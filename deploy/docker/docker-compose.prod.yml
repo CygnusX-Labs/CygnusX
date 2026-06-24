@@ -1,0 +1,36 @@
+# ============================================
+# OmicHub Docker Compose - 生产环境 Override
+# 用法: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# ============================================
+
+services:
+  nginx:
+    ports:
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - /etc/ssl/certs:/etc/ssl/certs:ro  # SSL 证书
+
+  web:
+    environment:
+      - APP_ENV=production
+      - APP_DEBUG=false
+    command: uvicorn omichub.main:app --host 0.0.0.0 --port 8000 --workers 4
+    volumes:
+      - shared_storage:/data/omichub
+    # 不挂载 src，使用镜像内打包的代码
+
+  worker:
+    environment:
+      - APP_ENV=production
+    deploy:
+      replicas: 2  # Worker 水平扩展
+
+  beat:
+    deploy:
+      replicas: 1  # Beat 必须单实例
+
+  db:
+    ports: []  # 不暴露数据库端口
+    volumes:
+      - pg_data:/var/lib/postgresql/data

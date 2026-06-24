@@ -1,0 +1,39 @@
+"""JWT 认证中间件"""
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+
+from omichub.core.security import decode_token
+
+# 不需要认证的路径
+PUBLIC_PATHS = {"/health", "/docs", "/redoc", "/openapi.json", "/api/v1/auth/login", "/api/v1/auth/register"}
+
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    """JWT 认证中间件 - 校验 Authorization 头"""
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        path = request.url.path
+
+        # 公开路径直接放行
+        if path in PUBLIC_PATHS or path.startswith("/api/v1/auth"):
+            return await call_next(request)
+
+        # WebSocket 连接由端点内自行处理
+        if request.scope["type"] == "websocket":
+            return await call_next(request)
+
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return Response(status_code=401, content='{"detail":"未提供认证令牌"}')
+
+        token = auth_header.removeprefix("Bearer ")
+        payload = decode_token(token)
+        if payload is None:
+            return Response(status_code=401, content='{"detail":"令牌无效或已过期"}')
+
+        # 将用户 ID 注入 request state
+        request.state.user_id = payload.get("sub")
+
+        return await call_next(request)

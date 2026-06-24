@@ -1,0 +1,110 @@
+[project]
+name = "omichub"
+version = "0.1.0"
+description = "OmicHub - 私有化多组学分析平台"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "OmicHub Team" },
+]
+
+dependencies = [
+    # Web 框架
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "python-multipart>=0.0.9",
+    # 数据校验
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    # 数据库
+    "sqlalchemy[asyncio]>=2.0.25",
+    "asyncpg>=0.29.0",
+    "alembic>=1.13.0",
+    # 缓存
+    "redis[hiredis]>=5.0.0",
+    # 任务队列
+    "celery[redis]>=5.3.6",
+    "flower>=2.0.1",
+    # 安全
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    # AI / LLM
+    "httpx>=0.27.0",
+    "mcp>=1.0.0",
+    # 工作流
+    "snakemake>=8.0.0",
+    # 文件处理
+    "aiofiles>=23.2.1",
+    "pyyaml>=6.0.1",
+    # 日志
+    "loguru>=0.7.2",
+    # 监控
+    "psutil>=5.9.8",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.5",
+    "pytest-cov>=4.1.0",
+    "httpx>=0.27.0",
+    "ruff>=0.3.0",
+    "mypy>=1.8.0",
+    "ipython>=8.20.0",
+    "types-pyyaml>=6.0.12",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/omichub"]
+
+# === Ruff 配置 ===
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "ASYNC", # flake8-async
+]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.ruff.format]
+quote-style = "double"
+
+# === MyPy 配置 ===
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["celery.*", "flower.*", "snakemake.*", "mcp.*"]
+ignore_missing_imports = true
+
+# === Pytest 配置 ===
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short --strict-markers"
+markers = [
+    "unit: 单元测试",
+    "integration: 集成测试",
+    "e2e: 端到端测试",
+]
