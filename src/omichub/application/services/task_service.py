@@ -8,7 +8,6 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from omichub.application.schemas.base import PaginationParams
-from omichub.application.schemas.flow import flow_config_to_detail
 from omichub.application.schemas.task import (
     TaskListResponse,
     TaskResponse,
@@ -53,8 +52,7 @@ class TaskService:
         5. 投递 Celery 异步任务；
         6. 将任务状态推进为 QUEUED。
         """
-        flow = self._flow_service.get_flow(req.flow_id)
-        flow_detail = flow_config_to_detail(flow)
+        flow_detail = self._flow_service.get_flow(req.flow_id)
 
         work_dir = self._make_work_dir(req.flow_id, user_id)
 

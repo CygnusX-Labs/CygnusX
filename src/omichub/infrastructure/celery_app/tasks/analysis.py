@@ -79,6 +79,7 @@ async def _execute_snakemake(
 
         # 推进到 RUNNING
         task = await domain.transition_status(task, TaskStatus.RUNNING)
+        await session.commit()
         await _add_and_publish_log(
             LogLevel.INFO,
             f"调用 Snakemake: snakefile={snakefile}, work_dir={work_dir}",
@@ -123,6 +124,7 @@ async def _execute_snakemake(
                 )
                 return_status = "failed"
 
+            await session.commit()
             return {
                 "status": return_status,
                 "task_id": task_id,
@@ -136,6 +138,7 @@ async def _execute_snakemake(
             task = await domain.transition_status(task, TaskStatus.FAILED)
             task.error_message = str(exc)[:2000]
             await repo.save(task)
+            await session.commit()
             return {"status": "failed", "task_id": task_id, "error": str(exc)}
 
 

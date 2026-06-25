@@ -54,7 +54,10 @@ class TaskDomainService:
         self, task_id: UUID, level: LogLevel, message: str, source: str = ""
     ) -> None:
         """追加任务日志"""
+        from datetime import datetime
+
         await self._repo.append_log(task_id, {
+            "timestamp": datetime.now().isoformat(),
             "level": level.value,
             "message": message,
             "source": source,

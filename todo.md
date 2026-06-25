@@ -101,13 +101,17 @@
   - [x] 前端 DynamicForm 组件 (基于 Naive UI) — types/schema.ts + useConditionEvaluator + DynamicForm/FormField/RepeatableGroup/CollapsibleSection，已接入 FlowSubmitView.vue
   - [x] 修复: uvicorn 运行时 /flows 路由 404 (重启容器后路由正常，返回 401 需认证即证明路由已注册)
 
-- [ ] **任务执行闭环** (docs/modules/01_architecture_overview.md §4.4)
-  - [ ] TaskRepositoryImpl
-  - [ ] TaskService 提交任务用例 (参数快照锁定)
-  - [ ] Celery analysis 任务接入 LocalSnakemakeExecutor
-  - [ ] Redis Pub/Sub → WebSocket 实时日志推送
-  - [ ] 前端任务详情页 + 实时日志流
-  - [ ] Snakemake DAG 可视化
+- [x] **任务执行闭环** (docs/modules/01_architecture_overview.md §4.4) ✅ 2026-06-25 端到端验证通过
+  - [x] TaskRepositoryImpl (get_by_id/list_by_user/save/delete/append_log + 模型转换)
+  - [x] TaskService 提交任务用例 (参数快照锁定 + RNAFlow builder + Celery 投递 + 状态推进)
+  - [x] Celery analysis 任务接入 LocalSnakemakeExecutor (状态流转 + stdout/stderr 日志记录)
+  - [x] Redis Pub/Sub → WebSocket 实时日志推送 (pubsub.py + tasks.py WebSocket 端点)
+  - [x] 前端任务详情页 + 实时日志流 (TaskDetailView.vue + WebSocket 连接)
+  - [x] Snakemake DAG 可视化 (generate_dag SVG/DOT + 前端渲染)
+  - [x] 修复: TaskService.submit 重复调用 flow_config_to_detail 导致 500
+  - [x] 修复: Celery worker session 未 commit 导致状态/日志丢失 (ROLLBACK)
+  - [x] 修复: _update_model 覆盖 append_log 写入的日志 (logs 不再由 save 覆盖)
+  - [x] 修复: append_log 未存 timestamp 导致 _to_entity 转换报错
 
 ### 优先级 P1 — 饼干积分系统（🍪 Cookie）
 

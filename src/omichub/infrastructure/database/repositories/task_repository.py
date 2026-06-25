@@ -73,9 +73,11 @@ class TaskRepositoryImpl(ITaskRepository):
 
     @staticmethod
     def _to_entity(model: TaskModel) -> Task:
+        from datetime import datetime
+
         logs = [
             TaskLog(
-                timestamp=log.get("timestamp"),
+                timestamp=log.get("timestamp") or datetime.now(),
                 level=LogLevel(log.get("level", "info")),
                 message=log.get("message", ""),
                 source=log.get("source", ""),
@@ -131,7 +133,7 @@ class TaskRepositoryImpl(ITaskRepository):
         model.result_path = task.result_path
         model.error_message = task.error_message
         model.progress = task.progress
-        model.logs = [log.model_dump(mode="json") for log in task.logs]
+        # 注意: logs 不在此处覆盖，由 append_log 单独管理，避免丢失直接追加的日志
         model.started_at = task.started_at
         model.finished_at = task.finished_at
         return model
