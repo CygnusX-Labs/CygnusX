@@ -41,7 +41,6 @@ const userMenuOptions = [
     label: '设置',
     key: 'settings',
     icon: () => h(NIcon, null, { default: () => h(Settings) }),
-    disabled: true,
   },
   { type: 'divider' as const },
   {
@@ -54,6 +53,8 @@ const userMenuOptions = [
 function handleMenuSelect(key: string) {
   if (key === 'profile') {
     router.push('/profile')
+  } else if (key === 'settings') {
+    router.push('/settings')
   } else if (key === 'logout') {
     authStore.logout()
     router.push('/login')

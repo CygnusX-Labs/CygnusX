@@ -110,32 +110,35 @@ onMounted(fetchPricing)
 </script>
 
 <template>
-  <NSpace vertical :size="24" style="padding: 24px">
-    <NCard title="定价策略管理">
-      <template #header-extra>
-        <NButton type="primary" @click="openEdit()">新建定价</NButton>
-      </template>
-      <NDataTable :columns="columns" :data="pricing" :loading="loading" :pagination="{ pageSize: 20 }" />
-    </NCard>
+  <div class="page-container">
+    <h1 class="page-title">饼干定价管理</h1>
+    <NSpace vertical :size="24">
+      <NCard title="定价策略管理" :bordered="false" class="arco-card">
+        <template #header-extra>
+          <NButton type="primary" @click="openEdit()">新建定价</NButton>
+        </template>
+        <NDataTable :columns="columns" :data="pricing" :loading="loading" :pagination="{ pageSize: 20 }" :bordered="false" size="small" />
+      </NCard>
 
-    <NModal v-model:show="showEdit" :title="editForm.id ? '编辑定价' : '新建定价'" preset="dialog" style="width: 560px">
-      <NSpace vertical :size="16" style="padding: 16px 0">
-        <div>定价类型:</div>
-        <NSelect v-model:value="editForm.pricing_type" :options="typeOptions" />
-        <div>流程类别 (如 rna_seq):</div>
-        <NInput v-model:value="editForm.flow_category" placeholder="留空表示通用" />
-        <div>资源类型:</div>
-        <NInput v-model:value="editForm.resource_type" placeholder="如 cpu_core_per_hour" />
-        <div>基础费用:</div>
-        <NInputNumber v-model:value="editForm.base_cost" :step="0.1" :min="0" style="width: 100%" />
-        <div>计价单位:</div>
-        <NSelect v-model:value="editForm.unit" :options="unitOptions" />
-        <div>优先级 (数字越大越优先):</div>
-        <NInputNumber v-model:value="editForm.priority" :step="1" style="width: 100%" />
-        <div>描述:</div>
-        <NInput v-model:value="editForm.description" type="textarea" placeholder="可选" />
-        <NButton type="primary" @click="savePricing">保存</NButton>
-      </NSpace>
-    </NModal>
-  </NSpace>
+      <NModal v-model:show="showEdit" :title="editForm.id ? '编辑定价' : '新建定价'" preset="dialog" style="width: 560px">
+        <NSpace vertical :size="16" style="padding: 16px 0">
+          <div>定价类型:</div>
+          <NSelect v-model:value="editForm.pricing_type" :options="typeOptions" />
+          <div>流程类别 (如 rna_seq):</div>
+          <NInput v-model:value="editForm.flow_category" placeholder="留空表示通用" />
+          <div>资源类型:</div>
+          <NInput v-model:value="editForm.resource_type" placeholder="如 cpu_core_per_hour" />
+          <div>基础费用:</div>
+          <NInputNumber v-model:value="editForm.base_cost" :step="0.1" :min="0" style="width: 100%" />
+          <div>计价单位:</div>
+          <NSelect v-model:value="editForm.unit" :options="unitOptions" />
+          <div>优先级 (数字越大越优先):</div>
+          <NInputNumber v-model:value="editForm.priority" :step="1" style="width: 100%" />
+          <div>描述:</div>
+          <NInput v-model:value="editForm.description" type="textarea" placeholder="可选" />
+          <NButton type="primary" @click="savePricing">保存</NButton>
+        </NSpace>
+      </NModal>
+    </NSpace>
+  </div>
 </template>

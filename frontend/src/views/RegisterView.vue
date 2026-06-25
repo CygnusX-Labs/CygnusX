@@ -1,7 +1,12 @@
 <template>
   <div class="register-container">
-    <div class="register-card">
-      <h2 class="register-title">用户注册</h2>
+    <div class="register-orb register-orb--1" />
+    <div class="register-orb register-orb--2" />
+    <div class="register-card animate-scale-in">
+      <div class="register-header">
+        <h2 class="register-title gradient-text">注册账户</h2>
+        <p class="register-subtitle">加入 OmicHub 多组学分析平台</p>
+      </div>
       <n-form ref="formRef" :model="formData" :rules="rules" class="register-form">
         <n-form-item label="用户名" path="username">
           <n-input
@@ -60,9 +65,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useMessage } from 'naive-ui'
+import { useMessage, NAlert } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
-import { NAlert } from 'naive-ui'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -148,30 +152,65 @@ const handleRegister = async () => {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(-45deg, #165DFF, #3063FF, #6B8DD6, #8E54E9);
+  background-size: 400% 400%;
+  animation: gradientShift 12s ease infinite;
+  position: relative;
+  overflow: hidden;
+}
+
+.register-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.3;
+  pointer-events: none;
+}
+.register-orb--1 {
+  width: 400px;
+  height: 400px;
+  background: #a5b4fc;
+  top: -100px;
+  left: -100px;
+  animation: drift 14s ease-in-out infinite;
+}
+.register-orb--2 {
+  width: 300px;
+  height: 300px;
+  background: #67e8f9;
+  bottom: -50px;
+  right: -50px;
+  animation: drift 16s ease-in-out infinite reverse;
 }
 
 .register-card {
+  position: relative;
+  z-index: 1;
   width: 100%;
   max-width: 450px;
   padding: 40px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
 }
 
-.register-title {
+.register-header {
   text-align: center;
   margin-bottom: 32px;
-  color: #333;
-  font-size: 24px;
-  font-weight: 600;
 }
-
+.register-title {
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.register-subtitle {
+  font-size: 14px;
+  color: var(--neutral-text-3);
+}
 .register-form {
   margin-top: 24px;
 }
-
 .register-actions {
   display: flex;
   justify-content: space-between;

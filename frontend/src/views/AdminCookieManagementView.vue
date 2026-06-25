@@ -46,7 +46,7 @@ const columns = [
   {
     title: '状态',
     key: 'status',
-    render: (row: any) => h(NTag, { type: statusTag(row.status), size: 'small' }, { default: () => row.status }),
+    render: (row: any) => h(NTag, { type: statusTag(row.status), size: 'small', round: true }, { default: () => row.status }),
   },
   { title: '累计获得', key: 'total_earned', render: (row: any) => Number(row.total_earned).toFixed(1) },
   { title: '累计消费', key: 'total_spent', render: (row: any) => Number(row.total_spent).toFixed(1) },
@@ -111,39 +111,42 @@ onMounted(fetchData)
 </script>
 
 <template>
-  <NSpace vertical :size="24" style="padding: 24px">
-    <NCard v-if="stats" title="系统统计">
-      <NSpace :size="48">
-        <NStatistic label="总账户数" :value="stats.total_accounts" />
-        <NStatistic label="活跃账户" :value="stats.active_accounts" />
-        <NStatistic label="系统总余额" :value="Number(stats.total_balance).toFixed(1)">
-          <template #suffix>🍪</template>
-        </NStatistic>
-        <NStatistic label="冻结总额" :value="Number(stats.total_frozen).toFixed(1)">
-          <template #suffix>🍪</template>
-        </NStatistic>
-        <NStatistic label="累计发放" :value="Number(stats.total_earned).toFixed(1)">
-          <template #suffix>🍪</template>
-        </NStatistic>
-        <NStatistic label="累计消费" :value="Number(stats.total_spent).toFixed(1)">
-          <template #suffix>🍪</template>
-        </NStatistic>
-      </NSpace>
-    </NCard>
+  <div class="page-container">
+    <h1 class="page-title">饼干账户管理</h1>
+    <NSpace vertical :size="24">
+      <NCard v-if="stats" title="系统统计" :bordered="false" class="arco-card">
+        <NSpace :size="48">
+          <NStatistic label="总账户数" :value="stats.total_accounts" />
+          <NStatistic label="活跃账户" :value="stats.active_accounts" />
+          <NStatistic label="系统总余额" :value="Number(stats.total_balance).toFixed(1)">
+            <template #suffix>🍪</template>
+          </NStatistic>
+          <NStatistic label="冻结总额" :value="Number(stats.total_frozen).toFixed(1)">
+            <template #suffix>🍪</template>
+          </NStatistic>
+          <NStatistic label="累计发放" :value="Number(stats.total_earned).toFixed(1)">
+            <template #suffix>🍪</template>
+          </NStatistic>
+          <NStatistic label="累计消费" :value="Number(stats.total_spent).toFixed(1)">
+            <template #suffix>🍪</template>
+          </NStatistic>
+        </NSpace>
+      </NCard>
 
-    <NCard title="账户管理">
-      <NDataTable :columns="columns" :data="accounts" :loading="loading" :pagination="{ pageSize: 20 }" />
-    </NCard>
+      <NCard title="账户管理" :bordered="false" class="arco-card">
+        <NDataTable :columns="columns" :data="accounts" :loading="loading" :pagination="{ pageSize: 20 }" :bordered="false" size="small" />
+      </NCard>
 
-    <NModal v-model:show="showAdjust" title="调整余额" preset="dialog" style="width: 480px">
-      <NSpace vertical :size="16" style="padding: 16px 0">
-        <div>目标用户: {{ adjustTarget.substring(0, 8) }}...</div>
-        <div>金额 (正数增加, 负数减少):</div>
-        <NInputNumber v-model:value="adjustAmount" :step="1" style="width: 100%" />
-        <div>原因:</div>
-        <n-input v-model:value="adjustReason" placeholder="请输入调整原因" />
-        <NButton type="primary" @click="submitAdjust">确认调整</NButton>
-      </NSpace>
-    </NModal>
-  </NSpace>
+      <NModal v-model:show="showAdjust" title="调整余额" preset="dialog" style="width: 480px">
+        <NSpace vertical :size="16" style="padding: 16px 0">
+          <div>目标用户: {{ adjustTarget.substring(0, 8) }}...</div>
+          <div>金额 (正数增加, 负数减少):</div>
+          <NInputNumber v-model:value="adjustAmount" :step="1" style="width: 100%" />
+          <div>原因:</div>
+          <n-input v-model:value="adjustReason" placeholder="请输入调整原因" />
+          <NButton type="primary" @click="submitAdjust">确认调整</NButton>
+        </NSpace>
+      </NModal>
+    </NSpace>
+  </div>
 </template>

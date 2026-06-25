@@ -51,15 +51,15 @@ const columns = [
     title: '类型',
     key: 'txn_type',
     render(row: CookieTransaction) {
-      return h(NTag, { type: txnTagType(row.txn_type), size: 'small' }, { default: () => row.txn_type })
+      return h(NTag, { type: txnTagType(row.txn_type), size: 'small', round: true }, { default: () => row.txn_type })
     },
   },
   {
     title: '金额',
     key: 'amount',
     render(row: CookieTransaction) {
-      const color = row.amount >= 0 ? '#18a058' : '#d03050'
-      return h('span', { style: { color, fontWeight: 'bold' } }, `${row.amount >= 0 ? '+' : ''}${Number(row.amount).toFixed(2)}`)
+      const color = row.amount >= 0 ? 'var(--arco-success)' : 'var(--arco-danger)'
+      return h('span', { style: { color, fontWeight: 500 } }, `${row.amount >= 0 ? '+' : ''}${Number(row.amount).toFixed(2)}`)
     },
   },
   { title: '交易后余额', key: 'balance_after', render: (row: CookieTransaction) => Number(row.balance_after).toFixed(2) },
@@ -82,51 +82,54 @@ onMounted(async () => {
 </script>
 
 <template>
-  <NSpace vertical :size="24" style="padding: 24px">
-    <NCard title="饼干账户">
-      <NGrid v-if="account" :cols="4" :x-gap="16" :y-gap="16" responsive="screen">
-        <NGridItem>
-          <NStatistic label="可用余额" :value="Number(account.available_balance).toFixed(1)">
-            <template #suffix>🍪</template>
-          </NStatistic>
-        </NGridItem>
-        <NGridItem>
-          <NStatistic label="总余额" :value="Number(account.balance).toFixed(1)">
-            <template #suffix>🍪</template>
-          </NStatistic>
-        </NGridItem>
-        <NGridItem>
-          <NStatistic label="冻结中" :value="Number(account.frozen_balance).toFixed(1)">
-            <template #suffix>🍪</template>
-          </NStatistic>
-        </NGridItem>
-        <NGridItem>
-          <NStatistic label="累计获得" :value="Number(account.total_earned).toFixed(1)">
-            <template #suffix>🍪</template>
-          </NStatistic>
-        </NGridItem>
-      </NGrid>
-      <NDescriptions v-if="account" :columns="2" bordered style="margin-top: 16px">
-        <NDescriptionsItem label="账户状态">
-          <NTag :type="statusTagType" size="small">{{ account.status }}</NTag>
-        </NDescriptionsItem>
-        <NDescriptionsItem label="累计消费">{{ Number(account.total_spent).toFixed(2) }} 🍪</NDescriptionsItem>
-        <NDescriptionsItem label="累计调整">{{ Number(account.total_adjusted).toFixed(2) }} 🍪</NDescriptionsItem>
-        <NDescriptionsItem label="创建时间">
-          {{ account.created_at ? new Date(account.created_at).toLocaleString('zh-CN') : '-' }}
-        </NDescriptionsItem>
-      </NDescriptions>
-    </NCard>
+  <div class="page-container">
+    <h1 class="page-title">用量统计</h1>
+    <NSpace vertical :size="24">
+      <NCard title="饼干账户" :bordered="false" class="arco-card">
+        <NGrid v-if="account" :cols="4" :x-gap="16" :y-gap="16" responsive="screen">
+          <NGridItem>
+            <NStatistic label="可用余额" :value="Number(account.available_balance).toFixed(1)">
+              <template #suffix>🍪</template>
+            </NStatistic>
+          </NGridItem>
+          <NGridItem>
+            <NStatistic label="总余额" :value="Number(account.balance).toFixed(1)">
+              <template #suffix>🍪</template>
+            </NStatistic>
+          </NGridItem>
+          <NGridItem>
+            <NStatistic label="冻结中" :value="Number(account.frozen_balance).toFixed(1)">
+              <template #suffix>🍪</template>
+            </NStatistic>
+          </NGridItem>
+          <NGridItem>
+            <NStatistic label="累计获得" :value="Number(account.total_earned).toFixed(1)">
+              <template #suffix>🍪</template>
+            </NStatistic>
+          </NGridItem>
+        </NGrid>
+        <NDescriptions v-if="account" :columns="2" bordered style="margin-top: 16px">
+          <NDescriptionsItem label="账户状态">
+            <NTag :type="statusTagType" size="small" round>{{ account.status }}</NTag>
+          </NDescriptionsItem>
+          <NDescriptionsItem label="累计消费">{{ Number(account.total_spent).toFixed(2) }} 🍪</NDescriptionsItem>
+          <NDescriptionsItem label="累计调整">{{ Number(account.total_adjusted).toFixed(2) }} 🍪</NDescriptionsItem>
+          <NDescriptionsItem label="创建时间">
+            {{ account.created_at ? new Date(account.created_at).toLocaleString('zh-CN') : '-' }}
+          </NDescriptionsItem>
+        </NDescriptions>
+      </NCard>
 
-    <NCard title="交易流水">
-      <NDataTable
-        :columns="columns"
-        :data="transactions"
-        :loading="loading"
-        :pagination="{ pageSize: 20 }"
-        :bordered="false"
-        size="small"
-      />
-    </NCard>
-  </NSpace>
+      <NCard title="交易流水" :bordered="false" class="arco-card">
+        <NDataTable
+          :columns="columns"
+          :data="transactions"
+          :loading="loading"
+          :pagination="{ pageSize: 20 }"
+          :bordered="false"
+          size="small"
+        />
+      </NCard>
+    </NSpace>
+  </div>
 </template>

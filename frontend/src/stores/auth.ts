@@ -43,6 +43,17 @@ export const useAuthStore = defineStore('auth', () => {
     await apiClient.post('/auth/register', req)
   }
 
+  async function setupFirstAdmin(req: RegisterRequest): Promise<void> {
+    const response = await apiClient.post<TokenResponse>('/auth/setup', req)
+    setTokens(response.data.access_token, response.data.refresh_token)
+    await fetchUser()
+  }
+
+  async function checkSetupRequired(): Promise<boolean> {
+    const response = await apiClient.get<{ setup_required: boolean }>('/auth/setup-required')
+    return response.data.setup_required
+  }
+
   async function fetchUser(): Promise<void> {
     if (!accessToken.value) return
     const response = await apiClient.get<User>('/auth/me')
@@ -78,6 +89,8 @@ export const useAuthStore = defineStore('auth', () => {
     clearTokens,
     login,
     register,
+    setupFirstAdmin,
+    checkSetupRequired,
     fetchUser,
     refreshAccessToken,
     logout,

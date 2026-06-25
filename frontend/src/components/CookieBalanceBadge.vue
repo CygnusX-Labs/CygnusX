@@ -3,9 +3,11 @@ import { computed, onMounted } from 'vue'
 import { NBadge, NTag } from 'naive-ui'
 import { useCookieStore } from '@/stores/cookie'
 import { useAuthStore } from '@/stores/auth'
+import { useCookieWebSocket } from '@/composables/useCookieWebSocket'
 
 const cookieStore = useCookieStore()
 const authStore = useAuthStore()
+const { connect } = useCookieWebSocket()
 
 const cookieColor = computed(() => {
   const b = cookieStore.balance
@@ -17,6 +19,7 @@ const cookieColor = computed(() => {
 onMounted(async () => {
   if (authStore.isLoggedIn) {
     await cookieStore.fetchAccount()
+    connect()
   }
 })
 </script>

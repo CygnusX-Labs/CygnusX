@@ -2,6 +2,20 @@ import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
+// 首次部署配置状态缓存
+let setupChecked = false
+let setupRequired = false
+
+export function resetSetupCheck() {
+  setupChecked = false
+  setupRequired = false
+}
+
+export function markSetupComplete() {
+  setupChecked = true
+  setupRequired = false
+}
+
 const routes: RouteRecordRaw[] = [
   {
     path: '/login',
@@ -14,6 +28,12 @@ const routes: RouteRecordRaw[] = [
     name: 'register',
     component: () => import('@/views/RegisterView.vue'),
     meta: { title: '注册', requiresAuth: false }
+  },
+  {
+    path: '/setup',
+    name: 'setup',
+    component: () => import('@/views/SetupView.vue'),
+    meta: { title: '首次配置', requiresAuth: false }
   },
   {
     path: '/',
@@ -68,16 +88,34 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '个人中心', requiresAuth: true }
       },
       {
+        path: 'settings',
+        name: 'settings',
+        component: () => import('@/views/SettingsView.vue'),
+        meta: { title: '设置', requiresAuth: true }
+      },
+      {
         path: 'cookies',
         name: 'cookies',
         component: () => import('@/views/CookieAccountView.vue'),
         meta: { title: '饼干账户', requiresAuth: true }
       },
       {
+        path: 'about',
+        name: 'about',
+        component: () => import('@/views/AboutView.vue'),
+        meta: { title: '关于', requiresAuth: false }
+      },
+      {
         path: 'admin/cookies/accounts',
         name: 'admin-cookies-accounts',
         component: () => import('@/views/AdminCookieManagementView.vue'),
         meta: { title: '饼干账户管理', requiresAuth: true }
+      },
+      {
+        path: 'admin/cookies/transactions',
+        name: 'admin-cookies-transactions',
+        component: () => import('@/views/AdminCookieTransactionsView.vue'),
+        meta: { title: '交易流水审计', requiresAuth: true }
       },
       {
         path: 'admin/cookies/pricing',
@@ -107,10 +145,33 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
+
+  // 首次部署：检查是否已配置 root 管理员
+  if (!setupChecked) {
+    try {
+      setupRequired = await authStore.checkSetupRequired()
+      setupChecked = true
+    } catch {
+      // 接口失败时不阻塞用户，允许继续访问
+      setupRequired = false
+      setupChecked = true
+    }
+  }
+
+  if (setupRequired && to.name !== 'setup') {
+    next('/setup')
+    return
+  }
+
+  if (!setupRequired && to.name === 'setup') {
+    next('/login')
+    return
+  }
+
   const isLoggedIn = authStore.isLoggedIn
-  
+
   if (to.meta.requiresAuth && !isLoggedIn) {
     // 需要登录但未登录
     next('/login')

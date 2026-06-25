@@ -42,6 +42,18 @@ const statusType = computed(() => {
   return map[task.value?.status || 'pending'] || 'default'
 })
 
+const statusText = computed(() => {
+  const map: Record<string, string> = {
+    pending: '待审核',
+    queued: '排队中',
+    running: '运行中',
+    success: '已完成',
+    failed: '失败',
+    cancelled: '已取消',
+  }
+  return map[task.value?.status || 'pending'] || task.value?.status || '未知'
+})
+
 async function fetchTask() {
   loading.value = true
   error.value = ''
@@ -125,21 +137,22 @@ watch(taskId, () => {
 </script>
 
 <template>
-  <div class="task-detail">
-    <NBreadcrumb>
-      <NBreadcrumbItem>任务管理</NBreadcrumbItem>
+  <div class="page-container">
+    <h1 class="page-title">任务详情</h1>
+    <NBreadcrumb class="task-breadcrumb">
+      <NBreadcrumbItem>任务中心</NBreadcrumbItem>
       <NBreadcrumbItem>任务详情</NBreadcrumbItem>
     </NBreadcrumb>
 
     <NAlert v-if="error" type="error" :title="error" />
 
-    <NCard v-if="task" title="任务概览" class="overview-card">
+    <NCard v-if="task" title="任务概览" :bordered="false" class="arco-card overview-card">
       <NSpace vertical>
         <NDescriptions :columns="3" bordered>
           <NDescriptionsItem label="任务名称">{{ task.name }}</NDescriptionsItem>
           <NDescriptionsItem label="流程">{{ task.flow_id }}</NDescriptionsItem>
           <NDescriptionsItem label="状态">
-            <NTag :type="statusType">{{ task.status }}</NTag>
+            <NTag :type="statusType" round>{{ statusText }}</NTag>
           </NDescriptionsItem>
           <NDescriptionsItem label="执行模式">{{ task.execution_mode }}</NDescriptionsItem>
           <NDescriptionsItem label="工作目录">{{ task.work_dir }}</NDescriptionsItem>
@@ -148,13 +161,14 @@ watch(taskId, () => {
         <NProgress
           :percentage="Math.round(task.progress * 100)"
           :status="task.status === 'failed' ? 'error' : 'success'"
+          :indicator-text-color="task.status === 'failed' ? 'var(--arco-danger)' : 'var(--arco-success)'"
         />
       </NSpace>
     </NCard>
 
     <NTabs type="line" animated>
       <NTabPane name="logs" tab="实时日志">
-        <NCard class="logs-card">
+        <NCard :bordered="false" class="arco-card logs-card">
           <div class="log-container">
             <div
               v-for="(log, index) in logs"
@@ -172,7 +186,7 @@ watch(taskId, () => {
       </NTabPane>
 
       <NTabPane name="dag" tab="DAG 可视化">
-        <NCard class="dag-card">
+        <NCard :bordered="false" class="arco-card dag-card">
           <NSpace vertical>
             <NButton type="primary" :loading="dagLoading" @click="fetchDag">
               生成 DAG
@@ -189,26 +203,29 @@ watch(taskId, () => {
 </template>
 
 <style scoped>
-.task-detail {
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.task-breadcrumb {
+  margin-bottom: 16px;
 }
-.overview-card,
+
+.overview-card {
+  margin-bottom: 24px;
+}
+
 .logs-card {
   margin-top: 16px;
 }
+
 .log-container {
   max-height: 600px;
   overflow-y: auto;
-  font-family: monospace;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   font-size: 13px;
   background-color: #1e1e1e;
   color: #d4d4d4;
   padding: 12px;
-  border-radius: 4px;
+  border-radius: 8px;
 }
+
 .log-line {
   display: flex;
   gap: 12px;
@@ -216,53 +233,66 @@ watch(taskId, () => {
   white-space: pre-wrap;
   word-break: break-all;
 }
+
 .log-time {
   color: #858585;
   min-width: 180px;
 }
+
 .log-level {
   min-width: 60px;
   font-weight: bold;
 }
+
 .level-error .log-level {
   color: #f14c4c;
 }
+
 .level-warning .log-level {
   color: #f5a623;
 }
+
 .level-info .log-level {
   color: #4ec9b0;
 }
+
 .level-debug .log-level {
   color: #9cdcfe;
 }
+
 .empty-logs {
   color: #858585;
   text-align: center;
   padding: 24px;
 }
+
 .dag-card {
   min-height: 400px;
+  margin-top: 16px;
 }
+
 .dag-svg {
   overflow-x: auto;
 }
+
 .dag-svg svg {
   max-width: 100%;
   height: auto;
 }
+
 .dag-dot {
   background-color: #1e1e1e;
   color: #d4d4d4;
   padding: 12px;
-  border-radius: 4px;
+  border-radius: 8px;
   overflow-x: auto;
-  font-family: monospace;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   font-size: 13px;
   white-space: pre;
 }
+
 .empty-dag {
-  color: #858585;
+  color: var(--neutral-text-3);
   text-align: center;
   padding: 48px;
 }

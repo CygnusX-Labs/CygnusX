@@ -1,13 +1,14 @@
 <template>
-  <div class="profile-container">
-    <n-card title="个人信息" :bordered="false" class="profile-card">
+  <div class="page-container">
+    <h1 class="page-title">个人中心</h1>
+    <n-card title="个人信息" :bordered="false" class="arco-card profile-card">
       <n-descriptions :column="2" bordered>
         <n-descriptions-item label="用户ID">{{ user?.id }}</n-descriptions-item>
         <n-descriptions-item label="用户名">{{ user?.username }}</n-descriptions-item>
         <n-descriptions-item label="邮箱">{{ user?.email }}</n-descriptions-item>
         <n-descriptions-item label="角色">{{ user?.role }}</n-descriptions-item>
         <n-descriptions-item label="账户状态">
-          <n-tag :type="user?.status === 'active' ? 'success' : 'warning'">
+          <n-tag :type="user?.status === 'active' ? 'success' : 'warning'" round>
             {{ user?.status }}
           </n-tag>
         </n-descriptions-item>
@@ -93,14 +94,8 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.profile-container {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 24px;
-}
-
 .profile-card {
-  margin-bottom: 24px;
+  max-width: 800px;
 }
 
 .card-actions {

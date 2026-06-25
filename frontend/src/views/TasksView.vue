@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Task } from '@/types'
 import { apiClient } from '@/api'
-import { NButton, NCard, NDataTable, NEmpty, NSpin, NTag } from 'naive-ui'
+import { NButton, NDataTable, NEmpty, NSpin, NTag } from 'naive-ui'
 import { h, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -21,13 +21,25 @@ const statusType = (status: string) => {
   return map[status] || 'default'
 }
 
+const statusText = (status: string) => {
+  const map: Record<string, string> = {
+    pending: '待审核',
+    queued: '排队中',
+    running: '运行中',
+    success: '已完成',
+    failed: '失败',
+    cancelled: '已取消',
+  }
+  return map[status] || status
+}
+
 const columns = [
   { title: '任务名称', key: 'name' },
   { title: '流程', key: 'flow_id' },
   {
     title: '状态',
     key: 'status',
-    render: (row: Task) => h(NTag, { type: statusType(row.status) }, { default: () => row.status }),
+    render: (row: Task) => h(NTag, { type: statusType(row.status), size: 'small', round: true }, { default: () => statusText(row.status) }),
   },
   {
     title: '进度',
@@ -65,24 +77,20 @@ onMounted(fetchTasks)
 </script>
 
 <template>
-  <div class="tasks-view">
-    <h2>任务管理</h2>
+  <div class="page-container">
+    <h1 class="page-title">任务中心</h1>
     <NSpin :show="loading">
-      <NCard>
+      <div class="arco-card">
         <NDataTable
           v-if="tasks.length"
           :columns="columns"
           :data="tasks"
           :row-key="(row: Task) => row.id"
+          :bordered="false"
+          size="small"
         />
         <NEmpty v-else description="暂无任务" />
-      </NCard>
+      </div>
     </NSpin>
   </div>
 </template>
-
-<style scoped>
-.tasks-view {
-  padding: 24px;
-}
-</style>

@@ -30,12 +30,12 @@ const columns = [
   {
     title: '角色',
     key: 'role',
-    render: (row: any) => h(NTag, { type: row.role === 'admin' ? 'success' : 'default', size: 'small' }, { default: () => row.role }),
+    render: (row: any) => h(NTag, { type: row.role === 'admin' ? 'success' : 'default', size: 'small', round: true }, { default: () => row.role }),
   },
   {
     title: '状态',
     key: 'status',
-    render: (row: any) => h(NTag, { type: statusTag(row.status), size: 'small' }, { default: () => row.status }),
+    render: (row: any) => h(NTag, { type: statusTag(row.status), size: 'small', round: true }, { default: () => row.status }),
   },
   {
     title: '注册时间',
@@ -101,9 +101,10 @@ onMounted(fetchUsers)
 </script>
 
 <template>
-  <NSpace vertical :size="24" style="padding: 24px">
-    <NCard title="用户管理">
-      <NDataTable :columns="columns" :data="users" :loading="loading" :pagination="{ pageSize: 20 }" />
+  <div class="page-container">
+    <h1 class="page-title">用户管理</h1>
+    <NCard title="用户列表" :bordered="false" class="arco-card">
+      <NDataTable :columns="columns" :data="users" :loading="loading" :pagination="{ pageSize: 20 }" :bordered="false" size="small" />
     </NCard>
-  </NSpace>
+  </div>
 </template>

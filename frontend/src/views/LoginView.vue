@@ -1,7 +1,12 @@
 <template>
   <div class="login-container">
-    <div class="login-card">
-      <h2 class="login-title">欢迎登录 OmicHub</h2>
+    <div class="login-orb login-orb--1" />
+    <div class="login-orb login-orb--2" />
+    <div class="login-card animate-scale-in">
+      <div class="login-header">
+        <h2 class="login-title gradient-text">OmicHub</h2>
+        <p class="login-subtitle">欢迎登录多组学分析平台</p>
+      </div>
       <n-form ref="formRef" :model="formData" :rules="rules" class="login-form">
         <n-form-item label="用户名" path="username">
           <n-input
@@ -93,30 +98,65 @@ const handleLogin = async () => {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(-45deg, #165DFF, #3063FF, #6B8DD6, #8E54E9);
+  background-size: 400% 400%;
+  animation: gradientShift 12s ease infinite;
+  position: relative;
+  overflow: hidden;
+}
+
+.login-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.3;
+  pointer-events: none;
+}
+.login-orb--1 {
+  width: 400px;
+  height: 400px;
+  background: #a5b4fc;
+  top: -100px;
+  right: -100px;
+  animation: drift 14s ease-in-out infinite;
+}
+.login-orb--2 {
+  width: 300px;
+  height: 300px;
+  background: #67e8f9;
+  bottom: -50px;
+  left: -50px;
+  animation: drift 16s ease-in-out infinite reverse;
 }
 
 .login-card {
+  position: relative;
+  z-index: 1;
   width: 100%;
   max-width: 400px;
   padding: 40px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
 }
 
-.login-title {
+.login-header {
   text-align: center;
   margin-bottom: 32px;
-  color: #333;
-  font-size: 24px;
-  font-weight: 600;
 }
-
+.login-title {
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.login-subtitle {
+  font-size: 14px;
+  color: var(--neutral-text-3);
+}
 .login-form {
   margin-top: 24px;
 }
-
 .login-actions {
   display: flex;
   justify-content: space-between;

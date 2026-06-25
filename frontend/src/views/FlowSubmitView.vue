@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { FlowConfig, FormValues, Parameter } from '@/types/schema'
 import type { Task } from '@/types'
+import type { CostEstimate } from '@/types'
 import { apiClient } from '@/api'
 import DynamicForm from '@/components/dynamic-form/DynamicForm.vue'
 import {
@@ -14,11 +15,13 @@ import {
   NTable,
   NTag,
 } from 'naive-ui'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useCookieStore } from '@/stores/cookie'
 
 const route = useRoute()
 const router = useRouter()
+const cookieStore = useCookieStore()
 const flowId = computed(() => route.params.flowId as string)
 
 const flow = ref<FlowConfig | null>(null)
@@ -34,6 +37,32 @@ const formValues = ref<FormValues>({})
 const sampleSheet = ref<Record<string, string>[]>([
   { sample: '', sample_name: '', group: '' },
 ])
+
+// 饼干预估
+const costEstimate = ref<CostEstimate | null>(null)
+const estimating = ref(false)
+let estimateTimer: ReturnType<typeof setTimeout> | null = null
+
+async function fetchEstimate() {
+  if (!flowId.value) return
+  estimating.value = true
+  try {
+    costEstimate.value = await cookieStore.estimateCost(flowId.value)
+  } catch {
+    costEstimate.value = null
+  } finally {
+    estimating.value = false
+  }
+}
+
+function debouncedEstimate() {
+  if (estimateTimer) clearTimeout(estimateTimer)
+  estimateTimer = setTimeout(fetchEstimate, 500)
+}
+
+// flow 加载后 + 参数变更时防抖预估
+watch(flowId, fetchEstimate, { immediate: false })
+watch(() => formValues.value, debouncedEstimate, { deep: true })
 
 async function fetchFlow() {
   loading.value = true
@@ -84,6 +113,11 @@ async function submitTask() {
   submitting.value = true
   error.value = ''
   try {
+    // 饼干预估：余额不足时拦截
+    if (cookieStore.isLoggedIn && costEstimate.value && !costEstimate.value.affordable) {
+      error.value = `饼干余额不足: 需要 ${costEstimate.value.estimated_cost} 🍪, 当前可用 ${costEstimate.value.current_balance} 🍪`
+      return
+    }
     const comparisons = buildComparisons()
     const payload: Record<string, unknown> = {
       flow_id: flowId.value,
@@ -147,7 +181,27 @@ onMounted(fetchFlow)
 
       <NDivider />
 
-      <NButton type="primary" size="large" :loading="submitting" @click="submitTask">
+      <NCard v-if="cookieStore.isLoggedIn && costEstimate" size="small" :bordered="true">
+        <NSpace align="center" justify="space-between">
+          <NSpace align="center" :size="24">
+            <div>
+              <span style="color: #666">预估费用: </span>
+              <span style="font-weight: bold; font-size: 18px">{{ Number(costEstimate.estimated_cost).toFixed(2) }} 🍪</span>
+            </div>
+            <div>
+              <span style="color: #666">当前余额: </span>
+              <span :style="{ fontWeight: 'bold', color: costEstimate.affordable ? '#18a058' : '#d03050' }">
+                {{ Number(costEstimate.current_balance).toFixed(1) }} 🍪
+              </span>
+            </div>
+          </NSpace>
+          <NTag :type="costEstimate.affordable ? 'success' : 'error'" size="small">
+            {{ costEstimate.affordable ? '余额充足' : '余额不足' }}
+          </NTag>
+        </NSpace>
+      </NCard>
+
+      <NButton type="primary" size="large" :loading="submitting" :disabled="!!costEstimate && !costEstimate.affordable" @click="submitTask">
         提交任务
       </NButton>
     </NSpin>
