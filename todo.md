@@ -84,7 +84,7 @@
   - [x] 修复: DashboardView 健康检查路径错误 (apiClient /../health → axios /health)
   - [x] 修复: DashboardView 快速开始按钮未绑定 @click 跳转事件
 
-- [ ] **YAML 配置中心** (docs/modules/04_yaml_schema.md) — 后端完成，前端待实现
+- [x] **YAML 配置中心** (docs/modules/04_yaml_schema.md) ✅ 2026-06-25 前后端闭环
   - [x] FlowDomainService.parse_yaml 完整实现 (services.py)
   - [x] YAML → FlowConfig 转换 (entities.py 完整 Pydantic v2 模型)
   - [x] DAG 依赖图校验 (find_condition_cycle 三色 DFS 检测 condition 循环依赖)
@@ -98,8 +98,8 @@
   - [x] api/v1/flows.py: 5 端点 (GET / | GET /schema | POST /reload | GET /{id} | GET /{id}/schema)
   - [x] flows/rna_seq.yaml 示例配置 (覆盖全部参数类型+条件渲染+Group+Section)
   - [x] docker-compose 挂载 flows 目录 + config.py 新增 flow_yaml_dir
-  - [ ] 前端 DynamicForm 组件 (基于 Naive UI) — types/schema.ts + useConditionEvaluator + DynamicForm/Form/RepeatableGroup/CollapsibleSection
-  - [ ] 待解决 bug: uvicorn 运行时 /flows 路由 404 (TestClient 验证路由注册正常，疑似 reload 缓存问题，需重启容器验证)
+  - [x] 前端 DynamicForm 组件 (基于 Naive UI) — types/schema.ts + useConditionEvaluator + DynamicForm/FormField/RepeatableGroup/CollapsibleSection，已接入 FlowSubmitView.vue
+  - [x] 修复: uvicorn 运行时 /flows 路由 404 (重启容器后路由正常，返回 401 需认证即证明路由已注册)
 
 - [ ] **任务执行闭环** (docs/modules/01_architecture_overview.md §4.4)
   - [ ] TaskRepositoryImpl
