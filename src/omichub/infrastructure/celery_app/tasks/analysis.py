@@ -18,6 +18,7 @@ def run_snakemake(
     snakefile: str,
     task_id: str,
     config_file: str = "",
+    config_file_param: str = "analysisyaml",
     work_dir: str = "",
     cores: int = 4,
 ) -> dict:
@@ -31,6 +32,7 @@ def run_snakemake(
             snakefile=snakefile,
             task_id=task_id,
             config_file=config_file,
+            config_file_param=config_file_param,
             work_dir=work_dir,
             cores=cores,
         )
@@ -41,6 +43,7 @@ async def _execute_snakemake(
     snakefile: str,
     task_id: str,
     config_file: str,
+    config_file_param: str,
     work_dir: str,
     cores: int,
 ) -> dict:
@@ -62,9 +65,7 @@ async def _execute_snakemake(
         if task is None:
             return {"status": "failed", "message": f"任务 {task_id} 不存在"}
 
-        async def _add_and_publish_log(
-            level: LogLevel, message: str, source: str = ""
-        ) -> None:
+        async def _add_and_publish_log(level: LogLevel, message: str, source: str = "") -> None:
             await domain.add_log(task_uuid, level, message, source=source)
             await publish_task_log(
                 task_id=task_id,
@@ -74,9 +75,7 @@ async def _execute_snakemake(
             )
 
         # 推送开始日志
-        await _add_and_publish_log(
-            LogLevel.INFO, "开始执行 Snakemake 分析任务", source="celery"
-        )
+        await _add_and_publish_log(LogLevel.INFO, "开始执行 Snakemake 分析任务", source="celery")
 
         # 推进到 RUNNING
         task = await domain.transition_status(task, TaskStatus.RUNNING)
@@ -94,25 +93,20 @@ async def _execute_snakemake(
                 work_dir=work_dir,
                 cores=cores,
                 config_file=config_file,
+                config_file_param=config_file_param,
             )
 
             # 记录 stdout / stderr 摘要
             for line in (result.get("stdout") or "").splitlines()[-200:]:
                 if line.strip():
-                    await _add_and_publish_log(
-                        LogLevel.INFO, line, source="snakemake"
-                    )
+                    await _add_and_publish_log(LogLevel.INFO, line, source="snakemake")
             for line in (result.get("stderr") or "").splitlines()[-200:]:
                 if line.strip():
-                    await _add_and_publish_log(
-                        LogLevel.WARNING, line, source="snakemake"
-                    )
+                    await _add_and_publish_log(LogLevel.WARNING, line, source="snakemake")
 
             if result.get("status") == "success":
                 task = await domain.transition_status(task, TaskStatus.SUCCESS)
-                await _add_and_publish_log(
-                    LogLevel.INFO, "Snakemake 执行完成", source="snakemake"
-                )
+                await _add_and_publish_log(LogLevel.INFO, "Snakemake 执行完成", source="snakemake")
                 return_status = "success"
             else:
                 task = await domain.transition_status(task, TaskStatus.FAILED)
@@ -149,9 +143,7 @@ async def _execute_snakemake(
             }
 
         except Exception as exc:  # noqa: BLE001
-            await _add_and_publish_log(
-                LogLevel.ERROR, f"执行异常: {exc}", source="celery"
-            )
+            await _add_and_publish_log(LogLevel.ERROR, f"执行异常: {exc}", source="celery")
             task = await domain.transition_status(task, TaskStatus.FAILED)
             task.error_message = str(exc)[:2000]
             await repo.save(task)

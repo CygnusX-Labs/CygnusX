@@ -24,6 +24,7 @@ class LocalSnakemakeExecutor:
         work_dir: str = "",
         targets: list[str] | None = None,
         config_file: str | None = None,
+        config_file_param: str = "analysisyaml",
     ) -> dict[str, Any]:
         """执行 Snakemake 工作流
 
@@ -33,16 +34,19 @@ class LocalSnakemakeExecutor:
             cores: CPU 核心数
             work_dir: Snakemake --directory 工作目录
             targets: 目标文件列表
-            config_file: 若提供，则以 --config analysisyaml=<config_file> 形式传递
-                         （RNAFlow 等通过单一 YAML 配置文件驱动的流程使用）
+            config_file: 若提供，则以 --config <config_file_param>=<config_file> 形式传递
+            config_file_param: 流程接收配置文件的 --config 参数名，默认 analysisyaml
+                               （RNAFlow 使用 analysisyaml；其他流程可在 execution 中指定）
 
         Returns:
             执行结果，包含 status, stdout, stderr, returncode
         """
         cmd = [
             "snakemake",
-            "-s", snakefile,
-            "--cores", str(cores or self.settings.snakemake_cores),
+            "-s",
+            snakefile,
+            "--cores",
+            str(cores or self.settings.snakemake_cores),
         ]
 
         if self.settings.snakemake_use_conda:
@@ -55,7 +59,7 @@ class LocalSnakemakeExecutor:
             cmd.extend(targets)
 
         if config_file:
-            cmd.extend(["--config", f"analysisyaml={config_file}"])
+            cmd.extend(["--config", f"{config_file_param}={config_file}"])
         elif config:
             for key, value in config.items():
                 cmd.extend(["--config", f"{key}={value}"])
@@ -79,6 +83,7 @@ class LocalSnakemakeExecutor:
         snakefile: str,
         config_file: str = "",
         work_dir: str = "",
+        config_file_param: str = "analysisyaml",
     ) -> dict[str, Any]:
         """生成 Snakemake DAG 可视化。
 
@@ -86,9 +91,11 @@ class LocalSnakemakeExecutor:
         """
         cmd = [
             "snakemake",
-            "-s", snakefile,
+            "-s",
+            snakefile,
             "--dag",
-            "--cores", "1",
+            "--cores",
+            "1",
         ]
 
         if self.settings.snakemake_use_conda:
@@ -98,7 +105,7 @@ class LocalSnakemakeExecutor:
             cmd.extend(["--directory", work_dir])
 
         if config_file:
-            cmd.extend(["--config", f"analysisyaml={config_file}"])
+            cmd.extend(["--config", f"{config_file_param}={config_file}"])
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -117,7 +124,8 @@ class LocalSnakemakeExecutor:
 
         if shutil.which("dot"):
             dot_proc = await asyncio.create_subprocess_exec(
-                "dot", "-Tsvg",
+                "dot",
+                "-Tsvg",
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,

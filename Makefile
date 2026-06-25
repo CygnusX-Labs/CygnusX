@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker test lint format type-check migrate migrate-new docker-up docker-down clean
+.PHONY: help dev dev-worker test lint format type-check migrate migrate-new docker-up docker-down clean init-admin init-cookies
 
 help: ## 显示所有可用命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -57,6 +57,12 @@ frontend-dev: ## 启动前端开发服务器
 
 frontend-build: ## 构建前端生产版本
 	cd frontend && npm run build
+
+init-admin: ## 初始化管理员账号 (首次部署使用)
+	uv run python scripts/init_admin.py
+
+init-cookies: ## 初始化默认饼干定价策略
+	uv run python scripts/init_cookies.py
 
 clean: ## 清理临时文件
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; \

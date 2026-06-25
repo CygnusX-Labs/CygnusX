@@ -11,38 +11,38 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 # ============================================================
 # 1. 枚举定义
 # ============================================================
 
+
 class ParameterTypeEnum(str, Enum):
     """参数类型枚举 — 前端据此选择渲染组件"""
 
-    STRING = "string"      # 文本输入框
-    INT = "int"            # 整数输入框 / 步进器
-    FLOAT = "float"        # 浮点数输入框 / 滑块
-    SELECT = "select"      # 下拉选择（单/多选）
-    FILE = "file"          # 文件上传
-    BOOLEAN = "boolean"    # 开关 / 复选框
-    GROUP = "group"        # 可重复参数组（动态增减）
-    SECTION = "section"    # 折叠区域（高级参数）
+    STRING = "string"  # 文本输入框
+    INT = "int"  # 整数输入框 / 步进器
+    FLOAT = "float"  # 浮点数输入框 / 滑块
+    SELECT = "select"  # 下拉选择（单/多选）
+    FILE = "file"  # 文件上传
+    BOOLEAN = "boolean"  # 开关 / 复选框
+    GROUP = "group"  # 可重复参数组（动态增减）
+    SECTION = "section"  # 折叠区域（高级参数）
 
 
 class ConditionOperatorEnum(str, Enum):
     """条件运算符枚举"""
 
-    EQ = "eq"              # 等于
-    NE = "ne"              # 不等于
-    GT = "gt"              # 大于
-    LT = "lt"              # 小于
-    GTE = "gte"            # 大于等于
-    LTE = "lte"            # 小于等于
-    IN = "in"              # 包含于（value 为列表）
-    NOT_IN = "not_in"      # 不包含于
+    EQ = "eq"  # 等于
+    NE = "ne"  # 不等于
+    GT = "gt"  # 大于
+    LT = "lt"  # 小于
+    GTE = "gte"  # 大于等于
+    LTE = "lte"  # 小于等于
+    IN = "in"  # 包含于（value 为列表）
+    NOT_IN = "not_in"  # 不包含于
     CONTAINS = "contains"  # 包含（字符串或列表）
-    EXISTS = "exists"      # 字段存在且非空
-    REGEX = "regex"        # 正则匹配
+    EXISTS = "exists"  # 字段存在且非空
+    REGEX = "regex"  # 正则匹配
 
 
 class FileAcceptType(str, Enum):
@@ -59,6 +59,7 @@ class FileAcceptType(str, Enum):
 # ============================================================
 # 2. 配置子模型（类型特定属性）
 # ============================================================
+
 
 class _StrictModel(BaseModel):
     """严格模式基类 — 禁止额外字段"""
@@ -148,25 +149,20 @@ class SectionConfig(_StrictModel):
 # 3. 执行配置模型
 # ============================================================
 
+
 class ResourcesConfig(_StrictModel):
     """计算资源配置"""
 
     cores: int = Field(default=4, ge=1, le=128, description="CPU核心数")
     memory: str = Field(default="8G", pattern=r"^\d+[GMT]B?$", description="内存")
-    time: str = Field(
-        default="2h", pattern=r"^\d+[smhd]$", description="运行时间限制"
-    )
+    time: str = Field(default="2h", pattern=r"^\d+[smhd]$", description="运行时间限制")
 
 
 class ExecutionConfig(_StrictModel):
     """流程执行配置"""
 
-    engine: Literal["snakemake", "nextflow"] = Field(
-        default="snakemake", description="执行引擎"
-    )
-    snakefile: str = Field(
-        ..., description="Snakefile 路径（相对于项目根目录）"
-    )
+    engine: Literal["snakemake", "nextflow"] = Field(default="snakemake", description="执行引擎")
+    snakefile: str = Field(..., description="Snakefile 路径（相对于项目根目录）")
     conda_env: str | None = Field(default=None, description="Conda 环境名")
     default_resources: ResourcesConfig = Field(
         default_factory=ResourcesConfig, description="默认计算资源"
@@ -174,14 +170,16 @@ class ExecutionConfig(_StrictModel):
     sample_sheet_format: Literal["csv", "excel", "json"] = Field(
         default="csv", description="样本表格式"
     )
-    extra_args: list[str] = Field(
-        default=[], description="额外传给 Snakemake 的参数"
+    extra_args: list[str] = Field(default=[], description="额外传给 Snakemake 的参数")
+    config_file_param: str | None = Field(
+        default=None, description="流程通过 --config <param>=<config_file> 接收配置时的参数名"
     )
 
 
 # ============================================================
 # 4. 样本表配置模型
 # ============================================================
+
 
 class SampleSheetColumn(_StrictModel):
     """样本表列定义"""
@@ -194,9 +192,7 @@ class SampleSheetColumn(_StrictModel):
     description: str = Field(default="", description="列说明")
     example: str | None = Field(default=None, description="示例值")
     unique: bool = Field(default=False, description="是否唯一")
-    allowed_values: list[str] | None = Field(
-        default=None, description="允许的枚举值"
-    )
+    allowed_values: list[str] | None = Field(default=None, description="允许的枚举值")
 
 
 class ValidationRule(_StrictModel):
@@ -213,29 +209,22 @@ class ValidationRule(_StrictModel):
 class SampleSheetConfig(_StrictModel):
     """样本表整体配置"""
 
-    columns: list[SampleSheetColumn] = Field(
-        ..., min_length=1, description="列定义列表"
-    )
-    validation_rules: list[ValidationRule] = Field(
-        default=[], description="自定义校验规则"
-    )
+    columns: list[SampleSheetColumn] = Field(..., min_length=1, description="列定义列表")
+    validation_rules: list[ValidationRule] = Field(default=[], description="自定义校验规则")
 
 
 # ============================================================
 # 5. 流程元信息
 # ============================================================
 
+
 class FlowMeta(_StrictModel):
     """流程元信息"""
 
-    id: str = Field(
-        ..., pattern=r"^[a-z][a-z0-9_]*$", description="唯一标识符"
-    )
+    id: str = Field(..., pattern=r"^[a-z][a-z0-9_]*$", description="唯一标识符")
     name: str = Field(..., min_length=1, description="显示名称")
     category: str = Field(..., description="分类")
-    version: str = Field(
-        ..., pattern=r"^\d+\.\d+\.\d+(-\w+)?$", description="语义化版本"
-    )
+    version: str = Field(..., pattern=r"^\d+\.\d+\.\d+(-\w+)?$", description="语义化版本")
     description: str = Field(..., min_length=1, description="流程描述")
     author: str | None = Field(default=None, description="作者")
     tags: list[str] = Field(default=[], description="标签列表")

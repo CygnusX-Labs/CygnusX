@@ -2,12 +2,13 @@
 
 from fastapi import APIRouter
 
-from omichub.api.v1 import auth, cookies, flows, tasks, users
+from omichub.api.v1 import auth, cookies, docs, flows, tasks, users
 from omichub.api.v1.admin import admin_cookies, users as admin_users
 
 api_router = APIRouter()
 
 api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+api_router.include_router(docs.router, prefix="/docs", tags=["Docs"])
 api_router.include_router(flows.router, prefix="/flows", tags=["Flows"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["Tasks"])
 api_router.include_router(users.router, prefix="/users", tags=["Users"])

@@ -1,5 +1,6 @@
 """饼干积分 — 管理端路由"""
 
+from datetime import date, datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -13,6 +14,7 @@ from omichub.application.schemas.cookie import (
     CookieTransactionDTO,
     PricingCreateRequest,
 )
+from omichub.application.services.cookie_monitor_service import CookieMonitorService
 from omichub.application.services.cookie_service import CookieService
 from omichub.core.exceptions import AuthorizationError
 
@@ -28,8 +30,8 @@ CookieServiceDep = Annotated[CookieService, Depends(get_cookie_service)]
 
 async def require_admin(current_user_id: CurrentUserId) -> None:
     """简化版管理员校验 — 后续可接入完整 RBAC"""
-    from omichub.infrastructure.database.session import get_session_factory
     from omichub.infrastructure.database.models.user import UserModel
+    from omichub.infrastructure.database.session import get_session_factory
 
     factory = get_session_factory()
     async with factory() as session:
@@ -154,3 +156,91 @@ async def delete_pricing(
 ):
     ok = await service.delete_pricing(pricing_id)
     return {"deleted": ok}
+
+
+@router.get("/transactions/filtered", summary="全局交易流水审计(多维度过滤)")
+async def list_all_transactions_filtered(
+    _admin: AdminRequired,
+    service: CookieServiceDep,
+    user_id: UUID | None = None,
+    txn_type: str | None = None,
+    source_type: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    offset: int = 0,
+    limit: int = 50,
+):
+    """全局交易流水审计 — 支持按用户/类型/来源/日期过滤，返回用户名"""
+    items = await service.list_all_transactions_filtered(
+        user_id=user_id,
+        txn_type=txn_type,
+        source_type=source_type,
+        date_from=date_from,
+        date_to=date_to,
+        offset=offset,
+        limit=limit,
+    )
+    total = await service.count_all_transactions_filtered(
+        user_id=user_id,
+        txn_type=txn_type,
+        source_type=source_type,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    return {"items": items, "total": total, "offset": offset, "limit": limit}
+
+
+@router.post("/reconcile", summary="手动触发日终对账")
+async def trigger_reconcile(
+    _admin: AdminRequired,
+    db: DbSession,
+    snapshot_date: date | None = None,
+):
+    """手动触发账本快照 + 异常检测（通常由 Celery Beat 每日自动执行）"""
+    monitor = CookieMonitorService(db)
+    result = await monitor.reconcile_ledger(snapshot_date)
+    return result.model_dump()
+
+
+@router.get("/anomalies", summary="异常检测报告")
+async def get_anomalies(
+    _admin: AdminRequired,
+    db: DbSession,
+    snapshot_date: date | None = None,
+):
+    """获取余额异常检测报告"""
+    monitor = CookieMonitorService(db)
+    anomalies = await monitor.detect_anomalies(snapshot_date)
+    return {
+        "snapshot_date": str(snapshot_date or datetime.now().date()),
+        "anomalies": [a.model_dump() for a in anomalies],
+    }
+
+
+@router.get("/ledger", summary="账本快照报告")
+async def get_ledger_report(
+    _admin: AdminRequired,
+    db: DbSession,
+    snapshot_date: Annotated[date, Query(description="快照日期 YYYY-MM-DD")],
+    offset: int = 0,
+    limit: int = 100,
+):
+    """获取指定日期的账本快照"""
+    monitor = CookieMonitorService(db)
+    entries = await monitor.get_ledger_report(snapshot_date, offset, limit)
+    return {
+        "snapshot_date": str(snapshot_date),
+        "entries": [
+            {
+                "user_id": str(e.user_id),
+                "account_id": e.account_id,
+                "opening_balance": float(e.opening_balance),
+                "total_earned": float(e.total_earned),
+                "total_spent": float(e.total_spent),
+                "total_adjusted": float(e.total_adjusted),
+                "closing_balance": float(e.closing_balance),
+                "transaction_count": e.transaction_count,
+            }
+            for e in entries
+        ],
+    }

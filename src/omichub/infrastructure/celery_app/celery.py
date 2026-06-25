@@ -11,7 +11,10 @@ celery_app = Celery(
     "omichub",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
-    include=["omichub.infrastructure.celery_app.tasks.analysis"],
+    include=[
+        "omichub.infrastructure.celery_app.tasks.analysis",
+        "omichub.infrastructure.celery_app.tasks.cookie",
+    ],
 )
 
 celery_app.conf.update(
@@ -32,6 +35,9 @@ celery_app.conf.task_routes = {
     "omichub.infrastructure.celery_app.tasks.analysis.*": {
         "queue": "analysis"
     },
+    "omichub.infrastructure.celery_app.tasks.cookie.*": {
+        "queue": "analysis"
+    },
 }
 
 # 定时任务
@@ -40,5 +46,10 @@ celery_app.conf.beat_schedule = {
     "cleanup-expired-archives": {
         "task": "omichub.infrastructure.celery_app.tasks.analysis.cleanup_expired",
         "schedule": crontab(hour=2, minute=0),
+    },
+    # 每天凌晨 2:30 饼干日终对账 + 异常检测
+    "cookie-daily-reconcile": {
+        "task": "omichub.infrastructure.celery_app.tasks.cookie.daily_reconcile",
+        "schedule": crontab(hour=2, minute=30),
     },
 }

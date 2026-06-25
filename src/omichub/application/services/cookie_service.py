@@ -10,7 +10,6 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.cookie import (
-    AdjustBalanceRequest,
     CookieAccountDTO,
     CookieStatsDTO,
     CookieTransactionDTO,
@@ -20,7 +19,12 @@ from omichub.application.schemas.cookie import (
 from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError, NotFoundError
 from omichub.domain.cookie.entities import CookieAccount, CookiePricing, CookieTransaction
-from omichub.domain.cookie.value_objects import AccountStatus, PricingType, PricingUnit, TransactionType
+from omichub.domain.cookie.value_objects import (
+    AccountStatus,
+    PricingType,
+    PricingUnit,
+    TransactionType,
+)
 from omichub.infrastructure.database.models.cookie import CookieAccountModel, CookieTransactionModel
 from omichub.infrastructure.database.repositories.cookie_repository import (
     SqlAlchemyAccountRepository,
@@ -284,6 +288,77 @@ class CookieService:
             for t in result.scalars().all()
         ]
 
+    async def list_all_transactions_filtered(
+        self,
+        user_id: UUID | None = None,
+        txn_type: str | None = None,
+        source_type: str | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> list[CookieTransactionDTO]:
+        """全局交易流水审计 — 支持多维度过滤 + 关联用户名"""
+        from omichub.infrastructure.database.models.user import UserModel
+
+        query = (
+            select(
+                CookieTransactionModel,
+                UserModel.username,
+                UserModel.email,
+            )
+            .outerjoin(UserModel, CookieTransactionModel.user_id == UserModel.id)
+            .order_by(desc(CookieTransactionModel.created_at))
+        )
+        if user_id is not None:
+            query = query.where(CookieTransactionModel.user_id == user_id)
+        if txn_type:
+            query = query.where(CookieTransactionModel.txn_type == txn_type)
+        if source_type:
+            query = query.where(CookieTransactionModel.source_type == source_type)
+        if date_from:
+            query = query.where(CookieTransactionModel.created_at >= date_from)
+        if date_to:
+            query = query.where(CookieTransactionModel.created_at <= date_to)
+        query = query.offset(offset).limit(limit)
+        result = await self._session.execute(query)
+        return [
+            {
+                **CookieTransactionDTO(
+                    id=t.id, user_id=t.user_id, txn_type=t.txn_type, amount=t.amount,
+                    balance_after=t.balance_after, source_type=t.source_type or "",
+                    source_id=t.source_id or "", task_type=t.task_type or "",
+                    description=t.description or "", created_at=t.created_at,
+                ).model_dump(),
+                "username": username or "",
+                "email": email or "",
+            }
+            for t, username, email in result.all()
+        ]
+
+    async def count_all_transactions_filtered(
+        self,
+        user_id: UUID | None = None,
+        txn_type: str | None = None,
+        source_type: str | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> int:
+        """统计过滤后的交易总数"""
+        query = select(func.count()).select_from(CookieTransactionModel)
+        if user_id is not None:
+            query = query.where(CookieTransactionModel.user_id == user_id)
+        if txn_type:
+            query = query.where(CookieTransactionModel.txn_type == txn_type)
+        if source_type:
+            query = query.where(CookieTransactionModel.source_type == source_type)
+        if date_from:
+            query = query.where(CookieTransactionModel.created_at >= date_from)
+        if date_to:
+            query = query.where(CookieTransactionModel.created_at <= date_to)
+        result = await self._session.execute(query)
+        return result.scalar() or 0
+
     # ------------------------------------------------------------------
     # 内部方法
     # ------------------------------------------------------------------
@@ -314,7 +389,27 @@ class CookieService:
             task_type=task_type, resource_cores=resource_cores,
             execution_seconds=execution_seconds, description=description,
         )
-        return await self._txn_repo.add(txn)
+        txn = await self._txn_repo.add(txn)
+
+        # 发布余额变更事件（WebSocket 实时推送）
+        if self._settings.enable_cookie_system:
+            try:
+                from omichub.infrastructure.cache.cookie_pubsub import (
+                    publish_cookie_balance,
+                )
+
+                await publish_cookie_balance(
+                    user_id=account.user_id,
+                    balance=account.balance,
+                    frozen_balance=account.frozen_balance,
+                    txn_type=txn_type.value,
+                    amount=amount,
+                    description=description,
+                )
+            except Exception:
+                pass
+
+        return txn
 
     @staticmethod
     def _account_to_dto(a: CookieAccount) -> CookieAccountDTO:

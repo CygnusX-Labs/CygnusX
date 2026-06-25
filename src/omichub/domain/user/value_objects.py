@@ -16,3 +16,4 @@ class UserStatus(str, Enum):
     ACTIVE = "active"
     INACTIVE = "inactive"
     LOCKED = "locked"
+    PENDING = "pending"

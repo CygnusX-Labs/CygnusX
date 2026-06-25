@@ -68,3 +68,21 @@ class UserListParams(PaginationParams):
     q: str | None = Field(default=None, description="搜索关键词")
     role: Role | None = Field(default=None)
     status: UserStatus | None = Field(default=None)
+
+
+class ChangePasswordRequest(OmicsHubBaseSchema):
+    """修改密码请求"""
+
+    old_password: str = Field(min_length=8, max_length=128, description="当前密码")
+    new_password: str = Field(
+        min_length=8,
+        max_length=128,
+        description="新密码（至少8位，包含字母和数字）",
+    )
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, v: str) -> str:
+        if not any(c.isalpha() for c in v) or not any(c.isdigit() for c in v):
+            raise ValueError("密码必须包含字母和数字")
+        return v

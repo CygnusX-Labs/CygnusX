@@ -12,6 +12,7 @@ from omichub.core.config import get_settings
 from omichub.core.exceptions import OmicHubError
 from omichub.core.logging import setup_logging
 from omichub.middleware.auth import AuthMiddleware
+from omichub.middleware.cookie import CookieRequiredMiddleware
 
 
 @asynccontextmanager
@@ -65,6 +66,9 @@ def create_app() -> FastAPI:
 
     # JWT 认证中间件（全局拦截，公开路径在 PUBLIC_PATHS 中配置）
     app.add_middleware(AuthMiddleware)
+
+    # 饼干消费拦截中间件（消费类路由的账户状态守卫）
+    app.add_middleware(CookieRequiredMiddleware)
 
     # 全局异常处理
     @app.exception_handler(OmicHubError)

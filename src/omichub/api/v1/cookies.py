@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 
 from omichub.api.deps import CurrentUserId, DbSession
 from omichub.application.schemas.cookie import (
@@ -12,6 +12,8 @@ from omichub.application.schemas.cookie import (
     CostEstimateDTO,
 )
 from omichub.application.services.cookie_service import CookieService
+from omichub.core.security import decode_token
+from omichub.infrastructure.cache.cookie_pubsub import subscribe_cookie_balance
 
 router = APIRouter()
 
@@ -63,3 +65,34 @@ async def balance_check(
 ):
     balance = await service.check_balance(UUID(current_user_id))
     return {"balance": float(balance), "sufficient": balance >= amount}
+
+
+@router.websocket("/ws", name="cookie_balance_websocket")
+async def cookie_balance_websocket(websocket: WebSocket):
+    """饼干余额 WebSocket 实时推送。
+
+    连接示例：wss://host/api/v1/cookies/ws?token=<JWT>
+    交易完成后推送：{balance, frozen_balance, available_balance, txn_type, amount, description}
+    """
+    token = websocket.query_params.get("token")
+    payload = decode_token(token) if token else None
+    if payload is None or payload.get("type") != "access":
+        await websocket.close(code=1008, reason="Invalid token")
+        return
+
+    user_id = payload.get("sub")
+    if user_id is None:
+        await websocket.close(code=1008, reason="Invalid token")
+        return
+
+    await websocket.accept()
+    pubsub = await subscribe_cookie_balance(user_id)
+    try:
+        async for message in pubsub.listen():
+            if message["type"] == "message":
+                await websocket.send_text(message["data"])
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await pubsub.unsubscribe()
+        await pubsub.close()

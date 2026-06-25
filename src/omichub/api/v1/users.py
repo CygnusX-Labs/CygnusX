@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query
 
 from omichub.api.deps import CurrentUserId, DbSession
 from omichub.application.schemas.user import (
+    ChangePasswordRequest,
     UserListItem,
     UserResponse,
     UserUpdateRequest,
@@ -82,3 +83,18 @@ async def delete_user(
     """删除用户（仅管理员）"""
     await user_service.delete_user(user_id)
     return {"message": "用户删除成功"}
+
+
+@router.put("/{user_id}/password")
+async def change_password(
+    user_id: str,
+    req: ChangePasswordRequest,
+    current_user_id: CurrentUserId,
+    user_service: Annotated[UserService, Depends(get_user_service)] = None,
+):
+    """修改密码（只能修改自己的密码）"""
+    if user_id != current_user_id:
+        raise AuthorizationError("无权修改其他用户密码")
+
+    await user_service.change_password(user_id, req.old_password, req.new_password)
+    return {"message": "密码修改成功"}

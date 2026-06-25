@@ -56,6 +56,12 @@ class SqlAlchemyUserRepository(IUserRepository):
         db_user = result.scalar_one_or_none()
         return self._to_domain(db_user) if db_user else None
 
+    async def has_any_admin(self) -> bool:
+        """检查是否已存在管理员账号"""
+        stmt = select(UserModel).where(UserModel.role == Role.ADMIN.value).limit(1)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
     async def save(self, user: User) -> User:
         """保存用户（新建或更新）"""
         if user.id is not None:
@@ -72,7 +78,9 @@ class SqlAlchemyUserRepository(IUserRepository):
             db_user.email = user.email
             db_user.hashed_password = user.hashed_password
             db_user.role = user.role.value if isinstance(user.role, Role) else user.role
-            db_user.status = user.status.value if isinstance(user.status, UserStatus) else user.status
+            db_user.status = (
+                user.status.value if isinstance(user.status, UserStatus) else user.status
+            )
             db_user.workspace_id = user.workspace_id
             db_user.avatar_url = user.avatar_url
             db_user.preferences = user.preferences

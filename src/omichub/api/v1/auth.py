@@ -14,6 +14,14 @@ from omichub.application.schemas.auth import (
 from omichub.application.schemas.user import UserResponse
 from omichub.application.services import AuthService
 from omichub.core.config import get_settings
+from omichub.core.exceptions import ConflictError
+from omichub.core.security import (
+    create_access_token,
+    create_refresh_token,
+    hash_password,
+)
+from omichub.domain.user.entities import User
+from omichub.domain.user.value_objects import Role, UserStatus
 from omichub.infrastructure.database.repositories import SqlAlchemyUserRepository
 
 router = APIRouter()
@@ -28,7 +36,7 @@ def get_auth_service(db: DbSession) -> AuthService:
 async def login(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
-):
+) -> TokenResponse:
     """用户登录（OAuth2 密码模式）"""
     access_token, refresh_token, _user = await auth_service.login(
         form_data.username, form_data.password
@@ -62,7 +70,7 @@ async def register(
 async def refresh_token(
     req: RefreshTokenRequest,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
-):
+) -> TokenResponse:
     """刷新访问令牌"""
     access_token, refresh_token = await auth_service.refresh_token(req.refresh_token)
     return TokenResponse(
@@ -77,7 +85,57 @@ async def refresh_token(
 async def get_me(
     current_user_id: CurrentUserId,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
-):
+) -> UserResponse:
     """获取当前登录用户信息"""
     user = await auth_service.get_current_user(current_user_id)
     return UserResponse.model_validate(user)
+
+
+@router.get("/setup-required")
+async def setup_required(db: DbSession) -> dict[str, bool]:
+    """检查是否需要初始化第一个管理员账号"""
+    repo = SqlAlchemyUserRepository(db)
+    return {"setup_required": not await repo.has_any_admin()}
+
+
+@router.post("/setup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+async def setup_first_admin(
+    req: UserRegisterRequest,
+    db: DbSession,
+) -> TokenResponse:
+    """创建第一个管理员账号（仅在系统无管理员时可用）"""
+    repo = SqlAlchemyUserRepository(db)
+
+    if await repo.has_any_admin():
+        raise ConflictError("系统已存在管理员账号，请通过登录页访问")
+
+    # 检查用户名/邮箱是否已被占用
+    if await repo.get_by_username(req.username):
+        raise ConflictError(f"用户名 {req.username} 已存在")
+    if await repo.get_by_email(req.email):
+        raise ConflictError(f"邮箱 {req.email} 已被注册")
+
+    admin = User(
+        username=req.username,
+        email=req.email,
+        hashed_password=hash_password(req.password),
+        role=Role.ADMIN,
+        status=UserStatus.ACTIVE,
+    )
+    created = await repo.save(admin)
+
+    # 如果启用饼干系统，自动创建饼干账户
+    if get_settings().enable_cookie_system:
+        from omichub.application.services.cookie_service import CookieService
+
+        cookie_service = CookieService(db)
+        await cookie_service.get_or_create_account(created.id)
+
+    access_token = create_access_token(subject=str(created.id))
+    refresh_token = create_refresh_token(subject=str(created.id))
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+        expires_in=30 * 60,
+    )

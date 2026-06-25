@@ -6,9 +6,10 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from omichub.application.schemas.base import PaginationParams
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from omichub.application.schemas.task import (
     TaskListResponse,
     TaskResponse,
@@ -25,7 +26,6 @@ from omichub.infrastructure.database.repositories.task_repository import (
     TaskRepositoryImpl,
 )
 from omichub.infrastructure.execution.local import LocalSnakemakeExecutor
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class TaskService:
@@ -60,7 +60,7 @@ class TaskService:
         # 参数快照：复制一份不可变的提交时参数
         parameter_snapshot = dict(req.parameters)
 
-        # 生成 RNAFlow 项目输入文件
+        # 生成 RNAFlow / ATACFlow 项目输入文件
         config_file = ""
         if req.flow_id == "rna_seq":
             from omichub.infrastructure.execution.rnaflow_builder import (
@@ -74,13 +74,24 @@ class TaskService:
                 comparisons=req.comparisons,
             )
             config_file = str(files["config"])
+        elif req.flow_id == "atac_seq":
+            from omichub.infrastructure.execution.atacflow_builder import (
+                build_atacflow_project,
+            )
+
+            files = build_atacflow_project(
+                work_dir=work_dir,
+                parameters=parameter_snapshot,
+                sample_rows=req.sample_sheet,
+                comparisons=req.comparisons,
+            )
+            config_file = str(files["config"])
 
         # 创建任务聚合根
         task = await self._domain.submit(
             flow_id=req.flow_id,
             user_id=UUID(user_id),
-            name=req.name
-            or f"{flow_detail.meta.name} - {datetime.now().strftime('%Y%m%d%H%M%S')}",
+            name=req.name or f"{flow_detail.meta.name} - {datetime.now().strftime('%Y%m%d%H%M%S')}",
             parameters=parameter_snapshot,
             execution_mode=req.execution_mode,
         )
@@ -94,6 +105,7 @@ class TaskService:
             snakefile=flow_detail.execution["snakefile"],
             task_id=str(task.id),
             config_file=config_file,
+            config_file_param=flow_detail.execution.get("config_file_param") or "analysisyaml",
             work_dir=work_dir,
             cores=flow_detail.execution.get("default_resources", {}).get("cores", 4),
         )
@@ -109,9 +121,7 @@ class TaskService:
             )
 
             consumer = TaskCookieConsumer(self._db)
-            pre_deducted = await consumer.on_submit(
-                UUID(user_id), str(task.id), req.flow_id
-            )
+            pre_deducted = await consumer.on_submit(UUID(user_id), str(task.id), req.flow_id)
             task.parameters["_cookie_pre_deducted"] = float(pre_deducted)
             task = await self._repo.save(task)
 
@@ -124,9 +134,7 @@ class TaskService:
             raise NotFoundError("任务不存在")
         return task_to_response(task)
 
-    async def list_tasks(
-        self, user_id: str, status: str | None = None
-    ) -> TaskListResponse:
+    async def list_tasks(self, user_id: str, status: str | None = None) -> TaskListResponse:
         """获取用户任务列表"""
         tasks = await self._repo.list_by_user(UUID(user_id), status=status)
         return TaskListResponse(
@@ -152,9 +160,7 @@ class TaskService:
                 )
 
                 consumer = TaskCookieConsumer(self._db)
-                await consumer.on_cancel(
-                    UUID(user_id), str(task.id), Decimal(str(pre_deducted))
-                )
+                await consumer.on_cancel(UUID(user_id), str(task.id), Decimal(str(pre_deducted)))
 
         return task_to_response(task)
 
@@ -164,17 +170,19 @@ class TaskService:
         if task is None or str(task.user_id) != user_id:
             raise NotFoundError("任务不存在")
 
-        flow = self._flow_service.get_flow(task.flow_id)
-        flow_detail = flow_config_to_detail(flow)
+        flow_detail = self._flow_service.get_flow(task.flow_id)
 
         config_file = ""
         if task.flow_id == "rna_seq":
             config_file = str(Path(task.work_dir) / "config.yaml")
+        elif task.flow_id == "atac_seq":
+            config_file = str(Path(task.work_dir) / "analysis.yaml")
 
         executor = LocalSnakemakeExecutor()
         return await executor.generate_dag(
             snakefile=flow_detail.execution["snakefile"],
             config_file=config_file,
+            config_file_param=flow_detail.execution.get("config_file_param") or "analysisyaml",
             work_dir=task.work_dir,
         )
 

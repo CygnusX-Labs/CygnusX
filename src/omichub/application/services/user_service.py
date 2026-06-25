@@ -3,7 +3,8 @@
 import uuid
 
 from omichub.application.schemas.user import UserUpdateRequest
-from omichub.core.exceptions import ConflictError, NotFoundError
+from omichub.core.exceptions import AuthenticationError, ConflictError, NotFoundError
+from omichub.core.security import hash_password, verify_password
 from omichub.domain.user.entities import User
 from omichub.domain.user.repositories import IUserRepository
 
@@ -20,7 +21,7 @@ class UserService:
         page_size: int = 20,
         q: str | None = None,
         role: str | None = None,
-        status: str | None = None
+        status: str | None = None,
     ) -> tuple[list[User], int]:
         """获取用户列表"""
         # 这里可以添加数据库查询逻辑，支持筛选和分页
@@ -76,3 +77,18 @@ class UserService:
     async def delete_user(self, user_id: str) -> bool:
         """删除用户"""
         return await self.user_repo.delete(uuid.UUID(user_id))
+
+    async def change_password(self, user_id: str, old_password: str, new_password: str) -> None:
+        """修改密码 — 校验旧密码后设置新密码"""
+        user = await self.user_repo.get_by_id(uuid.UUID(user_id))
+        if not user:
+            raise NotFoundError("用户不存在")
+
+        if not verify_password(old_password, user.hashed_password):
+            raise AuthenticationError("当前密码不正确")
+
+        if old_password == new_password:
+            raise AuthenticationError("新密码不能与旧密码相同")
+
+        user.hashed_password = hash_password(new_password)
+        await self.user_repo.save(user)

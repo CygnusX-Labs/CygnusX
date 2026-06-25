@@ -11,8 +11,12 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from omichub.core.config import get_settings
 from omichub.infrastructure.database.base import Base
 
-# 导入所有模型以注册到 metadata
-# from omichub.infrastructure.database.models import user  # noqa: F401
+# 导入所有模型以注册到 metadata（autogenerate 依赖）
+from omichub.infrastructure.database.models import (  # noqa: F401
+    cookie,
+    task,
+    user,
+)
 
 config = context.config
 if config.config_file_name is not None:
