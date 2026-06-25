@@ -31,7 +31,8 @@ const statusTag = (status: string) => {
 
 const columns = [
   { title: 'ID', key: 'id', width: 60 },
-  { title: '用户ID', key: 'user_id', ellipsis: { tooltip: true } },
+  { title: '用户名', key: 'username', width: 120 },
+  { title: '邮箱', key: 'email', ellipsis: { tooltip: true } },
   {
     title: '余额',
     key: 'balance',

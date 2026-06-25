@@ -240,9 +240,35 @@ class CookieService:
             total_earned=Decimal(str(row[4])), total_spent=Decimal(str(row[5])),
         )
 
-    async def list_all_accounts(self, status: str | None = None, offset: int = 0, limit: int = 50) -> list[CookieAccountDTO]:
-        accounts = await self._account_repo.list_all(status, offset, limit)
-        return [self._account_to_dto(a) for a in accounts]
+    async def list_all_accounts(self, status: str | None = None, offset: int = 0, limit: int = 50) -> list[dict]:
+        """列出所有账户 — 关联用户名和用户状态"""
+        from omichub.infrastructure.database.models.user import UserModel
+
+        query = (
+            select(
+                CookieAccountModel,
+                UserModel.username,
+                UserModel.email,
+                UserModel.status.label("user_status"),
+            )
+            .outerjoin(UserModel, CookieAccountModel.user_id == UserModel.id)
+            .order_by(desc(CookieAccountModel.created_at))
+            .offset(offset)
+            .limit(limit)
+        )
+        if status:
+            query = query.filter(CookieAccountModel.status == status)
+        result = await self._session.execute(query)
+        rows = result.all()
+        return [
+            {
+                **self._account_to_dto(a).__dict__,
+                "username": username or "",
+                "email": email or "",
+                "user_status": user_status or "",
+            }
+            for a, username, email, user_status in rows
+        ]
 
     async def list_all_transactions(self, offset: int = 0, limit: int = 50) -> list[CookieTransactionDTO]:
         result = await self._session.execute(

@@ -85,6 +85,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/AdminCookiePricingView.vue'),
         meta: { title: '饼干定价管理', requiresAuth: true }
       },
+      {
+        path: 'admin/users',
+        name: 'admin-users',
+        component: () => import('@/views/AdminUserManagementView.vue'),
+        meta: { title: '用户管理', requiresAuth: true }
+      },
     ],
   },
   {

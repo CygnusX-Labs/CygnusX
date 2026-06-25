@@ -75,6 +75,10 @@
   - [x] UserService/AuthService 编排登录用例
   - [x] JWT 中间件接入 main.py
   - [x] 前端登录页面 + auth store 完整逻辑
+  - [x] 注册审批机制: 新用户默认 status=pending, 管理员审批后变 active 才可登录
+  - [x] 用户管理 API (admin/users.py): GET 列表 | PUT /{id}/approve | PUT /{id}/reject | PUT /{id}/role
+  - [x] 前端用户管理页 (AdminUserManagementView.vue): 审批/拒绝/角色切换
+  - [x] 侧边栏菜单改为 computed 动态渲染 (admin 角色可见"系统管理"子菜单)
   - [x] 修复: session.py 模型未注册导致建表失败
   - [x] 修复: router/index.ts/g isLoggedIn() 误调用 computed
   - [x] 修复: DefaultLayout.vue FileText → DocumentText (ionicons5 改名)
@@ -83,6 +87,7 @@
   - [x] 修复: nginx index.html 无禁缓存头导致浏览器加载旧 JS (404)
   - [x] 修复: DashboardView 健康检查路径错误 (apiClient /../health → axios /health)
   - [x] 修复: DashboardView 快速开始按钮未绑定 @click 跳转事件
+  - [x] 修复: DefaultLayout 侧边栏 AI 助手菜单重复 + 管理员菜单缺失
 
 - [x] **YAML 配置中心** (docs/modules/04_yaml_schema.md) ✅ 2026-06-25 前后端闭环
   - [x] FlowDomainService.parse_yaml 完整实现 (services.py)
@@ -139,7 +144,8 @@
 
 #### 后端 — API 路由 (api/v1/)
 - [x] 用户端 cookies.py: GET /cookies/account | /transactions | /pricing | /estimate | /balance-check
-- [x] 管理端 admin/cookies.py: GET /admin/cookies/accounts | POST /adjust | PUT /accounts/{id}/freeze|unfreeze|suspend | GET /transactions | /stats | /pricing (CRUD)
+- [x] 管理端 admin/cookies.py: GET /admin/cookies/accounts (JOIN users 返回用户名/邮箱) | POST /adjust | PUT /accounts/{id}/freeze|unfreeze|suspend | GET /transactions | /stats | /pricing (CRUD)
+- [x] 管理端 admin/users.py: GET /admin/users 用户列表 | PUT /{id}/approve 审批 | PUT /{id}/reject 拒绝 | PUT /{id}/role 角色切换
 - [ ] CookieRequiredMiddleware 消费拦截中间件 (当前通过 TaskCookieConsumer 在服务层集成，未用独立中间件)
 - [x] TaskCookieConsumer — 任务提交前预估+预扣，完成时结算，取消时退还
 - [ ] SandboxCookieConsumer — 沙盒启动前检查，运行中按分钟计费 (依赖 P2 沙盒)
@@ -161,11 +167,13 @@
 - [ ] composables/useCookieWebSocket.ts — 实时余额变更推送 (store 中预留 updateBalanceFromWebSocket)
 - [x] components/CookieBalanceBadge.vue — 全局余额徽章 (顶栏，已接入 DefaultLayout)
 - [x] views/CookieAccountView.vue — 用户账户页 (余额统计/流水列表)
-- [x] views/AdminCookieManagementView.vue — 管理后台账户管理 (列表/调整/冻结/解冻)
+- [x] views/AdminCookieManagementView.vue — 管理后台账户管理 (列表显示用户名+邮箱/调整/冻结/解冻)
 - [x] views/AdminCookiePricingView.vue — 定价策略管理 (CRUD + Modal)
+- [x] views/AdminUserManagementView.vue — 用户管理 (审批通过/拒绝/角色切换)
 - [ ] views/AdminCookieTransactionsView.vue — 全局交易流水审计 (当前在管理页内嵌)
 - [ ] TaskSubmitView.vue 集成饼干预估 (防抖 500ms 调 /estimate)
-- [x] 路由配置: /cookies (用户) + /admin/cookies/accounts + /admin/cookies/pricing (管理员)
+- [x] 路由配置: /cookies (用户) + /admin/users + /admin/cookies/accounts + /admin/cookies/pricing (管理员)
+- [x] DefaultLayout 侧边栏: computed 动态菜单, admin 角色可见"系统管理"子菜单组 (用户管理/饼干账户管理/饼干定价管理)
 
 #### 部署与运维
 - [x] config.py 新增 cookie 相关配置项 + enable_cookie_system 开关

@@ -42,12 +42,13 @@ class AuthService:
         # 哈希密码
         hashed_pwd = hash_password(req.password)
 
-        # 创建用户实体
+        # 创建用户实体 — 默认 pending 状态，需管理员审批
         user = User(
             username=req.username,
             email=req.email,
             hashed_password=hashed_pwd
         )
+        user.status = "pending"
 
         # 保存用户
         return await self.user_repo.save(user)
