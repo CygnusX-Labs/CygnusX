@@ -4,7 +4,23 @@
 导入即注册到 Base.metadata，供 create_all / alembic 使用。
 """
 
+from omichub.infrastructure.database.models.cookie import (
+    ConsumptionLogModel,
+    CookieAccountModel,
+    CookiePricingModel,
+    CookieTransactionModel,
+    LedgerEntryModel,
+)
 from omichub.infrastructure.database.models.task import TaskModel
 from omichub.infrastructure.database.models.user import UserModel, WorkspaceModel
 
-__all__ = ["UserModel", "WorkspaceModel", "TaskModel"]
+__all__ = [
+    "UserModel",
+    "WorkspaceModel",
+    "TaskModel",
+    "CookieAccountModel",
+    "CookieTransactionModel",
+    "CookiePricingModel",
+    "ConsumptionLogModel",
+    "LedgerEntryModel",
+]

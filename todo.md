@@ -113,64 +113,64 @@
   - [x] 修复: _update_model 覆盖 append_log 写入的日志 (logs 不再由 save 覆盖)
   - [x] 修复: append_log 未存 timestamp 导致 _to_entity 转换报错
 
-### 优先级 P1 — 饼干积分系统（🍪 Cookie）
+### 优先级 P1 — 饼干积分系统（🍪 Cookie）✅ 2026-06-25 端到端验证通过
 
 > 文档: docs/modules/12_cookie_backend.md + 13_cookie_frontend.md + 14_cookie_integration.md
-> 当前状态: 代码库零实现，需从零构建。核心模块不依赖任务/沙盒，可立即开发；集成点依赖 P0 任务闭环 + P2 沙盒。
+> 架构适配: 设计文档用 ORM 贫血模型，本项目适配为 DDD 模式 (Pydantic 实体 + 仓储接口 + Python 端统计维护替代 SQL 触发器)
 
 #### 后端 — 领域层 (domain/cookie/)
-- [ ] CookieAccount 聚合根 + CookieTransaction 实体 + CookiePricing 值对象
-- [ ] TxnType/AccountStatus/PricingType 值对象 (earn/spend/adjust/refund/freeze/unfreeze)
-- [ ] ICookieAccountRepository / ICookieTransactionRepository / ICookiePricingRepository 仓储接口
+- [x] CookieAccount 聚合根 + CookieTransaction/CookiePricing/ConsumptionLog/LedgerEntry 实体
+- [x] TransactionType/AccountStatus/PricingType/PricingUnit/BillingItem 值对象 (earn/spend/adjust/refund/freeze/unfreeze)
+- [x] ICookieAccountRepository / ICookieTransactionRepository / ICookiePricingRepository / IConsumptionLogRepository / ILedgerRepository 仓储接口
+- [x] CookieAccount.apply_transaction() — Python 端维护统计 (替代 SQL 触发器 fn_update_account_stats)
 
 #### 后端 — 基础设施层 (infrastructure/database/)
-- [ ] 5 张表 ORM 模型: cookie_accounts / cookie_transactions / cookie_pricing / cookie_consumption_logs / cookie_ledger
-- [ ] 索引设计 (idx_txn_user_created 覆盖索引、idx_pricing_query 部分索引等)
-- [ ] 触发器函数: fn_update_account_stats (统计字段维护) + fn_create_cookie_account_on_signup (注册自动建户)
-- [ ] SqlAlchemyAccountRepository / SqlAlchemyTransactionRepository / SqlAlchemyPricingRepository 仓储实现
-- [ ] Alembic 迁移脚本 (含默认定价策略 seed 数据)
+- [x] 5 张表 ORM 模型: cookie_accounts / cookie_transactions / cookie_pricing / cookie_consumption_logs / cookie_ledger
+- [x] 索引设计 (idx_txn_user_created 覆盖索引、idx_pricing_query 部分索引、idx_txn_source 等)
+- [x] Python 端统计维护 (apply_transaction 替代 SQL 触发器) + 注册建户 (get_or_create_account 替代 fn_create_cookie_account_on_signup)
+- [x] SqlAlchemyAccountRepository / SqlAlchemyTransactionRepository / SqlAlchemyPricingRepository / SqlAlchemyConsumptionLogRepository / SqlAlchemyLedgerRepository 仓储实现
+- [ ] Alembic 迁移脚本 (当前用 create_all 自动建表，生产环境需迁移)
 
 #### 后端 — 应用层 (application/)
-- [ ] CookieService 核心服务: check_balance / pre_deduct (悲观锁 SELECT FOR UPDATE) / settle (多退少补) / refund / freeze / unfreeze
-- [ ] PricingEngine 定价计算引擎: 按 flow_category + resource_type + priority 匹配 + 时段生效判断
-- [ ] Pydantic DTO: CookieAccountDTO / CookieTransactionDTO / CookiePricingDTO / CostEstimateDTO / CookieStatsDTO
-- [ ] SettlementService 结算服务 (Celery 回调中调用)
+- [x] CookieService 核心服务: check_balance / pre_deduct / settle (多退少补) / refund / freeze / unfreeze / suspend / adjust
+- [x] PricingEngine 定价计算引擎: 按 flow_category + resource_type + priority 匹配 + 时段生效判断
+- [x] Pydantic DTO: CookieAccountDTO / CookieTransactionDTO / CookiePricingDTO / CostEstimateDTO / CookieStatsDTO
+- [x] TaskCookieConsumer 结算服务 (Celery 回调中调用 on_complete/on_cancel)
 
 #### 后端 — API 路由 (api/v1/)
-- [ ] 用户端 cookies.py: GET /cookies/account | /transactions | /pricing | /estimate | /balance-check
-- [ ] 管理端 admin/cookies.py: GET /admin/cookies/accounts | POST /adjust | PUT /accounts/{id}/freeze|unfreeze|suspend | GET /transactions | /stats | /pricing
-- [ ] CookieRequiredMiddleware 消费拦截中间件 (可开关)
-- [ ] TaskCookieConsumer — 任务提交前预估+预扣，完成时结算
-- [ ] SandboxCookieConsumer — 沙盒启动前检查，运行中按分钟计费
-- [ ] config.py 新增: ENABLE_COOKIE_SYSTEM / INITIAL_COOKIE_BALANCE / COOKIE_SANDBOX_BASE_COST 等
+- [x] 用户端 cookies.py: GET /cookies/account | /transactions | /pricing | /estimate | /balance-check
+- [x] 管理端 admin/cookies.py: GET /admin/cookies/accounts | POST /adjust | PUT /accounts/{id}/freeze|unfreeze|suspend | GET /transactions | /stats | /pricing (CRUD)
+- [ ] CookieRequiredMiddleware 消费拦截中间件 (当前通过 TaskCookieConsumer 在服务层集成，未用独立中间件)
+- [x] TaskCookieConsumer — 任务提交前预估+预扣，完成时结算，取消时退还
+- [ ] SandboxCookieConsumer — 沙盒启动前检查，运行中按分钟计费 (依赖 P2 沙盒)
+- [x] config.py 新增: enable_cookie_system / initial_cookie_balance / cookie_sandbox_base_cost
 
 #### 集成点 (依赖任务闭环 P0 + 沙盒 P2)
-- [ ] 集成点#1: 用户注册触发器自动建户 + 赠送 INITIAL_COOKIE_BALANCE (100🍪)
-- [ ] 集成点#2: 任务提交注入 Cookie 检查 (余额不足返回 402)
-- [ ] 集成点#3: Celery 任务完成回调结算 (多退少补)
-- [ ] 集成点#4: 任务取消退还预扣饼干
-- [ ] 集成点#5: 沙盒启动前余额检查 + 预扣基础费用
-- [ ] 集成点#6: 沙盒关闭结算最终费用
-- [ ] 集成点#7: Celery Beat 每分钟沙盒扣费，余额不足自动停止
-- [ ] 集成点#8: AI Agent 提交任务前检查余额
+- [x] 集成点#1: 用户注册自动建户 + 赠送 INITIAL_COOKIE_BALANCE (100🍪) — auth.py register 端点
+- [x] 集成点#2: 任务提交注入 Cookie 检查 + 预扣 (余额不足返回 400 BusinessError) — task_service.submit
+- [x] 集成点#3: Celery 任务完成回调结算 (多退少补) — analysis.py _execute_snakemake
+- [x] 集成点#4: 任务取消退还预扣饼干 — task_service.cancel_task
+- [ ] 集成点#5: 沙盒启动前余额检查 + 预扣基础费用 (依赖 P2 沙盒)
+- [ ] 集成点#6: 沙盒关闭结算最终费用 (依赖 P2 沙盒)
+- [ ] 集成点#7: Celery Beat 每分钟沙盒扣费，余额不足自动停止 (依赖 P2 沙盒)
+- [ ] 集成点#8: AI Agent 提交任务前检查余额 (依赖 P2 AI)
 
 #### 前端 (frontend/src/)
-- [ ] types/cookie.d.ts — TS 类型定义 (CookieAccount/Transaction/Pricing/CostEstimate)
-- [ ] stores/cookie.ts — Pinia store (余额/流水/预估，WebSocket 实时推送)
-- [ ] composables/useCookieWebSocket.ts — 实时余额变更推送
-- [ ] components/CookieBalanceBadge.vue — 全局余额徽章 (顶栏)
-- [ ] views/CookieAccountView.vue — 用户账户页 (余额/月消费/组内排名/流水列表)
-- [ ] views/AdminCookieManagementView.vue — 管理后台账户管理
-- [ ] components/CookieAdjustModal.vue — 管理员调整余额弹窗
-- [ ] views/AdminCookieTransactionsView.vue — 全局交易流水审计
-- [ ] views/AdminCookiePricingView.vue — 定价策略管理 (CRUD)
+- [x] types/index.ts — TS 类型定义 (CookieAccount/Transaction/Pricing/CostEstimate/CookieStats)
+- [x] stores/cookie.ts — Pinia store (余额/流水/预估)
+- [ ] composables/useCookieWebSocket.ts — 实时余额变更推送 (store 中预留 updateBalanceFromWebSocket)
+- [x] components/CookieBalanceBadge.vue — 全局余额徽章 (顶栏，已接入 DefaultLayout)
+- [x] views/CookieAccountView.vue — 用户账户页 (余额统计/流水列表)
+- [x] views/AdminCookieManagementView.vue — 管理后台账户管理 (列表/调整/冻结/解冻)
+- [x] views/AdminCookiePricingView.vue — 定价策略管理 (CRUD + Modal)
+- [ ] views/AdminCookieTransactionsView.vue — 全局交易流水审计 (当前在管理页内嵌)
 - [ ] TaskSubmitView.vue 集成饼干预估 (防抖 500ms 调 /estimate)
-- [ ] 路由配置: /cookie (用户) + /admin/cookies/* (管理员，RBAC)
+- [x] 路由配置: /cookies (用户) + /admin/cookies/accounts + /admin/cookies/pricing (管理员)
 
 #### 部署与运维
-- [ ] docker-compose.yml 新增 cookie 相关环境变量
-- [ ] scripts/init_cookies.py — 初始化默认定价策略脚本
-- [ ] cookie 系统开关 ENABLE_COOKIE_SYSTEM=false 时全链路跳过
+- [x] config.py 新增 cookie 相关配置项 + enable_cookie_system 开关
+- [x] scripts/init_cookies.py — 初始化默认定价策略脚本
+- [x] cookie 系统开关 ENABLE_COOKIE_SYSTEM=false 时全链路跳过 (TaskCookieConsumer 检查)
 - [ ] 监控: 余额异常告警 + 流水对账 (cookie_ledger 日终快照)
 
 ### 优先级 P2 — AI Copilot 与沙盒

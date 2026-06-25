@@ -75,3 +75,61 @@ export interface ChatMessage {
   content: string
   timestamp: string
 }
+
+// ===== 饼干积分系统 =====
+export interface CookieAccount {
+  id: number | null
+  user_id: string
+  balance: number
+  frozen_balance: number
+  available_balance: number
+  total_earned: number
+  total_spent: number
+  total_adjusted: number
+  status: 'active' | 'frozen' | 'suspended'
+  created_at: string | null
+}
+
+export interface CookieTransaction {
+  id: number | null
+  user_id: string
+  txn_type: 'earn' | 'spend' | 'adjust' | 'refund' | 'freeze' | 'unfreeze'
+  amount: number
+  balance_after: number
+  source_type: string
+  source_id: string
+  task_type: string
+  description: string
+  created_at: string | null
+}
+
+export interface CookiePricing {
+  id: number | null
+  pricing_type: 'task_type' | 'resource' | 'sandbox' | 'bonus'
+  resource_type: string
+  flow_category: string
+  base_cost: number
+  unit: 'per_task' | 'per_hour' | 'per_core_hour' | 'per_gb_hour' | 'per_session' | 'per_user'
+  is_active: boolean
+  priority: number
+  description: string
+  effective_from: string | null
+  effective_until: string | null
+}
+
+export interface CostEstimate {
+  flow_id: string
+  estimated_cost: number
+  breakdown: Array<{ item: string; cost: string }>
+  affordable: boolean
+  current_balance: number
+}
+
+export interface CookieStats {
+  total_accounts: number
+  active_accounts: number
+  total_balance: number
+  total_frozen: number
+  total_earned: number
+  total_spent: number
+}

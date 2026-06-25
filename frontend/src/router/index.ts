@@ -67,6 +67,24 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/ProfileView.vue'),
         meta: { title: '个人中心', requiresAuth: true }
       },
+      {
+        path: 'cookies',
+        name: 'cookies',
+        component: () => import('@/views/CookieAccountView.vue'),
+        meta: { title: '饼干账户', requiresAuth: true }
+      },
+      {
+        path: 'admin/cookies/accounts',
+        name: 'admin-cookies-accounts',
+        component: () => import('@/views/AdminCookieManagementView.vue'),
+        meta: { title: '饼干账户管理', requiresAuth: true }
+      },
+      {
+        path: 'admin/cookies/pricing',
+        name: 'admin-cookies-pricing',
+        component: () => import('@/views/AdminCookiePricingView.vue'),
+        meta: { title: '饼干定价管理', requiresAuth: true }
+      },
     ],
   },
   {

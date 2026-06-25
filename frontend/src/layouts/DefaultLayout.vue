@@ -3,8 +3,9 @@ import { NLayout, NLayoutHeader, NLayoutSider, NLayoutContent, NMenu, NIcon } fr
 import type { MenuOption } from 'naive-ui'
 import { h, ref, onMounted } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { Home, List, DocumentText, Chatbubbles, CloudUpload } from '@vicons/ionicons5'
+import { Home, List, DocumentText, Chatbubbles, CloudUpload, Wallet } from '@vicons/ionicons5'
 import HeaderComponent from '@/components/HeaderComponent.vue'
+import CookieBalanceBadge from '@/components/CookieBalanceBadge.vue'
 import { useAuthStore } from '@/stores/auth'
 import type { User } from '@/types'
 
@@ -38,6 +39,16 @@ const menuOptions: MenuOption[] = [
     key: 'ai',
     icon: () => h(NIcon, null, { default: () => h(Chatbubbles) }),
   },
+  {
+    label: () => h(RouterLink, { to: '/ai' }, { default: () => 'AI 助手' }),
+    key: 'ai',
+    icon: () => h(NIcon, null, { default: () => h(Chatbubbles) }),
+  },
+  {
+    label: () => h(RouterLink, { to: '/cookies' }, { default: () => '饼干账户' }),
+    key: 'cookies',
+    icon: () => h(NIcon, null, { default: () => h(Wallet) }),
+  },
 ]
 
 onMounted(async () => {
@@ -58,6 +69,8 @@ onMounted(async () => {
     </NLayoutSider>
     <NLayout>
       <NLayoutHeader bordered style="height: 64px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between;">
+        <div style="flex: 1" />
+        <CookieBalanceBadge />
         <HeaderComponent :current-user="currentUser" />
       </NLayoutHeader>
       <NLayoutContent content-style="padding: 24px;" :native-scrollbar="false">

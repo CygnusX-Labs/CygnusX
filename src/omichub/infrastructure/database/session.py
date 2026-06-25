@@ -55,6 +55,7 @@ async def init_db() -> None:
             from omichub.infrastructure.database.base import Base
             # 导入所有模型以注册到 metadata
             from omichub.infrastructure.database.models import (  # noqa: F401
+                cookie,
                 task,
                 user,
             )

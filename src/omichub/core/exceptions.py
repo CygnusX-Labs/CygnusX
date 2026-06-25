@@ -50,3 +50,13 @@ class YAMLConfigError(OmicHubError):
 class MCPConnectionError(OmicHubError):
     status_code = 503
     detail = "MCP server connection failed"
+
+
+class BusinessError(OmicHubError):
+    status_code = 400
+    detail = "Business rule violation"
+
+
+class InsufficientBalanceError(BusinessError):
+    status_code = 402
+    detail = "Insufficient cookie balance"

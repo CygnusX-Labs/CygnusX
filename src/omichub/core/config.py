@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     snakemake_use_conda: bool = True
     snakemake_conda_prefix: str = "/opt/conda/envs"
 
+    # ===== 饼干积分系统 =====
+    enable_cookie_system: bool = True
+    initial_cookie_balance: float = 100.0
+    cookie_sandbox_base_cost: float = 0.5
+
     @field_validator("database_url", mode="before")
     @classmethod
     def assemble_database_url(cls, v: str, info: Any) -> str:

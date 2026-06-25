@@ -13,6 +13,7 @@ from omichub.application.schemas.auth import (
 )
 from omichub.application.schemas.user import UserResponse
 from omichub.application.services import AuthService
+from omichub.core.config import get_settings
 from omichub.infrastructure.database.repositories import SqlAlchemyUserRepository
 
 router = APIRouter()
@@ -44,9 +45,16 @@ async def login(
 async def register(
     req: UserRegisterRequest,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
-):
+    db: DbSession,
+) -> UserResponse:
     """用户注册"""
     user = await auth_service.register(req)
+    # 集成点#1: 注册时自动创建饼干账户 + 赠送初始饼干
+    if get_settings().enable_cookie_system:
+        from omichub.application.services.cookie_service import CookieService
+
+        cookie_service = CookieService(db)
+        await cookie_service.get_or_create_account(user.id)
     return UserResponse.model_validate(user)
 
 

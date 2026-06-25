@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -99,6 +100,21 @@ class TaskService:
 
         # 状态推进为已入队
         task = await self._domain.transition_status(task, TaskStatus.QUEUED)
+
+        # 集成点#2: 任务提交前预扣饼干
+        pre_deducted = Decimal("0")
+        if self._settings.enable_cookie_system:
+            from omichub.application.services.task_cookie_consumer import (
+                TaskCookieConsumer,
+            )
+
+            consumer = TaskCookieConsumer(self._db)
+            pre_deducted = await consumer.on_submit(
+                UUID(user_id), str(task.id), req.flow_id
+            )
+            task.parameters["_cookie_pre_deducted"] = float(pre_deducted)
+            task = await self._repo.save(task)
+
         return task_to_response(task)
 
     async def get_task(self, task_id: UUID, user_id: str) -> TaskResponse:
@@ -126,6 +142,20 @@ class TaskService:
         if task.status not in {TaskStatus.PENDING, TaskStatus.QUEUED, TaskStatus.RUNNING}:
             raise ValidationError(f"当前状态 {task.status.value} 不允许取消")
         task = await self._domain.transition_status(task, TaskStatus.CANCELLED)
+
+        # 集成点#4: 任务取消退还预扣饼干
+        if self._settings.enable_cookie_system:
+            pre_deducted = task.parameters.get("_cookie_pre_deducted", 0)
+            if pre_deducted > 0:
+                from omichub.application.services.task_cookie_consumer import (
+                    TaskCookieConsumer,
+                )
+
+                consumer = TaskCookieConsumer(self._db)
+                await consumer.on_cancel(
+                    UUID(user_id), str(task.id), Decimal(str(pre_deducted))
+                )
+
         return task_to_response(task)
 
     async def get_task_dag(self, task_id: UUID, user_id: str) -> dict[str, Any]:

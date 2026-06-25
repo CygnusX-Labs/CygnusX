@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal
 from uuid import UUID
 
 from celery import shared_task
@@ -123,6 +124,22 @@ async def _execute_snakemake(
                     source="snakemake",
                 )
                 return_status = "failed"
+
+            # 集成点#3: 任务完成时结算饼干 (多退少补)
+            pre_deducted = task.parameters.get("_cookie_pre_deducted", 0) if task.parameters else 0
+            if pre_deducted > 0:
+                from omichub.application.services.task_cookie_consumer import (
+                    TaskCookieConsumer,
+                )
+
+                consumer = TaskCookieConsumer(session)
+                await consumer.on_complete(
+                    user_id=task.user_id,
+                    task_id=str(task.id),
+                    flow_id=task.flow_id,
+                    pre_deducted=Decimal(str(pre_deducted)),
+                    resource_cores=cores,
+                )
 
             await session.commit()
             return {
