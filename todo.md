@@ -1,7 +1,7 @@
 # OmicHub 开发进度 Todo
 
 > 基于 `docs/` 架构设计文档，逐步完善项目骨架。
-> 更新日期：2026-06-25
+> 更新日期：2026-06-25 (Cookie 系统收尾)
 
 ---
 
@@ -102,6 +102,10 @@
   - [x] schemas/flow.py: FlowListItemDTO/FlowDetailDTO/FlowListResponse/FlowReloadResponse + JSON Schema 导出
   - [x] api/v1/flows.py: 5 端点 (GET / | GET /schema | POST /reload | GET /{id} | GET /{id}/schema)
   - [x] flows/rna_seq.yaml 示例配置 (覆盖全部参数类型+条件渲染+Group+Section)
+  - [x] flows/atac_seq.yaml ATAC-seq 流程配置 (Bowtie2/Chromap + MACS2 + TOBIAS)
+  - [x] ATACFlow Builder (`atacflow_builder.py`) 生成 analysis.yaml / samples.csv / contrasts.csv
+  - [x] TaskService 支持 atac_seq 提交与 DAG 生成
+  - [x] ExecutionConfig 增加 `config_file_param` 以支持不同流程的配置文件参数名
   - [x] docker-compose 挂载 flows 目录 + config.py 新增 flow_yaml_dir
   - [x] 前端 DynamicForm 组件 (基于 Naive UI) — types/schema.ts + useConditionEvaluator + DynamicForm/FormField/RepeatableGroup/CollapsibleSection，已接入 FlowSubmitView.vue
   - [x] 修复: uvicorn 运行时 /flows 路由 404 (重启容器后路由正常，返回 401 需认证即证明路由已注册)
@@ -134,7 +138,7 @@
 - [x] 索引设计 (idx_txn_user_created 覆盖索引、idx_pricing_query 部分索引、idx_txn_source 等)
 - [x] Python 端统计维护 (apply_transaction 替代 SQL 触发器) + 注册建户 (get_or_create_account 替代 fn_create_cookie_account_on_signup)
 - [x] SqlAlchemyAccountRepository / SqlAlchemyTransactionRepository / SqlAlchemyPricingRepository / SqlAlchemyConsumptionLogRepository / SqlAlchemyLedgerRepository 仓储实现
-- [ ] Alembic 迁移脚本 (当前用 create_all 自动建表，生产环境需迁移)
+- [x] Alembic 迁移脚本 (alembic/env.py 修复模型导入 + 08ab25316cc1_initial_schema 覆盖全部 7 表+索引+约束，upgrade/无 drift 验证通过)
 
 #### 后端 — 应用层 (application/)
 - [x] CookieService 核心服务: check_balance / pre_deduct / settle (多退少补) / refund / freeze / unfreeze / suspend / adjust
@@ -146,7 +150,7 @@
 - [x] 用户端 cookies.py: GET /cookies/account | /transactions | /pricing | /estimate | /balance-check
 - [x] 管理端 admin/cookies.py: GET /admin/cookies/accounts (JOIN users 返回用户名/邮箱) | POST /adjust | PUT /accounts/{id}/freeze|unfreeze|suspend | GET /transactions | /stats | /pricing (CRUD)
 - [x] 管理端 admin/users.py: GET /admin/users 用户列表 | PUT /{id}/approve 审批 | PUT /{id}/reject 拒绝 | PUT /{id}/role 角色切换
-- [ ] CookieRequiredMiddleware 消费拦截中间件 (当前通过 TaskCookieConsumer 在服务层集成，未用独立中间件)
+- [x] CookieRequiredMiddleware 消费拦截中间件 (middleware/cookie.py — 消费类路由 HTTP 层守卫，冻结→402/停用→403，已注册 main.py)
 - [x] TaskCookieConsumer — 任务提交前预估+预扣，完成时结算，取消时退还
 - [ ] SandboxCookieConsumer — 沙盒启动前检查，运行中按分钟计费 (依赖 P2 沙盒)
 - [x] config.py 新增: enable_cookie_system / initial_cookie_balance / cookie_sandbox_base_cost
@@ -164,22 +168,22 @@
 #### 前端 (frontend/src/)
 - [x] types/index.ts — TS 类型定义 (CookieAccount/Transaction/Pricing/CostEstimate/CookieStats)
 - [x] stores/cookie.ts — Pinia store (余额/流水/预估)
-- [ ] composables/useCookieWebSocket.ts — 实时余额变更推送 (store 中预留 updateBalanceFromWebSocket)
+- [x] composables/useCookieWebSocket.ts — 实时余额变更推送 (Redis Pub/Sub + WebSocket /cookies/ws + 自动重连指数退避，已接入 CookieBalanceBadge)
 - [x] components/CookieBalanceBadge.vue — 全局余额徽章 (顶栏，已接入 DefaultLayout)
 - [x] views/CookieAccountView.vue — 用户账户页 (余额统计/流水列表)
 - [x] views/AdminCookieManagementView.vue — 管理后台账户管理 (列表显示用户名+邮箱/调整/冻结/解冻)
 - [x] views/AdminCookiePricingView.vue — 定价策略管理 (CRUD + Modal)
 - [x] views/AdminUserManagementView.vue — 用户管理 (审批通过/拒绝/角色切换)
-- [ ] views/AdminCookieTransactionsView.vue — 全局交易流水审计 (当前在管理页内嵌)
-- [ ] TaskSubmitView.vue 集成饼干预估 (防抖 500ms 调 /estimate)
-- [x] 路由配置: /cookies (用户) + /admin/users + /admin/cookies/accounts + /admin/cookies/pricing (管理员)
-- [x] DefaultLayout 侧边栏: computed 动态菜单, admin 角色可见"系统管理"子菜单组 (用户管理/饼干账户管理/饼干定价管理)
+- [x] views/AdminCookieTransactionsView.vue — 全局交易流水审计 (独立页面 + 多维度过滤 user/txn_type/source_type/日期 + 分页 + JOIN 用户名/邮箱)
+- [x] TaskSubmitView.vue 集成饼干预估 (防抖 500ms 调 /estimate + 余额不足禁用提交按钮 + 费用/余额展示卡片)
+- [x] 路由配置: /cookies (用户) + /admin/users + /admin/cookies/accounts + /admin/cookies/transactions + /admin/cookies/pricing (管理员)
+- [x] DefaultLayout 侧边栏: computed 动态菜单, admin 角色可见"系统管理"子菜单组 (用户管理/饼干账户管理/交易流水审计/饼干定价管理)
 
 #### 部署与运维
 - [x] config.py 新增 cookie 相关配置项 + enable_cookie_system 开关
 - [x] scripts/init_cookies.py — 初始化默认定价策略脚本
 - [x] cookie 系统开关 ENABLE_COOKIE_SYSTEM=false 时全链路跳过 (TaskCookieConsumer 检查)
-- [ ] 监控: 余额异常告警 + 流水对账 (cookie_ledger 日终快照)
+- [x] 监控: CookieMonitorService 余额异常告警 + 流水对账 (cookie_ledger 日终快照 + Celery Beat 每日 2:30 自动对账 + 异常检测: 负余额/大额调整/高频消费/冻结账户活动 + 管理端 API: POST /reconcile, GET /anomalies, GET /ledger)
 
 ### 优先级 P2 — AI Copilot 与沙盒
 
@@ -208,11 +212,22 @@
 
 ### 优先级 P3 — 生产化
 
-- [ ] **数据库迁移** (docs/modules/02_database_schema.md)
-  - [ ] 完整建表 SQL (六域所有表)
-  - [ ] JSONB 字段标注
-  - [ ] 索引设计
-  - [ ] Alembic 初始迁移
+- [x] **首次部署初始化**
+  - [x] Web 首次配置引导页 (`/setup`)：无管理员时自动跳转，创建 root 管理员并登录
+  - [x] 后端 API: `GET /auth/setup-required` + `POST /auth/setup`
+  - [x] 路由守卫自动检测并跳转 setup 页面
+  - [x] 修复 `AuthMiddleware` 未放行 `/auth/setup-required` 和 `/auth/setup`
+  - [x] 修复 `main.py` 重复注册 7 次 `CookieRequiredMiddleware` 导致请求异常
+  - [x] 修复 `UserStatus` 枚举缺少 `pending` 状态导致含待审批用户时转换失败
+  - [x] `scripts/init_admin.py` 命令行初始化脚本（幂等、生产环境强制设置密码）
+  - [x] `.env.example` 增加 `OMICHBUB_INIT_ADMIN_*` 配置项
+  - [x] `Makefile` 增加 `make init-admin` / `make init-cookies` 命令
+
+- [x] **数据库迁移** (docs/modules/02_database_schema.md) ✅ 2026-06-25
+  - [x] 完整建表 SQL (六域所有表 — 通过 Alembic autogenerate 生成)
+  - [x] JSONB 字段标注 (parameters/logs/preferences 等)
+  - [x] 索引设计 (覆盖索引 + 部分索引 + 复合索引)
+  - [x] Alembic 初始迁移 (08ab25316cc1_initial_schema.py — 7 表 + 全部索引/约束/FK，upgrade 验证通过)
 
 - [ ] **安全加固** (docs/modules/01_architecture_overview.md §4.5)
   - [ ] RBAC 中间件完整实现 (数据库查角色)
@@ -232,6 +247,24 @@
   - [ ] Slurm/SGE 作业翻译
   - [ ] 结果回传 (rsync/HTTP)
 
+### 本次美化/文档待收尾（2026-06-26 继续）
+
+- [ ] **知识库与文档中心**
+  - [x] 创建 `docs/knowledge/` 与 `docs/docs/` 目录及 YAML/Markdown 示例文件
+  - [x] 后端 `docs_service.py` + `api/v1/docs.py` 路由实现
+  - [x] 后端 `api/v1/router.py` 注册 `/docs` 路由
+  - [x] 前端 `MarkdownReader.vue` 轻量 Markdown 渲染组件
+  - [x] 前端 `KnowledgeView.vue` 知识库页面（待验证路由参数默认值）
+  - [ ] 前端 `DocsView.vue` 文档中心页面
+  - [ ] 前端 `router/index.ts` 注册 `/knowledge/:docId?` 与 `/docs/:docId?` 路由
+  - [ ] `DefaultLayout.vue` 更新顶部导航链接：实验室知识库 → `/knowledge`，文档 → `/docs`
+  - [ ] 前后端类型检查与构建验证
+
+- [ ] **首页流星效果优化**
+  - [ ] `AboutView.vue` 流星出现位置与飞行方向完全随机化
+  - [ ] 降低流星频率（数量、延迟、持续时间）
+  - [ ] 流星尾巴方向随飞行角度同步
+
 ### 优先级 P4 — 优化与运维
 
 - [ ] **监控可观测性**
@@ -241,6 +274,7 @@
   - [ ] API 请求追踪 (OpenTelemetry)
 
 - [ ] **前端完善**
+  - [x] About 页面 (Milky Way 背景 + star-stuff 文案) ✅ 2026-06-25
   - [ ] 各域页面完整实现 (Flows/Tasks/Files/AI)
   - [ ] 全局错误处理 + 加载态
   - [ ] 响应式布局适配
@@ -257,6 +291,66 @@
   - [ ] 部署手册
   - [ ] 运维 runbook
   - [ ] 用户使用手册
+
+---
+
+## 前端动画/美化仓库调研
+
+> 针对当前前端技术栈 **Vue 3 + Vite + TypeScript + Naive UI** 的可选动画/美化库清单（仅调研，未引入代码）。
+
+### 通用动画库（Vue 3 原生支持或友好）
+
+- [@vueuse/motion](https://github.com/vueuse/motion) — Vue 官方生态 motion 库，指令式 `v-motion`，零配置入场/出场动画
+- [AutoAnimate](https://github.com/formkit/auto-animate) — DOM 变化自动动画，适合列表/弹窗/下拉菜单
+- [vue-kinesis](https://github.com/amineyarman/vue-kinesis) — 鼠标/滚动/陀螺仪驱动的视差交互动画
+- [AnimXYZ](https://github.com/ingram-projects/animxyz) — CSS 变量驱动的组合动画框架，原生支持 Vue
+- [Animate.css](https://github.com/animate-css/animate.css) — 经典 CSS 动画库，直接加 class 使用
+- [GSAP](https://github.com/greensock/GSAP) + [vue-gsap](https://github.com/derickdaniel/vue-gsap) — 专业级时间轴动画
+- [Motion One](https://github.com/motiondivision/motionone) + [vue-motion-one](https://github.com/wobsoriano/vue-motion-one) — 轻量高性能硬件加速动画
+
+### 页面背景 / 粒子特效
+
+- [tsParticles](https://github.com/matteobruni/tsparticles) — 粒子效果库，有 `@tsparticles/vue3`，支持雪花/连线/星空/星云
+- [particles.js](https://github.com/VincentGarreau/particles.js) — 经典轻量粒子背景（维护较慢，更推荐 tsParticles）
+- [Inspira UI](https://github.com/unovue/inspira-ui) — Vue 版 Aceternity/Magic UI，含 Aurora、粒子漩涡、雪花、光束、流星等 70+ 特效组件
+- [Vanta.js](https://github.com/tengbao/vanta) — 3D 动态背景（飞鸟/海浪/云雾/拓扑），基于 three.js/p5
+- [three.js](https://github.com/mrdoob/three.js) — 3D 场景终极方案
+- [granim.js](https://github.com/sarcadass/granim.js) — 动态渐变背景，登录页常用
+
+### 滚动 / 视差 / 交互增强
+
+- [AOS](https://github.com/michalsnik/aos) — 滚动触发入场动画
+- [ScrollReveal](https://github.com/jlmakes/scrollreveal) — 滚动显示动画
+- [rellax](https://github.com/dixonandmoe/rellax) — 轻量视差滚动
+- [tilt.js](https://github.com/gijsroge/tilt.js) — 卡片 3D 倾斜悬浮效果
+- [locomotive-scroll](https://github.com/locomotivemtl/locomotive-scroll) — 平滑滚动 + 视差
+
+### 加载动画 / 微交互
+
+- [LDRS](https://github.com/loading-io/ldrs) — 精致加载动画
+- [Whirl](https://github.com/jh3y/whirl) — 纯 CSS loading 动画合集
+- [vue3-lottie](https://github.com/megasanjay/vue3-lottie) — Vue 3 播放 Lottie/AE 动画
+- [dotLottie](https://github.com/LottieFiles/dotlottie-web) — LottieFiles 官方新版轻量播放器
+- [Hover.css](https://github.com/IanLunn/Hover.css) — 鼠标悬浮效果合集
+- [CSShake](https://github.com/elrumordelaluz/csshake) — 抖动动画，表单错误提示可用
+
+### UI 美化 / 主题增强
+
+- [Naive UI 官方主题](https://github.com/tusen-ai/naive-ui) — 通过 `n-config-provider` + `theme-overrides` 做动态换肤、暗黑模式
+- [@vueuse/core](https://github.com/vueuse/vueuse) — `useColorMode` / `useCycleList` 快速做主题切换
+- [Tailwind CSS](https://github.com/tailwindlabs/tailwind.css) — 原子化 CSS，配合 Naive UI 做自定义布局
+- [UnoCSS](https://github.com/unocss/unocss) — 按需原子 CSS，可与 Naive UI 主题变量联动
+
+### 针对当前项目的建议组合
+
+考虑到是 **生信分析平台**，建议优先走"简洁专业 + 适度动效"路线：
+
+1. **入场/过渡**：`@vueuse/motion` 或 `AutoAnimate`
+2. **列表/表格动画**：`AutoAnimate`
+3. **登录页/首页背景**：`tsParticles` 或 `Inspira UI` 的 Aurora/粒子组件
+4. **加载状态**：`LDRS` 或 `vue3-lottie`
+5. **主题美化**：Naive UI `theme-overrides` + `@vueuse/core` 的 `useColorMode` 做暗黑模式
+6. **滚动展示**：`AOS` 做文档/结果页滚动动画
 
 ---
 
