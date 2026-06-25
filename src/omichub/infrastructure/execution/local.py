@@ -1,6 +1,7 @@
 """本地执行器 - Snakemake subprocess"""
 
 import asyncio
+import shutil
 from typing import Any
 
 from omichub.core.config import get_settings
@@ -18,12 +19,22 @@ class LocalSnakemakeExecutor:
     async def execute(
         self,
         snakefile: str,
-        config: dict[str, Any],
+        config: dict[str, Any] | None = None,
         cores: int | None = None,
         work_dir: str = "",
         targets: list[str] | None = None,
+        config_file: str | None = None,
     ) -> dict[str, Any]:
         """执行 Snakemake 工作流
+
+        Args:
+            snakefile: Snakefile 路径
+            config: 需要以 --config key=value 形式传递的配置字典
+            cores: CPU 核心数
+            work_dir: Snakemake --directory 工作目录
+            targets: 目标文件列表
+            config_file: 若提供，则以 --config analysisyaml=<config_file> 形式传递
+                         （RNAFlow 等通过单一 YAML 配置文件驱动的流程使用）
 
         Returns:
             执行结果，包含 status, stdout, stderr, returncode
@@ -43,9 +54,11 @@ class LocalSnakemakeExecutor:
         if targets:
             cmd.extend(targets)
 
-        # 传递配置参数
-        for key, value in config.items():
-            cmd.extend(["--config", f"{key}={value}"])
+        if config_file:
+            cmd.extend(["--config", f"analysisyaml={config_file}"])
+        elif config:
+            for key, value in config.items():
+                cmd.extend(["--config", f"{key}={value}"])
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -59,4 +72,72 @@ class LocalSnakemakeExecutor:
             "returncode": process.returncode,
             "stdout": stdout.decode(),
             "stderr": stderr.decode(),
+        }
+
+    async def generate_dag(
+        self,
+        snakefile: str,
+        config_file: str = "",
+        work_dir: str = "",
+    ) -> dict[str, Any]:
+        """生成 Snakemake DAG 可视化。
+
+        若系统安装了 graphviz 的 dot，则返回 SVG；否则返回 DOT 文本。
+        """
+        cmd = [
+            "snakemake",
+            "-s", snakefile,
+            "--dag",
+            "--cores", "1",
+        ]
+
+        if self.settings.snakemake_use_conda:
+            cmd.append("--use-conda")
+
+        if work_dir:
+            cmd.extend(["--directory", work_dir])
+
+        if config_file:
+            cmd.extend(["--config", f"analysisyaml={config_file}"])
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        dot_text, stderr = await process.communicate()
+        dot_text_str = dot_text.decode()
+
+        if process.returncode != 0:
+            return {
+                "status": "failed",
+                "returncode": process.returncode,
+                "error": stderr.decode(),
+            }
+
+        if shutil.which("dot"):
+            dot_proc = await asyncio.create_subprocess_exec(
+                "dot", "-Tsvg",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            svg_bytes, dot_err = await dot_proc.communicate(input=dot_text)
+            if dot_proc.returncode == 0:
+                return {
+                    "status": "success",
+                    "format": "svg",
+                    "content": svg_bytes.decode(),
+                }
+            return {
+                "status": "success",
+                "format": "dot",
+                "content": dot_text_str,
+                "warning": f"dot 渲染失败: {dot_err.decode()}",
+            }
+
+        return {
+            "status": "success",
+            "format": "dot",
+            "content": dot_text_str,
         }

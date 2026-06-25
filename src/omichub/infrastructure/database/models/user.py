@@ -1,9 +1,8 @@
 """用户域 ORM 模型"""
 
 import uuid
-from datetime import datetime
 
-from sqlalchemy import String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,7 +23,12 @@ class UserModel(Base, TimestampMixin):
     role: Mapped[str] = mapped_column(String(20), default="user")  # admin / user
     status: Mapped[str] = mapped_column(String(20), default="active")
     workspace_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=True
+    )
+    avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    preferences: Mapped[dict] = mapped_column(JSON, default=dict)
+    last_login_at: Mapped[str | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
 

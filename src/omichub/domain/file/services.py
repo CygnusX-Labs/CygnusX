@@ -1,9 +1,7 @@
 """文件域服务"""
 
 import hashlib
-from pathlib import Path
 
-from omichub.domain.file.entities import DataFile, ResultArchive, Sample
 from omichub.domain.file.repositories import (
     IFileRepository,
     IResultArchiveRepository,

@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { NCard, NGrid, NGridItem, NStatistic, NButton, NSpace } from 'naive-ui'
-import apiClient from '@/api/client'
+import axios from 'axios'
 
+const router = useRouter()
 const healthStatus = ref<string>('检测中...')
 
 onMounted(async () => {
   try {
-    const res = await apiClient.get('/../health')
+    const res = await axios.get('/health')
     healthStatus.value = res.data.status === 'ok' ? '正常运行' : '异常'
   } catch {
     healthStatus.value = '后端未连接'
@@ -36,9 +38,9 @@ onMounted(async () => {
 
     <NCard title="快速开始">
       <NSpace>
-        <NButton type="primary">提交分析任务</NButton>
-        <NButton>上传样本数据</NButton>
-        <NButton>浏览分析流程</NButton>
+        <NButton type="primary" @click="router.push('/flows')">提交分析任务</NButton>
+        <NButton @click="router.push('/files')">上传样本数据</NButton>
+        <NButton @click="router.push('/flows')">浏览分析流程</NButton>
       </NSpace>
     </NCard>
 

@@ -68,22 +68,38 @@
 
 ### 优先级 P0 — 核心功能闭环
 
-- [ ] **用户认证闭环** (docs/modules/03_api_design.md)
-  - [ ] auth.py 实现登录/注册/刷新令牌端点
-  - [ ] UserModel 完整 ORM (含 workspace 关联)
-  - [ ] UserRepositoryImpl (SQLAlchemy 实现)
-  - [ ] UserService 编排登录用例
-  - [ ] JWT 中间件接入 main.py
-  - [ ] 前端登录页面 + auth store 完整逻辑
+- [x] **用户认证闭环** (docs/modules/03_api_design.md) ✅ 2026-06-25 验证通过
+  - [x] auth.py 实现登录/注册/刷新令牌端点
+  - [x] UserModel 完整 ORM (含 workspace ForeignKey 关联)
+  - [x] UserRepositoryImpl (SQLAlchemy 实现)
+  - [x] UserService/AuthService 编排登录用例
+  - [x] JWT 中间件接入 main.py
+  - [x] 前端登录页面 + auth store 完整逻辑
+  - [x] 修复: session.py 模型未注册导致建表失败
+  - [x] 修复: router/index.ts/g isLoggedIn() 误调用 computed
+  - [x] 修复: DefaultLayout.vue FileText → DocumentText (ionicons5 改名)
+  - [x] 修复: main.ts 未全局注册 naive-ui 导致登录页组件不渲染
+  - [x] 修复: n-input-password 组件不存在 → n-input type=password (LoginView/RegisterView)
+  - [x] 修复: nginx index.html 无禁缓存头导致浏览器加载旧 JS (404)
+  - [x] 修复: DashboardView 健康检查路径错误 (apiClient /../health → axios /health)
+  - [x] 修复: DashboardView 快速开始按钮未绑定 @click 跳转事件
 
-- [ ] **YAML 配置中心** (docs/modules/04_yaml_schema.md)
-  - [ ] FlowDomainService.parse_yaml 完整实现
-  - [ ] YAML → FlowDefinition 转换
-  - [ ] DAG 依赖图校验 (拓扑排序检测环)
-  - [ ] FlowRepositoryImpl
-  - [ ] `/api/v1/flows/{id}/schema` 返回 JSON Schema
-  - [ ] 前端 DynamicForm 组件 (基于 Naive UI)
-  - [ ] YAML 热重载接口
+- [ ] **YAML 配置中心** (docs/modules/04_yaml_schema.md) — 后端完成，前端待实现
+  - [x] FlowDomainService.parse_yaml 完整实现 (services.py)
+  - [x] YAML → FlowConfig 转换 (entities.py 完整 Pydantic v2 模型)
+  - [x] DAG 依赖图校验 (find_condition_cycle 三色 DFS 检测 condition 循环依赖)
+  - [x] FlowRepositoryImpl (FileSystemFlowRepository 文件系统仓储 + 线程安全缓存)
+  - [x] `/api/v1/flows/{flow_id}/schema` 返回 JSON Schema (含顶层 FlowConfig Schema)
+  - [x] YAML 热重载接口 (POST /api/v1/flows/reload)
+  - [x] 完整 value_objects: ParameterTypeEnum + 6 Config 子模型 + ExecutionConfig + SampleSheetConfig + FlowMeta
+  - [x] 完整 entities: ConditionRule (简单+AND/OR 嵌套) + Parameter (类型校验) + FlowConfig (唯一性+条件引用校验) + FlowDefinition 聚合根
+  - [x] condition.py: ConditionEvaluator (11 运算符) + ConditionalValidator (可见参数+必填校验)
+  - [x] schemas/flow.py: FlowListItemDTO/FlowDetailDTO/FlowListResponse/FlowReloadResponse + JSON Schema 导出
+  - [x] api/v1/flows.py: 5 端点 (GET / | GET /schema | POST /reload | GET /{id} | GET /{id}/schema)
+  - [x] flows/rna_seq.yaml 示例配置 (覆盖全部参数类型+条件渲染+Group+Section)
+  - [x] docker-compose 挂载 flows 目录 + config.py 新增 flow_yaml_dir
+  - [ ] 前端 DynamicForm 组件 (基于 Naive UI) — types/schema.ts + useConditionEvaluator + DynamicForm/Form/RepeatableGroup/CollapsibleSection
+  - [ ] 待解决 bug: uvicorn 运行时 /flows 路由 404 (TestClient 验证路由注册正常，疑似 reload 缓存问题，需重启容器验证)
 
 - [ ] **任务执行闭环** (docs/modules/01_architecture_overview.md §4.4)
   - [ ] TaskRepositoryImpl
@@ -93,7 +109,67 @@
   - [ ] 前端任务详情页 + 实时日志流
   - [ ] Snakemake DAG 可视化
 
-### 优先级 P1 — AI Copilot 与沙盒
+### 优先级 P1 — 饼干积分系统（🍪 Cookie）
+
+> 文档: docs/modules/12_cookie_backend.md + 13_cookie_frontend.md + 14_cookie_integration.md
+> 当前状态: 代码库零实现，需从零构建。核心模块不依赖任务/沙盒，可立即开发；集成点依赖 P0 任务闭环 + P2 沙盒。
+
+#### 后端 — 领域层 (domain/cookie/)
+- [ ] CookieAccount 聚合根 + CookieTransaction 实体 + CookiePricing 值对象
+- [ ] TxnType/AccountStatus/PricingType 值对象 (earn/spend/adjust/refund/freeze/unfreeze)
+- [ ] ICookieAccountRepository / ICookieTransactionRepository / ICookiePricingRepository 仓储接口
+
+#### 后端 — 基础设施层 (infrastructure/database/)
+- [ ] 5 张表 ORM 模型: cookie_accounts / cookie_transactions / cookie_pricing / cookie_consumption_logs / cookie_ledger
+- [ ] 索引设计 (idx_txn_user_created 覆盖索引、idx_pricing_query 部分索引等)
+- [ ] 触发器函数: fn_update_account_stats (统计字段维护) + fn_create_cookie_account_on_signup (注册自动建户)
+- [ ] SqlAlchemyAccountRepository / SqlAlchemyTransactionRepository / SqlAlchemyPricingRepository 仓储实现
+- [ ] Alembic 迁移脚本 (含默认定价策略 seed 数据)
+
+#### 后端 — 应用层 (application/)
+- [ ] CookieService 核心服务: check_balance / pre_deduct (悲观锁 SELECT FOR UPDATE) / settle (多退少补) / refund / freeze / unfreeze
+- [ ] PricingEngine 定价计算引擎: 按 flow_category + resource_type + priority 匹配 + 时段生效判断
+- [ ] Pydantic DTO: CookieAccountDTO / CookieTransactionDTO / CookiePricingDTO / CostEstimateDTO / CookieStatsDTO
+- [ ] SettlementService 结算服务 (Celery 回调中调用)
+
+#### 后端 — API 路由 (api/v1/)
+- [ ] 用户端 cookies.py: GET /cookies/account | /transactions | /pricing | /estimate | /balance-check
+- [ ] 管理端 admin/cookies.py: GET /admin/cookies/accounts | POST /adjust | PUT /accounts/{id}/freeze|unfreeze|suspend | GET /transactions | /stats | /pricing
+- [ ] CookieRequiredMiddleware 消费拦截中间件 (可开关)
+- [ ] TaskCookieConsumer — 任务提交前预估+预扣，完成时结算
+- [ ] SandboxCookieConsumer — 沙盒启动前检查，运行中按分钟计费
+- [ ] config.py 新增: ENABLE_COOKIE_SYSTEM / INITIAL_COOKIE_BALANCE / COOKIE_SANDBOX_BASE_COST 等
+
+#### 集成点 (依赖任务闭环 P0 + 沙盒 P2)
+- [ ] 集成点#1: 用户注册触发器自动建户 + 赠送 INITIAL_COOKIE_BALANCE (100🍪)
+- [ ] 集成点#2: 任务提交注入 Cookie 检查 (余额不足返回 402)
+- [ ] 集成点#3: Celery 任务完成回调结算 (多退少补)
+- [ ] 集成点#4: 任务取消退还预扣饼干
+- [ ] 集成点#5: 沙盒启动前余额检查 + 预扣基础费用
+- [ ] 集成点#6: 沙盒关闭结算最终费用
+- [ ] 集成点#7: Celery Beat 每分钟沙盒扣费，余额不足自动停止
+- [ ] 集成点#8: AI Agent 提交任务前检查余额
+
+#### 前端 (frontend/src/)
+- [ ] types/cookie.d.ts — TS 类型定义 (CookieAccount/Transaction/Pricing/CostEstimate)
+- [ ] stores/cookie.ts — Pinia store (余额/流水/预估，WebSocket 实时推送)
+- [ ] composables/useCookieWebSocket.ts — 实时余额变更推送
+- [ ] components/CookieBalanceBadge.vue — 全局余额徽章 (顶栏)
+- [ ] views/CookieAccountView.vue — 用户账户页 (余额/月消费/组内排名/流水列表)
+- [ ] views/AdminCookieManagementView.vue — 管理后台账户管理
+- [ ] components/CookieAdjustModal.vue — 管理员调整余额弹窗
+- [ ] views/AdminCookieTransactionsView.vue — 全局交易流水审计
+- [ ] views/AdminCookiePricingView.vue — 定价策略管理 (CRUD)
+- [ ] TaskSubmitView.vue 集成饼干预估 (防抖 500ms 调 /estimate)
+- [ ] 路由配置: /cookie (用户) + /admin/cookies/* (管理员，RBAC)
+
+#### 部署与运维
+- [ ] docker-compose.yml 新增 cookie 相关环境变量
+- [ ] scripts/init_cookies.py — 初始化默认定价策略脚本
+- [ ] cookie 系统开关 ENABLE_COOKIE_SYSTEM=false 时全链路跳过
+- [ ] 监控: 余额异常告警 + 流水对账 (cookie_ledger 日终快照)
+
+### 优先级 P2 — AI Copilot 与沙盒
 
 - [ ] **AI 对话 WebSocket** (docs/modules/09_sandbox_architecture.md)
   - [ ] ai.py WebSocket 端点完整实现 (非 echo)
@@ -118,7 +194,7 @@
   - [ ] 工具发现 + 调用路由 + 错误隔离
   - [ ] `/api/v1/mcp/servers` CRUD 端点
 
-### 优先级 P2 — 生产化
+### 优先级 P3 — 生产化
 
 - [ ] **数据库迁移** (docs/modules/02_database_schema.md)
   - [ ] 完整建表 SQL (六域所有表)
@@ -144,7 +220,7 @@
   - [ ] Slurm/SGE 作业翻译
   - [ ] 结果回传 (rsync/HTTP)
 
-### 优先级 P3 — 优化与运维
+### 优先级 P4 — 优化与运维
 
 - [ ] **监控可观测性**
   - [ ] Prometheus 指标暴露

@@ -4,7 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 from omichub.core.exceptions import ValidationError
-from omichub.domain.task.entities import Task, TaskLog
+from omichub.domain.task.entities import Task
 from omichub.domain.task.repositories import ITaskRepository
 from omichub.domain.task.value_objects import ExecutionMode, LogLevel, TaskStatus
 
@@ -17,14 +17,25 @@ class TaskDomainService:
 
     async def submit(
         self,
-        flow_id: UUID,
+        flow_id: str,
         user_id: UUID,
+        name: str,
         parameters: dict,
         execution_mode: ExecutionMode = ExecutionMode.LOCAL,
     ) -> Task:
-        """提交新任务"""
-        # TODO: 实现
-        raise NotImplementedError
+        """提交新任务：创建聚合根并持久化"""
+        from uuid import uuid4
+
+        task = Task(
+            id=uuid4(),
+            flow_id=flow_id,
+            user_id=user_id,
+            name=name,
+            status=TaskStatus.PENDING,
+            execution_mode=execution_mode,
+            parameters=parameters,
+        )
+        return await self._repo.save(task)
 
     async def transition_status(self, task: Task, new_status: TaskStatus) -> Task:
         """执行状态转换（含合法性校验）"""

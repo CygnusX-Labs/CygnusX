@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     upload_dir: str = "uploads"
     results_dir: str = "results"
 
+    # ===== 流程 YAML 配置 =====
+    flow_yaml_dir: str = "flows"
+
     # ===== Snakemake 配置 =====
     snakemake_cores: int = 4
     snakemake_use_conda: bool = True

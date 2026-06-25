@@ -7,17 +7,17 @@ from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from omichub.core.config import get_settings
 from omichub.core.exceptions import AuthenticationError
 from omichub.core.security import decode_token
-from omichub.infrastructure.database.session import async_session_factory
+from omichub.infrastructure.database.session import get_session_factory
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
     """获取数据库会话"""
-    async with async_session_factory() as session:
+    factory = get_session_factory()
+    async with factory() as session:
         try:
             yield session
             await session.commit()

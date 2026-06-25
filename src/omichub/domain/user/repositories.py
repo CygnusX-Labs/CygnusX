@@ -1,8 +1,7 @@
 """用户域仓储接口"""
 
-from uuid import UUID
-
 from typing import Protocol
+from uuid import UUID
 
 from omichub.domain.user.entities import User
 

@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from omichub.domain.task.value_objects import ExecutionMode, TaskStatus, LogLevel
+from omichub.domain.task.value_objects import ExecutionMode, LogLevel, TaskStatus
 
 
 class TaskLog(BaseModel):
@@ -22,7 +22,7 @@ class Task(BaseModel):
     """任务聚合根 - 统一任务模型"""
 
     id: UUID
-    flow_id: UUID
+    flow_id: str  # 对应流程 meta.id，如 rna_seq
     user_id: UUID
     name: str = ""
     status: TaskStatus = TaskStatus.PENDING

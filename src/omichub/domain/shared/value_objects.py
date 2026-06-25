@@ -1,6 +1,5 @@
 """共享值对象 - 跨域通用的值对象"""
 
-from enum import Enum
 from uuid import UUID, uuid4
 
 

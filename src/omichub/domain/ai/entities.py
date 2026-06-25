@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from omichub.domain.ai.value_objects import RoleType, ToolCallStatus
+from omichub.domain.ai.value_objects import RoleType
 
 
 class Message(BaseModel):

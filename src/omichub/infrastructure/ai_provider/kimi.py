@@ -49,29 +49,28 @@ class KimiProvider:
         tools: list[dict] | None = None,
     ) -> AsyncIterator[str]:
         """流式对话"""
-        async with httpx.AsyncClient() as client:
-            async with client.stream(
-                "POST",
-                f"{self.base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key}"},
-                json={
-                    "model": model or self.model,
-                    "messages": messages,
-                    "temperature": temperature,
-                    "stream": True,
-                    **({"tools": tools} if tools else {}),
-                },
-                timeout=120,
-            ) as response:
-                async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        data = line[6:]
-                        if data == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data)
-                            content = chunk["choices"][0]["delta"].get("content", "")
-                            if content:
-                                yield content
-                        except (json.JSONDecodeError, KeyError):
-                            continue
+        async with httpx.AsyncClient() as client, client.stream(
+            "POST",
+            f"{self.base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            json={
+                "model": model or self.model,
+                "messages": messages,
+                "temperature": temperature,
+                "stream": True,
+                **({"tools": tools} if tools else {}),
+            },
+            timeout=120,
+        ) as response:
+            async for line in response.aiter_lines():
+                if line.startswith("data: "):
+                    data = line[6:]
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                        content = chunk["choices"][0]["delta"].get("content", "")
+                        if content:
+                            yield content
+                    except (json.JSONDecodeError, KeyError):
+                        continue

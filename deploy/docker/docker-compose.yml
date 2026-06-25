@@ -13,7 +13,7 @@ services:
       - "8888:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/frontend.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../../frontend/dist:/usr/share/nginx/html:ro
     depends_on:
       - web
     networks:
@@ -39,6 +39,7 @@ services:
         condition: service_healthy
     volumes:
       - ../../src:/app/src:ro  # 开发环境热重载
+      - ../../flows:/app/flows:ro  # 流程 YAML 配置（热重载）
       - shared_storage:/data/omichub
     networks:
       - app_net

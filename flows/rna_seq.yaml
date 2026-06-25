@@ -1,0 +1,294 @@
+# ============================================================
+# RNA-seq 差异表达分析流程配置
+# 与 /home/zj/pipeline/RNAFlow 配合，参数命名与 RNAFlow config.yaml 保持一致
+# ============================================================
+
+meta:
+  id: rna_seq
+  name: "RNA-seq 差异表达分析"
+  category: transcriptomics
+  version: "2.2.0"
+  description: "基于已搭建好的 RNAFlow 流程（STAR + RSEM + DESeq2）的标准 RNA-seq 差异表达分析。提交后自动生成 RNAFlow 所需 config.yaml、samples.csv、contrasts.csv。"
+  author: "OmicsHub Team"
+  tags: ["rnaseq", "differential-expression", "STAR", "RSEM", "DESeq2", "RNAFlow"]
+  icon: "rna"
+  docs_url: "https://docs.omicshub.org/workflows/rna_seq"
+
+parameters:
+  # ----------------------------------------------------------
+  # 一、项目基本信息
+  # ----------------------------------------------------------
+  - name: project_name
+    label: "项目名称"
+    type: string
+    required: true
+    default: "OmicsHub_RNA_seq"
+    help_text: "为该 RNA-seq 项目命名"
+    placeholder: "PRJNA1224991"
+    order: 1
+
+  - name: Genome_Version
+    label: "参考基因组版本"
+    type: select
+    required: true
+    default: "hg38"
+    help_text: "选择比对使用的参考基因组版本（需已配置在 RNAFlow reference.yaml 中）"
+    order: 2
+    select_config:
+      options:
+        - label: "人类 GRCh38 (hg38)"
+          value: "hg38"
+        - label: "小鼠 GRCm39 (GRCm39)"
+          value: "GRCm39"
+        - label: "拟南芥 TAIR10.1"
+          value: "TAIR10.1"
+        - label: "番茄 ITAG4.1"
+          value: "ITAG4.1"
+        - label: "生菜 Lsat_Salinas_v11"
+          value: "Lsat_Salinas_v11"
+        - label: "生菜 Lsat_Salinas_v11_wx"
+          value: "Lsat_Salinas_v11_wx"
+        - label: "生菜 Lsat_Salinas_v8_wx"
+          value: "Lsat_Salinas_v8_wx"
+
+  - name: species
+    label: "物种"
+    type: string
+    required: true
+    default: "Homo sapiens"
+    help_text: "物种名称"
+    order: 3
+
+  - name: client
+    label: "客户 / 课题组"
+    type: string
+    required: true
+    default: "内部测试"
+    help_text: "客户或课题组标识"
+    order: 4
+
+  # ----------------------------------------------------------
+  # 二、输入数据路径
+  # ----------------------------------------------------------
+  - name: raw_data_path
+    label: "原始数据目录"
+    type: string
+    required: true
+    help_text: "存放原始 FASTQ 文件的目录路径（RNAFlow 会根据 sample 列自动匹配 _R1.fq.gz / _R2.fq.gz）"
+    placeholder: "/data/project/00.raw_data"
+    order: 10
+
+  - name: data_deliver
+    label: "结果交付目录"
+    type: string
+    required: false
+    help_text: "最终结果输出目录，留空则使用 workflow 父目录下的 data_deliver"
+    placeholder: "/data/project/02.data_deliver"
+    order: 11
+
+  # ----------------------------------------------------------
+  # 三、执行与资源参数
+  # ----------------------------------------------------------
+  - name: execution_mode
+    label: "执行模式"
+    type: select
+    required: true
+    default: "local"
+    help_text: "选择本地执行或集群执行"
+    order: 20
+    select_config:
+      options:
+        - label: "本地执行 (local)"
+          value: "local"
+        - label: "集群执行 (cluster)"
+          value: "cluster"
+
+  - name: queue_id
+    label: "集群队列"
+    type: string
+    required: true
+    default: "default"
+    help_text: "集群调度队列（仅集群模式需要）"
+    placeholder: "default"
+    order: 21
+    condition:
+      field: "execution_mode"
+      operator: "eq"
+      value: "cluster"
+
+  - name: Library_Types
+    label: "链特异性"
+    type: select
+    required: true
+    default: "fr-unstranded"
+    help_text: "文库链特异性类型"
+    order: 22
+    select_config:
+      options:
+        - label: "非链特异性 (fr-unstranded)"
+          value: "fr-unstranded"
+        - label: "反向链 (fr-firststrand，如 dUTP 方法)"
+          value: "fr-firststrand"
+        - label: "正向链 (fr-secondstrand，如 TruSeq Stranded)"
+          value: "fr-secondstrand"
+
+  # ----------------------------------------------------------
+  # 四、分析模块开关
+  # ----------------------------------------------------------
+  - name: only_qc
+    label: "仅运行 QC"
+    type: boolean
+    required: false
+    default: false
+    help_text: "仅执行质控模块，不进行后续比对/定量/DEG"
+    order: 30
+
+  - name: deg
+    label: "运行差异表达分析 (DEG)"
+    type: boolean
+    required: false
+    default: true
+    help_text: "使用 DESeq2 进行差异表达分析"
+    order: 31
+
+  - name: report
+    label: "生成 HTML 报告"
+    type: boolean
+    required: false
+    default: true
+    help_text: "生成完整分析结果报告"
+    order: 32
+
+  - name: fastq_screen
+    label: "运行 FastQ Screen 污染检查"
+    type: boolean
+    required: false
+    default: true
+    help_text: "检查样品是否存在外源污染"
+    order: 33
+
+  - name: call_variant
+    label: "调用变异 (call_variant)"
+    type: boolean
+    required: false
+    default: false
+    help_text: "从 RNA-seq 数据 calling 变异"
+    order: 34
+
+  - name: detect_novel_transcripts
+    label: "检测新转录本"
+    type: boolean
+    required: false
+    default: false
+    help_text: "使用 StringTie 检测新转录本"
+    order: 35
+
+  - name: rmats
+    label: "运行 rMATS 可变剪接分析"
+    type: boolean
+    required: false
+    default: true
+    help_text: "进行可变剪接事件分析"
+    order: 36
+
+  - name: gene_fusion
+    label: "运行基因融合检测"
+    type: boolean
+    required: false
+    default: false
+    help_text: "使用 Arriba 检测基因融合"
+    order: 37
+
+  # ----------------------------------------------------------
+  # 五、差异比较组（可重复 Group）
+  # ----------------------------------------------------------
+  - name: comparisons
+    label: "差异比较组"
+    type: group
+    required: false
+    help_text: "定义需要比较的分组，每组指定对照组和实验组（仅 DEG 分析时需要）"
+    order: 40
+    group_config:
+      min_items: 1
+      max_items: 20
+      item_label: "比较组"
+      add_button_text: "+ 添加差异比较组"
+      parameters:
+        - name: Control
+          label: "对照组"
+          type: string
+          required: true
+          help_text: "对照组名称（需与样本表中 group 列一致）"
+          placeholder: "control"
+
+        - name: Treat
+          label: "实验组"
+          type: string
+          required: true
+          help_text: "实验组名称（需与样本表中 group 列一致）"
+          placeholder: "treatment"
+
+  # ----------------------------------------------------------
+  # 六、高级参数（折叠 Section）
+  # ----------------------------------------------------------
+  - name: advanced_params
+    label: "高级参数"
+    type: section
+    order: 50
+    section_config:
+      title: "高级分析参数"
+      default_expanded: false
+      description: "Loki 日志等高级设置，一般无需修改"
+      parameters:
+        - name: loki_url
+          label: "Loki 日志服务器 URL"
+          type: string
+          required: false
+          help_text: "可选：RNAFlow 将日志推送到 Loki 的地址"
+          placeholder: "http://loki:3100"
+
+# ============================================================
+# 执行配置
+# ============================================================
+execution:
+  engine: snakemake
+  snakefile: "/home/zj/pipeline/RNAFlow/snakefile"
+  conda_env: null
+  default_resources:
+    cores: 8
+    memory: "32G"
+    time: "4h"
+  sample_sheet_format: csv
+  extra_args:
+    - "--use-conda"
+    - "--latency-wait 60"
+    - "--rerun-incomplete"
+
+# ============================================================
+# 样本表配置
+# ============================================================
+sample_sheet:
+  columns:
+    - name: sample
+      required: true
+      type: string
+      description: "样本 ID，需与 FASTQ 文件名前缀一致（不含 _R1.fq.gz 等后缀）"
+      example: "S001_Tumor"
+      unique: true
+
+    - name: sample_name
+      required: true
+      type: string
+      description: "样本显示名称"
+      example: "S001"
+
+    - name: group
+      required: true
+      type: string
+      description: "分组信息（用于差异比较）"
+      example: "Tumor"
+
+  validation_rules:
+    - type: unique_combination
+      columns: ["sample"]
+      message: "sample 必须唯一"

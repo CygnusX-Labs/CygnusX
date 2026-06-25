@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import Depends, Request
+from fastapi import Request
 
 from omichub.api.deps import CurrentUserId
 

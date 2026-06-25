@@ -1,5 +1,6 @@
 """用户域实体 - 聚合根"""
 
+import uuid
 from datetime import datetime
 from uuid import UUID
 
@@ -11,7 +12,7 @@ from omichub.domain.user.value_objects import Role, UserStatus
 class Workspace(BaseModel):
     """工作空间 - 用户数据隔离边界"""
 
-    id: UUID
+    id: UUID = Field(default_factory=uuid.uuid4)
     owner_id: UUID
     name: str
     storage_quota: int = 1024 * 1024 * 1024 * 10  # 默认 10GB
@@ -21,13 +22,16 @@ class Workspace(BaseModel):
 class User(BaseModel):
     """用户聚合根"""
 
-    id: UUID
+    id: UUID = Field(default_factory=uuid.uuid4)
     username: str
     email: str
     hashed_password: str
     role: Role = Role.USER
     status: UserStatus = UserStatus.ACTIVE
     workspace_id: UUID | None = None
+    avatar_url: str | None = None
+    preferences: dict = Field(default_factory=dict)
+    last_login_at: datetime | None = None
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 

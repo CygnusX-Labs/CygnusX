@@ -1,0 +1,269 @@
+<script setup lang="ts">
+import type { Task, TaskLog } from '@/types'
+import apiClient from '@/api/client'
+import {
+  NAlert,
+  NBreadcrumb,
+  NBreadcrumbItem,
+  NButton,
+  NCard,
+  NDescriptions,
+  NDescriptionsItem,
+  NProgress,
+  NSpace,
+  NTabPane,
+  NTabs,
+  NTag,
+} from 'naive-ui'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
+const taskId = computed(() => route.params.taskId as string)
+
+const task = ref<Task | null>(null)
+const logs = ref<TaskLog[]>([])
+const loading = ref(false)
+const error = ref('')
+const socket = ref<WebSocket | null>(null)
+
+const dag = ref<{ status: string; format?: string; content?: string; error?: string } | null>(null)
+const dagLoading = ref(false)
+
+const statusType = computed(() => {
+  const map: Record<string, 'default' | 'success' | 'warning' | 'error'> = {
+    pending: 'default',
+    queued: 'warning',
+    running: 'warning',
+    success: 'success',
+    failed: 'error',
+    cancelled: 'default',
+  }
+  return map[task.value?.status || 'pending'] || 'default'
+})
+
+async function fetchTask() {
+  loading.value = true
+  error.value = ''
+  try {
+    const res = await apiClient.get<Task>(`/tasks/${taskId.value}`)
+    task.value = res.data
+    logs.value = res.data.logs || []
+  } catch (e: any) {
+    error.value = e.response?.data?.detail || '获取任务详情失败'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function fetchDag() {
+  dagLoading.value = true
+  try {
+    const res = await apiClient.get(`/tasks/${taskId.value}/dag`)
+    dag.value = res.data
+  } catch (e: any) {
+    dag.value = { status: 'failed', error: e.response?.data?.detail || '生成 DAG 失败' }
+  } finally {
+    dagLoading.value = false
+  }
+}
+
+function connectWebSocket() {
+  const token = localStorage.getItem('access_token')
+  if (!token) return
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const wsUrl = `${protocol}//${window.location.host}/api/v1/tasks/${taskId.value}/ws?token=${token}`
+
+  const ws = new WebSocket(wsUrl)
+  socket.value = ws
+
+  ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data) as TaskLog
+      logs.value.push(data)
+    } catch {
+      logs.value.push({
+        timestamp: new Date().toISOString(),
+        level: 'info',
+        message: event.data,
+        source: 'websocket',
+      })
+    }
+  }
+
+  ws.onerror = () => {
+    error.value = 'WebSocket 连接失败'
+  }
+
+  ws.onclose = () => {
+    socket.value = null
+  }
+}
+
+function disconnectWebSocket() {
+  if (socket.value) {
+    socket.value.close()
+    socket.value = null
+  }
+}
+
+onMounted(() => {
+  fetchTask()
+  connectWebSocket()
+})
+
+onUnmounted(() => {
+  disconnectWebSocket()
+})
+
+watch(taskId, () => {
+  disconnectWebSocket()
+  fetchTask()
+  connectWebSocket()
+})
+</script>
+
+<template>
+  <div class="task-detail">
+    <NBreadcrumb>
+      <NBreadcrumbItem>任务管理</NBreadcrumbItem>
+      <NBreadcrumbItem>任务详情</NBreadcrumbItem>
+    </NBreadcrumb>
+
+    <NAlert v-if="error" type="error" :title="error" />
+
+    <NCard v-if="task" title="任务概览" class="overview-card">
+      <NSpace vertical>
+        <NDescriptions :columns="3" bordered>
+          <NDescriptionsItem label="任务名称">{{ task.name }}</NDescriptionsItem>
+          <NDescriptionsItem label="流程">{{ task.flow_id }}</NDescriptionsItem>
+          <NDescriptionsItem label="状态">
+            <NTag :type="statusType">{{ task.status }}</NTag>
+          </NDescriptionsItem>
+          <NDescriptionsItem label="执行模式">{{ task.execution_mode }}</NDescriptionsItem>
+          <NDescriptionsItem label="工作目录">{{ task.work_dir }}</NDescriptionsItem>
+          <NDescriptionsItem label="创建时间">{{ task.created_at }}</NDescriptionsItem>
+        </NDescriptions>
+        <NProgress
+          :percentage="Math.round(task.progress * 100)"
+          :status="task.status === 'failed' ? 'error' : 'success'"
+        />
+      </NSpace>
+    </NCard>
+
+    <NTabs type="line" animated>
+      <NTabPane name="logs" tab="实时日志">
+        <NCard class="logs-card">
+          <div class="log-container">
+            <div
+              v-for="(log, index) in logs"
+              :key="index"
+              class="log-line"
+              :class="`level-${log.level}`"
+            >
+              <span class="log-time">{{ log.timestamp }}</span>
+              <span class="log-level">{{ log.level.toUpperCase() }}</span>
+              <span class="log-message">{{ log.message }}</span>
+            </div>
+            <div v-if="logs.length === 0" class="empty-logs">暂无日志</div>
+          </div>
+        </NCard>
+      </NTabPane>
+
+      <NTabPane name="dag" tab="DAG 可视化">
+        <NCard class="dag-card">
+          <NSpace vertical>
+            <NButton type="primary" :loading="dagLoading" @click="fetchDag">
+              生成 DAG
+            </NButton>
+            <NAlert v-if="dag?.status === 'failed'" type="error" :title="dag.error || '生成失败'" />
+            <div v-else-if="dag?.format === 'svg'" class="dag-svg" v-html="dag.content" />
+            <pre v-else-if="dag?.format === 'dot'" class="dag-dot">{{ dag.content }}</pre>
+            <div v-else-if="dag === null" class="empty-dag">点击上方按钮生成 DAG</div>
+          </NSpace>
+        </NCard>
+      </NTabPane>
+    </NTabs>
+  </div>
+</template>
+
+<style scoped>
+.task-detail {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.overview-card,
+.logs-card {
+  margin-top: 16px;
+}
+.log-container {
+  max-height: 600px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 13px;
+  background-color: #1e1e1e;
+  color: #d4d4d4;
+  padding: 12px;
+  border-radius: 4px;
+}
+.log-line {
+  display: flex;
+  gap: 12px;
+  padding: 2px 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.log-time {
+  color: #858585;
+  min-width: 180px;
+}
+.log-level {
+  min-width: 60px;
+  font-weight: bold;
+}
+.level-error .log-level {
+  color: #f14c4c;
+}
+.level-warning .log-level {
+  color: #f5a623;
+}
+.level-info .log-level {
+  color: #4ec9b0;
+}
+.level-debug .log-level {
+  color: #9cdcfe;
+}
+.empty-logs {
+  color: #858585;
+  text-align: center;
+  padding: 24px;
+}
+.dag-card {
+  min-height: 400px;
+}
+.dag-svg {
+  overflow-x: auto;
+}
+.dag-svg svg {
+  max-width: 100%;
+  height: auto;
+}
+.dag-dot {
+  background-color: #1e1e1e;
+  color: #d4d4d4;
+  padding: 12px;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-family: monospace;
+  font-size: 13px;
+  white-space: pre;
+}
+.empty-dag {
+  color: #858585;
+  text-align: center;
+  padding: 48px;
+}
+</style>

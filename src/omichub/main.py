@@ -1,16 +1,17 @@
 """FastAPI 应用入口"""
 
-from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
+from omichub.api.v1.router import api_router
 from omichub.core.config import get_settings
 from omichub.core.exceptions import OmicHubError
 from omichub.core.logging import setup_logging
-from omichub.api.v1.router import api_router
+from omichub.middleware.auth import AuthMiddleware
 
 
 @asynccontextmanager
@@ -62,6 +63,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # JWT 认证中间件（全局拦截，公开路径在 PUBLIC_PATHS 中配置）
+    app.add_middleware(AuthMiddleware)
+
     # 全局异常处理
     @app.exception_handler(OmicHubError)
     async def omichub_error_handler(request: Request, exc: OmicHubError) -> JSONResponse:
@@ -72,6 +76,17 @@ def create_app() -> FastAPI:
 
     # 注册路由
     app.include_router(api_router, prefix="/api/v1")
+
+    # 开发模式下提供顶层重定向，便于直接访问 uvicorn 时不因缺少 /api/v1 前缀而 404
+    if settings.app_debug:
+
+        @app.get("/flows", include_in_schema=False)
+        async def _redirect_flows_root(request: Request) -> RedirectResponse:
+            return RedirectResponse(url=f"/api/v1/flows{request.query_params}")
+
+        @app.get("/flows/{path:path}", include_in_schema=False)
+        async def _redirect_flows_path(request: Request, path: str) -> RedirectResponse:
+            return RedirectResponse(url=f"/api/v1/flows/{path}{request.query_params}")
 
     # 健康检查
     @app.get("/health", tags=["system"])

@@ -1,11 +1,9 @@
 """AI 域服务 - 上下文管理、工具编排"""
 
-from typing import Any
 from uuid import UUID
 
-from omichub.domain.ai.entities import Conversation, Message
+from omichub.domain.ai.entities import Conversation
 from omichub.domain.ai.repositories import IConversationRepository
-from omichub.domain.ai.value_objects import RoleType
 
 
 class AIDomainService:
