@@ -1,11 +1,31 @@
 # OmicHub 开发进度 Todo
 
 > 基于 `docs/` 架构设计文档，逐步完善项目骨架。
-> 更新日期：2026-06-25 (Cookie 系统收尾)
+> 更新日期：2026-06-26 (前端体验修复)
 
 ---
 
 ## 已完成
+
+### 本次前端体验修复 ✅ 2026-06-26
+- [x] **AI 聊天框可用性修复**
+  - [x] 修复 `useAIWebSocket.ts` 发送时序 bug：连接未 `OPEN` 时消息入队，连接成功后按序发送
+  - [x] `AIChat.vue` 增加连接错误提示，未配置 AI Provider 时显示具体原因
+  - [x] 前端 type-check / build 通过
+- [x] **管理员菜单图标区分与折叠**
+  - [x] `DefaultLayout.vue` 中“系统管理”改为可折叠分组，默认收起
+  - [x] 用户管理 `PersonOutline`、饼干账户管理 `WalletOutline`、饼干定价管理 `PricetagOutline`、AI 模型配置 `SparklesOutline`
+  - [x] 移动端抽屉同步展示管理入口，修复 `<renderUserAvatar />` 引用错误
+- [x] **通知提醒系统闭环**
+  - [x] 后端新增 `NotificationModel` + Repository + Service + API（列表/发布/已读/删除）
+  - [x] 注册路由 `/api/v1/notifications` 与 `/api/v1/admin/notifications`
+  - [x] Alembic 迁移脚本 `c72c373d1ee2_add_notification_table.py`
+  - [x] 前端新增 `NotificationDrawer.vue` + `stores/notification.ts` + TS 类型
+  - [x] `DefaultLayout.vue` 顶部通知图标显示未读数，点击打开抽屉
+  - [x] 管理员可在抽屉内发布通知（标题/内容/级别/全员或指定用户/过期时间）
+  - [x] 后端 `make test` 通过、前端 `npm run build` 通过
+
+### 历史已完成
 
 ### 1. 项目骨架搭建
 - [x] Python 项目结构 (src layout + uv + pyproject.toml)
@@ -187,28 +207,33 @@
 
 ### 优先级 P2 — AI Copilot 与沙盒
 
-- [ ] **AI 对话 WebSocket** (docs/modules/09_sandbox_architecture.md)
-  - [ ] ai.py WebSocket 端点完整实现 (非 echo)
-  - [ ] ConversationRepositoryImpl
-  - [ ] AIService 编排对话 + 上下文管理
-  - [ ] KimiProvider 流式响应接入
-  - [ ] 前端 AIChat 组件 (Markdown 渲染 + 流式打字机)
-  - [ ] Tool Use 协议 (submit_task/query_status/list_samples)
+- [x] **AI 对话 WebSocket** (docs/modules/09_sandbox_architecture.md) ✅ 2026-06-26 后端+前端实现完成
+  - [x] ai.py WebSocket 端点完整实现 (非 echo)
+  - [x] ConversationRepositoryImpl
+  - [x] AIService 编排对话 + 上下文管理
+  - [x] KimiProvider 流式响应接入
+  - [x] 前端 AIChat 组件 (Markdown 渲染 + 流式打字机) — 已修复 `NScroll` → `NScrollbar` 类型错误，type-check/build 通过
+  - [x] Tool Use 协议 (submit_task/query_status/list_samples)
 
 - [ ] **代码执行沙盒** (docs/modules/08_tech_selection.md)
-  - [ ] Docker 预热容器池管理器
-  - [ ] 沙盒镜像 Dockerfile (Bioconda + scanpy/seurat)
-  - [ ] WebSocket 代码执行协议
-  - [ ] 前端 CodeMirror 6 编辑器组件
-  - [ ] ECharts GL 图表渲染 (UMAP/热图)
-  - [ ] 会话亲和性 + 30min 超时回收
+  - [x] Docker 预热容器池管理器
+  - [ ] 沙盒镜像 Dockerfile (Bioconda + scanpy/seurat) — 当前 `deploy/sandbox/Dockerfile` 用 pip 安装 scanpy，R+Seurat 被注释
+  - [x] WebSocket 代码执行协议
+  - [ ] 前端 CodeMirror 6 编辑器组件 — 依赖已安装但无页面/组件使用
+  - [ ] ECharts GL 图表渲染 (UMAP/热图) — 依赖已安装但沙盒页面未实现
+  - [x] 会话亲和性 + 30min 超时回收
 
-- [ ] **MCP 集成** (docs/modules/11_integration_fusion.md)
-  - [ ] MCPServerRepositoryImpl
-  - [ ] MCP Client (Python MCP SDK) 生命周期管理
-  - [ ] 四大预设 MCP 服务 (文献/基因组/代码/知识库)
-  - [ ] 工具发现 + 调用路由 + 错误隔离
-  - [ ] `/api/v1/mcp/servers` CRUD 端点
+- [x] **MCP 集成** (docs/modules/11_integration_fusion.md) ✅ 2026-06-26 后端实现完成
+  - [x] MCPServerRepositoryImpl
+  - [x] MCP Client (Python MCP SDK) 生命周期管理
+  - [x] 四大预设 MCP 服务 (文献/基因组/代码/知识库)
+  - [x] 工具发现 + 调用路由 + 错误隔离
+  - [x] `/api/v1/mcp/servers` CRUD 端点
+
+> ⚠️ P2 后续待补齐：
+> 1. 补 alembic 迁移：`ai_conversations` / `ai_messages` / `mcp_servers` / `sandbox_sessions` 四张表未在现有迁移中。
+> 2. 沙盒前端页面：`SandboxView.vue` + 路由 `/sandbox` + CodeMirror 6 + ECharts GL UMAP/热图渲染。
+> 3. 沙盒镜像 Dockerfile 按文档要求改为 Bioconda 并启用 R+Seurat。
 
 ### 优先级 P3 — 生产化
 

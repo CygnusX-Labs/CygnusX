@@ -13,7 +13,12 @@ from omichub.infrastructure.database.base import Base
 
 # 导入所有模型以注册到 metadata（autogenerate 依赖）
 from omichub.infrastructure.database.models import (  # noqa: F401
+    ai,
+    ai_provider,
     cookie,
+    mcp,
+    notification,
+    sandbox,
     task,
     user,
 )

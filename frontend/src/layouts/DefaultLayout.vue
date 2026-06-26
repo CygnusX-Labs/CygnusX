@@ -10,19 +10,24 @@ import {
   DocumentTextOutline, CloudUploadOutline, BarChartOutline, SettingsOutline,
   InformationCircleOutline, PersonOutline, LogOutOutline, MoonOutline, SunnyOutline,
   MenuOutline, ChevronForwardOutline, ChevronBackOutline, ChevronDownOutline,
-  NotificationsOutline, HelpCircleOutline, ChatbubblesOutline, Planet,
+  NotificationsOutline, HelpCircleOutline, ChatbubblesOutline, Planet, CodeSlashOutline,
+  WalletOutline, PricetagOutline, SparklesOutline,
 } from '@vicons/ionicons5'
 import CookieBalanceBadge from '@/components/CookieBalanceBadge.vue'
+import NotificationDrawer from '@/components/NotificationDrawer.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useNotificationStore } from '@/stores/notification'
 import type { User } from '@/types'
 
 const authStore = useAuthStore()
+const notificationStore = useNotificationStore()
 const route = useRoute()
 const router = useRouter()
 const currentUser = ref<User | null>(null)
 
 const collapsed = ref(false)
 const mobileDrawerOpen = ref(false)
+const notificationDrawerOpen = ref(false)
 const expandedKeys = ref<string[]>(['analysis-center'])
 
 const isAdmin = computed(() => authStore.user?.role === 'admin')
@@ -49,6 +54,7 @@ onMounted(() => {
   if (authStore.isLoggedIn) {
     authStore.fetchUser().then(() => {
       currentUser.value = authStore.user
+      notificationStore.fetchNotifications()
     })
   }
 })
@@ -90,6 +96,7 @@ const mainNavItems = computed<NavItem[]>(() => [
   { key: 'files', label: '数据管理', to: '/files', icon: CloudUploadOutline },
   { key: 'tasks', label: '任务中心', to: '/tasks', icon: DocumentTextOutline },
   { key: 'ai', label: 'AI 助手', to: '/ai', icon: ChatbubblesOutline },
+  { key: 'sandbox', label: '代码沙盒', to: '/sandbox', icon: CodeSlashOutline },
 ])
 
 const systemNavItems = computed<NavItem[]>(() => [
@@ -99,9 +106,18 @@ const systemNavItems = computed<NavItem[]>(() => [
 ])
 
 const adminNavItems = computed<NavItem[]>(() => [
-  { key: 'admin-users', label: '用户管理', to: '/admin/users', icon: PersonOutline },
-  { key: 'admin-cookies-accounts', label: '饼干账户管理', to: '/admin/cookies/accounts', icon: PersonOutline },
-  { key: 'admin-cookies-pricing', label: '饼干定价管理', to: '/admin/cookies/pricing', icon: SettingsOutline },
+  {
+    key: 'admin-center',
+    label: '系统管理',
+    to: '/admin/users',
+    icon: SettingsOutline,
+    children: [
+      { key: 'admin-users', label: '用户管理', to: '/admin/users', icon: PersonOutline },
+      { key: 'admin-cookies-accounts', label: '饼干账户管理', to: '/admin/cookies/accounts', icon: WalletOutline },
+      { key: 'admin-cookies-pricing', label: '饼干定价管理', to: '/admin/cookies/pricing', icon: PricetagOutline },
+      { key: 'admin-ai-providers', label: 'AI 模型配置', to: '/admin/ai-providers', icon: SparklesOutline },
+    ],
+  },
 ])
 
 function isActive(item: NavItem): boolean {
@@ -213,8 +229,8 @@ const UserAvatar = () => {
         <CookieBalanceBadge />
         <NTooltip placement="bottom" :delay="300">
           <template #trigger>
-            <NButton text class="top-icon-btn">
-              <NBadge dot processing>
+            <NButton text class="top-icon-btn" @click="notificationDrawerOpen = true">
+              <NBadge :value="notificationStore.unreadCount" :max="99" :show="notificationStore.unreadCount > 0">
                 <NIcon :size="20">
                   <NotificationsOutline />
                 </NIcon>
@@ -350,28 +366,58 @@ const UserAvatar = () => {
                 <div
                   v-for="item in adminNavItems"
                   :key="item.key"
-                  class="nav-item"
-                  :class="{
-                    'nav-item--active': isActive(item),
-                    'nav-item--collapsed': collapsed,
-                  }"
-                  @click="handleNavClick(item)"
+                  class="nav-group-item"
                 >
-                  <NTooltip v-if="collapsed" placement="right" :delay="300">
-                    <template #trigger>
-                      <div class="nav-item-inner">
-                        <NIcon :size="18" class="nav-icon">
-                          <component :is="item.icon" />
-                        </NIcon>
-                      </div>
-                    </template>
-                    {{ item.label }}
-                  </NTooltip>
-                  <div v-else class="nav-item-inner">
-                    <NIcon :size="18" class="nav-icon">
-                      <component :is="item.icon" />
-                    </NIcon>
-                    <span class="nav-label">{{ item.label }}</span>
+                  <div
+                    class="nav-item"
+                    :class="{
+                      'nav-item--active': isActive(item),
+                      'nav-item--collapsed': collapsed,
+                    }"
+                    @click="handleNavClick(item)"
+                  >
+                    <NTooltip v-if="collapsed && !item.children" placement="right" :delay="300">
+                      <template #trigger>
+                        <div class="nav-item-inner">
+                          <NIcon :size="18" class="nav-icon">
+                            <component :is="item.icon" />
+                          </NIcon>
+                        </div>
+                      </template>
+                      {{ item.label }}
+                    </NTooltip>
+                    <div v-else class="nav-item-inner">
+                      <NIcon :size="18" class="nav-icon">
+                        <component :is="item.icon" />
+                      </NIcon>
+                      <span v-show="!collapsed" class="nav-label">{{ item.label }}</span>
+                      <NIcon
+                        v-if="item.children && !collapsed"
+                        :size="14"
+                        class="nav-chevron"
+                        :class="{ 'nav-chevron--expanded': isExpanded(item.key) }"
+                      >
+                        <ChevronForwardOutline />
+                      </NIcon>
+                    </div>
+                  </div>
+                  <!-- 子菜单 -->
+                  <div
+                    v-if="item.children && !collapsed && isExpanded(item.key)"
+                    class="sub-nav"
+                  >
+                    <RouterLink
+                      v-for="child in item.children"
+                      :key="child.key"
+                      :to="child.to"
+                      class="sub-nav-item"
+                      :class="{ 'sub-nav-item--active': route.name === child.key }"
+                    >
+                      <NIcon :size="16" class="sub-nav-icon">
+                        <component :is="child.icon" />
+                      </NIcon>
+                      <span>{{ child.label }}</span>
+                    </RouterLink>
                   </div>
                 </div>
               </nav>
@@ -455,8 +501,26 @@ const UserAvatar = () => {
                 <span>{{ item.label }}</span>
               </RouterLink>
             </nav>
+            <template v-if="isAdmin">
+              <div class="nav-divider" />
+              <nav class="mobile-nav-group">
+                <RouterLink
+                  v-for="item in adminNavItems.flatMap((i) => i.children || [i])"
+                  :key="item.key"
+                  :to="item.to"
+                  class="mobile-nav-item"
+                  :class="{ 'mobile-nav-item--active': isActive(item) }"
+                  @click="mobileDrawerOpen = false"
+                >
+                  <NIcon :size="18">
+                    <component :is="item.icon" />
+                  </NIcon>
+                  <span>{{ item.label }}</span>
+                </RouterLink>
+              </nav>
+            </template>
             <div class="mobile-user-card" @click="handleLogout">
-              <renderUserAvatar />
+              <UserAvatar />
               <div class="user-info">
                 <p class="user-name">{{ currentUser?.username || '未登录' }}</p>
                 <p class="user-role">{{ isAdmin ? '管理员' : '普通用户' }}</p>
@@ -480,6 +544,8 @@ const UserAvatar = () => {
         </NLayoutContent>
       </NLayout>
     </div>
+
+    <NotificationDrawer v-model:show="notificationDrawerOpen" />
   </div>
 </template>
 

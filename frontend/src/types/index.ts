@@ -76,6 +76,101 @@ export interface ChatMessage {
   timestamp: string
 }
 
+// ===== AI Copilot =====
+export interface Conversation {
+  id: string
+  user_id: string
+  title: string
+  model: string
+  message_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface AIMessage {
+  id: string
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content: string
+  tool_calls?: Array<Record<string, unknown>>
+  tool_call_id?: string | null
+  timestamp: string
+}
+
+export interface ConversationDetail extends Conversation {
+  messages: AIMessage[]
+}
+
+// AI WebSocket 事件
+export type AIEvent =
+  | { type: 'user_message'; message: AIMessage }
+  | { type: 'token'; content: string }
+  | { type: 'assistant_message'; message: AIMessage }
+  | { type: 'tool_call'; tool: string; arguments: Record<string, unknown> }
+  | { type: 'tool_result'; tool: string; result: Record<string, unknown> }
+  | { type: 'done' }
+  | { type: 'error'; detail: string }
+  | { type: 'pong' }
+
+// ===== 代码执行沙盒 =====
+export interface SandboxSession {
+  id: string
+  user_id: string
+  container_id: string | null
+  status: 'creating' | 'ready' | 'executing' | 'idle' | 'paused' | 'error' | 'destroyed'
+  language: string
+  last_activity: string
+  created_at: string
+  expires_at: string | null
+}
+
+export type SandboxEvent =
+  | { type: 'stdout'; data: string }
+  | { type: 'stderr'; data: string }
+  | { type: 'echarts'; option: Record<string, unknown> }
+  | { type: 'image'; data: string }
+  | { type: 'done'; exit_code: number; duration_ms: number }
+  | { type: 'error'; detail: string }
+
+// ===== MCP =====
+export interface MCPServer {
+  id: string
+  name: string
+  description: string
+  transport: 'stdio' | 'sse' | 'builtin'
+  command: string
+  url: string
+  status: 'online' | 'offline' | 'error' | 'starting'
+  timeout: number
+  auto_restart: boolean
+  is_preset: boolean
+  tool_count: number
+  created_at: string | null
+}
+
+export interface MCPTool {
+  name: string
+  description: string
+  input_schema: Record<string, unknown>
+}
+
+// ===== AI Provider 配置 =====
+export interface AIProviderConfig {
+  id: string
+  name: string
+  provider_type: string
+  model: string
+  base_url: string
+  temperature: number
+  max_tokens: number
+  top_p: number
+  timeout: number
+  is_active: boolean
+  is_default: boolean
+  extra_params: Record<string, unknown>
+  created_at: string | null
+  updated_at: string | null
+}
+
 // ===== 饼干积分系统 =====
 export interface CookieAccount {
   id: number | null
@@ -132,4 +227,21 @@ export interface CookieStats {
   total_frozen: number
   total_earned: number
   total_spent: number
+}
+
+// ===== 通知提醒 =====
+export type NotificationLevel = 'info' | 'warning' | 'error'
+
+export interface Notification {
+  id: string
+  title: string
+  content: string
+  level: NotificationLevel
+  created_by: string
+  is_global: boolean
+  target_user_id: string | null
+  read_by: string[]
+  expires_at: string | null
+  created_at: string
+  updated_at: string
 }
