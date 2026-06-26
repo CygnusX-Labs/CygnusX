@@ -118,7 +118,7 @@ class ConditionalValidator:
 
     @staticmethod
     def get_visible_params(
-        parameters: list["Parameter"],
+        parameters: list[Parameter],
         form_values: dict[str, Any],
     ) -> list[str]:
         """获取当前条件下所有可见参数的名称列表。
@@ -127,7 +127,7 @@ class ConditionalValidator:
         """
         visible: list[str] = []
 
-        def check(param: "Parameter", prefix: str = "") -> None:
+        def check(param: Parameter, prefix: str = "") -> None:
             full_name = f"{prefix}{param.name}"
 
             # 检查条件
@@ -157,7 +157,7 @@ class ConditionalValidator:
 
     @staticmethod
     def validate_required(
-        parameters: list["Parameter"],
+        parameters: list[Parameter],
         form_values: dict[str, Any],
     ) -> list[dict[str, str]]:
         """校验可见的必填参数是否已填写。
@@ -170,7 +170,7 @@ class ConditionalValidator:
             ConditionalValidator.get_visible_params(parameters, form_values)
         )
 
-        def check(param: "Parameter", prefix: str = "") -> None:
+        def check(param: Parameter, prefix: str = "") -> None:
             full_name = f"{prefix}{param.name}"
 
             # 跳过不可见参数

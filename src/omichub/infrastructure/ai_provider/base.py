@@ -12,19 +12,18 @@ class LLMProvider(Protocol):
         messages: list[dict[str, str]],
         model: str = "",
         temperature: float = 0.7,
-        tools: list[dict] | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """同步对话"""
+        """非流式对话；传入 tools 时返回可能包含 tool_calls"""
         ...
 
-    async def stream_chat(
+    def stream_chat(
         self,
         messages: list[dict[str, str]],
         model: str = "",
         temperature: float = 0.7,
-        tools: list[dict] | None = None,
     ) -> AsyncIterator[str]:
-        """流式对话 - 逐 token 返回"""
+        """流式对话 - 逐 token 返回（async generator，调用无需 await）"""
         ...
 
     async def embeddings(

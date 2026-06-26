@@ -14,6 +14,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from omichub.domain.flow.value_objects import (
+    ConditionOperatorEnum,
     ExecutionConfig,
     FileConfig,
     FlowMeta,
@@ -24,9 +25,6 @@ from omichub.domain.flow.value_objects import (
     SectionConfig,
     SelectConfig,
     StringConfig,
-)
-from omichub.domain.flow.value_objects import (
-    ConditionOperatorEnum,
 )
 
 # ============================================================
@@ -50,15 +48,15 @@ class ConditionRule(BaseModel):
     )
     value: Any = Field(default=None, description="比较值")
 
-    and_rules: list["ConditionRule"] | None = Field(
+    and_rules: list[ConditionRule] | None = Field(
         default=None, description="AND 复合条件"
     )
-    or_rules: list["ConditionRule"] | None = Field(
+    or_rules: list[ConditionRule] | None = Field(
         default=None, description="OR 复合条件"
     )
 
     @model_validator(mode="after")
-    def validate_condition_structure(self) -> "ConditionRule":
+    def validate_condition_structure(self) -> ConditionRule:
         """校验条件结构合法性"""
         has_simple = self.field is not None and self.operator is not None
         has_and = self.and_rules is not None
@@ -114,7 +112,7 @@ class Parameter(BaseModel):
     section_config: SectionConfig | None = None
 
     @model_validator(mode="after")
-    def validate_type_specific_config(self) -> "Parameter":
+    def validate_type_specific_config(self) -> Parameter:
         """校验类型专属配置的一致性"""
         config_map: dict[ParameterTypeEnum, str | None] = {
             ParameterTypeEnum.STRING: "string_config",
@@ -229,7 +227,7 @@ class FlowConfig(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def validate_condition_references(self) -> "FlowConfig":
+    def validate_condition_references(self) -> FlowConfig:
         """校验 condition 中引用的 field 存在于已定义的参数中"""
         all_fields: set[str] = set()
 

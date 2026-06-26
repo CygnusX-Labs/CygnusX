@@ -1,6 +1,6 @@
 """AI 域仓储接口"""
 
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 from omichub.domain.ai.entities import Conversation
@@ -17,4 +17,4 @@ class IConversationRepository(Protocol):
 
     async def delete(self, conversation_id: UUID) -> bool: ...
 
-    async def append_message(self, conversation_id: UUID, message: dict) -> None: ...
+    async def append_message(self, conversation_id: UUID, message: dict[str, Any]) -> None: ...

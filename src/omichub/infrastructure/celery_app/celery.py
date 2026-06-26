@@ -14,6 +14,7 @@ celery_app = Celery(
     include=[
         "omichub.infrastructure.celery_app.tasks.analysis",
         "omichub.infrastructure.celery_app.tasks.cookie",
+        "omichub.infrastructure.celery_app.tasks.sandbox",
     ],
 )
 
@@ -38,6 +39,9 @@ celery_app.conf.task_routes = {
     "omichub.infrastructure.celery_app.tasks.cookie.*": {
         "queue": "analysis"
     },
+    "omichub.infrastructure.celery_app.tasks.sandbox.*": {
+        "queue": "analysis"
+    },
 }
 
 # 定时任务
@@ -51,5 +55,10 @@ celery_app.conf.beat_schedule = {
     "cookie-daily-reconcile": {
         "task": "omichub.infrastructure.celery_app.tasks.cookie.daily_reconcile",
         "schedule": crontab(hour=2, minute=30),
+    },
+    # 每 5 分钟回收超时沙盒会话
+    "sandbox-recycle-expired": {
+        "task": "omichub.infrastructure.celery_app.tasks.sandbox.recycle_expired",
+        "schedule": crontab(minute="*/5"),
     },
 }

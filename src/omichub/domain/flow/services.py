@@ -13,7 +13,6 @@ from pydantic import ValidationError
 
 from omichub.core.exceptions import YAMLConfigError
 from omichub.domain.flow.entities import ConditionRule, FlowConfig, Parameter
-from omichub.domain.flow.value_objects import ParameterTypeEnum
 
 
 class FlowDomainService:

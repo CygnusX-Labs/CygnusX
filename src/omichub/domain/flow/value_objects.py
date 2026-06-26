@@ -126,7 +126,7 @@ class GroupConfig(_StrictModel):
     max_items: int | None = Field(default=None, ge=1, description="最多组数")
     item_label: str = Field(default="条目", description="单组显示标签")
     add_button_text: str = Field(default="+ 添加", description="添加按钮文案")
-    parameters: list["Parameter"] = Field(  # type: ignore[name-defined]
+    parameters: list[Parameter] = Field(  # type: ignore[name-defined]
         default=[], description="组内参数定义（递归）"
     )
 
@@ -140,7 +140,7 @@ class SectionConfig(_StrictModel):
     title: str = Field(default="高级设置", description="折叠区域标题")
     default_expanded: bool = Field(default=False, description="默认展开")
     description: str = Field(default="", description="区域说明")
-    parameters: list["Parameter"] = Field(  # type: ignore[name-defined]
+    parameters: list[Parameter] = Field(  # type: ignore[name-defined]
         default=[], description="区域内参数定义（递归）"
     )
 

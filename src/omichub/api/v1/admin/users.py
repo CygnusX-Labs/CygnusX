@@ -5,7 +5,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import desc, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.api.deps import CurrentUserId, DbSession
 from omichub.core.exceptions import AuthorizationError, NotFoundError

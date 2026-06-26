@@ -9,11 +9,12 @@ from __future__ import annotations
 from pathlib import Path
 from threading import RLock
 
+from loguru import logger
+
 from omichub.core.config import get_settings
 from omichub.core.exceptions import YAMLConfigError
 from omichub.domain.flow.entities import FlowConfig
 from omichub.domain.flow.services import FlowDomainService
-from loguru import logger
 
 
 class FileSystemFlowRepository:

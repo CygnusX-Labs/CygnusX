@@ -19,3 +19,11 @@ class ToolCallStatus(str, Enum):
     EXECUTING = "executing"
     SUCCESS = "success"
     FAILED = "failed"
+
+
+class ToolName(str, Enum):
+    """AI Copilot 内置工具（Tool Use 协议）"""
+
+    SUBMIT_TASK = "submit_task"
+    QUERY_STATUS = "query_status"
+    LIST_SAMPLES = "list_samples"

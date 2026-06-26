@@ -9,7 +9,6 @@ import yaml
 
 from omichub.core.exceptions import NotFoundError
 
-
 DOCS_ROOT = Path("docs")
 
 

@@ -6,7 +6,6 @@ from typing import Any
 
 from omichub.application.schemas.flow import (
     FlowDetailDTO,
-    FlowListItemDTO,
     FlowListResponse,
     FlowReloadResponse,
     export_flow_json_schema,

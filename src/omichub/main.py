@@ -15,6 +15,47 @@ from omichub.middleware.auth import AuthMiddleware
 from omichub.middleware.cookie import CookieRequiredMiddleware
 
 
+async def _init_default_ai_provider() -> None:
+    """若数据库中无 AI Provider 配置，则从环境变量创建默认配置"""
+    from omichub.core.config import get_settings
+    from omichub.domain.ai_provider.entities import AIProviderConfig
+    from omichub.domain.ai_provider.value_objects import ProviderType
+    from omichub.infrastructure.database.repositories.ai_provider_repository import (
+        SqlAlchemyAIProviderConfigRepository,
+    )
+    from omichub.infrastructure.database.session import get_session_factory
+
+    settings = get_settings()
+    factory = get_session_factory()
+    if factory is None:
+        return
+
+    async with factory() as session:
+        repo = SqlAlchemyAIProviderConfigRepository(session)
+        count = await repo.count()
+        if count > 0:
+            return
+
+        provider_type = ProviderType.KIMI if settings.llm_provider == "kimi" else ProviderType.OPENAI
+        model = settings.kimi_model if settings.llm_provider == "kimi" else settings.openai_model
+        base_url = settings.kimi_base_url if settings.llm_provider == "kimi" else settings.openai_base_url
+        api_key = settings.kimi_api_key if settings.llm_provider == "kimi" else settings.openai_api_key
+
+        if not api_key:
+            return
+
+        config = AIProviderConfig.create(
+            name="默认 Kimi 配置" if settings.llm_provider == "kimi" else "默认 OpenAI 配置",
+            provider_type=provider_type,
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+            temperature=settings.ai_temperature,
+        )
+        config.is_default = True
+        await repo.save(config)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """应用生命周期：启动与关闭"""
@@ -32,6 +73,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("数据库连接已就绪")
     except Exception as e:
         logger.warning(f"数据库未就绪，降级运行: {e}")
+
+    # 沙盒容器池预热（Docker 不可用时跳过）
+    try:
+        from omichub.infrastructure.sandbox import get_sandbox_pool
+
+        await get_sandbox_pool().initialize()
+    except Exception as e:
+        logger.warning(f"沙盒容器池未预热，降级运行: {e}")
+
+    # 初始化默认 AI Provider（从环境变量兜底配置迁移）
+    try:
+        await _init_default_ai_provider()
+        logger.info("AI Provider 初始化完成")
+    except Exception as e:
+        logger.warning(f"AI Provider 初始化失败，降级运行: {e}")
 
     yield
 

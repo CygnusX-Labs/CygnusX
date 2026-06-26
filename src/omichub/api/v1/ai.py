@@ -1,27 +1,139 @@
-"""AI 对话路由 - WebSocket 全双工通信"""
+"""AI 对话路由 - WebSocket 全双工流式通信 + 对话 CRUD"""
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+import json
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+
+from omichub.api.deps import CurrentUserId, DbSession
+from omichub.application.schemas.ai import (
+    ConversationDetailDTO,
+    ConversationDTO,
+    CreateConversationDTO,
+)
+from omichub.application.services.ai_service import AIService
+from omichub.core.security import decode_token
+from omichub.infrastructure.database.session import get_session_factory
 
 router = APIRouter()
 
 
-@router.get("/conversations")
-async def list_conversations():
-    """获取对话列表"""
-    return {"message": "list conversations"}
+def get_ai_service(db: DbSession) -> AIService:
+    return AIService(db)
 
 
-@router.websocket("/ws")
-async def ai_websocket(websocket: WebSocket):
+AIServiceDep = Annotated[AIService, Depends(get_ai_service)]
+
+
+@router.get("/conversations", response_model=list[ConversationDTO], summary="对话列表")
+async def list_conversations(
+    current_user_id: CurrentUserId, service: AIServiceDep
+) -> list[ConversationDTO]:
+    return await service.list_conversations(UUID(current_user_id))
+
+
+@router.post(
+    "/conversations",
+    response_model=ConversationDTO,
+    status_code=201,
+    summary="创建对话",
+)
+async def create_conversation(
+    current_user_id: CurrentUserId,
+    service: AIServiceDep,
+    req: CreateConversationDTO,
+) -> ConversationDTO:
+    return await service.create_conversation(UUID(current_user_id), req)
+
+
+@router.get(
+    "/conversations/{conversation_id}",
+    response_model=ConversationDetailDTO,
+    summary="对话详情（含消息）",
+)
+async def get_conversation(
+    current_user_id: CurrentUserId,
+    service: AIServiceDep,
+    conversation_id: UUID,
+) -> ConversationDetailDTO:
+    return await service.get_conversation(UUID(current_user_id), conversation_id)
+
+
+@router.delete("/conversations/{conversation_id}", summary="删除对话")
+async def delete_conversation(
+    current_user_id: CurrentUserId,
+    service: AIServiceDep,
+    conversation_id: UUID,
+) -> dict[str, bool]:
+    ok = await service.delete_conversation(UUID(current_user_id), conversation_id)
+    return {"deleted": ok}
+
+
+@router.websocket("/ws", name="ai_chat_websocket")
+async def ai_websocket(websocket: WebSocket) -> None:
     """AI 对话 WebSocket 端点
 
-    支持流式 AI 响应、Tool Use 调用、MCP 工具集成。
+    连接：wss://host/api/v1/ai/ws?token=<JWT>
+    客户端发送 JSON：{"type":"chat","conversation_id":"<uuid>","content":"你好"}
+    服务端流式返回事件：token / user_message / assistant_message / tool_call / tool_result / done / error
     """
+    token = websocket.query_params.get("token")
+    payload = decode_token(token) if token else None
+    if payload is None or payload.get("type") != "access":
+        await websocket.close(code=1008, reason="Invalid token")
+        return
+
+    user_id_str = payload.get("sub")
+    if user_id_str is None:
+        await websocket.close(code=1008, reason="Invalid token")
+        return
+
+    user_id = UUID(str(user_id_str))
     await websocket.accept()
+
     try:
         while True:
-            data = await websocket.receive_text()
-            # TODO: 实现完整的 AI 对话逻辑
-            await websocket.send_text(f"Echo: {data}")
+            raw = await websocket.receive_text()
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                await websocket.send_text(json.dumps({"type": "error", "detail": "非 JSON 消息"}))
+                continue
+
+            msg_type = data.get("type")
+            if msg_type == "ping":
+                await websocket.send_text(json.dumps({"type": "pong"}))
+                continue
+
+            if msg_type != "chat":
+                await websocket.send_text(
+                    json.dumps({"type": "error", "detail": f"未知消息类型: {msg_type}"})
+                )
+                continue
+
+            conv_id_raw = data.get("conversation_id", "")
+            content = data.get("content", "")
+            try:
+                conversation_id = UUID(str(conv_id_raw))
+            except ValueError:
+                await websocket.send_text(
+                    json.dumps({"type": "error", "detail": "无效的 conversation_id"})
+                )
+                continue
+
+            # 每次对话使用独立 DB 会话
+            factory = get_session_factory()
+            async with factory() as session:
+                try:
+                    service = AIService(session)
+                    async for event in service.stream_chat(user_id, conversation_id, content):
+                        await websocket.send_text(json.dumps(event, default=str))
+                    await session.commit()
+                except Exception as e:  # noqa: BLE001
+                    await session.rollback()
+                    await websocket.send_text(
+                        json.dumps({"type": "error", "detail": f"内部错误：{e}"})
+                    )
     except WebSocketDisconnect:
         pass

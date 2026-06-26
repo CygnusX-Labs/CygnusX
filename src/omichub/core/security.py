@@ -1,12 +1,47 @@
-"""安全模块 - JWT 签发/验证、密码哈希"""
+"""安全模块 - JWT 签发/验证、密码哈希、对称加密"""
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import bcrypt
+from cryptography.fernet import Fernet
 from jose import JWTError, jwt
 
 from omichub.core.config import get_settings
+
+
+def _get_fernet() -> Fernet | None:
+    """根据配置返回 Fernet 实例；未配置加密密钥时返回 None"""
+    key = get_settings().ai_provider_key_encryption_key
+    if not key:
+        return None
+    try:
+        return Fernet(key.encode("utf-8"))
+    except Exception:
+        return None
+
+
+def encrypt_value(plain: str) -> str:
+    """对称加密字符串；未配置密钥时原样返回"""
+    if not plain:
+        return plain
+    fernet = _get_fernet()
+    if fernet is None:
+        return plain
+    return fernet.encrypt(plain.encode("utf-8")).decode("utf-8")
+
+
+def decrypt_value(cipher: str) -> str:
+    """解密字符串；未配置密钥或原文时原样返回"""
+    if not cipher:
+        return cipher
+    fernet = _get_fernet()
+    if fernet is None:
+        return cipher
+    try:
+        return fernet.decrypt(cipher.encode("utf-8")).decode("utf-8")
+    except Exception:
+        return cipher
 
 
 def hash_password(password: str) -> str:

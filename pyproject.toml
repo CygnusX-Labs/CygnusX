@@ -31,7 +31,12 @@ dependencies = [
     "passlib[bcrypt]>=1.7.4",
     # AI / LLM
     "httpx>=0.27.0",
+    "litellm>=1.60.0",
     "mcp>=1.0.0",
+    # 加密
+    "cryptography>=42.0.0",
+    # 代码执行沙盒（容器池）
+    "docker>=7.0.0",
     # 工作流
     "snakemake>=8.0.0",
     # 文件处理
@@ -95,7 +100,7 @@ disallow_untyped_defs = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["celery.*", "flower.*", "snakemake.*", "mcp.*"]
+module = ["celery.*", "flower.*", "snakemake.*", "mcp.*", "docker.*"]
 ignore_missing_imports = true
 
 # === Pytest 配置 ===

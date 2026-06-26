@@ -78,6 +78,32 @@ class Settings(BaseSettings):
     initial_cookie_balance: float = 100.0
     cookie_sandbox_base_cost: float = 0.5
 
+    # ===== AI Copilot =====
+    ai_system_prompt: str = (
+        "你是 OmicHub 智能分析助手，专注于多组学（RNA-seq/ATAC-seq 等）数据分析。"
+        "回答需简洁专业，代码块标注语言（python/r/bash），数据路径用 /workspace/data 前缀。"
+    )
+    ai_max_context_messages: int = 20
+    ai_temperature: float = 0.7
+    ai_default_provider_id: str = ""  # 默认 AI provider 配置 UUID，空则使用环境变量兜底
+    ai_provider_key_encryption_key: str = ""  # Fernet 密钥，为空则 API key 明文存储
+
+    # ===== 代码执行沙盒 =====
+    sandbox_enabled: bool = True
+    sandbox_image: str = "omichub/sandbox-base:latest"
+    sandbox_docker_network: str = "omichub_default"
+    sandbox_warm_pool_size: int = 2
+    sandbox_max_pool_size: int = 10
+    sandbox_session_timeout: int = 1800  # 30 分钟无活动回收
+    sandbox_exec_timeout: int = 300  # 单次代码执行超时（秒）
+    sandbox_data_dir: str = "/data/omichub"
+    sandbox_default_cpu: float = 2.0
+    sandbox_default_memory: str = "4g"
+
+    # ===== MCP 集成 =====
+    mcp_enabled: bool = True
+    mcp_default_timeout: int = 30
+
     @field_validator("database_url", mode="before")
     @classmethod
     def assemble_database_url(cls, v: str, info: Any) -> str:

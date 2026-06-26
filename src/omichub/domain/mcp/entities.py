@@ -14,7 +14,7 @@ class MCPToolRegistry(BaseModel):
 
     tool_name: str
     description: str = ""
-    schema: dict[str, Any] = {}
+    input_schema: dict[str, Any] = {}
     server_id: UUID
 
 
@@ -32,6 +32,7 @@ class MCPServer(BaseModel):
     tools: list[MCPToolRegistry] = []
     timeout: int = 30  # 超时秒数
     auto_restart: bool = True
+    is_preset: bool = False
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 

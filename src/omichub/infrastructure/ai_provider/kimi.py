@@ -23,7 +23,7 @@ class KimiProvider:
         messages: list[dict[str, str]],
         model: str = "",
         temperature: float = 0.7,
-        tools: list[dict] | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """同步对话"""
         async with httpx.AsyncClient() as client:
@@ -39,14 +39,14 @@ class KimiProvider:
                 timeout=120,
             )
             response.raise_for_status()
-            return response.json()
+            data: dict[str, Any] = response.json()
+            return data
 
     async def stream_chat(
         self,
         messages: list[dict[str, str]],
         model: str = "",
         temperature: float = 0.7,
-        tools: list[dict] | None = None,
     ) -> AsyncIterator[str]:
         """流式对话"""
         async with httpx.AsyncClient() as client, client.stream(
@@ -58,7 +58,6 @@ class KimiProvider:
                 "messages": messages,
                 "temperature": temperature,
                 "stream": True,
-                **({"tools": tools} if tools else {}),
             },
             timeout=120,
         ) as response:
@@ -74,3 +73,7 @@ class KimiProvider:
                             yield content
                     except (json.JSONDecodeError, KeyError):
                         continue
+
+    async def embeddings(self, text: str, model: str = "") -> list[float]:
+        """文本嵌入向量（Kimi 当前无嵌入接口，返回空列表占位）"""
+        return []

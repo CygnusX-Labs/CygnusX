@@ -53,9 +53,13 @@ async def init_db() -> None:
         # 开发环境自动建表（生产环境用 alembic 迁移）
         if not get_settings().is_production:
             from omichub.infrastructure.database.base import Base
+
             # 导入所有模型以注册到 metadata
             from omichub.infrastructure.database.models import (  # noqa: F401
+                ai,
                 cookie,
+                mcp,
+                sandbox,
                 task,
                 user,
             )

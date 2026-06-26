@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
-from omichub.infrastructure.cache.redis_client import close_redis, get_redis
-
+from omichub.infrastructure.cache.redis_client import get_redis
 
 TASK_LOG_CHANNEL_PREFIX = "task_logs:"
 
