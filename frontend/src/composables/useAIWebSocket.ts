@@ -81,7 +81,7 @@ export function useAIWebSocket() {
 
     ws.value.onerror = () => {
       connected.value = false
-      lastError.value = 'WebSocket 连接失败，正在尝试重连…'
+      lastError.value = 'AI 服务连接失败，请检查网络或点击重连'
     }
   }
 

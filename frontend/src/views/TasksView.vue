@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import type { Task } from '@/types'
-import { apiClient } from '@/api'
-import { NButton, NDataTable, NEmpty, NSpin, NTag } from 'naive-ui'
+import apiClient from '@/api/client'
+import { NButton, NDataTable, NEmpty, NSpin, NTag, useMessage } from 'naive-ui'
 import { h, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
+const message = useMessage()
 const tasks = ref<Task[]>([])
 const loading = ref(false)
 
@@ -68,6 +69,10 @@ async function fetchTasks() {
   try {
     const res = await apiClient.get<{ items: Task[]; total: number }>('/tasks')
     tasks.value = res.data.items
+  } catch (error) {
+    console.error('获取任务列表失败', error)
+    message.error('获取任务列表失败，请稍后重试')
+    tasks.value = []
   } finally {
     loading.value = false
   }

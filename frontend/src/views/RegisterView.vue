@@ -7,7 +7,18 @@
         <h2 class="register-title gradient-text">注册账户</h2>
         <p class="register-subtitle">加入 OmicHub 多组学分析平台</p>
       </div>
-      <n-form ref="formRef" :model="formData" :rules="rules" class="register-form">
+
+      <n-alert v-if="registrationClosed" type="warning" :show-icon="true" class="error-alert">
+        暂不接受新用户注册，如需账号请联系管理员。
+      </n-alert>
+
+      <div v-if="registrationClosed" class="register-actions">
+        <n-button size="large" @click="$router.push('/login')">
+          返回登录
+        </n-button>
+      </div>
+
+      <n-form v-if="!registrationClosed" ref="formRef" :model="formData" :rules="rules" class="register-form">
         <n-form-item label="用户名" path="username">
           <n-input
             v-model:value="formData.username"
@@ -63,10 +74,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage, NAlert } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
+import apiClient from '@/api/client'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -74,6 +86,16 @@ const message = useMessage()
 const formRef = ref()
 const loading = ref(false)
 const errorMsg = ref('')
+const registrationClosed = ref(false)
+
+onMounted(async () => {
+  try {
+    const res = await apiClient.get<{ registration_enabled: boolean }>('/site-settings')
+    registrationClosed.value = !res.data.registration_enabled
+  } catch {
+    /* 接口异常默认允许注册 */
+  }
+})
 
 const formData = ref({
   username: '',

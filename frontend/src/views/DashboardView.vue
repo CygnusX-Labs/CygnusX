@@ -42,7 +42,7 @@ const totalTaskCount = ref(0)
 const sampleCount = ref(0)
 const recentTasks = ref<Task[]>([])
 const loadingTasks = ref(false)
-const bannerClosed = ref(false)
+const bannerClosed = ref(localStorage.getItem('omichub:dashboardBannerClosed') === 'true')
 
 // 趋势图数据（后续可接入真实统计）
 const trendData = [
@@ -128,8 +128,6 @@ const trendOption = computed(() => ({
 }))
 
 onMounted(async () => {
-  bannerClosed.value = localStorage.getItem('omichub:dashboardBannerClosed') === 'true'
-
   // 健康检查
   try {
     const res = await axios.get('/health')

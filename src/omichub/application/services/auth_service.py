@@ -1,6 +1,7 @@
 """认证应用服务"""
 
 import uuid
+from datetime import UTC, datetime
 
 from omichub.application.schemas.auth import UserRegisterRequest
 from omichub.core.config import get_settings
@@ -18,6 +19,7 @@ from omichub.core.security import (
 )
 from omichub.domain.user.entities import User
 from omichub.domain.user.repositories import IUserRepository
+from omichub.domain.user.value_objects import UserStatus
 
 
 class AuthService:
@@ -48,7 +50,7 @@ class AuthService:
             email=req.email,
             hashed_password=hashed_pwd
         )
-        user.status = "pending"
+        user.status = UserStatus.PENDING
 
         # 保存用户
         return await self.user_repo.save(user)
@@ -65,12 +67,16 @@ class AuthService:
             raise AuthenticationError("用户名或密码错误")
 
         # 验证用户状态
-        if user.status != "active":
+        if user.status != UserStatus.ACTIVE:
             raise AuthenticationError("账户未激活")
 
+        # 更新最后登录时间
+        user.last_login_at = datetime.now(UTC)
+        await self.user_repo.save(user)
+
         # 创建令牌
-        access_token = create_access_token(subject=user.id)
-        refresh_token = create_refresh_token(subject=user.id)
+        access_token = create_access_token(subject=str(user.id))
+        refresh_token = create_refresh_token(subject=str(user.id))
 
         return access_token, refresh_token, user
 

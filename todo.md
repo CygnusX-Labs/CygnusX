@@ -7,6 +7,45 @@
 
 ## 已完成
 
+### 测试报告 v1.1 问题修复 ✅ 2026-06-26
+- [x] **认证与路由**
+  - [x] 登录成功后 `router.push('/')` + `window.location.href` 双重兜底跳转
+  - [x] 路由守卫以 `localStorage.access_token` 为准，未登录访问受保护路由带 `redirect` 参数
+  - [x] 登出后清除状态并 `window.location.reload()` 彻底重置
+  - [x] 增加跨标签页 `storage` 监听，token 被清除时自动登出
+  - [x] 登录/注册失败显示表单内红色文案 + Toast 提示
+- [x] **核心页面**
+  - [x] `TasksView.vue` 修复导入、增加错误处理，解决白屏
+  - [x] `FilesView.vue` 从占位改为真实文件列表（调用 `/api/v1/files`）
+  - [x] 后端新增 `/api/v1/files` 列表接口 + `FileService.list_files`
+  - [x] `FlowsView.vue` 空状态提示优化
+  - [x] `KnowledgeView.vue` 空文档提示
+  - [x] `SandboxView.vue` 建设中占位，避免 404 外观
+- [x] **AI 助手交互**
+  - [x] `KimiLayout.vue` / `ai.ts` 修复新建会话后 UI 切换、消息即时渲染
+  - [x] 历史会话点击切换加载
+  - [x] `KimiChatInput.vue` 去除 Tooltip 嵌套，修复 Agent/插件/模型下拉无响应
+  - [x] 快捷提示卡片点击自动发送
+  - [x] WebSocket 连接失败时显示错误横幅与重连按钮
+  - [x] 后端新增 `GET /api/v1/ai/status` 配置检测接口
+  - [x] `LiteLLMProvider` / `KimiProvider` 新增 `is_configured()` 检查
+  - [x] AI 未配置时返回明确错误并前端显示黄色警告条
+- [x] **系统设置**
+  - [x] `SettingsView.vue` 平台设置页签确保管理员可见
+  - [x] 注册开关保存失败回滚并提示错误
+  - [x] `RegisterView.vue` 关闭注册时隐藏表单并显示提示
+  - [x] 后端 `auth.py` 注册接口校验 `site_settings.registration_enabled`
+- [x] **UI/UX**
+  - [x] `DashboardView.vue` banner 关闭状态持久化到 localStorage
+  - [x] `global.css` 提升下拉菜单 z-index，避免与侧边栏重叠
+- [x] **AI Provider 外置 YAML 配置**
+  - [x] `config.py` 新增 `AI_PROVIDER_CONFIG_YAML`
+  - [x] 新增 `AIProviderYamlLoader` 服务，支持 `${ENV_VAR}` 插值与多 Provider 同步
+  - [x] `main.py` 启动时自动同步 YAML 到数据库
+  - [x] 新增 `data/ai_providers.yaml` + `data/ai_providers.yaml.example`
+  - [x] `.env.example` 增加 YAML 配置说明
+- [x] **构建验证**：前端 `type-check` / `build` 通过，后端 `make test` 6 passed
+
 ### 本次前端体验修复 ✅ 2026-06-26
 - [x] **AI 聊天框可用性修复**
   - [x] 修复 `useAIWebSocket.ts` 发送时序 bug：连接未 `OPEN` 时消息入队，连接成功后按序发送

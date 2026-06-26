@@ -74,6 +74,10 @@ class KimiProvider:
                     except (json.JSONDecodeError, KeyError):
                         continue
 
+    def is_configured(self) -> bool:
+        """检查是否已配置有效 API Key 与模型"""
+        return bool(self.api_key) and bool(self.model)
+
     async def embeddings(self, text: str, model: str = "") -> list[float]:
         """文本嵌入向量（Kimi 当前无嵌入接口，返回空列表占位）"""
         return []

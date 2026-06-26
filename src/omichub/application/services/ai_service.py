@@ -166,6 +166,14 @@ class AIService:
             conv = await self._domain.compress_context(conv, self._settings.ai_max_context_messages)
 
         provider = get_llm_provider()
+        if not await provider.is_configured():
+            yield {
+                "type": "error",
+                "detail": "AI 服务未配置：请在 .env 设置 KIMI_API_KEY / OPENAI_API_KEY，或在管理后台配置 AI Provider",
+            }
+            yield {"type": "done"}
+            return
+
         system_prompt = self._settings.ai_system_prompt + self._TOOL_USE_INSTRUCTIONS
 
         try:

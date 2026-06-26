@@ -2,14 +2,15 @@
 import type { FlowDefinition } from '@/types'
 import { apiClient } from '@/api'
 import { NButton, NEmpty, NSpin, NTag } from 'naive-ui'
-import { onMounted, ref, computed, h } from 'vue'
-import { useRouter } from 'vue-router'
+import { onMounted, ref, computed, h, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   FlaskOutline, FitnessOutline, GlobeOutline, BugOutline,
   GridOutline, BookOutline, BeakerOutline, ExtensionPuzzleOutline,
   PeopleOutline, StarOutline, CodeSlashOutline, DocumentTextOutline,
 } from '@vicons/ionicons5'
 
+const route = useRoute()
 const router = useRouter()
 const flows = ref<FlowDefinition[]>([])
 const loading = ref(false)
@@ -23,6 +24,28 @@ async function fetchFlows() {
     loading.value = false
   }
 }
+
+// 当前选中的分析类型（来自 /flows?type=xxx）
+const activeType = computed(() => (route.query.type as string) || '')
+
+const typeLabels: Record<string, string> = {
+  'rna-seq': 'RNA-seq 分析',
+  'atac-seq': 'ATAC-seq 分析',
+  'chip-seq': 'ChIP-seq 分析',
+  'scrna': '单细胞分析',
+  'wgs': '全基因组测序',
+  'metagenome': '宏基因组分析',
+}
+
+// 按类型过滤（匹配 flow.id 或 category 中包含该前缀）
+const filteredFlows = computed(() => {
+  if (!activeType.value) return flows.value
+  return flows.value.filter((f) => {
+    const key = `${f.id} ${f.category || ''}`.toLowerCase()
+    return key.includes(activeType.value.replace('-', ''))
+      || key.includes(activeType.value)
+  })
+})
 
 function goToSubmit(flowId: string) {
   router.push({ name: 'flow-submit', params: { flowId } })
@@ -73,13 +96,15 @@ function getFlowMeta(flow: FlowDefinition) {
 }
 
 const featuredFlow = computed(() => {
-  return flows.value.find((f) => f.id.toLowerCase().includes('rna')) || flows.value[0]
+  return filteredFlows.value.find((f) => f.id.toLowerCase().includes('rna')) || filteredFlows.value[0]
 })
 
 const normalFlows = computed(() => {
-  return flows.value.filter((f) => f.id !== featuredFlow.value?.id)
+  if (activeType.value) return filteredFlows.value
+  return filteredFlows.value.filter((f) => f.id !== featuredFlow.value?.id)
 })
 
+watch(() => route.query.type, fetchFlows)
 onMounted(fetchFlows)
 </script>
 
@@ -88,12 +113,15 @@ onMounted(fetchFlows)
     <!-- Header -->
     <div class="flows-header animate-fade-in-up">
       <div>
-        <h1 class="page-title" style="margin-bottom: 8px;">分析流程中心</h1>
+        <h1 class="page-title" style="margin-bottom: 8px;">{{ activeType ? (typeLabels[activeType] || '分析流程') : '分析流程中心' }}</h1>
         <p class="page-subtitle">
-          选择适合您研究需求的分析流程，快速启动多组学分析
+          {{ activeType ? '当前筛选的分析流程，点击卡片即可提交任务' : '选择适合您研究需求的分析流程，快速启动多组学分析' }}
         </p>
       </div>
       <div class="flows-header-actions">
+        <NButton v-if="activeType" class="header-btn-secondary" @click="router.push('/flows')">
+          查看全部流程
+        </NButton>
         <NButton class="header-btn-secondary">
           <template #icon>
             <component :is="CodeSlashOutline" />
@@ -110,9 +138,9 @@ onMounted(fetchFlows)
     </div>
 
     <NSpin :show="loading">
-      <template v-if="flows.length > 0">
-        <!-- 推荐流程 -->
-        <section class="featured-section animate-fade-in-up delay-100">
+      <template v-if="filteredFlows.length > 0">
+        <!-- 推荐流程（按类型筛选时不展示推荐区，直接全部以卡片展示） -->
+        <section v-if="!activeType && featuredFlow" class="featured-section animate-fade-in-up delay-100">
           <h2 class="section-label">
             <span class="section-icon">🔥</span>
             推荐流程
@@ -146,7 +174,7 @@ onMounted(fetchFlows)
         <section class="all-flows-section animate-fade-in-up delay-200">
           <h2 class="section-label">
             <span class="section-icon">📋</span>
-            全部流程
+            {{ activeType ? '筛选结果' : '全部流程' }}
           </h2>
           <div class="flow-grid">
             <div
@@ -182,7 +210,16 @@ onMounted(fetchFlows)
         </section>
       </template>
 
-      <NEmpty v-else description="暂无可用流程" />
+      <NEmpty v-else>
+        <template #default>
+          <div style="text-align: center;">
+            <p>{{ activeType ? '该类型暂无可用流程' : '暂无可用流程' }}</p>
+            <p style="font-size: 13px; color: var(--neutral-text-3); margin-top: 8px;">
+              {{ activeType ? '请尝试查看全部流程，或联系管理员添加该类型流程' : '请联系管理员配置分析流程，或查看开发者文档' }}
+            </p>
+          </div>
+        </template>
+      </NEmpty>
     </NSpin>
   </div>
 </template>

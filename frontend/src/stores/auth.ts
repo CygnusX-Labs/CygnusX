@@ -77,6 +77,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   function logout() {
     clearTokens()
+    // 确保 Pinia 中的用户状态同步清空
+    user.value = null
   }
 
   return {

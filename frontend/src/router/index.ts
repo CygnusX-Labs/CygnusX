@@ -79,7 +79,7 @@ const routes: RouteRecordRaw[] = [
         path: 'ai',
         name: 'ai',
         component: () => import('@/views/AIChatView.vue'),
-        meta: { title: 'AI 助手', requiresAuth: true }
+        meta: { title: 'AI 助手', requiresAuth: true, fullscreen: true }
       },
       {
         path: 'profile',
@@ -104,6 +104,24 @@ const routes: RouteRecordRaw[] = [
         name: 'about',
         component: () => import('@/views/AboutView.vue'),
         meta: { title: '关于', requiresAuth: false }
+      },
+      {
+        path: 'knowledge',
+        name: 'knowledge',
+        component: () => import('@/views/KnowledgeView.vue'),
+        meta: { title: '实验室知识库', requiresAuth: true }
+      },
+      {
+        path: 'knowledge/:docId',
+        name: 'knowledge-doc',
+        component: () => import('@/views/KnowledgeView.vue'),
+        meta: { title: '实验室知识库', requiresAuth: true }
+      },
+      {
+        path: 'sandbox',
+        name: 'sandbox',
+        component: () => import('@/views/SandboxView.vue'),
+        meta: { title: '代码沙盒', requiresAuth: true }
       },
       {
         path: 'admin/cookies/accounts',
@@ -153,6 +171,7 @@ const router = createRouter({
 // 路由守卫
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
+  const isLoggedIn = !!localStorage.getItem('access_token')
 
   // 首次部署：检查是否已配置 root 管理员
   if (!setupChecked) {
@@ -172,15 +191,13 @@ router.beforeEach(async (to, from, next) => {
   }
 
   if (!setupRequired && to.name === 'setup') {
-    next('/login')
+    next(isLoggedIn ? '/' : '/login')
     return
   }
 
-  const isLoggedIn = authStore.isLoggedIn
-
   if (to.meta.requiresAuth && !isLoggedIn) {
-    // 需要登录但未登录
-    next('/login')
+    // 需要登录但未登录（含 token 被清除的情况）
+    next({ path: '/login', query: { redirect: to.fullPath } })
   } else if ((to.name === 'login' || to.name === 'register') && isLoggedIn) {
     // 已登录且访问登录/注册页
     next('/')

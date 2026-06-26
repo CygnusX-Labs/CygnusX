@@ -160,6 +160,15 @@ class LiteLLMProvider:
             logger.warning(f"LiteLLM 流式调用失败: {e}")
             raise
 
+    async def is_configured(self) -> bool:
+        """检查是否已配置有效 API Key 与模型"""
+        config = await self._get_config()
+        if config is not None:
+            return bool(config.api_key) and bool(config.model)
+        if self._settings.llm_provider == "openai":
+            return bool(self._settings.openai_api_key) and bool(self._settings.openai_model)
+        return bool(self._settings.kimi_api_key) and bool(self._settings.kimi_model)
+
     async def embeddings(self, text: str, model: str = "") -> list[float]:
         """文本嵌入向量（可选能力）"""
         config = await self._get_config()

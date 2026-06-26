@@ -87,6 +87,7 @@ class Settings(BaseSettings):
     ai_temperature: float = 0.7
     ai_default_provider_id: str = ""  # 默认 AI provider 配置 UUID，空则使用环境变量兜底
     ai_provider_key_encryption_key: str = ""  # Fernet 密钥，为空则 API key 明文存储
+    ai_provider_config_yaml: str = "data/ai_providers.yaml"  # 外置 AI Provider YAML 配置路径
 
     # ===== 代码执行沙盒 =====
     sandbox_enabled: bool = True

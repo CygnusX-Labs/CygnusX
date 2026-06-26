@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NCard, NSpin, NEmpty, NMenu, NIcon } from 'naive-ui'
+import { NCard, NSpin, NEmpty, NMenu, NIcon, useMessage } from 'naive-ui'
 import type { MenuOption } from 'naive-ui'
 import { BookOutline } from '@vicons/ionicons5'
 import apiClient from '@/api/client'
@@ -20,6 +20,7 @@ interface DocContent {
 
 const route = useRoute()
 const router = useRouter()
+const message = useMessage()
 
 const loadingNav = ref(false)
 const loadingDoc = ref(false)
@@ -33,6 +34,10 @@ async function fetchNav() {
     const res = await apiClient.get<{ title: string; items: DocNavItem[] }>('/docs/knowledge')
     navTitle.value = res.data.title
     navItems.value = res.data.items
+  } catch (error) {
+    console.error('获取知识库目录失败', error)
+    message.error('获取知识库目录失败')
+    navItems.value = []
   } finally {
     loadingNav.value = false
   }
@@ -43,6 +48,10 @@ async function fetchDoc(docId: string) {
   try {
     const res = await apiClient.get<DocContent>(`/docs/knowledge/${docId}`)
     currentDoc.value = res.data
+  } catch (error) {
+    console.error('获取文档内容失败', error)
+    message.error('获取文档内容失败')
+    currentDoc.value = null
   } finally {
     loadingDoc.value = false
   }
@@ -84,8 +93,6 @@ onMounted(async () => {
     router.replace({ name: 'knowledge', params: { docId: first.id } })
   }
 })
-
-import { h } from 'vue'
 </script>
 
 <template>
@@ -95,11 +102,13 @@ import { h } from 'vue'
         <div class="nav-title">{{ navTitle }}</div>
         <NSpin :show="loadingNav">
           <NMenu
+            v-if="navItems.length"
             :value="(route.params.docId as string)"
             :options="menuOptions"
             :collapsed-width="64"
             @update:value="handleMenuUpdate"
           />
+          <NEmpty v-else description="暂无文档，请联系管理员添加知识库内容" />
         </NSpin>
       </NCard>
     </div>
@@ -111,7 +120,7 @@ import { h } from 'vue'
             :title="currentDoc.title"
             :content="currentDoc.content"
           />
-          <NEmpty v-else description="请选择文档" />
+          <NEmpty v-else description="请选择左侧文档进行阅读" />
         </NSpin>
       </NCard>
     </div>

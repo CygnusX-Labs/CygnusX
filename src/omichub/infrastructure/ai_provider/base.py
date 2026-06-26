@@ -26,6 +26,10 @@ class LLMProvider(Protocol):
         """流式对话 - 逐 token 返回（async generator，调用无需 await）"""
         ...
 
+    async def is_configured(self) -> bool:
+        """检查是否已配置有效 API Key 与模型"""
+        ...
+
     async def embeddings(
         self, text: str, model: str = ""
     ) -> list[float]:

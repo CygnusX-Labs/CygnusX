@@ -3,7 +3,7 @@ import {
   NLayout, NLayoutSider, NLayoutContent, NIcon, NButton, NTooltip, NDropdown,
   NDrawer, NDrawerContent, NAvatar, NBadge,
 } from 'naive-ui'
-import { computed, h, ref, watch, onMounted } from 'vue'
+import { computed, h, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   HomeOutline, GridOutline, FlaskOutline, FitnessOutline, GlobeOutline, BugOutline,
@@ -32,6 +32,12 @@ const expandedKeys = ref<string[]>(['analysis-center'])
 
 const isAdmin = computed(() => authStore.user?.role === 'admin')
 
+const contentStyle = computed(() =>
+  route.meta.fullscreen
+    ? 'padding: 0; height: 100%; background: var(--neutral-bg);'
+    : 'padding: 24px; background: var(--neutral-bg);'
+)
+
 // 响应式：窗口宽度 < 1024 自动折叠，< 768 进入移动端模式
 const windowWidth = ref(window.innerWidth)
 const isMobile = computed(() => windowWidth.value < 768)
@@ -51,12 +57,18 @@ function updateWindowWidth() {
 onMounted(() => {
   updateWindowWidth()
   window.addEventListener('resize', updateWindowWidth)
+  window.addEventListener('storage', handleStorageChange)
   if (authStore.isLoggedIn) {
     authStore.fetchUser().then(() => {
       currentUser.value = authStore.user
       notificationStore.fetchNotifications()
     })
   }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', updateWindowWidth)
+  window.removeEventListener('storage', handleStorageChange)
 })
 
 watch(windowWidth, updateWindowWidth)
@@ -72,12 +84,12 @@ interface NavItem {
 const topNavItems = computed<NavItem[]>(() => [
   { key: 'dashboard', label: '控制台', to: '/', icon: HomeOutline },
   { key: 'flows', label: '分析流程中心', to: '/flows', icon: FlaskOutline },
-  { key: 'knowledge', label: '实验室知识库', to: '/about', icon: DocumentTextOutline },
-  { key: 'docs', label: '文档', to: '/about', icon: HelpCircleOutline },
+  { key: 'knowledge', label: '实验室知识库', to: '/knowledge', icon: DocumentTextOutline },
+  { key: 'docs', label: '文档', to: '/knowledge', icon: HelpCircleOutline },
 ])
 
 const mainNavItems = computed<NavItem[]>(() => [
-  { key: 'home', label: '首页', to: '/about', icon: HomeOutline },
+  { key: 'home', label: '首页', to: '/', icon: HomeOutline },
   { key: 'dashboard', label: '仪表板', to: '/', icon: GridOutline },
   {
     key: 'analysis-center',
@@ -85,12 +97,12 @@ const mainNavItems = computed<NavItem[]>(() => [
     to: '/flows',
     icon: FlaskOutline,
     children: [
-      { key: 'rna-seq', label: 'RNA-seq 分析', to: '/flows', icon: FlaskOutline },
-      { key: 'atac-seq', label: 'ATAC-seq 分析', to: '/flows', icon: FitnessOutline },
-      { key: 'chip-seq', label: 'ChIP-seq 分析', to: '/flows', icon: FlaskOutline },
-      { key: 'scrna', label: '单细胞分析', to: '/flows', icon: GridOutline },
-      { key: 'wgs', label: '全基因组测序', to: '/flows', icon: GlobeOutline },
-      { key: 'metagenome', label: '宏基因组分析', to: '/flows', icon: BugOutline },
+      { key: 'rna-seq', label: 'RNA-seq 分析', to: '/flows?type=rna-seq', icon: FlaskOutline },
+      { key: 'atac-seq', label: 'ATAC-seq 分析', to: '/flows?type=atac-seq', icon: FitnessOutline },
+      { key: 'chip-seq', label: 'ChIP-seq 分析', to: '/flows?type=chip-seq', icon: FlaskOutline },
+      { key: 'scrna', label: '单细胞分析', to: '/flows?type=scrna', icon: GridOutline },
+      { key: 'wgs', label: '全基因组测序', to: '/flows?type=wgs', icon: GlobeOutline },
+      { key: 'metagenome', label: '宏基因组分析', to: '/flows?type=metagenome', icon: BugOutline },
     ],
   },
   { key: 'files', label: '数据管理', to: '/files', icon: CloudUploadOutline },
@@ -121,16 +133,27 @@ const adminNavItems = computed<NavItem[]>(() => [
 ])
 
 function isActive(item: NavItem): boolean {
-  if (route.path === item.to && item.to !== '/flows') return true
-  if (item.children) {
-    return item.children.some((child) => route.name === child.key)
+  if (!item.children) {
+    if (item.to.includes('?')) {
+      const [path, query] = item.to.split('?')
+      const type = query.split('=')[1]
+      return route.path === path && route.query.type === type
+    }
+    if (route.path === item.to) return true
+    return false
   }
-  return false
+  return item.children.some((child) => {
+    if (child.to.includes('?type=')) {
+      return route.path === '/flows' && route.query.type === child.to.split('type=')[1]
+    }
+    return route.name === child.key || route.path === child.to
+  })
 }
 
 function isTopActive(item: NavItem): boolean {
   if (item.key === 'dashboard') return route.path === '/'
   if (item.key === 'flows') return route.path.startsWith('/flows')
+  if (item.key === 'knowledge') return route.path.startsWith('/knowledge')
   return false
 }
 
@@ -159,9 +182,18 @@ function handleNavClick(item: NavItem) {
   }
 }
 
-function handleLogout() {
+async function handleLogout() {
   authStore.logout()
-  router.push('/login')
+  await router.replace('/login')
+  window.location.reload()
+}
+
+function handleStorageChange(e: StorageEvent) {
+  if (e.key === 'access_token' && !e.newValue) {
+    authStore.logout()
+    router.replace('/login')
+    window.location.reload()
+  }
 }
 
 const userMenuOptions = [
@@ -315,7 +347,7 @@ const UserAvatar = () => {
                     :key="child.key"
                     :to="child.to"
                     class="sub-nav-item"
-                    :class="{ 'sub-nav-item--active': route.name === child.key }"
+                    :class="{ 'sub-nav-item--active': isActive(child) }"
                   >
                     <NIcon :size="16" class="sub-nav-icon">
                       <component :is="child.icon" />
@@ -411,7 +443,7 @@ const UserAvatar = () => {
                       :key="child.key"
                       :to="child.to"
                       class="sub-nav-item"
-                      :class="{ 'sub-nav-item--active': route.name === child.key }"
+                      :class="{ 'sub-nav-item--active': isActive(child) }"
                     >
                       <NIcon :size="16" class="sub-nav-icon">
                         <component :is="child.icon" />
@@ -533,7 +565,7 @@ const UserAvatar = () => {
       <!-- 主内容区 -->
       <NLayout class="main-layout">
         <NLayoutContent
-          content-style="padding: 24px; background: var(--neutral-bg);"
+          :content-style="contentStyle"
           :native-scrollbar="false"
         >
           <RouterView v-slot="{ Component }">
@@ -946,8 +978,20 @@ const UserAvatar = () => {
 /* ===== 主内容区 ===== */
 .main-layout {
   flex: 1;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   background: var(--neutral-bg);
+}
+
+.main-layout :deep(.n-layout) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-layout :deep(.n-layout-scroll-container) {
+  flex: 1;
 }
 
 /* 隐藏 Naive UI LayoutSider 默认 border 以使用自定义边框 */

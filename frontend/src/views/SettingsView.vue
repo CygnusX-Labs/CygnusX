@@ -3,16 +3,20 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   NCard, NTabs, NTabPane, NForm, NFormItem, NInput, NButton,
-  NSpace, NAvatar, NUpload, NIcon, NTag, useMessage,
+  NSpace, NAvatar, NUpload, NIcon, NTag, NSwitch, useMessage,
 } from 'naive-ui'
 import type { FormInst, FormRules } from 'naive-ui'
-import { PersonOutline, LockClosedOutline, SettingsOutline, CloudUploadOutline } from '@vicons/ionicons5'
+import { PersonOutline, LockClosedOutline, SettingsOutline, CloudUploadOutline, GlobeOutline } from '@vicons/ionicons5'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const message = useMessage()
+
+const isAdmin = computed(() => authStore.user?.role === 'admin')
+const regEnabled = ref(true)
+const regSaving = ref(false)
 
 const userId = computed(() => authStore.user?.id || '')
 const profileFormRef = ref<FormInst | null>(null)
@@ -67,8 +71,14 @@ const passwordRules: FormRules = {
   ],
 }
 
-onMounted(() => {
+onMounted(async () => {
   if (!authStore.isLoggedIn) {
+    router.push('/login')
+    return
+  }
+  try {
+    await authStore.fetchUser()
+  } catch {
     router.push('/login')
     return
   }
@@ -77,7 +87,31 @@ onMounted(() => {
     profileForm.value.email = authStore.user.email
     profileForm.value.avatar_url = authStore.user.avatar_url || ''
   }
+  if (isAdmin.value) await fetchSiteSettings()
 })
+
+async function fetchSiteSettings() {
+  try {
+    const res = await apiClient.get<{ registration_enabled: boolean }>('/site-settings')
+    regEnabled.value = res.data.registration_enabled
+  } catch {
+    /* 读取失败默认开放 */
+  }
+}
+
+async function saveRegistration(value: boolean) {
+  regSaving.value = true
+  try {
+    await apiClient.put('/site-settings', { registration_enabled: value })
+    regEnabled.value = value
+    message.success(value ? '已开放用户注册' : '已关闭用户注册')
+  } catch (e: any) {
+    regEnabled.value = !value
+    message.error(e.response?.data?.detail || '保存失败')
+  } finally {
+    regSaving.value = false
+  }
+}
 
 async function saveProfile() {
   try {
@@ -216,6 +250,31 @@ async function savePassword() {
                 <div class="pref-desc">设置常用的分析流程作为默认</div>
               </div>
               <NTag size="small" type="info">即将支持</NTag>
+            </div>
+          </div>
+        </NCard>
+      </NTabPane>
+
+      <!-- 平台设置（仅管理员可见） -->
+      <NTabPane v-if="isAdmin" name="platform" tab="平台设置">
+        <NCard :bordered="false" class="arco-card settings-card">
+          <template #header>
+            <NSpace align="center">
+              <NIcon :size="18"><GlobeOutline /></NIcon>
+              <span>平台全局配置</span>
+            </NSpace>
+          </template>
+          <div class="pref-list">
+            <div class="pref-item">
+              <div class="pref-info">
+                <div class="pref-label">开放用户注册</div>
+                <div class="pref-desc">关闭后新用户将无法自助注册，需由管理员创建账号</div>
+              </div>
+              <NSwitch
+                :value="regEnabled"
+                :loading="regSaving"
+                @update:value="saveRegistration"
+              />
             </div>
           </div>
         </NCard>

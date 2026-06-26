@@ -89,6 +89,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.warning(f"AI Provider 初始化失败，降级运行: {e}")
 
+    # 从外置 YAML 同步 AI Provider 配置
+    try:
+        from omichub.application.services.ai_provider_yaml_loader import (
+            AIProviderYamlLoader,
+        )
+        from omichub.infrastructure.database.session import get_session_factory
+
+        factory = get_session_factory()
+        if factory is not None:
+            async with factory() as session:
+                count = await AIProviderYamlLoader(session).load_and_sync()
+                if count:
+                    logger.info(f"已从 YAML 同步 {count} 个 AI Provider")
+    except Exception as e:
+        logger.warning(f"AI Provider YAML 同步失败，降级运行: {e}")
+
     yield
 
     # 关闭时清理

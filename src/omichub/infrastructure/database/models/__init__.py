@@ -16,6 +16,7 @@ from omichub.infrastructure.database.models.cookie import (
 from omichub.infrastructure.database.models.mcp import MCPServerModel
 from omichub.infrastructure.database.models.notification import NotificationModel
 from omichub.infrastructure.database.models.sandbox import SandboxSessionModel
+from omichub.infrastructure.database.models.site_settings import SiteSettingModel
 from omichub.infrastructure.database.models.task import TaskModel
 from omichub.infrastructure.database.models.user import UserModel, WorkspaceModel
 
@@ -34,4 +35,5 @@ __all__ = [
     "MCPServerModel",
     "SandboxSessionModel",
     "NotificationModel",
+    "SiteSettingModel",
 ]

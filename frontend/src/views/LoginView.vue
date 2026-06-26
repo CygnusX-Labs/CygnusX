@@ -28,11 +28,15 @@
           />
         </n-form-item>
 
+        <div v-if="errorMessage" class="login-error-message">
+          {{ errorMessage }}
+        </div>
+
         <div class="login-actions">
           <n-button type="primary" size="large" :loading="loading" @click="handleLogin">
             登录
           </n-button>
-          <n-button size="large" @click="$router.push('/register')">
+          <n-button v-if="registrationEnabled" size="large" @click="$router.push('/register')">
             注册
           </n-button>
         </div>
@@ -42,16 +46,28 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
+import apiClient from '@/api/client'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const message = useMessage()
 const formRef = ref()
 const loading = ref(false)
+const registrationEnabled = ref(true)
+const errorMessage = ref('')
+
+onMounted(async () => {
+  try {
+    const res = await apiClient.get<{ registration_enabled: boolean }>('/site-settings')
+    registrationEnabled.value = res.data.registration_enabled
+  } catch {
+    /* 接口异常默认显示注册入口 */
+  }
+})
 
 const formData = ref({
   username: '',
@@ -72,6 +88,8 @@ const rules = {
 const handleLogin = async () => {
   if (!formRef.value) return
 
+  errorMessage.value = ''
+
   try {
     await formRef.value.validate()
   } catch {
@@ -83,9 +101,19 @@ const handleLogin = async () => {
   try {
     await authStore.login(formData.value.username, formData.value.password)
     message.success('登录成功')
-    router.push('/')
+    try {
+      await router.push('/')
+    } catch {
+      window.location.href = '/'
+    }
+    setTimeout(() => {
+      if (window.location.pathname === '/login') {
+        window.location.href = '/'
+      }
+    }, 100)
   } catch (error: any) {
-    message.error(error.response?.data?.detail || '登录失败，请检查用户名和密码')
+    errorMessage.value = error.response?.data?.detail || '用户名或密码错误'
+    message.error(errorMessage.value)
   } finally {
     loading.value = false
   }
@@ -156,6 +184,12 @@ const handleLogin = async () => {
 }
 .login-form {
   margin-top: 24px;
+}
+.login-error-message {
+  margin-bottom: 16px;
+  color: #d03050;
+  font-size: 14px;
+  text-align: center;
 }
 .login-actions {
   display: flex;

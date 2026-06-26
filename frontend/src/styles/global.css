@@ -353,3 +353,9 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ===== Naive UI 下拉菜单层级 ===== */
+.n-dropdown,
+.n-dropdown-menu {
+  z-index: 2000 !important;
+}

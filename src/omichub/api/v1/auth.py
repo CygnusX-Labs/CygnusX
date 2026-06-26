@@ -14,7 +14,7 @@ from omichub.application.schemas.auth import (
 from omichub.application.schemas.user import UserResponse
 from omichub.application.services import AuthService
 from omichub.core.config import get_settings
-from omichub.core.exceptions import ConflictError
+from omichub.core.exceptions import AuthorizationError, ConflictError
 from omichub.core.security import (
     create_access_token,
     create_refresh_token,
@@ -56,6 +56,12 @@ async def register(
     db: DbSession,
 ) -> UserResponse:
     """用户注册"""
+    # 平台级开关：未开放注册时拒绝
+    from omichub.application.services.site_settings_service import SiteSettingsService
+
+    if not await SiteSettingsService(db).is_registration_enabled():
+        raise AuthorizationError("平台已关闭注册，请联系管理员")
+
     user = await auth_service.register(req)
     # 集成点#1: 注册时自动创建饼干账户 + 赠送初始饼干
     if get_settings().enable_cookie_system:

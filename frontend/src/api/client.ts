@@ -24,6 +24,15 @@ apiClient.interceptors.request.use(
 // 标记是否正在刷新令牌，避免并发刷新
 let isRefreshing = false
 
+function clearAuthAndRedirectToLogin() {
+  localStorage.removeItem('access_token')
+  localStorage.removeItem('refresh_token')
+  if (window.location.pathname !== '/login') {
+    const redirect = encodeURIComponent(window.location.pathname + window.location.search)
+    window.location.href = `/login?redirect=${redirect}`
+  }
+}
+
 // 响应拦截器 - 统一错误处理 + 自动刷新令牌
 apiClient.interceptors.response.use(
   (response) => response,
@@ -40,11 +49,7 @@ apiClient.interceptors.response.use(
       const refreshToken = localStorage.getItem('refresh_token')
       if (!refreshToken || isRefreshing) {
         // 没有刷新令牌或正在刷新 → 清理并跳转登录
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('refresh_token')
-        if (window.location.pathname !== '/login') {
-          window.location.href = '/login'
-        }
+        clearAuthAndRedirectToLogin()
         return Promise.reject(error)
       }
 
@@ -63,11 +68,7 @@ apiClient.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${access_token}`
         return apiClient(originalRequest)
       } catch {
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('refresh_token')
-        if (window.location.pathname !== '/login') {
-          window.location.href = '/login'
-        }
+        clearAuthAndRedirectToLogin()
         return Promise.reject(error)
       } finally {
         isRefreshing = false

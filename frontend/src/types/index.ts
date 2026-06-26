@@ -44,6 +44,17 @@ export interface FlowDefinition {
   version: string
 }
 
+export interface DataFile {
+  id: string
+  path: string
+  original_name: string
+  size: number
+  checksum: string
+  file_type: 'fastq' | 'bam' | 'vcf' | 'count_matrix' | 'h5ad' | 'rds' | 'meta' | 'report' | 'image' | 'other'
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
 export interface TaskLog {
   timestamp: string
   level: 'debug' | 'info' | 'warning' | 'error' | 'critical'

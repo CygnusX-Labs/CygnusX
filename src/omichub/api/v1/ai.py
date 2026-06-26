@@ -14,6 +14,7 @@ from omichub.application.schemas.ai import (
 )
 from omichub.application.services.ai_service import AIService
 from omichub.core.security import decode_token
+from omichub.infrastructure.ai_provider import get_llm_provider
 from omichub.infrastructure.database.session import get_session_factory
 
 router = APIRouter()
@@ -24,6 +25,13 @@ def get_ai_service(db: DbSession) -> AIService:
 
 
 AIServiceDep = Annotated[AIService, Depends(get_ai_service)]
+
+
+@router.get("/status", summary="AI 服务配置状态")
+async def ai_status() -> dict[str, bool]:
+    """返回 AI 服务是否已配置（无需登录，便于前端提前提示）"""
+    provider = get_llm_provider()
+    return {"configured": await provider.is_configured()}
 
 
 @router.get("/conversations", response_model=list[ConversationDTO], summary="对话列表")

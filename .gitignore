@@ -76,5 +76,7 @@ frontend/.vite/
 # 不忽略 deploy/docker/ 下的配置文件
 
 # ===== 数据卷（本地开发） =====
+!data/ai_providers.yaml
+!data/ai_providers.yaml.example
 data/
 volumes/

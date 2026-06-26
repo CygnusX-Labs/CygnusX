@@ -24,6 +24,8 @@ export const useAIStore = defineStore('ai', () => {
   async function createConversation(title = '新对话'): Promise<Conversation> {
     const res = await apiClient.post<Conversation>('/ai/conversations', { title })
     conversations.value.unshift(res.data)
+    // 创建后立即切换到新会话，避免 UI 仍停留在旧会话
+    currentConversation.value = { ...res.data, messages: [] }
     return res.data
   }
 
