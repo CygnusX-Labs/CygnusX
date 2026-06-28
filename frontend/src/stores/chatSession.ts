@@ -1,0 +1,277 @@
+/**
+ * 聊天会话 Store — Cherry Studio 架构
+ *
+ * 管理会话列表、消息历史、SSE 流式聊天编排。
+ * 替代旧 chat.ts（基于 localStorage 的 WebSocket 系统）。
+ */
+
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+import apiClient from '@/api/client'
+import { useChatStream } from '@/composables/useChatStream'
+import type { ChatSessionDTO, ChatMessageDTO, ChatModelOption, DisplayMessage } from '@/types/chat'
+
+export const useChatSessionStore = defineStore('chatSession', () => {
+  // ========== State ==========
+  const sessions = ref<ChatSessionDTO[]>([])
+  const currentSessionId = ref<string>('')
+  const messages = ref<DisplayMessage[]>([])
+  const models = ref<ChatModelOption[]>([])
+  const selectedModelId = ref<string>('')
+  const loadingSessions = ref(false)
+  const loadingMessages = ref(false)
+
+  // 流式状态
+  const streamingContent = ref('')
+  const streamingReasoning = ref('')
+  const isStreaming = ref(false)
+  const streamError = ref('')
+
+  const { streamChat, abortStream, isStreaming: streamActive } = useChatStream()
+
+  // ========== Getters ==========
+  const currentSession = computed(() =>
+    sessions.value.find((s) => s.session_id === currentSessionId.value),
+  )
+
+  const selectedModel = computed(() =>
+    models.value.find((m) => m.id === selectedModelId.value),
+  )
+
+  // ========== Actions ==========
+
+  /** 加载可用模型列表 */
+  async function fetchModels() {
+    try {
+      const res = await apiClient.get<ChatModelOption[]>('/chat/models')
+      models.value = res.data
+      if (!selectedModelId.value) {
+        const defaultModel = models.value.find((m) => m.is_default) || models.value[0]
+        if (defaultModel) selectedModelId.value = defaultModel.id
+      }
+    } catch (e) {
+      console.error('加载模型列表失败:', e)
+    }
+  }
+
+  /** 加载会话列表 */
+  async function fetchSessions() {
+    loadingSessions.value = true
+    try {
+      const res = await apiClient.get<ChatSessionDTO[]>('/chat/sessions')
+      sessions.value = res.data
+    } finally {
+      loadingSessions.value = false
+    }
+  }
+
+  /** 选择会话并加载消息 */
+  async function selectSession(sessionId: string) {
+    currentSessionId.value = sessionId
+    loadingMessages.value = true
+    try {
+      const res = await apiClient.get<ChatMessageDTO[]>(`/chat/sessions/${sessionId}/messages`)
+      messages.value = res.data.map((m) => ({
+        message_id: m.message_id,
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+        reasoning: '',
+        status: m.status as 'complete' | 'streaming' | 'error',
+        created_at: m.created_at,
+      }))
+    } finally {
+      loadingMessages.value = false
+    }
+  }
+
+  /** 创建新会话 */
+  async function createSession(modelId: string, assistantId?: string): Promise<string | null> {
+    try {
+      const res = await apiClient.post<ChatSessionDTO>('/chat/sessions', {
+        model_id: modelId,
+        assistant_id: assistantId,
+        title: '新对话',
+      })
+      sessions.value.unshift(res.data)
+      currentSessionId.value = res.data.session_id
+      messages.value = []
+      return res.data.session_id
+    } catch (e) {
+      console.error('创建会话失败:', e)
+      return null
+    }
+  }
+
+  /** 更新会话标题 */
+  async function updateSessionTitle(sessionId: string, title: string) {
+    try {
+      await apiClient.put(`/chat/sessions/${sessionId}/title`, null, {
+        params: { title },
+      })
+      const session = sessions.value.find((s) => s.session_id === sessionId)
+      if (session) session.title = title
+    } catch (e) {
+      console.error('更新标题失败:', e)
+    }
+  }
+
+  /** 删除会话 */
+  async function deleteSession(sessionId: string) {
+    try {
+      await apiClient.delete(`/chat/sessions/${sessionId}`)
+      sessions.value = sessions.value.filter((s) => s.session_id !== sessionId)
+      if (currentSessionId.value === sessionId) {
+        currentSessionId.value = ''
+        messages.value = []
+      }
+    } catch (e) {
+      console.error('删除会话失败:', e)
+    }
+  }
+
+  /** 发送消息（SSE 流式） */
+  async function sendMessage(
+    content: string,
+    options?: {
+      assistantId?: string
+      systemPrompt?: string
+      temperature?: number
+      maxTokens?: number
+      contextLength?: number
+    },
+  ) {
+    if (!content.trim() || !selectedModelId.value) return
+    if (isStreaming.value) return
+
+    streamError.value = ''
+    streamingContent.value = ''
+    streamingReasoning.value = ''
+
+    // 添加用户消息到显示列表
+    const userMsg: DisplayMessage = {
+      message_id: `temp_${Date.now()}`,
+      role: 'user',
+      content: content.trim(),
+      reasoning: '',
+      status: 'complete',
+      created_at: new Date().toISOString(),
+    }
+    messages.value.push(userMsg)
+
+    // 添加 AI 占位消息
+    const aiMsg: DisplayMessage = {
+      message_id: `temp_ai_${Date.now()}`,
+      role: 'assistant',
+      content: '',
+      reasoning: '',
+      status: 'streaming',
+      created_at: new Date().toISOString(),
+    }
+    messages.value.push(aiMsg)
+
+    isStreaming.value = true
+
+    // 构建发送给后端的消息列表（包含历史上下文）
+    const ctxLen = options?.contextLength ?? 20
+    const apiMessages = messages.value
+      .filter((m) => m.status !== 'error')
+      .slice(-ctxLen)
+      .map((m) => ({ role: m.role, content: m.content }))
+      .filter((m) => m.content.length > 0)
+
+    // 移除刚添加的空 AI 占位
+    apiMessages.pop()
+
+    await streamChat(
+      {
+        messages: apiMessages,
+        modelId: selectedModelId.value,
+        sessionId: currentSessionId.value || undefined,
+        assistantId: options?.assistantId,
+        systemPrompt: options?.systemPrompt,
+        temperature: options?.temperature,
+        maxTokens: options?.maxTokens,
+      },
+      {
+        onText: (text, isReasoning) => {
+          if (isReasoning) {
+            streamingReasoning.value += text
+            aiMsg.reasoning = streamingReasoning.value
+          } else {
+            streamingContent.value += text
+            aiMsg.content = streamingContent.value
+          }
+        },
+        onSessionCreated: (sessionId, messageId) => {
+          if (!currentSessionId.value) {
+            currentSessionId.value = sessionId
+            aiMsg.message_id = messageId
+            // 刷新会话列表
+            fetchSessions()
+          } else {
+            aiMsg.message_id = messageId
+          }
+        },
+        onError: (error) => {
+          streamError.value = error
+          aiMsg.status = 'error'
+          aiMsg.content = streamingContent.value || error
+        },
+        onDone: (_sessionId, _messageId) => {
+          aiMsg.status = 'complete'
+          // 自动生成标题（第一条消息后）
+          const session = sessions.value.find((s) => s.session_id === currentSessionId.value)
+          if (session && session.title === '新对话') {
+            const autoTitle = content.trim().slice(0, 30) + (content.trim().length > 30 ? '...' : '')
+            updateSessionTitle(currentSessionId.value, autoTitle)
+          }
+        },
+      },
+    )
+
+    isStreaming.value = false
+  }
+
+  /** 停止流式输出 */
+  function stopStreaming() {
+    abortStream()
+    isStreaming.value = false
+    const lastMsg = messages.value[messages.value.length - 1]
+    if (lastMsg && lastMsg.status === 'streaming') {
+      lastMsg.status = 'complete'
+    }
+  }
+
+  /** 清空当前会话消息（仅前端，不删数据库） */
+  function clearDisplayMessages() {
+    messages.value = []
+  }
+
+  return {
+    // State
+    sessions,
+    currentSessionId,
+    messages,
+    models,
+    selectedModelId,
+    loadingSessions,
+    loadingMessages,
+    streamingContent,
+    streamingReasoning,
+    isStreaming,
+    streamError,
+    // Getters
+    currentSession,
+    selectedModel,
+    // Actions
+    fetchModels,
+    fetchSessions,
+    selectSession,
+    createSession,
+    updateSessionTitle,
+    deleteSession,
+    sendMessage,
+    stopStreaming,
+    clearDisplayMessages,
+  }
+})

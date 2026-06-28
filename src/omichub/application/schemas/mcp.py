@@ -47,6 +47,18 @@ class CreateMCPServerDTO(OmicsHubBaseSchema):
     auto_restart: bool = True
 
 
+class UpdateMCPServerDTO(OmicsHubBaseSchema):
+    """更新 MCP Server"""
+
+    name: str | None = None
+    description: str | None = None
+    command: str | None = None
+    url: str | None = None
+    env: dict[str, str] | None = None
+    timeout: int | None = None
+    auto_restart: bool | None = None
+
+
 class InvokeToolDTO(OmicsHubBaseSchema):
     """工具调用请求"""
 

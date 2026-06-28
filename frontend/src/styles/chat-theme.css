@@ -683,6 +683,7 @@
   padding: 12px 24px;
   border-bottom: 1px solid var(--chat-border);
   background: var(--chat-surface);
+  flex-shrink: 0;
 }
 .kimi-layout .session-header .session-title-input {
   max-width: 400px;
@@ -706,4 +707,5 @@
 .kimi-layout .input-area-wrapper {
   padding: 16px 24px 24px;
   background: linear-gradient(to top, var(--chat-bg) 80%, transparent);
+  flex-shrink: 0;
 }

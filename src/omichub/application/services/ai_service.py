@@ -7,6 +7,8 @@ from collections.abc import AsyncIterator
 from typing import Any
 from uuid import UUID, uuid4
 
+from loguru import logger
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.ai import (
@@ -44,6 +46,7 @@ def _conversation_to_dto(conv: Conversation, message_count: int | None = None) -
         user_id=conv.user_id,
         title=conv.title,
         model=conv.model,
+        assistant_id=conv.assistant_id,
         message_count=cnt,
         created_at=conv.created_at,
         updated_at=conv.updated_at,
@@ -123,6 +126,8 @@ class AIService:
     ) -> ConversationDTO:
         model = req.model or self._settings.kimi_model
         conv = await self._domain.create_conversation(user_id, req.title, model)
+        conv.assistant_id = req.assistant_id
+        await self._repo.save(conv)
         return _conversation_to_dto(conv, 0)
 
     async def list_conversations(self, user_id: UUID) -> list[ConversationDTO]:
@@ -144,7 +149,8 @@ class AIService:
         return await self._repo.delete(conversation_id)
 
     async def stream_chat(
-        self, user_id: UUID, conversation_id: UUID, content: str
+        self, user_id: UUID, conversation_id: UUID, content: str,
+        assistant_id: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """流式对话 - 逐 token 推送事件流
 
@@ -174,28 +180,76 @@ class AIService:
             yield {"type": "done"}
             return
 
+        # 构建 system prompt：基础 + 助手 + 技能
         system_prompt = self._settings.ai_system_prompt + self._TOOL_USE_INSTRUCTIONS
+
+        # 助手 system prompt 注入
+        effective_assistant_id = conv.assistant_id or assistant_id
+        if effective_assistant_id:
+            from omichub.infrastructure.database.models.chat import ChatAssistantModel
+
+            result = await self._db.execute(
+                select(ChatAssistantModel).where(
+                    ChatAssistantModel.assistant_id == effective_assistant_id,
+                    ChatAssistantModel.is_active == True,  # noqa: E712
+                )
+            )
+            ast = result.scalar_one_or_none()
+            if ast and ast.system_prompt:
+                system_prompt = ast.system_prompt + self._TOOL_USE_INSTRUCTIONS
+
+        # 技能 prompt 注入
+        try:
+            from omichub.application.services.skill_service import SkillService
+
+            skills = await SkillService(self._db).get_active_skills()
+            if skills:
+                system_prompt += SkillService.build_skills_prompt(skills)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"技能注入失败: {e}")
 
         try:
             messages = await self._domain.build_context_messages(conv, system_prompt)
 
-            # 第一轮：非流式调用，支持原生 function calling 决定工具
-            response = await provider.chat(
-                messages,
-                temperature=self._settings.ai_temperature,
-                tools=self.TOOLS,
-            )
-            message = response.get("choices", [{}])[0].get("message", {})
-            assistant_content = message.get("content", "") or ""
-            tool_calls_raw = message.get("tool_calls", [])
+            # 第一轮：流式调用 + 工具调用
+            stream_fn = getattr(provider, "stream_chat_with_tools", None)
+            content_parts: list[str] = []
+            final_tool_calls: list[dict[str, Any]] = []
 
-            # 兼容层：非 function calling 模型可能通过文本代码块表达工具调用
+            if stream_fn:
+                async for ev in stream_fn(
+                    messages,
+                    temperature=self._settings.ai_temperature,
+                    tools=self.TOOLS,
+                ):
+                    if ev.type == "text" and ev.content:
+                        content_parts.append(ev.content)
+                        yield {"type": "token", "content": ev.content}
+                    elif ev.type == "tool_calls":
+                        final_tool_calls = ev.tool_calls or []
+            else:
+                # Fallback：provider 不支持流式+tools，回退非流式
+                response = await provider.chat(
+                    messages,
+                    temperature=self._settings.ai_temperature,
+                    tools=self.TOOLS,
+                )
+                message = response.get("choices", [{}])[0].get("message", {})
+                assistant_content = message.get("content", "") or ""
+                content_parts.append(assistant_content)
+                final_tool_calls = message.get("tool_calls") or []
+
+            assistant_content = "".join(content_parts)
+
+            # 兼容层：非 FC 模型可能通过文本代码块表达工具调用
             cleaned, extracted_tool_calls = self._extract_tool_calls(assistant_content)
             if extracted_tool_calls:
                 assistant_content = cleaned
 
+            # 合并 tool_calls
+            tool_calls = self._normalize_tool_calls(final_tool_calls) + extracted_tool_calls
+
             # 存储助手消息
-            tool_calls = self._normalize_tool_calls(tool_calls_raw) + extracted_tool_calls
             conv = await self._domain.append_assistant_message(
                 conv, assistant_content, tool_calls=tool_calls or None
             )
@@ -205,7 +259,7 @@ class AIService:
                 "message": _message_to_dto(last_assistant).model_dump(),
             }
 
-            # Tool Use 执行 + 二次流式回答
+            # Tool Use 执行 + 二次流式回答（不变）
             if tool_calls:
                 executor = AIToolExecutor(self._db, user_id)
                 for tc in tool_calls:
@@ -244,8 +298,10 @@ class AIService:
     )
 
     @staticmethod
-    def _normalize_tool_calls(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _normalize_tool_calls(raw: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
         """将 OpenAI tool_calls 格式转为内部统一格式"""
+        if not raw:
+            return []
         result: list[dict[str, Any]] = []
         for tc in raw:
             func = tc.get("function", {})

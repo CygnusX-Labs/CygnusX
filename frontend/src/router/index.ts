@@ -153,6 +153,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/AdminAIProvidersView.vue'),
         meta: { title: 'AI 模型配置', requiresAuth: true }
       },
+      {
+        path: 'admin/ai-resources',
+        name: 'admin-ai-resources',
+        component: () => import('@/views/AdminAIResourceCenterView.vue'),
+        meta: { title: 'AI 资源中心', requiresAuth: true }
+      },
     ],
   },
   {

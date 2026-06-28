@@ -164,6 +164,72 @@ export interface MCPTool {
   input_schema: Record<string, unknown>
 }
 
+// ===== Skill =====
+export interface Skill {
+  id: string
+  skill_id: string
+  name: string
+  description: string
+  prompt: string
+  tool_definition: Record<string, unknown> | null
+  icon: string
+  category: string
+  is_active: boolean
+  is_builtin: boolean
+  created_at: string
+  updated_at: string
+}
+
+// ===== ChatAssistant (admin) =====
+export interface ChatAssistantAdmin {
+  assistant_id: string
+  name: string
+  description: string | null
+  system_prompt: string
+  default_model_id: string | null
+  default_temperature: number
+  default_max_tokens: number
+  icon: string
+  color: string
+  category: string
+  is_builtin: boolean
+  is_active: boolean
+  is_default: boolean
+}
+
+// ===== Skill =====
+export interface Skill {
+  id: string
+  skill_id: string
+  name: string
+  description: string
+  prompt: string
+  tool_definition: Record<string, unknown> | null
+  icon: string
+  category: string
+  is_active: boolean
+  is_builtin: boolean
+  created_at: string
+  updated_at: string
+}
+
+// ===== ChatAssistant (Admin) =====
+export interface ChatAssistantAdmin {
+  assistant_id: string
+  name: string
+  description: string | null
+  system_prompt: string
+  default_model_id: string | null
+  default_temperature: number
+  default_max_tokens: number
+  icon: string
+  color: string
+  category: string
+  is_builtin: boolean
+  is_active: boolean
+  is_default: boolean
+}
+
 // ===== AI Provider 配置 =====
 export interface AIProviderConfig {
   id: string

@@ -62,12 +62,15 @@ class SqlAlchemyConversationRepository(IConversationRepository):
                 title=conversation.title,
                 model=conversation.model,
                 summary=conversation.context_window.summary,
+                assistant_id=conversation.assistant_id,
             )
             self._session.add(model)
         else:
             model.title = conversation.title
             model.model = conversation.model
             model.summary = conversation.context_window.summary
+            if conversation.assistant_id is not None:
+                model.assistant_id = conversation.assistant_id
         await self._session.flush()
 
         # upsert 所有消息（按 id）
@@ -120,6 +123,7 @@ class SqlAlchemyConversationRepository(IConversationRepository):
             user_id=m.user_id,
             title=m.title,
             model=m.model,
+            assistant_id=m.assistant_id,
             context_window=ContextWindow(messages=messages, summary=m.summary or ""),
             created_at=m.created_at,
             updated_at=m.updated_at or datetime.now(),

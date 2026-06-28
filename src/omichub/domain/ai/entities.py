@@ -42,6 +42,7 @@ class Conversation(BaseModel):
     user_id: UUID
     title: str = "新对话"
     model: str = ""
+    assistant_id: str | None = None
     context_window: ContextWindow = Field(default_factory=ContextWindow)
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)

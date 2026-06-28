@@ -5,6 +5,7 @@ interface PendingMessage {
   type: 'chat'
   conversation_id: string
   content: string
+  assistant_id?: string
 }
 
 /**
@@ -85,8 +86,13 @@ export function useAIWebSocket() {
     }
   }
 
-  function sendChat(conversationId: string, content: string) {
-    const msg: PendingMessage = { type: 'chat', conversation_id: conversationId, content }
+  function sendChat(conversationId: string, content: string, assistantId?: string) {
+    const msg: PendingMessage = {
+      type: 'chat',
+      conversation_id: conversationId,
+      content,
+      ...(assistantId ? { assistant_id: assistantId } : {}),
+    }
     if (ws.value && ws.value.readyState === WebSocket.OPEN) {
       ws.value.send(JSON.stringify(msg))
     } else {

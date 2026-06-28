@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 from omichub.core.config import get_settings
+from omichub.infrastructure.ai_provider.base import StreamEvent
 
 
 class KimiProvider:
@@ -74,9 +75,30 @@ class KimiProvider:
                     except (json.JSONDecodeError, KeyError):
                         continue
 
-    def is_configured(self) -> bool:
+    async def is_configured(self) -> bool:
         """检查是否已配置有效 API Key 与模型"""
         return bool(self.api_key) and bool(self.model)
+
+    async def stream_chat_with_tools(
+        self,
+        messages: list[dict[str, str]],
+        model: str = "",
+        temperature: float = 0.7,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        """降级实现：非流式 chat + 整段 content 作单条 StreamEvent
+
+        Kimi 旧版 API 不支持 stream+tools，委托非流式后封装为事件流。
+        """
+        response = await self.chat(messages, model=model, temperature=temperature, tools=tools)
+        message = response.get("choices", [{}])[0].get("message", {})
+        content = message.get("content", "") or ""
+        if content:
+            yield StreamEvent(type="text", content=content)
+        raw_tool_calls = message.get("tool_calls") or []
+        if raw_tool_calls:
+            yield StreamEvent(type="tool_calls", tool_calls=raw_tool_calls)
+        yield StreamEvent(type="done")
 
     async def embeddings(self, text: str, model: str = "") -> list[float]:
         """文本嵌入向量（Kimi 当前无嵌入接口，返回空列表占位）"""

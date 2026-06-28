@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from omichub.api.v1 import (
     ai,
     auth,
+    chat,
     cookies,
     docs,
     files,
@@ -18,6 +19,8 @@ from omichub.api.v1 import (
 )
 from omichub.api.v1.admin import admin_cookies
 from omichub.api.v1.admin import ai_providers as admin_ai_providers
+from omichub.api.v1.admin import assistants as admin_assistants
+from omichub.api.v1.admin import skills as admin_skills
 from omichub.api.v1.admin import users as admin_users
 
 api_router = APIRouter()
@@ -35,7 +38,12 @@ api_router.include_router(admin_users.router, prefix="/admin/users", tags=["Admi
 api_router.include_router(
     admin_ai_providers.router, prefix="/admin/ai-providers", tags=["Admin-AI-Providers"]
 )
+api_router.include_router(admin_skills.router, prefix="/admin/skills", tags=["Admin-Skills"])
+api_router.include_router(
+    admin_assistants.router, prefix="/admin/assistants", tags=["Admin-Assistants"]
+)
 api_router.include_router(ai.router, prefix="/ai", tags=["AI Copilot"])
+api_router.include_router(chat.router, prefix="/chat", tags=["AI Chat"])
 api_router.include_router(notification.router, prefix="/notifications", tags=["Notifications"])
 api_router.include_router(mcp.router, prefix="/mcp", tags=["MCP"])
 api_router.include_router(sandbox.router, prefix="/sandbox", tags=["Sandbox"])

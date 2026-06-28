@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { isToday, isYesterday, parseISO } from 'date-fns'
+import apiClient from '@/api/client'
 import type { ChatSession, ChatMessage, UserInfo, ModelOption, PluginOption } from '@/components/ai-chat/types'
 
 export const useChatStore = defineStore('chat', () => {
@@ -251,6 +252,21 @@ export const useChatStore = defineStore('chat', () => {
     } else if (!currentSessionId.value) {
       currentSessionId.value = sessions.value[0].id
     }
+    fetchPlugins()
+  }
+
+  async function fetchPlugins() {
+    try {
+      const res = await apiClient.get<Array<{ skill_id: string; name: string; description: string; icon: string }>>('/chat/skills')
+      availablePlugins.value = res.data.map((s) => ({
+        id: s.skill_id,
+        name: s.name,
+        description: s.description,
+        icon: s.icon,
+      }))
+    } catch {
+      /* 静默失败，保留默认 */
+    }
   }
 
   return {
@@ -291,6 +307,7 @@ export const useChatStore = defineStore('chat', () => {
     toggleTheme,
     selectModel,
     initStore,
+    fetchPlugins,
     saveToLocalStorage,
     loadFromLocalStorage,
   }

@@ -26,6 +26,7 @@ class ConversationModel(Base, TimestampMixin):
     title: Mapped[str] = mapped_column(String(255), default="新对话")
     model: Mapped[str] = mapped_column(String(100), default="")
     summary: Mapped[str] = mapped_column(Text, default="")
+    assistant_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
 
 class MessageModel(Base):

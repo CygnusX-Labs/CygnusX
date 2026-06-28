@@ -34,9 +34,13 @@ const isAdmin = computed(() => authStore.user?.role === 'admin')
 
 const contentStyle = computed(() =>
   route.meta.fullscreen
-    ? 'padding: 0; height: 100%; background: var(--neutral-bg);'
+    ? 'padding: 0; display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--neutral-bg);'
     : 'padding: 24px; background: var(--neutral-bg);'
 )
+
+// 全屏页面（如 AI 助手）使用原生滚动容器，使 .n-layout-scroll-container 的 flex:1
+// 高度规则生效，让内部 chat 布局铺满视口；非全屏页面保留 Naive 虚拟滚动条。
+const useNativeScrollbar = computed(() => route.meta.fullscreen === true)
 
 // 响应式：窗口宽度 < 1024 自动折叠，< 768 进入移动端模式
 const windowWidth = ref(window.innerWidth)
@@ -128,6 +132,7 @@ const adminNavItems = computed<NavItem[]>(() => [
       { key: 'admin-cookies-accounts', label: '饼干账户管理', to: '/admin/cookies/accounts', icon: WalletOutline },
       { key: 'admin-cookies-pricing', label: '饼干定价管理', to: '/admin/cookies/pricing', icon: PricetagOutline },
       { key: 'admin-ai-providers', label: 'AI 模型配置', to: '/admin/ai-providers', icon: SparklesOutline },
+      { key: 'admin-ai-resources', label: 'AI 资源中心', to: '/admin/ai-resources', icon: SparklesOutline },
     ],
   },
 ])
@@ -566,7 +571,7 @@ const UserAvatar = () => {
       <NLayout class="main-layout">
         <NLayoutContent
           :content-style="contentStyle"
-          :native-scrollbar="false"
+          :native-scrollbar="useNativeScrollbar"
         >
           <RouterView v-slot="{ Component }">
             <Transition name="route" mode="out-in">

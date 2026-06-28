@@ -122,6 +122,7 @@ async def ai_websocket(websocket: WebSocket) -> None:
 
             conv_id_raw = data.get("conversation_id", "")
             content = data.get("content", "")
+            assistant_id = data.get("assistant_id")
             try:
                 conversation_id = UUID(str(conv_id_raw))
             except ValueError:
@@ -135,7 +136,9 @@ async def ai_websocket(websocket: WebSocket) -> None:
             async with factory() as session:
                 try:
                     service = AIService(session)
-                    async for event in service.stream_chat(user_id, conversation_id, content):
+                    async for event in service.stream_chat(
+                        user_id, conversation_id, content, assistant_id
+                    ):
                         await websocket.send_text(json.dumps(event, default=str))
                     await session.commit()
                 except Exception as e:  # noqa: BLE001

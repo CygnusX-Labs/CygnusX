@@ -9,13 +9,13 @@
 # 管理员仍可在"系统设置 → AI 模型配置"中查看/修改/测试。
 
 providers:
-  - name: Kimi 默认
+  - name: aliyun
     provider_type: openai_compatible
-    model: moonshot-v1-8k
-    base_url: https://api.moonshot.cn/v1
-    api_key: ${KIMI_API_KEY}
+    model: qwen3.7-max
+    base_url: https://llm-i1uekbihz77q045m.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+    api_key: ${AL_API_KEY}
     temperature: 0.7
-    max_tokens: 2048
+    max_tokens: 4096
     top_p: 1.0
     timeout: 120
     is_default: true

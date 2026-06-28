@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
+import DOMPurify from 'dompurify'
 import 'highlight.js/styles/github.css'
 
 const props = defineProps<{ content: string }>()
@@ -23,11 +24,34 @@ const md = new MarkdownIt({
   },
 })
 
-const html = computed(() => md.render(props.content || ''))
+const html = computed(() => {
+  const raw = md.render(props.content || '')
+  return DOMPurify.sanitize(raw, {
+    ADD_ATTR: ['target', 'rel'],
+  })
+})
+
+const copied = ref<string | null>(null)
+
+async function copyCode(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  const btn = target.closest('.copy-btn') as HTMLElement | null
+  if (!btn) return
+  const pre = btn.parentElement?.querySelector('code')
+  if (!pre) return
+  const text = pre.textContent || ''
+  try {
+    await navigator.clipboard.writeText(text)
+    copied.value = btn.dataset.id || '0'
+    setTimeout(() => (copied.value = null), 2000)
+  } catch {
+    // clipboard 不可用时静默失败
+  }
+}
 </script>
 
 <template>
-  <div class="md-body" v-html="html"></div>
+  <div class="md-body" v-html="html" @click="copyCode"></div>
 </template>
 
 <style scoped>
@@ -64,6 +88,7 @@ const html = computed(() => md.render(props.content || ''))
   padding: 12px 14px;
   overflow-x: auto;
   margin: 0.5em 0;
+  position: relative;
 }
 .md-body :deep(pre.hljs code) {
   background: transparent;
@@ -85,5 +110,12 @@ const html = computed(() => md.render(props.content || ''))
 .md-body :deep(td) {
   border: 1px solid var(--neutral-border, #e5e6eb);
   padding: 6px 10px;
+}
+.md-body :deep(a) {
+  color: var(--arco-primary, #165dff);
+  text-decoration: none;
+}
+.md-body :deep(a:hover) {
+  text-decoration: underline;
 }
 </style>

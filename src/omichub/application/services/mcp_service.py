@@ -11,6 +11,7 @@ from omichub.application.schemas.mcp import (
     CreateMCPServerDTO,
     MCPServerDTO,
     MCPToolDTO,
+    UpdateMCPServerDTO,
 )
 from omichub.core.config import get_settings
 from omichub.core.exceptions import ConflictError, NotFoundError
@@ -127,6 +128,25 @@ class MCPService:
 
     async def delete_server(self, server_id: UUID) -> bool:
         return await self._repo.delete(server_id)
+
+    async def update_server(self, server_id: UUID, req: UpdateMCPServerDTO) -> MCPServerDTO:
+        """更新 MCP Server 配置"""
+        server = await self._repo.get_by_id(server_id)
+        if server is None:
+            raise NotFoundError("MCP Server 不存在")
+        data = req.model_dump(exclude_unset=True)
+        for key, value in data.items():
+            setattr(server, key, value)
+        await self._repo.save(server)
+        return _server_to_dto(server)
+
+    async def test_server(self, server_id: UUID) -> dict[str, Any]:
+        """测试连接并发现工具"""
+        try:
+            tools = await self.list_tools(server_id)
+            return {"success": True, "tool_count": len(tools), "status": "online"}
+        except Exception as e:  # noqa: BLE001
+            return {"success": False, "tool_count": 0, "status": "error", "error": str(e)}
 
     async def list_tools(self, server_id: UUID) -> list[MCPToolDTO]:
         """获取指定 Server 的工具列表（builtin 即时返回；外部即时发现）"""

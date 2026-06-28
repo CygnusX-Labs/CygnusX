@@ -54,6 +54,7 @@ async def _init_default_ai_provider() -> None:
         )
         config.is_default = True
         await repo.save(config)
+        await session.commit()
 
 
 @asynccontextmanager
@@ -82,14 +83,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.warning(f"沙盒容器池未预热，降级运行: {e}")
 
-    # 初始化默认 AI Provider（从环境变量兜底配置迁移）
-    try:
-        await _init_default_ai_provider()
-        logger.info("AI Provider 初始化完成")
-    except Exception as e:
-        logger.warning(f"AI Provider 初始化失败，降级运行: {e}")
-
-    # 从外置 YAML 同步 AI Provider 配置
+    # 从外置 YAML 同步 AI Provider 配置（推荐方式：data/ai_providers.yaml）
     try:
         from omichub.application.services.ai_provider_yaml_loader import (
             AIProviderYamlLoader,
@@ -102,8 +96,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 count = await AIProviderYamlLoader(session).load_and_sync()
                 if count:
                     logger.info(f"已从 YAML 同步 {count} 个 AI Provider")
+                await session.commit()
     except Exception as e:
         logger.warning(f"AI Provider YAML 同步失败，降级运行: {e}")
+
+    # 兜底：若数据库中仍无任何 AI Provider，则从环境变量创建默认配置
+    try:
+        await _init_default_ai_provider()
+        logger.info("AI Provider 初始化完成")
+    except Exception as e:
+        logger.warning(f"AI Provider 初始化失败，降级运行: {e}")
+
+    # 初始化内置聊天助手（RNA-seq 分析师、单细胞分析师等）
+    try:
+        from omichub.application.services.chat_service import ChatService
+        from omichub.infrastructure.database.session import get_session_factory
+
+        factory = get_session_factory()
+        if factory is not None:
+            async with factory() as session:
+                service = ChatService(session)
+                await service.init_builtin_assistants()
+                await session.commit()
+                logger.info("内置聊天助手初始化完成")
+    except Exception as e:
+        logger.warning(f"内置聊天助手初始化失败，降级运行: {e}")
 
     yield
 

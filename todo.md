@@ -1,11 +1,73 @@
 # OmicHub 开发进度 Todo
 
 > 基于 `docs/` 架构设计文档，逐步完善项目骨架。
-> 更新日期：2026-06-26 (前端体验修复)
+> 更新日期：2026-06-28 (Cherry Studio SSE 架构 + AI 资源管理中心)
 
 ---
 
 ## 已完成
+
+### Cherry Studio SSE 架构切换 + AI 资源管理中心 ✅ 2026-06-28
+
+> 端到端验证：`POST /chat/stream` SSE 逐 token 推送（12 文本 token + 61 推理 token），会话/消息持久化到 `chat_sessions`/`chat_messages`，技能 prompt 注入生效，助手 system_prompt 覆盖生效。
+
+- [x] **Part 1：流式聊天 Provider 重构**
+  - [x] `litellm_provider.py` 新增 `stream_chat_with_tools()` — 逐 token `StreamEvent` 推送 + `delta.tool_calls` 按 index 累积 + `BadRequestError` 降级非流式
+  - [x] `kimi.py` 修复 `is_configured` sync→async + 新增 `stream_chat_with_tools` 降级实现
+  - [x] `base.py` 新增 `StreamEvent` dataclass + Protocol `stream_chat_with_tools` 方法签名
+  - [x] 修复 `_build_kwargs` 丢失 `stream=True` 导致 litellm 返回 `ModelResponse` 而非异步流的致命 bug
+- [x] **Part 2：Skill 后端（技能 prompt 注入）**
+  - [x] `domain/skill/` — 完整六域分层（entities / value_objects / repositories / services）
+  - [x] `infrastructure/database/models/skill.py` — SkillModel ORM
+  - [x] `infrastructure/database/repositories/skill_repository.py` — SqlAlchemySkillRepository
+  - [x] `application/schemas/skill.py` — SkillDTO + CreateSkillDTO + UpdateSkillDTO
+  - [x] `application/services/skill_service.py` — CRUD + `build_skills_prompt()` + `get_active_skills()` (MAX_ACTIVE_SKILLS=10)
+  - [x] `api/v1/admin/skills.py` — AdminRequired CRUD + toggle
+  - [x] `api/v1/chat.py` 新增公开 `GET /chat/skills`（仅返回启用技能，供前端插件下拉）
+  - [x] Alembic 迁移 `e4f5a6b7c8d9` — skills 表 + ai_conversations.assistant_id + chat_assistants.is_default
+- [x] **Part 3：Agent 后端（助手管理）**
+  - [x] `ChatAssistantModel` 新增 `is_default` 列
+  - [x] `ConversationModel` 新增 `assistant_id` 列
+  - [x] `chat_service.py` — `list_all_assistants` / `update_assistant` (含 is_default 联动清除) / `delete_assistant` (builtin 仅停用) / `toggle_assistant` / `set_default_assistant`
+  - [x] `schemas/chat.py` — `UpdateAssistantRequest` 新增 `is_default` 字段
+  - [x] `api/v1/admin/assistants.py` — AdminRequired CRUD + toggle + set-default
+- [x] **Part 4：MCP 管理加固**
+  - [x] `api/v1/mcp.py` — ALL endpoints (GET/POST/PUT/DELETE) 改为 `AdminRequired`（防止命令/env 泄露）
+  - [x] 新增 `PUT /servers/{id}` 编辑 + `POST /servers/{id}/test` 连通性测试
+  - [x] `schemas/mcp.py` — `UpdateMCPServerDTO`
+  - [x] `mcp_service.py` — `update_server` + `test_server` 方法
+- [x] **Part 5：Cherry Studio SSE 前端（核心架构切换）**
+  - [x] 移除 7 个文件的 DEPRECATED 标记（`useChatStream.ts` / `chatSession.ts` / `chatAssistant.ts` / `ChatMessageItem.vue` / `ChatSettingsDrawer.vue` / `types/chat.ts` / `openai_compatible.py`）
+  - [x] `KimiLayout.vue` **重写** — 从 WebSocket stores (`useAIStore` + `useAIWebSocket`) 切换到 SSE stores (`useChatSessionStore` + `useChatAssistantStore`)，不再需要 WebSocket 连接/重连逻辑
+  - [x] `chat_service.py` SSE `stream_chat()` 添加技能 prompt 注入（与 WebSocket 路径一致）
+  - [x] `stores/chat.ts` — `fetchPlugins()` 从 `GET /chat/skills` 加载启用技能，替代硬编码插件列表
+  - [x] `alembic/env.py` — 添加 `skill` 模型导入（供 autogenerate 使用）
+- [x] **Part 6：AI 资源管理中心前端**
+  - [x] `types/index.ts` — Skill + ChatAssistantAdmin 接口
+  - [x] `stores/mcp.ts` — createServer/updateServer/deleteServer/testServer
+  - [x] `components/admin/McpResourceTab.vue` — MCP CRUD + 连通性测试
+  - [x] `components/admin/SkillResourceTab.vue` — Skill CRUD
+  - [x] `components/admin/AgentResourceTab.vue` — Agent CRUD + toggle + set-default
+  - [x] `views/AdminAIResourceCenterView.vue` — 三标签页统一管理
+  - [x] `router/index.ts` — `admin/ai-resources` 路由
+  - [x] `layouts/DefaultLayout.vue` — 侧边栏入口
+- [x] **验证**：后端 `ruff check` 全通过；前端 `vue-tsc --noEmit` 无错误；`npm run build` 成功；SSE 端到端测试通过（逐 token + 推理过程 + 会话持久化 + 技能注入）
+
+### AI 助手可用性修复（输入无响应 + 界面不铺满）✅ 2026-06-27
+
+> 端到端验证：经 nginx 真实 WebSocket 发送 `hi` → 收到 `['user_message','assistant_message','done']`，回复“您好！我是 OmicHub 智能分析助手…”；`/ai/status` 返回 `{"configured":true}`。
+
+- [x] **问题一：输入 `hi` 没有任何回复**（多根因叠加，导致后端 AI 调用必然失败）
+  - [x] **litellm 路由失败（主因）**：`LiteLLMProvider` 把裸模型名 `qwen3.7-max` 直传 litellm，自定义 OpenAI 兼容端点要求 `openai/` 前缀否则抛 `BadRequestError: LLM Provider NOT provided`。新增 `_route_model()`：配置了自定义 `api_base` 且模型名无前缀时自动补 `openai/`（实测 `openai/qwen3.7-max` 正常返回）
+  - [x] **YAML Provider 同步崩溃**：`AIProviderYamlLoader` 对领域实体直接 `session.add()` 抛 `Class ... is not mapped`，aliyun 配置未入库（DB 查出 0 行）。改为统一走 `repo.save()`（实体→ORM 模型转换），并修正默认 Provider 管理（`set_default` 正确取消其他默认）
+  - [x] **会话未提交**：启动初始化与 YAML 同步仅 `flush()` 未 `commit()`，数据被回滚。两处补 `await session.commit()`；并调整 lifespan 顺序——YAML（方式1，推荐）先同步，环境变量（方式2）仅在库空时兜底，符合 `.env.example` 设计
+  - [x] **`${AL_API_KEY}` 解析为空**：YAML 把 key 改为 `${AL_API_KEY}` 引用，但容器环境无此变量→插值得空串→入库 key 为空→“Invalid API-key”。`.env` 新增 `AL_API_KEY`（`.env` 已 gitignore，密钥不出库），`.env.example` 补模板；compose 给 `web` 挂载 `../../data:/app/data:ro`（之前容器内 `/app/data` 不存在，YAML 同步空跑）
+  - [x] **`tool_calls: null` 崩溃**：qwen/aliyun 不调工具时返回 `"tool_calls": null`，`message.get("tool_calls", [])` 拿到 `None`，`_normalize_tool_calls` 遍历 `None` 抛 `TypeError`，在 `assistant_message` 事件发出前被 `except` 吞成 error——故 LLM 已回复但前端不可见。改为 `message.get("tool_calls") or []` + `_normalize_tool_calls` 增加 `if not raw: return []` 守卫
+- [x] **问题二：AI 界面下方空白、不铺满视口**
+  - [x] 根因：`DefaultLayout` 用 `:native-scrollbar="false"` → Naive 渲染 `NScrollbar` 而非 `.n-layout-scroll-container`；全局 CSS 里 `:deep(.n-layout-scroll-container){flex:1}` 只匹配原生滚动容器、不命中 NScrollbar，高度链断裂 → `.kimi-layout` 的 `height:100%` 无从解析 → 聊天区只占内容高度、下方留白
+  - [x] 修复：`DefaultLayout.vue` 对 `fullscreen` 路由（仅 `/ai`）改用 `:native-scrollbar="true"`，使 `.n-layout-scroll-container` 的 `flex:1` 生效，高度链贯通、聊天自动铺满视口、消息列表内部滚动
+  - [x] `.session-header` / `.input-area-wrapper` 增加 `flex-shrink:0`，短屏下输入框不被挤压
+- [x] **验证**：前端 `npm run build` 通过（nginx 已服务新产物 `index-BQzk0j96.css`）；后端真实 WebSocket 走 nginx 端到端返回正常回复；DB 默认 Provider = aliyun(qwen3.7-max)，key 已加密落库
 
 ### 测试报告 v1.1 问题修复 ✅ 2026-06-26
 - [x] **认证与路由**
@@ -246,21 +308,28 @@
 
 ### 优先级 P2 — AI Copilot 与沙盒
 
-- [x] **AI 对话 WebSocket** (docs/modules/09_sandbox_architecture.md) ✅ 2026-06-26 后端+前端实现完成
-  - [x] ai.py WebSocket 端点完整实现 (非 echo)
-  - [x] ConversationRepositoryImpl
-  - [x] AIService 编排对话 + 上下文管理
-  - [x] KimiProvider 流式响应接入
-  - [x] 前端 AIChat 组件 (Markdown 渲染 + 流式打字机) — 已修复 `NScroll` → `NScrollbar` 类型错误，type-check/build 通过
-  - [x] Tool Use 协议 (submit_task/query_status/list_samples)
+- [x] **AI 对话 SSE 流式（Cherry Studio 架构）** (docs/OmicHub_CherryStudio_整合实施文档.md) ✅ 2026-06-28 Cherry Studio SSE 架构完成
+  - [x] `chat_service.py` SSE `stream_chat()` — 流式输出 + 实时数据库更新 + 会话/消息持久化
+  - [x] `openai_compatible.py` `OpenAICompatibleProvider` + `ProviderManager` — httpx 直连 OpenAI SSE，支持 DeepSeek reasoning_content
+  - [x] `api/v1/chat.py` — `POST /chat/stream` SSE 端点 + 会话/助手/模型管理 REST API
+  - [x] `useChatStream.ts` — fetch + ReadableStream 解析 SSE，AbortController 停止生成
+  - [x] `chatSession.ts` — 会话/消息/流式状态管理（Cherry Studio Optimistic Update 模式）
+  - [x] `chatAssistant.ts` — 内置助手 + 自定义助手管理（分类分组）
+  - [x] `ChatMessageItem.vue` + `MarkdownRenderer.vue` — Markdown 渲染 + DOMPurify XSS 防护 + highlight.js 代码高亮 + 复制按钮
+  - [x] `KimiLayout.vue` 接入 SSE stores（不再依赖 WebSocket）
+  - [x] Tool Use 协议 (submit_task/query_status/list_samples) — WebSocket 路径保留（ai_service.py）
+  - [x] ⚠️ 2026-06-27 修复多重隐性 bug 使其真正可用：litellm 路由前缀 / YAML 同步 `not mapped` 崩溃 + 未 commit / `${AL_API_KEY}` 解析为空 / `tool_calls:null` 崩溃（详见顶部「AI 助手可用性修复」节）
+  - [x] ⚠️ 2026-06-28 修复 `_build_kwargs` 丢失 `stream=True` 导致 SSE 返回 ModelResponse 的致命 bug
+  - [x] ⚠️ 2026-06-28 技能 prompt 注入 + 助手 system_prompt 覆盖 + 资源管理中心（Skill/Agent/MCP 三标签页）
 
-- [ ] **代码执行沙盒** (docs/modules/08_tech_selection.md)
+- [x] **代码执行沙盒** (docs/modules/08_tech_selection.md) ✅ 2026-06-27
   - [x] Docker 预热容器池管理器
-  - [ ] 沙盒镜像 Dockerfile (Bioconda + scanpy/seurat) — 当前 `deploy/sandbox/Dockerfile` 用 pip 安装 scanpy，R+Seurat 被注释
+  - [x] 沙盒镜像 Dockerfile (Bioconda + scanpy/seurat) — 改为 `condaforge/mambaforge` 基础，bioconda 渠道预装 scanpy/anndata/squidpy/scvi-tools + R/Seurat/IRkernel；新增 `sitecustomize.py` 注入 sc/np/pd + `show_echarts`/`show_image` 回传协议
   - [x] WebSocket 代码执行协议
-  - [ ] 前端 CodeMirror 6 编辑器组件 — 依赖已安装但无页面/组件使用
-  - [ ] ECharts GL 图表渲染 (UMAP/热图) — 依赖已安装但沙盒页面未实现
+  - [x] 前端 CodeMirror 6 编辑器组件 — `components/sandbox/CodeEditor.vue`（Python lang + one-dark + 行号/历史/高亮）
+  - [x] ECharts GL 图表渲染 (UMAP/热图) — `components/sandbox/echartsSetup.ts` 注册 scatterGL/heatmap/dataZoom/visualMap/brush
   - [x] 会话亲和性 + 30min 超时回收
+  - [x] `SandboxView.vue` 完整页面：会话列表/创建/销毁 + 编辑器 + 运行/停止 + 结果三标签页（输出/图表/图片）+ 示例代码（UMAP scatterGL / 表达热图 / matplotlib 图片）
 
 - [x] **MCP 集成** (docs/modules/11_integration_fusion.md) ✅ 2026-06-26 后端实现完成
   - [x] MCPServerRepositoryImpl
@@ -271,8 +340,8 @@
 
 > ⚠️ P2 后续待补齐：
 > 1. 补 alembic 迁移：`ai_conversations` / `ai_messages` / `mcp_servers` / `sandbox_sessions` 四张表未在现有迁移中。
-> 2. 沙盒前端页面：`SandboxView.vue` + 路由 `/sandbox` + CodeMirror 6 + ECharts GL UMAP/热图渲染。
-> 3. 沙盒镜像 Dockerfile 按文档要求改为 Bioconda 并启用 R+Seurat。
+> 2. ~~沙盒前端页面：`SandboxView.vue` + 路由 `/sandbox` + CodeMirror 6 + ECharts GL UMAP/热图渲染。~~ ✅ 2026-06-27 已完成
+> 3. ~~沙盒镜像 Dockerfile 按文档要求改为 Bioconda 并启用 R+Seurat。~~ ✅ 2026-06-27 已完成
 
 ### 优先级 P3 — 生产化
 

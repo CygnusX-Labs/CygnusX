@@ -27,6 +27,7 @@ class ConversationDTO(OmicsHubBaseSchema):
     user_id: UUID
     title: str = "新对话"
     model: str = ""
+    assistant_id: str | None = None
     message_count: int = 0
     created_at: datetime
     updated_at: datetime
@@ -43,6 +44,10 @@ class CreateConversationDTO(OmicsHubBaseSchema):
 
     title: str = "新对话"
     model: str = ""
+    assistant_id: str | None = None
+    assistant_id: str | None = None
+    assistant_id: str | None = None
+    assistant_id: str | None = None
 
 
 class SendChatDTO(OmicsHubBaseSchema):

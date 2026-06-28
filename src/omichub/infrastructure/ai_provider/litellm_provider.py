@@ -10,6 +10,7 @@ from loguru import logger
 
 from omichub.core.config import get_settings
 from omichub.domain.ai_provider.entities import AIProviderConfig
+from omichub.infrastructure.ai_provider.base import StreamEvent
 
 
 class LiteLLMProvider:
@@ -65,6 +66,21 @@ class LiteLLMProvider:
 
         return None
 
+    @staticmethod
+    def _route_model(model: str, has_custom_base: bool) -> str:
+        """litellm 按模型名路由：自定义 OpenAI 兼容端点必须加 ``openai/`` 前缀，
+        否则 litellm 无法判定 provider 会抛 BadRequestError。
+
+        - 已带 provider 前缀（含 ``/``，如 ``openai/``、``azure/``）则原样返回；
+        - 设置了自定义 ``api_base`` 且模型名无前缀时，统一补 ``openai/`` 前缀；
+        - 未设置 ``api_base`` 的原生模型（如 ``gpt-4o``）交由 litellm 自动路由。
+        """
+        if not model or "/" in model:
+            return model
+        if has_custom_base:
+            return f"openai/{model}"
+        return model
+
     def _build_kwargs(
         self, config: AIProviderConfig | None, messages: list[dict[str, str]], **overrides: Any
     ) -> dict[str, Any]:
@@ -103,9 +119,12 @@ class LiteLLMProvider:
                 )
 
         # 覆盖参数
-        for key in ("temperature", "max_tokens", "top_p", "timeout", "tools"):
+        for key in ("stream", "temperature", "max_tokens", "top_p", "timeout", "tools"):
             if key in overrides:
                 kwargs[key] = overrides[key]
+
+        # litellm 路由：自定义 OpenAI 兼容端点需 openai/ 前缀，否则 BadRequestError
+        kwargs["model"] = self._route_model(str(kwargs.get("model", "")), bool(kwargs.get("api_base")))
 
         return kwargs
 
@@ -159,6 +178,112 @@ class LiteLLMProvider:
         except Exception as e:  # noqa: BLE001
             logger.warning(f"LiteLLM 流式调用失败: {e}")
             raise
+
+    async def stream_chat_with_tools(
+        self,
+        messages: list[dict[str, str]],
+        model: str = "",
+        temperature: float | None = None,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        """流式对话 + 工具调用 — 逐 token 推送 + 流末组装 tool_calls
+
+        遍历 litellm.acompletion(stream=True, tools=...) 的 chunk：
+        - delta.content → yield StreamEvent("text")
+        - delta.tool_calls → 按 index 累积 id/function.name/function.arguments（字符串拼接）
+        - 流末若 tc_acc 非空 → 解析 arguments JSON → yield StreamEvent("tool_calls")
+
+        降级：litellm.BadRequestError 时回退非流式 self.chat(tools=tools)
+        """
+        overrides: dict[str, Any] = {"stream": True}
+        if model:
+            overrides["model"] = model
+        if temperature is not None:
+            overrides["temperature"] = temperature
+        if tools is not None:
+            overrides["tools"] = tools
+
+        config = await self._get_config()
+        kwargs = self._build_kwargs(config, messages, **overrides)
+
+        tc_acc: dict[int, dict[str, Any]] = {}
+
+        try:
+            logger.debug(f"LiteLLM stream+tools call: model={kwargs.get('model')}")
+            stream = await litellm.acompletion(**kwargs)
+            async for chunk in stream:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                finish = chunk.choices[0].finish_reason
+
+                # 1. 内容 token
+                content = getattr(delta, "content", None) or ""
+                if content:
+                    yield StreamEvent(type="text", content=content)
+
+                # 2. 工具调用增量累积（按 index 分片拼接）
+                raw_tc = getattr(delta, "tool_calls", None)
+                if raw_tc:
+                    for tc in raw_tc:
+                        idx = getattr(tc, "index", 0) or 0
+                        if idx not in tc_acc:
+                            tc_acc[idx] = {
+                                "id": "",
+                                "type": "function",
+                                "function": {"name": "", "arguments": ""},
+                            }
+                        if getattr(tc, "id", None):
+                            tc_acc[idx]["id"] = tc.id
+                        func = getattr(tc, "function", None)
+                        if func:
+                            if getattr(func, "name", None):
+                                tc_acc[idx]["function"]["name"] += func.name
+                            if getattr(func, "arguments", None):
+                                tc_acc[idx]["function"]["arguments"] += func.arguments
+
+                # 3. finish_reason 处理
+                if finish and finish != "null" and finish == "content_filter":
+                    yield StreamEvent(type="text", content="[输出被内容安全过滤器拦截]")
+                # 注意：不在此处 return，等流自然结束
+
+        except litellm.BadRequestError as e:
+            # 降级：provider 不支持 stream+tools
+            logger.warning(f"Stream+tools 不支持，降级非流式: {e}")
+            response = await self.chat(
+                messages, model=model, temperature=temperature, tools=tools
+            )
+            message = response.get("choices", [{}])[0].get("message", {})
+            content = message.get("content", "") or ""
+            if content:
+                yield StreamEvent(type="text", content=content)
+            raw_tool_calls = message.get("tool_calls") or []
+            if raw_tool_calls:
+                yield StreamEvent(type="tool_calls", tool_calls=raw_tool_calls)
+            yield StreamEvent(type="done")
+            return
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"LiteLLM stream+tools 调用失败: {e}")
+            raise
+
+        # 流结束：组装 tool_calls
+        if tc_acc:
+            assembled: list[dict[str, Any]] = []
+            for idx in sorted(tc_acc):
+                tc = tc_acc[idx]
+                assembled.append(
+                    {
+                        "id": tc["id"] or f"call_{idx}",
+                        "type": "function",
+                        "function": {
+                            "name": tc["function"]["name"],
+                            "arguments": tc["function"]["arguments"],
+                        },
+                    }
+                )
+            yield StreamEvent(type="tool_calls", tool_calls=assembled)
+
+        yield StreamEvent(type="done")
 
     async def is_configured(self) -> bool:
         """检查是否已配置有效 API Key 与模型"""
