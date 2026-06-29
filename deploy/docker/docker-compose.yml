@@ -32,6 +32,8 @@ services:
       - APP_ENV=development
       - POSTGRES_HOST=db
       - REDIS_HOST=cache
+      - AL_API_KEY=${AL_API_KEY}
+      - ARK_API_KEY=${ARK_API_KEY}
     depends_on:
       db:
         condition: service_healthy
@@ -45,7 +47,8 @@ services:
     networks:
       - app_net
       - data_net
-    command: uvicorn omichub.main:app --host 0.0.0.0 --port 8000 --reload
+    # 生产模式启动：多 worker + 关闭热重载（避免 watchdog 扫描 src 的首次加载开销）
+    command: uvicorn omichub.main:app --host 0.0.0.0 --port 8000 --workers 2
 
   # ===== Celery Worker =====
   worker:
@@ -60,6 +63,8 @@ services:
       - APP_ENV=development
       - POSTGRES_HOST=db
       - REDIS_HOST=cache
+      - AL_API_KEY=${AL_API_KEY}
+      - ARK_API_KEY=${ARK_API_KEY}
     depends_on:
       - web
     volumes:
@@ -89,6 +94,8 @@ services:
       - APP_ENV=development
       - POSTGRES_HOST=db
       - REDIS_HOST=cache
+      - AL_API_KEY=${AL_API_KEY}
+      - ARK_API_KEY=${ARK_API_KEY}
     depends_on:
       - worker
     volumes:

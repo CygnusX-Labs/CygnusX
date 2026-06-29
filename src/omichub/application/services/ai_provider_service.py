@@ -21,6 +21,10 @@ from omichub.infrastructure.database.repositories.ai_provider_repository import 
     SqlAlchemyAIProviderConfigRepository,
 )
 
+# API Key 脱敏哨兵：GET 接口回显用，PUT 接口据此判断是否保留原值。
+# 与仓储层 ai_provider_repository._update_model 的守卫保持一致，形成双重防护。
+MASKED_API_KEY = "********"
+
 
 def _to_dto(config: AIProviderConfig) -> AIProviderConfigDTO:
     return AIProviderConfigDTO(
@@ -36,6 +40,9 @@ def _to_dto(config: AIProviderConfig) -> AIProviderConfigDTO:
         is_active=config.is_active,
         is_default=config.is_default,
         extra_params=config.extra_params,
+        # 已配置则回显脱敏哨兵，前端据此判断是否已设密钥；
+        # 回传时哨兵与空串都视为"不更新"，绝不覆写真实 Key。
+        api_key=MASKED_API_KEY if config.api_key else "",
         created_at=config.created_at.isoformat() if config.created_at else None,
         updated_at=config.updated_at.isoformat() if config.updated_at else None,
     )
@@ -94,7 +101,9 @@ class AIProviderConfigService:
         config.timeout = dto.timeout
         config.is_active = dto.is_active
         config.extra_params = dto.extra_params
-        if dto.api_key:
+        # 仅当提交了非空、且非脱敏哨兵的 Key 时才更新；
+        # 空串与 "********"（脱敏回显原样回传）均保留原值。
+        if dto.api_key and dto.api_key != MASKED_API_KEY:
             config.api_key = dto.api_key
         config.mark_updated()
 

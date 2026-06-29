@@ -102,7 +102,9 @@ async function fetchConfigs() {
 
 function openEdit(row?: AIProviderConfig) {
   if (row) {
-    editForm.value = { ...row, api_key: '' }
+    // 回显后端脱敏值（已配置为 "********"，未配置为空）；
+    // 用户不改则原样回传，由后端判定保留原值；改了则回传新 Key。
+    editForm.value = { ...row, api_key: row.api_key ?? '' }
   } else {
     editForm.value = {
       name: '',

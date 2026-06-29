@@ -3,7 +3,7 @@
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class AIProviderConfigBaseDTO(BaseModel):
@@ -30,6 +30,7 @@ class AIProviderConfigUpdateDTO(AIProviderConfigBaseDTO):
 class AIProviderConfigDTO(AIProviderConfigBaseDTO):
     id: UUID
     is_default: bool
+    api_key: str = ""  # 脱敏回显：已配置为 "********"，未配置为 ""
     created_at: str | None = None
     updated_at: str | None = None
 
