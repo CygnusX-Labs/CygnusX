@@ -68,7 +68,7 @@ class AIService:
                     "properties": {
                         "flow_id": {
                             "type": "string",
-                            "description": "分析流程 ID，如 rna_seq、atac_seq",
+                            "description": "分析流程 ID，对应 YAML 中 meta.id",
                         },
                         "parameters": {
                             "type": "object",

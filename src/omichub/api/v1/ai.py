@@ -28,10 +28,20 @@ AIServiceDep = Annotated[AIService, Depends(get_ai_service)]
 
 
 @router.get("/status", summary="AI 服务配置状态")
-async def ai_status() -> dict[str, bool]:
-    """返回 AI 服务是否已配置（无需登录，便于前端提前提示）"""
-    provider = get_llm_provider()
-    return {"configured": await provider.is_configured()}
+async def ai_status(db: DbSession) -> dict[str, bool]:
+    """返回 AI 服务是否已配置（无需登录，便于前端提前提示）
+
+    修复：不再只检查默认 provider 或 .env 环境变量，而是检查数据库中
+    是否存在任意一个已启用且配置了 API Key 的 provider，与 /chat/models 保持一致。
+    """
+    from omichub.infrastructure.database.repositories.ai_provider_repository import (
+        SqlAlchemyAIProviderConfigRepository,
+    )
+
+    repo = SqlAlchemyAIProviderConfigRepository(db)
+    configs = await repo.list_all(active_only=True)
+    configured = any(bool(c.api_key) and bool(c.model) for c in configs)
+    return {"configured": configured}
 
 
 @router.get("/conversations", response_model=list[ConversationDTO], summary="对话列表")

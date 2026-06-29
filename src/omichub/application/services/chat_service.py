@@ -262,23 +262,25 @@ class ChatService:
             current_session_id = dto.session_id
 
         # 3. 确定系统提示词
-        final_system_prompt = system_prompt
-        if not final_system_prompt and assistant_id:
-            ast = await self.get_assistant(assistant_id)
-            if ast:
-                final_system_prompt = ast.system_prompt
-        if not final_system_prompt:
-            final_system_prompt = DEFAULT_SYSTEM_PROMPT
+        # [极简测试] 临时禁用所有系统提示词，直接和裸模型对话
+        final_system_prompt = None
+        # final_system_prompt = system_prompt
+        # if not final_system_prompt and assistant_id:
+        #     ast = await self.get_assistant(assistant_id)
+        #     if ast:
+        #         final_system_prompt = ast.system_prompt
+        # if not final_system_prompt:
+        #     final_system_prompt = DEFAULT_SYSTEM_PROMPT
 
-        # 技能 prompt 注入
-        try:
-            from omichub.application.services.skill_service import SkillService
-
-            skills = await SkillService(self._db).get_active_skills()
-            if skills:
-                final_system_prompt += SkillService.build_skills_prompt(skills)
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"技能注入失败: {e}")
+        # [极简测试] 临时禁用技能 prompt 注入
+        # try:
+        #     from omichub.application.services.skill_service import SkillService
+        #
+        #     skills = await SkillService(self._db).get_active_skills()
+        #     if skills:
+        #         final_system_prompt += SkillService.build_skills_prompt(skills)
+        # except Exception as e:  # noqa: BLE001
+        #     logger.warning(f"技能注入失败: {e}")
 
         # 4. 保存用户消息
         user_content = messages[-1].get("content", "") if messages else ""
