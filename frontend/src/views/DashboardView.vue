@@ -243,7 +243,7 @@ function statusTextClass(status: string) {
 
 <template>
   <div class="dashboard-page">
-    <h1 class="page-title">控制台</h1>
+    <h1 class="page-title">仪表板</h1>
 
     <!-- 公告横幅 -->
     <div v-if="!bannerClosed" class="announcement-banner animate-fade-in">
@@ -254,8 +254,8 @@ function statusTextClass(status: string) {
           </NIcon>
         </div>
         <div class="banner-text">
-          <h4 class="banner-title">单细胞分析模块即将上线</h4>
-          <p class="banner-desc">全新支持 10x Genomics 数据，敬请期待</p>
+          <h4 class="banner-title">RNA-seq / ATAC-seq 分析已就绪</h4>
+          <p class="banner-desc">转录组与表观遗传分析流程均已上线，点击立即开始</p>
         </div>
         <NButton size="small" class="banner-btn" @click="router.push('/flows')">
           立即查看
