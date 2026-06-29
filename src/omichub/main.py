@@ -1,5 +1,6 @@
 """FastAPI 应用入口"""
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -59,72 +60,87 @@ async def _init_default_ai_provider() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """应用生命周期：启动与关闭"""
+    """应用生命周期：启动与关闭
+
+    性能优化：初始化步骤并行执行（asyncio.gather），首启耗时从「串行之和」降为
+    「最慢一项」；沙盒容器池预热转后台任务，不阻塞 app 接受请求（首请求无需等容器池）。
+    """
     setup_logging()
     from loguru import logger
 
     settings = get_settings()
     logger.info(f"启动 {settings.app_name} (env={settings.app_env})")
 
-    # 启动时初始化连接（数据库不可用时降级运行，便于骨架阶段独立启动）
     from omichub.infrastructure.database.session import init_db
 
+    # --- 第 0 步：数据库连接必须先就绪（后续步骤依赖它）---
     try:
         await init_db()
         logger.info("数据库连接已就绪")
     except Exception as e:
         logger.warning(f"数据库未就绪，降级运行: {e}")
 
-    # 沙盒容器池预热（Docker 不可用时跳过）
-    try:
-        from omichub.infrastructure.sandbox import get_sandbox_pool
+    # --- 沙盒预热：转后台 task，不阻塞 app 就绪（首请求无需等容器池）---
+    async def _warmup_sandbox() -> None:
+        try:
+            from omichub.infrastructure.sandbox import get_sandbox_pool
 
-        await get_sandbox_pool().initialize()
-    except Exception as e:
-        logger.warning(f"沙盒容器池未预热，降级运行: {e}")
+            await get_sandbox_pool().initialize()
+            logger.info("沙盒容器池预热完成")
+        except Exception as e:
+            logger.warning(f"沙盒容器池未预热，降级运行: {e}")
 
-    # 从外置 YAML 同步 AI Provider 配置（推荐方式：data/ai_providers.yaml）
-    try:
-        from omichub.application.services.ai_provider_yaml_loader import (
-            AIProviderYamlLoader,
-        )
-        from omichub.infrastructure.database.session import get_session_factory
+    sandbox_task = asyncio.create_task(_warmup_sandbox())
 
-        factory = get_session_factory()
-        if factory is not None:
-            async with factory() as session:
-                count = await AIProviderYamlLoader(session).load_and_sync()
-                if count:
-                    logger.info(f"已从 YAML 同步 {count} 个 AI Provider")
-                await session.commit()
-    except Exception as e:
-        logger.warning(f"AI Provider YAML 同步失败，降级运行: {e}")
+    # --- 三个独立的写库初始化并行执行 ---
+    async def _sync_ai_providers() -> None:
+        # 从外置 YAML 同步 AI Provider 配置（推荐方式：data/ai_providers.yaml）
+        try:
+            from omichub.application.services.ai_provider_yaml_loader import (
+                AIProviderYamlLoader,
+            )
+            from omichub.infrastructure.database.session import get_session_factory
 
-    # 兜底：若数据库中仍无任何 AI Provider，则从环境变量创建默认配置
-    try:
-        await _init_default_ai_provider()
-        logger.info("AI Provider 初始化完成")
-    except Exception as e:
-        logger.warning(f"AI Provider 初始化失败，降级运行: {e}")
+            factory = get_session_factory()
+            if factory is not None:
+                async with factory() as session:
+                    count = await AIProviderYamlLoader(session).load_and_sync()
+                    if count:
+                        logger.info(f"已从 YAML 同步 {count} 个 AI Provider")
+                    await session.commit()
+        except Exception as e:
+            logger.warning(f"AI Provider YAML 同步失败，降级运行: {e}")
 
-    # 初始化内置聊天助手（RNA-seq 分析师、单细胞分析师等）
-    try:
-        from omichub.application.services.chat_service import ChatService
-        from omichub.infrastructure.database.session import get_session_factory
+    async def _init_default_provider() -> None:
+        # 兜底：若数据库中仍无任何 AI Provider，则从环境变量创建默认配置
+        try:
+            await _init_default_ai_provider()
+            logger.info("AI Provider 初始化完成")
+        except Exception as e:
+            logger.warning(f"AI Provider 初始化失败，降级运行: {e}")
 
-        factory = get_session_factory()
-        if factory is not None:
-            async with factory() as session:
-                service = ChatService(session)
-                await service.init_builtin_assistants()
-                await session.commit()
-                logger.info("内置聊天助手初始化完成")
-    except Exception as e:
-        logger.warning(f"内置聊天助手初始化失败，降级运行: {e}")
+    async def _init_assistants() -> None:
+        # 初始化内置聊天助手（RNA-seq 分析师、单细胞分析师等）
+        try:
+            from omichub.application.services.chat_service import ChatService
+            from omichub.infrastructure.database.session import get_session_factory
+
+            factory = get_session_factory()
+            if factory is not None:
+                async with factory() as session:
+                    service = ChatService(session)
+                    await service.init_builtin_assistants()
+                    await session.commit()
+                    logger.info("内置聊天助手初始化完成")
+        except Exception as e:
+            logger.warning(f"内置聊天助手初始化失败，降级运行: {e}")
+
+    await asyncio.gather(_sync_ai_providers(), _init_default_provider(), _init_assistants())
 
     yield
 
-    # 关闭时清理
+    # 关闭时清理：取消未完成的沙盒预热 + 关闭数据库
+    sandbox_task.cancel()
     from omichub.infrastructure.database.session import close_db
 
     await close_db()
