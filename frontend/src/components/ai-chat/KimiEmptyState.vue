@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import KimiChatInput from './KimiChatInput.vue'
 import type { QuickPrompt } from './types'
 
 interface Props {
@@ -17,8 +15,6 @@ const emit = defineEmits<{
   sendPrompt: [prompt: string]
   uploadFile: [file: File]
 }>()
-
-const inputValue = ref('')
 
 const logoMotion = {
   initial: { opacity: 0, y: 30, scale: 0.95 },
@@ -43,21 +39,8 @@ const cardMotion = (index: number) => ({
   },
 })
 
-const inputMotion = {
-  initial: { opacity: 0, y: 20 },
-  enter: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 500, delay: 800, ease: 'easeOut' },
-  },
-}
-
 function handlePromptClick(prompt: QuickPrompt) {
   emit('sendPrompt', prompt.text)
-}
-
-function handleSend(content: string) {
-  emit('sendPrompt', content)
 }
 </script>
 
@@ -83,13 +66,6 @@ function handleSend(content: string) {
       </div>
     </div>
 
-    <div v-motion="inputMotion" class="empty-input-wrapper">
-      <KimiChatInput
-        v-model="inputValue"
-        placeholder="输入 / 唤起插件和技能..."
-        @send="handleSend"
-      />
-    </div>
   </div>
 </template>
 
@@ -139,6 +115,7 @@ function handleSend(content: string) {
     gap: 12px;
     max-width: 720px;
     width: 100%;
+    padding-bottom: 80px; /* 与全局底部输入框保持距离 */
   }
 
   .prompt-card {
@@ -171,12 +148,6 @@ function handleSend(content: string) {
     line-height: 1.4;
   }
 
-  .empty-input-wrapper {
-    width: 100%;
-    max-width: 760px;
-    position: sticky;
-    bottom: 0;
-  }
 }
 
 @keyframes logoBreath {

@@ -42,12 +42,13 @@ const emit = defineEmits<{
 const activeMenu = ref('')
 
 const functionMenus = [
-  { key: 'plugin', label: '插件', icon: ExtensionPuzzleOutline, path: '/plugins' },
+  // 插件、深度研究、Agent 模式页面暂未实现，先隐藏
+  // { key: 'plugin', label: '插件', icon: ExtensionPuzzleOutline, path: '/plugins' },
   { key: 'analysis', label: '分析流程', icon: AnalyticsOutline, path: '/flows' },
   { key: 'data', label: '项目数据', icon: FolderOutline, path: '/files' },
-  { key: 'research', label: '深度研究', icon: SearchOutline, path: '/research' },
+  // { key: 'research', label: '深度研究', icon: SearchOutline, path: '/research' },
   { key: 'code', label: '代码沙盒', icon: CodeSlashOutline, path: '/sandbox' },
-  { key: 'agent', label: 'Agent 模式', icon: RocketOutline, path: '/agent', badge: 'New' },
+  // { key: 'agent', label: 'Agent 模式', icon: RocketOutline, path: '/agent', badge: 'New' },
 ]
 
 const groupedSessions = computed(() => {
@@ -110,15 +111,6 @@ function handleMenuClick(item: { key: string; path: string }) {
         >
           <n-icon size="18" class="menu-icon"><component :is="item.icon" /></n-icon>
           <span v-if="!collapsed" class="menu-label">{{ item.label }}</span>
-          <n-tag
-            v-if="!collapsed && item.badge"
-            size="small"
-            :bordered="false"
-            type="info"
-            class="menu-badge"
-          >
-            {{ item.badge }}
-          </n-tag>
         </div>
       </div>
     </div>

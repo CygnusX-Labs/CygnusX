@@ -212,7 +212,8 @@ function handlePluginSelect(key: string) {
 
     <div class="input-toolbar">
       <div class="toolbar-left">
-        <n-tooltip trigger="hover">
+        <!-- 上传文件、Agent、插件功能暂未实现，先隐藏避免误导 -->
+        <n-tooltip v-if="false" trigger="hover">
           <template #trigger>
             <n-button text class="toolbar-btn" @click="triggerFileUpload">
               <template #icon>
@@ -223,6 +224,7 @@ function handlePluginSelect(key: string) {
           上传文件
         </n-tooltip>
         <input
+          v-if="false"
           ref="fileInputRef"
           type="file"
           multiple
@@ -231,6 +233,7 @@ function handlePluginSelect(key: string) {
         />
 
         <n-button
+          v-if="false"
           text
           class="toolbar-btn agent-btn"
           :class="{ active: agentMode }"
@@ -243,7 +246,7 @@ function handlePluginSelect(key: string) {
           <span class="btn-label">Agent</span>
         </n-button>
 
-        <n-dropdown :options="pluginOptions" trigger="click" @select="handlePluginSelect">
+        <n-dropdown v-if="false" :options="pluginOptions" trigger="click" @select="handlePluginSelect">
           <n-button text class="toolbar-btn plugin-btn" title="选择插件">
             <template #icon>
               <n-icon size="16"><ExtensionPuzzleOutline /></n-icon>

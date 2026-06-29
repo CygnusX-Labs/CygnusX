@@ -13,7 +13,7 @@ import { useChatSessionStore } from '@/stores/chatSession'
 import { useChatAssistantStore } from '@/stores/chatAssistant'
 import { useChatStore } from '@/stores/chat'
 import { useAuthStore } from '@/stores/auth'
-import type { ChatMessage, ChatSession, SendOptions } from './types'
+import type { ChatMessage, ChatSession, SendOptions, ModelOption } from './types'
 
 const chatSessionStore = useChatSessionStore()
 const chatAssistantStore = useChatAssistantStore()
@@ -56,14 +56,17 @@ const titleModel = computed({
 })
 
 // chatSessionStore.messages -> KimiMessageList 需要的 ChatMessage[]
-const messages = computed<ChatMessage[]>(() =>
-  chatSessionStore.messages.map((m) => ({
+const messages = computed<ChatMessage[]>(() => {
+  // 依赖流式内容，确保 SSE 推流时能实时触发重新渲染
+  const _ = chatSessionStore.streamingContent + chatSessionStore.streamingReasoning
+  return chatSessionStore.messages.map((m) => ({
     id: m.message_id,
     role: m.role as ChatMessage['role'],
     content: m.content,
+    thought: m.reasoning,
     createdAt: m.created_at,
   }))
-)
+})
 
 const isEmpty = computed(
   () => !chatSessionStore.currentSessionId || messages.value.length === 0,
@@ -76,10 +79,30 @@ const assistantOptions = computed(() =>
   }))
 )
 
+// chatSessionStore.models -> KimiChatInput 需要的 ModelOption[]
+const availableModelsForInput = computed<ModelOption[]>(() =>
+  chatSessionStore.models.map((m) => ({
+    id: m.id,
+    name: m.name,
+    description: `${m.provider_type} · ${m.model}`,
+    provider: m.provider_type,
+  }))
+)
+
 const streamingContent = computed(() => {
+  // 依赖流式内容，确保 SSE 推流时 streamingContent 能实时更新
+  const _ = chatSessionStore.streamingContent
   const msgs = chatSessionStore.messages
   const last = msgs[msgs.length - 1]
   return last?.role === 'assistant' && last.status === 'streaming' ? last.content : ''
+})
+
+const streamingReasoning = computed(() => {
+  // 依赖流式思考内容，确保 reasoning 能实时更新
+  const _ = chatSessionStore.streamingReasoning
+  const msgs = chatSessionStore.messages
+  const last = msgs[msgs.length - 1]
+  return last?.role === 'assistant' && last.status === 'streaming' ? last.reasoning : ''
 })
 
 const showConfigWarning = computed(() => !aiConfigured.value)
@@ -132,7 +155,8 @@ async function handleSend(content: string, _options: SendOptions) {
   inputMessage.value = ''
   await chatSessionStore.sendMessage(content, {
     assistantId: chatAssistantStore.currentAssistantId || undefined,
-    systemPrompt: chatAssistantStore.currentAssistant?.system_prompt,
+    // [极简测试] 临时禁用助手系统提示词
+    // systemPrompt: chatAssistantStore.currentAssistant?.system_prompt,
   })
 
   if (chatSessionStore.streamError) {
@@ -141,19 +165,19 @@ async function handleSend(content: string, _options: SendOptions) {
 }
 
 function handleSendPrompt(prompt: string) {
-  handleSend(prompt, { agentMode: chatStore.agentMode, model: chatStore.selectedModel, plugins: [] })
+  handleSend(prompt, { agentMode: chatStore.agentMode, model: chatSessionStore.selectedModelId, plugins: [] })
 }
 
 function handleSelectModel(modelId: string) {
   chatSessionStore.selectedModelId = modelId
 }
 
-function handleSelectPlugin(pluginId: string) {
-  message.info(`已选择插件: ${pluginId}`)
+function handleSelectPlugin(_pluginId: string) {
+  message.info('插件功能开发中，敬请期待')
 }
 
-function handleUploadFile(file: File) {
-  message.info(`上传文件: ${file.name}`)
+function handleUploadFile(_file: File) {
+  message.info('文件上传功能开发中，敬请期待')
 }
 
 function handleNavigate(path: string) {
@@ -217,105 +241,137 @@ onMounted(async () => {
         AI 服务未配置：请在后端 .env 中设置 KIMI_API_KEY / OPENAI_API_KEY，或由管理员在"系统设置 → AI 模型配置"中添加 Provider。
       </n-alert>
 
-      <KimiEmptyState
-        v-if="isEmpty"
-        logo-text="OMIC HUB"
-        :quick-prompts="chatStore.quickPrompts"
-        @send-prompt="handleSendPrompt"
-        @upload-file="handleUploadFile"
-      />
-
-      <template v-else>
-        <div class="session-header">
-          <n-input v-model:value="titleModel" class="session-title-input" placeholder="会话标题">
-            <template #prefix>
-              <n-icon><CreateOutline /></n-icon>
-            </template>
-          </n-input>
-          <div class="session-actions">
-            <n-select
-              v-if="assistantOptions.length > 0"
-              v-model:value="chatAssistantStore.currentAssistantId"
-              :options="assistantOptions"
-              size="tiny"
-              style="width: 160px"
-              placeholder="选择助手"
-            />
-            <n-tag :type="chatSessionStore.isStreaming ? 'warning' : 'success'" size="small" round>
-              {{ chatSessionStore.isStreaming ? '生成中' : '就绪' }}
-            </n-tag>
-            <n-button text class="action-btn">
-              <template #icon><n-icon><ShareOutline /></n-icon></template>
-              分享
-            </n-button>
-            <n-button text class="action-btn">
-              <template #icon><n-icon><SettingsOutline /></n-icon></template>
-              设置
-            </n-button>
-          </div>
-        </div>
-
-        <KimiMessageList
-          :messages="messages"
-          :is-typing="chatSessionStore.isStreaming"
-          :streaming-content="streamingContent"
-          @feedback="handleFeedback"
-          @copy-message="handleCopyMessage"
-          @retry="handleRetry"
+      <div class="main-content-area">
+        <KimiEmptyState
+          v-if="isEmpty"
+          logo-text="OMIC HUB"
+          :quick-prompts="chatStore.quickPrompts"
+          @send-prompt="handleSendPrompt"
+          @upload-file="handleUploadFile"
         />
 
-        <n-alert
-          v-if="showStreamError"
-          type="error"
-          :show-icon="true"
-          closable
-          class="conn-alert"
-          @close="chatSessionStore.streamError = ''"
-        >
-          {{ chatSessionStore.streamError }}
-        </n-alert>
+        <template v-else>
+          <div class="session-header">
+            <n-input v-model:value="titleModel" class="session-title-input" placeholder="会话标题">
+              <template #prefix>
+                <n-icon><CreateOutline /></n-icon>
+              </template>
+            </n-input>
+            <div class="session-actions">
+              <n-select
+                v-if="assistantOptions.length > 0"
+                v-model:value="chatAssistantStore.currentAssistantId"
+                :options="assistantOptions"
+                size="tiny"
+                style="width: 160px"
+                placeholder="选择助手"
+              />
+              <n-tag :type="chatSessionStore.isStreaming ? 'warning' : 'success'" size="small" round>
+                {{ chatSessionStore.isStreaming ? '生成中' : '就绪' }}
+              </n-tag>
+              <n-button text class="action-btn">
+                <template #icon><n-icon><ShareOutline /></n-icon></template>
+                分享
+              </n-button>
+              <n-button text class="action-btn">
+                <template #icon><n-icon><SettingsOutline /></n-icon></template>
+                设置
+              </n-button>
+            </div>
+          </div>
 
-        <div class="input-area-wrapper">
-          <KimiChatInput
-            v-model="inputMessage"
-            :agent-mode="chatStore.agentMode"
-            :selected-model="chatStore.selectedModel"
-            :models="chatStore.availableModels"
-            :plugins="chatStore.availablePlugins"
-            :disabled="chatSessionStore.isStreaming"
-            @send="(content) => handleSend(content, { agentMode: chatStore.agentMode, model: chatStore.selectedModel, plugins: [] })"
-            @toggle-agent="chatStore.agentMode = !chatStore.agentMode"
-            @select-model="handleSelectModel"
-            @select-plugin="handleSelectPlugin"
-            @upload-file="handleUploadFile"
+          <KimiMessageList
+            :messages="messages"
+            :is-typing="chatSessionStore.isStreaming"
+            :streaming-content="streamingContent"
+            :streaming-thought="streamingReasoning"
+            @feedback="handleFeedback"
+            @copy-message="handleCopyMessage"
+            @retry="handleRetry"
           />
-        </div>
-      </template>
+
+          <n-alert
+            v-if="showStreamError"
+            type="error"
+            :show-icon="true"
+            closable
+            class="conn-alert"
+            @close="chatSessionStore.streamError = ''"
+          >
+            {{ chatSessionStore.streamError }}
+          </n-alert>
+        </template>
+      </div>
+
+      <div class="input-area-wrapper">
+        <KimiChatInput
+          v-model="inputMessage"
+          :agent-mode="chatStore.agentMode"
+          :selected-model="chatSessionStore.selectedModelId"
+          :models="availableModelsForInput"
+          :plugins="chatStore.availablePlugins"
+          :disabled="chatSessionStore.isStreaming"
+          @send="(content) => handleSend(content, { agentMode: chatStore.agentMode, model: chatSessionStore.selectedModelId, plugins: [] })"
+          @toggle-agent="chatStore.agentMode = !chatStore.agentMode"
+          @select-model="handleSelectModel"
+          @select-plugin="handleSelectPlugin"
+          @upload-file="handleUploadFile"
+        />
+      </div>
     </main>
   </div>
 </template>
 
 <style scoped lang="scss">
 .kimi-layout {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
   display: flex;
-  width: 100%;
-  height: 100%;
   background: var(--chat-bg);
   color: var(--chat-text-primary);
   overflow: hidden;
 }
+
 .kimi-main {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
+
 .config-alert {
   border-radius: 0;
   flex-shrink: 0;
 }
+
 .conn-alert {
   border-radius: 0;
   flex-shrink: 0;
+}
+
+.main-content-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.session-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--chat-border);
+}
+
+.input-area-wrapper {
+  flex-shrink: 0;
+  padding: 16px 24px;
+  border-top: 1px solid var(--chat-border);
+  background: var(--chat-bg);
 }
 </style>

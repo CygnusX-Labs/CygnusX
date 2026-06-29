@@ -146,7 +146,7 @@ function handleFeedback(type: 'like' | 'dislike') {
               <template #icon><n-icon size="14"><CopyOutline /></n-icon></template>
               复制
             </n-button>
-            <n-button text size="tiny" class="action-btn" @click="handleRetry">
+            <n-button v-if="false" text size="tiny" class="action-btn" @click="handleRetry">
               <template #icon><n-icon size="14"><RefreshOutline /></n-icon></template>
               重试
             </n-button>
