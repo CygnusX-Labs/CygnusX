@@ -171,16 +171,15 @@ export const useChatSessionStore = defineStore('chatSession', () => {
 
     isStreaming.value = true
 
-    // 构建发送给后端的消息列表（包含历史上下文）
+    // 构建发送给后端的消息列表（含历史上下文，排除当前 AI 占位 aiMsg）
+    // 注意：不能用“先 push 再 pop()”的方式剔除 aiMsg——空内容占位会被
+    // content.length 过滤掉，pop() 反而误删了刚加入的最新用户消息。
+    // 这里用对象引用直接排除 aiMsg，确保本次用户输入必在上下文末尾。
     const ctxLen = options?.contextLength ?? 20
     const apiMessages = messages.value
-      .filter((m) => m.status !== 'error')
+      .filter((m) => m !== aiMsg && m.status !== 'error' && m.content.length > 0)
       .slice(-ctxLen)
       .map((m) => ({ role: m.role, content: m.content }))
-      .filter((m) => m.content.length > 0)
-
-    // 移除刚添加的空 AI 占位
-    apiMessages.pop()
 
     await streamChat(
       {
@@ -188,7 +187,8 @@ export const useChatSessionStore = defineStore('chatSession', () => {
         modelId: selectedModelId.value,
         sessionId: currentSessionId.value || undefined,
         assistantId: options?.assistantId,
-        systemPrompt: options?.systemPrompt,
+        // [极简测试] 临时禁用前端传入的系统提示词
+        // systemPrompt: options?.systemPrompt,
         temperature: options?.temperature,
         maxTokens: options?.maxTokens,
       },
