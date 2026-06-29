@@ -41,9 +41,15 @@ const routes: RouteRecordRaw[] = [
     children: [
       {
         path: '',
+        name: 'home',
+        component: () => import('@/views/HomeView.vue'),
+        meta: { title: '首页', requiresAuth: true }
+      },
+      {
+        path: 'dashboard',
         name: 'dashboard',
         component: () => import('@/views/DashboardView.vue'),
-        meta: { title: '首页', requiresAuth: true }
+        meta: { title: '仪表板', requiresAuth: true }
       },
       {
         path: 'flows',
@@ -103,7 +109,7 @@ const routes: RouteRecordRaw[] = [
         path: 'about',
         name: 'about',
         component: () => import('@/views/AboutView.vue'),
-        meta: { title: '关于', requiresAuth: false }
+        meta: { title: '关于', requiresAuth: false, autoCollapseSidebar: true }
       },
       {
         path: 'knowledge',

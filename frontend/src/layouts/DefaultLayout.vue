@@ -6,10 +6,10 @@ import {
 import { computed, h, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
-  HomeOutline, GridOutline, FlaskOutline, FitnessOutline, GlobeOutline, BugOutline,
+  HomeOutline, GridOutline, FlaskOutline, FitnessOutline,
   DocumentTextOutline, CloudUploadOutline, BarChartOutline, SettingsOutline,
-  InformationCircleOutline, PersonOutline, LogOutOutline, MoonOutline, SunnyOutline,
-  MenuOutline, ChevronForwardOutline, ChevronBackOutline, ChevronDownOutline,
+  InformationCircleOutline, PersonOutline, LogOutOutline, MoonOutline,
+  MenuOutline, ChevronForwardOutline, ChevronDownOutline,
   NotificationsOutline, HelpCircleOutline, ChatbubblesOutline, Planet, CodeSlashOutline,
   WalletOutline, PricetagOutline, SparklesOutline,
 } from '@vicons/ionicons5'
@@ -30,6 +30,10 @@ const mobileDrawerOpen = ref(false)
 const notificationDrawerOpen = ref(false)
 const expandedKeys = ref<string[]>(['analysis-center'])
 
+// 记录用户最后一次手动折叠状态：进入「关于」页强制折叠前保存，离开后恢复。
+const userCollapsed = ref(false)
+const lastAutoCollapsed = ref(false)
+
 const isAdmin = computed(() => authStore.user?.role === 'admin')
 
 const contentStyle = computed(() =>
@@ -49,12 +53,44 @@ const isTablet = computed(() => windowWidth.value >= 768 && windowWidth.value < 
 
 function updateWindowWidth() {
   windowWidth.value = window.innerWidth
+  // 「关于」页：路由驱动折叠，resize 时不覆盖其折叠态（让星空获得最大展示面积）
+  if (route.meta.autoCollapseSidebar) {
+    collapsed.value = true
+    return
+  }
   if (isMobile.value) {
     collapsed.value = false
   } else if (isTablet.value) {
     collapsed.value = true
   } else {
-    collapsed.value = false
+    collapsed.value = userCollapsed.value
+  }
+}
+
+// 路由 Meta 驱动：进入带 autoCollapseSidebar 的页面强制折叠，离开后恢复用户最后一次手动状态
+watch(
+  () => route.fullPath,
+  () => {
+    const autoCollapse = route.meta.autoCollapseSidebar === true
+    if (autoCollapse) {
+      // 进入「关于」页：若当前未折叠则记录原状态后折叠
+      if (!lastAutoCollapsed.value) {
+        userCollapsed.value = collapsed.value
+      }
+      collapsed.value = true
+    } else if (lastAutoCollapsed.value) {
+      // 离开「关于」页：恢复用户最后一次手动状态（desktop 下生效）
+      collapsed.value = isTablet.value ? true : userCollapsed.value
+    }
+    lastAutoCollapsed.value = autoCollapse
+  },
+)
+
+// 汉堡按钮手动切换：同时记录用户偏好，供离开「关于」页后恢复
+function toggleCollapsed() {
+  collapsed.value = !collapsed.value
+  if (!route.meta.autoCollapseSidebar) {
+    userCollapsed.value = collapsed.value
   }
 }
 
@@ -86,7 +122,7 @@ interface NavItem {
 }
 
 const topNavItems = computed<NavItem[]>(() => [
-  { key: 'dashboard', label: '控制台', to: '/', icon: HomeOutline },
+  { key: 'dashboard', label: '控制台', to: '/dashboard', icon: HomeOutline },
   { key: 'flows', label: '分析流程中心', to: '/flows', icon: FlaskOutline },
   { key: 'knowledge', label: '实验室知识库', to: '/knowledge', icon: DocumentTextOutline },
   { key: 'docs', label: '文档', to: '/knowledge', icon: HelpCircleOutline },
@@ -94,7 +130,7 @@ const topNavItems = computed<NavItem[]>(() => [
 
 const mainNavItems = computed<NavItem[]>(() => [
   { key: 'home', label: '首页', to: '/', icon: HomeOutline },
-  { key: 'dashboard', label: '仪表板', to: '/', icon: GridOutline },
+  { key: 'dashboard', label: '仪表板', to: '/dashboard', icon: GridOutline },
   {
     key: 'analysis-center',
     label: '分析中心',
@@ -103,10 +139,6 @@ const mainNavItems = computed<NavItem[]>(() => [
     children: [
       { key: 'rna-seq', label: 'RNA-seq 分析', to: '/flows?type=rna-seq', icon: FlaskOutline },
       { key: 'atac-seq', label: 'ATAC-seq 分析', to: '/flows?type=atac-seq', icon: FitnessOutline },
-      { key: 'chip-seq', label: 'ChIP-seq 分析', to: '/flows?type=chip-seq', icon: FlaskOutline },
-      { key: 'scrna', label: '单细胞分析', to: '/flows?type=scrna', icon: GridOutline },
-      { key: 'wgs', label: '全基因组测序', to: '/flows?type=wgs', icon: GlobeOutline },
-      { key: 'metagenome', label: '宏基因组分析', to: '/flows?type=metagenome', icon: BugOutline },
     ],
   },
   { key: 'files', label: '数据管理', to: '/files', icon: CloudUploadOutline },
@@ -156,7 +188,7 @@ function isActive(item: NavItem): boolean {
 }
 
 function isTopActive(item: NavItem): boolean {
-  if (item.key === 'dashboard') return route.path === '/'
+  if (item.key === 'dashboard') return route.path === '/dashboard'
   if (item.key === 'flows') return route.path.startsWith('/flows')
   if (item.key === 'knowledge') return route.path.startsWith('/knowledge')
   return false
@@ -235,7 +267,7 @@ const UserAvatar = () => {
     <!-- 顶部导航栏 -->
     <header class="top-nav">
       <div class="top-nav-left">
-        <NButton text class="hamburger-btn" @click="isMobile ? mobileDrawerOpen = true : collapsed = !collapsed">
+        <NButton text class="hamburger-btn" @click="isMobile ? mobileDrawerOpen = true : toggleCollapsed()">
           <NIcon :size="20">
             <MenuOutline />
           </NIcon>
@@ -997,6 +1029,17 @@ const UserAvatar = () => {
 
 .main-layout :deep(.n-layout-scroll-container) {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.main-layout :deep(.n-layout-content) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
 }
 
 /* 隐藏 Naive UI LayoutSider 默认 border 以使用自定义边框 */

@@ -5,18 +5,31 @@ import { useRouter } from 'vue-router'
 
 const router = useRouter()
 
-const stars = Array.from({ length: 160 }, (_, i) => ({
-  id: i,
-  top: Math.random() * 100,
-  left: Math.random() * 100,
-  delay: Math.random() * 5,
-  duration: 2 + Math.random() * 4,
-  size: 1 + Math.random() * 2.5,
-}))
+const stars = Array.from({ length: 160 }, (_, i) => {
+  const size = Math.random() * 1.5 + 1
+  const baseOpacity = Math.random() * 0.6 + 0.4
 
-const shootingStars = Array.from({ length: 6 }, (_, i) => ({
+  const isBright = baseOpacity > 0.7
+  const hasCross = isBright && Math.random() > 0.8
+
+  const crossScale = hasCross ? (size * baseOpacity * 0.8).toFixed(2) : 0
+
+  return {
+    id: i,
+    top: Math.random() * 100,
+    left: Math.random() * 100,
+    size: size,
+    opacity: baseOpacity,
+    delay: Math.random() * 5,
+    duration: Math.random() * 3 + 2,
+    hasCross: hasCross,
+    crossScale: crossScale
+  }
+})
+
+const shootingStars = Array.from({ length: 3 }, (_, i) => ({
   id: i,
-  delay: i * 2.5 + Math.random() * 3,
+  delay: i * 5 + Math.random() * 5,
   duration: 1.5 + Math.random() * 1.5,
   top: Math.random() * 50,
   left: Math.random() * 60,
@@ -64,15 +77,18 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
         v-for="s in stars"
         :key="s.id"
         class="star"
+        :class="{ 'has-cross': s.hasCross }"
         :style="{
           top: s.top + '%',
           left: s.left + '%',
-          animationDelay: s.delay + 's',
-          animationDuration: s.duration + 's',
           width: s.size + 'px',
           height: s.size + 'px',
+          opacity: s.opacity,
+          animationDelay: s.delay + 's',
+          animationDuration: s.duration + 's',
+          '--cross-scale': s.crossScale
         }"
-      />
+      ></div>
     </div>
 
     <!-- 流星 -->
@@ -86,7 +102,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
           left: ss.left + '%',
           animationDelay: ss.delay + 's',
           animationDuration: ss.duration + 's',
-          transform: `scale(${ss.scale})`,
+          '--star-scale': ss.scale
         }"
       />
     </div>
@@ -106,15 +122,8 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
       <h1 class="about-title">OmicHub</h1>
       <p class="about-subtitle">多组学数据分析平台</p>
 
-      <div class="about-description">
-        <p>
-          OmicHub 是面向生命科学研究的私有化多组学分析平台，整合 RNA-seq、ATAC-seq、ChIP-seq、
-          单细胞测序、全基因组测序等主流分析流程。基于 Snakemake 工作流引擎，实现从原始数据质控、
-          比对、定量到差异分析与可视化的全流程自动化，让研究人员能够专注于科学发现本身。
-        </p>
-      </div>
-
       <div class="about-quote-box">
+        <p class="about-quote-title">We are made of star-stuff</p>
         <p class="about-quote">
           我们只是借用了宇宙中的这些碳、氢、氧原子几十年，用它们去短暂地体验了一次这个世界。
           组成我们大脑和身体的每一个原子，都来自几十亿年前远古恒星内部的核聚变爆炸。
@@ -179,20 +188,31 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 <style scoped>
 @keyframes shooting {
   0% {
-    transform: translateX(0) translateY(0) rotate(-35deg) scaleX(0);
+    transform: translateX(0) translateY(0) rotate(35deg) scaleX(0) scale(var(--star-scale, 1));
     opacity: 0;
   }
   10% {
     opacity: 1;
-    transform: translateX(60px) translateY(42px) rotate(-35deg) scaleX(1);
+    transform: translateX(60px) translateY(42px) rotate(35deg) scaleX(1) scale(var(--star-scale, 1));
   }
   70% {
     opacity: 1;
-    transform: translateX(420px) translateY(294px) rotate(-35deg) scaleX(1);
+    transform: translateX(420px) translateY(294px) rotate(35deg) scaleX(1) scale(var(--star-scale, 1));
   }
   100% {
-    transform: translateX(600px) translateY(420px) rotate(-35deg) scaleX(0.6);
+    transform: translateX(600px) translateY(420px) rotate(35deg) scaleX(0.6) scale(var(--star-scale, 1));
     opacity: 0;
+  }
+}
+
+@keyframes twinkle {
+  0% {
+    opacity: 0.2;
+    transform: translate(-50%, -50%) scale(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.2);
   }
 }
 
@@ -264,12 +284,50 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   z-index: 1;
   pointer-events: none;
 }
+
 .star {
   position: absolute;
-  background: #fff;
   border-radius: 50%;
-  animation: twinkle ease-in-out infinite;
-  box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);
+  background: #ffffff;
+  box-shadow: 0 0 4px 1px rgba(255, 255, 255, 0.6);
+  animation: twinkle linear infinite alternate;
+  transform: translate(-50%, -50%);
+}
+
+.star.has-cross::before,
+.star.has-cross::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(var(--cross-scale));
+}
+
+.star.has-cross::before {
+  width: 40px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(107, 141, 214, 0.8) 40%,
+    rgba(255, 255, 255, 1) 50%,
+    rgba(107, 141, 214, 0.8) 60%,
+    transparent 100%
+  );
+}
+
+.star.has-cross::after {
+  width: 1px;
+  height: 40px;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(107, 141, 214, 0.8) 40%,
+    rgba(255, 255, 255, 1) 50%,
+    rgba(107, 141, 214, 0.8) 60%,
+    transparent 100%
+  );
 }
 
 /* 流星 */
@@ -293,7 +351,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.9), rgba(107, 141, 214, 0.6), transparent);
+  background: linear-gradient(to left, rgba(255, 255, 255, 0.9), rgba(107, 141, 214, 0.6), transparent);
   border-radius: 50%;
   filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.9));
 }
@@ -391,33 +449,40 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   font-weight: 500;
 }
 
-/* 平台描述 */
-.about-description {
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.15);
-  border-radius: 12px;
-  padding: 20px 24px;
-  margin-bottom: 24px;
-  backdrop-filter: blur(8px);
-}
-.about-description p {
-  font-size: 14px;
-  line-height: 1.8;
-  color: #cbd5e1;
-  margin: 0;
-  text-align: justify;
-  text-indent: 2em;
-}
-
-/* 引言盒子 */
+/* 玻璃面板（Glassmorphism）：引言盒子 */
 .about-quote-box {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.15);
+  background: rgba(20, 25, 45, 0.3);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
   border-radius: 12px;
   padding: 24px 28px;
   margin-bottom: 28px;
-  backdrop-filter: blur(8px);
+  transition: border-color 0.3s ease, transform 0.3s ease;
 }
+.about-quote-box:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+}
+
+/* 题记：与标题同色系渐变，柔和高亮，不抢眼 */
+.about-quote-title {
+  font-size: 16px;
+  font-weight: 600;
+  font-style: italic;
+  letter-spacing: 1px;
+  margin: 0 0 14px;
+  text-align: center;
+  text-indent: 0;
+  background: linear-gradient(90deg, #6B8DD6, #67e8f9, #6B8DD6);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 4s linear infinite;
+}
+
 .about-quote {
   font-size: 14px;
   line-height: 1.9;
@@ -427,7 +492,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   text-indent: 2em;
 }
 
-/* 特性 */
+/* 特性：玻璃面板 */
 .features {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -440,15 +505,17 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   gap: 10px;
   padding: 14px;
   border-radius: 10px;
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.15);
-  transition: all 0.3s ease;
+  background: rgba(20, 25, 45, 0.3);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  transition: border-color 0.3s ease, transform 0.3s ease;
   text-align: left;
 }
 .feature-item:hover {
-  background: rgba(22, 93, 255, 0.15);
-  border-color: rgba(22, 93, 255, 0.4);
-  transform: translateY(-4px);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
 }
 .feature-icon {
   color: #6B8DD6;
@@ -492,9 +559,8 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   .about-content { padding: 24px 20px; }
   .about-title { font-size: 32px; }
   .about-subtitle { font-size: 16px; }
-  .about-description p,
   .about-quote { font-size: 13px; }
-  .about-description,
+  .about-quote-title { font-size: 14px; margin-bottom: 10px; }
   .about-quote-box { padding: 16px 20px; }
   .features { grid-template-columns: 1fr; }
   .about-actions {
