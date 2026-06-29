@@ -42,6 +42,7 @@ export interface FlowDefinition {
   description: string
   category: string
   version: string
+  tags?: string[]
 }
 
 export interface DataFile {
@@ -243,6 +244,7 @@ export interface AIProviderConfig {
   timeout: number
   is_active: boolean
   is_default: boolean
+  api_key?: string // 脱敏回显："********" 表示已配置，未配置为空
   extra_params: Record<string, unknown>
   created_at: string | null
   updated_at: string | null

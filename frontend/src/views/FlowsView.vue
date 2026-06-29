@@ -7,7 +7,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   FlaskOutline, FitnessOutline, GlobeOutline, BugOutline,
   GridOutline, BookOutline, BeakerOutline, ExtensionPuzzleOutline,
-  PeopleOutline, StarOutline, CodeSlashOutline, DocumentTextOutline,
+  CodeSlashOutline, DocumentTextOutline,
 } from '@vicons/ionicons5'
 
 const route = useRoute()
@@ -37,13 +37,14 @@ const typeLabels: Record<string, string> = {
   'metagenome': '宏基因组分析',
 }
 
-// 按类型过滤（匹配 flow.id 或 category 中包含该前缀）
+// 按类型过滤：归一化匹配，使 rna-seq / rna_seq / rnaseq 互通
 const filteredFlows = computed(() => {
   if (!activeType.value) return flows.value
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const target = norm(activeType.value)
   return flows.value.filter((f) => {
-    const key = `${f.id} ${f.category || ''}`.toLowerCase()
-    return key.includes(activeType.value.replace('-', ''))
-      || key.includes(activeType.value)
+    const key = norm(`${f.id} ${f.category || ''} ${(f.tags || []).join(' ')}`)
+    return key.includes(target)
   })
 })
 
@@ -157,16 +158,6 @@ onMounted(fetchFlows)
             <p class="featured-desc">
               {{ featuredFlow?.description || '适用于基因表达定量与差异分析，支持 DESeq2、edgeR 等多种算法' }}
             </p>
-            <div class="featured-meta">
-              <span class="featured-meta-item">
-                <component :is="PeopleOutline" :size="14" />
-                1,234 次使用
-              </span>
-              <span class="featured-meta-item">
-                <component :is="StarOutline" :size="14" />
-                4.9 评分
-              </span>
-            </div>
           </div>
         </section>
 
@@ -332,22 +323,7 @@ onMounted(fetchFlows)
   line-height: 22px;
   opacity: 0.85;
   max-width: 480px;
-  margin: 0 0 16px;
-}
-
-.featured-meta {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  gap: 16px;
-  font-size: 12px;
-  opacity: 0.8;
-}
-
-.featured-meta-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  margin: 0;
 }
 
 .all-flows-section {
