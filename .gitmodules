@@ -1,0 +1,6 @@
+[submodule "pipelines/RNAFlow"]
+	path = pipelines/RNAFlow
+	url = git@github.com:xsx123123/RNAFlow.git
+[submodule "pipelines/ATACFlow"]
+	path = pipelines/ATACFlow
+	url = git@github.com:xsx123123/ATACFlow.git
