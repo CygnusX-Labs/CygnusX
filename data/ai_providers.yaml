@@ -9,7 +9,7 @@
 # 管理员仍可在"系统设置 → AI 模型配置"中查看/修改/测试。
 
 providers:
-  - name: aliyun
+  - name: qwen3.7-max
     provider_type: openai_compatible
     model: qwen3.7-max
     base_url: https://llm-i1uekbihz77q045m.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
@@ -21,12 +21,39 @@ providers:
     is_default: true
     is_active: true
     extra_params: {}
-
-  # - name: OpenAI
-  #   provider_type: openai_compatible
-  #   model: gpt-4o
-  #   base_url: https://api.openai.com/v1
-  #   api_key: ${OPENAI_API_KEY}
-  #   temperature: 0.7
-  #   max_tokens: 4096
-  #   is_default: false
+  - name: qwen3.7-plus
+    provider_type: openai_compatible
+    model: qwen3.7-plus
+    base_url: https://llm-i1uekbihz77q045m.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+    api_key: ${AL_API_KEY}
+    temperature: 0.7
+    max_tokens: 4096
+    top_p: 1.0
+    timeout: 120
+    is_default: true
+    is_active: true
+    extra_params: {}
+  - name: deepseek-v4-pro
+    provider_type: openai_compatible
+    model: deepseek-v4-pro
+    base_url: https://ark.cn-beijing.volces.com/api/coding/v3
+    api_key: ${ARK_API_KEY}
+    temperature: 0.7
+    max_tokens: 4096
+    top_p: 1.0
+    timeout: 120
+    is_default: true
+    is_active: true
+    extra_params: {}
+  - name: doubao-seed-2.0-pro
+    provider_type: openai_compatible
+    model: doubao-seed-2.0-pro
+    base_url: https://ark.cn-beijing.volces.com/api/coding/v3
+    api_key: ${ARK_API_KEY}
+    temperature: 0.7
+    max_tokens: 4096
+    top_p: 1.0
+    timeout: 120
+    is_default: true
+    is_active: true
+    extra_params: {}
