@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker test lint format type-check migrate migrate-new docker-up docker-down clean init-admin init-cookies
+.PHONY: help dev dev-worker test lint format type-check migrate migrate-new docker-up docker-down docker-logs docker-clean docker-purge clean init-admin init-cookies
 
 help: ## 显示所有可用命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -49,6 +49,12 @@ docker-down: ## 停止 Docker Compose
 docker-logs: ## 查看 Docker 日志
 	docker compose -f deploy/docker/docker-compose.yml logs -f
 
+docker-clean: ## 清理容器与网络（保留数据库/数据卷，不删镜像）
+	docker compose -f deploy/docker/docker-compose.yml down --remove-orphans
+
+docker-purge: ## [危险] 彻底清理：容器+数据卷(数据库/Redis/共享存储)+网络+本地镜像（不可逆，重置到干净状态）
+	docker compose -f deploy/docker/docker-compose.yml down -v --rmi local --remove-orphans
+
 frontend-install: ## 安装前端依赖
 	cd frontend && npm install
 
@@ -57,6 +63,11 @@ frontend-dev: ## 启动前端开发服务器
 
 frontend-build: ## 构建前端生产版本
 	cd frontend && npm run build
+
+docker-reload: ## 重新构建前端并刷新 Docker (开发用)
+	cd frontend && npm run build
+	docker compose -f deploy/docker/docker-compose.yml restart nginx
+	docker compose -f deploy/docker/docker-compose.yml up -d
 
 init-admin: ## 初始化管理员账号 (首次部署使用)
 	uv run python scripts/init_admin.py

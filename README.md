@@ -160,21 +160,74 @@ rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov
 
 ### Docker 数据清理
 
-```bash
-# 停止并删除容器（保留数据卷）
-make docker-down
+按破坏性分级，优先使用 `make` 命令：
 
-# 停止并删除容器 + 删除数据卷（⚠️ 会丢失数据库和文件数据）
-docker compose -f deploy/docker/docker-compose.yml down -v
+```bash
+# ① 轻度清理：仅删除容器 + 网络（含孤儿容器），保留数据库/Redis/共享存储数据卷与镜像
+make docker-clean
+
+# ② 彻底重置（⚠️ 不可逆）：容器 + 数据卷(pg_data/redis_data/shared_storage) + 网络 + 本地构建镜像
+make docker-purge
+```
+
+清理后重新拉起并初始化：
+
+```bash
+make docker-up
+docker exec omichub-web uv run alembic upgrade head
+docker exec omichub-web uv run python scripts/init_admin.py   # 首次部署需要
+docker exec omichub-web uv run python scripts/init_cookies.py # 可选
+```
+
+> ⚠️ `make docker-purge` 会清空 `pg_data` 数据卷，相当于删库。执行前确认无需保留的实验/任务数据，或先备份。
+
+补充命令（手动场景）：
+
+```bash
+# 仅停止容器（等同 docker-clean 但不重建）
+make docker-down
 
 # 清理 Docker 构建缓存和悬挂镜像
 docker builder prune -f
 docker image prune -f
 
-# 彻底清理所有 OmicHub 相关资源（⚠️ 不可恢复）
+# 彻底清理所有 OmicHub 相关资源（含拉取镜像，⚠️ 不可恢复）
 docker compose -f deploy/docker/docker-compose.yml down -v --rmi all
 docker volume rm $(docker volume ls -q | grep omichub) 2>/dev/null
 ```
+
+### 账号密码重置
+
+如果只是忘记管理员密码，不需要删除数据库，直接重置即可：
+
+```bash
+# 进入 web 容器
+docker exec -it omichub-web bash
+
+# 重置 admin 密码为 admin123（开发环境）
+python - <<'PY'
+import asyncio
+from omichub.core.security import hash_password
+from omichub.infrastructure.database.session import get_session_factory
+from omichub.infrastructure.database.repositories.user_repository import SqlAlchemyUserRepository
+
+async def reset():
+    factory = get_session_factory()
+    async with factory() as session:
+        repo = SqlAlchemyUserRepository(session)
+        user = await repo.get_by_username("admin")
+        if not user:
+            print("未找到 admin 用户")
+            return
+        user.hashed_password = hash_password("admin123")
+        await repo.save(user)
+        print("admin 密码已重置为 admin123，请登录后立即修改")
+
+asyncio.run(reset())
+PY
+```
+
+重置后使用 `admin / admin123` 登录，并在 **系统设置 → 个人中心** 修改为强密码。
 
 ### 数据库重置
 
@@ -255,9 +308,96 @@ docs/                 架构设计文档
 | `make migrate-new m="名称"` | 创建新迁移 |
 | `make docker-up` | Docker Compose 启动 |
 | `make docker-down` | Docker Compose 停止 |
+| `make docker-clean` | 清理容器与网络（保留数据卷） |
+| `make docker-purge` | [危险] 彻底清理：容器+数据卷+网络+本地镜像 |
 | `make init-admin` | 初始化管理员账号 |
 | `make init-cookies` | 初始化饼干定价策略 |
 | `make clean` | 清理 Python 缓存文件 |
+
+## 流程（Flow）扩展机制
+
+OmicHub 采用 **YAML 声明式 + 通用构建器** 的架构来接入不同的 Snakemake 分析流程。新增流程时，**通常只需要在 `flows/` 目录下添加 YAML 配置文件**，无需修改后端 Python 代码。
+
+### 流程加载方式
+
+1. 服务启动后，首次访问 `/api/v1/flows` 时会懒加载 `flows/` 目录下所有 `*.yaml` / `*.yml` 文件；
+2. 文件由 `FlowDomainService` 用 Pydantic 模型校验结构、参数唯一性、条件渲染引用等；
+3. 校验通过的流程会缓存在内存中，以 `meta.id` 为唯一键；
+4. 新增或修改 YAML 后，调用 `POST /api/v1/flows/reload` 即可热重载，无需重启服务。
+
+### 核心设计
+
+后端 `TaskService` 不再针对每个流程写 `if-elif` 分支，而是统一调用 `GenericFlowBuilder`。该构建器读取 YAML 中的 `pipeline_mapping` 节点，动态完成：
+
+- 生成主配置文件（`config.yaml` / `analysis.yaml` 等，由 `execution.config_file_name` 指定）；
+- 生成样本表 `samples.csv`；
+- 生成差异比较组表 `contrasts.csv`（可选）；
+- 注入动态计算字段（工作目录、样本表路径、比较组路径）。
+
+### 新增一个分析流程的步骤
+
+以新增 `chip_seq` 为例：
+
+1. **创建 YAML 文件** `flows/chip_seq.yaml`，至少包含：
+   - `meta`：流程元信息（`id` 必须全局唯一且符合 `^[a-z][a-z0-9_]*$`）；
+   - `parameters`：前端动态表单参数定义；
+   - `execution`：Snakefile 路径、资源配置、主配置文件名；
+   - `sample_sheet`：样本表校验规则；
+   - `pipeline_mapping`：参数到底层流程输入文件的映射规则。
+
+2. **编写 `pipeline_mapping`**：
+
+   ```yaml
+   pipeline_mapping:
+     config_fields:           # 直接写入主配置文件的字段
+       - project_name
+       - Genome_Version
+       - species
+       - raw_data_path
+       - peak_calling.macs2_qvalue   # 支持点号生成嵌套字典
+     computed_fields:         # 由构建器动态注入的字段
+       workflow: "__work_dir__"
+       sample_csv: "__samples_csv__"
+       paired_csv: "__contrasts_csv__"
+     list_fields:             # 强制转为字符串列表的字段
+       - raw_data_path
+     sample_sheet:
+       output_name: "samples.csv"
+       columns:
+         sample: sample
+         sample_name: sample_name
+         group: group
+     comparisons:
+       output_name: "contrasts.csv"
+       columns:
+         Control: Control
+         Treat: Treat
+   ```
+
+3. **放置 Snakefile**：确保 `execution.snakefile` 指向的 Snakemake 文件存在，并能读取生成的配置文件；
+
+4. **热重载**：
+
+   ```bash
+   curl -X POST http://localhost:8000/api/v1/flows/reload \
+        -H "Authorization: Bearer <token>"
+   ```
+
+   或直接重启后端服务。
+
+5. **前端使用**：访问 `/api/v1/flows/chip_seq/schema` 可获取参数 JSON Schema，前端据此渲染表单；提交任务时 `/api/v1/tasks/submit` 的 `flow_id` 填 `chip_seq` 即可。
+
+### 已有流程配置参考
+
+- `flows/rna_seq.yaml` — RNAFlow 流程，主配置文件 `config.yaml`
+- `flows/atac_seq.yaml` — ATACFlow 流程，主配置文件 `analysis.yaml`
+
+### 注意事项
+
+- `meta.id` 一旦确定尽量不要修改，数据库中的任务记录会关联该 ID；
+- `pipeline_mapping` 缺失的流程只会被展示和解析，**无法提交执行**；
+- 若某字段需要嵌套结构（如 `peak_calling.use_pooled_peaks`），在 `config_fields` 中使用点号路径即可；
+- 所有字段默认值、动态占位符、类型转换规则均可在 `pipeline_mapping` 中声明。
 
 ## 文档
 
