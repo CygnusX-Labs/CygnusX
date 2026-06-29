@@ -21,6 +21,7 @@ from omichub.domain.flow.value_objects import (
     GroupConfig,
     NumberConfig,
     ParameterTypeEnum,
+    PipelineMappingConfig,
     SampleSheetConfig,
     SectionConfig,
     SelectConfig,
@@ -191,7 +192,7 @@ class Parameter(BaseModel):
 class FlowConfig(BaseModel):
     """完整流程配置 — 顶层模型。
 
-    YAML 文件解析后的完整结构：meta + parameters + execution + sample_sheet。
+    YAML 文件解析后的完整结构：meta + parameters + execution + sample_sheet + pipeline_mapping。
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -203,6 +204,9 @@ class FlowConfig(BaseModel):
     execution: ExecutionConfig = Field(..., description="执行配置")
     sample_sheet: SampleSheetConfig | None = Field(
         default=None, description="样本表配置（如流程需要样本表）"
+    )
+    pipeline_mapping: PipelineMappingConfig | None = Field(
+        default=None, description="前端参数到底层流程输入文件的映射规则"
     )
 
     @field_validator("parameters")

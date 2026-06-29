@@ -47,6 +47,7 @@ class FlowDetailDTO(OmicsHubBaseSchema):
     parameters: list[Parameter]
     execution: dict[str, Any]
     sample_sheet: dict[str, Any] | None = None
+    pipeline_mapping: dict[str, Any] | None = None
 
 
 class FlowListResponse(OmicsHubBaseSchema):
@@ -97,6 +98,9 @@ def flow_config_to_detail(config: FlowConfig) -> FlowDetailDTO:
         parameters=config.parameters,
         execution=config.execution.model_dump(),
         sample_sheet=config.sample_sheet.model_dump() if config.sample_sheet else None,
+        pipeline_mapping=config.pipeline_mapping.model_dump()
+        if config.pipeline_mapping
+        else None,
     )
 
 

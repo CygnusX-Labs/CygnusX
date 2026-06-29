@@ -34,6 +34,10 @@ class FlowService:
         config = self._get_or_404(flow_id)
         return flow_config_to_detail(config)
 
+    def get_flow_config(self, flow_id: str) -> FlowConfig:
+        """获取原始流程配置对象（供执行层使用）"""
+        return self._get_or_404(flow_id)
+
     def get_flow_parameters(self, flow_id: str) -> list[dict[str, Any]]:
         """获取流程参数定义（前端动态表单用）"""
         config = self._get_or_404(flow_id)

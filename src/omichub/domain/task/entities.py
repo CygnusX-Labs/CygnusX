@@ -22,7 +22,7 @@ class Task(BaseModel):
     """任务聚合根 - 统一任务模型"""
 
     id: UUID
-    flow_id: str  # 对应流程 meta.id，如 rna_seq
+    flow_id: str  # 对应流程 YAML 中 meta.id
     user_id: UUID
     name: str = ""
     status: TaskStatus = TaskStatus.PENDING

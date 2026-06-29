@@ -242,6 +242,7 @@ execution:
   engine: snakemake
   snakefile: "/home/zj/pipeline/ATACFlow/snakefile"
   config_file_param: "analysisyaml"
+  config_file_name: "analysis.yaml"
   conda_env: null
   default_resources:
     cores: 8
@@ -281,3 +282,45 @@ sample_sheet:
     - type: unique_combination
       columns: ["sample"]
       message: "sample 必须唯一"
+
+# ============================================================
+# 前端参数到底层流程输入文件映射（通用构建器使用）
+# ============================================================
+pipeline_mapping:
+  config_fields:
+    - project_name
+    - Genome_Version
+    - species
+    - client
+    - raw_data_path
+    - data_deliver
+    - execution_mode
+    - queue_id
+    - Library_Types
+    - only_qc
+    - report
+    - fastq_screen
+    - diff_peaks
+    - mapping_tools
+    - peak_calling.use_pooled_peaks
+
+  computed_fields:
+    workflow: "__work_dir__"
+    sample_csv: "__samples_csv__"
+    paired_csv: "__contrasts_csv__"
+
+  list_fields:
+    - raw_data_path
+
+  sample_sheet:
+    output_name: "samples.csv"
+    columns:
+      sample: sample
+      sample_name: sample_name
+      group: group
+
+  comparisons:
+    output_name: "contrasts.csv"
+    columns:
+      Control: Control
+      Treat: Treat

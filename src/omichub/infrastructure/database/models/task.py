@@ -21,7 +21,7 @@ class TaskModel(Base, TimestampMixin):
     )
     flow_id: Mapped[str] = mapped_column(
         String(100), index=True, nullable=False
-    )  # 对应流程 meta.id，如 rna_seq
+    )  # 对应流程 YAML 中 meta.id
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), index=True, nullable=False
     )

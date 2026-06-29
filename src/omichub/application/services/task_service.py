@@ -25,6 +25,7 @@ from omichub.infrastructure.celery_app.tasks.analysis import run_snakemake
 from omichub.infrastructure.database.repositories.task_repository import (
     TaskRepositoryImpl,
 )
+from omichub.infrastructure.execution.generic_builder import GenericFlowBuilder
 from omichub.infrastructure.execution.local import LocalSnakemakeExecutor
 
 
@@ -48,11 +49,12 @@ class TaskService:
         流程：
         1. 校验流程定义存在；
         2. 锁定参数快照；
-        3. 为 RNAFlow 流程生成项目 config.yaml / samples.csv / contrasts.csv；
+        3. 通过通用构建器生成流程输入文件；
         4. 创建任务聚合根并持久化；
         5. 投递 Celery 异步任务；
         6. 将任务状态推进为 QUEUED。
         """
+        flow_config = self._flow_service.get_flow_config(req.flow_id)
         flow_detail = self._flow_service.get_flow(req.flow_id)
 
         work_dir = self._make_work_dir(req.flow_id, user_id)
@@ -60,32 +62,16 @@ class TaskService:
         # 参数快照：复制一份不可变的提交时参数
         parameter_snapshot = dict(req.parameters)
 
-        # 生成 RNAFlow / ATACFlow 项目输入文件
-        config_file = ""
-        if req.flow_id == "rna_seq":
-            from omichub.infrastructure.execution.rnaflow_builder import (
-                build_rnaflow_project,
-            )
-
-            files = build_rnaflow_project(
-                work_dir=work_dir,
-                parameters=parameter_snapshot,
-                sample_rows=req.sample_sheet,
-                comparisons=req.comparisons,
-            )
-            config_file = str(files["config"])
-        elif req.flow_id == "atac_seq":
-            from omichub.infrastructure.execution.atacflow_builder import (
-                build_atacflow_project,
-            )
-
-            files = build_atacflow_project(
-                work_dir=work_dir,
-                parameters=parameter_snapshot,
-                sample_rows=req.sample_sheet,
-                comparisons=req.comparisons,
-            )
-            config_file = str(files["config"])
+        # 通用构建器生成底层流程输入文件
+        builder = GenericFlowBuilder()
+        files = builder.build_project_files(
+            flow_config=flow_config,
+            parameters=parameter_snapshot,
+            sample_rows=req.sample_sheet,
+            comparisons=req.comparisons,
+            work_dir=work_dir,
+        )
+        config_file = str(files["config"])
 
         # 创建任务聚合根
         task = await self._domain.submit(
@@ -170,13 +156,10 @@ class TaskService:
         if task is None or str(task.user_id) != user_id:
             raise NotFoundError("任务不存在")
 
+        flow_config = self._flow_service.get_flow_config(task.flow_id)
         flow_detail = self._flow_service.get_flow(task.flow_id)
 
-        config_file = ""
-        if task.flow_id == "rna_seq":
-            config_file = str(Path(task.work_dir) / "config.yaml")
-        elif task.flow_id == "atac_seq":
-            config_file = str(Path(task.work_dir) / "analysis.yaml")
+        config_file = str(Path(task.work_dir) / flow_config.execution.config_file_name)
 
         executor = LocalSnakemakeExecutor()
         return await executor.generate_dag(

@@ -164,6 +164,9 @@ class ExecutionConfig(_StrictModel):
     engine: Literal["snakemake", "nextflow"] = Field(default="snakemake", description="执行引擎")
     snakefile: str = Field(..., description="Snakefile 路径（相对于项目根目录）")
     conda_env: str | None = Field(default=None, description="Conda 环境名")
+    config_file_name: str = Field(
+        default="config.yaml", description="流程主配置文件名（生成在工作目录下）"
+    )
     default_resources: ResourcesConfig = Field(
         default_factory=ResourcesConfig, description="默认计算资源"
     )
@@ -214,7 +217,66 @@ class SampleSheetConfig(_StrictModel):
 
 
 # ============================================================
-# 5. 流程元信息
+# 5. 流程输入文件映射配置（通用构建器使用）
+# ============================================================
+
+
+class SampleSheetMappingConfig(_StrictModel):
+    """样本表 CSV 输出映射配置。
+
+    columns 为字典：key 是输出 CSV 列名，value 是 sample_sheet 行数据中的字段名。
+    """
+
+    output_name: str = Field(default="samples.csv", description="输出文件名")
+    columns: dict[str, str] = Field(
+        ..., min_length=1, description="CSV 列名 → 输入字段名映射"
+    )
+
+
+class ComparisonsMappingConfig(_StrictModel):
+    """差异比较组 CSV 输出映射配置（如 contrasts.csv）。"""
+
+    output_name: str = Field(default="contrasts.csv", description="输出文件名")
+    columns: dict[str, str] = Field(
+        ..., min_length=1, description="CSV 列名 → 输入字段名映射"
+    )
+
+
+class PipelineMappingConfig(_StrictModel):
+    """YAML 解释器映射配置 — 声明前端参数如何转为底层流程输入文件。
+
+    - config_fields: 需要写入主配置文件的字段列表。支持点号路径
+      （如 "peak_calling.use_pooled_peaks"），此时会生成嵌套字典。
+    - computed_fields: 由构建器动态计算的字段（如工作目录、样本表路径）。
+      取值使用占位符：__work_dir__、__samples_csv__、__contrasts_csv__。
+    - list_fields: 需要强制转换为字符串列表的字段（如 raw_data_path）。
+    - defaults: 当前端未提供某字段时的默认值。
+    - sample_sheet: 样本表 CSV 生成规则。
+    - comparisons: 差异比较组 CSV 生成规则（可选）。
+    """
+
+    config_fields: list[str] = Field(
+        default=[], description="写入主配置文件的字段列表（支持点号嵌套路径）"
+    )
+    computed_fields: dict[str, str] = Field(
+        default={}, description="动态计算字段：输出键 → 占位符"
+    )
+    list_fields: list[str] = Field(
+        default=[], description="需要强制转为字符串列表的字段名"
+    )
+    defaults: dict[str, Any] = Field(
+        default={}, description="字段默认值（当前端未传或为空时使用）"
+    )
+    sample_sheet: SampleSheetMappingConfig | None = Field(
+        default=None, description="样本表 CSV 生成规则"
+    )
+    comparisons: ComparisonsMappingConfig | None = Field(
+        default=None, description="差异比较组 CSV 生成规则"
+    )
+
+
+# ============================================================
+# 6. 流程元信息
 # ============================================================
 
 
