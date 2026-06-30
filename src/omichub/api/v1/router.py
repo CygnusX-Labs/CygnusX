@@ -14,6 +14,7 @@ from omichub.api.v1 import (
     mcp,
     notification,
     sandbox,
+    site_content,
     site_settings,
     stats,
     tasks,
@@ -30,6 +31,7 @@ api_router = APIRouter()
 
 api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 api_router.include_router(site_settings.router, prefix="/site-settings", tags=["SiteSettings"])
+api_router.include_router(site_content.router, prefix="/site-content", tags=["SiteContent"])
 api_router.include_router(docs.router, prefix="/docs", tags=["Docs"])
 api_router.include_router(flows.router, prefix="/flows", tags=["Flows"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["Tasks"])

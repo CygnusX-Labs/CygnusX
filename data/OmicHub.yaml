@@ -1,0 +1,41 @@
+# ============================================
+# OmicHub 首页文案配置
+# ============================================
+# 修改本文件后刷新前端页面即生效，无需重启后端、无需重新构建前端。
+# 字段缺失或解析失败时，系统会自动回退到内置默认文案，首页不会报错。
+#
+# quick_entries 的 key 是与前端硬编码图标/路由的连接键，请勿随意改名：
+#   rna-seq / atac-seq / files / ai / tasks / sandbox
+# 仅改 title / desc 即可更新文案。
+
+hero:
+  title: "欢迎使用 OmicHub"
+  description: "华中农业大学园艺林学学院私有化多组学分析平台。从数据上传、流程分析到结果交付，一站式完成您的组学研究。"
+
+quick_entries:
+  - key: rna-seq
+    title: "RNA-seq 分析"
+    desc: "转录组差异表达分析"
+  - key: atac-seq
+    title: "ATAC-seq 分析"
+    desc: "染色质开放性分析"
+  - key: files
+    title: "数据管理"
+    desc: "上传与管理样本数据"
+  - key: ai
+    title: "AI 助手"
+    desc: "智能分析与问答"
+  - key: tasks
+    title: "任务中心"
+    desc: "查看分析任务进度"
+  - key: sandbox
+    title: "代码沙盒"
+    desc: "在线编写分析脚本"
+
+guide_steps:
+  - title: "上传样本数据"
+    desc: "将 FASTQ / BAM 等原始数据上传至数据管理"
+  - title: "选择分析流程"
+    desc: "在分析中心选择 RNA-seq 或 ATAC-seq 流程"
+  - title: "查看分析结果"
+    desc: "任务完成后在任务中心查看与下载结果"

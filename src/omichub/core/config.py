@@ -97,6 +97,7 @@ class Settings(BaseSettings):
     ai_default_provider_id: str = ""  # 默认 AI provider 配置 UUID，空则使用环境变量兜底
     ai_provider_key_encryption_key: str = ""  # Fernet 密钥，为空则 API key 明文存储
     ai_provider_config_yaml: str = "data/ai_providers.yaml"  # 外置 AI Provider YAML 配置路径
+    site_content_yaml: str = "data/OmicHub.yaml"  # 首页文案外置 YAML 路径（改文件即生效）
 
     # ===== 代码执行沙盒 =====
     sandbox_enabled: bool = True

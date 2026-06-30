@@ -1,0 +1,77 @@
+"""首页文案服务 —— 加载 data/OmicHub.yaml，每次请求从磁盘读取，改文件即生效。
+
+仿 docs_service 的磁盘读取风格：不落库、不走 lifespan 同步。
+文件缺失 / 解析失败 / 字段缺失时回退到内置默认文案，保证首页永远不崩。
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from omichub.application.schemas.site_content import SiteContentDTO
+from omichub.core.config import get_settings
+
+# 内置默认文案：yaml 缺失或损坏时的兜底，保持首页可用
+DEFAULT_CONTENT: dict[str, Any] = {
+    "hero": {
+        "title": "欢迎使用 OmicHub",
+        "description": (
+            "华中农业大学园艺林学学院私有化多组学分析平台。"
+            "从数据上传、流程分析到结果交付，一站式完成您的组学研究。"
+        ),
+    },
+    "quick_entries": [
+        {"key": "rna-seq", "title": "RNA-seq 分析", "desc": "转录组差异表达分析"},
+        {"key": "atac-seq", "title": "ATAC-seq 分析", "desc": "染色质开放性分析"},
+        {"key": "files", "title": "数据管理", "desc": "上传与管理样本数据"},
+        {"key": "ai", "title": "AI 助手", "desc": "智能分析与问答"},
+        {"key": "tasks", "title": "任务中心", "desc": "查看分析任务进度"},
+        {"key": "sandbox", "title": "代码沙盒", "desc": "在线编写分析脚本"},
+    ],
+    "guide_steps": [
+        {"title": "上传样本数据", "desc": "将 FASTQ / BAM 等原始数据上传至数据管理"},
+        {"title": "选择分析流程", "desc": "在分析中心选择 RNA-seq 或 ATAC-seq 流程"},
+        {"title": "查看分析结果", "desc": "任务完成后在任务中心查看与下载结果"},
+    ],
+}
+
+
+class SiteContentService:
+    """首页文案服务"""
+
+    def __init__(self, yaml_path: str | Path | None = None) -> None:
+        self._path = Path(yaml_path) if yaml_path else Path(get_settings().site_content_yaml)
+
+    def get_content(self) -> SiteContentDTO:
+        """读取首页文案。yaml 缺失 / 解析失败 / 字段缺失时回退默认。"""
+        data = _deep_merge(DEFAULT_CONTENT, self._load_yaml())
+        try:
+            return SiteContentDTO.model_validate(data)
+        except Exception:
+            # yaml 结构不合法时整体兜底，避免首页 500
+            return SiteContentDTO.model_validate(DEFAULT_CONTENT)
+
+    def _load_yaml(self) -> dict[str, Any]:
+        """读盘；文件不存在 / 解析失败 / 非字典时返回空 dict（由默认值兜底）。"""
+        if not self._path.exists():
+            return {}
+        try:
+            with self._path.open("r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+        except (yaml.YAMLError, OSError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """深度合并：override 覆盖 base 同名字段，list 整体替换。"""
+    result: dict[str, Any] = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result

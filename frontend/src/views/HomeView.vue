@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NButton, NIcon } from 'naive-ui'
 import {
@@ -7,7 +7,40 @@ import {
   DocumentTextOutline, CodeSlashOutline, RocketOutline, BarChartOutline,
   CheckmarkCircleOutline,
 } from '@vicons/ionicons5'
+import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
+import type { SiteContent } from '@/types/site-content'
+
+// 默认文案兜底：API 拉取失败时保证首页仍可正常渲染
+const DEFAULT_CONTENT: SiteContent = {
+  hero: {
+    title: '欢迎使用 OmicHub',
+    description: '华中农业大学园艺林学学院私有化多组学分析平台。从数据上传、流程分析到结果交付，一站式完成您的组学研究。',
+  },
+  quick_entries: [
+    { key: 'rna-seq', title: 'RNA-seq 分析', desc: '转录组差异表达分析' },
+    { key: 'atac-seq', title: 'ATAC-seq 分析', desc: '染色质开放性分析' },
+    { key: 'files', title: '数据管理', desc: '上传与管理样本数据' },
+    { key: 'ai', title: 'AI 助手', desc: '智能分析与问答' },
+    { key: 'tasks', title: '任务中心', desc: '查看分析任务进度' },
+    { key: 'sandbox', title: '代码沙盒', desc: '在线编写分析脚本' },
+  ],
+  guide_steps: [
+    { title: '上传样本数据', desc: '将 FASTQ / BAM 等原始数据上传至数据管理' },
+    { title: '选择分析流程', desc: '在分析中心选择 RNA-seq 或 ATAC-seq 流程' },
+    { title: '查看分析结果', desc: '任务完成后在任务中心查看与下载结果' },
+  ],
+}
+
+// 快捷入口的图标 / 配色 / 路由按 key 硬编码（不进 yaml，避免组件与路由耦合）
+const entryMeta: Record<string, { icon: any; iconBg: string; to: string }> = {
+  'rna-seq': { icon: FlaskOutline, iconBg: 'blue', to: '/flows?type=rna-seq' },
+  'atac-seq': { icon: FitnessOutline, iconBg: 'purple', to: '/flows?type=atac-seq' },
+  'files': { icon: CloudUploadOutline, iconBg: 'cyan', to: '/files' },
+  'ai': { icon: ChatbubblesOutline, iconBg: 'green', to: '/ai' },
+  'tasks': { icon: DocumentTextOutline, iconBg: 'orange', to: '/tasks' },
+  'sandbox': { icon: CodeSlashOutline, iconBg: 'teal', to: '/sandbox' },
+}
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -34,14 +67,16 @@ interface QuickEntry {
   to: string
 }
 
-const quickEntries: QuickEntry[] = [
-  { key: 'rna-seq', title: 'RNA-seq 分析', desc: '转录组差异表达分析', icon: FlaskOutline, iconBg: 'blue', to: '/flows?type=rna-seq' },
-  { key: 'atac-seq', title: 'ATAC-seq 分析', desc: '染色质开放性分析', icon: FitnessOutline, iconBg: 'purple', to: '/flows?type=atac-seq' },
-  { key: 'files', title: '数据管理', desc: '上传与管理样本数据', icon: CloudUploadOutline, iconBg: 'cyan', to: '/files' },
-  { key: 'ai', title: 'AI 助手', desc: '智能分析与问答', icon: ChatbubblesOutline, iconBg: 'green', to: '/ai' },
-  { key: 'tasks', title: '任务中心', desc: '查看分析任务进度', icon: DocumentTextOutline, iconBg: 'orange', to: '/tasks' },
-  { key: 'sandbox', title: '代码沙盒', desc: '在线编写分析脚本', icon: CodeSlashOutline, iconBg: 'teal', to: '/sandbox' },
-]
+const content = ref<SiteContent>(DEFAULT_CONTENT)
+
+// 文案来自 yaml（title/desc），图标/路由按 key 合并
+const quickEntries = computed<QuickEntry[]>(() =>
+  content.value.quick_entries
+    .filter((e) => entryMeta[e.key])
+    .map((e) => ({ ...e, ...entryMeta[e.key] })),
+)
+
+const guideSteps = computed(() => content.value.guide_steps)
 
 const bgColors: Record<string, string> = {
   blue: '#E8F3FF',
@@ -61,15 +96,18 @@ const iconColors: Record<string, string> = {
   teal: '#0FC6C2',
 }
 
-const guideSteps = [
-  { title: '上传样本数据', desc: '将 FASTQ / BAM 等原始数据上传至数据管理' },
-  { title: '选择分析流程', desc: '在分析中心选择 RNA-seq 或 ATAC-seq 流程' },
-  { title: '查看分析结果', desc: '任务完成后在任务中心查看与下载结果' },
-]
-
 function goTo(path: string) {
   router.push(path)
 }
+
+onMounted(async () => {
+  try {
+    const res = await apiClient.get<SiteContent>('/site-content')
+    content.value = res.data
+  } catch {
+    // 拉取失败保留默认文案，首页照常渲染
+  }
+})
 </script>
 
 <template>
@@ -83,9 +121,9 @@ function goTo(path: string) {
       </div>
       <div class="hero-content">
         <p class="hero-greeting">{{ greeting }}{{ username ? '，' + username : '' }} 👋</p>
-        <h1 class="hero-title">欢迎使用 OmicHub</h1>
+        <h1 class="hero-title">{{ content.hero.title }}</h1>
         <p class="hero-desc">
-          华中农业大学园艺林学学院私有化多组学分析平台。从数据上传、流程分析到结果交付，一站式完成您的组学研究。
+          {{ content.hero.description }}
         </p>
         <div class="hero-actions">
           <NButton type="primary" size="large" @click="goTo('/flows')">
