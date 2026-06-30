@@ -8,7 +8,7 @@
 - **前端**: Vue 3 + TypeScript + Vite + Naive UI + Pinia
 - **流程引擎**: Snakemake 8.0+
 - **AI**: Cherry Studio SSE 架构 + Kimi/OpenAI API + MCP SDK
-- **部署**: Docker Compose
+- **部署**: Docker Compose（主栈 + 独立 Worker 栈，逻辑解耦）
 
 ## 快速开始
 
@@ -22,9 +22,8 @@
 ### 本地开发
 
 ```bash
-# 1. 复制环境变量
-cp .env.example .env
-# 编辑 .env，设置 JWT_SECRET_KEY、AL_API_KEY 等
+# 1. 检查环境变量（.env 已存在，按需编辑）
+#    编辑 .env，设置 JWT_SECRET_KEY、AL_API_KEY 等
 
 # 2. 安装后端依赖
 uv sync
@@ -55,41 +54,59 @@ make frontend-dev
 
 ### Docker 部署（推荐）
 
+OmicHub 的 Web 控制面与 Celery Worker 计算面已拆分为**两个独立编排栈**，通过外部网络 `omichub_net` 共享 Redis，并经宿主目录 `/data/omichub` 共享任务数据：
+
+- **主栈** `docker-compose.yml`：`web` / `db` / `redis` / `nginx` / `beat` / `flower`
+- **Worker 栈** `docker-compose.worker.yml`：仅 `worker`，挂载宿主 conda 与流程代码
+
 ```bash
-# 1. 复制并编辑环境变量
-cp .env.example .env
-# 必须修改：
-#   - JWT_SECRET_KEY（随机长字符串）
-#   - AL_API_KEY（阿里云 DashScope API Key）
-#   - OMICHBUB_INIT_ADMIN_PASSWORD（生产环境必填）
-#   - AI_CONFIG_ENCRYPTION_KEY（固定值，用于加密 API Key）
+# 0. 宿主目录前置（首次部署，需 sudo；让 web 与 worker 共享同一任务数据目录）
+sudo mkdir -p /data/omichub
+sudo chown $USER:$USER /data/omichub
+
+# 1. 检查环境变量（.env 已存在，按需编辑）
+#    必须修改：
+#    - JWT_SECRET_KEY（随机长字符串）
+#    - AL_API_KEY（阿里云 DashScope API Key）
+#    - OMICHBUB_INIT_ADMIN_PASSWORD（生产环境必填）
+#    - AI_CONFIG_ENCRYPTION_KEY（固定值，用于加密 API Key）
 
 # 2. 构建前端
 cd frontend && npm install && npm run build && cd ..
 
-# 3. 启动全部服务（PostgreSQL + Redis + FastAPI + Celery + Nginx）
+# 3. 启动主栈（自动创建跨栈外部网络 omichub_net）
 make docker-up
 
-# 4. 执行数据库迁移
+# 4. 启动独立 Worker 栈（计算节点）
+make docker-up-worker
+
+# 5. 执行数据库迁移
 docker exec omichub-web uv run alembic upgrade head
 
-# 5. 初始化管理员账号
+# 6. 初始化管理员账号
 docker exec omichub-web uv run python scripts/init_admin.py
 
-# 6. 初始化饼干定价策略（可选）
+# 7. 初始化饼干定价策略（可选）
 docker exec omichub-web uv run python scripts/init_cookies.py
 
-# 7. 访问
+# 8. 访问
 # 开发环境: http://localhost:8888
 ```
+
+> 💡 一键拉起主栈 + Worker（含前端构建）：`make docker-up-all`；改动前端后刷新：`make docker-reload`。
 
 ### 生产环境部署
 
 ```bash
-# 使用生产环境 override（4 worker + 不暴露 DB 端口 + SSL）
+# 主栈：使用生产环境 override（4 uvicorn worker + 不暴露 DB 端口 + SSL）
 docker compose -f deploy/docker/docker-compose.yml \
                -f deploy/docker/docker-compose.prod.yml up -d
+
+# Worker 栈：独立启动（生产水平扩展用 --scale）
+docker compose -f deploy/docker/docker-compose.worker.yml --scale worker=2 up -d
 ```
+
+> 注意：两栈必须通过同一外部网络 `omichub_net` 连通，且共享同一宿主 `/data/omichub`。首次需先执行 `docker network create omichub_net`（或 `make docker-network`）。
 
 生产环境注意事项：
 - 设置 `APP_ENV=production`、`APP_DEBUG=false`
@@ -163,17 +180,19 @@ rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov
 按破坏性分级，优先使用 `make` 命令：
 
 ```bash
-# ① 轻度清理：仅删除容器 + 网络（含孤儿容器），保留数据库/Redis/共享存储数据卷与镜像
+# ① 轻度清理：仅删除两栈容器 + 网络（含孤儿容器），保留数据库/Redis 数据卷与镜像
 make docker-clean
 
-# ② 彻底重置（⚠️ 不可逆）：容器 + 数据卷(pg_data/redis_data/shared_storage) + 网络 + 本地构建镜像
+# ② 彻底重置（⚠️ 不可逆）：两栈容器 + 数据卷(pg_data/redis_data) + 网络 + 本地构建镜像
 make docker-purge
 ```
+
+> 注：任务数据存放于宿主 `/data/omichub`（bind mount，非数据卷），`make docker-purge` **不会**删除它。需彻底清理任务数据请手动 `sudo rm -rf /data/omichub`。
 
 清理后重新拉起并初始化：
 
 ```bash
-make docker-up
+make docker-up-all
 docker exec omichub-web uv run alembic upgrade head
 docker exec omichub-web uv run python scripts/init_admin.py   # 首次部署需要
 docker exec omichub-web uv run python scripts/init_cookies.py # 可选
@@ -193,7 +212,9 @@ docker image prune -f
 
 # 彻底清理所有 OmicHub 相关资源（含拉取镜像，⚠️ 不可恢复）
 docker compose -f deploy/docker/docker-compose.yml down -v --rmi all
+docker compose -f deploy/docker/docker-compose.worker.yml down -v --rmi all
 docker volume rm $(docker volume ls -q | grep omichub) 2>/dev/null
+sudo rm -rf /data/omichub   # 任务数据（bind mount）
 ```
 
 ### 账号密码重置
@@ -243,7 +264,7 @@ docker exec omichub-web uv run alembic upgrade head
 # 方式 3：彻底重建（⚠️ 删除所有数据）
 docker compose -f deploy/docker/docker-compose.yml down -v
 docker volume create --name deploy_pg_data 2>/dev/null; true
-make docker-up
+make docker-up-all
 docker exec omichub-web uv run alembic upgrade head
 docker exec omichub-web uv run python scripts/init_admin.py
 ```
@@ -288,7 +309,8 @@ frontend/             前端 Vue 3
     stores/           Pinia 状态 (chatSession/chatAssistant/ai/auth/...)
     views/            页面
 deploy/docker/        Docker 部署配置
-  docker-compose.yml  开发环境
+  docker-compose.yml  主栈开发环境 (web/db/redis/nginx/beat/flower)
+  docker-compose.worker.yml  独立 Worker 计算栈
   docker-compose.prod.yml  生产环境 override
 flows/                Snakemake 流程 YAML (rna_seq/atac_seq)
 data/                 AI Provider YAML 配置
@@ -306,9 +328,14 @@ docs/                 架构设计文档
 | `make format` | 代码格式化 |
 | `make migrate` | 执行数据库迁移 |
 | `make migrate-new m="名称"` | 创建新迁移 |
-| `make docker-up` | Docker Compose 启动 |
-| `make docker-down` | Docker Compose 停止 |
-| `make docker-clean` | 清理容器与网络（保留数据卷） |
+| `make docker-network` | 创建跨栈外部网络 omichub_net（幂等） |
+| `make docker-up` | 启动主栈 (web/db/redis/nginx/beat/flower) |
+| `make docker-up-worker` | 启动独立 Worker 计算栈 |
+| `make docker-up-all` | 启动主栈 + Worker（一键全启） |
+| `make docker-down-all` | 停止主栈 + Worker |
+| `make docker-logs-worker` | 查看 Worker 日志 |
+| `make docker-reload` | 重新构建前端并刷新主栈 + Worker |
+| `make docker-clean` | 清理两栈容器与网络（保留数据卷） |
 | `make docker-purge` | [危险] 彻底清理：容器+数据卷+网络+本地镜像 |
 | `make init-admin` | 初始化管理员账号 |
 | `make init-cookies` | 初始化饼干定价策略 |

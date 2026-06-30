@@ -71,7 +71,8 @@ class Settings(BaseSettings):
     # ===== Snakemake 配置 =====
     snakemake_cores: int = 4
     snakemake_use_conda: bool = True
-    snakemake_conda_prefix: str = "/opt/conda/envs"
+    # --use-conda 时环境创建目录（须可写，避免只读挂载冲突）
+    snakemake_conda_prefix: str = "/data/omichub/.conda_envs"
 
     # ===== 饼干积分系统 =====
     enable_cookie_system: bool = True

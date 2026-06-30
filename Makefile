@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker test lint format type-check migrate migrate-new docker-up docker-down docker-logs docker-clean docker-purge clean init-admin init-cookies
+.PHONY: help dev dev-worker test lint format type-check migrate migrate-new docker-network docker-up docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge clean init-admin init-cookies
 
 help: ## 显示所有可用命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -40,20 +40,46 @@ migrate-new: ## 创建新迁移 (用法: make migrate-new m="migration name")
 migrate-rollback: ## 回滚上一个迁移
 	uv run alembic downgrade -1
 
-docker-up: ## 启动 Docker Compose (开发环境)
-	docker compose -f deploy/docker/docker-compose.yml up -d
+# ===== Docker Compose 编排（主栈 + 独立 Worker 栈，单机逻辑解耦）=====
+COMPOSE_MAIN   := docker compose -f deploy/docker/docker-compose.yml
+COMPOSE_WORKER := docker compose -f deploy/docker/docker-compose.worker.yml
+COMPOSE_ALL    := docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.worker.yml
+DOCKER_NETWORK := omichub_net
 
-docker-down: ## 停止 Docker Compose
-	docker compose -f deploy/docker/docker-compose.yml down
+docker-network: ## 创建跨栈外部网络 omichub_net（幂等）
+	@docker network create $(DOCKER_NETWORK) 2>/dev/null || true
 
-docker-logs: ## 查看 Docker 日志
-	docker compose -f deploy/docker/docker-compose.yml logs -f
+docker-up: docker-network ## 启动主栈 (web/db/redis/nginx/beat/flower)
+	$(COMPOSE_MAIN) up -d
 
-docker-clean: ## 清理容器与网络（保留数据库/数据卷，不删镜像）
-	docker compose -f deploy/docker/docker-compose.yml down --remove-orphans
+docker-up-worker: docker-network ## 启动独立计算节点 Worker 栈
+	$(COMPOSE_WORKER) up -d
 
-docker-purge: ## [危险] 彻底清理：容器+数据卷(数据库/Redis/共享存储)+网络+本地镜像（不可逆，重置到干净状态）
-	docker compose -f deploy/docker/docker-compose.yml down -v --rmi local --remove-orphans
+docker-up-all: docker-network ## 启动主栈 + Worker（一键全启）
+	$(COMPOSE_MAIN) up -d
+	$(COMPOSE_WORKER) up -d
+
+docker-down: ## 停止主栈
+	$(COMPOSE_MAIN) down
+
+docker-down-worker: ## 停止 Worker 栈
+	$(COMPOSE_WORKER) down
+
+docker-down-all: ## 停止主栈 + Worker
+	$(COMPOSE_ALL) down
+
+docker-logs: ## 查看主栈日志
+	$(COMPOSE_MAIN) logs -f
+
+docker-logs-worker: ## 查看 Worker 日志
+	$(COMPOSE_WORKER) logs -f
+
+docker-clean: ## 清理容器与网络（保留数据卷，不删镜像）
+	$(COMPOSE_ALL) down --remove-orphans
+
+docker-purge: ## [危险] 彻底清理：容器+数据卷+网络+本地镜像（不可逆，重置到干净状态）
+	$(COMPOSE_ALL) down -v --rmi local --remove-orphans
+	@docker network rm $(DOCKER_NETWORK) 2>/dev/null || true
 
 frontend-install: ## 安装前端依赖
 	cd frontend && npm install
@@ -64,10 +90,11 @@ frontend-dev: ## 启动前端开发服务器
 frontend-build: ## 构建前端生产版本
 	cd frontend && npm run build
 
-docker-reload: ## 重新构建前端并刷新 Docker (开发用)
+docker-reload: docker-network ## 重新构建前端并刷新主栈 + Worker (开发用)
 	cd frontend && npm run build
-	docker compose -f deploy/docker/docker-compose.yml restart nginx
-	docker compose -f deploy/docker/docker-compose.yml up -d
+	$(COMPOSE_MAIN) restart nginx
+	$(COMPOSE_MAIN) up -d
+	$(COMPOSE_WORKER) up -d
 
 init-admin: ## 初始化管理员账号 (首次部署使用)
 	uv run python scripts/init_admin.py

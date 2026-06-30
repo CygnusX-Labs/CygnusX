@@ -43,45 +43,16 @@ services:
       - ../../src:/app/src:ro  # 开发环境热重载
       - ../../flows:/app/flows:ro  # 流程 YAML 配置（热重载）
       - ../../data:/app/data:ro  # AI Provider YAML 配置（热重载）
-      - shared_storage:/data/omichub
+      - /data/omichub:/data/omichub  # 任务数据（与独立 worker 栈共享同一宿主目录）
     networks:
       - app_net
       - data_net
+      - omichub_net        # 跨栈外部网络：与独立 worker 栈（docker-compose.worker.yml）互通
     # 生产模式启动：多 worker + 关闭热重载（避免 watchdog 扫描 src 的首次加载开销）
     command: uvicorn omichub.main:app --host 0.0.0.0 --port 8000 --workers 2
 
-  # ===== Celery Worker =====
-  worker:
-    build:
-      context: ../..
-      dockerfile: deploy/docker/Dockerfile
-    container_name: omichub-worker
-    restart: unless-stopped
-    env_file:
-      - ../../.env
-    environment:
-      - APP_ENV=development
-      - POSTGRES_HOST=db
-      - REDIS_HOST=cache
-      - AL_API_KEY=${AL_API_KEY}
-      - ARK_API_KEY=${ARK_API_KEY}
-    depends_on:
-      - web
-    volumes:
-      - ../../src:/app/src:ro  # 开发环境热重载
-      - shared_storage:/data/omichub
-    networks:
-      - app_net
-      - data_net
-    command: celery -A omichub.infrastructure.celery_app.celery worker --loglevel=info
-    healthcheck:
-      test: ["CMD-SHELL", "celery -A omichub.infrastructure.celery_app.celery inspect ping -d celery@$$HOSTNAME || exit 1"]
-      interval: 30s
-      timeout: 10s
-      start_period: 30s
-      retries: 3
-
-  # ===== Celery Beat 定时器 =====
+  # ===== Celery Beat 定时器（留在主栈，单实例） =====
+  # 注：计算型 worker 已拆分至独立编排栈 deploy/docker/docker-compose.worker.yml，
   beat:
     build:
       context: ../..
@@ -97,12 +68,13 @@ services:
       - AL_API_KEY=${AL_API_KEY}
       - ARK_API_KEY=${ARK_API_KEY}
     depends_on:
-      - worker
+      - web                  # worker 已迁独立栈，beat 仅需主栈启动顺序保证
     volumes:
       - ../../src:/app/src:ro  # 开发环境热重载
     networks:
       - app_net
       - data_net
+      - omichub_net          # beat 须经服务名 cache 连 Redis
     command: celery -A omichub.infrastructure.celery_app.celery beat --loglevel=info
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import os; os.kill(1, 0)\" || exit 1"]
@@ -127,10 +99,11 @@ services:
     ports:
       - "5555:5555"
     depends_on:
-      - worker
+      - web                  # 监控独立 worker 栈，同网络可连
     networks:
       - app_net
       - data_net
+      - omichub_net          # flower 经网络发现跨栈 worker
     command: celery -A omichub.infrastructure.celery_app.celery flower --port=5555
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5555/"]
@@ -171,6 +144,7 @@ services:
       - redis_data:/data
     networks:
       - data_net
+      - omichub_net          # 关键：独立 worker 栈经服务名 cache 连 Redis
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -182,8 +156,9 @@ networks:
     driver: bridge
   data_net:
     driver: bridge
+  omichub_net:               # 跨栈外部网络：供独立计算栈 docker-compose.worker.yml 加入
+    external: true           # 需先 `docker network create omichub_net` 创建
 
 volumes:
   pg_data:
   redis_data:
-  shared_storage:

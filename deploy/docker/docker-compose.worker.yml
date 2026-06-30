@@ -1,0 +1,53 @@
+# ============================================
+# OmicHub 计算节点栈（独立编排）——仅 Celery Worker
+# 单机逻辑解耦：与主栈 (docker-compose.yml) 通过外部网络 omichub_net 共享 Redis
+# 用法: docker compose -f deploy/docker/docker-compose.worker.yml up -d
+# 生产水平扩展: docker compose -f deploy/docker/docker-compose.worker.yml --scale worker=2 up -d
+#
+# 前置:
+#   1. docker network create omichub_net      # 外部网络（主栈已声明同名 external）
+#   2. 主栈已启动，且 cache 服务已加入 omichub_net
+#   3. mkdir -p /data/omichub                  # 任务数据目录（首次部署）
+#   4. 宿主 conda 实际在 /home/zj/miniconda3，分析 env 在 /home/zj/.local/share/mamba/envs
+# ============================================
+services:
+  worker:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    container_name: omichub-worker
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment:
+      - APP_ENV=development
+      - POSTGRES_HOST=db
+      - REDIS_HOST=cache                 # 经 omichub_net 解析主栈 Redis 服务名
+      - CELERY_BROKER_URL=redis://cache:6379/1
+      - CELERY_RESULT_BACKEND=redis://cache:6379/2
+      - AL_API_KEY=${AL_API_KEY}
+      - ARK_API_KEY=${ARK_API_KEY}
+      # 优先用宿主 conda 的 snakemake（python3.13，与 RNAFlow 实跑一致），回退镜像 venv
+      - PATH=/home/zj/miniconda3/envs/snakemake/bin:/home/zj/miniconda3/bin:/app/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      # conda 环境创建目录（可写）：--use-conda 时按 env hash 在此创建/复用，避免只读挂载冲突
+      - SNAKEMAKE_CONDA_PREFIX=/data/omichub/.conda_envs
+    volumes:
+      # —— 核心共享存储（模拟分布式共享盘，与主栈 web 共用）——
+      - /data/omichub:/data/omichub                       # 任务数据读写
+      - /home/zj/pipeline:/home/zj/pipeline:ro            # Snakemake 流程代码
+      # —— conda 运行时（只读，原位挂载以匹配 shebang 绝对路径）——
+      - /home/zj/miniconda3:/home/zj/miniconda3:ro        # 含 bin/conda、envs/snakemake
+      - /home/zj/.local/share/mamba:/home/zj/.local/share/mamba:ro   # RNAFlow 各分析工具 env
+    networks:
+      - omichub_net
+    command: celery -A omichub.infrastructure.celery_app.celery worker --loglevel=info
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A omichub.infrastructure.celery_app.celery inspect ping -d celery@$$HOSTNAME || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
+networks:
+  omichub_net:
+    external: true
