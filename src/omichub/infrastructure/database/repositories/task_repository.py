@@ -1,8 +1,9 @@
 """任务仓储实现 — SQLAlchemy"""
 
+from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import Row, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.domain.task.entities import Task, TaskLog
@@ -19,15 +20,11 @@ class TaskRepositoryImpl(ITaskRepository):
 
     async def get_by_id(self, task_id: UUID) -> Task | None:
         """根据 ID 获取任务"""
-        result = await self._session.execute(
-            select(TaskModel).where(TaskModel.id == task_id)
-        )
+        result = await self._session.execute(select(TaskModel).where(TaskModel.id == task_id))
         model = result.scalar_one_or_none()
         return self._to_entity(model) if model else None
 
-    async def list_by_user(
-        self, user_id: UUID, status: str | None = None
-    ) -> list[Task]:
+    async def list_by_user(self, user_id: UUID, status: str | None = None) -> list[Task]:
         """列出用户的任务"""
         query = select(TaskModel).where(TaskModel.user_id == user_id)
         if status:
@@ -68,6 +65,77 @@ class TaskRepositoryImpl(ITaskRepository):
         await self._session.flush()
 
     # ------------------------------------------------------------------
+    # 仪表板统计聚合（返回原始行/标量，不走 _to_entity）
+    # ------------------------------------------------------------------
+
+    async def count_trend_by_day(self, days: int, user_id: UUID | None = None) -> list[Row]:
+        """按天聚合过去 N 天的任务数与样本数。
+
+        user_id 为 None 时统计全平台（管理员视角）。
+        缺日（无任务）由服务层补 0。
+        """
+        cutoff = datetime.now() - timedelta(days=days)
+        date_col = func.date(TaskModel.created_at).label("date")
+        stmt = (
+            select(
+                date_col,
+                func.count(TaskModel.id).label("task_count"),
+                func.coalesce(func.sum(TaskModel.sample_count), 0).label("sample_count"),
+            )
+            .where(TaskModel.created_at >= cutoff)
+            .group_by(date_col)
+            .order_by(date_col)
+        )
+        if user_id is not None:
+            stmt = stmt.where(TaskModel.user_id == user_id)
+        result = await self._session.execute(stmt)
+        return list(result.all())
+
+    async def count_by_status(self, user_id: UUID | None = None) -> list[Row]:
+        """按状态聚合任务数。user_id 为 None 时为全平台。"""
+        stmt = select(TaskModel.status, func.count(TaskModel.id))
+        if user_id is not None:
+            stmt = stmt.where(TaskModel.user_id == user_id)
+        stmt = stmt.group_by(TaskModel.status)
+        result = await self._session.execute(stmt)
+        return list(result.all())
+
+    async def count_by_flow(self, user_id: UUID | None = None) -> list[Row]:
+        """按流程聚合任务数。user_id 为 None 时为全平台。"""
+        stmt = select(TaskModel.flow_id, func.count(TaskModel.id))
+        if user_id is not None:
+            stmt = stmt.where(TaskModel.user_id == user_id)
+        stmt = stmt.group_by(TaskModel.flow_id)
+        result = await self._session.execute(stmt)
+        return list(result.all())
+
+    async def count_active_users_since(self, days: int) -> int:
+        """近 N 天内有提交任务行为的去重用户数。"""
+        cutoff = datetime.now() - timedelta(days=days)
+        stmt = select(func.count(func.distinct(TaskModel.user_id))).where(
+            TaskModel.created_at >= cutoff
+        )
+        result = await self._session.execute(stmt)
+        return int(result.scalar_one())
+
+    async def list_recent_failed(self, limit: int = 10, user_id: UUID | None = None) -> list[Task]:
+        """近期失败任务。user_id 为 None 时为全平台（管理员）。"""
+        stmt = select(TaskModel).where(TaskModel.status == TaskStatus.FAILED.value)
+        if user_id is not None:
+            stmt = stmt.where(TaskModel.user_id == user_id)
+        stmt = stmt.order_by(TaskModel.created_at.desc()).limit(limit)
+        result = await self._session.execute(stmt)
+        return [self._to_entity(m) for m in result.scalars().all()]
+
+    async def sum_sample_count(self, user_id: UUID | None = None) -> int:
+        """累计样本数。user_id 为 None 时为全平台。"""
+        stmt = select(func.coalesce(func.sum(TaskModel.sample_count), 0))
+        if user_id is not None:
+            stmt = stmt.where(TaskModel.user_id == user_id)
+        result = await self._session.execute(stmt)
+        return int(result.scalar_one())
+
+    # ------------------------------------------------------------------
     # 模型 ↔ 实体转换
     # ------------------------------------------------------------------
 
@@ -96,6 +164,7 @@ class TaskRepositoryImpl(ITaskRepository):
             result_path=model.result_path,
             error_message=model.error_message,
             progress=model.progress,
+            sample_count=model.sample_count,
             logs=logs,
             created_at=model.created_at,
             started_at=model.started_at,
@@ -116,6 +185,7 @@ class TaskRepositoryImpl(ITaskRepository):
             result_path=task.result_path,
             error_message=task.error_message,
             progress=task.progress,
+            sample_count=task.sample_count,
             logs=[log.model_dump(mode="json") for log in task.logs],
             started_at=task.started_at,
             finished_at=task.finished_at,
@@ -133,6 +203,7 @@ class TaskRepositoryImpl(ITaskRepository):
         model.result_path = task.result_path
         model.error_message = task.error_message
         model.progress = task.progress
+        model.sample_count = task.sample_count
         # 注意: logs 不在此处覆盖，由 append_log 单独管理，避免丢失直接追加的日志
         model.started_at = task.started_at
         model.finished_at = task.finished_at

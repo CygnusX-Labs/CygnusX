@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     initial_cookie_balance: float = 100.0
     cookie_sandbox_base_cost: float = 0.5
 
+    # ===== 仪表板统计缓存 =====
+    enable_stats_cache: bool = True  # Redis 不可用时自动降级为直查 DB
+
     # ===== AI Copilot =====
     ai_system_prompt: str = (
         "你是 OmicHub 智能分析助手，专注于多组学（RNA-seq/ATAC-seq 等）数据分析。"

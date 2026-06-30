@@ -1,38 +1,26 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, h } from 'vue'
+import { ref, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  NButton, NSpace, NIcon, NProgress, NTag, NTooltip,
-  NDataTable, NEmpty,
+  NButton, NSpace, NIcon, NProgress, NTag, NTooltip, NDataTable, NEmpty, NSpin,
 } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import {
-  FlaskOutline, RocketOutline, CloudUploadOutline, EyeOutline,
-  RefreshOutline, TrashOutline, CheckmarkOutline, ChevronForwardOutline,
-  CloseOutline, CalendarOutline, SparklesOutline,
+  RocketOutline, EyeOutline,
+  RefreshOutline, TrashOutline,
+  CloseOutline, SparklesOutline,
 } from '@vicons/ionicons5'
-import { use } from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
-import { BarChart, LineChart } from 'echarts/charts'
-import {
-  GridComponent, TooltipComponent, LegendComponent, DatasetComponent,
-} from 'echarts/components'
-import VChart from 'vue-echarts'
 import axios from 'axios'
 import apiClient from '@/api/client'
 import type { Task } from '@/types'
-
-use([
-  CanvasRenderer,
-  BarChart,
-  LineChart,
-  GridComponent,
-  TooltipComponent,
-  LegendComponent,
-  DatasetComponent,
-])
+import type { StatsOverview } from '@/types/stats'
+import { useAuthStore } from '@/stores/auth'
+import TrendChart from '@/components/dashboard/TrendChart.vue'
+import QuickStartSteps from '@/components/dashboard/QuickStartSteps.vue'
+import AdminStatsPanel from '@/components/dashboard/AdminStatsPanel.vue'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 const healthStatus = ref<string>('检测中...')
 const healthOk = ref(false)
@@ -41,91 +29,9 @@ const runningTaskCount = ref(0)
 const totalTaskCount = ref(0)
 const sampleCount = ref(0)
 const recentTasks = ref<Task[]>([])
+const loadingOverview = ref(false)
 const loadingTasks = ref(false)
 const bannerClosed = ref(localStorage.getItem('omichub:dashboardBannerClosed') === 'true')
-
-// 趋势图数据（后续可接入真实统计）
-const trendData = [
-  { date: '06/12', tasks: 5, samples: 10 },
-  { date: '06/14', tasks: 15, samples: 35 },
-  { date: '06/16', tasks: 40, samples: 180 },
-  { date: '06/18', tasks: 25, samples: 120 },
-  { date: '06/20', tasks: 8, samples: 40 },
-  { date: '06/22', tasks: 2, samples: 15 },
-  { date: '06/24', tasks: 0, samples: 5 },
-]
-
-const trendOption = computed(() => ({
-  tooltip: {
-    trigger: 'axis',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E5E6EB',
-    borderWidth: 1,
-    textStyle: { color: '#1D2129', fontSize: 12 },
-    extraCssText: 'box-shadow: 0 4px 20px rgba(0,0,0,0.08); border-radius: 8px;',
-  },
-  legend: {
-    data: ['分析任务数', '样本数量'],
-    bottom: 0,
-    textStyle: { color: '#4E5969', fontSize: 12 },
-    itemWidth: 10,
-    itemHeight: 10,
-  },
-  grid: {
-    left: 12,
-    right: 12,
-    top: 24,
-    bottom: 32,
-    containLabel: true,
-  },
-  xAxis: {
-    type: 'category',
-    data: trendData.map((d) => d.date),
-    axisLine: { lineStyle: { color: '#E5E6EB' } },
-    axisTick: { show: false },
-    axisLabel: { color: '#86909C', fontSize: 12 },
-  },
-  yAxis: [
-    {
-      type: 'value',
-      name: '任务数',
-      nameTextStyle: { color: '#86909C', fontSize: 11, align: 'left', padding: [0, 0, 0, -20] },
-      axisLine: { show: false },
-      axisTick: { show: false },
-      splitLine: { lineStyle: { color: '#E5E6EB', type: 'dashed' } },
-      axisLabel: { color: '#86909C', fontSize: 12 },
-    },
-    {
-      type: 'value',
-      name: '样本数',
-      nameTextStyle: { color: '#86909C', fontSize: 11, align: 'right', padding: [0, -20, 0, 0] },
-      axisLine: { show: false },
-      axisTick: { show: false },
-      splitLine: { show: false },
-      axisLabel: { color: '#86909C', fontSize: 12 },
-    },
-  ],
-  series: [
-    {
-      name: '分析任务数',
-      type: 'bar',
-      data: trendData.map((d) => d.tasks),
-      itemStyle: { color: '#165DFF', borderRadius: [4, 4, 0, 0] },
-      barMaxWidth: 32,
-    },
-    {
-      name: '样本数量',
-      type: 'line',
-      yAxisIndex: 1,
-      data: trendData.map((d) => d.samples),
-      itemStyle: { color: '#FF7D00' },
-      lineStyle: { color: '#FF7D00', width: 2 },
-      symbol: 'circle',
-      symbolSize: 6,
-      smooth: true,
-    },
-  ],
-}))
 
 onMounted(async () => {
   // 健康检查
@@ -145,17 +51,33 @@ onMounted(async () => {
     flowCount.value = 0
   }
 
-  // 任务统计
+  // 状态概览（运行任务 / 总任务 / 样本数）— 真实聚合接口
+  loadingOverview.value = true
   try {
-    const running = await apiClient.get<{ total: number }>('/tasks', { params: { status: 'running' } })
-    runningTaskCount.value = running.data.total ?? 0
-
-    const all = await apiClient.get<{ total: number; items: Task[] }>('/tasks', { params: { limit: 5 } })
-    totalTaskCount.value = all.data.total ?? 0
-    recentTasks.value = all.data.items ?? []
+    const res = await apiClient.get<StatsOverview>('/stats/overview')
+    runningTaskCount.value = res.data.running ?? 0
+    totalTaskCount.value = res.data.total ?? 0
+    sampleCount.value = res.data.samples ?? 0
   } catch {
     runningTaskCount.value = 0
     totalTaskCount.value = 0
+    sampleCount.value = 0
+  } finally {
+    loadingOverview.value = false
+  }
+
+  // 最近任务
+  loadingTasks.value = true
+  try {
+    const res = await apiClient.get<{ total: number; items: Task[] }>('/tasks', {
+      params: { limit: 5 },
+    })
+    totalTaskCount.value = res.data.total ?? 0
+    recentTasks.value = res.data.items ?? []
+  } catch {
+    recentTasks.value = []
+  } finally {
+    loadingTasks.value = false
   }
 })
 
@@ -225,20 +147,6 @@ const columns: DataTableColumns<Task> = [
     }),
   },
 ]
-
-const quickSteps = [
-  { number: 1, title: '上传样本数据', status: 'completed' as const },
-  { number: 2, title: '选择分析流程', status: 'current' as const },
-  { number: 3, title: '查看分析结果', status: 'pending' as const },
-]
-
-function statusClass(status: string) {
-  return `step-circle step-circle--${status}`
-}
-
-function statusTextClass(status: string) {
-  return `step-title step-title--${status}`
-}
 </script>
 
 <template>
@@ -268,32 +176,8 @@ function statusTextClass(status: string) {
       </button>
     </div>
 
-    <!-- 快速开始 -->
-    <section class="quick-start animate-fade-in-up">
-      <h2 class="section-title">快速开始</h2>
-      <div class="steps-row">
-        <div
-          v-for="(step, index) in quickSteps"
-          :key="step.number"
-          class="step-item"
-        >
-          <span :class="statusClass(step.status)">
-            <NIcon v-if="step.status === 'completed'" :size="14">
-              <CheckmarkOutline />
-            </NIcon>
-            <span v-else>{{ step.number }}</span>
-          </span>
-          <span :class="statusTextClass(step.status)">{{ step.title }}</span>
-          <NIcon
-            v-if="index < quickSteps.length - 1"
-            :size="16"
-            class="step-arrow"
-          >
-            <ChevronForwardOutline />
-          </NIcon>
-        </div>
-      </div>
-    </section>
+    <!-- 快速开始（动态画像） -->
+    <QuickStartSteps />
 
     <!-- 数据概览 - 左右分栏 -->
     <section class="overview-grid animate-fade-in-up delay-100">
@@ -315,38 +199,30 @@ function statusTextClass(status: string) {
           <span class="status-value">{{ healthStatus }}</span>
         </div>
         <div class="status-divider" />
-        <div class="status-metrics">
-          <div class="status-metric-row">
-            <span class="status-metric-label">分析流程</span>
-            <span class="status-metric-value">{{ flowCount }}</span>
+        <NSpin :show="loadingOverview">
+          <div class="status-metrics">
+            <div class="status-metric-row">
+              <span class="status-metric-label">分析流程</span>
+              <span class="status-metric-value">{{ flowCount }}</span>
+            </div>
+            <div class="status-metric-row">
+              <span class="status-metric-label">运行任务</span>
+              <span class="status-metric-value">{{ runningTaskCount }}</span>
+            </div>
+            <div class="status-metric-row">
+              <span class="status-metric-label">数据样本</span>
+              <span class="status-metric-value">{{ sampleCount }}</span>
+            </div>
           </div>
-          <div class="status-metric-row">
-            <span class="status-metric-label">运行任务</span>
-            <span class="status-metric-value">{{ runningTaskCount }}</span>
-          </div>
-          <div class="status-metric-row">
-            <span class="status-metric-label">数据样本</span>
-            <span class="status-metric-value">{{ sampleCount }}</span>
-          </div>
-        </div>
+        </NSpin>
       </div>
 
-      <!-- 右侧趋势图 -->
-      <div class="arco-card trend-card">
-        <div class="arco-card-header">
-          <span class="arco-card-title">任务提交趋势</span>
-          <NButton size="small" class="date-picker-btn">
-            <template #icon>
-              <NIcon :size="14"><CalendarOutline /></NIcon>
-            </template>
-            近 7 天
-          </NButton>
-        </div>
-        <div class="trend-chart-wrap">
-          <VChart :option="trendOption" autoresize style="width: 100%; height: 260px;" />
-        </div>
-      </div>
+      <!-- 右侧趋势图（真实接口 + 7/30 天切换） -->
+      <TrendChart />
     </section>
+
+    <!-- 管理员全平台监控态势（仅管理员可见） -->
+    <AdminStatsPanel v-if="authStore.isAdmin" />
 
     <!-- 最近任务 -->
     <section class="arco-card recent-tasks animate-fade-in-up delay-200">
@@ -356,29 +232,30 @@ function statusTextClass(status: string) {
           查看全部 →
         </NButton>
       </div>
-      <NDataTable
-        v-if="recentTasks.length > 0"
-        :columns="columns"
-        :data="recentTasks"
-        :loading="loadingTasks"
-        :bordered="false"
-        size="small"
-        :single-line="false"
-        class="recent-table"
-      />
-      <NEmpty v-else description="暂无任务">
-        <template #extra>
-          <div class="empty-extra">
-            <p>点击上方按钮提交您的第一个分析任务</p>
-            <NButton type="primary" @click="router.push('/flows')">
-              <template #icon>
-                <NIcon><RocketOutline /></NIcon>
-              </template>
-              提交分析任务
-            </NButton>
-          </div>
-        </template>
-      </NEmpty>
+      <NSpin :show="loadingTasks">
+        <NDataTable
+          v-if="recentTasks.length > 0"
+          :columns="columns"
+          :data="recentTasks"
+          :bordered="false"
+          size="small"
+          :single-line="false"
+          class="recent-table"
+        />
+        <NEmpty v-else description="暂无任务">
+          <template #extra>
+            <div class="empty-extra">
+              <p>点击上方按钮提交您的第一个分析任务</p>
+              <NButton type="primary" @click="router.push('/flows')">
+                <template #icon>
+                  <NIcon><RocketOutline /></NIcon>
+                </template>
+                提交分析任务
+              </NButton>
+            </div>
+          </template>
+        </NEmpty>
+      </NSpin>
     </section>
   </div>
 </template>
@@ -475,80 +352,6 @@ function statusTextClass(status: string) {
   background: rgba(255, 255, 255, 0.3);
 }
 
-/* 快速开始 */
-.quick-start {
-  margin-bottom: 24px;
-}
-
-.section-title {
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 26px;
-  color: var(--neutral-text-1);
-  margin: 0 0 16px;
-}
-
-.steps-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.step-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.step-circle {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 500;
-  transition: all 0.2s ease;
-}
-
-.step-circle--completed {
-  background: var(--arco-primary);
-  color: #fff;
-}
-
-.step-circle--current {
-  background: var(--arco-primary);
-  color: #fff;
-  box-shadow: 0 0 0 4px rgba(22, 93, 255, 0.15);
-}
-
-.step-circle--pending {
-  background: var(--neutral-border);
-  color: var(--neutral-text-3);
-}
-
-.step-title {
-  font-size: 14px;
-  line-height: 22px;
-}
-
-.step-title--completed,
-.step-title--current {
-  color: var(--arco-primary);
-  font-weight: 500;
-}
-
-.step-title--pending {
-  color: var(--neutral-text-3);
-}
-
-.step-arrow {
-  color: var(--neutral-text-4);
-  margin: 0 4px;
-}
-
 /* 数据概览 */
 .overview-grid {
   display: grid;
@@ -636,22 +439,9 @@ function statusTextClass(status: string) {
   color: var(--neutral-text-1);
 }
 
-.trend-card {
-  min-width: 0;
-}
-
-.trend-chart-wrap {
-  width: 100%;
-}
-
 .refresh-btn,
 .view-all-btn {
   color: var(--arco-primary) !important;
-}
-
-.date-picker-btn {
-  color: var(--neutral-text-2) !important;
-  border-color: var(--neutral-border) !important;
 }
 
 /* 最近任务 */
@@ -696,15 +486,6 @@ function statusTextClass(status: string) {
 @media (max-width: 768px) {
   .dashboard-page {
     padding: 16px;
-  }
-
-  .steps-row {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .step-arrow {
-    display: none;
   }
 
   .banner-content {

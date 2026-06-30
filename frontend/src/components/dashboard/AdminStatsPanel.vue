@@ -1,0 +1,455 @@
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
+import { NIcon, NEmpty, NSpin, NTag } from 'naive-ui'
+import { AlertCircleOutline, PeopleOutline, FlashOutline } from '@vicons/ionicons5'
+import { useRouter } from 'vue-router'
+import { use } from 'echarts/core'
+import { CanvasRenderer } from 'echarts/renderers'
+import { BarChart, PieChart } from 'echarts/charts'
+import {
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+} from 'echarts/components'
+import VChart from 'vue-echarts'
+import apiClient from '@/api/client'
+import type {
+  AdminStatus,
+  AdminUserStats,
+  FlowUsage,
+  FailedTask,
+} from '@/types/stats'
+
+use([CanvasRenderer, PieChart, BarChart, GridComponent, TooltipComponent, LegendComponent])
+
+const router = useRouter()
+
+const statusData = ref<AdminStatus>({})
+const flowUsage = ref<FlowUsage[]>([])
+const userStats = ref<AdminUserStats>({ total_users: 0, active_users_7d: 0 })
+const failedTasks = ref<FailedTask[]>([])
+
+const loadingStatus = ref(false)
+const loadingFlows = ref(false)
+const loadingUsers = ref(false)
+const loadingFailed = ref(false)
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: '待审核',
+  queued: '排队中',
+  running: '运行中',
+  success: '已完成',
+  failed: '失败',
+  cancelled: '已取消',
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  pending: '#FF7D00',
+  queued: '#FF9A2E',
+  running: '#165DFF',
+  success: '#00B42A',
+  failed: '#F53F3F',
+  cancelled: '#86909C',
+}
+
+const pieOption = computed(() => ({
+  tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+  legend: { bottom: 0, textStyle: { color: '#4E5969', fontSize: 12 }, itemWidth: 10, itemHeight: 10 },
+  series: [
+    {
+      name: '任务状态',
+      type: 'pie',
+      radius: ['40%', '68%'],
+      center: ['50%', '46%'],
+      avoidLabelOverlap: true,
+      itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+      label: { show: false },
+      emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
+      data: Object.entries(statusData.value).map(([k, v]) => ({
+        name: STATUS_LABELS[k] ?? k,
+        value: v,
+        itemStyle: { color: STATUS_COLORS[k] },
+      })),
+    },
+  ],
+}))
+
+const flowOption = computed(() => ({
+  tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+  grid: { left: 12, right: 24, top: 16, bottom: 8, containLabel: true },
+  xAxis: {
+    type: 'value',
+    axisLine: { show: false },
+    axisTick: { show: false },
+    splitLine: { lineStyle: { color: '#E5E6EB', type: 'dashed' } },
+    axisLabel: { color: '#86909C', fontSize: 12 },
+  },
+  yAxis: {
+    type: 'category',
+    data: flowUsage.value.map((f) => f.name).reverse(),
+    axisLine: { lineStyle: { color: '#E5E6EB' } },
+    axisTick: { show: false },
+    axisLabel: { color: '#4E5969', fontSize: 12 },
+  },
+  series: [
+    {
+      type: 'bar',
+      data: flowUsage.value.map((f) => f.count).reverse(),
+      barMaxWidth: 18,
+      itemStyle: {
+        color: '#165DFF',
+        borderRadius: [0, 4, 4, 0],
+      },
+    },
+  ],
+}))
+
+const totalTasks = computed(() =>
+  Object.values(statusData.value).reduce((a, b) => a + b, 0),
+)
+
+function statusTagType(s: string): 'success' | 'warning' | 'error' | 'info' | 'default' {
+  return ({
+    success: 'success',
+    failed: 'error',
+    running: 'info',
+    queued: 'warning',
+    pending: 'warning',
+    cancelled: 'default',
+  } as const)[s] ?? 'default'
+}
+
+function formatTime(iso: string | null): string {
+  if (!iso) return '-'
+  return new Date(iso).toLocaleString('zh-CN', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+async function fetchStatus() {
+  loadingStatus.value = true
+  try {
+    const res = await apiClient.get<AdminStatus>('/admin/stats/status')
+    statusData.value = res.data ?? {}
+  } catch {
+    statusData.value = {}
+  } finally {
+    loadingStatus.value = false
+  }
+}
+
+async function fetchFlows() {
+  loadingFlows.value = true
+  try {
+    const res = await apiClient.get<FlowUsage[]>('/admin/stats/flows')
+    flowUsage.value = res.data ?? []
+  } catch {
+    flowUsage.value = []
+  } finally {
+    loadingFlows.value = false
+  }
+}
+
+async function fetchUsers() {
+  loadingUsers.value = true
+  try {
+    const res = await apiClient.get<AdminUserStats>('/admin/stats/users')
+    userStats.value = res.data ?? { total_users: 0, active_users_7d: 0 }
+  } catch {
+    userStats.value = { total_users: 0, active_users_7d: 0 }
+  } finally {
+    loadingUsers.value = false
+  }
+}
+
+async function fetchFailed() {
+  loadingFailed.value = true
+  try {
+    const res = await apiClient.get<FailedTask[]>('/admin/stats/recent-failed', {
+      params: { limit: 10 },
+    })
+    failedTasks.value = res.data ?? []
+  } catch {
+    failedTasks.value = []
+  } finally {
+    loadingFailed.value = false
+  }
+}
+
+onMounted(() => {
+  void fetchStatus()
+  void fetchFlows()
+  void fetchUsers()
+  void fetchFailed()
+})
+</script>
+
+<template>
+  <section class="admin-panel">
+    <div class="panel-header">
+      <h2 class="section-title">全平台全局监控态势看板</h2>
+      <NTag type="warning" size="small" round>管理员</NTag>
+    </div>
+
+    <!-- 指标卡片：用户与活跃度 -->
+    <div class="stat-cards">
+      <div class="stat-card">
+        <div class="stat-icon stat-icon--blue"><NIcon :size="20"><PeopleOutline /></NIcon></div>
+        <NSpin :show="loadingUsers">
+          <div class="stat-body">
+            <span class="stat-value">{{ userStats.total_users }}</span>
+            <span class="stat-label">注册用户总数</span>
+          </div>
+        </NSpin>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon stat-icon--green"><NIcon :size="20"><FlashOutline /></NIcon></div>
+        <NSpin :show="loadingUsers">
+          <div class="stat-body">
+            <span class="stat-value">{{ userStats.active_users_7d }}</span>
+            <span class="stat-label">近 7 天活跃用户</span>
+          </div>
+        </NSpin>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon stat-icon--purple"><NIcon :size="20"><AlertCircleOutline /></NIcon></div>
+        <NSpin :show="loadingStatus">
+          <div class="stat-body">
+            <span class="stat-value">{{ totalTasks }}</span>
+            <span class="stat-label">全平台任务总数</span>
+          </div>
+        </NSpin>
+      </div>
+    </div>
+
+    <!-- 图表区 -->
+    <div class="charts-grid">
+      <div class="arco-card chart-card">
+        <div class="arco-card-header"><span class="arco-card-title">任务状态分布</span></div>
+        <NSpin :show="loadingStatus">
+          <VChart :option="pieOption" autoresize style="width: 100%; height: 260px;" />
+        </NSpin>
+      </div>
+      <div class="arco-card chart-card">
+        <div class="arco-card-header"><span class="arco-card-title">流程使用占比</span></div>
+        <NSpin :show="loadingFlows">
+          <VChart
+            v-if="flowUsage.length > 0"
+            :option="flowOption"
+            autoresize
+            style="width: 100%; height: 260px;"
+          />
+          <NEmpty v-else description="暂无流程调用记录" style="padding: 60px 0;" />
+        </NSpin>
+      </div>
+    </div>
+
+    <!-- 近期失败任务监控 -->
+    <div class="arco-card failed-card">
+      <div class="arco-card-header">
+        <span class="arco-card-title">
+          <NIcon :size="16" class="alert-icon"><AlertCircleOutline /></NIcon>
+          近期失败任务监控
+        </span>
+      </div>
+      <NSpin :show="loadingFailed">
+        <div v-if="failedTasks.length > 0" class="failed-list">
+          <div
+            v-for="task in failedTasks"
+            :key="task.id"
+            class="failed-item"
+            @click="router.push(`/tasks/${task.id}`)"
+          >
+            <div class="failed-main">
+              <span class="failed-name">{{ task.name || '(未命名任务)' }}</span>
+              <NTag size="tiny" :type="statusTagType('failed')" round>失败</NTag>
+            </div>
+            <div class="failed-meta">
+              <span class="failed-flow">{{ task.flow_id }}</span>
+              <span class="failed-error" :title="task.error_message">
+                {{ task.error_message || '无错误信息' }}
+              </span>
+              <span class="failed-time">{{ formatTime(task.created_at) }}</span>
+            </div>
+          </div>
+        </div>
+        <NEmpty v-else description="近期无失败任务，系统运行良好" style="padding: 32px 0;" />
+      </NSpin>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.admin-panel {
+  margin-top: 8px;
+  margin-bottom: 24px;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--neutral-text-1, #1d2129);
+  margin: 0;
+}
+
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.stat-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--neutral-card-bg, #fff);
+  border: 1px solid var(--neutral-border, #e5e6eb);
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+
+.stat-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.stat-icon--blue { background: rgba(22, 93, 255, 0.1); color: #165dff; }
+.stat-icon--green { background: rgba(0, 180, 42, 0.1); color: #00b42a; }
+.stat-icon--purple { background: rgba(142, 84, 233, 0.1); color: #8e54e9; }
+
+.stat-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 32px;
+  color: var(--neutral-text-1, #1d2129);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--neutral-text-3, #86909c);
+}
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.arco-card {
+  background: var(--neutral-card-bg, #fff);
+  border: 1px solid var(--neutral-border, #e5e6eb);
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+
+.arco-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.arco-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--neutral-text-1, #1d2129);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.alert-icon {
+  color: #f53f3f;
+}
+
+.failed-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.failed-item {
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(229, 230, 235, 0.5);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.failed-item:last-child {
+  border-bottom: none;
+}
+
+.failed-item:hover {
+  background: var(--neutral-hover, #f7f8fa);
+  margin: 0 -20px;
+  padding: 12px 20px;
+}
+
+.failed-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.failed-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--neutral-text-1, #1d2129);
+}
+
+.failed-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--neutral-text-3, #86909c);
+}
+
+.failed-flow {
+  color: var(--arco-primary, #165dff);
+}
+
+.failed-error {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.failed-time {
+  flex-shrink: 0;
+}
+
+@media (max-width: 1024px) {
+  .stat-cards {
+    grid-template-columns: 1fr;
+  }
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

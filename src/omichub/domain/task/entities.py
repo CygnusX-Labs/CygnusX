@@ -32,6 +32,7 @@ class Task(BaseModel):
     result_path: str = ""
     error_message: str = ""
     progress: float = 0.0  # 0.0 ~ 1.0
+    sample_count: int = 0  # 提交时由 len(sample_sheet) 落库
     logs: list[TaskLog] = []
     created_at: datetime = Field(default_factory=datetime.now)
     started_at: datetime | None = None

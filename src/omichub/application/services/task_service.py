@@ -80,6 +80,7 @@ class TaskService:
             name=req.name or f"{flow_detail.meta.name} - {datetime.now().strftime('%Y%m%d%H%M%S')}",
             parameters=parameter_snapshot,
             execution_mode=req.execution_mode,
+            sample_count=len(req.sample_sheet),
         )
 
         # 写入工作目录等运行信息

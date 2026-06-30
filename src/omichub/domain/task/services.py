@@ -22,6 +22,7 @@ class TaskDomainService:
         name: str,
         parameters: dict,
         execution_mode: ExecutionMode = ExecutionMode.LOCAL,
+        sample_count: int = 0,
     ) -> Task:
         """提交新任务：创建聚合根并持久化"""
         from uuid import uuid4
@@ -34,15 +35,14 @@ class TaskDomainService:
             status=TaskStatus.PENDING,
             execution_mode=execution_mode,
             parameters=parameters,
+            sample_count=sample_count,
         )
         return await self._repo.save(task)
 
     async def transition_status(self, task: Task, new_status: TaskStatus) -> Task:
         """执行状态转换（含合法性校验）"""
         if not task.can_transition_to(new_status):
-            raise ValidationError(
-                f"非法状态转换: {task.status} → {new_status}"
-            )
+            raise ValidationError(f"非法状态转换: {task.status} → {new_status}")
         task.status = new_status
         if new_status == TaskStatus.RUNNING and task.started_at is None:
             task.started_at = datetime.now()
@@ -50,15 +50,16 @@ class TaskDomainService:
             task.finished_at = datetime.now()
         return await self._repo.save(task)
 
-    async def add_log(
-        self, task_id: UUID, level: LogLevel, message: str, source: str = ""
-    ) -> None:
+    async def add_log(self, task_id: UUID, level: LogLevel, message: str, source: str = "") -> None:
         """追加任务日志"""
         from datetime import datetime
 
-        await self._repo.append_log(task_id, {
-            "timestamp": datetime.now().isoformat(),
-            "level": level.value,
-            "message": message,
-            "source": source,
-        })
+        await self._repo.append_log(
+            task_id,
+            {
+                "timestamp": datetime.now().isoformat(),
+                "level": level.value,
+                "message": message,
+                "source": source,
+            },
+        )

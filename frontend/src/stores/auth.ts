@@ -10,6 +10,8 @@ export const useAuthStore = defineStore('auth', () => {
   const loading = ref(false)
 
   const isLoggedIn = computed(() => accessToken.value !== null)
+  // 管理员视角感知位：role 由 /auth/me 返回并随 user 持久化
+  const isAdmin = computed(() => user.value?.role === 'admin')
 
   function setTokens(access: string, refresh: string) {
     accessToken.value = access
@@ -87,6 +89,7 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     loading,
     isLoggedIn,
+    isAdmin,
     setTokens,
     clearTokens,
     login,

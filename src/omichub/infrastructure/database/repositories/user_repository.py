@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.domain.user.entities import User
@@ -61,6 +61,12 @@ class SqlAlchemyUserRepository(IUserRepository):
         stmt = select(UserModel).where(UserModel.role == Role.ADMIN.value).limit(1)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none() is not None
+
+    async def count_total(self) -> int:
+        """全平台注册用户总数"""
+        stmt = select(func.count(UserModel.id))
+        result = await self.session.execute(stmt)
+        return int(result.scalar_one())
 
     async def save(self, user: User) -> User:
         """保存用户（新建或更新）"""
