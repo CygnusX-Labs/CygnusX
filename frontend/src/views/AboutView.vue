@@ -20,8 +20,8 @@ const stars = Array.from({ length: 160 }, (_, i) => {
     left: Math.random() * 100,
     size: size,
     opacity: baseOpacity,
-    delay: Math.random() * 5,
-    duration: Math.random() * 3 + 2,
+    delay: Math.random() * 8,
+    duration: Math.random() * 5 + 5,
     hasCross: hasCross,
     crossScale: crossScale
   }
@@ -29,8 +29,9 @@ const stars = Array.from({ length: 160 }, (_, i) => {
 
 const shootingStars = Array.from({ length: 3 }, (_, i) => ({
   id: i,
-  delay: i * 5 + Math.random() * 5,
-  duration: 1.5 + Math.random() * 1.5,
+  // 长周期循环：每颗约 18~24s 才划过一次（可见段仅占约 12%，靠 keyframes 压缩）
+  delay: i * 6 + Math.random() * 4,
+  duration: 18 + Math.random() * 6,
   top: Math.random() * 50,
   left: Math.random() * 60,
   scale: 0.8 + Math.random() * 0.7,
@@ -191,13 +192,17 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
     transform: translateX(0) translateY(0) rotate(35deg) scaleX(0) scale(var(--star-scale, 1));
     opacity: 0;
   }
-  10% {
+  20% {
     opacity: 1;
     transform: translateX(60px) translateY(42px) rotate(35deg) scaleX(1) scale(var(--star-scale, 1));
   }
-  70% {
+  32% {
     opacity: 1;
     transform: translateX(420px) translateY(294px) rotate(35deg) scaleX(1) scale(var(--star-scale, 1));
+  }
+  42% {
+    transform: translateX(600px) translateY(420px) rotate(35deg) scaleX(0.6) scale(var(--star-scale, 1));
+    opacity: 0;
   }
   100% {
     transform: translateX(600px) translateY(420px) rotate(35deg) scaleX(0.6) scale(var(--star-scale, 1));
