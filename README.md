@@ -426,6 +426,56 @@ OmicHub 采用 **YAML 声明式 + 通用构建器** 的架构来接入不同的 
 - 若某字段需要嵌套结构（如 `peak_calling.use_pooled_peaks`），在 `config_fields` 中使用点号路径即可；
 - 所有字段默认值、动态占位符、类型转换规则均可在 `pipeline_mapping` 中声明。
 
+## 数据下载（EBIDownload）
+
+平台内置「数据下载」入口，调用 Rust 写的 [EBIDownload](pipelines/EBIDownload) 工具从 EBI/NCBI 下载测序数据（FASTQ）。下载完成的数据**自动出现在「数据管理」中**（FASTQ 类型），可直接作为分析流程的输入。该功能默认关闭，按以下步骤启用：
+
+### 1. 构建 Rust 二进制
+
+```bash
+cd pipelines/EBIDownload
+CC=clang cargo build -p ebidownload-cli --release
+# 产物：target/release/EBIDownload
+```
+
+### 2. 装运行时依赖
+
+Worker 需要 `sra-tools`（`prefetch` / `fasterq-dump`）。宿主机或 worker 镜像任选一种方式安装：
+
+```bash
+# 方式 A：在 worker 容器/镜像内安装
+mamba install -n base -c bioconda sra-tools
+
+# 方式 B：用 EBIDownload 自带命令拉取（写入 EBIDownload.yaml 指向的路径）
+./EBIDownload deps install
+```
+
+### 3. 配置二进制与 YAML 路径
+
+将构建产物与工具配置（`EBIDownload.yaml`，含 sra-tools 路径）放到 `/data/omichub/bin/`（默认路径，可在 `.env` 覆盖）：
+
+```bash
+mkdir -p /data/omichub/bin
+cp pipelines/EBIDownload/target/release/EBIDownload /data/omichub/bin/EBIDownload
+cp pipelines/EBIDownload/EBIDownload.yaml /data/omichub/bin/EBIDownload.yaml
+```
+
+对应 `.env` 配置项（均有默认值）：
+
+```env
+ENABLE_EBI_DOWNLOAD=true                 # 装好二进制 + sra-tools 后再开
+EBI_DOWNLOAD_BINARY=/data/omichub/bin/EBIDownload
+EBI_DOWNLOAD_YAML=/data/omichub/bin/EBIDownload.yaml
+```
+
+### 4. 端到端验证
+
+1. 访问前端「数据下载」页面（`/downloads`），输入一个公开登录号（如 `PRJNA1251654` 或单个 `SRRxxxxxx`），提交下载任务；
+2. 跳转任务详情页，可见任务状态为 RUNNING、EBIDownload 的 JSON 日志实时回写、下载进度条推进；
+3. 任务 SUCCESS 后，刷新「数据管理」（`/files`）即可看到 `ebi_download/<accession>/` 下的 FASTQ 文件（类型标记为 FASTQ）。
+
+> 说明：下载产物落在 `storage_path/upload_dir/<user_id>/ebi_download/<accession>/`，复用文件系统的扫描入库机制，无需额外建表。FASTQ 体量较大，请确认 `/data/omichub` 所在磁盘容量充足。
+
 ## 文档
 
 详细架构设计见 `docs/` 目录：

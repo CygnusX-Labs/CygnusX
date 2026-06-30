@@ -88,7 +88,7 @@ async def _execute_snakemake(
 
         try:
             executor = LocalSnakemakeExecutor()
-            result = await executor.execute(
+            result = await executor._execute(
                 snakefile=snakefile,
                 work_dir=work_dir,
                 cores=cores,

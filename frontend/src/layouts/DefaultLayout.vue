@@ -7,7 +7,7 @@ import { computed, h, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   HomeOutline, GridOutline, FlaskOutline, FitnessOutline,
-  DocumentTextOutline, CloudUploadOutline, BarChartOutline, SettingsOutline,
+  DocumentTextOutline, CloudUploadOutline, DownloadOutline, BarChartOutline, SettingsOutline,
   InformationCircleOutline, PersonOutline, LogOutOutline, MoonOutline,
   MenuOutline, ChevronForwardOutline, ChevronDownOutline,
   NotificationsOutline, HelpCircleOutline, ChatbubblesOutline, Planet, CodeSlashOutline,
@@ -142,6 +142,7 @@ const mainNavItems = computed<NavItem[]>(() => [
     ],
   },
   { key: 'files', label: '数据管理', to: '/files', icon: CloudUploadOutline },
+  { key: 'downloads', label: '数据下载', to: '/downloads', icon: DownloadOutline },
   { key: 'tasks', label: '任务中心', to: '/tasks', icon: DocumentTextOutline },
   { key: 'ai', label: 'AI 助手', to: '/ai', icon: ChatbubblesOutline },
   { key: 'sandbox', label: '代码沙盒', to: '/sandbox', icon: CodeSlashOutline },

@@ -14,6 +14,7 @@ celery_app = Celery(
     include=[
         "omichub.infrastructure.celery_app.tasks.analysis",
         "omichub.infrastructure.celery_app.tasks.cookie",
+        "omichub.infrastructure.celery_app.tasks.download",
         "omichub.infrastructure.celery_app.tasks.sandbox",
     ],
 )
@@ -33,15 +34,10 @@ celery_app.conf.update(
 
 # 队列路由
 celery_app.conf.task_routes = {
-    "omichub.infrastructure.celery_app.tasks.analysis.*": {
-        "queue": "analysis"
-    },
-    "omichub.infrastructure.celery_app.tasks.cookie.*": {
-        "queue": "analysis"
-    },
-    "omichub.infrastructure.celery_app.tasks.sandbox.*": {
-        "queue": "analysis"
-    },
+    "omichub.infrastructure.celery_app.tasks.analysis.*": {"queue": "analysis"},
+    "omichub.infrastructure.celery_app.tasks.cookie.*": {"queue": "analysis"},
+    "omichub.infrastructure.celery_app.tasks.download.*": {"queue": "analysis"},
+    "omichub.infrastructure.celery_app.tasks.sandbox.*": {"queue": "analysis"},
 }
 
 # 定时任务

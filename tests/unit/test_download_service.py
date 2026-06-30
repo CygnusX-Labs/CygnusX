@@ -1,0 +1,125 @@
+"""DownloadService 单元测试 — 任务创建 / 参数落库 / 目录生成 / dispatch。"""
+
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
+
+import pytest
+
+from omichub.application.schemas.download import DownloadRequest
+from omichub.application.services.download_service import (
+    DOWNLOAD_FLOW_ID,
+    DownloadService,
+)
+from omichub.domain.task.entities import Task
+from omichub.domain.task.value_objects import TaskStatus
+
+
+@pytest.fixture
+def service() -> DownloadService:
+    """DownloadService，仓储/域服务 mock，Celery delay mock。"""
+    svc = DownloadService(db=MagicMock())
+    svc._repo = AsyncMock()
+    svc._domain = AsyncMock()
+    return svc
+
+
+@pytest.mark.asyncio
+async def test_submit_creates_download_task_and_dispatches(service):
+    user_id = str(uuid4())
+    req = DownloadRequest(accession="PRJNA1251654", download_method="aws")
+
+    created_task = Task(
+        id=uuid4(),
+        flow_id=DOWNLOAD_FLOW_ID,
+        user_id=uuid4(),
+        name="EBI 下载 PRJNA1251654",
+        status=TaskStatus.PENDING,
+        parameters={"accession": "PRJNA1251654"},
+    )
+    service._domain.submit.return_value = created_task
+    service._repo.save.return_value = created_task
+    # transition_status 返回 QUEUED 后的任务
+    queued = created_task.model_copy(update={"status": TaskStatus.QUEUED})
+    service._domain.transition_status.return_value = queued
+
+    with patch("omichub.application.services.download_service.run_download") as mock_delay:
+        result = await service.submit(user_id, req)
+
+    # 域服务以 ebi_download flow_id 建任务
+    service._domain.submit.assert_called_once()
+    call_kwargs = service._domain.submit.call_args.kwargs
+    assert call_kwargs["flow_id"] == DOWNLOAD_FLOW_ID
+    assert call_kwargs["parameters"]["accession"] == "PRJNA1251654"
+    assert call_kwargs["sample_count"] == 0
+
+    # work_dir 落在 upload_dir 下（触发 Files 自动入库）
+    assert "ebi_download" in created_task.work_dir
+    assert "PRJNA1251654" in created_task.work_dir
+
+    # Celery 任务已投递
+    mock_delay.delay.assert_called_once_with(task_id=str(created_task.id))
+    # 状态推进到 QUEUED
+    service._domain.transition_status.assert_called_once()
+    assert result.flow_id == DOWNLOAD_FLOW_ID
+
+
+@pytest.mark.asyncio
+async def test_submit_rejects_empty_accession(service):
+    from omichub.core.exceptions import ValidationError
+
+    req = DownloadRequest(accession="   ")
+    with pytest.raises(ValidationError):
+        await service.submit(str(uuid4()), req)
+    service._domain.submit.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_submit_sanitizes_accession_path(service):
+    """accession 含路径分隔符时清理，防越权写目录。"""
+    req = DownloadRequest(accession="../etc/passwd")
+    created = Task(
+        id=uuid4(),
+        flow_id=DOWNLOAD_FLOW_ID,
+        user_id=uuid4(),
+        name="x",
+        status=TaskStatus.PENDING,
+        parameters={},
+    )
+    service._domain.submit.return_value = created
+    service._repo.save.return_value = created
+    service._domain.transition_status.return_value = created
+
+    with patch("omichub.application.services.download_service.run_download"):
+        await service.submit(str(uuid4()), req)
+
+    # 不存在 ".." 路径分量（即无目录穿越，原始 ../ 已被替换为单段目录名）
+    from pathlib import Path
+
+    assert ".." not in Path(created.work_dir).parts
+
+
+@pytest.mark.asyncio
+async def test_list_downloads_filters_by_flow_id(service):
+    user_id = str(uuid4())
+    download_task = Task(
+        id=uuid4(),
+        flow_id=DOWNLOAD_FLOW_ID,
+        user_id=uuid4(),
+        name="d",
+        status=TaskStatus.SUCCESS,
+        parameters={},
+    )
+    analysis_task = Task(
+        id=uuid4(),
+        flow_id="rna_seq",
+        user_id=uuid4(),
+        name="a",
+        status=TaskStatus.SUCCESS,
+        parameters={},
+    )
+    service._repo.list_by_user.return_value = [analysis_task, download_task]
+
+    result = await service.list_downloads(user_id)
+
+    assert result.total == 1
+    assert result.items[0].flow_id == DOWNLOAD_FLOW_ID

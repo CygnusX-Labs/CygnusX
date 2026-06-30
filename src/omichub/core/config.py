@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     upload_dir: str = "uploads"
     results_dir: str = "results"
 
+    # ===== 数据下载 (EBIDownload Rust 二进制) =====
+    enable_ebi_download: bool = False  # 装好二进制 + sra-tools 后再开
+    ebi_download_binary: str = "/data/omichub/bin/EBIDownload"
+    ebi_download_yaml: str = "/data/omichub/bin/EBIDownload.yaml"
+
     # ===== 流程 YAML 配置 =====
     flow_yaml_dir: str = "flows"
 

@@ -5,9 +5,14 @@ import shutil
 from typing import Any
 
 from omichub.core.config import get_settings
+from omichub.infrastructure.execution.base import (
+    BaseExecutor,
+    ExecutionContext,
+    ExecutionResult,
+)
 
 
-class LocalSnakemakeExecutor:
+class LocalSnakemakeExecutor(BaseExecutor):
     """本地 Snakemake 执行器
 
     通过 subprocess 调用 Snakemake CLI，直接在 Worker 所在服务器执行。
@@ -16,7 +21,30 @@ class LocalSnakemakeExecutor:
     def __init__(self) -> None:
         self.settings = get_settings()
 
-    async def execute(
+    async def execute(self, ctx: ExecutionContext) -> ExecutionResult:
+        """统一执行入口（实现 BaseExecutor 契约）。
+
+        委托给既有的 _execute(...)，保留原缓冲行为，不改 Snakemake 可观测日志。
+        """
+        if ctx.snakefile is None:
+            return ExecutionResult(
+                status="failed", returncode=-1, stderr="Snakemake 缺少 snakefile"
+            )
+        result = await self._execute(
+            snakefile=ctx.snakefile,
+            work_dir=ctx.work_dir,
+            cores=ctx.cores,
+            config_file=ctx.config_file,
+            config_file_param=ctx.config_file_param,
+        )
+        return ExecutionResult(
+            status=result["status"],
+            returncode=result["returncode"],
+            stdout=result["stdout"],
+            stderr=result["stderr"],
+        )
+
+    async def _execute(
         self,
         snakefile: str,
         config: dict[str, Any] | None = None,
@@ -26,7 +54,7 @@ class LocalSnakemakeExecutor:
         config_file: str | None = None,
         config_file_param: str = "analysisyaml",
     ) -> dict[str, Any]:
-        """执行 Snakemake 工作流
+        """执行 Snakemake 工作流（既有实现，向后兼容）。
 
         Args:
             snakefile: Snakefile 路径

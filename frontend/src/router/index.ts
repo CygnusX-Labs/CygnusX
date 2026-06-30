@@ -82,6 +82,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '文件管理', requiresAuth: true }
       },
       {
+        path: 'downloads',
+        name: 'downloads',
+        component: () => import('@/views/DownloadsView.vue'),
+        meta: { title: '数据下载', requiresAuth: true }
+      },
+      {
         path: 'ai',
         name: 'ai',
         component: () => import('@/views/AIChatView.vue'),
