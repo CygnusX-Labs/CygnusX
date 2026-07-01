@@ -29,7 +29,7 @@ router = APIRouter()
 
 def get_auth_service(db: DbSession) -> AuthService:
     """获取认证服务实例"""
-    return AuthService(SqlAlchemyUserRepository(db))
+    return AuthService(SqlAlchemyUserRepository(db), db)
 
 
 @router.post("/login", response_model=TokenResponse)
