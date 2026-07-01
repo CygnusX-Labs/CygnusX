@@ -3,6 +3,7 @@
     <div class="login-orb login-orb--1" />
     <div class="login-orb login-orb--2" />
     <div class="login-card animate-scale-in">
+      <LoginCats />
       <div class="login-header">
         <h2 class="login-title gradient-text">OmicHub</h2>
         <p class="login-subtitle">欢迎登录多组学分析平台</p>
@@ -36,12 +37,17 @@
           <n-button type="primary" size="large" :loading="loading" @click="handleLogin">
             登录
           </n-button>
-          <n-button v-if="registrationEnabled" size="large" @click="$router.push('/register')">
+          <n-button size="large" @click="handleRegister">
             注册
           </n-button>
         </div>
       </n-form>
     </div>
+    <RegistrationDisabledModal
+      v-model:show="showRegModal"
+      :message="siteConfig.registrationDisabledMessage"
+      :contact="siteConfig.adminContact"
+    />
   </div>
 </template>
 
@@ -50,24 +56,34 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
-import apiClient from '@/api/client'
+import { useSiteConfigStore } from '@/stores/site-config'
+import RegistrationDisabledModal from '@/components/RegistrationDisabledModal.vue'
+import LoginCats from '@/components/LoginCats.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const message = useMessage()
+const siteConfig = useSiteConfigStore()
 const formRef = ref()
 const loading = ref(false)
-const registrationEnabled = ref(true)
 const errorMessage = ref('')
+const showRegModal = ref(false)
 
-onMounted(async () => {
-  try {
-    const res = await apiClient.get<{ registration_enabled: boolean }>('/site-settings')
-    registrationEnabled.value = res.data.registration_enabled
-  } catch {
-    /* 接口异常默认显示注册入口 */
-  }
+// 拉取注册开关（site-settings，DB）+ 提示文案（site-content，YAML）
+onMounted(() => {
+  siteConfig.fetchSiteConfig()
 })
+
+// 点击“注册”：开关关闭时拦截并弹自定义模态框提示，不跳转；开启时正常跳转注册页
+// 首次点击前若配置尚未就绪，先等一次拉取（已就绪则立即放行，不额外发请求）
+async function handleRegister() {
+  if (!siteConfig.loaded) await siteConfig.fetchSiteConfig()
+  if (siteConfig.allowRegistration) {
+    router.push('/register')
+    return
+  }
+  showRegModal.value = true
+}
 
 const formData = ref({
   username: '',
@@ -163,10 +179,15 @@ const handleLogin = async () => {
   width: 100%;
   max-width: 400px;
   padding: 40px;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(20px);
+  /* Glassmorphism：半透明白底，透出底部蓝色渐变 */
+  background-color: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  /* 玻璃边缘：极细半透明白边 */
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  /* 弥散柔和阴影，取代原先偏重的 60px 阴影 */
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
 }
 
 .login-header {
@@ -188,12 +209,23 @@ const handleLogin = async () => {
 .login-error-message {
   margin-bottom: 16px;
   color: #d03050;
-  font-size: 14px;
+  font-size: 13px;
   text-align: center;
 }
 .login-actions {
   display: flex;
   justify-content: space-between;
   margin-top: 32px;
+}
+
+/* 表单校验提示精致化：「请输入用户名/密码」等红色校验文案
+   覆盖 Naive UI .n-form-item 内部反馈行，加间距、缩字号，避免排版过紧 */
+:deep(.n-form-item) .n-form-item-feedback {
+  min-height: 18px;
+  padding-top: 4px;
+}
+:deep(.n-form-item) .n-form-item-feedback__line {
+  font-size: 12px;
+  line-height: 1.4;
 }
 </style>

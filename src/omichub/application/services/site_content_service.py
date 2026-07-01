@@ -36,6 +36,10 @@ DEFAULT_CONTENT: dict[str, Any] = {
         {"title": "选择分析流程", "desc": "在分析中心选择 RNA-seq 或 ATAC-seq 流程"},
         {"title": "查看分析结果", "desc": "任务完成后在任务中心查看与下载结果"},
     ],
+    "registration": {
+        "disabled_message": "当前平台暂停自助注册，需由管理员创建账号。",
+        "admin_contact": "",
+    },
 }
 
 

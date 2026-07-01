@@ -28,9 +28,21 @@ class GuideStepContent(OmicsHubBaseSchema):
     desc: str
 
 
+class RegistrationContent(OmicsHubBaseSchema):
+    """注册策略提示文案（公开读取）。
+
+    真正的注册开关由后台 site-settings（DB）控制并在 /auth/register 强制校验；
+    这里只提供“关闭注册时告诉用户联系谁”的文案，由 data/OmicHub.yaml 驱动。
+    """
+
+    disabled_message: str
+    admin_contact: str
+
+
 class SiteContentDTO(OmicsHubBaseSchema):
     """首页文案（公开读取）"""
 
     hero: HeroContent
     quick_entries: list[QuickEntryContent]
     guide_steps: list[GuideStepContent]
+    registration: RegistrationContent

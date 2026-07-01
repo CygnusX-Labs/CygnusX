@@ -72,3 +72,45 @@ def test_get_content_falls_back_on_invalid_syntax(tmp_path: Path):
     bad.write_text("hero: [unclosed bracket\n", encoding="utf-8")
     content = SiteContentService(bad).get_content()
     assert content.hero.title == DEFAULT_CONTENT["hero"]["title"]
+
+
+def test_get_content_includes_registration_defaults(tmp_path: Path):
+    """yaml 未配置 registration 时，回退默认提示文案与管理员联系方式。"""
+    yaml_path = _write_yaml(
+        tmp_path / "OmicHub.yaml",
+        {"hero": {"title": "t", "description": "d"}},
+    )
+    content = SiteContentService(yaml_path).get_content()
+    assert content.registration.disabled_message == DEFAULT_CONTENT["registration"]["disabled_message"]
+    assert content.registration.admin_contact == ""
+
+
+def test_get_content_reads_registration_from_yaml(tmp_path: Path):
+    """yaml 配置 registration 时返回其中的文案与联系方式。"""
+    yaml_path = _write_yaml(
+        tmp_path / "OmicHub.yaml",
+        {
+            "hero": {"title": "t", "description": "d"},
+            "registration": {
+                "disabled_message": "暂停注册，请联系管理员。",
+                "admin_contact": "admin@hzau.edu.cn",
+            },
+        },
+    )
+    content = SiteContentService(yaml_path).get_content()
+    assert content.registration.disabled_message == "暂停注册，请联系管理员。"
+    assert content.registration.admin_contact == "admin@hzau.edu.cn"
+
+
+def test_get_content_fills_partial_registration_from_default(tmp_path: Path):
+    """yaml 仅给出 admin_contact 时，disabled_message 由默认补齐。"""
+    yaml_path = _write_yaml(
+        tmp_path / "OmicHub.yaml",
+        {
+            "hero": {"title": "t", "description": "d"},
+            "registration": {"admin_contact": "admin@hzau.edu.cn"},
+        },
+    )
+    content = SiteContentService(yaml_path).get_content()
+    assert content.registration.admin_contact == "admin@hzau.edu.cn"
+    assert content.registration.disabled_message == DEFAULT_CONTENT["registration"]["disabled_message"]

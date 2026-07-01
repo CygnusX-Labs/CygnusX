@@ -336,6 +336,15 @@ body {
   border-radius: 16px;
 }
 
+/* ===== Naive UI Modal 遮罩毛玻璃化 ===== */
+/* 遮罩 teleport 到 body，scoped 样式打不到，故放全局。
+   默认遮罩为不透明深灰，改为轻透黑 + 4px 模糊，让背后登录卡片若隐若现。 */
+.n-modal-mask {
+  background-color: rgba(0, 0, 0, 0.25) !important;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
 /* ===== 动画渐变背景 ===== */
 .animated-gradient-bg {
   background: linear-gradient(-45deg, #165DFF, #6B8DD6, #8E54E9, #165DFF);
