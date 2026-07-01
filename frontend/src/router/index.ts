@@ -115,7 +115,7 @@ const routes: RouteRecordRaw[] = [
         path: 'about',
         name: 'about',
         component: () => import('@/views/AboutView.vue'),
-        meta: { title: '关于', requiresAuth: false, autoCollapseSidebar: true }
+        meta: { title: '关于', requiresAuth: true, autoCollapseSidebar: true }
       },
       {
         path: 'knowledge',

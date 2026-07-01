@@ -54,3 +54,7 @@ class TokenResponse(OmicsHubBaseSchema):
     refresh_token: str = Field(description="刷新令牌（长期有效，默认7天）")
     token_type: str = Field(default="bearer", description="令牌类型")
     expires_in: int = Field(description="访问令牌过期时间（秒）")
+    first_login: bool = Field(
+        default=False,
+        description="是否为首次登录（last_login_at 为空时判定为 True），前端据此触发迎新引导",
+    )

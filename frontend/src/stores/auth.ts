@@ -3,11 +3,17 @@ import { ref, computed } from 'vue'
 import apiClient from '@/api/client'
 import type { User, TokenResponse, RegisterRequest } from '@/types'
 
+// sessionStorage key：首次登录迎新标记。镜像 pendingOnboarding，
+// 以便 LoginView 的 window.location.href 兜底跳转（整页刷新丢失 Pinia）后仍可恢复。
+const FIRST_LOGIN_KEY = 'omichub_first_login'
+
 export const useAuthStore = defineStore('auth', () => {
   const accessToken = ref<string | null>(localStorage.getItem('access_token'))
   const refreshToken = ref<string | null>(localStorage.getItem('refresh_token'))
   const user = ref<User | null>(null)
   const loading = ref(false)
+  // 本次登录是否为首次登录（后端 TokenResponse.first_login），用于触发迎新弹窗
+  const pendingOnboarding = ref<boolean>(sessionStorage.getItem(FIRST_LOGIN_KEY) === '1')
 
   const isLoggedIn = computed(() => accessToken.value !== null)
   // 管理员视角感知位：role 由 /auth/me 返回并随 user 持久化
@@ -26,6 +32,22 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     localStorage.removeItem('access_token')
     localStorage.removeItem('refresh_token')
+    sessionStorage.removeItem(FIRST_LOGIN_KEY)
+    pendingOnboarding.value = false
+  }
+
+  /** 标记首次登录迎新待展示（同步写入 sessionStorage 以抗整页刷新） */
+  function markOnboardingPending(pending: boolean) {
+    pendingOnboarding.value = pending
+    if (pending) sessionStorage.setItem(FIRST_LOGIN_KEY, '1')
+    else sessionStorage.removeItem(FIRST_LOGIN_KEY)
+  }
+
+  /** 消费迎新待展示标记：返回是否需要展示，并清除标记 */
+  function consumeOnboarding(): boolean {
+    const pending = pendingOnboarding.value || sessionStorage.getItem(FIRST_LOGIN_KEY) === '1'
+    markOnboardingPending(false)
+    return pending
   }
 
   async function login(username: string, password: string): Promise<void> {
@@ -38,6 +60,8 @@ export const useAuthStore = defineStore('auth', () => {
     })
 
     setTokens(response.data.access_token, response.data.refresh_token)
+    // 后端依据 last_login_at 判定首次登录；首次则触发迎新弹窗
+    markOnboardingPending(!!response.data.first_login)
     await fetchUser()
   }
 
@@ -48,6 +72,8 @@ export const useAuthStore = defineStore('auth', () => {
   async function setupFirstAdmin(req: RegisterRequest): Promise<void> {
     const response = await apiClient.post<TokenResponse>('/auth/setup', req)
     setTokens(response.data.access_token, response.data.refresh_token)
+    // 首位管理员也是新用户，同样展示迎新引导
+    markOnboardingPending(true)
     await fetchUser()
   }
 
@@ -90,6 +116,7 @@ export const useAuthStore = defineStore('auth', () => {
     loading,
     isLoggedIn,
     isAdmin,
+    pendingOnboarding,
     setTokens,
     clearTokens,
     login,
@@ -99,5 +126,7 @@ export const useAuthStore = defineStore('auth', () => {
     fetchUser,
     refreshAccessToken,
     logout,
+    markOnboardingPending,
+    consumeOnboarding,
   }
 })

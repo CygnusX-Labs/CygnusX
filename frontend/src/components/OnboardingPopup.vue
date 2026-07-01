@@ -1,31 +1,36 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed } from 'vue'
+// 彩蛋同款猫猫插画（猫猫踩地球）
 import logoImg from '@/assets/ChatGPT_logo.png'
 
 interface Props {
   visible: boolean
+  // 管理员联系方式（来自 data/OmicHub.yaml registration.admin_contact）；为空则不展示该行
+  adminContact?: string
 }
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  adminContact: '',
+})
 
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void
-  (e: 'go-knowledge', dontShow: boolean): void
-  (e: 'skip', dontShow: boolean): void
+  (e: 'go-knowledge'): void
+  (e: 'skip'): void
 }>()
 
-const dontShowAgain = ref(false)
+const showContact = computed(() => props.adminContact.trim().length > 0)
 
 function close() {
   emit('update:visible', false)
 }
 
 function handleGoKnowledge() {
-  emit('go-knowledge', dontShowAgain.value)
+  emit('go-knowledge')
   close()
 }
 
 function handleSkip() {
-  emit('skip', dontShowAgain.value)
+  emit('skip')
   close()
 }
 </script>
@@ -50,7 +55,7 @@ function handleSkip() {
         <div class="flex justify-center pt-8 pb-2">
           <img
             :src="logoImg"
-            alt="OmicHub Mascot"
+            alt="OmicHub 守护者"
             class="h-48 w-auto select-none drop-shadow-md animate-soft-float"
             draggable="false"
           />
@@ -62,16 +67,16 @@ function handleSkip() {
             欢迎来到 OmicHub 🚀
           </h1>
           <p class="mt-2 mb-4 text-sm text-gray-500">
-            开启你的高效多组学探索之旅！
+            开启你的高效多组学探索之旅！先去看看实验室知识库吧～
           </p>
         </div>
 
-        <!-- 核心快捷导航卡片 -->
+        <!-- 核心快捷导航卡片：实验室知识库 -->
         <div class="px-8">
           <div
             role="button"
             tabindex="0"
-            class="flex cursor-pointer items-center gap-4 rounded-xl border border-gray-200 bg-white p-4 transition-all hover:border-blue-500 hover:bg-blue-50"
+            class="group flex cursor-pointer items-center gap-4 rounded-xl border border-gray-200 bg-white p-4 transition-all hover:border-blue-500 hover:bg-blue-50"
             @click="handleGoKnowledge"
             @keyup.enter="handleGoKnowledge"
           >
@@ -86,35 +91,29 @@ function handleSkip() {
           </div>
         </div>
 
-        <!-- 底部操作与免打扰区 -->
-        <div class="flex items-center justify-between px-8 py-6">
-          <!-- 左侧：不再提示 -->
-          <label class="flex cursor-pointer select-none items-center gap-2 text-xs text-gray-400">
-            <input
-              v-model="dontShowAgain"
-              type="checkbox"
-              class="h-3.5 w-3.5 cursor-pointer accent-blue-600"
-            />
-            <span>不再提示 (Don't show this again)</span>
-          </label>
+        <!-- 管理员联系方式提示 -->
+        <div v-if="showContact" class="px-8 pt-3">
+          <p class="text-center text-xs text-gray-400">
+            遇到其他问题可联系管理员：<span class="font-medium text-gray-600">{{ adminContact }}</span>
+          </p>
+        </div>
 
-          <!-- 右侧：按钮组 -->
-          <div class="flex items-center gap-3">
-            <button
-              type="button"
-              class="rounded-lg border border-blue-600 px-4 py-2 text-sm font-medium text-blue-600 transition-colors hover:bg-blue-50"
-              @click="handleSkip"
-            >
-              直接体验
-            </button>
-            <button
-              type="button"
-              class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-              @click="handleGoKnowledge"
-            >
-              前往知识库
-            </button>
-          </div>
+        <!-- 底部操作区 -->
+        <div class="flex items-center justify-end gap-3 px-8 py-6">
+          <button
+            type="button"
+            class="rounded-lg border border-blue-600 px-4 py-2 text-sm font-medium text-blue-600 transition-colors hover:bg-blue-50"
+            @click="handleSkip"
+          >
+            稍后再看
+          </button>
+          <button
+            type="button"
+            class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+            @click="handleGoKnowledge"
+          >
+            前往知识库
+          </button>
         </div>
       </div>
     </div>

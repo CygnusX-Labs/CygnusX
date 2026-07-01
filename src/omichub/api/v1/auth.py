@@ -38,7 +38,7 @@ async def login(
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
 ) -> TokenResponse:
     """用户登录（OAuth2 密码模式）"""
-    access_token, refresh_token, _user = await auth_service.login(
+    access_token, refresh_token, _user, first_login = await auth_service.login(
         form_data.username, form_data.password
     )
     return TokenResponse(
@@ -46,6 +46,7 @@ async def login(
         refresh_token=refresh_token,
         token_type="bearer",
         expires_in=30 * 60,
+        first_login=first_login,
     )
 
 
@@ -137,6 +138,11 @@ async def setup_first_admin(
         cookie_service = CookieService(db)
         await cookie_service.get_or_create_account(created.id)
 
+    # 首位管理员也是新用户：创建定向欢迎通知并触发迎新引导
+    from omichub.application.services.auth_service import create_welcome_notification
+
+    await create_welcome_notification(db, str(created.id))
+
     access_token = create_access_token(subject=str(created.id))
     refresh_token = create_refresh_token(subject=str(created.id))
     return TokenResponse(
@@ -144,4 +150,5 @@ async def setup_first_admin(
         refresh_token=refresh_token,
         token_type="bearer",
         expires_in=30 * 60,
+        first_login=True,
     )

@@ -15,12 +15,15 @@ import {
 } from '@vicons/ionicons5'
 import CookieBalanceBadge from '@/components/CookieBalanceBadge.vue'
 import NotificationDrawer from '@/components/NotificationDrawer.vue'
+import OnboardingPopup from '@/components/OnboardingPopup.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notification'
+import { useSiteConfigStore } from '@/stores/site-config'
 import type { User } from '@/types'
 
 const authStore = useAuthStore()
 const notificationStore = useNotificationStore()
+const siteConfig = useSiteConfigStore()
 const route = useRoute()
 const router = useRouter()
 const currentUser = ref<User | null>(null)
@@ -28,6 +31,8 @@ const currentUser = ref<User | null>(null)
 const collapsed = ref(false)
 const mobileDrawerOpen = ref(false)
 const notificationDrawerOpen = ref(false)
+// 首次登录迎新弹窗：由 authStore.consumeOnboarding() 触发
+const onboardingVisible = ref(false)
 const expandedKeys = ref<string[]>(['analysis-center'])
 
 // 记录用户最后一次手动折叠状态：进入「关于」页强制折叠前保存，离开后恢复。
@@ -102,6 +107,12 @@ onMounted(() => {
     authStore.fetchUser().then(() => {
       currentUser.value = authStore.user
       notificationStore.fetchNotifications()
+      // 首次登录：弹出迎新引导（猫猫 + 知识库入口 + 管理员联系方式）
+      if (authStore.consumeOnboarding()) {
+        // 确保管理员联系方式已加载（供弹窗展示）；失败也不阻塞弹窗
+        siteConfig.fetchSiteConfig().catch(() => {})
+        onboardingVisible.value = true
+      }
     })
   }
 })
@@ -232,6 +243,15 @@ function handleStorageChange(e: StorageEvent) {
     router.replace('/login')
     window.location.reload()
   }
+}
+
+// 迎新弹窗：前往知识库 / 稍后再看
+function handleOnboardingGoKnowledge() {
+  onboardingVisible.value = false
+  router.push('/knowledge')
+}
+function handleOnboardingSkip() {
+  onboardingVisible.value = false
 }
 
 const userMenuOptions = [
@@ -616,6 +636,14 @@ const UserAvatar = () => {
     </div>
 
     <NotificationDrawer v-model:show="notificationDrawerOpen" />
+
+    <!-- 首次登录迎新弹窗 -->
+    <OnboardingPopup
+      v-model:visible="onboardingVisible"
+      :admin-contact="siteConfig.adminContact"
+      @go-knowledge="handleOnboardingGoKnowledge"
+      @skip="handleOnboardingSkip"
+    />
   </div>
 </template>
 

@@ -1,9 +1,15 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { NIcon, NButton } from 'naive-ui'
 import { RocketOutline, FlaskOutline, ShieldCheckmarkOutline, TelescopeOutline } from '@vicons/ionicons5'
 import { useRouter } from 'vue-router'
+// 彩蛋图片：猫猫踩地球插画
+import catEarthLogo from '@/assets/ChatGPT_logo.png'
 
 const router = useRouter()
+
+// 彩蛋：点击蓝色星球触发隐藏弹窗
+const showEasterEgg = ref(false)
 
 const stars = Array.from({ length: 160 }, (_, i) => {
   const size = Math.random() * 1.5 + 1
@@ -114,8 +120,8 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 
     <!-- 内容 -->
     <div class="about-content">
-      <!-- 旋转行星 -->
-      <div class="planet-wrap">
+      <!-- 旋转行星（点击触发隐藏彩蛋） -->
+      <div class="planet-wrap" style="cursor: pointer" title="点我看看？" @click="showEasterEgg = true">
         <div class="planet" />
         <div class="planet-ring" />
       </div>
@@ -183,10 +189,58 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
         <span>华中农业大学园艺林学学院 · 多组学分析平台</span>
       </div>
     </div>
+
+    <!-- 隐藏彩蛋弹窗：点击蓝色星球触发 -->
+    <div
+      v-if="showEasterEgg"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      @click="showEasterEgg = false"
+    >
+      <!-- 弹窗主体：深色毛玻璃，阻止点击冒泡到遮罩层 -->
+      <div
+        class="relative w-fit max-w-[90vw] rounded-2xl border border-white/10 bg-[#0B1121]/70 px-10 py-8 shadow-2xl backdrop-blur-md"
+        @click.stop
+      >
+        <!-- 毛玻璃质感关闭按钮：悬浮光晕 + 旋转缩放动画 -->
+        <button
+          class="eg-close-btn group absolute right-4 top-4 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-white/15 bg-white/5 text-slate-300 backdrop-blur-sm transition-all duration-300 hover:border-cyan-300/60 hover:bg-cyan-300/10 hover:text-cyan-200 hover:shadow-[0_0_14px_rgba(103,232,249,0.55)]"
+          aria-label="关闭"
+          @click="showEasterEgg = false"
+        >
+          <span
+            class="text-lg font-light leading-none transition-transform duration-300 group-hover:scale-110 group-hover:rotate-90"
+          >
+            ✕
+          </span>
+        </button>
+
+        <img
+          :src="catEarthLogo"
+          alt="星际守护者"
+          class="mx-auto block h-48 w-auto object-contain"
+        />
+        <p class="mt-6 whitespace-nowrap text-center text-lg font-bold text-white">
+          🎉 恭喜你发现了 OmicHub 的隐藏星际守护者！
+        </p>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
+/* 关闭按钮：空闲呼吸光晕，悬停时由 Tailwind 接管旋转/缩放/高亮 */
+.eg-close-btn {
+  animation: eg-close-pulse 2.4s ease-in-out infinite;
+}
+@keyframes eg-close-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(103, 232, 249, 0);
+  }
+  50% {
+    box-shadow: 0 0 10px 1px rgba(103, 232, 249, 0.28);
+  }
+}
 @keyframes shooting {
   0% {
     transform: translateX(0) translateY(0) rotate(35deg) scaleX(0) scale(var(--star-scale, 1));
