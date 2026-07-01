@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   /* ===== 火山方舟 / Arco Design 色彩体系 ===== */
   --arco-primary: #165DFF;
