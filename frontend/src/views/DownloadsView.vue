@@ -9,6 +9,8 @@ import type { DataTableColumns, SelectOption } from 'naive-ui'
 import { DownloadOutline, RefreshOutline, EyeOutline } from '@vicons/ionicons5'
 import apiClient from '@/api/client'
 import type { Task } from '@/types'
+import AdvancedDownloadOptions from '@/components/download/AdvancedDownloadOptions.vue'
+import { createDefaultAdvancedOptions } from '@/types/download'
 
 const router = useRouter()
 const message = useMessage()
@@ -18,6 +20,8 @@ const downloadMethod = ref<'aws' | 'aspera' | 'ftp'>('aws')
 const multithreads = ref(4)
 const awsThreads = ref(8)
 const submitting = ref(false)
+// 高级选项：默认值（cleanup-sra 勾选、pe-only 不勾选、四个过滤器为空）
+const advancedOptions = ref(createDefaultAdvancedOptions())
 
 const tasks = ref<Task[]>([])
 const loading = ref(false)
@@ -141,9 +145,13 @@ async function submit() {
       download_method: downloadMethod.value,
       multithreads: multithreads.value,
       aws_threads: awsThreads.value,
+      // 高级选项随请求下发；后端待实现对 --filter-* / --exclude-* / --cleanup-sra / --pe-only 的透传
+      advanced: advancedOptions.value,
     })
     message.success('下载任务已提交')
     accession.value = ''
+    // 提交后重置高级选项为默认值，避免下次提交残留上次配置
+    advancedOptions.value = createDefaultAdvancedOptions()
     await fetchTasks()
     // 跳转到任务详情查看实时进度/日志
     router.push(`/tasks/${res.data.id}`)
@@ -188,6 +196,12 @@ onUnmounted(() => stopPolling())
             <NInputNumber v-model:value="awsThreads" :min="1" :max="64" />
           </NFormItem>
         </NSpace>
+
+        <!-- 高级选项折叠面板：默认收起，展开后暴露 Filters / Cleanup -->
+        <NFormItem label=" " :show-label="false">
+          <AdvancedDownloadOptions v-model="advancedOptions" />
+        </NFormItem>
+
         <NFormItem label=" " :show-label="false">
           <NButton type="primary" :loading="submitting" @click="submit">
             <template #icon>
