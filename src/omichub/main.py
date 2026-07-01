@@ -12,6 +12,9 @@ from fastapi.staticfiles import StaticFiles
 
 from omichub.api.v1.router import api_router
 from omichub.core.config import get_settings
+# 显式加载 Celery 应用：使 @shared_task 绑定到配置好的 celery_app（含 task_routes / task_default_queue）。
+# 否则 web 进程会回退到 Celery 默认 app，把任务投到默认 "celery" 队列而非 "analysis"，导致 worker 消费不到。
+from omichub.infrastructure.celery_app.celery import celery_app  # noqa: F401
 from omichub.core.exceptions import OmicHubError
 from omichub.core.logging import setup_logging
 from omichub.middleware.auth import AuthMiddleware

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, h } from 'vue'
+import { ref, computed, onMounted, onUnmounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   NCard, NForm, NFormItem, NInput, NSelect, NInputNumber, NButton,
@@ -94,16 +94,39 @@ const columns = computed<DataTableColumns<Task>>(() => [
   },
 ])
 
-async function fetchTasks() {
-  loading.value = true
+const TERMINAL_STATUSES = ['success', 'failed', 'cancelled']
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+function startPolling() {
+  if (pollTimer) return
+  pollTimer = setInterval(() => fetchTasks(true), 5000)
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+function syncPolling() {
+  // 列表中存在运行中任务才轮询，全部终态则停（避免空转）
+  if (tasks.value.some((t) => !TERMINAL_STATUSES.includes(t.status))) startPolling()
+  else stopPolling()
+}
+
+async function fetchTasks(silent = false) {
+  if (!silent) loading.value = true
   try {
     const res = await apiClient.get<{ items: Task[]; total: number }>('/downloads')
     tasks.value = res.data.items ?? []
   } catch {
-    tasks.value = []
+    // 轮询失败不清空列表，避免瞬态网络抖动闪空 UI
+    if (!silent) tasks.value = []
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
+  syncPolling()
 }
 
 async function submit() {
@@ -133,6 +156,7 @@ async function submit() {
 }
 
 onMounted(fetchTasks)
+onUnmounted(() => stopPolling())
 </script>
 
 <template>
@@ -178,7 +202,7 @@ onMounted(fetchTasks)
     <NCard class="list-card" :bordered="false">
       <div class="card-header">
         <h3 class="card-title">下载任务</h3>
-        <NButton text size="small" class="refresh-btn" @click="fetchTasks">
+        <NButton text size="small" class="refresh-btn" @click="() => fetchTasks()">
           <template #icon>
             <NIcon :size="16"><RefreshOutline /></NIcon>
           </template>

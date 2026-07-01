@@ -54,17 +54,39 @@ const statusText = computed(() => {
   return map[task.value?.status || 'pending'] || task.value?.status || '未知'
 })
 
-async function fetchTask() {
-  loading.value = true
-  error.value = ''
+const TERMINAL_STATUSES = ['success', 'failed', 'cancelled']
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+function isTerminalStatus(status?: string): boolean {
+  return TERMINAL_STATUSES.includes(status || '')
+}
+
+function startPolling() {
+  if (pollTimer) return
+  pollTimer = setInterval(() => fetchTask(true), 3000)
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+async function fetchTask(silent = false) {
+  if (!silent) loading.value = true
+  if (!silent) error.value = ''
   try {
     const res = await apiClient.get<Task>(`/tasks/${taskId.value}`)
     task.value = res.data
-    logs.value = res.data.logs || []
+    // 仅首次（非静默）拉取历史日志；运行中由 WebSocket 维护 logs，
+    // 轮询只更新 task（status/progress），不覆盖 logs 以防日志面板跳动/丢失在途行
+    if (!silent) logs.value = res.data.logs || []
+    if (isTerminalStatus(res.data.status)) stopPolling()
   } catch (e: any) {
-    error.value = e.response?.data?.detail || '获取任务详情失败'
+    if (!silent) error.value = e.response?.data?.detail || '获取任务详情失败'
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
 
@@ -120,19 +142,23 @@ function disconnectWebSocket() {
   }
 }
 
-onMounted(() => {
-  fetchTask()
+onMounted(async () => {
+  await fetchTask()
   connectWebSocket()
+  if (!isTerminalStatus(task.value?.status)) startPolling()
 })
 
 onUnmounted(() => {
+  stopPolling()
   disconnectWebSocket()
 })
 
-watch(taskId, () => {
+watch(taskId, async () => {
+  stopPolling()
   disconnectWebSocket()
-  fetchTask()
+  await fetchTask()
   connectWebSocket()
+  if (!isTerminalStatus(task.value?.status)) startPolling()
 })
 </script>
 

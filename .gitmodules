@@ -4,3 +4,6 @@
 [submodule "pipelines/ATACFlow"]
 	path = pipelines/ATACFlow
 	url = git@github.com:xsx123123/ATACFlow.git
+[submodule "pipelines/EBIDownload"]
+	path = pipelines/EBIDownload
+	url = git@github.com:xsx123123/EBIDownload.git

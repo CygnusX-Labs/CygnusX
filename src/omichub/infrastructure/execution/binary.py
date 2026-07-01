@@ -56,11 +56,26 @@ class BinaryExecutor(BaseExecutor):
                 await self._emit(ctx, text, is_stderr=is_stderr)
 
         # 并发排空 stdout / stderr，实现真正的逐行实时流式
-        await asyncio.gather(
-            _drain(process.stdout, stdout_lines, is_stderr=False),
-            _drain(process.stderr, stderr_lines, is_stderr=True),
+        drain_stdout = asyncio.create_task(
+            _drain(process.stdout, stdout_lines, is_stderr=False)
         )
+        drain_stderr = asyncio.create_task(
+            _drain(process.stderr, stderr_lines, is_stderr=True)
+        )
+
+        # 以"进程退出"为完成信号，而非管道 EOF：Celery prefork + asyncio subprocess 下
+        # 管道可能不正常 EOF，readline 会永久阻塞，导致 execute() 不返回、任务卡 running。
         returncode = await process.wait()
+
+        # 进程退出后给 drain 短暂收尾窗口，flush 管道缓冲的末尾行；超时则 cancel（管道异常兜底）
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(drain_stdout, drain_stderr), timeout=2.0
+            )
+        except TimeoutError:
+            drain_stdout.cancel()
+            drain_stderr.cancel()
+            await asyncio.gather(drain_stdout, drain_stderr, return_exceptions=True)
 
         return ExecutionResult(
             status="success" if returncode == 0 else "failed",

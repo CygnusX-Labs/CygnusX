@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import NullPool
 
 from omichub.core.config import get_settings
 
@@ -24,8 +25,10 @@ def get_engine() -> AsyncEngine:
             settings.database_url,
             echo=settings.app_debug,
             pool_pre_ping=True,
-            pool_size=10,
-            max_overflow=20,
+            # Celery 任务用 asyncio.run() 每次新建事件循环；QueuePool 会跨循环保留连接，
+            # 复用时抛 "Future attached to a different loop"。NullPool 不保留连接、每次新建，
+            # web(FastAPI 单循环) 与 celery(每任务新循环) 共用本单例引擎均安全。
+            poolclass=NullPool,
         )
     return _engine
 

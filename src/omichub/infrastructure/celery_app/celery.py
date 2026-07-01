@@ -30,6 +30,9 @@ celery_app.conf.update(
     task_soft_time_limit=3600 * 5,  # 5 小时软超时
     worker_prefetch_multiplier=1,  # 长任务场景公平调度
     worker_max_tasks_per_child=10,  # 防止内存泄漏
+    # 默认队列与 task_routes 一致：所有任务路由到 "analysis"，
+    # worker（无 -Q 时）消费默认队列，故默认队列必须是 analysis，否则任务进队列后无人消费
+    task_default_queue="analysis",
 )
 
 # 队列路由
