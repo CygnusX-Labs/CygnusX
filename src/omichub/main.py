@@ -3,10 +3,12 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from omichub.api.v1.router import api_router
 from omichub.core.config import get_settings
@@ -207,6 +209,11 @@ def create_app() -> FastAPI:
 
     # 注册路由
     app.include_router(api_router, prefix="/api/v1")
+
+    # 静态资源：开放 docs/ 目录供知识库图片引用（如 /docs-static/knowledge/figure/xxx.png）
+    docs_static_path = Path("docs")
+    if docs_static_path.is_dir():
+        app.mount("/docs-static", StaticFiles(directory=docs_static_path), name="docs-static")
 
     # 开发模式下提供顶层重定向，便于直接访问 uvicorn 时不因缺少 /api/v1 前缀而 404
     if settings.app_debug:
