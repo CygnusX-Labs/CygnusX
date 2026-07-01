@@ -40,6 +40,15 @@ DEFAULT_CONTENT: dict[str, Any] = {
         "disabled_message": "当前平台暂停自助注册，需由管理员创建账号。",
         "admin_contact": "",
     },
+    "activation": {
+        "message": "你的账号尚未激活，暂无法登录。请联系管理员为你开通激活，开通后即可正常使用平台～",
+        "admin_contact": "",
+    },
+    "easter_egg": {
+        "message": "🎉 恭喜你发现了 OmicHub 的隐藏星际守护者！",
+        "button_text": "🐾 召唤星际猫咪",
+        "toast": "🎉 星际守护者已响应召唤！快看看屏幕上留下的足迹吧～ ✨",
+    },
 }
 
 
@@ -53,10 +62,16 @@ class SiteContentService:
         """读取首页文案。yaml 缺失 / 解析失败 / 字段缺失时回退默认。"""
         data = _deep_merge(DEFAULT_CONTENT, self._load_yaml())
         try:
-            return SiteContentDTO.model_validate(data)
+            dto = SiteContentDTO.model_validate(data)
         except Exception:
             # yaml 结构不合法时整体兜底，避免首页 500
-            return SiteContentDTO.model_validate(DEFAULT_CONTENT)
+            dto = SiteContentDTO.model_validate(DEFAULT_CONTENT)
+
+        # activation.admin_contact 缺省时回退到 registration.admin_contact，
+        # 避免管理员需在两处重复填写同一邮箱
+        if not dto.activation.admin_contact:
+            dto.activation.admin_contact = dto.registration.admin_contact
+        return dto
 
     def _load_yaml(self) -> dict[str, Any]:
         """读盘；文件不存在 / 解析失败 / 非字典时返回空 dict（由默认值兜底）。"""

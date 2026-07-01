@@ -10,12 +10,21 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import apiClient from '@/api/client'
-import type { RegistrationContent } from '@/types/site-content'
+import type { RegistrationContent, ActivationContent, EasterEggContent } from '@/types/site-content'
 
 // 文案兜底：site-content 拉取失败时使用
 const DEFAULT_REGISTRATION: RegistrationContent = {
   disabled_message: '当前平台暂停自助注册，需由管理员创建账号。',
   admin_contact: '',
+}
+const DEFAULT_ACTIVATION: ActivationContent = {
+  message: '你的账号尚未激活，暂无法登录。请联系管理员为你开通激活，开通后即可正常使用平台～',
+  admin_contact: '',
+}
+const DEFAULT_EASTER_EGG: EasterEggContent = {
+  message: '🎉 恭喜你发现了 OmicHub 的隐藏星际守护者！',
+  button_text: '🐾 召唤星际猫咪',
+  toast: '🎉 星际守护者已响应召唤！快看看屏幕上留下的足迹吧～ ✨',
 }
 
 export const useSiteConfigStore = defineStore('site-config', () => {
@@ -23,6 +32,10 @@ export const useSiteConfigStore = defineStore('site-config', () => {
   const registrationEnabled = ref(true)
   // 注册提示文案与管理员联系方式（来自 YAML）。
   const registrationContent = ref<RegistrationContent>({ ...DEFAULT_REGISTRATION })
+  // 账户未激活提示文案（来自 YAML activation 段）
+  const activationContent = ref<ActivationContent>({ ...DEFAULT_ACTIVATION })
+  // 关于页彩蛋文案（来自 YAML easter_egg 段）
+  const easterEggContent = ref<EasterEggContent>({ ...DEFAULT_EASTER_EGG })
   // 配置是否已就绪（首次拉取完成后置 true，供点击时判断是否需等待）
   const loaded = ref(false)
 
@@ -36,6 +49,24 @@ export const useSiteConfigStore = defineStore('site-config', () => {
 
   /** 关闭注册时联系管理员的方式（邮箱/说明，trim 后；空串表示未配置） */
   const adminContact = computed(() => registrationContent.value.admin_contact.trim())
+
+  /** 账户未激活弹窗的正文文案 */
+  const activationMessage = computed(() => activationContent.value.message)
+
+  /** 关于页彩蛋弹窗的庆祝文案 */
+  const easterEggMessage = computed(() => easterEggContent.value.message)
+
+  /** 关于页右下角召唤按钮文案 */
+  const easterEggButtonText = computed(() => easterEggContent.value.button_text)
+
+  /** 召唤按钮点击后的 Toast 提示文案 */
+  const easterEggToast = computed(() => easterEggContent.value.toast)
+
+  /** 未激活弹窗联系管理员的方式；后端缺省回退到 registration.admin_contact */
+  const activationContact = computed(() => {
+    const c = activationContent.value.admin_contact.trim()
+    return c || adminContact.value
+  })
 
   /** 关闭注册时的完整提示文案（若配置了管理员联系方式则附带，用于 message 兜底场景） */
   const registrationDisabledTip = computed(() =>
@@ -51,7 +82,7 @@ export const useSiteConfigStore = defineStore('site-config', () => {
   function fetchSiteConfig(): Promise<void> {
     if (loadingPromise) return loadingPromise
     const p = (async () => {
-      const [enabled, reg] = await Promise.all([
+      const [enabled, content] = await Promise.all([
         // 注册开关：接口异常默认允许注册
         apiClient
           .get<{ registration_enabled: boolean }>('/site-settings')
@@ -59,12 +90,14 @@ export const useSiteConfigStore = defineStore('site-config', () => {
           .catch(() => true),
         // 提示文案 + 管理员联系方式：接口异常保留默认文案
         apiClient
-          .get<{ registration?: RegistrationContent }>('/site-content')
-          .then((res) => res.data.registration)
+          .get<{ registration?: RegistrationContent; activation?: ActivationContent; easter_egg?: EasterEggContent }>('/site-content')
+          .then((res) => res.data)
           .catch(() => undefined),
       ])
       registrationEnabled.value = enabled
-      if (reg) registrationContent.value = reg
+      if (content?.registration) registrationContent.value = content.registration
+      if (content?.activation) activationContent.value = content.activation
+      if (content?.easter_egg) easterEggContent.value = content.easter_egg
       loaded.value = true
     })()
     loadingPromise = p
@@ -78,10 +111,17 @@ export const useSiteConfigStore = defineStore('site-config', () => {
   return {
     registrationEnabled,
     registrationContent,
+    activationContent,
+    easterEggContent,
     loaded,
     allowRegistration,
     registrationDisabledMessage,
     adminContact,
+    activationMessage,
+    activationContact,
+    easterEggMessage,
+    easterEggButtonText,
+    easterEggToast,
     registrationDisabledTip,
     fetchSiteConfig,
   }

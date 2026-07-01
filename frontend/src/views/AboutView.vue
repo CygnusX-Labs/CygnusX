@@ -1,15 +1,66 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { NIcon, NButton } from 'naive-ui'
+import { ref, onBeforeUnmount } from 'vue'
+import { NIcon, NButton, useMessage } from 'naive-ui'
 import { RocketOutline, FlaskOutline, ShieldCheckmarkOutline, TelescopeOutline } from '@vicons/ionicons5'
 import { useRouter } from 'vue-router'
+import { useSiteConfigStore } from '@/stores/site-config'
 // 彩蛋图片：猫猫踩地球插画
 import catEarthLogo from '@/assets/ChatGPT_logo.png'
 
 const router = useRouter()
+const siteConfig = useSiteConfigStore()
+const message = useMessage()
 
 // 彩蛋：点击蓝色星球触发隐藏弹窗
 const showEasterEgg = ref(false)
+
+// 打开彩蛋弹窗：顺带拉取站点文案（已加载则复用，确保文案可被 YAML 配置覆盖）
+function openEasterEgg() {
+  siteConfig.fetchSiteConfig()
+  showEasterEgg.value = true
+}
+
+// ===== 召唤星际猫咪：全屏随机浮现发光猫爪足迹 =====
+interface CatPaw {
+  id: number
+  top: number
+  left: number
+  rotate: number
+  scale: number
+  delay: number
+}
+const catPaws = ref<CatPaw[]>([])
+const showCatPaws = ref(false)
+let pawTimer: ReturnType<typeof setTimeout> | null = null
+
+// 召唤：生成一批随机位置的猫爪 + Toast，6s 后自动收起
+function summonCat() {
+  // 防连点：已在播放时不再重复触发（保留 toast 不重复弹）
+  if (showCatPaws.value) return
+  // 确保 toast / 按钮文案已就绪（首次进入关于页即点按钮时可能尚未拉取）
+  siteConfig.fetchSiteConfig()
+  showCatPaws.value = true
+  const batch: CatPaw[] = Array.from({ length: 26 }, (_, i) => ({
+    id: Date.now() + i,
+    top: 8 + Math.random() * 84,
+    left: 5 + Math.random() * 90,
+    rotate: -30 + Math.random() * 60,
+    scale: 0.7 + Math.random() * 0.8,
+    delay: Math.random() * 1.2,
+  }))
+  catPaws.value = batch
+  message.success(siteConfig.easterEggToast, { duration: 3500 })
+
+  if (pawTimer) clearTimeout(pawTimer)
+  pawTimer = setTimeout(() => {
+    showCatPaws.value = false
+    catPaws.value = []
+  }, 7000)
+}
+
+onBeforeUnmount(() => {
+  if (pawTimer) clearTimeout(pawTimer)
+})
 
 const stars = Array.from({ length: 160 }, (_, i) => {
   const size = Math.random() * 1.5 + 1
@@ -121,7 +172,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
     <!-- 内容 -->
     <div class="about-content">
       <!-- 旋转行星（点击触发隐藏彩蛋） -->
-      <div class="planet-wrap" style="cursor: pointer" title="点我看看？" @click="showEasterEgg = true">
+      <div class="planet-wrap" style="cursor: pointer" title="点我看看？" @click="openEasterEgg">
         <div class="planet" />
         <div class="planet-ring" />
       </div>
@@ -219,11 +270,39 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
           alt="星际守护者"
           class="mx-auto block h-48 w-auto object-contain"
         />
-        <p class="mt-6 whitespace-nowrap text-center text-lg font-bold text-white">
-          🎉 恭喜你发现了 OmicHub 的隐藏星际守护者！
+        <p class="mt-6 max-w-[36rem] text-center text-lg font-bold leading-relaxed break-words text-white">
+          {{ siteConfig.easterEggMessage }}
         </p>
       </div>
     </div>
+
+    <!-- 悬浮召唤按钮：召唤星际猫咪 -->
+    <button
+      class="summon-cat-btn"
+      :aria-label="siteConfig.easterEggButtonText"
+      @click="summonCat"
+    >
+      <span class="summon-cat-btn__icon">🐾</span>
+      <span class="summon-cat-btn__text">{{ siteConfig.easterEggButtonText }}</span>
+    </button>
+
+    <!-- 星际猫爪足迹覆盖层：不阻挡页面点击 -->
+    <Transition name="paws-fade">
+      <div v-if="showCatPaws" class="cat-paws-overlay">
+        <span
+          v-for="p in catPaws"
+          :key="p.id"
+          class="cat-paw"
+          :style="{
+            top: p.top + '%',
+            left: p.left + '%',
+            '--rot': p.rotate + 'deg',
+            '--scale': p.scale,
+            animationDelay: p.delay + 's',
+          }"
+        >🐾</span>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -625,6 +704,89 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   .about-actions {
     flex-direction: column;
     align-items: center;
+  }
+}
+
+/* ===== 悬浮召唤按钮 ===== */
+.summon-cat-btn {
+  position: fixed;
+  right: 36px;
+  bottom: 36px;
+  z-index: 90;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 22px;
+  border: none;
+  border-radius: 9999px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.45);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+  animation: summon-pulse 2.8s ease-in-out infinite;
+}
+.summon-cat-btn:hover {
+  transform: translateY(-2px) scale(1.04);
+  box-shadow: 0 8px 28px rgba(118, 75, 162, 0.6);
+}
+.summon-cat-btn:active {
+  transform: translateY(0) scale(0.98);
+}
+.summon-cat-btn__icon {
+  font-size: 18px;
+  display: inline-block;
+  animation: paw-wiggle 1.6s ease-in-out infinite;
+}
+@keyframes summon-pulse {
+  0%, 100% { box-shadow: 0 4px 20px rgba(102, 126, 234, 0.35); }
+  50% { box-shadow: 0 4px 28px rgba(118, 75, 162, 0.65); }
+}
+@keyframes paw-wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-12deg); }
+  75% { transform: rotate(12deg); }
+}
+
+/* ===== 星际猫爪足迹覆盖层 ===== */
+.cat-paws-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none; /* 不阻挡页面交互 */
+}
+.cat-paw {
+  position: absolute;
+  font-size: 52px;
+  /* 彩色 emoji 不受 color 影响，用多层 drop-shadow 叠出强发光，让深空背景上也醒目 */
+  filter:
+    drop-shadow(0 0 6px rgba(255, 255, 255, 0.95))
+    drop-shadow(0 0 12px rgba(167, 139, 250, 0.9))
+    drop-shadow(0 0 22px rgba(103, 232, 249, 0.7));
+  opacity: 0;
+  animation: paw-appear 2s ease-out forwards;
+}
+@keyframes paw-appear {
+  0% { opacity: 0; transform: translate(-50%, -50%) rotate(var(--rot, 0deg)) scale(calc(var(--scale, 1) * 0.4)); }
+  18% { opacity: 1; transform: translate(-50%, -50%) rotate(var(--rot, 0deg)) scale(var(--scale, 1)); }
+  78% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.paws-fade-leave-active {
+  transition: opacity 0.4s ease;
+}
+.paws-fade-leave-to {
+  opacity: 0;
+}
+
+@media (max-width: 640px) {
+  .summon-cat-btn {
+    right: 16px;
+    bottom: 16px;
+    padding: 10px 16px;
+    font-size: 13px;
   }
 }
 </style>

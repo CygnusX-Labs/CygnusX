@@ -25,10 +25,32 @@ export interface RegistrationContent {
   admin_contact: string
 }
 
+/** 账户未激活提示文案：登录未激活账户时弹窗展示 */
+export interface ActivationContent {
+  /** 未激活弹窗的正文文案 */
+  message: string
+  /** 联系管理员的方式（可空，后端缺省时回退到 registration.admin_contact） */
+  admin_contact: string
+}
+
+/** 关于页彩蛋文案：点击蓝色星球触发的隐藏弹窗 */
+export interface EasterEggContent {
+  /** 彩蛋弹窗的庆祝文案 */
+  message: string
+  /** 悬浮召唤按钮文案（关于页右下角“召唤星际猫咪”） */
+  button_text: string
+  /** 点击召唤按钮后的 Toast 提示文案 */
+  toast: string
+}
+
 export interface SiteContent {
   hero: HeroContent
   quick_entries: QuickEntryContent[]
   guide_steps: GuideStepContent[]
   /** 注册策略提示文案（可选：后端未返回时不阻断 HomeView 默认文案） */
   registration?: RegistrationContent
+  /** 账户未激活提示文案（可选） */
+  activation?: ActivationContent
+  /** 关于页彩蛋文案（可选） */
+  easter_egg?: EasterEggContent
 }
