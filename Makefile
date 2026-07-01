@@ -93,6 +93,7 @@ frontend-build: ## 构建前端生产版本
 docker-reload: docker-network ## 重新构建前端并刷新主栈 + Worker (开发用)
 	cd frontend && npm run build
 	$(COMPOSE_MAIN) restart nginx
+	$(COMPOSE_MAIN) restart web   # web 关闭了 --reload，改后端代码需手动 restart 才生效
 	$(COMPOSE_MAIN) up -d
 	$(COMPOSE_WORKER) up -d
 

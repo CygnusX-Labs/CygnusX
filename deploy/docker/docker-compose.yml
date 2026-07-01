@@ -26,6 +26,7 @@ services:
       dockerfile: deploy/docker/Dockerfile
     container_name: omichub-web
     restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"   # 以宿主用户运行，避免 root；写入挂载卷文件归宿主所有
     env_file:
       - ../../.env
     environment:
@@ -34,6 +35,7 @@ services:
       - REDIS_HOST=cache
       - AL_API_KEY=${AL_API_KEY}
       - ARK_API_KEY=${ARK_API_KEY}
+      - HOME=/tmp                          # uid 1000 无 passwd 条目，显式 HOME 防 expanduser 失败
     depends_on:
       db:
         condition: service_healthy
@@ -42,6 +44,7 @@ services:
     volumes:
       - ../../src:/app/src:ro  # 开发环境热重载
       - ../../flows:/app/flows:ro  # 流程 YAML 配置（热重载）
+      - ../../docs:/app/docs  # 知识库文档（meta.yaml + *.md，在线编辑与图片上传需要可写）
       - ../../data:/app/data:ro  # AI Provider YAML 配置（热重载）
       - /data/omichub:/data/omichub  # 任务数据（与独立 worker 栈共享同一宿主目录）
     networks:
@@ -59,6 +62,7 @@ services:
       dockerfile: deploy/docker/Dockerfile
     container_name: omichub-beat
     restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"   # 以宿主用户运行，避免 root
     env_file:
       - ../../.env
     environment:
@@ -67,6 +71,7 @@ services:
       - REDIS_HOST=cache
       - AL_API_KEY=${AL_API_KEY}
       - ARK_API_KEY=${ARK_API_KEY}
+      - HOME=/tmp                          # uid 1000 无 passwd 条目，显式 HOME 防 expanduser 失败
     depends_on:
       - web                  # worker 已迁独立栈，beat 仅需主栈启动顺序保证
     volumes:
@@ -75,6 +80,7 @@ services:
       - app_net
       - data_net
       - omichub_net          # beat 须经服务名 cache 连 Redis
+    working_dir: /tmp        # celerybeat-schedule 默认写 CWD；/app 不可写，改 /tmp（1777 可写）
     command: celery -A omichub.infrastructure.celery_app.celery beat --loglevel=info
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import os; os.kill(1, 0)\" || exit 1"]
@@ -90,12 +96,14 @@ services:
       dockerfile: deploy/docker/Dockerfile
     container_name: omichub-flower
     restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"   # 以宿主用户运行，避免 root
     env_file:
       - ../../.env
     environment:
       - APP_ENV=development
       - POSTGRES_HOST=db
       - REDIS_HOST=cache
+      - HOME=/tmp                          # uid 1000 无 passwd 条目，显式 HOME 防 expanduser 失败
     ports:
       - "5555:5555"
     depends_on:
@@ -127,6 +135,7 @@ services:
       - pg_data:/var/lib/postgresql/data
     networks:
       - data_net
+      - omichub_net        # 跨栈：独立 worker 经服务名 db 连库（与 cache 同款跨栈互通）
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U omichub"]
       interval: 10s
