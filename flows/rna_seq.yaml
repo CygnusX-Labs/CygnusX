@@ -12,7 +12,7 @@ meta:
   author: "OmicsHub Team"
   tags: ["rnaseq", "differential-expression", "STAR", "RSEM", "DESeq2", "RNAFlow"]
   icon: "rna"
-  docs_url: "https://docs.omicshub.org/workflows/rna_seq"
+  docs_url: "https://github.com/xsx123123/RNAFlow"
 
 parameters:
   # ----------------------------------------------------------

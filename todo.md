@@ -1,11 +1,103 @@
 # OmicHub 开发进度 Todo
 
 > 基于 `docs/` 架构设计文档，逐步完善项目骨架。
-> 更新日期：2026-06-28 (Cherry Studio SSE 架构 + AI 资源管理中心)
+> 更新日期：2026-06-30 (管理员登录欢迎彩蛋 + 注册开关拦截)
 
 ---
 
 ## 已完成
+
+### 登录页 + 注册弹窗 Glassmorphism 毛玻璃改造 ✅ 2026-06-30
+
+> 需求：登录卡片 & 弹窗卡片纯白背景改毛玻璃（半透白 + backdrop-filter:blur + 玻璃边框 + 弥散阴影）；弹窗遮罩改轻透黑 + 轻模糊。
+> 纠偏：① 项目样式方案是原生 CSS `<style scoped>`，**非 Tailwind**（需求里给的 Tailwind 类名仅作参考）；② 登录卡片原已是 `rgba(255,255,255,0.95)`（非纯白 #fff），只是透明度太接近不透、无毛玻璃感——属实需改造；③ 弹窗卡片原 `background:#fff` 纯白——属实需改造；④ 弹窗遮罩用 Naive UI `<NModal>`，遮罩 teleport 到 body，scoped `:deep()` 打不到，须用全局 CSS 覆盖 `.n-modal-mask`。
+> 验证：`npm run type-check` 退出码 0；`npm run build` 退出码 0（9.20s）；产物确认三处毛玻璃样式全部生效。
+
+- [x] **LoginView.vue 登录卡片**：`rgba(255,255,255,0.95)` → `0.75` + `backdrop-filter:blur(16px)` + `border:1px solid rgba(255,255,255,0.4)` + `box-shadow:0 8px 32px rgba(31,38,135,0.1)`（取代原 60px 重阴影）
+- [x] **RegistrationDisabledModal.vue 弹窗卡片**：`background:#fff` → `rgba(255,255,255,0.75)` + `backdrop-filter:blur(16px)` + 玻璃边框 + 弥散阴影
+- [x] **global.css 遮罩层**：新增全局 `.n-modal-mask` 规则——`background-color:rgba(0,0,0,0.25)!important`（产物压缩为 `#00000040` 等价）+ `backdrop-filter:blur(4px)`，让背后登录卡片若隐若现；含 `-webkit-backdrop-filter` 兼容 Safari
+- [x] **验证**：三处 `backdrop-filter`、玻璃边框、遮罩半透黑均确认进产物 CSS；type-check/build 双 0 退出码
+
+### 登录页猫咪浮层视觉重构（三只各异 + 治白底 + Y轴上移 + 错误提示精致化）✅ 2026-06-30
+
+> 需求：① 彻底清除中间 Lottie 白底块；② 三只猫 Y 轴上移贴合卡片上沿、绝不遮 Logo/输入框；③ 左右重复的黑猫占位图换成不同素材；④ 红色表单校验提示加间距缩字号。
+> 根因核查（不盲改）：① 「中间白底」非 vue3-lottie 容器所致（其默认背景即 transparent），而是 `cat-sleeping-rolling.json` 内置 500×500 纯白实体背景层（`ty=1, sc:#ffffff`）——故 `mix-blend-mode: multiply` 对症；② 「两边黑猫占位图」即 `loader-cat.json` 本身画的是近黑剪影猫（主色 `[0.008,0.004,0]`），且左右共用同一只（靠 scaleX 镜像区分），确属重复。
+> 素材决策：新增用户提供的 `data/orangeCat.json`（259×190/60fps/透明背景橙猫）替换左侧重复，三只各异；中 rolling 治白底用 multiply，左橙猫/右 loader 本就透明免此处理。
+
+- [x] **资产转换**：`data/orangeCat.json` → `frontend/public/lottie/orange-cat.json`（kebab-case，校验合法 Lottie JSON，透明背景无白底）
+- [x] **LoginCats.vue 重构**
+  - [x] 三只各异：左 `orange-cat`（镜像朝中央）/ 中 `cat-sleeping-rolling`（`mix-blend-mode: multiply` 治自带白底）/ 右 `loader-cat`（保留）
+  - [x] 强制透明容器：`.cat` 与 `:deep(.lottie-animation-container)` 双层 `background: transparent !important`
+  - [x] Y 轴上移：左右 `top: -38px`、中央 `top: -44px`，底部贴合卡片上沿、探出半个身子，不遮 Logo/输入框
+  - [x] 横向均匀分布：左 `left:16px` / 中 `left:50% + translateX(-50%)` / 右 `right:16px` 对称
+  - [x] 移动端 `<768px` 隐藏左右、仅留中央（`top:-36px`）
+- [x] **LoginView.vue 表单错误提示精致化**
+  - [x] Naive UI 校验提示（「请输入用户名/密码」）`:deep(.n-form-item-feedback)` 加 `padding-top:4px` + 字号 `12px` + `line-height:1.4`
+  - [x] `.login-error-message`（登录失败整段）字号 14px→13px 与校验提示风格统一
+- [x] **验证**：`npm run type-check` 退出码 0；`npm run build` 退出码 0（9.28s）；`dist/lottie/orange-cat.json` 就位；`LoginView` 产物正确引用三只猫资产
+
+### 登录页猫咪动画浮层（dotLottie 转 JSON 复用 vue3-lottie）✅ 2026-06-30
+
+> 需求：白色登录卡片顶部边缘趴三只猫咪动画（加载猫 + 睡觉打滚猫），增加治愈感；移动端只保留中央一只。
+> 纠偏：原提示词假设动画资产在 `data/` 且用 `@dotlottie/vue-player`——两处皆有误。① `data/` 是后端 Python 读 YAML 的目录，浏览器访问不到，前端静态资产应放 `frontend/public/`；② `@dotlottie/vue-player` 在 npm 404 不存在（官方无 Vue 专用包）。
+> 架构决策：复用项目既有 `vue3-lottie@3.3.1`（注册弹窗 `RegistrationDisabledModal` 已用其播 `public/lottie/cat.json`），把两个 `.lottie`（dotLottie 压缩=zip）解压为 `animation.json` 放 `public/lottie/`，沿用 `:animation-link` + `BASE_URL` + `loop` + `auto-play` + `@on-error` emoji 兜底模式。零新依赖。
+> 验证：`npm run type-check` 退出码 0；`npm run build` 退出码 0（9.44s，7443 模块）；`dist/lottie/*.json` 就位、`LoginCats` 进 `LoginView-*.js` 产物。
+
+- [x] **资产转换与归位**
+  - [x] `unzip -p` 从两个 `.lottie`（manifest.json + animations/12345.json）提取动画 JSON → `frontend/public/lottie/loader-cat.json`（280×200/25fps/11层）+ `cat-sleeping-rolling.json`（500×500/29.97fps/15层），均校验为合法 Lottie JSON
+  - [x] `.lottie` 源文件从 `data/` 移到 `frontend/public/lottie/`（kebab-case 去空格）；删除 `data/` 下哈基咪先前解压的冗余 `.json` 副本，`data/` 回归 YAML-only
+- [x] **新增组件 `components/LoginCats.vue`**
+  - [x] 三只猫绝对定位趴在 `.login-card`（已 `position:relative`）顶部边缘（左/中/右），`top:-34px~-40px` 探出半个身子
+  - [x] 左右用 loader-cat（左右镜像对称朝中央），中央用 cat-sleeping-rolling（略大 80px）
+  - [x] `pointer-events:none` 不挡表单；每只独立 `@on-error` → 🐱 emoji 兜底
+  - [x] 响应式 `@media(max-width:767px)` 隐藏左右、仅留中央
+- [x] **LoginView.vue 接入**
+  - [x] import `LoginCats`，在 `.login-card` 首位插入 `<LoginCats />`（卡片已有 `position:relative;z-index:1`，无需改定位上下文）
+
+### 管理员登录欢迎小彩蛋（LLM 文案 + 3s 超时兜底 + Naive UI Notification）✅ 2026-06-30
+
+> 需求：root/管理员登录进入仪表板后，后台异步拉取一段带颜文字的 LLM 欢迎词，右上角 Notification 弹出；LLM 接口 3s 超时或报错时回退默认文案「晚上好，root 👋 欢迎使用 OmicHub！」，务必保证弹窗弹出。
+> 架构决策：① 复用全局 `apiClient`（自动带 JWT），单次请求 `timeout: 3000` 覆盖默认 30s；② `useNotification()` 必须在 `NNotificationProvider` 子树内调用——App.vue 原仅有 Message/Dialog Provider，补齐 NotificationProvider；③ 用 `watch(user.role, { immediate })` 兼容两种时序（刚登录 user 已就绪 / 刷新页面 fetchUser 异步未就绪），触发后立即 `stop()` 防泄漏；④ `sessionStorage` 标记一次会话只弹一次，避免反复进出仪表板刷屏。
+> 验证：前端 `npm run type-check`（vue-tsc --noEmit）退出码 0 零错误。
+
+- [x] **新增 composable：`composables/useAdminWelcome.ts`**
+  - [x] `fetchWelcomeText()` — 模拟调用 LLM 接口（`POST /api/v1/llm/generate-welcome`，3s 超时 + 错误捕获），兼容返回纯字符串或 `{ content }` 两种形态；空文案抛错走兜底
+  - [x] `showWelcome()` — `notification.create({ title, content, type:'success', duration:6000, keepAliveOnHover })`，`placement="top-right"` 由 Provider 决定
+  - [x] `fire()` — 拉取文案（失败静默回退默认文案）→ 弹窗；`sessionStorage` 标记防重复弹
+  - [x] `triggerAdminWelcome()` — `watch(role, immediate)` 兼容时序竞态，触发后 `stop()` 取消监听
+- [x] **App.vue 补齐 NotificationProvider**
+  - [x] import 新增 `NNotificationProvider`，在 `NDialogProvider` 内层包裹 `RouterView`（`placement="top-right"`）
+- [x] **DashboardView.vue 接入**
+  - [x] import `useAdminWelcome`，`onMounted` 调 `triggerAdminWelcome()`（后台异步、不阻塞主流程）
+- [x] **后端：预生成 + 顺序轮询**（避免运行时调 LLM 的 2~5s 延迟，把「调 AI」挪到启动时低频补齐）
+  - [x] `core/config.py` 新增 `welcome_yaml` / `welcome_state_yaml` / `welcome_seed_threshold`(20) 三配置
+  - [x] `application/services/welcome_service.py` — `WelcomeService`：`seed_if_needed` 启动补齐（调默认 provider 的 `LiteLLMProvider.chat` 非流式生成，复用 `AIProviderConfigService.get_active_default` + `ai_provider_service.test_config` 范式；条数 < 20 才补，失败仅 log 不阻塞启动）、`get_next_welcome` 运行时顺序轮询（游标单调递增存独立状态文件，取模仅在读取处做；文件缺失/空/损坏回退 `DEFAULT_WELCOME_TEXT`）、给定 system prompt 常量（元气小助手人设 + 5 条约束）
+  - [x] `api/v1/llm.py` — `POST /llm/generate-welcome`，`AdminRequired` 守卫（从 `admin/users.py` 导入），返回 `{content}`（与前端 composable 兼容）；非管理员走全局 `AuthorizationError` → 403
+  - [x] `api/v1/router.py` 注册 `llm` 路由（`prefix=/llm tags=["LLM"]`），最终路径 `/api/v1/llm/generate-welcome`
+  - [x] `main.py` lifespan 新增 `_seed_welcome()`，串行在 `asyncio.gather(...AI Provider 同步...)` 之后执行（依赖默认 provider 已就绪），异常仅 log warning 不阻塞启动
+  - [x] 数据流：启动补齐写 `data/welcome.yaml`（纯字符串数组 `messages: [...]`）；运行时读它 + 游标 `data/welcome_state.yaml`（`{next_index: int}`）
+- [x] **验证**：后端新文件 ruff 全通过、main.py 语法 OK；TestClient 真实 HTTP `POST /api/v1/llm/generate-welcome` 无 token → 401（路由已注册+鉴权生效）；WelcomeService 离线单测 5/5 通过（文件缺失兜底 / 顺序轮询不重复 / 游标单调递增 / 状态损坏归零 / 取模正确）；seed 无默认 provider 时静默跳过不阻塞；前端 `npm run type-check` 退出码 0
+
+### 登录页注册开关拦截（保留按钮 + Toast 提示，文案外置 YAML）✅ 2026-06-30
+
+> 需求：后台 `allowRegistration` 关闭时，登录页保留"注册"按钮但点击不跳转，弹全局 Toast「当前平台暂停自助注册，需由管理员创建账号」；开启时正常跳转注册页。
+> 架构决策：开关复用既有 DB 驱动 `site_settings.registration_enabled`（`GET /site-settings` 公开 + `/auth/register` 后端强制校验，不破坏安全语义）；提示文案与管理员联系方式外置到 `data/OmicHub.yaml`（改文件即生效）。
+> 验证：后端 `pytest tests/unit/test_site_content_service.py` 8/8 通过；前端 `npm run type-check` 零错误；真实 `data/OmicHub.yaml` 端到端解析 `registration` 块正常。
+
+- [x] **后端：YAML 新增 registration 配置块**
+  - [x] `data/OmicHub.yaml` 新增 `registration` 块（`disabled_message` + `admin_contact`，附注释说明开关本身归 DB 管）
+  - [x] `schemas/site_content.py` 新增 `RegistrationContent` + `SiteContentDTO.registration`
+  - [x] `services/site_content_service.py` 的 `DEFAULT_CONTENT` 补 `registration` 默认值（文件缺失/字段缺失自动兜底，首页永不崩）
+- [x] **前端：类型 + Pinia site-config store**
+  - [x] `types/site-content.ts` 新增 `RegistrationContent` 接口 + `SiteContent.registration?`（可选，不波及 HomeView 默认文案）
+  - [x] 新建 `stores/site-config.ts` — 封装 `/site-settings` + `/site-content` 并行拉取、状态存储、`allowRegistration` computed、`registrationDisabledTip`（自动拼管理员联系方式）、并发去重 + `loaded` 就绪标记
+- [x] **LoginView 改造：保留按钮 + 点击拦截 + Toast**
+  - [x] 移除原 `v-if="registrationEnabled"` 隐藏按钮逻辑，改为始终渲染"注册"按钮
+  - [x] `onMounted` 调 `siteConfig.fetchSiteConfig()`；`handleRegister` 点击拦截：开关关 → `message.warning` Toast 不跳转，开关开 → `router.push('/register')`
+  - [x] 防 `onMounted` 竞态：首次点击若 `loaded` 未就绪先 `await fetchSiteConfig()` 再判断
+  - [x] Toast 走 `App.vue` 全局 `NMessageProvider` 的 `useMessage()`，为真正全局提示
+- [x] **测试**
+  - [x] `tests/unit/test_site_content_service.py` 新增 3 个回归测试（默认兜底 / YAML 读取 / 部分字段补齐）
 
 ### Cherry Studio SSE 架构切换 + AI 资源管理中心 ✅ 2026-06-28
 

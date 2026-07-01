@@ -93,7 +93,14 @@ docker exec omichub-web uv run python scripts/init_cookies.py
 # 开发环境: http://localhost:8888
 ```
 
-> 💡 一键拉起主栈 + Worker（含前端构建）：`make docker-up-all`；改动前端后刷新：`make docker-reload`。
+> ⚠️ **改前端后必须重启 nginx 才能生效**：nginx 通过 bind mount 挂载 `frontend/dist`，
+> 但 `docker up -d` **不会重启已运行的容器**。Vite 构建会清空重建 dist（新 inode），
+> 旧的 nginx 进程仍持有旧目录句柄，导致页面不更新。
+> - 改动前端后用：`make docker-reload`（含 build + restart nginx）
+> - 或手动：`cd frontend && npm run build && cd .. && docker restart omichub-nginx`
+> - 浏览器端强制刷新：Ctrl+Shift+R（避免缓存旧 chunk）
+
+> 💡 一键拉起主栈 + Worker（含前端构建）：`make docker-up-all`。
 
 ### 生产环境部署
 
@@ -304,7 +311,7 @@ src/omichub/          后端 Python 包 (DDD 分层)
   middleware/         中间件 (auth/rbac/cookie/rate_limit)
 frontend/             前端 Vue 3
   src/
-    components/       组件 (ai-chat/ admin/ sandbox/)
+    components/       组件 (ai-chat/ admin/ sandbox/ knowledge/ dashboard/)
     composables/      组合式函数 (useChatStream/useAIWebSocket/...)
     stores/           Pinia 状态 (chatSession/chatAssistant/ai/auth/...)
     views/            页面
@@ -312,9 +319,11 @@ deploy/docker/        Docker 部署配置
   docker-compose.yml  主栈开发环境 (web/db/redis/nginx/beat/flower)
   docker-compose.worker.yml  独立 Worker 计算栈
   docker-compose.prod.yml  生产环境 override
+  nginx/nginx.conf   nginx 配置 (bind mount 挂载 frontend/dist)
 flows/                Snakemake 流程 YAML (rna_seq/atac_seq)
 data/                 AI Provider YAML 配置
 docs/                 架构设计文档
+  knowledge/         实验室知识库 (meta.yaml 导航 + *.md 正文)
 ```
 
 ## 常用命令
@@ -475,6 +484,46 @@ EBI_DOWNLOAD_YAML=/data/omichub/bin/EBIDownload.yaml
 3. 任务 SUCCESS 后，刷新「数据管理」（`/files`）即可看到 `ebi_download/<accession>/` 下的 FASTQ 文件（类型标记为 FASTQ）。
 
 > 说明：下载产物落在 `storage_path/upload_dir/<user_id>/ebi_download/<accession>/`，复用文件系统的扫描入库机制，无需额外建表。FASTQ 体量较大，请确认 `/data/omichub` 所在磁盘容量充足。
+
+## 实验室知识库（Knowledge Base）
+
+知识库页面（`/knowledge`）采用「树形目录 + 沉浸式 Markdown 阅读 + 管理员在线编辑」的专业文档系统，基于 [md-editor-v3](https://github.com/imzbf/md-editor-v3) 实现。
+
+### 数据来源与自动加载
+
+知识库文档以纯文件形式存储在 `docs/knowledge/` 目录：
+
+- `docs/knowledge/meta.yaml` —— 导航配置（标题、文档列表、可选 `category` 分类）
+- `docs/knowledge/*.md` —— Markdown 正文
+
+服务每次读取文档时**直接读盘**，因此保存后无需重启即可生效（重启后自动加载最新内容，无 DB 持久化）。
+
+```yaml
+# docs/knowledge/meta.yaml 示例
+title: "实验室知识库"
+items:
+  - id: "getting-started"
+    title: "快速入门"
+    file: "getting-started.md"
+    category: "上手指南"      # 可选，前端按它聚合成树形目录
+  - id: "rna-seq-tips"
+    title: "RNA-seq 分析小贴士"
+    file: "rna-seq-tips.md"
+    category: "流程说明"
+```
+
+### 在线编辑（管理员）
+
+- **阅读模式**：左侧树形目录（按 `category` 分组）+ 右侧 `MdPreview` 预览（80%）+ `MdCatalog` 大纲导航（20%，sticky）。
+- **编辑模式**（仅管理员可见「编辑」按钮）：满宽 `MdEditor` 编辑器；点「保存」回写 `docs/knowledge/<file>.md` 落盘，下次加载即为新内容；点「取消」还原。
+- 接口：`GET /api/v1/docs/knowledge`（目录）、`GET /api/v1/docs/knowledge/{doc_id}`（正文）、`PUT /api/v1/docs/knowledge/{doc_id}`（保存，需管理员）。
+
+### 安全
+
+- 保存接口带路径遍历防护：`resolve()` 后必须仍在 `docs/knowledge/` 目录内，且只能改已配置条目对应的文件，禁止凭空新建或越权写盘。
+- 原子写：先写 `.tmp` 再 `replace`，避免写一半损坏文件。
+
+> 新增文档：在 `meta.yaml` 的 `items` 加一条，并在 `docs/knowledge/` 放对应 `.md` 文件即可（可热更新，无需迁移）。
 
 ## 文档
 
