@@ -48,9 +48,15 @@ class SqlAlchemyNotificationRepository:
         notification = await self.get_by_id(notification_id)
         if notification is None:
             return None
-        read_by = notification.read_by or []
-        if str(user_id) not in [str(uid) for uid in read_by]:
-            read_by.append(user_id)
+        # 用新列表替换，避免就地 append 后赋值同对象导致 SQLAlchemy 不标记 dirty（JSONB 无可变跟踪），
+        # 否则第二个用户标记已读时 old is value 短路、UPDATE 不发出，已读记录写不进库。
+        # 统一存 str：JSONB 用默认 json 编码器，UUID 不可序列化会抛
+        # "Object of type UUID is not JSON serializable"；存 str 也与
+        # _notification_to_dict / 前端 read_by.includes(uid) 口径一致。
+        read_by = [str(uid) for uid in (notification.read_by or [])]
+        uid_str = str(user_id)
+        if uid_str not in read_by:
+            read_by.append(uid_str)
             notification.read_by = read_by
             await self.session.flush()
             await self.session.refresh(notification)

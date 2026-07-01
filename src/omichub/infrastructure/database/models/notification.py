@@ -34,5 +34,6 @@ class NotificationModel(Base, TimestampMixin):
     target_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True
     )
-    read_by: Mapped[list[uuid.UUID]] = mapped_column(JSONB, default=list)
+    # 已读用户 ID 列表（存 str 形式的 UUID，便于 JSONB 序列化与前后端口径统一）
+    read_by: Mapped[list[str]] = mapped_column(JSONB, default=list)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

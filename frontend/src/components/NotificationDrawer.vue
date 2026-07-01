@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import {
   NDrawer, NDrawerContent, NButton, NIcon, NSpace, NEmpty, NTag, NForm, NFormItem,
-  NInput, NSelect, NSwitch, NSpin, NPopconfirm,
+  NInput, NSelect, NSwitch, NSpin, NPopconfirm, useMessage,
 } from 'naive-ui'
 import {
   NotificationsOutline, CheckmarkOutline, TrashOutline, AddOutline,
@@ -22,6 +22,7 @@ const emit = defineEmits<{
 
 const store = useNotificationStore()
 const authStore = useAuthStore()
+const message = useMessage()
 const isAdmin = computed(() => authStore.user?.role === 'admin')
 const showCreateForm = ref(false)
 const submitting = ref(false)
@@ -73,8 +74,13 @@ function formatTime(iso: string): string {
 }
 
 async function handleMarkRead(n: Notification) {
-  if (store.isRead(n)) return
-  await store.markRead(n.id)
+  // 已读 / 正在标记中：直接跳过，避免重复请求
+  if (store.isRead(n) || store.isMarking(n.id)) return
+  try {
+    await store.markRead(n.id)
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || '标记已读失败，请稍后重试')
+  }
 }
 
 async function handleCreate() {
@@ -202,6 +208,8 @@ async function handleDelete(id: string) {
                 v-if="!store.isRead(n)"
                 text
                 size="tiny"
+                :loading="store.isMarking(n.id)"
+                :disabled="store.isMarking(n.id)"
                 @click="handleMarkRead(n)"
               >
                 <template #icon><NIcon><CheckmarkOutline /></NIcon></template>

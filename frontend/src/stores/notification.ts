@@ -7,6 +7,9 @@ import type { Notification } from '@/types'
 export const useNotificationStore = defineStore('notification', () => {
   const notifications = ref<Notification[]>([])
   const loading = ref(false)
+  // 正在标记已读的通知 id 集合：用于防连点 + 按钮 loading 态。
+  // 用“整体替换 Set”保证 .has() 的响应式追踪。
+  const markingIds = ref<Set<string>>(new Set())
 
   const authStore = useAuthStore()
   const currentUserId = computed(() => authStore.user?.id || '')
@@ -15,6 +18,11 @@ export const useNotificationStore = defineStore('notification', () => {
     const uid = currentUserId.value
     return notifications.value.filter((n) => !n.read_by.includes(uid)).length
   })
+
+  /** 某条通知是否正在标记已读（供按钮 loading / 禁用） */
+  function isMarking(id: string): boolean {
+    return markingIds.value.has(id)
+  }
 
   async function fetchNotifications() {
     loading.value = true
@@ -26,11 +34,27 @@ export const useNotificationStore = defineStore('notification', () => {
     }
   }
 
+  /**
+   * 标记单条通知已读。
+   * - 防连点：同一条通知在途时直接返回，不重复发请求。
+   * - 错误向上抛出：由调用方（组件）决定如何提示用户。
+   * - 局部更新：用接口返回的最新通知替换列表对应项，避免整表重拉。
+   */
   async function markRead(id: string) {
-    const res = await apiClient.patch<Notification>(`/notifications/${id}/read`)
-    const idx = notifications.value.findIndex((n) => n.id === id)
-    if (idx >= 0) {
-      notifications.value[idx] = res.data
+    if (markingIds.value.has(id)) return
+    const next = new Set(markingIds.value)
+    next.add(id)
+    markingIds.value = next
+    try {
+      const res = await apiClient.patch<Notification>(`/notifications/${id}/read`)
+      const idx = notifications.value.findIndex((n) => n.id === id)
+      if (idx >= 0) {
+        notifications.value[idx] = res.data
+      }
+    } finally {
+      const after = new Set(markingIds.value)
+      after.delete(id)
+      markingIds.value = after
     }
   }
 
@@ -59,11 +83,13 @@ export const useNotificationStore = defineStore('notification', () => {
   return {
     notifications,
     loading,
+    markingIds,
     unreadCount,
     fetchNotifications,
     markRead,
     createNotification,
     deleteNotification,
     isRead,
+    isMarking,
   }
 })
