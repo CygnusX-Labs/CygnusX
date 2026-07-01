@@ -99,6 +99,16 @@ class Settings(BaseSettings):
     ai_provider_config_yaml: str = "data/ai_providers.yaml"  # 外置 AI Provider YAML 配置路径
     site_content_yaml: str = "data/OmicHub.yaml"  # 首页文案外置 YAML 路径（改文件即生效）
 
+    # ===== 管理员欢迎彩蛋（预生成 + 顺序轮询）=====
+    # 启动时若 welcome.yaml 条数 < threshold，调用默认 AI provider 补齐到 threshold 条；
+    # 运行时登录仅读盘 + 游标前进，零延迟、不调 AI。两文件均缺失时回退内置兜底文案。
+    # 注意：必须放在可写目录。data/ 目录在容器中为只读挂载（docker-compose :ro），
+    # 故改用 storage_path（/data/omichub，容器与宿主共享且可写）下的 welcome/ 子目录，
+    # 避免与任务数据混放。
+    welcome_yaml: str = "/data/omichub/welcome/welcome.yaml"  # 预生成欢迎词（纯字符串数组）
+    welcome_state_yaml: str = "/data/omichub/welcome/welcome_state.yaml"  # 轮询游标
+    welcome_seed_threshold: int = 20  # 启动补齐目标条数
+
     # ===== 代码执行沙盒 =====
     sandbox_enabled: bool = True
     sandbox_image: str = "omichub/sandbox-base:latest"

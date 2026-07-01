@@ -137,10 +137,32 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     await asyncio.gather(_sync_ai_providers(), _init_default_provider(), _init_assistants())
 
+    # 欢迎词补齐：须在 AI Provider 同步完成之后（依赖默认 provider），
+    # 故串行执行而非并入上方 gather。条数 < 阈值才调 LLM 补齐；失败仅 log，不阻塞启动。
+    # 注意：补齐需串行调 LLM 多次（默认阈值 20 条，单次数秒），若在 startup 同步 await 会
+    # 阻塞应用就绪 → 健康检查失败 → nginx 502。故改为后台任务，startup 立即完成，补齐异步进行。
+    async def _seed_welcome() -> None:
+        try:
+            from omichub.application.services.welcome_service import WelcomeService
+            from omichub.infrastructure.database.session import get_session_factory
+
+            factory = get_session_factory()
+            if factory is not None:
+                async with factory() as session:
+                    total = await WelcomeService(session).seed_if_needed()
+                    await session.commit()
+                    logger.info(f"管理员欢迎词就绪，共 {total} 条")
+        except Exception as e:
+            logger.warning(f"欢迎词补齐失败，降级使用兜底文案: {e}")
+
+    welcome_task = asyncio.create_task(_seed_welcome())
+
+
     yield
 
-    # 关闭时清理：取消未完成的沙盒预热 + 关闭数据库
+    # 关闭时清理：取消未完成的沙盒预热 + 欢迎词补齐 + 关闭数据库
     sandbox_task.cancel()
+    welcome_task.cancel()
     from omichub.infrastructure.database.session import close_db
 
     await close_db()

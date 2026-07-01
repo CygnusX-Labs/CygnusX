@@ -15,12 +15,15 @@ import apiClient from '@/api/client'
 import type { Task } from '@/types'
 import type { StatsOverview } from '@/types/stats'
 import { useAuthStore } from '@/stores/auth'
+import { useAdminWelcome } from '@/composables/useAdminWelcome'
 import TrendChart from '@/components/dashboard/TrendChart.vue'
 import QuickStartSteps from '@/components/dashboard/QuickStartSteps.vue'
 import AdminStatsPanel from '@/components/dashboard/AdminStatsPanel.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
+// 管理员登录欢迎小彩蛋：内部判断角色 + 3s 超时兜底，一次会话只弹一次
+const { triggerAdminWelcome } = useAdminWelcome()
 
 const healthStatus = ref<string>('检测中...')
 const healthOk = ref(false)
@@ -34,6 +37,9 @@ const loadingTasks = ref(false)
 const bannerClosed = ref(localStorage.getItem('omichub:dashboardBannerClosed') === 'true')
 
 onMounted(async () => {
+  // 管理员欢迎彩蛋：后台异步拉取文案，不阻塞主流程；失败自动回退默认文案
+  triggerAdminWelcome()
+
   // 健康检查
   try {
     const res = await axios.get('/health')
