@@ -7,15 +7,18 @@ import router from './router'
 import '@/styles/global.css'
 import '@/styles/chat-theme.css'
 import 'highlight.js/styles/github-dark.css'
+import { useThemeStore } from '@/stores/theme'
 
 const app = createApp(App)
 
 app.use(createPinia())
+
+// Pinia 初始化后立即恢复主题，避免闪白
+const themeStore = useThemeStore()
+themeStore.initTheme()
+
 app.use(router)
 app.use(naive)
 app.use(MotionPlugin)
-
-// 默认 Kimi 深色主题
-document.documentElement.setAttribute('data-theme', 'dark')
 
 app.mount('#app')

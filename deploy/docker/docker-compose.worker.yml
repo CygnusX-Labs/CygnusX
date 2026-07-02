@@ -38,6 +38,7 @@ services:
       - /data/omichub:/data/omichub                       # 任务数据读写
       - /home/zj/pipeline:/home/zj/pipeline:ro            # Snakemake 流程代码
       - ../../src:/app/src:ro                            # 开发热重载：与 web/beat 一致，代码改动重启即生效（免重建镜像）
+      - ../../alembic:/app/alembic:ro                    # 迁移脚本（与 web/beat 一致，便于排障时 exec alembic）
       # —— conda 运行时（只读，原位挂载以匹配 shebang 绝对路径）——
       - /home/zj/miniconda3:/home/zj/miniconda3:ro        # 含 bin/conda、envs/snakemake
       - /home/zj/.local/share/mamba:/home/zj/.local/share/mamba:ro   # RNAFlow 各分析工具 env

@@ -242,6 +242,37 @@ export const useChatSessionStore = defineStore('chatSession', () => {
     }
   }
 
+  /** 删除单条显示消息（仅前端显示层，不删数据库） */
+  function removeDisplayMessage(messageId: string) {
+    messages.value = messages.value.filter((m) => m.message_id !== messageId)
+  }
+
+  /**
+   * 重新生成指定 AI 回复：
+   * 定位该 assistant 消息及其前一条 user 消息，一并移除后以原用户输入重发。
+   * 仅对显示层操作；若该消息非最后一条，后续消息保留（上下文以新回复衔接）。
+   */
+  async function regenerateMessage(messageId: string) {
+    if (isStreaming.value) return
+    const idx = messages.value.findIndex((m) => m.message_id === messageId)
+    if (idx < 0) return
+
+    // 向前查找最近的 user 消息
+    let userIdx = -1
+    for (let i = idx - 1; i >= 0; i--) {
+      if (messages.value[i].role === 'user') {
+        userIdx = i
+        break
+      }
+    }
+    if (userIdx < 0) return
+
+    const userContent = messages.value[userIdx].content
+    // 移除 [userIdx, idx] 区间（旧 user + 旧 assistant）
+    messages.value.splice(userIdx, idx - userIdx + 1)
+    await sendMessage(userContent)
+  }
+
   /** 清空当前会话消息（仅前端，不删数据库） */
   function clearDisplayMessages() {
     messages.value = []
@@ -273,5 +304,7 @@ export const useChatSessionStore = defineStore('chatSession', () => {
     sendMessage,
     stopStreaming,
     clearDisplayMessages,
+    removeDisplayMessage,
+    regenerateMessage,
   }
 })

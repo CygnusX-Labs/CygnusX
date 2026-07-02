@@ -1,140 +1,176 @@
 <script setup lang="ts">
-import { h, onMounted, ref } from 'vue'
+import { h, ref, computed, onMounted } from 'vue'
 import {
-  NButton, NDataTable, NModal, NForm, NFormItem, NInput, NInputNumber,
-  NTag, NSpace, NPopconfirm, useMessage, NIcon, NSelect,
+  NButton, NDataTable, NIcon, NTag, NSpace, NPopconfirm, NModal, NForm,
+  NFormItem, NInput, NSelect, NColorPicker, NTransfer, useMessage,
 } from 'naive-ui'
-import { CreateOutline, TrashOutline, RefreshOutline, StarOutline } from '@vicons/ionicons5'
+import { CreateOutline, TrashOutline, RefreshOutline, StarOutline, EyeOutline } from '@vicons/ionicons5'
+import { useAgentHubStore, CATEGORY_LABELS } from '@/stores/agentHub'
 import apiClient from '@/api/client'
-import type { ChatAssistantAdmin } from '@/types'
+import type { AgentTemplate, AgentCategory } from '@/types/agent'
 
 const message = useMessage()
-const list = ref<ChatAssistantAdmin[]>([])
-const loading = ref(false)
-const showEdit = ref(false)
-const editing = ref<Partial<ChatAssistantAdmin>>({})
-const isEdit = ref(false)
+const store = useAgentHubStore()
 
-const categoryOptions = [
-  { label: '通用', value: 'general' },
-  { label: '分析', value: 'analysis' },
-  { label: '编程', value: 'code' },
-  { label: '可视化', value: 'visualization' },
-]
+const showEdit = ref(false)
+const editing = ref<Partial<AgentTemplate>>({})
+const isEdit = ref(false)
+const previewId = ref<string | null>(null)
+
+/** 可选模型配置（来自 /chat/models） */
+const modelOptions = ref<{ label: string; value: string }[]>([])
+
+onMounted(async () => {
+  // 后台需含停用 Agent 的全量列表
+  await store.fetchAgents(false)
+  await Promise.all([store.fetchMcps(), store.fetchSkills()])
+  try {
+    const res = await apiClient.get<Array<{ id: string; name: string; model: string }>>('/chat/models')
+    modelOptions.value = (res.data || []).map((m) => ({
+      label: `${m.name} (${m.model})`,
+      value: m.id,
+    }))
+  } catch (e) {
+    console.error('加载模型列表失败:', e)
+  }
+})
+
+const categoryOptions = (Object.keys(CATEGORY_LABELS) as AgentCategory[]).map((k) => ({
+  label: CATEGORY_LABELS[k], value: k,
+}))
+
+const mcpTransferOptions = computed(() =>
+  store.mcps.map((m) => ({ label: `${m.name}`, value: m.id })),
+)
+const skillTransferOptions = computed(() =>
+  store.skills.map((s) => ({ label: s.name, value: s.id })),
+)
 
 const columns = [
-  { title: '图标', key: 'icon', width: 50, render: (r: ChatAssistantAdmin) => r.icon },
-  { title: '名称', key: 'name', width: 140 },
-  { title: '分类', key: 'category', width: 80 },
+  { title: '头像', key: 'avatar', width: 56, render: (r: AgentTemplate) => r.avatar },
+  { title: '名称', key: 'name', width: 150 },
+  { title: '分类', key: 'category', width: 90, render: (r: AgentTemplate) => CATEGORY_LABELS[r.category] },
   {
-    title: '状态', key: 'is_active', width: 70,
-    render: (r: ChatAssistantAdmin) => h(NTag, { type: r.is_active ? 'success' : 'default', size: 'small', round: true }, { default: () => r.is_active ? '启用' : '停用' })
+    title: '挂载能力', key: 'mounts', width: 200,
+    render: (r: AgentTemplate) =>
+      h(NSpace, { size: 4 }, {
+        default: () => [
+          h(NTag, { size: 'tiny', type: 'info', bordered: false }, { default: () => `MCP×${r.mcp_ids.length}` }),
+          h(NTag, { size: 'tiny', type: 'success', bordered: false }, { default: () => `技能×${r.skill_ids.length}` }),
+        ],
+      }),
   },
   {
-    title: '默认', key: 'is_default', width: 60,
-    render: (r: ChatAssistantAdmin) => r.is_default ? h(NTag, { type: 'warning', size: 'tiny' }, { default: () => '默认' }) : ''
+    title: '状态', key: 'is_active', width: 80,
+    render: (r: AgentTemplate) => h(NTag, { type: r.is_active ? 'success' : 'default', size: 'small', round: true }, { default: () => r.is_active ? '启用' : '停用' }),
   },
-  { title: '内置', key: 'is_builtin', width: 50, render: (r: ChatAssistantAdmin) => r.is_builtin ? '是' : '否' },
   {
     title: '操作', key: 'actions', width: 240,
-    render: (r: ChatAssistantAdmin) => h(NSpace, { size: 'small' }, {
-      default: () => [
-        h(NButton, { size: 'tiny', quaternary: true, onClick: () => handleEdit(r) }, {
-          default: () => [h(NIcon, { component: CreateOutline }), '编辑']
-        }),
-        h(NButton, { size: 'tiny', quaternary: true, onClick: () => handleToggle(r.assistant_id) }, {
-          default: () => r.is_active ? '停用' : '启用'
-        }),
-        !r.is_default && h(NButton, { size: 'tiny', quaternary: true, onClick: () => handleSetDefault(r.assistant_id) }, {
-          default: () => [h(NIcon, { component: StarOutline }), '设默认']
-        }),
-        !r.is_builtin && h(NPopconfirm, { onPositiveClick: () => handleDelete(r.assistant_id) }, {
-          trigger: () => h(NButton, { size: 'tiny', quaternary: true, type: 'error' }, {
-            default: () => [h(NIcon, { component: TrashOutline }), '删除']
+    render: (r: AgentTemplate) =>
+      h(NSpace, { size: 'small' }, {
+        default: () => [
+          h(NButton, { size: 'tiny', quaternary: true, onClick: () => openPreview(r.id) },
+            { default: () => [h(NIcon, { component: EyeOutline }), '预览'] }),
+          h(NButton, { size: 'tiny', quaternary: true, onClick: () => handleEdit(r) },
+            { default: () => [h(NIcon, { component: CreateOutline }), '编辑'] }),
+          h(NButton, { size: 'tiny', quaternary: true, onClick: () => store.toggleAgent(r.id) },
+            { default: () => r.is_active ? '停用' : '启用' }),
+          !r.is_builtin && h(NPopconfirm, { onPositiveClick: () => handleDelete(r.id) }, {
+            trigger: () => h(NButton, { size: 'tiny', quaternary: true, type: 'error' },
+              { default: () => [h(NIcon, { component: TrashOutline }), '删除'] }),
+            default: () => '确定删除该助手模板？',
           }),
-          default: () => '确定删除？'
-        }),
-      ]
-    })
+        ],
+      }),
   },
 ]
 
-onMounted(() => fetchList())
-
-async function fetchList() {
-  loading.value = true
-  try {
-    const res = await apiClient.get<ChatAssistantAdmin[]>('/admin/assistants')
-    list.value = res.data
-  } finally { loading.value = false }
-}
-
 function handleCreate() {
-  editing.value = { default_temperature: 0.3, default_max_tokens: 4096, icon: '🤖', color: '#4f8ef7', category: 'general' }
+  editing.value = {
+    avatar: '🤖', color: '#4f8ef7', category: 'general',
+    model_id: undefined, mcp_ids: [], skill_ids: [],
+    welcome_message: '你好，有什么可以帮你？', is_active: true,
+  }
   isEdit.value = false
   showEdit.value = true
 }
 
-function handleEdit(r: ChatAssistantAdmin) {
-  editing.value = { ...r }
+function handleEdit(r: AgentTemplate) {
+  editing.value = { ...r, mcp_ids: [...r.mcp_ids], skill_ids: [...r.skill_ids] }
   isEdit.value = true
   showEdit.value = true
 }
 
 async function handleSave() {
-  try {
-    if (isEdit.value) {
-      await apiClient.put(`/admin/assistants/${editing.value.assistant_id}`, editing.value)
-      message.success('更新成功')
-    } else {
-      await apiClient.post('/admin/assistants', editing.value)
-      message.success('创建成功')
-    }
+  if (!editing.value.name?.trim()) {
+    message.warning('请填写助手名称')
+    return
+  }
+  const saved = await store.upsertAgent(editing.value)
+  if (saved) {
+    message.success(isEdit.value ? '已更新' : '已创建')
     showEdit.value = false
-    fetchList()
-  } catch (e: any) { message.error(e?.response?.data?.detail || '操作失败') }
-}
-
-async function handleToggle(id: string) {
-  try { await apiClient.post(`/admin/assistants/${id}/toggle`); fetchList() }
-  catch (e: any) { message.error(e?.response?.data?.detail || '操作失败') }
-}
-
-async function handleSetDefault(id: string) {
-  try { await apiClient.post(`/admin/assistants/${id}/set-default`); message.success('已设为默认'); fetchList() }
-  catch (e: any) { message.error(e?.response?.data?.detail || '操作失败') }
+  } else {
+    message.error('保存失败，请检查后端接口')
+  }
 }
 
 async function handleDelete(id: string) {
-  try { await apiClient.delete(`/admin/assistants/${id}`); message.success('已删除'); fetchList() }
-  catch (e: any) { message.error(e?.response?.data?.detail || '删除失败') }
+  await store.deleteAgent(id)
+  message.success('已删除')
 }
+
+function openPreview(id: string) { previewId.value = id }
+const previewAgent = computed(() => store.getAgent(previewId.value || ''))
 </script>
 
 <template>
   <div class="resource-tab">
     <div class="tab-header">
+      <span class="tab-hint">编排 Agent 模板：定义角色设定，并挂载 MCP 服务与技能。</span>
       <NButton type="primary" size="small" @click="handleCreate">
         <template #icon><NIcon :component="CreateOutline" /></template>
         新建助手
       </NButton>
-      <NButton size="small" quaternary @click="fetchList">
-        <template #icon><NIcon :component="RefreshOutline" /></template>
-        刷新
-      </NButton>
     </div>
-    <NDataTable :columns="columns" :data="list" :loading="loading" :bordered="false" size="small" />
-    <NModal v-model:show="showEdit" preset="card" :title="isEdit ? '编辑助手' : '新建助手'" style="width: 560px">
-      <NForm label-placement="left" size="small">
-        <NFormItem label="助手ID"><NInput v-model:value="editing.assistant_id" :disabled="isEdit" placeholder="rna_seq_analyst" /></NFormItem>
-        <NFormItem label="名称"><NInput v-model:value="editing.name" /></NFormItem>
+    <NDataTable :columns="columns" :data="store.agents" :bordered="false" size="small" :row-key="(r: AgentTemplate) => r.id" />
+
+    <!-- 编辑/新建 -->
+    <NModal v-model:show="showEdit" preset="card" :title="isEdit ? '编辑助手模板' : '新建助手模板'" style="width: 760px">
+      <NForm label-placement="left" size="small" :label-width="92">
+        <NFormItem label="头像">
+          <NSpace align="center">
+            <NInput v-model:value="editing.avatar" placeholder="🤖" style="width: 80px" />
+            <span class="emoji-preview" :style="{ background: editing.color }">{{ editing.avatar }}</span>
+            <NColorPicker v-model:value="editing.color" size="small" :show-alpha="false" style="width: 120px" />
+          </NSpace>
+        </NFormItem>
+        <NFormItem label="名称"><NInput v-model:value="editing.name" placeholder="如：单细胞分析师" /></NFormItem>
         <NFormItem label="描述"><NInput v-model:value="editing.description" /></NFormItem>
-        <NFormItem label="系统提示词"><NInput v-model:value="editing.system_prompt" type="textarea" :autosize="{minRows:4,maxRows:10}" /></NFormItem>
-        <NFormItem label="图标"><NInput v-model:value="editing.icon" /></NFormItem>
-        <NFormItem label="颜色"><NInput v-model:value="editing.color" /></NFormItem>
-        <NFormItem label="分类"><NSelect v-model:value="editing.category" :options="categoryOptions" /></NFormItem>
-        <NFormItem label="Temperature"><NInputNumber v-model:value="editing.default_temperature" :min="0" :max="2" :step="0.1" /></NFormItem>
-        <NFormItem label="Max Tokens"><NInputNumber v-model:value="editing.default_max_tokens" :min="100" :max="32768" :step="100" /></NFormItem>
+        <NFormItem label="绑定模型配置">
+          <NSelect
+            v-model:value="editing.model_id"
+            :options="modelOptions"
+            placeholder="选择后端已配置的模型（决定 Base URL / API Key）"
+            clearable
+            filterable
+          />
+        </NFormItem>
+        <NFormItem label="分类">
+          <NSelect v-model:value="editing.category" :options="categoryOptions" />
+        </NFormItem>
+        <NFormItem label="欢迎语">
+          <NInput v-model:value="editing.welcome_message" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" />
+        </NFormItem>
+        <NFormItem label="系统设定">
+          <NInput v-model:value="editing.system_prompt" type="textarea" :autosize="{ minRows: 4, maxRows: 10 }" placeholder="System Prompt：角色、能力边界、输出风格…" />
+        </NFormItem>
+        <NFormItem label="挂载 MCP">
+          <NTransfer v-model:value="editing.mcp_ids" :options="mcpTransferOptions" source-filterable />
+        </NFormItem>
+        <NFormItem label="挂载技能">
+          <NTransfer v-model:value="editing.skill_ids" :options="skillTransferOptions" source-filterable />
+        </NFormItem>
       </NForm>
       <template #footer>
         <NSpace justify="end">
@@ -143,9 +179,39 @@ async function handleDelete(id: string) {
         </NSpace>
       </template>
     </NModal>
+
+    <!-- 预览能力 -->
+    <NModal :show="!!previewAgent" preset="card" :title="previewAgent ? `${previewAgent.avatar} ${previewAgent.name} · 能力预览` : ''" style="width: 520px" @update:show="previewId = null">
+      <template v-if="previewAgent">
+        <div class="preview-section">
+          <div class="preview-label">挂载 MCP（{{ previewAgent.mcp_ids.length }}）</div>
+          <NSpace size="small">
+            <NTag v-for="m in store.mcpsByIds(previewAgent.mcp_ids)" :key="m.id" type="info" round>{{ m.name }}</NTag>
+            <span v-if="!previewAgent.mcp_ids.length" class="empty">未挂载</span>
+          </NSpace>
+        </div>
+        <div class="preview-section">
+          <div class="preview-label">挂载技能（{{ previewAgent.skill_ids.length }}）</div>
+          <NSpace size="small">
+            <NTag v-for="s in store.skillsByIds(previewAgent.skill_ids)" :key="s.id" type="success" round>{{ s.icon }} {{ s.name }}</NTag>
+            <span v-if="!previewAgent.skill_ids.length" class="empty">未挂载</span>
+          </NSpace>
+        </div>
+        <div class="preview-section">
+          <div class="preview-label">系统设定</div>
+          <div class="preview-prompt">{{ previewAgent.system_prompt }}</div>
+        </div>
+      </template>
+    </NModal>
   </div>
 </template>
 
 <style scoped>
-.tab-header { display: flex; gap: 8px; margin-bottom: 12px; }
+.tab-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.tab-hint { font-size: 12px; color: var(--n-text-color-3, #999); }
+.emoji-preview { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; font-size: 18px; }
+.preview-section { margin-bottom: 16px; }
+.preview-label { font-size: 12px; color: #999; margin-bottom: 6px; }
+.preview-prompt { font-size: 12px; color: #555; background: rgba(0,0,0,0.03); padding: 10px; border-radius: 6px; white-space: pre-wrap; line-height: 1.6; }
+.empty { font-size: 12px; color: #bbb; }
 </style>

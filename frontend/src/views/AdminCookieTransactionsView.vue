@@ -5,12 +5,16 @@ import {
   NCard,
   NDataTable,
   NDatePicker,
+  NInput,
   NSelect,
   NSpace,
   NTag,
   useMessage,
 } from 'naive-ui'
 import { h, onMounted, ref, reactive } from 'vue'
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
 
 interface TxnRow {
   id: number
@@ -143,7 +147,14 @@ function resetFilters() {
   fetchData()
 }
 
-onMounted(fetchData)
+onMounted(() => {
+  // 接收跨页跳转带来的 user_id（来自「用户管理」→ 查看资产流水）
+  const q = route.query.user_id
+  if (q && typeof q === 'string') {
+    filters.user_id = q
+  }
+  fetchData()
+})
 </script>
 
 <template>
@@ -151,7 +162,13 @@ onMounted(fetchData)
     <h1 class="page-title">交易流水审计</h1>
     <NSpace vertical :size="24">
       <NCard title="筛选条件" :bordered="false" class="arco-card">
-        <NSpace :size="16" align="center">
+        <NSpace :size="16" align="center" wrap>
+          <NInput
+            v-model:value="filters.user_id"
+            placeholder="用户 ID（跨页跳转带入）"
+            clearable
+            style="width: 280px"
+          />
           <NSelect
             v-model:value="filters.txn_type"
             :options="txnTypeOptions"

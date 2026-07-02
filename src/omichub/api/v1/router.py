@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from omichub.api.v1 import (
+    agents,
     ai,
     auth,
     chat,
@@ -22,6 +23,7 @@ from omichub.api.v1 import (
     users,
 )
 from omichub.api.v1.admin import admin_cookies
+from omichub.api.v1.admin import agents as admin_agents
 from omichub.api.v1.admin import ai_providers as admin_ai_providers
 from omichub.api.v1.admin import assistants as admin_assistants
 from omichub.api.v1.admin import skills as admin_skills
@@ -51,6 +53,10 @@ api_router.include_router(admin_skills.router, prefix="/admin/skills", tags=["Ad
 api_router.include_router(
     admin_assistants.router, prefix="/admin/assistants", tags=["Admin-Assistants"]
 )
+api_router.include_router(
+    admin_agents.router, prefix="/admin/agents", tags=["Admin-Agents"]
+)
+api_router.include_router(agents.router, prefix="/agents", tags=["Agents"])
 api_router.include_router(ai.router, prefix="/ai", tags=["AI Copilot"])
 api_router.include_router(chat.router, prefix="/chat", tags=["AI Chat"])
 api_router.include_router(llm.router, prefix="/llm", tags=["LLM"])

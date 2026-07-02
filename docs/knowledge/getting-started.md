@@ -1,5 +1,7 @@
 # 快速入门
 
+
+
 欢迎使用 OmicHub 实验室知识库！
 
 ## 什么是 OmicHub
@@ -7,6 +9,7 @@
 OmicHub 是面向生命科学研究团队的私有化多组学分析平台，整合 RNA-seq、ATAC-seq、ChIP-seq、单细胞测序、全基因组测序等主流分析流程。
 
 <img src="./figure/c_52.jpg" alt="图片描述">
+<img src="./figure/0R3A1502.jpg" alt="图片描述">
 
 ## 首次使用流程
 

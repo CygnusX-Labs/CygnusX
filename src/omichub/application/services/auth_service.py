@@ -14,6 +14,7 @@ from omichub.core.exceptions import (
     AuthenticationError,
     ConflictError,
     NotFoundError,
+    OmicHubError,
 )
 from omichub.core.security import (
     create_access_token,
@@ -88,7 +89,8 @@ class AuthService:
         user = User(
             username=req.username,
             email=req.email,
-            hashed_password=hashed_pwd
+            hashed_password=hashed_pwd,
+            lab_group=req.lab_group,
         )
         user.status = UserStatus.PENDING
 
@@ -102,7 +104,14 @@ class AuthService:
         is_first_login 在更新 last_login_at 之前判定（为 None 即首次）。
         """
         # 获取用户
-        user = await self.user_repo.get_by_username(username)
+        # 防御性捕获：DB 层异常（缺列、连接失败等）不应冒泡成 500 后被前端误判为
+        # "密码错误"。此处显式捕获 SQLAlchemyError，记录关键日志并返回通用 500 提示，
+        # 让运维一眼看出是系统故障而非认证失败。
+        try:
+            user = await self.user_repo.get_by_username(username)
+        except Exception as exc:
+            logging.critical(f"Database error during login (user='{username}'): {exc}")
+            raise OmicHubError("系统内部错误，请联系管理员")
         if not user:
             raise AuthenticationError("用户名或密码错误")
 

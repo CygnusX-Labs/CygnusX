@@ -23,12 +23,16 @@ class TaskDomainService:
         parameters: dict,
         execution_mode: ExecutionMode = ExecutionMode.LOCAL,
         sample_count: int = 0,
+        task_id: UUID | None = None,
     ) -> Task:
-        """提交新任务：创建聚合根并持久化"""
+        """提交新任务：创建聚合根并持久化
+
+        task_id 可选：调用方预生成 id 用于工作目录路径时传入，否则自动生成。
+        """
         from uuid import uuid4
 
         task = Task(
-            id=uuid4(),
+            id=task_id or uuid4(),
             flow_id=flow_id,
             user_id=user_id,
             name=name,

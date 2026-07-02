@@ -38,6 +38,14 @@ class SqlAlchemyMCPServerRepository(IMCPServerRepository):
         result = await self._session.execute(query)
         return [self._to_entity(m) for m in result.scalars().all()]
 
+    async def get_by_ids(self, ids: list[UUID]) -> list[MCPServer]:
+        if not ids:
+            return []
+        result = await self._session.execute(
+            select(MCPServerModel).where(MCPServerModel.id.in_(ids))
+        )
+        return [self._to_entity(m) for m in result.scalars().all()]
+
     async def save(self, server: MCPServer) -> MCPServer:
         model = await self._session.get(MCPServerModel, server.id)
         if model is None:

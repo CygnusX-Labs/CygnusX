@@ -36,6 +36,7 @@ services:
       - AL_API_KEY=${AL_API_KEY}
       - ARK_API_KEY=${ARK_API_KEY}
       - HOME=/tmp                          # uid 1000 无 passwd 条目，显式 HOME 防 expanduser 失败
+      - RUN_MIGRATIONS=1                   # 容器启动时由 entrypoint 自动跑 alembic upgrade head
     depends_on:
       db:
         condition: service_healthy
@@ -46,13 +47,18 @@ services:
       - ../../flows:/app/flows:ro  # 流程 YAML 配置（热重载）
       - ../../docs:/app/docs  # 知识库文档（meta.yaml + *.md，在线编辑与图片上传需要可写）
       - ../../data:/app/data:ro  # AI Provider YAML 配置（热重载）
+      - ../../alembic:/app/alembic:ro  # 迁移脚本热同步（容器内可见，免重建镜像）
+      - ./entrypoint.sh:/app/entrypoint.sh:ro  # 启动入口：先迁移后启动
       - /data/omichub:/data/omichub  # 任务数据（与独立 worker 栈共享同一宿主目录）
     networks:
       - app_net
       - data_net
       - omichub_net        # 跨栈外部网络：与独立 worker 栈（docker-compose.worker.yml）互通
+    # 启动入口：先跑 alembic upgrade head（保证 schema 与代码同步），再启动 uvicorn。
+    # 历史教训：曾因迁移未进容器 + create_all 不补字段，导致 users.storage_quota 缺列引发 500。
+    entrypoint: ["/bin/sh", "/app/entrypoint.sh"]
     # 生产模式启动：多 worker + 关闭热重载（避免 watchdog 扫描 src 的首次加载开销）
-    command: uvicorn omichub.main:app --host 0.0.0.0 --port 8000 --workers 2
+    command: ["uvicorn", "omichub.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
 
   # ===== Celery Beat 定时器（留在主栈，单实例） =====
   # 注：计算型 worker 已拆分至独立编排栈 deploy/docker/docker-compose.worker.yml，
@@ -76,6 +82,7 @@ services:
       - web                  # worker 已迁独立栈，beat 仅需主栈启动顺序保证
     volumes:
       - ../../src:/app/src:ro  # 开发环境热重载
+      - ../../alembic:/app/alembic:ro  # 迁移脚本（与 web 一致，便于排障时 exec alembic）
     networks:
       - app_net
       - data_net

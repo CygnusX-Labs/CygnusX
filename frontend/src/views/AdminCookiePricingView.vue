@@ -22,7 +22,9 @@ const editForm = ref<any>({
   resource_type: '',
   flow_category: '',
   base_cost: 1,
-  unit: 'per_task',
+  per_sample_cost: 0,
+  per_comparison_cost: 0,
+  unit: 'per_sample',
   priority: 0,
   description: '',
   effective_until: null,
@@ -41,6 +43,8 @@ const unitOptions = [
   { label: '每GB时', value: 'per_gb_hour' },
   { label: '每次会话', value: 'per_session' },
   { label: '每用户', value: 'per_user' },
+  { label: '每样本', value: 'per_sample' },
+  { label: '每比较组', value: 'per_comparison' },
 ]
 
 const columns = [
@@ -49,6 +53,8 @@ const columns = [
   { title: '流程类别', key: 'flow_category' },
   { title: '资源类型', key: 'resource_type' },
   { title: '基础费用', key: 'base_cost', render: (r: any) => Number(r.base_cost).toFixed(2) },
+  { title: '单样本费用', key: 'per_sample_cost', render: (r: any) => Number(r.per_sample_cost || 0).toFixed(2) },
+  { title: '每组比较费用', key: 'per_comparison_cost', render: (r: any) => Number(r.per_comparison_cost || 0).toFixed(2) },
   { title: '单位', key: 'unit' },
   { title: '优先级', key: 'priority' },
   {
@@ -82,7 +88,7 @@ function openEdit(row?: any) {
   if (row) {
     editForm.value = { ...row }
   } else {
-    editForm.value = { pricing_type: 'task_type', resource_type: '', flow_category: '', base_cost: 1, unit: 'per_task', priority: 0, description: '', effective_until: null }
+    editForm.value = { pricing_type: 'task_type', resource_type: '', flow_category: '', base_cost: 1, per_sample_cost: 0, per_comparison_cost: 0, unit: 'per_sample', priority: 0, description: '', effective_until: null }
   }
   showEdit.value = true
 }
@@ -130,6 +136,10 @@ onMounted(fetchPricing)
           <NInput v-model:value="editForm.resource_type" placeholder="如 cpu_core_per_hour" />
           <div>基础费用:</div>
           <NInputNumber v-model:value="editForm.base_cost" :step="0.1" :min="0" style="width: 100%" />
+          <div>单样本费用:</div>
+          <NInputNumber v-model:value="editForm.per_sample_cost" :step="0.1" :min="0" style="width: 100%" />
+          <div>每组比较费用:</div>
+          <NInputNumber v-model:value="editForm.per_comparison_cost" :step="0.1" :min="0" style="width: 100%" />
           <div>计价单位:</div>
           <NSelect v-model:value="editForm.unit" :options="unitOptions" />
           <div>优先级 (数字越大越优先):</div>

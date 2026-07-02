@@ -13,24 +13,37 @@ const props = withDefaults(
   defineProps<{
     /** 弹窗显隐 */
     show: boolean
+    /** 弹窗主标题（小字说明，置于文案上方）；空则不渲染标题行 */
+    title?: string
     /** 关闭注册时的提示文案（来自 YAML registration.disabled_message）；未传时用默认兜底 */
     message?: string
     /** 管理员联系方式（邮箱）；空则不显示邮箱胶囊 */
     contact?: string
+    /** Lottie 动画文件名（位于 public/lottie/ 下）；默认 cat.json */
+    lottieName?: string
+    /** 底部确认按钮文案；默认“我知道了” */
+    buttonText?: string
   }>(),
   {
+    title: '',
     message: '叮咚！自助注册通道暂时休息啦～(≧▽≦) 想要加入平台的话，请呼叫管理员为你创建专属账号呀！',
     contact: '',
+    lottieName: 'cat.json',
+    buttonText: '我知道了',
   },
 )
 
 const emit = defineEmits<{
   'update:show': [value: boolean]
+  /** 点击底部确认按钮时触发（区别于蒙层关闭：仅按钮点击才会计数/触发彩蛋） */
+  confirm: []
 }>()
 
-// cat.json 静态路径：public/lottie/cat.json → 访问 URL /lottie/cat.json
-// 用 BASE_URL 拼接，兼容部署到子路径；改 cat.json 后刷新即生效，无需重新 build
-const lottieUrl = computed(() => `${import.meta.env.BASE_URL}lottie/cat.json`)
+// cat.json 静态路径：public/lottie/{lottieName} → 访问 URL /lottie/{lottieName}
+// 用 BASE_URL 拼接，兼容部署到子路径；改 json 后刷新即生效，无需重新 build
+const lottieUrl = computed(
+  () => `${import.meta.env.BASE_URL}lottie/${props.lottieName}`,
+)
 
 // 动画尺寸：放大到 140px，居中显示
 const lottieSize = 140
@@ -85,6 +98,12 @@ function handleUpdateShow(v: boolean) {
 function close() {
   emit('update:show', false)
 }
+/** 点击确认按钮：先发 confirm（供父组件计数/触发彩蛋），再关闭。
+ *  蒙层关闭只走 handleUpdateShow，不会触发 confirm。 */
+function handleConfirm() {
+  emit('confirm')
+  close()
+}
 </script>
 
 <template>
@@ -109,6 +128,9 @@ function close() {
         />
         <div v-else class="reg-lottie-fallback" aria-hidden="true">🐱</div>
       </div>
+
+      <!-- 标题（可选，账户未激活等场景使用） -->
+      <p v-if="title" class="reg-title">{{ title }}</p>
 
       <!-- 提示文案（居中 / 行高 1.6 / 深灰） -->
       <p class="reg-message">{{ message }}</p>
@@ -139,8 +161,8 @@ function close() {
       </div>
 
       <!-- 底部按钮（居中） -->
-      <NButton type="primary" class="reg-confirm-btn" @click="close">
-        我知道了
+      <NButton type="primary" class="reg-confirm-btn" @click="handleConfirm">
+        {{ buttonText }}
       </NButton>
     </div>
   </NModal>
@@ -148,7 +170,7 @@ function close() {
 
 <style scoped>
 .reg-modal {
-  width: 360px;
+  width: 400px;
   max-width: calc(100vw - 48px);
   /* Glassmorphism：半透明白底，透出背后登录卡片与渐变 */
   background-color: rgba(255, 255, 255, 0.75);
@@ -192,6 +214,16 @@ function close() {
   50% {
     transform: translateY(-6px);
   }
+}
+
+/* ===== 标题（居中 / 加粗 / 深色，账户未激活等场景） ===== */
+.reg-title {
+  text-align: center;
+  font-size: 17px;
+  font-weight: 600;
+  color: #1d2129;
+  margin: 0 0 8px;
+  word-break: break-word;
 }
 
 /* ===== 文案（居中 / 行高 1.6 / 深灰 #4B5563） ===== */

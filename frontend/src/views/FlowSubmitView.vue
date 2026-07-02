@@ -4,20 +4,24 @@ import type { Task } from '@/types'
 import type { CostEstimate } from '@/types'
 import { apiClient } from '@/api'
 import DynamicForm from '@/components/dynamic-form/DynamicForm.vue'
+import FilePickerModal from '@/components/FilePickerModal.vue'
 import {
   NAlert,
   NButton,
   NCard,
   NDivider,
+  NIcon,
   NInput,
   NSpin,
   NSpace,
   NTable,
   NTag,
 } from 'naive-ui'
+import { FolderOpenOutline, LogoGithub } from '@vicons/ionicons5'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCookieStore } from '@/stores/cookie'
+import type { FilePickerItem } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -29,6 +33,11 @@ const loading = ref(false)
 const submitting = ref(false)
 const error = ref('')
 const taskName = ref('')
+
+// 文件选择器状态：当前正在编辑的单元格 { rowIndex, colName }
+const pickerVisible = ref(false)
+const pickerFileType = ref<string | undefined>(undefined)
+const pickerTarget = ref<{ rowIndex: number; colName: string } | null>(null)
 
 const parameters = computed(() => flow.value?.parameters || [])
 const sampleSheetConfig = computed(() => flow.value?.sample_sheet)
@@ -47,7 +56,12 @@ async function fetchEstimate() {
   if (!flowId.value) return
   estimating.value = true
   try {
-    costEstimate.value = await cookieStore.estimateCost(flowId.value)
+    const comparisons = buildComparisons() || []
+    costEstimate.value = await cookieStore.estimateCost(
+      flowId.value,
+      sampleSheet.value.length,
+      comparisons.length,
+    )
   } catch {
     costEstimate.value = null
   } finally {
@@ -60,9 +74,10 @@ function debouncedEstimate() {
   estimateTimer = setTimeout(fetchEstimate, 500)
 }
 
-// flow 加载后 + 参数变更时防抖预估
+// flow 加载后 + 参数/样本表变更时防抖预估
 watch(flowId, fetchEstimate, { immediate: false })
 watch(() => formValues.value, debouncedEstimate, { deep: true })
+watch(() => sampleSheet.value, debouncedEstimate, { deep: true })
 
 async function fetchFlow() {
   loading.value = true
@@ -96,6 +111,37 @@ function removeSampleRow(index: number) {
   if (sampleSheet.value.length > 1) {
     sampleSheet.value.splice(index, 1)
   }
+}
+
+/** 判断列是否为文件路径列（fastq/bam/vc/file 等） */
+function isFileColumn(colName: string): boolean {
+  const n = (colName || '').toLowerCase()
+  return ['fastq', 'fastq_1', 'fastq_2', 'fq', 'bam', 'vcf', 'file', 'filepath', 'r1', 'r2'].some(
+    (k) => n.includes(k),
+  )
+}
+
+/** 打开文件选择器，记录当前编辑的单元格 */
+function openPicker(rowIndex: number, colName: string) {
+  // 根据列名推断文件类型过滤
+  const n = colName.toLowerCase()
+  let ft: string | undefined
+  if (n.includes('fastq') || n.includes('fq') || n.includes('r1') || n.includes('r2')) ft = 'fastq'
+  else if (n.includes('bam')) ft = 'bam'
+  else if (n.includes('vcf')) ft = 'vcf'
+  pickerFileType.value = ft
+  pickerTarget.value = { rowIndex, colName }
+  pickerVisible.value = true
+}
+
+/** 选择器确认：回填绝对路径到样本表单元格 */
+function handlePickerSelect(items: FilePickerItem[]) {
+  if (!pickerTarget.value) return
+  const { rowIndex, colName } = pickerTarget.value
+  if (items.length > 0) {
+    sampleSheet.value[rowIndex][colName] = items[0].abs_path
+  }
+  pickerTarget.value = null
 }
 
 function buildComparisons(): Record<string, string>[] | undefined {
@@ -143,7 +189,19 @@ onMounted(fetchFlow)
 
 <template>
   <div class="flow-submit-view">
-    <h2>{{ flow?.meta.name || '提交任务' }}</h2>
+    <div class="submit-header">
+      <h2>{{ flow?.meta.name || '提交任务' }}</h2>
+      <a
+        v-if="flow?.meta.docs_url"
+        :href="flow.meta.docs_url"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="github-link"
+      >
+        <NIcon :size="18"><LogoGithub /></NIcon>
+        查看源码
+      </a>
+    </div>
     <NAlert v-if="error" type="error" :title="error" />
 
     <NSpin :show="loading">
@@ -168,7 +226,18 @@ onMounted(fetchFlow)
           <tbody>
             <tr v-for="(row, index) in sampleSheet" :key="index">
               <td v-for="col in sampleSheetConfig.columns" :key="col.name">
-                <NInput v-model:value="row[col.name]" />
+                <div class="file-col-cell">
+                  <NInput v-model:value="row[col.name]" :placeholder="isFileColumn(col.name) ? '可手填或点右侧选择' : ''" />
+                  <NButton
+                    v-if="isFileColumn(col.name)"
+                    size="small"
+                    quaternary
+                    title="从数据管理选择文件"
+                    @click="openPicker(index, col.name)"
+                  >
+                    <template #icon><NIcon><FolderOpenOutline /></NIcon></template>
+                  </NButton>
+                </div>
               </td>
               <td>
                 <NButton text type="error" @click="removeSampleRow(index)">删除</NButton>
@@ -205,6 +274,13 @@ onMounted(fetchFlow)
         提交任务
       </NButton>
     </NSpin>
+
+    <!-- 文件选择器：样本表文件列从用户已上传数据选 -->
+    <FilePickerModal
+      v-model:show="pickerVisible"
+      :file-type="pickerFileType"
+      @select="handlePickerSelect"
+    />
   </div>
 </template>
 
@@ -215,10 +291,43 @@ onMounted(fetchFlow)
   flex-direction: column;
   gap: 16px;
 }
+.submit-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.submit-header h2 {
+  margin: 0;
+}
+.github-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 8px;
+  background: var(--neutral-hover, #f5f5f5);
+  color: var(--neutral-text-2, #666);
+  font-size: 13px;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.github-link:hover {
+  color: var(--neutral-text-1, #333);
+  background: var(--neutral-border, #e8e8e8);
+}
 .sample-card {
   margin-top: 16px;
 }
 .add-row-btn {
   margin-top: 12px;
+}
+.file-col-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 240px;
+}
+.file-col-cell :deep(.n-input) {
+  flex: 1;
 }
 </style>

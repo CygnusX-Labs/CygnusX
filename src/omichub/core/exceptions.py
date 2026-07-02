@@ -60,3 +60,10 @@ class BusinessError(OmicHubError):
 class InsufficientBalanceError(BusinessError):
     status_code = 402
     detail = "Insufficient cookie balance"
+
+
+class QuotaExceededError(OmicHubError):
+    """存储配额超限 — 上传前置校验拦截"""
+
+    status_code = 403
+    detail = "存储空间不足"

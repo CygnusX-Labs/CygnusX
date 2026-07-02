@@ -9,21 +9,19 @@ import {
   RocketOutline, EyeOutline,
   RefreshOutline, TrashOutline,
   CloseOutline, SparklesOutline,
+  ScanOutline, GlobeOutline, SearchOutline, ColorPaletteOutline,
 } from '@vicons/ionicons5'
 import axios from 'axios'
 import apiClient from '@/api/client'
 import type { Task } from '@/types'
 import type { StatsOverview } from '@/types/stats'
 import { useAuthStore } from '@/stores/auth'
-import { useAdminWelcome } from '@/composables/useAdminWelcome'
 import TrendChart from '@/components/dashboard/TrendChart.vue'
 import QuickStartSteps from '@/components/dashboard/QuickStartSteps.vue'
 import AdminStatsPanel from '@/components/dashboard/AdminStatsPanel.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
-// 管理员登录欢迎小彩蛋：内部判断角色 + 3s 超时兜底，一次会话只弹一次
-const { triggerAdminWelcome } = useAdminWelcome()
 
 const healthStatus = ref<string>('检测中...')
 const healthOk = ref(false)
@@ -37,9 +35,6 @@ const loadingTasks = ref(false)
 const bannerClosed = ref(localStorage.getItem('omichub:dashboardBannerClosed') === 'true')
 
 onMounted(async () => {
-  // 管理员欢迎彩蛋：后台异步拉取文案，不阻塞主流程；失败自动回退默认文案
-  triggerAdminWelcome()
-
   // 健康检查
   try {
     const res = await axios.get('/health')
@@ -225,6 +220,54 @@ const columns: DataTableColumns<Task> = [
 
       <!-- 右侧趋势图（真实接口 + 7/30 天切换） -->
       <TrendChart />
+    </section>
+
+    <!-- 生信工具箱快捷入口 -->
+    <section class="arco-card tools-entry animate-fade-in-up delay-100">
+      <div class="arco-card-header">
+        <h3 class="arco-card-title">生信工具箱</h3>
+        <NButton text size="small" class="view-all-btn" @click="router.push('/tools')">
+          查看全部 →
+        </NButton>
+      </div>
+      <div class="tools-entry-grid">
+        <div class="tool-entry-card" @click="router.push('/tools/fastq-qc')">
+          <div class="tool-entry-icon" style="background: linear-gradient(135deg, #165DFF, #6B8DD6)">
+            <NIcon :size="22" color="#fff"><ScanOutline /></NIcon>
+          </div>
+          <div class="tool-entry-info">
+            <span class="tool-entry-name">FASTQ 质控</span>
+            <span class="tool-entry-desc">测序数据质量评估与清洗</span>
+          </div>
+        </div>
+        <div class="tool-entry-card" @click="router.push('/tools/igv')">
+          <div class="tool-entry-icon" style="background: linear-gradient(135deg, #00B42A, #23C372)">
+            <NIcon :size="22" color="#fff"><GlobeOutline /></NIcon>
+          </div>
+          <div class="tool-entry-info">
+            <span class="tool-entry-name">IGV 浏览器</span>
+            <span class="tool-entry-desc">基因组数据在线可视化</span>
+          </div>
+        </div>
+        <div class="tool-entry-card" @click="router.push('/tools/blast')">
+          <div class="tool-entry-icon" style="background: linear-gradient(135deg, #FF7D00, #FF9A2E)">
+            <NIcon :size="22" color="#fff"><SearchOutline /></NIcon>
+          </div>
+          <div class="tool-entry-info">
+            <span class="tool-entry-name">序列检索</span>
+            <span class="tool-entry-desc">BLAST 本地序列比对</span>
+          </div>
+        </div>
+        <div class="tool-entry-card" @click="router.push('/tools/plot')">
+          <div class="tool-entry-icon" style="background: linear-gradient(135deg, #8E54E9, #B96CD4)">
+            <NIcon :size="22" color="#fff"><ColorPaletteOutline /></NIcon>
+          </div>
+          <div class="tool-entry-info">
+            <span class="tool-entry-name">绘图工坊</span>
+            <span class="tool-entry-desc">组学数据交互式可视化</span>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- 管理员全平台监控态势（仅管理员可见） -->
@@ -482,10 +525,64 @@ const columns: DataTableColumns<Task> = [
   margin: 0 0 12px;
 }
 
+/* 生信工具箱快捷入口 */
+.tools-entry {
+  margin-bottom: 24px;
+}
+.tools-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.tool-entry-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--neutral-border, #e5e6eb);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.tool-entry-card:hover {
+  border-color: var(--arco-primary, #165DFF);
+  background: rgba(22, 93, 255, 0.03);
+}
+.tool-entry-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.tool-entry-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.tool-entry-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--neutral-text-1, #1d2129);
+}
+.tool-entry-desc {
+  font-size: 11px;
+  color: var(--neutral-text-3, #86909c);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* 响应式 */
 @media (max-width: 1024px) {
   .overview-grid {
     grid-template-columns: 1fr;
+  }
+  .tools-entry-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
@@ -500,6 +597,10 @@ const columns: DataTableColumns<Task> = [
 
   .banner-btn {
     margin-left: auto;
+  }
+
+  .tools-entry-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

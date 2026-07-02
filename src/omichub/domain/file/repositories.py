@@ -1,33 +1,68 @@
-"""文件域仓储接口"""
+"""文件域仓储接口
+
+所有方法首参 user_id，查询统一带 WHERE user_id = ?，
+在数据访问层彻底杜绝跨租户水平越权。
+"""
 
 from typing import Protocol
 from uuid import UUID
 
-from omichub.domain.file.entities import DataFile, ResultArchive, Sample
+from omichub.domain.file.entities import DataFile, Directory, ResultArchive, Sample, UploadSession
+
+
+class IFileRepository(Protocol):
+    """文件记录仓储接口"""
+
+    async def get_by_id(self, user_id: UUID, file_id: UUID) -> DataFile | None: ...
+
+    async def list_by_user(
+        self,
+        user_id: UUID,
+        *,
+        status: str | None = "active",
+        order_by: str = "created_at",
+        desc: bool = True,
+        directory: str | None = None,
+    ) -> list[DataFile]: ...
+
+    async def save(self, file: DataFile) -> DataFile: ...
+    async def update_status(self, user_id: UUID, file_id: UUID, status: str) -> bool: ...
+
+    async def delete(self, user_id: UUID, file_id: UUID) -> bool: ...
+
+    async def sum_size(self, user_id: UUID) -> int: ...
+
+
+class IUploadSessionRepository(Protocol):
+    """分块上传会话仓储接口"""
+
+    async def get_by_id(self, user_id: UUID, session_id: UUID) -> UploadSession | None: ...
+
+    async def find_completed(
+        self, user_id: UUID, file_name: str, total_size: int
+    ) -> UploadSession | None:
+        """秒传命中：同名同大小且已 completed"""
+        ...
+
+    async def save(self, session: UploadSession) -> UploadSession: ...
+
+    async def add_chunk(self, user_id: UUID, session_id: UUID, chunk: dict) -> UploadSession | None: ...
+
+    async def update_status(self, user_id: UUID, session_id: UUID, status: str) -> bool: ...
+
+    async def delete(self, user_id: UUID, session_id: UUID) -> bool: ...
 
 
 class ISampleRepository(Protocol):
     """样本仓储接口"""
 
-    async def get_by_id(self, sample_id: UUID) -> Sample | None: ...
+    async def get_by_id(self, user_id: UUID, sample_id: UUID) -> Sample | None: ...
 
     async def list_by_user(self, user_id: UUID) -> list[Sample]: ...
 
     async def save(self, sample: Sample) -> Sample: ...
 
-    async def delete(self, sample_id: UUID) -> bool: ...
-
-
-class IFileRepository(Protocol):
-    """文件仓储接口"""
-
-    async def get_by_id(self, file_id: UUID) -> DataFile | None: ...
-
-    async def save(self, file: DataFile) -> DataFile: ...
-
-    async def delete(self, file_id: UUID) -> bool: ...
-
-    async def calculate_checksum(self, path: str) -> str: ...
+    async def delete(self, user_id: UUID, sample_id: UUID) -> bool: ...
 
 
 class IResultArchiveRepository(Protocol):
@@ -38,3 +73,15 @@ class IResultArchiveRepository(Protocol):
     async def save(self, archive: ResultArchive) -> ResultArchive: ...
 
     async def cleanup_expired(self) -> int: ...
+
+
+class IDirectoryRepository(Protocol):
+    """用户目录仓储接口"""
+
+    async def list_by_user(self, user_id: UUID) -> list[Directory]: ...
+
+    async def get_by_path(self, user_id: UUID, path: str) -> Directory | None: ...
+
+    async def save(self, directory: Directory) -> Directory: ...
+
+    async def delete(self, user_id: UUID, path: str) -> bool: ...

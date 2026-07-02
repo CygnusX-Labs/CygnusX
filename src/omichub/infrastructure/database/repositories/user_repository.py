@@ -31,6 +31,10 @@ class SqlAlchemyUserRepository(IUserRepository):
             avatar_url=db_user.avatar_url,
             preferences=db_user.preferences or {},
             last_login_at=db_user.last_login_at,
+            storage_quota=db_user.storage_quota,
+            used_storage=db_user.used_storage,
+            admin_note=db_user.admin_note,
+            lab_group=db_user.lab_group,
             created_at=db_user.created_at,
             updated_at=db_user.updated_at,
         )
@@ -91,6 +95,10 @@ class SqlAlchemyUserRepository(IUserRepository):
             db_user.avatar_url = user.avatar_url
             db_user.preferences = user.preferences
             db_user.last_login_at = user.last_login_at
+            db_user.storage_quota = user.storage_quota
+            db_user.used_storage = user.used_storage
+            db_user.admin_note = user.admin_note
+            db_user.lab_group = user.lab_group
         else:
             # 创建新用户
             db_user = UserModel(
@@ -104,12 +112,35 @@ class SqlAlchemyUserRepository(IUserRepository):
                 avatar_url=user.avatar_url,
                 preferences=user.preferences,
                 last_login_at=user.last_login_at,
+                storage_quota=user.storage_quota,
+                used_storage=user.used_storage,
+                admin_note=user.admin_note,
+                lab_group=user.lab_group,
             )
             self.session.add(db_user)
 
         await self.session.commit()
         await self.session.refresh(db_user)
         return self._to_domain(db_user)
+
+    async def add_used_storage(self, user_id: uuid.UUID, delta: int) -> int:
+        """原子累加用户已用空间（并发安全，防双计/漏计）。
+
+        delta 为正表示增加（上传完成），为负表示扣减（删除文件）。
+        返回累加后的 used_storage 值。
+        """
+        from sqlalchemy import update
+
+        stmt = (
+            update(UserModel)
+            .where(UserModel.id == user_id)
+            .values(used_storage=UserModel.used_storage + delta)
+            .returning(UserModel.used_storage)
+        )
+        result = await self.session.execute(stmt)
+        new_value = int(result.scalar_one())
+        await self.session.commit()
+        return new_value
 
     async def delete(self, user_id: uuid.UUID) -> bool:
         """删除用户"""

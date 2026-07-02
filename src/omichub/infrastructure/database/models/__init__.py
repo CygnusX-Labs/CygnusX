@@ -4,8 +4,10 @@
 导入即注册到 Base.metadata，供 create_all / alembic 使用。
 """
 
+from omichub.infrastructure.database.models.agent import AgentTemplateModel
 from omichub.infrastructure.database.models.ai import ConversationModel, MessageModel
 from omichub.infrastructure.database.models.ai_provider import AIProviderConfigModel
+from omichub.infrastructure.database.models.audit_log import AuditLogModel
 from omichub.infrastructure.database.models.chat import (
     ChatAssistantModel,
     ChatMessageModel,
@@ -18,6 +20,12 @@ from omichub.infrastructure.database.models.cookie import (
     CookieTransactionModel,
     LedgerEntryModel,
 )
+from omichub.infrastructure.database.models.file import (
+    DirectoryModel,
+    FileRecordModel,
+    SampleModel,
+    UploadSessionModel,
+)
 from omichub.infrastructure.database.models.mcp import MCPServerModel
 from omichub.infrastructure.database.models.notification import NotificationModel
 from omichub.infrastructure.database.models.sandbox import SandboxSessionModel
@@ -27,6 +35,7 @@ from omichub.infrastructure.database.models.task import TaskModel
 from omichub.infrastructure.database.models.user import UserModel, WorkspaceModel
 
 __all__ = [
+    "AgentTemplateModel",
     "UserModel",
     "WorkspaceModel",
     "TaskModel",
@@ -41,9 +50,14 @@ __all__ = [
     "ChatMessageModel",
     "ChatAssistantModel",
     "AIProviderConfigModel",
+    "AuditLogModel",
     "MCPServerModel",
     "SandboxSessionModel",
     "NotificationModel",
     "SiteSettingModel",
     "SkillModel",
+    "FileRecordModel",
+    "UploadSessionModel",
+    "SampleModel",
+    "DirectoryModel",
 ]

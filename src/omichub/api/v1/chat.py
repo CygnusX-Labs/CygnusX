@@ -48,22 +48,37 @@ async def chat_stream(
 ) -> StreamingResponse:
     """SSE 流式聊天接口
 
-    请求体: {"messages": [{"role":"user","content":"hi"}], "model_id": "uuid", ...}
+    - 传 ``agent_id``：走 Agent 调度中枢（组装模型/系统词/MCP 工具，含 tool_call 闭环）
+    - 否则按 ``model_id`` 直连模型
+
     响应: data: {"type":"text","content":"你"}\\n\\n ...
+    事件类型: text / tool_call / tool_result / error / done
     """
 
     async def generate_sse():
         service = ChatService(db)
-        async for chunk in service.stream_chat(
-            user_id=current_user_id,
-            messages=request.messages,
-            model_id=request.model_id,
-            session_id=request.session_id,
-            assistant_id=request.assistant_id,
-            system_prompt=request.system_prompt,
-            temperature=request.temperature,
-            max_tokens=request.max_tokens,
-        ):
+        if request.agent_id:
+            gen = service.stream_agent_chat(
+                user_id=current_user_id,
+                agent_id=request.agent_id,
+                messages=request.messages,
+                session_id=request.session_id,
+            )
+        else:
+            if not request.model_id:
+                yield f"data: {json.dumps({'type': 'error', 'content': 'agent_id 与 model_id 至少传一个'}, ensure_ascii=False)}\n\n"
+                return
+            gen = service.stream_chat(
+                user_id=current_user_id,
+                messages=request.messages,
+                model_id=request.model_id,
+                session_id=request.session_id,
+                assistant_id=request.assistant_id,
+                system_prompt=request.system_prompt,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+            )
+        async for chunk in gen:
             data: dict = {"type": chunk.type, "content": chunk.content}
             if chunk.metadata:
                 data.update(chunk.metadata)
@@ -145,7 +160,7 @@ async def get_messages(
         from omichub.core.exceptions import NotFoundError
 
         raise NotFoundError("会话不存在或无权访问")
-    return await service.get_messages(session_id)
+    return await service.get_messages(session_id, current_user_id)
 
 
 @router.put("/sessions/{session_id}/title", summary="更新标题")

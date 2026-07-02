@@ -71,13 +71,51 @@ export interface QuickPrompt {
   category: string
 }
 
+// ===== 模型能力 =====
+export type Capability = 'longContext' | 'code' | 'multimodal' | 'bio'
+
+// ===== 模型类型 =====
+export type ModelType = 'general' | 'bio'
+
 // ===== 模型选项 =====
 export interface ModelOption {
   id: string
   name: string
   description: string
   provider: string
+  /** 推断出的能力标签 */
+  capabilities?: Capability[]
+  /** 通用 / 生信专用 */
+  modelType?: ModelType
+  /** 上下文窗口大小（k） */
+  contextWindow?: number
 }
+
+// ===== 消息操作类型 =====
+export type MessageAction = 'copy' | 'regenerate' | 'retry' | 'translate' | 'delete'
+
+// ===== 复制模式 =====
+export type CopyMode = 'plain' | 'markdown' | 'citation'
+
+// ===== 生信提示词模板 =====
+export interface BioPromptTemplate {
+  id: string
+  title: string
+  description: string
+  category: string
+  /** Markdown 内容，可含 {{param}} 占位符 */
+  content: string
+}
+
+// ===== 对话级设置 =====
+export interface ConversationSettings {
+  temperature: number
+  maxTokens: number
+  contextLength: number
+}
+
+// ===== 系统状态 =====
+export type SystemStatus = 'ready' | 'thinking' | 'toolCalling' | 'webSearching'
 
 // ===== 插件选项 =====
 export interface PluginOption {

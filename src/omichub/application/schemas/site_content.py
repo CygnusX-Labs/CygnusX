@@ -45,10 +45,19 @@ class ActivationContent(OmicsHubBaseSchema):
     用户登录未激活账户时（auth_service 抛“账户未激活”），前端弹出友好提示，
     引导用户联系管理员激活。文案由 data/OmicHub.yaml 的 activation 段驱动，改文件即生效。
     admin_contact 缺省时回退到 registration.admin_contact，避免重复配置。
+
+    支持“点击计数 + 文案切换”彩蛋：第 1-2 次显示正常版（title/button_text/message），
+    第 3 次及以后切换为着急版（title_urgent/button_text_urgent/message_urgent），
+    第 5 次点击关闭时触发全局猫爪彩蛋事件。
     """
 
     message: str
     admin_contact: str = ""
+    title: str = "账号还在星尘中沉睡 ✨"
+    button_text: str = "收到喵！"
+    title_urgent: str = "喵～ 你好像很着急呢 ⏳"
+    message_urgent: str = "(｡•́︿•̀｡) 再戳管理员一下嘛！开通后就能开心逛平台啦～ ✨"
+    button_text_urgent: str = "我这就去！"
 
 
 class EasterEggContent(OmicsHubBaseSchema):

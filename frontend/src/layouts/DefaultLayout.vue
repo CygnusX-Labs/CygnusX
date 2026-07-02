@@ -1,29 +1,39 @@
 <script setup lang="ts">
 import {
   NLayout, NLayoutSider, NLayoutContent, NIcon, NButton, NTooltip, NDropdown,
-  NDrawer, NDrawerContent, NAvatar, NBadge,
+  NDrawer, NDrawerContent, NAvatar, NBadge, NModal,
 } from 'naive-ui'
 import { computed, h, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   HomeOutline, GridOutline, FlaskOutline, FitnessOutline,
   DocumentTextOutline, CloudUploadOutline, DownloadOutline, BarChartOutline, SettingsOutline,
-  InformationCircleOutline, PersonOutline, LogOutOutline, MoonOutline,
+  InformationCircleOutline, PersonOutline, LogOutOutline, MoonOutline, SunnyOutline,
   MenuOutline, ChevronForwardOutline, ChevronDownOutline,
   NotificationsOutline, HelpCircleOutline, ChatbubblesOutline, Planet, CodeSlashOutline,
-  WalletOutline, PricetagOutline, SparklesOutline,
+  WalletOutline, PricetagOutline, SparklesOutline, ConstructOutline,
 } from '@vicons/ionicons5'
 import CookieBalanceBadge from '@/components/CookieBalanceBadge.vue'
 import NotificationDrawer from '@/components/NotificationDrawer.vue'
 import OnboardingPopup from '@/components/OnboardingPopup.vue'
+import ChunkUploader from '@/components/ChunkUploader.vue'
+import UploadFloatingBall from '@/components/UploadFloatingBall.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useUploadStore } from '@/stores/upload'
 import { useNotificationStore } from '@/stores/notification'
 import { useSiteConfigStore } from '@/stores/site-config'
+import { useAdminWelcome } from '@/composables/useAdminWelcome'
+import { useThemeStore } from '@/stores/theme'
 import type { User } from '@/types'
 
 const authStore = useAuthStore()
 const notificationStore = useNotificationStore()
 const siteConfig = useSiteConfigStore()
+const uploadStore = useUploadStore()
+const themeStore = useThemeStore()
+// 管理员登录欢迎小彩蛋：setup 阶段注册 useNotification，onMounted 触发；
+// 内部 watch + 会话标记确保一次会话只弹一次，刷新页面不弹。
+const { triggerAdminWelcome } = useAdminWelcome()
 const route = useRoute()
 const router = useRouter()
 const currentUser = ref<User | null>(null)
@@ -40,6 +50,7 @@ const userCollapsed = ref(false)
 const lastAutoCollapsed = ref(false)
 
 const isAdmin = computed(() => authStore.user?.role === 'admin')
+const isDarkTheme = computed(() => themeStore.isDark)
 
 const contentStyle = computed(() =>
   route.meta.fullscreen
@@ -115,6 +126,9 @@ onMounted(() => {
       }
     })
   }
+  // 管理员欢迎彩蛋：登录后任意页面（不只是仪表板）进入即触发，
+  // 内部 watch 等待 role 确定 + sessionStorage 标记保证一次会话只弹一次
+  triggerAdminWelcome()
 })
 
 onBeforeUnmount(() => {
@@ -157,6 +171,7 @@ const mainNavItems = computed<NavItem[]>(() => [
   { key: 'tasks', label: '任务中心', to: '/tasks', icon: DocumentTextOutline },
   { key: 'ai', label: 'AI 助手', to: '/ai', icon: ChatbubblesOutline },
   { key: 'sandbox', label: '代码沙盒', to: '/sandbox', icon: CodeSlashOutline },
+  { key: 'tools', label: '生信工具箱', to: '/tools', icon: ConstructOutline },
 ])
 
 const systemNavItems = computed<NavItem[]>(() => [
@@ -183,6 +198,8 @@ const adminNavItems = computed<NavItem[]>(() => [
 
 function isActive(item: NavItem): boolean {
   if (!item.children) {
+    // 生信工具箱：子工具页面也保持高亮
+    if (item.key === 'tools') return route.path === '/tools' || route.path.startsWith('/tools/')
     if (item.to.includes('?')) {
       const [path, query] = item.to.split('?')
       const type = query.split('=')[1]
@@ -254,17 +271,22 @@ function handleOnboardingSkip() {
   onboardingVisible.value = false
 }
 
-const userMenuOptions = [
+const userMenuOptions = computed(() => [
   { label: '个人中心', key: 'profile', icon: () => h(NIcon, null, { default: () => h(PersonOutline) }) },
   { label: '账号设置', key: 'settings', icon: () => h(NIcon, null, { default: () => h(SettingsOutline) }) },
-  { label: '深色模式', key: 'theme', icon: () => h(NIcon, null, { default: () => h(MoonOutline) }) },
+  {
+    label: isDarkTheme.value ? '浅色模式' : '深色模式',
+    key: 'theme',
+    icon: () => h(NIcon, null, { default: () => h(isDarkTheme.value ? SunnyOutline : MoonOutline) }),
+  },
   { type: 'divider' as const, key: 'divider' },
   { label: '退出登录', key: 'logout', icon: () => h(NIcon, null, { default: () => h(LogOutOutline) }) },
-]
+])
 
 function handleUserMenuSelect(key: string) {
   if (key === 'profile') router.push('/profile')
   else if (key === 'settings') router.push('/settings')
+  else if (key === 'theme') themeStore.toggleTheme()
   else if (key === 'logout') handleLogout()
 }
 
@@ -636,6 +658,20 @@ const UserAvatar = () => {
     </div>
 
     <NotificationDrawer v-model:show="notificationDrawerOpen" />
+
+    <!-- 全局上传弹窗（跨页面持久，最小化为悬浮球） -->
+    <NModal
+      v-model:show="uploadStore.modalOpen"
+      preset="card"
+      title="上传数据"
+      style="width: 600px"
+      :bordered="false"
+      :mask-closable="false"
+      @update:show="(v: boolean) => { if (!v) uploadStore.close() }"
+    >
+      <ChunkUploader />
+    </NModal>
+    <UploadFloatingBall />
 
     <!-- 首次登录迎新弹窗 -->
     <OnboardingPopup

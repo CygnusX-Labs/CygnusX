@@ -50,8 +50,13 @@ class OpenAICompatibleProvider:
         system_prompt: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
+        tools: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[ChatChunk]:
-        """SSE 流式输出 — 对接 OpenAI /chat/completions 接口"""
+        """SSE 流式输出 — 对接 OpenAI /chat/completions 接口
+
+        ``tools`` 为 OpenAI 标准工具定义列表；非空时注入请求，并在模型返回
+        tool_calls 时累积分片，于流结束统一 yield 一个 type="tool_calls" chunk。
+        """
         api_messages: list[dict[str, str]] = []
         if system_prompt:
             api_messages.append({"role": "system", "content": system_prompt})
@@ -64,6 +69,9 @@ class OpenAICompatibleProvider:
             "max_tokens": max_tokens,
             "stream": True,
         }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
@@ -111,6 +119,9 @@ class OpenAICompatibleProvider:
                     return
 
                 buffer = ""
+                # 累积流式 tool_calls 分片（OpenAI 按 index 分片下发）
+                tool_acc: dict[int, dict[str, Any]] = {}
+
                 async for chunk in response.aiter_text():
                     buffer += chunk
                     lines = buffer.split("\n")
@@ -123,6 +134,11 @@ class OpenAICompatibleProvider:
 
                         data = line[6:]
                         if data == "[DONE]":
+                            if self._emit_tool_calls(tool_acc):
+                                yield ChatChunk(
+                                    type="tool_calls",
+                                    metadata={"tool_calls": self._materialize_tool_calls(tool_acc)},
+                                )
                             yield ChatChunk(type="done")
                             return
 
@@ -165,20 +181,35 @@ class OpenAICompatibleProvider:
                                 },
                             )
 
-                        tool_calls = delta.get("tool_calls")
-                        if tool_calls:
-                            yield ChatChunk(
-                                type="tool_call",
-                                content="",
-                                metadata={"tool_calls": tool_calls},
-                            )
+                        # 累积 tool_calls 分片，不逐片 yield
+                        for tc in delta.get("tool_calls", []) or []:
+                            idx = tc.get("index", 0)
+                            slot = tool_acc.setdefault(idx, {
+                                "id": "", "type": "function",
+                                "function": {"name": "", "arguments": ""},
+                            })
+                            if tc.get("id"):
+                                slot["id"] = tc["id"]
+                            if tc.get("type"):
+                                slot["type"] = tc["type"]
+                            fn = tc.get("function", {})
+                            if fn.get("name"):
+                                slot["function"]["name"] += fn["name"]
+                            if fn.get("arguments"):
+                                slot["function"]["arguments"] += fn["arguments"]
 
                         finish = choices[0].get("finish_reason")
-                        if finish and finish != "null" and finish == "content_filter":
-                            yield ChatChunk(type="error", content="输出被内容安全过滤器拦截")
-                            return
+                        if finish and finish != "null":
+                            if finish == "content_filter":
+                                yield ChatChunk(type="error", content="输出被内容安全过滤器拦截")
+                                return
 
                 # 流结束但未收到 [DONE]
+                if self._emit_tool_calls(tool_acc):
+                    yield ChatChunk(
+                        type="tool_calls",
+                        metadata={"tool_calls": self._materialize_tool_calls(tool_acc)},
+                    )
                 yield ChatChunk(type="done")
 
         except httpx.TimeoutException:
@@ -210,6 +241,16 @@ class OpenAICompatibleProvider:
                 return resp.status_code == 200
         except Exception:  # noqa: BLE001
             return False
+
+    @staticmethod
+    def _emit_tool_calls(tool_acc: dict[int, dict[str, Any]]) -> bool:
+        return bool(tool_acc) and any(
+            slot["function"].get("name") for slot in tool_acc.values()
+        )
+
+    @staticmethod
+    def _materialize_tool_calls(tool_acc: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+        return [tool_acc[i] for i in sorted(tool_acc)]
 
 
 class ProviderManager:

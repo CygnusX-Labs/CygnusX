@@ -48,6 +48,9 @@
       :message="siteConfig.registrationDisabledMessage"
       :contact="siteConfig.adminContact"
     />
+    <!-- 账户未激活弹窗：专用 ActivationModal（点击计数 + 文案切换 + 第 5 次猫爪彩蛋），
+         文案/联系方式由 YAML activation 段驱动 -->
+    <ActivationModal v-model:show="showInactiveModal" />
   </div>
 </template>
 
@@ -58,6 +61,7 @@ import { useMessage } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
 import { useSiteConfigStore } from '@/stores/site-config'
 import RegistrationDisabledModal from '@/components/RegistrationDisabledModal.vue'
+import ActivationModal from '@/components/ActivationModal.vue'
 import LoginCats from '@/components/LoginCats.vue'
 
 const router = useRouter()
@@ -68,6 +72,8 @@ const formRef = ref()
 const loading = ref(false)
 const errorMessage = ref('')
 const showRegModal = ref(false)
+// 账户未激活时弹模态框（带管理员联系方式），比纯 toast 更友好
+const showInactiveModal = ref(false)
 
 // 拉取注册开关（site-settings，DB）+ 提示文案（site-content，YAML）
 onMounted(() => {
@@ -128,8 +134,26 @@ const handleLogin = async () => {
       }
     }, 100)
   } catch (error: any) {
-    errorMessage.value = error.response?.data?.detail || '用户名或密码错误'
-    message.error(errorMessage.value)
+    const status = error.response?.status
+    const detail: string = error.response?.data?.detail || ''
+
+    // 系统内部错误（500/502/503 等）：明确提示系统故障，避免被误判为"密码错误"，
+    // 让运维与用户能区分认证失败与服务端异常。
+    if (status >= 500) {
+      const sysMsg = '系统内部错误，请联系管理员'
+      errorMessage.value = sysMsg
+      message.error(sysMsg)
+    } else if (detail.includes('未激活')) {
+      // 账户未激活：弹模态框并附带管理员联系方式，引导用户联系管理员激活
+      errorMessage.value = detail
+      if (!siteConfig.loaded) await siteConfig.fetchSiteConfig().catch(() => {})
+      showInactiveModal.value = true
+    } else {
+      // 401/403 等认证失败：模糊提示"用户名或密码错误"（不区分用户名是否存在，防枚举）
+      const authMsg = detail || '用户名或密码错误'
+      errorMessage.value = authMsg
+      message.error(authMsg)
+    }
   } finally {
     loading.value = false
   }

@@ -8,27 +8,9 @@ from sqlalchemy import select
 
 from omichub.api.deps import CurrentUserId, DbSession
 from omichub.application.services.stats_service import StatsService
-from omichub.core.exceptions import AuthorizationError
+from omichub.middleware.rbac import AdminRequired, require_admin  # 统一 RBAC 实现
 
 router = APIRouter()
-
-
-async def require_admin(current_user_id: CurrentUserId) -> None:
-    """校验当前用户为管理员（沿用本仓各 admin router 的既有写法）。"""
-    from omichub.infrastructure.database.models.user import UserModel
-    from omichub.infrastructure.database.session import get_session_factory
-
-    factory = get_session_factory()
-    async with factory() as session:
-        result = await session.execute(
-            select(UserModel.role).where(UserModel.id == UUID(current_user_id))
-        )
-        role = result.scalar_one_or_none()
-        if role != "admin":
-            raise AuthorizationError("需要管理员权限")
-
-
-AdminRequired = Annotated[None, Depends(require_admin)]
 
 
 def get_stats_service(db: DbSession) -> StatsService:

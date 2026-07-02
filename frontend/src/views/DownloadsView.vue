@@ -23,6 +23,31 @@ const submitting = ref(false)
 // 高级选项：默认值（cleanup-sra 勾选、pe-only 不勾选、四个过滤器为空）
 const advancedOptions = ref(createDefaultAdvancedOptions())
 
+// 下载目标目录：可选用户已有目录，或输入新目录名（不存在则后端自动创建）
+const targetDirectory = ref('')
+const directoryOptions = ref<{ label: string; value: string }[]>([])
+const NEW_DIR_VALUE = '__new__'
+const newDirInput = ref('')
+const isNewDir = ref(false)
+
+async function fetchDirectories() {
+  try {
+    const res = await apiClient.get<{ path: string }[]>('/files/directories')
+    directoryOptions.value = [
+      { label: '根目录（不指定）', value: '' },
+      ...res.data.map((d) => ({ label: d.path, value: d.path })),
+      { label: '➕ 新建目录...', value: NEW_DIR_VALUE },
+    ]
+  } catch {
+    directoryOptions.value = [{ label: '根目录（不指定）', value: '' }]
+  }
+}
+
+function handleDirChange(v: string) {
+  isNewDir.value = v === NEW_DIR_VALUE
+  if (!isNewDir.value) targetDirectory.value = v
+}
+
 const tasks = ref<Task[]>([])
 const loading = ref(false)
 
@@ -140,18 +165,24 @@ async function submit() {
   }
   submitting.value = true
   try {
+    const dir = isNewDir.value ? newDirInput.value.trim() : targetDirectory.value.trim()
     const res = await apiClient.post<Task>('/downloads', {
       accession: accession.value.trim(),
       download_method: downloadMethod.value,
       multithreads: multithreads.value,
       aws_threads: awsThreads.value,
+      target_directory: dir,
       // 高级选项随请求下发；后端待实现对 --filter-* / --exclude-* / --cleanup-sra / --pe-only 的透传
       advanced: advancedOptions.value,
     })
     message.success('下载任务已提交')
     accession.value = ''
+    newDirInput.value = ''
+    isNewDir.value = false
+    targetDirectory.value = ''
     // 提交后重置高级选项为默认值，避免下次提交残留上次配置
     advancedOptions.value = createDefaultAdvancedOptions()
+    await fetchDirectories()
     await fetchTasks()
     // 跳转到任务详情查看实时进度/日志
     router.push(`/tasks/${res.data.id}`)
@@ -163,7 +194,10 @@ async function submit() {
   }
 }
 
-onMounted(fetchTasks)
+onMounted(() => {
+  fetchTasks()
+  fetchDirectories()
+})
 onUnmounted(() => stopPolling())
 </script>
 
@@ -187,6 +221,24 @@ onUnmounted(() => stopPolling())
         </NFormItem>
         <NFormItem label="下载方式">
           <NSelect v-model:value="downloadMethod" :options="methodOptions" style="width: 280px" />
+        </NFormItem>
+        <NFormItem label="下载到目录">
+          <NSpace vertical :size="8" style="width: 100%">
+            <NSelect
+              :value="isNewDir ? NEW_DIR_VALUE : targetDirectory"
+              :options="directoryOptions"
+              style="width: 320px"
+              filterable
+              placeholder="选择目标目录（默认根目录）"
+              @update:value="handleDirChange"
+            />
+            <NInput
+              v-if="isNewDir"
+              v-model:value="newDirInput"
+              placeholder="输入新目录名，如 projectA（不存在将自动创建）"
+              style="width: 320px"
+            />
+          </NSpace>
         </NFormItem>
         <NSpace>
           <NFormItem label="并发下载数">

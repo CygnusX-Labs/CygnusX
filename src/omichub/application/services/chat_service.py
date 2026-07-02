@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -124,11 +125,12 @@ class ChatService:
 
     async def create_session(
         self, user_id: str, model_id: uuid.UUID, title: str = "新对话",
-        assistant_id: str | None = None,
+        assistant_id: str | None = None, agent_id: str | None = None,
     ) -> ChatSessionDTO:
         session = ChatSessionModel(
             id=uuid.uuid4(), session_id=str(uuid.uuid4()), user_id=user_id,
-            model_id=model_id, title=title, assistant_id=assistant_id, status="active",
+            model_id=model_id, title=title, assistant_id=assistant_id,
+            agent_id=agent_id, status="active",
         )
         self._db.add(session)
         await self._db.flush()
@@ -211,7 +213,13 @@ class ChatService:
                 msg.metadata_json = existing
             await self._db.flush()
 
-    async def get_messages(self, session_id: str) -> list[ChatMessageDTO]:
+    async def get_messages(self, session_id: str, user_id: str | None = None) -> list[ChatMessageDTO]:
+        # 纵深防御：即便路由层已校验归属，service 层仍复核会话属于该用户，
+        # 避免任何调用方绕过路由直接拿到他人会话消息。
+        if user_id is not None:
+            session = await self.get_session(session_id, user_id)
+            if not session:
+                raise NotFoundError("会话不存在或无权访问")
         result = await self._db.execute(
             select(ChatMessageModel)
             .where(ChatMessageModel.session_id == session_id)
@@ -283,7 +291,14 @@ class ChatService:
         #     logger.warning(f"技能注入失败: {e}")
 
         # 4. 保存用户消息
-        user_content = messages[-1].get("content", "") if messages else ""
+        # 敏感信息脱敏：落库前清洗用户消息，DB 不留存原始品种名等敏感词；
+        # 同时构建送 LLM 的脱敏副本（不可逆，不还原）
+        from omichub.core.config import get_settings
+        from omichub.core.sanitizer import sanitize_messages, sanitize_text
+
+        sensitive_keywords = get_settings().sensitive_keywords
+        user_content_raw = messages[-1].get("content", "") if messages else ""
+        user_content = sanitize_text(user_content_raw, sensitive_keywords)
         await self.add_message(current_session_id, "user", user_content)
 
         # 5. 创建 AI 消息记录
@@ -293,6 +308,8 @@ class ChatService:
         )
 
         # 6. 调用 LLM 流式输出
+        # 送外部 LLM 的 messages 用脱敏副本，避免敏感词外泄到第三方模型
+        llm_messages = sanitize_messages(messages, sensitive_keywords)
         full_content = ""
         update_counter = 0
 
@@ -301,7 +318,7 @@ class ChatService:
             final_max = max_tokens if max_tokens is not None else model_config.max_tokens
 
             async for chunk in provider_manager.chat_stream(
-                config=model_config, messages=messages,
+                config=model_config, messages=llm_messages,
                 system_prompt=final_system_prompt,
                 temperature=final_temp, max_tokens=final_max,
             ):
@@ -335,6 +352,214 @@ class ChatService:
                     return
 
                 yield chunk
+
+        except Exception as e:  # noqa: BLE001
+            await self.update_message_content(
+                ai_message.message_id, full_content or f"生成失败: {e}",
+                "error", {"error": str(e)},
+            )
+            yield ChatChunk(
+                type="error", content=f"生成失败: {e}",
+                metadata={"session_id": current_session_id, "message_id": ai_message.message_id},
+            )
+
+    # --- Agent 调度中枢：SSE 流式聊天（含 MCP 工具调用闭环） ---
+
+    async def stream_agent_chat(
+        self, user_id: str, agent_id: str, messages: list[dict[str, str]],
+        session_id: str | None = None,
+    ) -> AsyncIterator[ChatChunk]:
+        """Agent 编排闭环：查 Agent → 组装模型/系统词/工具 → 打 LLM → 执行 tool_call 回灌 → 流式返回"""
+        from omichub.application.services.agent_service import AgentService
+        from omichub.core.config import get_settings
+        from omichub.core.sanitizer import sanitize_messages, sanitize_text
+        from omichub.infrastructure.mcp.client import MCPClient
+
+        ctx = await AgentService(self._db).assemble_context(agent_id)
+        if ctx is None:
+            yield ChatChunk(type="error", content="Agent 不存在或已停用")
+            return
+        if ctx.model_config is None:
+            yield ChatChunk(
+                type="error",
+                content=f"Agent '{ctx.agent.name}' 未绑定可用模型，请联系管理员在 AI 资源中心配置",
+            )
+            return
+        if not ctx.model_config.api_key:
+            yield ChatChunk(
+                type="error",
+                content=f"模型 '{ctx.model_config.name}' 的 API Key 未配置，请联系管理员设置",
+            )
+            return
+
+        model_config = ctx.model_config
+        sensitive_keywords = get_settings().sensitive_keywords
+
+        # 1. 取/建会话
+        if session_id:
+            session = await self.get_session(session_id, user_id)
+            if not session:
+                yield ChatChunk(type="error", content="会话不存在或已被删除")
+                return
+            current_session_id = session_id
+        else:
+            title = f"与 {ctx.agent.name} 的对话"
+            dto = await self.create_session(
+                user_id, model_config.id, title, agent_id=agent_id,
+            )
+            current_session_id = dto.session_id
+
+        # 2. 落库用户消息（脱敏）
+        user_content_raw = messages[-1].get("content", "") if messages else ""
+        user_content = sanitize_text(user_content_raw, sensitive_keywords)
+        await self.add_message(current_session_id, "user", user_content)
+
+        # 3. AI 占位消息
+        ai_message = await self.add_message(
+            current_session_id, "assistant", "", status="streaming",
+            metadata={"model": model_config.name, "agent_id": agent_id},
+        )
+
+        # 4. 送 LLM 的 messages（脱敏副本）
+        llm_messages: list[dict[str, Any]] = sanitize_messages(messages, sensitive_keywords)
+        full_content = ""
+        update_counter = 0
+        first_chunk_sent = False
+        max_rounds = 8
+
+        mcp_client = MCPClient()
+
+        try:
+            for _round in range(max_rounds):
+                round_text = ""
+                round_tool_calls: list[dict[str, Any]] = []
+
+                async for chunk in provider_manager.chat_stream(
+                    config=model_config, messages=llm_messages,
+                    system_prompt=ctx.system_prompt or None,
+                    temperature=ctx.temperature, max_tokens=ctx.max_tokens,
+                    tools=ctx.tools or None,
+                ):
+                    if chunk.type == "text":
+                        if chunk.metadata.get("is_reasoning"):
+                            # 推理过程不并入最终正文，但仍透传给前端
+                            yield chunk
+                            continue
+                        round_text += chunk.content
+                        full_content += chunk.content
+                        update_counter += 1
+                        if update_counter % 5 == 0:
+                            await self.update_message_content(
+                                ai_message.message_id, full_content, "streaming"
+                            )
+                        if not first_chunk_sent:
+                            chunk.metadata["session_id"] = current_session_id
+                            chunk.metadata["message_id"] = ai_message.message_id
+                            first_chunk_sent = True
+                        yield chunk
+
+                    elif chunk.type == "tool_calls":
+                        round_tool_calls = chunk.metadata.get("tool_calls", [])
+
+                    elif chunk.type == "error":
+                        await self.update_message_content(
+                            ai_message.message_id,
+                            full_content or f"生成失败: {chunk.content}",
+                            "error", {"error": chunk.content},
+                        )
+                        yield chunk
+                        return
+
+                    elif chunk.type == "done":
+                        # done 仅作为单轮结束信号，是否继续由 round_tool_calls 决定
+                        pass
+
+                # 本轮无工具调用 → 正常结束
+                if not round_tool_calls:
+                    await self.update_message_content(
+                        ai_message.message_id, full_content, "complete"
+                    )
+                    yield ChatChunk(
+                        type="done",
+                        metadata={
+                            "session_id": current_session_id,
+                            "message_id": ai_message.message_id,
+                        },
+                    )
+                    return
+
+                # 有工具调用 → 执行并回灌，进入下一轮
+                # 先把 assistant 的 tool_calls 消息加入上下文
+                llm_messages.append({
+                    "role": "assistant",
+                    "content": round_text or "",
+                    "tool_calls": round_tool_calls,
+                })
+                if round_text:
+                    full_content += "\n\n" if full_content else ""
+                    # 工具调用阶段的正文并入落库内容
+                    await self.update_message_content(
+                        ai_message.message_id, full_content, "streaming"
+                    )
+
+                for tc in round_tool_calls:
+                    fn = tc.get("function", {}) or {}
+                    tool_name = fn.get("name", "")
+                    raw_args = fn.get("arguments", "")
+                    try:
+                        args = json.loads(raw_args) if raw_args else {}
+                    except json.JSONDecodeError:
+                        args = {}
+
+                    yield ChatChunk(
+                        type="tool_call",
+                        metadata={
+                            "tool_call_id": tc.get("id", ""),
+                            "tool_name": tool_name,
+                            "arguments": args,
+                        },
+                    )
+
+                    # 在绑定的 MCP server 中找到拥有该工具的 server
+                    server = next(
+                        (s for s in ctx.mcp_servers
+                         if any(t.tool_name == tool_name for t in s.tools)),
+                        None,
+                    )
+                    if server is None:
+                        result = {"success": False, "error": f"工具 {tool_name} 未挂载到该 Agent"}
+                    else:
+                        result = await mcp_client.call_tool(server, tool_name, args)
+
+                    yield ChatChunk(
+                        type="tool_result",
+                        metadata={
+                            "tool_call_id": tc.get("id", ""),
+                            "tool_name": tool_name,
+                            "success": bool(result.get("success")),
+                            "result": result.get("result", result.get("error", "")),
+                        },
+                    )
+                    llm_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.get("id", ""),
+                        "content": json.dumps(
+                            result.get("result", result), ensure_ascii=False, default=str
+                        )[:4000],
+                    })
+
+            # 超过最大轮次仍未结束
+            await self.update_message_content(
+                ai_message.message_id, full_content, "complete",
+                {"warning": "工具调用轮次达上限，已提前结束"},
+            )
+            yield ChatChunk(
+                type="done",
+                metadata={
+                    "session_id": current_session_id,
+                    "message_id": ai_message.message_id,
+                },
+            )
 
         except Exception as e:  # noqa: BLE001
             await self.update_message_content(

@@ -3,25 +3,30 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { NButton, NIcon } from 'naive-ui'
 import { ChevronDownOutline } from '@vicons/ionicons5'
 import KimiMessageItem from './KimiMessageItem.vue'
-import type { ChatMessage } from './types'
+import type { ChatMessage, CopyMode } from './types'
 
 interface Props {
   messages: ChatMessage[]
   isTyping?: boolean
   streamingContent?: string
   streamingThought?: string
+  modelName?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   isTyping: false,
   streamingContent: '',
   streamingThought: '',
+  modelName: 'AI 助手',
 })
 
 const emit = defineEmits<{
   feedback: [messageId: string, type: 'like' | 'dislike']
-  copyMessage: [content: string]
-  retry: [messageId: string]
+  copy: [mode: CopyMode]
+  regenerate: [messageId: string]
+  retryWithModel: [messageId: string]
+  translate: [messageId: string]
+  delete: [messageId: string]
 }>()
 
 const listRef = ref<HTMLDivElement>()
@@ -88,9 +93,13 @@ onUnmounted(() => {
           :is-streaming="message.id === streamingMessageId"
           :streaming-content="streamingContent"
           :streaming-thought="streamingThought"
+          :model-name="modelName"
           @feedback="(id, type) => emit('feedback', id, type)"
-          @copy-message="(content) => emit('copyMessage', content)"
-          @retry="(id) => emit('retry', id)"
+          @copy="(mode) => emit('copy', mode)"
+          @regenerate="(id) => emit('regenerate', id)"
+          @retry-with-model="(id) => emit('retryWithModel', id)"
+          @translate="(id) => emit('translate', id)"
+          @delete="(id) => emit('delete', id)"
         />
       </transition-group>
 

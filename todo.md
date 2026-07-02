@@ -1,11 +1,259 @@
 # OmicHub 开发进度 Todo
 
 > 基于 `docs/` 架构设计文档，逐步完善项目骨架。
-> 更新日期：2026-06-30 (管理员登录欢迎彩蛋 + 注册开关拦截)
+> 更新日期：2026-07-02 (AI 助手 YAML 化配置 + 模型显示修复 + 生信工具箱前端搭建 + 数据管理模块全面升级 + Agent 调度中枢前后端真实联动 + 统一夜间模式 + 饼干余额调账修复)
 
 ---
 
 ## 已完成
+
+### 统一夜间模式与 AI 助手主题联动 ✅ 2026-07-02
+
+> 需求：平台此前没有真正的夜间模式切换，AI 助手沿用独立的 Kimi 风格纯黑主题，与平台整体不统一。需要实现全局主题切换，并让 AI 助手跟随平台主题。
+> 架构决策：新增 `useThemeStore` 统一管控主题，持久化到 `localStorage` key `omichub-theme`；在 `<html>` 上设置 `data-theme` 与 `.dark` class；`App.vue` 的 `NConfigProvider` 绑定 Naive UI `darkTheme` 并把 `themeOverrides` 改为响应式；`global.css` 新增 `:root[data-theme="dark"]` 平台深色变量，并把 `.kimi-layout` 的 chat 变量映射到平台统一中性色；AI 助手移除独立的 `theme`/`chat-theme` 逻辑，完全跟随全局 `data-theme`。
+> 验证：前端 `npm run type-check && npm run build` 通过。
+
+- [x] **全局主题 Store**
+  - [x] 新建 `frontend/src/stores/theme.ts` — `useThemeStore`：`theme`/`isDark`/`setTheme`/`toggleTheme`/`initTheme`
+  - [x] `localStorage` key 为 `omichub-theme`，默认 `dark`
+  - [x] 设置 `document.documentElement.setAttribute('data-theme', ...)` + `classList.toggle('dark', ...)`
+- [x] **启动时恢复主题**
+  - [x] `frontend/src/main.ts`：Pinia 创建后立即 `themeStore.initTheme()`，避免首屏闪白
+- [x] **Naive UI 动态主题**
+  - [x] `frontend/src/App.vue`：导入 `darkTheme` + `useThemeStore`
+  - [x] `NConfigProvider` 绑定 `:theme="naiveTheme"`
+  - [x] `themeOverrides` 改为 `computed<GlobalThemeOverrides>`，深色/浅色自动切换 common text/body/card/modal/popover/divider/border + Layout + Menu 颜色
+- [x] **平台深色 CSS 变量**
+  - [x] `frontend/src/styles/global.css`：新增 `:root[data-theme="dark"]` 覆盖 `--arco-*` / `--neutral-*` / `--sidebar-*` / `--shadow-*` / `--page-bg`
+  - [x] 新增 `:root[data-theme="dark"] .kimi-layout` 规则，把 `--chat-*` 系列变量映射到平台统一中性色（背景/表面/边框/文本/强调色/输入框/导航栏/芯片/阴影等）
+- [x] **顶部用户菜单主题切换**
+  - [x] `frontend/src/layouts/DefaultLayout.vue`：导入 `SunnyOutline`
+  - [x] `userMenuOptions` 改为 `computed`，当前深色时显示「浅色模式 ☀️」，浅色时显示「深色模式 🌙」
+  - [x] `handleUserMenuSelect` 增加 `theme` 分支，调用 `themeStore.toggleTheme()`
+- [x] **AI 助手去独立主题**
+  - [x] `frontend/src/stores/chat.ts`：移除 `theme` ref、`setTheme`/`toggleTheme`、`chat-theme` localStorage 读写
+  - [x] `frontend/src/components/ai-chat/KimiLayout.vue`：导入 `useThemeStore`，模板 `:data-theme="themeStore.theme"`
+
+### 饼干余额调账修复（已有用户无法选择 + 充值成功报系统内部错误）✅ 2026-07-02
+
+> 需求：「充值 / 变更饼干余额」弹窗中无法选择已有用户；选择用户充值后提示成功，但随后又弹出「系统内部错误，请联系管理员」。
+> 根因分析：
+> 1. 用户选择：早期实现只从饼干账户列表拉人，导致未开通饼干钱包的已有用户选不到。当前 `RechargeModal` 已改为从 `/admin/users` 拉全部注册用户，此问题实际已修复。
+> 2. 系统内部错误：前端选择「扣除」时发送负数金额；后端 `CookieService.adjust_balance` 会把带符号金额记为 `txn_type='adjust'`；但数据库 `cookie_transactions` 表的 check constraint `chk_txn_amount_sign` 强制 `adjust` 类型金额必须 `>= 0`，写入负数时触发数据库校验错误，被全局异常处理器统一返回「系统内部错误，请联系管理员」。
+> 架构决策：调整数据库约束，允许 `adjust` 类型金额可正可负（正=充值/补贴，负=扣除/调账）；`earn`/`refund`/`unfreeze` 仍必须非负，`spend`/`freeze` 仍必须非正。同步新增 Alembic 迁移 + 合并迁移解决当前 revision 分支问题，并增强前端错误提示。
+> 验证：
+> - 后端 `uv run ruff check` 针对改动文件通过；
+> - 后端 `uv run pytest tests/ -v`：36 通过，1 个预存在的下载服务测试失败（与本次改动无关）；
+> - 前端 `npm run type-check && npm run build` 通过；
+> - `alembic history` 单 head：`i6j7k8l9m0n1_merge_cookie_adjust_heads`。
+> ⚠️ 真实环境待执行：`make migrate`（或 `uv run alembic upgrade head`）应用新迁移。
+
+- [x] **后端 — 修正数据库约束**
+  - [x] `src/omichub/infrastructure/database/models/cookie.py`：更新 `chk_txn_amount_sign`，`adjust` 允许正负；`earn`/`refund`/`unfreeze` 仍 `>=0`；`spend`/`freeze` 仍 `<=0`
+- [x] **后端 — Alembic 迁移**
+  - [x] 新建 `alembic/versions/h4i5j6k7l8m9_allow_negative_adjust_transactions.py` — 删除旧约束、创建新约束
+  - [x] 新建 `alembic/versions/i6j7k8l9m0n1_merge_cookie_adjust_heads.py` — 合并当前分支，保证 `alembic upgrade head` 单 head
+- [x] **前端 — 调账弹窗健壮性**
+  - [x] `frontend/src/components/admin-cookie/RechargeModal.vue`：移除 `handleSubmit` 中 catch 后的 `return` 与重复 `store.fetchAccounts()`，由父组件统一刷新
+  - [x] `frontend/src/views/AdminCookieManagementView.vue`：`onRechargeSuccess` 加 try-catch，刷新失败时给出具体错误提示
+  - [x] `frontend/src/views/AdminUserManagementView.vue`：`fetchUsers` 加 try-catch，加载失败时提示具体原因
+- [x] **用户选择确认**
+  - [x] `RechargeModal.vue` 继续从 `/admin/users` 拉全部注册用户（含未开通饼干钱包用户），支持 filterable 搜索
+
+### AI 助手 YAML 化配置 + 模型显示修复 ✅ 2026-07-02
+
+> 需求：① AI 助手显示的模型名与实际使用的模型不一致（内置种子 `model_engine` 写 "gpt-4o" 等假名，`model_id` 为 None，回落到默认模型）；② 每个助手应可独立配置模型、MCP、技能、提示词，配置存于 `data/ai/*.yaml`，由 `OmicHub.yaml` 控制加载哪些助手。
+> 架构决策：每个助手一个 YAML 文件（`data/ai/{name}.yaml`），`model` 字段按 name 匹配 `ai_provider_configs` 表解析出真实 `model_id`；`OmicHub.yaml` 新增 `agents.enabled` 列表控制加载；`model_engine` 改为从 provider config 动态填充真实模型名；前端移除硬编码 `MODEL_ENGINE_OPTIONS`，直接展示后端返回的模型名。
+> 验证：`agent_loader.py` 导入通过 + 成功加载 4 个 YAML 配置；`agent_service.py` 导入通过；前端 `vue-tsc --noEmit` 零错误。⚠️ 真实环境待补：`alembic upgrade head`（新增 `model_name` 列）+ 端到端发消息验证模型显示一致。
+
+- [x] **YAML 配置文件**
+  - [x] `data/ai/general.yaml` — 通用助手（model: qwen3.7-max）
+  - [x] `data/ai/rnaseq.yaml` — RNA-seq 分析师
+  - [x] `data/ai/code.yaml` — 代码助手
+  - [x] `data/ai/viz.yaml` — 可视化助手
+  - [x] `data/OmicHub.yaml` 新增 `agents.enabled` 列表（控制加载哪些助手）
+- [x] **后端 — YAML 加载器**
+  - [x] `infrastructure/config/__init__.py` + `agent_loader.py` — 读取 `OmicHub.yaml` 的 `agents.enabled`，逐个加载 `data/ai/{name}.yaml`，文件缺失/解析失败跳过并记录日志
+- [x] **后端 — DB Model 扩展**
+  - [x] `models/agent.py` 新增 `model_name` 列（存 YAML 中的模型名称，便于调试）
+  - [x] Alembic 迁移 `g3h4i5j6k7l8_add_model_name_to_agent_templates.py`
+- [x] **后端 — AgentService 改造**
+  - [x] 删除硬编码 `BUILTIN_AGENTS` 列表
+  - [x] `ensure_builtin_agents()` 改为调用 `load_agent_configs()` 从 YAML 加载
+  - [x] 按 `model` name 查 `ai_provider_configs` 解析 `model_id` + 自动填充 `model_engine`（真实模型名）
+  - [x] `_to_dto()` 新增 `model_name` 字段
+- [x] **后端 — Schema 扩展**
+  - [x] `schemas/agent.py` — `AgentTemplateDTO` + `CreateAgentRequest` 新增 `model_name` 字段
+- [x] **前端 — 移除硬编码模型选项**
+  - [x] `stores/agentHub.ts` 删除 `MODEL_ENGINE_OPTIONS` 硬编码列表
+  - [x] `components/admin/AgentResourceTab.vue` 移除「模型引擎标签」表单项（`model_engine` 自动解析）+ 移除 `MODEL_ENGINE_OPTIONS` 导入
+  - [x] `components/agent-workspace/AgentSandbox.vue` 简化 `engineLabel`，直接显示 `model_engine`
+  - [x] `components/agent-workspace/AgentCapabilityDrawer.vue` 同上
+- [x] **前端 — 类型与 API 映射**
+  - [x] `types/agent.ts` — `AgentTemplate` 新增 `model_name?: string`
+  - [x] `api/agent.ts` — `toAgent()` 新增 `model_name` 字段映射
+
+### 分析流程中心 GitHub 源码链接 ✅ 2026-07-02
+
+> 需求：分析流程中心已有流程（RNA-seq、ATAC-seq 等）的 YAML 配置中定义了 `meta.docs_url`（GitHub 仓库地址），后端 API 也已透传该字段，但前端未渲染。需要在流程卡片和提交页面展示 GitHub 源码链接。
+> 架构决策：零后端改动（`docs_url` 已在 `FlowMeta` 值对象 + `FlowListItemDTO` + `FlowMetaDTO` 中传递）。前端三处改动：`FlowDefinition` 类型补字段 → `FlowsView.vue` 推荐卡右上角 + 普通卡标签栏加 GitHub 图标链接 → `FlowSubmitView.vue` 标题旁加「查看源码」按钮。链接使用 `@click.stop` 阻止冒泡（避免同时触发卡片跳转），`target="_blank"` 新窗口打开。后续新增流程只要在 YAML 中设置 `meta.docs_url` 即自动展示。
+> 验证：`vue-tsc --noEmit` 零错误。
+
+- [x] **前端类型补全**
+  - [x] `types/index.ts` — `FlowDefinition` 接口新增 `docs_url?: string | null`
+- [x] **FlowsView.vue 流程卡片**
+  - [x] 导入 `LogoGithub` 图标 + `NIcon` 组件
+  - [x] 推荐流程（featured card）右上角新增「源码」按钮（半透明白底，hover 加深），`@click.stop` 阻止冒泡
+  - [x] 普通流程卡片标签栏末尾新增 GitHub 图标链接（`margin-left: auto` 推至右侧），hover 变深色
+  - [x] 两处链接均 `v-if="flow.docs_url"` 条件渲染，无 `docs_url` 时不显示
+- [x] **FlowSubmitView.vue 提交页**
+  - [x] 标题区改为 flex 布局，右侧新增「查看源码」按钮（灰底圆角，hover 加深）
+  - [x] `v-if="flow?.meta.docs_url"` 条件渲染，读取 `FlowConfig.meta.docs_url`
+
+### 生信工具箱 (BioTools) 前端模块搭建 ✅ 2026-07-02
+
+> 需求：新增「生信工具箱」模块，提供 FASTQ 质控、Web IGV 浏览器、序列检索 (BLAST)、组学绘图工坊等独立工具页面。当前阶段仅搭建前端 UI 骨架与静态交互，全程使用 Mock 数据，后端 API 在后续阶段逐步接入。
+> 架构决策：前端 `views/BioTools/` 独立子目录（打破现有扁平结构，建立工具"特区"）；路由统一 `/tools/*` 前缀；侧边栏新增一级菜单「生信工具箱」（`ConstructOutline` 图标），`isActive` 扩展支持子路由高亮；Dashboard 新增 4 卡片快捷入口；图表渲染复用项目已有的 `vue-echarts` + `echartsSetup.ts`。
+> 验证：前端 `vue-tsc --noEmit` 零错误；`vite build` 成功（10.24s）。
+
+- [x] **阶段零：目录结构与路由**
+  - [x] 新建 `frontend/src/views/BioTools/` 目录（5 个页面）+ `frontend/src/components/bio-tools/` 目录（共享组件）
+  - [x] `router/index.ts` 新增 5 条路由：`/tools`（大厅）/ `/tools/fastq-qc` / `/tools/igv` / `/tools/blast` / `/tools/plot`，全部 `requiresAuth: true` + 懒加载
+  - [x] `DefaultLayout.vue` 侧边栏 `mainNavItems` 新增「生信工具箱」（`ConstructOutline` 图标，位于「代码沙盒」之后）
+  - [x] `DefaultLayout.vue` `isActive()` 扩展：`item.key === 'tools'` 时 `/tools` 和 `/tools/*` 均高亮
+- [x] **阶段一：前端 UI 搭建（Mock 数据）**
+  - [x] **ToolCard.vue** — 大厅可复用卡片组件（渐变图标 + 标题 + 描述 + hover 浮起动效）
+  - [x] **ToolsHubView.vue** — 工具箱大厅：2×2 卡片网格（FASTQ/IGV/BLAST/绘图），点击跳转对应工具页，移动端单列
+  - [x] **FastqQCView.vue** — FASTQ 质控页：左栏参数面板（Phred 阈值滑块 / 截断长度滑块 / 接头开关 / 文件选择）+ 右栏 Mock 统计卡片（保留率 / Reads 数 / GC%）+ ECharts 碱基质量分布折线图（滑动参数时 Mock 数据动态联动）
+  - [x] **IGVBrowserView.vue** — IGV 占位页：参考基因组下拉（hg38/mm10/水稻/拟南芥）+ 渲染容器占位提示 + Mock 轨道列表（Sample_1.bam / H3K27ac.bw），暂不引入 igv.js 依赖
+  - [x] **BlastSearchView.vue** — BLAST 检索页：FASTA 文本框（支持文件上传填充）+ 目标数据库下拉（水稻泛基因组/生菜转录本/拟南芥蛋白库/NCBI nt）+ E-value 阈值 + Mock 结果 NDataTable（Query/Subject/Identity%/E-value/Bit Score）+ 序列比对高亮 `<pre>` 展示
+  - [x] **PlotWorkshopView.vue** — 绘图工坊：CSV/TSV 上传 + 5 种图表类型（柱/线/散点/热图/箱线图）+ X/Y 轴列选择 + 配色方案 + ECharts 实时渲染画布（切换图表类型即渲染对应 Mock 图表）
+  - [x] **DashboardView.vue** — 在 overview-grid 与 AdminStatsPanel 之间新增「生信工具箱」快捷入口卡片（4 列网格，响应式 2 列/1 列）
+- [ ] **后续阶段（待推进）**
+  - [ ] 阶段二：后端 `/api/v1/tools/` 路由组 + IGV 静态资源 Range Requests 支持 + 质控接口联调（Rust 脚本）
+  - [ ] 阶段三：Celery 异步 BLAST 任务队列 + AI 绘图 Agent 接入（MCP 协议）
+  - [ ] 后端 `tools_engine/` 目录（Rust 质控工具 + Python 绘图脚本）
+  - [ ] igv.js 真实引入（配合 BAM/BigWig Range Requests）
+
+### 数据管理模块全面升级（多租户隔离 + 配额 + 断点续传 + 生命周期）✅ 2026-07-02 待真实环境验证
+
+> 需求：构建支持多用户物理/逻辑隔离、500GB 动态配额与自动清理、大文件断点续传与容量可视化的生信存储底座，为 Nextflow/Snakemake 流程提供稳健文件吞吐。
+> 架构决策：配额落 User 表（与现有 per-user 隔离逻辑统一，弃用未启用的 Workspace 表配额）；新建 FileRecord/UploadSession/Sample 三表替代磁盘扫描；仓储层所有方法首参 user_id + WHERE 过滤，杜绝水平越权。
+> 验证：15 个后端模块导入通过；create_app().openapi() 注册 9 个 files + 8 个 admin 路由；前端 vue-tsc 零错误、npm run build 成功；FileService 路径/类型识别正确；前后端 MD5 协议一致性已验证（spark-md5 与 hashlib.md5 同字节同结果）。⚠️ 真实环境待补：alembic upgrade head + httpie 端到端 + celery worker/beat 实跑。
+
+- [x] **阶段一：底层架构与多租户隔离**
+  - [x] `UserModel` 加 `storage_quota`(默认 500GiB)/`used_storage` + User 领域实体同步 + 仓储 `add_used_storage()` 原子累加（防并发双计）
+  - [x] 新建 `models/file.py`：`FileRecordModel`/`UploadSessionModel`/`SampleModel`，全部 `user_id` 外键 + 索引 + ondelete=CASCADE
+  - [x] Alembic 迁移 `a9b0c1d2e3f4`（链 f1a2b3c4d5e6→a9b0c1d2e3f4）：新列 + 三新表 + 外键 + 索引 + server_default
+  - [x] `QuotaExceededError` → 全局 OmicHubError handler 映射 403
+  - [x] 路径规范化：`{storage_path}/users/{user_id}/raw/` 与 `/results/`，FileService 路径工厂 `user_raw_dir`/`user_results_dir`
+- [x] **阶段一：Repository 层（强制 user_id 隔离）**
+  - [x] `domain/file/repositories.py` 三接口（IFileRepository/IUploadSessionRepository/ISampleRepository），所有方法首参 user_id
+  - [x] `infrastructure/database/repositories/file_repository.py` 三实现，get_by_id 同时校验归属（越权返 404）
+  - [x] `FileService.list_files` 从磁盘 rglob 切换为 DB 查询（支持排序）
+- [x] **阶段二：大文件传输与配额控制**
+  - [x] `schemas/file.py` 扩展：UploadInit/Chunk/Merge/Quota/Sample DTO
+  - [x] FileService：`init_upload`（配额预检→403、秒传、断点续传）/ `save_chunk`（MD5 校验+幂等）/ `merge_upload`（合并+总 MD5+原子累加配额+清理临时分片）/ `get_quota`
+  - [x] 9 个路由：list / quota / upload/init / upload/chunk / upload/merge / upload/cancel / download / delete / samples
+- [x] **阶段三：自动化管控与生命周期**
+  - [x] `tasks/storage.py`：`reconcile_used_storage`（每日 3:00 盘点物理目录校正 used_storage）+ `cleanup_expired`（僵尸会话/30天临时/90天冷数据归档或删除）
+  - [x] `celery.py` 注册 include + route + 两条 beat；旧 `analysis.cleanup_expired` 桩改为向后兼容委托
+  - [x] `core/config.py` 新增保留期配置（file_temp_retention_days=30 / file_archive_retention_days=90 / file_archive_mode）
+- [x] **阶段四：前端交互重构**
+  - [x] `FilesView.vue` 重写：StorageBanner + ChunkUploader + 可排序表格 + 下载/删除
+  - [x] `StorageBanner.vue`：复用 Dashboard 蓝紫渐变，三段阈值进度条（0-70% 青/71-90% 黄/91-100% 红）
+  - [x] `ChunkUploader.vue` + `useChunkUpload.ts`：5MiB 切片、3 路并发、spark-md5、暂停/续传/取消
+  - [x] `types/index.ts` 补 7 个类型（QuotaInfo/UploadInit/Chunk/Merge/QueueItem 等）
+- [x] **阶段五：Admin 配额调配**
+  - [x] 后端 `PUT /admin/users/{id}/quota`（校验正数/5TiB 上限/不低于已用）+ list_users 返回配额
+  - [x] 前端 `AdminUserManagementView.vue` 加存储用量列（小进度条）+「配额」按钮 + `QuotaEditModal.vue`
+- [ ] **真实环境验证（待补）**：alembic upgrade head → httpie 走 init/chunk/merge/quota/download/续传/越权404 → celery worker+beat 跑对账与清理
+
+### Agent 调度中枢前后端真实联动（agent_id → 组装模型/系统词/MCP 工具 → SSE 流式 + tool_call 闭环）✅ 2026-07-02 待真实环境验证
+
+> 需求：打通「组装环节」。此前前端智能体沙盒用 `sendMockMessage` 的 setTimeout 假回复，后端 `/chat/stream` 直接吃 model_id、无 Agent 概念、无 MCP 工具注入、system_prompt 被「极简测试」注释掉，且后端根本没有 Agent 实体（仅活在前端 Mock store）。目标链路：前端传 `agent_id` → 后端查 Agent 设定（system_prompt + 绑定模型 + 绑定 MCP 工具）→ 查模型连接信息 → MCP 工具 Schema 转 OpenAI tools 注入 → 打向模型 → SSE 流式回前端；模型返回 tool_calls 时后端用 MCPClient 自动执行并回灌，继续生成（agentic 闭环）。
+> 架构决策（已与用户确认两点范围）：① Agent **全量落库**（新建 agent_templates 表，不走扩展 ChatAssistantModel 也不走前端透传）；② MCP 工具**注入 + 自动执行闭环**（不只注入）。
+> 复用既有实现：SSE 解析复用 `useChatStream.ts` 模式扩展；Provider 复用 `OpenAICompatibleProvider`/`ProviderManager`；MCP 执行复用 `MCPClient.call_tool` + `MCPDomainService.route_tool_call`；消息持久化复用 `ChatService.add_message`/`get_session`/`create_session`/`update_message_content`；脱敏复用 `sanitizer`；技能 prompt 复用 `SkillService.build_skills_prompt`；Admin CRUD 范式复用 `admin/assistants.py`。
+> 验证：后端 `import omichub.main` 通过、openapi 含 `/agents`/`/admin/agents`/`/chat/stream`(agent_id) 路由；ORM metadata 校验 `agent_templates` 表与 `chat_sessions.agent_id` 列已注册；迁移 revision 链正确（`7f8e9d0c1b2a → 9a5b6c7d8e1f`）；前端 `vue-tsc --noEmit` 零错误。⚠️ 真实环境待补：`alembic upgrade head`（沙箱无 DB 访问未实跑）+ 端到端发消息 + 给内置 Agent 绑定真实 model_id 后测工具调用闭环。
+
+#### 后端 — Agent 实体落库
+- [x] **新建 `infrastructure/database/models/agent.py`** — `AgentTemplateModel`：`id`/`agent_id`(unique)/`name`/`description`/`avatar`/`color`/`category`/`model_id`(FK→ai_provider_configs.id, nullable)/`model_engine`(展示 label)/`system_prompt`/`welcome_message`/`mcp_ids`(JSONB)/`skill_ids`(JSONB)/`temperature`/`max_tokens`/`is_builtin`/`is_active`/`is_default` + TimestampMixin；索引 `idx_agent_templates_category(category,is_active)`
+- [x] **`chat.py` 模型扩展** — `ChatSessionModel` 新增 `agent_id` 列（FK→agent_templates.agent_id, nullable），会话归属 Agent
+- [x] **`models/__init__.py` 注册** — import `AgentTemplateModel` 并加入 `__all__`（alembic autogenerate 依赖）
+- [x] **Alembic 迁移 `9a5b6c7d8e1f_add_agent_templates.py`** — 建 `agent_templates` 表 + `chat_sessions.agent_id` 列 + FK；down_revision=`7f8e9d0c1b2a`（mergepoint 之后，单 head 无需 merge）
+
+#### 后端 — Agent Schemas + Service
+- [x] **新建 `application/schemas/agent.py`** — `AgentTemplateDTO`/`CreateAgentRequest`/`UpdateAgentRequest`（mcp_ids/skill_ids 为 list[Any]）
+- [x] **新建 `application/services/agent_service.py`**
+  - [x] `BUILTIN_AGENTS` 种子（4 个：general/rnaseq/code/viz，沿用前端 Mock seed 设定）
+  - [x] CRUD：`list_agents(active_only)`/`get_agent`/`get_agent_dto`/`create_agent`/`update_agent`/`delete_agent`(builtin 仅停用)/`toggle_agent`/`set_default_agent` + `ensure_builtin_agents`(幂等落库)
+  - [x] **`assemble_context(agent_id) -> AgentContext`**（调度中枢核心）：加载 Agent → `_resolve_model`(优先 agent.model_id，缺省回落默认/首个启用) → `SqlAlchemyMCPServerRepository.get_by_ids` 拉绑定 MCP server → 工具 `inputSchema` 转 OpenAI tools `{type:function, function:{name,description,parameters}}` → system_prompt = agent.system_prompt + `_build_skill_prompt`(skill_ids 经 SkillModel 解析 + `SkillService.build_skills_prompt`)
+  - [x] `AgentContext` dataclass：agent/model_config(可 None)/system_prompt/tools/mcp_servers/temperature/max_tokens
+
+#### 后端 — MCP 仓储 + Provider 升级
+- [x] **`domain/mcp/repositories.py` + `mcp_repository.py` 新增 `get_by_ids(ids)`**（`where(id.in_(ids))`），供 assemble_context 批量拉绑定 server
+- [x] **`openai_compatible.py` 升级**
+  - [x] `chat_stream` 新增 `tools: list[dict] | None` 入参；非空时注入 `payload["tools"]` + `tool_choice="auto"`
+  - [x] 累积流式 `tool_calls` 分片（按 index 累加 id/type/function.name/function.arguments）；流结束 yield 一个 `ChatChunk(type="tool_calls", metadata={"tool_calls":[...]})`（区别于旧的单分片 tool_call）
+  - [x] 辅助方法 `_emit_tool_calls`/`_materialize_tool_calls` 提到 class 级（修正误入 try 块导致 except 失效）
+
+#### 后端 — 编排闭环 + 路由
+- [x] **`schemas/chat.py` 扩展 `ChatStreamRequest`** — `model_id` 改 `UUID | None`（与 agent_id 至少传一个）、新增 `agent_id: str | None`、新增 `stream: bool = True`
+- [x] **`ChatService.create_session` 加 `agent_id` 参数** — 会话 agent_id 列落库
+- [x] **`ChatService.stream_agent_chat`（新增，旧 stream_chat 不动）** — Agent 编排闭环：
+  - [x] `assemble_context` 取 model_config/system_prompt/tools/mcp_servers；任一缺失 yield error chunk
+  - [x] 取/建会话（复用 get_session/create_session）+ 落库用户消息(sanitize_text) + AI 占位消息(status=streaming)
+  - [x] **Agentic 循环（上限 8 轮）**：`provider_manager.chat_stream(tools=...)` → 累积 text 逐 chunk yield(打字机) → 收到 tool_calls 则对每个 tool_call：yield `tool_call` SSE → 在绑定 mcp_servers 里按 tool_name 找 server → `MCPClient.call_tool` → yield `tool_result` SSE(含 success/结果) → append assistant tool_calls 消息 + 各 role:tool 结果消息 → continue 下一轮；无 tool_calls 则落库完整 content + yield `done`(带 session_id/message_id) + return
+  - [x] 异常/超轮次落库已生成内容 + yield error/done；送 LLM 的 messages 用 sanitize_messages 脱敏
+- [x] **`api/v1/chat.py` `/chat/stream` 分派** — agent_id 非空走 `stream_agent_chat`，否则走旧 `stream_chat`（model_id 缺失 yield error）；SSE 事件类型扩展 text/tool_call/tool_result/error/done
+- [x] **新建 `api/v1/admin/agents.py`** — AdminRequired CRUD + toggle + set-default（镜像 assistants.py）
+- [x] **新建 `api/v1/agents.py`** — 公开 `GET /agents`(启用列表) + `GET /agents/{agent_id}`(详情含 welcome_message)
+- [x] **`api/v1/router.py` 挂载** — `/admin/agents`(Admin-Agents) + `/agents`(Agents)
+
+#### 前端 — 切真实 API + SSE 流式
+- [x] **新建 `api/agent.ts`** — `agentApi.list/get` + `adminAgentApi.create/update/remove/toggle`；DTO↔AgentTemplate 互转（含 model_id）
+- [x] **`types/agent.ts` 扩展** — `AgentTemplate` 新增 `model_id?: string`
+- [x] **新建 `composables/useAgentChatStream.ts`** — fetch + ReadableStream；payload `{agent_id, session_id?, messages, stream:true}`；解析 text/tool_call/tool_result/error/done 事件（区别于 useChatStream 的 assistant_id 路径）
+- [x] **`stores/agentHub.ts` 从 Mock 切真实**
+  - [x] 移除 `seedAgents()`/`seedMcps()`/`seedSkills()`/`sendMockMessage`/streamTimer setInterval 假回复
+  - [x] `fetchAgents(activeOnly)`(调 /agents 或 /admin/agents) + `fetchMcps`(调 /mcp) + `fetchSkills(all)`(调 /chat/skills 或 /admin/skills) + `initAssets`(Promise.all)
+  - [x] admin 动作改 async：`upsertAgent`/`toggleAgent`/`deleteAgent`(调 admin API 后刷新) + 技能 `importSkillFromUrl`/`importSkillFromJson`/`toggleSkill`/`deleteSkill`(调 /admin/skills)
+  - [x] **`sendMessage(content)` 真实 SSE**：push 用户消息 + AI 占位(toolCalls:[]) → 构建 ctxLen=20 上下文 → `streamChat` → onText 累积占位 content/onSessionCreated 回填真实 session_id/onToolCall 追加 toolCalls(pending→running)/onToolResult 更新 status(success/error)/onError/onDone
+  - [x] `stopStreaming` 调 abortStream
+- [x] **`AgentResourceTab.vue` 表单适配** — 「大模型引擎」下拉改为**「绑定模型配置」**下拉（数据源 `GET /chat/models`，value=model_id UUID）+ 保留「模型引擎标签」次要下拉；onMounted 调 `fetchAgents(false)` + fetchMcps/fetchSkills + 加载模型列表；handleSave/handleDelete 改 async
+- [x] **`SkillResourceTab.vue` 适配** — onMounted 调 `fetchSkills(true)`；import/toggle/delete 改 async（原 setTimeout Mock 移除）
+- [x] **`AgentWorkspace.vue`** — onMounted 调 `store.initAssets()`
+- [x] **`AgentSandbox.vue`** — `handleSend` 改调 `store.sendMessage(content)`（不 await 让 UI 立即清空）；透传 `streaming-thought`
+
+#### 待真实环境验证
+- [ ] `alembic upgrade head`（沙箱无 DB 访问，未实跑；迁移文件 revision 链与 ORM metadata 已校验通过）
+- [ ] 端到端：进入 AI 助手页 → 选「RNA-seq 分析师」→ 发「帮我解释 DESeq2 结果」→ 验证打字机流式
+- [ ] 给内置 Agent 显式绑定真实 model_id（AI 资源中心表单），诱导调用 BioDB MCP 的 `query_kegg` → 验证 tool_call→tool_result 气泡后模型继续生成
+- [ ] DB 校验：`chat_sessions.agent_id` 正确、`chat_messages` 含 user+assistant 记录 status=complete
+
+### 账户未激活弹窗彩蛋（点击计数 + 文案切换 + 第5次猫爪）✅ 2026-07-02 待明日测试
+
+> 需求：登录未激活账号时弹窗,文案活泼化 + 点击计数渐变:前两次正常版、第三次起着急版、第五次关闭触发全屏猫爪彩蛋。文案全部 YAML 驱动。
+> 技术栈纠偏:任务描述写 React+Arco,实为 Vue3+Naive UI;无独立 ActivationModal.tsx,原由 RegistrationDisabledModal 复用;猫咪是 Lottie(cat-fishing-on-moon.json)非 cat-moon.png;无全局彩蛋系统需自建 CatPawsOverlay。
+> 架构:新增 ActivationModal.vue 薄壳(复用共享弹窗视觉 + 叠加计数逻辑)→ 派发 window 事件 omicHub:triggerCatPaws → 新增全局 CatPawsOverlay.vue(App.vue 挂载)监听事件渲染猫爪;AboutView 召唤按钮也改派发同一事件,统一一套实现。
+> 验证:后端 SiteContentService 返回 activation 全字段;前端 vue-tsc 退出码 0;Node 单测计数阈值(open#1/#2 normal→#3 urgent→#5 触发猫爪→#6 不重复)正确;web 容器 healthy。
+
+- [x] **后端 YAML 化**(改文件刷新即生效)
+  - [x] `data/OmicHub.yaml` activation 段新增 title/button_text/title_urgent/message_urgent/button_text_urgent
+  - [x] `schemas/site_content.py` ActivationContent 扩展 5 字段(带默认值,缺失不崩)
+  - [x] `services/site_content_service.py` DEFAULT_CONTENT 补对应默认值
+- [x] **前端类型 + store**
+  - [x] `types/site-content.ts` ActivationContent 接口扩展
+  - [x] `stores/site-config.ts` 新增 6 个 computed(activationTitle/Message/ButtonText + 着急版三件套)
+- [x] **共享弹窗增强**
+  - [x] `RegistrationDisabledModal.vue` 新增 buttonText prop + confirm 事件(仅按钮点击触发,蒙层关闭不触发→满足"只有点按钮才计数");宽度 360→400px
+- [x] **新增 ActivationModal.vue** — 打开时读 localStorage `omicHub_activation_click_count` → 按阈值(count<2 正常 / count>=2 着急)选文案 → 按钮点击 count++ 写回 → 第5次(next===5)派发 `window.dispatchEvent(new CustomEvent('omicHub:triggerCatPaws'))` → 关闭
+- [x] **新增 CatPawsOverlay.vue** — 全局监听 omicHub:triggerCatPaws,26个发光猫爪(drop-shadow 紫青强发光)、7s 自动收起、pointer-events:none 不挡交互
+- [x] **App.vue** 全局挂载 CatPawsOverlay(NMessageProvider 内,登录页/关于页都覆盖)
+- [x] **AboutView.vue** 召唤按钮改派发事件(删本地猫爪状态/CSS,与 ActivationModal 共用 CatPawsOverlay)
+- [x] **LoginView.vue** 未激活场景从 RegistrationDisabledModal 换成 ActivationModal
+- [x] **边界**:清 localStorage 计数重置 / 蒙层关闭不计入 / 隐私模式 try-catch 降级 / 注册关闭场景不受影响
+- [ ] **明日测试路径**:刷新登录页,用未激活账号登录 → 前两次「收到喵!」+正常文案(账号还在星尘中沉睡✨) → 第三次起切着急版(喵～你好像很着急呢⏳)+按钮变「我这就去!」→ 第五次关闭后全屏猫爪彩蛋浮现。所有文案改 data/OmicHub.yaml activation 段即可调整
 
 ### 登录页 + 注册弹窗 Glassmorphism 毛玻璃改造 ✅ 2026-06-30
 
@@ -461,11 +709,11 @@
   - [ ] 敏感信息脱敏 (AI 对话中的品种名)
   - [ ] 审计日志表 + 中间件
 
-- [ ] **文件管理** (docs/modules/03_api_design.md)
-  - [ ] 文件上传 (分块 + 断点续传)
-  - [ ] SampleRepositoryImpl
-  - [ ] 结果归档过期清理 (Celery Beat 定时任务)
-  - [ ] 前端文件管理页 + 上传组件
+- [x] **文件管理** (docs/modules/03_api_design.md) ✅ 2026-07-02 详见顶部「数据管理模块全面升级」
+  - [x] 文件上传 (分块 + 断点续传)
+  - [x] SampleRepositoryImpl
+  - [x] 结果归档过期清理 (Celery Beat 定时任务)
+  - [x] 前端文件管理页 + 上传组件
 
 - [ ] **远程执行模式** (docs/modules/01_architecture_overview.md §4.4)
   - [ ] 远程 Snakemake Executor 服务 (集群头节点 FastAPI 副进程)
@@ -500,10 +748,10 @@
 
 - [ ] **前端完善**
   - [x] About 页面 (Milky Way 背景 + star-stuff 文案) ✅ 2026-06-25
+  - [x] 暗色模式 ✅ 2026-07-02
   - [ ] 各域页面完整实现 (Flows/Tasks/Files/AI)
   - [ ] 全局错误处理 + 加载态
   - [ ] 响应式布局适配
-  - [ ] 暗色模式
 
 - [ ] **测试覆盖**
   - [ ] 六域单元测试

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
+from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -28,6 +28,16 @@ class UserModel(Base, TimestampMixin):
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     preferences: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # ===== 存储配额（按用户隔离）=====
+    # 默认 500 GiB；管理员可经 PUT /admin/users/{id}/quota 动态调配
+    storage_quota: Mapped[int] = mapped_column(BigInteger, default=500 * 1024 * 1024 * 1024)
+    used_storage: Mapped[int] = mapped_column(BigInteger, default=0)
+    # ===== 管理员备注 =====
+    # 供管理员记录辅助信息（如"客户要求延期""测试账号"），不对外暴露给用户
+    admin_note: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    # ===== 所属课题组 =====
+    # 用户归属的研究组/实验室，用于资产看板分组与检索；可空
+    lab_group: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
 
 
 class WorkspaceModel(Base, TimestampMixin):

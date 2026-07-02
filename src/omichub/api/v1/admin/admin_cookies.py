@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 
 from omichub.api.deps import CurrentUserId, DbSession
 from omichub.application.schemas.cookie import (
+    AdminCookieAccountDTO,
     AdjustBalanceRequest,
     CookieAccountDTO,
     CookieStatsDTO,
@@ -16,7 +17,7 @@ from omichub.application.schemas.cookie import (
 )
 from omichub.application.services.cookie_monitor_service import CookieMonitorService
 from omichub.application.services.cookie_service import CookieService
-from omichub.core.exceptions import AuthorizationError
+from omichub.middleware.rbac import AdminRequired  # 统一 RBAC 实现
 
 router = APIRouter()
 
@@ -28,35 +29,17 @@ def get_cookie_service(db: DbSession) -> CookieService:
 CookieServiceDep = Annotated[CookieService, Depends(get_cookie_service)]
 
 
-async def require_admin(current_user_id: CurrentUserId) -> None:
-    """简化版管理员校验 — 后续可接入完整 RBAC"""
-    from omichub.infrastructure.database.models.user import UserModel
-    from omichub.infrastructure.database.session import get_session_factory
-
-    factory = get_session_factory()
-    async with factory() as session:
-        from sqlalchemy import select
-
-        result = await session.execute(
-            select(UserModel.role).where(UserModel.id == UUID(current_user_id))
-        )
-        role = result.scalar_one_or_none()
-        if role != "admin":
-            raise AuthorizationError("需要管理员权限")
-
-
-AdminRequired = Annotated[None, Depends(require_admin)]
-
-
-@router.get("/accounts", response_model=list[CookieAccountDTO], summary="所有账户")
+@router.get("/accounts", response_model=list[AdminCookieAccountDTO], summary="所有账户")
 async def list_accounts(
     _admin: AdminRequired,
     service: CookieServiceDep,
     status: str | None = None,
+    search: str | None = None,
     offset: int = 0,
     limit: int = 50,
-) -> list[CookieAccountDTO]:
-    return await service.list_all_accounts(status, offset, limit)
+) -> list[AdminCookieAccountDTO]:
+    """所有饼干账户 — 关联用户身份/角色/课题组/存储资产，支持按用户名/邮箱/用户ID检索。"""
+    return await service.list_all_accounts(status, search, offset, limit)
 
 
 @router.post("/accounts/{user_id}/adjust", response_model=CookieTransactionDTO, summary="调整余额")

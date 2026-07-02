@@ -13,12 +13,14 @@ class ChatStreamRequest(BaseModel):
     """流式聊天请求"""
 
     messages: list[dict[str, str]] = Field(..., description="消息列表 [{role, content}]")
-    model_id: UUID = Field(..., description="使用的模型配置 ID")
+    model_id: UUID | None = Field(None, description="使用的模型配置 ID（与 agent_id 至少传一个）")
+    agent_id: str | None = Field(None, description="Agent ID：传入则走 Agent 调度中枢")
     session_id: str | None = Field(None, description="会话 ID，新建则传 null")
     assistant_id: str | None = Field(None, description="助手 ID")
     system_prompt: str | None = Field(None, description="自定义系统提示词")
     temperature: float | None = None
     max_tokens: int | None = None
+    stream: bool = Field(True, description="是否流式返回")
 
 
 class ChatMessageDTO(BaseModel):

@@ -132,6 +132,8 @@ async def _execute_snakemake(
                     task_id=str(task.id),
                     flow_id=task.flow_id,
                     pre_deducted=Decimal(str(pre_deducted)),
+                    sample_count=task.sample_count,
+                    comparison_count=len((task.parameters or {}).get("comparisons", [])),
                     resource_cores=cores,
                 )
 
@@ -153,6 +155,11 @@ async def _execute_snakemake(
 
 @shared_task(name="omichub.infrastructure.celery_app.tasks.analysis.cleanup_expired")
 def cleanup_expired() -> dict:
-    """清理过期结果归档"""
-    # TODO: 调用 FileDomainService.cleanup_expired_archives()
-    return {"status": "ok", "cleaned": 0}
+    """[已迁移] 过期清理逻辑移至 tasks.storage.cleanup_expired。
+
+    保留任务名仅为向后兼容旧 beat 配置；实际由 storage.cleanup_expired 承担。
+    新部署的 beat 已直接指向 storage.cleanup_expired。
+    """
+    from omichub.infrastructure.celery_app.tasks.storage import cleanup_expired as _real
+
+    return _real()  # shared_task 直接调用即在进程内执行其函数体

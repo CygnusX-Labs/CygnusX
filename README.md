@@ -38,6 +38,8 @@ make docker-up
 make migrate
 
 # 6. 初始化管理员账号
+#    命令行：make init-admin
+#    或浏览器访问 http://localhost:5173/setup 网页注册（见下方「首次使用与管理员注册」）
 make init-admin
 
 # 7. 初始化饼干定价策略（可选）
@@ -83,7 +85,9 @@ make docker-up-worker
 # 5. 执行数据库迁移
 docker exec omichub-web uv run alembic upgrade head
 
-# 6. 初始化管理员账号
+# 6. 初始化管理员账号（二选一，推荐方式 A）
+#    方式 A：浏览器访问 /setup 网页注册（见下方「首次使用与管理员注册」）
+#    方式 B：命令行脚本
 docker exec omichub-web uv run python scripts/init_admin.py
 
 # 7. 初始化饼干定价策略（可选）
@@ -99,6 +103,22 @@ docker exec omichub-web uv run python scripts/init_cookies.py
 > - 改动前端后用：`make docker-reload`（含 build + restart nginx）
 > - 或手动：`cd frontend && npm run build && cd .. && docker restart omichub-nginx`
 > - 浏览器端强制刷新：Ctrl+Shift+R（避免缓存旧 chunk）
+
+### 首次使用与管理员注册
+
+平台首次部署、数据库尚无管理员账号时，可直接用浏览器打开「初始化配置」页创建首位管理员：
+
+```
+http://<服务器IP>:8888/setup        # 例：http://192.168.5.102:8888/setup
+```
+
+- 该页面仅在**系统无任何 admin 用户**时可用（后端 `has_any_admin()` 强制校验）。
+- 一旦首位管理员创建成功，`/setup` 即被永久关闭：
+  - 浏览器再次访问 `/setup` 会自动重定向到登录页；
+  - 即便绕过前端直接 `POST /api/v1/auth/setup`，后端也会返回 `409 系统已存在管理员账号，请通过登录页访问`，无法再创建第二个管理员。
+- 因此 `/setup` 不存在被反复打开注册管理员的安全风险。
+
+> 首位管理员创建后，其他账号需由管理员在「系统管理 → 用户管理」中创建（或在开放自助注册时通过登录页注册）。首次登录会自动弹出迎新引导，并收到一条指向「实验室知识库」的欢迎通知。
 
 > 💡 一键拉起主栈 + Worker（含前端构建）：`make docker-up-all`。
 

@@ -41,7 +41,23 @@ class DownloadService:
             raise ValidationError("登录号 (accession) 不能为空")
 
         accession = req.accession.strip()
-        work_dir = self._make_work_dir(user_id, accession)
+        # 规整目标目录：去首尾斜杠、防 .. 越权
+        directory = self._normalize_directory(req.target_directory)
+        work_dir = self._make_work_dir(user_id, accession, directory)
+
+        # 若指定了目标目录且尚未登记，自动创建 Directory 记录（物理目录已由 _make_work_dir 创建）
+        if directory:
+            from omichub.application.services.file_service import FileService
+            from omichub.application.schemas.file import DirectoryCreateRequest
+
+            file_svc = FileService(self._db)
+            try:
+                await file_svc.create_directory(
+                    UUID(user_id), DirectoryCreateRequest(path=directory)
+                )
+            except Exception:
+                # 目录已存在则忽略（ConflictError），其他异常不阻断下载提交
+                pass
 
         # 创建任务聚合根（复用通用 Task，flow_id 标记为数据下载）
         task = await self._domain.submit(
@@ -53,6 +69,7 @@ class DownloadService:
                 "download_method": req.download_method,
                 "multithreads": req.multithreads,
                 "aws_threads": req.aws_threads,
+                "target_directory": directory,
             },
             sample_count=0,
         )
@@ -75,20 +92,30 @@ class DownloadService:
             total=len(downloads),
         )
 
-    def _make_work_dir(self, user_id: str, accession: str) -> str:
-        """下载产物目录 — 落在 upload_dir 下以触发 Files 自动入库。
+    @staticmethod
+    def _normalize_directory(directory: str | None) -> str:
+        if not directory:
+            return ""
+        d = directory.strip().strip("/")
+        parts = [p for p in d.split("/") if p not in ("", ".", "..")]
+        return "/".join(parts)
 
-        storage_path/upload_dir/<user_id>/ebi_download/<accession>/
-        建目录（同步，仿 task_service._make_work_dir），返回路径字符串。
+    def _make_work_dir(self, user_id: str, accession: str, directory: str = "") -> str:
+        """下载产物目录 — 统一收拢到 users/{uid}/downloads/{directory}/{accession}/
+
+        旧路径 uploads/{uid}/ebi_download/{accession}/ 已废弃。
+        directory 为空时落到 downloads 根目录。
         """
         # accession 仅用作目录名，去除可能的路径分隔符以防越权
         safe_acc = accession.replace("/", "_").replace("\\", "_").strip()
-        work_dir = (
+        base = (
             Path(self._settings.storage_path)
-            / self._settings.upload_dir
+            / "users"
             / user_id
-            / "ebi_download"
-            / safe_acc
+            / "downloads"
         )
+        if directory:
+            base = base / directory
+        work_dir = base / safe_acc
         work_dir.mkdir(parents=True, exist_ok=True)
         return str(work_dir)

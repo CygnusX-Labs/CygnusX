@@ -44,6 +44,7 @@ export interface FlowDefinition {
   category: string
   version: string
   tags?: string[]
+  docs_url?: string | null
 }
 
 export interface DataFile {
@@ -53,8 +54,76 @@ export interface DataFile {
   size: number
   checksum: string
   file_type: 'fastq' | 'bam' | 'vcf' | 'count_matrix' | 'h5ad' | 'rds' | 'meta' | 'report' | 'image' | 'other'
+  status?: string
+  directory?: string
   metadata: Record<string, unknown>
   created_at: string
+}
+
+/** 存储配额信息 */
+export interface QuotaInfo {
+  used: number
+  total: number
+  percent: number
+}
+
+/** 用户自定义目录 */
+export interface Directory {
+  id: string
+  path: string
+  name: string
+  parent_path: string | null
+  is_system?: boolean
+  created_at: string
+}
+
+/** 文件选择器项（供分析选文件） */
+export interface FilePickerItem {
+  id: string
+  original_name: string
+  size: number
+  file_type: string
+  directory: string
+  abs_path: string
+}
+
+/** 分块上传初始化响应 */
+export interface UploadInitResponse {
+  upload_id: string
+  completed: boolean
+  file_id?: string | null
+  uploaded_chunks: Array<{ index: number; md5?: string }> | number[]
+  chunk_size: number
+}
+
+/** 分块上传响应 */
+export interface UploadChunkResponse {
+  upload_id: string
+  index: number
+  accepted: boolean
+  uploaded: number
+}
+
+/** 合并响应 */
+export interface UploadMergeResponse {
+  file_id: string
+  original_name: string
+  size: number
+  checksum: string
+  used_storage: number
+}
+
+/** 上传队列项状态 */
+export interface UploadQueueItem {
+  id: string
+  file: File
+  uploadId: string | null
+  status: 'pending' | 'uploading' | 'merging' | 'completed' | 'paused' | 'failed' | 'cancelled'
+  progress: number
+  uploadedChunks: number
+  totalChunks: number
+  speed: number
+  error: string
 }
 
 export interface TaskLog {
@@ -284,7 +353,9 @@ export interface CookiePricing {
   resource_type: string
   flow_category: string
   base_cost: number
-  unit: 'per_task' | 'per_hour' | 'per_core_hour' | 'per_gb_hour' | 'per_session' | 'per_user'
+  per_sample_cost: number
+  per_comparison_cost: number
+  unit: 'per_task' | 'per_hour' | 'per_core_hour' | 'per_gb_hour' | 'per_session' | 'per_user' | 'per_sample' | 'per_comparison'
   is_active: boolean
   priority: number
   description: string
@@ -295,6 +366,8 @@ export interface CookiePricing {
 export interface CostEstimate {
   flow_id: string
   estimated_cost: number
+  sample_count: number
+  comparison_count: number
   breakdown: Array<{ item: string; cost: string }>
   affordable: boolean
   current_balance: number

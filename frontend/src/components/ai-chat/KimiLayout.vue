@@ -2,22 +2,24 @@
 import { ref, computed, onMounted } from 'vue'
 import { useMagicKeys, whenever } from '@vueuse/core'
 import { useRouter } from 'vue-router'
-import { NInput, NIcon, NButton, NTag, NAlert, NSelect, useMessage } from 'naive-ui'
-import { ShareOutline, SettingsOutline, CreateOutline } from '@vicons/ionicons5'
+import { NAlert, useMessage } from 'naive-ui'
 import KimiSidebar from './KimiSidebar.vue'
 import KimiEmptyState from './KimiEmptyState.vue'
 import KimiMessageList from './KimiMessageList.vue'
 import KimiChatInput from './KimiChatInput.vue'
+import ModelNavBar from './ModelNavBar.vue'
 import apiClient from '@/api/client'
 import { useChatSessionStore } from '@/stores/chatSession'
 import { useChatAssistantStore } from '@/stores/chatAssistant'
 import { useChatStore } from '@/stores/chat'
+import { useThemeStore } from '@/stores/theme'
 import { useAuthStore } from '@/stores/auth'
-import type { ChatMessage, ChatSession, SendOptions, ModelOption } from './types'
+import type { ChatMessage, ChatSession, SendOptions, CopyMode } from './types'
 
 const chatSessionStore = useChatSessionStore()
 const chatAssistantStore = useChatAssistantStore()
 const chatStore = useChatStore()
+const themeStore = useThemeStore()
 const authStore = useAuthStore()
 const router = useRouter()
 const message = useMessage()
@@ -47,14 +49,6 @@ const sessions = computed<ChatSession[]>(() =>
 
 const currentSessionId = computed(() => chatSessionStore.currentSessionId)
 
-const titleModel = computed({
-  get: () => chatSessionStore.currentSession?.title ?? '',
-  set: (v: string) => {
-    const sid = chatSessionStore.currentSessionId
-    if (sid) chatSessionStore.updateSessionTitle(sid, v)
-  },
-})
-
 // chatSessionStore.messages -> KimiMessageList 需要的 ChatMessage[]
 const messages = computed<ChatMessage[]>(() => {
   // 依赖流式内容，确保 SSE 推流时能实时触发重新渲染
@@ -72,22 +66,8 @@ const isEmpty = computed(
   () => !chatSessionStore.currentSessionId || messages.value.length === 0,
 )
 
-const assistantOptions = computed(() =>
-  chatAssistantStore.assistants.map((a) => ({
-    label: `${a.icon} ${a.name}`,
-    value: a.assistant_id,
-  }))
-)
-
-// chatSessionStore.models -> KimiChatInput 需要的 ModelOption[]
-const availableModelsForInput = computed<ModelOption[]>(() =>
-  chatSessionStore.models.map((m) => ({
-    id: m.id,
-    name: m.name,
-    description: `${m.provider_type} · ${m.model}`,
-    provider: m.provider_type,
-  }))
-)
+// 当前模型名称（供消息引用格式使用）
+const currentModelName = computed(() => chatSessionStore.selectedModel?.name ?? 'AI 助手')
 
 const streamingContent = computed(() => {
   // 依赖流式内容，确保 SSE 推流时 streamingContent 能实时更新
@@ -157,6 +137,9 @@ async function handleSend(content: string, _options: SendOptions) {
     assistantId: chatAssistantStore.currentAssistantId || undefined,
     // [极简测试] 临时禁用助手系统提示词
     // systemPrompt: chatAssistantStore.currentAssistant?.system_prompt,
+    temperature: chatStore.conversationSettings.temperature,
+    maxTokens: chatStore.conversationSettings.maxTokens,
+    contextLength: chatStore.conversationSettings.contextLength,
   })
 
   if (chatSessionStore.streamError) {
@@ -168,16 +151,16 @@ function handleSendPrompt(prompt: string) {
   handleSend(prompt, { agentMode: chatStore.agentMode, model: chatSessionStore.selectedModelId, plugins: [] })
 }
 
-function handleSelectModel(modelId: string) {
-  chatSessionStore.selectedModelId = modelId
-}
-
-function handleSelectPlugin(_pluginId: string) {
-  message.info('插件功能开发中，敬请期待')
-}
-
 function handleUploadFile(_file: File) {
-  message.info('文件上传功能开发中，敬请期待')
+  message.info('文件上传功能开发中')
+}
+
+function handleToggleWebSearch() {
+  message.info('联网搜索功能开发中')
+}
+
+function handleTriggerSandbox() {
+  message.info('代码沙盒功能开发中')
 }
 
 function handleNavigate(path: string) {
@@ -190,13 +173,29 @@ function handleFeedback(_id: string, type: 'like' | 'dislike') {
   message.success(type === 'like' ? '感谢反馈' : '会继续改进')
 }
 
-function handleCopyMessage(content: string) {
-  navigator.clipboard.writeText(content)
+function handleCopy(_mode: CopyMode) {
   message.success('已复制')
 }
 
-function handleRetry(_id: string) {
+async function handleRegenerate(id: string) {
+  if (chatSessionStore.isStreaming) {
+    message.warning('请等待当前回复完成')
+    return
+  }
   message.info('重新生成中...')
+  await chatSessionStore.regenerateMessage(id)
+}
+
+function handleRetryWithModel(_id: string) {
+  message.info('换模型重试功能开发中')
+}
+
+function handleTranslate(_id: string) {
+  message.info('翻译功能开发中')
+}
+
+function handleDeleteMessage(id: string) {
+  chatSessionStore.removeDisplayMessage(id)
 }
 
 // ===== 生命周期 =====
@@ -218,7 +217,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="kimi-layout" :data-theme="chatStore.theme">
+  <div class="kimi-layout" :data-theme="themeStore.theme">
     <KimiSidebar
       :sessions="sessions"
       :current-session-id="currentSessionId"
@@ -251,43 +250,20 @@ onMounted(async () => {
         />
 
         <template v-else>
-          <div class="session-header">
-            <n-input v-model:value="titleModel" class="session-title-input" placeholder="会话标题">
-              <template #prefix>
-                <n-icon><CreateOutline /></n-icon>
-              </template>
-            </n-input>
-            <div class="session-actions">
-              <n-select
-                v-if="assistantOptions.length > 0"
-                v-model:value="chatAssistantStore.currentAssistantId"
-                :options="assistantOptions"
-                size="tiny"
-                style="width: 160px"
-                placeholder="选择助手"
-              />
-              <n-tag :type="chatSessionStore.isStreaming ? 'warning' : 'success'" size="small" round>
-                {{ chatSessionStore.isStreaming ? '生成中' : '就绪' }}
-              </n-tag>
-              <n-button text class="action-btn">
-                <template #icon><n-icon><ShareOutline /></n-icon></template>
-                分享
-              </n-button>
-              <n-button text class="action-btn">
-                <template #icon><n-icon><SettingsOutline /></n-icon></template>
-                设置
-              </n-button>
-            </div>
-          </div>
+          <ModelNavBar />
 
           <KimiMessageList
             :messages="messages"
             :is-typing="chatSessionStore.isStreaming"
             :streaming-content="streamingContent"
             :streaming-thought="streamingReasoning"
+            :model-name="currentModelName"
             @feedback="handleFeedback"
-            @copy-message="handleCopyMessage"
-            @retry="handleRetry"
+            @copy="handleCopy"
+            @regenerate="handleRegenerate"
+            @retry-with-model="handleRetryWithModel"
+            @translate="handleTranslate"
+            @delete="handleDeleteMessage"
           />
 
           <n-alert
@@ -306,16 +282,11 @@ onMounted(async () => {
       <div class="input-area-wrapper">
         <KimiChatInput
           v-model="inputMessage"
-          :agent-mode="chatStore.agentMode"
-          :selected-model="chatSessionStore.selectedModelId"
-          :models="availableModelsForInput"
-          :plugins="chatStore.availablePlugins"
           :disabled="chatSessionStore.isStreaming"
           @send="(content) => handleSend(content, { agentMode: chatStore.agentMode, model: chatSessionStore.selectedModelId, plugins: [] })"
-          @toggle-agent="chatStore.agentMode = !chatStore.agentMode"
-          @select-model="handleSelectModel"
-          @select-plugin="handleSelectPlugin"
           @upload-file="handleUploadFile"
+          @toggle-web-search="handleToggleWebSearch"
+          @trigger-sandbox="handleTriggerSandbox"
         />
       </div>
     </main>

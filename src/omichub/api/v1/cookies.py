@@ -53,8 +53,12 @@ async def estimate_cost(
     current_user_id: CurrentUserId,
     service: CookieServiceDep,
     flow_id: str = Query(..., description="流程ID"),
+    sample_count: int = Query(0, ge=0, description="样本数量"),
+    comparison_count: int = Query(0, ge=0, description="差异比较组数量"),
 ) -> CostEstimateDTO:
-    return await service.estimate_cost(UUID(current_user_id), flow_id)
+    return await service.estimate_cost(
+        UUID(current_user_id), flow_id, sample_count, comparison_count
+    )
 
 
 @router.get("/balance-check", summary="检查余额是否足够")

@@ -41,8 +41,13 @@ DEFAULT_CONTENT: dict[str, Any] = {
         "admin_contact": "",
     },
     "activation": {
-        "message": "你的账号尚未激活，暂无法登录。请联系管理员为你开通激活，开通后即可正常使用平台～",
+        "message": "喵喵！检测到账号还在沉睡中，快找管理员大大帮忙激活一下吧！开通后就能开心逛平台啦～",
         "admin_contact": "",
+        "title": "账号还在星尘中沉睡 ✨",
+        "button_text": "收到喵！",
+        "title_urgent": "喵～ 你好像很着急呢 ⏳",
+        "message_urgent": "(｡•́︿•̀｡) 再戳管理员一下嘛！开通后就能开心逛平台啦～ ✨",
+        "button_text_urgent": "我这就去！",
     },
     "easter_egg": {
         "message": "🎉 恭喜你发现了 OmicHub 的隐藏星际守护者！",

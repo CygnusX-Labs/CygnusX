@@ -1,18 +1,15 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { NAvatar, NButton, NIcon, NTag, NCollapseTransition } from 'naive-ui'
+import { NAvatar, NIcon, NTag, NCollapseTransition } from 'naive-ui'
 import {
   SparklesOutline,
   ChevronForwardOutline,
-  CopyOutline,
-  RefreshOutline,
-  ThumbsUpOutline,
-  ThumbsDownOutline,
   DocumentOutline,
   BuildOutline,
 } from '@vicons/ionicons5'
 import md, { VChart } from './setup'
-import type { ChatMessage } from './types'
+import MessageActionBar from './MessageActionBar.vue'
+import type { ChatMessage, CopyMode } from './types'
 
 interface Props {
   message: ChatMessage
@@ -20,6 +17,7 @@ interface Props {
   streamingContent?: string
   streamingThought?: string
   userAvatar?: string
+  modelName?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -27,15 +25,20 @@ const props = withDefaults(defineProps<Props>(), {
   streamingContent: '',
   streamingThought: '',
   userAvatar: '',
+  modelName: 'AI 助手',
 })
 
 const emit = defineEmits<{
   feedback: [messageId: string, type: 'like' | 'dislike']
-  copyMessage: [content: string]
-  retry: [messageId: string]
+  copy: [mode: CopyMode]
+  regenerate: [messageId: string]
+  retryWithModel: [messageId: string]
+  translate: [messageId: string]
+  delete: [messageId: string]
 }>()
 
 const showThought = ref(false)
+const hovered = ref(false)
 
 const thoughtContent = computed(() =>
   props.isStreaming ? props.streamingThought : props.message.thought || ''
@@ -56,22 +59,30 @@ function handleBodyClick(e: MouseEvent) {
   }, 1500)
 }
 
-function handleCopy() {
-  navigator.clipboard.writeText(props.message.content)
-  emit('copyMessage', props.message.content)
+function handleCopy(mode: CopyMode) {
+  emit('copy', mode)
 }
-
-function handleRetry() {
-  emit('retry', props.message.id)
+function handleRegenerate() {
+  emit('regenerate', props.message.id)
 }
-
-function handleFeedback(type: 'like' | 'dislike') {
-  emit('feedback', props.message.id, type)
+function handleRetryWithModel() {
+  emit('retryWithModel', props.message.id)
+}
+function handleTranslate() {
+  emit('translate', props.message.id)
+}
+function handleDelete() {
+  emit('delete', props.message.id)
 }
 </script>
 
 <template>
-  <div class="kimi-message-item" :class="message.role">
+  <div
+    class="kimi-message-item"
+    :class="message.role"
+    @mouseenter="hovered = true"
+    @mouseleave="hovered = false"
+  >
     <template v-if="message.role === 'user'">
       <div class="user-message-wrapper">
         <div class="user-bubble">
@@ -82,6 +93,12 @@ function handleFeedback(type: 'like' | 'dislike') {
               <span>{{ file.name }}</span>
             </div>
           </div>
+          <MessageActionBar
+            :visible="hovered"
+            :is-user="true"
+            :content="message.content"
+            @delete="handleDelete"
+          />
         </div>
         <div class="user-avatar">
           <n-avatar
@@ -141,22 +158,18 @@ function handleFeedback(type: 'like' | 'dislike') {
             </div>
           </div>
 
-          <div class="message-actions">
-            <n-button text size="tiny" class="action-btn" @click="handleCopy">
-              <template #icon><n-icon size="14"><CopyOutline /></n-icon></template>
-              复制
-            </n-button>
-            <n-button v-if="false" text size="tiny" class="action-btn" @click="handleRetry">
-              <template #icon><n-icon size="14"><RefreshOutline /></n-icon></template>
-              重试
-            </n-button>
-            <n-button text size="tiny" class="action-btn" @click="handleFeedback('like')">
-              <template #icon><n-icon size="14"><ThumbsUpOutline /></n-icon></template>
-            </n-button>
-            <n-button text size="tiny" class="action-btn" @click="handleFeedback('dislike')">
-              <template #icon><n-icon size="14"><ThumbsDownOutline /></n-icon></template>
-            </n-button>
-          </div>
+          <MessageActionBar
+            v-if="!isStreaming"
+            :visible="hovered"
+            :is-user="false"
+            :content="message.content"
+            :model-name="modelName"
+            @copy="handleCopy"
+            @regenerate="handleRegenerate"
+            @retry-with-model="handleRetryWithModel"
+            @translate="handleTranslate"
+            @delete="handleDelete"
+          />
         </div>
       </div>
     </template>
@@ -229,16 +242,6 @@ function handleFeedback(type: 'like' | 'dislike') {
   font-weight: 500;
   color: var(--chat-accent);
   margin-bottom: 6px;
-}
-.kimi-message-item.assistant .message-actions {
-  display: flex;
-  gap: 4px;
-  margin-top: 10px;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-.kimi-message-item.assistant:hover .message-actions {
-  opacity: 1;
 }
 .kimi-message-item .system-message {
   text-align: center;

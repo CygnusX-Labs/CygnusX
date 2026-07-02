@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import KimiLayout from '@/components/ai-chat/KimiLayout.vue'
+import AgentWorkspace from '@/components/agent-workspace/AgentWorkspace.vue'
 </script>
 
 <template>
   <div class="ai-page">
-    <KimiLayout />
+    <AgentWorkspace />
   </div>
 </template>
 

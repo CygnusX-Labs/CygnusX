@@ -20,41 +20,22 @@ function openEasterEgg() {
   showEasterEgg.value = true
 }
 
-// ===== 召唤星际猫咪：全屏随机浮现发光猫爪足迹 =====
-interface CatPaw {
-  id: number
-  top: number
-  left: number
-  rotate: number
-  scale: number
-  delay: number
-}
-const catPaws = ref<CatPaw[]>([])
-const showCatPaws = ref(false)
+// ===== 召唤星际猫咪 =====
+// 猫爪动画由全局 CatPawsOverlay 负责（App.vue 挂载），这里只派发事件 + 弹 Toast。
+// playing 用于防连点：动画播放期间不重复派发。
+const playing = ref(false)
 let pawTimer: ReturnType<typeof setTimeout> | null = null
 
-// 召唤：生成一批随机位置的猫爪 + Toast，6s 后自动收起
 function summonCat() {
-  // 防连点：已在播放时不再重复触发（保留 toast 不重复弹）
-  if (showCatPaws.value) return
+  if (playing.value) return
   // 确保 toast / 按钮文案已就绪（首次进入关于页即点按钮时可能尚未拉取）
   siteConfig.fetchSiteConfig()
-  showCatPaws.value = true
-  const batch: CatPaw[] = Array.from({ length: 26 }, (_, i) => ({
-    id: Date.now() + i,
-    top: 8 + Math.random() * 84,
-    left: 5 + Math.random() * 90,
-    rotate: -30 + Math.random() * 60,
-    scale: 0.7 + Math.random() * 0.8,
-    delay: Math.random() * 1.2,
-  }))
-  catPaws.value = batch
+  playing.value = true
   message.success(siteConfig.easterEggToast, { duration: 3500 })
-
+  window.dispatchEvent(new CustomEvent('omicHub:triggerCatPaws'))
   if (pawTimer) clearTimeout(pawTimer)
   pawTimer = setTimeout(() => {
-    showCatPaws.value = false
-    catPaws.value = []
+    playing.value = false
   }, 7000)
 }
 
@@ -286,23 +267,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
       <span class="summon-cat-btn__text">{{ siteConfig.easterEggButtonText }}</span>
     </button>
 
-    <!-- 星际猫爪足迹覆盖层：不阻挡页面点击 -->
-    <Transition name="paws-fade">
-      <div v-if="showCatPaws" class="cat-paws-overlay">
-        <span
-          v-for="p in catPaws"
-          :key="p.id"
-          class="cat-paw"
-          :style="{
-            top: p.top + '%',
-            left: p.left + '%',
-            '--rot': p.rotate + 'deg',
-            '--scale': p.scale,
-            animationDelay: p.delay + 's',
-          }"
-        >🐾</span>
-      </div>
-    </Transition>
+    <!-- 猫爪足迹覆盖层由全局 CatPawsOverlay（App.vue）渲染，本页不再自建 -->
   </div>
 </template>
 
@@ -748,37 +713,6 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   0%, 100% { transform: rotate(0deg); }
   25% { transform: rotate(-12deg); }
   75% { transform: rotate(12deg); }
-}
-
-/* ===== 星际猫爪足迹覆盖层 ===== */
-.cat-paws-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  pointer-events: none; /* 不阻挡页面交互 */
-}
-.cat-paw {
-  position: absolute;
-  font-size: 52px;
-  /* 彩色 emoji 不受 color 影响，用多层 drop-shadow 叠出强发光，让深空背景上也醒目 */
-  filter:
-    drop-shadow(0 0 6px rgba(255, 255, 255, 0.95))
-    drop-shadow(0 0 12px rgba(167, 139, 250, 0.9))
-    drop-shadow(0 0 22px rgba(103, 232, 249, 0.7));
-  opacity: 0;
-  animation: paw-appear 2s ease-out forwards;
-}
-@keyframes paw-appear {
-  0% { opacity: 0; transform: translate(-50%, -50%) rotate(var(--rot, 0deg)) scale(calc(var(--scale, 1) * 0.4)); }
-  18% { opacity: 1; transform: translate(-50%, -50%) rotate(var(--rot, 0deg)) scale(var(--scale, 1)); }
-  78% { opacity: 1; }
-  100% { opacity: 0; }
-}
-.paws-fade-leave-active {
-  transition: opacity 0.4s ease;
-}
-.paws-fade-leave-to {
-  opacity: 0;
 }
 
 @media (max-width: 640px) {

@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     storage_path: str = "/data/omichub"
     upload_dir: str = "uploads"
     results_dir: str = "results"
+    # 文件生命周期：临时分片会话超 24h 视为僵尸；中间文件保留期；冷数据归档期
+    file_upload_session_timeout_hours: int = 24
+    file_temp_retention_days: int = 30  # 超期临时/中间文件清理
+    file_archive_retention_days: int = 90  # 超期未活跃结果归档或删除
+    file_archive_mode: str = "archive"  # archive（压缩归档）/ delete（彻底删除）
 
     # ===== 数据下载 (EBIDownload Rust 二进制) =====
     enable_ebi_download: bool = False  # 装好二进制 + sra-tools 后再开
@@ -124,6 +129,15 @@ class Settings(BaseSettings):
     # ===== MCP 集成 =====
     mcp_enabled: bool = True
     mcp_default_timeout: int = 30
+
+    # ===== 限流（全局每 IP 滑动窗口，Redis 不可用时降级放行）=====
+    rate_limit_enabled: bool = True
+    rate_limit_max: int = 100  # 窗口内最大请求数
+    rate_limit_window: int = 60  # 窗口秒数
+
+    # ===== 敏感信息脱敏 =====
+    # 逗号分隔的敏感词列表，AI 对话送 LLM 前 / 落库前替换为 [REDACTED]（不可逆）
+    sensitive_keywords: list[str] = []
 
     @field_validator("database_url", mode="before")
     @classmethod

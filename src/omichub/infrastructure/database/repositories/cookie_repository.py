@@ -295,6 +295,8 @@ class SqlAlchemyPricingRepository(ICookiePricingRepository):
             resource_type=m.resource_type or "",
             flow_category=m.flow_category or "",
             base_cost=m.base_cost or Decimal("0"),
+            per_sample_cost=m.per_sample_cost or Decimal("0"),
+            per_comparison_cost=m.per_comparison_cost or Decimal("0"),
             unit=PricingUnit(m.unit),
             is_active=m.is_active,
             effective_from=m.effective_from,
@@ -315,6 +317,8 @@ class SqlAlchemyPricingRepository(ICookiePricingRepository):
             resource_type=p.resource_type or None,
             flow_category=p.flow_category or None,
             base_cost=p.base_cost,
+            per_sample_cost=p.per_sample_cost,
+            per_comparison_cost=p.per_comparison_cost,
             unit=p.unit.value,
             is_active=p.is_active,
             effective_from=p.effective_from,
@@ -331,6 +335,8 @@ class SqlAlchemyPricingRepository(ICookiePricingRepository):
         m.resource_type = p.resource_type or None
         m.flow_category = p.flow_category or None
         m.base_cost = p.base_cost
+        m.per_sample_cost = p.per_sample_cost
+        m.per_comparison_cost = p.per_comparison_cost
         m.unit = p.unit.value
         m.is_active = p.is_active
         m.effective_from = p.effective_from

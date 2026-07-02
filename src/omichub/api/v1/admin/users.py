@@ -4,29 +4,17 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 
 from omichub.api.deps import CurrentUserId, DbSession
-from omichub.core.exceptions import AuthorizationError, NotFoundError
+from omichub.application.schemas.auth import UserRegisterRequest
+from omichub.core.exceptions import AuthorizationError, ConflictError, NotFoundError
+from omichub.core.security import hash_password
+from omichub.domain.user.entities import User
+from omichub.domain.user.value_objects import Role, UserStatus
+from omichub.middleware.rbac import AdminRequired  # 统一 RBAC 实现，re-export 供下游导入
 
 router = APIRouter()
-
-
-async def require_admin(current_user_id: CurrentUserId) -> None:
-    from omichub.infrastructure.database.models.user import UserModel
-    from omichub.infrastructure.database.session import get_session_factory
-
-    factory = get_session_factory()
-    async with factory() as session:
-        result = await session.execute(
-            select(UserModel.role).where(UserModel.id == UUID(current_user_id))
-        )
-        role = result.scalar_one_or_none()
-        if role != "admin":
-            raise AuthorizationError("需要管理员权限")
-
-
-AdminRequired = Annotated[None, Depends(require_admin)]
 
 
 @router.get("", summary="所有用户列表")
@@ -37,16 +25,26 @@ async def list_users(
     offset: int = 0,
     limit: int = 100,
 ):
+    from omichub.infrastructure.database.models.cookie import CookieAccountModel
     from omichub.infrastructure.database.models.user import UserModel
 
-    query = select(
-        UserModel.id,
-        UserModel.username,
-        UserModel.email,
-        UserModel.role,
-        UserModel.status,
-        UserModel.created_at,
-        UserModel.last_login_at,
+    query = (
+        select(
+            UserModel.id,
+            UserModel.username,
+            UserModel.email,
+            UserModel.role,
+            UserModel.status,
+            UserModel.created_at,
+            UserModel.last_login_at,
+            UserModel.storage_quota,
+            UserModel.used_storage,
+            UserModel.admin_note,
+            UserModel.lab_group,
+            CookieAccountModel.balance.label("cookie_balance"),
+            CookieAccountModel.status.label("cookie_status"),
+        )
+        .outerjoin(CookieAccountModel, CookieAccountModel.user_id == UserModel.id)
     )
     if status:
         query = query.where(UserModel.status == status)
@@ -61,9 +59,68 @@ async def list_users(
             "status": row.status,
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "last_login_at": row.last_login_at.isoformat() if row.last_login_at else None,
+            "storage_quota": row.storage_quota,
+            "used_storage": row.used_storage,
+            "admin_note": row.admin_note or "",
+            "lab_group": row.lab_group or "",
+            # 资产穿透：饼干余额与账户状态（无账户视为未发放，余额 0）
+            "cookie_balance": float(row.cookie_balance) if row.cookie_balance is not None else 0.0,
+            "cookie_status": row.cookie_status or None,
         }
         for row in result.all()
     ]
+
+
+@router.post("", summary="管理员添加用户")
+async def create_user(
+    req: UserRegisterRequest,
+    current_user_id: CurrentUserId,
+    _admin: AdminRequired,
+    db: DbSession,
+):
+    """管理员直接添加用户（无需自助注册审批）。
+
+    - 复用 UserRegisterRequest 的字段与密码强度校验；
+    - 创建即为 active 状态，可直接登录；
+    - 可选角色 user/admin（默认 user）。
+    """
+    from omichub.infrastructure.database.models.user import UserModel
+
+    # 用户名/邮箱唯一性校验
+    if await db.scalar(select(UserModel).where(UserModel.username == req.username)):
+        raise ConflictError(f"用户名 {req.username} 已存在")
+    if await db.scalar(select(UserModel).where(UserModel.email == req.email)):
+        raise ConflictError(f"邮箱 {req.email} 已被注册")
+
+    user = User(
+        username=req.username,
+        email=req.email,
+        hashed_password=hash_password(req.password),
+        role=Role.USER,
+        status=UserStatus.ACTIVE,
+        lab_group=req.lab_group,
+    )
+    # 领域实体落库
+    from omichub.infrastructure.database.repositories import SqlAlchemyUserRepository
+
+    saved = await SqlAlchemyUserRepository(db).save(user)
+
+    # 集成点：启用饼干系统时自动创建饼干账户
+    from omichub.core.config import get_settings
+
+    if get_settings().enable_cookie_system:
+        from omichub.application.services.cookie_service import CookieService
+
+        await CookieService(db).get_or_create_account(saved.id)
+
+    return {
+        "id": str(saved.id),
+        "username": saved.username,
+        "email": saved.email,
+        "role": saved.role.value,
+        "status": saved.status.value,
+        "created_at": saved.created_at.isoformat() if saved.created_at else None,
+    }
 
 
 @router.put("/{user_id}/approve", summary="审批通过用户")
@@ -77,10 +134,23 @@ async def approve_user(
     user = await db.get(UserModel, user_id)
     if user is None:
         raise NotFoundError("用户不存在")
-    if user.status != "pending":
+    # 审批通过：允许 pending（首次审批）与 rejected（重新捞回误拒用户）→ active。
+    # active/inactive 已是正常在用账号，不再走审批路径。
+    if user.status not in ("pending", "rejected"):
         return {"message": f"用户当前状态为 {user.status}，无需审批"}
     user.status = "active"
     await db.flush()
+
+    # 账号初始化钩子：审批通过时自动创建饼干钱包并发放新人初始额度。
+    # get_or_create_account 幂等——重复审批不会重复发放。
+    from omichub.core.config import get_settings
+
+    if get_settings().enable_cookie_system:
+        from omichub.application.services.cookie_service import CookieService
+
+        await CookieService(db).get_or_create_account(user.id)
+        await db.flush()
+
     return {"id": str(user.id), "username": user.username, "status": user.status}
 
 
@@ -118,3 +188,211 @@ async def update_user_role(
     user.role = role
     await db.flush()
     return {"id": str(user.id), "username": user.username, "role": user.role}
+
+
+@router.put("/{user_id}/quota", summary="调整用户存储配额")
+async def update_user_quota(
+    user_id: UUID,
+    _admin: AdminRequired,
+    db: DbSession,
+    storage_quota_gb: float = 500.0,
+):
+    """动态调整用户存储配额（应对 WGS 等超大数据项目临时扩容）。
+
+    - storage_quota_gb 单位 GiB，需 > 0，上限 5 TiB（5120 GiB）；
+    - 不可低于当前已用空间（避免负配额）。
+    """
+    from omichub.infrastructure.database.models.user import UserModel
+
+    if storage_quota_gb <= 0:
+        raise AuthorizationError("配额必须大于 0")
+    if storage_quota_gb > 5120:
+        raise AuthorizationError("单用户配额上限 5 TiB")
+
+    user = await db.get(UserModel, user_id)
+    if user is None:
+        raise NotFoundError("用户不存在")
+
+    new_quota = int(storage_quota_gb * 1024 * 1024 * 1024)
+    if new_quota < user.used_storage:
+        raise AuthorizationError(
+            f"新配额 {storage_quota_gb} GiB 低于该用户已用空间"
+            f"（{user.used_storage / 1024 / 1024 / 1024:.2f} GiB）"
+        )
+
+    user.storage_quota = new_quota
+    await db.flush()
+    return {
+        "id": str(user.id),
+        "username": user.username,
+        "storage_quota": user.storage_quota,
+        "used_storage": user.used_storage,
+    }
+
+
+@router.put("/{user_id}/note", summary="编辑管理员备注")
+async def update_user_note(
+    user_id: UUID,
+    _admin: AdminRequired,
+    db: DbSession,
+    note: str = "",
+):
+    """编辑用户的管理员备注（如"客户要求延期""测试账号"等辅助信息）。
+
+    - 备注仅管理员可见，不对外暴露给用户；
+    - 空字符串视为清除备注；
+    - 长度上限 1000 字符。
+    """
+    from omichub.infrastructure.database.models.user import UserModel
+
+    note = (note or "").strip()
+    if len(note) > 1000:
+        raise AuthorizationError("备注长度不能超过 1000 字符")
+
+    user = await db.get(UserModel, user_id)
+    if user is None:
+        raise NotFoundError("用户不存在")
+
+    user.admin_note = note or None
+    await db.flush()
+    return {
+        "id": str(user.id),
+        "username": user.username,
+        "admin_note": user.admin_note or "",
+    }
+
+
+@router.put("/{user_id}/status", summary="启用/禁用账号")
+async def update_user_status(
+    user_id: UUID,
+    current_user_id: CurrentUserId,
+    _admin: AdminRequired,
+    db: DbSession,
+    status: str = "active",
+):
+    """切换账号状态（active 启用 / inactive 禁用）。
+
+    安全护栏：
+    - 禁止禁用当前登录账号自己；
+    - 禁止禁用最后一个管理员（避免平台失去管理入口）。
+    禁用后用户登录会被拒（login 校验 status != active）。
+    """
+    from omichub.infrastructure.database.models.user import UserModel
+
+    if status not in ("active", "inactive"):
+        raise AuthorizationError("状态只能是 active 或 inactive")
+
+    # 不能禁用自己
+    if status == "inactive" and str(user_id) == current_user_id:
+        raise AuthorizationError("不能禁用当前登录的管理员账号")
+
+    user = await db.get(UserModel, user_id)
+    if user is None:
+        raise NotFoundError("用户不存在")
+
+    # 禁用管理员时，确保仍至少保留一个可用管理员
+    if status == "inactive" and user.role == "admin":
+        active_admin_count = await db.scalar(
+            select(func.count(UserModel.id)).where(
+                UserModel.role == "admin", UserModel.status == "active"
+            )
+        )
+        if active_admin_count is not None and active_admin_count <= 1:
+            raise AuthorizationError("系统至少需要保留一个可用管理员账号，无法禁用")
+
+    user.status = status
+    await db.flush()
+    return {"id": str(user.id), "username": user.username, "status": user.status}
+
+
+@router.delete("/{user_id}", summary="删除用户")
+async def delete_user(
+    user_id: UUID,
+    current_user_id: CurrentUserId,
+    _admin: AdminRequired,
+    db: DbSession,
+):
+    """彻底删除用户（不可恢复）。
+
+    安全护栏：
+    - 禁止删除当前登录账号自己；
+    - 禁止删除最后一个管理员（避免平台失去管理入口）。
+    前端已做二次确认（逐字输入确认文案），此处为后端兜底。
+
+    关联数据清理：CASCADE 的表（ai_conversations / cookie_accounts /
+    sandbox_sessions）由数据库自动级联删除；NO ACTION 的表在此显式处理：
+    - 交易流水/消费日志/账本（user_id NOT NULL）：删除该用户记录；
+    - 交易流水的 admin_id、饼干定价 created_by/updated_by（可空）：置 NULL 保留审计；
+    - 通知：删除该用户创建的及定向发给该用户的通知。
+    """
+    from omichub.infrastructure.database.models.cookie import (
+        ConsumptionLogModel,
+        CookiePricingModel,
+        CookieTransactionModel,
+        LedgerEntryModel,
+    )
+    from omichub.infrastructure.database.models.notification import NotificationModel
+    from omichub.infrastructure.database.models.user import UserModel
+
+    # 不能删除自己
+    if str(user_id) == current_user_id:
+        raise AuthorizationError("不能删除当前登录的管理员账号")
+
+    user = await db.get(UserModel, user_id)
+    if user is None:
+        raise NotFoundError("用户不存在")
+
+    # 删除的是管理员时，确保仍至少保留一个管理员
+    if user.role == "admin":
+        admin_count = await db.scalar(
+            select(func.count(UserModel.id)).where(UserModel.role == "admin")
+        )
+        if admin_count is not None and admin_count <= 1:
+            raise AuthorizationError("系统至少需要保留一个管理员账号，无法删除")
+
+    username = user.username
+
+    # 1) 可空外键置 NULL（保留审计流水，仅断开用户关联）
+    await db.execute(
+        CookieTransactionModel.__table__.update()
+        .where(CookieTransactionModel.admin_id == user_id)
+        .values(admin_id=None)
+    )
+    await db.execute(
+        CookiePricingModel.__table__.update()
+        .where(CookiePricingModel.created_by == user_id)
+        .values(created_by=None)
+    )
+    await db.execute(
+        CookiePricingModel.__table__.update()
+        .where(CookiePricingModel.updated_by == user_id)
+        .values(updated_by=None)
+    )
+
+    # 2) NOT NULL 外键的关联记录：删除该用户的数据
+    await db.execute(
+        CookieTransactionModel.__table__.delete().where(
+            CookieTransactionModel.user_id == user_id
+        )
+    )
+    await db.execute(
+        ConsumptionLogModel.__table__.delete().where(
+            ConsumptionLogModel.user_id == user_id
+        )
+    )
+    await db.execute(
+        LedgerEntryModel.__table__.delete().where(LedgerEntryModel.user_id == user_id)
+    )
+
+    # 3) 通知：删除该用户创建的 + 定向发给该用户的
+    await db.execute(
+        NotificationModel.__table__.delete().where(
+            (NotificationModel.created_by == user_id)
+            | (NotificationModel.target_user_id == user_id)
+        )
+    )
+
+    # 4) 最后删除用户本体（CASCADE 表由数据库自动清理）
+    await db.delete(user)
+    await db.flush()
+    return {"id": str(user_id), "username": username, "deleted": True}

@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import type { FlowDefinition } from '@/types'
 import { apiClient } from '@/api'
-import { NButton, NEmpty, NSpin, NTag } from 'naive-ui'
+import { NButton, NEmpty, NIcon, NSpin, NTag } from 'naive-ui'
 import { onMounted, ref, computed, h, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   FlaskOutline, FitnessOutline, GlobeOutline, BugOutline,
   GridOutline, BookOutline, BeakerOutline, ExtensionPuzzleOutline,
-  CodeSlashOutline, DocumentTextOutline,
+  CodeSlashOutline, DocumentTextOutline, LogoGithub,
 } from '@vicons/ionicons5'
 
 const route = useRoute()
@@ -150,6 +150,17 @@ onMounted(fetchFlows)
             <div class="featured-bg-icon">
               <component :is="FlaskOutline" :size="160" />
             </div>
+            <a
+              v-if="featuredFlow?.docs_url"
+              :href="featuredFlow.docs_url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="featured-github-link"
+              @click.stop
+            >
+              <NIcon :size="18"><LogoGithub /></NIcon>
+              源码
+            </a>
             <div class="featured-tags">
               <span class="featured-tag">热门</span>
               <span class="featured-tag">转录组</span>
@@ -195,6 +206,17 @@ onMounted(fetchFlows)
                   {{ tag }}
                 </span>
                 <NTag size="small" round type="info">v{{ flow.version }}</NTag>
+                <a
+                  v-if="flow.docs_url"
+                  :href="flow.docs_url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="flow-github-link"
+                  title="查看源码"
+                  @click.stop
+                >
+                  <NIcon :size="16"><LogoGithub /></NIcon>
+                </a>
               </div>
             </div>
           </div>
@@ -324,6 +346,40 @@ onMounted(fetchFlows)
   opacity: 0.85;
   max-width: 480px;
   margin: 0;
+}
+
+.featured-github-link {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font-size: 13px;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+
+.featured-github-link:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.flow-github-link {
+  display: inline-flex;
+  align-items: center;
+  color: var(--neutral-text-3);
+  text-decoration: none;
+  transition: color 0.2s;
+  margin-left: auto;
+}
+
+.flow-github-link:hover {
+  color: var(--neutral-text-1);
 }
 
 .all-flows-section {

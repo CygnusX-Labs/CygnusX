@@ -232,6 +232,15 @@ async def _execute_download(task_id: str) -> dict:
                 task.progress = 1.0
                 task.result_path = work_dir
                 await repo.save(task)
+                # 下载产物入库为 FileRecord，directory=target_directory，使文件出现在数据管理
+                directory = str(params.get("target_directory", "") or "")
+                await _register_downloaded_files(
+                    session=session,
+                    user_id=task.user_id,
+                    work_dir=work_dir,
+                    directory=directory,
+                    storage_root=settings.storage_path,
+                )
                 task = await domain.transition_status(task, TaskStatus.SUCCESS)
                 await _add_and_publish_log(LogLevel.INFO, "数据下载完成", source="binary")
                 return_status = "success"
@@ -263,3 +272,77 @@ async def _execute_download(task_id: str) -> dict:
         finally:
             sampler.cancel()
             await asyncio.gather(sampler, return_exceptions=True)
+
+
+async def _register_downloaded_files(
+    *,
+    session,
+    user_id,
+    work_dir: str,
+    directory: str,
+    storage_root: str,
+) -> None:
+    """下载产物入库为 FileRecord — 扫描 work_dir 下的 .sra/.fastq.gz 等文件。
+
+    每个 FileRecord 的 storage_path 为相对 storage_root 的路径，directory=target_directory。
+    幂等：已存在同 storage_path 的记录则跳过。
+    """
+    import uuid as _uuid
+    from pathlib import Path
+
+    from sqlalchemy import select
+
+    from omichub.domain.file.entities import DataFile
+    from omichub.domain.file.value_objects import FileType
+    from omichub.infrastructure.database.models.file import FileRecordModel
+
+    work_path = Path(work_dir)
+    root_path = Path(storage_root)
+    if not work_path.exists():
+        return
+
+    # 规整 directory
+    d = (directory or "").strip().strip("/")
+    parts = [p for p in d.split("/") if p not in ("", ".", "..")]
+    directory_norm = "/".join(parts)
+
+    # 下载产物类型识别
+    def _ftype(name: str) -> FileType:
+        n = name.lower()
+        if n.endswith((".fastq", ".fastq.gz", ".fq", ".fq.gz")):
+            return FileType.FASTQ
+        if n.endswith(".sra"):
+            return FileType.OTHER  # SRA 原始格式，转 fastq 后才是 FASTQ
+        if n.endswith(".bam"):
+            return FileType.BAM
+        return FileType.OTHER
+
+    for f in work_path.rglob("*"):
+        if not f.is_file():
+            continue
+        try:
+            rel = str(f.relative_to(root_path))
+        except ValueError:
+            continue
+        # 幂等：同 storage_path 已存在则跳过
+        exists = await session.scalar(
+            select(FileRecordModel.id).where(FileRecordModel.storage_path == rel)
+        )
+        if exists:
+            continue
+        record = DataFile(
+            id=_uuid.uuid4(),
+            user_id=user_id,
+            path=rel,
+            original_name=f.name,
+            size=f.stat().st_size,
+            checksum="",
+            file_type=_ftype(f.name),
+            status="active",
+            directory=directory_norm,
+        )
+        from omichub.infrastructure.database.repositories.file_repository import (
+            FileRepositoryImpl,
+        )
+
+        await FileRepositoryImpl(session).save(record)

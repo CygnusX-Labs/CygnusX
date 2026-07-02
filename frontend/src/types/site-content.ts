@@ -25,12 +25,23 @@ export interface RegistrationContent {
   admin_contact: string
 }
 
-/** 账户未激活提示文案：登录未激活账户时弹窗展示 */
+/** 账户未激活提示文案：登录未激活账户时弹窗展示。
+ *  支持点击计数彩蛋：第 1-2 次正常版，第 3 次起着急版，第 5 次触发猫爪彩蛋。 */
 export interface ActivationContent {
-  /** 未激活弹窗的正文文案 */
+  /** 未激活弹窗的正文文案（正常版） */
   message: string
   /** 联系管理员的方式（可空，后端缺省时回退到 registration.admin_contact） */
   admin_contact: string
+  /** 标题（正常版） */
+  title: string
+  /** 按钮文案（正常版） */
+  button_text: string
+  /** 标题（着急版，第 3 次起） */
+  title_urgent: string
+  /** 正文文案（着急版） */
+  message_urgent: string
+  /** 按钮文案（着急版） */
+  button_text_urgent: string
 }
 
 /** 关于页彩蛋文案：点击蓝色星球触发的隐藏弹窗 */

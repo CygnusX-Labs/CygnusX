@@ -40,6 +40,8 @@ class PricingUnit(str, Enum):
     PER_GB_HOUR = "per_gb_hour"
     PER_SESSION = "per_session"
     PER_USER = "per_user"
+    PER_SAMPLE = "per_sample"
+    PER_COMPARISON = "per_comparison"
 
 
 class BillingItem(str, Enum):

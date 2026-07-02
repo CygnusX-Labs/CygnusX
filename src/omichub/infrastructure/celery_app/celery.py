@@ -16,6 +16,7 @@ celery_app = Celery(
         "omichub.infrastructure.celery_app.tasks.cookie",
         "omichub.infrastructure.celery_app.tasks.download",
         "omichub.infrastructure.celery_app.tasks.sandbox",
+        "omichub.infrastructure.celery_app.tasks.storage",
     ],
 )
 
@@ -41,14 +42,20 @@ celery_app.conf.task_routes = {
     "omichub.infrastructure.celery_app.tasks.cookie.*": {"queue": "analysis"},
     "omichub.infrastructure.celery_app.tasks.download.*": {"queue": "analysis"},
     "omichub.infrastructure.celery_app.tasks.sandbox.*": {"queue": "analysis"},
+    "omichub.infrastructure.celery_app.tasks.storage.*": {"queue": "analysis"},
 }
 
 # 定时任务
 celery_app.conf.beat_schedule = {
-    # 每天凌晨 2 点清理过期结果归档
+    # 每天凌晨 2 点清理过期/僵尸上传会话 + 临时文件 + 冷数据归档
     "cleanup-expired-archives": {
-        "task": "omichub.infrastructure.celery_app.tasks.analysis.cleanup_expired",
+        "task": "omichub.infrastructure.celery_app.tasks.storage.cleanup_expired",
         "schedule": crontab(hour=2, minute=0),
+    },
+    # 每天凌晨 3 点空间使用量对账（校准 used_storage）
+    "storage-reconcile-used": {
+        "task": "omichub.infrastructure.celery_app.tasks.storage.reconcile_used_storage",
+        "schedule": crontab(hour=3, minute=0),
     },
     # 每天凌晨 2:30 饼干日终对账 + 异常检测
     "cookie-daily-reconcile": {

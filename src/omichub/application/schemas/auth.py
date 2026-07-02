@@ -29,6 +29,11 @@ class UserRegisterRequest(OmicsHubBaseSchema):
         max_length=128,
         description="密码：至少8位字符",
     )
+    lab_group: str | None = Field(
+        default=None,
+        max_length=120,
+        description="所属课题组（研究组/实验室，可空）",
+    )
 
     @field_validator("password")
     @classmethod

@@ -59,7 +59,9 @@ class CookieTransactionModel(Base):
     __tablename__ = "cookie_transactions"
     __table_args__ = (
         CheckConstraint(
-            "(txn_type NOT IN ('earn', 'adjust') OR amount >= 0) AND "
+            "(txn_type != 'earn' OR amount >= 0) AND "
+            "(txn_type != 'refund' OR amount >= 0) AND "
+            "(txn_type != 'unfreeze' OR amount >= 0) AND "
             "(txn_type NOT IN ('spend', 'freeze') OR amount <= 0)",
             name="chk_txn_amount_sign",
         ),
@@ -113,7 +115,7 @@ class CookiePricingModel(Base, TimestampMixin):
             name="chk_pricing_type",
         ),
         CheckConstraint(
-            "unit IN ('per_task', 'per_hour', 'per_core_hour', 'per_gb_hour', 'per_session', 'per_user')",
+            "unit IN ('per_task', 'per_hour', 'per_core_hour', 'per_gb_hour', 'per_session', 'per_user', 'per_sample', 'per_comparison')",
             name="chk_pricing_unit",
         ),
         Index(
@@ -131,6 +133,8 @@ class CookiePricingModel(Base, TimestampMixin):
     resource_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     flow_category: Mapped[str | None] = mapped_column(String(50), nullable=True)
     base_cost: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
+    per_sample_cost: Mapped[Decimal] = mapped_column(Numeric(10, 4), default=Decimal("0"))
+    per_comparison_cost: Mapped[Decimal] = mapped_column(Numeric(10, 4), default=Decimal("0"))
     unit: Mapped[str] = mapped_column(String(20), nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True)
     effective_from: Mapped[datetime] = mapped_column(

@@ -136,6 +136,36 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '代码沙盒', requiresAuth: true }
       },
       {
+        path: 'tools',
+        name: 'tools',
+        component: () => import('@/views/BioTools/ToolsHubView.vue'),
+        meta: { title: '生信工具箱', requiresAuth: true }
+      },
+      {
+        path: 'tools/fastq-qc',
+        name: 'tools-fastq-qc',
+        component: () => import('@/views/BioTools/FastqQCView.vue'),
+        meta: { title: 'FASTQ 质控', requiresAuth: true }
+      },
+      {
+        path: 'tools/igv',
+        name: 'tools-igv',
+        component: () => import('@/views/BioTools/IGVBrowserView.vue'),
+        meta: { title: 'IGV 浏览器', requiresAuth: true }
+      },
+      {
+        path: 'tools/blast',
+        name: 'tools-blast',
+        component: () => import('@/views/BioTools/BlastSearchView.vue'),
+        meta: { title: '序列检索', requiresAuth: true }
+      },
+      {
+        path: 'tools/plot',
+        name: 'tools-plot',
+        component: () => import('@/views/BioTools/PlotWorkshopView.vue'),
+        meta: { title: '绘图工坊', requiresAuth: true }
+      },
+      {
         path: 'admin/cookies/accounts',
         name: 'admin-cookies-accounts',
         component: () => import('@/views/AdminCookieManagementView.vue'),

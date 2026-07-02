@@ -16,6 +16,7 @@ from omichub.infrastructure.database.models import (  # noqa: F401
     ai,
     ai_provider,
     cookie,
+    file,
     mcp,
     notification,
     sandbox,

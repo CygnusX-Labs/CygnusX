@@ -32,6 +32,13 @@ class User(BaseModel):
     avatar_url: str | None = None
     preferences: dict = Field(default_factory=dict)
     last_login_at: datetime | None = None
+    # 存储配额（按用户隔离，默认 500 GiB）
+    storage_quota: int = 500 * 1024 * 1024 * 1024
+    used_storage: int = 0
+    # 管理员备注（如"客户要求延期""测试账号"），不对外暴露给用户
+    admin_note: str | None = None
+    # 所属课题组（研究组/实验室，可空）
+    lab_group: str | None = None
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 

@@ -15,28 +15,11 @@ from sqlalchemy import select
 from omichub.api.deps import CurrentUserId
 from omichub.application.services.docs_service import DocsService
 from omichub.core.exceptions import AuthorizationError, ValidationError
+from omichub.middleware.rbac import AdminRequired  # 统一 RBAC 实现
 
 router = APIRouter()
 
 service = DocsService()
-
-
-async def require_admin(current_user_id: CurrentUserId) -> None:
-    """校验当前用户为管理员（沿用本仓 admin router 既有写法）。"""
-    from omichub.infrastructure.database.models.user import UserModel
-    from omichub.infrastructure.database.session import get_session_factory
-
-    factory = get_session_factory()
-    async with factory() as session:
-        result = await session.execute(
-            select(UserModel.role).where(UserModel.id == UUID(current_user_id))
-        )
-        role = result.scalar_one_or_none()
-        if role != "admin":
-            raise AuthorizationError("需要管理员权限")
-
-
-AdminRequired = Annotated[None, Depends(require_admin)]
 
 
 class DocContentUpdate(BaseModel):

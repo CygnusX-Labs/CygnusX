@@ -18,8 +18,13 @@ const DEFAULT_REGISTRATION: RegistrationContent = {
   admin_contact: '',
 }
 const DEFAULT_ACTIVATION: ActivationContent = {
-  message: '你的账号尚未激活，暂无法登录。请联系管理员为你开通激活，开通后即可正常使用平台～',
+  message: '喵喵！检测到账号还在沉睡中，快找管理员大大帮忙激活一下吧！开通后就能开心逛平台啦～',
   admin_contact: '',
+  title: '账号还在星尘中沉睡 ✨',
+  button_text: '收到喵！',
+  title_urgent: '喵～ 你好像很着急呢 ⏳',
+  message_urgent: '(｡•́︿•̀｡) 再戳管理员一下嘛！开通后就能开心逛平台啦～ ✨',
+  button_text_urgent: '我这就去！',
 }
 const DEFAULT_EASTER_EGG: EasterEggContent = {
   message: '🎉 恭喜你发现了 OmicHub 的隐藏星际守护者！',
@@ -50,8 +55,18 @@ export const useSiteConfigStore = defineStore('site-config', () => {
   /** 关闭注册时联系管理员的方式（邮箱/说明，trim 后；空串表示未配置） */
   const adminContact = computed(() => registrationContent.value.admin_contact.trim())
 
-  /** 账户未激活弹窗的正文文案 */
+  /** 账户未激活弹窗的正文文案（正常版） */
   const activationMessage = computed(() => activationContent.value.message)
+  /** 账户未激活弹窗标题（正常版） */
+  const activationTitle = computed(() => activationContent.value.title)
+  /** 账户未激活弹窗按钮文案（正常版） */
+  const activationButtonText = computed(() => activationContent.value.button_text)
+  /** 着急版标题（第 3 次起） */
+  const activationTitleUrgent = computed(() => activationContent.value.title_urgent)
+  /** 着急版正文（第 3 次起） */
+  const activationMessageUrgent = computed(() => activationContent.value.message_urgent)
+  /** 着急版按钮文案（第 3 次起） */
+  const activationButtonTextUrgent = computed(() => activationContent.value.button_text_urgent)
 
   /** 关于页彩蛋弹窗的庆祝文案 */
   const easterEggMessage = computed(() => easterEggContent.value.message)
@@ -118,6 +133,11 @@ export const useSiteConfigStore = defineStore('site-config', () => {
     registrationDisabledMessage,
     adminContact,
     activationMessage,
+    activationTitle,
+    activationButtonText,
+    activationTitleUrgent,
+    activationMessageUrgent,
+    activationButtonTextUrgent,
     activationContact,
     easterEggMessage,
     easterEggButtonText,

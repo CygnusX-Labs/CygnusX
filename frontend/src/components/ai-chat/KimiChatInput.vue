@@ -1,51 +1,49 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
-import { NButton, NIcon, NTooltip, NDropdown } from 'naive-ui'
+import { NButton, NIcon, NTooltip, NPopover, useMessage } from 'naive-ui'
 import {
-  AddOutline,
   ArrowUpOutline,
-  ChevronDownOutline,
-  ExtensionPuzzleOutline,
+  BulbOutline,
+  AttachOutline,
+  GlobeOutline,
+  TerminalOutline,
   SparklesOutline,
+  TrashOutline,
 } from '@vicons/ionicons5'
 import SlashCommandMenu from './SlashCommandMenu.vue'
-import type { ModelOption, PluginOption } from './types'
+import PromptSidebar from './PromptSidebar.vue'
+import { useChatStore } from '@/stores/chat'
 
 interface Props {
   modelValue: string
   placeholder?: string
-  agentMode?: boolean
-  selectedModel?: string
-  models?: ModelOption[]
-  plugins?: PluginOption[]
   disabled?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   modelValue: '',
-  placeholder: '输入 "/" 唤起插件和技能...',
-  agentMode: false,
-  selectedModel: 'kimi-k2',
-  models: () => [],
-  plugins: () => [],
+  placeholder: '输入消息，或点击左侧工具唤起能力...',
   disabled: false,
 })
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   send: [content: string]
-  toggleAgent: []
-  selectModel: [modelId: string]
-  selectPlugin: [pluginId: string]
   uploadFile: [file: File]
+  toggleWebSearch: []
+  triggerSandbox: []
 }>()
 
+const chatStore = useChatStore()
+const message = useMessage()
+
 const textareaRef = ref<HTMLTextAreaElement>()
-const fileInputRef = ref<HTMLInputElement>()
 const isFocused = ref(false)
 const showSlashMenu = ref(false)
 const slashQuery = ref('')
 const slashMenuPosition = ref({ top: 0, left: 0 })
+const showPromptSidebar = ref(false)
+const showClearConfirm = ref(false)
 
 const localValue = ref(props.modelValue)
 
@@ -75,25 +73,6 @@ function autoResize() {
 }
 
 const canSend = computed(() => localValue.value.trim().length > 0)
-
-const selectedModelName = computed(() => {
-  const model = props.models.find((m) => m.id === props.selectedModel)
-  return model?.name || '选择模型'
-})
-
-const modelDropdownOptions = computed(() => {
-  return props.models.map((m) => ({
-    key: m.id,
-    label: `${m.id === props.selectedModel ? '✓ ' : ''}${m.name} - ${m.description}`,
-  }))
-})
-
-const pluginOptions = computed(() => {
-  return props.plugins.map((p) => ({
-    key: p.id,
-    label: `${p.icon} ${p.name} - ${p.description}`,
-  }))
-})
 
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -164,30 +143,39 @@ function handleBlur() {
   }, 200)
 }
 
-function triggerFileUpload() {
-  fileInputRef.value?.click()
+// 占位功能（后端依赖，本轮提示开发中）
+function handleAttachStub() {
+  message.info('文件上传功能开发中')
+}
+function handleWebSearchStub() {
+  message.info('联网搜索功能开发中')
+}
+function handleSandboxStub() {
+  message.info('代码沙盒功能开发中')
 }
 
-function handleFileChange(e: Event) {
-  const target = e.target as HTMLInputElement
-  const files = target.files
-  if (files && files.length > 0) {
-    emit('uploadFile', files[0])
-    target.value = ''
-  }
+function handlePromptSelect(content: string) {
+  localValue.value = content
+  nextTick(() => {
+    textareaRef.value?.focus()
+    autoResize()
+  })
 }
 
-function handleModelSelect(key: string) {
-  emit('selectModel', key)
-}
-
-function handlePluginSelect(key: string) {
-  emit('selectPlugin', key)
+function handleClearConfirm() {
+  localValue.value = ''
+  showClearConfirm.value = false
+  nextTick(() => {
+    if (textareaRef.value) textareaRef.value.style.height = 'auto'
+  })
 }
 </script>
 
 <template>
-  <div class="kimi-chat-input" :class="{ focused: isFocused, disabled }">
+  <div
+    class="kimi-chat-input"
+    :class="{ focused: isFocused, disabled, 'deep-thinking': chatStore.deepThinking }"
+  >
     <div class="input-wrapper">
       <textarea
         ref="textareaRef"
@@ -212,57 +200,84 @@ function handlePluginSelect(key: string) {
 
     <div class="input-toolbar">
       <div class="toolbar-left">
-        <!-- 上传文件、Agent、插件功能暂未实现，先隐藏避免误导 -->
-        <n-tooltip v-if="false" trigger="hover">
+        <!-- 提示词模板 -->
+        <n-tooltip trigger="hover">
           <template #trigger>
-            <n-button text class="toolbar-btn" @click="triggerFileUpload">
-              <template #icon>
-                <n-icon size="18"><AddOutline /></n-icon>
-              </template>
+            <n-button text class="toolbar-btn" @click="showPromptSidebar = true">
+              <n-icon size="18"><BulbOutline /></n-icon>
+            </n-button>
+          </template>
+          提示词模板
+        </n-tooltip>
+
+        <!-- 附件上传（占位） -->
+        <n-tooltip trigger="hover">
+          <template #trigger>
+            <n-button text class="toolbar-btn" @click="handleAttachStub">
+              <n-icon size="18"><AttachOutline /></n-icon>
             </n-button>
           </template>
           上传文件
         </n-tooltip>
-        <input
-          v-if="false"
-          ref="fileInputRef"
-          type="file"
-          multiple
-          style="display: none"
-          @change="handleFileChange"
-        />
 
-        <n-button
-          v-if="false"
-          text
-          class="toolbar-btn agent-btn"
-          :class="{ active: agentMode }"
-          :title="agentMode ? '关闭 Agent 模式' : '开启 Agent 模式'"
-          @click="$emit('toggleAgent')"
-        >
-          <template #icon>
-            <n-icon size="16"><SparklesOutline /></n-icon>
+        <!-- 联网搜索（占位） -->
+        <n-tooltip trigger="hover">
+          <template #trigger>
+            <n-button text class="toolbar-btn" @click="handleWebSearchStub">
+              <n-icon size="18"><GlobeOutline /></n-icon>
+            </n-button>
           </template>
-          <span class="btn-label">Agent</span>
-        </n-button>
+          联网搜索
+        </n-tooltip>
 
-        <n-dropdown v-if="false" :options="pluginOptions" trigger="click" @select="handlePluginSelect">
-          <n-button text class="toolbar-btn plugin-btn" title="选择插件">
-            <template #icon>
-              <n-icon size="16"><ExtensionPuzzleOutline /></n-icon>
-            </template>
-            <span class="btn-label">插件</span>
-          </n-button>
-        </n-dropdown>
+        <!-- 代码沙盒（占位） -->
+        <n-tooltip trigger="hover">
+          <template #trigger>
+            <n-button text class="toolbar-btn" @click="handleSandboxStub">
+              <n-icon size="18"><TerminalOutline /></n-icon>
+            </n-button>
+          </template>
+          代码执行
+        </n-tooltip>
+
+        <!-- 深度思考 -->
+        <n-tooltip trigger="hover">
+          <template #trigger>
+            <n-button
+              text
+              class="toolbar-btn deep-thinking-btn"
+              :class="{ active: chatStore.deepThinking }"
+              @click="chatStore.toggleDeepThinking()"
+            >
+              <n-icon size="18"><SparklesOutline /></n-icon>
+              <span class="btn-label">深度思考</span>
+            </n-button>
+          </template>
+          {{ chatStore.deepThinking ? '关闭深度思考' : '开启深度思考' }}
+        </n-tooltip>
       </div>
 
       <div class="toolbar-right">
-        <n-dropdown :options="modelDropdownOptions" trigger="click" @select="handleModelSelect">
-          <n-button text class="toolbar-btn model-btn">
-            <span class="model-name">{{ selectedModelName }}</span>
-            <n-icon size="14"><ChevronDownOutline /></n-icon>
-          </n-button>
-        </n-dropdown>
+        <!-- 清空 -->
+        <n-popover v-model:show="showClearConfirm" trigger="click" placement="top-end" :width="200">
+          <template #trigger>
+            <n-tooltip trigger="hover">
+              <template #trigger>
+                <n-button text class="toolbar-btn clear-btn" :disabled="!localValue">
+                  <n-icon size="18"><TrashOutline /></n-icon>
+                </n-button>
+              </template>
+              清空输入
+            </n-tooltip>
+          </template>
+          <div style="text-align: center">
+            <p style="margin: 0 0 10px; font-size: 13px">确认清空输入框内容？</p>
+            <div style="display: flex; gap: 8px; justify-content: center">
+              <n-button size="small" @click="showClearConfirm = false">取消</n-button>
+              <n-button size="small" type="error" @click="handleClearConfirm">确认清空</n-button>
+            </div>
+          </div>
+        </n-popover>
 
         <n-button
           circle
@@ -277,6 +292,12 @@ function handlePluginSelect(key: string) {
         </n-button>
       </div>
     </div>
+
+    <PromptSidebar
+      :visible="showPromptSidebar"
+      @close="showPromptSidebar = false"
+      @select="handlePromptSelect"
+    />
   </div>
 </template>
 
@@ -286,11 +307,16 @@ function handlePluginSelect(key: string) {
   border: 1px solid var(--chat-input-border);
   border-radius: 20px;
   padding: 12px 16px;
-  transition: all 0.3s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 
   &.focused {
     border-color: var(--chat-accent);
     box-shadow: 0 0 0 2px rgba(79, 142, 247, 0.15);
+  }
+
+  &.deep-thinking {
+    border-color: var(--chat-deep-thinking);
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.3);
   }
 
   &.disabled {
@@ -347,16 +373,11 @@ function handlePluginSelect(key: string) {
       color: var(--chat-text-secondary);
       padding: 4px 8px;
       border-radius: 8px;
-      transition: all 0.2s ease;
+      transition: all 0.15s ease;
 
       &:hover {
         color: var(--chat-text-primary);
         background: var(--chat-surface-hover);
-      }
-
-      &.agent-btn.active {
-        color: var(--chat-accent);
-        background: rgba(79, 142, 247, 0.1);
       }
 
       .btn-label {
@@ -364,11 +385,13 @@ function handlePluginSelect(key: string) {
         font-size: 13px;
       }
 
-      &.model-btn {
-        .model-name {
-          margin-right: 4px;
-          font-size: 13px;
-        }
+      &.deep-thinking-btn.active {
+        color: var(--chat-deep-thinking);
+        background: rgba(245, 158, 11, 0.12);
+      }
+
+      &.clear-btn:hover {
+        color: var(--chat-error);
       }
     }
 

@@ -24,6 +24,20 @@ class CookieAccountDTO(OmicsHubBaseSchema):
     created_at: datetime | None = None
 
 
+class AdminCookieAccountDTO(CookieAccountDTO):
+    """管理端账户信息 — 关联用户身份与存储资产，供「饼干账户管理」与「用户管理」共用同一份 JOIN 视图"""
+
+    username: str = ""
+    email: str = ""
+    role: str = ""
+    lab_group: str | None = None
+    user_status: str = ""
+    # 用户侧资产（来自 users 表，便于抽屉展示，无需再请求 /admin/users）
+    user_created_at: datetime | None = None
+    storage_quota: int = 0
+    used_storage: int = 0
+
+
 class CookieTransactionDTO(OmicsHubBaseSchema):
     """交易流水"""
 
@@ -47,6 +61,8 @@ class CookiePricingDTO(OmicsHubBaseSchema):
     resource_type: str = ""
     flow_category: str = ""
     base_cost: Decimal
+    per_sample_cost: Decimal = Decimal("0")
+    per_comparison_cost: Decimal = Decimal("0")
     unit: str
     is_active: bool = True
     priority: int = 0
@@ -60,6 +76,8 @@ class CostEstimateDTO(OmicsHubBaseSchema):
 
     flow_id: str
     estimated_cost: Decimal
+    sample_count: int = 0
+    comparison_count: int = 0
     breakdown: list[dict] = []
     affordable: bool = True
     current_balance: Decimal = Decimal("0")
@@ -83,6 +101,8 @@ class PricingCreateRequest(OmicsHubBaseSchema):
     resource_type: str = ""
     flow_category: str = ""
     base_cost: Decimal
+    per_sample_cost: Decimal = Decimal("0")
+    per_comparison_cost: Decimal = Decimal("0")
     unit: str
     priority: int = 0
     description: str = ""

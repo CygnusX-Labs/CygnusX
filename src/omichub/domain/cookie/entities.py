@@ -48,6 +48,8 @@ class CookiePricing(BaseModel):
     resource_type: str = ""
     flow_category: str = ""
     base_cost: Decimal = Decimal("0")
+    per_sample_cost: Decimal = Decimal("0")
+    per_comparison_cost: Decimal = Decimal("0")
     unit: PricingUnit
     is_active: bool = True
     effective_from: datetime = Field(default_factory=datetime.now)

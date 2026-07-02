@@ -26,7 +26,12 @@ class TaskCookieConsumer:
         self._settings = get_settings()
 
     async def on_submit(
-        self, user_id: UUID, task_id: str, flow_id: str
+        self,
+        user_id: UUID,
+        task_id: str,
+        flow_id: str,
+        sample_count: int = 0,
+        comparison_count: int = 0,
     ) -> Decimal:
         """集成点#2: 任务提交前预估+预扣
 
@@ -36,13 +41,15 @@ class TaskCookieConsumer:
         if not self._settings.enable_cookie_system:
             return Decimal("0")
 
-        estimated = await self._pricing_engine.estimate_task_cost(flow_id)
+        estimated = await self._pricing_engine.estimate_task_cost(
+            flow_id, sample_count, comparison_count
+        )
         await self._cookie_service.pre_deduct(
             user_id=user_id,
             amount=estimated,
             source_type="task",
             source_id=task_id,
-            description=f"任务提交预扣 {estimated} 🍪 (flow={flow_id})",
+            description=f"任务提交预扣 {estimated} 🍪 (flow={flow_id}, samples={sample_count}, comparisons={comparison_count})",
         )
         return estimated
 
@@ -52,6 +59,8 @@ class TaskCookieConsumer:
         task_id: str,
         flow_id: str,
         pre_deducted: Decimal,
+        sample_count: int = 0,
+        comparison_count: int = 0,
         execution_seconds: int | None = None,
         resource_cores: int | None = None,
     ) -> None:
@@ -59,10 +68,12 @@ class TaskCookieConsumer:
         if not self._settings.enable_cookie_system or pre_deducted == 0:
             return
 
-        actual_cost = await self._pricing_engine.estimate_task_cost(flow_id)
+        actual_cost = await self._pricing_engine.estimate_task_cost(
+            flow_id, sample_count, comparison_count
+        )
         await self._cookie_service.settle(
             user_id=user_id,
-            pre_deducted_amount=pre_deducted,
+            pre_deducted=pre_deducted,
             actual_cost=actual_cost,
             source_type="task",
             source_id=task_id,

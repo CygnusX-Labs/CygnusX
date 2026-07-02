@@ -2,7 +2,45 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { isToday, isYesterday, parseISO } from 'date-fns'
 import apiClient from '@/api/client'
-import type { ChatSession, ChatMessage, UserInfo, ModelOption, PluginOption } from '@/components/ai-chat/types'
+import type { ChatSession, ChatMessage, UserInfo, ModelOption, PluginOption, ConversationSettings } from '@/components/ai-chat/types'
+
+const FAVORITE_MODELS_KEY = 'chat-favorite-models'
+const CONVERSATION_SETTINGS_KEY = 'chat-conversation-settings'
+const DEEP_THINKING_KEY = 'chat-deep-thinking'
+
+const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = {
+  temperature: 0.7,
+  maxTokens: 2048,
+  contextLength: 20,
+}
+
+function loadBoolean(key: string, fallback: boolean): boolean {
+  try {
+    const v = localStorage.getItem(key)
+    return v === null ? fallback : v === 'true'
+  } catch {
+    return fallback
+  }
+}
+
+function loadConversationSettings(): ConversationSettings {
+  try {
+    const v = localStorage.getItem(CONVERSATION_SETTINGS_KEY)
+    if (!v) return { ...DEFAULT_CONVERSATION_SETTINGS }
+    return { ...DEFAULT_CONVERSATION_SETTINGS, ...JSON.parse(v) }
+  } catch {
+    return { ...DEFAULT_CONVERSATION_SETTINGS }
+  }
+}
+
+function loadFavoriteModels(): string[] {
+  try {
+    const v = localStorage.getItem(FAVORITE_MODELS_KEY)
+    return v ? (JSON.parse(v) as string[]) : []
+  } catch {
+    return []
+  }
+}
 
 export const useChatStore = defineStore('chat', () => {
   // ========== State ==========
@@ -11,10 +49,20 @@ export const useChatStore = defineStore('chat', () => {
   const isTyping = ref(false)
   const streamingContent = ref('')
   const streamingThought = ref('')
-  const theme = ref<'dark' | 'light'>('dark')
   const sidebarCollapsed = ref(false)
   const agentMode = ref(false)
   const selectedModel = ref('kimi-k2')
+
+  // 深度思考模式（前端状态，透传至 sendMessage，后端可暂忽略）
+  const deepThinking = ref<boolean>(loadBoolean(DEEP_THINKING_KEY, false))
+
+  // 对话级设置（温度 / 最大输出 / 上下文长度）
+  const conversationSettings = ref<ConversationSettings>(
+    loadConversationSettings(),
+  )
+
+  // 收藏的模型 id 列表（localStorage 持久化）
+  const favoriteModels = ref<string[]>(loadFavoriteModels())
 
   const currentUser = ref<UserInfo>({
     id: '',
@@ -201,20 +249,62 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   // 设置
-  function setTheme(newTheme: 'dark' | 'light') {
-    theme.value = newTheme
-    document.documentElement.setAttribute('data-theme', newTheme)
-    localStorage.setItem('chat-theme', newTheme)
-  }
-
-  function toggleTheme() {
-    setTheme(theme.value === 'dark' ? 'light' : 'dark')
-  }
-
   function selectModel(modelId: string) {
     selectedModel.value = modelId
     if (currentSession.value) {
       currentSession.value.model = modelId
+    }
+  }
+
+  // 深度思考
+  function setDeepThinking(enabled: boolean) {
+    deepThinking.value = enabled
+    try {
+      localStorage.setItem(DEEP_THINKING_KEY, String(enabled))
+    } catch {
+      /* 静默 */
+    }
+  }
+
+  function toggleDeepThinking() {
+    setDeepThinking(!deepThinking.value)
+  }
+
+  // 对话级设置
+  function updateConversationSettings(patch: Partial<ConversationSettings>) {
+    conversationSettings.value = { ...conversationSettings.value, ...patch }
+    try {
+      localStorage.setItem(CONVERSATION_SETTINGS_KEY, JSON.stringify(conversationSettings.value))
+    } catch {
+      /* 静默 */
+    }
+  }
+
+  function resetConversationSettings() {
+    conversationSettings.value = { ...DEFAULT_CONVERSATION_SETTINGS }
+    try {
+      localStorage.setItem(CONVERSATION_SETTINGS_KEY, JSON.stringify(conversationSettings.value))
+    } catch {
+      /* 静默 */
+    }
+  }
+
+  // 模型收藏
+  function isFavorite(modelId: string) {
+    return favoriteModels.value.includes(modelId)
+  }
+
+  function toggleFavorite(modelId: string) {
+    const idx = favoriteModels.value.indexOf(modelId)
+    if (idx > -1) {
+      favoriteModels.value.splice(idx, 1)
+    } else {
+      favoriteModels.value.push(modelId)
+    }
+    try {
+      localStorage.setItem(FAVORITE_MODELS_KEY, JSON.stringify(favoriteModels.value))
+    } catch {
+      /* 静默 */
     }
   }
 
@@ -232,11 +322,6 @@ export const useChatStore = defineStore('chat', () => {
       const saved = localStorage.getItem('chat-sessions')
       if (saved) {
         sessions.value = JSON.parse(saved)
-      }
-      const savedTheme = localStorage.getItem('chat-theme')
-      if (savedTheme) {
-        theme.value = savedTheme as 'dark' | 'light'
-        document.documentElement.setAttribute('data-theme', theme.value)
       }
     } catch (e) {
       console.warn('Failed to load sessions:', e)
@@ -276,10 +361,12 @@ export const useChatStore = defineStore('chat', () => {
     isTyping,
     streamingContent,
     streamingThought,
-    theme,
     sidebarCollapsed,
     agentMode,
     selectedModel,
+    deepThinking,
+    conversationSettings,
+    favoriteModels,
     currentUser,
     availableModels,
     availablePlugins,
@@ -303,9 +390,13 @@ export const useChatStore = defineStore('chat', () => {
     appendStreamContent,
     appendStreamThought,
     finishStreaming,
-    setTheme,
-    toggleTheme,
     selectModel,
+    setDeepThinking,
+    toggleDeepThinking,
+    updateConversationSettings,
+    resetConversationSettings,
+    isFavorite,
+    toggleFavorite,
     initStore,
     fetchPlugins,
     saveToLocalStorage,

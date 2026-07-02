@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.cookie import (
@@ -40,11 +40,24 @@ class PricingEngine:
     def __init__(self, session: AsyncSession):
         self._pricing_repo = SqlAlchemyPricingRepository(session)
 
-    async def estimate_task_cost(self, flow_id: str) -> Decimal:
+    async def estimate_task_cost(
+        self,
+        flow_id: str,
+        sample_count: int = 0,
+        comparison_count: int = 0,
+    ) -> Decimal:
+        """估算任务费用：基础费 + 样本数 × 单样本费 + 比较组数 × 每组差异分析费。"""
         pricing = await self._pricing_repo.find_match(
             flow_category=flow_id, pricing_type=PricingType.TASK_TYPE.value
         )
-        return pricing.base_cost if pricing else Decimal("1.0")
+        base = pricing.base_cost if pricing else Decimal("1.0")
+        per_sample = pricing.per_sample_cost if pricing else Decimal("0")
+        per_comparison = pricing.per_comparison_cost if pricing else Decimal("0")
+
+        samples = Decimal(max(sample_count, 0))
+        comparisons = Decimal(max(comparison_count, 0))
+        total = base + per_sample * samples + per_comparison * comparisons
+        return total.quantize(Decimal("0.01"))
 
     async def estimate_sandbox_cost(self, duration_hours: float = 1.0) -> Decimal:
         pricing = await self._pricing_repo.find_match(pricing_type=PricingType.SANDBOX.value)
@@ -192,7 +205,10 @@ class CookieService:
     async def create_pricing(self, req: PricingCreateRequest, admin_id: UUID) -> CookiePricing:
         pricing = CookiePricing(
             pricing_type=PricingType(req.pricing_type), resource_type=req.resource_type,
-            flow_category=req.flow_category, base_cost=req.base_cost, unit=PricingUnit(req.unit),
+            flow_category=req.flow_category, base_cost=req.base_cost,
+            per_sample_cost=req.per_sample_cost,
+            per_comparison_cost=req.per_comparison_cost,
+            unit=PricingUnit(req.unit),
             priority=req.priority, description=req.description,
             effective_until=req.effective_until, created_by=admin_id,
         )
@@ -206,6 +222,8 @@ class CookieService:
         pricing.resource_type = req.resource_type
         pricing.flow_category = req.flow_category
         pricing.base_cost = req.base_cost
+        pricing.per_sample_cost = req.per_sample_cost
+        pricing.per_comparison_cost = req.per_comparison_cost
         pricing.unit = PricingUnit(req.unit)
         pricing.priority = req.priority
         pricing.description = req.description
@@ -216,14 +234,28 @@ class CookieService:
     async def delete_pricing(self, pricing_id: int) -> bool:
         return await self._pricing_repo.delete(pricing_id)
 
-    async def estimate_cost(self, user_id: UUID, flow_id: str) -> CostEstimateDTO:
+    async def estimate_cost(
+        self,
+        user_id: UUID,
+        flow_id: str,
+        sample_count: int = 0,
+        comparison_count: int = 0,
+    ) -> CostEstimateDTO:
         engine = PricingEngine(self._session)
-        cost = await engine.estimate_task_cost(flow_id)
+        cost = await engine.estimate_task_cost(flow_id, sample_count, comparison_count)
         balance = await self.check_balance(user_id)
         return CostEstimateDTO(
-            flow_id=flow_id, estimated_cost=cost,
-            breakdown=[{"item": "task_base", "cost": str(cost)}],
-            affordable=balance >= cost, current_balance=balance,
+            flow_id=flow_id,
+            estimated_cost=cost,
+            sample_count=sample_count,
+            comparison_count=comparison_count,
+            breakdown=[
+                {"item": "task_base", "cost": str(cost)},
+                {"item": "sample_count", "value": sample_count},
+                {"item": "comparison_count", "value": comparison_count},
+            ],
+            affordable=balance >= cost,
+            current_balance=balance,
         )
 
     async def get_stats(self) -> CookieStatsDTO:
@@ -244,8 +276,17 @@ class CookieService:
             total_earned=Decimal(str(row[4])), total_spent=Decimal(str(row[5])),
         )
 
-    async def list_all_accounts(self, status: str | None = None, offset: int = 0, limit: int = 50) -> list[dict]:
-        """列出所有账户 — 关联用户名和用户状态"""
+    async def list_all_accounts(
+        self,
+        status: str | None = None,
+        search: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> list[dict]:
+        """列出所有账户 — 关联用户身份与存储资产，支持按用户名/邮箱/用户ID检索。
+
+        与 `GET /admin/users` 共用同一份 users↔cookie_accounts JOIN 视图，确保两页数据一致。
+        """
         from omichub.infrastructure.database.models.user import UserModel
 
         query = (
@@ -253,25 +294,60 @@ class CookieService:
                 CookieAccountModel,
                 UserModel.username,
                 UserModel.email,
+                UserModel.role,
+                UserModel.lab_group,
                 UserModel.status.label("user_status"),
+                UserModel.created_at.label("user_created_at"),
+                UserModel.storage_quota,
+                UserModel.used_storage,
             )
             .outerjoin(UserModel, CookieAccountModel.user_id == UserModel.id)
             .order_by(desc(CookieAccountModel.created_at))
-            .offset(offset)
-            .limit(limit)
         )
         if status:
             query = query.filter(CookieAccountModel.status == status)
+        if search:
+            kw = f"%{search.strip()}%"
+            # search 命中用户名/邮箱模糊匹配，或精确命中 user_id（支持跨页跳转按 ID 过滤）
+            try:
+                uid = UUID(search.strip())
+                query = query.where(
+                    or_(
+                        UserModel.username.ilike(kw),
+                        UserModel.email.ilike(kw),
+                        CookieAccountModel.user_id == uid,
+                    )
+                )
+            except (ValueError, AttributeError):
+                query = query.where(
+                    or_(UserModel.username.ilike(kw), UserModel.email.ilike(kw))
+                )
+        query = query.offset(offset).limit(limit)
         result = await self._session.execute(query)
         rows = result.all()
         return [
             {
-                **self._account_to_dto(a).__dict__,
+                **self._account_to_dto(self._account_repo._to_entity(a)).model_dump(),
                 "username": username or "",
                 "email": email or "",
+                "role": role or "",
+                "lab_group": lab_group,
                 "user_status": user_status or "",
+                "user_created_at": user_created_at,
+                "storage_quota": storage_quota or 0,
+                "used_storage": used_storage or 0,
             }
-            for a, username, email, user_status in rows
+            for (
+                a,
+                username,
+                email,
+                role,
+                lab_group,
+                user_status,
+                user_created_at,
+                storage_quota,
+                used_storage,
+            ) in rows
         ]
 
     async def list_all_transactions(self, offset: int = 0, limit: int = 50) -> list[CookieTransactionDTO]:

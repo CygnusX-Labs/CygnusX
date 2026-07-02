@@ -50,24 +50,17 @@ async_session_factory = get_session_factory
 
 
 async def init_db() -> None:
-    """初始化数据库连接"""
-    engine = get_engine()
-    async with engine.begin() as conn:
-        # 开发环境自动建表（生产环境用 alembic 迁移）
-        if not get_settings().is_production:
-            from omichub.infrastructure.database.base import Base
+    """初始化数据库连接（预热引擎）。
 
-            # 导入所有模型以注册到 metadata
-            from omichub.infrastructure.database.models import (  # noqa: F401
-                ai,
-                cookie,
-                mcp,
-                sandbox,
-                task,
-                user,
-            )
+    schema 建表/变更统一由 Alembic 迁移管理：容器启动时 entrypoint 执行
+    `alembic upgrade head`（见 deploy/docker/entrypoint.sh）。
 
-            await conn.run_sync(Base.metadata.create_all)
+    历史上 dev 模式用 `Base.metadata.create_all` 自动建表，已弃用——它只建新表、
+    不会给已存在的表补字段，曾导致 `users.storage_quota` 缺列引发登录 500
+    （代码查新列、DB 无该列）。统一走 Alembic 后，加字段必出迁移脚本，schema 与代码强绑定。
+    """
+    # 仅触发引擎懒初始化（建立连接池），不在此建表
+    _ = get_engine()
 
 
 async def close_db() -> None:

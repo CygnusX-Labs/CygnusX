@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -57,7 +58,9 @@ class TaskService:
         flow_config = self._flow_service.get_flow_config(req.flow_id)
         flow_detail = self._flow_service.get_flow(req.flow_id)
 
-        work_dir = self._make_work_dir(req.flow_id, user_id)
+        # 预生成 task_id 用于工作目录路径（统一收拢到 users/{uid}/results/{flow_id}/{task_id}/）
+        task_id = uuid.uuid4()
+        work_dir = self._make_work_dir(req.flow_id, user_id, task_id)
 
         # 参数快照：复制一份不可变的提交时参数
         parameter_snapshot = dict(req.parameters)
@@ -73,7 +76,7 @@ class TaskService:
         )
         config_file = str(files["config"])
 
-        # 创建任务聚合根
+        # 创建任务聚合根（复用预生成的 task_id，保证 work_dir 路径与 task id 一致）
         task = await self._domain.submit(
             flow_id=req.flow_id,
             user_id=UUID(user_id),
@@ -81,6 +84,7 @@ class TaskService:
             parameters=parameter_snapshot,
             execution_mode=req.execution_mode,
             sample_count=len(req.sample_sheet),
+            task_id=task_id,
         )
 
         # 写入工作目录等运行信息
@@ -108,7 +112,11 @@ class TaskService:
             )
 
             consumer = TaskCookieConsumer(self._db)
-            pre_deducted = await consumer.on_submit(UUID(user_id), str(task.id), req.flow_id)
+            pre_deducted = await consumer.on_submit(
+                UUID(user_id), str(task.id), req.flow_id,
+                sample_count=len(req.sample_sheet),
+                comparison_count=len(req.comparisons or []),
+            )
             task.parameters["_cookie_pre_deducted"] = float(pre_deducted)
             task = await self._repo.save(task)
 
@@ -170,10 +178,18 @@ class TaskService:
             work_dir=task.work_dir,
         )
 
-    def _make_work_dir(self, flow_id: str, user_id: str) -> str:
-        """生成任务工作目录"""
-        base = Path(self._settings.storage_path) / "tasks" / user_id / flow_id
-        # 使用 task_id 占位目录会在创建聚合根后重命名；这里先用时间戳目录
-        work_dir = base / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    def _make_work_dir(self, flow_id: str, user_id: str, task_id: uuid.UUID) -> str:
+        """生成任务工作目录 — 统一收拢到 users/{uid}/results/{flow_id}/{task_id}/
+
+        旧路径 tasks/{uid}/{flow_id}/{ts}/ 已废弃（旧任务保留原 work_dir 不动）。
+        """
+        work_dir = (
+            Path(self._settings.storage_path)
+            / "users"
+            / user_id
+            / "results"
+            / flow_id
+            / str(task_id)
+        )
         work_dir.mkdir(parents=True, exist_ok=True)
         return str(work_dir)

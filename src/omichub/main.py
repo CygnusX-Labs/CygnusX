@@ -17,8 +17,11 @@ from omichub.core.config import get_settings
 from omichub.infrastructure.celery_app.celery import celery_app  # noqa: F401
 from omichub.core.exceptions import OmicHubError
 from omichub.core.logging import setup_logging
+from loguru import logger
+from omichub.middleware.audit import AuditMiddleware
 from omichub.middleware.auth import AuthMiddleware
 from omichub.middleware.cookie import CookieRequiredMiddleware
+from omichub.middleware.rate_limit import RateLimitMiddleware
 
 
 async def _init_default_ai_provider() -> None:
@@ -202,12 +205,35 @@ def create_app() -> FastAPI:
     # 饼干消费拦截中间件（消费类路由的账户状态守卫）
     app.add_middleware(CookieRequiredMiddleware)
 
+    # 审计日志中间件：记录写操作。注册在 Auth 之后（更外层），
+    # 响应回流时 AuthMiddleware 已注入 request.state.user_id，可据此归属操作者。
+    app.add_middleware(AuditMiddleware)
+
+    # 限流中间件：全局每 IP 滑动窗口。最后注册=最外层，先于鉴权拦截，Redis 不可用降级放行。
+    app.add_middleware(
+        RateLimitMiddleware,
+        max_requests=settings.rate_limit_max,
+        window_seconds=settings.rate_limit_window,
+        enabled=settings.rate_limit_enabled,
+    )
+
     # 全局异常处理
     @app.exception_handler(OmicHubError)
     async def omichub_error_handler(request: Request, exc: OmicHubError) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": exc.detail},
+        )
+
+    # 兜底异常处理：捕获所有未被上面精准命中的异常（如 DB 缺列、连接失败等
+    # SQLAlchemyError / 编程错误），记录完整堆栈到日志，对外仅返回通用 500 提示。
+    # 避免内部错误信息泄露，也避免前端把 500 误判成"密码错误"等业务错误。
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception(f"Unhandled exception on {request.method} {request.url.path}: {exc}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "系统内部错误，请联系管理员"},
         )
 
     # 注册路由
