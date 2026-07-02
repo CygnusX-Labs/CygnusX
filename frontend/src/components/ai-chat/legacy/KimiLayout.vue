@@ -1,12 +1,23 @@
 <script setup lang="ts">
+/**
+ * [LEGACY] Model-first 旧版布局
+ *
+ * 当前 `/ai` 路由不再直接挂载该组件，已切到 Agent-first 的 AgentWorkspace。
+ * 保留原因：
+ *   1. 底层聊天组件（KimiMessageList / KimiChatInput / KimiMessageItem）仍被 AgentSandbox 复用；
+ *   2. 便于未来需要切回模型优先模式或做 A/B 对比时快速恢复。
+ *
+ * 未来去留：当 Agent-first 模式完全覆盖模型优先能力后，可删除 legacy/ 目录
+ * 及 chatSession / chatAssistant 等模型优先 Store。
+ */
 import { ref, computed, onMounted } from 'vue'
 import { useMagicKeys, whenever } from '@vueuse/core'
 import { useRouter } from 'vue-router'
 import { NAlert, useMessage } from 'naive-ui'
 import KimiSidebar from './KimiSidebar.vue'
 import KimiEmptyState from './KimiEmptyState.vue'
-import KimiMessageList from './KimiMessageList.vue'
-import KimiChatInput from './KimiChatInput.vue'
+import KimiMessageList from '../KimiMessageList.vue'
+import KimiChatInput from '../KimiChatInput.vue'
 import ModelNavBar from './ModelNavBar.vue'
 import apiClient from '@/api/client'
 import { useChatSessionStore } from '@/stores/chatSession'
@@ -14,7 +25,7 @@ import { useChatAssistantStore } from '@/stores/chatAssistant'
 import { useChatStore } from '@/stores/chat'
 import { useThemeStore } from '@/stores/theme'
 import { useAuthStore } from '@/stores/auth'
-import type { ChatMessage, ChatSession, SendOptions, CopyMode } from './types'
+import type { ChatMessage, ChatSession, SendOptions, CopyMode } from '../types'
 
 const chatSessionStore = useChatSessionStore()
 const chatAssistantStore = useChatAssistantStore()

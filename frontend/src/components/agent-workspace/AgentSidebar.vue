@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { NButton, NIcon, NAvatar, NTag } from 'naive-ui'
+import { NButton, NIcon } from 'naive-ui'
 import {
-  AddOutline, CloseOutline, ChatbubbleOutline, MenuOutline, ChevronDownOutline,
+  AddOutline, CloseOutline, ChatbubbleOutline, MenuOutline,
 } from '@vicons/ionicons5'
 import { useAgentHubStore } from '@/stores/agentHub'
-import { useAuthStore } from '@/stores/auth'
 
 const store = useAgentHubStore()
-const authStore = useAuthStore()
 
 defineProps<{ collapsed?: boolean }>()
 defineEmits<{
@@ -17,11 +15,6 @@ defineEmits<{
   selectSession: [id: string]
   deleteSession: [id: string]
 }>()
-
-const userInfo = computed(() => ({
-  name: authStore.user?.username || '用户',
-  role: authStore.user?.role === 'admin' ? 'Admin' : 'User',
-}))
 
 const grouped = computed(() => store.groupedSessions)
 </script>
@@ -61,17 +54,6 @@ const grouped = computed(() => store.groupedSessions)
           </NButton>
         </div>
       </div>
-    </div>
-
-    <div class="user-box" :class="{ collapsed }">
-      <NAvatar round size="small" :fallback-src="`https://api.dicebear.com/7.x/initials/svg?seed=${userInfo.name}`" />
-      <template v-if="!collapsed">
-        <div class="user-meta">
-          <div class="user-name">{{ userInfo.name }}</div>
-          <NTag size="tiny" :bordered="false" type="success">{{ userInfo.role }}</NTag>
-        </div>
-        <NButton text><NIcon size="14"><ChevronDownOutline /></NIcon></NButton>
-      </template>
     </div>
   </aside>
 </template>
@@ -116,12 +98,4 @@ const grouped = computed(() => store.groupedSessions)
 .s-title { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .s-del { opacity: 0; transition: opacity .15s; }
 .session-item:hover .s-del { opacity: 1; }
-
-.user-box {
-  display: flex; align-items: center; gap: 10px;
-  padding: 12px 14px; border-top: 1px solid var(--chat-border);
-}
-.user-box.collapsed { justify-content: center; }
-.user-meta { flex: 1; min-width: 0; }
-.user-name { font-size: 13px; font-weight: 500; }
 </style>

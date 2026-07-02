@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { QuickPrompt } from './types'
+import type { QuickPrompt } from '../types'
 
 interface Props {
   logoText?: string

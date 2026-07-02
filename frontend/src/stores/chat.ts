@@ -1,5 +1,17 @@
-import { defineStore } from 'pinia'
+/**
+ * UI / 设置 Store
+ *
+ * 目前承载：
+ * - 旧版 Model-first 的 localStorage 会话、模型收藏、可用模型/插件列表
+ * - 当前 Agent-first 模式仍使用的 deepThinking 开关
+ * - 通用对话设置（temperature / maxTokens / contextLength）
+ *
+ * TODO: 在 Agent-first 架构稳定后，建议将 UI 状态（sidebarCollapsed、deepThinking、
+ * conversationSettings、主题无关的界面偏好）剥离到独立的 uiSettingsStore；
+ * 与模型优先相关的会话/模型/助手状态随旧布局一并移除，降低状态同步的认知负担。
+ */
 import { ref, computed } from 'vue'
+import { defineStore } from 'pinia'
 import { isToday, isYesterday, parseISO } from 'date-fns'
 import apiClient from '@/api/client'
 import type { ChatSession, ChatMessage, UserInfo, ModelOption, PluginOption, ConversationSettings } from '@/components/ai-chat/types'

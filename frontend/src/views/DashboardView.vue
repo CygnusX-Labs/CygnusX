@@ -34,6 +34,13 @@ const loadingOverview = ref(false)
 const loadingTasks = ref(false)
 const bannerClosed = ref(localStorage.getItem('omichub:dashboardBannerClosed') === 'true')
 
+const tools = [
+  { name: 'FASTQ 质控', desc: '测序数据质量评估与清洗', to: '/tools/fastq-qc', icon: ScanOutline, gradient: 'linear-gradient(135deg, #165DFF, #6B8DD6)' },
+  { name: 'IGV 浏览器', desc: '基因组数据在线可视化', to: '/tools/igv', icon: GlobeOutline, gradient: 'linear-gradient(135deg, #00B42A, #23C372)' },
+  { name: '序列检索', desc: 'BLAST 本地序列比对', to: '/tools/blast', icon: SearchOutline, gradient: 'linear-gradient(135deg, #FF7D00, #FF9A2E)' },
+  { name: '绘图工坊', desc: '组学数据交互式可视化', to: '/tools/plot', icon: ColorPaletteOutline, gradient: 'linear-gradient(135deg, #8E54E9, #B96CD4)' },
+]
+
 onMounted(async () => {
   // 健康检查
   try {
@@ -183,15 +190,18 @@ const columns: DataTableColumns<Task> = [
     <!-- 数据概览 - 左右分栏 -->
     <section class="overview-grid animate-fade-in-up delay-100">
       <!-- 左侧运行状态 -->
-      <div class="arco-card status-card">
+      <div class="arco-card status-card card-hover-lift">
         <div class="arco-card-header">
           <span class="arco-card-title">运行状态</span>
-          <NButton text size="small" class="refresh-btn" @click="$router.go(0)">
-            <template #icon>
-              <NIcon :size="16"><RefreshOutline /></NIcon>
-            </template>
-            刷新
-          </NButton>
+          <div class="header-right">
+            <span class="trend-badge trend-up">+12%</span>
+            <NButton text size="small" class="refresh-btn" @click="$router.go(0)">
+              <template #icon>
+                <NIcon :size="16"><RefreshOutline /></NIcon>
+              </template>
+              刷新
+            </NButton>
+          </div>
         </div>
         <div class="status-main">
           <span class="status-pulse">
@@ -231,40 +241,13 @@ const columns: DataTableColumns<Task> = [
         </NButton>
       </div>
       <div class="tools-entry-grid">
-        <div class="tool-entry-card" @click="router.push('/tools/fastq-qc')">
-          <div class="tool-entry-icon" style="background: linear-gradient(135deg, #165DFF, #6B8DD6)">
-            <NIcon :size="22" color="#fff"><ScanOutline /></NIcon>
+        <div v-for="(tool, idx) in tools" :key="tool.name" class="tool-entry-card stagger-item" :style="{ animationDelay: `${0.05 * (idx + 1)}s` }" @click="router.push(tool.to)">
+          <div class="tool-entry-icon" :style="{ background: tool.gradient }">
+            <NIcon :size="22" color="#fff"><component :is="tool.icon" /></NIcon>
           </div>
           <div class="tool-entry-info">
-            <span class="tool-entry-name">FASTQ 质控</span>
-            <span class="tool-entry-desc">测序数据质量评估与清洗</span>
-          </div>
-        </div>
-        <div class="tool-entry-card" @click="router.push('/tools/igv')">
-          <div class="tool-entry-icon" style="background: linear-gradient(135deg, #00B42A, #23C372)">
-            <NIcon :size="22" color="#fff"><GlobeOutline /></NIcon>
-          </div>
-          <div class="tool-entry-info">
-            <span class="tool-entry-name">IGV 浏览器</span>
-            <span class="tool-entry-desc">基因组数据在线可视化</span>
-          </div>
-        </div>
-        <div class="tool-entry-card" @click="router.push('/tools/blast')">
-          <div class="tool-entry-icon" style="background: linear-gradient(135deg, #FF7D00, #FF9A2E)">
-            <NIcon :size="22" color="#fff"><SearchOutline /></NIcon>
-          </div>
-          <div class="tool-entry-info">
-            <span class="tool-entry-name">序列检索</span>
-            <span class="tool-entry-desc">BLAST 本地序列比对</span>
-          </div>
-        </div>
-        <div class="tool-entry-card" @click="router.push('/tools/plot')">
-          <div class="tool-entry-icon" style="background: linear-gradient(135deg, #8E54E9, #B96CD4)">
-            <NIcon :size="22" color="#fff"><ColorPaletteOutline /></NIcon>
-          </div>
-          <div class="tool-entry-info">
-            <span class="tool-entry-name">绘图工坊</span>
-            <span class="tool-entry-desc">组学数据交互式可视化</span>
+            <span class="tool-entry-name">{{ tool.name }}</span>
+            <span class="tool-entry-desc">{{ tool.desc }}</span>
           </div>
         </div>
       </div>
@@ -493,6 +476,32 @@ const columns: DataTableColumns<Task> = [
   color: var(--arco-primary) !important;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.trend-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.trend-up {
+  background: var(--arco-success-light, #E8FFEA);
+  color: var(--arco-success, #00B42A);
+}
+
+:root[data-theme="dark"] .trend-up {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22C55E;
+}
+
 /* 最近任务 */
 .recent-tasks {
   overflow: hidden;
@@ -542,11 +551,20 @@ const columns: DataTableColumns<Task> = [
   border-radius: 10px;
   border: 1px solid var(--neutral-border, #e5e6eb);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.2s ease;
 }
 .tool-entry-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1),
+              0 8px 16px rgba(0, 0, 0, 0.06);
   border-color: var(--arco-primary, #165DFF);
   background: rgba(22, 93, 255, 0.03);
+}
+:root[data-theme="dark"] .tool-entry-card:hover {
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35),
+              0 8px 16px rgba(0, 0, 0, 0.2);
 }
 .tool-entry-icon {
   width: 40px;

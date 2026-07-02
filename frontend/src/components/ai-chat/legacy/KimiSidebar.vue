@@ -16,7 +16,7 @@ import {
   RocketOutline,
 } from '@vicons/ionicons5'
 import { isToday, isYesterday, parseISO } from 'date-fns'
-import type { ChatSession, UserInfo } from './types'
+import type { ChatSession, UserInfo } from '../types'
 
 interface Props {
   sessions?: ChatSession[]

@@ -2,6 +2,10 @@
  * 聊天助手 Store — Cherry Studio 架构
  *
  * 管理内置助手列表（RNA-seq 分析师、单细胞分析师等）。
+ *
+ * @deprecated 该 Store 仅服务于旧版 Model-first 布局（KimiLayout.vue）。
+ * 当前 `/ai` 路由主推 Agent-first 模式，助手概念已下沉到后端的 Agent 配置。
+ * 未来若彻底放弃模型优先模式，可连同 chatSession 一起移除。
  */
 
 import { defineStore } from 'pinia'

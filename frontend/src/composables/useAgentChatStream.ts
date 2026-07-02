@@ -12,6 +12,12 @@ export interface AgentChatStreamOptions {
   agentId: string
   messages: { role: string; content: string }[]
   sessionId?: string
+  /** 温度（0-1），后端 Agent 编排层可透传给底层模型 */
+  temperature?: number
+  /** 单次回复最大 token 数 */
+  maxTokens?: number
+  /** 是否开启深度思考/推理模式 */
+  deepThinking?: boolean
 }
 
 export interface ToolCallEvent {
@@ -60,6 +66,9 @@ export function useAgentChatStream() {
           session_id: options.sessionId,
           messages: options.messages,
           stream: true,
+          temperature: options.temperature,
+          max_tokens: options.maxTokens,
+          deep_thinking: options.deepThinking,
         }),
         signal: abortController.value.signal,
       })

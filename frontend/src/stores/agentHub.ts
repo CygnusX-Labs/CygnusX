@@ -6,6 +6,10 @@
  *
  * 消息结构复用 @/components/ai-chat/types 的 ChatMessage，便于直接喂给
  * KimiMessageList / KimiChatInput 等已解耦的聊天组件。
+ *
+ * TODO: 在 Agent-first 架构稳定后，chatSession / chatAssistant 等模型优先 Store 应废弃，
+ * chatStore 中与 UI 相关的设置（sidebarCollapsed / deepThinking / conversationSettings）
+ * 可进一步收敛到独立的 uiSettingsStore，会话与智能体逻辑保留在 agentHub。
  */
 
 import { defineStore } from 'pinia'
@@ -21,6 +25,7 @@ import type { ChatMessage, ToolCall } from '@/components/ai-chat/types'
 import { agentApi, adminAgentApi } from '@/api/agent'
 import apiClient from '@/api/client'
 import { useAgentChatStream } from '@/composables/useAgentChatStream'
+import { useChatStore } from '@/stores/chat'
 
 export const CATEGORY_LABELS: Record<AgentCategory, string> = {
   general: '通用',
@@ -47,12 +52,34 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   const sessions = ref<AgentSession[]>([])
   const currentSessionId = ref<string>('')
 
-  // 流式状态
   const isStreaming = ref(false)
   const streamingContent = ref('')
   const streamingThought = ref('')
 
   const { streamChat, abortStream } = useAgentChatStream()
+
+  /**
+   * 临时会话 ID 解析锁。
+   * Agent 工作流先创建客户端临时 `sess-` ID，等待 SSE 返回真实 session_id 后回填。
+   * 该锁保证在回填完成前，后续消息不会携带临时 ID 重复触发后端创建多个会话。
+   */
+  let pendingSessionIdResolver: (() => void) | null = null
+  let pendingSessionIdPromise: Promise<void> | null = null
+
+  function createSessionIdLock(): Promise<void> {
+    if (!pendingSessionIdPromise) {
+      pendingSessionIdPromise = new Promise((resolve) => {
+        pendingSessionIdResolver = resolve
+      })
+    }
+    return pendingSessionIdPromise
+  }
+
+  function releaseSessionIdLock() {
+    pendingSessionIdResolver?.()
+    pendingSessionIdResolver = null
+    pendingSessionIdPromise = null
+  }
 
   // ========== Getters ==========
   const activeAgents = computed(() => agents.value.filter((a) => a.is_active))
@@ -251,6 +278,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   // ========== 会话编排 ==========
 
   function startSessionFromAgent(agentId: string): AgentSession | null {
+    // 切换/新建会话时先中断当前流，避免资源浪费
+    stopStreaming()
     const agent = getAgent(agentId)
     if (!agent) return null
     const now = new Date().toISOString()
@@ -275,14 +304,17 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   }
 
   function selectSession(id: string) {
+    if (currentSessionId.value !== id) stopStreaming()
     currentSessionId.value = id
   }
 
   function newChat() {
+    stopStreaming()
     currentSessionId.value = ''
   }
 
   function deleteSession(id: string) {
+    if (currentSessionId.value === id) stopStreaming()
     sessions.value = sessions.value.filter((s) => s.id !== id)
     if (currentSessionId.value === id) currentSessionId.value = ''
   }
@@ -298,6 +330,13 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     if (!session || isStreaming.value || !content.trim()) return
     const agent = getAgent(session.agent_id)
     if (!agent) return
+
+    // 若当前临时会话 ID 正在解析为真实 ID，排队等待，防止创建重复会话
+    if (session.id.startsWith('sess-') && pendingSessionIdPromise) {
+      await pendingSessionIdPromise
+    }
+
+    const chatStore = useChatStore()
     const now = new Date().toISOString()
 
     // 用户消息
@@ -326,7 +365,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     }
 
     // 构建送后端的上下文（含历史，排除当前 AI 占位）
-    const ctxLen = 20
+    const ctxLen = chatStore.conversationSettings.contextLength ?? 20
     const apiMessages = session.messages
       .filter((m) => m.id !== aiId && m.role !== 'assistant' || (m.role === 'assistant' && m.content.length > 0))
       .slice(-ctxLen)
@@ -340,11 +379,17 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     let backendSessionId: string | undefined
     if (session.id.startsWith('sess-') === false) backendSessionId = session.id
 
+    // 新会话首次发消息时加锁，直到 onSessionCreated 回填真实 ID
+    if (session.id.startsWith('sess-')) createSessionIdLock()
+
     await streamChat(
       {
         agentId: agent.id,
         messages: apiMessages,
         sessionId: backendSessionId,
+        temperature: chatStore.conversationSettings.temperature,
+        maxTokens: chatStore.conversationSettings.maxTokens,
+        deepThinking: chatStore.deepThinking,
       },
       {
         onText: (text, isReasoning) => {
@@ -360,6 +405,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           if (session.id.startsWith('sess-')) {
             session.id = sessionId
             currentSessionId.value = sessionId
+            releaseSessionIdLock()
           }
         },
         onToolCall: (event) => {
@@ -386,12 +432,14 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           isStreaming.value = false
           streamingContent.value = ''
           streamingThought.value = ''
+          releaseSessionIdLock()
         },
         onDone: () => {
           aiMsg.content = streamingContent.value || aiMsg.content
           isStreaming.value = false
           streamingContent.value = ''
           streamingThought.value = ''
+          releaseSessionIdLock()
         },
       },
     )
@@ -400,6 +448,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     isStreaming.value = false
     streamingContent.value = ''
     streamingThought.value = ''
+    releaseSessionIdLock()
   }
 
   function stopStreaming() {
@@ -414,6 +463,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     isStreaming.value = false
     streamingContent.value = ''
     streamingThought.value = ''
+    releaseSessionIdLock()
   }
 
   return {

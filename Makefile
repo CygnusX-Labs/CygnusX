@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker test lint format type-check migrate migrate-new docker-network docker-up docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge clean init-admin init-cookies
+.PHONY: help dev dev-worker test lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-up docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge clean init-admin init-cookies check-alembic-heads
 
 help: ## 显示所有可用命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -40,6 +40,12 @@ migrate-new: ## 创建新迁移 (用法: make migrate-new m="migration name")
 migrate-rollback: ## 回滚上一个迁移
 	uv run alembic downgrade -1
 
+migrate-merge: ## 自动合并 Alembic 多分支 (Multiple Heads 修复)
+	@echo "=> 正在合并 Alembic 多分支..."
+	uv run alembic merge heads -m "auto-merge parallel branches"
+	uv run alembic upgrade head
+	@echo "=> ✅ 多分支合并完成，数据库已更新至最新版本。"
+
 # ===== Docker Compose 编排（主栈 + 独立 Worker 栈，单机逻辑解耦）=====
 COMPOSE_MAIN   := docker compose -f deploy/docker/docker-compose.yml
 COMPOSE_WORKER := docker compose -f deploy/docker/docker-compose.worker.yml
@@ -51,6 +57,7 @@ docker-network: ## 创建跨栈外部网络 omichub_net（幂等）
 
 docker-up: docker-network ## 启动主栈 (web/db/redis/nginx/beat/flower)
 	$(COMPOSE_MAIN) up -d
+	@$(MAKE) --no-print-directory check-alembic-heads
 
 docker-up-worker: docker-network ## 启动独立计算节点 Worker 栈
 	$(COMPOSE_WORKER) up -d
@@ -58,6 +65,7 @@ docker-up-worker: docker-network ## 启动独立计算节点 Worker 栈
 docker-up-all: docker-network ## 启动主栈 + Worker（一键全启）
 	$(COMPOSE_MAIN) up -d
 	$(COMPOSE_WORKER) up -d
+	@$(MAKE) --no-print-directory check-alembic-heads
 
 docker-down: ## 停止主栈
 	$(COMPOSE_MAIN) down
@@ -96,12 +104,36 @@ docker-reload: docker-network ## 重新构建前端并刷新主栈 + Worker (开
 	$(COMPOSE_MAIN) restart web   # web 关闭了 --reload，改后端代码需手动 restart 才生效
 	$(COMPOSE_MAIN) up -d
 	$(COMPOSE_WORKER) up -d
+	@$(MAKE) --no-print-directory check-alembic-heads
 
 init-admin: ## 初始化管理员账号 (首次部署使用)
 	uv run python scripts/init_admin.py
 
 init-cookies: ## 初始化默认饼干定价策略
 	uv run python scripts/init_cookies.py
+
+check-alembic-heads: ## 检测 Alembic 迁移是否存在多分支 (Multiple Heads)
+	@echo "=> 🐱 正在检查 Alembic 数据库迁移状态..."
+	@sleep 3  # 等待 web 容器就绪
+	@HEAD_COUNT=$$(docker exec omichub-web alembic heads 2>/dev/null | grep -c '(head)' || echo 0); \
+	if [ "$$HEAD_COUNT" -gt 1 ]; then \
+		echo ""; \
+		echo "====================================================================="; \
+		echo "  🚨 [警告] Alembic 存在多个分支 (Multiple Heads)！"; \
+		echo "  ⚠️  数据库处于分叉状态，登录等接口可能触发 500 错误。"; \
+		echo ""; \
+		echo "  🛠️  修复命令（直接复制执行）："; \
+		echo ""; \
+		echo "    make migrate-merge"; \
+		echo ""; \
+		echo "  或手动分步："; \
+		echo "    docker exec omichub-web alembic merge heads -m \"merge parallel branches\""; \
+		echo "    docker exec omichub-web alembic upgrade head"; \
+		echo "====================================================================="; \
+		echo ""; \
+	else \
+		echo "=> ✅ 数据库版本树正常，未发现分叉。"; \
+	fi
 
 clean: ## 清理临时文件
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; \

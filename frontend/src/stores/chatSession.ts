@@ -3,6 +3,10 @@
  *
  * 管理会话列表、消息历史、SSE 流式聊天编排。
  * 替代旧 chat.ts（基于 localStorage 的 WebSocket 系统）。
+ *
+ * @deprecated 该 Store 仅服务于旧版 Model-first 布局（KimiLayout.vue）。
+ * 当前 `/ai` 路由主推 Agent-first 模式，由 agentHub Store 负责会话与 SSE 编排。
+ * 未来若彻底放弃模型优先模式，可连同 chatAssistant 一起移除。
  */
 
 import { defineStore } from 'pinia'

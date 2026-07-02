@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { NButton, NIcon } from 'naive-ui'
 import { ChevronDownOutline } from '@vicons/ionicons5'
+import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import KimiMessageItem from './KimiMessageItem.vue'
 import type { ChatMessage, CopyMode } from './types'
 
@@ -29,10 +30,12 @@ const emit = defineEmits<{
   delete: [messageId: string]
 }>()
 
-const listRef = ref<HTMLDivElement>()
-const showScrollToBottom = ref(false)
+interface ScrollerExpose {
+  scrollToBottom: () => void
+}
 
-const messagesWithIndex = computed(() => props.messages.map((m, i) => ({ ...m, index: i })))
+const scrollerRef = ref<InstanceType<typeof DynamicScroller> & ScrollerExpose>()
+const showScrollToBottom = ref(false)
 
 const streamingMessageId = computed(() => {
   const lastMsg = props.messages[props.messages.length - 1]
@@ -43,14 +46,13 @@ const streamingMessageId = computed(() => {
 })
 
 function scrollToBottom() {
-  if (listRef.value) {
-    listRef.value.scrollTop = listRef.value.scrollHeight
-  }
+  scrollerRef.value?.scrollToBottom()
 }
 
 function handleScroll() {
-  if (!listRef.value) return
-  const { scrollTop, scrollHeight, clientHeight } = listRef.value
+  const el = scrollerRef.value?.$el as HTMLElement | undefined
+  if (!el) return
+  const { scrollTop, scrollHeight, clientHeight } = el
   showScrollToBottom.value = scrollHeight - scrollTop - clientHeight > 100
 }
 
@@ -60,7 +62,7 @@ watch(
     nextTick(() => {
       if (!showScrollToBottom.value) scrollToBottom()
     })
-  }
+  },
 )
 
 watch(
@@ -69,46 +71,66 @@ watch(
     nextTick(() => {
       if (!showScrollToBottom.value) scrollToBottom()
     })
-  }
+  },
 )
 
 onMounted(() => {
-  listRef.value?.addEventListener('scroll', handleScroll)
+  const el = scrollerRef.value?.$el as HTMLElement | undefined
+  el?.addEventListener('scroll', handleScroll)
   scrollToBottom()
 })
 
 onUnmounted(() => {
-  listRef.value?.removeEventListener('scroll', handleScroll)
+  const el = scrollerRef.value?.$el as HTMLElement | undefined
+  el?.removeEventListener('scroll', handleScroll)
 })
 </script>
 
 <template>
-  <div ref="listRef" class="kimi-message-list">
-    <div class="message-container">
-      <transition-group name="message-slide">
-        <KimiMessageItem
-          v-for="message in messages"
-          :key="message.id"
-          :message="message"
-          :is-streaming="message.id === streamingMessageId"
-          :streaming-content="streamingContent"
-          :streaming-thought="streamingThought"
-          :model-name="modelName"
-          @feedback="(id, type) => emit('feedback', id, type)"
-          @copy="(mode) => emit('copy', mode)"
-          @regenerate="(id) => emit('regenerate', id)"
-          @retry-with-model="(id) => emit('retryWithModel', id)"
-          @translate="(id) => emit('translate', id)"
-          @delete="(id) => emit('delete', id)"
-        />
-      </transition-group>
+  <div class="kimi-message-list">
+    <DynamicScroller
+      ref="scrollerRef"
+      :items="messages"
+      :min-item-size="80"
+      key-field="id"
+      class="message-scroller"
+    >
+      <template #default="{ item, index, active }">
+        <DynamicScrollerItem
+          :item="item"
+          :active="active"
+          :size-dependencies="[
+            item.content,
+            item.thought,
+            streamingMessageId === item.id ? streamingContent : '',
+            streamingMessageId === item.id ? streamingThought : '',
+          ]"
+          :data-index="index"
+        >
+          <KimiMessageItem
+            :message="item"
+            :is-streaming="item.id === streamingMessageId"
+            :streaming-content="streamingContent"
+            :streaming-thought="streamingThought"
+            :model-name="modelName"
+            @feedback="(id, type) => emit('feedback', id, type)"
+            @copy="(mode) => emit('copy', mode)"
+            @regenerate="(id) => emit('regenerate', id)"
+            @retry-with-model="(id) => emit('retryWithModel', id)"
+            @translate="(id) => emit('translate', id)"
+            @delete="(id) => emit('delete', id)"
+          />
+        </DynamicScrollerItem>
+      </template>
 
-      <div v-if="isTyping && !streamingContent" class="typing-indicator">
-        <div class="typing-dot" />
-        <div class="typing-dot" />
-        <div class="typing-dot" />
-      </div>
-    </div>
+      <template #after>
+        <div v-if="isTyping && !streamingContent" class="typing-indicator">
+          <div class="typing-dot" />
+          <div class="typing-dot" />
+          <div class="typing-dot" />
+        </div>
+      </template>
+    </DynamicScroller>
 
     <transition name="fade">
       <n-button v-if="showScrollToBottom" circle class="scroll-to-bottom" @click="scrollToBottom">
@@ -124,12 +146,15 @@ onUnmounted(() => {
 .kimi-message-list {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 16px 0;
+  overflow: hidden;
   position: relative;
 
-  .message-container {
+  .message-scroller {
+    height: 100%;
+    padding: 16px 0;
+  }
+
+  :deep(.vue-recycle-scroller__item-wrapper) {
     padding: 0 24px;
     max-width: 900px;
     margin: 0 auto;
@@ -172,19 +197,6 @@ onUnmounted(() => {
     background: var(--chat-surface-hover);
     color: var(--chat-text-primary);
   }
-}
-
-.message-slide-enter-active,
-.message-slide-leave-active {
-  transition: all 0.3s ease;
-}
-.message-slide-enter-from {
-  opacity: 0;
-  transform: translateY(20px);
-}
-.message-slide-leave-to {
-  opacity: 0;
-  transform: translateY(-10px);
 }
 
 .fade-enter-active,

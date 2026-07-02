@@ -7,6 +7,7 @@ import router from './router'
 import '@/styles/global.css'
 import '@/styles/chat-theme.css'
 import 'highlight.js/styles/github-dark.css'
+import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { useThemeStore } from '@/stores/theme'
 
 const app = createApp(App)

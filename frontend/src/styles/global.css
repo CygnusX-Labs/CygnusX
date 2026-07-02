@@ -381,6 +381,52 @@ body {
 .delay-700 { animation-delay: 0.7s; }
 .delay-800 { animation-delay: 0.8s; }
 
+/* ===== Stagger 入场动画（0.05s 递增延迟） ===== */
+@keyframes staggerFadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.stagger-item {
+  opacity: 0;
+  animation: staggerFadeInUp 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+
+.stagger-item:nth-child(1)  { animation-delay: 0.05s; }
+.stagger-item:nth-child(2)  { animation-delay: 0.10s; }
+.stagger-item:nth-child(3)  { animation-delay: 0.15s; }
+.stagger-item:nth-child(4)  { animation-delay: 0.20s; }
+.stagger-item:nth-child(5)  { animation-delay: 0.25s; }
+.stagger-item:nth-child(6)  { animation-delay: 0.30s; }
+.stagger-item:nth-child(7)  { animation-delay: 0.35s; }
+.stagger-item:nth-child(8)  { animation-delay: 0.40s; }
+.stagger-item:nth-child(9)  { animation-delay: 0.45s; }
+.stagger-item:nth-child(10) { animation-delay: 0.50s; }
+.stagger-item:nth-child(n+11) { animation-delay: 0.55s; }
+
+/* ===== 卡片悬停反馈（上浮 8px + shadow 升级） ===== */
+.card-hover-lift {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-hover-lift:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1),
+              0 8px 16px rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme="dark"] .card-hover-lift:hover {
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35),
+              0 8px 16px rgba(0, 0, 0, 0.2);
+}
+
+/* ===== 按钮点击缩放反馈 ===== */
+.btn-press:active {
+  transform: scale(0.95);
+  transition: transform 0.1s ease;
+}
+
 /* ===== 路由过渡动画 ===== */
 .route-enter-active {
   transition: opacity 0.3s ease, transform 0.3s ease;

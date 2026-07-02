@@ -20,8 +20,8 @@ import {
 import { useChatSessionStore } from '@/stores/chatSession'
 import { useChatStore } from '@/stores/chat'
 import { useChatAssistantStore } from '@/stores/chatAssistant'
-import { enhanceModels, topCapabilities, CAPABILITY_LABELS } from './modelCapabilities'
-import type { ModelOption, Capability, SystemStatus } from './types'
+import { enhanceModels, topCapabilities, CAPABILITY_LABELS } from '../modelCapabilities'
+import type { ModelOption, Capability, SystemStatus } from '../types'
 
 const emit = defineEmits<{ share: [] }>()
 

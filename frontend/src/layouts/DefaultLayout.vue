@@ -150,7 +150,6 @@ const topNavItems = computed<NavItem[]>(() => [
   { key: 'dashboard', label: '控制台', to: '/dashboard', icon: HomeOutline },
   { key: 'flows', label: '分析流程中心', to: '/flows', icon: FlaskOutline },
   { key: 'knowledge', label: '实验室知识库', to: '/knowledge', icon: DocumentTextOutline },
-  { key: 'docs', label: '文档', to: '/knowledge', icon: HelpCircleOutline },
 ])
 
 const mainNavItems = computed<NavItem[]>(() => [
@@ -698,10 +697,16 @@ const UserAvatar = () => {
   justify-content: space-between;
   height: 56px;
   padding: 0 16px;
-  background: var(--neutral-card);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--neutral-border);
   flex-shrink: 0;
   z-index: 100;
+}
+
+:root[data-theme="dark"] .top-nav {
+  background: rgba(30, 30, 35, 0.7);
 }
 
 .top-nav-left {
@@ -722,6 +727,9 @@ const UserAvatar = () => {
 }
 .hamburger-btn:hover {
   background: var(--neutral-hover);
+}
+.hamburger-btn:active {
+  transform: scale(0.95);
 }
 
 .logo-block {
@@ -810,6 +818,9 @@ const UserAvatar = () => {
 .top-icon-btn:hover {
   background: var(--neutral-hover);
 }
+.top-icon-btn:active {
+  transform: scale(0.95);
+}
 
 /* ===== 主体 ===== */
 .app-body {
@@ -820,6 +831,7 @@ const UserAvatar = () => {
 
 .app-sider {
   background: var(--sidebar-bg) !important;
+  transition: width 0.3s ease-in-out;
 }
 
 .sider-inner {
@@ -827,6 +839,7 @@ const UserAvatar = () => {
   flex-direction: column;
   height: 100%;
   padding: 12px 12px 12px;
+  transition: opacity 0.2s ease-in-out;
 }
 
 .sider-nav-groups {
@@ -864,6 +877,18 @@ const UserAvatar = () => {
   background: var(--sidebar-active);
   color: var(--sidebar-active-text);
   font-weight: 500;
+  position: relative;
+}
+
+.nav-item--active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  background: var(--arco-primary);
+  border-radius: 0 3px 3px 0;
 }
 
 .nav-item-inner {

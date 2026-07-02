@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { NAvatar, NIcon, NTag, NCollapseTransition } from 'naive-ui'
 import {
-  SparklesOutline,
   ChevronForwardOutline,
   DocumentOutline,
   BuildOutline,
 } from '@vicons/ionicons5'
+import { Vue3Lottie } from 'vue3-lottie'
 import md, { VChart } from './setup'
 import MessageActionBar from './MessageActionBar.vue'
 import type { ChatMessage, CopyMode } from './types'
@@ -39,14 +39,52 @@ const emit = defineEmits<{
 
 const showThought = ref(false)
 const hovered = ref(false)
+const lottieRef = ref<InstanceType<typeof Vue3Lottie> | null>(null)
+
+const lottieUrl = `${import.meta.env.BASE_URL}lottie/ai-avatar.json`
+
+watch(
+  () => props.isStreaming,
+  (streaming) => {
+    lottieRef.value?.setSpeed(streaming ? 2 : 1)
+  },
+)
 
 const thoughtContent = computed(() =>
   props.isStreaming ? props.streamingThought : props.message.thought || ''
 )
 
-const renderedContent = computed(() => {
-  const c = props.isStreaming ? props.streamingContent : props.message.content
-  return c ? md.render(c) : ''
+const renderedContent = ref('')
+let renderRafId: number | null = null
+
+function renderMarkdown(source: string) {
+  renderedContent.value = source ? md.render(source) : ''
+}
+
+watch(
+  () => (props.isStreaming ? props.streamingContent : props.message.content),
+  (source) => {
+    if (props.isStreaming) {
+      // 流式输出高频触发时，通过 requestAnimationFrame 批量渲染，
+      // 避免 markdown-it/highlight.js 每收到一个 chunk 都阻塞主线程。
+      if (renderRafId) return
+      renderRafId = requestAnimationFrame(() => {
+        renderMarkdown(props.streamingContent)
+        renderRafId = null
+      })
+    } else {
+      renderMarkdown(source || '')
+    }
+  },
+  { immediate: true },
+)
+
+// 组件卸载时取消未执行的渲染帧
+onUnmounted(() => {
+  if (renderRafId) {
+    cancelAnimationFrame(renderRafId)
+    renderRafId = null
+  }
 })
 
 function handleBodyClick(e: MouseEvent) {
@@ -114,9 +152,14 @@ function handleDelete() {
     <template v-else-if="message.role === 'assistant'">
       <div class="ai-message-wrapper">
         <div class="ai-avatar">
-          <n-avatar round size="small" :style="{ background: 'var(--chat-accent)' }">
-            <n-icon size="16"><SparklesOutline /></n-icon>
-          </n-avatar>
+          <Vue3Lottie
+            ref="lottieRef"
+            :animation-link="lottieUrl"
+            :loop="true"
+            :auto-play="true"
+            :width="40"
+            :height="40"
+          />
         </div>
         <div class="ai-content">
           <div class="ai-name">OmicHub AI</div>
@@ -231,7 +274,11 @@ function handleDelete() {
 }
 .kimi-message-item.assistant .ai-avatar {
   flex-shrink: 0;
-  margin-top: 4px;
+  width: 40px;
+  height: 40px;
+  margin-top: 2px;
+  border-radius: 50%;
+  overflow: hidden;
 }
 .kimi-message-item.assistant .ai-content {
   flex: 1;
