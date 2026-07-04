@@ -23,6 +23,7 @@ function toAgent(d: any): AgentTemplate {
     features: d.features || {},
     is_active: d.is_active ?? true,
     is_builtin: d.is_builtin ?? false,
+    is_default: d.is_default ?? false,
   }
 }
 
@@ -59,6 +60,9 @@ export const adminAgentApi = {
   async toggle(agentId: string): Promise<AgentTemplate> {
     const res = await apiClient.post(`/admin/agents/${agentId}/toggle`)
     return toAgent(res.data)
+  },
+  async setDefault(agentId: string): Promise<void> {
+    await apiClient.post(`/admin/agents/${agentId}/set-default`)
   },
 }
 

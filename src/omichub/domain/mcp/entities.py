@@ -26,9 +26,14 @@ class MCPServer(BaseModel):
     description: str = ""
     transport: Transport = Transport.STDIO
     command: str = ""  # stdio 模式的启动命令
+    args: list[str] = []  # stdio 模式参数
     url: str = ""  # SSE 模式的 URL
     env: dict[str, str] = {}
+    registry: str = "default"  # 包管理源
+    working_dir: str = ""  # 工作目录
+    version: str = ""  # 版本号
     status: ServerStatus = ServerStatus.OFFLINE
+    is_enabled: bool = True  # 管理启用开关
     tools: list[MCPToolRegistry] = []
     timeout: int = 30  # 超时秒数
     auto_restart: bool = True
@@ -37,4 +42,4 @@ class MCPServer(BaseModel):
     updated_at: datetime = Field(default_factory=datetime.now)
 
     def is_available(self) -> bool:
-        return self.status == ServerStatus.ONLINE
+        return self.is_enabled and self.status == ServerStatus.ONLINE

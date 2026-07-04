@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -28,6 +29,13 @@ from omichub.infrastructure.database.models.skill import SkillModel
 from omichub.infrastructure.database.repositories.mcp_repository import (
     SqlAlchemyMCPServerRepository,
 )
+
+
+def _generate_agent_id(name: str) -> str:
+    """根据名称生成唯一 agent_id"""
+    base = re.sub(r"[^a-z0-9\u4e00-\u9fa5]+", "-", name.strip().lower()).strip("-") or "agent"
+    suffix = uuid.uuid4().hex[:6]
+    return f"{base}-{suffix}"
 
 
 @dataclass
@@ -132,9 +140,13 @@ class AgentService:
     # --- CRUD ---
 
     async def create_agent(self, req: CreateAgentRequest) -> AgentTemplateDTO:
-        if await self.get_agent(req.agent_id) is not None:
-            raise BusinessError(f"Agent ID '{req.agent_id}' 已存在")
+        agent_id = req.agent_id.strip() if req.agent_id else ""
+        if not agent_id:
+            agent_id = _generate_agent_id(req.name)
+        if await self.get_agent(agent_id) is not None:
+            raise BusinessError(f"Agent ID '{agent_id}' 已存在")
         data = req.model_dump()
+        data["agent_id"] = agent_id
         await self._sync_model_labels(data)
         agent = AgentTemplateModel(is_builtin=False, is_active=True, **data)
         self._db.add(agent)
@@ -232,8 +244,9 @@ class AgentService:
         # 2. 收集绑定的 MCP server 及其工具，转成 OpenAI tools
         mcp_servers: list[MCPServer] = []
         tools: list[dict[str, Any]] = []
-        mcp_uuids = [self._parse_uuid(mid) for mid in (agent.mcp_ids or [])]
-        mcp_uuids = [u for u in mcp_uuids if u is not None]
+        mcp_uuids: list[uuid.UUID] = [u for u in (
+            self._parse_uuid(mid) for mid in (agent.mcp_ids or [])
+        ) if u is not None]
         if mcp_uuids:
             mcp_servers = await self._mcp_repo.get_by_ids(mcp_uuids)
             for server in mcp_servers:

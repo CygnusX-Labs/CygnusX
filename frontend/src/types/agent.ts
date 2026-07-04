@@ -22,9 +22,27 @@ export interface McpService {
   /** 在线状态：🟢 online / 🔴 offline */
   status: 'online' | 'offline'
   transport: 'stdio' | 'sse' | 'builtin'
+  command: string
+  args: string[]
+  url: string
+  env: Record<string, string>
+  registry: string
+  working_dir: string
+  version: string
+  is_enabled: boolean
   tools: McpTool[]
+  timeout: number
+  auto_restart: boolean
   tool_count: number
   is_preset: boolean
+}
+
+/** MCP 日志条目 */
+export interface McpLogEntry {
+  timestamp: string
+  level: 'info' | 'stderr' | 'error' | 'warn'
+  message: string
+  source: string
 }
 
 /** 技能（支持 URL 拉取 / JSON 粘贴导入） */
@@ -76,6 +94,7 @@ export interface AgentTemplate {
   features: AgentFeatures
   is_active: boolean
   is_builtin: boolean
+  is_default: boolean
 }
 
 /** 大模型引擎选项（Agent 编排表单下拉用） */

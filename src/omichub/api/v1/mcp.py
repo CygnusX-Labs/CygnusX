@@ -10,6 +10,7 @@ from omichub.api.v1.admin.users import AdminRequired
 from omichub.application.schemas.mcp import (
     CreateMCPServerDTO,
     InvokeToolDTO,
+    MCPLogEntryDTO,
     MCPServerDTO,
     MCPToolDTO,
     UpdateMCPServerDTO,
@@ -116,3 +117,17 @@ async def invoke_tool(
 
         raise ValidationError("tool_name 与路径不一致")
     return await service.invoke_tool(server_id, tool_name, req.arguments)
+
+
+@router.get(
+    "/servers/{server_id}/logs",
+    response_model=list[MCPLogEntryDTO],
+    summary="MCP Server 运行日志",
+)
+async def list_logs(
+    _admin: AdminRequired,
+    service: MCPServiceDep,
+    server_id: UUID,
+    tail: int = 100,
+) -> list[MCPLogEntryDTO]:
+    return await service.list_logs(server_id, tail=tail)

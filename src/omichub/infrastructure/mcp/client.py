@@ -120,9 +120,14 @@ class MCPClient:
         if server.transport == Transport.STDIO:
             from mcp.client.stdio import StdioServerParameters, stdio_client
 
+            parts = server.command.split() if server.command else []
+            command = parts[0] if parts else ""
+            args = parts[1:] if len(parts) > 1 else []
+            if server.args:
+                args = list(server.args)
             params = StdioServerParameters(
-                command=server.command.split()[0] if server.command else "",
-                args=server.command.split()[1:] if server.command else [],
+                command=command,
+                args=args,
                 env=server.env or None,
             )
             return stdio_client(params)

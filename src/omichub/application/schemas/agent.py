@@ -38,7 +38,7 @@ class AgentTemplateDTO(BaseModel):
 
 
 class CreateAgentRequest(BaseModel):
-    agent_id: str
+    agent_id: str = ""
     name: str
     description: str = ""
     avatar: str = "\U0001F916"

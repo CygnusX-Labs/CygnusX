@@ -90,9 +90,14 @@ class SqlAlchemyMCPServerRepository(IMCPServerRepository):
             description=m.description,
             transport=Transport(m.transport),
             command=m.command,
+            args=list(m.args or []),
             url=m.url,
             env=m.env or {},
+            registry=m.package_registry,
+            working_dir=m.working_dir,
+            version=m.version,
             status=ServerStatus(m.status),
+            is_enabled=m.is_enabled,
             tools=tools,
             timeout=m.timeout,
             auto_restart=m.auto_restart,
@@ -109,9 +114,14 @@ class SqlAlchemyMCPServerRepository(IMCPServerRepository):
             description=s.description,
             transport=s.transport.value,
             command=s.command,
+            args=list(s.args or []),
             url=s.url,
             env=s.env,
+            package_registry=s.registry,
+            working_dir=s.working_dir,
+            version=s.version,
             status=s.status.value,
+            is_enabled=s.is_enabled,
             tools=[{"name": t.tool_name, "description": t.description, "inputSchema": t.input_schema} for t in s.tools],
             timeout=s.timeout,
             auto_restart=s.auto_restart,
@@ -123,9 +133,14 @@ class SqlAlchemyMCPServerRepository(IMCPServerRepository):
         m.description = s.description
         m.transport = s.transport.value
         m.command = s.command
+        m.args = list(s.args or [])
         m.url = s.url
         m.env = s.env
+        m.package_registry = s.registry
+        m.working_dir = s.working_dir
+        m.version = s.version
         m.status = s.status.value
+        m.is_enabled = s.is_enabled
         m.tools = [
             {"name": t.tool_name, "description": t.description, "inputSchema": t.input_schema}
             for t in s.tools

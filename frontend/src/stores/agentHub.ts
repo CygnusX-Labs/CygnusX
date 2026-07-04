@@ -18,6 +18,7 @@ import { isToday, isYesterday, parseISO } from 'date-fns'
 import type {
   AgentCategory,
   AgentTemplate,
+  McpLogEntry,
   McpService,
   McpTool,
   SkillItem,
@@ -142,7 +143,17 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         description: m.description ?? '',
         status: m.status === 'online' ? 'online' : 'offline',
         transport: m.transport ?? 'builtin',
+        command: m.command ?? '',
+        args: m.args ?? [],
+        url: m.url ?? '',
+        env: m.env ?? {},
+        registry: m.registry ?? 'default',
+        working_dir: m.working_dir ?? '',
+        version: m.version ?? '',
+        is_enabled: m.is_enabled ?? true,
         tools: m.tools ?? [],
+        timeout: m.timeout ?? 30,
+        auto_restart: m.auto_restart ?? true,
         tool_count: m.tool_count ?? 0,
         is_preset: !!m.is_preset,
       }))
@@ -179,16 +190,16 @@ export const useAgentHubStore = defineStore('agentHub', () => {
 
   // ========== 资产 Actions（后台 CRUD，调真实 API） ==========
 
-  /** 切换 MCP 在线状态 */
+  /** 切换 MCP 启用状态 */
   async function toggleMcpStatus(id: string) {
     const m = mcps.value.find((x) => x.id === id)
     if (!m) return
-    const newStatus = m.status === 'online' ? 'offline' : 'online'
+    const newEnabled = !m.is_enabled
     try {
-      await apiClient.put(`/mcp/servers/${id}`, { status: newStatus })
-      m.status = newStatus
+      await apiClient.put(`/mcp/servers/${id}`, { is_enabled: newEnabled })
+      m.is_enabled = newEnabled
     } catch {
-      m.status = newStatus
+      // keep original
     }
   }
 
@@ -197,12 +208,30 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     description?: string
     transport: string
     command?: string
+    args?: string[]
     url?: string
     env?: Record<string, string>
+    registry?: string
+    working_dir?: string
     timeout?: number
   }): Promise<void> {
     await apiClient.post('/mcp/servers', data)
     await fetchMcps()
+  }
+
+  async function updateMcpServer(id: string, data: Record<string, unknown>): Promise<void> {
+    await apiClient.put(`/mcp/servers/${id}`, data)
+    await fetchMcps()
+  }
+
+  async function fetchMcpLogs(id: string, tail = 100): Promise<McpLogEntry[]> {
+    const res = await apiClient.get(`/mcp/servers/${id}/logs`, { params: { tail } })
+    return (res.data || []).map((log: any) => ({
+      timestamp: log.timestamp,
+      level: log.level,
+      message: log.message,
+      source: log.source,
+    }))
   }
 
   async function removeMcpServer(id: string): Promise<void> {
@@ -228,37 +257,29 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   }
 
   async function upsertAgent(dto: Partial<AgentTemplate> & { id?: string }): Promise<AgentTemplate | null> {
-    try {
-      let saved: AgentTemplate
-      if (dto.id && agents.value.some((a) => a.id === dto.id)) {
-        saved = await adminAgentApi.update(dto.id, dto)
-      } else {
-        saved = await adminAgentApi.create(dto)
-      }
-      await fetchAgents(false)
-      return saved
-    } catch (e) {
-      console.error('保存 Agent 失败:', e)
-      return null
+    let saved: AgentTemplate
+    if (dto.id && agents.value.some((a) => a.id === dto.id)) {
+      saved = await adminAgentApi.update(dto.id, dto)
+    } else {
+      saved = await adminAgentApi.create(dto)
     }
+    await fetchAgents(false)
+    return saved
   }
 
   async function toggleAgent(id: string): Promise<void> {
-    try {
-      await adminAgentApi.toggle(id)
-      await fetchAgents(false)
-    } catch (e) {
-      console.error('切换 Agent 状态失败:', e)
-    }
+    await adminAgentApi.toggle(id)
+    await fetchAgents(false)
   }
 
   async function deleteAgent(id: string): Promise<void> {
-    try {
-      await adminAgentApi.remove(id)
-      await fetchAgents(false)
-    } catch (e) {
-      console.error('删除 Agent 失败:', e)
-    }
+    await adminAgentApi.remove(id)
+    await fetchAgents(false)
+  }
+
+  async function setDefaultAgent(id: string): Promise<void> {
+    await adminAgentApi.setDefault(id)
+    await fetchAgents(false)
   }
 
   // ========== 技能管理（后台 CRUD，调 /admin/skills） ==========
@@ -547,8 +568,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     getAgent, mcpsByIds, skillsByIds,
     // asset actions
     fetchAgents, fetchMcps, fetchSkills, initAssets,
-    toggleMcpStatus, addMcpServer, removeMcpServer, testMcpServer, fetchMcpTools,
-    upsertAgent, toggleAgent, deleteAgent,
+    toggleMcpStatus, addMcpServer, updateMcpServer, removeMcpServer, testMcpServer, fetchMcpTools, fetchMcpLogs,
+    upsertAgent, toggleAgent, deleteAgent, setDefaultAgent,
     importSkillFromUrl, importSkillFromJson, toggleSkill, deleteSkill,
     // session actions
     startSessionFromAgent, selectSession, newChat, deleteSession, renameSession,

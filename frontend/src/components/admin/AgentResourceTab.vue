@@ -1,23 +1,30 @@
 <script setup lang="ts">
-import { h, ref, computed, onMounted } from 'vue'
+import { h, ref, computed, onMounted, watch } from 'vue'
 import {
-  NButton, NDataTable, NIcon, NTag, NSpace, NPopconfirm, NModal, NForm,
-  NFormItem, NInput, NSelect, NColorPicker, NTransfer, NSwitch, NPopover, NSpin, useMessage,
+  NButton, NDataTable, NIcon, NTag, NSpace, NPopconfirm, NModal, NCard,
+  NForm, NFormItem, NInput, NSelect, NColorPicker, NSwitch, NPopover, NSpin,
+  useMessage,
 } from 'naive-ui'
-import { CreateOutline, TrashOutline, RefreshOutline, StarOutline, EyeOutline } from '@vicons/ionicons5'
+import {
+  CreateOutline, TrashOutline, RefreshOutline, StarOutline, EyeOutline,
+  ColorPaletteOutline, HappyOutline,
+} from '@vicons/ionicons5'
 import { useAgentHubStore, CATEGORY_LABELS } from '@/stores/agentHub'
 import { adminProviderApi } from '@/api/admin/ai_provider'
-import type { AgentTemplate, AgentCategory } from '@/types/agent'
+import type { AgentTemplate, AgentCategory, AgentFeatures } from '@/types/agent'
 
 const message = useMessage()
 const store = useAgentHubStore()
 
 const showEdit = ref(false)
 const editing = ref<Partial<AgentTemplate>>({})
+const editingSnapshot = ref<string>('')
 const isEdit = ref(false)
+const saving = ref(false)
 const previewId = ref<string | null>(null)
 const discovering = ref(false)
 const discoveryMap = ref<Record<string, { providerName: string; models: Array<{ id: string; name: string }> }>>({})
+const systemPromptExpanded = ref(false)
 
 /** 可选模型配置（来自 /admin/ai-providers） */
 const modelOptions = ref<{ label: string; value: string }[]>([])
@@ -26,6 +33,12 @@ const modelMap = computed(() => {
   modelOptions.value.forEach((o) => { map[o.value] = o.label })
   return map
 })
+
+const EMOJI_LIST = [
+  '🤖', '🧬', '🧪', '🔬', '💻', '📊', '🧠', '🌐', '📚', '🔭',
+  '🚀', '⭐', '🌙', '☀️', '🔥', '💡', '🔧', '📈', '🎨', '🎓',
+  '🐱', '🐶', '🦊', '🐼', '🐨', '🐯', '🦁', '🐸', '🐙', '🦉',
+]
 
 async function loadModelOptions() {
   try {
@@ -57,14 +70,6 @@ async function refreshModels() {
       }
     })
     discoveryMap.value = map
-    // 如果当前编辑项有 model_id，且对应 provider 发现了新模型，把 label 补充上
-    Object.values(map).forEach(({ models }) => {
-      models.forEach((m) => {
-        if (!modelOptions.value.some((o) => o.value === m.id)) {
-          // 发现的是远程模型 ID，当前架构仍按 Provider 配置选择，这里仅作展示提示
-        }
-      })
-    })
   } catch (e) {
     message.error('刷新模型列表失败')
     console.error(e)
@@ -74,7 +79,6 @@ async function refreshModels() {
 }
 
 onMounted(async () => {
-  // 后台需含停用 Agent 的全量列表
   await store.fetchAgents(false)
   await Promise.all([store.fetchMcps(), store.fetchSkills()])
   await loadModelOptions()
@@ -84,16 +88,35 @@ const categoryOptions = (Object.keys(CATEGORY_LABELS) as AgentCategory[]).map((k
   label: CATEGORY_LABELS[k], value: k,
 }))
 
-const mcpTransferOptions = computed(() =>
-  store.mcps.map((m) => ({ label: `${m.name}`, value: m.id })),
+const mcpOptions = computed(() =>
+  store.mcps.map((m) => ({ label: `${m.name}`, value: m.id, disabled: !m.status || m.status === 'offline' })),
 )
-const skillTransferOptions = computed(() =>
-  store.skills.map((s) => ({ label: s.name, value: s.id })),
+const skillOptions = computed(() =>
+  store.skills.map((s) => ({ label: `${s.icon ?? '🔧'} ${s.name}`, value: s.id })),
 )
+
+const isDirty = computed(() => {
+  try {
+    return JSON.stringify(editing.value) !== editingSnapshot.value
+  } catch {
+    return true
+  }
+})
+
+const systemPromptLength = computed(() => editing.value.system_prompt?.length ?? 0)
 
 const columns = [
   { title: '头像', key: 'avatar', width: 56, render: (r: AgentTemplate) => r.avatar },
-  { title: '名称', key: 'name', width: 150 },
+  {
+    title: '名称', key: 'name', width: 180,
+    render: (r: AgentTemplate) =>
+      h(NSpace, { size: 4, align: 'center' }, {
+        default: () => [
+          h('span', null, r.name),
+          r.is_default && h(NTag, { size: 'tiny', type: 'warning', round: true }, { default: () => '默认' }),
+        ],
+      }),
+  },
   { title: '分类', key: 'category', width: 90, render: (r: AgentTemplate) => CATEGORY_LABELS[r.category] },
   {
     title: '模型', key: 'model', width: 160,
@@ -117,7 +140,7 @@ const columns = [
     render: (r: AgentTemplate) => h(NTag, { type: r.is_active ? 'success' : 'default', size: 'small', round: true }, { default: () => r.is_active ? '启用' : '停用' }),
   },
   {
-    title: '操作', key: 'actions', width: 240,
+    title: '操作', key: 'actions', width: 280,
     render: (r: AgentTemplate) =>
       h(NSpace, { size: 'small' }, {
         default: () => [
@@ -125,7 +148,9 @@ const columns = [
             { default: () => [h(NIcon, { component: EyeOutline }), '预览'] }),
           h(NButton, { size: 'tiny', quaternary: true, onClick: () => handleEdit(r) },
             { default: () => [h(NIcon, { component: CreateOutline }), '编辑'] }),
-          h(NButton, { size: 'tiny', quaternary: true, onClick: () => store.toggleAgent(r.id) },
+          !r.is_default && h(NButton, { size: 'tiny', quaternary: true, onClick: () => handleSetDefault(r.id) },
+            { default: () => [h(NIcon, { component: StarOutline }), '设为默认'] }),
+          h(NButton, { size: 'tiny', quaternary: true, onClick: () => handleToggle(r.id) },
             { default: () => r.is_active ? '停用' : '启用' }),
           !r.is_builtin && h(NPopconfirm, { onPositiveClick: () => handleDelete(r.id) }, {
             trigger: () => h(NButton, { size: 'tiny', quaternary: true, type: 'error' },
@@ -137,20 +162,50 @@ const columns = [
   },
 ]
 
-function handleCreate() {
-  editing.value = {
-    avatar: '🤖', color: '#4f8ef7', category: 'general',
-    model_id: undefined, mcp_ids: [], skill_ids: [],
-    features: {},
-    welcome_message: '你好，有什么可以帮你？', is_active: true,
+function makeDefaultAgent(): Partial<AgentTemplate> {
+  return {
+    avatar: '🤖',
+    color: '#4f8ef7',
+    category: 'general',
+    model_id: undefined,
+    mcp_ids: [],
+    skill_ids: [],
+    features: {
+      enable_web_search: false,
+      enable_file_upload: false,
+      enable_code_execution: false,
+      enable_deep_thinking: false,
+    } as AgentFeatures,
+    welcome_message: '你好，有什么可以帮你？',
+    system_prompt: '',
+    is_active: true,
   }
+}
+
+function handleCreate() {
+  editing.value = makeDefaultAgent()
+  editingSnapshot.value = JSON.stringify(editing.value)
   isEdit.value = false
+  systemPromptExpanded.value = false
   showEdit.value = true
 }
 
 function handleEdit(r: AgentTemplate) {
-  editing.value = { ...r, mcp_ids: [...r.mcp_ids], skill_ids: [...r.skill_ids], features: { ...r.features } }
+  editing.value = {
+    ...r,
+    mcp_ids: [...r.mcp_ids],
+    skill_ids: [...r.skill_ids],
+    features: {
+      enable_web_search: false,
+      enable_file_upload: false,
+      enable_code_execution: false,
+      enable_deep_thinking: false,
+      ...(r.features || {}),
+    },
+  }
+  editingSnapshot.value = JSON.stringify(editing.value)
   isEdit.value = true
+  systemPromptExpanded.value = false
   showEdit.value = true
 }
 
@@ -159,22 +214,96 @@ async function handleSave() {
     message.warning('请填写助手名称')
     return
   }
-  const saved = await store.upsertAgent(editing.value)
-  if (saved) {
-    message.success(isEdit.value ? '已更新' : '已创建')
-    showEdit.value = false
-  } else {
-    message.error('保存失败，请检查后端接口')
+  if (!editing.value.category) {
+    message.warning('请选择分类')
+    return
+  }
+  saving.value = true
+  try {
+    const saved = await store.upsertAgent(editing.value)
+    if (saved) {
+      message.success(isEdit.value ? '已更新' : '已创建')
+      showEdit.value = false
+    } else {
+      message.error('保存失败，请检查后端接口')
+    }
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail || e?.message || '保存失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+async function handleToggle(id: string) {
+  try {
+    await store.toggleAgent(id)
+    const agent = store.getAgent(id)
+    message.success(agent?.is_active ? '已启用' : '已停用')
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail || '操作失败')
+  }
+}
+
+async function handleSetDefault(id: string) {
+  try {
+    await store.setDefaultAgent(id)
+    message.success('已设为默认助手')
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail || '设置失败')
   }
 }
 
 async function handleDelete(id: string) {
-  await store.deleteAgent(id)
-  message.success('已删除')
+  try {
+    await store.deleteAgent(id)
+    message.success('已删除')
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail || '删除失败')
+  }
 }
 
 function openPreview(id: string) { previewId.value = id }
 const previewAgent = computed(() => store.getAgent(previewId.value || ''))
+
+function onSelectEmoji(emoji: string) {
+  editing.value.avatar = emoji
+}
+
+function onColorChange(color: string) {
+  editing.value.color = color
+}
+
+function restoreSystemPrompt() {
+  editing.value.system_prompt = ''
+}
+
+const featureSwitches = computed(() => [
+  {
+    key: 'enable_web_search',
+    title: '联网搜索',
+    desc: '允许助手访问互联网获取最新信息',
+  },
+  {
+    key: 'enable_file_upload',
+    title: '文件上传',
+    desc: '允许用户上传文件进行分析',
+  },
+  {
+    key: 'enable_code_execution',
+    title: '代码执行',
+    desc: '允许助手在沙盒中执行 Python 等代码',
+  },
+  {
+    key: 'enable_deep_thinking',
+    title: '深度思考',
+    desc: '启用推理链，适合复杂问题拆解',
+  },
+])
+
+function updateFeature(key: keyof AgentFeatures, val: boolean) {
+  if (!editing.value.features) editing.value.features = {}
+  editing.value.features[key] = val
+}
 </script>
 
 <template>
@@ -189,94 +318,192 @@ const previewAgent = computed(() => store.getAgent(previewId.value || ''))
     <NDataTable :columns="columns" :data="store.agents" :bordered="false" size="small" :row-key="(r: AgentTemplate) => r.id" />
 
     <!-- 编辑/新建 -->
-    <NModal v-model:show="showEdit" preset="card" :title="isEdit ? '编辑助手模板' : '新建助手模板'" style="width: 760px">
-      <NForm label-placement="left" size="small" :label-width="92">
-        <NFormItem label="头像">
-          <NSpace align="center">
-            <NInput v-model:value="editing.avatar" placeholder="🤖" style="width: 80px" />
-            <span class="emoji-preview" :style="{ background: editing.color }">{{ editing.avatar }}</span>
-            <NColorPicker v-model:value="editing.color" size="small" :show-alpha="false" style="width: 120px" />
-          </NSpace>
-        </NFormItem>
-        <NFormItem label="名称"><NInput v-model:value="editing.name" placeholder="如：单细胞分析师" /></NFormItem>
-        <NFormItem label="描述"><NInput v-model:value="editing.description" /></NFormItem>
-        <NFormItem label="绑定模型配置">
-          <NSpace align="center" style="width: 100%">
-            <NSelect
-              v-model:value="editing.model_id"
-              :options="modelOptions"
-              placeholder="选择后端已配置的模型（决定 Base URL / API Key）"
-              clearable
-              filterable
-              style="flex: 1"
-            />
-            <NPopover trigger="click" placement="bottom" style="max-width: 360px" @update:show="refreshModels">
-              <template #trigger>
-                <NButton text class="toolbar-btn" :loading="discovering" @click="refreshModels">
-                  <template #icon><NIcon :component="RefreshOutline" /></template>
-                </NButton>
-              </template>
-              <div style="max-height: 260px; overflow-y: auto">
-                <div v-if="discovering" style="padding: 12px; text-align: center">
-                  <NSpin size="small" />
-                </div>
-                <template v-else>
-                  <div v-if="!Object.keys(discoveryMap).length" style="padding: 8px; color: #999; font-size: 12px">
-                    未从任何 Provider 发现可用模型，请检查 API Key / Base URL。
+    <NModal
+      v-model:show="showEdit"
+      preset="card"
+      :title="isEdit ? '编辑助手模板' : '新建助手模板'"
+      style="width: 760px; max-height: 90vh"
+      :segmented="{ content: true, footer: true }"
+    >
+      <div class="edit-body">
+        <!-- 基本信息 -->
+        <NCard title="基本信息" size="small" class="form-card">
+          <NForm label-placement="top" size="small">
+            <NFormItem label="头像与主题色">
+              <NSpace align="center" size="large">
+                <NPopover trigger="click" placement="bottom" style="padding: 8px">
+                  <template #trigger>
+                    <div class="avatar-picker" :style="{ background: editing.color }">
+                      {{ editing.avatar || '🤖' }}
+                    </div>
+                  </template>
+                  <div class="emoji-grid">
+                    <div
+                      v-for="emoji in EMOJI_LIST"
+                      :key="emoji"
+                      class="emoji-cell"
+                      @click="onSelectEmoji(emoji)"
+                    >
+                      {{ emoji }}
+                    </div>
                   </div>
-                  <div v-for="item in Object.values(discoveryMap)" :key="item.providerName" style="margin-bottom: 10px">
-                    <div style="font-size: 12px; font-weight: 500; margin-bottom: 4px">{{ item.providerName }}</div>
-                    <NSpace size="small" wrap>
-                      <NTag v-for="m in item.models" :key="m.id" size="tiny" round>{{ m.name || m.id }}</NTag>
-                    </NSpace>
-                  </div>
-                </template>
-              </div>
-            </NPopover>
-          </NSpace>
-        </NFormItem>
-        <NFormItem label="分类">
-          <NSelect v-model:value="editing.category" :options="categoryOptions" />
-        </NFormItem>
-        <NFormItem label="欢迎语">
-          <NInput v-model:value="editing.welcome_message" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" />
-        </NFormItem>
-        <NFormItem label="系统设定">
-          <NInput v-model:value="editing.system_prompt" type="textarea" :autosize="{ minRows: 4, maxRows: 10 }" placeholder="System Prompt：角色、能力边界、输出风格…" />
-        </NFormItem>
-        <NFormItem label="挂载 MCP">
-          <NTransfer v-model:value="editing.mcp_ids" :options="mcpTransferOptions" source-filterable />
-        </NFormItem>
-        <NFormItem label="挂载技能">
-          <NTransfer v-model:value="editing.skill_ids" :options="skillTransferOptions" source-filterable />
-        </NFormItem>
+                </NPopover>
+                <NPopover trigger="click" placement="bottom">
+                  <template #trigger>
+                    <div class="color-trigger">
+                      <div class="color-indicator" :style="{ background: editing.color }" />
+                      <span class="color-value">{{ editing.color }}</span>
+                    </div>
+                  </template>
+                  <NColorPicker
+                    :value="editing.color"
+                    size="small"
+                    :show-alpha="false"
+                    @update:value="onColorChange"
+                  />
+                </NPopover>
+              </NSpace>
+            </NFormItem>
+            <NFormItem label="名称" required>
+              <NInput v-model:value="editing.name" placeholder="如：单细胞分析师" />
+            </NFormItem>
+            <NFormItem label="描述">
+              <NInput v-model:value="editing.description" placeholder="一句话描述该助手的定位" />
+            </NFormItem>
+          </NForm>
+        </NCard>
 
-        <NFormItem label="功能开关">
-          <NSpace vertical>
-            <NSpace align="center">
-              <NSwitch v-model:value="editing.features!.enable_web_search" />
-              <span style="font-size: 13px">联网搜索</span>
-            </NSpace>
-            <NSpace align="center">
-              <NSwitch v-model:value="editing.features!.enable_file_upload" />
-              <span style="font-size: 13px">文件上传</span>
-            </NSpace>
-            <NSpace align="center">
-              <NSwitch v-model:value="editing.features!.enable_code_execution" />
-              <span style="font-size: 13px">代码执行</span>
-            </NSpace>
-            <NSpace align="center">
-              <NSwitch v-model:value="editing.features!.enable_deep_thinking" />
-              <span style="font-size: 13px">深度思考</span>
-            </NSpace>
-          </NSpace>
-        </NFormItem>
-      </NForm>
+        <!-- 模型与交互 -->
+        <NCard title="模型与交互" size="small" class="form-card">
+          <NForm label-placement="top" size="small">
+            <NFormItem label="绑定模型配置">
+              <NSpace align="center" style="width: 100%">
+                <NSelect
+                  v-model:value="editing.model_id"
+                  :options="modelOptions"
+                  placeholder="选择后端已配置的模型（决定 Base URL / API Key）"
+                  clearable
+                  filterable
+                  style="flex: 1"
+                />
+                <NPopover trigger="click" placement="bottom" style="max-width: 360px" @update:show="refreshModels">
+                  <template #trigger>
+                    <NButton text class="toolbar-btn" :loading="discovering" @click="refreshModels">
+                      <template #icon><NIcon :component="RefreshOutline" /></template>
+                    </NButton>
+                  </template>
+                  <div style="max-height: 260px; overflow-y: auto">
+                    <div v-if="discovering" style="padding: 12px; text-align: center">
+                      <NSpin size="small" />
+                    </div>
+                    <template v-else>
+                      <div v-if="!Object.keys(discoveryMap).length" style="padding: 8px; color: #999; font-size: 12px">
+                        未从任何 Provider 发现可用模型，请检查 API Key / Base URL。
+                      </div>
+                      <div v-for="item in Object.values(discoveryMap)" :key="item.providerName" style="margin-bottom: 10px">
+                        <div style="font-size: 12px; font-weight: 500; margin-bottom: 4px">{{ item.providerName }}</div>
+                        <NSpace size="small" wrap>
+                          <NTag v-for="m in item.models" :key="m.id" size="tiny" round>{{ m.name || m.id }}</NTag>
+                        </NSpace>
+                      </div>
+                    </template>
+                  </div>
+                </NPopover>
+              </NSpace>
+            </NFormItem>
+            <NFormItem label="分类" required>
+              <NSelect v-model:value="editing.category" :options="categoryOptions" />
+            </NFormItem>
+            <NFormItem label="欢迎语">
+              <NInput v-model:value="editing.welcome_message" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" />
+            </NFormItem>
+          </NForm>
+        </NCard>
+
+        <!-- 系统设定 -->
+        <NCard title="系统设定" size="small" class="form-card">
+          <NForm label-placement="top" size="small">
+            <NFormItem>
+              <template #label>
+                <NSpace align="center" justify="space-between" style="width: 100%">
+                  <span>系统提示词</span>
+                  <NSpace>
+                    <NButton size="tiny" text @click="systemPromptExpanded = !systemPromptExpanded">
+                      {{ systemPromptExpanded ? '收起' : '展开' }}
+                    </NButton>
+                    <NButton size="tiny" text @click="restoreSystemPrompt">恢复默认</NButton>
+                  </NSpace>
+                </NSpace>
+              </template>
+              <NInput
+                v-model:value="editing.system_prompt"
+                type="textarea"
+                :autosize="systemPromptExpanded ? { minRows: 8, maxRows: 20 } : { minRows: 3, maxRows: 6 }"
+                placeholder="System Prompt：角色、能力边界、输出风格…"
+              />
+              <div class="char-count">{{ systemPromptLength }} / 2000</div>
+            </NFormItem>
+          </NForm>
+        </NCard>
+
+        <!-- 能力挂载 -->
+        <NCard title="能力挂载" size="small" class="form-card">
+          <NForm label-placement="top" size="small">
+            <NFormItem label="挂载 MCP">
+              <NSelect
+                v-model:value="editing.mcp_ids"
+                :options="mcpOptions"
+                multiple
+                filterable
+                placeholder="选择要挂载的 MCP 服务"
+                :max-tag-count="3"
+              />
+            </NFormItem>
+            <NFormItem label="挂载技能">
+              <NSelect
+                v-model:value="editing.skill_ids"
+                :options="skillOptions"
+                multiple
+                filterable
+                placeholder="选择要挂载的技能"
+                :max-tag-count="3"
+              />
+            </NFormItem>
+          </NForm>
+        </NCard>
+
+        <!-- 功能开关 -->
+        <NCard title="功能开关" size="small" class="form-card">
+          <div class="switch-list">
+            <div v-for="f in featureSwitches" :key="f.key" class="switch-row">
+              <div class="switch-info">
+                <div class="switch-title">{{ f.title }}</div>
+                <div class="switch-desc">{{ f.desc }}</div>
+              </div>
+              <NSwitch
+                :value="!!editing.features?.[f.key as keyof AgentFeatures]"
+                @update:value="(v) => updateFeature(f.key as keyof AgentFeatures, v)"
+              />
+            </div>
+          </div>
+        </NCard>
+      </div>
+
       <template #footer>
-        <NSpace justify="end">
-          <NButton size="small" @click="showEdit = false">取消</NButton>
-          <NButton size="small" type="primary" @click="handleSave">保存</NButton>
-        </NSpace>
+        <div class="edit-footer">
+          <NSpace justify="end" align="center">
+            <NButton size="small" @click="showEdit = false">取消</NButton>
+            <NButton
+              size="small"
+              type="primary"
+              :disabled="!isDirty"
+              :loading="saving"
+              @click="handleSave"
+            >
+              保存
+            </NButton>
+          </NSpace>
+        </div>
       </template>
     </NModal>
 
@@ -309,7 +536,85 @@ const previewAgent = computed(() => store.getAgent(previewId.value || ''))
 <style scoped>
 .tab-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .tab-hint { font-size: 12px; color: var(--n-text-color-3, #999); }
-.emoji-preview { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; font-size: 18px; }
+.form-card { margin-bottom: 16px; }
+.edit-body { max-height: calc(90vh - 140px); overflow-y: auto; padding-right: 6px; }
+.edit-footer { padding: 8px 0; }
+
+.avatar-picker {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  border: 2px solid var(--n-border-color, #e0e0e6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+.avatar-picker:hover { border-color: var(--n-text-color-2, #333); transform: scale(1.04); }
+
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 28px);
+  gap: 4px;
+}
+.emoji-cell {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.emoji-cell:hover { background: var(--n-border-color, #e0e0e6); }
+
+.color-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--n-border-color, #e0e0e6);
+  transition: border-color 0.2s;
+}
+.color-trigger:hover { border-color: var(--n-text-color-2, #333); }
+.color-indicator {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1px solid var(--n-border-color, #e0e0e6);
+}
+.color-value {
+  font-size: 12px;
+  color: var(--n-text-color-3, #999);
+  font-family: monospace;
+}
+
+.char-count {
+  text-align: right;
+  font-size: 12px;
+  color: var(--n-text-color-3, #999);
+  margin-top: 4px;
+}
+
+.switch-list { display: flex; flex-direction: column; }
+.switch-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--n-border-color, #e0e0e6);
+}
+.switch-row:last-child { border-bottom: none; }
+.switch-info { flex: 1; padding-right: 16px; }
+.switch-title { font-size: 14px; font-weight: 500; color: var(--n-text-color-1, #333); }
+.switch-desc { font-size: 12px; color: var(--n-text-color-3, #999); margin-top: 2px; }
+
 .preview-section { margin-bottom: 16px; }
 .preview-label { font-size: 12px; color: #999; margin-bottom: 6px; }
 .preview-prompt { font-size: 12px; color: #555; background: rgba(0,0,0,0.03); padding: 10px; border-radius: 6px; white-space: pre-wrap; line-height: 1.6; }

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.mcp import (
     CreateMCPServerDTO,
+    MCPLogEntryDTO,
     MCPServerDTO,
     MCPToolDTO,
     UpdateMCPServerDTO,
@@ -18,6 +19,7 @@ from omichub.core.exceptions import ConflictError, NotFoundError
 from omichub.domain.mcp.entities import MCPServer, MCPToolRegistry
 from omichub.domain.mcp.services import MCPDomainService
 from omichub.domain.mcp.value_objects import ServerStatus, Transport
+from omichub.infrastructure.database.models.mcp_log import MCPLogModel
 from omichub.infrastructure.database.repositories.mcp_repository import (
     SqlAlchemyMCPServerRepository,
 )
@@ -32,8 +34,14 @@ def _server_to_dto(s: MCPServer) -> MCPServerDTO:
         description=s.description,
         transport=s.transport.value,
         command=s.command,
+        args=list(s.args or []),
         url=s.url,
+        env=dict(s.env or {}),
+        registry=s.registry,
+        working_dir=s.working_dir,
+        version=s.version,
         status=s.status.value if hasattr(s.status, "value") else str(s.status),
+        is_enabled=s.is_enabled,
         timeout=s.timeout,
         auto_restart=s.auto_restart,
         is_preset=s.is_preset,
@@ -116,8 +124,11 @@ class MCPService:
             description=req.description,
             transport=transport,
             command=req.command,
+            args=list(req.args or []),
             url=req.url,
             env=req.env,
+            registry=req.registry,
+            working_dir=req.working_dir,
             status=ServerStatus.OFFLINE,
             timeout=req.timeout,
             auto_restart=req.auto_restart,
@@ -144,8 +155,10 @@ class MCPService:
         """测试连接并发现工具"""
         try:
             tools = await self.list_tools(server_id)
+            await self._add_log(server_id, "info", f"测试连接成功，发现 {len(tools)} 个工具", "internal")
             return {"success": True, "tool_count": len(tools), "status": "online"}
         except Exception as e:  # noqa: BLE001
+            await self._add_log(server_id, "error", f"测试连接失败: {e}", "internal")
             return {"success": False, "tool_count": 0, "status": "error", "error": str(e)}
 
     async def list_tools(self, server_id: UUID) -> list[MCPToolDTO]:
@@ -185,4 +198,43 @@ class MCPService:
         result = await self._client.call_tool(server, tool_name, arguments)
         if not result.get("success"):
             await self._domain.mark_error(server.id)
+            await self._add_log(server_id, "error", f"工具调用失败 {tool_name}: {result.get('error', '')}", "internal")
+        else:
+            await self._add_log(server_id, "info", f"工具调用成功 {tool_name}", "internal")
         return result
+
+    async def list_logs(self, server_id: UUID, tail: int = 100) -> list[MCPLogEntryDTO]:
+        """获取 MCP Server 最近日志"""
+        from sqlalchemy import desc, select
+
+        result = await self._db.execute(
+            select(MCPLogModel)
+            .where(MCPLogModel.service_id == server_id)
+            .order_by(desc(MCPLogModel.timestamp))
+            .limit(tail)
+        )
+        logs = result.scalars().all()
+        return [
+            MCPLogEntryDTO(
+                timestamp=log.timestamp,
+                level=log.level,
+                message=log.message,
+                source=log.source,
+            )
+            for log in reversed(logs)
+        ]
+
+    async def _add_log(self, server_id: UUID, level: str, message: str, source: str = "internal") -> None:
+        """写入一条 MCP 日志"""
+        from datetime import datetime
+
+        self._db.add(
+            MCPLogModel(
+                service_id=server_id,
+                timestamp=datetime.utcnow(),
+                level=level,
+                message=message,
+                source=source,
+            )
+        )
+        await self._db.flush()

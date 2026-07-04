@@ -12,7 +12,9 @@ from omichub.core.exceptions import AuthorizationError, ConflictError, NotFoundE
 from omichub.core.security import hash_password
 from omichub.domain.user.entities import User
 from omichub.domain.user.value_objects import Role, UserStatus
-from omichub.middleware.rbac import AdminRequired  # 统一 RBAC 实现，re-export 供下游导入
+from omichub.middleware.rbac import (
+    AdminRequired as AdminRequired,  # 统一 RBAC 实现，re-export 供下游导入
+)
 
 router = APIRouter()
 
