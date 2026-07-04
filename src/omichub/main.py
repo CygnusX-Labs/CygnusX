@@ -6,18 +6,20 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from loguru import logger
 
 from omichub.api.v1.router import api_router
 from omichub.core.config import get_settings
+from omichub.core.exceptions import OmicHubError
+from omichub.core.logging import setup_logging
+
 # 显式加载 Celery 应用：使 @shared_task 绑定到配置好的 celery_app（含 task_routes / task_default_queue）。
 # 否则 web 进程会回退到 Celery 默认 app，把任务投到默认 "celery" 队列而非 "analysis"，导致 worker 消费不到。
 from omichub.infrastructure.celery_app.celery import celery_app  # noqa: F401
-from omichub.core.exceptions import OmicHubError
-from omichub.core.logging import setup_logging
-from loguru import logger
 from omichub.middleware.audit import AuditMiddleware
 from omichub.middleware.auth import AuthMiddleware
 from omichub.middleware.cookie import CookieRequiredMiddleware
@@ -223,6 +225,17 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": exc.detail},
+        )
+
+    # 请求参数校验失败：返回 422 及具体字段错误，避免被下方兜底 500 吞掉。
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        logger.warning(f"Validation error on {request.method} {request.url.path}: {exc.errors()}")
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "请求参数校验失败", "errors": exc.errors()},
         )
 
     # 兜底异常处理：捕获所有未被上面精准命中的异常（如 DB 缺列、连接失败等

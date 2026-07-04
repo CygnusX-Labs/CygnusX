@@ -3,10 +3,20 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+
+
+def _empty_str_to_none(value: Any) -> Any:
+    """把空字符串转换成 None，避免前端清空选择时传 '' 导致 UUID 校验失败。"""
+    if value == "":
+        return None
+    return value
+
+
+EmptyStrUUID = Annotated[UUID | None, BeforeValidator(_empty_str_to_none)]
 
 
 class AgentTemplateDTO(BaseModel):
@@ -20,7 +30,7 @@ class AgentTemplateDTO(BaseModel):
     avatar: str = "\U0001F916"
     color: str = "#4f8ef7"
     category: str = "general"
-    model_id: UUID | None = None
+    model_id: EmptyStrUUID = None
     model_name: str = ""
     model_engine: str = ""
     system_prompt: str = ""
@@ -44,7 +54,7 @@ class CreateAgentRequest(BaseModel):
     avatar: str = "\U0001F916"
     color: str = "#4f8ef7"
     category: str = "general"
-    model_id: UUID | None = None
+    model_id: EmptyStrUUID = None
     system_prompt: str = ""
     welcome_message: str = ""
     mcp_ids: list[Any] = Field(default_factory=list)
@@ -62,7 +72,7 @@ class UpdateAgentRequest(BaseModel):
     avatar: str | None = None
     color: str | None = None
     category: str | None = None
-    model_id: UUID | None = None
+    model_id: EmptyStrUUID = None
     system_prompt: str | None = None
     welcome_message: str | None = None
     mcp_ids: list[Any] | None = None

@@ -75,7 +75,11 @@ function toPayload(a: Partial<AgentTemplate> & { id?: string }): Record<string, 
   if (a.avatar !== undefined) out.avatar = a.avatar
   if (a.color !== undefined) out.color = a.color
   if (a.category !== undefined) out.category = a.category
-  if (a.model_id !== undefined) out.model_id = a.model_id || null
+  if (a.model_id !== undefined) {
+    out.model_id = a.model_id || null
+  } else if ('model_id' in a) {
+    out.model_id = null
+  }
   if (a.system_prompt !== undefined) out.system_prompt = a.system_prompt
   if (a.welcome_message !== undefined) out.welcome_message = a.welcome_message
   if (a.mcp_ids !== undefined) out.mcp_ids = a.mcp_ids

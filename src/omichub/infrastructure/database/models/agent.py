@@ -18,6 +18,41 @@ from omichub.infrastructure.database.base import Base, TimestampMixin
 class AgentTemplateModel(Base, TimestampMixin):
     """Agent 模板表"""
 
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)
+        if self.description is None:
+            self.description = ""
+        if self.avatar is None:
+            self.avatar = "\U0001F916"
+        if self.color is None:
+            self.color = "#4f8ef7"
+        if self.category is None:
+            self.category = "general"
+        if self.model_name is None:
+            self.model_name = ""
+        if self.model_engine is None:
+            self.model_engine = ""
+        if self.system_prompt is None:
+            self.system_prompt = ""
+        if self.welcome_message is None:
+            self.welcome_message = ""
+        if self.mcp_ids is None:
+            self.mcp_ids = []
+        if self.skill_ids is None:
+            self.skill_ids = []
+        if self.features is None:
+            self.features = {}
+        if self.temperature is None:
+            self.temperature = 0.7
+        if self.max_tokens is None:
+            self.max_tokens = 4096
+        if self.is_builtin is None:
+            self.is_builtin = False
+        if self.is_active is None:
+            self.is_active = True
+        if self.is_default is None:
+            self.is_default = False
+
     __tablename__ = "agent_templates"
 
     id: Mapped[uuid.UUID] = mapped_column(
