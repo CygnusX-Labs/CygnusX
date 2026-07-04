@@ -9,6 +9,7 @@ import {
 } from '@vicons/ionicons5'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
+import HeroAnimation from '@/components/HeroAnimation.vue'
 import type { SiteContent } from '@/types/site-content'
 
 // 默认文案兜底：API 拉取失败时保证首页仍可正常渲染
@@ -115,11 +116,7 @@ onMounted(async () => {
   <div class="home-page">
     <!-- Hero 欢迎区 -->
     <section class="hero animate-fade-in-up">
-      <div class="hero-bg-icon">
-        <NIcon :size="200">
-          <FlaskOutline />
-        </NIcon>
-      </div>
+      <HeroAnimation />
       <div class="hero-content">
         <p class="hero-greeting">{{ greeting }}{{ displayName ? '，' + displayName : '' }} 👋</p>
         <h1 class="hero-title">{{ content.hero.title }}</h1>
@@ -225,17 +222,12 @@ onMounted(async () => {
 }
 
 .hero-bg-icon {
-  position: absolute;
-  top: -30px;
-  right: -20px;
-  opacity: 0.12;
-  transform: rotate(12deg);
-  pointer-events: none;
+  display: none;
 }
 
 .hero-content {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   max-width: 640px;
 }
 

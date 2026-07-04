@@ -1,11 +1,49 @@
 # OmicHub 开发进度 Todo
 
 > 基于 `docs/` 架构设计文档，逐步完善项目骨架。
-> 更新日期：2026-07-04 (饼干定价页 500 修复：数据库缺列 + AI 助手架构文档)
+> 更新日期：2026-07-05 (个人中心 Bento Grid + Hero 动画库 v3)
 
 ---
 
 ## 已完成
+
+### 个人中心 Bento Grid 重构 ✅ 2026-07-05
+
+> 需求：按 `docs/26.7.5/omicHub_profile_page_full_implementation.md` 与 `omicHub_profile_page_bento_grid.md` 重构个人中心，从垂直堆叠改为 Bento Grid 布局。
+> 验证：前端 `vue-tsc --noEmit` 通过；`npm run build` 构建成功。
+
+- [x] **Bento Grid 布局**
+  - [x] `frontend/src/views/ProfileView.vue` 改为 3 列 CSS Grid，最大宽度 960px
+  - [x] 用户信息 `span 3`、KPI `span 1`、最近任务 `span 2`、常用流程 `span 1`、安全 `span 1`、偏好 `span 2`、API 密钥 `span 3`、隐私 `span 2`、审计日志 `span 1`
+  - [x] 响应式：`>900px` 3 列、`600-900px` 2 列（KPI 保持小方块）、`<600px` 1 列
+- [x] **功能卡片**
+  - [x] 用户信息卡片：头像、角色标签、ID/创建时间、邮箱、状态
+  - [x] 使用概览 KPI：本月分析、运行中、存储用量、存储进度条
+  - [x] 常用流程竖排快捷入口、最近任务列表
+  - [x] 安全与登录、登录历史抽屉、活跃会话抽屉
+  - [x] 操作审计、API 密钥管理（新建/复制/撤销）
+  - [x] 平台偏好（默认首页/主题/语言/通知渠道）、数据与隐私（导出/下载/删除账户）
+- [x] **Mock 与 API 兼容**
+  - [x] 后端未就绪模块使用 Mock 数据，接口就绪后自动切换
+  - [x] 偏好设置先写入 localStorage，后续可替换为 `/api/user/preferences`
+
+### 首页 Hero 动态背景动画库 v3 ✅ 2026-07-05
+
+> 需求：按 `docs/26.7.5/omicHub_hero_animation.md` / `v3.md` 替换 Hero 区域静态烧瓶为动态 Canvas 动画，每次加载随机切换。
+> 验证：前端 `vue-tsc --noEmit` 通过；`npm run build` 构建成功。
+
+- [x] **新增组件** — `frontend/src/components/HeroAnimation.vue`，纯 Canvas 实现，零外部依赖
+- [x] **6 种动画模式**（每次加载随机选取）：
+  - [x] `particles`：浮动粒子网络 + 近距连线
+  - [x] `stars`：星空粒子 + 大星十字光芒
+  - [x] `aura`：同心圆环光晕脉冲 + 放射线
+  - [x] `noise`：Perlin noise 噪点流场
+  - [x] `orbitals`：几何轨道环 + 轨道小白点
+  - [x] `gradient`：蓝紫粉渐变流光色块
+- [x] **集成与优化**
+  - [x] `frontend/src/views/HomeView.vue` 引入 `HeroAnimation`，移除静态烧瓶图标
+  - [x] Canvas `opacity: 0.35`、`pointer-events: none`，不干扰文字与按钮
+  - [x] Retina 适配、resize 自适应、页面不可见暂停、组件卸载清理
 
 ### 饼干定价页 500 错误修复 + AI 助手架构文档 ✅ 2026-07-04
 
