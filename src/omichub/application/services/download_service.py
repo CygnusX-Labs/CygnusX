@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from omichub.application.schemas.download import DownloadRequest
 from omichub.application.schemas.task import TaskListResponse, TaskResponse, task_to_response
 from omichub.core.config import get_settings
-from omichub.core.exceptions import ValidationError
+from omichub.core.exceptions import NotFoundError, ValidationError
 from omichub.domain.task.services import TaskDomainService
 from omichub.domain.task.value_objects import TaskStatus
 from omichub.infrastructure.celery_app.tasks.download import run_download
@@ -70,6 +70,7 @@ class DownloadService:
                 "multithreads": req.multithreads,
                 "aws_threads": req.aws_threads,
                 "target_directory": directory,
+                "dry_run": req.dry_run,
             },
             sample_count=0,
         )
@@ -92,6 +93,15 @@ class DownloadService:
             total=len(downloads),
         )
 
+    async def get_task_for_user(self, task_id: UUID, user_id: str) -> TaskResponse:
+        """获取任务详情并校验归属权。"""
+        task = await self._repo.get_by_id(task_id)
+        if task is None or str(task.user_id) != user_id:
+            raise NotFoundError("任务不存在")
+        if task.flow_id != DOWNLOAD_FLOW_ID:
+            raise ValidationError("非下载任务")
+        return task_to_response(task)
+
     @staticmethod
     def _normalize_directory(directory: str | None) -> str:
         if not directory:
@@ -101,10 +111,9 @@ class DownloadService:
         return "/".join(parts)
 
     def _make_work_dir(self, user_id: str, accession: str, directory: str = "") -> str:
-        """下载产物目录 — 统一收拢到 users/{uid}/downloads/{directory}/{accession}/
+        """下载产物目录 — 统一收拢到 users/{uid}/raw_data/{directory}/{accession}/
 
-        旧路径 uploads/{uid}/ebi_download/{accession}/ 已废弃。
-        directory 为空时落到 downloads 根目录。
+        directory 为空时落到 raw_data 根目录。
         """
         # accession 仅用作目录名，去除可能的路径分隔符以防越权
         safe_acc = accession.replace("/", "_").replace("\\", "_").strip()
@@ -112,7 +121,7 @@ class DownloadService:
             Path(self._settings.storage_path)
             / "users"
             / user_id
-            / "downloads"
+            / "raw_data"
         )
         if directory:
             base = base / directory

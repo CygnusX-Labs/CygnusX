@@ -12,6 +12,7 @@ export interface User {
   role: 'admin' | 'user'
   status: 'active' | 'inactive' | 'locked'
   avatar_url?: string | null
+  nickname?: string | null
   preferences?: Record<string, unknown>
   last_login_at?: string | null
   created_at: string
@@ -137,6 +138,7 @@ export interface Task {
   id: string
   flow_id: string
   user_id: string
+  username?: string
   name: string
   status: 'pending' | 'queued' | 'running' | 'success' | 'failed' | 'cancelled'
   execution_mode: string

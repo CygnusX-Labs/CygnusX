@@ -49,7 +49,7 @@ class TaskCookieConsumer:
             amount=estimated,
             source_type="task",
             source_id=task_id,
-            description=f"任务提交预扣 {estimated} 🍪 (flow={flow_id}, samples={sample_count}, comparisons={comparison_count})",
+            description=f"任务提交预扣 {estimated} 🥫 (flow={flow_id}, samples={sample_count}, comparisons={comparison_count})",
         )
         return estimated
 
@@ -94,5 +94,5 @@ class TaskCookieConsumer:
             amount=pre_deducted,
             source_type="task",
             source_id=task_id,
-            description=f"任务取消退还预扣 {pre_deducted} 🍪",
+            description=f"任务取消退还预扣 {pre_deducted} 🥫",
         )

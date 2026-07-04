@@ -12,6 +12,7 @@ from omichub.api.v1 import (
     downloads,
     files,
     flows,
+    jbrowse,
     llm,
     mcp,
     notification,
@@ -28,6 +29,7 @@ from omichub.api.v1.admin import ai_providers as admin_ai_providers
 from omichub.api.v1.admin import assistants as admin_assistants
 from omichub.api.v1.admin import skills as admin_skills
 from omichub.api.v1.admin import stats as admin_stats
+from omichub.api.v1.admin import storage as admin_storage
 from omichub.api.v1.admin import users as admin_users
 
 api_router = APIRouter()
@@ -47,6 +49,9 @@ api_router.include_router(admin_cookies.router, prefix="/admin/cookies", tags=["
 api_router.include_router(admin_users.router, prefix="/admin/users", tags=["Admin-Users"])
 api_router.include_router(admin_stats.router, prefix="/admin/stats", tags=["Admin-Stats"])
 api_router.include_router(
+    admin_storage.router, prefix="/admin/storage", tags=["Admin-Storage"]
+)
+api_router.include_router(
     admin_ai_providers.router, prefix="/admin/ai-providers", tags=["Admin-AI-Providers"]
 )
 api_router.include_router(admin_skills.router, prefix="/admin/skills", tags=["Admin-Skills"])
@@ -63,3 +68,4 @@ api_router.include_router(llm.router, prefix="/llm", tags=["LLM"])
 api_router.include_router(notification.router, prefix="/notifications", tags=["Notifications"])
 api_router.include_router(mcp.router, prefix="/mcp", tags=["MCP"])
 api_router.include_router(sandbox.router, prefix="/sandbox", tags=["Sandbox"])
+api_router.include_router(jbrowse.router, prefix="/jbrowse", tags=["JBrowse 基因组浏览器"])

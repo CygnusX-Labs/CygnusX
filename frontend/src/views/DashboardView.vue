@@ -3,13 +3,13 @@ import { ref, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   NButton, NSpace, NIcon, NProgress, NTag, NTooltip, NDataTable, NEmpty, NSpin,
+  NPopconfirm, useMessage,
 } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import {
   RocketOutline, EyeOutline,
   RefreshOutline, TrashOutline,
   CloseOutline, SparklesOutline,
-  ScanOutline, GlobeOutline, SearchOutline, ColorPaletteOutline,
 } from '@vicons/ionicons5'
 import axios from 'axios'
 import apiClient from '@/api/client'
@@ -34,12 +34,69 @@ const loadingOverview = ref(false)
 const loadingTasks = ref(false)
 const bannerClosed = ref(localStorage.getItem('omichub:dashboardBannerClosed') === 'true')
 
-const tools = [
-  { name: 'FASTQ 质控', desc: '测序数据质量评估与清洗', to: '/tools/fastq-qc', icon: ScanOutline, gradient: 'linear-gradient(135deg, #165DFF, #6B8DD6)' },
-  { name: 'IGV 浏览器', desc: '基因组数据在线可视化', to: '/tools/igv', icon: GlobeOutline, gradient: 'linear-gradient(135deg, #00B42A, #23C372)' },
-  { name: '序列检索', desc: 'BLAST 本地序列比对', to: '/tools/blast', icon: SearchOutline, gradient: 'linear-gradient(135deg, #FF7D00, #FF9A2E)' },
-  { name: '绘图工坊', desc: '组学数据交互式可视化', to: '/tools/plot', icon: ColorPaletteOutline, gradient: 'linear-gradient(135deg, #8E54E9, #B96CD4)' },
+const message = useMessage()
+
+// ===== 最近任务：管理员视角迭代期 mock 预览 =====
+// 真实接口 GET /tasks 暂未返回 username 字段，先用 mock 预览多用户混合效果。
+// 接口就绪后置 USE_MOCK_TASKS = false 即可切回真实数据。
+const USE_MOCK_TASKS = true
+
+const MOCK_TASKS: Task[] = [
+  {
+    id: 't-001', flow_id: 'rna-seq', user_id: 'u-1001', username: 'zhang_san',
+    name: '番茄叶片 RNA-seq 重复', status: 'running', execution_mode: 'celery',
+    parameters: {}, work_dir: '', result_path: '', error_message: '',
+    progress: 0.62, logs: [], created_at: '2026-07-03T09:12:00',
+    started_at: '2026-07-03T09:13:00', finished_at: null,
+  },
+  {
+    id: 't-002', flow_id: 'ebi_download', user_id: 'u-1002', username: 'li_si',
+    name: 'EBI PRJEB12345 原始数据下载', status: 'failed', execution_mode: 'celery',
+    parameters: {}, work_dir: '', result_path: '', error_message: '远程连接超时',
+    progress: 0.18, logs: [], created_at: '2026-07-03T08:40:00',
+    started_at: '2026-07-03T08:41:00', finished_at: '2026-07-03T09:05:00',
+  },
+  {
+    id: 't-003', flow_id: 'atac-seq', user_id: 'u-1003', username: 'wang_wu',
+    name: '拟南芥根尖 ATAC-seq', status: 'success', execution_mode: 'celery',
+    parameters: {}, work_dir: '', result_path: '', error_message: '',
+    progress: 1, logs: [], created_at: '2026-07-02T16:20:00',
+    started_at: '2026-07-02T16:21:00', finished_at: '2026-07-02T18:02:00',
+  },
+  {
+    id: 't-004', flow_id: 'rna-seq', user_id: 'u-1001', username: 'zhang_san',
+    name: '黄瓜果实转录组分析', status: 'queued', execution_mode: 'celery',
+    parameters: {}, work_dir: '', result_path: '', error_message: '',
+    progress: 0, logs: [], created_at: '2026-07-03T09:30:00',
+    started_at: null, finished_at: null,
+  },
+  {
+    id: 't-005', flow_id: 'variant_calling', user_id: 'u-1004', username: 'zhao_liu',
+    name: '水稻群体变异检测', status: 'pending', execution_mode: 'celery',
+    parameters: {}, work_dir: '', result_path: '', error_message: '',
+    progress: 0, logs: [], created_at: '2026-07-03T09:45:00',
+    started_at: null, finished_at: null,
+  },
 ]
+
+// 操作列：功能接口对接中，先占位（console + Message）
+function handleView(row: Task) {
+  console.log('[dashboard] handleView', row.id)
+  message.info('该功能接口对接中')
+}
+function handleRetry(row: Task) {
+  console.log('[dashboard] handleRetry', row.id)
+  message.info('该功能接口对接中')
+}
+function handleDelete(row: Task) {
+  console.log('[dashboard] handleDelete', row.id)
+  message.info('该功能接口对接中')
+}
+
+// 重试仅在非进行态可用：running / queued / pending 视为进行中，禁止重试
+function canRetry(status: Task['status']): boolean {
+  return !['running', 'queued', 'pending'].includes(status)
+}
 
 onMounted(async () => {
   // 健康检查
@@ -74,18 +131,24 @@ onMounted(async () => {
     loadingOverview.value = false
   }
 
-  // 最近任务
-  loadingTasks.value = true
-  try {
-    const res = await apiClient.get<{ total: number; items: Task[] }>('/tasks', {
-      params: { limit: 5 },
-    })
-    totalTaskCount.value = res.data.total ?? 0
-    recentTasks.value = res.data.items ?? []
-  } catch {
-    recentTasks.value = []
-  } finally {
+  // 最近任务：USE_MOCK_TASKS=true 用 mock 预览多用户混合；false 走真实接口
+  if (USE_MOCK_TASKS) {
+    recentTasks.value = MOCK_TASKS
+    totalTaskCount.value = MOCK_TASKS.length
     loadingTasks.value = false
+  } else {
+    loadingTasks.value = true
+    try {
+      const res = await apiClient.get<{ total: number; items: Task[] }>('/tasks', {
+        params: { limit: 5 },
+      })
+      totalTaskCount.value = res.data.total ?? 0
+      recentTasks.value = res.data.items ?? []
+    } catch {
+      recentTasks.value = []
+    } finally {
+      loadingTasks.value = false
+    }
   }
 })
 
@@ -112,6 +175,12 @@ function statusConfig(status: string) {
 }
 
 const columns: DataTableColumns<Task> = [
+  {
+    title: '所属用户',
+    key: 'user_id',
+    width: 120,
+    render: (row) => row.username || row.user_id,
+  },
   { title: '任务名称', key: 'name', ellipsis: { tooltip: true } },
   { title: '分析流程', key: 'flow_id', width: 120 },
   {
@@ -145,12 +214,40 @@ const columns: DataTableColumns<Task> = [
   {
     title: '操作',
     key: 'actions',
-    width: 140,
-    render: () => h(NSpace, { size: 4 }, {
+    width: 168,
+    render: (row) => h(NSpace, { size: 4 }, {
       default: () => [
-        h(NTooltip, null, { trigger: () => h(NButton, { size: 'tiny', quaternary: true, circle: true }, { icon: () => h(NIcon, null, { default: () => h(EyeOutline) }) }), default: () => '查看' }),
-        h(NTooltip, null, { trigger: () => h(NButton, { size: 'tiny', quaternary: true, circle: true }, { icon: () => h(NIcon, null, { default: () => h(RefreshOutline) }) }), default: () => '重新运行' }),
-        h(NTooltip, null, { trigger: () => h(NButton, { size: 'tiny', quaternary: true, circle: true }, { icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) }), default: () => '删除' }),
+        // 查看任务详情
+        h(NTooltip, null, {
+          trigger: () => h(NButton, {
+            size: 'tiny', quaternary: true, circle: true,
+            onClick: () => handleView(row),
+          }, { icon: () => h(NIcon, null, { default: () => h(EyeOutline) }) }),
+          default: () => '查看任务详情',
+        }),
+        // 重新运行：进行中（running/queued/pending）禁用
+        h(NTooltip, null, {
+          trigger: () => h(NButton, {
+            size: 'tiny', quaternary: true, circle: true,
+            disabled: !canRetry(row.status),
+            onClick: () => handleRetry(row),
+          }, { icon: () => h(NIcon, null, { default: () => h(RefreshOutline) }) }),
+          default: () => canRetry(row.status) ? '重新运行' : '任务进行中，无法重试',
+        }),
+        // 删除：Popconfirm 二次确认（提示会清理底层计算资源与文件目录）
+        h(NPopconfirm, {
+          positiveText: '确认删除',
+          negativeText: '取消',
+          onPositiveClick: () => handleDelete(row),
+        }, {
+          default: () => '此操作将同时清理该用户底层的计算资源与文件目录，是否继续？',
+          trigger: () => h(NTooltip, null, {
+            trigger: () => h(NButton, {
+              size: 'tiny', quaternary: true, circle: true, type: 'error',
+            }, { icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) }),
+            default: () => '删除任务',
+          }),
+        }),
       ],
     }),
   },
@@ -230,27 +327,6 @@ const columns: DataTableColumns<Task> = [
 
       <!-- 右侧趋势图（真实接口 + 7/30 天切换） -->
       <TrendChart />
-    </section>
-
-    <!-- 生信工具箱快捷入口 -->
-    <section class="arco-card tools-entry animate-fade-in-up delay-100">
-      <div class="arco-card-header">
-        <h3 class="arco-card-title">生信工具箱</h3>
-        <NButton text size="small" class="view-all-btn" @click="router.push('/tools')">
-          查看全部 →
-        </NButton>
-      </div>
-      <div class="tools-entry-grid">
-        <div v-for="(tool, idx) in tools" :key="tool.name" class="tool-entry-card stagger-item" :style="{ animationDelay: `${0.05 * (idx + 1)}s` }" @click="router.push(tool.to)">
-          <div class="tool-entry-icon" :style="{ background: tool.gradient }">
-            <NIcon :size="22" color="#fff"><component :is="tool.icon" /></NIcon>
-          </div>
-          <div class="tool-entry-info">
-            <span class="tool-entry-name">{{ tool.name }}</span>
-            <span class="tool-entry-desc">{{ tool.desc }}</span>
-          </div>
-        </div>
-      </div>
     </section>
 
     <!-- 管理员全平台监控态势（仅管理员可见） -->
@@ -534,73 +610,10 @@ const columns: DataTableColumns<Task> = [
   margin: 0 0 12px;
 }
 
-/* 生信工具箱快捷入口 */
-.tools-entry {
-  margin-bottom: 24px;
-}
-.tools-entry-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-}
-.tool-entry-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px;
-  border-radius: 10px;
-  border: 1px solid var(--neutral-border, #e5e6eb);
-  cursor: pointer;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-              border-color 0.2s ease;
-}
-.tool-entry-card:hover {
-  transform: translateY(-8px);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1),
-              0 8px 16px rgba(0, 0, 0, 0.06);
-  border-color: var(--arco-primary, #165DFF);
-  background: rgba(22, 93, 255, 0.03);
-}
-:root[data-theme="dark"] .tool-entry-card:hover {
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35),
-              0 8px 16px rgba(0, 0, 0, 0.2);
-}
-.tool-entry-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.tool-entry-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.tool-entry-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
-}
-.tool-entry-desc {
-  font-size: 11px;
-  color: var(--neutral-text-3, #86909c);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* 响应式 */
 @media (max-width: 1024px) {
   .overview-grid {
     grid-template-columns: 1fr;
-  }
-  .tools-entry-grid {
-    grid-template-columns: repeat(2, 1fr);
   }
 }
 
@@ -615,10 +628,6 @@ const columns: DataTableColumns<Task> = [
 
   .banner-btn {
     margin-left: auto;
-  }
-
-  .tools-entry-grid {
-    grid-template-columns: 1fr;
   }
 }
 </style>

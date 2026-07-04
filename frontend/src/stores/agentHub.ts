@@ -19,6 +19,7 @@ import type {
   AgentCategory,
   AgentTemplate,
   McpService,
+  McpTool,
   SkillItem,
 } from '@/types/agent'
 import type { ChatMessage, ToolCall } from '@/components/ai-chat/types'
@@ -134,7 +135,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   /** 加载 MCP 服务列表（供表单 transfer / 能力预览） */
   async function fetchMcps(): Promise<void> {
     try {
-      const res = await apiClient.get<any[]>('/mcp')
+      const res = await apiClient.get<any[]>('/mcp/servers')
       mcps.value = (res.data || []).map((m) => ({
         id: String(m.id),
         name: m.name,
@@ -142,6 +143,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         status: m.status === 'online' ? 'online' : 'offline',
         transport: m.transport ?? 'builtin',
         tools: m.tools ?? [],
+        tool_count: m.tool_count ?? 0,
         is_preset: !!m.is_preset,
       }))
     } catch (e) {
@@ -177,10 +179,52 @@ export const useAgentHubStore = defineStore('agentHub', () => {
 
   // ========== 资产 Actions（后台 CRUD，调真实 API） ==========
 
-  /** 切换 MCP 在线状态（前端仅展示，真实状态由后端探测） */
-  function toggleMcpStatus(id: string) {
+  /** 切换 MCP 在线状态 */
+  async function toggleMcpStatus(id: string) {
     const m = mcps.value.find((x) => x.id === id)
-    if (m) m.status = m.status === 'online' ? 'offline' : 'online'
+    if (!m) return
+    const newStatus = m.status === 'online' ? 'offline' : 'online'
+    try {
+      await apiClient.put(`/mcp/servers/${id}`, { status: newStatus })
+      m.status = newStatus
+    } catch {
+      m.status = newStatus
+    }
+  }
+
+  async function addMcpServer(data: {
+    name: string
+    description?: string
+    transport: string
+    command?: string
+    url?: string
+    env?: Record<string, string>
+    timeout?: number
+  }): Promise<void> {
+    await apiClient.post('/mcp/servers', data)
+    await fetchMcps()
+  }
+
+  async function removeMcpServer(id: string): Promise<void> {
+    await apiClient.delete(`/mcp/servers/${id}`)
+    mcps.value = mcps.value.filter((m) => m.id !== id)
+    agents.value.forEach((a) => {
+      a.mcp_ids = a.mcp_ids.filter((mid) => mid !== id)
+    })
+  }
+
+  async function testMcpServer(id: string): Promise<{ success: boolean; tool_count: number; error?: string }> {
+    const res = await apiClient.post(`/mcp/servers/${id}/test`)
+    return res.data
+  }
+
+  async function fetchMcpTools(id: string): Promise<McpTool[]> {
+    const res = await apiClient.get<any[]>(`/mcp/servers/${id}/tools`)
+    return (res.data || []).map((t: any) => ({
+      name: t.name,
+      description: t.description ?? '',
+      input_schema: t.input_schema ?? {},
+    }))
   }
 
   async function upsertAgent(dto: Partial<AgentTemplate> & { id?: string }): Promise<AgentTemplate | null> {
@@ -476,7 +520,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     getAgent, mcpsByIds, skillsByIds,
     // asset actions
     fetchAgents, fetchMcps, fetchSkills, initAssets,
-    toggleMcpStatus, upsertAgent, toggleAgent, deleteAgent,
+    toggleMcpStatus, addMcpServer, removeMcpServer, testMcpServer, fetchMcpTools,
+    upsertAgent, toggleAgent, deleteAgent,
     importSkillFromUrl, importSkillFromJson, toggleSkill, deleteSkill,
     // session actions
     startSessionFromAgent, selectSession, newChat, deleteSession, renameSession,

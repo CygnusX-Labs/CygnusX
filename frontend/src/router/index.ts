@@ -55,7 +55,7 @@ const routes: RouteRecordRaw[] = [
         path: 'flows',
         name: 'flows',
         component: () => import('@/views/FlowsView.vue'),
-        meta: { title: '分析流程', requiresAuth: true }
+        meta: { title: '分析中心', requiresAuth: true }
       },
       {
         path: 'flows/:flowId/submit',
@@ -79,7 +79,7 @@ const routes: RouteRecordRaw[] = [
         path: 'files',
         name: 'files',
         component: () => import('@/views/FilesView.vue'),
-        meta: { title: '文件管理', requiresAuth: true }
+        meta: { title: '文件管理', requiresAuth: true, fullscreen: true }
       },
       {
         path: 'downloads',
@@ -121,13 +121,13 @@ const routes: RouteRecordRaw[] = [
         path: 'knowledge',
         name: 'knowledge',
         component: () => import('@/views/KnowledgeView.vue'),
-        meta: { title: '实验室知识库', requiresAuth: true }
+        meta: { title: '实验室知识库', requiresAuth: true, fullscreen: true }
       },
       {
         path: 'knowledge/:docId',
         name: 'knowledge-doc',
         component: () => import('@/views/KnowledgeView.vue'),
-        meta: { title: '实验室知识库', requiresAuth: true }
+        meta: { title: '实验室知识库', requiresAuth: true, fullscreen: true }
       },
       {
         path: 'sandbox',
@@ -148,10 +148,10 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'FASTQ 质控', requiresAuth: true }
       },
       {
-        path: 'tools/igv',
-        name: 'tools-igv',
-        component: () => import('@/views/BioTools/IGVBrowserView.vue'),
-        meta: { title: 'IGV 浏览器', requiresAuth: true }
+        path: 'tools/jbrowse',
+        name: 'tools-jbrowse',
+        component: () => import('@/views/BioTools/JBrowseViewer.vue'),
+        meta: { title: '基因组浏览器', requiresAuth: true, fullscreen: true }
       },
       {
         path: 'tools/blast',

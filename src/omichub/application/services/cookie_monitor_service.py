@@ -205,7 +205,7 @@ class CookieMonitorService:
                 AnomalyReport(
                     anomaly_type="large_adjustment",
                     user_id=txn.user_id,
-                    detail=f"大额调整 {txn.amount} 🍪: {txn.adjust_reason}",
+                    detail=f"大额调整 {txn.amount} 🥫: {txn.adjust_reason}",
                     severity="warning",
                 )
             )
@@ -252,7 +252,7 @@ class CookieMonitorService:
                 AnomalyReport(
                     anomaly_type="frozen_account_activity",
                     user_id=txn.user_id,
-                    detail=f"冻结/停用账户有交易活动: {txn.txn_type} {txn.amount} 🍪",
+                    detail=f"冻结/停用账户有交易活动: {txn.txn_type} {txn.amount} 🥫",
                     severity="warning",
                 )
             )

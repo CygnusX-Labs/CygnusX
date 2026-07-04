@@ -1,81 +1,83 @@
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
 import type { Task } from '@/types'
-import apiClient from '@/api/client'
-import { NButton, NDataTable, NEmpty, NSpin, NTag, useMessage } from 'naive-ui'
-import { h, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import TaskTable from '@/components/task/TaskTable.vue'
+import { useMessage } from 'naive-ui'
 
-const router = useRouter()
 const message = useMessage()
 const tasks = ref<Task[]>([])
 const loading = ref(false)
 
-const statusType = (status: string) => {
-  const map: Record<string, 'default' | 'success' | 'warning' | 'error'> = {
-    pending: 'default',
-    queued: 'warning',
-    running: 'warning',
-    success: 'success',
-    failed: 'error',
-    cancelled: 'default',
-  }
-  return map[status] || 'default'
-}
-
-const statusText = (status: string) => {
-  const map: Record<string, string> = {
-    pending: '待审核',
-    queued: '排队中',
-    running: '运行中',
-    success: '已完成',
-    failed: '失败',
-    cancelled: '已取消',
-  }
-  return map[status] || status
-}
-
-const columns = [
-  { title: '任务名称', key: 'name' },
-  { title: '流程', key: 'flow_id' },
+const MOCK_TASKS: Task[] = [
   {
-    title: '状态',
-    key: 'status',
-    render: (row: Task) => h(NTag, { type: statusType(row.status), size: 'small', round: true }, { default: () => statusText(row.status) }),
+    id: 't-001', flow_id: 'rna-seq', user_id: 'u-1001', username: 'zhang_san',
+    name: '番茄叶片 RNA-seq 差异表达分析', status: 'running', execution_mode: 'celery',
+    parameters: {}, work_dir: '', result_path: '', error_message: '',
+    progress: 0.62, logs: [], created_at: '2026-07-03T09:12:00',
+    started_at: '2026-07-03T09:13:00', finished_at: null,
   },
   {
-    title: '进度',
-    key: 'progress',
-    render: (row: Task) => `${Math.round(row.progress * 100)}%`,
+    id: 't-002', flow_id: 'ebi_download', user_id: 'u-1002', username: 'li_si',
+    name: 'EBI PRJEB12345 原始数据下载', status: 'failed', execution_mode: 'celery',
+    parameters: {}, work_dir: '', result_path: '', error_message: '远程连接超时，FTP 服务器无响应',
+    progress: 0.18, logs: [], created_at: '2026-07-03T08:40:00',
+    started_at: '2026-07-03T08:41:00', finished_at: '2026-07-03T09:05:00',
   },
-  { title: '创建时间', key: 'created_at' },
   {
-    title: '操作',
-    key: 'actions',
-    render: (row: Task) =>
-      h(
-        NButton,
-        {
-          text: true,
-          type: 'primary',
-          onClick: () => router.push({ name: 'task-detail', params: { taskId: row.id } }),
-        },
-        { default: () => '详情' },
-      ),
+    id: 't-003', flow_id: 'atac-seq', user_id: 'u-1003', username: 'wang_wu',
+    name: '拟南芥根尖 ATAC-seq 开放区域检测', status: 'success', execution_mode: 'celery',
+    parameters: {}, work_dir: '', result_path: '/results/atac-seq/t-003', error_message: '',
+    progress: 1, logs: [], created_at: '2026-07-02T16:20:00',
+    started_at: '2026-07-02T16:21:00', finished_at: '2026-07-02T18:02:00',
+  },
+  {
+    id: 't-004', flow_id: 'rna-seq', user_id: 'u-1001', username: 'zhang_san',
+    name: '黄瓜果实转录组时间序列分析', status: 'queued', execution_mode: 'celery',
+    parameters: {}, work_dir: '', result_path: '', error_message: '',
+    progress: 0, logs: [], created_at: '2026-07-03T09:30:00',
+    started_at: null, finished_at: null,
+  },
+  {
+    id: 't-005', flow_id: 'variant_calling', user_id: 'u-1004', username: 'zhao_liu',
+    name: '水稻群体 128 份种质 SNP/InDel 变异检测', status: 'pending', execution_mode: 'celery',
+    parameters: {}, work_dir: '', result_path: '', error_message: '',
+    progress: 0, logs: [], created_at: '2026-07-03T09:45:00',
+    started_at: null, finished_at: null,
+  },
+  {
+    id: 't-006', flow_id: 'spatial-transcriptomics', user_id: 'u-1005', username: 'chen_qi',
+    name: '小鼠脑组织 10x Visium 空间转录组聚类', status: 'running', execution_mode: 'celery',
+    parameters: {}, work_dir: '', result_path: '', error_message: '',
+    progress: 0.35, logs: [], created_at: '2026-07-03T07:50:00',
+    started_at: '2026-07-03T07:52:00', finished_at: null,
+  },
+  {
+    id: 't-007', flow_id: 'scrna-seq', user_id: 'u-1003', username: 'wang_wu',
+    name: '人 PBMC 单细胞转录组质控与降维', status: 'success', execution_mode: 'celery',
+    parameters: {}, work_dir: '', result_path: '/results/scrna-seq/t-007', error_message: '',
+    progress: 1, logs: [], created_at: '2026-07-01T14:10:00',
+    started_at: '2026-07-01T14:11:00', finished_at: '2026-07-01T15:48:00',
+  },
+  {
+    id: 't-008', flow_id: 'ebi_download', user_id: 'u-1006', username: 'sun_ba',
+    name: 'EBI PRJNA678901 双端测序数据批量下载', status: 'cancelled', execution_mode: 'celery',
+    parameters: {}, work_dir: '', result_path: '', error_message: '',
+    progress: 0.42, logs: [], created_at: '2026-07-02T11:00:00',
+    started_at: '2026-07-02T11:01:00', finished_at: '2026-07-02T11:35:00',
   },
 ]
 
-async function fetchTasks() {
+function fetchTasks() {
   loading.value = true
-  try {
-    const res = await apiClient.get<{ items: Task[]; total: number }>('/tasks')
-    tasks.value = res.data.items
-  } catch (error) {
-    console.error('获取任务列表失败', error)
-    message.error('获取任务列表失败，请稍后重试')
-    tasks.value = []
-  } finally {
+  setTimeout(() => {
+    tasks.value = [...MOCK_TASKS]
     loading.value = false
-  }
+  }, 600)
+}
+
+function handleDelete(task: Task) {
+  tasks.value = tasks.value.filter(t => t.id !== task.id)
+  message.success(`已删除「${task.name}」`)
 }
 
 onMounted(fetchTasks)
@@ -83,19 +85,18 @@ onMounted(fetchTasks)
 
 <template>
   <div class="page-container">
-    <h1 class="page-title">任务中心</h1>
-    <NSpin :show="loading">
-      <div class="arco-card">
-        <NDataTable
-          v-if="tasks.length"
-          :columns="columns"
-          :data="tasks"
-          :row-key="(row: Task) => row.id"
-          :bordered="false"
-          size="small"
-        />
-        <NEmpty v-else description="暂无任务" />
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="page-title">任务中心</h1>
+        <p class="text-sm text-gray-400 mt-1">管理和监控所有生信分析任务的执行状态</p>
       </div>
-    </NSpin>
+    </div>
+
+    <TaskTable
+      :tasks="tasks"
+      :loading="loading"
+      @refresh="fetchTasks"
+      @delete="handleDelete"
+    />
   </div>
 </template>

@@ -5,7 +5,7 @@
 import { computed } from 'vue'
 import { NButton, NIcon, NTag, NTooltip, useMessage } from 'naive-ui'
 import {
-  CloseOutline, DownloadOutline, MoveOutline, TrashOutline, EyeOutline,
+  CloseOutline, DownloadOutline, MoveOutline, TrashOutline,
   DocumentOutline, CopyOutline,
 } from '@vicons/ionicons5'
 import type { DataFile } from '@/types'
@@ -16,7 +16,6 @@ const emit = defineEmits<{
   (e: 'download', file: DataFile): void
   (e: 'move', file: DataFile): void
   (e: 'delete', file: DataFile): void
-  (e: 'open-igv', file: DataFile): void
 }>()
 const message = useMessage()
 
@@ -135,10 +134,6 @@ async function copyChecksum() {
       <NButton size="small" block @click="emit('move', file)">
         <template #icon><NIcon><MoveOutline /></NIcon></template>
         移动
-      </NButton>
-      <NButton v-if="file.file_type === 'bam'" size="small" block type="primary" @click="emit('open-igv', file)">
-        <template #icon><NIcon><EyeOutline /></NIcon></template>
-        在 IGV 中查看
       </NButton>
       <NButton size="small" block type="error" ghost @click="emit('delete', file)">
         <template #icon><NIcon><TrashOutline /></NIcon></template>

@@ -18,6 +18,7 @@ class UserResponse(OmicsHubBaseSchema):
     role: str = Field(description="角色")
     status: UserStatus = Field(description="账户状态")
     avatar_url: str | None = Field(default=None, description="头像 URL")
+    nickname: str | None = Field(default=None, max_length=120, description="昵称（展示用，空则降级为用户名）")
     preferences: dict = Field(default_factory=dict, description="用户偏好")
     last_login_at: datetime | None = Field(default=None, description="最后登录时间")
     created_at: datetime = Field(description="创建时间")
@@ -39,6 +40,7 @@ class UserUpdateRequest(OmicsHubBaseSchema):
         pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$",
     )
     avatar_url: str | None = Field(default=None, max_length=500)
+    nickname: str | None = Field(default=None, max_length=120, description="昵称（展示用，空则降级为用户名）")
     preferences: dict | None = Field(default=None, description="用户偏好设置")
     status: UserStatus | None = Field(default=None, description="账户状态")
 

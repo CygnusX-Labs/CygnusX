@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, onBeforeUnmount } from 'vue'
+import { ref, onBeforeUnmount, onMounted } from 'vue'
 import { NIcon, NButton, useMessage } from 'naive-ui'
-import { RocketOutline, FlaskOutline, ShieldCheckmarkOutline, TelescopeOutline } from '@vicons/ionicons5'
+import { RocketOutline, FlaskOutline, ShieldCheckmarkOutline, TelescopeOutline, LogoGithub } from '@vicons/ionicons5'
 import { useRouter } from 'vue-router'
 import { useSiteConfigStore } from '@/stores/site-config'
 // 彩蛋图片：猫猫踩地球插画
@@ -10,6 +10,10 @@ import catEarthLogo from '@/assets/ChatGPT_logo.png'
 const router = useRouter()
 const siteConfig = useSiteConfigStore()
 const message = useMessage()
+
+onMounted(() => {
+  siteConfig.fetchSiteConfig()
+})
 
 // 彩蛋：点击蓝色星球触发隐藏弹窗
 const showEasterEgg = ref(false)
@@ -212,6 +216,20 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
         <NButton size="large" ghost style="color: #fff; border-color: rgba(255,255,255,0.3);" @click="router.push('/dashboard')">
           进入控制台
         </NButton>
+        <NButton
+          v-if="siteConfig.platformGithub"
+          size="large"
+          ghost
+          tag="a"
+          :href="siteConfig.platformGithub"
+          target="_blank"
+          style="color: #fff; border-color: rgba(255,255,255,0.3);"
+        >
+          <template #icon>
+            <NIcon><LogoGithub /></NIcon>
+          </template>
+          GitHub
+        </NButton>
       </div>
 
       <!-- 底部 -->
@@ -219,6 +237,13 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
         <span class="about-brand">OmicHub</span>
         <span class="about-divider">·</span>
         <span>华中农业大学园艺林学学院 · 多组学分析平台</span>
+        <div v-if="siteConfig.platformAuthor" class="about-credit">
+          Designed by {{ siteConfig.platformAuthor }}
+          <template v-if="siteConfig.platformEmail">
+            <span class="about-divider">|</span>
+            Contact: <a :href="`mailto:${siteConfig.platformEmail}`" class="about-credit-link">{{ siteConfig.platformEmail }}</a>
+          </template>
+        </div>
       </div>
     </div>
 
@@ -656,6 +681,19 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 }
 .about-divider {
   margin: 0 8px;
+}
+.about-credit {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #64748b;
+}
+.about-credit-link {
+  color: #6B8DD6;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+.about-credit-link:hover {
+  color: #67e8f9;
 }
 
 @media (max-width: 640px) {

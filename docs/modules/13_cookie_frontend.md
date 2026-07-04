@@ -1,4 +1,4 @@
-# OmicHub 🍪 饼干积分系统 — 前端完整设计文档
+# OmicHub 🥫 饼干积分系统 — 前端完整设计文档
 
 > 技术栈：Vue 3 + TypeScript + Vite + Naive UI + Pinia + ECharts  
 > 版本：v1.0  |  作者：OmicHub Frontend Team
@@ -752,7 +752,7 @@ export function useWebSocket() {
             :to="currentBalance"
             :duration="800"
           />
-          <template #suffix>🍪</template>
+          <template #suffix>🥫</template>
         </n-statistic>
       </div>
 
@@ -1009,7 +1009,7 @@ function getTxTypeLabel(type: TransactionType): string {
 <template>
   <div class="cookie-account-page">
     <!-- 页面标题 -->
-    <n-page-header title="🍪 我的饼干账户" subtitle="查看饼干余额、交易流水与消费统计" />
+    <n-page-header title="🥫 我的饼干账户" subtitle="查看饼干余额、交易流水与消费统计" />
 
     <n-space vertical :size="24" style="margin-top: 20px;">
 
@@ -1025,7 +1025,7 @@ function getTxTypeLabel(type: TransactionType): string {
               <span class="stat-number stat-number--primary">
                 {{ formattedBalance }}
               </span>
-              <template #suffix>🍪</template>
+              <template #suffix>🥫</template>
             </n-statistic>
             <n-tag
               :type="account?.status === 'active' ? 'success' : 'error'"
@@ -1048,7 +1048,7 @@ function getTxTypeLabel(type: TransactionType): string {
               <span class="stat-number stat-number--danger">
                 {{ summary?.monthlySpent ?? 0 }}
               </span>
-              <template #suffix>🍪</template>
+              <template #suffix>🥫</template>
             </n-statistic>
             <n-text depth="3" style="font-size: 12px;">较上月 --</n-text>
           </n-card>
@@ -1064,7 +1064,7 @@ function getTxTypeLabel(type: TransactionType): string {
               <span class="stat-number stat-number--success">
                 {{ summary?.monthlyEarned ?? 0 }}
               </span>
-              <template #suffix>🍪</template>
+              <template #suffix>🥫</template>
             </n-statistic>
             <n-text depth="3" style="font-size: 12px;">含系统奖励</n-text>
           </n-card>
@@ -1253,14 +1253,14 @@ const columns = computed<DataTableColumns<CookieTransaction>>(() => [
         color: row.amount > 0 ? '#18a058' : '#d03050',
         fontWeight: 600,
       },
-    }, `${row.amount > 0 ? '+' : ''}${row.amount} 🍪`),
+    }, `${row.amount > 0 ? '+' : ''}${row.amount} 🥫`),
   },
   {
     title: '余额',
     key: 'balanceAfter',
     width: 120,
     align: 'right',
-    render: (row) => `${row.balanceAfter.toLocaleString()} 🍪`,
+    render: (row) => `${row.balanceAfter.toLocaleString()} 🥫`,
   },
   {
     title: '描述',
@@ -1381,7 +1381,7 @@ function initPieChart() {
   const option: echarts.EChartsOption = {
     tooltip: {
       trigger: 'item',
-      formatter: '{b}: {c} 🍪 ({d}%)',
+      formatter: '{b}: {c} 🥫 ({d}%)',
       backgroundColor: 'var(--n-card-color)',
       borderColor: 'var(--n-border-color)',
       textStyle: { color: 'var(--n-text-color)' },
@@ -1547,7 +1547,7 @@ function getTxLabel(type: TransactionType): string {
 <template>
   <div class="admin-cookie-page">
     <!-- 页面标题 -->
-    <n-page-header title="🍪 饼干管理" subtitle="管理系统饼干流通、用户账户与充值" />
+    <n-page-header title="🥫 饼干管理" subtitle="管理系统饼干流通、用户账户与充值" />
 
     <n-space vertical :size="20" style="margin-top: 20px;">
 
@@ -1777,7 +1777,7 @@ const columns = computed<DataTableColumns<CookieAccount>>(() => [
     render: (row) => h(NText, {
       strong: true,
       style: { color: '#f5a623', fontSize: '15px' },
-    }, { default: () => `${row.balance.toLocaleString()} 🍪` }),
+    }, { default: () => `${row.balance.toLocaleString()} 🥫` }),
   },
   {
     title: '总消费',
@@ -1785,14 +1785,14 @@ const columns = computed<DataTableColumns<CookieAccount>>(() => [
     width: 130,
     sorter: true,
     align: 'right',
-    render: (row) => `${row.totalSpent.toLocaleString()} 🍪`,
+    render: (row) => `${row.totalSpent.toLocaleString()} 🥫`,
   },
   {
     title: '总获得',
     key: 'totalEarned',
     width: 130,
     align: 'right',
-    render: (row) => `${row.totalEarned.toLocaleString()} 🍪`,
+    render: (row) => `${row.totalEarned.toLocaleString()} 🥫`,
   },
   {
     title: '账户状态',
@@ -2031,7 +2031,7 @@ function formatDateTime(dateStr: string): string {
       <n-descriptions label-placement="left" :column="1" bordered>
         <n-descriptions-item label="当前余额">
           <n-text strong style="color: #f5a623; font-size: 18px;">
-            {{ user.balance.toLocaleString() }} 🍪
+            {{ user.balance.toLocaleString() }} 🥫
           </n-text>
         </n-descriptions-item>
         <n-descriptions-item label="操作类型">
@@ -2059,7 +2059,7 @@ function formatDateTime(dateStr: string): string {
             :show-button="true"
             :precision="0"
           >
-            <template #suffix>🍪</template>
+            <template #suffix>🥫</template>
           </n-input-number>
         </n-form-item>
 
@@ -2070,7 +2070,7 @@ function formatDateTime(dateStr: string): string {
             strong
             style="font-size: 16px;"
           >
-            {{ newBalance.toLocaleString() }} 🍪
+            {{ newBalance.toLocaleString() }} 🥫
           </n-text>
           <n-text v-if="newBalance < 0" type="error" style="margin-left: 8px;">
             余额不能为负数！
@@ -2172,8 +2172,8 @@ const formData = ref({
 const modalTitle = computed(() => {
   if (!props.user) return ''
   return props.mode === 'recharge'
-    ? `🍪 充值 — ${props.user.userName}`
-    : `🍪 扣减 — ${props.user.userName}`
+    ? `🥫 充值 — ${props.user.userName}`
+    : `🥫 扣减 — ${props.user.userName}`
 })
 
 const newBalance = computed(() => {
@@ -2406,13 +2406,13 @@ async function handleSubmit() {
           <n-text type="success">
             <n-number-animation :from="0" :to="stats.income" show-separator />
           </n-text>
-          <template #suffix>🍪</template>
+          <template #suffix>🥫</template>
         </n-statistic>
         <n-statistic label="支出合计" tabular-nums>
           <n-text type="error">
             <n-number-animation :from="0" :to="stats.expense" show-separator />
           </n-text>
-          <template #suffix>🍪</template>
+          <template #suffix>🥫</template>
         </n-statistic>
       </n-space>
 
@@ -2526,14 +2526,14 @@ const columns = computed<DataTableColumns<CookieTransaction>>(() => [
     render: (row) => h(NText, {
       strong: true,
       type: row.amount > 0 ? 'success' : 'error',
-    }, { default: () => `${row.amount > 0 ? '+' : ''}${row.amount} 🍪` }),
+    }, { default: () => `${row.amount > 0 ? '+' : ''}${row.amount} 🥫` }),
   },
   {
     title: '变动后余额',
     key: 'balanceAfter',
     width: 120,
     align: 'right',
-    render: (row) => `${row.balanceAfter.toLocaleString()} 🍪`,
+    render: (row) => `${row.balanceAfter.toLocaleString()} 🥫`,
   },
   {
     title: '描述',
@@ -2769,7 +2769,7 @@ function getTxLabel(type: TransactionType): string {
             placeholder="每小时单价（饼干）"
             style="width: 100%;"
           >
-            <template #suffix>🍪 / 小时</template>
+            <template #suffix>🥫 / 小时</template>
           </n-input-number>
         </n-form-item>
 
@@ -2906,7 +2906,7 @@ const columns = computed<DataTableColumns<CookiePricing>>(() => [
     width: 130,
     align: 'right',
     render: (row) => h(NText, { strong: true }, {
-      default: () => `${row.unitPrice} 🍪/小时`,
+      default: () => `${row.unitPrice} 🥫/小时`,
     }),
   },
   {
@@ -3056,7 +3056,7 @@ function formatDateTime(dateStr: string): string {
 <template>
   <!-- ... 原有表单内容 ... -->
 
-  <!-- 🍪 饼干预估区域 -->
+  <!-- 🥫 饼干预估区域 -->
   <n-card
     size="small"
     class="cost-estimate-card"
@@ -3082,7 +3082,7 @@ function formatDateTime(dateStr: string): string {
           <n-text depth="2">
             基础费用（{{ flowCategoryLabel }}）
           </n-text>
-          <n-text>{{ estimate.baseFee }} 🍪</n-text>
+          <n-text>{{ estimate.baseFee }} 🥫</n-text>
         </n-space>
 
         <!-- 资源费用明细 -->
@@ -3095,10 +3095,10 @@ function formatDateTime(dateStr: string): string {
           <n-text depth="2">
             {{ resourceLabel(res.resourceType) }}
             <n-text depth="3" style="font-size: 12px;">
-              （{{ res.quantity }}{{ resourceUnit(res.resourceType) }} × {{ res.duration }}小时 @ {{ res.unitPrice }}🍪/h）
+              （{{ res.quantity }}{{ resourceUnit(res.resourceType) }} × {{ res.duration }}小时 @ {{ res.unitPrice }}🥫/h）
             </n-text>
           </n-text>
-          <n-text>{{ res.subtotal }} 🍪</n-text>
+          <n-text>{{ res.subtotal }} 🥫</n-text>
         </n-space>
 
         <!-- 折扣信息 -->
@@ -3111,7 +3111,7 @@ function formatDateTime(dateStr: string): string {
             折扣优惠（{{ (estimate.discountRate * 10).toFixed(1) }}折）
           </n-text>
           <n-text type="success">
-            -{{ (estimate.total - estimate.discountedTotal).toFixed(0) }} 🍪
+            -{{ (estimate.total - estimate.discountedTotal).toFixed(0) }} 🥫
           </n-text>
         </n-space>
 
@@ -3121,7 +3121,7 @@ function formatDateTime(dateStr: string): string {
         <n-space justify="space-between" align="center">
           <n-text strong style="font-size: 15px;">预估总计</n-text>
           <n-text type="warning" strong style="font-size: 18px;">
-            {{ Math.ceil(estimate.discountedTotal) }} 🍪
+            {{ Math.ceil(estimate.discountedTotal) }} 🥫
           </n-text>
         </n-space>
       </template>
@@ -3143,8 +3143,8 @@ function formatDateTime(dateStr: string): string {
         <n-space vertical :size="4">
           <n-text strong>余额不足！</n-text>
           <n-text>
-            当前余额 <n-text strong>{{ account.balance }}</n-text> 🍪，
-            还需 <n-text type="error" strong>{{ Math.ceil(estimate.discountedTotal - account.balance) }}</n-text> 🍪
+            当前余额 <n-text strong>{{ account.balance }}</n-text> 🥫，
+            还需 <n-text type="error" strong>{{ Math.ceil(estimate.discountedTotal - account.balance) }}</n-text> 🥫
           </n-text>
           <n-button
             text
@@ -3168,7 +3168,7 @@ function formatDateTime(dateStr: string): string {
         </n-space>
         <n-text>
           <n-text strong style="color: #f5a623;">{{ account.balance }}</n-text>
-          🍪（执行后剩余 <n-text strong>{{ account.balance - Math.ceil(estimate.discountedTotal) }}</n-text> 🍪）
+          🥫（执行后剩余 <n-text strong>{{ account.balance - Math.ceil(estimate.discountedTotal) }}</n-text> 🥫）
         </n-text>
       </n-space>
     </n-space>
@@ -3184,7 +3184,7 @@ function formatDateTime(dateStr: string): string {
       @click="handleSubmit"
     >
       <template #icon><n-icon><SendOutline /></n-icon></template>
-      提交任务（{{ estimate ? Math.ceil(estimate.discountedTotal) + ' 🍪' : '...' }}）
+      提交任务（{{ estimate ? Math.ceil(estimate.discountedTotal) + ' 🥫' : '...' }}）
     </n-button>
   </n-space>
 
@@ -3192,7 +3192,7 @@ function formatDateTime(dateStr: string): string {
   <n-modal
     v-model:show="showInsufficientModal"
     preset="card"
-    title="🍪 饼干余额不足"
+    title="🥫 饼干余额不足"
     style="width: 420px;"
     :bordered="false"
   >
@@ -3207,16 +3207,16 @@ function formatDateTime(dateStr: string): string {
 
       <n-descriptions bordered :column="1" style="width: 100%;">
         <n-descriptions-item label="当前余额">
-          <n-text strong style="color: #f5a623;">{{ account?.balance ?? 0 }} 🍪</n-text>
+          <n-text strong style="color: #f5a623;">{{ account?.balance ?? 0 }} 🥫</n-text>
         </n-descriptions-item>
         <n-descriptions-item label="预估消耗">
           <n-text strong type="error">
-            {{ estimate ? Math.ceil(estimate.discountedTotal) : '--' }} 🍪
+            {{ estimate ? Math.ceil(estimate.discountedTotal) : '--' }} 🥫
           </n-text>
         </n-descriptions-item>
         <n-descriptions-item label="差额">
           <n-text strong type="error">
-            {{ estimate && account ? Math.ceil(estimate.discountedTotal - account.balance) : '--' }} 🍪
+            {{ estimate && account ? Math.ceil(estimate.discountedTotal - account.balance) : '--' }} 🥫
           </n-text>
         </n-descriptions-item>
       </n-descriptions>
@@ -3623,4 +3623,4 @@ src/
 
 ---
 
-*文档生成完毕 — OmicHub 🍪 Cookie System Frontend v1.0*
+*文档生成完毕 — OmicHub 🥫 Cookie System Frontend v1.0*

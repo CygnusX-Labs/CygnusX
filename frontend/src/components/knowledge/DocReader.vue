@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { MdPreview, MdCatalog } from 'md-editor-v3'
 import 'md-editor-v3/lib/preview.css'
 
@@ -38,9 +38,13 @@ const resolvedContent = computed(() => {
 // 预览容器的 id，供 MdCatalog 锚定滚动
 const previewId = 'knowledge-md-preview'
 // MdCatalog 需要 string | HTMLElement（非 null），computed 保证非空
-const scrollElement = computed<HTMLElement>(
-  () => document.documentElement as HTMLElement,
-)
+const scrollElement = ref<HTMLElement>(document.documentElement)
+
+onMounted(() => {
+  const previewEl = document.getElementById(previewId)
+  const scrollParent = previewEl?.closest('.content-body') as HTMLElement | null
+  if (scrollParent) scrollElement.value = scrollParent
+})
 </script>
 
 <template>
@@ -68,15 +72,18 @@ const scrollElement = computed<HTMLElement>(
   display: flex;
   gap: 24px;
   align-items: flex-start;
+  min-width: 0; /* ← 防吹爆：允许整行窄于 min-content */
 }
 
 .reader-preview {
   flex: 0 0 80%;
-  min-width: 0;
+  min-width: 0; /* 允许窄于 min-content，长字符串不再顶开本格 */
+  overflow-wrap: anywhere; /* Markdown 长 URL / 长字符串自动折行，不撑爆预览区 */
 }
 
 .reader-toc {
   flex: 0 0 20%;
+  min-width: 0; /* ← 防吹爆 */
   position: sticky;
   top: 16px;
   max-height: calc(100vh - 180px);

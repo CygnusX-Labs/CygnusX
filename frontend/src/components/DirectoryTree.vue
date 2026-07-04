@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, h, onMounted, ref } from 'vue'
+import { computed, h, onMounted, reactive, ref } from 'vue'
 import { NButton, NDropdown, NEmpty, NIcon, NSpin, NTree, useDialog, useMessage } from 'naive-ui'
 import type { TreeOption } from 'naive-ui'
-import { FolderOutline, AddOutline, TrashOutline, FolderOpenOutline, EllipsisHorizontalOutline, CreateOutline, LockClosedOutline } from '@vicons/ionicons5'
+import { FolderOutline, AddOutline, TrashOutline, FolderOpenOutline, EllipsisHorizontalOutline, CreateOutline, LockClosedOutline, OpenOutline } from '@vicons/ionicons5'
 import apiClient from '@/api/client'
 import type { Directory } from '@/types'
 
@@ -48,22 +48,12 @@ const treeData = computed<TreeOption[]>(() => {
 
 const selectedKeys = computed(() => [selected.value || ''])
 
-/** 节点 label 渲染：名称 + 文件计数 (N)，计数含子目录汇总 */
+/** 节点 label 渲染：名称 + 该目录的直接文件计数 (N)，不含子目录（避免父级重复汇总） */
 function renderLabel({ option }: { option: TreeOption }) {
   const path = String(option.key ?? '')
   const name = option.label as string
   const counts = props.fileCounts || {}
-  // 该目录直接文件数 + 所有以该目录为前缀的子目录文件数（汇总）
-  let total = counts[path] || 0
-  if (path) {
-    const prefix = path + '/'
-    for (const k of Object.keys(counts)) {
-      if (k.startsWith(prefix)) total += counts[k] || 0
-    }
-  } else {
-    // 根目录：所有目录的文件都属于根汇总
-    for (const k of Object.keys(counts)) total += counts[k] || 0
-  }
+  const total = counts[path] || 0
   return h('span', { class: 'tree-label' }, [
     h('span', null, name),
     total > 0 ? h('span', { class: 'dir-count' }, total) : null,
@@ -124,7 +114,7 @@ function openCreateModal(parentPath: string) {
 }
 
 function confirmDelete(dir: Directory) {
-  dialog.warning({
+  dialog.error({
     title: '删除目录',
     content: `确认删除目录「${dir.path}」？该目录下的文件会移回根目录。`,
     positiveText: '删除',
@@ -133,7 +123,14 @@ function confirmDelete(dir: Directory) {
       try {
         await apiClient.delete('/files/directories', { params: { path: dir.path } })
         message.success('目录已删除')
-        if (selected.value === dir.path) selected.value = ''
+        // 若删除的是当前打开目录或其祖先目录，回退到根目录
+        if (
+          selected.value === dir.path ||
+          (dir.path && selected.value.startsWith(dir.path + '/'))
+        ) {
+          selected.value = ''
+        }
+        // 重新拉取整棵目录树（新数组引用，触发重渲染）
         await fetchDirectories()
         emit('refresh-files')
       } catch (e: any) {
@@ -142,11 +139,6 @@ function confirmDelete(dir: Directory) {
     },
   })
 }
-
-const contextMenuOptions = (dir: Directory) => [
-  { label: '新建子目录', key: 'create' },
-  { label: '删除目录', key: 'delete' },
-]
 
 /** 重命名目录 — TODO: 后端重命名端点就绪后接入 PUT /files/directories/rename */
 function renameDirectory(dir: Directory) {
@@ -170,14 +162,13 @@ function handleInlineMenu(key: string, dir: Directory) {
   else if (key === 'delete') confirmDelete(dir)
 }
 
-/** 系统目录前缀锁图标 */
+/** 节点前缀图标：系统目录灰色文件夹、用户目录黄色文件夹 */
 function renderPrefix({ option }: { option: TreeOption }) {
   const path = String(option.key ?? '')
-  const dir = path ? directories.value.find((d) => d.path === path) : null
-  if (dir?.is_system) {
-    return h(NIcon, { size: 13, color: '#86909c', style: 'margin-right:4px' }, { default: () => h(LockClosedOutline) })
-  }
-  return null
+  if (!path) return null
+  const dir = directories.value.find((d) => d.path === path)
+  const color = dir?.is_system ? '#86909c' : '#FFB020'
+  return h(NIcon, { size: 15, color, style: 'margin-right:4px' }, { default: () => h(FolderOutline) })
 }
 
 /** 节点悬浮时右侧内联显示 + / ⋯ */
@@ -232,31 +223,45 @@ function renderSuffix({ option }: { option: TreeOption }) {
   return h('div', { class: 'inline-actions', onClick: (e: MouseEvent) => e.stopPropagation() }, buttons)
 }
 
+/** 右键上下文菜单（n-dropdown 手动定位） */
+const contextMenu = reactive({ show: false, x: 0, y: 0, path: '', isSystem: false })
+
+const contextMenuOptions = computed(() => {
+  const opts = [
+    { label: '打开', key: 'open', icon: () => h(NIcon, null, { default: () => h(OpenOutline) }) },
+    { label: '新建子目录', key: 'create', icon: () => h(NIcon, null, { default: () => h(AddOutline) }) },
+  ]
+  // 系统目录锁定：不允许删除
+  if (!contextMenu.isSystem) {
+    opts.push({ label: '删除', key: 'delete', icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) })
+  }
+  return opts
+})
+
+function onContextMenuSelect(key: string) {
+  contextMenu.show = false
+  const path = contextMenu.path
+  if (key === 'open') {
+    selected.value = path
+    emit('refresh-files')
+  } else if (key === 'create') {
+    openCreateModal(path)
+  } else if (key === 'delete') {
+    const dir = directories.value.find((d) => d.path === path)
+    if (dir) confirmDelete(dir)
+  }
+}
+
 function handleContextMenu(option: TreeOption, e: MouseEvent) {
   e.preventDefault()
   const path = String(option.key ?? '')
-  // 根目录只允许新建
-  if (!path) {
-    openCreateModal('')
-    return
-  }
+  if (!path) return // 根目录不弹菜单
   const dir = directories.value.find((d) => d.path === path)
-  if (!dir) return
-  // 系统目录锁定：仅允许新建子目录，禁止删除/重命名
-  if (dir.is_system) {
-    openCreateModal(dir.path)
-    return
-  }
-  // 用 dropdown 太复杂，直接弹菜单选择 — 这里简化为右键即弹新建/删除选项
-  dialog.create({
-    title: `目录：${dir.name}`,
-    content: '选择操作',
-    action: () =>
-      h('div', { style: 'display:flex;gap:8px;justify-content:flex-end' }, [
-        h(NButton, { onClick: () => { openCreateModal(dir.path) } }, { default: () => '新建子目录' }),
-        h(NButton, { type: 'error', ghost: true, onClick: () => confirmDelete(dir) }, { default: () => '删除目录' }),
-      ]),
-  })
+  contextMenu.path = path
+  contextMenu.isSystem = !!dir?.is_system
+  contextMenu.x = e.clientX
+  contextMenu.y = e.clientY
+  contextMenu.show = true
 }
 
 function nodeProps({ option }: { option: TreeOption }) {
@@ -284,6 +289,8 @@ onMounted(fetchDirectories)
       <NTree
         block-line
         expand-on-click
+        show-line
+        :indent="20"
         :data="treeData"
         :selected-keys="selectedKeys"
         :default-expanded-keys="['']"
@@ -294,15 +301,28 @@ onMounted(fetchDirectories)
         :node-props="nodeProps"
       />
     </NSpin>
+    <NDropdown
+      placement="bottom-start"
+      trigger="manual"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      :show="contextMenu.show"
+      :options="contextMenuOptions"
+      @select="onContextMenuSelect"
+      @clickoutside="contextMenu.show = false"
+    />
   </div>
 </template>
 
 <style scoped>
 .directory-tree {
-  width: 240px;
+  width: 100%;
+  height: 100%;
   flex-shrink: 0;
   padding: 12px;
   box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .tree-header {
   display: flex;
@@ -349,5 +369,24 @@ onMounted(fetchDirectories)
 .directory-tree :deep(.n-tree-node:hover) .inline-actions,
 .directory-tree :deep(.n-tree-node--selected) .inline-actions {
   opacity: 1;
+}
+/* 节点 hover / 选中高亮 */
+.directory-tree :deep(.n-tree-node-content) {
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
+  padding: 2px 4px;
+}
+.directory-tree :deep(.n-tree-node-content:hover) {
+  background-color: var(--neutral-bg, #f2f3f8);
+}
+.directory-tree :deep(.n-tree-node--selected .n-tree-node-content),
+.directory-tree :deep(.n-tree-node--selected > .n-tree-node-content) {
+  background-color: rgba(22, 93, 255, 0.12);
+}
+/* 连线虚线化 */
+.directory-tree :deep(.n-tree-node-content__indent::before),
+.directory-tree :deep(.n-tree-node-content__indent::after) {
+  border-left-style: dashed !important;
+  border-left-color: var(--neutral-border, #e5e6eb) !important;
 }
 </style>

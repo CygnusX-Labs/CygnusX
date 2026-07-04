@@ -24,7 +24,12 @@ const mountedSkills = computed(() => (agent.value ? store.skillsByIds(agent.valu
       <div class="cap-drawer">
         <div class="meta-row">
           <span class="k">大模型引擎</span>
-          <NTag size="small" round :bordered="false" type="info">{{ engineLabel }}</NTag>
+          <NSpace :size="4">
+            <NTag size="small" round :bordered="false" type="info">{{ engineLabel }}</NTag>
+            <NTag v-if="agent.model_name && agent.model_name !== engineLabel" size="small" round :bordered="false">
+              {{ agent.model_name }}
+            </NTag>
+          </NSpace>
         </div>
         <div class="meta-row">
           <span class="k">分类</span>

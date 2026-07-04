@@ -16,3 +16,4 @@ class DownloadRequest(OmicsHubBaseSchema):
     aws_threads: int = Field(default=8, ge=1, le=64, description="单文件 AWS 并发线程数")
     # 下载目标目录（相对 users/{uid}/downloads/ 的子路径，空串=根；不存在则自动创建）
     target_directory: str = Field(default="", max_length=500, description="下载到用户目录下的指定子目录")
+    dry_run: bool = Field(default=False, description="模拟下载，不实际下载文件（测试用）")

@@ -20,7 +20,7 @@ const cards = computed(() => {
       icon: TrendingUpOutline,
       color: 'var(--arco-primary)',
       bg: 'var(--arco-primary-light)',
-      suffix: '🍪',
+      suffix: '🥫',
     },
     {
       label: '累计发放',
@@ -28,7 +28,7 @@ const cards = computed(() => {
       icon: FlashOutline,
       color: 'var(--arco-success)',
       bg: 'var(--arco-success-light)',
-      suffix: '🍪',
+      suffix: '🥫',
     },
     {
       label: '累计消耗',
@@ -36,7 +36,7 @@ const cards = computed(() => {
       icon: CalendarOutline,
       color: 'var(--arco-warning, #FF7D00)',
       bg: 'var(--arco-warning-light, #FFF7E8)',
-      suffix: '🍪',
+      suffix: '🥫',
     },
     {
       label: '活跃账户数',

@@ -23,6 +23,7 @@ export interface McpService {
   status: 'online' | 'offline'
   transport: 'stdio' | 'sse' | 'builtin'
   tools: McpTool[]
+  tool_count: number
   is_preset: boolean
 }
 

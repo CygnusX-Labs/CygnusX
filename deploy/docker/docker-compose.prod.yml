@@ -10,6 +10,9 @@ services:
     volumes:
       - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
       - /etc/ssl/certs:/etc/ssl/certs:ro  # SSL 证书
+      # JBrowse 2 静态产物 + 数据文件（/tracks/ 路径，只读）
+      - ../../pipelines/jbrowse2:/var/www/jbrowse2:ro
+      - /data/omichub:/data/omichub:ro
 
   web:
     environment:

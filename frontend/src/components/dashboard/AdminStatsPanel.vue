@@ -13,6 +13,7 @@ import {
 } from 'echarts/components'
 import VChart from 'vue-echarts'
 import apiClient from '@/api/client'
+import StorageMonitorPanel from '@/components/dashboard/StorageMonitorPanel.vue'
 import type {
   AdminStatus,
   AdminUserStats,
@@ -224,6 +225,9 @@ onMounted(() => {
         </NSpin>
       </div>
     </div>
+
+    <!-- 存储空间监控（全局容量 + Top 用户占用） -->
+    <StorageMonitorPanel />
 
     <!-- 图表区 -->
     <div class="charts-grid">

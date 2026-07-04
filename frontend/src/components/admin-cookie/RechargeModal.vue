@@ -97,7 +97,7 @@ async function handleSubmit() {
   try {
     const signed = type.value === 'add' ? amount.value : -amount.value
     await store.adjust(userId.value, signed, remark.value.trim())
-    message.success(`已${type.value === 'add' ? '充值' : '扣除'} ${amount.value} 🍪`)
+    message.success(`已${type.value === 'add' ? '充值' : '扣除'} ${amount.value} 🥫`)
     emit('update:show', false)
     emit('success')
   } catch (e: any) {
@@ -130,7 +130,7 @@ async function handleSubmit() {
         <div v-if="selectedUser" class="preset-hint">
           当前余额
           <NTag size="small" round :type="(selectedUser.cookie_balance ?? 0) < 50 ? 'warning' : 'success'">
-            {{ selectedUser.cookie_balance ?? 0 }} 🍪
+            {{ selectedUser.cookie_balance ?? 0 }} 🥫
           </NTag>
           <template v-if="selectedUser.lab_group"> · {{ selectedUser.lab_group }}</template>
         </div>
@@ -145,7 +145,7 @@ async function handleSubmit() {
 
       <NFormItem label="变更数量" required>
         <NInputNumber v-model:value="amount" :min="1" :step="1" :precision="0" placeholder="请输入正整数" style="width: 100%">
-          <template #suffix>🍪</template>
+          <template #suffix>🥫</template>
         </NInputNumber>
       </NFormItem>
 

@@ -10,7 +10,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import apiClient from '@/api/client'
-import type { RegistrationContent, ActivationContent, EasterEggContent } from '@/types/site-content'
+import type { RegistrationContent, ActivationContent, EasterEggContent, PlatformContent } from '@/types/site-content'
 
 // 文案兜底：site-content 拉取失败时使用
 const DEFAULT_REGISTRATION: RegistrationContent = {
@@ -31,6 +31,12 @@ const DEFAULT_EASTER_EGG: EasterEggContent = {
   button_text: '🐾 召唤星际猫咪',
   toast: '🎉 星际守护者已响应召唤！快看看屏幕上留下的足迹吧～ ✨',
 }
+const DEFAULT_PLATFORM: PlatformContent = {
+  title: 'OmicHub',
+  author: '',
+  email: '',
+  github: '',
+}
 
 export const useSiteConfigStore = defineStore('site-config', () => {
   // 注册开关（true=开放自助注册）。默认 true：接口异常时不阻断登录页注册入口。
@@ -41,6 +47,8 @@ export const useSiteConfigStore = defineStore('site-config', () => {
   const activationContent = ref<ActivationContent>({ ...DEFAULT_ACTIVATION })
   // 关于页彩蛋文案（来自 YAML easter_egg 段）
   const easterEggContent = ref<EasterEggContent>({ ...DEFAULT_EASTER_EGG })
+  // 平台元信息（来自 YAML platform 段）
+  const platformContent = ref<PlatformContent>({ ...DEFAULT_PLATFORM })
   // 配置是否已就绪（首次拉取完成后置 true，供点击时判断是否需等待）
   const loaded = ref(false)
 
@@ -77,6 +85,13 @@ export const useSiteConfigStore = defineStore('site-config', () => {
   /** 召唤按钮点击后的 Toast 提示文案 */
   const easterEggToast = computed(() => easterEggContent.value.toast)
 
+  /** 平台 GitHub 链接 */
+  const platformGithub = computed(() => platformContent.value.github)
+  /** 平台作者 */
+  const platformAuthor = computed(() => platformContent.value.author)
+  /** 平台联系邮箱 */
+  const platformEmail = computed(() => platformContent.value.email)
+
   /** 未激活弹窗联系管理员的方式；后端缺省回退到 registration.admin_contact */
   const activationContact = computed(() => {
     const c = activationContent.value.admin_contact.trim()
@@ -105,7 +120,7 @@ export const useSiteConfigStore = defineStore('site-config', () => {
           .catch(() => true),
         // 提示文案 + 管理员联系方式：接口异常保留默认文案
         apiClient
-          .get<{ registration?: RegistrationContent; activation?: ActivationContent; easter_egg?: EasterEggContent }>('/site-content')
+          .get<{ registration?: RegistrationContent; activation?: ActivationContent; easter_egg?: EasterEggContent; platform?: PlatformContent }>('/site-content')
           .then((res) => res.data)
           .catch(() => undefined),
       ])
@@ -113,6 +128,7 @@ export const useSiteConfigStore = defineStore('site-config', () => {
       if (content?.registration) registrationContent.value = content.registration
       if (content?.activation) activationContent.value = content.activation
       if (content?.easter_egg) easterEggContent.value = content.easter_egg
+      if (content?.platform) platformContent.value = content.platform
       loaded.value = true
     })()
     loadingPromise = p
@@ -128,6 +144,7 @@ export const useSiteConfigStore = defineStore('site-config', () => {
     registrationContent,
     activationContent,
     easterEggContent,
+    platformContent,
     loaded,
     allowRegistration,
     registrationDisabledMessage,
@@ -142,6 +159,9 @@ export const useSiteConfigStore = defineStore('site-config', () => {
     easterEggMessage,
     easterEggButtonText,
     easterEggToast,
+    platformGithub,
+    platformAuthor,
+    platformEmail,
     registrationDisabledTip,
     fetchSiteConfig,
   }

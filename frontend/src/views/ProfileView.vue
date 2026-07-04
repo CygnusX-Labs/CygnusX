@@ -5,6 +5,7 @@
       <n-descriptions :column="2" bordered>
         <n-descriptions-item label="用户ID">{{ user?.id }}</n-descriptions-item>
         <n-descriptions-item label="用户名">{{ user?.username }}</n-descriptions-item>
+        <n-descriptions-item label="昵称">{{ user?.nickname || '未设置' }}</n-descriptions-item>
         <n-descriptions-item label="邮箱">{{ user?.email }}</n-descriptions-item>
         <n-descriptions-item label="角色">{{ roleLabel }}</n-descriptions-item>
         <n-descriptions-item label="账户状态">

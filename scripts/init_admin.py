@@ -81,7 +81,7 @@ async def main() -> None:
 
             cookie_service = CookieService(session)
             await cookie_service.get_or_create_account(created.id)
-            print(f"🍪 已为管理员创建饼干账户 (初始余额: {settings.initial_cookie_balance})")
+            print(f"🥫 已为管理员创建饼干账户 (初始余额: {settings.initial_cookie_balance})")
 
     print("✅ 管理员账号创建成功")
     print(f"   用户名: {created.username}")

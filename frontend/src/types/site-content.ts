@@ -48,10 +48,18 @@ export interface ActivationContent {
 export interface EasterEggContent {
   /** 彩蛋弹窗的庆祝文案 */
   message: string
-  /** 悬浮召唤按钮文案（关于页右下角“召唤星际猫咪”） */
+  /** 悬浮召唤按钮文案（关于页右下角”召唤星际猫咪”） */
   button_text: string
   /** 点击召唤按钮后的 Toast 提示文案 */
   toast: string
+}
+
+/** 平台元信息：作者、联系方式、GitHub 等 */
+export interface PlatformContent {
+  title: string
+  author: string
+  email: string
+  github: string
 }
 
 export interface SiteContent {
@@ -64,4 +72,6 @@ export interface SiteContent {
   activation?: ActivationContent
   /** 关于页彩蛋文案（可选） */
   easter_egg?: EasterEggContent
+  /** 平台元信息（可选） */
+  platform?: PlatformContent
 }

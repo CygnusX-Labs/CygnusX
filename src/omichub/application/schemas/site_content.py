@@ -72,6 +72,18 @@ class EasterEggContent(OmicsHubBaseSchema):
     toast: str = "🎉 星际守护者已响应召唤！快看看屏幕上留下的足迹吧～ ✨"
 
 
+class PlatformContent(OmicsHubBaseSchema):
+    """平台元信息（公开读取）。
+
+    由 data/OmicHub.yaml 的 platform 段驱动，提供作者、联系方式、GitHub 等。
+    """
+
+    title: str = "OmicHub"
+    author: str = ""
+    email: str = ""
+    github: str = ""
+
+
 class SiteContentDTO(OmicsHubBaseSchema):
     """首页文案（公开读取）"""
 
@@ -84,3 +96,4 @@ class SiteContentDTO(OmicsHubBaseSchema):
         admin_contact="",
     )
     easter_egg: EasterEggContent = EasterEggContent()
+    platform: PlatformContent = PlatformContent()

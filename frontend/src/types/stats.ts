@@ -52,3 +52,39 @@ export interface FailedTask {
   error_message: string
   created_at: string | null
 }
+
+/** 全局磁盘容量（data_root 所在挂载盘） */
+export interface StorageGlobalUsage {
+  /** 总容量（字节） */
+  total: number
+  /** 已用空间（字节） */
+  used: number
+  /** 剩余空间（字节） */
+  free: number
+  /** 已用百分比（0-100） */
+  used_percent: number
+}
+
+/** 单个用户的空间占用 */
+export interface UserStorageUsage {
+  /** 用户 ID（users/ 下的目录名） */
+  user_id: string
+  /** 用户名（库中查不到时回退为目录名） */
+  username: string
+  /** 占用磁盘空间（字节） */
+  size: number
+  /** 占所有用户占用总和的百分比（0-100） */
+  percent: number
+}
+
+/** 存储监控聚合响应 */
+export interface StorageUsage {
+  /** 本次统计的数据根目录 */
+  data_root: string
+  /** 全局磁盘容量 */
+  global_usage: StorageGlobalUsage
+  /** 占用最多的前 N 个用户（降序） */
+  users: UserStorageUsage[]
+  /** 扫描到的用户目录总数 */
+  users_total: number
+}

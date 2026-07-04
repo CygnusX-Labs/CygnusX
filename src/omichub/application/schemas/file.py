@@ -37,6 +37,13 @@ class QuotaResponse(BaseModel):
     percent: float
 
 
+class SyncResponse(BaseModel):
+    """文件同步结果 — 扫描磁盘新增登记的文件数与字节数"""
+
+    added: int = 0
+    added_size: int = 0
+
+
 # ===== 分块上传 =====
 class UploadInitRequest(BaseModel):
     """上传初始化请求"""

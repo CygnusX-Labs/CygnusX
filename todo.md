@@ -583,7 +583,7 @@
   - [x] 修复: _update_model 覆盖 append_log 写入的日志 (logs 不再由 save 覆盖)
   - [x] 修复: append_log 未存 timestamp 导致 _to_entity 转换报错
 
-### 优先级 P1 — 饼干积分系统（🍪 Cookie）✅ 2026-06-25 端到端验证通过
+### 优先级 P1 — 饼干积分系统（🥫 Cookie）✅ 2026-06-25 端到端验证通过
 
 > 文档: docs/modules/12_cookie_backend.md + 13_cookie_frontend.md + 14_cookie_integration.md
 > 架构适配: 设计文档用 ORM 贫血模型，本项目适配为 DDD 模式 (Pydantic 实体 + 仓储接口 + Python 端统计维护替代 SQL 触发器)
@@ -617,7 +617,7 @@
 - [x] config.py 新增: enable_cookie_system / initial_cookie_balance / cookie_sandbox_base_cost
 
 #### 集成点 (依赖任务闭环 P0 + 沙盒 P2)
-- [x] 集成点#1: 用户注册自动建户 + 赠送 INITIAL_COOKIE_BALANCE (100🍪) — auth.py register 端点
+- [x] 集成点#1: 用户注册自动建户 + 赠送 INITIAL_COOKIE_BALANCE (100🥫) — auth.py register 端点
 - [x] 集成点#2: 任务提交注入 Cookie 检查 + 预扣 (余额不足返回 400 BusinessError) — task_service.submit
 - [x] 集成点#3: Celery 任务完成回调结算 (多退少补) — analysis.py _execute_snakemake
 - [x] 集成点#4: 任务取消退还预扣饼干 — task_service.cancel_task

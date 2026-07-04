@@ -6,11 +6,12 @@ import apiClient from '@/api/client'
 import {
   CloudUploadOutline, SearchOutline, FolderOpenOutline, ScanOutline,
   CloudDownloadOutline, GlobeOutline, LinkOutline, GridOutline, ListOutline,
-  DocumentTextOutline,
+  DocumentTextOutline, RefreshOutline, EllipsisHorizontalOutline, DownloadOutline,
+  CreateOutline, TrashOutline,
 } from '@vicons/ionicons5'
 import {
-  NButton, NDataTable, NIcon, NInput, NSelect, NSpin, NTag, NUpload,
-  useDialog, useMessage,
+  NButton, NBreadcrumb, NBreadcrumbItem, NDataTable, NDropdown, NIcon, NInput,
+  NSelect, NSpin, NTag, NUpload, useDialog, useMessage,
 } from 'naive-ui'
 import type { DataTableColumns, UploadFileInfo } from 'naive-ui'
 import DirectoryTree from '@/components/DirectoryTree.vue'
@@ -18,6 +19,7 @@ import OverviewStats from '@/components/data-management/OverviewStats.vue'
 import StorageOverviewWidget from '@/components/data-management/StorageOverviewWidget.vue'
 import RecentActivitiesWidget from '@/components/data-management/RecentActivitiesWidget.vue'
 import FileDetailPanel from '@/components/data-management/FileDetailPanel.vue'
+import JBrowseLinkGenerator from '@/components/data-management/JBrowseLinkGenerator.vue'
 import { useUploadStore } from '@/stores/upload'
 import { storeToRefs } from 'pinia'
 
@@ -34,12 +36,14 @@ const samplesCount = ref(0)
 const quota = ref<QuotaInfo>({ used: 0, total: 0, percent: 0 })
 const loading = ref(false)
 const currentDirectory = ref('')
+const siderWidth = ref(280)
 
 // Finder 状态
 const viewMode = ref<'list' | 'grid'>('list')
 const searchQuery = ref('')
 const sortBy = ref<'name' | 'size' | 'time'>('time')
 const selectedFile = ref<DataFile | null>(null)
+const showJbrowseLinkGen = ref(false)
 
 function formatSize(bytes: number) {
   if (!bytes) return '0 B'
@@ -67,6 +71,21 @@ const fileCounts = computed<Record<string, number>>(() => {
 const directoryFiles = computed(() =>
   allFiles.value.filter((f) => (f.directory || '') === currentDirectory.value),
 )
+
+/** 面包屑：根目录 > seg1 > seg2 ...，可点击跳转 */
+const breadcrumbItems = computed(() => {
+  const segs = currentDirectory.value.split('/').filter(Boolean)
+  const items: { label: string; path: string }[] = [{ label: '根目录', path: '' }]
+  let acc = ''
+  for (const s of segs) {
+    acc = acc ? `${acc}/${s}` : s
+    items.push({ label: s, path: acc })
+  }
+  return items
+})
+function navigateTo(path: string) {
+  currentDirectory.value = path
+}
 
 /** 搜索 + 排序后的展示列表 */
 const displayFiles = computed(() => {
@@ -111,13 +130,37 @@ function fileIcon(fileType: string) {
   return ScanOutline
 }
 
+/** 文件名后缀 → emoji 图标 */
+function fileEmoji(name: string): string {
+  const n = name.toLowerCase()
+  if (n.endsWith('.zip')) return '📦'
+  if (n.endsWith('.tsv') || n.endsWith('.csv')) return '📊'
+  if (n.endsWith('.fastq.gz') || n.endsWith('.fq.gz') || n.endsWith('.fastq') || n.endsWith('.fq')) return '🧬'
+  if (n.endsWith('.log')) return '📜'
+  return '📄'
+}
+
+function rowActionOptions() {
+  return [
+    { label: '下载', key: 'download', icon: () => h(NIcon, null, { default: () => h(DownloadOutline) }) },
+    { label: '重命名', key: 'rename', icon: () => h(NIcon, null, { default: () => h(CreateOutline) }) },
+    { label: '删除', key: 'delete', icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) },
+  ]
+}
+
+function onRowAction(key: string, row: DataFile) {
+  if (key === 'download') downloadFile(row)
+  else if (key === 'rename') message.info('重命名功能即将上线')
+  else if (key === 'delete') confirmDelete(row)
+}
+
 const columns = computed<DataTableColumns<DataFile>>(() => [
   {
     title: '文件名',
     key: 'original_name',
     render: (row) =>
       h('div', { class: 'file-name-cell' }, [
-        h(NIcon, { size: 18, color: '#165DFF' }, { default: () => h(fileIcon(row.file_type)) }),
+        h('span', { class: 'file-emoji' }, fileEmoji(row.original_name)),
         h('span', null, row.original_name),
       ]),
   },
@@ -129,6 +172,29 @@ const columns = computed<DataTableColumns<DataFile>>(() => [
     width: 170,
     render: (row) => (row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '-'),
   },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 70,
+    render: (row) =>
+      h(
+        NDropdown,
+        {
+          trigger: 'click',
+          placement: 'bottom-end',
+          options: rowActionOptions(),
+          onSelect: (k: string) => onRowAction(k, row),
+        },
+        {
+          default: () =>
+            h(
+              NButton,
+              { size: 'tiny', quaternary: true, onClick: (e: Event) => e.stopPropagation() },
+              { icon: () => h(NIcon, null, { default: () => h(EllipsisHorizontalOutline) }) },
+            ),
+        },
+      ),
+  },
 ])
 
 const sortOptions = [
@@ -136,6 +202,46 @@ const sortOptions = [
   { label: '按名称排序', value: 'name' },
   { label: '按大小排序', value: 'size' },
 ]
+
+const syncing = ref(false)
+
+/** 同步磁盘文件到 file_records（只增不删），silent=true 用于进页面自动同步（不弹提示） */
+async function syncFiles(silent = false) {
+  syncing.value = true
+  try {
+    const res = await apiClient.post<{ added: number; added_size: number }>('/files/sync')
+    if (!silent) {
+      message.success(
+        res.data.added > 0 ? `同步完成，新增 ${res.data.added} 个文件` : '同步完成，无新增文件',
+      )
+    }
+  } catch {
+    if (!silent) message.error('同步失败，请稍后重试')
+  } finally {
+    syncing.value = false
+    await fetchAll()
+  }
+}
+
+/** 拖拽调整左侧目录树宽度（200~480px） */
+function startResize(e: MouseEvent) {
+  e.preventDefault()
+  const startX = e.clientX
+  const startW = siderWidth.value
+  const onMove = (ev: MouseEvent) => {
+    siderWidth.value = Math.min(480, Math.max(200, startW + ev.clientX - startX))
+  }
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
 
 async function fetchAll() {
   loading.value = true
@@ -184,7 +290,7 @@ async function downloadFile(row: DataFile) {
 }
 
 function confirmDelete(row: DataFile) {
-  dialog.warning({
+  dialog.error({
     title: '删除文件',
     content: `确认删除「${row.original_name}」？将释放 ${formatSize(row.size)} 空间。`,
     positiveText: '删除',
@@ -234,10 +340,6 @@ async function openMoveModal(row: DataFile) {
   })
 }
 
-function openInIGV(row: DataFile) {
-  router.push({ path: '/tools/igv', query: { bam: row.original_name, id: row.id } })
-}
-
 function handleDropUpload({ file }: { file: UploadFileInfo }): boolean {
   if (file.file) {
     uploadStore.open(currentDirectory.value)
@@ -255,7 +357,7 @@ const supportedFormats = ['FASTQ', 'BAM', 'VCF', 'CRAM', 'ZIP']
 watch(completedSeq, () => { fetchAll() })
 watch(currentDirectory, () => { selectedFile.value = null })
 
-onMounted(fetchAll)
+onMounted(() => syncFiles(true))
 </script>
 
 <template>
@@ -270,18 +372,31 @@ onMounted(fetchAll)
 
     <!-- Finder 三栏 -->
     <div class="finder-grid">
-      <!-- 左：目录树 -->
-      <aside class="col-tree">
+      <!-- 左：目录树（可拖拽调宽） -->
+      <aside class="col-tree" :style="{ width: siderWidth + 'px' }">
         <DirectoryTree
           v-model="currentDirectory"
           ref="treeRef"
           :file-counts="fileCounts"
           @refresh-files="fetchAll"
         />
+        <div class="resize-handle" title="拖拽调整宽度" @mousedown="startResize"></div>
       </aside>
 
       <!-- 中：Data Workspace -->
       <section class="col-workspace">
+        <!-- 面包屑导航 -->
+        <div class="breadcrumb-bar">
+          <NBreadcrumb>
+            <NBreadcrumbItem
+              v-for="item in breadcrumbItems"
+              :key="item.path"
+              @click="navigateTo(item.path)"
+            >
+              {{ item.label }}
+            </NBreadcrumbItem>
+          </NBreadcrumb>
+        </div>
         <!-- 工具栏 -->
         <div class="toolbar">
           <div class="toolbar-left">
@@ -292,6 +407,14 @@ onMounted(fetchAll)
             <NButton size="small" @click="treeRef?.openCreateModal?.(currentDirectory)">
               <template #icon><NIcon><FolderOpenOutline /></NIcon></template>
               新建文件夹
+            </NButton>
+            <NButton size="small" :loading="syncing" @click="syncFiles(false)">
+              <template #icon><NIcon><RefreshOutline /></NIcon></template>
+              同步
+            </NButton>
+            <NButton size="small" @click="showJbrowseLinkGen = true">
+              <template #icon><NIcon><LinkOutline /></NIcon></template>
+              JBrowse 直链
             </NButton>
             <NSelect
               v-model:value="sortBy"
@@ -344,7 +467,6 @@ onMounted(fetchAll)
                 class="grid-card"
                 :class="{ active: selectedFile?.id === f.id }"
                 @click="selectFile(f)"
-                @dblclick="f.file_type === 'bam' ? openInIGV(f) : null"
               >
                 <div class="grid-icon">
                   <NIcon :size="28" color="#165DFF"><component :is="fileIcon(f.file_type)" /></NIcon>
@@ -412,6 +534,7 @@ onMounted(fetchAll)
 
       <!-- 右：详情面板 -->
       <aside class="col-detail">
+        <JBrowseLinkGenerator v-model:show="showJbrowseLinkGen" :files="displayFiles" />
         <FileDetailPanel
           v-if="selectedFile"
           :file="selectedFile"
@@ -419,7 +542,6 @@ onMounted(fetchAll)
           @download="downloadFile"
           @move="openMoveModal"
           @delete="confirmDelete"
-          @open-igv="openInIGV"
         />
         <template v-else>
           <StorageOverviewWidget
@@ -438,15 +560,20 @@ onMounted(fetchAll)
 <style scoped>
 .finder-page {
   background: var(--page-bg, #F7F9FC);
-  min-height: 100%;
-  padding: 20px;
+  flex: 1;
+  min-height: 0;
+  padding: 16px;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
 }
 .finder-grid {
-  display: grid;
-  grid-template-columns: 240px 1fr 300px;
+  flex: 1;
+  display: flex;
   gap: 16px;
-  align-items: start;
+  min-height: 0; /* 允许子项收缩并独立滚动 */
 }
 .col-tree,
 .col-workspace,
@@ -455,19 +582,51 @@ onMounted(fetchAll)
   border-radius: var(--radius-lg, 16px);
   box-shadow: var(--shadow-soft, 0 4px 12px rgba(0, 0, 0, 0.05));
   border: 1px solid rgba(229, 230, 235, 0.5);
+  min-height: 0;
 }
 .col-tree {
-  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+  overflow: visible; /* 让 resize-handle 可超出右边缘 */
+}
+.resize-handle {
+  position: absolute;
+  top: 0;
+  right: -6px;
+  width: 12px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5;
+}
+.resize-handle:hover,
+.resize-handle:active {
+  background: rgba(22, 93, 255, 0.12);
+  border-radius: 4px;
 }
 .col-workspace {
+  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+.breadcrumb-bar {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--neutral-border, #e5e6eb);
+  flex-shrink: 0;
 }
 .col-detail {
+  width: 300px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  overflow-y: auto;
+}
+.file-emoji {
+  font-size: 16px;
+  line-height: 1;
+  margin-right: 6px;
 }
 
 /* 工具栏 */
@@ -479,6 +638,7 @@ onMounted(fetchAll)
   padding: 12px 16px;
   border-bottom: 1px solid var(--neutral-border, #e5e6eb);
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 .toolbar-left,
 .toolbar-right {
@@ -495,6 +655,8 @@ onMounted(fetchAll)
 }
 .workspace-body {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding: 8px 12px 16px;
 }
 .workspace-body :deep(.n-spin-content) {

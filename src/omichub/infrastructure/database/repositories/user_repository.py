@@ -29,6 +29,7 @@ class SqlAlchemyUserRepository(IUserRepository):
             status=UserStatus(db_user.status),
             workspace_id=db_user.workspace_id,
             avatar_url=db_user.avatar_url,
+            nickname=db_user.nickname,
             preferences=db_user.preferences or {},
             last_login_at=db_user.last_login_at,
             storage_quota=db_user.storage_quota,
@@ -93,6 +94,7 @@ class SqlAlchemyUserRepository(IUserRepository):
             )
             db_user.workspace_id = user.workspace_id
             db_user.avatar_url = user.avatar_url
+            db_user.nickname = user.nickname
             db_user.preferences = user.preferences
             db_user.last_login_at = user.last_login_at
             db_user.storage_quota = user.storage_quota
@@ -110,6 +112,7 @@ class SqlAlchemyUserRepository(IUserRepository):
                 status=user.status.value if isinstance(user.status, UserStatus) else user.status,
                 workspace_id=user.workspace_id,
                 avatar_url=user.avatar_url,
+                nickname=user.nickname,
                 preferences=user.preferences,
                 last_login_at=user.last_login_at,
                 storage_quota=user.storage_quota,
@@ -135,6 +138,34 @@ class SqlAlchemyUserRepository(IUserRepository):
             update(UserModel)
             .where(UserModel.id == user_id)
             .values(used_storage=UserModel.used_storage + delta)
+            .returning(UserModel.used_storage)
+        )
+        result = await self.session.execute(stmt)
+        new_value = int(result.scalar_one())
+        await self.session.commit()
+        return new_value
+
+    async def recompute_used_storage(self, user_id: uuid.UUID) -> int:
+        """按 file_records(active) 重算 used_storage，修正配额漂移。
+
+        下载登记/同步后调用，亦可作配额自愈。返回重算后的值。
+        """
+        from sqlalchemy import func, update
+
+        from omichub.infrastructure.database.models.file import FileRecordModel
+
+        sum_stmt = (
+            select(func.coalesce(func.sum(FileRecordModel.size), 0))
+            .where(
+                FileRecordModel.user_id == user_id,
+                FileRecordModel.status == "active",
+            )
+            .scalar_subquery()
+        )
+        stmt = (
+            update(UserModel)
+            .where(UserModel.id == user_id)
+            .values(used_storage=sum_stmt)
             .returning(UserModel.used_storage)
         )
         result = await self.session.execute(stmt)

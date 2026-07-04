@@ -85,9 +85,9 @@ function usedGb(bytes: number): string {
         </div>
 
         <NSpace :size="24" class="acct-stats">
-          <NStatistic label="当前余额" :value="account.balance"><template #suffix>🍪</template></NStatistic>
-          <NStatistic label="累计充值" :value="totalRecharge"><template #suffix>🍪</template></NStatistic>
-          <NStatistic label="累计消耗" :value="totalSpend"><template #suffix>🍪</template></NStatistic>
+          <NStatistic label="当前余额" :value="account.balance"><template #suffix>🥫</template></NStatistic>
+          <NStatistic label="累计充值" :value="totalRecharge"><template #suffix>🥫</template></NStatistic>
+          <NStatistic label="累计消耗" :value="totalSpend"><template #suffix>🥫</template></NStatistic>
         </NSpace>
 
         <!-- 时间线 -->
@@ -103,13 +103,13 @@ function usedGb(bytes: number): string {
                 <div class="txn-top">
                   <span class="txn-desc">{{ t.description || t.txn_type }}</span>
                   <span class="txn-amount" :class="t.amount >= 0 ? 'plus' : 'minus'">
-                    {{ t.amount >= 0 ? '+' : '' }}{{ t.amount }} 🍪
+                    {{ t.amount >= 0 ? '+' : '' }}{{ t.amount }} 🥫
                   </span>
                 </div>
                 <div class="txn-foot">
                   <NTag size="tiny" :bordered="false">{{ metaOf(t.source_type).label }}</NTag>
                   <span class="txn-date">{{ fmtDate(t.created_at) }}</span>
-                  <span class="txn-after">余额 {{ t.balance_after }} 🍪</span>
+                  <span class="txn-after">余额 {{ t.balance_after }} 🥫</span>
                 </div>
               </div>
             </NTimelineItem>

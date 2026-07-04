@@ -15,6 +15,8 @@ const authStore = useAuthStore()
 const message = useMessage()
 
 const isAdmin = computed(() => authStore.user?.role === 'admin')
+// 展示名：优先昵称，空则降级为用户名（与首页欢迎语一致）
+const displayName = computed(() => authStore.user?.nickname || authStore.user?.username || '')
 const regEnabled = ref(true)
 const regSaving = ref(false)
 
@@ -27,6 +29,7 @@ const savingPassword = ref(false)
 const profileForm = ref({
   username: '',
   email: '',
+  nickname: '',
   avatar_url: '',
 })
 
@@ -85,6 +88,7 @@ onMounted(async () => {
   if (authStore.user) {
     profileForm.value.username = authStore.user.username
     profileForm.value.email = authStore.user.email
+    profileForm.value.nickname = authStore.user.nickname || ''
     profileForm.value.avatar_url = authStore.user.avatar_url || ''
   }
   if (isAdmin.value) await fetchSiteSettings()
@@ -124,6 +128,7 @@ async function saveProfile() {
     await apiClient.put(`/users/${userId.value}`, {
       username: profileForm.value.username,
       email: profileForm.value.email,
+      nickname: profileForm.value.nickname || null,
       avatar_url: profileForm.value.avatar_url || null,
     })
     await authStore.fetchUser()
@@ -170,7 +175,7 @@ async function savePassword() {
               <NIcon :size="36"><PersonOutline /></NIcon>
             </NAvatar>
             <div class="avatar-info">
-              <div class="avatar-name">{{ authStore.user?.username }}</div>
+              <div class="avatar-name">{{ displayName }}</div>
               <NTag size="small" :type="authStore.user?.role === 'admin' ? 'warning' : 'default'">
                 {{ authStore.user?.role }}
               </NTag>
@@ -180,6 +185,9 @@ async function savePassword() {
           <NForm ref="profileFormRef" :model="profileForm" :rules="profileRules" label-placement="top">
             <NFormItem label="用户名" path="username">
               <NInput v-model:value="profileForm.username" placeholder="用户名" />
+            </NFormItem>
+            <NFormItem label="昵称" path="nickname">
+              <NInput v-model:value="profileForm.nickname" placeholder="留空则使用用户名" />
             </NFormItem>
             <NFormItem label="邮箱" path="email">
               <NInput v-model:value="profileForm.email" placeholder="邮箱" />

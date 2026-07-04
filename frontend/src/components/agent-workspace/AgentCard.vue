@@ -29,6 +29,9 @@ const caps = computed(() => [
           <NTag size="tiny" round :bordered="false" :color="{ color: agent.color, textColor: '#fff' }">
             {{ CATEGORY_LABELS[agent.category] }}
           </NTag>
+          <NTag v-if="agent.model_engine" size="tiny" round :bordered="false" type="warning">
+            {{ agent.model_engine }}
+          </NTag>
           <NTag v-if="mountedMcps.length" size="tiny" round :bordered="false" type="info">
             MCP×{{ mountedMcps.length }}
           </NTag>

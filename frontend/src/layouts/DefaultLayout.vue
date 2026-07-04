@@ -148,8 +148,9 @@ interface NavItem {
 
 const topNavItems = computed<NavItem[]>(() => [
   { key: 'dashboard', label: '控制台', to: '/dashboard', icon: HomeOutline },
-  { key: 'flows', label: '分析流程中心', to: '/flows', icon: FlaskOutline },
+  { key: 'flows', label: '分析中心', to: '/flows', icon: FlaskOutline },
   { key: 'knowledge', label: '实验室知识库', to: '/knowledge', icon: DocumentTextOutline },
+  { key: 'about', label: '关于', to: '/about', icon: InformationCircleOutline },
 ])
 
 const mainNavItems = computed<NavItem[]>(() => [
@@ -219,6 +220,7 @@ function isTopActive(item: NavItem): boolean {
   if (item.key === 'dashboard') return route.path === '/dashboard'
   if (item.key === 'flows') return route.path.startsWith('/flows')
   if (item.key === 'knowledge') return route.path.startsWith('/knowledge')
+  if (item.key === 'about') return route.path === '/about'
   return false
 }
 
@@ -687,6 +689,7 @@ const UserAvatar = () => {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  overflow: hidden;
   background: var(--neutral-bg);
 }
 
@@ -1122,6 +1125,7 @@ const UserAvatar = () => {
   display: flex;
   flex-direction: column;
   position: relative;
+  overflow: hidden !important;
 }
 
 .main-layout :deep(.n-layout-content) {
@@ -1130,6 +1134,7 @@ const UserAvatar = () => {
   flex-direction: column;
   min-height: 0;
   position: relative;
+  overflow: hidden !important;
 }
 
 /* 隐藏 Naive UI LayoutSider 默认 border 以使用自定义边框 */

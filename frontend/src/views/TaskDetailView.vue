@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { Task, TaskLog } from '@/types'
+import type { RunProgress } from '@/types/download'
 import apiClient from '@/api/client'
+import { useDownloadProgress } from '@/composables/useDownloadProgress'
 import {
   NAlert,
   NBreadcrumb,
@@ -35,6 +37,10 @@ const socket = ref<WebSocket | null>(null)
 // 记录上次轮询到的任务状态，用于检测「运行中 → 已完成」的状态转换并触发提示
 const lastStatus = ref<string>('')
 
+// 下载进度：逐 run 进度条
+const { progress: downloadProgress, startPolling: startProgressPolling, stopPolling: stopProgressPolling } =
+  useDownloadProgress(taskId)
+
 const dag = ref<{ status: string; format?: string; content?: string; error?: string } | null>(null)
 const dagLoading = ref(false)
 
@@ -64,6 +70,39 @@ const statusText = computed(() => {
 
 // 数据下载任务的 flow_id 标识（与后端 DOWNLOAD_FLOW_ID 一致）
 const DOWNLOAD_FLOW_ID = 'ebi_download'
+
+const isDownloadTask = computed(() => task.value?.flow_id === DOWNLOAD_FLOW_ID)
+
+// 阶段标签映射
+function stageLabel(stage: string): string {
+  const map: Record<string, string> = {
+    pending: '等待',
+    downloading: '下载中',
+    extracting: '解压中',
+    compressing: '压缩中',
+    completed: '完成',
+    failed: '失败',
+  }
+  return map[stage] || stage
+}
+
+function stageTagType(stage: string): 'default' | 'info' | 'warning' | 'success' | 'error' {
+  const map: Record<string, 'default' | 'info' | 'warning' | 'success' | 'error'> = {
+    pending: 'default',
+    downloading: 'info',
+    extracting: 'warning',
+    compressing: 'warning',
+    completed: 'success',
+    failed: 'error',
+  }
+  return map[stage] || 'default'
+}
+
+// 将 runs dict 转为数组便于 v-for
+const runList = computed<RunProgress[]>(() => {
+  if (!downloadProgress.value?.runs) return []
+  return Object.values(downloadProgress.value.runs)
+})
 
 // 数据路径：仅任务成功且有 result_path 时才有值，用于概览展示与复制
 const dataPath = computed(() => {
@@ -126,7 +165,10 @@ async function fetchTask(silent = false) {
     // 仅首次（非静默）拉取历史日志；运行中由 WebSocket 维护 logs，
     // 轮询只更新 task（status/progress），不覆盖 logs 以防日志面板跳动/丢失在途行
     if (!silent) logs.value = res.data.logs || []
-    if (isTerminalStatus(res.data.status)) stopPolling()
+    if (isTerminalStatus(res.data.status)) {
+      stopPolling()
+      stopProgressPolling()
+    }
   } catch (e: any) {
     if (!silent) error.value = e.response?.data?.detail || '获取任务详情失败'
   } finally {
@@ -190,19 +232,23 @@ onMounted(async () => {
   await fetchTask()
   connectWebSocket()
   if (!isTerminalStatus(task.value?.status)) startPolling()
+  if (isDownloadTask.value && !isTerminalStatus(task.value?.status)) startProgressPolling()
 })
 
 onUnmounted(() => {
   stopPolling()
+  stopProgressPolling()
   disconnectWebSocket()
 })
 
 watch(taskId, async () => {
   stopPolling()
+  stopProgressPolling()
   disconnectWebSocket()
   await fetchTask()
   connectWebSocket()
   if (!isTerminalStatus(task.value?.status)) startPolling()
+  if (isDownloadTask.value && !isTerminalStatus(task.value?.status)) startProgressPolling()
 })
 </script>
 
@@ -244,6 +290,32 @@ watch(taskId, async () => {
           :status="task.status === 'failed' ? 'error' : 'success'"
           :indicator-text-color="task.status === 'failed' ? 'var(--arco-danger)' : 'var(--arco-success)'"
         />
+
+        <!-- 逐 Run 进度（仅下载任务且 progress API 有数据时显示） -->
+        <div v-if="isDownloadTask && runList.length > 0" class="run-progress-section">
+          <h4 class="run-section-title">逐样本进度 ({{ runList.length }} runs)</h4>
+          <div class="run-list">
+            <div v-for="run in runList" :key="run.run_id" class="run-item">
+              <div class="run-header">
+                <span class="run-id">{{ run.run_id }}</span>
+                <NTag :type="stageTagType(run.stage)" size="small" round>
+                  {{ stageLabel(run.stage) }}
+                </NTag>
+              </div>
+              <NProgress
+                :percentage="Math.round(run.overall_percent)"
+                :status="run.stage === 'failed' ? 'error' : run.stage === 'completed' ? 'success' : 'default'"
+                :height="6"
+                :show-indicator="true"
+              />
+              <div class="stage-details">
+                <span>下载 {{ run.download.percent.toFixed(0) }}%</span>
+                <span>解压 {{ run.extraction.percent.toFixed(0) }}%</span>
+                <span>压缩 {{ run.compression.percent.toFixed(0) }}%</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </NSpace>
     </NCard>
 
@@ -389,5 +461,53 @@ watch(taskId, async () => {
   color: var(--neutral-text-3);
   text-align: center;
   padding: 48px;
+}
+
+/* 逐 Run 进度区 */
+.run-progress-section {
+  margin-top: 16px;
+}
+
+.run-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--neutral-text-1);
+  margin: 0 0 12px;
+}
+
+.run-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.run-item {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--neutral-bg-2, #f7f8fa);
+}
+
+.run-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.run-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--neutral-text-1);
+}
+
+.stage-details {
+  display: flex;
+  gap: 16px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--neutral-text-3);
 }
 </style>

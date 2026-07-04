@@ -30,6 +30,8 @@ class User(BaseModel):
     status: UserStatus = UserStatus.ACTIVE
     workspace_id: UUID | None = None
     avatar_url: str | None = None
+    # 昵称：展示用别名，空则前端降级为 username
+    nickname: str | None = None
     preferences: dict = Field(default_factory=dict)
     last_login_at: datetime | None = None
     # 存储配额（按用户隔离，默认 500 GiB）

@@ -89,7 +89,7 @@ class CookieService:
         account = await self._account_repo.save(account)
         await self._record_transaction(
             account, TransactionType.EARN, initial,
-            source_type="signup", description=f"新用户注册赠送 {initial} 🍪",
+            source_type="signup", description=f"新用户注册赠送 {initial} 🥫",
         )
         return account
 
@@ -112,7 +112,7 @@ class CookieService:
         return await self._record_transaction(
             account, TransactionType.FREEZE, -abs(amount),
             source_type=source_type, source_id=source_id,
-            description=description or f"预扣 {amount} 🍪 ({source_type}:{source_id})",
+            description=description or f"预扣 {amount} 🥫 ({source_type}:{source_id})",
         )
 
     async def settle(
@@ -128,13 +128,13 @@ class CookieService:
                 account, TransactionType.SPEND, -abs(diff),
                 source_type=source_type, source_id=source_id, task_type=task_type,
                 resource_cores=resource_cores, execution_seconds=execution_seconds,
-                description=f"结算补扣 {diff} 🍪 (实际{actual_cost}-预扣{pre_deducted})",
+                description=f"结算补扣 {diff} 🥫 (实际{actual_cost}-预扣{pre_deducted})",
             )
         elif diff < 0:
             return await self._record_transaction(
                 account, TransactionType.UNFREEZE, abs(diff),
                 source_type=source_type, source_id=source_id, task_type=task_type,
-                description=f"结算退还 {abs(diff)} 🍪 (预扣{pre_deducted}-实际{actual_cost})",
+                description=f"结算退还 {abs(diff)} 🥫 (预扣{pre_deducted}-实际{actual_cost})",
             )
         else:
             return await self._record_transaction(
@@ -152,7 +152,7 @@ class CookieService:
         return await self._record_transaction(
             account, TransactionType.REFUND, abs(amount),
             source_type=source_type, source_id=source_id,
-            description=description or f"退还预扣 {amount} 🍪",
+            description=description or f"退还预扣 {amount} 🥫",
         )
 
     async def freeze_account(self, user_id: UUID, reason: str, admin_id: UUID) -> CookieAccountDTO:
@@ -189,7 +189,7 @@ class CookieService:
         txn = await self._record_transaction(
             account, TransactionType.ADJUST, amount,
             source_type="admin", admin_id=admin_id, adjust_reason=reason,
-            description=f"管理员调整 {amount} 🍪: {reason}",
+            description=f"管理员调整 {amount} 🥫: {reason}",
         )
         return self._txn_to_dto(txn)
 

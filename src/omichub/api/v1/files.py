@@ -18,6 +18,7 @@ from omichub.application.schemas.file import (
     SampleCreateRequest,
     SampleDTO,
     SampleListResponse,
+    SyncResponse,
     UploadChunkResponse,
     UploadInitRequest,
     UploadInitResponse,
@@ -54,6 +55,18 @@ async def get_quota(
 ) -> QuotaResponse:
     """获取当前用户存储配额与已用空间"""
     return await service.get_quota(UUID(current_user_id))
+
+
+@router.post("/sync", response_model=SyncResponse, summary="同步磁盘文件到文件列表")
+async def sync_files(
+    current_user_id: CurrentUserId,
+    service: FileServiceDep,
+) -> SyncResponse:
+    """扫描当前用户目录，把磁盘有但未登记的文件登记进 file_records（只增不删），并重算配额。
+
+    用于手动放入的文件、旧任务未登记产物等。返回新增文件数与字节数。
+    """
+    return await service.sync_user_files(UUID(current_user_id))
 
 
 # ===== 用户目录 =====

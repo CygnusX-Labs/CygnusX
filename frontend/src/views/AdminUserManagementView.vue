@@ -185,7 +185,7 @@ const columns: DataTableColumns<AdminUser> = [
     render: (row) => {
       const bal = typeof row.cookie_balance === 'number' ? row.cookie_balance : 0
       const cls = bal < 0 ? 'cookie-danger' : bal < 50 ? 'cookie-warn' : 'cookie-normal'
-      return h('span', { class: ['cookie-balance', cls] }, `${bal} 🍪`)
+      return h('span', { class: ['cookie-balance', cls] }, `${bal} 🥫`)
     },
   },
   {

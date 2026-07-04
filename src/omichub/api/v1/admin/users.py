@@ -113,6 +113,11 @@ async def create_user(
 
         await CookieService(db).get_or_create_account(saved.id)
 
+    # 初始化用户默认目录（raw_data/workspace/temp），使新用户进数据管理页即见
+    from omichub.application.services.file_service import FileService
+
+    await FileService(db).ensure_default_directories(saved.id)
+
     return {
         "id": str(saved.id),
         "username": saved.username,
@@ -150,6 +155,11 @@ async def approve_user(
 
         await CookieService(db).get_or_create_account(user.id)
         await db.flush()
+
+    # 初始化用户默认目录（raw_data/workspace/temp），使新用户进数据管理页即见
+    from omichub.application.services.file_service import FileService
+
+    await FileService(db).ensure_default_directories(user.id)
 
     return {"id": str(user.id), "username": user.username, "status": user.status}
 

@@ -45,7 +45,8 @@ const entryMeta: Record<string, { icon: any; iconBg: string; to: string }> = {
 const router = useRouter()
 const authStore = useAuthStore()
 
-const username = computed(() => authStore.user?.username || '')
+// 展示名：优先昵称，未设置或为空则降级为用户名
+const displayName = computed(() => authStore.user?.nickname || authStore.user?.username || '')
 const isAdmin = computed(() => authStore.user?.role === 'admin')
 
 // 根据当前时段返回问候语
@@ -120,7 +121,7 @@ onMounted(async () => {
         </NIcon>
       </div>
       <div class="hero-content">
-        <p class="hero-greeting">{{ greeting }}{{ username ? '，' + username : '' }} 👋</p>
+        <p class="hero-greeting">{{ greeting }}{{ displayName ? '，' + displayName : '' }} 👋</p>
         <h1 class="hero-title">{{ content.hero.title }}</h1>
         <p class="hero-desc">
           {{ content.hero.description }}

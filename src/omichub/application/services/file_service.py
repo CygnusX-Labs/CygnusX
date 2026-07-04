@@ -27,6 +27,7 @@ from omichub.application.schemas.file import (
     SampleCreateRequest,
     SampleDTO,
     SampleListResponse,
+    SyncResponse,
     UploadChunkResponse,
     UploadInitRequest,
     UploadInitResponse,
@@ -75,6 +76,37 @@ def _detect_file_type(filename: str) -> FileType:
     if name_lower.endswith((".png", ".jpg", ".jpeg", ".gif", ".svg")):
         return FileType.IMAGE
     return FileType.OTHER
+
+
+async def ensure_directory_chain(session: AsyncSession, user_id: UUID, path: str) -> None:
+    """确保 path 及其各级父目录在 user_directories 中存在（幂等）。
+
+    path 形如 ``raw_data/PRJNA1259417``。逐段创建缺失的 Directory 记录；系统默认目录段
+    （raw_data/workspace/temp）标记 is_system=True，其余为用户数据目录。
+    供文件同步与下载产物登记共用。
+    """
+    repo = DirectoryRepositoryImpl(session)
+    parts = [p for p in path.split("/") if p and p not in ("", ".", "..")]
+    parent: str | None = None
+    cumulative: list[str] = []
+    for p in parts:
+        cumulative.append(p)
+        cur_path = "/".join(cumulative)
+        if await repo.get_by_path(user_id, cur_path) is not None:
+            parent = cur_path
+            continue
+        await repo.save(
+            Directory(
+                id=uuid.uuid4(),
+                user_id=user_id,
+                path=cur_path,
+                name=p,
+                parent_path=parent,
+                # 仅顶层系统默认目录标 is_system；同名嵌套子目录（如 downloads/raw_data）不算
+                is_system=(p in SYSTEM_DIRECTORIES and parent is None),
+            )
+        )
+        parent = cur_path
 
 
 class FileService:
@@ -519,6 +551,95 @@ class FileService:
             if file_type is None or f.file_type.value == file_type
         ]
         return result
+
+    # ------------------------------------------------------------------
+    # 文件同步（磁盘 → file_records，只增不删）
+    # ------------------------------------------------------------------
+    async def sync_user_files(self, user_id: UUID) -> SyncResponse:
+        """扫描用户目录，把磁盘有但 file_records 没有的文件登记进来（只增不删），并重算配额。
+
+        用于：手动放入的文件、旧任务未登记的产物等。幂等：同 storage_path 已存在则跳过。
+        directory 推导见 ``_derive_directory``（raw/ 前缀剥离匹配上传，raw_data/ 等保留匹配下载）。
+        """
+        from sqlalchemy import select
+
+        from omichub.infrastructure.database.models.file import FileRecordModel
+
+        user_root = self._storage_root / "users" / str(user_id)
+        if not user_root.exists():
+            await self._users.recompute_used_storage(user_id)
+            return SyncResponse(added=0, added_size=0)
+
+        # 一次性取已有 storage_path 集合，避免逐文件查询
+        res = await self._session.execute(
+            select(FileRecordModel.storage_path).where(FileRecordModel.user_id == user_id)
+        )
+        existing: set[str] = {row[0] for row in res.all()}
+
+        added = 0
+        added_size = 0
+        for f in user_root.rglob("*"):
+            if not f.is_file():
+                continue
+            # 跳过隐藏目录/文件（.tmp 上传分片、.qoder 等 IDE 元数据）
+            if any(part.startswith(".") for part in f.relative_to(user_root).parts):
+                continue
+            try:
+                rel = str(f.relative_to(self._storage_root))
+            except ValueError:
+                continue
+            if rel in existing:
+                continue
+            try:
+                rel_user = f.relative_to(user_root)
+            except ValueError:
+                rel_user = None
+            directory = self._derive_directory(rel_user)
+            if directory:
+                await ensure_directory_chain(self._session, user_id, directory)
+            try:
+                size = f.stat().st_size
+            except OSError:
+                continue
+            record = DataFile(
+                id=uuid.uuid4(),
+                user_id=user_id,
+                path=rel,
+                original_name=f.name,
+                size=size,
+                checksum="",
+                file_type=_detect_file_type(f.name),
+                status="active",
+                directory=directory,
+            )
+            await self._files.save(record)
+            existing.add(rel)
+            added += 1
+            added_size += size
+
+        # 重算配额，修正历史漂移（下载/手动放入未计入的部分）
+        await self._users.recompute_used_storage(user_id)
+        await self._session.commit()
+        return SyncResponse(added=added, added_size=added_size)
+
+    @staticmethod
+    def _derive_directory(rel_user: Path | None) -> str:
+        """从「相对用户根的路径」推导 logical directory。
+
+        - ``raw_data/PRJNA1259417/x.fq`` → ``raw_data/PRJNA1259417``（下载布局，保留）
+        - ``raw/myproj/x.fq`` → ``myproj``（上传布局，剥离 raw/ 前缀）
+        - ``raw/raw_data/x.fq`` → ``raw_data``（上传到系统目录 raw_data）
+        - 直接在用户根下的文件 → ``""``
+        """
+        if rel_user is None:
+            return ""
+        parts = list(rel_user.parts)[:-1]  # 去掉文件名
+        if not parts:
+            return ""
+        if parts[0] == "raw":
+            parts = parts[1:]
+        parts = [p for p in parts if p and p not in (".", "..")]
+        return "/".join(parts)
 
     # ------------------------------------------------------------------
     # 样本（供流程引擎读取文件路径）

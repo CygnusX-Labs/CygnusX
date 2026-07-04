@@ -89,22 +89,22 @@ onMounted(async () => {
         <NGrid v-if="account" :cols="4" :x-gap="16" :y-gap="16" responsive="screen">
           <NGridItem>
             <NStatistic label="可用余额" :value="Number(account.available_balance).toFixed(1)">
-              <template #suffix>🍪</template>
+              <template #suffix>🥫</template>
             </NStatistic>
           </NGridItem>
           <NGridItem>
             <NStatistic label="总余额" :value="Number(account.balance).toFixed(1)">
-              <template #suffix>🍪</template>
+              <template #suffix>🥫</template>
             </NStatistic>
           </NGridItem>
           <NGridItem>
             <NStatistic label="冻结中" :value="Number(account.frozen_balance).toFixed(1)">
-              <template #suffix>🍪</template>
+              <template #suffix>🥫</template>
             </NStatistic>
           </NGridItem>
           <NGridItem>
             <NStatistic label="累计获得" :value="Number(account.total_earned).toFixed(1)">
-              <template #suffix>🍪</template>
+              <template #suffix>🥫</template>
             </NStatistic>
           </NGridItem>
         </NGrid>
@@ -112,8 +112,8 @@ onMounted(async () => {
           <NDescriptionsItem label="账户状态">
             <NTag :type="statusTagType" size="small" round>{{ account.status }}</NTag>
           </NDescriptionsItem>
-          <NDescriptionsItem label="累计消费">{{ Number(account.total_spent).toFixed(2) }} 🍪</NDescriptionsItem>
-          <NDescriptionsItem label="累计调整">{{ Number(account.total_adjusted).toFixed(2) }} 🍪</NDescriptionsItem>
+          <NDescriptionsItem label="累计消费">{{ Number(account.total_spent).toFixed(2) }} 🥫</NDescriptionsItem>
+          <NDescriptionsItem label="累计调整">{{ Number(account.total_adjusted).toFixed(2) }} 🥫</NDescriptionsItem>
           <NDescriptionsItem label="创建时间">
             {{ account.created_at ? new Date(account.created_at).toLocaleString('zh-CN') : '-' }}
           </NDescriptionsItem>

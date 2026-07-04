@@ -100,7 +100,7 @@ function handleSubmit() {
         <div v-if="selectedAccount" class="preset-hint">
           当前余额
           <NTag size="small" round :type="selectedAccount.balance < 50 ? 'warning' : 'success'">
-            {{ selectedAccount.balance }} 🍪
+            {{ selectedAccount.balance }} 🥫
           </NTag>
           · 所属 {{ selectedAccount.group }}
         </div>
@@ -122,7 +122,7 @@ function handleSubmit() {
           placeholder="请输入正整数"
           style="width: 100%"
         >
-          <template #suffix>🍪</template>
+          <template #suffix>🥫</template>
         </NInputNumber>
       </NFormItem>
 

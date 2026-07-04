@@ -39,4 +39,32 @@ export interface DownloadRequest {
   aws_threads: number
   /** 高级选项；后端暂未消费，预留字段，便于后续 CLI 透传 */
   advanced?: AdvancedDownloadOptions
+  /** 模拟下载，不实际下载文件（测试用） */
+  dry_run?: boolean
+}
+
+/** 单阶段进度 */
+export interface StageProgress {
+  bytes_done: number
+  bytes_total: number
+  weight: number
+  percent: number
+}
+
+/** 单个 run（SRR）的三阶段进度 */
+export interface RunProgress {
+  run_id: string
+  stage: 'pending' | 'downloading' | 'extracting' | 'compressing' | 'completed' | 'failed'
+  overall_percent: number
+  download: StageProgress
+  extraction: StageProgress
+  compression: StageProgress
+}
+
+/** 下载进度 API 响应 */
+export interface DownloadProgressResponse {
+  task_id: string
+  runs: Record<string, RunProgress>
+  overall_percent: number
+  source: 'progress_api' | 'unavailable'
 }

@@ -99,11 +99,11 @@ const columns: DataTableColumns<AdminCookieAccount> = [
       const low = row.balance < 50
       return h('span', { class: ['balance', { danger: row.balance < 0, warn: low && row.balance >= 0 }] }, [
         low ? h(NIcon, { component: WarningOutline, style: { marginRight: '4px' } }) : null,
-        `${row.balance} 🍪`,
+        `${row.balance} 🥫`,
       ])
     },
   },
-  { title: '累计消耗', key: 'total_spent', width: 120, render: (row) => `${row.total_spent} 🍪` },
+  { title: '累计消耗', key: 'total_spent', width: 120, render: (row) => `${row.total_spent} 🥫` },
   {
     title: '账户状态', key: 'status', width: 110,
     render: (row) => {

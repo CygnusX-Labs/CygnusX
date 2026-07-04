@@ -27,7 +27,7 @@ onMounted(async () => {
 <template>
   <div v-if="authStore.isLoggedIn && cookieStore.account" class="cookie-badge">
     <NTag :type="cookieColor" size="small" round>
-      🍪 {{ cookieStore.balance.toFixed(1) }}
+      🥫 {{ cookieStore.balance.toFixed(1) }}
     </NTag>
   </div>
 </template>

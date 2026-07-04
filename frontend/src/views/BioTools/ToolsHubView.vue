@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 import {
-  ScanOutline, GlobeOutline, SearchOutline, ColorPaletteOutline,
+  ScanOutline, SearchOutline, ColorPaletteOutline, LayersOutline,
 } from '@vicons/ionicons5'
 import ToolCard from '@/components/bio-tools/ToolCard.vue'
 
@@ -17,12 +17,12 @@ const tools = [
     to: '/tools/fastq-qc',
   },
   {
-    key: 'igv',
-    title: 'Web IGV 浏览器',
-    description: '基因组可视化浏览器，支持 BAM / BigWig / VCF 等格式在线浏览',
-    icon: GlobeOutline,
-    gradient: 'linear-gradient(135deg, #00B42A 0%, #23C372 100%)',
-    to: '/tools/igv',
+    key: 'jbrowse',
+    title: 'Web 基因组浏览器',
+    description: '基于 JBrowse 2，支持 BAM / BigWig / VCF / GFF3 在线浏览，外置 YAML 配置参考基因组',
+    icon: LayersOutline,
+    gradient: 'linear-gradient(135deg, #722ED1 0%, #B37FEB 100%)',
+    to: '/tools/jbrowse',
   },
   {
     key: 'blast',

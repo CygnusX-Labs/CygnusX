@@ -1,4 +1,4 @@
-# OmicHub 🍪 饼干积分系统设计文档
+# OmicHub 🥫 饼干积分系统设计文档
 
 > **文档版本**：v1.0  
 > **项目**：OmicHub — 私有化多组学分析平台  
@@ -10,7 +10,7 @@
 
 ## 文档概要
 
-本文档详细描述了 OmicHub 平台的 **🍪 饼干积分系统** 的完整设计方案，包括：
+本文档详细描述了 OmicHub 平台的 **🥫 饼干积分系统** 的完整设计方案，包括：
 
 | 章节 | 内容 |
 |------|------|
@@ -4895,7 +4895,7 @@ app.conf.timezone = "Asia/Shanghai"
 
 # 12.2 饼干系统 — 前端界面设计
 
-# OmicHub 🍪 饼干积分系统 — 前端完整设计文档
+# OmicHub 🥫 饼干积分系统 — 前端完整设计文档
 
 > 技术栈：Vue 3 + TypeScript + Vite + Naive UI + Pinia + ECharts  
 > 版本：v1.0  |  作者：OmicHub Frontend Team
@@ -5649,7 +5649,7 @@ export function useWebSocket() {
             :to="currentBalance"
             :duration="800"
           />
-          <template #suffix>🍪</template>
+          <template #suffix>🥫</template>
         </n-statistic>
       </div>
 
@@ -5906,7 +5906,7 @@ function getTxTypeLabel(type: TransactionType): string {
 <template>
   <div class="cookie-account-page">
     <!-- 页面标题 -->
-    <n-page-header title="🍪 我的饼干账户" subtitle="查看饼干余额、交易流水与消费统计" />
+    <n-page-header title="🥫 我的饼干账户" subtitle="查看饼干余额、交易流水与消费统计" />
 
     <n-space vertical :size="24" style="margin-top: 20px;">
 
@@ -5922,7 +5922,7 @@ function getTxTypeLabel(type: TransactionType): string {
               <span class="stat-number stat-number--primary">
                 {{ formattedBalance }}
               </span>
-              <template #suffix>🍪</template>
+              <template #suffix>🥫</template>
             </n-statistic>
             <n-tag
               :type="account?.status === 'active' ? 'success' : 'error'"
@@ -5945,7 +5945,7 @@ function getTxTypeLabel(type: TransactionType): string {
               <span class="stat-number stat-number--danger">
                 {{ summary?.monthlySpent ?? 0 }}
               </span>
-              <template #suffix>🍪</template>
+              <template #suffix>🥫</template>
             </n-statistic>
             <n-text depth="3" style="font-size: 12px;">较上月 --</n-text>
           </n-card>
@@ -5961,7 +5961,7 @@ function getTxTypeLabel(type: TransactionType): string {
               <span class="stat-number stat-number--success">
                 {{ summary?.monthlyEarned ?? 0 }}
               </span>
-              <template #suffix>🍪</template>
+              <template #suffix>🥫</template>
             </n-statistic>
             <n-text depth="3" style="font-size: 12px;">含系统奖励</n-text>
           </n-card>
@@ -6150,14 +6150,14 @@ const columns = computed<DataTableColumns<CookieTransaction>>(() => [
         color: row.amount > 0 ? '#18a058' : '#d03050',
         fontWeight: 600,
       },
-    }, `${row.amount > 0 ? '+' : ''}${row.amount} 🍪`),
+    }, `${row.amount > 0 ? '+' : ''}${row.amount} 🥫`),
   },
   {
     title: '余额',
     key: 'balanceAfter',
     width: 120,
     align: 'right',
-    render: (row) => `${row.balanceAfter.toLocaleString()} 🍪`,
+    render: (row) => `${row.balanceAfter.toLocaleString()} 🥫`,
   },
   {
     title: '描述',
@@ -6278,7 +6278,7 @@ function initPieChart() {
   const option: echarts.EChartsOption = {
     tooltip: {
       trigger: 'item',
-      formatter: '{b}: {c} 🍪 ({d}%)',
+      formatter: '{b}: {c} 🥫 ({d}%)',
       backgroundColor: 'var(--n-card-color)',
       borderColor: 'var(--n-border-color)',
       textStyle: { color: 'var(--n-text-color)' },
@@ -6444,7 +6444,7 @@ function getTxLabel(type: TransactionType): string {
 <template>
   <div class="admin-cookie-page">
     <!-- 页面标题 -->
-    <n-page-header title="🍪 饼干管理" subtitle="管理系统饼干流通、用户账户与充值" />
+    <n-page-header title="🥫 饼干管理" subtitle="管理系统饼干流通、用户账户与充值" />
 
     <n-space vertical :size="20" style="margin-top: 20px;">
 
@@ -6674,7 +6674,7 @@ const columns = computed<DataTableColumns<CookieAccount>>(() => [
     render: (row) => h(NText, {
       strong: true,
       style: { color: '#f5a623', fontSize: '15px' },
-    }, { default: () => `${row.balance.toLocaleString()} 🍪` }),
+    }, { default: () => `${row.balance.toLocaleString()} 🥫` }),
   },
   {
     title: '总消费',
@@ -6682,14 +6682,14 @@ const columns = computed<DataTableColumns<CookieAccount>>(() => [
     width: 130,
     sorter: true,
     align: 'right',
-    render: (row) => `${row.totalSpent.toLocaleString()} 🍪`,
+    render: (row) => `${row.totalSpent.toLocaleString()} 🥫`,
   },
   {
     title: '总获得',
     key: 'totalEarned',
     width: 130,
     align: 'right',
-    render: (row) => `${row.totalEarned.toLocaleString()} 🍪`,
+    render: (row) => `${row.totalEarned.toLocaleString()} 🥫`,
   },
   {
     title: '账户状态',
@@ -6928,7 +6928,7 @@ function formatDateTime(dateStr: string): string {
       <n-descriptions label-placement="left" :column="1" bordered>
         <n-descriptions-item label="当前余额">
           <n-text strong style="color: #f5a623; font-size: 18px;">
-            {{ user.balance.toLocaleString() }} 🍪
+            {{ user.balance.toLocaleString() }} 🥫
           </n-text>
         </n-descriptions-item>
         <n-descriptions-item label="操作类型">
@@ -6956,7 +6956,7 @@ function formatDateTime(dateStr: string): string {
             :show-button="true"
             :precision="0"
           >
-            <template #suffix>🍪</template>
+            <template #suffix>🥫</template>
           </n-input-number>
         </n-form-item>
 
@@ -6967,7 +6967,7 @@ function formatDateTime(dateStr: string): string {
             strong
             style="font-size: 16px;"
           >
-            {{ newBalance.toLocaleString() }} 🍪
+            {{ newBalance.toLocaleString() }} 🥫
           </n-text>
           <n-text v-if="newBalance < 0" type="error" style="margin-left: 8px;">
             余额不能为负数！
@@ -7069,8 +7069,8 @@ const formData = ref({
 const modalTitle = computed(() => {
   if (!props.user) return ''
   return props.mode === 'recharge'
-    ? `🍪 充值 — ${props.user.userName}`
-    : `🍪 扣减 — ${props.user.userName}`
+    ? `🥫 充值 — ${props.user.userName}`
+    : `🥫 扣减 — ${props.user.userName}`
 })
 
 const newBalance = computed(() => {
@@ -7303,13 +7303,13 @@ async function handleSubmit() {
           <n-text type="success">
             <n-number-animation :from="0" :to="stats.income" show-separator />
           </n-text>
-          <template #suffix>🍪</template>
+          <template #suffix>🥫</template>
         </n-statistic>
         <n-statistic label="支出合计" tabular-nums>
           <n-text type="error">
             <n-number-animation :from="0" :to="stats.expense" show-separator />
           </n-text>
-          <template #suffix>🍪</template>
+          <template #suffix>🥫</template>
         </n-statistic>
       </n-space>
 
@@ -7423,14 +7423,14 @@ const columns = computed<DataTableColumns<CookieTransaction>>(() => [
     render: (row) => h(NText, {
       strong: true,
       type: row.amount > 0 ? 'success' : 'error',
-    }, { default: () => `${row.amount > 0 ? '+' : ''}${row.amount} 🍪` }),
+    }, { default: () => `${row.amount > 0 ? '+' : ''}${row.amount} 🥫` }),
   },
   {
     title: '变动后余额',
     key: 'balanceAfter',
     width: 120,
     align: 'right',
-    render: (row) => `${row.balanceAfter.toLocaleString()} 🍪`,
+    render: (row) => `${row.balanceAfter.toLocaleString()} 🥫`,
   },
   {
     title: '描述',
@@ -7666,7 +7666,7 @@ function getTxLabel(type: TransactionType): string {
             placeholder="每小时单价（饼干）"
             style="width: 100%;"
           >
-            <template #suffix>🍪 / 小时</template>
+            <template #suffix>🥫 / 小时</template>
           </n-input-number>
         </n-form-item>
 
@@ -7803,7 +7803,7 @@ const columns = computed<DataTableColumns<CookiePricing>>(() => [
     width: 130,
     align: 'right',
     render: (row) => h(NText, { strong: true }, {
-      default: () => `${row.unitPrice} 🍪/小时`,
+      default: () => `${row.unitPrice} 🥫/小时`,
     }),
   },
   {
@@ -7953,7 +7953,7 @@ function formatDateTime(dateStr: string): string {
 <template>
   <!-- ... 原有表单内容 ... -->
 
-  <!-- 🍪 饼干预估区域 -->
+  <!-- 🥫 饼干预估区域 -->
   <n-card
     size="small"
     class="cost-estimate-card"
@@ -7979,7 +7979,7 @@ function formatDateTime(dateStr: string): string {
           <n-text depth="2">
             基础费用（{{ flowCategoryLabel }}）
           </n-text>
-          <n-text>{{ estimate.baseFee }} 🍪</n-text>
+          <n-text>{{ estimate.baseFee }} 🥫</n-text>
         </n-space>
 
         <!-- 资源费用明细 -->
@@ -7992,10 +7992,10 @@ function formatDateTime(dateStr: string): string {
           <n-text depth="2">
             {{ resourceLabel(res.resourceType) }}
             <n-text depth="3" style="font-size: 12px;">
-              （{{ res.quantity }}{{ resourceUnit(res.resourceType) }} × {{ res.duration }}小时 @ {{ res.unitPrice }}🍪/h）
+              （{{ res.quantity }}{{ resourceUnit(res.resourceType) }} × {{ res.duration }}小时 @ {{ res.unitPrice }}🥫/h）
             </n-text>
           </n-text>
-          <n-text>{{ res.subtotal }} 🍪</n-text>
+          <n-text>{{ res.subtotal }} 🥫</n-text>
         </n-space>
 
         <!-- 折扣信息 -->
@@ -8008,7 +8008,7 @@ function formatDateTime(dateStr: string): string {
             折扣优惠（{{ (estimate.discountRate * 10).toFixed(1) }}折）
           </n-text>
           <n-text type="success">
-            -{{ (estimate.total - estimate.discountedTotal).toFixed(0) }} 🍪
+            -{{ (estimate.total - estimate.discountedTotal).toFixed(0) }} 🥫
           </n-text>
         </n-space>
 
@@ -8018,7 +8018,7 @@ function formatDateTime(dateStr: string): string {
         <n-space justify="space-between" align="center">
           <n-text strong style="font-size: 15px;">预估总计</n-text>
           <n-text type="warning" strong style="font-size: 18px;">
-            {{ Math.ceil(estimate.discountedTotal) }} 🍪
+            {{ Math.ceil(estimate.discountedTotal) }} 🥫
           </n-text>
         </n-space>
       </template>
@@ -8040,8 +8040,8 @@ function formatDateTime(dateStr: string): string {
         <n-space vertical :size="4">
           <n-text strong>余额不足！</n-text>
           <n-text>
-            当前余额 <n-text strong>{{ account.balance }}</n-text> 🍪，
-            还需 <n-text type="error" strong>{{ Math.ceil(estimate.discountedTotal - account.balance) }}</n-text> 🍪
+            当前余额 <n-text strong>{{ account.balance }}</n-text> 🥫，
+            还需 <n-text type="error" strong>{{ Math.ceil(estimate.discountedTotal - account.balance) }}</n-text> 🥫
           </n-text>
           <n-button
             text
@@ -8065,7 +8065,7 @@ function formatDateTime(dateStr: string): string {
         </n-space>
         <n-text>
           <n-text strong style="color: #f5a623;">{{ account.balance }}</n-text>
-          🍪（执行后剩余 <n-text strong>{{ account.balance - Math.ceil(estimate.discountedTotal) }}</n-text> 🍪）
+          🥫（执行后剩余 <n-text strong>{{ account.balance - Math.ceil(estimate.discountedTotal) }}</n-text> 🥫）
         </n-text>
       </n-space>
     </n-space>
@@ -8081,7 +8081,7 @@ function formatDateTime(dateStr: string): string {
       @click="handleSubmit"
     >
       <template #icon><n-icon><SendOutline /></n-icon></template>
-      提交任务（{{ estimate ? Math.ceil(estimate.discountedTotal) + ' 🍪' : '...' }}）
+      提交任务（{{ estimate ? Math.ceil(estimate.discountedTotal) + ' 🥫' : '...' }}）
     </n-button>
   </n-space>
 
@@ -8089,7 +8089,7 @@ function formatDateTime(dateStr: string): string {
   <n-modal
     v-model:show="showInsufficientModal"
     preset="card"
-    title="🍪 饼干余额不足"
+    title="🥫 饼干余额不足"
     style="width: 420px;"
     :bordered="false"
   >
@@ -8104,16 +8104,16 @@ function formatDateTime(dateStr: string): string {
 
       <n-descriptions bordered :column="1" style="width: 100%;">
         <n-descriptions-item label="当前余额">
-          <n-text strong style="color: #f5a623;">{{ account?.balance ?? 0 }} 🍪</n-text>
+          <n-text strong style="color: #f5a623;">{{ account?.balance ?? 0 }} 🥫</n-text>
         </n-descriptions-item>
         <n-descriptions-item label="预估消耗">
           <n-text strong type="error">
-            {{ estimate ? Math.ceil(estimate.discountedTotal) : '--' }} 🍪
+            {{ estimate ? Math.ceil(estimate.discountedTotal) : '--' }} 🥫
           </n-text>
         </n-descriptions-item>
         <n-descriptions-item label="差额">
           <n-text strong type="error">
-            {{ estimate && account ? Math.ceil(estimate.discountedTotal - account.balance) : '--' }} 🍪
+            {{ estimate && account ? Math.ceil(estimate.discountedTotal - account.balance) : '--' }} 🥫
           </n-text>
         </n-descriptions-item>
       </n-descriptions>
@@ -8520,7 +8520,7 @@ src/
 
 ---
 
-*文档生成完毕 — OmicHub 🍪 Cookie System Frontend v1.0*
+*文档生成完毕 — OmicHub 🥫 Cookie System Frontend v1.0*
 
 
 ---
@@ -8531,7 +8531,7 @@ src/
 
 # 12.3 饼干系统 — 与主框架融合方案
 
-# OmicHub 🍪 饼干积分系统 — 主框架融合方案
+# OmicHub 🥫 饼干积分系统 — 主框架融合方案
 
 > **版本**: v1.0
 > **作者**: 系统集成架构师
@@ -8667,7 +8667,7 @@ omic-hub/
     │                                                              │
     ▼                                                              │
 [Trigger] 自动创建 cookie_accounts 记录                              │
-    │  赠送 INITIAL_COOKIE_BALANCE (默认100🍪)                       │
+    │  赠送 INITIAL_COOKIE_BALANCE (默认100🥫)                       │
     ▼                                                              │
 用户提交任务 ───────────────────────────────────────────────────▶   │
     │                                                           │   │
@@ -8780,10 +8780,10 @@ class Settings(BaseSettings):
     """新用户初始饼干赠送数量"""
     
     COOKIE_SANDBOX_BASE_COST: Decimal = Decimal("5.00")
-    """沙盒基础启动费用（🍪）"""
+    """沙盒基础启动费用（🥫）"""
     
     COOKIE_SANDBOX_PER_MINUTE_COST: Decimal = Decimal("0.50")
-    """沙盒每分钟运行费用（🍪）"""
+    """沙盒每分钟运行费用（🥫）"""
     
     COOKIE_DEDUCTION_TIMEOUT_SECONDS: int = 300
     """预扣费用超时时间（秒），超时自动退还"""
@@ -8957,7 +8957,7 @@ async def submit_task(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail={
                 "error": "COOKIE_INSUFFICIENT",
-                "message": "🍪 饼干余额不足，请先充值",
+                "message": "🥫 饼干余额不足，请先充值",
                 "current_balance": float(current_balance),
                 "required": float(estimated_cost),
                 "shortage": float(estimated_cost - current_balance),
@@ -9277,9 +9277,9 @@ class SandboxOrchestrator:
         
         if current_balance < min_required:
             raise SandboxError(
-                f"🍪 饼干余额不足。"
-                f"需要至少 {float(min_required)} 🍪（含启动费 {float(base_cost)} + 预留 {float(self.pricing.get_sandbox_min_reserve())}），"
-                f"当前余额: {float(current_balance)} 🍪",
+                f"🥫 饼干余额不足。"
+                f"需要至少 {float(min_required)} 🥫（含启动费 {float(base_cost)} + 预留 {float(self.pricing.get_sandbox_min_reserve())}），"
+                f"当前余额: {float(current_balance)} 🥫",
                 error_code="COOKIE_INSUFFICIENT",
                 current_balance=float(current_balance),
                 required=float(min_required),
@@ -9297,7 +9297,7 @@ class SandboxOrchestrator:
             )
         except InsufficientBalanceError:
             raise SandboxError(
-                "🍪 余额不足，无法启动沙盒",
+                "🥫 余额不足，无法启动沙盒",
                 error_code="COOKIE_HOLD_FAILED",
             )
         
@@ -9330,7 +9330,7 @@ class SandboxOrchestrator:
             
             logger.info(
                 f"[Sandbox] 沙盒 {sandbox['session_id']} 启动成功，"
-                f"用户 {user_id} 预扣 {float(base_cost)} 🍪"
+                f"用户 {user_id} 预扣 {float(base_cost)} 🥫"
             )
             
             return sandbox
@@ -9383,7 +9383,7 @@ class SandboxOrchestrator:
                 logger.info(
                     f"[Sandbox] 沙盒 {session_id} 停止，"
                     f"运行 {runtime_minutes} 分钟，"
-                    f"实际费用 {float(actual_cost)} 🍪"
+                    f"实际费用 {float(actual_cost)} 🥫"
                 )
                 
             except Exception as e:
@@ -9551,7 +9551,7 @@ def refund_expired_holds():
                 reason="预扣超时自动退还",
             )
             refunded_count += 1
-            logger.info(f"[Cookie] 预扣 {hold['id']} 超时已自动退还 {hold['amount']} 🍪")
+            logger.info(f"[Cookie] 预扣 {hold['id']} 超时已自动退还 {hold['amount']} 🥫")
         except Exception as e:
             logger.error(f"[Cookie] 预扣 {hold['id']} 退还失败: {e}")
     
@@ -9704,7 +9704,7 @@ class CookieAgentTools:
         
         return {
             "balance": float(balance),
-            "unit": "🍪",
+            "unit": "🥫",
             "status": account_info["status"],
             "total_earned": float(account_info["total_earned"]),
             "total_consumed": float(account_info["total_consumed"]),
@@ -9741,7 +9741,7 @@ class CookieAgentTools:
         
         return {
             "estimated_cost": float(estimated_cost),
-            "unit": "🍪",
+            "unit": "🥫",
             "range": {
                 "min": float(estimated_cost * Decimal("0.7")),
                 "max": float(estimated_cost * Decimal("1.5")),
@@ -9761,13 +9761,13 @@ class CookieAgentTools:
         
         return {
             "estimated_cost": float(total_cost),
-            "unit": "🍪",
+            "unit": "🥫",
             "breakdown": {
                 "base_cost": float(base_cost),
                 "runtime_cost": float(per_minute * estimated_minutes),
                 "per_minute_rate": float(per_minute),
             },
-            "note": f"预估使用 {estimated_hours} 小时，按每分钟 {float(per_minute)} 🍪 计费",
+            "note": f"预估使用 {estimated_hours} 小时，按每分钟 {float(per_minute)} 🥫 计费",
         }
     
     async def get_pricing_info(self) -> Dict[str, Any]:
@@ -9791,16 +9791,16 @@ AGENT_COOKIE_PROMPT = """
 对话示例：
 
 用户: "帮我做一个RNA-seq分析"
-Agent: [调用 estimate_task_cookies] → 预估需要 150-200 🍪
-Agent: [调用 check_cookie_balance] → 当前余额 500 🍪
-Agent: "RNA-seq 分析预估需要 150-200 🍪（范围：105-300），您当前有 500 🍪，余额充足。是否确认提交？"
+Agent: [调用 estimate_task_cookies] → 预估需要 150-200 🥫
+Agent: [调用 check_cookie_balance] → 当前余额 500 🥫
+Agent: "RNA-seq 分析预估需要 150-200 🥫（范围：105-300），您当前有 500 🥫，余额充足。是否确认提交？"
 用户: "确认"
 Agent: [调用 submit_task] → 任务已提交
 
 用户: "启动一个沙盒"
-Agent: [调用 check_cookie_balance] → 当前余额 5 🍪
-Agent: [调用 estimate_sandbox_cookies] → 预估需要 35 🍪（基础费5 + 1小时30）
-Agent: "沙盒启动预估需要 35 🍪，但您当前只有 5 🍪，还差 30 🍪。请联系管理员充值后再试。"
+Agent: [调用 check_cookie_balance] → 当前余额 5 🥫
+Agent: [调用 estimate_sandbox_cookies] → 预估需要 35 🥫（基础费5 + 1小时30）
+Agent: "沙盒启动预估需要 35 🥫，但您当前只有 5 🥫，还差 30 🥫。请联系管理员充值后再试。"
 """
 ```
 
@@ -9853,7 +9853,7 @@ CREATE TABLE IF NOT EXISTS cookie_accounts (
 );
 
 COMMENT ON TABLE cookie_accounts IS '饼干账户表 — 每个用户一个账户';
-COMMENT ON COLUMN cookie_accounts.balance IS '当前可用余额（🍪）';
+COMMENT ON COLUMN cookie_accounts.balance IS '当前可用余额（🥫）';
 COMMENT ON COLUMN cookie_accounts.status IS 'active=正常, frozen=冻结(只进不出), suspended=暂停(不进不出), closed=已关闭';
 
 
@@ -10483,7 +10483,7 @@ asyncio.run(run_migration())
 fi
 
 # ─── 3. 初始化饼干系统数据 ───
-echo "🍪 初始化饼干系统..."
+echo "🥫 初始化饼干系统..."
 python scripts/init_cookies.py
 
 # ─── 4. 创建管理员账户（如果指定了ADMIN_USERNAME）───
@@ -10529,7 +10529,7 @@ async def verify():
     # 检查已有用户是否都有饼干账户
     stats = await cookie_service.get_system_stats()
     print(f'饼干账户: {stats[\"total_accounts\"]} 个')
-    print(f'总余额: {stats[\"total_balance\"]} 🍪')
+    print(f'总余额: {stats[\"total_balance\"]} 🥫')
     
     print('✅ 饼干系统验证通过')
 
@@ -10539,7 +10539,7 @@ asyncio.run(verify())
 echo ""
 echo "═══════════════════════════════════════════════════"
 echo "  ✅ OmicHub 初始化完成！"
-echo "  🍪 饼干积分系统已就绪"
+echo "  🥫 饼干积分系统已就绪"
 echo "═══════════════════════════════════════════════════"
 ```
 
@@ -10567,7 +10567,7 @@ async def init_cookie_system():
     conn = await asyncpg.connect(settings.DATABASE_URL)
     
     try:
-        print("🍪 开始初始化饼干系统...")
+        print("🥫 开始初始化饼干系统...")
         
         # 1. 为已有用户创建饼干账户
         result = await conn.execute(
@@ -10643,7 +10643,7 @@ async def init_cookie_system():
             """
         )
         print(f"  📊 当前饼干账户: {stats['total_accounts']} 个")
-        print(f"  📊 总余额: {stats['total_balance']} 🍪")
+        print(f"  📊 总余额: {stats['total_balance']} 🥫")
         print(f"  📊 管理员账户: {stats['admin_accounts']} 个")
         
         print("✅ 饼干系统初始化完成！")
@@ -11117,7 +11117,7 @@ system_prompt: |
   
   ## 饼干积分规则
   
-  平台使用 "饼干" (🍪) 作为积分货币。用户在提交任务和启动沙盒时需要消耗饼干。
+  平台使用 "饼干" (🥫) 作为积分货币。用户在提交任务和启动沙盒时需要消耗饼干。
   
   ### 操作要求
   
@@ -11133,17 +11133,17 @@ system_prompt: |
   用户: "帮我做一个RNA-seq分析"
   → [调用 estimate_task_cookies, flow_category="rna-seq"]
   → [调用 check_cookie_balance]
-  → Assistant: "RNA-seq 分析预估需要 150-200 🍪，您当前有 500 🍪，余额充足。是否确认提交？"
+  → Assistant: "RNA-seq 分析预估需要 150-200 🥫，您当前有 500 🥫，余额充足。是否确认提交？"
   用户: "确认"
   → [调用 submit_task]
-  → Assistant: "✅ 任务已提交！任务ID: task_12345，预估消耗 150 🍪。"
+  → Assistant: "✅ 任务已提交！任务ID: task_12345，预估消耗 150 🥫。"
   
   **场景：用户启动沙盒但余额不足**
   
   用户: "启动一个沙盒"
   → [调用 check_cookie_balance]
   → [调用 estimate_sandbox_cookies]
-  → Assistant: "沙盒启动需要基础费 5 🍪 + 运行费（每分钟 0.5 🍪）。您当前只有 3 🍪，余额不足（至少需 10 🍪）。请联系管理员充值后再试。"
+  → Assistant: "沙盒启动需要基础费 5 🥫 + 运行费（每分钟 0.5 🥫）。您当前只有 3 🥫，余额不足（至少需 10 🥫）。请联系管理员充值后再试。"
   
   ### 注意事项
   
@@ -11398,8 +11398,8 @@ class InsufficientBalanceError(CookieException):
         self.current_balance = current_balance
         self.required = required
         super().__init__(
-            f"余额不足: 当前 {current_balance} 🍪, 需要 {required} 🍪, "
-            f"差 {required - current_balance} 🍪"
+            f"余额不足: 当前 {current_balance} 🥫, 需要 {required} 🥫, "
+            f"差 {required - current_balance} 🥫"
         )
 
 
@@ -11502,7 +11502,7 @@ groups:
           severity: warning
         annotations:
           summary: "大量用户饼干余额不足"
-          description: "超过 50 个用户余额低于 10 🍪"
+          description: "超过 50 个用户余额低于 10 🥫"
 
       # 交易异常增多
       - alert: CookieTransactionErrors
@@ -11580,7 +11580,7 @@ groups:
 
 | 术语 | 说明 |
 |------|------|
-| 🍪 饼干 | OmicHub 平台积分货币单位 |
+| 🥫 饼干 | OmicHub 平台积分货币单位 |
 | 预扣 (Hold) | 在操作前冻结一部分余额，操作完成后结算 |
 | 结算 (Settle) | 根据实际消耗，将预扣金额转为正式消费或退还差额 |
 | 多退少补 | 实际费用 < 预扣 → 退还差额；实际费用 > 预扣 → 补扣差额 |

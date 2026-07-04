@@ -161,7 +161,7 @@ async function submitTask() {
   try {
     // 饼干预估：余额不足时拦截
     if (cookieStore.isLoggedIn && costEstimate.value && !costEstimate.value.affordable) {
-      error.value = `饼干余额不足: 需要 ${costEstimate.value.estimated_cost} 🍪, 当前可用 ${costEstimate.value.current_balance} 🍪`
+      error.value = `饼干余额不足: 需要 ${costEstimate.value.estimated_cost} 🥫, 当前可用 ${costEstimate.value.current_balance} 🥫`
       return
     }
     const comparisons = buildComparisons()
@@ -255,12 +255,12 @@ onMounted(fetchFlow)
           <NSpace align="center" :size="24">
             <div>
               <span style="color: #666">预估费用: </span>
-              <span style="font-weight: bold; font-size: 18px">{{ Number(costEstimate.estimated_cost).toFixed(2) }} 🍪</span>
+              <span style="font-weight: bold; font-size: 18px">{{ Number(costEstimate.estimated_cost).toFixed(2) }} 🥫</span>
             </div>
             <div>
               <span style="color: #666">当前余额: </span>
               <span :style="{ fontWeight: 'bold', color: costEstimate.affordable ? '#18a058' : '#d03050' }">
-                {{ Number(costEstimate.current_balance).toFixed(1) }} 🍪
+                {{ Number(costEstimate.current_balance).toFixed(1) }} 🥫
               </span>
             </div>
           </NSpace>

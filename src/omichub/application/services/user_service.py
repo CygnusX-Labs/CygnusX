@@ -67,6 +67,8 @@ class UserService:
         # 更新其他字段
         if req.avatar_url is not None:
             user.avatar_url = req.avatar_url
+        if req.nickname is not None:
+            user.nickname = req.nickname
         if req.preferences is not None:
             user.preferences = req.preferences
         if req.status is not None:

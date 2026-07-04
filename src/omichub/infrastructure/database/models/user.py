@@ -26,6 +26,8 @@ class UserModel(Base, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=True
     )
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # 昵称：展示用别名，空则前端降级为 username。不参与登录/鉴权
+    nickname: Mapped[str | None] = mapped_column(String(120), nullable=True)
     preferences: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # ===== 存储配额（按用户隔离）=====

@@ -103,6 +103,9 @@ class Settings(BaseSettings):
     ai_provider_key_encryption_key: str = ""  # Fernet 密钥，为空则 API key 明文存储
     ai_provider_config_yaml: str = "data/ai_providers.yaml"  # 外置 AI Provider YAML 配置路径
     site_content_yaml: str = "data/OmicHub.yaml"  # 首页文案外置 YAML 路径（改文件即生效）
+    # JBrowse 2 基因组浏览器外置配置：参考基因组 / 预设轨道 / 扫描与上传策略。
+    # 改文件后调用 POST /api/v1/jbrowse/config/reload 即时生效（或等配置加载器 mtime 热重载）。
+    jbrowse_config_yaml: str = "data/jbrowse_config.yaml"
 
     # ===== 管理员欢迎彩蛋（预生成 + 顺序轮询）=====
     # 启动时若 welcome.yaml 条数 < threshold，调用默认 AI provider 补齐到 threshold 条；

@@ -19,6 +19,11 @@ const previewId = ref<string | null>(null)
 
 /** 可选模型配置（来自 /chat/models） */
 const modelOptions = ref<{ label: string; value: string }[]>([])
+const modelMap = computed(() => {
+  const map: Record<string, string> = {}
+  modelOptions.value.forEach((o) => { map[o.value] = o.label })
+  return map
+})
 
 onMounted(async () => {
   // 后台需含停用 Agent 的全量列表
@@ -50,6 +55,14 @@ const columns = [
   { title: '头像', key: 'avatar', width: 56, render: (r: AgentTemplate) => r.avatar },
   { title: '名称', key: 'name', width: 150 },
   { title: '分类', key: 'category', width: 90, render: (r: AgentTemplate) => CATEGORY_LABELS[r.category] },
+  {
+    title: '模型', key: 'model', width: 160,
+    render: (r: AgentTemplate) => {
+      const label = r.model_id ? modelMap.value[r.model_id] : ''
+      const text = label || r.model_engine || '未绑定'
+      return h(NTag, { size: 'tiny', type: label ? 'info' : 'default', bordered: false }, { default: () => text })
+    },
+  },
   {
     title: '挂载能力', key: 'mounts', width: 200,
     render: (r: AgentTemplate) =>
