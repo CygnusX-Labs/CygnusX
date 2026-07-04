@@ -82,5 +82,6 @@ function toPayload(a: Partial<AgentTemplate> & { id?: string }): Record<string, 
   if (a.skill_ids !== undefined) out.skill_ids = a.skill_ids
   if (a.features !== undefined) out.features = a.features
   if (a.is_active !== undefined) out.is_active = a.is_active
+  if (a.is_default !== undefined) out.is_default = a.is_default
   return out
 }

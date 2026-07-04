@@ -53,6 +53,7 @@ class CreateAgentRequest(BaseModel):
     temperature: float = 0.7
     max_tokens: int = 4096
     is_active: bool = True
+    is_default: bool = False
 
 
 class UpdateAgentRequest(BaseModel):
