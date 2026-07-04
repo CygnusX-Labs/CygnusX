@@ -48,7 +48,7 @@ function handleSkip() {
     >
       <!-- 弹窗主体 -->
       <div
-        class="relative w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl"
+        class="relative w-full max-w-lg overflow-hidden rounded-2xl bg-neutral-card shadow-2xl"
         style="animation: scaleIn 0.4s ease-out both"
       >
         <!-- 顶部主视觉图：上下浮动 -->
@@ -76,7 +76,7 @@ function handleSkip() {
           <div
             role="button"
             tabindex="0"
-            class="group flex cursor-pointer items-center gap-4 rounded-xl border border-gray-200 bg-white p-4 transition-all hover:border-blue-500 hover:bg-blue-50"
+            class="group flex cursor-pointer items-center gap-4 rounded-xl border border-gray-200 bg-neutral-card p-4 transition-all hover:border-blue-500 hover:bg-blue-50"
             @click="handleGoKnowledge"
             @keyup.enter="handleGoKnowledge"
           >

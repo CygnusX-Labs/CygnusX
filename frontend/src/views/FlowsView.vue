@@ -184,7 +184,7 @@ onMounted(fetchFlows)
         <div
           v-for="p in gridPipelines"
           :key="p.id"
-          class="relative bg-white rounded-xl border border-gray-100 shadow-sm p-5 flex flex-col transition-all duration-200"
+          class="relative bg-neutral-card rounded-xl border border-gray-100 shadow-sm p-5 flex flex-col transition-all duration-200"
           :class="p.isReady
             ? 'hover:shadow-lg hover:-translate-y-0.5 cursor-pointer hover:border-blue-200'
             : 'opacity-60 grayscale-[20%] cursor-not-allowed'"

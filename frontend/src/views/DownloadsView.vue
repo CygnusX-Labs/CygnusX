@@ -213,7 +213,7 @@ const inputFocusStyle = {
     </div>
 
     <!-- ═══ 参数配置卡片 ═══ -->
-    <div class="bg-white rounded-xl mb-5" style="box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #F3F4F6">
+    <div class="bg-neutral-card rounded-xl mb-5" style="box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #F3F4F6">
 
       <!-- ── SRA 表单 ── -->
       <div v-if="activeTab === 'sra'" class="p-6 space-y-5">
@@ -278,7 +278,7 @@ const inputFocusStyle = {
             <div
               v-if="advancedOpen"
               id="advanced-panel-bottom"
-              class="border rounded-b-lg bg-white p-5"
+              class="border rounded-b-lg bg-neutral-card p-5"
               style="border-color: #D1D5DB; border-top: none; border-radius: 0 0 8px 8px"
             >
               <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -436,7 +436,7 @@ const inputFocusStyle = {
     </div>
 
     <!-- ═══ 下载任务卡片 ═══ -->
-    <div class="bg-white rounded-xl" style="box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #F3F4F6">
+    <div class="bg-neutral-card rounded-xl" style="box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #F3F4F6">
 
       <!-- 队列头部 -->
       <div class="flex items-center justify-between px-5 py-3.5 border-b" style="border-color: #F3F4F6">

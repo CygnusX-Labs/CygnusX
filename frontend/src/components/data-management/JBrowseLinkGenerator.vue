@@ -127,7 +127,7 @@ async function copyUrl() {
     :auto-focus="false"
     @update:show="emit('update:show', $event)"
   >
-    <div class="w-full max-w-2xl mx-4 bg-white rounded-xl shadow-xl overflow-hidden">
+    <div class="w-full max-w-2xl mx-4 bg-neutral-card rounded-xl shadow-xl overflow-hidden">
       <!-- 头部 -->
       <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
         <div class="flex items-center gap-2">

@@ -73,7 +73,7 @@ function handleConfirm() {
     >
       <!-- 弹窗主体 -->
       <div
-        class="w-full max-w-md rounded-lg bg-white p-6 shadow-xl dark:bg-[#1a1f2e]"
+        class="w-full max-w-md rounded-lg bg-neutral-card p-6 shadow-xl"
         style="animation: scaleIn 0.2s ease-out both"
       >
         <!-- 顶部：红色警告图标 + 标题 -->

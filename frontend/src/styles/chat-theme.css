@@ -19,10 +19,10 @@
   --chat-text-secondary: #888888;
   --chat-text-muted: #555555;
 
-  /* 强调色 */
-  --chat-accent: #4f8ef7;
-  --chat-accent-hover: #3a7de4;
-  --chat-accent-light: rgba(79, 142, 247, 0.1);
+  /* 强调色（对齐平台主色，深色模式自动跟随 --arco-primary）*/
+  --chat-accent: var(--arco-primary);
+  --chat-accent-hover: var(--arco-primary-hover);
+  --chat-accent-light: var(--arco-primary-light);
 
   /* 消息 */
   --chat-user-bubble: #2a2a2a;
@@ -102,9 +102,9 @@
   --chat-text-secondary: #666666;
   --chat-text-muted: #999999;
 
-  --chat-accent: #2563eb;
-  --chat-accent-hover: #1d4ed8;
-  --chat-accent-light: rgba(37, 99, 235, 0.1);
+  --chat-accent: var(--arco-primary);
+  --chat-accent-hover: var(--arco-primary-hover);
+  --chat-accent-light: var(--arco-primary-light);
 
   --chat-user-bubble: #2563eb;
   --chat-ai-card: #ffffff;

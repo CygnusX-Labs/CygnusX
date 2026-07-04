@@ -50,6 +50,31 @@
 
   /* 页面底色（premium Finder 风格） */
   --page-bg: #F7F9FC;
+
+  /* ===== 间距体系（P2 留白统一）===== */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 20px;
+  --space-2xl: 24px;
+  --space-3xl: 32px;
+  --space-4xl: 40px;
+  --space-5xl: 48px;
+  --card-padding: 24px;
+  --card-gap: 20px;
+  --page-padding: 32px;
+  --section-gap: 32px;
+
+  /* ===== Type Scale（字体层级）===== */
+  --font-display-size: 28px;      --font-display-height: 36px;      --font-display-weight: 600;  --font-display-spacing: -0.02em;
+  --font-page-title-size: 24px;   --font-page-title-height: 32px;   --font-page-title-weight: 600; --font-page-title-spacing: -0.02em;
+  --font-section-size: 18px;      --font-section-height: 28px;      --font-section-weight: 600;  --font-section-spacing: -0.01em;
+  --font-card-title-size: 16px;   --font-card-title-height: 24px;   --font-card-title-weight: 500;
+  --font-body-size: 14px;         --font-body-height: 22px;         --font-body-weight: 400;
+  --font-small-size: 13px;        --font-small-height: 20px;        --font-small-weight: 400;
+  --font-caption-size: 12px;      --font-caption-height: 18px;      --font-caption-weight: 400;
+  --font-micro-size: 11px;        --font-micro-height: 16px;        --font-micro-weight: 400;
 }
 
 /* ===== 深色模式（平台统一） ===== */
@@ -432,6 +457,53 @@ body {
 .btn-press:active {
   transform: scale(0.95);
   transition: transform 0.1s ease;
+}
+
+/* ===== Type Scale 工具类（P1）===== */
+.font-display     { font-size: var(--font-display-size);     line-height: var(--font-display-height);     font-weight: var(--font-display-weight);     letter-spacing: var(--font-display-spacing); }
+.font-page-title  { font-size: var(--font-page-title-size);  line-height: var(--font-page-title-height);  font-weight: var(--font-page-title-weight);  letter-spacing: var(--font-page-title-spacing); }
+.font-section     { font-size: var(--font-section-size);     line-height: var(--font-section-height);     font-weight: var(--font-section-weight);     letter-spacing: var(--font-section-spacing); }
+.font-card-title  { font-size: var(--font-card-title-size);  line-height: var(--font-card-title-height);  font-weight: var(--font-card-title-weight); }
+.font-body        { font-size: var(--font-body-size);        line-height: var(--font-body-height);        font-weight: var(--font-body-weight); }
+.font-small       { font-size: var(--font-small-size);       line-height: var(--font-small-height);       font-weight: var(--font-small-weight); }
+.font-caption     { font-size: var(--font-caption-size);     line-height: var(--font-caption-height);     font-weight: var(--font-caption-weight); }
+.font-micro       { font-size: var(--font-micro-size);       line-height: var(--font-micro-height);       font-weight: var(--font-micro-weight); }
+
+/* 统计数字强化（等宽 + 紧凑字距）*/
+.stat-number {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--neutral-text-1);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== 统一交互反馈（P1，新代码优先使用；旧 .card-hover-lift 保留不破坏）===== */
+/* 卡片悬停：克制 4px 上浮 + 阴影升级 */
+.card-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-card-hover);
+}
+.card-hover-subtle:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
+}
+
+/* 文字链接悬停 */
+.link-hover {
+  transition: color 0.15s ease;
+}
+.link-hover:hover {
+  color: var(--arco-primary);
+}
+
+/* 焦点环（a11y）*/
+.focus-ring:focus-visible {
+  outline: 2px solid var(--arco-primary);
+  outline-offset: 2px;
 }
 
 /* ===== 路由过渡动画 ===== */

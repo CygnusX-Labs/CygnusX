@@ -43,7 +43,7 @@ const themeOverrides = computed<GlobalThemeOverrides>(() => {
       dividerColor: isDark ? '#2A3040' : '#E5E6EB',
       borderColor: isDark ? '#2A3040' : '#E5E6EB',
       fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif",
-      borderRadius: '6px',
+      borderRadius: '8px',  // 对齐 --radius-sm（P0 圆角统一）
       borderRadiusSmall: '4px',
     },
     Button: {
