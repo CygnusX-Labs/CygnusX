@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +18,7 @@ from omichub.core.exceptions import (
     OmicHubError,
 )
 from omichub.core.security import (
+    create_2fa_challenge_token,
     create_access_token,
     create_refresh_token,
     decode_token,
@@ -31,6 +33,27 @@ from omichub.infrastructure.database.repositories.notification_repository import
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class LoginSuccess:
+    """密码登录成功（2FA 未开启）→ 直接下发正式令牌。"""
+
+    access_token: str
+    refresh_token: str
+    user: User
+    is_first_login: bool
+
+
+@dataclass
+class LoginTwoFactorRequired:
+    """密码正确但已开启 2FA → 仅下发短时中间态凭证，不下发正式权限。
+
+    前端据此切换到「请输入 6 位动态验证码」表单，调用 /auth/2fa/login 完成校验。
+    """
+
+    challenge_token: str
+    user: User
 
 
 async def create_welcome_notification(db: AsyncSession, user_id: str) -> None:
@@ -97,13 +120,15 @@ class AuthService:
         # 保存用户
         return await self.user_repo.save(user)
 
-    async def login(self, username: str, password: str) -> tuple[str, str, User, bool]:
-        """用户登录
+    async def login(
+        self, username: str, password: str
+    ) -> LoginSuccess | LoginTwoFactorRequired:
+        """用户登录（密码阶段）。
 
-        返回 (access_token, refresh_token, user, is_first_login)。
-        is_first_login 在更新 last_login_at 之前判定（为 None 即首次）。
+        - 2FA 未开启：校验通过即下发正式 access/refresh token，更新 last_login_at。
+        - 2FA 已开启：仅签发 5 分钟中间态凭证（type=2fa_challenge），不下发正式权限、
+          不更新 last_login_at；前端需调 /auth/2fa/login 完成二次校验。
         """
-        # 获取用户
         # 防御性捕获：DB 层异常（缺列、连接失败等）不应冒泡成 500 后被前端误判为
         # "密码错误"。此处显式捕获 SQLAlchemyError，记录关键日志并返回通用 500 提示，
         # 让运维一眼看出是系统故障而非认证失败。
@@ -111,7 +136,7 @@ class AuthService:
             user = await self.user_repo.get_by_username(username)
         except Exception as exc:
             logging.critical(f"Database error during login (user='{username}'): {exc}")
-            raise OmicHubError("系统内部错误，请联系管理员")
+            raise OmicHubError("系统内部错误，请联系管理员") from exc
         if not user:
             raise AuthenticationError("用户名或密码错误")
 
@@ -122,6 +147,11 @@ class AuthService:
         # 验证用户状态
         if user.status != UserStatus.ACTIVE:
             raise AuthenticationError("账户未激活")
+
+        # 2FA 已开启：签发中间态凭证，等二次校验
+        if user.is_2fa_enabled:
+            challenge = create_2fa_challenge_token(subject=str(user.id))
+            return LoginTwoFactorRequired(challenge_token=challenge, user=user)
 
         # 首次登录判定：在更新 last_login_at 之前检查
         is_first_login = user.last_login_at is None
@@ -138,7 +168,7 @@ class AuthService:
         access_token = create_access_token(subject=str(user.id))
         refresh_token = create_refresh_token(subject=str(user.id))
 
-        return access_token, refresh_token, user, is_first_login
+        return LoginSuccess(access_token, refresh_token, user, is_first_login)
 
     async def refresh_token(self, refresh_token: str) -> tuple[str, str]:
         """刷新访问令牌"""

@@ -22,15 +22,16 @@ const md = new MarkdownIt({
   linkify: true,
   typographer: true,
   highlight: (str: string, lang: string): string => {
+    const runBtn = `<button class="run-btn" data-code="${encodeURIComponent(str)}" data-lang="${lang || 'text'}">▶ 运行</button>`
     if (lang && hljs.getLanguage(lang)) {
       try {
         const highlighted = hljs.highlight(str, { language: lang }).value
-        return `<pre class="hljs"><div class="code-header"><span class="code-lang">${lang}</span><button class="copy-btn" data-code="${encodeURIComponent(str)}">复制</button></div><code class="hljs language-${lang}">${highlighted}</code></pre>`
+        return `<pre class="hljs"><div class="code-header"><span class="code-lang">${lang}</span>${runBtn}<button class="copy-btn" data-code="${encodeURIComponent(str)}">复制</button></div><code class="hljs language-${lang}">${highlighted}</code></pre>`
       } catch {
         /* empty */
       }
     }
-    return `<pre class="hljs"><div class="code-header"><span class="code-lang">text</span><button class="copy-btn" data-code="${encodeURIComponent(str)}">复制</button></div><code>${md.utils.escapeHtml(str)}</code></pre>`
+    return `<pre class="hljs"><div class="code-header"><span class="code-lang">text</span>${runBtn}<button class="copy-btn" data-code="${encodeURIComponent(str)}">复制</button></div><code>${md.utils.escapeHtml(str)}</code></pre>`
   },
 })
 

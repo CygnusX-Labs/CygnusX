@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { NButton, NIcon, NTag, useMessage } from 'naive-ui'
+import { NButton, NIcon, NTag } from 'naive-ui'
 import { ArrowBackOutline, BulbOutline } from '@vicons/ionicons5'
 import KimiMessageList from '@/components/ai-chat/KimiMessageList.vue'
 import KimiChatInput from '@/components/ai-chat/KimiChatInput.vue'
 import AgentCapabilityDrawer from './AgentCapabilityDrawer.vue'
 import { useAgentHubStore } from '@/stores/agentHub'
+import type { FileAttachment } from '@/components/ai-chat/types'
 
 const store = useAgentHubStore()
-const message = useMessage()
 
 const input = ref('')
 const showCap = ref(false)
@@ -17,20 +17,17 @@ const agent = computed(() => store.currentAgent)
 const session = computed(() => store.currentSession)
 const engineLabel = computed(() => agent.value?.model_engine || '')
 
-function handleSend(content: string) {
-  if (!content.trim() || store.isStreaming) return
+function handleSend(content: string, options: { attachments?: FileAttachment[]; enableWebSearch?: boolean; enableCodeExecution?: boolean } = {}) {
+  if (!content.trim() && !options.attachments?.length) return
+  if (store.isStreaming) return
   // sendMessage 是 async；不 await，让 UI 立即清空输入框
-  store.sendMessage(content)
+  store.sendMessage(content, options)
   input.value = ''
 }
 
 function handleBack() {
   store.newChat()
 }
-
-function handleUpload() { message.info('文件上传功能开发中') }
-function handleWebSearch() { message.info('联网搜索功能开发中') }
-function handleSandbox() { message.info('代码沙盒功能开发中') }
 </script>
 
 <template>
@@ -73,9 +70,6 @@ function handleSandbox() { message.info('代码沙盒功能开发中') }
         :disabled="store.isStreaming"
         :placeholder="`向 ${agent.name} 提问…`"
         @send="handleSend"
-        @upload-file="handleUpload"
-        @toggle-web-search="handleWebSearch"
-        @trigger-sandbox="handleSandbox"
       />
     </div>
 

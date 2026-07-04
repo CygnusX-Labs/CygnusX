@@ -6,7 +6,6 @@ import {
   NDataTable,
   NDropdown,
   NIcon,
-  NPopconfirm,
   NSpace,
   NTag,
   useMessage,
@@ -23,10 +22,10 @@ import {
 } from '@vicons/ionicons5'
 import { h, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import DeleteConfirmModal from '@/components/DeleteConfirmModal.vue'
 import AddUserModal from '@/components/AddUserModal.vue'
 import QuotaEditModal from '@/components/QuotaEditModal.vue'
 import NoteEditModal from '@/components/NoteEditModal.vue'
+import AdminTOTPConfirmModal from '@/components/AdminTOTPConfirmModal.vue'
 import RechargeModal from '@/components/admin-cookie/RechargeModal.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -56,12 +55,6 @@ const loading = ref(false)
 const showRecharge = ref(false)
 const rechargeUserId = ref<string | null>(null)
 
-// 删除确认弹窗（逐字强确认，保留给"更多"菜单外的快速删除入口，此处暂留兼容；
-// 操作列的删除走 NPopconfirm 轻量确认，二者择一即可）
-const deleteModalVisible = ref(false)
-const targetUsername = ref('')
-const pendingDeleteId = ref<string | null>(null)
-
 // 添加用户弹窗
 const addUserModalVisible = ref(false)
 
@@ -72,6 +65,12 @@ const quotaTarget = ref<AdminUser | null>(null)
 // 编辑备注弹窗
 const noteModalVisible = ref(false)
 const noteTarget = ref<AdminUser | null>(null)
+
+// 高敏感操作：TOTP 二次确认弹窗
+const totpModalVisible = ref(false)
+const totpTargetId = ref<string | null>(null)
+const totpTargetUsername = ref('')
+const totpLoading = ref(false)
 
 const statusTag = (status: string) => {
   const map: Record<string, 'success' | 'warning' | 'error' | 'default'> = {
@@ -102,7 +101,7 @@ function buildMoreOptions(row: AdminUser) {
   return opts
 }
 
-/** 下拉菜单选中处理（删除不在此处理，走 Popconfirm） */
+/** 下拉菜单选中处理（删除不在此处理，走 TOTP 二次确认弹窗） */
 function handleMoreSelect(key: string, row: AdminUser) {
   if (key === 'note') openNoteModal(row)
   else if (key === 'quota') openQuotaModal(row)
@@ -260,29 +259,18 @@ const columns: DataTableColumns<AdminUser> = [
         },
       )
 
-      // 删除：高危，独立放最右，用 NPopconfirm 二次确认
+      // 删除：高危，独立放最右，TOTP 二次确认弹窗
       const deleteBtn = h(
-        NPopconfirm,
+        NButton,
         {
-          onPositiveClick: () => deleteUser(row.id),
-          positiveText: '确认删除',
-          negativeText: '取消',
+          size: 'small',
+          type: 'error',
+          ghost: true,
+          disabled: isSelf,
+          title: isSelf ? '不能删除当前登录账号' : '删除该用户',
+          onClick: () => openDeleteWithTotp(row),
         },
-        {
-          default: () => `确认删除用户「${row.username}」？此操作不可恢复。`,
-          trigger: () =>
-            h(
-              NButton,
-              {
-                size: 'small',
-                type: 'error',
-                ghost: true,
-                disabled: isSelf,
-                title: isSelf ? '不能删除当前登录账号' : '删除该用户',
-              },
-              { default: () => '删除' },
-            ),
-        },
+        { default: () => '删除' },
       )
 
       return h(NSpace, { size: 4, align: 'center' }, { default: () => [...primary, moreDropdown, deleteBtn] })
@@ -329,10 +317,31 @@ async function toggleStatus(row: AdminUser) {
   await fetchUsers()
 }
 
-// 删除：NPopconfirm 确认后直接执行
-async function deleteUser(id: string) {
+// 删除：先弹 TOTP 二次确认，再请求后端（带 X-TOTP-Code 请求头）
+function openDeleteWithTotp(row: AdminUser) {
+  totpTargetId.value = row.id
+  totpTargetUsername.value = row.username
+  totpModalVisible.value = true
+}
+
+async function handleTotpConfirm(code: string) {
+  if (!totpTargetId.value) return
+  totpLoading.value = true
   try {
-    await apiClient.delete(`/admin/users/${id}`)
+    await deleteUser(totpTargetId.value, code)
+    totpModalVisible.value = false
+    totpTargetId.value = null
+    totpTargetUsername.value = ''
+  } finally {
+    totpLoading.value = false
+  }
+}
+
+async function deleteUser(id: string, totpCode: string) {
+  try {
+    await apiClient.delete(`/admin/users/${id}`, {
+      headers: { 'X-TOTP-Code': totpCode },
+    })
     message.success('用户已删除')
     await fetchUsers()
   } catch (error: any) {
@@ -390,18 +399,20 @@ onMounted(fetchUsers)
       @success="(note: string) => onNoteSaved(noteTarget?.id || '', note)"
     />
 
-    <!-- 删除用户二次确认弹窗（保留兜底，操作列已改用 Popconfirm） -->
-    <DeleteConfirmModal
-      v-model:visible="deleteModalVisible"
-      :target-username="targetUsername"
-      @confirm="() => { if (pendingDeleteId) deleteUser(pendingDeleteId) }"
-    />
-
     <!-- 快捷充值饼干（与饼干账户管理共用同一全局组件） -->
     <RechargeModal
       v-model:show="showRecharge"
       :user-id="rechargeUserId"
       @success="fetchUsers"
+    />
+    <!-- 删除用户 TOTP 二次确认弹窗 -->
+    <AdminTOTPConfirmModal
+      v-model:show="totpModalVisible"
+      :title="`删除用户：${totpTargetUsername}`"
+      :description="`确认彻底删除用户「${totpTargetUsername}」？此操作不可恢复，请输入当前 6 位 TOTP 验证码。`"
+      confirm-text="确认删除"
+      :loading="totpLoading"
+      @confirm="handleTotpConfirm"
     />
   </div>
 </template>

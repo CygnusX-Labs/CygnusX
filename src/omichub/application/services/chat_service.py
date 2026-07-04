@@ -10,11 +10,15 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
+import anyio
+import httpx
 from loguru import logger
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -113,6 +117,23 @@ BUILTIN_ASSISTANTS: list[dict[str, Any]] = [
         "category": "visualization",
     },
 ]
+
+
+WEB_SEARCH_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "web_search",
+        "description": "联网搜索，获取与用户问题相关的实时信息。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "搜索关键词"},
+                "top_n": {"type": "integer", "default": 5, "description": "返回结果数量"},
+            },
+            "required": ["query"],
+        },
+    },
+}
 
 
 class ChatService:
@@ -366,8 +387,14 @@ class ChatService:
     # --- Agent 调度中枢：SSE 流式聊天（含 MCP 工具调用闭环） ---
 
     async def stream_agent_chat(
-        self, user_id: str, agent_id: str, messages: list[dict[str, str]],
+        self,
+        user_id: str,
+        agent_id: str,
+        messages: list[dict[str, str]],
         session_id: str | None = None,
+        attachments: list[dict[str, Any]] | None = None,
+        enable_web_search: bool = False,
+        enable_code_execution: bool = False,
     ) -> AsyncIterator[ChatChunk]:
         """Agent 编排闭环：查 Agent → 组装模型/系统词/工具 → 打 LLM → 执行 tool_call 回灌 → 流式返回"""
         from omichub.application.services.agent_service import AgentService
@@ -412,7 +439,10 @@ class ChatService:
         # 2. 落库用户消息（脱敏）
         user_content_raw = messages[-1].get("content", "") if messages else ""
         user_content = sanitize_text(user_content_raw, sensitive_keywords)
-        await self.add_message(current_session_id, "user", user_content)
+        await self.add_message(
+            current_session_id, "user", user_content,
+            metadata={"attachments": attachments or []},
+        )
 
         # 3. AI 占位消息
         ai_message = await self.add_message(
@@ -420,8 +450,17 @@ class ChatService:
             metadata={"model": model_config.name, "agent_id": agent_id},
         )
 
-        # 4. 送 LLM 的 messages（脱敏副本）
+        # 4. 送 LLM 的 messages（脱敏 + 附件多模态注入）
         llm_messages: list[dict[str, Any]] = sanitize_messages(messages, sensitive_keywords)
+        if attachments:
+            llm_messages = await self._build_multimodal_messages(llm_messages, attachments)
+
+        # 动态追加联网搜索工具
+        tools = list(ctx.tools or [])
+        effective_web_search = enable_web_search or bool(ctx.features.get("enable_web_search"))
+        if effective_web_search:
+            tools.append(WEB_SEARCH_TOOL)
+
         full_content = ""
         update_counter = 0
         first_chunk_sent = False
@@ -438,7 +477,7 @@ class ChatService:
                     config=model_config, messages=llm_messages,
                     system_prompt=ctx.system_prompt or None,
                     temperature=ctx.temperature, max_tokens=ctx.max_tokens,
-                    tools=ctx.tools or None,
+                    tools=tools or None,
                 ):
                     if chunk.type == "text":
                         if chunk.metadata.get("is_reasoning"):
@@ -527,7 +566,10 @@ class ChatService:
                         None,
                     )
                     if server is None:
-                        result = {"success": False, "error": f"工具 {tool_name} 未挂载到该 Agent"}
+                        if tool_name == "web_search":
+                            result = await self._web_search(args)
+                        else:
+                            result = {"success": False, "error": f"工具 {tool_name} 未挂载到该 Agent"}
                     else:
                         result = await mcp_client.call_tool(server, tool_name, args)
 
@@ -570,6 +612,126 @@ class ChatService:
                 type="error", content=f"生成失败: {e}",
                 metadata={"session_id": current_session_id, "message_id": ai_message.message_id},
             )
+
+    # --- 多模态与联网搜索辅助 ---
+
+    @staticmethod
+    async def _build_multimodal_messages(
+        messages: list[dict[str, Any]], attachments: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """把附件注入到最后一条用户消息中，构造 OpenAI 多模态消息格式。"""
+        if not messages:
+            return messages
+        target_index = max(
+            (i for i, m in enumerate(messages) if m.get("role") == "user"),
+            default=-1,
+        )
+        if target_index == -1:
+            return messages
+
+        target = messages[target_index]
+        content: list[dict[str, Any]] = [
+            {"type": "text", "text": target.get("content", "")}
+        ]
+        for att in attachments:
+            att_type = att.get("type", "file")
+            mime = att.get("mime_type", "")
+            if att_type == "image" or (mime and mime.startswith("image/")):
+                data_url = await ChatService._read_attachment_data_url(att)
+                if data_url:
+                    content.append({"type": "image_url", "image_url": {"url": data_url}})
+                else:
+                    content.append({
+                        "type": "text",
+                        "text": f"\n\n[图片 {att.get('name', '')} 读取失败]",
+                    })
+            else:
+                text = await ChatService._read_attachment_text(att)
+                max_len = 8000
+                if text:
+                    snippet = text[:max_len] + ("\n...（已截断）" if len(text) > max_len else "")
+                    content.append({
+                        "type": "text",
+                        "text": f"\n\n[文件: {att.get('name', '')}]\n{snippet}",
+                    })
+                else:
+                    content.append({
+                        "type": "text",
+                        "text": f"\n\n[文件 {att.get('name', '')} 读取失败或为空]",
+                    })
+
+        new_messages = list(messages)
+        new_messages[target_index] = {**target, "content": content}
+        return new_messages
+
+    @staticmethod
+    def _resolve_attachment_path(att_url: str) -> str | None:
+        """把聊天附件 URL 解析为本地路径，非本地上传则返回 None。"""
+        prefix = "/api/v1/files/chat-upload/"
+        if att_url.startswith(prefix):
+            filename = Path(att_url[len(prefix):]).name
+            path = os.path.join("data/uploads/chat", filename)
+            if os.path.isfile(path):
+                return path
+        return None
+
+    @staticmethod
+    async def _read_attachment_data_url(att: dict[str, Any]) -> str:
+        """读取附件并返回 base64 data URL（主要用于图片）。"""
+        import base64
+
+        att_url = att.get("url", "")
+        mime = att.get("mime_type") or "application/octet-stream"
+        local_path = ChatService._resolve_attachment_path(att_url)
+        try:
+            if local_path:
+                async with await anyio.open_file(local_path, "rb") as f:
+                    data = await f.read()
+            else:
+                async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+                    resp = await client.get(att_url)
+                    resp.raise_for_status()
+                    data = resp.content
+            encoded = base64.b64encode(data).decode("ascii")
+            return f"data:{mime};base64,{encoded}"
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"读取附件失败 {att.get('name')}: {e}")
+            return ""
+
+    @staticmethod
+    async def _read_attachment_text(att: dict[str, Any]) -> str:
+        """读取文本类附件内容。"""
+        att_url = att.get("url", "")
+        local_path = ChatService._resolve_attachment_path(att_url)
+        try:
+            if local_path:
+                async with await anyio.open_file(local_path, "r", encoding="utf-8", errors="ignore") as f:
+                    return await f.read()
+            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+                resp = await client.get(att_url)
+                resp.raise_for_status()
+                return resp.text
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"读取文本附件失败 {att.get('name')}: {e}")
+            return ""
+
+    async def _web_search(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """联网搜索占位实现：返回模拟结果，后续可替换为真实搜索引擎。"""
+        query = arguments.get("query", "")
+        top_n = int(arguments.get("top_n", 5))
+        results = [
+            {
+                "title": f"与「{query}」相关的搜索结果示例 1",
+                "url": "https://example.com/1",
+                "snippet": "这是联网搜索返回的示例摘要，真实实现可接入 DuckDuckGo / Bing / 自建搜索。",
+            },
+            {
+                "title": f"与「{query}」相关的搜索结果示例 2",
+                "url": "https://example.com/2",
+                "snippet": "示例摘要 2：OmicHub 后续可在此接入生物医学文献或通用网页搜索。",
+            },
+        ]
+        return {"success": True, "result": {"query": query, "results": results[:top_n]}}
 
     # --- 助手管理 ---
 

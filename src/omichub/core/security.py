@@ -93,3 +93,29 @@ def decode_token(token: str) -> dict[str, Any] | None:
         return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
     except JWTError:
         return None
+
+
+def create_2fa_challenge_token(
+    subject: str | int, expires_delta: timedelta | None = None
+) -> str:
+    """创建 2FA 中间态凭证（短时 JWT，type=2fa_challenge，默认 5 分钟）。
+
+    仅用于密码校验通过、但需完成 TOTP 二次校验的过渡态；不携带任何正式权限。
+    """
+    settings = get_settings()
+    expire = datetime.now(UTC) + (expires_delta or timedelta(minutes=5))
+    payload: dict[str, Any] = {
+        "sub": str(subject),
+        "exp": expire,
+        "type": "2fa_challenge",
+    }
+    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def decode_2fa_challenge_token(token: str) -> str | None:
+    """解码 2FA 中间态凭证，返回 user_id；非法/过期/类型不符返回 None。"""
+    payload = decode_token(token)
+    if payload is None or payload.get("type") != "2fa_challenge":
+        return None
+    user_id = payload.get("sub")
+    return str(user_id) if user_id else None

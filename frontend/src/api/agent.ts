@@ -20,6 +20,7 @@ function toAgent(d: any): AgentTemplate {
     welcome_message: d.welcome_message ?? '',
     mcp_ids: (d.mcp_ids ?? []).map(String),
     skill_ids: (d.skill_ids ?? []).map(String),
+    features: d.features || {},
     is_active: d.is_active ?? true,
     is_builtin: d.is_builtin ?? false,
   }
@@ -71,11 +72,11 @@ function toPayload(a: Partial<AgentTemplate> & { id?: string }): Record<string, 
   if (a.color !== undefined) out.color = a.color
   if (a.category !== undefined) out.category = a.category
   if (a.model_id !== undefined) out.model_id = a.model_id || null
-  if (a.model_engine !== undefined) out.model_engine = a.model_engine
   if (a.system_prompt !== undefined) out.system_prompt = a.system_prompt
   if (a.welcome_message !== undefined) out.welcome_message = a.welcome_message
   if (a.mcp_ids !== undefined) out.mcp_ids = a.mcp_ids
   if (a.skill_ids !== undefined) out.skill_ids = a.skill_ids
+  if (a.features !== undefined) out.features = a.features
   if (a.is_active !== undefined) out.is_active = a.is_active
   return out
 }

@@ -6,7 +6,8 @@
  * 优雅降级：LLM 接口 3s 超时或任意异常时，静默回退默认文案，保证一定有弹窗。
  * 节流策略：一次浏览器会话（sessionStorage）只弹一次，避免反复进出仪表板刷屏。
  */
-import { watch } from 'vue'
+import { nextTick, watch } from 'vue'
+import type { WatchStopHandle } from 'vue'
 import { useNotification } from 'naive-ui'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
@@ -82,12 +83,17 @@ export function useAdminWelcome() {
    * 触发后立即取消监听，避免内存泄漏。
    */
   function triggerAdminWelcome() {
-    const stop = watch(
+    // 注意：这里不能用 const stop = watch(..., () => { stop() }, { immediate: true })。
+    // immediate 回调会在 watch 返回 stop handle 之前同步执行，此时 stop 仍处于 TDZ，
+    // 生产环境压缩后变量名变成 $，会抛出 "Cannot access '$' before initialization"。
+    let stop: WatchStopHandle | null = null
+    stop = watch(
       () => authStore.user?.role,
       (role) => {
         if (role === 'admin') {
           void fire()
-          stop()
+          // 推迟到 nextTick，确保 stop 已经被赋值
+          nextTick(() => stop?.())
         }
       },
       { immediate: true },

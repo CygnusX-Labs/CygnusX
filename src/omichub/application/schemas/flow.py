@@ -21,7 +21,9 @@ class FlowMetaDTO(OmicsHubBaseSchema):
     author: str | None = None
     tags: list[str] = []
     icon: str | None = None
+    color: str | None = None
     docs_url: str | None = None
+    github_url: str | None = None
 
 
 class FlowListItemDTO(OmicsHubBaseSchema):
@@ -35,7 +37,9 @@ class FlowListItemDTO(OmicsHubBaseSchema):
     author: str | None = None
     tags: list[str] = []
     icon: str | None = None
+    color: str | None = None
     docs_url: str | None = None
+    github_url: str | None = None
     parameter_count: int = 0
     has_sample_sheet: bool = False
 
@@ -75,7 +79,9 @@ def flow_config_to_list_item(config: FlowConfig) -> FlowListItemDTO:
         author=config.meta.author,
         tags=config.meta.tags,
         icon=config.meta.icon,
+        color=config.meta.color,
         docs_url=config.meta.docs_url,
+        github_url=config.meta.github_url,
         parameter_count=len(config.parameters),
         has_sample_sheet=config.sample_sheet is not None,
     )
@@ -93,7 +99,9 @@ def flow_config_to_detail(config: FlowConfig) -> FlowDetailDTO:
             author=config.meta.author,
             tags=config.meta.tags,
             icon=config.meta.icon,
+            color=config.meta.color,
             docs_url=config.meta.docs_url,
+            github_url=config.meta.github_url,
         ),
         parameters=config.parameters,
         execution=config.execution.model_dump(),

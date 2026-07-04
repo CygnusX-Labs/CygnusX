@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
-import { NButton, NIcon, NTooltip, NPopover, useMessage } from 'naive-ui'
+import { NButton, NIcon, NTooltip, NPopover, useMessage, NTag } from 'naive-ui'
 import {
   ArrowUpOutline,
   BulbOutline,
@@ -13,6 +13,8 @@ import {
 import SlashCommandMenu from './SlashCommandMenu.vue'
 import PromptSidebar from './PromptSidebar.vue'
 import { useChatStore } from '@/stores/chat'
+import apiClient from '@/api/client'
+import type { FileAttachment } from './types'
 
 interface Props {
   modelValue: string
@@ -28,9 +30,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
-  send: [content: string]
-  uploadFile: [file: File]
-  toggleWebSearch: []
+  send: [content: string, options: { attachments?: FileAttachment[]; enableWebSearch?: boolean; enableCodeExecution?: boolean }]
   triggerSandbox: []
 }>()
 
@@ -38,12 +38,15 @@ const chatStore = useChatStore()
 const message = useMessage()
 
 const textareaRef = ref<HTMLTextAreaElement>()
+const fileInputRef = ref<HTMLInputElement>()
 const isFocused = ref(false)
 const showSlashMenu = ref(false)
 const slashQuery = ref('')
 const slashMenuPosition = ref({ top: 0, left: 0 })
 const showPromptSidebar = ref(false)
 const showClearConfirm = ref(false)
+const attachments = ref<FileAttachment[]>([])
+const uploading = ref(false)
 
 const localValue = ref(props.modelValue)
 
@@ -72,7 +75,7 @@ function autoResize() {
   el.style.height = Math.min(el.scrollHeight, 200) + 'px'
 }
 
-const canSend = computed(() => localValue.value.trim().length > 0)
+const canSend = computed(() => localValue.value.trim().length > 0 || attachments.value.length > 0)
 
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -126,9 +129,13 @@ function handleSlashSelect(command: string) {
 
 function handleSend() {
   const content = localValue.value.trim()
-  if (!content || props.disabled) return
-  emit('send', content)
+  if ((!content && !attachments.value.length) || props.disabled) return
+  emit('send', content, {
+    attachments: attachments.value.length ? [...attachments.value] : undefined,
+    enableWebSearch: chatStore.enableWebSearch,
+  })
   localValue.value = ''
+  attachments.value = []
   nextTick(() => {
     if (textareaRef.value) {
       textareaRef.value.style.height = 'auto'
@@ -143,15 +150,46 @@ function handleBlur() {
   }, 200)
 }
 
-// 占位功能（后端依赖，本轮提示开发中）
-function handleAttachStub() {
-  message.info('文件上传功能开发中')
+function handleAttach() {
+  fileInputRef.value?.click()
 }
-function handleWebSearchStub() {
-  message.info('联网搜索功能开发中')
+
+async function handleFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = input.files
+  if (!files || !files.length) return
+  uploading.value = true
+  for (const file of Array.from(files)) {
+    const formData = new FormData()
+    formData.append('file', file)
+    try {
+      const res = await apiClient.post('/files/chat-upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      attachments.value.push({
+        name: file.name,
+        size: file.size,
+        type: file.type || 'application/octet-stream',
+        url: res.data.url,
+      })
+    } catch (err: any) {
+      message.error(`上传 ${file.name} 失败: ${err?.response?.data?.detail || err.message}`)
+    }
+  }
+  uploading.value = false
+  input.value = ''
 }
+
+function removeAttachment(idx: number) {
+  attachments.value.splice(idx, 1)
+}
+
+function handleWebSearchToggle() {
+  chatStore.toggleWebSearch()
+}
+
 function handleSandboxStub() {
-  message.info('代码沙盒功能开发中')
+  message.info('代码执行请在生成代码后点击代码块“运行”按钮')
 }
 
 function handlePromptSelect(content: string) {
@@ -190,6 +228,28 @@ function handleClearConfirm() {
       />
     </div>
 
+    <input
+      ref="fileInputRef"
+      type="file"
+      multiple
+      style="display: none"
+      @change="handleFileChange"
+    />
+
+    <div v-if="attachments.length" class="attachment-list">
+      <NTag
+        v-for="(att, idx) in attachments"
+        :key="idx"
+        size="small"
+        round
+        closable
+        :disabled="uploading"
+        @close="removeAttachment(idx)"
+      >
+        {{ att.name }}
+      </NTag>
+    </div>
+
     <SlashCommandMenu
       v-if="showSlashMenu"
       :query="slashQuery"
@@ -210,27 +270,32 @@ function handleClearConfirm() {
           提示词模板
         </n-tooltip>
 
-        <!-- 附件上传（占位） -->
+        <!-- 附件上传 -->
         <n-tooltip trigger="hover">
           <template #trigger>
-            <n-button text class="toolbar-btn" @click="handleAttachStub">
+            <n-button text class="toolbar-btn" :loading="uploading" @click="handleAttach">
               <n-icon size="18"><AttachOutline /></n-icon>
             </n-button>
           </template>
           上传文件
         </n-tooltip>
 
-        <!-- 联网搜索（占位） -->
+        <!-- 联网搜索 -->
         <n-tooltip trigger="hover">
           <template #trigger>
-            <n-button text class="toolbar-btn" @click="handleWebSearchStub">
+            <n-button
+              text
+              class="toolbar-btn"
+              :class="{ active: chatStore.enableWebSearch }"
+              @click="handleWebSearchToggle"
+            >
               <n-icon size="18"><GlobeOutline /></n-icon>
             </n-button>
           </template>
-          联网搜索
+          {{ chatStore.enableWebSearch ? '关闭联网搜索' : '开启联网搜索' }}
         </n-tooltip>
 
-        <!-- 代码沙盒（占位） -->
+        <!-- 代码执行提示 -->
         <n-tooltip trigger="hover">
           <template #trigger>
             <n-button text class="toolbar-btn" @click="handleSandboxStub">
@@ -328,6 +393,13 @@ function handleClearConfirm() {
     margin-bottom: 8px;
   }
 
+  .attachment-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+
   .chat-textarea {
     width: 100%;
     min-height: 24px;
@@ -378,6 +450,11 @@ function handleClearConfirm() {
       &:hover {
         color: var(--chat-text-primary);
         background: var(--chat-surface-hover);
+      }
+
+      &.active {
+        color: var(--chat-accent);
+        background: rgba(79, 142, 247, 0.12);
       }
 
       .btn-label {

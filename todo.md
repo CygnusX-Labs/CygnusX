@@ -1,11 +1,56 @@
 # OmicHub 开发进度 Todo
 
 > 基于 `docs/` 架构设计文档，逐步完善项目骨架。
-> 更新日期：2026-07-02 (AI 助手 YAML 化配置 + 模型显示修复 + 生信工具箱前端搭建 + 数据管理模块全面升级 + Agent 调度中枢前后端真实联动 + 统一夜间模式 + 饼干余额调账修复)
+> 更新日期：2026-07-04 (饼干定价页 500 修复：数据库缺列 + AI 助手架构文档)
 
 ---
 
 ## 已完成
+
+### 饼干定价页 500 错误修复 + AI 助手架构文档 ✅ 2026-07-04
+
+> 需求：`/admin/cookies/pricing` 页面突然报 500 错误（`Request failed with status code 500`）。
+> 根因分析：`cookie_pricing` 数据库表缺少 ORM 模型中定义的 `per_sample_cost` 和 `per_comparison_cost` 两列，查询时触发 `asyncpg.exceptions.UndefinedColumnError`。同时 CHECK 约束 `chk_pricing_unit` 缺少 `per_sample` 和 `per_comparison` 两个合法值。数据库 schema 与 ORM 模型不一致，属于历史迁移遗漏。
+> 验证：修复后 `\d cookie_pricing` 确认两列已存在、约束已更新。
+
+- [x] **数据库修复** — `ALTER TABLE cookie_pricing ADD COLUMN per_sample_cost/per_comparison_cost` + 重建 `chk_pricing_unit` 约束（新增 `per_sample`/`per_comparison`）
+- [x] **Alembic 迁移** — `l9m0n1o2p3q4_add_cookie_pricing_sample_cost_columns.py`（upgrade/downgrade 完整，链 `k8l9m0n1o2p3 → l9m0n1o2p3q4`）
+- [x] **AI 助手架构文档** — `docs/ai.md`：汇总当前 AI 助手完整实现（两代架构演进、后端四层文件清单、前端组件/Store/Composable 清单、Agent 模式端到端数据流、配置体系、安全机制、DB ER 关系、扩展点分析），供后续架构优化参考
+
+### AI 助手架构优化（按调研报告）✅ 2026-07-04
+
+> 依据：`docs/omichub-architecture-research-report.md`。目标：解决报告中 5 大问题（模型一致、自动发现、配置统一、文件/搜索/代码执行、保留样式）。
+> 验证：后端 `ruff check` / 前端 `vue-tsc --noEmit` / `npm run build` 通过；新增 Alembic 迁移 `n1o2p3q4r5s6`。
+
+- [x] **问题 1：Agent 模型调用一致**
+  - [x] 后端：`AgentService.assemble_context()` 严格按 `model_id` 外键解析，取消 fallback 到默认模型
+  - [x] 后端：`create_agent` / `update_agent` 时自动同步 `model_engine` / `model_name`
+  - [x] 后端：`CreateAgentRequest` / `UpdateAgentRequest` 移除 `model_engine` 字段，避免前端字符串覆盖
+  - [x] 前端：`AgentResourceTab.vue` 模型列移除 `model_engine` fallback，仅展示下拉选择的 Provider
+- [x] **问题 2：模型自动发现**
+  - [x] 后端：`OpenAICompatibleProvider.list_models()` 调用 `/v1/models`
+  - [x] 后端：`POST /admin/ai-providers/{id}/discover-models`
+  - [x] 后端：`GET /admin/ai-providers/templates` 内置 Provider 模板
+  - [x] 数据：`data/provider_templates.yaml` 预置 OpenAI / Anthropic / DeepSeek / Kimi / Qwen / Ark / Ollama
+  - [x] 前端：`AgentResourceTab.vue` 模型下拉旁增加刷新按钮 + 发现结果浮层
+- [x] **问题 3：配置统一**
+  - [x] 后端：`agent_templates` 新增 `features` JSONB（联网搜索 / 文件上传 / 代码执行 / 深度思考）
+  - [x] 后端：`AgentContext` 携带 `features`，`stream_agent_chat` 默认启用 Agent 级开关
+  - [x] 后端：Alembic 迁移 `n1o2p3q4r5s6_add_agent_features.py`
+  - [x] 前端：`AgentResourceTab.vue` 新增「功能开关」表单区
+  - [x] 前端：`AgentTemplate` / `adminAgentApi` DTO 映射 `features`
+- [x] **问题 4：文件上传 / 联网搜索 / 代码执行**
+  - [x] 后端：`POST /files/chat-upload` + `GET /files/chat-upload/{filename}` 独立聊天附件目录
+  - [x] 后端：`ChatStreamRequest` 增加 `attachments` / `enable_web_search`
+  - [x] 后端：`ChatService._build_multimodal_messages()` 把图片转 base64 `image_url`、文本文件注入上下文
+  - [x] 后端：`WEB_SEARCH_TOOL` 动态注入 + `_web_search()` 占位实现（可替换真实搜索引擎）
+  - [x] 前端：`KimiChatInput.vue` 文件上传真实可用、联网搜索 toggle、附件标签展示
+  - [x] 前端：`useAgentChatStream` / `agentHub.sendMessage` 透传 `attachments` / `enableWebSearch`
+  - [x] 前端：`usePyodide.ts` 懒加载 Pyodide + numpy/pandas/matplotlib
+  - [x] 前端：`setup.ts` 代码块增加「▶ 运行」按钮；`KimiMessageItem.vue` 调用 Pyodide 并展示输出/图表
+- [x] **问题 5：保留现有样式 + 引入架构**
+  - [x] 未引入新 UI 框架，沿用 Vue 3 + Pinia + NaiveUI
+  - [x] 复用 MCP 架构接入联网搜索，OpenAI 兼容 Provider 架构接入自动发现
 
 ### 统一夜间模式与 AI 助手主题联动 ✅ 2026-07-02
 
@@ -733,11 +778,6 @@
   - [ ] `DefaultLayout.vue` 更新顶部导航链接：实验室知识库 → `/knowledge`，文档 → `/docs`
   - [ ] 前后端类型检查与构建验证
 
-- [ ] **首页流星效果优化**
-  - [ ] `AboutView.vue` 流星出现位置与飞行方向完全随机化
-  - [ ] 降低流星频率（数量、延迟、持续时间）
-  - [ ] 流星尾巴方向随飞行角度同步
-
 ### 优先级 P4 — 优化与运维
 
 - [ ] **监控可观测性**
@@ -749,9 +789,11 @@
 - [ ] **前端完善**
   - [x] About 页面 (Milky Way 背景 + star-stuff 文案) ✅ 2026-06-25
   - [x] 暗色模式 ✅ 2026-07-02
-  - [ ] 各域页面完整实现 (Flows/Tasks/Files/AI)
-  - [ ] 全局错误处理 + 加载态
-  - [ ] 响应式布局适配
+  - [x] 各域页面完整实现 (Flows/Tasks/Files/AI) ✅ 2026-07-04
+  - [x] 全局错误处理 + 加载态 ✅ 2026-07-04
+  - [x] 响应式布局适配 ✅ 2026-07-04
+  
+  > 完成内容：新增 `useApi` 统一请求组合式函数、`AppErrorBoundary` 全局错误边界、`AppLoading`/`AppSkeleton` 通用加载骨架组件；`TasksView` 对接真实 `/api/v1/tasks` 接口并新增状态筛选/搜索/真实删除；`FlowsView` 移除硬编码占位，对接 `/api/v1/flows` 动态渲染；`FilesView` 修复响应式 bug 与深色模式变量，桌面端三栏、移动端抽屉式目录树/详情面板；`AgentWorkspace` 增加 Agent 资产加载态与错误重试兜底。验证：`npm run type-check && npm run build` 通过。
 
 - [ ] **测试覆盖**
   - [ ] 六域单元测试
@@ -767,66 +809,6 @@
 
 ---
 
-## 前端动画/美化仓库调研
-
-> 针对当前前端技术栈 **Vue 3 + Vite + TypeScript + Naive UI** 的可选动画/美化库清单（仅调研，未引入代码）。
-
-### 通用动画库（Vue 3 原生支持或友好）
-
-- [@vueuse/motion](https://github.com/vueuse/motion) — Vue 官方生态 motion 库，指令式 `v-motion`，零配置入场/出场动画
-- [AutoAnimate](https://github.com/formkit/auto-animate) — DOM 变化自动动画，适合列表/弹窗/下拉菜单
-- [vue-kinesis](https://github.com/amineyarman/vue-kinesis) — 鼠标/滚动/陀螺仪驱动的视差交互动画
-- [AnimXYZ](https://github.com/ingram-projects/animxyz) — CSS 变量驱动的组合动画框架，原生支持 Vue
-- [Animate.css](https://github.com/animate-css/animate.css) — 经典 CSS 动画库，直接加 class 使用
-- [GSAP](https://github.com/greensock/GSAP) + [vue-gsap](https://github.com/derickdaniel/vue-gsap) — 专业级时间轴动画
-- [Motion One](https://github.com/motiondivision/motionone) + [vue-motion-one](https://github.com/wobsoriano/vue-motion-one) — 轻量高性能硬件加速动画
-
-### 页面背景 / 粒子特效
-
-- [tsParticles](https://github.com/matteobruni/tsparticles) — 粒子效果库，有 `@tsparticles/vue3`，支持雪花/连线/星空/星云
-- [particles.js](https://github.com/VincentGarreau/particles.js) — 经典轻量粒子背景（维护较慢，更推荐 tsParticles）
-- [Inspira UI](https://github.com/unovue/inspira-ui) — Vue 版 Aceternity/Magic UI，含 Aurora、粒子漩涡、雪花、光束、流星等 70+ 特效组件
-- [Vanta.js](https://github.com/tengbao/vanta) — 3D 动态背景（飞鸟/海浪/云雾/拓扑），基于 three.js/p5
-- [three.js](https://github.com/mrdoob/three.js) — 3D 场景终极方案
-- [granim.js](https://github.com/sarcadass/granim.js) — 动态渐变背景，登录页常用
-
-### 滚动 / 视差 / 交互增强
-
-- [AOS](https://github.com/michalsnik/aos) — 滚动触发入场动画
-- [ScrollReveal](https://github.com/jlmakes/scrollreveal) — 滚动显示动画
-- [rellax](https://github.com/dixonandmoe/rellax) — 轻量视差滚动
-- [tilt.js](https://github.com/gijsroge/tilt.js) — 卡片 3D 倾斜悬浮效果
-- [locomotive-scroll](https://github.com/locomotivemtl/locomotive-scroll) — 平滑滚动 + 视差
-
-### 加载动画 / 微交互
-
-- [LDRS](https://github.com/loading-io/ldrs) — 精致加载动画
-- [Whirl](https://github.com/jh3y/whirl) — 纯 CSS loading 动画合集
-- [vue3-lottie](https://github.com/megasanjay/vue3-lottie) — Vue 3 播放 Lottie/AE 动画
-- [dotLottie](https://github.com/LottieFiles/dotlottie-web) — LottieFiles 官方新版轻量播放器
-- [Hover.css](https://github.com/IanLunn/Hover.css) — 鼠标悬浮效果合集
-- [CSShake](https://github.com/elrumordelaluz/csshake) — 抖动动画，表单错误提示可用
-
-### UI 美化 / 主题增强
-
-- [Naive UI 官方主题](https://github.com/tusen-ai/naive-ui) — 通过 `n-config-provider` + `theme-overrides` 做动态换肤、暗黑模式
-- [@vueuse/core](https://github.com/vueuse/vueuse) — `useColorMode` / `useCycleList` 快速做主题切换
-- [Tailwind CSS](https://github.com/tailwindlabs/tailwind.css) — 原子化 CSS，配合 Naive UI 做自定义布局
-- [UnoCSS](https://github.com/unocss/unocss) — 按需原子 CSS，可与 Naive UI 主题变量联动
-
-### 针对当前项目的建议组合
-
-考虑到是 **生信分析平台**，建议优先走"简洁专业 + 适度动效"路线：
-
-1. **入场/过渡**：`@vueuse/motion` 或 `AutoAnimate`
-2. **列表/表格动画**：`AutoAnimate`
-3. **登录页/首页背景**：`tsParticles` 或 `Inspira UI` 的 Aurora/粒子组件
-4. **加载状态**：`LDRS` 或 `vue3-lottie`
-5. **主题美化**：Naive UI `theme-overrides` + `@vueuse/core` 的 `useColorMode` 做暗黑模式
-6. **滚动展示**：`AOS` 做文档/结果页滚动动画
-
----
-
 ## 技术决策记录
 
 | # | 决策 | 选择 | 理由 |
@@ -838,3 +820,26 @@
 | 5 | 开发模式 src 挂载 | web/worker/beat | 热重载，无需 rebuild 镜像 |
 | 6 | Beat schedule | crontab 对象 | 不能用字符串，Celery 要求 crontab 实例 |
 | 7 | 健康检查 | 各服务自定义 | slim 镜像无 pgrep/curl，需 CMD-SHELL |
+
+
+### 前端优化：分析中心卡片 + 系统设置页面 ✅ 2026-07-05
+
+> 需求：按 `docs/omic_hub_frontend_optimization.md` 优化分析中心卡片视觉与交互，并在系统设置中新增平台级 TOTP 策略控制。
+> 验证：前端 `vite build` 构建成功；修改文件 `vue-tsc` 无新增类型错误；后端文件 `py_compile` 通过；`tests/integration/test_flows.py` 通过。
+
+- [x] **分析中心卡片优化**
+  - [x] `flows/atac_seq.yaml` / `flows/rna_seq.yaml` 的 `meta.icon` 改为 Emoji（🧪 / 🧬）
+  - [x] `frontend/src/views/FlowsView.vue` 优先读取 `flow.icon`，兼容旧 key 兜底，按 `category` 动态背景色
+  - [x] GitHub 图标从 `meta.docs_url` 读取，仅 `github.com` 链接显示，带 wiggle 悬停动画
+  - [x] 推荐流程 Banner 同步显示 `text-4xl` Emoji 与白色 GitHub 图标
+- [x] **系统设置页面优化**
+  - [x] 页面内容区宽度从 `max-width: 640px` 放宽至 `1024px`（`>1440px` 为 `1152px`）
+  - [x] 卡片 padding 统一为 `32px`（移动端 `24px`），平台设置采用响应式两列布局
+  - [x] 平台设置新增 TOTP 策略分段控制器（关闭 / 可选 / 强制）
+  - [x] 安全设置根据 `totp_policy` 动态展示：关闭时显示禁用提示，`required` 时显示橙色强制横幅与橙色按钮
+- [x] **后端配套接口**
+  - [x] 新增 `GET /api/v1/platform/config` 公开读取平台配置
+  - [x] 新增 `PATCH /api/v1/admin/platform-config` 管理员更新平台配置（需 TOTP 二次验证）
+  - [x] `SiteSettingModel` 新增 `totp_policy` 字段（`String(16)`，默认 `optional`）
+  - [x] `SiteSettingsDTO` / `UpdateSiteSettingsDTO` 扩展 `totp_policy`
+  - [x] 新增 Alembic 迁移 `m0n1o2p3q4r5_add_totp_policy_to_site_settings.py`

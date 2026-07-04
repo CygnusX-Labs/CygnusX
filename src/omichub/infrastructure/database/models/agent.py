@@ -48,6 +48,9 @@ class AgentTemplateModel(Base, TimestampMixin):
     mcp_ids: Mapped[list[Any]] = mapped_column(JSONB, default=list, nullable=False)
     skill_ids: Mapped[list[Any]] = mapped_column(JSONB, default=list, nullable=False)
 
+    # 统一功能开关：联网搜索 / 代码执行 / 文件上传 / 深度思考
+    features: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+
     temperature: Mapped[float] = mapped_column(Float, default=0.7, nullable=False)
     max_tokens: Mapped[int] = mapped_column(Integer, default=4096, nullable=False)
 

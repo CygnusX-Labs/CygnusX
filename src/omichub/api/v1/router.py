@@ -16,6 +16,7 @@ from omichub.api.v1 import (
     llm,
     mcp,
     notification,
+    platform_config,
     sandbox,
     site_content,
     site_settings,
@@ -27,6 +28,7 @@ from omichub.api.v1.admin import admin_cookies
 from omichub.api.v1.admin import agents as admin_agents
 from omichub.api.v1.admin import ai_providers as admin_ai_providers
 from omichub.api.v1.admin import assistants as admin_assistants
+from omichub.api.v1.admin import platform_config as admin_platform_config
 from omichub.api.v1.admin import skills as admin_skills
 from omichub.api.v1.admin import stats as admin_stats
 from omichub.api.v1.admin import storage as admin_storage
@@ -36,6 +38,7 @@ api_router = APIRouter()
 
 api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 api_router.include_router(site_settings.router, prefix="/site-settings", tags=["SiteSettings"])
+api_router.include_router(platform_config.router, prefix="/platform", tags=["PlatformConfig"])
 api_router.include_router(site_content.router, prefix="/site-content", tags=["SiteContent"])
 api_router.include_router(docs.router, prefix="/docs", tags=["Docs"])
 api_router.include_router(flows.router, prefix="/flows", tags=["Flows"])
@@ -60,6 +63,9 @@ api_router.include_router(
 )
 api_router.include_router(
     admin_agents.router, prefix="/admin/agents", tags=["Admin-Agents"]
+)
+api_router.include_router(
+    admin_platform_config.router, prefix="/admin", tags=["Admin-PlatformConfig"]
 )
 api_router.include_router(agents.router, prefix="/agents", tags=["Agents"])
 api_router.include_router(ai.router, prefix="/ai", tags=["AI Copilot"])

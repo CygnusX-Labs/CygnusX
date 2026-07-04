@@ -1,17 +1,18 @@
 <script setup lang="ts">
-import { computed, h, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { DataFile, Directory, QuotaInfo } from '@/types'
 import apiClient from '@/api/client'
+import { useApi } from '@/composables/useApi'
+import AppLoading from '@/components/AppLoading.vue'
 import {
   CloudUploadOutline, SearchOutline, FolderOpenOutline, ScanOutline,
   CloudDownloadOutline, GlobeOutline, LinkOutline, GridOutline, ListOutline,
   DocumentTextOutline, RefreshOutline, EllipsisHorizontalOutline, DownloadOutline,
-  CreateOutline, TrashOutline,
+  CreateOutline, TrashOutline, MenuOutline, CloseOutline,
 } from '@vicons/ionicons5'
 import {
-  NButton, NBreadcrumb, NBreadcrumbItem, NDataTable, NDropdown, NIcon, NInput,
-  NSelect, NSpin, NTag, NUpload, useDialog, useMessage,
+  NButton, NBreadcrumb, NBreadcrumbItem, NDataTable, NDropdown, NDrawer,
+  NIcon, NInput, NSelect, NSpin, NTag, NUpload, useDialog, useMessage,
 } from 'naive-ui'
 import type { DataTableColumns, UploadFileInfo } from 'naive-ui'
 import DirectoryTree from '@/components/DirectoryTree.vue'
@@ -23,7 +24,6 @@ import JBrowseLinkGenerator from '@/components/data-management/JBrowseLinkGenera
 import { useUploadStore } from '@/stores/upload'
 import { storeToRefs } from 'pinia'
 
-const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
 const treeRef = ref<InstanceType<typeof DirectoryTree>>()
@@ -34,9 +34,44 @@ const allFiles = ref<DataFile[]>([])
 const directories = ref<Directory[]>([])
 const samplesCount = ref(0)
 const quota = ref<QuotaInfo>({ used: 0, total: 0, percent: 0 })
-const loading = ref(false)
 const currentDirectory = ref('')
 const siderWidth = ref(280)
+
+// 移动端抽屉状态
+const showTreeDrawer = ref(false)
+const showDetailDrawer = ref(false)
+const isMobile = ref(false)
+const isTablet = ref(false)
+
+function updateViewport() {
+  const w = window.innerWidth
+  isMobile.value = w < 768
+  isTablet.value = w >= 768 && w < 1200
+  if (!isMobile.value && !isTablet.value) {
+    showTreeDrawer.value = false
+    showDetailDrawer.value = false
+  }
+}
+
+const {
+  loading,
+  error,
+  execute: fetchAll,
+} = useApi(
+  async () => {
+    const [filesRes, dirsRes, samplesRes, quotaRes] = await Promise.all([
+      apiClient.get<{ items: DataFile[]; total: number }>('/files'),
+      apiClient.get<Directory[]>('/files/directories'),
+      apiClient.get<{ items: unknown[]; total: number }>('/files/samples'),
+      apiClient.get<QuotaInfo>('/files/quota'),
+    ])
+    allFiles.value = filesRes.data.items
+    directories.value = dirsRes.data
+    samplesCount.value = samplesRes.data.total ?? samplesRes.data.items.length
+    quota.value = quotaRes.data
+  },
+  { initialData: undefined },
+)
 
 // Finder 状态
 const viewMode = ref<'list' | 'grid'>('list')
@@ -104,7 +139,10 @@ const displayFiles = computed(() => {
 })
 
 /** 文件格式 Tag 元信息 */
-const fileTypeTagMeta: Record<string, { label: string; type?: 'info' | 'success' | 'warning' | 'default'; color?: string }> = {
+const fileTypeTagMeta: Record<
+  string,
+  { label: string; type?: 'info' | 'success' | 'warning' | 'default'; color?: string }
+> = {
   fastq: { label: 'FASTQ', type: 'info' },
   bam: { label: 'BAM', type: 'success' },
   vcf: { label: 'VCF', type: 'warning' },
@@ -121,12 +159,19 @@ function renderFileTypeTag(fileType: string) {
   const meta = fileTypeTagMeta[fileType] || fileTypeTagMeta.other
   return h(
     NTag,
-    { size: 'small', round: true, type: meta.type, color: meta.color ? { color: meta.color, textColor: '#fff', borderColor: meta.color } : undefined },
+    {
+      size: 'small',
+      round: true,
+      type: meta.type,
+      color: meta.color
+        ? { color: meta.color, textColor: '#fff', borderColor: meta.color }
+        : undefined,
+    },
     { default: () => meta.label },
   )
 }
 
-function fileIcon(fileType: string) {
+function fileIcon() {
   return ScanOutline
 }
 
@@ -243,34 +288,16 @@ function startResize(e: MouseEvent) {
   document.addEventListener('mouseup', onUp)
 }
 
-async function fetchAll() {
-  loading.value = true
-  try {
-    const [filesRes, dirsRes, samplesRes, quotaRes] = await Promise.all([
-      apiClient.get<{ items: DataFile[]; total: number }>('/files'),
-      apiClient.get<Directory[]>('/files/directories'),
-      apiClient.get<{ items: unknown[]; total: number }>('/files/samples'),
-      apiClient.get<QuotaInfo>('/files/quota'),
-    ])
-    allFiles.value = filesRes.data.items
-    directories.value = dirsRes.data
-    samplesCount.value = samplesRes.data.total ?? samplesRes.data.items.length
-    quota.value = quotaRes.data
-  } catch (error) {
-    console.error('加载数据失败', error)
-    message.error('加载数据失败，请稍后重试')
-  } finally {
-    loading.value = false
-  }
-}
-
 function selectFile(row: DataFile) {
   selectedFile.value = selectedFile.value?.id === row.id ? null : row
+  if (selectedFile.value && isMobile.value) {
+    showDetailDrawer.value = true
+  }
 }
 
 function rowProps(row: DataFile) {
   return {
-    style: selectedFile.value?.id === row.id ? 'background: rgba(22,93,255,0.06)' : '',
+    style: selectedFile.value?.id === row.id ? 'background: var(--arco-primary-light)' : '',
     onClick: () => selectFile(row),
   }
 }
@@ -321,11 +348,14 @@ async function openMoveModal(row: DataFile) {
   let target = row.directory || ''
   dialog.create({
     title: `移动「${row.original_name}」`,
-    content: () => h(NSelect, {
-      value: target,
-      'onUpdate:value': (v: string) => (target = v),
-      options, placeholder: '选择目标目录', filterable: true,
-    }),
+    content: () =>
+      h(NSelect, {
+        value: target,
+        'onUpdate:value': (v: string) => (target = v),
+        options,
+        placeholder: '选择目标目录',
+        filterable: true,
+      }),
     positiveText: '移动',
     negativeText: '取消',
     onPositiveClick: async () => {
@@ -348,16 +378,33 @@ function handleDropUpload({ file }: { file: UploadFileInfo }): boolean {
   return false
 }
 
-function importFromSRA() { message.info('SRA 公共数据库导入即将上线') }
-function importFromGEO() { message.info('GEO 公共数据库导入即将上线') }
-function importFromURL() { message.info('URL 导入即将上线') }
+function importFromSRA() {
+  message.info('SRA 公共数据库导入即将上线')
+}
+function importFromGEO() {
+  message.info('GEO 公共数据库导入即将上线')
+}
+function importFromURL() {
+  message.info('URL 导入即将上线')
+}
 
 const supportedFormats = ['FASTQ', 'BAM', 'VCF', 'CRAM', 'ZIP']
 
-watch(completedSeq, () => { fetchAll() })
-watch(currentDirectory, () => { selectedFile.value = null })
+watch(completedSeq, () => {
+  fetchAll()
+})
+watch(currentDirectory, () => {
+  selectedFile.value = null
+})
 
-onMounted(() => syncFiles(true))
+onMounted(() => {
+  updateViewport()
+  window.addEventListener('resize', updateViewport)
+  syncFiles(true)
+})
+onUnmounted(() => {
+  window.removeEventListener('resize', updateViewport)
+})
 </script>
 
 <template>
@@ -371,9 +418,9 @@ onMounted(() => syncFiles(true))
     />
 
     <!-- Finder 三栏 -->
-    <div class="finder-grid">
-      <!-- 左：目录树（可拖拽调宽） -->
-      <aside class="col-tree" :style="{ width: siderWidth + 'px' }">
+    <div class="finder-grid" :class="{ 'finder-grid--mobile': isMobile || isTablet }">
+      <!-- 左：目录树（桌面端可拖拽调宽） -->
+      <aside v-if="!isMobile && !isTablet" class="col-tree" :style="{ width: siderWidth + 'px' }">
         <DirectoryTree
           v-model="currentDirectory"
           ref="treeRef"
@@ -387,41 +434,53 @@ onMounted(() => syncFiles(true))
       <section class="col-workspace">
         <!-- 面包屑导航 -->
         <div class="breadcrumb-bar">
-          <NBreadcrumb>
-            <NBreadcrumbItem
-              v-for="item in breadcrumbItems"
-              :key="item.path"
-              @click="navigateTo(item.path)"
-            >
-              {{ item.label }}
-            </NBreadcrumbItem>
-          </NBreadcrumb>
+          <div class="breadcrumb-left">
+            <NButton v-if="isMobile || isTablet" size="small" quaternary @click="showTreeDrawer = true">
+              <template #icon>
+                <NIcon><MenuOutline /></NIcon>
+              </template>
+              目录
+            </NButton>
+            <NBreadcrumb>
+              <NBreadcrumbItem
+                v-for="item in breadcrumbItems"
+                :key="item.path"
+                @click="navigateTo(item.path)"
+              >
+                {{ item.label }}
+              </NBreadcrumbItem>
+            </NBreadcrumb>
+          </div>
         </div>
+
         <!-- 工具栏 -->
         <div class="toolbar">
           <div class="toolbar-left">
             <NButton type="primary" size="small" @click="uploadStore.open(currentDirectory)">
-              <template #icon><NIcon><CloudUploadOutline /></NIcon></template>
+              <template #icon>
+                <NIcon><CloudUploadOutline /></NIcon>
+              </template>
               上传
             </NButton>
             <NButton size="small" @click="treeRef?.openCreateModal?.(currentDirectory)">
-              <template #icon><NIcon><FolderOpenOutline /></NIcon></template>
+              <template #icon>
+                <NIcon><FolderOpenOutline /></NIcon>
+              </template>
               新建文件夹
             </NButton>
             <NButton size="small" :loading="syncing" @click="syncFiles(false)">
-              <template #icon><NIcon><RefreshOutline /></NIcon></template>
+              <template #icon>
+                <NIcon><RefreshOutline /></NIcon>
+              </template>
               同步
             </NButton>
             <NButton size="small" @click="showJbrowseLinkGen = true">
-              <template #icon><NIcon><LinkOutline /></NIcon></template>
+              <template #icon>
+                <NIcon><LinkOutline /></NIcon>
+              </template>
               JBrowse 直链
             </NButton>
-            <NSelect
-              v-model:value="sortBy"
-              :options="sortOptions"
-              size="small"
-              style="width: 130px"
-            />
+            <NSelect v-model:value="sortBy" :options="sortOptions" size="small" style="width: 130px" />
           </div>
           <div class="toolbar-right">
             <NInput
@@ -431,23 +490,56 @@ onMounted(() => syncFiles(true))
               clearable
               style="width: 180px"
             >
-              <template #prefix><NIcon :size="14"><SearchOutline /></NIcon></template>
+              <template #prefix>
+                <NIcon :size="14"><SearchOutline /></NIcon>
+              </template>
             </NInput>
             <div class="view-toggle">
-              <NButton size="small" :type="viewMode === 'list' ? 'primary' : 'default'" quaternary @click="viewMode = 'list'">
-                <template #icon><NIcon><ListOutline /></NIcon></template>
+              <NButton
+                size="small"
+                :type="viewMode === 'list' ? 'primary' : 'default'"
+                quaternary
+                @click="viewMode = 'list'"
+              >
+                <template #icon>
+                  <NIcon><ListOutline /></NIcon>
+                </template>
               </NButton>
-              <NButton size="small" :type="viewMode === 'grid' ? 'primary' : 'default'" quaternary @click="viewMode = 'grid'">
-                <template #icon><NIcon><GridOutline /></NIcon></template>
+              <NButton
+                size="small"
+                :type="viewMode === 'grid' ? 'primary' : 'default'"
+                quaternary
+                @click="viewMode = 'grid'"
+              >
+                <template #icon>
+                  <NIcon><GridOutline /></NIcon>
+                </template>
               </NButton>
             </div>
+            <NButton
+              v-if="isMobile || isTablet"
+              size="small"
+              quaternary
+              @click="showDetailDrawer = true"
+            >
+              <template #icon>
+                <NIcon><MenuOutline /></NIcon>
+              </template>
+              详情
+            </NButton>
           </div>
         </div>
 
         <!-- 工作台主体 -->
         <NSpin :show="loading" class="workspace-body">
+          <!-- 错误状态 -->
+          <div v-if="error && !displayFiles.length" class="workspace-error">
+            <AppLoading text="加载失败，请重试" size="small" />
+            <NButton size="small" @click="fetchAll">重试</NButton>
+          </div>
+
           <!-- 有文件 -->
-          <template v-if="displayFiles.length">
+          <template v-else-if="displayFiles.length">
             <!-- 列表视图 -->
             <NDataTable
               v-if="viewMode === 'list'"
@@ -469,7 +561,9 @@ onMounted(() => syncFiles(true))
                 @click="selectFile(f)"
               >
                 <div class="grid-icon">
-                  <NIcon :size="28" color="#165DFF"><component :is="fileIcon(f.file_type)" /></NIcon>
+                  <NIcon :size="28" color="var(--arco-primary)"
+                    ><component :is="fileIcon()" /></NIcon
+                  >
                 </div>
                 <span class="grid-name" :title="f.original_name">{{ f.original_name }}</span>
                 <span class="grid-size">{{ formatSize(f.size) }}</span>
@@ -482,17 +576,70 @@ onMounted(() => syncFiles(true))
 
           <!-- 空状态 -->
           <div v-else class="empty-state">
-            <svg class="dna-illustration" width="96" height="96" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M30 15 C 90 15, 90 105, 30 105" stroke="#165DFF" stroke-width="2.5" stroke-linecap="round" fill="none" opacity="0.4"/>
-              <path d="M90 15 C 30 15, 30 105, 90 105" stroke="#165DFF" stroke-width="2.5" stroke-linecap="round" fill="none" opacity="0.4"/>
-              <line x1="38" y1="28" x2="82" y2="28" stroke="#165DFF" stroke-width="2" opacity="0.3" stroke-linecap="round"/>
-              <line x1="44" y1="44" x2="76" y2="44" stroke="#165DFF" stroke-width="2" opacity="0.3" stroke-linecap="round"/>
-              <line x1="46" y1="60" x2="74" y2="60" stroke="#165DFF" stroke-width="2" opacity="0.3" stroke-linecap="round"/>
-              <line x1="44" y1="76" x2="76" y2="76" stroke="#165DFF" stroke-width="2" opacity="0.3" stroke-linecap="round"/>
-              <line x1="38" y1="92" x2="82" y2="92" stroke="#165DFF" stroke-width="2" opacity="0.3" stroke-linecap="round"/>
+            <svg
+              class="dna-illustration"
+              width="96"
+              height="96"
+              viewBox="0 0 120 120"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M30 15 C 90 15, 90 105, 30 105"
+                stroke="var(--arco-primary)"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                fill="none"
+                opacity="0.4"
+              />
+              <path
+                d="M90 15 C 30 15, 30 105, 90 105"
+                stroke="var(--arco-primary)"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                fill="none"
+                opacity="0.4"
+              />
+              <line
+                x1="38" y1="28" x2="82" y2="28"
+                stroke="var(--arco-primary)"
+                stroke-width="2"
+                opacity="0.3"
+                stroke-linecap="round"
+              />
+              <line
+                x1="44" y1="44" x2="76" y2="44"
+                stroke="var(--arco-primary)"
+                stroke-width="2"
+                opacity="0.3"
+                stroke-linecap="round"
+              />
+              <line
+                x1="46" y1="60" x2="74" y2="60"
+                stroke="var(--arco-primary)"
+                stroke-width="2"
+                opacity="0.3"
+                stroke-linecap="round"
+              />
+              <line
+                x1="44" y1="76" x2="76" y2="76"
+                stroke="var(--arco-primary)"
+                stroke-width="2"
+                opacity="0.3"
+                stroke-linecap="round"
+              />
+              <line
+                x1="38" y1="92" x2="82" y2="92"
+                stroke="var(--arco-primary)"
+                stroke-width="2"
+                opacity="0.3"
+                stroke-linecap="round"
+              />
             </svg>
             <h3 class="empty-title">No datasets in this folder</h3>
-            <p class="empty-subtitle">拖拽测序数据到下方，或点击选择文件上传到「{{ currentDirectory || '根目录' }}」</p>
+            <p class="empty-subtitle">
+              拖拽测序数据到下方，或点击选择文件上传到「{{ currentDirectory || '根目录' }}」
+            </p>
 
             <NUpload
               class="empty-dropzone"
@@ -502,8 +649,11 @@ onMounted(() => syncFiles(true))
               directory-dnd
               @before-upload="handleDropUpload"
             >
-              <div class="dropzone-inner">
-                <NIcon :size="28" class="dropzone-icon"><CloudDownloadOutline /></NIcon>
+              <div class="dropzone-inner"
+              >
+                <NIcon :size="28" class="dropzone-icon"
+                  ><CloudDownloadOutline /></NIcon
+                >
                 <p class="dropzone-title">拖拽文件到此处，或点击选择</p>
                 <div class="format-chips">
                   <span v-for="fmt in supportedFormats" :key="fmt" class="format-chip">{{ fmt }}</span>
@@ -512,28 +662,38 @@ onMounted(() => syncFiles(true))
             </NUpload>
 
             <div class="import-row">
-              <NButton size="small" quaternary @click="importFromSRA">
-                <template #icon><NIcon><GlobeOutline /></NIcon></template>
+              <NButton size="small" quaternary @click="importFromSRA"
+              >
+                <template #icon>
+                  <NIcon><GlobeOutline /></NIcon>
+                </template>
                 Import from SRA
               </NButton>
-              <NButton size="small" quaternary @click="importFromGEO">
-                <template #icon><NIcon><GlobeOutline /></NIcon></template>
+              <NButton size="small" quaternary @click="importFromGEO"
+              >
+                <template #icon>
+                  <NIcon><GlobeOutline /></NIcon>
+                </template>
                 Import from GEO
               </NButton>
-              <NButton size="small" quaternary @click="importFromURL">
-                <template #icon><NIcon><LinkOutline /></NIcon></template>
+              <NButton size="small" quaternary @click="importFromURL"
+              >
+                <template #icon>
+                  <NIcon><LinkOutline /></NIcon>
+                </template>
                 Import from URL
               </NButton>
             </div>
-            <a class="help-link" @click="message.info('帮助文档即将上线')">
+            <a class="help-link" @click="message.info('帮助文档即将上线')"
+            >
               <NIcon :size="13"><DocumentTextOutline /></NIcon> 查看支持的数据格式与上传帮助
             </a>
           </div>
         </NSpin>
       </section>
 
-      <!-- 右：详情面板 -->
-      <aside class="col-detail">
+      <!-- 右：详情面板（桌面端常驻） -->
+      <aside v-if="!isMobile && !isTablet" class="col-detail">
         <JBrowseLinkGenerator v-model:show="showJbrowseLinkGen" :files="displayFiles" />
         <FileDetailPanel
           v-if="selectedFile"
@@ -554,12 +714,76 @@ onMounted(() => syncFiles(true))
         </template>
       </aside>
     </div>
+
+    <!-- 移动端目录树抽屉 -->
+    <NDrawer
+      v-model:show="showTreeDrawer"
+      :width="260"
+      placement="left"
+      :auto-focus="false"
+    >
+      <div class="mobile-drawer-header"
+      >
+        <span class="font-medium">目录</span>
+        <NButton text circle size="small" @click="showTreeDrawer = false"
+        >
+          <template #icon>
+            <NIcon><CloseOutline /></NIcon>
+          </template>
+        </NButton>
+      </div>
+      <DirectoryTree
+        v-model="currentDirectory"
+        :file-counts="fileCounts"
+        @refresh-files="fetchAll"
+      />
+    </NDrawer>
+
+    <!-- 移动端详情抽屉 -->
+    <NDrawer
+      v-model:show="showDetailDrawer"
+      :width="320"
+      placement="right"
+      :auto-focus="false"
+    >
+      <div class="mobile-drawer-header"
+      >
+        <span class="font-medium">详情</span>
+        <NButton text circle size="small" @click="showDetailDrawer = false"
+        >
+          <template #icon>
+            <NIcon><CloseOutline /></NIcon>
+          </template>
+        </NButton>
+      </div>
+      <div class="mobile-detail-body"
+      >
+        <JBrowseLinkGenerator v-model:show="showJbrowseLinkGen" :files="displayFiles" />
+        <FileDetailPanel
+          v-if="selectedFile"
+          :file="selectedFile"
+          @close="selectedFile = null; showDetailDrawer = false"
+          @download="downloadFile"
+          @move="openMoveModal"
+          @delete="confirmDelete"
+        />
+        <template v-else>
+          <StorageOverviewWidget
+            :quota="quota"
+            :directory-count="directories.length"
+            @clean-cache="fetchAll"
+            @manage-storage="message.info('存储管理面板即将上线')"
+          />
+          <RecentActivitiesWidget :files="allFiles" :directories="directories" />
+        </template>
+      </div>
+    </NDrawer>
   </div>
 </template>
 
 <style scoped>
 .finder-page {
-  background: var(--page-bg, #F7F9FC);
+  background: var(--page-bg, var(--neutral-bg));
   flex: 1;
   min-height: 0;
   padding: 16px;
@@ -569,26 +793,35 @@ onMounted(() => syncFiles(true))
   gap: 16px;
   overflow: hidden;
 }
+
 .finder-grid {
   flex: 1;
   display: flex;
   gap: 16px;
-  min-height: 0; /* 允许子项收缩并独立滚动 */
+  min-height: 0;
 }
+
+.finder-grid--mobile {
+  flex-direction: column;
+  gap: 12px;
+}
+
 .col-tree,
 .col-workspace,
 .col-detail {
   background: var(--neutral-card, #fff);
   border-radius: var(--radius-lg, 16px);
   box-shadow: var(--shadow-soft, 0 4px 12px rgba(0, 0, 0, 0.05));
-  border: 1px solid rgba(229, 230, 235, 0.5);
+  border: 1px solid var(--neutral-border);
   min-height: 0;
 }
+
 .col-tree {
   position: relative;
   flex-shrink: 0;
-  overflow: visible; /* 让 resize-handle 可超出右边缘 */
+  overflow: visible;
 }
+
 .resize-handle {
   position: absolute;
   top: 0;
@@ -598,11 +831,13 @@ onMounted(() => syncFiles(true))
   cursor: col-resize;
   z-index: 5;
 }
+
 .resize-handle:hover,
 .resize-handle:active {
-  background: rgba(22, 93, 255, 0.12);
+  background: var(--arco-primary-light);
   border-radius: 4px;
 }
+
 .col-workspace {
   flex: 1;
   min-width: 0;
@@ -610,11 +845,19 @@ onMounted(() => syncFiles(true))
   flex-direction: column;
   overflow: hidden;
 }
+
 .breadcrumb-bar {
   padding: 10px 16px;
-  border-bottom: 1px solid var(--neutral-border, #e5e6eb);
+  border-bottom: 1px solid var(--neutral-border);
   flex-shrink: 0;
 }
+
+.breadcrumb-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .col-detail {
   width: 300px;
   flex-shrink: 0;
@@ -622,7 +865,9 @@ onMounted(() => syncFiles(true))
   flex-direction: column;
   gap: 16px;
   overflow-y: auto;
+  padding: 16px;
 }
+
 .file-emoji {
   font-size: 16px;
   line-height: 1;
@@ -636,37 +881,52 @@ onMounted(() => syncFiles(true))
   justify-content: space-between;
   gap: 12px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--neutral-border, #e5e6eb);
+  border-bottom: 1px solid var(--neutral-border);
   flex-wrap: wrap;
   flex-shrink: 0;
 }
+
 .toolbar-left,
 .toolbar-right {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
+
 .view-toggle {
   display: flex;
   gap: 2px;
-  background: var(--neutral-bg, #f2f3f8);
+  background: var(--neutral-bg);
   border-radius: 8px;
   padding: 2px;
 }
+
 .workspace-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   padding: 8px 12px 16px;
 }
+
 .workspace-body :deep(.n-spin-content) {
   height: 100%;
+}
+
+.workspace-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 24px;
 }
 
 /* 文件表格 */
 .file-table {
   cursor: default;
 }
+
 .file-name-cell {
   display: flex;
   align-items: center;
@@ -680,6 +940,7 @@ onMounted(() => syncFiles(true))
   gap: 12px;
   padding: 8px 4px;
 }
+
 .grid-card {
   display: flex;
   flex-direction: column;
@@ -692,27 +953,31 @@ onMounted(() => syncFiles(true))
   transition: all 0.15s ease;
   text-align: center;
 }
+
 .grid-card:hover {
-  background: #F5F8FF;
-  border-color: rgba(22, 93, 255, 0.15);
+  background: var(--arco-primary-light);
+  border-color: var(--arco-primary);
 }
+
 .grid-card.active {
-  background: #E8F3FF;
-  border-color: #165DFF;
+  background: var(--arco-primary-light);
+  border-color: var(--arco-primary);
 }
+
 .grid-icon {
   width: 52px;
   height: 52px;
   border-radius: var(--radius-md, 12px);
-  background: #F5F8FF;
+  background: var(--neutral-hover);
   display: flex;
   align-items: center;
   justify-content: center;
 }
+
 .grid-name {
   font-size: 12px;
   font-weight: 500;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   word-break: break-all;
   line-height: 1.3;
   max-width: 100%;
@@ -721,11 +986,13 @@ onMounted(() => syncFiles(true))
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
 .grid-size {
   font-size: 11px;
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
   font-variant-numeric: tabular-nums;
 }
+
 .grid-tag {
   margin-top: 2px;
 }
@@ -737,68 +1004,80 @@ onMounted(() => syncFiles(true))
   align-items: center;
   padding: 32px 24px 40px;
 }
+
 .dna-illustration {
   margin-bottom: 16px;
 }
+
 .empty-title {
   font-size: 16px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   margin: 0 0 6px;
 }
+
 .empty-subtitle {
   font-size: 13px;
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
   margin: 0 0 22px;
   text-align: center;
 }
+
 .empty-dropzone {
   width: 100%;
   max-width: 480px;
 }
+
 .empty-dropzone :deep(.n-upload-trigger) {
   width: 100%;
 }
+
 .dropzone-inner {
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 32px;
-  border: 2px dashed var(--neutral-border, #d9d9d9);
+  border: 2px dashed var(--neutral-border);
   border-radius: var(--radius-lg, 16px);
-  background: var(--neutral-card, #fff);
+  background: var(--neutral-card);
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s;
   width: 100%;
   box-sizing: border-box;
 }
+
 .dropzone-inner:hover {
-  border-color: #165DFF;
-  background: #F5F8FF;
+  border-color: var(--arco-primary);
+  background: var(--arco-primary-light);
 }
+
 .dropzone-icon {
-  color: #165DFF;
+  color: var(--arco-primary);
   margin-bottom: 8px;
 }
+
 .dropzone-title {
   margin: 0 0 10px;
   font-size: 14px;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
 }
+
 .format-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   justify-content: center;
 }
+
 .format-chip {
   font-size: 11px;
   font-weight: 600;
-  color: #165DFF;
-  background: #E8F3FF;
+  color: var(--arco-primary);
+  background: var(--arco-primary-light);
   padding: 3px 10px;
   border-radius: 8px;
 }
+
 .import-row {
   display: flex;
   gap: 10px;
@@ -806,46 +1085,71 @@ onMounted(() => syncFiles(true))
   flex-wrap: wrap;
   justify-content: center;
 }
+
 .help-link {
   margin-top: 16px;
   font-size: 12px;
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
+
 .help-link:hover {
-  color: #165DFF;
+  color: var(--arco-primary);
 }
 
-@media (max-width: 1100px) {
+/* 移动端抽屉 */
+.mobile-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--neutral-border);
+}
+
+.mobile-detail-body {
+  padding: 16px;
+}
+
+/* 响应式 */
+@media (max-width: 1200px) {
   .finder-grid {
-    grid-template-columns: 220px 1fr;
+    flex-direction: column;
   }
+
+  .col-tree,
   .col-detail {
-    grid-column: 1 / -1;
-    flex-direction: row;
-    flex-wrap: wrap;
+    display: none;
   }
-  .col-detail > * {
-    flex: 1 1 280px;
+
+  .col-workspace {
+    min-height: 0;
   }
 }
-@media (max-width: 820px) {
-  .finder-grid {
-    grid-template-columns: 1fr;
+
+@media (max-width: 768px) {
+  .finder-page {
+    padding: 12px;
+    gap: 12px;
   }
-  .col-tree {
-    order: 0;
-  }
+
   .toolbar {
     flex-direction: column;
     align-items: stretch;
+    gap: 10px;
   }
+
   .toolbar-left,
   .toolbar-right {
-    justify-content: center;
+    justify-content: flex-start;
+  }
+
+  .toolbar-left :deep(.n-select),
+  .toolbar-right :deep(.n-input) {
+    flex: 1;
+    min-width: 120px;
   }
 }
 </style>

@@ -1,8 +1,12 @@
 """文件路由 — 列表 / 分块上传 / 配额 / 下载 / 删除 / 目录 / 样本"""
 
+import os
+import uuid
+from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
+import anyio
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import FileResponse
 
@@ -139,10 +143,10 @@ async def init_upload(
 async def upload_chunk(
     current_user_id: CurrentUserId,
     service: FileServiceDep,
-    upload_id: UUID = Form(...),
-    index: int = Form(...),
-    md5: str = Form(...),
-    chunk: UploadFile = File(...),
+    upload_id: UUID = Form(...),  # noqa: B008
+    index: int = Form(...),  # noqa: B008
+    md5: str = Form(...),  # noqa: B008
+    chunk: UploadFile = File(...),  # noqa: B008
 ) -> UploadChunkResponse:
     """接收单个文件分片，校验 MD5 后落盘并记录传输状态"""
     chunk_bytes = await chunk.read()
@@ -168,6 +172,47 @@ async def cancel_upload(
     """取消上传：删除会话与临时分片"""
     await service.cancel_upload(UUID(current_user_id), upload_id)
     return {"deleted": True}
+
+
+@router.post("/chat-upload", summary="聊天文件上传（供 AI 多模态/附件）")
+async def upload_chat_file(
+    current_user_id: CurrentUserId,
+    file: UploadFile = File(...),  # noqa: B008 — FastAPI 上传参数标准写法
+) -> dict:
+    """接收聊天附件，保存到独立目录并返回访问 URL。"""
+    upload_dir = "data/uploads/chat"
+    os.makedirs(upload_dir, exist_ok=True)
+
+    suffix = Path(file.filename or "").suffix
+    file_id = uuid.uuid4().hex
+    filename = f"{file_id}{suffix}"
+    dest = os.path.join(upload_dir, filename)
+    body = await file.read()
+    async with await anyio.open_file(dest, "wb") as buffer:
+        await buffer.write(body)
+
+    return {
+        "id": file_id,
+        "name": file.filename or filename,
+        "url": f"/api/v1/files/chat-upload/{filename}",
+        "mime_type": file.content_type or "application/octet-stream",
+    }
+
+
+@router.get("/chat-upload/{filename}", summary="下载聊天附件")
+async def download_chat_file(
+    current_user_id: CurrentUserId,
+    filename: str,
+) -> FileResponse:
+    """下载聊天上传的附件（仅允许访问 chat 目录下文件）。"""
+    upload_dir = anyio.Path("data/uploads/chat")
+    # 防止目录遍历
+    safe_name = Path(filename).name
+    path = upload_dir / safe_name
+    if not await path.is_file():
+        from omichub.core.exceptions import NotFoundError
+        raise NotFoundError("文件不存在")
+    return FileResponse(str(path), filename=safe_name)
 
 
 @router.get("/{file_id}/download", summary="下载文件")

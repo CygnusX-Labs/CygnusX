@@ -18,6 +18,19 @@ export interface AgentChatStreamOptions {
   maxTokens?: number
   /** 是否开启深度思考/推理模式 */
   deepThinking?: boolean
+  /** 当前用户消息的附件 */
+  attachments?: ChatAttachment[]
+  /** 是否启用联网搜索 */
+  enableWebSearch?: boolean
+  /** 是否启用代码执行（仅作标记，实际由前端 Pyodide 执行） */
+  enableCodeExecution?: boolean
+}
+
+export interface ChatAttachment {
+  type: 'image' | 'file'
+  url: string
+  name: string
+  mime_type: string
 }
 
 export interface ToolCallEvent {
@@ -69,6 +82,9 @@ export function useAgentChatStream() {
           temperature: options.temperature,
           max_tokens: options.maxTokens,
           deep_thinking: options.deepThinking,
+          attachments: options.attachments || [],
+          enable_web_search: options.enableWebSearch || false,
+          enable_code_execution: options.enableCodeExecution || false,
         }),
         signal: abortController.value.signal,
       })

@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker test lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-up docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge clean init-admin init-cookies check-alembic-heads
+.PHONY: help dev dev-worker test lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-up docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge docker-start clean init-admin init-cookies check-alembic-heads
 
 help: ## 显示所有可用命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -85,9 +85,32 @@ docker-logs-worker: ## 查看 Worker 日志
 docker-clean: ## 清理容器与网络（保留数据卷，不删镜像）
 	$(COMPOSE_ALL) down --remove-orphans
 
-docker-purge: ## [危险] 彻底清理：容器+数据卷+网络+本地镜像（不可逆，重置到干净状态）
-	$(COMPOSE_ALL) down -v --rmi local --remove-orphans
-	@docker network rm $(DOCKER_NETWORK) 2>/dev/null || true
+docker-purge: ## [危险] 彻底清理：容器+数据卷+网络+本地镜像+前端构建产物（不可逆，重置到干净状态）
+	@echo "=> 停止并删除所有容器及命名数据卷..."
+	-$(COMPOSE_ALL) down --volumes --remove-orphans 2>/dev/null
+	-docker rm -f omichub-nginx omichub-web omichub-beat omichub-flower omichub-db omichub-cache omichub-worker 2>/dev/null
+	@echo "=> 删除所有 OmicHub 数据卷（含 docker_ 前缀命名卷）..."
+	-docker volume rm $$(docker volume ls -q --filter name=docker_) 2>/dev/null
+	@echo "=> 删除 omichub 网络..."
+	-docker network rm $(DOCKER_NETWORK) 2>/dev/null
+	@echo "=> 删除本地构建镜像..."
+	-docker rmi $$(docker images --filter reference=docker-web --filter reference=docker-beat --filter reference=docker-flower --filter reference=docker-worker -q) 2>/dev/null
+	@echo "=> 清理前端构建产物..."
+	rm -rf frontend/dist
+	@echo "=> 清理完成"
+
+docker-start: ## 彻底重建：清空一切 + 重建镜像 + 构建前端 + 启动全部服务
+	@$(MAKE) --no-print-directory docker-purge
+	@echo "=> 构建前端..."
+	cd frontend && npm run build
+	@echo "=> 重建 Docker 镜像..."
+	$(COMPOSE_MAIN) build --no-cache
+	$(COMPOSE_WORKER) build --no-cache
+	@echo "=> 启动全部服务..."
+	@$(MAKE) --no-print-directory docker-network
+	$(COMPOSE_MAIN) up -d
+	$(COMPOSE_WORKER) up -d
+	@$(MAKE) --no-print-directory check-alembic-heads
 
 frontend-install: ## 安装前端依赖
 	cd frontend && npm install
@@ -134,6 +157,9 @@ check-alembic-heads: ## 检测 Alembic 迁移是否存在多分支 (Multiple Hea
 	else \
 		echo "=> ✅ 数据库版本树正常，未发现分叉。"; \
 	fi
+
+check-migrations: ## 静态检查 Alembic 迁移链完整性（不依赖数据库）
+	@uv run python scripts/check_migrations.py
 
 clean: ## 清理临时文件
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; \

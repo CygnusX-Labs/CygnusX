@@ -1,102 +1,155 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import type { Task } from '@/types'
 import TaskTable from '@/components/task/TaskTable.vue'
-import { useMessage } from 'naive-ui'
+import AppLoading from '@/components/AppLoading.vue'
+import apiClient from '@/api/client'
+import { useApi } from '@/composables/useApi'
+import { NInput, NSelect, NButton, NIcon, useMessage } from 'naive-ui'
+import { RefreshOutline, SearchOutline } from '@vicons/ionicons5'
 
 const message = useMessage()
-const tasks = ref<Task[]>([])
-const loading = ref(false)
 
-const MOCK_TASKS: Task[] = [
-  {
-    id: 't-001', flow_id: 'rna-seq', user_id: 'u-1001', username: 'zhang_san',
-    name: '番茄叶片 RNA-seq 差异表达分析', status: 'running', execution_mode: 'celery',
-    parameters: {}, work_dir: '', result_path: '', error_message: '',
-    progress: 0.62, logs: [], created_at: '2026-07-03T09:12:00',
-    started_at: '2026-07-03T09:13:00', finished_at: null,
-  },
-  {
-    id: 't-002', flow_id: 'ebi_download', user_id: 'u-1002', username: 'li_si',
-    name: 'EBI PRJEB12345 原始数据下载', status: 'failed', execution_mode: 'celery',
-    parameters: {}, work_dir: '', result_path: '', error_message: '远程连接超时，FTP 服务器无响应',
-    progress: 0.18, logs: [], created_at: '2026-07-03T08:40:00',
-    started_at: '2026-07-03T08:41:00', finished_at: '2026-07-03T09:05:00',
-  },
-  {
-    id: 't-003', flow_id: 'atac-seq', user_id: 'u-1003', username: 'wang_wu',
-    name: '拟南芥根尖 ATAC-seq 开放区域检测', status: 'success', execution_mode: 'celery',
-    parameters: {}, work_dir: '', result_path: '/results/atac-seq/t-003', error_message: '',
-    progress: 1, logs: [], created_at: '2026-07-02T16:20:00',
-    started_at: '2026-07-02T16:21:00', finished_at: '2026-07-02T18:02:00',
-  },
-  {
-    id: 't-004', flow_id: 'rna-seq', user_id: 'u-1001', username: 'zhang_san',
-    name: '黄瓜果实转录组时间序列分析', status: 'queued', execution_mode: 'celery',
-    parameters: {}, work_dir: '', result_path: '', error_message: '',
-    progress: 0, logs: [], created_at: '2026-07-03T09:30:00',
-    started_at: null, finished_at: null,
-  },
-  {
-    id: 't-005', flow_id: 'variant_calling', user_id: 'u-1004', username: 'zhao_liu',
-    name: '水稻群体 128 份种质 SNP/InDel 变异检测', status: 'pending', execution_mode: 'celery',
-    parameters: {}, work_dir: '', result_path: '', error_message: '',
-    progress: 0, logs: [], created_at: '2026-07-03T09:45:00',
-    started_at: null, finished_at: null,
-  },
-  {
-    id: 't-006', flow_id: 'spatial-transcriptomics', user_id: 'u-1005', username: 'chen_qi',
-    name: '小鼠脑组织 10x Visium 空间转录组聚类', status: 'running', execution_mode: 'celery',
-    parameters: {}, work_dir: '', result_path: '', error_message: '',
-    progress: 0.35, logs: [], created_at: '2026-07-03T07:50:00',
-    started_at: '2026-07-03T07:52:00', finished_at: null,
-  },
-  {
-    id: 't-007', flow_id: 'scrna-seq', user_id: 'u-1003', username: 'wang_wu',
-    name: '人 PBMC 单细胞转录组质控与降维', status: 'success', execution_mode: 'celery',
-    parameters: {}, work_dir: '', result_path: '/results/scrna-seq/t-007', error_message: '',
-    progress: 1, logs: [], created_at: '2026-07-01T14:10:00',
-    started_at: '2026-07-01T14:11:00', finished_at: '2026-07-01T15:48:00',
-  },
-  {
-    id: 't-008', flow_id: 'ebi_download', user_id: 'u-1006', username: 'sun_ba',
-    name: 'EBI PRJNA678901 双端测序数据批量下载', status: 'cancelled', execution_mode: 'celery',
-    parameters: {}, work_dir: '', result_path: '', error_message: '',
-    progress: 0.42, logs: [], created_at: '2026-07-02T11:00:00',
-    started_at: '2026-07-02T11:01:00', finished_at: '2026-07-02T11:35:00',
-  },
+const statusFilter = ref<Task['status'] | 'all'>('all')
+const searchQuery = ref('')
+
+const statusOptions = [
+  { label: '全部状态', value: 'all' },
+  { label: '待审核', value: 'pending' },
+  { label: '排队中', value: 'queued' },
+  { label: '运行中', value: 'running' },
+  { label: '已完成', value: 'success' },
+  { label: '失败', value: 'failed' },
+  { label: '已取消', value: 'cancelled' },
 ]
 
-function fetchTasks() {
-  loading.value = true
-  setTimeout(() => {
-    tasks.value = [...MOCK_TASKS]
-    loading.value = false
-  }, 600)
-}
+const {
+  data: tasks,
+  loading,
+  execute: fetchTasks,
+} = useApi<Task[]>(
+  async () => {
+    const res = await apiClient.get<{ items: Task[]; total: number }>('/tasks', {
+      params: statusFilter.value === 'all' ? {} : { status: statusFilter.value },
+    })
+    return res.data.items
+  },
+  { initialData: [] },
+)
 
-function handleDelete(task: Task) {
-  tasks.value = tasks.value.filter(t => t.id !== task.id)
-  message.success(`已删除「${task.name}」`)
+const filteredTasks = computed(() => {
+  let list = tasks.value || []
+  const q = searchQuery.value.trim().toLowerCase()
+  if (q) {
+    list = list.filter(
+      (t) =>
+        t.name.toLowerCase().includes(q) ||
+        t.flow_id.toLowerCase().includes(q) ||
+        (t.error_message || '').toLowerCase().includes(q),
+    )
+  }
+  return list
+})
+
+async function handleDelete(task: Task) {
+  try {
+    await apiClient.delete(`/tasks/${task.id}`)
+    message.success(`已删除「${task.name}」`)
+    await fetchTasks()
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail || '删除失败，请稍后重试')
+  }
 }
 
 onMounted(fetchTasks)
 </script>
 
 <template>
-  <div class="page-container">
-    <div class="flex items-center justify-between mb-6">
-      <div>
+  <div class="page-container tasks-page">
+    <div class="tasks-header">
+      <div class="tasks-header__title">
         <h1 class="page-title">任务中心</h1>
         <p class="text-sm text-gray-400 mt-1">管理和监控所有生信分析任务的执行状态</p>
       </div>
+      <div class="tasks-header__actions">
+        <NInput
+          v-model:value="searchQuery"
+          placeholder="搜索任务名称、流程、错误信息..."
+          clearable
+          style="width: 260px"
+        >
+          <template #prefix>
+            <NIcon :size="14"><SearchOutline /></NIcon>
+          </template>
+        </NInput>
+        <NSelect
+          v-model:value="statusFilter"
+          :options="statusOptions"
+          style="width: 140px"
+          @update:value="fetchTasks"
+        />
+        <NButton @click="fetchTasks">
+          <template #icon>
+            <NIcon><RefreshOutline /></NIcon>
+          </template>
+          刷新
+        </NButton>
+      </div>
     </div>
 
+    <div v-if="loading && !filteredTasks.length" class="tasks-loading">
+      <AppLoading text="加载任务列表..." />
+    </div>
     <TaskTable
-      :tasks="tasks"
+      v-else
+      :tasks="filteredTasks"
       :loading="loading"
       @refresh="fetchTasks"
       @delete="handleDelete"
     />
   </div>
 </template>
+
+<style scoped>
+.tasks-page {
+  min-height: 100%;
+  background: var(--neutral-bg);
+}
+
+.tasks-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.tasks-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.tasks-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+}
+
+@media (max-width: 768px) {
+  .tasks-header {
+    flex-direction: column;
+  }
+  .tasks-header__actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .tasks-header__actions :deep(.n-input),
+  .tasks-header__actions :deep(.n-select) {
+    width: 100% !important;
+  }
+}
+</style>

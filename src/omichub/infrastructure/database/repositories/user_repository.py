@@ -36,6 +36,8 @@ class SqlAlchemyUserRepository(IUserRepository):
             used_storage=db_user.used_storage,
             admin_note=db_user.admin_note,
             lab_group=db_user.lab_group,
+            totp_secret=db_user.totp_secret,
+            is_2fa_enabled=db_user.is_2fa_enabled,
             created_at=db_user.created_at,
             updated_at=db_user.updated_at,
         )
@@ -101,6 +103,8 @@ class SqlAlchemyUserRepository(IUserRepository):
             db_user.used_storage = user.used_storage
             db_user.admin_note = user.admin_note
             db_user.lab_group = user.lab_group
+            db_user.totp_secret = user.totp_secret
+            db_user.is_2fa_enabled = user.is_2fa_enabled
         else:
             # 创建新用户
             db_user = UserModel(
@@ -119,6 +123,8 @@ class SqlAlchemyUserRepository(IUserRepository):
                 used_storage=user.used_storage,
                 admin_note=user.admin_note,
                 lab_group=user.lab_group,
+                totp_secret=user.totp_secret,
+                is_2fa_enabled=user.is_2fa_enabled,
             )
             self.session.add(db_user)
 

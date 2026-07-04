@@ -41,6 +41,10 @@ class User(BaseModel):
     admin_note: str | None = None
     # 所属课题组（研究组/实验室，可空）
     lab_group: str | None = None
+    # ===== TOTP 二次验证（2FA）=====
+    # totp_secret 为加密后的密文（Fernet）；未配置加密密钥时为明文
+    totp_secret: str | None = None
+    is_2fa_enabled: bool = False
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 

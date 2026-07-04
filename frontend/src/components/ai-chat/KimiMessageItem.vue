@@ -8,6 +8,7 @@ import {
 } from '@vicons/ionicons5'
 import { Vue3Lottie } from 'vue3-lottie'
 import md, { VChart } from './setup'
+import { usePyodide } from '@/composables/usePyodide'
 import MessageActionBar from './MessageActionBar.vue'
 import type { ChatMessage, CopyMode } from './types'
 
@@ -87,14 +88,52 @@ onUnmounted(() => {
   }
 })
 
+const { execute } = usePyodide()
+
 function handleBodyClick(e: MouseEvent) {
   const t = (e.target as HTMLElement).closest('.copy-btn') as HTMLElement | null
-  if (!t) return
-  navigator.clipboard.writeText(decodeURIComponent(t.dataset.code || ''))
-  t.textContent = '已复制!'
-  setTimeout(() => {
-    t.textContent = '复制'
-  }, 1500)
+  if (t) {
+    navigator.clipboard.writeText(decodeURIComponent(t.dataset.code || ''))
+    t.textContent = '已复制!'
+    setTimeout(() => {
+      t.textContent = '复制'
+    }, 1500)
+    return
+  }
+
+  const runBtn = (e.target as HTMLElement).closest('.run-btn') as HTMLElement | null
+  if (runBtn) {
+    const code = decodeURIComponent(runBtn.dataset.code || '')
+    if (!code) return
+    runBtn.textContent = '运行中...'
+    runBtn.setAttribute('disabled', 'true')
+    execute(code).then((res) => {
+      runBtn.textContent = '▶ 运行'
+      runBtn.removeAttribute('disabled')
+      // 在当前 pre 后插入结果面板
+      const pre = runBtn.closest('pre')
+      if (!pre) return
+      let resultPanel = pre.nextElementSibling as HTMLElement | null
+      if (!resultPanel || !resultPanel.classList.contains('execution-result')) {
+        resultPanel = document.createElement('div')
+        resultPanel.className = 'execution-result'
+        pre.parentNode?.insertBefore(resultPanel, pre.nextSibling)
+      }
+      const outputHtml = res.error
+        ? `<div class="exec-error">${escapeHtml(res.error)}</div>`
+        : `<pre class="exec-output">${escapeHtml(res.output || '（无输出）')}</pre>`
+      const imagesHtml = res.images.map((img) => `<img src="${img}" class="exec-image" />`).join('')
+      resultPanel.innerHTML = outputHtml + imagesHtml
+    })
+  }
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
 }
 
 function handleCopy(mode: CopyMode) {
@@ -295,5 +334,70 @@ function handleDelete() {
   padding: 8px 0;
   font-size: 13px;
   color: var(--chat-text-muted);
+}
+
+:deep(.code-header) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--chat-surface, #f5f5f5);
+  border-bottom: 1px solid var(--chat-border);
+  font-size: 12px;
+}
+
+:deep(.code-lang) {
+  color: var(--chat-text-muted);
+  text-transform: uppercase;
+  margin-right: auto;
+}
+
+:deep(.copy-btn),
+:deep(.run-btn) {
+  background: transparent;
+  border: 1px solid var(--chat-border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--chat-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+:deep(.copy-btn:hover),
+:deep(.run-btn:hover) {
+  color: var(--chat-accent);
+  border-color: var(--chat-accent);
+}
+
+:deep(.run-btn:disabled) {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+:deep(.execution-result) {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--chat-surface-hover, rgba(0,0,0,0.03));
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+:deep(.exec-output) {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: monospace;
+}
+
+:deep(.exec-error) {
+  color: var(--chat-error, #d03050);
+  white-space: pre-wrap;
+}
+
+:deep(.exec-image) {
+  max-width: 100%;
+  margin-top: 8px;
+  border-radius: 4px;
 }
 </style>

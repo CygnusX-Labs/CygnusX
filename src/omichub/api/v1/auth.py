@@ -7,12 +7,19 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from omichub.api.deps import CurrentUserId, DbSession
 from omichub.application.schemas.auth import (
+    LoginResponse,
     RefreshTokenRequest,
     TokenResponse,
+    TwoFactorCodeRequest,
+    TwoFactorLoginRequest,
+    TwoFactorSetupResponse,
+    TwoFactorStatusResponse,
     UserRegisterRequest,
 )
 from omichub.application.schemas.user import UserResponse
 from omichub.application.services import AuthService
+from omichub.application.services.auth_service import LoginTwoFactorRequired
+from omichub.application.services.totp_service import MfaService
 from omichub.core.config import get_settings
 from omichub.core.exceptions import AuthorizationError, ConflictError
 from omichub.core.security import (
@@ -32,14 +39,96 @@ def get_auth_service(db: DbSession) -> AuthService:
     return AuthService(SqlAlchemyUserRepository(db), db)
 
 
-@router.post("/login", response_model=TokenResponse)
+def get_mfa_service(db: DbSession) -> MfaService:
+    """获取 2FA 服务实例"""
+    return MfaService(SqlAlchemyUserRepository(db), db)
+
+
+@router.post("/login", response_model=LoginResponse)
 async def login(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
+) -> LoginResponse:
+    """用户登录（OAuth2 密码模式）。
+
+    - 2FA 未开启：直接返回正式 access/refresh token。
+    - 2FA 已开启：返回 requires_2fa=true + challenge_token，前端进入二次校验流程。
+    """
+    result = await auth_service.login(form_data.username, form_data.password)
+    if isinstance(result, LoginTwoFactorRequired):
+        return LoginResponse(
+            requires_2fa=True,
+            challenge_token=result.challenge_token,
+        )
+    return LoginResponse(
+        access_token=result.access_token,
+        refresh_token=result.refresh_token,
+        token_type="bearer",
+        expires_in=30 * 60,
+        first_login=result.is_first_login,
+    )
+
+
+# ====================== 2FA 绑定 / 管理 ======================
+
+
+@router.get("/2fa/status", response_model=TwoFactorStatusResponse, summary="当前用户 2FA 状态")
+async def get_2fa_status(
+    current_user_id: CurrentUserId,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+) -> TwoFactorStatusResponse:
+    user = await auth_service.get_current_user(current_user_id)
+    return TwoFactorStatusResponse(
+        enabled=user.is_2fa_enabled, has_secret=bool(user.totp_secret)
+    )
+
+
+@router.post("/2fa/setup", response_model=TwoFactorSetupResponse, summary="生成 2FA 绑定密钥")
+async def setup_2fa(
+    current_user_id: CurrentUserId,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    mfa_service: Annotated[MfaService, Depends(get_mfa_service)],
+) -> TwoFactorSetupResponse:
+    """生成随机 TOTP 密钥并加密落盘（不启用）。返回明文密钥 + otpauth_uri 供前端生码。"""
+    user = await auth_service.get_current_user(current_user_id)
+    secret, uri = await mfa_service.setup(user)
+    return TwoFactorSetupResponse(secret=secret, otpauth_uri=uri)
+
+
+@router.post("/2fa/verify", response_model=TwoFactorStatusResponse, summary="确认启用 2FA")
+async def verify_2fa(
+    req: TwoFactorCodeRequest,
+    current_user_id: CurrentUserId,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    mfa_service: Annotated[MfaService, Depends(get_mfa_service)],
+) -> TwoFactorStatusResponse:
+    """校验 6 位码通过 → is_2fa_enabled=true。"""
+    user = await auth_service.get_current_user(current_user_id)
+    await mfa_service.confirm_enable(user, req.code)
+    return TwoFactorStatusResponse(enabled=True, has_secret=True)
+
+
+@router.post("/2fa/disable", response_model=TwoFactorStatusResponse, summary="关闭 2FA")
+async def disable_2fa(
+    req: TwoFactorCodeRequest,
+    current_user_id: CurrentUserId,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    mfa_service: Annotated[MfaService, Depends(get_mfa_service)],
+) -> TwoFactorStatusResponse:
+    """关闭 2FA：必须校验一次当前验证码，防止他人盗号后关闭。"""
+    user = await auth_service.get_current_user(current_user_id)
+    await mfa_service.disable(user, req.code)
+    return TwoFactorStatusResponse(enabled=False, has_secret=False)
+
+
+@router.post("/2fa/login", response_model=TokenResponse, summary="2FA 登录校验")
+async def login_2fa(
+    req: TwoFactorLoginRequest,
+    mfa_service: Annotated[MfaService, Depends(get_mfa_service)],
 ) -> TokenResponse:
-    """用户登录（OAuth2 密码模式）"""
-    access_token, refresh_token, _user, first_login = await auth_service.login(
-        form_data.username, form_data.password
+    """中间态凭证 + 6 位码 → 正式 access/refresh token。"""
+    access_token, refresh_token, _user, first_login = await mfa_service.complete_login(
+        req.challenge_token, req.code
     )
     return TokenResponse(
         access_token=access_token,

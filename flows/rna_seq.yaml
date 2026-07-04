@@ -11,8 +11,10 @@ meta:
   description: "基于已搭建好的 RNAFlow 流程（STAR + RSEM + DESeq2）的标准 RNA-seq 差异表达分析。提交后自动生成 RNAFlow 所需 config.yaml、samples.csv、contrasts.csv。"
   author: "OmicsHub Team"
   tags: ["rnaseq", "differential-expression", "STAR", "RSEM", "DESeq2", "RNAFlow"]
-  icon: "rna"
+  icon: "🧬"
+  color: "chart-1"
   docs_url: "https://github.com/xsx123123/RNAFlow"
+  github_url: "https://github.com/xsx123123/RNAFlow"
 
 parameters:
   # ----------------------------------------------------------
