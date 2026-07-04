@@ -84,6 +84,15 @@ class PlatformContent(OmicsHubBaseSchema):
     github: str = ""
 
 
+class AIAssistantContent(OmicsHubBaseSchema):
+    """AI 助手页文案（公开读取）。
+
+    由 data/OmicHub.yaml 的 ai_assistant 段驱动，改文件即生效。
+    """
+
+    input_hint: str = "内容由 AI 生成，请仔细甄别"
+
+
 class SiteContentDTO(OmicsHubBaseSchema):
     """首页文案（公开读取）"""
 
@@ -97,3 +106,4 @@ class SiteContentDTO(OmicsHubBaseSchema):
     )
     easter_egg: EasterEggContent = EasterEggContent()
     platform: PlatformContent = PlatformContent()
+    ai_assistant: AIAssistantContent = AIAssistantContent()

@@ -62,6 +62,12 @@ export interface PlatformContent {
   github: string
 }
 
+/** AI 助手页文案 */
+export interface AIAssistantContent {
+  /** 输入框底部提示小字 */
+  input_hint: string
+}
+
 export interface SiteContent {
   hero: HeroContent
   quick_entries: QuickEntryContent[]
@@ -74,4 +80,6 @@ export interface SiteContent {
   easter_egg?: EasterEggContent
   /** 平台元信息（可选） */
   platform?: PlatformContent
+  /** AI 助手页文案（可选） */
+  ai_assistant?: AIAssistantContent
 }

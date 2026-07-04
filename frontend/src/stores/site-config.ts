@@ -10,7 +10,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import apiClient from '@/api/client'
-import type { RegistrationContent, ActivationContent, EasterEggContent, PlatformContent } from '@/types/site-content'
+import type { RegistrationContent, ActivationContent, EasterEggContent, PlatformContent, AIAssistantContent } from '@/types/site-content'
 
 // 文案兜底：site-content 拉取失败时使用
 const DEFAULT_REGISTRATION: RegistrationContent = {
@@ -37,6 +37,9 @@ const DEFAULT_PLATFORM: PlatformContent = {
   email: '',
   github: '',
 }
+const DEFAULT_AI_ASSISTANT: AIAssistantContent = {
+  input_hint: '内容由 AI 生成，请仔细甄别',
+}
 
 export const useSiteConfigStore = defineStore('site-config', () => {
   // 注册开关（true=开放自助注册）。默认 true：接口异常时不阻断登录页注册入口。
@@ -49,6 +52,8 @@ export const useSiteConfigStore = defineStore('site-config', () => {
   const easterEggContent = ref<EasterEggContent>({ ...DEFAULT_EASTER_EGG })
   // 平台元信息（来自 YAML platform 段）
   const platformContent = ref<PlatformContent>({ ...DEFAULT_PLATFORM })
+  // AI 助手页文案（来自 YAML ai_assistant 段）
+  const aiAssistantContent = ref<AIAssistantContent>({ ...DEFAULT_AI_ASSISTANT })
   // 配置是否已就绪（首次拉取完成后置 true，供点击时判断是否需等待）
   const loaded = ref(false)
 
@@ -92,6 +97,9 @@ export const useSiteConfigStore = defineStore('site-config', () => {
   /** 平台联系邮箱 */
   const platformEmail = computed(() => platformContent.value.email)
 
+  /** AI 助手输入框底部提示小字 */
+  const aiInputHint = computed(() => aiAssistantContent.value.input_hint)
+
   /** 未激活弹窗联系管理员的方式；后端缺省回退到 registration.admin_contact */
   const activationContact = computed(() => {
     const c = activationContent.value.admin_contact.trim()
@@ -120,7 +128,7 @@ export const useSiteConfigStore = defineStore('site-config', () => {
           .catch(() => true),
         // 提示文案 + 管理员联系方式：接口异常保留默认文案
         apiClient
-          .get<{ registration?: RegistrationContent; activation?: ActivationContent; easter_egg?: EasterEggContent; platform?: PlatformContent }>('/site-content')
+          .get<{ registration?: RegistrationContent; activation?: ActivationContent; easter_egg?: EasterEggContent; platform?: PlatformContent; ai_assistant?: AIAssistantContent }>('/site-content')
           .then((res) => res.data)
           .catch(() => undefined),
       ])
@@ -129,6 +137,7 @@ export const useSiteConfigStore = defineStore('site-config', () => {
       if (content?.activation) activationContent.value = content.activation
       if (content?.easter_egg) easterEggContent.value = content.easter_egg
       if (content?.platform) platformContent.value = content.platform
+      if (content?.ai_assistant) aiAssistantContent.value = content.ai_assistant
       loaded.value = true
     })()
     loadingPromise = p
@@ -145,6 +154,7 @@ export const useSiteConfigStore = defineStore('site-config', () => {
     activationContent,
     easterEggContent,
     platformContent,
+    aiAssistantContent,
     loaded,
     allowRegistration,
     registrationDisabledMessage,
@@ -162,6 +172,7 @@ export const useSiteConfigStore = defineStore('site-config', () => {
     platformGithub,
     platformAuthor,
     platformEmail,
+    aiInputHint,
     registrationDisabledTip,
     fetchSiteConfig,
   }

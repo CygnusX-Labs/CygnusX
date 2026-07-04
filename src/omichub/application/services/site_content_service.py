@@ -54,6 +54,9 @@ DEFAULT_CONTENT: dict[str, Any] = {
         "button_text": "🐾 召唤星际猫咪",
         "toast": "🎉 星际守护者已响应召唤！快看看屏幕上留下的足迹吧～ ✨",
     },
+    "ai_assistant": {
+        "input_hint": "内容由 AI 生成，请仔细甄别",
+    },
 }
 
 

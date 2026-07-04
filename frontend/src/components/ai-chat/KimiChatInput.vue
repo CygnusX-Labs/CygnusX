@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { NButton, NIcon, NTooltip, NPopover, useMessage, NTag } from 'naive-ui'
 import {
   ArrowUpOutline,
@@ -13,6 +13,7 @@ import {
 import SlashCommandMenu from './SlashCommandMenu.vue'
 import PromptSidebar from './PromptSidebar.vue'
 import { useChatStore } from '@/stores/chat'
+import { useSiteConfigStore } from '@/stores/site-config'
 import apiClient from '@/api/client'
 import type { FileAttachment } from './types'
 
@@ -35,6 +36,7 @@ const emit = defineEmits<{
 }>()
 
 const chatStore = useChatStore()
+const siteConfigStore = useSiteConfigStore()
 const message = useMessage()
 
 const textareaRef = ref<HTMLTextAreaElement>()
@@ -207,6 +209,10 @@ function handleClearConfirm() {
     if (textareaRef.value) textareaRef.value.style.height = 'auto'
   })
 }
+
+onMounted(() => {
+  siteConfigStore.fetchSiteConfig()
+})
 </script>
 
 <template>
@@ -358,6 +364,10 @@ function handleClearConfirm() {
       </div>
     </div>
 
+    <div class="input-hint">
+      {{ siteConfigStore.aiInputHint }}
+    </div>
+
     <PromptSidebar
       :visible="showPromptSidebar"
       @close="showPromptSidebar = false"
@@ -489,6 +499,14 @@ function handleClearConfirm() {
         opacity: 0.4;
       }
     }
+  }
+
+  .input-hint {
+    text-align: center;
+    font-size: 12px;
+    color: var(--chat-text-muted);
+    margin-top: 8px;
+    line-height: 1.4;
   }
 }
 </style>
