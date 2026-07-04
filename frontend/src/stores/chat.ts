@@ -19,6 +19,7 @@ import type { ChatSession, ChatMessage, UserInfo, ModelOption, PluginOption, Con
 const FAVORITE_MODELS_KEY = 'chat-favorite-models'
 const CONVERSATION_SETTINGS_KEY = 'chat-conversation-settings'
 const DEEP_THINKING_KEY = 'chat-deep-thinking'
+const WEB_SEARCH_KEY = 'chat-web-search'
 
 const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = {
   temperature: 0.7,
@@ -67,6 +68,9 @@ export const useChatStore = defineStore('chat', () => {
 
   // 深度思考模式（前端状态，透传至 sendMessage，后端可暂忽略）
   const deepThinking = ref<boolean>(loadBoolean(DEEP_THINKING_KEY, false))
+
+  // 联网搜索开关
+  const enableWebSearch = ref<boolean>(loadBoolean(WEB_SEARCH_KEY, false))
 
   // 对话级设置（温度 / 最大输出 / 上下文长度）
   const conversationSettings = ref<ConversationSettings>(
@@ -282,6 +286,20 @@ export const useChatStore = defineStore('chat', () => {
     setDeepThinking(!deepThinking.value)
   }
 
+  // 联网搜索
+  function setWebSearch(enabled: boolean) {
+    enableWebSearch.value = enabled
+    try {
+      localStorage.setItem(WEB_SEARCH_KEY, String(enabled))
+    } catch {
+      /* 静默 */
+    }
+  }
+
+  function toggleWebSearch() {
+    setWebSearch(!enableWebSearch.value)
+  }
+
   // 对话级设置
   function updateConversationSettings(patch: Partial<ConversationSettings>) {
     conversationSettings.value = { ...conversationSettings.value, ...patch }
@@ -377,6 +395,7 @@ export const useChatStore = defineStore('chat', () => {
     agentMode,
     selectedModel,
     deepThinking,
+    enableWebSearch,
     conversationSettings,
     favoriteModels,
     currentUser,
@@ -405,6 +424,8 @@ export const useChatStore = defineStore('chat', () => {
     selectModel,
     setDeepThinking,
     toggleDeepThinking,
+    setWebSearch,
+    toggleWebSearch,
     updateConversationSettings,
     resetConversationSettings,
     isFavorite,

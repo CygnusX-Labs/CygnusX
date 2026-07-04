@@ -9,6 +9,15 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class ChatAttachment(BaseModel):
+    """聊天附件（多模态消息用）"""
+
+    type: str = Field("file", description="image 或 file")
+    url: str
+    name: str = ""
+    mime_type: str = ""
+
+
 class ChatStreamRequest(BaseModel):
     """流式聊天请求"""
 
@@ -21,6 +30,9 @@ class ChatStreamRequest(BaseModel):
     temperature: float | None = None
     max_tokens: int | None = None
     stream: bool = Field(True, description="是否流式返回")
+    attachments: list[ChatAttachment] = Field(default_factory=list, description="当前用户消息的附件")
+    enable_web_search: bool = Field(False, description="是否启用联网搜索")
+    enable_code_execution: bool = Field(False, description="是否启用代码执行（仅前端 Pyodide，后端透传标记）")
 
 
 class ChatMessageDTO(BaseModel):

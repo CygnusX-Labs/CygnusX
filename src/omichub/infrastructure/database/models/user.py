@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, String, Text
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -40,6 +40,11 @@ class UserModel(Base, TimestampMixin):
     # ===== 所属课题组 =====
     # 用户归属的研究组/实验室，用于资产看板分组与检索；可空
     lab_group: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    # ===== TOTP 二次验证（2FA）=====
+    # totp_secret 加密落盘（Fernet，复用 ai_provider_key_encryption_key）；未配置密钥时明文。
+    # is_2fa_enabled 仅在用户绑定验证器并成功校验一次后置 true。
+    totp_secret: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    is_2fa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
 
 class WorkspaceModel(Base, TimestampMixin):

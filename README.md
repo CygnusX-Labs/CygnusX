@@ -204,19 +204,29 @@ rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov
 
 ### Docker 数据清理
 
-按破坏性分级，优先使用 `make` 命令：
+按破坏性分级，四个命令职责清晰：
+
+| 命令 | 容器 | 数据卷 | 镜像 | 前端 dist | 用途 |
+|------|------|--------|------|-----------|------|
+| `docker-clean` | down | 保留 | 保留 | 保留 | 停服务，数据不动 |
+| `docker-reload` | restart | 保留 | 保留 | 重建 | 开发时刷代码 |
+| `docker-purge` | down + 强制删除 | 清空 | 删除 | 删除 | 只清理，不启动 |
+| `docker-start` | purge + build + up | 清空 | 重建 | 重建 | 彻底重建，从头启动 |
 
 ```bash
 # ① 轻度清理：仅删除两栈容器 + 网络（含孤儿容器），保留数据库/Redis 数据卷与镜像
 make docker-clean
 
-# ② 彻底重置（⚠️ 不可逆）：两栈容器 + 数据卷(pg_data/redis_data) + 网络 + 本地构建镜像
+# ② 彻底清理（⚠️ 不可逆）：容器 + 数据卷 + 网络 + 本地镜像 + 前端构建产物，只清理不启动
 make docker-purge
+
+# ③ 彻底重建（⚠️ 不可逆）：在 purge 基础上重建镜像 + 构建前端 + 启动全部服务
+make docker-start
 ```
 
 > 注：任务数据存放于宿主 `/data/omichub`（bind mount，非数据卷），`make docker-purge` **不会**删除它。需彻底清理任务数据请手动 `sudo rm -rf /data/omichub`。
 
-清理后重新拉起并初始化：
+`docker-start` 清理后会自动重建并启动，无需手动执行 `docker-up-all`。`docker-purge` 清理后需手动拉起：
 
 ```bash
 make docker-up-all
@@ -365,10 +375,104 @@ docs/                 架构设计文档
 | `make docker-logs-worker` | 查看 Worker 日志 |
 | `make docker-reload` | 重新构建前端并刷新主栈 + Worker |
 | `make docker-clean` | 清理两栈容器与网络（保留数据卷） |
-| `make docker-purge` | [危险] 彻底清理：容器+数据卷+网络+本地镜像 |
+| `make docker-purge` | [危险] 彻底清理：容器+数据卷+网络+本地镜像+前端产物 |
+| `make docker-start` | [危险] 彻底重建：purge + 重建镜像 + 构建前端 + 启动全部服务 |
 | `make init-admin` | 初始化管理员账号 |
 | `make init-cookies` | 初始化饼干定价策略 |
+| `make check-migrations` | 静态检查 Alembic 迁移链完整性 |
+| `make check-alembic-heads` | 检查数据库是否存在 Alembic 多分支 (Multiple Heads) |
 | `make clean` | 清理 Python 缓存文件 |
+
+## 数据库迁移
+
+### 创建新迁移
+
+```bash
+make migrate-new m="add xxx table"
+```
+
+### 迁移链健康检查
+
+新增或修改迁移文件后，务必运行静态检查，确保 `down_revision` 等依赖关系正确：
+
+```bash
+make check-migrations
+```
+
+`make check-migrations` 会在**不连接数据库**的情况下解析所有迁移文件，检查：
+
+- 每个迁移文件都能正确解析 `revision`、`down_revision`、`depends_on`。
+- `down_revision` / `depends_on` 指向的父迁移真实存在。
+- 迁移链只有一个 root，且拓扑连通（无孤岛）。
+- 最终 `alembic heads` 唯一。
+
+**建议在以下场景执行：**
+
+- 新建或修改了 `alembic/versions/` 下的迁移文件。
+- 合并分支后迁移文件有冲突。
+- 拉取他人代码后，本地发现 `alembic/versions/` 有新增文件。
+- 提交代码前或 CI 流水线中。
+
+如果检查失败，说明迁移链本身有问题，**不要提交、不要部署**，先修好 `down_revision` 再推进。
+
+### 常见迁移错误
+
+#### `down_revision` 指向错误父节点
+
+例如迁移 `g3h4i5j6k7l8_add_model_name_to_agent_templates.py` 的作用是向 `agent_templates` 表添加字段，因此它的 `down_revision` 必须指向创建 `agent_templates` 表的迁移 `9a5b6c7d8e1f`。如果错指向 `c2d3e4f5a6b7`（目录表迁移），则空库从头升级时会因表不存在而报错：
+
+```
+sqlalchemy.exc.ProgrammingError: relation "agent_templates" does not exist
+```
+
+修复方式：修正迁移文件中的 `down_revision`。
+
+#### Alembic Multiple Heads（多分支）
+
+当多人并行创建迁移且未正确合并时，可能出现多个 head。可通过以下方式检查：
+
+```bash
+make check-alembic-heads
+```
+
+若发现多分支，执行：
+
+```bash
+make migrate-merge
+```
+
+## 代码更新后如何更新容器
+
+根据改动类型选择对应的更新命令，避免不必要的镜像重建或数据清理：
+
+| 改动类型 | 推荐命令 | 说明 |
+|---|---|---|
+| 只改前端代码（`frontend/src/`） | `make docker-reload` | 重新构建 `frontend/dist`，并重启 nginx / web |
+| 只改后端 Python 源码（`src/`） | `docker restart omichub-web omichub-beat omichub-worker` | 容器挂载 `src:ro`，重启即可加载新代码，无需重建镜像 |
+| 改了流程 YAML（`flows/*.yaml`） | `curl -X POST http://localhost:8000/api/v1/flows/reload` | 流程支持热重载，无需重启服务 |
+| 改了数据库模型或新增迁移文件 | 先 `make check-migrations`，再 `make docker-reload` | web 容器入口会自动执行 `alembic upgrade head` |
+| 改了依赖（`pyproject.toml` / `uv.lock`）或 Dockerfile | `make docker-start` | 必须重建镜像；这会清空数据卷，开发环境可用，生产环境需谨慎 |
+| 想彻底从零重建 | `make docker-start` | 执行 `docker-purge + build --no-cache + 构建前端 + up` |
+
+### 日常迭代推荐
+
+前端 + 后端源码的日常改动，统一用：
+
+```bash
+make docker-reload
+```
+
+它等价于：
+
+```bash
+cd frontend && npm run build
+docker compose -f deploy/docker/docker-compose.yml restart nginx
+docker compose -f deploy/docker/docker-compose.yml restart web
+docker compose -f deploy/docker/docker-compose.yml up -d
+docker compose -f deploy/docker/docker-compose.worker.yml up -d
+```
+
+> ⚠️ `make docker-reload` **不会重建镜像，也不会删除数据卷**。如果改了 `pyproject.toml`、Dockerfile 或需要彻底清空环境，请用 `make docker-start`。
 
 ## 流程（Flow）扩展机制
 

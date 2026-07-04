@@ -27,6 +27,7 @@ class AgentTemplateDTO(BaseModel):
     welcome_message: str = ""
     mcp_ids: list[Any] = Field(default_factory=list)
     skill_ids: list[Any] = Field(default_factory=list)
+    features: dict[str, Any] = Field(default_factory=dict)
     temperature: float = 0.7
     max_tokens: int = 4096
     is_builtin: bool = False
@@ -44,12 +45,11 @@ class CreateAgentRequest(BaseModel):
     color: str = "#4f8ef7"
     category: str = "general"
     model_id: UUID | None = None
-    model_name: str = ""
-    model_engine: str = ""
     system_prompt: str = ""
     welcome_message: str = ""
     mcp_ids: list[Any] = Field(default_factory=list)
     skill_ids: list[Any] = Field(default_factory=list)
+    features: dict[str, Any] = Field(default_factory=dict)
     temperature: float = 0.7
     max_tokens: int = 4096
     is_active: bool = True
@@ -62,11 +62,11 @@ class UpdateAgentRequest(BaseModel):
     color: str | None = None
     category: str | None = None
     model_id: UUID | None = None
-    model_engine: str | None = None
     system_prompt: str | None = None
     welcome_message: str | None = None
     mcp_ids: list[Any] | None = None
     skill_ids: list[Any] | None = None
+    features: dict[str, Any] | None = None
     temperature: float | None = None
     max_tokens: int | None = None
     is_active: bool | None = None

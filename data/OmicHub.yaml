@@ -31,8 +31,8 @@ storage:
   users_subdir: "users"
 
 hero:
-  title: "欢迎使用 OmicHub"
-  description: "华中农业大学园艺林学学基因组学实验室私有化多组学分析平台。从数据上传、流程分析到结果交付，一站式完成您的组学研究。"
+  title: "OmicHub 星尘工作站 🌌"
+  description: "华中农业大学园艺林学学院基因组学实验室出品！数据上传、流程分析、结果交付——像收集星尘一样，一站式攒齐你的组学宝藏 ✨ 让科研变得丝滑起来～"
 
 quick_entries:
   - key: rna-seq

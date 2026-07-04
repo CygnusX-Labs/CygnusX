@@ -25,7 +25,7 @@ async function handleUploadImg(files: File[], callback: (urls: string[]) => void
       files.map(async (file, index) => {
         const formData = new FormData()
         formData.append('file', file)
-        const res = await apiClient.post<{ url: string }>('/knowledge/upload', formData, {
+        const res = await apiClient.post<{ url: string }>('/docs/knowledge/upload', formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
         })
         urls[index] = res.data.url

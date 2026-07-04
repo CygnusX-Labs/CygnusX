@@ -1,7 +1,17 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import apiClient from '@/api/client'
-import type { User, TokenResponse, RegisterRequest } from '@/types'
+import type {
+  User,
+  TokenResponse,
+  LoginResponse,
+  LoginRequest,
+  RegisterRequest,
+  TwoFactorSetupResponse,
+  TwoFactorStatusResponse,
+  TwoFactorLoginRequest,
+  TwoFactorCodeRequest,
+} from '@/types'
 
 // sessionStorage key：首次登录迎新标记。镜像 pendingOnboarding，
 // 以便 LoginView 的 window.location.href 兜底跳转（整页刷新丢失 Pinia）后仍可恢复。
@@ -50,19 +60,54 @@ export const useAuthStore = defineStore('auth', () => {
     return pending
   }
 
-  async function login(username: string, password: string): Promise<void> {
+  async function login(username: string, password: string): Promise<LoginResponse> {
     const formData = new FormData()
     formData.append('username', username)
     formData.append('password', password)
 
-    const response = await apiClient.post<TokenResponse>('/auth/login', formData, {
+    const response = await apiClient.post<LoginResponse>('/auth/login', formData, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     })
 
-    setTokens(response.data.access_token, response.data.refresh_token)
-    // 后端依据 last_login_at 判定首次登录；首次则触发迎新弹窗
-    markOnboardingPending(!!response.data.first_login)
+    const data = response.data
+    if (!data.requires_2fa) {
+      setTokens(data.access_token, data.refresh_token)
+      markOnboardingPending(!!data.first_login)
+      await fetchUser()
+    }
+    return data
+  }
+
+  async function complete2FALogin(challengeToken: string, code: string): Promise<TokenResponse> {
+    const req: TwoFactorLoginRequest = { challenge_token: challengeToken, code }
+    const response = await apiClient.post<TokenResponse>('/auth/2fa/login', req)
+    const data = response.data
+    setTokens(data.access_token, data.refresh_token)
+    markOnboardingPending(!!data.first_login)
     await fetchUser()
+    return data
+  }
+
+  async function fetch2FAStatus(): Promise<TwoFactorStatusResponse> {
+    const response = await apiClient.get<TwoFactorStatusResponse>('/auth/2fa/status')
+    return response.data
+  }
+
+  async function setup2FA(): Promise<TwoFactorSetupResponse> {
+    const response = await apiClient.post<TwoFactorSetupResponse>('/auth/2fa/setup')
+    return response.data
+  }
+
+  async function confirmEnable2FA(code: string): Promise<TwoFactorStatusResponse> {
+    const req: TwoFactorCodeRequest = { code }
+    const response = await apiClient.post<TwoFactorStatusResponse>('/auth/2fa/verify', req)
+    return response.data
+  }
+
+  async function disable2FA(code: string): Promise<TwoFactorStatusResponse> {
+    const req: TwoFactorCodeRequest = { code }
+    const response = await apiClient.post<TwoFactorStatusResponse>('/auth/2fa/disable', req)
+    return response.data
   }
 
   async function register(req: RegisterRequest): Promise<void> {
@@ -120,6 +165,11 @@ export const useAuthStore = defineStore('auth', () => {
     setTokens,
     clearTokens,
     login,
+    complete2FALogin,
+    fetch2FAStatus,
+    setup2FA,
+    confirmEnable2FA,
+    disable2FA,
     register,
     setupFirstAdmin,
     checkSetupRequired,

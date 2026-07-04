@@ -22,7 +22,7 @@ import type {
   McpTool,
   SkillItem,
 } from '@/types/agent'
-import type { ChatMessage, ToolCall } from '@/components/ai-chat/types'
+import type { ChatMessage, ToolCall, FileAttachment } from '@/components/ai-chat/types'
 import { agentApi, adminAgentApi } from '@/api/agent'
 import apiClient from '@/api/client'
 import { useAgentChatStream } from '@/composables/useAgentChatStream'
@@ -369,7 +369,14 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   }
 
   /** 发送消息（真实 SSE 流式，走 Agent 调度中枢） */
-  async function sendMessage(content: string): Promise<void> {
+  async function sendMessage(
+    content: string,
+    options: {
+      attachments?: FileAttachment[]
+      enableWebSearch?: boolean
+      enableCodeExecution?: boolean
+    } = {},
+  ): Promise<void> {
     const session = currentSession.value
     if (!session || isStreaming.value || !content.trim()) return
     const agent = getAgent(session.agent_id)
@@ -384,12 +391,21 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     const now = new Date().toISOString()
 
     // 用户消息
-    session.messages.push({
+    const userMsg: ChatMessage = {
       id: `msg-${Date.now()}`,
       role: 'user',
       content: content.trim(),
       createdAt: now,
-    })
+    }
+    if (options.attachments?.length) {
+      userMsg.attachments = options.attachments.map((a) => ({
+        name: a.name,
+        size: a.size,
+        type: a.type,
+        url: a.url,
+      }))
+    }
+    session.messages.push(userMsg)
 
     // 助手占位消息（流式填充）
     const aiId = `msg-ai-${Date.now()}`
@@ -415,6 +431,14 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       .slice(-ctxLen)
       .map((m) => ({ role: m.role, content: m.content }))
 
+    // 当前消息的附件（仅最后一条用户消息需要）
+    const apiAttachments = options.attachments?.map((a) => ({
+      type: (a.type.startsWith('image/') ? 'image' : 'file') as 'image' | 'file',
+      url: a.url || '',
+      name: a.name,
+      mime_type: a.type,
+    })) || []
+
     isStreaming.value = true
     streamingContent.value = ''
     streamingThought.value = ''
@@ -434,6 +458,9 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         temperature: chatStore.conversationSettings.temperature,
         maxTokens: chatStore.conversationSettings.maxTokens,
         deepThinking: chatStore.deepThinking,
+        attachments: apiAttachments,
+        enableWebSearch: options.enableWebSearch ?? chatStore.enableWebSearch,
+        enableCodeExecution: options.enableCodeExecution ?? false,
       },
       {
         onText: (text, isReasoning) => {

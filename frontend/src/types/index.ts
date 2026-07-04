@@ -27,6 +27,35 @@ export interface TokenResponse {
   first_login: boolean
 }
 
+export interface LoginResponse {
+  access_token: string
+  refresh_token: string
+  token_type: string
+  expires_in: number
+  first_login: boolean
+  requires_2fa: boolean
+  challenge_token: string | null
+}
+
+export interface TwoFactorSetupResponse {
+  secret: string
+  otpauth_uri: string
+}
+
+export interface TwoFactorStatusResponse {
+  enabled: boolean
+  has_secret: boolean
+}
+
+export interface TwoFactorLoginRequest {
+  challenge_token: string
+  code: string
+}
+
+export interface TwoFactorCodeRequest {
+  code: string
+}
+
 export interface LoginRequest {
   username: string
   password: string
@@ -36,6 +65,7 @@ export interface RegisterRequest {
   username: string
   email: string
   password: string
+  lab_group?: string | null
 }
 
 export interface FlowDefinition {
@@ -46,6 +76,12 @@ export interface FlowDefinition {
   version: string
   tags?: string[]
   docs_url?: string | null
+  github_url?: string | null
+  icon?: string | null
+  color?: string | null
+  author?: string | null
+  parameter_count?: number
+  has_sample_sheet?: boolean
 }
 
 export interface DataFile {
@@ -363,6 +399,16 @@ export interface CookiePricing {
   description: string
   effective_from: string | null
   effective_until: string | null
+}
+
+export interface SiteSettings {
+  registration_enabled: boolean
+  totp_policy: 'off' | 'optional' | 'required'
+}
+
+export interface UpdateSiteSettings {
+  registration_enabled?: boolean
+  totp_policy?: 'off' | 'optional' | 'required'
 }
 
 export interface CostEstimate {

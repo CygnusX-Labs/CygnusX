@@ -46,3 +46,24 @@ class AIProviderConfigTestResponse(BaseModel):
     success: bool
     response: str = ""
     error: str = ""
+
+
+class DiscoveredModel(BaseModel):
+    id: str
+    name: str = ""
+    owned_by: str = "unknown"
+
+
+class AIProviderDiscoverResponse(BaseModel):
+    provider_id: UUID
+    provider_name: str
+    models: list[DiscoveredModel] = Field(default_factory=list)
+
+
+class AIProviderTemplate(BaseModel):
+    name: str
+    provider_type: str
+    base_url: str
+    default_models: list[str] = Field(default_factory=list)
+    env_key: str = ""
+    exists: bool = False

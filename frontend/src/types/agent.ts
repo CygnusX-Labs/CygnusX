@@ -41,6 +41,13 @@ export interface SkillItem {
   is_active: boolean
 }
 
+export interface AgentFeatures {
+  enable_web_search?: boolean
+  enable_code_execution?: boolean
+  enable_file_upload?: boolean
+  enable_deep_thinking?: boolean
+}
+
 /** Agent 模板 —— 后台编排、前台按需唤醒的「专家角色」 */
 export interface AgentTemplate {
   id: string
@@ -65,6 +72,8 @@ export interface AgentTemplate {
   mcp_ids: string[]
   /** 挂载的技能 id 列表 */
   skill_ids: string[]
+  /** 功能开关 */
+  features: AgentFeatures
   is_active: boolean
   is_builtin: boolean
 }

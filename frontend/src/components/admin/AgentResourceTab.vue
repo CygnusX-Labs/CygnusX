@@ -2,11 +2,11 @@
 import { h, ref, computed, onMounted } from 'vue'
 import {
   NButton, NDataTable, NIcon, NTag, NSpace, NPopconfirm, NModal, NForm,
-  NFormItem, NInput, NSelect, NColorPicker, NTransfer, useMessage,
+  NFormItem, NInput, NSelect, NColorPicker, NTransfer, NSwitch, NPopover, NSpin, useMessage,
 } from 'naive-ui'
 import { CreateOutline, TrashOutline, RefreshOutline, StarOutline, EyeOutline } from '@vicons/ionicons5'
 import { useAgentHubStore, CATEGORY_LABELS } from '@/stores/agentHub'
-import apiClient from '@/api/client'
+import { adminProviderApi } from '@/api/admin/ai_provider'
 import type { AgentTemplate, AgentCategory } from '@/types/agent'
 
 const message = useMessage()
@@ -16,8 +16,10 @@ const showEdit = ref(false)
 const editing = ref<Partial<AgentTemplate>>({})
 const isEdit = ref(false)
 const previewId = ref<string | null>(null)
+const discovering = ref(false)
+const discoveryMap = ref<Record<string, { providerName: string; models: Array<{ id: string; name: string }> }>>({})
 
-/** 可选模型配置（来自 /chat/models） */
+/** 可选模型配置（来自 /admin/ai-providers） */
 const modelOptions = ref<{ label: string; value: string }[]>([])
 const modelMap = computed(() => {
   const map: Record<string, string> = {}
@@ -25,19 +27,57 @@ const modelMap = computed(() => {
   return map
 })
 
-onMounted(async () => {
-  // 后台需含停用 Agent 的全量列表
-  await store.fetchAgents(false)
-  await Promise.all([store.fetchMcps(), store.fetchSkills()])
+async function loadModelOptions() {
   try {
-    const res = await apiClient.get<Array<{ id: string; name: string; model: string }>>('/chat/models')
-    modelOptions.value = (res.data || []).map((m) => ({
+    const providers = await adminProviderApi.list()
+    modelOptions.value = providers.map((m) => ({
       label: `${m.name} (${m.model})`,
       value: m.id,
     }))
   } catch (e) {
     console.error('加载模型列表失败:', e)
   }
+}
+
+async function refreshModels() {
+  discovering.value = true
+  try {
+    const providers = await adminProviderApi.list()
+    await loadModelOptions()
+    const discoveries = await Promise.all(
+      providers.map((p) => adminProviderApi.discoverModels(p.id).catch(() => null)),
+    )
+    const map: Record<string, { providerName: string; models: Array<{ id: string; name: string }> }> = {}
+    discoveries.forEach((d) => {
+      if (d?.models?.length) {
+        map[d.provider_id] = {
+          providerName: d.provider_name,
+          models: d.models.map((m) => ({ id: m.id, name: m.name || m.id })),
+        }
+      }
+    })
+    discoveryMap.value = map
+    // 如果当前编辑项有 model_id，且对应 provider 发现了新模型，把 label 补充上
+    Object.values(map).forEach(({ models }) => {
+      models.forEach((m) => {
+        if (!modelOptions.value.some((o) => o.value === m.id)) {
+          // 发现的是远程模型 ID，当前架构仍按 Provider 配置选择，这里仅作展示提示
+        }
+      })
+    })
+  } catch (e) {
+    message.error('刷新模型列表失败')
+    console.error(e)
+  } finally {
+    discovering.value = false
+  }
+}
+
+onMounted(async () => {
+  // 后台需含停用 Agent 的全量列表
+  await store.fetchAgents(false)
+  await Promise.all([store.fetchMcps(), store.fetchSkills()])
+  await loadModelOptions()
 })
 
 const categoryOptions = (Object.keys(CATEGORY_LABELS) as AgentCategory[]).map((k) => ({
@@ -59,8 +99,7 @@ const columns = [
     title: '模型', key: 'model', width: 160,
     render: (r: AgentTemplate) => {
       const label = r.model_id ? modelMap.value[r.model_id] : ''
-      const text = label || r.model_engine || '未绑定'
-      return h(NTag, { size: 'tiny', type: label ? 'info' : 'default', bordered: false }, { default: () => text })
+      return h(NTag, { size: 'tiny', type: label ? 'info' : 'default', bordered: false }, { default: () => label || '未绑定' })
     },
   },
   {
@@ -102,6 +141,7 @@ function handleCreate() {
   editing.value = {
     avatar: '🤖', color: '#4f8ef7', category: 'general',
     model_id: undefined, mcp_ids: [], skill_ids: [],
+    features: {},
     welcome_message: '你好，有什么可以帮你？', is_active: true,
   }
   isEdit.value = false
@@ -109,7 +149,7 @@ function handleCreate() {
 }
 
 function handleEdit(r: AgentTemplate) {
-  editing.value = { ...r, mcp_ids: [...r.mcp_ids], skill_ids: [...r.skill_ids] }
+  editing.value = { ...r, mcp_ids: [...r.mcp_ids], skill_ids: [...r.skill_ids], features: { ...r.features } }
   isEdit.value = true
   showEdit.value = true
 }
@@ -161,13 +201,39 @@ const previewAgent = computed(() => store.getAgent(previewId.value || ''))
         <NFormItem label="名称"><NInput v-model:value="editing.name" placeholder="如：单细胞分析师" /></NFormItem>
         <NFormItem label="描述"><NInput v-model:value="editing.description" /></NFormItem>
         <NFormItem label="绑定模型配置">
-          <NSelect
-            v-model:value="editing.model_id"
-            :options="modelOptions"
-            placeholder="选择后端已配置的模型（决定 Base URL / API Key）"
-            clearable
-            filterable
-          />
+          <NSpace align="center" style="width: 100%">
+            <NSelect
+              v-model:value="editing.model_id"
+              :options="modelOptions"
+              placeholder="选择后端已配置的模型（决定 Base URL / API Key）"
+              clearable
+              filterable
+              style="flex: 1"
+            />
+            <NPopover trigger="click" placement="bottom" style="max-width: 360px" @update:show="refreshModels">
+              <template #trigger>
+                <NButton text class="toolbar-btn" :loading="discovering" @click="refreshModels">
+                  <template #icon><NIcon :component="RefreshOutline" /></template>
+                </NButton>
+              </template>
+              <div style="max-height: 260px; overflow-y: auto">
+                <div v-if="discovering" style="padding: 12px; text-align: center">
+                  <NSpin size="small" />
+                </div>
+                <template v-else>
+                  <div v-if="!Object.keys(discoveryMap).length" style="padding: 8px; color: #999; font-size: 12px">
+                    未从任何 Provider 发现可用模型，请检查 API Key / Base URL。
+                  </div>
+                  <div v-for="item in Object.values(discoveryMap)" :key="item.providerName" style="margin-bottom: 10px">
+                    <div style="font-size: 12px; font-weight: 500; margin-bottom: 4px">{{ item.providerName }}</div>
+                    <NSpace size="small" wrap>
+                      <NTag v-for="m in item.models" :key="m.id" size="tiny" round>{{ m.name || m.id }}</NTag>
+                    </NSpace>
+                  </div>
+                </template>
+              </div>
+            </NPopover>
+          </NSpace>
         </NFormItem>
         <NFormItem label="分类">
           <NSelect v-model:value="editing.category" :options="categoryOptions" />
@@ -183,6 +249,27 @@ const previewAgent = computed(() => store.getAgent(previewId.value || ''))
         </NFormItem>
         <NFormItem label="挂载技能">
           <NTransfer v-model:value="editing.skill_ids" :options="skillTransferOptions" source-filterable />
+        </NFormItem>
+
+        <NFormItem label="功能开关">
+          <NSpace vertical>
+            <NSpace align="center">
+              <NSwitch v-model:value="editing.features!.enable_web_search" />
+              <span style="font-size: 13px">联网搜索</span>
+            </NSpace>
+            <NSpace align="center">
+              <NSwitch v-model:value="editing.features!.enable_file_upload" />
+              <span style="font-size: 13px">文件上传</span>
+            </NSpace>
+            <NSpace align="center">
+              <NSwitch v-model:value="editing.features!.enable_code_execution" />
+              <span style="font-size: 13px">代码执行</span>
+            </NSpace>
+            <NSpace align="center">
+              <NSwitch v-model:value="editing.features!.enable_deep_thinking" />
+              <span style="font-size: 13px">深度思考</span>
+            </NSpace>
+          </NSpace>
         </NFormItem>
       </NForm>
       <template #footer>

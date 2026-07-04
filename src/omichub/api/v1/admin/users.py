@@ -3,10 +3,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 from sqlalchemy import desc, func, select
 
-from omichub.api.deps import CurrentUserId, DbSession
+from omichub.api.deps import AdminTotpRequired, CurrentUserId, DbSession
 from omichub.application.schemas.auth import UserRegisterRequest
 from omichub.core.exceptions import AuthorizationError, ConflictError, NotFoundError
 from omichub.core.security import hash_password
@@ -320,6 +320,7 @@ async def delete_user(
     user_id: UUID,
     current_user_id: CurrentUserId,
     _admin: AdminRequired,
+    _totp: AdminTotpRequired,  # 敏感操作：强制 X-TOTP-Code 二次校验
     db: DbSession,
 ):
     """彻底删除用户（不可恢复）。

@@ -199,10 +199,9 @@ class OpenAICompatibleProvider:
                                 slot["function"]["arguments"] += fn["arguments"]
 
                         finish = choices[0].get("finish_reason")
-                        if finish and finish != "null":
-                            if finish == "content_filter":
-                                yield ChatChunk(type="error", content="输出被内容安全过滤器拦截")
-                                return
+                        if finish and finish != "null" and finish == "content_filter":
+                            yield ChatChunk(type="error", content="输出被内容安全过滤器拦截")
+                            return
 
                 # 流结束但未收到 [DONE]
                 if self._emit_tool_calls(tool_acc):
@@ -232,15 +231,37 @@ class OpenAICompatibleProvider:
     async def validate(self) -> bool:
         """验证 API Key 和连接是否正常"""
         try:
-            headers = {
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-            }
-            async with httpx.AsyncClient(timeout=10, verify=True) as client:
-                resp = await client.get(f"{self.base_url}/models", headers=headers)
-                return resp.status_code == 200
+            models = await self.list_models()
+            return len(models) > 0
         except Exception:  # noqa: BLE001
             return False
+
+    async def list_models(self) -> list[dict[str, Any]]:
+        """调用 /v1/models 返回远程模型列表。"""
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=10, verify=True) as client:
+            resp = await client.get(f"{self.base_url}/models", headers=headers)
+            if resp.status_code == 401:
+                raise RuntimeError(f"API Key 无效或已过期（模型: {self.name}）")
+            if resp.status_code == 404:
+                raise RuntimeError(f"该 Provider 不支持 /v1/models 端点（模型: {self.name}）")
+            if resp.status_code >= 400:
+                body = (await resp.aread()).decode()[:500]
+                raise RuntimeError(f"发现模型失败（模型: {self.name}）: {body}")
+            data = resp.json()
+            models = data.get("data", [])
+            return [
+                {
+                    "id": m.get("id", ""),
+                    "name": m.get("name") or m.get("id", ""),
+                    "owned_by": m.get("owned_by", "unknown"),
+                }
+                for m in models
+                if m.get("id")
+            ]
 
     @staticmethod
     def _emit_tool_calls(tool_acc: dict[int, dict[str, Any]]) -> bool:

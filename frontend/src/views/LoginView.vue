@@ -9,35 +9,67 @@
         <p class="login-subtitle">欢迎登录多组学分析平台</p>
       </div>
       <n-form ref="formRef" :model="formData" :rules="rules" class="login-form">
-        <n-form-item label="用户名" path="username">
-          <n-input
-            v-model:value="formData.username"
-            placeholder="请输入用户名"
-            size="large"
-            @keyup.enter="handleLogin"
-          />
-        </n-form-item>
+        <!-- 第一步：账号密码 -->
+        <template v-if="step === 'credentials'">
+          <n-form-item label="用户名" path="username">
+            <n-input
+              v-model:value="formData.username"
+              placeholder="请输入用户名"
+              size="large"
+              @keyup.enter="handleLogin"
+            />
+          </n-form-item>
 
-        <n-form-item label="密码" path="password">
-          <n-input
-            v-model:value="formData.password"
-            type="password"
-            show-password-on="click"
-            placeholder="请输入密码"
-            size="large"
-            @keyup.enter="handleLogin"
-          />
-        </n-form-item>
+          <n-form-item label="密码" path="password">
+            <n-input
+              v-model:value="formData.password"
+              type="password"
+              show-password-on="click"
+              placeholder="请输入密码"
+              size="large"
+              @keyup.enter="handleLogin"
+            />
+          </n-form-item>
+        </template>
+
+        <!-- 第二步：TOTP 6 位验证码 -->
+        <template v-else>
+          <n-form-item label="6 位动态验证码" path="totpCode">
+            <n-input
+              v-model:value="formData.totpCode"
+              placeholder="请输入 Authenticator 验证码"
+              size="large"
+              maxlength="6"
+              :input-props="{ inputmode: 'numeric', autocomplete: 'one-time-code' }"
+              @keyup.enter="handleVerify2FA"
+            />
+          </n-form-item>
+          <p class="totp-hint">已开启二次验证，请打开 Authenticator 应用查看当前验证码。</p>
+        </template>
 
         <div v-if="errorMessage" class="login-error-message">
           {{ errorMessage }}
         </div>
 
         <div class="login-actions">
-          <n-button type="primary" size="large" :loading="loading" @click="handleLogin">
+          <n-button
+            v-if="step === 'credentials'"
+            type="primary"
+            size="large"
+            :loading="loading"
+            @click="handleLogin"
+          >
             登录
           </n-button>
-          <n-button size="large" @click="handleRegister">
+          <template v-else>
+            <n-button type="primary" size="large" :loading="loading" @click="handleVerify2FA">
+              验证并登录
+            </n-button>
+            <n-button size="large" @click="resetToCredentials">
+              返回
+            </n-button>
+          </template>
+          <n-button v-if="step === 'credentials'" size="large" @click="handleRegister">
             注册
           </n-button>
         </div>
@@ -94,6 +126,7 @@ async function handleRegister() {
 const formData = ref({
   username: '',
   password: '',
+  totpCode: '',
 })
 
 const rules = {
@@ -105,6 +138,52 @@ const rules = {
     { required: true, message: '请输入密码', trigger: 'blur' },
     { min: 8, max: 128, message: '密码长度在 8 到 128 个字符', trigger: 'blur' },
   ],
+  totpCode: [
+    { required: true, message: '请输入 6 位验证码', trigger: 'blur' },
+    { pattern: /^\d{6}$/, message: '验证码必须为 6 位数字', trigger: 'blur' },
+  ],
+}
+
+const step = ref<'credentials' | 'totp'>('credentials')
+const challengeToken = ref('')
+
+function resetToCredentials() {
+  step.value = 'credentials'
+  challengeToken.value = ''
+  formData.value.totpCode = ''
+  errorMessage.value = ''
+}
+
+function redirectHome() {
+  try {
+    router.push('/')
+  } catch {
+    window.location.href = '/'
+  }
+  setTimeout(() => {
+    if (window.location.pathname === '/login') {
+      window.location.href = '/'
+    }
+  }, 100)
+}
+
+function handleLoginError(error: any) {
+  const status = error.response?.status
+  const detail: string = error.response?.data?.detail || ''
+
+  if (status >= 500) {
+    const sysMsg = '系统内部错误，请联系管理员'
+    errorMessage.value = sysMsg
+    message.error(sysMsg)
+  } else if (detail.includes('未激活')) {
+    errorMessage.value = detail
+    if (!siteConfig.loaded) siteConfig.fetchSiteConfig().catch(() => {})
+    showInactiveModal.value = true
+  } else {
+    const authMsg = detail || '用户名或密码错误'
+    errorMessage.value = authMsg
+    message.error(authMsg)
+  }
 }
 
 const handleLogin = async () => {
@@ -121,39 +200,46 @@ const handleLogin = async () => {
   loading.value = true
 
   try {
-    await authStore.login(formData.value.username, formData.value.password)
-    message.success('登录成功')
-    try {
-      await router.push('/')
-    } catch {
-      window.location.href = '/'
-    }
-    setTimeout(() => {
-      if (window.location.pathname === '/login') {
-        window.location.href = '/'
-      }
-    }, 100)
-  } catch (error: any) {
-    const status = error.response?.status
-    const detail: string = error.response?.data?.detail || ''
+    const result = await authStore.login(formData.value.username, formData.value.password)
 
-    // 系统内部错误（500/502/503 等）：明确提示系统故障，避免被误判为"密码错误"，
-    // 让运维与用户能区分认证失败与服务端异常。
-    if (status >= 500) {
-      const sysMsg = '系统内部错误，请联系管理员'
-      errorMessage.value = sysMsg
-      message.error(sysMsg)
-    } else if (detail.includes('未激活')) {
-      // 账户未激活：弹模态框并附带管理员联系方式，引导用户联系管理员激活
-      errorMessage.value = detail
-      if (!siteConfig.loaded) await siteConfig.fetchSiteConfig().catch(() => {})
-      showInactiveModal.value = true
-    } else {
-      // 401/403 等认证失败：模糊提示"用户名或密码错误"（不区分用户名是否存在，防枚举）
-      const authMsg = detail || '用户名或密码错误'
-      errorMessage.value = authMsg
-      message.error(authMsg)
+    if (result.requires_2fa) {
+      challengeToken.value = result.challenge_token || ''
+      step.value = 'totp'
+      message.info('请打开 Authenticator 应用，输入 6 位动态验证码')
+      return
     }
+
+    message.success('登录成功')
+    redirectHome()
+  } catch (error: any) {
+    handleLoginError(error)
+  } finally {
+    loading.value = false
+  }
+}
+
+const handleVerify2FA = async () => {
+  if (!formRef.value) return
+  errorMessage.value = ''
+
+  try {
+    await formRef.value.validate()
+  } catch {
+    return
+  }
+
+  if (!challengeToken.value) {
+    errorMessage.value = '2FA 凭证丢失，请重新登录'
+    return
+  }
+
+  loading.value = true
+  try {
+    await authStore.complete2FALogin(challengeToken.value, formData.value.totpCode)
+    message.success('登录成功')
+    redirectHome()
+  } catch (error: any) {
+    handleLoginError(error)
   } finally {
     loading.value = false
   }
@@ -240,6 +326,12 @@ const handleLogin = async () => {
   display: flex;
   justify-content: space-between;
   margin-top: 32px;
+}
+.totp-hint {
+  margin: -8px 0 16px;
+  font-size: 13px;
+  color: var(--neutral-text-3);
+  text-align: center;
 }
 
 /* 表单校验提示精致化：「请输入用户名/密码」等红色校验文案

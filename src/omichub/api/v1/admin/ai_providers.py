@@ -13,6 +13,8 @@ from omichub.application.schemas.ai_provider import (
     AIProviderConfigTestRequest,
     AIProviderConfigTestResponse,
     AIProviderConfigUpdateDTO,
+    AIProviderDiscoverResponse,
+    AIProviderTemplate,
 )
 from omichub.application.services.ai_provider_service import AIProviderConfigService
 
@@ -24,6 +26,14 @@ def get_service(db: DbSession) -> AIProviderConfigService:
 
 
 ServiceDep = Annotated[AIProviderConfigService, Depends(get_service)]
+
+
+@router.get("/templates", response_model=list[AIProviderTemplate], summary="内置 Provider 模板列表")
+async def list_templates(
+    _admin: AdminRequired,
+    service: ServiceDep,
+) -> list[AIProviderTemplate]:
+    return await service.list_templates()
 
 
 @router.get("", response_model=list[AIProviderConfigDTO], summary="AI Provider 配置列表")
@@ -88,6 +98,19 @@ async def set_default_config(
     config_id: UUID,
 ) -> AIProviderConfigDTO:
     return await service.set_default(config_id)
+
+
+@router.post(
+    "/{config_id}/discover-models",
+    response_model=AIProviderDiscoverResponse,
+    summary="自动发现该 Provider 下的可用模型",
+)
+async def discover_models(
+    _admin: AdminRequired,
+    service: ServiceDep,
+    config_id: UUID,
+) -> AIProviderDiscoverResponse:
+    return await service.discover_models(config_id)
 
 
 @router.post(

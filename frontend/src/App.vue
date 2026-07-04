@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { NConfigProvider, NMessageProvider, NDialogProvider, NNotificationProvider, zhCN, dateZhCN, darkTheme } from 'naive-ui'
 import type { GlobalThemeOverrides } from 'naive-ui'
+import AppErrorBoundary from '@/components/AppErrorBoundary.vue'
 import CatPawsOverlay from '@/components/CatPawsOverlay.vue'
 import { useThemeStore } from '@/stores/theme'
 import { computed } from 'vue'
@@ -93,7 +94,9 @@ const themeOverrides = computed<GlobalThemeOverrides>(() => {
     <NMessageProvider>
       <NDialogProvider>
         <NNotificationProvider placement="top-right">
-          <RouterView />
+          <AppErrorBoundary>
+            <RouterView />
+          </AppErrorBoundary>
           <!-- 全局猫爪彩蛋覆盖层：监听 omicHub:triggerCatPaws 事件（激活弹窗第 5 次 / 关于页召唤按钮） -->
           <CatPawsOverlay />
         </NNotificationProvider>

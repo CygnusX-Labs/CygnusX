@@ -290,5 +290,7 @@ class FlowMeta(_StrictModel):
     description: str = Field(..., min_length=1, description="流程描述")
     author: str | None = Field(default=None, description="作者")
     tags: list[str] = Field(default=[], description="标签列表")
-    icon: str | None = Field(default=None, description="图标类名")
+    icon: str | None = Field(default=None, description="图标，支持 Emoji 或图标名")
+    color: str | None = Field(default=None, description="主题色 key，如 chart-1")
     docs_url: str | None = Field(default=None, description="文档链接")
+    github_url: str | None = Field(default=None, description="GitHub 源码链接")

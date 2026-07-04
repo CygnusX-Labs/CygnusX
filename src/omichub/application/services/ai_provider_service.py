@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
+import anyio
+import yaml
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.ai_provider import (
@@ -11,12 +14,17 @@ from omichub.application.schemas.ai_provider import (
     AIProviderConfigDTO,
     AIProviderConfigTestResponse,
     AIProviderConfigUpdateDTO,
+    AIProviderDiscoverResponse,
+    AIProviderTemplate,
+    DiscoveredModel,
 )
-from omichub.core.exceptions import NotFoundError
+from omichub.core.config import get_settings
+from omichub.core.exceptions import BusinessError, NotFoundError
 from omichub.domain.ai_provider.entities import AIProviderConfig
 from omichub.domain.ai_provider.services import AIProviderConfigDomainService
 from omichub.domain.ai_provider.value_objects import ProviderType
 from omichub.infrastructure.ai_provider.litellm_provider import LiteLLMProvider
+from omichub.infrastructure.ai_provider.openai_compatible import OpenAICompatibleProvider
 from omichub.infrastructure.database.repositories.ai_provider_repository import (
     SqlAlchemyAIProviderConfigRepository,
 )
@@ -59,6 +67,38 @@ class AIProviderConfigService:
     async def list_configs(self) -> list[AIProviderConfigDTO]:
         configs = await self._repo.list_all()
         return [_to_dto(c) for c in configs]
+
+    async def list_templates(self) -> list[AIProviderTemplate]:
+        """加载内置 Provider 模板，并标记是否已在数据库中存在。"""
+        settings = get_settings()
+        path = anyio.Path(settings.ai_provider_config_yaml or "data/provider_templates.yaml")
+        fallback = anyio.Path("data/provider_templates.yaml")
+        if not await path.exists():
+            path = fallback
+        templates: list[dict[str, Any]] = []
+        if await path.exists():
+            async with await anyio.open_file(path, encoding="utf-8") as f:
+                content = await f.read()
+            data = yaml.safe_load(content) or {}
+            templates = data.get("templates", [])
+        existing_names = {c.name for c in await self._repo.list_all()}
+        result: list[AIProviderTemplate] = []
+        for item in templates:
+            name = item.get("name", "")
+            if not name:
+                continue
+            env_key = item.get("env_key", "")
+            result.append(
+                AIProviderTemplate(
+                    name=name,
+                    provider_type=item.get("provider_type", "openai_compatible"),
+                    base_url=item.get("base_url", ""),
+                    default_models=item.get("default_models", []),
+                    env_key=env_key,
+                    exists=name in existing_names,
+                )
+            )
+        return result
 
     async def get_config(self, config_id: UUID) -> AIProviderConfigDTO:
         config = await self._repo.get_by_id(config_id)
@@ -135,6 +175,33 @@ class AIProviderConfigService:
             return AIProviderConfigTestResponse(success=True, response=str(content))
         except Exception as e:  # noqa: BLE001
             return AIProviderConfigTestResponse(success=False, error=str(e))
+
+    async def discover_models(self, config_id: UUID) -> AIProviderDiscoverResponse:
+        """自动发现指定 Provider 下的可用模型列表。"""
+        config = await self._repo.get_by_id(config_id)
+        if config is None:
+            raise NotFoundError("AI Provider 配置不存在")
+        if not config.model or not config.base_url:
+            return AIProviderDiscoverResponse(
+                provider_id=config_id, provider_name=config.name, models=[]
+            )
+        provider = OpenAICompatibleProvider(config)
+        try:
+            raw_models = await provider.list_models()
+        except Exception as e:  # noqa: BLE001
+            raise BusinessError(f"发现模型失败: {e}") from e
+        return AIProviderDiscoverResponse(
+            provider_id=config_id,
+            provider_name=config.name,
+            models=[
+                DiscoveredModel(
+                    id=m["id"],
+                    name=m.get("name") or m["id"],
+                    owned_by=m.get("owned_by", "unknown"),
+                )
+                for m in raw_models
+            ],
+        )
 
     async def get_active_default(self) -> AIProviderConfig | None:
         return await self._repo.get_default()

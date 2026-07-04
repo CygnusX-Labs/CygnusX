@@ -16,6 +16,14 @@
   --arco-danger: #F53F3F;
   --arco-danger-light: #FFECE8;
 
+  /* 图表系列色（用于流程卡片、数据可视化） */
+  --kimi-chart-1: #165DFF;
+  --kimi-chart-2: #F53F3F;
+  --kimi-chart-3: #00B42A;
+  --kimi-chart-4: #8E54E9;
+  --kimi-chart-5: #FF7D00;
+  --kimi-chart-6: #14C8D4;
+
   /* 中性色 */
   --neutral-bg: #F2F3F8;
   --neutral-card: #FFFFFF;
@@ -90,6 +98,14 @@
   --arco-warning-light: rgba(245, 158, 11, 0.15);
   --arco-danger: #EF4444;
   --arco-danger-light: rgba(239, 68, 68, 0.15);
+
+  /* 深色模式图表系列色 */
+  --kimi-chart-1: #3B82F6;
+  --kimi-chart-2: #EF4444;
+  --kimi-chart-3: #22C55E;
+  --kimi-chart-4: #A78BFA;
+  --kimi-chart-5: #F59E0B;
+  --kimi-chart-6: #22D3EE;
 
   --neutral-bg: #0B0F19;
   --neutral-card: #151A25;
@@ -554,6 +570,14 @@ body {
   background: linear-gradient(-45deg, #165DFF, #6B8DD6, #8E54E9, #165DFF);
   background-size: 400% 400%;
   animation: gradientShift 12s ease infinite;
+}
+
+@keyframes github-wiggle {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  20%  { transform: rotate(-15deg) scale(1.2); }
+  40%  { transform: rotate(10deg) scale(1.2); }
+  60%  { transform: rotate(-8deg) scale(1.15); }
+  80%  { transform: rotate(4deg) scale(1.1); }
 }
 
 /* ===== 减少动画偏好 (a11y) ===== */

@@ -39,6 +39,7 @@ class AgentContext:
     system_prompt: str
     tools: list[dict[str, Any]] = field(default_factory=list)
     mcp_servers: list[MCPServer] = field(default_factory=list)
+    features: dict[str, Any] = field(default_factory=dict)
     temperature: float = 0.7
     max_tokens: int = 4096
 
@@ -133,7 +134,9 @@ class AgentService:
     async def create_agent(self, req: CreateAgentRequest) -> AgentTemplateDTO:
         if await self.get_agent(req.agent_id) is not None:
             raise BusinessError(f"Agent ID '{req.agent_id}' 已存在")
-        agent = AgentTemplateModel(is_builtin=False, is_active=True, **req.model_dump())
+        data = req.model_dump()
+        await self._sync_model_labels(data)
+        agent = AgentTemplateModel(is_builtin=False, is_active=True, **data)
         self._db.add(agent)
         await self._db.flush()
         return self._to_dto(agent)
@@ -145,10 +148,32 @@ class AgentService:
         data = req.model_dump(exclude_unset=True)
         if data.get("is_default"):
             await self._clear_other_defaults()
+        await self._sync_model_labels(data)
         for key, value in data.items():
             setattr(agent, key, value)
         await self._db.flush()
         return self._to_dto(agent)
+
+    async def _sync_model_labels(self, data: dict[str, Any]) -> None:
+        """根据 model_id 同步 model_engine / model_name，确保展示与调用一致。"""
+        model_id = data.get("model_id")
+        if model_id is None:
+            data["model_engine"] = ""
+            data["model_name"] = ""
+            return
+        result = await self._db.execute(
+            select(AIProviderConfigModel).where(
+                AIProviderConfigModel.id == model_id,
+                AIProviderConfigModel.is_active == True,  # noqa: E712
+            )
+        )
+        provider = result.scalar_one_or_none()
+        if provider is not None:
+            data["model_engine"] = provider.model
+            data["model_name"] = provider.name
+        else:
+            data["model_engine"] = ""
+            data["model_name"] = ""
 
     async def delete_agent(self, agent_id: str) -> bool:
         agent = await self.get_agent(agent_id)
@@ -234,26 +259,22 @@ class AgentService:
             system_prompt=system_prompt,
             tools=tools,
             mcp_servers=mcp_servers,
+            features=dict(agent.features or {}),
             temperature=agent.temperature,
             max_tokens=agent.max_tokens,
         )
 
     async def _resolve_model(self, model_id: uuid.UUID | None) -> AIProviderConfigModel | None:
-        if model_id is not None:
-            result = await self._db.execute(
-                select(AIProviderConfigModel).where(
-                    AIProviderConfigModel.id == model_id,
-                    AIProviderConfigModel.is_active == True,  # noqa: E712
-                )
-            )
-            return result.scalar_one_or_none()
-        # 回落：默认模型 → 首个启用模型
+        """严格按 Agent 绑定的 model_id 解析模型，避免 fallback 导致调用与设置不一致。"""
+        if model_id is None:
+            return None
         result = await self._db.execute(
-            select(AIProviderConfigModel)
-            .where(AIProviderConfigModel.is_active == True)  # noqa: E712
-            .order_by(AIProviderConfigModel.is_default.desc())
+            select(AIProviderConfigModel).where(
+                AIProviderConfigModel.id == model_id,
+                AIProviderConfigModel.is_active == True,  # noqa: E712
+            )
         )
-        return result.scalars().first()
+        return result.scalar_one_or_none()
 
     async def _build_skill_prompt(self, skill_ids: list[Any]) -> str:
         if not skill_ids:
@@ -297,6 +318,7 @@ class AgentService:
             model_id=a.model_id, model_name=a.model_name, model_engine=a.model_engine,
             system_prompt=a.system_prompt, welcome_message=a.welcome_message,
             mcp_ids=list(a.mcp_ids or []), skill_ids=list(a.skill_ids or []),
+            features=dict(a.features or {}),
             temperature=a.temperature, max_tokens=a.max_tokens,
             is_builtin=a.is_builtin, is_active=a.is_active, is_default=a.is_default,
             created_at=a.created_at, updated_at=a.updated_at,

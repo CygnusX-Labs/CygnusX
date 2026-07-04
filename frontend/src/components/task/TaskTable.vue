@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppLoading from '@/components/AppLoading.vue'
+import { NTooltip } from 'naive-ui'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import type { Task } from '@/types'
@@ -130,10 +132,11 @@ const stats = computed(() => {
         </button>
       </div>
 
-      <!-- 表格 -->
-      <table v-else class="w-full">
-        <thead>
-          <tr class="border-b border-gray-100">
+      <!-- 表格容器 -->
+      <div v-else class="overflow-x-auto">
+        <table class="w-full min-w-[760px]">
+          <thead>
+            <tr class="border-b border-gray-100">
             <th v-if="showUser" class="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3">用户</th>
             <th class="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3">任务名称</th>
             <th class="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3 w-[130px]">流程</th>
@@ -222,17 +225,22 @@ const stats = computed(() => {
                   </svg>
                 </button>
 
-                <!-- 重新运行 -->
-                <button
-                  v-if="isTerminal(task.status)"
-                  class="p-1.5 rounded-lg text-gray-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
-                  title="重新运行"
-                  @click.stop
-                >
-                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                </button>
+              <!-- 重新运行（暂无后端接口，禁用并提示） -->
+                <NTooltip placement="top">
+                  <template #trigger>
+                    <button
+                      v-if="isTerminal(task.status)"
+                      disabled
+                      class="p-1.5 rounded-lg text-gray-300 cursor-not-allowed"
+                      title="重新运行"
+                    >
+                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    </button>
+                  </template>
+                  重新运行功能即将上线
+                </NTooltip>
 
                 <!-- 删除 -->
                 <button
@@ -249,16 +257,11 @@ const stats = computed(() => {
           </tr>
         </tbody>
       </table>
+      </div>
 
       <!-- 加载态 -->
       <div v-if="loading" class="flex items-center justify-center py-12">
-        <div class="flex items-center gap-2 text-sm text-gray-400">
-          <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-          加载中...
-        </div>
+        <AppLoading text="加载中..." size="small" />
       </div>
     </div>
 
