@@ -9,7 +9,7 @@ import {
 } from '@vicons/ionicons5'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
-import HeroAnimation from '@/components/HeroAnimation.vue'
+import OmicBackgroundAnimation from '@/components/OmicBackgroundAnimation.vue'
 import type { SiteContent } from '@/types/site-content'
 
 // 默认文案兜底：API 拉取失败时保证首页仍可正常渲染
@@ -29,7 +29,7 @@ const DEFAULT_CONTENT: SiteContent = {
   guide_steps: [
     { title: '上传样本数据', desc: '将 FASTQ / BAM 等原始数据上传至数据管理' },
     { title: '选择分析流程', desc: '在分析中心选择 RNA-seq 或 ATAC-seq 流程' },
-    { title: '查看分析结果', desc: '任务完成后在任务中心查看与下载结果' },
+    { title: '查看分析结果', desc: '任务完成后在报告中心查看与下载结果' },
   ],
 }
 
@@ -116,7 +116,7 @@ onMounted(async () => {
   <div class="home-page">
     <!-- Hero 欢迎区 -->
     <section class="hero animate-fade-in-up">
-      <HeroAnimation />
+      <OmicBackgroundAnimation context="hero" />
       <div class="hero-content">
         <p class="hero-greeting">{{ greeting }}{{ displayName ? '，' + displayName : '' }} 👋</p>
         <h1 class="hero-title">{{ content.hero.title }}</h1>

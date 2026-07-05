@@ -1,60 +1,30 @@
 <script setup lang="ts">
 /**
- * LoginCats —— 登录卡片顶部猫咪动画浮层（两只各异的喵）
+ * LoginCats —— 登录页唯一吉祥物：黑猫
  *
- * 两只猫以绝对定位「趴」在白色登录卡片的顶部外边缘，底部贴合卡片上沿、探出半个身子，
- * 绝不遮挡卡片内部的 "OmicHub" 文字与输入框。
- * 复用项目既有 vue3-lottie 模式（同 RegistrationDisabledModal）：
- *   - :animation-link 走 public/lottie/*.json，用 BASE_URL 拼接兼容子路径部署
- *   - loop + auto-play 无限循环自动播放
- *   - @on-error 兜底为 🐱 emoji，资源缺失/损坏时浮层仍可看
- * pointer-events: none 确保猫咪不拦截表单点击。
- *
- * 素材分配（两只各异，避免重复）：
- *   - 左：orange-cat.json（橙猫，透明背景，镜像朝中央）
- *   - 右：loader-cat.json（加载猫，透明背景，放大突出）
- *
- * 两只均透明背景，无需 mix-blend 治白底。
- * 右猫放大（height 88）后同步上移 top，使底部位置与左猫一致、不遮挡 Logo 文字。
+ * 仅保留 loader-cat（黑猫）一只，居中放置于 OmicHub 标题正上方，
+ * 头部探出登录卡片顶部，不遮挡标题与表单。
+ * 复用项目既有 vue3-lottie 模式，资源缺失时兜底为 🐱 emoji。
  */
 import { ref } from 'vue'
 import { Vue3Lottie } from 'vue3-lottie'
 
 const BASE = import.meta.env.BASE_URL
-const urls = {
-  orange: `${BASE}lottie/orange-cat.json`,
-  loader: `${BASE}lottie/loader-cat.json`,
-}
+const blackCatUrl = `${BASE}lottie/loader-cat.json`
 
-// 每只猫独立的失败标记，单只挂掉不影响另一只
-const leftFailed = ref(false)
-const rightFailed = ref(false)
+const failed = ref(false)
 </script>
 
 <template>
-  <div class="login-cats" aria-hidden="true">
-    <!-- 左：橙猫，镜像翻转面朝中央（透明背景） -->
-    <div class="cat cat--left">
+  <div class="cat-mascot-wrapper" aria-hidden="true">
+    <div class="cat-mascot">
       <Vue3Lottie
-        v-if="!leftFailed"
-        :animation-link="urls.orange"
+        v-if="!failed"
+        :animation-link="blackCatUrl"
         :loop="true"
         :auto-play="true"
-        :height="72"
-        @on-error="leftFailed = true"
-      />
-      <span v-else class="cat-emoji">🐱</span>
-    </div>
-
-    <!-- 右：加载猫（透明背景，放大突出） -->
-    <div class="cat cat--right">
-      <Vue3Lottie
-        v-if="!rightFailed"
-        :animation-link="urls.loader"
-        :loop="true"
-        :auto-play="true"
-        :height="88"
-        @on-error="rightFailed = true"
+        :height="160"
+        @on-error="failed = true"
       />
       <span v-else class="cat-emoji">🐱</span>
     </div>
@@ -62,62 +32,83 @@ const rightFailed = ref(false)
 </template>
 
 <style scoped>
-.login-cats {
-  /* 挂在 .login-card（position: relative）顶部，零布局占位 */
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 0;
-  pointer-events: none; /* 不拦截卡片内的表单点击 */
-  z-index: 3;
+.cat-mascot-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: -55px;
+  margin-bottom: 12px;
+  position: relative;
+  z-index: 15;
+  opacity: 0;
+  transform: translateY(-20px);
+  animation: catDropIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) 0.5s forwards;
 }
 
-.cat {
-  position: absolute;
-  pointer-events: none;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  /* 强制透明容器：vue3-lottie 默认即 transparent，此处 !important 双保险，
-     彻底杜绝任何继承背景造成的白块 */
+.cat-mascot {
+  width: 160px;
+  height: auto;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
+  transition: transform 0.3s ease;
+  pointer-events: auto;
   background: transparent !important;
 }
 
-/* 深入 vue3-lottie 内部容器，确保其也无背景 */
-.cat :deep(.lottie-animation-container) {
+.cat-mascot :deep(.lottie-animation-container) {
   background-color: transparent !important;
 }
 
-/* 左：橙猫，镜像翻转面朝中央，靠左分布 */
-.cat--left {
-  left: 16px;
-  top: -38px; /* height 72 → 底部约在卡片顶部下方 34px（padding 区，未到文字） */
-  transform: scaleX(-1);
-}
-
-/* 右：加载猫，放大（height 88），同步上移 top 使底部位置与左猫一致、不遮 Logo */
-.cat--right {
-  right: 16px;
-  top: -54px; /* height 88 → 底部仍在卡片顶部下方 ~34px，与左猫底部对齐 */
+.cat-mascot:hover {
+  transform: scale(1.05) translateY(-4px);
 }
 
 .cat-emoji {
-  font-size: 40px;
+  font-size: 100px;
   line-height: 1;
   filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.15));
 }
 
-/* 响应式：移动端只保留右侧放大的猫并居中，避免窄屏拥挤 */
-@media (max-width: 767px) {
-  .cat--left {
-    display: none;
+@keyframes catDropIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.9);
   }
-  .cat--right {
-    right: auto;
-    left: 50%;
-    top: -48px;
-    transform: translateX(-50%);
+  70% {
+    transform: translateY(4px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 768px) {
+  .cat-mascot-wrapper {
+    margin-top: -40px;
+    margin-bottom: 8px;
+  }
+
+  .cat-mascot {
+    width: 120px;
+  }
+
+  .cat-emoji {
+    font-size: 80px;
+  }
+}
+
+@media (max-width: 480px) {
+  .cat-mascot-wrapper {
+    margin-top: -30px;
+    margin-bottom: 6px;
+  }
+
+  .cat-mascot {
+    width: 100px;
+  }
+
+  .cat-emoji {
+    font-size: 72px;
   }
 }
 </style>

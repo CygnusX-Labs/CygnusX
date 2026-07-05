@@ -49,6 +49,7 @@ async function loadModelOptions() {
     }))
   } catch (e) {
     console.error('加载模型列表失败:', e)
+    message.error('加载模型列表失败，请检查 AI Provider 配置接口')
   }
 }
 
@@ -191,8 +192,14 @@ function handleCreate() {
 }
 
 function handleEdit(r: AgentTemplate) {
+  // 若当前绑定的 model_id 已不在可选列表中（provider 被删），清空避免保存时 500
+  const validModelId = r.model_id && modelOptions.value.some((o) => o.value === r.model_id)
+    ? r.model_id
+    : undefined
+
   editing.value = {
     ...r,
+    model_id: validModelId,
     mcp_ids: [...r.mcp_ids],
     skill_ids: [...r.skill_ids],
     features: {
@@ -218,6 +225,14 @@ async function handleSave() {
     message.warning('请选择分类')
     return
   }
+  if (
+    editing.value.model_id &&
+    !modelOptions.value.some((o) => o.value === editing.value.model_id)
+  ) {
+    message.warning('所选模型已不可用，请重新选择')
+    editing.value.model_id = undefined
+    return
+  }
   saving.value = true
   try {
     const saved = await store.upsertAgent(editing.value)
@@ -228,6 +243,7 @@ async function handleSave() {
       message.error('保存失败，请检查后端接口')
     }
   } catch (e: any) {
+    console.error('Agent 保存失败:', e, 'payload:', editing.value)
     message.error(e?.response?.data?.detail || e?.message || '保存失败')
   } finally {
     saving.value = false
@@ -322,7 +338,8 @@ function updateFeature(key: keyof AgentFeatures, val: boolean) {
       v-model:show="showEdit"
       preset="card"
       :title="isEdit ? '编辑助手模板' : '新建助手模板'"
-      style="width: 760px; max-height: 90vh"
+      style="width: 760px"
+      class="agent-edit-modal"
       :segmented="{ content: true, footer: true }"
     >
       <div class="edit-body">
@@ -537,8 +554,24 @@ function updateFeature(key: keyof AgentFeatures, val: boolean) {
 .tab-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .tab-hint { font-size: 12px; color: var(--n-text-color-3, #999); }
 .form-card { margin-bottom: 16px; }
-.edit-body { max-height: calc(90vh - 140px); overflow-y: auto; padding-right: 6px; }
+.edit-body { padding-right: 6px; }
 .edit-footer { padding: 8px 0; }
+
+/* 修复编辑弹窗内容过长时底部按钮被挤出可视区域的问题 */
+.agent-edit-modal :deep(.n-card) {
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+.agent-edit-modal :deep(.n-card__content) {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+}
+.agent-edit-modal :deep(.n-card__footer),
+.agent-edit-modal :deep(.n-card__action) {
+  flex-shrink: 0;
+}
 
 .avatar-picker {
   width: 48px;

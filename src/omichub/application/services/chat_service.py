@@ -333,6 +333,7 @@ class ChatService:
         llm_messages = sanitize_messages(messages, sensitive_keywords)
         full_content = ""
         update_counter = 0
+        last_usage: dict[str, Any] | None = None
 
         try:
             final_temp = temperature if temperature is not None else model_config.temperature
@@ -364,9 +365,12 @@ class ChatService:
                     return
 
                 elif chunk.type == "done":
+                    last_usage = chunk.metadata.get("usage")
                     await self.update_message_content(
-                        ai_message.message_id, full_content, "complete"
+                        ai_message.message_id, full_content, "complete",
+                        {"usage": last_usage} if last_usage else None,
                     )
+                    await self._apply_usage_to_session(ai_message.message_id, last_usage)
                     chunk.metadata["session_id"] = current_session_id
                     chunk.metadata["message_id"] = ai_message.message_id
                     yield chunk
@@ -392,6 +396,7 @@ class ChatService:
         agent_id: str,
         messages: list[dict[str, str]],
         session_id: str | None = None,
+        model_id: uuid.UUID | None = None,
         attachments: list[dict[str, Any]] | None = None,
         enable_web_search: bool = False,
         enable_code_execution: bool = False,
@@ -406,6 +411,24 @@ class ChatService:
         if ctx is None:
             yield ChatChunk(type="error", content="Agent 不存在或已停用")
             return
+
+        # 若请求指定了 model_id，校验并覆盖 Agent 默认模型
+        if model_id is not None:
+            override = await self._resolve_model(model_id)
+            if override is None:
+                yield ChatChunk(
+                    type="error",
+                    content="指定的模型不存在或未启用",
+                )
+                return
+            if not override.api_key:
+                yield ChatChunk(
+                    type="error",
+                    content=f"模型 '{override.name}' 的 API Key 未配置，请联系管理员设置",
+                )
+                return
+            ctx.model_config = override
+
         if ctx.model_config is None:
             yield ChatChunk(
                 type="error",
@@ -428,6 +451,10 @@ class ChatService:
             if not session:
                 yield ChatChunk(type="error", content="会话不存在或已被删除")
                 return
+            # 若用户切换了模型，同步更新会话记录的 model_id
+            if model_id is not None and session.model_id != model_id:
+                session.model_id = model_id
+                session.updated_at = datetime.now(UTC)
             current_session_id = session_id
         else:
             title = f"与 {ctx.agent.name} 的对话"
@@ -465,6 +492,7 @@ class ChatService:
         update_counter = 0
         first_chunk_sent = False
         max_rounds = 8
+        last_usage: dict[str, Any] | None = None
 
         mcp_client = MCPClient()
 
@@ -511,18 +539,21 @@ class ChatService:
 
                     elif chunk.type == "done":
                         # done 仅作为单轮结束信号，是否继续由 round_tool_calls 决定
-                        pass
+                        last_usage = chunk.metadata.get("usage")
 
                 # 本轮无工具调用 → 正常结束
                 if not round_tool_calls:
                     await self.update_message_content(
-                        ai_message.message_id, full_content, "complete"
+                        ai_message.message_id, full_content, "complete",
+                        {"usage": last_usage} if last_usage else None,
                     )
+                    await self._apply_usage_to_session(ai_message.message_id, last_usage)
                     yield ChatChunk(
                         type="done",
                         metadata={
                             "session_id": current_session_id,
                             "message_id": ai_message.message_id,
+                            "usage": last_usage,
                         },
                     )
                     return
@@ -715,6 +746,46 @@ class ChatService:
             logger.warning(f"读取文本附件失败 {att.get('name')}: {e}")
             return ""
 
+    async def _resolve_model(self, model_id: uuid.UUID) -> AIProviderConfigModel | None:
+        """按 ID 解析已启用的模型配置。"""
+        result = await self._db.execute(
+            select(AIProviderConfigModel).where(
+                AIProviderConfigModel.id == model_id,
+                AIProviderConfigModel.is_active == True,  # noqa: E712
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def _apply_usage_to_session(
+        self, message_id: str, usage: dict[str, Any] | None,
+    ) -> None:
+        """把 LLM 返回的 usage 累加到会话 total_tokens，并写入消息 metadata。"""
+        if not usage:
+            return
+        try:
+            total = int(
+                usage.get("total_tokens")
+                or usage.get("total")
+                or (int(usage.get("prompt_tokens") or 0) + int(usage.get("completion_tokens") or 0))
+                or 0
+            )
+            if total <= 0:
+                return
+            msg_result = await self._db.execute(
+                select(ChatMessageModel).where(ChatMessageModel.message_id == message_id)
+            )
+            msg = msg_result.scalar_one_or_none()
+            if not msg:
+                return
+            session_result = await self._db.execute(
+                select(ChatSessionModel).where(ChatSessionModel.session_id == msg.session_id)
+            )
+            session = session_result.scalar_one_or_none()
+            if session:
+                session.total_tokens += total
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"累加 token 用量失败: {e}")
+
     async def _web_search(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """联网搜索占位实现：返回模拟结果，后续可替换为真实搜索引擎。"""
         query = arguments.get("query", "")
@@ -857,10 +928,16 @@ class ChatService:
 
     @staticmethod
     def _to_msg_dto(m: ChatMessageModel) -> ChatMessageDTO:
+        usage = (m.metadata_json or {}).get("usage") or {}
         return ChatMessageDTO(
             message_id=m.message_id, role=m.role, content=m.content,
             content_type=m.content_type, status=m.status,
             metadata_json=m.metadata_json or {}, created_at=m.created_at,
+            tokens={
+                "input": usage.get("prompt_tokens", 0) or usage.get("input", 0),
+                "output": usage.get("completion_tokens", 0) or usage.get("output", 0),
+                "total": usage.get("total_tokens", 0) or usage.get("total", 0),
+            },
         )
 
     @staticmethod

@@ -26,7 +26,7 @@ import type {
 import type { ChatMessage, ToolCall, FileAttachment } from '@/components/ai-chat/types'
 import { agentApi, adminAgentApi } from '@/api/agent'
 import apiClient from '@/api/client'
-import { useAgentChatStream } from '@/composables/useAgentChatStream'
+import { useAgentChatStream, type TokenUsage } from '@/composables/useAgentChatStream'
 import { useChatStore } from '@/stores/chat'
 
 export const CATEGORY_LABELS: Record<AgentCategory, string> = {
@@ -44,6 +44,19 @@ export interface AgentSession {
   messages: ChatMessage[]
   created_at: string
   updated_at: string
+  /** 当前会话使用的模型配置 ID（覆盖 Agent 默认模型） */
+  model_id?: string
+}
+
+/** 可用模型选项（来自 /api/v1/chat/models） */
+export interface AvailableModel {
+  id: string
+  name: string
+  model: string
+  provider_type: string
+  is_default: boolean
+  temperature?: number
+  max_tokens?: number
 }
 
 export const useAgentHubStore = defineStore('agentHub', () => {
@@ -57,6 +70,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   const isStreaming = ref(false)
   const streamingContent = ref('')
   const streamingThought = ref('')
+  const availableModels = ref<AvailableModel[]>([])
 
   const { streamChat, abortStream } = useAgentChatStream()
 
@@ -183,9 +197,27 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     }
   }
 
+  /** 加载可用模型列表（供会话内模型切换） */
+  async function fetchAvailableModels(): Promise<void> {
+    try {
+      const res = await apiClient.get<AvailableModel[]>('/chat/models')
+      availableModels.value = (res.data || []).map((m) => ({
+        id: String(m.id),
+        name: m.name,
+        model: m.model,
+        provider_type: m.provider_type,
+        is_default: m.is_default,
+        temperature: m.temperature,
+        max_tokens: m.max_tokens,
+      }))
+    } catch (e) {
+      console.error('加载模型列表失败:', e)
+    }
+  }
+
   /** 一次性初始化全部资产（前台页面挂载时调用） */
   async function initAssets(): Promise<void> {
-    await Promise.all([fetchAgents(true), fetchMcps(), fetchSkills(false)])
+    await Promise.all([fetchAgents(true), fetchMcps(), fetchSkills(false), fetchAvailableModels()])
   }
 
   // ========== 资产 Actions（后台 CRUD，调真实 API） ==========
@@ -352,16 +384,10 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       id: `sess-${Date.now()}`,
       title: agent.name,
       agent_id: agentId,
-      messages: [
-        {
-          id: `msg-${Date.now()}`,
-          role: 'assistant',
-          content: agent.welcome_message,
-          createdAt: now,
-        },
-      ],
+      messages: [],
       created_at: now,
       updated_at: now,
+      model_id: agent.model_id || undefined,
     }
     sessions.value.unshift(session)
     currentSessionId.value = session.id
@@ -387,6 +413,44 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   function renameSession(id: string, title: string) {
     const s = sessions.value.find((x) => x.id === id)
     if (s) s.title = title
+  }
+
+  /** 切换指定会话当前使用的模型 */
+  function switchSessionModel(id: string, modelId: string) {
+    const s = sessions.value.find((x) => x.id === id)
+    if (s) s.model_id = modelId
+  }
+
+  /** 从后端加载指定会话的历史消息（含 token）并替换当前客户端消息 */
+  async function loadSessionMessages(sessionId: string): Promise<void> {
+    try {
+      const res = await apiClient.get<Array<{
+        message_id: string
+        role: string
+        content: string
+        metadata_json?: Record<string, unknown>
+        created_at: string
+        tokens?: { input: number; output: number; total: number }
+      }>>(`/chat/sessions/${sessionId}/messages`)
+      const session = sessions.value.find((s) => s.id === sessionId)
+      if (!session) return
+      const existingIds = new Set(session.messages.map((m) => m.id))
+      const loaded = (res.data || []).map((m) => ({
+        id: m.message_id,
+        role: m.role as 'user' | 'assistant' | 'system',
+        content: m.content,
+        createdAt: m.created_at,
+        modelName: (m.metadata_json?.model as string) || undefined,
+        tokens: m.tokens || { input: 0, output: 0, total: 0 },
+      }))
+      // 保留当前正在流式中的占位消息，避免闪烁
+      const streamingPlaceholders = session.messages.filter(
+        (m) => m.role === 'assistant' && m.content === '' && !existingIds.has(m.id),
+      )
+      session.messages = [...loaded, ...streamingPlaceholders]
+    } catch (e) {
+      console.error('加载会话历史消息失败:', e)
+    }
   }
 
   /** 发送消息（真实 SSE 流式，走 Agent 调度中枢） */
@@ -417,6 +481,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       role: 'user',
       content: content.trim(),
       createdAt: now,
+      tokens: { input: 0, output: 0, total: 0 },
     }
     if (options.attachments?.length) {
       userMsg.attachments = options.attachments.map((a) => ({
@@ -434,8 +499,10 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       id: aiId,
       role: 'assistant',
       content: '',
+      modelName: agent.model_engine || agent.name,
       toolCalls: [],
       createdAt: new Date().toISOString(),
+      tokens: { input: 0, output: 0, total: 0 },
     }
     session.messages.push(aiMsg)
 
@@ -476,6 +543,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         agentId: agent.id,
         messages: apiMessages,
         sessionId: backendSessionId,
+        modelId: session.model_id,
         temperature: chatStore.conversationSettings.temperature,
         maxTokens: chatStore.conversationSettings.maxTokens,
         deepThinking: chatStore.deepThinking,
@@ -493,11 +561,12 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           session.updated_at = new Date().toISOString()
         },
         onSessionCreated: (sessionId) => {
-          // 后端首次创建会话 → 回填真实 session_id
+          // 后端首次创建会话 → 回填真实 session_id，并异步加载历史消息（含 token）
           if (session.id.startsWith('sess-')) {
             session.id = sessionId
             currentSessionId.value = sessionId
             releaseSessionIdLock()
+            loadSessionMessages(sessionId).catch(() => {})
           }
         },
         onToolCall: (event) => {
@@ -518,6 +587,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         },
         onError: (error) => {
           aiMsg.content = streamingContent.value || `生成失败: ${error}`
+          aiMsg.status = 'error'
           aiMsg.toolCalls = (aiMsg.toolCalls || []).map((t) =>
             t.status === 'running' ? { ...t, status: 'error' as const } : t,
           )
@@ -526,8 +596,24 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           streamingThought.value = ''
           releaseSessionIdLock()
         },
-        onDone: () => {
+        onDone: (_, __, usage) => {
           aiMsg.content = streamingContent.value || aiMsg.content
+          aiMsg.thought = streamingThought.value || undefined
+          if (usage) {
+            const input = usage.prompt_tokens ?? usage.input ?? 0
+            const output = usage.completion_tokens ?? usage.output ?? 0
+            const total = usage.total_tokens ?? usage.total ?? input + output
+            aiMsg.tokens = { input, output, total }
+            // 同时给用户消息补上输入 token（如果 usage 包含 prompt_tokens）
+            const userMsgIdx = session.messages.findIndex((m) => m.id === userMsg.id)
+            if (userMsgIdx >= 0) {
+              session.messages[userMsgIdx].tokens = {
+                input,
+                output: 0,
+                total: input,
+              }
+            }
+          }
           isStreaming.value = false
           streamingContent.value = ''
           streamingThought.value = ''
@@ -561,18 +647,18 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   return {
     // state
     mcps, skills, agents, sessions, currentSessionId,
-    isStreaming, streamingContent, streamingThought,
+    isStreaming, streamingContent, streamingThought, availableModels,
     // getters
     activeAgents, currentSession, currentAgent, groupedSessions,
     // lookups
     getAgent, mcpsByIds, skillsByIds,
     // asset actions
-    fetchAgents, fetchMcps, fetchSkills, initAssets,
+    fetchAgents, fetchMcps, fetchSkills, initAssets, fetchAvailableModels,
     toggleMcpStatus, addMcpServer, updateMcpServer, removeMcpServer, testMcpServer, fetchMcpTools, fetchMcpLogs,
     upsertAgent, toggleAgent, deleteAgent, setDefaultAgent,
     importSkillFromUrl, importSkillFromJson, toggleSkill, deleteSkill,
     // session actions
-    startSessionFromAgent, selectSession, newChat, deleteSession, renameSession,
-    sendMessage, stopStreaming,
+    startSessionFromAgent, selectSession, newChat, deleteSession, renameSession, switchSessionModel,
+    loadSessionMessages, sendMessage, stopStreaming,
   }
 })

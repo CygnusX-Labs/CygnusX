@@ -27,6 +27,26 @@ def admin_override():
 
 
 @pytest.mark.integration
+async def test_update_agent_rejects_nonexistent_model_id(client, auth_headers, admin_override):
+    """更新 Agent 时绑定不存在的 model_id 应返回 400 业务错误，而不是 500。"""
+    resp = await client.post(
+        "/api/v1/admin/agents",
+        json={"name": "模型校验", "category": "general"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    agent_id = resp.json()["agent_id"]
+
+    resp = await client.put(
+        f"/api/v1/admin/agents/{agent_id}",
+        json={"model_id": str(uuid4())},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 400
+    assert "模型配置不存在" in resp.json()["detail"]
+
+
+@pytest.mark.integration
 async def test_list_agents_contract(client, auth_headers, admin_override):
     """/admin/agents 列表端点应返回 Agent 数组。"""
     payload = [

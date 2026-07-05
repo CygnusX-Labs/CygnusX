@@ -17,6 +17,7 @@ from omichub.api.v1 import (
     mcp,
     notification,
     platform_config,
+    reports,
     sandbox,
     site_content,
     site_settings,
@@ -72,6 +73,7 @@ api_router.include_router(ai.router, prefix="/ai", tags=["AI Copilot"])
 api_router.include_router(chat.router, prefix="/chat", tags=["AI Chat"])
 api_router.include_router(llm.router, prefix="/llm", tags=["LLM"])
 api_router.include_router(notification.router, prefix="/notifications", tags=["Notifications"])
+api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])
 api_router.include_router(mcp.router, prefix="/mcp", tags=["MCP"])
 api_router.include_router(sandbox.router, prefix="/sandbox", tags=["Sandbox"])
 api_router.include_router(jbrowse.router, prefix="/jbrowse", tags=["JBrowse 基因组浏览器"])

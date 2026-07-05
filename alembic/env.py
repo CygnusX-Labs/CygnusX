@@ -19,6 +19,7 @@ from omichub.infrastructure.database.models import (  # noqa: F401
     file,
     mcp,
     notification,
+    report,
     sandbox,
     skill,
     task,

@@ -82,8 +82,8 @@ function toPayload(a: Partial<AgentTemplate> & { id?: string }): Record<string, 
   }
   if (a.system_prompt !== undefined) out.system_prompt = a.system_prompt
   if (a.welcome_message !== undefined) out.welcome_message = a.welcome_message
-  if (a.mcp_ids !== undefined) out.mcp_ids = a.mcp_ids
-  if (a.skill_ids !== undefined) out.skill_ids = a.skill_ids
+  if (a.mcp_ids !== undefined) out.mcp_ids = a.mcp_ids || []
+  if (a.skill_ids !== undefined) out.skill_ids = a.skill_ids || []
   if (a.features !== undefined) out.features = a.features
   if (a.is_active !== undefined) out.is_active = a.is_active
   if (a.is_default !== undefined) out.is_default = a.is_default

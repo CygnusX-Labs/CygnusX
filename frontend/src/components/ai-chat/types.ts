@@ -1,13 +1,32 @@
+// ===== Token 统计 =====
+export interface TokenInfo {
+  input?: number
+  output?: number
+  total?: number
+}
+
 // ===== 聊天消息 =====
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
   thought?: string
+  /** 思考过程用时（秒），AI 消息专属 */
+  thinkingDuration?: number
+  /** 实际使用的模型名，AI 消息专属 */
+  modelName?: string
   toolCalls?: ToolCall[]
   charts?: ChartData[]
   attachments?: FileAttachment[]
   feedback?: 'like' | 'dislike'
+  /** 是否被编辑过，用户消息专属 */
+  edited?: boolean
+  /** 编辑历史，用户消息专属 */
+  editHistory?: string[]
+  /** Token 统计 */
+  tokens?: TokenInfo
+  /** 消息状态，用于流式错误/空内容识别 */
+  status?: 'complete' | 'streaming' | 'error'
   createdAt: string
 }
 

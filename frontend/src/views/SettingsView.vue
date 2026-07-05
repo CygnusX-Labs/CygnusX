@@ -227,6 +227,7 @@ async function confirmPlatformChange(code: string) {
     platformTotpModalVisible.value = false
     message.success('平台全局配置已保存')
   } catch (e: any) {
+    console.error('平台配置保存失败:', e, 'payload:', platformPending.value)
     message.error(e.response?.data?.detail || '保存失败')
   } finally {
     platformLoading.value = false
@@ -250,6 +251,10 @@ function onTOTPPolicyChange(value: SiteSettings['totp_policy']) {
 }
 
 async function saveProfile() {
+  if (!userId.value) {
+    message.error('用户信息未加载，请刷新页面后重试')
+    return
+  }
   try {
     await profileFormRef.value?.validate()
   } catch {
@@ -266,6 +271,7 @@ async function saveProfile() {
     await authStore.fetchUser()
     message.success('个人信息保存成功')
   } catch (e: any) {
+    console.error('保存个人信息失败:', e, 'userId:', userId.value)
     message.error(e.response?.data?.detail || '保存失败')
   } finally {
     savingProfile.value = false
@@ -273,6 +279,10 @@ async function saveProfile() {
 }
 
 async function savePassword() {
+  if (!userId.value) {
+    message.error('用户信息未加载，请刷新页面后重试')
+    return
+  }
   try {
     await passwordFormRef.value?.validate()
   } catch {
@@ -287,6 +297,7 @@ async function savePassword() {
     message.success('密码修改成功')
     passwordForm.value = { old_password: '', new_password: '', confirm_password: '' }
   } catch (e: any) {
+    console.error('修改密码失败:', e, 'userId:', userId.value)
     message.error(e.response?.data?.detail || '密码修改失败')
   } finally {
     savingPassword.value = false

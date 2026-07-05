@@ -1,80 +1,91 @@
 <template>
-  <div class="login-container">
-    <div class="login-orb login-orb--1" />
-    <div class="login-orb login-orb--2" />
-    <div class="login-card animate-scale-in">
-      <LoginCats />
-      <div class="login-header">
-        <h2 class="login-title gradient-text">OmicHub</h2>
-        <p class="login-subtitle">欢迎登录多组学分析平台</p>
+  <div class="login-page">
+    <StarField />
+    <LoginPageQuote />
+    <div class="login-content">
+      <div class="login-card-wrapper">
+        <div class="login-card animate-scale-in">
+          <div class="login-header">
+            <LogoAnimation />
+            <h2 class="login-title gradient-text">OmicHub</h2>
+            <p class="login-subtitle">欢迎登录多组学分析平台</p>
+          </div>
+          <n-form ref="formRef" :model="formData" :rules="rules" class="login-form">
+            <!-- 第一步：账号密码 -->
+            <template v-if="step === 'credentials'">
+              <n-form-item label="用户名" path="username">
+                <n-input
+                  v-model:value="formData.username"
+                  placeholder="请输入用户名"
+                  size="large"
+                  @keyup.enter="handleLogin"
+                >
+                  <template #prefix>
+                    <n-icon :component="PersonOutline" />
+                  </template>
+                </n-input>
+              </n-form-item>
+
+              <n-form-item label="密码" path="password">
+                <n-input
+                  v-model:value="formData.password"
+                  type="password"
+                  show-password-on="click"
+                  placeholder="请输入密码"
+                  size="large"
+                  @keyup.enter="handleLogin"
+                >
+                  <template #prefix>
+                    <n-icon :component="LockClosedOutline" />
+                  </template>
+                </n-input>
+              </n-form-item>
+            </template>
+
+            <!-- 第二步：TOTP 6 位验证码 -->
+            <template v-else>
+              <n-form-item label="6 位动态验证码" path="totpCode">
+                <n-input
+                  v-model:value="formData.totpCode"
+                  placeholder="请输入 Authenticator 验证码"
+                  size="large"
+                  maxlength="6"
+                  :input-props="{ inputmode: 'numeric', autocomplete: 'one-time-code' }"
+                  @keyup.enter="handleVerify2FA"
+                />
+              </n-form-item>
+              <p class="totp-hint">已开启二次验证，请打开 Authenticator 应用查看当前验证码。</p>
+            </template>
+
+            <div v-if="errorMessage" class="login-error-message">
+              {{ errorMessage }}
+            </div>
+
+            <div class="login-actions">
+              <LoginButton
+                v-if="step === 'credentials'"
+                :disabled="isLoginButtonDisabled"
+                :loading="loading"
+                :success="loginSuccess"
+                @click="handleLogin"
+              />
+              <template v-else>
+                <n-button type="primary" size="large" :loading="loading" @click="handleVerify2FA">
+                  验证并登录
+                </n-button>
+                <n-button size="large" @click="resetToCredentials">
+                  返回
+                </n-button>
+              </template>
+              <n-button v-if="step === 'credentials'" size="large" @click="handleRegister">
+                还没有账号？立即注册
+              </n-button>
+            </div>
+          </n-form>
+        </div>
       </div>
-      <n-form ref="formRef" :model="formData" :rules="rules" class="login-form">
-        <!-- 第一步：账号密码 -->
-        <template v-if="step === 'credentials'">
-          <n-form-item label="用户名" path="username">
-            <n-input
-              v-model:value="formData.username"
-              placeholder="请输入用户名"
-              size="large"
-              @keyup.enter="handleLogin"
-            />
-          </n-form-item>
-
-          <n-form-item label="密码" path="password">
-            <n-input
-              v-model:value="formData.password"
-              type="password"
-              show-password-on="click"
-              placeholder="请输入密码"
-              size="large"
-              @keyup.enter="handleLogin"
-            />
-          </n-form-item>
-        </template>
-
-        <!-- 第二步：TOTP 6 位验证码 -->
-        <template v-else>
-          <n-form-item label="6 位动态验证码" path="totpCode">
-            <n-input
-              v-model:value="formData.totpCode"
-              placeholder="请输入 Authenticator 验证码"
-              size="large"
-              maxlength="6"
-              :input-props="{ inputmode: 'numeric', autocomplete: 'one-time-code' }"
-              @keyup.enter="handleVerify2FA"
-            />
-          </n-form-item>
-          <p class="totp-hint">已开启二次验证，请打开 Authenticator 应用查看当前验证码。</p>
-        </template>
-
-        <div v-if="errorMessage" class="login-error-message">
-          {{ errorMessage }}
-        </div>
-
-        <div class="login-actions">
-          <n-button
-            v-if="step === 'credentials'"
-            type="primary"
-            size="large"
-            :loading="loading"
-            @click="handleLogin"
-          >
-            登录
-          </n-button>
-          <template v-else>
-            <n-button type="primary" size="large" :loading="loading" @click="handleVerify2FA">
-              验证并登录
-            </n-button>
-            <n-button size="large" @click="resetToCredentials">
-              返回
-            </n-button>
-          </template>
-          <n-button v-if="step === 'credentials'" size="large" @click="handleRegister">
-            注册
-          </n-button>
-        </div>
-      </n-form>
     </div>
+    <StardustQuote />
     <RegistrationDisabledModal
       v-model:show="showRegModal"
       :message="siteConfig.registrationDisabledMessage"
@@ -87,14 +98,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
+import { PersonOutline, LockClosedOutline } from '@vicons/ionicons5'
 import { useAuthStore } from '@/stores/auth'
 import { useSiteConfigStore } from '@/stores/site-config'
 import RegistrationDisabledModal from '@/components/RegistrationDisabledModal.vue'
 import ActivationModal from '@/components/ActivationModal.vue'
+import LoginButton from '@/components/LoginButton.vue'
 import LoginCats from '@/components/LoginCats.vue'
+import LoginPageQuote from '@/components/LoginPageQuote.vue'
+import LogoAnimation from '@/components/LogoAnimation.vue'
+import StarField from '@/components/StarField.vue'
+import StardustQuote from '@/components/StardustQuote.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -146,6 +163,11 @@ const rules = {
 
 const step = ref<'credentials' | 'totp'>('credentials')
 const challengeToken = ref('')
+const loginSuccess = ref(false)
+
+const isLoginButtonDisabled = computed(() => {
+  return !formData.value.username || !formData.value.password
+})
 
 function resetToCredentials() {
   step.value = 'credentials'
@@ -209,8 +231,11 @@ const handleLogin = async () => {
       return
     }
 
+    loginSuccess.value = true
     message.success('登录成功')
-    redirectHome()
+    setTimeout(() => {
+      redirectHome()
+    }, 1200)
   } catch (error: any) {
     handleLoginError(error)
   } finally {
@@ -252,7 +277,8 @@ const handleVerify2FA = async () => {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: linear-gradient(-45deg, #165DFF, #3063FF, #6B8DD6, #8E54E9);
+  /* 与 Hero 同色系，但饱和度降低，更柔和 */
+  background: linear-gradient(135deg, #6b7fd4 0%, #8b7fd4 35%, #a080d4 65%, #b080c8 100%);
   background-size: 400% 400%;
   animation: gradientShift 12s ease infinite;
   position: relative;
@@ -263,13 +289,14 @@ const handleVerify2FA = async () => {
   position: absolute;
   border-radius: 50%;
   filter: blur(80px);
-  opacity: 0.3;
+  opacity: 0.35;
   pointer-events: none;
+  z-index: 1;
 }
 .login-orb--1 {
   width: 400px;
   height: 400px;
-  background: #a5b4fc;
+  background: #c5d0ff;
   top: -100px;
   right: -100px;
   animation: drift 14s ease-in-out infinite;
@@ -277,44 +304,175 @@ const handleVerify2FA = async () => {
 .login-orb--2 {
   width: 300px;
   height: 300px;
-  background: #67e8f9;
+  background: #e0c8ff;
   bottom: -50px;
   left: -50px;
   animation: drift 16s ease-in-out infinite reverse;
+}
+
+.login-card-wrapper {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 426px;
+  padding: 3px;
+  border-radius: 19px;
 }
 
 .login-card {
   position: relative;
   z-index: 1;
   width: 100%;
-  max-width: 400px;
-  padding: 40px;
-  /* Glassmorphism：半透明白底，透出底部蓝色渐变 */
-  background-color: rgba(255, 255, 255, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  /* 玻璃边缘：极细半透明白边 */
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  max-width: 420px;
+  padding: 28px 32px 32px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: 16px;
-  /* 弥散柔和阴影，取代原先偏重的 60px 阴影 */
-  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
+  box-shadow: 0 25px 60px rgba(40, 30, 80, 0.15);
+}
+
+:root[data-theme='dark'] .login-card-wrapper {
+  /* 暗色：wrapper 承载流光边框 + 呼吸光晕 */
+  padding: 3px;
+  border-radius: 19px;
+}
+
+/* 金色边框层：静态锥形渐变，mask 镂空内部，无旋转 */
+:root[data-theme='dark'] .login-card-wrapper::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 19px;
+  background: conic-gradient(
+    from 45deg,
+    rgba(255, 200, 100, 0.12) 0deg,
+    rgba(255, 225, 160, 0.22) 90deg,
+    rgba(255, 200, 100, 0.12) 180deg,
+    rgba(255, 180, 90, 0.08) 270deg,
+    rgba(255, 200, 100, 0.12) 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  padding: 2.5px;
+  box-sizing: border-box;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* 呼吸光晕层 */
+:root[data-theme='dark'] .login-card-wrapper::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  right: -3px;
+  bottom: -3px;
+  border-radius: 21px;
+  background: transparent;
+  box-shadow:
+    0 0 18px rgba(255, 200, 100, 0.08),
+    0 0 36px rgba(255, 180, 80, 0.04);
+  animation: golden-breathe 6s ease-in-out infinite;
+  z-index: -1;
+  pointer-events: none;
+}
+
+:root[data-theme='dark'] .login-card {
+  /* 暗色卡片本体：无边框，背景由 wrapper 流光承担 */
+  background: rgba(30, 30, 60, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+  animation: floatCard 6s ease-in-out infinite;
+}
+
+@keyframes golden-orbit {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes golden-breathe {
+  0%, 100% {
+    box-shadow:
+      0 0 18px rgba(255, 200, 100, 0.07),
+      0 0 36px rgba(255, 180, 80, 0.035);
+  }
+  50% {
+    box-shadow:
+      0 0 24px rgba(255, 215, 130, 0.12),
+      0 0 48px rgba(255, 195, 100, 0.06);
+  }
+}
+
+@keyframes floatCard {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.login-page {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-content {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+}
+
+.login-card {
+  animation: floatCard 6s ease-in-out infinite;
+}
+
+:root[data-theme='dark'] .login-container {
+  /* 暗色：Hero 同款色相，明度大幅降低 */
+  background: linear-gradient(135deg, #2a3a6e 0%, #3a2a6e 35%, #4a2a6e 65%, #3a2a5e 100%);
 }
 
 .login-header {
   text-align: center;
-  margin-bottom: 32px;
+  margin-bottom: 16px;
+  position: relative;
+  z-index: 2;
 }
 .login-title {
   font-size: 28px;
   font-weight: 700;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+  filter: drop-shadow(0 4px 18px rgba(64, 120, 255, 0.25));
 }
 .login-subtitle {
   font-size: 14px;
-  color: var(--neutral-text-3);
+  color: #5a5a7a;
+}
+:root[data-theme='dark'] .login-subtitle {
+  color: #a0a0c0;
 }
 .login-form {
-  margin-top: 24px;
+  margin-top: 0;
+}
+.login-form :deep(.n-form-item) {
+  margin-bottom: 16px;
+}
+.login-form :deep(.n-form-item:last-of-type) {
+  margin-bottom: 20px;
 }
 .login-error-message {
   margin-bottom: 16px;
@@ -325,17 +483,112 @@ const handleVerify2FA = async () => {
 .login-actions {
   display: flex;
   justify-content: space-between;
-  margin-top: 32px;
+  align-items: center;
+  margin-top: 0;
+  gap: 16px;
+}
+
+.login-actions :deep(.n-button:not(.n-button--primary-type)) {
+  --n-text-color: #5a6a8a !important;
+  --n-text-color-hover: #4d7cff !important;
+  --n-text-color-pressed: #3a5fd6 !important;
+  --n-border: none !important;
+  --n-border-hover: none !important;
+  --n-border-pressed: none !important;
+  --n-color: transparent !important;
+  --n-color-hover: transparent !important;
+  --n-color-pressed: transparent !important;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: color 0.2s ease, text-decoration-color 0.2s ease;
+}
+
+.login-actions :deep(.n-button:not(.n-button--primary-type):hover) {
+  text-decoration-color: rgba(77, 124, 255, 0.4);
+}
+
+:root[data-theme='dark'] .login-actions :deep(.n-button:not(.n-button--primary-type)) {
+  --n-text-color: #b0c0e8 !important;
+  --n-text-color-hover: #9bb8ff !important;
+  --n-text-color-pressed: #7a9ef0 !important;
 }
 .totp-hint {
   margin: -8px 0 16px;
   font-size: 13px;
-  color: var(--neutral-text-3);
+  color: #5a5a7a;
   text-align: center;
 }
+:root[data-theme='dark'] .totp-hint {
+  color: #a0a0c0;
+}
 
-/* 表单校验提示精致化：「请输入用户名/密码」等红色校验文案
-   覆盖 Naive UI .n-form-item 内部反馈行，加间距、缩字号，避免排版过紧 */
+/* 暗色模式：提升表单标签、输入框、按钮对比度 */
+:root[data-theme='dark'] .login-form :deep(.n-form-item .n-form-item-label) {
+  color: #e0e0f0 !important;
+}
+
+:root[data-theme='dark'] .login-form :deep(.n-input) {
+  --n-border-color: rgba(255, 255, 255, 0.18) !important;
+  --n-border-hover: rgba(255, 255, 255, 0.28) !important;
+  --n-border-focus: #9b7cf7 !important;
+  --n-color: rgba(255, 255, 255, 0.07) !important;
+  --n-color-focus: rgba(255, 255, 255, 0.1) !important;
+  --n-text-color: #f0f0f8 !important;
+  --n-placeholder-color: #7a7a9a !important;
+  --n-box-shadow-focus: 0 0 0 3px rgba(155, 124, 247, 0.2) !important;
+  --n-icon-color: #9a9ab8 !important;
+}
+
+:root[data-theme='dark'] .login-actions :deep(.n-button:not(.n-button--primary-type)) {
+  --n-text-color: #c0c8ff !important;
+  --n-text-color-hover: #d0d8ff !important;
+  --n-text-color-pressed: #b0b8f0 !important;
+  --n-border: 1px solid rgba(192, 200, 255, 0.45) !important;
+  --n-border-hover: 1px solid rgba(192, 200, 255, 0.6) !important;
+  --n-border-pressed: 1px solid rgba(192, 200, 255, 0.5) !important;
+}
+
+/* 登录主按钮在暗色下使用更亮的渐变 */
+:root[data-theme='dark'] .login-actions :deep(.n-button--primary-type) {
+  --n-text-color: #ffffff !important;
+  --n-text-color-hover: #ffffff !important;
+  --n-text-color-pressed: #f0f0f8 !important;
+}
+
+/* 亮色模式：优化输入框边框与 placeholder 可读性 */
+.login-form :deep(.n-input) {
+  --n-border-color: rgba(60, 60, 100, 0.16);
+  --n-border-hover: rgba(60, 60, 100, 0.28);
+  --n-border-focus: #4d7cff;
+  --n-color: rgba(255, 255, 255, 0.55);
+  --n-color-focus: rgba(255, 255, 255, 0.72);
+  --n-placeholder-color: #9a9ab0;
+  --n-box-shadow-focus: 0 0 0 4px rgba(77, 124, 255, 0.15);
+  --n-icon-color: #7a7a9a;
+}
+
+.login-form :deep(.n-input--focus) {
+  border-color: #4d7cff;
+}
+
+.login-form :deep(.n-input .n-input__input-el),
+.login-form :deep(.n-input .n-input__textarea-el) {
+  color: #1a1a2e;
+}
+.login-form :deep(.n-input .n-input__placeholder) {
+  color: var(--n-placeholder-color);
+}
+.login-form :deep(.n-form-item .n-form-item-label) {
+  color: #3a3a5c;
+}
+
+/* 错误提示 */
+:root[data-theme='dark'] .login-error-message {
+  color: #ff7b7b;
+}
+
+/* 表单校验提示精致化 */
 :deep(.n-form-item) .n-form-item-feedback {
   min-height: 18px;
   padding-top: 4px;
