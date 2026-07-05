@@ -169,6 +169,7 @@ const mainNavItems = computed<NavItem[]>(() => [
   { key: 'files', label: '数据管理', to: '/files', icon: CloudUploadOutline },
   { key: 'downloads', label: '数据下载', to: '/downloads', icon: DownloadOutline },
   { key: 'tasks', label: '任务中心', to: '/tasks', icon: DocumentTextOutline },
+  { key: 'reports', label: '结果报告中心', to: '/reports', icon: DocumentTextOutline },
   { key: 'ai', label: 'AI 助手', to: '/ai', icon: ChatbubblesOutline },
   { key: 'sandbox', label: '代码沙盒', to: '/sandbox', icon: CodeSlashOutline },
   { key: 'tools', label: '生信工具箱', to: '/tools', icon: ConstructOutline },

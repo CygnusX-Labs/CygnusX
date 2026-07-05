@@ -68,6 +68,7 @@ class OpenAICompatibleProvider:
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
         if tools:
             payload["tools"] = tools
@@ -121,6 +122,7 @@ class OpenAICompatibleProvider:
                 buffer = ""
                 # 累积流式 tool_calls 分片（OpenAI 按 index 分片下发）
                 tool_acc: dict[int, dict[str, Any]] = {}
+                usage: dict[str, Any] | None = None
 
                 async for chunk in response.aiter_text():
                     buffer += chunk
@@ -139,7 +141,10 @@ class OpenAICompatibleProvider:
                                     type="tool_calls",
                                     metadata={"tool_calls": self._materialize_tool_calls(tool_acc)},
                                 )
-                            yield ChatChunk(type="done")
+                            done_meta: dict[str, Any] = {}
+                            if usage:
+                                done_meta["usage"] = usage
+                            yield ChatChunk(type="done", metadata=done_meta)
                             return
 
                         try:
@@ -156,6 +161,15 @@ class OpenAICompatibleProvider:
                             return
 
                         choices = parsed.get("choices", [])
+
+                        # 有些 provider 在 choices 为空时下发 usage
+                        if parsed.get("usage"):
+                            usage = parsed["usage"]
+
+                        # 有些 provider（如 OpenAI 兼容）在 choices 最后一块带 usage
+                        if choices and choices[0].get("usage"):
+                            usage = choices[0]["usage"]
+
                         if not choices:
                             continue
 
@@ -175,10 +189,7 @@ class OpenAICompatibleProvider:
                             yield ChatChunk(
                                 type="text",
                                 content=content,
-                                metadata={
-                                    "model": self.model,
-                                    **({"usage": parsed["usage"]} if parsed.get("usage") else {}),
-                                },
+                                metadata={"model": self.model},
                             )
 
                         # 累积 tool_calls 分片，不逐片 yield
@@ -209,7 +220,10 @@ class OpenAICompatibleProvider:
                         type="tool_calls",
                         metadata={"tool_calls": self._materialize_tool_calls(tool_acc)},
                     )
-                yield ChatChunk(type="done")
+                done_meta = {}
+                if usage:
+                    done_meta["usage"] = usage
+                yield ChatChunk(type="done", metadata=done_meta)
 
         except httpx.TimeoutException:
             yield ChatChunk(

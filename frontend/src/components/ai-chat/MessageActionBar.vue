@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { NButton, NIcon, NPopover } from 'naive-ui'
+import { NButton, NIcon, NPopover, NTooltip } from 'naive-ui'
 import {
   CopyOutline,
   CheckmarkOutline,
   RefreshOutline,
   LanguageOutline,
   TrashOutline,
+  PencilOutline,
+  ReloadOutline,
 } from '@vicons/ionicons5'
 import type { CopyMode } from './types'
 
@@ -27,6 +29,7 @@ const emit = defineEmits<{
   retryWithModel: []
   translate: []
   delete: []
+  edit: []
 }>()
 
 const copied = ref(false)
@@ -70,6 +73,10 @@ function handleTranslate() {
   emit('translate')
 }
 
+function handleEdit() {
+  emit('edit')
+}
+
 function requestDelete() {
   confirmingDelete.value = true
 }
@@ -85,57 +92,102 @@ function confirmDelete() {
 </script>
 
 <template>
-  <div v-if="!confirmingDelete" class="message-action-bar" :class="{ visible }">
-    <!-- 复制：弹层三模式 -->
-    <n-popover v-if="!isUser" trigger="click" placement="top" :width="170">
-      <template #trigger>
-        <n-button text class="action-btn" :class="{ copied }">
-          <n-icon size="15">
-            <CheckmarkOutline v-if="copied" />
-            <CopyOutline v-else />
-          </n-icon>
-        </n-button>
-      </template>
-      <div style="display: flex; flex-direction: column; gap: 2px">
-        <n-button text size="small" style="justify-content: flex-start" @click="doCopy('plain')">
-          复制纯文本
-        </n-button>
-        <n-button text size="small" style="justify-content: flex-start" @click="doCopy('markdown')">
-          复制 Markdown 源码
-        </n-button>
-        <n-button text size="small" style="justify-content: flex-start" @click="doCopy('citation')">
-          复制为引用格式
-        </n-button>
-      </div>
-    </n-popover>
+  <template v-if="!confirmingDelete">
+    <!-- 用户消息操作：重新发送、编辑、复制、删除 -->
+    <div v-if="isUser" class="message-action-bar" :class="{ visible }">
+      <n-tooltip placement="top" trigger="hover">
+        <template #trigger>
+          <n-button text class="action-btn" @click="handleRegenerate">
+            <n-icon size="15"><ReloadOutline /></n-icon>
+          </n-button>
+        </template>
+        <span>重新发送</span>
+      </n-tooltip>
 
-    <!-- 重新生成：弹层 同模型 / 换模型 -->
-    <n-popover v-if="!isUser" trigger="click" placement="top" :width="150">
-      <template #trigger>
-        <n-button text class="action-btn">
-          <n-icon size="15"><RefreshOutline /></n-icon>
-        </n-button>
-      </template>
-      <div style="display: flex; flex-direction: column; gap: 2px">
-        <n-button text size="small" style="justify-content: flex-start" @click="handleRegenerate">
-          重新生成
-        </n-button>
-        <n-button text size="small" style="justify-content: flex-start" @click="handleRetryWithModel">
-          换模型重试
-        </n-button>
-      </div>
-    </n-popover>
+      <n-tooltip placement="top" trigger="hover">
+        <template #trigger>
+          <n-button text class="action-btn" @click="handleEdit">
+            <n-icon size="15"><PencilOutline /></n-icon>
+          </n-button>
+        </template>
+        <span>编辑</span>
+      </n-tooltip>
 
-    <!-- 翻译 -->
-    <n-button v-if="!isUser" text class="action-btn" @click="handleTranslate">
-      <n-icon size="15"><LanguageOutline /></n-icon>
-    </n-button>
+      <n-tooltip placement="top" trigger="hover">
+        <template #trigger>
+          <n-button text class="action-btn" :class="{ copied }" @click="doCopy('plain')">
+            <n-icon size="15">
+              <CheckmarkOutline v-if="copied" />
+              <CopyOutline v-else />
+            </n-icon>
+          </n-button>
+        </template>
+        <span>复制</span>
+      </n-tooltip>
 
-    <!-- 删除 -->
-    <n-button text class="action-btn danger" @click="requestDelete">
-      <n-icon size="15"><TrashOutline /></n-icon>
-    </n-button>
-  </div>
+      <n-tooltip placement="top" trigger="hover">
+        <template #trigger>
+          <n-button text class="action-btn danger" @click="requestDelete">
+            <n-icon size="15"><TrashOutline /></n-icon>
+          </n-button>
+        </template>
+        <span>删除</span>
+      </n-tooltip>
+    </div>
+
+    <!-- AI 消息操作 -->
+    <div v-else class="message-action-bar" :class="{ visible }">
+      <!-- 复制：弹层三模式 -->
+      <n-popover trigger="click" placement="top" :width="170">
+        <template #trigger>
+          <n-button text class="action-btn" :class="{ copied }">
+            <n-icon size="15">
+              <CheckmarkOutline v-if="copied" />
+              <CopyOutline v-else />
+            </n-icon>
+          </n-button>
+        </template>
+        <div style="display: flex; flex-direction: column; gap: 2px">
+          <n-button text size="small" style="justify-content: flex-start" @click="doCopy('plain')">
+            复制纯文本
+          </n-button>
+          <n-button text size="small" style="justify-content: flex-start" @click="doCopy('markdown')">
+            复制 Markdown 源码
+          </n-button>
+          <n-button text size="small" style="justify-content: flex-start" @click="doCopy('citation')">
+            复制为引用格式
+          </n-button>
+        </div>
+      </n-popover>
+
+      <!-- 重新生成：弹层 同模型 / 换模型 -->
+      <n-popover trigger="click" placement="top" :width="150">
+        <template #trigger>
+          <n-button text class="action-btn">
+            <n-icon size="15"><RefreshOutline /></n-icon>
+          </n-button>
+        </template>
+        <div style="display: flex; flex-direction: column; gap: 2px">
+          <n-button text size="small" style="justify-content: flex-start" @click="handleRegenerate">
+            重新生成
+          </n-button>
+          <n-button text size="small" style="justify-content: flex-start" @click="handleRetryWithModel">
+            换模型重试
+          </n-button>
+        </div>
+      </n-popover>
+
+      <!-- 翻译 -->
+      <n-button text class="action-btn" @click="handleTranslate">
+        <n-icon size="15"><LanguageOutline /></n-icon>
+      </n-button>
+
+      <!-- 删除 -->
+      <n-button text class="action-btn danger" @click="requestDelete">
+        <n-icon size="15"><TrashOutline /></n-icon>
+      </n-button>
+    </div>
+  </template>
 
   <!-- 删除确认气泡 -->
   <div v-else class="message-action-bar visible">

@@ -107,6 +107,31 @@ async def _execute_snakemake(
             if result.get("status") == "success":
                 task = await domain.transition_status(task, TaskStatus.SUCCESS)
                 await _add_and_publish_log(LogLevel.INFO, "Snakemake 执行完成", source="snakemake")
+
+                # 任务成功后自动生成报告记录
+                try:
+                    from omichub.application.services.report_service import ReportService
+
+                    report_service = ReportService(session)
+                    duration_seconds = 0
+                    if task.started_at and task.finished_at:
+                        duration_seconds = int((task.finished_at - task.started_at).total_seconds())
+                    await report_service.create_report_from_task(
+                        task_id=str(task.id),
+                        user_id=str(task.user_id),
+                        flow_id=task.flow_id,
+                        work_dir=task.work_dir,
+                        sample_count=task.sample_count,
+                        duration=duration_seconds,
+                    )
+                    await _add_and_publish_log(LogLevel.INFO, "分析报告记录已生成", source="report")
+                except Exception as report_exc:  # noqa: BLE001
+                    await _add_and_publish_log(
+                        LogLevel.WARNING,
+                        f"生成报告记录失败（非阻塞）: {report_exc}",
+                        source="report",
+                    )
+
                 return_status = "success"
             else:
                 task = await domain.transition_status(task, TaskStatus.FAILED)

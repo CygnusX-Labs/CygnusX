@@ -12,6 +12,8 @@ export interface AgentChatStreamOptions {
   agentId: string
   messages: { role: string; content: string }[]
   sessionId?: string
+  /** 当前请求强制使用的模型配置 ID（覆盖 Agent 默认模型） */
+  modelId?: string
   /** 温度（0-1），后端 Agent 编排层可透传给底层模型 */
   temperature?: number
   /** 单次回复最大 token 数 */
@@ -45,13 +47,22 @@ export interface ToolResultEvent {
   result: unknown
 }
 
+export interface TokenUsage {
+  input?: number
+  output?: number
+  total?: number
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+}
+
 export interface AgentStreamCallbacks {
   onText?: (text: string, isReasoning?: boolean) => void
   onSessionCreated?: (sessionId: string, messageId: string) => void
   onToolCall?: (event: ToolCallEvent) => void
   onToolResult?: (event: ToolResultEvent) => void
   onError?: (error: string) => void
-  onDone?: (sessionId: string, messageId: string) => void
+  onDone?: (sessionId: string, messageId: string, usage?: TokenUsage) => void
 }
 
 export function useAgentChatStream() {
@@ -77,6 +88,7 @@ export function useAgentChatStream() {
         body: JSON.stringify({
           agent_id: options.agentId,
           session_id: options.sessionId,
+          model_id: options.modelId,
           messages: options.messages,
           stream: true,
           temperature: options.temperature,
@@ -163,7 +175,10 @@ export function useAgentChatStream() {
         cb.onError?.(content || '生成失败')
         break
       case 'done':
-        if (sessionId && messageId) cb.onDone?.(sessionId, messageId)
+        if (sessionId && messageId) {
+          const usage = data.usage as TokenUsage | undefined
+          cb.onDone?.(sessionId, messageId, usage)
+        }
         break
     }
   }

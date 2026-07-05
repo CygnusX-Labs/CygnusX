@@ -22,6 +22,17 @@ export interface ChatMessageDTO {
   status: 'complete' | 'streaming' | 'error'
   metadata_json: Record<string, unknown>
   created_at: string
+  tokens?: {
+    input: number
+    output: number
+    total: number
+  }
+}
+
+export interface TokenInfo {
+  input: number
+  output: number
+  total: number
 }
 
 export interface ChatAssistantDTO {

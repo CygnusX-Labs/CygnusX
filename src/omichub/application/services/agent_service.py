@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.agent import (
@@ -139,32 +140,78 @@ class AgentService:
 
     # --- CRUD ---
 
+    async def update_agent(self, agent_id: str, req: UpdateAgentRequest) -> AgentTemplateDTO:
+        agent = await self.get_agent(agent_id)
+        if not agent:
+            raise NotFoundError("Agent 不存在")
+        try:
+            data = req.model_dump(exclude_unset=True)
+            if data.get("is_default"):
+                await self._clear_other_defaults()
+            self._normalize_json_lists(data)
+            await self._validate_model_id(data)
+            await self._sync_model_labels(data)
+            for key, value in data.items():
+                setattr(agent, key, value)
+            await self._db.flush()
+            await self._db.refresh(agent)
+            return self._to_dto(agent)
+        except IntegrityError as exc:
+            await self._db.rollback()
+            raise BusinessError("绑定的模型配置不存在或数据冲突，请检查模型选择") from exc
+        except SQLAlchemyError as exc:
+            await self._db.rollback()
+            import logging
+            logging.getLogger(__name__).exception(f"更新 Agent {agent_id} 数据库错误: {exc}")
+            raise BusinessError("保存 Agent 时数据库出错，请稍后重试或联系管理员") from exc
+
     async def create_agent(self, req: CreateAgentRequest) -> AgentTemplateDTO:
         agent_id = req.agent_id.strip() if req.agent_id else ""
         if not agent_id:
             agent_id = _generate_agent_id(req.name)
         if await self.get_agent(agent_id) is not None:
             raise BusinessError(f"Agent ID '{agent_id}' 已存在")
-        data = req.model_dump()
-        data["agent_id"] = agent_id
-        await self._sync_model_labels(data)
-        agent = AgentTemplateModel(is_builtin=False, is_active=True, **data)
-        self._db.add(agent)
-        await self._db.flush()
-        return self._to_dto(agent)
+        try:
+            data = req.model_dump()
+            data["agent_id"] = agent_id
+            data.pop("is_builtin", None)
+            self._normalize_json_lists(data)
+            await self._validate_model_id(data)
+            await self._sync_model_labels(data)
+            agent = AgentTemplateModel(**data)
+            self._db.add(agent)
+            await self._db.flush()
+            await self._db.refresh(agent)
+            return self._to_dto(agent)
+        except IntegrityError as exc:
+            await self._db.rollback()
+            raise BusinessError("绑定的模型配置不存在或数据冲突，请检查模型选择") from exc
+        except SQLAlchemyError as exc:
+            await self._db.rollback()
+            import logging
+            logging.getLogger(__name__).exception(f"创建 Agent {agent_id} 数据库错误: {exc}")
+            raise BusinessError("创建 Agent 时数据库出错，请稍后重试或联系管理员") from exc
 
-    async def update_agent(self, agent_id: str, req: UpdateAgentRequest) -> AgentTemplateDTO:
-        agent = await self.get_agent(agent_id)
-        if not agent:
-            raise NotFoundError("Agent 不存在")
-        data = req.model_dump(exclude_unset=True)
-        if data.get("is_default"):
-            await self._clear_other_defaults()
-        await self._sync_model_labels(data)
-        for key, value in data.items():
-            setattr(agent, key, value)
-        await self._db.flush()
-        return self._to_dto(agent)
+    @staticmethod
+    def _normalize_json_lists(data: dict[str, Any]) -> None:
+        """把前端可能传 null 的数组字段归一为 []，避免 ORM 写入 JSONB null 后与默认值不一致。"""
+        for key in ("mcp_ids", "skill_ids"):
+            if key in data and data[key] is None:
+                data[key] = []
+
+    async def _validate_model_id(self, data: dict[str, Any]) -> None:
+        """校验 model_id 指向的 provider 真实存在且已启用，避免数据库 FK 500 或调用失败。"""
+        model_id = data.get("model_id")
+        if model_id is None:
+            return
+        result = await self._db.execute(
+            select(AIProviderConfigModel.id).where(
+                AIProviderConfigModel.id == model_id,
+                AIProviderConfigModel.is_active == True,  # noqa: E712
+            )
+        )
+        if result.scalar_one_or_none() is None:
+            raise BusinessError("绑定的模型配置不存在、已被删除或未启用，请重新选择模型")
 
     async def _sync_model_labels(self, data: dict[str, Any]) -> None:
         """根据 model_id 同步 model_engine / model_name，确保展示与调用一致。"""
@@ -184,6 +231,7 @@ class AgentService:
             data["model_engine"] = provider.model
             data["model_name"] = provider.name
         else:
+            # 校验已通过时这里不应发生；保留兜底，避免空指针
             data["model_engine"] = ""
             data["model_name"] = ""
 
@@ -192,6 +240,12 @@ class AgentService:
         if not agent:
             raise NotFoundError("Agent 不存在")
         if agent.is_builtin:
+            # 内置 Agent 软删除：若其是默认助手，先转移默认状态
+            if agent.is_default:
+                successor = await self._find_default_successor(agent.category, agent.agent_id)
+                if successor is not None:
+                    successor.is_default = True
+                agent.is_default = False
             agent.is_active = False
             await self._db.flush()
             return True
@@ -203,9 +257,35 @@ class AgentService:
         agent = await self.get_agent(agent_id)
         if not agent:
             raise NotFoundError("Agent 不存在")
-        agent.is_active = not agent.is_active
+
+        new_active = not agent.is_active
+        if not new_active and agent.is_default:
+            # 停用默认 Agent 前，需将默认状态转移给同分类其他启用 Agent
+            successor = await self._find_default_successor(agent.category, agent.agent_id)
+            if successor is None:
+                raise BusinessError(
+                    "当前分类至少需要保留一个启用的 Agent，请先创建或启用其他 Agent 再停用默认助手"
+                )
+            successor.is_default = True
+            agent.is_default = False
+
+        agent.is_active = new_active
         await self._db.flush()
+        await self._db.refresh(agent)
         return self._to_dto(agent)
+
+    async def _find_default_successor(
+        self, category: str, exclude_agent_id: str
+    ) -> AgentTemplateModel | None:
+        """查找同分类下可接替默认状态的其他启用 Agent，按创建时间优先取最新的。"""
+        result = await self._db.execute(
+            select(AgentTemplateModel).where(
+                AgentTemplateModel.category == category,
+                AgentTemplateModel.is_active == True,  # noqa: E712
+                AgentTemplateModel.agent_id != exclude_agent_id,
+            ).order_by(AgentTemplateModel.created_at.desc())
+        )
+        return result.scalars().first()
 
     async def set_default_agent(self, agent_id: str) -> None:
         agent = await self.get_agent(agent_id)

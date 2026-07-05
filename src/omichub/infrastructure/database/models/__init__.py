@@ -28,6 +28,7 @@ from omichub.infrastructure.database.models.file import (
 )
 from omichub.infrastructure.database.models.mcp import MCPServerModel
 from omichub.infrastructure.database.models.notification import NotificationModel
+from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
 from omichub.infrastructure.database.models.sandbox import SandboxSessionModel
 from omichub.infrastructure.database.models.site_settings import SiteSettingModel
 from omichub.infrastructure.database.models.skill import SkillModel
@@ -52,6 +53,8 @@ __all__ = [
     "AIProviderConfigModel",
     "AuditLogModel",
     "MCPServerModel",
+    "ReportModel",
+    "ReportFileModel",
     "SandboxSessionModel",
     "NotificationModel",
     "SiteSettingModel",

@@ -12,6 +12,11 @@ interface Props {
   streamingContent?: string
   streamingThought?: string
   modelName?: string
+  userName?: string
+  userAvatar?: string
+  agentName?: string
+  agentAvatar?: string
+  agentColor?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -19,6 +24,11 @@ const props = withDefaults(defineProps<Props>(), {
   streamingContent: '',
   streamingThought: '',
   modelName: 'AI 助手',
+  userName: '我',
+  userAvatar: '',
+  agentName: 'OmicHub AI',
+  agentAvatar: '🤖',
+  agentColor: '#4f8ef7',
 })
 
 const emit = defineEmits<{
@@ -28,6 +38,7 @@ const emit = defineEmits<{
   retryWithModel: [messageId: string]
   translate: [messageId: string]
   delete: [messageId: string]
+  edit: [messageId: string]
 }>()
 
 interface ScrollerExpose {
@@ -102,6 +113,7 @@ onUnmounted(() => {
           :size-dependencies="[
             item.content,
             item.thought,
+            JSON.stringify(item.tokens),
             streamingMessageId === item.id ? streamingContent : '',
             streamingMessageId === item.id ? streamingThought : '',
           ]"
@@ -113,12 +125,18 @@ onUnmounted(() => {
             :streaming-content="streamingContent"
             :streaming-thought="streamingThought"
             :model-name="modelName"
+            :user-name="userName"
+            :user-avatar="userAvatar"
+            :agent-name="agentName"
+            :agent-avatar="agentAvatar"
+            :agent-color="agentColor"
             @feedback="(id, type) => emit('feedback', id, type)"
             @copy="(mode) => emit('copy', mode)"
             @regenerate="(id) => emit('regenerate', id)"
             @retry-with-model="(id) => emit('retryWithModel', id)"
             @translate="(id) => emit('translate', id)"
             @delete="(id) => emit('delete', id)"
+            @edit="(id) => emit('edit', id)"
           />
         </DynamicScrollerItem>
       </template>

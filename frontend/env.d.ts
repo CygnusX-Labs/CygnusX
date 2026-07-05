@@ -6,6 +6,11 @@ declare module '*.vue' {
   export default component
 }
 
+interface Window {
+  initHeroAnimation?: (canvas: HTMLCanvasElement) => (() => void) | undefined
+  initLoginAnimation?: (canvas: HTMLCanvasElement) => (() => void) | undefined
+}
+
 declare module 'vue-virtual-scroller' {
   import type { Component, VNode } from 'vue'
 
