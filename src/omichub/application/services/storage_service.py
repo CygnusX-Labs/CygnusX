@@ -118,17 +118,19 @@ class StorageService:
         # du 快路径：一次性统计所有子目录，C 优化
         sizes = await asyncio.to_thread(self._du_batch, child_dirs)
 
-        # 子目录名 → user_id；批量查库映射 username（一次查询）
-        name_to_username = await self._map_usernames(list(sizes.keys()))
+        # 子目录名 → user_id；批量查库映射 username + nickname（一次查询）
+        name_to_display = await self._map_user_display(list(sizes.keys()))
 
         total_used = sum(sizes.values())
         result: list[dict] = []
         for name, size in sorted(sizes.items(), key=lambda x: x[1], reverse=True):
             percent = round(size / total_used * 100, 2) if total_used > 0 else 0.0
+            display = name_to_display.get(name)
             result.append(
                 {
                     "user_id": name,
-                    "username": name_to_username.get(name, name),
+                    "username": display["username"] if display else name,
+                    "nickname": display["nickname"] if display else None,
                     "size": int(size),
                     "percent": percent,
                 }
@@ -202,11 +204,11 @@ class StorageService:
         return result
 
     # ------------------------------------------------------------------
-    # user_id → username 批量映射
+    # user_id → username / nickname 批量映射
     # ------------------------------------------------------------------
 
-    async def _map_usernames(self, names: list[str]) -> dict[str, str]:
-        """把 users/ 下目录名（user_id）批量映射为 username。
+    async def _map_user_display(self, names: list[str]) -> dict[str, dict[str, str | None]]:
+        """把 users/ 下目录名（user_id）批量映射为 {username, nickname}。
 
         非法 UUID 或库中不存在的用户不会被映射，调用方回退用目录名展示。
         DB 不可用时返回空 dict，不影响统计结果。
@@ -225,11 +227,14 @@ class StorageService:
 
         try:
             rows = await self._db.execute(
-                select(UserModel.id, UserModel.username).where(
+                select(UserModel.id, UserModel.username, UserModel.nickname).where(
                     UserModel.id.in_(user_ids)
                 )
             )
-            return {str(r[0]): r[1] for r in rows.all()}
+            return {
+                str(r[0]): {"username": r[1], "nickname": r[2]}
+                for r in rows.all()
+            }
         except Exception:
             # DB 异常不影响磁盘统计，回退用目录名
             return {}

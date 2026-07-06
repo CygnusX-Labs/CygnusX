@@ -217,7 +217,7 @@ const chartOption = computed(() => {
 
 <style scoped>
 .plot-page {
-  padding: 24px;
+  padding: 16px;
   min-height: 100%;
 }
 .page-toolbar {
@@ -235,7 +235,7 @@ const chartOption = computed(() => {
 .plot-layout {
   display: grid;
   grid-template-columns: 300px 1fr;
-  gap: 20px;
+  gap: 16px;
   align-items: start;
 }
 .config-panel {

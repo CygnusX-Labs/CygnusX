@@ -153,9 +153,9 @@ OmicHub 前端是 **Vue 3 + naive-ui**，而 JBrowse 2 官方提供的是 React 
 
 ---
 
-## 5. 配置系统（`data/jbrowse_config.yaml`）
+## 5. 配置系统（`tools/jbrowse/jbrowse_config.yaml`）
 
-外置 YAML，路径由 `settings.jbrowse_config_yaml` 决定（默认 `data/jbrowse_config.yaml`，容器内 `:ro` 挂载即可读）。结构（pydantic v2 校验，`infrastructure/config/jbrowse_config.py`）：
+外置 YAML，路径由 `settings.jbrowse_config_yaml` 决定（默认 `tools/jbrowse/jbrowse_config.yaml`，集中配置于 tools/，容器内经 tools/ 挂载 `:ro` 可读）。结构（pydantic v2 校验，`infrastructure/config/jbrowse_config.py`）：
 
 | 段 | 作用 |
 |----|----|
@@ -278,7 +278,7 @@ nginx:
 | 后端 Schema | `src/omichub/application/schemas/jbrowse.py` |
 | 配置加载器 | `src/omichub/infrastructure/config/jbrowse_config.py` |
 | 索引任务 | `src/omichub/infrastructure/celery_app/tasks/jbrowse.py` |
-| 平台配置 | `data/jbrowse_config.yaml` |
+| 平台配置 | `tools/jbrowse/jbrowse_config.yaml` |
 | nginx | `deploy/docker/nginx/nginx.conf` |
 | 下载脚本 | `scripts/download_jbrowse2.sh` |
 | **本构建产物** | `pipelines/jbrowse2/`（即本目录，v2.15.1） |

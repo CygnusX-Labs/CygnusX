@@ -33,7 +33,8 @@ export {}
     let animationId: number | null = null
 
     const CONFIG = {
-      hero: { opacity: 0.4, density: 8000, speed: 1.0, glow: true },
+      // hero 背景是抢眼的蓝紫渐变，动画需更高的不透明度/密度/速度才能"压得住"被看见
+      hero: { opacity: 1.0, density: 5000, speed: 1.4, glow: true },
       login: { opacity: 0.3, density: 10000, speed: 0.6, glow: true },
     }[context]
 

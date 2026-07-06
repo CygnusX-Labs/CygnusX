@@ -9,6 +9,8 @@
 #     /data/omichub 挂载解析（与 data/OmicHub.yaml 的 storage.data_root 一致）。
 #   - 这些文件会经 nginx 的 /tracks/ 路径对外暴露，供 JBrowse 2 通过 HTTP Range
 #     Request 流式读取。故 /data/omichub 下的引用组与轨道文件必须对 nginx 可读。
+#     （参考基因组与预设轨道已迁至 /data/omichub/omichub_data/jbrowse/，仍位于
+#     data_root 之下，/tracks/ 换算与 nginx alias 无需改动。）
 #   - 索引缺失时，可由「我的文件」面板或 POST /api/v1/jbrowse/index/create 触发
 #     Celery 任务生成（需 worker 镜像内装好 samtools / bcftools / tabix）。
 #
@@ -24,8 +26,8 @@ assemblies:
     name: "人类 (GRCh38/hg38)"
     species: "Homo sapiens"
     description: "人类参考基因组 GRCh38"
-    fasta: "/data/omichub/jbrowse/ref/human_hg38/GRCh38.p14.genome.fa"
-    fai: "/data/omichub/jbrowse/ref/human_hg38/GRCh38.p14.genome.fa.fai"
+    fasta: "/data/omichub/omichub_data/jbrowse/ref/human_hg38/GRCh38.p14.genome.fa"
+    fai: "/data/omichub/omichub_data/jbrowse/ref/human_hg38/GRCh38.p14.genome.fa.fai"
 
 # --------------------------------------------
 # 预设轨道（公共/共享数据，所有用户可见）
@@ -34,7 +36,7 @@ assemblies:
 preset_tracks:
   human_hg38:
     - name: "基因注释"
-      file: "/data/omichub/jbrowse/tracks/human_hg38/gencode.v50.basic.annotation.gff3"
+      file: "/data/omichub/omichub_data/jbrowse/tracks/human_hg38/gencode.v50.basic.annotation.gff3"
       type: "gff3"
       color: "#2E7D32"
 

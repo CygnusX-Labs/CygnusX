@@ -6,6 +6,7 @@ import apiClient from '@/api/client'
 interface TargetUser {
   id: string
   username: string
+  nickname?: string | null
   admin_note?: string | null
 }
 
@@ -65,7 +66,7 @@ async function handleSubmit() {
     <div class="note-modal">
       <h3 class="note-title">编辑管理员备注</h3>
       <p v-if="props.user" class="note-desc">
-        用户：{{ props.user.username }}
+        用户：{{ props.user.nickname || props.user.username }}
         <span class="note-hint">（仅管理员可见）</span>
       </p>
 

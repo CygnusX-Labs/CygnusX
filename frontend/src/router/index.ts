@@ -172,6 +172,42 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '绘图工坊', requiresAuth: true }
       },
       {
+        path: 'tools/volcano',
+        name: 'tools-volcano',
+        component: () => import('@/views/BioTools/VolcanoPlotView.vue'),
+        meta: { title: '火山图绘制', requiresAuth: true }
+      },
+      {
+        path: 'tools/kegg-enrichment',
+        name: 'tools-kegg-enrichment',
+        component: () => import('@/views/BioTools/KeggEnrichmentView.vue'),
+        meta: { title: 'KEGG 通路富集分析', requiresAuth: true }
+      },
+      {
+        path: 'tools/seq-manipulator',
+        name: 'tools-seq-manipulator',
+        component: () => import('@/views/BioTools/SeqManipulatorView.vue'),
+        meta: { title: '序列魔术师', requiresAuth: true }
+      },
+      {
+        path: 'tools/format-converter',
+        name: 'tools-format-converter',
+        component: () => import('@/views/BioTools/FormatConverterView.vue'),
+        meta: { title: '格式轻量转换器', requiresAuth: true }
+      },
+      {
+        path: 'reference-genomes',
+        name: 'reference-genomes',
+        component: () => import('@/views/ReferenceGenomesView.vue'),
+        meta: { title: '参考基因组', requiresAuth: true }
+      },
+      {
+        path: 'reference-genomes/:id',
+        name: 'reference-genome-detail',
+        component: () => import('@/views/ReferenceGenomeDetailView.vue'),
+        meta: { title: '基因组详情', requiresAuth: true }
+      },
+      {
         path: 'admin/cookies/accounts',
         name: 'admin-cookies-accounts',
         component: () => import('@/views/AdminCookieManagementView.vue'),

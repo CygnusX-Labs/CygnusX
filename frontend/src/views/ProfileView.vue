@@ -9,7 +9,7 @@
           </NAvatar>
           <div class="user-info-main">
             <div class="user-info-name-row">
-              <span class="user-name">{{ user?.username }}</span>
+              <span class="user-name">{{ displayName(user) }}</span>
               <NTag :type="roleTagType" size="small" round class="role-tag">
                 {{ roleLabel }}
               </NTag>
@@ -332,6 +332,7 @@ import { format, formatDistanceToNow, parseISO } from 'date-fns'
 import { zhCN } from 'date-fns/locale'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
+import { displayName } from '@/utils/displayName'
 import apiClient from '@/api/client'
 import type { User } from '@/types'
 
@@ -479,7 +480,7 @@ const MOCK_API_KEYS: ApiKey[] = [
 ]
 
 // ===== 计算属性 =====
-const userInitial = computed(() => user.value?.username?.charAt(0).toUpperCase() || 'U')
+const userInitial = computed(() => displayName(user.value).charAt(0).toUpperCase() || 'U')
 const shortId = computed(() => {
   if (!user.value?.id) return '-'
   return user.value.id.slice(0, 8) + '…'

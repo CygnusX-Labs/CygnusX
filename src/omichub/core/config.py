@@ -105,16 +105,38 @@ class Settings(BaseSettings):
     site_content_yaml: str = "data/OmicHub.yaml"  # 首页文案外置 YAML 路径（改文件即生效）
     # JBrowse 2 基因组浏览器外置配置：参考基因组 / 预设轨道 / 扫描与上传策略。
     # 改文件后调用 POST /api/v1/jbrowse/config/reload 即时生效（或等配置加载器 mtime 热重载）。
-    jbrowse_config_yaml: str = "data/jbrowse_config.yaml"
+    # 集中配置：与富集分析同放 tools/<工具名>/，仓库内源码管控；容器内经 tools/ 挂载(:ro) 可读。
+    jbrowse_config_yaml: str = "tools/jbrowse/jbrowse_config.yaml"
+
+    # ===== 工具箱前端注册表（哪些工具加载到前端 + 展示元数据）=====
+    # tools_setting.yaml 列出全部工具卡片（title/description/icon/gradient/route/enabled），
+    # 前端 GET /api/v1/tools 拉取 enabled 项渲染 ToolsHub；改文件由加载器 mtime 热重载。
+    # 仅「展示元数据」集中于此；各工具的「功能配置」放 tools/<工具名>/（如 jbrowse/、enrichments/）。
+    tools_setting_yaml: str = "tools/tools_setting.yaml"
+
+    # ===== 富集分析（KEGG / GO，R Docker 容器）=====
+    # 物种配置 YAML（仓库内源码管控，仿 flows/）；改文件后由加载器 mtime 热重载。
+    enrichment_config_yaml: str = "tools/enrichments/species_config.yaml"
+    # R 计算容器镜像（用户自行构建，契约见 docs/26.7.6/KEGG_Docker_契约.md）
+    enrichment_docker_image: str = "omichub-r-enrichment:v1"
+    # 容器加入的 Docker 网络（与 squid-proxy 同网，仅放行 KEGG 域名）
+    enrichment_docker_network: str = "omichub_enrichment_net"
+    # 出站代理地址（容器 http_proxy/https_proxy；squid 白名单 .kegg.jp .genome.jp）
+    enrichment_proxy_url: str = "http://squid-proxy:3128"
+    # 宿主→容器挂载源（容器内固定为 /data/omichub，基因列表与结果 CSV 经此交换）
+    enrichment_data_mount: str = "/data/omichub"
+    enrichment_exec_timeout: int = 120  # 单次富集分析超时（秒）
+    enrichment_memory: str = "2g"  # 容器内存上限
+    enrichment_cpus: float = 2.0  # 容器 CPU 核数
 
     # ===== 管理员欢迎彩蛋（预生成 + 顺序轮询）=====
     # 启动时若 welcome.yaml 条数 < threshold，调用默认 AI provider 补齐到 threshold 条；
     # 运行时登录仅读盘 + 游标前进，零延迟、不调 AI。两文件均缺失时回退内置兜底文案。
     # 注意：必须放在可写目录。data/ 目录在容器中为只读挂载（docker-compose :ro），
-    # 故改用 storage_path（/data/omichub，容器与宿主共享且可写）下的 welcome/ 子目录，
-    # 避免与任务数据混放。
-    welcome_yaml: str = "/data/omichub/welcome/welcome.yaml"  # 预生成欢迎词（纯字符串数组）
-    welcome_state_yaml: str = "/data/omichub/welcome/welcome_state.yaml"  # 轮询游标
+    # 故改用 storage_path（/data/omichub，容器与宿主共享且可写）下的
+    # omichub_data/welcome/ 子目录，避免与任务数据混放。
+    welcome_yaml: str = "/data/omichub/omichub_data/welcome/welcome.yaml"  # 预生成欢迎词（纯字符串数组）
+    welcome_state_yaml: str = "/data/omichub/omichub_data/welcome/welcome_state.yaml"  # 轮询游标
     welcome_seed_threshold: int = 20  # 启动补齐目标条数
 
     # ===== 代码执行沙盒 =====

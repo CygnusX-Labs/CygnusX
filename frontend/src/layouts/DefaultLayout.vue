@@ -11,7 +11,7 @@ import {
   InformationCircleOutline, PersonOutline, LogOutOutline, MoonOutline, SunnyOutline,
   MenuOutline, ChevronForwardOutline, ChevronDownOutline,
   NotificationsOutline, HelpCircleOutline, ChatbubblesOutline, Planet, CodeSlashOutline,
-  WalletOutline, PricetagOutline, SparklesOutline, ConstructOutline,
+  WalletOutline, PricetagOutline, SparklesOutline, ConstructOutline, LayersOutline,
 } from '@vicons/ionicons5'
 import CookieBalanceBadge from '@/components/CookieBalanceBadge.vue'
 import NotificationDrawer from '@/components/NotificationDrawer.vue'
@@ -19,6 +19,7 @@ import OnboardingPopup from '@/components/OnboardingPopup.vue'
 import ChunkUploader from '@/components/ChunkUploader.vue'
 import UploadFloatingBall from '@/components/UploadFloatingBall.vue'
 import { useAuthStore } from '@/stores/auth'
+import { displayName } from '@/utils/displayName'
 import { useUploadStore } from '@/stores/upload'
 import { useNotificationStore } from '@/stores/notification'
 import { useSiteConfigStore } from '@/stores/site-config'
@@ -52,11 +53,20 @@ const lastAutoCollapsed = ref(false)
 const isAdmin = computed(() => authStore.user?.role === 'admin')
 const isDarkTheme = computed(() => themeStore.isDark)
 
-const contentStyle = computed(() =>
-  route.meta.fullscreen
-    ? 'padding: 0; display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--neutral-bg);'
-    : 'padding: 24px; background: var(--neutral-bg);'
-)
+const contentStyle = computed(() => {
+  if (route.meta.fullscreen) {
+    return 'padding: 0; display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--neutral-bg);'
+  }
+  // 生信工具箱区域（列表页 + 各工具页）紧凑布局：外层 padding 0，
+  // 由各工具页面根容器自行控制 16px 内边距，避免双层 padding 浪费边缘空间。
+  // JBrowse 已被上方 fullscreen 分支拦截，此处再显式排除做双重保险，确保其样式完全不变。
+  const isToolsArea = route.path === '/tools'
+    || (route.path.startsWith('/tools/') && route.path !== '/tools/jbrowse')
+  if (isToolsArea) {
+    return 'padding: 0; background: var(--neutral-bg);'
+  }
+  return 'padding: 24px; background: var(--neutral-bg);'
+})
 
 // 全屏页面（如 AI 助手）使用原生滚动容器，使 .n-layout-scroll-container 的 flex:1
 // 高度规则生效，让内部 chat 布局铺满视口；非全屏页面保留 Naive 虚拟滚动条。
@@ -167,6 +177,7 @@ const mainNavItems = computed<NavItem[]>(() => [
     ],
   },
   { key: 'files', label: '数据管理', to: '/files', icon: CloudUploadOutline },
+  { key: 'reference-genomes', label: '参考基因组', to: '/reference-genomes', icon: LayersOutline },
   { key: 'downloads', label: '数据下载', to: '/downloads', icon: DownloadOutline },
   { key: 'tasks', label: '任务中心', to: '/tasks', icon: DocumentTextOutline },
   { key: 'reports', label: '结果报告中心', to: '/reports', icon: DocumentTextOutline },
@@ -201,6 +212,8 @@ function isActive(item: NavItem): boolean {
   if (!item.children) {
     // 生信工具箱：子工具页面也保持高亮
     if (item.key === 'tools') return route.path === '/tools' || route.path.startsWith('/tools/')
+    // 参考基因组：详情页也保持高亮
+    if (item.key === 'reference-genomes') return route.path === '/reference-genomes' || route.path.startsWith('/reference-genomes/')
     if (item.to.includes('?')) {
       const [path, query] = item.to.split('?')
       const type = query.split('=')[1]
@@ -293,7 +306,7 @@ function handleUserMenuSelect(key: string) {
 }
 
 const UserAvatar = () => {
-  const name = currentUser.value?.username || 'U'
+  const name = displayName(currentUser.value) || 'U'
   return h(NAvatar, {
     round: true,
     size: 'small',
@@ -562,7 +575,7 @@ const UserAvatar = () => {
               <div class="user-card">
                 <UserAvatar />
                 <div class="user-info">
-                  <p class="user-name">{{ currentUser?.username || '未登录' }}</p>
+                  <p class="user-name">{{ displayName(currentUser) || '未登录' }}</p>
                   <p class="user-role">{{ isAdmin ? '管理员' : '普通用户' }}</p>
                 </div>
                 <NIcon :size="14" class="user-chevron">

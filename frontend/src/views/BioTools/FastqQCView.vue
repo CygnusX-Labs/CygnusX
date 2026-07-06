@@ -179,7 +179,7 @@ function handleRunQC() {
 
 <style scoped>
 .fastq-page {
-  padding: 24px;
+  padding: 16px;
   min-height: 100%;
 }
 .page-toolbar {
@@ -197,7 +197,7 @@ function handleRunQC() {
 .fastq-layout {
   display: grid;
   grid-template-columns: 320px 1fr;
-  gap: 20px;
+  gap: 16px;
   align-items: start;
 }
 .param-panel {

@@ -32,6 +32,7 @@ import { useAuthStore } from '@/stores/auth'
 interface AdminUser {
   id: string
   username: string
+  nickname?: string | null
   email: string
   role: string
   status: string
@@ -120,7 +121,11 @@ function viewTxns(row: AdminUser) {
 }
 
 const columns: DataTableColumns<AdminUser> = [
-  { title: '用户名', key: 'username' },
+  {
+    title: '用户',
+    key: 'username',
+    render: (row) => (row.nickname ? `${row.nickname}（${row.username}）` : row.username),
+  },
   { title: '邮箱', key: 'email', ellipsis: { tooltip: true } },
   {
     title: '角色',

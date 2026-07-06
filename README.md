@@ -224,7 +224,7 @@ make docker-purge
 make docker-start
 ```
 
-> 注：任务数据存放于宿主 `/data/omichub`（bind mount，非数据卷），`make docker-purge` **不会**删除它。需彻底清理任务数据请手动 `sudo rm -rf /data/omichub`。
+> 注：任务数据存放于宿主 `/data/omichub`（bind mount，非数据卷），`make docker-purge` **不会**删除它。其中 `omichub_data/_pgdata` 是数据库目录、`omichub_data/_redis` 是缓存目录。需彻底清理任务数据请手动 `sudo rm -rf /data/omichub`。
 
 `docker-start` 清理后会自动重建并启动，无需手动执行 `docker-up-all`。`docker-purge` 清理后需手动拉起：
 
@@ -354,6 +354,52 @@ flows/                Snakemake 流程 YAML (rna_seq/atac_seq)
 data/                 AI Provider YAML 配置
 docs/                 架构设计文档
   knowledge/         实验室知识库 (meta.yaml 导航 + *.md 正文)
+```
+
+## 数据目录结构
+
+平台运行时数据统一收口在宿主机 `/data/omichub`（由 `data/OmicHub.yaml` 的 `storage.data_root` 声明）。**数据库、缓存、参考基因组、知识库、欢迎词**五类核心数据已集中迁至 `omichub_data/` 子目录，让数据区更清爽；用户上传、任务产物等仍直接落在根下。
+
+```
+/data/omichub/                      # 数据根目录（storage.data_root）
+├── omichub_data/                   # ★ 集中数据区
+│   ├── _pgdata/                    # PostgreSQL 数据库（bind mount，uid 70 / 700）
+│   ├── _redis/                     # Redis 持久化 dump.rdb（bind mount，uid 999）
+│   ├── jbrowse/                    # JBrowse 2 参考基因组 + 预设轨道（ref/ tracks/）
+│   ├── knowledge/                  # 实验室知识库运行时副本（镜像自 docs/knowledge/）
+│   └── welcome/                    # 管理员登录欢迎词（welcome.yaml + 轮询游标）
+├── users/<user_id>/                # 用户私有数据（上传 / 结果 / 富集产物）
+├── uploads/                        # 分片上传中转
+├── bin/                            # 外置二进制（EBIDownload 等）
+├── dataset/                        # 公共数据集
+└── .tmp/                           # 临时文件
+```
+
+### omichub_data 各子目录
+
+| 子目录 | 作用 | 挂载 / 配置来源 | 备注 |
+|--------|------|-----------------|------|
+| `_pgdata/` | PostgreSQL 全部关系型数据（账号/任务/AI 会话） | `db` 服务 bind mount → `/var/lib/postgresql/data` | 属主 postgres(uid 70)，`rsync` 需 `-a` 保留属主；停库后再迁移 |
+| `_redis/` | Redis 持久化 + Celery 队列 + 限流缓存 | `cache` 服务 bind mount → `/data` | 属主 redis(uid 999)；缓存类数据，丢失可重建 |
+| `jbrowse/` | 参考基因组 FASTA(3.3G) + 基因注释(3.2G) | `tools/jbrowse/jbrowse_config.yaml` 绝对路径 | 经 nginx `/tracks/` 流式读取；位于 `data_root` 下，换算自动兼容 |
+| `knowledge/` | 知识库 `meta.yaml` + `*.md` + 配图 | 镜像自仓库 `docs/knowledge/` | 在线编辑读仓库源；此为数据区备份副本 |
+| `welcome/` | 预生成欢迎词数组 + 轮询游标 | `config.py` 的 `welcome_yaml` / `welcome_state_yaml` | 启动时不足 20 条自动调 AI 补齐 |
+
+### 为什么这些路径不用改容器挂载
+
+`omichub_data` 仍是 `data_root`（`/data/omichub`）的子目录，因此：
+
+- 容器内 `/data/omichub` 挂载、nginx `/tracks/` alias、`storage.data_root` 均**未改动**；
+- `to_tracks_uri()` 把绝对路径换算为 `/tracks/omichub_data/jbrowse/...`，nginx 天然可读；
+- 仅需同步修改 `docker-compose.yml` / `docker-compose.prod.yml` 的 `db`/`cache` bind mount、`config.py` 的 welcome 路径、`jbrowse_config.yaml` 的 fasta/轨道路径。
+
+### 快速备份 / 迁移
+
+```bash
+# 停服后增量同步整个数据根（含 omichub_data）
+docker compose -f deploy/docker/docker-compose.yml down
+docker compose -f deploy/docker/docker-compose.worker.yml down
+sudo rsync -aP --info=progress2 /data/omichub/ <目标机>:/data/omichub/
 ```
 
 ## 常用命令

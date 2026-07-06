@@ -14,7 +14,10 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import JSONResponse
 
 from omichub.api.deps import CurrentUserId
-from omichub.application.schemas.jbrowse import (
+from omichub.core.exceptions import NotFoundError, ValidationError
+from omichub.middleware.rbac import AdminRequired
+from omichub.tools.jbrowse.config import config_manager
+from omichub.tools.jbrowse.schema import (
     AssemblyDetailDTO,
     AssemblyListResponse,
     BatchUploadItemDTO,
@@ -27,11 +30,12 @@ from omichub.application.schemas.jbrowse import (
     ScanResponse,
     UploadResultDTO,
 )
-from omichub.application.services.jbrowse_service import JBrowseService, jbrowse_service
-from omichub.core.exceptions import NotFoundError, ValidationError
-from omichub.infrastructure.celery_app.tasks.jbrowse import index_file
-from omichub.infrastructure.config.jbrowse_config import config_manager
-from omichub.middleware.rbac import AdminRequired
+from omichub.tools.jbrowse.service import JBrowseService, jbrowse_service
+from omichub.tools.jbrowse.tasks import index_file
+
+# 路由元数据：供 omichub.tools.register_tool_routers 自动发现挂载
+prefix = "/jbrowse"
+tags = ["JBrowse 基因组浏览器"]
 
 router = APIRouter()
 

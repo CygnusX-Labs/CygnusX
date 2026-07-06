@@ -141,13 +141,6 @@ onUnmounted(() => {
         </DynamicScrollerItem>
       </template>
 
-      <template #after>
-        <div v-if="isTyping && !streamingContent" class="typing-indicator">
-          <div class="typing-dot" />
-          <div class="typing-dot" />
-          <div class="typing-dot" />
-        </div>
-      </template>
     </DynamicScroller>
 
     <transition name="fade">
@@ -178,29 +171,7 @@ onUnmounted(() => {
     margin: 0 auto;
   }
 
-  .typing-indicator {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 16px 20px;
-    margin-left: 48px;
-
-    .typing-dot {
-      width: 8px;
-      height: 8px;
-      background: var(--chat-text-muted);
-      border-radius: 50%;
-      animation: typingBounce 1.4s ease-in-out infinite;
-    }
-
-    .typing-dot:nth-child(2) {
-      animation-delay: 0.2s;
-    }
-
-    .typing-dot:nth-child(3) {
-      animation-delay: 0.4s;
-    }
-  }
+  /* typing-indicator 跳动点已移除 */
 
   .scroll-to-bottom {
     position: absolute;

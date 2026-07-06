@@ -16,21 +16,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from omichub.application.schemas.jbrowse import (
-    AssemblyDetailDTO,
-    AssemblyDTO,
-    PresetTrackDTO,
-    ScannedFileDTO,
-)
 from omichub.core.exceptions import NotFoundError, ValidationError
-from omichub.infrastructure.config.jbrowse_config import (
+from omichub.infrastructure.config.storage_config import get_storage_config
+from omichub.tools.jbrowse.config import (
     AssemblyConfig,
     ConfigManager,
     TrackConfig,
     config_manager,
     to_tracks_uri,
 )
-from omichub.infrastructure.config.storage_config import get_storage_config
+from omichub.tools.jbrowse.schema import (
+    AssemblyDetailDTO,
+    AssemblyDTO,
+    PresetTrackDTO,
+    ScannedFileDTO,
+)
 
 # Nginx 暴露的数据路径前缀（与 nginx.conf 的 location /tracks/ 对应）
 _TRACKS_PREFIX = "/tracks"

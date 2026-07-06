@@ -6,6 +6,7 @@ import apiClient from '@/api/client'
 interface TargetUser {
   id: string
   username: string
+  nickname?: string | null
   storage_quota: number
   used_storage: number
 }
@@ -50,7 +51,7 @@ async function handleSubmit() {
     await apiClient.put(`/admin/users/${props.user.id}/quota`, null, {
       params: { storage_quota_gb: quotaGb.value },
     })
-    message.success(`已将 ${props.user.username} 配额调整为 ${quotaGb.value} GiB`)
+    message.success(`已将 ${props.user.nickname || props.user.username} 配额调整为 ${quotaGb.value} GiB`)
     close()
     emit('success')
   } catch (error: any) {
@@ -72,7 +73,7 @@ async function handleSubmit() {
     <div class="quota-modal">
       <h3 class="quota-title">调整存储配额</h3>
       <p v-if="props.user" class="quota-desc">
-        用户：{{ props.user.username }}　当前已用：
+        用户：{{ props.user.nickname || props.user.username }}　当前已用：
         {{ toGb(props.user.used_storage) }} GiB
       </p>
 

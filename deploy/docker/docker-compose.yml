@@ -50,6 +50,7 @@ services:
     volumes:
       - ../../src:/app/src:ro  # 开发环境热重载
       - ../../flows:/app/flows:ro  # 流程 YAML 配置（热重载）
+      - ../../tools:/app/tools:ro  # 工具箱配置（tools_setting.yaml + jbrowse/ + enrichments/，热重载）
       - ../../docs:/app/docs  # 知识库文档（meta.yaml + *.md，在线编辑与图片上传需要可写）
       - ../../data:/app/data:ro  # AI Provider YAML 配置（热重载）
       - ../../alembic:/app/alembic:ro  # 迁移脚本热同步（容器内可见，免重建镜像）
@@ -144,7 +145,8 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      # bind mount：数据固化到 /data/omichub/omichub_data/_pgdata，便于跨平台迁移（rsync omichub_data 即可带走）
+      - /data/omichub/omichub_data/_pgdata:/var/lib/postgresql/data
     networks:
       - data_net
       - omichub_net        # 跨栈：独立 worker 经服务名 db 连库（与 cache 同款跨栈互通）
@@ -162,7 +164,8 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
+      # bind mount：数据固化到 /data/omichub/omichub_data/_redis，便于跨平台迁移
+      - /data/omichub/omichub_data/_redis:/data
     networks:
       - data_net
       - omichub_net          # 关键：独立 worker 栈经服务名 cache 连 Redis
@@ -180,6 +183,5 @@ networks:
   omichub_net:               # 跨栈外部网络：供独立计算栈 docker-compose.worker.yml 加入
     external: true           # 需先 `docker network create omichub_net` 创建
 
-volumes:
-  pg_data:
-  redis_data:
+# 注：pg_data / redis_data 已改为 bind mount（/data/omichub/omichub_data/_pgdata、_redis），
+#     不再需要命名卷声明。旧卷 docker_pg_data / docker_redis_data 可在验证无误后删除。

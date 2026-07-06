@@ -3,7 +3,7 @@
 索引工具依赖：samtools / bcftools / tabix。worker 镜像未安装对应二进制时，
 任务返回明确的失败信息（不抛异常、不重试到死），前端据此提示"请联系管理员安装索引工具"。
 
-任务命名遵循 storage.py 约定：omichub.infrastructure.celery_app.tasks.jbrowse.<name>，
+任务命名遵循 storage.py 约定：omichub.tools.jbrowse.tasks.<name>，
 便于 celery_app.conf.task_routes 统一路由到 analysis 队列。
 """
 
@@ -51,7 +51,7 @@ def _norm_ext(path: Path) -> str:
 
 
 @shared_task(
-    name="omichub.infrastructure.celery_app.tasks.jbrowse.index_file",
+    name="omichub.tools.jbrowse.tasks.index_file",
     bind=True,
     max_retries=2,
     default_retry_delay=60,
@@ -141,7 +141,7 @@ def index_file(self, file_path: str) -> dict:
     }
 
 
-@shared_task(name="omichub.infrastructure.celery_app.tasks.jbrowse.scan_and_index")
+@shared_task(name="omichub.tools.jbrowse.tasks.scan_and_index")
 def scan_and_index(user_id: str) -> dict:
     """扫描用户目录并为缺失索引的文件排队生成索引。
 
@@ -153,8 +153,8 @@ def scan_and_index(user_id: str) -> dict:
 
 
 async def _scan_and_index(user_id: str) -> dict:
-    from omichub.application.services.jbrowse_service import jbrowse_service
-    from omichub.infrastructure.config.jbrowse_config import config_manager
+    from omichub.tools.jbrowse.config import config_manager
+    from omichub.tools.jbrowse.service import jbrowse_service
 
     config = config_manager.get_config()
     if not config.auto_scan.enabled or not config.auto_scan.auto_index:

@@ -1,11 +1,47 @@
 # OmicHub 开发进度 Todo
 
 > 基于 `docs/` 架构设计文档，逐步完善项目骨架。
-> 更新日期：2026-07-05 (个人中心 Bento Grid + Hero 动画库 v3)
+> 更新日期：2026-07-06 (生信工具箱模块化重构 + 数据目录集中迁移 omichub_data)
 
 ---
 
 ## 已完成
+
+### 生信工具箱模块化重构（工具代码收口 + 路由自动发现）✅ 2026-07-06
+
+> 需求：工具箱代码原先散落在 `api/v1/`、`application/services/`、`application/schemas/`、`infrastructure/config/`、`infrastructure/execution/`、`infrastructure/celery_app/tasks/` 六处分层目录，新增工具需手改 ~7 处代码（含 `router.py` 显式 `include_router`）。将每个工具的代码收口到自包含子包，实现「加子包即模块、核心路由表零侵入」。
+> 架构决策：在主包内建 `src/omichub/tools/` 子包（非仓库根 `tools/`——后者保持纯 YAML 配置，配置与代码职责分离）；每个工具一个子包（`api.py`/`service.py`/`schema.py`/`config.py`/`tasks.py`/`runner.py`）；`tools/__init__.py` 提供 `register_tool_routers()` 自动扫描子包 `api.py` 的 `router` 属性并挂载，`router.py` 不再逐工具手写挂载。
+> 验证：ruff 改动文件 0 错误；23 单测通过（唯一失败的 `test_download_service` 与本次无关）；运行中 app OpenAPI 150 路径含 jbrowse 11 / enrichment 2 / tools 2；worker 仅注册新路径任务；7 容器 healthy。
+
+- [x] **新包结构** — `src/omichub/tools/` 下三个子包：
+  - [x] `registry/`（api/schema/config）← 原 `api/v1/tools.py` + `schemas/tools_registry.py` + `config/tools_registry_config.py`
+  - [x] `jbrowse/`（api/service/schema/config/tasks）← 原 5 文件
+  - [x] `enrichments/`（api/service/schema/config/runner）← 原 5 文件
+  - [x] 共 13 个工具文件 `git mv`/`mv` 归位（jbrowse 走 `git mv` 保留历史，enrichment/registry 为未跟踪文件走 `mv`）
+- [x] **路由自动发现** — `tools/__init__.py` 的 `register_tool_routers(api_router)`：`pkgutil.iter_modules` 扫描子包，导入 `<包>.api`，有 `router` 属性即按子包自声明的 `prefix`/`tags` 挂载；纯配置工具（无 api.py）静默跳过
+  - [x] 每个 `api.py` 新增模块级 `prefix`/`tags` 常量（jbrowse→`/jbrowse`、enrichment→`/enrichment`、registry→`/tools`）
+  - [x] `api/v1/router.py` 移除 jbrowse/enrichment/tools 显式 import + 3 行 `include_router`，改为一行 `register_tool_routers(api_router)`
+- [x] **import 全量改写** — 13 个移动文件内部 import 改为绝对路径 `omichub.tools.<工具>.*`；外部引用同步更新：
+  - [x] `infrastructure/celery_app/celery.py` — `include` 列表与 `task_routes` 的 jbrowse 项改指向 `omichub.tools.jbrowse.tasks`
+  - [x] `jbrowse/tasks.py` — 两个 `@shared_task(name=...)` 更新为新模块路径
+- [x] **清理遗留** — 删除旧路径遗留的 13 个 orphan `.pyc`（曾导致 worker 重复注册新旧两套任务名）
+- [x] **文档** — `tools/README.md` 后端入口表 + 新增工具流程更新为模块化版本（标注「无需改 router.py」）
+- [x] **验证** — 自动发现单元测试发现 3 个工具模块；OpenAPI 含全部 15 条工具路由；HTTP `/api/v1/{tools,enrichment/species,jbrowse/assemblies}` 均返 401（路由存在，仅需鉴权）
+
+### 数据目录集中迁移到 omichub_data ✅ 2026-07-06
+
+> 需求：将 `/data/omichub` 下的 `jbrowse`/`knowledge`/`_pgdata`/`_redis`/`welcome` 五类核心数据集中迁至 `/data/omichub/omichub_data/` 子目录，让数据区更清爽；迁移过程中同步修改所有涉及的脚本/配置，并产出目录结构说明文档。
+> 架构决策：`data_root`（`/data/omichub`）保持不变——`omichub_data` 仍是其子目录，故容器 `/data/omichub` 挂载、nginx `/tracks/` alias、`to_tracks_uri()` 路径换算**全部无需改动**，仅同步修改 4 个文件中的具体子路径。`_pgdata`(uid 70)/`_redis`(uid 999) 因属主非 zj 且 `mv` 需更新目录内 `..` 条目，用临时 root 容器执行重命名（sudo 不可用时的绕过方案）。
+> 验证：DB `users=2/tables=28/alembic=7ec7e0105527`、Redis `db1=3/db2=284` 数据无损；nginx `/tracks/omichub_data/jbrowse/.../GRCh38.p14.genome.fa` 返 HTTP 206（JBrowse2 Range Request 正常）；7 容器 healthy。
+
+- [x] **目录迁移** — `jbrowse`/`knowledge`/`welcome`（zj 属主，`mv`）；`_pgdata`/`_redis`（`docker run --rm -v alpine mv` 以 root 重命名，属主/权限原样保留）
+- [x] **配置/脚本同步修改**：
+  - [x] `tools/jbrowse/jbrowse_config.yaml` — fasta/fai/预设轨道路径 → `omichub_data/jbrowse/`（scan_paths/upload_dir 引用 users 不动）
+  - [x] `deploy/docker/docker-compose.yml` + `docker-compose.prod.yml` — `db`/`cache` bind mount → `omichub_data/_pgdata`、`omichub_data/_redis`
+  - [x] `src/omichub/core/config.py` — `welcome_yaml`/`welcome_state_yaml` → `omichub_data/welcome/`
+- [x] **知识库运行时副本** — `docs/knowledge/` 镜像到 `/data/omichub/omichub_data/knowledge/`（含 figure/video）；新增 `data-directory-guide.md` 详细目录说明并登记到 `meta.yaml`
+- [x] **文档** — README.md 新增「数据目录结构」章节（目录树 + 子目录表 + 迁移说明）；`docs/OmicHub_数据存储排查与迁移规划报告.md` 加 omichub_data 收口更新说明 + 修正 bind mount 示例
+- [x] **验证** — ruff/YAML 校验通过；`test_docs_service` 5/5 通过；JBrowse `/tracks/` 流式读取 HTTP 206；DB/Redis 数据完整性校验通过
 
 ### 个人中心 Bento Grid 重构 ✅ 2026-07-05
 

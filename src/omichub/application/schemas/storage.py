@@ -23,6 +23,7 @@ class UserStorageUsage(OmicsHubBaseSchema):
 
     user_id: str = Field(..., description="用户 ID（即 users/ 下的目录名）")
     username: str = Field(..., description="用户名（查库映射；未映射成功时回退为目录名）")
+    nickname: str | None = Field(default=None, description="昵称（查库映射；空则前端降级用 username）")
     size: int = Field(..., description="占用磁盘空间（字节，按块大小统计）")
     percent: float = Field(..., description="占所有用户占用总和的百分比（0-100）")
 

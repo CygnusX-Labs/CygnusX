@@ -18,6 +18,7 @@ import apiClient from '@/api/client'
 interface RechargeUserOption {
   id: string
   username: string
+  nickname?: string | null
   email: string
   role: string
   status: string
@@ -53,7 +54,7 @@ const isPreset = computed(() => !!props.userId)
 // 选项来源：所有注册用户（含未开通饼干钱包的用户），避免「已有用户」选不到
 const userOptions = computed(() =>
   users.value.map((u) => ({
-    label: `${u.username}（${u.email}）`,
+    label: `${u.nickname || u.username}（${u.email}）`,
     value: u.id,
   })),
 )

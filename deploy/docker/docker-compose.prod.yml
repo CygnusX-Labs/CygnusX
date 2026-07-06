@@ -33,4 +33,5 @@ services:
   db:
     ports: []  # 不暴露数据库端口
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      # bind mount：与开发环境一致，数据固化到 /data/omichub/omichub_data/_pgdata
+      - /data/omichub/omichub_data/_pgdata:/var/lib/postgresql/data

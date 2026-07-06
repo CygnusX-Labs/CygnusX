@@ -274,6 +274,14 @@ onMounted(fetchFlows)
                   </span>
                 </div>
               </div>
+              <button
+                v-if="p.githubUrl"
+                class="flow-github-link focus-ring"
+                title="查看源码"
+                @click="openGithub($event, p.githubUrl)"
+              >
+                <NIcon :size="18"><LogoGithub /></NIcon>
+              </button>
             </div>
           </div>
         </div>
@@ -465,6 +473,12 @@ onMounted(fetchFlows)
   animation: github-wiggle 0.5s ease-in-out;
 }
 
+@keyframes github-wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-10deg); }
+  75% { transform: rotate(10deg); }
+}
+
 /* ===== All Flows Grid ===== */
 .all-flows-section {
   margin-bottom: 24px;
@@ -507,6 +521,35 @@ onMounted(fetchFlows)
   border-color: var(--neutral-text-1);
   transform: translateY(-1px);
   box-shadow: 0 2px 8px color-mix(in srgb, var(--neutral-text-1) 6%, transparent);
+}
+
+.flow-github-link {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  color: var(--neutral-text-3);
+  opacity: 0;
+  transition: opacity 0.2s ease, color 0.2s ease;
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.flow-card:hover .flow-github-link {
+  opacity: 1;
+}
+
+.flow-card:hover .flow-version {
+  opacity: 0;
+}
+
+.flow-github-link:hover {
+  color: #24292f;
+  animation: github-wiggle 0.5s ease-in-out;
 }
 
 .flow-inner {
@@ -554,6 +597,7 @@ onMounted(fetchFlows)
   font-size: 11px;
   color: var(--neutral-text-3);
   flex-shrink: 0;
+  transition: opacity 0.2s ease;
 }
 
 .flow-desc {

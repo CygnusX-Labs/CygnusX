@@ -1,7 +1,7 @@
 """JBrowse 2 外置 YAML 配置加载器 —— 参考基因组 / 预设轨道 / 扫描与上传策略。
 
-配置文件路径由 settings.jbrowse_config_yaml 决定（默认 data/jbrowse_config.yaml，
-与 ai_providers.yaml / OmicHub.yaml 同目录，容器内 :ro 挂载即可读）。
+配置文件路径由 settings.jbrowse_config_yaml 决定（默认 tools/jbrowse/jbrowse_config.yaml，
+集中配置于 tools/<工具名>/ 目录，容器内经 tools/ 挂载 :ro 可读；与 enrichment 同模式）。
 
 热重载策略：
 - ConfigManager 单例缓存解析后的 JBrowseConfig，按文件 mtime 判定是否需要重新解析；

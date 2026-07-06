@@ -1,46 +1,51 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import type { Component } from 'vue'
+import { NIcon } from 'naive-ui'
 import {
-  ScanOutline, SearchOutline, ColorPaletteOutline, LayersOutline,
+  ScanOutline, SearchOutline, ColorPaletteOutline, LayersOutline, BarChartOutline,
+  AppsOutline, FlaskOutline, BonfireOutline, CalculatorOutline, SwapHorizontalOutline,
 } from '@vicons/ionicons5'
 import ToolCard from '@/components/bio-tools/ToolCard.vue'
+import AppLoading from '@/components/AppLoading.vue'
+import { useApi } from '@/composables/useApi'
+import { fetchTools } from '@/api/tools'
+import type { ToolItem } from '@/types/tools'
 
 const router = useRouter()
 
-const tools = [
-  {
-    key: 'fastq-qc',
-    title: 'FASTQ 极速质控',
-    description: '高通量测序数据质量评估与清洗，支持 Phred 过滤、接头去除、长度截断',
-    icon: ScanOutline,
-    gradient: 'linear-gradient(135deg, #165DFF 0%, #6B8DD6 100%)',
-    to: '/tools/fastq-qc',
-  },
-  {
-    key: 'jbrowse',
-    title: 'Web 基因组浏览器',
-    description: '基于 JBrowse 2，支持 BAM / BigWig / VCF / GFF3 在线浏览，外置 YAML 配置参考基因组',
-    icon: LayersOutline,
-    gradient: 'linear-gradient(135deg, #722ED1 0%, #B37FEB 100%)',
-    to: '/tools/jbrowse',
-  },
-  {
-    key: 'blast',
-    title: '序列检索 BLAST',
-    description: '本地化序列比对检索，支持水稻泛基因组、生菜转录本等自定义数据库',
-    icon: SearchOutline,
-    gradient: 'linear-gradient(135deg, #FF7D00 0%, #FF9A2E 100%)',
-    to: '/tools/blast',
-  },
-  {
-    key: 'plot',
-    title: '组学绘图工坊',
-    description: '交互式数据可视化，支持散点图、热图、火山图、箱线图等组学常用图表',
-    icon: ColorPaletteOutline,
-    gradient: 'linear-gradient(135deg, #8E54E9 0%, #B96CD4 100%)',
-    to: '/tools/plot',
-  },
-]
+/**
+ * 图标字符串 key → @vicons/ionicons5 组件映射表。
+ * tools_setting.yaml 的 icon 字段是字符串（YAML 不能承载 Vue 组件），
+ * 故新增工具若用新图标，须在此登记；未登记的 key 回退到 AppsOutline。
+ */
+const ICON_MAP: Record<string, Component> = {
+  ScanOutline,
+  SearchOutline,
+  ColorPaletteOutline,
+  LayersOutline,
+  BarChartOutline,
+  AppsOutline,
+  BonfireOutline,
+  CalculatorOutline,
+  SwapHorizontalOutline,
+}
+
+function resolveIcon(key: string): Component {
+  return ICON_MAP[key] ?? AppsOutline
+}
+
+const {
+  data: tools,
+  loading,
+  execute: fetchToolsList,
+} = useApi<ToolItem[]>(fetchTools, { initialData: [] })
+
+/** useApi 返回 Ref<T | undefined>，模板里统一经此 computed 兜底为数组 */
+const toolList = computed<ToolItem[]>(() => tools.value ?? [])
+
+fetchToolsList()
 </script>
 
 <template>
@@ -50,16 +55,30 @@ const tools = [
       <p class="page-subtitle">集成常用生物信息学分析工具，从质控到可视化一站式完成</p>
     </div>
 
-    <div class="tools-grid">
+    <!-- 加载态 -->
+    <div v-if="loading && !toolList.length" class="tools-loading">
+      <AppLoading text="加载工具箱..." />
+    </div>
+
+    <div v-else-if="toolList.length" class="tools-grid">
       <ToolCard
-        v-for="tool in tools"
+        v-for="tool in toolList"
         :key="tool.key"
         :title="tool.title"
         :description="tool.description"
-        :icon="tool.icon"
+        :icon="resolveIcon(tool.icon)"
         :gradient="tool.gradient"
-        @click="router.push(tool.to)"
+        @click="router.push(tool.route)"
       />
+    </div>
+
+    <!-- 空状态 -->
+    <div v-else class="tools-empty">
+      <NIcon :size="64" class="empty-icon">
+        <FlaskOutline />
+      </NIcon>
+      <p class="empty-title">暂无可用工具</p>
+      <p class="empty-hint">请在 tools/tools_setting.yaml 中启用工具</p>
     </div>
 
     <div class="hub-footer">
@@ -70,7 +89,7 @@ const tools = [
 
 <style scoped>
 .tools-hub-page {
-  padding: 24px;
+  padding: 16px;
   min-height: 100%;
 }
 .page-header {
@@ -92,6 +111,29 @@ const tools = [
   grid-template-columns: repeat(2, 1fr);
   gap: 16px;
   margin-bottom: 32px;
+}
+.tools-loading,
+.tools-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 24px;
+}
+.empty-icon {
+  color: var(--neutral-text-3, #c9cdd4);
+  margin-bottom: 16px;
+}
+.empty-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--neutral-text-3, #86909c);
+  margin: 0 0 4px;
+}
+.empty-hint {
+  font-size: 12px;
+  color: var(--neutral-text-3, #c9cdd4);
+  margin: 0;
 }
 .hub-footer {
   text-align: center;

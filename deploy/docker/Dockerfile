@@ -21,6 +21,8 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src/ ./src/
 COPY alembic.ini ./
 COPY alembic/ ./alembic/
+# 工具箱配置（tools_setting.yaml + 各工具子目录 YAML）；prod 不挂源码，须打进镜像
+COPY tools/ ./tools/
 
 # 安装项目本身
 RUN uv sync --frozen --no-dev
@@ -40,6 +42,7 @@ COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src /app/src
 COPY --from=builder /app/alembic.ini /app/alembic.ini
 COPY --from=builder /app/alembic /app/alembic
+COPY --from=builder /app/tools /app/tools
 
 # 设置环境变量
 ENV PATH="/app/.venv/bin:$PATH"

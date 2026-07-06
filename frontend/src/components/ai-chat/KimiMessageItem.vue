@@ -315,56 +315,13 @@ function handleEdit() {
         </div>
       </div>
 
-      <div
-        v-if="thoughtContent"
-        class="thinking-process"
-        :class="{ 'is-thinking': isThinking }"
-      >
-        <div class="thinking-header" @click="showThought = !showThought">
-          <span class="thinking-icon">
-            <svg class="bulb-glow" viewBox="0 0 24 24" width="18" height="18">
-              <defs>
-                <linearGradient id="bulbGradient" x1="5" y1="2" x2="19" y2="18">
-                  <stop offset="0%" stop-color="#6366f1" />
-                  <stop offset="100%" stop-color="#a855f7" />
-                </linearGradient>
-              </defs>
-              <path
-                fill="url(#bulbGradient)"
-                d="M12 2C8.13 2 5 5.13 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.87-3.13-7-7-7z"
-              />
-            </svg>
-          </span>
-          <span class="thinking-title">
-            {{ isThinking ? '思考过程' : `已深度思考${message.thinkingDuration ? `（用时 ${message.thinkingDuration.toFixed(1)} 秒）` : ''}` }}
-          </span>
-          <span v-if="isThinking" class="thinking-status active">
-            <span class="pulse-dot" />
-            分析中...
-          </span>
-          <n-icon size="14" class="thinking-arrow" :class="{ expanded: showThought }">
-            <ChevronForwardOutline />
-          </n-icon>
-        </div>
-        <n-collapse-transition>
-          <div v-show="showThought" class="thinking-content">
-            <pre>{{ thoughtContent }}</pre>
-          </div>
-        </n-collapse-transition>
-      </div>
-
-      <!-- 骨架屏：生成中且暂无内容 -->
+      <!-- 生成中纯文本提示：已移除思考过程面板与骨架屏，仅保留静态文字 -->
       <transition name="fade">
         <div
           v-if="isStreaming && showSkeleton && !streamingHasContent && !isError && !isEmpty"
-          class="skeleton-container"
+          class="waiting-hint-static"
         >
-          <div class="skeleton-line" style="width: 92%" />
-          <div class="skeleton-line" style="width: 78%" />
-          <div class="skeleton-line" style="width: 64%" />
-          <div class="skeleton-line" style="width: 85%" />
-          <div class="skeleton-paragraph" />
-          <div class="waiting-hint">🌌 星尘正在穿越神经网络，请稍候...</div>
+          星尘正在穿越神经网络，请稍候...
         </div>
       </transition>
 
@@ -629,135 +586,13 @@ function handleEdit() {
   50% { opacity: 0; }
 }
 
-/* 思考过程折叠区 */
-.thinking-process {
+/* 生成中纯文本提示（替代原骨架屏 + 思考过程面板） */
+.waiting-hint-static {
   width: 90%;
-  margin-bottom: 8px;
-}
-.thinking-process.is-thinking .thinking-header {
-  background: linear-gradient(135deg, #f5f3ff 0%, #eef2ff 100%);
-  border-color: rgba(168, 85, 247, 0.35);
-  animation: thinking-pulse 2.4s ease-in-out infinite;
-}
-@keyframes thinking-pulse {
-  0%, 100% { background: linear-gradient(135deg, #f8f7ff 0%, #f0f4ff 100%); }
-  50% { background: linear-gradient(135deg, #f0ebff 0%, #e8eeff 100%); }
-}
-.thinking-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: #f8f9ff;
-  border: 1px solid #e8ecff;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
+  padding: 8px 0;
   font-size: 13px;
-  color: var(--chat-accent, #4A6CF7);
-}
-.thinking-header:hover {
-  background: #f0f3ff;
-}
-.thinking-icon {
-  display: flex;
-  align-items: center;
-  font-size: 16px;
-}
-.bulb-glow {
-  filter: drop-shadow(0 0 4px rgba(168, 85, 247, 0.45));
-  animation: bulb-glow 2.4s ease-in-out infinite;
-}
-@keyframes bulb-glow {
-  0%, 100% { filter: drop-shadow(0 0 3px rgba(168, 85, 247, 0.35)); }
-  50% { filter: drop-shadow(0 0 8px rgba(168, 85, 247, 0.65)); }
-}
-.thinking-title {
-  flex: 1;
-  font-weight: 500;
-}
-.thinking-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 8px;
-  background: rgba(168, 85, 247, 0.10);
-  border-radius: 12px;
-  font-size: 11px;
-  color: #7c3aed;
-}
-.thinking-status .pulse-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #7c3aed;
-  animation: pulse-dot 1.4s ease-in-out infinite;
-}
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(0.85); }
-}
-.thinking-arrow {
-  transition: transform 0.2s ease;
-  color: #999;
-}
-.thinking-arrow.expanded {
-  transform: rotate(90deg);
-}
-.thinking-content {
-  padding: 12px 16px;
-  background: #fafbff;
-  border: 1px solid #e8ecff;
-  border-top: none;
-  border-radius: 0 0 10px 10px;
-  font-size: 13px;
-  color: var(--chat-text-secondary, #666);
-  line-height: 1.7;
-  max-height: 300px;
-  overflow-y: auto;
-}
-.thinking-content pre {
-  white-space: pre-wrap;
-  word-break: break-word;
-  margin: 0;
-  font-family: inherit;
-}
-
-/* 骨架屏 */
-.skeleton-container {
-  width: 90%;
-  padding: 16px 20px;
-  background: var(--chat-ai-card, #ffffff);
-  border: 1px solid var(--chat-border, #f0f0f0);
-  border-radius: 12px;
-  margin-bottom: 8px;
-}
-.skeleton-line,
-.skeleton-paragraph {
-  height: 14px;
-  margin-bottom: 10px;
-  border-radius: 6px;
-  background: linear-gradient(
-    90deg,
-    rgba(99, 102, 241, 0.08) 0%,
-    rgba(168, 85, 247, 0.14) 50%,
-    rgba(99, 102, 241, 0.08) 100%
-  );
-  background-size: 200% 100%;
-  animation: stardust-shimmer 1.8s linear infinite;
-}
-.skeleton-paragraph {
-  height: 64px;
-}
-.waiting-hint {
-  margin-top: 12px;
-  font-size: 12px;
-  color: var(--chat-text-muted, #999);
-  text-align: center;
-}
-@keyframes stardust-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  color: var(--chat-text-muted, #86909c);
+  line-height: 1.6;
 }
 
 /* 空内容 / 错误态 */

@@ -71,6 +71,8 @@ export interface UserStorageUsage {
   user_id: string
   /** 用户名（库中查不到时回退为目录名） */
   username: string
+  /** 昵称（空则前端降级用 username） */
+  nickname?: string | null
   /** 占用磁盘空间（字节） */
   size: number
   /** 占所有用户占用总和的百分比（0-100） */

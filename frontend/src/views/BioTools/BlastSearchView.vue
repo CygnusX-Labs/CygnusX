@@ -166,7 +166,7 @@ Sbjct  49  AGCAGCAG AGCAGCAGCAGCGACGACGACGACGA GGCAGGCGGCGGC  96`
 
 <style scoped>
 .blast-page {
-  padding: 24px;
+  padding: 16px;
   min-height: 100%;
 }
 .page-toolbar {
@@ -184,7 +184,7 @@ Sbjct  49  AGCAGCAG AGCAGCAGCAGCGACGACGACGACGA GGCAGGCGGCGGC  96`
 .blast-layout {
   display: grid;
   grid-template-columns: 360px 1fr;
-  gap: 20px;
+  gap: 16px;
   align-items: start;
 }
 .input-card {

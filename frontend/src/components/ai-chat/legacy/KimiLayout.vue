@@ -20,6 +20,7 @@ import KimiMessageList from '../KimiMessageList.vue'
 import KimiChatInput from '../KimiChatInput.vue'
 import ModelNavBar from './ModelNavBar.vue'
 import apiClient from '@/api/client'
+import { displayName } from '@/utils/displayName'
 import { useChatSessionStore } from '@/stores/chatSession'
 import { useChatAssistantStore } from '@/stores/chatAssistant'
 import { useChatStore } from '@/stores/chat'
@@ -40,7 +41,7 @@ const aiConfigured = ref(true)
 
 const userInfo = computed(() => ({
   id: String(authStore.user?.id ?? ''),
-  name: authStore.user?.username || '用户',
+  name: displayName(authStore.user) || '用户',
   avatar: '',
   role: authStore.user?.role === 'admin' ? '管理员' : '普通用户',
   roleTag: authStore.user?.role === 'admin' ? 'Admin' : 'User',

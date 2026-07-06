@@ -34,6 +34,7 @@ async def list_users(
         select(
             UserModel.id,
             UserModel.username,
+            UserModel.nickname,
             UserModel.email,
             UserModel.role,
             UserModel.status,
@@ -56,6 +57,7 @@ async def list_users(
         {
             "id": str(row.id),
             "username": row.username,
+            "nickname": row.nickname,
             "email": row.email,
             "role": row.role,
             "status": row.status,

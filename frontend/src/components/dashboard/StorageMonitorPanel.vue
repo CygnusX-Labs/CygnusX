@@ -84,7 +84,7 @@ const pieOption = computed(() => ({
       itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
       label: { show: false },
       emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
-      data: users.value.map((u) => ({ name: u.username, value: u.size })),
+      data: users.value.map((u) => ({ name: u.nickname || u.username, value: u.size })),
     },
   ],
 }))
@@ -156,7 +156,7 @@ const pieOption = computed(() => ({
           <div class="users-list">
             <div v-for="(u, i) in users" :key="u.user_id" class="user-row">
               <span class="user-rank" :class="rankClass(i)">{{ i + 1 }}</span>
-              <span class="user-name" :title="u.username">{{ u.username }}</span>
+              <span class="user-name" :title="u.nickname || u.username">{{ u.nickname || u.username }}</span>
               <span class="user-size">{{ formatBytes(u.size) }}</span>
               <span class="user-percent">{{ u.percent.toFixed(1) }}%</span>
             </div>

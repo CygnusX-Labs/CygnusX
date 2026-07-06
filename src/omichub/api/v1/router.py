@@ -12,7 +12,6 @@ from omichub.api.v1 import (
     downloads,
     files,
     flows,
-    jbrowse,
     llm,
     mcp,
     notification,
@@ -34,6 +33,7 @@ from omichub.api.v1.admin import skills as admin_skills
 from omichub.api.v1.admin import stats as admin_stats
 from omichub.api.v1.admin import storage as admin_storage
 from omichub.api.v1.admin import users as admin_users
+from omichub.tools import register_tool_routers
 
 api_router = APIRouter()
 
@@ -76,4 +76,7 @@ api_router.include_router(notification.router, prefix="/notifications", tags=["N
 api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])
 api_router.include_router(mcp.router, prefix="/mcp", tags=["MCP"])
 api_router.include_router(sandbox.router, prefix="/sandbox", tags=["Sandbox"])
-api_router.include_router(jbrowse.router, prefix="/jbrowse", tags=["JBrowse 基因组浏览器"])
+
+# 生信工具箱：自动发现 omichub.tools.<工具>.api 并挂载（每个工具自声明 prefix/tags）
+# 新增工具无需改本文件 —— 在 src/omichub/tools/<工具名>/api.py 声明 router/prefix/tags 即可。
+register_tool_routers(api_router)
