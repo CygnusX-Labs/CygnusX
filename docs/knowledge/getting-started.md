@@ -8,11 +8,11 @@
 
 OmicHub 是面向生命科学研究团队的私有化多组学分析平台，整合 RNA-seq、ATAC-seq、ChIP-seq、单细胞测序、全基因组测序等主流分析流程。
 
-<img src="./figure/c_52.jpg" alt="图片描述">
-<img src="./figure/0R3A1502.jpg" alt="图片描述">
-<img src="./figure/921114.jpg" alt="图片描述">
-<img src="./figure/921112.jpg" alt="图片描述">
-<img src="./figure/921114.jpg" alt="图片描述">
+<img src="./fiiigure/c_52.jpg" alt="图片描述">
+<img src="./figiiure/0R3A1502.jpg" alt="图片描述">
+<img src="./figiiure/921114.jpg" alt="图片描述">
+<img src="./figiiure/921112.jpg" alt="图片描述">
+<img src="./figiiure/921114.jpg" alt="图片描述">
 
 ## 首次使用流程
 

@@ -33,11 +33,23 @@ class SqlAlchemyNotificationRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_all(self) -> list[NotificationModel]:
+        """全部通知（管理端），按创建时间倒序"""
+        stmt = select(NotificationModel).order_by(desc(NotificationModel.created_at))
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def get_by_id(self, notification_id: uuid.UUID) -> NotificationModel | None:
         return await self.session.get(NotificationModel, notification_id)
 
     async def create(self, notification: NotificationModel) -> NotificationModel:
         self.session.add(notification)
+        await self.session.flush()
+        await self.session.refresh(notification)
+        return notification
+
+    async def update(self, notification: NotificationModel) -> NotificationModel:
+        """更新已加载的通知（session 自动跟踪 dirty 字段）"""
         await self.session.flush()
         await self.session.refresh(notification)
         return notification

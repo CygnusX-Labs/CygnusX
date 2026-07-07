@@ -49,8 +49,8 @@ async function copyMessage() {
         v-if="isUser"
         round
         :size="36"
-        color="#e8f0fe"
-        style="color: #165dff; font-weight: 600"
+        color="var(--arco-primary-light)"
+        style="color: var(--arco-primary); font-weight: 600"
       >
         我
       </NAvatar>
@@ -170,12 +170,12 @@ async function copyMessage() {
   word-break: break-word;
 }
 .message-user .message-content {
-  background: #e8f0fe;
-  color: #1d2129;
+  background: var(--arco-primary-light);
+  color: var(--neutral-text-1);
 }
 .error-content {
-  background: #fff2f0 !important;
-  color: #cf1322;
+  background: var(--arco-danger-light) !important;
+  color: var(--arco-danger);
 }
 .reasoning-block {
   margin-bottom: 6px;

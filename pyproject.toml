@@ -38,6 +38,8 @@ dependencies = [
     "cryptography>=42.0.0",
     # 代码执行沙盒（容器池）
     "docker>=7.0.0",
+    # 终端 WebSocket 代理
+    "aiohttp>=3.9.0",
     # 工作流
     "snakemake>=8.0.0",
     # 文件处理

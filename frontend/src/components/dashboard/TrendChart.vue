@@ -32,16 +32,16 @@ const loading = ref(false)
 const trendOption = computed(() => ({
   tooltip: {
     trigger: 'axis',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E5E6EB',
+    backgroundColor: 'var(--neutral-card)',
+    borderColor: 'var(--neutral-border)',
     borderWidth: 1,
-    textStyle: { color: '#1D2129', fontSize: 12 },
+    textStyle: { color: 'var(--neutral-text-1)', fontSize: 12 },
     extraCssText: 'box-shadow: 0 4px 20px rgba(0,0,0,0.08); border-radius: 8px;',
   },
   legend: {
     data: ['分析任务数', '样本数量'],
     bottom: 0,
-    textStyle: { color: '#4E5969', fontSize: 12 },
+    textStyle: { color: 'var(--neutral-text-2)', fontSize: 12 },
     itemWidth: 10,
     itemHeight: 10,
   },
@@ -49,28 +49,28 @@ const trendOption = computed(() => ({
   xAxis: {
     type: 'category',
     data: trendData.value.map((d) => d.date),
-    axisLine: { lineStyle: { color: '#E5E6EB' } },
+    axisLine: { lineStyle: { color: 'var(--neutral-border)' } },
     axisTick: { show: false },
-    axisLabel: { color: '#86909C', fontSize: 12 },
+    axisLabel: { color: 'var(--neutral-text-3)', fontSize: 12 },
   },
   yAxis: [
     {
       type: 'value',
       name: '任务数',
-      nameTextStyle: { color: '#86909C', fontSize: 11, align: 'left', padding: [0, 0, 0, -20] },
+      nameTextStyle: { color: 'var(--neutral-text-3)', fontSize: 11, align: 'left', padding: [0, 0, 0, -20] },
       axisLine: { show: false },
       axisTick: { show: false },
-      splitLine: { lineStyle: { color: '#E5E6EB', type: 'dashed' } },
-      axisLabel: { color: '#86909C', fontSize: 12 },
+      splitLine: { lineStyle: { color: 'var(--neutral-border)', type: 'dashed' } },
+      axisLabel: { color: 'var(--neutral-text-3)', fontSize: 12 },
     },
     {
       type: 'value',
       name: '样本数',
-      nameTextStyle: { color: '#86909C', fontSize: 11, align: 'right', padding: [0, -20, 0, 0] },
+      nameTextStyle: { color: 'var(--neutral-text-3)', fontSize: 11, align: 'right', padding: [0, -20, 0, 0] },
       axisLine: { show: false },
       axisTick: { show: false },
       splitLine: { show: false },
-      axisLabel: { color: '#86909C', fontSize: 12 },
+      axisLabel: { color: 'var(--neutral-text-3)', fontSize: 12 },
     },
   ],
   series: [
@@ -78,7 +78,7 @@ const trendOption = computed(() => ({
       name: '分析任务数',
       type: 'bar',
       data: trendData.value.map((d) => d.tasks),
-      itemStyle: { color: '#165DFF', borderRadius: [4, 4, 0, 0] },
+      itemStyle: { color: 'var(--arco-primary)', borderRadius: [4, 4, 0, 0] },
       barMaxWidth: 32,
     },
     {
@@ -86,8 +86,8 @@ const trendOption = computed(() => ({
       type: 'line',
       yAxisIndex: 1,
       data: trendData.value.map((d) => d.samples),
-      itemStyle: { color: '#FF7D00' },
-      lineStyle: { color: '#FF7D00', width: 2 },
+      itemStyle: { color: 'var(--arco-warning)' },
+      lineStyle: { color: 'var(--arco-warning)', width: 2 },
       symbol: 'circle',
       symbolSize: 6,
       smooth: true,
@@ -156,8 +156,8 @@ onMounted(fetchTrend)
 
 <style scoped>
 .arco-card {
-  background: var(--neutral-card-bg, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
   border-radius: 12px;
   padding: 16px 20px;
   min-width: 0;
@@ -173,7 +173,7 @@ onMounted(fetchTrend)
 .arco-card-title {
   font-size: 15px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
 }
 
 .days-toggle {
@@ -183,7 +183,7 @@ onMounted(fetchTrend)
 }
 
 .cal-icon {
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
   margin-left: 2px;
 }
 

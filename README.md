@@ -351,6 +351,10 @@ deploy/docker/        Docker 部署配置
   docker-compose.prod.yml  生产环境 override
   nginx/nginx.conf   nginx 配置 (bind mount 挂载 frontend/dist)
 flows/                Snakemake 流程 YAML (rna_seq/atac_seq)
+tools/                生信工具箱工具配置 (YAML 热重载)
+  terminal/           云端沙盒终端 (Dockerfile + terminal_config.yaml)
+  jbrowse/            JBrowse 2 基因组浏览器配置
+  enrichments/        KEGG/GO 富集分析物种配置
 data/                 AI Provider YAML 配置
 docs/                 架构设计文档
   knowledge/         实验室知识库 (meta.yaml 导航 + *.md 正文)
@@ -401,6 +405,76 @@ docker compose -f deploy/docker/docker-compose.yml down
 docker compose -f deploy/docker/docker-compose.worker.yml down
 sudo rsync -aP --info=progress2 /data/omichub/ <目标机>:/data/omichub/
 ```
+
+## 日志排查
+
+平台日志统一收口到宿主机 `/data/omichub/logs/`（由 Docker bind mount 映射到容器内 `/app/logs`、`/logs`、`/var/log/nginx`），容器重建后日志不丢失。
+
+### 目录结构
+
+```
+/data/omichub/logs/
+├── app/                          # 应用服务日志（web / beat / worker）
+│   ├── omichub.log               # 可读文本主日志（loguru 轮转）
+│   ├── omichub.json.log          # 结构化 JSON 日志，供 Loki/Promtail 抓取
+│   └── error.log                 # ERROR 级别以上单独抽离
+├── nginx/
+│   ├── access.log                # Nginx JSON 结构化访问日志
+│   └── error.log                 # Nginx 错误日志
+├── celery/                       # Celery 任务执行日志（DB 之外的文本备份）
+│   └── tasks/
+│       └── {task_id}.log
+└── snakemake/                    # 生物信息流程日志
+    └── {project_name}/
+        └── {timestamp}/
+            ├── stdout.log
+            └── stderr.log
+```
+
+### 首次初始化
+
+新机器或清空数据后执行一次：
+
+```bash
+sudo mkdir -p /data/omichub/logs/{app,nginx,celery,snakemake}
+sudo chown -R ${PUID:-1000}:${PGID:-1000} /data/omichub/logs
+sudo chmod -R 755 /data/omichub/logs
+```
+
+### 常用排查命令
+
+```bash
+# 实时跟踪应用日志
+tail -f /data/omichub/logs/app/omichub.log
+
+# 只看 ERROR
+tail -f /data/omichub/logs/app/error.log
+
+# 按任务查 Celery 日志（task_id 可在前端任务详情或数据库 tasks 表获取）
+cat /data/omichub/logs/celery/tasks/{task_id}.log
+
+# 查看最近一次 Snakemake 流程 stdout/stderr
+ls -lt /data/omichub/logs/snakemake/{project_name}/
+
+# 统计今日 ERROR 数量
+grep "ERROR" /data/omichub/logs/app/omichub.log | wc -l
+
+# JSON 日志按服务过滤（需 jq）
+jq 'select(.extra.service == "audit")' /data/omichub/logs/app/omichub.json.log
+
+# Nginx 5xx 请求
+jq 'select(.status >= 500)' /data/omichub/logs/nginx/access.log
+```
+
+### 环境变量
+
+| 环境变量 | 说明 | 默认值 |
+|----------|------|--------|
+| `SERVICE_NAME` | 服务标识（web/beat/worker） | `app` |
+| `OMICHUB_LOG_LEVEL` | 日志级别 | `INFO`（开发环境 DEBUG） |
+| `OMICHUB_LOG_DIR` | 日志根目录 | `/app/logs` |
+
+详细架构说明见项目根目录 `LOG_ARCHITECTURE.md`。
 
 ## 常用命令
 
@@ -694,6 +768,59 @@ items:
 - 原子写：先写 `.tmp` 再 `replace`，避免写一半损坏文件。
 
 > 新增文档：在 `meta.yaml` 的 `items` 加一条，并在 `docs/knowledge/` 放对应 `.md` 文件即可（可热更新，无需迁移）。
+
+## 云端沙盒终端
+
+生信工具箱中的即用即毁隔离容器终端。用户在浏览器中获得交互式 bash shell，容器挂载个人工作目录，退出即销毁。
+
+### 架构
+
+```
+浏览器 xterm.js  ──WebSocket──>  FastAPI 双向代理  ──aiohttp WS──>  容器内 ttyd:7681 (bash)
+                                      │
+                              DockerManager (创建/销毁)
+                                      │
+                              /data/omichub/users/{uid}/workspace  ←bind mount→  /home/omichub/workspace
+```
+
+### 启用与配置
+
+1. 构建镜像（`make docker-reload` 自动执行，或手动）：
+
+   ```bash
+   docker build -t omichub/sandbox-terminal:latest tools/terminal/docker/
+   ```
+
+2. 确保隔离网络存在（`make docker-reload` 自动创建）：
+
+   ```bash
+   docker network create omichub-sandbox-net
+   ```
+
+3. 所有运行参数集中在 `tools/terminal/terminal_config.yaml`，修改后**自动热重载**（无需重启）：
+
+   | 关键参数 | 默认值 | 说明 |
+   |---------|--------|------|
+   | `enabled` | `true` | 功能开关 |
+   | `image.name:tag` | `omichub/sandbox-terminal:latest` | 容器镜像 |
+   | `default_resources.memory_mb` | `512` | 内存上限 |
+   | `lifecycle.idle_timeout` | `1800` (30min) | 空闲超时 |
+   | `lifecycle.max_sessions_per_user` | `2` | 单用户最大并发 |
+   | `storage.workspace_base` | `/data/omichub/users` | 用户目录基路径 |
+
+### 安全策略
+
+- **根文件系统只读** (`read_only=True`)，仅 workspace 和 tmpfs 可写
+- **cap_drop ALL** + **no-new-privileges**，容器内非 root (`user 1000:1000`)
+- **内存/CPU/PID 硬限制**，防止单用户耗尽资源
+- **目录隔离**：仅挂载 `/data/omichub/users/{uid}/workspace`，无法访问其他用户或系统路径
+- **即用即毁**：`auto_remove=True`，容器退出后自动删除
+
+### 预装工具
+
+samtools, bcftools, bedtools, fastqc, seqkit, python3 (numpy/pandas/biopython/pysam), vim, htop, jq
+
+详细架构与代码分布见 `tools/terminal/README.md`。
 
 ## 文档
 

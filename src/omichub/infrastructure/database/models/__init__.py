@@ -7,6 +7,7 @@
 from omichub.infrastructure.database.models.agent import AgentTemplateModel
 from omichub.infrastructure.database.models.ai import ConversationModel, MessageModel
 from omichub.infrastructure.database.models.ai_provider import AIProviderConfigModel
+from omichub.infrastructure.database.models.announcement import AnnouncementModel
 from omichub.infrastructure.database.models.audit_log import AuditLogModel
 from omichub.infrastructure.database.models.chat import (
     ChatAssistantModel,
@@ -30,6 +31,7 @@ from omichub.infrastructure.database.models.mcp import MCPServerModel
 from omichub.infrastructure.database.models.notification import NotificationModel
 from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
 from omichub.infrastructure.database.models.sandbox import SandboxSessionModel
+from omichub.infrastructure.database.models.terminal import TerminalSessionModel
 from omichub.infrastructure.database.models.site_settings import SiteSettingModel
 from omichub.infrastructure.database.models.skill import SkillModel
 from omichub.infrastructure.database.models.task import TaskModel
@@ -51,11 +53,13 @@ __all__ = [
     "ChatMessageModel",
     "ChatAssistantModel",
     "AIProviderConfigModel",
+    "AnnouncementModel",
     "AuditLogModel",
     "MCPServerModel",
     "ReportModel",
     "ReportFileModel",
     "SandboxSessionModel",
+    "TerminalSessionModel",
     "NotificationModel",
     "SiteSettingModel",
     "SkillModel",

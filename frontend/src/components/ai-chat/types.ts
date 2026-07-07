@@ -26,7 +26,7 @@ export interface ChatMessage {
   /** Token 统计 */
   tokens?: TokenInfo
   /** 消息状态，用于流式错误/空内容识别 */
-  status?: 'complete' | 'streaming' | 'error'
+  status?: 'complete' | 'streaming' | 'error' | 'empty'
   createdAt: string
 }
 

@@ -108,3 +108,13 @@ tools:
     enabled: true
     order: 65
     config_dir: ""
+
+  - key: "terminal"
+    title: "云端沙盒终端"
+    description: "隔离容器交互式终端，预装 samtools/bedtools/python/R，退出即销毁，数据仅保留在工作目录"
+    icon: "TerminalOutline"
+    gradient: "linear-gradient(135deg, #1e1e1e 0%, #333333 100%)"
+    route: "/tools/terminal"
+    enabled: true
+    order: 70
+    config_dir: "tools/terminal"

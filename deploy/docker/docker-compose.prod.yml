@@ -13,20 +13,28 @@ services:
       # JBrowse 2 静态产物 + 数据文件（/tracks/ 路径，只读）
       - ../../pipelines/jbrowse2:/var/www/jbrowse2:ro
       - /data/omichub:/data/omichub:ro
+      # Nginx 访问/错误日志持久化到宿主机
+      - /data/omichub/logs/nginx:/var/log/nginx
 
   web:
     environment:
       - APP_ENV=production
       - APP_DEBUG=false
+      - SERVICE_NAME=web
     command: uvicorn omichub.main:app --host 0.0.0.0 --port 8000 --workers 4
     volumes:
       - /data/omichub:/data/omichub  # 任务数据（与独立 worker 栈共享同一宿主目录）
+      - /data/omichub/logs/app:/app/logs  # 应用日志持久化到宿主机
     # 不挂载 src，使用镜像内打包的代码
 
   # 注：worker 已迁至独立编排栈 docker-compose.worker.yml
   # 生产水平扩展: docker compose -f docker-compose.worker.yml --scale worker=2 up -d
 
   beat:
+    environment:
+      - SERVICE_NAME=beat
+    volumes:
+      - /data/omichub/logs/app:/app/logs  # 应用日志持久化到宿主机
     deploy:
       replicas: 1  # Beat 必须单实例
 

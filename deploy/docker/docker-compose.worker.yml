@@ -24,6 +24,7 @@ services:
       - APP_ENV=development
       - POSTGRES_HOST=db
       - REDIS_HOST=cache                 # 经 omichub_net 解析主栈 Redis 服务名
+      - SERVICE_NAME=worker
       - CELERY_BROKER_URL=redis://cache:6379/1
       - CELERY_RESULT_BACKEND=redis://cache:6379/2
       - AL_API_KEY=${AL_API_KEY}
@@ -36,6 +37,8 @@ services:
     volumes:
       # —— 核心共享存储（模拟分布式共享盘，与主栈 web 共用）——
       - /data/omichub:/data/omichub                       # 任务数据读写
+      - /data/omichub/logs/app:/app/logs                 # 应用日志持久化到宿主机
+      - /data/omichub/logs/snakemake:/logs               # Snakemake 流程日志统一落盘
       - /home/zj/pipeline:/home/zj/pipeline:ro            # Snakemake 流程代码
       - ../../src:/app/src:ro                            # 开发热重载：与 web/beat 一致，代码改动重启即生效（免重建镜像）
       - ../../alembic:/app/alembic:ro                    # 迁移脚本（与 web/beat 一致，便于排障时 exec alembic）

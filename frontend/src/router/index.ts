@@ -196,6 +196,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '格式轻量转换器', requiresAuth: true }
       },
       {
+        path: 'tools/terminal',
+        name: 'tools-terminal',
+        component: () => import('@/views/BioTools/TerminalView.vue'),
+        meta: { title: '云端沙盒终端', requiresAuth: true, fullscreen: true }
+      },
+      {
         path: 'reference-genomes',
         name: 'reference-genomes',
         component: () => import('@/views/ReferenceGenomesView.vue'),
@@ -242,6 +248,18 @@ const routes: RouteRecordRaw[] = [
         name: 'admin-ai-resources',
         component: () => import('@/views/AdminAIResourceCenterView.vue'),
         meta: { title: 'AI 资源中心', requiresAuth: true }
+      },
+      {
+        path: 'admin/announcements',
+        name: 'admin-announcements',
+        component: () => import('@/views/AdminAnnouncementsView.vue'),
+        meta: { title: '通知公告', requiresAuth: true }
+      },
+      {
+        path: 'admin/terminals',
+        name: 'admin-terminals',
+        component: () => import('@/views/AdminTerminalManagementView.vue'),
+        meta: { title: '沙盒终端管理', requiresAuth: true }
       },
     ],
   },

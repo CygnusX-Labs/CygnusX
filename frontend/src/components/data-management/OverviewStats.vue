@@ -83,14 +83,14 @@ const cards: CardDef[] = [
   align-items: center;
   gap: 14px;
   box-sizing: border-box;
-  border: 1px solid rgba(229, 230, 235, 0.5);
+  border: 1px solid var(--neutral-border);
 }
 .stat-icon {
   width: 40px;
   height: 40px;
   border-radius: var(--radius-md, 12px);
-  background: #F5F8FF;
-  color: #165DFF;
+  background: var(--arco-primary-light);
+  color: var(--arco-primary);
   display: flex;
   align-items: center;
   justify-content: center;

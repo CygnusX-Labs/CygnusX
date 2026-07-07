@@ -350,7 +350,7 @@ onMounted(() => {
 <style scoped>
 .reports-page {
   min-height: 100%;
-  background: #f5f7fa;
+  background: var(--neutral-bg);
   padding: 24px;
 }
 .reports-header {
@@ -363,12 +363,12 @@ onMounted(() => {
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: #1f2329;
+  color: var(--neutral-text-1);
   margin: 0 0 6px;
 }
 .page-subtitle {
   font-size: 14px;
-  color: #8f959e;
+  color: var(--neutral-text-2);
   margin: 0;
 }
 
@@ -386,15 +386,15 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
   padding: 16px 20px;
-  background: #fff;
+  background: var(--neutral-card);
   border-radius: 16px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(229, 230, 235, 0.6);
+  border: 1px solid var(--neutral-border);
   margin-bottom: 20px;
   flex-wrap: wrap;
 }
 .filter-bar :deep(.n-input) {
-  background: #f0f2f5;
+  background: var(--neutral-hover);
   border-radius: 10px;
   transition: all 0.2s ease;
   --n-border: none !important;
@@ -407,8 +407,8 @@ onMounted(() => {
   border: none !important;
 }
 .filter-bar :deep(.n-input.n-input--focus) {
-  background: #fff;
-  box-shadow: 0 0 0 2px rgba(22, 93, 255, 0.12), 0 0 0 4px rgba(142, 84, 233, 0.06);
+  background: var(--neutral-card);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--arco-primary) 12%, transparent), 0 0 0 4px color-mix(in srgb, var(--kimi-chart-4) 6%, transparent);
 }
 .filter-bar :deep(.n-input .n-input__input-el),
 .filter-bar :deep(.n-input .n-input__placeholder) {
@@ -416,7 +416,7 @@ onMounted(() => {
 }
 .filter-bar :deep(.n-base-selection) {
   border: none;
-  background: #f0f2f5;
+  background: var(--neutral-hover);
   border-radius: 10px;
   font-size: 13px;
   transition: all 0.2s ease;
@@ -426,19 +426,19 @@ onMounted(() => {
   border: none !important;
 }
 .filter-bar :deep(.n-base-selection:hover) {
-  background: #e8eaed;
+  background: var(--neutral-hover);
 }
 .filter-bar :deep(.n-base-selection--active),
 .filter-bar :deep(.n-base-selection--focus) {
-  background: #fff;
-  box-shadow: 0 0 0 2px rgba(22, 93, 255, 0.12), 0 0 0 4px rgba(142, 84, 233, 0.06);
+  background: var(--neutral-card);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--arco-primary) 12%, transparent), 0 0 0 4px color-mix(in srgb, var(--kimi-chart-4) 6%, transparent);
 }
 .refresh-btn {
-  color: #8f959e;
+  color: var(--neutral-text-2);
   transition: color 0.2s;
 }
 .refresh-btn:hover {
-  color: #165dff;
+  color: var(--arco-primary);
 }
 
 /* 报告卡片列表 */
@@ -449,7 +449,7 @@ onMounted(() => {
   margin-bottom: 24px;
 }
 .report-card--highlight {
-  box-shadow: inset 0 0 0 2px #165dff, 0 8px 24px rgba(22, 93, 255, 0.1) !important;
+  box-shadow: inset 0 0 0 2px var(--arco-primary), 0 8px 24px color-mix(in srgb, var(--arco-primary) 10%, transparent) !important;
 }
 .pagination-bar {
   display: flex;

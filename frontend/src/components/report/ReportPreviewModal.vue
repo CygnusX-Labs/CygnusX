@@ -29,7 +29,7 @@ async function loadPreview() {
     const res = await reportApi.previewReport(props.report.id)
     htmlContent.value = res.data
   } catch {
-    htmlContent.value = '<p style="color:#999;text-align:center;padding:40px 0;">报告加载失败，请尝试下载查看</p>'
+    htmlContent.value = '<p style="color:var(--neutral-text-3, #999);text-align:center;padding:40px 0;">报告加载失败，请尝试下载查看</p>'
   } finally {
     loading.value = false
   }
@@ -135,7 +135,7 @@ watch(() => props.report, (report) => {
   width: 100%;
   border-radius: 8px;
   overflow: hidden;
-  background: #fff;
+  background: var(--neutral-card);
 }
 .preview-iframe {
   width: 100%;

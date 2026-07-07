@@ -12,6 +12,7 @@ import {
   MenuOutline, ChevronForwardOutline, ChevronDownOutline,
   NotificationsOutline, HelpCircleOutline, ChatbubblesOutline, Planet, CodeSlashOutline,
   WalletOutline, PricetagOutline, SparklesOutline, ConstructOutline, LayersOutline,
+  TerminalOutline,
 } from '@vicons/ionicons5'
 import CookieBalanceBadge from '@/components/CookieBalanceBadge.vue'
 import NotificationDrawer from '@/components/NotificationDrawer.vue'
@@ -204,6 +205,8 @@ const adminNavItems = computed<NavItem[]>(() => [
       { key: 'admin-cookies-pricing', label: '饼干定价管理', to: '/admin/cookies/pricing', icon: PricetagOutline },
       { key: 'admin-ai-providers', label: 'AI 模型配置', to: '/admin/ai-providers', icon: SparklesOutline },
       { key: 'admin-ai-resources', label: 'AI 资源中心', to: '/admin/ai-resources', icon: SparklesOutline },
+      { key: 'admin-announcements', label: '通知公告', to: '/admin/announcements', icon: NotificationsOutline },
+      { key: 'admin-terminals', label: '沙盒终端管理', to: '/admin/terminals', icon: TerminalOutline },
     ],
   },
 ])

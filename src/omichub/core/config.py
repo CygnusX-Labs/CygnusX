@@ -151,6 +151,12 @@ class Settings(BaseSettings):
     sandbox_default_cpu: float = 2.0
     sandbox_default_memory: str = "4g"
 
+    # ===== 云端沙盒终端 =====
+    # 功能配置 YAML（仓库内源码管控）；改文件后由加载器 mtime 热重载。
+    terminal_config_yaml: str = "tools/terminal/terminal_config.yaml"
+    # 终端镜像配置 YAML（仓库内源码管控）；改文件后由加载器 mtime 热重载。
+    terminal_images_config_yaml: str = "tools/terminal/terminal_images.yaml"
+
     # ===== MCP 集成 =====
     mcp_enabled: bool = True
     mcp_default_timeout: int = 30

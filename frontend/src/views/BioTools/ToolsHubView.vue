@@ -6,6 +6,7 @@ import { NIcon } from 'naive-ui'
 import {
   ScanOutline, SearchOutline, ColorPaletteOutline, LayersOutline, BarChartOutline,
   AppsOutline, FlaskOutline, BonfireOutline, CalculatorOutline, SwapHorizontalOutline,
+  TerminalOutline,
 } from '@vicons/ionicons5'
 import ToolCard from '@/components/bio-tools/ToolCard.vue'
 import AppLoading from '@/components/AppLoading.vue'
@@ -30,6 +31,7 @@ const ICON_MAP: Record<string, Component> = {
   BonfireOutline,
   CalculatorOutline,
   SwapHorizontalOutline,
+  TerminalOutline,
 }
 
 function resolveIcon(key: string): Component {
@@ -98,12 +100,12 @@ fetchToolsList()
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   margin: 0 0 6px;
 }
 .page-subtitle {
   font-size: 14px;
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
   margin: 0;
 }
 .tools-grid {
@@ -121,18 +123,18 @@ fetchToolsList()
   padding: 64px 24px;
 }
 .empty-icon {
-  color: var(--neutral-text-3, #c9cdd4);
+  color: var(--neutral-text-3);
   margin-bottom: 16px;
 }
 .empty-title {
   font-size: 14px;
   font-weight: 500;
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
   margin: 0 0 4px;
 }
 .empty-hint {
   font-size: 12px;
-  color: var(--neutral-text-3, #c9cdd4);
+  color: var(--neutral-text-3);
   margin: 0;
 }
 .hub-footer {
@@ -141,7 +143,7 @@ fetchToolsList()
 }
 .footer-hint {
   font-size: 13px;
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
   margin: 0;
 }
 @media (max-width: 768px) {

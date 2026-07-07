@@ -2,7 +2,13 @@
 import { MdEditor } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
 import { useMessage } from 'naive-ui'
+import { computed } from 'vue'
 import apiClient from '@/api/client'
+import { useThemeStore } from '@/stores/theme'
+
+const themeStore = useThemeStore()
+// MdEditor.theme 默认 'light'，需同步应用主题，否则暗黑下编辑区为白底
+const mdTheme = computed<'light' | 'dark'>(() => (themeStore.isDark ? 'dark' : 'light'))
 
 const props = defineProps<{
   modelValue: string
@@ -44,6 +50,7 @@ async function handleUploadImg(files: File[], callback: (urls: string[]) => void
     <MdEditor
       :model-value="props.modelValue"
       :preview="false"
+      :theme="mdTheme"
       :toolbars-exclude="['github', 'save', 'pageFullscreen', 'catalog']"
       :style="{ height: 'calc(100vh - 220px)' }"
       placeholder="在此编写 Markdown 文档…"

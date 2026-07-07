@@ -129,20 +129,20 @@ async function copyUrl() {
   >
     <div class="w-full max-w-2xl mx-4 bg-neutral-card rounded-xl shadow-xl overflow-hidden">
       <!-- 头部 -->
-      <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-neutral-border">
         <div class="flex items-center gap-2">
           <button
             v-if="selectedFile"
-            class="text-gray-400 hover:text-gray-600 transition-colors"
+            class="text-text-tertiary hover:text-text-secondary transition-colors"
             title="返回文件选择"
             @click="back"
           >
             <NIcon :size="18"><ArrowBackOutline /></NIcon>
           </button>
-          <h3 class="text-base font-semibold text-gray-800">JBrowse 直链生成器</h3>
+          <h3 class="text-base font-semibold text-text-primary">JBrowse 直链生成器</h3>
         </div>
         <button
-          class="text-gray-400 hover:text-gray-600 transition-colors"
+          class="text-text-tertiary hover:text-text-secondary transition-colors"
           @click="close"
         >
           <NIcon :size="20"><CloseOutline /></NIcon>
@@ -151,15 +151,15 @@ async function copyUrl() {
 
       <!-- 状态 A：文件选择期 -->
       <div v-if="!selectedFile" class="p-6">
-        <p class="text-sm text-gray-500 mb-4">选择一个文件，生成可供 JBrowse 2 直接读取的直链</p>
+        <p class="text-sm text-text-secondary mb-4">选择一个文件，生成可供 JBrowse 2 直接读取的直链</p>
         <div v-if="files.length === 0" class="py-12">
           <NEmpty description="当前目录暂无文件" />
         </div>
-        <ul v-else class="max-h-96 overflow-y-auto divide-y divide-gray-100">
+        <ul v-else class="max-h-96 overflow-y-auto divide-y divide-neutral-border">
           <li
             v-for="f in files"
             :key="f.id"
-            class="flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer hover:bg-blue-50 transition-colors group"
+            class="flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer hover:bg-primary-light transition-colors group"
             @click="selectedFile = f"
           >
             <span
@@ -169,14 +169,14 @@ async function copyUrl() {
               <NIcon :size="18"><component :is="metaOf(f).icon" /></NIcon>
             </span>
             <div class="flex-1 min-w-0">
-              <p class="text-sm font-medium text-gray-800 truncate">{{ f.original_name }}</p>
-              <p class="text-xs text-gray-400 truncate">{{ f.path }}</p>
+              <p class="text-sm font-medium text-text-primary truncate">{{ f.original_name }}</p>
+              <p class="text-xs text-text-tertiary truncate">{{ f.path }}</p>
             </div>
             <span
               class="text-xs px-2 py-0.5 rounded-md font-medium flex-shrink-0"
               :class="metaOf(f).badge"
             >{{ metaOf(f).label }}</span>
-            <NIcon :size="16" class="text-gray-300 group-hover:text-blue-400 flex-shrink-0">
+            <NIcon :size="16" class="text-text-disabled group-hover:text-primary flex-shrink-0">
               <ChevronForwardOutline />
             </NIcon>
           </li>
@@ -186,7 +186,7 @@ async function copyUrl() {
       <!-- 状态 B：链接生成期 -->
       <div v-else class="p-6">
         <!-- 选中文件摘要 -->
-        <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg mb-4">
+        <div class="flex items-center gap-3 p-3 bg-neutral-bg rounded-lg mb-4">
           <span
             class="inline-flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0"
             :class="metaOf(selectedFile).badge"
@@ -194,8 +194,8 @@ async function copyUrl() {
             <NIcon :size="18"><component :is="metaOf(selectedFile).icon" /></NIcon>
           </span>
           <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-gray-800 truncate">{{ selectedFile.original_name }}</p>
-            <p class="text-xs text-gray-400 truncate">{{ selectedFile.path }}</p>
+            <p class="text-sm font-medium text-text-primary truncate">{{ selectedFile.original_name }}</p>
+            <p class="text-xs text-text-tertiary truncate">{{ selectedFile.path }}</p>
           </div>
           <span
             class="text-xs px-2 py-0.5 rounded-md font-medium flex-shrink-0"
@@ -204,12 +204,12 @@ async function copyUrl() {
         </div>
 
         <!-- 只读直链文本框 + 复制按钮 -->
-        <label class="block text-xs font-medium text-gray-500 mb-1.5">JBrowse 2 直链（URL）</label>
+        <label class="block text-xs font-medium text-text-secondary mb-1.5">JBrowse 2 直链（URL）</label>
         <div class="flex gap-2">
           <input
             :value="trackUrl"
             readonly
-            class="flex-1 min-w-0 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 font-mono focus:outline-none focus:ring-2 focus:ring-blue-200"
+            class="flex-1 min-w-0 px-3 py-2 bg-neutral-bg border border-neutral-border rounded-lg text-sm text-text-primary font-mono focus:outline-none focus:ring-2 focus:ring-primary-light"
             @focus="($event.target as HTMLInputElement).select()"
           />
           <button
@@ -234,8 +234,8 @@ async function copyUrl() {
         </div>
 
         <!-- 使用说明 -->
-        <div class="mt-4 p-3 bg-blue-50 rounded-lg">
-          <p class="text-xs text-blue-700 leading-relaxed">
+        <div class="mt-4 p-3 bg-primary-light rounded-lg">
+          <p class="text-xs text-primary leading-relaxed">
             <strong>用法：</strong>复制此链接 → 打开 JBrowse 2 → Add track → URL → 粘贴。该直链经平台 /tracks/ 网关输出，原生支持 HTTP Range（分段读取）与跨域，JBrowse 2 可流式读取大文件，无需整包下载。
           </p>
         </div>

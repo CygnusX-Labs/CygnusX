@@ -67,6 +67,7 @@ async def chat_stream(
                 attachments=request.attachments,
                 enable_web_search=request.enable_web_search,
                 enable_code_execution=request.enable_code_execution,
+                deep_thinking=request.deep_thinking,
             )
         else:
             if not request.model_id:

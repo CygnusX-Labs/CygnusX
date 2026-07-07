@@ -52,6 +52,15 @@ class CreateNotificationRequest(BaseModel):
     expires_at: datetime | None = None
 
 
+class UpdateNotificationRequest(BaseModel):
+    title: str | None = None
+    content: str | None = None
+    level: str | None = None
+    is_global: bool | None = None
+    target_user_id: str | None = None
+    expires_at: datetime | None = None
+
+
 class MarkReadResponse(BaseModel):
     id: str
     read_by: list[str]
@@ -86,6 +95,31 @@ async def create_notification(
         target_user_id=req.target_user_id,
         expires_at=req.expires_at,
     )
+    return _notification_to_dict(notification)
+
+
+@router.get("/all", summary="全部通知列表（管理员）")
+async def list_all_notifications(_admin: AdminRequired, db: DbSession):
+    repo = SqlAlchemyNotificationRepository(db)
+    service = NotificationService(repo)
+    notifications = await service.list_all()
+    return [_notification_to_dict(n) for n in notifications]
+
+
+@router.put("/{notification_id}", summary="管理员编辑通知")
+async def update_notification(
+    notification_id: UUID,
+    req: UpdateNotificationRequest,
+    _admin: AdminRequired,
+    db: DbSession,
+):
+    repo = SqlAlchemyNotificationRepository(db)
+    service = NotificationService(repo)
+    notification = await service.update(
+        str(notification_id), **req.model_dump(exclude_unset=True)
+    )
+    if notification is None:
+        raise NotFoundError("通知不存在")
     return _notification_to_dict(notification)
 
 

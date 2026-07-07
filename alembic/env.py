@@ -15,6 +15,7 @@ from omichub.infrastructure.database.base import Base
 from omichub.infrastructure.database.models import (  # noqa: F401
     ai,
     ai_provider,
+    announcement,
     cookie,
     file,
     mcp,

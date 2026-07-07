@@ -57,10 +57,10 @@ const theme = colorMap[props.color] || colorMap.blue
 <style scoped>
 .stat-card {
   transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-  background: #fff;
+  background: var(--neutral-card);
   border-radius: 16px;
   box-shadow: 0 4px 12px rgba(22, 93, 255, 0.04);
-  border: 1px solid rgba(229, 230, 235, 0.5);
+  border: 1px solid var(--neutral-border);
 }
 .stat-card:hover {
   transform: translateY(-4px);
@@ -87,7 +87,7 @@ const theme = colorMap[props.color] || colorMap.blue
 .stat-value {
   font-size: 26px;
   font-weight: 700;
-  color: #1f2329;
+  color: var(--neutral-text-1);
   line-height: 1;
   letter-spacing: -0.02em;
 }
@@ -101,7 +101,7 @@ const theme = colorMap[props.color] || colorMap.blue
 }
 .stat-title {
   font-size: 13px;
-  color: #8f959e;
+  color: var(--neutral-text-2);
   margin-top: 5px;
 }
 @keyframes breathe {

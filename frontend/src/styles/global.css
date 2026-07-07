@@ -596,3 +596,119 @@ body {
 .n-dropdown-menu {
   z-index: 2000 !important;
 }
+
+/* ===== 深色模式兜底修复 =====
+   项目中存在大量硬编码浅色样式（#fff、#f0f2f5、#E5E6EB 等）未随主题切换，
+   导致深色模式下出现白底或文字不清晰。此处通过全局覆盖兜底，让旧代码在
+   深色模式下自动使用设计令牌变量；新代码请优先直接使用 var(--*) 或 Tailwind
+   语义色（bg-neutral-card / text-text-primary 等）。
+   ===== */
+:root[data-theme="dark"] {
+  /* Tailwind bg-white 在深色模式下应使用卡片背景（保留彩色按钮上的 white） */
+  .bg-white:not(.btn-keep-white):not([class*="text-white"]) {
+    background-color: var(--neutral-card) !important;
+  }
+
+  /* 常见硬编码白色/浅色背景（inline style 与 class） */
+  [style*="background: #fff"],
+  [style*="background:#fff"],
+  [style*="background-color: #fff"],
+  [style*="background-color:#fff"],
+  [style*="background: #ffffff"],
+  [style*="background:#ffffff"],
+  [style*="background-color: #ffffff"],
+  [style*="background-color:#ffffff"] {
+    background-color: var(--neutral-card) !important;
+  }
+
+  /* 浅灰背景 */
+  [style*="background: #f7f8fa"],
+  [style*="background:#f7f8fa"],
+  [style*="background-color: #f7f8fa"],
+  [style*="background-color:#f7f8fa"],
+  [style*="background: #f0f2f5"],
+  [style*="background:#f0f2f5"],
+  [style*="background-color: #f0f2f5"],
+  [style*="background-color:#f0f2f5"],
+  [style*="background: #f2f3f5"],
+  [style*="background:#f2f3f5"],
+  [style*="background-color: #f2f3f5"],
+  [style*="background-color:#f2f3f5"] {
+    background-color: var(--neutral-hover) !important;
+  }
+
+  /* 常见硬编码主文字颜色 */
+  [style*="color: #1f2329"],
+  [style*="color:#1f2329"],
+  [style*="color: #1D2129"],
+  [style*="color:#1D2129"] {
+    color: var(--neutral-text-1) !important;
+  }
+
+  /* 常见硬编码次要文字颜色 */
+  [style*="color: #8f959e"],
+  [style*="color:#8f959e"],
+  [style*="color: #86909C"],
+  [style*="color:#86909C"],
+  [style*="color: #4e5969"],
+  [style*="color:#4e5969"] {
+    color: var(--neutral-text-2) !important;
+  }
+
+  /* 常见硬编码浅色边框 */
+  [style*="border: 1px solid #E5E6EB"],
+  [style*="border:1px solid #E5E6EB"],
+  [style*="border: 1px solid #e5e6eb"],
+  [style*="border:1px solid #e5e6eb"],
+  [style*="border-color: #E5E6EB"],
+  [style*="border-color:#E5E6EB"],
+  [style*="border-color: #e5e6eb"],
+  [style*="border-color:#e5e6eb"] {
+    border-color: var(--neutral-border) !important;
+  }
+
+  /* Naive UI 组件在深色模式下被业务代码 :deep 覆盖的兜底恢复 */
+  .n-input,
+  .n-input .n-input__input-el,
+  .n-base-selection,
+  .n-base-selection-input,
+  .n-base-selection-input__content,
+  .n-base-selection__border,
+  .n-base-selection__state-border {
+    background-color: transparent !important;
+    color: var(--neutral-text-1) !important;
+  }
+
+  /* Arco 卡片边框使用中性边框变量 */
+  .arco-card {
+    border-color: var(--neutral-border);
+  }
+
+  /* 统计卡片、报告卡片等硬编码白底兜底 */
+  .stat-card,
+  .report-card-minimal,
+  .report-stat-card,
+  .filter-bar,
+  .preview-container,
+  .reg-modal,
+  .floating-ball,
+  .report-card,
+  .task-table-card,
+  .data-card,
+  .bio-tool-panel {
+    background-color: var(--neutral-card) !important;
+  }
+
+  /* 半透明玻璃弹窗深色化 */
+  .reg-modal {
+    background-color: rgba(21, 26, 37, 0.85) !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  /* 常见报告/图表容器浅色渐变背景深色化 */
+  .report-stat-gradient,
+  .stat-icon,
+  .report-type-badge {
+    filter: brightness(0.85) saturate(0.9);
+  }
+}

@@ -215,9 +215,41 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     }
   }
 
+  /** 加载当前用户的历史会话列表（Agent-first 模式只保留绑定 agent_id 的会话） */
+  async function fetchSessions(): Promise<void> {
+    try {
+      const res = await apiClient.get<Array<{
+        session_id: string
+        title: string
+        agent_id: string | null
+        model_id: string
+        created_at: string
+        updated_at: string
+      }>>('/chat/sessions')
+      const loaded = (res.data || [])
+        .filter((s) => s.agent_id)
+        .map((s) => ({
+          id: s.session_id,
+          title: s.title,
+          agent_id: s.agent_id as string,
+          messages: [] as ChatMessage[],
+          created_at: s.created_at,
+          updated_at: s.updated_at,
+          model_id: s.model_id || undefined,
+        }))
+      // 合并正在流式中的临时会话，避免刷新时丢失
+      const tempSessions = sessions.value.filter((s) => s.id.startsWith('sess-'))
+      sessions.value = [...tempSessions, ...loaded]
+    } catch (e) {
+      console.error('加载会话列表失败:', e)
+    }
+  }
+
   /** 一次性初始化全部资产（前台页面挂载时调用） */
   async function initAssets(): Promise<void> {
-    await Promise.all([fetchAgents(true), fetchMcps(), fetchSkills(false), fetchAvailableModels()])
+    await Promise.all([
+      fetchAgents(true), fetchMcps(), fetchSkills(false), fetchAvailableModels(), fetchSessions(),
+    ])
   }
 
   // ========== 资产 Actions（后台 CRUD，调真实 API） ==========
@@ -394,9 +426,13 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     return session
   }
 
-  function selectSession(id: string) {
+  async function selectSession(id: string) {
     if (currentSessionId.value !== id) stopStreaming()
     currentSessionId.value = id
+    const session = sessions.value.find((s) => s.id === id)
+    if (session && session.messages.length === 0 && !session.id.startsWith('sess-')) {
+      await loadSessionMessages(id)
+    }
   }
 
   function newChat() {
@@ -404,8 +440,16 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     currentSessionId.value = ''
   }
 
-  function deleteSession(id: string) {
+  async function deleteSession(id: string) {
     if (currentSessionId.value === id) stopStreaming()
+    if (!id.startsWith('sess-')) {
+      try {
+        await apiClient.delete(`/chat/sessions/${id}`)
+      } catch (e) {
+        console.error('删除会话失败:', e)
+        return
+      }
+    }
     sessions.value = sessions.value.filter((s) => s.id !== id)
     if (currentSessionId.value === id) currentSessionId.value = ''
   }
@@ -587,6 +631,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         },
         onError: (error) => {
           aiMsg.content = streamingContent.value || `生成失败: ${error}`
+          aiMsg.thought = streamingThought.value || undefined
           aiMsg.status = 'error'
           aiMsg.toolCalls = (aiMsg.toolCalls || []).map((t) =>
             t.status === 'running' ? { ...t, status: 'error' as const } : t,
@@ -604,7 +649,6 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             const output = usage.completion_tokens ?? usage.output ?? 0
             const total = usage.total_tokens ?? usage.total ?? input + output
             aiMsg.tokens = { input, output, total }
-            // 同时给用户消息补上输入 token（如果 usage 包含 prompt_tokens）
             const userMsgIdx = session.messages.findIndex((m) => m.id === userMsg.id)
             if (userMsgIdx >= 0) {
               session.messages[userMsgIdx].tokens = {
@@ -612,6 +656,12 @@ export const useAgentHubStore = defineStore('agentHub', () => {
                 output: 0,
                 total: input,
               }
+            }
+          }
+          if (!aiMsg.content.trim() && !aiMsg.toolCalls?.length) {
+            aiMsg.status = aiMsg.thought ? 'empty' : 'error'
+            if (!aiMsg.thought) {
+              aiMsg.content = '当前模型响应为空，请重新发送'
             }
           }
           isStreaming.value = false
@@ -622,11 +672,21 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       },
     )
 
-    // 兜底：若流异常中断未触发 onDone/onError
-    isStreaming.value = false
-    streamingContent.value = ''
-    streamingThought.value = ''
-    releaseSessionIdLock()
+    // 兜底：若流异常中断未触发 onDone/onError（极罕见，onDone 已有内部兜底）
+    if (isStreaming.value) {
+      aiMsg.content = streamingContent.value || aiMsg.content
+      aiMsg.thought = streamingThought.value || undefined
+      if (!aiMsg.content.trim() && !aiMsg.toolCalls?.length) {
+        aiMsg.status = aiMsg.thought ? 'empty' : 'error'
+        if (!aiMsg.thought) {
+          aiMsg.content = '当前模型响应为空，请重新发送'
+        }
+      }
+      isStreaming.value = false
+      streamingContent.value = ''
+      streamingThought.value = ''
+      releaseSessionIdLock()
+    }
   }
 
   function stopStreaming() {
@@ -636,6 +696,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       const last = session.messages[session.messages.length - 1]
       if (last && last.role === 'assistant') {
         last.content = streamingContent.value || last.content || '（已停止）'
+        last.thought = streamingThought.value || undefined
       }
     }
     isStreaming.value = false
@@ -653,7 +714,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     // lookups
     getAgent, mcpsByIds, skillsByIds,
     // asset actions
-    fetchAgents, fetchMcps, fetchSkills, initAssets, fetchAvailableModels,
+    fetchAgents, fetchMcps, fetchSkills, initAssets, fetchAvailableModels, fetchSessions,
     toggleMcpStatus, addMcpServer, updateMcpServer, removeMcpServer, testMcpServer, fetchMcpTools, fetchMcpLogs,
     upsertAgent, toggleAgent, deleteAgent, setDefaultAgent,
     importSkillFromUrl, importSkillFromJson, toggleSkill, deleteSkill,

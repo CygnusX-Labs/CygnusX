@@ -153,10 +153,16 @@ function handleClick() {
 }
 
 /* Disabled state */
+:root[data-theme="dark"] .login-button--disabled .login-button__bg {
+  background: var(--neutral-hover);
+}
 .login-button--disabled .login-button__bg {
   background: #e8ecf4;
 }
 
+:root[data-theme="dark"] .login-button--disabled {
+  color: var(--neutral-text-4);
+}
 .login-button--disabled {
   color: #aeb7c7;
   cursor: not-allowed;

@@ -18,6 +18,22 @@ class NotificationService:
     async def list_for_user(self, user_id: str) -> list[NotificationModel]:
         return await self._repo.list_for_user(UUID(user_id))
 
+    async def list_all(self) -> list[NotificationModel]:
+        """管理端：全部通知"""
+        return await self._repo.list_all()
+
+    async def update(self, notification_id: str, **kwargs) -> NotificationModel | None:
+        notification = await self._repo.get_by_id(UUID(notification_id))
+        if notification is None:
+            return None
+        # target_user_id 是 UUID 字段，传字符串需转换
+        if "target_user_id" in kwargs:
+            tuid = kwargs["target_user_id"]
+            kwargs["target_user_id"] = UUID(tuid) if tuid else None
+        for key, value in kwargs.items():
+            setattr(notification, key, value)
+        return await self._repo.update(notification)
+
     async def create(
         self,
         created_by: str,

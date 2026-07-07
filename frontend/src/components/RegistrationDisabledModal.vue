@@ -188,6 +188,11 @@ function handleConfirm() {
   box-sizing: border-box;
 }
 
+:root[data-theme="dark"] .reg-modal {
+  background-color: rgba(21, 26, 37, 0.85);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
 /* ===== Lottie 动画区（放大到 140px，居中） ===== */
 .reg-lottie {
   height: 140px;
@@ -221,7 +226,7 @@ function handleConfirm() {
   text-align: center;
   font-size: 17px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--neutral-text-1);
   margin: 0 0 8px;
   word-break: break-word;
 }
@@ -231,7 +236,7 @@ function handleConfirm() {
   text-align: center;
   font-size: 15px;
   line-height: 1.6;
-  color: #4b5563;
+  color: var(--neutral-text-2);
   margin: 4px 0 18px;
   word-break: break-word;
 }
@@ -254,8 +259,8 @@ function handleConfirm() {
   max-width: 100%;
   min-width: 0;
   padding: 8px 16px;
-  background: #f0f5ff;
-  color: #165dff;
+  background: var(--arco-primary-light);
+  color: var(--arco-primary);
   border-radius: 999px;
   font-size: 13px;
   font-weight: 500;
@@ -264,12 +269,12 @@ function handleConfirm() {
 }
 
 .reg-contact-pill:hover {
-  background: #e0eaff;
+  filter: brightness(0.92);
 }
 
 .reg-pill-icon {
   flex-shrink: 0;
-  color: #165dff;
+  color: var(--arco-primary);
 }
 
 /* 邮箱文本：不截断、不换行、完整展示 */
@@ -286,18 +291,18 @@ function handleConfirm() {
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 1px solid #e5e6eb;
-  background: #fff;
+  border: 1px solid var(--neutral-border);
+  background: var(--neutral-card);
   border-radius: 999px;
-  color: #4e5969;
+  color: var(--neutral-text-2);
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .reg-copy-btn:hover {
-  background: #f7f8fa;
-  color: #165dff;
-  border-color: #bedaff;
+  background: var(--neutral-hover);
+  color: var(--arco-primary);
+  border-color: var(--arco-primary);
 }
 
 /* ===== 底部按钮（居中） ===== */

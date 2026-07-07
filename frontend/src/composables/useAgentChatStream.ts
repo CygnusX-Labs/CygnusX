@@ -114,6 +114,8 @@ export function useAgentChatStream() {
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+      let doneReceived = false
+      let errorReceived = false
 
       while (true) {
         const { done, value } = await reader.read()
@@ -126,11 +128,18 @@ export function useAgentChatStream() {
           if (!trimmed || !trimmed.startsWith('data: ')) continue
           const data = trimmed.slice(6)
           try {
-            handleStreamEvent(JSON.parse(data), callbacks)
+            const parsed = JSON.parse(data)
+            handleStreamEvent(parsed, callbacks)
+            if (parsed.type === 'done') doneReceived = true
+            if (parsed.type === 'error') errorReceived = true
           } catch {
             /* 忽略不完整 JSON */
           }
         }
+      }
+
+      if (!doneReceived && !errorReceived) {
+        callbacks.onDone?.('', '', undefined)
       }
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') {
@@ -175,9 +184,9 @@ export function useAgentChatStream() {
         cb.onError?.(content || '生成失败')
         break
       case 'done':
-        if (sessionId && messageId) {
+        {
           const usage = data.usage as TokenUsage | undefined
-          cb.onDone?.(sessionId, messageId, usage)
+          cb.onDone?.(sessionId || '', messageId || '', usage)
         }
         break
     }

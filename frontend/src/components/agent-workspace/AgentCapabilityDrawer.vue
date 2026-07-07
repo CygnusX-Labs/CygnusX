@@ -78,11 +78,11 @@ const mountedSkills = computed(() => (agent.value ? store.skillsByIds(agent.valu
 <style scoped>
 .cap-drawer { display: flex; flex-direction: column; gap: 12px; }
 .meta-row { display: flex; align-items: center; justify-content: space-between; }
-.meta-row .k { font-size: 13px; color: #888; }
+.meta-row .k { font-size: 13px; color: var(--neutral-text-3, #888); }
 .mcp-list { display: flex; flex-direction: column; gap: 12px; }
-.mcp-block { background: rgba(0,0,0,.03); border-radius: 8px; padding: 10px 12px; }
+.mcp-block { background: var(--neutral-hover, rgba(0,0,0,.03)); border-radius: 8px; padding: 10px 12px; }
 .mcp-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .mcp-name { font-weight: 600; font-size: 13px; }
-.mcp-desc { font-size: 12px; color: #888; }
-.prompt-box { font-size: 12px; color: #555; white-space: pre-wrap; line-height: 1.6; background: rgba(0,0,0,.03); padding: 10px 12px; border-radius: 8px; }
+.mcp-desc { font-size: 12px; color: var(--neutral-text-3, #888); }
+.prompt-box { font-size: 12px; color: var(--neutral-text-2, #555); white-space: pre-wrap; line-height: 1.6; background: var(--neutral-hover, rgba(0,0,0,.03)); padding: 10px 12px; border-radius: 8px; }
 </style>

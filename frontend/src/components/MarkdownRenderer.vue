@@ -81,6 +81,9 @@ async function copyCode(e: MouseEvent) {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 0.9em;
 }
+:root[data-theme="dark"] .md-body :deep(pre.hljs) {
+  background: var(--neutral-card);
+}
 .md-body :deep(pre.hljs) {
   background: #f6f8fa;
   border: 1px solid var(--neutral-border, #e5e6eb);

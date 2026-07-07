@@ -81,6 +81,6 @@ const caps = computed(() => [
 .cap-pop { font-size: 13px; }
 .cap-title { font-weight: 600; margin-bottom: 8px; }
 .cap-list { display: flex; flex-direction: column; gap: 4px; }
-.cap-item { font-size: 12px; color: #666; }
-.cap-empty { font-size: 12px; color: #aaa; }
+.cap-item { font-size: 12px; color: var(--neutral-text-2, #666); }
+.cap-empty { font-size: 12px; color: var(--neutral-text-3, #aaa); }
 </style>

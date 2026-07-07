@@ -229,11 +229,11 @@ function handlePrimaryClick() {
 
 <style scoped>
 .report-card-minimal {
-  background: #fff;
+  background: var(--neutral-card);
   border-radius: 16px;
   padding: 20px 24px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(229, 230, 235, 0.6);
+  border: 1px solid var(--neutral-border);
   transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
   cursor: pointer;
   position: relative;
@@ -241,11 +241,11 @@ function handlePrimaryClick() {
 }
 .report-card-minimal:hover {
   transform: translateY(-4px);
-  box-shadow: 0 12px 32px rgba(22, 93, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.04);
-  border-color: rgba(22, 93, 255, 0.2);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--arco-primary) 10%, transparent), 0 4px 12px rgba(0, 0, 0, 0.04);
+  border-color: color-mix(in srgb, var(--arco-primary) 20%, transparent);
 }
 .report-card-minimal:hover .report-title {
-  color: #165dff;
+  color: var(--arco-primary);
 }
 
 /* Card Header */
@@ -286,7 +286,7 @@ function handlePrimaryClick() {
 .report-title {
   font-size: 16px;
   font-weight: 500;
-  color: #1f2329;
+  color: var(--neutral-text-1);
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -296,7 +296,7 @@ function handlePrimaryClick() {
 }
 .flow-label {
   font-size: 12px;
-  color: #8f959e;
+  color: var(--neutral-text-2);
   font-weight: 500;
 }
 .header-right {
@@ -336,7 +336,7 @@ function handlePrimaryClick() {
 }
 .report-desc {
   font-size: 14px;
-  color: #8f959e;
+  color: var(--neutral-text-2);
   margin: 0;
   line-height: 1.6;
   overflow: hidden;
@@ -365,16 +365,16 @@ function handlePrimaryClick() {
   align-items: center;
   gap: 5px;
   padding: 4px 10px;
-  background: #f2f3f5;
+  background: var(--neutral-hover);
   border-radius: 6px;
   font-size: 12px;
-  color: #4e5969;
+  color: var(--neutral-text-2);
   font-weight: 500;
   line-height: 18px;
   transition: background 0.15s;
 }
 .report-card-minimal:hover .meta-tag {
-  background: #e8eaed;
+  background: var(--neutral-hover);
 }
 
 .footer-actions {
@@ -390,7 +390,7 @@ function handlePrimaryClick() {
   padding: 6px 10px;
   border: none;
   background: transparent;
-  color: #165dff;
+  color: var(--arco-primary);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -398,13 +398,13 @@ function handlePrimaryClick() {
   transition: all 0.15s;
 }
 .text-action:hover {
-  background: rgba(22, 93, 255, 0.06);
+  background: color-mix(in srgb, var(--arco-primary) 6%, transparent);
 }
 .text-action.download {
-  color: #8e54e9;
+  color: var(--kimi-chart-4);
 }
 .text-action.download:hover {
-  background: rgba(142, 84, 233, 0.06);
+  background: color-mix(in srgb, var(--kimi-chart-4) 6%, transparent);
 }
 
 .status-hint {
@@ -416,12 +416,12 @@ function handlePrimaryClick() {
   border-radius: 8px;
 }
 .status-hint.generating {
-  color: #165dff;
-  background: #e8f3ff;
+  color: var(--arco-primary);
+  background: var(--arco-primary-light);
 }
 .status-hint.failed {
-  color: #f53f3f;
-  background: #ffece8;
+  color: var(--arco-danger);
+  background: var(--arco-danger-light);
 }
 
 .icon-actions {
@@ -435,7 +435,7 @@ function handlePrimaryClick() {
   border-radius: 8px;
   border: none;
   background: transparent;
-  color: #c9cdd4;
+  color: var(--neutral-text-4);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -443,30 +443,30 @@ function handlePrimaryClick() {
   transition: all 0.15s;
 }
 .icon-btn:hover {
-  background: #f2f3f5;
-  color: #4e5969;
+  background: var(--neutral-hover);
+  color: var(--neutral-text-2);
 }
 .icon-btn.starred {
   color: #ffb800;
 }
 .icon-btn.starred:hover {
-  background: #fff9e6;
+  background: var(--arco-warning-light);
 }
 .icon-btn.action-delete:hover {
-  color: #f53f3f;
-  background: #ffece8;
+  color: var(--arco-danger);
+  background: var(--arco-danger-light);
 }
 
 /* 失败状态弱化 */
 .report-card-minimal.failed .report-title {
-  color: #86909c;
+  color: var(--neutral-text-3);
   text-decoration: line-through;
 }
 .report-card-minimal.failed:hover .report-title {
-  color: #f53f3f;
+  color: var(--arco-danger);
 }
 .report-card-minimal.expired .report-title {
-  color: #86909c;
+  color: var(--neutral-text-3);
 }
 
 /* 收藏高亮 */

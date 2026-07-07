@@ -51,9 +51,11 @@ COMPOSE_MAIN   := docker compose -f deploy/docker/docker-compose.yml
 COMPOSE_WORKER := docker compose -f deploy/docker/docker-compose.worker.yml
 COMPOSE_ALL    := docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.worker.yml
 DOCKER_NETWORK := omichub_net
+SANDBOX_NETWORK := omichub-sandbox-net
 
-docker-network: ## 创建跨栈外部网络 omichub_net（幂等）
+docker-network: ## 创建跨栈外部网络 omichub_net + 终端沙盒网络（幂等）
 	@docker network create $(DOCKER_NETWORK) 2>/dev/null || true
+	@docker network create $(SANDBOX_NETWORK) 2>/dev/null || true
 
 docker-up: docker-network ## 启动主栈 (web/db/redis/nginx/beat/flower)
 	$(COMPOSE_MAIN) up -d
@@ -122,9 +124,11 @@ frontend-build: ## 构建前端生产版本
 	cd frontend && npm run build
 
 docker-reload: docker-network ## 重新构建前端并刷新主栈 + Worker (开发用)
+	@echo "=> 清理残留容器..."
+	-@docker ps -a --filter "name=omichub-" -q | xargs -r docker rm -f 2>/dev/null
+	@echo "=> 构建终端沙盒镜像..."
+	-docker build -t omichub/sandbox-terminal:latest tools/terminal/docker/
 	cd frontend && npm run build
-	$(COMPOSE_MAIN) restart nginx
-	$(COMPOSE_MAIN) restart web   # web 关闭了 --reload，改后端代码需手动 restart 才生效
 	$(COMPOSE_MAIN) up -d
 	$(COMPOSE_WORKER) up -d
 	@$(MAKE) --no-print-directory check-alembic-heads

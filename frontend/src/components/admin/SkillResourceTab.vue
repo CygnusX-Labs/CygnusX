@@ -157,9 +157,9 @@ function handleDelete(skill: SkillItem) {
 .skill-body { flex: 1; min-width: 0; }
 .skill-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .skill-name { font-weight: 600; font-size: 14px; }
-.skill-desc { font-size: 12px; color: #888; line-height: 1.5; }
-.skill-url { font-size: 11px; color: #aaa; margin-top: 6px; display: flex; align-items: center; gap: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skill-desc { font-size: 12px; color: var(--neutral-text-3, #888); line-height: 1.5; }
+.skill-url { font-size: 11px; color: var(--neutral-text-3, #aaa); margin-top: 6px; display: flex; align-items: center; gap: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .skill-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
 .import-pane { display: flex; flex-direction: column; gap: 12px; padding-top: 8px; }
-.pane-hint { font-size: 12px; color: #888; margin: 0; }
+.pane-hint { font-size: 12px; color: var(--neutral-text-3, #888); margin: 0; }
 </style>

@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted } from 'vue'
-import { NAvatar, NButton, NIcon, NTag, NCollapseTransition } from 'naive-ui'
+import { NButton, NIcon, NTag } from 'naive-ui'
 import {
-  ChevronForwardOutline,
   DocumentOutline,
   BuildOutline,
 } from '@vicons/ionicons5'
 import { Vue3Lottie } from 'vue3-lottie'
 import md, { VChart } from './setup'
 import { usePyodide } from '@/composables/usePyodide'
+import UserAvatar from '@/components/UserAvatar.vue'
 import MessageActionBar from './MessageActionBar.vue'
 import type { ChatMessage, CopyMode } from './types'
 
@@ -51,63 +51,67 @@ const emit = defineEmits<{
   edit: [messageId: string]
 }>()
 
-const showThought = ref(false)
 const hovered = ref(false)
 const lottieRef = ref<InstanceType<typeof Vue3Lottie> | null>(null)
+const thoughtExpanded = ref(false)
 
-// 流式生成态：收到第一个非空字符后渐隐骨架屏
-const showSkeleton = ref(true)
-const streamingHasContent = computed(() =>
-  (props.isStreaming ? props.streamingContent : props.message.content)?.length > 0,
-)
-watch(streamingHasContent, (hasContent) => {
-  if (hasContent) {
-    setTimeout(() => {
-      showSkeleton.value = false
-    }, 300)
-  } else {
-    showSkeleton.value = true
-  }
-})
-
-// 思考完成且进入正式生成后，3 秒自动折叠思考面板
-watch(
-  () => props.isStreaming,
-  (streaming, prev) => {
-    if (prev && !streaming && thoughtContent.value) {
-      // 流结束保持展开，让用户能看思考过程
-      return
-    }
-    if (!streaming || !thoughtContent.value) return
-    // 已有思考内容且开始正式生成时，延迟折叠
-    if (props.streamingContent.length > 0 && thoughtContent.value.length > 0) {
-      setTimeout(() => {
-        showThought.value = false
-      }, 3000)
-    }
-  },
+const displayContent = computed(() =>
+  props.isStreaming ? props.streamingContent : props.message.content,
 )
 
-const lottieUrl = `${import.meta.env.BASE_URL}lottie/ai-avatar.json`
-
-watch(
-  () => props.isStreaming,
-  (streaming) => {
-    lottieRef.value?.setSpeed(streaming ? 2 : 1)
-  },
-)
-
-const thoughtContent = computed(() =>
+const displayThought = computed(() =>
   props.isStreaming ? props.streamingThought : props.message.thought || '',
 )
 
-const isThinking = computed(() => props.isStreaming && thoughtContent.value.length > 0 && !props.streamingContent.length)
+const streamingHasContent = computed(() => displayContent.value.length > 0)
 
-const isError = computed(() => props.message.status === 'error' || (props.message.content?.startsWith('生成失败') ?? false))
+const hasThought = computed(() => displayThought.value.length > 0)
+
+const isThinking = computed(() =>
+  props.isStreaming && hasThought.value && !streamingHasContent.value,
+)
+
+const showStarAnimation = computed(() =>
+  props.isStreaming && !streamingHasContent.value,
+)
+
+const showThinkingIndicator = computed(() =>
+  props.isStreaming && isThinking.value,
+)
+
+const starPositions = computed(() => {
+  const count = 22
+  const positions: Array<{ x: string; y: string; delay: string; size: string; duration: string }> = []
+  for (let i = 0; i < count; i++) {
+    positions.push({
+      x: `${Math.random() * 100}%`,
+      y: `${Math.random() * 100}%`,
+      delay: `${Math.random() * 3}s`,
+      size: `${2 + Math.random() * 4}px`,
+      duration: `${3 + Math.random() * 4}s`,
+    })
+  }
+  return positions
+})
+
+const isError = computed(() =>
+  props.message.status === 'error'
+  || (props.message.content?.startsWith('生成失败') ?? false),
+)
+
+const isEmptyWithThought = computed(() =>
+  !props.isStreaming
+  && !props.message.content?.trim().length
+  && !!(props.message.thought?.trim().length)
+  && !props.message.toolCalls?.length
+  && !props.message.charts?.length
+  && !isError.value,
+)
 
 const isEmpty = computed(() =>
   !props.isStreaming
   && !props.message.content?.trim().length
+  && !(props.message.thought?.trim().length)
   && !props.message.toolCalls?.length
   && !props.message.charts?.length
   && !isError.value,
@@ -118,6 +122,18 @@ const formattedTime = computed(() => {
   if (Number.isNaN(d.getTime())) return ''
   return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 })
+
+const lottieUrl = `${import.meta.env.BASE_URL}lottie/ai-avatar.json`
+
+watch(
+  () => props.isStreaming,
+  (streaming) => {
+    lottieRef.value?.setSpeed(streaming ? 2 : 1)
+    if (!streaming) {
+      thoughtExpanded.value = false
+    }
+  },
+)
 
 const tokenText = computed(() => {
   const t = props.message.tokens
@@ -144,14 +160,12 @@ function renderMarkdown(source: string) {
 }
 
 watch(
-  () => (props.isStreaming ? props.streamingContent : props.message.content),
+  () => displayContent.value,
   (source) => {
     if (props.isStreaming) {
-      // 流式输出高频触发时，通过 requestAnimationFrame 批量渲染，
-      // 避免 markdown-it/highlight.js 每收到一个 chunk 都阻塞主线程。
       if (renderRafId) return
       renderRafId = requestAnimationFrame(() => {
-        renderMarkdown(props.streamingContent)
+        renderMarkdown(displayContent.value)
         renderRafId = null
       })
     } else {
@@ -161,7 +175,6 @@ watch(
   { immediate: true },
 )
 
-// 组件卸载时取消未执行的渲染帧
 onUnmounted(() => {
   if (renderRafId) {
     cancelAnimationFrame(renderRafId)
@@ -253,11 +266,10 @@ function handleEdit() {
         </div>
         <div class="message-identity">
           <span class="message-name">{{ userName }}</span>
-          <n-avatar
-            round
-            size="small"
+          <UserAvatar
+            :nickname="userName"
             :src="userAvatar"
-            fallback-src="https://api.dicebear.com/7.x/avataaars/svg?seed=user"
+            :size="28"
             class="message-avatar"
           />
         </div>
@@ -307,6 +319,9 @@ function handleEdit() {
             </div>
           </div>
           <span class="message-name ai-name">{{ aiIdentityName }}</span>
+          <transition name="fade">
+            <span v-if="showThinkingIndicator" class="thinking-badge">✨ 思考中...</span>
+          </transition>
         </div>
         <div class="message-meta">
           <span v-if="tokenText" class="meta-item tokens">{{ tokenText }}</span>
@@ -315,17 +330,7 @@ function handleEdit() {
         </div>
       </div>
 
-      <!-- 生成中纯文本提示：已移除思考过程面板与骨架屏，仅保留静态文字 -->
-      <transition name="fade">
-        <div
-          v-if="isStreaming && showSkeleton && !streamingHasContent && !isError && !isEmpty"
-          class="waiting-hint-static"
-        >
-          星尘正在穿越神经网络，请稍候...
-        </div>
-      </transition>
-
-      <!-- 空内容 / 错误态 -->
+      <!-- 错误态 -->
       <div v-if="isError" class="ai-empty-state error">
         <div class="empty-icon">💫</div>
         <div class="empty-title">星尘信号受到了干扰</div>
@@ -336,47 +341,111 @@ function handleEdit() {
         </div>
       </div>
 
+      <!-- 空内容但有思考过程 -->
+      <div v-else-if="isEmptyWithThought" class="ai-empty-state">
+        <div class="empty-icon">💭</div>
+        <div class="empty-title">思考完成，但未生成正式回复</div>
+        <div class="empty-desc">模型完成了推理，但未输出正式回复内容，请重试或切换模型。</div>
+        <details class="thought-details">
+          <summary class="thought-summary">🔍 查看思考过程</summary>
+          <div class="thought-text">{{ message.thought }}</div>
+        </details>
+        <div class="empty-actions">
+          <n-button size="small" type="primary" @click="handleRegenerate">🔄 重新生成</n-button>
+          <n-button size="small" @click="handleRetryWithModel">⚙️ 切换模型</n-button>
+        </div>
+      </div>
+
+      <!-- 完全空内容 -->
       <div v-else-if="isEmpty" class="ai-empty-state">
         <div class="empty-icon">🌌</div>
         <div class="empty-title">这片星域暂时没有回应</div>
         <div class="empty-desc">
-          模型似乎返回了空内容，可能是：<br>
-          · 当前问题超出了模型的知识边界<br>
-          · 网络连接出现波动
+          当前模型响应为空，请重新发送或切换模型。<br>
+          · 可能是网络连接出现波动<br>
+          · 模型在当前上下文中无法生成回复
         </div>
         <div class="empty-actions">
-          <n-button size="small" type="primary" @click="handleRegenerate">🔄 重新生成</n-button>
+          <n-button size="small" type="primary" @click="handleRegenerate">🔄 重新发送</n-button>
+          <n-button size="small" @click="handleRetryWithModel">⚙️ 切换模型</n-button>
         </div>
       </div>
 
-      <div v-else class="message-content ai-card" :class="{ 'streaming-active': isStreaming }">
-        <div class="message-body markdown-body" v-html="renderedContent" @click="handleBodyClick" />
-
-        <div v-if="message.toolCalls?.length" class="tool-results">
-          <div v-for="(tool, idx) in message.toolCalls" :key="idx" class="tool-card">
-            <div class="tool-header">
-              <n-icon size="16"><BuildOutline /></n-icon>
-              <span>{{ tool.name }}</span>
+      <!-- 正常内容区 -->
+      <template v-else>
+        <!-- 可折叠的思考过程 -->
+        <div v-if="hasThought" class="thought-block">
+          <button class="thought-toggle" @click="thoughtExpanded = !thoughtExpanded">
+            <span v-if="showThinkingIndicator" class="thinking-label">✨ 思考中...</span>
+            <span v-else class="thinking-label">🔍 思考过程</span>
+            <span class="thought-arrow" :class="{ rotated: thoughtExpanded }">▾</span>
+          </button>
+          <transition name="thought-expand">
+            <div v-show="thoughtExpanded" class="thought-content">
+              {{ displayThought }}
             </div>
-            <div class="tool-content">
-              <pre>{{ JSON.stringify(tool.result, null, 2) }}</pre>
-            </div>
-          </div>
+          </transition>
         </div>
 
-        <div v-if="message.charts?.length" class="chart-results">
-          <div v-for="(chart, idx) in message.charts" :key="idx" class="chart-container">
-            <VChart :option="chart.option" autoresize style="height: 300px" />
+        <!-- 星辰动画（等待/思考期循环播放，内容到达后淡出） -->
+        <transition name="star-fade">
+          <div v-if="showStarAnimation" class="star-animation-bubble">
+            <div class="starfield">
+              <span
+                v-for="i in 22"
+                :key="i"
+                class="star-particle"
+                :style="{
+                  '--star-x': starPositions[i - 1].x,
+                  '--star-y': starPositions[i - 1].y,
+                  '--star-delay': starPositions[i - 1].delay,
+                  '--star-size': starPositions[i - 1].size,
+                  '--star-duration': starPositions[i - 1].duration,
+                }"
+              />
+            </div>
+            <div class="shimmer-bars">
+              <div class="shimmer-bar" style="width: 90%" />
+              <div class="shimmer-bar" style="width: 75%" />
+              <div class="shimmer-bar" style="width: 60%" />
+            </div>
+            <div class="star-loading-text">
+              <span class="star-icon">🌌</span>
+              {{ isThinking ? '星尘正在神经网络中推理...' : '星尘正在穿越神经网络...' }}
+            </div>
           </div>
-        </div>
+        </transition>
 
-        <!-- 流式光标 -->
-        <span v-if="isStreaming && streamingHasContent" class="stream-cursor" />
-      </div>
+        <!-- 内容气泡 -->
+        <div v-if="streamingHasContent || !isStreaming" class="message-content ai-card" :class="{ 'streaming-active': isStreaming }">
+          <div class="message-body markdown-body" v-html="renderedContent" @click="handleBodyClick" />
+
+          <div v-if="message.toolCalls?.length" class="tool-results">
+            <div v-for="(tool, idx) in message.toolCalls" :key="idx" class="tool-card">
+              <div class="tool-header">
+                <n-icon size="16"><BuildOutline /></n-icon>
+                <span>{{ tool.name }}</span>
+              </div>
+              <div class="tool-content">
+                <pre>{{ JSON.stringify(tool.result, null, 2) }}</pre>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="message.charts?.length" class="chart-results">
+            <div v-for="(chart, idx) in message.charts" :key="idx" class="chart-container">
+              <VChart :option="chart.option" autoresize style="height: 300px" />
+            </div>
+          </div>
+
+          <!-- 流式光标 -->
+          <span v-if="isStreaming && streamingHasContent" class="stream-cursor" />
+        </div>
+      </template>
 
       <!-- 错误/空内容态下直接显示操作栏 -->
       <MessageActionBar
-        v-if="(isError || isEmpty)"
+        v-if="(isError || isEmpty || isEmptyWithThought)"
         :visible="true"
         :is-user="false"
         :content="message.content"
@@ -439,6 +508,18 @@ function handleEdit() {
 }
 .ai-name {
   color: var(--chat-accent, #4f8ef7);
+}
+
+.thinking-badge {
+  font-size: 12px;
+  color: var(--chat-accent, #4f8ef7);
+  opacity: 0.7;
+  animation: thinking-pulse 2s ease-in-out infinite;
+  white-space: nowrap;
+}
+@keyframes thinking-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.9; }
 }
 
 .message-meta {
@@ -586,13 +667,233 @@ function handleEdit() {
   50% { opacity: 0; }
 }
 
-/* 生成中纯文本提示（替代原骨架屏 + 思考过程面板） */
-.waiting-hint-static {
+/* 星辰动画气泡：等待/思考期的循环动画 */
+.star-animation-bubble {
+  position: relative;
   width: 90%;
-  padding: 8px 0;
+  min-height: 140px;
+  padding: 18px 22px 12px;
+  background: var(--chat-ai-card, #ffffff);
+  border: 1px solid var(--chat-border, #f0f0f0);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: star-bubble-enter 0.3s ease;
+}
+@keyframes star-bubble-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.starfield {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+.star-particle {
+  position: absolute;
+  left: var(--star-x);
+  top: var(--star-y);
+  width: var(--star-size);
+  height: var(--star-size);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.8) 0%, rgba(99, 102, 241, 0.4) 50%, transparent 100%);
+  box-shadow: 0 0 6px rgba(168, 85, 247, 0.5);
+  animation: star-twinkle var(--star-duration) ease-in-out infinite;
+  animation-delay: var(--star-delay);
+}
+@keyframes star-twinkle {
+  0%, 100% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+:root[data-theme="dark"] .star-particle {
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.9) 0%, rgba(99, 102, 241, 0.5) 50%, transparent 100%);
+  box-shadow: 0 0 8px rgba(168, 85, 247, 0.7);
+}
+
+.shimmer-bars {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.shimmer-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    rgba(99, 102, 241, 0.08) 0%,
+    rgba(139, 92, 246, 0.18) 50%,
+    rgba(99, 102, 241, 0.08) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer-flow 1.8s infinite ease-in-out;
+}
+@keyframes shimmer-flow {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+:root[data-theme="dark"] .shimmer-bar {
+  background: linear-gradient(
+    90deg,
+    rgba(99, 102, 241, 0.14) 0%,
+    rgba(139, 92, 246, 0.26) 50%,
+    rgba(99, 102, 241, 0.14) 100%
+  );
+  background-size: 200% 100%;
+}
+
+.star-loading-text {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  margin-top: auto;
+  padding-bottom: 4px;
+  font-size: 12px;
+  color: var(--chat-text-muted, #94a3b8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.star-icon {
+  display: inline-block;
+  margin-right: 6px;
+  animation: gentle-pulse 2s infinite ease-in-out;
+}
+@keyframes gentle-pulse {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+/* 星辰动画淡出过渡 */
+.star-fade-enter-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.star-fade-leave-active {
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+.star-fade-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.star-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+/* 思考过程折叠块 */
+.thought-block {
+  width: 90%;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--chat-border, #f0f0f0);
+  background: var(--chat-surface, #f8f9fa);
+}
+.thought-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--chat-text-secondary, #666);
+  transition: background 0.2s ease;
+}
+.thought-toggle:hover {
+  background: var(--chat-surface-hover, rgba(0, 0, 0, 0.03));
+}
+.thinking-label {
+  color: var(--chat-accent, #4f8ef7);
+  opacity: 0.8;
+}
+.thought-arrow {
+  margin-left: auto;
+  font-size: 10px;
+  transition: transform 0.2s ease;
+}
+.thought-arrow.rotated {
+  transform: rotate(180deg);
+}
+.thought-content {
+  padding: 10px 14px;
   font-size: 13px;
-  color: var(--chat-text-muted, #86909c);
-  line-height: 1.6;
+  line-height: 1.7;
+  color: var(--chat-text-secondary, #666);
+  font-style: italic;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+  border-top: 1px solid var(--chat-border, #f0f0f0);
+  background: var(--chat-surface, #f8f9fa);
+}
+:root[data-theme="dark"] .thought-content {
+  background: rgba(255, 255, 255, 0.03);
+}
+.thought-expand-enter-active,
+.thought-expand-leave-active {
+  transition: opacity 0.2s ease, max-height 0.3s ease;
+}
+.thought-expand-enter-from,
+.thought-expand-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
+
+/* 空内容态中的思考过程详情 */
+.thought-details {
+  width: 100%;
+  margin: 12px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--chat-border, #e0e0e0);
+}
+.thought-summary {
+  padding: 8px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--chat-text-secondary, #666);
+  background: var(--chat-surface, #f8f9fa);
+}
+.thought-text {
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--chat-text-secondary, #666);
+  font-style: italic;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+/* thinking-badge fade transition */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
 /* 空内容 / 错误态 */
@@ -633,17 +934,6 @@ function handleEdit() {
   display: flex;
   gap: 10px;
   margin-top: 14px;
-}
-
-/* 过渡动画 */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s ease, transform 0.3s ease;
-}
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-  transform: translateY(4px);
 }
 
 .kimi-message-item .system-message {
@@ -716,5 +1006,17 @@ function handleEdit() {
   max-width: 100%;
   margin-top: 8px;
   border-radius: 4px;
+}
+
+/* 响应式：窄屏下星辰动画高度缩减，宽度保持自适应 */
+@media (max-width: 640px) {
+  .star-animation-bubble {
+    width: 100%;
+    min-height: 90px;
+    padding: 14px 16px 10px;
+  }
+  .thought-block {
+    width: 100%;
+  }
 }
 </style>

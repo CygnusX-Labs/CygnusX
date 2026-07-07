@@ -1,7 +1,10 @@
 """本地执行器 - Snakemake subprocess"""
 
 import asyncio
+import os
 import shutil
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from omichub.core.config import get_settings
@@ -10,6 +13,35 @@ from omichub.infrastructure.execution.base import (
     ExecutionContext,
     ExecutionResult,
 )
+
+# 容器内通过 docker-compose.worker.yml 挂载到宿主机 /data/omichub/logs/snakemake
+SNAKEMAKE_LOG_ROOT = Path(os.getenv("OMICHUB_SNAKEMAKE_LOG_DIR", "/logs/snakemake"))
+
+
+def _write_snakemake_logs(
+    work_dir: str,
+    stdout: bytes,
+    stderr: bytes,
+) -> Path | None:
+    """将 Snakemake 的 stdout/stderr 写入统一日志目录。
+
+    目录结构：/logs/snakemake/{project_name}/{timestamp}/
+      - stdout.log
+      - stderr.log
+
+    返回写入的日志目录；写入失败时返回 None，不影响主流程。
+    """
+    try:
+        project_name = Path(work_dir).name if work_dir else "unknown"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_dir = SNAKEMAKE_LOG_ROOT / project_name / timestamp
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        (log_dir / "stdout.log").write_bytes(stdout)
+        (log_dir / "stderr.log").write_bytes(stderr)
+        return log_dir
+    except OSError:
+        return None
 
 
 class LocalSnakemakeExecutor(BaseExecutor):
@@ -99,11 +131,16 @@ class LocalSnakemakeExecutor(BaseExecutor):
         )
         stdout, stderr = await process.communicate()
 
+        stdout_str = stdout.decode()
+        stderr_str = stderr.decode()
+        log_dir = _write_snakemake_logs(work_dir, stdout, stderr)
+
         return {
             "status": "success" if process.returncode == 0 else "failed",
             "returncode": process.returncode,
-            "stdout": stdout.decode(),
-            "stderr": stderr.decode(),
+            "stdout": stdout_str,
+            "stderr": stderr_str,
+            "log_dir": str(log_dir) if log_dir else None,
         }
 
     async def generate_dag(

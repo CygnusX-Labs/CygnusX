@@ -19,6 +19,8 @@ services:
       - ../../pipelines/jbrowse2:/var/www/jbrowse2:ro
       # 数据文件：经 /tracks/ 路径供 JBrowse 2 流式读取（只读）
       - /data/omichub:/data/omichub:ro
+      # Nginx 访问/错误日志持久化到宿主机，避免容器重建丢失
+      - /data/omichub/logs/nginx:/var/log/nginx
     depends_on:
       - web
     networks:
@@ -32,16 +34,20 @@ services:
     container_name: omichub-web
     restart: unless-stopped
     user: "${PUID:-1000}:${PGID:-1000}"   # 以宿主用户运行，避免 root；写入挂载卷文件归宿主所有
+    group_add:
+      - "${DOCKER_GID:-987}"              # 加入宿主 docker 组，授权访问 docker.sock（终端/沙盒容器管理）
     env_file:
       - ../../.env
     environment:
       - APP_ENV=development
       - POSTGRES_HOST=db
       - REDIS_HOST=cache
+      - SERVICE_NAME=web
       - AL_API_KEY=${AL_API_KEY}
       - ARK_API_KEY=${ARK_API_KEY}
       - HOME=/tmp                          # uid 1000 无 passwd 条目，显式 HOME 防 expanduser 失败
       - RUN_MIGRATIONS=1                   # 容器启动时由 entrypoint 自动跑 alembic upgrade head
+      - OMICHUB_LOG_DIR=/tmp/omichub-logs  # /app 归 root，uid 1000 无法写入 /app/logs
     depends_on:
       db:
         condition: service_healthy
@@ -56,10 +62,13 @@ services:
       - ../../alembic:/app/alembic:ro  # 迁移脚本热同步（容器内可见，免重建镜像）
       - ./entrypoint.sh:/app/entrypoint.sh:ro  # 启动入口：先迁移后启动
       - /data/omichub:/data/omichub  # 任务数据（与独立 worker 栈共享同一宿主目录）
+      - /data/omichub/logs/app:/app/logs  # 应用日志持久化到宿主机
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker socket（沙盒/终端容器管理）
     networks:
       - app_net
       - data_net
       - omichub_net        # 跨栈外部网络：与独立 worker 栈（docker-compose.worker.yml）互通
+      - omichub-sandbox-net # 终端沙盒网络：WebSocket 代理经容器 DNS 直连 ttyd（端口 7681）
     # 启动入口：先跑 alembic upgrade head（保证 schema 与代码同步），再启动 uvicorn。
     # 历史教训：曾因迁移未进容器 + create_all 不补字段，导致 users.storage_quota 缺列引发 500。
     entrypoint: ["/bin/sh", "/app/entrypoint.sh"]
@@ -81,6 +90,7 @@ services:
       - APP_ENV=development
       - POSTGRES_HOST=db
       - REDIS_HOST=cache
+      - SERVICE_NAME=beat
       - AL_API_KEY=${AL_API_KEY}
       - ARK_API_KEY=${ARK_API_KEY}
       - HOME=/tmp                          # uid 1000 无 passwd 条目，显式 HOME 防 expanduser 失败
@@ -89,6 +99,7 @@ services:
     volumes:
       - ../../src:/app/src:ro  # 开发环境热重载
       - ../../alembic:/app/alembic:ro  # 迁移脚本（与 web 一致，便于排障时 exec alembic）
+      - /data/omichub/logs/app:/app/logs  # 应用日志持久化到宿主机
     networks:
       - app_net
       - data_net
@@ -182,6 +193,8 @@ networks:
     driver: bridge
   omichub_net:               # 跨栈外部网络：供独立计算栈 docker-compose.worker.yml 加入
     external: true           # 需先 `docker network create omichub_net` 创建
+  omichub-sandbox-net:       # 终端沙盒网络：由 Makefile docker-network 创建
+    external: true
 
 # 注：pg_data / redis_data 已改为 bind mount（/data/omichub/omichub_data/_pgdata、_redis），
 #     不再需要命名卷声明。旧卷 docker_pg_data / docker_redis_data 可在验证无误后删除。

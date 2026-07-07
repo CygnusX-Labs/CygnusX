@@ -92,3 +92,22 @@ class AuditMiddleware(BaseHTTPMiddleware):
         async with factory() as session:
             session.add(entry)
             await session.commit()
+
+        # 文本备份：写入 JSON 日志，供后续 Loki/审计排查；失败不影响主请求
+        try:
+            logger.bind(service="audit").info(
+                {
+                    "timestamp": entry.created_at.isoformat() if entry.created_at else None,
+                    "user_id": str(entry.user_id) if entry.user_id else None,
+                    "method": entry.method,
+                    "path": entry.path,
+                    "resource_type": entry.resource_type,
+                    "resource_id": entry.resource_id,
+                    "status_code": entry.status_code,
+                    "ip": entry.ip,
+                    "user_agent": entry.user_agent,
+                    "result": "SUCCESS" if entry.status_code < 400 else "FAILURE",
+                }
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"审计日志文本备份失败: {e}")

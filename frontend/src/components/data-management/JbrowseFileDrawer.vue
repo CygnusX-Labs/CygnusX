@@ -140,7 +140,7 @@ function formatDate(iso: string): string {
         <div class="relative mb-4">
           <NIcon
             :size="16"
-            class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+            class="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none"
           >
             <SearchOutline />
           </NIcon>
@@ -148,7 +148,7 @@ function formatDate(iso: string): string {
             v-model="searchQuery"
             type="text"
             placeholder="搜索文件名..."
-            class="w-full pl-9 pr-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 transition"
+            class="w-full pl-9 pr-3 py-2 text-sm bg-neutral-bg border border-neutral-border rounded-lg text-text-primary placeholder-text-tertiary focus:outline-none focus:ring-2 focus:ring-primary-light focus:border-primary transition"
           />
         </div>
 
@@ -156,11 +156,11 @@ function formatDate(iso: string): string {
         <div v-if="scannedFiles.length === 0 && !scanLoading" class="py-10">
           <NEmpty>
             <template #icon>
-              <NIcon :size="48" class="text-gray-300"><FolderOpenOutline /></NIcon>
+              <NIcon :size="48" class="text-text-disabled"><FolderOpenOutline /></NIcon>
             </template>
             <div class="text-center max-w-xs mx-auto px-2">
-              <p class="text-sm font-medium text-gray-800 mb-2">未找到可加载的轨道文件</p>
-              <p class="text-xs text-gray-500 leading-relaxed">
+              <p class="text-sm font-medium text-text-primary mb-2">未找到可加载的轨道文件</p>
+              <p class="text-xs text-text-secondary leading-relaxed">
                 JBrowse 仅支持已比对 / 注释的格式：<strong>BAM · CRAM · BigWig · VCF.gz · bed.gz · gff3.gz</strong>。
                 若你目录下只有 FASTQ / SRA 原始测序数据，需先运行分析流程生成 BAM，或直接上传轨道文件。
               </p>
@@ -181,10 +181,10 @@ function formatDate(iso: string): string {
             class="flex items-center gap-3 p-3 rounded-xl border transition-colors"
             :class="
               selectedSet.has(file.path)
-                ? 'bg-blue-50/60 border-blue-200 cursor-pointer'
+                ? 'bg-primary-light/60 border-primary-light cursor-pointer'
                 : file.can_load
-                  ? 'border-gray-100 hover:bg-gray-50 hover:border-gray-200 cursor-pointer'
-                  : 'border-gray-100 cursor-not-allowed'
+                  ? 'border-neutral-border hover:bg-neutral-hover hover:border-neutral-border cursor-pointer'
+                  : 'border-neutral-border cursor-not-allowed'
             "
             @click="file.can_load && onToggle(file, !selectedSet.has(file.path))"
           >
@@ -201,17 +201,17 @@ function formatDate(iso: string): string {
             <div class="flex-1 min-w-0">
               <p
                 class="text-sm font-medium truncate"
-                :class="file.can_load ? 'text-gray-800' : 'text-gray-400'"
+                :class="file.can_load ? 'text-text-primary' : 'text-text-tertiary'"
               >
                 {{ file.name }}
               </p>
               <div class="flex items-center gap-2 mt-1">
-                <span class="text-xs px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-600 font-medium">
+                <span class="text-xs px-1.5 py-0.5 rounded-md bg-neutral-hover text-text-secondary font-medium">
                   {{ file.type }}
                 </span>
-                <span class="text-xs text-gray-500">{{ file.size_human }}</span>
-                <span class="text-xs text-gray-300">·</span>
-                <span class="text-xs text-gray-500">{{ formatDate(file.modified) }}</span>
+                <span class="text-xs text-text-secondary">{{ file.size_human }}</span>
+                <span class="text-xs text-text-disabled">·</span>
+                <span class="text-xs text-text-secondary">{{ formatDate(file.modified) }}</span>
               </div>
             </div>
 
@@ -234,7 +234,7 @@ function formatDate(iso: string): string {
 
       <template #footer>
         <div class="flex items-center justify-between w-full">
-          <span class="text-xs text-gray-500">已选 {{ selectedPaths.length }} 个文件</span>
+          <span class="text-xs text-text-secondary">已选 {{ selectedPaths.length }} 个文件</span>
           <NButton type="primary" :disabled="selectedPaths.length === 0" @click="onLoad">
             加载选中文件
           </NButton>

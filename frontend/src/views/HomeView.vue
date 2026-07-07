@@ -10,6 +10,7 @@ import {
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import OmicBackgroundAnimation from '@/components/OmicBackgroundAnimation.vue'
+import AnnouncementBanner from '@/components/AnnouncementBanner.vue'
 import type { SiteContent } from '@/types/site-content'
 
 // 默认文案兜底：API 拉取失败时保证首页仍可正常渲染
@@ -139,6 +140,9 @@ onMounted(async () => {
         </div>
       </div>
     </section>
+
+    <!-- 条幅通知（管理员后台配置，按优先级取最高一条） -->
+    <AnnouncementBanner />
 
     <!-- 快捷入口 -->
     <section class="section animate-fade-in-up delay-100">

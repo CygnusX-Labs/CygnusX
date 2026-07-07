@@ -282,13 +282,13 @@ function clearAll() {
 .page-title {
   font-size: 20px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   margin: 0;
   flex: 1;
 }
 .page-subtitle {
   font-size: 13px;
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
   margin: 0 0 12px;
 }
 .seq-layout {
@@ -299,8 +299,8 @@ function clearAll() {
 }
 .param-panel,
 .result-card {
-  background: var(--neutral-card, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
   border-radius: 12px;
   padding: 12px;
 }
@@ -313,7 +313,7 @@ function clearAll() {
 .panel-title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
 }
 .seq-input :deep(textarea) {
   font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
@@ -349,9 +349,9 @@ function clearAll() {
   font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
   font-size: 12px;
   line-height: 1.5;
-  color: var(--neutral-text-1, #1d2129);
-  background: var(--neutral-bg, #f7f8fa);
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  color: var(--neutral-text-1);
+  background: var(--neutral-bg);
+  border: 1px solid var(--neutral-border);
   border-radius: 8px;
   padding: 10px;
   margin: 0;
@@ -372,7 +372,7 @@ function clearAll() {
   text-align: center;
   padding: 10px 6px;
   border-radius: 8px;
-  background: var(--neutral-bg, #f7f8fa);
+  background: var(--neutral-bg);
 }
 .stat-gc :deep(.n-statistic-value__content) { color: #00b42a; }
 .stat-at :deep(.n-statistic-value__content) { color: #165dff; }
@@ -388,7 +388,7 @@ function clearAll() {
   align-items: flex-start;
   gap: 8px;
   padding: 6px 8px;
-  background: var(--neutral-bg, #f7f8fa);
+  background: var(--neutral-bg);
   border-radius: 6px;
 }
 .frame-tag {
@@ -406,10 +406,10 @@ function clearAll() {
 .empty-state {
   padding: 48px 16px;
   text-align: center;
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
 }
 .empty-state p { margin: 4px 0; font-size: 14px; }
-.empty-hint { font-size: 12px !important; color: var(--neutral-text-3, #c9cdd4); }
+.empty-hint { font-size: 12px !important; color: var(--neutral-text-3); }
 @media (max-width: 1200px) {
   .seq-layout { grid-template-columns: 1fr; }
 }

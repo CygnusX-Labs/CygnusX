@@ -5,10 +5,13 @@ import { ArrowBackOutline, BulbOutline, FlashOutline, CloseOutline } from '@vico
 import KimiMessageList from '@/components/ai-chat/KimiMessageList.vue'
 import KimiChatInput from '@/components/ai-chat/KimiChatInput.vue'
 import AgentCapabilityDrawer from './AgentCapabilityDrawer.vue'
+import ShaniaChatBackground from './ShaniaChatBackground.vue'
 import { useAgentHubStore } from '@/stores/agentHub'
+import { useAuthStore } from '@/stores/auth'
 import type { FileAttachment } from '@/components/ai-chat/types'
 
 const store = useAgentHubStore()
+const authStore = useAuthStore()
 
 const input = ref('')
 const showCap = ref(false)
@@ -19,6 +22,11 @@ let noticeTimer: ReturnType<typeof setTimeout> | null = null
 const agent = computed(() => store.currentAgent)
 const session = computed(() => store.currentSession)
 const engineLabel = computed(() => agent.value?.model_engine || '')
+
+const userDisplayName = computed(() =>
+  authStore.user?.nickname || authStore.user?.username || '我',
+)
+const userAvatarUrl = computed(() => authStore.user?.avatar_url || '')
 
 const welcomeStorageKey = computed(() => `agent-welcome-closed:${agent.value?.id || 'global'}`)
 
@@ -110,6 +118,7 @@ function handleBack() {
 
 <template>
   <div class="agent-sandbox" v-if="agent && session">
+    <ShaniaChatBackground v-if="agent.id === 'shania'" />
     <header class="sandbox-header">
       <div class="header-left">
         <NButton text class="back-btn" @click="handleBack">
@@ -174,6 +183,8 @@ function handleBack() {
           :streaming-content="store.streamingContent"
           :streaming-thought="store.streamingThought"
           :model-name="agent.name"
+          :user-name="userDisplayName"
+          :user-avatar="userAvatarUrl"
         />
       </div>
     </div>
@@ -194,7 +205,7 @@ function handleBack() {
 </template>
 
 <style scoped lang="scss">
-.agent-sandbox { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.agent-sandbox { position: relative; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 
 .sandbox-header {
   flex-shrink: 0;

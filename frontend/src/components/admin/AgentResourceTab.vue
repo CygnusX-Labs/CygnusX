@@ -414,7 +414,7 @@ function updateFeature(key: keyof AgentFeatures, val: boolean) {
                       <NSpin size="small" />
                     </div>
                     <template v-else>
-                      <div v-if="!Object.keys(discoveryMap).length" style="padding: 8px; color: #999; font-size: 12px">
+                      <div v-if="!Object.keys(discoveryMap).length" style="padding: 8px; color: var(--neutral-text-3, #999); font-size: 12px">
                         未从任何 Provider 发现可用模型，请检查 API Key / Base URL。
                       </div>
                       <div v-for="item in Object.values(discoveryMap)" :key="item.providerName" style="margin-bottom: 10px">
@@ -649,7 +649,7 @@ function updateFeature(key: keyof AgentFeatures, val: boolean) {
 .switch-desc { font-size: 12px; color: var(--n-text-color-3, #999); margin-top: 2px; }
 
 .preview-section { margin-bottom: 16px; }
-.preview-label { font-size: 12px; color: #999; margin-bottom: 6px; }
-.preview-prompt { font-size: 12px; color: #555; background: rgba(0,0,0,0.03); padding: 10px; border-radius: 6px; white-space: pre-wrap; line-height: 1.6; }
-.empty { font-size: 12px; color: #bbb; }
+.preview-label { font-size: 12px; color: var(--neutral-text-3); margin-bottom: 6px; }
+.preview-prompt { font-size: 12px; color: var(--neutral-text-2); background: var(--neutral-hover); padding: 10px; border-radius: 6px; white-space: pre-wrap; line-height: 1.6; }
+.empty { font-size: 12px; color: var(--neutral-text-4); }
 </style>

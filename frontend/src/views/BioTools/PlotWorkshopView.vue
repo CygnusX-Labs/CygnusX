@@ -229,7 +229,7 @@ const chartOption = computed(() => {
 .page-title {
   font-size: 20px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   margin: 0;
 }
 .plot-layout {
@@ -239,8 +239,8 @@ const chartOption = computed(() => {
   align-items: start;
 }
 .config-panel {
-  background: var(--neutral-card, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
   border-radius: 12px;
   padding: 20px;
 }
@@ -250,7 +250,7 @@ const chartOption = computed(() => {
 .section-title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   margin: 0 0 8px;
 }
 .file-hint {
@@ -268,8 +268,8 @@ const chartOption = computed(() => {
   min-height: 480px;
 }
 .canvas-card {
-  background: var(--neutral-card, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
   border-radius: 12px;
   padding: 20px;
 }

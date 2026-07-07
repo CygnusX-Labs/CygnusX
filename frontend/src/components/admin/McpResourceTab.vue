@@ -609,35 +609,35 @@ const columns = [
 :deep(.mcp-name) { display: flex; align-items: center; gap: 10px; }
 :deep(.mcp-icon) { font-size: 18px; }
 :deep(.mcp-title) { font-weight: 600; display: flex; align-items: center; }
-:deep(.mcp-desc) { font-size: 12px; color: #999; }
+:deep(.mcp-desc) { font-size: 12px; color: var(--neutral-text-3, #999); }
 :deep(.status-dot) { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
 :deep(.status-dot .dot) { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 :deep(.status-dot .dot.online) { background: #18a058; box-shadow: 0 0 6px #18a05880; }
 :deep(.status-dot .dot.offline) { background: #d03050; }
 :deep(.tool-count) { font-weight: 600; color: var(--n-color-primary, #4f8ef7); }
 :deep(.expand-panel) { padding: 8px 12px 16px; }
-:deep(.expand-title) { font-size: 12px; color: #999; margin-bottom: 10px; }
+:deep(.expand-title) { font-size: 12px; color: var(--neutral-text-3, #999); margin-bottom: 10px; }
 :deep(.tools-grid) { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-:deep(.tool-cell) { background: rgba(0,0,0,0.02); border: 1px solid var(--n-border-color, #eee); border-radius: 8px; padding: 10px 12px; }
+:deep(.tool-cell) { background: var(--neutral-hover, rgba(0,0,0,0.02)); border: 1px solid var(--n-border-color, #eee); border-radius: 8px; padding: 10px 12px; }
 :deep(.tool-head) { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 :deep(.tool-name) { font-weight: 600; font-size: 13px; font-family: monospace; }
-:deep(.tool-desc) { font-size: 12px; color: #666; margin-bottom: 6px; }
+:deep(.tool-desc) { font-size: 12px; color: var(--neutral-text-2, #666); margin-bottom: 6px; }
 :deep(.tool-schema) { display: flex; flex-wrap: wrap; gap: 4px; }
-:deep(.tools-empty) { font-size: 12px; color: #999; }
+:deep(.tools-empty) { font-size: 12px; color: var(--neutral-text-3, #999); }
 
 .tools-panel { padding: 8px 0; }
-.placeholder-tab { padding: 24px; text-align: center; color: #999; font-size: 13px; }
+.placeholder-tab { padding: 24px; text-align: center; color: var(--neutral-text-3, #999); font-size: 13px; }
 
 .log-container { max-height: 480px; overflow-y: auto; }
-.log-empty { padding: 24px; text-align: center; color: #999; font-size: 13px; }
+.log-empty { padding: 24px; text-align: center; color: var(--neutral-text-3, #999); font-size: 13px; }
 .log-list { font-family: var(--kimi-font-mono, monospace); font-size: 13px; }
 .log-entry { display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--n-border-color, #eee); }
 .log-entry:last-child { border-bottom: none; }
-.log-time { color: #999; white-space: nowrap; flex-shrink: 0; }
+.log-time { color: var(--neutral-text-3, #999); white-space: nowrap; flex-shrink: 0; }
 .log-level { padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 500; flex-shrink: 0; text-transform: uppercase; }
 .log-level.info { background: rgba(79, 142, 247, 0.15); color: #4f8ef7; }
 .log-level.stderr { background: rgba(255, 138, 48, 0.15); color: #ff8a30; }
 .log-level.warn { background: rgba(250, 204, 21, 0.15); color: #d4a017; }
 .log-level.error { background: rgba(208, 48, 80, 0.15); color: #d03050; }
-.log-message { color: #333; word-break: break-all; }
+.log-message { color: var(--neutral-text-1, #333); word-break: break-all; }
 </style>

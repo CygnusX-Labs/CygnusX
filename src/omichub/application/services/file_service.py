@@ -428,6 +428,12 @@ class FileService:
             created_at=saved.created_at,
         )
 
+    def user_system_dir(self, user_id: UUID, name: str) -> Path:
+        """用户顶层系统目录（raw_data / workspace / temp）物理路径工厂"""
+        d = self._storage_root / "users" / str(user_id) / name
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
     # ------------------------------------------------------------------
     # 用户目录 CRUD
     # ------------------------------------------------------------------
@@ -436,6 +442,7 @@ class FileService:
 
         任何用户首次访问目录列表时补齐，避免改动注册/激活流程。
         已存在则跳过；新建的标记 is_system=True 并预创建物理目录。
+        物理目录统一放在 users/{uid}/<name>/，与下载服务、沙盒挂载约定一致。
         """
         existing = await self._dirs.list_by_user(user_id)
         existing_paths = {d.path for d in existing}
@@ -452,7 +459,7 @@ class FileService:
                 is_system=True,
             )
             await self._dirs.save(directory)
-            self._raw_subdir(user_id, name)  # 预创建物理目录
+            self.user_system_dir(user_id, name)  # 预创建物理目录
             created_any = True
         if created_any:
             await self._session.commit()

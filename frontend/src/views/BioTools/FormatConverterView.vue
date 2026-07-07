@@ -354,13 +354,13 @@ function loadSample() {
 .page-title {
   font-size: 20px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   margin: 0;
   flex: 1;
 }
 .page-subtitle {
   font-size: 13px;
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
   margin: 0 0 12px;
 }
 .tab-layout {
@@ -372,8 +372,8 @@ function loadSample() {
 }
 .param-panel,
 .result-card {
-  background: var(--neutral-card, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
   border-radius: 12px;
   padding: 12px;
 }
@@ -381,7 +381,7 @@ function loadSample() {
   display: block;
   font-size: 13px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   margin-bottom: 8px;
 }
 .mono-input :deep(textarea) {
@@ -406,11 +406,11 @@ function loadSample() {
 .field label {
   display: block;
   font-size: 12px;
-  color: var(--neutral-text-2, #4e5969);
+  color: var(--neutral-text-2);
   margin-bottom: 4px;
 }
 .arrow-icon {
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
   margin-bottom: 8px;
   flex-shrink: 0;
 }
@@ -439,9 +439,9 @@ function loadSample() {
   font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
   font-size: 12px;
   line-height: 1.5;
-  color: var(--neutral-text-1, #1d2129);
-  background: var(--neutral-bg, #f7f8fa);
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  color: var(--neutral-text-1);
+  background: var(--neutral-bg);
+  border: 1px solid var(--neutral-border);
   border-radius: 8px;
   padding: 10px;
   margin: 0;
@@ -452,7 +452,7 @@ function loadSample() {
 .empty-state {
   padding: 48px 16px;
   text-align: center;
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
   font-size: 14px;
 }
 @media (max-width: 1200px) {

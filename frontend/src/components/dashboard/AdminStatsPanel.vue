@@ -55,7 +55,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 const pieOption = computed(() => ({
   tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-  legend: { bottom: 0, textStyle: { color: '#4E5969', fontSize: 12 }, itemWidth: 10, itemHeight: 10 },
+  legend: { bottom: 0, textStyle: { color: 'var(--neutral-text-2)', fontSize: 12 }, itemWidth: 10, itemHeight: 10 },
   series: [
     {
       name: '任务状态',
@@ -63,7 +63,7 @@ const pieOption = computed(() => ({
       radius: ['40%', '68%'],
       center: ['50%', '46%'],
       avoidLabelOverlap: true,
-      itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+      itemStyle: { borderRadius: 6, borderColor: 'var(--neutral-card)', borderWidth: 2 },
       label: { show: false },
       emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
       data: Object.entries(statusData.value).map(([k, v]) => ({
@@ -82,15 +82,15 @@ const flowOption = computed(() => ({
     type: 'value',
     axisLine: { show: false },
     axisTick: { show: false },
-    splitLine: { lineStyle: { color: '#E5E6EB', type: 'dashed' } },
-    axisLabel: { color: '#86909C', fontSize: 12 },
+    splitLine: { lineStyle: { color: 'var(--neutral-border)', type: 'dashed' } },
+    axisLabel: { color: 'var(--neutral-text-3)', fontSize: 12 },
   },
   yAxis: {
     type: 'category',
     data: flowUsage.value.map((f) => f.name).reverse(),
-    axisLine: { lineStyle: { color: '#E5E6EB' } },
+    axisLine: { lineStyle: { color: 'var(--neutral-border)' } },
     axisTick: { show: false },
-    axisLabel: { color: '#4E5969', fontSize: 12 },
+    axisLabel: { color: 'var(--neutral-text-2)', fontSize: 12 },
   },
   series: [
     {
@@ -98,7 +98,7 @@ const flowOption = computed(() => ({
       data: flowUsage.value.map((f) => f.count).reverse(),
       barMaxWidth: 18,
       itemStyle: {
-        color: '#165DFF',
+        color: 'var(--arco-primary)',
         borderRadius: [0, 4, 4, 0],
       },
     },
@@ -302,7 +302,7 @@ onMounted(() => {
 .section-title {
   font-size: 18px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   margin: 0;
 }
 
@@ -317,8 +317,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-  background: var(--neutral-card-bg, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
   border-radius: 12px;
   padding: 16px 20px;
 }
@@ -333,9 +333,9 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-.stat-icon--blue { background: rgba(22, 93, 255, 0.1); color: #165dff; }
-.stat-icon--green { background: rgba(0, 180, 42, 0.1); color: #00b42a; }
-.stat-icon--purple { background: rgba(142, 84, 233, 0.1); color: #8e54e9; }
+.stat-icon--blue { background: color-mix(in srgb, var(--arco-primary) 10%, transparent); color: var(--arco-primary); }
+.stat-icon--green { background: color-mix(in srgb, var(--arco-success) 10%, transparent); color: var(--arco-success); }
+.stat-icon--purple { background: color-mix(in srgb, var(--kimi-chart-4) 10%, transparent); color: var(--kimi-chart-4); }
 
 .stat-body {
   display: flex;
@@ -346,13 +346,13 @@ onMounted(() => {
   font-size: 24px;
   font-weight: 600;
   line-height: 32px;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   font-variant-numeric: tabular-nums;
 }
 
 .stat-label {
   font-size: 12px;
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
 }
 
 .charts-grid {
@@ -363,8 +363,8 @@ onMounted(() => {
 }
 
 .arco-card {
-  background: var(--neutral-card-bg, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
   border-radius: 12px;
   padding: 16px 20px;
 }
@@ -379,14 +379,14 @@ onMounted(() => {
 .arco-card-title {
   font-size: 15px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
 .alert-icon {
-  color: #f53f3f;
+  color: var(--arco-danger);
 }
 
 .failed-list {
@@ -396,7 +396,7 @@ onMounted(() => {
 
 .failed-item {
   padding: 12px 0;
-  border-bottom: 1px solid rgba(229, 230, 235, 0.5);
+  border-bottom: 1px solid color-mix(in srgb, var(--neutral-border) 50%, transparent);
   cursor: pointer;
   transition: background 0.2s ease;
 }
@@ -406,7 +406,7 @@ onMounted(() => {
 }
 
 .failed-item:hover {
-  background: var(--neutral-hover, #f7f8fa);
+  background: var(--neutral-hover);
   margin: 0 -20px;
   padding: 12px 20px;
 }
@@ -421,7 +421,7 @@ onMounted(() => {
 .failed-name {
   font-size: 14px;
   font-weight: 500;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
 }
 
 .failed-meta {
@@ -429,11 +429,11 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
   font-size: 12px;
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
 }
 
 .failed-flow {
-  color: var(--arco-primary, #165dff);
+  color: var(--arco-primary);
 }
 
 .failed-error {

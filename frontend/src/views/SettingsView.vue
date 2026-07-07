@@ -716,6 +716,11 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
   margin-top: 0;
 }
 
+:root[data-theme="dark"] .twofa-disabled {
+  background: var(--neutral-hover) !important;
+  border-color: var(--neutral-border) !important;
+}
+
 .twofa-disabled {
   background: #f9fafb !important;
   border-color: #f3f4f6 !important;
@@ -747,8 +752,11 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
   color: var(--neutral-text-2);
 }
 
+:root[data-theme="dark"] .twofa-secret code {
+  background: var(--neutral-hover);
+}
 .twofa-secret code {
-  background: var(--neutral-fill);
+  background: var(--neutral-fill, #f2f3f5);
   padding: 4px 8px;
   border-radius: 4px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;

@@ -191,7 +191,7 @@ function handleRunQC() {
 .page-title {
   font-size: 20px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   margin: 0;
 }
 .fastq-layout {
@@ -201,8 +201,8 @@ function handleRunQC() {
   align-items: start;
 }
 .param-panel {
-  background: var(--neutral-card, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
   border-radius: 12px;
   padding: 20px;
 }
@@ -212,12 +212,12 @@ function handleRunQC() {
 .section-title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   margin: 0 0 10px;
 }
 .param-hint {
   font-size: 12px;
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
   margin: 8px 0 0;
 }
 .selected-file {
@@ -245,8 +245,8 @@ function handleRunQC() {
   gap: 12px;
 }
 .stat-card {
-  background: var(--neutral-card, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
   border-radius: 10px;
   padding: 14px 16px;
   display: flex;
@@ -255,24 +255,24 @@ function handleRunQC() {
 }
 .stat-label {
   font-size: 12px;
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
 }
 .stat-value {
   font-size: 22px;
   font-weight: 700;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   font-variant-numeric: tabular-nums;
 }
 .chart-card {
-  background: var(--neutral-card, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
   border-radius: 12px;
   padding: 16px 20px;
 }
 .chart-title {
   font-size: 14px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   margin: 0 0 12px;
 }
 .quality-chart {

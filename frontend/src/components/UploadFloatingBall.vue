@@ -42,7 +42,7 @@ function expand() {
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--neutral-card);
   box-shadow: 0 6px 20px rgba(22, 93, 255, 0.28);
   display: flex;
   flex-direction: column;

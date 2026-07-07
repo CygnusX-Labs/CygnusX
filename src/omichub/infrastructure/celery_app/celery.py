@@ -4,6 +4,7 @@ from celery import Celery
 from celery.schedules import crontab
 
 from omichub.core.config import get_settings
+from omichub.infrastructure.celery_app.logging import LoggedTask
 
 settings = get_settings()
 
@@ -11,6 +12,7 @@ celery_app = Celery(
     "omichub",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
+    task_cls=LoggedTask,
     include=[
         "omichub.infrastructure.celery_app.tasks.analysis",
         "omichub.infrastructure.celery_app.tasks.cookie",

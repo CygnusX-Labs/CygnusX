@@ -51,12 +51,69 @@ class OpenAICompatibleProvider:
         temperature: float = 0.7,
         max_tokens: int = 4096,
         tools: list[dict[str, Any]] | None = None,
+        deep_thinking: bool = False,
     ) -> AsyncIterator[ChatChunk]:
         """SSE 流式输出 — 对接 OpenAI /chat/completions 接口
 
         ``tools`` 为 OpenAI 标准工具定义列表；非空时注入请求，并在模型返回
         tool_calls 时累积分片，于流结束统一 yield 一个 type="tool_calls" chunk。
+        ``deep_thinking`` 为 True 时注入 enable_thinking 参数（Qwen3 / DeepSeek 等）。
+
+        内置空响应重试：若首次流式调用未产生任何 text/tool_calls chunk，
+        自动重试一次；两次均空则 yield error。
         """
+        has_yielded_text = False
+        has_tool_calls = False
+        last_usage: dict[str, Any] | None = None
+
+        for attempt in range(2):
+            attempt_had_text = False
+            attempt_had_error = False
+            async for chunk in self._stream_once(
+                messages, system_prompt, temperature, max_tokens, tools, deep_thinking,
+            ):
+                if chunk.type == "text":
+                    has_yielded_text = True
+                    attempt_had_text = True
+                    yield chunk
+                elif chunk.type == "tool_calls":
+                    has_tool_calls = True
+                    yield chunk
+                elif chunk.type == "done":
+                    last_usage = chunk.metadata.get("usage")
+                elif chunk.type == "error":
+                    attempt_had_error = True
+                    yield chunk
+                    return
+                else:
+                    yield chunk
+
+            if attempt_had_text or attempt_had_error or has_tool_calls:
+                break
+            if attempt == 0:
+                logger.info(f"模型 '{self.name}' 返回空内容，自动重试一次")
+
+        if not has_yielded_text and not has_tool_calls:
+            yield ChatChunk(
+                type="error",
+                content=f"当前模型 '{self.name}' 响应为空，请重新发送",
+            )
+        else:
+            done_meta: dict[str, Any] = {}
+            if last_usage:
+                done_meta["usage"] = last_usage
+            yield ChatChunk(type="done", metadata=done_meta)
+
+    async def _stream_once(
+        self,
+        messages: list[dict[str, str]],
+        system_prompt: str | None,
+        temperature: float,
+        max_tokens: int,
+        tools: list[dict[str, Any]] | None,
+        deep_thinking: bool,
+    ) -> AsyncIterator[ChatChunk]:
+        """单次流式 HTTP 调用（不含重试逻辑）"""
         api_messages: list[dict[str, str]] = []
         if system_prompt:
             api_messages.append({"role": "system", "content": system_prompt})
@@ -73,6 +130,8 @@ class OpenAICompatibleProvider:
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
+        if deep_thinking:
+            payload["enable_thinking"] = True
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",

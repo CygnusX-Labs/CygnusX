@@ -74,6 +74,7 @@ agents:
     - rnaseq
     - code
     - viz
+    - shania
 
 # --------------------------------------------
 # EBI 下载进度 key

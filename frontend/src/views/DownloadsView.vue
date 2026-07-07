@@ -63,8 +63,8 @@ const statusConfig: Record<string, { label: string; badge: string; icon: string 
   success: { label: '已完成', badge: 'bg-green-50 text-green-700', icon: 'check' },
   running: { label: '下载中', badge: 'bg-blue-50 text-blue-700', icon: 'loading' },
   failed:  { label: '失败',   badge: 'bg-red-50 text-red-700', icon: 'x' },
-  queued:  { label: '排队中', badge: 'bg-gray-100 text-gray-600', icon: 'clock' },
-  pending: { label: '等待中', badge: 'bg-gray-100 text-gray-500', icon: 'clock' },
+  queued:  { label: '排队中', badge: 'bg-neutral-hover text-text-secondary', icon: 'clock' },
+  pending: { label: '等待中', badge: 'bg-neutral-hover text-text-secondary', icon: 'clock' },
 }
 
 function scfg(status: string) {
@@ -169,12 +169,12 @@ function handleSubmit() {
 const inputFocusStyle = {
   onFocus: (e: Event) => {
     const el = e.target as HTMLInputElement | HTMLTextAreaElement
-    el.style.borderColor = '#4F8EF7'
-    el.style.boxShadow = '0 0 0 3px rgba(79,142,247,0.15)'
+    el.style.borderColor = 'var(--arco-primary)'
+    el.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--arco-primary) 15%, transparent)'
   },
   onBlur: (e: Event) => {
     const el = e.target as HTMLInputElement | HTMLTextAreaElement
-    el.style.borderColor = '#E5E7EB'
+    el.style.borderColor = 'var(--neutral-border)'
     el.style.boxShadow = 'none'
   },
 }
@@ -185,8 +185,8 @@ const inputFocusStyle = {
 
     <!-- ═══ 页面标题区 ═══ -->
     <div class="mb-6">
-      <h1 class="text-lg font-semibold" style="color: #1F2937">数据下载与聚合</h1>
-      <p class="text-sm mt-1" style="color: #9CA3AF">从 NCBI/EBI 公共数据库、网盘或云存储拉取测序数据，下载完成后自动入库</p>
+      <h1 class="text-lg font-semibold" style="color: var(--neutral-text-1)">数据下载与聚合</h1>
+      <p class="text-sm mt-1" style="color: var(--neutral-text-3)">从 NCBI/EBI 公共数据库、网盘或云存储拉取测序数据，下载完成后自动入库</p>
     </div>
 
     <!-- ═══ Pill 胶囊式 Tab 栏 ═══ -->
@@ -198,7 +198,7 @@ const inputFocusStyle = {
         :class="activeTab === tab.key
           ? 'text-white shadow-md shadow-blue-500/20'
           : 'text-gray-500 hover:text-gray-800'"
-        :style="activeTab === tab.key ? 'background: linear-gradient(135deg, #4F8EF7, #7C6FD4)' : 'background: #F3F4F6'"
+        :style="activeTab === tab.key ? 'background: linear-gradient(135deg, #4F8EF7, #7C6FD4)' : 'background: var(--neutral-hover)'"
         @click="activeTab = tab.key"
       >
         <span class="text-sm">{{ tab.icon }}</span>
@@ -207,20 +207,20 @@ const inputFocusStyle = {
     </div>
 
     <!-- ═══ 动态描述条 ═══ -->
-    <div class="flex items-start gap-2.5 text-sm p-3.5 rounded-lg mb-5" style="background: rgba(79,142,247,0.06); color: #6B7280; border-radius: 8px">
-      <svg class="w-4 h-4 mt-0.5 flex-shrink-0" style="color: #4F8EF7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" /></svg>
+    <div class="flex items-start gap-2.5 text-sm p-3.5 rounded-lg mb-5" style="background: color-mix(in srgb, var(--arco-primary) 6%, transparent); color: var(--neutral-text-2); border-radius: 8px">
+      <svg class="w-4 h-4 mt-0.5 flex-shrink-0" style="color: var(--arco-primary)" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" /></svg>
       <span class="leading-relaxed">{{ tabDescriptions[activeTab] }}</span>
     </div>
 
     <!-- ═══ 参数配置卡片 ═══ -->
-    <div class="bg-neutral-card rounded-xl mb-5" style="box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #F3F4F6">
+    <div class="bg-neutral-card rounded-xl mb-5" style="box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05); border: 1px solid var(--neutral-border)">
 
       <!-- ── SRA 表单 ── -->
       <div v-if="activeTab === 'sra'" class="p-6 space-y-5">
 
         <!-- 登录号（Textarea 自适应高度） -->
         <div class="flex items-start gap-4">
-          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: #374151">
+          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">
             登录号 <span class="text-red-400">*</span>
           </label>
           <div class="flex-1 max-w-lg">
@@ -229,7 +229,7 @@ const inputFocusStyle = {
               rows="1"
               placeholder="PRJNA1251654 或 SRRxxxxxx，多个用逗号或换行分隔"
               class="w-full px-3.5 py-2.5 text-sm border resize-none transition-all duration-200 focus:outline-none"
-              style="border-color: #E5E7EB; border-radius: 8px; color: #1F2937; min-height: 40px; max-height: 120px"
+              style="border-color: var(--neutral-border); border-radius: 8px; color: var(--neutral-text-1); min-height: 40px; max-height: 120px"
               v-on="inputFocusStyle"
             />
           </div>
@@ -237,7 +237,7 @@ const inputFocusStyle = {
 
         <!-- 下载方式（NSelect 下拉，统一浅色主题） -->
         <div class="flex items-start gap-4">
-          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: #374151">下载方式</label>
+          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">下载方式</label>
           <NSelect
             v-model:value="sraMethod"
             :options="sraMethodOptions"
@@ -248,7 +248,7 @@ const inputFocusStyle = {
 
         <!-- 下载到 -->
         <div class="flex items-start gap-4">
-          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: #374151">下载到</label>
+          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">下载到</label>
           <NSelect
             v-model:value="targetDirectory"
             :options="targetDirectoryOptions"
@@ -264,14 +264,14 @@ const inputFocusStyle = {
             <button
               class="w-full flex items-center justify-between px-4 py-3 rounded-lg border transition-all duration-200"
               :style="advancedOpen
-                ? 'background: #F3F4F6; border-color: #D1D5DB; border-style: solid; border-radius: 8px 8px 0 0'
-                : 'background: #F9FAFB; border-color: #E5E7EB; border-style: dashed'"
-              @mouseenter="($event.currentTarget as HTMLElement).style.background='#F3F4F6'; ($event.currentTarget as HTMLElement).style.borderStyle='solid'"
+                ? 'background: var(--neutral-hover); border-color: var(--neutral-border); border-style: solid; border-radius: 8px 8px 0 0'
+                : 'background: var(--neutral-bg); border-color: var(--neutral-border); border-style: dashed'"
+              @mouseenter="($event.currentTarget as HTMLElement).style.background='var(--neutral-hover)'; ($event.currentTarget as HTMLElement).style.borderStyle='solid'"
               @mouseleave="($event.currentTarget as HTMLElement).style.background=advancedOpen ? '#F3F4F6' : '#F9FAFB'; ($event.currentTarget as HTMLElement).style.borderStyle=advancedOpen ? 'solid' : 'dashed'"
               @click="toggleAdvanced"
             >
-              <span class="text-sm font-medium" style="color: #374151">高级选项：样本与 Run 过滤</span>
-              <svg class="w-4 h-4 transition-transform duration-300" style="color: #6B7280" :class="advancedOpen ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
+              <span class="text-sm font-medium" style="color: var(--neutral-text-1)">高级选项：样本与 Run 过滤</span>
+              <svg class="w-4 h-4 transition-transform duration-300" style="color: var(--neutral-text-2)" :class="advancedOpen ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
             </button>
 
             <!-- 展开内容：2x2 正则过滤 -->
@@ -279,13 +279,13 @@ const inputFocusStyle = {
               v-if="advancedOpen"
               id="advanced-panel-bottom"
               class="border rounded-b-lg bg-neutral-card p-5"
-              style="border-color: #D1D5DB; border-top: none; border-radius: 0 0 8px 8px"
+              style="border-color: var(--neutral-border); border-top: none; border-radius: 0 0 8px 8px"
             >
               <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <!-- 包含样本 -->
                 <div class="flex flex-col gap-1.5">
-                  <label class="text-sm font-medium flex items-center gap-1.5" style="color: #374151">
-                    <span class="inline-flex items-center justify-center w-5 h-5 rounded text-xs font-semibold" style="background: #EEF2FF; color: #4F8EF7; border-radius: 4px">+</span>
+                  <label class="text-sm font-medium flex items-center gap-1.5" style="color: var(--neutral-text-1)">
+                    <span class="inline-flex items-center justify-center w-5 h-5 rounded text-xs font-semibold" style="background: var(--arco-primary-light); color: #4F8EF7; border-radius: 4px">+</span>
                     包含样本 (Include)
                   </label>
                   <input
@@ -293,16 +293,16 @@ const inputFocusStyle = {
                     type="text"
                     placeholder="如：^SAMN.*"
                     class="h-10 px-3.5 text-sm border rounded-lg transition-all duration-200 focus:outline-none"
-                    style="border-color: #E5E7EB; color: #1F2937; border-radius: 8px"
+                    style="border-color: var(--neutral-border); color: var(--neutral-text-1); border-radius: 8px"
                     v-on="inputFocusStyle"
                   />
-                  <span class="text-xs" style="color: #9CA3AF">正则匹配样本 ID，留空不过滤</span>
+                  <span class="text-xs" style="color: var(--neutral-text-3)">正则匹配样本 ID，留空不过滤</span>
                 </div>
 
                 <!-- 排除样本 -->
                 <div class="flex flex-col gap-1.5">
-                  <label class="text-sm font-medium flex items-center gap-1.5" style="color: #374151">
-                    <span class="inline-flex items-center justify-center w-5 h-5 rounded text-xs font-semibold" style="background: #FEF2F2; color: #EF4444; border-radius: 4px">−</span>
+                  <label class="text-sm font-medium flex items-center gap-1.5" style="color: var(--neutral-text-1)">
+                    <span class="inline-flex items-center justify-center w-5 h-5 rounded text-xs font-semibold" style="background: var(--arco-danger-light); color: #EF4444; border-radius: 4px">−</span>
                     排除样本 (Exclude)
                   </label>
                   <input
@@ -310,16 +310,16 @@ const inputFocusStyle = {
                     type="text"
                     placeholder="如：.control."
                     class="h-10 px-3.5 text-sm border rounded-lg transition-all duration-200 focus:outline-none"
-                    style="border-color: #E5E7EB; color: #1F2937; border-radius: 8px"
+                    style="border-color: var(--neutral-border); color: var(--neutral-text-1); border-radius: 8px"
                     v-on="inputFocusStyle"
                   />
-                  <span class="text-xs" style="color: #9CA3AF">匹配到的样本将被跳过</span>
+                  <span class="text-xs" style="color: var(--neutral-text-3)">匹配到的样本将被跳过</span>
                 </div>
 
                 <!-- 包含 Run -->
                 <div class="flex flex-col gap-1.5">
-                  <label class="text-sm font-medium flex items-center gap-1.5" style="color: #374151">
-                    <span class="inline-flex items-center justify-center w-5 h-5 rounded text-xs font-semibold" style="background: #EEF2FF; color: #4F8EF7; border-radius: 4px">+</span>
+                  <label class="text-sm font-medium flex items-center gap-1.5" style="color: var(--neutral-text-1)">
+                    <span class="inline-flex items-center justify-center w-5 h-5 rounded text-xs font-semibold" style="background: var(--arco-primary-light); color: #4F8EF7; border-radius: 4px">+</span>
                     包含 Run (Include)
                   </label>
                   <input
@@ -327,16 +327,16 @@ const inputFocusStyle = {
                     type="text"
                     placeholder="如：SRR123.*"
                     class="h-10 px-3.5 text-sm border rounded-lg transition-all duration-200 focus:outline-none"
-                    style="border-color: #E5E7EB; color: #1F2937; border-radius: 8px"
+                    style="border-color: var(--neutral-border); color: var(--neutral-text-1); border-radius: 8px"
                     v-on="inputFocusStyle"
                   />
-                  <span class="text-xs" style="color: #9CA3AF">正则匹配 Run 编号</span>
+                  <span class="text-xs" style="color: var(--neutral-text-3)">正则匹配 Run 编号</span>
                 </div>
 
                 <!-- 排除 Run -->
                 <div class="flex flex-col gap-1.5">
-                  <label class="text-sm font-medium flex items-center gap-1.5" style="color: #374151">
-                    <span class="inline-flex items-center justify-center w-5 h-5 rounded text-xs font-semibold" style="background: #FEF2F2; color: #EF4444; border-radius: 4px">−</span>
+                  <label class="text-sm font-medium flex items-center gap-1.5" style="color: var(--neutral-text-1)">
+                    <span class="inline-flex items-center justify-center w-5 h-5 rounded text-xs font-semibold" style="background: var(--arco-danger-light); color: #EF4444; border-radius: 4px">−</span>
                     排除 Run (Exclude)
                   </label>
                   <input
@@ -344,14 +344,14 @@ const inputFocusStyle = {
                     type="text"
                     placeholder="如：.test."
                     class="h-10 px-3.5 text-sm border rounded-lg transition-all duration-200 focus:outline-none"
-                    style="border-color: #E5E7EB; color: #1F2937; border-radius: 8px"
+                    style="border-color: var(--neutral-border); color: var(--neutral-text-1); border-radius: 8px"
                     v-on="inputFocusStyle"
                   />
-                  <span class="text-xs" style="color: #9CA3AF">匹配到的 Run 将被跳过</span>
+                  <span class="text-xs" style="color: var(--neutral-text-3)">匹配到的 Run 将被跳过</span>
                 </div>
               </div>
 
-              <p class="text-xs mt-4" style="color: #9CA3AF">支持正则表达式过滤，留空表示不过滤。多个模式用逗号分隔。</p>
+              <p class="text-xs mt-4" style="color: var(--neutral-text-3)">支持正则表达式过滤，留空表示不过滤。多个模式用逗号分隔。</p>
             </div>
           </div>
         </div>
@@ -373,8 +373,8 @@ const inputFocusStyle = {
             </button>
             <button
               class="h-10 px-5 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 border hover:-translate-y-px active:scale-[0.98]"
-              style="border-color: #D1D5DB; color: #374151; border-radius: 8px; background: transparent"
-              @mouseenter="($event.currentTarget as HTMLElement).style.background='#F9FAFB'"
+              style="border-color: var(--neutral-border); color: var(--neutral-text-1); border-radius: 8px; background: transparent"
+              @mouseenter="($event.currentTarget as HTMLElement).style.background='var(--neutral-bg)'"
               @mouseleave="($event.currentTarget as HTMLElement).style.background='transparent'"
             >
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
@@ -387,19 +387,19 @@ const inputFocusStyle = {
       <!-- ── 云盘表单 ── -->
       <div v-if="activeTab === 'cloud-drive'" class="p-6 space-y-5">
         <div class="flex items-start gap-4">
-          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: #374151">网盘来源</label>
+          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">网盘来源</label>
           <div class="flex items-center gap-4 h-10">
-            <label class="flex items-center gap-1.5 text-sm cursor-pointer" style="color: #374151"><input v-model="driveProvider" type="radio" value="baidu" class="accent-blue-500 w-3.5 h-3.5" /> 百度网盘</label>
-            <label class="flex items-center gap-1.5 text-sm cursor-pointer" style="color: #374151"><input v-model="driveProvider" type="radio" value="123" class="accent-blue-500 w-3.5 h-3.5" /> 123 云盘</label>
+            <label class="flex items-center gap-1.5 text-sm cursor-pointer" style="color: var(--neutral-text-1)"><input v-model="driveProvider" type="radio" value="baidu" class="accent-blue-500 w-3.5 h-3.5" /> 百度网盘</label>
+            <label class="flex items-center gap-1.5 text-sm cursor-pointer" style="color: var(--neutral-text-1)"><input v-model="driveProvider" type="radio" value="123" class="accent-blue-500 w-3.5 h-3.5" /> 123 云盘</label>
           </div>
         </div>
         <div class="flex items-start gap-4">
-          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: #374151">分享链接 <span class="text-red-400">*</span></label>
-          <input v-model="driveLink" type="text" placeholder="粘贴网盘分享链接" class="flex-1 max-w-lg h-10 px-3.5 text-sm border transition-all duration-200 focus:outline-none" style="border-color: #E5E7EB; border-radius: 8px; color: #1F2937" v-on="inputFocusStyle" />
+          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">分享链接 <span class="text-red-400">*</span></label>
+          <input v-model="driveLink" type="text" placeholder="粘贴网盘分享链接" class="flex-1 max-w-lg h-10 px-3.5 text-sm border transition-all duration-200 focus:outline-none" style="border-color: var(--neutral-border); border-radius: 8px; color: var(--neutral-text-1)" v-on="inputFocusStyle" />
         </div>
         <div class="flex items-start gap-4">
-          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: #374151">提取码</label>
-          <input v-model="driveCode" type="text" placeholder="可选" maxlength="8" class="w-36 h-10 px-3.5 text-sm border text-center transition-all duration-200 focus:outline-none" style="border-color: #E5E7EB; border-radius: 8px; color: #1F2937" v-on="inputFocusStyle" />
+          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">提取码</label>
+          <input v-model="driveCode" type="text" placeholder="可选" maxlength="8" class="w-36 h-10 px-3.5 text-sm border text-center transition-all duration-200 focus:outline-none" style="border-color: var(--neutral-border); border-radius: 8px; color: var(--neutral-text-1)" v-on="inputFocusStyle" />
         </div>
         <div class="flex items-start gap-4 pt-1">
           <div class="w-20 shrink-0"></div>
@@ -413,7 +413,7 @@ const inputFocusStyle = {
       <!-- ── 云存储表单 ── -->
       <div v-if="activeTab === 'cloud-storage'" class="p-6 space-y-5">
         <div class="flex items-start gap-4">
-          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: #374151">云服务商</label>
+          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">云服务商</label>
           <NSelect
             v-model:value="storageProvider"
             :options="storageProviderOptions"
@@ -422,8 +422,8 @@ const inputFocusStyle = {
           />
         </div>
         <div class="flex items-start gap-4">
-          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: #374151">对象 URI <span class="text-red-400">*</span></label>
-          <input v-model="storageUri" type="text" placeholder="oss://bucket-name/path/to/data/" class="flex-1 max-w-lg h-10 px-3.5 text-sm font-mono border transition-all duration-200 focus:outline-none" style="border-color: #E5E7EB; border-radius: 8px; color: #1F2937" v-on="inputFocusStyle" />
+          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">对象 URI <span class="text-red-400">*</span></label>
+          <input v-model="storageUri" type="text" placeholder="oss://bucket-name/path/to/data/" class="flex-1 max-w-lg h-10 px-3.5 text-sm font-mono border transition-all duration-200 focus:outline-none" style="border-color: var(--neutral-border); border-radius: 8px; color: var(--neutral-text-1)" v-on="inputFocusStyle" />
         </div>
         <div class="flex items-start gap-4 pt-1">
           <div class="w-20 shrink-0"></div>
@@ -436,13 +436,13 @@ const inputFocusStyle = {
     </div>
 
     <!-- ═══ 下载任务卡片 ═══ -->
-    <div class="bg-neutral-card rounded-xl" style="box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #F3F4F6">
+    <div class="bg-neutral-card rounded-xl" style="box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05); border: 1px solid var(--neutral-border)">
 
       <!-- 队列头部 -->
-      <div class="flex items-center justify-between px-5 py-3.5 border-b" style="border-color: #F3F4F6">
+      <div class="flex items-center justify-between px-5 py-3.5 border-b" style="border-color: var(--neutral-border)">
         <div class="flex items-center gap-4">
-          <h3 class="text-sm font-semibold" style="color: #1F2937">下载任务</h3>
-          <div class="flex items-center gap-3 text-xs" style="color: #9CA3AF">
+          <h3 class="text-sm font-semibold" style="color: var(--neutral-text-1)">下载任务</h3>
+          <div class="flex items-center gap-3 text-xs" style="color: var(--neutral-text-3)">
             <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span> 共 {{ stats.total }} 个</span>
             <span v-if="stats.running" class="flex items-center gap-1" style="color: #4F8EF7"><span class="w-1.5 h-1.5 rounded-full animate-pulse" style="background: #4F8EF7"></span> {{ stats.running }} 下载中</span>
             <span v-if="stats.success" class="flex items-center gap-1 text-green-600"><span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> {{ stats.success }} 已完成</span>
@@ -455,7 +455,7 @@ const inputFocusStyle = {
             size="small"
             style="width: 120px"
           />
-          <button class="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md transition-colors" style="color: #6B7280; border-radius: 6px" @mouseenter="($event.currentTarget as HTMLElement).style.color='#4F8EF7'; ($event.currentTarget as HTMLElement).style.background='#F3F4F6'" @mouseleave="($event.currentTarget as HTMLElement).style.color='#6B7280'; ($event.currentTarget as HTMLElement).style.background='transparent'">
+          <button class="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md transition-colors" style="color: var(--neutral-text-2); border-radius: 6px" @mouseenter="($event.currentTarget as HTMLElement).style.color='#4F8EF7'; ($event.currentTarget as HTMLElement).style.background='var(--neutral-hover)'" @mouseleave="($event.currentTarget as HTMLElement).style.color='var(--neutral-text-2)'; ($event.currentTarget as HTMLElement).style.background='transparent'">
             <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
             刷新
           </button>
@@ -465,14 +465,14 @@ const inputFocusStyle = {
       <!-- 表格 -->
       <div class="overflow-x-auto">
         <table class="min-w-full text-left">
-          <thead class="border-b" style="background: #F9FAFB; border-color: #F3F4F6">
+          <thead class="border-b" style="background: var(--neutral-bg); border-color: var(--neutral-border)">
             <tr>
-              <th class="text-xs font-medium px-5 py-2.5" style="color: #6B7280">任务名称</th>
-              <th class="text-xs font-medium px-5 py-2.5 w-[100px]" style="color: #6B7280">登录号</th>
-              <th class="text-xs font-medium px-5 py-2.5 w-[100px]" style="color: #6B7280">状态</th>
-              <th class="text-xs font-medium px-5 py-2.5 w-[180px]" style="color: #6B7280">进度</th>
-              <th class="text-xs font-medium px-5 py-2.5 w-[120px]" style="color: #6B7280">提交时间</th>
-              <th class="text-xs font-medium px-5 py-2.5 w-[100px] text-right" style="color: #6B7280">操作</th>
+              <th class="text-xs font-medium px-5 py-2.5" style="color: var(--neutral-text-2)">任务名称</th>
+              <th class="text-xs font-medium px-5 py-2.5 w-[100px]" style="color: var(--neutral-text-2)">登录号</th>
+              <th class="text-xs font-medium px-5 py-2.5 w-[100px]" style="color: var(--neutral-text-2)">状态</th>
+              <th class="text-xs font-medium px-5 py-2.5 w-[180px]" style="color: var(--neutral-text-2)">进度</th>
+              <th class="text-xs font-medium px-5 py-2.5 w-[120px]" style="color: var(--neutral-text-2)">提交时间</th>
+              <th class="text-xs font-medium px-5 py-2.5 w-[100px] text-right" style="color: var(--neutral-text-2)">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -481,21 +481,21 @@ const inputFocusStyle = {
               :key="task.id"
               class="transition-colors group"
               style="height: 52px"
-              @mouseenter="($event.currentTarget as HTMLElement).style.background='#FAFBFC'"
+              @mouseenter="($event.currentTarget as HTMLElement).style.background='var(--neutral-hover)'"
               @mouseleave="($event.currentTarget as HTMLElement).style.background='transparent'"
             >
               <!-- 任务名称 -->
-              <td class="px-5 py-3 border-b" style="border-color: #F3F4F6">
-                <span class="text-sm font-medium truncate block max-w-[280px]" style="color: #1F2937" :title="task.name">{{ task.name }}</span>
+              <td class="px-5 py-3 border-b" style="border-color: var(--neutral-border)">
+                <span class="text-sm font-medium truncate block max-w-[280px]" style="color: var(--neutral-text-1)" :title="task.name">{{ task.name }}</span>
               </td>
 
               <!-- 登录号 -->
-              <td class="px-5 py-3 border-b" style="border-color: #F3F4F6">
-                <span class="text-xs font-mono truncate block max-w-[110px]" style="color: #6B7280" :title="task.accession">{{ task.accession }}</span>
+              <td class="px-5 py-3 border-b" style="border-color: var(--neutral-border)">
+                <span class="text-xs font-mono truncate block max-w-[110px]" style="color: var(--neutral-text-2)" :title="task.accession">{{ task.accession }}</span>
               </td>
 
               <!-- 状态 -->
-              <td class="px-5 py-3 border-b" style="border-color: #F3F4F6">
+              <td class="px-5 py-3 border-b" style="border-color: var(--neutral-border)">
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium" style="border-radius: 4px" :class="scfg(task.status).badge">
                   <svg v-if="scfg(task.status).icon === 'check'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
                   <svg v-else-if="scfg(task.status).icon === 'loading'" class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" /></svg>
@@ -506,36 +506,36 @@ const inputFocusStyle = {
               </td>
 
               <!-- 进度条 -->
-              <td class="px-5 py-3 border-b" style="border-color: #F3F4F6">
+              <td class="px-5 py-3 border-b" style="border-color: var(--neutral-border)">
                 <div class="flex items-center gap-2">
-                  <div class="flex-1 h-1.5 rounded-full overflow-hidden" style="background: #F3F4F6; border-radius: 3px">
+                  <div class="flex-1 h-1.5 rounded-full overflow-hidden" style="background: var(--neutral-hover); border-radius: 3px">
                     <div
                       class="h-full rounded-full transition-all duration-500"
                       :style="`${gradientBar}; width: ${pct(task)}%; border-radius: 3px`"
                     ></div>
                   </div>
-                  <span class="text-xs font-medium tabular-nums w-8 text-right" style="color: #6B7280">{{ pct(task) }}%</span>
+                  <span class="text-xs font-medium tabular-nums w-8 text-right" style="color: var(--neutral-text-2)">{{ pct(task) }}%</span>
                 </div>
               </td>
 
               <!-- 时间 -->
-              <td class="px-5 py-3 border-b" style="border-color: #F3F4F6">
-                <span class="text-xs" style="color: #9CA3AF">{{ formatTime(task.createdAt) }}</span>
+              <td class="px-5 py-3 border-b" style="border-color: var(--neutral-border)">
+                <span class="text-xs" style="color: var(--neutral-text-3)">{{ formatTime(task.createdAt) }}</span>
               </td>
 
               <!-- 操作 -->
-              <td class="px-5 py-3 border-b text-right" style="border-color: #F3F4F6">
+              <td class="px-5 py-3 border-b text-right" style="border-color: var(--neutral-border)">
                 <div class="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button v-if="task.status === 'running'" class="p-1.5 rounded-md transition-colors" style="color: #9CA3AF" title="暂停" @mouseenter="($event.target as HTMLElement).style.color='#F59E0B'" @mouseleave="($event.target as HTMLElement).style.color='#9CA3AF'">
+                  <button v-if="task.status === 'running'" class="p-1.5 rounded-md transition-colors" style="color: var(--neutral-text-3)" title="暂停" @mouseenter="($event.target as HTMLElement).style.color='#F59E0B'" @mouseleave="($event.target as HTMLElement).style.color='var(--neutral-text-3)'">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25v13.5m-7.5-13.5v13.5" /></svg>
                   </button>
-                  <button class="p-1.5 rounded-md transition-colors" style="color: #9CA3AF" title="查看日志" @mouseenter="($event.target as HTMLElement).style.color='#4F8EF7'" @mouseleave="($event.target as HTMLElement).style.color='#9CA3AF'" @click="router.push(`/tasks/${task.id}`)">
+                  <button class="p-1.5 rounded-md transition-colors" style="color: var(--neutral-text-3)" title="查看日志" @mouseenter="($event.target as HTMLElement).style.color='#4F8EF7'" @mouseleave="($event.target as HTMLElement).style.color='var(--neutral-text-3)'" @click="router.push(`/tasks/${task.id}`)">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
                   </button>
-                  <button v-if="task.status === 'failed'" class="p-1.5 rounded-md transition-colors" style="color: #9CA3AF" title="重新下载" @mouseenter="($event.target as HTMLElement).style.color='#10B981'" @mouseleave="($event.target as HTMLElement).style.color='#9CA3AF'">
+                  <button v-if="task.status === 'failed'" class="p-1.5 rounded-md transition-colors" style="color: var(--neutral-text-3)" title="重新下载" @mouseenter="($event.target as HTMLElement).style.color='#10B981'" @mouseleave="($event.target as HTMLElement).style.color='var(--neutral-text-3)'">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                   </button>
-                  <button class="p-1.5 rounded-md transition-colors" style="color: #9CA3AF" title="删除" @mouseenter="($event.target as HTMLElement).style.color='#EF4444'" @mouseleave="($event.target as HTMLElement).style.color='#9CA3AF'">
+                  <button class="p-1.5 rounded-md transition-colors" style="color: var(--neutral-text-3)" title="删除" @mouseenter="($event.target as HTMLElement).style.color='#EF4444'" @mouseleave="($event.target as HTMLElement).style.color='var(--neutral-text-3)'">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                   </button>
                 </div>
@@ -546,11 +546,11 @@ const inputFocusStyle = {
 
         <!-- 空状态 -->
         <div v-if="filteredTasks.length === 0" class="flex flex-col items-center justify-center py-20">
-          <svg class="w-16 h-16 mb-4" style="color: #E5E7EB" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="0.8">
+          <svg class="w-16 h-16 mb-4" style="color: var(--neutral-border)" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="0.8">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 16v-4m0 0V8m0 4h4m-4 0H8m12 4v1a3 3 0 01-3 3H7a3 3 0 01-3-3v-1" />
           </svg>
-          <p class="text-sm font-medium mb-1" style="color: #6B7280">暂无下载任务</p>
-          <p class="text-xs" style="color: #9CA3AF">输入登录号后开始拉取数据，下载完成的文件将自动出现在「数据管理」中</p>
+          <p class="text-sm font-medium mb-1" style="color: var(--neutral-text-2)">暂无下载任务</p>
+          <p class="text-xs" style="color: var(--neutral-text-3)">输入登录号后开始拉取数据，下载完成的文件将自动出现在「数据管理」中</p>
         </div>
       </div>
     </div>

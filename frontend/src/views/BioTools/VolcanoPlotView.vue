@@ -46,6 +46,10 @@ const form = reactive({
   yAxisTitle: '',
   plotTitle: '',
   autoWrapTitle: true,
+  // 导出尺寸：关闭时跟随图表容器实际尺寸，开启时用自定义宽高（单位 px）
+  exportCustomSize: false,
+  exportWidth: 1200,
+  exportHeight: 800,
 })
 
 const colors = reactive({ ...DEFAULT_COLORS })
@@ -250,8 +254,9 @@ function exportImage(format: 'png' | 'svg') {
   if (!container) return
   const baseName = `volcano_${config.value.expName || 'plot'}`
   const rect = container.getBoundingClientRect()
-  const width = Math.round(rect.width)
-  const height = Math.round(rect.height)
+  // 自定义导出尺寸优先；否则跟随图表容器实际尺寸
+  const width = form.exportCustomSize ? form.exportWidth : Math.round(rect.width)
+  const height = form.exportCustomSize ? form.exportHeight : Math.round(rect.height)
   if (format === 'svg') {
     // SVG 为矢量，无 DPI 概念，直接导出
     Plotly.downloadImage(container, {
@@ -558,6 +563,24 @@ onUnmounted(() => {
               <label>非显著透明度 ({{ form.alpha.toFixed(2) }})</label>
               <NSlider v-model:value="form.alpha" :min="0.1" :max="1" :step="0.05" />
             </div>
+
+            <div class="switch-row">
+              <span>自定义导出尺寸</span>
+              <NSwitch v-model:value="form.exportCustomSize" size="small" />
+            </div>
+            <div class="row-2col" v-if="form.exportCustomSize">
+              <div class="field">
+                <label>宽度 (px)</label>
+                <NInputNumber v-model:value="form.exportWidth" :min="100" :max="8000" :step="10" :show-button="false" size="small" />
+              </div>
+              <div class="field">
+                <label>高度 (px)</label>
+                <NInputNumber v-model:value="form.exportHeight" :min="100" :max="8000" :step="10" :show-button="false" size="small" />
+              </div>
+            </div>
+            <p class="hint" v-if="form.exportCustomSize">
+              PNG 按 DPI 放大：{{ form.exportWidth }}×{{ form.exportHeight }} @ {{ exportDpi }}DPI → {{ Math.round(form.exportWidth * exportDpi / 96) }}×{{ Math.round(form.exportHeight * exportDpi / 96) }}px
+            </p>
           </NCollapseItem>
         </NCollapse>
         <NButton block quaternary size="small" class="reset-btn" @click="handleReset">重置全部</NButton>
@@ -689,7 +712,7 @@ onUnmounted(() => {
 .page-title {
   font-size: 20px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   margin: 0;
   flex: 1;
 }
@@ -701,8 +724,8 @@ onUnmounted(() => {
 }
 .param-panel,
 .gene-panel {
-  background: var(--neutral-card, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
   border-radius: 12px;
   padding: 12px;
   max-height: calc(100vh - 120px);
@@ -717,7 +740,7 @@ onUnmounted(() => {
 }
 .hint {
   font-size: 12px;
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
   margin: 6px 0;
 }
 .hint.error {
@@ -740,7 +763,7 @@ onUnmounted(() => {
 .field label {
   display: block;
   font-size: 12px;
-  color: var(--neutral-text-2, #4e5969);
+  color: var(--neutral-text-2);
   margin-bottom: 4px;
 }
 .color-grid {
@@ -752,7 +775,7 @@ onUnmounted(() => {
 .color-field label {
   display: block;
   font-size: 11px;
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
   margin-bottom: 3px;
 }
 .switch-row {
@@ -760,7 +783,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   font-size: 12px;
-  color: var(--neutral-text-2, #4e5969);
+  color: var(--neutral-text-2);
   margin: 6px 0;
 }
 .reset-btn {
@@ -776,7 +799,7 @@ onUnmounted(() => {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: var(--neutral-card, #fff);
+  background: var(--neutral-card);
   padding: 16px;
   max-height: 100vh;
 }
@@ -787,8 +810,8 @@ onUnmounted(() => {
 }
 .plot-card {
   position: relative;
-  background: var(--neutral-card, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
   border-radius: 12px;
   padding: 8px;
   min-height: 540px;
@@ -803,7 +826,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--neutral-card, #fff);
+  background: var(--neutral-card);
   opacity: 0.6;
   border-radius: 12px;
 }
@@ -834,12 +857,12 @@ onUnmounted(() => {
   text-align: center;
   padding: 6px 0;
   border-radius: 8px;
-  background: var(--neutral-bg, #f7f8fa);
+  background: var(--neutral-bg);
 }
 .stat-up :deep(.n-statistic-value__content) { color: #e41749; }
 .stat-down :deep(.n-statistic-value__content) { color: #41b6e6; }
 .stat-non :deep(.n-statistic-value__content) { color: #86909c; }
-.stat-total :deep(.n-statistic-value__content) { color: var(--neutral-text-1, #1d2129); }
+.stat-total :deep(.n-statistic-value__content) { color: var(--neutral-text-1); }
 .search-section {
   display: flex;
   flex-direction: column;
@@ -848,13 +871,13 @@ onUnmounted(() => {
 .search-results {
   max-height: 200px;
   overflow-y: auto;
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  border: 1px solid var(--neutral-border);
   border-radius: 8px;
 }
 .search-empty {
   padding: 10px;
   font-size: 12px;
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
   text-align: center;
 }
 .search-item {
@@ -863,15 +886,15 @@ onUnmounted(() => {
   justify-content: space-between;
   padding: 6px 10px;
   cursor: pointer;
-  border-bottom: 1px solid var(--neutral-border, #f0f1f5);
+  border-bottom: 1px solid var(--neutral-border);
   font-size: 12px;
 }
 .search-item:hover {
-  background: var(--neutral-bg, #f7f8fa);
+  background: var(--neutral-bg);
 }
 .search-item .gene-name {
   font-weight: 500;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
 }
 .sig-header {
   display: flex;
@@ -879,7 +902,7 @@ onUnmounted(() => {
   justify-content: space-between;
   font-size: 13px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   margin-bottom: 6px;
 }
 .sig-list {
@@ -891,13 +914,13 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   padding: 5px 4px;
-  border-bottom: 1px solid var(--neutral-border, #f0f1f5);
+  border-bottom: 1px solid var(--neutral-border);
   font-size: 12px;
 }
 .sig-gene {
   flex: 1;
   cursor: pointer;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
 }
 .sig-gene:hover {
   color: var(--arco-primary, #165dff);
@@ -905,13 +928,13 @@ onUnmounted(() => {
 .arrow-up { color: #e41749; margin-left: 4px; }
 .arrow-down { color: #41b6e6; margin-left: 4px; }
 .sig-p {
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
   font-size: 11px;
 }
 .bottom-table {
   margin-top: 16px;
-  background: var(--neutral-card, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
   border-radius: 12px;
   overflow: hidden;
 }
@@ -923,7 +946,7 @@ onUnmounted(() => {
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
 }
 .bottom-table-body {
   padding: 0 12px 12px;

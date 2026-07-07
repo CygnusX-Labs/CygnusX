@@ -33,6 +33,7 @@ class ChatStreamRequest(BaseModel):
     attachments: list[ChatAttachment] = Field(default_factory=list, description="当前用户消息的附件")
     enable_web_search: bool = Field(False, description="是否启用联网搜索")
     enable_code_execution: bool = Field(False, description="是否启用代码执行（仅前端 Pyodide，后端透传标记）")
+    deep_thinking: bool = Field(False, description="是否开启深度思考/推理模式")
 
 
 class ChatMessageDTO(BaseModel):
@@ -60,6 +61,7 @@ class ChatSessionDTO(BaseModel):
     session_id: str
     title: str
     assistant_id: str | None = None
+    agent_id: str | None = None
     model_id: UUID
     message_count: int
     status: str

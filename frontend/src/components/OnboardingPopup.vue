@@ -63,10 +63,10 @@ function handleSkip() {
 
         <!-- 欢迎文案 -->
         <div class="px-8 pb-2 text-center">
-          <h1 class="text-2xl font-bold text-gray-900">
+          <h1 class="text-2xl font-bold text-text-primary">
             欢迎来到 OmicHub 🚀
           </h1>
-          <p class="mt-2 mb-4 text-sm text-gray-500">
+          <p class="mt-2 mb-4 text-sm text-text-secondary">
             开启你的高效多组学探索之旅！先去看看实验室知识库吧～
           </p>
         </div>
@@ -76,25 +76,25 @@ function handleSkip() {
           <div
             role="button"
             tabindex="0"
-            class="group flex cursor-pointer items-center gap-4 rounded-xl border border-gray-200 bg-neutral-card p-4 transition-all hover:border-blue-500 hover:bg-blue-50"
+            class="group flex cursor-pointer items-center gap-4 rounded-xl border border-neutral-border bg-neutral-card p-4 transition-all hover:border-primary hover:bg-primary-light"
             @click="handleGoKnowledge"
             @keyup.enter="handleGoKnowledge"
           >
             <span class="text-3xl">📚</span>
             <div class="flex-1 text-left">
-              <div class="font-bold text-gray-900">实验室知识库</div>
-              <div class="mt-0.5 text-xs text-gray-400">
+              <div class="font-bold text-text-primary">实验室知识库</div>
+              <div class="mt-0.5 text-xs text-text-tertiary">
                 查阅组内标准操作规范与服务器使用指南
               </div>
             </div>
-            <span class="text-gray-300 transition-colors group-hover:text-blue-500">→</span>
+            <span class="text-text-disabled transition-colors group-hover:text-primary">→</span>
           </div>
         </div>
 
         <!-- 管理员联系方式提示 -->
         <div v-if="showContact" class="px-8 pt-3">
-          <p class="text-center text-xs text-gray-400">
-            遇到其他问题可联系管理员：<span class="font-medium text-gray-600">{{ adminContact }}</span>
+          <p class="text-center text-xs text-text-tertiary">
+            遇到其他问题可联系管理员：<span class="font-medium text-text-secondary">{{ adminContact }}</span>
           </p>
         </div>
 
@@ -102,14 +102,14 @@ function handleSkip() {
         <div class="flex items-center justify-end gap-3 px-8 py-6">
           <button
             type="button"
-            class="rounded-lg border border-blue-600 px-4 py-2 text-sm font-medium text-blue-600 transition-colors hover:bg-blue-50"
+            class="rounded-lg border border-primary px-4 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary-light"
             @click="handleSkip"
           >
             稍后再看
           </button>
           <button
             type="button"
-            class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+            class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
             @click="handleGoKnowledge"
           >
             前往知识库

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { NButton, NIcon } from 'naive-ui'
+import { NButton, NIcon, NTooltip } from 'naive-ui'
 import {
   AddOutline, CloseOutline, ChatbubbleOutline, MenuOutline,
 } from '@vicons/ionicons5'
@@ -23,16 +23,24 @@ const grouped = computed(() => store.groupedSessions)
   <aside class="agent-sidebar" :class="{ collapsed }">
     <div class="sidebar-top">
       <span v-if="!collapsed" class="brand">AI 助手 · 多智能体</span>
-      <NButton text class="collapse-btn" @click="$emit('toggleCollapse')">
-        <NIcon size="18"><MenuOutline /></NIcon>
-      </NButton>
-    </div>
-
-    <div class="new-btn-wrap">
-      <NButton type="primary" class="new-btn" :class="{ collapsed }" @click="$emit('newChat')">
-        <template #icon><NIcon><AddOutline /></NIcon></template>
-        <span v-if="!collapsed">新建智能体对话</span>
-      </NButton>
+      <div class="nav-top-controls" :class="{ collapsed }">
+        <NTooltip trigger="hover" placement="right">
+          <template #trigger>
+            <NButton text class="nav-icon-btn menu-btn" @click="$emit('toggleCollapse')">
+              <NIcon size="18"><MenuOutline /></NIcon>
+            </NButton>
+          </template>
+          {{ collapsed ? '展开菜单' : '折叠菜单' }}
+        </NTooltip>
+        <NTooltip trigger="hover" placement="right">
+          <template #trigger>
+            <NButton text class="nav-icon-btn add-btn" @click="$emit('newChat')">
+              <NIcon size="18"><AddOutline /></NIcon>
+            </NButton>
+          </template>
+          新建智能体对话
+        </NTooltip>
+      </div>
     </div>
 
     <div v-if="!collapsed" class="history">
@@ -78,9 +86,47 @@ const grouped = computed(() => store.groupedSessions)
 }
 .brand { font-size: 13px; font-weight: 600; }
 
-.new-btn-wrap { padding: 0 12px 12px; }
-.new-btn { width: 100%; }
-.new-btn.collapsed { padding: 0; }
+.nav-top-controls {
+  display: flex; align-items: center; gap: 10px;
+}
+.nav-top-controls.collapsed {
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.nav-icon-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+.nav-icon-btn .n-icon {
+  width: 18px;
+  height: 18px;
+  font-size: 18px;
+}
+
+.nav-icon-btn.menu-btn {
+  color: var(--chat-text-muted, #86909c);
+}
+.nav-icon-btn.menu-btn:hover {
+  background: var(--chat-surface-hover, rgba(0,0,0,.06));
+  color: var(--chat-text-primary, #1d2129);
+}
+
+.nav-icon-btn.add-btn {
+  background: var(--chat-accent, #165DFF);
+  color: #fff;
+}
+.nav-icon-btn.add-btn:hover {
+  background: var(--chat-accent-hover, #0e42d2);
+  transform: scale(1.05);
+}
 
 .history { flex: 1; overflow-y: auto; padding: 0 8px; }
 .section-title { font-size: 11px; color: var(--chat-text-muted, #999); padding: 8px 8px 4px; }

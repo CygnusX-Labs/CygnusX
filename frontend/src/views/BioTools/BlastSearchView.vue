@@ -178,7 +178,7 @@ Sbjct  49  AGCAGCAG AGCAGCAGCAGCGACGACGACGACGA GGCAGGCGGCGGC  96`
 .page-title {
   font-size: 20px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   margin: 0;
 }
 .blast-layout {
@@ -188,8 +188,8 @@ Sbjct  49  AGCAGCAG AGCAGCAGCAGCGACGACGACGACGA GGCAGGCGGCGGC  96`
   align-items: start;
 }
 .input-card {
-  background: var(--neutral-card, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
   border-radius: 12px;
   padding: 16px;
   margin-bottom: 12px;
@@ -197,7 +197,7 @@ Sbjct  49  AGCAGCAG AGCAGCAGCAGCGACGACGACGACGA GGCAGGCGGCGGC  96`
 .section-title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   margin: 0 0 10px;
 }
 .fasta-textarea :deep(textarea) {
@@ -225,19 +225,19 @@ Sbjct  49  AGCAGCAG AGCAGCAGCAGCGACGACGACGACGA GGCAGGCGGCGGC  96`
   margin: 0;
 }
 .results-table {
-  background: var(--neutral-card, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
   border-radius: 12px;
   overflow: hidden;
 }
 .results-table :deep(th) {
   font-size: 12px;
   font-weight: 500;
-  background: var(--neutral-bg, #f2f3f8);
+  background: var(--neutral-bg);
 }
 .alignment-card {
-  background: var(--neutral-card, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
   border-radius: 12px;
   padding: 16px;
 }
@@ -245,8 +245,8 @@ Sbjct  49  AGCAGCAG AGCAGCAGCAGCGACGACGACGACGA GGCAGGCGGCGGC  96`
   font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
   font-size: 12px;
   line-height: 1.5;
-  color: var(--neutral-text-1, #1d2129);
-  background: var(--neutral-bg, #f2f3f8);
+  color: var(--neutral-text-1);
+  background: var(--neutral-bg);
   padding: 14px;
   border-radius: 8px;
   overflow-x: auto;

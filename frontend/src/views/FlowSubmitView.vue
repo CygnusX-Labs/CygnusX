@@ -254,11 +254,11 @@ onMounted(fetchFlow)
         <NSpace align="center" justify="space-between">
           <NSpace align="center" :size="24">
             <div>
-              <span style="color: #666">预估费用: </span>
+              <span style="color: var(--neutral-text-2, #666)">预估费用: </span>
               <span style="font-weight: bold; font-size: 18px">{{ Number(costEstimate.estimated_cost).toFixed(2) }} 🥫</span>
             </div>
             <div>
-              <span style="color: #666">当前余额: </span>
+              <span style="color: var(--neutral-text-2, #666)">当前余额: </span>
               <span :style="{ fontWeight: 'bold', color: costEstimate.affordable ? '#18a058' : '#d03050' }">
                 {{ Number(costEstimate.current_balance).toFixed(1) }} 🥫
               </span>

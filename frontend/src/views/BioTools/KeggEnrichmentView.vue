@@ -304,7 +304,7 @@ onMounted(() => {
 .page-title {
   font-size: 20px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
   margin: 0;
 }
 .kegg-layout {
@@ -314,14 +314,14 @@ onMounted(() => {
   align-items: start;
 }
 .param-panel {
-  background: var(--neutral-card, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
   border-radius: 12px;
   padding: 20px;
 }
 .upload-hint {
   font-size: 12px;
-  color: var(--neutral-text-3, #86909c);
+  color: var(--neutral-text-3);
   margin: 8px 0 0;
 }
 .result-area {
@@ -356,7 +356,7 @@ onMounted(() => {
   margin-bottom: 12px;
   font-size: 14px;
   font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
+  color: var(--neutral-text-1);
 }
 .kegg-link {
   color: var(--arco-primary, #165dff);

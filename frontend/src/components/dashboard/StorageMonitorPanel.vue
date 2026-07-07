@@ -69,7 +69,7 @@ const pieOption = computed(() => ({
   },
   legend: {
     bottom: 0,
-    textStyle: { color: '#4E5969', fontSize: 12 },
+    textStyle: { color: 'var(--neutral-text-2)', fontSize: 12 },
     itemWidth: 10,
     itemHeight: 10,
     type: 'scroll',
@@ -81,7 +81,7 @@ const pieOption = computed(() => ({
       radius: ['40%', '68%'],
       center: ['50%', '46%'],
       avoidLabelOverlap: true,
-      itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+      itemStyle: { borderRadius: 6, borderColor: 'var(--neutral-card)', borderWidth: 2 },
       label: { show: false },
       emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
       data: users.value.map((u) => ({ name: u.nickname || u.username, value: u.size })),
@@ -117,7 +117,7 @@ const pieOption = computed(() => ({
             :percentage="Math.round(globalUsage.used_percent)"
             :height="14"
             :color="usageColor"
-            rail-color="#E5E6EB"
+            rail-color="var(--neutral-border)"
             indicator-placement="inside"
             :show-indicator="true"
           />

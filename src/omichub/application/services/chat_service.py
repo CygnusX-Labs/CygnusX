@@ -400,6 +400,7 @@ class ChatService:
         attachments: list[dict[str, Any]] | None = None,
         enable_web_search: bool = False,
         enable_code_execution: bool = False,
+        deep_thinking: bool = False,
     ) -> AsyncIterator[ChatChunk]:
         """Agent 编排闭环：查 Agent → 组装模型/系统词/工具 → 打 LLM → 执行 tool_call 回灌 → 流式返回"""
         from omichub.application.services.agent_service import AgentService
@@ -505,7 +506,7 @@ class ChatService:
                     config=model_config, messages=llm_messages,
                     system_prompt=ctx.system_prompt or None,
                     temperature=ctx.temperature, max_tokens=ctx.max_tokens,
-                    tools=tools or None,
+                    tools=tools or None, deep_thinking=deep_thinking,
                 ):
                     if chunk.type == "text":
                         if chunk.metadata.get("is_reasoning"):
@@ -922,8 +923,9 @@ class ChatService:
     def _to_session_dto(s: ChatSessionModel) -> ChatSessionDTO:
         return ChatSessionDTO(
             session_id=s.session_id, title=s.title, assistant_id=s.assistant_id,
-            model_id=s.model_id, message_count=s.message_count, status=s.status,
-            created_at=s.created_at, updated_at=s.updated_at, last_message_at=s.last_message_at,
+            agent_id=s.agent_id, model_id=s.model_id, message_count=s.message_count,
+            status=s.status, created_at=s.created_at, updated_at=s.updated_at,
+            last_message_at=s.last_message_at,
         )
 
     @staticmethod
