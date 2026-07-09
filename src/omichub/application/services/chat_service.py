@@ -19,9 +19,11 @@ from typing import Any
 
 import anyio
 import httpx
+import ipaddress
 from loguru import logger
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from urllib.parse import urlparse
 
 from omichub.application.schemas.chat import (
     ChatAssistantDTO,
@@ -51,7 +53,7 @@ BUILTIN_ASSISTANTS: list[dict[str, Any]] = [
         "system_prompt": DEFAULT_SYSTEM_PROMPT,
         "default_temperature": 0.7,
         "default_max_tokens": 2048,
-        "icon": "\U0001F916",
+        "icon": "\U0001f916",
         "color": "#4f8ef7",
         "category": "general",
     },
@@ -67,7 +69,7 @@ BUILTIN_ASSISTANTS: list[dict[str, Any]] = [
         ),
         "default_temperature": 0.3,
         "default_max_tokens": 4096,
-        "icon": "\U0001F9EC",
+        "icon": "\U0001f9ec",
         "color": "#4f8ef7",
         "category": "analysis",
     },
@@ -83,7 +85,7 @@ BUILTIN_ASSISTANTS: list[dict[str, Any]] = [
         ),
         "default_temperature": 0.3,
         "default_max_tokens": 4096,
-        "icon": "\U0001F52C",
+        "icon": "\U0001f52c",
         "color": "#e74c3c",
         "category": "analysis",
     },
@@ -97,7 +99,7 @@ BUILTIN_ASSISTANTS: list[dict[str, Any]] = [
         ),
         "default_temperature": 0.2,
         "default_max_tokens": 4096,
-        "icon": "\U0001F4BB",
+        "icon": "\U0001f4bb",
         "color": "#f39c12",
         "category": "code",
     },
@@ -112,7 +114,7 @@ BUILTIN_ASSISTANTS: list[dict[str, Any]] = [
         ),
         "default_temperature": 0.3,
         "default_max_tokens": 4096,
-        "icon": "\U0001F4CA",
+        "icon": "\U0001f4ca",
         "color": "#27ae60",
         "category": "visualization",
     },
@@ -145,13 +147,22 @@ class ChatService:
     # --- 会话管理 ---
 
     async def create_session(
-        self, user_id: str, model_id: uuid.UUID, title: str = "新对话",
-        assistant_id: str | None = None, agent_id: str | None = None,
+        self,
+        user_id: str,
+        model_id: uuid.UUID,
+        title: str = "新对话",
+        assistant_id: str | None = None,
+        agent_id: str | None = None,
     ) -> ChatSessionDTO:
         session = ChatSessionModel(
-            id=uuid.uuid4(), session_id=str(uuid.uuid4()), user_id=user_id,
-            model_id=model_id, title=title, assistant_id=assistant_id,
-            agent_id=agent_id, status="active",
+            id=uuid.uuid4(),
+            session_id=str(uuid.uuid4()),
+            user_id=user_id,
+            model_id=model_id,
+            title=title,
+            assistant_id=assistant_id,
+            agent_id=agent_id,
+            status="active",
         )
         self._db.add(session)
         await self._db.flush()
@@ -175,7 +186,9 @@ class ChatService:
         )
         return [self._to_session_dto(s) for s in result.scalars().all()]
 
-    async def update_session_title(self, session_id: str, user_id: str, title: str) -> ChatSessionDTO:
+    async def update_session_title(
+        self, session_id: str, user_id: str, title: str
+    ) -> ChatSessionDTO:
         session = await self.get_session(session_id, user_id)
         if not session:
             raise NotFoundError("会话不存在或无权访问")
@@ -196,14 +209,23 @@ class ChatService:
     # --- 消息管理 ---
 
     async def add_message(
-        self, session_id: str, role: str, content: str = "",
-        content_type: str = "text", status: str = "complete",
+        self,
+        session_id: str,
+        role: str,
+        content: str = "",
+        content_type: str = "text",
+        status: str = "complete",
         metadata: dict[str, Any] | None = None,
     ) -> ChatMessageModel:
         message = ChatMessageModel(
-            id=uuid.uuid4(), message_id=str(uuid.uuid4()), session_id=session_id,
-            role=role, content=content, content_type=content_type,
-            status=status, metadata_json=metadata or {},
+            id=uuid.uuid4(),
+            message_id=str(uuid.uuid4()),
+            session_id=session_id,
+            role=role,
+            content=content,
+            content_type=content_type,
+            status=status,
+            metadata_json=metadata or {},
         )
         self._db.add(message)
         result = await self._db.execute(
@@ -218,7 +240,10 @@ class ChatService:
         return message
 
     async def update_message_content(
-        self, message_id: str, content: str, status: str = "complete",
+        self,
+        message_id: str,
+        content: str,
+        status: str = "complete",
         metadata: dict[str, Any] | None = None,
     ) -> None:
         result = await self._db.execute(
@@ -234,7 +259,9 @@ class ChatService:
                 msg.metadata_json = existing
             await self._db.flush()
 
-    async def get_messages(self, session_id: str, user_id: str | None = None) -> list[ChatMessageDTO]:
+    async def get_messages(
+        self, session_id: str, user_id: str | None = None
+    ) -> list[ChatMessageDTO]:
         # 纵深防御：即便路由层已校验归属，service 层仍复核会话属于该用户，
         # 避免任何调用方绕过路由直接拿到他人会话消息。
         if user_id is not None:
@@ -251,9 +278,14 @@ class ChatService:
     # --- SSE 流式聊天 ---
 
     async def stream_chat(
-        self, user_id: str, messages: list[dict[str, str]], model_id: uuid.UUID,
-        session_id: str | None = None, assistant_id: str | None = None,
-        system_prompt: str | None = None, temperature: float | None = None,
+        self,
+        user_id: str,
+        messages: list[dict[str, str]],
+        model_id: uuid.UUID,
+        session_id: str | None = None,
+        assistant_id: str | None = None,
+        system_prompt: str | None = None,
+        temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> AsyncIterator[ChatChunk]:
         # 1. 获取并验证模型配置
@@ -324,7 +356,10 @@ class ChatService:
 
         # 5. 创建 AI 消息记录
         ai_message = await self.add_message(
-            current_session_id, "assistant", "", status="streaming",
+            current_session_id,
+            "assistant",
+            "",
+            status="streaming",
             metadata={"model": model_config.name, "model_id": str(model_id)},
         )
 
@@ -340,9 +375,11 @@ class ChatService:
             final_max = max_tokens if max_tokens is not None else model_config.max_tokens
 
             async for chunk in provider_manager.chat_stream(
-                config=model_config, messages=llm_messages,
+                config=model_config,
+                messages=llm_messages,
                 system_prompt=final_system_prompt,
-                temperature=final_temp, max_tokens=final_max,
+                temperature=final_temp,
+                max_tokens=final_max,
             ):
                 if chunk.type == "text":
                     full_content += chunk.content
@@ -359,7 +396,8 @@ class ChatService:
                     await self.update_message_content(
                         ai_message.message_id,
                         full_content or f"生成失败: {chunk.content}",
-                        "error", {"error": chunk.content},
+                        "error",
+                        {"error": chunk.content},
                     )
                     yield chunk
                     return
@@ -367,7 +405,9 @@ class ChatService:
                 elif chunk.type == "done":
                     last_usage = chunk.metadata.get("usage")
                     await self.update_message_content(
-                        ai_message.message_id, full_content, "complete",
+                        ai_message.message_id,
+                        full_content,
+                        "complete",
                         {"usage": last_usage} if last_usage else None,
                     )
                     await self._apply_usage_to_session(ai_message.message_id, last_usage)
@@ -380,11 +420,14 @@ class ChatService:
 
         except Exception as e:  # noqa: BLE001
             await self.update_message_content(
-                ai_message.message_id, full_content or f"生成失败: {e}",
-                "error", {"error": str(e)},
+                ai_message.message_id,
+                full_content or f"生成失败: {e}",
+                "error",
+                {"error": str(e)},
             )
             yield ChatChunk(
-                type="error", content=f"生成失败: {e}",
+                type="error",
+                content=f"生成失败: {e}",
                 metadata={"session_id": current_session_id, "message_id": ai_message.message_id},
             )
 
@@ -460,7 +503,10 @@ class ChatService:
         else:
             title = f"与 {ctx.agent.name} 的对话"
             dto = await self.create_session(
-                user_id, model_config.id, title, agent_id=agent_id,
+                user_id,
+                model_config.id,
+                title,
+                agent_id=agent_id,
             )
             current_session_id = dto.session_id
 
@@ -468,13 +514,18 @@ class ChatService:
         user_content_raw = messages[-1].get("content", "") if messages else ""
         user_content = sanitize_text(user_content_raw, sensitive_keywords)
         await self.add_message(
-            current_session_id, "user", user_content,
+            current_session_id,
+            "user",
+            user_content,
             metadata={"attachments": attachments or []},
         )
 
         # 3. AI 占位消息
         ai_message = await self.add_message(
-            current_session_id, "assistant", "", status="streaming",
+            current_session_id,
+            "assistant",
+            "",
+            status="streaming",
             metadata={"model": model_config.name, "agent_id": agent_id},
         )
 
@@ -503,10 +554,13 @@ class ChatService:
                 round_tool_calls: list[dict[str, Any]] = []
 
                 async for chunk in provider_manager.chat_stream(
-                    config=model_config, messages=llm_messages,
+                    config=model_config,
+                    messages=llm_messages,
                     system_prompt=ctx.system_prompt or None,
-                    temperature=ctx.temperature, max_tokens=ctx.max_tokens,
-                    tools=tools or None, deep_thinking=deep_thinking,
+                    temperature=ctx.temperature,
+                    max_tokens=ctx.max_tokens,
+                    tools=tools or None,
+                    deep_thinking=deep_thinking,
                 ):
                     if chunk.type == "text":
                         if chunk.metadata.get("is_reasoning"):
@@ -533,7 +587,8 @@ class ChatService:
                         await self.update_message_content(
                             ai_message.message_id,
                             full_content or f"生成失败: {chunk.content}",
-                            "error", {"error": chunk.content},
+                            "error",
+                            {"error": chunk.content},
                         )
                         yield chunk
                         return
@@ -545,7 +600,9 @@ class ChatService:
                 # 本轮无工具调用 → 正常结束
                 if not round_tool_calls:
                     await self.update_message_content(
-                        ai_message.message_id, full_content, "complete",
+                        ai_message.message_id,
+                        full_content,
+                        "complete",
                         {"usage": last_usage} if last_usage else None,
                     )
                     await self._apply_usage_to_session(ai_message.message_id, last_usage)
@@ -561,11 +618,13 @@ class ChatService:
 
                 # 有工具调用 → 执行并回灌，进入下一轮
                 # 先把 assistant 的 tool_calls 消息加入上下文
-                llm_messages.append({
-                    "role": "assistant",
-                    "content": round_text or "",
-                    "tool_calls": round_tool_calls,
-                })
+                llm_messages.append(
+                    {
+                        "role": "assistant",
+                        "content": round_text or "",
+                        "tool_calls": round_tool_calls,
+                    }
+                )
                 if round_text:
                     full_content += "\n\n" if full_content else ""
                     # 工具调用阶段的正文并入落库内容
@@ -593,15 +652,21 @@ class ChatService:
 
                     # 在绑定的 MCP server 中找到拥有该工具的 server
                     server = next(
-                        (s for s in ctx.mcp_servers
-                         if any(t.tool_name == tool_name for t in s.tools)),
+                        (
+                            s
+                            for s in ctx.mcp_servers
+                            if any(t.tool_name == tool_name for t in s.tools)
+                        ),
                         None,
                     )
                     if server is None:
                         if tool_name == "web_search":
                             result = await self._web_search(args)
                         else:
-                            result = {"success": False, "error": f"工具 {tool_name} 未挂载到该 Agent"}
+                            result = {
+                                "success": False,
+                                "error": f"工具 {tool_name} 未挂载到该 Agent",
+                            }
                     else:
                         result = await mcp_client.call_tool(server, tool_name, args)
 
@@ -614,17 +679,21 @@ class ChatService:
                             "result": result.get("result", result.get("error", "")),
                         },
                     )
-                    llm_messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc.get("id", ""),
-                        "content": json.dumps(
-                            result.get("result", result), ensure_ascii=False, default=str
-                        )[:4000],
-                    })
+                    llm_messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.get("id", ""),
+                            "content": json.dumps(
+                                result.get("result", result), ensure_ascii=False, default=str
+                            )[:4000],
+                        }
+                    )
 
             # 超过最大轮次仍未结束
             await self.update_message_content(
-                ai_message.message_id, full_content, "complete",
+                ai_message.message_id,
+                full_content,
+                "complete",
                 {"warning": "工具调用轮次达上限，已提前结束"},
             )
             yield ChatChunk(
@@ -637,11 +706,14 @@ class ChatService:
 
         except Exception as e:  # noqa: BLE001
             await self.update_message_content(
-                ai_message.message_id, full_content or f"生成失败: {e}",
-                "error", {"error": str(e)},
+                ai_message.message_id,
+                full_content or f"生成失败: {e}",
+                "error",
+                {"error": str(e)},
             )
             yield ChatChunk(
-                type="error", content=f"生成失败: {e}",
+                type="error",
+                content=f"生成失败: {e}",
                 metadata={"session_id": current_session_id, "message_id": ai_message.message_id},
             )
 
@@ -662,9 +734,7 @@ class ChatService:
             return messages
 
         target = messages[target_index]
-        content: list[dict[str, Any]] = [
-            {"type": "text", "text": target.get("content", "")}
-        ]
+        content: list[dict[str, Any]] = [{"type": "text", "text": target.get("content", "")}]
         for att in attachments:
             att_type = att.get("type", "file")
             mime = att.get("mime_type", "")
@@ -673,24 +743,30 @@ class ChatService:
                 if data_url:
                     content.append({"type": "image_url", "image_url": {"url": data_url}})
                 else:
-                    content.append({
-                        "type": "text",
-                        "text": f"\n\n[图片 {att.get('name', '')} 读取失败]",
-                    })
+                    content.append(
+                        {
+                            "type": "text",
+                            "text": f"\n\n[图片 {att.get('name', '')} 读取失败]",
+                        }
+                    )
             else:
                 text = await ChatService._read_attachment_text(att)
                 max_len = 8000
                 if text:
                     snippet = text[:max_len] + ("\n...（已截断）" if len(text) > max_len else "")
-                    content.append({
-                        "type": "text",
-                        "text": f"\n\n[文件: {att.get('name', '')}]\n{snippet}",
-                    })
+                    content.append(
+                        {
+                            "type": "text",
+                            "text": f"\n\n[文件: {att.get('name', '')}]\n{snippet}",
+                        }
+                    )
                 else:
-                    content.append({
-                        "type": "text",
-                        "text": f"\n\n[文件 {att.get('name', '')} 读取失败或为空]",
-                    })
+                    content.append(
+                        {
+                            "type": "text",
+                            "text": f"\n\n[文件 {att.get('name', '')} 读取失败或为空]",
+                        }
+                    )
 
         new_messages = list(messages)
         new_messages[target_index] = {**target, "content": content}
@@ -698,14 +774,46 @@ class ChatService:
 
     @staticmethod
     def _resolve_attachment_path(att_url: str) -> str | None:
-        """把聊天附件 URL 解析为本地路径，非本地上传则返回 None。"""
+        """把聊天附件 URL 解析为本地路径，非本地上传或越权则返回 None。"""
         prefix = "/api/v1/files/chat-upload/"
-        if att_url.startswith(prefix):
-            filename = Path(att_url[len(prefix):]).name
-            path = os.path.join("data/uploads/chat", filename)
-            if os.path.isfile(path):
-                return path
+        if not att_url.startswith(prefix):
+            return None
+        rest = att_url[len(prefix) :]
+        parts = rest.split("/", 1)
+        if len(parts) != 2:
+            return None
+        user_id, filename = parts
+        filename = Path(filename).name
+        path = os.path.join("data/uploads/chat", user_id, filename)
+        if os.path.isfile(path):
+            return path
         return None
+
+    @staticmethod
+    def _is_internal_url(url: str) -> bool:
+        """禁止访问内网、回环、链路本地、metadata 等地址，防止 SSRF。"""
+        if not url:
+            return True
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return True
+        host = parsed.hostname
+        if not host:
+            return True
+        if host == "169.254.169.254":
+            return True
+        try:
+            addr = ipaddress.ip_address(host)
+            return (
+                addr.is_loopback
+                or addr.is_private
+                or addr.is_link_local
+                or addr.is_multicast
+                or addr.is_reserved
+            )
+        except ValueError:
+            # 域名：放行；如需更严格可再校验是否解析到内网
+            return False
 
     @staticmethod
     async def _read_attachment_data_url(att: dict[str, Any]) -> str:
@@ -720,6 +828,9 @@ class ChatService:
                 async with await anyio.open_file(local_path, "rb") as f:
                     data = await f.read()
             else:
+                if ChatService._is_internal_url(att_url):
+                    logger.warning(f"拒绝读取内网/非法附件 URL: {att_url}")
+                    return ""
                 async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
                     resp = await client.get(att_url)
                     resp.raise_for_status()
@@ -737,8 +848,13 @@ class ChatService:
         local_path = ChatService._resolve_attachment_path(att_url)
         try:
             if local_path:
-                async with await anyio.open_file(local_path, "r", encoding="utf-8", errors="ignore") as f:
+                async with await anyio.open_file(
+                    local_path, "r", encoding="utf-8", errors="ignore"
+                ) as f:
                     return await f.read()
+            if ChatService._is_internal_url(att_url):
+                logger.warning(f"拒绝读取内网/非法附件 URL: {att_url}")
+                return ""
             async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
                 resp = await client.get(att_url)
                 resp.raise_for_status()
@@ -758,7 +874,9 @@ class ChatService:
         return result.scalar_one_or_none()
 
     async def _apply_usage_to_session(
-        self, message_id: str, usage: dict[str, Any] | None,
+        self,
+        message_id: str,
+        usage: dict[str, Any] | None,
     ) -> None:
         """把 LLM 返回的 usage 累加到会话 total_tokens，并写入消息 metadata。"""
         if not usage:
@@ -839,20 +957,36 @@ class ChatService:
         return self._to_ast_dto(ast)
 
     async def create_custom_assistant(
-        self, user_id: str, assistant_id: str, name: str, description: str,
-        system_prompt: str, default_model_id: uuid.UUID | None = None,
-        default_temperature: float = 0.3, default_max_tokens: int = 4096,
-        icon: str = "\U0001F916", color: str = "#4f8ef7", category: str = "general",
+        self,
+        user_id: str,
+        assistant_id: str,
+        name: str,
+        description: str,
+        system_prompt: str,
+        default_model_id: uuid.UUID | None = None,
+        default_temperature: float = 0.3,
+        default_max_tokens: int = 4096,
+        icon: str = "\U0001f916",
+        color: str = "#4f8ef7",
+        category: str = "general",
     ) -> ChatAssistantDTO:
         existing = await self.get_assistant(assistant_id)
         if existing:
             raise BusinessError(f"助手 ID '{assistant_id}' 已存在")
         ast = ChatAssistantModel(
-            assistant_id=assistant_id, name=name, description=description,
-            system_prompt=system_prompt, default_model_id=default_model_id,
-            default_temperature=default_temperature, default_max_tokens=default_max_tokens,
-            icon=icon, color=color, category=category,
-            is_builtin=False, is_active=True, created_by=user_id,
+            assistant_id=assistant_id,
+            name=name,
+            description=description,
+            system_prompt=system_prompt,
+            default_model_id=default_model_id,
+            default_temperature=default_temperature,
+            default_max_tokens=default_max_tokens,
+            icon=icon,
+            color=color,
+            category=category,
+            is_builtin=False,
+            is_active=True,
+            created_by=user_id,
         )
         self._db.add(ast)
         await self._db.flush()
@@ -922,9 +1056,15 @@ class ChatService:
     @staticmethod
     def _to_session_dto(s: ChatSessionModel) -> ChatSessionDTO:
         return ChatSessionDTO(
-            session_id=s.session_id, title=s.title, assistant_id=s.assistant_id,
-            agent_id=s.agent_id, model_id=s.model_id, message_count=s.message_count,
-            status=s.status, created_at=s.created_at, updated_at=s.updated_at,
+            session_id=s.session_id,
+            title=s.title,
+            assistant_id=s.assistant_id,
+            agent_id=s.agent_id,
+            model_id=s.model_id,
+            message_count=s.message_count,
+            status=s.status,
+            created_at=s.created_at,
+            updated_at=s.updated_at,
             last_message_at=s.last_message_at,
         )
 
@@ -932,9 +1072,13 @@ class ChatService:
     def _to_msg_dto(m: ChatMessageModel) -> ChatMessageDTO:
         usage = (m.metadata_json or {}).get("usage") or {}
         return ChatMessageDTO(
-            message_id=m.message_id, role=m.role, content=m.content,
-            content_type=m.content_type, status=m.status,
-            metadata_json=m.metadata_json or {}, created_at=m.created_at,
+            message_id=m.message_id,
+            role=m.role,
+            content=m.content,
+            content_type=m.content_type,
+            status=m.status,
+            metadata_json=m.metadata_json or {},
+            created_at=m.created_at,
             tokens={
                 "input": usage.get("prompt_tokens", 0) or usage.get("input", 0),
                 "output": usage.get("completion_tokens", 0) or usage.get("output", 0),
@@ -945,9 +1089,17 @@ class ChatService:
     @staticmethod
     def _to_ast_dto(a: ChatAssistantModel) -> ChatAssistantDTO:
         return ChatAssistantDTO(
-            assistant_id=a.assistant_id, name=a.name, description=a.description,
-            system_prompt=a.system_prompt, default_model_id=a.default_model_id,
-            default_temperature=a.default_temperature, default_max_tokens=a.default_max_tokens,
-            icon=a.icon, color=a.color, category=a.category,
-            is_builtin=a.is_builtin, is_active=a.is_active, is_default=a.is_default,
+            assistant_id=a.assistant_id,
+            name=a.name,
+            description=a.description,
+            system_prompt=a.system_prompt,
+            default_model_id=a.default_model_id,
+            default_temperature=a.default_temperature,
+            default_max_tokens=a.default_max_tokens,
+            icon=a.icon,
+            color=a.color,
+            category=a.category,
+            is_builtin=a.is_builtin,
+            is_active=a.is_active,
+            is_default=a.is_default,
         )

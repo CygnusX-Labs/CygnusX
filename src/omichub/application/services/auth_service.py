@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from omichub.application.schemas.auth import UserRegisterRequest
 from omichub.application.services.notification_service import NotificationService
 from omichub.application.services.site_content_service import SiteContentService
+from omichub.application.services.site_settings_service import SiteSettingsService
 from omichub.core.config import get_settings
 from omichub.core.exceptions import (
     AuthenticationError,
@@ -63,9 +64,7 @@ async def create_welcome_notification(db: AsyncSession, user_id: str) -> None:
     通知创建失败仅记录日志，不影响登录主流程。
     """
     try:
-        admin_contact = (
-            SiteContentService().get_content().registration.admin_contact.strip()
-        )
+        admin_contact = SiteContentService().get_content().registration.admin_contact.strip()
         content = (
             "欢迎使用 OmicHub！建议先前往「实验室知识库」查阅组内标准操作规范与服务器使用指南；"
             "若仍有其他问题，可联系管理员获取帮助。"
@@ -120,9 +119,7 @@ class AuthService:
         # 保存用户
         return await self.user_repo.save(user)
 
-    async def login(
-        self, username: str, password: str
-    ) -> LoginSuccess | LoginTwoFactorRequired:
+    async def login(self, username: str, password: str) -> LoginSuccess | LoginTwoFactorRequired:
         """用户登录（密码阶段）。
 
         - 2FA 未开启：校验通过即下发正式 access/refresh token，更新 last_login_at。
@@ -148,9 +145,19 @@ class AuthService:
         if user.status != UserStatus.ACTIVE:
             raise AuthenticationError("账户未激活")
 
+        # 站点策略强制 2FA：未绑定则拒绝登录
+        try:
+            totp_policy = await SiteSettingsService(self._db).get_totp_policy()
+        except Exception:
+            totp_policy = "optional"
+        if totp_policy == "required" and not user.is_2fa_enabled:
+            raise AuthenticationError("平台已强制开启二次验证，请先绑定 2FA 后再登录")
+
         # 2FA 已开启：签发中间态凭证，等二次校验
         if user.is_2fa_enabled:
-            challenge = create_2fa_challenge_token(subject=str(user.id))
+            challenge = create_2fa_challenge_token(
+                subject=str(user.id), token_version=user.token_version
+            )
             return LoginTwoFactorRequired(challenge_token=challenge, user=user)
 
         # 首次登录判定：在更新 last_login_at 之前检查
@@ -165,8 +172,12 @@ class AuthService:
             await create_welcome_notification(self._db, str(user.id))
 
         # 创建令牌
-        access_token = create_access_token(subject=str(user.id))
-        refresh_token = create_refresh_token(subject=str(user.id))
+        access_token = create_access_token(
+            subject=str(user.id), token_version=user.token_version
+        )
+        refresh_token = create_refresh_token(
+            subject=str(user.id), token_version=user.token_version
+        )
 
         return LoginSuccess(access_token, refresh_token, user, is_first_login)
 
@@ -186,9 +197,15 @@ class AuthService:
         if not user:
             raise NotFoundError("用户不存在")
 
+        # 校验 token_version：旧版本 token 拒绝刷新
+        if payload.get("token_version") != user.token_version:
+            raise AuthenticationError("令牌已失效，请重新登录")
+
         # 创建新的访问令牌
-        access_token = create_access_token(subject=user_id)
-        new_refresh_token = create_refresh_token(subject=user_id)
+        access_token = create_access_token(subject=user_id, token_version=user.token_version)
+        new_refresh_token = create_refresh_token(
+            subject=user_id, token_version=user.token_version
+        )
 
         return access_token, new_refresh_token
 

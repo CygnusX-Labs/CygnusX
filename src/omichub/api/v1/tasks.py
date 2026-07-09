@@ -12,7 +12,7 @@ from fastapi import (
     status,
 )
 
-from omichub.api.deps import CurrentUserId, DbSession
+from omichub.api.deps import CurrentUserId, DbSession, get_active_user_from_token_payload
 from omichub.application.schemas.task import (
     TaskListResponse,
     TaskResponse,
@@ -119,7 +119,12 @@ async def task_logs_websocket(websocket: WebSocket, task_id: str):
         await websocket.close(code=1008, reason="Invalid token")
         return
 
-    user_id = payload.get("sub")
+    user = await get_active_user_from_token_payload(payload)
+    if user is None:
+        await websocket.close(code=1008, reason="User inactive or not found")
+        return
+
+    user_id = str(user.id)
 
     # 校验任务归属
     async with get_session_factory()() as session:

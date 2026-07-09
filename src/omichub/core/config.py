@@ -153,6 +153,8 @@ class Settings(BaseSettings):
     sandbox_enabled: bool = True
     sandbox_image: str = "omichub/sandbox-base:latest"
     sandbox_docker_network: str = "omichub_default"
+    # 是否将沙盒容器置于无网络模式（默认 True），防止用户代码扫描/访问内网
+    sandbox_network_isolated: bool = True
     sandbox_warm_pool_size: int = 2
     sandbox_max_pool_size: int = 10
     sandbox_session_timeout: int = 1800  # 30 分钟无活动回收

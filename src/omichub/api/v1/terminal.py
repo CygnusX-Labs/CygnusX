@@ -10,10 +10,11 @@ import aiohttp
 from fastapi import APIRouter, Depends, WebSocket
 from loguru import logger
 
-from omichub.api.deps import CurrentUserId, DbSession
+from omichub.api.deps import CurrentUserId, DbSession, get_active_user_from_token_payload
 from omichub.application.schemas.terminal import (
     CreateTerminalDTO,
     TerminalImageDTO,
+    TerminalRuntimeConfigDTO,
     TerminalSessionDTO,
 )
 from omichub.application.services.terminal_service import TerminalService
@@ -51,6 +52,12 @@ async def list_sessions(
 async def list_environments(service: TerminalServiceDep) -> list[TerminalImageDTO]:
     """获取所有启用的沙盒终端镜像（前端镜像选择器数据源）。"""
     return service.get_enabled_images()
+
+
+@router.get("/config", response_model=TerminalRuntimeConfigDTO, summary="终端运行时配置")
+async def get_runtime_config(service: TerminalServiceDep) -> TerminalRuntimeConfigDTO:
+    """获取终端启用状态、默认资源和最大资源限制。"""
+    return service.get_runtime_config()
 
 
 @router.post(
@@ -99,10 +106,12 @@ async def terminal_websocket(websocket: WebSocket, session_id: str) -> None:
         await websocket.close(code=1008, reason="Invalid token")
         return
 
-    user_id_str = payload.get("sub")
-    if user_id_str is None:
-        await websocket.close(code=1008, reason="Invalid token")
+    user = await get_active_user_from_token_payload(payload)
+    if user is None:
+        await websocket.close(code=1008, reason="User inactive or not found")
         return
+
+    user_id_str = str(user.id)
 
     factory = get_session_factory()
     async with factory() as db:

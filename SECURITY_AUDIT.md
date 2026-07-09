@@ -142,3 +142,55 @@ postgres_password = "omichub"
 - 所有修改的 Python 文件均通过 `py_compile`。
 
 > 剩余待办:公网/多租户场景下 `/tracks/` 应进一步实现后端鉴权代理;CSP 策略可根据前端实际情况后续补强。
+
+---
+
+## 第二轮全方面安全审计（2026-07-09）
+
+在首轮 14 项修复基础上，对认证/授权、WebSocket、AI/MCP、文件上传、沙盒/终端、登录限流、JWT 吊销、依赖漏洞等攻击面进行第二轮审计。
+
+### 🔴 严重 / 高危（新增）
+
+| 编号 | 问题 | 位置 | 风险 | 修复 |
+|---|---|---|---|---|
+| #15 | WebSocket 端点未校验用户状态 | `ai.py` / `terminal.py` / `sandbox.py` / `cookies.py` / `tasks.py` | 用户被禁用/删除后，token 未过期仍可连接 AI/终端/沙盒/饼干/任务日志 WS | accept 前调用 `get_active_user_from_token_payload` 查库确认 active |
+| #16 | Chat 附件读取 SSRF | `chat_service.py:785-824` | 附件 URL 可指向内网/metadata，读取任意内部服务 | 非本地上传时校验 URL scheme 与 host，禁止内网/回环/metadata |
+| #17 | MCP stdio 路径遍历 + args 未校验 | `mcp/client.py:63-71` | `command="../bin/bash"` 可绕过；`args` 可带 `-c` 执行任意命令 | 禁止 `..`、PATH 白名单、args 禁止 shell 元字符与路径穿越 |
+| #18 | AI Tool Call 参数无 schema 校验 | `ai_service.py` / `ai_tools.py` | 模型被 prompt 注入后可越权查询/提交恶意任务 | `submit_task`/`query_status`/`list_samples` 用 Pydantic 校验参数 |
+
+### 🟠 中危（新增）
+
+| 编号 | 问题 | 位置 | 风险 | 修复 |
+|---|---|---|---|---|
+| #19 | 登录限流 XFF 首个 IP 可伪造 | `login_rate_limit.py:24-32` | 攻击者伪造 XFF 头部绕过限流 | 取 `X-Forwarded-For` 链中最后一个 IP |
+| #20 | JWT 无吊销机制 | `security.py` | 改密/禁用/角色变更后旧 token 仍有效 | 引入 `token_version`；关键变更时递增 |
+| #21 | 沙盒容器未做网络隔离 | `sandbox/pool.py:100-119` | 用户代码可扫描内网、出站连接 | 默认 `network_mode="none"`，配置项 `SANDBOX_NETWORK_ISOLATED` |
+| #22 | 聊天文件上传全局可访问 | `files.py:260-301` | 任意登录用户可下载所有聊天附件 | 目录按 `chat/{user_id}` 隔离；下载校验归属 |
+| #23 | TOTP `required` 策略未生效 | `auth_service.py` | 站点开启强制 2FA 后普通用户仍可登录 | `totp_policy=required` 且未开启 2FA 时拒绝登录 |
+| #24 | 依赖漏洞（ecdsa） | `pyproject.toml` | `python-jose` 依赖的 `ecdsa` 存在 Minerva 计时攻击 CVE | 用 `PyJWT` 替换 `python-jose[cryptography]`，移除 ecdsa |
+
+### 修复记录（第二轮）
+
+| 编号 | 修复内容 | 关键文件 |
+|---|---|---|
+| #15 | 所有 WebSocket 端点在 `accept()` 前查库校验用户 active 状态 | `api/v1/ai.py`, `terminal.py`, `sandbox.py`, `cookies.py`, `tasks.py`, `api/deps.py` |
+| #16 | Chat 附件非本地上传时禁止内网/回环/metadata URL | `chat_service.py` |
+| #17 | MCP stdio 命令 PATH 白名单、args 禁止 shell 元字符与路径穿越 | `mcp/client.py` |
+| #18 | AI Tool 参数 Pydantic schema 校验 | `ai_tools.py` |
+| #19 | 登录限流取 XFF 最后一个 IP | `login_rate_limit.py` |
+| #20 | JWT token_version 吊销机制 + 数据库迁移 | `security.py`, `deps.py`, `user model`, `user_repository.py`, `auth_service.py`, `totp_service.py`, `admin/users.py`, `user_service.py`, `alembic` |
+| #21 | 沙盒默认无网络模式 | `sandbox/pool.py`, `config.py` |
+| #22 | 聊天文件按用户隔离 | `files.py`, `chat_service.py` |
+| #23 | 强制 TOTP required 策略生效 | `auth_service.py` |
+| #24 | 依赖替换消除 ecdsa CVE | `pyproject.toml`, `uv.lock`, `security.py` |
+
+### 验证情况（第二轮）
+
+- 新增 `tests/unit/test_security_round2.py`，23 个用例全部通过。
+- `tests/unit/` 全部 **76** 个用例通过。
+- `pip-audit` 扫描项目依赖：**No known vulnerabilities found**。
+- 所有修改的 Python 文件均通过 `py_compile`。
+- Alembic 迁移文件 `s7t8u9v0w1x2_add_user_token_version.py` 已创建。
+
+> 第二轮审计后，公网/多租户场景仍需关注：沙盒逃逸纵深防御、终端容器权限最小化、CSP 策略补强。
+

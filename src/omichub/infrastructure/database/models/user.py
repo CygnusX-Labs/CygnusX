@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,6 +22,8 @@ class UserModel(Base, TimestampMixin):
     hashed_password: Mapped[str] = mapped_column(Text)
     role: Mapped[str] = mapped_column(String(20), default="user")  # admin / user
     status: Mapped[str] = mapped_column(String(20), default="active")
+    # JWT 版本号：改密/角色变更/状态禁用时递增，使旧 token 失效
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     workspace_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=True
     )

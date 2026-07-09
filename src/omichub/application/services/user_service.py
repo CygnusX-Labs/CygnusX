@@ -114,6 +114,7 @@ class UserService:
                 raise AuthenticationError("新密码不能与旧密码相同")
 
             user.hashed_password = hash_password(new_password)
+            user.token_version += 1
             await self.user_repo.save(user)
         except SQLAlchemyError as exc:
             logger.exception(f"修改密码 {user_id} 数据库错误: {exc}")

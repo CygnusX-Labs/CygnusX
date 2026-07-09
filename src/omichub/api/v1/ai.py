@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
-from omichub.api.deps import CurrentUserId, DbSession
+from omichub.api.deps import CurrentUserId, DbSession, get_active_user_from_token_payload
 from omichub.application.schemas.ai import (
     ConversationDetailDTO,
     ConversationDTO,
@@ -14,7 +14,6 @@ from omichub.application.schemas.ai import (
 )
 from omichub.application.services.ai_service import AIService
 from omichub.core.security import decode_token
-from omichub.infrastructure.ai_provider import get_llm_provider
 from omichub.infrastructure.database.session import get_session_factory
 
 router = APIRouter()
@@ -102,12 +101,12 @@ async def ai_websocket(websocket: WebSocket) -> None:
         await websocket.close(code=1008, reason="Invalid token")
         return
 
-    user_id_str = payload.get("sub")
-    if user_id_str is None:
-        await websocket.close(code=1008, reason="Invalid token")
+    user = await get_active_user_from_token_payload(payload)
+    if user is None:
+        await websocket.close(code=1008, reason="User inactive or not found")
         return
 
-    user_id = UUID(str(user_id_str))
+    user_id = user.id
     await websocket.accept()
 
     try:

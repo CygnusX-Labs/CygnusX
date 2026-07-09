@@ -64,9 +64,7 @@ class MfaService:
         pyotp 在 issuer_name 给定时会自动产出 "{issuer}:{name}" 形式的 label，
         故 name 只传 username，避免出现 "OmicHub:OmicHub:alice" 双前缀。
         """
-        return pyotp.TOTP(secret).provisioning_uri(
-            name=username, issuer_name=_ISSUER
-        )
+        return pyotp.TOTP(secret).provisioning_uri(name=username, issuer_name=_ISSUER)
 
     @staticmethod
     def _verify(plain_secret: str, code: str) -> bool:
@@ -121,9 +119,7 @@ class MfaService:
     # ------------------------------------------------------------------ #
     # 登录二次校验
     # ------------------------------------------------------------------ #
-    async def complete_login(
-        self, challenge_token: str, code: str
-    ) -> tuple[str, str, User, bool]:
+    async def complete_login(self, challenge_token: str, code: str) -> tuple[str, str, User, bool]:
         """2FA 登录校验：中间态凭证 + 6 位码 → 正式 token。
 
         返回 (access_token, refresh_token, user, is_first_login)。校验通过才更新 last_login_at。
@@ -150,8 +146,10 @@ class MfaService:
         if is_first_login:
             await self._safe_create_welcome_notification(str(user.id))
 
-        access_token = create_access_token(subject=str(user.id))
-        refresh_token = create_refresh_token(subject=str(user.id))
+        access_token = create_access_token(subject=str(user.id), token_version=user.token_version)
+        refresh_token = create_refresh_token(
+            subject=str(user.id), token_version=user.token_version
+        )
         return access_token, refresh_token, user, is_first_login
 
     @staticmethod

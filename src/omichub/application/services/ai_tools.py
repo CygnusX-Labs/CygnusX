@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from pydantic import BaseModel, ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.task import TaskSubmitRequest
@@ -14,6 +15,14 @@ from omichub.application.services.task_service import TaskService
 from omichub.core.config import get_settings
 from omichub.domain.ai.value_objects import ToolName
 from omichub.infrastructure.database.repositories.task_repository import TaskRepositoryImpl
+
+
+class QueryStatusArgs(BaseModel):
+    task_id: str
+
+
+class ListSamplesArgs(BaseModel):
+    pass
 
 
 class AIToolExecutor:
@@ -35,13 +44,10 @@ class AIToolExecutor:
     async def _submit_task(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """提交分析任务"""
         try:
-            req = TaskSubmitRequest(
-                flow_id=arguments.get("flow_id", ""),
-                name=arguments.get("name", ""),
-                parameters=arguments.get("parameters", {}),
-                sample_sheet=arguments.get("sample_sheet", []),
-                comparisons=arguments.get("comparisons"),
-            )
+            req = TaskSubmitRequest(**arguments)
+        except PydanticValidationError as e:
+            return {"success": False, "error": f"参数校验失败: {e}"}
+        try:
             task_service = TaskService(self._db)
             resp = await task_service.submit(str(self._user_id), req)
             return {
@@ -55,10 +61,10 @@ class AIToolExecutor:
 
     async def _query_status(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """查询任务状态"""
-        task_id_raw = arguments.get("task_id", "")
         try:
-            task_id = UUID(str(task_id_raw))
-        except ValueError:
+            args = QueryStatusArgs(**arguments)
+            task_id = UUID(str(args.task_id))
+        except (PydanticValidationError, ValueError):
             return {"success": False, "error": "无效的 task_id"}
 
         repo = TaskRepositoryImpl(self._db)
@@ -75,6 +81,10 @@ class AIToolExecutor:
 
     async def _list_samples(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """列出用户数据目录下的样本文件"""
+        try:
+            ListSamplesArgs(**arguments)
+        except PydanticValidationError as e:
+            return {"success": False, "error": f"参数校验失败: {e}"}
         settings = get_settings()
         user_dir = Path(settings.storage_path) / settings.upload_dir / str(self._user_id)
         samples: list[dict[str, Any]] = []
@@ -83,9 +93,7 @@ class AIToolExecutor:
                 full = user_dir / entry
                 if full.is_file():
                     stat = full.stat()
-                    samples.append(
-                        {"name": entry, "size_bytes": stat.st_size}
-                    )
+                    samples.append({"name": entry, "size_bytes": stat.st_size})
         if not samples:
             samples = [
                 {"name": "demo_pbmc.h5ad", "note": "示例数据：10x PBMC"},

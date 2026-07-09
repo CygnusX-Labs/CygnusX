@@ -103,6 +103,12 @@ class SandboxPool:
         cpu_shares = int(self._settings.sandbox_default_cpu * 1024)
 
         def _run() -> str:
+            network = None
+            network_mode = None
+            if self._settings.sandbox_network_isolated:
+                network_mode = "none"
+            else:
+                network = self._settings.sandbox_docker_network
             container = client.containers.run(
                 image=self._settings.sandbox_image,
                 command=["sleep", "infinity"],
@@ -110,7 +116,8 @@ class SandboxPool:
                 name=name or None,
                 mem_limit=mem_limit,
                 cpu_shares=cpu_shares,
-                network=self._settings.sandbox_docker_network,
+                network=network,
+                network_mode=network_mode,
                 labels={"omicshub.sandbox": "warm"},
                 tty=True,
             )
@@ -228,11 +235,11 @@ class SandboxPool:
         if channel == "stdout":
             if line.startswith(_ECHARTS_PREFIX):
                 try:
-                    option = json.loads(line[len(_ECHARTS_PREFIX):].strip())
+                    option = json.loads(line[len(_ECHARTS_PREFIX) :].strip())
                     return {"type": "echarts", "option": option}
                 except json.JSONDecodeError:
                     return {"type": "stdout", "data": line}
             if line.startswith(_IMAGE_PREFIX):
-                return {"type": "image", "data": line[len(_IMAGE_PREFIX):].strip()}
+                return {"type": "image", "data": line[len(_IMAGE_PREFIX) :].strip()}
             return {"type": "stdout", "data": line}
         return {"type": "stderr", "data": line}

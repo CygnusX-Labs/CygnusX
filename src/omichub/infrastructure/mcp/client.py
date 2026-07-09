@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import re
+import shutil
 from typing import Any
 from urllib.parse import urlparse
 
@@ -61,13 +63,34 @@ def validate_sse_url(url: str) -> None:
 
 
 def validate_stdio_command(command: str) -> None:
-    """校验 stdio command：禁止绝对路径和 shell 解释器。"""
+    """校验 stdio command：禁止空值、路径遍历、绝对路径、shell 解释器，且必须位于 PATH。"""
     if not command:
         raise ValueError("stdio command 不能为空")
+    if ".." in command:
+        raise ValueError("stdio command 禁止路径遍历")
     if "/" in command or "\\" in command:
         raise ValueError("stdio command 禁止使用绝对路径")
     if command.lower() in _DENIED_STDIO_COMMANDS:
         raise ValueError(f"stdio command 禁止调用 shell 解释器: {command}")
+    if shutil.which(command) is None:
+        raise ValueError(f"stdio command 不在 PATH 中: {command}")
+
+
+# 禁止 args 中的 shell 元字符与路径穿越
+_DENIED_STDIO_ARG_PATTERN = re.compile(r"[;&|<>()`$]|\$\(|\`")
+
+
+def validate_stdio_args(args: list[str] | None) -> None:
+    """校验 stdio args：禁止 shell 元字符、路径穿越与绝对路径。"""
+    if not args:
+        return
+    for arg in args:
+        if ".." in arg:
+            raise ValueError("stdio args 禁止路径遍历")
+        if arg.startswith("/") or arg.startswith("\\"):
+            raise ValueError("stdio args 禁止使用绝对路径")
+        if _DENIED_STDIO_ARG_PATTERN.search(arg):
+            raise ValueError(f"stdio args 包含非法字符: {arg}")
 
 
 class MCPClient:
@@ -187,6 +210,7 @@ class MCPClient:
             args = parts[1:] if len(parts) > 1 else []
             if server.args:
                 args = list(server.args)
+            validate_stdio_args(args)
             params = StdioServerParameters(
                 command=command,
                 args=args,

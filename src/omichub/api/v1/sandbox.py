@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from loguru import logger
 
-from omichub.api.deps import CurrentUserId, DbSession
+from omichub.api.deps import CurrentUserId, DbSession, get_active_user_from_token_payload
 from omichub.application.schemas.sandbox import (
     CreateSandboxDTO,
     SandboxSessionDTO,
@@ -80,12 +80,12 @@ async def sandbox_websocket(websocket: WebSocket, session_id: str) -> None:
         await websocket.close(code=1008, reason="Invalid token")
         return
 
-    user_id_str = payload.get("sub")
-    if user_id_str is None:
-        await websocket.close(code=1008, reason="Invalid token")
+    user = await get_active_user_from_token_payload(payload)
+    if user is None:
+        await websocket.close(code=1008, reason="User inactive or not found")
         return
 
-    user_id = UUID(str(user_id_str))
+    user_id = user.id
     try:
         conversation_session_id = UUID(session_id)
     except ValueError:

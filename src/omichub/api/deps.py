@@ -2,7 +2,7 @@
 
 import uuid
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, Header
 from fastapi.security import OAuth2PasswordBearer
@@ -12,6 +12,7 @@ from omichub.application.services.totp_service import MfaService
 from omichub.core.exceptions import AuthenticationError, AuthorizationError
 from omichub.core.security import decode_token
 from omichub.domain.user.value_objects import Role
+from omichub.infrastructure.database.models.user import UserModel
 from omichub.infrastructure.database.repositories import SqlAlchemyUserRepository
 from omichub.infrastructure.database.session import get_session_factory
 
@@ -34,13 +35,27 @@ DbSession = Annotated[AsyncSession, Depends(get_db)]
 
 
 async def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
-    """从 JWT Token 中解析当前用户 ID"""
+    """从 JWT Token 中解析当前用户 ID，并校验 token_version 与用户状态。"""
     payload = decode_token(token)
     if payload is None or payload.get("type") != "access":
         raise AuthenticationError("无效的访问令牌")
     user_id = payload.get("sub")
     if user_id is None:
         raise AuthenticationError("令牌中缺少用户信息")
+
+    # 校验 token_version：改密/角色/状态变更后旧 token 失效
+    try:
+        uuid_val = uuid.UUID(str(user_id))
+    except ValueError as exc:
+        raise AuthenticationError("令牌中用户信息无效") from exc
+    factory = get_session_factory()
+    async with factory() as db:
+        user = await db.get(UserModel, uuid_val)
+        if user is None or user.status != "active":
+            raise AuthenticationError("用户不存在或已被禁用")
+        if payload.get("token_version") != user.token_version:
+            raise AuthenticationError("令牌已失效，请重新登录")
+
     return str(user_id)
 
 
@@ -75,3 +90,25 @@ async def require_admin_totp(
 
 
 AdminTotpRequired = Annotated[str, Depends(require_admin_totp)]
+
+
+async def get_active_user_from_token_payload(payload: dict[str, Any]) -> UserModel | None:
+    """从已解码的 JWT payload 中解析用户并校验其处于 active 状态与 token_version。
+
+    用于 WebSocket 端点：token 合法并不够，还需确认用户未被禁用、删除或 token 已被吊销。
+    """
+    user_id = payload.get("sub")
+    if not user_id:
+        return None
+    try:
+        uuid_val = uuid.UUID(str(user_id))
+    except ValueError:
+        return None
+    factory = get_session_factory()
+    async with factory() as db:
+        user = await db.get(UserModel, uuid_val)
+        if user is None or user.status != "active":
+            return None
+        if payload.get("token_version") != user.token_version:
+            return None
+        return user

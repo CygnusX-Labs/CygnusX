@@ -4,8 +4,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import bcrypt
+import jwt
 from cryptography.fernet import Fernet
-from jose import JWTError, jwt
 
 from omichub.core.config import get_settings
 
@@ -58,7 +58,11 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(pwd_bytes, hash_bytes)
 
 
-def create_access_token(subject: str | int, expires_delta: timedelta | None = None) -> str:
+def create_access_token(
+    subject: str | int,
+    token_version: int | None = None,
+    expires_delta: timedelta | None = None,
+) -> str:
     """创建 Access Token"""
     settings = get_settings()
     expire = datetime.now(UTC) + (
@@ -69,10 +73,16 @@ def create_access_token(subject: str | int, expires_delta: timedelta | None = No
         "exp": expire,
         "type": "access",
     }
+    if token_version is not None:
+        payload["token_version"] = token_version
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
-def create_refresh_token(subject: str | int, expires_delta: timedelta | None = None) -> str:
+def create_refresh_token(
+    subject: str | int,
+    token_version: int | None = None,
+    expires_delta: timedelta | None = None,
+) -> str:
     """创建 Refresh Token"""
     settings = get_settings()
     expire = datetime.now(UTC) + (
@@ -83,6 +93,8 @@ def create_refresh_token(subject: str | int, expires_delta: timedelta | None = N
         "exp": expire,
         "type": "refresh",
     }
+    if token_version is not None:
+        payload["token_version"] = token_version
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
@@ -90,13 +102,17 @@ def decode_token(token: str) -> dict[str, Any] | None:
     """解码 JWT Token，失败返回 None"""
     settings = get_settings()
     try:
-        return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
-    except JWTError:
+        return jwt.decode(
+            token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm]
+        )
+    except jwt.PyJWTError:
         return None
 
 
 def create_2fa_challenge_token(
-    subject: str | int, expires_delta: timedelta | None = None
+    subject: str | int,
+    token_version: int | None = None,
+    expires_delta: timedelta | None = None,
 ) -> str:
     """创建 2FA 中间态凭证（短时 JWT，type=2fa_challenge，默认 5 分钟）。
 
@@ -109,6 +125,8 @@ def create_2fa_challenge_token(
         "exp": expire,
         "type": "2fa_challenge",
     }
+    if token_version is not None:
+        payload["token_version"] = token_version
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 

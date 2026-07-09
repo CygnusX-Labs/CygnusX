@@ -263,9 +263,9 @@ async def upload_chat_file(
     current_user_id: CurrentUserId,
     file: UploadFile = File(...),  # noqa: B008 — FastAPI 上传参数标准写法
 ) -> dict:
-    """接收聊天附件，保存到独立目录并返回访问 URL。"""
+    """接收聊天附件，保存到用户隔离目录并返回访问 URL。"""
     _validate_chat_upload_filename(file.filename)
-    upload_dir = "data/uploads/chat"
+    upload_dir = f"data/uploads/chat/{current_user_id}"
     os.makedirs(upload_dir, exist_ok=True)
 
     suffix = Path(file.filename or "").suffix
@@ -279,19 +279,24 @@ async def upload_chat_file(
     return {
         "id": file_id,
         "name": file.filename or filename,
-        "url": f"/api/v1/files/chat-upload/{filename}",
+        "url": f"/api/v1/files/chat-upload/{current_user_id}/{filename}",
         "mime_type": file.content_type or "application/octet-stream",
     }
 
 
-@router.get("/chat-upload/{filename}", summary="下载聊天附件")
+@router.get("/chat-upload/{user_id}/{filename}", summary="下载聊天附件")
 async def download_chat_file(
     current_user_id: CurrentUserId,
+    user_id: str,
     filename: str,
 ) -> FileResponse:
-    """下载聊天上传的附件（仅允许访问 chat 目录下文件）。"""
-    upload_dir = anyio.Path("data/uploads/chat")
-    # 防止目录遍历
+    """下载聊天上传的附件（仅允许访问当前用户自己的聊天文件）。"""
+    if user_id != current_user_id:
+        from omichub.core.exceptions import AuthorizationError
+
+        raise AuthorizationError("无权访问该附件")
+    upload_dir = anyio.Path(f"data/uploads/chat/{current_user_id}")
+    # 防止目录遍历：仅取 basename
     safe_name = Path(filename).name
     path = upload_dir / safe_name
     if not await path.is_file():

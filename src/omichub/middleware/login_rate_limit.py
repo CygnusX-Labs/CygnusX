@@ -22,10 +22,14 @@ _memory_failures: dict[str, list[float]] = {}
 
 
 def _client_ip(request: Request) -> str:
-    """取真实客户端 IP（与全局限流中间件保持一致）。"""
+    """取真实客户端 IP（与全局限流中间件保持一致）。
+
+    在反向代理环境下，X-Forwarded-For 可能包含客户端伪造的前置 IP，
+    因此取链中最后一个（即最靠近服务端、由 nginx 追加的）IP。
+    """
     xff = request.headers.get("x-forwarded-for")
     if xff:
-        return xff.split(",")[0].strip()
+        return xff.split(",")[-1].strip()
     xri = request.headers.get("x-real-ip")
     if xri:
         return xri.strip()

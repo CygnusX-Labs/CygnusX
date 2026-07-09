@@ -933,6 +933,16 @@ samtools, bcftools, bedtools, fastqc, seqkit, python3 (numpy/pandas/biopython/py
 | #12 | 终端会话 ID 熵低 | `terminal_service.py` | 改用 `secrets.token_urlsafe(16)` |
 | #13 | WebSocket 异常 detail 回传客户端 | `sandbox.py` | 仅返回通用错误，详细异常进日志 |
 | #14 | AI key 可能进异常日志 | `openai_compatible.py` | 日志脱敏：Bearer token / api_key 替换为 `[REDACTED]` |
+| #15 | WebSocket 未校验用户禁用状态 | `ai.py` / `terminal.py` / `sandbox.py` / `cookies.py` / `tasks.py` | accept 前查库确认 `status == active` |
+| #16 | Chat 附件读取 SSRF | `chat_service.py` | 非本地上传时禁止访问内网/回环/metadata URL |
+| #17 | MCP stdio command 路径遍历 / args 未校验 | `mcp/client.py` | 禁止 `..`、PATH 白名单、args 禁止 shell 元字符 |
+| #18 | AI Tool Call 参数无 schema 校验 | `ai_tools.py` | `TaskSubmitRequest` / `QueryStatusArgs` Pydantic 校验 |
+| #19 | 登录限流 XFF 首个 IP 可伪造 | `login_rate_limit.py` | 取 `X-Forwarded-For` 链中最后一个 IP |
+| #20 | JWT 无吊销机制 | `security.py` / `deps.py` / `user model` | 引入 `token_version`；改密/角色/状态变更时递增 |
+| #21 | 沙盒容器未做网络隔离 | `sandbox/pool.py` / `config.py` | 默认 `sandbox_network_isolated=true` 使用 `network_mode=none` |
+| #22 | 聊天文件上传全局可访问 | `files.py` / `chat_service.py` | 目录按 `chat/{user_id}` 隔离；下载校验归属 |
+| #23 | TOTP `required` 策略未生效 | `auth_service.py` | `totp_policy=required` 时未绑定 2FA 拒绝登录 |
+| #24 | 依赖存在已知 CVE（ecdsa） | `pyproject.toml` / `security.py` | 用 `PyJWT` 替换 `python-jose[cryptography]`，移除 ecdsa 依赖 |
 
 ### 首次部署必填环境变量
 
@@ -974,7 +984,8 @@ FLOWER_BASIC_AUTH=admin:your-strong-password
 MCP Server 注册/调用为**管理员功能**，已做以下限制：
 
 - SSE URL 仅允许 `http`/`https`，禁止指向内网、回环、`169.254.169.254` 等地址。
-- stdio command 禁止绝对路径和常见 shell 解释器（`sh`/`bash`/`zsh`/`cmd`/`powershell` 等）。
+- stdio command 禁止路径遍历、绝对路径，且必须从 `PATH` 中解析得到；禁止常见 shell 解释器（`sh`/`bash`/`zsh`/`cmd`/`powershell` 等）。
+- stdio args 禁止 shell 元字符（`;|&<>()$` 等）与绝对路径/路径遍历。
 
 建议同时启用管理员 2FA、使用强密码，避免管理员凭据泄露后被滥用。
 
@@ -988,6 +999,9 @@ MCP Server 注册/调用为**管理员功能**，已做以下限制：
 - [ ] Flower 服务已在生产关闭（`replicas: 0`）
 - [ ] SSL 证书已挂载到 nginx
 - [ ] `/tracks/` 仅允许受信内网访问
+- [ ] 沙盒容器已启用网络隔离（`SANDBOX_NETWORK_ISOLATED=true`，默认开启）
+- [ ] 聊天附件按用户隔离，不存在跨用户访问
+- [ ] 依赖漏洞扫描（`pip-audit`）无高危以上漏洞
 
 ## 文档
 

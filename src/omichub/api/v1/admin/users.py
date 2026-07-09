@@ -30,25 +30,22 @@ async def list_users(
     from omichub.infrastructure.database.models.cookie import CookieAccountModel
     from omichub.infrastructure.database.models.user import UserModel
 
-    query = (
-        select(
-            UserModel.id,
-            UserModel.username,
-            UserModel.nickname,
-            UserModel.email,
-            UserModel.role,
-            UserModel.status,
-            UserModel.created_at,
-            UserModel.last_login_at,
-            UserModel.storage_quota,
-            UserModel.used_storage,
-            UserModel.admin_note,
-            UserModel.lab_group,
-            CookieAccountModel.balance.label("cookie_balance"),
-            CookieAccountModel.status.label("cookie_status"),
-        )
-        .outerjoin(CookieAccountModel, CookieAccountModel.user_id == UserModel.id)
-    )
+    query = select(
+        UserModel.id,
+        UserModel.username,
+        UserModel.nickname,
+        UserModel.email,
+        UserModel.role,
+        UserModel.status,
+        UserModel.created_at,
+        UserModel.last_login_at,
+        UserModel.storage_quota,
+        UserModel.used_storage,
+        UserModel.admin_note,
+        UserModel.lab_group,
+        CookieAccountModel.balance.label("cookie_balance"),
+        CookieAccountModel.status.label("cookie_status"),
+    ).outerjoin(CookieAccountModel, CookieAccountModel.user_id == UserModel.id)
     if status:
         query = query.where(UserModel.status == status)
     query = query.order_by(desc(UserModel.created_at)).offset(offset).limit(limit)
@@ -148,6 +145,7 @@ async def approve_user(
     if user.status not in ("pending", "rejected"):
         return {"message": f"用户当前状态为 {user.status}，无需审批"}
     user.status = "active"
+    user.token_version += 1
     await db.flush()
 
     # 账号初始化钩子：审批通过时自动创建饼干钱包并发放新人初始额度。
@@ -181,6 +179,7 @@ async def reject_user(
     if user is None:
         raise NotFoundError("用户不存在")
     user.status = "rejected"
+    user.token_version += 1
     await db.flush()
     return {"id": str(user.id), "username": user.username, "status": "rejected", "reason": reason}
 
@@ -200,6 +199,7 @@ async def update_user_role(
     if user is None:
         raise NotFoundError("用户不存在")
     user.role = role
+    user.token_version += 1
     await db.flush()
     return {"id": str(user.id), "username": user.username, "role": user.role}
 
@@ -315,6 +315,7 @@ async def update_user_status(
             raise AuthorizationError("系统至少需要保留一个可用管理员账号，无法禁用")
 
     user.status = status
+    user.token_version += 1
     await db.flush()
     return {"id": str(user.id), "username": user.username, "status": user.status}
 
@@ -386,18 +387,12 @@ async def delete_user(
 
     # 2) NOT NULL 外键的关联记录：删除该用户的数据
     await db.execute(
-        CookieTransactionModel.__table__.delete().where(
-            CookieTransactionModel.user_id == user_id
-        )
+        CookieTransactionModel.__table__.delete().where(CookieTransactionModel.user_id == user_id)
     )
     await db.execute(
-        ConsumptionLogModel.__table__.delete().where(
-            ConsumptionLogModel.user_id == user_id
-        )
+        ConsumptionLogModel.__table__.delete().where(ConsumptionLogModel.user_id == user_id)
     )
-    await db.execute(
-        LedgerEntryModel.__table__.delete().where(LedgerEntryModel.user_id == user_id)
-    )
+    await db.execute(LedgerEntryModel.__table__.delete().where(LedgerEntryModel.user_id == user_id))
 
     # 3) 通知：删除该用户创建的 + 定向发给该用户的
     await db.execute(
