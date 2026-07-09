@@ -21,6 +21,7 @@ from omichub.infrastructure.database.models.cookie import (
     CookieTransactionModel,
     LedgerEntryModel,
 )
+from omichub.infrastructure.database.models.festival import FestivalClaimModel
 from omichub.infrastructure.database.models.file import (
     DirectoryModel,
     FileRecordModel,
@@ -47,6 +48,7 @@ __all__ = [
     "CookiePricingModel",
     "ConsumptionLogModel",
     "LedgerEntryModel",
+    "FestivalClaimModel",
     "ConversationModel",
     "MessageModel",
     "ChatSessionModel",

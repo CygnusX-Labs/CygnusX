@@ -7,11 +7,14 @@ import {
   CheckmarkCircleOutline,
 } from '@vicons/ionicons5'
 import apiClient from '@/api/client'
+import { festivalApi } from '@/api/festival'
 import { useAuthStore } from '@/stores/auth'
 import OmicBackgroundAnimation from '@/components/OmicBackgroundAnimation.vue'
 import AnnouncementBanner from '@/components/AnnouncementBanner.vue'
+import FestivalPopup from '@/components/FestivalPopup.vue'
 import type { SiteContent } from '@/types/site-content'
 import type { HomeQuickEntry, SiteSettings } from '@/types'
+import type { FestivalConfig } from '@/types/festival'
 import {
   normalizeHomeQuickEntries,
   quickEntryBgColors,
@@ -62,6 +65,14 @@ interface QuickEntry extends HomeQuickEntry {
 
 const content = ref<SiteContent>(DEFAULT_CONTENT)
 const configuredQuickEntries = ref<HomeQuickEntry[] | null>(null)
+const todayFestival = ref<FestivalConfig | null>(null)
+const festivalClaimed = ref(false)
+
+const showFestivalPopup = computed(() => {
+  if (!todayFestival.value) return false
+  const seen = localStorage.getItem(`festival_seen_${todayFestival.value.id}`) === '1'
+  return !seen
+})
 
 const quickEntries = computed<QuickEntry[]>(() => {
   const source = configuredQuickEntries.value?.length
@@ -80,9 +91,10 @@ function goTo(path: string) {
 }
 
 onMounted(async () => {
-  const [contentResult, settingsResult] = await Promise.allSettled([
+  const [contentResult, settingsResult, festivalResult] = await Promise.allSettled([
     apiClient.get<SiteContent>('/site-content'),
     apiClient.get<SiteSettings>('/site-settings'),
+    festivalApi.getTodayFestival(),
   ])
 
   if (contentResult.status === 'fulfilled') {
@@ -91,6 +103,11 @@ onMounted(async () => {
 
   if (settingsResult.status === 'fulfilled' && settingsResult.value.data.home_quick_entries?.length) {
     configuredQuickEntries.value = normalizeHomeQuickEntries(settingsResult.value.data.home_quick_entries)
+  }
+
+  if (festivalResult.status === 'fulfilled' && festivalResult.value.hasFestival) {
+    todayFestival.value = festivalResult.value.festival
+    festivalClaimed.value = festivalResult.value.claimed
   }
 })
 </script>
@@ -186,6 +203,13 @@ onMounted(async () => {
         <NButton type="primary" size="small">进入管理</NButton>
       </div>
     </section>
+    <!-- 节日彩蛋弹窗 -->
+    <FestivalPopup
+      v-if="todayFestival && showFestivalPopup"
+      :festival="todayFestival"
+      @claimed="festivalClaimed = true"
+      @close="todayFestival = null"
+    />
   </div>
 </template>
 

@@ -55,6 +55,8 @@ SANDBOX_NETWORK := omichub-sandbox-net
 DATA_ROOT ?= /data/omichub
 PUID ?= $(shell id -u)
 PGID ?= $(shell id -g)
+REDIS_PASSWORD ?= omichub
+export REDIS_PASSWORD
 
 docker-network: ## 创建跨栈外部网络 omichub_net + 终端沙盒网络（幂等）
 	@docker network create $(DOCKER_NETWORK) 2>/dev/null || true

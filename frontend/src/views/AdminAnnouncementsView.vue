@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { NTabPane, NTabs } from 'naive-ui'
 import AnnouncementManager from '@/components/admin/AnnouncementManager.vue'
+import FestivalManager from '@/components/admin/FestivalManager.vue'
 import NotificationManager from '@/components/admin/NotificationManager.vue'
 </script>
 
@@ -13,6 +14,9 @@ import NotificationManager from '@/components/admin/NotificationManager.vue'
       </NTabPane>
       <NTabPane name="notification" tab="通知提醒">
         <NotificationManager />
+      </NTabPane>
+      <NTabPane name="festival" tab="节日彩蛋 ✨">
+        <FestivalManager />
       </NTabPane>
     </NTabs>
   </div>

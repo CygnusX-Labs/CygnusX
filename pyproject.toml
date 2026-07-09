@@ -45,6 +45,7 @@ dependencies = [
     # 文件处理
     "aiofiles>=23.2.1",
     "pyyaml>=6.0.1",
+    "lunardate>=0.3.0",
     # 日志
     "loguru>=0.7.2",
     "rich-argparse>=1.7.0",
@@ -94,6 +95,11 @@ select = [
 ]
 ignore = ["E501"]  # line length handled by formatter
 
+[tool.ruff.lint.per-file-ignores]
+# 节日彩蛋配置与 DTO 使用 camelCase 以兼容 YAML/JSON 约定
+"src/omichub/domain/festival/**/*.py" = ["N815"]
+"src/omichub/application/schemas/festival.py" = ["N815"]
+
 [tool.ruff.format]
 quote-style = "double"
 
@@ -107,7 +113,7 @@ disallow_untyped_defs = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["celery.*", "flower.*", "snakemake.*", "mcp.*", "docker.*"]
+module = ["celery.*", "flower.*", "snakemake.*", "mcp.*", "docker.*", "lunardate.*"]
 ignore_missing_imports = true
 
 # === Pytest 配置 ===

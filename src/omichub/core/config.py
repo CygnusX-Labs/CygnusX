@@ -122,6 +122,9 @@ class Settings(BaseSettings):
     # 仅「展示元数据」集中于此；各工具的「功能配置」放 tool_configs/<工具名>/（如 jbrowse/、enrichments/）。
     tools_setting_yaml: str = "tool_configs/tools_setting.yaml"
 
+    # ===== 节日彩蛋系统 =====
+    festival_config_yaml: str = "data/festival_config.yaml"  # 节日彩蛋外置 YAML 配置路径
+
     # ===== 富集分析（KEGG / GO，R Docker 容器）=====
     # 物种配置 YAML（仓库内源码管控，仿 flows/）；改文件后由加载器 mtime 热重载。
     enrichment_config_yaml: str = "tool_configs/enrichments/species_config.yaml"

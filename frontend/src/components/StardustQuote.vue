@@ -2,16 +2,22 @@
 import { ref } from 'vue'
 
 const expanded = ref(false)
+
+function toggleExpanded() {
+  expanded.value = !expanded.value
+}
 </script>
 
 <template>
-  <div
-    class="stardust-quote"
-    @mouseenter="expanded = true"
-    @mouseleave="expanded = false"
-  >
-    <div class="quote-en gilded breathe">"We are made of star-stuff"</div>
-    <div class="quote-cn-short gilded breathe breathe-delayed">
+  <div class="stardust-quote">
+    <div
+      class="quote-en gilded breathe clickable"
+      @click="toggleExpanded"
+      title="点击展开完整星尘引言"
+    >
+      "We are made of star-stuff"
+    </div>
+    <div class="quote-cn-short clickable" @click="toggleExpanded">
       我们只是借用了宇宙中的这些原子，短暂地体验了一次这个世界。
     </div>
     <div class="quote-cn-full" :class="{ expanded }">
@@ -30,23 +36,26 @@ const expanded = ref(false)
   transform: translateX(-50%);
   z-index: 10;
   text-align: center;
-  max-width: 680px;
+  max-width: 720px;
   padding: 0 24px;
-  opacity: 0.85;
-  transition: opacity 0.4s ease;
-  cursor: default;
+  opacity: 1;
   pointer-events: auto;
 }
 
-.stardust-quote:hover {
+.clickable {
+  cursor: pointer;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.clickable:hover {
   opacity: 1;
+  transform: scale(1.02);
 }
 
 .quote-en {
   font-size: 13px;
   font-style: italic;
   letter-spacing: 1.5px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
   font-family: Georgia, 'Times New Roman', serif;
 }
 
@@ -94,15 +103,24 @@ const expanded = ref(false)
 
 .quote-cn-short {
   font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
   line-height: 1.8;
-  transition: all 0.3s ease;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  margin-bottom: 4px;
+}
+.quote-cn-short:hover {
+  color: #ffffff;
 }
 
 .quote-cn-full {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.55);
+  font-size: 13px;
+  color: #ffffff;
+  font-weight: 600;
   line-height: 1.9;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.4),
+    0 0 12px rgba(0, 0, 0, 0.3);
   max-height: 0;
   opacity: 0;
   overflow: hidden;
@@ -125,7 +143,8 @@ const expanded = ref(false)
     font-size: 11px;
   }
   .quote-cn-full {
-    display: none;
+    font-size: 11px;
+    font-weight: 600;
   }
 }
 </style>

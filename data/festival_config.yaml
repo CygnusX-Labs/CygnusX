@@ -1,0 +1,430 @@
+# ============================================================
+# OmicHub 节日彩蛋系统配置文件
+# 版本: 1.0
+# 说明: 管理员可通过此文件配置节日彩蛋、弹窗、额度赠送
+# 路径: data/festival_config.yaml
+# ============================================================
+
+version: "1.0"
+
+# ── 全局配置 ──
+global:
+  # 系统总开关（紧急情况下可一键关闭）
+  enabled: true
+
+  # 默认生效时间范围
+  defaultActiveWindow:
+    start: "00:00:00"
+    end: "23:59:59"
+
+  # 弹窗全局默认配置
+  popupDefaults:
+    showOncePerUser: true        # 每个用户只展示一次
+    showMaxTimes: 3              # 最多展示次数
+    dismissible: true            # 是否可关闭
+    backdropClose: true          # 点击遮罩关闭
+    escClose: true               # ESC键关闭
+
+  # 额度赠送全局限制
+  quotaDefaults:
+    expiryDays: 30               # 赠送额度有效期（天）
+
+# ── 节日列表 ──
+festivals:
+  # ═══════════════════════════════════════════════════════════
+  # 农历节日
+  # ═══════════════════════════════════════════════════════════
+  - id: spring_festival
+    name: "春节"
+    nameEn: "Spring Festival"
+    category: "traditional"
+    calendarType: "lunar"
+    lunarDate: { month: 1, day: 1 }
+    activeRange: { offsetDays: -1, durationDays: 7 }
+    popup:
+      enabled: true
+      title: "🎊 新春大吉"
+      content: |
+        在这辞旧迎新的时刻，愿星光为你指引前路。
+        送你 {{bonusAmount}} 饼干大礼包！
+      primaryButton:
+        text: "立即领取 ✨"
+        action: "claim_quota"
+      secondaryButton:
+        text: "了解更多"
+        action: "navigate"
+        link: "/about"
+      animation:
+        enabled: true
+        type: "fireworks"
+        duration: 15
+    quotaBonus:
+      enabled: true
+      amount: 1000
+      unit: "cookie"
+      description: "春节特别赠送"
+    priority: 100
+    enabled: true
+
+  - id: lantern_festival
+    name: "元宵节"
+    nameEn: "Lantern Festival"
+    category: "traditional"
+    calendarType: "lunar"
+    lunarDate: { month: 1, day: 15 }
+    popup:
+      enabled: true
+      title: "🏮 元宵喜乐"
+      content: "花灯如昼，月圆人团圆。送你 {{bonusAmount}} 饼干！"
+      animation:
+        enabled: true
+        type: "confetti"
+        duration: 15
+    quotaBonus:
+      enabled: true
+      amount: 200
+      unit: "cookie"
+    priority: 80
+    enabled: true
+
+  - id: dragon_boat
+    name: "端午节"
+    nameEn: "Dragon Boat Festival"
+    category: "traditional"
+    calendarType: "lunar"
+    lunarDate: { month: 5, day: 5 }
+    popup:
+      enabled: true
+      title: "🐲 端午安康"
+      content: "粽叶飘香，龙舟竞渡。送你 {{bonusAmount}} 饼干！"
+      animation:
+        enabled: true
+        type: "confetti"
+        duration: 8
+    quotaBonus:
+      enabled: true
+      amount: 300
+      unit: "cookie"
+    priority: 80
+    enabled: true
+
+  - id: qixi
+    name: "七夕节"
+    nameEn: "Qixi Festival"
+    category: "traditional"
+    calendarType: "lunar"
+    lunarDate: { month: 7, day: 7 }
+    popup:
+      enabled: true
+      title: "💕 七夕快乐"
+      content: "星河为证，爱意绵长。在浩瀚宇宙中相遇，是千万分之一的奇迹。送你 {{bonusAmount}} 饼干！"
+      animation:
+        enabled: true
+        type: "confetti"
+        duration: 12
+    quotaBonus:
+      enabled: true
+      amount: 520
+      unit: "cookie"
+      description: "七夕限定额度"
+    priority: 70
+    enabled: true
+
+  - id: mid_autumn
+    name: "中秋节"
+    nameEn: "Mid-Autumn Festival"
+    category: "traditional"
+    calendarType: "lunar"
+    lunarDate: { month: 8, day: 15 }
+    popup:
+      enabled: true
+      title: "🌕 中秋团圆"
+      content: "月圆人团圆，中秋送福。每一轮明月，都是宇宙送给我们的礼物。送你 {{bonusAmount}} 饼干！"
+      animation:
+        enabled: true
+        type: "fireworks"
+        duration: 20
+    quotaBonus:
+      enabled: true
+      amount: 500
+      unit: "cookie"
+    priority: 90
+    enabled: true
+
+  - id: double_ninth
+    name: "重阳节"
+    nameEn: "Double Ninth Festival"
+    category: "traditional"
+    calendarType: "lunar"
+    lunarDate: { month: 9, day: 9 }
+    popup:
+      enabled: true
+      title: "🍂 重阳登高"
+      content: "九九重阳，健康长寿。送你 {{bonusAmount}} 饼干！"
+    quotaBonus:
+      enabled: true
+      amount: 200
+      unit: "cookie"
+    priority: 60
+    enabled: true
+
+  # ═══════════════════════════════════════════════════════════
+  # 公历节日
+  # ═══════════════════════════════════════════════════════════
+  - id: new_year
+    name: "元旦"
+    nameEn: "New Year's Day"
+    category: "modern"
+    calendarType: "solar"
+    solarDate: { month: 1, day: 1 }
+    popup:
+      enabled: true
+      title: "🎉 新年快乐"
+      content: "新的一年，愿你在星辰大海中探索无限可能。送你 {{bonusAmount}} 饼干开启新一年！"
+      animation:
+        enabled: true
+        type: "confetti"
+        duration: 15
+    quotaBonus:
+      enabled: true
+      amount: 500
+      unit: "cookie"
+    priority: 90
+    enabled: true
+
+  - id: labor_day
+    name: "劳动节"
+    nameEn: "Labor Day"
+    category: "modern"
+    calendarType: "solar"
+    solarDate: { month: 5, day: 1 }
+    popup:
+      enabled: true
+      title: "🛠️ 劳动节快乐"
+      content: "劳动最光荣！送你 {{bonusAmount}} 饼干！"
+    quotaBonus:
+      enabled: true
+      amount: 300
+      unit: "cookie"
+    priority: 70
+    enabled: true
+
+  - id: national_day
+    name: "国庆节"
+    nameEn: "National Day"
+    category: "modern"
+    calendarType: "solar"
+    solarDate: { month: 10, day: 1 }
+    activeRange: { offsetDays: 0, durationDays: 7 }
+    popup:
+      enabled: true
+      title: "🇨🇳 国庆快乐"
+      content: "盛世华诞，举国同庆。送你 {{bonusAmount}} 饼干！"
+      animation:
+        enabled: true
+        type: "fireworks"
+        duration: 30
+    quotaBonus:
+      enabled: true
+      amount: 1000
+      unit: "cookie"
+      description: "国庆黄金周福利"
+    priority: 100
+    enabled: true
+
+  - id: valentine
+    name: "情人节"
+    nameEn: "Valentine's Day"
+    category: "modern"
+    calendarType: "solar"
+    solarDate: { month: 2, day: 14 }
+    popup:
+      enabled: true
+      title: "❤️ 情人节快乐"
+      content: "爱与被爱，都是幸福。送你 {{bonusAmount}} 饼干！"
+      animation:
+        enabled: true
+        type: "confetti"
+        duration: 15
+    quotaBonus:
+      enabled: true
+      amount: 520
+      unit: "cookie"
+    priority: 70
+    enabled: true
+
+  - id: christmas
+    name: "圣诞节"
+    nameEn: "Christmas"
+    category: "modern"
+    calendarType: "solar"
+    solarDate: { month: 12, day: 25 }
+    popup:
+      enabled: true
+      title: "🎄 圣诞快乐"
+      content: "Merry Christmas！送你 {{bonusAmount}} 饼干！"
+      animation:
+        enabled: true
+        type: "snow"
+        duration: 20
+    quotaBonus:
+      enabled: true
+      amount: 300
+      unit: "cookie"
+    priority: 60
+    enabled: true
+
+  # ═══════════════════════════════════════════════════════════
+  # 24节气（精选）
+  # ═══════════════════════════════════════════════════════════
+  - id: li_chun
+    name: "立春"
+    category: "solar_term"
+    calendarType: "solar_term"
+    solarTerm: { name: "立春", index: 0 }
+    popup:
+      enabled: true
+      title: "🌱 立春"
+      content: "春回大地，万物复苏。宇宙也开始新一轮的生命循环。送你 {{bonusAmount}} 饼干！"
+      animation:
+        enabled: true
+        type: "confetti"
+        duration: 10
+    quotaBonus:
+      enabled: true
+      amount: 200
+      unit: "cookie"
+    priority: 50
+    enabled: true
+
+  - id: xia_zhi
+    name: "夏至"
+    category: "solar_term"
+    calendarType: "solar_term"
+    solarTerm: { name: "夏至", index: 10 }
+    popup:
+      enabled: true
+      title: "☀️ 夏至"
+      content: "昼最长，夜最短。恒星也以最炽烈的姿态燃烧。送你 {{bonusAmount}} 饼干！"
+    quotaBonus:
+      enabled: true
+      amount: 200
+      unit: "cookie"
+    priority: 50
+    enabled: true
+
+  - id: qiu_fen
+    name: "秋分"
+    category: "solar_term"
+    calendarType: "solar_term"
+    solarTerm: { name: "秋分", index: 15 }
+    popup:
+      enabled: true
+      title: "🍁 秋分"
+      content: "昼夜均分，秋意渐浓。送你 {{bonusAmount}} 饼干！"
+    quotaBonus:
+      enabled: true
+      amount: 200
+      unit: "cookie"
+    priority: 50
+    enabled: true
+
+  - id: dong_zhi
+    name: "冬至"
+    category: "solar_term"
+    calendarType: "solar_term"
+    solarTerm: { name: "冬至", index: 22 }
+    popup:
+      enabled: true
+      title: "❄️ 冬至"
+      content: "冬至大如年。送你 {{bonusAmount}} 饼干！"
+      animation:
+        enabled: true
+        type: "snow"
+        duration: 10
+    quotaBonus:
+      enabled: true
+      amount: 300
+      unit: "cookie"
+    priority: 60
+    enabled: true
+
+  # ═══════════════════════════════════════════════════════════
+  # 特殊节日
+  # ═══════════════════════════════════════════════════════════
+  - id: programmers_day
+    name: "程序员节"
+    nameEn: "Programmers' Day"
+    category: "special"
+    calendarType: "solar"
+    solarDate: { month: 10, day: 24 }
+    popup:
+      enabled: true
+      title: "💻 1024 程序员节"
+      content: "Hello World！祝程序员们节日快乐！送你 {{bonusAmount}} 饼干！"
+      animation:
+        enabled: true
+        type: "confetti"
+        duration: 15
+    quotaBonus:
+      enabled: true
+      amount: 1024
+      unit: "cookie"
+      description: "程序员专属额度"
+    priority: 85
+    enabled: true
+
+  # ═══════════════════════════════════════════════════════════
+  # 管理员自定义节日（示例）
+  # ═══════════════════════════════════════════════════════════
+  - id: omichub_anniversary
+    name: "OmicHub 周年庆"
+    category: "custom"
+    calendarType: "solar"
+    solarDate: { month: 6, day: 18 }
+    activeRange: { year: 2026, offsetDays: 0, durationDays: 3 }
+    popup:
+      enabled: true
+      title: "🎂 OmicHub 周年庆"
+      content: "感恩相伴，共赴未来。周年庆特别福利 {{bonusAmount}} 饼干！"
+    quotaBonus:
+      enabled: true
+      amount: 2000
+      unit: "cookie"
+    priority: 120
+    enabled: true
+
+# ── 动画类型定义 ──
+animationTypes:
+  fireworks:
+    name: "烟花"
+    description: "全屏烟花动画"
+    library: "canvas-confetti"
+  snow:
+    name: "雪花"
+    description: "飘雪效果"
+    library: "css"
+  confetti:
+    name: "彩纸"
+    description: "五彩纸屑庆祝"
+    library: "canvas-confetti"
+  star_heart:
+    name: "星河爱心"
+    description: "星星汇聚成爱心"
+    library: "canvas-confetti"
+  moon_glow:
+    name: "月光"
+    description: "月亮发光+星云效果"
+    library: "css"
+  petal:
+    name: "花瓣"
+    description: "花瓣飘落"
+    library: "css"
+  code_rain:
+    name: "代码雨"
+    description: "黑客帝国风格代码雨"
+    library: "css"
+  lantern:
+    name: "灯笼"
+    description: "灯笼飘动"
+    library: "css"

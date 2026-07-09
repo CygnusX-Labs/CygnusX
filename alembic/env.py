@@ -18,6 +18,7 @@ from omichub.infrastructure.database.models import (  # noqa: F401
     announcement,
     cookie,
     file,
+    festival,
     mcp,
     notification,
     report,

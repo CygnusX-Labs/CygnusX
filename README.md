@@ -636,6 +636,32 @@ docker compose -f deploy/docker/docker-compose.worker.yml up -d
 
 > ⚠️ `make docker-reload` **不会重建镜像，也不会删除数据卷**。如果改了 `pyproject.toml`、Dockerfile 或需要彻底清空环境，请用 `make docker-start`。
 
+### 彻底重建环境
+
+如果需要**完全重建**（清空容器、数据卷、本地镜像，并重新构建镜像 + 前端 + 启动全部服务），使用：
+
+```bash
+make docker-start
+```
+
+`make docker-start` 等价于：
+
+```bash
+make docker-purge          # 清空容器、数据卷、网络、本地镜像、前端 dist
+cd frontend && npm run build
+docker compose -f deploy/docker/docker-compose.yml build --no-cache
+docker compose -f deploy/docker/docker-compose.worker.yml build --no-cache
+make docker-up-all
+```
+
+典型场景：
+- 修改了 `pyproject.toml` 新增/删除依赖（例如安装 `lunardate`）。
+- 修改了 `deploy/docker/Dockerfile`。
+- `make docker-reload` 后应用启动报 `ModuleNotFoundError` 等镜像内依赖缺失错误。
+- 想从零开始清理开发环境。
+
+> ⚠️ `make docker-start` 会清空 PostgreSQL 与 Redis 数据卷，开发环境可用；生产环境请谨慎，执行前务必备份。
+
 ## 流程（Flow）扩展机制
 
 OmicHub 采用 **YAML 声明式 + 通用构建器** 的架构来接入不同的 Snakemake 分析流程。新增流程时，**通常只需要在 `flows/` 目录下添加 YAML 配置文件**，无需修改后端 Python 代码。
@@ -963,6 +989,8 @@ AI_PROVIDER_KEY_ENCRYPTION_KEY=your-fernet-key-here
 # 开发环境 Flower 基本认证（用户名:密码）
 FLOWER_BASIC_AUTH=admin:your-strong-password
 ```
+
+> 💡 **开发环境默认值**：`Makefile` 已默认设置 `REDIS_PASSWORD=omichub`。如果你通过 `make docker-up` / `make docker-reload` 启动，无需在 `.env` 中额外配置 Redis 密码；如需自定义，在 `.env` 中设置 `REDIS_PASSWORD` 即可覆盖。
 
 > ⚠️ `AI_PROVIDER_KEY_ENCRYPTION_KEY` 一旦设置并写入数据后**不可更改**，否则已加密的字段将无法解密。
 
