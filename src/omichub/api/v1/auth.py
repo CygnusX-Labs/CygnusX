@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from omichub.api.deps import CurrentUserId, DbSession
@@ -21,7 +21,7 @@ from omichub.application.services import AuthService
 from omichub.application.services.auth_service import LoginTwoFactorRequired
 from omichub.application.services.totp_service import MfaService
 from omichub.core.config import get_settings
-from omichub.core.exceptions import AuthorizationError, ConflictError
+from omichub.core.exceptions import AuthenticationError, AuthorizationError, ConflictError
 from omichub.core.security import (
     create_access_token,
     create_refresh_token,
@@ -30,6 +30,7 @@ from omichub.core.security import (
 from omichub.domain.user.entities import User
 from omichub.domain.user.value_objects import Role, UserStatus
 from omichub.infrastructure.database.repositories import SqlAlchemyUserRepository
+from omichub.middleware.login_rate_limit import LoginRateLimitDep
 
 router = APIRouter()
 
@@ -46,15 +47,24 @@ def get_mfa_service(db: DbSession) -> MfaService:
 
 @router.post("/login", response_model=LoginResponse)
 async def login(
+    request: Request,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    rate_limiter: LoginRateLimitDep,
 ) -> LoginResponse:
     """用户登录（OAuth2 密码模式）。
 
     - 2FA 未开启：直接返回正式 access/refresh token。
     - 2FA 已开启：返回 requires_2fa=true + challenge_token，前端进入二次校验流程。
     """
-    result = await auth_service.login(form_data.username, form_data.password)
+    await rate_limiter.check(request)
+    try:
+        result = await auth_service.login(form_data.username, form_data.password)
+    except AuthenticationError:
+        await rate_limiter.record_failure(request)
+        raise
+    await rate_limiter.clear(request)
+
     if isinstance(result, LoginTwoFactorRequired):
         return LoginResponse(
             requires_2fa=True,
@@ -78,9 +88,7 @@ async def get_2fa_status(
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
 ) -> TwoFactorStatusResponse:
     user = await auth_service.get_current_user(current_user_id)
-    return TwoFactorStatusResponse(
-        enabled=user.is_2fa_enabled, has_secret=bool(user.totp_secret)
-    )
+    return TwoFactorStatusResponse(enabled=user.is_2fa_enabled, has_secret=bool(user.totp_secret))
 
 
 @router.post("/2fa/setup", response_model=TwoFactorSetupResponse, summary="生成 2FA 绑定密钥")
@@ -123,13 +131,21 @@ async def disable_2fa(
 
 @router.post("/2fa/login", response_model=TokenResponse, summary="2FA 登录校验")
 async def login_2fa(
+    request: Request,
     req: TwoFactorLoginRequest,
     mfa_service: Annotated[MfaService, Depends(get_mfa_service)],
+    rate_limiter: LoginRateLimitDep,
 ) -> TokenResponse:
     """中间态凭证 + 6 位码 → 正式 access/refresh token。"""
-    access_token, refresh_token, _user, first_login = await mfa_service.complete_login(
-        req.challenge_token, req.code
-    )
+    await rate_limiter.check(request)
+    try:
+        access_token, refresh_token, _user, first_login = await mfa_service.complete_login(
+            req.challenge_token, req.code
+        )
+    except AuthenticationError:
+        await rate_limiter.record_failure(request)
+        raise
+    await rate_limiter.clear(request)
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,

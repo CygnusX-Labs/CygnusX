@@ -15,7 +15,7 @@ from omichub.application.schemas.mcp import (
     UpdateMCPServerDTO,
 )
 from omichub.core.config import get_settings
-from omichub.core.exceptions import ConflictError, NotFoundError
+from omichub.core.exceptions import ConflictError, NotFoundError, ValidationError
 from omichub.domain.mcp.entities import MCPServer, MCPToolRegistry
 from omichub.domain.mcp.services import MCPDomainService
 from omichub.domain.mcp.value_objects import ServerStatus, Transport
@@ -23,7 +23,7 @@ from omichub.infrastructure.database.models.mcp_log import MCPLogModel
 from omichub.infrastructure.database.repositories.mcp_repository import (
     SqlAlchemyMCPServerRepository,
 )
-from omichub.infrastructure.mcp.client import MCPClient
+from omichub.infrastructure.mcp.client import MCPClient, validate_sse_url, validate_stdio_command
 from omichub.infrastructure.mcp.presets import PRESET_SERVERS
 
 
@@ -57,9 +57,7 @@ def _tool_to_dto(t: MCPToolRegistry | dict[str, Any]) -> MCPToolDTO:
             description=t.get("description", ""),
             input_schema=t.get("inputSchema", {}),
         )
-    return MCPToolDTO(
-        name=t.tool_name, description=t.description, input_schema=t.input_schema
-    )
+    return MCPToolDTO(name=t.tool_name, description=t.description, input_schema=t.input_schema)
 
 
 class MCPService:
@@ -117,7 +115,19 @@ class MCPService:
         existing = await self._repo.get_by_name(req.name)
         if existing is not None:
             raise ConflictError(f"MCP Server 名称已存在: {req.name}")
-        transport = Transport(req.transport) if req.transport in ("stdio", "sse") else Transport.STDIO
+        transport = (
+            Transport(req.transport) if req.transport in ("stdio", "sse") else Transport.STDIO
+        )
+        if transport == Transport.STDIO:
+            try:
+                validate_stdio_command(req.command or "")
+            except ValueError as exc:
+                raise ValidationError(str(exc)) from exc
+        elif transport == Transport.SSE:
+            try:
+                validate_sse_url(req.url or "")
+            except ValueError as exc:
+                raise ValidationError(str(exc)) from exc
         server = MCPServer(
             id=uuid4(),
             name=req.name,
@@ -148,6 +158,18 @@ class MCPService:
         data = req.model_dump(exclude_unset=True)
         for key, value in data.items():
             setattr(server, key, value)
+        # 校验更新后的配置
+        transport = server.transport
+        if transport == Transport.STDIO:
+            try:
+                validate_stdio_command(server.command or "")
+            except ValueError as exc:
+                raise ValidationError(str(exc)) from exc
+        elif transport == Transport.SSE:
+            try:
+                validate_sse_url(server.url or "")
+            except ValueError as exc:
+                raise ValidationError(str(exc)) from exc
         await self._repo.save(server)
         return _server_to_dto(server)
 
@@ -155,7 +177,9 @@ class MCPService:
         """测试连接并发现工具"""
         try:
             tools = await self.list_tools(server_id)
-            await self._add_log(server_id, "info", f"测试连接成功，发现 {len(tools)} 个工具", "internal")
+            await self._add_log(
+                server_id, "info", f"测试连接成功，发现 {len(tools)} 个工具", "internal"
+            )
             return {"success": True, "tool_count": len(tools), "status": "online"}
         except Exception as e:  # noqa: BLE001
             await self._add_log(server_id, "error", f"测试连接失败: {e}", "internal")
@@ -190,15 +214,17 @@ class MCPService:
             raise NotFoundError("MCP Server 不存在")
         # 路由校验：确认工具属于该 server（builtin 允许未刷入快照的直接调用）
         routed = await self._domain.route_tool_call(tool_name)
-        if (
-            (routed is None or routed.id != server.id)
-            and server.transport != Transport.BUILTIN
-        ):
+        if (routed is None or routed.id != server.id) and server.transport != Transport.BUILTIN:
             raise NotFoundError(f"工具 {tool_name} 不属于该 Server")
         result = await self._client.call_tool(server, tool_name, arguments)
         if not result.get("success"):
             await self._domain.mark_error(server.id)
-            await self._add_log(server_id, "error", f"工具调用失败 {tool_name}: {result.get('error', '')}", "internal")
+            await self._add_log(
+                server_id,
+                "error",
+                f"工具调用失败 {tool_name}: {result.get('error', '')}",
+                "internal",
+            )
         else:
             await self._add_log(server_id, "info", f"工具调用成功 {tool_name}", "internal")
         return result
@@ -224,7 +250,9 @@ class MCPService:
             for log in reversed(logs)
         ]
 
-    async def _add_log(self, server_id: UUID, level: str, message: str, source: str = "internal") -> None:
+    async def _add_log(
+        self, server_id: UUID, level: str, message: str, source: str = "internal"
+    ) -> None:
         """写入一条 MCP 日志"""
         from datetime import datetime
 

@@ -19,6 +19,8 @@
 - Docker >= 24.0
 - uv (Python 包管理器)
 
+详细的 Makefile 命令说明见 [docs/Makefile_命令说明.md](docs/Makefile_命令说明.md)。
+
 ### 本地开发
 
 ```bash
@@ -408,27 +410,25 @@ sudo rsync -aP --info=progress2 /data/omichub/ <目标机>:/data/omichub/
 
 ## 日志排查
 
-平台日志统一收口到宿主机 `/data/omichub/logs/`（由 Docker bind mount 映射到容器内 `/app/logs`、`/logs`、`/var/log/nginx`），容器重建后日志不丢失。
+平台日志统一收口到宿主机 `/data/omichub/logs/`。应用日志、Celery 单任务日志、Nginx 日志、Snakemake stdout/stderr 均有明确的容量保护策略。
 
 ### 目录结构
 
-```
+```text
 /data/omichub/logs/
-├── app/                          # 应用服务日志（web / beat / worker）
-│   ├── omichub.log               # 可读文本主日志（loguru 轮转）
-│   ├── omichub.json.log          # 结构化 JSON 日志，供 Loki/Promtail 抓取
-│   └── error.log                 # ERROR 级别以上单独抽离
+├── app/                          # web / beat / worker 应用日志
+│   ├── omichub.log
+│   ├── omichub.json.log
+│   └── error.log
+├── celery/                       # Celery 单任务日志
+│   └── tasks/{task_id}.log
 ├── nginx/
-│   ├── access.log                # Nginx JSON 结构化访问日志
-│   └── error.log                 # Nginx 错误日志
-├── celery/                       # Celery 任务执行日志（DB 之外的文本备份）
-│   └── tasks/
-│       └── {task_id}.log
-└── snakemake/                    # 生物信息流程日志
-    └── {project_name}/
-        └── {timestamp}/
-            ├── stdout.log
-            └── stderr.log
+│   ├── access.log
+│   └── error.log
+└── snakemake/
+    └── {project_name}/{timestamp}/
+        ├── stdout.log
+        └── stderr.log
 ```
 
 ### 首次初始化
@@ -436,9 +436,16 @@ sudo rsync -aP --info=progress2 /data/omichub/ <目标机>:/data/omichub/
 新机器或清空数据后执行一次：
 
 ```bash
-sudo mkdir -p /data/omichub/logs/{app,nginx,celery,snakemake}
+sudo mkdir -p /data/omichub/logs/{app,celery/tasks,nginx,snakemake}
 sudo chown -R ${PUID:-1000}:${PGID:-1000} /data/omichub/logs
 sudo chmod -R 755 /data/omichub/logs
+```
+
+如需启用宿主机 logrotate 兜底 Nginx/Snakemake 文件日志：
+
+```bash
+sudo cp deploy/logrotate/omichub-logs /etc/logrotate.d/omichub-logs
+sudo logrotate -d /etc/logrotate.d/omichub-logs
 ```
 
 ### 常用排查命令
@@ -450,29 +457,46 @@ tail -f /data/omichub/logs/app/omichub.log
 # 只看 ERROR
 tail -f /data/omichub/logs/app/error.log
 
-# 按任务查 Celery 日志（task_id 可在前端任务详情或数据库 tasks 表获取）
-cat /data/omichub/logs/celery/tasks/{task_id}.log
+# 按任务查 Celery 文件日志
+tail -f /data/omichub/logs/celery/tasks/{task_id}.log
 
-# 查看最近一次 Snakemake 流程 stdout/stderr
+# 查看最近一次 Snakemake stdout/stderr
 ls -lt /data/omichub/logs/snakemake/{project_name}/
 
-# 统计今日 ERROR 数量
-grep "ERROR" /data/omichub/logs/app/omichub.log | wc -l
-
 # JSON 日志按服务过滤（需 jq）
-jq 'select(.extra.service == "audit")' /data/omichub/logs/app/omichub.json.log
+jq 'select(.record.extra.service == "audit")' /data/omichub/logs/app/omichub.json.log
 
 # Nginx 5xx 请求
 jq 'select(.status >= 500)' /data/omichub/logs/nginx/access.log
 ```
+
+### 容量保护
+
+| 日志类型 | 策略 | 默认值 |
+|------|------|------|
+| 应用日志 | loguru rotation/retention/compression | `50 MB` / `30 days` / `zip` |
+| Celery 单任务日志 | loguru rotation/retention/compression | `20 MB` / `7 days` / `zip` |
+| Docker stdout/stderr | Docker `json-file` 限制 | `50m` × `3` |
+| Nginx 文件日志 | 宿主机 logrotate | `100M` 或 daily，保留 14 轮 |
+| Snakemake 文件日志 | 宿主机 logrotate + 定时清理 | `200M` 或 daily，建议 30 天清理 |
+| DB 任务日志 | repository 截断 | 单条 8192 字符，单任务最近 1000 条 |
 
 ### 环境变量
 
 | 环境变量 | 说明 | 默认值 |
 |----------|------|--------|
 | `SERVICE_NAME` | 服务标识（web/beat/worker） | `app` |
-| `OMICHUB_LOG_LEVEL` | 日志级别 | `INFO`（开发环境 DEBUG） |
-| `OMICHUB_LOG_DIR` | 日志根目录 | `/app/logs` |
+| `OMICHUB_LOG_LEVEL` | stdout 日志级别 | `INFO`（开发环境 DEBUG） |
+| `OMICHUB_LOG_DIR` | 应用日志根目录 | `/app/logs` |
+| `OMICHUB_LOG_ROTATION` | 应用日志轮转阈值 | `50 MB` |
+| `OMICHUB_LOG_RETENTION` | 应用日志保留期 | `30 days` |
+| `OMICHUB_LOG_COMPRESSION` | 应用日志压缩格式 | `zip` |
+| `OMICHUB_CELERY_LOG_DIR` | Celery 单任务日志目录 | `${OMICHUB_LOG_DIR}/celery/tasks` |
+| `OMICHUB_CELERY_LOG_ROTATION` | Celery 单任务日志轮转阈值 | `20 MB` |
+| `OMICHUB_CELERY_LOG_RETENTION` | Celery 单任务日志保留期 | `7 days` |
+| `OMICHUB_CELERY_LOG_COMPRESSION` | Celery 单任务日志压缩格式 | `zip` |
+| `TASK_LOG_MESSAGE_MAX_CHARS` | DB 单条任务日志 message 最大字符数 | `8192` |
+| `TASK_LOG_MAX_ENTRIES` | DB 单任务最多保留日志条数 | `1000` |
 
 详细架构说明见项目根目录 `LOG_ARCHITECTURE.md`。
 
@@ -488,6 +512,7 @@ jq 'select(.status >= 500)' /data/omichub/logs/nginx/access.log
 | `make migrate` | 执行数据库迁移 |
 | `make migrate-new m="名称"` | 创建新迁移 |
 | `make docker-network` | 创建跨栈外部网络 omichub_net（幂等） |
+| `make docker-fix-permissions` | 修复 `/data/omichub` 日志/用户目录权限事故 |
 | `make docker-up` | 启动主栈 (web/db/redis/nginx/beat/flower) |
 | `make docker-up-worker` | 启动独立 Worker 计算栈 |
 | `make docker-up-all` | 启动主栈 + Worker（一键全启） |
@@ -534,6 +559,23 @@ make check-migrations
 - 提交代码前或 CI 流水线中。
 
 如果检查失败，说明迁移链本身有问题，**不要提交、不要部署**，先修好 `down_revision` 再推进。
+
+### Docker 权限事故恢复
+
+如果 `make docker-reload` 后登录页提示“系统内部错误”，并且 `docker logs omichub-web` 出现类似：
+
+```text
+PermissionError: [Errno 13] Permission denied: '/app/logs/omichub.log'
+```
+
+说明宿主机 `/data/omichub/logs/app` 等 bind mount 目录被 root 创建或属主漂移，而 `web/worker` 容器按非 root 的 `1000:1000` 运行，无法写日志。执行：
+
+```bash
+make docker-fix-permissions
+docker restart omichub-web omichub-worker omichub-beat
+```
+
+`docker-up`、`docker-up-worker`、`docker-up-all`、`docker-start`、`docker-reload` 已经会自动执行轻量版运行目录准备，正常情况下不需要手动处理。
 
 ### 常见迁移错误
 
@@ -679,11 +721,42 @@ OmicHub 采用 **YAML 声明式 + 通用构建器** 的架构来接入不同的 
 - 若某字段需要嵌套结构（如 `peak_calling.use_pooled_peaks`），在 `config_fields` 中使用点号路径即可；
 - 所有字段默认值、动态占位符、类型转换规则均可在 `pipeline_mapping` 中声明。
 
-## 数据下载（EBIDownload）
+## 数据下载与聚合（公共数据库 + 云存储）
 
-平台内置「数据下载」入口，调用 Rust 写的 [EBIDownload](pipelines/EBIDownload) 工具从 EBI/NCBI 下载测序数据（FASTQ）。下载完成的数据**自动出现在「数据管理」中**（FASTQ 类型），可直接作为分析流程的输入。该功能默认关闭，按以下步骤启用：
+平台内置「数据下载」入口（`/downloads`），统一承载公共数据库下载与云对象存储直拉。所有下载都会创建通用 `Task` 聚合根（历史 `flow_id="ebi_download"`，语义已扩展为 Data Download），任务日志、状态、进度、任务详情页和文件入库都复用现有任务系统，不额外创建 `download_tasks` / `download_files` 表。
 
-### 1. 构建 Rust 二进制
+### 架构
+
+```text
+Vue 下载页 (/downloads)
+  ├─ 公共数据库：accession + method
+  └─ 云存储：provider + object_uri + recursive
+        │ POST /api/v1/downloads
+        ▼
+DownloadService
+  ├─ 校验来源参数与目标目录
+  ├─ 创建 Task(flow_id="ebi_download")
+  └─ 投递 Celery run_download(task_id)
+        ▼
+Celery 下载任务
+  ├─ source=sra           → EBIDownload + Progress API + Redis download_progress:{task_id}
+  └─ source=cloud_storage → ossutil/tosutil/obsutil + stdout/stderr 进度解析
+        ▼
+TaskRepository + Redis Pub/Sub
+  ├─ 回写 Task.status / Task.progress / Task.logs
+  └─ 任务详情页实时展示日志与总进度
+        ▼
+_register_downloaded_files
+  └─ 扫描 work_dir，写入 FileRecord，文件自动出现在「数据管理」
+```
+
+这套实现采纳了 `docs/26.7.8/OmicHub_云存储下载前后端连接方案.md` 中“前端选择云商 → 后端调用二进制 → 捕获进度 → 前端展示”的核心思路；未采纳新增三张下载表和独立 WebSocket 的部分，因为当前系统已有 Task 聚合、任务日志 WebSocket、Redis 下载进度和文件入库链路。
+
+### 公共数据库下载（EBIDownload）
+
+调用 Rust 写的 [EBIDownload](pipelines/EBIDownload) 工具从 EBI/NCBI 下载测序数据（FASTQ）。下载完成的数据会自动出现在「数据管理」中，可直接作为分析流程输入。该功能默认关闭，启用步骤如下。
+
+#### 1. 构建 Rust 二进制
 
 ```bash
 cd pipelines/EBIDownload
@@ -691,7 +764,7 @@ CC=clang cargo build -p ebidownload-cli --release
 # 产物：target/release/EBIDownload
 ```
 
-### 2. 装运行时依赖
+#### 2. 装运行时依赖
 
 Worker 需要 `sra-tools`（`prefetch` / `fasterq-dump`）。宿主机或 worker 镜像任选一种方式安装：
 
@@ -703,9 +776,7 @@ mamba install -n base -c bioconda sra-tools
 ./EBIDownload deps install
 ```
 
-### 3. 配置二进制与 YAML 路径
-
-将构建产物与工具配置（`EBIDownload.yaml`，含 sra-tools 路径）放到 `/data/omichub/bin/`（默认路径，可在 `.env` 覆盖）：
+#### 3. 配置二进制与 YAML 路径
 
 ```bash
 mkdir -p /data/omichub/bin
@@ -713,21 +784,39 @@ cp pipelines/EBIDownload/target/release/EBIDownload /data/omichub/bin/EBIDownloa
 cp pipelines/EBIDownload/EBIDownload.yaml /data/omichub/bin/EBIDownload.yaml
 ```
 
-对应 `.env` 配置项（均有默认值）：
-
 ```env
-ENABLE_EBI_DOWNLOAD=true                 # 装好二进制 + sra-tools 后再开
+ENABLE_EBI_DOWNLOAD=true
 EBI_DOWNLOAD_BINARY=/data/omichub/bin/EBIDownload
 EBI_DOWNLOAD_YAML=/data/omichub/bin/EBIDownload.yaml
 ```
 
-### 4. 端到端验证
+### 云存储直拉（OSS / TOS / OBS）
 
-1. 访问前端「数据下载」页面（`/downloads`），输入一个公开登录号（如 `PRJNA1251654` 或单个 `SRRxxxxxx`），提交下载任务；
-2. 跳转任务详情页，可见任务状态为 RUNNING、EBIDownload 的 JSON 日志实时回写、下载进度条推进；
-3. 任务 SUCCESS 后，刷新「数据管理」（`/files`）即可看到 `ebi_download/<accession>/` 下的 FASTQ 文件（类型标记为 FASTQ）。
+云存储直拉通过对象存储官方 CLI 在 worker 节点执行下载，当前支持：
 
-> 说明：下载产物落在 `storage_path/upload_dir/<user_id>/ebi_download/<accession>/`，复用文件系统的扫描入库机制，无需额外建表。FASTQ 体量较大，请确认 `/data/omichub` 所在磁盘容量充足。
+| 前端选项 | URI 前缀 | 默认二进制 |
+| --- | --- | --- |
+| 阿里云 OSS | `oss://bucket/path` | `/data/omichub/bin/ossutil` |
+| 火山引擎 TOS | `tos://bucket/path` | `/data/omichub/bin/tosutil` |
+| 华为云 OBS | `obs://bucket/path` | `/data/omichub/bin/obsutil` |
+
+启用前需要把对应 CLI 放到 `/data/omichub/bin/`，赋予执行权限，并按云商工具自身规范在 worker 环境中配置访问凭据。OmicHub 当前不保存云厂商 AK/SK，也不新增云存储凭据表。
+
+```env
+ENABLE_CLOUD_STORAGE_DOWNLOAD=true
+CLOUD_OSSUTIL_BINARY=/data/omichub/bin/ossutil
+CLOUD_TOSUTIL_BINARY=/data/omichub/bin/tosutil
+CLOUD_OBSUTIL_BINARY=/data/omichub/bin/obsutil
+```
+
+### 端到端验证
+
+1. 访问前端「数据下载」页面（`/downloads`）。
+2. 公共数据库：输入 `PRJNA1251654` 或单个 `SRRxxxxxx` 后提交；云存储：选择云商并输入 `oss://` / `tos://` / `obs://` URI 后提交。
+3. 页面会跳转到任务详情页，可见任务状态、实时日志与总进度。
+4. 任务 `success` 后刷新「数据管理」（`/files`），即可看到 `raw_data/<任务目录>/` 下的下载文件。
+
+> 说明：下载产物落在 `storage_path/users/<user_id>/raw_data/<target_directory>/<任务目录>/`。FASTQ/BAM 会按文件后缀识别类型，其余对象以 OTHER 入库。大体量数据请确认 `/data/omichub` 所在磁盘容量充足。
 
 ## 实验室知识库（Knowledge Base）
 
@@ -821,6 +910,84 @@ items:
 samtools, bcftools, bedtools, fastqc, seqkit, python3 (numpy/pandas/biopython/pysam), vim, htop, jq
 
 详细架构与代码分布见 `tools/terminal/README.md`。
+
+## 安全加固清单
+
+本章节汇总 `SECURITY_AUDIT.md` 中识别的风险及对应的修复措施。首次部署或升级后请按此清单核对。
+
+### 修复概览
+
+| 编号 | 风险 | 修复位置 | 关键配置/说明 |
+|---|---|---|---|
+| #1 | 路径穿越 → 任意文件读取 | `file_service.py` / `report_service.py` | `_resolve_abs()` / `_resolve_report_path()` 强制 `resolve().relative_to(storage_root)` 校验 |
+| #2 | `/tracks/` 无鉴权暴露用户数据 | `nginx.conf` / `nginx.prod.conf` | 默认启用 RFC1918 内网 IP 白名单 |
+| #3 | 生产环境默认 JWT 密钥 | `config.py` | `APP_ENV=production` 时若密钥仍为默认值则启动失败 |
+| #4 | Redis 无密码 + 端口暴露 | `docker-compose.yml` / `docker-compose.prod.yml` / `config.py` | 开发环境 `--requirepass`；生产关闭 Redis 宿主端口 |
+| #5 | AI Provider key / TOTP secret 明文落盘 | `config.py` | 生产环境强制 `AI_PROVIDER_KEY_ENCRYPTION_KEY` 非空 |
+| #6 | MCP stdio/SSE 的 RCE/SSRF | `mcp/client.py` / `mcp_service.py` | SSE URL 禁止内网/IP；stdio 禁止绝对路径与 shell |
+| #7 | nginx 缺失安全头 + 聊天上传无校验 | `nginx.conf` / `nginx.prod.conf` / `files.py` | 增加 `X-Frame-Options` 等；上传文件扩展名白名单 |
+| #8 | Flower 监控无鉴权 | `docker-compose.yml` / `docker-compose.prod.yml` | 开发环境 `--basic_auth`；生产默认关闭 Flower |
+| #9 | 云存储 URI 只校验 scheme | `schemas/download.py` | 按云商校验 endpoint 后缀，禁止 IP 地址 |
+| #10 | cookie balance Redis 频道无命名空间 | `cookie_pubsub.py` | 频道名改为 `omichub:cookie_balance:{user_id}` |
+| #11 | 登录端点仅全局限流 | `auth.py` / `login_rate_limit.py` | 同一 IP 5 分钟失败 5 次封禁 15 分钟 |
+| #12 | 终端会话 ID 熵低 | `terminal_service.py` | 改用 `secrets.token_urlsafe(16)` |
+| #13 | WebSocket 异常 detail 回传客户端 | `sandbox.py` | 仅返回通用错误，详细异常进日志 |
+| #14 | AI key 可能进异常日志 | `openai_compatible.py` | 日志脱敏：Bearer token / api_key 替换为 `[REDACTED]` |
+
+### 首次部署必填环境变量
+
+以下变量在 `.env` 中必须设置为强随机值，生产环境若缺失或仍为默认值应用将**启动失败**。
+
+```bash
+# JWT / Cookie 签名密钥（任意长随机字符串，建议 ≥32 字节）
+JWT_SECRET_KEY=your-random-secret-here
+APP_SECRET_KEY=your-random-secret-here
+
+# Redis 认证密码
+REDIS_PASSWORD=your-redis-password-here
+
+# AI Provider key / TOTP secret 加密密钥（Fernet 32 字节 URL-safe base64）
+# 生成方式：python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+AI_PROVIDER_KEY_ENCRYPTION_KEY=your-fernet-key-here
+
+# 开发环境 Flower 基本认证（用户名:密码）
+FLOWER_BASIC_AUTH=admin:your-strong-password
+```
+
+> ⚠️ `AI_PROVIDER_KEY_ENCRYPTION_KEY` 一旦设置并写入数据后**不可更改**，否则已加密的字段将无法解密。
+
+### `/tracks/` 数据访问说明
+
+`/tracks/` 用于 JBrowse 2 流式读取参考基因组、BAM/VCF 等大文件。默认配置仅允许 RFC1918 内网地址访问：
+
+- `10.0.0.0/8`
+- `172.16.0.0/12`
+- `192.168.0.0/16`
+
+**公网或多租户部署**不应仅依赖 IP 白名单，建议：
+
+1. 通过 VPN/专线访问；或
+2. 实现后端鉴权代理 + nginx `X-Accel-Redirect` 内部重定向。
+
+### MCP 管理安全
+
+MCP Server 注册/调用为**管理员功能**，已做以下限制：
+
+- SSE URL 仅允许 `http`/`https`，禁止指向内网、回环、`169.254.169.254` 等地址。
+- stdio command 禁止绝对路径和常见 shell 解释器（`sh`/`bash`/`zsh`/`cmd`/`powershell` 等）。
+
+建议同时启用管理员 2FA、使用强密码，避免管理员凭据泄露后被滥用。
+
+### 生产环境部署检查项
+
+- [ ] `APP_ENV=production`、`APP_DEBUG=false`
+- [ ] `JWT_SECRET_KEY`、`APP_SECRET_KEY`、`REDIS_PASSWORD`、`AI_PROVIDER_KEY_ENCRYPTION_KEY` 已设置且非默认值
+- [ ] `OMICHBUB_INIT_ADMIN_PASSWORD` 为强密码
+- [ ] 数据库端口已在 `docker-compose.prod.yml` 中关闭
+- [ ] Redis 端口已在 `docker-compose.prod.yml` 中关闭
+- [ ] Flower 服务已在生产关闭（`replicas: 0`）
+- [ ] SSL 证书已挂载到 nginx
+- [ ] `/tracks/` 仅允许受信内网访问
 
 ## 文档
 

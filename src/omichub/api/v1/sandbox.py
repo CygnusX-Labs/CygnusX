@@ -5,6 +5,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from loguru import logger
 
 from omichub.api.deps import CurrentUserId, DbSession
 from omichub.application.schemas.sandbox import (
@@ -98,9 +99,7 @@ async def sandbox_websocket(websocket: WebSocket, session_id: str) -> None:
             try:
                 data = json.loads(raw)
             except json.JSONDecodeError:
-                await websocket.send_text(
-                    json.dumps({"type": "error", "detail": "非 JSON 消息"})
-                )
+                await websocket.send_text(json.dumps({"type": "error", "detail": "非 JSON 消息"}))
                 continue
 
             if data.get("type") != "execute":
@@ -122,8 +121,9 @@ async def sandbox_websocket(websocket: WebSocket, session_id: str) -> None:
                     await db.commit()
                 except Exception as e:  # noqa: BLE001
                     await db.rollback()
+                    logger.exception(f"沙盒执行异常 (session={conversation_session_id}): {e}")
                     await websocket.send_text(
-                        json.dumps({"type": "error", "detail": f"内部错误：{e}"})
+                        json.dumps({"type": "error", "detail": "沙盒执行内部错误，请联系管理员"})
                     )
     except WebSocketDisconnect:
         pass

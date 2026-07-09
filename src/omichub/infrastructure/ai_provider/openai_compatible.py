@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -18,6 +19,24 @@ import httpx
 from loguru import logger
 
 from omichub.infrastructure.database.models.ai_provider import AIProviderConfigModel
+
+
+def _sanitize_log_message(message: str) -> str:
+    """脱敏日志消息：抹去可能的 Bearer token / api_key 等敏感字段。"""
+    if not message:
+        return message
+    # Bearer token
+    message = re.sub(
+        r"Bearer\s+[a-zA-Z0-9_\-\.]{20,}", "Bearer [REDACTED]", message, flags=re.IGNORECASE
+    )
+    # api_key=... / "api_key": "..."
+    message = re.sub(
+        r"(api[_\-]?key['\"]?\s*[:=]\s*['\"])[a-zA-Z0-9_\-\.]{20,}(['\"])",
+        r"\1[REDACTED]\2",
+        message,
+        flags=re.IGNORECASE,
+    )
+    return message
 
 
 @dataclass
@@ -70,7 +89,12 @@ class OpenAICompatibleProvider:
             attempt_had_text = False
             attempt_had_error = False
             async for chunk in self._stream_once(
-                messages, system_prompt, temperature, max_tokens, tools, deep_thinking,
+                messages,
+                system_prompt,
+                temperature,
+                max_tokens,
+                tools,
+                deep_thinking,
             ):
                 if chunk.type == "text":
                     has_yielded_text = True
@@ -254,10 +278,14 @@ class OpenAICompatibleProvider:
                         # 累积 tool_calls 分片，不逐片 yield
                         for tc in delta.get("tool_calls", []) or []:
                             idx = tc.get("index", 0)
-                            slot = tool_acc.setdefault(idx, {
-                                "id": "", "type": "function",
-                                "function": {"name": "", "arguments": ""},
-                            })
+                            slot = tool_acc.setdefault(
+                                idx,
+                                {
+                                    "id": "",
+                                    "type": "function",
+                                    "function": {"name": "", "arguments": ""},
+                                },
+                            )
                             if tc.get("id"):
                                 slot["id"] = tc["id"]
                             if tc.get("type"):
@@ -295,10 +323,11 @@ class OpenAICompatibleProvider:
                 content=f"无法连接到模型服务（{self.base_url}），请检查 Base URL（模型: {self.name}）",
             )
         except Exception as e:  # noqa: BLE001
-            logger.error(f"LLM 调用异常: {e}")
+            safe_msg = _sanitize_log_message(str(e))
+            logger.error(f"LLM 调用异常: {safe_msg}")
             yield ChatChunk(
                 type="error",
-                content=f"调用模型时发生未预期错误（模型: {self.name}）: {e}",
+                content=f"调用模型时发生未预期错误（模型: {self.name}）: {safe_msg}",
             )
 
     async def validate(self) -> bool:
@@ -338,9 +367,7 @@ class OpenAICompatibleProvider:
 
     @staticmethod
     def _emit_tool_calls(tool_acc: dict[int, dict[str, Any]]) -> bool:
-        return bool(tool_acc) and any(
-            slot["function"].get("name") for slot in tool_acc.values()
-        )
+        return bool(tool_acc) and any(slot["function"].get("name") for slot in tool_acc.values())
 
     @staticmethod
     def _materialize_tool_calls(tool_acc: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:

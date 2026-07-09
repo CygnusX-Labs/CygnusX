@@ -30,8 +30,89 @@ from omichub.application.schemas.file import (
     UploadMergeResponse,
 )
 from omichub.application.services.file_service import FileService
+from omichub.core.exceptions import ValidationError
 
 router = APIRouter()
+
+# 聊天文件上传允许/禁止的扩展名
+_CHAT_UPLOAD_BLOCKED_SUFFIXES = frozenset(
+    {
+        ".exe",
+        ".bat",
+        ".cmd",
+        ".com",
+        ".scr",
+        ".msi",
+        ".dll",
+        ".sh",
+        ".bash",
+        ".zsh",
+        ".csh",
+        ".fish",
+        ".ps1",
+        ".vbs",
+        ".js",
+        ".jar",
+        ".apk",
+        ".app",
+        ".dmg",
+    }
+)
+_CHAT_UPLOAD_ALLOWED_SUFFIXES = frozenset(
+    {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".svg",
+        ".webp",
+        ".bmp",
+        ".ico",
+        ".pdf",
+        ".txt",
+        ".md",
+        ".doc",
+        ".docx",
+        ".csv",
+        ".tsv",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".fastq",
+        ".fq",
+        ".fasta",
+        ".fa",
+        ".fna",
+        ".bam",
+        ".cram",
+        ".sam",
+        ".vcf",
+        ".gff",
+        ".gtf",
+        ".bed",
+        ".h5ad",
+        ".rds",
+        ".gz",
+        ".zip",
+        ".tar",
+        ".bz2",
+        ".xz",
+    }
+)
+
+
+def _validate_chat_upload_filename(filename: str | None) -> None:
+    """校验聊天上传文件名：必须带扩展名，禁止可执行文件。"""
+    if not filename:
+        raise ValidationError("文件名不能为空")
+    suffixes = [s.lower() for s in Path(filename).suffixes]
+    if not suffixes:
+        raise ValidationError("上传文件必须带扩展名")
+    for suffix in suffixes:
+        if suffix in _CHAT_UPLOAD_BLOCKED_SUFFIXES:
+            raise ValidationError(f"禁止上传可执行文件: {suffix}")
+    if suffixes[-1] not in _CHAT_UPLOAD_ALLOWED_SUFFIXES:
+        raise ValidationError(f"不支持的文件类型: {suffixes[-1]}")
 
 
 def get_file_service(db: DbSession) -> FileService:
@@ -66,9 +147,10 @@ async def sync_files(
     current_user_id: CurrentUserId,
     service: FileServiceDep,
 ) -> SyncResponse:
-    """扫描当前用户目录，把磁盘有但未登记的文件登记进 file_records（只增不删），并重算配额。
+    """对账当前用户目录与 file_records，并重算配额。
 
-    用于手动放入的文件、旧任务未登记产物等。返回新增文件数与字节数。
+    用于手动放入文件、旧任务未登记产物、手工删除物理文件后的页面自愈。
+    返回新增、清理和显示名修正统计。
     """
     return await service.sync_user_files(UUID(current_user_id))
 
@@ -112,7 +194,9 @@ async def list_files_for_picker(
     file_type: Annotated[str | None, Query(description="按文件类型过滤，如 fastq/bam")] = None,
 ) -> list[FilePickerItemDTO]:
     """供分析文件选择器：返回文件 + 绝对路径"""
-    return await service.list_files_for_picker(UUID(current_user_id), directory=directory, file_type=file_type)
+    return await service.list_files_for_picker(
+        UUID(current_user_id), directory=directory, file_type=file_type
+    )
 
 
 @router.put("/{file_id}/move", response_model=DataFileDTO, summary="移动文件到目录")
@@ -180,6 +264,7 @@ async def upload_chat_file(
     file: UploadFile = File(...),  # noqa: B008 — FastAPI 上传参数标准写法
 ) -> dict:
     """接收聊天附件，保存到独立目录并返回访问 URL。"""
+    _validate_chat_upload_filename(file.filename)
     upload_dir = "data/uploads/chat"
     os.makedirs(upload_dir, exist_ok=True)
 
@@ -211,6 +296,7 @@ async def download_chat_file(
     path = upload_dir / safe_name
     if not await path.is_file():
         from omichub.core.exceptions import NotFoundError
+
         raise NotFoundError("文件不存在")
     return FileResponse(str(path), filename=safe_name)
 

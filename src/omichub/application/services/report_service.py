@@ -10,7 +10,6 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from omichub.application.schemas.base import PaginationParams
 from omichub.application.schemas.report import (
     ReportFileResponse,
     ReportFilterParams,
@@ -18,7 +17,8 @@ from omichub.application.schemas.report import (
     ReportResponse,
 )
 from omichub.application.services.flow_service import FlowService
-from omichub.core.exceptions import NotFoundError
+from omichub.core.config import get_settings
+from omichub.core.exceptions import AuthorizationError, NotFoundError
 from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
 from omichub.infrastructure.database.repositories.report_repository import (
     ReportRepositoryImpl,
@@ -32,6 +32,21 @@ class ReportService:
         self._db = db
         self._repo = ReportRepositoryImpl(db)
         self._flow_service = FlowService()
+        self._settings = get_settings()
+
+    def _resolve_report_path(self, path: str) -> Path:
+        """校验报告文件路径必须位于 storage_root 内，防止路径穿越。
+
+        历史数据可能存的是绝对路径，故先 resolve 再 relative_to 校验。
+        """
+        if not path:
+            raise NotFoundError("报告路径不能为空")
+        target = Path(path).resolve()
+        try:
+            target.relative_to(Path(self._settings.storage_path).resolve())
+        except ValueError as exc:
+            raise AuthorizationError("非法报告路径：路径越权") from exc
+        return target
 
     async def list_reports(
         self,
@@ -73,7 +88,7 @@ class ReportService:
         if primary is None:
             return "<p>未找到可预览的 HTML 报告</p>"
 
-        path = Path(primary.path)
+        path = self._resolve_report_path(primary.path)
         if not path.exists():
             return "<p>报告文件已丢失，请尝试下载</p>"
 
@@ -92,7 +107,7 @@ class ReportService:
         if file_model is None or file_model.report_id != report_id:
             raise NotFoundError("文件不存在")
 
-        path = Path(file_model.path)
+        path = self._resolve_report_path(file_model.path)
         if not path.exists():
             raise NotFoundError("文件已丢失")
         return path

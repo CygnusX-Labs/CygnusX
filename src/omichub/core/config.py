@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Any
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -70,10 +70,14 @@ class Settings(BaseSettings):
     file_archive_retention_days: int = 90  # 超期未活跃结果归档或删除
     file_archive_mode: str = "archive"  # archive（压缩归档）/ delete（彻底删除）
 
-    # ===== 数据下载 (EBIDownload Rust 二进制) =====
+    # ===== 数据下载 (EBIDownload Rust 二进制 + 云存储 CLI) =====
     enable_ebi_download: bool = False  # 装好二进制 + sra-tools 后再开
     ebi_download_binary: str = "/data/omichub/bin/EBIDownload"
     ebi_download_yaml: str = "/data/omichub/bin/EBIDownload.yaml"
+    enable_cloud_storage_download: bool = False  # 装好 ossutil/tosutil/obsutil 并配置凭据后再开
+    cloud_ossutil_binary: str = "/data/omichub/bin/ossutil"
+    cloud_tosutil_binary: str = "/data/omichub/bin/tosutil"
+    cloud_obsutil_binary: str = "/data/omichub/bin/obsutil"
 
     # ===== 流程 YAML 配置 =====
     flow_yaml_dir: str = "flows"
@@ -83,6 +87,10 @@ class Settings(BaseSettings):
     snakemake_use_conda: bool = True
     # --use-conda 时环境创建目录（须可写，避免只读挂载冲突）
     snakemake_conda_prefix: str = "/data/omichub/.conda_envs"
+
+    # ===== 任务日志保护 =====
+    task_log_message_max_chars: int = 8192  # DB 中单条任务日志 message 最大字符数
+    task_log_max_entries: int = 1000  # DB 中单任务最多保留最近 N 条日志
 
     # ===== 饼干积分系统 =====
     enable_cookie_system: bool = True
@@ -135,7 +143,9 @@ class Settings(BaseSettings):
     # 注意：必须放在可写目录。data/ 目录在容器中为只读挂载（docker-compose :ro），
     # 故改用 storage_path（/data/omichub，容器与宿主共享且可写）下的
     # omichub_data/welcome/ 子目录，避免与任务数据混放。
-    welcome_yaml: str = "/data/omichub/omichub_data/welcome/welcome.yaml"  # 预生成欢迎词（纯字符串数组）
+    welcome_yaml: str = (
+        "/data/omichub/omichub_data/welcome/welcome.yaml"  # 预生成欢迎词（纯字符串数组）
+    )
     welcome_state_yaml: str = "/data/omichub/omichub_data/welcome/welcome_state.yaml"  # 轮询游标
     welcome_seed_threshold: int = 20  # 启动补齐目标条数
 
@@ -199,6 +209,23 @@ class Settings(BaseSettings):
         values = info.data
         password_part = f":{values['redis_password']}@" if values["redis_password"] else ""
         return f"redis://{password_part}{values['redis_host']}:{values['redis_port']}/2"
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> "Settings":
+        """生产环境强制校验关键密钥，避免使用默认值或空值上线。"""
+        if not self.is_production:
+            return self
+
+        default_secret = "change-me-in-production"
+        if self.app_secret_key == default_secret:
+            raise ValueError("生产环境必须设置 APP_SECRET_KEY，不能使用默认值")
+        if self.jwt_secret_key == default_secret:
+            raise ValueError("生产环境必须设置 JWT_SECRET_KEY，不能使用默认值")
+        if not self.redis_password:
+            raise ValueError("生产环境必须设置 REDIS_PASSWORD")
+        if not self.ai_provider_key_encryption_key:
+            raise ValueError("生产环境必须设置 AI_PROVIDER_KEY_ENCRYPTION_KEY")
+        return self
 
     @property
     def redis_url(self) -> str:

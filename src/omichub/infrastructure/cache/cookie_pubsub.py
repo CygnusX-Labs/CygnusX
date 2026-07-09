@@ -12,11 +12,11 @@ from uuid import UUID
 
 from omichub.infrastructure.cache.redis_client import get_redis
 
-COOKIE_BALANCE_CHANNEL_PREFIX = "cookie_balance:"
+COOKIE_BALANCE_CHANNEL_PREFIX = "omichub:cookie_balance:"
 
 
 def get_cookie_balance_channel(user_id: UUID | str) -> str:
-    """获取用户饼干余额频道名"""
+    """获取用户饼干余额频道名（带应用级前缀，避免多应用共享 Redis 时冲突）"""
     return f"{COOKIE_BALANCE_CHANNEL_PREFIX}{user_id}"
 
 

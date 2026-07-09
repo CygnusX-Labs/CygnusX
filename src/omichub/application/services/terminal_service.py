@@ -5,8 +5,7 @@
 
 from __future__ import annotations
 
-import random
-import string
+import secrets
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -18,6 +17,8 @@ from omichub.application.schemas.terminal import (
     AdminTerminalSessionDTO,
     CreateTerminalDTO,
     TerminalResourceDTO,
+    TerminalRuntimeConfigDTO,
+    TerminalRuntimeResourceDTO,
     TerminalSessionDTO,
 )
 from omichub.core.exceptions import BusinessError, NotFoundError
@@ -31,6 +32,7 @@ from omichub.infrastructure.database.repositories.terminal_repository import (
 from omichub.infrastructure.terminal import get_terminal_docker_manager
 from omichub.infrastructure.terminal.docker_manager import TerminalDockerError
 from omichub.tools.terminal.config import (
+    ResourceConfig,
     TerminalImage,
     get_terminal_config,
     get_terminal_images_config,
@@ -65,7 +67,16 @@ def _to_dto(s: TerminalSession) -> TerminalSessionDTO:
 
 
 def _generate_session_id() -> str:
-    return "term_" + "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
+    return "term_" + secrets.token_urlsafe(16)
+
+
+def _runtime_resource_to_dto(resource: ResourceConfig) -> TerminalRuntimeResourceDTO:
+    return TerminalRuntimeResourceDTO(
+        memory_mb=resource.memory_mb,
+        cpu_cores=resource.cpu_cores,
+        pid_limit=resource.pid_limit,
+        tmpfs_size_mb=resource.tmpfs_size_mb,
+    )
 
 
 class TerminalService:
@@ -88,6 +99,15 @@ class TerminalService:
     def get_enabled_images(self) -> list[TerminalImage]:
         """获取所有启用的终端镜像（前端镜像选择器数据源）。"""
         return self._images_cfg.get_enabled_images()
+
+    def get_runtime_config(self) -> TerminalRuntimeConfigDTO:
+        """获取终端运行时配置（mtime 热重载后返回前端用）。"""
+        cfg = self._cfg
+        return TerminalRuntimeConfigDTO(
+            enabled=cfg.enabled,
+            default_resources=_runtime_resource_to_dto(cfg.default_resources),
+            max_resources=_runtime_resource_to_dto(cfg.max_resources),
+        )
 
     async def list_sessions(self, user_id: UUID) -> list[TerminalSessionDTO]:
         sessions = await self._repo.list_active_by_user(user_id)

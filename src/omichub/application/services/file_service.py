@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import shutil
 import uuid
 from pathlib import Path
@@ -22,7 +23,6 @@ from omichub.application.schemas.file import (
     DirectoryDTO,
     FileListResponse,
     FilePickerItemDTO,
-    MoveFileRequest,
     QuotaResponse,
     SampleCreateRequest,
     SampleDTO,
@@ -34,7 +34,13 @@ from omichub.application.schemas.file import (
     UploadMergeResponse,
 )
 from omichub.core.config import get_settings
-from omichub.core.exceptions import AuthorizationError, ConflictError, NotFoundError, QuotaExceededError, ValidationError
+from omichub.core.exceptions import (
+    AuthorizationError,
+    ConflictError,
+    NotFoundError,
+    QuotaExceededError,
+    ValidationError,
+)
 from omichub.domain.file.entities import DataFile, Directory, Sample, UploadSession
 from omichub.domain.file.value_objects import FileType
 from omichub.infrastructure.database.repositories import (
@@ -52,6 +58,23 @@ DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024  # 5 MiB
 
 # 系统默认目录：用户首次访问时懒初始化，锁定不可删除/重命名
 SYSTEM_DIRECTORIES: tuple[str, ...] = ("raw_data", "workspace", "temp")
+
+_DEDUPE_SUFFIX_RE = re.compile(r"^(?P<stem>.+)_[0-9a-f]{8}$", re.IGNORECASE)
+_LEGACY_GZIP_DEDUPE_RE = re.compile(
+    r"^(?P<stem>.+\.(?:fastq|fq|vcf|gff|gtf|fa|fasta|fna))_[0-9a-f]{8}(?P<suffix>\.gz)$",
+    re.IGNORECASE,
+)
+_COMPOUND_GZIP_SUFFIX_PARENTS = {
+    ".fastq",
+    ".fq",
+    ".vcf",
+    ".gff",
+    ".gtf",
+    ".fa",
+    ".fasta",
+    ".fna",
+    ".tar",
+}
 
 
 def _detect_file_type(filename: str) -> FileType:
@@ -76,6 +99,49 @@ def _detect_file_type(filename: str) -> FileType:
     if name_lower.endswith((".png", ".jpg", ".jpeg", ".gif", ".svg")):
         return FileType.IMAGE
     return FileType.OTHER
+
+
+def _split_display_suffix(filename: str) -> tuple[str, str]:
+    """拆分文件名 stem/suffix，保留常见双后缀如 .fastq.gz。"""
+    suffixes = Path(filename).suffixes
+    if (
+        len(suffixes) >= 2
+        and suffixes[-1].lower() == ".gz"
+        and suffixes[-2].lower() in _COMPOUND_GZIP_SUFFIX_PARENTS
+    ):
+        suffix = "".join(suffixes[-2:])
+    elif suffixes:
+        suffix = suffixes[-1]
+    else:
+        suffix = ""
+
+    stem = filename[: -len(suffix)] if suffix else filename
+    return stem, suffix
+
+
+def _append_dedupe_suffix(path: Path, token: str) -> Path:
+    """生成去重后的物理文件名，同时尽量保留复合扩展名。"""
+    stem, suffix = _split_display_suffix(path.name)
+    return path.with_name(f"{stem}_{token}{suffix}")
+
+
+def canonical_original_name(filename: str) -> str:
+    """把系统生成的短 UUID 去重后缀从展示名里剥掉。
+
+    只处理本服务生成的 8 位十六进制后缀，避免误伤常见测序 lane 编号
+    （如 _001）或用户自带数字。
+    """
+    name = Path(filename).name
+
+    legacy_match = _LEGACY_GZIP_DEDUPE_RE.match(name)
+    if legacy_match:
+        return f"{legacy_match.group('stem')}{legacy_match.group('suffix')}"
+
+    stem, suffix = _split_display_suffix(name)
+    match = _DEDUPE_SUFFIX_RE.match(stem)
+    if match:
+        return f"{match.group('stem')}{suffix}"
+    return name
 
 
 async def ensure_directory_chain(session: AsyncSession, user_id: UUID, path: str) -> None:
@@ -146,8 +212,20 @@ class FileService:
         return d
 
     def _resolve_abs(self, storage_path: str) -> Path:
-        """storage_path 为相对根目录的路径；拼成绝对路径"""
-        return self._storage_root / storage_path
+        """storage_path 为相对根目录的路径；拼成绝对路径并做路径遍历校验。
+
+        拒绝绝对路径输入，解析后必须仍位于 storage_root 内，否则视为越权。
+        """
+        if not storage_path:
+            raise NotFoundError("文件路径不能为空")
+        if Path(storage_path).is_absolute():
+            raise AuthorizationError("非法文件路径：禁止绝对路径")
+        abs_path = (self._storage_root / storage_path).resolve()
+        try:
+            abs_path.relative_to(self._storage_root.resolve())
+        except ValueError as exc:
+            raise AuthorizationError("非法文件路径：路径越权") from exc
+        return abs_path
 
     def _normalize_directory(self, directory: str | None) -> str:
         """规整目录路径：去首尾斜杠、禁绝对路径越权"""
@@ -275,9 +353,7 @@ class FileService:
         chunk_path.write_bytes(chunk_bytes)
 
         # 更新会话（幂等：同 index 替换）
-        session = await self._sessions.add_chunk(
-            user_id, upload_id, {"index": index, "md5": md5}
-        )
+        session = await self._sessions.add_chunk(user_id, upload_id, {"index": index, "md5": md5})
         if session is None:
             raise NotFoundError("上传会话不存在")
         await self._session.commit()
@@ -310,8 +386,7 @@ class FileService:
         final_path = raw_subdir / session.file_name
         # 同名冲突：追加短 uuid
         if final_path.exists():
-            stem = final_path.stem
-            final_path = raw_subdir / f"{stem}_{uuid.uuid4().hex[:8]}{final_path.suffix}"
+            final_path = _append_dedupe_suffix(final_path, uuid.uuid4().hex[:8])
 
         hasher = hashlib.md5()
         with final_path.open("wb") as out:
@@ -409,8 +484,7 @@ class FileService:
         new_abs = new_subdir / old_abs.name
         if new_abs.exists() and new_abs != old_abs:
             # 目标已存在同名：追加短 uuid
-            stem = new_abs.stem
-            new_abs = new_subdir / f"{stem}_{uuid.uuid4().hex[:8]}{new_abs.suffix}"
+            new_abs = _append_dedupe_suffix(new_abs, uuid.uuid4().hex[:8])
         if old_abs.exists() and new_abs != old_abs:
             shutil.move(str(old_abs), str(new_abs))
         file.directory = directory
@@ -487,10 +561,13 @@ class FileService:
             raise ValidationError("目录路径过长")
         # 顶层目录不得与系统默认目录同名，避免冲突
         top = path.split("/")[0]
-        if top in SYSTEM_DIRECTORIES and not await self._dirs.get_by_path(user_id, top):
+        if (
+            path == top
+            and top in SYSTEM_DIRECTORIES
+            and not await self._dirs.get_by_path(user_id, top)
+        ):
             # 允许在系统目录下建子目录，但不允许新建同名顶层系统目录
-            if path == top:
-                raise ConflictError(f"系统目录已存在：{path}")
+            raise ConflictError(f"系统目录已存在：{path}")
         if await self._dirs.get_by_path(user_id, path) is not None:
             raise ConflictError(f"目录已存在：{path}")
         # 父目录必须存在（若有多级）
@@ -511,7 +588,11 @@ class FileService:
         self._raw_subdir(user_id, path)
         await self._session.commit()
         return DirectoryDTO(
-            id=saved.id, path=saved.path, name=saved.name, parent_path=saved.parent_path, created_at=saved.created_at
+            id=saved.id,
+            path=saved.path,
+            name=saved.name,
+            parent_path=saved.parent_path,
+            created_at=saved.created_at,
         )
 
     async def delete_directory(self, user_id: UUID, path: str) -> bool:
@@ -560,74 +641,102 @@ class FileService:
         return result
 
     # ------------------------------------------------------------------
-    # 文件同步（磁盘 → file_records，只增不删）
+    # 文件同步（磁盘 ↔ file_records）
     # ------------------------------------------------------------------
     async def sync_user_files(self, user_id: UUID) -> SyncResponse:
-        """扫描用户目录，把磁盘有但 file_records 没有的文件登记进来（只增不删），并重算配额。
+        """对账用户目录与 file_records，并重算配额。
 
-        用于：手动放入的文件、旧任务未登记的产物等。幂等：同 storage_path 已存在则跳过。
-        directory 推导见 ``_derive_directory``（raw/ 前缀剥离匹配上传，raw_data/ 等保留匹配下载）。
+        用于：手动放入的文件、旧任务未登记的产物，以及用户从磁盘直接删除文件后的
+        页面自愈。幂等：同 storage_path 已存在则跳过；active 记录的物理文件不存在则
+        删除记录；历史去重后缀显示名会在同步时修正。
         """
         from sqlalchemy import select
 
         from omichub.infrastructure.database.models.file import FileRecordModel
 
         user_root = self._storage_root / "users" / str(user_id)
-        if not user_root.exists():
-            await self._users.recompute_used_storage(user_id)
-            return SyncResponse(added=0, added_size=0)
 
-        # 一次性取已有 storage_path 集合，避免逐文件查询
         res = await self._session.execute(
-            select(FileRecordModel.storage_path).where(FileRecordModel.user_id == user_id)
+            select(FileRecordModel).where(
+                FileRecordModel.user_id == user_id,
+                FileRecordModel.status == "active",
+            )
         )
-        existing: set[str] = {row[0] for row in res.all()}
+        existing_paths: set[str] = set()
+        removed = 0
+        removed_size = 0
+        renamed = 0
+
+        for model in res.scalars().all():
+            abs_path = self._resolve_abs(model.storage_path)
+            if not abs_path.is_file():
+                await self._files.delete(user_id, model.id)
+                removed += 1
+                removed_size += model.size or 0
+                continue
+
+            existing_paths.add(model.storage_path)
+            physical_name = abs_path.name
+            if model.original_name == physical_name:
+                clean_name = canonical_original_name(physical_name)
+                if clean_name != model.original_name:
+                    model.original_name = clean_name
+                    model.file_type = _detect_file_type(clean_name).value
+                    renamed += 1
 
         added = 0
         added_size = 0
-        for f in user_root.rglob("*"):
-            if not f.is_file():
-                continue
-            # 跳过隐藏目录/文件（.tmp 上传分片、.qoder 等 IDE 元数据）
-            if any(part.startswith(".") for part in f.relative_to(user_root).parts):
-                continue
-            try:
-                rel = str(f.relative_to(self._storage_root))
-            except ValueError:
-                continue
-            if rel in existing:
-                continue
-            try:
-                rel_user = f.relative_to(user_root)
-            except ValueError:
-                rel_user = None
-            directory = self._derive_directory(rel_user)
-            if directory:
-                await ensure_directory_chain(self._session, user_id, directory)
-            try:
-                size = f.stat().st_size
-            except OSError:
-                continue
-            record = DataFile(
-                id=uuid.uuid4(),
-                user_id=user_id,
-                path=rel,
-                original_name=f.name,
-                size=size,
-                checksum="",
-                file_type=_detect_file_type(f.name),
-                status="active",
-                directory=directory,
-            )
-            await self._files.save(record)
-            existing.add(rel)
-            added += 1
-            added_size += size
+        if user_root.exists():
+            for f in user_root.rglob("*"):
+                if not f.is_file():
+                    continue
+                # 跳过隐藏目录/文件（.tmp 上传分片、.qoder 等 IDE 元数据）
+                if any(part.startswith(".") for part in f.relative_to(user_root).parts):
+                    continue
+                try:
+                    rel = str(f.relative_to(self._storage_root))
+                except ValueError:
+                    continue
+                if rel in existing_paths:
+                    continue
+                try:
+                    rel_user = f.relative_to(user_root)
+                except ValueError:
+                    rel_user = None
+                directory = self._derive_directory(rel_user)
+                if directory:
+                    await ensure_directory_chain(self._session, user_id, directory)
+                try:
+                    size = f.stat().st_size
+                except OSError:
+                    continue
+                original_name = canonical_original_name(f.name)
+                record = DataFile(
+                    id=uuid.uuid4(),
+                    user_id=user_id,
+                    path=rel,
+                    original_name=original_name,
+                    size=size,
+                    checksum="",
+                    file_type=_detect_file_type(original_name),
+                    status="active",
+                    directory=directory,
+                )
+                await self._files.save(record)
+                existing_paths.add(rel)
+                added += 1
+                added_size += size
 
-        # 重算配额，修正历史漂移（下载/手动放入未计入的部分）
+        # 重算配额，修正历史漂移（下载/手动放入/手工删除未计入的部分）
         await self._users.recompute_used_storage(user_id)
         await self._session.commit()
-        return SyncResponse(added=added, added_size=added_size)
+        return SyncResponse(
+            added=added,
+            added_size=added_size,
+            removed=removed,
+            removed_size=removed_size,
+            renamed=renamed,
+        )
 
     @staticmethod
     def _derive_directory(rel_user: Path | None) -> str:
