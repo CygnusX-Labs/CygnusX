@@ -27,7 +27,10 @@ class AIDomainService:
         return await self._repo.save(conversation)
 
     async def append_assistant_message(
-        self, conversation: Conversation, content: str, tool_calls: list[dict[str, Any]] | None = None
+        self,
+        conversation: Conversation,
+        content: str,
+        tool_calls: list[dict[str, Any]] | None = None,
     ) -> Conversation:
         conversation.add_message(
             Message(
@@ -58,7 +61,9 @@ class AIDomainService:
             messages.append({"role": msg.role.value, "content": msg.content})
         return messages
 
-    async def compress_context(self, conversation: Conversation, max_messages: int = 20) -> Conversation:
+    async def compress_context(
+        self, conversation: Conversation, max_messages: int = 20
+    ) -> Conversation:
         """长对话上下文截断（保留最近 N 条）"""
         conversation.context_window.truncate(max_messages)
         conversation.updated_at = datetime.now()

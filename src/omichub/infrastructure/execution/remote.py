@@ -50,9 +50,7 @@ class RemoteSnakemakeExecutor:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.executor_url}/api/v1/jobs/{job_id}",
-                headers={"Authorization": f"Bearer {self.api_key}"}
-                if self.api_key
-                else {},
+                headers={"Authorization": f"Bearer {self.api_key}"} if self.api_key else {},
             )
             response.raise_for_status()
             return response.json()
@@ -62,9 +60,7 @@ class RemoteSnakemakeExecutor:
         async with httpx.AsyncClient() as client:
             response = await client.delete(
                 f"{self.executor_url}/api/v1/jobs/{job_id}",
-                headers={"Authorization": f"Bearer {self.api_key}"}
-                if self.api_key
-                else {},
+                headers={"Authorization": f"Bearer {self.api_key}"} if self.api_key else {},
             )
             response.raise_for_status()
             return response.json()

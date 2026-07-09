@@ -401,14 +401,27 @@ export interface CookiePricing {
   effective_until: string | null
 }
 
+export type QuickEntryColor = 'blue' | 'purple' | 'cyan' | 'green' | 'orange' | 'teal' | 'gray'
+
+export interface HomeQuickEntry {
+  key: string
+  title: string
+  desc: string
+  to: string
+  icon: string
+  icon_bg: QuickEntryColor
+}
+
 export interface SiteSettings {
   registration_enabled: boolean
   totp_policy: 'off' | 'optional' | 'required'
+  home_quick_entries?: HomeQuickEntry[]
 }
 
 export interface UpdateSiteSettings {
   registration_enabled?: boolean
   totp_policy?: 'off' | 'optional' | 'required'
+  home_quick_entries?: HomeQuickEntry[]
 }
 
 export interface CostEstimate {

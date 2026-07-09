@@ -6,7 +6,7 @@ import { NIcon } from 'naive-ui'
 import {
   ScanOutline, SearchOutline, ColorPaletteOutline, LayersOutline, BarChartOutline,
   AppsOutline, FlaskOutline, BonfireOutline, CalculatorOutline, SwapHorizontalOutline,
-  TerminalOutline,
+  TerminalOutline, GitNetworkOutline,
 } from '@vicons/ionicons5'
 import ToolCard from '@/components/bio-tools/ToolCard.vue'
 import AppLoading from '@/components/AppLoading.vue'
@@ -32,6 +32,7 @@ const ICON_MAP: Record<string, Component> = {
   CalculatorOutline,
   SwapHorizontalOutline,
   TerminalOutline,
+  GitNetworkOutline,
 }
 
 function resolveIcon(key: string): Component {

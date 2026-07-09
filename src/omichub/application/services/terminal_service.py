@@ -1,6 +1,6 @@
 """终端应用服务 - 会话管理、容器生命周期、超时回收
 
-所有运行时参数从 tools/terminal/terminal_config.yaml 读取（mtime 热重载）。
+所有运行时参数从 tool_configs/terminal/terminal_config.yaml 读取（mtime 热重载）。
 """
 
 from __future__ import annotations

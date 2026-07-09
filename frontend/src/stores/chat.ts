@@ -109,7 +109,6 @@ export const useChatStore = defineStore('chat', () => {
     { icon: '📊', text: '绘制 UMAP 降维可视化图', category: 'visualization' },
     { icon: '🧬', text: '查询 GO 富集分析结果', category: 'analysis' },
     { icon: '📁', text: '列出我最近的分析任务', category: 'task' },
-    { icon: '💻', text: '打开代码沙盒写 Python', category: 'code' },
     { icon: '📎', text: '使用插件搜索 PubMed 文献', category: 'search' },
   ])
 

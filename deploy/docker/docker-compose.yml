@@ -64,7 +64,7 @@ services:
     volumes:
       - ../../src:/app/src:ro  # 开发环境热重载
       - ../../flows:/app/flows:ro  # 流程 YAML 配置（热重载）
-      - ../../tools:/app/tools:ro  # 工具箱配置（tools_setting.yaml + jbrowse/ + enrichments/，热重载）
+      - ../../tool_configs:/app/tool_configs:ro  # 工具箱配置（tools_setting.yaml + jbrowse/ + enrichments/，热重载）
       - ../../docs:/app/docs  # 知识库文档（meta.yaml + *.md，在线编辑与图片上传需要可写）
       - ../../data:/app/data:ro  # AI Provider YAML 配置（热重载）
       - ../../alembic:/app/alembic:ro  # 迁移脚本热同步（容器内可见，免重建镜像）

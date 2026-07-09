@@ -1,6 +1,6 @@
 """终端容器管理 - Docker 沙盒终端生命周期
 
-所有配置项从 tools/terminal/terminal_config.yaml 读取（经 ConfigManager mtime 热重载），
+所有配置项从 tool_configs/terminal/terminal_config.yaml 读取（经 ConfigManager mtime 热重载），
 不再依赖 core/config.py 的 Pydantic Settings。
 """
 
@@ -85,10 +85,28 @@ class TerminalDockerManager:
 
         image_resources = image.resources
         defaults = cfg.default_resources
-        mem = memory_mb or image_resources.memory_mb or defaults.memory_mb
-        cpu = cpu_cores or image_resources.cpu_cores or defaults.cpu_cores
-        pids = pid_limit or image_resources.pid_limit or defaults.pid_limit
-        tmpfs_mb = defaults.tmpfs_size_mb
+        limits = cfg.max_resources
+
+        def _clamp(value: float, lower: float, upper: float) -> float:
+            normalized_upper = max(lower, upper)
+            return min(max(value, lower), normalized_upper)
+
+        mem = int(
+            _clamp(
+                memory_mb or image_resources.memory_mb or defaults.memory_mb, 1, limits.memory_mb
+            )
+        )
+        cpu = _clamp(
+            cpu_cores or image_resources.cpu_cores or defaults.cpu_cores,
+            0.1,
+            limits.cpu_cores,
+        )
+        pids = int(
+            _clamp(
+                pid_limit or image_resources.pid_limit or defaults.pid_limit, 1, limits.pid_limit
+            )
+        )
+        tmpfs_mb = int(_clamp(defaults.tmpfs_size_mb, 1, limits.tmpfs_size_mb))
 
         # 预创建并挂载用户顶层系统目录（与 FileService.ensure_default_directories 约定一致）
         user_root = f"{cfg.storage.workspace_base}/{user_id}"
@@ -116,11 +134,17 @@ class TerminalDockerManager:
 
         # 镜像特定环境变量
         env_vars = {item.name: item.value for item in image.env}
-        env_vars.update({
-            "USER_ID": user_id,
-            "SESSION_ID": session_id,
-            "HOME": "/home/omichub",
-        })
+        env_vars.update(
+            {
+                "USER_ID": user_id,
+                "SESSION_ID": session_id,
+                "HOME": "/home/omichub",
+                "ZDOTDIR": "/home/omichub",
+                "XDG_CACHE_HOME": "/home/omichub/.cache",
+                "OMP_CACHE_DIR": "/home/omichub/.cache",
+                "ZSH_CACHE_DIR": "/home/omichub/.cache/oh-my-zsh",
+            }
+        )
 
         def _run() -> str:
             container = client.containers.run(

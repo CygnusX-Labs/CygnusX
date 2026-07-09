@@ -29,9 +29,7 @@ class CookieAccountModel(Base, TimestampMixin):
 
     __tablename__ = "cookie_accounts"
     __table_args__ = (
-        CheckConstraint(
-            "status IN ('active', 'frozen', 'suspended')", name="chk_account_status"
-        ),
+        CheckConstraint("status IN ('active', 'frozen', 'suspended')", name="chk_account_status"),
         Index("idx_accounts_status", "status", postgresql_where=text("status != 'active'")),
         Index("idx_accounts_updated_at", "updated_at"),
     )
@@ -72,7 +70,12 @@ class CookieTransactionModel(Base):
             "txn_type",
             postgresql_using="btree",
         ),
-        Index("idx_txn_source", "source_type", "source_id", postgresql_where=text("source_id IS NOT NULL")),
+        Index(
+            "idx_txn_source",
+            "source_type",
+            "source_id",
+            postgresql_where=text("source_id IS NOT NULL"),
+        ),
         Index("idx_txn_type_created", "txn_type", "created_at"),
         Index("idx_txn_account", "account_id", "created_at"),
     )
@@ -100,9 +103,7 @@ class CookieTransactionModel(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class CookiePricingModel(Base, TimestampMixin):
@@ -140,9 +141,7 @@ class CookiePricingModel(Base, TimestampMixin):
     effective_from: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    effective_until: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    effective_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     priority: Mapped[int] = mapped_column(Integer, default=0)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[uuid.UUID | None] = mapped_column(
@@ -164,7 +163,11 @@ class ConsumptionLogModel(Base):
             name="chk_billing_item",
         ),
         Index("idx_logs_task", "task_id", postgresql_where=text("task_id IS NOT NULL")),
-        Index("idx_logs_sandbox", "sandbox_session_id", postgresql_where=text("sandbox_session_id IS NOT NULL")),
+        Index(
+            "idx_logs_sandbox",
+            "sandbox_session_id",
+            postgresql_where=text("sandbox_session_id IS NOT NULL"),
+        ),
         Index("idx_logs_user_created", "user_id", "created_at"),
         Index("idx_logs_transaction", "transaction_id"),
     )
@@ -182,16 +185,10 @@ class ConsumptionLogModel(Base):
     quantity: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
     total_cost: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    ended_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class LedgerEntryModel(Base):
@@ -217,6 +214,4 @@ class LedgerEntryModel(Base):
     total_adjusted: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
     closing_balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     transaction_count: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

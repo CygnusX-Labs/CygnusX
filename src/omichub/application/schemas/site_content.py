@@ -11,9 +11,10 @@ class HeroContent(OmicsHubBaseSchema):
 
 
 class QuickEntryContent(OmicsHubBaseSchema):
-    """快捷入口文案。
+    """快捷入口兜底文案。
 
-    key 用于前端与硬编码的图标/路由做合并，title/desc 为可配置文案。
+    首页实际展示优先使用 site_settings.home_quick_entries；
+    当 DB 配置不可用时，前端按 key 回退到默认路由与图标。
     """
 
     key: str

@@ -113,7 +113,9 @@ class TaskService:
 
             consumer = TaskCookieConsumer(self._db)
             pre_deducted = await consumer.on_submit(
-                UUID(user_id), str(task.id), req.flow_id,
+                UUID(user_id),
+                str(task.id),
+                req.flow_id,
                 sample_count=len(req.sample_sheet),
                 comparison_count=len(req.comparisons or []),
             )

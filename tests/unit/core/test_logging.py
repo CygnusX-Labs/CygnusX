@@ -47,9 +47,7 @@ class TestSetupLogging:
         assert (tmp_path / "omichub.json.log").exists()
         assert (tmp_path / "error.log").exists()
 
-    def test_service_binding(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_service_binding(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("OMICHUB_LOG_DIR", str(tmp_path))
         monkeypatch.setenv("SERVICE_NAME", "test-worker")
 

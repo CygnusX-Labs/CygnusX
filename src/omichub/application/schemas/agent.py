@@ -27,7 +27,7 @@ class AgentTemplateDTO(BaseModel):
     agent_id: str
     name: str
     description: str = ""
-    avatar: str = "\U0001F916"
+    avatar: str = "\U0001f916"
     color: str = "#4f8ef7"
     category: str = "general"
     model_id: EmptyStrUUID = None
@@ -51,7 +51,7 @@ class CreateAgentRequest(BaseModel):
     agent_id: str = ""
     name: str
     description: str = ""
-    avatar: str = "\U0001F916"
+    avatar: str = "\U0001f916"
     color: str = "#4f8ef7"
     category: str = "general"
     model_id: EmptyStrUUID = None

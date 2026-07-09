@@ -2,21 +2,51 @@
 import { computed, h, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  NButton, NDataTable, NDrawer, NDrawerContent, NIcon, NInput, NSelect, NStatistic,
-  NTabPane, NTabs, NTag, useMessage,
+  NButton,
+  NDataTable,
+  NDrawer,
+  NDrawerContent,
+  NEmpty,
+  NIcon,
+  NInput,
+  NSelect,
+  NStatistic,
+  NTabPane,
+  NTabs,
+  NTag,
+  useMessage,
   type DataTableColumns,
 } from 'naive-ui'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { PieChart } from 'echarts/charts'
-import { TooltipComponent, LegendComponent } from 'echarts/components'
+import { LegendComponent, TooltipComponent } from 'echarts/components'
 import {
-  ArrowBackOutline, CopyOutline, DownloadOutline, SearchOutline, SwapHorizontalOutline,
+  ArrowBackOutline,
+  CopyOutline,
+  DownloadOutline,
+  SearchOutline,
+  SwapHorizontalOutline,
 } from '@vicons/ionicons5'
 import {
-  getGenomeById, MOCK_CHROMOSOMES, MOCK_FILES, MOCK_GENES, MOCK_GENE_TYPES,
-  MOCK_ID_MAP, MOCK_ID_MAP_REVERSE, type Gene,
+  DATABASE_SPECIES,
+  MOCK_CHROMOSOMES,
+  MOCK_GENE_TYPES,
+  MOCK_ID_MAP,
+  MOCK_ID_MAP_REVERSE,
+  formatLocation,
+  getDataFileEntries,
+  getGeneById,
+  getGenesForVersion,
+  getGenomeVersionById,
+  getSpeciesByVersionId,
+  searchGenesForVersion,
+  type BuildStatus,
+  type DataFileType,
+  type Gene,
+  type GOAnnotation,
+  type KEGGAnnotation,
 } from '@/mock/referenceGenomes'
 
 use([CanvasRenderer, PieChart, TooltipComponent, LegendComponent])
@@ -25,709 +55,1130 @@ const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 
-const genome = computed(() => getGenomeById(route.params.id as string))
+const versionId = computed(() => route.params.id as string)
+const version = computed(() => getGenomeVersionById(versionId.value))
+const species = computed(() => getSpeciesByVersionId(versionId.value))
+const genes = computed(() => getGenesForVersion(versionId.value))
+const dataFiles = computed(() => version.value ? getDataFileEntries(version.value) : [])
 
-const activeTab = ref<'overview' | 'search' | 'mapping'>('overview')
-
-// ===== 概览：染色体条形图 =====
-const maxChromLength = Math.max(...MOCK_CHROMOSOMES.map((c) => c.length))
+const activeTab = ref<'overview' | 'genes' | 'annotations' | 'mapping' | 'files'>('overview')
 const selectedChrom = ref('')
+const searchField = ref<'all' | 'geneId' | 'geneSymbol' | 'description'>('all')
+const searchQuery = ref('')
+const drawerVisible = ref(false)
+const drawerGene = ref<Gene | null>(null)
+const mapInput = ref('')
+const mapResult = ref<{ input: string; output: string | null; status: 'success' | 'fail' }[]>([])
+const mappingDirection = ref<'v8tov11' | 'v11tov8'>('v8tov11')
 
+const versionSelect = computed({
+  get: () => versionId.value,
+  set: (next: string) => router.push(`/database/${next}`),
+})
+
+const versionOptions = computed(() => species.value?.genomeVersions.map((item) => ({
+  label: `${item.versionName} · ${item.assemblyName}`,
+  value: item.versionId,
+})) ?? [])
+
+const searchFieldOptions = [
+  { label: '全部字段', value: 'all' },
+  { label: 'Gene ID', value: 'geneId' },
+  { label: 'Symbol', value: 'geneSymbol' },
+  { label: '功能描述', value: 'description' },
+]
+
+const sourceLabel: Record<DataFileType, string> = {
+  fasta: 'FASTA',
+  gff: 'GFF',
+  go: 'GO',
+  kegg: 'KEGG',
+}
+
+const maxChromLength = Math.max(...MOCK_CHROMOSOMES.map((chrom) => chrom.length))
 const pieOption = computed(() => ({
   tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-  legend: { bottom: 0, textStyle: { color: '#94a3b8', fontSize: 12 } },
+  legend: { bottom: 0, textStyle: { color: '#86909c', fontSize: 12 } },
   series: [
     {
       type: 'pie',
       radius: ['45%', '70%'],
       avoidLabelOverlap: false,
       label: { show: false },
-      data: MOCK_GENE_TYPES.map((t) => ({ name: t.name, value: t.value, itemStyle: { color: t.color } })),
+      data: MOCK_GENE_TYPES.map((item) => ({
+        name: item.name,
+        value: item.value,
+        itemStyle: { color: item.color },
+      })),
     },
   ],
 }))
 
-// ===== 基因搜索 =====
-const searchField = ref<'geneId' | 'geneName' | 'annotation'>('geneId')
-const searchQuery = ref('')
-const searchFieldOptions = [
-  { label: 'Gene ID', value: 'geneId' },
-  { label: 'Gene Name', value: 'geneName' },
-  { label: '功能注释', value: 'annotation' },
-]
+const filteredGenes = computed(() => searchGenesForVersion(
+  versionId.value,
+  searchQuery.value,
+  searchField.value,
+  selectedChrom.value || undefined,
+))
 
-const filteredGenes = computed(() => {
-  let list = MOCK_GENES
-  if (selectedChrom.value) list = list.filter((g) => g.chromosome === selectedChrom.value)
-  const q = searchQuery.value.trim().toLowerCase()
-  if (q) {
-    list = list.filter((g) => {
-      if (searchField.value === 'geneId') return g.geneId.toLowerCase().includes(q)
-      if (searchField.value === 'geneName') return g.geneName.toLowerCase().includes(q)
-      return g.annotation.toLowerCase().includes(q)
-    })
+const annotationRows = computed(() => {
+  const go = new Map<string, GOAnnotation>()
+  const kegg = new Map<string, KEGGAnnotation>()
+  genes.value.forEach((gene) => {
+    gene.goAnnotations.forEach((item) => go.set(item.goId, item))
+    gene.keggAnnotations.forEach((item) => kegg.set(item.pathwayId, item))
+  })
+  return {
+    go: Array.from(go.values()),
+    kegg: Array.from(kegg.values()),
   }
-  return list
 })
 
-const drawerVisible = ref(false)
-const drawerGene = ref<Gene | null>(null)
+const drawerGoGroups = computed(() => {
+  const groups: Record<'BP' | 'MF' | 'CC', GOAnnotation[]> = { BP: [], MF: [], CC: [] }
+  drawerGene.value?.goAnnotations.forEach((item) => groups[item.namespace].push(item))
+  return groups
+})
 
-function openDrawer(g: Gene) {
-  drawerGene.value = g
-  drawerVisible.value = true
+function buildStatusType(status: BuildStatus): 'success' | 'warning' | 'error' | 'default' {
+  if (status === 'ready') return 'success'
+  if (status === 'building') return 'warning'
+  if (status === 'error') return 'error'
+  return 'default'
+}
+
+function buildStatusText(status: BuildStatus) {
+  if (status === 'ready') return '就绪'
+  if (status === 'building') return '构建中'
+  if (status === 'missing') return '缺失'
+  return '异常'
+}
+
+function geneTypeText(type: Gene['geneType']) {
+  if (type === 'protein_coding') return '蛋白编码'
+  if (type === 'lncRNA') return 'lncRNA'
+  if (type === 'pseudogene') return '假基因'
+  if (type === 'transposable_element') return '转座元件'
+  return '其他'
+}
+
+function geneLength(gene: Gene) {
+  return gene.end - gene.start + 1
 }
 
 function selectChrom(name: string) {
   selectedChrom.value = selectedChrom.value === name ? '' : name
-  if (selectedChrom.value) activeTab.value = 'search'
+  if (selectedChrom.value) activeTab.value = 'genes'
 }
 
-const columns: DataTableColumns<Gene> = [
-  { title: '基因ID', key: 'geneId', width: 120, render: (g) => h('span', { class: 'mono' }, g.geneId) },
-  { title: '基因名', key: 'geneName', width: 110 },
-  { title: '染色体', key: 'chromosome', width: 80 },
-  { title: '位置', key: 'position', width: 180, render: (g) => `${g.start.toLocaleString()}-${g.end.toLocaleString()}` },
-  { title: '长度', key: 'length', width: 90, render: (g) => `${g.length} bp` },
-  { title: '功能注释', key: 'annotation', ellipsis: { tooltip: true } },
-  {
-    title: '操作', key: 'actions', width: 100,
-    render: (g) => h(NButton, { size: 'tiny', tertiary: true, onClick: () => openDrawer(g) }, { default: () => '查看详情' }),
-  },
-]
-
-// ===== 版本映射 =====
-const mapDirection = ref<'v8tov11' | 'v11tov8'>('v8tov11')
-const mapInput = ref('')
-const mapResult = ref<{ input: string; output: string | null; status: 'success' | 'fail' }[]>([])
-
-function runMap() {
-  const ids = mapInput.value.split('\n').map((s) => s.trim()).filter(Boolean)
-  if (!ids.length) {
-    message.warning('请输入要转换的基因 ID（每行一个）')
-    return
-  }
-  const map = mapDirection.value === 'v8tov11' ? MOCK_ID_MAP : MOCK_ID_MAP_REVERSE
-  mapResult.value = ids.map((id) => ({
-    input: id,
-    output: map[id] || null,
-    status: map[id] ? 'success' : 'fail',
-  }))
-  const ok = mapResult.value.filter((r) => r.status === 'success').length
-  message.success(`转换完成：${ok}/${ids.length} 成功`)
+function openGene(gene: Gene) {
+  drawerGene.value = gene
+  drawerVisible.value = true
 }
 
-function swapDirection() {
-  mapDirection.value = mapDirection.value === 'v8tov11' ? 'v11tov8' : 'v8tov11'
-  mapInput.value = ''
-  mapResult.value = []
+function openGeneById(geneId: string) {
+  const gene = getGeneById(geneId, versionId.value)
+  if (gene) openGene(gene)
 }
 
-function downloadMap() {
-  const content = mapResult.value
-    .map((r) => `${r.input}\t${r.output || 'N/A'}\t${r.status}`)
-    .join('\n')
-  const blob = new Blob([`input\toutput\tstatus\n${content}`], { type: 'text/tsv' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'id_mapping.tsv'
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-// ===== 文件清单复制 =====
-async function copyPath(path: string) {
+async function copyText(text: string, label = '内容') {
   try {
-    await navigator.clipboard.writeText(path)
-    message.success('路径已复制')
+    await navigator.clipboard.writeText(text)
+    message.success(`${label}已复制`)
   } catch {
     message.error('复制失败')
   }
 }
 
-function setDefault() {
-  message.success(`已将 ${genome.value?.commonName} ${genome.value?.version} 设为项目默认`)
+function runMap() {
+  const ids = mapInput.value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean)
+  if (!ids.length) {
+    message.warning('请输入要转换的基因 ID')
+    return
+  }
+  const map = mappingDirection.value === 'v8tov11' ? MOCK_ID_MAP : MOCK_ID_MAP_REVERSE
+  mapResult.value = ids.map((id) => ({
+    input: id,
+    output: map[id] || null,
+    status: map[id] ? 'success' : 'fail',
+  }))
+  const success = mapResult.value.filter((item) => item.status === 'success').length
+  message.success(`映射完成：${success}/${ids.length} 成功`)
 }
+
+function swapDirection() {
+  mappingDirection.value = mappingDirection.value === 'v8tov11' ? 'v11tov8' : 'v8tov11'
+  mapInput.value = ''
+  mapResult.value = []
+}
+
+function downloadMap() {
+  const content = mapResult.value.map((row) => `${row.input}\t${row.output || 'N/A'}\t${row.status}`).join('\n')
+  const blob = new Blob([`input\toutput\tstatus\n${content}`], { type: 'text/tsv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${species.value?.id || 'database'}_mapping.tsv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function goNamespaceLabel(namespace: 'BP' | 'MF' | 'CC') {
+  if (namespace === 'BP') return '生物过程'
+  if (namespace === 'MF') return '分子功能'
+  return '细胞组分'
+}
+
+const geneColumns: DataTableColumns<Gene> = [
+  {
+    title: 'Gene ID',
+    key: 'geneId',
+    width: 130,
+    render: (gene) => h('button', { class: 'gene-link', onClick: () => openGene(gene) }, gene.geneId),
+  },
+  { title: 'Symbol', key: 'geneSymbol', width: 110 },
+  {
+    title: '位置',
+    key: 'location',
+    width: 210,
+    render: (gene) => h('span', { class: 'mono' }, formatLocation(gene)),
+  },
+  { title: '类型', key: 'geneType', width: 110, render: (gene) => geneTypeText(gene.geneType) },
+  { title: '长度', key: 'length', width: 90, render: (gene) => `${geneLength(gene).toLocaleString()} bp` },
+  { title: '功能描述', key: 'description', ellipsis: { tooltip: true } },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 96,
+    render: (gene) => h(NButton, { size: 'tiny', tertiary: true, onClick: () => openGene(gene) }, { default: () => '详情' }),
+  },
+]
 </script>
 
 <template>
-  <div v-if="genome" class="detail-page">
+  <div v-if="version && species" class="database-detail-page">
     <div class="page-toolbar">
-      <NButton text @click="router.push('/reference-genomes')">
+      <NButton text @click="router.push('/database')">
         <template #icon><NIcon :size="18"><ArrowBackOutline /></NIcon></template>
-        返回基因组列表
+        返回数据库
       </NButton>
+      <div class="breadcrumb">
+        数据库 / {{ species.commonName }} / {{ version.versionName }}
+      </div>
     </div>
 
+    <section class="detail-hero">
+      <div class="species-icon" :style="{ background: species.gradient }">{{ species.icon }}</div>
+      <div class="hero-info">
+        <div class="hero-kicker">{{ species.scientificName }} · Taxonomy {{ species.taxonomyId }}</div>
+        <h1>{{ species.commonName }} {{ version.versionName }}</h1>
+        <p>{{ version.description }}</p>
+      </div>
+      <div class="hero-version-select">
+        <NSelect v-model:value="versionSelect" :options="versionOptions" size="small" />
+      </div>
+    </section>
+
     <div class="detail-layout">
-      <!-- 左栏：信息面板 -->
       <aside class="info-panel">
-        <div class="info-header">
-          <div class="info-title">
-            <span class="emoji">{{ genome.speciesEmoji }}</span>
-            <span>{{ genome.commonName }} {{ genome.version }}</span>
-          </div>
-          <div class="info-subtitle">{{ genome.versionFull }} · 染色体级组装</div>
-          <div class="info-tags">
-            <NTag size="tiny" round>预置</NTag>
-            <NTag v-for="t in genome.tags" :key="t" size="tiny" round :type="t.includes('最新') ? 'success' : 'info'">{{ t }}</NTag>
+        <div class="panel-section">
+          <div class="section-title">版本摘要</div>
+          <div class="stat-grid">
+            <div class="stat-item"><NStatistic label="染色体" :value="version.stats.chromosomes" /></div>
+            <div class="stat-item"><NStatistic label="基因" :value="version.stats.totalGenes" /></div>
+            <div class="stat-item"><NStatistic label="蛋白编码" :value="version.stats.proteinCoding" /></div>
+            <div class="stat-item"><NStatistic label="大小" :value="version.stats.genomeSize" /></div>
           </div>
         </div>
 
-        <div class="stat-grid">
-          <div class="stat-item"><NStatistic label="染色体数" :value="genome.chromosomes" /></div>
-          <div class="stat-item"><NStatistic label="基因总数" :value="genome.totalGenes" /></div>
-          <div class="stat-item"><NStatistic label="基因组大小" :value="genome.genomeSize" /></div>
-          <div class="stat-item"><NStatistic label="N50" :value="genome.n50" /></div>
-        </div>
-
-        <div class="file-section">
-          <div class="section-title">📁 参考文件</div>
-          <div
-            v-for="f in MOCK_FILES"
-            :key="f.name"
-            class="file-item"
-            @click="copyPath(f.path)"
-          >
-            <div class="file-info">
-              <div class="file-name">{{ f.name }}</div>
-              <div class="file-size">{{ f.size }}</div>
+        <div class="panel-section">
+          <div class="section-title">数据源状态</div>
+          <div class="file-list compact">
+            <div v-for="file in dataFiles" :key="file.type" class="file-item" @click="copyText(file.path, file.label)">
+              <div>
+                <div class="file-name">{{ sourceLabel[file.type] }}</div>
+                <div class="file-meta">{{ file.format }} · {{ file.size }}</div>
+              </div>
+              <NTag size="tiny" :type="buildStatusType(file.buildStatus)" round>
+                {{ buildStatusText(file.buildStatus) }}
+              </NTag>
             </div>
-            <span class="file-status">✅</span>
-            <NIcon class="copy-icon" :size="14"><CopyOutline /></NIcon>
           </div>
+        </div>
+
+        <div class="panel-section">
+          <div class="section-title">版本映射</div>
+          <div v-if="species.versionMappings.length" class="mapping-card-list">
+            <div v-for="mapping in species.versionMappings" :key="`${mapping.source}-${mapping.target}`" class="mapping-card">
+              <div class="mapping-pair">{{ mapping.source }} → {{ mapping.target }}</div>
+              <div class="mapping-meta">{{ mapping.mappingTool }} · {{ mapping.mappedGenes.toLocaleString() }} genes · Q{{ mapping.averageQuality }}</div>
+            </div>
+          </div>
+          <div v-else class="subtle-empty">暂无跨版本映射</div>
         </div>
 
         <div class="info-actions">
-          <NButton size="small" type="primary" block @click="setDefault">设为项目默认</NButton>
-          <NButton size="small" block quaternary>下载基因ID映射表</NButton>
+          <NButton size="small" type="primary" block @click="activeTab = 'genes'">浏览基因</NButton>
+          <NButton size="small" block quaternary @click="activeTab = 'files'">查看文件路径</NButton>
         </div>
       </aside>
 
-      <!-- 右栏：主内容 -->
       <main class="main-content">
         <NTabs v-model:value="activeTab" type="line" animated size="medium">
-          <!-- Tab 1：概览 -->
-          <NTabPane name="overview" tab="📊 概览">
-            <div class="overview-section">
-              <div class="block-title">
-                染色体长度可视化
-                <span v-if="selectedChrom" class="chrom-filter-hint">
-                  已筛选：{{ selectedChrom }}
-                  <NButton size="tiny" quaternary @click="selectedChrom = ''">清除</NButton>
-                </span>
-              </div>
-              <div class="chrom-chart">
-                <div
-                  v-for="c in MOCK_CHROMOSOMES"
-                  :key="c.name"
-                  class="chrom-row"
-                  :class="{ active: selectedChrom === c.name }"
-                  @click="selectChrom(c.name)"
-                >
-                  <span class="chrom-name">{{ c.name }}</span>
-                  <div class="chrom-bar-track">
-                    <div
-                      class="chrom-bar"
-                      :style="{ width: `${(c.length / maxChromLength) * 100}%`, background: c.color }"
-                    />
-                  </div>
-                  <span class="chrom-length">{{ (c.length / 1e6).toFixed(1) }} Mb</span>
+          <NTabPane name="overview" tab="概览">
+            <div class="overview-grid">
+              <section class="content-block">
+                <div class="block-title">
+                  染色体长度
+                  <span v-if="selectedChrom" class="filter-hint">
+                    已筛选 {{ selectedChrom }}
+                    <NButton size="tiny" quaternary @click="selectedChrom = ''">清除</NButton>
+                  </span>
                 </div>
-              </div>
-            </div>
+                <div class="chrom-chart">
+                  <div
+                    v-for="chrom in MOCK_CHROMOSOMES"
+                    :key="chrom.name"
+                    class="chrom-row"
+                    :class="{ active: selectedChrom === chrom.name }"
+                    @click="selectChrom(chrom.name)"
+                  >
+                    <span class="chrom-name">{{ chrom.name }}</span>
+                    <div class="chrom-bar-track">
+                      <div
+                        class="chrom-bar"
+                        :style="{ width: `${(chrom.length / maxChromLength) * 100}%`, background: chrom.color }"
+                      />
+                    </div>
+                    <span class="chrom-length">{{ (chrom.length / 1e6).toFixed(1) }} Mb</span>
+                  </div>
+                </div>
+              </section>
 
-            <div class="overview-section">
-              <div class="block-title">基因类型分布</div>
-              <div class="pie-wrap">
-                <VChart :option="pieOption" autoresize style="height: 280px" />
-              </div>
+              <section class="content-block">
+                <div class="block-title">基因类型</div>
+                <VChart :option="pieOption" autoresize style="height: 282px" />
+              </section>
             </div>
           </NTabPane>
 
-          <!-- Tab 2：基因搜索 -->
-          <NTabPane name="search" tab="🔍 基因搜索">
+          <NTabPane name="genes" tab="基因">
             <div class="search-bar">
-              <NSelect
-                v-model:value="searchField"
-                :options="searchFieldOptions"
-                size="small"
-                style="width: 130px"
-              />
+              <NSelect v-model:value="searchField" :options="searchFieldOptions" class="search-field" />
               <NInput
                 v-model:value="searchQuery"
-                size="small"
                 clearable
-                placeholder="搜索基因ID、基因名、功能注释... 例如：LsG0001 或 MYB"
-                style="flex: 1"
+                placeholder="搜索 Gene ID、Symbol、功能描述或别名"
+                class="gene-search"
               >
                 <template #prefix><NIcon><SearchOutline /></NIcon></template>
               </NInput>
             </div>
 
-            <div v-if="selectedChrom" class="chrom-filter-hint">
-              已按染色体 {{ selectedChrom }} 筛选
+            <div v-if="selectedChrom" class="filter-hint standalone">
+              已按 {{ selectedChrom }} 筛选
               <NButton size="tiny" quaternary @click="selectedChrom = ''">清除筛选</NButton>
             </div>
 
-            <div v-if="filteredGenes.length" class="search-result">
-              <div class="result-count">共 {{ filteredGenes.length }} 条结果</div>
+            <div v-if="filteredGenes.length" class="table-wrap">
+              <div class="result-count">共 {{ filteredGenes.length }} 条基因</div>
               <NDataTable
-                :columns="columns"
+                :columns="geneColumns"
                 :data="filteredGenes"
                 :pagination="{ pageSize: 10 }"
-                :bordered="true"
                 size="small"
-                :max-height="420"
+                :bordered="false"
+                :max-height="440"
               />
             </div>
-            <div v-else class="search-empty">
-              🌌 这片星空下没有找到该基因，换个关键词试试？
+            <NEmpty v-else class="tab-empty" description="暂无匹配基因" />
+          </NTabPane>
+
+          <NTabPane name="annotations" tab="GO / KEGG">
+            <div class="annotation-grid">
+              <section class="content-block">
+                <div class="block-title">GO 注释</div>
+                <div v-if="annotationRows.go.length" class="annotation-list">
+                  <div v-for="item in annotationRows.go" :key="item.goId" class="annotation-row">
+                    <span class="mono strong">{{ item.goId }}</span>
+                    <span>{{ item.term }}</span>
+                    <NTag size="tiny" round>{{ goNamespaceLabel(item.namespace) }}</NTag>
+                    <span class="annotation-source">{{ item.evidenceCode }} · {{ item.source }}</span>
+                  </div>
+                </div>
+                <NEmpty v-else description="暂无 GO 注释" />
+              </section>
+
+              <section class="content-block">
+                <div class="block-title">KEGG 通路</div>
+                <div v-if="annotationRows.kegg.length" class="annotation-list">
+                  <div v-for="item in annotationRows.kegg" :key="item.pathwayId" class="annotation-row">
+                    <span class="mono strong">{{ item.pathwayId }}</span>
+                    <span>{{ item.pathwayName }}</span>
+                    <NTag size="tiny" type="info" round>{{ item.category }}</NTag>
+                    <span class="annotation-source">{{ item.genesInPathway }} genes</span>
+                  </div>
+                </div>
+                <NEmpty v-else description="暂无 KEGG 注释" />
+              </section>
             </div>
           </NTabPane>
 
-          <!-- Tab 3：版本映射 -->
-          <NTabPane name="mapping" tab="🔄 版本映射">
-            <div class="mapping-header">
-              <div class="block-title">
-                基因 ID 版本映射
-                <span class="mapping-dir">{{ mapDirection === 'v8tov11' ? 'v8 → v11' : 'v11 → v8' }}</span>
-              </div>
-              <NButton size="small" quaternary @click="swapDirection">
-                <template #icon><NIcon><SwapHorizontalOutline /></NIcon></template>交换方向
-              </NButton>
-            </div>
-
-            <div class="mapping-layout">
-              <div class="mapping-side">
-                <div class="mapping-label">
-                  输入 {{ mapDirection === 'v8tov11' ? 'v8' : 'v11' }} ID（每行一个）
+          <NTabPane name="mapping" tab="版本映射">
+            <section class="content-block">
+              <div class="mapping-header">
+                <div>
+                  <div class="block-title">基因 ID 映射</div>
+                  <p class="block-desc">{{ mappingDirection === 'v8tov11' ? 'Lsat_v8 → Lsat_v11' : 'Lsat_v11 → Lsat_v8' }}</p>
                 </div>
-                <NInput
-                  v-model:value="mapInput"
-                  type="textarea"
-                  :autosize="{ minRows: 8, maxRows: 14 }"
-                  placeholder="Lsat_v8_0001&#10;Lsat_v8_0002&#10;..."
-                  class="mono-input"
-                />
-                <NButton size="small" type="primary" block @click="runMap">
+                <NButton size="small" quaternary @click="swapDirection">
                   <template #icon><NIcon><SwapHorizontalOutline /></NIcon></template>
-                  转换为 {{ mapDirection === 'v8tov11' ? 'v11' : 'v8' }}
+                  交换方向
                 </NButton>
               </div>
 
-              <div class="mapping-side">
-                <div class="mapping-label">转换结果</div>
-                <div class="mapping-result">
-                  <div v-if="!mapResult.length" class="mapping-empty">等待转换...</div>
-                  <div
-                    v-for="r in mapResult"
-                    :key="r.input"
-                    class="mapping-row"
-                    :class="{ fail: r.status === 'fail' }"
-                  >
-                    <span class="mono">{{ r.input }}</span>
-                    <NIcon :size="12"><ArrowBackOutline class="rotate-90" /></NIcon>
-                    <span class="mono">{{ r.output || '未找到' }}</span>
-                    <NTag size="tiny" :type="r.status === 'success' ? 'success' : 'error'" round>
-                      {{ r.status === 'success' ? '成功' : '未找到' }}
-                    </NTag>
-                  </div>
+              <div v-if="species.versionMappings.length" class="mapping-layout">
+                <div class="mapping-side">
+                  <div class="mapping-label">输入基因 ID（每行或逗号分隔）</div>
+                  <NInput
+                    v-model:value="mapInput"
+                    type="textarea"
+                    :autosize="{ minRows: 8, maxRows: 14 }"
+                    placeholder="Lsat_v8_0001&#10;Lsat_v8_0002"
+                    class="mono-input"
+                  />
+                  <NButton type="primary" size="small" block @click="runMap">
+                    <template #icon><NIcon><SwapHorizontalOutline /></NIcon></template>
+                    开始映射
+                  </NButton>
                 </div>
-                <NButton v-if="mapResult.length" size="small" block quaternary @click="downloadMap">
-                  <template #icon><NIcon><DownloadOutline /></NIcon></template>下载映射表
-                </NButton>
+
+                <div class="mapping-side">
+                  <div class="mapping-label">映射结果</div>
+                  <div class="mapping-result">
+                    <div v-if="!mapResult.length" class="mapping-empty">等待映射...</div>
+                    <div v-for="row in mapResult" :key="row.input" class="mapping-row" :class="{ fail: row.status === 'fail' }">
+                      <span class="mono">{{ row.input }}</span>
+                      <span>→</span>
+                      <button v-if="row.output" class="gene-link" @click="openGeneById(row.output)">{{ row.output }}</button>
+                      <span v-else class="mono">未找到</span>
+                      <NTag size="tiny" :type="row.status === 'success' ? 'success' : 'error'" round>
+                        {{ row.status === 'success' ? '成功' : '失败' }}
+                      </NTag>
+                    </div>
+                  </div>
+                  <NButton v-if="mapResult.length" size="small" quaternary block @click="downloadMap">
+                    <template #icon><NIcon><DownloadOutline /></NIcon></template>
+                    导出结果
+                  </NButton>
+                </div>
               </div>
-            </div>
+              <NEmpty v-else class="tab-empty" description="当前物种暂无跨版本映射" />
+            </section>
+          </NTabPane>
+
+          <NTabPane name="files" tab="数据文件">
+            <section class="content-block">
+              <div class="block-title">数据文件</div>
+              <div class="file-list">
+                <div v-for="file in dataFiles" :key="file.type" class="file-row">
+                  <div class="file-type">{{ sourceLabel[file.type] }}</div>
+                  <div class="file-body">
+                    <div class="file-path mono">{{ file.path }}</div>
+                    <div class="file-meta">
+                      {{ file.format }} · {{ file.size }} · {{ file.buildTool || 'custom' }}
+                      <template v-if="file.indexPath"> · index: {{ file.indexPath }}</template>
+                      <template v-if="file.dbPath"> · db: {{ file.dbPath }}</template>
+                    </div>
+                  </div>
+                  <NTag size="small" :type="buildStatusType(file.buildStatus)" round>{{ buildStatusText(file.buildStatus) }}</NTag>
+                  <NButton size="tiny" quaternary @click="copyText(file.path, file.label)">
+                    <template #icon><NIcon><CopyOutline /></NIcon></template>
+                  </NButton>
+                </div>
+              </div>
+            </section>
           </NTabPane>
         </NTabs>
       </main>
     </div>
 
-    <!-- 基因详情抽屉 -->
-    <NDrawer v-model:show="drawerVisible" :width="480" placement="right">
+    <NDrawer v-model:show="drawerVisible" :width="560" placement="right">
       <NDrawerContent v-if="drawerGene" :title="drawerGene.geneId" closable>
-        <div class="gene-detail">
-          <div class="gene-detail-row">
-            <span class="gd-label">基因名</span>
-            <span class="gd-value">{{ drawerGene.geneName }}</span>
-          </div>
-          <div class="gene-detail-row">
-            <span class="gd-label">染色体</span>
-            <span class="gd-value">{{ drawerGene.chromosome }}: {{ drawerGene.start.toLocaleString() }}-{{ drawerGene.end.toLocaleString() }} ({{ drawerGene.strand }})</span>
-          </div>
-          <div class="gene-detail-row">
-            <span class="gd-label">长度</span>
-            <span class="gd-value">{{ drawerGene.length.toLocaleString() }} bp</span>
-          </div>
-          <div class="gene-detail-row">
-            <span class="gd-label">外显子数</span>
-            <span class="gd-value">{{ drawerGene.exons }}</span>
-          </div>
-          <div class="gene-detail-row">
-            <span class="gd-label">功能注释</span>
-            <span class="gd-value">{{ drawerGene.annotation }}</span>
-          </div>
-
-          <div class="gene-structure-section">
-            <div class="gd-label">外显子结构</div>
-            <div class="gene-structure">
-              <div class="strand-arrow">{{ drawerGene.strand === '+' ? '→' : '←' }}</div>
-              <div class="exon-track">
-                <template v-for="i in drawerGene.exons" :key="i">
-                  <div v-if="i > 1" class="intron" />
-                  <div class="exon" />
-                </template>
-              </div>
+        <div class="gene-drawer">
+          <div class="gene-summary-card">
+            <div>
+              <div class="gene-symbol">{{ drawerGene.geneSymbol }}</div>
+              <div class="gene-name">{{ drawerGene.geneName }}</div>
             </div>
-            <div class="structure-hint">{{ drawerGene.chromosome }}: {{ drawerGene.start.toLocaleString() }} - {{ drawerGene.end.toLocaleString() }}</div>
+            <NTag size="small" type="success" round>{{ drawerGene.status }}</NTag>
           </div>
-        </div>
 
-        <template #footer>
-          <NButton size="small" type="primary" @click="message.info('JBrowse 集成开发中')">
-            在 JBrowse 中查看
-          </NButton>
-        </template>
+          <NTabs type="segment" animated>
+            <NTabPane name="summary" tab="Summary">
+              <div class="detail-list">
+                <div><span>基因类型</span><strong>{{ geneTypeText(drawerGene.geneType) }}</strong></div>
+                <div><span>位置</span><strong class="mono">{{ formatLocation(drawerGene) }}</strong></div>
+                <div><span>长度</span><strong>{{ geneLength(drawerGene).toLocaleString() }} bp</strong></div>
+                <div><span>别名</span><strong>{{ drawerGene.aliases.join(', ') || '-' }}</strong></div>
+              </div>
+              <p class="gene-description">{{ drawerGene.description }}</p>
+
+              <div class="gene-structure-section">
+                <div class="drawer-section-title">外显子结构</div>
+                <div class="gene-structure">
+                  <div class="strand-arrow">{{ drawerGene.strand === '+' ? '→' : '←' }}</div>
+                  <div class="exon-track">
+                    <template v-for="exon in drawerGene.transcripts[0]?.exons" :key="exon.rank">
+                      <div v-if="exon.rank > 1" class="intron" />
+                      <div class="exon" :title="`E${exon.rank}`" />
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </NTabPane>
+
+            <NTabPane name="transcripts" tab="Transcripts">
+              <div v-for="tx in drawerGene.transcripts" :key="tx.transcriptId" class="tx-row">
+                <div>
+                  <div class="mono strong">{{ tx.transcriptId }}</div>
+                  <div class="file-meta">{{ tx.biotype }} · {{ tx.length.toLocaleString() }} bp · {{ tx.exons.length }} exons</div>
+                </div>
+                <NTag v-if="tx.canonical" size="tiny" type="success" round>Canonical</NTag>
+              </div>
+            </NTabPane>
+
+            <NTabPane name="go" tab="GO">
+              <div v-for="namespace in (['MF', 'BP', 'CC'] as const)" :key="namespace" class="drawer-annotation-group">
+                <div class="drawer-section-title">{{ goNamespaceLabel(namespace) }}</div>
+                <div v-if="drawerGoGroups[namespace].length" class="drawer-annotation-list">
+                  <div v-for="item in drawerGoGroups[namespace]" :key="item.goId" class="drawer-annotation-row">
+                    <span class="mono strong">{{ item.goId }}</span>
+                    <span>{{ item.term }}</span>
+                    <span class="annotation-source">{{ item.evidenceCode }} · {{ item.source }}</span>
+                  </div>
+                </div>
+                <div v-else class="subtle-empty small">无记录</div>
+              </div>
+            </NTabPane>
+
+            <NTabPane name="kegg" tab="KEGG">
+              <div v-if="drawerGene.keggAnnotations.length" class="drawer-annotation-list">
+                <div v-for="item in drawerGene.keggAnnotations" :key="item.pathwayId" class="drawer-annotation-row">
+                  <span class="mono strong">{{ item.pathwayId }}</span>
+                  <span>{{ item.pathwayName }}</span>
+                  <span class="annotation-source">{{ item.koId || '-' }} · {{ item.genesInPathway }} genes</span>
+                </div>
+              </div>
+              <NEmpty v-else description="暂无 KEGG 注释" />
+            </NTabPane>
+
+            <NTabPane name="sequence" tab="Sequence">
+              <div class="sequence-block">
+                <div class="drawer-section-title">FASTA 预览</div>
+                <pre>&gt;{{ drawerGene.geneId }} {{ formatLocation(drawerGene) }}
+{{ drawerGene.sequence.genomic }}</pre>
+                <NButton size="small" quaternary @click="copyText(drawerGene.sequence.genomic, '序列')">
+                  <template #icon><NIcon><CopyOutline /></NIcon></template>
+                  复制序列
+                </NButton>
+              </div>
+            </NTabPane>
+          </NTabs>
+        </div>
       </NDrawerContent>
     </NDrawer>
   </div>
 
-  <!-- 基因组不存在 -->
   <div v-else class="not-found">
-    <p class="empty-icon">🌌</p>
-    <p>未找到该参考基因组</p>
-    <NButton size="small" type="primary" @click="router.push('/reference-genomes')">返回列表</NButton>
+    <NEmpty description="未找到该数据库版本" />
+    <NButton size="small" type="primary" @click="router.push('/database')">返回数据库</NButton>
   </div>
 </template>
 
 <style scoped>
-.detail-page {
+.database-detail-page {
+  --db-primary: #165dff;
+  --db-purple: #722ed1;
+  --db-text: #1d2129;
+  --db-subtext: #4e5969;
+  --db-muted: #86909c;
+  --db-border: #e5e6eb;
+  --db-soft: #f7f8fa;
+  --db-card: #fff;
   min-height: 100%;
 }
+
 .page-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 12px;
 }
+
+.breadcrumb {
+  color: var(--db-muted);
+  font-size: 12px;
+}
+
+.detail-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 260px;
+  gap: 16px;
+  align-items: center;
+  min-height: 150px;
+  padding: 22px;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  color: #fff;
+  background: linear-gradient(135deg, #0f1f4a 0%, #165dff 58%, #722ed1 100%);
+}
+
+.species-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 8px;
+  font-size: 30px;
+}
+
+.hero-info {
+  min-width: 0;
+}
+
+.hero-kicker {
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.detail-hero h1 {
+  margin: 5px 0;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.detail-hero p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .detail-layout {
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: 330px minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
+
+.info-panel,
+.main-content,
+.content-block {
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  background: var(--db-card);
+}
+
 .info-panel {
-  background: var(--neutral-card, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
-  border-radius: 12px;
-  padding: 16px;
+  position: sticky;
+  top: 16px;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  position: sticky;
-  top: 16px;
+  padding: 16px;
 }
-.info-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--neutral-text-1, #1e293b);
+
+.panel-section {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 10px;
 }
-.info-title .emoji { font-size: 24px; }
-.info-subtitle {
-  font-size: 12px;
-  color: var(--neutral-text-3, #94a3b8);
-  margin-top: 4px;
-  font-family: 'JetBrains Mono', Consolas, monospace;
+
+.section-title,
+.block-title,
+.drawer-section-title {
+  color: var(--db-text);
+  font-size: 14px;
+  font-weight: 800;
 }
-.info-tags {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-top: 8px;
-}
+
 .stat-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
+
 .stat-item {
+  padding: 10px 8px;
   text-align: center;
-  padding: 10px 6px;
-  background: var(--neutral-bg, #f8fafc);
   border-radius: 8px;
+  background: var(--db-soft);
 }
-.section-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--neutral-text-1, #1e293b);
-  margin-bottom: 8px;
+
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
-.file-item {
+
+.file-list.compact {
+  gap: 6px;
+}
+
+.file-item,
+.file-row,
+.mapping-card,
+.tx-row,
+.annotation-row,
+.drawer-annotation-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 6px;
+  gap: 10px;
+  min-width: 0;
+  border-radius: 8px;
+  background: var(--db-soft);
+}
+
+.file-item {
+  justify-content: space-between;
+  padding: 9px 10px;
   cursor: pointer;
-  transition: background 0.2s;
 }
-.file-item:hover {
-  background: var(--neutral-bg, #f8fafc);
-}
-.file-info { flex: 1; min-width: 0; }
-.file-name {
+
+.file-name,
+.file-type {
+  color: var(--db-text);
   font-size: 13px;
-  color: var(--neutral-text-1, #1e293b);
-  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-weight: 800;
 }
-.file-size {
-  font-size: 11px;
-  color: var(--neutral-text-3, #94a3b8);
+
+.file-meta,
+.block-desc,
+.annotation-source,
+.mapping-meta,
+.subtle-empty {
+  color: var(--db-muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
-.file-status { font-size: 12px; }
-.copy-icon {
-  color: var(--neutral-text-3, #94a3b8);
-  opacity: 0;
-  transition: opacity 0.2s;
+
+.mapping-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
-.file-item:hover .copy-icon { opacity: 1; }
+
+.mapping-card {
+  align-items: flex-start;
+  flex-direction: column;
+  padding: 10px;
+}
+
+.mapping-pair {
+  color: var(--db-text);
+  font-size: 12px;
+  font-weight: 800;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
 .info-actions {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
+
 .main-content {
-  background: var(--neutral-card, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
-  border-radius: 12px;
   padding: 16px;
   min-width: 0;
 }
+
+.overview-grid,
+.annotation-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: 16px;
+}
+
+.content-block {
+  padding: 16px;
+}
+
 .block-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--neutral-text-1, #1e293b);
-  margin-bottom: 12px;
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-bottom: 12px;
 }
-.chrom-filter-hint {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--neutral-text-3, #94a3b8);
+
+.filter-hint {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  color: var(--db-muted);
+  font-size: 12px;
+  font-weight: 400;
 }
-.overview-section { margin-bottom: 24px; }
+
+.filter-hint.standalone {
+  margin-bottom: 10px;
+}
+
 .chrom-chart {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
+
 .chrom-row {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 72px;
   gap: 10px;
-  cursor: pointer;
-  padding: 4px 6px;
+  align-items: center;
+  padding: 5px 6px;
   border-radius: 6px;
-  transition: background 0.2s;
+  cursor: pointer;
 }
-.chrom-row:hover, .chrom-row.active {
-  background: var(--neutral-bg, #f8fafc);
-}
+
+.chrom-row:hover,
 .chrom-row.active {
-  box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.3);
+  background: var(--db-soft);
 }
-.chrom-name {
-  width: 48px;
+
+.chrom-row.active {
+  box-shadow: inset 0 0 0 1px rgba(22, 93, 255, 0.25);
+}
+
+.chrom-name,
+.chrom-length,
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.chrom-name,
+.chrom-length {
+  color: var(--db-subtext);
   font-size: 12px;
-  font-family: 'JetBrains Mono', Consolas, monospace;
-  color: var(--neutral-text-2, #475569);
 }
+
+.chrom-length {
+  text-align: right;
+}
+
 .chrom-bar-track {
-  flex: 1;
   height: 18px;
-  background: var(--neutral-bg, #f1f5f9);
   border-radius: 4px;
+  background: #eef0f4;
   overflow: hidden;
 }
+
 .chrom-bar {
   height: 100%;
   border-radius: 4px;
-  transition: width 0.4s ease;
 }
-.chrom-length {
-  width: 64px;
-  text-align: right;
-  font-size: 12px;
-  color: var(--neutral-text-3, #94a3b8);
-  font-family: 'JetBrains Mono', Consolas, monospace;
-}
-.pie-wrap { width: 100%; }
 
 .search-bar {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 12px;
 }
+
+.search-field {
+  width: 132px;
+}
+
+.gene-search {
+  flex: 1;
+}
+
 .result-count {
-  font-size: 12px;
-  color: var(--neutral-text-3, #94a3b8);
   margin-bottom: 8px;
+  color: var(--db-muted);
+  font-size: 12px;
 }
-.search-empty {
-  padding: 40px;
-  text-align: center;
-  color: var(--neutral-text-3, #94a3b8);
-  font-size: 14px;
+
+:deep(.gene-link),
+.gene-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--db-primary);
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  cursor: pointer;
 }
+
 :deep(.mono) {
-  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 12px;
+}
+
+.strong {
+  font-weight: 800;
+}
+
+.annotation-list,
+.drawer-annotation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.annotation-row,
+.drawer-annotation-row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) auto auto;
+  padding: 9px 10px;
   font-size: 12px;
 }
 
 .mapping-header {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
+  gap: 12px;
 }
-.mapping-dir {
-  font-size: 12px;
-  font-weight: 400;
-  color: #7c3aed;
-  background: rgba(124, 58, 237, 0.1);
-  padding: 2px 8px;
-  border-radius: 10px;
-}
+
 .mapping-layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
 }
+
 .mapping-side {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.mapping-label {
-  font-size: 12px;
-  color: var(--neutral-text-2, #475569);
-}
-.mono-input :deep(textarea) {
-  font-family: 'JetBrains Mono', Consolas, monospace;
-  font-size: 12px;
-}
-.mapping-result {
-  border: 1px solid var(--neutral-border, #e5e6eb);
-  border-radius: 8px;
-  min-height: 200px;
-  max-height: 280px;
-  overflow-y: auto;
-  padding: 6px;
-}
-.mapping-empty {
-  padding: 40px 12px;
-  text-align: center;
-  color: var(--neutral-text-3, #c9cdd4);
-  font-size: 13px;
-}
-.mapping-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  font-size: 12px;
-  border-bottom: 1px solid var(--neutral-border, #f0f1f5);
-}
-.mapping-row.fail { color: var(--neutral-text-3, #94a3b8); }
-.mapping-row .mono {
-  font-family: 'JetBrains Mono', Consolas, monospace;
-}
-.rotate-90 { transform: rotate(90deg); }
 
-/* 基因详情抽屉 */
-.gene-detail {
+.mapping-label {
+  color: var(--db-subtext);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mono-input :deep(textarea) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+.mapping-result {
+  min-height: 230px;
+  max-height: 300px;
+  padding: 8px;
+  overflow-y: auto;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+}
+
+.mapping-empty,
+.tab-empty {
+  padding: 48px 16px;
+}
+
+.mapping-row {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.mapping-row.fail {
+  opacity: 0.68;
+}
+
+.file-row {
+  padding: 11px 12px;
+}
+
+.file-type {
+  width: 64px;
+  flex: 0 0 auto;
+}
+
+.file-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-path {
+  color: var(--db-text);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.gene-drawer {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
-.gene-detail-row {
+
+.gene-summary-card {
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #e8f3ff 0%, #f1e8ff 100%);
+}
+
+.gene-symbol {
+  color: var(--db-text);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.gene-name,
+.gene-description {
+  color: var(--db-subtext);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.detail-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.detail-list > div {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
   gap: 12px;
   font-size: 13px;
 }
-.gd-label {
-  width: 72px;
-  flex-shrink: 0;
-  color: var(--neutral-text-3, #94a3b8);
+
+.detail-list span {
+  color: var(--db-muted);
 }
-.gd-value {
-  color: var(--neutral-text-1, #1e293b);
-  flex: 1;
+
+.detail-list strong {
+  min-width: 0;
+  color: var(--db-text);
+  word-break: break-word;
 }
+
 .gene-structure-section {
-  margin-top: 12px;
-  padding: 16px;
-  background: var(--neutral-bg, #f8fafc);
+  padding: 14px;
   border-radius: 8px;
+  background: var(--db-soft);
 }
+
 .gene-structure {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 12px 0 6px;
+  margin-top: 12px;
 }
+
 .strand-arrow {
-  font-size: 18px;
-  color: var(--neutral-text-3, #94a3b8);
+  color: var(--db-muted);
+  font-size: 20px;
 }
+
 .exon-track {
-  flex: 1;
   display: flex;
   align-items: center;
-  height: 24px;
+  flex: 1;
+  min-width: 0;
+  height: 28px;
 }
+
 .exon {
-  width: 28px;
+  flex: 0 0 30px;
   height: 20px;
-  background: linear-gradient(135deg, #3b82f6, #7c3aed);
-  border-radius: 3px;
-  flex-shrink: 0;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #165dff, #722ed1);
 }
+
 .intron {
   flex: 1;
+  min-width: 16px;
   height: 2px;
-  background: #cbd5e1;
-  margin: 0 2px;
+  margin: 0 3px;
+  background: #c9cdd4;
 }
-.structure-hint {
-  font-size: 11px;
-  color: var(--neutral-text-3, #94a3b8);
-  font-family: 'JetBrains Mono', Consolas, monospace;
+
+.tx-row,
+.drawer-annotation-row {
+  justify-content: space-between;
+  padding: 10px;
+}
+
+.drawer-annotation-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: start;
+}
+
+.drawer-annotation-group + .drawer-annotation-group {
+  margin-top: 14px;
+}
+
+.sequence-block pre {
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding: 12px;
+  border-radius: 8px;
+  color: #1d2129;
+  background: #f7f8fa;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.subtle-empty.small {
+  padding: 8px 0;
 }
 
 .not-found {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
   padding: 80px 24px;
-  text-align: center;
-  color: var(--neutral-text-3, #94a3b8);
 }
-.not-found .empty-icon {
-  font-size: 48px;
-  margin: 0 0 8px;
+
+@media (max-width: 1100px) {
+  .detail-layout,
+  .overview-grid,
+  .annotation-grid,
+  .mapping-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .info-panel {
+    position: static;
+  }
 }
-@media (max-width: 1024px) {
-  .detail-layout { grid-template-columns: 1fr; }
-  .info-panel { position: static; }
-  .mapping-layout { grid-template-columns: 1fr; }
-}
-@media (max-width: 640px) {
-  .stat-grid { grid-template-columns: 1fr; }
+
+@media (max-width: 720px) {
+  .detail-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .search-bar,
+  .file-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .search-field,
+  .hero-version-select {
+    width: 100%;
+  }
+
+  .stat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .annotation-row,
+  .drawer-annotation-row {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

@@ -124,7 +124,9 @@ class LiteLLMProvider:
                 kwargs[key] = overrides[key]
 
         # litellm 路由：自定义 OpenAI 兼容端点需 openai/ 前缀，否则 BadRequestError
-        kwargs["model"] = self._route_model(str(kwargs.get("model", "")), bool(kwargs.get("api_base")))
+        kwargs["model"] = self._route_model(
+            str(kwargs.get("model", "")), bool(kwargs.get("api_base"))
+        )
 
         return kwargs
 
@@ -250,9 +252,7 @@ class LiteLLMProvider:
         except litellm.BadRequestError as e:
             # 降级：provider 不支持 stream+tools
             logger.warning(f"Stream+tools 不支持，降级非流式: {e}")
-            response = await self.chat(
-                messages, model=model, temperature=temperature, tools=tools
-            )
+            response = await self.chat(messages, model=model, temperature=temperature, tools=tools)
             message = response.get("choices", [{}])[0].get("message", {})
             content = message.get("content", "") or ""
             if content:
@@ -314,7 +314,9 @@ class LiteLLMProvider:
             kwargs["api_key"] = self._settings.openai_api_key or self._settings.kimi_api_key
 
         response = await litellm.aembedding(**kwargs)
-        data: dict[str, Any] = response.model_dump() if hasattr(response, "model_dump") else dict(response)
+        data: dict[str, Any] = (
+            response.model_dump() if hasattr(response, "model_dump") else dict(response)
+        )
         embedding_data: list[dict[str, Any]] = data.get("data", [{}])
         embedding: list[float] = embedding_data[0].get("embedding", []) if embedding_data else []
         return embedding

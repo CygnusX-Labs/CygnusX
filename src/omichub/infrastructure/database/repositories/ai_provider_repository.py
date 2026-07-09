@@ -41,7 +41,9 @@ class SqlAlchemyAIProviderConfigRepository(IAIProviderConfigRepository):
         query = select(AIProviderConfigModel)
         if active_only:
             query = query.where(AIProviderConfigModel.is_active.is_(True))
-        query = query.order_by(desc(AIProviderConfigModel.is_default), desc(AIProviderConfigModel.updated_at))
+        query = query.order_by(
+            desc(AIProviderConfigModel.is_default), desc(AIProviderConfigModel.updated_at)
+        )
         result = await self._session.execute(query)
         return [self._to_entity(m) for m in result.scalars().all()]
 

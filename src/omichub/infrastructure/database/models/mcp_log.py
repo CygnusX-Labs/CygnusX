@@ -21,13 +21,9 @@ class MCPLogModel(Base):
         ForeignKey("mcp_servers.id", ondelete="CASCADE"),
         nullable=False,
     )
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     level: Mapped[str] = mapped_column(String(20), default="info", nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     source: Mapped[str] = mapped_column(String(100), default="internal")
 
-    __table_args__ = (
-        Index("idx_mcp_logs_service_timestamp", "service_id", "timestamp"),
-    )
+    __table_args__ = (Index("idx_mcp_logs_service_timestamp", "service_id", "timestamp"),)

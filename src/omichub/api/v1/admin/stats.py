@@ -1,14 +1,12 @@
 """仪表板统计 — 管理员全平台视角（全局态势）。"""
 
 from typing import Annotated
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
 
-from omichub.api.deps import CurrentUserId, DbSession
+from omichub.api.deps import DbSession
 from omichub.application.services.stats_service import StatsService
-from omichub.middleware.rbac import AdminRequired, require_admin  # 统一 RBAC 实现
+from omichub.middleware.rbac import AdminRequired  # 统一 RBAC 实现
 
 router = APIRouter()
 

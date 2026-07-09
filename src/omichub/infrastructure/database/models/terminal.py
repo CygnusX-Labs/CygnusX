@@ -26,7 +26,5 @@ class TerminalSessionModel(Base, TimestampMixin):
     container_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     host_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="creating", index=True)
-    last_activity: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.now
-    )
+    last_activity: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.now)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

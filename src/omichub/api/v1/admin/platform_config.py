@@ -9,7 +9,9 @@ from omichub.application.services.site_settings_service import SiteSettingsServi
 router = APIRouter()
 
 
-@router.patch("/platform-config", response_model=SiteSettingsDTO, summary="更新平台全局配置（管理员+TOTP）")
+@router.patch(
+    "/platform-config", response_model=SiteSettingsDTO, summary="更新平台全局配置（管理员+TOTP）"
+)
 async def update_platform_config(
     req: UpdateSiteSettingsDTO,
     _totp: AdminTotpRequired,

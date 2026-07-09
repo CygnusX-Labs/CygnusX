@@ -6,6 +6,19 @@ export interface TerminalResources {
   pid_limit: number
 }
 
+export interface TerminalRuntimeResources {
+  memory_mb: number
+  cpu_cores: number
+  pid_limit: number
+  tmpfs_size_mb: number
+}
+
+export interface TerminalRuntimeConfig {
+  enabled: boolean
+  default_resources: TerminalRuntimeResources
+  max_resources: TerminalRuntimeResources
+}
+
 export interface TerminalImage {
   id: string
   name: string

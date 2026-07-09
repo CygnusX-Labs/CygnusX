@@ -47,9 +47,7 @@ class LLMProvider(Protocol):
         """检查是否已配置有效 API Key 与模型"""
         ...
 
-    async def embeddings(
-        self, text: str, model: str = ""
-    ) -> list[float]:
+    async def embeddings(self, text: str, model: str = "") -> list[float]:
         """文本嵌入向量"""
         ...
 

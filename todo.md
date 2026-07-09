@@ -10,7 +10,7 @@
 ### 生信工具箱模块化重构（工具代码收口 + 路由自动发现）✅ 2026-07-06
 
 > 需求：工具箱代码原先散落在 `api/v1/`、`application/services/`、`application/schemas/`、`infrastructure/config/`、`infrastructure/execution/`、`infrastructure/celery_app/tasks/` 六处分层目录，新增工具需手改 ~7 处代码（含 `router.py` 显式 `include_router`）。将每个工具的代码收口到自包含子包，实现「加子包即模块、核心路由表零侵入」。
-> 架构决策：在主包内建 `src/omichub/tools/` 子包（非仓库根 `tools/`——后者保持纯 YAML 配置，配置与代码职责分离）；每个工具一个子包（`api.py`/`service.py`/`schema.py`/`config.py`/`tasks.py`/`runner.py`）；`tools/__init__.py` 提供 `register_tool_routers()` 自动扫描子包 `api.py` 的 `router` 属性并挂载，`router.py` 不再逐工具手写挂载。
+> 架构决策：在主包内建 `src/omichub/tools/` 子包（非仓库根 `tool_configs/`——后者保持纯 YAML 配置，配置与代码职责分离）；每个工具一个子包（`api.py`/`service.py`/`schema.py`/`config.py`/`tasks.py`/`runner.py`）；`tools/__init__.py` 提供 `register_tool_routers()` 自动扫描子包 `api.py` 的 `router` 属性并挂载，`router.py` 不再逐工具手写挂载。
 > 验证：ruff 改动文件 0 错误；23 单测通过（唯一失败的 `test_download_service` 与本次无关）；运行中 app OpenAPI 150 路径含 jbrowse 11 / enrichment 2 / tools 2；worker 仅注册新路径任务；7 容器 healthy。
 
 - [x] **新包结构** — `src/omichub/tools/` 下三个子包：
@@ -25,7 +25,7 @@
   - [x] `infrastructure/celery_app/celery.py` — `include` 列表与 `task_routes` 的 jbrowse 项改指向 `omichub.tools.jbrowse.tasks`
   - [x] `jbrowse/tasks.py` — 两个 `@shared_task(name=...)` 更新为新模块路径
 - [x] **清理遗留** — 删除旧路径遗留的 13 个 orphan `.pyc`（曾导致 worker 重复注册新旧两套任务名）
-- [x] **文档** — `tools/README.md` 后端入口表 + 新增工具流程更新为模块化版本（标注「无需改 router.py」）
+- [x] **文档** — `tool_configs/README.md` 后端入口表 + 新增工具流程更新为模块化版本（标注「无需改 router.py」）
 - [x] **验证** — 自动发现单元测试发现 3 个工具模块；OpenAPI 含全部 15 条工具路由；HTTP `/api/v1/{tools,enrichment/species,jbrowse/assemblies}` 均返 401（路由存在，仅需鉴权）
 
 ### 数据目录集中迁移到 omichub_data ✅ 2026-07-06
@@ -36,7 +36,7 @@
 
 - [x] **目录迁移** — `jbrowse`/`knowledge`/`welcome`（zj 属主，`mv`）；`_pgdata`/`_redis`（`docker run --rm -v alpine mv` 以 root 重命名，属主/权限原样保留）
 - [x] **配置/脚本同步修改**：
-  - [x] `tools/jbrowse/jbrowse_config.yaml` — fasta/fai/预设轨道路径 → `omichub_data/jbrowse/`（scan_paths/upload_dir 引用 users 不动）
+  - [x] `tool_configs/jbrowse/jbrowse_config.yaml` — fasta/fai/预设轨道路径 → `omichub_data/jbrowse/`（scan_paths/upload_dir 引用 users 不动）
   - [x] `deploy/docker/docker-compose.yml` + `docker-compose.prod.yml` — `db`/`cache` bind mount → `omichub_data/_pgdata`、`omichub_data/_redis`
   - [x] `src/omichub/core/config.py` — `welcome_yaml`/`welcome_state_yaml` → `omichub_data/welcome/`
 - [x] **知识库运行时副本** — `docs/knowledge/` 镜像到 `/data/omichub/omichub_data/knowledge/`（含 figure/video）；新增 `data-directory-guide.md` 详细目录说明并登记到 `meta.yaml`

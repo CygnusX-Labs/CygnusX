@@ -38,10 +38,13 @@ class QuotaResponse(BaseModel):
 
 
 class SyncResponse(BaseModel):
-    """文件同步结果 — 扫描磁盘新增登记的文件数与字节数"""
+    """文件同步结果 — 磁盘与文件记录对账统计"""
 
     added: int = 0
     added_size: int = 0
+    removed: int = 0
+    removed_size: int = 0
+    renamed: int = 0
 
 
 # ===== 分块上传 =====

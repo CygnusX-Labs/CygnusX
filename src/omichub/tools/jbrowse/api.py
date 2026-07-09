@@ -91,7 +91,9 @@ async def generate_config(
     service: JBrowseServiceDep,
     assembly: Annotated[str, Query(description="参考基因组 ID")],
     tracks: Annotated[list[str] | None, Query(description="用户轨道文件路径列表")] = None,
-    region: Annotated[str | None, Query(description="初始视图区域，如 Chr1:1000000-2000000")] = None,
+    region: Annotated[
+        str | None, Query(description="初始视图区域，如 Chr1:1000000-2000000")
+    ] = None,
 ) -> JSONResponse:
     """根据 assembly ID 和轨道列表生成完整的 JBrowse 2 配置 JSON。
 
@@ -226,7 +228,9 @@ async def upload_batch(
                 item.index_task_id = task.id
             results.append(item)
         except Exception as e:
-            results.append(BatchUploadItemDTO(filename=file.filename or "unnamed", success=False, error=str(e)))
+            results.append(
+                BatchUploadItemDTO(filename=file.filename or "unnamed", success=False, error=str(e))
+            )
             with contextlib.suppress(Exception):
                 await file.close()
 

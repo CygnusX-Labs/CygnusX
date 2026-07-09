@@ -172,7 +172,7 @@ function handleToggleWebSearch() {
 }
 
 function handleTriggerSandbox() {
-  message.info('代码沙盒功能开发中')
+  message.info('代码执行请在生成代码后点击代码块“运行”按钮')
 }
 
 function handleNavigate(path: string) {

@@ -31,15 +31,11 @@ class ConditionEvaluator:
         """
         # 复合条件：AND
         if rule.and_rules is not None:
-            return all(
-                ConditionEvaluator.evaluate(r, form_values) for r in rule.and_rules
-            )
+            return all(ConditionEvaluator.evaluate(r, form_values) for r in rule.and_rules)
 
         # 复合条件：OR
         if rule.or_rules is not None:
-            return any(
-                ConditionEvaluator.evaluate(r, form_values) for r in rule.or_rules
-            )
+            return any(ConditionEvaluator.evaluate(r, form_values) for r in rule.or_rules)
 
         # 简单条件
         if rule.field is None or rule.operator is None:
@@ -47,14 +43,10 @@ class ConditionEvaluator:
 
         actual_value = form_values.get(rule.field)
 
-        return ConditionEvaluator._compare(
-            actual_value, rule.operator, rule.value
-        )
+        return ConditionEvaluator._compare(actual_value, rule.operator, rule.value)
 
     @staticmethod
-    def _compare(
-        actual: Any, operator: ConditionOperatorEnum, expected: Any
-    ) -> bool:
+    def _compare(actual: Any, operator: ConditionOperatorEnum, expected: Any) -> bool:
         """单次比较运算"""
         op = operator
 
@@ -166,9 +158,7 @@ class ConditionalValidator:
             list[dict]: 错误列表，每项包含 field 和 message
         """
         errors: list[dict[str, str]] = []
-        visible = set(
-            ConditionalValidator.get_visible_params(parameters, form_values)
-        )
+        visible = set(ConditionalValidator.get_visible_params(parameters, form_values))
 
         def check(param: Parameter, prefix: str = "") -> None:
             full_name = f"{prefix}{param.name}"
@@ -181,10 +171,12 @@ class ConditionalValidator:
             if param.required:
                 value = form_values.get(param.name)
                 if value is None or value == "":
-                    errors.append({
-                        "field": full_name,
-                        "message": f"'{param.label}' 是必填项",
-                    })
+                    errors.append(
+                        {
+                            "field": full_name,
+                            "message": f"'{param.label}' 是必填项",
+                        }
+                    )
 
             # 递归 GROUP
             if param.type == ParameterTypeEnum.GROUP and param.group_config:
@@ -196,10 +188,7 @@ class ConditionalValidator:
                             continue
                         merged = {
                             **form_values,
-                            **{
-                                sp.name: item.get(sp.name)
-                                for sp in param.group_config.parameters
-                            },
+                            **{sp.name: item.get(sp.name) for sp in param.group_config.parameters},
                         }
                         for sub_param in param.group_config.parameters:
                             sub_full = f"{item_prefix}{sub_param.name}"
@@ -208,10 +197,12 @@ class ConditionalValidator:
                             if sub_param.required:
                                 v = item.get(sub_param.name)
                                 if v is None or v == "":
-                                    errors.append({
-                                        "field": sub_full,
-                                        "message": f"'{sub_param.label}' 是必填项",
-                                    })
+                                    errors.append(
+                                        {
+                                            "field": sub_full,
+                                            "message": f"'{sub_param.label}' 是必填项",
+                                        }
+                                    )
 
             elif param.type == ParameterTypeEnum.SECTION and param.section_config:
                 for sub_param in param.section_config.parameters:

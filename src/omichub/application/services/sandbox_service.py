@@ -63,8 +63,7 @@ class SandboxService:
             user_id=user_id,
             status=SandboxStatus.CREATING,
             language=language,
-            expires_at=datetime.now()
-            + timedelta(seconds=self._settings.sandbox_session_timeout),
+            expires_at=datetime.now() + timedelta(seconds=self._settings.sandbox_session_timeout),
         )
         session = await self._domain.create_session(session)
 
@@ -132,7 +131,11 @@ class SandboxService:
         result = await self._db.execute(
             select(SandboxSessionModel).where(
                 SandboxSessionModel.status.in_(
-                    [SandboxStatus.IDLE.value, SandboxStatus.READY.value, SandboxStatus.PAUSED.value]
+                    [
+                        SandboxStatus.IDLE.value,
+                        SandboxStatus.READY.value,
+                        SandboxStatus.PAUSED.value,
+                    ]
                 ),
                 SandboxSessionModel.last_activity < threshold,
             )

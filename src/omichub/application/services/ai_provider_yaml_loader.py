@@ -30,10 +30,12 @@ _ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 def _interpolate_env(value: Any) -> Any:
     """递归替换字符串中的 ${ENV} / ${ENV:-default}"""
     if isinstance(value, str):
+
         def replacer(match: re.Match[str]) -> str:
             var_name = match.group(1)
             default = match.group(2)
             return os.environ.get(var_name, default if default is not None else "")
+
         return _ENV_PATTERN.sub(replacer, value)
     if isinstance(value, dict):
         return {k: _interpolate_env(v) for k, v in value.items()}

@@ -2,13 +2,13 @@
 
 设计目标：让工具像「插件模块」一样自包含。每个工具子包把该工具的全部代码
 （api 路由 / service / schema / config / tasks / runner）收口在一个目录里，
-仓库根的 ``tools/`` 只放 YAML 配置，配置与代码职责分离。
+仓库根的 ``tool_configs/`` 只放 YAML 配置，配置与代码职责分离。
 
 新增工具（带后端逻辑）：
   1. 本包下建子包 ``<工具名>/``，内含 ``api.py``（声明 ``router`` / ``prefix`` / ``tags``）
      及 service / schema / config 等；
-  2. 在仓库根 ``tools/tools_setting.yaml`` 登记前端展示元数据；
-  3. 功能配置放仓库根 ``tools/<工具名>/*.yaml``，由子包内 config 加载器读取。
+  2. 在仓库根 ``tool_configs/tools_setting.yaml`` 登记前端展示元数据；
+  3. 功能配置放仓库根 ``tool_configs/<工具名>/*.yaml``，由子包内 config 加载器读取。
   无需改 ``api/v1/router.py`` —— ``register_tool_routers`` 会自动发现并挂载子包路由。
 
 自动发现约定：子包若有 ``api`` 模块且带 ``router`` 属性，即被视为可挂载工具；

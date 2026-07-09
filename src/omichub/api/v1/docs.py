@@ -5,16 +5,13 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 from typing import Annotated, Any
-from uuid import UUID
 
 import anyio
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, File, UploadFile
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 
-from omichub.api.deps import CurrentUserId
 from omichub.application.services.docs_service import DocsService
-from omichub.core.exceptions import AuthorizationError, ValidationError
+from omichub.core.exceptions import ValidationError
 from omichub.middleware.rbac import AdminRequired  # 统一 RBAC 实现
 
 router = APIRouter()

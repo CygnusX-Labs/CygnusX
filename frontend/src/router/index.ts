@@ -137,9 +137,7 @@ const routes: RouteRecordRaw[] = [
       },
       {
         path: 'sandbox',
-        name: 'sandbox',
-        component: () => import('@/views/SandboxView.vue'),
-        meta: { title: '代码沙盒', requiresAuth: true }
+        redirect: '/tools/terminal'
       },
       {
         path: 'tools',
@@ -190,6 +188,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '序列魔术师', requiresAuth: true }
       },
       {
+        path: 'tools/primer-forge',
+        name: 'tools-primer-forge',
+        component: () => import('@/views/BioTools/PrimerForgeView.vue'),
+        meta: { title: 'PrimerForge 引物锻造工坊', requiresAuth: true }
+      },
+      {
         path: 'tools/format-converter',
         name: 'tools-format-converter',
         component: () => import('@/views/BioTools/FormatConverterView.vue'),
@@ -202,16 +206,28 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '云端沙盒终端', requiresAuth: true, fullscreen: true }
       },
       {
+        path: 'database',
+        name: 'database',
+        component: () => import('@/views/ReferenceGenomesView.vue'),
+        meta: { title: '数据库', requiresAuth: true }
+      },
+      {
+        path: 'database/:id',
+        name: 'database-detail',
+        component: () => import('@/views/ReferenceGenomeDetailView.vue'),
+        meta: { title: '数据库详情', requiresAuth: true }
+      },
+      {
         path: 'reference-genomes',
         name: 'reference-genomes',
         component: () => import('@/views/ReferenceGenomesView.vue'),
-        meta: { title: '参考基因组', requiresAuth: true }
+        meta: { title: '数据库', requiresAuth: true }
       },
       {
         path: 'reference-genomes/:id',
         name: 'reference-genome-detail',
         component: () => import('@/views/ReferenceGenomeDetailView.vue'),
-        meta: { title: '基因组详情', requiresAuth: true }
+        meta: { title: '数据库详情', requiresAuth: true }
       },
       {
         path: 'admin/cookies/accounts',
@@ -236,6 +252,12 @@ const routes: RouteRecordRaw[] = [
         name: 'admin-users',
         component: () => import('@/views/AdminUserManagementView.vue'),
         meta: { title: '用户管理', requiresAuth: true }
+      },
+      {
+        path: 'admin/home-quick-entries',
+        name: 'admin-home-quick-entries',
+        component: () => import('@/views/AdminHomeQuickEntriesView.vue'),
+        meta: { title: '首页入口管理', requiresAuth: true }
       },
       {
         path: 'admin/ai-providers',

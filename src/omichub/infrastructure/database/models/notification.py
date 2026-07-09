@@ -21,9 +21,7 @@ class NotificationModel(Base, TimestampMixin):
 
     __tablename__ = "notifications"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title: Mapped[str] = mapped_column(String(200))
     content: Mapped[str] = mapped_column(Text)
     level: Mapped[str] = mapped_column(String(20), default="info")  # info / warning / error

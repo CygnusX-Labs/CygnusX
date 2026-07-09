@@ -113,18 +113,18 @@ class Settings(BaseSettings):
     site_content_yaml: str = "data/OmicHub.yaml"  # 首页文案外置 YAML 路径（改文件即生效）
     # JBrowse 2 基因组浏览器外置配置：参考基因组 / 预设轨道 / 扫描与上传策略。
     # 改文件后调用 POST /api/v1/jbrowse/config/reload 即时生效（或等配置加载器 mtime 热重载）。
-    # 集中配置：与富集分析同放 tools/<工具名>/，仓库内源码管控；容器内经 tools/ 挂载(:ro) 可读。
-    jbrowse_config_yaml: str = "tools/jbrowse/jbrowse_config.yaml"
+    # 集中配置：与富集分析同放 tool_configs/<工具名>/，仓库内源码管控；容器内经 tool_configs/ 挂载(:ro) 可读。
+    jbrowse_config_yaml: str = "tool_configs/jbrowse/jbrowse_config.yaml"
 
     # ===== 工具箱前端注册表（哪些工具加载到前端 + 展示元数据）=====
-    # tools_setting.yaml 列出全部工具卡片（title/description/icon/gradient/route/enabled），
+    # tool_configs/tools_setting.yaml 列出全部工具卡片（title/description/icon/gradient/route/enabled），
     # 前端 GET /api/v1/tools 拉取 enabled 项渲染 ToolsHub；改文件由加载器 mtime 热重载。
-    # 仅「展示元数据」集中于此；各工具的「功能配置」放 tools/<工具名>/（如 jbrowse/、enrichments/）。
-    tools_setting_yaml: str = "tools/tools_setting.yaml"
+    # 仅「展示元数据」集中于此；各工具的「功能配置」放 tool_configs/<工具名>/（如 jbrowse/、enrichments/）。
+    tools_setting_yaml: str = "tool_configs/tools_setting.yaml"
 
     # ===== 富集分析（KEGG / GO，R Docker 容器）=====
     # 物种配置 YAML（仓库内源码管控，仿 flows/）；改文件后由加载器 mtime 热重载。
-    enrichment_config_yaml: str = "tools/enrichments/species_config.yaml"
+    enrichment_config_yaml: str = "tool_configs/enrichments/species_config.yaml"
     # R 计算容器镜像（用户自行构建，契约见 docs/26.7.6/KEGG_Docker_契约.md）
     enrichment_docker_image: str = "omichub-r-enrichment:v1"
     # 容器加入的 Docker 网络（与 squid-proxy 同网，仅放行 KEGG 域名）
@@ -165,9 +165,9 @@ class Settings(BaseSettings):
 
     # ===== 云端沙盒终端 =====
     # 功能配置 YAML（仓库内源码管控）；改文件后由加载器 mtime 热重载。
-    terminal_config_yaml: str = "tools/terminal/terminal_config.yaml"
+    terminal_config_yaml: str = "tool_configs/terminal/terminal_config.yaml"
     # 终端镜像配置 YAML（仓库内源码管控）；改文件后由加载器 mtime 热重载。
-    terminal_images_config_yaml: str = "tools/terminal/terminal_images.yaml"
+    terminal_images_config_yaml: str = "tool_configs/terminal/terminal_images.yaml"
 
     # ===== MCP 集成 =====
     mcp_enabled: bool = True

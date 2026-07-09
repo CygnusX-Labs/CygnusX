@@ -46,9 +46,7 @@ class FlowDomainService:
             raise YAMLConfigError(f"YAML 解析失败: {e}") from e
 
         if not isinstance(data, dict):
-            raise YAMLConfigError(
-                f"YAML 顶层必须是字典，实际为: {type(data).__name__}"
-            )
+            raise YAMLConfigError(f"YAML 顶层必须是字典，实际为: {type(data).__name__}")
 
         return data
 
@@ -71,17 +69,13 @@ class FlowDomainService:
             flow_config = FlowConfig.model_validate(data)
         except ValidationError as e:
             errors = self._format_validation_errors(e)
-            raise YAMLConfigError(
-                f"流程配置校验失败 ({yaml_path.name}):\n{errors}"
-            ) from e
+            raise YAMLConfigError(f"流程配置校验失败 ({yaml_path.name}):\n{errors}") from e
 
         # 2. DAG 校验（检测 condition 循环依赖）
         cycle = self.find_condition_cycle(flow_config.parameters)
         if cycle:
             cycle_str = " → ".join(cycle)
-            raise YAMLConfigError(
-                f"参数条件渲染存在循环依赖: {cycle_str}"
-            )
+            raise YAMLConfigError(f"参数条件渲染存在循环依赖: {cycle_str}")
 
         return flow_config
 
@@ -197,8 +191,6 @@ def validate_flow_config(data: dict[str, Any]) -> FlowConfig:
 
     cycle = FlowDomainService.find_condition_cycle(flow_config.parameters)
     if cycle:
-        raise YAMLConfigError(
-            f"参数条件渲染存在循环依赖: {' → '.join(cycle)}"
-        )
+        raise YAMLConfigError(f"参数条件渲染存在循环依赖: {' → '.join(cycle)}")
 
     return flow_config

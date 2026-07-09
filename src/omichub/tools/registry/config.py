@@ -1,11 +1,11 @@
 """工具箱前端注册表外置 YAML 配置加载器。
 
-配置文件路径由 settings.tools_setting_yaml 决定（默认 tools/tools_setting.yaml，
-集中配置于 tools/ 根目录，仓库内源码管控；容器内经 tools/ 挂载 :ro 可读）。
+配置文件路径由 settings.tools_setting_yaml 决定（默认 tool_configs/tools_setting.yaml，
+集中配置于 tool_configs/ 根目录，仓库内源码管控；容器内经 tool_configs/ 挂载 :ro 可读）。
 
 职责边界：
 - 本文件只管「哪些工具加载到前端 + 展示元数据」（title/description/icon/gradient/route）。
-- 各工具的「功能配置」放 tools/<工具名>/（如 jbrowse/jbrowse_config.yaml、
+- 各工具的「功能配置」放 tool_configs/<工具名>/（如 jbrowse/jbrowse_config.yaml、
   enrichments/species_config.yaml），由各自加载器解析，互不耦合。
 
 热重载策略（与 jbrowse_config / enrichment_config 一致）：

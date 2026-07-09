@@ -3,7 +3,6 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   NButton,
-  NCard,
   NSpin,
   NTag,
   NSpace,
@@ -13,6 +12,7 @@ import {
   useDialog,
 } from 'naive-ui'
 import {
+  ArrowBackOutline,
   TerminalOutline,
   ExpandOutline,
   ContractOutline,
@@ -40,6 +40,7 @@ const images = computed(() => store.enabledImages)
 const selectedImage = computed(() => store.selectedImage)
 const memoryRange = computed(() => store.memoryRange)
 const cpuRange = computed(() => store.cpuRange)
+const terminalEnabled = computed(() => store.terminalEnabled)
 
 const memoryMb = computed({
   get: () => store.effectiveMemoryMb,
@@ -54,6 +55,35 @@ const cpuCores = computed({
     store.customCpuCores = val
   },
 })
+
+const selectedImageLabel = computed(() => {
+  if (!selectedImage.value) return '未选择'
+  return `${selectedImage.value.icon} ${selectedImage.value.name}`
+})
+
+const preinstalledToolCount = computed(() => {
+  const desc = selectedImage.value?.description ?? ''
+  const tools = desc
+    .split(/[、，,]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+  return Math.max(tools.length, selectedImage.value?.tags.length ?? 0)
+})
+
+const imageSizeGb = computed(() => {
+  if (!selectedImage.value) return '0.0'
+  const memoryFactor = selectedImage.value.resources.memory_mb / 1024
+  const toolFactor = preinstalledToolCount.value * 0.03
+  const estimate = Math.max(1.2, Math.min(4.8, 0.75 + memoryFactor * 0.55 + toolFactor))
+  return estimate.toFixed(1)
+})
+
+const estimatedStartupSeconds = computed(() => {
+  if (!selectedImage.value) return 0
+  return Math.max(3, Math.min(9, Math.ceil(2 + memoryMb.value / 2048 + cpuCores.value / 4)))
+})
+
+const mountDirectory = computed(() => '/home/omichub/workspace')
 
 const statusType = computed(() => {
   switch (session.value?.status) {
@@ -83,6 +113,10 @@ function startCountdown() {
 }
 
 async function handleCreate() {
+  if (!terminalEnabled.value) {
+    message.warning('云端沙盒终端已关闭')
+    return
+  }
   if (!selectedImage.value) {
     message.warning('请先选择一个镜像')
     return
@@ -92,7 +126,7 @@ async function handleCreate() {
     message.success('沙盒终端已启动')
     startCountdown()
   } catch (e: any) {
-    message.error(e?.response?.data?.detail || '启动沙盒终端失败')
+    message.error(e?.response?.data?.detail || e?.message || '启动沙盒终端失败')
   }
 }
 
@@ -144,30 +178,26 @@ watch(
 
 <template>
   <div class="terminal-page" :class="{ 'terminal-fullscreen': fullScreen }">
-    <div class="terminal-header">
+    <div v-if="session" class="terminal-header session-header">
       <div class="header-left">
-        <NIcon :size="20" color="#0dbc79">
+        <NIcon :size="20" color="#2e5bff">
           <TerminalOutline />
         </NIcon>
         <span class="header-title">云端沙盒终端</span>
-        <NTag v-if="session" :type="statusType" size="small" round>
+        <NTag :type="statusType" size="small" round>
           {{ session.status }}
         </NTag>
-        <span v-if="session" class="session-id">{{ session.session_id }}</span>
-        <span v-if="session?.image_name" class="image-name">{{ session.image_name }}</span>
+        <span class="session-id">{{ session.session_id }}</span>
+        <span v-if="session.image_name" class="image-name">{{ session.image_name }}</span>
       </div>
       <div class="header-right">
-        <NSpace v-if="session" align="center" :size="8">
-          <NIcon :size="14" color="#86909c">
+        <NSpace align="center" :size="8">
+          <NIcon :size="14" color="#6b7280">
             <TimeOutline />
           </NIcon>
           <span class="remaining-time">{{ remainingMinutes }}分钟</span>
         </NSpace>
-        <NButton
-          quaternary
-          size="small"
-          @click="fullScreen = !fullScreen"
-        >
+        <NButton quaternary size="small" @click="fullScreen = !fullScreen">
           <template #icon>
             <NIcon>
               <ContractOutline v-if="fullScreen" />
@@ -175,13 +205,7 @@ watch(
             </NIcon>
           </template>
         </NButton>
-        <NButton
-          type="error"
-          size="small"
-          quaternary
-          @click="handleDestroy"
-          :disabled="!session"
-        >
+        <NButton type="error" size="small" quaternary @click="handleDestroy">
           <template #icon>
             <NIcon>
               <TrashOutline />
@@ -191,68 +215,135 @@ watch(
       </div>
     </div>
 
+    <div v-else class="page-header">
+      <NButton secondary class="back-button" @click="router.push('/tools')">
+        <template #icon>
+          <NIcon :size="18">
+            <ArrowBackOutline />
+          </NIcon>
+        </template>
+        返回工具箱
+      </NButton>
+      <div class="page-title-group">
+        <h1 class="page-title">云端沙盒终端</h1>
+        <p class="page-subtitle">选择预装工具链的镜像，启动一个隔离、用完即毁的沙盒终端</p>
+      </div>
+    </div>
+
     <div class="terminal-body">
-      <!-- 加载中 -->
       <div v-if="loading" class="terminal-loading">
         <NSpin size="large" />
         <p class="loading-text">正在启动隔离容器...</p>
         <p v-if="selectedImage" class="loading-desc">镜像：{{ selectedImage.name }}</p>
       </div>
 
-      <!-- 终端运行中 -->
       <div v-else-if="session?.ws_url" class="terminal-content">
         <XTerminal :session-id="session.session_id" />
       </div>
 
-      <!-- 镜像选择页 -->
       <div v-else class="terminal-selector">
-        <div class="selector-header">
-          <NIcon :size="32" color="#0dbc79">
-            <TerminalOutline />
-          </NIcon>
-          <div class="selector-titles">
-            <h2 class="selector-title">选择分析环境</h2>
-            <p class="selector-subtitle">选择预装工具链的镜像，启动一个隔离、用完即毁的沙盒终端</p>
-          </div>
-        </div>
+        <div class="main-layout">
+          <aside class="left-column">
+            <section class="config-card">
+              <div class="card-heading">
+                <h2>选择分析环境</h2>
+                <p>点击镜像卡片切换预装工具链</p>
+              </div>
+              <ImageSelector v-model="store.selectedImageId" :images="images" />
+              <NEmpty
+                v-if="images.length === 0 && !loading"
+                class="empty-state"
+                description="暂无可用镜像，请联系管理员配置 terminal_images.yaml"
+              />
+            </section>
 
-        <NCard content-style="padding: 20px" class="selector-card">
-          <ImageSelector
-            v-model="store.selectedImageId"
-            :images="images"
-          />
+            <section class="config-card">
+              <div class="card-heading">
+                <h2>资源设置</h2>
+                <p>资源调整会实时同步到右侧启动预览</p>
+              </div>
+              <ResourceSettings
+                v-model:memory-mb="memoryMb"
+                v-model:cpu-cores="cpuCores"
+                :memory-min="memoryRange.min"
+                :memory-max="memoryRange.max"
+                :memory-step="memoryRange.step"
+                :cpu-min="cpuRange.min"
+                :cpu-max="cpuRange.max"
+                :cpu-step="cpuRange.step"
+                :disabled="loading"
+              />
+            </section>
+          </aside>
 
-          <ResourceSettings
-            v-model:memory-mb="memoryMb"
-            v-model:cpu-cores="cpuCores"
-            :memory-min="memoryRange.min"
-            :memory-max="memoryRange.max"
-            :memory-step="memoryRange.step"
-            :cpu-min="cpuRange.min"
-            :cpu-max="cpuRange.max"
-            :cpu-step="cpuRange.step"
-            :disabled="loading"
-          />
+          <main class="right-column">
+            <div class="stats-row">
+              <div class="stat-card">
+                <span class="stat-label">镜像大小</span>
+                <span class="stat-value">{{ imageSizeGb }}<span class="stat-unit">GB</span></span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">预装工具</span>
+                <span class="stat-value">{{ preinstalledToolCount }}<span class="stat-unit">个</span></span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">预计启动</span>
+                <span class="stat-value">{{ estimatedStartupSeconds }}<span class="stat-unit">秒</span></span>
+              </div>
+            </div>
 
-          <div class="selector-actions">
-            <NButton
-              type="primary"
-              size="large"
-              :disabled="!selectedImage"
-              :loading="loading"
-              @click="handleCreate"
-            >
-              <template #icon>
-                <NIcon>
-                  <PlayOutline />
+            <section class="preview-panel">
+              <div class="preview-title">
+                <NIcon :size="18">
+                  <TerminalOutline />
                 </NIcon>
-              </template>
-              启动 {{ selectedImage?.name || '终端' }}
-            </NButton>
-          </div>
-        </NCard>
+                启动配置预览
+              </div>
 
-        <NEmpty v-if="images.length === 0 && !loading" description="暂无可用镜像，请联系管理员配置 terminal_images.yaml" />
+              <div class="preview-row">
+                <span class="preview-key">分析镜像</span>
+                <span class="preview-val">{{ selectedImageLabel }}</span>
+              </div>
+              <div class="preview-row">
+                <span class="preview-key">分配内存</span>
+                <span class="preview-val">{{ memoryMb }} MB</span>
+              </div>
+              <div class="preview-row">
+                <span class="preview-key">分配 CPU</span>
+                <span class="preview-val">{{ cpuCores }} 核</span>
+              </div>
+              <div class="preview-row">
+                <span class="preview-key">挂载目录</span>
+                <span class="preview-val monospace">{{ mountDirectory }}</span>
+              </div>
+              <div class="preview-row">
+                <span class="preview-key">网络模式</span>
+                <span class="preview-val">隔离桥接网络</span>
+              </div>
+              <div class="preview-row">
+                <span class="preview-key">生命周期</span>
+                <span class="preview-val danger">用完即毁</span>
+              </div>
+
+              <NButton
+                type="primary"
+                size="large"
+                block
+                class="launch-button"
+                :disabled="!selectedImage || !terminalEnabled"
+                :loading="loading"
+                @click="handleCreate"
+              >
+                <template #icon>
+                  <NIcon>
+                    <PlayOutline />
+                  </NIcon>
+                </template>
+                启动 {{ selectedImage?.name || '终端' }}
+              </NButton>
+            </section>
+          </main>
+        </div>
       </div>
     </div>
   </div>
@@ -260,10 +351,19 @@ watch(
 
 <style scoped>
 .terminal-page {
+  --terminal-bg: #f5f6fa;
+  --terminal-card: #fff;
+  --terminal-primary: #2e5bff;
+  --terminal-primary-light: #e8eeff;
+  --terminal-text: #1f2937;
+  --terminal-subtext: #6b7280;
+  --terminal-border: #e5e7eb;
+  --terminal-soft-border: #f3f4f6;
+  --terminal-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
   display: flex;
   flex-direction: column;
-  height: 100%;
-  background: var(--n-color, #fff);
+  min-height: 100%;
+  background: var(--terminal-bg);
 }
 
 .terminal-fullscreen {
@@ -273,12 +373,54 @@ watch(
   background: #1e1e1e;
 }
 
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px 0;
+  flex-shrink: 0;
+}
+
+.back-button {
+  height: 36px;
+  border-radius: 8px;
+}
+
+:deep(.back-button:hover) {
+  color: var(--terminal-primary);
+  border-color: #c7d2fe;
+  background: var(--terminal-primary-light);
+}
+
+.page-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.page-title {
+  margin: 0;
+  color: var(--terminal-text);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.page-subtitle {
+  margin: 0;
+  color: var(--terminal-subtext);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .terminal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 8px 16px;
-  border-bottom: 1px solid var(--n-border-color, #e0e0e6);
+  border-bottom: 1px solid var(--terminal-border);
+  background: #fff;
   flex-shrink: 0;
 }
 
@@ -286,26 +428,28 @@ watch(
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .header-title {
+  color: var(--terminal-text);
   font-size: 15px;
   font-weight: 600;
-  color: var(--neutral-text-1);
 }
 
 .session-id {
+  color: var(--terminal-subtext);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
-  color: var(--neutral-text-3);
-  font-family: monospace;
 }
 
 .image-name {
-  font-size: 12px;
-  color: var(--neutral-text-2);
-  background: var(--neutral-fill-2);
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: 6px;
+  background: var(--terminal-primary-light);
+  color: var(--terminal-primary);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .header-right {
@@ -315,8 +459,8 @@ watch(
 }
 
 .remaining-time {
+  color: var(--terminal-subtext);
   font-size: 12px;
-  color: var(--neutral-text-3);
 }
 
 .terminal-body {
@@ -341,59 +485,201 @@ watch(
 }
 
 .loading-text {
-  font-size: 14px;
-  color: var(--neutral-text-3);
   margin: 0;
+  color: var(--terminal-subtext);
+  font-size: 14px;
 }
 
 .loading-desc {
-  font-size: 12px;
-  color: var(--neutral-text-2);
   margin: 0;
+  color: var(--terminal-subtext);
+  font-size: 12px;
 }
 
 .terminal-selector {
-  padding: 24px;
-  max-width: 1000px;
-  margin: 0 auto;
   width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 20px;
 }
 
-.selector-header {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 20px;
+.main-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
 }
 
-.selector-titles {
+.left-column,
+.right-column {
+  min-width: 0;
+}
+
+.left-column {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 16px;
 }
 
-.selector-title {
-  font-size: 20px;
-  font-weight: 600;
-  margin: 0;
-  color: var(--neutral-text-1);
-}
-
-.selector-subtitle {
-  font-size: 13px;
-  color: var(--neutral-text-3);
-  margin: 0;
-}
-
-.selector-card {
-  margin-bottom: 20px;
-}
-
-.selector-actions {
+.right-column {
   display: flex;
-  justify-content: center;
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid var(--n-border-color, #e0e0e6);
+  flex-direction: column;
+  gap: 16px;
+}
+
+.config-card,
+.preview-panel,
+.stat-card {
+  background: var(--terminal-card);
+  border: 1px solid var(--terminal-border);
+  border-radius: 12px;
+  box-shadow: var(--terminal-shadow);
+}
+
+.config-card {
+  padding: 20px;
+}
+
+.card-heading {
+  margin-bottom: 16px;
+}
+
+.card-heading h2 {
+  margin: 0;
+  color: var(--terminal-text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.card-heading p {
+  margin: 5px 0 0;
+  color: var(--terminal-subtext);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.empty-state {
+  margin-top: 16px;
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 104px;
+  padding: 20px;
+}
+
+.stat-label {
+  color: var(--terminal-subtext);
+  font-size: 12px;
+}
+
+.stat-value {
+  color: var(--terminal-text);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-unit {
+  margin-left: 2px;
+  color: var(--terminal-subtext);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.preview-panel {
+  padding: 24px;
+}
+
+.preview-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--terminal-text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.preview-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 46px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--terminal-soft-border);
+}
+
+.preview-key {
+  flex: 0 0 auto;
+  color: var(--terminal-subtext);
+  font-size: 13px;
+}
+
+.preview-val {
+  min-width: 0;
+  color: var(--terminal-text);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: right;
+  word-break: break-word;
+}
+
+.preview-val.monospace {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.preview-val.danger {
+  color: #dc2626;
+}
+
+.launch-button {
+  height: 48px;
+  margin-top: 20px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(46, 91, 255, 0.25);
+}
+
+:deep(.launch-button.n-button--disabled) {
+  box-shadow: none;
+}
+
+@media (max-width: 900px) {
+  .page-header {
+    align-items: flex-start;
+    padding: 14px 16px 0;
+  }
+
+  .terminal-selector {
+    padding: 16px;
+  }
+
+  .main-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .right-column {
+    order: 1;
+  }
+
+  .left-column {
+    order: 2;
+  }
+
+  .stats-row {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

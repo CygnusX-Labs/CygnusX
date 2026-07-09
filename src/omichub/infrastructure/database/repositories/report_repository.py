@@ -17,9 +17,7 @@ class ReportRepositoryImpl:
 
     async def get_by_id(self, report_id: UUID) -> ReportModel | None:
         """根据 ID 获取报告"""
-        result = await self._session.execute(
-            select(ReportModel).where(ReportModel.id == report_id)
-        )
+        result = await self._session.execute(select(ReportModel).where(ReportModel.id == report_id))
         return result.scalar_one_or_none()
 
     async def list_by_user(
@@ -118,7 +116,8 @@ class ReportRepositoryImpl:
         total = total_result.scalar_one()
 
         starred_stmt = select(func.count(ReportModel.id)).where(
-            ReportModel.user_id == user_id, ReportModel.is_starred == True  # noqa: E712
+            ReportModel.user_id == user_id,
+            ReportModel.is_starred == True,  # noqa: E712
         )
         starred_result = await self._session.execute(starred_stmt)
         starred = starred_result.scalar_one()

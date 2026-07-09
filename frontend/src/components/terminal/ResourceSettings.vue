@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { NCard, NSlider, NInputNumber, NSpace } from 'naive-ui'
+import { NSlider, NInputNumber } from 'naive-ui'
 
 interface Props {
   memoryMb: number
@@ -39,21 +39,54 @@ const cpuModel = computed({
   set: (val) => emit('update:cpuCores', val),
 })
 
-const memoryMarks = computed(() => {
-  const marks: Record<number, string> = {}
-  for (let v = props.memoryMin; v <= props.memoryMax; v += 512) {
-    marks[v] = `${v}M`
-  }
-  return marks
-})
+function formatMarkNumber(value: number) {
+  if (Number.isInteger(value)) return `${value}`
+  return value.toFixed(1).replace(/\.0$/, '')
+}
 
-const cpuMarks = computed(() => {
+function normalizeMarkValue(value: number) {
+  return Number(value.toFixed(3))
+}
+
+function buildSliderMarks(
+  min: number,
+  max: number,
+  step: number,
+  formatter: (value: number) => string,
+) {
   const marks: Record<number, string> = {}
-  for (let v = props.cpuMin; v <= props.cpuMax; v += 0.5) {
-    marks[Math.round(v * 10) / 10] = `${v}核`
+  const boundedMin = Math.min(min, max)
+  const boundedMax = Math.max(min, max)
+  const baseStep = Math.max(step, 0.001)
+
+  marks[normalizeMarkValue(boundedMin)] = formatter(boundedMin)
+  if (boundedMax === boundedMin) return marks
+
+  const targetSegments = 6
+  const rawStep = (boundedMax - boundedMin) / targetSegments
+  const markStep = Math.max(baseStep, Math.ceil(rawStep / baseStep) * baseStep)
+
+  for (let value = boundedMin + markStep; value < boundedMax; value += markStep) {
+    const normalized = normalizeMarkValue(value)
+    marks[normalized] = formatter(normalized)
   }
+
+  marks[normalizeMarkValue(boundedMax)] = formatter(boundedMax)
   return marks
-})
+}
+
+function formatMemoryMark(value: number) {
+  if (value >= 1024) return `${formatMarkNumber(value / 1024)}G`
+  return `${formatMarkNumber(value)}M`
+}
+
+const memoryMarks = computed(() =>
+  buildSliderMarks(props.memoryMin, props.memoryMax, props.memoryStep, formatMemoryMark),
+)
+
+const cpuMarks = computed(() =>
+  buildSliderMarks(props.cpuMin, props.cpuMax, props.cpuStep, (value) => `${formatMarkNumber(value)}核`),
+)
 
 function formatCpuLabel(value: number) {
   return `${value} 核`
@@ -65,21 +98,11 @@ function formatMemoryLabel(value: number) {
 </script>
 
 <template>
-  <NCard title="资源设置" size="small" class="resource-settings">
-    <div class="resource-row">
+  <section class="resource-settings">
+    <div class="resource-section">
       <div class="resource-label">
-        <span>内存</span>
-        <NInputNumber
-          v-model:value="memoryModel"
-          :min="memoryMin"
-          :max="memoryMax"
-          :step="memoryStep"
-          :disabled="disabled"
-          size="small"
-          style="width: 100px"
-        >
-          <template #suffix>MB</template>
-        </NInputNumber>
+        <span>分配内存</span>
+        <span class="current-value">{{ memoryMb }} MB</span>
       </div>
       <NSlider
         v-model:value="memoryModel"
@@ -90,22 +113,23 @@ function formatMemoryLabel(value: number) {
         :disabled="disabled"
         :format-tooltip="formatMemoryLabel"
       />
+      <NInputNumber
+        v-model:value="memoryModel"
+        :min="memoryMin"
+        :max="memoryMax"
+        :step="memoryStep"
+        :disabled="disabled"
+        size="small"
+        class="resource-input"
+      >
+        <template #suffix>MB</template>
+      </NInputNumber>
     </div>
 
-    <div class="resource-row">
+    <div class="resource-section">
       <div class="resource-label">
-        <span>CPU</span>
-        <NInputNumber
-          v-model:value="cpuModel"
-          :min="cpuMin"
-          :max="cpuMax"
-          :step="cpuStep"
-          :disabled="disabled"
-          size="small"
-          style="width: 100px"
-        >
-          <template #suffix>核</template>
-        </NInputNumber>
+        <span>分配 CPU</span>
+        <span class="current-value">{{ cpuCores }} 核</span>
       </div>
       <NSlider
         v-model:value="cpuModel"
@@ -116,34 +140,84 @@ function formatMemoryLabel(value: number) {
         :disabled="disabled"
         :format-tooltip="formatCpuLabel"
       />
+      <NInputNumber
+        v-model:value="cpuModel"
+        :min="cpuMin"
+        :max="cpuMax"
+        :step="cpuStep"
+        :disabled="disabled"
+        size="small"
+        class="resource-input"
+      >
+        <template #suffix>核</template>
+      </NInputNumber>
     </div>
-  </NCard>
+  </section>
 </template>
 
 <style scoped>
 .resource-settings {
-  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
 }
 
-.resource-row {
-  margin-bottom: 20px;
-}
-
-.resource-row:last-child {
-  margin-bottom: 0;
+.resource-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .resource-label {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
-  font-size: 14px;
-  color: var(--n-text-color-base);
-  font-weight: 500;
+  gap: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.current-value {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #e8eeff;
+  color: #2e5bff;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.resource-input {
+  width: 120px;
+  align-self: flex-end;
+}
+
+:deep(.n-slider) {
+  --n-rail-height: 6px !important;
+  --n-fill-color: #2e5bff !important;
+  --n-fill-color-hover: #2e5bff !important;
+  --n-rail-color: #e5e7eb !important;
+  --n-rail-color-hover: #e5e7eb !important;
+  --n-handle-size: 18px !important;
+  --n-handle-color: #fff !important;
+  --n-handle-box-shadow: 0 0 0 2px #2e5bff, 0 2px 6px rgba(46, 91, 255, 0.25) !important;
+  --n-handle-box-shadow-hover: 0 0 0 2px #2e5bff, 0 4px 10px rgba(46, 91, 255, 0.3) !important;
 }
 
 :deep(.n-slider-mark) {
+  margin-top: 7px;
+  color: #6b7280;
   font-size: 11px;
+}
+
+:deep(.n-slider-mark::before) {
+  content: '';
+  display: block;
+  width: 1px;
+  height: 5px;
+  margin: 0 auto 4px;
+  background: #d1d5db;
 }
 </style>

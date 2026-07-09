@@ -250,15 +250,25 @@ const sortOptions = [
 
 const syncing = ref(false)
 
-/** 同步磁盘文件到 file_records（只增不删），silent=true 用于进页面自动同步（不弹提示） */
+type SyncFilesResponse = {
+  added: number
+  added_size: number
+  removed?: number
+  removed_size?: number
+  renamed?: number
+}
+
+/** 对账磁盘文件与 file_records，silent=true 用于进页面自动同步（不弹提示） */
 async function syncFiles(silent = false) {
   syncing.value = true
   try {
-    const res = await apiClient.post<{ added: number; added_size: number }>('/files/sync')
+    const res = await apiClient.post<SyncFilesResponse>('/files/sync')
     if (!silent) {
-      message.success(
-        res.data.added > 0 ? `同步完成，新增 ${res.data.added} 个文件` : '同步完成，无新增文件',
-      )
+      const changes: string[] = []
+      if (res.data.added > 0) changes.push(`新增 ${res.data.added} 个文件`)
+      if ((res.data.removed ?? 0) > 0) changes.push(`清理 ${res.data.removed} 条已删除记录`)
+      if ((res.data.renamed ?? 0) > 0) changes.push(`修正 ${res.data.renamed} 个显示名`)
+      message.success(changes.length ? `同步完成，${changes.join('，')}` : '同步完成，无变化')
     }
   } catch {
     if (!silent) message.error('同步失败，请稍后重试')

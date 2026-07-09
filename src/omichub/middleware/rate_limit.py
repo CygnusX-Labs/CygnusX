@@ -49,7 +49,9 @@ def _should_skip(request: Request) -> bool:
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """每 IP 滑动窗口限流。Redis 异常时降级放行。"""
 
-    def __init__(self, app, max_requests: int = 100, window_seconds: int = 60, enabled: bool = True):
+    def __init__(
+        self, app, max_requests: int = 100, window_seconds: int = 60, enabled: bool = True
+    ):
         super().__init__(app)
         self.max_requests = max_requests
         self.window_seconds = window_seconds

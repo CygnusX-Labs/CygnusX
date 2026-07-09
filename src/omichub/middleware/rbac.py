@@ -28,9 +28,7 @@ def require_roles(*roles: str) -> Callable[..., None]:
         # 延迟导入，规避模型加载顺序导致的循环引用
         from omichub.infrastructure.database.models.user import UserModel
 
-        result = await db.execute(
-            select(UserModel.role).where(UserModel.id == UUID(user_id))
-        )
+        result = await db.execute(select(UserModel.role).where(UserModel.id == UUID(user_id)))
         role = result.scalar_one_or_none()
         if role is None:
             raise AuthorizationError("用户不存在")
@@ -46,9 +44,7 @@ async def require_admin(user_id: CurrentUserId, db: DbSession) -> None:
     """校验当前用户为管理员（实时查库）。"""
     from omichub.infrastructure.database.models.user import UserModel
 
-    result = await db.execute(
-        select(UserModel.role).where(UserModel.id == UUID(user_id))
-    )
+    result = await db.execute(select(UserModel.role).where(UserModel.id == UUID(user_id)))
     role = result.scalar_one_or_none()
     if role is None:
         raise AuthorizationError("用户不存在")

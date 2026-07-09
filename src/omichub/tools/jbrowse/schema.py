@@ -7,19 +7,46 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic import Field
+
 from omichub.application.schemas.base import OmicsHubBaseSchema
 
 
+class AssemblyDataFileDTO(OmicsHubBaseSchema):
+    """数据库模块数据文件描述（FASTA/GFF/GO/KEGG）。"""
+
+    path: str
+    index_path: str | None = None
+    db_path: str | None = None
+    format: str | None = None
+    build_required: bool = False
+    build_tool: str | None = None
+    build_status: str = "ready"
+    size: str | None = None
+
+
 class AssemblyDTO(OmicsHubBaseSchema):
-    """参考基因组摘要（不含 FASTA 绝对路径，避免泄漏服务端目录）。"""
+    """参考基因组/数据库版本摘要（不含 FASTA 绝对路径，避免泄漏服务端目录）。"""
 
     id: str
     name: str
     species: str | None = None
+    common_name: str | None = None
+    taxonomy_id: str | None = None
+    version_id: str | None = None
+    version_name: str | None = None
+    assembly_name: str | None = None
+    category: str | None = None
+    icon: str | None = None
+    is_default: bool = False
+    status: str = "active"
+    release_date: str | None = None
     description: str | None = None
+    stats: dict[str, Any] = Field(default_factory=dict)
+    data_files: dict[str, AssemblyDataFileDTO] = Field(default_factory=dict)
     fasta_exists: bool = False
     fai_exists: bool = False
-    aliases: list[str] = []
+    aliases: list[str] = Field(default_factory=list)
 
 
 class AssemblyDetailDTO(AssemblyDTO):

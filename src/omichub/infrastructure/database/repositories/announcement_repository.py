@@ -17,12 +17,9 @@ class SqlAlchemyAnnouncementRepository:
 
     async def list_all(self) -> list[AnnouncementModel]:
         """全部通知，按优先级倒序、创建时间倒序"""
-        stmt = (
-            select(AnnouncementModel)
-            .order_by(
-                desc(AnnouncementModel.priority),
-                desc(AnnouncementModel.created_at),
-            )
+        stmt = select(AnnouncementModel).order_by(
+            desc(AnnouncementModel.priority),
+            desc(AnnouncementModel.created_at),
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
@@ -34,10 +31,7 @@ class SqlAlchemyAnnouncementRepository:
             select(AnnouncementModel)
             .where(AnnouncementModel.is_enabled.is_(True))
             .where(AnnouncementModel.start_time <= now)
-            .where(
-                (AnnouncementModel.end_time.is_(None))
-                | (AnnouncementModel.end_time >= now)
-            )
+            .where((AnnouncementModel.end_time.is_(None)) | (AnnouncementModel.end_time >= now))
             .order_by(
                 desc(AnnouncementModel.priority),
                 desc(AnnouncementModel.created_at),

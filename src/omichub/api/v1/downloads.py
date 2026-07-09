@@ -16,7 +16,7 @@ from omichub.application.schemas.download_progress import (
 from omichub.application.schemas.task import TaskListResponse, TaskResponse
 from omichub.application.services.download_service import DownloadService
 from omichub.core.config import get_settings
-from omichub.core.exceptions import NotFoundError, ValidationError
+from omichub.core.exceptions import ValidationError
 from omichub.infrastructure.cache.redis_client import get_redis
 
 router = APIRouter()
@@ -30,9 +30,14 @@ def get_download_service(db: DbSession) -> DownloadService:
 DownloadServiceDep = Annotated[DownloadService, Depends(get_download_service)]
 
 
-def _ensure_enabled() -> None:
-    """未启用数据下载时拒绝（部署里装好二进制+sra-tools 再开）。"""
-    if not get_settings().enable_ebi_download:
+def _ensure_enabled(req: DownloadRequest) -> None:
+    """按下载来源检查对应运行时是否启用。"""
+    settings = get_settings()
+    if req.source == "cloud_storage":
+        if not settings.enable_cloud_storage_download:
+            raise ValidationError("云存储下载功能未启用")
+        return
+    if not settings.enable_ebi_download:
         raise ValidationError("数据下载功能未启用")
 
 
@@ -43,7 +48,7 @@ async def submit_download(
     service: DownloadServiceDep,
 ) -> TaskResponse:
     """提交一个 EBI/NCBI 数据下载任务，返回任务对象（可经 /tasks/{id} 查进度/日志）。"""
-    _ensure_enabled()
+    _ensure_enabled(req)
     return await service.submit(current_user_id, req)
 
 

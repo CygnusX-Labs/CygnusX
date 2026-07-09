@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,15 +15,9 @@ class ReportModel(Base, TimestampMixin):
 
     __tablename__ = "reports"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    task_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), index=True, nullable=False
-    )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), index=True, nullable=False
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True, nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True, nullable=False)
     flow_id: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
     flow_name: Mapped[str] = mapped_column(String(100), default="")
     flow_version: Mapped[str] = mapped_column(String(20), default="")
@@ -52,9 +46,7 @@ class ReportFileModel(Base, TimestampMixin):
 
     __tablename__ = "report_files"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     report_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("reports.id", ondelete="CASCADE"), index=True, nullable=False
     )

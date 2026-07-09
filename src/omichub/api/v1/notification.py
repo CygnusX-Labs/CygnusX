@@ -115,9 +115,7 @@ async def update_notification(
 ):
     repo = SqlAlchemyNotificationRepository(db)
     service = NotificationService(repo)
-    notification = await service.update(
-        str(notification_id), **req.model_dump(exclude_unset=True)
-    )
+    notification = await service.update(str(notification_id), **req.model_dump(exclude_unset=True))
     if notification is None:
         raise NotFoundError("通知不存在")
     return _notification_to_dict(notification)

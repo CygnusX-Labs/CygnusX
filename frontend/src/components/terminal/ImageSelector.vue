@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { NCard, NTag, NSpace, NRadio } from 'naive-ui'
+import { NTag, NSpace } from 'naive-ui'
 import type { TerminalImage } from '@/types/terminal'
 
 interface Props {
@@ -25,111 +25,121 @@ function selectImage(id: string) {
 
 <template>
   <div class="image-selector">
-    <NCard
+    <button
       v-for="img in images"
       :key="img.id"
-      size="small"
-      hoverable
-      :class="['image-card', { active: selectedId === img.id }]"
+      type="button"
+      :class="['image-item', { active: selectedId === img.id }]"
+      :aria-pressed="selectedId === img.id"
       @click="selectImage(img.id)"
     >
-      <div class="card-content">
-        <div class="image-icon">{{ img.icon }}</div>
-        <div class="image-info">
-          <div class="info-header">
-            <span class="image-name">{{ img.name }}</span>
-            <NRadio
-              :checked="selectedId === img.id"
-              :value="img.id"
-              @click.stop
-              @update:checked="selectImage(img.id)"
-            />
-          </div>
-          <p class="image-desc">{{ img.description }}</p>
-          <NSpace size="small" class="image-tags">
-            <NTag v-for="tag in img.tags" :key="tag" size="tiny" round>{{ tag }}</NTag>
-          </NSpace>
-          <div class="image-resources">
-            默认资源：{{ img.resources.memory_mb }} MB / {{ img.resources.cpu_cores }} 核
-          </div>
-        </div>
-      </div>
-    </NCard>
+      <span class="image-radio" aria-hidden="true">
+        <span v-if="selectedId === img.id" class="radio-dot" />
+      </span>
+      <span class="image-info">
+        <span class="image-name">{{ img.icon }} {{ img.name }}</span>
+        <span class="image-desc">{{ img.description }}</span>
+        <NSpace size="small" class="image-tags">
+          <NTag v-for="tag in img.tags" :key="tag" size="tiny" round>{{ tag }}</NTag>
+        </NSpace>
+        <span class="image-resources">
+          默认资源：{{ img.resources.memory_mb }} MB / {{ img.resources.cpu_cores }} 核
+        </span>
+      </span>
+    </button>
   </div>
 </template>
 
 <style scoped>
 .image-selector {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   width: 100%;
 }
 
-.image-card {
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border: 1px solid transparent;
-}
-
-.image-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-
-.image-card.active {
-  border-color: var(--n-primary-color, #18a058);
-  background: rgba(24, 160, 88, 0.04);
-}
-
-.card-content {
+.image-item {
   display: flex;
-  gap: 14px;
   align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-height: 132px;
+  padding: 16px;
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
-.image-icon {
-  font-size: 40px;
-  line-height: 1;
-  flex-shrink: 0;
+.image-item:hover {
+  border-color: #c7d2fe;
+  background: #fafbff;
+  transform: translateY(-1px);
+}
+
+.image-item.active {
+  border-color: #2e5bff;
+  background: #f8faff;
+  box-shadow: 0 0 0 3px rgba(46, 91, 255, 0.08);
+}
+
+.image-radio {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  border: 2px solid #d1d5db;
+  border-radius: 50%;
+  background: #fff;
+  flex: 0 0 auto;
+}
+
+.image-item.active .image-radio {
+  border-color: #2e5bff;
+  background: #2e5bff;
+}
+
+.radio-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
 }
 
 .image-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.info-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
 }
 
 .image-name {
   font-size: 15px;
-  font-weight: 600;
-  color: var(--n-text-color-base);
+  font-weight: 700;
+  line-height: 1.3;
+  color: #1f2937;
 }
 
 .image-desc {
+  margin-top: 6px;
   font-size: 13px;
-  color: var(--n-text-color-3);
-  line-height: 1.5;
-  margin: 0 0 8px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  line-height: 1.55;
+  color: #6b7280;
 }
 
 .image-tags {
-  margin-bottom: 8px;
+  margin-top: 8px;
 }
 
 .image-resources {
+  margin-top: 8px;
   font-size: 12px;
-  color: var(--n-text-color-2);
+  color: #6b7280;
 }
 </style>

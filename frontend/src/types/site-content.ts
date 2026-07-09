@@ -5,7 +5,7 @@ export interface HeroContent {
   description: string
 }
 
-/** 快捷入口文案：key 与前端硬编码的图标/路由映射 */
+/** 快捷入口兜底文案：实际首页入口优先使用 site_settings.home_quick_entries */
 export interface QuickEntryContent {
   key: string
   title: string

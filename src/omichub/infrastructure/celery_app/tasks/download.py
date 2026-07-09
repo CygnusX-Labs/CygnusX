@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import glob
 import os
+import re
 from datetime import datetime
 from uuid import UUID
 
@@ -65,6 +66,75 @@ def _scan_sra_files(work_dir: str) -> tuple[dict[str, int], int]:
         sizes[run_id] = size
         total_bytes += size
     return sizes, total_bytes
+
+
+_CLOUD_PROVIDER_LABELS = {
+    "aliyun": "阿里云 OSS",
+    "volc": "火山引擎 TOS",
+    "huawei": "华为云 OBS",
+}
+
+
+def _cloud_binary_path(settings, provider: str) -> str:
+    return {
+        "aliyun": settings.cloud_ossutil_binary,
+        "volc": settings.cloud_tosutil_binary,
+        "huawei": settings.cloud_obsutil_binary,
+    }[provider]
+
+
+def _build_cloud_storage_args(
+    provider: str, object_uri: str, work_dir: str, recursive: bool
+) -> list[str]:
+    """构造云存储 CLI 参数，二进制路径由 ExecutionContext.binary 承载。"""
+    if provider == "aliyun":
+        args = ["cp", object_uri, work_dir, "--update", "--force", "--jobs", "5"]
+        if recursive:
+            args.append("--recursive")
+        return args
+    if provider == "volc":
+        args = [
+            "cp",
+            object_uri,
+            work_dir,
+            "-u",
+            "-j",
+            "5",
+            "--checkpoint",
+            os.path.join(work_dir, ".checkpoint"),
+        ]
+        if recursive:
+            args.append("-r")
+        return args
+    if provider == "huawei":
+        args = [
+            "cp",
+            object_uri,
+            work_dir,
+            "-f",
+            "-u",
+            "-j",
+            "5",
+            "-parallel",
+            "5",
+            "-partSize",
+            "5",
+        ]
+        if recursive:
+            args.append("-r")
+        return args
+    raise ValueError(f"不支持的云存储提供商: {provider}")
+
+
+def _parse_cloud_storage_progress(message: str) -> float | None:
+    """从 ossutil/tosutil/obsutil 输出中提取通用百分比进度。"""
+    match = re.search(r"(?<!\d)(100(?:\.0+)?|[1-9]?\d(?:\.\d+)?)\s*%", message)
+    if not match:
+        return None
+    try:
+        return max(0.0, min(1.0, float(match.group(1)) / 100.0))
+    except ValueError:
+        return None
 
 
 async def _execute_download(task_id: str) -> dict:
@@ -129,6 +199,19 @@ async def _execute_download(task_id: str) -> dict:
         await _add_and_publish_log(LogLevel.INFO, "开始执行数据下载任务", source="celery")
         task = await domain.transition_status(task, TaskStatus.RUNNING)
         await session.commit()
+
+        source = str(params.get("source", "sra") or "sra")
+        if source == "cloud_storage":
+            return await _execute_cloud_storage_download(
+                task_id=task_id,
+                task_uuid=task_uuid,
+                task=task,
+                params=params,
+                session=session,
+                repo=repo,
+                domain=domain,
+                add_and_publish_log=_add_and_publish_log,
+            )
 
         settings = get_settings()
         accession = str(params.get("accession", ""))
@@ -196,9 +279,7 @@ async def _execute_download(task_id: str) -> dict:
                 try:
                     sizes, total_bytes = _scan_sra_files(work_dir)
                     done = sum(
-                        1
-                        for rid, sz in sizes.items()
-                        if sz > 0 and prev_sizes.get(rid) == sz
+                        1 for rid, sz in sizes.items() if sz > 0 and prev_sizes.get(rid) == sz
                     )
                     if total > 0 and done != last_done:
                         msg = f"已下载 {done}/{total} 文件，共 {total_bytes / (1024**3):.1f} GB"
@@ -337,10 +418,134 @@ async def _execute_download(task_id: str) -> dict:
             # 清理 Redis 进度缓存
             try:
                 from omichub.infrastructure.cache.redis_client import get_redis
+
                 r = get_redis()
                 await r.delete(f"download_progress:{task_id}")
             except Exception:
                 pass
+
+
+async def _execute_cloud_storage_download(
+    *,
+    task_id: str,
+    task_uuid: UUID,
+    task,
+    params: dict,
+    session,
+    repo,
+    domain,
+    add_and_publish_log,
+) -> dict:
+    """执行云存储对象下载，复用 Task 日志/进度/文件入库链路。"""
+    settings = get_settings()
+    provider = str(params.get("cloud_provider", ""))
+    object_uri = str(params.get("object_uri", ""))
+    recursive = bool(params.get("recursive", True))
+    directory = str(params.get("target_directory", "") or "")
+    work_dir = task.work_dir or ""
+    label = _CLOUD_PROVIDER_LABELS.get(provider, provider)
+
+    try:
+        binary = _cloud_binary_path(settings, provider)
+        binary_args = _build_cloud_storage_args(provider, object_uri, work_dir, recursive)
+    except Exception as exc:  # noqa: BLE001
+        task = await domain.transition_status(task, TaskStatus.FAILED)
+        task.error_message = str(exc)[:2000]
+        await repo.save(task)
+        await add_and_publish_log(LogLevel.ERROR, f"云存储下载配置错误: {exc}", source="celery")
+        await session.commit()
+        return {"status": "failed", "task_id": task_id, "error": str(exc)}
+
+    binary_exists = bool(binary) and await asyncio.to_thread(os.path.exists, binary)
+    if not binary_exists:
+        msg = f"{label} 下载工具未找到: {binary}"
+        task = await domain.transition_status(task, TaskStatus.FAILED)
+        task.error_message = msg
+        await repo.save(task)
+        await add_and_publish_log(LogLevel.ERROR, msg, source="celery")
+        await session.commit()
+        return {"status": "failed", "task_id": task_id, "error": msg}
+
+    os.makedirs(work_dir, exist_ok=True)
+    db_lock = asyncio.Lock()
+    last_progress = -1.0
+
+    async def _on_cloud_log(level: str, message: str, source: str = "binary") -> None:
+        nonlocal last_progress, task
+        parsed_progress = _parse_cloud_storage_progress(message)
+        async with db_lock:
+            if parsed_progress is not None:
+                if parsed_progress - last_progress >= 0.02 or parsed_progress >= 1.0:
+                    last_progress = parsed_progress
+                    task.progress = parsed_progress
+                    await repo.save(task)
+                    await add_and_publish_log(
+                        LogLevel.INFO,
+                        f"云存储下载进度 {parsed_progress * 100:.0f}% ({label})",
+                        source=source,
+                    )
+                    await session.commit()
+                return
+            try:
+                lvl = LogLevel(level)
+            except ValueError:
+                lvl = LogLevel.INFO
+            await add_and_publish_log(lvl, message[:1000], source=source)
+            await session.commit()
+
+    await add_and_publish_log(
+        LogLevel.INFO,
+        f"调用 {label} 下载工具: object_uri={object_uri}, work_dir={work_dir}, recursive={recursive}",
+        source="binary",
+    )
+    await session.commit()
+
+    ctx = ExecutionContext(
+        engine="binary",
+        work_dir=work_dir,
+        binary=binary,
+        binary_args=binary_args,
+        on_log=_on_cloud_log,
+    )
+
+    try:
+        executor = get_executor("binary")
+        result = await executor.execute(ctx)
+
+        if result.status == "success":
+            task.progress = 1.0
+            task.result_path = work_dir
+            await repo.save(task)
+            await _register_downloaded_files(
+                session=session,
+                user_id=task.user_id,
+                work_dir=work_dir,
+                directory=directory,
+                storage_root=settings.storage_path,
+            )
+            task = await domain.transition_status(task, TaskStatus.SUCCESS)
+            await add_and_publish_log(LogLevel.INFO, "云存储下载完成，文件已入库", source="binary")
+            return_status = "success"
+        else:
+            task = await domain.transition_status(task, TaskStatus.FAILED)
+            task.error_message = (result.stderr or result.stdout)[:2000]
+            await repo.save(task)
+            await add_and_publish_log(
+                LogLevel.ERROR,
+                f"云存储下载失败 (returncode={result.returncode})",
+                source="binary",
+            )
+            return_status = "failed"
+
+        await session.commit()
+        return {"status": return_status, "task_id": task_id, "returncode": result.returncode}
+    except Exception as exc:  # noqa: BLE001
+        await add_and_publish_log(LogLevel.ERROR, f"云存储下载执行异常: {exc}", source="celery")
+        task = await domain.transition_status(task, TaskStatus.FAILED)
+        task.error_message = str(exc)[:2000]
+        await repo.save(task)
+        await session.commit()
+        return {"status": "failed", "task_id": task_id, "error": str(exc)}
 
 
 async def _register_downloaded_files(
@@ -366,7 +571,10 @@ async def _register_downloaded_files(
 
     from sqlalchemy import select
 
-    from omichub.application.services.file_service import ensure_directory_chain
+    from omichub.application.services.file_service import (
+        canonical_original_name,
+        ensure_directory_chain,
+    )
     from omichub.domain.file.entities import DataFile
     from omichub.domain.file.value_objects import FileType
     from omichub.infrastructure.database.models.file import FileRecordModel
@@ -379,7 +587,7 @@ async def _register_downloaded_files(
 
     work_path = Path(work_dir)
     root_path = Path(storage_root)
-    if not work_path.exists():
+    if not await asyncio.to_thread(work_path.exists):
         return
 
     # 规整 target_directory
@@ -389,9 +597,7 @@ async def _register_downloaded_files(
 
     # accession = work_dir 末段（_make_work_dir 以 safe_acc 命名该目录）
     accession = work_path.name
-    logical_dir = (
-        f"{directory_norm}/{accession}" if directory_norm else f"raw_data/{accession}"
-    )
+    logical_dir = f"{directory_norm}/{accession}" if directory_norm else f"raw_data/{accession}"
 
     # 确保 Directory 记录链存在（含父级），使数据管理页目录树能展示该 accession 文件夹
     await ensure_directory_chain(session, user_id, logical_dir)
@@ -407,10 +613,10 @@ async def _register_downloaded_files(
             return FileType.BAM
         return FileType.OTHER
 
+    files = await asyncio.to_thread(lambda: [f for f in work_path.rglob("*") if f.is_file()])
+
     new_size = 0
-    for f in work_path.rglob("*"):
-        if not f.is_file():
-            continue
+    for f in files:
         try:
             rel = str(f.relative_to(root_path))
         except ValueError:
@@ -422,14 +628,15 @@ async def _register_downloaded_files(
         if exists:
             continue
         size = f.stat().st_size
+        original_name = canonical_original_name(f.name)
         record = DataFile(
             id=_uuid.uuid4(),
             user_id=user_id,
             path=rel,
-            original_name=f.name,
+            original_name=original_name,
             size=size,
             checksum="",
-            file_type=_ftype(f.name),
+            file_type=_ftype(original_name),
             status="active",
             directory=logical_dir,
         )

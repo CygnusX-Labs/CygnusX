@@ -4,7 +4,7 @@
 - POST  /tools/reload  管理员强制热重载 YAML
 
 鉴权：列表接口公开（与 /flows 一致，仅展示元数据，无用户数据）；热重载需管理员。
-配置集中管理：展示元数据在 tools/tools_setting.yaml，各工具功能配置在 tools/<工具名>/。
+配置集中管理：展示元数据在 tool_configs/tools_setting.yaml，各工具功能配置在 tool_configs/<工具名>/。
 """
 
 from fastapi import APIRouter

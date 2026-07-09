@@ -33,9 +33,7 @@ class MessageModel(Base):
     """对话消息表"""
 
     __tablename__ = "ai_messages"
-    __table_args__ = (
-        Index("idx_ai_msg_conv", "conversation_id", "timestamp"),
-    )
+    __table_args__ = (Index("idx_ai_msg_conv", "conversation_id", "timestamp"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -47,6 +45,4 @@ class MessageModel(Base):
     content: Mapped[str] = mapped_column(Text, default="")
     tool_calls: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     tool_call_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

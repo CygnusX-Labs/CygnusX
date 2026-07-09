@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { NSelect, useMessage } from 'naive-ui'
+import apiClient from '@/api/client'
 
 type SourceTab = 'sra' | 'cloud-drive' | 'cloud-storage'
 
@@ -10,11 +11,26 @@ interface DownloadTask {
   name: string
   source: string
   accession: string
-  status: 'running' | 'queued' | 'success' | 'failed' | 'pending'
+  status: 'running' | 'queued' | 'success' | 'failed' | 'pending' | 'cancelled'
   progress: number
   size: string
   speed: string
   createdAt: string
+}
+
+interface TaskResponse {
+  id: string
+  name: string
+  flow_id: string
+  status: string
+  progress: number
+  parameters: Record<string, unknown>
+  created_at: string
+}
+
+interface TaskListResponse {
+  items: TaskResponse[]
+  total: number
 }
 
 const router = useRouter()
@@ -22,6 +38,7 @@ const message = useMessage()
 
 const activeTab = ref<SourceTab>('sra')
 const submitting = ref(false)
+const loadingTasks = ref(false)
 
 // ── SRA 基础表单 ──
 const sraAccession = ref('')
@@ -43,6 +60,7 @@ const driveCode = ref('')
 // ── 云存储表单 ──
 const storageProvider = ref<'aliyun' | 'volc' | 'huawei'>('aliyun')
 const storageUri = ref('')
+const storageRecursive = ref(true)
 
 // ── 任务列表状态筛选 ──
 const statusFilter = ref<'all' | DownloadTask['status']>('all')
@@ -56,13 +74,14 @@ const tabs: { key: SourceTab; icon: string; label: string }[] = [
 const tabDescriptions: Record<SourceTab, string> = {
   'sra': '输入 NCBI/EBI 登录号（如 PRJNA），通过高并发节点直接将原始测序数据同步至您的工作空间。',
   'cloud-drive': '支持解析百度网盘或 123 云盘分享链接，无需消耗本地带宽，云端内网极速拉取交接数据。',
-  'cloud-storage': '通过云厂商内网（阿里云、火山、华为等）实现对象存储之间的数据秒级克隆。',
+  'cloud-storage': '通过云厂商内网（阿里云、火山、华为等）调用对象存储 CLI 拉取数据，完成后自动入库。',
 }
 
 const statusConfig: Record<string, { label: string; badge: string; icon: string }> = {
   success: { label: '已完成', badge: 'bg-green-50 text-green-700', icon: 'check' },
   running: { label: '下载中', badge: 'bg-blue-50 text-blue-700', icon: 'loading' },
   failed:  { label: '失败',   badge: 'bg-red-50 text-red-700', icon: 'x' },
+  cancelled: { label: '已取消', badge: 'bg-neutral-hover text-text-secondary', icon: 'x' },
   queued:  { label: '排队中', badge: 'bg-neutral-hover text-text-secondary', icon: 'clock' },
   pending: { label: '等待中', badge: 'bg-neutral-hover text-text-secondary', icon: 'clock' },
 }
@@ -76,20 +95,7 @@ function pct(task: DownloadTask) {
 }
 
 const gradientBar = 'background: linear-gradient(90deg, #4F8EF7, #9B59B6)'
-
-// ── Mock 任务 ──
-const tasks = ref<DownloadTask[]>([
-  { id: 'd-001', name: 'PRJNA1251654 原始数据下载', source: 'SRA', accession: 'PRJNA1251654', status: 'running', progress: 0.62, size: '18.4 / 29.7 GB', speed: '12.3 MB/s', createdAt: '2026-07-03T09:12:00' },
-  { id: 'd-002', name: 'SRR19852341 单样本下载', source: 'SRA', accession: 'SRR19852341', status: 'success', progress: 1, size: '4.2 GB', speed: '-', createdAt: '2026-07-03T08:40:00' },
-  { id: 'd-003', name: 'PRJEB54321 批量下载', source: 'SRA', accession: 'PRJEB54321', status: 'failed', progress: 0.18, size: '1.1 / 6.2 GB', speed: '-', createdAt: '2026-07-03T07:50:00' },
-  { id: 'd-004', name: '百度网盘 — 黄瓜果实转录组', source: '云盘', accession: 'link', status: 'queued', progress: 0, size: '8.6 GB', speed: '-', createdAt: '2026-07-03T09:30:00' },
-  { id: 'd-005', name: '123 云盘 — 拟南芥 ATAC 数据', source: '云盘', accession: 'link', status: 'running', progress: 0.35, size: '2.1 / 6.0 GB', speed: '5.8 MB/s', createdAt: '2026-07-03T09:15:00' },
-  { id: 'd-006', name: '阿里云 OSS — 水稻变异检测', source: '云存储', accession: 'oss://rg-seq/raw', status: 'success', progress: 1, size: '12.3 GB', speed: '-', createdAt: '2026-07-02T16:20:00' },
-  { id: 'd-007', name: '火山引擎 TOS — PBMC 单细胞', source: '云存储', accession: 'tos://scrna/pbmc', status: 'pending', progress: 0, size: '3.8 GB', speed: '-', createdAt: '2026-07-03T09:45:00' },
-  { id: 'd-008', name: 'PRJNA678901 双端数据', source: 'SRA', accession: 'PRJNA678901', status: 'running', progress: 0.81, size: '22.5 / 27.8 GB', speed: '15.1 MB/s', createdAt: '2026-07-02T11:00:00' },
-  { id: 'd-009', name: '华为 OBS — 小鼠脑组织空间组', source: '云存储', accession: 'obs://spatial/mouse-brain', status: 'failed', progress: 0.42, size: '1.7 / 4.0 GB', speed: '-', createdAt: '2026-07-02T14:30:00' },
-  { id: 'd-010', name: 'SRR21876543 转录组下载', source: 'SRA', accession: 'SRR21876543', status: 'success', progress: 1, size: '3.1 GB', speed: '-', createdAt: '2026-07-01T20:10:00' },
-])
+const tasks = ref<DownloadTask[]>([])
 
 const stats = computed(() => {
   const t = tasks.value
@@ -106,7 +112,6 @@ const filteredTasks = computed(() => {
   return tasks.value.filter(t => t.status === statusFilter.value)
 })
 
-// ── 下拉选项（统一走 NSelect，继承全局浅色主题：白底 + 蓝色高亮 + 右侧对勾）──
 const sraMethodOptions = [
   { label: 'AWS S3（推荐，最快）', value: 'aws' },
   { label: 'Aspera 高速', value: 'aspera' },
@@ -138,6 +143,42 @@ function formatTime(iso: string): string {
   return `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+function normalizeStatus(status: string): DownloadTask['status'] {
+  if (status === 'running' || status === 'queued' || status === 'success' || status === 'failed' || status === 'cancelled') {
+    return status
+  }
+  return 'pending'
+}
+
+function mapTask(task: TaskResponse): DownloadTask {
+  const params = task.parameters || {}
+  const source = params.source === 'cloud_storage' ? '云存储' : 'SRA'
+  const accession = String(params.object_uri || params.accession || '-')
+  return {
+    id: task.id,
+    name: task.name,
+    source,
+    accession,
+    status: normalizeStatus(task.status),
+    progress: Number(task.progress || 0),
+    size: '-',
+    speed: '-',
+    createdAt: task.created_at,
+  }
+}
+
+async function fetchDownloads() {
+  loadingTasks.value = true
+  try {
+    const res = await apiClient.get<TaskListResponse>('/downloads')
+    tasks.value = res.data.items.map(mapTask)
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail || '加载下载任务失败')
+  } finally {
+    loadingTasks.value = false
+  }
+}
+
 async function toggleAdvanced() {
   advancedOpen.value = !advancedOpen.value
   if (advancedOpen.value) {
@@ -147,23 +188,45 @@ async function toggleAdvanced() {
   }
 }
 
-function handleSubmit() {
+async function handleSubmit() {
+  if (activeTab.value === 'cloud-drive') {
+    message.warning('云盘极速提取尚未接入后端，当前先支持公共数据库与云存储直拉')
+    return
+  }
+
+  let payload: Record<string, unknown>
   if (activeTab.value === 'sra') {
     if (!sraAccession.value.trim()) { message.warning('请输入登录号'); return }
-    message.success(`已提交 SRA 下载任务：${sraAccession.value}`)
-    sraAccession.value = ''
-  } else if (activeTab.value === 'cloud-drive') {
-    if (!driveLink.value.trim()) { message.warning('请输入分享链接'); return }
-    message.success('已提交云盘提取任务')
-    driveLink.value = ''
-    driveCode.value = ''
+    payload = {
+      source: 'sra',
+      accession: sraAccession.value.trim(),
+      download_method: sraMethod.value,
+      target_directory: targetDirectory.value,
+    }
   } else {
     if (!storageUri.value.trim()) { message.warning('请输入对象 URI'); return }
-    message.success('已提交云存储拉取任务')
-    storageUri.value = ''
+    payload = {
+      source: 'cloud_storage',
+      cloud_provider: storageProvider.value,
+      object_uri: storageUri.value.trim(),
+      recursive: storageRecursive.value,
+      target_directory: targetDirectory.value,
+    }
   }
+
   submitting.value = true
-  setTimeout(() => { submitting.value = false }, 800)
+  try {
+    const res = await apiClient.post<TaskResponse>('/downloads', payload)
+    message.success('已提交下载任务')
+    if (activeTab.value === 'sra') sraAccession.value = ''
+    if (activeTab.value === 'cloud-storage') storageUri.value = ''
+    await fetchDownloads()
+    router.push(`/tasks/${res.data.id}`)
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail || '提交下载任务失败')
+  } finally {
+    submitting.value = false
+  }
 }
 
 const inputFocusStyle = {
@@ -178,6 +241,8 @@ const inputFocusStyle = {
     el.style.boxShadow = 'none'
   },
 }
+
+onMounted(fetchDownloads)
 </script>
 
 <template>
@@ -425,6 +490,22 @@ const inputFocusStyle = {
           <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">对象 URI <span class="text-red-400">*</span></label>
           <input v-model="storageUri" type="text" placeholder="oss://bucket-name/path/to/data/" class="flex-1 max-w-lg h-10 px-3.5 text-sm font-mono border transition-all duration-200 focus:outline-none" style="border-color: var(--neutral-border); border-radius: 8px; color: var(--neutral-text-1)" v-on="inputFocusStyle" />
         </div>
+        <div class="flex items-start gap-4">
+          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">下载到</label>
+          <NSelect
+            v-model:value="targetDirectory"
+            :options="targetDirectoryOptions"
+            size="large"
+            style="width: 240px"
+          />
+        </div>
+        <div class="flex items-start gap-4">
+          <div class="w-20 shrink-0"></div>
+          <label class="flex items-center gap-2 text-sm cursor-pointer" style="color: var(--neutral-text-1)">
+            <input v-model="storageRecursive" type="checkbox" class="accent-blue-500 w-4 h-4" />
+            递归拉取目录
+          </label>
+        </div>
         <div class="flex items-start gap-4 pt-1">
           <div class="w-20 shrink-0"></div>
           <button class="h-10 px-6 text-sm font-semibold text-white rounded-lg transition-all duration-200 flex items-center gap-2 disabled:opacity-50 hover:-translate-y-px active:scale-[0.98]" :disabled="submitting" style="background: linear-gradient(135deg, #4F8EF7, #9B59B6); box-shadow: 0 4px 14px rgba(79,142,247,0.3); border-radius: 8px" @click="handleSubmit">
@@ -455,9 +536,9 @@ const inputFocusStyle = {
             size="small"
             style="width: 120px"
           />
-          <button class="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md transition-colors" style="color: var(--neutral-text-2); border-radius: 6px" @mouseenter="($event.currentTarget as HTMLElement).style.color='#4F8EF7'; ($event.currentTarget as HTMLElement).style.background='var(--neutral-hover)'" @mouseleave="($event.currentTarget as HTMLElement).style.color='var(--neutral-text-2)'; ($event.currentTarget as HTMLElement).style.background='transparent'">
+          <button class="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md transition-colors" style="color: var(--neutral-text-2); border-radius: 6px" @mouseenter="($event.currentTarget as HTMLElement).style.color='#4F8EF7'; ($event.currentTarget as HTMLElement).style.background='var(--neutral-hover)'" @mouseleave="($event.currentTarget as HTMLElement).style.color='var(--neutral-text-2)'; ($event.currentTarget as HTMLElement).style.background='transparent'" @click="fetchDownloads">
             <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-            刷新
+            {{ loadingTasks ? '刷新中' : '刷新' }}
           </button>
         </div>
       </div>

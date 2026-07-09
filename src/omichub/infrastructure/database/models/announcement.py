@@ -23,9 +23,7 @@ class AnnouncementModel(Base, TimestampMixin):
 
     __tablename__ = "announcements"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title: Mapped[str] = mapped_column(String(200), nullable=False, comment="通知标题")
     description: Mapped[str] = mapped_column(Text, nullable=False, comment="通知描述")
     type: Mapped[str] = mapped_column(
@@ -49,9 +47,5 @@ class AnnouncementModel(Base, TimestampMixin):
     dismiss_behavior: Mapped[str] = mapped_column(
         String(20), default="none", comment="daily/forever/none"
     )
-    priority: Mapped[int] = mapped_column(
-        Integer, default=0, comment="优先级，越大越优先"
-    )
-    is_enabled: Mapped[bool] = mapped_column(
-        Boolean, default=True, comment="是否启用"
-    )
+    priority: Mapped[int] = mapped_column(Integer, default=0, comment="优先级，越大越优先")
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")

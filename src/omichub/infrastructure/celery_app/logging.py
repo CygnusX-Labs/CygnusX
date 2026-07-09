@@ -3,22 +3,48 @@
 为每个 Celery 任务自动创建独立的文本日志文件，实现「DB + WebSocket 实时流」之外的
 文本备份，便于在宿主机上按任务 ID 直接 tail/grep 排查。
 
-日志路径：/app/logs/celery/tasks/{task_id}.log
-（通过 docker-compose.worker.yml 挂载到 /data/omichub/logs/celery/tasks）
+默认日志路径：/app/logs/celery/tasks/{task_id}.log
+Docker Worker 通过 OMICHUB_CELERY_LOG_DIR 覆盖到 /data/omichub/logs/celery/tasks。
 """
 
 import os
+from contextlib import suppress
 from pathlib import Path
 
 from celery import Task
 from loguru import logger
 
-TASK_LOG_DIR = Path(os.getenv("OMICHUB_CELERY_LOG_DIR", "/app/logs/celery/tasks"))
+TASK_LOG_DIR = Path(
+    os.getenv(
+        "OMICHUB_CELERY_LOG_DIR",
+        str(Path(os.getenv("OMICHUB_LOG_DIR", "/app/logs")) / "celery" / "tasks"),
+    )
+)
+TASK_LOG_ROTATION = os.getenv("OMICHUB_CELERY_LOG_ROTATION", "20 MB")
+TASK_LOG_RETENTION = os.getenv("OMICHUB_CELERY_LOG_RETENTION", "7 days")
+TASK_LOG_COMPRESSION = os.getenv("OMICHUB_CELERY_LOG_COMPRESSION", "zip")
 
 
-def _ensure_task_log_dir() -> None:
-    """确保任务日志目录存在。"""
-    TASK_LOG_DIR.mkdir(parents=True, exist_ok=True)
+def _add_task_file_sink(task_id: str) -> int | None:
+    """为单个任务添加文件 sink；失败时降级为仅全局日志。"""
+    try:
+        TASK_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        sink_path = TASK_LOG_DIR / f"{task_id}.log"
+        return logger.add(
+            sink_path,
+            level="INFO",
+            format=(
+                "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | "
+                "{name}:{function}:{line} | {message}"
+            ),
+            rotation=TASK_LOG_ROTATION,
+            retention=TASK_LOG_RETENTION,
+            compression=TASK_LOG_COMPRESSION,
+            enqueue=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"Celery task file log disabled for {task_id}: {exc}")
+        return None
 
 
 class LoggedTask(Task):
@@ -30,22 +56,13 @@ class LoggedTask(Task):
 
     def __call__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         task_id = self.request.id or "no-id"
-        _ensure_task_log_dir()
-        sink_path = TASK_LOG_DIR / f"{task_id}.log"
-
-        handler_id = logger.add(
-            sink_path,
-            level="INFO",
-            format=(
-                "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | "
-                "{name}:{function}:{line} | {message}"
-            ),
-            enqueue=True,
-        )
+        handler_id = _add_task_file_sink(task_id)
 
         try:
             logger.info(f"Task {task_id} started: {self.name}")
             return self.run(*args, **kwargs)
         finally:
             logger.info(f"Task {task_id} finished: {self.name}")
-            logger.remove(handler_id)
+            if handler_id is not None:
+                with suppress(ValueError):
+                    logger.remove(handler_id)

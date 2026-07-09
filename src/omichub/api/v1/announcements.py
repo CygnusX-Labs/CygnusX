@@ -58,9 +58,7 @@ async def list_announcements(_admin: AdminRequired, db: DbSession):
     response_model=AnnouncementResponse,
     summary="获取单个通知（管理员）",
 )
-async def get_announcement(
-    announcement_id: UUID, _admin: AdminRequired, db: DbSession
-):
+async def get_announcement(announcement_id: UUID, _admin: AdminRequired, db: DbSession):
     repo = SqlAlchemyAnnouncementRepository(db)
     service = AnnouncementService(repo)
     announcement = await service.get_by_id(str(announcement_id))
@@ -74,9 +72,7 @@ async def get_announcement(
     response_model=AnnouncementResponse,
     summary="创建通知（管理员）",
 )
-async def create_announcement(
-    req: AnnouncementCreate, _admin: AdminRequired, db: DbSession
-):
+async def create_announcement(req: AnnouncementCreate, _admin: AdminRequired, db: DbSession):
     repo = SqlAlchemyAnnouncementRepository(db)
     service = AnnouncementService(repo)
     return await service.create(**req.model_dump())
@@ -95,18 +91,14 @@ async def update_announcement(
 ):
     repo = SqlAlchemyAnnouncementRepository(db)
     service = AnnouncementService(repo)
-    announcement = await service.update(
-        str(announcement_id), **req.model_dump(exclude_unset=True)
-    )
+    announcement = await service.update(str(announcement_id), **req.model_dump(exclude_unset=True))
     if announcement is None:
         raise NotFoundError("通知不存在")
     return announcement
 
 
 @router.delete("/{announcement_id}", summary="删除通知（管理员）")
-async def delete_announcement(
-    announcement_id: UUID, _admin: AdminRequired, db: DbSession
-):
+async def delete_announcement(announcement_id: UUID, _admin: AdminRequired, db: DbSession):
     repo = SqlAlchemyAnnouncementRepository(db)
     service = AnnouncementService(repo)
     ok = await service.delete(str(announcement_id))

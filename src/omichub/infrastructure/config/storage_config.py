@@ -66,8 +66,5 @@ def get_storage_config(yaml_path: str | Path | None = None) -> StorageConfig:
         or str(settings.storage_path or "").strip()
         or _DEFAULT_DATA_ROOT
     )
-    users_subdir = (
-        str(storage.get("users_subdir") or "").strip()
-        or _DEFAULT_USERS_SUBDIR
-    )
+    users_subdir = str(storage.get("users_subdir") or "").strip() or _DEFAULT_USERS_SUBDIR
     return StorageConfig(data_root=data_root, users_subdir=users_subdir)

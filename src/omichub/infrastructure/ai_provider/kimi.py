@@ -50,18 +50,21 @@ class KimiProvider:
         temperature: float = 0.7,
     ) -> AsyncIterator[str]:
         """流式对话"""
-        async with httpx.AsyncClient() as client, client.stream(
-            "POST",
-            f"{self.base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            json={
-                "model": model or self.model,
-                "messages": messages,
-                "temperature": temperature,
-                "stream": True,
-            },
-            timeout=120,
-        ) as response:
+        async with (
+            httpx.AsyncClient() as client,
+            client.stream(
+                "POST",
+                f"{self.base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                json={
+                    "model": model or self.model,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "stream": True,
+                },
+                timeout=120,
+            ) as response,
+        ):
             async for line in response.aiter_lines():
                 if line.startswith("data: "):
                     data = line[6:]

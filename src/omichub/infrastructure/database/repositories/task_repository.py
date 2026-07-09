@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import Row, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from omichub.core.config import get_settings
 from omichub.domain.task.entities import Task, TaskLog
 from omichub.domain.task.repositories import ITaskRepository
 from omichub.domain.task.value_objects import ExecutionMode, LogLevel, TaskStatus
@@ -55,14 +56,34 @@ class TaskRepositoryImpl(ITaskRepository):
         return False
 
     async def append_log(self, task_id: UUID, log_entry: dict) -> None:
-        """追加单条日志"""
+        """追加单条日志，并限制 DB 中的日志体积。"""
         model = await self._session.get(TaskModel, task_id)
         if model is None:
             return
+
+        settings = get_settings()
+        bounded_entry = self._bound_log_entry(
+            log_entry,
+            max_chars=settings.task_log_message_max_chars,
+        )
         logs = list(model.logs or [])
-        logs.append(log_entry)
+        logs.append(bounded_entry)
+        if settings.task_log_max_entries > 0:
+            logs = logs[-settings.task_log_max_entries :]
         model.logs = logs
         await self._session.flush()
+
+    @staticmethod
+    def _bound_log_entry(log_entry: dict, max_chars: int) -> dict:
+        """截断超长 message，避免 tasks.logs JSON 字段无限膨胀。"""
+        entry = dict(log_entry)
+        message = entry.get("message")
+        if isinstance(message, str) and max_chars > 0 and len(message) > max_chars:
+            omitted = len(message) - max_chars
+            entry["message"] = f"{message[:max_chars]}... [truncated {omitted} chars]"
+            entry["truncated"] = True
+            entry["original_length"] = len(message)
+        return entry
 
     # ------------------------------------------------------------------
     # 仪表板统计聚合（返回原始行/标量，不走 _to_entity）

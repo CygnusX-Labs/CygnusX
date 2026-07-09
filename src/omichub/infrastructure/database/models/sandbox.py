@@ -25,7 +25,5 @@ class SandboxSessionModel(Base, TimestampMixin):
     container_name: Mapped[str] = mapped_column(String(128), default="")
     status: Mapped[str] = mapped_column(String(20), default="creating", index=True)
     language: Mapped[str] = mapped_column(String(20), default="python")
-    last_activity: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.now
-    )
+    last_activity: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.now)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

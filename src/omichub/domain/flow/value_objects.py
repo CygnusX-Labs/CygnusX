@@ -228,18 +228,14 @@ class SampleSheetMappingConfig(_StrictModel):
     """
 
     output_name: str = Field(default="samples.csv", description="输出文件名")
-    columns: dict[str, str] = Field(
-        ..., min_length=1, description="CSV 列名 → 输入字段名映射"
-    )
+    columns: dict[str, str] = Field(..., min_length=1, description="CSV 列名 → 输入字段名映射")
 
 
 class ComparisonsMappingConfig(_StrictModel):
     """差异比较组 CSV 输出映射配置（如 contrasts.csv）。"""
 
     output_name: str = Field(default="contrasts.csv", description="输出文件名")
-    columns: dict[str, str] = Field(
-        ..., min_length=1, description="CSV 列名 → 输入字段名映射"
-    )
+    columns: dict[str, str] = Field(..., min_length=1, description="CSV 列名 → 输入字段名映射")
 
 
 class PipelineMappingConfig(_StrictModel):
@@ -258,15 +254,9 @@ class PipelineMappingConfig(_StrictModel):
     config_fields: list[str] = Field(
         default=[], description="写入主配置文件的字段列表（支持点号嵌套路径）"
     )
-    computed_fields: dict[str, str] = Field(
-        default={}, description="动态计算字段：输出键 → 占位符"
-    )
-    list_fields: list[str] = Field(
-        default=[], description="需要强制转为字符串列表的字段名"
-    )
-    defaults: dict[str, Any] = Field(
-        default={}, description="字段默认值（当前端未传或为空时使用）"
-    )
+    computed_fields: dict[str, str] = Field(default={}, description="动态计算字段：输出键 → 占位符")
+    list_fields: list[str] = Field(default=[], description="需要强制转为字符串列表的字段名")
+    defaults: dict[str, Any] = Field(default={}, description="字段默认值（当前端未传或为空时使用）")
     sample_sheet: SampleSheetMappingConfig | None = Field(
         default=None, description="样本表 CSV 生成规则"
     )

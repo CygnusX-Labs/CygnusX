@@ -25,8 +25,6 @@ async def test_list_flows(client, auth_headers):
 @pytest.mark.integration
 async def test_flows_redirect(client, auth_headers):
     """测试顶层 /flows 在开发模式下重定向到 /api/v1/flows"""
-    response = await client.get(
-        "/flows", headers=auth_headers, follow_redirects=False
-    )
+    response = await client.get("/flows", headers=auth_headers, follow_redirects=False)
     assert response.status_code == 307
     assert response.headers["location"] == "/api/v1/flows"

@@ -10,7 +10,6 @@ import asyncio
 import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
-from uuid import UUID
 
 from celery import shared_task
 
@@ -45,9 +44,7 @@ async def _reconcile_used_storage() -> dict:
             user_dir = users_root / str(user_id)
             actual = _dir_size(user_dir) if user_dir.exists() else 0
             await session.execute(
-                update(UserModel)
-                .where(UserModel.id == user_id)
-                .values(used_storage=actual)
+                update(UserModel).where(UserModel.id == user_id).values(used_storage=actual)
             )
             reconciled += 1
 

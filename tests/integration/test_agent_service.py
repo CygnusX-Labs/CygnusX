@@ -82,9 +82,7 @@ async def test_toggle_default_agent_transfers_default(service: AgentService) -> 
 async def test_toggle_default_agent_without_successor_raises(service: AgentService) -> None:
     """当同分类没有其他启用 Agent 时，停用默认 Agent 应抛出业务异常。"""
     category = f"test-{uuid4().hex[:8]}"
-    agent = await service.create_agent(
-        CreateAgentRequest(name="孤独默认", category=category)
-    )
+    agent = await service.create_agent(CreateAgentRequest(name="孤独默认", category=category))
     await service.set_default_agent(agent.agent_id)
 
     with pytest.raises(BusinessError):
@@ -150,7 +148,9 @@ async def test_update_agent_with_null_mcps_and_skills(service: AgentService) -> 
     assert updated.skill_ids == []
 
 
-async def test_update_default_agent_with_model_and_mounts(service: AgentService, db: AsyncSession) -> None:
+async def test_update_default_agent_with_model_and_mounts(
+    service: AgentService, db: AsyncSession
+) -> None:
     """默认 Agent 也可以正常修改绑定模型和 MCP/技能挂载，不应报系统错误。"""
     provider = AIProviderConfigModel(
         id=uuid4(),

@@ -3,7 +3,7 @@
 > 面向「自己造镜像」的实现者。后端（Python）只负责拼 `docker run` 命令、读写挂载目录、
 > 解析 CSV、生成 Plotly；**R 镜像内部跑什么、吃什么、吐什么**全由本文档约束。
 >
-> 配套：物种配置见 `tools/enrichments/species_config.yaml`；后端调度见
+> 配套：物种配置见 `tool_configs/enrichments/species_config.yaml`；后端调度见
 > `src/omichub/infrastructure/execution/enrichment_runner.py`。
 
 ---

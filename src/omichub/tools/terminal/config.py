@@ -1,7 +1,7 @@
 """云端沙盒终端外置 YAML 配置加载器。
 
-配置文件路径由 settings.terminal_config_yaml 决定（默认 tools/terminal/terminal_config.yaml，
-集中配置于 tools/<工具名>/ 目录，容器内经 tools/ 挂载 :ro 可读；与 jbrowse / enrichment 同模式）。
+配置文件路径由 settings.terminal_config_yaml 决定（默认 tool_configs/terminal/terminal_config.yaml，
+集中配置于 tool_configs/<工具名>/ 目录，容器内经 tool_configs/ 挂载 :ro 可读；与 jbrowse / enrichment 同模式）。
 
 热重载策略：
 - TerminalConfigManager 单例缓存解析后的 TerminalConfig，按文件 mtime 判定是否需要重新解析；
@@ -159,9 +159,14 @@ class TerminalConfig(BaseModel):
     enabled: bool = True
     image: ImageConfig = Field(default_factory=ImageConfig)
     default_resources: ResourceConfig = Field(default_factory=ResourceConfig)
-    max_resources: ResourceConfig = Field(default_factory=lambda: ResourceConfig(
-        memory_mb=4096, cpu_cores=4.0, pid_limit=500, tmpfs_size_mb=500,
-    ))
+    max_resources: ResourceConfig = Field(
+        default_factory=lambda: ResourceConfig(
+            memory_mb=4096,
+            cpu_cores=4.0,
+            pid_limit=500,
+            tmpfs_size_mb=500,
+        )
+    )
     lifecycle: LifecycleConfig = Field(default_factory=LifecycleConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     network: NetworkConfig = Field(default_factory=NetworkConfig)
@@ -172,7 +177,9 @@ class TerminalConfig(BaseModel):
 class TerminalConfigManager:
     """配置管理器，支持 mtime 热重载。"""
 
-    def __init__(self, config_path: str | Path | None = None, images_config_path: str | Path | None = None) -> None:
+    def __init__(
+        self, config_path: str | Path | None = None, images_config_path: str | Path | None = None
+    ) -> None:
         self.config_path = str(config_path) if config_path else get_settings().terminal_config_yaml
         self.images_config_path = (
             str(images_config_path)

@@ -12,7 +12,6 @@ import {
   AnalyticsOutline,
   FolderOutline,
   SearchOutline,
-  CodeSlashOutline,
   RocketOutline,
 } from '@vicons/ionicons5'
 import { isToday, isYesterday, parseISO } from 'date-fns'
@@ -47,7 +46,6 @@ const functionMenus = [
   { key: 'analysis', label: '分析流程', icon: AnalyticsOutline, path: '/flows' },
   { key: 'data', label: '项目数据', icon: FolderOutline, path: '/files' },
   // { key: 'research', label: '深度研究', icon: SearchOutline, path: '/research' },
-  { key: 'code', label: '代码沙盒', icon: CodeSlashOutline, path: '/sandbox' },
   // { key: 'agent', label: 'Agent 模式', icon: RocketOutline, path: '/agent', badge: 'New' },
 ]
 

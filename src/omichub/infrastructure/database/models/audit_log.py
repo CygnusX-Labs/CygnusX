@@ -20,13 +20,9 @@ class AuditLogModel(Base):
 
     __tablename__ = "audit_logs"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     # 操作者；未登录请求（如登录失败）为 NULL
-    user_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, index=True
-    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     username: Mapped[str | None] = mapped_column(String(100), nullable=True)
     method: Mapped[str] = mapped_column(String(10), index=True)  # POST/PUT/PATCH/DELETE
     path: Mapped[str] = mapped_column(String(500), index=True)

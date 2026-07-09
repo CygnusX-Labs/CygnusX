@@ -10,7 +10,7 @@ import {
   DocumentTextOutline, CloudUploadOutline, DownloadOutline, BarChartOutline, SettingsOutline,
   InformationCircleOutline, PersonOutline, LogOutOutline, MoonOutline, SunnyOutline,
   MenuOutline, ChevronForwardOutline, ChevronDownOutline,
-  NotificationsOutline, HelpCircleOutline, ChatbubblesOutline, Planet, CodeSlashOutline,
+  NotificationsOutline, HelpCircleOutline, ChatbubblesOutline, Planet,
   WalletOutline, PricetagOutline, SparklesOutline, ConstructOutline, LayersOutline,
   TerminalOutline,
 } from '@vicons/ionicons5'
@@ -178,12 +178,11 @@ const mainNavItems = computed<NavItem[]>(() => [
     ],
   },
   { key: 'files', label: '数据管理', to: '/files', icon: CloudUploadOutline },
-  { key: 'reference-genomes', label: '参考基因组', to: '/reference-genomes', icon: LayersOutline },
+  { key: 'database', label: '数据库', to: '/database', icon: LayersOutline },
   { key: 'downloads', label: '数据下载', to: '/downloads', icon: DownloadOutline },
   { key: 'tasks', label: '任务中心', to: '/tasks', icon: DocumentTextOutline },
   { key: 'reports', label: '结果报告中心', to: '/reports', icon: DocumentTextOutline },
   { key: 'ai', label: 'AI 助手', to: '/ai', icon: ChatbubblesOutline },
-  { key: 'sandbox', label: '代码沙盒', to: '/sandbox', icon: CodeSlashOutline },
   { key: 'tools', label: '生信工具箱', to: '/tools', icon: ConstructOutline },
 ])
 
@@ -201,6 +200,7 @@ const adminNavItems = computed<NavItem[]>(() => [
     icon: SettingsOutline,
     children: [
       { key: 'admin-users', label: '用户管理', to: '/admin/users', icon: PersonOutline },
+      { key: 'admin-home-quick-entries', label: '首页入口管理', to: '/admin/home-quick-entries', icon: GridOutline },
       { key: 'admin-cookies-accounts', label: '饼干账户管理', to: '/admin/cookies/accounts', icon: WalletOutline },
       { key: 'admin-cookies-pricing', label: '饼干定价管理', to: '/admin/cookies/pricing', icon: PricetagOutline },
       { key: 'admin-ai-providers', label: 'AI 模型配置', to: '/admin/ai-providers', icon: SparklesOutline },
@@ -215,8 +215,13 @@ function isActive(item: NavItem): boolean {
   if (!item.children) {
     // 生信工具箱：子工具页面也保持高亮
     if (item.key === 'tools') return route.path === '/tools' || route.path.startsWith('/tools/')
-    // 参考基因组：详情页也保持高亮
-    if (item.key === 'reference-genomes') return route.path === '/reference-genomes' || route.path.startsWith('/reference-genomes/')
+    // 数据库：新旧入口和详情页都保持高亮
+    if (item.key === 'database') {
+      return route.path === '/database'
+        || route.path.startsWith('/database/')
+        || route.path === '/reference-genomes'
+        || route.path.startsWith('/reference-genomes/')
+    }
     if (item.to.includes('?')) {
       const [path, query] = item.to.split('?')
       const type = query.split('=')[1]

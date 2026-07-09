@@ -10,6 +10,12 @@
 #   3. mkdir -p /data/omichub                  # 任务数据目录（首次部署）
 #   4. 宿主 conda 实际在 /home/zj/miniconda3，分析 env 在 /home/zj/.local/share/mamba/envs
 # ============================================
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
 services:
   worker:
     build:
@@ -17,6 +23,7 @@ services:
       dockerfile: deploy/docker/Dockerfile
     container_name: omichub-worker
     restart: unless-stopped
+    logging: *default-logging
     user: "${PUID:-1000}:${PGID:-1000}"   # 以宿主用户运行，避免 root；任务数据/conda envs 文件归宿主所有
     env_file:
       - ../../.env
@@ -30,6 +37,8 @@ services:
       - AL_API_KEY=${AL_API_KEY}
       - ARK_API_KEY=${ARK_API_KEY}
       - HOME=/tmp                        # uid 1000 无 passwd 条目，显式 HOME 防 conda/expanduser 失败
+      - OMICHUB_LOG_DIR=/app/logs
+      - OMICHUB_CELERY_LOG_DIR=/data/omichub/logs/celery/tasks
       # 优先用宿主 conda 的 snakemake（python3.13，与 RNAFlow 实跑一致），回退镜像 venv
       - PATH=/home/zj/miniconda3/envs/snakemake/bin:/home/zj/miniconda3/bin:/app/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       # conda 环境创建目录（可写）：--use-conda 时按 env hash 在此创建/复用，避免只读挂载冲突

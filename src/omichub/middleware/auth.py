@@ -19,8 +19,8 @@ PUBLIC_PATHS = frozenset(
         "/api/v1/auth/setup-required",
         "/api/v1/auth/setup",
         # 站点级公开配置：登录页未登录即需读取
-        "/api/v1/site-settings",   # 注册开关（关闭时登录页拦截注册按钮）
-        "/api/v1/site-content",    # 首页文案 + 注册提示文案（YAML 驱动）
+        "/api/v1/site-settings",  # 注册开关（关闭时登录页拦截注册按钮）
+        "/api/v1/site-content",  # 首页文案 + 注册提示文案（YAML 驱动）
     }
 )
 

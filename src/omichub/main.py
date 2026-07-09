@@ -47,10 +47,16 @@ async def _init_default_ai_provider() -> None:
         if count > 0:
             return
 
-        provider_type = ProviderType.KIMI if settings.llm_provider == "kimi" else ProviderType.OPENAI
+        provider_type = (
+            ProviderType.KIMI if settings.llm_provider == "kimi" else ProviderType.OPENAI
+        )
         model = settings.kimi_model if settings.llm_provider == "kimi" else settings.openai_model
-        base_url = settings.kimi_base_url if settings.llm_provider == "kimi" else settings.openai_base_url
-        api_key = settings.kimi_api_key if settings.llm_provider == "kimi" else settings.openai_api_key
+        base_url = (
+            settings.kimi_base_url if settings.llm_provider == "kimi" else settings.openai_base_url
+        )
+        api_key = (
+            settings.kimi_api_key if settings.llm_provider == "kimi" else settings.openai_api_key
+        )
 
         if not api_key:
             return
@@ -166,7 +172,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning(f"欢迎词补齐失败，降级使用兜底文案: {e}")
 
     welcome_task = asyncio.create_task(_seed_welcome())
-
 
     yield
 

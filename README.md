@@ -353,7 +353,7 @@ deploy/docker/        Docker 部署配置
   docker-compose.prod.yml  生产环境 override
   nginx/nginx.conf   nginx 配置 (bind mount 挂载 frontend/dist)
 flows/                Snakemake 流程 YAML (rna_seq/atac_seq)
-tools/                生信工具箱工具配置 (YAML 热重载)
+tool_configs/           生信工具箱工具配置 (YAML 热重载)
   terminal/           云端沙盒终端 (Dockerfile + terminal_config.yaml)
   jbrowse/            JBrowse 2 基因组浏览器配置
   enrichments/        KEGG/GO 富集分析物种配置
@@ -387,7 +387,7 @@ docs/                 架构设计文档
 |--------|------|-----------------|------|
 | `_pgdata/` | PostgreSQL 全部关系型数据（账号/任务/AI 会话） | `db` 服务 bind mount → `/var/lib/postgresql/data` | 属主 postgres(uid 70)，`rsync` 需 `-a` 保留属主；停库后再迁移 |
 | `_redis/` | Redis 持久化 + Celery 队列 + 限流缓存 | `cache` 服务 bind mount → `/data` | 属主 redis(uid 999)；缓存类数据，丢失可重建 |
-| `jbrowse/` | 参考基因组 FASTA(3.3G) + 基因注释(3.2G) | `tools/jbrowse/jbrowse_config.yaml` 绝对路径 | 经 nginx `/tracks/` 流式读取；位于 `data_root` 下，换算自动兼容 |
+| `jbrowse/` | 参考基因组 FASTA(3.3G) + 基因注释(3.2G) | `tool_configs/jbrowse/jbrowse_config.yaml` 绝对路径 | 经 nginx `/tracks/` 流式读取；位于 `data_root` 下，换算自动兼容 |
 | `knowledge/` | 知识库 `meta.yaml` + `*.md` + 配图 | 镜像自仓库 `docs/knowledge/` | 在线编辑读仓库源；此为数据区备份副本 |
 | `welcome/` | 预生成欢迎词数组 + 轮询游标 | `config.py` 的 `welcome_yaml` / `welcome_state_yaml` | 启动时不足 20 条自动调 AI 补齐 |
 
@@ -877,7 +877,7 @@ items:
 1. 构建镜像（`make docker-reload` 自动执行，或手动）：
 
    ```bash
-   docker build -t omichub/sandbox-terminal:latest tools/terminal/docker/
+   docker build -t omichub/sandbox-terminal:latest tool_configs/terminal/docker/
    ```
 
 2. 确保隔离网络存在（`make docker-reload` 自动创建）：
@@ -886,7 +886,7 @@ items:
    docker network create omichub-sandbox-net
    ```
 
-3. 所有运行参数集中在 `tools/terminal/terminal_config.yaml`，修改后**自动热重载**（无需重启）：
+3. 所有运行参数集中在 `tool_configs/terminal/terminal_config.yaml`，修改后**自动热重载**（无需重启）：
 
    | 关键参数 | 默认值 | 说明 |
    |---------|--------|------|
@@ -909,7 +909,7 @@ items:
 
 samtools, bcftools, bedtools, fastqc, seqkit, python3 (numpy/pandas/biopython/pysam), vim, htop, jq
 
-详细架构与代码分布见 `tools/terminal/README.md`。
+详细架构与代码分布见 `tool_configs/terminal/README.md`。
 
 ## 安全加固清单
 
@@ -1010,3 +1010,296 @@ MCP Server 注册/调用为**管理员功能**，已做以下限制：
 - `OmicHub_CherryStudio_整合实施文档.md` — AI 助手 Cherry Studio SSE 架构
 - `OmicHub_完整系统架构设计文档_v3.md` — 整体架构设计
 - `modules/` — 各模块详细设计
+
+## 当前工作区变更摘要
+
+> 自动生成于 `2026-07-09T21:40:00+08:00`，反映当前 Git 工作区状态。
+
+| 类型 | 数量 |
+|------|------|
+| 修改 (Modified) | 145 |
+| 删除 (Deleted) | 26 |
+| 未跟踪 (Untracked) | 18 |
+| 子模块修改 | 1 |
+
+### 主要结构性变更
+
+- **docs/ 清理**：删除 13 个 `* copy.md` 副本文件。
+- **tools/ 重命名**：仓库根 `tools/` 目录整体迁移为 `tool_configs/`，避免与后端代码包 `src/omichub/tools/` 同名混淆。
+
+### 修改的文件（按目录分组）
+
+#### LOG_ARCHITECTURE.md
+- LOG_ARCHITECTURE.md
+
+#### Makefile
+- Makefile
+
+#### README.md
+- README.md
+
+#### data
+- data/OmicHub.yaml
+- data/ai_providers.yaml
+
+#### deploy/docker
+- deploy/docker/Dockerfile
+- deploy/docker/docker-compose.worker.yml
+- deploy/docker/docker-compose.yml
+
+#### docs
+- docs/26.7.6/KEGG_Docker_契约.md
+- docs/knowledge/data-directory-guide.md
+
+#### frontend/public
+- frontend/public/genomes.yaml
+
+#### frontend/src
+- frontend/src/api/terminal.ts
+- frontend/src/components/ai-chat/legacy/KimiLayout.vue
+- frontend/src/components/ai-chat/legacy/KimiSidebar.vue
+- frontend/src/components/task/TaskTable.vue
+- frontend/src/components/terminal/ImageSelector.vue
+- frontend/src/components/terminal/ResourceSettings.vue
+- frontend/src/layouts/DefaultLayout.vue
+- frontend/src/mock/referenceGenomes.ts
+- frontend/src/router/index.ts
+- frontend/src/stores/chat.ts
+- frontend/src/stores/terminal.ts
+- frontend/src/types/download.ts
+- frontend/src/types/index.ts
+- frontend/src/types/jbrowse.ts
+- frontend/src/types/site-content.ts
+- frontend/src/types/terminal.ts
+- frontend/src/views/BioTools/TerminalView.vue
+- frontend/src/views/BioTools/ToolsHubView.vue
+- frontend/src/views/DownloadsView.vue
+- frontend/src/views/FilesView.vue
+- frontend/src/views/HomeView.vue
+- frontend/src/views/ReferenceGenomeDetailView.vue
+- frontend/src/views/ReferenceGenomesView.vue
+
+#### report
+- report/01_架构梳理.md
+- report/04_可优化点与建议.md
+
+#### src/omichub/api/v1/admin
+- src/omichub/api/v1/admin/admin_cookies.py
+- src/omichub/api/v1/admin/platform_config.py
+- src/omichub/api/v1/admin/stats.py
+
+#### src/omichub/api/v1
+- src/omichub/api/v1/announcements.py
+- src/omichub/api/v1/chat.py
+- src/omichub/api/v1/docs.py
+- src/omichub/api/v1/downloads.py
+- src/omichub/api/v1/notification.py
+
+#### src/omichub/application/schemas
+- src/omichub/application/schemas/agent.py
+- src/omichub/application/schemas/base.py
+- src/omichub/application/schemas/chat.py
+- src/omichub/application/schemas/file.py
+- src/omichub/application/schemas/flow.py
+- src/omichub/application/schemas/site_content.py
+- src/omichub/application/schemas/site_settings.py
+- src/omichub/application/schemas/skill.py
+- src/omichub/application/schemas/storage.py
+- src/omichub/application/schemas/task.py
+- src/omichub/application/schemas/terminal.py
+- src/omichub/application/schemas/user.py
+
+#### src/omichub/application/services
+- src/omichub/application/services/agent_service.py
+- src/omichub/application/services/ai_provider_yaml_loader.py
+- src/omichub/application/services/ai_service.py
+- src/omichub/application/services/cookie_service.py
+- src/omichub/application/services/download_service.py
+- src/omichub/application/services/flow_service.py
+- src/omichub/application/services/sandbox_service.py
+- src/omichub/application/services/site_settings_service.py
+- src/omichub/application/services/skill_service.py
+- src/omichub/application/services/storage_service.py
+- src/omichub/application/services/task_cookie_consumer.py
+- src/omichub/application/services/task_service.py
+- src/omichub/application/services/terminal_service.py
+
+#### src/omichub/core
+- src/omichub/core/config.py
+- src/omichub/core/logging.py
+
+#### src/omichub/domain/ai
+- src/omichub/domain/ai/services.py
+
+#### src/omichub/domain/cookie
+- src/omichub/domain/cookie/repositories.py
+
+#### src/omichub/domain/file
+- src/omichub/domain/file/repositories.py
+
+#### src/omichub/domain/flow
+- src/omichub/domain/flow/condition.py
+- src/omichub/domain/flow/entities.py
+- src/omichub/domain/flow/services.py
+- src/omichub/domain/flow/value_objects.py
+
+#### src/omichub/domain/skill
+- src/omichub/domain/skill/entities.py
+
+#### src/omichub/domain/user
+- src/omichub/domain/user/repositories.py
+
+#### src/omichub/infrastructure/ai_provider
+- src/omichub/infrastructure/ai_provider/base.py
+- src/omichub/infrastructure/ai_provider/kimi.py
+- src/omichub/infrastructure/ai_provider/litellm_provider.py
+
+#### src/omichub/infrastructure/celery_app
+- src/omichub/infrastructure/celery_app/celery.py
+- src/omichub/infrastructure/celery_app/logging.py
+- src/omichub/infrastructure/celery_app/tasks/download.py
+- src/omichub/infrastructure/celery_app/tasks/storage.py
+
+#### src/omichub/infrastructure/config
+- src/omichub/infrastructure/config/agent_loader.py
+- src/omichub/infrastructure/config/storage_config.py
+
+#### src/omichub/infrastructure/database/models
+- src/omichub/infrastructure/database/models/__init__.py
+- src/omichub/infrastructure/database/models/agent.py
+- src/omichub/infrastructure/database/models/ai.py
+- src/omichub/infrastructure/database/models/ai_provider.py
+- src/omichub/infrastructure/database/models/announcement.py
+- src/omichub/infrastructure/database/models/audit_log.py
+- src/omichub/infrastructure/database/models/chat.py
+- src/omichub/infrastructure/database/models/cookie.py
+- src/omichub/infrastructure/database/models/file.py
+- src/omichub/infrastructure/database/models/mcp_log.py
+- src/omichub/infrastructure/database/models/notification.py
+- src/omichub/infrastructure/database/models/report.py
+- src/omichub/infrastructure/database/models/sandbox.py
+- src/omichub/infrastructure/database/models/site_settings.py
+- src/omichub/infrastructure/database/models/skill.py
+- src/omichub/infrastructure/database/models/terminal.py
+
+#### src/omichub/infrastructure/database/repositories
+- src/omichub/infrastructure/database/repositories/ai_provider_repository.py
+- src/omichub/infrastructure/database/repositories/announcement_repository.py
+- src/omichub/infrastructure/database/repositories/cookie_repository.py
+- src/omichub/infrastructure/database/repositories/file_repository.py
+- src/omichub/infrastructure/database/repositories/mcp_repository.py
+- src/omichub/infrastructure/database/repositories/notification_repository.py
+- src/omichub/infrastructure/database/repositories/report_repository.py
+- src/omichub/infrastructure/database/repositories/sandbox_repository.py
+- src/omichub/infrastructure/database/repositories/task_repository.py
+
+#### src/omichub/infrastructure/database
+- src/omichub/infrastructure/database/base.py
+
+#### src/omichub/infrastructure/download
+- src/omichub/infrastructure/download/progress_crypto.py
+- src/omichub/infrastructure/download/progress_poller.py
+
+#### src/omichub/infrastructure/execution
+- src/omichub/infrastructure/execution/binary.py
+- src/omichub/infrastructure/execution/generic_builder.py
+- src/omichub/infrastructure/execution/remote.py
+
+#### src/omichub/infrastructure/terminal
+- src/omichub/infrastructure/terminal/docker_manager.py
+
+#### src/omichub
+- src/omichub/main.py
+
+#### src/omichub/middleware
+- src/omichub/middleware/auth.py
+- src/omichub/middleware/rate_limit.py
+- src/omichub/middleware/rbac.py
+
+#### src/omichub/tools/enrichments
+- src/omichub/tools/enrichments/api.py
+- src/omichub/tools/enrichments/config.py
+- src/omichub/tools/enrichments/service.py
+
+#### src/omichub/tools/jbrowse
+- src/omichub/tools/jbrowse/api.py
+- src/omichub/tools/jbrowse/config.py
+- src/omichub/tools/jbrowse/schema.py
+- src/omichub/tools/jbrowse/service.py
+
+#### src/omichub/tools/registry
+- src/omichub/tools/registry/api.py
+- src/omichub/tools/registry/config.py
+
+#### src/omichub/tools/terminal
+- src/omichub/tools/terminal/config.py
+
+#### src/omichub/tools
+- src/omichub/tools/__init__.py
+
+#### tests/integration
+- tests/integration/test_agent_service.py
+- tests/integration/test_downloads.py
+- tests/integration/test_flows.py
+- tests/integration/test_tasks.py
+
+#### tests/unit/core
+- tests/unit/core/test_logging.py
+
+#### tests/unit
+- tests/unit/test_download_service.py
+- tests/unit/test_site_content_service.py
+
+#### todo.md
+- todo.md
+
+### 删除的文件
+
+- docs/26.7.5/Agent_Management_Bug_Fix_Plan copy.md
+- docs/OmicHub_AI界面功能优化计划 copy.md
+- docs/OmicHub_AI聊天窗口Kimi风格改造方案 copy.md
+- docs/OmicHub_CherryStudio_整合实施文档 copy.md
+- docs/OmicHub_生产级优化建议文档 copy.md
+- docs/OmicHub_美化优化文档 copy.md
+- docs/docs/modules/12_cookie_backend copy.md
+- docs/docs/modules/13_cookie_frontend copy.md
+- docs/docs/modules/14_cookie_integration copy.md
+- docs/modules/12_cookie_backend copy.md
+- docs/modules/13_cookie_frontend copy.md
+- docs/modules/14_cookie_integration copy.md
+- tools/README.md
+- tools/enrichments/README.md
+- tools/enrichments/species_config.yaml
+- tools/jbrowse/jbrowse_config.yaml
+- tools/terminal/README.md
+- tools/terminal/docker/Dockerfile
+- tools/terminal/docker/bashrc
+- tools/terminal/docker/zshrc
+- tools/terminal/terminal_config.yaml
+- tools/terminal/terminal_images.yaml
+- tools/tools_design.md
+- tools/tools_setting.yaml
+- tools/volcano/volcano_test_data.csv
+- tools/volcano/volcano_test_data.tsv
+
+### 新增/未跟踪的目录或文件
+
+- alembic/versions/r6s7t8u9v0w1_add_home_quick_entries_to_site_settings.py
+- change.md
+- deploy/logrotate/
+- docs/26.7.8/
+- docs/26.7.9/
+- docs/Makefile_命令说明.md
+- docs/offline_reference_database_build.md
+- docs/plan/2026-07-09_reference_database_optimization_plan.md
+- docs/plan/KEGG_GO离线数据库获取方案.md
+- frontend/src/config/
+- frontend/src/utils/primerForgeProcessor.ts
+- frontend/src/views/AdminHomeQuickEntriesView.vue
+- frontend/src/views/BioTools/PrimerForgeView.vue
+- scripts/README.md
+- scripts/omichubtools/
+- scripts/pyproject.toml
+- tests/unit/test_file_service.py
+- tool_configs/
+

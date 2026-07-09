@@ -24,10 +24,7 @@ class SqlAlchemyNotificationRepository:
                 (NotificationModel.is_global.is_(True))
                 | (NotificationModel.target_user_id == user_id)
             )
-            .where(
-                (NotificationModel.expires_at.is_(None))
-                | (NotificationModel.expires_at > now)
-            )
+            .where((NotificationModel.expires_at.is_(None)) | (NotificationModel.expires_at > now))
             .order_by(desc(NotificationModel.created_at))
         )
         result = await self.session.execute(stmt)

@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-import os
 from pathlib import Path
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -49,13 +48,12 @@ def load_progress_key(work_dir: str, timeout: float = 15.0) -> bytes:
             break
         # 同步 sleep（在 Celery 协程中由调用方用 asyncio.to_thread 包装）
         import time
+
         time.sleep(sleep_time)
         elapsed += sleep_time
         interval = min(interval * 1.5, 2.0)
 
-    raise ProgressKeyTimeout(
-        f"progress.key 在 {timeout}s 内未出现于 {work_dir}"
-    )
+    raise ProgressKeyTimeout(f"progress.key 在 {timeout}s 内未出现于 {work_dir}")
 
 
 async def load_progress_key_async(work_dir: str, timeout: float = 15.0) -> bytes:

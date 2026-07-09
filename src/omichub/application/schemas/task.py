@@ -65,7 +65,9 @@ def task_to_response(task: Any) -> TaskResponse:
         user_id=task.user_id,
         name=task.name,
         status=task.status.value if isinstance(task.status, TaskStatus) else task.status,
-        execution_mode=task.execution_mode.value if isinstance(task.execution_mode, ExecutionMode) else task.execution_mode,
+        execution_mode=task.execution_mode.value
+        if isinstance(task.execution_mode, ExecutionMode)
+        else task.execution_mode,
         parameters=task.parameters or {},
         work_dir=task.work_dir,
         result_path=task.result_path,

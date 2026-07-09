@@ -66,6 +66,7 @@ def _load_single_agent(yaml_path: Path) -> dict[str, Any] | None:
     """加载单个 Agent YAML 文件，失败返回 None"""
     if not yaml_path.exists():
         import logging
+
         logging.getLogger(__name__).warning(f"Agent YAML 不存在: {yaml_path}")
         return None
 
@@ -74,6 +75,7 @@ def _load_single_agent(yaml_path: Path) -> dict[str, Any] | None:
             data = yaml.safe_load(f) or {}
     except (yaml.YAMLError, OSError) as e:
         import logging
+
         logging.getLogger(__name__).warning(f"Agent YAML 解析失败 {yaml_path}: {e}")
         return None
 
@@ -83,6 +85,7 @@ def _load_single_agent(yaml_path: Path) -> dict[str, Any] | None:
     # 必填字段校验
     if not data.get("agent_id"):
         import logging
+
         logging.getLogger(__name__).warning(f"Agent YAML 缺少 agent_id: {yaml_path}")
         return None
 

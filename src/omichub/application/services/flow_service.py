@@ -59,17 +59,14 @@ class FlowService:
             "title": f"Flow parameters: {config.meta.id}",
             "type": "object",
             "properties": {
-                p.name: {"description": p.label, "type": "any"}
-                for p in config.parameters
+                p.name: {"description": p.label, "type": "any"} for p in config.parameters
             },
         }
 
     def reload(self) -> FlowReloadResponse:
         """热重载所有流程配置"""
         count = self._repo.reload()
-        return FlowReloadResponse(
-            loaded=count, message=f"已重新加载 {count} 个流程配置"
-        )
+        return FlowReloadResponse(loaded=count, message=f"已重新加载 {count} 个流程配置")
 
     def _get_or_404(self, flow_id: str) -> FlowConfig:
         """获取流程配置，不存在抛 404"""

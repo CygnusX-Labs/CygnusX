@@ -32,6 +32,7 @@ from omichub.domain.flow.value_objects import (
 # 1. 条件渲染规则（核心）
 # ============================================================
 
+
 class ConditionRule(BaseModel):
     """条件渲染规则 — 支持简单条件和复合条件（and / or 嵌套）。
 
@@ -44,17 +45,11 @@ class ConditionRule(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     field: str | None = Field(default=None, description="依赖的字段名")
-    operator: ConditionOperatorEnum | None = Field(
-        default=None, description="比较运算符"
-    )
+    operator: ConditionOperatorEnum | None = Field(default=None, description="比较运算符")
     value: Any = Field(default=None, description="比较值")
 
-    and_rules: list[ConditionRule] | None = Field(
-        default=None, description="AND 复合条件"
-    )
-    or_rules: list[ConditionRule] | None = Field(
-        default=None, description="OR 复合条件"
-    )
+    and_rules: list[ConditionRule] | None = Field(default=None, description="AND 复合条件")
+    or_rules: list[ConditionRule] | None = Field(default=None, description="OR 复合条件")
 
     @model_validator(mode="after")
     def validate_condition_structure(self) -> ConditionRule:
@@ -80,6 +75,7 @@ class ConditionRule(BaseModel):
 # 2. 参数模型（核心）
 # ============================================================
 
+
 class Parameter(BaseModel):
     """单个参数定义 — 前端据此渲染表单控件。
 
@@ -100,9 +96,7 @@ class Parameter(BaseModel):
     order: int = Field(default=0, description="显示顺序权重（越小越靠前）")
 
     # 条件渲染规则
-    condition: ConditionRule | None = Field(
-        default=None, description="条件渲染规则"
-    )
+    condition: ConditionRule | None = Field(default=None, description="条件渲染规则")
 
     # 类型专属配置（根据 type 选择对应的 config）
     string_config: StringConfig | None = None
@@ -140,8 +134,7 @@ class Parameter(BaseModel):
         for attr_name, config_value in all_configs.items():
             if config_value is not None and attr_name != expected_attr:
                 raise ValueError(
-                    f"type='{self.type.value}' 不应设置 {attr_name}，"
-                    f"期望: {expected_attr}"
+                    f"type='{self.type.value}' 不应设置 {attr_name}，期望: {expected_attr}"
                 )
 
         # GROUP/SECTION 必须有对应的 config 且包含子参数
@@ -178,9 +171,7 @@ class Parameter(BaseModel):
         if param_type in type_checks:
             expected_type = type_checks[param_type]
             if expected_type is not None and not isinstance(v, expected_type):
-                raise ValueError(
-                    f"type='{param_type.value}' 的 default 必须是 {expected_type}"
-                )
+                raise ValueError(f"type='{param_type.value}' 的 default 必须是 {expected_type}")
 
         return v
 
@@ -188,6 +179,7 @@ class Parameter(BaseModel):
 # ============================================================
 # 3. 顶层流程配置模型
 # ============================================================
+
 
 class FlowConfig(BaseModel):
     """完整流程配置 — 顶层模型。
@@ -198,9 +190,7 @@ class FlowConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     meta: FlowMeta = Field(..., description="流程元信息")
-    parameters: list[Parameter] = Field(
-        ..., min_length=1, description="参数定义列表"
-    )
+    parameters: list[Parameter] = Field(..., min_length=1, description="参数定义列表")
     execution: ExecutionConfig = Field(..., description="执行配置")
     sample_sheet: SampleSheetConfig | None = Field(
         default=None, description="样本表配置（如流程需要样本表）"
@@ -249,9 +239,7 @@ class FlowConfig(BaseModel):
             if rule is None:
                 return
             if rule.field and rule.field not in all_fields:
-                raise ValueError(
-                    f"参数 '{path}' 的 condition 引用了未定义的字段: '{rule.field}'"
-                )
+                raise ValueError(f"参数 '{path}' 的 condition 引用了未定义的字段: '{rule.field}'")
             if rule.and_rules:
                 for r in rule.and_rules:
                     check_rule(r, path)
@@ -275,6 +263,7 @@ class FlowConfig(BaseModel):
 # ============================================================
 # 4. FlowDefinition 聚合根
 # ============================================================
+
 
 class FlowDefinition(BaseModel):
     """流程定义聚合根 — 包装 FlowConfig + 系统 ID。

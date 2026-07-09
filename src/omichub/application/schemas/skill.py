@@ -18,7 +18,7 @@ class SkillDTO(BaseModel):
     description: str = ""
     prompt: str = ""
     tool_definition: dict[str, Any] | None = None
-    icon: str = "\U0001F527"
+    icon: str = "\U0001f527"
     category: str = "general"
     is_active: bool = True
     is_builtin: bool = False
@@ -32,7 +32,7 @@ class CreateSkillDTO(BaseModel):
     description: str = ""
     prompt: str = ""
     tool_definition: dict[str, Any] | None = None
-    icon: str = "\U0001F527"
+    icon: str = "\U0001f527"
     category: str = "general"
     is_active: bool = True
 

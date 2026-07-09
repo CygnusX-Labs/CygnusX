@@ -1,7 +1,7 @@
 """JBrowse 2 外置 YAML 配置加载器 —— 参考基因组 / 预设轨道 / 扫描与上传策略。
 
-配置文件路径由 settings.jbrowse_config_yaml 决定（默认 tools/jbrowse/jbrowse_config.yaml，
-集中配置于 tools/<工具名>/ 目录，容器内经 tools/ 挂载 :ro 可读；与 enrichment 同模式）。
+配置文件路径由 settings.jbrowse_config_yaml 决定（默认 tool_configs/jbrowse/jbrowse_config.yaml，
+集中配置于 tool_configs/<工具名>/ 目录，容器内经 tool_configs/ 挂载 :ro 可读；与 enrichment 同模式）。
 
 热重载策略：
 - ConfigManager 单例缓存解析后的 JBrowseConfig，按文件 mtime 判定是否需要重新解析；
@@ -26,18 +26,47 @@ from omichub.core.config import get_settings
 from omichub.infrastructure.config.storage_config import get_storage_config
 
 
+class AssemblyDataFileConfig(BaseModel):
+    """数据库模块数据文件配置（FASTA/GFF/GO/KEGG）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    path: str
+    index_path: str | None = None
+    db_path: str | None = None
+    format: str | None = None
+    build_required: bool = False
+    build_tool: str | None = None
+    build_status: str = "ready"
+    size: str | None = None
+
+
 class AssemblyConfig(BaseModel):
-    """参考基因组配置"""
+    """参考基因组/数据库版本配置"""
 
     model_config = ConfigDict(extra="ignore")
 
     id: str = Field(..., description="唯一标识符")
     name: str = Field(..., description="显示名称")
     species: str | None = None
+    common_name: str | None = None
+    taxonomy_id: str | None = None
+    version_id: str | None = None
+    version_name: str | None = None
+    assembly_name: str | None = None
+    category: str | None = None
+    icon: str | None = None
+    is_default: bool = False
+    status: str = "active"
+    release_date: str | None = None
+    stats: dict[str, Any] = Field(default_factory=dict)
+    data_files: dict[str, AssemblyDataFileConfig] = Field(default_factory=dict)
     description: str | None = None
     fasta: str = Field(..., description="FASTA 文件绝对路径")
     fai: str = Field(..., description="FASTA 索引文件路径")
-    aliases: list[str] = Field(default_factory=list, description="基因组别名（assembly name alternatives）")
+    aliases: list[str] = Field(
+        default_factory=list, description="基因组别名（assembly name alternatives）"
+    )
 
 
 class TrackConfig(BaseModel):
@@ -59,9 +88,7 @@ class AutoScanConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = True
-    scan_paths: list[str] = Field(
-        default_factory=lambda: ["/data/omichub/users/{user_id}/bam/"]
-    )
+    scan_paths: list[str] = Field(default_factory=lambda: ["/data/omichub/users/{user_id}/bam/"])
     extensions: list[str] = Field(
         default_factory=lambda: [".bam", ".bw", ".bigwig", ".vcf.gz", ".bed.gz"]
     )
@@ -76,9 +103,7 @@ class UploadConfig(BaseModel):
 
     upload_dir: str = "/data/omichub/users/{user_id}/uploads/"
     max_file_size: int = 10  # GB
-    allowed_types: list[str] = Field(
-        default_factory=lambda: [".bam", ".bw", ".vcf.gz", ".fasta"]
-    )
+    allowed_types: list[str] = Field(default_factory=lambda: [".bam", ".bw", ".vcf.gz", ".fasta"])
     auto_index_after_upload: bool = True
     index_timeout: int = 3600  # 秒
 

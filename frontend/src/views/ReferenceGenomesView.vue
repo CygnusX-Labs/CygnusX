@@ -1,315 +1,667 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NIcon, NInput, NSelect, NTag, useMessage } from 'naive-ui'
-import { SearchOutline, ArrowForwardOutline, CheckmarkCircleOutline } from '@vicons/ionicons5'
-import { MOCK_GENOMES, type Genome } from '@/mock/referenceGenomes'
+import { NButton, NEmpty, NIcon, NInput, NSelect, NTag, useMessage } from 'naive-ui'
+import {
+  AddOutline,
+  ArrowForwardOutline,
+  CheckmarkCircleOutline,
+  LayersOutline,
+  SearchOutline,
+} from '@vicons/ionicons5'
+import {
+  DATABASE_SPECIES,
+  getDataFileEntries,
+  getDatabaseSummary,
+  getDefaultGenomeVersion,
+  getSpeciesBuildStatus,
+  type BuildStatus,
+  type DataFileType,
+  type GenomeVersion,
+  type SpeciesDatabase,
+} from '@/mock/referenceGenomes'
 
 const router = useRouter()
 const message = useMessage()
 
-/** 本地维护默认基因组（mock，后续接后端）。 */
-const genomes = ref<Genome[]>(MOCK_GENOMES.map((g) => ({ ...g })))
 const searchQuery = ref('')
-const speciesFilter = ref('lettuce')
-const sortBy = ref('default')
+const categoryFilter = ref<'all' | 'plant' | 'animal' | 'microbe'>('all')
+const statusFilter = ref<'all' | BuildStatus>('all')
+const sortBy = ref<'default' | 'species' | 'genes' | 'versions'>('default')
+const defaultVersionBySpecies = ref<Record<string, string>>(
+  Object.fromEntries(DATABASE_SPECIES.map((species) => [species.id, getDefaultGenomeVersion(species).versionId])),
+)
 
-const speciesOptions = [
-  { label: '🥬 生菜', value: 'lettuce' },
-  { label: '🍅 番茄（敬请期待）', value: 'tomato', disabled: true },
-  { label: '🌾 水稻（敬请期待）', value: 'rice', disabled: true },
+const categoryOptions = [
+  { label: '全部分类', value: 'all' },
+  { label: '植物', value: 'plant' },
+  { label: '动物', value: 'animal' },
+  { label: '微生物', value: 'microbe' },
 ]
+
+const statusOptions = [
+  { label: '全部状态', value: 'all' },
+  { label: '就绪', value: 'ready' },
+  { label: '构建中', value: 'building' },
+  { label: '缺失文件', value: 'missing' },
+  { label: '异常', value: 'error' },
+]
+
 const sortOptions = [
-  { label: '默认', value: 'default' },
-  { label: '按基因数', value: 'genes' },
-  { label: '按发布日期', value: 'date' },
+  { label: '默认排序', value: 'default' },
+  { label: '按物种名称', value: 'species' },
+  { label: '按基因数量', value: 'genes' },
+  { label: '按版本数量', value: 'versions' },
 ]
 
-const filteredGenomes = computed(() => {
-  let list = genomes.value.filter((g) => {
-    if (speciesFilter.value === 'lettuce' && g.commonName !== '生菜') return false
-    return true
+const sourceOrder: DataFileType[] = ['fasta', 'gff', 'go', 'kegg']
+const sourceLabel: Record<DataFileType, string> = {
+  fasta: 'FA',
+  gff: 'GFF',
+  go: 'GO',
+  kegg: 'KEGG',
+}
+
+const summary = computed(() => getDatabaseSummary())
+
+const filteredSpecies = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase()
+  let list = DATABASE_SPECIES.filter((species) => {
+    if (categoryFilter.value !== 'all' && species.category !== categoryFilter.value) return false
+    const status = getSpeciesBuildStatus(species)
+    if (statusFilter.value !== 'all' && status !== statusFilter.value) return false
+    if (!query) return true
+    return [
+      species.commonName,
+      species.scientificName,
+      species.taxonomyId,
+      species.description,
+      ...species.genomeVersions.flatMap((version) => [version.versionName, version.assemblyName, ...version.tags]),
+    ].some((value) => value.toLowerCase().includes(query))
   })
-  const q = searchQuery.value.trim().toLowerCase()
-  if (q) {
-    list = list.filter((g) =>
-      [g.commonName, g.latinName, g.version, g.versionFull, ...g.tags].some((s) => s.toLowerCase().includes(q)),
-    )
+
+  if (sortBy.value === 'species') {
+    list = [...list].sort((a, b) => a.scientificName.localeCompare(b.scientificName))
   }
-  if (sortBy.value === 'genes') list = [...list].sort((a, b) => b.totalGenes - a.totalGenes)
-  if (sortBy.value === 'date') list = [...list].sort((a, b) => b.releaseDate.localeCompare(a.releaseDate))
+  if (sortBy.value === 'genes') {
+    list = [...list].sort((a, b) => countGenes(b) - countGenes(a))
+  }
+  if (sortBy.value === 'versions') {
+    list = [...list].sort((a, b) => b.genomeVersions.length - a.genomeVersions.length)
+  }
   return list
 })
 
-function tagType(tag: string): 'success' | 'info' | 'warning' {
-  if (tag.includes('最新')) return 'success'
-  if (tag.includes('稳定')) return 'info'
-  return 'warning'
+function countGenes(species: SpeciesDatabase) {
+  return species.genomeVersions.reduce((sum, version) => sum + version.stats.totalGenes, 0)
 }
 
-function viewDetail(g: Genome) {
-  router.push(`/reference-genomes/${g.id}`)
+function countReadyFiles(species: SpeciesDatabase) {
+  return species.genomeVersions
+    .flatMap(getDataFileEntries)
+    .filter((file) => file.buildStatus === 'ready').length
 }
 
-function setDefault(g: Genome) {
-  genomes.value = genomes.value.map((x) => ({ ...x, isDefault: x.id === g.id }))
-  message.success(`已将 ${g.commonName} ${g.version} 设为项目默认参考基因组`)
+function effectiveDefaultVersion(species: SpeciesDatabase) {
+  return species.genomeVersions.find((version) => version.versionId === defaultVersionBySpecies.value[species.id])
+    ?? getDefaultGenomeVersion(species)
+}
+
+function versionStatusType(status: BuildStatus): 'success' | 'warning' | 'error' | 'info' | 'default' {
+  if (status === 'ready') return 'success'
+  if (status === 'building') return 'warning'
+  if (status === 'error') return 'error'
+  if (status === 'missing') return 'default'
+  return 'info'
+}
+
+function statusText(status: BuildStatus) {
+  if (status === 'ready') return '就绪'
+  if (status === 'building') return '构建中'
+  if (status === 'missing') return '缺失'
+  return '异常'
+}
+
+function fileEnabled(version: GenomeVersion, type: DataFileType) {
+  return version.dataFiles[type]?.buildStatus === 'ready'
+}
+
+function openVersion(version: GenomeVersion) {
+  router.push(`/database/${version.versionId}`)
+}
+
+function setDefault(species: SpeciesDatabase, version: GenomeVersion) {
+  defaultVersionBySpecies.value = { ...defaultVersionBySpecies.value, [species.id]: version.versionId }
+  message.success(`已将 ${species.commonName} ${version.versionName} 设为默认数据库版本`)
+}
+
+function openRegisterDialog() {
+  message.info('数据库注册当前通过 YAML 配置接入：编辑 databases.yaml / jbrowse_config.yaml 后热重载')
 }
 </script>
 
 <template>
-  <div class="genomes-page">
-    <!-- Hero -->
-    <div class="hero">
-      <div class="hero-content">
-        <h1 class="hero-title">🧬 参考基因组库</h1>
-        <p class="hero-subtitle">预置基因组与注释，让比对与注释一步到位</p>
+  <div class="database-page">
+    <section class="database-hero">
+      <div class="hero-copy">
+        <div class="hero-kicker">
+          <NIcon :size="16"><LayersOutline /></NIcon>
+          Gene-Centric Database
+        </div>
+        <h1>数据库</h1>
+        <p>集中管理 FA、GFF、GO、KEGG 与跨版本基因映射。</p>
       </div>
-      <svg class="hero-deco" viewBox="0 0 120 160" fill="none" aria-hidden="true">
-        <path d="M30 10 Q60 40 30 80 Q60 120 30 150" stroke="rgba(255,255,255,0.25)" stroke-width="3" fill="none" />
-        <path d="M90 10 Q60 40 90 80 Q60 120 90 150" stroke="rgba(255,255,255,0.25)" stroke-width="3" fill="none" />
-        <line v-for="y in [25, 45, 65, 85, 105, 125, 145]" :key="y" :x1="32" :x2="88" :y1="y" :y2="y" stroke="rgba(255,255,255,0.15)" stroke-width="2" />
-      </svg>
-    </div>
+      <div class="hero-actions">
+        <NButton type="primary" secondary class="register-button" @click="openRegisterDialog">
+          <template #icon><NIcon><AddOutline /></NIcon></template>
+          注册数据库
+        </NButton>
+      </div>
+    </section>
 
-    <!-- 搜索与筛选栏 -->
-    <div class="filter-bar">
-      <NSelect
-        v-model:value="speciesFilter"
-        :options="speciesOptions"
-        size="small"
-        style="width: 160px"
-      />
+    <section class="summary-grid">
+      <div class="summary-item">
+        <span class="summary-label">物种</span>
+        <span class="summary-value">{{ summary.totalSpecies }}</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">版本</span>
+        <span class="summary-value">{{ summary.totalVersions }}</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">基因</span>
+        <span class="summary-value">{{ summary.totalGenes.toLocaleString() }}</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">数据文件</span>
+        <span class="summary-value">{{ summary.readyFiles }}/{{ summary.totalFiles }}</span>
+      </div>
+    </section>
+
+    <section class="toolbar">
       <NInput
         v-model:value="searchQuery"
-        size="small"
         clearable
-        placeholder="搜索物种、版本、关键词..."
-        style="flex: 1; max-width: 420px"
+        placeholder="搜索物种、版本、Taxonomy ID 或注释关键词"
+        class="search-input"
       >
         <template #prefix><NIcon><SearchOutline /></NIcon></template>
       </NInput>
-      <NSelect
-        v-model:value="sortBy"
-        :options="sortOptions"
-        size="small"
-        style="width: 140px"
-      />
-    </div>
+      <NSelect v-model:value="categoryFilter" :options="categoryOptions" class="filter-select" />
+      <NSelect v-model:value="statusFilter" :options="statusOptions" class="filter-select" />
+      <NSelect v-model:value="sortBy" :options="sortOptions" class="sort-select" />
+    </section>
 
-    <!-- 卡片网格 -->
-    <div v-if="filteredGenomes.length" class="genome-grid">
-      <div
-        v-for="g in filteredGenomes"
-        :key="g.id"
-        class="genome-card"
-        :class="{ 'is-default': g.isDefault }"
+    <section v-if="filteredSpecies.length" class="species-grid">
+      <article
+        v-for="species in filteredSpecies"
+        :key="species.id"
+        class="species-card"
       >
-        <div class="card-header">
-          <span class="species-emoji">{{ g.speciesEmoji }}</span>
-          <div class="species-info">
-            <div class="species-name">{{ g.commonName }}</div>
-            <div class="species-latin">{{ g.latinName }}</div>
+        <div class="card-topline" :style="{ background: species.gradient }" />
+        <header class="species-header">
+          <div class="species-icon" :style="{ background: species.gradient }">{{ species.icon }}</div>
+          <div class="species-title-block">
+            <div class="species-title-row">
+              <h2>{{ species.commonName }}</h2>
+              <NTag size="small" :type="versionStatusType(getSpeciesBuildStatus(species))" round>
+                {{ statusText(getSpeciesBuildStatus(species)) }}
+              </NTag>
+            </div>
+            <p class="species-latin">{{ species.scientificName }}</p>
+            <p class="species-desc">{{ species.description }}</p>
           </div>
-          <NTag v-if="g.isDefault" size="tiny" type="success" round>默认</NTag>
-        </div>
+        </header>
 
-        <div class="version-box">
-          <div class="version-row">
-            <span class="version-text">{{ g.version }}</span>
+        <div class="default-version">
+          <div class="version-main">
+            <span class="version-name">{{ effectiveDefaultVersion(species).versionName }}</span>
+            <span class="assembly-name">{{ effectiveDefaultVersion(species).assemblyName }}</span>
+          </div>
+          <div class="version-tags">
             <NTag
-              v-for="t in g.tags"
-              :key="t"
+              v-for="tag in effectiveDefaultVersion(species).tags"
+              :key="tag"
               size="tiny"
-              :type="tagType(t)"
               round
-            >{{ t }}</NTag>
+              type="info"
+            >{{ tag }}</NTag>
           </div>
-          <div class="version-full">{{ g.versionFull }}</div>
         </div>
 
-        <div class="card-stats">
-          <div class="stat-line">🧬 {{ g.chromosomes }} 条染色体 · {{ g.totalGenes.toLocaleString() }} 基因</div>
-          <div class="stat-line">📦 {{ g.genomeSize }} · {{ g.releaseDate }} 发布</div>
+        <div class="source-row">
+          <span
+            v-for="source in sourceOrder"
+            :key="source"
+            class="source-chip"
+            :class="{ ready: fileEnabled(effectiveDefaultVersion(species), source) }"
+          >{{ sourceLabel[source] }}</span>
         </div>
 
-        <div class="card-actions">
-          <NButton size="small" type="primary" @click="viewDetail(g)">
-            查看详情
+        <div class="metric-grid">
+          <div>
+            <span class="metric-value">{{ effectiveDefaultVersion(species).stats.chromosomes }}</span>
+            <span class="metric-label">染色体</span>
+          </div>
+          <div>
+            <span class="metric-value">{{ effectiveDefaultVersion(species).stats.totalGenes.toLocaleString() }}</span>
+            <span class="metric-label">基因</span>
+          </div>
+          <div>
+            <span class="metric-value">{{ effectiveDefaultVersion(species).stats.genomeSize }}</span>
+            <span class="metric-label">大小</span>
+          </div>
+          <div>
+            <span class="metric-value">{{ countReadyFiles(species) }}</span>
+            <span class="metric-label">就绪文件</span>
+          </div>
+        </div>
+
+        <div class="version-list">
+          <button
+            v-for="version in species.genomeVersions"
+            :key="version.versionId"
+            class="version-pill"
+            :class="{ active: version.versionId === effectiveDefaultVersion(species).versionId }"
+            @click="setDefault(species, version)"
+          >
+            <span>{{ version.versionName }}</span>
+            <NIcon v-if="version.versionId === effectiveDefaultVersion(species).versionId" :size="14">
+              <CheckmarkCircleOutline />
+            </NIcon>
+          </button>
+        </div>
+
+        <footer class="card-actions">
+          <NButton type="primary" size="small" @click="openVersion(effectiveDefaultVersion(species))">
+            查看数据库
             <template #icon><NIcon><ArrowForwardOutline /></NIcon></template>
           </NButton>
-          <NButton
-            size="small"
-            :disabled="g.isDefault"
-            @click="setDefault(g)"
-          >
-            <template #icon><NIcon><CheckmarkCircleOutline /></NIcon></template>
+          <NButton size="small" quaternary @click="setDefault(species, effectiveDefaultVersion(species))">
             设为默认
           </NButton>
-        </div>
+        </footer>
+      </article>
+    </section>
 
-        <div class="card-gradient-bar" :style="{ background: g.gradient }" />
-      </div>
-    </div>
-
-    <!-- 空状态 -->
-    <div v-else class="empty-state">
-      <p class="empty-icon">🧬</p>
-      <p>暂无基因组数据，请联系管理员预置</p>
-    </div>
+    <NEmpty v-else class="empty-state" description="暂无匹配的数据库" />
   </div>
 </template>
 
 <style scoped>
-.genomes-page {
+.database-page {
+  --db-primary: #165dff;
+  --db-purple: #722ed1;
+  --db-cyan: #0fc6c2;
+  --db-text: #1d2129;
+  --db-subtext: #4e5969;
+  --db-muted: #86909c;
+  --db-border: #e5e6eb;
+  --db-bg: #f7f8fa;
+  --db-card: #fff;
   min-height: 100%;
 }
-.hero {
-  position: relative;
-  height: 140px;
-  background: linear-gradient(135deg, #3b82f6 0%, #7c3aed 100%);
-  border-radius: 12px;
+
+.database-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 176px;
   padding: 28px 32px;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
   margin-bottom: 16px;
-}
-.hero-content {
-  position: relative;
-  z-index: 1;
-}
-.hero-title {
-  font-size: 24px;
-  font-weight: 700;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #0f1f4a 0%, #165dff 52%, #722ed1 100%);
   color: #fff;
-  margin: 0 0 6px;
+  overflow: hidden;
 }
-.hero-subtitle {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.85);
-  margin: 0;
+
+.hero-copy {
+  min-width: 0;
 }
-.hero-deco {
-  position: absolute;
-  right: 32px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 120px;
-  height: 160px;
-  opacity: 0.6;
-}
-.filter-bar {
-  display: flex;
+
+.hero-kicker {
+  display: inline-flex;
   align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.database-hero h1 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+
+.database-hero p {
+  max-width: 560px;
+  margin: 8px 0 0;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.hero-actions {
+  flex: 0 0 auto;
+}
+
+.register-button {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 16px;
-  flex-wrap: wrap;
 }
-.genome-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-.genome-card {
-  position: relative;
-  background: var(--neutral-card, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
-  border-radius: 12px;
-  padding: 18px;
+
+.summary-item {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  transition: all 0.3s ease;
-  overflow: hidden;
+  gap: 4px;
+  min-height: 82px;
+  padding: 16px;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  background: var(--db-card);
 }
-.genome-card:hover {
-  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.12);
-  transform: translateY(-2px);
-  border-color: rgba(124, 58, 237, 0.3);
+
+.summary-label {
+  color: var(--db-muted);
+  font-size: 12px;
 }
-.genome-card.is-default {
-  border-color: rgba(34, 197, 94, 0.4);
+
+.summary-value {
+  color: var(--db-text);
+  font-size: 24px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
 }
-.card-header {
+
+.toolbar {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-.species-emoji {
-  font-size: 28px;
-}
-.species-info {
-  flex: 1;
-  min-width: 0;
-}
-.species-name {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--neutral-text-1, #1e293b);
-}
-.species-latin {
-  font-size: 12px;
-  color: var(--neutral-text-3, #94a3b8);
-  font-style: italic;
-}
-.version-box {
-  background: var(--neutral-bg, #f8fafc);
-  border-radius: 8px;
+  margin-bottom: 16px;
   padding: 12px;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  background: var(--db-card);
 }
-.version-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
+
+.search-input {
+  flex: 1 1 340px;
+  min-width: 220px;
 }
-.version-text {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--neutral-text-1, #1e293b);
+
+.filter-select {
+  width: 136px;
 }
-.version-full {
-  font-family: 'JetBrains Mono', Consolas, monospace;
-  font-size: 12px;
-  color: var(--neutral-text-3, #94a3b8);
+
+.sort-select {
+  width: 148px;
 }
-.card-stats {
+
+.species-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.species-card {
+  position: relative;
   display: flex;
   flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  min-height: 330px;
+  padding: 18px;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  background: var(--db-card);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.species-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(22, 93, 255, 0.3);
+  box-shadow: 0 10px 24px rgba(22, 93, 255, 0.12);
+}
+
+.card-topline {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+}
+
+.species-header {
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+}
+
+.species-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  font-size: 23px;
+}
+
+.species-title-block {
+  min-width: 0;
+  flex: 1;
+}
+
+.species-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.species-title-row h2 {
+  margin: 0;
+  color: var(--db-text);
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.species-latin,
+.species-desc {
+  margin: 0;
+  color: var(--db-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.species-latin {
+  margin-top: 3px;
+  font-style: italic;
+}
+
+.species-desc {
+  margin-top: 5px;
+  color: var(--db-subtext);
+}
+
+.default-version {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f7f8fa;
+}
+
+.version-main,
+.metric-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.version-name {
+  color: var(--db-text);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.assembly-name,
+.metric-label {
+  color: var(--db-muted);
+  font-size: 12px;
+}
+
+.assembly-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  word-break: break-word;
+}
+
+.version-tags {
+  display: flex;
+  align-content: flex-start;
+  justify-content: flex-end;
   gap: 6px;
+  flex-wrap: wrap;
 }
-.stat-line {
-  font-size: 13px;
-  color: var(--neutral-text-2, #475569);
+
+.source-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
+
+.source-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  min-width: 48px;
+  padding: 0 10px;
+  border: 1px dashed #c9cdd4;
+  border-radius: 6px;
+  color: var(--db-muted);
+  background: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.source-chip.ready {
+  border-style: solid;
+  border-color: rgba(22, 93, 255, 0.24);
+  color: var(--db-primary);
+  background: #e8f3ff;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.metric-grid > div {
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: #f7f8fa;
+}
+
+.metric-value {
+  color: var(--db-text);
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.version-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.version-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--db-subtext);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.version-pill.active {
+  border-color: rgba(22, 93, 255, 0.24);
+  color: var(--db-primary);
+  background: #e8f3ff;
+}
+
 .card-actions {
   display: flex;
   gap: 8px;
+  margin-top: auto;
 }
-.card-gradient-bar {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 3px;
-}
+
 .empty-state {
-  padding: 80px 24px;
-  text-align: center;
-  color: var(--neutral-text-3, #94a3b8);
+  padding: 72px 24px;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  background: var(--db-card);
 }
-.empty-icon {
-  font-size: 48px;
-  margin: 0 0 8px;
+
+@media (max-width: 1180px) {
+  .species-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
-@media (max-width: 1024px) {
-  .genome-grid { grid-template-columns: repeat(2, 1fr); }
-}
-@media (max-width: 640px) {
-  .genome-grid { grid-template-columns: 1fr; }
-  .hero { height: 120px; padding: 20px; }
-  .hero-deco { display: none; }
+
+@media (max-width: 760px) {
+  .database-hero,
+  .toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .summary-grid,
+  .species-grid,
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-select,
+  .sort-select {
+    width: 100%;
+  }
+
+  .card-actions {
+    flex-direction: column;
+  }
 }
 </style>

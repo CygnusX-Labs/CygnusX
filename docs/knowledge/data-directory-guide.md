@@ -50,7 +50,7 @@ OmicHub 的运行时数据统一收口在宿主机 `/data/omichub` 下。为让�
   └── tracks/human_hg38/             # 预设公共轨道
       └── gencode.v50.basic.annotation.gff3   # ~3.2 GB 基因注释
   ```
-- **配置来源**：`tools/jbrowse/jbrowse_config.yaml` 中的 `assemblies[*].fasta/fai` 与 `preset_tracks` 绝对路径
+- **配置来源**：`tool_configs/jbrowse/jbrowse_config.yaml` 中的 `assemblies[*].fasta/fai` 与 `preset_tracks` 绝对路径
 - **访问方式**：经 nginx `/tracks/` 路径流式读取（HTTP Range Request）。因 `omichub_data` 仍位于 `data_root`（`/data/omichub`）之下，`to_tracks_uri()` 自动换算为 `/tracks/omichub_data/jbrowse/...`，nginx alias 无需改动
 - **新增基因组**：在 `jbrowse/ref/<species>/` 放 FASTA + `.fai`，并在 `jbrowse_config.yaml` 的 `assemblies` 追加一项，调用 `POST /api/v1/jbrowse/config/reload` 热生效
 - **体积**：参考基因组与注释文件较大（单文件可达数 GB），迁往对象存储时建议按物种打包
@@ -93,7 +93,7 @@ OmicHub 的运行时数据统一收口在宿主机 `/data/omichub` 下。为让�
 | `deploy/docker/docker-compose.yml` | `db` / `cache` 的 bind mount 改为 `omichub_data/_pgdata`、`omichub_data/_redis` |
 | `deploy/docker/docker-compose.prod.yml` | 生产环境 `db` 的 bind mount 同步修改 |
 | `src/omichub/core/config.py` | `welcome_yaml` / `welcome_state_yaml` 指向 `omichub_data/welcome/` |
-| `tools/jbrowse/jbrowse_config.yaml` | `assemblies.fasta/fai` 与 `preset_tracks.file` 指向 `omichub_data/jbrowse/` |
+| `tool_configs/jbrowse/jbrowse_config.yaml` | `assemblies.fasta/fai` 与 `preset_tracks.file` 指向 `omichub_data/jbrowse/` |
 
 > 容器内 `/data/omichub` 挂载、nginx `/tracks/` alias、`storage.data_root` 均**未改动**——因为 `omichub_data` 仍是 `data_root` 的子目录，所有基于 `data_root` 的换算逻辑（如 `to_tracks_uri`）天然兼容。
 

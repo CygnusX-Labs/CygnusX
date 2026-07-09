@@ -39,18 +39,14 @@ async def test_submit_task_endpoint(client, auth_headers):
         finished_at=None,
     )
 
-    with patch(
-        "omichub.api.v1.tasks.TaskService.submit", return_value=fake_task
-    ):
+    with patch("omichub.api.v1.tasks.TaskService.submit", return_value=fake_task):
         response = await client.post(
             "/api/v1/tasks",
             json={
                 "flow_id": "rna_seq",
                 "name": "Test Task",
                 "parameters": {"project_name": "Test"},
-                "sample_sheet": [
-                    {"sample": "S1", "sample_name": "Sample1", "group": "control"}
-                ],
+                "sample_sheet": [{"sample": "S1", "sample_name": "Sample1", "group": "control"}],
             },
             headers=auth_headers,
         )
@@ -68,9 +64,7 @@ async def test_list_tasks_endpoint(client, auth_headers):
         "omichub.api.v1.tasks.TaskService.list_tasks",
         return_value={"items": [], "total": 0},
     ):
-        response = await client.get(
-            "/api/v1/tasks", headers=auth_headers
-        )
+        response = await client.get("/api/v1/tasks", headers=auth_headers)
 
     assert response.status_code == 200
     data = response.json()

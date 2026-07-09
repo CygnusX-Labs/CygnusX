@@ -31,10 +31,10 @@ from omichub.infrastructure.database.models.mcp import MCPServerModel
 from omichub.infrastructure.database.models.notification import NotificationModel
 from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
 from omichub.infrastructure.database.models.sandbox import SandboxSessionModel
-from omichub.infrastructure.database.models.terminal import TerminalSessionModel
 from omichub.infrastructure.database.models.site_settings import SiteSettingModel
 from omichub.infrastructure.database.models.skill import SkillModel
 from omichub.infrastructure.database.models.task import TaskModel
+from omichub.infrastructure.database.models.terminal import TerminalSessionModel
 from omichub.infrastructure.database.models.user import UserModel, WorkspaceModel
 
 __all__ = [

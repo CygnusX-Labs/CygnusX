@@ -122,7 +122,10 @@ class SqlAlchemyMCPServerRepository(IMCPServerRepository):
             version=s.version,
             status=s.status.value,
             is_enabled=s.is_enabled,
-            tools=[{"name": t.tool_name, "description": t.description, "inputSchema": t.input_schema} for t in s.tools],
+            tools=[
+                {"name": t.tool_name, "description": t.description, "inputSchema": t.input_schema}
+                for t in s.tools
+            ],
             timeout=s.timeout,
             auto_restart=s.auto_restart,
             is_preset=s.is_preset,

@@ -53,8 +53,7 @@ class GenericFlowBuilder:
         mapping = flow_config.pipeline_mapping
         if mapping is None:
             raise ValidationError(
-                f"流程 '{flow_config.meta.id}' 缺少 pipeline_mapping 配置，"
-                "无法生成底层流程输入文件"
+                f"流程 '{flow_config.meta.id}' 缺少 pipeline_mapping 配置，无法生成底层流程输入文件"
             )
 
         result: dict[str, Path] = {}

@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker test lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-up docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge docker-start clean init-admin init-cookies check-alembic-heads
+.PHONY: help dev dev-worker test lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-runtime-dirs docker-fix-permissions docker-up docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge docker-start clean init-admin init-cookies check-alembic-heads
 
 help: ## 显示所有可用命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -52,19 +52,34 @@ COMPOSE_WORKER := docker compose -f deploy/docker/docker-compose.worker.yml
 COMPOSE_ALL    := docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.worker.yml
 DOCKER_NETWORK := omichub_net
 SANDBOX_NETWORK := omichub-sandbox-net
+DATA_ROOT ?= /data/omichub
+PUID ?= $(shell id -u)
+PGID ?= $(shell id -g)
 
 docker-network: ## 创建跨栈外部网络 omichub_net + 终端沙盒网络（幂等）
 	@docker network create $(DOCKER_NETWORK) 2>/dev/null || true
 	@docker network create $(SANDBOX_NETWORK) 2>/dev/null || true
 
+docker-runtime-dirs: ## 准备关键运行目录与非 root 容器写入权限（docker-up/reload 自动执行）
+	@echo "=> 准备运行目录权限..."
+	@docker run --rm -v $(DATA_ROOT):/data-root python:3.11-slim sh -c 'mkdir -p /data-root/logs/app /data-root/logs/celery/tasks /data-root/logs/nginx /data-root/logs/snakemake /data-root/users /data-root/uploads /data-root/.tmp /data-root/.conda_envs /data-root/omichub_data/_pgdata /data-root/omichub_data/_redis && chown -R $(PUID):$(PGID) /data-root/logs/app /data-root/logs/celery /data-root/logs/snakemake /data-root/uploads /data-root/.tmp /data-root/.conda_envs && chown $(PUID):$(PGID) /data-root/users'
+
+docker-fix-permissions: ## 手动修复 /data/omichub 权限事故（登录 500 / PermissionError 时使用）
+	@echo "=> 修复 /data/omichub 非 root 服务写入权限..."
+	@docker run --rm -v $(DATA_ROOT):/data-root python:3.11-slim sh -c 'mkdir -p /data-root/logs/app /data-root/logs/celery/tasks /data-root/logs/nginx /data-root/logs/snakemake /data-root/users /data-root/uploads /data-root/.tmp /data-root/.conda_envs /data-root/omichub_data/_pgdata /data-root/omichub_data/_redis && chown -R $(PUID):$(PGID) /data-root/logs/app /data-root/logs/celery /data-root/logs/snakemake /data-root/users /data-root/uploads /data-root/.tmp /data-root/.conda_envs'
+	@echo "=> 权限修复完成。建议执行: docker restart omichub-web omichub-worker omichub-beat"
+
 docker-up: docker-network ## 启动主栈 (web/db/redis/nginx/beat/flower)
+	@$(MAKE) --no-print-directory docker-runtime-dirs
 	$(COMPOSE_MAIN) up -d
 	@$(MAKE) --no-print-directory check-alembic-heads
 
 docker-up-worker: docker-network ## 启动独立计算节点 Worker 栈
+	@$(MAKE) --no-print-directory docker-runtime-dirs
 	$(COMPOSE_WORKER) up -d
 
 docker-up-all: docker-network ## 启动主栈 + Worker（一键全启）
+	@$(MAKE) --no-print-directory docker-runtime-dirs
 	$(COMPOSE_MAIN) up -d
 	$(COMPOSE_WORKER) up -d
 	@$(MAKE) --no-print-directory check-alembic-heads
@@ -110,6 +125,7 @@ docker-start: ## 彻底重建：清空一切 + 重建镜像 + 构建前端 + 启
 	$(COMPOSE_WORKER) build --no-cache
 	@echo "=> 启动全部服务..."
 	@$(MAKE) --no-print-directory docker-network
+	@$(MAKE) --no-print-directory docker-runtime-dirs
 	$(COMPOSE_MAIN) up -d
 	$(COMPOSE_WORKER) up -d
 	@$(MAKE) --no-print-directory check-alembic-heads
@@ -124,10 +140,11 @@ frontend-build: ## 构建前端生产版本
 	cd frontend && npm run build
 
 docker-reload: docker-network ## 重新构建前端并刷新主栈 + Worker (开发用)
+	@$(MAKE) --no-print-directory docker-runtime-dirs
 	@echo "=> 清理残留容器..."
 	-@docker ps -a --filter "name=omichub-" -q | xargs -r docker rm -f 2>/dev/null
 	@echo "=> 构建终端沙盒镜像..."
-	-docker build -t omichub/sandbox-terminal:latest tools/terminal/docker/
+	-docker build -t omichub/sandbox-terminal:latest tool_configs/terminal/docker/
 	cd frontend && npm run build
 	$(COMPOSE_MAIN) up -d
 	$(COMPOSE_WORKER) up -d

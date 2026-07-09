@@ -11,6 +11,7 @@
 - OMICHUB_LOG_DIR: 日志根目录，默认 /app/logs；本地开发无法写入时自动回退到 ./logs
 """
 
+import logging
 import os
 import sys
 from pathlib import Path
@@ -23,30 +24,65 @@ from omichub.core.config import get_settings
 DEFAULT_LOG_DIR = "/app/logs"
 # 本地开发回退路径（项目根目录下的 logs/）
 FALLBACK_LOG_DIR = "logs"
+# 最后一层兜底，避免容器 bind mount 权限异常导致服务启动失败。
+LAST_RESORT_LOG_DIR = "/tmp/omichub/logs"
 
 SERVICE_NAME = os.getenv("SERVICE_NAME", "app")
 LOG_LEVEL = os.getenv("OMICHUB_LOG_LEVEL", "INFO").upper()
+LOG_ROTATION = os.getenv("OMICHUB_LOG_ROTATION", "50 MB")
+LOG_RETENTION = os.getenv("OMICHUB_LOG_RETENTION", "30 days")
+LOG_COMPRESSION = os.getenv("OMICHUB_LOG_COMPRESSION", "zip")
+
+
+class InterceptHandler(logging.Handler):
+    """将标准库 logging 转发到 loguru，避免日志分散到 root logger。"""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            level: str | int = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+
+        frame = logging.currentframe()
+        depth = 2
+        while frame and frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back
+            depth += 1
+
+        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+
+
+def _is_writable_log_dir(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        test_file = path / ".write_test"
+        test_file.write_text("")
+        test_file.unlink()
+        return True
+    except OSError:
+        return False
 
 
 def _resolve_log_dir() -> Path:
     """解析日志根目录。
 
-    优先使用 OMICHUB_LOG_DIR 环境变量；未设置时使用 /app/logs。
-    若 /app/logs 无法创建/写入（常见于本地开发），回退到当前工作目录的 logs/。
+    优先使用 OMICHUB_LOG_DIR；不可写时回退到本地 logs/，再回退到 /tmp。
+    这样 bind mount 权限异常时服务仍能启动，问题会通过 stdout 日志暴露。
     """
     raw_dir = os.getenv("OMICHUB_LOG_DIR", DEFAULT_LOG_DIR)
-    path = Path(raw_dir).resolve()
-    try:
-        path.mkdir(parents=True, exist_ok=True)
-        # 测试是否可写
-        test_file = path / ".write_test"
-        test_file.write_text("")
-        test_file.unlink()
-        return path
-    except OSError:
-        fallback = Path(FALLBACK_LOG_DIR).resolve()
-        fallback.mkdir(parents=True, exist_ok=True)
-        return fallback
+    candidates = [Path(raw_dir), Path(FALLBACK_LOG_DIR), Path(LAST_RESORT_LOG_DIR)]
+    tried: set[Path] = set()
+
+    for candidate in candidates:
+        path = candidate.resolve()
+        if path in tried:
+            continue
+        tried.add(path)
+        if _is_writable_log_dir(path):
+            return path
+
+    # /tmp 理论上应始终可写；保留 fail-fast 以暴露极端环境问题。
+    raise PermissionError(f"No writable log directory found: {', '.join(str(p) for p in tried)}")
 
 
 def _text_format() -> str:
@@ -87,6 +123,9 @@ def setup_logging() -> None:
 
     service_name = os.getenv("SERVICE_NAME", SERVICE_NAME)
     log_dir = _resolve_log_dir()
+    rotation = os.getenv("OMICHUB_LOG_ROTATION", LOG_ROTATION)
+    retention = os.getenv("OMICHUB_LOG_RETENTION", LOG_RETENTION)
+    compression = os.getenv("OMICHUB_LOG_COMPRESSION", LOG_COMPRESSION)
 
     # 移除默认 handler
     logger.remove()
@@ -105,9 +144,9 @@ def setup_logging() -> None:
     logger.add(
         log_dir / "omichub.log",
         level="INFO",
-        rotation="50 MB",
-        retention="30 days",
-        compression="zip",
+        rotation=rotation,
+        retention=retention,
+        compression=compression,
         format=_text_format(),
         enqueue=True,
         backtrace=True,
@@ -118,9 +157,9 @@ def setup_logging() -> None:
     logger.add(
         log_dir / "omichub.json.log",
         level="INFO",
-        rotation="50 MB",
-        retention="30 days",
-        compression="zip",
+        rotation=rotation,
+        retention=retention,
+        compression=compression,
         serialize=True,
         enqueue=True,
     )
@@ -129,9 +168,9 @@ def setup_logging() -> None:
     logger.add(
         log_dir / "error.log",
         level="ERROR",
-        rotation="50 MB",
-        retention="30 days",
-        compression="zip",
+        rotation=rotation,
+        retention=retention,
+        compression=compression,
         format=_text_format(),
         enqueue=True,
         backtrace=True,
@@ -141,7 +180,10 @@ def setup_logging() -> None:
     # 绑定服务名到上下文
     logger.configure(extra={"service": service_name})
 
+    # 兼容仍使用 logging.getLogger(...) 的旧代码和第三方库日志。
+    logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+
 
 # 全局默认 logger；调用方优先使用 setup_logging() 重新初始化
-#（web/beat/worker 的入口均已调用）。
+# （web/beat/worker 的入口均已调用）。
 setup_logging()

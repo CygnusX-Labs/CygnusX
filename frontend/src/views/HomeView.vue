@@ -3,8 +3,7 @@ import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NButton, NIcon } from 'naive-ui'
 import {
-  FlaskOutline, FitnessOutline, CloudUploadOutline, ChatbubblesOutline,
-  DocumentTextOutline, CodeSlashOutline, RocketOutline, BarChartOutline,
+  RocketOutline, BarChartOutline,
   CheckmarkCircleOutline,
 } from '@vicons/ionicons5'
 import apiClient from '@/api/client'
@@ -12,6 +11,13 @@ import { useAuthStore } from '@/stores/auth'
 import OmicBackgroundAnimation from '@/components/OmicBackgroundAnimation.vue'
 import AnnouncementBanner from '@/components/AnnouncementBanner.vue'
 import type { SiteContent } from '@/types/site-content'
+import type { HomeQuickEntry, SiteSettings } from '@/types'
+import {
+  normalizeHomeQuickEntries,
+  quickEntryBgColors,
+  quickEntryIconColors,
+  resolveHomeQuickEntryIcon,
+} from '@/config/homeQuickEntries'
 
 // 默认文案兜底：API 拉取失败时保证首页仍可正常渲染
 const DEFAULT_CONTENT: SiteContent = {
@@ -25,23 +31,12 @@ const DEFAULT_CONTENT: SiteContent = {
     { key: 'files', title: '数据管理', desc: '上传与管理样本数据' },
     { key: 'ai', title: 'AI 助手', desc: '智能分析与问答' },
     { key: 'tasks', title: '任务中心', desc: '查看分析任务进度' },
-    { key: 'sandbox', title: '代码沙盒', desc: '在线编写分析脚本' },
   ],
   guide_steps: [
     { title: '上传样本数据', desc: '将 FASTQ / BAM 等原始数据上传至数据管理' },
     { title: '选择分析流程', desc: '在分析中心选择 RNA-seq 或 ATAC-seq 流程' },
     { title: '查看分析结果', desc: '任务完成后在报告中心查看与下载结果' },
   ],
-}
-
-// 快捷入口的图标 / 配色 / 路由按 key 硬编码（不进 yaml，避免组件与路由耦合）
-const entryMeta: Record<string, { icon: any; iconBg: string; to: string }> = {
-  'rna-seq': { icon: FlaskOutline, iconBg: 'blue', to: '/flows?type=rna-seq' },
-  'atac-seq': { icon: FitnessOutline, iconBg: 'purple', to: '/flows?type=atac-seq' },
-  'files': { icon: CloudUploadOutline, iconBg: 'cyan', to: '/files' },
-  'ai': { icon: ChatbubblesOutline, iconBg: 'green', to: '/ai' },
-  'tasks': { icon: DocumentTextOutline, iconBg: 'orange', to: '/tasks' },
-  'sandbox': { icon: CodeSlashOutline, iconBg: 'teal', to: '/sandbox' },
 }
 
 const router = useRouter()
@@ -61,54 +56,41 @@ const greeting = computed(() => {
   return '晚上好'
 })
 
-interface QuickEntry {
-  key: string
-  title: string
-  desc: string
-  icon: any
-  iconBg: string
-  to: string
+interface QuickEntry extends HomeQuickEntry {
+  iconComponent: ReturnType<typeof resolveHomeQuickEntryIcon>
 }
 
 const content = ref<SiteContent>(DEFAULT_CONTENT)
+const configuredQuickEntries = ref<HomeQuickEntry[] | null>(null)
 
-// 文案来自 yaml（title/desc），图标/路由按 key 合并
-const quickEntries = computed<QuickEntry[]>(() =>
-  content.value.quick_entries
-    .filter((e) => entryMeta[e.key])
-    .map((e) => ({ ...e, ...entryMeta[e.key] })),
-)
+const quickEntries = computed<QuickEntry[]>(() => {
+  const source = configuredQuickEntries.value?.length
+    ? configuredQuickEntries.value
+    : content.value.quick_entries
+  return normalizeHomeQuickEntries(source).map((entry) => ({
+    ...entry,
+    iconComponent: resolveHomeQuickEntryIcon(entry.icon),
+  }))
+})
 
 const guideSteps = computed(() => content.value.guide_steps)
-
-const bgColors: Record<string, string> = {
-  blue: '#E8F3FF',
-  purple: '#F0E8FF',
-  cyan: '#E6FFFB',
-  green: '#E8FFEA',
-  orange: '#FFF2E8',
-  teal: '#E8FFFA',
-}
-
-const iconColors: Record<string, string> = {
-  blue: '#165DFF',
-  purple: '#722ED1',
-  cyan: '#14C9C9',
-  green: '#00B42A',
-  orange: '#F77234',
-  teal: '#0FC6C2',
-}
 
 function goTo(path: string) {
   router.push(path)
 }
 
 onMounted(async () => {
-  try {
-    const res = await apiClient.get<SiteContent>('/site-content')
-    content.value = res.data
-  } catch {
-    // 拉取失败保留默认文案，首页照常渲染
+  const [contentResult, settingsResult] = await Promise.allSettled([
+    apiClient.get<SiteContent>('/site-content'),
+    apiClient.get<SiteSettings>('/site-settings'),
+  ])
+
+  if (contentResult.status === 'fulfilled') {
+    content.value = contentResult.value.data
+  }
+
+  if (settingsResult.status === 'fulfilled' && settingsResult.value.data.home_quick_entries?.length) {
+    configuredQuickEntries.value = normalizeHomeQuickEntries(settingsResult.value.data.home_quick_entries)
   }
 })
 </script>
@@ -156,10 +138,10 @@ onMounted(async () => {
         >
           <div
             class="entry-icon"
-            :style="{ background: bgColors[entry.iconBg], color: iconColors[entry.iconBg] }"
+            :style="{ background: quickEntryBgColors[entry.icon_bg], color: quickEntryIconColors[entry.icon_bg] }"
           >
             <NIcon :size="24">
-              <component :is="entry.icon" />
+              <component :is="entry.iconComponent" />
             </NIcon>
           </div>
           <div class="entry-text">

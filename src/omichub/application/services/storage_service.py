@@ -27,9 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.storage import (
-    StorageGlobalUsage,
     StorageUsage,
-    UserStorageUsage,
 )
 from omichub.infrastructure.cache.stats_cache import cached_json
 from omichub.infrastructure.config.storage_config import get_storage_config
@@ -231,10 +229,7 @@ class StorageService:
                     UserModel.id.in_(user_ids)
                 )
             )
-            return {
-                str(r[0]): {"username": r[1], "nickname": r[2]}
-                for r in rows.all()
-            }
+            return {str(r[0]): {"username": r[1], "nickname": r[2]} for r in rows.all()}
         except Exception:
             # DB 异常不影响磁盘统计，回退用目录名
             return {}

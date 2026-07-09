@@ -54,7 +54,9 @@ async def submit_enrichment(
     service: EnrichmentServiceDep,
     species_id: Annotated[str, Form(description="物种 ID（YAML 中 id）")],
     gene_text: Annotated[str | None, Form(description="手动输入的基因 ID 列表，每行一个")] = None,
-    gene_file: Annotated[UploadFile | None, File(description="基因 ID 文件 (.txt/.csv/.tsv)")] = None,
+    gene_file: Annotated[
+        UploadFile | None, File(description="基因 ID 文件 (.txt/.csv/.tsv)")
+    ] = None,
 ) -> EnrichmentResultDTO:
     """提交 KEGG 富集分析。
 

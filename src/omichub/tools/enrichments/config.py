@@ -1,7 +1,7 @@
 """富集分析物种外置 YAML 配置加载器。
 
 配置文件路径由 settings.enrichment_config_yaml 决定（默认
-tools/enrichments/species_config.yaml，仓库内源码管控，仿 flows/）。
+tool_configs/enrichments/species_config.yaml，仓库内源码管控，仿 flows/）。
 
 热重载策略（与 jbrowse_config 一致）：
 - EnrichmentConfigManager 单例缓存解析后的 EnrichmentConfig，按文件 mtime 判定是否重解析；
@@ -54,7 +54,9 @@ class EnrichmentConfigManager:
     """配置管理器，支持 mtime 热重载。"""
 
     def __init__(self, config_path: str | Path | None = None) -> None:
-        self.config_path = str(config_path) if config_path else get_settings().enrichment_config_yaml
+        self.config_path = (
+            str(config_path) if config_path else get_settings().enrichment_config_yaml
+        )
         self._config: EnrichmentConfig | None = None
         self._mtime: float = 0.0
 

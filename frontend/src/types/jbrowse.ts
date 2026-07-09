@@ -1,10 +1,33 @@
 /** JBrowse 2 前端类型 —— 与后端 application/schemas/jbrowse.py 对齐。 */
 
+export interface AssemblyDataFileDTO {
+  path: string
+  index_path?: string | null
+  db_path?: string | null
+  format?: string | null
+  build_required: boolean
+  build_tool?: string | null
+  build_status: string
+  size?: string | null
+}
+
 export interface AssemblyDTO {
   id: string
   name: string
   species?: string | null
+  common_name?: string | null
+  taxonomy_id?: string | null
+  version_id?: string | null
+  version_name?: string | null
+  assembly_name?: string | null
+  category?: string | null
+  icon?: string | null
+  is_default: boolean
+  status: string
+  release_date?: string | null
   description?: string | null
+  stats: Record<string, unknown>
+  data_files: Record<string, AssemblyDataFileDTO>
   fasta_exists: boolean
   fai_exists: boolean
   aliases: string[]

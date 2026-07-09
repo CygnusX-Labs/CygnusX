@@ -30,9 +30,13 @@ class ChatStreamRequest(BaseModel):
     temperature: float | None = None
     max_tokens: int | None = None
     stream: bool = Field(True, description="是否流式返回")
-    attachments: list[ChatAttachment] = Field(default_factory=list, description="当前用户消息的附件")
+    attachments: list[ChatAttachment] = Field(
+        default_factory=list, description="当前用户消息的附件"
+    )
     enable_web_search: bool = Field(False, description="是否启用联网搜索")
-    enable_code_execution: bool = Field(False, description="是否启用代码执行（仅前端 Pyodide，后端透传标记）")
+    enable_code_execution: bool = Field(
+        False, description="是否启用代码执行（仅前端 Pyodide，后端透传标记）"
+    )
     deep_thinking: bool = Field(False, description="是否开启深度思考/推理模式")
 
 
@@ -99,7 +103,7 @@ class CreateAssistantRequest(BaseModel):
     name: str
     description: str = ""
     system_prompt: str
-    icon: str = "\U0001F916"
+    icon: str = "\U0001f916"
     color: str = "#4f8ef7"
     category: str = "general"
     default_temperature: float = 0.3

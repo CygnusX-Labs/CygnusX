@@ -24,9 +24,7 @@ class ChatSessionModel(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    session_id: Mapped[str] = mapped_column(
-        String(50), unique=True, nullable=False, index=True
-    )
+    session_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     user_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     assistant_id: Mapped[str | None] = mapped_column(
         String(50), ForeignKey("chat_assistants.assistant_id"), nullable=True
@@ -43,9 +41,7 @@ class ChatSessionModel(Base, TimestampMixin):
     total_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
 
-    last_message_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     messages: Mapped[list["ChatMessageModel"]] = relationship(
         "ChatMessageModel",
@@ -54,9 +50,7 @@ class ChatSessionModel(Base, TimestampMixin):
         order_by="ChatMessageModel.created_at",
     )
 
-    __table_args__ = (
-        Index("idx_chat_sessions_user_updated", "user_id", "updated_at"),
-    )
+    __table_args__ = (Index("idx_chat_sessions_user_updated", "user_id", "updated_at"),)
 
 
 class ChatMessageModel(Base):
@@ -67,32 +61,26 @@ class ChatMessageModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    message_id: Mapped[str] = mapped_column(
-        String(50), unique=True, nullable=False, index=True
-    )
+    message_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     session_id: Mapped[str] = mapped_column(
-        String(50), ForeignKey("chat_sessions.session_id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        String(50),
+        ForeignKey("chat_sessions.session_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
 
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, default="", nullable=False)
     content_type: Mapped[str] = mapped_column(String(20), default="text", nullable=False)
-    metadata_json: Mapped[dict[str, Any]] = mapped_column(
-        JSONB, default=dict, nullable=False
-    )
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="complete", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     session: Mapped[ChatSessionModel | None] = relationship(
         "ChatSessionModel", back_populates="messages"
     )
 
-    __table_args__ = (
-        Index("idx_chat_messages_session_created", "session_id", "created_at"),
-    )
+    __table_args__ = (Index("idx_chat_messages_session_created", "session_id", "created_at"),)
 
 
 class ChatAssistantModel(Base, TimestampMixin):
@@ -101,9 +89,7 @@ class ChatAssistantModel(Base, TimestampMixin):
     __tablename__ = "chat_assistants"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    assistant_id: Mapped[str] = mapped_column(
-        String(50), unique=True, nullable=False, index=True
-    )
+    assistant_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
@@ -114,7 +100,7 @@ class ChatAssistantModel(Base, TimestampMixin):
     default_temperature: Mapped[float] = mapped_column(Float, default=0.3, nullable=False)
     default_max_tokens: Mapped[int] = mapped_column(Integer, default=4096, nullable=False)
 
-    icon: Mapped[str] = mapped_column(String(10), default="\U0001F916", nullable=False)
+    icon: Mapped[str] = mapped_column(String(10), default="\U0001f916", nullable=False)
     color: Mapped[str] = mapped_column(String(20), default="#4f8ef7", nullable=False)
     category: Mapped[str] = mapped_column(String(50), default="general", nullable=False)
 
@@ -123,6 +109,4 @@ class ChatAssistantModel(Base, TimestampMixin):
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
-    __table_args__ = (
-        Index("idx_chat_assistants_category", "category", "is_active"),
-    )
+    __table_args__ = (Index("idx_chat_assistants_category", "category", "is_active"),)

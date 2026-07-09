@@ -2,7 +2,7 @@
 # OmicHub 前端驱动的 JBrowse 2 基因组清单
 # ============================================
 # 用途：供 YamlGenomeBrowser.vue 在前端直接解析，构建 JBrowse 2 配置并渲染。
-# 与后端 tools/jbrowse/jbrowse_config.yaml 的区别：
+# 与后端 tool_configs/jbrowse/jbrowse_config.yaml 的区别：
 #   - 后端那份用【文件系统绝对路径】(/data/omichub/...)，由后端做归属校验 + URI 换算；
 #   - 本份用【可直接 fetch 的 URI】，因为前端不经过后端，JBrowse iframe 需要能直接流式读取。
 #

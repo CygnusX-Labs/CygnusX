@@ -149,7 +149,10 @@ class AIService:
         return await self._repo.delete(conversation_id)
 
     async def stream_chat(
-        self, user_id: UUID, conversation_id: UUID, content: str,
+        self,
+        user_id: UUID,
+        conversation_id: UUID,
+        content: str,
         assistant_id: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """流式对话 - 逐 token 推送事件流

@@ -95,7 +95,7 @@ class AgentService:
                 "agent_id": cfg["agent_id"],
                 "name": cfg.get("name", ""),
                 "description": cfg.get("description", ""),
-                "avatar": cfg.get("avatar", "\U0001F916"),
+                "avatar": cfg.get("avatar", "\U0001f916"),
                 "color": cfg.get("color", "#4f8ef7"),
                 "category": cfg.get("category", "general"),
                 "model_id": model_id,
@@ -120,9 +120,7 @@ class AgentService:
         query = select(AgentTemplateModel)
         if active_only:
             query = query.where(AgentTemplateModel.is_active == True)  # noqa: E712
-        query = query.order_by(
-            AgentTemplateModel.is_default.desc(), AgentTemplateModel.created_at
-        )
+        query = query.order_by(AgentTemplateModel.is_default.desc(), AgentTemplateModel.created_at)
         result = await self._db.execute(query)
         return [self._to_dto(a) for a in result.scalars().all()]
 
@@ -162,6 +160,7 @@ class AgentService:
         except SQLAlchemyError as exc:
             await self._db.rollback()
             import logging
+
             logging.getLogger(__name__).exception(f"更新 Agent {agent_id} 数据库错误: {exc}")
             raise BusinessError("保存 Agent 时数据库出错，请稍后重试或联系管理员") from exc
 
@@ -189,6 +188,7 @@ class AgentService:
         except SQLAlchemyError as exc:
             await self._db.rollback()
             import logging
+
             logging.getLogger(__name__).exception(f"创建 Agent {agent_id} 数据库错误: {exc}")
             raise BusinessError("创建 Agent 时数据库出错，请稍后重试或联系管理员") from exc
 
@@ -279,11 +279,13 @@ class AgentService:
     ) -> AgentTemplateModel | None:
         """查找同分类下可接替默认状态的其他启用 Agent，按创建时间优先取最新的。"""
         result = await self._db.execute(
-            select(AgentTemplateModel).where(
+            select(AgentTemplateModel)
+            .where(
                 AgentTemplateModel.category == category,
                 AgentTemplateModel.is_active == True,  # noqa: E712
                 AgentTemplateModel.agent_id != exclude_agent_id,
-            ).order_by(AgentTemplateModel.created_at.desc())
+            )
+            .order_by(AgentTemplateModel.created_at.desc())
         )
         return result.scalars().first()
 
@@ -317,28 +319,32 @@ class AgentService:
         model_config = await self._resolve_model(agent.model_id)
         if model_config is None:
             return AgentContext(
-                agent=agent, model_config=None,
+                agent=agent,
+                model_config=None,
                 system_prompt=agent.system_prompt,
             )
 
         # 2. 收集绑定的 MCP server 及其工具，转成 OpenAI tools
         mcp_servers: list[MCPServer] = []
         tools: list[dict[str, Any]] = []
-        mcp_uuids: list[uuid.UUID] = [u for u in (
-            self._parse_uuid(mid) for mid in (agent.mcp_ids or [])
-        ) if u is not None]
+        mcp_uuids: list[uuid.UUID] = [
+            u for u in (self._parse_uuid(mid) for mid in (agent.mcp_ids or [])) if u is not None
+        ]
         if mcp_uuids:
             mcp_servers = await self._mcp_repo.get_by_ids(mcp_uuids)
             for server in mcp_servers:
                 for t in server.tools:
-                    tools.append({
-                        "type": "function",
-                        "function": {
-                            "name": t.tool_name,
-                            "description": t.description or "",
-                            "parameters": t.input_schema or {"type": "object", "properties": {}},
-                        },
-                    })
+                    tools.append(
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": t.tool_name,
+                                "description": t.description or "",
+                                "parameters": t.input_schema
+                                or {"type": "object", "properties": {}},
+                            },
+                        }
+                    )
 
         # 3. 系统提示词 = Agent 设定 + 绑定技能 prompt 后缀
         system_prompt = agent.system_prompt
@@ -380,16 +386,25 @@ class AgentService:
         )
         skills = [
             Skill(
-                id=m.id, skill_id=m.skill_id, name=m.name, description=m.description,
-                prompt=m.prompt, tool_definition=m.tool_definition, icon=m.icon,
-                category=m.category, is_active=m.is_active, is_builtin=m.is_builtin,
-                created_at=m.created_at, updated_at=m.updated_at,
+                id=m.id,
+                skill_id=m.skill_id,
+                name=m.name,
+                description=m.description,
+                prompt=m.prompt,
+                tool_definition=m.tool_definition,
+                icon=m.icon,
+                category=m.category,
+                is_active=m.is_active,
+                is_builtin=m.is_builtin,
+                created_at=m.created_at,
+                updated_at=m.updated_at,
             )
             for m in result.scalars().all()
         ]
         if not skills:
             return ""
         from omichub.application.services.skill_service import SkillService
+
         return SkillService.build_skills_prompt(skills)
 
     @staticmethod
@@ -406,13 +421,25 @@ class AgentService:
     @staticmethod
     def _to_dto(a: AgentTemplateModel) -> AgentTemplateDTO:
         return AgentTemplateDTO(
-            agent_id=a.agent_id, name=a.name, description=a.description,
-            avatar=a.avatar, color=a.color, category=a.category,
-            model_id=a.model_id, model_name=a.model_name, model_engine=a.model_engine,
-            system_prompt=a.system_prompt, welcome_message=a.welcome_message,
-            mcp_ids=list(a.mcp_ids or []), skill_ids=list(a.skill_ids or []),
+            agent_id=a.agent_id,
+            name=a.name,
+            description=a.description,
+            avatar=a.avatar,
+            color=a.color,
+            category=a.category,
+            model_id=a.model_id,
+            model_name=a.model_name,
+            model_engine=a.model_engine,
+            system_prompt=a.system_prompt,
+            welcome_message=a.welcome_message,
+            mcp_ids=list(a.mcp_ids or []),
+            skill_ids=list(a.skill_ids or []),
             features=dict(a.features or {}),
-            temperature=a.temperature, max_tokens=a.max_tokens,
-            is_builtin=a.is_builtin, is_active=a.is_active, is_default=a.is_default,
-            created_at=a.created_at, updated_at=a.updated_at,
+            temperature=a.temperature,
+            max_tokens=a.max_tokens,
+            is_builtin=a.is_builtin,
+            is_active=a.is_active,
+            is_default=a.is_default,
+            created_at=a.created_at,
+            updated_at=a.updated_at,
         )

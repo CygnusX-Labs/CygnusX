@@ -105,35 +105,45 @@ class JBrowseService:
         assemblies = self._manager.get_config().assemblies
 
         async def _to_dto(asm: AssemblyConfig) -> AssemblyDTO:
-            fasta_exists, fai_exists = await asyncio.to_thread(self._pair_exists, asm.fasta, asm.fai)
-            return AssemblyDTO(
-                id=asm.id,
-                name=asm.name,
-                species=asm.species,
-                description=asm.description,
-                fasta_exists=fasta_exists,
-                fai_exists=fai_exists,
-                aliases=asm.aliases or [],
+            fasta_exists, fai_exists = await asyncio.to_thread(
+                self._pair_exists, asm.fasta, asm.fai
             )
+            return self._assembly_to_dto(asm, fasta_exists, fai_exists)
 
         return await asyncio.gather(*(_to_dto(a) for a in assemblies))
+
+    def _assembly_to_dto(
+        self, asm: AssemblyConfig, fasta_exists: bool, fai_exists: bool
+    ) -> AssemblyDTO:
+        return AssemblyDTO(
+            id=asm.id,
+            name=asm.name,
+            species=asm.species,
+            common_name=asm.common_name,
+            taxonomy_id=asm.taxonomy_id,
+            version_id=asm.version_id or asm.id,
+            version_name=asm.version_name,
+            assembly_name=asm.assembly_name,
+            category=asm.category,
+            icon=asm.icon,
+            is_default=asm.is_default,
+            status=asm.status,
+            release_date=asm.release_date,
+            description=asm.description,
+            stats=asm.stats or {},
+            data_files={key: value.model_dump() for key, value in asm.data_files.items()},
+            fasta_exists=fasta_exists,
+            fai_exists=fai_exists,
+            aliases=asm.aliases or [],
+        )
 
     async def get_assembly_detail(self, assembly_id: str) -> AssemblyDetailDTO:
         asm = self._manager.get_assembly(assembly_id)
         if asm is None:
             raise NotFoundError(f"参考基因组不存在: {assembly_id}")
         fasta_exists, fai_exists = await asyncio.to_thread(self._pair_exists, asm.fasta, asm.fai)
-        return AssemblyDetailDTO(
-            id=asm.id,
-            name=asm.name,
-            species=asm.species,
-            description=asm.description,
-            fasta=asm.fasta,
-            fai=asm.fai,
-            fasta_exists=fasta_exists,
-            fai_exists=fai_exists,
-            aliases=asm.aliases or [],
-        )
+        base = self._assembly_to_dto(asm, fasta_exists, fai_exists).model_dump()
+        return AssemblyDetailDTO(**base, fasta=asm.fasta, fai=asm.fai)
 
     async def list_preset_tracks(self, assembly_id: str) -> list[PresetTrackDTO]:
         tracks = self._manager.get_preset_tracks(assembly_id)
@@ -184,8 +194,7 @@ class JBrowseService:
 
         default_region = region or config.defaults.default_region
         view_tracks = [
-            {"id": t["trackId"], "type": t["type"], "configuration": t["trackId"]}
-            for t in tracks
+            {"id": t["trackId"], "type": t["type"], "configuration": t["trackId"]} for t in tracks
         ]
 
         return {
@@ -286,9 +295,7 @@ class JBrowseService:
             "adapter": adapter,
         }
 
-    def _build_user_track(
-        self, file_path: str, assembly: AssemblyConfig
-    ) -> dict[str, Any] | None:
+    def _build_user_track(self, file_path: str, assembly: AssemblyConfig) -> dict[str, Any] | None:
         """从文件路径构建用户轨道配置。"""
         path = Path(file_path)
         ext = self._ext_of(file_path)

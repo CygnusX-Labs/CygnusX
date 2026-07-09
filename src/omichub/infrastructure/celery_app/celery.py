@@ -4,9 +4,11 @@ from celery import Celery
 from celery.schedules import crontab
 
 from omichub.core.config import get_settings
+from omichub.core.logging import setup_logging
 from omichub.infrastructure.celery_app.logging import LoggedTask
 
 settings = get_settings()
+setup_logging()
 
 celery_app = Celery(
     "omichub",

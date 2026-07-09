@@ -144,7 +144,9 @@ async def create_session(
     service: ChatServiceDep,
     req: CreateSessionRequest,
 ) -> ChatSessionDTO:
-    return await service.create_session(current_user_id, req.model_id, req.title or "新对话", req.assistant_id)
+    return await service.create_session(
+        current_user_id, req.model_id, req.title or "新对话", req.assistant_id
+    )
 
 
 @router.get("/sessions", response_model=list[ChatSessionDTO], summary="会话列表")
@@ -154,7 +156,9 @@ async def list_sessions(
     return await service.list_sessions(current_user_id)
 
 
-@router.get("/sessions/{session_id}/messages", response_model=list[ChatMessageDTO], summary="会话消息")
+@router.get(
+    "/sessions/{session_id}/messages", response_model=list[ChatMessageDTO], summary="会话消息"
+)
 async def get_messages(
     current_user_id: CurrentUserId,
     service: ChatServiceDep,
@@ -203,9 +207,7 @@ async def list_assistants(
 
 
 @router.get("/assistants/{assistant_id}", response_model=ChatAssistantDTO, summary="助手详情")
-async def get_assistant(
-    service: ChatServiceDep, assistant_id: str
-) -> ChatAssistantDTO:
+async def get_assistant(service: ChatServiceDep, assistant_id: str) -> ChatAssistantDTO:
     return await service.get_assistant_dto(assistant_id)
 
 

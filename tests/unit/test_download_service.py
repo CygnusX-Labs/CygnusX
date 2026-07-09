@@ -53,7 +53,7 @@ async def test_submit_creates_download_task_and_dispatches(service):
     assert call_kwargs["sample_count"] == 0
 
     # work_dir 落在 upload_dir 下（触发 Files 自动入库）
-    assert "ebi_download" in created_task.work_dir
+    assert "raw_data" in created_task.work_dir
     assert "PRJNA1251654" in created_task.work_dir
 
     # Celery 任务已投递
@@ -63,14 +63,11 @@ async def test_submit_creates_download_task_and_dispatches(service):
     assert result.flow_id == DOWNLOAD_FLOW_ID
 
 
-@pytest.mark.asyncio
-async def test_submit_rejects_empty_accession(service):
-    from omichub.core.exceptions import ValidationError
+def test_download_request_rejects_empty_accession():
+    from pydantic import ValidationError
 
-    req = DownloadRequest(accession="   ")
     with pytest.raises(ValidationError):
-        await service.submit(str(uuid4()), req)
-    service._domain.submit.assert_not_called()
+        DownloadRequest(accession="   ")
 
 
 @pytest.mark.asyncio
@@ -96,6 +93,43 @@ async def test_submit_sanitizes_accession_path(service):
     from pathlib import Path
 
     assert ".." not in Path(created.work_dir).parts
+
+
+@pytest.mark.asyncio
+async def test_submit_cloud_storage_task_and_dispatches(service):
+    user_id = str(uuid4())
+    req = DownloadRequest(
+        source="cloud_storage",
+        cloud_provider="aliyun",
+        object_uri="oss://bucket/raw/",
+        target_directory="projects/rna-seq",
+    )
+
+    created_task = Task(
+        id=uuid4(),
+        flow_id=DOWNLOAD_FLOW_ID,
+        user_id=uuid4(),
+        name="cloud",
+        status=TaskStatus.PENDING,
+        parameters={},
+    )
+    service._domain.submit.return_value = created_task
+    service._repo.save.return_value = created_task
+    queued = created_task.model_copy(update={"status": TaskStatus.QUEUED})
+    service._domain.transition_status.return_value = queued
+
+    with patch("omichub.application.services.download_service.run_download") as mock_delay:
+        result = await service.submit(user_id, req)
+
+    call_kwargs = service._domain.submit.call_args.kwargs
+    assert call_kwargs["flow_id"] == DOWNLOAD_FLOW_ID
+    assert call_kwargs["parameters"]["source"] == "cloud_storage"
+    assert call_kwargs["parameters"]["cloud_provider"] == "aliyun"
+    assert call_kwargs["parameters"]["object_uri"] == "oss://bucket/raw/"
+    assert "projects/rna-seq" in created_task.work_dir
+    assert "aliyun_oss_bucket_raw" in created_task.work_dir
+    mock_delay.delay.assert_called_once_with(task_id=str(created_task.id))
+    assert result.flow_id == DOWNLOAD_FLOW_ID
 
 
 @pytest.mark.asyncio

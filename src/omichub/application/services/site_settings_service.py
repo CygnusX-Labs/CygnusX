@@ -1,11 +1,16 @@
 """站点设置应用服务 — 单行配置的读取与更新"""
 
-import logging
+from __future__ import annotations
 
+import logging
+from typing import Any, cast
+
+from pydantic import TypeAdapter
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.site_settings import (
+    HomeQuickEntryDTO,
     SiteSettingsDTO,
     TOTPPolicy,
     UpdateSiteSettingsDTO,
@@ -14,6 +19,67 @@ from omichub.core.exceptions import BusinessError
 from omichub.infrastructure.database.models.site_settings import SiteSettingModel
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_HOME_QUICK_ENTRIES: list[dict[str, str]] = [
+    {
+        "key": "rna-seq",
+        "title": "RNA-seq 分析",
+        "desc": "转录组差异表达分析",
+        "to": "/flows?type=rna-seq",
+        "icon": "FlaskOutline",
+        "icon_bg": "blue",
+    },
+    {
+        "key": "atac-seq",
+        "title": "ATAC-seq 分析",
+        "desc": "染色质开放性分析",
+        "to": "/flows?type=atac-seq",
+        "icon": "FitnessOutline",
+        "icon_bg": "purple",
+    },
+    {
+        "key": "files",
+        "title": "数据管理",
+        "desc": "上传与管理样本数据",
+        "to": "/files",
+        "icon": "CloudUploadOutline",
+        "icon_bg": "cyan",
+    },
+    {
+        "key": "ai",
+        "title": "AI 助手",
+        "desc": "智能分析与问答",
+        "to": "/ai",
+        "icon": "ChatbubblesOutline",
+        "icon_bg": "green",
+    },
+    {
+        "key": "tasks",
+        "title": "任务中心",
+        "desc": "查看分析任务进度",
+        "to": "/tasks",
+        "icon": "DocumentTextOutline",
+        "icon_bg": "orange",
+    },
+]
+
+_HOME_QUICK_ENTRY_ADAPTER = TypeAdapter(list[HomeQuickEntryDTO])
+
+
+def _default_home_quick_entries() -> list[dict[str, str]]:
+    return [dict(entry) for entry in DEFAULT_HOME_QUICK_ENTRIES]
+
+
+def _normalize_home_quick_entries(value: Any) -> list[HomeQuickEntryDTO]:
+    """校验 DB 中的快捷入口配置；空值或坏数据回退默认值。"""
+    if not isinstance(value, list) or not value:
+        return _HOME_QUICK_ENTRY_ADAPTER.validate_python(_default_home_quick_entries())
+    try:
+        entries = _HOME_QUICK_ENTRY_ADAPTER.validate_python(value)
+    except Exception:
+        return _HOME_QUICK_ENTRY_ADAPTER.validate_python(_default_home_quick_entries())
+    normalized = entries[:8]
+    return normalized or _HOME_QUICK_ENTRY_ADAPTER.validate_python(_default_home_quick_entries())
 
 
 class SiteSettingsService:
@@ -28,7 +94,12 @@ class SiteSettingsService:
         try:
             model = await self._db.get(SiteSettingModel, self._SINGLETON_ID)
             if model is None:
-                model = SiteSettingModel(id=self._SINGLETON_ID, registration_enabled=True, totp_policy="optional")
+                model = SiteSettingModel(
+                    id=self._SINGLETON_ID,
+                    registration_enabled=True,
+                    totp_policy="optional",
+                    home_quick_entries=_default_home_quick_entries(),
+                )
                 self._db.add(model)
                 await self._db.flush()
             return model
@@ -39,9 +110,15 @@ class SiteSettingsService:
 
     async def get_settings(self) -> SiteSettingsDTO:
         model = await self._get_or_create()
+        policy = (
+            model.totp_policy
+            if model.totp_policy in ("off", "optional", "required")
+            else "optional"
+        )
         return SiteSettingsDTO(
             registration_enabled=model.registration_enabled,
-            totp_policy=model.totp_policy,
+            totp_policy=cast(TOTPPolicy, policy),
+            home_quick_entries=_normalize_home_quick_entries(model.home_quick_entries),
         )
 
     async def is_registration_enabled(self) -> bool:
@@ -53,7 +130,7 @@ class SiteSettingsService:
         policy = model.totp_policy
         if policy not in ("off", "optional", "required"):
             return "optional"
-        return policy
+        return cast(TOTPPolicy, policy)
 
     async def update_settings(self, req: UpdateSiteSettingsDTO) -> SiteSettingsDTO:
         try:
@@ -62,6 +139,8 @@ class SiteSettingsService:
                 model.registration_enabled = req.registration_enabled
             if req.totp_policy is not None:
                 model.totp_policy = req.totp_policy
+            if req.home_quick_entries is not None:
+                model.home_quick_entries = [entry.model_dump() for entry in req.home_quick_entries]
             await self._db.flush()
             return await self.get_settings()
         except SQLAlchemyError as exc:

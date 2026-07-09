@@ -109,7 +109,10 @@ class EnrichmentService:
         run_result = await self._runner.run(params, container_name)
 
         if run_result.returncode != 0:
-            tail = run_result.stderr.strip()[-_STDERR_TAIL:] or run_result.stdout.strip()[-_STDERR_TAIL:]
+            tail = (
+                run_result.stderr.strip()[-_STDERR_TAIL:]
+                or run_result.stdout.strip()[-_STDERR_TAIL:]
+            )
             raise TaskExecutionError(
                 f"富集分析失败 (exit={run_result.returncode}): {tail or '容器未给出错误信息'}"
             )

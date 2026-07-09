@@ -82,9 +82,7 @@ class TaskCookieConsumer:
             execution_seconds=execution_seconds,
         )
 
-    async def on_cancel(
-        self, user_id: UUID, task_id: str, pre_deducted: Decimal
-    ) -> None:
+    async def on_cancel(self, user_id: UUID, task_id: str, pre_deducted: Decimal) -> None:
         """集成点#4: 任务取消退还预扣饼干"""
         if not self._settings.enable_cookie_system or pre_deducted == 0:
             return

@@ -55,7 +55,9 @@ class SqlAlchemySandboxSessionRepository(ISandboxSessionRepository):
                 user_id=session.user_id,
                 container_id=session.container_id,
                 container_name=session.container_name,
-                status=session.status.value if hasattr(session.status, "value") else str(session.status),
+                status=session.status.value
+                if hasattr(session.status, "value")
+                else str(session.status),
                 language=session.language,
                 last_activity=session.last_activity,
                 expires_at=session.expires_at,

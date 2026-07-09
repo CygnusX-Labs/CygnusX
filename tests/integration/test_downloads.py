@@ -70,6 +70,48 @@ async def test_submit_download_contract(client, auth_headers, monkeypatch):
 
 
 @pytest.mark.integration
+async def test_submit_cloud_storage_download_contract(client, auth_headers, monkeypatch):
+    """启用云存储后可通过同一 /downloads 接口提交云存储直拉任务。"""
+    monkeypatch.setattr(get_settings(), "enable_cloud_storage_download", True)
+
+    fake = TaskResponse(
+        id=uuid4(),
+        flow_id="ebi_download",
+        user_id=uuid4(),
+        name="云存储下载 阿里云 OSS oss://bucket/raw/",
+        status="queued",
+        execution_mode="local",
+        parameters={"source": "cloud_storage", "object_uri": "oss://bucket/raw/"},
+        work_dir="/tmp/raw_data/aliyun_oss_bucket_raw",
+        result_path="",
+        error_message="",
+        progress=0.0,
+        logs=[],
+        created_at=datetime.now(),
+        started_at=None,
+        finished_at=None,
+    )
+    with patch(
+        "omichub.api.v1.downloads.DownloadService.submit",
+        new=AsyncMock(return_value=fake),
+    ):
+        resp = await client.post(
+            "/api/v1/downloads",
+            json={
+                "source": "cloud_storage",
+                "cloud_provider": "aliyun",
+                "object_uri": "oss://bucket/raw/",
+            },
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["flow_id"] == "ebi_download"
+    assert data["parameters"]["source"] == "cloud_storage"
+
+
+@pytest.mark.integration
 async def test_downloads_requires_auth(client):
     """未认证访问返回 401（路由存在）。"""
     resp = await client.post("/api/v1/downloads", json={"accession": "PRJNA1"})

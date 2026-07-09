@@ -8,7 +8,16 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -101,4 +110,6 @@ class DirectoryModel(Base, TimestampMixin):
     # 父目录路径，如 "projectA"；根级目录 parent_path 为 NULL
     parent_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # 系统默认目录（raw_data / workspace / temp）—— 不可删除/重命名
-    is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+    is_system: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )

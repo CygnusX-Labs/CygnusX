@@ -88,8 +88,11 @@ class CookieService:
         account = CookieAccount(user_id=user_id)
         account = await self._account_repo.save(account)
         await self._record_transaction(
-            account, TransactionType.EARN, initial,
-            source_type="signup", description=f"新用户注册赠送 {initial} 🥫",
+            account,
+            TransactionType.EARN,
+            initial,
+            source_type="signup",
+            description=f"新用户注册赠送 {initial} 🥫",
         )
         return account
 
@@ -102,7 +105,11 @@ class CookieService:
         return account.available_balance
 
     async def pre_deduct(
-        self, user_id: UUID, amount: Decimal, source_type: str, source_id: str,
+        self,
+        user_id: UUID,
+        amount: Decimal,
+        source_type: str,
+        source_id: str,
         description: str = "",
     ) -> CookieTransaction:
         """预扣饼干（冻结）— 任务提交前调用"""
@@ -110,48 +117,77 @@ class CookieService:
         if not account.can_spend(amount):
             raise BusinessError(f"饼干余额不足: 需要 {amount}, 可用 {account.available_balance}")
         return await self._record_transaction(
-            account, TransactionType.FREEZE, -abs(amount),
-            source_type=source_type, source_id=source_id,
+            account,
+            TransactionType.FREEZE,
+            -abs(amount),
+            source_type=source_type,
+            source_id=source_id,
             description=description or f"预扣 {amount} 🥫 ({source_type}:{source_id})",
         )
 
     async def settle(
-        self, user_id: UUID, pre_deducted: Decimal, actual_cost: Decimal,
-        source_type: str, source_id: str, task_type: str = "",
-        resource_cores: int | None = None, execution_seconds: int | None = None,
+        self,
+        user_id: UUID,
+        pre_deducted: Decimal,
+        actual_cost: Decimal,
+        source_type: str,
+        source_id: str,
+        task_type: str = "",
+        resource_cores: int | None = None,
+        execution_seconds: int | None = None,
     ) -> CookieTransaction:
         """结算（多退少补）— 任务完成时调用"""
         account = await self.get_or_create_account(user_id)
         diff = actual_cost - pre_deducted
         if diff > 0:
             return await self._record_transaction(
-                account, TransactionType.SPEND, -abs(diff),
-                source_type=source_type, source_id=source_id, task_type=task_type,
-                resource_cores=resource_cores, execution_seconds=execution_seconds,
+                account,
+                TransactionType.SPEND,
+                -abs(diff),
+                source_type=source_type,
+                source_id=source_id,
+                task_type=task_type,
+                resource_cores=resource_cores,
+                execution_seconds=execution_seconds,
                 description=f"结算补扣 {diff} 🥫 (实际{actual_cost}-预扣{pre_deducted})",
             )
         elif diff < 0:
             return await self._record_transaction(
-                account, TransactionType.UNFREEZE, abs(diff),
-                source_type=source_type, source_id=source_id, task_type=task_type,
+                account,
+                TransactionType.UNFREEZE,
+                abs(diff),
+                source_type=source_type,
+                source_id=source_id,
+                task_type=task_type,
                 description=f"结算退还 {abs(diff)} 🥫 (预扣{pre_deducted}-实际{actual_cost})",
             )
         else:
             return await self._record_transaction(
-                account, TransactionType.UNFREEZE, Decimal("0"),
-                source_type=source_type, source_id=source_id, task_type=task_type,
+                account,
+                TransactionType.UNFREEZE,
+                Decimal("0"),
+                source_type=source_type,
+                source_id=source_id,
+                task_type=task_type,
                 description=f"结算完成 (预扣=实际={actual_cost})",
             )
 
     async def refund(
-        self, user_id: UUID, amount: Decimal, source_type: str, source_id: str,
+        self,
+        user_id: UUID,
+        amount: Decimal,
+        source_type: str,
+        source_id: str,
         description: str = "",
     ) -> CookieTransaction:
         """退还预扣饼干 — 任务取消时调用"""
         account = await self.get_or_create_account(user_id)
         return await self._record_transaction(
-            account, TransactionType.REFUND, abs(amount),
-            source_type=source_type, source_id=source_id,
+            account,
+            TransactionType.REFUND,
+            abs(amount),
+            source_type=source_type,
+            source_id=source_id,
             description=description or f"退还预扣 {amount} 🥫",
         )
 
@@ -187,8 +223,12 @@ class CookieService:
     ) -> CookieTransactionDTO:
         account = await self.get_or_create_account(user_id)
         txn = await self._record_transaction(
-            account, TransactionType.ADJUST, amount,
-            source_type="admin", admin_id=admin_id, adjust_reason=reason,
+            account,
+            TransactionType.ADJUST,
+            amount,
+            source_type="admin",
+            admin_id=admin_id,
+            adjust_reason=reason,
             description=f"管理员调整 {amount} 🥫: {reason}",
         )
         return self._txn_to_dto(txn)
@@ -204,17 +244,23 @@ class CookieService:
 
     async def create_pricing(self, req: PricingCreateRequest, admin_id: UUID) -> CookiePricing:
         pricing = CookiePricing(
-            pricing_type=PricingType(req.pricing_type), resource_type=req.resource_type,
-            flow_category=req.flow_category, base_cost=req.base_cost,
+            pricing_type=PricingType(req.pricing_type),
+            resource_type=req.resource_type,
+            flow_category=req.flow_category,
+            base_cost=req.base_cost,
             per_sample_cost=req.per_sample_cost,
             per_comparison_cost=req.per_comparison_cost,
             unit=PricingUnit(req.unit),
-            priority=req.priority, description=req.description,
-            effective_until=req.effective_until, created_by=admin_id,
+            priority=req.priority,
+            description=req.description,
+            effective_until=req.effective_until,
+            created_by=admin_id,
         )
         return await self._pricing_repo.save(pricing)
 
-    async def update_pricing(self, pricing_id: int, req: PricingCreateRequest, admin_id: UUID) -> CookiePricing:
+    async def update_pricing(
+        self, pricing_id: int, req: PricingCreateRequest, admin_id: UUID
+    ) -> CookiePricing:
         pricing = await self._pricing_repo.get_by_id(pricing_id)
         if pricing is None:
             raise NotFoundError(f"定价策略 {pricing_id} 不存在")
@@ -271,9 +317,12 @@ class CookieService:
         )
         row = result.one()
         return CookieStatsDTO(
-            total_accounts=row[0] or 0, active_accounts=row[1] or 0,
-            total_balance=Decimal(str(row[2])), total_frozen=Decimal(str(row[3])),
-            total_earned=Decimal(str(row[4])), total_spent=Decimal(str(row[5])),
+            total_accounts=row[0] or 0,
+            active_accounts=row[1] or 0,
+            total_balance=Decimal(str(row[2])),
+            total_frozen=Decimal(str(row[3])),
+            total_earned=Decimal(str(row[4])),
+            total_spent=Decimal(str(row[5])),
         )
 
     async def list_all_accounts(
@@ -319,9 +368,7 @@ class CookieService:
                     )
                 )
             except (ValueError, AttributeError):
-                query = query.where(
-                    or_(UserModel.username.ilike(kw), UserModel.email.ilike(kw))
-                )
+                query = query.where(or_(UserModel.username.ilike(kw), UserModel.email.ilike(kw)))
         query = query.offset(offset).limit(limit)
         result = await self._session.execute(query)
         rows = result.all()
@@ -350,16 +397,27 @@ class CookieService:
             ) in rows
         ]
 
-    async def list_all_transactions(self, offset: int = 0, limit: int = 50) -> list[CookieTransactionDTO]:
+    async def list_all_transactions(
+        self, offset: int = 0, limit: int = 50
+    ) -> list[CookieTransactionDTO]:
         result = await self._session.execute(
-            select(CookieTransactionModel).order_by(desc(CookieTransactionModel.created_at)).offset(offset).limit(limit)
+            select(CookieTransactionModel)
+            .order_by(desc(CookieTransactionModel.created_at))
+            .offset(offset)
+            .limit(limit)
         )
         return [
             CookieTransactionDTO(
-                id=t.id, user_id=t.user_id, txn_type=t.txn_type, amount=t.amount,
-                balance_after=t.balance_after, source_type=t.source_type or "",
-                source_id=t.source_id or "", task_type=t.task_type or "",
-                description=t.description or "", created_at=t.created_at,
+                id=t.id,
+                user_id=t.user_id,
+                txn_type=t.txn_type,
+                amount=t.amount,
+                balance_after=t.balance_after,
+                source_type=t.source_type or "",
+                source_id=t.source_id or "",
+                task_type=t.task_type or "",
+                description=t.description or "",
+                created_at=t.created_at,
             )
             for t in result.scalars().all()
         ]
@@ -401,10 +459,16 @@ class CookieService:
         return [
             {
                 **CookieTransactionDTO(
-                    id=t.id, user_id=t.user_id, txn_type=t.txn_type, amount=t.amount,
-                    balance_after=t.balance_after, source_type=t.source_type or "",
-                    source_id=t.source_id or "", task_type=t.task_type or "",
-                    description=t.description or "", created_at=t.created_at,
+                    id=t.id,
+                    user_id=t.user_id,
+                    txn_type=t.txn_type,
+                    amount=t.amount,
+                    balance_after=t.balance_after,
+                    source_type=t.source_type or "",
+                    source_id=t.source_id or "",
+                    task_type=t.task_type or "",
+                    description=t.description or "",
+                    created_at=t.created_at,
                 ).model_dump(),
                 "username": username or "",
                 "email": email or "",
@@ -440,30 +504,53 @@ class CookieService:
     # ------------------------------------------------------------------
 
     async def _record_transaction(
-        self, account: CookieAccount, txn_type: TransactionType, amount: Decimal,
-        source_type: str = "", source_id: str = "", admin_id: UUID | None = None,
-        adjust_reason: str = "", task_type: str = "",
-        resource_cores: int | None = None, execution_seconds: int | None = None,
+        self,
+        account: CookieAccount,
+        txn_type: TransactionType,
+        amount: Decimal,
+        source_type: str = "",
+        source_id: str = "",
+        admin_id: UUID | None = None,
+        adjust_reason: str = "",
+        task_type: str = "",
+        resource_cores: int | None = None,
+        execution_seconds: int | None = None,
         description: str = "",
     ) -> CookieTransaction:
         """记录交易并更新账户（Python 端维护统计，替代 SQL 触发器）"""
         account.apply_transaction(
             CookieTransaction(
-                id=None, account_id=account.id, user_id=account.user_id,
-                txn_type=txn_type, amount=amount, balance_after=account.balance,
-                source_type=source_type, source_id=source_id, admin_id=admin_id,
-                adjust_reason=adjust_reason, task_type=task_type,
-                resource_cores=resource_cores, execution_seconds=execution_seconds,
+                id=None,
+                account_id=account.id,
+                user_id=account.user_id,
+                txn_type=txn_type,
+                amount=amount,
+                balance_after=account.balance,
+                source_type=source_type,
+                source_id=source_id,
+                admin_id=admin_id,
+                adjust_reason=adjust_reason,
+                task_type=task_type,
+                resource_cores=resource_cores,
+                execution_seconds=execution_seconds,
                 description=description,
             )
         )
         await self._account_repo.save(account)
         txn = CookieTransaction(
-            account_id=account.id, user_id=account.user_id, txn_type=txn_type,
-            amount=amount, balance_after=account.balance, source_type=source_type,
-            source_id=source_id, admin_id=admin_id, adjust_reason=adjust_reason,
-            task_type=task_type, resource_cores=resource_cores,
-            execution_seconds=execution_seconds, description=description,
+            account_id=account.id,
+            user_id=account.user_id,
+            txn_type=txn_type,
+            amount=amount,
+            balance_after=account.balance,
+            source_type=source_type,
+            source_id=source_id,
+            admin_id=admin_id,
+            adjust_reason=adjust_reason,
+            task_type=task_type,
+            resource_cores=resource_cores,
+            execution_seconds=execution_seconds,
+            description=description,
         )
         txn = await self._txn_repo.add(txn)
 
@@ -490,17 +577,29 @@ class CookieService:
     @staticmethod
     def _account_to_dto(a: CookieAccount) -> CookieAccountDTO:
         return CookieAccountDTO(
-            id=a.id, user_id=a.user_id, balance=a.balance, frozen_balance=a.frozen_balance,
-            available_balance=a.available_balance, total_earned=a.total_earned,
-            total_spent=a.total_spent, total_adjusted=a.total_adjusted,
-            status=a.status.value, created_at=a.created_at,
+            id=a.id,
+            user_id=a.user_id,
+            balance=a.balance,
+            frozen_balance=a.frozen_balance,
+            available_balance=a.available_balance,
+            total_earned=a.total_earned,
+            total_spent=a.total_spent,
+            total_adjusted=a.total_adjusted,
+            status=a.status.value,
+            created_at=a.created_at,
         )
 
     @staticmethod
     def _txn_to_dto(t: CookieTransaction) -> CookieTransactionDTO:
         return CookieTransactionDTO(
-            id=t.id, user_id=t.user_id, txn_type=t.txn_type.value, amount=t.amount,
-            balance_after=t.balance_after, source_type=t.source_type,
-            source_id=t.source_id, task_type=t.task_type,
-            description=t.description, created_at=t.created_at,
+            id=t.id,
+            user_id=t.user_id,
+            txn_type=t.txn_type.value,
+            amount=t.amount,
+            balance_after=t.balance_after,
+            source_type=t.source_type,
+            source_id=t.source_id,
+            task_type=t.task_type,
+            description=t.description,
+            created_at=t.created_at,
         )

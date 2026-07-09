@@ -23,7 +23,7 @@ class AgentTemplateModel(Base, TimestampMixin):
         if self.description is None:
             self.description = ""
         if self.avatar is None:
-            self.avatar = "\U0001F916"
+            self.avatar = "\U0001f916"
         if self.color is None:
             self.color = "#4f8ef7"
         if self.category is None:
@@ -58,12 +58,10 @@ class AgentTemplateModel(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    agent_id: Mapped[str] = mapped_column(
-        String(50), unique=True, nullable=False, index=True
-    )
+    agent_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    avatar: Mapped[str] = mapped_column(String(10), default="\U0001F916", nullable=False)
+    avatar: Mapped[str] = mapped_column(String(10), default="\U0001f916", nullable=False)
     color: Mapped[str] = mapped_column(String(20), default="#4f8ef7", nullable=False)
     category: Mapped[str] = mapped_column(String(50), default="general", nullable=False)
 
@@ -94,6 +92,4 @@ class AgentTemplateModel(Base, TimestampMixin):
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
-    __table_args__ = (
-        Index("idx_agent_templates_category", "category", "is_active"),
-    )
+    __table_args__ = (Index("idx_agent_templates_category", "category", "is_active"),)

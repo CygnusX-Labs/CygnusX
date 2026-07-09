@@ -1,5 +1,10 @@
 import apiClient from '@/api/client'
-import type { TerminalSession, CreateTerminalRequest, TerminalImage } from '@/types/terminal'
+import type {
+  TerminalSession,
+  CreateTerminalRequest,
+  TerminalImage,
+  TerminalRuntimeConfig,
+} from '@/types/terminal'
 
 export async function createTerminalSession(req?: CreateTerminalRequest) {
   const { data } = await apiClient.post<TerminalSession>('/terminal/sessions', req ?? {})
@@ -23,5 +28,10 @@ export async function deleteTerminalSession(sessionId: string) {
 
 export async function listTerminalImages() {
   const { data } = await apiClient.get<TerminalImage[]>('/terminal/environments')
+  return data
+}
+
+export async function getTerminalConfig() {
+  const { data } = await apiClient.get<TerminalRuntimeConfig>('/terminal/config')
   return data
 }

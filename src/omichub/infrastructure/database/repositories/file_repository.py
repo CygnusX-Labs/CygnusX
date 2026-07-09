@@ -77,7 +77,9 @@ class FileRepositoryImpl(IFileRepository):
             existing.storage_path = file.path
             existing.size = file.size
             existing.checksum = file.checksum
-            existing.file_type = file.file_type.value if hasattr(file.file_type, "value") else file.file_type
+            existing.file_type = (
+                file.file_type.value if hasattr(file.file_type, "value") else file.file_type
+            )
             existing.directory = file.directory
             model = existing
         else:
@@ -88,7 +90,9 @@ class FileRepositoryImpl(IFileRepository):
                 storage_path=file.path,
                 size=file.size,
                 checksum=file.checksum,
-                file_type=file.file_type.value if hasattr(file.file_type, "value") else file.file_type,
+                file_type=file.file_type.value
+                if hasattr(file.file_type, "value")
+                else file.file_type,
                 status="active",
                 directory=file.directory,
             )

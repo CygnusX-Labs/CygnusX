@@ -51,7 +51,7 @@ function flowLabel(flowId: string): string {
     'atac-seq': 'ATAC-seq',
     'rna_seq': 'RNA-seq',
     'atac_seq': 'ATAC-seq',
-    'ebi_download': 'EBI Download',
+    'ebi_download': 'Data Download',
     'variant_calling': 'Variant Calling',
     'spatial-transcriptomics': 'Spatial TX',
     'scrna-seq': 'scRNA-seq',

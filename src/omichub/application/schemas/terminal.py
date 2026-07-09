@@ -26,6 +26,23 @@ class TerminalImageResourceDTO(OmicsHubBaseSchema):
     pid_limit: int | None = None
 
 
+class TerminalRuntimeResourceDTO(OmicsHubBaseSchema):
+    """终端运行时资源配置"""
+
+    memory_mb: int
+    cpu_cores: float
+    pid_limit: int
+    tmpfs_size_mb: int
+
+
+class TerminalRuntimeConfigDTO(OmicsHubBaseSchema):
+    """终端运行时配置（返回前端用）"""
+
+    enabled: bool
+    default_resources: TerminalRuntimeResourceDTO
+    max_resources: TerminalRuntimeResourceDTO
+
+
 class TerminalImageEnvDTO(OmicsHubBaseSchema):
     """镜像环境变量"""
 

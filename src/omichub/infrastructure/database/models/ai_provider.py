@@ -19,7 +19,9 @@ class AIProviderConfigModel(Base, TimestampMixin):
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
-    provider_type: Mapped[str] = mapped_column(String(30), default="openai_compatible", nullable=False)
+    provider_type: Mapped[str] = mapped_column(
+        String(30), default="openai_compatible", nullable=False
+    )
     model: Mapped[str] = mapped_column(String(100), nullable=False)
     base_url: Mapped[str] = mapped_column(String(500), default="", nullable=False)
     api_key: Mapped[str] = mapped_column(Text, default="", nullable=False)

@@ -34,9 +34,7 @@ class SkillService:
         return [self._to_dto(m) for m in result.scalars().all()]
 
     async def get_skill(self, skill_id: str) -> SkillDTO:
-        result = await self._db.execute(
-            select(SkillModel).where(SkillModel.skill_id == skill_id)
-        )
+        result = await self._db.execute(select(SkillModel).where(SkillModel.skill_id == skill_id))
         m = result.scalar_one_or_none()
         if not m:
             raise NotFoundError(f"技能 '{skill_id}' 不存在")
@@ -63,9 +61,7 @@ class SkillService:
         return self._to_dto(model)
 
     async def update_skill(self, skill_id: str, req: UpdateSkillDTO) -> SkillDTO:
-        result = await self._db.execute(
-            select(SkillModel).where(SkillModel.skill_id == skill_id)
-        )
+        result = await self._db.execute(select(SkillModel).where(SkillModel.skill_id == skill_id))
         model = result.scalar_one_or_none()
         if not model:
             raise NotFoundError(f"技能 '{skill_id}' 不存在")
@@ -76,9 +72,7 @@ class SkillService:
         return self._to_dto(model)
 
     async def delete_skill(self, skill_id: str) -> bool:
-        result = await self._db.execute(
-            select(SkillModel).where(SkillModel.skill_id == skill_id)
-        )
+        result = await self._db.execute(select(SkillModel).where(SkillModel.skill_id == skill_id))
         model = result.scalar_one_or_none()
         if not model:
             raise NotFoundError(f"技能 '{skill_id}' 不存在")
@@ -89,9 +83,7 @@ class SkillService:
         return True
 
     async def toggle_skill(self, skill_id: str) -> SkillDTO:
-        result = await self._db.execute(
-            select(SkillModel).where(SkillModel.skill_id == skill_id)
-        )
+        result = await self._db.execute(select(SkillModel).where(SkillModel.skill_id == skill_id))
         model = result.scalar_one_or_none()
         if not model:
             raise NotFoundError(f"技能 '{skill_id}' 不存在")
@@ -131,9 +123,7 @@ class SkillService:
         return SkillDomainService.build_prompt(skills)
 
     async def get_by_skill_id(self, skill_id: str) -> SkillModel | None:
-        result = await self._db.execute(
-            select(SkillModel).where(SkillModel.skill_id == skill_id)
-        )
+        result = await self._db.execute(select(SkillModel).where(SkillModel.skill_id == skill_id))
         return result.scalar_one_or_none()
 
     @staticmethod

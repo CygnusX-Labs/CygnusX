@@ -33,13 +33,18 @@ export function createDefaultAdvancedOptions(): AdvancedDownloadOptions {
 }
 
 export interface DownloadRequest {
-  accession: string
-  download_method: 'aws' | 'aspera' | 'ftp'
-  multithreads: number
-  aws_threads: number
+  source?: 'sra' | 'cloud_storage'
+  accession?: string
+  download_method?: 'aws' | 'aspera' | 'ftp'
+  multithreads?: number
+  aws_threads?: number
+  cloud_provider?: 'aliyun' | 'volc' | 'huawei'
+  object_uri?: string
+  recursive?: boolean
+  target_directory?: string
   /** 高级选项；后端暂未消费，预留字段，便于后续 CLI 透传 */
   advanced?: AdvancedDownloadOptions
-  /** 模拟下载，不实际下载文件（测试用） */
+  /** 模拟下载，不实际下载文件（测试用，仅 SRA 下载支持） */
   dry_run?: boolean
 }
 

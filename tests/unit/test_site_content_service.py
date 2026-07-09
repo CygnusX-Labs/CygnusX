@@ -81,7 +81,9 @@ def test_get_content_includes_registration_defaults(tmp_path: Path):
         {"hero": {"title": "t", "description": "d"}},
     )
     content = SiteContentService(yaml_path).get_content()
-    assert content.registration.disabled_message == DEFAULT_CONTENT["registration"]["disabled_message"]
+    assert (
+        content.registration.disabled_message == DEFAULT_CONTENT["registration"]["disabled_message"]
+    )
     assert content.registration.admin_contact == ""
 
 
@@ -113,4 +115,6 @@ def test_get_content_fills_partial_registration_from_default(tmp_path: Path):
     )
     content = SiteContentService(yaml_path).get_content()
     assert content.registration.admin_contact == "admin@hzau.edu.cn"
-    assert content.registration.disabled_message == DEFAULT_CONTENT["registration"]["disabled_message"]
+    assert (
+        content.registration.disabled_message == DEFAULT_CONTENT["registration"]["disabled_message"]
+    )

@@ -168,18 +168,14 @@ class SqlAlchemyTransactionRepository(ICookieTransactionRepository):
         offset: int = 0,
         limit: int = 50,
     ) -> list[CookieTransaction]:
-        query = select(CookieTransactionModel).where(
-            CookieTransactionModel.user_id == user_id
-        )
+        query = select(CookieTransactionModel).where(CookieTransactionModel.user_id == user_id)
         if txn_type:
             query = query.where(CookieTransactionModel.txn_type == txn_type)
         query = query.order_by(desc(CookieTransactionModel.created_at)).offset(offset).limit(limit)
         result = await self._session.execute(query)
         return [self._to_entity(m) for m in result.scalars().all()]
 
-    async def list_by_source(
-        self, source_type: str, source_id: str
-    ) -> list[CookieTransaction]:
+    async def list_by_source(self, source_type: str, source_id: str) -> list[CookieTransaction]:
         result = await self._session.execute(
             select(CookieTransactionModel)
             .where(
@@ -246,12 +242,16 @@ class SqlAlchemyPricingRepository(ICookiePricingRepository):
         pricing_type: str = "",
     ) -> CookiePricing | None:
         """按 flow_category + resource_type + priority 匹配最优定价"""
-        query = select(CookiePricingModel).where(
-            CookiePricingModel.is_active == True,  # noqa: E712
-            CookiePricingModel.effective_from <= func.now(),
-        ).where(
-            (CookiePricingModel.effective_until.is_(None))
-            | (CookiePricingModel.effective_until > func.now())
+        query = (
+            select(CookiePricingModel)
+            .where(
+                CookiePricingModel.is_active == True,  # noqa: E712
+                CookiePricingModel.effective_from <= func.now(),
+            )
+            .where(
+                (CookiePricingModel.effective_until.is_(None))
+                | (CookiePricingModel.effective_until > func.now())
+            )
         )
         if flow_category:
             query = query.where(CookiePricingModel.flow_category == flow_category)
@@ -436,9 +436,7 @@ class SqlAlchemyLedgerRepository(ILedgerRepository):
         await self._session.refresh(model)
         return self._to_entity(model)
 
-    async def get_by_date_user(
-        self, snapshot_date: date, user_id: UUID
-    ) -> LedgerEntry | None:
+    async def get_by_date_user(self, snapshot_date: date, user_id: UUID) -> LedgerEntry | None:
         result = await self._session.execute(
             select(LedgerEntryModel).where(
                 LedgerEntryModel.snapshot_date == snapshot_date,

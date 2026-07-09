@@ -1,12 +1,14 @@
-"""数据下载应用服务 — 编排 EBI 数据下载任务。
+"""数据下载应用服务 — 编排公共数据库与云存储下载任务。
 
-复用通用 Task 聚合根承载下载任务（flow_id="ebi_download"），不引入新领域表。
-下载产物落到 `storage_path/upload_dir/<user_id>/ebi_download/<accession>/`，
-借 FileService 的文件系统扫描自动出现在 /files。
+复用通用 Task 聚合根承载下载任务（历史 flow_id="ebi_download"），不引入新领域表。
+下载产物落到 `storage_path/users/<user_id>/raw_data/...`，完成后登记为 FileRecord，
+自动出现在「数据管理」中。
 """
 
 from __future__ import annotations
 
+import contextlib
+import re
 from pathlib import Path
 from uuid import UUID
 
@@ -23,7 +25,15 @@ from omichub.infrastructure.database.repositories.task_repository import (
     TaskRepositoryImpl,
 )
 
-DOWNLOAD_FLOW_ID = "ebi_download"
+DOWNLOAD_FLOW_ID = "ebi_download"  # 兼容既有任务筛选；语义已扩展为数据下载聚合
+
+_CLOUD_PROVIDER_LABELS = {
+    "aliyun": "阿里云 OSS",
+    "volc": "火山引擎 TOS",
+    "volcengine": "火山引擎 TOS",
+    "huawei": "华为云 OBS",
+    "huaweicloud": "华为云 OBS",
+}
 
 
 class DownloadService:
@@ -37,41 +47,55 @@ class DownloadService:
 
     async def submit(self, user_id: str, req: DownloadRequest) -> TaskResponse:
         """提交一个数据下载任务。"""
-        if not req.accession or not req.accession.strip():
-            raise ValidationError("登录号 (accession) 不能为空")
-
-        accession = req.accession.strip()
-        # 规整目标目录：去首尾斜杠、防 .. 越权
         directory = self._normalize_directory(req.target_directory)
-        work_dir = self._make_work_dir(user_id, accession, directory)
 
-        # 若指定了目标目录且尚未登记，自动创建 Directory 记录（物理目录已由 _make_work_dir 创建）
-        if directory:
-            from omichub.application.services.file_service import FileService
-            from omichub.application.schemas.file import DirectoryCreateRequest
-
-            file_svc = FileService(self._db)
-            try:
-                await file_svc.create_directory(
-                    UUID(user_id), DirectoryCreateRequest(path=directory)
-                )
-            except Exception:
-                # 目录已存在则忽略（ConflictError），其他异常不阻断下载提交
-                pass
-
-        # 创建任务聚合根（复用通用 Task，flow_id 标记为数据下载）
-        task = await self._domain.submit(
-            flow_id=DOWNLOAD_FLOW_ID,
-            user_id=UUID(user_id),
-            name=f"EBI 下载 {accession}",
-            parameters={
+        if req.source == "cloud_storage":
+            provider = self._normalize_cloud_provider(req.cloud_provider or "")
+            object_uri = req.object_uri.strip()
+            safe_label = self._safe_path_label(f"{provider}_{object_uri}", fallback="cloud_storage")
+            work_dir = self._make_work_dir(user_id, safe_label, directory)
+            source_label = _CLOUD_PROVIDER_LABELS.get(provider, provider)
+            task_name = f"云存储下载 {source_label} {object_uri}"
+            parameters = {
+                "source": "cloud_storage",
+                "cloud_provider": provider,
+                "object_uri": object_uri,
+                "recursive": req.recursive,
+                "target_directory": directory,
+            }
+        else:
+            accession = req.accession.strip()
+            safe_accession = self._safe_path_label(accession, fallback="sra")
+            work_dir = self._make_work_dir(user_id, safe_accession, directory)
+            task_name = f"EBI 下载 {accession}"
+            parameters = {
+                "source": "sra",
                 "accession": accession,
                 "download_method": req.download_method,
                 "multithreads": req.multithreads,
                 "aws_threads": req.aws_threads,
                 "target_directory": directory,
                 "dry_run": req.dry_run,
-            },
+            }
+
+        # 若指定了目标目录且尚未登记，自动创建 Directory 记录（物理目录已由 _make_work_dir 创建）
+        if directory:
+            from omichub.application.schemas.file import DirectoryCreateRequest
+            from omichub.application.services.file_service import FileService
+
+            file_svc = FileService(self._db)
+            # 目录已存在则忽略（ConflictError），其他异常不阻断下载提交
+            with contextlib.suppress(Exception):
+                await file_svc.create_directory(
+                    UUID(user_id), DirectoryCreateRequest(path=directory)
+                )
+
+        # 创建任务聚合根（复用通用 Task，flow_id 标记为数据下载）
+        task = await self._domain.submit(
+            flow_id=DOWNLOAD_FLOW_ID,
+            user_id=UUID(user_id),
+            name=task_name,
+            parameters=parameters,
             sample_count=0,
         )
         task.work_dir = work_dir
@@ -110,21 +134,29 @@ class DownloadService:
         parts = [p for p in d.split("/") if p not in ("", ".", "..")]
         return "/".join(parts)
 
-    def _make_work_dir(self, user_id: str, accession: str, directory: str = "") -> str:
-        """下载产物目录 — 统一收拢到 users/{uid}/raw_data/{directory}/{accession}/
+    @staticmethod
+    def _normalize_cloud_provider(provider: str) -> str:
+        normalized = {
+            "volcengine": "volc",
+            "huaweicloud": "huawei",
+        }.get(provider, provider)
+        if normalized not in {"aliyun", "volc", "huawei"}:
+            raise ValidationError("不支持的云存储提供商")
+        return normalized
+
+    @staticmethod
+    def _safe_path_label(value: str, fallback: str) -> str:
+        label = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip()).strip("._-")
+        return (label or fallback)[:120]
+
+    def _make_work_dir(self, user_id: str, label: str, directory: str = "") -> str:
+        """下载产物目录 — 统一收拢到 users/{uid}/raw_data/{directory}/{label}/
 
         directory 为空时落到 raw_data 根目录。
         """
-        # accession 仅用作目录名，去除可能的路径分隔符以防越权
-        safe_acc = accession.replace("/", "_").replace("\\", "_").strip()
-        base = (
-            Path(self._settings.storage_path)
-            / "users"
-            / user_id
-            / "raw_data"
-        )
+        base = Path(self._settings.storage_path) / "users" / user_id / "raw_data"
         if directory:
             base = base / directory
-        work_dir = base / safe_acc
+        work_dir = base / label
         work_dir.mkdir(parents=True, exist_ok=True)
         return str(work_dir)
