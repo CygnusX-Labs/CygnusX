@@ -6,6 +6,10 @@
 # ----- 阶段 1: 构建依赖 -----
 FROM python:3.11-slim AS builder
 
+# Git is required to install the Snakemake logger plugin from the JZ_Tools
+# repository subdirectory during image build.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git && rm -rf /var/lib/apt/lists/*
+
 # 安装 uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
@@ -26,6 +30,11 @@ COPY tool_configs/ ./tool_configs/
 
 # 安装项目本身
 RUN uv sync --frozen --no-dev
+
+# Snakemake logger plugin used by the workflow monitor.
+# The plugin must be installed in the same venv that provides the snakemake CLI.
+ARG SNAKEMAKE_LOGGER_PLUGIN_REF=main
+RUN /app/.venv/bin/python -m pip install --no-cache-dir "snakemake-logger-plugin-rich-loguru @ git+https://github.com/xsx123123/JZ_Tools.git@${SNAKEMAKE_LOGGER_PLUGIN_REF}#subdirectory=src/logger_plugin" && /app/.venv/bin/python -c "import re; from importlib.metadata import version; v = version('snakemake-logger-plugin-rich-loguru'); m = re.match(r'^(\d+)\.(\d+)\.(\d+)', v); assert m and tuple(map(int, m.groups())) >= (0, 2, 1), f'snakemake-logger-plugin-rich-loguru >=0.2.1 required, got {v}'; import snakemake_logger_plugin_rich_loguru; print(f'snakemake-logger-plugin-rich-loguru {v} installed')"
 
 # ----- 阶段 2: 运行 -----
 FROM python:3.11-slim AS runtime

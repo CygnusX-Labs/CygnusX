@@ -122,6 +122,23 @@ class Settings(BaseSettings):
     # 仅「展示元数据」集中于此；各工具的「功能配置」放 tool_configs/<工具名>/（如 jbrowse/、enrichments/）。
     tools_setting_yaml: str = "tool_configs/tools_setting.yaml"
 
+    # ===== Snakemake 流程监控 =====
+    workflow_monitor_enabled: bool = True
+    workflow_monitor_template_dir: str = "tool_configs/workflow_monitor/templates"
+    workflow_monitor_default_template: str = "default"
+    workflow_monitor_ingest_token: str = ""
+    # Alias used by the Snakemake logger plugin; if set, it also satisfies backend ingest auth.
+    omichub_workflow_monitor_token: str = ""
+    workflow_monitor_internal_url: str = "http://web:8000/api/v1/workflow-monitor"
+    workflow_monitor_plugin_token_env: str = "OMICHUB_WORKFLOW_MONITOR_TOKEN"
+    workflow_monitor_signature_max_skew_seconds: int = 300
+    # Entry point from snakemake-logger-plugin-rich-loguru >= 0.2.1.
+    snakemake_monitor_logger: str = "rich_loguru"
+    snakemake_monitor_plugin_min_version: str = "0.2.1"
+    workflow_monitor_event_ttl_seconds: int = 86400
+    workflow_monitor_recent_event_limit: int = 1000
+    workflow_monitor_stale_after_seconds: int = 600
+
     # ===== 节日彩蛋系统 =====
     festival_config_yaml: str = "data/festival_config.yaml"  # 节日彩蛋外置 YAML 配置路径
 
@@ -218,6 +235,9 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         """生产环境强制校验关键密钥，避免使用默认值或空值上线。"""
+        if not self.workflow_monitor_ingest_token and self.omichub_workflow_monitor_token:
+            self.workflow_monitor_ingest_token = self.omichub_workflow_monitor_token
+
         if not self.is_production:
             return self
 
@@ -230,6 +250,8 @@ class Settings(BaseSettings):
             raise ValueError("生产环境必须设置 REDIS_PASSWORD")
         if not self.ai_provider_key_encryption_key:
             raise ValueError("生产环境必须设置 AI_PROVIDER_KEY_ENCRYPTION_KEY")
+        if self.workflow_monitor_enabled and not self.workflow_monitor_ingest_token:
+            raise ValueError("生产环境启用流程监控时必须设置 WORKFLOW_MONITOR_INGEST_TOKEN")
         return self
 
     @property

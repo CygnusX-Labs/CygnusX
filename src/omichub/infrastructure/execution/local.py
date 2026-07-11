@@ -2,8 +2,10 @@
 
 import asyncio
 import os
+import re
 import shutil
 from datetime import datetime
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +18,13 @@ from omichub.infrastructure.execution.base import (
 
 # 容器内通过 docker-compose.worker.yml 挂载到宿主机 /data/omichub/logs/snakemake
 SNAKEMAKE_LOG_ROOT = Path(os.getenv("OMICHUB_SNAKEMAKE_LOG_DIR", "/logs/snakemake"))
+
+
+def _parse_version_tuple(value: str) -> tuple[int, int, int]:
+    match = re.match(r"^(\d+)\.(\d+)\.(\d+)", value)
+    if not match:
+        return (0, 0, 0)
+    return tuple(int(part) for part in match.groups())
 
 
 def _write_snakemake_logs(
@@ -52,6 +61,26 @@ class LocalSnakemakeExecutor(BaseExecutor):
 
     def __init__(self) -> None:
         self.settings = get_settings()
+
+    def _ensure_monitor_logger_plugin(self) -> None:
+        if not self.settings.workflow_monitor_enabled:
+            return
+        if self.settings.snakemake_monitor_logger != "rich_loguru":
+            return
+
+        package_name = "snakemake-logger-plugin-rich-loguru"
+        minimum = self.settings.snakemake_monitor_plugin_min_version
+        try:
+            installed = version(package_name)
+        except PackageNotFoundError as exc:
+            raise RuntimeError(
+                f"Snakemake logger plugin {package_name}>={minimum} is required but not installed"
+            ) from exc
+
+        if _parse_version_tuple(installed) < _parse_version_tuple(minimum):
+            raise RuntimeError(
+                f"Snakemake logger plugin {package_name}>={minimum} is required, got {installed}"
+            )
 
     async def execute(self, ctx: ExecutionContext) -> ExecutionResult:
         """统一执行入口（实现 BaseExecutor 契约）。
@@ -101,6 +130,8 @@ class LocalSnakemakeExecutor(BaseExecutor):
         Returns:
             执行结果，包含 status, stdout, stderr, returncode
         """
+        self._ensure_monitor_logger_plugin()
+
         cmd = [
             "snakemake",
             "-s",
@@ -112,6 +143,11 @@ class LocalSnakemakeExecutor(BaseExecutor):
         if self.settings.snakemake_use_conda:
             cmd.append("--use-conda")
 
+        if self.settings.workflow_monitor_enabled and self.settings.snakemake_monitor_logger:
+            cmd.extend(["--logger", self.settings.snakemake_monitor_logger])
+
+        monitor_config = Path(work_dir) / "monitor_config.yaml" if work_dir else None
+
         if work_dir:
             cmd.extend(["--directory", work_dir])
 
@@ -120,9 +156,13 @@ class LocalSnakemakeExecutor(BaseExecutor):
 
         if config_file:
             cmd.extend(["--config", f"{config_file_param}={config_file}"])
+            if monitor_config and monitor_config.exists():
+                cmd.append(f"monitor_conf={monitor_config}")
         elif config:
             for key, value in config.items():
                 cmd.extend(["--config", f"{key}={value}"])
+            if monitor_config and monitor_config.exists():
+                cmd.extend(["--config", f"monitor_conf={monitor_config}"])
 
         process = await asyncio.create_subprocess_exec(
             *cmd,

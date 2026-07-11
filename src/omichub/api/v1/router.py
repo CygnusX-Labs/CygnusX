@@ -26,6 +26,7 @@ from omichub.api.v1 import (
     tasks,
     terminal,
     users,
+    workflow_monitor,
 )
 from omichub.api.v1.admin import admin_cookies
 from omichub.api.v1.admin import agents as admin_agents
@@ -50,6 +51,9 @@ api_router.include_router(docs.router, prefix="/docs", tags=["Docs"])
 api_router.include_router(flows.router, prefix="/flows", tags=["Flows"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["Tasks"])
 api_router.include_router(stats.router, prefix="/stats", tags=["Stats"])
+api_router.include_router(
+    workflow_monitor.router, prefix="/workflow-monitor", tags=["Workflow-Monitor"]
+)
 api_router.include_router(downloads.router, prefix="/downloads", tags=["Downloads"])
 api_router.include_router(files.router, prefix="/files", tags=["Files"])
 api_router.include_router(users.router, prefix="/users", tags=["Users"])

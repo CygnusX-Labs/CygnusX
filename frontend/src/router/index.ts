@@ -70,6 +70,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '任务管理', requiresAuth: true }
       },
       {
+        path: 'workflow-monitor',
+        name: 'workflow-monitor',
+        component: () => import('@/views/WorkflowMonitorView.vue'),
+        meta: { title: '流程监控', requiresAuth: true }
+      },
+      {
         path: 'tasks/:taskId',
         name: 'task-detail',
         component: () => import('@/views/TaskDetailView.vue'),

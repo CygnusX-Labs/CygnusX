@@ -21,6 +21,8 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
+      args:
+        SNAKEMAKE_LOGGER_PLUGIN_REF: ${SNAKEMAKE_LOGGER_PLUGIN_REF:-main}
     container_name: omichub-worker
     restart: unless-stopped
     logging: *default-logging
@@ -39,8 +41,10 @@ services:
       - HOME=/tmp                        # uid 1000 无 passwd 条目，显式 HOME 防 conda/expanduser 失败
       - OMICHUB_LOG_DIR=/app/logs
       - OMICHUB_CELERY_LOG_DIR=/data/omichub/logs/celery/tasks
-      # 优先用宿主 conda 的 snakemake（python3.13，与 RNAFlow 实跑一致），回退镜像 venv
-      - PATH=/home/zj/miniconda3/envs/snakemake/bin:/home/zj/miniconda3/bin:/app/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      # 优先使用镜像 venv 的 snakemake，确保 Snakemake 与 logger 插件安装在同一 Python 环境。
+      # 宿主 conda 仍保留在 PATH 中，供 --use-conda 创建/复用流程环境。
+      - PATH=/app/.venv/bin:/home/zj/miniconda3/envs/snakemake/bin:/home/zj/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      - SNAKEMAKE_MONITOR_LOGGER=rich_loguru
       # conda 环境创建目录（可写）：--use-conda 时按 env hash 在此创建/复用，避免只读挂载冲突
       - SNAKEMAKE_CONDA_PREFIX=/data/omichub/.conda_envs
     volumes:
@@ -58,7 +62,12 @@ services:
       - omichub_net
     # -Q analysis: 显式消费 analysis 队列（task_routes 把全部任务路由到此队列）。
     #   不加 -Q 时 worker 只消费内置默认队列 "celery"，会导致 analysis 队列里的任务永远排队。
-    command: celery -A omichub.infrastructure.celery_app.celery worker -Q analysis --loglevel=info
+    command:
+      - /bin/sh
+      - -c
+      - |
+        export OMICHUB_WORKFLOW_MONITOR_TOKEN="$${OMICHUB_WORKFLOW_MONITOR_TOKEN:-$${WORKFLOW_MONITOR_INGEST_TOKEN}}"
+        exec celery -A omichub.infrastructure.celery_app.celery worker -Q analysis --loglevel=info
     healthcheck:
       test: ["CMD-SHELL", "celery -A omichub.infrastructure.celery_app.celery inspect ping -d celery@$$HOSTNAME || exit 1"]
       interval: 30s

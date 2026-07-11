@@ -181,6 +181,7 @@ const mainNavItems = computed<NavItem[]>(() => [
   { key: 'database', label: '数据库', to: '/database', icon: LayersOutline },
   { key: 'downloads', label: '数据下载', to: '/downloads', icon: DownloadOutline },
   { key: 'tasks', label: '任务中心', to: '/tasks', icon: DocumentTextOutline },
+  { key: 'workflow-monitor', label: '流程监控', to: '/workflow-monitor', icon: BarChartOutline },
   { key: 'reports', label: '结果报告中心', to: '/reports', icon: DocumentTextOutline },
   { key: 'ai', label: 'AI 助手', to: '/ai', icon: ChatbubblesOutline },
   { key: 'tools', label: '生信工具箱', to: '/tools', icon: ConstructOutline },

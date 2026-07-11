@@ -21,6 +21,8 @@ PUBLIC_PATHS = frozenset(
         # 站点级公开配置：登录页未登录即需读取
         "/api/v1/site-settings",  # 注册开关（关闭时登录页拦截注册按钮）
         "/api/v1/site-content",  # 首页文案 + 注册提示文案（YAML 驱动）
+        "/api/v1/workflow-monitor/events",  # Worker 内部流程监控原生事件摄取
+        "/api/v1/workflow-monitor/loki/api/v1/push",  # Worker 内部 Loki-compatible 摄取
     }
 )
 

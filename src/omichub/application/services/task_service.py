@@ -75,6 +75,12 @@ class TaskService:
             work_dir=work_dir,
         )
         config_file = str(files["config"])
+        self._write_monitor_config(
+            work_dir=work_dir,
+            task_id=str(task_id),
+            flow_id=req.flow_id,
+            user_id=user_id,
+        )
 
         # 创建任务聚合根（复用预生成的 task_id，保证 work_dir 路径与 task id 一致）
         task = await self._domain.submit(
@@ -179,6 +185,40 @@ class TaskService:
             config_file_param=flow_detail.execution.get("config_file_param") or "analysisyaml",
             work_dir=task.work_dir,
         )
+
+    def _write_monitor_config(self, work_dir: str, task_id: str, flow_id: str, user_id: str) -> None:
+        """Write per-task monitor config for the Snakemake logger plugin."""
+        if not self._settings.workflow_monitor_enabled:
+            return
+        try:
+            import yaml
+
+            path = Path(work_dir) / "monitor_config.yaml"
+            monitor_base_url = self._settings.workflow_monitor_internal_url.rstrip("/")
+            monitor_event_url = (
+                monitor_base_url
+                if monitor_base_url.endswith("/events")
+                else f"{monitor_base_url}/events"
+            )
+            token_placeholder = "${" + self._settings.workflow_monitor_plugin_token_env + "}"
+            data = {
+                "project_name": task_id,
+                "omichub_monitor_url": monitor_event_url,
+                "omichub_monitor_token": token_placeholder,
+                "omichub_task_id": task_id,
+                "omichub_flow_id": flow_id,
+                "omichub_user_id": user_id,
+                "omichub_monitor_sign_requests": True,
+                "omichub_monitor_signing_key": token_placeholder,
+                "omichub_monitor_encrypt_payload": False,
+                "omichub_monitor_tls_verify": True,
+            }
+            path.write_text(
+                yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8"
+            )
+        except OSError:
+            # Monitoring must not block task submission; the workflow can still run without it.
+            return
 
     def _make_work_dir(self, flow_id: str, user_id: str, task_id: uuid.UUID) -> str:
         """生成任务工作目录 — 统一收拢到 users/{uid}/results/{flow_id}/{task_id}/
