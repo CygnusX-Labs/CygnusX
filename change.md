@@ -127,3 +127,56 @@
 - `npm run type-check` 通过。
 - `npm run build` 通过。
 
+# 2026-07-11 变更记录
+
+## 今日完成
+
+### 实验室知识库快速入门文档重写
+
+- 重写 `docs/knowledge/getting-started.md`，将 Carl Sagan 的引言置于文首。
+- 补充 OmicHub 平台理念：让数据回归科学、过程可复现、知识沉淀与共享。
+- 详细说明 10 个核心模块的平台理念与使用方法：
+  数据管理、分析流程中心、任务中心、AI 聊天助手、实验室知识库、
+  云端沙盒终端、饼干积分、富集分析与可视化、JBrowse 2、MCP 工具扩展。
+- 增加首次使用四步上手、常见问题排查与获取帮助指引。
+
+### 知识库文件同步机制
+
+- 新增 `scripts/sync_knowledge_from_files.py`：
+  - 将 `docs/knowledge/*.md` 按 `meta.yaml` 同步到数据库。
+  - 支持 `--auto-admin` 自动选择管理员作为同步者。
+  - 使用 Rich 输出彩色同步结果表格，并关闭 SQL echo 日志。
+- `Makefile` 新增 `sync-knowledge` 目标，`docker-reload` 执行后自动同步知识库。
+- `deploy/docker/docker-compose.yml` 挂载 `scripts` 目录到 web 容器，确保容器内可执行同步脚本。
+- 说明：知识库以数据库为权威源，网页端编辑过的文档会入库；直接修改 .md 后需执行同步网页才生效。
+
+### 知识库前端 UI 优化
+
+- 左侧侧边栏：
+  - 「新建文档」改为全宽主题蓝 CTA 按钮（无边框、圆角、白字）。
+  - 「待审核」改为纯文本 + 图标的菜单项样式。
+  - 目录树菜单项统一增加 hover 浅灰背景、圆角与间距。
+- 底部讨论区：
+  - 增加浅灰分割线与顶部间距，与正文区隔开。
+  - 输入框改为 100% 宽度的多行文本域，带浅灰边框、8px 圆角、内边距与占位符。
+  - 「发送」按钮移至输入框右下角，使用 Flex 靠右对齐。
+
+### Git 提交整理
+
+- 将工作区变更按功能拆分为 3 个 commit：
+  - `feat(knowledge)`：实验室知识库重构与同步机制。
+  - `feat(festival)`：节日彩蛋系统与全屏沉浸式背景动画。
+  - `feat(workflow-monitor)`：Snakemake 流程监控模块（含旧 `tools/` 目录清理）。
+- 剩余未提交：`pipelines/EBIDownload` 子模块仍有本地修改，需单独处理。
+
+## 已验证
+
+- `python -m py_compile scripts/sync_knowledge_from_files.py`
+- `cd frontend && npm run type-check`
+- `make docker-reload` 可正常完成并自动同步知识库。
+
+## 当前边界
+
+- `pipelines/EBIDownload` 子模块变更未提交。
+- 知识库网页端目前缺少文档删除按钮，后续可补充。
+
