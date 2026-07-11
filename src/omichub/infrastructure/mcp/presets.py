@@ -66,6 +66,39 @@ async def _format_code(arguments: dict[str, Any]) -> dict[str, Any]:
     return {"code": formatted, "changed": formatted != code}
 
 
+async def _search_knowledge_db(query: str) -> list[dict[str, Any]]:
+    """优先从数据库搜索已发布知识库文档。"""
+    from sqlalchemy import select
+
+    from omichub.infrastructure.database.models.knowledge_document import KbDocumentModel
+    from omichub.infrastructure.database.models.knowledge_revision import DocRevisionModel
+    from omichub.infrastructure.database.session import get_session_factory
+
+    factory = get_session_factory()
+    results: list[dict[str, Any]] = []
+    async with factory() as db:
+        stmt = (
+            select(KbDocumentModel.doc_id, DocRevisionModel.content)
+            .join(
+                DocRevisionModel,
+                KbDocumentModel.current_rev == DocRevisionModel.id,
+            )
+            .where(KbDocumentModel.status == 1)
+            .order_by(KbDocumentModel.updated_at.desc())
+            .limit(10)
+        )
+        rows = await db.execute(stmt)
+        for doc_id, content in rows:
+            text = (content or "").lower()
+            if not query or query in text:
+                summary = next(
+                    (p.strip() for p in (content or "").split("\n\n") if p.strip()),
+                    "",
+                )[:200]
+                results.append({"file": f"{doc_id}.md", "summary": summary})
+    return results
+
+
 def _scan_knowledge_sync(query: str) -> list[dict[str, Any]]:
     knowledge_dir = Path(__file__).resolve().parents[3] / "docs" / "knowledge"
     results: list[dict[str, Any]] = []
@@ -88,7 +121,11 @@ def _scan_knowledge_sync(query: str) -> list[dict[str, Any]]:
 
 async def _search_knowledge(arguments: dict[str, Any]) -> dict[str, Any]:
     query = arguments.get("query", "").lower()
-    results = await asyncio.to_thread(_scan_knowledge_sync, query)
+    try:
+        results = await _search_knowledge_db(query)
+    except Exception:
+        # 数据库不可用时降级到文件系统扫描
+        results = await asyncio.to_thread(_scan_knowledge_sync, query)
     return {"results": results, "total": len(results)}
 
 

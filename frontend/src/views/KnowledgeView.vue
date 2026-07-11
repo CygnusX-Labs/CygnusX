@@ -1,13 +1,32 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NCard, NSpin, NEmpty, NButton, NSpace, NIcon, useMessage } from 'naive-ui'
-import { CreateOutline, SaveOutline, CloseOutline, CloudDownloadOutline } from '@vicons/ionicons5'
+import {
+  NCard,
+  NSpin,
+  NEmpty,
+  NButton,
+  NSpace,
+  NIcon,
+  NPopconfirm,
+  useMessage,
+} from 'naive-ui'
+import {
+  CreateOutline,
+  SaveOutline,
+  CloseOutline,
+  CloudDownloadOutline,
+  AddOutline,
+  HourglassOutline,
+  TrashOutline,
+} from '@vicons/ionicons5'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import DocTree from '@/components/knowledge/DocTree.vue'
 import DocReader from '@/components/knowledge/DocReader.vue'
 import DocEditor from '@/components/knowledge/DocEditor.vue'
+import DocCreateModal from '@/components/knowledge/DocCreateModal.vue'
+import AuditPendingPanel from '@/components/knowledge/AuditPendingPanel.vue'
 import type { KnowledgeItem, KnowledgeDoc, DocTreeNode } from '@/types/knowledge'
 
 const route = useRoute()
@@ -24,11 +43,15 @@ const loadingNav = ref(false)
 const loadingDoc = ref(false)
 const saving = ref(false)
 
-/** 编辑缓冲：进入编辑模式时快照原文，取消时还原 */
 const editBuffer = ref('')
 const draftContent = ref('')
+const draftSummary = ref('')
 
-/** 由扁平导航按 category 聚合成树形结构 */
+const showCreateModal = ref(false)
+const showAuditPanel = ref(false)
+
+const isAdmin = computed(() => authStore.isAdmin)
+
 const documentTree = computed<DocTreeNode[]>(() => {
   const groups = new Map<string, KnowledgeItem[]>()
   for (const item of navItems.value) {
@@ -44,9 +67,14 @@ const documentTree = computed<DocTreeNode[]>(() => {
       key: `doc:${it.id}`,
       label: it.title,
       docId: it.id,
+      status: it.status,
     })),
   }))
 })
+
+const existingCategories = computed(() =>
+  [...new Set(navItems.value.map((item) => item.category).filter(Boolean))] as string[],
+)
 
 async function fetchNav() {
   loadingNav.value = true
@@ -89,30 +117,28 @@ function startEdit() {
   if (!activeDoc.value) return
   editBuffer.value = activeDoc.value.content
   draftContent.value = activeDoc.value.content
+  draftSummary.value = ''
   isEditMode.value = true
 }
 
 function cancelEdit() {
   draftContent.value = editBuffer.value
+  draftSummary.value = ''
   isEditMode.value = false
 }
 
 async function saveDoc() {
   if (!activeDoc.value) return
-  if (!authStore.isAdmin) {
-    message.error('仅管理员可保存文档')
-    return
-  }
   saving.value = true
   try {
-    await apiClient.put(`/docs/knowledge/${activeDoc.value.id}`, {
+    const res = await apiClient.put(`/docs/knowledge/${activeDoc.value.id}`, {
       content: draftContent.value,
+      editSummary: draftSummary.value || undefined,
     })
-    // 控制台打印当前 Markdown（任务要求，便于后续对接后端时排查）
-    console.log('[知识库保存]', activeDoc.value.id, draftContent.value)
     isEditMode.value = false
-    message.success('保存成功')
+    message.success(res.data.message || '保存成功')
     await fetchDoc(activeDoc.value.id)
+    await fetchNav()
   } catch (err: unknown) {
     const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
     message.error(detail || '保存失败')
@@ -121,7 +147,42 @@ async function saveDoc() {
   }
 }
 
-// 路由参数变化时拉取文档
+async function deleteDoc() {
+  if (!activeDoc.value) return
+  try {
+    await apiClient.delete(`/docs/knowledge/${activeDoc.value.id}`)
+    message.success('文档已删除')
+    activeDoc.value = null
+    await fetchNav()
+    // 删除后跳转到第一个文档，如果没有则清空路由参数
+    if (documentTree.value.length > 0) {
+      const firstLeaf = documentTree.value[0].children?.[0]
+      if (firstLeaf?.docId) {
+        await router.replace({ name: 'knowledge-doc', params: { docId: firstLeaf.docId } })
+      } else {
+        await router.replace({ name: 'knowledge' })
+      }
+    } else {
+      await router.replace({ name: 'knowledge' })
+    }
+  } catch (err: unknown) {
+    const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+    message.error(detail || '删除失败')
+  }
+}
+
+function handleCreated(docId: string) {
+  void fetchNav()
+  router.push({ name: 'knowledge-doc', params: { docId } })
+}
+
+function handleAudited() {
+  void fetchNav()
+  if (activeDoc.value) {
+    void fetchDoc(activeDoc.value.id)
+  }
+}
+
 watch(
   () => route.params.docId as string | undefined,
   (docId) => {
@@ -134,7 +195,6 @@ watch(
 
 onMounted(async () => {
   await fetchNav()
-  // 进入页面若未指定文档，默认选第一个叶子
   const docId = route.params.docId as string | undefined
   if (!docId && documentTree.value.length > 0) {
     const firstLeaf = documentTree.value[0].children?.[0]
@@ -151,6 +211,27 @@ onMounted(async () => {
     <div class="docs-sider">
       <NCard :bordered="false" class="arco-card nav-card">
         <div class="nav-title">{{ navTitle }}</div>
+
+        <!-- 核心操作：新建文档 -->
+        <NButton
+          size="medium"
+          type="primary"
+          block
+          class="create-doc-btn"
+          @click="showCreateModal = true"
+        >
+          <template #icon><NIcon><AddOutline /></NIcon></template>
+          新建文档
+        </NButton>
+
+        <!-- 管理员额外菜单 -->
+        <div v-if="isAdmin" class="sider-menu">
+          <div class="sider-menu-item" @click="showAuditPanel = true">
+            <NIcon size="16"><HourglassOutline /></NIcon>
+            <span>待审核</span>
+          </div>
+        </div>
+
         <NSpin :show="loadingNav">
           <DocTree
             v-if="documentTree.length"
@@ -174,7 +255,6 @@ onMounted(async () => {
           <NSpace v-if="activeDoc">
             <template v-if="!isEditMode">
               <NButton
-                v-if="authStore.isAdmin"
                 size="small"
                 type="primary"
                 ghost
@@ -183,6 +263,15 @@ onMounted(async () => {
                 <template #icon><NIcon><CreateOutline /></NIcon></template>
                 编辑
               </NButton>
+              <NPopconfirm v-if="isAdmin" @positive-click="deleteDoc">
+                <template #trigger>
+                  <NButton size="small" type="error" ghost>
+                    <template #icon><NIcon><TrashOutline /></NIcon></template>
+                    删除
+                  </NButton>
+                </template>
+                确定删除该文档？此操作不可恢复。
+              </NPopconfirm>
             </template>
             <template v-else>
               <NButton size="small" @click="cancelEdit">
@@ -191,7 +280,7 @@ onMounted(async () => {
               </NButton>
               <NButton size="small" type="primary" :loading="saving" @click="saveDoc">
                 <template #icon><NIcon><SaveOutline /></NIcon></template>
-                保存
+                {{ isAdmin ? '保存并发布' : '提交审核' }}
               </NButton>
             </template>
           </NSpace>
@@ -200,13 +289,13 @@ onMounted(async () => {
         <!-- 内容区 -->
         <NSpin :show="loadingDoc">
           <div v-if="activeDoc" class="content-body">
-            <!-- 编辑模式：满宽编辑器，隐藏 TOC -->
             <DocEditor
               v-if="isEditMode"
               v-model="draftContent"
+              v-model:edit-summary="draftSummary"
+              :is-admin="isAdmin"
             />
-            <!-- 阅读模式：预览 80% + 大纲 20% -->
-            <DocReader v-else :content="activeDoc.content" />
+            <DocReader v-else :doc="activeDoc" @refresh="fetchDoc(activeDoc.id)" />
           </div>
           <NEmpty v-else description="请选择左侧文档进行阅读">
             <template #icon>
@@ -217,6 +306,17 @@ onMounted(async () => {
       </NCard>
     </div>
   </div>
+
+  <DocCreateModal
+    v-model:show="showCreateModal"
+    :existing-categories="existingCategories"
+    @created="handleCreated"
+  />
+
+  <AuditPendingPanel
+    v-model:show="showAuditPanel"
+    @audited="handleAudited"
+  />
 </template>
 
 <style scoped>
@@ -226,11 +326,11 @@ onMounted(async () => {
   flex: 1;
   min-height: 0 !important;
   overflow: hidden;
-  padding: 0; /* 覆盖 .page-container 的 24px padding，外层 NLayoutContent 已有 */
+  padding: 0;
 }
 
 .docs-sider {
-  width: 220px; /* 由 250px 收窄，减少右侧冗余留白 */
+  width: 240px;
   flex-shrink: 0;
   overflow: hidden;
   display: flex;
@@ -243,9 +343,6 @@ onMounted(async () => {
   overflow-y: auto;
 }
 
-/* 穿透 NCard 内容区覆盖默认 padding。
-   ⚠️ Naive UI 真实类名是 n-card-content（连字符），不是 n-card__content（BEM 双下划线）——
-   写成 .n-card__content 会不命中（与正文区同类问题）。左右 16px 让内容在更窄卡片里更舒展。 */
 .docs-sider :deep(.n-card > .n-card-content) {
   padding: 16px 12px;
 }
@@ -254,37 +351,85 @@ onMounted(async () => {
   font-size: 16px;
   font-weight: 600;
   color: var(--neutral-text-1);
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   padding: 0;
-  text-align: center; /* 标题居中，视觉更平衡 */
+  text-align: center;
 }
 
-/* 树节点：轻微水平内边距，避免紧贴内容区左缘；NTree 自身层级缩进不动 */
+/* 新建文档：全宽 CTA 按钮 */
+.create-doc-btn {
+  margin-bottom: 8px;
+  border-radius: 6px !important;
+  font-weight: 500;
+}
+
+.create-doc-btn :deep(.n-button__content) {
+  gap: 6px;
+}
+
+/* 侧边栏菜单项（待审核、收藏夹等） */
+.sider-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.sider-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--neutral-text-2);
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  user-select: none;
+}
+
+.sider-menu-item:hover {
+  background-color: var(--neutral-hover);
+  color: var(--neutral-text-1);
+}
+
 .docs-sider :deep(.n-tree-node) {
   padding: 0 4px;
 }
 
-.docs-main {
-  flex: 1;
-  min-width: 0;   /* 允许水平收缩，防 Flex Blowout */
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden; /* 兜底：严禁 .docs-main 自身溢出 */
+.docs-sider :deep(.n-tree-node-content) {
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: background-color 0.2s ease;
 }
 
-/* NCard 根节点：跟随父级高度/宽度收缩 */
-.docs-main > :deep(.n-card) {
+.docs-sider :deep(.n-tree-node-content:hover) {
+  background-color: var(--neutral-hover);
+}
+
+.docs-sider :deep(.n-tree-node--selected .n-tree-node-content) {
+  background-color: var(--arco-primary-light);
+  color: var(--arco-primary);
+}
+
+.docs-main {
   flex: 1;
-  min-width: 0;   /* ← 防吹爆：允许窄于 min-content */
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-/* NCard 内容区：类名 n-card-content（连字符，不是 n-card__content）。
-   只传递 flex 约束，自身不滚动；padding 清零下放给 .content-header/.content-body。 */
+.docs-main > :deep(.n-card) {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .docs-main > :deep(.n-card > .n-card-content) {
   flex: 1;
   min-width: 0;
@@ -292,10 +437,9 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   padding: 0 !important;
-  overflow: hidden !important; /* 这一层绝对不滚动，只传递约束 */
+  overflow: hidden !important;
 }
 
-/* NSpin 两层包裹也必须传递 flex + min-width:0，否则链路断在 NSpin */
 .docs-main > :deep(.n-card .n-spin-container) {
   flex: 1;
   min-width: 0;
@@ -316,7 +460,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 24px 12px; /* 水平 24px 与 .content-body 对齐，标题与正文左右不错位 */
+  padding: 16px 24px 12px;
   margin-bottom: 16px;
   border-bottom: 1px solid var(--neutral-border);
   flex-shrink: 0;
@@ -331,16 +475,15 @@ onMounted(async () => {
 
 .content-body {
   flex: 1;
-  min-width: 0;   /* ← 防吹爆 */
+  min-width: 0;
   min-height: 0;
-  overflow-y: auto;   /* 唯一的垂直滚动发生在这里 */
-  overflow-x: hidden; /* 禁止水平滚动，长内容在此裁剪 */
-  padding: 24px 24px; /* 水平 24px 呼吸感；滚动条仍贴卡片右缘 */
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 24px 24px;
   width: 100%;
-  box-sizing: border-box; /* padding 不外扩，杜绝 100% + padding 溢出 */
+  box-sizing: border-box;
 }
 
-/* ===== 局部滚动条美化（8px 纤细质感） ===== */
 .content-body::-webkit-scrollbar {
   width: 8px;
 }

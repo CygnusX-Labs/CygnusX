@@ -28,6 +28,11 @@ from omichub.infrastructure.database.models.file import (
     SampleModel,
     UploadSessionModel,
 )
+from omichub.infrastructure.database.models.knowledge_audit_log import DocAuditLogModel
+from omichub.infrastructure.database.models.knowledge_document import KbDocumentModel
+from omichub.infrastructure.database.models.knowledge_editor import DocEditorModel
+from omichub.infrastructure.database.models.knowledge_issue import KbIssueModel
+from omichub.infrastructure.database.models.knowledge_revision import DocRevisionModel
 from omichub.infrastructure.database.models.mcp import MCPServerModel
 from omichub.infrastructure.database.models.notification import NotificationModel
 from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
@@ -57,6 +62,11 @@ __all__ = [
     "AIProviderConfigModel",
     "AnnouncementModel",
     "AuditLogModel",
+    "KbDocumentModel",
+    "DocRevisionModel",
+    "DocEditorModel",
+    "KbIssueModel",
+    "DocAuditLogModel",
     "MCPServerModel",
     "ReportModel",
     "ReportFileModel",

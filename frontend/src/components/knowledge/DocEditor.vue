@@ -1,27 +1,34 @@
 <script setup lang="ts">
 import { MdEditor } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
-import { useMessage } from 'naive-ui'
+import { NInput, useMessage } from 'naive-ui'
 import { computed } from 'vue'
 import apiClient from '@/api/client'
+import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
-
-const themeStore = useThemeStore()
-// MdEditor.theme 默认 'light'，需同步应用主题，否则暗黑下编辑区为白底
-const mdTheme = computed<'light' | 'dark'>(() => (themeStore.isDark ? 'dark' : 'light'))
 
 const props = defineProps<{
   modelValue: string
+  editSummary?: string
+  isAdmin?: boolean
 }>()
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
+  'update:editSummary': [value: string]
 }>()
+
+const themeStore = useThemeStore()
+const mdTheme = computed<'light' | 'dark'>(() => (themeStore.isDark ? 'dark' : 'light'))
 
 const message = useMessage()
 
 function handleChange(value: string) {
   emit('update:modelValue', value)
+}
+
+function handleSummaryChange(value: string) {
+  emit('update:editSummary', value)
 }
 
 async function handleUploadImg(files: File[], callback: (urls: string[]) => void) {
@@ -47,12 +54,19 @@ async function handleUploadImg(files: File[], callback: (urls: string[]) => void
 
 <template>
   <div class="doc-editor">
+    <div class="summary-row">
+      <NInput
+        :value="editSummary"
+        placeholder="编辑摘要（可选）：简述本次变更"
+        @update:value="handleSummaryChange"
+      />
+    </div>
     <MdEditor
       :model-value="props.modelValue"
       :preview="false"
       :theme="mdTheme"
       :toolbars-exclude="['github', 'save', 'pageFullscreen', 'catalog']"
-      :style="{ height: 'calc(100vh - 220px)' }"
+      :style="{ height: 'calc(100vh - 280px)' }"
       placeholder="在此编写 Markdown 文档…"
       @update:model-value="handleChange"
       @on-upload-img="handleUploadImg"
@@ -63,6 +77,10 @@ async function handleUploadImg(files: File[], callback: (urls: string[]) => void
 <style scoped>
 .doc-editor {
   width: 100%;
+}
+
+.summary-row {
+  margin-bottom: 12px;
 }
 
 .doc-editor :deep(.md-editor) {

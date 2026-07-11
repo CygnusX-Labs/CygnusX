@@ -48,15 +48,18 @@ const treeData = computed<TreeOption[]>(() => {
 
 const selectedKeys = computed(() => [selected.value || ''])
 
-/** 节点 label 渲染：名称 + 该目录的直接文件计数 (N)，不含子目录（避免父级重复汇总） */
+/** 节点 label 渲染：名称 + 该目录的直接文件计数 (N)，不含子目录（避免父级重复汇总）
+ *  系统目录（如 raw_data / temp / workspace）不显示计数，保持整洁 */
 function renderLabel({ option }: { option: TreeOption }) {
   const path = String(option.key ?? '')
   const name = option.label as string
   const counts = props.fileCounts || {}
   const total = counts[path] || 0
+  const dir = directories.value.find((d) => d.path === path)
+  const showCount = total > 0 && !dir?.is_system
   return h('span', { class: 'tree-label' }, [
     h('span', null, name),
-    total > 0 ? h('span', { class: 'dir-count' }, total) : null,
+    showCount ? h('span', { class: 'dir-count' }, total) : null,
   ])
 }
 

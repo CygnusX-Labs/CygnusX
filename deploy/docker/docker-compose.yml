@@ -38,6 +38,8 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
+      args:
+        SNAKEMAKE_LOGGER_PLUGIN_REF: ${SNAKEMAKE_LOGGER_PLUGIN_REF:-main}
     container_name: omichub-web
     restart: unless-stopped
     logging: *default-logging
@@ -68,6 +70,7 @@ services:
       - ../../docs:/app/docs  # 知识库文档（meta.yaml + *.md，在线编辑与图片上传需要可写）
       - ../../data:/app/data:ro  # AI Provider YAML 配置（热重载）
       - ../../alembic:/app/alembic:ro  # 迁移脚本热同步（容器内可见，免重建镜像）
+      - ../../scripts:/app/scripts:ro  # 运维/初始化/同步脚本（热重载）
       - ./entrypoint.sh:/app/entrypoint.sh:ro  # 启动入口：先迁移后启动
       - /data/omichub:/data/omichub  # 任务数据（与独立 worker 栈共享同一宿主目录）
       - /data/omichub/logs/app:/app/logs  # 应用日志持久化到宿主机
@@ -89,6 +92,8 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
+      args:
+        SNAKEMAKE_LOGGER_PLUGIN_REF: ${SNAKEMAKE_LOGGER_PLUGIN_REF:-main}
     container_name: omichub-beat
     restart: unless-stopped
     logging: *default-logging
@@ -128,6 +133,8 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
+      args:
+        SNAKEMAKE_LOGGER_PLUGIN_REF: ${SNAKEMAKE_LOGGER_PLUGIN_REF:-main}
     container_name: omichub-flower
     restart: unless-stopped
     logging: *default-logging

@@ -2,21 +2,28 @@
 import { ref, computed, onMounted } from 'vue'
 import { MdPreview, MdCatalog } from 'md-editor-v3'
 import 'md-editor-v3/lib/preview.css'
+import { NAlert } from 'naive-ui'
 import { useThemeStore } from '@/stores/theme'
+import DocEditors from '@/components/knowledge/DocEditors.vue'
+import DocIssues from '@/components/knowledge/DocIssues.vue'
+import type { KnowledgeDoc } from '@/types/knowledge'
 
 const themeStore = useThemeStore()
-// md-editor-v3 的 MdPreview.theme 默认 'light'，需显式同步应用主题，否则暗黑下正文为白底
 const mdTheme = computed<'light' | 'dark'>(() => (themeStore.isDark ? 'dark' : 'light'))
 
 const props = defineProps<{
-  content: string
+  doc: KnowledgeDoc
+}>()
+
+const emit = defineEmits<{
+  refresh: []
 }>()
 
 const STATIC_IMAGE_BASE = '/docs-static/knowledge/'
 
 /** 把 Markdown/HTML 中的相对图片路径解析为后端静态资源 URL */
 const resolvedContent = computed(() => {
-  let text = props.content || ''
+  let text = props.doc.content || ''
 
   // 1) Markdown 图片语法: ![alt](figure/xxx.png "title") / ![alt](./figure/xxx.png)
   text = text.replace(
@@ -27,7 +34,7 @@ const resolvedContent = computed(() => {
 
   // 2) HTML <img> 标签: <img src="./figure/xxx.jpg" alt="...">
   text = text.replace(
-    /<img\b([^>]*)\bsrc=["'](\.\/|)(figure\/[^"']+)["']([^>]*)>/gi,
+    /<img\b([^\u003e]*)\bsrc=["'](\.\/|)(figure\/[^"']+)["']([^\u003e]*)\u003e/gi,
     (_match, before, _dot, relPath, after) => {
       const altMatch =
         (after as string).match(/alt=["']([^"']*)["']/) ||
@@ -40,9 +47,10 @@ const resolvedContent = computed(() => {
   return text
 })
 
+const hasPendingRevision = computed(() => !!props.doc.pendingRevision)
+
 // 预览容器的 id，供 MdCatalog 锚定滚动
 const previewId = 'knowledge-md-preview'
-// MdCatalog 需要 string | HTMLElement（非 null），computed 保证非空
 const scrollElement = ref<HTMLElement>(document.documentElement)
 
 onMounted(() => {
@@ -55,12 +63,24 @@ onMounted(() => {
 <template>
   <div class="reader-layout">
     <div class="reader-preview" :id="previewId">
+      <NAlert
+        v-if="hasPendingRevision"
+        type="warning"
+        :show-icon="false"
+        class="pending-alert"
+      >
+        当前版本正在审核中，您看到的是上一个已发布版本。
+      </NAlert>
+
       <MdPreview
         :model-value="resolvedContent"
         :theme="mdTheme"
-        :previewTheme="'default'"
-        :codeTheme="'github'"
+        :preview-theme="'default'"
+        :code-theme="'github'"
       />
+
+      <DocEditors :editors="doc.editors" />
+      <DocIssues :doc-id="doc.id" :issues="doc.issues" @refresh="$emit('refresh')" />
     </div>
     <aside class="reader-toc">
       <div class="toc-title">大纲</div>
@@ -85,6 +105,10 @@ onMounted(() => {
   flex: 0 0 80%;
   min-width: 0; /* 允许窄于 min-content，长字符串不再顶开本格 */
   overflow-wrap: anywhere; /* Markdown 长 URL / 长字符串自动折行，不撑爆预览区 */
+}
+
+.pending-alert {
+  margin-bottom: 16px;
 }
 
 .reader-toc {

@@ -1,0 +1,280 @@
+#!/usr/bin/env python3
+"""将 docs/knowledge/ 下的 Markdown 文件同步到数据库。
+
+场景：
+    知识库服务以数据库为权威源。一旦某篇文档被网页端编辑过，它就会被导入到数据库中。
+    此后直接修改本地 docs/knowledge/*.md 文件，网页端不会自动热重载，因为读取的是数据库内容。
+    本脚本用于把文件系统的最新内容同步回数据库，实现"文件修改 → 网页生效"。
+
+用法示例：
+    source .venv/bin/activate
+    python scripts/sync_knowledge_from_files.py \
+        --meta-yaml docs/knowledge/meta.yaml \
+        --admin-user-id 00000000-0000-0000-0000-000000000001
+
+Docker 部署环境：
+    docker exec omichub-web python scripts/sync_knowledge_from_files.py \
+        --meta-yaml docs/knowledge/meta.yaml \
+        --auto-admin
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import logging
+import uuid
+from pathlib import Path
+
+import yaml
+from rich.console import Console
+from rich.table import Table
+from rich.theme import Theme
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from omichub.infrastructure.database.models.knowledge_document import KbDocumentModel
+from omichub.infrastructure.database.models.knowledge_editor import DocEditorModel
+from omichub.infrastructure.database.models.knowledge_revision import DocRevisionModel
+from omichub.infrastructure.database.models.user import UserModel
+from omichub.infrastructure.database.session import get_engine, get_session_factory
+
+# 抑制 SQLAlchemy 引擎日志输出，避免同步时打印大量 SQL
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy.dialects").setLevel(logging.WARNING)
+
+# Rich 控制台主题
+custom_theme = Theme(
+    {
+        "info": "cyan",
+        "success": "green",
+        "warning": "yellow",
+        "error": "red bold",
+        "title": "bold blue",
+    }
+)
+console = Console(theme=custom_theme)
+
+
+async def resolve_admin_user_id(
+    session: AsyncSession, admin_user_id: uuid.UUID | None, auto_admin: bool
+) -> uuid.UUID:
+    """解析最终使用的管理员用户 ID。"""
+    if admin_user_id is not None:
+        return admin_user_id
+
+    if not auto_admin:
+        raise ValueError("必须提供 --admin-user-id 或 --auto-admin")
+
+    result = await session.execute(
+        select(UserModel.id).where(UserModel.role == "admin").order_by(UserModel.created_at.asc()).limit(1)
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        raise ValueError("数据库中不存在 role='admin' 的用户，无法自动选择管理员")
+    return row
+
+
+async def sync(
+    meta_yaml_path: Path,
+    admin_user_id: uuid.UUID | None,
+    session: AsyncSession,
+    auto_admin: bool = False,
+) -> tuple[int, int, int]:
+    """执行同步，返回 (更新的文档数, 新建的文档数, 跳过的文档数)。"""
+    section_dir = meta_yaml_path.parent
+
+    admin_user_id = await resolve_admin_user_id(session, admin_user_id, auto_admin)
+
+    user_result = await session.execute(
+        select(UserModel.username, UserModel.nickname).where(UserModel.id == admin_user_id)
+    )
+    user_row = user_result.one_or_none()
+    if user_row is None:
+        raise ValueError(f"admin_user_id {admin_user_id} 不存在")
+    admin_name = user_row.nickname or user_row.username
+
+    with open(meta_yaml_path, encoding="utf-8") as f:
+        meta = yaml.safe_load(f) or {}
+
+    updated = 0
+    created = 0
+    skipped = 0
+    results: list[tuple[str, str, str]] = []
+
+    for item in meta.get("items", []):
+        doc_id = item.get("id")
+        title = item.get("title")
+        category = item.get("category") or "未分类"
+        md_file = item.get("file")
+        if not doc_id or not title or not md_file:
+            results.append(("[warning]跳过[/warning]", doc_id or "?", "条目缺少 id/title/file"))
+            skipped += 1
+            continue
+
+        file_path = section_dir / md_file
+        if not file_path.exists():
+            results.append(("[error]缺失[/error]", doc_id, f"文件不存在: {md_file}"))
+            skipped += 1
+            continue
+
+        content = file_path.read_text(encoding="utf-8")
+
+        # 查询数据库中是否已存在
+        doc_result = await session.execute(
+            select(KbDocumentModel).where(KbDocumentModel.doc_id == doc_id)
+        )
+        document = doc_result.scalar_one_or_none()
+
+        if document is None:
+            # 新建文档 + 初始版本
+            document = KbDocumentModel(
+                doc_id=doc_id,
+                title=title,
+                category=category,
+                file_path=str(file_path),
+                status=1,
+                created_by=admin_user_id,
+            )
+            session.add(document)
+            await session.flush()
+
+            revision = DocRevisionModel(
+                document_id=document.id,
+                content=content,
+                edit_summary="从文件系统同步导入",
+                edited_by=admin_user_id,
+                status=1,
+            )
+            session.add(revision)
+            await session.flush()
+
+            document.current_rev = revision.id
+
+            editor = DocEditorModel(
+                document_id=document.id,
+                user_id=admin_user_id,
+                user_name=admin_name,
+                edit_count=1,
+            )
+            session.add(editor)
+
+            created += 1
+            results.append(("[success]新建[/success]", doc_id, title))
+        else:
+            # 同步 title / category
+            document.title = title
+            document.category = category
+
+            # 只有当内容发生变化时才创建新版本
+            current_revision = await session.get(DocRevisionModel, document.current_rev)
+            if current_revision is not None and current_revision.content == content:
+                results.append(("[info]无变化[/info]", doc_id, title))
+                continue
+
+            # 归档旧版本
+            if current_revision is not None:
+                current_revision.status = 4  # 已归档
+
+            revision = DocRevisionModel(
+                document_id=document.id,
+                content=content,
+                edit_summary="从文件系统同步更新",
+                edited_by=admin_user_id,
+                status=1,
+            )
+            session.add(revision)
+            await session.flush()
+
+            document.current_rev = revision.id
+            document.status = 1
+
+            # 更新编辑者统计
+            editor_result = await session.execute(
+                select(DocEditorModel).where(
+                    DocEditorModel.document_id == document.id,
+                    DocEditorModel.user_id == admin_user_id,
+                )
+            )
+            editor = editor_result.scalar_one_or_none()
+            if editor is None:
+                editor = DocEditorModel(
+                    document_id=document.id,
+                    user_id=admin_user_id,
+                    user_name=admin_name,
+                    edit_count=1,
+                )
+                session.add(editor)
+            else:
+                editor.edit_count += 1
+                editor.user_name = admin_name
+
+            updated += 1
+            results.append(("[success]更新[/success]", doc_id, title))
+
+    await session.commit()
+
+    # 输出结果表格
+    table = Table(title="知识库同步结果", show_header=True, header_style="bold magenta")
+    table.add_column("状态", style="bold", width=10)
+    table.add_column("文档 ID", style="dim", width=32)
+    table.add_column("标题", style="bold")
+
+    for status, doc_id, title in results:
+        table.add_row(status, doc_id, title)
+
+    console.print(table)
+
+    return updated, created, skipped
+
+
+async def main() -> None:
+    parser = argparse.ArgumentParser(description="将知识库 Markdown 文件同步到数据库")
+    parser.add_argument(
+        "--meta-yaml",
+        type=Path,
+        default=Path("docs/knowledge/meta.yaml"),
+        help="知识库 meta.yaml 路径",
+    )
+    parser.add_argument(
+        "--admin-user-id",
+        type=str,
+        default=None,
+        help="用于标记同步版本创建者的用户 UUID（与 --auto-admin 二选一）",
+    )
+    parser.add_argument(
+        "--auto-admin",
+        action="store_true",
+        help="自动选择数据库中最早创建的管理员用户作为同步者",
+    )
+    args = parser.parse_args()
+
+    if not args.meta_yaml.exists():
+        console.print(f"[error]meta.yaml 不存在: {args.meta_yaml}[/error]")
+        raise SystemExit(1)
+
+    admin_user_id = uuid.UUID(args.admin_user_id) if args.admin_user_id else None
+
+    # 关闭 SQLAlchemy echo，避免打印 SQL（即使 APP_DEBUG=true）
+    engine = get_engine()
+    engine.echo = False
+
+    factory = get_session_factory()
+    async with factory() as session:
+        updated, created, skipped = await sync(
+            args.meta_yaml, admin_user_id, session, auto_admin=args.auto_admin
+        )
+
+    summary = Table.grid(padding=(0, 2))
+    summary.add_row(
+        "[title]同步完成[/title]",
+        f"[success]更新 {updated} 篇[/success]",
+        f"[info]新建 {created} 篇[/info]",
+        f"[warning]跳过 {skipped} 篇[/warning]",
+    )
+    console.print(summary)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

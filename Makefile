@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker test lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-runtime-dirs docker-fix-permissions docker-up docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge docker-start clean init-admin init-cookies check-alembic-heads
+.PHONY: help dev dev-worker test lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-runtime-dirs docker-fix-permissions docker-up docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge docker-start clean init-admin init-cookies check-alembic-heads sync-knowledge
 
 help: ## 显示所有可用命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -142,15 +142,42 @@ frontend-build: ## 构建前端生产版本
 	cd frontend && npm run build
 
 docker-reload: docker-network ## 重新构建前端并刷新主栈 + Worker (开发用)
+	@echo ""
+	@echo "╔══════════════════════════════════════════════════════════════╗"
+	@echo "║  🚀 OmicHub 开发环境热重载                                    ║"
+	@echo "║     重新构建前端 + 重启服务 + 同步知识库                      ║"
+	@echo "╚══════════════════════════════════════════════════════════════╝"
 	@$(MAKE) --no-print-directory docker-runtime-dirs
-	@echo "=> 清理残留容器..."
+	@echo ""
+	@echo "📦 步骤 1/6：清理残留容器，避免旧容器占用端口或挂载..."
 	-@docker ps -a --filter "name=omichub-" -q | xargs -r docker rm -f 2>/dev/null
-	@echo "=> 构建终端沙盒镜像..."
+	@echo ""
+	@echo "🐳 步骤 2/6：构建终端沙盒镜像（如已存在则使用缓存）..."
 	-docker build -t omichub/sandbox-terminal:latest tool_configs/terminal/docker/
+	@echo ""
+	@echo "⚡ 步骤 3/6：重新构建前端生产包（vite build）..."
 	cd frontend && npm run build
+	@echo ""
+	@echo "🌐 步骤 4/6：启动主栈服务（web / db / redis / nginx / beat / flower）..."
 	$(COMPOSE_MAIN) up -d
+	@echo ""
+	@echo "🔧 步骤 5/6：启动独立 Worker 计算栈..."
 	$(COMPOSE_WORKER) up -d
+	@echo ""
+	@echo "🗄️  步骤 6/6：检查数据库迁移状态并同步知识库..."
 	@$(MAKE) --no-print-directory check-alembic-heads
+	@$(MAKE) --no-print-directory sync-knowledge
+	@echo ""
+	@echo "✅ 热重载完成！访问地址：http://localhost:8888"
+	@echo ""
+
+sync-knowledge: ## 将 docs/knowledge/*.md 同步到数据库（开发/本地文件编辑后使用）
+	@echo ""
+	@echo "📚 同步知识库：将 docs/knowledge/*.md 文件内容同步到数据库..."
+	@echo "   （说明：知识库以数据库为权威源，直接改 .md 文件后需要此步骤网页才生效）"
+	@docker exec omichub-web python scripts/sync_knowledge_from_files.py \
+		--meta-yaml docs/knowledge/meta.yaml \
+		--auto-admin
 
 init-admin: ## 初始化管理员账号 (首次部署使用)
 	uv run python scripts/init_admin.py
