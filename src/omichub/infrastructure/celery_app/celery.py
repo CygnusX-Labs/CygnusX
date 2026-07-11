@@ -20,6 +20,7 @@ celery_app = Celery(
         "omichub.infrastructure.celery_app.tasks.cookie",
         "omichub.infrastructure.celery_app.tasks.download",
         "omichub.tools.jbrowse.tasks",
+        "omichub.tools.phylogenetic_tree.tasks",
         "omichub.infrastructure.celery_app.tasks.sandbox",
         "omichub.infrastructure.celery_app.tasks.storage",
     ],
@@ -47,6 +48,7 @@ celery_app.conf.task_routes = {
     "omichub.infrastructure.celery_app.tasks.cookie.*": {"queue": "analysis"},
     "omichub.infrastructure.celery_app.tasks.download.*": {"queue": "analysis"},
     "omichub.tools.jbrowse.tasks.*": {"queue": "analysis"},
+    "omichub.tools.phylogenetic_tree.tasks.*": {"queue": "phylo_tree"},
     "omichub.infrastructure.celery_app.tasks.sandbox.*": {"queue": "analysis"},
     "omichub.infrastructure.celery_app.tasks.storage.*": {"queue": "analysis"},
 }

@@ -5,10 +5,14 @@ import { resolve } from 'path'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [vue()],
+  logLevel: 'error',
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
     },
+  },
+  optimizeDeps: {
+    include: ['phylotree'],
   },
   server: {
     port: 5173,
@@ -25,9 +29,21 @@ export default defineConfig({
       },
     },
   },
+  css: {
+    preprocessorOptions: {
+      scss: {
+        silenceDeprecations: ['legacy-js-api'],
+      },
+    },
+  },
   build: {
     outDir: 'dist',
     sourcemap: false,
     chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      onwarn(_warning, _warn) {
+        // 折叠所有 Rollup warning（仅保留抛出的 error），避免依赖库噪音刷屏
+      },
+    },
   },
 })

@@ -1,0 +1,73 @@
+# ============================================
+# OmicHub Docker Compose - 跨机部署 Web 主栈覆盖
+# 用法:
+#   docker compose \
+#     -f deploy/docker/docker-compose.yml \
+#     -f deploy/docker/docker-compose.cross-web.yml \
+#     up -d
+#
+# 前置条件:
+#   1. 已配置 .env，且 POSTGRES/REDIS 密码已改为强密码。
+#   2. 当前服务器内网 IP 已替换下方示例中的 10.0.0.10。
+#   3. Worker 服务器防火墙已放行 5432/6379/8000。
+# ============================================
+
+services:
+  nginx:
+    ports:
+      # Nginx 入口保持 8888
+      - "8888:80"
+
+  web:
+    environment:
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - SERVICE_NAME=web
+      # Web 侧仍通过 Docker 服务名访问 db/cache
+      - POSTGRES_HOST=db
+      - REDIS_HOST=cache
+    command: uvicorn omichub.main:app --host 0.0.0.0 --port 8000 --workers 4
+    volumes:
+      # 生产环境不挂载源码，使用镜像内代码
+      - /data/omichub:/data/omichub
+      - /data/omichub/logs/app:/app/logs
+    ports:
+      # Worker 需要跨机访问 Web API（workflow monitor ingest）
+      - "10.0.0.10:8000:8000"
+
+  db:
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      # 仅绑定内网 IP，供 Worker 跨机访问
+      - "10.0.0.10:5432:5432"
+
+  cache:
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    ports:
+      # 仅绑定内网 IP，供 Worker 跨机访问
+      - "10.0.0.10:6379:6379"
+
+  beat:
+    environment:
+      - SERVICE_NAME=beat
+      - POSTGRES_HOST=db
+      - REDIS_HOST=cache
+
+  flower:
+    environment:
+      - REDIS_HOST=cache
+    ports:
+      # 建议仅内网/VPN 访问
+      - "10.0.0.10:5555:5555"
+
+# 将外部网络改为本地 bridge，Web 栈内部仍可用服务名互通
+networks:
+  omichub_net:
+    external: false
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16

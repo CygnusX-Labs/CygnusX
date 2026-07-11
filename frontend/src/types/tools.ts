@@ -19,6 +19,10 @@ export interface ToolItem {
   route: string
   /** 排序权重，升序 */
   order: number
+  /** 工具所属分组 key */
+  group: string
+  /** 是否启用；接口通常已过滤禁用工具，前端保留兼容性判断 */
+  enabled?: boolean
   /** 该工具功能配置目录（相对仓库根），仅展示用 */
   config_dir: string
 }

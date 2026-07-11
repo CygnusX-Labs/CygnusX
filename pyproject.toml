@@ -45,6 +45,7 @@ dependencies = [
     # 文件处理
     "aiofiles>=23.2.1",
     "pyyaml>=6.0.1",
+    "biopython>=1.83",
     "lunardate>=0.3.0",
     # 日志
     "loguru>=0.7.2",

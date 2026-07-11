@@ -1,0 +1,31 @@
+FROM condaforge/mambaforge:23.11.0-0
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV CONDA_DEFAULT_ENV=phylo
+ENV PATH=/opt/conda/envs/phylo/bin:$PATH
+
+# 基础依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential gcc g++ gfortran make cmake \
+    libopenmpi-dev libgomp1 && rm -rf /var/lib/apt/lists/*
+
+# 创建 Conda 环境
+RUN mamba create -n phylo python=3.11 -y
+
+# 科学计算基础
+RUN mamba install -n phylo -c bioconda -c conda-forge \
+    biopython=1.83 numpy scipy pandas dendropy -y && mamba clean -a -y
+
+# MSA 工具
+RUN mamba install -n phylo -c bioconda \
+    mafft=7.525 clustalo=1.2.4 muscle=5.1 -y && mamba clean -a -y
+
+# 树构建工具
+RUN mamba install -n phylo -c bioconda \
+    fasttree=2.1.11 iqtree=2.2.2.7 mrbayes=3.2.7 phylip=3.697 \
+    seqkit=2.7 -y && mamba clean -a -y
+
+WORKDIR /workspace
+
+# 运行 worker：需在编排中覆盖 command
+# celery -A omichub.celery_app worker -Q phylo_tree -n phylo@%h --concurrency=2

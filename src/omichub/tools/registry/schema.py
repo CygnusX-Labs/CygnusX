@@ -22,6 +22,7 @@ class ToolItemDTO(OmicsHubBaseSchema):
     icon: str
     gradient: str
     route: str
+    group: str = ""
     order: int = 0
     config_dir: str = ""
 

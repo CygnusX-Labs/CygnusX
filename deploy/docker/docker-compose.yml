@@ -53,6 +53,7 @@ services:
       - POSTGRES_HOST=db
       - REDIS_HOST=cache
       - SERVICE_NAME=web
+      - PYTHONPATH=/app/src
       - AL_API_KEY=${AL_API_KEY}
       - ARK_API_KEY=${ARK_API_KEY}
       - HOME=/tmp                          # uid 1000 无 passwd 条目，显式 HOME 防 expanduser 失败
@@ -105,6 +106,7 @@ services:
       - POSTGRES_HOST=db
       - REDIS_HOST=cache
       - SERVICE_NAME=beat
+      - PYTHONPATH=/app/src
       - AL_API_KEY=${AL_API_KEY}
       - ARK_API_KEY=${ARK_API_KEY}
       - HOME=/tmp                          # uid 1000 无 passwd 条目，显式 HOME 防 expanduser 失败

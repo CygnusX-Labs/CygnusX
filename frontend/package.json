@@ -36,6 +36,7 @@
     "markdown-it": "^14.2.0",
     "md-editor-v3": "^6.5.3",
     "naive-ui": "^2.38.0",
+    "phylotree": "^2.6.0",
     "pinia": "^2.1.7",
     "plotly.js-dist-min": "^3.7.0",
     "qrcode": "^1.5.3",

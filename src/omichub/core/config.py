@@ -122,6 +122,10 @@ class Settings(BaseSettings):
     # 仅「展示元数据」集中于此；各工具的「功能配置」放 tool_configs/<工具名>/（如 jbrowse/、enrichments/）。
     tools_setting_yaml: str = "tool_configs/tools_setting.yaml"
 
+    # ===== 系统发育树构建工具配置 =====
+    phylogenetic_tree_config_yaml: str = "tool_configs/phylogenetic-tree/config.yaml"
+    phylogenetic_tree_defaults_yaml: str = "tool_configs/phylogenetic-tree/defaults.yaml"
+
     # ===== Snakemake 流程监控 =====
     workflow_monitor_enabled: bool = True
     workflow_monitor_template_dir: str = "tool_configs/workflow_monitor/templates"

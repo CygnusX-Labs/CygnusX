@@ -212,6 +212,24 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '云端沙盒终端', requiresAuth: true, fullscreen: true }
       },
       {
+        path: 'tools/phylogenetic-tree',
+        name: 'tools-phylogenetic-tree',
+        component: () => import('@/views/BioTools/PhylogeneticTreeView.vue'),
+        meta: { title: '系统发育树构建', requiresAuth: true }
+      },
+      {
+        path: 'tools/gene-expression-explorer',
+        name: 'tools-gene-expression-explorer',
+        component: () => import('@/views/BioTools/GeneExpressionExplorerView.vue'),
+        meta: { title: '基因表达矩阵 Explorer', requiresAuth: true }
+      },
+      {
+        path: 'tools/manhattan',
+        name: 'tools-manhattan',
+        component: () => import('@/views/BioTools/ManhattanPlotView.vue'),
+        meta: { title: '曼哈顿图绘制', requiresAuth: true }
+      },
+      {
         path: 'database',
         name: 'database',
         component: () => import('@/views/ReferenceGenomesView.vue'),

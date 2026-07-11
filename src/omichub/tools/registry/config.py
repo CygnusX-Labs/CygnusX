@@ -43,6 +43,7 @@ class ToolItem(BaseModel):
         description="卡片图标背景渐变（CSS linear-gradient）",
     )
     route: str = Field(..., description="点击卡片跳转的前端路由")
+    group: str = Field(default="", description="工具分组 key（供前端工具箱归类展示）")
     enabled: bool = Field(default=True, description="false 则不出现在工具箱")
     order: int = Field(default=0, description="卡片排序，升序")
     config_dir: str = Field(default="", description="该工具功能配置目录（相对仓库根），仅展示用")

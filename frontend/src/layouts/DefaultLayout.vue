@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  NLayout, NLayoutSider, NLayoutContent, NIcon, NButton, NTooltip, NDropdown,
+  NLayout, NLayoutSider, NLayoutContent, NIcon, NButton, NTooltip, NDropdown, NPopover,
   NDrawer, NDrawerContent, NAvatar, NBadge, NModal,
 } from 'naive-ui'
 import { computed, h, ref, watch, onMounted, onBeforeUnmount } from 'vue'
@@ -426,6 +426,38 @@ const UserAvatar = () => {
                     </template>
                     {{ item.label }}
                   </NTooltip>
+                  <NPopover
+                    v-else-if="collapsed && item.children"
+                    trigger="hover"
+                    placement="right-start"
+                    :delay="150"
+                    :show-arrow="false"
+                    :z-index="1050"
+                    class="collapsed-submenu-popover"
+                  >
+                    <template #trigger>
+                      <div class="nav-item-inner">
+                        <NIcon :size="19" class="nav-icon">
+                          <component :is="item.icon" />
+                        </NIcon>
+                      </div>
+                    </template>
+                    <div class="collapsed-submenu-content">
+                      <p class="collapsed-submenu-title">{{ item.label }}</p>
+                      <RouterLink
+                        v-for="child in item.children"
+                        :key="child.key"
+                        :to="child.to"
+                        class="collapsed-submenu-item"
+                        :class="{ 'collapsed-submenu-item--active': isActive(child) }"
+                      >
+                        <NIcon :size="16">
+                          <component :is="child.icon" />
+                        </NIcon>
+                        <span>{{ child.label }}</span>
+                      </RouterLink>
+                    </div>
+                  </NPopover>
                   <div v-else class="nav-item-inner">
                     <NIcon :size="18" class="nav-icon">
                       <component :is="item.icon" />
@@ -522,6 +554,38 @@ const UserAvatar = () => {
                       </template>
                       {{ item.label }}
                     </NTooltip>
+                    <NPopover
+                      v-else-if="collapsed && item.children"
+                      trigger="hover"
+                      placement="right-start"
+                      :delay="150"
+                      :show-arrow="false"
+                      :z-index="1050"
+                      class="collapsed-submenu-popover"
+                    >
+                      <template #trigger>
+                        <div class="nav-item-inner">
+                          <NIcon :size="19" class="nav-icon">
+                            <component :is="item.icon" />
+                          </NIcon>
+                        </div>
+                      </template>
+                      <div class="collapsed-submenu-content">
+                        <p class="collapsed-submenu-title">{{ item.label }}</p>
+                        <RouterLink
+                          v-for="child in item.children"
+                          :key="child.key"
+                          :to="child.to"
+                          class="collapsed-submenu-item"
+                          :class="{ 'collapsed-submenu-item--active': isActive(child) }"
+                        >
+                          <NIcon :size="16">
+                            <component :is="child.icon" />
+                          </NIcon>
+                          <span>{{ child.label }}</span>
+                        </RouterLink>
+                      </div>
+                    </NPopover>
                     <div v-else class="nav-item-inner">
                       <NIcon :size="18" class="nav-icon">
                         <component :is="item.icon" />
@@ -857,6 +921,7 @@ const UserAvatar = () => {
 
 .app-sider {
   background: var(--sidebar-bg) !important;
+  overflow: visible !important;
   transition: width 0.3s ease-in-out;
 }
 
@@ -890,13 +955,14 @@ const UserAvatar = () => {
   flex-direction: column;
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
   color: var(--neutral-text-2);
 }
 
 .nav-item:hover {
-  background: var(--sidebar-hover);
+  background: linear-gradient(90deg, rgba(22, 93, 255, 0.12), rgba(22, 93, 255, 0.04));
   color: var(--neutral-text-1);
+  box-shadow: inset 0 0 0 1px rgba(22, 93, 255, 0.1), 0 4px 12px rgba(22, 93, 255, 0.08);
 }
 
 .nav-item--active {
@@ -926,12 +992,19 @@ const UserAvatar = () => {
 }
 
 .nav-item--collapsed .nav-item-inner {
+  width: 40px;
+  height: 40px;
   justify-content: center;
   padding: 0;
+  border-radius: 10px;
 }
 
 .nav-icon {
   flex-shrink: 0;
+}
+
+.nav-item--collapsed:hover .nav-icon {
+  filter: drop-shadow(0 0 6px rgba(22, 93, 255, 0.5));
 }
 
 .nav-label {
@@ -989,6 +1062,44 @@ const UserAvatar = () => {
   flex-shrink: 0;
 }
 
+.collapsed-submenu-content {
+  min-width: 184px;
+  padding: 6px;
+}
+
+.collapsed-submenu-title {
+  margin: 0;
+  padding: 7px 8px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--neutral-text-3);
+}
+
+.collapsed-submenu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 36px;
+  padding: 0 9px;
+  border-radius: 7px;
+  color: var(--neutral-text-2);
+  font-size: 13px;
+  line-height: 20px;
+  text-decoration: none;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.collapsed-submenu-item:hover {
+  color: var(--neutral-text-1);
+  background: rgba(22, 93, 255, 0.1);
+}
+
+.collapsed-submenu-item--active {
+  color: var(--arco-primary);
+  background: var(--arco-primary-light);
+  font-weight: 500;
+}
+
 .nav-divider {
   height: 1px;
   background: var(--neutral-border);
@@ -998,7 +1109,7 @@ const UserAvatar = () => {
 /* ===== 底部用户区 ===== */
 .sider-footer {
   margin-top: auto;
-  padding-top: 12px;
+  padding-top: 14px;
   border-top: 1px solid var(--neutral-border);
 }
 
@@ -1045,7 +1156,7 @@ const UserAvatar = () => {
 .user-avatar-only {
   display: flex;
   justify-content: center;
-  padding: 4px 0;
+  padding: 6px 0 2px;
 }
 
 .user-avatar-btn {
@@ -1055,6 +1166,14 @@ const UserAvatar = () => {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
+  border: 1px solid transparent;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.user-avatar-btn:hover {
+  background: rgba(22, 93, 255, 0.1);
+  border-color: rgba(22, 93, 255, 0.24);
+  box-shadow: 0 0 12px rgba(22, 93, 255, 0.16);
 }
 
 /* ===== 移动端抽屉 ===== */
@@ -1167,5 +1286,16 @@ const UserAvatar = () => {
 
 :deep(.n-layout-sider .n-layout-sider-scroll-container) {
   border-right: 1px solid var(--sidebar-border);
+  overflow: visible !important;
+}
+
+:global(.collapsed-submenu-popover.n-popover) {
+  z-index: 1050 !important;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 10px;
+  background: var(--sidebar-bg);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.24), 0 0 0 1px rgba(22, 93, 255, 0.08);
 }
 </style>

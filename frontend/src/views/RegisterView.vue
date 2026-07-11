@@ -86,8 +86,22 @@
               {{ errorMsg }}
             </n-alert>
 
+            <div class="agreement-row form-item-full">
+              <n-checkbox v-model:checked="agreed" class="agreement-checkbox" />
+              <span class="agreement-text">
+                我已阅读并同意
+                <a class="agreement-link" @click="showAgreementDrawer = true">《OmicHub 平台服务协议》</a>
+              </span>
+            </div>
+
             <div class="register-actions form-item-full">
-              <n-button type="primary" size="large" :loading="loading" @click="handleRegister">
+              <n-button
+                type="primary"
+                size="large"
+                :loading="loading"
+                :disabled="!agreed || loading"
+                @click="handleRegister"
+              >
                 注册账户
               </n-button>
               <span class="back-to-login">
@@ -98,6 +112,11 @@
         </div>
       </div>
     </div>
+
+    <AgreementDrawer
+      v-model:show="showAgreementDrawer"
+      @agree="agreed = true"
+    />
 
     <StardustQuote />
   </div>
@@ -110,6 +129,7 @@ import { useMessage } from 'naive-ui'
 import { PersonOutline, LockClosedOutline, MailOutline } from '@vicons/ionicons5'
 import { useAuthStore } from '@/stores/auth'
 import apiClient from '@/api/client'
+import AgreementDrawer from '@/components/AgreementDrawer.vue'
 import LoginPageQuote from '@/components/LoginPageQuote.vue'
 import LogoAnimation from '@/components/LogoAnimation.vue'
 import StarField from '@/components/StarField.vue'
@@ -122,6 +142,8 @@ const formRef = ref()
 const loading = ref(false)
 const errorMsg = ref('')
 const registrationClosed = ref(false)
+const agreed = ref(false)
+const showAgreementDrawer = ref(false)
 
 onMounted(async () => {
   try {
@@ -445,6 +467,59 @@ const handleRegister = async () => {
 
 .register-actions :deep(.n-button--primary-type:active) {
   transform: scale(0.98);
+}
+
+.register-actions :deep(.n-button--primary-type.n-button--disabled) {
+  opacity: 0.5;
+  filter: grayscale(1);
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.agreement-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.agreement-checkbox {
+  --n-color-checked: #165dff;
+  --n-color-checked-hover: #165dff;
+  --n-border-checked: #165dff;
+  --n-border-focus: #165dff;
+  --n-box-shadow-focus: 0 0 0 2px rgba(22, 93, 255, 0.2);
+}
+
+.agreement-text {
+  font-size: 13px;
+  color: #4a4a6a;
+  line-height: 1.5;
+}
+
+:root[data-theme='dark'] .agreement-text {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.agreement-link {
+  color: #165dff;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.2s ease, text-decoration 0.2s ease;
+}
+
+.agreement-link:hover {
+  color: #3a7dff;
+  text-decoration: underline;
+}
+
+:root[data-theme='dark'] .agreement-link {
+  color: #4d9dff;
+}
+
+:root[data-theme='dark'] .agreement-link:hover {
+  color: #7ab8ff;
 }
 
 .back-to-login {
