@@ -6,7 +6,10 @@ from omichub.domain.festival.repositories import (
     FestivalConfigRepository,
 )
 from omichub.domain.festival.services import FestivalCalendarService
-from omichub.domain.festival.solar_term_calendar import get_solar_term_date
+from omichub.domain.festival.solar_term_calendar import (
+    get_solar_term_date,
+    get_solar_term_date_by_name,
+)
 from omichub.domain.festival.value_objects import (
     ActiveRange,
     AnimationConfig,
@@ -30,6 +33,7 @@ __all__ = [
     "FestivalConfigRepository",
     "FestivalClaimRepository",
     "get_solar_term_date",
+    "get_solar_term_date_by_name",
     "ActiveRange",
     "AnimationConfig",
     "AnimationType",

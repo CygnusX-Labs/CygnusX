@@ -6,15 +6,12 @@
  */
 
 export type FestivalAnimationType =
-  | 'fireworks'
   | 'lanterns'
   | 'dragon_boat'
   | 'milky_way'
   | 'moon_rise'
   | 'climbing'
-  | 'new_year_fireworks'
   | 'gears'
-  | 'flag_fireworks'
   | 'hearts_rise'
   | 'snowfall'
   | 'sprout'
@@ -22,9 +19,49 @@ export type FestivalAnimationType =
   | 'maple_fall'
   | 'snow_warm'
   | 'national_day'
-  | 'starfield_fireworks'
   | 'code_rain'
   | 'nebula'
+
+export type FestivalTexture =
+  | 'silk'
+  | 'paper'
+  | 'mist'
+  | 'lattice'
+  | 'code'
+  | 'frost'
+  | 'grain'
+  | 'bamboo'
+  | 'brocade'
+  | 'jade'
+  | 'porcelain'
+  | 'book'
+
+export type FestivalForm =
+  | 'tablet'
+  | 'scroll'
+  | 'moon'
+  | 'ripple'
+  | 'jade'
+  | 'mountain'
+  | 'banner'
+  | 'petal'
+  | 'frost'
+  | 'terminal'
+  | 'orbital'
+
+export type FestivalLayout =
+  | 'classic'
+  | 'couplet'
+  | 'moon-arc'
+  | 'river'
+  | 'vertical-rain'
+  | 'mountain'
+  | 'bridge'
+  | 'field'
+  | 'code'
+  | 'star-map'
+
+export type FestivalMotionProfile = 'gentle' | 'water' | 'botanical' | 'crystal' | 'astral' | 'firm'
 
 export interface FestivalTheme {
   id: string
@@ -50,6 +87,14 @@ export interface FestivalTheme {
   fontFamily?: string
   buttonText: string
   specialEffect?: string
+  ambientColor?: string
+  surfaceColor?: string
+  highlightColor?: string
+  texture?: FestivalTexture
+  form?: FestivalForm
+  layout?: FestivalLayout
+  phenology?: string
+  motionProfile?: FestivalMotionProfile
 }
 
 export const FESTIVAL_THEMES: FestivalTheme[] = [
@@ -72,7 +117,7 @@ export const FESTIVAL_THEMES: FestivalTheme[] = [
     buttonShadow: '0 0 20px rgba(255,50,50,0.5)',
     taglineColor: '#d4a574',
     particleColors: ['#FFD700', '#FF6B35', '#FF4444', '#FFA500'],
-    animationType: 'starfield_fireworks',
+    animationType: 'nebula',
     decoration: 'spring_couplets',
     buttonText: '领取新年红包 🧧',
   },
@@ -212,8 +257,8 @@ export const FESTIVAL_THEMES: FestivalTheme[] = [
     buttonShadow: '0 0 25px rgba(100,80,255,0.5)',
     taglineColor: '#8890ff',
     particleColors: ['#FFD700', '#FF6B6B', '#4ECDC4', '#A78BFA', '#FF85C0'],
-    animationType: 'new_year_fireworks',
-    decoration: 'fireworks_banner',
+    animationType: 'nebula',
+    decoration: 'dawn_banner',
     buttonText: '开启新宇宙 🚀',
   },
   {
@@ -449,19 +494,453 @@ export const FESTIVAL_THEMES: FestivalTheme[] = [
   },
 ]
 
+
+
+const REFINED_THEME_OVERRIDES: Record<string, Partial<FestivalTheme>> = {
+  spring_festival: {
+    gradient: 'linear-gradient(145deg, rgba(31,18,20,0.94) 0%, rgba(54,28,28,0.88) 46%, rgba(24,16,18,0.94) 100%)',
+    borderColor: 'rgba(216, 180, 106, 0.34)',
+    titleColor: '#F2D6A2',
+    textColor: '#F4E7D2',
+    amountColor: '#E7C27E',
+    amountGlow: '0 0 30px rgba(216,180,106,0.28), 0 0 70px rgba(151,77,68,0.16)',
+    buttonGradient: 'linear-gradient(135deg, rgba(118,55,55,0.96), rgba(185,128,83,0.92))',
+    buttonTextColor: '#FFF5DD',
+    buttonShadow: '0 16px 42px rgba(72,25,24,0.32), inset 0 1px 0 rgba(255,255,255,0.18)',
+    taglineColor: '#C8AF86',
+    particleColors: ['#E7C27E', '#A8675D', '#F4E7D2'],
+    ambientColor: '#D8B46A',
+    surfaceColor: 'rgba(28,18,18,0.72)',
+    highlightColor: '#F8E6BF',
+    texture: 'paper',
+    buttonText: '领取节日额度',
+  },
+  lantern_festival: {
+    gradient: 'linear-gradient(145deg, rgba(32,24,22,0.94), rgba(58,37,30,0.86) 52%, rgba(24,18,18,0.94))',
+    borderColor: 'rgba(205, 154, 95, 0.32)',
+    titleColor: '#E3BE88',
+    textColor: '#F0DDC8',
+    amountColor: '#D8A767',
+    amountGlow: '0 0 30px rgba(205,154,95,0.24)',
+    buttonGradient: 'linear-gradient(135deg, rgba(101,65,50,0.96), rgba(195,139,84,0.9))',
+    buttonTextColor: '#FFF1DD',
+    buttonShadow: '0 15px 40px rgba(60,34,26,0.34), inset 0 1px 0 rgba(255,255,255,0.16)',
+    taglineColor: '#BFA07C',
+    particleColors: ['#E3BE88', '#A66F52', '#F2D8B8'],
+    ambientColor: '#C9985A',
+    surfaceColor: 'rgba(31,23,22,0.72)',
+    highlightColor: '#FFE1AD',
+    texture: 'silk',
+    buttonText: '收下这束微光',
+  },
+  dragon_boat: {
+    gradient: 'linear-gradient(145deg, rgba(14,28,24,0.95), rgba(27,49,41,0.86) 50%, rgba(11,24,23,0.95))',
+    borderColor: 'rgba(132, 167, 139, 0.32)',
+    titleColor: '#B9CDB5',
+    textColor: '#DCE8D8',
+    amountColor: '#A8C7A6',
+    amountGlow: '0 0 30px rgba(132,167,139,0.24)',
+    buttonGradient: 'linear-gradient(135deg, rgba(52,86,72,0.96), rgba(121,150,111,0.9))',
+    buttonTextColor: '#F4FAEF',
+    buttonShadow: '0 15px 40px rgba(17,47,38,0.34), inset 0 1px 0 rgba(255,255,255,0.16)',
+    taglineColor: '#A3B59E',
+    particleColors: ['#B9CDB5', '#78966F', '#DDE7D8'],
+    ambientColor: '#84A78B',
+    surfaceColor: 'rgba(15,29,25,0.72)',
+    highlightColor: '#E7F0E3',
+    texture: 'grain',
+    buttonText: '领取节日额度',
+  },
+  qixi: {
+    gradient: 'linear-gradient(145deg, rgba(24,20,34,0.95), rgba(43,34,58,0.88) 48%, rgba(21,18,32,0.95))',
+    borderColor: 'rgba(191, 154, 180, 0.34)',
+    titleColor: '#E1B8CC',
+    textColor: '#E9D9E8',
+    amountColor: '#D8A8C0',
+    amountGlow: '0 0 34px rgba(191,154,180,0.28), 0 0 72px rgba(111,101,151,0.16)',
+    buttonGradient: 'linear-gradient(135deg, rgba(89,72,119,0.96), rgba(184,132,160,0.9))',
+    buttonTextColor: '#FFF2FA',
+    buttonShadow: '0 15px 42px rgba(36,28,59,0.34), inset 0 1px 0 rgba(255,255,255,0.16)',
+    taglineColor: '#C8ABC6',
+    particleColors: ['#E1B8CC', '#8F82B0', '#F1E3EE'],
+    ambientColor: '#B894B5',
+    surfaceColor: 'rgba(25,21,35,0.74)',
+    highlightColor: '#F4D9E8',
+    texture: 'silk',
+    buttonText: '领取星河微光',
+  },
+  mid_autumn: {
+    gradient: 'linear-gradient(145deg, rgba(16,22,34,0.96), rgba(26,31,43,0.88) 52%, rgba(10,15,26,0.96))',
+    borderColor: 'rgba(218, 208, 186, 0.32)',
+    titleColor: '#E9E0CF',
+    textColor: '#DDE4EC',
+    amountColor: '#D9C8A8',
+    amountGlow: '0 0 34px rgba(218,208,186,0.28), 0 0 76px rgba(114,139,171,0.16)',
+    buttonGradient: 'linear-gradient(135deg, rgba(54,72,94,0.96), rgba(191,150,88,0.88))',
+    buttonTextColor: '#FFF7E8',
+    buttonShadow: '0 16px 42px rgba(13,21,35,0.38), inset 0 1px 0 rgba(255,255,255,0.16)',
+    taglineColor: '#AEB9C8',
+    particleColors: ['#E9E0CF', '#C99655', '#9DB4D0'],
+    ambientColor: '#DAD0BA',
+    surfaceColor: 'rgba(15,21,33,0.76)',
+    highlightColor: '#FFF5DC',
+    texture: 'frost',
+    buttonText: '领取月光额度',
+  },
+  double_ninth: {
+    gradient: 'linear-gradient(145deg, rgba(28,23,18,0.95), rgba(50,39,28,0.86) 50%, rgba(21,18,15,0.95))',
+    borderColor: 'rgba(191, 146, 88, 0.30)',
+    titleColor: '#D8B06F',
+    textColor: '#E9D8BF',
+    amountColor: '#D3A967',
+    amountGlow: '0 0 28px rgba(191,146,88,0.24)',
+    buttonGradient: 'linear-gradient(135deg, rgba(94,67,45,0.96), rgba(179,129,75,0.9))',
+    buttonTextColor: '#FFF0DA',
+    buttonShadow: '0 14px 38px rgba(55,37,24,0.34), inset 0 1px 0 rgba(255,255,255,0.15)',
+    taglineColor: '#BCA27F',
+    particleColors: ['#D8B06F', '#A87952', '#EADAC2'],
+    ambientColor: '#BF9258',
+    surfaceColor: 'rgba(28,23,18,0.72)',
+    highlightColor: '#F0D6A7',
+    texture: 'paper',
+    buttonText: '登高领取',
+  },
+  new_year: {
+    gradient: 'linear-gradient(145deg, rgba(15,20,38,0.96), rgba(27,35,62,0.88) 50%, rgba(11,15,30,0.96))',
+    borderColor: 'rgba(154, 178, 217, 0.34)',
+    titleColor: '#DCE6FF',
+    textColor: '#D5DEEF',
+    amountColor: '#CBD8F4',
+    amountGlow: '0 0 32px rgba(154,178,217,0.28)',
+    buttonGradient: 'linear-gradient(135deg, rgba(64,82,125,0.96), rgba(131,158,202,0.9))',
+    buttonTextColor: '#F6F9FF',
+    buttonShadow: '0 16px 42px rgba(17,25,52,0.38), inset 0 1px 0 rgba(255,255,255,0.16)',
+    taglineColor: '#A9B7D5',
+    particleColors: ['#DCE6FF', '#8FA8D6', '#D5C8F1'],
+    ambientColor: '#9AB2D9',
+    surfaceColor: 'rgba(15,20,38,0.74)',
+    highlightColor: '#F3F7FF',
+    texture: 'frost',
+    buttonText: '开启新年额度',
+  },
+  labor_day: {
+    gradient: 'linear-gradient(145deg, rgba(20,23,29,0.96), rgba(36,40,48,0.88) 50%, rgba(15,18,24,0.96))',
+    borderColor: 'rgba(198, 159, 94, 0.28)',
+    titleColor: '#D3B27A',
+    textColor: '#DCE0E6',
+    amountColor: '#D0A866',
+    amountGlow: '0 0 28px rgba(198,159,94,0.23)',
+    buttonGradient: 'linear-gradient(135deg, rgba(68,75,86,0.96), rgba(184,139,76,0.88))',
+    buttonTextColor: '#FFF3DE',
+    buttonShadow: '0 14px 38px rgba(20,22,28,0.36), inset 0 1px 0 rgba(255,255,255,0.16)',
+    taglineColor: '#AEB4BE',
+    particleColors: ['#D3B27A', '#8E98A8', '#E7E0D3'],
+    ambientColor: '#C69F5E',
+    surfaceColor: 'rgba(20,23,29,0.74)',
+    highlightColor: '#E9D4A4',
+    texture: 'lattice',
+    buttonText: '领取劳动礼遇',
+  },
+  national_day: {
+    gradient: 'linear-gradient(145deg, rgba(37,18,20,0.96), rgba(72,30,30,0.88) 48%, rgba(24,15,18,0.96))',
+    borderColor: 'rgba(207, 174, 107, 0.34)',
+    titleColor: '#E5C984',
+    textColor: '#F0D9C9',
+    amountColor: '#D9BB73',
+    amountGlow: '0 0 32px rgba(207,174,107,0.26), 0 0 70px rgba(143,46,44,0.14)',
+    buttonGradient: 'linear-gradient(135deg, rgba(112,43,43,0.96), rgba(199,151,89,0.9))',
+    buttonTextColor: '#FFF3D9',
+    buttonShadow: '0 16px 44px rgba(75,23,25,0.36), inset 0 1px 0 rgba(255,255,255,0.16)',
+    taglineColor: '#C9AA78',
+    particleColors: ['#E5C984', '#9B4E4A', '#F1DEB2'],
+    ambientColor: '#CFAE6B',
+    surfaceColor: 'rgba(36,18,20,0.74)',
+    highlightColor: '#F3DCA3',
+    texture: 'silk',
+    buttonText: '领取节日额度',
+  },
+  valentine: {
+    gradient: 'linear-gradient(145deg, rgba(32,22,28,0.96), rgba(58,39,50,0.86) 50%, rgba(22,17,24,0.96))',
+    borderColor: 'rgba(201, 154, 174, 0.32)',
+    titleColor: '#E2B9CA',
+    textColor: '#EBD8E1',
+    amountColor: '#D9A9BC',
+    amountGlow: '0 0 30px rgba(201,154,174,0.25)',
+    buttonGradient: 'linear-gradient(135deg, rgba(104,72,91,0.96), rgba(193,132,158,0.9))',
+    buttonTextColor: '#FFF2F7',
+    buttonShadow: '0 15px 40px rgba(48,30,40,0.35), inset 0 1px 0 rgba(255,255,255,0.16)',
+    taglineColor: '#C7A7B5',
+    particleColors: ['#E2B9CA', '#A88DA8', '#F1E2E8'],
+    ambientColor: '#C99AAE',
+    surfaceColor: 'rgba(32,22,28,0.72)',
+    highlightColor: '#F5D7E3',
+    texture: 'silk',
+    buttonText: '领取心意额度',
+  },
+  christmas: {
+    gradient: 'linear-gradient(145deg, rgba(14,24,28,0.96), rgba(26,43,44,0.88) 52%, rgba(12,20,25,0.96))',
+    borderColor: 'rgba(151, 181, 172, 0.32)',
+    titleColor: '#D7E4EA',
+    textColor: '#D5E2E0',
+    amountColor: '#BFD7CC',
+    amountGlow: '0 0 30px rgba(151,181,172,0.25)',
+    buttonGradient: 'linear-gradient(135deg, rgba(55,85,75,0.96), rgba(139,169,160,0.88))',
+    buttonTextColor: '#F5FBFA',
+    buttonShadow: '0 15px 40px rgba(12,29,30,0.36), inset 0 1px 0 rgba(255,255,255,0.16)',
+    taglineColor: '#A6BDB8',
+    particleColors: ['#D7E4EA', '#97B5AC', '#EEF4F4'],
+    ambientColor: '#97B5AC',
+    surfaceColor: 'rgba(14,24,28,0.74)',
+    highlightColor: '#F4FBFD',
+    texture: 'frost',
+    buttonText: '领取冬日额度',
+  },
+  li_chun: {
+    gradient: 'linear-gradient(145deg, rgba(17,29,23,0.96), rgba(31,49,39,0.86) 50%, rgba(13,24,20,0.96))',
+    borderColor: 'rgba(152, 181, 144, 0.31)',
+    titleColor: '#C8DDBF',
+    textColor: '#DFEBDD',
+    amountColor: '#BFD6B6',
+    amountGlow: '0 0 28px rgba(152,181,144,0.24)',
+    buttonGradient: 'linear-gradient(135deg, rgba(65,92,73,0.96), rgba(143,174,136,0.88))',
+    buttonTextColor: '#F6FBF2',
+    buttonShadow: '0 14px 38px rgba(18,44,30,0.33), inset 0 1px 0 rgba(255,255,255,0.15)',
+    taglineColor: '#AAC0A5',
+    particleColors: ['#C8DDBF', '#8FAE8F', '#E4EAD8'],
+    ambientColor: '#98B590',
+    surfaceColor: 'rgba(17,29,23,0.73)',
+    highlightColor: '#EDF5E7',
+    texture: 'grain',
+    buttonText: '领取节气额度',
+  },
+  xia_zhi: {
+    gradient: 'linear-gradient(145deg, rgba(33,27,18,0.96), rgba(58,47,29,0.86) 52%, rgba(23,20,15,0.96))',
+    borderColor: 'rgba(214, 181, 109, 0.30)',
+    titleColor: '#E8CF92',
+    textColor: '#EDE0C0',
+    amountColor: '#D9B66E',
+    amountGlow: '0 0 30px rgba(214,181,109,0.24)',
+    buttonGradient: 'linear-gradient(135deg, rgba(92,75,44,0.96), rgba(190,150,80,0.88))',
+    buttonTextColor: '#FFF5DA',
+    buttonShadow: '0 14px 38px rgba(45,34,20,0.34), inset 0 1px 0 rgba(255,255,255,0.15)',
+    taglineColor: '#C4AA78',
+    particleColors: ['#E8CF92', '#B88F52', '#F1E4C2'],
+    ambientColor: '#D6B56D',
+    surfaceColor: 'rgba(33,27,18,0.73)',
+    highlightColor: '#F5DFAD',
+    texture: 'silk',
+    buttonText: '领取节气额度',
+  },
+  qiu_fen: {
+    gradient: 'linear-gradient(145deg, rgba(33,24,19,0.96), rgba(58,39,29,0.86) 50%, rgba(22,18,15,0.96))',
+    borderColor: 'rgba(199, 144, 94, 0.30)',
+    titleColor: '#DDB284',
+    textColor: '#EBD9C9',
+    amountColor: '#D0A064',
+    amountGlow: '0 0 28px rgba(199,144,94,0.23)',
+    buttonGradient: 'linear-gradient(135deg, rgba(96,65,44,0.96), rgba(188,128,76,0.88))',
+    buttonTextColor: '#FFF1E1',
+    buttonShadow: '0 14px 38px rgba(48,31,22,0.34), inset 0 1px 0 rgba(255,255,255,0.15)',
+    taglineColor: '#C0A082',
+    particleColors: ['#DDB284', '#A87252', '#EBD6BE'],
+    ambientColor: '#C7905E',
+    surfaceColor: 'rgba(33,24,19,0.73)',
+    highlightColor: '#F0D0A8',
+    texture: 'paper',
+    buttonText: '领取节气额度',
+  },
+  dong_zhi: {
+    gradient: 'linear-gradient(145deg, rgba(16,22,32,0.96), rgba(30,38,52,0.88) 52%, rgba(12,17,28,0.96))',
+    borderColor: 'rgba(174, 187, 209, 0.31)',
+    titleColor: '#DCE5F3',
+    textColor: '#D5DEEA',
+    amountColor: '#BFCBE0',
+    amountGlow: '0 0 30px rgba(174,187,209,0.25)',
+    buttonGradient: 'linear-gradient(135deg, rgba(58,72,98,0.96), rgba(143,160,188,0.88))',
+    buttonTextColor: '#F7FAFF',
+    buttonShadow: '0 15px 40px rgba(12,19,32,0.36), inset 0 1px 0 rgba(255,255,255,0.16)',
+    taglineColor: '#A9B5C8',
+    particleColors: ['#DCE5F3', '#AEBBD1', '#EEF3FA'],
+    ambientColor: '#AEBBD1',
+    surfaceColor: 'rgba(16,22,32,0.74)',
+    highlightColor: '#F4F8FF',
+    texture: 'frost',
+    buttonText: '领取节气额度',
+  },
+  programmers_day: {
+    gradient: 'linear-gradient(145deg, rgba(9,14,14,0.96), rgba(14,28,24,0.88) 52%, rgba(6,10,11,0.96))',
+    borderColor: 'rgba(112, 198, 166, 0.32)',
+    titleColor: '#A8E4CE',
+    textColor: '#C8DDD6',
+    amountColor: '#92D7BF',
+    amountGlow: '0 0 28px rgba(112,198,166,0.26)',
+    buttonGradient: 'linear-gradient(135deg, rgba(30,60,52,0.96), rgba(83,150,124,0.88))',
+    buttonTextColor: '#ECFFF8',
+    buttonShadow: '0 15px 40px rgba(4,18,16,0.38), inset 0 1px 0 rgba(255,255,255,0.14)',
+    taglineColor: '#82B6A2',
+    particleColors: ['#A8E4CE', '#70C6A6', '#D9F2EA'],
+    ambientColor: '#70C6A6',
+    surfaceColor: 'rgba(9,14,14,0.76)',
+    highlightColor: '#D7FFF1',
+    texture: 'code',
+    buttonText: 'Run claim()',
+  },
+  anniversary: {
+    gradient: 'linear-gradient(145deg, rgba(18,22,42,0.96), rgba(36,31,62,0.88) 50%, rgba(13,16,32,0.96))',
+    borderColor: 'rgba(175, 162, 212, 0.34)',
+    titleColor: '#D7CCF1',
+    textColor: '#DDE0F4',
+    amountColor: '#C8B9E8',
+    amountGlow: '0 0 34px rgba(175,162,212,0.28)',
+    buttonGradient: 'linear-gradient(135deg, rgba(77,72,126,0.96), rgba(159,143,202,0.9))',
+    buttonTextColor: '#F8F5FF',
+    buttonShadow: '0 16px 44px rgba(18,20,52,0.38), inset 0 1px 0 rgba(255,255,255,0.16)',
+    taglineColor: '#B4AED0',
+    particleColors: ['#D7CCF1', '#AFA2D4', '#DCE6FF'],
+    ambientColor: '#AFA2D4',
+    surfaceColor: 'rgba(18,22,42,0.74)',
+    highlightColor: '#EFE9FF',
+    texture: 'frost',
+    buttonText: '领取周年礼遇',
+  },
+}
+
+const SOLAR_TERM_REFINEMENTS: Record<string, Partial<FestivalTheme>> = {
+  立春: { ambientColor: '#A7BE9E', titleColor: '#D6E7CE', borderColor: 'rgba(167,190,158,0.32)', particleColors: ['#D6E7CE', '#A7BE9E', '#EDF5E8'], texture: 'grain' },
+  雨水: { ambientColor: '#93AFC2', titleColor: '#D5E6EC', borderColor: 'rgba(147,175,194,0.32)', particleColors: ['#D5E6EC', '#93AFC2', '#E8F0F2'], texture: 'mist' },
+  惊蛰: { ambientColor: '#A3B88A', titleColor: '#D7E4BE', borderColor: 'rgba(163,184,138,0.32)', particleColors: ['#D7E4BE', '#A3B88A', '#EAF0DB'], texture: 'lattice' },
+  春分: { ambientColor: '#B2BE9C', titleColor: '#DFE7CD', borderColor: 'rgba(178,190,156,0.32)', particleColors: ['#DFE7CD', '#B2BE9C', '#F1F4E7'], texture: 'silk' },
+  清明: { ambientColor: '#9FB7B0', titleColor: '#D7E5DF', borderColor: 'rgba(159,183,176,0.32)', particleColors: ['#D7E5DF', '#9FB7B0', '#EDF2EF'], texture: 'mist' },
+  谷雨: { ambientColor: '#9BB68A', titleColor: '#DCE9CF', borderColor: 'rgba(155,182,138,0.32)', particleColors: ['#DCE9CF', '#9BB68A', '#EDF4E7'], texture: 'grain' },
+  立夏: { ambientColor: '#CDB676', titleColor: '#E9D79A', borderColor: 'rgba(205,182,118,0.31)', particleColors: ['#E9D79A', '#CDB676', '#F3E7C6'], texture: 'silk' },
+  小满: { ambientColor: '#B9B77D', titleColor: '#E0DEAA', borderColor: 'rgba(185,183,125,0.31)', particleColors: ['#E0DEAA', '#B9B77D', '#F0EED1'], texture: 'grain' },
+  芒种: { ambientColor: '#C4A669', titleColor: '#E8D095', borderColor: 'rgba(196,166,105,0.31)', particleColors: ['#E8D095', '#C4A669', '#F2E1B8'], texture: 'paper' },
+  夏至: { ambientColor: '#D0B06F', titleColor: '#EFD59A', borderColor: 'rgba(208,176,111,0.32)', particleColors: ['#EFD59A', '#D0B06F', '#F6E8C0'], texture: 'silk' },
+  小暑: { ambientColor: '#C99C68', titleColor: '#E8C595', borderColor: 'rgba(201,156,104,0.31)', particleColors: ['#E8C595', '#C99C68', '#F4DFC2'], texture: 'mist' },
+  大暑: { ambientColor: '#C28A63', titleColor: '#E7B88D', borderColor: 'rgba(194,138,99,0.31)', particleColors: ['#E7B88D', '#C28A63', '#F0D1B9'], texture: 'grain' },
+  立秋: { ambientColor: '#C59A70', titleColor: '#E5C09A', borderColor: 'rgba(197,154,112,0.31)', particleColors: ['#E5C09A', '#C59A70', '#F1D9BF'], texture: 'paper' },
+  处暑: { ambientColor: '#B98F73', titleColor: '#E0BDA4', borderColor: 'rgba(185,143,115,0.31)', particleColors: ['#E0BDA4', '#B98F73', '#EDD6C7'], texture: 'silk' },
+  白露: { ambientColor: '#B8A890', titleColor: '#E3D8C6', borderColor: 'rgba(184,168,144,0.31)', particleColors: ['#E3D8C6', '#B8A890', '#F1EBE0'], texture: 'frost' },
+  秋分: { ambientColor: '#C7905E', titleColor: '#DDB284', borderColor: 'rgba(199,144,94,0.31)', particleColors: ['#DDB284', '#C7905E', '#EBD6BE'], texture: 'paper' },
+  寒露: { ambientColor: '#A88772', titleColor: '#D7B8A4', borderColor: 'rgba(168,135,114,0.31)', particleColors: ['#D7B8A4', '#A88772', '#E9D6CB'], texture: 'mist' },
+  霜降: { ambientColor: '#B28368', titleColor: '#D8AA87', borderColor: 'rgba(178,131,104,0.31)', particleColors: ['#D8AA87', '#B28368', '#E8CCBA'], texture: 'frost' },
+  立冬: { ambientColor: '#9CAAC0', titleColor: '#D6DFEC', borderColor: 'rgba(156,170,192,0.31)', particleColors: ['#D6DFEC', '#9CAAC0', '#EEF2F7'], texture: 'frost' },
+  小雪: { ambientColor: '#A8B7C8', titleColor: '#DCE7F0', borderColor: 'rgba(168,183,200,0.31)', particleColors: ['#DCE7F0', '#A8B7C8', '#F1F5F8'], texture: 'mist' },
+  大雪: { ambientColor: '#B7C2D1', titleColor: '#E3EAF2', borderColor: 'rgba(183,194,209,0.31)', particleColors: ['#E3EAF2', '#B7C2D1', '#F6F8FB'], texture: 'frost' },
+  冬至: { ambientColor: '#AEBBD1', titleColor: '#DCE5F3', borderColor: 'rgba(174,187,209,0.31)', particleColors: ['#DCE5F3', '#AEBBD1', '#EEF3FA'], texture: 'frost' },
+  小寒: { ambientColor: '#9CAEC7', titleColor: '#D6E2F0', borderColor: 'rgba(156,174,199,0.31)', particleColors: ['#D6E2F0', '#9CAEC7', '#EDF3F9'], texture: 'frost' },
+  大寒: { ambientColor: '#8FA3BD', titleColor: '#D1DEED', borderColor: 'rgba(143,163,189,0.31)', particleColors: ['#D1DEED', '#8FA3BD', '#EAF1F8'], texture: 'frost' },
+}
+
+
+const FESTIVAL_FORM_REFINEMENTS: Record<string, Partial<FestivalTheme>> = {
+  spring_festival: { form: 'scroll', layout: 'couplet', phenology: 'spring-scroll', motionProfile: 'firm', texture: 'brocade' },
+  lantern_festival: { form: 'ripple', layout: 'moon-arc', phenology: 'lantern-orbit', motionProfile: 'water', texture: 'silk' },
+  dragon_boat: { form: 'jade', layout: 'river', phenology: 'reed-river', motionProfile: 'water', texture: 'bamboo' },
+  qixi: { form: 'petal', layout: 'bridge', phenology: 'star-bridge', motionProfile: 'astral', texture: 'silk' },
+  mid_autumn: { form: 'moon', layout: 'moon-arc', phenology: 'moon-tide', motionProfile: 'astral', texture: 'porcelain' },
+  double_ninth: { form: 'mountain', layout: 'mountain', phenology: 'chrysanthemum-slope', motionProfile: 'gentle', texture: 'book' },
+  new_year: { form: 'tablet', layout: 'classic', phenology: 'dawn-ring', motionProfile: 'astral', texture: 'frost' },
+  labor_day: { form: 'tablet', layout: 'field', phenology: 'grain-grid', motionProfile: 'firm', texture: 'lattice' },
+  national_day: { form: 'banner', layout: 'mountain', phenology: 'mountain-dawn', motionProfile: 'firm', texture: 'brocade' },
+  valentine: { form: 'petal', layout: 'bridge', phenology: 'silk-knot', motionProfile: 'gentle', texture: 'silk' },
+  christmas: { form: 'frost', layout: 'classic', phenology: 'winter-window', motionProfile: 'crystal', texture: 'frost' },
+  li_chun: { form: 'jade', layout: 'field', phenology: 'spring-sprout', motionProfile: 'botanical', texture: 'grain' },
+  xia_zhi: { form: 'ripple', layout: 'field', phenology: 'solar-arc', motionProfile: 'water', texture: 'silk' },
+  qiu_fen: { form: 'mountain', layout: 'mountain', phenology: 'autumn-balance', motionProfile: 'gentle', texture: 'paper' },
+  dong_zhi: { form: 'frost', layout: 'moon-arc', phenology: 'yang-return', motionProfile: 'crystal', texture: 'frost' },
+  programmers_day: { form: 'terminal', layout: 'code', phenology: 'code-lattice', motionProfile: 'firm', texture: 'code' },
+  anniversary: { form: 'orbital', layout: 'star-map', phenology: 'nebula-orbit', motionProfile: 'astral', texture: 'frost' },
+}
+
+const SOLAR_TERM_FORM_REFINEMENTS: Record<string, Partial<FestivalTheme>> = {
+  立春: { form: 'jade', layout: 'field', phenology: 'spring-sprout', motionProfile: 'botanical', texture: 'grain' },
+  雨水: { form: 'ripple', layout: 'river', phenology: 'rain-ripple', motionProfile: 'water', texture: 'mist' },
+  惊蛰: { form: 'tablet', layout: 'field', phenology: 'thunder-crack', motionProfile: 'firm', texture: 'lattice' },
+  春分: { form: 'scroll', layout: 'couplet', phenology: 'equinox-balance', motionProfile: 'gentle', texture: 'silk' },
+  清明: { form: 'ripple', layout: 'vertical-rain', phenology: 'clear-rain', motionProfile: 'water', texture: 'paper' },
+  谷雨: { form: 'jade', layout: 'river', phenology: 'rice-rain', motionProfile: 'water', texture: 'grain' },
+  立夏: { form: 'ripple', layout: 'field', phenology: 'tomato-vine', motionProfile: 'botanical', texture: 'silk' },
+  小满: { form: 'tablet', layout: 'field', phenology: 'rice-wheat-fill', motionProfile: 'botanical', texture: 'grain' },
+  芒种: { form: 'scroll', layout: 'field', phenology: 'wheat-awn-seed', motionProfile: 'botanical', texture: 'paper' },
+  夏至: { form: 'moon', layout: 'moon-arc', phenology: 'solar-arc', motionProfile: 'astral', texture: 'silk' },
+  小暑: { form: 'ripple', layout: 'river', phenology: 'heat-haze', motionProfile: 'water', texture: 'mist' },
+  大暑: { form: 'ripple', layout: 'field', phenology: 'lotus-heat', motionProfile: 'water', texture: 'grain' },
+  立秋: { form: 'mountain', layout: 'mountain', phenology: 'autumn-leaf', motionProfile: 'gentle', texture: 'book' },
+  处暑: { form: 'scroll', layout: 'classic', phenology: 'cooling-cloud', motionProfile: 'gentle', texture: 'silk' },
+  白露: { form: 'frost', layout: 'classic', phenology: 'dew-beads', motionProfile: 'crystal', texture: 'porcelain' },
+  秋分: { form: 'mountain', layout: 'mountain', phenology: 'autumn-balance', motionProfile: 'gentle', texture: 'paper' },
+  寒露: { form: 'frost', layout: 'vertical-rain', phenology: 'cold-dew', motionProfile: 'crystal', texture: 'mist' },
+  霜降: { form: 'frost', layout: 'classic', phenology: 'frost-vein', motionProfile: 'crystal', texture: 'frost' },
+  立冬: { form: 'frost', layout: 'classic', phenology: 'winter-mist', motionProfile: 'crystal', texture: 'frost' },
+  小雪: { form: 'frost', layout: 'vertical-rain', phenology: 'snow-mist', motionProfile: 'crystal', texture: 'mist' },
+  大雪: { form: 'frost', layout: 'classic', phenology: 'snow-field', motionProfile: 'crystal', texture: 'frost' },
+  冬至: { form: 'moon', layout: 'moon-arc', phenology: 'yang-return', motionProfile: 'crystal', texture: 'porcelain' },
+  小寒: { form: 'frost', layout: 'mountain', phenology: 'cold-ridge', motionProfile: 'crystal', texture: 'frost' },
+  大寒: { form: 'frost', layout: 'mountain', phenology: 'ice-ring', motionProfile: 'crystal', texture: 'frost' },
+}
+
+function withThemeRefinement(theme: FestivalTheme, festivalName?: string): FestivalTheme {
+  const baseOverride = REFINED_THEME_OVERRIDES[theme.id] ?? {}
+  const formOverride = FESTIVAL_FORM_REFINEMENTS[theme.id] ?? {}
+  const solarTermOverride = festivalName ? SOLAR_TERM_REFINEMENTS[festivalName] ?? {} : {}
+  const solarTermFormOverride = festivalName ? SOLAR_TERM_FORM_REFINEMENTS[festivalName] ?? {} : {}
+  return {
+    ...theme,
+    ...baseOverride,
+    ...formOverride,
+    ...solarTermOverride,
+    ...solarTermFormOverride,
+  }
+}
+
+const SOLAR_TERM_THEME_BY_NAME: Record<string, string> = {
+  雨水: 'li_chun',
+  惊蛰: 'li_chun',
+  春分: 'li_chun',
+  清明: 'li_chun',
+  谷雨: 'li_chun',
+  立夏: 'xia_zhi',
+  小满: 'xia_zhi',
+  芒种: 'xia_zhi',
+  小暑: 'xia_zhi',
+  大暑: 'xia_zhi',
+  立秋: 'qiu_fen',
+  处暑: 'qiu_fen',
+  白露: 'qiu_fen',
+  寒露: 'qiu_fen',
+  霜降: 'qiu_fen',
+  立冬: 'dong_zhi',
+  小雪: 'dong_zhi',
+  大雪: 'dong_zhi',
+  小寒: 'dong_zhi',
+  大寒: 'dong_zhi',
+}
+
+function findFestivalThemeById(id: string, festivalName?: string): FestivalTheme | undefined {
+  const theme = FESTIVAL_THEMES.find((t) => t.id === id)
+  return theme ? withThemeRefinement(theme, festivalName) : undefined
+}
 /**
  * 根据节日名称查找主题。
  * 匹配逻辑：后端返回的节日 name 包含主题 name（例如"春节"匹配"春节"）。
+ * 24 节气按四季复用结构，但通过 SOLAR_TERM_REFINEMENTS 注入独立色盘与肌理。
  */
 export function findFestivalTheme(name: string): FestivalTheme | undefined {
-  return FESTIVAL_THEMES.find((t) => name.includes(t.name))
+  const exactTheme = FESTIVAL_THEMES.find((t) => name.includes(t.name))
+  if (exactTheme) return withThemeRefinement(exactTheme, name)
+
+  const solarTermThemeId = SOLAR_TERM_THEME_BY_NAME[name]
+  if (solarTermThemeId) return findFestivalThemeById(solarTermThemeId, name)
+
+  return undefined
 }
 
 /**
  * 获取默认主题，兜底使用春节。
  */
 export function getDefaultTheme(): FestivalTheme {
-  return FESTIVAL_THEMES[0]
+  return withThemeRefinement(FESTIVAL_THEMES[0], FESTIVAL_THEMES[0].name)
 }
 
 /**

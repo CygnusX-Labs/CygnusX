@@ -125,4 +125,4 @@ easter_egg:
 # 改本文件后刷新即生效，无需重启后端。
 ai_assistant:
   # 输入框底部提示小字
-  input_hint: "内容由 AI 生成，请仔细甄别"
+  input_hint:  "以上星尘由硅基网络演算，请以碳基智慧感知!"

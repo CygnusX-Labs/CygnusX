@@ -137,6 +137,8 @@ class FestivalService:
                 festival.popup.title = str(popup_data["title"])
             if "content" in popup_data:
                 festival.popup.content = str(popup_data["content"])
+            if "description" in popup_data:
+                festival.popup.description = str(popup_data["description"])
             if "animation" in popup_data and festival.popup.animation:
                 anim = popup_data["animation"] or {}
                 if "enabled" in anim:
@@ -191,6 +193,7 @@ def _to_dto(festival: FestivalConfig) -> FestivalDTO:
         id=festival.id,
         name=festival.name,
         nameEn=festival.nameEn,
+        description=festival.description,
         category=festival.category.value,
         calendarType=festival.calendarType.value,
         lunarDate=festival.lunarDate,
@@ -201,6 +204,7 @@ def _to_dto(festival: FestivalConfig) -> FestivalDTO:
             enabled=popup.enabled,
             title=popup.title,
             content=popup.content,
+            description=popup.description,
             primaryButton=primary_dto,
             secondaryButton=secondary_dto,
             animation=animation_dto,

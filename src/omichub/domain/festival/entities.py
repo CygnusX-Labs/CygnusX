@@ -25,6 +25,7 @@ class FestivalConfig(BaseModel):
     id: str
     name: str
     nameEn: str | None = None
+    description: str = ""
     category: FestivalCategory
     calendarType: CalendarType
     lunarDate: dict[str, Any] | None = None

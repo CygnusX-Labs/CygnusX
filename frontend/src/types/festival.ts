@@ -16,6 +16,7 @@ export interface PopupConfig {
   enabled: boolean
   title: string
   content: string
+  description?: string
   primaryButton?: PopupButton | null
   secondaryButton?: PopupButton | null
   animation?: AnimationConfig | null
@@ -32,6 +33,7 @@ export interface FestivalConfig {
   id: string
   name: string
   nameEn?: string | null
+  description?: string
   category: string
   calendarType: string
   lunarDate?: { month: number; day: number; leap?: boolean } | null

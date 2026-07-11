@@ -29,6 +29,7 @@ class PopupConfigDTO(OmicsHubBaseSchema):
     enabled: bool = False
     title: str = ""
     content: str = ""
+    description: str = ""
     primaryButton: PopupButtonDTO | None = None
     secondaryButton: PopupButtonDTO | None = None
     animation: AnimationConfigDTO | None = None
@@ -49,6 +50,7 @@ class FestivalDTO(OmicsHubBaseSchema):
     id: str
     name: str
     nameEn: str | None = None
+    description: str = ""
     category: str
     calendarType: str
     lunarDate: dict[str, Any] | None = None

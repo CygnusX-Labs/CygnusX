@@ -207,6 +207,7 @@ onMounted(async () => {
     <FestivalPopup
       v-if="todayFestival && showFestivalPopup"
       :festival="todayFestival"
+      :already-claimed="festivalClaimed"
       @claimed="festivalClaimed = true"
       @close="todayFestival = null"
     />

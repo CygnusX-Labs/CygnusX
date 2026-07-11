@@ -1,453 +1,379 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 interface Props {
   decoration: string
   themeColor?: string
+  phenology?: string
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  themeColor: '#9fb7d7',
+  phenology: '',
+})
 
-const decorationClass = `decoration-${props.decoration}`
+const decorationClass = computed(() => `decoration-${props.decoration}`)
+const phenologyClass = computed(() => (props.phenology ? `phenology-${props.phenology}` : ''))
+const decorationStyle = computed(() => ({ '--decoration-color': props.themeColor }))
+
+const nodes = Array.from({ length: 9 }, (_, index) => ({
+  id: index,
+  left: `${(index * 23 + 9) % 100}%`,
+  top: `${(index * 31 + 13) % 100}%`,
+  size: `${18 + (index % 4) * 12}px`,
+  delay: `${(index % 5) * 0.42}s`,
+}))
+
+const threads = Array.from({ length: 6 }, (_, index) => ({
+  id: index,
+  left: `${8 + index * 17}%`,
+  top: `${16 + (index % 3) * 19}%`,
+  delay: `${index * 0.28}s`,
+  rotation: `${-18 + index * 7}deg`,
+}))
 </script>
 
 <template>
-  <div class="festival-decoration" :class="decorationClass">
-    <!-- 春节：福字灯笼（仅保留左侧） -->
-    <template v-if="decoration === 'spring_couplets'">
-      <div class="couplet couplet-left">福</div>
-      <div class="gold-shards">
-        <span v-for="n in 12" :key="n" class="shard" :style="{ left: `${Math.random() * 100}%`, animationDelay: `${Math.random() * 2}s` }">✦</span>
-      </div>
-    </template>
+  <div class="festival-decoration" :class="[decorationClass, phenologyClass]" :style="decorationStyle">
+    <div class="texture-lattice" />
+    <div class="motif motif-primary" />
+    <div class="motif motif-secondary" />
+    <div class="motif motif-tertiary" />
 
-    <!-- 元宵节：灯笼 -->
-    <template v-else-if="decoration === 'lanterns'">
-      <div v-for="n in 5" :key="n" class="lantern" :style="{ left: `${10 + n * 18}%`, animationDelay: `${n * 0.8}s` }">🏮</div>
-    </template>
+    <span
+      v-for="node in nodes"
+      :key="node.id"
+      class="soft-node"
+      :style="{
+        left: node.left,
+        top: node.top,
+        width: node.size,
+        height: node.size,
+        animationDelay: node.delay,
+      }"
+    />
 
-    <!-- 端午节：竹叶 -->
-    <template v-else-if="decoration === 'bamboo'">
-      <div v-for="n in 6" :key="n" class="bamboo-leaf" :style="{ left: `${5 + n * 16}%`, transform: `rotate(${-10 + n * 4}deg)` }">🎋</div>
-    </template>
-
-    <!-- 七夕：爱心星群 -->
-    <template v-else-if="decoration === 'stars_heart'">
-      <div class="star-heart">💕</div>
-      <div class="star-orbit star-orbit-1">✨</div>
-      <div class="star-orbit star-orbit-2">✨</div>
-    </template>
-
-    <!-- 中秋：月亮兔子 -->
-    <template v-else-if="decoration === 'moon_rabbit'">
-      <div class="moon-mini">🌕</div>
-      <div class="rabbit-silhouette">🐇</div>
-    </template>
-
-    <!-- 重阳：菊花 -->
-    <template v-else-if="decoration === 'chrysanthemum'">
-      <div v-for="n in 4" :key="n" class="chrysanthemum" :style="{ left: `${80 + n * 5}%`, top: `${10 + n * 8}%` }">🌼</div>
-    </template>
-
-    <!-- 元旦：烟花横幅 -->
-    <template v-else-if="decoration === 'fireworks_banner'">
-      <div class="new-year-banner">🎆 新年快乐 🎆</div>
-    </template>
-
-    <!-- 劳动节：工具 -->
-    <template v-else-if="decoration === 'tools'">
-      <div class="tool tool-hammer">🔨</div>
-      <div class="tool tool-wrench">🔧</div>
-      <div class="tool tool-gear">⚙️</div>
-    </template>
-
-    <!-- 国庆节：五角星 -->
-    <template v-else-if="decoration === 'national_banner'">
-      <div class="national-stars">
-        <span v-for="n in 5" :key="n" class="nat-star" :style="{ animationDelay: `${n * 0.2}s` }">⭐</span>
-      </div>
-    </template>
-
-    <!-- 情人节：爱心 -->
-    <template v-else-if="decoration === 'hearts'">
-      <div v-for="n in 6" :key="n" class="floating-heart" :style="{ left: `${5 + n * 15}%`, animationDelay: `${n * 0.5}s` }">💖</div>
-    </template>
-
-    <!-- 圣诞节：圣诞树 -->
-    <template v-else-if="decoration === 'christmas_tree'">
-      <div class="christmas-tree">🎄</div>
-      <div class="reindeer">🦌</div>
-    </template>
-
-    <!-- 立春：嫩芽 -->
-    <template v-else-if="decoration === 'sprout'">
-      <div v-for="n in 5" :key="n" class="sprout-emoji" :style="{ left: `${5 + n * 20}%`, animationDelay: `${n * 0.3}s` }">🌱</div>
-    </template>
-
-    <!-- 夏至：太阳 -->
-    <template v-else-if="decoration === 'sun'">
-      <div class="sun-emoji">☀️</div>
-    </template>
-
-    <!-- 秋分：枫叶 -->
-    <template v-else-if="decoration === 'maple'">
-      <div v-for="n in 5" :key="n" class="maple-emoji" :style="{ left: `${5 + n * 20}%`, animationDelay: `${n * 0.4}s` }">🍁</div>
-    </template>
-
-    <!-- 冬至：雪花 -->
-    <template v-else-if="decoration === 'snowflake'">
-      <div class="dumpling">🥟</div>
-      <div v-for="n in 4" :key="n" class="steam" :style="{ left: `${85 + n * 3}%`, animationDelay: `${n * 0.4}s` }">♨️</div>
-    </template>
-
-    <!-- 程序员节：终端 -->
-    <template v-else-if="decoration === 'terminal'">
-      <div class="terminal-blink">_</div>
-      <div class="code-bracket">{ }</div>
-    </template>
-
-    <!-- 周年庆：星云 -->
-    <template v-else-if="decoration === 'galaxy'">
-      <div class="galaxy-ring"></div>
-      <div class="planet">🪐</div>
-    </template>
+    <span
+      v-for="thread in threads"
+      :key="thread.id"
+      class="light-thread"
+      :style="{
+        left: thread.left,
+        top: thread.top,
+        rotate: thread.rotation,
+        animationDelay: thread.delay,
+      }"
+    />
   </div>
 </template>
 
 <style scoped>
 .festival-decoration {
+  --decoration-color: #9fb7d7;
   position: absolute;
   inset: 0;
-  pointer-events: none;
-  overflow: hidden;
-  border-radius: inherit;
   z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: inherit;
+  color: var(--decoration-color);
 }
 
-/* 春节福字灯笼 */
-.couplet {
+.texture-lattice {
   position: absolute;
-  top: 0;
-  width: 40px;
-  padding: 18px 6px 44px;
-  background: linear-gradient(180deg, rgba(196, 30, 30, 0.95) 0%, rgba(110, 10, 10, 0.92) 100%);
-  color: #ffd700;
-  font-size: 22px;
-  font-weight: 700;
-  text-align: center;
-  border: 1px solid rgba(255, 215, 0, 0.75);
-  border-top: none;
-  border-radius: 0 0 8px 8px;
+  inset: 1px;
+  border-radius: inherit;
+  opacity: 0.18;
+  mix-blend-mode: soft-light;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--decoration-color) 22%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--decoration-color) 16%, transparent) 1px, transparent 1px);
+  background-size: 42px 42px, 42px 42px;
+  mask-image: radial-gradient(circle at 50% 38%, black 0%, transparent 74%);
+  animation: latticeDrift 18s cubic-bezier(0.22, 1, 0.36, 1) infinite alternate;
+}
+
+.motif,
+.soft-node,
+.light-thread {
+  position: absolute;
+  display: block;
+}
+
+.motif {
+  border: 1px solid color-mix(in srgb, var(--decoration-color) 34%, transparent);
   box-shadow:
-    0 0 0 1px rgba(196, 30, 30, 0.4),
-    0 0 18px rgba(255, 215, 0, 0.25),
-    inset 0 0 14px rgba(255, 215, 0, 0.08);
-  writing-mode: vertical-rl;
-}
-.couplet-left { left: 18px; }
-.couplet::before {
-  content: '';
-  position: absolute;
-  top: -10px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 12px;
-  height: 10px;
-  background: linear-gradient(180deg, #8b0000, #c41e1e);
-  border: 1px solid rgba(255, 215, 0, 0.5);
-  border-radius: 2px;
-}
-.gold-shards .shard {
-  position: absolute;
-  bottom: 0;
-  color: #ffd700;
-  font-size: 12px;
-  opacity: 0;
-  animation: floatUp 3s ease-in infinite;
-}
-@keyframes floatUp {
-  0% { transform: translateY(0); opacity: 0; }
-  20% { opacity: 1; }
-  100% { transform: translateY(-200px) rotate(180deg); opacity: 0; }
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 38px color-mix(in srgb, var(--decoration-color) 18%, transparent);
+  opacity: 0.42;
+  filter: blur(0.15px);
+  animation: motifBreathe 9s cubic-bezier(0.2, 0.8, 0.2, 1) infinite alternate;
 }
 
-/* 灯笼 */
-.lantern {
-  position: absolute;
-  top: -40px;
-  font-size: 34px;
-  opacity: 0.85;
-  animation: lanternSway 5s ease-in-out infinite;
-  filter: drop-shadow(0 0 8px rgba(255, 165, 0, 0.5));
-}
-@keyframes lanternSway {
-  0%, 100% { transform: translateY(0) rotate(-5deg); }
-  50% { transform: translateY(30px) rotate(5deg); }
-}
-
-/* 竹叶 */
-.bamboo-leaf {
-  position: absolute;
-  bottom: 8px;
-  font-size: 28px;
-  opacity: 0.7;
-  animation: bambooSway 4s ease-in-out infinite alternate;
-}
-@keyframes bambooSway {
-  from { transform: rotate(-10deg); }
-  to { transform: rotate(10deg); }
-}
-
-/* 七夕爱心 */
-.star-heart {
-  position: absolute;
-  top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 32px;
-  opacity: 0.7;
-  animation: heartPulse 2s ease-in-out infinite;
-}
-.star-orbit {
-  position: absolute;
-  font-size: 14px;
-  opacity: 0.6;
-  animation: orbit 4s linear infinite;
-}
-.star-orbit-1 { top: 20%; left: 20%; }
-.star-orbit-2 { top: 25%; right: 20%; animation-direction: reverse; }
-@keyframes heartPulse {
-  0%, 100% { transform: translateX(-50%) scale(1); }
-  50% { transform: translateX(-50%) scale(1.15); }
-}
-@keyframes orbit {
-  from { transform: rotate(0deg) translateX(30px) rotate(0deg); }
-  to { transform: rotate(360deg) translateX(30px) rotate(-360deg); }
-}
-
-/* 中秋 */
-.moon-mini {
-  position: absolute;
-  top: 16px;
-  right: 20px;
-  font-size: 36px;
-  filter: drop-shadow(0 0 12px rgba(232, 220, 200, 0.5));
-  animation: moonFloat 4s ease-in-out infinite;
-}
-.rabbit-silhouette {
-  position: absolute;
-  bottom: 16px;
-  right: 24px;
-  font-size: 24px;
-  opacity: 0.8;
-}
-@keyframes moonFloat {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
-}
-
-/* 重阳菊花 */
-.chrysanthemum {
-  position: absolute;
-  font-size: 26px;
-  opacity: 0.75;
-  animation: chrysPulse 3s ease-in-out infinite;
-}
-@keyframes chrysPulse {
-  0%, 100% { opacity: 0.5; transform: scale(0.95); }
-  50% { opacity: 0.9; transform: scale(1.05); }
-}
-
-/* 元旦横幅 */
-.new-year-banner {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 4px 14px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: #ffd700;
-  font-size: 12px;
-  letter-spacing: 1px;
-}
-
-/* 劳动节工具 */
-.tool {
-  position: absolute;
-  font-size: 26px;
-  opacity: 0.55;
-}
-.tool-hammer { top: 20px; left: 20px; animation: toolBob 3s ease-in-out infinite; }
-.tool-wrench { bottom: 20px; right: 24px; animation: toolBob 3s ease-in-out 1s infinite; }
-.tool-gear { top: 60px; right: 20px; animation: spin 8s linear infinite; }
-@keyframes toolBob {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-6px); }
-}
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-/* 国庆五角星 */
-.national-stars {
-  position: absolute;
-  top: 16px;
-  left: 16px;
-}
-.nat-star {
-  font-size: 22px;
-  margin-right: 4px;
-  display: inline-block;
-  animation: starGlow 1.5s ease-in-out infinite;
-}
-@keyframes starGlow {
-  0%, 100% { opacity: 0.6; filter: drop-shadow(0 0 2px #ffd700); }
-  50% { opacity: 1; filter: drop-shadow(0 0 10px #ffd700); }
-}
-
-/* 情人节爱心 */
-.floating-heart {
-  position: absolute;
-  bottom: -10px;
-  font-size: 24px;
-  opacity: 0.6;
-  animation: heartFloat 4s ease-in infinite;
-}
-@keyframes heartFloat {
-  0% { transform: translateY(0) scale(0.8); opacity: 0; }
-  20% { opacity: 0.7; }
-  100% { transform: translateY(-220px) scale(1.2); opacity: 0; }
-}
-
-/* 圣诞 */
-.christmas-tree {
-  position: absolute;
-  top: 12px;
-  right: 16px;
-  font-size: 40px;
-  filter: drop-shadow(0 0 8px rgba(144, 238, 144, 0.4));
-}
-.reindeer {
-  position: absolute;
-  bottom: 12px;
-  left: 16px;
-  font-size: 26px;
-  animation: reindeerRun 6s linear infinite;
-}
-@keyframes reindeerRun {
-  0% { transform: translateX(-50px); opacity: 0; }
-  10% { opacity: 1; }
-  90% { opacity: 1; }
-  100% { transform: translateX(300px); opacity: 0; }
-}
-
-/* 立春嫩芽 */
-.sprout-emoji {
-  position: absolute;
-  bottom: 8px;
-  font-size: 28px;
-  animation: sproutPop 2s ease-out infinite alternate;
-}
-@keyframes sproutPop {
-  from { transform: translateY(8px) scale(0.9); }
-  to { transform: translateY(-4px) scale(1.1); }
-}
-
-/* 夏至太阳 */
-.sun-emoji {
-  position: absolute;
-  top: 16px;
-  right: 20px;
-  font-size: 44px;
-  animation: sunRotate 12s linear infinite;
-}
-@keyframes sunRotate {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-/* 秋分枫叶 */
-.maple-emoji {
-  position: absolute;
-  top: 12px;
-  font-size: 24px;
-  opacity: 0.7;
-  animation: mapleSpin 5s linear infinite;
-}
-@keyframes mapleSpin {
-  from { transform: rotate(0deg) translateY(0); }
-  to { transform: rotate(360deg) translateY(10px); }
-}
-
-/* 冬至 */
-.dumpling {
-  position: absolute;
-  bottom: 12px;
-  right: 20px;
-  font-size: 34px;
-}
-.steam {
-  position: absolute;
-  bottom: 50px;
-  font-size: 14px;
-  opacity: 0;
-  animation: steamRise 2s ease-out infinite;
-}
-@keyframes steamRise {
-  0% { transform: translateY(0); opacity: 0; }
-  30% { opacity: 0.6; }
-  100% { transform: translateY(-30px); opacity: 0; }
-}
-
-/* 程序员节终端 */
-.terminal-blink {
-  position: absolute;
-  top: 16px;
-  left: 18px;
-  color: #00ff66;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 24px;
-  animation: blink 1s step-end infinite;
-}
-.code-bracket {
-  position: absolute;
-  bottom: 16px;
-  right: 20px;
-  color: #00ff66;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 28px;
-  opacity: 0.4;
-}
-@keyframes blink {
-  50% { opacity: 0; }
-}
-
-/* 周年庆星云 */
-.galaxy-ring {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 300px;
-  height: 300px;
-  transform: translate(-50%, -50%);
+.motif-primary {
+  top: -92px;
+  right: -72px;
+  width: 240px;
+  height: 240px;
   border-radius: 50%;
-  background: radial-gradient(circle, transparent 40%, rgba(167, 139, 250, 0.15) 60%, transparent 70%);
-  animation: galaxySpin 20s linear infinite;
+  background: radial-gradient(circle at 34% 32%, color-mix(in srgb, var(--decoration-color) 16%, transparent), transparent 58%);
 }
-.planet {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  font-size: 30px;
-  animation: planetBob 5s ease-in-out infinite;
+
+.motif-secondary {
+  left: -80px;
+  bottom: -92px;
+  width: 250px;
+  height: 180px;
+  border-radius: 48% 52% 58% 42%;
+  background: radial-gradient(circle at 66% 42%, color-mix(in srgb, var(--decoration-color) 13%, transparent), transparent 64%);
+  animation-delay: -2.8s;
 }
-@keyframes galaxySpin {
-  from { transform: translate(-50%, -50%) rotate(0deg); }
-  to { transform: translate(-50%, -50%) rotate(360deg); }
+
+.motif-tertiary {
+  left: 50%;
+  top: 9%;
+  width: 280px;
+  height: 76px;
+  border-radius: 999px;
+  transform: translateX(-50%) rotate(-7deg);
+  border-color: color-mix(in srgb, var(--decoration-color) 20%, transparent);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--decoration-color) 12%, transparent), transparent);
+  filter: blur(8px);
+  opacity: 0.24;
 }
-@keyframes planetBob {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
+
+.soft-node {
+  border-radius: 999px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--decoration-color) 34%, rgba(255,255,255,0.24)) 0%, transparent 68%);
+  opacity: 0.16;
+  filter: blur(7px);
+  mix-blend-mode: screen;
+  animation: nodeBreathe 8.5s cubic-bezier(0.22, 1, 0.36, 1) infinite alternate;
+}
+
+.light-thread {
+  width: 78px;
+  height: 1px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--decoration-color) 44%, rgba(255,255,255,0.4)), transparent);
+  opacity: 0.22;
+  filter: blur(0.2px);
+  animation: threadFloat 10s cubic-bezier(0.2, 0.8, 0.2, 1) infinite alternate;
+}
+
+.decoration-spring_couplets .motif-primary,
+.decoration-dawn_banner .motif-primary,
+.decoration-national_banner .motif-primary {
+  border-radius: 34% 66% 46% 54%;
+  transform: rotate(-14deg);
+}
+.decoration-spring_couplets .motif-secondary,
+.decoration-national_banner .motif-secondary {
+  width: 310px;
+  height: 86px;
+  border-radius: 999px;
+  transform: rotate(-12deg);
+}
+
+.decoration-lanterns .motif-primary,
+.decoration-moon_rabbit .motif-primary,
+.decoration-snowflake .motif-primary {
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 42% 36%, rgba(255,255,255,0.16), transparent 22%),
+    radial-gradient(circle, color-mix(in srgb, var(--decoration-color) 13%, transparent), transparent 63%);
+}
+.decoration-lanterns .motif-tertiary,
+.decoration-moon_rabbit .motif-tertiary {
+  opacity: 0.36;
+  filter: blur(3px);
+}
+
+.decoration-bamboo .motif-tertiary,
+.decoration-sprout .motif-tertiary {
+  width: 190px;
+  height: 190px;
+  border-radius: 44% 56% 48% 52%;
+  transform: translateX(-50%) rotate(22deg) skewY(-8deg);
+}
+.decoration-bamboo .light-thread,
+.decoration-sprout .light-thread {
+  height: 64px;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--decoration-color) 42%, rgba(255,255,255,0.24)), transparent);
+}
+
+.decoration-stars_heart .motif-primary,
+.decoration-hearts .motif-primary,
+.decoration-galaxy .motif-primary {
+  border-radius: 50%;
+  transform: rotate(-18deg) scaleX(1.42);
+  background: radial-gradient(circle at 50% 50%, transparent 42%, color-mix(in srgb, var(--decoration-color) 12%, transparent) 58%, transparent 72%);
+}
+.decoration-stars_heart .motif-secondary,
+.decoration-hearts .motif-secondary,
+.decoration-galaxy .motif-secondary {
+  border-radius: 50%;
+  transform: rotate(18deg) scaleX(1.26);
+}
+
+.decoration-chrysanthemum .motif-primary,
+.decoration-maple .motif-primary {
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background:
+    repeating-conic-gradient(from 22deg, color-mix(in srgb, var(--decoration-color) 14%, transparent) 0 7deg, transparent 7deg 18deg),
+    radial-gradient(circle, transparent 0 42%, color-mix(in srgb, var(--decoration-color) 10%, transparent) 44%, transparent 68%);
+  mask-image: radial-gradient(circle, transparent 0 28%, black 34%, transparent 76%);
+}
+
+.decoration-tools .texture-lattice,
+.decoration-terminal .texture-lattice {
+  opacity: 0.25;
+  background-size: 24px 24px, 24px 24px;
+  mask-image: linear-gradient(transparent, black 20%, black 80%, transparent);
+}
+.decoration-tools .motif-tertiary,
+.decoration-terminal .motif-tertiary {
+  height: 120px;
+  border-radius: 18px;
+  filter: blur(0.2px);
+  transform: translateX(-50%) rotate(0deg);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--decoration-color) 10%, transparent), transparent);
+}
+
+.decoration-christmas_tree .motif-tertiary,
+.decoration-snowflake .motif-tertiary,
+.decoration-snowflake .motif-secondary {
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--decoration-color) 18%, transparent), rgba(255,255,255,0.08), transparent);
+  filter: blur(12px);
+}
+
+.decoration-sun .motif-primary {
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--decoration-color) 16%, rgba(255,255,255,0.10)), transparent 58%);
+}
+.decoration-sun .motif-secondary {
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent, color-mix(in srgb, var(--decoration-color) 12%, transparent), transparent, color-mix(in srgb, var(--decoration-color) 10%, transparent), transparent);
+  opacity: 0.22;
+}
+
+.phenology-rain-ripple .motif-tertiary,
+.phenology-clear-rain .motif-tertiary,
+.phenology-grain-rain .motif-tertiary,
+.phenology-rice-rain .motif-tertiary {
+  width: 320px;
+  height: 118px;
+  border-radius: 999px;
+  border-color: color-mix(in srgb, var(--decoration-color) 22%, transparent);
+  background: repeating-radial-gradient(ellipse at center, transparent 0 18px, color-mix(in srgb, var(--decoration-color) 14%, transparent) 19px 20px, transparent 21px 38px);
+  filter: blur(1px);
+}
+.phenology-rain-ripple .light-thread,
+.phenology-clear-rain .light-thread,
+.phenology-snow-mist .light-thread {
+  width: 1px;
+  height: 86px;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--decoration-color) 38%, rgba(255,255,255,0.22)), transparent);
+}
+.phenology-thunder-crack .motif-tertiary {
+  width: 260px;
+  height: 120px;
+  border-radius: 16px;
+  clip-path: polygon(0 44%, 36% 44%, 26% 8%, 82% 54%, 48% 54%, 62% 96%);
+  background: color-mix(in srgb, var(--decoration-color) 20%, transparent);
+  filter: blur(5px);
+}
+.phenology-spring-sprout .motif-tertiary,
+.phenology-wheat-fill .motif-tertiary,
+.phenology-rice-wheat-fill .motif-tertiary,
+.phenology-awn-seed .motif-tertiary,
+.phenology-wheat-awn-seed .motif-tertiary,
+.phenology-lotus-breath .motif-tertiary,
+.phenology-tomato-vine .motif-tertiary,
+.phenology-lotus-heat .motif-tertiary {
+  width: 210px;
+  height: 210px;
+  border-radius: 58% 42% 56% 44%;
+  transform: translateX(-50%) rotate(28deg) skewY(-10deg);
+  background:
+    radial-gradient(ellipse at 42% 28%, color-mix(in srgb, var(--decoration-color) 18%, transparent), transparent 48%),
+    linear-gradient(140deg, transparent 0 48%, color-mix(in srgb, var(--decoration-color) 18%, transparent) 49% 51%, transparent 52%);
+}
+.phenology-frost-vein .texture-lattice,
+.phenology-ice-ring .texture-lattice,
+.phenology-cold-ridge .texture-lattice,
+.phenology-cold-dew .texture-lattice,
+.phenology-winter-mist .texture-lattice,
+.phenology-snow-field .texture-lattice {
+  opacity: 0.24;
+  background-image:
+    linear-gradient(34deg, transparent 0 42%, color-mix(in srgb, var(--decoration-color) 24%, transparent) 43% 44%, transparent 45%),
+    linear-gradient(116deg, transparent 0 58%, color-mix(in srgb, var(--decoration-color) 18%, transparent) 59% 60%, transparent 61%);
+  background-size: 82px 82px, 128px 128px;
+}
+.phenology-moon-tide .motif-primary,
+.phenology-yang-return .motif-primary,
+.phenology-solar-arc .motif-primary,
+.phenology-lantern-orbit .motif-primary {
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 42% 36%, rgba(255,255,255,0.18), transparent 18%),
+    radial-gradient(circle, transparent 42%, color-mix(in srgb, var(--decoration-color) 16%, transparent) 46%, transparent 68%);
+}
+.phenology-mountain-dawn .motif-secondary,
+.phenology-autumn-leaf .motif-secondary,
+.phenology-autumn-balance .motif-secondary,
+.phenology-chrysanthemum-slope .motif-secondary {
+  width: 330px;
+  height: 118px;
+  border-radius: 18px 18px 42px 42px;
+  background:
+    linear-gradient(135deg, transparent 0 48%, color-mix(in srgb, var(--decoration-color) 14%, transparent) 49% 50%, transparent 51%),
+    linear-gradient(45deg, transparent 0 58%, color-mix(in srgb, var(--decoration-color) 10%, transparent) 59% 60%, transparent 61%);
+}
+.phenology-star-bridge .motif-primary,
+.phenology-nebula-orbit .motif-primary,
+.phenology-silk-knot .motif-primary {
+  transform: rotate(-18deg) scaleX(1.52);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, transparent 42%, color-mix(in srgb, var(--decoration-color) 14%, transparent) 58%, transparent 74%);
+}
+
+@keyframes motifBreathe {
+  0% { opacity: 0.28; transform: translate3d(0, 0, 0) scale(0.985); }
+  100% { opacity: 0.48; transform: translate3d(-5px, 7px, 0) scale(1.018); }
+}
+
+@keyframes nodeBreathe {
+  0% { opacity: 0.08; transform: translate3d(0, 0, 0) scale(0.92); }
+  100% { opacity: 0.2; transform: translate3d(8px, -10px, 0) scale(1.08); }
+}
+
+@keyframes threadFloat {
+  0% { opacity: 0.12; transform: translate3d(0, 0, 0) scaleX(0.86); }
+  100% { opacity: 0.3; transform: translate3d(8px, -8px, 0) scaleX(1.04); }
+}
+
+@keyframes latticeDrift {
+  0% { background-position: 0 0, 0 0; opacity: 0.12; }
+  100% { background-position: 18px -14px, -12px 16px; opacity: 0.22; }
+}
+
+@media (max-width: 640px) {
+  .motif-primary { width: 190px; height: 190px; }
+  .motif-secondary { width: 200px; height: 150px; }
+  .motif-tertiary { width: 210px; }
+  .soft-node { filter: blur(8px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .festival-decoration *,
+  .festival-decoration *::before,
+  .festival-decoration *::after {
+    animation: none !important;
+  }
 }
 </style>

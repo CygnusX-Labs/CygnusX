@@ -55,6 +55,7 @@ def _parse_popup(data: dict[str, Any]) -> PopupConfig:
         enabled=bool(data.get("enabled", False)),
         title=str(data.get("title", "")),
         content=str(data.get("content", "")),
+        description=str(data.get("description", "")),
         primaryButton=_parse_button(data.get("primaryButton") or {}),
         secondaryButton=_parse_button(data.get("secondaryButton") or {}),
         animation=AnimationConfig(
@@ -121,6 +122,7 @@ def _build_festival(item: dict[str, Any]) -> FestivalConfig:
         id=str(item["id"]),
         name=str(item["name"]),
         nameEn=item.get("nameEn"),
+        description=str(item.get("description", "")),
         category=FestivalCategory(item.get("category", "modern")),
         calendarType=calendar_type,
         lunarDate=lunar_date,
@@ -147,6 +149,8 @@ def _festival_to_dict(festival: FestivalConfig) -> dict[str, Any]:
     }
     if festival.nameEn:
         data["nameEn"] = festival.nameEn
+    if festival.description:
+        data["description"] = festival.description
 
     if festival.calendarType == CalendarType.SOLAR and festival.solarDate:
         data["solarDate"] = {"month": festival.solarDate.month, "day": festival.solarDate.day}
@@ -161,6 +165,8 @@ def _festival_to_dict(festival: FestivalConfig) -> dict[str, Any]:
         popup_dict["title"] = popup.title
     if popup.content:
         popup_dict["content"] = popup.content
+    if popup.description:
+        popup_dict["description"] = popup.description
     if popup.primaryButton:
         popup_dict["primaryButton"] = popup.primaryButton.model_dump()
     if popup.secondaryButton:

@@ -7,7 +7,10 @@ from typing import TYPE_CHECKING, cast
 
 from lunardate import LunarDate as _LunarDate
 
-from omichub.domain.festival.solar_term_calendar import get_solar_term_date
+from omichub.domain.festival.solar_term_calendar import (
+    get_solar_term_date,
+    get_solar_term_date_by_name,
+)
 from omichub.domain.festival.value_objects import (
     ActiveRange,
     CalendarType,
@@ -53,6 +56,9 @@ class FestivalCalendarService:
             term = festival.solarTerm
             if term is None:
                 return None
+            by_name = get_solar_term_date_by_name(year, term.name)
+            if by_name is not None:
+                return by_name
             return get_solar_term_date(year, term.index)
 
         return None

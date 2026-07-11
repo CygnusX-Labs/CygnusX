@@ -117,14 +117,27 @@ def test_solar_term_li_chun(service: FestivalCalendarService):
     assert service.is_active_on(li_chun, date(2026, 2, 4)) is True
 
 
-def test_solar_term_out_of_range(service: FestivalCalendarService):
-    unknown = FestivalConfig(
-        id="unknown_term",
-        name="未覆盖节气",
+def test_solar_term_yu_shui(service: FestivalCalendarService):
+    yu_shui = FestivalConfig(
+        id="yu_shui",
+        name="雨水",
         category=FestivalCategory.SOLAR_TERM,
         calendarType=CalendarType.SOLAR_TERM,
         solarTerm={"name": "雨水", "index": 1},
         priority=50,
         enabled=True,
     )
-    assert service.resolve_festival_date(unknown, 2026) is None
+    assert service.resolve_festival_date(yu_shui, 2026) == date(2026, 2, 18)
+
+
+def test_solar_term_year_out_of_range(service: FestivalCalendarService):
+    yu_shui = FestivalConfig(
+        id="yu_shui",
+        name="雨水",
+        category=FestivalCategory.SOLAR_TERM,
+        calendarType=CalendarType.SOLAR_TERM,
+        solarTerm={"name": "雨水", "index": 1},
+        priority=50,
+        enabled=True,
+    )
+    assert service.resolve_festival_date(yu_shui, 2040) is None

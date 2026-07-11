@@ -91,6 +91,7 @@ class PopupConfig(BaseModel):
     enabled: bool = False
     title: str = ""
     content: str = ""
+    description: str = ""
     primaryButton: PopupButton | None = None
     secondaryButton: PopupButton | None = None
     animation: AnimationConfig | None = None
