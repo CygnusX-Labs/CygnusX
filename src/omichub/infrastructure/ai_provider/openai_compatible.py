@@ -88,12 +88,18 @@ class OpenAICompatibleProvider:
         for attempt in range(2):
             attempt_had_text = False
             attempt_had_error = False
+            # 部分模型（如某些 Qwen 托管版本）不支持流式 function calling，
+            # 首次带 tools 空响应后，第二次尝试不带 tools。
+            attempt_tools = tools if attempt == 0 else None
+            if attempt == 1 and tools:
+                logger.info(f"模型 '{self.name}' 带 tools 返回空，尝试不带 tools 重试")
+
             async for chunk in self._stream_once(
                 messages,
                 system_prompt,
                 temperature,
                 max_tokens,
-                tools,
+                attempt_tools,
                 deep_thinking,
             ):
                 if chunk.type == "text":
@@ -118,6 +124,10 @@ class OpenAICompatibleProvider:
                 logger.info(f"模型 '{self.name}' 返回空内容，自动重试一次")
 
         if not has_yielded_text and not has_tool_calls:
+            logger.error(
+                f"[LLM空响应] provider={self.name} model={self.model} "
+                f"messages={len(messages)} tools={bool(tools)} deep_thinking={deep_thinking}"
+            )
             yield ChatChunk(
                 type="error",
                 content=f"当前模型 '{self.name}' 响应为空，请重新发送",
@@ -162,6 +172,10 @@ class OpenAICompatibleProvider:
         }
 
         try:
+            logger.debug(
+                f"[LLM请求] provider={self.name} model={self.model} "
+                f"messages={len(api_messages)} tools={bool(tools)} deep_thinking={deep_thinking}"
+            )
             async with (
                 httpx.AsyncClient(
                     timeout=httpx.Timeout(self._timeout, connect=10),
@@ -196,6 +210,10 @@ class OpenAICompatibleProvider:
                 if response.status_code >= 400:
                     body = await response.aread()
                     detail = body.decode()[:500] if body else f"HTTP {response.status_code}"
+                    logger.error(
+                        f"[LLM请求失败] provider={self.name} model={self.model} "
+                        f"status={response.status_code} detail={detail}"
+                    )
                     yield ChatChunk(
                         type="error",
                         content=f"请求失败（模型: {self.name}）: {detail}",

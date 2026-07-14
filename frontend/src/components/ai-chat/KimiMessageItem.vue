@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from 'vue'
-import { NButton, NIcon, NTag } from 'naive-ui'
+import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
+import { NButton, NIcon, NTag, NDataTable } from 'naive-ui'
 import {
   DocumentOutline,
   BuildOutline,
 } from '@vicons/ionicons5'
 import { Vue3Lottie } from 'vue3-lottie'
+import { useRouter } from 'vue-router'
 import md, { VChart } from './setup'
 import { usePyodide } from '@/composables/usePyodide'
 import UserAvatar from '@/components/UserAvatar.vue'
 import MessageActionBar from './MessageActionBar.vue'
-import type { ChatMessage, CopyMode } from './types'
+import TaskProgressCard from './TaskProgressCard.vue'
+import ChartPreviewModal from './ChartPreviewModal.vue'
+import type { ChatMessage, CopyMode, ChartData, ToolCall } from './types'
 
 interface Props {
   message: ChatMessage
@@ -49,11 +52,101 @@ const emit = defineEmits<{
   translate: [messageId: string]
   delete: [messageId: string]
   edit: [messageId: string]
+  confirmTool: [toolName: string, args: Record<string, unknown>]
+  openToolPage: [route: string, args: Record<string, unknown>]
 }>()
+
+const router = useRouter()
 
 const hovered = ref(false)
 const lottieRef = ref<InstanceType<typeof Vue3Lottie> | null>(null)
 const thoughtExpanded = ref(false)
+const plotlyContainers = ref<Record<string, HTMLDivElement | null>>({})
+const plotlyRenderError = ref<string>('')
+
+function extractPlotlyFigure(tool: ToolCall): Record<string, unknown> | undefined {
+  // 1. 优先走专用 uiPayload 通道
+  const fromUi = tool.uiPayload?.plotly_figure as Record<string, unknown> | undefined
+  if (fromUi) return fromUi
+  // 2. 兼容 result 里仍包着 ui_payload 的旧/异常封装
+  const result = tool.result as Record<string, unknown> | undefined
+  if (!result || typeof result !== 'object') return undefined
+  const nestedUi = (result.ui_payload as Record<string, unknown> | undefined)
+    || (result.uiPayload as Record<string, unknown> | undefined)
+  if (nestedUi?.plotly_figure) return nestedUi.plotly_figure as Record<string, unknown>
+  // 3. 兜底：result 直接就是 figure
+  if (result.data && result.layout) return result
+  return undefined
+}
+
+// 优先从工具结果的 uiPayload.plotly_figure 取图，fallback 到 message.charts
+const plotlyCharts = computed(() => {
+  const fromToolCalls: ChartData[] = []
+  for (const tool of props.message.toolCalls || []) {
+    const figure = extractPlotlyFigure(tool)
+    if (figure) {
+      fromToolCalls.push({
+        id: `tool-plotly-${tool.id}`,
+        type: 'plotly',
+        option: figure,
+      })
+    }
+  }
+  const fromCharts = (props.message.charts || []).filter((c) => c.type === 'plotly')
+  return [...fromToolCalls, ...fromCharts]
+})
+
+function setPlotlyContainer(chartId: string) {
+  return (el: unknown) => {
+    if (el) plotlyContainers.value[chartId] = el as HTMLDivElement
+  }
+}
+
+async function renderPlotlyCharts() {
+  if (!plotlyCharts.value.length) return
+  plotlyRenderError.value = ''
+  try {
+    const Plotly = await import('plotly.js-dist-min')
+    await nextTick()
+    for (const chart of plotlyCharts.value) {
+      const el = plotlyContainers.value[chart.id]
+      if (!el) continue
+      try {
+        await Plotly.newPlot(
+          el,
+          (chart.option.data || []) as Plotly.Data[],
+          (chart.option.layout || {}) as Partial<Plotly.Layout>,
+          { responsive: true, displayModeBar: true, displaylogo: false },
+        )
+      } catch (e) {
+        el.textContent = `Plotly 渲染失败: ${e instanceof Error ? e.message : String(e)}`
+      }
+    }
+  } catch (e) {
+    plotlyRenderError.value = `Plotly 加载失败: ${e instanceof Error ? e.message : String(e)}`
+  }
+}
+
+watch(() => [props.message.toolCalls, props.message.charts], renderPlotlyCharts, { deep: true })
+
+// 表格数据（取第一个含 table_data 的 tool result）
+const tableData = computed(() => {
+  const tc = props.message.toolCalls?.find(
+    (t) => t.uiPayload && (t.uiPayload.table_data || t.uiPayload.tableData),
+  )
+  const raw = tc?.uiPayload?.table_data || tc?.uiPayload?.tableData
+  if (!raw || !Array.isArray(raw) || !raw.length) return null
+  return raw as Record<string, unknown>[]
+})
+
+const tableColumns = computed(() => {
+  if (!tableData.value) return []
+  return Object.keys(tableData.value[0]).map((key) => ({
+    title: key,
+    key,
+    ellipsis: { tooltip: true },
+  }))
+})
 
 const displayContent = computed(() =>
   props.isStreaming ? props.streamingContent : props.message.content,
@@ -183,6 +276,44 @@ onUnmounted(() => {
 })
 
 const { execute } = usePyodide()
+
+const previewChart = ref<ChartData | null>(null)
+const showChartPreview = ref(false)
+
+function openChartPreview(chart: ChartData) {
+  previewChart.value = chart
+  showChartPreview.value = true
+}
+
+function handleConfirmTool(toolName: string, args: Record<string, unknown>) {
+  emit('confirmTool', toolName, { ...args, _confirmed: true })
+}
+
+function handleOpenToolPage(route: string, args: Record<string, unknown>) {
+  if (route.startsWith('/')) {
+    router.push(route)
+  } else {
+    emit('openToolPage', route, args)
+  }
+}
+
+const confirmToolCalls = computed(() =>
+  (props.message.toolCalls || []).filter(
+    (t) => t.uiPayload?.confirm_card === true,
+  ),
+)
+
+const openPageToolCalls = computed(() =>
+  (props.message.toolCalls || []).filter(
+    (t) => t.uiPayload?.route,
+  ),
+)
+
+const taskToolCalls = computed(() =>
+  (props.message.toolCalls || []).filter(
+    (t) => t.uiPayload?.task_id,
+  ),
+)
 
 function handleBodyClick(e: MouseEvent) {
   const t = (e.target as HTMLElement).closest('.copy-btn') as HTMLElement | null
@@ -420,21 +551,107 @@ function handleEdit() {
         <div v-if="streamingHasContent || !isStreaming" class="message-content ai-card" :class="{ 'streaming-active': isStreaming }">
           <div class="message-body markdown-body" v-html="renderedContent" @click="handleBodyClick" />
 
+          <div v-if="plotlyCharts.length" class="chart-results">
+            <div
+              v-for="chart in plotlyCharts"
+              :key="chart.id"
+              class="chart-wrapper"
+            >
+              <div class="chart-actions">
+                <n-button size="tiny" @click="openChartPreview(chart)">🔍 预览</n-button>
+              </div>
+              <div
+                :ref="setPlotlyContainer(chart.id)"
+                class="plotly-container"
+              />
+            </div>
+            <div v-if="plotlyRenderError" class="plotly-render-error">{{ plotlyRenderError }}</div>
+          </div>
+
+          <div v-if="message.charts?.some((c) => c.type === 'echarts')" class="chart-results">
+            <div
+              v-for="(chart, idx) in message.charts.filter((c) => c.type === 'echarts')"
+              :key="idx"
+              class="chart-wrapper"
+            >
+              <div class="chart-actions">
+                <n-button size="tiny" @click="openChartPreview(chart)">🔍 预览</n-button>
+              </div>
+              <VChart :option="chart.option" autoresize style="height: 300px" />
+            </div>
+          </div>
+
+          <div v-if="tableData" class="table-results">
+            <n-data-table
+              :data="tableData"
+              :columns="tableColumns"
+              :max-height="300"
+              size="small"
+            />
+          </div>
+
           <div v-if="message.toolCalls?.length" class="tool-results">
             <div v-for="(tool, idx) in message.toolCalls" :key="idx" class="tool-card">
               <div class="tool-header">
                 <n-icon size="16"><BuildOutline /></n-icon>
                 <span>{{ tool.name }}</span>
+                <n-tag v-if="tool.mcpServer" size="tiny" type="info" class="server-tag">
+                  MCP: {{ tool.mcpServer }}
+                </n-tag>
+                <n-tag
+                  v-if="tool.status"
+                  size="tiny"
+                  :type="tool.status === 'success' ? 'success' : tool.status === 'error' ? 'error' : 'warning'"
+                  class="status-tag"
+                >
+                  {{ tool.status === 'running' ? '执行中' : tool.status === 'success' ? '成功' : tool.status === 'error' ? '失败' : tool.status }}
+                </n-tag>
+              </div>
+              <div v-if="tool.arguments && Object.keys(tool.arguments).length" class="tool-args">
+                <div class="tool-section-title">参数</div>
+                <pre>{{ JSON.stringify(tool.arguments, null, 2) }}</pre>
               </div>
               <div class="tool-content">
+                <div class="tool-section-title">结果</div>
                 <pre>{{ JSON.stringify(tool.result, null, 2) }}</pre>
               </div>
-            </div>
-          </div>
 
-          <div v-if="message.charts?.length" class="chart-results">
-            <div v-for="(chart, idx) in message.charts" :key="idx" class="chart-container">
-              <VChart :option="chart.option" autoresize style="height: 300px" />
+              <!-- 二次确认卡 -->
+              <div v-if="tool.uiPayload?.confirm_card" class="confirm-card">
+                <div class="confirm-title">⚠️ 需要确认</div>
+                <div class="confirm-desc">
+                  该操作将执行 {{ tool.name }}，确认后继续？
+                </div>
+                <div v-if="tool.uiPayload?.args" class="confirm-preview">
+                  <pre>{{ JSON.stringify(tool.uiPayload.args, null, 2) }}</pre>
+                </div>
+                <div class="confirm-actions">
+                  <n-button size="small" type="primary" @click="handleConfirmTool(tool.name, tool.arguments)">
+                    确认执行
+                  </n-button>
+                </div>
+              </div>
+
+              <!-- open_page 引导卡 -->
+              <div v-if="tool.uiPayload?.route" class="open-page-card">
+                <div class="open-page-title">🔗 前往工具页</div>
+                <div class="open-page-desc">
+                  {{ tool.uiPayload.message || `${tool.name} 需要在专用工具页完成` }}
+                </div>
+                <div class="open-page-actions">
+                  <n-button size="small" type="info" @click="handleOpenToolPage(String(tool.uiPayload.route), tool.arguments)">
+                    打开 {{ tool.uiPayload.route }}
+                  </n-button>
+                </div>
+              </div>
+
+              <!-- 异步任务进度卡 -->
+              <TaskProgressCard
+                v-if="tool.uiPayload?.task_id"
+                :task-id="String(tool.uiPayload.task_id)"
+                :progress-url="tool.uiPayload.progress_url ? String(tool.uiPayload.progress_url) : undefined"
+                :result-url="tool.uiPayload.result_url ? String(tool.uiPayload.result_url) : undefined"
+              />
             </div>
           </div>
 
@@ -463,6 +680,8 @@ function handleEdit() {
         <span>{{ message.content }}</span>
       </div>
     </template>
+
+    <ChartPreviewModal v-model:show="showChartPreview" :chart="previewChart" />
   </div>
 </template>
 
@@ -1008,6 +1227,155 @@ function handleEdit() {
   border-radius: 4px;
 }
 
+/* 图表结果 */
+.chart-results {
+  width: 100%;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.chart-wrapper {
+  position: relative;
+  border: 1px solid var(--chat-border, #f0f0f0);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--chat-ai-card, #ffffff);
+}
+.chart-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.chart-wrapper:hover .chart-actions {
+  opacity: 1;
+}
+
+/* Plotly 图表容器 */
+.plotly-container {
+  width: 100%;
+  min-height: 400px;
+}
+.plotly-render-error {
+  color: var(--chat-error, #d03050);
+  font-size: 13px;
+  padding: 8px 12px;
+  background: var(--chat-surface, #fff8f9);
+  border: 1px solid rgba(208, 48, 80, 0.15);
+  border-radius: 6px;
+}
+
+/* 表格结果 */
+.table-results {
+  width: 100%;
+  margin-top: 12px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--chat-border, #f0f0f0);
+}
+
+/* 二次确认卡 */
+.confirm-card {
+  margin-top: 12px;
+  padding: 14px;
+  background: var(--chat-surface, #fffbe6);
+  border: 1px solid #ffe58f;
+  border-radius: 8px;
+}
+.confirm-title {
+  font-weight: 600;
+  color: #d48806;
+  margin-bottom: 6px;
+}
+.confirm-desc {
+  font-size: 13px;
+  color: var(--chat-text-secondary, #666);
+  margin-bottom: 10px;
+}
+.confirm-preview {
+  margin-bottom: 10px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.confirm-preview pre {
+  margin: 0;
+  font-size: 12px;
+  background: rgba(0, 0, 0, 0.03);
+  padding: 8px;
+  border-radius: 4px;
+}
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* open_page 引导卡 */
+.open-page-card {
+  margin-top: 12px;
+  padding: 14px;
+  background: var(--chat-surface, #e6f7ff);
+  border: 1px solid #91d5ff;
+  border-radius: 8px;
+}
+.open-page-title {
+  font-weight: 600;
+  color: #096dd9;
+  margin-bottom: 6px;
+}
+.open-page-desc {
+  font-size: 13px;
+  color: var(--chat-text-secondary, #666);
+  margin-bottom: 10px;
+}
+.open-page-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* 工具调用结果卡 */
+.tool-results {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+.tool-card {
+  padding: 12px;
+  background: var(--chat-surface, #f8f9fa);
+  border: 1px solid var(--chat-border, #e8e8e8);
+  border-radius: 8px;
+}
+.tool-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--chat-text-primary, #1a1a1a);
+}
+.server-tag,
+.status-tag {
+  margin-left: auto;
+}
+.tool-section-title {
+  font-size: 12px;
+  color: var(--chat-text-muted, #999);
+  margin: 10px 0 6px;
+}
+.tool-args pre,
+.tool-content pre {
+  margin: 0;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 4px;
+  font-size: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
 /* 响应式：窄屏下星辰动画高度缩减，宽度保持自适应 */
 @media (max-width: 640px) {
   .star-animation-bubble {
@@ -1017,6 +1385,9 @@ function handleEdit() {
   }
   .thought-block {
     width: 100%;
+  }
+  .plotly-container {
+    min-height: 280px;
   }
 }
 </style>

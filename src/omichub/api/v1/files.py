@@ -1,13 +1,12 @@
 """文件路由 — 列表 / 分块上传 / 配额 / 下载 / 删除 / 目录 / 样本"""
 
-import os
 import uuid
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 import anyio
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from omichub.api.deps import CurrentUserId, DbSession
@@ -31,6 +30,7 @@ from omichub.application.schemas.file import (
 )
 from omichub.application.services.file_service import FileService
 from omichub.core.exceptions import ValidationError
+from omichub.infrastructure.config.storage_config import get_user_chat_upload_dir
 
 router = APIRouter()
 
@@ -180,7 +180,7 @@ async def delete_directory(
     current_user_id: CurrentUserId,
     service: FileServiceDep,
     path: Annotated[str, Query(description="要删除的目录路径")] = "",
-) -> dict:
+) -> dict[str, Any]:
     """删除目录（含其下文件回退到根目录）"""
     await service.delete_directory(UUID(current_user_id), path)
     return {"deleted": True}
@@ -252,7 +252,7 @@ async def cancel_upload(
     current_user_id: CurrentUserId,
     upload_id: UUID,
     service: FileServiceDep,
-) -> dict:
+) -> dict[str, Any]:
     """取消上传：删除会话与临时分片"""
     await service.cancel_upload(UUID(current_user_id), upload_id)
     return {"deleted": True}
@@ -260,18 +260,27 @@ async def cancel_upload(
 
 @router.post("/chat-upload", summary="聊天文件上传（供 AI 多模态/附件）")
 async def upload_chat_file(
-    current_user_id: CurrentUserId,
+    request: Request,
     file: UploadFile = File(...),  # noqa: B008 — FastAPI 上传参数标准写法
-) -> dict:
-    """接收聊天附件，保存到用户隔离目录并返回访问 URL。"""
+) -> dict[str, Any]:
+    """接收聊天附件，保存到用户隔离目录并返回访问 URL。
+
+    用户身份直接取自 AuthMiddleware 注入的 request.state.user_id，
+    避免上传接口重复查询数据库，降低抖动/版本校验带来的失败面。
+    """
+    current_user_id: str = getattr(request.state, "user_id", "") or ""
+    if not current_user_id:
+        from omichub.core.exceptions import AuthenticationError
+
+        raise AuthenticationError("无法识别当前用户")
+
     _validate_chat_upload_filename(file.filename)
-    upload_dir = f"data/uploads/chat/{current_user_id}"
-    os.makedirs(upload_dir, exist_ok=True)
+    upload_dir = get_user_chat_upload_dir(current_user_id)
 
     suffix = Path(file.filename or "").suffix
     file_id = uuid.uuid4().hex
     filename = f"{file_id}{suffix}"
-    dest = os.path.join(upload_dir, filename)
+    dest = upload_dir / filename
     body = await file.read()
     async with await anyio.open_file(dest, "wb") as buffer:
         await buffer.write(body)
@@ -286,20 +295,21 @@ async def upload_chat_file(
 
 @router.get("/chat-upload/{user_id}/{filename}", summary="下载聊天附件")
 async def download_chat_file(
-    current_user_id: CurrentUserId,
+    request: Request,
     user_id: str,
     filename: str,
 ) -> FileResponse:
     """下载聊天上传的附件（仅允许访问当前用户自己的聊天文件）。"""
-    if user_id != current_user_id:
+    current_user_id: str = getattr(request.state, "user_id", "") or ""
+    if not current_user_id or user_id != current_user_id:
         from omichub.core.exceptions import AuthorizationError
 
         raise AuthorizationError("无权访问该附件")
-    upload_dir = anyio.Path(f"data/uploads/chat/{current_user_id}")
+    upload_dir = get_user_chat_upload_dir(current_user_id)
     # 防止目录遍历：仅取 basename
     safe_name = Path(filename).name
     path = upload_dir / safe_name
-    if not await path.is_file():
+    if not path.is_file():
         from omichub.core.exceptions import NotFoundError
 
         raise NotFoundError("文件不存在")
@@ -322,7 +332,7 @@ async def delete_file(
     current_user_id: CurrentUserId,
     file_id: UUID,
     service: FileServiceDep,
-) -> dict:
+) -> dict[str, Any]:
     """删除文件并扣减配额"""
     await service.delete_file(UUID(current_user_id), file_id)
     return {"deleted": True}

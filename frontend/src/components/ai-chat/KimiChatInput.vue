@@ -173,6 +173,7 @@ async function handleFileChange(e: Event) {
         size: file.size,
         type: file.type || 'application/octet-stream',
         url: res.data.url,
+        file_id: res.data.id,
       })
     } catch (err: any) {
       message.error(`上传 ${file.name} 失败: ${err?.response?.data?.detail || err.message}`)

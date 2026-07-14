@@ -68,3 +68,14 @@ def get_storage_config(yaml_path: str | Path | None = None) -> StorageConfig:
     )
     users_subdir = str(storage.get("users_subdir") or "").strip() or _DEFAULT_USERS_SUBDIR
     return StorageConfig(data_root=data_root, users_subdir=users_subdir)
+
+
+def get_user_chat_upload_dir(user_id: str) -> Path:
+    """AI 助手聊天附件的落盘目录：{data_root}/{users_subdir}/{user_id}/workspace/chat-uploads。
+
+    放在用户 workspace 下，便于后续工具/流程直接引用，也方便文件管理器统一浏览。
+    """
+    cfg = get_storage_config()
+    path = Path(cfg.data_root) / cfg.users_subdir / str(user_id) / "workspace" / "chat-uploads"
+    path.mkdir(parents=True, exist_ok=True)
+    return path

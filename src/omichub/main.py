@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -237,10 +238,22 @@ def create_app() -> FastAPI:
     async def validation_exception_handler(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
-        logger.warning(f"Validation error on {request.method} {request.url.path}: {exc.errors()}")
+        def _sanitize(obj: Any) -> Any:
+            """将 Pydantic error 结构中的异常对象/不可序列化值转成字符串。"""
+            if isinstance(obj, list):
+                return [_sanitize(item) for item in obj]
+            if isinstance(obj, dict):
+                return {key: _sanitize(value) for key, value in obj.items()}
+            if isinstance(obj, BaseException):
+                return str(obj)
+            return obj
+
+        raw_errors = exc.errors()
+        safe_errors = _sanitize(raw_errors)
+        logger.warning(f"Validation error on {request.method} {request.url.path}: {safe_errors}")
         return JSONResponse(
             status_code=422,
-            content={"detail": "请求参数校验失败", "errors": exc.errors()},
+            content={"detail": "请求参数校验失败", "errors": safe_errors},
         )
 
     # 兜底异常处理：捕获所有未被上面精准命中的异常（如 DB 缺列、连接失败等

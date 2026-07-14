@@ -33,18 +33,22 @@ export interface ChatAttachment {
   url: string
   name: string
   mime_type: string
+  file_id?: string
 }
 
 export interface ToolCallEvent {
   tool_call_id: string
   tool_name: string
   arguments: Record<string, unknown>
+  mcp_server?: string
 }
 export interface ToolResultEvent {
   tool_call_id: string
   tool_name: string
   success: boolean
   result: unknown
+  ui_payload?: Record<string, unknown>
+  mcp_server?: string
 }
 
 export interface TokenUsage {
@@ -178,6 +182,7 @@ export function useAgentChatStream() {
           tool_name: (data.tool_name as string) || '',
           success: Boolean(data.success),
           result: data.result,
+          ui_payload: (data.ui_payload as Record<string, unknown>) || undefined,
         })
         break
       case 'error':

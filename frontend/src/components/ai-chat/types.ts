@@ -30,20 +30,22 @@ export interface ChatMessage {
   createdAt: string
 }
 
+// ===== 图表数据 =====
+export interface ChartData {
+  id: string
+  type: 'echarts' | 'plotly'
+  option: Record<string, unknown>
+}
+
 // ===== 工具调用 =====
 export interface ToolCall {
   id: string
   name: string
   arguments: Record<string, unknown>
   result?: unknown
+  uiPayload?: Record<string, unknown>
+  mcpServer?: string
   status: 'pending' | 'running' | 'success' | 'error'
-}
-
-// ===== 图表数据 =====
-export interface ChartData {
-  id: string
-  type: 'echarts'
-  option: Record<string, unknown>
 }
 
 // ===== 文件附件 =====
@@ -52,6 +54,7 @@ export interface FileAttachment {
   size: number
   type: string
   url?: string
+  file_id?: string
 }
 
 // ===== 会话 =====

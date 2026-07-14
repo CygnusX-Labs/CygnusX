@@ -1,14 +1,14 @@
 # ============================================
 # OmicHub 计算节点栈（独立编排）——仅 Celery Worker
 # 单机逻辑解耦：与主栈 (docker-compose.yml) 通过外部网络 omichub_net 共享 Redis
-# 用法: docker compose -f deploy/docker/docker-compose.worker.yml up -d
-# 生产水平扩展: docker compose -f deploy/docker/docker-compose.worker.yml --scale worker=2 up -d
+# 用法: ./scripts/worker-compose.sh up -d（或 make docker-up-worker）
+# 生产水平扩展: ./scripts/worker-compose.sh --scale worker=2 up -d
 #
 # 前置:
 #   1. docker network create omichub_net      # 外部网络（主栈已声明同名 external）
 #   2. 主栈已启动，且 cache 服务已加入 omichub_net
-#   3. mkdir -p /data/omichub                  # 任务数据目录（首次部署）
-#   4. 宿主 conda 实际在 /home/zj/miniconda3，分析 env 在 /home/zj/.local/share/mamba/envs
+#   3. 编辑 data/worker_config.yaml 配置本机的共享盘与流程 Workspace 路径
+#   4. 使用 scripts/worker-compose.sh 启动，以将 YAML 路径加载到 Compose
 # ============================================
 x-logging: &default-logging
   driver: json-file
@@ -18,15 +18,17 @@ x-logging: &default-logging
 
 services:
   worker:
+    # Compose 同时负责构建与运行。可在 .env 覆盖为不可变发布标签，
+    # 例如 OMICHUB_WORKER_IMAGE=registry.example.com/omichub-worker:2026.07.12-<sha>。
+    image: ${OMICHUB_WORKER_IMAGE:-omichub-worker:dev}
     build:
       context: ../..
-      dockerfile: deploy/docker/Dockerfile
+      dockerfile: deploy/docker/Dockerfile.worker
       args:
         SNAKEMAKE_LOGGER_PLUGIN_REF: ${SNAKEMAKE_LOGGER_PLUGIN_REF:-main}
     container_name: omichub-worker
     restart: unless-stopped
     logging: *default-logging
-    user: "${PUID:-1000}:${PGID:-1000}"   # 以宿主用户运行，避免 root；任务数据/conda envs 文件归宿主所有
     env_file:
       - ../../.env
     environment:
@@ -39,26 +41,21 @@ services:
       - CELERY_RESULT_BACKEND=redis://cache:6379/2
       - AL_API_KEY=${AL_API_KEY}
       - ARK_API_KEY=${ARK_API_KEY}
-      - HOME=/tmp                        # uid 1000 无 passwd 条目，显式 HOME 防 conda/expanduser 失败
       - OMICHUB_LOG_DIR=/app/logs
       - OMICHUB_CELERY_LOG_DIR=/data/omichub/logs/celery/tasks
-      # 优先使用镜像 venv 的 snakemake，确保 Snakemake 与 logger 插件安装在同一 Python 环境。
-      # 宿主 conda 仍保留在 PATH 中，供 --use-conda 创建/复用流程环境。
-      - PATH=/app/.venv/bin:/home/zj/miniconda3/envs/snakemake/bin:/home/zj/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      # Snakemake 与 Micromamba 均由轻量 Worker 镜像提供；流程环境运行时写入共享盘。
+      - PATH=/app/.venv/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
       - SNAKEMAKE_MONITOR_LOGGER=rich_loguru
-      # conda 环境创建目录（可写）：--use-conda 时按 env hash 在此创建/复用，避免只读挂载冲突
+      - SNAKEMAKE_USE_CONDA=true
       - SNAKEMAKE_CONDA_PREFIX=/data/omichub/.conda_envs
+      - MAMBA_ROOT_PREFIX=/data/omichub/.mamba
+      - XDG_CACHE_HOME=/data/omichub/.cache
     volumes:
       # —— 核心共享存储（模拟分布式共享盘，与主栈 web 共用）——
-      - /data/omichub:/data/omichub                       # 任务数据读写
-      - /data/omichub/logs/app:/app/logs                 # 应用日志持久化到宿主机
-      - /data/omichub/logs/snakemake:/logs               # Snakemake 流程日志统一落盘
-      - /home/zj/pipeline:/home/zj/pipeline:ro            # Snakemake 流程代码
-      - ../../src:/app/src:ro                            # 开发热重载：与 web/beat 一致，代码改动重启即生效（免重建镜像）
-      - ../../alembic:/app/alembic:ro                    # 迁移脚本（与 web/beat 一致，便于排障时 exec alembic）
-      # —— conda 运行时（只读，原位挂载以匹配 shebang 绝对路径）——
-      - /home/zj/miniconda3:/home/zj/miniconda3:ro        # 含 bin/conda、envs/snakemake
-      - /home/zj/.local/share/mamba:/home/zj/.local/share/mamba:ro   # RNAFlow 各分析工具 env
+      - ${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}:/data/omichub # 任务数据读写
+      - ${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}/logs/app:/app/logs # 应用日志持久化到宿主机
+      - ${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}/logs/snakemake:/logs # Snakemake 流程日志统一落盘
+      - ${WORKER_PIPELINE_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}:/opt/omichub/pipelines:ro # RNAFlow / ATACFlow Workspace
     networks:
       - omichub_net
     # -Q analysis: 显式消费 analysis 队列（task_routes 把全部任务路由到此队列）。

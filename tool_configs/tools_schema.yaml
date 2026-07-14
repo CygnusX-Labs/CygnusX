@@ -1,0 +1,143 @@
+# ============================================
+# OmicHub AI 助手可调用的工具 Schema 注册表
+# ============================================
+# 与 tools_setting.yaml 解耦：前者供 LLM 消费，后者供前端工具箱展示。
+# 改完即生效：加载器按文件 mtime 自动热重载，无需重启后端。
+#
+# 命名约定：
+#   - name 统一以 omichub_ 开头，避免与 MCP preset / web_search 撞名。
+#   - input_schema 遵循 JSON Schema Draft 7（转 OpenAI functions 时自动调整）。
+#   - invocation_mode 决定执行方式：
+#       backend_sync   进程内同步调 service
+#       backend_shim   进程内调轻量 Python shim
+#       backend_async  仅提交异步任务（Phase 1 占位）
+#       open_page      不执行，返回前端路由引导用户
+#
+# 字段说明：
+#   key              与 tools_setting.yaml 对应的工具 key
+#   name             LLM function 名
+#   description      LLM 看到的工具描述
+#   category         工具类别（enrichment / visualization / sequence / workflow）
+#   invocation_mode  执行模式
+#   service          backend_sync 时：module.path:ClassName
+#   method           backend_sync 时：调用的方法名
+#   shim_module      backend_shim 时：module.path
+#   requires_confirm 是否需要用户二次确认
+#   annotations      MCP Tool Annotations（readOnlyHint / destructiveHint / openWorld / idempotent）
+#   input_schema     LLM 参数 JSON Schema
+#   llm_result_fields  回灌 LLM 的字段白名单
+#   ui_result_fields   透传给前端的字段白名单
+# --------------------------------------------
+
+tools:
+  - key: kegg-enrichment
+    name: omichub_run_kegg_enrichment
+    description: 对基因列表进行 KEGG 通路富集分析，返回 Top 通路摘要与 Plotly 气泡图。
+    category: enrichment
+    invocation_mode: backend_sync
+    service: omichub.tools.enrichments.service.EnrichmentService
+    method: submit
+    requires_confirm: false
+    annotations:
+      readOnlyHint: false
+      destructiveHint: false
+      openWorld: false
+      idempotent: true
+    input_schema:
+      type: object
+      properties:
+        species_id:
+          type: string
+          description: 物种 ID，如 human、mouse、rat
+        gene_text:
+          type: string
+          description: 每行一个基因符号或 Entrez ID；也支持 upload://file_id 引用已上传的基因列表文件
+      required: [species_id, gene_text]
+    llm_result_fields: [task_id, stats, top_pathways, success, error]
+    ui_result_fields: [plotly_figure, table_data, download_urls]
+
+  - key: volcano
+    name: omichub_plot_volcano
+    description: 根据差异表达结果绘制交互式火山图。支持 CSV/TSV 文本，自动识别 log2FC 与 p-value 列。
+    category: visualization
+    invocation_mode: backend_shim
+    shim_module: omichub.tools.shims.volcano
+    requires_confirm: false
+    annotations:
+      readOnlyHint: false
+      destructiveHint: false
+      openWorld: false
+      idempotent: true
+    input_schema:
+      type: object
+      properties:
+        data_text:
+          type: string
+          description: CSV/TSV 格式的差异表达表文本，含 log2FC 与 p-value 列；也支持 upload://file_id 引用已上传文件
+        pval_cutoff:
+          type: number
+          default: 0.05
+          description: p-value 阈值
+        lfc_cutoff:
+          type: number
+          default: 1.0
+          description: log2FoldChange 阈值
+      required: [data_text]
+    llm_result_fields: [stats, top_up_genes, top_down_genes, success, error]
+    ui_result_fields: [plotly_figure, result_ref]
+
+  - key: phylogenetic-tree
+    name: omichub_build_phylogenetic_tree
+    description: 提交系统发育树构建任务（异步），返回 task_id 供后续查看进度。
+    category: sequence
+    invocation_mode: backend_async
+    service: omichub.tools.phylogenetic_tree.service.PhylogeneticTreeService
+    requires_confirm: true
+    annotations:
+      readOnlyHint: false
+      destructiveHint: false
+      openWorld: false
+      idempotent: false
+    input_schema:
+      type: object
+      properties:
+        file_id:
+          type: string
+          description: 已上传序列文件的 file_id
+        method:
+          type: string
+          enum: [NJ, UPGMA, ML, Bayesian]
+          description: 建树方法
+      required: [file_id, method]
+    llm_result_fields: [task_id, status, message, success, error]
+    ui_result_fields: [task_id, status, progress_url, result_url]
+
+  - key: manhattan
+    name: omichub_plot_manhattan
+    description: 根据 GWAS/QTL 汇总统计表绘制交互式曼哈顿图。支持 CSV/TSV 文本，自动识别 SNP / Chromosome / Position / P-value 列。
+    category: visualization
+    invocation_mode: backend_shim
+    shim_module: omichub.tools.shims.manhattan
+    requires_confirm: false
+    annotations:
+      readOnlyHint: false
+      destructiveHint: false
+      openWorld: false
+      idempotent: true
+    input_schema:
+      type: object
+      properties:
+        data_text:
+          type: string
+          description: CSV/TSV 格式的 GWAS 汇总统计表，含 SNP、染色体、位置、P-value 列；也支持 upload://file_id
+        suggestive_line:
+          type: number
+          default: 5.0
+          description: suggestive 阈值线 (-log10 p)
+        genome_wide_line:
+          type: number
+          default: 8.0
+          description: genome-wide 阈值线 (-log10 p)
+      required: [data_text]
+    llm_result_fields: [stats, top_snps, success, error]
+    ui_result_fields: [plotly_figure, result_ref]

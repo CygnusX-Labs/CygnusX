@@ -43,6 +43,41 @@ omichubtools
 └── build-reference-database        # refdb build 的兼容别名
 ```
 
+## 脚本与文件清单
+
+`scripts/` 目录下既有可直接运行的独立脚本，也有正在演进的 `omichubtools` 离线 CLI 包。下面分别说明每个文件/脚本的作用。
+
+### 顶层独立维护脚本
+
+| 脚本 | 作用 | 典型用法 |
+| --- | --- | --- |
+| `check_migrations.py` | 检查 Alembic 迁移链的健康状况：解析所有迁移文件的 `revision` / `down_revision` / `depends_on`，验证依赖是否存在、root 唯一、拓扑连通，并可选调用 `alembic heads` 确认 head 唯一。 | `python scripts/check_migrations.py` |
+| `download_jbrowse2.sh` | 一键下载 JBrowse 2 Web 静态产物（默认 v2.15.1）到 `pipelines/jbrowse2/`，供 nginx 以 `/jbrowse2/` 路径提供静态资源。 | `./scripts/download_jbrowse2.sh` |
+| `init_admin.py` | 首次部署时初始化管理员账号。支持通过环境变量自定义用户名、邮箱和密码；生产环境必须设置 `OMICHBUB_INIT_ADMIN_PASSWORD`。若启用饼干系统，会自动为管理员创建饼干账户。 | `python scripts/init_admin.py` |
+| `init_cookies.py` | 初始化默认的饼干（资源计费）定价策略，包括 RNA-seq、ATAC-seq、scRNA-seq 任务定价、CPU/内存费率、沙盒费用以及新用户注册赠送。 | `python scripts/init_cookies.py` |
+| `migrate_knowledge_base.py` | 一次性迁移：将 `docs/knowledge/meta.yaml` 中声明的 Markdown 文档导入数据库，生成初始版本并关联编辑者。建议在 `alembic upgrade head` 之后执行。 | `python scripts/migrate_knowledge_base.py --admin-user-id <UUID>` |
+| `render_worker_config.py` | 读取 `data/worker_config.yaml`，校验 `paths` 配置，将 `shared_data_dir` / `pipeline_dir` 渲染为 shell 兼容的 env 文件 `data/.worker-config.env`，供 Docker Compose 插值使用。 | `python scripts/render_worker_config.py` |
+| `sync_knowledge_from_files.py` | 增量同步：将 `docs/knowledge/*.md` 的最新内容同步回数据库。已存在的文档会创建新版本，不存在的会新建；支持自动选择最早创建的管理员作为同步者。 | `python scripts/sync_knowledge_from_files.py --auto-admin` |
+| `worker-compose.sh` | 启动 Worker 的包装脚本：先调用 `render_worker_config.py` 生成 env 文件，再 source 后执行 `docker compose -f deploy/docker/docker-compose.worker.yml`。 | `./scripts/worker-compose.sh up -d` |
+
+### omichubtools 包内文件
+
+| 文件 | 作用 |
+| --- | --- |
+| `pyproject.toml` | `omichubtools` 独立包的安装配置（`pip install -e ./scripts`），定义依赖、入口脚本、构建后端和 ruff 配置。 |
+| `omichubtools/__init__.py` | 包初始化，暴露 `__version__`。 |
+| `omichubtools/__main__.py` | 支持以 `python -m omichubtools` 方式启动 CLI。 |
+| `omichubtools/cli.py` | CLI 顶层入口：注册全局参数、`version`、`refdb build` 以及兼容别名 `build-reference-database`。 |
+| `omichubtools/commands/__init__.py` | 命令模块包标记。 |
+| `omichubtools/commands/reference_database.py` | `refdb build` 命令的完整实现：解析 FASTA/GFF/GO/KO/KEGG 输入，生成 SQLite 数据库、`.fai` 索引、manifest 和 JBrowse 配置片段。 |
+| `omichubtools/config/default.yaml` | 包内默认日志配置（标签、级别、样式）。 |
+| `omichubtools/config/software.yaml` | 软件元信息（版本、作者、描述）和外部工具声明（如 `samtools`）。 |
+| `omichubtools/utils/argparse.py` | 自定义 `OmicHubHelpFormatter`，基于 `rich-argparse` 美化帮助输出，并提供无 Rich 时的降级。 |
+| `omichubtools/utils/configuration.py` | 配置加载：读取包内 YAML，支持项目级 `omichubtools.yaml` / `omichubtools.local.yaml` 覆盖。 |
+| `omichubtools/utils/logo.py` | 终端 logo 显示，支持 Rich 和 rich-gradient 渐变效果，无依赖时降级为纯文本。 |
+| `omichubtools/utils/log_utils.py` | loguru + Rich 日志初始化，支持拦截标准 logging、捕获 warning、文件日志和分级别控制台输出。 |
+| `omichubtools/utils/version.py` | `version` 命令实现：展示 Python 运行时、平台、依赖包版本和外部工具状态。 |
+
 ## 参考数据库离线构建
 
 典型命令：
@@ -81,27 +116,40 @@ CLI 帮助输出使用 `rich-argparse`，会保留参数默认值并用 Rich 样
 
 平台只注册这些生成好的文件路径，不在 API 或 Worker 中执行转换。
 
-## 包结构
+## 包结构概览
 
 ```text
 scripts/
-├── pyproject.toml                    # omichubtools 独立安装配置，支持 pip install -e ./scripts
+├── pyproject.toml
 ├── omichubtools/
-│   ├── cli.py                         # 顶层 argparse 入口
+│   ├── __init__.py
+│   ├── __main__.py
+│   ├── cli.py
 │   ├── commands/
-│   │   └── reference_database.py       # refdb build 命令实现
+│   │   ├── __init__.py
+│   │   └── reference_database.py
 │   ├── config/
-│   │   ├── default.yaml                # CLI 默认日志配置
-│   │   └── software.yaml               # 工具元信息和外部工具声明
+│   │   ├── __init__.py
+│   │   ├── default.yaml
+│   │   └── software.yaml
 │   └── utils/
-│       ├── configuration.py            # 包内 YAML + 项目覆盖配置加载
-│       ├── logo.py                     # 终端 logo，参考 gpse LogoDisplay 风格
-│       ├── log_utils.py                # loguru/rich 日志初始化
-│       └── version.py                  # version 命令展示
-├── check_migrations.py                 # Makefile 仍在调用，后续可迁入 omichubtools
-├── download_jbrowse2.sh                # JBrowse 2 静态产物下载脚本，部署文档仍在引用
-├── init_admin.py                       # Makefile/README 仍在调用，后续可迁入 omichubtools
-└── init_cookies.py                     # Makefile/README 仍在调用，后续可迁入 omichubtools
+│       ├── __init__.py
+│       ├── argparse.py
+│       ├── configuration.py
+│       ├── logo.py
+│       ├── log_utils.py
+│       └── version.py
+├── check_migrations.py
+├── download_jbrowse2.sh
+├── init_admin.py
+├── init_cookies.py
+├── migrate_knowledge_base.py
+├── render_worker_config.py
+├── sync_knowledge_from_files.py
+└── worker-compose.sh
+```
+
+各文件/脚本的具体作用见上文「脚本与文件清单」。
 ```
 
 ## 配置覆盖

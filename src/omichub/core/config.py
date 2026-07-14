@@ -122,6 +122,11 @@ class Settings(BaseSettings):
     # 仅「展示元数据」集中于此；各工具的「功能配置」放 tool_configs/<工具名>/（如 jbrowse/、enrichments/）。
     tools_setting_yaml: str = "tool_configs/tools_setting.yaml"
 
+    # ===== AI 助手可调用的工具 Schema 注册表 =====
+    # tool_configs/tools_schema.yaml 描述 LLM 可见的参数 schema、执行方式、结果字段白名单等。
+    # 与 tools_setting.yaml 解耦：前者供 LLM/MCP 消费，后者供前端工具箱展示。
+    tools_schema_yaml: str = "tool_configs/tools_schema.yaml"
+
     # ===== 系统发育树构建工具配置 =====
     phylogenetic_tree_config_yaml: str = "tool_configs/phylogenetic-tree/config.yaml"
     phylogenetic_tree_defaults_yaml: str = "tool_configs/phylogenetic-tree/defaults.yaml"

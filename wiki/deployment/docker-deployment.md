@@ -42,3 +42,26 @@ docker compose -f deploy/docker/docker-compose.worker.yml \
 ```
 
 prod override 关闭 DB/Redis 宿主端口、Flower 副本为 0、使用 4 uvicorn worker。
+
+## Worker 镜像与交互终端
+
+Worker 镜像 `omichub-worker:dev` 除运行 Celery、Snakemake、Micromamba 外，还包含：
+
+- `btop`：查看容器内资源使用情况。
+- `zsh`、Oh My Zsh、Oh My Posh：计算节点的交互式终端体验。
+- `omichub` 运行账户（UID/GID `1000`，默认 shell 为 Zsh）。
+
+镜像入口会在启动 Worker 时准备共享盘目录，并将进程降权为 `omichub`。该账户的 HOME 是 `/tmp/omichub-home`，因此 `btop`、Zsh 历史与 Snakemake logger 都有可写的用户目录。Snakemake logger 不会再因 UID `1000` 缺少 passwd 条目而出现 `getpwuid(): uid not found: 1000`。
+
+```bash
+# 修改 deploy/docker/Dockerfile.worker 或 worker-entrypoint.sh 后重建
+make docker-build-worker
+
+# 进入正在运行的计算 Worker
+docker exec -it omichub-worker zsh
+
+# 本地检查镜像；交互式裸 bash 会自动切换至 zsh
+docker run --rm -it omichub-worker:dev bash
+```
+
+入口脚本只会将交互式、无额外参数的 `bash` 切换为 Zsh；`bash -c '...'`、`bash -ic '...'` 等脚本调用保持 Bash 语义，Compose 中的 Celery `command` 也不会被修改。

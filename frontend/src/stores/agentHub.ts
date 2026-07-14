@@ -23,7 +23,7 @@ import type {
   McpTool,
   SkillItem,
 } from '@/types/agent'
-import type { ChatMessage, ToolCall, FileAttachment } from '@/components/ai-chat/types'
+import type { ChatMessage, ToolCall, FileAttachment, ChartData } from '@/components/ai-chat/types'
 import { agentApi, adminAgentApi } from '@/api/agent'
 import apiClient from '@/api/client'
 import { useAgentChatStream, type TokenUsage } from '@/composables/useAgentChatStream'
@@ -569,6 +569,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       url: a.url || '',
       name: a.name,
       mime_type: a.type,
+      file_id: a.file_id,
     })) || []
 
     isStreaming.value = true
@@ -620,13 +621,23 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             name: event.tool_name,
             arguments: event.arguments,
             status: 'running',
+            mcpServer: event.mcp_server,
           })
         },
         onToolResult: (event) => {
           const tc = (aiMsg.toolCalls || []).find((t) => t.id === event.tool_call_id)
           if (tc) {
             tc.result = event.result
+            // 兼容：event.ui_payload 缺失但 event.result 里包着 ui_payload 的情况
+            let uiPayload = event.ui_payload
+            if (!uiPayload && event.result && typeof event.result === 'object') {
+              const r = event.result as Record<string, unknown>
+              uiPayload = (r.ui_payload as Record<string, unknown> | undefined)
+                || (r.uiPayload as Record<string, unknown> | undefined)
+            }
+            tc.uiPayload = uiPayload
             tc.status = event.success ? 'success' : 'error'
+            tc.mcpServer = event.mcp_server
           }
         },
         onError: (error) => {

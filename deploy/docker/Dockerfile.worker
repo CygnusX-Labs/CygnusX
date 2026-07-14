@@ -1,0 +1,106 @@
+# Lightweight Worker image: OmicHub/Celery/Snakemake/Micromamba only.
+# RNAFlow, ATACFlow, reference data, and rule Conda environments are runtime resources.
+
+FROM python:3.11-slim AS builder
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates git \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:0.6.14 /uv /usr/local/bin/uv
+
+WORKDIR /app
+
+ENV UV_HTTP_TIMEOUT=120 \
+    UV_HTTP_RETRIES=5
+
+COPY pyproject.toml uv.lock* README.md ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+COPY src/ ./src/
+COPY alembic.ini ./
+COPY alembic/ ./alembic/
+COPY tool_configs/ ./tool_configs/
+COPY pipelines/RNAFlow/src/src/logger_plugin/ ./logger_plugin/
+RUN uv sync --frozen --no-dev
+
+RUN uv pip install --python /app/.venv/bin/python --no-cache \
+      ./logger_plugin \
+    && /app/.venv/bin/python -c "from importlib.metadata import version; print(f'snakemake-logger-plugin-rich-loguru {version(\"snakemake-logger-plugin-rich-loguru\")} installed')"
+
+FROM mambaorg/micromamba:2.0.5 AS micromamba
+
+FROM python:3.11-slim AS runtime
+
+ARG OH_MY_ZSH_REF=master
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        btop \
+        bzip2 \
+        ca-certificates \
+        curl \
+        git \
+        gosu \
+        unzip \
+        wget \
+        zsh \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --gid 1000 omichub \
+    && useradd --uid 1000 --gid omichub --home-dir /tmp/omichub-home --shell /bin/zsh --no-create-home omichub
+
+RUN set -eux; \
+    curl --fail --location --retry 5 --retry-all-errors \
+      "https://github.com/ohmyzsh/ohmyzsh/archive/refs/heads/${OH_MY_ZSH_REF}.tar.gz" \
+      --output /tmp/oh-my-zsh.tar.gz; \
+    mkdir -p /opt/oh-my-zsh; \
+    tar -xzf /tmp/oh-my-zsh.tar.gz --strip-components=1 -C /opt/oh-my-zsh; \
+    rm /tmp/oh-my-zsh.tar.gz; \
+    chmod -R go-w /opt/oh-my-zsh; \
+    curl --fail --location --retry 5 --retry-all-errors https://ohmyposh.dev/install.sh \
+      --output /tmp/install-oh-my-posh.sh; \
+    bash /tmp/install-oh-my-posh.sh -d /usr/local/bin; \
+    rm /tmp/install-oh-my-posh.sh; \
+    oh-my-posh version; \
+    mkdir -p /etc/zsh; \
+    printf '%s\n' \
+      'if [[ -o interactive ]]; then' \
+      '  export ZSH=/opt/oh-my-zsh' \
+      '  ZSH_THEME=""' \
+      '  plugins=(git)' \
+      '  source "$ZSH/oh-my-zsh.sh"' \
+      '  eval "$(oh-my-posh init zsh)"' \
+      'fi' \
+      > /etc/zsh/zshrc.omichub; \
+    printf '%s\n' 'source /etc/zsh/zshrc.omichub' >> /etc/zsh/zshrc
+
+COPY --from=micromamba /usr/bin/micromamba /usr/local/bin/micromamba
+COPY --from=builder /app /app
+COPY deploy/docker/worker-entrypoint.sh /usr/local/bin/worker-entrypoint
+
+RUN printf '%s\n' \
+      '#!/bin/sh' \
+      'exec /usr/local/bin/micromamba "$@"' \
+      > /usr/local/bin/conda \
+    && chmod 0755 /usr/local/bin/conda /usr/local/bin/worker-entrypoint \
+    && mkdir -p /opt/omichub/pipelines /data/omichub /tmp/omichub-home \
+    && printf '%s\n' 'source /etc/zsh/zshrc.omichub' > /tmp/omichub-home/.zshrc \
+    && chmod 0644 /tmp/omichub-home/.zshrc \
+    && chmod 0777 /tmp/omichub-home
+
+WORKDIR /app
+
+ENV APP_ENV=production \
+    HOME=/tmp/omichub-home \
+    MAMBA_ROOT_PREFIX=/data/omichub/.mamba \
+    PATH=/app/.venv/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/src \
+    SNAKEMAKE_CONDA_PREFIX=/data/omichub/.conda_envs \
+    TERM=xterm-256color \
+    XDG_CACHE_HOME=/data/omichub/.cache
+
+ENTRYPOINT ["/usr/local/bin/worker-entrypoint"]
+CMD ["celery", "-A", "omichub.infrastructure.celery_app.celery", "worker", "-Q", "analysis", "--loglevel=info"]

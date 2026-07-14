@@ -111,6 +111,20 @@ function handleSend(content: string, options: { attachments?: FileAttachment[]; 
   input.value = ''
 }
 
+function handleConfirmTool(toolName: string, args: Record<string, unknown>) {
+  // 发送确认消息，依赖 LLM 根据上下文再次调用同一工具并附加 _confirmed: true
+  const content = `确认执行 ${toolName}`
+  store.sendMessage(content, {})
+}
+
+function handleOpenToolPage(route: string, _args: Record<string, unknown>) {
+  // open_page 工具直接跳转前端路由
+  if (route.startsWith('/')) {
+    // router.push(route)  // AgentSandbox 未引入 router，交由父层或 window 跳转
+    window.location.href = route
+  }
+}
+
 function handleBack() {
   store.newChat()
 }
@@ -185,6 +199,8 @@ function handleBack() {
           :model-name="agent.name"
           :user-name="userDisplayName"
           :user-avatar="userAvatarUrl"
+          @confirm-tool="handleConfirmTool"
+          @open-tool-page="handleOpenToolPage"
         />
       </div>
     </div>

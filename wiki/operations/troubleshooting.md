@@ -28,6 +28,45 @@
 - 工作目录磁盘空间
 - Conda 环境/容器镜像是否包含所需软件
 
+## Worker 镜像或 Snakemake 启动失败
+
+修改了 `deploy/docker/Dockerfile.worker` 或 `deploy/docker/worker-entrypoint.sh` 后，必须重新构建 Worker 镜像：
+
+```bash
+make docker-build-worker
+```
+
+确认镜像中的工具和 Snakemake logger 可以加载：
+
+```bash
+docker run --rm omichub-worker:dev snakemake --version
+docker run --rm --entrypoint /bin/sh omichub-worker:dev -c 'id; getent passwd 1000'
+```
+
+预期运行身份为 `uid=1000(omichub)`。若出现 `KeyError: getpwuid(): uid not found: 1000`，说明正在使用旧镜像；重新执行 `make docker-build-worker` 后再启动 Worker：
+
+```bash
+make docker-up-worker
+```
+
+若构建在读取 `docker/dockerfile:1` 时出现 BuildKit 的 `failed size validation`，请确认 Worker Dockerfile 没有恢复 `# syntax=docker/dockerfile:1`，并清理可回收的构建缓存后重试：
+
+```bash
+docker builder prune
+make docker-build-worker
+```
+
+> `docker builder prune` 会删除未使用的构建缓存，不会删除正在运行的容器。
+
+## Worker 交互终端
+
+```bash
+docker exec -it omichub-worker zsh
+docker run --rm -it omichub-worker:dev bash
+```
+
+后一个命令中的交互式裸 `bash` 会自动进入 Zsh，并可使用 `btop`。若仅需执行 Bash 脚本，使用 `bash -c '...'`，入口脚本不会切换 shell。
+
 ## 数据库相关 500 错误
 
 ```bash

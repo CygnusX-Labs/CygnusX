@@ -120,7 +120,11 @@ class MCPClient:
         return tools or []
 
     async def call_tool(
-        self, server: MCPServer, tool_name: str, arguments: dict[str, Any]
+        self,
+        server: MCPServer,
+        tool_name: str,
+        arguments: dict[str, Any],
+        user_id: str | None = None,
     ) -> dict[str, Any]:
         """调用某 MCP Server 的指定工具"""
         if server.transport == Transport.BUILTIN:
@@ -131,7 +135,16 @@ class MCPClient:
             if handler is None:
                 return {"success": False, "error": f"工具 {tool_name} 不存在于 {server.name}"}
             try:
-                result = await handler(arguments)
+                # 若 handler 支持 user_id / tool_name 参数则透传
+                import inspect
+
+                sig = inspect.signature(handler)
+                kwargs: dict[str, Any] = {}
+                if "user_id" in sig.parameters:
+                    kwargs["user_id"] = user_id
+                if "tool_name" in sig.parameters:
+                    kwargs["tool_name"] = tool_name
+                result = await handler(arguments, **kwargs)
                 return {"success": True, "result": result}
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"MCP 工具调用失败 {server.name}.{tool_name}: {e}")

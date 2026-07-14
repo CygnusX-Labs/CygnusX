@@ -7,8 +7,24 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from pathlib import Path
 from typing import Any
+
+from omichub.application.services.tool_bridge_service import get_tool_bridge_service
+
+# omichub-tools builtin preset 的确定性 UUID（uuid5 DNS namespace + name）
+OMICHUB_TOOLS_SERVER_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "omichub-tools.builtin")
+OMICHUB_TOOLS_SERVER_NAME = "omichub-tools"
+
+
+async def _omichub_tools_handler(
+    arguments: dict[str, Any], tool_name: str = "", user_id: str | None = None
+) -> dict[str, Any]:
+    """omichub-tools builtin preset 的统一 handler。"""
+    if not user_id:
+        user_id = arguments.get("_user_id", "anonymous")
+    return await get_tool_bridge_service().execute(user_id, tool_name, arguments)
 
 
 async def _search_literature(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -223,7 +239,31 @@ PRESET_SERVERS: list[dict[str, Any]] = [
 ]
 
 
+def _build_omichub_tools_preset() -> dict[str, Any]:
+    """动态构建 omichub-tools builtin preset（tools 来自 tools_schema.yaml）。"""
+    from omichub.tools.schema_loader import schema_loader
+
+    tools = schema_loader.to_openai_tools()
+    handlers = {t["function"]["name"]: _omichub_tools_handler for t in tools}
+    return {
+        "name": "omichub-tools",
+        "description": "OmicHub 生信工具箱 MCP - KEGG 富集、火山图、系统发育树等",
+        "transport": "builtin",
+        "tools": [
+            {
+                "name": t["function"]["name"],
+                "description": t["function"]["description"],
+                "inputSchema": t["function"]["parameters"],
+            }
+            for t in tools
+        ],
+        "handlers": handlers,
+    }
+
+
 def get_preset_by_name(name: str) -> dict[str, Any] | None:
+    if name == "omichub-tools":
+        return _build_omichub_tools_preset()
     for p in PRESET_SERVERS:
         if p["name"] == name:
             return p
@@ -232,5 +272,8 @@ def get_preset_by_name(name: str) -> dict[str, Any] | None:
 
 __all__ = [
     "PRESET_SERVERS",
+    "OMICHUB_TOOLS_SERVER_ID",
+    "OMICHUB_TOOLS_SERVER_NAME",
     "get_preset_by_name",
+    "_build_omichub_tools_preset",
 ]

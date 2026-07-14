@@ -141,7 +141,7 @@ class LocalSnakemakeExecutor(BaseExecutor):
         ]
 
         if self.settings.snakemake_use_conda:
-            cmd.append("--use-conda")
+            cmd.extend(["--use-conda", "--conda-prefix", self.settings.snakemake_conda_prefix])
 
         if self.settings.workflow_monitor_enabled and self.settings.snakemake_monitor_logger:
             cmd.extend(["--logger", self.settings.snakemake_monitor_logger])
@@ -204,7 +204,7 @@ class LocalSnakemakeExecutor(BaseExecutor):
         ]
 
         if self.settings.snakemake_use_conda:
-            cmd.append("--use-conda")
+            cmd.extend(["--use-conda", "--conda-prefix", self.settings.snakemake_conda_prefix])
 
         if work_dir:
             cmd.extend(["--directory", work_dir])

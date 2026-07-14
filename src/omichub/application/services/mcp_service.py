@@ -24,7 +24,12 @@ from omichub.infrastructure.database.repositories.mcp_repository import (
     SqlAlchemyMCPServerRepository,
 )
 from omichub.infrastructure.mcp.client import MCPClient, validate_sse_url, validate_stdio_command
-from omichub.infrastructure.mcp.presets import PRESET_SERVERS
+from omichub.infrastructure.mcp.presets import (
+    OMICHUB_TOOLS_SERVER_ID,
+    OMICHUB_TOOLS_SERVER_NAME,
+    PRESET_SERVERS,
+    _build_omichub_tools_preset,
+)
 
 
 def _server_to_dto(s: MCPServer) -> MCPServerDTO:
@@ -71,7 +76,7 @@ class MCPService:
         self._settings = get_settings()
 
     async def ensure_presets(self) -> None:
-        """初始化四大预设 MCP 服务（幂等）"""
+        """初始化预设 MCP 服务（含 omichub-tools 动态预设，幂等）"""
         for preset in PRESET_SERVERS:
             existing = await self._repo.get_by_name(preset["name"])
             if existing is not None:
@@ -89,6 +94,32 @@ class MCPService:
                 id=uuid4(),
                 name=preset["name"],
                 description=preset["description"],
+                transport=Transport.BUILTIN,
+                status=ServerStatus.ONLINE,
+                tools=tools,
+                timeout=self._settings.mcp_default_timeout,
+                auto_restart=True,
+                is_preset=True,
+            )
+            await self._repo.save(server)
+
+        # 动态生信工具箱 preset
+        omichub_preset = _build_omichub_tools_preset()
+        existing_omichub = await self._repo.get_by_id(OMICHUB_TOOLS_SERVER_ID)
+        if existing_omichub is None:
+            tools = [
+                MCPToolRegistry(
+                    tool_name=t["name"],
+                    description=t["description"],
+                    input_schema=t["inputSchema"],
+                    server_id=OMICHUB_TOOLS_SERVER_ID,
+                )
+                for t in omichub_preset["tools"]
+            ]
+            server = MCPServer(
+                id=OMICHUB_TOOLS_SERVER_ID,
+                name=OMICHUB_TOOLS_SERVER_NAME,
+                description=omichub_preset["description"],
                 transport=Transport.BUILTIN,
                 status=ServerStatus.ONLINE,
                 tools=tools,

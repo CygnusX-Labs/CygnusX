@@ -9,26 +9,26 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
-import os
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import anyio
 import httpx
-import ipaddress
 from loguru import logger
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from urllib.parse import urlparse
 
 from omichub.application.schemas.chat import (
     ChatAssistantDTO,
     ChatMessageDTO,
     ChatSessionDTO,
+    UpdateAssistantRequest,
 )
 from omichub.core.exceptions import BusinessError, NotFoundError
 from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk, provider_manager
@@ -513,11 +513,15 @@ class ChatService:
         # 2. 落库用户消息（脱敏）
         user_content_raw = messages[-1].get("content", "") if messages else ""
         user_content = sanitize_text(user_content_raw, sensitive_keywords)
+        attachment_dicts = [
+            att.model_dump() if hasattr(att, "model_dump") else dict(att)
+            for att in (attachments or [])
+        ]
         await self.add_message(
             current_session_id,
             "user",
             user_content,
-            metadata={"attachments": attachments or []},
+            metadata={"attachments": attachment_dicts},
         )
 
         # 3. AI 占位消息
@@ -549,6 +553,10 @@ class ChatService:
         mcp_client = MCPClient()
 
         try:
+            logger.info(
+                f"[Agent聊天] 开始调用模型 provider={model_config.name} model={model_config.model} "
+                f"messages={len(llm_messages)} tools={len(tools)} attachments={len(attachments or [])}"
+            )
             for _round in range(max_rounds):
                 round_text = ""
                 round_tool_calls: list[dict[str, Any]] = []
@@ -641,15 +649,6 @@ class ChatService:
                     except json.JSONDecodeError:
                         args = {}
 
-                    yield ChatChunk(
-                        type="tool_call",
-                        metadata={
-                            "tool_call_id": tc.get("id", ""),
-                            "tool_name": tool_name,
-                            "arguments": args,
-                        },
-                    )
-
                     # 在绑定的 MCP server 中找到拥有该工具的 server
                     server = next(
                         (
@@ -659,6 +658,17 @@ class ChatService:
                         ),
                         None,
                     )
+
+                    yield ChatChunk(
+                        type="tool_call",
+                        metadata={
+                            "tool_call_id": tc.get("id", ""),
+                            "tool_name": tool_name,
+                            "arguments": args,
+                            "mcp_server": server.name if server else None,
+                        },
+                    )
+
                     if server is None:
                         if tool_name == "web_search":
                             result = await self._web_search(args)
@@ -668,24 +678,40 @@ class ChatService:
                                 "error": f"工具 {tool_name} 未挂载到该 Agent",
                             }
                     else:
-                        result = await mcp_client.call_tool(server, tool_name, args)
+                        result = await mcp_client.call_tool(
+                            server, tool_name, args, user_id=user_id
+                        )
+
+                    # 双通道：llm_payload 给 LLM，ui_payload 给前端
+                    tool_output = result.get("result") if isinstance(result, dict) else result
+                    if isinstance(tool_output, dict) and ("llm_payload" in tool_output or "ui_payload" in tool_output):
+                        ui_payload = tool_output.get("ui_payload")
+                        llm_result = tool_output.get("llm_payload", tool_output)
+                    else:
+                        ui_payload = None
+                        llm_result = tool_output if tool_output is not None else result
+                    if not isinstance(llm_result, dict):
+                        llm_result = {"result": llm_result}
 
                     yield ChatChunk(
                         type="tool_result",
                         metadata={
                             "tool_call_id": tc.get("id", ""),
                             "tool_name": tool_name,
+                            "mcp_server": server.name if server else None,
                             "success": bool(result.get("success")),
-                            "result": result.get("result", result.get("error", "")),
+                            "result": llm_result,
+                            "ui_payload": ui_payload,
                         },
                     )
+                    llm_content = json.dumps(llm_result, ensure_ascii=False, default=str)
+                    if len(llm_content) > 4000:
+                        llm_content = llm_content[:4000]
                     llm_messages.append(
                         {
                             "role": "tool",
                             "tool_call_id": tc.get("id", ""),
-                            "content": json.dumps(
-                                result.get("result", result), ensure_ascii=False, default=str
-                            )[:4000],
+                            "content": llm_content,
                         }
                     )
 
@@ -721,9 +747,14 @@ class ChatService:
 
     @staticmethod
     async def _build_multimodal_messages(
-        messages: list[dict[str, Any]], attachments: list[dict[str, Any]]
+        messages: list[dict[str, Any]], attachments: list[Any]
     ) -> list[dict[str, Any]]:
-        """把附件注入到最后一条用户消息中，构造 OpenAI 多模态消息格式。"""
+        """把附件注入到最后一条用户消息中。
+
+        兼容策略：
+        - 只有文本/文件附件时，保持 content 为字符串（对 Qwen 等国产模型兼容性最好）。
+        - 包含图片附件时，使用 OpenAI 多模态 list 格式。
+        """
         if not messages:
             return messages
         target_index = max(
@@ -734,8 +765,52 @@ class ChatService:
             return messages
 
         target = messages[target_index]
-        content: list[dict[str, Any]] = [{"type": "text", "text": target.get("content", "")}]
-        for att in attachments:
+        base_text = str(target.get("content", ""))
+
+        # attachments 可能是 Pydantic ChatAttachment 对象列表，统一转成 dict
+        attachment_dicts: list[dict[str, Any]] = [
+            att.model_dump() if hasattr(att, "model_dump") else dict(att)
+            for att in (attachments or [])
+        ]
+
+        has_image = any(
+            att.get("type") == "image"
+            or (att.get("mime_type", "").startswith("image/"))
+            for att in attachment_dicts
+        )
+
+        async def _build_snippets(att: dict[str, Any]) -> list[str]:
+            """为单个附件生成文本提示片段。"""
+            text = await ChatService._read_attachment_text(att)
+            file_id = att.get("file_id", "")
+            max_len = 8000
+            snippets: list[str] = []
+            if file_id:
+                snippets.append(
+                    f"[文件: {att.get('name', '')} 已上传，file_id: {file_id}，"
+                    f"可在工具参数中通过 upload://{file_id} 或直接作为 file_id 引用]"
+                )
+            if text:
+                snippet = text[:max_len] + ("\n...（已截断）" if len(text) > max_len else "")
+                snippets.append(f"[文件内容预览: {att.get('name', '')}]\n{snippet}")
+            if not snippets:
+                snippets.append(f"[文件 {att.get('name', '')} 读取失败或为空]")
+            return snippets
+
+        new_messages = list(messages)
+
+        if not has_image:
+            # 纯文本附件：拼成字符串，兼容性最好
+            parts = [base_text]
+            for att in attachment_dicts:
+                snippets = await _build_snippets(att)
+                parts.append("\n\n".join(snippets))
+            new_messages[target_index] = {**target, "content": "\n\n".join(parts)}
+            return new_messages
+
+        # 含图片：使用 OpenAI 多模态 list 格式
+        content: list[dict[str, Any]] = [{"type": "text", "text": base_text}]
+        for att in attachment_dicts:
             att_type = att.get("type", "file")
             mime = att.get("mime_type", "")
             if att_type == "image" or (mime and mime.startswith("image/")):
@@ -750,25 +825,9 @@ class ChatService:
                         }
                     )
             else:
-                text = await ChatService._read_attachment_text(att)
-                max_len = 8000
-                if text:
-                    snippet = text[:max_len] + ("\n...（已截断）" if len(text) > max_len else "")
-                    content.append(
-                        {
-                            "type": "text",
-                            "text": f"\n\n[文件: {att.get('name', '')}]\n{snippet}",
-                        }
-                    )
-                else:
-                    content.append(
-                        {
-                            "type": "text",
-                            "text": f"\n\n[文件 {att.get('name', '')} 读取失败或为空]",
-                        }
-                    )
+                snippets = await _build_snippets(att)
+                content.append({"type": "text", "text": "\n\n" + "\n\n".join(snippets)})
 
-        new_messages = list(messages)
         new_messages[target_index] = {**target, "content": content}
         return new_messages
 
@@ -784,9 +843,11 @@ class ChatService:
             return None
         user_id, filename = parts
         filename = Path(filename).name
-        path = os.path.join("data/uploads/chat", user_id, filename)
-        if os.path.isfile(path):
-            return path
+        from omichub.infrastructure.config.storage_config import get_user_chat_upload_dir
+
+        path = get_user_chat_upload_dir(user_id) / filename
+        if path.is_file():
+            return str(path)
         return None
 
     @staticmethod
@@ -1002,7 +1063,7 @@ class ChatService:
         )
         return [self._to_ast_dto(a) for a in result.scalars().all()]
 
-    async def update_assistant(self, assistant_id: str, req) -> ChatAssistantDTO:
+    async def update_assistant(self, assistant_id: str, req: UpdateAssistantRequest) -> ChatAssistantDTO:
         ast = await self.get_assistant(assistant_id)
         if not ast:
             raise NotFoundError("助手不存在")

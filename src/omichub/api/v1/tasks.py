@@ -1,6 +1,8 @@
 """任务路由"""
 
-from typing import Annotated
+import json
+from collections.abc import AsyncIterator
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import (
@@ -11,6 +13,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
+from fastapi.responses import StreamingResponse
 
 from omichub.api.deps import CurrentUserId, DbSession, get_active_user_from_token_payload
 from omichub.application.schemas.task import (
@@ -20,7 +23,7 @@ from omichub.application.schemas.task import (
 )
 from omichub.application.services.task_service import TaskService
 from omichub.core.security import decode_token
-from omichub.infrastructure.cache.pubsub import subscribe_task_logs
+from omichub.infrastructure.cache.pubsub import subscribe_arq_progress, subscribe_task_logs
 from omichub.infrastructure.database.repositories.task_repository import (
     TaskRepositoryImpl,
 )
@@ -77,7 +80,7 @@ async def get_task_logs(
     task_id: UUID,
     current_user_id: CurrentUserId,
     service: TaskServiceDep,
-) -> dict:
+) -> dict[str, Any]:
     """获取任务执行日志"""
     task = await service.get_task(task_id, current_user_id)
     return {
@@ -101,14 +104,14 @@ async def get_task_dag(
     task_id: UUID,
     current_user_id: CurrentUserId,
     service: TaskServiceDep,
-) -> dict:
+) -> dict[str, Any]:
     """生成并返回 Snakemake DAG（SVG 或 DOT 文本）"""
     result = await service.get_task_dag(task_id, current_user_id)
     return result
 
 
 @router.websocket("/{task_id}/ws", name="task_logs_websocket")
-async def task_logs_websocket(websocket: WebSocket, task_id: str):
+async def task_logs_websocket(websocket: WebSocket, task_id: str) -> None:
     """任务日志 WebSocket 实时推送。
 
     连接示例：wss://host/api/v1/tasks/{task_id}/ws?token=<JWT>
@@ -145,3 +148,38 @@ async def task_logs_websocket(websocket: WebSocket, task_id: str):
     finally:
         await pubsub.unsubscribe()
         await pubsub.close()
+
+
+@router.get("/{task_id}/progress", summary="ARQ 任务进度 SSE")
+async def task_progress_sse(
+    task_id: str, current_user_id: CurrentUserId
+) -> StreamingResponse:
+    """ARQ 异步任务进度 Server-Sent Events。
+
+    连接示例：/api/v1/tasks/{task_id}/progress
+    """
+
+    async def event_generator() -> AsyncIterator[str]:
+        pubsub = await subscribe_arq_progress(task_id)
+        try:
+            # 先发送一次初始事件
+            yield f"data: {json.dumps({'task_id': task_id, 'phase': 'PENDING', 'progress': 0.0, 'message': '等待进度...'}, ensure_ascii=False)}\n\n"
+            async for message in pubsub.listen():
+                if message["type"] == "message":
+                    data = message["data"]
+                    if isinstance(data, bytes):
+                        data = data.decode("utf-8")
+                    yield f"data: {data}\n\n"
+        finally:
+            await pubsub.unsubscribe()
+            await pubsub.close()
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

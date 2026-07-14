@@ -21,7 +21,8 @@ from omichub.application.schemas.agent import (
     UpdateAgentRequest,
 )
 from omichub.core.exceptions import BusinessError, NotFoundError
-from omichub.domain.mcp.entities import MCPServer
+from omichub.domain.mcp.entities import MCPServer, MCPToolRegistry
+from omichub.domain.mcp.value_objects import ServerStatus, Transport
 from omichub.domain.skill.entities import Skill
 from omichub.infrastructure.config.agent_loader import load_agent_configs
 from omichub.infrastructure.database.models.agent import AgentTemplateModel
@@ -30,6 +31,11 @@ from omichub.infrastructure.database.models.skill import SkillModel
 from omichub.infrastructure.database.repositories.mcp_repository import (
     SqlAlchemyMCPServerRepository,
 )
+from omichub.infrastructure.mcp.presets import (
+    OMICHUB_TOOLS_SERVER_ID,
+    OMICHUB_TOOLS_SERVER_NAME,
+)
+from omichub.tools.schema_loader import schema_loader
 
 
 def _generate_agent_id(name: str) -> str:
@@ -91,6 +97,9 @@ class AgentService:
                 model_engine = provider.model  # 真实模型名
 
             # 构建落库字段
+            mcp_ids = cfg.get("mcp_ids", [])
+            if not mcp_ids:
+                mcp_ids = [str(OMICHUB_TOOLS_SERVER_ID)]
             agent_data = {
                 "agent_id": cfg["agent_id"],
                 "name": cfg.get("name", ""),
@@ -103,7 +112,7 @@ class AgentService:
                 "model_engine": model_engine,
                 "system_prompt": cfg.get("system_prompt", ""),
                 "welcome_message": cfg.get("welcome_message", ""),
-                "mcp_ids": cfg.get("mcp_ids", []),
+                "mcp_ids": mcp_ids,
                 "skill_ids": cfg.get("skill_ids", []),
                 "temperature": cfg.get("temperature", 0.7),
                 "max_tokens": cfg.get("max_tokens", 4096),
@@ -330,8 +339,10 @@ class AgentService:
         mcp_uuids: list[uuid.UUID] = [
             u for u in (self._parse_uuid(mid) for mid in (agent.mcp_ids or [])) if u is not None
         ]
-        if mcp_uuids:
-            mcp_servers = await self._mcp_repo.get_by_ids(mcp_uuids)
+        omichub_selected = OMICHUB_TOOLS_SERVER_ID in mcp_uuids
+        other_uuids = [u for u in mcp_uuids if u != OMICHUB_TOOLS_SERVER_ID]
+        if other_uuids:
+            mcp_servers = await self._mcp_repo.get_by_ids(other_uuids)
             for server in mcp_servers:
                 for t in server.tools:
                     tools.append(
@@ -346,11 +357,21 @@ class AgentService:
                         }
                     )
 
-        # 3. 系统提示词 = Agent 设定 + 绑定技能 prompt 后缀
+        # 2.5 自动注入 omichub-tools builtin preset（显式选中，或为空时保持默认）
+        omichub_tools_server = self._build_omichub_tools_server()
+        if omichub_tools_server and (omichub_selected or not mcp_uuids):
+            mcp_servers.append(omichub_tools_server)
+            tools.extend(schema_loader.to_openai_tools())
+
+        # 3. 系统提示词 = Agent 设定 + 绑定技能 prompt 后缀 + omichub-tools 清单
         system_prompt = agent.system_prompt
         skill_suffix = await self._build_skill_prompt(agent.skill_ids or [])
         if skill_suffix:
             system_prompt = f"{system_prompt}\n\n{skill_suffix}" if system_prompt else skill_suffix
+        if omichub_tools_server and (omichub_selected or not mcp_uuids):
+            tool_hint = schema_loader.build_system_hint()
+            if tool_hint:
+                system_prompt = f"{system_prompt}\n\n{tool_hint}" if system_prompt else tool_hint
 
         return AgentContext(
             agent=agent,
@@ -406,6 +427,31 @@ class AgentService:
         from omichub.application.services.skill_service import SkillService
 
         return SkillService.build_skills_prompt(skills)
+
+    @staticmethod
+    def _build_omichub_tools_server() -> MCPServer | None:
+        """构造虚拟的 omichub-tools builtin MCP Server。"""
+        tools = schema_loader.list_tools()
+        if not tools:
+            return None
+        return MCPServer(
+            id=OMICHUB_TOOLS_SERVER_ID,
+            name=OMICHUB_TOOLS_SERVER_NAME,
+            description="OmicHub 生信工具箱 MCP",
+            transport=Transport.BUILTIN,
+            is_enabled=True,
+            is_preset=True,
+            status=ServerStatus.ONLINE,
+            tools=[
+                MCPToolRegistry(
+                    tool_name=t.name,
+                    description=t.description,
+                    input_schema=t.input_schema,
+                    server_id=OMICHUB_TOOLS_SERVER_ID,
+                )
+                for t in tools
+            ],
+        )
 
     @staticmethod
     def _parse_uuid(value: Any) -> uuid.UUID | None:

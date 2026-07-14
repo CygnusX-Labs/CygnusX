@@ -61,7 +61,7 @@ make frontend-dev
 OmicHub 的 Web 控制面与 Celery Worker 计算面已拆分为**两个独立编排栈**，通过外部网络 `omichub_net` 共享 Redis，并经宿主目录 `/data/omichub` 共享任务数据：
 
 - **主栈** `docker-compose.yml`：`web` / `db` / `redis` / `nginx` / `beat` / `flower`
-- **Worker 栈** `docker-compose.worker.yml`：仅 `worker`，挂载宿主 conda 与流程代码
+- **Worker 栈** `docker-compose.worker.yml`：仅 `worker`，挂载流程 Workspace，并将动态 Conda 环境缓存写入共享盘
 
 ```bash
 # 0. 宿主目录前置（首次部署，需 sudo；让 web 与 worker 共享同一任务数据目录）
@@ -81,21 +81,25 @@ cd frontend && npm install && npm run build && cd ..
 # 3. 启动主栈（自动创建跨栈外部网络 omichub_net）
 make docker-up
 
-# 4. 启动独立 Worker 栈（计算节点）
+# 4. 编辑 Worker 宿主机路径（迁移到新计算节点时只需改此文件）
+#    data/worker_config.yaml
+
+# 5. 启动独立 Worker 栈（计算节点）
+#    该命令通过 docker-compose.worker.yml 构建并运行 omichub-worker:dev。
 make docker-up-worker
 
-# 5. 执行数据库迁移
+# 6. 执行数据库迁移
 docker exec omichub-web uv run alembic upgrade head
 
-# 6. 初始化管理员账号（二选一，推荐方式 A）
+# 7. 初始化管理员账号（二选一，推荐方式 A）
 #    方式 A：浏览器访问 /setup 网页注册（见下方「首次使用与管理员注册」）
 #    方式 B：命令行脚本
 docker exec omichub-web uv run python scripts/init_admin.py
 
-# 7. 初始化饼干定价策略（可选）
+# 8. 初始化饼干定价策略（可选）
 docker exec omichub-web uv run python scripts/init_cookies.py
 
-# 8. 访问
+# 9. 访问
 # 开发环境: http://localhost:8888
 ```
 
@@ -132,10 +136,68 @@ docker compose -f deploy/docker/docker-compose.yml \
                -f deploy/docker/docker-compose.prod.yml up -d
 
 # Worker 栈：独立启动（生产水平扩展用 --scale）
-docker compose -f deploy/docker/docker-compose.worker.yml --scale worker=2 up -d
+./scripts/worker-compose.sh --scale worker=2 up -d
 ```
 
 > 注意：两栈必须通过同一外部网络 `omichub_net` 连通，且共享同一宿主 `/data/omichub`。首次需先执行 `docker network create omichub_net`（或 `make docker-network`）。
+
+### Worker 路径配置与跨机迁移
+
+Worker 的宿主机路径统一由 `data/worker_config.yaml` 定义：
+
+```yaml
+paths:
+  shared_data_dir: /data/omichub
+  pipeline_dir: /home/zj/pipeline
+```
+
+- `shared_data_dir` 必须是 Web 与 Worker 都可访问的共享存储；任务输入、结果、日志和 Snakemake Conda 缓存都位于其中。
+- `pipeline_dir` 指向包含 `RNAFlow/` 和 `ATACFlow/` 的目录；可以设为当前仓库的 `pipelines` 绝对路径。
+- Worker 镜像内置 Micromamba、Celery 与 Snakemake；不再挂载宿主机 Conda/Mamba。流程 Workspace 只读挂载到 `/opt/omichub/pipelines`，运行时环境缓存固定在共享盘 `/data/omichub/.conda_envs`。
+- Flow 配置中的 Snakefile 应使用容器路径，例如 `/opt/omichub/pipelines/RNAFlow/Snakefile`；迁移机器时只改 YAML 中的宿主机路径。
+
+请使用 `make docker-up-worker` 或 `./scripts/worker-compose.sh ...` 启动 Worker。启动脚本会先把 YAML 渲染为被 Git 忽略的 `data/.worker-config.env`，再交给 Docker Compose 插值；不要直接运行 `docker compose -f deploy/docker/docker-compose.worker.yml ...`。
+
+Worker 默认镜像标签为 `omichub-worker:dev`，由 `docker-compose.worker.yml` 的 `image` 与 `build` 同时定义。可通过 `.env` 覆盖 `OMICHUB_WORKER_IMAGE` 使用指定的镜像仓库或发布标签：
+
+```dotenv
+OMICHUB_WORKER_IMAGE=registry.example.com/omichub-worker:2026.07.12-a1b2c3d
+```
+
+仅构建镜像时使用：
+
+```bash
+make docker-build-worker
+```
+
+### Worker 镜像：交互终端与运行用户
+
+Worker 镜像除 Celery、Snakemake 和 Micromamba 外，还预装了 `btop`、`zsh`、Oh My Zsh 与 Oh My Posh，便于在计算节点直接检查运行环境。
+
+镜像中的任务进程默认使用 `omichub` 用户（UID/GID `1000`）运行；该账户有可写的临时 HOME 目录 `/tmp/omichub-home`。这也保证 Snakemake 的 logger 插件能够解析当前用户名，不会因 `getpwuid(): uid not found: 1000` 中断。
+
+```bash
+# Dockerfile 或 Worker 入口脚本变更后重建镜像
+make docker-build-worker
+
+# 交互式进入 Worker；裸 `bash` 会被入口脚本自动切换为 zsh
+docker run --rm -it omichub-worker:dev bash
+
+# 进入已运行的 Worker
+docker exec -it omichub-worker zsh
+
+# 验证镜像内 Snakemake 与终端工具
+snakemake --version
+btop
+```
+
+> `bash -c '...'`、`bash -ic '...'` 等脚本形式不会被改写；仅交互式裸 `bash` 会切换到 Zsh。Compose 启动的 Celery Worker 命令不受影响。
+
+部署前可校验配置语法：
+
+```bash
+python3 scripts/render_worker_config.py --check
+```
 
 生产环境注意事项：
 - 设置 `APP_ENV=production`、`APP_DEBUG=false`
@@ -178,7 +240,97 @@ providers:
 - **助手系统**: 6 个内置助手（通用/RNA-seq/单细胞/代码/文献/可视化）+ 自定义助手
 - **技能注入**: 管理员可配置技能（Skill），激活后自动注入到 system prompt
 
-## 临时文件清理
+### 工具箱与 AI 助手联动框架
+
+AI 助手不仅能对话，还能直接调用「生信工具箱」中的工具完成绘图、富集、序列分析等任务。工具在 `tool_configs/tools_schema.yaml` 中注册为 LLM 可调用的 function，通过内置 MCP `omichub-tools` 在进程内执行。
+
+#### 完整调用链路
+
+```text
+用户消息 / 附件
+    │
+    ▼
+Agent 调度中枢 (chat_service.py::stream_agent_chat)
+    │ 1. 查 Agent → 组装模型 / 系统词 / MCP server / 工具列表
+    │ 2. 送 LLM（流式）
+    ▼
+LLM 输出 tool_calls（OpenAI function call）
+    │
+    ▼
+MCPClient.call_tool(server, tool_name, arguments)
+    │  builtin transport → omichub-tools preset
+    ▼
+ToolBridgeService.execute(user_id, tool_name, arguments)
+    │ 1. 参数校验 + upload://file_id 解析
+    │ 2. 按 invocation_mode 分发执行
+    ▼
+具体工具实现（service / shim / async / open_page）
+    │
+    ▼
+双通道结果
+    ├─ llm_payload：精简摘要，回灌 LLM 用于下一轮对话
+    └─ ui_payload：完整图/表/任务信息，透传给前端渲染
+```
+
+#### 关键文件
+
+| 职责 | 文件 |
+|------|------|
+| 工具注册表 | `tool_configs/tools_schema.yaml` |
+| Schema 加载 / OpenAI functions 转换 | `src/omichub/tools/schema_loader.py` |
+| 工具执行桥（校验、分发、双通道打包） | `src/omichub/application/services/tool_bridge_service.py` |
+| 内置 MCP 预设（omichub-tools） | `src/omichub/infrastructure/mcp/presets.py` |
+| Agent 上下文组装 | `src/omichub/application/services/agent_service.py` |
+| 流式聊天 + tool_call 闭环 | `src/omichub/application/services/chat_service.py` |
+| SSE 流式接口 | `src/omichub/api/v1/chat.py` |
+| 前端工具结果渲染（图表/表格/任务卡） | `frontend/src/components/ai-chat/KimiMessageItem.vue` |
+| 前端 Agent 聊天 Store | `frontend/src/stores/agentHub.ts` |
+| 前端 SSE 解析 | `frontend/src/composables/useAgentChatStream.ts` |
+
+#### 双通道输出
+
+工具返回经 `ToolBridgeService._package()` 统一为：
+
+```python
+{
+    "success": True,
+    "is_error": False,
+    "llm_payload": {...},   # 给 LLM 看，建议 ≤3KB
+    "ui_payload": {...},    # 给前端看
+}
+```
+
+前端 `KimiMessageItem.vue` 识别的 `ui_payload` 字段：
+
+| 字段 | 作用 |
+|------|------|
+| `plotly_figure` | 渲染交互式 Plotly 图表 |
+| `table_data` / `tableData` | 渲染数据表格 |
+| `confirm_card` | 显示二次确认卡片 |
+| `route` | 显示「前往工具页」引导 |
+| `task_id` + `progress_url` / `result_url` | 显示异步任务进度 |
+
+#### 文件上传协议：`upload://file_id`
+
+AI 助手上传的文件保存在 `users/<user_id>/workspace/chat-uploads/`。当工具参数需要大段文本（如 `data_text`、`gene_text`）时，LLM 可以传 `upload://file_id` 引用已上传文件，而不是把整表 CSV 塞进参数。
+
+参数描述示例：
+
+```yaml
+data_text:
+  type: string
+  description: CSV/TSV 格式的差异表达表文本；也支持 upload://file_id 引用已上传文件
+```
+
+#### 新增一个 AI 助手可用工具的步骤
+
+1. 在 `src/omichub/tools/` 下实现工具逻辑（service / shim），返回原始 dict。
+2. 在 `tool_configs/tools_schema.yaml` 注册：name、description、input_schema、llm_result_fields、ui_result_fields。
+3. 选择 `invocation_mode`：轻量出图用 `backend_shim`，复用 service 用 `backend_sync`，长任务用 `backend_async`，复杂交互用 `open_page`。
+4. 确保 `ui_payload` 包含前端能识别的字段（如 `plotly_figure`）。
+5. 调用 `POST /api/v1/flows/reload` 或重启 web 容器使 schema 生效。
+
+详细架构规范见 `tool_configs/tools_design.md` 第十五章。
 
 ### 前端临时文件
 
@@ -251,7 +403,7 @@ docker image prune -f
 
 # 彻底清理所有 OmicHub 相关资源（含拉取镜像，⚠️ 不可恢复）
 docker compose -f deploy/docker/docker-compose.yml down -v --rmi all
-docker compose -f deploy/docker/docker-compose.worker.yml down -v --rmi all
+./scripts/worker-compose.sh down -v --rmi all
 docker volume rm $(docker volume ls -q | grep omichub) 2>/dev/null
 sudo rm -rf /data/omichub   # 任务数据（bind mount）
 ```
@@ -404,7 +556,7 @@ docs/                 架构设计文档
 ```bash
 # 停服后增量同步整个数据根（含 omichub_data）
 docker compose -f deploy/docker/docker-compose.yml down
-docker compose -f deploy/docker/docker-compose.worker.yml down
+./scripts/worker-compose.sh down
 sudo rsync -aP --info=progress2 /data/omichub/ <目标机>:/data/omichub/
 ```
 
@@ -631,7 +783,7 @@ cd frontend && npm run build
 docker compose -f deploy/docker/docker-compose.yml restart nginx
 docker compose -f deploy/docker/docker-compose.yml restart web
 docker compose -f deploy/docker/docker-compose.yml up -d
-docker compose -f deploy/docker/docker-compose.worker.yml up -d
+./scripts/worker-compose.sh up -d
 ```
 
 > ⚠️ `make docker-reload` **不会重建镜像，也不会删除数据卷**。如果改了 `pyproject.toml`、Dockerfile 或需要彻底清空环境，请用 `make docker-start`。
@@ -650,7 +802,7 @@ make docker-start
 make docker-purge          # 清空容器、数据卷、网络、本地镜像、前端 dist
 cd frontend && npm run build
 docker compose -f deploy/docker/docker-compose.yml build --no-cache
-docker compose -f deploy/docker/docker-compose.worker.yml build --no-cache
+./scripts/worker-compose.sh build --no-cache
 make docker-up-all
 ```
 
@@ -1330,4 +1482,3 @@ MCP Server 注册/调用为**管理员功能**，已做以下限制：
 - scripts/pyproject.toml
 - tests/unit/test_file_service.py
 - tool_configs/
-

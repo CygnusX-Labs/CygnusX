@@ -788,3 +788,157 @@ Plotly.downloadImage(container, {
 ---
 
 *本规范由现有工具实现提炼,改动规范请同步更新本文档。*
+
+
+---
+
+## 十五、AI 助手联动架构
+
+OmicHub 的「AI 助手」页面（Agent 调度中枢）不仅支持通用对话，还能直接调用平台生信工具箱中的工具完成计算、绘图、富集等任务。本章说明工具箱如何与 AI 助手打通，以及新增工具时需要遵守的约定。
+
+### 15.1 总体数据流
+
+```
+用户消息/附件
+    │
+    ▼
+Agent 调度中枢 (chat_service.py::stream_agent_chat)
+    │ 1. 查 Agent → 组装模型/系统词/MCP server/工具列表
+    │ 2. 送 LLM（流式）
+    ▼
+LLM 决定调用工具（OpenAI function call）
+    │
+    ▼
+MCPClient.call_tool(server, tool_name, arguments)
+    │  _builtin transport_ → omichub-tools preset
+    ▼
+ToolBridgeService.execute(user_id, tool_name, arguments)
+    │ 1. 参数校验 + upload:// 解析
+    │ 2. 按 invocation_mode 分发执行
+    ▼
+具体工具实现（service / shim / async / open_page）
+    │
+    ▼
+双通道结果
+    ├─ llm_payload：精简摘要，回灌 LLM 用于下一轮对话
+    └─ ui_payload：完整图/表/任务信息，透传给前端渲染
+```
+
+### 15.2 工具注册：从 tools_schema.yaml 到 LLM function
+
+`tool_configs/tools_schema.yaml` 是 AI 助手工具的唯一注册表。每个工具条目包含：
+
+| 字段 | 作用 |
+|------|------|
+| `name` | LLM 看到的 function 名，必须以 `omichub_` 开头 |
+| `description` | LLM 判断是否调用该工具的依据 |
+| `input_schema` | OpenAI functions 参数 schema |
+| `invocation_mode` | 执行方式：`backend_sync` / `backend_shim` / `backend_async` / `open_page` |
+| `service` + `method` | `backend_sync` 时进程内调用的 service 方法 |
+| `shim_module` | `backend_shim` 时调用的轻量 Python 模块 |
+| `llm_result_fields` | 回灌 LLM 的字段白名单（建议 ≤3KB） |
+| `ui_result_fields` | 透传给前端的字段白名单 |
+
+启动时 `AgentService.assemble_context()` 自动把 `tools_schema.yaml` 中的工具注入为 Agent 可调用的 OpenAI functions，并在系统提示词里追加工具清单（`schema_loader.build_system_hint()`）。
+
+### 15.3 双通道输出规范
+
+工具实现返回的原始 dict 经过 `ToolBridgeService._package()` 后统一为：
+
+```python
+{
+    "success": True,
+    "is_error": False,
+    "llm_payload": {...},   # 给 LLM 看
+    "ui_payload": {...},    # 给前端看
+}
+```
+
+#### 15.3.1 llm_payload（回灌 LLM）
+
+- 必须精简，默认不超过 3KB。
+- 只放文字摘要、统计、Top 列表、错误说明等 LLM 能读懂的内容。
+- 禁止放完整 Plotly JSON、二进制、大表格。
+
+#### 15.3.2 ui_payload（前端渲染）
+
+前端 `KimiMessageItem.vue` 目前识别以下 ui_payload 字段：
+
+| 字段 | 前端行为 |
+|------|---------|
+| `plotly_figure` | 用 Plotly.js 渲染交互式图表 |
+| `table_data` / `tableData` | 用 `NDataTable` 展示表格 |
+| `confirm_card` | 显示二次确认卡片 |
+| `route` | 显示「前往工具页」引导卡片 |
+| `task_id` + `progress_url` / `result_url` | 显示异步任务进度卡片 |
+
+新增可视化工具时，ui_payload 里必须包含 `plotly_figure: {data: [...], layout: {...}}`，前端即可自动出图。
+
+### 15.4 文件上传协议：`upload://file_id`
+
+AI 助手上传的文件保存在 `{data_root}/users/{uid}/workspace/chat-uploads/`。当工具参数需要大段文本（如 `data_text`、`gene_text`）时，LLM 可以传 `upload://file_id` 引用已上传文件，而不是把整个 CSV 塞进参数。
+
+约定：
+
+- 参数 description 里必须写明「也支持 upload://file_id」。
+- 系统提示词规则里明确要求 LLM：大文件用 `upload://file_id`，禁止留空。
+- `ToolBridgeService._resolve_upload_refs()` 负责把引用解析为文件内容。
+
+示例参数描述：
+
+```yaml
+data_text:
+  type: string
+  description: CSV/TSV 格式的差异表达表文本，含 log2FC 与 p-value 列；也支持 upload://file_id 引用已上传文件
+```
+
+### 15.5 前端 SSE 事件消费
+
+Agent 调度中枢通过 `/api/v1/chat/stream` 返回 SSE 事件，前端 `useAgentChatStream.ts` 解析：
+
+| 事件类型 | 含义 | 前端处理 |
+|---------|------|---------|
+| `text` | LLM 生成的文字 token | 追加到当前 assistant 消息 |
+| `tool_call` | LLM 发起工具调用 | 在 assistant 消息的 `toolCalls` 里新增 running 状态卡片 |
+| `tool_result` | 工具执行完成 | 匹配 `tool_call_id`，回填 `result` / `uiPayload`，更新状态为 success/error |
+| `error` | 服务端/模型错误 | 显示错误态 |
+| `done` | 整轮结束 | 结束流式状态 |
+
+`KimiMessageItem.vue` 中：
+
+```ts
+const plotlyCharts = computed(() => {
+  // 优先从 tool.uiPayload.plotly_figure 取图
+  // 兼容 result.ui_payload.plotly_figure / result.plotly_figure
+})
+```
+
+工具卡片会同时显示：工具名、参数、运行状态、LLM 摘要结果、图表/表格/确认卡/任务进度卡。
+
+### 15.6 新增一个 AI 助手可用工具的步骤
+
+1. **实现工具逻辑**：在 `src/omichub/tools/` 下新增 service 或 shim，返回原始 dict（含 `success` + 可选 `plotly_figure` / `table_data` 等）。
+2. **注册 schema**：在 `tool_configs/tools_schema.yaml` 新增条目，写好 description、input_schema、llm_result_fields、ui_result_fields。
+3. **选择 invocation_mode**：
+   - 轻量快速出图 → `backend_shim`
+   - 复用现有 service → `backend_sync`
+   - 长时间计算 → `backend_async`（返回 `task_id`）
+   - 需要复杂交互 → `open_page`（返回 `route`）
+4. **确认 ui_payload 字段**：出图必须含 `plotly_figure`；表格必须含 `table_data`。
+5. **测试链路**：
+   - `pytest tests/unit/tools/test_tool_bridge.py` 验证 ToolBridge 分发。
+   - 在 AI 助手页面发送自然语言请求，确认工具被调用、图表/表格正确渲染。
+
+### 15.7 常见问题排查
+
+| 现象 | 可能原因 | 排查方向 |
+|------|---------|---------|
+| LLM 不调用工具 | 工具描述不清 / 系统提示词未注入 | 检查 `tools_schema.yaml` description 和 `build_system_hint()` |
+| 提示缺少必填参数 | LLM 没传文件内容 | 确认参数 description 写了 `upload://file_id` |
+| 工具执行成功但前端没图 | `ui_payload` 里没有 `plotly_figure` / 字段名不对 | 检查 `ui_result_fields` 和工具返回值 |
+| 工具结果没关联到工具卡片 | `tool_call_id` 为空或前后端不匹配 | 检查 LLM provider 是否返回 tool_call id |
+| 图表渲染报错 | Plotly figure 结构非法 | 用 `python -m omichub.tools.shims.xxx` 单独测试返回值 |
+
+---
+
+*本章节与 `tools_update.md` 互为补充：后者记录落地计划与排期，本文档记录架构规范与实现约定。*

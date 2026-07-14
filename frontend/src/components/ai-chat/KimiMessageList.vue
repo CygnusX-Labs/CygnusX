@@ -39,6 +39,8 @@ const emit = defineEmits<{
   translate: [messageId: string]
   delete: [messageId: string]
   edit: [messageId: string]
+  confirmTool: [toolName: string, args: Record<string, unknown>]
+  openToolPage: [route: string, args: Record<string, unknown>]
 }>()
 
 interface ScrollerExpose {
@@ -114,6 +116,8 @@ onUnmounted(() => {
             item.content,
             item.thought,
             JSON.stringify(item.tokens),
+            JSON.stringify(item.toolCalls),
+            JSON.stringify(item.charts),
             streamingMessageId === item.id ? streamingContent : '',
             streamingMessageId === item.id ? streamingThought : '',
           ]"
@@ -137,6 +141,8 @@ onUnmounted(() => {
             @translate="(id) => emit('translate', id)"
             @delete="(id) => emit('delete', id)"
             @edit="(id) => emit('edit', id)"
+            @confirm-tool="(toolName, args) => emit('confirmTool', toolName, args)"
+            @open-tool-page="(route, args) => emit('openToolPage', route, args)"
           />
         </DynamicScrollerItem>
       </template>
