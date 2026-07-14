@@ -57,6 +57,7 @@ coverage.xml
 .env.local
 .env.*.local
 !.env.example
+data/.worker-config.env
 
 # ===== 数据库 =====
 *.sqlite
