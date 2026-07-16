@@ -788,16 +788,18 @@ const UserAvatar = () => {
   justify-content: space-between;
   height: 56px;
   padding: 0 16px;
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.58);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
   border-bottom: 1px solid var(--neutral-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42), 0 8px 24px rgba(29, 33, 41, 0.04);
   flex-shrink: 0;
   z-index: 100;
 }
 
 :root[data-theme="dark"] .top-nav {
-  background: rgba(30, 30, 35, 0.7);
+  background: rgba(24, 24, 30, 0.58);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 8px 24px rgba(0, 0, 0, 0.16);
 }
 
 .top-nav-left {
@@ -820,7 +822,8 @@ const UserAvatar = () => {
   background: var(--neutral-hover);
 }
 .hamburger-btn:active {
-  transform: scale(0.95);
+  transform: scale(0.97);
+  transition: transform 100ms ease-out;
 }
 
 .logo-block {
@@ -869,7 +872,7 @@ const UserAvatar = () => {
   font-weight: 400;
   color: var(--neutral-text-2);
   text-decoration: none;
-  transition: color 0.2s ease;
+  transition: color 140ms ease-out;
 }
 
 .top-nav-item:hover {
@@ -910,7 +913,8 @@ const UserAvatar = () => {
   background: var(--neutral-hover);
 }
 .top-icon-btn:active {
-  transform: scale(0.95);
+  transform: scale(0.97);
+  transition: transform 100ms ease-out;
 }
 
 /* ===== 主体 ===== */
@@ -921,9 +925,15 @@ const UserAvatar = () => {
 }
 
 .app-sider {
-  background: var(--sidebar-bg) !important;
+  background: rgba(255, 255, 255, 0.56) !important;
+  backdrop-filter: blur(24px) saturate(165%);
+  -webkit-backdrop-filter: blur(24px) saturate(165%);
   overflow: visible !important;
-  transition: width 0.3s ease-in-out;
+  transition: width 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+:root[data-theme="dark"] .app-sider {
+  background: rgba(17, 22, 34, 0.62) !important;
 }
 
 .sider-inner {
@@ -931,7 +941,7 @@ const UserAvatar = () => {
   flex-direction: column;
   height: 100%;
   padding: 12px 12px 12px;
-  transition: opacity 0.2s ease-in-out;
+  transition: opacity 180ms ease-out;
 }
 
 .sider-nav-groups {
@@ -956,7 +966,7 @@ const UserAvatar = () => {
   flex-direction: column;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  transition: background 180ms ease-out, color 180ms ease-out, box-shadow 220ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
   color: var(--neutral-text-2);
 }
 
@@ -964,6 +974,7 @@ const UserAvatar = () => {
   background: linear-gradient(90deg, rgba(22, 93, 255, 0.12), rgba(22, 93, 255, 0.04));
   color: var(--neutral-text-1);
   box-shadow: inset 0 0 0 1px rgba(22, 93, 255, 0.1), 0 4px 12px rgba(22, 93, 255, 0.08);
+  transform: translateX(2px);
 }
 
 .nav-item--active {
@@ -971,6 +982,10 @@ const UserAvatar = () => {
   color: var(--sidebar-active-text);
   font-weight: 500;
   position: relative;
+}
+
+.nav-item--active:hover {
+  transform: none;
 }
 
 .nav-item--active::before {
@@ -1296,7 +1311,13 @@ const UserAvatar = () => {
   overflow: hidden;
   border: 1px solid var(--sidebar-border);
   border-radius: 10px;
-  background: var(--sidebar-bg);
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.24), 0 0 0 1px rgba(22, 93, 255, 0.08);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(24px) saturate(170%);
+  -webkit-backdrop-filter: blur(24px) saturate(170%);
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(22, 93, 255, 0.08);
+}
+
+:global(:root[data-theme="dark"] .collapsed-submenu-popover.n-popover) {
+  background: rgba(24, 30, 44, 0.76);
 }
 </style>

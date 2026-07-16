@@ -3,6 +3,10 @@
 @tailwind utilities;
 
 :root {
+  /* Apple-inspired interaction timing: quick response, soft settling. */
+  --motion-quick: 140ms;
+  --motion-standard: 220ms;
+  --motion-spring: cubic-bezier(0.2, 0.8, 0.2, 1);
   /* ===== 火山方舟 / Arco Design 色彩体系 ===== */
   --arco-primary: #165DFF;
   --arco-primary-hover: #3063FF;
@@ -454,12 +458,12 @@ body {
 
 /* ===== 卡片悬停反馈（上浮 8px + shadow 升级） ===== */
 .card-hover-lift {
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform var(--motion-standard) var(--motion-spring),
+              box-shadow var(--motion-standard) var(--motion-spring);
 }
 
 .card-hover-lift:hover {
-  transform: translateY(-8px);
+  transform: translateY(-4px);
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1),
               0 8px 16px rgba(0, 0, 0, 0.06);
 }
@@ -471,8 +475,8 @@ body {
 
 /* ===== 按钮点击缩放反馈 ===== */
 .btn-press:active {
-  transform: scale(0.95);
-  transition: transform 0.1s ease;
+  transform: scale(0.97);
+  transition: transform 100ms ease-out;
 }
 
 /* ===== Type Scale 工具类（P1）===== */
@@ -497,10 +501,11 @@ body {
 /* ===== 统一交互反馈（P1，新代码优先使用；旧 .card-hover-lift 保留不破坏）===== */
 /* 卡片悬停：克制 4px 上浮 + 阴影升级 */
 .card-hover {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform var(--motion-standard) var(--motion-spring),
+              box-shadow var(--motion-standard) var(--motion-spring);
 }
 .card-hover:hover {
-  transform: translateY(-4px);
+  transform: translateY(-2px);
   box-shadow: var(--shadow-card-hover);
 }
 .card-hover-subtle:hover {
@@ -510,7 +515,7 @@ body {
 
 /* 文字链接悬停 */
 .link-hover {
-  transition: color 0.15s ease;
+  transition: color var(--motion-quick) ease-out;
 }
 .link-hover:hover {
   color: var(--arco-primary);
@@ -519,7 +524,35 @@ body {
 /* 焦点环（a11y）*/
 .focus-ring:focus-visible {
   outline: 2px solid var(--arco-primary);
-  outline-offset: 2px;
+  outline-offset: 3px;
+}
+
+/* Native-feeling response without changing the visual language. */
+:where(.n-button, button, [role="button"]):not(:disabled):active {
+  transform: scale(0.97);
+  transition-duration: 100ms !important;
+}
+
+:where(.n-button, button, [role="button"], a, input, textarea, select):focus-visible {
+  outline: 2px solid var(--arco-primary);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-card,
+  .top-nav,
+  .app-sider,
+  .collapsed-submenu-popover.n-popover {
+    background: var(--neutral-card);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :where(.n-button, button, [role="button"], a, input, textarea, select):focus-visible {
+    outline-width: 3px;
+  }
 }
 
 /* ===== 路由过渡动画 ===== */
@@ -549,10 +582,11 @@ body {
 
 /* ===== 玻璃拟态卡片 ===== */
 .glass-card {
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(28px) saturate(170%);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
   border-radius: 16px;
 }
 
@@ -561,8 +595,8 @@ body {
    默认遮罩为不透明深灰，改为轻透黑 + 4px 模糊，让背后登录卡片若隐若现。 */
 .n-modal-mask {
   background-color: rgba(0, 0, 0, 0.25) !important;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(10px) saturate(120%);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
 }
 
 /* ===== 动画渐变背景 ===== */
