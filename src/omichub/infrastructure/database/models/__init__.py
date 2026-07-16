@@ -9,6 +9,10 @@ from omichub.infrastructure.database.models.ai import ConversationModel, Message
 from omichub.infrastructure.database.models.ai_provider import AIProviderConfigModel
 from omichub.infrastructure.database.models.announcement import AnnouncementModel
 from omichub.infrastructure.database.models.audit_log import AuditLogModel
+from omichub.infrastructure.database.models.blast import (
+    BlastDatabaseModel,
+    BlastTaskModel,
+)
 from omichub.infrastructure.database.models.chat import (
     ChatAssistantModel,
     ChatMessageModel,
@@ -62,6 +66,8 @@ __all__ = [
     "AIProviderConfigModel",
     "AnnouncementModel",
     "AuditLogModel",
+    "BlastDatabaseModel",
+    "BlastTaskModel",
     "KbDocumentModel",
     "DocRevisionModel",
     "DocEditorModel",

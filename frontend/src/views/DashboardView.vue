@@ -13,7 +13,9 @@ import {
 } from '@vicons/ionicons5'
 import axios from 'axios'
 import apiClient from '@/api/client'
+import { fetchBlastTasks } from '@/api/blast'
 import type { Task } from '@/types'
+import type { BlastTaskListItem } from '@/types/blast'
 import type { StatsOverview } from '@/types/stats'
 import { useAuthStore } from '@/stores/auth'
 import TrendChart from '@/components/dashboard/TrendChart.vue'
@@ -30,8 +32,10 @@ const runningTaskCount = ref(0)
 const totalTaskCount = ref(0)
 const sampleCount = ref(0)
 const recentTasks = ref<Task[]>([])
+const blastTasks = ref<BlastTaskListItem[]>([])
 const loadingOverview = ref(false)
 const loadingTasks = ref(false)
+const loadingBlastTasks = ref(false)
 const bannerClosed = ref(localStorage.getItem('omichub:dashboardBannerClosed') === 'true')
 
 const message = useMessage()
@@ -150,6 +154,17 @@ onMounted(async () => {
       loadingTasks.value = false
     }
   }
+
+  // 最近 BLAST 任务
+  loadingBlastTasks.value = true
+  try {
+    const res = await fetchBlastTasks(undefined, 1, 5)
+    blastTasks.value = res.items ?? []
+  } catch {
+    blastTasks.value = []
+  } finally {
+    loadingBlastTasks.value = false
+  }
 })
 
 function closeBanner() {
@@ -249,6 +264,71 @@ const columns: DataTableColumns<Task> = [
           }),
         }),
       ],
+    }),
+  },
+]
+
+// ===== 最近 BLAST 任务 =====
+function blastStatusConfig(status: string) {
+  const map: Record<string, { type: 'success' | 'warning' | 'error' | 'info' | 'default'; text: string }> = {
+    completed: { type: 'success', text: '已完成' },
+    failed: { type: 'error', text: '失败' },
+    running: { type: 'info', text: '运行中' },
+    queued: { type: 'warning', text: '排队中' },
+    cancelled: { type: 'default', text: '已取消' },
+  }
+  return map[status] || { type: 'default', text: status }
+}
+
+const blastColumns: DataTableColumns<BlastTaskListItem> = [
+  {
+    title: '任务 ID',
+    key: 'task_id',
+    width: 160,
+    ellipsis: { tooltip: true },
+    render: (row) => row.task_id.slice(0, 12),
+  },
+  { title: '查询标题', key: 'query_title', ellipsis: { tooltip: true } },
+  { title: '数据库', key: 'db_name', width: 140, ellipsis: { tooltip: true } },
+  { title: 'Program', key: 'program', width: 90 },
+  {
+    title: '提交时间',
+    key: 'submitted_at',
+    width: 150,
+    render: (row) => formatTime(row.submitted_at || null),
+  },
+  {
+    title: '状态',
+    key: 'status',
+    width: 110,
+    render: (row) => {
+      const cfg = blastStatusConfig(row.status)
+      return h(NTag, { type: cfg.type, size: 'small', round: true }, { default: () => cfg.text })
+    },
+  },
+  {
+    title: '进度',
+    key: 'progress',
+    width: 160,
+    render: (row) => h(NProgress, {
+      type: 'line',
+      percentage: row.progress,
+      height: 6,
+      color: { stops: ['#165DFF', '#6B8DD6'] },
+      railColor: '#E5E6EB',
+      showIndicator: false,
+    }),
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 80,
+    render: (row) => h(NTooltip, null, {
+      trigger: () => h(NButton, {
+        size: 'tiny', quaternary: true, circle: true,
+        onClick: () => router.push(`/tools/blast?task=${row.task_id}`),
+      }, { icon: () => h(NIcon, null, { default: () => h(EyeOutline) }) }),
+      default: () => '查看 BLAST 结果',
     }),
   },
 ]
@@ -359,6 +439,40 @@ const columns: DataTableColumns<Task> = [
                   <NIcon><RocketOutline /></NIcon>
                 </template>
                 提交分析任务
+              </NButton>
+            </div>
+          </template>
+        </NEmpty>
+      </NSpin>
+    </section>
+
+    <!-- 最近 BLAST 任务 -->
+    <section class="arco-card recent-tasks animate-fade-in-up delay-300">
+      <div class="arco-card-header">
+        <h3 class="arco-card-title">最近 BLAST 任务</h3>
+        <NButton text size="small" class="view-all-btn" @click="router.push('/tools/blast/tasks')">
+          查看全部 →
+        </NButton>
+      </div>
+      <NSpin :show="loadingBlastTasks">
+        <NDataTable
+          v-if="blastTasks.length > 0"
+          :columns="blastColumns"
+          :data="blastTasks"
+          :bordered="false"
+          size="small"
+          :single-line="false"
+          class="recent-table"
+        />
+        <NEmpty v-else description="暂无 BLAST 任务">
+          <template #extra>
+            <div class="empty-extra">
+              <p>点击上方按钮提交您的第一个 BLAST 查询</p>
+              <NButton type="primary" @click="router.push('/tools/blast')">
+                <template #icon>
+                  <NIcon><SearchOutline /></NIcon>
+                </template>
+                提交 BLAST 查询
               </NButton>
             </div>
           </template>

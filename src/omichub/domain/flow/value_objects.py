@@ -6,10 +6,11 @@
 
 from __future__ import annotations
 
+import re
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ============================================================
 # 1. 枚举定义
@@ -284,3 +285,41 @@ class FlowMeta(_StrictModel):
     color: str | None = Field(default=None, description="主题色 key，如 chart-1")
     docs_url: str | None = Field(default=None, description="文档链接")
     github_url: str | None = Field(default=None, description="GitHub 源码链接")
+
+
+class FlowDialogueExample(_StrictModel):
+    """给 LLM 的示例对话片段。"""
+
+    user: str = Field(..., description="用户问句")
+    assistant: str = Field(..., description="助手回复")
+
+
+class FlowAIConfig(_StrictModel):
+    """流程的 AI 助手接入配置。
+
+    声明该流程是否对 AI 可见、工具 slug、参数白名单、确认策略等。
+    """
+
+    enabled: bool = Field(default=False, description="是否对 AI 助手可见")
+    tool_slug: str | None = Field(default=None, description="MCP tool 名后缀；默认使用 flow_id")
+    assistant_summary: str = Field(default="", description="给 LLM 的简短能力说明")
+    requires_confirmation: bool = Field(default=True, description="是否需要用户二次确认")
+    allowed_execution_modes: list[Literal["local", "remote"]] = Field(
+        default=["local"], description="允许的执行模式"
+    )
+    allowed_parameters: list[str] = Field(default=[], description="AI 可提交的参数白名单")
+    default_resource_hint: dict[str, Any] = Field(
+        default_factory=dict, description="默认资源提示（cores/memory/time）"
+    )
+    max_samples: int | None = Field(default=None, ge=1, description="最大样本数限制")
+    max_comparisons: int | None = Field(default=None, ge=1, description="最大比较组数限制")
+    example_dialogue: list[FlowDialogueExample] = Field(default=[], description="示例对话")
+
+    @field_validator("tool_slug")
+    @classmethod
+    def _validate_tool_slug(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not re.match(r"^[a-z][a-z0-9_]*$", v):
+            raise ValueError("tool_slug 只能包含小写字母、数字和下划线，且以小写字母开头")
+        return v

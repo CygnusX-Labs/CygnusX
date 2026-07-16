@@ -17,6 +17,7 @@ from omichub.domain.flow.value_objects import (
     ConditionOperatorEnum,
     ExecutionConfig,
     FileConfig,
+    FlowAIConfig,
     FlowMeta,
     GroupConfig,
     NumberConfig,
@@ -192,6 +193,7 @@ class FlowConfig(BaseModel):
     meta: FlowMeta = Field(..., description="流程元信息")
     parameters: list[Parameter] = Field(..., min_length=1, description="参数定义列表")
     execution: ExecutionConfig = Field(..., description="执行配置")
+    ai: FlowAIConfig | None = Field(default=None, description="AI 助手接入配置")
     sample_sheet: SampleSheetConfig | None = Field(
         default=None, description="样本表配置（如流程需要样本表）"
     )

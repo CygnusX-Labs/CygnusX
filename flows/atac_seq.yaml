@@ -16,6 +16,42 @@ meta:
   docs_url: "https://github.com/xsx123123/ATACFlow"
   github_url: "https://github.com/xsx123123/ATACFlow"
 
+ai:
+  enabled: true
+  tool_slug: atac_seq
+  assistant_summary: >
+    适用于有分组信息的 bulk ATAC-seq 染色质可及性分析。
+    输入为原始数据目录（FASTQ），输出包含 QC 报告、Peak  Calling、差异开放区域分析和可视化报告。
+  requires_confirmation: true
+  allowed_execution_modes: [local]
+  allowed_parameters:
+    - project_name
+    - Genome_Version
+    - species
+    - client
+    - raw_data_path
+    - data_deliver
+    - execution_mode
+    - queue_id
+    - Library_Types
+    - mapping_tools
+    - only_qc
+    - report
+    - fastq_screen
+    - diff_peaks
+    - use_pooled_peaks
+    - comparisons
+    - loki_url
+  default_resource_hint:
+    cores: 8
+    memory: "32G"
+    time: "4h"
+  max_samples: 100
+  max_comparisons: 10
+  example_dialogue:
+    - user: "我想分析小鼠 ATAC-seq 数据"
+      assistant: "我可以帮您使用 ATAC-seq 染色质可及性分析流程。请提供样本信息、分组以及原始数据目录路径。"
+
 parameters:
   # ----------------------------------------------------------
   # 一、项目基本信息

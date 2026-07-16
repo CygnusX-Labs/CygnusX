@@ -21,6 +21,7 @@ celery_app = Celery(
         "omichub.infrastructure.celery_app.tasks.download",
         "omichub.tools.jbrowse.tasks",
         "omichub.tools.phylogenetic_tree.tasks",
+        "omichub.tools.blast.tasks",
         "omichub.infrastructure.celery_app.tasks.sandbox",
         "omichub.infrastructure.celery_app.tasks.storage",
     ],
@@ -40,6 +41,9 @@ celery_app.conf.update(
     # 默认队列与 task_routes 一致：所有任务路由到 "analysis"，
     # worker（无 -Q 时）消费默认队列，故默认队列必须是 analysis，否则任务进队列后无人消费
     task_default_queue="analysis",
+    # 强制使用 settings 中的 broker/backend（避免 .env 中的 CELERY_BROKER_URL 覆盖带密码的版本）
+    broker_url=settings.celery_broker_url,
+    result_backend=settings.celery_result_backend,
 )
 
 # 队列路由
@@ -49,6 +53,8 @@ celery_app.conf.task_routes = {
     "omichub.infrastructure.celery_app.tasks.download.*": {"queue": "analysis"},
     "omichub.tools.jbrowse.tasks.*": {"queue": "analysis"},
     "omichub.tools.phylogenetic_tree.tasks.*": {"queue": "phylo_tree"},
+    "omichub.tools.blast.tasks.run_blast_search": {"queue": "blast_search"},
+    "omichub.tools.blast.tasks.build_blast_database": {"queue": "blast_db_build"},
     "omichub.infrastructure.celery_app.tasks.sandbox.*": {"queue": "analysis"},
     "omichub.infrastructure.celery_app.tasks.storage.*": {"queue": "analysis"},
 }

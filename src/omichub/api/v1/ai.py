@@ -1,10 +1,10 @@
 """AI 对话路由 - WebSocket 全双工流式通信 + 对话 CRUD"""
 
 import json
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
 from omichub.api.deps import CurrentUserId, DbSession, get_active_user_from_token_payload
 from omichub.application.schemas.ai import (
@@ -12,7 +12,13 @@ from omichub.application.schemas.ai import (
     ConversationDTO,
     CreateConversationDTO,
 )
+from omichub.application.schemas.tool_invocation import ToolInvocationContext
 from omichub.application.services.ai_service import AIService
+from omichub.application.services.analysis_flow_tool_service import AnalysisFlowToolService
+from omichub.application.services.tool_confirmation_service import (
+    ConfirmationError,
+    ToolConfirmationService,
+)
 from omichub.core.security import decode_token
 from omichub.infrastructure.database.session import get_session_factory
 
@@ -157,3 +163,53 @@ async def ai_websocket(websocket: WebSocket) -> None:
                     )
     except WebSocketDisconnect:
         pass
+
+
+# ============================================================
+# AI 工具确认（分析流程提交二次确认）
+# ============================================================
+
+
+@router.post("/tool-confirmations/{confirmation_id}/approve", summary="确认并提交分析任务")
+async def approve_tool_confirmation(
+    current_user_id: CurrentUserId,
+    db: DbSession,
+    confirmation_id: UUID,
+) -> dict[str, Any]:
+    """用户确认 AI 预检的分析流程，正式提交任务。"""
+    context = ToolInvocationContext(
+        user_id=str(current_user_id),
+        session_id="",
+        db=db,
+    )
+    service = AnalysisFlowToolService(context=context)
+    try:
+        result = await service.confirm_and_submit(str(confirmation_id))
+    except ConfirmationError as e:
+        raise HTTPException(status_code=400, detail={"code": e.code, "message": e.message}) from e
+    return {"success": True, **result}
+
+
+@router.post("/tool-confirmations/{confirmation_id}/reject", summary="拒绝分析任务提交")
+async def reject_tool_confirmation(
+    current_user_id: CurrentUserId,
+    db: DbSession,
+    confirmation_id: UUID,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    """用户拒绝 AI 预检的分析流程。"""
+    context = ToolInvocationContext(
+        user_id=str(current_user_id),
+        session_id="",
+        db=db,
+    )
+    confirmation_service = ToolConfirmationService()
+    try:
+        record = await confirmation_service.reject(
+            context=context,
+            confirmation_id=str(confirmation_id),
+            reason=reason,
+        )
+    except ConfirmationError as e:
+        raise HTTPException(status_code=400, detail={"code": e.code, "message": e.message}) from e
+    return {"success": True, "status": record.status}

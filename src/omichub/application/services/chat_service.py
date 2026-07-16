@@ -446,6 +446,7 @@ class ChatService:
         deep_thinking: bool = False,
     ) -> AsyncIterator[ChatChunk]:
         """Agent 编排闭环：查 Agent → 组装模型/系统词/工具 → 打 LLM → 执行 tool_call 回灌 → 流式返回"""
+        from omichub.application.schemas.tool_invocation import ToolInvocationContext
         from omichub.application.services.agent_service import AgentService
         from omichub.core.config import get_settings
         from omichub.core.sanitizer import sanitize_messages, sanitize_text
@@ -551,6 +552,13 @@ class ChatService:
         last_usage: dict[str, Any] | None = None
 
         mcp_client = MCPClient()
+
+        tool_context = ToolInvocationContext(
+            user_id=user_id,
+            agent_id=agent_id,
+            session_id=current_session_id,
+            db=self._db,
+        )
 
         try:
             logger.info(
@@ -679,7 +687,11 @@ class ChatService:
                             }
                     else:
                         result = await mcp_client.call_tool(
-                            server, tool_name, args, user_id=user_id
+                            server,
+                            tool_name,
+                            args,
+                            user_id=user_id,
+                            context=tool_context,
                         )
 
                     # 双通道：llm_payload 给 LLM，ui_payload 给前端

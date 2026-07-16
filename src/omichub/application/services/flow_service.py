@@ -29,6 +29,10 @@ class FlowService:
         items = [flow_config_to_list_item(c) for c in configs]
         return FlowListResponse(items=items, total=len(items))
 
+    def list_ai_enabled_flows(self) -> list[FlowConfig]:
+        """获取所有启用 AI 助手的流程配置。"""
+        return [c for c in self._repo.list_flows() if c.ai and c.ai.enabled]
+
     def get_flow(self, flow_id: str) -> FlowDetailDTO:
         """获取流程详情"""
         config = self._get_or_404(flow_id)

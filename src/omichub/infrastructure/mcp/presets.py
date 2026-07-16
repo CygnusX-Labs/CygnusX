@@ -11,6 +11,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from omichub.application.schemas.tool_invocation import ToolInvocationContext
 from omichub.application.services.tool_bridge_service import get_tool_bridge_service
 
 # omichub-tools builtin preset 的确定性 UUID（uuid5 DNS namespace + name）
@@ -19,12 +20,20 @@ OMICHUB_TOOLS_SERVER_NAME = "omichub-tools"
 
 
 async def _omichub_tools_handler(
-    arguments: dict[str, Any], tool_name: str = "", user_id: str | None = None
+    arguments: dict[str, Any],
+    tool_name: str = "",
+    user_id: str | None = None,
+    context: ToolInvocationContext | None = None,
 ) -> dict[str, Any]:
     """omichub-tools builtin preset 的统一 handler。"""
     if not user_id:
         user_id = arguments.get("_user_id", "anonymous")
-    return await get_tool_bridge_service().execute(user_id, tool_name, arguments)
+    return await get_tool_bridge_service().execute(
+        user_id=user_id,
+        tool_name=tool_name,
+        arguments=arguments,
+        context=context,
+    )
 
 
 async def _search_literature(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -240,14 +249,60 @@ PRESET_SERVERS: list[dict[str, Any]] = [
 
 
 def _build_omichub_tools_preset() -> dict[str, Any]:
-    """动态构建 omichub-tools builtin preset（tools 来自 tools_schema.yaml）。"""
+    """动态构建 omichub-tools builtin preset（tools 来自 tools_schema.yaml + 动态 Flow）。"""
+    from omichub.application.services.flow_service import FlowService
+    from omichub.tools.flow_schema_compiler import FlowToolSchemaCompiler
     from omichub.tools.schema_loader import schema_loader
 
-    tools = schema_loader.to_openai_tools()
-    handlers = {t["function"]["name"]: _omichub_tools_handler for t in tools}
+    static_tools = schema_loader.to_openai_tools()
+    handlers = {t["function"]["name"]: _omichub_tools_handler for t in static_tools}
+
+    # 动态编译 ai.enabled 的 Flow 为 MCP tool
+    compiler = FlowToolSchemaCompiler()
+    flow_service = FlowService()
+    dynamic_tools: list[dict[str, Any]] = []
+    try:
+        for flow_config in flow_service.list_flows().items:
+            if not (flow_config.ai and flow_config.ai.enabled):
+                continue
+            try:
+                tool_def = compiler.compile_prepare_tool(flow_config)
+                tool_name = tool_def["name"]
+                dynamic_tools.append(
+                    {
+                        "name": tool_name,
+                        "description": tool_def["description"],
+                        "inputSchema": tool_def["input_schema"],
+                    }
+                )
+                handlers[tool_name] = _omichub_tools_handler
+            except Exception:  # noqa: BLE001
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    f"动态编译 Flow tool 失败: {flow_config.meta.id}", exc_info=True
+                )
+
+        # 通用查询工具
+        for tool_def in [compiler.compile_status_tool(), compiler.compile_summary_tool()]:
+            tool_name = tool_def["name"]
+            dynamic_tools.append(
+                {
+                    "name": tool_name,
+                    "description": tool_def["description"],
+                    "inputSchema": tool_def["input_schema"],
+                }
+            )
+            handlers[tool_name] = _omichub_tools_handler
+    except Exception:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).warning("加载动态 Flow tools 失败", exc_info=True)
+
+    all_tools = static_tools + dynamic_tools
     return {
         "name": "omichub-tools",
-        "description": "OmicHub 生信工具箱 MCP - KEGG 富集、火山图、系统发育树等",
+        "description": "OmicHub 生信工具箱 MCP - KEGG 富集、火山图、系统发育树及分析中心流程",
         "transport": "builtin",
         "tools": [
             {
@@ -255,7 +310,7 @@ def _build_omichub_tools_preset() -> dict[str, Any]:
                 "description": t["function"]["description"],
                 "inputSchema": t["function"]["parameters"],
             }
-            for t in tools
+            for t in all_tools
         ],
         "handlers": handlers,
     }

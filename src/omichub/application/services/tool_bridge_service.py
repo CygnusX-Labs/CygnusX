@@ -15,6 +15,7 @@ import json
 import re
 from typing import Any
 
+from omichub.application.schemas.tool_invocation import ToolInvocationContext
 from omichub.core.exceptions import ValidationError
 from omichub.tools.schema_loader import ToolSchema, ToolsSchemaLoader, schema_loader
 
@@ -38,11 +39,18 @@ class ToolBridgeService:
         user_id: str,
         tool_name: str,
         arguments: dict[str, Any],
+        context: ToolInvocationContext | None = None,
     ) -> dict[str, Any]:
         """执行工具调用，返回统一格式。"""
         schema = self._loader.get_tool(tool_name)
         if schema is None:
             return self._error(f"未知工具: {tool_name}")
+
+        # analysis_flow 模式：强制需要 ToolInvocationContext
+        if schema.invocation_mode == "analysis_flow":
+            if context is None:
+                return self._error("analysis_flow 工具需要 ToolInvocationContext")
+            return await self._execute_analysis_flow(context, schema, arguments)
 
         try:
             args = self._validate_and_sanitize(schema, arguments)
@@ -168,7 +176,108 @@ class ToolBridgeService:
             return await self._submit_async_arq(user_id, schema.name, schema, args)
         if mode == "open_page":
             return self._open_page_payload(schema, args)
+        if mode == "analysis_flow":
+            raise RuntimeError("analysis_flow 应在 execute 顶层处理，不应进入 _dispatch")
         raise RuntimeError(f"不支持的 invocation_mode: {mode}")
+
+    async def _execute_analysis_flow(
+        self,
+        context: ToolInvocationContext,
+        schema: ToolSchema,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        """执行 analysis_flow 模式工具调用。"""
+        from omichub.application.services.analysis_flow_tool_service import (
+            AnalysisFlowToolService,
+        )
+
+        service = AnalysisFlowToolService(context=context)
+        flow_id = schema.extra.get("flow_id") if schema.extra else None
+        if not flow_id:
+            return self._error("analysis_flow schema 缺少 flow_id")
+
+        try:
+            if schema.extra and schema.extra.get("tool_role") == "status":
+                task_id = arguments.get("task_id", "")
+                result = await service.get_task_status(task_id)
+            elif schema.extra and schema.extra.get("tool_role") == "summary":
+                task_id = arguments.get("task_id", "")
+                result = await service.get_task_summary(task_id)
+            else:
+                result = await service.prepare(flow_id, arguments)
+        except Exception as e:  # noqa: BLE001
+            return self._error(str(e))
+
+        return self._package_analysis_flow_result(result)
+
+    def _package_analysis_flow_result(self, raw: dict[str, Any]) -> dict[str, Any]:
+        """打包 analysis_flow 结果为双通道格式。"""
+        if raw.get("valid") is False:
+            return {
+                "success": True,
+                "is_error": False,
+                "llm_payload": {
+                    "valid": False,
+                    "errors": raw.get("errors", []),
+                    "warnings": raw.get("warnings", []),
+                    "summary": "参数校验未通过，请根据错误信息补充或修正。",
+                },
+                "ui_payload": {
+                    "type": "error_card",
+                    "errors": raw.get("errors", []),
+                    "warnings": raw.get("warnings", []),
+                },
+            }
+
+        if "task_id" in raw:
+            # confirm_and_submit 或查询结果
+            return {
+                "success": True,
+                "is_error": False,
+                "llm_payload": {
+                    "task_id": raw.get("task_id"),
+                    "status": raw.get("status"),
+                    "task_url": raw.get("task_url"),
+                    "summary": f"任务已提交，ID: {raw.get('task_id')}",
+                },
+                "ui_payload": raw.get("task_card") or {"type": "task_card", **raw},
+            }
+
+        # prepare 成功返回确认预览
+        return {
+            "success": True,
+            "is_error": False,
+            "llm_payload": {
+                "valid": True,
+                "confirmation_id": raw.get("confirmation_id"),
+                "flow_id": raw.get("flow_id"),
+                "flow_name": raw.get("flow_name"),
+                "sample_count": raw.get("sample_count"),
+                "comparison_count": raw.get("comparison_count"),
+                "resource_hint": raw.get("resource_hint"),
+                "parameter_preview": raw.get("parameter_preview"),
+                "expires_at": raw.get("expires_at"),
+                "summary": (
+                    f"已为您预检 '{raw.get('flow_name')}' 流程，"
+                    f"样本数 {raw.get('sample_count')}，比较组数 {raw.get('comparison_count')}。"
+                    "请用户在确认卡上确认后正式提交。"
+                ),
+            },
+            "ui_payload": {
+                "type": "confirmation_card",
+                **raw,
+                "actions": {
+                    "approve": {
+                        "method": "POST",
+                        "url": f"/api/v1/ai/tool-confirmations/{raw.get('confirmation_id')}/approve",
+                    },
+                    "reject": {
+                        "method": "POST",
+                        "url": f"/api/v1/ai/tool-confirmations/{raw.get('confirmation_id')}/reject",
+                    },
+                },
+            },
+        }
 
     async def _submit_async_arq(
         self, user_id: str, tool_name: str, schema: ToolSchema, args: dict[str, Any]

@@ -131,6 +131,19 @@ class Settings(BaseSettings):
     phylogenetic_tree_config_yaml: str = "tool_configs/phylogenetic-tree/config.yaml"
     phylogenetic_tree_defaults_yaml: str = "tool_configs/phylogenetic-tree/defaults.yaml"
 
+    # ===== BLAST 序列比对工具配置 =====
+    blast_config_yaml: str = "tool_configs/blast/blast_config.yaml"
+    blast_db_root: str = "/data/omichub/blast/db"
+    blast_uploads_dir: str = "blast/uploads"
+    blast_results_dir: str = "blast/results"
+    blast_default_evalue: float = 1e-5
+    blast_default_max_target_seqs: int = 10
+    blast_docker_image: str = "ncbi/blast:latest"
+    blast_use_docker: bool = False
+    blast_num_threads: int = 4
+    blast_search_timeout: int = 3000  # 50 分钟软超时
+    blast_build_timeout: int = 3600  # 1 小时
+
     # ===== Snakemake 流程监控 =====
     workflow_monitor_enabled: bool = True
     workflow_monitor_template_dir: str = "tool_configs/workflow_monitor/templates"
@@ -226,19 +239,28 @@ class Settings(BaseSettings):
     @field_validator("celery_broker_url", mode="before")
     @classmethod
     def assemble_celery_broker(cls, v: str, info: Any) -> str:
-        if v:
-            return v
         values = info.data
-        password_part = f":{values['redis_password']}@" if values["redis_password"] else ""
+        redis_password = values.get("redis_password", "")
+        if v:
+            # 已配置 URL 但未带密码时，自动注入密码（兼容 .env 中硬编码的旧写法）
+            if redis_password and "://" in v and "@" not in v:
+                scheme, rest = v.split("://", 1)
+                return f"{scheme}://:{redis_password}@{rest}"
+            return v
+        password_part = f":{redis_password}@" if redis_password else ""
         return f"redis://{password_part}{values['redis_host']}:{values['redis_port']}/1"
 
     @field_validator("celery_result_backend", mode="before")
     @classmethod
     def assemble_celery_backend(cls, v: str, info: Any) -> str:
-        if v:
-            return v
         values = info.data
-        password_part = f":{values['redis_password']}@" if values["redis_password"] else ""
+        redis_password = values.get("redis_password", "")
+        if v:
+            if redis_password and "://" in v and "@" not in v:
+                scheme, rest = v.split("://", 1)
+                return f"{scheme}://:{redis_password}@{rest}"
+            return v
+        password_part = f":{redis_password}@" if redis_password else ""
         return f"redis://{password_part}{values['redis_host']}:{values['redis_port']}/2"
 
     @model_validator(mode="after")

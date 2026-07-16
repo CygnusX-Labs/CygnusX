@@ -170,6 +170,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '序列检索', requiresAuth: true }
       },
       {
+        path: 'tools/blast/tasks',
+        name: 'tools-blast-tasks',
+        component: () => import('@/views/BioTools/BlastTaskHistoryView.vue'),
+        meta: { title: 'BLAST 任务中心', requiresAuth: true }
+      },
+      {
         path: 'tools/plot',
         name: 'tools-plot',
         component: () => import('@/views/BioTools/PlotWorkshopView.vue'),
@@ -306,6 +312,12 @@ const routes: RouteRecordRaw[] = [
         name: 'admin-terminals',
         component: () => import('@/views/AdminTerminalManagementView.vue'),
         meta: { title: '沙盒终端管理', requiresAuth: true }
+      },
+      {
+        path: 'admin/blast-databases',
+        name: 'admin-blast-databases',
+        component: () => import('@/views/AdminBlastDatabasesView.vue'),
+        meta: { title: 'BLAST 数据库管理', requiresAuth: true }
       },
     ],
   },

@@ -16,6 +16,44 @@ meta:
   docs_url: "https://github.com/xsx123123/RNAFlow"
   github_url: "https://github.com/xsx123123/RNAFlow"
 
+ai:
+  enabled: true
+  tool_slug: rna_seq
+  assistant_summary: >
+    适用于有分组信息的 bulk RNA-seq 差异表达分析。
+    输入为原始数据目录（FASTQ），输出包含 QC 报告、差异表达基因列表和可视化报告。
+  requires_confirmation: true
+  allowed_execution_modes: [local]
+  allowed_parameters:
+    - project_name
+    - Genome_Version
+    - species
+    - client
+    - raw_data_path
+    - data_deliver
+    - execution_mode
+    - queue_id
+    - Library_Types
+    - only_qc
+    - deg
+    - report
+    - fastq_screen
+    - call_variant
+    - detect_novel_transcripts
+    - rmats
+    - gene_fusion
+    - comparisons
+    - loki_url
+  default_resource_hint:
+    cores: 8
+    memory: "32G"
+    time: "4h"
+  max_samples: 100
+  max_comparisons: 10
+  example_dialogue:
+    - user: "我想分析小鼠脑损伤的 RNA-seq 数据"
+      assistant: "我可以帮您使用 RNA-seq 差异表达分析流程。请提供样本信息和分组，以及原始数据目录路径。"
+
 parameters:
   # ----------------------------------------------------------
   # 一、项目基本信息

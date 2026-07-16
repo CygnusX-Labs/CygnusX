@@ -37,8 +37,9 @@ services:
       - REDIS_HOST=cache                 # 经 omichub_net 解析主栈 Redis 服务名
       - SERVICE_NAME=worker
       - PYTHONPATH=/app/src
-      - CELERY_BROKER_URL=redis://cache:6379/1
-      - CELERY_RESULT_BACKEND=redis://cache:6379/2
+      # Redis  broker/backend 必须携带密码；cache 服务已启用 --requirepass ${REDIS_PASSWORD}。
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@cache:6379/1
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@cache:6379/2
       - AL_API_KEY=${AL_API_KEY}
       - ARK_API_KEY=${ARK_API_KEY}
       - OMICHUB_LOG_DIR=/app/logs
@@ -51,6 +52,9 @@ services:
       - MAMBA_ROOT_PREFIX=/data/omichub/.mamba
       - XDG_CACHE_HOME=/data/omichub/.cache
     volumes:
+      # 开发环境源码热重载（生产部署应使用构建进镜像的 immutable 标签）
+      - ../../src:/app/src:ro
+      - ../../tool_configs:/app/tool_configs  # BLAST 数据库 YAML 需要可写
       # —— 核心共享存储（模拟分布式共享盘，与主栈 web 共用）——
       - ${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}:/data/omichub # 任务数据读写
       - ${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}/logs/app:/app/logs # 应用日志持久化到宿主机
@@ -58,14 +62,14 @@ services:
       - ${WORKER_PIPELINE_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}:/opt/omichub/pipelines:ro # RNAFlow / ATACFlow Workspace
     networks:
       - omichub_net
-    # -Q analysis: 显式消费 analysis 队列（task_routes 把全部任务路由到此队列）。
-    #   不加 -Q 时 worker 只消费内置默认队列 "celery"，会导致 analysis 队列里的任务永远排队。
+    # -Q analysis,blast_search,blast_db_build: 显式消费 analysis 队列及 BLAST 专属队列。
+    #   不加 -Q 时 worker 只消费内置默认队列 "celery"，会导致已路由任务永远排队。
     command:
       - /bin/sh
       - -c
       - |
         export OMICHUB_WORKFLOW_MONITOR_TOKEN="$${OMICHUB_WORKFLOW_MONITOR_TOKEN:-$${WORKFLOW_MONITOR_INGEST_TOKEN}}"
-        exec celery -A omichub.infrastructure.celery_app.celery worker -Q analysis --loglevel=info
+        exec celery -A omichub.infrastructure.celery_app.celery worker -Q analysis,blast_search,blast_db_build --loglevel=info
     healthcheck:
       test: ["CMD-SHELL", "celery -A omichub.infrastructure.celery_app.celery inspect ping -d celery@$$HOSTNAME || exit 1"]
       interval: 30s

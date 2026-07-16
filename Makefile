@@ -166,8 +166,8 @@ docker-reload: docker-network ## 重新构建前端并刷新主栈 + Worker (开
 	@echo "🌐 步骤 4/6：启动主栈服务（web / db / redis / nginx / beat / flower）..."
 	$(COMPOSE_MAIN) up -d
 	@echo ""
-	@echo "🔧 步骤 5/6：启动独立 Worker 计算栈..."
-	$(COMPOSE_WORKER) up -d
+	@echo "🔧 步骤 5/6：构建并启动独立 Worker 计算栈..."
+	$(COMPOSE_WORKER) up -d --build worker
 	@echo ""
 	@echo "🗄️  步骤 6/6：检查数据库迁移状态并同步知识库..."
 	@$(MAKE) --no-print-directory check-alembic-heads

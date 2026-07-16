@@ -21,6 +21,7 @@ class FileSystemFlowRepository:
     """文件系统流程仓储 — 从 YAML 目录加载流程配置。
 
     线程安全：使用 RLock 保护 _cache 字典。
+    支持基于目录 mtime 的自动热重载。
     """
 
     def __init__(self, yaml_dir: Path | None = None):
@@ -36,19 +37,18 @@ class FileSystemFlowRepository:
         self._service = FlowDomainService()
         self._cache: dict[str, FlowConfig] = {}
         self._lock = RLock()
+        self._mtime: float = 0.0
 
     def get_by_flow_id(self, flow_id: str) -> FlowConfig | None:
         """根据流程 ID（meta.id）获取流程配置"""
         with self._lock:
-            if not self._cache:
-                self._load_all()
+            self._auto_reload_if_needed()
             return self._cache.get(flow_id)
 
     def list_flows(self, category: str | None = None) -> list[FlowConfig]:
         """列出所有流程配置，可按分类过滤"""
         with self._lock:
-            if not self._cache:
-                self._load_all()
+            self._auto_reload_if_needed()
             flows = list(self._cache.values())
             if category:
                 flows = [f for f in flows if f.meta.category == category]
@@ -60,6 +60,32 @@ class FileSystemFlowRepository:
             self._cache.clear()
             self._load_all()
             return len(self._cache)
+
+    def _auto_reload_if_needed(self) -> None:
+        """检测 YAML 目录 mtime 变化并自动重载。"""
+        if not self._yaml_dir.exists():
+            return
+        try:
+            current_mtime = max(
+                (f.stat().st_mtime for f in self._yaml_dir.glob("*.yaml")),
+                default=self._mtime,
+            )
+            current_mtime = max(
+                current_mtime,
+                max(
+                    (f.stat().st_mtime for f in self._yaml_dir.glob("*.yml")),
+                    default=self._mtime,
+                ),
+            )
+        except OSError:
+            return
+
+        if self._cache and current_mtime <= self._mtime:
+            return
+
+        self._cache.clear()
+        self._load_all()
+        self._mtime = current_mtime
 
     def _load_all(self) -> None:
         """扫描 YAML 目录并加载所有流程配置（不加锁，调用方负责）"""

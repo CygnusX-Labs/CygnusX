@@ -45,6 +45,7 @@ class ToolSchema(BaseModel):
     input_schema: dict[str, Any] = Field(default_factory=dict, alias="input_schema")
     llm_result_fields: list[str] = Field(default_factory=list, alias="llm_result_fields")
     ui_result_fields: list[str] = Field(default_factory=list, alias="ui_result_fields")
+    extra: dict[str, Any] | None = Field(default=None, description="额外元数据，如 flow_id / tool_role")
 
 
 class ToolsSchemaRegistry(BaseModel):
@@ -63,6 +64,9 @@ class ToolsSchemaLoader:
         self._config: ToolsSchemaRegistry | None = None
         self._mtime: float = 0.0
         self._tools_by_name: dict[str, ToolSchema] = {}
+        # 动态 Flow tools 缓存
+        self._flow_tools: list[ToolSchema] | None = None
+        self._flow_mtime: float = 0.0
 
     def _load_yaml(self) -> dict[str, Any]:
         """读盘；文件不存在 / 解析失败时返回空 dict。"""
@@ -79,53 +83,139 @@ class ToolsSchemaLoader:
     def _rebuild_index(self) -> None:
         """按 name 重建索引，并校验唯一性（后定义的覆盖先定义的，同时打警告）。"""
         self._tools_by_name = {}
-        for tool in self._config.tools if self._config else []:
+        all_tools = list(self._config.tools if self._config else [])
+        if self._flow_tools:
+            all_tools = all_tools + self._flow_tools
+        for tool in all_tools:
             if tool.name in self._tools_by_name:
                 import logging
 
-                logging.getLogger(__name__).warning(
-                    f"tools_schema.yaml 中工具名重复: {tool.name}"
-                )
+                logging.getLogger(__name__).warning(f"工具名重复: {tool.name}")
             self._tools_by_name[tool.name] = tool
-
-    def get_config(self) -> ToolsSchemaRegistry:
-        """获取配置，自动检测文件变更并热重载；文件缺失返回默认空配置。"""
-        path = Path(self.config_path)
-        if not path.exists():
-            self._config = ToolsSchemaRegistry()
-            self._rebuild_index()
-            return self._config
-
-        try:
-            current_mtime = path.stat().st_mtime
-        except OSError:
-            return self._config or ToolsSchemaRegistry()
-
-        if self._config is None or current_mtime > self._mtime:
-            raw = self._load_yaml()
-            try:
-                self._config = ToolsSchemaRegistry(**raw)
-            except ValidationError:
-                import logging
-
-                logging.getLogger(__name__).exception("tools_schema.yaml 校验失败，降级为空配置")
-                self._config = ToolsSchemaRegistry()
-            self._mtime = current_mtime
-            self._rebuild_index()
-
-        return self._config
 
     def reload(self) -> ToolsSchemaRegistry:
         """强制重载配置。"""
         self._config = None
+        self._flow_tools = None
         return self.get_config()
 
+    def get_config(self) -> ToolsSchemaRegistry:
+        """获取配置，自动检测文件变更并热重载；文件缺失返回默认空配置。"""
+        path = Path(self.config_path)
+        need_rebuild = False
+
+        if not path.exists():
+            if self._config is None:
+                self._config = ToolsSchemaRegistry()
+                need_rebuild = True
+        else:
+            try:
+                current_mtime = path.stat().st_mtime
+            except OSError:
+                return self._config or ToolsSchemaRegistry()
+
+            if self._config is None or current_mtime > self._mtime:
+                raw = self._load_yaml()
+                try:
+                    self._config = ToolsSchemaRegistry(**raw)
+                except ValidationError:
+                    import logging
+
+                    logging.getLogger(__name__).exception("tools_schema.yaml 校验失败，降级为空配置")
+                    self._config = ToolsSchemaRegistry()
+                self._mtime = current_mtime
+                need_rebuild = True
+
+        # 检测 Flow YAML 变更并热重载动态 tools
+        flow_tools = self._load_flow_tools()
+        if need_rebuild or flow_tools is not self._flow_tools:
+            self._flow_tools = flow_tools
+            self._rebuild_index()
+
+        return self._config or ToolsSchemaRegistry()
+
     def list_tools(self) -> list[ToolSchema]:
-        """返回全部工具 schema。"""
-        return list(self.get_config().tools)
+        """返回全部工具 schema（含动态 Flow tools）。"""
+        return list(self.get_config().tools) + (self._flow_tools or [])
+
+    def _load_flow_tools(self) -> list[ToolSchema]:
+        """动态编译 ai.enabled 的 Flow 为 ToolSchema。"""
+        from omichub.application.services.flow_service import FlowService
+        from omichub.tools.flow_schema_compiler import FlowToolSchemaCompiler
+
+        try:
+            flow_service = FlowService()
+            compiler = FlowToolSchemaCompiler()
+            flows = flow_service.list_ai_enabled_flows()
+        except Exception:  # noqa: BLE001
+            import logging
+
+            logging.getLogger(__name__).warning("加载 Flow 列表失败", exc_info=True)
+            return []
+
+        tools: list[ToolSchema] = []
+        for flow in flows:
+            if not (flow.ai and flow.ai.enabled):
+                continue
+            try:
+                tool_def = compiler.compile_prepare_tool(flow)
+                tools.append(
+                    ToolSchema(
+                        key=f"flow-{flow.meta.id}",
+                        name=tool_def["name"],
+                        description=tool_def["description"],
+                        category="workflow",
+                        invocation_mode="analysis_flow",
+                        requires_confirm=flow.ai.requires_confirmation if flow.ai else True,
+                        input_schema=tool_def["input_schema"],
+                        llm_result_fields=[
+                            "valid",
+                            "confirmation_id",
+                            "flow_id",
+                            "flow_name",
+                            "sample_count",
+                            "comparison_count",
+                            "resource_hint",
+                            "parameter_preview",
+                            "task_id",
+                            "status",
+                            "task_url",
+                            "summary",
+                            "errors",
+                            "warnings",
+                        ],
+                        ui_result_fields=["confirmation_card", "task_card", "error_card"],
+                        extra={"flow_id": flow.meta.id, "tool_role": "prepare"},
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    f"编译 Flow tool 失败: {flow.meta.id}", exc_info=True
+                )
+
+        # 通用查询工具
+        for tool_def in [compiler.compile_status_tool(), compiler.compile_summary_tool()]:
+            tools.append(
+                ToolSchema(
+                    key=f"flow-{tool_def['name']}",
+                    name=tool_def["name"],
+                    description=tool_def["description"],
+                    category="workflow",
+                    invocation_mode="analysis_flow",
+                    requires_confirm=False,
+                    input_schema=tool_def["input_schema"],
+                    llm_result_fields=["task_id", "status", "progress", "summary"],
+                    ui_result_fields=["task_card"],
+                    extra={"tool_role": "status" if "status" in tool_def["name"] else "summary"},
+                )
+            )
+
+        return tools
 
     def get_tool(self, name: str) -> ToolSchema | None:
-        """按 name 查找工具 schema。"""
+        """按 name 查找工具 schema（含动态 Flow tools）。"""
         self.get_config()
         return self._tools_by_name.get(name)
 

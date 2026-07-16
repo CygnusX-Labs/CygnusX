@@ -1,97 +1,508 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, h, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
-  NButton, NIcon, NInput, NInputNumber, NSelect, NDataTable, NUpload, NSpace, NTag,
+  NAlert, NButton, NCard, NDataTable, NDivider, NIcon, NInput, NInputNumber, NProgress, NSelect,
+  NSpace, NSpin, NStatistic, NTag, NTooltip, NUpload, useMessage, type UploadFileInfo,
 } from 'naive-ui'
-import type { DataTableColumns, UploadFileInfo } from 'naive-ui'
-import { ArrowBackOutline, SearchOutline } from '@vicons/ionicons5'
+import {
+  ArrowBackOutline, DownloadOutline, FileTrayFullOutline, ListOutline, SearchOutline,
+} from '@vicons/ionicons5'
+import {
+  cancelBlastTask, downloadBlastResult, fetchBlastDatabases, fetchBlastResult, fetchBlastTasks,
+  fetchBlastTaskStatus, streamBlastTaskEvents, submitBlastTask,
+} from '@/api/blast'
+import BlastRightPanel from '@/components/blast/BlastRightPanel.vue'
+import BlastGraphicSummary from '@/components/blast/BlastGraphicSummary.vue'
+import BlastHitDetailCard from '@/components/blast/BlastHitDetailCard.vue'
+import BlastParamsInfo from '@/components/blast/BlastParamsInfo.vue'
+import { analyzeSequence, detectSequenceType } from '@/utils/sequenceAnalysis'
+import type { BlastDatabase, BlastHit, BlastResult, BlastTask, BlastTaskListItem, ProgramType } from '@/types/blast'
 
 const router = useRouter()
+const route = useRoute()
+const message = useMessage()
 
+const POLLING_INTERVAL = 2000
+
+// ---------------------------------------------------------------------------
+// Refs / State
+// ---------------------------------------------------------------------------
+
+const databases = ref<BlastDatabase[]>([])
+const loadingDatabases = ref(false)
+
+const selectedDbId = ref<string | null>(null)
 const fastaInput = ref('')
-const selectedDb = ref('rice-pan')
-const evalueThreshold = ref(1e-5)
-const isSearching = ref(false)
-const showResults = ref(true)
+const queryTitle = ref('Untitled Query')
+const program = ref<ProgramType | undefined>(undefined)
+const evalue = ref(1e-5)
+const maxTargetSeqs = ref(10)
+const wordSize = ref<number | undefined>(undefined)
+const gapOpen = ref<number | undefined>(undefined)
+const gapExtend = ref<number | undefined>(undefined)
 
-const dbOptions = [
-  { label: '水稻泛基因组 ( Rice Pan-Genome )', value: 'rice-pan' },
-  { label: '生菜转录本 ( Lettuce Transcriptome )', value: 'lettuce-tr' },
-  { label: '拟南芥蛋白库 ( Arabidopsis Proteins )', value: 'arabidopsis' },
-  { label: 'NCBI nt 核酸库', value: 'ncbi-nt' },
+const isSearching = ref(false)
+const currentTask = ref<BlastTask | null>(null)
+const currentResult = ref<BlastResult | null>(null)
+const pollingTimer = ref<ReturnType<typeof setInterval> | null>(null)
+const eventAbortController = ref<AbortController | null>(null)
+
+const recentTasks = ref<BlastTaskListItem[]>([])
+const loadingTasks = ref(false)
+
+// ---------------------------------------------------------------------------
+// Computed
+// ---------------------------------------------------------------------------
+
+const dbOptions = computed(() =>
+  databases.value.map((db) => ({
+    label: `${db.name} (${db.db_type === 'nucl' ? '核酸' : '蛋白'})`,
+    value: db.id,
+  })),
+)
+
+const programOptions = [
+  { label: 'blastn (核酸 vs 核酸)', value: 'blastn' },
+  { label: 'blastp (蛋白 vs 蛋白)', value: 'blastp' },
+  { label: 'blastx (核酸 vs 蛋白)', value: 'blastx' },
+  { label: 'tblastn (蛋白 vs 核酸)', value: 'tblastn' },
+  { label: 'tblastx (核酸 vs 核酸，双向翻译)', value: 'tblastx' },
 ]
+
+const selectedDb = computed(() =>
+  databases.value.find((db) => db.id === selectedDbId.value),
+)
+
+const sequenceStats = computed(() => analyzeSequence(fastaInput.value, selectedDb.value?.db_type))
+
+const taskStatusText = computed(() => {
+  if (!currentTask.value) return ''
+  const map: Record<string, string> = {
+    queued: '排队中',
+    running: '运行中',
+    completed: '已完成',
+    failed: '失败',
+    cancelled: '已取消',
+  }
+  return map[currentTask.value.status] || currentTask.value.status
+})
+
+const taskStatusType = computed(() => {
+  if (!currentTask.value) return 'default'
+  const map: Record<string, 'default' | 'success' | 'warning' | 'error'> = {
+    queued: 'default',
+    running: 'warning',
+    completed: 'success',
+    failed: 'error',
+    cancelled: 'default',
+  }
+  return map[currentTask.value.status] || 'default'
+})
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function parseFasta(text: string): { title: string; sequence: string } {
+  const lines = text.trim().split('\n').map((l) => l.trim())
+  let title = ''
+  const seqLines: string[] = []
+  for (const line of lines) {
+    if (!line) continue
+    if (line.startsWith('>')) {
+      title = line.slice(1).split(' ')[0]
+      continue
+    }
+    seqLines.push(line)
+  }
+  return { title, sequence: seqLines.join('') }
+}
+
+function autoRecommendProgram() {
+  if (sequenceStats.value.recommendedProgram) {
+    program.value = sequenceStats.value.recommendedProgram
+  }
+}
+
+function handleSequenceChange() {
+  if (!program.value) {
+    autoRecommendProgram()
+  }
+}
 
 function handleFileUpload({ file }: { file: UploadFileInfo }) {
   if (file.file) {
     const reader = new FileReader()
     reader.onload = () => {
-      fastaInput.value = (reader.result as string).slice(0, 5000)
+      const text = String(reader.result || '')
+      fastaInput.value = text.slice(0, 50000)
+      handleSequenceChange()
     }
     reader.readAsText(file.file)
   }
   return false
 }
 
-interface BlastHit {
-  query: string
-  subject: string
-  identity: number
-  evalue: string
-  bitScore: number
-  alignLen: number
-  qStart: number
-  qEnd: number
-  sStart: number
-  sEnd: number
+function ensureFasta(text: string, title: string): string {
+  const trimmed = text.trim()
+  if (trimmed.startsWith('>')) return trimmed
+  return `>${title || 'query'}\n${trimmed}`
 }
 
-const mockResults = ref<BlastHit[]>([
-  { query: 'OsNAC14', subject: 'Chr3:28,451,200-28,453,800', identity: 98.7, evalue: '2.1e-142', bitScore: 487, alignLen: 260, qStart: 1, qEnd: 260, sStart: 28451200, sEnd: 28453800 },
-  { query: 'OsNAC14', subject: 'Chr7:12,088,400-12,090,100', identity: 85.3, evalue: '3.4e-89', bitScore: 312, alignLen: 248, qStart: 8, qEnd: 255, sStart: 12088400, sEnd: 12090100 },
-  { query: 'OsNAC14', subject: 'Chr1:5,672,300-5,674,000', identity: 72.1, evalue: '1.8e-54', bitScore: 198, alignLen: 230, qStart: 22, qEnd: 251, sStart: 5672300, sEnd: 5674000 },
-  { query: 'OsNAC14', subject: 'Chr11:33,210,500-33,212,200', identity: 64.5, evalue: '5.6e-38', bitScore: 145, alignLen: 210, qStart: 40, qEnd: 249, sStart: 33210500, sEnd: 33212200 },
-  { query: 'OsNAC14', subject: 'Chr5:18,940,100-18,941,800', identity: 58.2, evalue: '2.3e-22', bitScore: 98, alignLen: 195, qStart: 55, qEnd: 249, sStart: 18940100, sEnd: 18941800 },
-])
+function validateInput(): string | null {
+  if (!selectedDbId.value) return '请选择目标数据库'
+  const trimmed = fastaInput.value.trim()
+  if (!trimmed) return '请输入查询序列'
+  const { sequence } = parseFasta(trimmed)
+  if (!sequence) return '查询序列不能为空'
+  if (sequence.length < 5) return '查询序列过短'
+  const queryType = detectSequenceType(sequence)
+  if (queryType === 'unknown') return '无法识别查询序列类型，请检查输入'
+  return null
+}
 
-const columns: DataTableColumns<BlastHit> = [
-  { title: 'Query', key: 'query', width: 100 },
-  { title: 'Subject', key: 'subject', ellipsis: { tooltip: true } },
+async function handleSearch() {
+  const error = validateInput()
+  if (error) {
+    message.error(error)
+    return
+  }
+
+  isSearching.value = true
+  currentResult.value = null
+  stopTaskTracking()
+
+  try {
+    const db = selectedDb.value!
+    const { title } = parseFasta(fastaInput.value)
+    const requestTitle = queryTitle.value.trim() || title || 'Untitled Query'
+    const request = {
+      db_id: db.id,
+      query_sequence: ensureFasta(fastaInput.value, requestTitle),
+      query_title: requestTitle,
+      program: program.value,
+      evalue: evalue.value,
+      max_target_seqs: maxTargetSeqs.value,
+      word_size: wordSize.value,
+      gapopen: gapOpen.value,
+      gapextend: gapExtend.value,
+      result_format: 'json' as const,
+    }
+    const task = await submitBlastTask(request)
+    currentTask.value = task
+    message.success(task.status === 'completed' ? '命中缓存，已直接返回结果' : `任务已提交：${task.task_id}`)
+    if (task.status === 'completed') {
+      await loadResult(task.task_id)
+      await loadRecentTasks()
+    } else {
+      startTaskTracking(task.task_id)
+    }
+  } catch (err: any) {
+    message.error(err?.response?.data?.detail || '任务提交失败')
+  } finally {
+    isSearching.value = false
+  }
+}
+
+async function pollTaskStatus(taskId: string) {
+  try {
+    const task = await fetchBlastTaskStatus(taskId)
+    currentTask.value = task
+    if (task.status === 'completed') {
+      stopPolling()
+      await loadResult(taskId)
+      await loadRecentTasks()
+      message.success('比对完成')
+    } else if (task.status === 'failed' || task.status === 'cancelled') {
+      stopPolling()
+      message.error(task.error_message || `任务${task.status === 'failed' ? '失败' : '已取消'}`)
+    }
+  } catch (err: any) {
+    message.error(err?.response?.data?.detail || '查询任务状态失败')
+    stopPolling()
+  }
+}
+
+async function loadResult(taskId: string) {
+  try {
+    const result = await fetchBlastResult(taskId, 'json')
+    currentResult.value = result
+  } catch (err: any) {
+    message.error(err?.response?.data?.detail || '加载结果失败')
+  }
+}
+
+async function handleTaskEvent(taskId: string, event: { status: BlastTask['status']; progress: number; message: string; error_message?: string }) {
+  currentTask.value = {
+    ...(currentTask.value || { task_id: taskId }),
+    task_id: taskId,
+    status: event.status,
+    progress: event.progress,
+    message: event.message,
+    error_message: event.error_message,
+  }
+  if (event.status === 'completed') {
+    stopTaskTracking()
+    await loadResult(taskId)
+    await loadRecentTasks()
+    message.success('比对完成')
+  } else if (event.status === 'failed' || event.status === 'cancelled') {
+    stopTaskTracking()
+    message.error(event.error_message || `任务${event.status === 'failed' ? '失败' : '已取消'}`)
+  }
+}
+
+function startTaskTracking(taskId: string) {
+  stopTaskTracking()
+  const controller = new AbortController()
+  eventAbortController.value = controller
+  void streamBlastTaskEvents(taskId, (event) => handleTaskEvent(taskId, event), controller.signal)
+    .catch(() => {
+      if (!controller.signal.aborted) startPolling(taskId)
+    })
+}
+
+function stopTaskTracking() {
+  eventAbortController.value?.abort()
+  eventAbortController.value = null
+  stopPolling()
+}
+
+function startPolling(taskId: string) {
+  stopPolling()
+  pollingTimer.value = setInterval(() => pollTaskStatus(taskId), POLLING_INTERVAL)
+}
+
+function stopPolling() {
+  if (pollingTimer.value) {
+    clearInterval(pollingTimer.value)
+    pollingTimer.value = null
+  }
+}
+
+async function handleCancel() {
+  if (!currentTask.value) return
+  try {
+    await cancelBlastTask(currentTask.value.task_id)
+    message.info('已取消任务')
+    stopTaskTracking()
+    currentTask.value = await fetchBlastTaskStatus(currentTask.value.task_id)
+  } catch (err: any) {
+    message.error(err?.response?.data?.detail || '取消任务失败')
+  }
+}
+
+async function loadRecentTasks() {
+  loadingTasks.value = true
+  try {
+    const response = await fetchBlastTasks(undefined, 1, 5)
+    recentTasks.value = response.items
+  } catch (err: any) {
+    message.error(err?.response?.data?.detail || '加载最近任务失败')
+  } finally {
+    loadingTasks.value = false
+  }
+}
+
+async function openTask(taskId: string) {
+  try {
+    stopTaskTracking()
+    currentTask.value = await fetchBlastTaskStatus(taskId)
+    currentResult.value = null
+    if (currentTask.value.status === 'completed') {
+      await loadResult(taskId)
+    } else if (currentTask.value.status === 'queued' || currentTask.value.status === 'running') {
+      startTaskTracking(taskId)
+    }
+  } catch (err: any) {
+    message.error(err?.response?.data?.detail || '加载历史任务失败')
+  }
+}
+
+async function handleSelectTask(task: BlastTaskListItem) {
+  await openTask(task.task_id)
+}
+
+async function rerunTask(taskId: string, fallback?: BlastTaskListItem) {
+  try {
+    const detail = await fetchBlastTaskStatus(taskId)
+    selectedDbId.value = detail.db_id || fallback?.db_id || null
+    fastaInput.value = detail.query_sequence || ''
+    queryTitle.value = detail.query_title || fallback?.query_title || 'Untitled Query'
+    program.value = detail.program
+    evalue.value = detail.evalue ?? 1e-5
+    maxTargetSeqs.value = detail.max_target_seqs ?? 10
+    wordSize.value = detail.word_size
+    gapOpen.value = detail.gapopen
+    gapExtend.value = detail.gapextend
+    currentTask.value = null
+    currentResult.value = null
+    message.success('已填充历史任务参数，可直接重新检索')
+  } catch (err: any) {
+    message.error(err?.response?.data?.detail || '读取历史任务参数失败')
+  }
+}
+
+async function handleRerunTask(task: BlastTaskListItem) {
+  await rerunTask(task.task_id, task)
+}
+
+async function handleDownload(format: 'xml' | 'json' | 'text') {
+  if (!currentResult.value) return
+  try {
+    await downloadBlastResult(currentResult.value.task_id, format, `${currentResult.value.task_id}.${format}`)
+  } catch (err: any) {
+    message.error(err?.response?.data?.detail || '下载失败')
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Result table
+// ---------------------------------------------------------------------------
+
+function getIdentityTagType(identity: number): 'success' | 'info' | 'warning' | 'error' {
+  if (identity >= 90) return 'success'
+  if (identity >= 70) return 'info'
+  if (identity >= 40) return 'warning'
+  return 'error'
+}
+
+function renderEvalue(evalue: number) {
+  if (evalue < 1e-100) {
+    return h(NTag, { type: 'error', size: 'small' }, { default: () => evalue.toExponential(1) })
+  }
+  return h('span', { style: { fontFamily: 'monospace', fontSize: '12px' } }, evalue.toExponential(2))
+}
+
+const columns = [
+  {
+    title: '#',
+    key: 'hit_num',
+    width: 50,
+    align: 'center' as const,
+    render: (row: BlastHit) => h('strong', null, row.hit_num),
+  },
+  {
+    title: 'Subject ID',
+    key: 'hit_id',
+    width: 110,
+    render: (row: BlastHit) => h(
+      NTooltip,
+      { trigger: 'hover' },
+      {
+        trigger: () => h('span', {
+          style: {
+            fontFamily: 'monospace',
+            fontWeight: 600,
+            fontSize: '13px',
+          },
+        }, row.hit_id),
+        default: () => row.hit_def || '无描述',
+      },
+    ),
+  },
+  {
+    title: 'Subject Description',
+    key: 'hit_def',
+    minWidth: 200,
+    ellipsis: { tooltip: true },
+    render: (row: BlastHit) => h('span', { style: { fontSize: '12px', color: 'var(--neutral-text-3)' } }, row.hit_def || '-'),
+  },
+  {
+    title: 'Length',
+    key: 'hit_len',
+    width: 90,
+    align: 'right' as const,
+    render: (row: BlastHit) => `${row.hit_len.toLocaleString()} bp`,
+  },
   {
     title: 'Identity %',
-    key: 'identity',
+    key: 'identity_percent',
     width: 100,
-    render: (row) => {
-      const color = row.identity >= 90 ? '#00B42A' : row.identity >= 70 ? '#FF7D00' : '#86909c'
-      return `${row.identity}%`
-    },
+    align: 'center' as const,
+    sorter: (a: BlastHit, b: BlastHit) => a.identity_percent - b.identity_percent,
+    render: (row: BlastHit) => h(
+      NTag,
+      { type: getIdentityTagType(row.identity_percent), size: 'small' },
+      { default: () => `${row.identity_percent.toFixed(1)}%` },
+    ),
   },
-  { title: 'E-value', key: 'evalue', width: 110 },
-  { title: 'Bit Score', key: 'bitScore', width: 90 },
-  { title: '比对长度', key: 'alignLen', width: 90 },
   {
-    title: 'Query 范围',
-    key: 'qRange',
+    title: 'E-value',
+    key: 'evalue',
+    width: 120,
+    sorter: (a: BlastHit, b: BlastHit) => a.evalue - b.evalue,
+    render: (row: BlastHit) => renderEvalue(row.evalue),
+  },
+  {
+    title: 'Bit Score',
+    key: 'bit_score',
+    width: 100,
+    align: 'right' as const,
+    sorter: (a: BlastHit, b: BlastHit) => a.bit_score - b.bit_score,
+    render: (row: BlastHit) => h('span', { style: { fontFamily: 'monospace' } }, row.bit_score.toFixed(1)),
+  },
+  {
+    title: 'Align Len',
+    key: 'align_length',
+    width: 100,
+    align: 'right' as const,
+    render: (row: BlastHit) => `${row.align_length} bp`,
+  },
+  {
+    title: 'Query Range',
+    key: 'q_range',
     width: 110,
-    render: (row) => `${row.qStart}-${row.qEnd}`,
+    align: 'center' as const,
+    render: (row: BlastHit) => h('span', { style: { fontFamily: 'monospace', fontSize: '12px' } }, `${row.q_start}-${row.q_end}`),
+  },
+  {
+    title: 'Subject Range',
+    key: 's_range',
+    width: 110,
+    align: 'center' as const,
+    render: (row: BlastHit) => h('span', { style: { fontFamily: 'monospace', fontSize: '12px' } }, `${row.s_start}-${row.s_end}`),
+  },
+  {
+    title: 'Coverage',
+    key: 'subject_coverage',
+    width: 130,
+    sorter: (a: BlastHit, b: BlastHit) => a.subject_coverage - b.subject_coverage,
+    render: (row: BlastHit) => h(NProgress, {
+      percentage: row.subject_coverage,
+      'show-indicator': false,
+      status: row.subject_coverage > 80 ? 'success' : row.subject_coverage > 50 ? 'default' : 'warning',
+    }),
   },
 ]
 
-function handleSearch() {
-  isSearching.value = true
-  setTimeout(() => {
-    isSearching.value = false
-    showResults.value = true
-  }, 1200)
-}
 
-const mockAlignment = `Query  1   ATGGCTGACGCCGACGACGACGACGGCGGCGGCGGCGGCGGCGGCGGC  50
-           ||||||||||||||||||||| |||||| |||||||||||| |||| |||
-Sbjct  1   ATGGCTGACGCCGACGACGAC AGCGGCGGCGGCGGCGGCAGGCGGCG  48
 
-Query  51  AGCAGCAGCAGCAGCAGCAGCGACGACGACGACGACGGCGGCGGCGGC  100
-           |||||||| ||||||||||||| |||||||||||| |||| |||||||||
-Sbjct  49  AGCAGCAG AGCAGCAGCAGCGACGACGACGACGA GGCAGGCGGCGGC  96`
+// ---------------------------------------------------------------------------
+// Lifecycle
+// ---------------------------------------------------------------------------
+
+onMounted(async () => {
+  loadingDatabases.value = true
+  try {
+    databases.value = await fetchBlastDatabases()
+    await loadRecentTasks()
+    if (typeof route.query.task === 'string') {
+      await openTask(route.query.task)
+    } else if (typeof route.query.rerun === 'string') {
+      await rerunTask(route.query.rerun)
+    }
+  } catch (err: any) {
+    message.error(err?.response?.data?.detail || '加载数据库列表失败')
+  } finally {
+    loadingDatabases.value = false
+  }
+})
+
+onUnmounted(() => {
+  stopTaskTracking()
+})
 </script>
 
 <template>
@@ -102,10 +513,29 @@ Sbjct  49  AGCAGCAG AGCAGCAGCAGCGACGACGACGACGA GGCAGGCGGCGGC  96`
         返回工具箱
       </NButton>
       <h1 class="page-title">序列检索 BLAST</h1>
+      <NButton size="small" secondary @click="router.push('/tools/blast/tasks')">
+        <template #icon><NIcon><ListOutline /></NIcon></template>
+        任务中心
+      </NButton>
     </div>
+
+    <NAlert type="warning" :show-icon="true" class="data-retention-alert">
+      BLAST 任务结果将在 7 天后自动清理，请及时下载或保存重要结果。
+    </NAlert>
 
     <div class="blast-layout">
       <div class="input-section">
+        <div class="input-card">
+          <h3 class="section-title">目标数据库</h3>
+          <NSelect
+            v-model:value="selectedDbId"
+            :options="dbOptions"
+            :loading="loadingDatabases"
+            placeholder="选择 BLAST 数据库"
+            @update:value="autoRecommendProgram"
+          />
+        </div>
+
         <div class="input-card">
           <h3 class="section-title">查询序列 (FASTA)</h3>
           <NInput
@@ -114,23 +544,53 @@ Sbjct  49  AGCAGCAG AGCAGCAGCAGCGACGACGACGACGA GGCAGGCGGCGGC  96`
             :rows="8"
             placeholder=">OsNAC14&#10;ATGGCTGACGCCGACGACGACGACGGCGGCGGCGGCGGCGGC..."
             class="fasta-textarea"
+            @input="handleSequenceChange"
           />
           <div class="upload-row">
             <NUpload accept=".fasta,.fa,.fna,.txt" :max="1" :default-upload="false" @change="handleFileUpload">
-              <NButton size="small">上传 FASTA 文件</NButton>
+              <NButton size="small">
+                <template #icon><NIcon><FileTrayFullOutline /></NIcon></template>
+                上传 FASTA 文件
+              </NButton>
             </NUpload>
           </div>
         </div>
 
         <div class="input-card">
-          <h3 class="section-title">目标数据库</h3>
-          <NSelect v-model:value="selectedDb" :options="dbOptions" />
+          <h3 class="section-title">比对算法</h3>
+          <NSelect v-model:value="program" :options="programOptions" clearable placeholder="自动推断" />
         </div>
 
         <div class="input-card params-row">
-          <div>
+          <div style="flex: 1;">
             <h3 class="section-title">E-value 阈值</h3>
-            <NInputNumber v-model:value="evalueThreshold" :min="1e-100" :max="10" :show-button="false" placeholder="1e-5" style="width: 160px" />
+            <NInputNumber v-model:value="evalue" :min="1e-100" :max="10" :show-button="false" placeholder="1e-5" />
+          </div>
+          <div style="flex: 1;">
+            <h3 class="section-title">最大匹配数</h3>
+            <NInputNumber v-model:value="maxTargetSeqs" :min="1" :max="100" :show-button="false" />
+          </div>
+        </div>
+
+        <div class="input-card params-row">
+          <div style="flex: 1;">
+            <h3 class="section-title">查询名称</h3>
+            <NInput v-model:value="queryTitle" placeholder="自定义查询名称" />
+          </div>
+        </div>
+
+        <div class="input-card params-row">
+          <div style="flex: 1;">
+            <h3 class="section-title">Word Size</h3>
+            <NInputNumber v-model:value="wordSize" :show-button="false" placeholder="默认" />
+          </div>
+          <div style="flex: 1;">
+            <h3 class="section-title">Gap Open</h3>
+            <NInputNumber v-model:value="gapOpen" :show-button="false" placeholder="默认" />
+          </div>
+          <div style="flex: 1;">
+            <h3 class="section-title">Gap Extend</h3>
+            <NInputNumber v-model:value="gapExtend" :show-button="false" placeholder="默认" />
           </div>
         </div>
 
@@ -140,24 +600,104 @@ Sbjct  49  AGCAGCAG AGCAGCAGCAGCGACGACGACGACGA GGCAGGCGGCGGC  96`
         </NButton>
       </div>
 
-      <div class="results-section" v-if="showResults">
-        <div class="results-header">
-          <h3 class="section-title">比对结果</h3>
-          <NTag size="small" type="success" round>{{ mockResults.length }} 条命中</NTag>
+      <div class="results-section">
+        <BlastRightPanel
+          :sequence-stats="sequenceStats"
+          :recent-tasks="recentTasks"
+          :loading-tasks="loadingTasks"
+          @select-task="handleSelectTask"
+          @rerun-task="handleRerunTask"
+        />
+        <div v-if="currentTask" class="results-header">
+          <h3 class="section-title">任务状态</h3>
+          <NSpace align="center">
+            <NTag :type="taskStatusType" size="small" round>{{ taskStatusText }}</NTag>
+            <span v-if="currentTask.status === 'running'" class="status-detail">
+              进度 {{ currentTask.progress }}%
+            </span>
+            <NButton v-if="currentTask.status === 'running'" size="tiny" @click="handleCancel">
+              取消
+            </NButton>
+          </NSpace>
         </div>
 
-        <NDataTable
-          :columns="columns"
-          :data="mockResults"
-          :bordered="false"
-          size="small"
-          :single-line="false"
-          class="results-table"
+        <NProgress
+          v-if="currentTask && currentTask.status === 'running'"
+          :percentage="currentTask.progress"
+          :show-indicator="false"
+          status="warning"
+          class="progress-bar"
         />
 
-        <div class="alignment-card">
-          <h3 class="section-title">序列比对详情 (Top Hit)</h3>
-          <pre class="alignment-view">{{ mockAlignment }}</pre>
+        <div v-if="currentTask?.error_message" class="error-message">
+          {{ currentTask.error_message }}
+        </div>
+
+        <NSpin v-if="currentTask?.status === 'running'" description="正在执行 BLAST 比对..." />
+
+        <template v-if="currentResult">
+          <NCard size="small" class="stats-card">
+            <div class="stats-row">
+              <NStatistic label="数据库" :value="currentResult.db_display_name || currentResult.statistics.db_name" />
+              <NStatistic label="算法" :value="(currentResult.program || currentResult.statistics.program || '').toUpperCase()" />
+              <NStatistic label="Query 长度" :value="`${currentResult.query_len} bp`" />
+              <NStatistic label="命中数" :value="currentResult.statistics.hit_count" />
+              <NStatistic label="最佳 E-value" :value="currentResult.hits[0]?.best_hsp?.evalue?.toExponential(2) || '-'" />
+              <NStatistic label="最佳 Identity" :value="`${currentResult.hits[0]?.identity_percent?.toFixed(1) || 0}%`" />
+            </div>
+            <NDivider style="margin: 12px 0;" />
+            <NSpace>
+              <NButton size="small" @click="handleDownload('xml')">
+                <template #icon><NIcon><DownloadOutline /></NIcon></template>
+                XML
+              </NButton>
+              <NButton size="small" @click="handleDownload('json')">
+                <template #icon><NIcon><DownloadOutline /></NIcon></template>
+                JSON
+              </NButton>
+              <NButton size="small" @click="handleDownload('text')">
+                <template #icon><NIcon><DownloadOutline /></NIcon></template>
+                Text
+              </NButton>
+            </NSpace>
+          </NCard>
+
+          <BlastGraphicSummary
+            v-if="currentResult.statistics.hit_count > 0"
+            :query-len="currentResult.query_len"
+            :hits="currentResult.hits"
+          />
+
+          <BlastParamsInfo v-if="currentResult.query_params" :params="currentResult.query_params" />
+
+          <NCard size="small" title="比对结果" class="results-table-card">
+            <NDataTable
+              :columns="columns"
+              :data="currentResult.hits"
+              :bordered="false"
+              size="small"
+              :single-line="false"
+              :pagination="{ pageSize: 50, showSizePicker: true, pageSizes: [20, 50, 100] }"
+              :max-height="560"
+              virtual-scroll
+              class="results-table"
+            />
+          </NCard>
+
+          <div v-if="currentResult.hits.length > 0" class="hit-cards-section">
+            <h3 class="hit-cards-title">序列比对详情 ({{ currentResult.statistics.hit_count }} hits)</h3>
+            <BlastHitDetailCard
+              v-for="hit in currentResult.hits"
+              :key="hit.hit_num"
+              :hit="hit"
+              :query-len="currentResult.query_len"
+              :default-expanded="hit.hit_num === 1"
+            />
+          </div>
+        </template>
+
+        <div v-if="!currentTask && !currentResult" class="empty-hint">
+          输入查询序列并选择数据库后点击「开始检索」
         </div>
       </div>
     </div>
@@ -187,12 +727,16 @@ Sbjct  49  AGCAGCAG AGCAGCAGCAGCGACGACGACGACGA GGCAGGCGGCGGC  96`
   gap: 16px;
   align-items: start;
 }
+.input-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 .input-card {
   background: var(--neutral-card);
   border: 1px solid var(--neutral-border);
   border-radius: 12px;
   padding: 16px;
-  margin-bottom: 12px;
 }
 .section-title {
   font-size: 13px;
@@ -211,6 +755,9 @@ Sbjct  49  AGCAGCAG AGCAGCAGCAGCGACGACGACGACGA GGCAGGCGGCGGC  96`
   display: flex;
   gap: 16px;
 }
+.data-retention-alert {
+  margin-bottom: 12px;
+}
 .results-section {
   display: flex;
   flex-direction: column;
@@ -220,9 +767,24 @@ Sbjct  49  AGCAGCAG AGCAGCAGCAGCGACGACGACGACGA GGCAGGCGGCGGC  96`
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 .results-header .section-title {
   margin: 0;
+}
+.status-detail {
+  font-size: 12px;
+  color: var(--neutral-text-2);
+}
+.progress-bar {
+  margin-top: -8px;
+}
+.error-message {
+  color: #f53f3f;
+  font-size: 13px;
+  background: rgba(245, 63, 63, 0.08);
+  padding: 10px 12px;
+  border-radius: 8px;
 }
 .results-table {
   background: var(--neutral-card);
@@ -235,11 +797,39 @@ Sbjct  49  AGCAGCAG AGCAGCAGCAGCGACGACGACGACGA GGCAGGCGGCGGC  96`
   font-weight: 500;
   background: var(--neutral-bg);
 }
+.stats-card {
+  margin-bottom: 16px;
+}
+.stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 32px;
+}
+.results-table-card {
+  margin-bottom: 16px;
+}
+.hit-cards-section {
+  margin-bottom: 16px;
+}
+.hit-cards-title {
+  font-size: 14px;
+  margin: 0 0 12px;
+  color: var(--neutral-text-2);
+}
 .alignment-card {
   background: var(--neutral-card);
   border: 1px solid var(--neutral-border);
   border-radius: 12px;
   padding: 16px;
+}
+.alignment-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.alignment-header .section-title {
+  margin: 0;
 }
 .alignment-view {
   font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
@@ -252,6 +842,12 @@ Sbjct  49  AGCAGCAG AGCAGCAGCAGCGACGACGACGACGA GGCAGGCGGCGGC  96`
   overflow-x: auto;
   margin: 0;
   white-space: pre;
+}
+.empty-hint {
+  color: var(--neutral-text-3);
+  font-size: 13px;
+  text-align: center;
+  padding: 40px 0;
 }
 @media (max-width: 900px) {
   .blast-layout {

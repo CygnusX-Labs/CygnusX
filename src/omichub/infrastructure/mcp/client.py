@@ -125,6 +125,7 @@ class MCPClient:
         tool_name: str,
         arguments: dict[str, Any],
         user_id: str | None = None,
+        context: Any | None = None,
     ) -> dict[str, Any]:
         """调用某 MCP Server 的指定工具"""
         if server.transport == Transport.BUILTIN:
@@ -135,7 +136,6 @@ class MCPClient:
             if handler is None:
                 return {"success": False, "error": f"工具 {tool_name} 不存在于 {server.name}"}
             try:
-                # 若 handler 支持 user_id / tool_name 参数则透传
                 import inspect
 
                 sig = inspect.signature(handler)
@@ -144,11 +144,21 @@ class MCPClient:
                     kwargs["user_id"] = user_id
                 if "tool_name" in sig.parameters:
                     kwargs["tool_name"] = tool_name
+                if "context" in sig.parameters:
+                    kwargs["context"] = context
+                elif context is not None:
+                    logger.warning(
+                        f"ToolInvocationContext 被忽略：{server.name}.{tool_name} 不接受 context 参数"
+                    )
                 result = await handler(arguments, **kwargs)
                 return {"success": True, "result": result}
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"MCP 工具调用失败 {server.name}.{tool_name}: {e}")
                 return {"success": False, "error": str(e)}
+
+        # stdio / sse：绝不传递 context
+        if context is not None:
+            logger.warning(f"ToolInvocationContext blocked for non-builtin transport: {server.name}")
 
         # stdio / sse
         result = await self._safe_external(
