@@ -1,0 +1,739 @@
+"""OmicStudio 沙盒管理器 —— 每会话一个容器，经 sandbox-agent HTTP 交互。
+
+设计（架构设计 §5/§6，按仓库现状适配：纯 docker SDK，无 Swarm）：
+- 懒启动：会话首次执行时 ensure_running 拉起容器，名 studio-{session_id[:8]}；
+- 交互：Web 通过共享工作区 Unix Socket 直连 sandbox-agent，不依赖沙盒网络、不发布端口、不 docker exec；
+- 工作区：bind-mount {workspace_root}/{session_id} -> /workspace，预建 input/output/ref/.logs；
+- 平台数据（P1 数据不搬家）：新建容器时把 {storage_path}/users/{user_id} 只读挂到
+  /data/platform，input/ 软链经它解析；按用户目录挂载是多租户隔离红线
+  （整根挂载会让沙盒内代码可读全部用户数据）。仅新建容器生效：已在运行的旧容器
+  无此挂载（其内 input 软链不可读），回收重建后自动获得；
+- 回收：Redis ZSET 记录跨进程 last_activity，Celery beat 每 5 分钟回收超 TTL 容器；
+  每次执行/文件请求持有独立 Redis 租约，避免长任务或并发请求被误回收。
+- 预热：会话创建后后台启动其专属容器；plain Docker 无法安全重绑 per-user bind mount，
+  因此不复用跨用户通用 standby，保留一会话一容器隔离。
+
+网络安全：agent 控制通道使用工作区 Unix Socket；none 模式使用 Docker network_mode=none，
+  whitelist 模式将通过每会话 internal 网络与受控代理出站；
+- Redis 不可用时活跃态和执行租约自动降级为进程内记录；此时仅保证单进程回收正确。
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import hashlib
+import json
+import time
+import uuid
+from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import httpx
+from loguru import logger
+
+from omichub.core.config import get_settings
+from omichub.infrastructure.cache.redis_client import get_redis
+from omichub.infrastructure.config.studio_loader import (
+    StudioConfig,
+    StudioConfigManager,
+    studio_config_manager,
+)
+from omichub.infrastructure.studio.paths import PLATFORM_CONTAINER_MOUNT
+
+_AGENT_TIMEOUT = httpx.Timeout(connect=5.0, read=None, write=30.0, pool=5.0)
+_ACTIVITY_KEY = "studio:sandbox:last_activity"
+_BUSY_KEY_PREFIX = "studio:sandbox:busy:"
+_AGENT_SOCKET_NAME = ".agent.sock"
+_AGENT_BASE_URL = "http://studio-agent"
+
+
+class StudioSandboxUnavailableError(Exception):
+    """沙盒不可用（Docker 未就绪 / Studio 未启用 / 镜像缺失）"""
+
+
+@dataclass
+class SandboxHandle:
+    """沙盒容器句柄"""
+
+    session_id: str
+    container_id: str
+    container_name: str
+    agent_url: str  # UDS client base URL（保留字段名兼容已有调用方）
+    agent_socket: Path
+    image: str
+    workspace_dir: Path
+
+
+@dataclass
+class StudioSandboxManager:
+    """Studio 沙盒管理器（进程内单例）"""
+
+    _config_manager: StudioConfigManager = studio_config_manager
+    _client: Any = None
+    _available: bool | None = None
+    # Redis 是跨 web/celery 进程的权威状态；内存字典作为 Redis 不可用时的降级。
+    _last_activity: dict[str, float] = field(default_factory=dict)
+    _busy_leases: dict[str, dict[str, float]] = field(default_factory=dict)
+
+    # ------------------------------------------------------------------
+    # 配置 & Docker 客户端
+    # ------------------------------------------------------------------
+    def _config(self) -> StudioConfig:
+        return self._config_manager.get_config()
+
+    def _get_client(self) -> Any:
+        if self._client is None:
+            import docker  # 延迟导入
+
+            self._client = docker.from_env()
+        return self._client
+
+    async def is_available(self) -> bool:
+        if self._available is not None:
+            return self._available
+        try:
+            client = self._get_client()
+            await asyncio.to_thread(client.ping)
+            self._available = True
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[Studio] 沙盒 Docker 不可用: {e}")
+            self._available = False
+        return self._available
+
+    # ------------------------------------------------------------------
+    # 工作区（纯路径逻辑，可单测）
+    # ------------------------------------------------------------------
+    def workspace_dir(self, session_id: str) -> Path:
+        """会话工作区宿主目录：{workspace_root}/{session_id}（防路径逃逸）"""
+        root = self._config().workspace_root.resolve()
+        candidate = (root / session_id).resolve()
+        if candidate.parent != root:
+            raise StudioSandboxUnavailableError(f"非法 session_id: {session_id!r}")
+        return candidate
+
+    @staticmethod
+    def ensure_workspace_dirs(workspace: Path) -> None:
+        """预建工作区子目录 input/output/ref/.logs，并放权给容器内 uid 10001。
+
+        容器以非 root（uid 10001）运行，宿主目录默认 root 所有会导致写失败；
+        优先 chown 10001，无权限时退化 chmod 0777（P0 单机部署可接受）。
+        """
+        for sub in ("", "input", "output", "ref", ".logs"):
+            (workspace / sub).mkdir(parents=True, exist_ok=True)
+        try:
+            import os
+
+            for sub in ("", "input", "output", "ref", ".logs"):
+                os.chown(workspace / sub, 10001, 10001)
+        except (AttributeError, PermissionError, OSError):
+            for sub in ("", "input", "output", "ref", ".logs"):
+                with contextlib.suppress(OSError):
+                    (workspace / sub).chmod(0o777)
+
+    @staticmethod
+    def container_name(session_id: str) -> str:
+        return f"studio-{session_id[:8]}"
+
+    @staticmethod
+    def session_network_name(session_id: str, config: StudioConfig) -> str:
+        """生成不暴露会话 ID、可稳定回收的每会话 internal 网络名。"""
+        suffix = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:12]
+        prefix = config.sandbox.network.docker_network.strip().rstrip("-")
+        return f"{prefix}-{suffix}"
+
+    @classmethod
+    def _ensure_whitelist_network(
+        cls, client: Any, session_id: str, config: StudioConfig
+    ) -> str | None:
+        network_config = config.sandbox.network
+        if network_config.mode.strip().lower() == "none":
+            return None
+        if not network_config.allow:
+            raise StudioSandboxUnavailableError(
+                "Studio whitelist 模式要求 sandbox.network.allow 至少声明一个域名"
+            )
+        network_name = cls.session_network_name(session_id, config)
+        created = False
+        try:
+            try:
+                network = client.networks.get(network_name)
+            except Exception:  # noqa: BLE001 - 不存在时创建
+                network = client.networks.create(
+                    network_name,
+                    driver="bridge",
+                    internal=True,
+                    labels={
+                        "omichub.studio.egress": "1",
+                        "omichub.studio.session": session_id,
+                    },
+                )
+                created = True
+            network.reload()
+            if not bool(network.attrs.get("Internal")):
+                raise StudioSandboxUnavailableError(
+                    f"Studio whitelist 网络必须为 Docker internal: {network_name}"
+                )
+            try:
+                proxy = client.containers.get(network_config.proxy_container)
+                proxy.reload()
+            except Exception as exc:  # noqa: BLE001
+                raise StudioSandboxUnavailableError(
+                    f"Studio 出站代理不可用: {network_config.proxy_container}"
+                ) from exc
+            if proxy.status != "running":
+                raise StudioSandboxUnavailableError(
+                    f"Studio 出站代理未运行: {network_config.proxy_container}"
+                )
+            allowed_names = {network_config.proxy_container, cls.container_name(session_id)}
+            attached_names = {
+                str(item.get("Name", ""))
+                for item in network.attrs.get("Containers", {}).values()
+                if item.get("Name")
+            }
+            unexpected = attached_names - allowed_names
+            if unexpected:
+                raise StudioSandboxUnavailableError(
+                    f"Studio whitelist 网络存在未授权容器: {sorted(unexpected)}"
+                )
+            proxy_networks = proxy.attrs.get("NetworkSettings", {}).get("Networks", {})
+            aliases = proxy_networks.get(network_name, {}).get("Aliases") or []
+            if network_name not in proxy_networks or network_config.proxy_host not in aliases:
+                if network_name in proxy_networks:
+                    network.disconnect(proxy, force=True)
+                network.connect(proxy, aliases=[network_config.proxy_host])
+                network.reload()
+            return network_name
+        except Exception:
+            if created:
+                with contextlib.suppress(Exception):
+                    network.remove()
+            raise
+
+    @classmethod
+    def _cleanup_whitelist_network(
+        cls, client: Any, session_id: str, config: StudioConfig
+    ) -> None:
+        """按安全标签清理会话临时网络，配置热切换后也不会泄漏。"""
+        networks: list[Any] = []
+        with contextlib.suppress(Exception):
+            networks.extend(
+                client.networks.list(
+                    filters={"label": f"omichub.studio.session={session_id}"}
+                )
+            )
+        with contextlib.suppress(Exception):
+            configured = client.networks.get(cls.session_network_name(session_id, config))
+            if all(getattr(item, "id", None) != configured.id for item in networks):
+                networks.append(configured)
+        for network in networks:
+            with contextlib.suppress(Exception):
+                network.reload()
+            for endpoint in network.attrs.get("Containers", {}).values():
+                name = endpoint.get("Name")
+                if not name:
+                    continue
+                with contextlib.suppress(Exception):
+                    network.disconnect(client.containers.get(name), force=True)
+            with contextlib.suppress(Exception):
+                network.remove()
+
+    async def _touch(self, session_id: str) -> None:
+        now = time.time()
+        self._last_activity[session_id] = now
+        try:
+            redis_client = get_redis()
+            await redis_client.zadd(_ACTIVITY_KEY, {session_id: now})
+            await redis_client.expire(_ACTIVITY_KEY, 60 * 60 * 24 * 8)
+        except Exception as exc:  # noqa: BLE001 - Redis 不可用时继续单进程降级
+            logger.debug("[Studio] Redis 活跃态写入失败，使用进程内降级: {}", exc)
+
+    async def _remove_activity(self, session_id: str) -> None:
+        self._last_activity.pop(session_id, None)
+        self._busy_leases.pop(session_id, None)
+        try:
+            redis_client = get_redis()
+            await redis_client.zrem(_ACTIVITY_KEY, session_id)
+            await redis_client.delete(f"{_BUSY_KEY_PREFIX}{session_id}")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[Studio] Redis 活跃态/租约删除失败: {}", exc)
+
+    async def _set_busy(self, session_id: str, timeout_sec: int) -> str:
+        lease_seconds = max(300, min(timeout_sec, 3600) + 120)
+        lease_token = uuid.uuid4().hex
+        expires_at = time.time() + lease_seconds
+        self._busy_leases.setdefault(session_id, {})[lease_token] = expires_at
+        try:
+            redis_client = get_redis()
+            key = f"{_BUSY_KEY_PREFIX}{session_id}"
+            await redis_client.zadd(key, {lease_token: expires_at})
+            await redis_client.expire(key, lease_seconds + 60)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[Studio] Redis 执行租约写入失败，使用进程内降级: {}", exc)
+        return lease_token
+
+    async def _clear_busy(self, session_id: str, lease_token: str) -> None:
+        leases = self._busy_leases.get(session_id)
+        if leases is not None:
+            leases.pop(lease_token, None)
+            if not leases:
+                self._busy_leases.pop(session_id, None)
+        try:
+            await get_redis().zrem(f"{_BUSY_KEY_PREFIX}{session_id}", lease_token)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[Studio] Redis 执行租约删除失败: {}", exc)
+
+    async def _is_busy(self, session_id: str) -> bool:
+        now = time.time()
+        leases = self._busy_leases.get(session_id, {})
+        active = {token: expiry for token, expiry in leases.items() if expiry > now}
+        if active:
+            self._busy_leases[session_id] = active
+            return True
+        self._busy_leases.pop(session_id, None)
+        try:
+            redis_client = get_redis()
+            key = f"{_BUSY_KEY_PREFIX}{session_id}"
+            await redis_client.zremrangebyscore(key, min=0, max=now)
+            return bool(await redis_client.zcard(key))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[Studio] Redis 执行租约读取失败: {}", exc)
+            return False
+
+    async def _activity_candidates(self, cutoff: float) -> set[str]:
+        candidates = {sid for sid, last in self._last_activity.items() if last <= cutoff}
+        try:
+            remote = await get_redis().zrangebyscore(_ACTIVITY_KEY, min=0, max=cutoff)
+            candidates.update(str(item) for item in remote)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[Studio] Redis 活跃态读取失败，使用进程内降级: {}", exc)
+        return candidates
+
+    # ------------------------------------------------------------------
+    # 容器生命周期
+    # ------------------------------------------------------------------
+    async def ensure_running(
+        self, session_id: str, image: str | None = None, user_id: str | None = None
+    ) -> SandboxHandle:
+        """确保会话容器运行中（懒启动 + 复用），返回句柄。
+
+        user_id 仅在新建容器时用到：决定 /data/platform 只读挂载的宿主源目录
+        （{storage_path}/users/{user_id}）；复用已运行容器时忽略。
+        """
+        config = self._config()
+        if not config.enabled:
+            raise StudioSandboxUnavailableError("Studio 功能未启用（studio.enabled=false）")
+        if not await self.is_available():
+            raise StudioSandboxUnavailableError("沙盒 Docker 不可用")
+
+        image = image or config.default_image
+        name = self.container_name(session_id)
+        workspace = self.workspace_dir(session_id)
+        self.ensure_workspace_dirs(workspace)
+
+        def _ensure() -> Any:
+            client = self._get_client()
+            self._validate_isolated_network(client, config)
+            network_name = self._ensure_whitelist_network(client, session_id, config)
+            try:
+                container = client.containers.get(name)
+            except Exception:  # noqa: BLE001 - NotFound 时走创建分支
+                container = None
+            if container is not None:
+                if container.status != "running":
+                    container.start()
+                container.reload()
+                self._validate_container_network(container, config, session_id)
+                return container
+
+            # agent 通过共享工作区 UDS 访问；none 模式的沙盒完全不加入 Docker 网络。
+            socket_path = workspace / _AGENT_SOCKET_NAME
+            with contextlib.suppress(OSError):
+                socket_path.unlink()
+            cpu_shares = int(config.sandbox.cpu * 1024)
+            volumes = {str(workspace): {"bind": "/workspace", "mode": "rw"}}
+            # P1 数据不搬家：当前用户数据目录只读挂入容器，input/ 软链经它解析。
+            # 多租户红线：只挂 users/{user_id}，绝不整根挂 storage_path。
+            if user_id:
+                user_root = Path(get_settings().storage_path) / "users" / str(user_id)
+                if user_root.is_dir():
+                    volumes[str(user_root)] = {"bind": PLATFORM_CONTAINER_MOUNT, "mode": "ro"}
+                else:
+                    logger.warning(
+                        f"[Studio] 用户数据目录不存在，跳过平台只读挂载: {user_root}"
+                    )
+            run_kwargs: dict[str, Any] = {
+                "image": image,
+                "name": name,
+                "detach": True,
+                "auto_remove": False,
+                "mem_limit": config.sandbox.memory,
+                "cpu_shares": cpu_shares,
+                "volumes": volumes,
+                "labels": {"omichub.studio": "1", "omichub.studio.session": session_id},
+            }
+            if config.sandbox.network.mode.strip().lower() == "none":
+                run_kwargs["network_mode"] = "none"
+            else:
+                assert network_name is not None
+                proxy_url = (
+                    f"http://{config.sandbox.network.proxy_host}:"
+                    f"{config.sandbox.network.proxy_port}"
+                )
+                run_kwargs["network"] = network_name
+                run_kwargs["environment"] = {
+                    "HTTP_PROXY": proxy_url,
+                    "HTTPS_PROXY": proxy_url,
+                    "http_proxy": proxy_url,
+                    "https_proxy": proxy_url,
+                    "NO_PROXY": "localhost,127.0.0.1",
+                    "no_proxy": "localhost,127.0.0.1",
+                }
+            return client.containers.run(**run_kwargs)
+
+        try:
+            container = await asyncio.to_thread(_ensure)
+        except StudioSandboxUnavailableError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            raise StudioSandboxUnavailableError(f"沙盒容器启动失败: {e}") from e
+
+        await asyncio.to_thread(container.reload)
+        agent_socket = workspace / _AGENT_SOCKET_NAME
+        agent_url = _AGENT_BASE_URL
+        # 容器进程就绪不代表 sandbox-agent 已监听，轮询 UDS 健康检查后再放行
+        await self._wait_ready(agent_socket)
+        await self._touch(session_id)
+        logger.info(f"[Studio] 会话 {session_id[:8]} 沙盒就绪: {name} -> unix://{agent_socket}")
+        return SandboxHandle(
+            session_id=session_id,
+            container_id=str(container.id),
+            container_name=name,
+            agent_url=agent_url,
+            agent_socket=agent_socket,
+            image=image,
+            workspace_dir=workspace,
+        )
+
+    @staticmethod
+    def _validate_isolated_network(client: Any, config: StudioConfig) -> None:
+        """none 模式必须使用 Docker network_mode=none；whitelist 由代理网络处理。"""
+        mode = config.sandbox.network.mode.strip().lower()
+        if mode not in {"none", "whitelist"}:
+            raise StudioSandboxUnavailableError(
+                f"Studio 沙盒网络模式尚未实现: {config.sandbox.network.mode}"
+            )
+
+    @classmethod
+    def _validate_container_network(
+        cls, container: Any, config: StudioConfig, session_id: str
+    ) -> None:
+        """复用容器必须匹配当前网络模式，且不能额外挂载平台网络。"""
+        mode = config.sandbox.network.mode.strip().lower()
+        host_mode = str(container.attrs.get("HostConfig", {}).get("NetworkMode", ""))
+        if mode == "none":
+            if host_mode != "none":
+                raise StudioSandboxUnavailableError(
+                    f"Studio 沙盒网络不安全: expected network_mode=none, actual={host_mode}"
+                )
+            return
+        expected = cls.session_network_name(session_id, config)
+        attached = set(
+            container.attrs.get("NetworkSettings", {}).get("Networks", {}).keys()
+        )
+        if attached != {expected}:
+            raise StudioSandboxUnavailableError(
+                f"Studio 沙盒网络不安全: expected={expected}, attached={sorted(attached)}"
+            )
+
+    @staticmethod
+    def _agent_client(socket_path: Path, timeout: httpx.Timeout) -> httpx.AsyncClient:
+        """构造经工作区 Unix Socket 访问 agent 的 HTTP 客户端。"""
+        transport = httpx.AsyncHTTPTransport(uds=str(socket_path))
+        return httpx.AsyncClient(
+            transport=transport,
+            base_url=_AGENT_BASE_URL,
+            timeout=timeout,
+        )
+
+    @classmethod
+    async def _wait_ready(cls, socket_path: Path, timeout_sec: float = 30.0) -> None:
+        """轮询 sandbox-agent UDS /healthz，直到服务就绪或超时。"""
+        deadline = asyncio.get_running_loop().time() + timeout_sec
+        while True:
+            try:
+                async with cls._agent_client(socket_path, httpx.Timeout(2.0)) as client:
+                    resp = await client.get("/healthz")
+                    if resp.status_code == 200:
+                        return
+            except Exception:  # noqa: BLE001 - socket 尚在创建，等待重试
+                pass
+            if asyncio.get_running_loop().time() > deadline:
+                raise StudioSandboxUnavailableError("沙盒 agent UDS 服务就绪超时")
+            await asyncio.sleep(0.3)
+
+    async def _handle(
+        self, session_id: str, image: str | None = None, user_id: str | None = None
+    ) -> SandboxHandle:
+        """ensure_running 并续约活跃时间。"""
+        handle = await self.ensure_running(session_id, image=image, user_id=user_id)
+        await self._touch(session_id)
+        return handle
+
+    async def status(self, session_id: str) -> str:
+        """探测会话沙盒容器状态（只读，不触发懒启动）。
+
+        返回 running / stopped / absent / unavailable（Studio 未启用或 Docker 不可用）。
+        """
+        if not self._config().enabled:
+            return "unavailable"
+        if not await self.is_available():
+            return "unavailable"
+        name = self.container_name(session_id)
+
+        def _probe() -> str:
+            try:
+                container = self._get_client().containers.get(name)
+            except Exception:  # noqa: BLE001 - 容器不存在视为 absent
+                return "absent"
+            return "running" if container.status == "running" else "stopped"
+
+        return await asyncio.to_thread(_probe)
+
+    async def metrics(self, session_id: str) -> dict[str, float | int]:
+        """读取运行中容器的轻量 CPU/内存快照；未运行时返回零值。"""
+        if await self.status(session_id) != "running":
+            return {"cpu_percent": 0.0, "memory_percent": 0.0, "memory_used": 0, "memory_limit": 0}
+        name = self.container_name(session_id)
+
+        def _read() -> dict[str, float | int]:
+            container = self._get_client().containers.get(name)
+            stats = container.stats(stream=False)
+            cpu = stats.get("cpu_stats") or {}
+            previous = stats.get("precpu_stats") or {}
+            cpu_total = float((cpu.get("cpu_usage") or {}).get("total_usage") or 0)
+            previous_total = float((previous.get("cpu_usage") or {}).get("total_usage") or 0)
+            system_total = float(cpu.get("system_cpu_usage") or 0)
+            previous_system = float(previous.get("system_cpu_usage") or 0)
+            online = int(cpu.get("online_cpus") or len((cpu.get("cpu_usage") or {}).get("percpu_usage") or []) or 1)
+            cpu_delta = cpu_total - previous_total
+            system_delta = system_total - previous_system
+            cpu_percent = (cpu_delta / system_delta * online * 100) if cpu_delta > 0 and system_delta > 0 else 0.0
+            memory = stats.get("memory_stats") or {}
+            memory_stats = memory.get("stats") or {}
+            memory_used = max(0, int(memory.get("usage") or 0) - int(memory_stats.get("cache") or 0))
+            memory_limit = int(memory.get("limit") or 0)
+            memory_percent = memory_used / memory_limit * 100 if memory_limit > 0 else 0.0
+            return {
+                "cpu_percent": round(min(cpu_percent, 100.0), 1),
+                "memory_percent": round(min(memory_percent, 100.0), 1),
+                "memory_used": memory_used,
+                "memory_limit": memory_limit,
+            }
+
+        try:
+            return await asyncio.to_thread(_read)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[Studio] 容器指标读取失败: {}", exc)
+            return {"cpu_percent": 0.0, "memory_percent": 0.0, "memory_used": 0, "memory_limit": 0}
+
+    async def stop(self, session_id: str) -> bool:
+        """停止并移除会话容器，返回是否实际回收了容器。"""
+        name = self.container_name(session_id)
+        await self._remove_activity(session_id)
+
+        def _stop() -> bool:
+            client = self._get_client()
+            removed = False
+            try:
+                container = client.containers.get(name)
+            except Exception:  # noqa: BLE001 - 容器不存在也继续清理会话网络
+                container = None
+            if container is not None:
+                with contextlib.suppress(Exception):
+                    container.stop(timeout=5)
+                container.remove(force=True)
+                removed = True
+            with contextlib.suppress(OSError):
+                (self.workspace_dir(session_id) / _AGENT_SOCKET_NAME).unlink()
+            self._cleanup_whitelist_network(client, session_id, self._config())
+            return removed
+
+        removed = await asyncio.to_thread(_stop)
+        if removed:
+            logger.info(f"[Studio] 会话 {session_id[:8]} 沙盒已回收")
+        return removed
+
+    async def hibernate(self, session_id: str) -> str:
+        """安全休眠会话沙盒：忙碌时拒绝，空闲时移除容器并保留 bind-mount 工作区。"""
+        if await self._is_busy(session_id):
+            return "busy"
+        status = await self.status(session_id)
+        if status in {"absent", "unavailable"}:
+            await self._remove_activity(session_id)
+            return status
+        await self.stop(session_id)
+        return "hibernated"
+
+    async def recycle_idle(self) -> int:
+        """回收跨进程可见且空闲超 TTL 的会话容器。"""
+        ttl = self._config().session.idle_ttl_minutes * 60
+        cutoff = time.time() - ttl
+        expired = await self._activity_candidates(cutoff)
+        recycled = 0
+        for session_id in expired:
+            if await self._is_busy(session_id):
+                continue
+            try:
+                if await self.stop(session_id):
+                    recycled += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"[Studio] 回收会话 {session_id[:8]} 沙盒失败: {exc}")
+        if recycled:
+            logger.info(f"[Studio] 空闲沙盒回收 {recycled} 个")
+        return recycled
+
+    # ------------------------------------------------------------------
+    # 代码执行（NDJSON 流式）
+    # ------------------------------------------------------------------
+    async def exec(
+        self,
+        session_id: str,
+        language: str,
+        code: str,
+        timeout_sec: int | None = None,
+        image: str | None = None,
+        user_id: str | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """流式执行代码，逐条产出 sandbox-agent 的 NDJSON 事件。
+
+        事件形态：{"type":"stdout"|"stderr","data":...}
+        终止事件：{"type":"result","exit_code":N,"duration_ms":...,"artifacts":[...]}
+        """
+        effective_timeout = timeout_sec or self._config().sandbox.exec_timeout_seconds
+        lease_token = await self._set_busy(session_id, effective_timeout)
+        payload = {
+            "language": language,
+            "code": code,
+            "timeout": effective_timeout,
+        }
+        try:
+            handle = await self._handle(session_id, image=image, user_id=user_id)
+            async with (
+                self._agent_client(handle.agent_socket, _AGENT_TIMEOUT) as client,
+                client.stream("POST", "/exec", json=payload) as resp,
+            ):
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line:
+                        continue
+                    try:
+                        yield json.loads(line)
+                    except json.JSONDecodeError:
+                        logger.warning(f"[Studio] 无法解析的 agent 输出: {line[:200]}")
+        finally:
+            await self._clear_busy(session_id, lease_token)
+            await self._touch(session_id)
+
+    # ------------------------------------------------------------------
+    # 文件操作（/files/* 薄封装）
+    # ------------------------------------------------------------------
+    async def list_files(
+        self, session_id: str, path: str = "", image: str | None = None, user_id: str | None = None
+    ) -> dict[str, Any]:
+        """列出工作区目录（含名称/类型/大小/mtime）。"""
+        return await self._agent_call(
+            session_id, "GET", "/files/list", params={"path": path}, image=image, user_id=user_id
+        )
+
+    async def read_file(
+        self,
+        session_id: str,
+        path: str,
+        offset: int = 0,
+        limit: int = 200,
+        image: str | None = None,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        """分页读取文本文件，返回 {content, total_lines, truncated}。"""
+        return await self._agent_call(
+            session_id,
+            "GET",
+            "/files/read",
+            params={"path": path, "offset": offset, "limit": limit},
+            image=image,
+            user_id=user_id,
+        )
+
+    async def write_file(
+        self,
+        session_id: str,
+        path: str,
+        content: str,
+        image: str | None = None,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        """创建 / 覆盖工作区文件。"""
+        return await self._agent_call(
+            session_id,
+            "POST",
+            "/files/write",
+            json={"path": path, "content": content},
+            image=image,
+            user_id=user_id,
+        )
+
+    async def make_directory(self, session_id: str, path: str, image: str | None = None, user_id: str | None = None) -> dict[str, Any]:
+        return await self._agent_call(session_id, "POST", "/files/mkdir", json={"path": path}, image=image, user_id=user_id)
+
+    async def rename_file(self, session_id: str, path: str, new_path: str, image: str | None = None, user_id: str | None = None) -> dict[str, Any]:
+        return await self._agent_call(session_id, "POST", "/files/rename", json={"path": path, "new_path": new_path}, image=image, user_id=user_id)
+
+    async def delete_file(self, session_id: str, path: str, image: str | None = None, user_id: str | None = None) -> dict[str, Any]:
+        return await self._agent_call(session_id, "DELETE", "/files/delete", params={"path": path}, image=image, user_id=user_id)
+
+    async def edit_file(
+        self,
+        session_id: str,
+        path: str,
+        old_string: str,
+        new_string: str,
+        image: str | None = None,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        """精确替换并返回 unified diff。"""
+        return await self._agent_call(
+            session_id,
+            "POST",
+            "/files/edit",
+            json={"path": path, "old_string": old_string, "new_string": new_string},
+            image=image,
+            user_id=user_id,
+        )
+
+    async def _agent_call(
+        self,
+        session_id: str,
+        method: str,
+        endpoint: str,
+        image: str | None = None,
+        user_id: str | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        lease_token = await self._set_busy(session_id, 60)
+        try:
+            handle = await self._handle(session_id, image=image, user_id=user_id)
+            async with self._agent_client(handle.agent_socket, _AGENT_TIMEOUT) as client:
+                resp = await client.request(method, endpoint, **kwargs)
+                resp.raise_for_status()
+                result: dict[str, Any] = resp.json()
+                return result
+        finally:
+            await self._clear_busy(session_id, lease_token)
+            await self._touch(session_id)
+
+
+# 进程内单例；活跃态与执行租约通过 Redis 跨 web/celery 共享。
+studio_sandbox_manager = StudioSandboxManager()

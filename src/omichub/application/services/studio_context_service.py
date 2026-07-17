@@ -1,0 +1,368 @@
+"""OmicStudio 上下文打包与产物登记服务（架构设计 §7.2）。
+
+两个职责：
+1. Context Packager：从结果报告中心一键创建 Studio 会话 —— 打包来源流程、run_id、
+   参数与产物文件（软链进 /workspace/input/），context_pack 写入会话 sandbox_meta，
+   聊天时由 chat_service 渲染进系统提示词；
+2. Artifact Service：把 /workspace/output/ 下的产物复制进报告中心存储区并登记为
+   新报告，与原报告建立版本树（parent_id + version）。
+   （复制而非软链：工作区 7 天后会被清理，报告中心需独立存续。）
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import shutil
+import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from omichub.application.schemas.chat import ChatSessionDTO
+from omichub.core.config import get_settings
+from omichub.core.exceptions import BusinessError, NotFoundError
+from omichub.infrastructure.database.models.chat import ChatSessionModel
+from omichub.infrastructure.database.models.file import FileRecordModel
+from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
+from omichub.infrastructure.database.models.task import TaskModel
+from omichub.infrastructure.studio.manager import studio_sandbox_manager
+from omichub.infrastructure.studio.paths import PathEscapeError
+from omichub.infrastructure.studio.workspace import (
+    link_platform_file,
+    list_input_links,
+    platform_user_rel,
+    resolve_artifact_path,
+)
+
+# Studio 会话登记报告时的流程标识（reports.flow_id 非空列，用 sentinel 区分平台流程）
+STUDIO_FLOW_ID = "studio"
+STUDIO_FLOW_NAME = "OmicStudio"
+STUDIO_FLOW_ICON = "🧪"
+
+CONTEXT_PACK_HINT = (
+    "用户对上述流程产出的结果不满意，希望在你的协助下诊断、复现并改进。"
+    "所有分析必须可复现、可修改、可重跑；满意的产物可用 artifact_register "
+    "登记为原报告的新版本（版本树）。"
+)
+
+
+def user_platform_root(user_id: str) -> Path:
+    """当前用户的平台数据根（{storage_path}/users/{user_id}）。
+
+    即沙盒容器内 /data/platform 只读挂载的宿主源目录。
+    """
+    return Path(get_settings().storage_path) / "users" / str(user_id)
+
+
+def report_file_mount_rel(file_path: str, user_id: str) -> str | None:
+    """报告文件绝对路径 → 平台挂载（/data/platform）内相对路径。
+
+    越出平台存储根或不属于该用户时返回 None（调用方跳过，不阻断整体引入）。
+    """
+    try:
+        rel = Path(file_path).resolve().relative_to(Path(get_settings().storage_path).resolve())
+    except ValueError:
+        return None
+    try:
+        return platform_user_rel(rel.as_posix(), user_id)
+    except PathEscapeError:
+        return None
+
+
+def link_report_files(
+    report: ReportModel, workspace: Path, user_id: str
+) -> list[dict[str, Any]]:
+    """把报告全部产物文件软链进 workspace/input/。
+
+    返回 [{name, sandbox_path, role, size}]；磁盘上已丢失或路径越权的文件跳过。
+    """
+    linked: list[dict[str, Any]] = []
+    for f in report.files:
+        mount_rel = report_file_mount_rel(f.path, user_id)
+        if mount_rel is None or not Path(f.path).is_file():
+            continue
+        link_name = link_platform_file(workspace, mount_rel, f.name)
+        linked.append(
+            {
+                "name": link_name,
+                "sandbox_path": f"/workspace/input/{link_name}",
+                "role": "主报告" if f.is_primary else f"产物（{f.type}）",
+                "size": f.size,
+            }
+        )
+    return linked
+
+
+async def create_session_from_report(
+    user_id: str, report_id: UUID | str, agent_id: str, db: AsyncSession
+) -> ChatSessionDTO:
+    """从报告创建 Studio 会话（「在 AI 工作台中优化」入口）。
+
+    流程：校验报告归属 → 校验 Agent 开放 Studio → 创建 studio 会话 →
+    报告产物软链进工作区 input/ → context_pack 写入 sandbox_meta。
+    """
+    # 延迟导入防循环：chat_service -> studio_tools -> 本模块
+    from omichub.application.services.agent_service import AgentService
+    from omichub.application.services.chat_service import ChatService
+
+    result = await db.execute(
+        select(ReportModel)
+        .where(ReportModel.id == UUID(str(report_id)))
+        .options(selectinload(ReportModel.files))
+    )
+    report = result.scalar_one_or_none()
+    if report is None or str(report.user_id) != str(user_id):
+        raise NotFoundError("报告不存在或无权访问")
+
+    agent = await AgentService(db).get_agent(agent_id)
+    if agent is None or not agent.is_active:
+        raise NotFoundError("Agent 不存在或已停用")
+    studio_cfg = (agent.features or {}).get("studio") or {}
+    if studio_cfg and studio_cfg.get("enabled") is False:
+        raise BusinessError("该 Agent 未启用 Studio 工作台")
+    if agent.model_id is None:
+        raise BusinessError("Agent 未绑定模型，无法创建 Studio 会话")
+
+    # 产出该报告的任务（取用户当时参数）；报告可能来自 Studio 回填（无任务行）
+    task = await db.get(TaskModel, report.task_id)
+    params = dict(task.parameters or {}) if task is not None else {}
+
+    service = ChatService(db)
+    image = studio_cfg.get("image")
+    dto = await service.create_session(
+        user_id,
+        agent.model_id,
+        f"优化：{report.title}"[:200],
+        agent_id=agent_id,
+        mode="studio",
+        sandbox_meta={"image": image} if image else None,
+    )
+
+    # 报告产物软链进工作区（数据不搬家），再回填 context_pack
+    workspace = studio_sandbox_manager.workspace_dir(dto.session_id)
+    studio_sandbox_manager.ensure_workspace_dirs(workspace)
+    linked = link_report_files(report, workspace, str(user_id))
+
+    context_pack: dict[str, Any] = {
+        "source": {
+            "pipeline": report.flow_id,
+            "pipeline_name": report.flow_name,
+            "run_id": str(report.task_id),
+            "params": params,
+            "report_id": str(report.id),
+            "report_title": report.title,
+        },
+        "files": [{"path": item["sandbox_path"], "role": item["role"]} for item in linked],
+        "hint": CONTEXT_PACK_HINT,
+    }
+    missing = len(report.files) - len(linked)
+    if missing > 0:
+        context_pack["note"] = f"{missing} 个报告文件已丢失或不可访问，未引入工作区"
+
+    session = await service.get_session(dto.session_id, user_id)
+    if session is None:  # 刚创建的会话不可能查不到，防御性兜底
+        raise BusinessError("Studio 会话创建失败")
+    meta = dict(session.sandbox_meta or {})
+    meta["context_pack"] = context_pack
+    session.sandbox_meta = meta  # 整体重赋值触发 JSONB 变更检测
+    await db.flush()
+    return ChatService._to_session_dto(session)
+
+
+def render_context_pack_hint(pack: dict[str, Any]) -> str:
+    """把 context_pack 渲染为中文系统提示词段（追加在 Studio 提示词后缀之后）。"""
+    source = pack.get("source") or {}
+    lines = [
+        "## 本次会话来源（Context Pack）",
+        "",
+        "用户从结果报告中心发起了「在 AI 工作台中优化」：",
+        f"- 来源流程：{source.get('pipeline_name') or source.get('pipeline') or '未知'}"
+        f"（{source.get('pipeline', '')}）",
+        f"- 运行 ID：{source.get('run_id', '')}",
+        f"- 原报告：{source.get('report_title', '')}（report_id: {source.get('report_id', '')}）",
+    ]
+    params = source.get("params") or {}
+    if params:
+        params_text = json.dumps(params, ensure_ascii=False, default=str)
+        if len(params_text) > 800:
+            params_text = params_text[:800] + "…（已截断）"
+        lines.append(f"- 当时参数：{params_text}")
+    files = pack.get("files") or []
+    if files:
+        lines.extend(["", "已引入 /workspace/input/ 的结果文件："])
+        for f in files:
+            lines.append(f"- {f.get('path')}（{f.get('role')}）")
+    if pack.get("note"):
+        lines.append(f"注意：{pack['note']}")
+    if pack.get("hint"):
+        lines.extend(["", f"优化提示：{pack['hint']}"])
+    return "\n".join(lines)
+
+
+def _infer_artifact_type(name: str) -> str:
+    """按扩展名推断产物类型（对应 report_files.type 的 html/pdf/png/zip/csv 风格）。"""
+    suffix = Path(name).suffix.lower().lstrip(".")
+    return suffix[:20] if suffix else "other"
+
+
+# ===== 数据管理引入（datahub_import 工具与 REST 入口共用路径） =====
+
+
+def _resolve_storage_file(storage_path: str, rel_path: str) -> Path | None:
+    """落盘路径校验（同步辅助）：相对存储根的路径 → 绝对路径，越界返回 None。"""
+    storage_root = Path(storage_path).resolve()
+    abs_path = (storage_root / rel_path).resolve()
+    if abs_path != storage_root and storage_root not in abs_path.parents:
+        return None
+    return abs_path
+
+
+async def import_datahub_file(
+    user_id: str,
+    session_id: str,
+    file_id: str,
+    name: str | None,
+    db: AsyncSession,
+) -> dict[str, Any]:
+    """把数据管理文件引入 Studio 工作区（/workspace/input/ 只读软链，数据不搬家）。
+
+    校验文件归属（强制 user_id 匹配，杜绝跨租户水平越权）与 active 状态，
+    软链目标为容器内 /data/platform/<用户相对路径>。返回
+    {sandbox_path, name, size, file_type, original_name, input_files}；
+    失败抛 NotFoundError / BusinessError（由调用方按通道收敛）。
+    """
+    if not file_id:
+        raise BusinessError("file_id 不能为空")
+    try:
+        file_uuid = uuid.UUID(file_id)
+        user_uuid = uuid.UUID(str(user_id))
+    except ValueError as exc:
+        raise BusinessError("file_id 格式非法") from exc
+
+    result = await db.execute(
+        select(FileRecordModel).where(
+            FileRecordModel.id == file_uuid,
+            FileRecordModel.user_id == user_uuid,
+        )
+    )
+    record = result.scalar_one_or_none()
+    if record is None:
+        raise NotFoundError("文件不存在或无权访问")
+    if record.status != "active":
+        raise BusinessError(f"文件当前状态（{record.status}）不可用，仅支持 active 文件")
+
+    abs_path = _resolve_storage_file(get_settings().storage_path, record.storage_path)
+    if abs_path is None:
+        raise BusinessError("文件存储路径异常（越出存储根）")
+    if not abs_path.is_file():
+        raise BusinessError("文件在磁盘上已丢失，请在数据管理中重新上传")
+
+    workspace = studio_sandbox_manager.workspace_dir(session_id)
+    studio_sandbox_manager.ensure_workspace_dirs(workspace)
+    try:
+        mount_rel = platform_user_rel(record.storage_path, str(user_id))
+    except PathEscapeError as e:
+        raise BusinessError(str(e)) from e
+    link_name = link_platform_file(workspace, mount_rel, name or record.original_name)
+
+    sandbox_path = f"/workspace/input/{link_name}"
+    return {
+        "sandbox_path": sandbox_path,
+        "name": link_name,
+        "size": record.size,
+        "file_type": record.file_type,
+        "original_name": record.original_name,
+        "input_files": [f"/workspace/input/{n}" for n in list_input_links(workspace)],
+    }
+
+
+async def register_artifact_report(
+    user_id: str,
+    session: ChatSessionModel,
+    path: str,
+    title: str,
+    db: AsyncSession,
+    artifact_type: str | None = None,
+    description: str | None = None,
+) -> tuple[ReportModel, ReportFileModel]:
+    """把 /workspace/output/ 下的产物登记为结果报告中心的新报告。
+
+    - path 强制落在工作区 output/ 内（resolve_artifact_path 守卫）；
+    - 产物复制到 {storage_path}/users/{user_id}/results/studio/{session_id}/
+      （工作区保留期仅 7 天，报告需独立存续，故复制而非软链）；
+    - 会话 sandbox_meta.context_pack.source.report_id 存在时挂为原报告的
+      下一版本（parent_id + version=父版本+1），否则 version=1。
+    """
+    if not title.strip():
+        raise BusinessError("报告标题不能为空")
+    workspace = studio_sandbox_manager.workspace_dir(session.session_id)
+    try:
+        target = resolve_artifact_path(workspace, path)
+    except PathEscapeError as e:
+        raise BusinessError(str(e)) from e
+    if not target.is_file():
+        raise NotFoundError(f"产物不存在: {path}")
+
+    # 版本树：父报告来自会话 context_pack；父报告已删除/不属于本人时退化为 v1
+    parent: ReportModel | None = None
+    pack = (session.sandbox_meta or {}).get("context_pack") or {}
+    parent_id_raw = (pack.get("source") or {}).get("report_id")
+    if parent_id_raw:
+        try:
+            candidate = await db.get(ReportModel, UUID(str(parent_id_raw)))
+        except ValueError:
+            candidate = None
+        if candidate is not None and str(candidate.user_id) == str(user_id):
+            parent = candidate
+    version = (parent.version or 1) + 1 if parent is not None else 1
+
+    dest_dir = user_platform_root(user_id) / "results" / "studio" / session.session_id
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / target.name
+    n = 1
+    while dest.exists():
+        n += 1
+        dest = dest_dir / f"{target.stem} ({n}){target.suffix}"
+    await asyncio.to_thread(shutil.copy2, target, dest)
+
+    now = datetime.now()
+    report = ReportModel(
+        id=uuid.uuid4(),
+        # Studio 会话不是任务中心任务：task_id 用随机哨兵值，避免与真实任务混淆
+        task_id=uuid.uuid4(),
+        user_id=UUID(str(user_id)),
+        flow_id=STUDIO_FLOW_ID,
+        flow_name=STUDIO_FLOW_NAME,
+        flow_version="",
+        flow_icon=STUDIO_FLOW_ICON,
+        title=title.strip()[:200],
+        description=(description or "")[:2000] if description else "",
+        status="completed",
+        sample_count=0,
+        duration=0,
+        created_at=now,
+        completed_at=now,
+        parent_id=parent.id if parent is not None else None,
+        version=version,
+    )
+    db.add(report)
+    await db.flush()
+
+    file_model = ReportFileModel(
+        id=uuid.uuid4(),
+        report_id=report.id,
+        name=dest.name,
+        type=(artifact_type or _infer_artifact_type(dest.name))[:20],
+        size=dest.stat().st_size,
+        path=str(dest),
+        is_primary=True,
+    )
+    db.add(file_model)
+    await db.flush()
+    return report, file_model

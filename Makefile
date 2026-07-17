@@ -58,7 +58,7 @@ PGID ?= $(shell id -g)
 REDIS_PASSWORD ?= omichub
 export REDIS_PASSWORD
 
-docker-network: ## 创建跨栈外部网络 omichub_net + 终端沙盒网络（幂等）
+docker-network: ## 创建跨栈外部网络 + 终端网络（Studio 会话网络由 Manager 动态创建）
 	@docker network create $(DOCKER_NETWORK) 2>/dev/null || true
 	@docker network create $(SANDBOX_NETWORK) 2>/dev/null || true
 
@@ -146,6 +146,9 @@ frontend-dev: ## 启动前端开发服务器
 frontend-build: ## 构建前端生产版本
 	cd frontend && npm run build
 
+runtime-images-build: ## 构建独立分析运行时镜像（core / plot / scrna）
+	deploy/runtime-images/build.sh
+
 docker-reload: docker-network ## 重新构建前端并刷新主栈 + Worker (开发用)
 	@echo ""
 	@echo "╔══════════════════════════════════════════════════════════════╗"
@@ -154,22 +157,26 @@ docker-reload: docker-network ## 重新构建前端并刷新主栈 + Worker (开
 	@echo "╚══════════════════════════════════════════════════════════════╝"
 	@$(MAKE) --no-print-directory docker-runtime-dirs
 	@echo ""
-	@echo "📦 步骤 1/6：清理残留容器，避免旧容器占用端口或挂载..."
+	@echo "📦 步骤 1/7：清理残留容器，避免旧容器占用端口或挂载..."
 	-@docker ps -a --filter "name=omichub-" -q | xargs -r docker rm -f 2>/dev/null
+	-@docker ps -a --filter "name=studio-" -q | xargs -r docker rm -f 2>/dev/null
 	@echo ""
-	@echo "🐳 步骤 2/6：构建终端沙盒镜像（如已存在则使用缓存）..."
+	@echo "🐳 步骤 2/7：构建终端沙盒镜像（如已存在则使用缓存）..."
 	-docker build -t omichub/sandbox-terminal:latest tool_configs/terminal/docker/
 	@echo ""
-	@echo "⚡ 步骤 3/6：重新构建前端生产包（vite build）..."
+	@echo "🧪 步骤 3/7：构建 Studio 运行时镜像（包含 sandbox-agent/PTY）..."
+	deploy/runtime-images/build.sh
+	@echo ""
+	@echo "⚡ 步骤 4/7：重新构建前端生产包（vite build）..."
 	cd frontend && npm run build
 	@echo ""
-	@echo "🌐 步骤 4/6：启动主栈服务（web / db / redis / nginx / beat / flower）..."
+	@echo "🌐 步骤 5/7：启动主栈服务（web / db / redis / nginx / beat / flower）..."
 	$(COMPOSE_MAIN) up -d
 	@echo ""
-	@echo "🔧 步骤 5/6：构建并启动独立 Worker 计算栈..."
+	@echo "🔧 步骤 6/7：构建并启动独立 Worker 计算栈..."
 	$(COMPOSE_WORKER) up -d --build worker
 	@echo ""
-	@echo "🗄️  步骤 6/6：检查数据库迁移状态并同步知识库..."
+	@echo "🗄️  步骤 7/7：检查数据库迁移状态并同步知识库..."
 	@$(MAKE) --no-print-directory check-alembic-heads
 	@$(MAKE) --no-print-directory sync-knowledge
 	@echo ""

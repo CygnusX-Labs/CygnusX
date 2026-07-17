@@ -39,11 +39,63 @@ def _sanitize_log_message(message: str) -> str:
     return message
 
 
+def _usage_int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def normalize_token_usage(usage: dict[str, Any] | None) -> dict[str, Any] | None:
+    """把不同 OpenAI 兼容服务的 usage 字段统一为标准三字段。"""
+    if not isinstance(usage, dict):
+        return None
+    source = usage.get("token_usage") if isinstance(usage.get("token_usage"), dict) else usage
+    prompt_tokens = _usage_int(
+        source.get("prompt_tokens")
+        or source.get("input_tokens")
+        or source.get("input")
+    )
+    completion_tokens = _usage_int(
+        source.get("completion_tokens")
+        or source.get("output_tokens")
+        or source.get("output")
+    )
+    total_tokens = _usage_int(source.get("total_tokens") or source.get("total"))
+    if total_tokens <= 0:
+        total_tokens = prompt_tokens + completion_tokens
+    normalized = dict(usage)
+    normalized.update(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+    )
+    return normalized
+
+
+def merge_token_usage(
+    accumulated: dict[str, Any] | None,
+    current: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """累计多次模型请求的 token 用量（Studio 工具循环会产生多轮请求）。"""
+    left = normalize_token_usage(accumulated)
+    right = normalize_token_usage(current)
+    if right is None:
+        return left
+    if left is None:
+        return right
+    return {
+        "prompt_tokens": left["prompt_tokens"] + right["prompt_tokens"],
+        "completion_tokens": left["completion_tokens"] + right["completion_tokens"],
+        "total_tokens": left["total_tokens"] + right["total_tokens"],
+    }
+
+
 @dataclass
 class ChatChunk:
     """流式输出数据块 — SSE 事件的统一抽象"""
 
-    type: str  # "text" | "tool_call" | "error" | "done"
+    type: str  # "text" | "tool_calls" | "tool_call" | "tool_output" | "tool_result" | "plan" | "error" | "done"
     content: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -113,11 +165,21 @@ class OpenAICompatibleProvider:
                     last_usage = chunk.metadata.get("usage")
                 elif chunk.type == "error":
                     attempt_had_error = True
+                    if (
+                        attempt == 0
+                        and not has_yielded_text
+                        and not has_tool_calls
+                        and chunk.metadata.get("retryable")
+                    ):
+                        logger.warning(f"模型 '{self.name}' 瞬时网络失败且尚未输出，自动重试一次")
+                        break
                     yield chunk
                     return
                 else:
                     yield chunk
 
+            if attempt_had_error and attempt == 0 and not has_yielded_text and not has_tool_calls:
+                continue
             if attempt_had_text or attempt_had_error or has_tool_calls:
                 break
             if attempt == 0:
@@ -265,11 +327,11 @@ class OpenAICompatibleProvider:
 
                         # 有些 provider 在 choices 为空时下发 usage
                         if parsed.get("usage"):
-                            usage = parsed["usage"]
+                            usage = normalize_token_usage(parsed["usage"])
 
                         # 有些 provider（如 OpenAI 兼容）在 choices 最后一块带 usage
                         if choices and choices[0].get("usage"):
-                            usage = choices[0]["usage"]
+                            usage = normalize_token_usage(choices[0]["usage"])
 
                         if not choices:
                             continue
@@ -334,11 +396,13 @@ class OpenAICompatibleProvider:
             yield ChatChunk(
                 type="error",
                 content=f"请求超时（{self._timeout}s），请检查网络或增加 Timeout（模型: {self.name}）",
+                metadata={"retryable": True},
             )
-        except httpx.ConnectError:
+        except httpx.NetworkError:
             yield ChatChunk(
                 type="error",
-                content=f"无法连接到模型服务（{self.base_url}），请检查 Base URL（模型: {self.name}）",
+                content=f"模型服务连接中断（{self.base_url}），请检查网络或 Base URL（模型: {self.name}）",
+                metadata={"retryable": True},
             )
         except Exception as e:  # noqa: BLE001
             safe_msg = _sanitize_log_message(str(e))

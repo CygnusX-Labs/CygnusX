@@ -51,10 +51,17 @@ export interface ToolResultEvent {
   mcp_server?: string
 }
 
+export interface StudioPlanStep {
+  title: string
+  status: 'pending' | 'in_progress' | 'done'
+}
+
 export interface TokenUsage {
   input?: number
   output?: number
   total?: number
+  input_tokens?: number
+  output_tokens?: number
   prompt_tokens?: number
   completion_tokens?: number
   total_tokens?: number
@@ -65,6 +72,12 @@ export interface AgentStreamCallbacks {
   onSessionCreated?: (sessionId: string, messageId: string) => void
   onToolCall?: (event: ToolCallEvent) => void
   onToolResult?: (event: ToolResultEvent) => void
+  /**
+   * Studio 工具执行过程中的 stdout/stderr 增量输出
+   * （sandbox_execute 边跑边推；Studio 工具事件带 tool_call_id，旧事件可能仅带工具名）
+   */
+  onToolOutput?: (tool: string, stream: 'stdout' | 'stderr', data: string, toolCallId?: string) => void
+  onPlan?: (steps: StudioPlanStep[]) => void
   onError?: (error: string) => void
   onDone?: (sessionId: string, messageId: string, usage?: TokenUsage) => void
 }
@@ -121,30 +134,37 @@ export function useAgentChatStream() {
       let doneReceived = false
       let errorReceived = false
 
+      const processLine = (line: string) => {
+        const trimmed = line.trim()
+        if (!trimmed || !trimmed.startsWith("data:")) return
+        const data = trimmed.slice(5).trimStart()
+        if (!data) return
+        try {
+          const parsed = JSON.parse(data)
+          handleStreamEvent(parsed, callbacks)
+          if (parsed.type === "done") doneReceived = true
+          if (parsed.type === "error") errorReceived = true
+        } catch {
+          console.warn("[AgentChatStream] 无法解析 SSE 事件:", data)
+        }
+      }
+
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
         buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-        for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed || !trimmed.startsWith('data: ')) continue
-          const data = trimmed.slice(6)
-          try {
-            const parsed = JSON.parse(data)
-            handleStreamEvent(parsed, callbacks)
-            if (parsed.type === 'done') doneReceived = true
-            if (parsed.type === 'error') errorReceived = true
-          } catch {
-            /* 忽略不完整 JSON */
-          }
-        }
+        const lines = buffer.split("\n")
+        buffer = lines.pop() || ""
+        for (const line of lines) processLine(line)
       }
 
+      buffer += decoder.decode()
+      if (buffer.trim()) processLine(buffer)
+
       if (!doneReceived && !errorReceived) {
-        callbacks.onDone?.('', '', undefined)
+        callbacks.onError?.("流式连接意外中断，请重新发送；如果频繁出现，请检查模型服务或反向代理超时配置")
       }
+
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         // 用户主动取消
@@ -184,6 +204,17 @@ export function useAgentChatStream() {
           result: data.result,
           ui_payload: (data.ui_payload as Record<string, unknown>) || undefined,
         })
+        break
+      case 'tool_output':
+        cb.onToolOutput?.(
+          (data.tool as string) || '',
+          data.stream === 'stderr' ? 'stderr' : 'stdout',
+          (data.data as string) || '',
+          (data.tool_call_id as string) || undefined,
+        )
+        break
+      case 'plan':
+        cb.onPlan?.((Array.isArray(data.steps) ? data.steps : []) as StudioPlanStep[])
         break
       case 'error':
         cb.onError?.(content || '生成失败')
