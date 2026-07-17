@@ -242,7 +242,7 @@ onUnmounted(() => {
 <template>
   <Transition
     enter-active-class="transition-opacity duration-300"
-    leave-active-class="transition-opacity duration-200"
+    leave-active-class="festival-modal-leave transition-opacity duration-[240ms]"
     enter-from-class="opacity-0"
     leave-to-class="opacity-0"
   >
@@ -402,12 +402,19 @@ onUnmounted(() => {
   -webkit-backdrop-filter: blur(30px) saturate(1.18);
   transform-origin: center 56%;
   animation: modalSpringIn 680ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  transition: transform 420ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 420ms cubic-bezier(0.16, 1, 0.3, 1), border-color 420ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: box-shadow 420ms cubic-bezier(0.16, 1, 0.3, 1), border-color 420ms cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform;
 }
-.festival-popup:hover {
-  transform: translate3d(0, -2px, 0) scale(1.002);
-  border-color: color-mix(in srgb, var(--theme-border) 78%, rgba(255,255,255,0.18));
+
+/* 退出沿同一空间路径返回（向下 + 缩小 + 失焦），缓动与入场互为镜像；
+   animation: none 解除入场关键帧 forwards 填充对 transform 的锁定 */
+.festival-modal-leave .festival-popup {
+  animation: none;
+  transform: translate3d(0, 14px, 0) scale(0.972);
+  filter: blur(4px);
+  transition:
+    transform 240ms cubic-bezier(0.7, 0, 0.84, 0),
+    filter 240ms cubic-bezier(0.7, 0, 0.84, 0);
 }
 
 
@@ -620,28 +627,23 @@ onUnmounted(() => {
 
 @keyframes modalSpringIn {
   0% { opacity: 0; transform: translate3d(0, 24px, 0) scale(0.965); filter: blur(6px); }
-  58% { opacity: 1; transform: translate3d(0, -2px, 0) scale(1.006); filter: blur(0); }
   100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: blur(0); }
 }
 
 @keyframes modalWaterIn {
   0% { opacity: 0; transform: translate3d(0, 28px, 0) scale(0.972, 0.985); filter: blur(10px); }
-  64% { opacity: 1; transform: translate3d(0, -3px, 0) scale(1.008, 0.998); filter: blur(0); }
   100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: blur(0); }
 }
 @keyframes modalGrowIn {
   0% { opacity: 0; transform: translate3d(0, 18px, 0) scale(0.94); filter: blur(7px); clip-path: inset(12% 8% 18% round 30px); }
-  62% { opacity: 1; transform: translate3d(0, -2px, 0) scale(1.006); filter: blur(0); clip-path: inset(0 round 30px); }
   100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: blur(0); clip-path: inset(0 round 30px); }
 }
 @keyframes modalCondenseIn {
   0% { opacity: 0; transform: translate3d(0, 14px, 0) scale(0.982); filter: blur(14px) saturate(0.86); }
-  55% { opacity: 0.92; transform: translate3d(0, -1px, 0) scale(1.004); filter: blur(1px) saturate(1.08); }
   100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: blur(0) saturate(1); }
 }
 @keyframes modalOrbitIn {
   0% { opacity: 0; transform: translate3d(0, 20px, 0) scale(0.966) rotateX(3deg); filter: blur(8px); }
-  60% { opacity: 1; transform: translate3d(0, -2px, 0) scale(1.005) rotateX(0); filter: blur(0); }
   100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: blur(0); }
 }
 
@@ -696,6 +698,13 @@ onUnmounted(() => {
 .festival-close-btn:active {
   transform: translateY(0) scale(0.96);
   box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
+  transition-duration: 100ms;
+}
+.festival-close-btn:focus-visible,
+.festival-btn-primary:focus-visible,
+.festival-btn-secondary:focus-visible {
+  outline: 2px solid var(--theme-color);
+  outline-offset: 2px;
 }
 
 .festival-badge {
@@ -721,6 +730,9 @@ onUnmounted(() => {
   font-size: 1.52rem;
   font-weight: 800;
   line-height: 1.28;
+  /* 大字标题收紧字距（字号越大字距越显宽），并启用光学尺寸 */
+  letter-spacing: -0.01em;
+  font-optical-sizing: auto;
   word-break: keep-all;
 }
 
@@ -921,7 +933,9 @@ onUnmounted(() => {
   font-size: clamp(2.6rem, 9vw, 3.55rem);
   font-weight: 900;
   line-height: 1;
-  letter-spacing: 0;
+  /* 超大数字负字距，避免视觉上散开 */
+  letter-spacing: -0.02em;
+  font-optical-sizing: auto;
   animation: amountGlow 2.8s cubic-bezier(0.37, 0, 0.63, 1) infinite;
 }
 @keyframes amountGlow {
@@ -963,6 +977,8 @@ onUnmounted(() => {
   transform: translateY(1px) scale(0.982);
   filter: brightness(0.98);
   box-shadow: 0 8px 22px rgba(0,0,0,0.22), inset 0 2px 10px rgba(0,0,0,0.18);
+  /* 按压反馈必须即时：缩短过渡时间，避免“慢半拍”的迟滞感 */
+  transition-duration: 100ms;
 }
 .festival-btn-primary:disabled {
   opacity: 0.7;
@@ -1005,7 +1021,8 @@ onUnmounted(() => {
   margin: 20px 0 0;
   font-size: 0.75rem;
   font-style: italic;
-  letter-spacing: 0;
+  /* 小号文字加正字距提升可读性 */
+  letter-spacing: 0.04em;
 }
 
 
@@ -1061,6 +1078,7 @@ onUnmounted(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* 减少动态效果 ≠ 无反馈：保留容器的不透明度交叉淡入淡出，去掉位移/缩放/模糊 */
   .festival-popup,
   .festival-popup::before,
   .festival-divider,
@@ -1074,8 +1092,48 @@ onUnmounted(() => {
   .festival-close-btn {
     transition: none;
   }
-  .festival-popup:hover {
+  .festival-modal-leave .festival-popup {
     transform: none;
+    filter: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  /* 减少透明度：去掉毛玻璃，表面改为近实色（内联渐变背景用 !important 覆盖） */
+  .festival-backdrop {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(0, 0, 0, 0.72);
+  }
+  .festival-popup {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background-color: rgba(16, 19, 26, 0.97) !important;
+  }
+  .festival-poem-card,
+  .festival-amount-card,
+  .festival-badge,
+  .festival-close-btn,
+  .festival-btn-secondary,
+  .festival-claimed-pill {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  /* 高对比：边框更实、层次边界更清晰 */
+  .festival-popup {
+    border-color: var(--theme-color);
+  }
+  .festival-poem-card,
+  .festival-amount-card {
+    border-color: color-mix(in srgb, var(--theme-color) 70%, #fff);
+  }
+  .festival-close-btn,
+  .festival-btn-secondary,
+  .festival-claimed-pill {
+    border-color: rgba(255, 255, 255, 0.6);
   }
 }
 </style>
