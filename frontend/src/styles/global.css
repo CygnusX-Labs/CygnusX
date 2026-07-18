@@ -214,11 +214,14 @@ body {
 }
 
 :where(.n-card, .arco-card, .omichub-card) {
-  position: relative;
   background-color: var(--neutral-card);
   border: 1px solid var(--neutral-border);
   border-left: 1px solid var(--neutral-border) !important;
   border-radius: var(--radius-card);
+}
+
+:where(.n-card, .arco-card, .omichub-card, .omichub-selectable-card) {
+  position: relative;
   transition:
     background-color var(--card-state-duration) var(--card-state-easing),
     border-color var(--card-state-duration) var(--card-state-easing),
@@ -226,7 +229,7 @@ body {
     transform var(--card-state-duration) var(--card-state-easing);
 }
 
-:where(.n-card, .arco-card, .omichub-card)::before {
+:where(.n-card, .arco-card, .omichub-card, .omichub-selectable-card)::before {
   content: '';
   position: absolute;
   top: 50%;
@@ -244,32 +247,33 @@ body {
     transform var(--card-state-duration) var(--card-state-easing);
 }
 
-:where(.n-card, .arco-card, .omichub-card):not(:is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [data-selected='true'])):hover {
+:where(.n-card, .arco-card, .omichub-card, .omichub-selectable-card):not(:is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [aria-checked='true'], [data-selected='true'])):hover {
   background-color: rgba(64, 158, 255, 0.025);
   border-color: rgba(64, 158, 255, 0.12);
 }
 
-:where(.n-card, .arco-card, .omichub-card):not(:is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [data-selected='true'])):hover::before {
+:where(.n-card, .arco-card, .omichub-card, .omichub-selectable-card):not(:is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [aria-checked='true'], [data-selected='true'])):hover::before {
   opacity: 0.28;
   transform: translateY(-50%) scaleY(0.72);
 }
 
-:where(.n-card, .arco-card, .omichub-card):is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [data-selected='true']) {
+:where(.n-card, .arco-card, .omichub-card, .omichub-selectable-card):is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [aria-checked='true'], [data-selected='true']) {
   background-color: rgba(64, 158, 255, 0.05);
   border-color: rgba(64, 158, 255, 0.18);
+  box-shadow: inset 0 0 0 1px var(--arco-primary);
 }
 
-:where(.n-card, .arco-card, .omichub-card):is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [data-selected='true'])::before {
+:where(.n-card, .arco-card, .omichub-card, .omichub-selectable-card):is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [aria-checked='true'], [data-selected='true'])::before {
   opacity: 1;
   transform: translateY(-50%) scaleY(1);
 }
 
-:root[data-theme="dark"] :where(.n-card, .arco-card, .omichub-card):not(:is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [data-selected='true'])):hover {
+:root[data-theme="dark"] :where(.n-card, .arco-card, .omichub-card, .omichub-selectable-card):not(:is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [aria-checked='true'], [data-selected='true'])):hover {
   background-color: rgba(76, 111, 255, 0.08);
   border-color: rgba(76, 111, 255, 0.2);
 }
 
-:root[data-theme="dark"] :where(.n-card, .arco-card, .omichub-card):is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [data-selected='true']) {
+:root[data-theme="dark"] :where(.n-card, .arco-card, .omichub-card, .omichub-selectable-card):is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [aria-checked='true'], [data-selected='true']) {
   background-color: rgba(76, 111, 255, 0.14);
   border-color: rgba(76, 111, 255, 0.28);
 }

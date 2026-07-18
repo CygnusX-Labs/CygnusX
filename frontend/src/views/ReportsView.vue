@@ -17,7 +17,7 @@ import ReportCardMinimal from '@/components/report/ReportCardMinimal.vue'
 import ReportStatCard from '@/components/report/ReportStatCard.vue'
 import ReportPreviewModal from '@/components/report/ReportPreviewModal.vue'
 import ReportEmptyState from '@/components/report/ReportEmptyState.vue'
-import AppLoading from '@/components/AppLoading.vue'
+import PageHeader from '@/components/PageHeader.vue'
 
 import { mockReports, mockStats } from '@/components/report/mockData'
 
@@ -236,12 +236,16 @@ onMounted(() => {
 
 <template>
   <div class="reports-page">
-    <div class="reports-header">
-      <div class="reports-header__title">
-        <h1 class="page-title">结果报告中心</h1>
-        <p class="page-subtitle">查看和管理所有分析生成的报告，支持在线预览和下载</p>
-      </div>
-    </div>
+    <PageHeader title="结果报告中心" subtitle="查看和管理所有分析生成的报告，支持在线预览和下载">
+      <template #actions>
+        <NButton secondary :loading="loading" @click="loadData">
+          <template #icon>
+            <NIcon :component="RefreshOutline" />
+          </template>
+          刷新报告
+        </NButton>
+      </template>
+    </PageHeader>
 
     <!-- 顶部数据看板 -->
     <div class="stats-dashboard">
@@ -313,12 +317,6 @@ onMounted(() => {
         @update:value="onFilterChange"
       />
 
-      <NButton text class="refresh-btn" @click="loadData">
-        <template #icon>
-          <NIcon :component="RefreshOutline" />
-        </template>
-        刷新
-      </NButton>
     </div>
 
     <!-- 报告卡片列表 -->
@@ -370,24 +368,6 @@ onMounted(() => {
   min-height: 100%;
   background: var(--neutral-bg);
   padding: 24px;
-}
-.reports-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 24px;
-}
-.page-title {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--neutral-text-1);
-  margin: 0 0 6px;
-}
-.page-subtitle {
-  font-size: 14px;
-  color: var(--neutral-text-2);
-  margin: 0;
 }
 
 /* 顶部数据看板 */
@@ -451,14 +431,6 @@ onMounted(() => {
   background: var(--neutral-card);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--arco-primary) 12%, transparent), 0 0 0 4px color-mix(in srgb, var(--kimi-chart-4) 6%, transparent);
 }
-.refresh-btn {
-  color: var(--neutral-text-2);
-  transition: color 0.2s;
-}
-.refresh-btn:hover {
-  color: var(--arco-primary);
-}
-
 /* 报告卡片列表 */
 .report-list {
   display: flex;
@@ -483,9 +455,6 @@ onMounted(() => {
 @media (max-width: 768px) {
   .reports-page {
     padding: 16px;
-  }
-  .reports-header {
-    flex-direction: column;
   }
   .stats-dashboard {
     grid-template-columns: repeat(2, 1fr);

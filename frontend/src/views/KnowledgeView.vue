@@ -205,7 +205,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="docs-layout page-container">
+  <main class="docs-layout page-container" aria-label="知识库">
     <!-- 左侧目录树 -->
     <div class="docs-sider">
       <NCard :bordered="false" class="arco-card nav-card">
@@ -231,7 +231,7 @@ onMounted(async () => {
           </div>
         </div>
 
-        <NSpin :show="loadingNav">
+        <NSpin :show="loadingNav" :aria-busy="loadingNav">
           <DocTree
             v-if="documentTree.length"
             :tree-data="documentTree"
@@ -295,7 +295,7 @@ onMounted(async () => {
         </div>
 
         <!-- 内容区 -->
-        <NSpin :show="loadingDoc">
+        <NSpin :show="loadingDoc" :aria-busy="loadingDoc">
           <div v-if="activeDoc" class="content-body">
             <DocEditor
               v-if="isEditMode"
@@ -314,7 +314,7 @@ onMounted(async () => {
         </NSpin>
       </NCard>
     </div>
-  </div>
+  </main>
 
   <DocCreateModal
     v-model:show="showCreateModal"

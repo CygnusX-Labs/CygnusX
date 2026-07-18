@@ -11,6 +11,7 @@ import {
 import { ArrowBackOutline, BarChartOutline, DownloadOutline, SparklesOutline } from '@vicons/ionicons5'
 import * as Plotly from 'plotly.js-dist-min'
 import { useThemeStore } from '@/stores/theme'
+import PageHeader from '@/components/PageHeader.vue'
 import type {
   ManhattanConfig, ColMap, ManhattanRow, ProcessedResult,
 } from '@/utils/manhattanProcessor'
@@ -400,13 +401,9 @@ onUnmounted(() => {
 <template>
   <div class="manhattan-page" @paste="handlePaste">
     <!-- Toolbar -->
-    <div class="page-toolbar">
-      <NButton text @click="router.push('/tools')">
-        <template #icon><NIcon :size="18"><ArrowBackOutline /></NIcon></template>
-        返回工具箱
-      </NButton>
-      <h1 class="page-title">曼哈顿图绘制</h1>
-      <NButton size="small" quaternary @click="loadSample">
+    <PageHeader title="曼哈顿图绘制" subtitle="导入关联分析结果，交互式生成与导出曼哈顿图" back-to="/tools" back-label="返回工具箱">
+      <template #actions>
+        <NButton size="small" quaternary @click="loadSample">
         <template #icon><NIcon><SparklesOutline /></NIcon></template>
         示例数据
       </NButton>
@@ -418,7 +415,8 @@ onUnmounted(() => {
         <NButton size="tiny" secondary @click="exportImage('png')">PNG</NButton>
         <NButton size="tiny" secondary @click="exportImage('svg')">SVG</NButton>
       </NButtonGroup>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- 主体 -->
     <div class="manhattan-layout">

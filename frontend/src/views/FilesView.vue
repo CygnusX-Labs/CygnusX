@@ -418,7 +418,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="finder-page">
+  <main class="finder-page" aria-label="数据管理">
     <!-- 顶部统计大盘 -->
     <OverviewStats
       :samples="samplesCount"
@@ -541,9 +541,9 @@ onUnmounted(() => {
         </div>
 
         <!-- 工作台主体 -->
-        <NSpin :show="loading" class="workspace-body">
+        <NSpin :show="loading" class="workspace-body" :aria-busy="loading">
           <!-- 错误状态 -->
-          <div v-if="error && !displayFiles.length" class="workspace-error">
+          <div v-if="error && !displayFiles.length" class="workspace-error" role="alert">
             <AppLoading text="加载失败，请重试" size="small" />
             <NButton size="small" @click="fetchAll">重试</NButton>
           </div>
@@ -567,8 +567,13 @@ onUnmounted(() => {
                 v-for="f in displayFiles"
                 :key="f.id"
                 class="grid-card omichub-card"
-                :class="{ active: selectedFile?.id === f.id }"
+                :class="{ active: selectedFile?.id === f.id, 'is-selected': selectedFile?.id === f.id }"
+                role="button"
+                tabindex="0"
+                :aria-selected="selectedFile?.id === f.id"
                 @click="selectFile(f)"
+                @keydown.enter.prevent="selectFile(f)"
+                @keydown.space.prevent="selectFile(f)"
               >
                 <div class="grid-icon">
                   <NIcon :size="28" color="var(--arco-primary)"
@@ -788,7 +793,7 @@ onUnmounted(() => {
         </template>
       </div>
     </NDrawer>
-  </div>
+  </main>
 </template>
 
 <style scoped>

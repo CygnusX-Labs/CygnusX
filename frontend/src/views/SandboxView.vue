@@ -272,7 +272,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="sandbox-page">
+  <main class="sandbox-page" aria-label="代码沙盒" :aria-busy="running">
     <div class="sandbox-toolbar">
       <NSpace align="center" :size="12">
         <NSelect
@@ -290,7 +290,7 @@ onBeforeUnmount(() => {
           <template #icon><NIcon><StopCircleOutline /></NIcon></template>
           停止
         </NButton>
-        <NTag :type="statusType" size="small" round>
+        <NTag :type="statusType" size="small" round role="status" aria-live="polite">
           <template #icon>
             <NIcon v-if="statusType === 'success'"><CheckmarkCircleOutline /></NIcon>
             <NIcon v-else-if="statusType === 'error'"><CloseCircleOutline /></NIcon>
@@ -426,7 +426,7 @@ onBeforeUnmount(() => {
         </NTabs>
       </section>
     </div>
-  </div>
+  </main>
 </template>
 
 <style scoped>

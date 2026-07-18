@@ -13,6 +13,7 @@ import {
 } from 'naive-ui'
 import { h, onMounted, ref, reactive } from 'vue'
 import { useRoute } from 'vue-router'
+import PageHeader from '@/components/PageHeader.vue'
 
 const route = useRoute()
 
@@ -159,7 +160,7 @@ onMounted(() => {
 
 <template>
   <div class="page-container">
-    <h1 class="page-title">交易流水审计</h1>
+    <PageHeader title="交易流水审计" subtitle="按用户、来源和时间范围追踪平台饼干流水" />
     <NSpace vertical :size="24">
       <NCard title="筛选条件" :bordered="false" class="arco-card">
         <NSpace :size="16" align="center" wrap>
@@ -198,6 +199,7 @@ onMounted(() => {
         <NDataTable
           :columns="columns"
           :data="data"
+          :row-key="(row) => row.id"
           :loading="loading"
           :pagination="{
             page: Math.floor(page.offset / page.limit) + 1,

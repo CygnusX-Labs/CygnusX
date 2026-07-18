@@ -33,7 +33,7 @@ onMounted(async () => {
 
 <template>
   <main class="shared-studio">
-    <div v-if="loading" class="center-state">
+    <div v-if="loading" class="center-state" role="status" aria-live="polite" aria-busy="true">
       <n-spin size="large" />
       <p>正在加载只读工作台…</p>
     </div>

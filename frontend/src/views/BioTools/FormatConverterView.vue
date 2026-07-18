@@ -12,6 +12,7 @@ import {
   parseIdMap, parseRecords,
   type SourceFormat, type TargetFormat,
 } from '@/utils/formatConverterProcessor'
+import PageHeader from '@/components/PageHeader.vue'
 
 const router = useRouter()
 const message = useMessage()
@@ -181,19 +182,14 @@ function loadSample() {
 
 <template>
   <div class="format-page">
-    <div class="page-toolbar">
-      <NButton text @click="router.push('/tools')">
-        <template #icon><NIcon :size="18"><ArrowBackOutline /></NIcon></template>
-        返回工具箱
-      </NButton>
-      <h1 class="page-title">🔄 格式轻量转换器</h1>
-      <NButton size="small" quaternary @click="loadSample">
-        <template #icon><NIcon><SparklesOutline /></NIcon></template>
-        示例数据
-      </NButton>
-    </div>
-
-    <p class="page-subtitle">生信格式界的万能翻译官，纯前端处理，文件不会上传服务器 😎</p>
+    <PageHeader title="格式轻量转换器" subtitle="在浏览器本地完成常用生信格式转换，数据不会上传服务器" back-to="/tools" back-label="返回工具箱">
+      <template #actions>
+        <NButton size="small" quaternary @click="loadSample">
+          <template #icon><NIcon><SparklesOutline /></NIcon></template>
+          示例数据
+        </NButton>
+      </template>
+    </PageHeader>
 
     <NTabs v-model:value="activeTab" type="line" animated size="medium">
       <!-- ===== Tab 1：GFF/GTF/BED 互转 ===== -->

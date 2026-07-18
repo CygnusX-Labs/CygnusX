@@ -5,6 +5,7 @@ import type { CostEstimate } from '@/types'
 import { apiClient } from '@/api'
 import DynamicForm from '@/components/dynamic-form/DynamicForm.vue'
 import FilePickerModal from '@/components/FilePickerModal.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import {
   NAlert,
   NButton,
@@ -189,22 +190,22 @@ onMounted(fetchFlow)
 
 <template>
   <div class="flow-submit-view">
-    <div class="submit-header">
-      <h2>{{ flow?.meta.name || '提交任务' }}</h2>
-      <a
-        v-if="flow?.meta.docs_url"
-        :href="flow.meta.docs_url"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="github-link"
-      >
-        <NIcon :size="18"><LogoGithub /></NIcon>
-        查看源码
-      </a>
-    </div>
-    <NAlert v-if="error" type="error" :title="error" />
+    <PageHeader :title="flow?.meta.name || '提交任务'" subtitle="配置分析参数与样本表后提交运行任务">
+      <template v-if="flow?.meta.docs_url" #actions>
+        <a
+          :href="flow.meta.docs_url"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="github-link focus-ring"
+        >
+          <NIcon :size="18"><LogoGithub /></NIcon>
+          查看源码
+        </a>
+      </template>
+    </PageHeader>
+    <NAlert v-if="error" type="error" :title="error" role="alert" />
 
-    <NSpin :show="loading">
+    <NSpin :show="loading" :aria-busy="loading">
       <NCard v-if="flow" title="任务参数">
         <NSpace vertical>
           <NInput v-model:value="taskName" placeholder="任务名称（可选）" />
@@ -254,12 +255,12 @@ onMounted(fetchFlow)
         <NSpace align="center" justify="space-between">
           <NSpace align="center" :size="24">
             <div>
-              <span style="color: var(--neutral-text-2, #666)">预估费用: </span>
+              <span class="cost-label">预估费用: </span>
               <span style="font-weight: bold; font-size: 18px">{{ Number(costEstimate.estimated_cost).toFixed(2) }} 🥫</span>
             </div>
             <div>
-              <span style="color: var(--neutral-text-2, #666)">当前余额: </span>
-              <span :style="{ fontWeight: 'bold', color: costEstimate.affordable ? '#18a058' : '#d03050' }">
+              <span class="cost-label">当前余额: </span>
+              <span :class="['cost-value', { 'cost-value--unaffordable': !costEstimate.affordable }]">
                 {{ Number(costEstimate.current_balance).toFixed(1) }} 🥫
               </span>
             </div>
@@ -291,29 +292,21 @@ onMounted(fetchFlow)
   flex-direction: column;
   gap: 16px;
 }
-.submit-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.submit-header h2 {
-  margin: 0;
-}
 .github-link {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   padding: 4px 12px;
   border-radius: 8px;
-  background: var(--neutral-hover, #f5f5f5);
-  color: var(--neutral-text-2, #666);
+  background: var(--neutral-hover);
+  color: var(--neutral-text-2);
   font-size: 13px;
   text-decoration: none;
   transition: all 0.2s;
 }
 .github-link:hover {
-  color: var(--neutral-text-1, #333);
-  background: var(--neutral-border, #e8e8e8);
+  color: var(--neutral-text-1);
+  background: var(--neutral-border);
 }
 .sample-card {
   margin-top: 16px;
@@ -329,5 +322,24 @@ onMounted(fetchFlow)
 }
 .file-col-cell :deep(.n-input) {
   flex: 1;
+}
+.cost-label {
+  color: var(--neutral-text-2);
+}
+.cost-value {
+  color: var(--arco-success);
+  font-size: 18px;
+  font-weight: 700;
+}
+.cost-value--unaffordable {
+  color: var(--arco-danger);
+}
+@media (max-width: 768px) {
+  .flow-submit-view {
+    padding: 16px;
+  }
+  .file-col-cell {
+    min-width: 200px;
+  }
 }
 </style>

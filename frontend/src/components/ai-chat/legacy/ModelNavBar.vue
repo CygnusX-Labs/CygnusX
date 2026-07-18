@@ -154,15 +154,20 @@ function handleShare() {
             <n-icon size="14" class="model-chevron"><ChevronDownOutline /></n-icon>
           </div>
         </template>
-        <div class="model-switcher-panel">
+        <div class="model-switcher-panel" role="listbox" aria-label="选择模型">
           <template v-if="groupedModels.fav.length">
             <div class="group-title">收藏</div>
             <div
               v-for="m in groupedModels.fav"
               :key="m.id"
-              class="model-item"
-              :class="{ selected: m.id === chatSessionStore.selectedModelId }"
+              class="model-item omichub-selectable-card"
+              :class="{ selected: m.id === chatSessionStore.selectedModelId, 'is-selected': m.id === chatSessionStore.selectedModelId }"
+              role="option"
+              tabindex="0"
+              :aria-selected="m.id === chatSessionStore.selectedModelId"
               @click="handleSwitchModel(m.id)"
+              @keydown.enter.prevent="handleSwitchModel(m.id)"
+              @keydown.space.prevent="handleSwitchModel(m.id)"
             >
               <div class="model-meta">
                 <div class="name">{{ m.name }}</div>
@@ -186,9 +191,14 @@ function handleShare() {
           <div
             v-for="m in groupedModels.general"
             :key="m.id"
-            class="model-item"
-            :class="{ selected: m.id === chatSessionStore.selectedModelId }"
+            class="model-item omichub-selectable-card"
+            :class="{ selected: m.id === chatSessionStore.selectedModelId, 'is-selected': m.id === chatSessionStore.selectedModelId }"
+            role="option"
+            tabindex="0"
+            :aria-selected="m.id === chatSessionStore.selectedModelId"
             @click="handleSwitchModel(m.id)"
+            @keydown.enter.prevent="handleSwitchModel(m.id)"
+            @keydown.space.prevent="handleSwitchModel(m.id)"
           >
             <div class="model-meta">
               <div class="name">{{ m.name }}</div>
@@ -220,9 +230,14 @@ function handleShare() {
             <div
               v-for="m in groupedModels.bio"
               :key="m.id"
-              class="model-item"
-              :class="{ selected: m.id === chatSessionStore.selectedModelId }"
+              class="model-item omichub-selectable-card"
+              :class="{ selected: m.id === chatSessionStore.selectedModelId, 'is-selected': m.id === chatSessionStore.selectedModelId }"
+              role="option"
+              tabindex="0"
+              :aria-selected="m.id === chatSessionStore.selectedModelId"
               @click="handleSwitchModel(m.id)"
+              @keydown.enter.prevent="handleSwitchModel(m.id)"
+              @keydown.space.prevent="handleSwitchModel(m.id)"
             >
               <div class="model-meta">
                 <div class="name">{{ m.name }}</div>

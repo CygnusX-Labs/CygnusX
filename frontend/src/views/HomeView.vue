@@ -115,7 +115,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="home-page">
+  <div class="home-page" role="main" aria-label="OmicHub 首页">
     <!-- Hero 欢迎区 -->
     <section class="hero animate-fade-in-up">
       <OmicBackgroundAnimation context="hero" />

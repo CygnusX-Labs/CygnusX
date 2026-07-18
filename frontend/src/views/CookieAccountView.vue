@@ -13,6 +13,7 @@ import {
   NTag,
 } from 'naive-ui'
 import { computed, h, onMounted, ref } from 'vue'
+import PageHeader from '@/components/PageHeader.vue'
 
 const account = ref<any>(null)
 const transactions = ref<CookieTransaction[]>([])
@@ -83,7 +84,7 @@ onMounted(async () => {
 
 <template>
   <div class="page-container">
-    <h1 class="page-title">用量统计</h1>
+    <PageHeader title="用量统计" subtitle="查看当前饼干余额、账户状态与交易流水" />
     <NSpace vertical :size="24">
       <NCard title="饼干账户" :bordered="false" class="arco-card">
         <NGrid v-if="account" :cols="4" :x-gap="16" :y-gap="16" responsive="screen">
@@ -124,6 +125,7 @@ onMounted(async () => {
         <NDataTable
           :columns="columns"
           :data="transactions"
+          :row-key="(row) => row.id ?? `${row.created_at}-${row.source_id}-${row.txn_type}`"
           :loading="loading"
           :pagination="{ pageSize: 20 }"
           :bordered="false"

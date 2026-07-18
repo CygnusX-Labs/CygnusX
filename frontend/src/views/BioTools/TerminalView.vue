@@ -6,6 +6,7 @@ import {
   NSpin,
   NTag,
   NSpace,
+  NTooltip,
   NIcon,
   NEmpty,
   useMessage,
@@ -177,14 +178,14 @@ watch(
 </script>
 
 <template>
-  <div class="terminal-page" :class="{ 'terminal-fullscreen': fullScreen }">
+  <div class="terminal-page" :class="{ 'terminal-fullscreen': fullScreen }" role="main" aria-label="云端沙盒终端">
     <div v-if="session" class="terminal-header session-header">
       <div class="header-left">
         <NIcon :size="20" color="#2e5bff">
           <TerminalOutline />
         </NIcon>
         <span class="header-title">云端沙盒终端</span>
-        <NTag :type="statusType" size="small" round>
+        <NTag :type="statusType" size="small" round role="status" aria-live="polite">
           {{ session.status }}
         </NTag>
         <span class="session-id">{{ session.session_id }}</span>
@@ -216,14 +217,14 @@ watch(
     </div>
 
     <div v-else class="page-header">
-      <NButton secondary class="back-button" @click="router.push('/tools')">
-        <template #icon>
-          <NIcon :size="18">
-            <ArrowBackOutline />
-          </NIcon>
+      <NTooltip placement="bottom" :delay="300">
+        <template #trigger>
+          <NButton circle secondary size="large" class="back-button" aria-label="返回工具箱" @click="router.push('/tools')">
+            <template #icon><NIcon :size="22"><ArrowBackOutline /></NIcon></template>
+          </NButton>
         </template>
         返回工具箱
-      </NButton>
+      </NTooltip>
       <div class="page-title-group">
         <h1 class="page-title">云端沙盒终端</h1>
         <p class="page-subtitle">选择预装工具链的镜像，启动一个隔离、用完即毁的沙盒终端</p>

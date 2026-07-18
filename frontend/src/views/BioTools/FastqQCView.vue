@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import PageHeader from '@/components/PageHeader.vue'
 import {
   NAlert,
   NButton,
@@ -155,14 +156,11 @@ function prepareTask() {
 
 <template>
   <div class="fastq-page">
-    <div class="page-toolbar">
-      <NButton text @click="router.push('/tools')">
-        <template #icon><NIcon :size="18"><ArrowBackOutline /></NIcon></template>
-        返回工具箱
-      </NButton>
-      <h1 class="page-title">FASTQ 极速质控</h1>
-      <NTag round size="small" type="info">fastp + MultiQC</NTag>
-    </div>
+    <PageHeader title="FASTQ 极速质控" subtitle="使用 fastp 与 MultiQC 完成测序数据质控与汇总" back-to="/tools" back-label="返回工具箱">
+      <template #actions>
+        <NTag round size="small" type="info">fastp + MultiQC</NTag>
+      </template>
+    </PageHeader>
 
     <NAlert type="info" :show-icon="true" class="tool-alert">
       从数据管理选择已上传至 workspace 的 FASTQ 文件；任务将按样本运行 fastp 并汇总 MultiQC 报告。
@@ -183,8 +181,9 @@ function prepareTask() {
           <h3 class="section-title">输入 FASTQ 文件</h3>
           <div class="input-grid" :class="{ paired: libraryType === 'paired' }">
             <div
-              class="fastq-dropzone"
-              :class="{ selected: read1 }"
+              class="fastq-dropzone omichub-selectable-card"
+              :class="{ selected: read1, 'is-selected': read1 }"
+              :data-selected="read1 ? 'true' : 'false'"
               role="button"
               tabindex="0"
               @click="openWorkspacePicker('read1')"
@@ -200,8 +199,9 @@ function prepareTask() {
             </div>
             <div
               v-if="libraryType === 'paired'"
-              class="fastq-dropzone"
-              :class="{ selected: read2 }"
+              class="fastq-dropzone omichub-selectable-card"
+              :class="{ selected: read2, 'is-selected': read2 }"
+              :data-selected="read2 ? 'true' : 'false'"
               role="button"
               tabindex="0"
               @click="openWorkspacePicker('read2')"

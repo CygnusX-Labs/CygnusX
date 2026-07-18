@@ -353,7 +353,7 @@ function reloadConfig() {
 </script>
 
 <template>
-  <div class="yaml-browser-page">
+  <div class="yaml-browser-page" role="main" aria-label="YAML 驱动基因组浏览器">
     <!-- 工具栏 -->
     <div class="toolbar">
       <div class="toolbar-left">

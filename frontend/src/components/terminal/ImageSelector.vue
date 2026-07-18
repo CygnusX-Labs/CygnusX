@@ -24,13 +24,15 @@ function selectImage(id: string) {
 </script>
 
 <template>
-  <div class="image-selector">
+  <div class="image-selector" role="radiogroup" aria-label="终端镜像">
     <button
       v-for="img in images"
       :key="img.id"
       type="button"
-      :class="['image-item', { active: selectedId === img.id }]"
-      :aria-pressed="selectedId === img.id"
+      class="image-item omichub-selectable-card"
+      :class="{ active: selectedId === img.id, 'is-selected': selectedId === img.id }"
+      role="radio"
+      :aria-checked="selectedId === img.id"
       @click="selectImage(img.id)"
     >
       <span class="image-radio" aria-hidden="true">

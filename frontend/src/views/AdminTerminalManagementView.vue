@@ -11,6 +11,7 @@ import {
   useMessage,
 } from 'naive-ui'
 import { h, onMounted, ref } from 'vue'
+import PageHeader from '@/components/PageHeader.vue'
 
 interface TerminalStats {
   cpu_percent: number
@@ -179,7 +180,7 @@ onMounted(fetchSessions)
 
 <template>
   <div class="page-container">
-    <h1 class="page-title">沙盒终端管理</h1>
+    <PageHeader title="沙盒终端管理" subtitle="查看运行中的终端会话与资源占用" />
     <NSpace vertical :size="24">
       <NCard title="活跃终端会话" :bordered="false" class="arco-card">
         <template #header-extra>
@@ -192,6 +193,7 @@ onMounted(fetchSessions)
         <NDataTable
           :columns="columns"
           :data="sessions"
+          :row-key="(row) => row.id"
           :loading="loading"
           :pagination="{ pageSize: 20 }"
           :bordered="false"

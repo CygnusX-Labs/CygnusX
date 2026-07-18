@@ -32,6 +32,7 @@ import {
   type PrimerPair,
   type PrimerTaskType,
 } from '@/utils/primerForgeProcessor'
+import PageHeader from '@/components/PageHeader.vue'
 
 const router = useRouter()
 const message = useMessage()
@@ -395,13 +396,9 @@ function primerDetail(primer: PrimerInfo, direction: 'forward' | 'reverse') {
 
 <template>
   <div class="primer-page">
-    <div class="page-toolbar">
-      <NButton text @click="router.push('/tools')">
-        <template #icon><NIcon :size="18"><ArrowBackOutline /></NIcon></template>
-        返回工具箱
-      </NButton>
-      <h1 class="page-title">PrimerForge 引物锻造工坊</h1>
-      <NButton size="small" quaternary @click="loadSample">
+    <PageHeader title="PrimerForge 引物锻造工坊" subtitle="设计、筛选与导出 PCR / qPCR 引物候选对" back-to="/tools" back-label="返回工具箱">
+      <template #actions>
+        <NButton size="small" quaternary @click="loadSample">
         <template #icon><NIcon><SparklesOutline /></NIcon></template>
         示例数据
       </NButton>
@@ -409,7 +406,8 @@ function primerDetail(primer: PrimerInfo, direction: 'forward' | 'reverse') {
         <template #icon><NIcon><RefreshOutline /></NIcon></template>
         重置参数
       </NButton>
-    </div>
+      </template>
+    </PageHeader>
 
     <div class="primer-layout">
       <aside class="param-panel">

@@ -1,5 +1,5 @@
 <template>
-  <div class="register-page">
+  <div class="register-page" role="main" aria-label="注册 OmicHub 账户">
     <StarField />
     <LoginPageQuote />
 

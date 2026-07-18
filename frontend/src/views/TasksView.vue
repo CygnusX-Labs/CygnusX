@@ -4,6 +4,7 @@ import type { Task } from '@/types'
 import TaskTable from '@/components/task/TaskTable.vue'
 import AppLoading from '@/components/AppLoading.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import apiClient from '@/api/client'
 import { useApi } from '@/composables/useApi'
 import { NInput, NSelect, NButton, NIcon, useMessage } from 'naive-ui'
@@ -90,17 +91,14 @@ onMounted(fetchTasks)
 
 <template>
   <div class="page-container tasks-page">
-    <div class="tasks-header">
-      <div class="tasks-header__title">
-        <h1 class="page-title">任务中心</h1>
-        <p class="text-sm text-gray-400 mt-1">管理和监控所有生信分析任务的执行状态</p>
-      </div>
-      <div class="tasks-header__actions">
+    <PageHeader title="任务中心" subtitle="管理和监控所有生信分析任务的执行状态">
+      <template #actions>
+        <div class="tasks-header__actions">
         <NInput
           v-model:value="searchQuery"
           placeholder="搜索任务名称、流程、错误信息..."
           clearable
-          style="width: 260px"
+          class="task-search"
         >
           <template #prefix>
             <NIcon :size="14"><SearchOutline /></NIcon>
@@ -112,14 +110,15 @@ onMounted(fetchTasks)
           style="width: 140px"
           @update:value="fetchTasks"
         />
-        <NButton @click="fetchTasks">
+        <NButton :loading="loading" @click="fetchTasks">
           <template #icon>
             <NIcon><RefreshOutline /></NIcon>
           </template>
           刷新
         </NButton>
-      </div>
-    </div>
+        </div>
+      </template>
+    </PageHeader>
 
     <div v-if="loading && !filteredTasks.length" class="tasks-loading">
       <AppLoading text="加载任务列表..." />
@@ -146,20 +145,16 @@ onMounted(fetchTasks)
   background: var(--neutral-bg);
 }
 
-.tasks-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
 .tasks-header__actions {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.task-search {
+  width: 260px;
 }
 
 .tasks-loading {
@@ -170,9 +165,6 @@ onMounted(fetchTasks)
 }
 
 @media (max-width: 768px) {
-  .tasks-header {
-    flex-direction: column;
-  }
   .tasks-header__actions {
     width: 100%;
     justify-content: flex-start;
@@ -180,6 +172,10 @@ onMounted(fetchTasks)
   .tasks-header__actions :deep(.n-input),
   .tasks-header__actions :deep(.n-select) {
     width: 100% !important;
+  }
+
+  .task-search {
+    flex: 1 1 220px;
   }
 }
 </style>

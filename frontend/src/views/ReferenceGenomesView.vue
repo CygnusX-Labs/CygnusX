@@ -141,7 +141,7 @@ function openRegisterDialog() {
 </script>
 
 <template>
-  <div class="database-page">
+  <div class="database-page" role="main" aria-label="参考基因组数据库">
     <PageHeader title="参考基因组数据库" subtitle="集中管理 FA、GFF、GO、KEGG 与跨版本基因映射。">
       <template #actions>
         <NButton type="primary" secondary class="register-button" @click="openRegisterDialog">

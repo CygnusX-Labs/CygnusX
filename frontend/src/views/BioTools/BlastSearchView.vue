@@ -16,6 +16,7 @@ import BlastRightPanel from '@/components/blast/BlastRightPanel.vue'
 import BlastGraphicSummary from '@/components/blast/BlastGraphicSummary.vue'
 import BlastHitDetailCard from '@/components/blast/BlastHitDetailCard.vue'
 import BlastParamsInfo from '@/components/blast/BlastParamsInfo.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { analyzeSequence, detectSequenceType } from '@/utils/sequenceAnalysis'
 import type { BlastDatabase, BlastHit, BlastResult, BlastTask, BlastTaskListItem, ProgramType } from '@/types/blast'
 
@@ -507,17 +508,14 @@ onUnmounted(() => {
 
 <template>
   <div class="blast-page">
-    <div class="page-toolbar">
-      <NButton text @click="router.push('/tools')">
-        <template #icon><NIcon :size="18"><ArrowBackOutline /></NIcon></template>
-        返回工具箱
-      </NButton>
-      <h1 class="page-title">序列检索 BLAST</h1>
-      <NButton size="small" secondary @click="router.push('/tools/blast/tasks')">
-        <template #icon><NIcon><ListOutline /></NIcon></template>
-        任务中心
-      </NButton>
-    </div>
+    <PageHeader title="序列检索 BLAST" subtitle="在本地和已配置数据库中执行序列相似性检索" back-to="/tools" back-label="返回工具箱">
+      <template #actions>
+        <NButton size="small" secondary @click="router.push('/tools/blast/tasks')">
+          <template #icon><NIcon><ListOutline /></NIcon></template>
+          任务中心
+        </NButton>
+      </template>
+    </PageHeader>
 
     <NAlert type="warning" :show-icon="true" class="data-retention-alert">
       BLAST 任务结果将在 7 天后自动清理，请及时下载或保存重要结果。
@@ -674,6 +672,7 @@ onUnmounted(() => {
             <NDataTable
               :columns="columns"
               :data="currentResult.hits"
+              :row-key="(row) => row.hit_id || `${row.query_id}-${row.subject_id}-${row.hit_num}`"
               :bordered="false"
               size="small"
               :single-line="false"

@@ -158,7 +158,7 @@ onMounted(fetchFlows)
 </script>
 
 <template>
-  <div class="flows-page">
+  <div class="flows-page" role="main" aria-label="分析流程中心">
     <PageHeader
       class="animate-fade-in-up"
       :title="activeType ? typeLabels[activeType] || '分析流程' : '分析中心'"

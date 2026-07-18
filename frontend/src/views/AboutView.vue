@@ -92,7 +92,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 </script>
 
 <template>
-  <div class="about-page">
+  <div class="about-page" role="main" aria-label="关于 OmicHub">
     <!-- 深空背景 -->
     <div class="space-bg" />
 

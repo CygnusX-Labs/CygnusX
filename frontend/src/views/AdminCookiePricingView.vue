@@ -12,6 +12,7 @@ import {
   useMessage,
 } from 'naive-ui'
 import { h, onMounted, ref } from 'vue'
+import PageHeader from '@/components/PageHeader.vue'
 
 const message = useMessage()
 const pricing = ref<any[]>([])
@@ -117,13 +118,13 @@ onMounted(fetchPricing)
 
 <template>
   <div class="page-container">
-    <h1 class="page-title">饼干定价管理</h1>
+    <PageHeader title="饼干定价管理" subtitle="维护任务、资源和奖励的计费策略" />
     <NSpace vertical :size="24">
       <NCard title="定价策略管理" :bordered="false" class="arco-card">
         <template #header-extra>
           <NButton type="primary" @click="openEdit()">新建定价</NButton>
         </template>
-        <NDataTable :columns="columns" :data="pricing" :loading="loading" :pagination="{ pageSize: 20 }" :bordered="false" size="small" />
+        <NDataTable :columns="columns" :data="pricing" :row-key="(row) => row.id" :loading="loading" :pagination="{ pageSize: 20 }" :bordered="false" size="small" />
       </NCard>
 
       <NModal v-model:show="showEdit" :title="editForm.id ? '编辑定价' : '新建定价'" preset="dialog" style="width: 560px">

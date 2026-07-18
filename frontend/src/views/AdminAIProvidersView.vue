@@ -17,6 +17,7 @@ import {
   NTag,
 } from 'naive-ui'
 import { h, onMounted, ref } from 'vue'
+import PageHeader from '@/components/PageHeader.vue'
 
 const message = useMessage()
 
@@ -167,7 +168,7 @@ onMounted(fetchConfigs)
 
 <template>
   <div class="page-container">
-    <h1 class="page-title">AI 模型配置</h1>
+    <PageHeader title="AI 模型配置" subtitle="管理应用可用的模型 Provider 与调用参数" />
     <NSpace vertical :size="24">
       <NCard title="Provider 配置" :bordered="false" class="arco-card">
         <template #header-extra>
@@ -176,6 +177,7 @@ onMounted(fetchConfigs)
         <NDataTable
           :columns="columns"
           :data="configs"
+          :row-key="(row) => row.id"
           :loading="loading"
           :pagination="{ pageSize: 20 }"
           :bordered="false"

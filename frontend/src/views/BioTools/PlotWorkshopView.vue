@@ -9,6 +9,7 @@ import {
 import { ArrowBackOutline, ContractOutline, DownloadOutline, ExpandOutline, RefreshOutline } from '@vicons/ionicons5'
 import * as Plotly from 'plotly.js-dist-min'
 import { useThemeStore } from '@/stores/theme'
+import PageHeader from '@/components/PageHeader.vue'
 import { fetchPosthocComparisons, type PosthocResult } from '@/api/plotStats'
 import { CONTINUOUS_PALETTES, DISCRETE_PALETTES } from '@/components/charts/palettes'
 import {
@@ -246,14 +247,14 @@ onUnmounted(() => {
 
 <template>
   <div class="workshop-page">
-    <div class="page-toolbar">
-      <NButton text @click="router.push('/tools')"><template #icon><NIcon><ArrowBackOutline /></NIcon></template>返回工具箱</NButton>
-      <div class="toolbar-title"><h1>组学绘图工坊</h1><span>上传数据 · 即时校验 · 交互绘图 · 高清导出</span></div>
-      <NSpace>
+    <PageHeader title="组学绘图工坊" subtitle="上传数据、即时校验、交互绘图并导出高清图表" back-to="/tools" back-label="返回工具箱">
+      <template #actions>
+        <NSpace>
         <NButton size="small" @click="loadExample()">加载示例</NButton>
         <NButton size="small" type="primary" @click="loadExample(true)"><template #icon><NIcon><DownloadOutline /></NIcon></template>下载示例数据</NButton>
-      </NSpace>
-    </div>
+        </NSpace>
+      </template>
+    </PageHeader>
 
     <div class="workshop-layout">
       <aside class="parameter-panel">

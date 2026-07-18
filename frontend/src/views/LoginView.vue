@@ -1,12 +1,13 @@
 <template>
-  <div class="login-page">
+  <div class="login-page" role="main" aria-label="登录 OmicHub">
     <StarField />
+    <LoginPageQuote />
     <div class="login-content">
       <div class="login-card-wrapper">
         <div class="login-card animate-scale-in">
           <div class="login-header">
             <LogoAnimation />
-            <h2 class="login-title gradient-text">OmicHub</h2>
+            <h2 class="login-title">OmicHub</h2>
             <p class="login-subtitle">欢迎登录多组学分析平台</p>
           </div>
           <n-form ref="formRef" :model="formData" :rules="rules" class="login-form">
@@ -107,6 +108,7 @@ import RegistrationDisabledModal from '@/components/RegistrationDisabledModal.vu
 import ActivationModal from '@/components/ActivationModal.vue'
 import LoginButton from '@/components/LoginButton.vue'
 import LogoAnimation from '@/components/LogoAnimation.vue'
+import LoginPageQuote from '@/components/LoginPageQuote.vue'
 import StarField from '@/components/StarField.vue'
 import StardustQuote from '@/components/StardustQuote.vue'
 
@@ -455,6 +457,7 @@ const handleVerify2FA = async () => {
   z-index: 2;
 }
 .login-title {
+  color: var(--brand-primary);
   font-size: 28px;
   font-weight: 700;
   margin-bottom: 6px;

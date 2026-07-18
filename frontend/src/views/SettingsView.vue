@@ -14,6 +14,7 @@ import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import type { SiteSettings } from '@/types'
 import { isFestivalEffectsEnabled, setFestivalEffectsEnabled } from '@/utils/interfacePreferences'
+import PageHeader from '@/components/PageHeader.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -322,9 +323,7 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
 
 <template>
   <div class="settings-page-wrapper">
-    <div class="settings-page-header">
-      <h1 class="page-title">系统设置</h1>
-    </div>
+    <PageHeader title="系统设置" subtitle="管理个人资料、登录安全与平台偏好" />
     <div class="settings-page">
       <NTabs type="line" animated>
         <!-- 个人信息 -->

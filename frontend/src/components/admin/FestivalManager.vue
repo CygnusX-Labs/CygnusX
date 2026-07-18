@@ -174,6 +174,7 @@ onMounted(fetchList)
     <NDataTable
       :columns="columns"
       :data="list"
+      :row-key="(row) => row.id"
       :loading="loading"
       :pagination="{ pageSize: 20 }"
       :bordered="false"

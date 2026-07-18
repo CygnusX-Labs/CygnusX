@@ -15,6 +15,7 @@ import {
   rebuildBlastDatabase, syncBlastDatabasesFromYaml,
 } from '@/api/blast'
 import type { BlastBuildStatusResponse, BlastDatabase } from '@/types/blast'
+import PageHeader from '@/components/PageHeader.vue'
 
 const message = useMessage()
 
@@ -341,6 +342,7 @@ onUnmounted(() => {
 
 <template>
   <div class="admin-blast-page">
+    <PageHeader title="BLAST 数据库管理" subtitle="维护检索数据库、构建状态和历史任务存储" />
     <NCard title="BLAST 存储管理" class="storage-card">
       <div v-if="stats" class="stats-row">
         <NStatistic title="总任务数" :value="stats.total_tasks" />

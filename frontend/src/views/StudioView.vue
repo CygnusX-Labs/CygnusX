@@ -611,7 +611,7 @@ function formatSessionTime(iso: string): string {
 </script>
 
 <template>
-  <div class="studio-view">
+  <main class="studio-view" aria-label="OmicStudio 工作台" :aria-busy="loading">
     <!-- 顶栏 -->
     <header class="studio-topbar">
       <div class="bar-left">
@@ -707,7 +707,7 @@ function formatSessionTime(iso: string): string {
     </header>
 
     <!-- 加载中 -->
-    <div v-if="loading" class="studio-center">
+    <div v-if="loading" class="studio-center" role="status" aria-live="polite">
       <n-spin size="medium" />
       <p class="center-tip">正在进入工作台…</p>
     </div>
@@ -926,7 +926,7 @@ function formatSessionTime(iso: string): string {
         </div>
       </div>
     </n-modal>
-  </div>
+  </main>
 </template>
 
 <style scoped lang="scss">

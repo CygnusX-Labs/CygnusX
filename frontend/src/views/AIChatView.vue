@@ -3,9 +3,9 @@ import AgentWorkspace from '@/components/agent-workspace/AgentWorkspace.vue'
 </script>
 
 <template>
-  <div class="ai-page">
+  <main class="ai-page" aria-label="AI 助手工作区">
     <AgentWorkspace />
-  </div>
+  </main>
 </template>
 
 <style scoped>

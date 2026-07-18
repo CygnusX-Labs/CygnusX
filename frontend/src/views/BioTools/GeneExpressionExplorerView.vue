@@ -10,6 +10,7 @@ import {
 import { ArrowBackOutline, GridOutline, SparklesOutline } from '@vicons/ionicons5'
 import * as Plotly from 'plotly.js-dist-min'
 import { useThemeStore } from '@/stores/theme'
+import PageHeader from '@/components/PageHeader.vue'
 import {
   type ExpressionMatrix, type GroupMapping, type ProcessedData,
   type ExplorerConfig, type PCAResult,
@@ -204,17 +205,14 @@ onUnmounted(() => {
 
 <template>
   <div class="gene-expression-explorer-page">
-    <div class="page-toolbar">
-      <NButton text @click="router.push('/tools')">
-        <template #icon><NIcon :size="18"><ArrowBackOutline /></NIcon></template>
-        返回工具箱
-      </NButton>
-      <h1 class="page-title">基因表达矩阵 Explorer</h1>
-      <NButton size="small" quaternary @click="loadSample">
-        <template #icon><NIcon><SparklesOutline /></NIcon></template>
-        示例数据
-      </NButton>
-    </div>
+    <PageHeader title="基因表达矩阵 Explorer" subtitle="上传表达矩阵，交互式探索样本分布、PCA 与基因方差" back-to="/tools" back-label="返回工具箱">
+      <template #actions>
+        <NButton size="small" quaternary @click="loadSample">
+          <template #icon><NIcon><SparklesOutline /></NIcon></template>
+          示例数据
+        </NButton>
+      </template>
+    </PageHeader>
 
     <div class="gene-expression-explorer-layout">
       <!-- 左：参数面板 -->

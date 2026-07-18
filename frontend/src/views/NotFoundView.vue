@@ -1,5 +1,5 @@
 <template>
-  <div class="not-found-container">
+  <div class="not-found-container" role="main" aria-label="页面未找到">
     <div class="not-found-orb not-found-orb--1" />
     <div class="not-found-content animate-scale-in">
       <div class="not-found-mascot" aria-hidden="true">🐱</div>

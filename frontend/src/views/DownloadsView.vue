@@ -78,12 +78,12 @@ const tabDescriptions: Record<SourceTab, string> = {
 }
 
 const statusConfig: Record<string, { label: string; badge: string; icon: string }> = {
-  success: { label: '已完成', badge: 'bg-green-50 text-green-700', icon: 'check' },
-  running: { label: '下载中', badge: 'bg-blue-50 text-blue-700', icon: 'loading' },
-  failed:  { label: '失败',   badge: 'bg-red-50 text-red-700', icon: 'x' },
-  cancelled: { label: '已取消', badge: 'bg-neutral-hover text-text-secondary', icon: 'x' },
-  queued:  { label: '排队中', badge: 'bg-neutral-hover text-text-secondary', icon: 'clock' },
-  pending: { label: '等待中', badge: 'bg-neutral-hover text-text-secondary', icon: 'clock' },
+  success: { label: '已完成', badge: 'download-status--success', icon: 'check' },
+  running: { label: '下载中', badge: 'download-status--running', icon: 'loading' },
+  failed:  { label: '失败', badge: 'download-status--failed', icon: 'x' },
+  cancelled: { label: '已取消', badge: 'download-status--neutral', icon: 'x' },
+  queued:  { label: '排队中', badge: 'download-status--neutral', icon: 'clock' },
+  pending: { label: '等待中', badge: 'download-status--neutral', icon: 'clock' },
 }
 
 function scfg(status: string) {
@@ -94,7 +94,7 @@ function pct(task: DownloadTask) {
   return Math.round(task.progress * 100)
 }
 
-const gradientBar = 'background: linear-gradient(90deg, #4F8EF7, #9B59B6)'
+const gradientBar = 'background: linear-gradient(90deg, var(--arco-primary), var(--kimi-chart-4))'
 const tasks = ref<DownloadTask[]>([])
 
 const stats = computed(() => {
@@ -525,8 +525,8 @@ onMounted(fetchDownloads)
           <h3 class="text-sm font-semibold" style="color: var(--neutral-text-1)">下载任务</h3>
           <div class="flex items-center gap-3 text-xs" style="color: var(--neutral-text-3)">
             <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span> 共 {{ stats.total }} 个</span>
-            <span v-if="stats.running" class="flex items-center gap-1" style="color: #4F8EF7"><span class="w-1.5 h-1.5 rounded-full animate-pulse" style="background: #4F8EF7"></span> {{ stats.running }} 下载中</span>
-            <span v-if="stats.success" class="flex items-center gap-1 text-green-600"><span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> {{ stats.success }} 已完成</span>
+            <span v-if="stats.running" class="download-metric download-metric--running"><span class="download-metric-dot animate-pulse"></span> {{ stats.running }} 下载中</span>
+            <span v-if="stats.success" class="download-metric download-metric--success"><span class="download-metric-dot"></span> {{ stats.success }} 已完成</span>
           </div>
         </div>
         <div class="flex items-center gap-2">
@@ -536,7 +536,7 @@ onMounted(fetchDownloads)
             size="small"
             style="width: 120px"
           />
-          <button class="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md transition-colors" style="color: var(--neutral-text-2); border-radius: 6px" @mouseenter="($event.currentTarget as HTMLElement).style.color='#4F8EF7'; ($event.currentTarget as HTMLElement).style.background='var(--neutral-hover)'" @mouseleave="($event.currentTarget as HTMLElement).style.color='var(--neutral-text-2)'; ($event.currentTarget as HTMLElement).style.background='transparent'" @click="fetchDownloads">
+          <button type="button" class="queue-refresh focus-ring" :disabled="loadingTasks" @click="fetchDownloads">
             <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
             {{ loadingTasks ? '刷新中' : '刷新' }}
           </button>
@@ -560,10 +560,8 @@ onMounted(fetchDownloads)
             <tr
               v-for="task in filteredTasks"
               :key="task.id"
-              class="transition-colors group"
+              class="download-row group"
               style="height: 52px"
-              @mouseenter="($event.currentTarget as HTMLElement).style.background='var(--neutral-hover)'"
-              @mouseleave="($event.currentTarget as HTMLElement).style.background='transparent'"
             >
               <!-- 任务名称 -->
               <td class="px-5 py-3 border-b" style="border-color: var(--neutral-border)">
@@ -577,7 +575,7 @@ onMounted(fetchDownloads)
 
               <!-- 状态 -->
               <td class="px-5 py-3 border-b" style="border-color: var(--neutral-border)">
-                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium" style="border-radius: 4px" :class="scfg(task.status).badge">
+                <span class="download-status inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium" :class="scfg(task.status).badge">
                   <svg v-if="scfg(task.status).icon === 'check'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
                   <svg v-else-if="scfg(task.status).icon === 'loading'" class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" /></svg>
                   <svg v-else-if="scfg(task.status).icon === 'x'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -607,16 +605,16 @@ onMounted(fetchDownloads)
               <!-- 操作 -->
               <td class="px-5 py-3 border-b text-right" style="border-color: var(--neutral-border)">
                 <div class="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button v-if="task.status === 'running'" class="p-1.5 rounded-md transition-colors" style="color: var(--neutral-text-3)" title="暂停" @mouseenter="($event.target as HTMLElement).style.color='#F59E0B'" @mouseleave="($event.target as HTMLElement).style.color='var(--neutral-text-3)'">
+                  <button v-if="task.status === 'running'" type="button" class="download-action download-action--warning focus-ring" title="暂停">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25v13.5m-7.5-13.5v13.5" /></svg>
                   </button>
-                  <button class="p-1.5 rounded-md transition-colors" style="color: var(--neutral-text-3)" title="查看日志" @mouseenter="($event.target as HTMLElement).style.color='#4F8EF7'" @mouseleave="($event.target as HTMLElement).style.color='var(--neutral-text-3)'" @click="router.push(`/tasks/${task.id}`)">
+                  <button type="button" class="download-action download-action--primary focus-ring" title="查看日志" @click="router.push(`/tasks/${task.id}`)">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
                   </button>
-                  <button v-if="task.status === 'failed'" class="p-1.5 rounded-md transition-colors" style="color: var(--neutral-text-3)" title="重新下载" @mouseenter="($event.target as HTMLElement).style.color='#10B981'" @mouseleave="($event.target as HTMLElement).style.color='var(--neutral-text-3)'">
+                  <button v-if="task.status === 'failed'" type="button" class="download-action download-action--success focus-ring" title="重新下载">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                   </button>
-                  <button class="p-1.5 rounded-md transition-colors" style="color: var(--neutral-text-3)" title="删除" @mouseenter="($event.target as HTMLElement).style.color='#EF4444'" @mouseleave="($event.target as HTMLElement).style.color='var(--neutral-text-3)'">
+                  <button type="button" class="download-action download-action--danger focus-ring" title="删除">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                   </button>
                 </div>
@@ -645,4 +643,68 @@ onMounted(fetchDownloads)
 .downloads-page {
   padding-bottom: 80px;
 }
+
+.queue-refresh,
+.download-action {
+  border: 0;
+  background: transparent;
+  color: var(--neutral-text-3);
+  cursor: pointer;
+  transition: background-color var(--motion-quick) ease-out, color var(--motion-quick) ease-out;
+}
+
+.queue-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: var(--neutral-text-2);
+}
+
+.queue-refresh:hover:not(:disabled) {
+  background: var(--neutral-hover);
+  color: var(--arco-primary);
+}
+
+.queue-refresh:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.download-row:hover {
+  background: var(--neutral-hover);
+}
+
+.download-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.download-metric-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.download-metric--running { color: var(--arco-primary); }
+.download-metric--success { color: var(--arco-success); }
+
+.download-status { border-radius: 4px; }
+.download-status--success { background: color-mix(in srgb, var(--arco-success) 12%, transparent); color: var(--arco-success); }
+.download-status--running { background: color-mix(in srgb, var(--arco-primary) 12%, transparent); color: var(--arco-primary); }
+.download-status--failed { background: color-mix(in srgb, var(--arco-danger) 12%, transparent); color: var(--arco-danger); }
+.download-status--neutral { background: var(--neutral-hover); color: var(--neutral-text-2); }
+
+.download-action {
+  padding: 6px;
+  border-radius: 6px;
+}
+
+.download-action--warning:hover { color: var(--arco-warning); }
+.download-action--primary:hover { color: var(--arco-primary); }
+.download-action--success:hover { color: var(--arco-success); }
+.download-action--danger:hover { color: var(--arco-danger); }
 </style>

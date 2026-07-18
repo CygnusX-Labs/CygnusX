@@ -7,6 +7,7 @@ import MonitorWidgetRenderer from '@/components/workflow-monitor/MonitorWidgetRe
 import { useWorkflowMonitorStore } from '@/stores/workflowMonitor'
 import { useWorkflowMonitorWebSocket } from '@/composables/useWorkflowMonitorWebSocket'
 import type { MonitorWidget } from '@/types/workflowMonitor'
+import PageHeader from '@/components/PageHeader.vue'
 
 const store = useWorkflowMonitorStore()
 const { template, summary, tasks, events, errors, loading, connected, filters } = storeToRefs(store)
@@ -80,15 +81,8 @@ onUnmounted(() => {
 
 <template>
   <div class="page-container workflow-monitor-page">
-    <div class="monitor-header">
-      <div>
-        <h1 class="page-title">流程监控</h1>
-        <p class="monitor-subtitle">
-          {{ template?.description || '实时监测 Snakemake 分析流程进度、日志和错误' }}
-          <span class="connection-dot" :class="{ connected }"></span>
-          {{ connected ? '实时连接' : '轮询模式' }}
-        </p>
-      </div>
+    <PageHeader title="流程监控" :subtitle="template?.description || '实时监测 Snakemake 分析流程进度、日志和错误'">
+      <template #actions>
       <MonitorFilterBar
         v-if="template"
         :filters="template.filters"
@@ -97,11 +91,17 @@ onUnmounted(() => {
         @update="updateFilter"
         @refresh="refresh"
       />
-    </div>
+      </template>
+    </PageHeader>
 
-    <NAlert v-if="error" type="error" :title="error" class="monitor-alert" />
+    <p class="monitor-subtitle" role="status" :aria-live="connected ? 'polite' : 'off'">
+      <span class="connection-dot" :class="{ connected }" aria-hidden="true"></span>
+      {{ connected ? '实时连接' : '轮询模式' }}
+    </p>
 
-    <NSpin :show="loading && !tasks.length">
+    <NAlert v-if="error" type="error" :title="error" class="monitor-alert" role="alert" />
+
+    <NSpin :show="loading && !tasks.length" :aria-busy="loading">
       <div v-if="template" class="monitor-content">
         <div class="metric-grid">
           <MonitorWidgetRenderer

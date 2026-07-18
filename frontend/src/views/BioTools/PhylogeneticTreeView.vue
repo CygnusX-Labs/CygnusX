@@ -11,6 +11,7 @@ import {
   SparklesOutline,
 } from '@vicons/ionicons5'
 import { useThemeStore } from '@/stores/theme'
+import PageHeader from '@/components/PageHeader.vue'
 import {
   cancelTask, fetchPhyloMethods, getDownloadUrl, getTaskStatus, submitTreeBuild, uploadSequenceFile,
 } from '@/api/phylo'
@@ -426,22 +427,14 @@ function handleRowClick(row: unknown) {
 
 <template>
   <div class="phylo-page">
-    <!-- 工具栏 -->
-    <div class="page-toolbar">
-      <NButton text @click="router.push('/tools')">
-        <template #icon>
-          <NIcon :size="18"><ArrowBackOutline /></NIcon>
-        </template>
-        返回工具箱
-      </NButton>
-      <h1 class="page-title">系统发育树构建</h1>
-      <NButton size="small" quaternary @click="loadExampleData">
-        <template #icon>
-          <NIcon><SparklesOutline /></NIcon>
-        </template>
+    <PageHeader title="系统发育树构建" subtitle="上传序列、配置比对与建树参数，交互式查看系统发育关系" back-to="/tools" back-label="返回工具箱">
+      <template #actions>
+        <NButton size="small" quaternary @click="loadExampleData">
+        <template #icon><NIcon><SparklesOutline /></NIcon></template>
         示例数据
       </NButton>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- 主体三栏 -->
     <div class="phylo-layout">
@@ -615,6 +608,7 @@ function handleRowClick(row: unknown) {
         <NDataTable
           :columns="sequenceColumns"
           :data="filteredSequences"
+          :row-key="(row) => row.id"
           :max-height="240"
           size="small"
           @row-click="handleRowClick"

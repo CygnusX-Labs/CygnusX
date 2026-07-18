@@ -140,16 +140,21 @@ const tableData = computed(() => {
   )
   const raw = tc?.uiPayload?.table_data || tc?.uiPayload?.tableData
   if (!raw || !Array.isArray(raw) || !raw.length) return null
-  return raw as Record<string, unknown>[]
+  return (raw as Record<string, unknown>[]).map((row, index) => ({
+    ...row,
+    __omicHubRowKey: `${props.message.id}-${index}`,
+  }))
 })
 
 const tableColumns = computed(() => {
   if (!tableData.value) return []
-  return Object.keys(tableData.value[0]).map((key) => ({
-    title: key,
-    key,
-    ellipsis: { tooltip: true },
-  }))
+  return Object.keys(tableData.value[0])
+    .filter((key) => key !== '__omicHubRowKey')
+    .map((key) => ({
+      title: key,
+      key,
+      ellipsis: { tooltip: true },
+    }))
 })
 
 const displayContent = computed(() =>
@@ -618,6 +623,7 @@ function handleEdit() {
             <n-data-table
               :data="tableData"
               :columns="tableColumns"
+              :row-key="(row) => String(row.__omicHubRowKey)"
               :max-height="300"
               size="small"
             />

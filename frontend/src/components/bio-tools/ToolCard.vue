@@ -54,6 +54,9 @@ const emit = defineEmits<{
   align-items: center;
   gap: 16px;
   padding: 20px;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid var(--neutral-border);
   cursor: pointer;
   transition:
     transform var(--card-state-duration) var(--card-state-easing),
@@ -63,6 +66,7 @@ const emit = defineEmits<{
   border-color: var(--arco-primary, #165DFF);
   /* 分层阴影：大面积柔光 + 近身接触影，比单层阴影更有「浮起」的纵深感 */
   box-shadow:
+    inset 0 0 0 1px var(--arco-primary, #165DFF),
     0 12px 28px rgba(22, 93, 255, 0.12),
     0 2px 6px rgba(0, 0, 0, 0.05);
   transform: translateY(-2px);

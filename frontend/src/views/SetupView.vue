@@ -87,7 +87,7 @@ async function handleSetup(e: Event) {
 </script>
 
 <template>
-  <div class="setup-page">
+  <main class="setup-page" aria-label="初始化 OmicHub" :aria-busy="loading">
     <div class="setup-overlay" />
     <div class="setup-content">
       <NCard class="setup-card" :bordered="false">
@@ -146,7 +146,7 @@ async function handleSetup(e: Event) {
         </p>
       </NCard>
     </div>
-  </div>
+  </main>
 </template>
 
 <style scoped>

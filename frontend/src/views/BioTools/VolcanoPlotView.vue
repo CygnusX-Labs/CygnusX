@@ -13,6 +13,7 @@ import {
 } from '@vicons/ionicons5'
 import * as Plotly from 'plotly.js-dist-min'
 import { useThemeStore } from '@/stores/theme'
+import PageHeader from '@/components/PageHeader.vue'
 import {
   autoDetectColumns, buildPlotlyFigure, DEFAULT_COLORS, formatP, genSampleData,
   getSignificantGenes, parseDelimited, processVolcanoData,
@@ -416,17 +417,14 @@ onUnmounted(() => {
 
 <template>
   <div class="volcano-page" @paste="handlePaste">
-    <div class="page-toolbar">
-      <NButton text @click="router.push('/tools')">
-        <template #icon><NIcon :size="18"><ArrowBackOutline /></NIcon></template>
-        返回工具箱
-      </NButton>
-      <h1 class="page-title">火山图绘制</h1>
-      <NButton size="small" quaternary @click="loadSample">
+    <PageHeader title="火山图绘制" subtitle="导入差异表达结果，交互式筛选与导出火山图" back-to="/tools" back-label="返回工具箱">
+      <template #actions>
+        <NButton size="small" quaternary @click="loadSample">
         <template #icon><NIcon><SparklesOutline /></NIcon></template>
         示例数据
       </NButton>
-    </div>
+      </template>
+    </PageHeader>
 
     <div class="volcano-layout">
       <aside class="param-panel">
@@ -688,6 +686,7 @@ onUnmounted(() => {
         <NDataTable
           :columns="tableColumns"
           :data="processed.rows"
+          :row-key="(row) => row.gene"
           :pagination="{ pageSize: 20 }"
           :bordered="true"
           size="small"

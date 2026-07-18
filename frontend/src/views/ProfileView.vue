@@ -1,5 +1,6 @@
 <template>
-  <div class="profile-page-wrapper">
+  <main class="profile-page-wrapper" aria-label="个人中心">
+    <h1 class="visually-hidden">个人中心</h1>
     <div class="profile-bento-grid">
       <!-- 1. 用户信息 —— 全宽 -->
       <div class="bento-card bento-col-3 user-info-card">
@@ -312,7 +313,7 @@
         </div>
       </NDrawerContent>
     </NDrawer>
-  </div>
+  </main>
 </template>
 
 <script setup lang="ts">
@@ -852,6 +853,18 @@ watch(
 </script>
 
 <style scoped>
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ===== Bento Grid 容器 ===== */
 .profile-page-wrapper {
   width: 100%;

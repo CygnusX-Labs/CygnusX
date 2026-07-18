@@ -23,6 +23,7 @@ import { CopyOutline } from '@vicons/ionicons5'
 import { useClipboard } from '@vueuse/core'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import PageHeader from '@/components/PageHeader.vue'
 
 const route = useRoute()
 const taskId = computed(() => route.params.taskId as string)
@@ -273,13 +274,13 @@ watch(taskId, async () => {
 
 <template>
   <div class="page-container">
-    <h1 class="page-title">任务详情</h1>
+    <PageHeader title="任务详情" subtitle="查看任务状态、运行阶段、实时日志与结果产物" />
     <NBreadcrumb class="task-breadcrumb">
       <NBreadcrumbItem>任务中心</NBreadcrumbItem>
       <NBreadcrumbItem>任务详情</NBreadcrumbItem>
     </NBreadcrumb>
 
-    <NAlert v-if="error" type="error" :title="error" />
+    <NAlert v-if="error" type="error" :title="error" role="alert" />
 
     <NCard v-if="task" title="任务概览" :bordered="false" class="arco-card overview-card">
       <NSpace vertical>

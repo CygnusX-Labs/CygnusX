@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, h } from 'vue'
+import { computed, ref, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   NButton, NSpace, NIcon, NProgress, NTag, NTooltip, NDataTable, NEmpty, NSpin,
@@ -8,7 +8,7 @@ import {
 import type { DataTableColumns } from 'naive-ui'
 import {
   RocketOutline, EyeOutline,
-  RefreshOutline, TrashOutline,
+  RefreshOutline, SearchOutline, TrashOutline,
 } from '@vicons/ionicons5'
 import axios from 'axios'
 import apiClient from '@/api/client'
@@ -29,6 +29,8 @@ const authStore = useAuthStore()
 
 const healthStatus = ref<string>('检测中...')
 const healthOk = ref(false)
+const healthLoading = ref(true)
+const refreshing = ref(false)
 const flowCount = ref(0)
 const runningTaskCount = ref(0)
 const totalTaskCount = ref(0)
@@ -103,14 +105,28 @@ function canRetry(status: Task['status']): boolean {
   return !['running', 'queued', 'pending'].includes(status)
 }
 
-onMounted(async () => {
+const healthTone = computed(() => {
+  if (healthLoading.value) return 'checking'
+  return healthOk.value ? 'healthy' : 'error'
+})
+
+onMounted(() => {
+  void loadDashboard()
+})
+
+async function loadDashboard() {
   // 健康检查
+  healthLoading.value = true
+  healthOk.value = false
+  healthStatus.value = '检测中...'
   try {
     const res = await axios.get('/health')
     healthOk.value = res.data.status === 'ok'
     healthStatus.value = healthOk.value ? '系统运行正常' : '异常'
   } catch {
     healthStatus.value = '后端未连接'
+  } finally {
+    healthLoading.value = false
   }
 
   // 分析流程数量
@@ -166,7 +182,21 @@ onMounted(async () => {
   } finally {
     loadingBlastTasks.value = false
   }
-})
+}
+
+async function handleRefresh() {
+  if (refreshing.value) return
+
+  refreshing.value = true
+  await loadDashboard()
+  refreshing.value = false
+
+  if (healthOk.value) {
+    message.success('仪表板已更新')
+  } else {
+    message.warning('部分平台状态暂不可用，请稍后重试')
+  }
+}
 
 function formatTime(iso: string | null): string {
   if (!iso) return '-'
@@ -183,6 +213,14 @@ function statusConfig(status: string) {
     cancelled: { type: 'default', text: '已取消' },
   }
   return map[status] || { type: 'default', text: status }
+}
+
+function taskRowKey(row: Task): string {
+  return row.id
+}
+
+function blastTaskRowKey(row: BlastTaskListItem): string {
+  return row.task_id
 }
 
 const columns: DataTableColumns<Task> = [
@@ -217,9 +255,9 @@ const columns: DataTableColumns<Task> = [
       type: 'line',
       percentage: Math.round(row.progress * 100),
       height: 6,
-      color: { stops: ['#165DFF', '#6B8DD6'] },
-      railColor: '#E5E6EB',
-      showIndicator: false,
+      color: { stops: ['var(--kimi-chart-1)', 'var(--brand-primary-hover)'] },
+      railColor: 'var(--neutral-border)',
+      showIndicator: true,
     }),
   },
   {
@@ -310,9 +348,9 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
       type: 'line',
       percentage: row.progress,
       height: 6,
-      color: { stops: ['#165DFF', '#6B8DD6'] },
-      railColor: '#E5E6EB',
-      showIndicator: false,
+      color: { stops: ['var(--kimi-chart-1)', 'var(--brand-primary-hover)'] },
+      railColor: 'var(--neutral-border)',
+      showIndicator: true,
     }),
   },
   {
@@ -332,7 +370,16 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
 
 <template>
   <div class="dashboard-page">
-    <PageHeader title="仪表板" subtitle="掌握当前分析任务、平台运行状态与数据趋势" />
+    <PageHeader title="仪表板" subtitle="掌握当前分析任务、平台运行状态与数据趋势">
+      <template #actions>
+        <NButton size="small" secondary :loading="refreshing" @click="handleRefresh">
+          <template #icon>
+            <NIcon :size="16"><RefreshOutline /></NIcon>
+          </template>
+          刷新数据
+        </NButton>
+      </template>
+    </PageHeader>
 
     <AnnouncementBanner
       title="RNA-seq / ATAC-seq 分析已就绪"
@@ -348,24 +395,15 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
     <!-- 数据概览 - 左右分栏 -->
     <section class="overview-grid animate-fade-in-up delay-100">
       <!-- 左侧运行状态 -->
-      <div class="arco-card status-card card-hover-lift">
+      <div class="arco-card status-card card-hover">
         <div class="arco-card-header">
           <span class="arco-card-title">运行状态</span>
-          <div class="header-right">
-            <span class="trend-badge trend-up">+12%</span>
-            <NButton text size="small" class="refresh-btn" @click="$router.go(0)">
-              <template #icon>
-                <NIcon :size="16"><RefreshOutline /></NIcon>
-              </template>
-              刷新
-            </NButton>
-          </div>
         </div>
-        <div class="status-main">
-          <span class="status-pulse">
+        <div class="status-main" role="status" :aria-busy="healthLoading">
+          <span class="status-pulse" :class="`status-pulse--${healthTone}`" aria-hidden="true">
             <span class="status-pulse-dot" />
           </span>
-          <span class="status-value">{{ healthStatus }}</span>
+          <span class="status-value" aria-live="polite">{{ healthStatus }}</span>
         </div>
         <div class="status-divider" />
         <NSpin :show="loadingOverview">
@@ -403,14 +441,16 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
           查看全部 →
         </NButton>
       </div>
-      <NSpin :show="loadingTasks">
+      <NSpin :show="loadingTasks" :aria-busy="loadingTasks">
         <NDataTable
           v-if="recentTasks.length > 0"
           :columns="columns"
           :data="recentTasks"
+          :row-key="taskRowKey"
           :bordered="false"
           size="small"
           :single-line="false"
+          :scroll-x="980"
           class="recent-table"
         />
         <NEmpty v-else description="暂无任务">
@@ -437,14 +477,16 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
           查看全部 →
         </NButton>
       </div>
-      <NSpin :show="loadingBlastTasks">
+      <NSpin :show="loadingBlastTasks" :aria-busy="loadingBlastTasks">
         <NDataTable
           v-if="blastTasks.length > 0"
           :columns="blastColumns"
           :data="blastTasks"
+          :row-key="blastTaskRowKey"
           :bordered="false"
           size="small"
           :single-line="false"
+          :scroll-x="900"
           class="recent-table"
         />
         <NEmpty v-else description="暂无 BLAST 任务">
@@ -512,7 +554,7 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: var(--arco-success);
+  background: var(--status-color);
 }
 
 .status-pulse-dot::before {
@@ -520,9 +562,31 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: var(--arco-success);
+  background: var(--status-color);
   animation: pulse-ring 1.5s ease-out infinite;
   opacity: 0.6;
+}
+
+.status-pulse--healthy {
+  --status-color: var(--arco-success);
+}
+
+.status-pulse--checking {
+  --status-color: var(--arco-primary);
+}
+
+.status-pulse--checking .status-pulse-dot::before {
+  animation-duration: 2.2s;
+}
+
+.status-pulse--error {
+  --status-color: var(--arco-danger);
+}
+
+.status-pulse--error .status-pulse-dot::before {
+  animation: none;
+  opacity: 0.18;
+  transform: scale(1.75);
 }
 
 @keyframes pulse-ring {
@@ -567,35 +631,8 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
   color: var(--neutral-text-1);
 }
 
-.refresh-btn,
 .view-all-btn {
   color: var(--arco-primary) !important;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.trend-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: 9999px;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 18px;
-}
-
-.trend-up {
-  background: var(--arco-success-light, #E8FFEA);
-  color: var(--arco-success, #00B42A);
-}
-
-:root[data-theme="dark"] .trend-up {
-  background: rgba(34, 197, 94, 0.15);
-  color: #22C55E;
 }
 
 /* 最近任务 */
@@ -614,7 +651,7 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
 .recent-table :deep(td) {
   font-size: 13px;
   color: var(--neutral-text-1);
-  border-bottom: 1px solid rgba(229, 230, 235, 0.5);
+  border-bottom: 1px solid var(--neutral-border);
 }
 
 .recent-table :deep(tr:hover td) {
@@ -648,6 +685,14 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
 
   .banner-btn {
     margin-left: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-pulse-dot::before {
+    animation: none;
+    opacity: 0.18;
+    transform: scale(1.5);
   }
 }
 </style>

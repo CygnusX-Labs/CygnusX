@@ -28,6 +28,7 @@ import NoteEditModal from '@/components/NoteEditModal.vue'
 import AdminTOTPConfirmModal from '@/components/AdminTOTPConfirmModal.vue'
 import RechargeModal from '@/components/admin-cookie/RechargeModal.vue'
 import { useAuthStore } from '@/stores/auth'
+import PageHeader from '@/components/PageHeader.vue'
 
 interface AdminUser {
   id: string
@@ -375,14 +376,16 @@ onMounted(fetchUsers)
 
 <template>
   <div class="page-container">
-    <div class="user-mgmt-header">
-      <h1 class="page-title">用户管理</h1>
-      <NButton type="primary" @click="addUserModalVisible = true">+ 添加用户</NButton>
-    </div>
+    <PageHeader title="用户管理" subtitle="维护账号状态、配额与管理员备注">
+      <template #actions>
+        <NButton type="primary" @click="addUserModalVisible = true">添加用户</NButton>
+      </template>
+    </PageHeader>
     <NCard title="用户列表" :bordered="false" class="arco-card">
       <NDataTable
         :columns="columns"
         :data="users"
+        :row-key="(row) => row.id"
         :loading="loading"
         :pagination="{ pageSize: 20 }"
         :bordered="false"

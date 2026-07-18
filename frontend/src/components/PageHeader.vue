@@ -1,17 +1,47 @@
 <script setup lang="ts">
+import { NButton, NIcon, NTooltip } from 'naive-ui'
+import { ArrowBackOutline } from '@vicons/ionicons5'
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
+
 withDefaults(defineProps<{
   title: string
   subtitle?: string
+  backTo?: string
+  backLabel?: string
 }>(), {
   subtitle: '',
+  backTo: '',
+  backLabel: '返回上一页',
 })
 </script>
 
 <template>
   <header class="page-header">
-    <div class="page-header-copy">
-      <h1>{{ title }}</h1>
-      <p v-if="subtitle">{{ subtitle }}</p>
+    <div class="page-header-main">
+      <NTooltip v-if="backTo" placement="bottom" :delay="300">
+        <template #trigger>
+          <NButton
+            circle
+            secondary
+            size="large"
+            class="page-header-back"
+            :aria-label="backLabel"
+            @click="router.push(backTo)"
+          >
+            <template #icon><NIcon :size="22"><ArrowBackOutline /></NIcon></template>
+          </NButton>
+        </template>
+        {{ backLabel }}
+      </NTooltip>
+      <div v-if="$slots.leading" class="page-header-leading">
+        <slot name="leading" />
+      </div>
+      <div class="page-header-copy">
+        <h1>{{ title }}</h1>
+        <p v-if="subtitle">{{ subtitle }}</p>
+      </div>
     </div>
     <div v-if="$slots.actions" class="page-header-actions">
       <slot name="actions" />
@@ -26,6 +56,24 @@ withDefaults(defineProps<{
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 24px;
+}
+
+.page-header-main {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+  gap: 8px;
+}
+
+.page-header-back {
+  flex: 0 0 auto;
+}
+
+.page-header-leading {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  padding-top: 2px;
 }
 
 .page-header-copy h1 {

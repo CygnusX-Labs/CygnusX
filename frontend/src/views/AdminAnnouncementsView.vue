@@ -3,11 +3,12 @@ import { NTabPane, NTabs } from 'naive-ui'
 import AnnouncementManager from '@/components/admin/AnnouncementManager.vue'
 import FestivalManager from '@/components/admin/FestivalManager.vue'
 import NotificationManager from '@/components/admin/NotificationManager.vue'
+import PageHeader from '@/components/PageHeader.vue'
 </script>
 
 <template>
   <div class="page-container">
-    <h1 class="page-title">通知公告管理</h1>
+    <PageHeader title="通知公告管理" subtitle="维护首页条幅、通知提醒与节日展示" />
     <NTabs type="line" animated>
       <NTabPane name="announcement" tab="首页条幅">
         <AnnouncementManager />

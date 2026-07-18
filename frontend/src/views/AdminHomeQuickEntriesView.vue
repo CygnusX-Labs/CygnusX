@@ -20,6 +20,7 @@ import {
   TrashOutline,
 } from '@vicons/ionicons5'
 import AdminTOTPConfirmModal from '@/components/AdminTOTPConfirmModal.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import apiClient from '@/api/client'
 import type { HomeQuickEntry, QuickEntryColor, SiteSettings } from '@/types'
 import {
@@ -177,15 +178,16 @@ onMounted(fetchSettings)
 
 <template>
   <div class="page-container">
-    <div class="page-header">
-      <h1 class="page-title">首页入口管理</h1>
+    <PageHeader title="首页入口管理" subtitle="维护首页展示的快捷入口与排序">
+      <template #actions>
       <NButton type="primary" :loading="saving" @click="openSaveConfirm">
         <template #icon>
           <NIcon><SaveOutline /></NIcon>
         </template>
         保存配置
       </NButton>
-    </div>
+      </template>
+    </PageHeader>
 
     <NCard title="快捷入口" :bordered="false" class="arco-card manager-card">
       <template #header-extra>

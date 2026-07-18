@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { NButton, NDataTable, NIcon, NInput, NPagination, NSelect, NSpace, NTag, useMessage } from 'naive-ui'
 import { ArrowBackOutline, RefreshOutline, SearchOutline } from '@vicons/ionicons5'
 import { fetchBlastTasks } from '@/api/blast'
+import PageHeader from '@/components/PageHeader.vue'
 import type { BlastTaskListItem, TaskStatus } from '@/types/blast'
 
 const router = useRouter()
@@ -74,13 +75,11 @@ onMounted(() => loadTasks())
 
 <template>
   <div class="history-page">
-    <div class="page-toolbar">
-      <NButton text @click="router.push('/tools/blast')">
-        <template #icon><NIcon><ArrowBackOutline /></NIcon></template>
-        返回 BLAST
-      </NButton>
-      <h1>BLAST 任务中心</h1>
-    </div>
+    <PageHeader title="BLAST 任务中心" subtitle="查询、筛选和打开历史 BLAST 检索任务" back-to="/tools/blast" back-label="返回 BLAST">
+      <template #actions>
+        <NButton :loading="loading" @click="loadTasks()"><template #icon><NIcon><RefreshOutline /></NIcon></template>刷新</NButton>
+      </template>
+    </PageHeader>
 
     <div class="filter-card">
       <NSelect v-model:value="status" :options="statusOptions" style="width: 150px" @update:value="loadTasks(true)" />
@@ -88,11 +87,10 @@ onMounted(() => loadTasks())
         <template #prefix><NIcon><SearchOutline /></NIcon></template>
       </NInput>
       <NButton type="primary" @click="loadTasks(true)">搜索</NButton>
-      <NButton @click="loadTasks()"><template #icon><NIcon><RefreshOutline /></NIcon></template>刷新</NButton>
     </div>
 
     <div class="table-card">
-      <NDataTable :columns="columns" :data="tasks" :loading="loading" :bordered="false" :single-line="false" />
+      <NDataTable :columns="columns" :data="tasks" :row-key="(row) => row.task_id" :loading="loading" :bordered="false" :single-line="false" :scroll-x="920" />
       <div class="pagination-row">
         <span>共 {{ total }} 条</span>
         <NPagination v-model:page="page" v-model:page-size="pageSize" :item-count="total" :page-sizes="[10, 20, 50]" show-size-picker @update:page="loadTasks()" @update:page-size="loadTasks(true)" />

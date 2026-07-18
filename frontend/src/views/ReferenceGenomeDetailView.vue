@@ -256,7 +256,7 @@ const geneColumns: DataTableColumns<Gene> = [
 </script>
 
 <template>
-  <div v-if="version && species" class="database-detail-page">
+  <div v-if="version && species" class="database-detail-page" role="main" aria-label="参考基因组详情">
     <div class="page-toolbar">
       <NButton text @click="router.push('/database')">
         <template #icon><NIcon :size="18"><ArrowBackOutline /></NIcon></template>
@@ -385,6 +385,7 @@ const geneColumns: DataTableColumns<Gene> = [
               <NDataTable
                 :columns="geneColumns"
                 :data="filteredGenes"
+                :row-key="(row) => row.geneId"
                 :pagination="{ pageSize: 10 }"
                 size="small"
                 :bordered="false"

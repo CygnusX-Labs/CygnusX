@@ -14,6 +14,7 @@ import {
   genSampleSeq, parseFasta, reverseComplement, rnaToDna, sixFrameTranslate,
   type SeqStats, type SeqType, type SixFrameResult,
 } from '@/utils/seqManipulatorProcessor'
+import PageHeader from '@/components/PageHeader.vue'
 
 const router = useRouter()
 const message = useMessage()
@@ -158,19 +159,14 @@ function clearAll() {
 
 <template>
   <div class="seq-page">
-    <div class="page-toolbar">
-      <NButton text @click="router.push('/tools')">
-        <template #icon><NIcon :size="18"><ArrowBackOutline /></NIcon></template>
-        返回工具箱
-      </NButton>
-      <h1 class="page-title">🧬 序列魔术师</h1>
-      <NButton size="small" quaternary @click="loadSample">
+    <PageHeader title="序列魔术师" subtitle="在浏览器本地完成序列清洗、转换、翻译与统计分析" back-to="/tools" back-label="返回工具箱">
+      <template #actions>
+        <NButton size="small" quaternary @click="loadSample">
         <template #icon><NIcon><SparklesOutline /></NIcon></template>
         示例序列
       </NButton>
-    </div>
-
-    <p class="page-subtitle">纯本地运算，你的序列不会离开浏览器，隐私绝对安全 ✨</p>
+      </template>
+    </PageHeader>
 
     <div class="seq-layout">
       <!-- 左：输入与操作 -->

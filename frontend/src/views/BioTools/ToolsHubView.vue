@@ -131,7 +131,7 @@ fetchToolsList()
 </script>
 
 <template>
-  <div class="tools-hub-page">
+  <div class="tools-hub-page" role="main" aria-label="生信工具箱" :aria-busy="loading">
     <PageHeader title="生信工具箱" subtitle="集成常用生物信息学分析工具，从质控到可视化一站式完成" />
 
     <!-- 加载态 -->

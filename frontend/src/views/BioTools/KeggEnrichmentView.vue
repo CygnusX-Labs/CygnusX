@@ -23,6 +23,7 @@ import {
 import { ArrowBackOutline } from '@vicons/ionicons5'
 import * as Plotly from 'plotly.js-dist-min'
 import { fetchSpeciesOptions, submitEnrichment } from '@/api/enrichment'
+import PageHeader from '@/components/PageHeader.vue'
 import type { EnrichmentResult, EnrichmentRow, SpeciesOption } from '@/types/enrichment'
 
 const router = useRouter()
@@ -186,15 +187,8 @@ onMounted(() => {
 
 <template>
   <div class="kegg-page">
-    <div class="page-toolbar">
-      <NButton text @click="router.push('/tools')">
-        <template #icon>
-          <NIcon :size="18"><ArrowBackOutline /></NIcon>
-        </template>
-        返回工具箱
-      </NButton>
-      <h1 class="page-title">KEGG 通路富集分析</h1>
-    </div>
+    <PageHeader title="KEGG 通路富集分析" subtitle="针对基因列表识别显著富集的 KEGG 通路" back-to="/tools" back-label="返回工具箱">
+    </PageHeader>
 
     <div class="kegg-layout">
       <aside class="param-panel">
@@ -277,6 +271,7 @@ onMounted(() => {
               <NDataTable
                 :columns="columns"
                 :data="result.table_data"
+                :row-key="(row) => row.id"
                 :pagination="{ pageSize: 10 }"
                 :bordered="true"
                 size="small"

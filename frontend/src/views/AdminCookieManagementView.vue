@@ -12,6 +12,7 @@ import { useAdminCookieStore, type AdminCookieAccount, type AdminCookieTxn } fro
 import CookieStatsDashboard from '@/components/admin-cookie/CookieStatsDashboard.vue'
 import RechargeModal from '@/components/admin-cookie/RechargeModal.vue'
 import CookieTransactionDrawer from '@/components/admin-cookie/CookieTransactionDrawer.vue'
+import PageHeader from '@/components/PageHeader.vue'
 
 const message = useMessage()
 const store = useAdminCookieStore()
@@ -133,7 +134,7 @@ onMounted(async () => {
 
 <template>
   <div class="page-container">
-    <h1 class="page-title">饼干账户管理</h1>
+    <PageHeader title="饼干账户管理" subtitle="查看用户余额、账户状态与交易明细" />
 
     <NSpace vertical :size="20">
       <CookieStatsDashboard :stats="store.stats" :loading="store.loading" />

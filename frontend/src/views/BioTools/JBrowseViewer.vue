@@ -307,7 +307,7 @@ function onDrawerLoad() {
 </script>
 
 <template>
-  <div class="jbrowse-page">
+  <div class="jbrowse-page" role="main" aria-label="Web 基因组浏览器">
     <!-- 统一工具栏 -->
     <div class="toolbar">
       <div class="toolbar-left">
