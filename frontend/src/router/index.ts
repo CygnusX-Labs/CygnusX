@@ -36,6 +36,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '首次配置', requiresAuth: false }
   },
   {
+    path: '/studio/shared/:token',
+    name: 'studio-shared',
+    component: () => import('@/views/SharedStudioView.vue'),
+    meta: { title: 'OmicStudio 只读分享', requiresAuth: false }
+  },
+  {
     path: '/',
     component: () => import('@/layouts/DefaultLayout.vue'),
     children: [
@@ -104,6 +110,12 @@ const routes: RouteRecordRaw[] = [
         name: 'ai',
         component: () => import('@/views/AIChatView.vue'),
         meta: { title: 'AI 助手', requiresAuth: true, fullscreen: true }
+      },
+      {
+        path: 'studio/:sessionId?',
+        name: 'studio',
+        component: () => import('@/views/StudioView.vue'),
+        meta: { title: 'AI 工作台', requiresAuth: true, fullscreen: true }
       },
       {
         path: 'profile',

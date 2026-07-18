@@ -54,6 +54,7 @@ class AgentContext:
     system_prompt: str
     tools: list[dict[str, Any]] = field(default_factory=list)
     mcp_servers: list[MCPServer] = field(default_factory=list)
+    skills: list[Skill] = field(default_factory=list)
     features: dict[str, Any] = field(default_factory=dict)
     temperature: float = 0.7
     max_tokens: int = 4096
@@ -85,6 +86,16 @@ class AgentService:
         for cfg in yaml_configs:
             existing = await self.get_agent(cfg["agent_id"])
             if existing is not None:
+                # 内置 Agent 的 YAML 是平台能力声明的来源；同步 features，
+                # 但不覆盖管理员可能调整过的模型、提示词或绑定关系。
+                if existing.is_builtin:
+                    existing_features = dict(existing.features or {})
+                    existing_features.update(dict(cfg.get("features") or {}))
+                    if cfg.get("studio"):
+                        existing_features["studio"] = cfg["studio"]
+                    else:
+                        existing_features.pop("studio", None)
+                    existing.features = existing_features
                 continue
 
             # 按 model name 解析 model_id
@@ -100,6 +111,11 @@ class AgentService:
             mcp_ids = cfg.get("mcp_ids", [])
             if not mcp_ids:
                 mcp_ids = [str(OMICHUB_TOOLS_SERVER_ID)]
+            # 统一功能开关：yaml features 原样保留，studio 段归入 features["studio"]，
+            # 不新增列（调度中枢经 AgentContext.features 读取）
+            features = dict(cfg.get("features") or {})
+            if cfg.get("studio"):
+                features["studio"] = cfg["studio"]
             agent_data = {
                 "agent_id": cfg["agent_id"],
                 "name": cfg.get("name", ""),
@@ -114,6 +130,7 @@ class AgentService:
                 "welcome_message": cfg.get("welcome_message", ""),
                 "mcp_ids": mcp_ids,
                 "skill_ids": cfg.get("skill_ids", []),
+                "features": features,
                 "temperature": cfg.get("temperature", 0.7),
                 "max_tokens": cfg.get("max_tokens", 4096),
                 "is_builtin": True,
@@ -363,9 +380,11 @@ class AgentService:
             mcp_servers.append(omichub_tools_server)
             tools.extend(schema_loader.to_openai_tools())
 
-        # 3. 系统提示词 = Agent 设定 + 绑定技能 prompt 后缀 + omichub-tools 清单
+        # 3. 系统提示词 = Agent 设定 + 绑定技能 prompt 后缀 + omichub-tools 清单。
+        # Studio 会话使用结构化 skills 重新组装渐进式披露上下文；普通聊天保持全量兼容。
         system_prompt = agent.system_prompt
-        skill_suffix = await self._build_skill_prompt(agent.skill_ids or [])
+        skills = await self._load_skills(agent.skill_ids or [])
+        skill_suffix = self._build_skills_prompt(skills)
         if skill_suffix:
             system_prompt = f"{system_prompt}\n\n{skill_suffix}" if system_prompt else skill_suffix
         if omichub_tools_server and (omichub_selected or not mcp_uuids):
@@ -379,6 +398,7 @@ class AgentService:
             system_prompt=system_prompt,
             tools=tools,
             mcp_servers=mcp_servers,
+            skills=skills,
             features=dict(agent.features or {}),
             temperature=agent.temperature,
             max_tokens=agent.max_tokens,
@@ -396,37 +416,44 @@ class AgentService:
         )
         return result.scalar_one_or_none()
 
-    async def _build_skill_prompt(self, skill_ids: list[Any]) -> str:
+    async def _load_skills(self, skill_ids: list[Any]) -> list[Skill]:
         if not skill_ids:
-            return ""
+            return []
         result = await self._db.execute(
             select(SkillModel).where(
-                SkillModel.skill_id.in_([str(s) for s in skill_ids]),
+                SkillModel.skill_id.in_([str(skill_id) for skill_id in skill_ids]),
                 SkillModel.is_active == True,  # noqa: E712
             )
         )
-        skills = [
+        return [
             Skill(
-                id=m.id,
-                skill_id=m.skill_id,
-                name=m.name,
-                description=m.description,
-                prompt=m.prompt,
-                tool_definition=m.tool_definition,
-                icon=m.icon,
-                category=m.category,
-                is_active=m.is_active,
-                is_builtin=m.is_builtin,
-                created_at=m.created_at,
-                updated_at=m.updated_at,
+                id=model.id,
+                skill_id=model.skill_id,
+                name=model.name,
+                description=model.description,
+                prompt=model.prompt,
+                tool_definition=model.tool_definition,
+                icon=model.icon,
+                category=model.category,
+                is_active=model.is_active,
+                is_builtin=model.is_builtin,
+                created_at=model.created_at,
+                updated_at=model.updated_at,
             )
-            for m in result.scalars().all()
+            for model in result.scalars().all()
         ]
+
+    @staticmethod
+    def _build_skills_prompt(skills: list[Skill]) -> str:
         if not skills:
             return ""
         from omichub.application.services.skill_service import SkillService
 
         return SkillService.build_skills_prompt(skills)
+
+    async def _build_skill_prompt(self, skill_ids: list[Any]) -> str:
+        """兼容旧调用方；新代码优先使用结构化 skills。"""
+        return self._build_skills_prompt(await self._load_skills(skill_ids))
 
     @staticmethod
     def _build_omichub_tools_server() -> MCPServer | None:

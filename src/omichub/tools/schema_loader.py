@@ -13,6 +13,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from omichub.core.config import get_settings
+from omichub.infrastructure.config.prompt_loader import render_prompt
 
 
 class ToolAnnotation(BaseModel):
@@ -45,7 +46,22 @@ class ToolSchema(BaseModel):
     input_schema: dict[str, Any] = Field(default_factory=dict, alias="input_schema")
     llm_result_fields: list[str] = Field(default_factory=list, alias="llm_result_fields")
     ui_result_fields: list[str] = Field(default_factory=list, alias="ui_result_fields")
+    runtime_profile: str | None = None
+    required_capabilities: set[str] = Field(default_factory=set)
     extra: dict[str, Any] | None = Field(default=None, description="额外元数据，如 flow_id / tool_role")
+
+    def resolve_runtime_image(self) -> str | None:
+        """解析工具声明的独立任务运行时；未声明时保持现有进程内/服务执行行为。"""
+        if not self.runtime_profile:
+            return None
+        from omichub.infrastructure.config.runtime_image_loader import get_runtime_images
+
+        _, profile = get_runtime_images().select(
+            self.required_capabilities,
+            "toolbox",
+            self.runtime_profile,
+        )
+        return profile.image
 
 
 class ToolsSchemaRegistry(BaseModel):
@@ -240,23 +256,11 @@ class ToolsSchemaLoader:
 
     def build_system_hint(self) -> str:
         """生成注入系统提示词的工具清单。"""
-        lines = [
-            "你是 OmicHub 生信平台的 AI 助手。当前可调用平台工具（function 名以 omichub_ 开头）："
-        ]
-        for idx, tool in enumerate(self.list_tools(), 1):
-            lines.append(f"{idx}. {tool.name} — {tool.description}")
-        lines.extend(
-            [
-                "规则：",
-                "- 需要计算/出图时优先调用工具，不要只给操作说明。",
-                "- 大文件用 upload://file_id，不要把整表 CSV 塞进参数。",
-                "- 异步工具只负责提交；完成后引导用户根据 task_id / 任务中心查看。",
-                "- 标注 requires_confirm 或 destructiveHint 的工具须先说明影响并等待用户确认。",
-                "- 当用户确认执行时，请再次调用同一工具并在 arguments 中加入 \"_confirmed\": true。",
-                "- 工具参数名为 data_text / gene_text 时，必须传入实际文本内容或 upload://file_id 引用；禁止留空。",
-            ]
+        catalog = "\n".join(
+            f"{idx}. {tool.name} — {tool.description}"
+            for idx, tool in enumerate(self.list_tools(), 1)
         )
-        return "\n".join(lines)
+        return render_prompt("tools.omichub_system_hint", tool_catalog=catalog)
 
 
 # 全局单例

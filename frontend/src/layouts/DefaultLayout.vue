@@ -12,7 +12,7 @@ import {
   MenuOutline, ChevronForwardOutline, ChevronDownOutline,
   NotificationsOutline, HelpCircleOutline, ChatbubblesOutline, Planet,
   WalletOutline, PricetagOutline, SparklesOutline, ConstructOutline, LayersOutline,
-  TerminalOutline, SearchOutline,
+  TerminalOutline, SearchOutline, DesktopOutline,
 } from '@vicons/ionicons5'
 import CookieBalanceBadge from '@/components/CookieBalanceBadge.vue'
 import NotificationDrawer from '@/components/NotificationDrawer.vue'
@@ -184,6 +184,7 @@ const mainNavItems = computed<NavItem[]>(() => [
   { key: 'workflow-monitor', label: '流程监控', to: '/workflow-monitor', icon: BarChartOutline },
   { key: 'reports', label: '结果报告中心', to: '/reports', icon: DocumentTextOutline },
   { key: 'ai', label: 'AI 助手', to: '/ai', icon: ChatbubblesOutline },
+  { key: 'studio', label: 'AI 工作台', to: '/studio', icon: DesktopOutline },
   { key: 'tools', label: '生信工具箱', to: '/tools', icon: ConstructOutline },
 ])
 
@@ -217,6 +218,8 @@ function isActive(item: NavItem): boolean {
   if (!item.children) {
     // 生信工具箱：子工具页面也保持高亮
     if (item.key === 'tools') return route.path === '/tools' || route.path.startsWith('/tools/')
+    // AI 工作台：会话页面也保持高亮
+    if (item.key === 'studio') return route.path === '/studio' || route.path.startsWith('/studio/')
     // 数据库：新旧入口和详情页都保持高亮
     if (item.key === 'database') {
       return route.path === '/database'

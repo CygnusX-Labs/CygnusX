@@ -26,6 +26,14 @@ PUBLIC_PATHS = frozenset(
     }
 )
 
+PUBLIC_PREFIXES = (
+    "/api/v1/studio/shared/",
+)
+
+SELF_AUTHENTICATED_PREFIXES = (
+    "/api/v1/studio/internal/",
+)
+
 
 class AuthMiddleware(BaseHTTPMiddleware):
     """JWT 认证中间件 - 校验 Authorization 头并注入 user_id 到 request.state"""
@@ -33,8 +41,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         path = request.url.path
 
-        # 公开路径直接放行
-        if path in PUBLIC_PATHS:
+        # 公开路径或端点自行鉴权的内部路径直接放行
+        if path in PUBLIC_PATHS or path.startswith(PUBLIC_PREFIXES + SELF_AUTHENTICATED_PREFIXES):
             return await call_next(request)
 
         # WebSocket 连接由端点内自行处理

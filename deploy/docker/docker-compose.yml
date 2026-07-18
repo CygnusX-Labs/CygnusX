@@ -87,6 +87,39 @@ services:
     # 生产模式启动：多 worker + 关闭热重载（避免 watchdog 扫描 src 的首次加载开销）
     command: ["uvicorn", "omichub.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
 
+  # ===== OmicStudio 域名白名单出站代理 =====
+  # 仅加入独立公网 bridge；Manager 会按会话把它动态接入临时 internal 网络。
+  studio-egress-proxy:
+    build:
+      context: ../studio
+      dockerfile: proxy.Dockerfile
+    container_name: omichub-studio-egress-proxy
+    restart: unless-stopped
+    logging: *default-logging
+    user: "10002:10002"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid
+    environment:
+      - STUDIO_CONFIG_PATH=/config/studio.yaml
+      - STUDIO_PROXY_PORT=3128
+      - STUDIO_PROXY_MAX_CONNECTIONS=128
+    volumes:
+      - ../../data/studio.yaml:/config/studio.yaml:ro
+    networks:
+      - studio_proxy_egress
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1',3128),2); s.close()"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   # ===== Celery Beat 定时器（留在主栈，单实例） =====
   # 注：计算型 worker 已拆分至独立编排栈 deploy/docker/docker-compose.worker.yml，
   beat:
@@ -218,6 +251,8 @@ networks:
     external: true           # 需先 `docker network create omichub_net` 创建
   omichub-sandbox-net:       # 终端沙盒网络：由 Makefile docker-network 创建
     external: true
+  studio_proxy_egress:       # 仅代理容器加入；不连接 Web/DB/Redis 等平台网络
+    driver: bridge
 
 # 注：pg_data / redis_data 已改为 bind mount（/data/omichub/omichub_data/_pgdata、_redis），
 #     不再需要命名卷声明。旧卷 docker_pg_data / docker_redis_data 可在验证无误后删除。

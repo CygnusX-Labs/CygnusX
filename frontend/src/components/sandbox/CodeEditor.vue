@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onBeforeUnmount, shallowRef } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount, shallowRef } from 'vue'
 import { EditorState, Compartment } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
@@ -18,6 +18,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   run: []
+  save: []
 }>()
 
 const host = ref<HTMLDivElement | null>(null)
@@ -39,6 +40,13 @@ function buildState(doc: string): EditorState {
           key: 'Mod-Enter',
           run: () => {
             emit('run')
+            return true
+          },
+        },
+        {
+          key: 'Mod-s',
+          run: () => {
+            emit('save')
             return true
           },
         },
@@ -65,7 +73,7 @@ function mount() {
   view.value = new EditorView({ state: buildState(props.modelValue), parent: host.value })
 }
 
-mount()
+onMounted(mount)
 onBeforeUnmount(() => {
   view.value?.destroy()
   view.value = null

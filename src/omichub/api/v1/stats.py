@@ -37,6 +37,16 @@ async def stats_trend(
     return await service.user_trend(current_user_id, days)
 
 
+@router.get("/studio", summary="当前用户 Studio 用量与配额")
+async def stats_studio_usage(
+    current_user_id: CurrentUserId,
+    service: StatsServiceDep,
+    days: Annotated[int, Query(ge=1, le=90, description="统计天数")] = 30,
+) -> dict:
+    """Studio token、沙盒运行、产物与存储配额汇总。"""
+    return await service.user_studio_usage(current_user_id, days)
+
+
 @router.get("/progress", summary="当前用户引导进度画像")
 async def stats_progress(
     current_user_id: CurrentUserId,

@@ -21,6 +21,7 @@ import {
   quickEntryIconColors,
   resolveHomeQuickEntryIcon,
 } from '@/config/homeQuickEntries'
+import { isFestivalEffectsEnabled } from '@/utils/interfacePreferences'
 
 // 默认文案兜底：API 拉取失败时保证首页仍可正常渲染
 const DEFAULT_CONTENT: SiteContent = {
@@ -69,6 +70,7 @@ const todayFestival = ref<FestivalConfig | null>(null)
 const festivalClaimed = ref(false)
 
 const showFestivalPopup = computed(() => {
+  if (!isFestivalEffectsEnabled()) return false
   if (!todayFestival.value) return false
   const seen = localStorage.getItem(`festival_seen_${todayFestival.value.id}`) === '1'
   return !seen
@@ -105,7 +107,7 @@ onMounted(async () => {
     configuredQuickEntries.value = normalizeHomeQuickEntries(settingsResult.value.data.home_quick_entries)
   }
 
-  if (festivalResult.status === 'fulfilled' && festivalResult.value.hasFestival) {
+  if (festivalResult.status === 'fulfilled' && festivalResult.value.hasFestival && isFestivalEffectsEnabled()) {
     todayFestival.value = festivalResult.value.festival
     festivalClaimed.value = festivalResult.value.claimed
   }

@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { Report, ReportFilter } from '@/types/report'
 import { reportApi } from '@/api/report'
+import { studioApi } from '@/api/studio'
 import { useApi } from '@/composables/useApi'
 import {
   NInput, NSelect, NButton, NIcon, NSpin, NPagination,
@@ -20,7 +21,7 @@ import AppLoading from '@/components/AppLoading.vue'
 
 import { mockReports, mockStats } from '@/components/report/mockData'
 
-const USE_MOCK = true  // 开发阶段使用 mock 数据，生产环境改为 false
+const USE_MOCK = import.meta.env.VITE_USE_MOCK_REPORTS === 'true'
 
 const route = useRoute()
 const router = useRouter()
@@ -151,6 +152,22 @@ function handleDownload(report: Report, fileId: string) {
 
 function handleViewTask(report: Report) {
   router.push({ name: 'task-detail', params: { taskId: report.task_id } })
+}
+
+async function handleOptimize(report: Report) {
+  if (USE_MOCK) {
+    message.info('当前报告中心使用 mock 数据，切换真实报告接口后可创建工作台会话')
+    return
+  }
+  try {
+    const session = await studioApi.createSessionFromReport({
+      report_id: report.id,
+      agent_id: 'agent-viz',
+    })
+    router.push({ name: 'studio', params: { sessionId: session.session_id } })
+  } catch {
+    message.error('创建 AI 工作台会话失败')
+  }
 }
 
 async function handleToggleStar(report: Report) {
@@ -323,6 +340,7 @@ onMounted(() => {
           @view-task="handleViewTask"
           @toggle-star="handleToggleStar"
           @delete="handleDelete"
+          @optimize="handleOptimize"
         />
       </div>
     </NSpin>

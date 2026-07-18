@@ -62,6 +62,8 @@ tools:
     category: visualization
     invocation_mode: backend_shim
     shim_module: omichub.tools.shims.volcano
+    runtime_profile: analysis-plot
+    required_capabilities: [python, plotting, tabular]
     requires_confirm: false
     annotations:
       readOnlyHint: false
@@ -118,6 +120,8 @@ tools:
     category: visualization
     invocation_mode: backend_shim
     shim_module: omichub.tools.shims.manhattan
+    runtime_profile: analysis-plot
+    required_capabilities: [python, plotting, tabular]
     requires_confirm: false
     annotations:
       readOnlyHint: false

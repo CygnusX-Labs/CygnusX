@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { NIcon, NButton } from 'naive-ui'
 import { CloseOutline } from '@vicons/ionicons5'
-import { BIO_PROMPTS } from './bioPrompts'
+import { loadBioPrompts } from './bioPrompts'
 import type { BioPromptTemplate } from './types'
 
 interface Props {
   visible: boolean
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
+const prompts = ref<BioPromptTemplate[]>([])
+const loaded = ref(false)
 
 const emit = defineEmits<{
   close: []
@@ -19,12 +21,18 @@ const emit = defineEmits<{
 // 按 category 分组
 const grouped = computed(() => {
   const map = new Map<string, BioPromptTemplate[]>()
-  for (const p of BIO_PROMPTS) {
+  for (const p of prompts.value) {
     if (!map.has(p.category)) map.set(p.category, [])
     map.get(p.category)!.push(p)
   }
   return Array.from(map.entries())
 })
+
+watch(() => props.visible, async (visible) => {
+  if (!visible || loaded.value) return
+  prompts.value = await loadBioPrompts().catch(() => [])
+  loaded.value = true
+}, { immediate: true })
 
 function handleSelect(content: string) {
   emit('select', content)
@@ -43,6 +51,7 @@ function handleSelect(content: string) {
         </n-button>
       </div>
       <div class="sidebar-body">
+        <div v-if="loaded && !grouped.length" class="prompt-empty">暂无可用提示词模板</div>
         <div v-for="[category, items] in grouped" :key="category">
           <div class="group-label">{{ category }}</div>
           <div

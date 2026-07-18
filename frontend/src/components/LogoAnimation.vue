@@ -14,10 +14,21 @@ const blackCatUrl = `${BASE}lottie/loader-cat.json`
 
 const globeFailed = ref(false)
 const catFailed = ref(false)
+let logoClicks = 0
+let resetTimer: ReturnType<typeof setTimeout> | null = null
+
+function handleLogoClick() {
+  logoClicks += 1
+  if (resetTimer) clearTimeout(resetTimer)
+  resetTimer = setTimeout(() => { logoClicks = 0 }, 1800)
+  if (logoClicks < 5) return
+  logoClicks = 0
+  window.dispatchEvent(new Event('omicHub:triggerMeteorShower'))
+}
 </script>
 
 <template>
-  <div class="logo-container" aria-hidden="true">
+  <div class="logo-container" role="button" tabindex="0" aria-label="OmicHub Logo 彩蛋" @click="handleLogoClick" @keydown.enter="handleLogoClick">
     <!-- 底层：旋转地球 -->
     <div class="globe-wrapper">
       <Vue3Lottie

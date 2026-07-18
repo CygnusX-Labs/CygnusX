@@ -17,7 +17,14 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="tool-card" @click="emit('click')">
+  <div
+    class="tool-card"
+    role="link"
+    tabindex="0"
+    @click="emit('click')"
+    @keydown.enter="emit('click')"
+    @keydown.space.prevent="emit('click')"
+  >
     <div class="tool-card-icon" :style="{ background: gradient }">
       <NIcon :size="28" color="#fff">
         <component :is="icon" />
@@ -27,7 +34,7 @@ const emit = defineEmits<{
       <h3 class="tool-card-title">{{ title }}</h3>
       <p class="tool-card-desc">{{ description }}</p>
     </div>
-    <NButton text class="tool-card-arrow">
+    <NButton text class="tool-card-arrow" tabindex="-1">
       <NIcon :size="18">
         <ChevronForwardOutline />
       </NIcon>
@@ -36,6 +43,12 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
+/*
+ * Apple Design 交互原则（详见 tool_configs/tools_design.md §十六）：
+ * - 缓动统一 cubic-bezier(0.16, 1, 0.3, 1)，模拟临界阻尼弹簧（无过冲）
+ * - 按压反馈即时（100ms），悬停反馈柔和（320ms）
+ * - 箭头位移暗示「即将前进」，预示手势方向
+ */
 .tool-card {
   display: flex;
   align-items: center;
@@ -45,12 +58,28 @@ const emit = defineEmits<{
   border: 1px solid var(--neutral-border, #e5e6eb);
   border-radius: 12px;
   cursor: pointer;
-  transition: all 0.25s ease;
+  transition:
+    transform 320ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 320ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 320ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .tool-card:hover {
   border-color: var(--arco-primary, #165DFF);
-  box-shadow: 0 4px 16px rgba(22, 93, 255, 0.1);
+  /* 分层阴影：大面积柔光 + 近身接触影，比单层阴影更有「浮起」的纵深感 */
+  box-shadow:
+    0 12px 28px rgba(22, 93, 255, 0.12),
+    0 2px 6px rgba(0, 0, 0, 0.05);
   transform: translateY(-2px);
+}
+/* 按下瞬间立刻收缩，反馈不等待松手 */
+.tool-card:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 2px 8px rgba(22, 93, 255, 0.08);
+  transition-duration: 100ms;
+}
+.tool-card:focus-visible {
+  outline: 2px solid var(--arco-primary, #165DFF);
+  outline-offset: 2px;
 }
 .tool-card-icon {
   width: 52px;
@@ -60,6 +89,10 @@ const emit = defineEmits<{
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  /* 顶部内高光 = 光打在材质上；底部浅投影让色块浮于卡片 */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 2px 8px rgba(0, 0, 0, 0.14);
 }
 .tool-card-body {
   flex: 1;
@@ -68,6 +101,7 @@ const emit = defineEmits<{
 .tool-card-title {
   font-size: 15px;
   font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--neutral-text-1, #1d2129);
   margin: 0 0 4px;
 }
@@ -80,8 +114,29 @@ const emit = defineEmits<{
 .tool-card-arrow {
   color: var(--neutral-text-3, #86909c);
   flex-shrink: 0;
+  transition:
+    transform 320ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 320ms cubic-bezier(0.16, 1, 0.3, 1);
 }
-.tool-card:hover .tool-card-arrow {
+/* 悬停时箭头右移，朝「前进」的方向给动作暗示 */
+.tool-card:hover .tool-card-arrow,
+.tool-card:focus-visible .tool-card-arrow {
   color: var(--arco-primary, #165DFF);
+  transform: translateX(3px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-card,
+  .tool-card-arrow {
+    transition: none;
+  }
+  .tool-card:hover,
+  .tool-card:active {
+    transform: none;
+  }
+  .tool-card:hover .tool-card-arrow,
+  .tool-card:focus-visible .tool-card-arrow {
+    transform: none;
+  }
 }
 </style>

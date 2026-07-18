@@ -23,6 +23,7 @@ from omichub.core.exceptions import NotFoundError
 from omichub.domain.ai.entities import Conversation, Message
 from omichub.domain.ai.services import AIDomainService
 from omichub.infrastructure.ai_provider import get_llm_provider
+from omichub.infrastructure.config.prompt_loader import get_prompt
 from omichub.infrastructure.database.repositories.ai_repository import (
     SqlAlchemyConversationRepository,
 )
@@ -184,7 +185,9 @@ class AIService:
             return
 
         # 构建 system prompt：基础 + 助手 + 技能
-        system_prompt = self._settings.ai_system_prompt + self._TOOL_USE_INSTRUCTIONS
+        system_prompt = (
+            self._settings.ai_system_prompt or get_prompt("copilot.system")
+        ) + get_prompt("copilot.tool_use")
 
         # 助手 system prompt 注入
         effective_assistant_id = conv.assistant_id or assistant_id
@@ -199,7 +202,7 @@ class AIService:
             )
             ast = result.scalar_one_or_none()
             if ast and ast.system_prompt:
-                system_prompt = ast.system_prompt + self._TOOL_USE_INSTRUCTIONS
+                system_prompt = ast.system_prompt + get_prompt("copilot.tool_use")
 
         # 技能 prompt 注入
         try:
@@ -292,13 +295,6 @@ class AIService:
             yield {"type": "error", "detail": f"AI 服务调用失败：{e}"}
 
         yield {"type": "done"}
-
-    _TOOL_USE_INSTRUCTIONS = (
-        "\n\n当需要调用工具时，输出一个 ```tool 代码块，内容为 JSON："
-        '{"tool":"submit_task|query_status|list_samples","arguments":{...}}。'
-        "submit_task 参数：flow_id、parameters、sample_sheet、name。"
-        "query_status 参数：task_id。list_samples 无参数。"
-    )
 
     @staticmethod
     def _normalize_tool_calls(raw: list[dict[str, Any]] | None) -> list[dict[str, Any]]:

@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { NButton, NIcon, NTooltip } from 'naive-ui'
 import {
   AddOutline, CloseOutline, ChatbubbleOutline, MenuOutline,
 } from '@vicons/ionicons5'
-import { useAgentHubStore } from '@/stores/agentHub'
+import { useAgentHubStore, type AgentSession } from '@/stores/agentHub'
 
 const store = useAgentHubStore()
+const router = useRouter()
 
 defineProps<{ collapsed?: boolean }>()
-defineEmits<{
+const emit = defineEmits<{
   toggleCollapse: []
   newChat: []
   selectSession: [id: string]
@@ -17,6 +19,15 @@ defineEmits<{
 }>()
 
 const grouped = computed(() => store.groupedSessions)
+
+/** Studio（工作台）会话直接跳转 /studio/:id，普通会话保持原地切换 */
+function handleSelectSession(s: AgentSession) {
+  if (store.studioSessionIds.has(s.id)) {
+    router.push({ name: 'studio', params: { sessionId: s.id } })
+    return
+  }
+  emit('selectSession', s.id)
+}
 </script>
 
 <template>
@@ -53,10 +64,16 @@ const grouped = computed(() => store.groupedSessions)
           :key="s.id"
           class="session-item"
           :class="{ active: s.id === store.currentSessionId }"
-          @click="$emit('selectSession', s.id)"
+          @click="handleSelectSession(s)"
         >
           <NIcon size="14" class="s-icon"><ChatbubbleOutline /></NIcon>
           <span class="s-title">{{ s.title }}</span>
+          <NTooltip v-if="store.studioSessionIds.has(s.id)" trigger="hover">
+            <template #trigger>
+              <span class="s-studio-badge">📊</span>
+            </template>
+            工作台会话，点击打开 AI 工作台
+          </NTooltip>
           <NButton text size="tiny" class="s-del" @click.stop="$emit('deleteSession', s.id)">
             <NIcon size="12"><CloseOutline /></NIcon>
           </NButton>
@@ -144,4 +161,5 @@ const grouped = computed(() => store.groupedSessions)
 .s-title { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .s-del { opacity: 0; transition: opacity .15s; }
 .session-item:hover .s-del { opacity: 1; }
+.s-studio-badge { font-size: 11px; flex-shrink: 0; }
 </style>

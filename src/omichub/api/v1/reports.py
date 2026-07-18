@@ -11,6 +11,7 @@ from omichub.application.schemas.report import (
     ReportFilterParams,
     ReportListResponse,
     ReportResponse,
+    ReportVersionTreeResponse,
     ToggleStarRequest,
 )
 from omichub.application.services.report_service import ReportService
@@ -58,6 +59,20 @@ async def get_report_stats(
 ) -> dict:
     """获取当前用户的报告统计概览"""
     return await service.stats(current_user_id)
+
+
+@router.get(
+    "/{report_id}/versions",
+    response_model=ReportVersionTreeResponse,
+    summary="获取报告版本树",
+)
+async def list_report_versions(
+    report_id: UUID,
+    current_user_id: CurrentUserId,
+    service: ReportServiceDep,
+) -> ReportVersionTreeResponse:
+    """获取原报告及其全部 Studio 衍生版本。"""
+    return await service.list_versions(report_id, current_user_id)
 
 
 @router.get("/{report_id}", response_model=ReportResponse, summary="获取报告详情")

@@ -9,7 +9,6 @@ import type { DataTableColumns } from 'naive-ui'
 import {
   RocketOutline, EyeOutline,
   RefreshOutline, TrashOutline,
-  CloseOutline, SparklesOutline,
 } from '@vicons/ionicons5'
 import axios from 'axios'
 import apiClient from '@/api/client'
@@ -19,8 +18,11 @@ import type { BlastTaskListItem } from '@/types/blast'
 import type { StatsOverview } from '@/types/stats'
 import { useAuthStore } from '@/stores/auth'
 import TrendChart from '@/components/dashboard/TrendChart.vue'
+import StudioUsagePanel from '@/components/dashboard/StudioUsagePanel.vue'
 import QuickStartSteps from '@/components/dashboard/QuickStartSteps.vue'
 import AdminStatsPanel from '@/components/dashboard/AdminStatsPanel.vue'
+import AnnouncementBanner from '@/components/AnnouncementBanner.vue'
+import PageHeader from '@/components/PageHeader.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -36,7 +38,6 @@ const blastTasks = ref<BlastTaskListItem[]>([])
 const loadingOverview = ref(false)
 const loadingTasks = ref(false)
 const loadingBlastTasks = ref(false)
-const bannerClosed = ref(localStorage.getItem('omichub:dashboardBannerClosed') === 'true')
 
 const message = useMessage()
 
@@ -166,11 +167,6 @@ onMounted(async () => {
     loadingBlastTasks.value = false
   }
 })
-
-function closeBanner() {
-  bannerClosed.value = true
-  localStorage.setItem('omichub:dashboardBannerClosed', 'true')
-}
 
 function formatTime(iso: string | null): string {
   if (!iso) return '-'
@@ -336,30 +332,15 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
 
 <template>
   <div class="dashboard-page">
-    <h1 class="page-title">仪表板</h1>
+    <PageHeader title="仪表板" subtitle="掌握当前分析任务、平台运行状态与数据趋势" />
 
-    <!-- 公告横幅 -->
-    <div v-if="!bannerClosed" class="announcement-banner animate-fade-in">
-      <div class="banner-content">
-        <div class="banner-icon">
-          <NIcon :size="20">
-            <SparklesOutline />
-          </NIcon>
-        </div>
-        <div class="banner-text">
-          <h4 class="banner-title">RNA-seq / ATAC-seq 分析已就绪</h4>
-          <p class="banner-desc">转录组与表观遗传分析流程均已上线，点击立即开始</p>
-        </div>
-        <NButton size="small" class="banner-btn" @click="router.push('/flows')">
-          立即查看
-        </NButton>
-      </div>
-      <button class="banner-close" @click="closeBanner">
-        <NIcon :size="14">
-          <CloseOutline />
-        </NIcon>
-      </button>
-    </div>
+    <AnnouncementBanner
+      title="RNA-seq / ATAC-seq 分析已就绪"
+      description="转录组与表观遗传分析流程均已上线，点击立即开始"
+      action-text="立即查看"
+      to="/flows"
+      dismiss-key="dashboard-analysis-ready"
+    />
 
     <!-- 快速开始（动态画像） -->
     <QuickStartSteps />
@@ -408,6 +389,8 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
       <!-- 右侧趋势图（真实接口 + 7/30 天切换） -->
       <TrendChart />
     </section>
+
+    <StudioUsagePanel />
 
     <!-- 管理员全平台监控态势（仅管理员可见） -->
     <AdminStatsPanel v-if="authStore.isAdmin" />
@@ -495,83 +478,6 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
   line-height: 32px;
   color: var(--neutral-text-1);
   margin: 0 0 24px;
-}
-
-/* 公告横幅 */
-.announcement-banner {
-  position: relative;
-  background: linear-gradient(135deg, #165DFF 0%, #6B8DD6 50%, #8E54E9 100%);
-  border-radius: 12px;
-  padding: 16px 48px 16px 16px;
-  margin-bottom: 24px;
-  color: #fff;
-}
-
-.banner-content {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.banner-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.banner-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.banner-title {
-  font-size: 14px;
-  font-weight: 500;
-  margin: 0 0 4px;
-}
-
-.banner-desc {
-  font-size: 12px;
-  opacity: 0.85;
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.banner-btn {
-  background: rgba(255, 255, 255, 0.2) !important;
-  color: #fff !important;
-  border: none !important;
-}
-.banner-btn:hover {
-  background: rgba(255, 255, 255, 0.3) !important;
-}
-
-.banner-close {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.2);
-  border: none;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 0.2s ease;
-}
-.banner-close:hover {
-  background: rgba(255, 255, 255, 0.3);
 }
 
 /* 数据概览 */

@@ -40,7 +40,18 @@ class ReportResponse(OmicsHubBaseSchema):
     completed_at: datetime | None
     is_read: bool
     is_starred: bool
+    # 版本树（OmicStudio 产物回填）：parent_id 指向被优化的原报告
+    parent_id: UUID | None = None
+    version: int = 1
     files: list[ReportFileResponse] = []
+
+
+class ReportVersionTreeResponse(OmicsHubBaseSchema):
+    """同一原始报告衍生出的版本树。"""
+
+    root_id: UUID
+    current_id: UUID
+    items: list[ReportResponse]
 
 
 class ReportListResponse(OmicsHubBaseSchema):

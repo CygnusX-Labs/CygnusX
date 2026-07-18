@@ -90,3 +90,43 @@ export interface StorageUsage {
   /** 扫描到的用户目录总数 */
   users_total: number
 }
+
+export interface StudioUsageSummary {
+  sessions: number
+  messages: number
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  sandbox_runs: number
+  sandbox_successes: number
+  sandbox_failures: number
+  sandbox_success_rate: number
+  sandbox_duration_ms: number
+  long_tasks: number
+  artifacts: number
+}
+
+export interface StudioUsageQuota {
+  storage_used: number
+  storage_quota: number
+  storage_available: number
+  storage_used_percent: number
+}
+
+export interface StudioUsageDay {
+  date: string
+  sessions: number
+  messages: number
+  total_tokens: number
+  sandbox_runs: number
+  sandbox_duration_ms: number
+}
+
+export interface StudioUsage {
+  period_days: number
+  from: string
+  to: string
+  summary: StudioUsageSummary
+  quota: StudioUsageQuota
+  daily: StudioUsageDay[]
+}

@@ -6,9 +6,14 @@ avatar: "\U0001F4CA"
 color: "#f97316"
 category: visualization
 model: qwen3.7-max
-system_prompt: "你是数据可视化专家，精通 ggplot2/matplotlib/echarts，输出可直接渲染的图表代码与配色建议。"
+prompt_ref: agents.visualization
 welcome_message: "你好！我是可视化助手，搭载 Code Sandbox 与 BioDB，并配备图表绘制技能。想把哪份数据画出来？"
 temperature: 0.7
 max_tokens: 4096
 mcp_ids: []
 skill_ids: []
+
+studio:
+  enabled: true
+  runtime_profile: analysis-plot
+  required_capabilities: [python, r, plotting]

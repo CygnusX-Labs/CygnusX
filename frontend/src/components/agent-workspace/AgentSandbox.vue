@@ -1,22 +1,27 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { NButton, NIcon, NSelect, NTag } from 'naive-ui'
-import { ArrowBackOutline, BulbOutline, FlashOutline, CloseOutline } from '@vicons/ionicons5'
+import { useRouter } from 'vue-router'
+import { NButton, NIcon, NSelect, NTag, NTooltip, useMessage } from 'naive-ui'
+import { ArrowBackOutline, BulbOutline, FlashOutline, CloseOutline, DesktopOutline } from '@vicons/ionicons5'
 import KimiMessageList from '@/components/ai-chat/KimiMessageList.vue'
 import KimiChatInput from '@/components/ai-chat/KimiChatInput.vue'
 import AgentCapabilityDrawer from './AgentCapabilityDrawer.vue'
 import ShaniaChatBackground from './ShaniaChatBackground.vue'
 import { useAgentHubStore } from '@/stores/agentHub'
 import { useAuthStore } from '@/stores/auth'
+import { studioApi } from '@/api/studio'
 import type { FileAttachment } from '@/components/ai-chat/types'
 
 const store = useAgentHubStore()
 const authStore = useAuthStore()
+const router = useRouter()
+const message = useMessage()
 
 const input = ref('')
 const showCap = ref(false)
 const modelSwitchNotice = ref('')
 const showWelcomeCard = ref(true)
+const creatingStudio = ref(false)
 let noticeTimer: ReturnType<typeof setTimeout> | null = null
 
 const agent = computed(() => store.currentAgent)
@@ -128,6 +133,21 @@ function handleOpenToolPage(route: string, _args: Record<string, unknown>) {
 function handleBack() {
   store.newChat()
 }
+
+/** 以当前智能体发起 Studio 工作台会话并跳转 /studio/:sessionId */
+async function handleEnterStudio() {
+  if (!agent.value || creatingStudio.value) return
+  creatingStudio.value = true
+  try {
+    const created = await studioApi.createSession({ agent_id: agent.value.id })
+    store.markStudioSession(created.session_id)
+    router.push({ name: 'studio', params: { sessionId: created.session_id } })
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail || '创建工作台会话失败')
+  } finally {
+    creatingStudio.value = false
+  }
+}
 </script>
 
 <template>
@@ -167,6 +187,15 @@ function handleBack() {
             <span v-if="modelSwitchNotice" class="model-switch-notice">{{ modelSwitchNotice }}</span>
           </transition>
         </div>
+        <NTooltip trigger="hover">
+          <template #trigger>
+            <NButton size="small" tertiary :loading="creatingStudio" @click="handleEnterStudio">
+              <template #icon><NIcon><DesktopOutline /></NIcon></template>
+              工作台模式
+            </NButton>
+          </template>
+          在 AI 分析工作台中打开该智能体（代码可改可跑）
+        </NTooltip>
         <NButton size="small" tertiary @click="showCap = true">
           <template #icon><NIcon><BulbOutline /></NIcon></template>
           查看该智能体能力

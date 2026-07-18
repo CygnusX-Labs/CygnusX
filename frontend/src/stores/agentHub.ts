@@ -26,8 +26,20 @@ import type {
 import type { ChatMessage, ToolCall, FileAttachment, ChartData } from '@/components/ai-chat/types'
 import { agentApi, adminAgentApi } from '@/api/agent'
 import apiClient from '@/api/client'
-import { useAgentChatStream, type TokenUsage } from '@/composables/useAgentChatStream'
+import {
+  useAgentChatStream,
+  type StudioPlanStep,
+  type TokenUsage,
+} from '@/composables/useAgentChatStream'
 import { useChatStore } from '@/stores/chat'
+
+const STUDIO_OUTPUT_CAP = 20_000
+
+function appendBoundedStudioOutput(current: string, data: string): string {
+  const combined = current + data
+  if (combined.length <= STUDIO_OUTPUT_CAP) return combined
+  return `…\n${combined.slice(-(STUDIO_OUTPUT_CAP - 2))}`
+}
 
 export const CATEGORY_LABELS: Record<AgentCategory, string> = {
   general: '通用',
@@ -71,6 +83,10 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   const streamingContent = ref('')
   const streamingThought = ref('')
   const availableModels = ref<AvailableModel[]>([])
+
+  /** Studio（工作台）会话 ID 集合：供会话列表打 📊 角标（后端 ChatSessionDTO 无 mode 字段，前端绕道获取） */
+  const studioSessionIds = ref<Set<string>>(new Set())
+  const currentPlan = ref<StudioPlanStep[]>([])
 
   const { streamChat, abortStream } = useAgentChatStream()
 
@@ -245,10 +261,26 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     }
   }
 
+  /** 拉取当前用户的 Studio 会话 ID 集合（供 /ai 会话列表打角标；失败静默，不阻塞主流程） */
+  async function fetchStudioSessionIds(): Promise<void> {
+    try {
+      const res = await apiClient.get<Array<{ session_id: string }>>('/studio/sessions')
+      studioSessionIds.value = new Set((res.data || []).map((s) => s.session_id))
+    } catch (e) {
+      console.error('加载 Studio 会话列表失败:', e)
+    }
+  }
+
+  /** 新建 Studio 会话后登记 ID，无需整表刷新 */
+  function markStudioSession(id: string): void {
+    studioSessionIds.value = new Set([...studioSessionIds.value, id])
+  }
+
   /** 一次性初始化全部资产（前台页面挂载时调用） */
   async function initAssets(): Promise<void> {
     await Promise.all([
       fetchAgents(true), fetchMcps(), fetchSkills(false), fetchAvailableModels(), fetchSessions(),
+      fetchStudioSessionIds(),
     ])
   }
 
@@ -427,7 +459,10 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   }
 
   async function selectSession(id: string) {
-    if (currentSessionId.value !== id) stopStreaming()
+    if (currentSessionId.value !== id) {
+      stopStreaming()
+      currentPlan.value = []
+    }
     currentSessionId.value = id
     const session = sessions.value.find((s) => s.id === id)
     if (session && session.messages.length === 0 && !session.id.startsWith('sess-')) {
@@ -479,14 +514,45 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       const session = sessions.value.find((s) => s.id === sessionId)
       if (!session) return
       const existingIds = new Set(session.messages.map((m) => m.id))
-      const loaded = (res.data || []).map((m) => ({
-        id: m.message_id,
-        role: m.role as 'user' | 'assistant' | 'system',
-        content: m.content,
-        createdAt: m.created_at,
-        modelName: (m.metadata_json?.model as string) || undefined,
-        tokens: m.tokens || { input: 0, output: 0, total: 0 },
-      }))
+      let restoredPlan: StudioPlanStep[] = []
+      const loaded = (res.data || []).map((m) => {
+        const msg: ChatMessage = {
+          id: m.message_id,
+          role: m.role as 'user' | 'assistant' | 'system',
+          content: m.content,
+          createdAt: m.created_at,
+          modelName: (m.metadata_json?.model as string) || undefined,
+          // usage is response metadata; keep it off user/system messages even if an old
+          // backend row contains a stale tokens payload.
+          tokens: m.role === 'assistant' ? (m.tokens || { input: 0, output: 0, total: 0 }) : undefined,
+        }
+        // Studio 会话：历史消息随 metadata_json.tool_invocations 落库，
+        // 重载时重建工具调用卡片（代码卡片凭 arguments + ui_payload 渲染）
+        const invocations = m.metadata_json?.tool_invocations
+        if (Array.isArray(invocations) && invocations.length) {
+          msg.toolCalls = invocations.map((t) => {
+            const inv = t as Record<string, unknown>
+            const uiPayload = (inv.ui_payload as Record<string, unknown> | undefined) || undefined
+            if (inv.tool_name === 'update_plan' && Array.isArray(uiPayload?.steps)) {
+              restoredPlan = uiPayload.steps as StudioPlanStep[]
+            }
+            const so = typeof uiPayload?.stdout === 'string' ? uiPayload.stdout : ''
+            const se = typeof uiPayload?.stderr === 'string' ? uiPayload.stderr : ''
+            const tc: ToolCall = {
+              id: (inv.tool_call_id as string) || `tc-${m.message_id}`,
+              name: (inv.tool_name as string) || '',
+              arguments: (inv.arguments as Record<string, unknown>) || {},
+              result: inv.result,
+              uiPayload,
+              mcpServer: 'studio',
+              status: inv.success ? 'success' : 'error',
+            }
+            if (so || se) tc.output = so + se
+            return tc
+          })
+        }
+        return msg
+      })
       // 保留当前正在流式中的占位消息，避免闪烁
       const streamingPlaceholders = session.messages.filter(
         (m) => m.role === 'assistant' && m.content === '' && !existingIds.has(m.id),
@@ -525,7 +591,6 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       role: 'user',
       content: content.trim(),
       createdAt: now,
-      tokens: { input: 0, output: 0, total: 0 },
     }
     if (options.attachments?.length) {
       userMsg.attachments = options.attachments.map((a) => ({
@@ -605,13 +670,14 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           }
           session.updated_at = new Date().toISOString()
         },
-        onSessionCreated: (sessionId) => {
-          // 后端首次创建会话 → 回填真实 session_id，并异步加载历史消息（含 token）
+        onSessionCreated: (sessionId, messageId) => {
+          // 首个文本块只回填后端 ID。不要在流式过程中加载历史消息：
+          // 此时后端助手行仍是 streaming/0 token，会替换正在更新的 aiMsg。
           if (session.id.startsWith('sess-')) {
             session.id = sessionId
             currentSessionId.value = sessionId
+            if (messageId) aiMsg.id = messageId
             releaseSessionIdLock()
-            loadSessionMessages(sessionId).catch(() => {})
           }
         },
         onToolCall: (event) => {
@@ -638,7 +704,32 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             tc.uiPayload = uiPayload
             tc.status = event.success ? 'success' : 'error'
             tc.mcpServer = event.mcp_server
+            // Studio 工具：未走 tool_output 流时，用 ui_payload 的 stdout/stderr 回填输出区
+            if (!tc.output && uiPayload) {
+              const so = typeof uiPayload.stdout === 'string' ? uiPayload.stdout : ''
+              const se = typeof uiPayload.stderr === 'string' ? uiPayload.stderr : ''
+              if (so || se) tc.output = appendBoundedStudioOutput('', so + se)
+            }
+            if (event.success && (tc.name === 'workspace_write' || tc.name === 'workspace_edit')) {
+              const changedPath = String(tc.arguments.path || uiPayload?.path || '')
+              if (changedPath) {
+                window.dispatchEvent(new CustomEvent('omichub:studio-file-changed', {
+                  detail: { sessionId: session.id, path: changedPath, tool: tc.name },
+                }))
+              }
+            }
           }
+        },
+        onPlan: (steps) => {
+          currentPlan.value = steps
+        },
+        onToolOutput: (tool, _stream, data, toolCallId) => {
+          // 优先按 tool_call_id 精确匹配；无 id（旧事件）时回退为最后一个同名 running 工具
+          const tcs = aiMsg.toolCalls || []
+          const tc = toolCallId
+            ? tcs.find((t) => t.id === toolCallId)
+            : [...tcs].reverse().find((t) => t.status === 'running' && (!tool || t.name === tool))
+          if (tc) tc.output = appendBoundedStudioOutput(tc.output || '', data)
         },
         onError: (error) => {
           aiMsg.content = streamingContent.value || `生成失败: ${error}`
@@ -652,22 +743,19 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           streamingThought.value = ''
           releaseSessionIdLock()
         },
-        onDone: (_, __, usage) => {
+        onDone: (_, messageId, usage) => {
           aiMsg.content = streamingContent.value || aiMsg.content
           aiMsg.thought = streamingThought.value || undefined
           if (usage) {
-            const input = usage.prompt_tokens ?? usage.input ?? 0
-            const output = usage.completion_tokens ?? usage.output ?? 0
+            const input = usage.prompt_tokens ?? usage.input_tokens ?? usage.input ?? 0
+            const output = usage.completion_tokens ?? usage.output_tokens ?? usage.output ?? 0
             const total = usage.total_tokens ?? usage.total ?? input + output
-            aiMsg.tokens = { input, output, total }
-            const userMsgIdx = session.messages.findIndex((m) => m.id === userMsg.id)
-            if (userMsgIdx >= 0) {
-              session.messages[userMsgIdx].tokens = {
-                input,
-                output: 0,
-                total: input,
-              }
-            }
+            // 以服务端返回的 assistant message_id 定位，避免流期间对象被替换后写入旧引用。
+            const targetId = messageId || aiMsg.id
+            const target = session.messages.find(
+              (item) => item.id === targetId && item.role === 'assistant',
+            )
+            ;(target || aiMsg).tokens = { input, output, total }
           }
           if (!aiMsg.content.trim() && !aiMsg.toolCalls?.length) {
             aiMsg.status = aiMsg.thought ? 'empty' : 'error'
@@ -720,12 +808,14 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     // state
     mcps, skills, agents, sessions, currentSessionId,
     isStreaming, streamingContent, streamingThought, availableModels,
+    studioSessionIds, currentPlan,
     // getters
     activeAgents, currentSession, currentAgent, groupedSessions,
     // lookups
     getAgent, mcpsByIds, skillsByIds,
     // asset actions
     fetchAgents, fetchMcps, fetchSkills, initAssets, fetchAvailableModels, fetchSessions,
+    fetchStudioSessionIds, markStudioSession,
     toggleMcpStatus, addMcpServer, updateMcpServer, removeMcpServer, testMcpServer, fetchMcpTools, fetchMcpLogs,
     upsertAgent, toggleAgent, deleteAgent, setDefaultAgent,
     importSkillFromUrl, importSkillFromJson, toggleSkill, deleteSkill,

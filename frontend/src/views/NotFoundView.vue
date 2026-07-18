@@ -2,6 +2,7 @@
   <div class="not-found-container">
     <div class="not-found-orb not-found-orb--1" />
     <div class="not-found-content animate-scale-in">
+      <div class="not-found-mascot" aria-hidden="true">🐱</div>
       <h1 class="error-code animate-float">404</h1>
       <p class="error-message">页面未找到</p>
       <p class="error-hint">您访问的页面可能已移除或暂时不可用</p>
@@ -59,6 +60,13 @@ const handleGoBack = () => {
   z-index: 1;
 }
 
+.not-found-mascot {
+  margin-bottom: -8px;
+  font-size: 54px;
+  filter: drop-shadow(0 8px 18px rgba(11, 15, 25, 0.2));
+  animation: mascot-bob 3.5s ease-in-out infinite;
+}
+
 .error-code {
   font-size: 120px;
   font-weight: 800;
@@ -77,5 +85,10 @@ const handleGoBack = () => {
   font-size: 14px;
   opacity: 0.6;
   margin-bottom: 32px;
+}
+
+@keyframes mascot-bob {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  50% { transform: translateY(-8px) rotate(3deg); }
 }
 </style>

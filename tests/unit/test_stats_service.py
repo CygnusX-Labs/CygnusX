@@ -129,3 +129,108 @@ async def test_admin_recent_failed_serializes(service):
     assert result[0]["flow_id"] == "rna_seq"
     assert result[0]["error_message"] == "boom"
     service._task_repo.list_recent_failed.assert_called_once_with(10, None)
+
+
+def test_aggregate_studio_usage_combines_messages_tools_and_long_tasks():
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    result = StatsService._aggregate_studio_usage(
+        days=7,
+        session_rows=[("studio-1", now)],
+        message_rows=[
+            (
+                "assistant",
+                {
+                    "usage": {"prompt_tokens": 100, "completion_tokens": 40},
+                    "tool_invocations": [
+                        {
+                            "tool_name": "sandbox_execute",
+                            "success": True,
+                            "ui_payload": {
+                                "exit_code": 0,
+                                "duration_ms": 1200,
+                                "artifacts": [{"path": "output/a.png"}],
+                            },
+                        },
+                        {
+                            "tool_name": "sandbox_execute",
+                            "success": True,
+                            "ui_payload": {
+                                "exit_code": 0,
+                                "duration_ms": 800,
+                                "artifacts": [{"path": "output/a.png"}],
+                            },
+                        },
+                    ],
+                },
+                now,
+            ),
+            ("user", {}, now),
+        ],
+        task_rows=[
+            (
+                "success",
+                now - timedelta(seconds=12),
+                now,
+                now,
+            ),
+        ],
+        storage_used=3 * 1024**3,
+        storage_quota=10 * 1024**3,
+    )
+
+    assert result["summary"] == {
+        "sessions": 1,
+        "messages": 2,
+        "input_tokens": 100,
+        "output_tokens": 40,
+        "total_tokens": 140,
+        "sandbox_runs": 3,
+        "sandbox_successes": 3,
+        "sandbox_failures": 0,
+        "sandbox_success_rate": 100.0,
+        "sandbox_duration_ms": 14000,
+        "long_tasks": 1,
+        "artifacts": 1,
+    }
+    assert result["quota"] == {
+        "storage_used": 3 * 1024**3,
+        "storage_quota": 10 * 1024**3,
+        "storage_available": 7 * 1024**3,
+        "storage_used_percent": 30.0,
+    }
+    assert result["daily"][-1]["sandbox_runs"] == 3
+    assert result["daily"][-1]["total_tokens"] == 140
+
+
+def test_aggregate_studio_usage_does_not_count_queued_tool_as_sync_run():
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC)
+    result = StatsService._aggregate_studio_usage(
+        days=1,
+        session_rows=[],
+        message_rows=[
+            (
+                "assistant",
+                {
+                    "tool_invocations": [
+                        {
+                            "tool_name": "sandbox_execute",
+                            "success": True,
+                            "ui_payload": {"task_id": "queued-1", "status": "queued"},
+                        }
+                    ]
+                },
+                now,
+            )
+        ],
+        task_rows=[("failed", None, None, now)],
+        storage_used=0,
+        storage_quota=0,
+    )
+
+    assert result["summary"]["sandbox_runs"] == 1
+    assert result["summary"]["sandbox_failures"] == 1
+    assert result["summary"]["sandbox_duration_ms"] == 0

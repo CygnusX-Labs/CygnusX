@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 存储透视卡 —— 用量占比 + 文件夹数 + Clean Cache / Manage Storage
+ * 存储透视卡 —— 用量占比 + 文件夹数 + 清理缓存 / 管理存储
  */
 import { NButton, NIcon, NProgress } from 'naive-ui'
 import { TrashOutline, SettingsOutline } from '@vicons/ionicons5'
@@ -51,11 +51,11 @@ function tierColor(p: number) {
     <div class="widget-actions">
       <NButton size="small" block @click="emit('clean-cache')">
         <template #icon><NIcon><TrashOutline /></NIcon></template>
-        Clean Cache
+        清理缓存
       </NButton>
       <NButton size="small" block quaternary @click="emit('manage-storage')">
         <template #icon><NIcon><SettingsOutline /></NIcon></template>
-        Manage Storage
+        管理存储
       </NButton>
     </div>
   </div>
@@ -64,10 +64,10 @@ function tierColor(p: number) {
 <style scoped>
 .widget {
   background: var(--neutral-card, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
-  border-radius: 12px;
+  border: none;
+  border-radius: var(--radius-card);
   padding: 16px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-card);
 }
 .widget-title {
   font-size: 13px;

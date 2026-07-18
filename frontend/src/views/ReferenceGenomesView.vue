@@ -6,9 +6,9 @@ import {
   AddOutline,
   ArrowForwardOutline,
   CheckmarkCircleOutline,
-  LayersOutline,
   SearchOutline,
 } from '@vicons/ionicons5'
+import PageHeader from '@/components/PageHeader.vue'
 import {
   DATABASE_SPECIES,
   getDataFileEntries,
@@ -142,22 +142,14 @@ function openRegisterDialog() {
 
 <template>
   <div class="database-page">
-    <section class="database-hero">
-      <div class="hero-copy">
-        <div class="hero-kicker">
-          <NIcon :size="16"><LayersOutline /></NIcon>
-          Gene-Centric Database
-        </div>
-        <h1>数据库</h1>
-        <p>集中管理 FA、GFF、GO、KEGG 与跨版本基因映射。</p>
-      </div>
-      <div class="hero-actions">
+    <PageHeader title="参考基因组数据库" subtitle="集中管理 FA、GFF、GO、KEGG 与跨版本基因映射。">
+      <template #actions>
         <NButton type="primary" secondary class="register-button" @click="openRegisterDialog">
           <template #icon><NIcon><AddOutline /></NIcon></template>
           注册数据库
         </NButton>
-      </div>
-    </section>
+      </template>
+    </PageHeader>
 
     <section class="summary-grid">
       <div class="summary-item">
@@ -198,7 +190,6 @@ function openRegisterDialog() {
         :key="species.id"
         class="species-card"
       >
-        <div class="card-topline" :style="{ background: species.gradient }" />
         <header class="species-header">
           <div class="species-icon" :style="{ background: species.gradient }">{{ species.icon }}</div>
           <div class="species-title-block">
@@ -302,60 +293,8 @@ function openRegisterDialog() {
   min-height: 100%;
 }
 
-.database-hero {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  min-height: 176px;
-  padding: 28px 32px;
-  margin-bottom: 16px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #0f1f4a 0%, #165dff 52%, #722ed1 100%);
-  color: #fff;
-  overflow: hidden;
-}
-
-.hero-copy {
-  min-width: 0;
-}
-
-.hero-kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 10px;
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.database-hero h1 {
-  margin: 0;
-  font-size: 30px;
-  font-weight: 800;
-  letter-spacing: 0;
-  line-height: 1.2;
-}
-
-.database-hero p {
-  max-width: 560px;
-  margin: 8px 0 0;
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.hero-actions {
-  flex: 0 0 auto;
-}
-
 .register-button {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.18);
+  border-radius: var(--radius-button);
 }
 
 .summary-grid {
@@ -427,26 +366,16 @@ function openRegisterDialog() {
   min-width: 0;
   min-height: 330px;
   padding: 18px;
-  border: 1px solid var(--db-border);
-  border-radius: 8px;
+  border: none;
+  border-radius: var(--radius-card);
   background: var(--db-card);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  overflow: hidden;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .species-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(22, 93, 255, 0.3);
-  box-shadow: 0 10px 24px rgba(22, 93, 255, 0.12);
-}
-
-.card-topline {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
+  box-shadow: var(--shadow-card-hover);
 }
 
 .species-header {
@@ -643,7 +572,6 @@ function openRegisterDialog() {
 }
 
 @media (max-width: 760px) {
-  .database-hero,
   .toolbar {
     align-items: stretch;
     flex-direction: column;

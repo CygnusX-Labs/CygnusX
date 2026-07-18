@@ -7,9 +7,10 @@ import {
   ScanOutline, SearchOutline, CodeSlashOutline, ColorPaletteOutline, LayersOutline, BarChartOutline,
   AppsOutline, FlaskOutline, BonfireOutline, CalculatorOutline, SwapHorizontalOutline,
   TerminalOutline, GitNetworkOutline, GitBranchOutline, GridOutline,
-  ChevronDownOutline, ChevronForwardOutline,
+  ChevronForwardOutline,
 } from '@vicons/ionicons5'
 import ToolCard from '@/components/bio-tools/ToolCard.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { useApi } from '@/composables/useApi'
 import { fetchTools } from '@/api/tools'
 import type { ToolItem } from '@/types/tools'
@@ -131,10 +132,7 @@ fetchToolsList()
 
 <template>
   <div class="tools-hub-page">
-    <div class="page-header">
-      <h1 class="page-title">生信工具箱</h1>
-      <p class="page-subtitle">集成常用生物信息学分析工具，从质控到可视化一站式完成</p>
-    </div>
+    <PageHeader title="生信工具箱" subtitle="集成常用生物信息学分析工具，从质控到可视化一站式完成" />
 
     <!-- 加载态 -->
     <div v-if="loading && !toolList.length" class="tool-groups tools-loading">
@@ -155,8 +153,13 @@ fetchToolsList()
           <NIcon :component="ICON_MAP[group.icon]" />
           <span class="group-label">{{ group.label }}</span>
           <span class="group-count">{{ group.tools.length }} 个工具</span>
-          <NButton text class="group-toggle" @click="toggleGroup(group.key)">
-            <NIcon :component="collapsed[group.key] ? ChevronForwardOutline : ChevronDownOutline" />
+          <NButton text class="group-toggle" :aria-label="collapsed[group.key] ? `展开${group.label}` : `收起${group.label}`" @click="toggleGroup(group.key)">
+            <!-- 单个箭头旋转 90°，比切换两个图标更连贯（可中断、无跳变） -->
+            <NIcon
+              :component="ChevronForwardOutline"
+              class="group-toggle-icon"
+              :class="{ expanded: !collapsed[group.key] }"
+            />
           </NButton>
         </div>
 
@@ -196,20 +199,6 @@ fetchToolsList()
   padding: 16px;
   min-height: 100%;
 }
-.page-header {
-  margin-bottom: 28px;
-}
-.page-title {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--neutral-text-1);
-  margin: 0 0 6px;
-}
-.page-subtitle {
-  font-size: 14px;
-  color: var(--neutral-text-3);
-  margin: 0;
-}
 .tool-group {
   margin-bottom: 24px;
 }
@@ -223,7 +212,8 @@ fetchToolsList()
 .group-label {
   overflow: hidden;
   font-size: 16px;
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -236,11 +226,39 @@ fetchToolsList()
   margin-left: auto;
   color: var(--neutral-text-3);
 }
+/* 展开/收起：箭头平滑旋转，缓动与全站弹簧曲线一致 */
+.group-toggle-icon {
+  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.group-toggle-icon.expanded {
+  transform: rotate(90deg);
+}
+/* 按下即时的收缩反馈，不等松手 */
+.group-toggle:active .group-toggle-icon {
+  scale: 0.88;
+  transition-duration: 100ms;
+}
 .tools-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 16px;
   margin: 12px 0;
+}
+/* 卡片交错入场：轻微上浮 + 淡入，逐级 40ms 延迟，柔和不炫技 */
+.tools-grid > * {
+  animation: cardIn 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.tools-grid > *:nth-child(2) { animation-delay: 40ms; }
+.tools-grid > *:nth-child(3) { animation-delay: 80ms; }
+.tools-grid > *:nth-child(4) { animation-delay: 120ms; }
+.tools-grid > *:nth-child(5) { animation-delay: 160ms; }
+.tools-grid > *:nth-child(6) { animation-delay: 200ms; }
+.tools-grid > *:nth-child(7) { animation-delay: 240ms; }
+.tools-grid > *:nth-child(8) { animation-delay: 280ms; }
+.tools-grid > *:nth-child(n+9) { animation-delay: 320ms; }
+@keyframes cardIn {
+  from { opacity: 0; transform: translate3d(0, 10px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
 }
 .skeleton-grid :deep(.n-skeleton) {
   border-radius: 12px;
@@ -286,6 +304,17 @@ fetchToolsList()
   }
   .group-header {
     gap: 6px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* 减少动态效果：去掉入场位移与箭头旋转，内容直接呈现 */
+  .tools-grid > * {
+    animation: none;
+  }
+  .group-toggle-icon,
+  .group-toggle:active .group-toggle-icon {
+    transition: none;
+    scale: none;
   }
 }
 </style>

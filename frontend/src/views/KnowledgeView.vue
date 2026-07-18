@@ -4,7 +4,6 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   NCard,
   NSpin,
-  NEmpty,
   NButton,
   NSpace,
   NIcon,
@@ -15,7 +14,6 @@ import {
   CreateOutline,
   SaveOutline,
   CloseOutline,
-  CloudDownloadOutline,
   AddOutline,
   HourglassOutline,
   TrashOutline,
@@ -27,6 +25,7 @@ import DocReader from '@/components/knowledge/DocReader.vue'
 import DocEditor from '@/components/knowledge/DocEditor.vue'
 import DocCreateModal from '@/components/knowledge/DocCreateModal.vue'
 import AuditPendingPanel from '@/components/knowledge/AuditPendingPanel.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import type { KnowledgeItem, KnowledgeDoc, DocTreeNode } from '@/types/knowledge'
 
 const route = useRoute()
@@ -239,7 +238,16 @@ onMounted(async () => {
             :active-id="activeDoc?.id"
             @select="selectDoc"
           />
-          <NEmpty v-else description="暂无文档" />
+          <EmptyState
+            v-else
+            icon="📚"
+            title="暂无文档"
+            description="创建第一篇文档，沉淀实验室知识。"
+          >
+            <template #actions>
+              <NButton size="small" type="primary" @click="showCreateModal = true">新建文档</NButton>
+            </template>
+          </EmptyState>
         </NSpin>
       </NCard>
     </div>
@@ -297,11 +305,12 @@ onMounted(async () => {
             />
             <DocReader v-else :doc="activeDoc" @refresh="fetchDoc(activeDoc.id)" />
           </div>
-          <NEmpty v-else description="请选择左侧文档进行阅读">
-            <template #icon>
-              <NIcon :size="48"><CloudDownloadOutline /></NIcon>
-            </template>
-          </NEmpty>
+          <EmptyState
+            v-else
+            icon="📄"
+            title="选择一篇文档开始阅读"
+            description="从左侧目录选择文档，或新建一篇文档开始记录。"
+          />
         </NSpin>
       </NCard>
     </div>

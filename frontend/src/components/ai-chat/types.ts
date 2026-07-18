@@ -46,6 +46,10 @@ export interface ToolCall {
   uiPayload?: Record<string, unknown>
   mcpServer?: string
   status: 'pending' | 'running' | 'success' | 'error'
+  /** Studio 工具执行过程中累计的 stdout/stderr 输出（流式填充） */
+  output?: string
+  /** Studio 代码卡片的语言（python / r / bash） */
+  language?: string
 }
 
 // ===== 文件附件 =====

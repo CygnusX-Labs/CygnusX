@@ -6,14 +6,19 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.services.flow_service import FlowService
 from omichub.domain.task.value_objects import TaskStatus
 from omichub.infrastructure.cache.stats_cache import cached_json
+from omichub.infrastructure.database.models.chat import ChatMessageModel, ChatSessionModel
+from omichub.infrastructure.database.models.task import TaskModel
+from omichub.infrastructure.database.models.user import UserModel
 from omichub.infrastructure.database.repositories.task_repository import (
     TaskRepositoryImpl,
 )
@@ -98,6 +103,61 @@ class StatsService:
 
         return await cached_json(f"stats:progress:{user_id}", _TTL_USER, _compute)
 
+    async def user_studio_usage(self, user_id: str, days: int) -> dict[str, Any]:
+        """近 N 天 Studio token、沙盒执行与存储配额汇总。"""
+
+        async def _compute() -> dict[str, Any]:
+            cutoff = datetime.now(UTC) - timedelta(days=days)
+            session_result = await self._db.execute(
+                select(
+                    ChatSessionModel.session_id,
+                    ChatSessionModel.created_at,
+                ).where(
+                    ChatSessionModel.user_id == user_id,
+                    ChatSessionModel.mode == "studio",
+                    ChatSessionModel.created_at >= cutoff,
+                )
+            )
+            message_result = await self._db.execute(
+                select(
+                    ChatMessageModel.role,
+                    ChatMessageModel.metadata_json,
+                    ChatMessageModel.created_at,
+                )
+                .join(
+                    ChatSessionModel,
+                    ChatSessionModel.session_id == ChatMessageModel.session_id,
+                )
+                .where(
+                    ChatSessionModel.user_id == user_id,
+                    ChatSessionModel.mode == "studio",
+                    ChatMessageModel.created_at >= cutoff,
+                )
+            )
+            task_result = await self._db.execute(
+                select(
+                    TaskModel.status,
+                    TaskModel.started_at,
+                    TaskModel.finished_at,
+                    TaskModel.created_at,
+                ).where(
+                    TaskModel.user_id == UUID(user_id),
+                    TaskModel.flow_id == "studio_sandbox",
+                    TaskModel.created_at >= cutoff,
+                )
+            )
+            user = await self._db.get(UserModel, UUID(user_id))
+            return self._aggregate_studio_usage(
+                days=days,
+                session_rows=list(session_result.all()),
+                message_rows=list(message_result.all()),
+                task_rows=list(task_result.all()),
+                storage_used=int(user.used_storage or 0) if user else 0,
+                storage_quota=int(user.storage_quota or 0) if user else 0,
+            )
+
+        return await cached_json(f"stats:studio:{user_id}:{days}", _TTL_USER, _compute)
+
     # ------------------------------------------------------------------
     # 管理员全平台指标
     # ------------------------------------------------------------------
@@ -159,3 +219,139 @@ class StatsService:
         """status -> count 映射。user_id 为 None 时为全平台。"""
         rows = await self._task_repo.count_by_status(user_id)
         return {str(row[0]): int(row[1]) for row in rows}
+
+    @staticmethod
+    def _aggregate_studio_usage(
+        *,
+        days: int,
+        session_rows: list[Any],
+        message_rows: list[Any],
+        task_rows: list[Any],
+        storage_used: int,
+        storage_quota: int,
+    ) -> dict[str, Any]:
+        """聚合已持久化的 Studio 会话、消息和长任务记录。"""
+        today = datetime.now(UTC).date()
+        dates = [today - timedelta(days=index) for index in range(days - 1, -1, -1)]
+        daily = {
+            item: {
+                "date": item.isoformat(),
+                "sessions": 0,
+                "messages": 0,
+                "total_tokens": 0,
+                "sandbox_runs": 0,
+                "sandbox_duration_ms": 0,
+            }
+            for item in dates
+        }
+
+        for row in session_rows:
+            created_at = row[1]
+            day = created_at.date() if created_at else None
+            if day in daily:
+                daily[day]["sessions"] += 1
+
+        input_tokens = 0
+        output_tokens = 0
+        total_tokens = 0
+        sync_runs = 0
+        sync_successes = 0
+        sync_duration_ms = 0
+        artifact_paths: set[str] = set()
+
+        for row in message_rows:
+            role, metadata, created_at = row
+            metadata = metadata or {}
+            day = created_at.date() if created_at else None
+            if day in daily:
+                daily[day]["messages"] += 1
+
+            if role == "assistant":
+                usage = metadata.get("usage") or {}
+                prompt_tokens = int(usage.get("prompt_tokens") or usage.get("input_tokens") or usage.get("input") or 0)
+                completion_tokens = int(
+                    usage.get("completion_tokens")
+                    or usage.get("output_tokens")
+                    or usage.get("output")
+                    or 0
+                )
+                message_total = int(
+                    usage.get("total_tokens")
+                    or usage.get("total")
+                    or prompt_tokens + completion_tokens
+                )
+                input_tokens += prompt_tokens
+                output_tokens += completion_tokens
+                total_tokens += message_total
+                if day in daily:
+                    daily[day]["total_tokens"] += message_total
+
+            for invocation in metadata.get("tool_invocations") or []:
+                if invocation.get("tool_name") != "sandbox_execute":
+                    continue
+                payload = invocation.get("ui_payload") or {}
+                if "duration_ms" not in payload:
+                    continue
+                duration_ms = max(0, int(payload.get("duration_ms") or 0))
+                sync_runs += 1
+                sync_duration_ms += duration_ms
+                if invocation.get("success") and int(payload.get("exit_code", -1)) == 0:
+                    sync_successes += 1
+                for artifact in payload.get("artifacts") or []:
+                    path = artifact.get("path") if isinstance(artifact, dict) else None
+                    if path:
+                        artifact_paths.add(str(path))
+                if day in daily:
+                    daily[day]["sandbox_runs"] += 1
+                    daily[day]["sandbox_duration_ms"] += duration_ms
+
+        long_runs = 0
+        long_successes = 0
+        long_duration_ms = 0
+        for row in task_rows:
+            status, started_at, finished_at, created_at = row
+            duration_ms = 0
+            if started_at and finished_at:
+                duration_ms = max(0, int((finished_at - started_at).total_seconds() * 1000))
+            long_runs += 1
+            long_duration_ms += duration_ms
+            if status == TaskStatus.SUCCESS.value:
+                long_successes += 1
+            day = created_at.date() if created_at else None
+            if day in daily:
+                daily[day]["sandbox_runs"] += 1
+                daily[day]["sandbox_duration_ms"] += duration_ms
+
+        sandbox_runs = sync_runs + long_runs
+        sandbox_successes = sync_successes + long_successes
+        storage_available = max(0, storage_quota - storage_used)
+        storage_percent = round(storage_used / storage_quota * 100, 2) if storage_quota else 0.0
+
+        return {
+            "period_days": days,
+            "from": dates[0].isoformat(),
+            "to": dates[-1].isoformat(),
+            "summary": {
+                "sessions": len(session_rows),
+                "messages": len(message_rows),
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": total_tokens,
+                "sandbox_runs": sandbox_runs,
+                "sandbox_successes": sandbox_successes,
+                "sandbox_failures": sandbox_runs - sandbox_successes,
+                "sandbox_success_rate": (
+                    round(sandbox_successes / sandbox_runs * 100, 2) if sandbox_runs else 0.0
+                ),
+                "sandbox_duration_ms": sync_duration_ms + long_duration_ms,
+                "long_tasks": long_runs,
+                "artifacts": len(artifact_paths),
+            },
+            "quota": {
+                "storage_used": storage_used,
+                "storage_quota": storage_quota,
+                "storage_available": storage_available,
+                "storage_used_percent": storage_percent,
+            },
+            "daily": list(daily.values()),
+        }

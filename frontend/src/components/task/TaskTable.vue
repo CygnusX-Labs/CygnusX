@@ -55,6 +55,7 @@ function flowLabel(flowId: string): string {
     'variant_calling': 'Variant Calling',
     'spatial-transcriptomics': 'Spatial TX',
     'scrna-seq': 'scRNA-seq',
+    studio_sandbox: 'AI 工作台',
   }
   return labels[flowId] || flowId
 }

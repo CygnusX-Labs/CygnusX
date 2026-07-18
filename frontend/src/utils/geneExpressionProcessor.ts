@@ -4,6 +4,7 @@
  * 纯函数模块，不依赖 Vue；PCA 使用 JavaScript 原生幂迭代实现，不引入外部数学库。
  */
 import * as Plotly from 'plotly.js-dist-min'
+import { CONTINUOUS_PALETTES, DISCRETE_PALETTES, EXPLORER_DISCRETE_PALETTES } from '@/components/charts/palettes'
 
 // ===== 类型 =====
 export interface ExpressionMatrix {
@@ -57,38 +58,20 @@ export const DEFAULT_CONFIG: ExplorerConfig = {
 }
 
 // ===== 调色方案 =====
-const PALETTES: Record<string, string[]> = {
-  Set2: ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494', '#b3b3b3'],
-  Set1: ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffff33', '#a65628', '#f781bf', '#999999'],
-  Set3: ['#8dd3c7', '#ffffb3', '#bebada', '#fb8072', '#80b1d3', '#fdb462', '#b3de69', '#fccde5', '#d9d9d9'],
-  Pastel1: ['#fbb4ae', '#b3cde3', '#ccebc5', '#decbe4', '#fed9a6', '#ffffcc', '#e5d8bd', '#fddaec', '#f2f2f2'],
-  Dark24: [
-    '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
-    '#1f77b4', '#ff7f0e', '#33a02c', '#fb9a99', '#e31a1c', '#fdbf6f', '#ff7f00', '#cab2d6',
-  ],
-  Friendly: ['#0072B2', '#56B4E9', '#009E73', '#F5C710', '#E69F00', '#D55E00'],
-  Seaside: ['#8ecae6', '#219ebc', '#023047', '#ffb703', '#fb8500'],
-  'Friendly Long': ['#CC79A7', '#0072B2', '#56B4E9', '#009E73', '#F5C710', '#E69F00', '#D55E00'],
-  'Friendly Long 2': ['#fe65b3', '#CC79A7', '#ffd2d8', '#0072B2', '#007aff', '#56B4E9', '#009E73', '#4cd964', '#F5C710', '#E69F00', '#D55E00', '#ff3b30'],
-  Apple: ['#ff3b30', '#ff9500', '#ffcc00', '#4cd964', '#5ac8fa', '#007aff', '#5856d6'],
-  IBM: ['#5B8DFE', '#725DEE', '#DD227D', '#FE5F00', '#FFB109'],
-  Candy: ['#9b5de5', '#f15bb5', '#fee440', '#00bbf9', '#00f5d4'],
-  'Color 1': ['#ECA669', '#E06681', '#8087E2', '#E2D269'],
+const PALETTES: Record<string, readonly string[]> = {
+  ...DISCRETE_PALETTES,
+  ...EXPLORER_DISCRETE_PALETTES,
 }
 
-const CONTINUOUS_PALETTES: Record<string, string[]> = {
-  BluePinkYellow: ['#00034D', '#000F9F', '#001CEF', '#241EF5', '#5823F6', '#A033E0', '#E85AB1', '#F1907C', '#F4AF63', '#FCE552', '#FFFB6D'],
-}
-
-function resolvePalette(name: string): string[] {
+function resolvePalette(name: string): readonly string[] {
   return PALETTES[name] ?? PALETTES.Friendly
 }
 
-function resolveContinuousPalette(name: string): string[] {
-  return CONTINUOUS_PALETTES[name] ?? CONTINUOUS_PALETTES.BluePinkYellow
+function resolveContinuousPalette(name: string): readonly string[] {
+  return CONTINUOUS_PALETTES[name as keyof typeof CONTINUOUS_PALETTES] ?? CONTINUOUS_PALETTES.BluePinkYellow
 }
 
-function buildColorscale(colors: string[]): Array<[number, string]> {
+function buildColorscale(colors: readonly string[]): Array<[number, string]> {
   return colors.map((c, i) => [i / Math.max(1, colors.length - 1), c] as [number, string])
 }
 

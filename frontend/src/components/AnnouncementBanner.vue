@@ -11,10 +11,32 @@ import {
 
 const router = useRouter()
 
+const props = withDefaults(defineProps<{
+  title?: string
+  description?: string
+  actionText?: string
+  to?: string
+  dismissKey?: string
+  closable?: boolean
+}>(), {
+  title: '',
+  description: '',
+  actionText: '',
+  to: '',
+  dismissKey: '',
+  closable: true,
+})
+
 const banner = ref<Announcement | null>(null)
 const visible = ref(false)
 
 const STORAGE_PREFIX = 'omichub_banner_dismissed_'
+const isStatic = computed(() => Boolean(props.title))
+const staticStorageKey = computed(() => `${STORAGE_PREFIX}${props.dismissKey || props.title}`)
+const displayTitle = computed(() => props.title || banner.value?.title || '')
+const displayDescription = computed(() => props.description || banner.value?.description || '')
+const displayActionText = computed(() => props.actionText || banner.value?.button_text || '')
+const canDismiss = computed(() => isStatic.value ? props.closable : banner.value?.dismiss_behavior !== 'none')
 
 /** 今日日期字符串 YYYY-MM-DD，用于 daily 关闭判断 */
 function todayStr(): string {
@@ -34,6 +56,11 @@ function isDismissed(b: Announcement): boolean {
 }
 
 function dismiss() {
+  if (isStatic.value) {
+    localStorage.setItem(staticStorageKey.value, 'forever')
+    visible.value = false
+    return
+  }
   if (!banner.value) return
   const b = banner.value
   if (b.dismiss_behavior !== 'none') {
@@ -45,6 +72,10 @@ function dismiss() {
 }
 
 function handleNavigate() {
+  if (isStatic.value) {
+    if (props.to) router.push(props.to)
+    return
+  }
   if (!banner.value?.link) return
   const link = banner.value.link
   if (/^https?:\/\//.test(link)) {
@@ -55,13 +86,16 @@ function handleNavigate() {
 }
 
 const iconDisplay = computed(() => {
+  if (isStatic.value) return '✨'
   if (!banner.value) return '📢'
   return banner.value.icon || DEFAULT_ICON_BY_TYPE[banner.value.type] || '📢'
 })
 
-const gradientClass = computed(() => `banner-${banner.value?.type || 'info'}`)
-
 onMounted(async () => {
+  if (isStatic.value) {
+    visible.value = !props.closable || localStorage.getItem(staticStorageKey.value) !== 'forever'
+    return
+  }
   try {
     const list = await announcementApi.getActive()
     // 后端已按优先级排序，取第一条未被当前用户关闭的
@@ -77,27 +111,26 @@ onMounted(async () => {
 <template>
   <Transition name="banner-slide">
     <div
-      v-if="banner && visible"
+      v-if="(isStatic || banner) && visible"
       class="announcement-banner"
-      :class="gradientClass"
       @click="handleNavigate"
     >
       <div class="banner-icon">{{ iconDisplay }}</div>
       <div class="banner-content">
-        <div class="banner-title">{{ banner.title }}</div>
-        <div class="banner-desc">{{ banner.description }}</div>
+        <div class="banner-title">{{ displayTitle }}</div>
+        <div class="banner-desc">{{ displayDescription }}</div>
       </div>
       <div class="banner-actions" @click.stop>
         <NButton
-          v-if="banner.button_text"
+          v-if="displayActionText"
           size="small"
           class="banner-btn"
           @click="handleNavigate"
         >
-          {{ banner.button_text }}
+          {{ displayActionText }}
         </NButton>
         <button
-          v-if="banner.dismiss_behavior !== 'none'"
+          v-if="canDismiss"
           class="banner-close"
           aria-label="关闭"
           @click.stop="dismiss"
@@ -115,30 +148,17 @@ onMounted(async () => {
   align-items: center;
   gap: 12px;
   margin: 16px 0;
-  padding: 12px 16px;
-  border-radius: 12px;
+  padding: 16px 20px;
+  border-radius: var(--radius-card);
   color: #fff;
   cursor: pointer;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  background: var(--brand-gradient);
+  box-shadow: 0 4px 12px rgba(76, 111, 255, 0.18);
   transition: filter 0.2s ease;
 }
 .announcement-banner:hover {
   filter: brightness(1.05);
-}
-
-/* 4 种类型渐变（亮色，暗黑模式下保持明亮，文字恒白） */
-.banner-info {
-  background: linear-gradient(90deg, #3b82f6, #7c3aed, #a855f7);
-}
-.banner-success {
-  background: linear-gradient(90deg, #34d399, #14b8a6);
-}
-.banner-warning {
-  background: linear-gradient(90deg, #fbbf24, #f97316);
-}
-.banner-feature {
-  background: linear-gradient(90deg, #e879f9, #a855f7);
 }
 
 .banner-icon {
@@ -182,13 +202,19 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 .banner-btn {
-  background: #fff !important;
-  color: #7c3aed !important;
-  border: none !important;
+  --n-color: transparent !important;
+  --n-color-hover: rgba(255, 255, 255, 0.14) !important;
+  --n-color-pressed: rgba(255, 255, 255, 0.2) !important;
+  --n-text-color: #fff !important;
+  --n-text-color-hover: #fff !important;
+  --n-text-color-pressed: #fff !important;
+  --n-border: 1px solid rgba(255, 255, 255, 0.8) !important;
+  --n-border-hover: 1px solid #fff !important;
+  --n-border-pressed: 1px solid #fff !important;
   font-weight: 500;
 }
 .banner-btn:hover {
-  background: rgba(255, 255, 255, 0.9) !important;
+  background: rgba(255, 255, 255, 0.14) !important;
 }
 
 .banner-close {

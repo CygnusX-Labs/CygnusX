@@ -646,7 +646,7 @@ onUnmounted(() => {
                 stroke-linecap="round"
               />
             </svg>
-            <h3 class="empty-title">No datasets in this folder</h3>
+            <h3 class="empty-title">当前文件夹暂无数据</h3>
             <p class="empty-subtitle">
               拖拽测序数据到下方，或点击选择文件上传到「{{ currentDirectory || '根目录' }}」
             </p>
@@ -677,21 +677,21 @@ onUnmounted(() => {
                 <template #icon>
                   <NIcon><GlobeOutline /></NIcon>
                 </template>
-                Import from SRA
+                从 SRA 导入
               </NButton>
               <NButton size="small" quaternary @click="importFromGEO"
               >
                 <template #icon>
                   <NIcon><GlobeOutline /></NIcon>
                 </template>
-                Import from GEO
+                从 GEO 导入
               </NButton>
               <NButton size="small" quaternary @click="importFromURL"
               >
                 <template #icon>
                   <NIcon><LinkOutline /></NIcon>
                 </template>
-                Import from URL
+                从链接导入
               </NButton>
             </div>
             <a class="help-link" @click="message.info('帮助文档即将上线')"

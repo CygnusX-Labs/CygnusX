@@ -50,9 +50,11 @@ async def chat_stream(
 
     - 传 ``agent_id``：走 Agent 调度中枢（组装模型/系统词/MCP 工具，含 tool_call 闭环）
     - 否则按 ``model_id`` 直连模型
+    - Studio 会话（session_id 对应会话行 mode="studio"，或新建时显式传 mode="studio"）
+      额外挂载工作台内置工具，sandbox_execute 的 stdout/stderr 以 tool_output 事件实时推送
 
     响应: data: {"type":"text","content":"你"}\\n\\n ...
-    事件类型: text / tool_call / tool_result / error / done
+    事件类型: text / tool_call / tool_output / tool_result / error / done
     """
 
     async def generate_sse():
@@ -68,6 +70,7 @@ async def chat_stream(
                 enable_web_search=request.enable_web_search,
                 enable_code_execution=request.enable_code_execution,
                 deep_thinking=request.deep_thinking,
+                mode=request.mode,
             )
         else:
             if not request.model_id:

@@ -73,6 +73,15 @@ class ReportRepositoryImpl:
         result = await self._session.execute(query)
         return list(result.scalars().all()), total
 
+    async def list_version_candidates(self, user_id: UUID) -> list[ReportModel]:
+        """列出用户可参与版本树构建的报告。"""
+        result = await self._session.execute(
+            select(ReportModel)
+            .where(ReportModel.user_id == user_id)
+            .order_by(ReportModel.version, ReportModel.created_at)
+        )
+        return list(result.scalars().all())
+
     async def get_by_task_id(self, task_id: UUID) -> ReportModel | None:
         """根据任务 ID 获取报告"""
         result = await self._session.execute(

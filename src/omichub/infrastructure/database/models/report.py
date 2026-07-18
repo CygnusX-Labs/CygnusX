@@ -36,6 +36,15 @@ class ReportModel(Base, TimestampMixin):
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     is_starred: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # 版本树（OmicStudio 产物回填）：parent_id 指向被优化的原报告，version 为父版本+1
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("reports.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False, server_default="1")
+
     files: Mapped[list["ReportFileModel"]] = relationship(
         "ReportFileModel", back_populates="report", cascade="all, delete-orphan"
     )

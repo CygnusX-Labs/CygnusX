@@ -43,6 +43,19 @@ class ChatSessionModel(Base, TimestampMixin):
 
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # ===== OmicStudio AI 分析工作台 =====
+    # mode: chat（普通对话）/ studio（工作台会话）；studio 会话绑定沙盒工作区
+    mode: Mapped[str] = mapped_column(String(16), default="chat", nullable=False, index=True)
+    workspace_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    sandbox_meta: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    share_token_hash: Mapped[str | None] = mapped_column(
+        String(64), unique=True, nullable=True, index=True
+    )
+    share_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    shared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     messages: Mapped[list["ChatMessageModel"]] = relationship(
         "ChatMessageModel",
         back_populates="session",

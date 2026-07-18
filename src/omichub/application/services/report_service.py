@@ -15,6 +15,7 @@ from omichub.application.schemas.report import (
     ReportFilterParams,
     ReportListResponse,
     ReportResponse,
+    ReportVersionTreeResponse,
 )
 from omichub.application.services.flow_service import FlowService
 from omichub.core.config import get_settings
@@ -75,6 +76,48 @@ class ReportService:
         if model is None or str(model.user_id) != user_id:
             raise NotFoundError("报告不存在")
         return _model_to_response(model)
+
+    async def list_versions(
+        self, report_id: UUID, user_id: str
+    ) -> ReportVersionTreeResponse:
+        """返回指定报告所属的完整版本树。"""
+        target = await self._repo.get_by_id(report_id)
+        if target is None or str(target.user_id) != user_id:
+            raise NotFoundError("报告不存在")
+
+        candidates = await self._repo.list_version_candidates(UUID(user_id))
+        by_id = {item.id: item for item in candidates}
+        by_id[target.id] = target
+
+        root = target
+        visited: set[UUID] = set()
+        while root.parent_id is not None:
+            if root.id in visited:
+                raise NotFoundError("报告版本树异常")
+            visited.add(root.id)
+            parent = by_id.get(root.parent_id)
+            if parent is None:
+                break
+            root = parent
+
+        family_ids = {root.id}
+        changed = True
+        while changed:
+            changed = False
+            for item in candidates:
+                if item.parent_id in family_ids and item.id not in family_ids:
+                    family_ids.add(item.id)
+                    changed = True
+
+        family = [item for item in candidates if item.id in family_ids]
+        if root.id not in {item.id for item in family}:
+            family.append(root)
+        family.sort(key=lambda item: (item.version, item.created_at, str(item.id)))
+        return ReportVersionTreeResponse(
+            root_id=root.id,
+            current_id=target.id,
+            items=[_model_to_response(item) for item in family],
+        )
 
     async def preview_html(self, report_id: UUID, user_id: str) -> str:
         """获取报告 HTML 预览内容"""
@@ -241,6 +284,8 @@ def _model_to_response(model: ReportModel) -> ReportResponse:
         completed_at=model.completed_at,
         is_read=model.is_read,
         is_starred=model.is_starred,
+        parent_id=model.parent_id,
+        version=model.version,
         files=[
             ReportFileResponse(
                 id=f.id,

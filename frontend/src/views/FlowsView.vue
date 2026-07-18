@@ -3,6 +3,7 @@ import type { FlowDefinition } from '@/types'
 import apiClient from '@/api/client'
 import { useApi } from '@/composables/useApi'
 import AppLoading from '@/components/AppLoading.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { NButton, NIcon } from 'naive-ui'
 import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -158,17 +159,13 @@ onMounted(fetchFlows)
 
 <template>
   <div class="flows-page">
-    <!-- Header -->
-    <div class="flows-header animate-fade-in-up">
-      <div>
-        <h1 class="page-title" style="margin-bottom: 8px;">
-          {{ activeType ? typeLabels[activeType] || '分析流程' : '分析中心' }}
-        </h1>
-        <p class="page-subtitle">
-          {{ activeType ? '当前筛选的分析流程，点击卡片即可提交任务' : '选择适合您研究需求的分析流程，快速启动多组学分析' }}
-        </p>
-      </div>
-      <div class="flows-header-actions">
+    <PageHeader
+      class="animate-fade-in-up"
+      :title="activeType ? typeLabels[activeType] || '分析流程' : '分析中心'"
+      :subtitle="activeType ? '当前筛选的分析流程，点击卡片即可提交任务' : '选择适合您研究需求的分析流程，快速启动多组学分析'"
+    >
+      <template #actions>
+        <div class="flows-header-actions">
         <NButton v-if="activeType" class="header-btn-secondary" @click="router.push('/flows')">
           查看全部流程
         </NButton>
@@ -180,8 +177,9 @@ onMounted(fetchFlows)
           <template #icon><component :is="DocumentTextOutline" /></template>
           开发者文档
         </NButton>
-      </div>
-    </div>
+        </div>
+      </template>
+    </PageHeader>
 
     <!-- 加载态 -->
     <div v-if="loading && !pipelines.length" class="flows-loading">
@@ -205,11 +203,12 @@ onMounted(fetchFlows)
               {{ featuredPipeline.icon }}
             </div>
 
-            <div class="hero-body">
-              <div class="hero-title-row">
-                <h3 class="hero-title">{{ featuredPipeline.name }}</h3>
-                <span class="version-badge">v{{ featuredPipeline.version }}</span>
-              </div>
+          <div class="hero-body">
+            <div class="hero-title-row">
+              <h3 class="hero-title">{{ featuredPipeline.name }}</h3>
+              <span class="recommended-badge">🔥 推荐</span>
+              <span class="version-badge">v{{ featuredPipeline.version }}</span>
+            </div>
               <p class="hero-desc">{{ featuredPipeline.desc }}</p>
               <div class="hero-tags">
                 <span
@@ -313,14 +312,6 @@ onMounted(fetchFlows)
   padding: 64px 24px;
 }
 
-.flows-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 24px;
-}
-
 .flows-header-actions {
   display: flex;
   gap: 12px;
@@ -358,10 +349,11 @@ onMounted(fetchFlows)
 /* ===== Hero Card ===== */
 .hero-card {
   position: relative;
-  border: 1px solid var(--neutral-border);
-  border-radius: 12px;
+  border: none;
+  border-radius: var(--radius-card);
   padding: 20px;
   background: var(--neutral-card);
+  box-shadow: var(--shadow-card);
   overflow: hidden;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -370,21 +362,17 @@ onMounted(fetchFlows)
 .hero-card::before {
   content: '';
   position: absolute;
-  top: 0;
+  top: 16px;
+  bottom: 16px;
   left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(
-    90deg,
-    var(--hero-accent),
-    color-mix(in srgb, var(--hero-accent) 60%, transparent)
-  );
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--brand-primary);
 }
 
 .hero-card:hover {
-  border-color: var(--neutral-text-1);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--neutral-text-1) 6%, transparent);
+  box-shadow: var(--shadow-card-hover);
 }
 
 .hero-inner {
@@ -429,6 +417,17 @@ onMounted(fetchFlows)
   padding: 2px 8px;
   border-radius: 4px;
   flex-shrink: 0;
+}
+
+.recommended-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--brand-primary);
+  background: var(--brand-primary-light);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
 }
 
 .hero-desc {
@@ -625,9 +624,6 @@ onMounted(fetchFlows)
 }
 
 @media (max-width: 768px) {
-  .flows-header {
-    flex-direction: column;
-  }
   .flows-header-actions {
     width: 100%;
     flex-wrap: wrap;

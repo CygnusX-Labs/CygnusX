@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import type { Task } from '@/types'
 import TaskTable from '@/components/task/TaskTable.vue'
 import AppLoading from '@/components/AppLoading.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import apiClient from '@/api/client'
 import { useApi } from '@/composables/useApi'
 import { NInput, NSelect, NButton, NIcon, useMessage } from 'naive-ui'
@@ -12,6 +13,8 @@ const message = useMessage()
 
 const statusFilter = ref<Task['status'] | 'all'>('all')
 const searchQuery = ref('')
+const knownCompletedTaskIds = ref(new Set<string>())
+const hasInitializedTaskSnapshot = ref(false)
 
 const statusOptions = [
   { label: '全部状态', value: 'all' },
@@ -49,6 +52,27 @@ const filteredTasks = computed(() => {
     )
   }
   return list
+})
+
+watch(tasks, (nextTasks) => {
+  const taskList = nextTasks ?? []
+  const completedIds = new Set(
+    taskList.filter((task) => task.status === 'success').map((task) => task.id),
+  )
+
+  if (hasInitializedTaskSnapshot.value) {
+    const newlyCompleted = taskList.filter(
+      (task) => task.status === 'success' && !knownCompletedTaskIds.value.has(task.id),
+    )
+    if (newlyCompleted.length) {
+      const name = newlyCompleted[0].name
+      const suffix = newlyCompleted.length > 1 ? `，另有 ${newlyCompleted.length - 1} 项已完成` : ''
+      message.success(`⭐ 「${name}」分析已完成${suffix}`)
+    }
+  }
+
+  knownCompletedTaskIds.value = completedIds
+  hasInitializedTaskSnapshot.value = true
 })
 
 async function handleDelete(task: Task) {
@@ -100,6 +124,12 @@ onMounted(fetchTasks)
     <div v-if="loading && !filteredTasks.length" class="tasks-loading">
       <AppLoading text="加载任务列表..." />
     </div>
+    <EmptyState
+      v-else-if="!filteredTasks.length"
+      icon="🧪"
+      :title="searchQuery || statusFilter !== 'all' ? '没有匹配的任务' : '暂时没有分析任务'"
+      :description="searchQuery || statusFilter !== 'all' ? '请调整搜索关键词或筛选条件后重试。' : '前往分析中心提交第一个任务后，执行进度会显示在这里。'"
+    />
     <TaskTable
       v-else
       :tasks="filteredTasks"

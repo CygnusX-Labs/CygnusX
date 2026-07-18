@@ -18,11 +18,14 @@ from omichub.api.v1 import (
     mcp,
     notification,
     platform_config,
+    plot_stats,
+    prompts,
     reports,
     sandbox,
     site_content,
     site_settings,
     stats,
+    studio,
     tasks,
     terminal,
     users,
@@ -51,6 +54,8 @@ api_router.include_router(docs.router, prefix="/docs", tags=["Docs"])
 api_router.include_router(flows.router, prefix="/flows", tags=["Flows"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["Tasks"])
 api_router.include_router(stats.router, prefix="/stats", tags=["Stats"])
+api_router.include_router(plot_stats.router, prefix="/stats", tags=["PlotStats"])
+api_router.include_router(prompts.router, prefix="/prompts", tags=["Prompts"])
 api_router.include_router(
     workflow_monitor.router, prefix="/workflow-monitor", tags=["Workflow-Monitor"]
 )
@@ -87,6 +92,7 @@ api_router.include_router(festival.router, prefix="/festival", tags=["Festival"]
 api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])
 api_router.include_router(mcp.router, prefix="/mcp", tags=["MCP"])
 api_router.include_router(sandbox.router, prefix="/sandbox", tags=["Sandbox"])
+api_router.include_router(studio.router, prefix="/studio", tags=["Studio"])
 api_router.include_router(terminal.router, prefix="/terminal", tags=["Terminal"])
 
 # 生信工具箱：自动发现 omichub.tools.<工具>.api 并挂载（每个工具自声明 prefix/tags）

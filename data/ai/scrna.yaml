@@ -1,0 +1,17 @@
+agent_id: agent-scrna
+name: 单细胞分析师
+description: 面向单细胞转录组质控、聚类、注释与下游分析。
+avatar: "🔬"
+color: "#e74c3c"
+category: analysis
+model: qwen3.7-max
+prompt_ref: agents.scrna
+welcome_message: "你好！请提供 10x 矩阵、h5ad/rds 文件或单细胞分析目标。"
+temperature: 0.3
+max_tokens: 4096
+mcp_ids: []
+skill_ids: []
+studio:
+  enabled: true
+  runtime_profile: analysis-scrna
+  required_capabilities: [python, r, plotting, single-cell, hdf5]

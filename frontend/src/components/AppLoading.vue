@@ -10,9 +10,10 @@ withDefaults(defineProps<{
 
 <template>
   <div class="app-loading" :class="`app-loading--${size}`">
-    <svg class="app-loading__spinner" viewBox="0 0 24 24" fill="none">
-      <circle class="app-loading__track" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" />
-      <path class="app-loading__arc" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+    <svg class="app-loading__dna" viewBox="0 0 40 48" fill="none" aria-hidden="true">
+      <path class="app-loading__strand app-loading__strand--left" d="M10 2C31 10 31 18 10 24C-11 31 -11 39 10 46" />
+      <path class="app-loading__strand app-loading__strand--right" d="M30 2C9 10 9 18 30 24C51 31 51 39 30 46" />
+      <path class="app-loading__rung" d="M13 8H27M11 16H29M11 32H29M13 40H27" />
     </svg>
     <span v-if="text" class="app-loading__text">{{ text }}</span>
   </div>
@@ -28,7 +29,7 @@ withDefaults(defineProps<{
   color: var(--neutral-text-3);
 }
 
-.app-loading--small .app-loading__spinner {
+.app-loading--small .app-loading__dna {
   width: 20px;
   height: 20px;
 }
@@ -36,7 +37,7 @@ withDefaults(defineProps<{
   font-size: 12px;
 }
 
-.app-loading--medium .app-loading__spinner {
+.app-loading--medium .app-loading__dna {
   width: 32px;
   height: 32px;
 }
@@ -44,7 +45,7 @@ withDefaults(defineProps<{
   font-size: 14px;
 }
 
-.app-loading--large .app-loading__spinner {
+.app-loading--large .app-loading__dna {
   width: 48px;
   height: 48px;
 }
@@ -52,24 +53,41 @@ withDefaults(defineProps<{
   font-size: 16px;
 }
 
-.app-loading__spinner {
-  animation: app-loading-spin 1s linear infinite;
+.app-loading__dna {
+  overflow: visible;
+  color: var(--brand-primary);
+  animation: app-loading-dna-breathe 1.5s ease-in-out infinite;
 }
 
-.app-loading__track {
-  opacity: 0.2;
+.app-loading__strand {
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 3;
 }
 
-.app-loading__arc {
-  opacity: 0.75;
+.app-loading__strand--right {
+  opacity: 0.45;
+}
+
+.app-loading__rung {
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 2;
+  opacity: 0.55;
 }
 
 .app-loading__text {
   color: var(--neutral-text-2);
 }
 
-@keyframes app-loading-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+@keyframes app-loading-dna-breathe {
+  0%, 100% { opacity: 0.55; transform: scale(0.94); }
+  50% { opacity: 1; transform: scale(1.06); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-loading__dna {
+    animation: none;
+  }
 }
 </style>

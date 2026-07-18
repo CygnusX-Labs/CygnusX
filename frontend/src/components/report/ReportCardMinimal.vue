@@ -8,7 +8,7 @@ import {
   EyeOutline, DownloadOutline, OpenOutline,
   StarOutline, Star, TrashOutline, WarningOutline,
   FlaskOutline, GitNetworkOutline, DocumentTextOutline,
-  TimeOutline,
+  TimeOutline, SparklesOutline,
 } from '@vicons/ionicons5'
 
 const props = defineProps<{
@@ -21,6 +21,7 @@ const emit = defineEmits<{
   viewTask: [report: Report]
   toggleStar: [report: Report]
   delete: [report: Report]
+  optimize: [report: Report]
 }>()
 
 const primaryFile = props.report.files.find(f => f.is_primary)
@@ -399,6 +400,9 @@ function handlePrimaryClick() {
 }
 .text-action:hover {
   background: color-mix(in srgb, var(--arco-primary) 6%, transparent);
+}
+.text-action.optimize {
+  color: #8e54e9;
 }
 .text-action.download {
   color: var(--kimi-chart-4);

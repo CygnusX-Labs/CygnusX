@@ -13,6 +13,7 @@ import {
 } from 'echarts/components'
 import VChart from 'vue-echarts'
 import apiClient from '@/api/client'
+import EmptyState from '@/components/EmptyState.vue'
 import type { TrendPoint } from '@/types/stats'
 
 use([
@@ -145,9 +146,16 @@ onMounted(fetchTrend)
     <div class="trend-chart-wrap">
       <NSpin :show="loading">
         <VChart
+          v-if="trendData.length"
           :option="trendOption"
           autoresize
           style="width: 100%; height: 260px;"
+        />
+        <EmptyState
+          v-else-if="!loading"
+          icon="📈"
+          title="暂无趋势数据"
+          description="提交分析任务后，这里会展示近期的任务与样本变化。"
         />
       </NSpin>
     </div>
@@ -157,9 +165,10 @@ onMounted(fetchTrend)
 <style scoped>
 .arco-card {
   background: var(--neutral-card);
-  border: 1px solid var(--neutral-border);
-  border-radius: 12px;
+  border: none;
+  border-radius: var(--radius-card);
   padding: 16px 20px;
+  box-shadow: var(--shadow-card);
   min-width: 0;
 }
 

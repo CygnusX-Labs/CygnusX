@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     app_secret_key: str = "change-me-in-production"
+    service_name: str = "web"
 
     # ===== 数据库配置 =====
     postgres_host: str = "localhost"
@@ -101,16 +102,15 @@ class Settings(BaseSettings):
     enable_stats_cache: bool = True  # Redis 不可用时自动降级为直查 DB
 
     # ===== AI Copilot =====
-    ai_system_prompt: str = (
-        "你是 OmicHub 智能分析助手，专注于多组学（RNA-seq/ATAC-seq 等）数据分析。"
-        "回答需简洁专业，代码块标注语言（python/r/bash），数据路径用 /workspace/data 前缀。"
-    )
+    ai_system_prompt: str = ""  # 已迁移到 data/prompts/copilot/system.md；仅保留环境变量兼容覆盖
     ai_max_context_messages: int = 20
     ai_temperature: float = 0.7
     ai_default_provider_id: str = ""  # 默认 AI provider 配置 UUID，空则使用环境变量兜底
     ai_provider_key_encryption_key: str = ""  # Fernet 密钥，为空则 API key 明文存储
     ai_provider_config_yaml: str = "data/ai_providers.yaml"  # 外置 AI Provider YAML 配置路径
     site_content_yaml: str = "data/OmicHub.yaml"  # 首页文案外置 YAML 路径（改文件即生效）
+    prompts_registry_yaml: str = "data/prompts/registry.yaml"
+    runtime_images_yaml: str = "data/runtime_images.yaml"
     # JBrowse 2 基因组浏览器外置配置：参考基因组 / 预设轨道 / 扫描与上传策略。
     # 改文件后调用 POST /api/v1/jbrowse/config/reload 即时生效（或等配置加载器 mtime 热重载）。
     # 集中配置：与富集分析同放 tool_configs/<工具名>/，仓库内源码管控；容器内经 tool_configs/ 挂载(:ro) 可读。
@@ -224,6 +224,13 @@ class Settings(BaseSettings):
     rate_limit_max: int = 100  # 窗口内最大请求数
     rate_limit_window: int = 60  # 窗口秒数
 
+    # ===== OmicStudio AI 分析工作台 =====
+    # 功能配置 YAML（仓库内源码管控）；改文件后由加载器 mtime 热重载。
+    studio_config_yaml: str = "data/studio.yaml"
+    # Celery worker 无 Docker socket；通过 web 的受认证内部控制面执行/回收沙盒。
+    studio_control_internal_url: str = "http://web:8000/api/v1/studio/internal"
+    studio_control_token: str = ""
+
     # ===== 敏感信息脱敏 =====
     # 逗号分隔的敏感词列表，AI 对话送 LLM 前 / 落库前替换为 [REDACTED]（不可逆）
     sensitive_keywords: list[str] = []
@@ -272,7 +279,6 @@ class Settings(BaseSettings):
         """生产环境强制校验关键密钥，避免使用默认值或空值上线。"""
         if not self.workflow_monitor_ingest_token and self.omichub_workflow_monitor_token:
             self.workflow_monitor_ingest_token = self.omichub_workflow_monitor_token
-
         if not self.is_production:
             return self
 

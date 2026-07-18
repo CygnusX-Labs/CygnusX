@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onUnmounted, nextTick, inject } from 'vue'
 import { NButton, NIcon, NTag, NDataTable } from 'naive-ui'
 import {
   DocumentOutline,
@@ -13,6 +13,8 @@ import UserAvatar from '@/components/UserAvatar.vue'
 import MessageActionBar from './MessageActionBar.vue'
 import TaskProgressCard from './TaskProgressCard.vue'
 import ChartPreviewModal from './ChartPreviewModal.vue'
+import StudioCodeCard from '@/components/studio/StudioCodeCard.vue'
+import { StudioContextKey, isStudioCodeTool } from '@/components/studio/context'
 import type { ChatMessage, CopyMode, ChartData, ToolCall } from './types'
 
 interface Props {
@@ -229,15 +231,14 @@ watch(
 )
 
 const tokenText = computed(() => {
+  if (props.message.role !== 'assistant') return ''
   const t = props.message.tokens
   if (!t) return ''
   const input = t.input ?? 0
   const output = t.output ?? 0
   const total = t.total ?? input + output
-  if (props.message.role === 'assistant') {
-    return `Tokens: ${total} ↑${input} ↓${output}`
-  }
-  return `Tokens: ${total} ↑${input}`
+  if (total <= 0 && input <= 0 && output <= 0) return ''
+  return `Tokens: ${total} ↑${input} ↓${output}`
 })
 
 const aiIdentityName = computed(() => {
@@ -314,6 +315,17 @@ const taskToolCalls = computed(() =>
     (t) => t.uiPayload?.task_id,
   ),
 )
+
+// Studio 工作台上下文：仅在 /studio 页面被 provide；注入成功时 Studio 代码工具改渲染代码卡片，
+// 普通 /ai 聊天无此上下文，渲染分支完全不变。
+const studioCtx = inject(StudioContextKey, null)
+function isStudioCodeToolCall(tool: ToolCall): boolean {
+  return !!studioCtx && isStudioCodeTool(tool.name)
+}
+
+function isArtifactRegisterTool(tool: ToolCall): boolean {
+  return tool.name === 'artifact_register' && tool.status === 'success' && !!tool.uiPayload?.report_id
+}
 
 function handleBodyClick(e: MouseEvent) {
   const t = (e.target as HTMLElement).closest('.copy-btn') as HTMLElement | null
@@ -591,7 +603,21 @@ function handleEdit() {
           </div>
 
           <div v-if="message.toolCalls?.length" class="tool-results">
-            <div v-for="(tool, idx) in message.toolCalls" :key="idx" class="tool-card">
+            <template v-for="(tool, idx) in message.toolCalls" :key="idx">
+              <!-- Studio 代码工具（仅工作台页面）：代码卡片，支持编辑/重跑/产物 -->
+              <StudioCodeCard v-if="isStudioCodeToolCall(tool)" :tool="tool" />
+              <div v-else-if="isArtifactRegisterTool(tool)" class="artifact-register-card">
+                <div class="artifact-register-icon">✓</div>
+                <div>
+                  <div class="artifact-register-title">
+                    已登记为《{{ tool.uiPayload?.title }}》v{{ tool.uiPayload?.version }}
+                  </div>
+                  <div v-if="tool.uiPayload?.parent_id" class="artifact-register-sub">
+                    已挂到原报告版本树
+                  </div>
+                </div>
+              </div>
+              <div v-else class="tool-card">
               <div class="tool-header">
                 <n-icon size="16"><BuildOutline /></n-icon>
                 <span>{{ tool.name }}</span>
@@ -651,8 +677,10 @@ function handleEdit() {
                 :task-id="String(tool.uiPayload.task_id)"
                 :progress-url="tool.uiPayload.progress_url ? String(tool.uiPayload.progress_url) : undefined"
                 :result-url="tool.uiPayload.result_url ? String(tool.uiPayload.result_url) : undefined"
+                :task-url="tool.uiPayload.task_url ? String(tool.uiPayload.task_url) : undefined"
               />
-            </div>
+              </div>
+            </template>
           </div>
 
           <!-- 流式光标 -->
@@ -1341,6 +1369,34 @@ function handleEdit() {
   flex-direction: column;
   gap: 12px;
   margin-top: 12px;
+}
+.artifact-register-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(24, 160, 88, 0.25);
+  border-radius: 10px;
+  background: rgba(24, 160, 88, 0.08);
+}
+.artifact-register-icon {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #18a058;
+  font-weight: 700;
+}
+.artifact-register-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.artifact-register-sub {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--chat-text-muted, #888);
 }
 .tool-card {
   padding: 12px;

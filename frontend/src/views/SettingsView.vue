@@ -13,6 +13,7 @@ import AdminTOTPConfirmModal from '@/components/AdminTOTPConfirmModal.vue'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import type { SiteSettings } from '@/types'
+import { isFestivalEffectsEnabled, setFestivalEffectsEnabled } from '@/utils/interfacePreferences'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -33,6 +34,7 @@ const profileFormRef = ref<FormInst | null>(null)
 const passwordFormRef = ref<FormInst | null>(null)
 const savingProfile = ref(false)
 const savingPassword = ref(false)
+const festivalEffectsEnabled = ref(false)
 
 const profileForm = ref({
   username: '',
@@ -190,6 +192,7 @@ const passwordRules: FormRules = {
 }
 
 onMounted(async () => {
+  festivalEffectsEnabled.value = isFestivalEffectsEnabled()
   if (!authStore.isLoggedIn) {
     router.push('/login')
     return
@@ -209,6 +212,12 @@ onMounted(async () => {
   await loadPlatformConfig()
   await load2FAStatus()
 })
+
+function updateFestivalEffects(enabled: boolean) {
+  festivalEffectsEnabled.value = enabled
+  setFestivalEffectsEnabled(enabled)
+  message.success(enabled ? '节日彩蛋已开启' : '节日彩蛋已关闭')
+}
 
 function requestPlatformChange(patch: Partial<SiteSettings>) {
   platformPending.value = patch
@@ -517,6 +526,13 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
                   <div class="pref-desc">跟随系统主题切换明暗模式</div>
                 </div>
                 <NTag size="small" type="info">即将支持</NTag>
+              </div>
+              <div class="pref-item">
+                <div class="pref-info">
+                  <div class="pref-label">节日彩蛋</div>
+                  <div class="pref-desc">在节日或节气当天展示首页祝福与氛围效果</div>
+                </div>
+                <NSwitch :value="festivalEffectsEnabled" @update:value="updateFestivalEffects" />
               </div>
               <div class="pref-item">
                 <div class="pref-info">

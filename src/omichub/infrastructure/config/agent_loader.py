@@ -6,12 +6,15 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from omichub.core.config import get_settings
+from omichub.infrastructure.config.prompt_loader import get_prompt
+from omichub.infrastructure.config.runtime_image_loader import get_runtime_images
 
 
 def load_agent_configs() -> list[dict[str, Any]]:
@@ -88,5 +91,53 @@ def _load_single_agent(yaml_path: Path) -> dict[str, Any] | None:
 
         logging.getLogger(__name__).warning(f"Agent YAML 缺少 agent_id: {yaml_path}")
         return None
+
+    prompt_ref = str(data.get("prompt_ref") or "").strip()
+    if prompt_ref:
+        prompt = get_prompt(prompt_ref)
+        if not prompt:
+            logging.getLogger(__name__).warning(
+                "Agent prompt_ref 无法解析: %s -> %s", yaml_path, prompt_ref
+            )
+            return None
+        data["system_prompt"] = prompt
+
+    # 可选 studio 段（OmicStudio 工作台）：{enabled: bool, image?: str}
+    # 结构非法时剔除该段，不影响 Agent 本体加载
+    studio = data.get("studio")
+    if studio is not None:
+        if not isinstance(studio, dict):
+            data.pop("studio", None)
+        else:
+            cleaned: dict[str, Any] = {}
+            if "enabled" in studio:
+                enabled = studio["enabled"]
+                cleaned["enabled"] = (
+                    enabled.strip().lower() in {"1", "true", "yes", "on"}
+                    if isinstance(enabled, str)
+                    else bool(enabled)
+                )
+            runtime_profile = str(studio.get("runtime_profile") or "").strip()
+            required_capabilities = {
+                str(value).strip()
+                for value in studio.get("required_capabilities", [])
+                if str(value).strip()
+            }
+            if runtime_profile:
+                try:
+                    _, profile = get_runtime_images().select(
+                        required_capabilities, "studio", runtime_profile
+                    )
+                except (KeyError, ValueError, LookupError, RuntimeError) as exc:
+                    logging.getLogger(__name__).warning(
+                        "Agent Studio 运行时无效 %s: %s", yaml_path, exc
+                    )
+                    return None
+                cleaned["runtime_profile"] = runtime_profile
+                cleaned["required_capabilities"] = sorted(required_capabilities)
+                cleaned["image"] = profile.image
+            elif studio.get("image"):
+                cleaned["image"] = str(studio["image"])
+            data["studio"] = cleaned
 
     return data

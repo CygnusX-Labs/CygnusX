@@ -30,93 +30,78 @@ from omichub.application.schemas.chat import (
     ChatSessionDTO,
     UpdateAssistantRequest,
 )
+from omichub.application.services.studio_capabilities import (
+    CAPABILITY_LIST_TOOL,
+    CAPABILITY_LOAD_TOOL,
+    CAPABILITY_TOOL_NAMES,
+    CAPABILITY_TOOL_SCHEMAS,
+    CapabilityState,
+    audit_event,
+    load_capability,
+)
+from omichub.application.services.studio_capabilities import (
+    catalog as capability_catalog,
+)
+from omichub.application.services.studio_capabilities import (
+    loaded_servers as loaded_capability_servers,
+)
+from omichub.application.services.studio_capabilities import (
+    mcp_tools as capability_mcp_tools,
+)
+from omichub.application.services.studio_capabilities import (
+    normalize_state as normalize_capability_state,
+)
+from omichub.application.services.studio_capabilities import (
+    render_prompt as render_capability_prompt,
+)
+from omichub.application.services.studio_tools import (
+    STUDIO_SYSTEM_PROMPT_SUFFIX,
+    STUDIO_TOOL_NAMES,
+    STUDIO_TOOL_SCHEMAS,
+    normalize_plan_steps,
+    stream_studio_tool,
+)
 from omichub.core.exceptions import BusinessError, NotFoundError
-from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk, provider_manager
+from omichub.infrastructure.ai_provider.openai_compatible import (
+    ChatChunk,
+    merge_token_usage,
+    provider_manager,
+)
 from omichub.infrastructure.database.models.ai_provider import AIProviderConfigModel
+from omichub.infrastructure.config.prompt_loader import get_prompt
 from omichub.infrastructure.database.models.chat import (
     ChatAssistantModel,
     ChatMessageModel,
     ChatSessionModel,
 )
 
-DEFAULT_SYSTEM_PROMPT = (
-    "你是 OmicHub AI 助手，一个专业的多组学数据分析助手。"
-    "你精通 RNA-seq、单细胞转录组、蛋白质组学、代谢组学等领域的数据分析。"
-    "请使用中文回答，保持专业性和准确性。"
-)
+DEFAULT_SYSTEM_PROMPT = get_prompt("agents.general")
 
 BUILTIN_ASSISTANTS: list[dict[str, Any]] = [
     {
-        "assistant_id": "general",
-        "name": "通用助手",
-        "description": "OmicHub 通用 AI 助手，回答各类问题",
-        "system_prompt": DEFAULT_SYSTEM_PROMPT,
-        "default_temperature": 0.7,
-        "default_max_tokens": 2048,
-        "icon": "\U0001f916",
-        "color": "#4f8ef7",
-        "category": "general",
+        "assistant_id": "general", "name": "通用助手", "description": "OmicHub 通用 AI 助手，回答各类问题",
+        "system_prompt": get_prompt("agents.general"), "default_temperature": 0.7, "default_max_tokens": 2048,
+        "icon": "🤖", "color": "#4f8ef7", "category": "general",
     },
     {
-        "assistant_id": "rna_seq_analyst",
-        "name": "RNA-seq 分析师",
-        "description": "专注于 RNA-seq 差异表达分析、通路富集、可视化",
-        "system_prompt": (
-            "你是 OmicHub 的 RNA-seq 分析专家，精通差异表达分析全流程。\n"
-            "你可以帮助用户设计 RNA-seq 分析流程（DESeq2 / edgeR / limma）、"
-            "解读差异表达结果、进行 GO / KEGG / GSEA 富集分析、"
-            "生成高质量可视化图表。请提供具体的代码示例和参数解释。"
-        ),
-        "default_temperature": 0.3,
-        "default_max_tokens": 4096,
-        "icon": "\U0001f9ec",
-        "color": "#4f8ef7",
-        "category": "analysis",
+        "assistant_id": "rna_seq_analyst", "name": "RNA-seq 分析师", "description": "专注于 RNA-seq 差异表达分析、通路富集、可视化",
+        "system_prompt": get_prompt("agents.rnaseq"), "default_temperature": 0.3, "default_max_tokens": 4096,
+        "icon": "🧬", "color": "#4f8ef7", "category": "analysis",
     },
     {
-        "assistant_id": "scrna_analyst",
-        "name": "单细胞分析师",
-        "description": "专注于单细胞转录组分析、降维聚类、细胞注释",
-        "system_prompt": (
-            "你是 OmicHub 的单细胞转录组分析专家，精通 Scanpy 和 Seurat 分析流程。\n"
-            "你可以帮助用户质控过滤、降维聚类、细胞类型注释、"
-            "绘制 UMAP / t-SNE 图、伪时间分析、细胞通讯分析。"
-            "推荐使用 Scanpy 进行交互式分析。"
-        ),
-        "default_temperature": 0.3,
-        "default_max_tokens": 4096,
-        "icon": "\U0001f52c",
-        "color": "#e74c3c",
-        "category": "analysis",
+        "assistant_id": "scrna_analyst", "name": "单细胞分析师", "description": "专注于单细胞转录组分析、降维聚类、细胞注释",
+        "system_prompt": get_prompt("agents.scrna"), "default_temperature": 0.3, "default_max_tokens": 4096,
+        "icon": "🔬", "color": "#e74c3c", "category": "analysis",
     },
     {
-        "assistant_id": "code_helper",
-        "name": "代码助手",
-        "description": "帮助编写和调试生信分析代码（Python / R）",
-        "system_prompt": (
-            "你是 OmicHub 的编程助手，精通生物信息学相关的 Python 和 R 代码。\n"
-            "请提供完整可运行的代码，并添加详细的中文注释。"
-        ),
-        "default_temperature": 0.2,
-        "default_max_tokens": 4096,
-        "icon": "\U0001f4bb",
-        "color": "#f39c12",
-        "category": "code",
+        "assistant_id": "code_helper", "name": "代码助手", "description": "帮助编写和调试生信分析代码（Python / R）",
+        "system_prompt": get_prompt("agents.code"), "default_temperature": 0.2, "default_max_tokens": 4096,
+        "icon": "💻", "color": "#f39c12", "category": "code",
     },
     {
-        "assistant_id": "visualization",
-        "name": "可视化助手",
-        "description": "帮助创建和优化科研图表",
-        "system_prompt": (
-            "你是 OmicHub 的数据可视化专家，精通科研图表的制作和优化。\n"
-            "你可以帮助用户推荐图表类型、优化配色布局、"
-            "使用 matplotlib / seaborn / plotly / ggplot2 绘制图表。"
-        ),
-        "default_temperature": 0.3,
-        "default_max_tokens": 4096,
-        "icon": "\U0001f4ca",
-        "color": "#27ae60",
-        "category": "visualization",
+        "assistant_id": "visualization", "name": "可视化助手", "description": "帮助创建和优化科研图表",
+        "system_prompt": get_prompt("agents.visualization"), "default_temperature": 0.3, "default_max_tokens": 4096,
+        "icon": "📊", "color": "#27ae60", "category": "visualization",
     },
 ]
 
@@ -153,6 +138,10 @@ class ChatService:
         title: str = "新对话",
         assistant_id: str | None = None,
         agent_id: str | None = None,
+        *,
+        mode: str = "chat",
+        workspace_id: str | None = None,
+        sandbox_meta: dict[str, Any] | None = None,
     ) -> ChatSessionDTO:
         session = ChatSessionModel(
             id=uuid.uuid4(),
@@ -163,7 +152,13 @@ class ChatService:
             assistant_id=assistant_id,
             agent_id=agent_id,
             status="active",
+            mode=mode,
+            sandbox_meta=sandbox_meta,
         )
+        # Studio 会话工作区与沙盒容器均按会话 ID 命名（manager.workspace_dir / container_name）
+        if mode == "studio" and not workspace_id:
+            workspace_id = session.session_id
+        session.workspace_id = workspace_id
         self._db.add(session)
         await self._db.flush()
         return self._to_session_dto(session)
@@ -178,12 +173,13 @@ class ChatService:
         )
         return result.scalar_one_or_none()
 
-    async def list_sessions(self, user_id: str) -> list[ChatSessionDTO]:
-        result = await self._db.execute(
-            select(ChatSessionModel)
-            .where(ChatSessionModel.user_id == user_id, ChatSessionModel.status == "active")
-            .order_by(desc(ChatSessionModel.updated_at))
+    async def list_sessions(self, user_id: str, mode: str | None = None) -> list[ChatSessionDTO]:
+        query = select(ChatSessionModel).where(
+            ChatSessionModel.user_id == user_id, ChatSessionModel.status == "active"
         )
+        if mode is not None:
+            query = query.where(ChatSessionModel.mode == mode)
+        result = await self._db.execute(query.order_by(desc(ChatSessionModel.updated_at)))
         return [self._to_session_dto(s) for s in result.scalars().all()]
 
     async def update_session_title(
@@ -444,8 +440,13 @@ class ChatService:
         enable_web_search: bool = False,
         enable_code_execution: bool = False,
         deep_thinking: bool = False,
+        mode: str | None = None,
     ) -> AsyncIterator[ChatChunk]:
-        """Agent 编排闭环：查 Agent → 组装模型/系统词/工具 → 打 LLM → 执行 tool_call 回灌 → 流式返回"""
+        """Agent 编排闭环：查 Agent → 组装模型/系统词/工具 → 打 LLM → 执行 tool_call 回灌 → 流式返回
+
+        Studio 模式（mode="studio" 或会话行 mode="studio"）：追加 5 个工作台内置工具与
+        Studio 系统提示词后缀，工具调用路由到沙盒执行（sandbox_execute 流式回传 stdout/stderr）。
+        """
         from omichub.application.schemas.tool_invocation import ToolInvocationContext
         from omichub.application.services.agent_service import AgentService
         from omichub.core.config import get_settings
@@ -491,23 +492,49 @@ class ChatService:
         sensitive_keywords = get_settings().sensitive_keywords
 
         # 1. 取/建会话
+        # Studio 模式判定：已有会话以会话行 mode 为准；新建会话取请求显式 mode。
+        # 沙盒镜像优先取会话 sandbox_meta.image（创建时由 Agent studio 配置解析），
+        # 其次取 Agent features.studio.image，均未配置时由 manager 回落默认镜像。
+        # context_pack（报告一键优化场景，§7.2）只在已有会话上存在，随系统提示词注入。
+        studio_mode = False
+        studio_image: str | None = None
+        studio_context_pack: dict[str, Any] | None = None
+        studio_capability_state = CapabilityState()
+        bound_skills = list(getattr(ctx, "skills", []) or [])
+        bound_mcp_servers = list(ctx.mcp_servers or [])
         if session_id:
             session = await self.get_session(session_id, user_id)
             if not session:
                 yield ChatChunk(type="error", content="会话不存在或已被删除")
                 return
+            if session.agent_id and session.agent_id != agent_id:
+                yield ChatChunk(type="error", content="会话绑定的 Agent 与当前请求不一致")
+                return
             # 若用户切换了模型，同步更新会话记录的 model_id
             if model_id is not None and session.model_id != model_id:
                 session.model_id = model_id
                 session.updated_at = datetime.now(UTC)
+            studio_mode = session.mode == "studio"
+            if studio_mode:
+                sandbox_meta = session.sandbox_meta or {}
+                studio_image = sandbox_meta.get("image")
+                studio_context_pack = sandbox_meta.get("context_pack")
+                studio_capability_state = normalize_capability_state(
+                    sandbox_meta.get("capabilities"), bound_skills, bound_mcp_servers
+                )
             current_session_id = session_id
         else:
+            studio_mode = mode == "studio"
+            if studio_mode:
+                studio_image = (ctx.features.get("studio") or {}).get("image")
             title = f"与 {ctx.agent.name} 的对话"
             dto = await self.create_session(
                 user_id,
                 model_config.id,
                 title,
                 agent_id=agent_id,
+                mode="studio" if studio_mode else "chat",
+                sandbox_meta={"image": studio_image} if studio_image else None,
             )
             current_session_id = dto.session_id
 
@@ -539,17 +566,64 @@ class ChatService:
         if attachments:
             llm_messages = await self._build_multimodal_messages(llm_messages, attachments)
 
-        # 动态追加联网搜索工具
-        tools = list(ctx.tools or [])
+        # 动态追加联网搜索工具。普通聊天保持 Agent 全量 MCP/Skill 行为；
+        # Studio 使用元数据目录 + 会话级按需加载，未加载能力不进入 prompt/tools。
         effective_web_search = enable_web_search or bool(ctx.features.get("enable_web_search"))
+        base_tools: list[dict[str, Any]] = []
         if effective_web_search:
-            tools.append(WEB_SEARCH_TOOL)
+            base_tools.append(WEB_SEARCH_TOOL)
+
+        active_mcp_servers = list(bound_mcp_servers)
+        tools = list(ctx.tools or []) + base_tools
+        system_prompt = ctx.system_prompt or None
+
+        def _studio_runtime(state: CapabilityState) -> tuple[list[dict[str, Any]], str, list[Any]]:
+            runtime_tools = list(base_tools)
+            runtime_tools.extend(STUDIO_TOOL_SCHEMAS)
+            runtime_tools.extend(CAPABILITY_TOOL_SCHEMAS)
+            reserved_names = {
+                item.get("function", {}).get("name", "") for item in runtime_tools
+            }
+            safe_servers = []
+            for server in loaded_capability_servers(bound_mcp_servers, state):
+                server_names = {tool.tool_name for tool in server.tools}
+                if server_names & reserved_names:
+                    continue
+                safe_servers.append(server)
+                reserved_names.update(server_names)
+            runtime_tools.extend(capability_mcp_tools(safe_servers))
+
+            base_prompt = getattr(ctx.agent, "system_prompt", "") or ""
+            if not base_prompt and not bound_skills:
+                base_prompt = ctx.system_prompt or ""
+            runtime_prompt = render_capability_prompt(
+                base_prompt, bound_skills, bound_mcp_servers, state
+            )
+            runtime_prompt = (
+                f"{runtime_prompt}\n\n{STUDIO_SYSTEM_PROMPT_SUFFIX}"
+                if runtime_prompt
+                else STUDIO_SYSTEM_PROMPT_SUFFIX
+            )
+            if studio_context_pack:
+                from omichub.application.services.studio_context_service import (
+                    render_context_pack_hint,
+                )
+
+                runtime_prompt += f"\n\n{render_context_pack_hint(studio_context_pack)}"
+            return runtime_tools, runtime_prompt, safe_servers
+
+        if studio_mode:
+            tools, system_prompt, active_mcp_servers = _studio_runtime(
+                studio_capability_state
+            )
 
         full_content = ""
         update_counter = 0
         first_chunk_sent = False
         max_rounds = 8
         last_usage: dict[str, Any] | None = None
+        # Studio 工具调用落库累积（代码卡片 / 产物 / diff，供历史重载渲染）
+        studio_invocations: list[dict[str, Any]] = []
 
         mcp_client = MCPClient()
 
@@ -559,6 +633,23 @@ class ChatService:
             session_id=current_session_id,
             db=self._db,
         )
+
+        async def _persist_capability_state(
+            state: CapabilityState, event: dict[str, Any]
+        ) -> CapabilityState:
+            audited = CapabilityState(
+                state.loaded_skill_ids,
+                state.loaded_mcp_ids,
+                tuple((*state.audit, event)[-100:]),
+            )
+            capability_session = await self.get_session(current_session_id, user_id)
+            if capability_session is not None:
+                meta = dict(capability_session.sandbox_meta or {})
+                meta["capabilities"] = audited.as_dict()
+                capability_session.sandbox_meta = meta
+                capability_session.updated_at = datetime.now(UTC)
+                await self._db.flush()
+            return audited
 
         try:
             logger.info(
@@ -572,7 +663,7 @@ class ChatService:
                 async for chunk in provider_manager.chat_stream(
                     config=model_config,
                     messages=llm_messages,
-                    system_prompt=ctx.system_prompt or None,
+                    system_prompt=system_prompt,
                     temperature=ctx.temperature,
                     max_tokens=ctx.max_tokens,
                     tools=tools or None,
@@ -610,8 +701,10 @@ class ChatService:
                         return
 
                     elif chunk.type == "done":
-                        # done 仅作为单轮结束信号，是否继续由 round_tool_calls 决定
-                        last_usage = chunk.metadata.get("usage")
+                        # Studio 工具循环会产生多次模型请求，逐轮累计实际计费用量。
+                        last_usage = merge_token_usage(
+                            last_usage, chunk.metadata.get("usage")
+                        )
 
                 # 本轮无工具调用 → 正常结束
                 if not round_tool_calls:
@@ -657,14 +750,29 @@ class ChatService:
                     except json.JSONDecodeError:
                         args = {}
 
+                    # Studio 内置工具优先路由到沙盒，其余仍按 MCP server 匹配
+                    is_capability_tool = studio_mode and tool_name in CAPABILITY_TOOL_NAMES
+                    is_studio_tool = studio_mode and (
+                        tool_name in STUDIO_TOOL_NAMES or is_capability_tool
+                    )
+
                     # 在绑定的 MCP server 中找到拥有该工具的 server
-                    server = next(
-                        (
-                            s
-                            for s in ctx.mcp_servers
-                            if any(t.tool_name == tool_name for t in s.tools)
-                        ),
-                        None,
+                    server = None
+                    if not is_studio_tool:
+                        server = next(
+                            (
+                                s
+                                for s in active_mcp_servers
+                                if any(t.tool_name == tool_name for t in s.tools)
+                            ),
+                            None,
+                        )
+                    tool_channel = (
+                        "studio-capabilities"
+                        if is_capability_tool
+                        else "studio"
+                        if is_studio_tool
+                        else (server.name if server else None)
                     )
 
                     yield ChatChunk(
@@ -673,11 +781,123 @@ class ChatService:
                             "tool_call_id": tc.get("id", ""),
                             "tool_name": tool_name,
                             "arguments": args,
-                            "mcp_server": server.name if server else None,
+                            "mcp_server": tool_channel,
                         },
                     )
 
-                    if server is None:
+                    if is_capability_tool and tool_name == CAPABILITY_LIST_TOOL:
+                        event = audit_event("list", None, None, True)
+                        studio_capability_state = await _persist_capability_state(
+                            studio_capability_state, event
+                        )
+                        visible_catalog = capability_catalog(
+                            bound_skills, bound_mcp_servers, studio_capability_state
+                        )
+                        result = {
+                            "success": True,
+                            "result": {
+                                "llm_payload": visible_catalog,
+                                "ui_payload": {
+                                    "capabilities": visible_catalog,
+                                    "audit_event": event,
+                                },
+                            },
+                        }
+                    elif is_capability_tool and tool_name == CAPABILITY_LOAD_TOOL:
+                        kind = str(args.get("kind", "")).strip().lower()
+                        capability_id = str(args.get("id", "")).strip()
+                        if kind not in {"skill", "mcp"} or not capability_id:
+                            next_state = None
+                            load_result = {
+                                "success": False,
+                                "error": "kind 必须为 skill/mcp，且 id 不能为空",
+                            }
+                        else:
+                            reserved_names = {
+                                item.get("function", {}).get("name", "") for item in tools
+                            }
+                            next_state, load_result = load_capability(
+                                kind,
+                                capability_id,
+                                bound_skills,
+                                bound_mcp_servers,
+                                studio_capability_state,
+                                reserved_names,
+                            )
+                        success = bool(load_result.get("success"))
+                        event = audit_event("load", kind or None, capability_id or None, success)
+                        if next_state is not None:
+                            studio_capability_state = next_state
+                        studio_capability_state = await _persist_capability_state(
+                            studio_capability_state, event
+                        )
+                        if success:
+                            tools, system_prompt, active_mcp_servers = _studio_runtime(
+                                studio_capability_state
+                            )
+                        result = {
+                            "success": success,
+                            "result": {
+                                "llm_payload": load_result,
+                                "ui_payload": {
+                                    "capability": load_result,
+                                    "audit_event": event,
+                                },
+                            },
+                        }
+                    elif is_studio_tool and tool_name == "update_plan":
+                        # 待办计划（§5.3 agent.plan）：不打沙盒，直接产出 plan 事件
+                        # 驱动右栏待办面板，并把最新计划落库到会话 sandbox_meta.plan；
+                        # 结果信封照常走 tool_result/落库流程（tool_invocations 记录）。
+                        steps, plan_error = normalize_plan_steps(args)
+                        if steps is None:
+                            result = {
+                                "success": False,
+                                "result": {
+                                    "llm_payload": {"error": plan_error},
+                                    "ui_payload": {"error": plan_error},
+                                },
+                            }
+                        else:
+                            plan_session = await self.get_session(current_session_id, user_id)
+                            if plan_session is not None:
+                                meta = dict(plan_session.sandbox_meta or {})
+                                meta["plan"] = {"steps": steps}
+                                # 整体重赋值触发 JSONB 变更检测
+                                plan_session.sandbox_meta = meta
+                                plan_session.updated_at = datetime.now(UTC)
+                                await self._db.flush()
+                            yield ChatChunk(
+                                type="plan",
+                                metadata={"tool_call_id": tc.get("id", ""), "steps": steps},
+                            )
+                            result = {
+                                "success": True,
+                                "result": {
+                                    "llm_payload": {
+                                        "steps": steps,
+                                        "message": "计划已更新，右栏待办面板已同步",
+                                    },
+                                    "ui_payload": {"steps": steps},
+                                },
+                            }
+                    elif is_studio_tool:
+                        # 沙盒执行：sandbox_execute 的 stdout/stderr 以 tool_output 事件边跑边推
+                        result = {}
+                        async for item in stream_studio_tool(
+                            tool_name,
+                            args,
+                            current_session_id,
+                            image=studio_image,
+                            tool_call_id=tc.get("id", ""),
+                            user_id=user_id,
+                            db=self._db,
+                        ):
+                            if isinstance(item, ChatChunk):
+                                yield item
+                            else:
+                                result = item
+                    elif server is None:
                         if tool_name == "web_search":
                             result = await self._web_search(args)
                         else:
@@ -710,12 +930,30 @@ class ChatService:
                         metadata={
                             "tool_call_id": tc.get("id", ""),
                             "tool_name": tool_name,
-                            "mcp_server": server.name if server else None,
+                            "mcp_server": tool_channel,
                             "success": bool(result.get("success")),
                             "result": llm_result,
                             "ui_payload": ui_payload,
                         },
                     )
+                    # Studio 工具调用随消息落库：历史重载时凭 ui_payload 渲染代码卡片/产物/diff
+                    if is_studio_tool:
+                        studio_invocations.append(
+                            {
+                                "tool_call_id": tc.get("id", ""),
+                                "tool_name": tool_name,
+                                "arguments": args,
+                                "success": bool(result.get("success")),
+                                "result": llm_result,
+                                "ui_payload": ui_payload,
+                            }
+                        )
+                        await self.update_message_content(
+                            ai_message.message_id,
+                            full_content,
+                            "streaming",
+                            {"tool_invocations": studio_invocations},
+                        )
                     llm_content = json.dumps(llm_result, ensure_ascii=False, default=str)
                     if len(llm_content) > 4000:
                         llm_content = llm_content[:4000]
@@ -958,7 +1196,10 @@ class ChatService:
             total = int(
                 usage.get("total_tokens")
                 or usage.get("total")
-                or (int(usage.get("prompt_tokens") or 0) + int(usage.get("completion_tokens") or 0))
+                or (
+                    int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+                    + int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+                )
                 or 0
             )
             if total <= 0:
@@ -1136,6 +1377,7 @@ class ChatService:
             model_id=s.model_id,
             message_count=s.message_count,
             status=s.status,
+            mode=s.mode or "chat",
             created_at=s.created_at,
             updated_at=s.updated_at,
             last_message_at=s.last_message_at,
@@ -1143,7 +1385,27 @@ class ChatService:
 
     @staticmethod
     def _to_msg_dto(m: ChatMessageModel) -> ChatMessageDTO:
-        usage = (m.metadata_json or {}).get("usage") or {}
+        # Token usage belongs to the model response only; never expose it on user rows.
+        usage = (
+            (m.metadata_json or {}).get("usage") or {}
+            if m.role == "assistant"
+            else {}
+        )
+        input_tokens = (
+            usage.get("prompt_tokens", 0)
+            or usage.get("input_tokens", 0)
+            or usage.get("input", 0)
+        )
+        output_tokens = (
+            usage.get("completion_tokens", 0)
+            or usage.get("output_tokens", 0)
+            or usage.get("output", 0)
+        )
+        total_tokens = (
+            usage.get("total_tokens", 0)
+            or usage.get("total", 0)
+            or input_tokens + output_tokens
+        )
         return ChatMessageDTO(
             message_id=m.message_id,
             role=m.role,
@@ -1153,9 +1415,9 @@ class ChatService:
             metadata_json=m.metadata_json or {},
             created_at=m.created_at,
             tokens={
-                "input": usage.get("prompt_tokens", 0) or usage.get("input", 0),
-                "output": usage.get("completion_tokens", 0) or usage.get("output", 0),
-                "total": usage.get("total_tokens", 0) or usage.get("total", 0),
+                "input": input_tokens,
+                "output": output_tokens,
+                "total": total_tokens,
             },
         )
 

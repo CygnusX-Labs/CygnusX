@@ -24,6 +24,7 @@ celery_app = Celery(
         "omichub.tools.blast.tasks",
         "omichub.infrastructure.celery_app.tasks.sandbox",
         "omichub.infrastructure.celery_app.tasks.storage",
+        "omichub.infrastructure.celery_app.tasks.studio",
     ],
 )
 
@@ -57,6 +58,7 @@ celery_app.conf.task_routes = {
     "omichub.tools.blast.tasks.build_blast_database": {"queue": "blast_db_build"},
     "omichub.infrastructure.celery_app.tasks.sandbox.*": {"queue": "analysis"},
     "omichub.infrastructure.celery_app.tasks.storage.*": {"queue": "analysis"},
+    "omichub.infrastructure.celery_app.tasks.studio.*": {"queue": "analysis"},
 }
 
 # 定时任务
@@ -79,6 +81,11 @@ celery_app.conf.beat_schedule = {
     # 每 5 分钟回收超时沙盒会话
     "sandbox-recycle-expired": {
         "task": "omichub.infrastructure.celery_app.tasks.sandbox.recycle_expired",
+        "schedule": crontab(minute="*/5"),
+    },
+    # 每 5 分钟回收空闲 Studio 沙盒容器
+    "studio-sandbox-recycle": {
+        "task": "omichub.infrastructure.celery_app.tasks.studio.recycle_idle_sandboxes",
         "schedule": crontab(minute="*/5"),
     },
 }

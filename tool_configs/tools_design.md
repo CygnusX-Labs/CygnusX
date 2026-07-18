@@ -4,7 +4,7 @@
 > 新增工具**必须遵循本规范**,以保证视觉一致、交互统一、维护成本低。
 > 现有参考实现:火山图(`VolcanoPlotView.vue`)为最完整的样板,优先参照;BLAST / FASTQ 质控 / 绘图工坊 / KEGG 为次参照;JBrowse 为**全屏工具特例**,不作为紧凑布局参照。
 >
-> 最后更新:2026-07-12
+> 最后更新:2026-07-17
 
 ---
 
@@ -938,6 +938,73 @@ const plotlyCharts = computed(() => {
 | 工具执行成功但前端没图 | `ui_payload` 里没有 `plotly_figure` / 字段名不对 | 检查 `ui_result_fields` 和工具返回值 |
 | 工具结果没关联到工具卡片 | `tool_call_id` 为空或前后端不匹配 | 检查 LLM provider 是否返回 tool_call id |
 | 图表渲染报错 | Plotly figure 结构非法 | 用 `python -m omichub.tools.shims.xxx` 单独测试返回值 |
+
+---
+
+## 十六、Apple Design 交互与动效规范(工具箱)
+
+> 自 2026-07-17 起,工具箱列表页(`ToolsHubView.vue`)与工具卡片(`ToolCard.vue`)按 Apple
+> 「流体界面」(Fluid Interfaces, WWDC 2018)原则设计。新增/修改工具箱 UI 时必须遵守本节约定,
+> 保持全站动效语言一致。
+
+### 16.1 核心原则
+
+| 原则 | 要求 |
+|------|------|
+| **响应即时** | 按下(pointer-down)立刻给出反馈,不等松手;按压态过渡时长固定 `100ms` |
+| **弹簧缓动** | 所有交互过渡统一用 `cubic-bezier(0.16, 1, 0.3, 1)`(模拟临界阻尼弹簧,无过冲);禁止 `transition: all` 和默认 `ease` |
+| **动量才弹** | 无手势动量的 UI(卡片、面板、模态)一律临界阻尼不回弹;回弹只允许出现在拖拽/甩动之后 |
+| **方向暗示** | 中间帧要预示结果:可导航卡片的箭头在悬停时向「前进」方向位移(`translateX(3px)`) |
+| **空间一致** | 展开/收起等可逆动作使用同一元素的连续运动(如箭头旋转 90°),禁止两个图标瞬时替换 |
+| **材质纵深** | 彩色图标块加顶部内高光 `inset 0 1px 0 rgba(255,255,255,0.28)`;浮起阴影用「大面积柔光 + 近身接触影」双层结构 |
+| **反馈有度** | 不可交互的表面不做悬停位移;反馈只出现在可操作的元素上 |
+
+### 16.2 标准参数(直接复用)
+
+```css
+/* 交互过渡(悬停/聚焦等柔和反馈) */
+transition: <prop> 320ms cubic-bezier(0.16, 1, 0.3, 1);
+
+/* 按压反馈(即时) */
+:active {
+  transform: scale(0.98);
+  transition-duration: 100ms;
+}
+
+/* 卡片/列表项入场(交错 40ms,仅上浮 + 淡入,无缩放弹跳) */
+@keyframes cardIn {
+  from { opacity: 0; transform: translate3d(0, 10px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+animation: cardIn 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+
+/* 键盘焦点(必须可见) */
+:focus-visible {
+  outline: 2px solid var(--arco-primary, #165DFF);
+  outline-offset: 2px;
+}
+
+/* 减少动态效果:去掉位移/缩放/旋转,保留不透明度变化 */
+@media (prefers-reduced-motion: reduce) { /* transition: none; transform: none */ }
+```
+
+### 16.3 无障碍基线
+
+- 可点击的非按钮元素(如卡片)必须 `role` + `tabindex="0"` + `@keydown.enter` / `@keydown.space.prevent`,并提供 `:focus-visible` 描边。
+- 三个无障碍媒体查询按需响应:`prefers-reduced-motion`(去位移,保留淡入淡出)、`prefers-reduced-transparency`(去毛玻璃改实色)、`prefers-contrast`(边框加实)。
+- 排他控件(展开/收起)加 `aria-label`,说明动作而非状态。
+
+### 16.4 字距规则
+
+- 大标题/大数字:负字距(`-0.01em` ~ `-0.02em`),可启用 `font-optical-sizing: auto`。
+- 正文(13–16px):字距保持 `0` 或 `-0.01em`,用字重而不是字距建立层级。
+
+### 16.5 本次落地记录(2026-07-17)
+
+| 文件 | 修改内容 |
+|------|---------|
+| `components/bio-tools/ToolCard.vue` | 缓动改弹簧曲线并限定属性;新增 `:active` 100ms 按压收缩;悬停阴影改双层;箭头悬停右移 3px;图标块加内高光与投影;补 `role="link"`、键盘触发、`:focus-visible`、`prefers-reduced-motion` |
+| `views/BioTools/ToolsHubView.vue` | 展开/收起改为单箭头旋转 90°(加 `aria-label`);卡片网格交错入场(40ms 步进);分组标题字重 500→600、字距 -0.01em;补 `prefers-reduced-motion` |
 
 ---
 

@@ -17,6 +17,9 @@
 ```
 tool_configs/
 ├── tools_setting.yaml          # 前端注册表（前端 GET /api/v1/tools 消费）
+├── fastq_qc/
+│   ├── README.md
+│   └── config.yaml             # fastp / MultiQC 镜像、资源、参数与存储策略
 ├── jbrowse/
 │   └── jbrowse_config.yaml     # JBrowse 2 参考基因组 / 预设轨道 / 扫描上传策略
 └── enrichments/
@@ -24,7 +27,7 @@ tool_configs/
     └── species_config.yaml     # KEGG/GO 富集分析物种列表（KEGG 三字码 / OrgDb / ID 类型）
 ```
 
-> 仅**有后端配置**的工具才建子目录。纯前端 mock 工具（fastq-qc / blast / plot）的展示信息统一在 `tool_configs/tools_setting.yaml`，待后端落地再建目录。
+> 仅**有后端配置**的工具才建子目录。纯前端 mock 工具（blast / plot）的展示信息统一在 `tool_configs/tools_setting.yaml`；FASTQ 极速质控已使用 `fastq_qc/config.yaml` 管理 Worker 默认行为。
 
 ## 后端入口
 
@@ -33,6 +36,7 @@ tool_configs/
 | 工具 | 代码子包 | 配置项（`core/config.py`） | API |
 |------|----------|---------------------------|-----|
 | 注册表 | `omichub.tools.registry`（api/schema/config） | `tools_setting_yaml` | `GET /api/v1/tools`、`POST /api/v1/tools/reload` |
+| FASTQ 极速质控 | `omichub.tools.fastq_qc`（待接入） | `fastq_qc_config_yaml`（待接入） | `/api/v1/qc/*` |
 | JBrowse | `omichub.tools.jbrowse`（api/service/schema/config/tasks） | `jbrowse_config_yaml` | `/api/v1/jbrowse/*` |
 | 富集分析 | `omichub.tools.enrichments`（api/service/schema/config/runner） | `enrichment_config_yaml` | `/api/v1/enrichment/*` |
 
@@ -52,6 +56,7 @@ tool_configs/
 **改文件即生效，无需重启**：加载器按文件 mtime 自动热重载。
 
 - `tool_configs/tools_setting.yaml` 改完 → 前端刷新工具箱即可见（或调 `POST /api/v1/tools/reload` 强制）。
+- `tool_configs/fastq_qc/config.yaml` → API 与 QC Worker 的配置加载器按 mtime 热重载；已创建任务仍使用各自的 `task.yaml` 快照。
 - `tool_configs/jbrowse/jbrowse_config.yaml` → 调 `POST /api/v1/jbrowse/config/reload`（管理员）或等 mtime 热重载。
 - `tool_configs/enrichments/species_config.yaml` → 等加载器 mtime 热重载。
 

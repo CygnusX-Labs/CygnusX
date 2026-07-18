@@ -69,6 +69,7 @@ agents:
   enabled:
     - general
     - rnaseq
+    - scrna
     - code
     - viz
     - shania

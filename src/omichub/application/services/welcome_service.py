@@ -22,23 +22,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from omichub.application.services.ai_provider_service import AIProviderConfigService
 from omichub.core.config import get_settings
 from omichub.infrastructure.ai_provider.litellm_provider import LiteLLMProvider
+from omichub.infrastructure.config.prompt_loader import get_prompt
 
 # 运行时兜底文案：welcome.yaml 缺失/空/损坏时使用，务必保证登录有弹窗
 DEFAULT_WELCOME_TEXT = "晚上好，root 👋 欢迎使用 OmicHub！"
 
 # 预生成用 system prompt —— 元气小助手人设，约束颜文字/语气/字数/随机性
-WELCOME_SYSTEM_PROMPT = """你现在是 OmicHub（一个专注多组学分析、RNA-seq 和 ATAC-seq 流程的生物信息学平台）的专属元气小助手。
-当前有一位系统管理员（root）登录了控制台，请你用简短、可爱、俏皮的语气向他表示欢迎。
-
-要求：
-1. 必须包含至少一个可爱的颜文字（如 (๑•̀ㅂ•́)و✧, ヾ(≧▽≦*)o, (*/ω\\*) 等）。
-2. 语气要像贴心的小助手，可以稍微带一点点对管理员“辛苦维护服务器”或者“跑生信数据”的关心与调侃。
-3. 长度控制在 30 - 50 字以内，适合作为前端弹窗（Toast/Notification）展示。
-4. 每次生成的文案需要有随机性和新鲜感。
-5. 不要输出任何多余的解释，直接输出欢迎文案即可。"""
+WELCOME_SYSTEM_PROMPT = get_prompt("welcome.admin_system")
 
 # 生成单条文案时的 user message（与 system prompt 配合，system 负责人设与约束）
-WELCOME_USER_PROMPT = "请生成一条 root 管理员登录欢迎词，只输出文案本身。"
+WELCOME_USER_PROMPT = get_prompt("welcome.admin_user")
 
 
 class WelcomeService:

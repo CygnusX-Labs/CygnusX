@@ -3,7 +3,7 @@
  * LoginButton —— 登录页主操作按钮
  *
  * 设计目标：现代 AI SaaS 级质感（Linear / Notion / Vercel 风格）
- * - 蓝色渐变 + 柔和投影，营造轻盈发光感
+ * - 品牌蓝色 + 柔和投影，营造轻盈发光感
  * - 完整的 idle / loading / success / disabled 状态
  * - 所有过渡使用 cubic-bezier(.4,0,.2,1)，180~250ms
  */
@@ -67,7 +67,7 @@ function handleClick() {
   height: 48px;
   padding: 0 28px;
   border: none;
-  border-radius: 12px;
+  border-radius: var(--radius-button);
   font-size: 16px;
   font-weight: 600;
   letter-spacing: 0.3px;
@@ -76,7 +76,7 @@ function handleClick() {
   outline: none;
   overflow: hidden;
   background: transparent;
-  box-shadow: 0 8px 24px rgba(59, 103, 255, 0.25);
+  box-shadow: 0 8px 24px rgba(76, 111, 255, 0.24);
   transform: scale(1);
   transition:
     transform 200ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -87,7 +87,7 @@ function handleClick() {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(135deg, #4f8dff 0%, #3366ff 100%);
+  background: var(--brand-primary);
   opacity: 1;
   transition:
     opacity 250ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -97,22 +97,22 @@ function handleClick() {
 
 .login-button:hover:not(:disabled):not(.login-button--disabled) {
   transform: scale(1.02);
-  box-shadow: 0 12px 30px rgba(59, 103, 255, 0.35);
+  box-shadow: 0 12px 30px rgba(76, 111, 255, 0.34);
 }
 
 .login-button:hover:not(:disabled):not(.login-button--disabled) .login-button__bg {
-  background: linear-gradient(135deg, #5f9aff 0%, #4475ff 100%);
+  background: var(--brand-primary-hover);
 }
 
 .login-button:active:not(:disabled):not(.login-button--disabled) {
   transform: scale(0.98);
-  box-shadow: 0 4px 14px rgba(59, 103, 255, 0.2);
+  box-shadow: 0 4px 14px rgba(76, 111, 255, 0.2);
 }
 
 .login-button:focus-visible {
   box-shadow:
-    0 0 0 4px rgba(79, 141, 255, 0.18),
-    0 8px 24px rgba(59, 103, 255, 0.25);
+    0 0 0 4px rgba(76, 111, 255, 0.18),
+    0 8px 24px rgba(76, 111, 255, 0.24);
 }
 
 .login-button__content {

@@ -20,7 +20,7 @@
 #   order       卡片排序，升序
 #   config_dir  该工具「功能配置」所在目录（相对仓库根），仅展示用；
 #               展示元数据集中在本文件，功能配置放 tool_configs/<工具名>/（如 jbrowse/、enrichments/）。
-#               无后端配置的纯前端工具（fastq-qc / blast / plot）留空。
+#               无后端配置的纯前端工具（blast / plot）留空。
 #
 # 新增工具：
 #   1. 在 tools 列表追加一项；
@@ -39,7 +39,7 @@ tools:
     group: "sequence"
     enabled: true
     order: 10
-    config_dir: ""
+    config_dir: "fastq_qc"
 
   - key: "jbrowse"
     title: "Web 基因组浏览器"

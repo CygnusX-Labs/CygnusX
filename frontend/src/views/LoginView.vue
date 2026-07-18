@@ -1,7 +1,6 @@
 <template>
   <div class="login-page">
     <StarField />
-    <LoginPageQuote />
     <div class="login-content">
       <div class="login-card-wrapper">
         <div class="login-card animate-scale-in">
@@ -107,8 +106,6 @@ import { useSiteConfigStore } from '@/stores/site-config'
 import RegistrationDisabledModal from '@/components/RegistrationDisabledModal.vue'
 import ActivationModal from '@/components/ActivationModal.vue'
 import LoginButton from '@/components/LoginButton.vue'
-import LoginCats from '@/components/LoginCats.vue'
-import LoginPageQuote from '@/components/LoginPageQuote.vue'
 import LogoAnimation from '@/components/LogoAnimation.vue'
 import StarField from '@/components/StarField.vue'
 import StardustQuote from '@/components/StardustQuote.vue'
@@ -325,10 +322,10 @@ const handleVerify2FA = async () => {
   width: 100%;
   max-width: 420px;
   padding: 28px 32px 32px;
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.68);
   border-radius: 16px;
   box-shadow: 0 25px 60px rgba(40, 30, 80, 0.15);
 }

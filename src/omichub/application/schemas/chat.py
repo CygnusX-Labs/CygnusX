@@ -38,6 +38,10 @@ class ChatStreamRequest(BaseModel):
         False, description="是否启用代码执行（仅前端 Pyodide，后端透传标记）"
     )
     deep_thinking: bool = Field(False, description="是否开启深度思考/推理模式")
+    mode: str | None = Field(
+        None,
+        description="会话模式 chat/studio；新建会话时生效，已有会话以会话行 mode 为准",
+    )
 
 
 class ChatMessageDTO(BaseModel):
@@ -69,6 +73,7 @@ class ChatSessionDTO(BaseModel):
     model_id: UUID
     message_count: int
     status: str
+    mode: str = "chat"
     created_at: datetime
     updated_at: datetime
     last_message_at: datetime | None = None
