@@ -1,0 +1,17 @@
+# MAS Orchestrator（仅在 MAS Feature Flag 打开并由服务端显式启用时使用）
+agent_id: agent-orchestrator
+name: 多智能体编排器
+description: 将用户确认的复合分析意图转换为受限、可审计的 DAG 计划草稿。
+avatar: "🧭"
+color: "#7c3aed"
+category: orchestration
+model: qwen3.7-max
+prompt_ref: agents.orchestrator
+welcome_message: "我会先生成可审查的分析计划；未经你的确认不会启动任务。"
+temperature: 0.1
+max_tokens: 4096
+mcp_ids: []
+skill_ids: []
+features:
+  mas_orchestrator: true
+  requires_plan_confirmation: true

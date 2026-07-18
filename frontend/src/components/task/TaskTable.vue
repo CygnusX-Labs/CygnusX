@@ -56,6 +56,7 @@ function flowLabel(flowId: string): string {
     'spatial-transcriptomics': 'Spatial TX',
     'scrna-seq': 'scRNA-seq',
     studio_sandbox: 'AI 工作台',
+    mas: 'MAS 多智能体',
   }
   return labels[flowId] || flowId
 }
@@ -257,6 +258,7 @@ const stats = computed(() => {
 
                 <!-- 删除 -->
                 <button
+                  v-if="task.execution_mode !== 'mas'"
                   class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
                   title="删除任务"
                   @click="deleteTarget = task"

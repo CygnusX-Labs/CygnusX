@@ -566,7 +566,7 @@ onUnmounted(() => {
               <div
                 v-for="f in displayFiles"
                 :key="f.id"
-                class="grid-card"
+                class="grid-card omichub-card"
                 :class="{ active: selectedFile?.id === f.id }"
                 @click="selectFile(f)"
               >
@@ -957,21 +957,8 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   padding: 16px 10px;
-  border-radius: var(--radius-md, 12px);
-  border: 1px solid transparent;
   cursor: pointer;
-  transition: all 0.15s ease;
   text-align: center;
-}
-
-.grid-card:hover {
-  background: var(--arco-primary-light);
-  border-color: var(--arco-primary);
-}
-
-.grid-card.active {
-  background: var(--arco-primary-light);
-  border-color: var(--arco-primary);
 }
 
 .grid-icon {

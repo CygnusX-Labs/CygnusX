@@ -12,9 +12,11 @@ import { usePyodide } from '@/composables/usePyodide'
 import UserAvatar from '@/components/UserAvatar.vue'
 import MessageActionBar from './MessageActionBar.vue'
 import TaskProgressCard from './TaskProgressCard.vue'
+import MasPlanPreviewCard from './MasPlanPreviewCard.vue'
 import ChartPreviewModal from './ChartPreviewModal.vue'
 import StudioCodeCard from '@/components/studio/StudioCodeCard.vue'
 import { StudioContextKey, isStudioCodeTool } from '@/components/studio/context'
+import type { MasPlan } from '@/api/mas'
 import type { ChatMessage, CopyMode, ChartData, ToolCall } from './types'
 
 interface Props {
@@ -327,6 +329,25 @@ function isArtifactRegisterTool(tool: ToolCall): boolean {
   return tool.name === 'artifact_register' && tool.status === 'success' && !!tool.uiPayload?.report_id
 }
 
+function hasMasPlan(tool: ToolCall): boolean {
+  const plan = tool.uiPayload?.mas_plan
+  return !!plan && typeof plan === 'object' && Array.isArray((plan as MasPlan).nodes)
+}
+
+function masPlanFromTool(tool: ToolCall): MasPlan {
+  return tool.uiPayload?.mas_plan as MasPlan
+}
+
+function contextSummaryFromTool(tool: ToolCall): Record<string, unknown> | undefined {
+  const summary = tool.uiPayload?.context_summary
+  return summary && typeof summary === 'object' ? summary as Record<string, unknown> : undefined
+}
+
+function stringPayloadValue(tool: ToolCall, key: string): string | undefined {
+  const value = tool.uiPayload?.[key]
+  return value === undefined || value === null ? undefined : String(value)
+}
+
 function handleBodyClick(e: MouseEvent) {
   const t = (e.target as HTMLElement).closest('.copy-btn') as HTMLElement | null
   if (t) {
@@ -606,6 +627,13 @@ function handleEdit() {
             <template v-for="(tool, idx) in message.toolCalls" :key="idx">
               <!-- Studio 代码工具（仅工作台页面）：代码卡片，支持编辑/重跑/产物 -->
               <StudioCodeCard v-if="isStudioCodeToolCall(tool)" :tool="tool" />
+              <MasPlanPreviewCard
+                v-else-if="hasMasPlan(tool)"
+                :plan="masPlanFromTool(tool)"
+                :context-summary="contextSummaryFromTool(tool)"
+                :session-id="stringPayloadValue(tool, 'session_id')"
+                :workspace-id="stringPayloadValue(tool, 'workspace_id')"
+              />
               <div v-else-if="isArtifactRegisterTool(tool)" class="artifact-register-card">
                 <div class="artifact-register-icon">✓</div>
                 <div>

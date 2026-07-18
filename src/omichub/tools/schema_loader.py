@@ -48,7 +48,10 @@ class ToolSchema(BaseModel):
     ui_result_fields: list[str] = Field(default_factory=list, alias="ui_result_fields")
     runtime_profile: str | None = None
     required_capabilities: set[str] = Field(default_factory=set)
-    extra: dict[str, Any] | None = Field(default=None, description="额外元数据，如 flow_id / tool_role")
+    mas_execution_policy: str | None = None
+    extra: dict[str, Any] | None = Field(
+        default=None, description="额外元数据，如 flow_id / tool_role"
+    )
 
     def resolve_runtime_image(self) -> str | None:
         """解析工具声明的独立任务运行时；未声明时保持现有进程内/服务执行行为。"""
@@ -62,6 +65,16 @@ class ToolSchema(BaseModel):
             self.runtime_profile,
         )
         return profile.image
+
+    def resolve_mas_execution_policy(self) -> object | None:
+        """Return the server-owned MAS execution policy referenced by this tool, if any."""
+        if not self.mas_execution_policy:
+            return None
+        from omichub.domain.mas.tool_policy import load_execution_policies
+
+        return load_execution_policies(get_settings().mas_tool_policies_yaml).get(
+            self.mas_execution_policy
+        )
 
 
 class ToolsSchemaRegistry(BaseModel):
@@ -137,7 +150,9 @@ class ToolsSchemaLoader:
                 except ValidationError:
                     import logging
 
-                    logging.getLogger(__name__).exception("tools_schema.yaml 校验失败，降级为空配置")
+                    logging.getLogger(__name__).exception(
+                        "tools_schema.yaml 校验失败，降级为空配置"
+                    )
                     self._config = ToolsSchemaRegistry()
                 self._mtime = current_mtime
                 need_rebuild = True
@@ -247,8 +262,7 @@ class ToolsSchemaLoader:
                 "function": {
                     "name": tool.name,
                     "description": tool.description,
-                    "parameters": tool.input_schema
-                    or {"type": "object", "properties": {}},
+                    "parameters": tool.input_schema or {"type": "object", "properties": {}},
                 },
             }
             result.append(schema)

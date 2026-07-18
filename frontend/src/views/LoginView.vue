@@ -327,7 +327,8 @@ const handleVerify2FA = async () => {
   -webkit-backdrop-filter: blur(24px) saturate(150%);
   border: 1px solid rgba(255, 255, 255, 0.68);
   border-radius: 16px;
-  box-shadow: 0 25px 60px rgba(40, 30, 80, 0.15);
+  box-shadow: 0 25px 60px rgba(40, 30, 80, 0.15), inset 0 1px rgba(255, 255, 255, 0.45);
+  transition: transform 220ms ease-out, box-shadow 220ms ease-out, background-color 220ms ease-out;
 }
 
 :root[data-theme='dark'] .login-card-wrapper {
@@ -416,7 +417,7 @@ const handleVerify2FA = async () => {
 .login-page {
   position: relative;
   width: 100vw;
-  height: 100vh;
+  min-height: 100dvh;
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -436,6 +437,10 @@ const handleVerify2FA = async () => {
 
 .login-card {
   animation: floatCard 6s ease-in-out infinite;
+}
+
+.login-card:focus-within {
+  box-shadow: 0 30px 72px rgba(40, 30, 80, 0.2), inset 0 1px rgba(255, 255, 255, 0.58);
 }
 
 :root[data-theme='dark'] .login-container {
@@ -498,11 +503,15 @@ const handleVerify2FA = async () => {
   font-weight: 500;
   text-decoration: underline;
   text-decoration-color: transparent;
-  transition: color 0.2s ease, text-decoration-color 0.2s ease;
+  transition: color 180ms ease-out, text-decoration-color 180ms ease-out, transform 120ms ease-out;
 }
 
 .login-actions :deep(.n-button:not(.n-button--primary-type):hover) {
   text-decoration-color: rgba(77, 124, 255, 0.4);
+}
+
+.login-actions :deep(.n-button:active) {
+  transform: scale(0.98);
 }
 
 :root[data-theme='dark'] .login-actions :deep(.n-button:not(.n-button--primary-type)) {
@@ -593,5 +602,18 @@ const handleVerify2FA = async () => {
 :deep(.n-form-item) .n-form-item-feedback__line {
   font-size: 12px;
   line-height: 1.4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-card,
+  :root[data-theme='dark'] .login-card,
+  :root[data-theme='dark'] .login-card-wrapper::after {
+    animation: none;
+  }
+
+  .login-card,
+  .login-actions :deep(.n-button) {
+    transition-duration: 1ms;
+  }
 }
 </style>

@@ -63,6 +63,7 @@ tools:
     invocation_mode: backend_shim
     shim_module: omichub.tools.shims.volcano
     runtime_profile: analysis-plot
+    mas_execution_policy: plot.deg_volcano
     required_capabilities: [python, plotting, tabular]
     requires_confirm: false
     annotations:

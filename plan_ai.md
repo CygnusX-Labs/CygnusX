@@ -1,6 +1,18 @@
 # OmicHub 多智能体编排、共享工作区与 A2A 架构实施方案（评审稿）
 
-> **状态：仅方案，未实施。**
+> **状态：实施中（基础能力已落地，未完成生产验收）。**
+>
+> **实施分支：** `feat/ai-assistant-mas-a2a`（自 `main` 于 2026-07-18 创建）。
+>
+> **截至 2026-07-18 的实施进度：**
+>
+> - **Phase 0 已完成：** MAS 领域状态机、DAG/事件/Artifact 契约、工作区路径隔离、容器预检策略、ADR 与单元测试。
+> - **Phase 1 核心链路已完成：** ORM、Alembic 迁移、Run/Artifact Registry、用户隔离 API、计划确认门、Artifact 完整性校验、仅投影元数据的 SSE 进度流，以及既有任务中心的 MAS Run 只读聚合投影。
+> - **Phase 2 核心链路已完成：** PostgreSQL Outbox、Redis Stream Publisher/Consumer、计划批准后的节点解锁/派发、乐观锁、幂等消费、有限自动重试、Fake Worker、HITL 审批与断点恢复；修复补偿节点和真实 Worker 的生产恢复演练仍待完成。
+> - **Phase 3 核心链路已完成：** Orchestrator 配置/Prompt、公共 Guardrails、服务端 Agent 能力校验、Chat/Studio 的结构化 `mas_plan` 预览适配，以及计划确认与实时进度卡；计划预览在用户确认前不会创建或执行 Run。
+> - **Phase 4 受控执行已实现，待部署验收：** EBIDownload 清单、原生 Apptainer RNAFlow Worker、交付清单/QC 摘要、QC 覆盖审计、静态 PNG/PDF 火山图及容器预检均已实现；需要在具备 Apptainer、RNAFlow SIF、EBIDownload 凭据和测试 FASTQ 的环境中完成 E2E 验收。
+>
+> 所有 MAS API 仍受 `mas_enabled=false`（默认值）保护，因此不会改变现有单 Agent Chat/Studio 的默认路径。
 >
 > 本文将当前 OmicHub 的“单 Agent + MCP 工具调用闭环”逐步升级为可审计的多智能体系统（MAS）。目标是让用户在一个会话内发起跨数据下载、RNA-seq 流程和绘图等复合任务，由 Orchestrator 生成 DAG、各领域 Agent 在共享工作区内交付文件指针，并以 A2A 事件协议可靠协作。
 >
@@ -282,7 +294,7 @@ PENDING → READY → DISPATCHED → RUNNING → VALIDATING → SUCCEEDED
 6. `mas_approvals`：`id`、`run_id`、`node_id`、`kind`、`prompt`、`options`、`response`、`status`、`expires_at`。
 7. `mas_rework_guards`：`run_id`、`target_node_id`、`input_artifact_id`、`input_sha256`、`error_code`、`remediation_kind`、`fingerprint`、`attempt_count`、`status`，并对 `(run_id, target_node_id, fingerprint)` 建唯一约束。
 
-现有任务中心可通过 `flow_id = "mas:<run_id>"` 或新增轻量映射表展示 MAS Run；不要将复杂 DAG JSON 塞入现有 `TaskModel.parameters` 作为唯一真相源。
+现有任务中心通过 `flow_id = "mas"` 的只读投影展示 MAS Run；MAS 表仍是唯一真相源，不将复杂 DAG JSON 塞入现有 `TaskModel.parameters`。
 
 ---
 
@@ -776,6 +788,62 @@ Orchestrator 不负责：执行 shell、读取大文件、生成最终统计结�
 4. 增加计划/结果回放、Run 克隆、缓存命中和可复现环境指纹。
 5. 建立质量基准集和红队用例，持续评估幻觉、越权工具调用和流程误调度。
 6. 完成 Apptainer 镜像签名/来源校验、专用计算节点容量与调度隔离，确保嵌套工作流不会回退到 Docker socket 方案。
+
+---
+
+## 12.1 后续开发待办（2026-07-18）
+
+> 以下项目尚未完成，建议按编号顺序继续开发。第 1、2 项需要真实 Worker 环境，不应在开发机通过伪造成功结果替代验收。
+
+### 1. 真实执行环境 E2E 验收（最高优先级）
+
+**前置条件：** Worker 节点已配置 Apptainer、RNAFlow SIF、EBIDownload 凭据/配置，以及可公开使用的小型 FASTQ 测试数据。
+
+1. 提交并确认一个 MAS 计划，完整执行“下载 → RNAFlow → QC → 火山图 → Artifact 下载”链路。
+2. 核验 Apptainer 挂载白名单、默认网络隔离、交付清单、Artifact 校验和和用户隔离。
+3. 保存执行日志、Run ID、输入数据版本、镜像摘要和产物清单，作为可复现验收记录。
+
+**验收：** 用户可从计划卡确认执行，在任务中心看到状态与节点进度，最终下载 FASTQ/分析结果、QC 摘要、PNG/PDF 火山图等登记产物；低于 QC 阈值时自动阻断火山图，显式覆盖须留下审计记录。
+
+### 2. 真实 Worker 故障恢复演练（最高优先级）
+
+1. 在节点运行期间终止 Celery Worker 或对应执行进程，再恢复 Worker 服务。
+2. 验证 PostgreSQL Outbox、Redis Stream 消费位置、去重键、`attempt_count` 与乐观锁能够恢复调度。
+3. 检查同一节点不会重复产生不可幂等副作用，未完成节点可继续执行，终态和 Artifact 元数据不丢失。
+
+**验收：** 不以清空 Redis 队列作为恢复手段；恢复后无重复下载/重复分析、无丢失事件，Run 保持可审计状态转换记录。
+
+### 3. 任务中心与工作流监控完善
+
+1. 将 MAS Run 和节点状态接入 Workflow Monitor 大屏，展示队列、依赖、节点状态与失败原因。
+2. 在任务中心增加跳转 MAS Run 详情、取消 MAS Run、查看/下载 Artifact 的明确入口。
+3. 保持 MAS 表为唯一真相源；任务中心仅消费只读投影，不复用或污染旧 `TaskModel` 生命周期。
+
+**验收：** 用户可从任务列表进入 MAS 详情、查看节点 DAG 与 Artifact，并只能操作自身 Run；取消与下载操作通过 MAS API 完成并保留审计记录。
+
+### 4. 补偿与局部重跑策略
+
+1. 定义可安全执行的补偿节点及其触发条件，限制同一错误指纹的补偿预算。
+2. 支持人工确认后的局部重跑，复用未失效的上游 Artifact，避免整条流程重复执行。
+3. 实现输入 Artifact 更新、失效或校验和变化后的下游失效传播和重新审批。
+
+**验收：** 相同失败不会无限生成补偿节点；局部重跑不会错误复用失效输入；每次重跑、补偿和人工确认均可追溯。
+
+### 5. Chat / Studio 计划体验打磨
+
+1. 为普通 Chat 提供缺失输入的结构化追问，例如 accession、样本表、比较组、物种和关键参数。
+2. 在计划卡展示依赖图、预估资源、风险/审批提示和缺失输入，明确区分“计划预览”和“已开始执行”。
+3. 对不受支持的流程给出能力边界与下一步建议，避免模型伪造可执行节点、文件路径或样本信息。
+
+**验收：** 用户补齐必要信息后才可生成可确认计划；计划卡的信息足以让用户理解执行范围、依赖、资源风险和待确认项。
+
+### 6. 生产运维能力
+
+1. 增加队列积压、节点失败率、节点执行时长、Apptainer 预检失败、Artifact 存储用量与清理状态等指标。
+2. 为关键阈值配置告警和 Run/节点维度的排障链接，避免只依赖应用日志定位问题。
+3. 补齐数据保留、归档/GC、容量阈值、异常清理和审计报表的运行手册。
+
+**验收：** 运维人员可从指标定位积压、失败或存储风险；告警可关联到具体 Run/节点；清理策略不删除仍被引用或仍在租约期内的 Artifact。
 
 ---
 

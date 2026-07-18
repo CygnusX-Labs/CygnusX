@@ -15,6 +15,7 @@ from omichub.api.v1 import (
     files,
     flows,
     llm,
+    mas,
     mcp,
     notification,
     platform_config,
@@ -86,6 +87,7 @@ api_router.include_router(agents.router, prefix="/agents", tags=["Agents"])
 api_router.include_router(ai.router, prefix="/ai", tags=["AI Copilot"])
 api_router.include_router(chat.router, prefix="/chat", tags=["AI Chat"])
 api_router.include_router(llm.router, prefix="/llm", tags=["LLM"])
+api_router.include_router(mas.router, prefix="/mas", tags=["Multi-Agent System"])
 api_router.include_router(notification.router, prefix="/notifications", tags=["Notifications"])
 api_router.include_router(announcements.router, prefix="/announcements", tags=["Announcements"])
 api_router.include_router(festival.router, prefix="/festival", tags=["Festival"])

@@ -18,7 +18,7 @@ const emit = defineEmits<{
 
 <template>
   <div
-    class="tool-card"
+    class="tool-card omichub-card"
     role="link"
     tabindex="0"
     @click="emit('click')"
@@ -54,14 +54,10 @@ const emit = defineEmits<{
   align-items: center;
   gap: 16px;
   padding: 20px;
-  background: var(--neutral-card, #fff);
-  border: 1px solid var(--neutral-border, #e5e6eb);
-  border-radius: 12px;
   cursor: pointer;
   transition:
-    transform 320ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 320ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 320ms cubic-bezier(0.16, 1, 0.3, 1);
+    transform var(--card-state-duration) var(--card-state-easing),
+    box-shadow var(--card-state-duration) var(--card-state-easing);
 }
 .tool-card:hover {
   border-color: var(--arco-primary, #165DFF);
@@ -115,8 +111,8 @@ const emit = defineEmits<{
   color: var(--neutral-text-3, #86909c);
   flex-shrink: 0;
   transition:
-    transform 320ms cubic-bezier(0.16, 1, 0.3, 1),
-    color 320ms cubic-bezier(0.16, 1, 0.3, 1);
+    transform var(--card-state-duration) var(--card-state-easing),
+    color var(--card-state-duration) var(--card-state-easing);
 }
 /* 悬停时箭头右移，朝「前进」的方向给动作暗示 */
 .tool-card:hover .tool-card-arrow,

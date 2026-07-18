@@ -7,6 +7,8 @@
   --motion-quick: 140ms;
   --motion-standard: 220ms;
   --motion-spring: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --card-state-duration: 300ms;
+  --card-state-easing: cubic-bezier(0.4, 0, 0.2, 1);
   /* ===== 火山方舟 / Arco Design 色彩体系 ===== */
   --arco-primary: var(--brand-primary);
   --arco-primary-hover: var(--brand-primary-hover);
@@ -209,8 +211,67 @@ body {
   border-radius: var(--radius-card);
   padding: 20px;
   box-shadow: var(--shadow-card);
-  border: none;
-  transition: all 0.3s ease;
+}
+
+:where(.n-card, .arco-card, .omichub-card) {
+  position: relative;
+  background-color: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
+  border-left: 1px solid var(--neutral-border) !important;
+  border-radius: var(--radius-card);
+  transition:
+    background-color var(--card-state-duration) var(--card-state-easing),
+    border-color var(--card-state-duration) var(--card-state-easing),
+    box-shadow var(--card-state-duration) var(--card-state-easing),
+    transform var(--card-state-duration) var(--card-state-easing);
+}
+
+:where(.n-card, .arco-card, .omichub-card)::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  width: 4px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--arco-primary);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) scaleY(0.45);
+  transform-origin: center;
+  transition:
+    opacity var(--card-state-duration) var(--card-state-easing),
+    transform var(--card-state-duration) var(--card-state-easing);
+}
+
+:where(.n-card, .arco-card, .omichub-card):not(:is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [data-selected='true'])):hover {
+  background-color: rgba(64, 158, 255, 0.025);
+  border-color: rgba(64, 158, 255, 0.12);
+}
+
+:where(.n-card, .arco-card, .omichub-card):not(:is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [data-selected='true'])):hover::before {
+  opacity: 0.28;
+  transform: translateY(-50%) scaleY(0.72);
+}
+
+:where(.n-card, .arco-card, .omichub-card):is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [data-selected='true']) {
+  background-color: rgba(64, 158, 255, 0.05);
+  border-color: rgba(64, 158, 255, 0.18);
+}
+
+:where(.n-card, .arco-card, .omichub-card):is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [data-selected='true'])::before {
+  opacity: 1;
+  transform: translateY(-50%) scaleY(1);
+}
+
+:root[data-theme="dark"] :where(.n-card, .arco-card, .omichub-card):not(:is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [data-selected='true'])):hover {
+  background-color: rgba(76, 111, 255, 0.08);
+  border-color: rgba(76, 111, 255, 0.2);
+}
+
+:root[data-theme="dark"] :where(.n-card, .arco-card, .omichub-card):is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [data-selected='true']) {
+  background-color: rgba(76, 111, 255, 0.14);
+  border-color: rgba(76, 111, 255, 0.28);
 }
 
 .arco-card-hover:hover {
@@ -456,8 +517,9 @@ body {
 
 /* ===== 卡片悬停反馈（上浮 8px + shadow 升级） ===== */
 .card-hover-lift {
-  transition: transform var(--motion-standard) var(--motion-spring),
-              box-shadow var(--motion-standard) var(--motion-spring);
+  transition:
+    transform var(--card-state-duration) var(--card-state-easing),
+    box-shadow var(--card-state-duration) var(--card-state-easing);
 }
 
 .card-hover-lift:hover {
@@ -499,8 +561,9 @@ body {
 /* ===== 统一交互反馈（P1，新代码优先使用；旧 .card-hover-lift 保留不破坏）===== */
 /* 卡片悬停：克制 4px 上浮 + 阴影升级 */
 .card-hover {
-  transition: transform var(--motion-standard) var(--motion-spring),
-              box-shadow var(--motion-standard) var(--motion-spring);
+  transition:
+    transform var(--card-state-duration) var(--card-state-easing),
+    box-shadow var(--card-state-duration) var(--card-state-easing);
 }
 .card-hover:hover {
   transform: translateY(-2px);

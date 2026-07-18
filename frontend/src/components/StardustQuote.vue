@@ -1,26 +1,49 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
+const props = withDefaults(defineProps<{
+  placement?: 'overlay' | 'flow'
+}>(), {
+  placement: 'overlay',
+})
+
 const expanded = ref(false)
 
 function toggleExpanded() {
   expanded.value = !expanded.value
 }
+
+function collapse() {
+  expanded.value = false
+}
 </script>
 
 <template>
-  <div class="stardust-quote">
-    <div
-      class="quote-en gilded breathe clickable"
+  <div
+    class="stardust-quote"
+    :class="`stardust-quote--${props.placement}`"
+    @mouseleave="collapse"
+  >
+    <button
+      type="button"
+      class="quote-en gilded breathe quote-trigger"
       @click="toggleExpanded"
-      title="点击展开完整星尘引言"
+      :aria-expanded="expanded"
+      aria-controls="stardust-quote-detail"
+      title="点击展开完整星尘引言，鼠标移开后自动收起"
     >
       "We are made of star-stuff"
-    </div>
-    <div class="quote-cn-short clickable" @click="toggleExpanded">
+    </button>
+    <button
+      type="button"
+      class="quote-cn-short quote-trigger"
+      @click="toggleExpanded"
+      :aria-expanded="expanded"
+      aria-controls="stardust-quote-detail"
+    >
       我们只是借用了宇宙中的这些原子，短暂地体验了一次这个世界。
-    </div>
-    <div class="quote-cn-full" :class="{ expanded }">
+    </button>
+    <div id="stardust-quote-detail" class="quote-cn-full" :class="{ expanded }">
       我们只是借用了宇宙中的这些碳、氢、氧原子几十年，用它们去短暂地体验了一次这个世界。
       组成我们大脑和身体的每一个原子，都来自几十亿年前远古恒星内部的核聚变爆炸。
       当生命结束时，我们并没有化为虚无，我们只是回到了那个浩瀚的宇宙中，换了一种方式继续存在。
@@ -42,13 +65,26 @@ function toggleExpanded() {
   pointer-events: auto;
 }
 
-.clickable {
+.quote-trigger {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: inherit;
   cursor: pointer;
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transition: opacity 180ms ease-out, transform 180ms ease-out;
 }
-.clickable:hover {
+.quote-trigger:hover {
   opacity: 1;
-  transform: scale(1.02);
+  transform: scale(1.015);
+}
+
+.quote-trigger:focus-visible {
+  outline: 2px solid rgba(255, 244, 192, 0.92);
+  outline-offset: 5px;
+  border-radius: 6px;
 }
 
 .quote-en {
@@ -132,6 +168,27 @@ function toggleExpanded() {
   max-height: 200px;
   opacity: 1;
   margin-top: 10px;
+}
+
+.stardust-quote--flow {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  transform: none;
+  flex: 0 0 auto;
+  margin: 0 auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gilded,
+  .breathe {
+    animation: none;
+  }
+
+  .quote-trigger,
+  .quote-cn-full {
+    transition-duration: 1ms;
+  }
 }
 
 @media (max-width: 768px) {
