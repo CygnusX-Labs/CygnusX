@@ -11,7 +11,7 @@
 
 ## 开发前必读
 
-1. 先阅读 `omichub_design.md` 的设计原则与模块类型划分。
+1. 先阅读 `ARCHITECTURE_DESIN/omichub_design.md` 的设计原则与模块类型划分。
 2. 新增模块前，在 `docs/modules/<module-key>.md` 完成设计文档。
 3. 前后端接口先定契约（Pydantic DTO ↔ TypeScript types），再写页面。
 4. 所有资源操作必须校验认证、角色与所属关系。

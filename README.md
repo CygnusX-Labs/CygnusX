@@ -650,7 +650,7 @@ jq 'select(.status >= 500)' /data/omichub/logs/nginx/access.log
 | `TASK_LOG_MESSAGE_MAX_CHARS` | DB 单条任务日志 message 最大字符数 | `8192` |
 | `TASK_LOG_MAX_ENTRIES` | DB 单任务最多保留日志条数 | `1000` |
 
-详细架构说明见项目根目录 `LOG_ARCHITECTURE.md`。
+详细架构说明见 `ARCHITECTURE_DESIN/LOG_ARCHITECTURE.md`。
 
 ## 常用命令
 
@@ -1209,8 +1209,8 @@ MCP Server 注册/调用为**管理员功能**，已做以下限制：
 
 ### 修改的文件（按目录分组）
 
-#### LOG_ARCHITECTURE.md
-- LOG_ARCHITECTURE.md
+#### ARCHITECTURE_DESIN/LOG_ARCHITECTURE.md
+- ARCHITECTURE_DESIN/LOG_ARCHITECTURE.md
 
 #### Makefile
 - Makefile
