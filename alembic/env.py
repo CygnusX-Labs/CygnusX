@@ -24,6 +24,7 @@ from omichub.infrastructure.database.models import (  # noqa: F401
     knowledge_editor,
     knowledge_issue,
     knowledge_revision,
+    mas,
     mcp,
     notification,
     report,

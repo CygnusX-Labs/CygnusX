@@ -25,6 +25,7 @@ celery_app = Celery(
         "omichub.infrastructure.celery_app.tasks.sandbox",
         "omichub.infrastructure.celery_app.tasks.storage",
         "omichub.infrastructure.celery_app.tasks.studio",
+        "omichub.infrastructure.celery_app.tasks.mas",
     ],
 )
 
@@ -59,6 +60,8 @@ celery_app.conf.task_routes = {
     "omichub.infrastructure.celery_app.tasks.sandbox.*": {"queue": "analysis"},
     "omichub.infrastructure.celery_app.tasks.storage.*": {"queue": "analysis"},
     "omichub.infrastructure.celery_app.tasks.studio.*": {"queue": "analysis"},
+    "omichub.infrastructure.celery_app.tasks.mas.rnaflow.*": {"queue": "mas_apptainer"},
+    "omichub.infrastructure.celery_app.tasks.mas.*": {"queue": "analysis"},
 }
 
 # 定时任务
@@ -87,5 +90,13 @@ celery_app.conf.beat_schedule = {
     "studio-sandbox-recycle": {
         "task": "omichub.infrastructure.celery_app.tasks.studio.recycle_idle_sandboxes",
         "schedule": crontab(minute="*/5"),
+    },
+    "mas-outbox-publish": {
+        "task": "omichub.infrastructure.celery_app.tasks.mas.publish_outbox",
+        "schedule": 10.0,
+    },
+    "mas-event-consume": {
+        "task": "omichub.infrastructure.celery_app.tasks.mas.consume_events",
+        "schedule": 5.0,
     },
 }

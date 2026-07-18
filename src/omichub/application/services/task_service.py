@@ -18,6 +18,7 @@ from omichub.application.schemas.task import (
     task_to_response,
 )
 from omichub.application.services.flow_service import FlowService
+from omichub.application.services.mas_task_projection import MASTaskProjection
 from omichub.core.config import get_settings
 from omichub.core.exceptions import NotFoundError, ValidationError
 from omichub.domain.task.services import TaskDomainService
@@ -26,6 +27,7 @@ from omichub.infrastructure.celery_app.tasks.analysis import run_snakemake
 from omichub.infrastructure.database.repositories.task_repository import (
     TaskRepositoryImpl,
 )
+from omichub.infrastructure.database.repositories.mas_repository import MASRepository
 from omichub.infrastructure.execution.generic_builder import GenericFlowBuilder
 from omichub.infrastructure.execution.local import LocalSnakemakeExecutor
 
@@ -40,6 +42,7 @@ class TaskService:
     ):
         self._db = db
         self._repo = TaskRepositoryImpl(db)
+        self._mas_projection = MASTaskProjection(MASRepository(db))
         self._domain = TaskDomainService(self._repo)
         self._flow_service = flow_service or FlowService()
         self._settings = get_settings()
@@ -133,22 +136,35 @@ class TaskService:
     async def get_task(self, task_id: UUID, user_id: str) -> TaskResponse:
         """获取任务详情"""
         task = await self._repo.get_by_id(task_id)
-        if task is None or str(task.user_id) != user_id:
+        if task is not None:
+            if str(task.user_id) != user_id:
+                raise NotFoundError("任务不存在")
+            return task_to_response(task)
+        projected = await self._mas_projection.get_for_user(task_id, UUID(user_id))
+        if projected is None:
             raise NotFoundError("任务不存在")
-        return task_to_response(task)
+        return projected
 
     async def list_tasks(self, user_id: str, status: str | None = None) -> TaskListResponse:
         """获取用户任务列表"""
         tasks = await self._repo.list_by_user(UUID(user_id), status=status)
+        mas_tasks = await self._mas_projection.list_for_user(UUID(user_id), status=status)
+        items = [*(task_to_response(task) for task in tasks), *mas_tasks]
+        items.sort(key=lambda item: item.created_at, reverse=True)
         return TaskListResponse(
-            items=[task_to_response(t) for t in tasks],
-            total=len(tasks),
+            items=items,
+            total=len(items),
         )
 
     async def cancel_task(self, task_id: UUID, user_id: str) -> TaskResponse:
         """取消任务"""
         task = await self._repo.get_by_id(task_id)
-        if task is None or str(task.user_id) != user_id:
+        if task is None:
+            projected = await self._mas_projection.get_for_user(task_id, UUID(user_id))
+            if projected is not None:
+                raise ValidationError("MAS 任务为只读投影，请通过 MAS Run 接口取消")
+            raise NotFoundError("任务不存在")
+        if str(task.user_id) != user_id:
             raise NotFoundError("任务不存在")
         if task.status not in {TaskStatus.PENDING, TaskStatus.QUEUED, TaskStatus.RUNNING}:
             raise ValidationError(f"当前状态 {task.status.value} 不允许取消")
@@ -170,7 +186,12 @@ class TaskService:
     async def get_task_dag(self, task_id: UUID, user_id: str) -> dict[str, Any]:
         """获取任务 DAG 可视化"""
         task = await self._repo.get_by_id(task_id)
-        if task is None or str(task.user_id) != user_id:
+        if task is None:
+            projected_dag = await self._mas_projection.dag_for_user(task_id, UUID(user_id))
+            if projected_dag is None:
+                raise NotFoundError("任务不存在")
+            return projected_dag
+        if str(task.user_id) != user_id:
             raise NotFoundError("任务不存在")
 
         flow_config = self._flow_service.get_flow_config(task.flow_id)

@@ -29,6 +29,12 @@ prompts:
     owners:
     - agent
     - studio
+  agents.orchestrator:
+    file: agents/orchestrator.md
+    kind: system
+    owners:
+    - agent
+    - orchestration
   chat.legacy_assistants:
     file: chat/legacy_assistants.yaml
     kind: mapping

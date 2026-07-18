@@ -63,6 +63,14 @@ class Settings(BaseSettings):
     # ===== 文件存储 =====
     storage_type: str = "local"
     storage_path: str = "/data/omichub"
+    # ===== 多智能体编排（MAS，默认关闭，待灰度启用）=====
+    mas_enabled: bool = False
+    mas_workspace_root: str = "/data/omichub"
+    mas_tool_policies_yaml: str = "data/mas/tool_policies.yaml"
+    mas_agent_capabilities_yaml: str = "data/mas/agent_capabilities.yaml"
+    mas_apptainer_binary: str = "apptainer"
+    mas_apptainer_image: str = ""
+    mas_apptainer_pipeline_root: str = "/opt/omichub/pipelines/RNAFlow"
     upload_dir: str = "uploads"
     results_dir: str = "results"
     # 文件生命周期：临时分片会话超 24h 视为僵尸；中间文件保留期；冷数据归档期

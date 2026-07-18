@@ -13,6 +13,7 @@ from .file_repository import (
     UploadSessionRepositoryImpl as UploadSessionRepositoryImpl,
 )
 from .flow_repository import FileSystemFlowRepository as FileSystemFlowRepository
+from .mas_repository import MASRepository as MASRepository
 from .task_repository import TaskRepositoryImpl as TaskRepositoryImpl
 from .user_repository import SqlAlchemyUserRepository as SqlAlchemyUserRepository
 
@@ -24,4 +25,5 @@ __all__ = [
     "UploadSessionRepositoryImpl",
     "SampleRepositoryImpl",
     "DirectoryRepositoryImpl",
+    "MASRepository",
 ]

@@ -41,7 +41,24 @@ const lastStatus = ref<string>('')
 const { progress: downloadProgress, startPolling: startProgressPolling, stopPolling: stopProgressPolling } =
   useDownloadProgress(taskId)
 
-const dag = ref<{ status: string; format?: string; content?: string; error?: string } | null>(null)
+type MasDagNode = {
+  id: string
+  label: string
+  agent_id: string
+  status: string
+  attempt_count: number
+}
+
+type TaskDag = {
+  status: string
+  format?: string
+  content?: string
+  error?: string
+  kind?: string
+  nodes?: MasDagNode[]
+}
+
+const dag = ref<TaskDag | null>(null)
 const dagLoading = ref(false)
 
 const statusType = computed(() => {
@@ -72,6 +89,7 @@ const statusText = computed(() => {
 const DOWNLOAD_FLOW_ID = 'ebi_download'
 
 const isDownloadTask = computed(() => task.value?.flow_id === DOWNLOAD_FLOW_ID)
+const isMasTask = computed(() => task.value?.flow_id === 'mas')
 
 // 阶段标签映射
 function stageLabel(stage: string): string {
@@ -189,6 +207,7 @@ async function fetchDag() {
 }
 
 function connectWebSocket() {
+  if (isMasTask.value) return
   const token = localStorage.getItem('access_token')
   if (!token) return
 
@@ -347,6 +366,16 @@ watch(taskId, async () => {
             <NAlert v-if="dag?.status === 'failed'" type="error" :title="dag.error || '生成失败'" />
             <div v-else-if="dag?.format === 'svg'" class="dag-svg" v-html="dag.content" />
             <pre v-else-if="dag?.format === 'dot'" class="dag-dot">{{ dag.content }}</pre>
+            <div v-else-if="dag?.kind === 'mas'" class="mas-dag-list">
+              <div v-for="node in dag.nodes || []" :key="node.id" class="mas-dag-node">
+                <strong>{{ node.id }}</strong>
+                <span>{{ node.label }}</span>
+                <NTag size="small" round>{{ node.agent_id }}</NTag>
+                <NTag size="small" round :type="node.status === 'failed' ? 'error' : node.status === 'succeeded' ? 'success' : 'warning'">
+                  {{ node.status }} · 第 {{ node.attempt_count }} 次
+                </NTag>
+              </div>
+            </div>
             <div v-else-if="dag === null" class="empty-dag">点击上方按钮生成 DAG</div>
           </NSpace>
         </NCard>
@@ -509,5 +538,29 @@ watch(taskId, async () => {
   margin-top: 4px;
   font-size: 12px;
   color: var(--neutral-text-3);
+}
+
+.mas-dag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mas-dag-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--neutral-bg-2, #f7f8fa);
+}
+
+.mas-dag-node strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.mas-dag-node span {
+  flex: 1;
+  color: var(--neutral-text-2);
 }
 </style>

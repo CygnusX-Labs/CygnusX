@@ -931,6 +931,7 @@ const UserAvatar = () => {
   background: rgba(255, 255, 255, 0.56) !important;
   backdrop-filter: blur(24px) saturate(165%);
   -webkit-backdrop-filter: blur(24px) saturate(165%);
+  border-right: none !important;
   overflow: visible !important;
   transition: width 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -951,6 +952,39 @@ const UserAvatar = () => {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(144, 147, 153, 0.05) transparent;
+  transition: scrollbar-color 180ms ease-out;
+}
+
+.sider-nav-groups::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sider-nav-groups::-webkit-scrollbar-track {
+  background: transparent;
+  border: 0;
+}
+
+.sider-nav-groups::-webkit-scrollbar-thumb {
+  background-color: rgba(144, 147, 153, 0.05);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  transition: background-color 180ms ease-out;
+}
+
+.app-sider:hover .sider-nav-groups {
+  scrollbar-color: rgba(144, 147, 153, 0.3) transparent;
+}
+
+.app-sider:hover .sider-nav-groups::-webkit-scrollbar-thumb {
+  background-color: rgba(144, 147, 153, 0.3);
+}
+
+.app-sider:hover .sider-nav-groups::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(144, 147, 153, 0.5);
 }
 
 .nav-group {
@@ -967,6 +1001,7 @@ const UserAvatar = () => {
 .nav-item {
   display: flex;
   flex-direction: column;
+  margin: 0 12px;
   border-radius: 8px;
   cursor: pointer;
   transition: background 180ms ease-out, color 180ms ease-out, box-shadow 220ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -1016,6 +1051,10 @@ const UserAvatar = () => {
   justify-content: center;
   padding: 0;
   border-radius: 10px;
+}
+
+.nav-item--collapsed {
+  margin: 0;
 }
 
 .nav-icon {
@@ -1301,10 +1340,11 @@ const UserAvatar = () => {
 /* 隐藏 Naive UI LayoutSider 默认 border 以使用自定义边框 */
 :deep(.n-layout-sider) {
   background: var(--sidebar-bg);
+  border-right: none !important;
 }
 
 :deep(.n-layout-sider .n-layout-sider-scroll-container) {
-  border-right: 1px solid var(--sidebar-border);
+  border-right: none;
   overflow: visible !important;
 }
 

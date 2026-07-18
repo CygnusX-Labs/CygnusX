@@ -61,6 +61,13 @@ from omichub.application.services.studio_tools import (
     normalize_plan_steps,
     stream_studio_tool,
 )
+from omichub.application.services.mas_plan_adapter import (
+    MAS_PLAN_PREVIEW_PROMPT_SUFFIX,
+    MAS_PLAN_PREVIEW_TOOL_NAME,
+    MAS_PLAN_PREVIEW_TOOL_SCHEMA,
+    MASPlanPreviewAdapter,
+)
+from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError, NotFoundError
 from omichub.infrastructure.ai_provider.openai_compatible import (
     ChatChunk,
@@ -576,6 +583,22 @@ class ChatService:
         active_mcp_servers = list(bound_mcp_servers)
         tools = list(ctx.tools or []) + base_tools
         system_prompt = ctx.system_prompt or None
+        mas_plan_tool_enabled = get_settings().mas_enabled and (
+            studio_mode or bool(ctx.features.get("mas_orchestrator"))
+        )
+
+        def _attach_mas_plan_tool(
+            runtime_tools: list[dict[str, Any]], runtime_prompt: str | None
+        ) -> tuple[list[dict[str, Any]], str]:
+            if not mas_plan_tool_enabled:
+                return runtime_tools, runtime_prompt or ""
+            if not any(
+                item.get("function", {}).get("name") == MAS_PLAN_PREVIEW_TOOL_NAME
+                for item in runtime_tools
+            ):
+                runtime_tools.append(MAS_PLAN_PREVIEW_TOOL_SCHEMA)
+            prompt = runtime_prompt or ""
+            return runtime_tools, f"{prompt}\n\n{MAS_PLAN_PREVIEW_PROMPT_SUFFIX}".strip()
 
         def _studio_runtime(state: CapabilityState) -> tuple[list[dict[str, Any]], str, list[Any]]:
             runtime_tools = list(base_tools)
@@ -616,6 +639,7 @@ class ChatService:
             tools, system_prompt, active_mcp_servers = _studio_runtime(
                 studio_capability_state
             )
+        tools, system_prompt = _attach_mas_plan_tool(tools, system_prompt)
 
         full_content = ""
         update_counter = 0
@@ -755,10 +779,13 @@ class ChatService:
                     is_studio_tool = studio_mode and (
                         tool_name in STUDIO_TOOL_NAMES or is_capability_tool
                     )
+                    is_mas_plan_tool = (
+                        mas_plan_tool_enabled and tool_name == MAS_PLAN_PREVIEW_TOOL_NAME
+                    )
 
                     # 在绑定的 MCP server 中找到拥有该工具的 server
                     server = None
-                    if not is_studio_tool:
+                    if not is_studio_tool and not is_mas_plan_tool:
                         server = next(
                             (
                                 s
@@ -770,6 +797,8 @@ class ChatService:
                     tool_channel = (
                         "studio-capabilities"
                         if is_capability_tool
+                        else "mas-plan"
+                        if is_mas_plan_tool
                         else "studio"
                         if is_studio_tool
                         else (server.name if server else None)
@@ -785,7 +814,9 @@ class ChatService:
                         },
                     )
 
-                    if is_capability_tool and tool_name == CAPABILITY_LIST_TOOL:
+                    if is_mas_plan_tool:
+                        result = MASPlanPreviewAdapter().adapt(args)
+                    elif is_capability_tool and tool_name == CAPABILITY_LIST_TOOL:
                         event = audit_event("list", None, None, True)
                         studio_capability_state = await _persist_capability_state(
                             studio_capability_state, event
@@ -835,6 +866,7 @@ class ChatService:
                             tools, system_prompt, active_mcp_servers = _studio_runtime(
                                 studio_capability_state
                             )
+                            tools, system_prompt = _attach_mas_plan_tool(tools, system_prompt)
                         result = {
                             "success": success,
                             "result": {
@@ -937,7 +969,7 @@ class ChatService:
                         },
                     )
                     # Studio 工具调用随消息落库：历史重载时凭 ui_payload 渲染代码卡片/产物/diff
-                    if is_studio_tool:
+                    if is_studio_tool or is_mas_plan_tool:
                         studio_invocations.append(
                             {
                                 "tool_call_id": tc.get("id", ""),

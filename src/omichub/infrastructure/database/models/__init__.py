@@ -38,6 +38,15 @@ from omichub.infrastructure.database.models.knowledge_editor import DocEditorMod
 from omichub.infrastructure.database.models.knowledge_issue import KbIssueModel
 from omichub.infrastructure.database.models.knowledge_revision import DocRevisionModel
 from omichub.infrastructure.database.models.mcp import MCPServerModel
+from omichub.infrastructure.database.models.mas import (
+    MASA2AEventModel,
+    MASApprovalModel,
+    MASArtifactModel,
+    MASNodeModel,
+    MASPlanModel,
+    MASReworkGuardModel,
+    MASRunModel,
+)
 from omichub.infrastructure.database.models.notification import NotificationModel
 from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
 from omichub.infrastructure.database.models.sandbox import SandboxSessionModel
@@ -74,6 +83,13 @@ __all__ = [
     "KbIssueModel",
     "DocAuditLogModel",
     "MCPServerModel",
+    "MASPlanModel",
+    "MASRunModel",
+    "MASNodeModel",
+    "MASArtifactModel",
+    "MASA2AEventModel",
+    "MASApprovalModel",
+    "MASReworkGuardModel",
     "ReportModel",
     "ReportFileModel",
     "SandboxSessionModel",

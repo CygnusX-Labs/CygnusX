@@ -53,7 +53,7 @@
               </n-input>
             </n-form-item>
 
-            <n-form-item label="密码" path="password" class="form-item-full">
+            <n-form-item label="密码" path="password" class="form-item-half">
               <n-input
                 v-model:value="formData.password"
                 type="password"
@@ -67,7 +67,7 @@
               </n-input>
             </n-form-item>
 
-            <n-form-item label="确认密码" path="confirmPassword" class="form-item-full">
+            <n-form-item label="确认密码" path="confirmPassword" class="form-item-half">
               <n-input
                 v-model:value="formData.confirmPassword"
                 type="password"
@@ -118,7 +118,7 @@
       @agree="agreed = true"
     />
 
-    <StardustQuote />
+    <StardustQuote placement="flow" />
   </div>
 </template>
 
@@ -229,11 +229,16 @@ const handleRegister = async () => {
 .register-page {
   position: relative;
   width: 100vw;
-  height: 100vh;
-  overflow: hidden;
+  min-height: 100dvh;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 16px;
+  padding: 24px 24px 20px;
   /* 与登录页 Hero 同款淡紫渐变 */
   background: linear-gradient(135deg, #6b7fd4 0%, #8b7fd4 35%, #a080d4 65%, #b080c8 100%);
 }
@@ -246,18 +251,19 @@ const handleRegister = async () => {
   position: relative;
   z-index: 10;
   width: 100%;
+  flex: 1 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 0 16px;
+  padding: 72px 0 0;
 }
 
 .register-card-wrapper {
   position: relative;
   z-index: 2;
   width: 100%;
-  max-width: 536px;
+  max-width: 704px;
   padding: 3px;
   border-radius: 19px;
 }
@@ -328,15 +334,20 @@ const handleRegister = async () => {
   position: relative;
   z-index: 1;
   width: 100%;
-  max-width: 530px;
-  padding: 28px 36px 36px;
+  max-width: 698px;
+  padding: 28px 40px 32px;
   background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: 16px;
-  box-shadow: 0 25px 60px rgba(40, 30, 80, 0.15);
-  transition: max-width 0.3s ease;
+  box-shadow: 0 25px 60px rgba(40, 30, 80, 0.15), inset 0 1px rgba(255, 255, 255, 0.45);
+  transition: transform 220ms ease-out, box-shadow 220ms ease-out, background-color 220ms ease-out;
+}
+
+.register-card:focus-within {
+  transform: translateY(-2px);
+  box-shadow: 0 32px 76px rgba(40, 30, 80, 0.2), inset 0 1px rgba(255, 255, 255, 0.55);
 }
 
 :root[data-theme='dark'] .register-card {
@@ -372,7 +383,7 @@ const handleRegister = async () => {
   margin-top: 16px;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px 16px;
+  gap: 16px 20px;
 }
 
 .register-form .form-item-half {
@@ -462,7 +473,7 @@ const handleRegister = async () => {
 }
 
 .register-actions :deep(.n-button--primary-type:hover) {
-  transform: scale(1.02) translateY(-1px);
+  transform: translateY(-1px);
 }
 
 .register-actions :deep(.n-button--primary-type:active) {
@@ -563,12 +574,41 @@ const handleRegister = async () => {
 }
 
 @media (max-width: 480px) {
+  .register-page {
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .register-content {
+    padding-top: 56px;
+  }
+
   .register-card {
-    padding: 24px 20px 32px;
+    padding: 24px 20px 28px;
   }
 
   .register-title {
     font-size: 24px;
+  }
+
+  .register-form {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .register-form .form-item-half {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .register-card,
+  .register-actions :deep(.n-button--primary-type) {
+    transition-duration: 1ms;
+  }
+
+  :root[data-theme='dark'] .register-card-wrapper::after {
+    animation: none;
   }
 }
 </style>

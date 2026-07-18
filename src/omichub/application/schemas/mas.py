@@ -1,0 +1,75 @@
+"""Request and response schemas for MAS run metadata APIs."""
+
+from datetime import datetime
+from typing import Any
+from uuid import UUID
+
+from pydantic import Field
+
+from omichub.application.schemas.base import OmicsHubBaseSchema
+from omichub.domain.mas.models import ExecutionPlan, MASArtifact
+
+
+class MASRunCreateRequest(OmicsHubBaseSchema):
+    plan: ExecutionPlan
+    context_summary: dict[str, Any] = Field(default_factory=dict)
+    session_id: UUID | None = None
+    workspace_id: UUID | None = None
+
+
+class MASRunResponse(OmicsHubBaseSchema):
+    id: UUID
+    plan_id: UUID
+    status: str
+    version: int
+    context_summary: dict[str, Any]
+    created_at: datetime
+    finished_at: datetime | None
+
+
+class MASArtifactRegisterRequest(OmicsHubBaseSchema):
+    artifact: MASArtifact
+
+
+class MASArtifactResponse(OmicsHubBaseSchema):
+    id: UUID
+    logical_name: str
+    kind: str
+    workspace_path: str
+    media_type: str
+    size_bytes: int
+    sha256: str
+    state: str
+    version: int
+    created_at: datetime
+
+
+class MASNodeProgressResponse(OmicsHubBaseSchema):
+    key: str
+    agent_id: str
+    intent: str
+    status: str
+    attempt_count: int
+
+
+class MASRunProgressResponse(OmicsHubBaseSchema):
+    run_id: UUID
+    status: str
+    version: int
+    nodes: list[MASNodeProgressResponse]
+
+
+class MASApprovalResolveRequest(OmicsHubBaseSchema):
+    approved: bool
+    response: dict[str, Any] = Field(default_factory=dict)
+
+
+class MASApprovalResponse(OmicsHubBaseSchema):
+    id: UUID
+    node_key: str | None
+    kind: str
+    prompt: str
+    options: list[dict[str, Any]]
+    status: str
+    response: dict[str, Any] | None
+    created_at: datetime
