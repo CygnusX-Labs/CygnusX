@@ -329,17 +329,17 @@ const handleVerify2FA = async () => {
   -webkit-backdrop-filter: blur(24px) saturate(150%);
   border: 1px solid rgba(255, 255, 255, 0.68);
   border-radius: 16px;
-  box-shadow: 0 25px 60px rgba(40, 30, 80, 0.15), inset 0 1px rgba(255, 255, 255, 0.45);
+  box-shadow: 0 25px 60px rgba(7, 34, 82, 0.2), inset 0 1px rgba(255, 255, 255, 0.45);
   transition: transform 220ms ease-out, box-shadow 220ms ease-out, background-color 220ms ease-out;
 }
 
 :root[data-theme='dark'] .login-card-wrapper {
-  /* 暗色：wrapper 承载流光边框 + 呼吸光晕 */
+  /* 暗色：使用与平台主色一致的蓝靛边缘 */
   padding: 3px;
   border-radius: 19px;
 }
 
-/* 金色边框层：静态锥形渐变，mask 镂空内部，无旋转 */
+/* 蓝靛边框层：静态锥形渐变，mask 镂空内部 */
 :root[data-theme='dark'] .login-card-wrapper::before {
   content: '';
   position: absolute;
@@ -350,11 +350,11 @@ const handleVerify2FA = async () => {
   border-radius: 19px;
   background: conic-gradient(
     from 45deg,
-    rgba(255, 200, 100, 0.12) 0deg,
-    rgba(255, 225, 160, 0.22) 90deg,
-    rgba(255, 200, 100, 0.12) 180deg,
-    rgba(255, 180, 90, 0.08) 270deg,
-    rgba(255, 200, 100, 0.12) 360deg
+    rgba(91, 139, 255, 0.14) 0deg,
+    rgba(155, 184, 255, 0.28) 90deg,
+    rgba(91, 139, 255, 0.14) 180deg,
+    rgba(112, 102, 236, 0.12) 270deg,
+    rgba(91, 139, 255, 0.14) 360deg
   );
   -webkit-mask:
     linear-gradient(#fff 0 0) content-box,
@@ -367,7 +367,7 @@ const handleVerify2FA = async () => {
   pointer-events: none;
 }
 
-/* 呼吸光晕层 */
+/* 静态环境光晕层 */
 :root[data-theme='dark'] .login-card-wrapper::after {
   content: '';
   position: absolute;
@@ -378,42 +378,16 @@ const handleVerify2FA = async () => {
   border-radius: 21px;
   background: transparent;
   box-shadow:
-    0 0 18px rgba(255, 200, 100, 0.08),
-    0 0 36px rgba(255, 180, 80, 0.04);
-  animation: golden-breathe 6s ease-in-out infinite;
+    0 0 22px rgba(91, 139, 255, 0.12),
+    0 0 44px rgba(91, 139, 255, 0.05);
   z-index: -1;
   pointer-events: none;
 }
 
 :root[data-theme='dark'] .login-card {
-  /* 暗色卡片本体：无边框，背景由 wrapper 流光承担 */
-  background: rgba(30, 30, 60, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
-  animation: floatCard 6s ease-in-out infinite;
-}
-
-@keyframes golden-orbit {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-@keyframes golden-breathe {
-  0%, 100% {
-    box-shadow:
-      0 0 18px rgba(255, 200, 100, 0.07),
-      0 0 36px rgba(255, 180, 80, 0.035);
-  }
-  50% {
-    box-shadow:
-      0 0 24px rgba(255, 215, 130, 0.12),
-      0 0 48px rgba(255, 195, 100, 0.06);
-  }
-}
-
-@keyframes floatCard {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-6px); }
+  background: rgba(8, 23, 53, 0.78);
+  border: 1px solid rgba(165, 192, 255, 0.14);
+  box-shadow: 0 24px 80px rgba(0, 9, 30, 0.4), inset 0 1px rgba(196, 216, 255, 0.08);
 }
 
 .login-page {
@@ -437,17 +411,9 @@ const handleVerify2FA = async () => {
   padding: 0 16px;
 }
 
-.login-card {
-  animation: floatCard 6s ease-in-out infinite;
-}
-
 .login-card:focus-within {
-  box-shadow: 0 30px 72px rgba(40, 30, 80, 0.2), inset 0 1px rgba(255, 255, 255, 0.58);
-}
-
-:root[data-theme='dark'] .login-container {
-  /* 暗色：Hero 同款色相，明度大幅降低 */
-  background: linear-gradient(135deg, #2a3a6e 0%, #3a2a6e 35%, #4a2a6e 65%, #3a2a5e 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 30px 72px rgba(7, 34, 82, 0.28), inset 0 1px rgba(255, 255, 255, 0.58);
 }
 
 .login-header {
@@ -540,12 +506,12 @@ const handleVerify2FA = async () => {
 :root[data-theme='dark'] .login-form :deep(.n-input) {
   --n-border-color: rgba(255, 255, 255, 0.18) !important;
   --n-border-hover: rgba(255, 255, 255, 0.28) !important;
-  --n-border-focus: #9b7cf7 !important;
+  --n-border-focus: #7691ff !important;
   --n-color: rgba(255, 255, 255, 0.07) !important;
   --n-color-focus: rgba(255, 255, 255, 0.1) !important;
   --n-text-color: #f0f0f8 !important;
   --n-placeholder-color: #7a7a9a !important;
-  --n-box-shadow-focus: 0 0 0 3px rgba(155, 124, 247, 0.2) !important;
+  --n-box-shadow-focus: 0 0 0 3px rgba(118, 145, 255, 0.24) !important;
   --n-icon-color: #9a9ab8 !important;
 }
 
@@ -608,12 +574,6 @@ const handleVerify2FA = async () => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .login-card,
-  :root[data-theme='dark'] .login-card,
-  :root[data-theme='dark'] .login-card-wrapper::after {
-    animation: none;
-  }
-
   .login-card,
   .login-actions :deep(.n-button) {
     transition-duration: 1ms;

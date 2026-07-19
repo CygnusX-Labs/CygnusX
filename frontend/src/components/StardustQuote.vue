@@ -82,13 +82,14 @@ function collapse() {
 }
 
 .quote-trigger:focus-visible {
-  outline: 2px solid rgba(255, 244, 192, 0.92);
+  outline: 2px solid rgba(181, 210, 255, 0.92);
   outline-offset: 5px;
   border-radius: 6px;
 }
 
 .quote-en {
   font-size: 13px;
+  font-weight: 500;
   font-style: italic;
   letter-spacing: 1.5px;
   margin-bottom: 6px;
@@ -98,11 +99,11 @@ function collapse() {
 .gilded {
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.75) 0%,
-    #fff8d4 25%,
-    #ffd700 50%,
-    #fff8d4 75%,
-    rgba(255, 255, 255, 0.75) 100%
+    rgba(238, 248, 255, 0.92) 0%,
+    #ffffff 24%,
+    #58a9ff 50%,
+    #ffffff 76%,
+    rgba(238, 248, 255, 0.92) 100%
   );
   background-size: 200% auto;
   -webkit-background-clip: text;
@@ -110,7 +111,7 @@ function collapse() {
   -webkit-text-fill-color: transparent;
   animation: shimmer 10s linear infinite;
   text-shadow: none;
-  filter: drop-shadow(0 0 6px rgba(255, 215, 100, 0.35));
+  filter: drop-shadow(0 0 12px rgba(112, 181, 255, 0.78));
 }
 
 .breathe {
@@ -128,12 +129,12 @@ function collapse() {
 
 @keyframes breathe-glow {
   0%, 100% {
-    opacity: 0.72;
-    filter: drop-shadow(0 0 5px rgba(255, 215, 100, 0.3));
+    opacity: 0.88;
+    filter: drop-shadow(0 0 9px rgba(112, 181, 255, 0.58));
   }
   50% {
     opacity: 1;
-    filter: drop-shadow(0 0 10px rgba(255, 215, 100, 0.55));
+    filter: drop-shadow(0 0 18px rgba(112, 181, 255, 0.94));
   }
 }
 

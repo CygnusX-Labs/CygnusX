@@ -10,7 +10,7 @@
 <template>
   <div class="login-page-top-quote">
     <p class="quote-cn">在某个地方，有某种不可思议的事物，正等待着被知晓。</p>
-    <p class="quote-en">"Somewhere, something incredible is waiting to be known."</p>
+    <p class="quote-en gilded breathe">"Somewhere, something incredible is waiting to be known."</p>
     <p class="quote-tagline">Every genome tells a story.</p>
   </div>
 </template>
@@ -43,14 +43,32 @@
 
 .quote-en {
   font-size: 13px;
-  font-weight: 400;
+  font-weight: 500;
   font-style: italic;
   font-family: Georgia, "Times New Roman", serif;
-  color: rgba(255, 255, 255, 0.85);
   line-height: 1.5;
   letter-spacing: 0.01em;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
   margin: 0 0 4px 0;
+}
+
+.gilded {
+  background: linear-gradient(
+    90deg,
+    rgba(238, 248, 255, 0.92) 0%,
+    #ffffff 24%,
+    #58a9ff 50%,
+    #ffffff 76%,
+    rgba(238, 248, 255, 0.92) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: none;
+}
+
+.breathe {
+  animation: shimmer 10s linear infinite, breathe-glow 6s ease-in-out infinite;
 }
 
 .quote-tagline {
@@ -70,6 +88,33 @@
     opacity: 0;
   }
   100% {
+    opacity: 1;
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
+@keyframes breathe-glow {
+  0%, 100% {
+    opacity: 0.88;
+    filter: drop-shadow(0 0 9px rgba(112, 181, 255, 0.58));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 18px rgba(112, 181, 255, 0.94));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-page-top-quote,
+  .breathe {
+    animation: none;
+  }
+
+  .login-page-top-quote {
     opacity: 1;
   }
 }

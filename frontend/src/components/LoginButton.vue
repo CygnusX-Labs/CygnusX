@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { CheckmarkCircleOutline } from '@vicons/ionicons5'
+import { NIcon } from 'naive-ui'
+
 /**
  * LoginButton —— 登录页主操作按钮
  *
@@ -47,7 +50,9 @@ function handleClick() {
 
     <span class="login-button__content">
       <span v-if="loading" class="login-button__spinner" aria-hidden="true" />
-      <span v-else-if="success" class="login-button__check" aria-hidden="true">✓</span>
+      <NIcon v-else-if="success" class="login-button__success-icon" :size="20" aria-hidden="true">
+        <CheckmarkCircleOutline />
+      </NIcon>
       <span class="login-button__text">
         <template v-if="loading">登录中...</template>
         <template v-else-if="success">登录成功</template>
@@ -144,12 +149,10 @@ function handleClick() {
   }
 }
 
-.login-button__check {
+.login-button__success-icon {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  font-weight: 600;
+  color: rgba(255, 255, 255, 0.96);
+  filter: drop-shadow(0 1px 2px rgba(5, 90, 62, 0.2));
 }
 
 /* Disabled state */

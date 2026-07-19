@@ -109,7 +109,7 @@ function handleLogoClick() {
 .cat-wrapper {
   position: absolute;
   bottom: 53px;
-  left: 50%;
+  left: calc(50% - 7px);
   transform: translateX(-50%);
   width: 155px;
   height: 155px;
@@ -157,6 +157,7 @@ function handleLogoClick() {
     width: 120px;
     height: 120px;
     bottom: 40px;
+    left: calc(50% - 5px);
   }
 
   .cat-emoji {

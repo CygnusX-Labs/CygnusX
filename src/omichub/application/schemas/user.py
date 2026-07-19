@@ -22,6 +22,8 @@ class UserResponse(OmicsHubBaseSchema):
         default=None, max_length=120, description="昵称（展示用，空则降级为用户名）"
     )
     preferences: dict = Field(default_factory=dict, description="用户偏好")
+    storage_quota: int = Field(default=0, description="存储配额（字节）")
+    used_storage: int = Field(default=0, description="已用存储（字节）")
     last_login_at: datetime | None = Field(default=None, description="最后登录时间")
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")
