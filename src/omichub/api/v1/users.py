@@ -1,8 +1,10 @@
 """用户管理路由"""
 
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 
 from omichub.api.deps import CurrentUserId, DbSession
 from omichub.application.schemas.user import (
@@ -14,6 +16,7 @@ from omichub.application.schemas.user import (
 from omichub.application.services import UserService
 from omichub.core.exceptions import AuthorizationError
 from omichub.infrastructure.database.repositories import SqlAlchemyUserRepository
+from omichub.infrastructure.database.models.audit_log import AuditLogModel
 from omichub.middleware.rbac import require_roles
 
 router = APIRouter()
@@ -22,6 +25,42 @@ router = APIRouter()
 def get_user_service(db: DbSession) -> UserService:
     """获取用户服务实例"""
     return UserService(SqlAlchemyUserRepository(db))
+
+
+@router.get("/me/audit-logs")
+async def get_my_audit_logs(
+    current_user_id: CurrentUserId,
+    db: DbSession,
+    limit: int = Query(5, ge=1, le=50),
+) -> list[dict[str, str]]:
+    """返回当前用户最近的真实写操作审计记录。"""
+    rows = await db.scalars(
+        select(AuditLogModel)
+        .where(AuditLogModel.user_id == uuid.UUID(current_user_id))
+        .order_by(AuditLogModel.created_at.desc())
+        .limit(limit)
+    )
+
+    def category(path: str) -> tuple[str, str]:
+        if "/password" in path:
+            return "password", "密码"
+        if "/2fa" in path:
+            return "security", "安全"
+        if "delete" in path or path.endswith("/account"):
+            return "delete", "删除"
+        if "/users" in path:
+            return "email", "资料"
+        return "security", "操作"
+
+    return [
+        {
+            "type": category(row.path)[0],
+            "type_label": category(row.path)[1],
+            "description": f"{row.method} {row.path}",
+            "created_at": row.created_at.isoformat(),
+        }
+        for row in rows
+    ]
 
 
 @router.get(

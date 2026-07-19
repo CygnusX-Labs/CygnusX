@@ -323,9 +323,10 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
 
 <template>
   <div class="settings-page-wrapper">
-    <PageHeader title="系统设置" subtitle="管理个人资料、登录安全与平台偏好" />
-    <div class="settings-page">
-      <NTabs type="line" animated>
+    <div class="settings-page-content">
+      <PageHeader title="系统设置" subtitle="管理个人资料、登录安全与平台偏好" />
+      <div class="settings-page">
+        <NTabs type="line" animated>
         <!-- 个人信息 -->
         <NTabPane name="profile" tab="个人信息">
           <NCard :bordered="false" class="arco-card settings-card">
@@ -601,18 +602,19 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
             </NCard>
           </div>
         </NTabPane>
-      </NTabs>
+        </NTabs>
 
-      <!-- 平台配置修改：TOTP 二次确认 -->
-      <AdminTOTPConfirmModal
-        v-model:show="platformTotpModalVisible"
-        title="修改平台全局配置"
-        description="开放/关闭用户注册或调整 TOTP 策略属于高敏感操作，请输入当前 6 位 TOTP 验证码以继续。"
-        confirm-text="确认修改"
-        :loading="platformTotpLoading"
-        @confirm="confirmPlatformChange"
-        @cancel="cancelPlatformChange"
-      />
+        <!-- 平台配置修改：TOTP 二次确认 -->
+        <AdminTOTPConfirmModal
+          v-model:show="platformTotpModalVisible"
+          title="修改平台全局配置"
+          description="开放/关闭用户注册或调整 TOTP 策略属于高敏感操作，请输入当前 6 位 TOTP 验证码以继续。"
+          confirm-text="确认修改"
+          :loading="platformTotpLoading"
+          @confirm="confirmPlatformChange"
+          @cancel="cancelPlatformChange"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -621,24 +623,22 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
 .settings-page-wrapper {
   min-height: 100%;
   background: var(--neutral-bg);
-  padding-bottom: 48px;
+  padding: 32px 0 48px;
 }
 
-.settings-page-header {
-  max-width: 1024px;
-  margin: 0 auto;
-  padding: 32px 24px 16px;
-}
-
-.settings-page {
+.settings-page-content {
+  width: 100%;
   max-width: 1024px;
   margin: 0 auto;
   padding: 0 24px;
 }
 
+.settings-page {
+  width: 100%;
+}
+
 @media (min-width: 1440px) {
-  .settings-page-header,
-  .settings-page {
+  .settings-page-content {
     max-width: 1152px;
     padding-left: 32px;
     padding-right: 32px;
@@ -646,10 +646,11 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
 }
 
 @media (max-width: 640px) {
-  .settings-page-header {
-    padding: 24px 16px 12px;
+  .settings-page-wrapper {
+    padding: 24px 0 40px;
   }
-  .settings-page {
+
+  .settings-page-content {
     padding: 0 16px;
   }
 }

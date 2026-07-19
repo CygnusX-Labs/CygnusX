@@ -14,6 +14,8 @@ export interface User {
   avatar_url?: string | null
   nickname?: string | null
   preferences?: Record<string, unknown>
+  storage_quota?: number
+  used_storage?: number
   last_login_at?: string | null
   created_at: string
   updated_at: string
