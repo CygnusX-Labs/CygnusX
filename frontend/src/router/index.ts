@@ -224,6 +224,24 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '格式轻量转换器', requiresAuth: true }
       },
       {
+        path: 'tools/id-converter',
+        name: 'tools-id-converter',
+        component: () => import('@/views/BioTools/IdConverterView.vue'),
+        meta: { title: 'ID 转换器', requiresAuth: true }
+      },
+      {
+        path: 'tools/wetlab-calculators',
+        name: 'tools-wetlab-calculators',
+        component: () => import('@/views/BioTools/WetLabCalculatorsView.vue'),
+        meta: { title: '湿实验计算器', requiresAuth: true }
+      },
+      {
+        path: 'tools/venn-upset',
+        name: 'tools-venn-upset',
+        component: () => import('@/views/BioTools/VennUpsetView.vue'),
+        meta: { title: '韦恩图 / UpSet 图', requiresAuth: true }
+      },
+      {
         path: 'tools/terminal',
         name: 'tools-terminal',
         component: () => import('@/views/BioTools/TerminalView.vue'),

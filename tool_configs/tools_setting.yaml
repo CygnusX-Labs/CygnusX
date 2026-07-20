@@ -162,6 +162,39 @@ tools:
     order: 65
     config_dir: ""
 
+  - key: "id-converter"
+    title: "ID 转换器"
+    description: "基因 Symbol / Ensembl / Entrez / UniProt 互转与列表集合运算，纯本地运算数据不离开浏览器"
+    icon: "GitBranchOutline"
+    gradient: "linear-gradient(135deg, #0FC6C2 0%, #5BD8A6 100%)"
+    route: "/tools/id-converter"
+    group: "sequence"
+    enabled: true
+    order: 64
+    config_dir: ""
+
+  - key: "wetlab-calculators"
+    title: "湿实验计算器"
+    description: "母液稀释、qPCR 2^-ΔΔCt、摩尔浓度与核酸换算四合一，纯本地运算数据不离开浏览器"
+    icon: "CalculatorOutline"
+    gradient: "linear-gradient(135deg, #00B42A 0%, #7BE188 100%)"
+    route: "/tools/wetlab-calculators"
+    group: "sequence"
+    enabled: true
+    order: 66
+    config_dir: ""
+
+  - key: "venn-upset"
+    title: "韦恩图 / UpSet 图"
+    description: "2~6 个基因列表的集合交集可视化，自动切换韦恩图与 UpSet 图，纯本地运算"
+    icon: "GridOutline"
+    gradient: "linear-gradient(135deg, #3491FA 0%, #7BC0FC 100%)"
+    route: "/tools/venn-upset"
+    group: "visualization"
+    enabled: true
+    order: 68
+    config_dir: ""
+
   - key: "terminal"
     title: "云端沙盒终端"
     description: "隔离容器交互式终端，预装 samtools/bedtools/python/R，退出即销毁，数据仅保留在工作目录"
