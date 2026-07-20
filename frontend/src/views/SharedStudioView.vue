@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { NButton, NResult, NSpin, NTag } from 'naive-ui'
+import { NButton, NSpin, NTag } from 'naive-ui'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
+import ErrorPage from '@/components/ErrorPage.vue'
 import { studioApi, type SharedStudioSession } from '@/api/studio'
 import PageHeader from '@/components/PageHeader.vue'
 
@@ -39,12 +40,11 @@ onMounted(async () => {
       <p>正在加载只读工作台…</p>
     </div>
 
-    <n-result
+    <ErrorPage
       v-else-if="failed || !snapshot"
-      status="404"
+      code="404"
       title="分享链接不存在或已失效"
-      description="链接可能已过期、被撤销或输入不完整。"
-      class="result"
+      hint="链接可能已过期、被撤销或输入不完整。"
     />
 
     <template v-else>
@@ -109,8 +109,7 @@ onMounted(async () => {
   color: var(--neutral-text-1, #172033);
   background: var(--neutral-bg-1, #f7f8fa);
 }
-.center-state,
-.result {
+.center-state {
   min-height: 70vh;
   display: flex;
   flex-direction: column;

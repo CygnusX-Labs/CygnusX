@@ -22,6 +22,13 @@
   --icon-system: #5B8FF9;
   --tag-neutral-bg: #F2F3F5;
   --tag-neutral-text: #4E5969;
+
+  /* 错误页（404/500 等）渐变背景与装饰光斑 */
+  --error-gradient-1: #165DFF;
+  --error-gradient-2: #3063FF;
+  --error-gradient-3: #6B8DD6;
+  --error-gradient-4: #8E54E9;
+  --error-orb: #A5B4FC;
 }
 
 :root[data-theme="dark"] {
@@ -36,6 +43,12 @@
   --text-tertiary: #7A8194;
   --tag-neutral-bg: #252B38;
   --tag-neutral-text: #B8BCC8;
+
+  --error-gradient-1: #0E2F9E;
+  --error-gradient-2: #1D39C4;
+  --error-gradient-3: #3D5A99;
+  --error-gradient-4: #5B3A9E;
+  --error-orb: #3B4A8A;
 }
 
 :root {

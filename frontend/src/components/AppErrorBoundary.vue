@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, onErrorCaptured } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NResult } from 'naive-ui'
+import { NButton } from 'naive-ui'
+import ErrorPage from '@/components/ErrorPage.vue'
 
 const router = useRouter()
 const hasError = ref(false)
@@ -22,44 +23,40 @@ function reload() {
 </script>
 
 <template>
-  <div v-if="hasError" class="error-boundary">
-    <NResult
-      status="500"
-      title="页面出了点小问题"
-      :description="errorMessage || '渲染异常，请刷新重试'"
-    >
-      <template #footer>
-        <div class="error-actions">
-          <NButton type="primary" @click="reload">刷新页面</NButton>
-          <NButton @click="router.push('/')">返回首页</NButton>
-        </div>
-        <p v-if="errorInfo" class="error-info">{{ errorInfo }}</p>
-      </template>
-    </NResult>
-  </div>
+  <ErrorPage
+    v-if="hasError"
+    code="500"
+    title="页面出了点小问题"
+    :hint="errorMessage || '渲染异常，请刷新重试'"
+  >
+    <template #actions>
+      <NButton type="primary" size="large" @click="reload">刷新页面</NButton>
+      <NButton size="large" ghost color="white" text-color="white" @click="router.push('/')">
+        返回首页
+      </NButton>
+    </template>
+    <details v-if="errorInfo" class="error-detail">
+      <summary>技术详情</summary>
+      <p class="error-detail-info">{{ errorInfo }}</p>
+    </details>
+  </ErrorPage>
   <slot v-else />
 </template>
 
 <style scoped>
-.error-boundary {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  padding: 24px;
-  background: var(--neutral-bg);
-}
-
-.error-actions {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-}
-
-.error-info {
-  margin-top: 16px;
+.error-detail {
+  margin-top: 24px;
   font-size: 12px;
-  color: var(--neutral-text-3);
+  opacity: 0.7;
+  color: white;
+}
+
+.error-detail summary {
+  cursor: pointer;
+}
+
+.error-detail-info {
+  margin-top: 8px;
   word-break: break-all;
 }
 </style>
