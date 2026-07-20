@@ -928,16 +928,16 @@ const UserAvatar = () => {
 }
 
 .app-sider {
-  background: rgba(255, 255, 255, 0.56) !important;
+  background: rgba(255, 255, 255, 0.56);
   backdrop-filter: blur(24px) saturate(165%);
   -webkit-backdrop-filter: blur(24px) saturate(165%);
-  border-right: none !important;
-  overflow: visible !important;
+  border-right: none;
+  overflow: visible;
   transition: width 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 :root[data-theme="dark"] .app-sider {
-  background: rgba(17, 22, 34, 0.62) !important;
+  background: rgba(17, 22, 34, 0.62);
 }
 
 .sider-inner {
@@ -1325,7 +1325,7 @@ const UserAvatar = () => {
   display: flex;
   flex-direction: column;
   position: relative;
-  overflow: hidden !important;
+  overflow: hidden;
 }
 
 .main-layout :deep(.n-layout-content) {
@@ -1334,20 +1334,21 @@ const UserAvatar = () => {
   flex-direction: column;
   min-height: 0;
   position: relative;
-  overflow: hidden !important;
+  overflow: hidden;
 }
 
 /* 隐藏 Naive UI LayoutSider 默认 border 以使用自定义边框 */
 :deep(.n-layout-sider) {
   background: var(--sidebar-bg);
-  border-right: none !important;
+  border-right: none;
 }
 
 :deep(.n-layout-sider .n-layout-sider-scroll-container) {
   border-right: none;
-  overflow: visible !important;
+  overflow: visible;
 }
 
+/* z-index !important 保留：teleported popover 脱离组件树，scoped 特异性无法覆盖 Naive UI 内联 z-index */
 :global(.collapsed-submenu-popover.n-popover) {
   z-index: 1050 !important;
   padding: 0;

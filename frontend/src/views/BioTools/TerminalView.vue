@@ -6,14 +6,12 @@ import {
   NSpin,
   NTag,
   NSpace,
-  NTooltip,
   NIcon,
   NEmpty,
   useMessage,
   useDialog,
 } from 'naive-ui'
 import {
-  ArrowBackOutline,
   TerminalOutline,
   ExpandOutline,
   ContractOutline,
@@ -24,6 +22,7 @@ import {
 import XTerminal from '@/components/terminal/XTerminal.vue'
 import ImageSelector from '@/components/terminal/ImageSelector.vue'
 import ResourceSettings from '@/components/terminal/ResourceSettings.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { useTerminalStore } from '@/stores/terminal'
 
 const router = useRouter()
@@ -216,20 +215,13 @@ watch(
       </div>
     </div>
 
-    <div v-else class="page-header">
-      <NTooltip placement="bottom" :delay="300">
-        <template #trigger>
-          <NButton circle secondary size="large" class="back-button" aria-label="返回工具箱" @click="router.push('/tools')">
-            <template #icon><NIcon :size="22"><ArrowBackOutline /></NIcon></template>
-          </NButton>
-        </template>
-        返回工具箱
-      </NTooltip>
-      <div class="page-title-group">
-        <h1 class="page-title">云端沙盒终端</h1>
-        <p class="page-subtitle">选择预装工具链的镜像，启动一个隔离、用完即毁的沙盒终端</p>
-      </div>
-    </div>
+    <PageHeader
+      v-else
+      title="云端沙盒终端"
+      subtitle="选择预装工具链的镜像，启动一个隔离、用完即毁的沙盒终端"
+      back-to="/tools"
+      back-label="返回工具箱"
+    />
 
     <div class="terminal-body">
       <div v-if="loading" class="terminal-loading">
@@ -372,47 +364,6 @@ watch(
   inset: 0;
   z-index: 1000;
   background: #1e1e1e;
-}
-
-.page-header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 16px 20px 0;
-  flex-shrink: 0;
-}
-
-.back-button {
-  height: 36px;
-  border-radius: 8px;
-}
-
-:deep(.back-button:hover) {
-  color: var(--terminal-primary);
-  border-color: #c7d2fe;
-  background: var(--terminal-primary-light);
-}
-
-.page-title-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.page-title {
-  margin: 0;
-  color: var(--terminal-text);
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: 0;
-}
-
-.page-subtitle {
-  margin: 0;
-  color: var(--terminal-subtext);
-  font-size: 13px;
-  line-height: 1.45;
 }
 
 .terminal-header {
@@ -658,11 +609,6 @@ watch(
 }
 
 @media (max-width: 900px) {
-  .page-header {
-    align-items: flex-start;
-    padding: 14px 16px 0;
-  }
-
   .terminal-selector {
     padding: 16px;
   }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { NButton, NIcon, NTooltip } from 'naive-ui'
 import {
   AddOutline, ChevronDownOutline, ChevronUpOutline, CloseOutline, PlayOutline,
@@ -153,6 +153,8 @@ function formatSize(size: number): string {
   return `${(size / 1024).toFixed(1)} KB`
 }
 
+let externallyChangedTimer: number | null = null
+
 async function openFile(path: string, pin = false, externallyChanged = false, activate = true) {
   let tab = tabs.value.find((item) => item.path === path)
   if (tab && externallyChanged) {
@@ -170,7 +172,8 @@ async function openFile(path: string, pin = false, externallyChanged = false, ac
           tab.savedContent = result.content
           tab.size = new Blob([result.content]).size
           tab.externallyChanged = true
-          window.setTimeout(() => { if (tab) tab.externallyChanged = false }, 1800)
+          if (externallyChangedTimer) clearTimeout(externallyChangedTimer)
+          externallyChangedTimer = window.setTimeout(() => { if (tab) tab.externallyChanged = false }, 1800)
         }
       }
     } finally {
@@ -362,6 +365,10 @@ function startTerminalResize(event: PointerEvent) {
   target.addEventListener('pointermove', move)
   target.addEventListener('pointerup', up)
 }
+
+onUnmounted(() => {
+  if (externallyChangedTimer) clearTimeout(externallyChangedTimer)
+})
 
 defineExpose({ openFile, markFileChanged })
 </script>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Task, TaskLog } from '@/types'
 import type { RunProgress } from '@/types/download'
+import DOMPurify from 'dompurify'
 import apiClient from '@/api/client'
 import { useDownloadProgress } from '@/composables/useDownloadProgress'
 import {
@@ -61,6 +62,10 @@ type TaskDag = {
 
 const dag = ref<TaskDag | null>(null)
 const dagLoading = ref(false)
+
+function sanitizeSvg(raw: string): string {
+  return DOMPurify.sanitize(raw, { USE_PROFILES: { svg: true, svgFilters: true } })
+}
 
 const statusType = computed(() => {
   const map: Record<string, 'default' | 'success' | 'warning' | 'error'> = {
@@ -365,7 +370,7 @@ watch(taskId, async () => {
               生成 DAG
             </NButton>
             <NAlert v-if="dag?.status === 'failed'" type="error" :title="dag.error || '生成失败'" />
-            <div v-else-if="dag?.format === 'svg'" class="dag-svg" v-html="dag.content" />
+            <div v-else-if="dag?.format === 'svg'" class="dag-svg" v-html="sanitizeSvg(dag.content || '')" />
             <pre v-else-if="dag?.format === 'dot'" class="dag-dot">{{ dag.content }}</pre>
             <div v-else-if="dag?.kind === 'mas'" class="mas-dag-list">
               <div v-for="node in dag.nodes || []" :key="node.id" class="mas-dag-node">

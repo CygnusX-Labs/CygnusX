@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import DOMPurify from 'dompurify'
 
 const props = defineProps<{
   content: string
@@ -173,7 +174,7 @@ function parseMarkdown(md: string): string {
   return html
 }
 
-const renderedHtml = computed(() => parseMarkdown(props.content))
+const renderedHtml = computed(() => DOMPurify.sanitize(parseMarkdown(props.content)))
 </script>
 
 <template>

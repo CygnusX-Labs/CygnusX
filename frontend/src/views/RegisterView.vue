@@ -372,11 +372,7 @@ const handleRegister = async () => {
 
 .register-subtitle {
   font-size: 14px;
-  color: #5a5a7a;
-}
-
-:root[data-theme='dark'] .register-subtitle {
-  color: #a0a0c0;
+  color: var(--neutral-text-2);
 }
 
 .register-form {
@@ -412,41 +408,41 @@ const handleRegister = async () => {
 .register-form :deep(.n-input) {
   --n-border-color: rgba(60, 60, 100, 0.16);
   --n-border-hover: rgba(60, 60, 100, 0.28);
-  --n-border-focus: #4d7cff;
+  --n-border-focus: var(--arco-primary);
   --n-color: rgba(255, 255, 255, 0.55);
   --n-color-focus: rgba(255, 255, 255, 0.72);
-  --n-placeholder-color: #9a9ab0;
+  --n-placeholder-color: var(--neutral-text-3);
   --n-box-shadow-focus: 0 0 0 4px rgba(77, 124, 255, 0.15);
-  --n-icon-color: #7a7a9a;
+  --n-icon-color: var(--neutral-text-3);
 }
 
 .register-form :deep(.n-input--focus) {
-  border-color: #4d7cff;
+  border-color: var(--arco-primary);
 }
 
 .register-form :deep(.n-input .n-input__input-el),
 .register-form :deep(.n-input .n-input__textarea-el) {
-  color: #1a1a2e;
+  color: var(--neutral-text-1);
 }
 
 .register-form :deep(.n-form-item .n-form-item-label) {
-  color: #3a3a5c;
+  color: var(--neutral-text-2);
 }
 
 :root[data-theme='dark'] .register-form :deep(.n-input) {
   --n-border-color: rgba(255, 255, 255, 0.18) !important;
   --n-border-hover: rgba(255, 255, 255, 0.28) !important;
-  --n-border-focus: #9b7cf7 !important;
+  --n-border-focus: var(--arco-primary) !important;
   --n-color: rgba(255, 255, 255, 0.07) !important;
   --n-color-focus: rgba(255, 255, 255, 0.1) !important;
-  --n-text-color: #f0f0f8 !important;
-  --n-placeholder-color: #7a7a9a !important;
+  --n-text-color: var(--neutral-text-1) !important;
+  --n-placeholder-color: var(--neutral-text-3) !important;
   --n-box-shadow-focus: 0 0 0 3px rgba(155, 124, 247, 0.2) !important;
-  --n-icon-color: #9a9ab8 !important;
+  --n-icon-color: var(--neutral-text-3) !important;
 }
 
 :root[data-theme='dark'] .register-form :deep(.n-form-item .n-form-item-label) {
-  color: #e0e0f0 !important;
+  color: var(--neutral-text-1) !important;
 }
 
 .register-actions {
@@ -496,51 +492,39 @@ const handleRegister = async () => {
 }
 
 .agreement-checkbox {
-  --n-color-checked: #165dff;
-  --n-color-checked-hover: #165dff;
-  --n-border-checked: #165dff;
-  --n-border-focus: #165dff;
+  --n-color-checked: var(--arco-primary);
+  --n-color-checked-hover: var(--arco-primary);
+  --n-border-checked: var(--arco-primary);
+  --n-border-focus: var(--arco-primary);
   --n-box-shadow-focus: 0 0 0 2px rgba(22, 93, 255, 0.2);
 }
 
 .agreement-text {
   font-size: 13px;
-  color: #4a4a6a;
+  color: var(--neutral-text-2);
   line-height: 1.5;
 }
 
-:root[data-theme='dark'] .agreement-text {
-  color: rgba(255, 255, 255, 0.7);
-}
-
 .agreement-link {
-  color: #165dff;
+  color: var(--arco-primary);
   text-decoration: none;
   cursor: pointer;
   transition: color 0.2s ease, text-decoration 0.2s ease;
 }
 
 .agreement-link:hover {
-  color: #3a7dff;
+  color: var(--arco-primary-hover);
   text-decoration: underline;
-}
-
-:root[data-theme='dark'] .agreement-link {
-  color: #4d9dff;
-}
-
-:root[data-theme='dark'] .agreement-link:hover {
-  color: #7ab8ff;
 }
 
 .back-to-login {
   font-size: 13px;
-  color: #6b7280;
+  color: var(--neutral-text-3);
   cursor: default;
 }
 
 .back-to-login a {
-  color: #4d7cff;
+  color: var(--arco-primary);
   text-decoration: none;
   margin-left: 4px;
   cursor: pointer;
@@ -548,20 +532,8 @@ const handleRegister = async () => {
 }
 
 .back-to-login a:hover {
-  color: #3a5fd6;
+  color: var(--arco-primary-active);
   text-decoration: underline;
-}
-
-:root[data-theme='dark'] .back-to-login {
-  color: rgba(255, 255, 255, 0.5);
-}
-
-:root[data-theme='dark'] .back-to-login a {
-  color: #a78bfa;
-}
-
-:root[data-theme='dark'] .back-to-login a:hover {
-  color: #c4b5fd;
 }
 
 .register-actions--single {

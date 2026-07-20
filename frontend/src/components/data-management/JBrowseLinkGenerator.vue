@@ -14,7 +14,7 @@
  *   - nginx /tracks/ alias 到 /data/omichub/，配好 Accept-Ranges + CORS（见 pipelines/jbrowse2/README.md）
  *   - 故该 URL 即 JBrowse 2 可流式读取的直链，外部 JBrowse 无需 JWT
  */
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import type { Component } from 'vue'
 import { NModal, NIcon, NEmpty, useMessage } from 'naive-ui'
 import {
@@ -118,6 +118,10 @@ async function copyUrl() {
     message.error('复制失败，请手动选中文本框内容复制')
   }
 }
+
+onUnmounted(() => {
+  if (copyTimer) clearTimeout(copyTimer)
+})
 </script>
 
 <template>

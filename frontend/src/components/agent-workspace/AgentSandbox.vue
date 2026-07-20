@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NButton, NIcon, NSelect, NTag, NTooltip, useMessage } from 'naive-ui'
 import { ArrowBackOutline, BulbOutline, FlashOutline, CloseOutline, DesktopOutline } from '@vicons/ionicons5'
@@ -148,6 +148,10 @@ async function handleEnterStudio() {
     creatingStudio.value = false
   }
 }
+
+onUnmounted(() => {
+  if (noticeTimer) clearTimeout(noticeTimer)
+})
 </script>
 
 <template>

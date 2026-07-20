@@ -5,7 +5,7 @@
  * 底层为无限旋转的地球 Lottie，上层复用原来的 loader-cat 黑猫动画，
  * 整体带轻微太空失重浮动，外层有紫色光晕呼应星空背景。
  */
-import { ref } from 'vue'
+import { onUnmounted, ref } from 'vue'
 import { Vue3Lottie } from 'vue3-lottie'
 
 const BASE = import.meta.env.BASE_URL
@@ -25,6 +25,10 @@ function handleLogoClick() {
   logoClicks = 0
   window.dispatchEvent(new Event('omicHub:triggerMeteorShower'))
 }
+
+onUnmounted(() => {
+  if (resetTimer) clearTimeout(resetTimer)
+})
 </script>
 
 <template>

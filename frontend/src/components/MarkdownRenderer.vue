@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
 import DOMPurify from 'dompurify'
@@ -32,6 +32,7 @@ const html = computed(() => {
 })
 
 const copied = ref<string | null>(null)
+let copyResetTimer: ReturnType<typeof setTimeout> | null = null
 
 async function copyCode(e: MouseEvent) {
   const target = e.target as HTMLElement
@@ -43,11 +44,16 @@ async function copyCode(e: MouseEvent) {
   try {
     await navigator.clipboard.writeText(text)
     copied.value = btn.dataset.id || '0'
-    setTimeout(() => (copied.value = null), 2000)
+    if (copyResetTimer) clearTimeout(copyResetTimer)
+    copyResetTimer = setTimeout(() => (copied.value = null), 2000)
   } catch {
     // clipboard 不可用时静默失败
   }
 }
+
+onUnmounted(() => {
+  if (copyResetTimer) clearTimeout(copyResetTimer)
+})
 </script>
 
 <template>

@@ -271,12 +271,12 @@ onMounted(async () => {
 }
 
 .hero-btn-secondary {
-  background: rgba(255, 255, 255, 0.2) !important;
-  color: #fff !important;
-  border: none !important;
-}
-.hero-btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.3) !important;
+  --n-color: rgba(255, 255, 255, 0.2);
+  --n-color-hover: rgba(255, 255, 255, 0.3);
+  --n-text-color: #fff;
+  --n-text-color-hover: #fff;
+  --n-border: none;
+  --n-border-hover: none;
 }
 
 /* ===== 通用 section ===== */

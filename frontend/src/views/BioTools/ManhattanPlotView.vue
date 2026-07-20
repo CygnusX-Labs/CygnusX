@@ -109,10 +109,13 @@ function onTableRowDblClick(row: ManhattanRow) {
   zoomToChromosome(row.chromosome)
 }
 
+let hoverResetTimer: ReturnType<typeof setTimeout> | null = null
+
 function scrollTableToRow(snpId: string) {
   // naive-ui data-table 没有公开滚动到行 API，这里仅做状态标记
   hoveredSnpId.value = snpId
-  setTimeout(() => {
+  if (hoverResetTimer) clearTimeout(hoverResetTimer)
+  hoverResetTimer = setTimeout(() => {
     if (hoveredSnpId.value === snpId) hoveredSnpId.value = null
   }, 1200)
 }
@@ -391,6 +394,7 @@ onMounted(() => loadSample())
 
 onUnmounted(() => {
   if (debounceTimer) clearTimeout(debounceTimer)
+  if (hoverResetTimer) clearTimeout(hoverResetTimer)
   const el = document.getElementById(PLOT_DIV_ID)
   if (el) Plotly.purge(el)
   const dist = document.getElementById(CHR_DIST_ID)

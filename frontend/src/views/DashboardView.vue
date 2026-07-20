@@ -632,7 +632,7 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
 }
 
 .view-all-btn {
-  color: var(--arco-primary) !important;
+  color: var(--arco-primary);
 }
 
 /* 最近任务 */
@@ -644,7 +644,7 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
   font-size: 12px;
   color: var(--neutral-text-3);
   font-weight: 500;
-  background: transparent !important;
+  background: transparent;
   border-bottom: 1px solid var(--neutral-border);
 }
 
@@ -655,7 +655,7 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
 }
 
 .recent-table :deep(tr:hover td) {
-  background: var(--neutral-hover) !important;
+  background: var(--neutral-hover);
 }
 
 .empty-extra {

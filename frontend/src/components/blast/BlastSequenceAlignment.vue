@@ -44,15 +44,15 @@ const lines = computed<AlignmentLine[]>(() => {
 
 function getBaseStyle(qBase: string, mChar: string): Record<string, string> {
   if (mChar === '|') {
-    return { color: '#059669', fontWeight: '700', backgroundColor: '#d1fae5' }
+    return { color: 'var(--arco-success)', fontWeight: '700', backgroundColor: 'var(--arco-success-light)' }
   }
   if (mChar === '+') {
-    return { color: '#d97706', fontWeight: '600', backgroundColor: '#fef3c7' }
+    return { color: 'var(--arco-warning)', fontWeight: '600', backgroundColor: 'var(--arco-warning-light)' }
   }
   if (qBase === '-') {
-    return { color: '#9ca3af', fontWeight: '400' }
+    return { color: 'var(--neutral-text-3)', fontWeight: '400' }
   }
-  return { color: '#dc2626', fontWeight: '600', backgroundColor: '#fee2e2' }
+  return { color: 'var(--arco-danger)', fontWeight: '600', backgroundColor: 'var(--arco-danger-light)' }
 }
 </script>
 
@@ -138,7 +138,7 @@ function getBaseStyle(qBase: string, mChar: string): Record<string, string> {
 .row-label {
   width: 70px;
   text-align: right;
-  color: #6b7280;
+  color: var(--neutral-text-3);
   font-size: 11px;
   flex-shrink: 0;
 }
@@ -147,13 +147,13 @@ function getBaseStyle(qBase: string, mChar: string): Record<string, string> {
   letter-spacing: 0.5px;
 }
 .midline {
-  color: #9ca3af;
+  color: var(--neutral-text-3);
 }
 .base {
   padding: 0 1px;
 }
 .row-end {
-  color: #6b7280;
+  color: var(--neutral-text-3);
   font-size: 11px;
   margin-left: 4px;
 }
@@ -167,25 +167,25 @@ function getBaseStyle(qBase: string, mChar: string): Record<string, string> {
   flex-wrap: wrap;
 }
 .legend-match {
-  color: #059669;
+  color: var(--arco-success);
   font-weight: 700;
-  background-color: #d1fae5;
+  background-color: var(--arco-success-light);
   padding: 0 2px;
 }
 .legend-similar {
-  color: #d97706;
+  color: var(--arco-warning);
   font-weight: 600;
-  background-color: #fef3c7;
+  background-color: var(--arco-warning-light);
   padding: 0 2px;
 }
 .legend-mismatch {
-  color: #dc2626;
+  color: var(--arco-danger);
   font-weight: 600;
-  background-color: #fee2e2;
+  background-color: var(--arco-danger-light);
   padding: 0 2px;
 }
 .legend-gap {
-  color: #9ca3af;
+  color: var(--neutral-text-3);
   padding: 0 2px;
 }
 </style>

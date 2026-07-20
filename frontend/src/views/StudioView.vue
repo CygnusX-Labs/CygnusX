@@ -617,7 +617,7 @@ function formatSessionTime(iso: string): string {
       <div class="bar-left">
         <n-tooltip trigger="hover">
           <template #trigger>
-            <n-button text class="back-btn" @click="handleBack">
+            <n-button text class="back-btn" aria-label="返回 AI 助手" @click="handleBack">
               <n-icon size="18"><ArrowBackOutline /></n-icon>
             </n-button>
           </template>

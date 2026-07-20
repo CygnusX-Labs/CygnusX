@@ -202,19 +202,19 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 .banner-btn {
-  --n-color: transparent !important;
-  --n-color-hover: rgba(255, 255, 255, 0.14) !important;
-  --n-color-pressed: rgba(255, 255, 255, 0.2) !important;
-  --n-text-color: #fff !important;
-  --n-text-color-hover: #fff !important;
-  --n-text-color-pressed: #fff !important;
-  --n-border: 1px solid rgba(255, 255, 255, 0.8) !important;
-  --n-border-hover: 1px solid #fff !important;
-  --n-border-pressed: 1px solid #fff !important;
+  --n-color: transparent;
+  --n-color-hover: rgba(255, 255, 255, 0.14);
+  --n-color-pressed: rgba(255, 255, 255, 0.2);
+  --n-text-color: #fff;
+  --n-text-color-hover: #fff;
+  --n-text-color-pressed: #fff;
+  --n-border: 1px solid rgba(255, 255, 255, 0.8);
+  --n-border-hover: 1px solid #fff;
+  --n-border-pressed: 1px solid #fff;
   font-weight: 500;
 }
 .banner-btn:hover {
-  background: rgba(255, 255, 255, 0.14) !important;
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .banner-close {

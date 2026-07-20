@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { NButton, NIcon, NTooltip, NPopover, useMessage, NTag } from 'naive-ui'
 import {
   ArrowUpOutline,
@@ -145,8 +145,11 @@ function handleSend() {
   })
 }
 
+let blurTimer: ReturnType<typeof setTimeout> | null = null
+
 function handleBlur() {
-  setTimeout(() => {
+  if (blurTimer) clearTimeout(blurTimer)
+  blurTimer = setTimeout(() => {
     isFocused.value = false
     showSlashMenu.value = false
   }, 200)
@@ -213,6 +216,10 @@ function handleClearConfirm() {
 
 onMounted(() => {
   siteConfigStore.fetchSiteConfig()
+})
+
+onUnmounted(() => {
+  if (blurTimer) clearTimeout(blurTimer)
 })
 </script>
 

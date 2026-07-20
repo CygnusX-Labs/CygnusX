@@ -23,7 +23,6 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { PieChart } from 'echarts/charts'
 import { LegendComponent, TooltipComponent } from 'echarts/components'
 import {
-  ArrowBackOutline,
   CopyOutline,
   DownloadOutline,
   SearchOutline,
@@ -48,6 +47,7 @@ import {
   type GOAnnotation,
   type KEGGAnnotation,
 } from '@/mock/referenceGenomes'
+import PageHeader from '@/components/PageHeader.vue'
 
 use([CanvasRenderer, PieChart, TooltipComponent, LegendComponent])
 
@@ -257,25 +257,22 @@ const geneColumns: DataTableColumns<Gene> = [
 
 <template>
   <div v-if="version && species" class="database-detail-page" role="main" aria-label="参考基因组详情">
-    <div class="page-toolbar">
-      <NButton text @click="router.push('/database')">
-        <template #icon><NIcon :size="18"><ArrowBackOutline /></NIcon></template>
-        返回数据库
-      </NButton>
-      <div class="breadcrumb">
-        数据库 / {{ species.commonName }} / {{ version.versionName }}
-      </div>
-    </div>
+    <PageHeader
+      :title="`${species.commonName} ${version.versionName}`"
+      :subtitle="version.description"
+      back-to="/database"
+      back-label="返回数据库"
+    >
+      <template #actions>
+        <NSelect v-model:value="versionSelect" :options="versionOptions" size="small" style="width: 260px" />
+      </template>
+    </PageHeader>
 
     <section class="detail-hero">
       <div class="species-icon" :style="{ background: species.gradient }">{{ species.icon }}</div>
       <div class="hero-info">
         <div class="hero-kicker">{{ species.scientificName }} · Taxonomy {{ species.taxonomyId }}</div>
-        <h1>{{ species.commonName }} {{ version.versionName }}</h1>
         <p>{{ version.description }}</p>
-      </div>
-      <div class="hero-version-select">
-        <NSelect v-model:value="versionSelect" :options="versionOptions" size="small" />
       </div>
     </section>
 
@@ -610,22 +607,9 @@ const geneColumns: DataTableColumns<Gene> = [
   min-height: 100%;
 }
 
-.page-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.breadcrumb {
-  color: var(--db-muted);
-  font-size: 12px;
-}
-
 .detail-hero {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 260px;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 16px;
   align-items: center;
   min-height: 150px;
@@ -654,13 +638,6 @@ const geneColumns: DataTableColumns<Gene> = [
   color: rgba(255, 255, 255, 0.74);
   font-size: 12px;
   font-weight: 700;
-}
-
-.detail-hero h1 {
-  margin: 5px 0;
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: 0;
 }
 
 .detail-hero p {
@@ -1168,8 +1145,7 @@ const geneColumns: DataTableColumns<Gene> = [
     flex-direction: column;
   }
 
-  .search-field,
-  .hero-version-select {
+  .search-field {
     width: 100%;
   }
 

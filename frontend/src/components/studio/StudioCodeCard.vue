@@ -9,7 +9,8 @@
  *  - 输出区：stdout/stderr 实时累计（ANSI 转义剥离、自动滚动、可折叠）
  *  - 产物：执行完成后的产物 chips，点击下载
  */
-import { ref, computed, watch, nextTick, inject } from 'vue'
+import { ref, computed, watch, nextTick, inject, onUnmounted } from 'vue'
+import DOMPurify from 'dompurify'
 import { NButton, NIcon, NTag, NTooltip, useMessage } from 'naive-ui'
 import { html as diffToHtml } from 'diff2html'
 import 'diff2html/bundles/css/diff2html.min.css'
@@ -90,11 +91,11 @@ const rollbackPayload = computed(() => {
 })
 const diffHtml = computed(() => {
   if (!diffText.value) return ''
-  return diffToHtml(diffText.value, {
+  return DOMPurify.sanitize(diffToHtml(diffText.value, {
     drawFileList: false,
     matching: 'lines',
     outputFormat: 'line-by-line',
-  })
+  }))
 })
 
 /** workspace_write 且内容可执行时同样允许重跑 */
@@ -262,6 +263,10 @@ function handleDownloadArtifact(path: string) {
   if (!ctx) return
   studioApi.downloadArtifact(ctx.sessionId.value, path).catch(() => {})
 }
+
+onUnmounted(() => {
+  if (copyTimer) clearTimeout(copyTimer)
+})
 </script>
 
 <template>

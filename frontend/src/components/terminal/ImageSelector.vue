@@ -67,9 +67,9 @@ function selectImage(id: string) {
   width: 100%;
   min-height: 132px;
   padding: 16px;
-  border: 2px solid #e5e7eb;
+  border: 2px solid var(--neutral-border);
   border-radius: 10px;
-  background: #fff;
+  background: var(--neutral-card);
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -77,14 +77,14 @@ function selectImage(id: string) {
 }
 
 .image-item:hover {
-  border-color: #c7d2fe;
-  background: #fafbff;
+  border-color: var(--arco-primary);
+  background: var(--neutral-hover);
   transform: translateY(-1px);
 }
 
 .image-item.active {
-  border-color: #2e5bff;
-  background: #f8faff;
+  border-color: var(--arco-primary);
+  background: var(--neutral-hover);
   box-shadow: 0 0 0 3px rgba(46, 91, 255, 0.08);
 }
 
@@ -96,15 +96,15 @@ function selectImage(id: string) {
   width: 18px;
   height: 18px;
   margin-top: 2px;
-  border: 2px solid #d1d5db;
+  border: 2px solid var(--neutral-border);
   border-radius: 50%;
-  background: #fff;
+  background: var(--neutral-card);
   flex: 0 0 auto;
 }
 
 .image-item.active .image-radio {
-  border-color: #2e5bff;
-  background: #2e5bff;
+  border-color: var(--arco-primary);
+  background: var(--arco-primary);
 }
 
 .radio-dot {
@@ -125,14 +125,14 @@ function selectImage(id: string) {
   font-size: 15px;
   font-weight: 700;
   line-height: 1.3;
-  color: #1f2937;
+  color: var(--neutral-text-1);
 }
 
 .image-desc {
   margin-top: 6px;
   font-size: 13px;
   line-height: 1.55;
-  color: #6b7280;
+  color: var(--neutral-text-3);
 }
 
 .image-tags {
@@ -142,6 +142,6 @@ function selectImage(id: string) {
 .image-resources {
   margin-top: 8px;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--neutral-text-3);
 }
 </style>

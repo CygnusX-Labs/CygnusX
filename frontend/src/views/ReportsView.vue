@@ -395,14 +395,14 @@ onMounted(() => {
   background: var(--neutral-hover);
   border-radius: 10px;
   transition: all 0.2s ease;
-  --n-border: none !important;
-  --n-border-hover: none !important;
-  --n-border-focus: none !important;
-  --n-box-shadow-focus: none !important;
+  --n-border: none;
+  --n-border-hover: none;
+  --n-border-focus: none;
+  --n-box-shadow-focus: none;
 }
 .filter-bar :deep(.n-input .n-input__border),
 .filter-bar :deep(.n-input .n-input__state-border) {
-  border: none !important;
+  border: none;
 }
 .filter-bar :deep(.n-input.n-input--focus) {
   background: var(--neutral-card);

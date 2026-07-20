@@ -19,7 +19,7 @@ import {
   NTag,
 } from 'naive-ui'
 import { FolderOpenOutline, LogoGithub } from '@vicons/ionicons5'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCookieStore } from '@/stores/cookie'
 import type { FilePickerItem } from '@/types'
@@ -186,6 +186,10 @@ async function submitTask() {
 }
 
 onMounted(fetchFlow)
+
+onUnmounted(() => {
+  if (estimateTimer) clearTimeout(estimateTimer)
+})
 </script>
 
 <template>

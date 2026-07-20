@@ -6,6 +6,7 @@
  * Markdown 渲染；同时支持下载、插入对话引用和保存为报告版本。
  */
 import { ref, watch, onBeforeUnmount } from 'vue'
+import DOMPurify from 'dompurify'
 import {
   NButton,
   NDataTable,
@@ -72,6 +73,7 @@ const showRegister = ref(false)
 const registerArtifact = ref<StudioArtifact | null>(null)
 const registerTitle = ref('')
 const registering = ref(false)
+let sparkleTimer: number | null = null
 
 function extension(path: string): string {
   return path.split('.').pop()?.toLowerCase() || ''
@@ -113,7 +115,8 @@ async function loadArtifacts() {
       if (fresh) {
         sparklePath.value = fresh.path
         message.success('✨ 新产物已就位')
-        window.setTimeout(() => { if (sparklePath.value === fresh.path) sparklePath.value = '' }, 900)
+        if (sparkleTimer) clearTimeout(sparkleTimer)
+        sparkleTimer = window.setTimeout(() => { if (sparklePath.value === fresh.path) sparklePath.value = '' }, 900)
       }
     }
     artifacts.value = nextArtifacts
@@ -142,6 +145,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  if (sparkleTimer) clearTimeout(sparkleTimer)
   clearThumbs()
   clearPreview()
 })
@@ -202,7 +206,7 @@ async function openPreview(artifact: StudioArtifact) {
       previewKind.value = 'markdown'
       const result = await studioApi.readArtifactText(props.sessionId, artifact.path, 2000)
       previewTruncated.value = result.truncated
-      previewMarkdown.value = markdown.render(result.content)
+      previewMarkdown.value = DOMPurify.sanitize(markdown.render(result.content))
       return
     }
 
@@ -241,7 +245,8 @@ async function submitRegister() {
     message.success(`已登记为《${result.title}》v${result.version}${suffix}`)
     showRegister.value = false
     sparklePath.value = artifact.path
-    window.setTimeout(() => { if (sparklePath.value === artifact.path) sparklePath.value = '' }, 900)
+    if (sparkleTimer) clearTimeout(sparkleTimer)
+    sparkleTimer = window.setTimeout(() => { if (sparklePath.value === artifact.path) sparklePath.value = '' }, 900)
     emit('registered')
   } catch {
     message.error('登记失败，请确认产物仍存在')

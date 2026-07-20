@@ -319,12 +319,12 @@ onMounted(fetchFlows)
 }
 
 .header-btn-secondary {
-  color: var(--neutral-text-2) !important;
-  border-color: var(--neutral-border) !important;
-  background: var(--neutral-card) !important;
-}
-.header-btn-secondary:hover {
-  background: var(--neutral-hover) !important;
+  --n-text-color: var(--neutral-text-2);
+  --n-text-color-hover: var(--neutral-text-2);
+  --n-border: 1px solid var(--neutral-border);
+  --n-border-hover: 1px solid var(--neutral-border);
+  --n-color: var(--neutral-card);
+  --n-color-hover: var(--neutral-hover);
 }
 
 .section-label {

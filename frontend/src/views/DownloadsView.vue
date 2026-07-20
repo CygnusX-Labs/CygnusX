@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { NSelect, useMessage } from 'naive-ui'
 import apiClient from '@/api/client'
+import PageHeader from '@/components/PageHeader.vue'
 
 type SourceTab = 'sra' | 'cloud-drive' | 'cloud-storage'
 
@@ -249,10 +250,10 @@ onMounted(fetchDownloads)
   <div class="downloads-page">
 
     <!-- ═══ 页面标题区 ═══ -->
-    <div class="mb-6">
-      <h1 class="text-lg font-semibold" style="color: var(--neutral-text-1)">数据下载与聚合</h1>
-      <p class="text-sm mt-1" style="color: var(--neutral-text-3)">从 NCBI/EBI 公共数据库、网盘或云存储拉取测序数据，下载完成后自动入库</p>
-    </div>
+    <PageHeader
+      title="数据下载与聚合"
+      subtitle="从 NCBI/EBI 公共数据库、网盘或云存储拉取测序数据，下载完成后自动入库"
+    />
 
     <!-- ═══ Pill 胶囊式 Tab 栏 ═══ -->
     <div class="flex items-center gap-2 mb-5">

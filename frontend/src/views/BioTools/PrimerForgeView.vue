@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, reactive, ref, watch } from 'vue'
+import { computed, h, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   NAlert, NButton, NCollapse, NCollapseItem, NDataTable, NDrawer, NDrawerContent,
@@ -190,6 +190,8 @@ function buildInput(): PrimerDesignInput {
   }
 }
 
+let designTimer: number | null = null
+
 function runDesign() {
   if (!parsed.value.sequence) {
     message.warning('请先输入 DNA 序列或上传 FASTA 文件')
@@ -200,7 +202,8 @@ function runDesign() {
     return
   }
   designing.value = true
-  window.setTimeout(() => {
+  if (designTimer) clearTimeout(designTimer)
+  designTimer = window.setTimeout(() => {
     const result = designPrimers(buildInput())
     designResult.value = result
     selectedRank.value = result.primerPairs[0]?.rank ?? null
@@ -323,6 +326,10 @@ function saveHistory() {
   localStorage.setItem(key, JSON.stringify([item, ...previous].slice(0, 30)))
   message.success('已保存到本地历史记录')
 }
+
+onUnmounted(() => {
+  if (designTimer) clearTimeout(designTimer)
+})
 
 const orderDrawerVisible = ref(false)
 const orderPairRanks = ref<number[]>([])

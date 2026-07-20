@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onUnmounted, ref } from 'vue'
 import { NButton, NIcon, NPopover, NTooltip } from 'naive-ui'
 import {
   CopyOutline,
@@ -34,6 +34,7 @@ const emit = defineEmits<{
 
 const copied = ref(false)
 const confirmingDelete = ref(false)
+let copyResetTimer: ReturnType<typeof setTimeout> | null = null
 
 function buildCitation(content: string): string {
   const date = new Date().toISOString().slice(0, 10)
@@ -56,7 +57,8 @@ async function doCopy(mode: CopyMode) {
   }
   copied.value = true
   emit('copy', mode)
-  setTimeout(() => {
+  if (copyResetTimer) clearTimeout(copyResetTimer)
+  copyResetTimer = setTimeout(() => {
     copied.value = false
   }, 1500)
 }
@@ -89,6 +91,10 @@ function confirmDelete() {
   confirmingDelete.value = false
   emit('delete')
 }
+
+onUnmounted(() => {
+  if (copyResetTimer) clearTimeout(copyResetTimer)
+})
 </script>
 
 <template>

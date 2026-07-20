@@ -98,7 +98,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { PersonOutline, LockClosedOutline } from '@vicons/ionicons5'
@@ -163,6 +163,8 @@ const rules = {
 const step = ref<'credentials' | 'totp'>('credentials')
 const challengeToken = ref('')
 const loginSuccess = ref(false)
+let redirectTimer: ReturnType<typeof setTimeout> | null = null
+let loginSuccessTimer: ReturnType<typeof setTimeout> | null = null
 
 const isLoginButtonDisabled = computed(() => {
   return !formData.value.username || !formData.value.password
@@ -181,7 +183,8 @@ function redirectHome() {
   } catch {
     window.location.href = '/'
   }
-  setTimeout(() => {
+  if (redirectTimer) clearTimeout(redirectTimer)
+  redirectTimer = setTimeout(() => {
     if (window.location.pathname === '/login') {
       window.location.href = '/'
     }
@@ -232,7 +235,8 @@ const handleLogin = async () => {
 
     loginSuccess.value = true
     message.success('登录成功')
-    setTimeout(() => {
+    if (loginSuccessTimer) clearTimeout(loginSuccessTimer)
+    loginSuccessTimer = setTimeout(() => {
       redirectHome()
     }, 1200)
   } catch (error: any) {
@@ -268,6 +272,11 @@ const handleVerify2FA = async () => {
     loading.value = false
   }
 }
+
+onUnmounted(() => {
+  if (redirectTimer) clearTimeout(redirectTimer)
+  if (loginSuccessTimer) clearTimeout(loginSuccessTimer)
+})
 </script>
 
 <style scoped>
@@ -431,10 +440,7 @@ const handleVerify2FA = async () => {
 }
 .login-subtitle {
   font-size: 14px;
-  color: #5a5a7a;
-}
-:root[data-theme='dark'] .login-subtitle {
-  color: #a0a0c0;
+  color: var(--neutral-text-2);
 }
 .login-form {
   margin-top: 0;
@@ -447,7 +453,7 @@ const handleVerify2FA = async () => {
 }
 .login-error-message {
   margin-bottom: 16px;
-  color: #d03050;
+  color: var(--arco-danger);
   font-size: 13px;
   text-align: center;
 }
@@ -460,9 +466,9 @@ const handleVerify2FA = async () => {
 }
 
 .login-actions :deep(.n-button:not(.n-button--primary-type)) {
-  --n-text-color: #5a6a8a !important;
-  --n-text-color-hover: #4d7cff !important;
-  --n-text-color-pressed: #3a5fd6 !important;
+  --n-text-color: var(--neutral-text-2) !important;
+  --n-text-color-hover: var(--arco-primary) !important;
+  --n-text-color-pressed: var(--arco-primary-active) !important;
   --n-border: none !important;
   --n-border-hover: none !important;
   --n-border-pressed: none !important;
@@ -483,42 +489,34 @@ const handleVerify2FA = async () => {
   transform: scale(0.98);
 }
 
-:root[data-theme='dark'] .login-actions :deep(.n-button:not(.n-button--primary-type)) {
-  --n-text-color: #b0c0e8 !important;
-  --n-text-color-hover: #9bb8ff !important;
-  --n-text-color-pressed: #7a9ef0 !important;
-}
 .totp-hint {
   margin: -8px 0 16px;
   font-size: 13px;
-  color: #5a5a7a;
+  color: var(--neutral-text-2);
   text-align: center;
-}
-:root[data-theme='dark'] .totp-hint {
-  color: #a0a0c0;
 }
 
 /* 暗色模式：提升表单标签、输入框、按钮对比度 */
 :root[data-theme='dark'] .login-form :deep(.n-form-item .n-form-item-label) {
-  color: #e0e0f0 !important;
+  color: var(--neutral-text-1) !important;
 }
 
 :root[data-theme='dark'] .login-form :deep(.n-input) {
   --n-border-color: rgba(255, 255, 255, 0.18) !important;
   --n-border-hover: rgba(255, 255, 255, 0.28) !important;
-  --n-border-focus: #7691ff !important;
+  --n-border-focus: var(--arco-primary) !important;
   --n-color: rgba(255, 255, 255, 0.07) !important;
   --n-color-focus: rgba(255, 255, 255, 0.1) !important;
-  --n-text-color: #f0f0f8 !important;
-  --n-placeholder-color: #7a7a9a !important;
+  --n-text-color: var(--neutral-text-1) !important;
+  --n-placeholder-color: var(--neutral-text-3) !important;
   --n-box-shadow-focus: 0 0 0 3px rgba(118, 145, 255, 0.24) !important;
-  --n-icon-color: #9a9ab8 !important;
+  --n-icon-color: var(--neutral-text-3) !important;
 }
 
 :root[data-theme='dark'] .login-actions :deep(.n-button:not(.n-button--primary-type)) {
-  --n-text-color: #c0c8ff !important;
-  --n-text-color-hover: #d0d8ff !important;
-  --n-text-color-pressed: #b0b8f0 !important;
+  --n-text-color: var(--neutral-text-2) !important;
+  --n-text-color-hover: var(--arco-primary-hover) !important;
+  --n-text-color-pressed: var(--arco-primary-active) !important;
   --n-border: 1px solid rgba(192, 200, 255, 0.45) !important;
   --n-border-hover: 1px solid rgba(192, 200, 255, 0.6) !important;
   --n-border-pressed: 1px solid rgba(192, 200, 255, 0.5) !important;
@@ -535,32 +533,27 @@ const handleVerify2FA = async () => {
 .login-form :deep(.n-input) {
   --n-border-color: rgba(60, 60, 100, 0.16);
   --n-border-hover: rgba(60, 60, 100, 0.28);
-  --n-border-focus: #4d7cff;
+  --n-border-focus: var(--arco-primary);
   --n-color: rgba(255, 255, 255, 0.55);
   --n-color-focus: rgba(255, 255, 255, 0.72);
-  --n-placeholder-color: #9a9ab0;
+  --n-placeholder-color: var(--neutral-text-3);
   --n-box-shadow-focus: 0 0 0 4px rgba(77, 124, 255, 0.15);
-  --n-icon-color: #7a7a9a;
+  --n-icon-color: var(--neutral-text-3);
 }
 
 .login-form :deep(.n-input--focus) {
-  border-color: #4d7cff;
+  border-color: var(--arco-primary);
 }
 
 .login-form :deep(.n-input .n-input__input-el),
 .login-form :deep(.n-input .n-input__textarea-el) {
-  color: #1a1a2e;
+  color: var(--neutral-text-1);
 }
 .login-form :deep(.n-input .n-input__placeholder) {
   color: var(--n-placeholder-color);
 }
 .login-form :deep(.n-form-item .n-form-item-label) {
-  color: #3a3a5c;
-}
-
-/* 错误提示 */
-:root[data-theme='dark'] .login-error-message {
-  color: #ff7b7b;
+  color: var(--neutral-text-2);
 }
 
 /* 表单校验提示精致化 */

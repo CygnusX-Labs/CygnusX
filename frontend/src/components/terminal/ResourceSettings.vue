@@ -112,6 +112,7 @@ function formatMemoryLabel(value: number) {
         :marks="memoryMarks"
         :disabled="disabled"
         :format-tooltip="formatMemoryLabel"
+        class="resource-slider"
       />
       <NInputNumber
         v-model:value="memoryModel"
@@ -139,6 +140,7 @@ function formatMemoryLabel(value: number) {
         :marks="cpuMarks"
         :disabled="disabled"
         :format-tooltip="formatCpuLabel"
+        class="resource-slider"
       />
       <NInputNumber
         v-model:value="cpuModel"
@@ -194,16 +196,16 @@ function formatMemoryLabel(value: number) {
   align-self: flex-end;
 }
 
-:deep(.n-slider) {
-  --n-rail-height: 6px !important;
-  --n-fill-color: #2e5bff !important;
-  --n-fill-color-hover: #2e5bff !important;
-  --n-rail-color: #e5e7eb !important;
-  --n-rail-color-hover: #e5e7eb !important;
-  --n-handle-size: 18px !important;
-  --n-handle-color: #fff !important;
-  --n-handle-box-shadow: 0 0 0 2px #2e5bff, 0 2px 6px rgba(46, 91, 255, 0.25) !important;
-  --n-handle-box-shadow-hover: 0 0 0 2px #2e5bff, 0 4px 10px rgba(46, 91, 255, 0.3) !important;
+.resource-slider {
+  --n-rail-height: 6px;
+  --n-fill-color: #2e5bff;
+  --n-fill-color-hover: #2e5bff;
+  --n-rail-color: #e5e7eb;
+  --n-rail-color-hover: #e5e7eb;
+  --n-handle-size: 18px;
+  --n-handle-color: #fff;
+  --n-handle-box-shadow: 0 0 0 2px #2e5bff, 0 2px 6px rgba(46, 91, 255, 0.25);
+  --n-handle-box-shadow-hover: 0 0 0 2px #2e5bff, 0 4px 10px rgba(46, 91, 255, 0.3);
 }
 
 :deep(.n-slider-mark) {

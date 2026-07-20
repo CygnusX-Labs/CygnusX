@@ -180,3 +180,90 @@
 - `pipelines/EBIDownload` 子模块变更未提交。
 - 知识库网页端目前缺少文档删除按钮，后续可补充。
 
+# 2026-07-20 变更记录
+
+## 今日完成
+
+### 前端设计规范文档补全（ARCHITECTURE_DESIN/fontend.md）
+
+- 在原有 §1–§12 基础上，新增 §13–§30 共 18 个章节，覆盖此前缺失的前端工程维度：
+  - §13 数据可视化规范（ECharts/Plotly 引擎选择、图表配色令牌、Processor 纯函数模式）
+  - §14 实时通信与 WebSocket（连接生命周期、心跳重连、组合式函数契约）
+  - §15 API 层与数据请求（目录命名、HTTP 错误码→UI 行为对照、数据加载模式）
+  - §16 状态管理（Store vs 本地状态边界、Setup Store 规范、组件通信）
+  - §17 文件操作（分片上传、下载进度、生信文件格式校验、文件预览）
+  - §18 AI 对话与流式界面（流式渲染、输入区交互、工具调用卡片）
+  - §19 终端与代码沙箱（等宽字体、DOM 行数限制、Pyodide、沙箱隔离）
+  - §20 代码组织与命名（目录结构、命名规则表、组件拆分原则）
+  - §21 性能预算与优化（包体积上限、虚拟滚动、网络缓存策略）
+  - §22 测试策略（Vitest + Playwright 金字塔、Mock 策略）
+  - §23 安全规范（XSS 防护、JWT 处理、输入校验、依赖审计）
+  - §24 国际化准备（当前中文规则 + 未来 i18n 迁移预留）
+  - §25 浏览器兼容与运行环境（支持矩阵、最小视口）
+  - §26 错误边界与全局异常（全局异常 UI、chunk 加载失败、日志监控）
+  - §27 路由与权限控制（懒加载、导航守卫、权限 UI）
+  - §28 通知与消息系统（消息层级、通知中心、去重规则）
+  - §29 打印与导出（print 样式、图表/表格/PDF 导出）
+  - §30 长任务与工作流监控（任务状态→UI 映射、进度反馈分级）
+
+### 前端设计规范审计与修复
+
+基于补全后的设计规范，对 `frontend/src` 全量代码进行合规审计，发现并修复 5 类问题：
+
+#### 1. XSS 修复（6 处 v-html 加 DOMPurify）
+
+- `views/TaskDetailView.vue`：SVG DAG 内容使用 `DOMPurify.sanitize(raw, { USE_PROFILES: { svg: true } })`。
+- `views/BioTools/SeqManipulatorView.vue`：`colorizeProtein` 输出经 DOMPurify 过滤，防止用户输入序列注入 HTML。
+- `components/MarkdownReader.vue`：手写 Markdown 解析器输出增加 DOMPurify 最终过滤。
+- `components/studio/StudioArtifactsPanel.vue`：Markdown 预览 `markdown.render()` 输出经 DOMPurify 过滤。
+- `components/studio/StudioCodeCard.vue`：diff2html 输出经 DOMPurify 过滤。
+- `components/ai-chat/KimiMessageItem.vue`：AI 生成内容 `md.render()` 输出经 DOMPurify 过滤。
+
+#### 2. 硬编码色值替换为语义变量（5 个文件）
+
+- `views/LoginView.vue`：~22 处 hex → `var(--neutral-text-*)`, `var(--arco-primary)`, `var(--arco-danger)` 等。
+- `views/RegisterView.vue`：同上模式，移除冗余 dark 覆盖块。
+- `views/AboutView.vue`：整页硬编码暗色 → 语义变量（保留装饰性渐变）。
+- `components/terminal/ImageSelector.vue`：~14 处 hex → 语义变量。
+- `components/blast/BlastSequenceAlignment.vue`：~14 处 hex → 语义变量（含 inline style）。
+
+#### 3. Timer 泄漏修复（16 个文件）
+
+- 为所有未清理的 `setTimeout` 补充 `onUnmounted` / `onBeforeUnmount` 清理：
+  FlowSubmitView、StudioCodeCard、RegistrationDisabledModal、JBrowseLinkGenerator、
+  LogoAnimation、AgentSandbox、MarkdownRenderer、MessageActionBar、KimiChatInput、
+  KimiMessageItem、StudioWorkspaceEditor、StudioArtifactsPanel、LoginView、
+  PrimerForgeView、ManhattanPlotView、JBrowseViewer。
+
+#### 4. !important 覆盖移除（8 个文件，~35 处）
+
+- `components/terminal/ResourceSettings.vue`：NSlider `--n-*` 变量改为 wrapper class 继承。
+- `components/AnnouncementBanner.vue`：移除 10 处 `!important`。
+- `views/ReportsView.vue`：移除 5 处，改用父类 + `:deep()` 提升优先级。
+- `views/DashboardView.vue`：移除 3 处。
+- `views/HomeView.vue`：改用 `--n-color` / `--n-text-color` 变量。
+- `views/SettingsView.vue`：移除 6 处，改用 `--n-*` 变量。
+- `views/FlowsView.vue`：移除 4 处，改用 `--n-*` 变量。
+- `layouts/DefaultLayout.vue`：移除 7 处（保留 1 处 teleported popover z-index 并注释说明）。
+
+#### 5. PageHeader 复用（6 个页面）
+
+- `views/BioTools/TerminalView.vue`：自定义 `.page-header` → `<PageHeader>`。
+- `views/BioTools/JBrowseViewer.vue`：自定义 `.toolbar` → `<PageHeader>`。
+- `views/BioTools/YamlGenomeBrowser.vue`：同上。
+- `views/ReferenceGenomeDetailView.vue`：自定义 `.page-toolbar` + `.detail-hero` → `<PageHeader>`。
+- `views/DownloadsView.vue`：Tailwind h1+p → `<PageHeader>`。
+- `views/SharedStudioView.vue`：自定义 `<header>` → `<PageHeader>`。
+
+## 已验证
+
+- `cd frontend && npm run type-check`（vue-tsc --noEmit）通过。
+- `cd frontend && npm run build`（vue-tsc -b && vite build）通过，exit code 0。
+
+## 当前边界
+
+- 仍有部分文件存在硬编码色值（PrimerForgeView、TaskDetailView、StudioView、DataTypesWidget、ReportCardMinimal 等），属 MEDIUM 优先级，后续迭代处理。
+- `!important` 在 LoginView、RegisterView、KnowledgeView 等认证/特殊页面仍有残留，因涉及 Naive UI 深层主题覆盖，需配合 themeOverrides 整体迁移。
+- StudioView 作为全屏工具保留专用 topbar，未强制替换为 PageHeader。
+- 前端测试基础设施（Vitest、Playwright）尚未搭建，§22 测试策略为规划性内容。
+

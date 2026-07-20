@@ -367,7 +367,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: #050810;
+  background: var(--neutral-bg);
 }
 
 /* 深空渐变背景 */
@@ -508,7 +508,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 .orb-1 {
   width: 340px;
   height: 340px;
-  background: #165DFF;
+  background: var(--arco-primary);
   top: 8%;
   left: 3%;
   animation: drift 14s ease-in-out infinite;
@@ -572,7 +572,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 }
 .about-subtitle {
   font-size: 18px;
-  color: #94a3b8;
+  color: var(--neutral-text-3);
   margin: 0 0 24px;
   font-weight: 500;
 }
@@ -614,7 +614,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 .about-quote {
   font-size: 14px;
   line-height: 1.9;
-  color: #e2e8f0;
+  color: var(--neutral-text-2);
   text-align: justify;
   margin: 0;
   text-indent: 2em;
@@ -646,17 +646,17 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   transform: translateY(-2px);
 }
 .feature-icon {
-  color: #6B8DD6;
+  color: var(--arco-primary);
   flex-shrink: 0;
 }
 .feature-title {
   font-size: 14px;
   font-weight: 600;
-  color: #f1f5f9;
+  color: var(--neutral-text-1);
 }
 .feature-desc {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--neutral-text-3);
   margin-top: 2px;
 }
 
@@ -671,13 +671,13 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 /* 底部 */
 .about-footer {
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--neutral-text-3);
   border-top: 1px solid rgba(148, 163, 184, 0.12);
   padding-top: 20px;
 }
 .about-brand {
   font-weight: 700;
-  color: #6B8DD6;
+  color: var(--arco-primary);
 }
 .about-divider {
   margin: 0 8px;
@@ -685,10 +685,10 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 .about-credit {
   margin-top: 8px;
   font-size: 12px;
-  color: #64748b;
+  color: var(--neutral-text-3);
 }
 .about-credit-link {
-  color: #6B8DD6;
+  color: var(--arco-primary);
   text-decoration: none;
   transition: color 0.2s ease;
 }

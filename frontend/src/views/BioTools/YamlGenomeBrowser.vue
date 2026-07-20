@@ -18,10 +18,11 @@ import {
   NButton, NIcon, NSelect, NInput, NSpin, NEmpty, useMessage,
 } from 'naive-ui'
 import {
-  ArrowBackOutline, LocationOutline, RefreshOutline, AlertCircleOutline,
+  LocationOutline, RefreshOutline, AlertCircleOutline,
 } from '@vicons/ionicons5'
 import { load as yamlLoad } from 'js-yaml'
 import { absolutizeUris } from '@/utils/jbrowse'
+import PageHeader from '@/components/PageHeader.vue'
 
 const router = useRouter()
 const message = useMessage()
@@ -355,17 +356,13 @@ function reloadConfig() {
 <template>
   <div class="yaml-browser-page" role="main" aria-label="YAML 驱动基因组浏览器">
     <!-- 工具栏 -->
-    <div class="toolbar">
-      <div class="toolbar-left">
-        <NButton text class="back-btn" @click="router.push('/tools')">
-          <NIcon :size="18"><ArrowBackOutline /></NIcon>
-        </NButton>
-        <div class="title-block">
-          <span class="title">🧬 YAML 驱动基因组浏览器</span>
-          <span class="subtitle">前端解析 genomes.yaml · 适配器构建 JBrowse 2 配置</span>
-        </div>
-      </div>
-      <div class="toolbar-right">
+    <PageHeader
+      title="🧬 YAML 驱动基因组浏览器"
+      subtitle="前端解析 genomes.yaml · 适配器构建 JBrowse 2 配置"
+      back-to="/tools"
+      back-label="返回工具箱"
+    >
+      <template #actions>
         <span class="ctrl-label">参考基因组</span>
         <NSelect
           v-model:value="selectedGenome"
@@ -393,8 +390,8 @@ function reloadConfig() {
           <template #icon><NIcon><RefreshOutline /></NIcon></template>
           重载配置
         </NButton>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- 渲染区 -->
     <div class="browser-view">
@@ -444,28 +441,6 @@ function reloadConfig() {
 }
 
 /* 工具栏 */
-.toolbar {
-  flex-shrink: 0;
-  min-height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 16px;
-  background: var(--neutral-card, #fff);
-  border-bottom: 1px solid var(--neutral-border, #e5e6eb);
-  flex-wrap: wrap;
-}
-.toolbar-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.back-btn {
-  flex-shrink: 0; width: 32px; height: 32px;
-  display: flex; align-items: center; justify-content: center; border-radius: 6px;
-}
-.back-btn:hover { background: var(--neutral-hover); }
-.title-block { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
-.title { font-size: 15px; font-weight: 600; color: var(--neutral-text-1, #1d2129); white-space: nowrap; }
-.subtitle { font-size: 12px; color: var(--neutral-text-3, #86909c); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.toolbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ctrl-label { font-size: 13px; color: var(--neutral-text-2, #4e5969); white-space: nowrap; }
 .loc-prefix { font-size: 13px; line-height: 1; }
 
@@ -495,8 +470,8 @@ function reloadConfig() {
 .empty-hint { font-size: 12px; color: var(--neutral-text-3, #86909c); max-width: 420px; word-break: break-all; }
 
 @media (max-width: 768px) {
-  .toolbar { flex-direction: column; align-items: stretch; padding: 8px 12px; }
-  .toolbar-right { width: 100%; }
-  .subtitle { display: none; }
+  .ctrl-label {
+    display: none;
+  }
 }
 </style>

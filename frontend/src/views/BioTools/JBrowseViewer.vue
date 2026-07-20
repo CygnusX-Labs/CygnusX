@@ -5,12 +5,13 @@ import { NButton, NIcon, NSelect, NInput, NTag, NSpace, NSpin, NEmpty,
   NModal, NUpload, NUploadDragger, NCheckbox, NProgress,
   NDivider, NForm, NFormItem, useMessage } from 'naive-ui'
 import {
-  ArrowBackOutline, LocationOutline, CloudUploadOutline,
+  LocationOutline, CloudUploadOutline,
   FolderOpenOutline, DesktopOutline,
 } from '@vicons/ionicons5'
 import { jbrowseApi } from '@/api/jbrowse'
 import { absolutizeUris } from '@/utils/jbrowse'
 import JbrowseFileDrawer from '@/components/data-management/JbrowseFileDrawer.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import type { AssemblyDTO, ScannedFileDTO, SelectedTrack } from '@/types/jbrowse'
 
 const route = useRoute()
@@ -33,6 +34,8 @@ let initTimer: ReturnType<typeof setTimeout> | null = null
 // iframe 强制刷新 key：每次生成新配置时自增，确保 iframe 元素重建，
 // 避免 JBrowse 2 复用 localStorage 旧 session 导致只显示 Logo
 const iframeKey = ref(0)
+let iframeLoadTimer: ReturnType<typeof setTimeout> | null = null
+let uploadCloseTimer: ReturnType<typeof setTimeout> | null = null
 
 // 上传
 const showUploadModal = ref(false)
@@ -90,6 +93,8 @@ onMounted(async () => {
 onUnmounted(() => {
   revokeBlobUrl()
   if (initTimer) clearTimeout(initTimer)
+  if (iframeLoadTimer) clearTimeout(iframeLoadTimer)
+  if (uploadCloseTimer) clearTimeout(uploadCloseTimer)
 })
 
 function revokeBlobUrl() {
@@ -195,7 +200,8 @@ async function loadBrowser() {
 /** iframe HTML 加载完成（JBrowse app 开始引导）→ 隐藏 loading */
 function onIframeLoad() {
   // 留一帧让 JBindView 完成首屏渲染，避免 loading 闪烁与 Logo 残影叠加
-  setTimeout(() => {
+  if (iframeLoadTimer) clearTimeout(iframeLoadTimer)
+  iframeLoadTimer = setTimeout(() => {
     loading.value = false
     if (initTimer) {
       clearTimeout(initTimer)
@@ -275,7 +281,8 @@ async function handleUpload() {
     }
   }
 
-  setTimeout(() => {
+  if (uploadCloseTimer) clearTimeout(uploadCloseTimer)
+  uploadCloseTimer = setTimeout(() => {
     showUploadModal.value = false
     resetUpload()
   }, 1500)
@@ -309,17 +316,13 @@ function onDrawerLoad() {
 <template>
   <div class="jbrowse-page" role="main" aria-label="Web 基因组浏览器">
     <!-- 统一工具栏 -->
-    <div class="toolbar">
-      <div class="toolbar-left">
-        <NButton text class="back-btn" @click="router.push('/tools')">
-          <NIcon :size="18"><ArrowBackOutline /></NIcon>
-        </NButton>
-        <div class="title-block">
-          <span class="title">🧬 Web 基因组浏览器</span>
-          <span class="subtitle">基于 JBrowse 2 · 支持 BAM / BigWig / VCF / GFF3 流式浏览</span>
-        </div>
-      </div>
-      <div class="toolbar-right">
+    <PageHeader
+      title="🧬 Web 基因组浏览器"
+      subtitle="基于 JBrowse 2 · 支持 BAM / BigWig / VCF / GFF3 流式浏览"
+      back-to="/tools"
+      back-label="返回工具箱"
+    >
+      <template #actions>
         <span class="ctrl-label">参考基因组</span>
         <NSelect
           v-model:value="selectedAssembly"
@@ -351,8 +354,8 @@ function onDrawerLoad() {
           <template #icon><NIcon><FolderOpenOutline /></NIcon></template>
           我的文件
         </NButton>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- 已选轨道 -->
     <div v-if="selectedTracks.length > 0" class="track-bar">
@@ -491,61 +494,6 @@ function onDrawerLoad() {
 }
 
 /* ===== 统一工具栏（48px，白底 + 底边框） ===== */
-.toolbar {
-  flex-shrink: 0;
-  min-height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 16px;
-  background: var(--neutral-card, #fff);
-  border-bottom: 1px solid var(--neutral-border, #e5e6eb);
-  flex-wrap: wrap;
-}
-.toolbar-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.back-btn {
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-}
-.back-btn:hover {
-  background: var(--neutral-hover);
-}
-.title-block {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  min-width: 0;
-}
-.title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
-  white-space: nowrap;
-}
-.subtitle {
-  font-size: 12px;
-  color: var(--neutral-text-3, #86909c);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
 .ctrl-label {
   font-size: 13px;
   color: var(--neutral-text-2, #4e5969);
@@ -669,15 +617,7 @@ function onDrawerLoad() {
 }
 
 @media (max-width: 768px) {
-  .toolbar {
-    flex-direction: column;
-    align-items: stretch;
-    padding: 8px 12px;
-  }
-  .toolbar-right {
-    width: 100%;
-  }
-  .subtitle {
+  .ctrl-label {
     display: none;
   }
 }

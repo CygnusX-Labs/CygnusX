@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted, nextTick, inject } from 'vue'
+import DOMPurify from 'dompurify'
 import { NButton, NIcon, NTag, NDataTable } from 'naive-ui'
 import {
   DocumentOutline,
@@ -257,7 +258,7 @@ const renderedContent = ref('')
 let renderRafId: number | null = null
 
 function renderMarkdown(source: string) {
-  renderedContent.value = source ? md.render(source) : ''
+  renderedContent.value = source ? DOMPurify.sanitize(md.render(source)) : ''
 }
 
 watch(
@@ -281,6 +282,7 @@ onUnmounted(() => {
     cancelAnimationFrame(renderRafId)
     renderRafId = null
   }
+  if (copyBtnTimer) clearTimeout(copyBtnTimer)
 })
 
 const { execute } = usePyodide()
@@ -353,12 +355,15 @@ function stringPayloadValue(tool: ToolCall, key: string): string | undefined {
   return value === undefined || value === null ? undefined : String(value)
 }
 
+let copyBtnTimer: ReturnType<typeof setTimeout> | null = null
+
 function handleBodyClick(e: MouseEvent) {
   const t = (e.target as HTMLElement).closest('.copy-btn') as HTMLElement | null
   if (t) {
     navigator.clipboard.writeText(decodeURIComponent(t.dataset.code || ''))
     t.textContent = '已复制!'
-    setTimeout(() => {
+    if (copyBtnTimer) clearTimeout(copyBtnTimer)
+    copyBtnTimer = setTimeout(() => {
       t.textContent = '复制'
     }, 1500)
     return

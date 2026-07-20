@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { NModal, NButton, NIcon, useMessage } from 'naive-ui'
 import { Vue3Lottie } from 'vue3-lottie'
 import { MailOutline, CopyOutline, CheckmarkOutline } from '@vicons/ionicons5'
@@ -104,6 +104,10 @@ function handleConfirm() {
   emit('confirm')
   close()
 }
+
+onUnmounted(() => {
+  if (copyTimer) clearTimeout(copyTimer)
+})
 </script>
 
 <template>

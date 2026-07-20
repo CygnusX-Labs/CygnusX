@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import DOMPurify from 'dompurify'
 import {
   NButton, NIcon, NInput, NStatistic, NTag, useMessage,
 } from 'naive-ui'
@@ -105,10 +106,11 @@ function requireSeq(): boolean {
 }
 
 function colorizeProtein(protein: string): string {
-  return protein
+  const html = protein
     .split('')
     .map((aa) => `<span style="color:${AA_COLORS[aa] || '#fff'}">${aa}</span>`)
     .join('')
+  return DOMPurify.sanitize(html)
 }
 
 async function copyResult() {

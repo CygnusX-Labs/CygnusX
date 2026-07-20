@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { NButton, NResult, NSpin, NTag } from 'naive-ui'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 import { studioApi, type SharedStudioSession } from '@/api/studio'
+import PageHeader from '@/components/PageHeader.vue'
 
 const route = useRoute()
 const token = computed(() => String(route.params.token || ''))
@@ -47,18 +48,17 @@ onMounted(async () => {
     />
 
     <template v-else>
-      <header class="page-header">
-        <div>
-          <div class="brand">OmicStudio · 只读分享</div>
-          <h1>{{ snapshot.title }}</h1>
-          <div class="meta">
-            <n-tag size="small" :bordered="false">{{ snapshot.agent_id || '未标注 Agent' }}</n-tag>
-            <span>创建于 {{ formatTime(snapshot.created_at) }}</span>
-            <span>链接有效至 {{ formatTime(snapshot.expires_at) }}</span>
-          </div>
-        </div>
-        <n-button class="no-print" @click="printPage">打印 / 保存为 PDF</n-button>
-      </header>
+      <PageHeader
+        :title="snapshot.title"
+        :subtitle="`OmicStudio · 只读分享 · 创建于 ${formatTime(snapshot.created_at)} · 链接有效至 ${formatTime(snapshot.expires_at)}`"
+      >
+        <template #leading>
+          <n-tag size="small" :bordered="false">{{ snapshot.agent_id || '未标注 Agent' }}</n-tag>
+        </template>
+        <template #actions>
+          <n-button class="no-print" @click="printPage">打印 / 保存为 PDF</n-button>
+        </template>
+      </PageHeader>
 
       <section class="section">
         <h2>对话记录</h2>
@@ -123,30 +123,6 @@ onMounted(async () => {
 footer {
   max-width: 980px;
   margin-inline: auto;
-}
-.page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 28px;
-}
-.brand {
-  color: var(--primary-color, #3b82f6);
-  font-weight: 700;
-  letter-spacing: .04em;
-}
-h1 {
-  margin: 8px 0 10px;
-  font-size: clamp(26px, 4vw, 42px);
-}
-.meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 16px;
-  color: var(--neutral-text-3, #667085);
-  font-size: 13px;
 }
 .section {
   margin-top: 26px;
