@@ -2,47 +2,43 @@
 
 编排流程（submit）：
 1. species_id 从 YAML 权威解析 kegg_code/org_db/id_type（不信任前端回传值）；
-2. 生成 task_id（UUID）+ 结果目录 /data/omichub/users/{user_id}/enrichment/{task_id}/；
+2. 生成 task_id（UUID）+ 结果目录 /data/omichub/users/{user_id}/enrichments/{project}/{task_id}/；
 3. 基因列表落盘 gene_list.txt（每行一个，去空行去重）；
-4. 调 EnrichmentDockerRunner 跑 R 容器，产出 kegg_result.csv；
-5. 解析 CSV → EnrichmentRowDTO[]；构造 Plotly JSON（Top 20 dot plot）；
-6. 容器非 0 退出 / 超时 → 抛 TaskExecutionError（带 stderr 摘要）。
+4. 创建通用 Task 记录并投递 Celery Worker；
+5. Worker 运行 R 容器后将 CSV 解析为标准结果行并回写任务；
+6. Web 查询任务状态，完成时返回结果；失败时返回错误摘要。
 
-v1 同步执行（前端一次拿全结果，不轮询）；task_id 仅作关联 ID 与结果目录名，不落库 Task。
-后续可升级为 Celery 任务 + DB Task 聚合根（仿 download_service）。
+前端轮询任务完成后，按 GO / KEGG 来源分别生成 Plotly 气泡图和统计表。
 """
 
 from __future__ import annotations
 
 import asyncio
 import csv
-import math
+import re
+import unicodedata
 import uuid
 from pathlib import Path
-from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.core.config import get_settings
 from omichub.core.exceptions import NotFoundError, TaskExecutionError, ValidationError
+from omichub.domain.task.value_objects import TaskStatus
+from omichub.infrastructure.database.models.task import TaskModel
 from omichub.tools.enrichments.config import (
     EnrichmentConfigManager,
     SpeciesConfig,
     config_manager,
 )
-from omichub.tools.enrichments.runner import (
-    EnrichmentDockerRunner,
-    EnrichmentRunParams,
-    enrichment_runner,
-)
 from omichub.tools.enrichments.schema import (
+    EnrichmentExampleDTO,
     EnrichmentResultDTO,
     EnrichmentRowDTO,
+    EnrichmentTaskDTO,
     SpeciesOptionDTO,
 )
-
-# Plotly Top N 通路展示数
-_TOP_N = 20
-# stderr 摘要最大长度（避免超长错误回传前端）
-_STDERR_TAIL = 800
 
 
 class EnrichmentService:
@@ -51,10 +47,8 @@ class EnrichmentService:
     def __init__(
         self,
         manager: EnrichmentConfigManager | None = None,
-        runner: EnrichmentDockerRunner | None = None,
     ) -> None:
         self._manager = manager or config_manager
-        self._runner = runner or enrichment_runner
         self._settings = get_settings()
 
     # ------------------------------------------------------------------
@@ -70,6 +64,9 @@ class EnrichmentService:
                 kegg_code=s.kegg_code,
                 org_db=s.org_db,
                 id_type=s.id_type,
+                analysis_types=s.analysis_types,
+                default_p_value_cutoff=s.p_value_cutoff,
+                default_q_value_cutoff=s.q_value_cutoff,
             )
             for s in self._manager.list_enabled_species()
         ]
@@ -80,50 +77,228 @@ class EnrichmentService:
 
     async def submit(
         self,
+        db: AsyncSession,
         user_id: str,
         species_id: str,
         gene_text: str | None,
-    ) -> EnrichmentResultDTO:
-        """提交 KEGG 富集分析，同步返回结果。"""
+        gene_file_bytes: bytes | None = None,
+        gene_filename: str | None = None,
+        project_name: str = "Enrichment Project",
+        p_value_cutoff: float = 0.05,
+        q_value_cutoff: float = 0.1,
+    ) -> EnrichmentTaskDTO:
+        """创建通用任务记录并投递 Celery；Web 不直接执行 R Docker。"""
         species = self._require_species(species_id)
-        genes = self._parse_genes(gene_text)
+        self._validate_cutoff("p-value", p_value_cutoff)
+        self._validate_cutoff("q-value", q_value_cutoff)
+        genes = await asyncio.to_thread(
+            self._parse_uploaded_genes,
+            gene_text,
+            gene_file_bytes,
+            gene_filename,
+        )
         if not genes:
             raise ValidationError("基因 ID 列表为空")
+        normalized_project_name = self._normalize_project_name(project_name)
+        project_slug = self._project_slug(normalized_project_name)
 
-        task_id = uuid.uuid4().hex
-        work_dir = self._work_dir(user_id, task_id)
+        task_uuid = uuid.uuid4()
+        task_id = str(task_uuid)
+        work_dir = self._work_dir(user_id, project_slug, task_id)
         await asyncio.to_thread(work_dir.mkdir, parents=True, exist_ok=True)
 
         input_path = work_dir / "gene_list.txt"
-        output_path = work_dir / "kegg_result.csv"
         await asyncio.to_thread(self._write_gene_list, input_path, genes)
 
-        params = EnrichmentRunParams(
-            input_path=str(input_path),
-            output_path=str(output_path),
-            kegg_code=species.kegg_code,
-            org_db=species.org_db,
-            id_type=species.id_type,
+        task = TaskModel(
+            id=task_uuid,
+            flow_id="kegg-enrichment",
+            user_id=uuid.UUID(user_id),
+            name=normalized_project_name,
+            status=TaskStatus.QUEUED.value,
+            parameters={
+                "species_id": species.id,
+                "project_name": normalized_project_name,
+                "project_slug": project_slug,
+                "gene_count": len(genes),
+                "p_value_cutoff": p_value_cutoff,
+                "q_value_cutoff": q_value_cutoff,
+            },
+            work_dir=str(work_dir),
+            progress=0,
+            sample_count=len(genes),
         )
-        container_name = f"omichub-enrich-{task_id[:8]}"
-        run_result = await self._runner.run(params, container_name)
+        db.add(task)
+        await db.commit()
 
-        if run_result.returncode != 0:
-            tail = (
-                run_result.stderr.strip()[-_STDERR_TAIL:]
-                or run_result.stdout.strip()[-_STDERR_TAIL:]
-            )
-            raise TaskExecutionError(
-                f"富集分析失败 (exit={run_result.returncode}): {tail or '容器未给出错误信息'}"
-            )
+        try:
+            from omichub.tools.enrichments.tasks import run_enrichment_task
 
-        rows = await asyncio.to_thread(self._read_result_csv, output_path)
-        plotly_json = self._build_plotly_json(rows)
-        return EnrichmentResultDTO(
+            run_enrichment_task.apply_async(args=[task_id], task_id=task_id)
+        except Exception as error:
+            task.status = TaskStatus.FAILED.value
+            task.error_message = f"富集任务投递失败: {error}"[:2000]
+            await db.commit()
+            raise TaskExecutionError(task.error_message) from error
+
+        return EnrichmentTaskDTO(
             task_id=task_id,
-            plotly_json=plotly_json,
-            table_data=rows,
+            status="queued",
+            progress=0,
+            message="富集任务已投递到 Celery Worker",
+            project_name=normalized_project_name,
+            species_id=species.id,
+            gene_count=len(genes),
+            created_at=task.created_at,
         )
+
+    async def get_example(self) -> EnrichmentExampleDTO:
+        """读取 COP1/HY5 1576 基因及其真实 R 富集结果。"""
+        example_dir = Path(self._settings.enrichment_config_yaml).parent / "examples"
+        gene_path = example_dir / "cop1_hy5_dependent_1576_gene_list.csv"
+        result_path = example_dir / "cop1_hy5_dependent_1576_enrichment_result.csv"
+        if not gene_path.exists() or not result_path.exists():
+            raise NotFoundError("富集示例数据不存在")
+
+        gene_bytes = await asyncio.to_thread(gene_path.read_bytes)
+        genes = await asyncio.to_thread(
+            self._parse_uploaded_genes,
+            None,
+            gene_bytes,
+            gene_path.name,
+        )
+        rows = await asyncio.to_thread(self._read_result_csv, result_path)
+        return EnrichmentExampleDTO(
+            id="cop1-hy5-dependent-1576",
+            title="COP1 and HY5 dependent（1576 genes）",
+            species_id="tomato_itag4_1",
+            gene_count=len(genes),
+            gene_text="\n".join(genes),
+            p_value_cutoff=0.05,
+            q_value_cutoff=0.05,
+            result=EnrichmentResultDTO(
+                task_id="sample-cop1-hy5-dependent-1576",
+                table_data=rows,
+            ),
+        )
+
+    async def get_task(
+        self,
+        db: AsyncSession,
+        task_id: str,
+        user_id: str,
+    ) -> EnrichmentTaskDTO:
+        """查询富集任务；完成时读取 Worker 写入的标准结果 DTO。"""
+        try:
+            task_uuid = uuid.UUID(task_id)
+            user_uuid = uuid.UUID(user_id)
+        except ValueError as error:
+            raise NotFoundError("找不到富集任务") from error
+
+        result = await db.execute(
+            select(TaskModel).where(
+                TaskModel.id == task_uuid,
+                TaskModel.user_id == user_uuid,
+                TaskModel.flow_id == "kegg-enrichment",
+            )
+        )
+        task = result.scalar_one_or_none()
+        if task is None:
+            raise NotFoundError("找不到富集任务")
+
+        if task.status == TaskStatus.SUCCESS.value:
+            payload = (task.parameters or {}).get("result")
+            if isinstance(payload, dict):
+                return EnrichmentTaskDTO(
+                    task_id=task_id,
+                    status="completed",
+                    progress=100,
+                    message="富集分析完成",
+                    result=EnrichmentResultDTO.model_validate(payload),
+                    **self._task_metadata(task),
+                )
+            return EnrichmentTaskDTO(
+                task_id=task_id,
+                status="failed",
+                progress=100,
+                error_message="任务已完成但结果文件缺失",
+                **self._task_metadata(task),
+            )
+        if task.status == TaskStatus.FAILED.value:
+            return EnrichmentTaskDTO(
+                task_id=task_id,
+                status="failed",
+                progress=int(task.progress or 0),
+                error_message=task.error_message or "富集分析失败",
+                **self._task_metadata(task),
+            )
+        return EnrichmentTaskDTO(
+            task_id=task_id,
+            status="running" if task.status == TaskStatus.RUNNING.value else "queued",
+            progress=int(task.progress or 0),
+            message="R 容器正在执行富集分析" if task.status == TaskStatus.RUNNING.value else "等待 Celery Worker 执行",
+            **self._task_metadata(task),
+        )
+
+    async def list_tasks(
+        self,
+        db: AsyncSession,
+        user_id: str,
+        limit: int = 50,
+    ) -> list[EnrichmentTaskDTO]:
+        """列出当前用户最近的富集任务，不返回大体积结果表。"""
+        try:
+            user_uuid = uuid.UUID(user_id)
+        except ValueError as error:
+            raise NotFoundError("找不到用户富集任务") from error
+        result = await db.execute(
+            select(TaskModel)
+            .where(
+                TaskModel.user_id == user_uuid,
+                TaskModel.flow_id == "kegg-enrichment",
+            )
+            .order_by(TaskModel.created_at.desc())
+            .limit(limit)
+        )
+        return [
+            EnrichmentTaskDTO(
+                task_id=str(task.id),
+                status=self._task_status(task),
+                progress=int(task.progress or 0),
+                message=self._task_message(task),
+                error_message=task.error_message or None,
+                **self._task_metadata(task),
+            )
+            for task in result.scalars().all()
+        ]
+
+    async def get_result_file(
+        self,
+        db: AsyncSession,
+        task_id: str,
+        user_id: str,
+    ) -> tuple[Path, str]:
+        """返回当前用户已完成任务的原始 clusterProfiler CSV。"""
+        try:
+            task_uuid = uuid.UUID(task_id)
+            user_uuid = uuid.UUID(user_id)
+        except ValueError as error:
+            raise NotFoundError("找不到富集结果") from error
+        result = await db.execute(
+            select(TaskModel).where(
+                TaskModel.id == task_uuid,
+                TaskModel.user_id == user_uuid,
+                TaskModel.flow_id == "kegg-enrichment",
+            )
+        )
+        task = result.scalar_one_or_none()
+        if task is None or task.status != TaskStatus.SUCCESS.value:
+            raise NotFoundError("富集结果尚不存在")
+        path = Path(task.result_path)
+        if not await asyncio.to_thread(path.is_file):
+            raise NotFoundError("富集原始结果文件不存在")
+        project_slug = str((task.parameters or {}).get("project_slug") or "enrichment-project")
+        return path, f"{project_slug}_{task_id[:8]}_enrichment_result.csv"
 
     # ------------------------------------------------------------------
     # 内部工具
@@ -136,6 +311,57 @@ class EnrichmentService:
         if not species.enabled:
             raise ValidationError(f"物种已禁用: {species_id}")
         return species
+
+    @staticmethod
+    def _validate_cutoff(label: str, value: float) -> None:
+        if not 0 < value <= 1:
+            raise ValidationError(f"{label} 阈值必须大于 0 且不超过 1")
+
+    @staticmethod
+    def _normalize_project_name(project_name: str) -> str:
+        value = " ".join(unicodedata.normalize("NFKC", project_name or "").split())
+        if not value:
+            raise ValidationError("项目名称不能为空")
+        if len(value) > 100:
+            raise ValidationError("项目名称不能超过 100 个字符")
+        return value
+
+    @staticmethod
+    def _project_slug(project_name: str) -> str:
+        slug = re.sub(r"[^\w\u4e00-\u9fff.-]+", "_", project_name, flags=re.UNICODE)
+        slug = slug.strip("._")[:80]
+        return slug or "enrichment-project"
+
+    @staticmethod
+    def _task_status(task: TaskModel) -> str:
+        if task.status == TaskStatus.SUCCESS.value:
+            return "completed"
+        if task.status == TaskStatus.FAILED.value:
+            return "failed"
+        if task.status == TaskStatus.RUNNING.value:
+            return "running"
+        return "queued"
+
+    @classmethod
+    def _task_message(cls, task: TaskModel) -> str:
+        status = cls._task_status(task)
+        return {
+            "completed": "富集分析完成",
+            "failed": "富集分析失败",
+            "running": "R 容器正在执行富集分析",
+            "queued": "等待 Celery Worker 执行",
+        }[status]
+
+    @staticmethod
+    def _task_metadata(task: TaskModel) -> dict[str, object]:
+        parameters = task.parameters or {}
+        return {
+            "project_name": str(parameters.get("project_name") or task.name or "Enrichment Project"),
+            "species_id": str(parameters.get("species_id") or ""),
+            "gene_count": int(parameters.get("gene_count") or task.sample_count or 0),
+            "created_at": task.created_at,
+            "finished_at": task.finished_at,
+        }
 
     @staticmethod
     def _parse_genes(gene_text: str | None) -> list[str]:
@@ -151,6 +377,34 @@ class EnrichmentService:
                 genes.append(g)
         return genes
 
+    @classmethod
+    def _parse_uploaded_genes(
+        cls,
+        gene_text: str | None,
+        gene_file_bytes: bytes | None,
+        gene_filename: str | None,
+    ) -> list[str]:
+        """从文本或单列 CSV/TSV 上传文件读取 Gene ID。"""
+        if gene_file_bytes is None:
+            return cls._parse_genes(gene_text)
+
+        suffix = Path(gene_filename or "").suffix.lower()
+        if suffix not in {".csv", ".tsv"}:
+            raise ValidationError("仅支持仅含一列 Gene ID 的 .csv 或 .tsv 文件")
+        text = gene_file_bytes.decode("utf-8-sig", errors="replace")
+        delimiter = "\t" if suffix == ".tsv" else ","
+        values = [
+            line.split(delimiter, 1)[0].strip()
+            for line in text.splitlines()
+        ]
+        return cls._drop_header_and_dedupe(values)
+
+    @classmethod
+    def _drop_header_and_dedupe(cls, values: list[str]) -> list[str]:
+        if values and values[0].strip().lower() in {"geneid", "gene_id", "gene", "id"}:
+            values = values[1:]
+        return cls._parse_genes("\n".join(values))
+
     @staticmethod
     def _write_gene_list(path: Path, genes: list[str]) -> None:
         """每行一个基因 ID，无表头（R 端 read.table(header=FALSE)$V1）。"""
@@ -158,13 +412,14 @@ class EnrichmentService:
             f.write("\n".join(genes))
             f.write("\n")
 
-    def _work_dir(self, user_id: str, task_id: str) -> Path:
-        """结果目录：{data_mount}/users/{user_id}/enrichment/{task_id}/。"""
+    def _work_dir(self, user_id: str, project_slug: str, task_id: str) -> Path:
+        """结果目录：{data_mount}/users/{user_id}/enrichments/{project}/{task_id}/。"""
         return (
             Path(self._settings.enrichment_data_mount)
             / "users"
             / str(user_id)
-            / "enrichment"
+            / "enrichments"
+            / project_slug
             / task_id
         )
 
@@ -191,67 +446,14 @@ class EnrichmentService:
                         gene_ratio=(raw.get("GeneRatio") or "").strip(),
                         pvalue=_to_float(raw.get("pvalue")),
                         p_adjust=_to_float(p_adjust_val),
+                        q_value=_to_float(raw.get("qvalue")),
                         count=_to_int(raw.get("Count")),
+                        source=(raw.get("Source") or "Unknown").strip(),
                     )
                 )
         # 显著性升序（最显著在前），供图表与表格默认排序
         rows.sort(key=lambda r: r.p_adjust)
         return rows
-
-    @staticmethod
-    def _build_plotly_json(rows: list[EnrichmentRowDTO]) -> dict[str, Any] | None:
-        """构造 Plotly dot plot JSON（Top N，最显著置顶）。无数据返回 None。"""
-        if not rows:
-            return None
-
-        top = rows[:_TOP_N]
-        # 反转：最显著排在列表末尾 → Plotly 默认 y 轴自下而上递增 → 置顶
-        top = list(reversed(top))
-
-        x: list[float] = []
-        y: list[str] = []
-        sizes: list[float] = []
-        colors: list[float] = []
-        text: list[str] = []
-        for r in top:
-            x.append(_gene_ratio_to_float(r.gene_ratio, r.count))
-            y.append(r.description or r.id)
-            sizes.append(min(8.0 + r.count * 2.0, 30.0))
-            # p_adjust=0 时 -log10 无界，钳到 0 防溢出
-            colors.append(-math.log10(r.p_adjust) if r.p_adjust > 0 else 0.0)
-            text.append(r.id)
-
-        return {
-            "data": [
-                {
-                    "type": "scatter",
-                    "mode": "markers",
-                    "x": x,
-                    "y": y,
-                    "text": text,
-                    "hovertemplate": (
-                        "<b>%{text}</b><br>%{y}<br>GeneRatio=%{x:.4f}"
-                        "<br>-log10(p.adjust)=%{marker.color:.2f}<extra></extra>"
-                    ),
-                    "marker": {
-                        "size": sizes,
-                        "color": colors,
-                        "colorscale": "Viridis",
-                        "showscale": True,
-                        "colorbar": {"title": {"text": "-log10(p.adjust)"}},
-                        "line": {"width": 0.5, "color": "rgba(120,120,120,0.6)"},
-                    },
-                }
-            ],
-            "layout": {
-                "title": {"text": f"KEGG Pathway Enrichment Top {len(top)}"},
-                "xaxis": {"title": {"text": "GeneRatio"}},
-                "yaxis": {"title": {"text": "Pathway"}, "automargin": True},
-                "margin": {"l": 24, "r": 24, "t": 50, "b": 40},
-                "height": 460,
-                "hovermode": "closest",
-            },
-        }
 
 
 def _to_float(v: object) -> float:
@@ -266,12 +468,3 @@ def _to_int(v: object) -> int:
         return int(float(str(v).strip())) if v not in (None, "") else 0
     except (TypeError, ValueError):
         return 0
-
-
-def _gene_ratio_to_float(ratio: str, count: int) -> float:
-    """GeneRatio '5/100' → 0.05；解析失败回退 count。"""
-    try:
-        num, denom = ratio.split("/", 1)
-        return float(num) / float(denom) if float(denom) else float(count)
-    except (ValueError, ZeroDivisionError):
-        return float(count)

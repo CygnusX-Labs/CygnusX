@@ -100,6 +100,7 @@ const statItems = computed(() => {
 
 <style scoped>
 .blast-hit-card {
+  min-width: 0;
   margin-bottom: 10px;
 }
 .blast-hit-card :deep(.n-card__content) {
@@ -110,6 +111,7 @@ const statItems = computed(() => {
   align-items: center;
   gap: 10px;
   min-width: 0;
+  flex-wrap: wrap;
   font-size: 13px;
 }
 .hit-title {

@@ -12,8 +12,9 @@ import {
   type ContinuousPaletteName,
   type DiscretePaletteName,
 } from '@/components/charts/palettes'
+import { wrapEnrichmentLabel } from '@/utils/enrichmentProcessor'
 
-export type ChartKind = 'bar' | 'line' | 'scatter' | 'heatmap' | 'corr-heatmap' | 'boxplot' | 'violin' | 'histogram' | 'mean-error' | 'pca'
+export type ChartKind = 'bar' | 'line' | 'scatter' | 'heatmap' | 'corr-heatmap' | 'boxplot' | 'violin' | 'histogram' | 'mean-error' | 'pca' | 'enrichment'
 export type Severity = 'success' | 'warning' | 'error'
 export type Normalization = 'row-zscore' | 'column-zscore' | 'log2' | 'none'
 export type ErrorBarMode = 'sd' | 'sem' | 'ci95'
@@ -42,6 +43,7 @@ export const CHART_DEFINITIONS: Record<ChartKind, ChartDefinition> = {
   histogram: { kind: 'histogram', label: '直方图 / 密度图', requiredColumns: [{ role: 'value', label: '数值列', type: 'numeric' }, { role: 'group', label: '分组列', type: 'category', optional: true }] },
   'mean-error': { kind: 'mean-error', label: '均值误差棒点图', requiredColumns: [{ role: 'group', label: '分组列', type: 'category' }, { role: 'value', label: '均值列', type: 'numeric' }, { role: 'error', label: '误差列', type: 'numeric' }] },
   pca: { kind: 'pca', label: 'PCA 主成分分析', requiredColumns: [{ role: 'id', label: 'ID 列', type: 'id' }] },
+  enrichment: { kind: 'enrichment', label: '富集结果气泡图', requiredColumns: [] },
 }
 
 export interface ParsedTable {
@@ -108,6 +110,7 @@ export interface WorkshopConfig {
   legendPosition: 'top' | 'bottom' | 'left' | 'right'
   legendOrientation: 'auto' | 'h' | 'v'
   legendFontSize: number
+  selectedEnrichmentIds: string[]
 }
 
 export interface GroupSummary {
@@ -137,7 +140,7 @@ export const DEFAULT_WORKSHOP_CONFIG: WorkshopConfig = {
   normalization: 'row-zscore', missingValue: 'drop-row', errorBar: 'sd', testMethod: 'welch',
   showPoints: true, showOutliers: true, notch: false,
   regression: 'linear', correlation: 'pearson', pointSize: 9, barWidth: 0.62, lineWidth: 2.5, distributionWidth: 0.65, histogramGap: 0.15, plotWidth: 900, plotHeight: 620, xRangeMode: 'auto', xMin: 0, xMax: 100, yRangeMode: 'auto', yMin: 0, yMax: 100, alpha: 0.78,
-  smoothLine: false, showValues: false, binCount: 24, showDensity: true, posthocLetters: {}, cluster: 'none', clusterDistance: 'euclidean', sampleAnnotations: {}, showConfidence: true, showLineError: true, showSignificance: true, significanceDisplay: 'p-value', legendPosition: 'top', legendOrientation: 'auto', legendFontSize: 12,
+  smoothLine: false, showValues: false, binCount: 24, showDensity: true, posthocLetters: {}, cluster: 'none', clusterDistance: 'euclidean', sampleAnnotations: {}, showConfidence: true, showLineError: true, showSignificance: true, significanceDisplay: 'p-value', legendPosition: 'top', legendOrientation: 'auto', legendFontSize: 12, selectedEnrichmentIds: [],
 }
 
 /** CSV/TSV/semicolon parser backed by PapaParse delimiter sniffing. */
@@ -157,11 +160,113 @@ export function inferColumnMap(headers: string[], kind: ChartKind): ColumnMap {
   const numeric = headers.filter((header) => /value|expression|count|score|mean|x|y|time|day|hour|trait|log2/i.test(header))
   const group = find('group', 'condition', 'treatment', 'class', 'line')
   const base = { ...DEFAULT_COLUMN_MAP, id: find('gene', 'id', 'feature', 'name'), group }
+  if (kind === 'enrichment') return base
   if (kind === 'heatmap' || kind === 'corr-heatmap' || kind === 'pca') return { ...base, id: base.id || headers[0] || '' }
   if (kind === 'scatter') return { ...base, x: find('x', 'expression', 'trait') || numeric[0] || '', y: find('y', 'trait', 'value') || numeric[1] || '' }
   if (kind === 'line') return { ...base, x: find('time', 'day', 'hour', 'x') || headers[0] || '', value: find('value', 'expression') || numeric[0] || '', series: find('line', 'series', 'group', 'condition') || group }
   if (kind === 'mean-error') return { ...base, group: group || headers[0] || '', value: find('mean', 'value', 'expression') || numeric[0] || '', error: find('sd', 'sem', 'error') || numeric[1] || '' }
   return { ...base, value: find('value', 'expression', 'score') || numeric[0] || '' }
+}
+
+function enrichmentHeader(headers: string[], ...aliases: string[]): string {
+  return headers.find((header) => aliases.includes(header.trim().toLowerCase())) ?? ''
+}
+
+function enrichmentRatio(value: string): number | null {
+  const [numerator, denominator] = value.split('/', 2).map(Number)
+  if (Number.isFinite(numerator) && Number.isFinite(denominator) && denominator > 0) return numerator / denominator
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+function processEnrichment(table: ParsedTable, config: WorkshopConfig): WorkshopResult {
+  const messages: ValidationMessage[] = []
+  const idColumn = enrichmentHeader(table.headers, 'id', 'go id', 'pathway id')
+  const descriptionColumn = enrichmentHeader(table.headers, 'description', 'go term', 'kegg pathway')
+  const ratioColumn = enrichmentHeader(table.headers, 'generatio', 'gene_ratio')
+  const pValueColumn = enrichmentHeader(table.headers, 'pvalue', 'p-value')
+  const pAdjustColumn = enrichmentHeader(table.headers, 'p.adjust', 'p_adjust', 'padj')
+  const qValueColumn = enrichmentHeader(table.headers, 'qvalue', 'q-value', 'q_value')
+  const countColumn = enrichmentHeader(table.headers, 'count')
+  const sourceColumn = enrichmentHeader(table.headers, 'source')
+  const missing = [
+    ['ID', idColumn],
+    ['Description', descriptionColumn],
+    ['GeneRatio', ratioColumn],
+    ['p.adjust', pAdjustColumn],
+    ['Count', countColumn],
+  ].filter(([, column]) => !column).map(([label]) => label)
+  if (missing.length) {
+    messages.push({ severity: 'error', text: `富集结果缺少标准列：${missing.join('、')}。` })
+    return { messages, traces: [], layout: layoutBase('enrichment', config), config: { responsive: true, displaylogo: false }, summaries: [], statistics: [], validRows: 0 }
+  }
+
+  const rows = table.rows.flatMap((row) => {
+    const id = row[idColumn]?.trim()
+    const description = row[descriptionColumn]?.trim()
+    const geneRatio = row[ratioColumn]?.trim()
+    const ratio = enrichmentRatio(geneRatio)
+    const pAdjust = finite(row[pAdjustColumn] ?? '')
+    const count = finite(row[countColumn] ?? '')
+    if (!id || !description || ratio === null || pAdjust === null || count === null) return []
+    return [{
+      id,
+      description,
+      geneRatio,
+      ratio,
+      pvalue: finite(row[pValueColumn] ?? '') ?? pAdjust,
+      pAdjust,
+      qvalue: finite(row[qValueColumn] ?? '') ?? 0,
+      count,
+      source: sourceColumn ? row[sourceColumn]?.trim() || 'Enrichment' : 'Enrichment',
+    }]
+  }).sort((left, right) => left.pAdjust - right.pAdjust)
+
+  const selected = new Set(config.selectedEnrichmentIds)
+  const visibleRows = (selected.size ? rows.filter((row) => selected.has(row.id)) : rows.slice(0, 20)).reverse()
+  if (!rows.length) messages.push({ severity: 'error', text: '没有可用于绘图的有效富集结果行。' })
+  else if (!visibleRows.length) messages.push({ severity: 'error', text: '所选 pathway/term 在当前数据中不存在。' })
+  else messages.push({ severity: 'success', text: selected.size ? `已选择 ${visibleRows.length} 个 pathway/term 重新绘图。` : `已按 p.adjust 展示 Top ${visibleRows.length}。` })
+
+  const significance = visibleRows.map((row) => -Math.log10(Math.max(row.pAdjust, 1e-300)))
+  const palette = CONTINUOUS_PALETTES[config.continuousPalette]
+  const colorscale = palette.map((color, index) => [index / Math.max(palette.length - 1, 1), color] as [number, string])
+  const minSignificance = significance.length ? Math.min(...significance) : 0
+  const maxSignificance = significance.length ? Math.max(...significance) : 1
+  const trace: Plotly.Data = {
+    type: 'scatter',
+    mode: 'markers',
+    x: visibleRows.map((row) => row.ratio),
+    y: visibleRows.map((row) => wrapEnrichmentLabel(row.description)),
+    text: visibleRows.map((row) => `${row.source}: ${row.id}`),
+    customdata: visibleRows.map((row) => [row.description, row.geneRatio, row.count, row.pvalue, row.pAdjust, row.qvalue]),
+    hovertemplate: '<b>%{text}</b><br>%{customdata[0]}<br>GeneRatio=%{customdata[1]} (%{x:.4f})<br>Count=%{customdata[2]}<br>p-value=%{customdata[3]:.2e}<br>p.adjust=%{customdata[4]:.2e}<br>q-value=%{customdata[5]:.2e}<extra></extra>',
+    marker: {
+      size: visibleRows.map((row) => Math.min(10 + Math.sqrt(Math.max(row.count, 1)) * 3.2, 36)),
+      color: significance,
+      colorscale,
+      cmin: minSignificance,
+      cmax: maxSignificance === minSignificance ? minSignificance + 1e-6 : maxSignificance,
+      showscale: true,
+      colorbar: { title: { text: '-log10<br>p.adjust' }, thickness: 13, outlinewidth: 0 },
+      opacity: config.alpha,
+      line: { width: 0 },
+    },
+  }
+  const layout = layoutBase('enrichment', config)
+  layout.title = { text: config.title || `Enrichment Analysis — ${visibleRows.length} Selected Terms`, x: 0.02, xanchor: 'left' }
+  layout.xaxis = { title: { text: config.xTitle || 'GeneRatio' }, gridcolor: '#e2e8f0', zeroline: false }
+  layout.yaxis = { title: { text: config.yTitle || 'Pathway / GO Term' }, automargin: true, gridcolor: '#e2e8f0' }
+  layout.margin = { l: 190, r: 96, t: 60, b: 64 }
+  return {
+    messages,
+    traces: visibleRows.length ? [trace] : [],
+    layout,
+    config: { responsive: true, displaylogo: false },
+    summaries: [],
+    statistics: visibleRows.map((row) => ({ Source: row.source, ID: row.id, Description: row.description, GeneRatio: row.geneRatio, pvalue: row.pvalue, 'p.adjust': row.pAdjust, qvalue: row.qvalue, Count: row.count })),
+    validRows: visibleRows.length,
+  }
 }
 
 function finite(value: string): number | null {
@@ -637,6 +742,7 @@ export function buildWorkshopResult(kind: ChartKind, table: ParsedTable, map: Co
   if (kind === 'histogram') return processHistogram(table, map, config)
   if (kind === 'mean-error') return processMeanError(table, map, config)
   if (kind === 'pca') return processPca(table, map, config)
+  if (kind === 'enrichment') return processEnrichment(table, config)
   return processLine(table, map, config)
 }
 

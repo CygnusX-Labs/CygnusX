@@ -202,6 +202,26 @@ async def test_open_page_payload() -> None:
 
 
 @pytest.mark.asyncio
+async def test_phylogenetic_tree_schema_uses_unified_page_entry() -> None:
+    """发育树 AI 工具只负责打开页面，实际计算统一走页面的 Celery API。"""
+    loader = ToolsSchemaLoader("tool_configs/tools_schema.yaml")
+    schema = loader.get_tool("omichub_build_phylogenetic_tree")
+
+    assert schema is not None
+    assert schema.invocation_mode == "open_page"
+    assert schema.route == "/tools/phylogenetic-tree"
+
+    service = ToolBridgeService(loader)
+    result = await service.execute(
+        "u1", "omichub_build_phylogenetic_tree", {"layout": "circular"}
+    )
+
+    assert result["success"] is True
+    assert result["ui_payload"]["route"] == "/tools/phylogenetic-tree"
+    assert result["ui_payload"]["arguments"] == {"layout": "circular"}
+
+
+@pytest.mark.asyncio
 async def test_backend_async_submits_arq_job() -> None:
     """backend_async 工具应投递 ARQ 任务并返回 task_id 与进度 URL。"""
     schema = ToolSchema(

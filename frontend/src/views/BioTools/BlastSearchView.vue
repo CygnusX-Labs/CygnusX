@@ -677,6 +677,7 @@ onUnmounted(() => {
               size="small"
               :single-line="false"
               :pagination="{ pageSize: 50, showSizePicker: true, pageSizes: [20, 50, 100] }"
+              :scroll-x="1220"
               :max-height="560"
               virtual-scroll
               class="results-table"
@@ -705,8 +706,14 @@ onUnmounted(() => {
 
 <style scoped>
 .blast-page {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   padding: 16px;
-  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 .page-toolbar {
   display: flex;
@@ -725,6 +732,7 @@ onUnmounted(() => {
   grid-template-columns: 360px 1fr;
   gap: 16px;
   align-items: start;
+  min-width: 0;
 }
 .input-section {
   display: flex;
@@ -761,6 +769,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
 }
 .results-header {
   display: flex;
@@ -800,14 +809,20 @@ onUnmounted(() => {
   margin-bottom: 16px;
 }
 .stats-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 32px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 16px;
 }
 .results-table-card {
+  min-width: 0;
   margin-bottom: 16px;
 }
+.results-table-card :deep(.n-card__content) {
+  min-width: 0;
+  overflow: hidden;
+}
 .hit-cards-section {
+  min-width: 0;
   margin-bottom: 16px;
 }
 .hit-cards-title {
@@ -816,6 +831,7 @@ onUnmounted(() => {
   color: var(--neutral-text-2);
 }
 .alignment-card {
+  min-width: 0;
   background: var(--neutral-card);
   border: 1px solid var(--neutral-border);
   border-radius: 12px;

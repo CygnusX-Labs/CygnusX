@@ -38,6 +38,14 @@ const chartOptions = Object.values(CHART_DEFINITIONS).map(({ label, kind }) => (
 const discreteOptions = Object.keys(DISCRETE_PALETTES).map((value) => ({ label: value, value }))
 const continuousOptions = Object.keys(CONTINUOUS_PALETTES).map((value) => ({ label: value, value }))
 const columnOptions = computed(() => table.value.headers.map((header) => ({ label: header, value: header })))
+const enrichmentPathwayOptions = computed(() => {
+  const idColumn = table.value.headers.find((header) => ['id', 'go id', 'pathway id'].includes(header.trim().toLowerCase()))
+  const descriptionColumn = table.value.headers.find((header) => ['description', 'go term', 'kegg pathway'].includes(header.trim().toLowerCase()))
+  if (!idColumn || !descriptionColumn) return []
+  return table.value.rows
+    .map((row) => ({ label: `${row[idColumn]} · ${row[descriptionColumn]}`, value: row[idColumn] }))
+    .filter((option) => option.value)
+})
 const result = computed(() => buildWorkshopResult(chartType.value, table.value, colMap, form))
 const isDark = computed(() => themeStore.isDark)
 const chartLabel = computed(() => chartOptions.find((option) => option.value === chartType.value)?.label ?? '')
@@ -45,8 +53,8 @@ const hasErrors = computed(() => result.value.messages.some((item) => item.sever
 const plotCanvasStyle = computed(() => ({ width: `${form.plotWidth}px`, height: `${form.plotHeight}px` }))
 
 function canUseNumericRange(axis: 'x' | 'y') {
-  if (axis === 'x') return ['scatter', 'line', 'histogram', 'pca'].includes(chartType.value)
-  return !['heatmap', 'corr-heatmap'].includes(chartType.value)
+  if (axis === 'x') return ['scatter', 'line', 'histogram', 'pca', 'enrichment'].includes(chartType.value)
+  return !['heatmap', 'corr-heatmap', 'enrichment'].includes(chartType.value)
 }
 
 function validRange(mode: 'auto' | 'manual', min: number, max: number) {
@@ -72,6 +80,7 @@ const examples: Record<ChartKind, { fileName: string; text: string; description:
   histogram: { fileName: 'example_histogram.csv', description: '一列数值，另可选一列分组；支持直方图叠加与高斯核密度曲线。', text: 'group,value\nControl,78.2\nControl,81.5\nControl,76.9\nTreatment,92.4\nTreatment,95.1\nTreatment,89.8\n' },
   'mean-error': { fileName: 'example_mean_error.csv', description: '摘要数据：分组、均值和 SD（或 SEM）三列，无需原始重复。', text: 'group,mean,sd\nControl,78.9,2.3\nTreatment_A,92.4,3.1\nTreatment_B,88.7,2.8\n' },
   pca: { fileName: 'example_pca.csv', description: '宽表表达矩阵：第一列为特征 ID，其余列为样本数值。', text: 'gene,Sample_A1,Sample_A2,Sample_B1,Sample_B2\nGene_1,8.2,7.9,5.1,5.4\nGene_2,4.1,4.3,6.8,6.9\nGene_3,9.0,8.8,3.2,3.1\nGene_4,6.7,6.3,8.6,8.3\n' },
+  enrichment: { fileName: 'example_enrichment.csv', description: 'clusterProfiler 标准结果：至少包含 ID、Description、GeneRatio、p.adjust、Count，可直接使用富集工具下载的原始 CSV。', text: 'Source,ID,Description,GeneRatio,pvalue,p.adjust,qvalue,Count\nGO:BP,GO:0015979,photosynthesis,28/420,1.2e-12,3.5e-10,2.8e-10,28\nGO:CC,GO:0009523,photosystem II,16/420,8.1e-11,1.1e-8,8.9e-9,16\nGO:MF,GO:0005506,iron ion binding,24/420,3.2e-8,2.4e-6,1.9e-6,24\nKEGG,sly00195,Photosynthesis,21/420,7.8e-10,4.3e-8,3.7e-8,21\nKEGG,sly01100,Metabolic pathways,44/420,2.1e-6,7.8e-5,6.9e-5,44\n' },
   line: { fileName: 'example_line.csv', description: '宽表：第一列为 X，其余每列为一条线；也支持 X + value + line 的长表。', text: 'time,Control,Treatment\n0,10.2,12.1\n24,25.4,18.3\n48,44.1,30.2\n72,55.8,42.4\n' },
 }
 
@@ -85,6 +94,7 @@ const chartGuides: Record<ChartKind, { purpose: string; why: string; suitableFor
   histogram: { purpose: '展示连续变量在不同数值区间中的频数或概率密度。', why: '在统计检验或建模前，可用于判断偏态、长尾、多峰和异常范围。', suitableFor: '测序深度、表达量、质量分数、片段长度和连续表型。', reading: '观察峰的位置、宽度、尾部和组间重叠；分箱数量会影响外观，应结合密度曲线判断。' },
   'mean-error': { purpose: '直接绘制已经汇总好的均值及 SD、SEM 或其他误差范围。', why: '当只有摘要统计或需要清晰比较效应量时，比重复构造原始数据更合适。', suitableFor: '文献汇总、平台输出的均值误差表、时间点或处理组摘要数据。', reading: '比较均值点及误差棒重叠情况，同时明确误差列代表 SD、SEM 还是置信区间。' },
   pca: { purpose: '把高维组学矩阵压缩到主要变异方向，用二维图展示样本整体关系。', why: '常用于质量控制、发现批次效应、检查组间分离和异常样本。', suitableFor: '转录组、蛋白组、代谢组等经过适当标准化的特征 × 样本矩阵。', reading: '坐标轴百分比表示解释方差；样本越近整体谱越相似，分离并不自动等同于统计显著。' },
+  enrichment: { purpose: '使用 GO/KEGG 富集结果重新绘制可投稿的气泡图，并自由选择关注的 pathway 或 term。', why: '默认 Top 20 不一定覆盖研究重点，手动筛选可突出与课题相关的生物过程和通路。', suitableFor: 'clusterProfiler 或 OmicHub 富集工具导出的标准 CSV，包含 GeneRatio、p.adjust 和 Count。', reading: 'X 轴表示 GeneRatio，气泡大小表示 Count，颜色表示 -log10(p.adjust)；颜色值越高通常越显著。' },
   line: { purpose: '展示指标随时间、剂量或有序条件变化的趋势。', why: '能够突出变化方向、拐点、响应速度以及不同系列之间的动态差异。', suitableFor: '时间序列、剂量梯度、生长曲线和连续采样实验。', reading: '关注整体趋势和系列间距离；若存在重复测量，应结合误差带判断波动是否稳定。' },
 }
 const currentChartGuide = computed(() => chartGuides[chartType.value])
@@ -98,6 +108,7 @@ const transformationDescription = computed(() => {
   if (chartType.value === 'corr-heatmap') return `当前流程：使用原始数值按 ${form.correlation === 'pearson' ? 'Pearson' : 'Spearman'} 方法计算变量两两相关系数，结果范围为 -1 到 1。`
   if (chartType.value === 'pca') return '当前流程：以每个特征在样本间的均值为中心化基准，基于协方差矩阵提取主成分；未进行额外缩放。'
   if (chartType.value === 'mean-error') return '当前流程：直接使用输入的均值和误差列绘图，不会从摘要数据反推原始重复。'
+  if (chartType.value === 'enrichment') return `当前流程：解析标准富集结果 → ${form.selectedEnrichmentIds.length ? `保留手动选择的 ${form.selectedEnrichmentIds.length} 个 pathway/term` : '按 p.adjust 选择 Top 20'} → GeneRatio 映射到 X 轴、Count 映射气泡大小、-log10(p.adjust) 映射颜色。`
   if (chartType.value === 'histogram') return '当前流程：原始数值按分箱统计；开启密度曲线时，额外使用高斯核密度估计进行平滑展示。'
   if (chartType.value === 'bar' || chartType.value === 'boxplot' || chartType.value === 'violin') return '当前流程：保留原始数值，按分组计算均值、SD/SEM/95% CI 或分布摘要；未进行标准化。'
   return '当前流程：保留原始数值，按 X 和系列分组汇总重复值；可选显示 SD 误差带和平滑曲线。'
@@ -108,6 +119,7 @@ function applyTable(text: string, name: string) {
   table.value = parsed
   fileName.value = name
   Object.assign(colMap, inferColumnMap(parsed.headers, chartType.value))
+  form.selectedEnrichmentIds = []
   if (!parsed.headers.length || !parsed.rows.length) message.error('文件解析失败：请确认文件包含表头和至少一行数据。')
 }
 
@@ -155,6 +167,7 @@ function changeChart(kind: ChartKind) {
   chartType.value = kind
   posthocResult.value = null
   form.posthocLetters = {}
+  form.selectedEnrichmentIds = []
   loadExample()
 }
 
@@ -186,7 +199,7 @@ function exportStatistics() {
   const posthocRows = posthocResult.value?.comparisons.map((comparison) => ({ comparison: `${comparison.group_a} vs ${comparison.group_b}`, method: posthocResult.value?.method ?? '', adjustment: posthocResult.value?.adjust ?? '', p_value: comparison.p_value })) ?? []
   const csv = resultToCsv([...baseRows, ...posthocRows])
   if (!csv) { message.warning('当前图表没有可导出的统计结果。'); return }
-  downloadText(csv, `plot_workshop_${chartType.value}_statistics.csv`, 'text/csv;charset=utf-8')
+  downloadText(csv, chartType.value === 'enrichment' ? 'enrichment_selected_results.csv' : `plot_workshop_${chartType.value}_statistics.csv`, 'text/csv;charset=utf-8')
 }
 
 function exportImage(format: 'png' | 'svg') {
@@ -265,7 +278,8 @@ onUnmounted(() => {
             <p class="file-state">{{ fileName || '尚未上传文件' }}</p>
             <NCard size="small" class="format-card" :bordered="false"><strong>格式要求</strong><p>{{ examples[chartType].description }}</p><code>{{ examples[chartType].text.split('\n').slice(0, 3).join('\n') }}</code></NCard>
             <div v-if="table.headers.length" class="mapping-grid">
-              <template v-if="chartType === 'heatmap' || chartType === 'corr-heatmap' || chartType === 'pca'"><label>ID 列</label><NSelect v-model:value="colMap.id" :options="columnOptions" size="small" /></template>
+              <template v-if="chartType === 'enrichment'"><NAlert type="info" :show-icon="false" :bordered="false">标准富集列会自动识别，不需要手动映射。</NAlert></template>
+              <template v-else-if="chartType === 'heatmap' || chartType === 'corr-heatmap' || chartType === 'pca'"><label>ID 列</label><NSelect v-model:value="colMap.id" :options="columnOptions" size="small" /></template>
               <template v-else-if="chartType === 'scatter'"><label>X 数值列</label><NSelect v-model:value="colMap.x" :options="columnOptions" size="small" /><label>Y 数值列</label><NSelect v-model:value="colMap.y" :options="columnOptions" size="small" /><label>分组列（可选）</label><NSelect v-model:value="colMap.group" clearable :options="columnOptions" size="small" /></template>
               <template v-else-if="chartType === 'mean-error'"><label>分组列</label><NSelect v-model:value="colMap.group" :options="columnOptions" size="small" /><label>均值列</label><NSelect v-model:value="colMap.value" :options="columnOptions" size="small" /><label>误差列（SD / SEM）</label><NSelect v-model:value="colMap.error" :options="columnOptions" size="small" /></template>
               <template v-else-if="chartType === 'histogram'"><label>数值列</label><NSelect v-model:value="colMap.value" :options="columnOptions" size="small" /><label>分组列（可选）</label><NSelect v-model:value="colMap.group" clearable :options="columnOptions" size="small" /></template>
@@ -276,7 +290,8 @@ onUnmounted(() => {
           </NCollapseItem>
 
           <NCollapseItem title="核心计算" name="core">
-            <template v-if="chartType === 'heatmap'"><label>标准化</label><NSelect v-model:value="form.normalization" size="small" :options="[{ label: '行 Z-score', value: 'row-zscore' }, { label: '列 Z-score', value: 'column-zscore' }, { label: 'log2(x+1)', value: 'log2' }, { label: '无', value: 'none' }]" /><label>缺失值处理</label><NSelect v-model:value="form.missingValue" size="small" :options="[{ label: '删除该行', value: 'drop-row' }, { label: '填 0', value: 'zero' }, { label: '填行均值', value: 'row-mean' }]" /><label>聚类</label><NSelect v-model:value="form.cluster" size="small" :options="[{ label: '无', value: 'none' }, { label: '行', value: 'rows' }, { label: '列', value: 'columns' }, { label: '双向', value: 'both' }]" /><label v-if="form.cluster !== 'none'">距离</label><NSelect v-if="form.cluster !== 'none'" v-model:value="form.clusterDistance" size="small" :options="[{ label: '欧氏距离', value: 'euclidean' }, { label: 'Pearson 相关', value: 'pearson' }]" /><div class="switch-row"><span>显示单元格数值</span><NSwitch v-model:value="form.showValues" size="small" /></div><NUpload accept=".csv,.tsv,.txt" :max="1" :default-upload="false" @change="handleAnnotationUpload"><NButton block size="small">上传样本注释</NButton></NUpload><p class="file-state">注释格式：sample,group</p></template>
+            <template v-if="chartType === 'enrichment'"><label>选择 pathway / GO term</label><NSelect v-model:value="form.selectedEnrichmentIds" multiple filterable clearable max-tag-count="responsive" size="small" placeholder="不选择时按 p.adjust 展示 Top 20" :options="enrichmentPathwayOptions" /><p class="axis-range-hint">可搜索 ID 或描述并多选；选择后只重绘这些结果，不修改原始 CSV。</p><NButton block size="small" secondary @click="form.selectedEnrichmentIds = []">恢复 p.adjust Top 20</NButton></template>
+            <template v-else-if="chartType === 'heatmap'"><label>标准化</label><NSelect v-model:value="form.normalization" size="small" :options="[{ label: '行 Z-score', value: 'row-zscore' }, { label: '列 Z-score', value: 'column-zscore' }, { label: 'log2(x+1)', value: 'log2' }, { label: '无', value: 'none' }]" /><label>缺失值处理</label><NSelect v-model:value="form.missingValue" size="small" :options="[{ label: '删除该行', value: 'drop-row' }, { label: '填 0', value: 'zero' }, { label: '填行均值', value: 'row-mean' }]" /><label>聚类</label><NSelect v-model:value="form.cluster" size="small" :options="[{ label: '无', value: 'none' }, { label: '行', value: 'rows' }, { label: '列', value: 'columns' }, { label: '双向', value: 'both' }]" /><label v-if="form.cluster !== 'none'">距离</label><NSelect v-if="form.cluster !== 'none'" v-model:value="form.clusterDistance" size="small" :options="[{ label: '欧氏距离', value: 'euclidean' }, { label: 'Pearson 相关', value: 'pearson' }]" /><div class="switch-row"><span>显示单元格数值</span><NSwitch v-model:value="form.showValues" size="small" /></div><NUpload accept=".csv,.tsv,.txt" :max="1" :default-upload="false" @change="handleAnnotationUpload"><NButton block size="small">上传样本注释</NButton></NUpload><p class="file-state">注释格式：sample,group</p></template>
             <template v-else-if="chartType === 'pca'"><NUpload accept=".csv,.tsv,.txt" :max="1" :default-upload="false" @change="handleAnnotationUpload"><NButton block size="small">上传样本分组注释</NButton></NUpload><p class="file-state">注释格式：sample,group；未上传时根据样本名末尾重复编号自动推断分组。</p></template>
             <template v-else-if="chartType === 'corr-heatmap'"><label>相关性方法</label><NSelect v-model:value="form.correlation" size="small" :options="[{ label: 'Pearson r', value: 'pearson' }, { label: 'Spearman ρ', value: 'spearman' }]" /></template>
             <template v-else-if="chartType === 'histogram'"><label>分箱数</label><NInputNumber v-model:value="form.binCount" :min="5" :max="100" size="small" /><div class="switch-row"><span>显示密度曲线</span><NSwitch v-model:value="form.showDensity" size="small" /></div></template>
@@ -286,7 +301,7 @@ onUnmounted(() => {
           </NCollapseItem>
 
           <NCollapseItem title="颜色、坐标轴与标题" name="style">
-            <template v-if="chartType === 'heatmap' || chartType === 'corr-heatmap'"><label>连续色板</label><NSelect v-model:value="form.continuousPalette" :options="continuousOptions" size="small" /></template>
+            <template v-if="chartType === 'heatmap' || chartType === 'corr-heatmap' || chartType === 'enrichment'"><label>连续色板</label><NSelect v-model:value="form.continuousPalette" :options="continuousOptions" size="small" /></template>
             <template v-else><label>离散色板</label><NSelect v-model:value="form.discretePalette" :options="discreteOptions" size="small" /></template>
             <label>主标题</label><NInput v-model:value="form.title" size="small" placeholder="留空使用默认标题" /><label>X 轴标题</label><NInput v-model:value="form.xTitle" size="small" placeholder="自动使用映射列名" /><label>Y 轴标题</label><NInput v-model:value="form.yTitle" size="small" placeholder="自动使用映射列名" />
             <label>X 轴范围</label><NSelect v-model:value="form.xRangeMode" size="small" :options="[{ label: '自动', value: 'auto' }, { label: '手动', value: 'manual' }]" /><div v-if="form.xRangeMode === 'manual'" class="two-input"><NInputNumber v-model:value="form.xMin" :min="-1000000000" :max="1000000000" placeholder="最小值" size="small" /><NInputNumber v-model:value="form.xMax" :min="-1000000000" :max="1000000000" placeholder="最大值" size="small" /></div>
@@ -306,7 +321,7 @@ onUnmounted(() => {
 
           <NCollapseItem title="导出" name="export">
             <label>PNG 分辨率</label><NSelect v-model:value="exportDpi" size="small" :options="[{ label: '300 DPI', value: 300 }, { label: '600 DPI', value: 600 }, { label: '1000 DPI', value: 1000 }]" /><div class="switch-row"><span>自定义尺寸</span><NSwitch v-model:value="form.exportCustomSize" size="small" /></div><div v-if="form.exportCustomSize" class="two-input"><NInputNumber v-model:value="form.exportWidth" :min="100" :max="8000" size="small" /><NInputNumber v-model:value="form.exportHeight" :min="100" :max="8000" size="small" /></div>
-            <NSpace vertical :size="8"><NButton block size="small" :disabled="hasErrors" @click="exportImage('png')">导出 PNG</NButton><NButton block size="small" :disabled="hasErrors" @click="exportImage('svg')">导出 SVG</NButton><NButton block size="small" :disabled="!result.statistics.length && !result.summaries.length" @click="exportStatistics">导出统计 CSV</NButton></NSpace>
+            <NSpace vertical :size="8"><NButton block size="small" :disabled="hasErrors" @click="exportImage('png')">导出 PNG</NButton><NButton block size="small" :disabled="hasErrors" @click="exportImage('svg')">导出 SVG</NButton><NButton block size="small" :disabled="!result.statistics.length && !result.summaries.length" @click="exportStatistics">{{ chartType === 'enrichment' ? '导出当前筛选 CSV' : '导出统计 CSV' }}</NButton></NSpace>
           </NCollapseItem>
         </NCollapse>
         <NButton block quaternary size="small" class="reset-button" @click="resetAll"><template #icon><NIcon><RefreshOutline /></NIcon></template>重置当前图表</NButton>

@@ -1,3 +1,7 @@
+# OmicHub phylogenetic analysis Worker image.
+# Purpose: consume phylo_tree queues in an isolated Conda environment.
+# Build context: repository root
+# Build command: make docker-build-worker
 FROM condaforge/mambaforge:23.11.0-0
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -10,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libopenmpi-dev libgomp1 && rm -rf /var/lib/apt/lists/*
 
 # 创建 Conda 环境
-RUN mamba create -n phylo python=3.11 -y
+RUN mamba create -n phylo python=3.11 pip -y
 
 # 科学计算基础
 RUN mamba install -n phylo -c bioconda -c conda-forge \
@@ -25,7 +29,13 @@ RUN mamba install -n phylo -c bioconda \
     fasttree=2.1.11 iqtree=2.2.2.7 mrbayes=3.2.7 phylip=3.697 \
     seqkit=2.7 -y && mamba clean -a -y
 
-WORKDIR /workspace
+WORKDIR /app
+
+COPY pyproject.toml README.md ./
+COPY src/ ./src/
+COPY tool_configs/ ./tool_configs/
+
+RUN /opt/conda/envs/phylo/bin/pip install --no-cache-dir .
 
 # 运行 worker：需在编排中覆盖 command
-# celery -A omichub.celery_app worker -Q phylo_tree -n phylo@%h --concurrency=2
+# celery -A omichub.infrastructure.celery_app.celery worker -Q phylo_tree -n phylo@%h

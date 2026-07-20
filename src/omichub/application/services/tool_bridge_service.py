@@ -363,6 +363,7 @@ class ToolBridgeService:
             "success": True,
             "message": f"请在工具页完成操作：{schema.route}",
             "route": schema.route,
+            "arguments": args,
         }
 
     def _package(self, schema: ToolSchema, raw: dict[str, Any]) -> dict[str, Any]:

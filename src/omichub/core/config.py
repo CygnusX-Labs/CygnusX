@@ -179,12 +179,12 @@ class Settings(BaseSettings):
     # ===== 富集分析（KEGG / GO，R Docker 容器）=====
     # 物种配置 YAML（仓库内源码管控，仿 flows/）；改文件后由加载器 mtime 热重载。
     enrichment_config_yaml: str = "tool_configs/enrichments/species_config.yaml"
-    # R 计算容器镜像（用户自行构建，契约见 docs/26.7.6/KEGG_Docker_契约.md）
+    # R 计算容器镜像（用户自行构建，契约见 tool_configs/enrichments/KEGG_Docker_契约.md）
     enrichment_docker_image: str = "omichub-r-enrichment:v1"
-    # 容器加入的 Docker 网络（与 squid-proxy 同网，仅放行 KEGG 域名）
-    enrichment_docker_network: str = "omichub_enrichment_net"
-    # 出站代理地址（容器 http_proxy/https_proxy；squid 白名单 .kegg.jp .genome.jp）
-    enrichment_proxy_url: str = "http://squid-proxy:3128"
+    # 容器加入的 Docker 网络；默认使用开发/生产主栈已创建的 app 网络。
+    enrichment_docker_network: str = "omichub_app_net"
+    # 可选出站代理地址；为空时 KEGG REST 通过 Docker bridge 直接出网。
+    enrichment_proxy_url: str = ""
     # 宿主→容器挂载源（容器内固定为 /data/omichub，基因列表与结果 CSV 经此交换）
     enrichment_data_mount: str = "/data/omichub"
     enrichment_exec_timeout: int = 120  # 单次富集分析超时（秒）

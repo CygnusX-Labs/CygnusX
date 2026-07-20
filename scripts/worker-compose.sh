@@ -16,4 +16,17 @@ set -a
 . "${repository_root}/.env"
 set +a
 
+docker_socket=/var/run/docker.sock
+if [[ -S "${docker_socket}" ]]; then
+    detected_docker_gid=$(stat -c '%g' "${docker_socket}")
+    if [[ -n "${DOCKER_GID:-}" && "${DOCKER_GID}" != "${detected_docker_gid}" ]]; then
+        printf 'Warning: DOCKER_GID=%s does not match %s GID=%s; using detected GID.\n' \
+            "${DOCKER_GID}" "${docker_socket}" "${detected_docker_gid}" >&2
+    fi
+    export DOCKER_GID="${detected_docker_gid}"
+else
+    printf 'Warning: Docker socket %s not found; container-backed tools will be unavailable.\n' \
+        "${docker_socket}" >&2
+fi
+
 exec docker compose -f deploy/docker/docker-compose.worker.yml "$@"

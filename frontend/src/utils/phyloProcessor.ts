@@ -159,19 +159,32 @@ export function computeTreeStatistics(root: NewickNode): TreeStatistics {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createRenderOptions(vizConfig: VizConfig, _isDark: boolean): Record<string, any> {
+  const isCircular = vizConfig.layout === 'circular'
+  const isUnrooted = vizConfig.layout === 'radial'
+  const isRoundLayout = isCircular || isUnrooted
+
   return {
     zoom: true,
     brush: false,
     collapsible: true,
     selectable: true,
-    'align-tips': vizConfig.alignTips,
+    responsive: true,
+    'align-tips': isCircular ? true : vizConfig.alignTips,
     'show-labels': vizConfig.showLabels,
-    'show-scale': vizConfig.showScaleBar,
+    'internal-names': vizConfig.showBootstrap,
+    'show-scale': vizConfig.showScaleBar && !isUnrooted,
     'font-size': vizConfig.fontSize,
-    width: 800,
-    height: 600,
-    layout: vizConfig.layout === 'rectangular' ? 'left-to-right' : 'left-to-right',
-    'is-radial': vizConfig.layout === 'radial' || vizConfig.layout === 'circular',
+    width: isRoundLayout ? 820 : 960,
+    height: isRoundLayout ? 820 : 640,
+    layout: 'left-to-right',
+    'is-radial': isCircular,
+    'is-unrooted': isUnrooted,
+    'left-right-spacing': 'fit-to-size',
+    'top-bottom-spacing': 'fit-to-size',
+    'max-radius': 360,
+    'edge-styler': (selection: { style: (name: string, value: string) => unknown }) => {
+      selection.style('stroke-width', `${vizConfig.branchWidth}px`)
+    },
   }
 }
 
@@ -201,13 +214,15 @@ export class PhyloTreeRenderer {
     this.clear()
     this.options = { ...this.options, ...options }
     this.tree = new this.phylotreeCtor(newickStr.trim())
-    this.tree.render({ container: this.container, ...this.options })
+    const display = this.tree.render({ container: this.container, ...this.options })
+    this.container.replaceChildren(display.show())
   }
 
   async updateOptions(options: Record<string, unknown>) {
     if (!this.tree || !this.container) return
     this.options = { ...this.options, ...options }
-    this.tree.render({ container: this.container, ...this.options })
+    const display = this.tree.render({ container: this.container, ...this.options })
+    this.container.replaceChildren(display.show())
   }
 
   highlightNode(nodeId: string) {
@@ -255,7 +270,7 @@ export function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url)
 }
 
-export function svgToPng(svgString: string): Promise<Blob> {
+export function svgToPng(svgString: string, background = 'transparent'): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const svg = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
     const url = URL.createObjectURL(svg)
@@ -270,8 +285,10 @@ export function svgToPng(svgString: string): Promise<Blob> {
     img.onload = () => {
       canvas.width = img.naturalWidth || 1200
       canvas.height = img.naturalHeight || 800
-      ctx.fillStyle = '#ffffff'
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      if (background !== 'transparent') {
+        ctx.fillStyle = background
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+      }
       ctx.drawImage(img, 0, 0)
       URL.revokeObjectURL(url)
       canvas.toBlob((blob) => {

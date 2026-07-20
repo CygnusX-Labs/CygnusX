@@ -1,110 +1,330 @@
 <script setup lang="ts">
-import { computed, h, nextTick, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
+  NAlert,
   NButton,
   NCard,
+  NCollapse,
+  NCollapseItem,
   NDataTable,
   NEmpty,
   NForm,
   NFormItem,
   NIcon,
   NInput,
+  NInputNumber,
   NSelect,
   NSpace,
   NSpin,
+  NSwitch,
   NTabPane,
   NTabs,
   NTag,
   NUpload,
   useMessage,
+  type DataTableColumns,
   type UploadFileInfo,
 } from 'naive-ui'
-import { ArrowBackOutline } from '@vicons/ionicons5'
+import { DownloadOutline, RefreshOutline, SparklesOutline } from '@vicons/ionicons5'
 import * as Plotly from 'plotly.js-dist-min'
-import { fetchSpeciesOptions, submitEnrichment } from '@/api/enrichment'
+import {
+  downloadEnrichmentResult,
+  fetchEnrichmentExample,
+  fetchEnrichmentHistory,
+  fetchEnrichmentTask,
+  fetchSpeciesOptions,
+  submitEnrichment,
+} from '@/api/enrichment'
 import PageHeader from '@/components/PageHeader.vue'
-import type { EnrichmentResult, EnrichmentRow, SpeciesOption } from '@/types/enrichment'
+import { useThemeStore } from '@/stores/theme'
+import type { EnrichmentResult, EnrichmentRow, EnrichmentTask, SpeciesOption } from '@/types/enrichment'
+import {
+  buildEnrichmentPlot,
+  ENRICHMENT_COLOR_OPTIONS,
+  filterEnrichmentRows,
+  type EnrichmentSource,
+} from '@/utils/enrichmentProcessor'
 
-const router = useRouter()
 const message = useMessage()
+const themeStore = useThemeStore()
 
 const form = reactive({
+  projectName: '',
   speciesId: '',
-  keggCode: '',
-  orgDb: '',
-  idType: '',
   geneText: '',
   geneFile: null as File | null,
+  pValueCutoff: 0.05,
+  qValueCutoff: 0.1,
+  goColor: 'var(--kimi-chart-3)',
+  keggColor: 'var(--kimi-chart-1)',
+  chartWidth: 960,
+  chartHeight: 480,
+  exportCustomSize: false,
+  exportWidth: 1600,
+  exportHeight: 1000,
 })
 
+const exportDpi = ref(300)
 const inputMode = ref<'text' | 'file'>('text')
 const speciesOptions = ref<SpeciesOption[]>([])
 const speciesLoading = ref(false)
+const speciesError = ref('')
+const sampleLoading = ref(false)
+const historyLoading = ref(false)
+const historyTasks = ref<EnrichmentTask[]>([])
+const openingHistoryTaskId = ref('')
 const submitting = ref(false)
+const activeTask = ref<EnrichmentTask | null>(null)
+const taskError = ref('')
 const result = ref<EnrichmentResult | null>(null)
 const fileList = ref<UploadFileInfo[]>([])
+const goPlotContainer = ref<HTMLElement | null>(null)
+const keggPlotContainer = ref<HTMLElement | null>(null)
+let taskPollTimer: ReturnType<typeof setTimeout> | undefined
+let plotRenderTimer: ReturnType<typeof setTimeout> | undefined
 
 const speciesSelectOptions = computed(() =>
-  speciesOptions.value.map((s) => ({ label: s.label, value: s.id })),
+  speciesOptions.value.map((species) => ({ label: species.label, value: species.id })),
 )
+const selectedSpecies = computed(() =>
+  speciesOptions.value.find((species) => species.id === form.speciesId) ?? null,
+)
+const selectedAnalysisTypes = computed(() => selectedSpecies.value?.analysis_types.join(' / ') || '未配置')
+const goRows = computed(() => filterEnrichmentRows(result.value?.table_data ?? [], 'GO'))
+const keggRows = computed(() => filterEnrichmentRows(result.value?.table_data ?? [], 'KEGG'))
+const hasResults = computed(() => goRows.value.length > 0 || keggRows.value.length > 0)
+const isSampleResult = computed(() => result.value?.task_id === 'sample-cop1-hy5-dependent-1576')
+const exportDpiOptions = [
+  { label: '300 DPI（报告）', value: 300 },
+  { label: '600 DPI（投稿）', value: 600 },
+  { label: '1000 DPI（精细）', value: 1000 },
+]
+const resultColumnDescriptions = [
+  { field: 'GO ID / Pathway ID', description: 'GO 术语或 KEGG 通路的稳定标识符，可用于数据库检索与结果追踪。' },
+  { field: 'Description', description: '术语或通路名称；图中长文本会折成两行并省略，悬停可查看完整名称。' },
+  { field: 'GeneRatio', description: '输入基因中命中该术语或通路的比例，格式为命中数 / 参与富集计算的基因数。' },
+  { field: 'p-value', description: '富集检验的原始显著性概率，数值越小表示随机出现该富集程度的可能性越低。' },
+  { field: 'p.adjust', description: 'clusterProfiler 多重检验校正后的 p-value；气泡颜色深浅按 -log10(p.adjust) 映射。' },
+  { field: 'q-value', description: '对假发现率的估计，用于辅助判断多重检验后的结果可靠性。' },
+  { field: 'Count', description: '输入 Gene ID 列表中命中该术语或通路的基因数量，同时映射为气泡大小。' },
+  { field: '查看 KEGG', description: '仅 KEGG 表提供，打开 KEGG 官方通路详情页面。' },
+]
 
-const columns = [
-  { title: '通路 ID', key: 'id', width: 120, fixed: 'left' as const },
-  { title: '通路描述', key: 'description', ellipsis: { tooltip: true }, minWidth: 220 },
-  { title: 'GeneRatio', key: 'gene_ratio', width: 110 },
-  { title: 'pvalue', key: 'pvalue', width: 110, render: (row: EnrichmentRow) => formatScientific(row.pvalue) },
-  { title: 'p.adjust', key: 'p_adjust', width: 110, render: (row: EnrichmentRow) => formatScientific(row.p_adjust) },
-  { title: 'Count', key: 'count', width: 90 },
+const goColumns: DataTableColumns<EnrichmentRow> = [
+  { title: 'GO ID', key: 'id', width: 145, fixed: 'left' },
+  { title: 'GO Term', key: 'description', ellipsis: { tooltip: true }, minWidth: 240 },
+  { title: 'GeneRatio', key: 'gene_ratio', width: 105 },
+  { title: 'p-value', key: 'pvalue', width: 105, render: (row) => formatScientific(row.pvalue) },
+  { title: 'p.adjust', key: 'p_adjust', width: 105, render: (row) => formatScientific(row.p_adjust) },
+  { title: 'q-value', key: 'q_value', width: 105, render: (row) => formatScientific(row.q_value) },
+  { title: 'Count', key: 'count', width: 80 },
+]
+
+const keggColumns: DataTableColumns<EnrichmentRow> = [
+  { title: 'Pathway ID', key: 'id', width: 145, fixed: 'left' },
+  { title: 'KEGG Pathway', key: 'description', ellipsis: { tooltip: true }, minWidth: 240 },
+  { title: 'GeneRatio', key: 'gene_ratio', width: 105 },
+  { title: 'p-value', key: 'pvalue', width: 105, render: (row) => formatScientific(row.pvalue) },
+  { title: 'p.adjust', key: 'p_adjust', width: 105, render: (row) => formatScientific(row.p_adjust) },
+  { title: 'q-value', key: 'q_value', width: 105, render: (row) => formatScientific(row.q_value) },
+  { title: 'Count', key: 'count', width: 80 },
   {
     title: '操作',
     key: 'actions',
     width: 100,
-    render: (row: EnrichmentRow) =>
-      h('a', { href: `https://www.kegg.jp/pathway/${row.id}`, target: '_blank', rel: 'noopener noreferrer', class: 'kegg-link' }, 'KEGG'),
+    render: (row) =>
+      h(
+        'a',
+        {
+          href: `https://www.kegg.jp/pathway/${row.id}`,
+          target: '_blank',
+          rel: 'noopener noreferrer',
+          class: 'kegg-link',
+        },
+        '查看 KEGG',
+      ),
   },
 ]
 
-function formatScientific(n: number) {
-  if (n === 0) return '0'
-  if (n < 0.001 || n >= 10000) return n.toExponential(2)
-  return n.toFixed(n < 0.01 ? 4 : 3)
+const historyColumns: DataTableColumns<EnrichmentTask> = [
+  { title: '项目 ID', key: 'project_name', minWidth: 180, ellipsis: { tooltip: true } },
+  { title: '物种', key: 'species_id', width: 145, ellipsis: { tooltip: true } },
+  { title: 'Gene 数', key: 'gene_count', width: 90 },
+  {
+    title: '状态',
+    key: 'status',
+    width: 100,
+    render: (task) => h(NTag, { size: 'small', type: historyStatusType(task.status) }, { default: () => historyStatusLabel(task.status) }),
+  },
+  { title: '创建时间', key: 'created_at', width: 175, render: (task) => formatTaskDate(task.created_at) },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 210,
+    fixed: 'right',
+    render: (task) => h(NSpace, { size: 6 }, {
+      default: () => [
+        h(NButton, {
+          size: 'tiny',
+          secondary: true,
+          disabled: task.status !== 'completed',
+          loading: openingHistoryTaskId.value === task.task_id,
+          onClick: () => void openHistoryTask(task),
+        }, { default: () => '查看结果' }),
+        h(NButton, {
+          size: 'tiny',
+          quaternary: true,
+          disabled: task.status !== 'completed',
+          onClick: () => void downloadOriginalResult(task),
+        }, { default: () => '原始 CSV' }),
+      ],
+    }),
+  },
+]
+
+function formatScientific(value: number) {
+  if (value === 0) return '0'
+  if (value < 0.001 || value >= 10000) return value.toExponential(2)
+  return value.toFixed(value < 0.01 ? 4 : 3)
+}
+
+function formatTaskDate(value?: string | null): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false })
+}
+
+function historyStatusLabel(status: EnrichmentTask['status']): string {
+  return { queued: '排队中', running: '分析中', completed: '已完成', failed: '失败' }[status]
+}
+
+function historyStatusType(status: EnrichmentTask['status']): 'default' | 'info' | 'success' | 'error' {
+  if (status === 'running') return 'info'
+  if (status === 'completed') return 'success'
+  if (status === 'failed') return 'error'
+  return 'default'
 }
 
 async function loadSpecies() {
   speciesLoading.value = true
+  speciesError.value = ''
   try {
     speciesOptions.value = await fetchSpeciesOptions()
-  } catch (err) {
-    message.error(err instanceof Error ? err.message : '加载物种配置失败')
+    if (form.speciesId && !selectedSpecies.value) form.speciesId = ''
+  } catch (error) {
+    speciesError.value = error instanceof Error ? error.message : '无法加载物种配置，请稍后重试。'
   } finally {
     speciesLoading.value = false
   }
 }
 
-function handleSpeciesChange(speciesId: string) {
-  const species = speciesOptions.value.find((s) => s.id === speciesId)
-  if (species) {
-    form.keggCode = species.kegg_code
-    form.orgDb = species.org_db
-    form.idType = species.id_type
-  } else {
-    form.keggCode = ''
-    form.orgDb = ''
-    form.idType = ''
+async function loadHistory() {
+  historyLoading.value = true
+  try {
+    historyTasks.value = await fetchEnrichmentHistory()
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '富集历史加载失败')
+  } finally {
+    historyLoading.value = false
   }
 }
 
-function handleFileChange({ fileList: list }: { fileList: UploadFileInfo[] }) {
-  const latest = list[list.length - 1]
+async function openHistoryTask(historyTask: EnrichmentTask) {
+  if (historyTask.status !== 'completed') return
+  openingHistoryTaskId.value = historyTask.task_id
+  taskError.value = ''
+  try {
+    const task = await fetchEnrichmentTask(historyTask.task_id)
+    if (!task.result) throw new Error('历史任务结果不存在')
+    stopTaskPolling()
+    activeTask.value = task
+    result.value = task.result
+    form.projectName = task.project_name
+    if (speciesOptions.value.some((species) => species.id === task.species_id)) form.speciesId = task.species_id
+    await nextTick()
+    await renderPlots()
+    message.success(`已打开项目：${task.project_name}`)
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '历史结果加载失败')
+  } finally {
+    openingHistoryTaskId.value = ''
+  }
+}
+
+async function downloadOriginalResult(task: EnrichmentTask) {
+  try {
+    await downloadEnrichmentResult(task)
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '原始结果下载失败')
+  }
+}
+
+function handleFileChange({ fileList: nextFileList }: { fileList: UploadFileInfo[] }) {
+  const latest = nextFileList[nextFileList.length - 1]
   form.geneFile = latest?.file ?? null
 }
 
+function clearPlots() {
+  if (goPlotContainer.value) Plotly.purge(goPlotContainer.value)
+  if (keggPlotContainer.value) Plotly.purge(keggPlotContainer.value)
+}
+
+function stopTaskPolling() {
+  if (taskPollTimer) clearTimeout(taskPollTimer)
+  taskPollTimer = undefined
+}
+
+async function loadSample() {
+  stopTaskPolling()
+  sampleLoading.value = true
+  submitting.value = false
+  activeTask.value = null
+  taskError.value = ''
+  try {
+    const example = await fetchEnrichmentExample()
+    inputMode.value = 'text'
+    form.geneText = example.gene_text
+    form.geneFile = null
+    fileList.value = []
+    form.speciesId = example.species_id
+    form.projectName = 'COP1-HY5 Example'
+    await nextTick()
+    form.pValueCutoff = example.p_value_cutoff
+    form.qValueCutoff = example.q_value_cutoff
+    result.value = example.result
+    await nextTick()
+    await renderPlots()
+    message.success(`已加载 ${example.title}：${example.gene_count} 个 Gene ID 与真实 R 富集结果。`)
+  } catch (error) {
+    taskError.value = error instanceof Error ? error.message : '示例数据加载失败'
+    message.error(taskError.value)
+  } finally {
+    sampleLoading.value = false
+  }
+}
+
+function validateCutoffs(): boolean {
+  if (!(form.pValueCutoff > 0 && form.pValueCutoff <= 1)) {
+    message.warning('p-value cutoff 必须大于 0 且不超过 1')
+    return false
+  }
+  if (!(form.qValueCutoff > 0 && form.qValueCutoff <= 1)) {
+    message.warning('q-value cutoff 必须大于 0 且不超过 1')
+    return false
+  }
+  return true
+}
+
 async function handleSubmit() {
+  if (!form.projectName.trim()) {
+    message.warning('请输入项目 ID')
+    return
+  }
   if (!form.speciesId) {
     message.warning('请选择物种')
     return
   }
+  if (!validateCutoffs()) return
   if (inputMode.value === 'text' && !form.geneText.trim()) {
     message.warning('请输入 Gene ID 列表')
     return
@@ -115,170 +335,516 @@ async function handleSubmit() {
   }
 
   submitting.value = true
+  activeTask.value = null
+  taskError.value = ''
   result.value = null
+  clearPlots()
   try {
     const payload = new FormData()
+    payload.append('project_name', form.projectName.trim())
     payload.append('species_id', form.speciesId)
-    payload.append('kegg_code', form.keggCode)
-    payload.append('org_db', form.orgDb)
-    payload.append('id_type', form.idType)
+    payload.append('p_value_cutoff', String(form.pValueCutoff))
+    payload.append('q_value_cutoff', String(form.qValueCutoff))
     if (inputMode.value === 'text') {
       payload.append('gene_text', form.geneText)
     } else if (form.geneFile) {
       payload.append('gene_file', form.geneFile)
     }
 
-    result.value = await submitEnrichment(payload)
-    await nextTick()
-    renderPlot()
-  } catch (err) {
-    message.error(err instanceof Error ? err.message : '分析任务提交失败')
-  } finally {
+    const task = await submitEnrichment(payload)
+    activeTask.value = task
+    await pollEnrichmentTask(task.task_id)
+  } catch (error) {
+    taskError.value = error instanceof Error ? error.message : '分析任务提交失败'
+    message.error(taskError.value)
     submitting.value = false
   }
 }
 
-function renderPlot() {
-  if (!result.value?.plotly_json) return
-  const container = document.getElementById('kegg-enrichment-plot')
-  if (!container) return
-  const { data, layout } = result.value.plotly_json
-  Plotly.newPlot(
+async function pollEnrichmentTask(taskId: string) {
+  try {
+    const task = await fetchEnrichmentTask(taskId)
+    activeTask.value = task
+    if (task.status === 'completed' && task.result) {
+      result.value = task.result
+      submitting.value = false
+      await nextTick()
+      await renderPlots()
+      await loadHistory()
+      message.success('GO / KEGG 富集分析完成')
+      return
+    }
+    if (task.status === 'failed') {
+      taskError.value = task.error_message || '富集分析失败'
+      submitting.value = false
+      message.error(taskError.value)
+      return
+    }
+    taskPollTimer = setTimeout(() => {
+      void pollEnrichmentTask(taskId)
+    }, 1500)
+  } catch (error) {
+    taskError.value = error instanceof Error ? error.message : '无法查询富集任务状态'
+    submitting.value = false
+    message.error(taskError.value)
+  }
+}
+
+async function renderSourcePlot(source: EnrichmentSource, container: HTMLElement | null) {
+  if (!container || !result.value) return
+  const rows = source === 'GO' ? goRows.value : keggRows.value
+  if (!rows.length) {
+    Plotly.purge(container)
+    return
+  }
+  const availableWidth = Math.max(container.clientWidth || form.chartWidth, 320)
+  const figure = buildEnrichmentPlot(result.value.table_data, source, {
+    color: resolveThemeColor(source === 'GO' ? form.goColor : form.keggColor),
+    textColor: resolveThemeColor('var(--neutral-text-1)'),
+    borderColor: resolveThemeColor('var(--neutral-border)'),
+    surfaceColor: resolveThemeColor('var(--neutral-card)'),
+    width: Math.min(form.chartWidth, availableWidth),
+    height: form.chartHeight,
+  })
+  const { data, layout } = figure
+  if (!Array.isArray(data)) return
+  await Plotly.react(
     container,
-    (data ?? []) as Plotly.Data[],
+    data as Plotly.Data[],
     (layout ?? {}) as Partial<Plotly.Layout>,
-    { responsive: true },
+    {
+      responsive: true,
+      displaylogo: false,
+      displayModeBar: 'hover',
+      modeBarButtonsToRemove: ['select2d', 'lasso2d'],
+      toImageButtonOptions: { format: 'svg' },
+    },
   )
 }
 
-function exportCsv() {
-  if (!result.value?.table_data.length) return
-  const header = ['ID', 'Description', 'GeneRatio', 'pvalue', 'p.adjust', 'Count']
-  const rows = result.value.table_data.map((r) =>
-    [r.id, `"${r.description.replace(/"/g, '""')}"`, r.gene_ratio, r.pvalue, r.p_adjust, r.count].join(','),
+function resolveThemeColor(value: string): string {
+  const match = value.match(/^var\((--[^)]+)\)$/)
+  if (!match) return value
+  return getComputedStyle(document.documentElement).getPropertyValue(match[1]).trim() || value
+}
+
+async function renderPlots() {
+  await Promise.all([
+    renderSourcePlot('GO', goPlotContainer.value),
+    renderSourcePlot('KEGG', keggPlotContainer.value),
+  ])
+}
+
+function schedulePlotRender() {
+  if (plotRenderTimer) clearTimeout(plotRenderTimer)
+  plotRenderTimer = setTimeout(() => {
+    void renderPlots()
+  }, 200)
+}
+
+function exportCsv(rows: EnrichmentRow[], source: 'GO' | 'KEGG' | 'GO_KEGG') {
+  if (!rows.length || !result.value) return
+  const header = ['Source', 'ID', 'Description', 'GeneRatio', 'pvalue', 'p.adjust', 'qvalue', 'Count']
+  const body = rows.map((row) =>
+    [
+      row.source,
+      row.id,
+      `"${row.description.replace(/"/g, '""')}"`,
+      row.gene_ratio,
+      row.pvalue,
+      row.p_adjust,
+      row.q_value,
+      row.count,
+    ].join(','),
   )
-  const blob = new Blob(['\uFEFF' + [header.join(','), ...rows].join('\n')], { type: 'text/csv;charset=utf-8;' })
+  const blob = new Blob(['\uFEFF' + [header.join(','), ...body].join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `kegg_enrichment_${result.value.task_id}.csv`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${source.toLowerCase()}_enrichment_${result.value.task_id}.csv`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
   URL.revokeObjectURL(url)
 }
 
+function exportTimestamp(): string {
+  const now = new Date()
+  const date = [now.getFullYear(), now.getMonth() + 1, now.getDate()].map((value) => String(value).padStart(2, '0')).join('')
+  const time = [now.getHours(), now.getMinutes(), now.getSeconds()].map((value) => String(value).padStart(2, '0')).join('')
+  return `${date}_${time}`
+}
+
+async function exportPlot(source: EnrichmentSource, format: 'png' | 'svg') {
+  const container = source === 'GO' ? goPlotContainer.value : keggPlotContainer.value
+  const rows = source === 'GO' ? goRows.value : keggRows.value
+  if (!container || !rows.length) {
+    message.warning(`当前没有可导出的 ${source} 图表`)
+    return
+  }
+  const width = form.exportCustomSize ? form.exportWidth : form.chartWidth
+  const height = form.exportCustomSize ? form.exportHeight : form.chartHeight
+  const baseName = `${source.toLowerCase()}_enrichment_${exportTimestamp()}`
+  try {
+    if (format === 'svg') {
+      await Plotly.downloadImage(container, { format, width, height, filename: baseName })
+      return
+    }
+    await Plotly.downloadImage(container, {
+      format,
+      width,
+      height,
+      scale: exportDpi.value / 96,
+      filename: `${baseName}_${exportDpi.value}dpi`,
+    } as any)
+  } catch {
+    message.error(`${source} ${format.toUpperCase()} 导出失败，请稍后重试。`)
+  }
+}
+
 function handleReset() {
+  stopTaskPolling()
+  submitting.value = false
+  activeTask.value = null
+  taskError.value = ''
   form.speciesId = ''
-  form.keggCode = ''
-  form.orgDb = ''
-  form.idType = ''
+  form.projectName = ''
   form.geneText = ''
   form.geneFile = null
+  form.pValueCutoff = 0.05
+  form.qValueCutoff = 0.1
+  form.goColor = 'var(--kimi-chart-3)'
+  form.keggColor = 'var(--kimi-chart-1)'
+  form.chartWidth = 960
+  form.chartHeight = 480
+  form.exportCustomSize = false
+  form.exportWidth = 1600
+  form.exportHeight = 1000
+  exportDpi.value = 300
   fileList.value = []
   inputMode.value = 'text'
   result.value = null
+  clearPlots()
 }
 
+watch(
+  () => form.speciesId,
+  () => {
+    if (!selectedSpecies.value) return
+    form.pValueCutoff = selectedSpecies.value.default_p_value_cutoff
+    form.qValueCutoff = selectedSpecies.value.default_q_value_cutoff
+  },
+)
+watch(
+  () => [form.goColor, form.keggColor, form.chartWidth, form.chartHeight, themeStore.isDark],
+  schedulePlotRender,
+)
+
 onMounted(() => {
-  loadSpecies()
+  void Promise.all([loadSpecies(), loadHistory()])
+})
+onBeforeUnmount(() => {
+  stopTaskPolling()
+  if (plotRenderTimer) clearTimeout(plotRenderTimer)
+  clearPlots()
 })
 </script>
 
 <template>
   <div class="kegg-page">
-    <PageHeader title="KEGG 通路富集分析" subtitle="针对基因列表识别显著富集的 KEGG 通路" back-to="/tools" back-label="返回工具箱">
+    <PageHeader
+      title="GO / KEGG 富集分析"
+      subtitle="提交单列 Gene ID 列表，由 R Docker 中的 clusterProfiler 分别执行 GO 与 KEGG 富集。"
+      back-to="/tools"
+      back-label="返回工具箱"
+    >
+      <template #actions>
+        <NSpace :size="4">
+          <NButton size="small" quaternary :loading="sampleLoading" @click="loadSample">
+            <template #icon>
+              <NIcon><SparklesOutline /></NIcon>
+            </template>
+            COP1/HY5 示例
+          </NButton>
+          <NButton size="small" quaternary :loading="speciesLoading" @click="loadSpecies">
+            <template #icon>
+              <NIcon><RefreshOutline /></NIcon>
+            </template>
+            刷新物种
+          </NButton>
+          <NButton size="small" quaternary :loading="historyLoading" @click="loadHistory">
+            <template #icon>
+              <NIcon><RefreshOutline /></NIcon>
+            </template>
+            刷新历史
+          </NButton>
+        </NSpace>
+      </template>
     </PageHeader>
 
     <div class="kegg-layout">
-      <aside class="param-panel">
+      <aside class="param-panel" aria-label="富集分析参数">
+        <NAlert v-if="speciesError" class="species-error" type="error" title="物种配置加载失败" :show-icon="true">
+          {{ speciesError }}
+        </NAlert>
+        <NButton
+          v-if="speciesError"
+          class="species-retry"
+          size="tiny"
+          secondary
+          type="error"
+          :loading="speciesLoading"
+          @click="loadSpecies"
+        >
+          重试加载物种
+        </NButton>
+
         <NForm label-placement="top" :show-feedback="false">
-          <NFormItem label="物种（Species）">
+          <NFormItem label="项目 ID" required>
+            <div class="project-field">
+              <NInput
+                v-model:value="form.projectName"
+                maxlength="100"
+                show-count
+                aria-required="true"
+                placeholder="例如：Tomato-COP1-HY5"
+              />
+              <p class="project-path-hint">结果保存到当前用户的 `enrichments/项目 ID/任务 ID/` 目录。</p>
+            </div>
+          </NFormItem>
+
+          <NFormItem label="物种">
             <NSelect
               v-model:value="form.speciesId"
               :options="speciesSelectOptions"
               placeholder="请选择物种"
               :loading="speciesLoading"
-              @update:value="handleSpeciesChange"
+              :disabled="Boolean(speciesError)"
             />
           </NFormItem>
 
-          <NFormItem label="KEGG Code">
-            <NInput v-model:value="form.keggCode" placeholder="如 hsa" disabled />
-          </NFormItem>
-          <NFormItem label="OrgDB">
-            <NInput v-model:value="form.orgDb" placeholder="如 org.Hs.eg.db" disabled />
-          </NFormItem>
-          <NFormItem label="ID 类型">
-            <NInput v-model:value="form.idType" placeholder="如 SYMBOL" disabled />
-          </NFormItem>
+          <NAlert v-if="selectedSpecies" class="species-summary" type="info" :show-icon="false">
+            <div class="species-summary-row">
+              <span>将执行</span>
+              <NTag size="small" type="success">{{ selectedAnalysisTypes }}</NTag>
+            </div>
+            <span class="species-summary-detail">基因 ID 类型：{{ selectedSpecies.id_type || '由本地参考库识别' }}</span>
+          </NAlert>
 
           <NFormItem label="基因 ID 列表">
-            <NTabs v-model:value="inputMode" type="line">
+            <NTabs v-model:value="inputMode" type="line" animated>
               <NTabPane name="text" tab="手动输入">
                 <NInput
                   v-model:value="form.geneText"
                   type="textarea"
                   :rows="8"
-                  placeholder="请输入 Gene ID，每行一个，例如：&#10;TP53&#10;BRCA1&#10;EGFR"
+                  placeholder="每行一个 Gene ID，例如：&#10;Solyc02g063527.2&#10;Solyc00g500064.1"
                 />
               </NTabPane>
-              <NTabPane name="file" tab="上传文件">
+              <NTabPane name="file" tab="上传 CSV / TSV">
                 <NUpload
                   v-model:file-list="fileList"
                   :default-upload="false"
                   :max="1"
-                  accept=".txt,.csv,.tsv"
+                  accept=".csv,.tsv"
                   @change="handleFileChange"
                 >
                   <NButton block>选择基因列表文件</NButton>
                 </NUpload>
-                <p class="upload-hint">支持 .txt / .csv / .tsv，每行一个 Gene ID</p>
+                <p class="upload-hint">仅读取第一列 Gene ID；可选首行 `GeneID`，不会解析差异表达统计列。</p>
               </NTabPane>
             </NTabs>
           </NFormItem>
 
+          <div class="parameter-grid" aria-label="显著性阈值">
+            <NFormItem label="p-value cutoff">
+              <NInputNumber v-model:value="form.pValueCutoff" :min="0.000001" :max="1" :step="0.01" :show-button="false" />
+            </NFormItem>
+            <NFormItem label="q-value cutoff">
+              <NInputNumber v-model:value="form.qValueCutoff" :min="0.000001" :max="1" :step="0.01" :show-button="false" />
+            </NFormItem>
+          </div>
+          <p class="parameter-hint">阈值随任务提交到 clusterProfiler；修改后需要重新提交分析。</p>
+
+          <div class="style-section">
+            <h3>图表样式</h3>
+            <div class="parameter-grid">
+              <NFormItem label="GO 主色">
+                <NSelect v-model:value="form.goColor" :options="ENRICHMENT_COLOR_OPTIONS" />
+              </NFormItem>
+              <NFormItem label="KEGG 主色">
+                <NSelect v-model:value="form.keggColor" :options="ENRICHMENT_COLOR_OPTIONS" />
+              </NFormItem>
+              <NFormItem label="图宽（px）">
+                <NInputNumber v-model:value="form.chartWidth" :min="640" :max="1600" :step="40" />
+              </NFormItem>
+              <NFormItem label="图高（px）">
+                <NInputNumber v-model:value="form.chartHeight" :min="360" :max="1000" :step="40" />
+              </NFormItem>
+            </div>
+            <p class="parameter-hint">主色生成连续色阶，颜色深浅表示 -log10(p.adjust)，气泡大小表示 Count；这些设置仅重绘前端 Plotly 图。</p>
+          </div>
+
+          <div class="style-section">
+            <h3>图片导出</h3>
+            <NFormItem label="PNG 分辨率">
+              <NSelect v-model:value="exportDpi" :options="exportDpiOptions" />
+            </NFormItem>
+            <div class="switch-row">
+              <span>自定义导出尺寸</span>
+              <NSwitch v-model:value="form.exportCustomSize" size="small" />
+            </div>
+            <div v-if="form.exportCustomSize" class="parameter-grid export-size-grid">
+              <NFormItem label="导出宽度（px）">
+                <NInputNumber v-model:value="form.exportWidth" :min="100" :max="8000" :step="100" />
+              </NFormItem>
+              <NFormItem label="导出高度（px）">
+                <NInputNumber v-model:value="form.exportHeight" :min="100" :max="8000" :step="100" />
+              </NFormItem>
+            </div>
+            <p class="parameter-hint">PNG 按所选 DPI 输出，SVG 保持矢量；未启用自定义尺寸时沿用当前图宽和图高。</p>
+          </div>
+
           <NSpace>
-            <NButton type="primary" :loading="submitting" @click="handleSubmit">提交分析</NButton>
-            <NButton @click="handleReset">重置</NButton>
+            <NButton type="primary" :loading="submitting" :disabled="Boolean(speciesError)" @click="handleSubmit">提交分析</NButton>
+            <NButton :disabled="submitting" @click="handleReset">重置</NButton>
           </NSpace>
         </NForm>
       </aside>
 
-      <main class="result-area">
+      <main class="result-area" aria-live="polite">
         <NCard class="result-card" :bordered="true">
           <template #header>
             <div class="result-header">
-              <span>分析结果</span>
-              <NButton v-if="result" size="small" @click="exportCsv">导出 CSV</NButton>
-            </div>
-          </template>
-
-          <NSpin v-if="submitting" class="result-placeholder" description="分析中，请稍候..." />
-
-          <template v-else-if="!result">
-            <NEmpty class="result-placeholder" description="提交分析后，将在此展示 Top 20 富集通路气泡图与完整结果表。" />
-          </template>
-
-          <template v-else>
-            <div id="kegg-enrichment-plot" class="plot-container" />
-
-            <div class="table-section">
-              <div class="table-title">
-                <span>富集结果明细</span>
-                <NTag size="small" type="info">共 {{ result.table_data.length }} 条</NTag>
+              <div>
+                <h2>分析结果</h2>
+                <p>GO 与 KEGG 分别展示 Top 20 气泡图和完整统计表。</p>
               </div>
-              <NDataTable
-                :columns="columns"
-                :data="result.table_data"
-                :row-key="(row) => row.id"
-                :pagination="{ pageSize: 10 }"
-                :bordered="true"
-                size="small"
-                :scroll-x="800"
-              />
+              <NSpace v-if="hasResults" :size="8">
+                <NTag v-if="isSampleResult" size="small" type="warning">真实示例结果</NTag>
+                <NTag v-if="activeTask?.project_name" size="small" type="info">{{ activeTask.project_name }}</NTag>
+                <NButton
+                  v-if="activeTask?.status === 'completed'"
+                  size="small"
+                  secondary
+                  @click="downloadOriginalResult(activeTask)"
+                >
+                  下载容器原始 CSV
+                </NButton>
+                <NButton size="small" secondary @click="exportCsv(result?.table_data ?? [], 'GO_KEGG')">导出全部 CSV</NButton>
+              </NSpace>
             </div>
           </template>
+
+          <NCollapse class="history-section" :default-expanded-names="[]" arrow-placement="left">
+            <NCollapseItem :name="'history'" :title="`历史分析结果（${historyTasks.length}）`">
+              <NDataTable
+                :columns="historyColumns"
+                :data="historyTasks"
+                :loading="historyLoading"
+                :row-key="(task) => task.task_id"
+                :pagination="{ pageSize: 8 }"
+                :scroll-x="900"
+                size="small"
+              />
+              <NEmpty v-if="!historyLoading && !historyTasks.length" size="small" description="当前用户还没有富集分析历史。" />
+            </NCollapseItem>
+          </NCollapse>
+
+          <div v-if="submitting" class="result-placeholder">
+            <NSpin :description="activeTask?.message || '等待 Celery Worker 执行 R 容器任务…'" />
+            <p class="task-progress">任务进度 {{ activeTask?.progress ?? 0 }}%</p>
+          </div>
+
+          <NAlert v-else-if="taskError" type="error" title="富集任务失败" class="task-error" :show-icon="true">
+            {{ taskError }}
+          </NAlert>
+
+          <NEmpty
+            v-else-if="!result"
+            class="result-placeholder"
+            description="选择物种并提交单列 Gene ID 列表后，在这里分别查看 GO 与 KEGG 结果。"
+          />
+
+          <NEmpty
+            v-else-if="!hasResults"
+            class="result-placeholder"
+            description="未发现满足当前 p-value / q-value 阈值的富集结果。"
+          />
+
+          <div v-else class="source-results">
+            <section class="source-section" aria-labelledby="go-result-title">
+              <div class="source-header">
+                <div>
+                  <h3 id="go-result-title">GO 富集分析</h3>
+                  <p>本地 GO OBO 与注释库，按 p.adjust 排序展示。</p>
+                </div>
+                <NSpace :size="8">
+                  <NTag size="small" type="success">{{ goRows.length }} 条</NTag>
+                  <NButton v-if="goRows.length" size="tiny" secondary @click="exportPlot('GO', 'png')">
+                    <template #icon><NIcon><DownloadOutline /></NIcon></template>
+                    PNG
+                  </NButton>
+                  <NButton v-if="goRows.length" size="tiny" secondary @click="exportPlot('GO', 'svg')">SVG</NButton>
+                  <NButton v-if="goRows.length" size="tiny" secondary @click="exportCsv(goRows, 'GO')">导出 GO CSV</NButton>
+                </NSpace>
+              </div>
+              <NEmpty v-if="!goRows.length" description="当前阈值下没有 GO 富集结果。" />
+              <template v-else>
+                <div ref="goPlotContainer" class="plot-container" aria-label="GO 富集气泡图" />
+                <NDataTable
+                  :columns="goColumns"
+                  :data="goRows"
+                  :row-key="(row) => `GO-${row.id}`"
+                  :pagination="{ pageSize: 10 }"
+                  :bordered="true"
+                  size="small"
+                  :scroll-x="900"
+                />
+              </template>
+            </section>
+
+            <section class="source-section" aria-labelledby="kegg-result-title">
+              <div class="source-header">
+                <div>
+                  <h3 id="kegg-result-title">KEGG 富集分析</h3>
+                  <p>KEGG 通路独立绘图，并提供通路详情跳转。</p>
+                </div>
+                <NSpace :size="8">
+                  <NTag size="small" type="info">{{ keggRows.length }} 条</NTag>
+                  <NButton v-if="keggRows.length" size="tiny" secondary @click="exportPlot('KEGG', 'png')">
+                    <template #icon><NIcon><DownloadOutline /></NIcon></template>
+                    PNG
+                  </NButton>
+                  <NButton v-if="keggRows.length" size="tiny" secondary @click="exportPlot('KEGG', 'svg')">SVG</NButton>
+                  <NButton v-if="keggRows.length" size="tiny" secondary @click="exportCsv(keggRows, 'KEGG')">导出 KEGG CSV</NButton>
+                </NSpace>
+              </div>
+              <NEmpty v-if="!keggRows.length" description="当前阈值下没有 KEGG 富集结果。" />
+              <template v-else>
+                <div ref="keggPlotContainer" class="plot-container" aria-label="KEGG 富集气泡图" />
+                <NDataTable
+                  :columns="keggColumns"
+                  :data="keggRows"
+                  :row-key="(row) => `KEGG-${row.id}`"
+                  :pagination="{ pageSize: 10 }"
+                  :bordered="true"
+                  size="small"
+                  :scroll-x="1000"
+                />
+              </template>
+            </section>
+
+            <NCard size="small" class="column-guide-card" title="结果表字段说明">
+              <p class="column-guide-intro">GO 与 KEGG 表采用同一统计字段，便于比较、导出与复现。</p>
+              <dl class="column-guide-grid">
+                <div v-for="item in resultColumnDescriptions" :key="item.field" class="column-guide-item">
+                  <dt>{{ item.field }}</dt>
+                  <dd>{{ item.description }}</dd>
+                </div>
+              </dl>
+            </NCard>
+          </div>
         </NCard>
       </main>
     </div>
@@ -287,82 +853,287 @@ onMounted(() => {
 
 <style scoped>
 .kegg-page {
-  padding: 16px;
   min-height: 100%;
+  padding: 16px;
 }
-.page-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
+
+.kegg-page :deep(.page-header) {
+  margin-bottom: 8px;
 }
-.page-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--neutral-text-1);
-  margin: 0;
-}
+
 .kegg-layout {
   display: grid;
-  grid-template-columns: 360px 1fr;
+  grid-template-columns: 340px minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
-.param-panel {
+
+.param-panel,
+.result-card {
   background: var(--neutral-card);
   border: 1px solid var(--neutral-border);
-  border-radius: 12px;
-  padding: 20px;
+  border-radius: var(--radius-card);
 }
-.upload-hint {
-  font-size: 12px;
-  color: var(--neutral-text-3);
-  margin: 8px 0 0;
+
+.param-panel {
+  max-height: calc(100vh - 130px);
+  padding: 12px;
+  overflow: auto;
 }
-.result-area {
-  min-height: 640px;
+
+.species-error,
+.task-error {
+  margin-bottom: 8px;
 }
-.result-card {
-  border-radius: 12px;
-}
-.result-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.result-placeholder {
-  height: 300px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.plot-container {
-  width: 100%;
-  height: 460px;
-  margin-bottom: 20px;
-}
-.table-section {
-  margin-top: 16px;
-}
-.table-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+
+.species-retry {
   margin-bottom: 12px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--neutral-text-1);
 }
-.kegg-link {
-  color: var(--arco-primary, #165dff);
+
+.species-summary {
+  margin: -2px 0 12px;
+}
+
+.species-summary-row,
+.result-header,
+.source-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.species-summary-row {
+  color: var(--neutral-text-2);
+  font-size: 12px;
+}
+
+.species-summary-detail,
+.upload-hint,
+.project-path-hint,
+.parameter-hint,
+.result-header p,
+.source-header p {
+  display: block;
+  margin: 5px 0 0;
+  color: var(--neutral-text-3);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.project-path-hint {
+  margin: 0;
+}
+
+.project-field {
+  display: grid;
+  width: 100%;
+  gap: 6px;
+}
+
+.parameter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 8px;
+}
+
+.parameter-grid :deep(.n-form-item) {
+  margin-bottom: 0;
+}
+
+.parameter-grid :deep(.n-input-number) {
+  width: 100%;
+}
+
+.parameter-hint {
+  margin: 8px 0 16px;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  margin-bottom: 10px;
+  color: var(--neutral-text-2);
   font-size: 13px;
 }
+
+.export-size-grid {
+  margin-bottom: 8px;
+}
+
+.style-section {
+  padding-top: 14px;
+  margin-top: 4px;
+  border-top: 1px solid var(--neutral-border);
+}
+
+.style-section h3 {
+  margin: 0 0 10px;
+  color: var(--neutral-text-1);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.result-area {
+  min-width: 0;
+}
+
+.result-card {
+  min-height: calc(100vh - 130px);
+}
+
+.history-section {
+  margin-bottom: 14px;
+  padding: 0 2px 12px;
+  border-bottom: 1px solid var(--neutral-border);
+}
+
+.result-header h2,
+.source-header h3 {
+  margin: 0;
+  color: var(--neutral-text-1);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.result-placeholder {
+  display: grid;
+  min-height: 320px;
+  place-items: center;
+}
+
+.task-progress {
+  margin: -116px 0 0;
+  color: var(--neutral-text-3);
+  font-size: 12px;
+}
+
+.source-results {
+  display: grid;
+  gap: 18px;
+}
+
+.source-section {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--neutral-border);
+  border-radius: var(--radius-card);
+  background: var(--neutral-card);
+}
+
+.source-header {
+  margin-bottom: 10px;
+}
+
+.source-header :deep(.n-space) {
+  justify-content: flex-end;
+}
+
+.plot-container {
+  width: 100%;
+  min-height: 360px;
+  margin: 0 auto 14px;
+  overflow: hidden;
+}
+
+.column-guide-card {
+  background: var(--neutral-bg);
+}
+
+.column-guide-intro {
+  margin: 0 0 12px;
+  color: var(--neutral-text-3);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.column-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.column-guide-item {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--neutral-border);
+  border-radius: var(--radius-button);
+  background: var(--neutral-card);
+}
+
+.column-guide-item dt {
+  margin-bottom: 4px;
+  color: var(--neutral-text-1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.column-guide-item dd {
+  margin: 0;
+  color: var(--neutral-text-2);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.kegg-link {
+  color: var(--arco-primary);
+  font-size: 13px;
+}
+
 .kegg-link:hover {
+  color: var(--arco-primary-hover);
   text-decoration: underline;
 }
-@media (max-width: 900px) {
+
+.kegg-link:focus-visible {
+  outline: 2px solid var(--arco-primary);
+  outline-offset: 3px;
+}
+
+@media (max-width: 1100px) {
   .kegg-layout {
     grid-template-columns: 1fr;
+  }
+
+  .param-panel,
+  .result-card {
+    max-height: none;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .kegg-page {
+    padding: 16px;
+  }
+
+  .result-header,
+  .source-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .parameter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .column-guide-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .plot-container {
+    min-height: 320px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kegg-link {
+    transition: none;
   }
 }
 </style>

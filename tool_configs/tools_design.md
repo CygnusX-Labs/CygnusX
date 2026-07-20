@@ -76,7 +76,7 @@ tool_configs/                            # 仓库根,后端配置目录
 1. **后端注册**:在 `tool_configs/tools_setting.yaml` 的 `tools` 列表追加一项，必须指定 `group`（字段与可选值见 §五）。
 2. **前端路由**:在 `frontend/src/router/index.ts` 的 `DefaultLayout` children 内,仿照已有工具追加子路由(见 §五)。
 3. **图标登记**(仅当用了新图标):在 `ToolsHubView.vue` 的 `ICON_MAP` 登记组件。YAML 的 `icon` 字段是字符串,Vue 组件不能由字符串动态 import,必须在此映射。
-4. **后端功能配置**(仅有后端的工具):按 §5.1.1 新建 `tool_configs/<tool-key>/` 目录放 YAML,并在 YAML 的 `config_dir` 指明。纯前端工具(如 plot/volcano/blast)留空。
+4. **后端功能配置**(仅有后端的工具):按 §5.1.1 新建 `tool_configs/<tool-key>/` 目录放 YAML,并在 YAML 的 `config_dir` 指明。纯前端工具(如 plot/volcano)留空；BLAST 和其他高计算量工具必须遵循 §5.1.2。
 5. **创建页面**:新建 `frontend/src/views/BioTools/<Tool>View.vue`,按 §六骨架实现;复杂数据逻辑抽到 `frontend/src/utils/<tool>Processor.ts`。
 
 > **图形绘制工具补充要求**：散点图、火山图、热图、箱线图、柱状图等以数据导入和交互式绘图为核心的工具，还必须遵守 §5.6 的参数、功能、导出与验证规范。
@@ -133,6 +133,105 @@ tool_configs/
 
 纯前端且没有可运营参数的工具可以保持 `config_dir: ""`；一旦需要让默认阈值、色板、资源列表或预设可独立维护，就应创建对应 YAML 配置，而不是继续扩大组件内硬编码常量。
 
+#### 5.1.2 高计算量工具执行架构（强制，复用 BLAST 模式）
+
+需要运行外部程序、R/Python 工作流、容器镜像、参考数据库检索，或预计会占用较多 CPU、内存、磁盘与执行时间的工具，**必须使用与 BLAST 相同的异步任务架构**。典型工具包括序列检索、比对、组装、注释、富集分析、统计模型和大规模可视化预处理。
+
+```text
+浏览器
+  └─ POST /<tool>/submit（上传/参数）
+       └─ Web API：鉴权、输入校验、创建 TaskModel、保存任务输入
+            └─ Celery：投递到 analysis 队列
+                 └─ Worker：消费任务、启动对应 Docker/R/命令行容器
+                      └─ 任务目录：写入结果表、图片、日志和结果元数据
+                 └─ Worker：更新任务状态、进度、错误与结果索引
+  └─ GET /<tool>/tasks/{task_id}（轮询任务状态与结果）
+       └─ 前端：渲染表格、Plotly/ECharts 图表与可下载产物
+```
+
+职责边界：
+
+| 层级 | 必须承担的职责 | 禁止事项 |
+|---|---|---|
+| 浏览器 | 提交参数/文件、展示排队与进度、轮询任务、渲染结果和下载链接。 | 直接执行分析程序、调用 Docker、等待长请求完成。 |
+| Web API | 鉴权与数据归属校验、轻量输入校验、创建任务记录、将任务投递至 Celery、提供状态/结果查询接口。 | 安装 Docker CLI、挂载 Docker Socket、同步运行 R/容器/高耗时子进程。 |
+| Celery Worker | 消费 `analysis` 队列、执行任务、控制超时与资源、更新 `TaskModel` 状态。 | 将执行结果只保存在进程内存中，或绕过任务状态记录。 |
+| 分析容器 | 在隔离环境中运行 BLAST、R、Python 或其他命令行工具；将约定产物写入挂载任务目录。 | 直接访问 Web 会话、数据库凭据或用户认证令牌。 |
+
+实现要求：
+
+1. 提交接口必须快速返回 `task_id`、初始状态与状态查询地址；不得等待容器分析结束后才响应。
+2. Web 进程不得依赖 Docker CLI 或 Docker Socket。只有执行分析的 Worker 具备 Docker CLI、Docker Socket（或等效容器运行权限）和所需的数据卷挂载。
+3. 每个任务使用独立的用户归属目录和任务目录；输入、运行日志、结构化结果、图片/PDF/CSV 等产物均写入该目录，并由 `task_id` 关联。
+4. Worker 必须在任务开始、进度更新、成功和失败时持久化状态；失败时记录对用户安全的错误摘要，内部日志不得直接泄露到前端。
+5. 所有查询、下载和结果展示接口必须校验任务所属用户；前端只能轮询和查看当前用户有权限访问的 `task_id`。
+6. 为 Celery 任务和容器运行设置软/硬超时、并发数、CPU/内存限制、文件大小限制及结果保留/清理策略；资源参数应由工具 YAML 或部署配置统一维护。
+7. 容器退出后由 Worker 解析约定的结果文件，生成前端可消费的结果 DTO/JSON；图表优先在前端用 Plotly/ECharts 交互式渲染，不要求容器生成静态图。
+8. 新增高计算工具时优先复用 BLAST 已有的任务模型、队列、状态字段、目录隔离、进度接口和前端轮询模式，不得重新实现一套同步执行链路。
+
+##### Docker Socket 权限与 GID 规范（强制）
+
+Worker 通过 `/var/run/docker.sock` 启动分析容器时，容器内 Worker 的附加组 GID 必须与宿主机 Docker Socket 的实际 GID 一致。**禁止在 Compose、Dockerfile、`.env` 或部署脚本中固定写死 `DOCKER_GID=987`、`999` 等机器相关数值**；不同 Linux 发行版、Docker 安装方式、CI 节点和服务器上的 Docker 组 GID 可能不同，固定值会导致以下错误：
+
+```text
+permission denied while trying to connect to the Docker daemon socket
+```
+
+部署实现必须遵循：
+
+1. 统一通过 `scripts/worker-compose.sh` 启动 Worker；该脚本在执行 Compose 前使用 `stat -c '%g' /var/run/docker.sock` 自动读取实际 GID，并导出为 `DOCKER_GID`。
+2. `docker-compose.worker.yml` 使用 `group_add: ["${DOCKER_GID}"]` 将 Worker 加入对应附加组，不提供固定数字作为默认值；未检测到 Socket 或 GID 时应明确失败或警告，而不是静默使用猜测值。
+3. Docker Socket 必须以只满足执行需求的权限挂载；禁止通过 `chmod 666 /var/run/docker.sock`、特权容器或全局放宽权限规避 GID 配置问题。
+4. Docker Socket、Docker CLI 和对应附加组只配置给需要启动分析容器的 Worker；Web 容器不得因为富集、BLAST 等计算任务获得该权限。
+5. Worker 重建或迁移节点后必须重新检测 GID；不得复用其他服务器生成的 Compose 环境文件。
+6. Worker 入口脚本从 root 降权到 `PUID:PGID` 时必须显式保留 Docker Socket GID。禁止使用会清空附加组的 `gosu "$PUID:$PGID"` 直接启动 Celery；应使用 `setpriv --reuid ... --regid ... --groups "$DOCKER_SOCKET_GID"`，或通过具名用户初始化等效附加组。
+7. 权限验收必须检查 Celery PID 及 prefork 子进程的 `/proc/<pid>/status`，确认 `Groups:` 包含 Socket GID。只执行 `docker exec omichub-worker docker version` 会以 root 或独立 exec 用户运行，不能证明实际 Celery 任务具备权限。
+8. Worker 健康检查必须同时验证 PID 1 附加组、非 root Docker daemon 连接和 Celery ping；任一失败时将容器标记为 unhealthy，避免任务继续被错误节点消费。
+
+部署验收至少执行：
+
+```bash
+stat -c 'host_socket_gid=%g mode=%A' /var/run/docker.sock
+docker exec omichub-worker sh -lc 'id; stat -c "worker_socket_gid=%g mode=%A" /var/run/docker.sock'
+docker exec omichub-worker sh -lc 'grep -E "^(Uid|Gid|Groups):" /proc/1/status'
+docker exec omichub-worker docker version
+docker exec omichub-worker docker run --rm alpine:3.20 true
+```
+
+宿主机、Worker 和 Celery 进程看到的 Socket GID必须匹配，且实际非 root 运行身份必须能成功执行 `docker version` 和最小测试容器。只验证 Docker CLI 已安装不算通过，因为 CLI 存在并不代表实际 Celery 任务有权连接 Docker daemon。
+
+##### Dockerfile 目录与职责规范（强制）
+
+平台服务、Celery Worker 和高计算量工具运行时的 Dockerfile 必须统一放在 `deploy/` 下，主栈相关镜像优先放在 `deploy/docker/`。`tool_configs/<tool-key>/` 只保存 YAML 配置、运行脚本、示例数据、资源契约和工具说明，禁止继续在工具配置目录中新增 Dockerfile。
+
+目录和命名约定：
+
+```text
+deploy/docker/
+├── Dockerfile                   # 通用后端：Web / Beat / Flower
+├── Dockerfile.frontend          # Vue 构建与 Nginx 静态托管
+├── Dockerfile.worker            # 通用 Celery 计算 Worker
+├── Dockerfile.phylo             # 系统发育专用 Worker
+├── Dockerfile.enrichment        # GO / KEGG clusterProfiler R 运行时
+└── README.md                    # 每个 Dockerfile 的职责、上下文和 Make 入口
+
+tool_configs/enrichments/
+├── run_enrichment.R             # Docker 构建上下文中的运行脚本
+├── species_config.yaml          # 工具运行配置
+└── examples/                    # 示例输入输出
+```
+
+实现要求：
+
+1. 通用后端可保留名称 `Dockerfile`；其他镜像使用 `Dockerfile.<purpose>`，不得使用含义不明的序号或临时名称。
+2. 每个 Dockerfile 文件头和 `deploy/docker/README.md` 必须说明镜像用途、构建上下文、运行角色和推荐 Make target。
+3. Dockerfile 位于 `deploy/docker/` 不代表构建上下文也必须是该目录；工具镜像可使用 `docker build -f deploy/docker/Dockerfile.<tool> tool_configs/<tool>/`，避免复制或移动运行脚本。
+4. 每个独立工具镜像必须提供稳定的 `make docker-build-<tool>` 入口。项目文档优先引用 Make target，不散落裸 `docker build` 命令。
+5. 启动依赖该镜像的 Worker 前，`make docker-up-worker`、`make docker-up-all`、`make docker-start` 和开发重载命令必须自动构建或检查镜像，避免任务提交后才因镜像不存在而失败。
+6. 移动或重命名 Dockerfile 时，必须同步更新 Makefile、Compose、README、工具契约、CI/CD 和测试中的路径，并通过 Make dry-run 与 Docker 构建配置验证。
+
+验收标准：提交后 Web 请求立即结束；Worker 可独立完成容器计算；Web 镜像中不存在分析所需 Docker 依赖；任务失败不会导致 Web 进程 500；前端能够明确展示 `queued`、`running`、`completed`、`failed` 状态并在完成后获取结果。
+
 ### 5.2 路由注册(`router/index.ts`)
 
 ```ts
@@ -172,7 +271,7 @@ const ICON_MAP: Record<string, Component> = {
 | `sequence` | 序列分析 | `CodeSlashOutline` | 1 | FASTQ 极速质控、序列检索 BLAST、序列魔术师、PrimerForge 引物锻造工坊 |
 | `visualization` | 数据可视化 | `ColorPaletteOutline` | 2 | 组学绘图工坊、火山图绘制 |
 | `genome` | 基因组与进化 | `LayersOutline` | 3 | Web 基因组浏览器、系统发育树构建、格式轻量转换器 |
-| `function` | 功能注释 | `BarChartOutline` | 4 | KEGG 通路富集分析 |
+| `function` | 功能注释 | `BarChartOutline` | 4 | GO / KEGG 富集分析 |
 | `environment` | 计算环境 | `TerminalOutline` | 5 | 云端沙盒终端 |
 
 分组与卡片排序规则：
@@ -339,6 +438,35 @@ function buildGroupColorMap(groups: string[], palette: readonly string[]) {
 ```
 
 图例中应按该颜色字典输出所有当前可见组；分组标签需使用用户可理解的中文/原始名称，禁止只展示内部编码。
+
+#### 5.6.3.2 富集气泡图颜色与尺寸规范（强制）
+
+GO / KEGG 等同时返回多个知识库来源的富集工具，结果不得混在同一气泡图和同一统计表中。每个来源必须拥有独立标题、空状态、图表、结果数量、表格和导出入口，允许某一来源无结果而另一来源正常展示。
+
+| 设置 | 默认值 | 合法范围与行为 |
+|---|---|---|
+| GO 主色 | `var(--kimi-chart-3)`（绿色） | 从 `--kimi-chart-1` 至 `--kimi-chart-6` 中选择；同一来源的图、hover 和导出保持一致。 |
+| KEGG 主色 | `var(--kimi-chart-1)`（蓝色） | 不得与 GO 默认同色；用户修改后只重绘前端图表。 |
+| 图宽 | `960px` | 允许 `640–1600px`；实际渲染宽度不得超过当前容器宽度，窄屏自动收缩。 |
+| 图高 | `480px` | 允许 `360–1000px`；GO 与 KEGG 默认保持相同高度。 |
+| 展示数量 | Top 20 | 分来源按 `p.adjust` 升序取 Top N，不得先合并来源再截断。 |
+| X 轴 | `GeneRatio` | 转换为连续比例；原始比例字符串保留在表格和 hover。 |
+| 点大小 | `Count` | 使用受控缩放并设置最大点径，避免大通路遮挡其它结果。 |
+| 点颜色 | `-log10(p.adjust)` | 必须使用连续渐变色板并显示 colorbar；来源主色只定义色阶基调，禁止所有气泡使用同一填充色。 |
+| Y 轴标签 | 描述文本 | 超长术语/通路名称应自动换行并限制为约两行，超出部分显示省略号；hover 必须保留完整描述。 |
+| hover | ID、描述、GeneRatio、Count、p-value、p.adjust、q-value | 小数使用科学计数法，不能遗漏 q-value。 |
+
+颜色、图宽和图高是**前端展示参数**，调整后使用 debounce + `Plotly.react` 局部重绘，不得重新提交计算任务。p-value cutoff 与 q-value cutoff 是**服务端计算参数**，必须分别提供输入框、校验 `0 < cutoff <= 1`，并随任务提交给 R/clusterProfiler；修改计算阈值后必须重新运行任务，不能只在浏览器隐藏结果冒充重新分析。
+
+富集结果页面还必须提供：每个来源独立的 PNG、SVG、CSV 导出入口；PNG 至少支持 300/600/1000 DPI，自定义导出尺寸范围遵循 100–8000 px；结果区提供字段说明卡片，解释 ID、Description、GeneRatio、p-value、p.adjust、q-value、Count 及来源专属操作。图片导出仅消费浏览器中的 Plotly 实例，不得重新提交 Celery 或重新启动 R 容器。
+
+富集任务提交必须包含用户可读的项目 ID，页面字段必须显示明确的必填状态，提交接口不得提供可绕过必填校验的默认项目值。后端对项目 ID 做长度校验和安全目录名转换，结果统一保存到 `{data_mount}/users/{user_id}/enrichments/{project_slug}/{task_id}/`，禁止直接拼接未经清洗的用户输入。项目 ID、物种、基因数量、阈值和结果路径元数据写入通用任务记录；页面提供当前用户的历史任务列表、已完成结果恢复查看和鉴权后的原始 clusterProfiler CSV 下载。历史接口只返回当前 JWT 用户的数据，不接受可伪造的 `user_id` 查询参数。
+
+项目 ID 下方的结果目录说明等帮助文案必须放在对应表单项的正常文档流中，并预留稳定间距；不得通过负外边距、绝对定位或不受控层级将提示文字推入输入框、标签或相邻控件区域。任何屏幕宽度、浏览器缩放比例及输入框显示字数统计时，帮助文案都不能被上方控件遮挡或与其重叠。
+
+气泡图内部可见标注使用英文，包括标题、X/Y 轴、colorbar 和 hover 字段名；页面表单、帮助文案和错误信息继续使用中文。默认标题分别为 `GO Enrichment — Top N`、`KEGG Enrichment — Top N`，避免导出论文图片时混入中文界面文案。
+
+组学绘图工坊必须支持“富集结果气泡图”图种：自动识别 `Source, ID, Description, GeneRatio, pvalue, p.adjust, qvalue, Count` 标准列；未选择条目时按 `p.adjust` 展示 Top 20，用户可按 ID/Description 搜索并多选 pathway/GO term 后局部重绘；当前筛选结果可导出 CSV，图片继续支持 PNG/SVG 和高 DPI。重新绘图仅处理下载结果，不重新运行 R 容器。
 
 #### 5.6.4 数据处理与绘图质量要求
 
@@ -781,7 +909,7 @@ Plotly.downloadImage(container, {
 | BLAST | `BlastSearchView.vue` | 两栏(输入 + 结果)、表格结果展示 |
 | FASTQ 质控 | `FastqQCView.vue` | 两栏、文件上传、统计卡片 |
 | 绘图工坊 | `PlotWorkshopView.vue` | ECharts 集成、多图表类型切换 |
-| KEGG 富集 | `KeggEnrichmentView.vue` | 两栏、后端配置驱动(`config_dir`) |
+| GO / KEGG 富集 | `KeggEnrichmentView.vue` | 两栏、R Docker、后端配置驱动(`config_dir`) |
 | JBrowse | `JBrowseViewer.vue` | **全屏工具特例**,仅参考全屏模式,不参考紧凑布局 |
 | 工具箱列表 | `ToolsHubView.vue` | 卡片网格、ICON_MAP、API 拉取 |
 
@@ -1009,3 +1137,16 @@ animation: cardIn 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
 ---
 
 *本章节与 `tools_update.md` 互为补充：后者记录落地计划与排期，本文档记录架构规范与实现约定。*
+
+## 十七、工具详情页页头统一规范
+
+所有工具详情页的返回入口必须与工具标题信息保持同一视觉组，避免返回按钮贴在标题上沿：
+
+- 标准工具页统一使用 `frontend/src/components/PageHeader.vue`。
+- `PageHeader` 的 `backTo` 通常指向 `/tools`，`backLabel` 使用“返回工具箱”。
+- 返回按钮在标题与副标题文本块之间垂直居中，而不是与 `h1` 顶部对齐；共享实现使用 `.page-header-main { align-items: center; }`。
+- 页面级操作继续放入 `PageHeader` 的 `#actions` 插槽，不能因为调整返回按钮位置而改变操作区的职责。
+- 图标按钮必须保留 Tooltip 与无障碍名称；窄屏下页头允许换行，但返回按钮仍需保持可见和键盘可达。
+- JBrowse、YAML 驱动基因组浏览器、云端沙盒终端等全屏或专用工具栏可以保留专用结构，但返回按钮必须与标题信息块垂直居中，并保持现有全屏布局例外。
+
+新增或修改工具时，先检查共享 `PageHeader`，只有在全屏工具确有布局约束时才新增局部页头实现。

@@ -29,6 +29,9 @@ services:
     container_name: omichub-worker
     restart: unless-stopped
     logging: *default-logging
+    group_add:
+      # scripts/worker-compose.sh 启动时自动读取 /var/run/docker.sock 的实际 GID。
+      - "${DOCKER_GID:?Run scripts/worker-compose.sh to detect the Docker socket GID}"
     env_file:
       - ../../.env
     environment:
@@ -60,6 +63,7 @@ services:
       - ${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}/logs/app:/app/logs # 应用日志持久化到宿主机
       - ${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}/logs/snakemake:/logs # Snakemake 流程日志统一落盘
       - ${WORKER_PIPELINE_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}:/opt/omichub/pipelines:ro # RNAFlow / ATACFlow Workspace
+      - /var/run/docker.sock:/var/run/docker.sock  # R enrichment 等隔离分析容器由 Worker 编排
     networks:
       - omichub_net
     # -Q analysis,blast_search,blast_db_build: 显式消费 analysis 队列及 BLAST 专属队列。
@@ -70,6 +74,57 @@ services:
       - |
         export OMICHUB_WORKFLOW_MONITOR_TOKEN="$${OMICHUB_WORKFLOW_MONITOR_TOKEN:-$${WORKFLOW_MONITOR_INGEST_TOKEN}}"
         exec celery -A omichub.infrastructure.celery_app.celery worker -Q analysis,blast_search,blast_db_build --loglevel=info
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          socket_gid=$$(stat -c '%g' /var/run/docker.sock) &&
+          grep '^Groups:' /proc/1/status | tr ' \t' '\n' | grep -qx "$$socket_gid" &&
+          setpriv --reuid "$${PUID:-1000}" --regid "$${PGID:-1000}" --groups "$$socket_gid" --
+          docker version >/dev/null 2>&1 &&
+          celery -A omichub.infrastructure.celery_app.celery inspect ping -d celery@$$HOSTNAME || exit 1
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
+  phylo-worker:
+    image: ${OMICHUB_PHYLO_WORKER_IMAGE:-omichub-phylo-worker:dev}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.phylo
+    container_name: omichub-phylo-worker
+    restart: unless-stopped
+    logging: *default-logging
+    env_file:
+      - ../../.env
+    environment:
+      - APP_ENV=development
+      - POSTGRES_HOST=db
+      - REDIS_HOST=cache
+      - SERVICE_NAME=phylo-worker
+      - PYTHONPATH=/app/src
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@cache:6379/1
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@cache:6379/2
+      - OMP_NUM_THREADS=${PHYLO_WORKER_THREADS:-4}
+      - OMICHUB_LOG_DIR=/app/logs
+    volumes:
+      - ../../src:/app/src:ro
+      - ../../tool_configs:/app/tool_configs:ro
+      - ${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}:/data/omichub
+      - ${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}/logs/app:/app/logs
+    networks:
+      - omichub_net
+    command:
+      - celery
+      - -A
+      - omichub.infrastructure.celery_app.celery
+      - worker
+      - -Q
+      - phylo_tree,phylo_tree_highmem
+      - --concurrency=${PHYLO_WORKER_CONCURRENCY:-2}
+      - --prefetch-multiplier=1
+      - --loglevel=info
     healthcheck:
       test: ["CMD-SHELL", "celery -A omichub.infrastructure.celery_app.celery inspect ping -d celery@$$HOSTNAME || exit 1"]
       interval: 30s

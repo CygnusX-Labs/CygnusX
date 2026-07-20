@@ -203,7 +203,7 @@ const routes: RouteRecordRaw[] = [
         path: 'tools/kegg-enrichment',
         name: 'tools-kegg-enrichment',
         component: () => import('@/views/BioTools/KeggEnrichmentView.vue'),
-        meta: { title: 'KEGG 通路富集分析', requiresAuth: true }
+        meta: { title: 'GO / KEGG 富集分析', requiresAuth: true }
       },
       {
         path: 'tools/seq-manipulator',

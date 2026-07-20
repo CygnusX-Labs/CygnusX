@@ -91,29 +91,25 @@ tools:
 
   - key: phylogenetic-tree
     name: omichub_build_phylogenetic_tree
-    description: 提交系统发育树构建任务（异步），返回 task_id 供后续查看进度。
+    description: 打开系统发育树工作台，由用户上传序列、配置参数，并通过专用 Celery worker 完成建树与可视化。
     category: sequence
-    invocation_mode: backend_async
-    service: omichub.tools.phylogenetic_tree.service.PhylogeneticTreeService
-    requires_confirm: true
+    invocation_mode: open_page
+    route: /tools/phylogenetic-tree
+    requires_confirm: false
     annotations:
       readOnlyHint: false
       destructiveHint: false
       openWorld: false
-      idempotent: false
+      idempotent: true
     input_schema:
       type: object
       properties:
-        file_id:
+        layout:
           type: string
-          description: 已上传序列文件的 file_id
-        method:
-          type: string
-          enum: [NJ, UPGMA, ML, Bayesian]
-          description: 建树方法
-      required: [file_id, method]
-    llm_result_fields: [task_id, status, message, success, error]
-    ui_result_fields: [task_id, status, progress_url, result_url]
+          enum: [rectangular, circular, radial]
+          description: 希望在页面中使用的树布局；页面仍允许用户随时切换
+    llm_result_fields: [route, message, success, error]
+    ui_result_fields: [route, arguments]
 
   - key: manhattan
     name: omichub_plot_manhattan

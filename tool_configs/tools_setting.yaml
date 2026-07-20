@@ -119,8 +119,8 @@ tools:
     config_dir: ""
 
   - key: "kegg-enrichment"
-    title: "KEGG 通路富集分析"
-    description: "基于 YAML 配置驱动，使用 clusterProfiler 进行 KEGG 通路富集分析"
+    title: "GO / KEGG 富集分析"
+    description: "基于本地参考库与 R Docker clusterProfiler 的 GO / KEGG 基因列表富集分析"
     icon: "BarChartOutline"
     gradient: "linear-gradient(135deg, #00B42A 0%, #4CDD7A 100%)"
     route: "/tools/kegg-enrichment"

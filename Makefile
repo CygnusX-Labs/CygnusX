@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker test lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-runtime-dirs docker-fix-permissions docker-up docker-build-worker docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge docker-start clean init-admin init-cookies check-alembic-heads sync-knowledge
+.PHONY: help dev dev-worker test lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-runtime-dirs docker-fix-permissions docker-up docker-build-enrichment docker-build-worker docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge docker-start clean init-admin init-cookies check-alembic-heads sync-knowledge
 
 help: ## 显示所有可用命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -52,6 +52,7 @@ COMPOSE_WORKER := ./scripts/worker-compose.sh
 COMPOSE_ALL    := docker compose -f deploy/docker/docker-compose.yml
 DOCKER_NETWORK := omichub_net
 SANDBOX_NETWORK := omichub-sandbox-net
+ENRICHMENT_DOCKER_IMAGE ?= omichub-r-enrichment:v1
 DATA_ROOT ?= /data/omichub
 PUID ?= $(shell id -u)
 PGID ?= $(shell id -g)
@@ -76,14 +77,17 @@ docker-up: docker-network ## 启动主栈 (web/db/redis/nginx/beat/flower)
 	$(COMPOSE_MAIN) up -d
 	@$(MAKE) --no-print-directory check-alembic-heads
 
-docker-build-worker: ## 使用 Docker Compose 构建轻量 Worker 镜像
-	$(COMPOSE_WORKER) build worker
+docker-build-enrichment: ## 构建 GO / KEGG 富集分析 R 运行时镜像
+	docker build -t $(ENRICHMENT_DOCKER_IMAGE) -f deploy/docker/Dockerfile.enrichment tool_configs/enrichments
 
-docker-up-worker: docker-network ## 构建并启动独立计算节点 Worker 栈
+docker-build-worker: docker-build-enrichment ## 构建富集运行时、通用 Worker 与系统发育 Worker 镜像
+	$(COMPOSE_WORKER) build worker phylo-worker
+
+docker-up-worker: docker-network docker-build-enrichment ## 构建并启动富集运行时、通用与系统发育 Worker 栈
 	@python3 scripts/render_worker_config.py
 	@set -a; . data/.worker-config.env; set +a; \
 		$(MAKE) --no-print-directory docker-runtime-dirs DATA_ROOT="$$WORKER_SHARED_DATA_DIR"
-	$(COMPOSE_WORKER) up -d --build worker
+	$(COMPOSE_WORKER) up -d --build worker phylo-worker
 
 docker-up-all: docker-network ## 启动主栈 + Worker（一键全启）
 	@$(MAKE) --no-print-directory docker-runtime-dirs
@@ -112,13 +116,13 @@ docker-clean: ## 清理容器与网络（保留数据卷，不删镜像）
 docker-purge: ## [危险] 彻底清理：容器+数据卷+网络+本地镜像+前端构建产物（不可逆，重置到干净状态）
 	@echo "=> 停止并删除所有容器及命名数据卷..."
 	-$(COMPOSE_ALL) down --volumes --remove-orphans 2>/dev/null
-	-docker rm -f omichub-nginx omichub-web omichub-beat omichub-flower omichub-db omichub-cache omichub-worker 2>/dev/null
+	-docker rm -f omichub-nginx omichub-web omichub-beat omichub-flower omichub-db omichub-cache omichub-worker omichub-phylo-worker 2>/dev/null
 	@echo "=> 删除所有 OmicHub 数据卷（含 docker_ 前缀命名卷）..."
 	-docker volume rm $$(docker volume ls -q --filter name=docker_) 2>/dev/null
 	@echo "=> 删除 omichub 网络..."
 	-docker network rm $(DOCKER_NETWORK) 2>/dev/null
 	@echo "=> 删除本地构建镜像..."
-	-docker rmi $$(docker images --filter reference=docker-web --filter reference=docker-beat --filter reference=docker-flower --filter reference=docker-worker -q) 2>/dev/null
+	-docker rmi $$(docker images --filter reference=docker-web --filter reference=docker-beat --filter reference=docker-flower --filter reference=docker-worker --filter reference=omichub-phylo-worker --filter reference=omichub-r-enrichment -q) 2>/dev/null
 	@echo "=> 清理前端构建产物..."
 	rm -rf frontend/dist
 	@echo "=> 清理完成"
@@ -130,6 +134,7 @@ docker-start: ## 彻底重建：清空一切 + 重建镜像 + 构建前端 + 启
 	@echo "=> 重建 Docker 镜像..."
 	$(COMPOSE_MAIN) build --no-cache
 	$(COMPOSE_WORKER) build --no-cache
+	@$(MAKE) --no-print-directory docker-build-enrichment
 	@echo "=> 启动全部服务..."
 	@$(MAKE) --no-print-directory docker-network
 	@$(MAKE) --no-print-directory docker-runtime-dirs
@@ -157,26 +162,29 @@ docker-reload: docker-network ## 重新构建前端并刷新主栈 + Worker (开
 	@echo "╚══════════════════════════════════════════════════════════════╝"
 	@$(MAKE) --no-print-directory docker-runtime-dirs
 	@echo ""
-	@echo "📦 步骤 1/7：清理残留容器，避免旧容器占用端口或挂载..."
+	@echo "📦 步骤 1/8：清理残留容器，避免旧容器占用端口或挂载..."
 	-@docker ps -a --filter "name=omichub-" -q | xargs -r docker rm -f 2>/dev/null
 	-@docker ps -a --filter "name=studio-" -q | xargs -r docker rm -f 2>/dev/null
 	@echo ""
-	@echo "🐳 步骤 2/7：构建终端沙盒镜像（如已存在则使用缓存）..."
+	@echo "🐳 步骤 2/8：构建终端沙盒镜像（如已存在则使用缓存）..."
 	-docker build -t omichub/sandbox-terminal:latest tool_configs/terminal/docker/
 	@echo ""
-	@echo "🧪 步骤 3/7：构建 Studio 运行时镜像（包含 sandbox-agent/PTY）..."
+	@echo "🧪 步骤 3/8：构建 Studio 运行时镜像（包含 sandbox-agent/PTY）..."
 	deploy/runtime-images/build.sh
 	@echo ""
-	@echo "⚡ 步骤 4/7：重新构建前端生产包（vite build）..."
+	@echo "🧬 步骤 4/8：构建 GO / KEGG 富集 R 运行时镜像..."
+	@$(MAKE) --no-print-directory docker-build-enrichment
+	@echo ""
+	@echo "⚡ 步骤 5/8：重新构建前端生产包（vite build）..."
 	cd frontend && npm run build
 	@echo ""
-	@echo "🌐 步骤 5/7：启动主栈服务（web / db / redis / nginx / beat / flower）..."
-	$(COMPOSE_MAIN) up -d
+	@echo "🌐 步骤 6/8：重新构建并启动主栈服务（web / db / redis / nginx / beat / flower）..."
+	$(COMPOSE_MAIN) up -d --build
 	@echo ""
-	@echo "🔧 步骤 6/7：构建并启动独立 Worker 计算栈..."
-	$(COMPOSE_WORKER) up -d --build worker
+	@echo "🔧 步骤 7/8：构建并启动通用与系统发育 Worker 计算栈..."
+	$(COMPOSE_WORKER) up -d --build worker phylo-worker
 	@echo ""
-	@echo "🗄️  步骤 7/7：检查数据库迁移状态并同步知识库..."
+	@echo "🗄️  步骤 8/8：检查数据库迁移状态并同步知识库..."
 	@$(MAKE) --no-print-directory check-alembic-heads
 	@$(MAKE) --no-print-directory sync-knowledge
 	@echo ""

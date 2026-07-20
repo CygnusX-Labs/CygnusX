@@ -82,3 +82,5 @@ frontend/.vite/
 !data/ai_providers.yaml.example
 !data/OmicHub.yaml
 volumes/
+.codex
+.agents

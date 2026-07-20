@@ -14,6 +14,12 @@ export interface SpeciesOption {
   org_db: string
   /** 基因 ID 类型，如 SYMBOL、TAIR */
   id_type: string
+  /** 当前物种已配置的分析类型 */
+  analysis_types: string[]
+  /** 默认 p-value cutoff */
+  default_p_value_cutoff: number
+  /** 默认 q-value cutoff */
+  default_q_value_cutoff: number
 }
 
 /** 单条富集结果 */
@@ -28,16 +34,48 @@ export interface EnrichmentRow {
   pvalue: number
   /** p.adjust */
   p_adjust: number
+  /** q-value */
+  q_value: number
   /** 富集基因数 */
   count: number
+  /** 注释来源，例如 GO:BP、GO:MF、GO:CC 或 KEGG */
+  source: string
 }
 
 /** 富集分析接口返回 */
 export interface EnrichmentResult {
   /** 任务 ID */
   task_id: string
-  /** 供 Plotly.js 渲染的图表 JSON */
+  /** 旧任务兼容字段；新页面依据 table_data 分别构建 GO / KEGG 图 */
   plotly_json?: Record<string, unknown>
   /** 结果表格 */
   table_data: EnrichmentRow[]
+}
+
+/** 富集 Celery 任务状态（完成后 result 才有值） */
+export type EnrichmentTaskStatus = 'queued' | 'running' | 'completed' | 'failed'
+
+export interface EnrichmentTask {
+  task_id: string
+  status: EnrichmentTaskStatus
+  progress: number
+  message: string
+  error_message?: string | null
+  result?: EnrichmentResult | null
+  project_name: string
+  species_id: string
+  gene_count: number
+  created_at?: string | null
+  finished_at?: string | null
+}
+
+export interface EnrichmentExample {
+  id: string
+  title: string
+  species_id: string
+  gene_count: number
+  gene_text: string
+  p_value_cutoff: number
+  q_value_cutoff: number
+  result: EnrichmentResult
 }

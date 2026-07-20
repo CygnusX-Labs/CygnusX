@@ -60,7 +60,7 @@ withDefaults(defineProps<{
 
 .page-header-main {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   min-width: 0;
   gap: 8px;
 }

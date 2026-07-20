@@ -37,8 +37,11 @@ export async function cancelTask(taskId: string): Promise<PhyloTaskResponse> {
   return data
 }
 
-export function getDownloadUrl(taskId: string, format: string): string {
-  return `/api/v1/phylogenetic-tree/download/${taskId}/${format}`
+export async function downloadTreeResult(taskId: string, format: string): Promise<string> {
+  const { data } = await apiClient.get<string>(`/phylogenetic-tree/download/${taskId}/${format}`, {
+    responseType: 'text',
+  })
+  return data
 }
 
 export async function fetchPhyloMethods(): Promise<PhyloMethodsResponse> {

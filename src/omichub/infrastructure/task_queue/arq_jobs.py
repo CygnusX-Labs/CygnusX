@@ -32,52 +32,8 @@ async def _publish_progress(
     await redis.publish(f"task:{task_id}:progress", payload)
 
 
-async def _run_phylogenetic_tree(
-    ctx: dict[str, Any], task_id: str, user_id: str, args: dict[str, Any]
-) -> dict[str, Any]:
-    """系统发育树构建 ARQ 任务。"""
-    from omichub.tools.phylogenetic_tree.core import build_tree
-    from omichub.tools.phylogenetic_tree.service import PhylogeneticTreeService
-
-    service = PhylogeneticTreeService()
-    meta = service._load_meta(user_id, args.get("file_id", ""))
-
-    # 默认参数与 PhyloSubmitRequest 对齐
-    method_raw = args.get("method", "nj")
-    method_map = {
-        "NJ": "nj",
-        "UPGMA": "upgma",
-        "ML": "iqtree",
-        "Bayesian": "mrbayes",
-    }
-    tree_method = method_map.get(method_raw, method_raw).lower()
-    task_input = {
-        "input_path": meta["input_path"],
-        "alignment_tool": args.get("alignment_tool", "mafft"),
-        "alignment_mode": args.get("alignment_mode", "auto"),
-        "tree_method": tree_method,
-        "substitution_model": args.get("substitution_model", "auto"),
-        "bootstrap_enabled": args.get("bootstrap_enabled", False),
-        "bootstrap_type": args.get("bootstrap_type", "standard"),
-        "bootstrap_replicates": args.get("bootstrap_replicates", 100),
-        "sequence_type": meta.get("sequence_type", "dna"),
-        "advanced_params": args.get("advanced_params", {}),
-        "user_id": str(user_id),
-    }
-
-    redis = ctx.get("redis")
-
-    async def progress(phase: str, progress: float, message: str) -> None:
-        if redis is not None:
-            await _publish_progress(redis, task_id, phase, progress, message)
-
-    return await build_tree(task_id, task_input, progress_callback=progress)
-
-
 # 工具名 → ARQ 执行函数的映射
-_TOOL_RUNNERS: dict[str, Any] = {
-    "omichub_build_phylogenetic_tree": _run_phylogenetic_tree,
-}
+_TOOL_RUNNERS: dict[str, Any] = {}
 
 
 async def run_tool_async(

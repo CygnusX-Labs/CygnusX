@@ -1,0 +1,14 @@
+# OmicHub GO / KEGG enrichment runtime image.
+# Purpose: run clusterProfiler inside isolated containers launched by Celery Worker.
+# Build context: tool_configs/enrichments
+# Build command: make docker-build-enrichment
+FROM bioconductor/bioconductor_docker:RELEASE_3_20
+
+RUN R -q -e 'install.packages(c("optparse", "ontologyIndex"), repos = "https://cloud.r-project.org")' && \
+    R -q -e 'BiocManager::install(c("clusterProfiler", "enrichplot"), update = FALSE, ask = FALSE)'
+
+COPY run_enrichment.R /app/run_enrichment.R
+RUN chmod 0555 /app/run_enrichment.R
+
+WORKDIR /app
+CMD ["Rscript", "/app/run_enrichment.R"]

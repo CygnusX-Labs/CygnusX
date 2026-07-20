@@ -290,16 +290,12 @@ class PhylogeneticTreeService:
         defaults = config_manager.get_defaults()
         sm = cfg.supported_methods
 
-        def _opts(key: str) -> list[PhyloMethodOptionDTO]:
-            items = sm.get(key, [])
-            return [PhyloMethodOptionDTO(**item) for item in items]
-
         return PhyloMethodsResponse(
-            alignment_tools=_opts("alignment_tools"),
-            tree_methods=_opts("tree_methods"),
-            substitution_models=sm.get("substitution_models", {}),
-            bootstrap_types=_opts("bootstrap_types"),
-            presets=defaults.defaults,
+            alignment_tools=[PhyloMethodOptionDTO(**item.model_dump()) for item in sm.alignment_tools],
+            tree_methods=[PhyloMethodOptionDTO(**item.model_dump()) for item in sm.tree_methods],
+            substitution_models=sm.substitution_models,
+            bootstrap_types=[PhyloMethodOptionDTO(**item.model_dump()) for item in sm.bootstrap_types],
+            presets={key: value.model_dump(exclude_none=True) for key, value in defaults.defaults.items()},
         )
 
     # ------------------------------------------------------------------
@@ -313,13 +309,13 @@ class PhylogeneticTreeService:
         cfg = config_manager.get_config()
         supported = cfg.supported_methods
 
-        valid_alignment = {t["key"] for t in supported.get("alignment_tools", [])}
+        valid_alignment = {item.key for item in supported.alignment_tools}
         if request.alignment_tool not in valid_alignment:
             return PhyloValidateResponse(
                 valid=False, message=f"不支持的比对工具: {request.alignment_tool}"
             )
 
-        tree_methods = {t["key"]: t for t in supported.get("tree_methods", [])}
+        tree_methods = {item.key: item for item in supported.tree_methods}
         if request.tree_method not in tree_methods:
             return PhyloValidateResponse(
                 valid=False, message=f"不支持的树构建方法: {request.tree_method}"
@@ -327,7 +323,7 @@ class PhylogeneticTreeService:
 
         # Bootstrap 与方法兼容性
         tree_meta = tree_methods[request.tree_method]
-        if request.bootstrap_enabled and not tree_meta.get("supports_bootstrap", False):
+        if request.bootstrap_enabled and not tree_meta.supports_bootstrap:
             return PhyloValidateResponse(
                 valid=False,
                 message=f"当前方法 {request.tree_method} 不支持 Bootstrap",
@@ -338,7 +334,7 @@ class PhylogeneticTreeService:
                 valid=False, message="Bootstrap 重复次数须在 10-10000 之间"
             )
 
-        valid_bootstrap_types = {t["key"] for t in supported.get("bootstrap_types", [])}
+        valid_bootstrap_types = {item.key for item in supported.bootstrap_types}
         if request.bootstrap_type not in valid_bootstrap_types:
             return PhyloValidateResponse(
                 valid=False, message=f"不支持的 Bootstrap 类型: {request.bootstrap_type}"

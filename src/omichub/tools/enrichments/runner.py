@@ -1,6 +1,6 @@
-"""富集分析 R 容器执行器 —— 拼接并运行 `docker run` 调用 R 计算镜像。
+"""GO / KEGG 富集 R 容器执行器 —— 拼接并运行 `docker run` 调用 R 计算镜像。
 
-镜像本身由用户构建（契约见 docs/26.7.6/KEGG_Docker_契约.md），本模块只负责：
+镜像本身由用户构建（契约见 tool_configs/enrichments/KEGG_Docker_契约.md），本模块只负责：
 - 按 settings 拼接 docker run 命令（网络 / 代理 / 挂载 / 资源 / 超时）；
 - asyncio.create_subprocess_exec 执行，事件循环不阻塞；
 - 捕获 stdout / stderr，超时则 kill 容器进程。
@@ -36,10 +36,15 @@ class EnrichmentRunParams:
     """单次富集分析的容器入参（已落到宿主磁盘的路径）。"""
 
     input_path: str  # gene_list.txt 宿主绝对路径（== 容器内路径）
-    output_path: str  # kegg_result.csv 宿主绝对路径（== 容器内路径）
+    output_path: str  # enrichment_result.csv 宿主绝对路径（== 容器内路径）
     kegg_code: str
-    org_db: str
     id_type: str
+    go_obo: str | None = None
+    go_annotation: str | None = None
+    kegg_id_map: str | None = None
+    kegg_key_type: str = "kegg"
+    p_value_cutoff: float = 0.05
+    q_value_cutoff: float = 0.1
 
 
 class EnrichmentDockerRunner:
@@ -51,7 +56,7 @@ class EnrichmentDockerRunner:
     def build_command(self, params: EnrichmentRunParams, container_name: str) -> list[str]:
         """构造 `docker run` 命令行参数列表。"""
         s = self._settings
-        return [
+        command = [
             "docker",
             "run",
             "--rm",
@@ -59,12 +64,20 @@ class EnrichmentDockerRunner:
             container_name,
             "--network",
             s.enrichment_docker_network,
-            "-e",
-            f"http_proxy={s.enrichment_proxy_url}",
-            "-e",
-            f"https_proxy={s.enrichment_proxy_url}",
-            "-e",
-            "no_proxy=localhost,127.0.0.1",
+        ]
+        if s.enrichment_proxy_url:
+            command.extend(
+                [
+                    "-e",
+                    f"http_proxy={s.enrichment_proxy_url}",
+                    "-e",
+                    f"https_proxy={s.enrichment_proxy_url}",
+                    "-e",
+                    "no_proxy=localhost,127.0.0.1",
+                ]
+            )
+        command.extend(
+            [
             "-v",
             f"{s.enrichment_data_mount}:/data/omichub",
             "--memory",
@@ -80,11 +93,23 @@ class EnrichmentDockerRunner:
             params.output_path,
             "--kegg_code",
             params.kegg_code,
-            "--org_db",
-            params.org_db,
             "--id_type",
             params.id_type,
-        ]
+            "--kegg_key_type",
+            params.kegg_key_type,
+            "--p_value_cutoff",
+            str(params.p_value_cutoff),
+            "--q_value_cutoff",
+            str(params.q_value_cutoff),
+            ]
+        )
+        if params.go_obo:
+            command.extend(["--go_obo", params.go_obo])
+        if params.go_annotation:
+            command.extend(["--go_annotation", params.go_annotation])
+        if params.kegg_id_map:
+            command.extend(["--kegg_id_map", params.kegg_id_map])
+        return command
 
     async def run(self, params: EnrichmentRunParams, container_name: str) -> EnrichmentRunResult:
         """执行容器，返回 stdout/stderr/returncode；超时 kill。

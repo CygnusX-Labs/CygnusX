@@ -10,28 +10,30 @@
 #   kegg_code     KEGG API 物种三字码，如 hsa / ath（传入容器 --kegg_code）
 #   org_db        R OrgDb 包名，如 org.Hs.eg.db（传入容器 --org_db）
 #   id_type       基因 ID 类型，如 SYMBOL / TAIR（传入容器 --id_type）
-#   kegg_rdata    离线 KEGG.RData 路径（预留，在线失败时 enricher fallback 用）
-#   kegg_supported 该物种是否被 KEGG 注释覆盖（预留，前端灰度用）
+#   go_annotation 本地 GO 注释（gene_id<TAB>GO:xxxx，第三列可选描述）
+#   go_obo        本地 GO OBO 文件，传给 R 容器的 clusterProfiler::enricher
+#   kegg_id_map   gene→NCBI/KEGG ID 映射，传给 R 容器的 enrichKEGG
+#   kegg_key_type clusterProfiler enrichKEGG 的 keyType，默认 kegg
+#   p_value_cutoff clusterProfiler 默认 p-valueCutoff
+#   q_value_cutoff clusterProfiler 默认 qvalueCutoff
+#
+# Web 只提交任务、读取 CSV；所有 GO / KEGG 富集和 PNG/PDF 可视化均在 R Docker 容器执行。
 #
 # 新增物种：在 species_list 下追加一项即可，无需改代码。
-# 注意：org_db 对应的 R 包必须已安装进富集分析镜像（见 docs/26.7.6/KEGG_Docker_契约.md）。
+# 注意：R 镜像须预装 clusterProfiler、enrichplot、ontologyIndex 和 optparse。
 # --------------------------------------------
 
 species_list:
-  - id: "human"
-    display_name: "Homo sapiens (人类)"
+  # 番茄 ITAG4.1：GO 使用本地 OBO/注释；KEGG 使用本地 gene→NCBI 映射。
+  - id: "tomato_itag4_1"
+    display_name: "Solanum lycopersicum ITAG4.1 (番茄)"
     enabled: true
-    kegg_code: "hsa"
-    org_db: "org.Hs.eg.db"
-    id_type: "SYMBOL"
-    kegg_rdata: null
-    kegg_supported: true
-
-  - id: "arabidopsis"
-    display_name: "Arabidopsis thaliana (拟南芥)"
-    enabled: true
-    kegg_code: "ath"
-    org_db: "org.At.tair.db"
-    id_type: "TAIR"
-    kegg_rdata: null
-    kegg_supported: true
+    kegg_code: "sly"
+    org_db: ""
+    id_type: "ITAG4.1"
+    go_annotation: "/data/omichub/omichub_data/reference/ITAG4.1/ITAG4.1_blast2go_annot.annot_deal"
+    go_obo: "/data/omichub/omichub_data/reference/ITAG4.1/go-basic.obo"
+    kegg_id_map: "/data/omichub/omichub_data/reference/ITAG4.1/ITAG4.1.kegg.id"
+    kegg_key_type: "kegg"
+    p_value_cutoff: 0.05
+    q_value_cutoff: 0.1

@@ -339,3 +339,523 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 ```
 
 技能用于提供一致的实施流程，不替代具体仓库中的 `AGENTS.md`、前端架构说明或组件库文档；发生冲突时，以当前仓库的直接指令和实现为准。
+
+## 12. 工具详情页返回按钮与页头对齐规范
+
+工具箱中的工具详情页统一使用 `frontend/src/components/PageHeader.vue` 作为页头：
+
+```vue
+<PageHeader
+  title="FASTQ 极速质控"
+  subtitle="使用 fastp 与 MultiQC 完成测序数据质控与汇总"
+  back-to="/tools"
+  back-label="返回工具箱"
+/>
+```
+
+- 返回按钮必须位于标题与副标题文本块的垂直中线位置，不得固定贴在标题顶部。
+- `PageHeader` 的 `.page-header-main` 使用 `align-items: center`，标题、副标题和返回按钮作为同一组进行垂直对齐。
+- 工具页的返回按钮保留圆形弱化按钮、Tooltip 和 `aria-label`，桌面端与窄屏端都必须可见、可聚焦、可操作。
+- 新增工具优先复用 `PageHeader`，不要在视图中重复实现返回按钮和标题布局。
+- 全屏工具可以保留专用工具栏，但返回按钮仍需与标题信息块垂直居中；JBrowse、YAML 基因组浏览器和终端遵循各自已有工具栏样式。
+
+## 13. 数据可视化规范
+
+本项目使用 **ECharts 5**（含 `echarts-gl`、`vue-echarts`）和 **Plotly.js** 两套图表引擎。新增图表必须遵循以下规则。
+
+### 13.1 引擎选择
+
+| 场景 | 推荐引擎 | 理由 |
+| --- | --- | --- |
+| 交互式统计图（柱状、折线、饼图、散点） | ECharts (`vue-echarts`) | 声明式配置、主题集成好、体积可控 |
+| 火山图、曼哈顿图、热图等生信专用图 | ECharts + 自定义 processor | 已有 `volcanoProcessor`、`manhattanProcessor` 等成熟实现 |
+| 3D 曲面、GL 散点 | ECharts GL | 已安装 `echarts-gl` |
+| 系统发育树、复杂交互式树图 | Plotly.js 或专用 SVG 渲染 | 已有 `phyloProcessor` 处理 Newick → 坐标 |
+| 富集分析气泡图、柱状图 | ECharts | 已有 `enrichmentProcessor` |
+| 需要导出为静态出版级图片 | Plotly.js (`toImage`) | 内置高清导出 |
+
+**规则**：同一页面不得同时引入 ECharts 和 Plotly；若页面已有 ECharts 图表，新增图表优先使用 ECharts。
+
+### 13.2 主题与配色
+
+- 图表系列色按 `--kimi-chart-1` 至 `--kimi-chart-6` 顺序取色；超过 6 个系列时循环使用并增加透明度区分。
+- 背景透明（`backgroundColor: 'transparent'`），让卡片背景透出。
+- 坐标轴文字使用 `--neutral-text-3`（12px），轴标题使用 `--neutral-text-2`（13px）。
+- 网格线使用 `--neutral-border`，虚线 `dashed`。
+- 深色模式下通过 CSS 变量自动适配；不得在 JS 中硬编码 `#fff` 或 `#333`。
+- 显著性标注（p-value 阈值线、差异基因高亮）使用 `--arco-danger` 和 `--arco-success`。
+
+### 13.3 交互与响应式
+
+- 所有图表必须提供 `tooltip`；tooltip 背景使用 `--neutral-card`，边框使用 `--neutral-border`，文字使用 `--neutral-text-1`。
+- 数据点超过 500 时启用 `large` 模式或 `sampling`；超过 5000 时使用 `dataZoom` 或后端聚合。
+- 图表容器使用 `ResizeObserver` 或 `vue-echarts` 的 `autoresize` 响应容器尺寸变化。
+- 窄屏下图表最小高度 `240px`，允许水平滚动而非压缩到不可读。
+- 图表加载使用 `NSkeleton`（矩形块）占位；加载失败显示 `NEmpty` + 重试按钮。
+
+### 13.4 导出与无障碍
+
+- 需要导出的图表提供"下载 PNG/SVG"按钮，放在卡片 `#header-extra` 或工具栏中。
+- 图表必须提供 `aria-label` 或相邻的数据摘要表格，不能仅靠视觉传达关键结论。
+- 颜色编码的信息（如上调/下调）必须同时使用形状、标签或图例文字表达。
+
+### 13.5 Processor 模式
+
+生信图表的数据转换统一放在 `frontend/src/utils/*Processor.ts`：
+
+- 每个 processor 是纯函数，输入后端原始数据，输出 ECharts `option` 或 Plotly `data + layout`。
+- Processor 不得发起网络请求或访问全局状态。
+- 新增 processor 文件命名：`{domain}Processor.ts`，并在对应 View 中按需导入。
+
+## 14. 实时通信与 WebSocket
+
+项目已有多个 WebSocket 组合式函数（`useAIWebSocket`、`useTerminalWebSocket`、`useSandboxWebSocket`、`useWorkflowMonitorWebSocket`、`useCookieWebSocket`）和流式组合式函数（`useChatStream`、`useAgentChatStream`、`useStudioRunStream`）。
+
+### 14.1 连接生命周期
+
+| 阶段 | 要求 |
+| --- | --- |
+| 建立 | 在组件 `onMounted` 或用户显式操作后连接；不在模块顶层或路由守卫中建立连接。 |
+| 心跳 | 每 30s 发送 ping；服务端 10s 内无 pong 视为断开。 |
+| 重连 | 指数退避（1s → 2s → 4s → 8s → 最大 30s），最多重试 5 次；重连期间 UI 显示"连接中…"状态。 |
+| 销毁 | 在 `onUnmounted` 或 `onBeforeUnmount` 中关闭；页面切换不得遗留僵尸连接。 |
+| 可见性 | `document.visibilitychange` 隐藏时暂停心跳，恢复时立即检测连接状态。 |
+
+### 14.2 UI 状态映射
+
+| 连接状态 | UI 表达 |
+| --- | --- |
+| `connecting` | 状态点主色 + 脉冲；操作按钮 `disabled` 或 `loading`。 |
+| `connected` | 状态点成功色；功能可用。 |
+| `reconnecting` | 状态点警告色 + 文字"重新连接中…"；保留已有内容不清空。 |
+| `disconnected` | 状态点错误色 + 文字"连接已断开"；提供手动重连按钮。 |
+
+### 14.3 消息处理
+
+- 消息类型使用 `type` 字段区分（如 `output`、`status`、`error`、`done`）；未知类型静默忽略并 `console.warn`。
+- 流式文本（AI 对话、终端输出）使用追加渲染，不重建整个 DOM；长输出启用虚拟滚动或限制 DOM 行数（保留最近 5000 行）。
+- 二进制消息（文件传输）使用 `ArrayBuffer`，不在 WebSocket 中传输 Base64 编码的大文件。
+- 错误消息必须映射为用户可理解的中文提示，不直接展示原始 JSON 或堆栈。
+
+### 14.4 组合式函数契约
+
+新增 WebSocket 组合式函数必须：
+
+- 返回 `{ status, data, error, connect, disconnect }` 基本接口。
+- 接受 `url` 或 `urlRef`（响应式）参数。
+- 内部处理重连、心跳和清理，调用方不需要关心底层。
+- 使用 `shallowRef` 存储高频更新数据（终端输出、流式文本），避免深层响应开销。
+
+## 15. API 层与数据请求
+
+### 15.1 目录与命名
+
+- 所有 API 模块位于 `frontend/src/api/`，按业务域命名（`tools.ts`、`blast.ts`、`phylo.ts`）。
+- 管理端 API 放在 `frontend/src/api/admin/` 子目录。
+- 每个模块导出具名函数（如 `getBlastResult`、`submitEnrichment`），不导出裸 axios 调用。
+- 请求/响应类型定义在 `frontend/src/types/` 对应文件中。
+
+### 15.2 请求规范
+
+- 统一使用 `frontend/src/api/client.ts` 导出的 axios 实例（`baseURL: /api/v1`，超时 30s）。
+- 长耗时请求（文件上传、任务提交）可单独设置更长超时，但不超过 5 分钟。
+- 请求参数使用 `params`（GET）或 `data`（POST/PUT），不拼接 URL 字符串。
+- 需要取消的请求（搜索建议、页面切换）使用 `AbortController`；组件卸载时取消未完成请求。
+
+### 15.3 错误处理
+
+| HTTP 状态 | 前端行为 |
+| --- | --- |
+| 401 | 由拦截器自动刷新 token；刷新失败跳转登录页并携带 `redirect`。 |
+| 403 | 显示权限不足提示（`NAlert` 或 `NResult`），不自动跳转。 |
+| 404 | 页面级：显示 `NResult status="404"`；资源级：`useMessage().error()`。 |
+| 422 | 表单校验错误：映射到对应字段；非表单场景：`useMessage().error()`。 |
+| 429 | 提示"操作过于频繁，请稍后重试"；禁用触发按钮 5s。 |
+| 500/502/503 | 提示"服务暂时不可用"；提供重试按钮；不暴露后端堆栈。 |
+| 网络错误 | 提示"网络连接失败，请检查网络"；保留已加载数据。 |
+
+- 业务错误（HTTP 200 但 `code !== 0`）由调用方根据 `message` 字段提示用户。
+- 全局拦截器只处理 401 刷新；其余错误由调用方决定提示方式，避免重复 toast。
+
+### 15.4 数据加载模式
+
+- 每个页面/组件的数据加载收敛为 `load*` 函数，支持重复调用。
+- 首次加载：`NSkeleton` 占位（贴近最终布局）。
+- 局部刷新：表格区域 `NSpin` 或按钮 `:loading`，不清空已有数据。
+- 分页/排序/筛选：更新查询状态对象后调用 `load*`，不重载路由。
+- 并行请求使用 `Promise.allSettled`，部分失败时展示成功部分 + 失败提示。
+- 轮询（任务进度）使用 `setInterval` + 组件卸载清理；优先使用 WebSocket 推送替代轮询。
+
+## 16. 状态管理
+
+### 16.1 Pinia Store 使用原则
+
+| 放入 Store | 留在组件本地 |
+| --- | --- |
+| 跨页面/跨组件共享的状态（用户信息、主题、通知） | 单组件内部的表单值、UI 开关 |
+| 需要持久化的状态（token、偏好设置） | 请求加载的列表数据（除非多组件共享） |
+| WebSocket 连接状态（终端、AI 对话） | 临时计算结果、图表 option |
+| 全局配置（站点配置、权限列表） | 分页、排序等页面级查询状态 |
+
+### 16.2 Store 规范
+
+- 文件位于 `frontend/src/stores/`，命名 `{domain}.ts`，导出 `use{Domain}Store`。
+- 使用 Setup Store 语法（`defineStore` + 组合式函数风格），与项目 `<script setup>` 一致。
+- Store 内不直接操作 DOM 或调用 `useMessage()`；UI 反馈由组件层处理。
+- 异步操作（API 调用）可以在 Store 中发起，但必须处理 loading 和 error 状态。
+- 需要持久化的 Store 使用 `pinia-plugin-persistedstate` 或手动 `localStorage`；token 类敏感数据使用 `sessionStorage` 或内存。
+
+### 16.3 组件间通信
+
+- 父子组件：`props` + `emit`，不使用事件总线。
+- 兄弟/跨层级：Pinia Store 或 `provide/inject`（限同一页面内）。
+- 全局事件（如主题切换、权限变更）：通过 Store 的 `$subscribe` 或 `watch` 响应。
+
+## 17. 文件操作
+
+### 17.1 上传
+
+- 小文件（< 10MB）：`NUpload` + 默认 `multipart/form-data`。
+- 大文件（≥ 10MB）：使用 `useChunkUpload` 分片上传；分片大小默认 5MB。
+- 上传前必须客户端校验：文件类型（扩展名 + MIME）、大小上限、数量限制。
+- 上传中显示进度条（`NProgress`）；支持取消和失败重试。
+- 生信文件（FASTQ、BAM、VCF、GFF）额外校验格式魔数或首行格式。
+- 拖拽上传区域使用虚线边框 + 图标 + 文字说明；`dragover` 时高亮。
+
+### 17.2 下载
+
+- 小文件直接 `<a download>` 或 `window.open`。
+- 大文件使用 `useDownloadProgress` 组合式函数，通过 `fetch` + `ReadableStream` 报告进度。
+- 下载按钮显示进度百分比；完成后使用 `useMessage().success()` 反馈。
+- 批量下载打包为 zip 由后端处理；前端显示打包进度。
+
+### 17.3 文件预览
+
+- 文本类（FASTA、CSV、日志）：前 100 行预览 + "查看完整文件"。
+- 图片（PNG、SVG）：`NImage` 预览。
+- 不支持预览的格式：显示文件图标 + 元信息（大小、修改时间）+ 下载按钮。
+- 预览不加载完整文件到内存；使用 Range 请求或后端截断。
+
+## 18. AI 对话与流式界面
+
+### 18.1 对话布局
+
+- 消息列表使用 `flex-direction: column`；用户消息右对齐，AI 消息左对齐。
+- 消息气泡最大宽度 `720px`；代码块和表格允许占满气泡宽度。
+- 长对话启用虚拟滚动或"加载更多历史"分页，不一次性渲染全部消息。
+- 新消息自动滚动到底部；用户向上滚动时暂停自动滚动并显示"回到底部"按钮。
+
+### 18.2 流式输出
+
+- 使用 `useChatStream` / `useAgentChatStream` 处理 SSE 或 WebSocket 流。
+- 流式文本逐字/逐块追加渲染；使用 `shallowRef` + `requestAnimationFrame` 节流更新（≤ 60fps）。
+- 流式过程中显示光标闪烁或"正在输入"指示器。
+- 流中断（网络断开、用户取消）：保留已输出内容 + 显示"生成已中断"标记 + 重新生成按钮。
+- Markdown 渲染使用流式安全的解析器，避免未闭合代码块导致布局跳动。
+
+### 18.3 输入区
+
+- 多行文本框（`NInput type="textarea"` + `autosize`）；`Enter` 发送，`Shift+Enter` 换行。
+- 发送按钮在空内容或生成中时 `disabled`；生成中变为"停止"按钮。
+- 支持附件（图片、文件）时，输入区上方显示附件预览条。
+- 输入历史：`↑`/`↓` 切换最近发送的消息（可选）。
+
+### 18.4 工具调用与多步结果
+
+- AI 调用工具时，在消息流中插入"工具卡片"：显示工具名、参数摘要、执行状态和结果折叠区。
+- 长时间工具执行显示进度或旋转指示器；超时（> 60s）提示用户。
+- 错误结果使用 `NAlert type="error"` 内嵌在消息中，不中断对话流。
+
+## 19. 终端与代码沙箱
+
+### 19.1 终端 UI
+
+- 使用等宽字体：`'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace`。
+- 背景使用 `--neutral-card` 或专用深色终端背景（深色模式下与页面背景区分）。
+- 输出区域限制 DOM 行数（最近 5000 行）；超出时截断顶部并提示"更早输出已截断"。
+- 支持文本选择复制；`Ctrl+C` 在无选区时发送 SIGINT，有选区时复制。
+- 连接状态指示器放在终端标题栏右侧。
+
+### 19.2 代码沙箱
+
+- 编辑器区域使用项目已集成的代码编辑组件；不额外引入新编辑器库。
+- 运行按钮使用 `:loading` 表示执行中；输出面板与编辑器上下或左右分栏。
+- Pyodide（客户端 Python）首次加载显示下载进度；后续使用缓存。
+- 执行超时默认 30s；超时后终止并提示。
+- 沙箱环境隔离：不访问宿主文件系统、不发起网络请求（除 Pyodide 包安装）。
+
+## 20. 代码组织与命名
+
+### 20.1 目录结构
+
+```
+frontend/src/
+├── api/              # API 请求模块（按业务域）
+│   └── admin/        # 管理端 API
+├── assets/           # 静态资源（图片、字体）
+├── components/       # 共享组件（跨页面复用）
+│   └── {domain}/     # 按业务域分子目录（blast/、chat/）
+├── composables/      # 组合式函数（use* 命名）
+├── config/           # 应用配置常量
+├── layouts/          # 布局组件
+├── router/           # 路由定义与守卫
+├── stores/           # Pinia Store
+├── styles/           # 全局样式与令牌
+├── types/            # TypeScript 类型定义
+├── utils/            # 工具函数与数据处理器
+└── views/            # 页面级组件（按功能域分子目录）
+    ├── BioTools/     # 生信工具页
+    ├── Dashboard/    # 仪表盘
+    └── ...
+```
+
+### 20.2 命名规则
+
+| 对象 | 规则 | 示例 |
+| --- | --- | --- |
+| 组件文件 | PascalCase | `BlastHitDetailCard.vue` |
+| 组合式函数 | camelCase + `use` 前缀 | `useChunkUpload.ts` |
+| Store | camelCase + `use` 前缀导出 | `useThemeStore` |
+| API 函数 | camelCase + 动词前缀 | `getTaskList`、`submitBlast` |
+| 类型/接口 | PascalCase | `EnrichmentResult` |
+| CSS 类 | kebab-case 或 BEM | `.omichub-selectable-card`、`.page-header-main` |
+| 路由 name | PascalCase | `BlastSearch`、`PhylogeneticTree` |
+| 常量 | UPPER_SNAKE_CASE | `MAX_UPLOAD_SIZE` |
+
+### 20.3 组件拆分原则
+
+- 单文件组件超过 300 行时考虑拆分。
+- 可复用（≥ 2 处使用）的 UI 片段提取到 `components/`。
+- 页面专用的子组件放在 `views/{Domain}/components/` 子目录。
+- 纯逻辑复用提取为 `composables/`；纯数据转换提取为 `utils/*Processor.ts`。
+
+## 21. 性能预算与优化
+
+### 21.1 包体积
+
+| 指标 | 预算 |
+| --- | --- |
+| 首屏 JS（gzip） | ≤ 300KB |
+| 单路由懒加载块（gzip） | ≤ 150KB |
+| ECharts 按需引入 | 只注册使用的图表类型和组件 |
+| Plotly.js | 仅在需要 Plotly 的路由懒加载 |
+
+- 路由级代码分割：所有 `views/` 使用 `() => import(...)` 懒加载。
+- 第三方库按需导入：ECharts 使用 `use()` 注册；Naive UI 保持现有全局注册方式。
+- 图片资源使用 WebP/AVIF + `srcset`；图标使用 SVG 组件或图标字体，不用 PNG 图标。
+
+### 21.2 渲染性能
+
+- 列表超过 100 项使用虚拟滚动（`NDataTable virtual-scroll` 或 `vue-virtual-scroller`）。
+- 高频更新数据（终端输出、流式文本）使用 `shallowRef` + 批量 DOM 更新。
+- 避免在 `v-for` 中使用复杂计算；提取为 `computed` 或预处理。
+- 大表格/大图表页面使用 `v-once` 或 `shallowReactive` 减少响应开销。
+- 图片懒加载：视口外图片使用 `loading="lazy"` 或 `IntersectionObserver`。
+
+### 21.3 网络优化
+
+- 静态资源使用内容哈希文件名 + 长期缓存。
+- API 响应按场景设置缓存策略：配置类（5min）、列表类（不缓存）、详情类（30s）。
+- 预加载：用户悬停导航项时预加载对应路由 chunk（`link rel="prefetch"`）。
+- 避免瀑布请求：并行无依赖请求使用 `Promise.allSettled`。
+
+## 22. 测试策略
+
+### 22.1 测试金字塔
+
+| 层级 | 工具 | 覆盖目标 |
+| --- | --- | --- |
+| 单元测试 | Vitest | 工具函数、Processor、Store、组合式函数 |
+| 组件测试 | Vitest + @vue/test-utils | 共享组件的交互和状态 |
+| E2E 测试 | Playwright | 关键用户路径（登录、提交任务、查看结果） |
+
+### 22.2 测试规则
+
+- `utils/*Processor.ts` 必须有单元测试：覆盖正常数据、空数据、异常数据。
+- Store 测试覆盖：初始状态、主要 action、错误处理。
+- 组件测试覆盖：渲染、用户交互（点击、输入）、props 变化、emit 事件。
+- E2E 覆盖黄金路径：登录 → 选择工具 → 提交任务 → 查看结果 → 登出。
+- 测试文件与源文件同目录（`*.test.ts`）或放在 `tests/` 镜像目录。
+- CI 中运行 `vitest run` + `playwright test`；测试不通过不合并。
+
+### 22.3 Mock 策略
+
+- API Mock：使用 `msw`（Mock Service Worker）拦截请求，不在组件中条件判断 mock。
+- WebSocket Mock：使用 `mock-socket` 模拟服务端消息。
+- 开发环境可使用 `frontend/src/mock/` 中的静态数据辅助调试，但测试必须使用 msw。
+
+## 23. 安全规范
+
+### 23.1 XSS 防护
+
+- 模板中不使用 `v-html` 渲染用户输入或后端未转义内容；必须使用时先经过 DOMPurify 过滤。
+- AI 输出的 Markdown 渲染使用安全的 Markdown 解析器（如 `markdown-it` + 禁用 `html` 选项）。
+- 用户文件名、路径在 UI 展示时使用文本插值 `{{ }}`，不拼接到 HTML 属性中。
+
+### 23.2 认证与令牌
+
+- JWT 存储在 `localStorage`（当前实现）；敏感操作（删除、权限变更）需要二次验证。
+- Token 刷新由 axios 拦截器统一处理；组件不直接操作 token。
+- 登出时清除所有本地存储的认证信息和用户数据。
+- WebSocket 连接在建立时携带 token；token 过期时服务端断开连接，客户端触发刷新重连。
+
+### 23.3 输入校验
+
+- 所有用户输入在提交前进行前端校验（格式、长度、类型）；前端校验不替代后端校验。
+- 文件上传校验扩展名 + MIME type + 文件大小；不信任客户端单独校验。
+- URL 参数和查询字符串使用 `encodeURIComponent`；路由参数使用 Vue Router 的 `params`/`query` API。
+
+### 23.4 依赖安全
+
+- 不引入未经审计的第三方包；新增依赖需说明用途和替代方案。
+- 定期运行 `npm audit`；高危漏洞在下一个迭代修复。
+- 锁定 `package-lock.json`；CI 使用 `npm ci` 安装。
+
+## 24. 国际化准备
+
+当前项目为中文单语言，但代码组织应为未来国际化预留空间。
+
+### 24.1 当前规则
+
+- UI 文案统一使用简体中文；标点使用中文标点（句号"。"、逗号"，"）。
+- 不在模板中拼接字符串表达复数或条件语句；使用完整的条件渲染。
+- 日期时间显示使用 `dayjs` + `zh-cn` locale；数字使用 `toLocaleString('zh-CN')`。
+- 错误提示、空状态、按钮文案写在组件内或统一的文案常量文件中，不散落在逻辑代码中。
+
+### 24.2 未来迁移预留
+
+- 新增页面时，将用户可见文案集中到组件顶部的 `const labels = { ... }` 或独立文案文件。
+- 不在 JS 逻辑中硬编码含语义的字符串比较（如 `if (status === '成功')`）；使用枚举或常量。
+- 布局避免固定宽度容纳中文；英文通常更长，预留弹性空间。
+
+## 25. 浏览器兼容与运行环境
+
+### 25.1 支持矩阵
+
+| 浏览器 | 最低版本 |
+| --- | --- |
+| Chrome / Edge | 最近 2 个大版本 |
+| Firefox | 最近 2 个大版本 |
+| Safari | 最近 2 个大版本 |
+| 移动端 Safari / Chrome | 最近 2 个大版本 |
+
+- 不支持 IE 11。
+- 使用 `caniuse` 确认 API 可用性；需要 polyfill 时在 `vite.config.ts` 中配置。
+- CSS 特性（`backdrop-filter`、`container query`）需要 `@supports` 回退。
+
+### 25.2 运行环境假设
+
+- 最小视口宽度：`375px`（iPhone SE）。
+- 最小屏幕分辨率：`1280×720`（桌面端）。
+- 网络环境：支持弱网（3G）下的基本可用性；超时后提供重试。
+- 不假设用户启用了 JavaScript 以外的插件（Flash、Java Applet）。
+
+## 26. 错误边界与全局异常
+
+### 26.1 Vue 错误处理
+
+- `app.config.errorHandler` 捕获未处理的组件错误；记录到控制台并显示用户友好的全局提示。
+- 关键页面（仪表盘、任务列表）使用 `onErrorCaptured` 阻止错误冒泡导致整页白屏。
+- 路由级错误（chunk 加载失败）：显示"页面加载失败"+ 重试按钮，不白屏。
+
+### 26.2 全局异常 UI
+
+| 场景 | UI 表达 |
+| --- | --- |
+| 路由 chunk 加载失败 | 全屏 `NResult` + "重新加载"按钮 |
+| 未捕获 Promise rejection | `useMessage().error('操作失败，请重试')` |
+| WebSocket 全部断开 | 顶部 `NAlert type="warning"` 横幅 + 重连按钮 |
+| 后端完全不可达 | 全屏 `NResult status="error"` + 重试 + 联系管理员 |
+
+### 26.3 日志与监控
+
+- 生产环境错误通过 `window.onerror` + `unhandledrejection` 上报（如接入 Sentry）。
+- 开发环境错误在控制台输出完整堆栈；生产环境不暴露堆栈给用户。
+- 关键操作（任务提交、文件上传、支付）记录操作日志（时间、用户、操作、结果）。
+
+## 27. 路由与权限控制
+
+### 27.1 路由组织
+
+- 路由定义在 `frontend/src/router/index.ts`；按功能域拆分路由数组。
+- 所有业务路由使用懒加载：`component: () => import('@/views/...')`。
+- 路由 `meta` 字段携带：`title`（页面标题）、`requiresAuth`（是否需要登录）、`roles`（允许角色）。
+- 页面标题在 `router.afterEach` 中统一设置为 `{title} - OmicHub`。
+
+### 27.2 导航守卫
+
+- 全局前置守卫：未登录访问 `requiresAuth` 路由 → 重定向 `/login?redirect=...`。
+- 角色守卫：无权限 → 显示 403 页面，不重定向（避免循环）。
+- 路由切换时取消上一个页面的未完成请求（通过路由级 `AbortController`）。
+
+### 27.3 权限 UI
+
+- 无权限的菜单项：隐藏或 `disabled` + Tooltip 说明原因。
+- 无权限的操作按钮：`disabled` + Tooltip"需要管理员权限"。
+- 权限变更后（如被移除角色）：下次 API 返回 403 时刷新权限列表并更新 UI。
+- 不使用前端路由隐藏作为唯一安全措施；后端必须同步校验。
+
+## 28. 通知与消息系统
+
+### 28.1 消息层级
+
+| 层级 | 工具 | 场景 | 持续时间 |
+| --- | --- | --- | --- |
+| 轻量反馈 | `useMessage()` | 操作成功/失败、复制完成 | 3s 自动消失 |
+| 重要通知 | `useNotification()` | 任务完成、系统公告、权限变更 | 手动关闭 |
+| 阻塞确认 | `useDialog()` / `NModal` | 破坏性操作确认、表单未保存离开 | 用户操作后关闭 |
+| 持久状态 | `NAlert` / `NResult` | 后端不可达、权限不足、功能降级 | 条件恢复后消失 |
+
+### 28.2 通知中心
+
+- 使用 `useNotificationStore` 管理未读通知；顶栏铃铛图标显示未读数。
+- 通知列表按时间倒序；支持标记已读、全部已读、按类型筛选。
+- 实时通知通过 WebSocket 推送；离线期间的通知在登录后拉取。
+- 通知点击跳转到对应页面/任务详情。
+
+### 28.3 规则
+
+- 同一操作不重复弹出相同消息（去重或节流）。
+- 批量操作结果汇总为一条消息（"成功 3 项，失败 1 项"），不逐条弹出。
+- 错误消息必须包含可操作的下一步（重试、联系管理员、查看日志），不只说"出错了"。
+
+## 29. 打印与导出
+
+### 29.1 打印样式
+
+- 需要打印的页面（报告、分析结果）提供 `@media print` 样式：隐藏导航、侧栏、操作按钮；卡片去阴影和圆角。
+- 图表打印前调用 `chart.getDataURL()` 转为静态图片，避免打印空白 canvas。
+- 分页使用 `page-break-inside: avoid` 防止卡片被截断。
+
+### 29.2 数据导出
+
+- 表格数据导出为 CSV/Excel：由后端生成文件，前端触发下载。
+- 图表导出为 PNG/SVG：使用 ECharts `getDataURL` 或 Plotly `toImage`。
+- 分析报告导出为 PDF：由后端渲染，前端显示生成进度。
+- 导出按钮使用 `:loading` 表示生成中；大文件导出提示预计时间。
+
+## 30. 长任务与工作流监控
+
+### 30.1 任务生命周期 UI
+
+| 任务状态 | UI 表达 |
+| --- | --- |
+| `pending` / `queued` | `NTag type="warning"` + "排队中" + 队列位置（如可知） |
+| `running` | `NTag type="info"` + `NProgress`（百分比或不确定态） |
+| `success` | `NTag type="success"` + 查看结果按钮 |
+| `failed` | `NTag type="error"` + 查看日志 + 重试按钮 |
+| `cancelled` | `NTag type="default"` + "已取消" |
+
+### 30.2 进度反馈
+
+- 短任务（< 10s）：按钮 `loading` + 禁用，不跳转。
+- 中等任务（10s – 2min）：页面内进度条 + 状态文字。
+- 长任务（> 2min）：提交后跳转任务列表或显示"已提交，可在任务中心查看"；通过 WebSocket 推送进度。
+- 多步骤工作流：显示步骤列表（`NSteps`），当前步骤高亮，已完成步骤可展开查看日志。
+
+### 30.3 任务操作
+
+- 运行中的任务提供"取消"按钮（`NPopconfirm` 确认）。
+- 失败任务提供"重试"（重新提交相同参数）和"查看日志"。
+- 任务列表支持按状态筛选、按时间排序、关键词搜索。
+- 任务结果页提供"重新运行"（预填参数到表单）和"下载结果"。

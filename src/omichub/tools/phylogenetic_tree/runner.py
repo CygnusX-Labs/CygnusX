@@ -201,7 +201,7 @@ def _run_external_tree_builder(
     from omichub.tools.phylogenetic_tree.config import config_manager
 
     cfg = config_manager.get_config()
-    threads = cfg.execution.get("resources", {}).get("default_threads", 4)
+    threads = cfg.execution.resources.default_threads
     seq_type = task_input.get("sequence_type", "auto")
 
     if method == "fasttree":

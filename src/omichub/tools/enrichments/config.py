@@ -9,8 +9,8 @@ tool_configs/enrichments/species_config.yaml，仓库内源码管控，仿 flows
  （前端物种下拉降级为空，不影响平台其它功能）；
 - 改文件后由加载器 mtime 自动热重载，无需重启。
 
-前向兼容字段 kegg_rdata / kegg_supported 当前不在 DTO 暴露，留给后续
-「离线 fallback」「物种 KEGG 可用性灰度」迭代启用（见方案文档建议 1/4）。
+物种可选声明本地 GO OBO/注释和 KEGG 基因 ID 映射。Web 服务仅调度 R Docker
+容器；容器使用 clusterProfiler 读取这些参考文件完成分析。
 """
 
 from __future__ import annotations
@@ -33,13 +33,51 @@ class SpeciesConfig(BaseModel):
     id: str = Field(..., description="物种唯一标识，前端下拉 value")
     display_name: str = Field(..., description="展示名称；DTO 序列化为 label")
     enabled: bool = Field(default=True, description="是否在前端下拉可见")
-    kegg_code: str = Field(..., description="KEGG API 物种三字码，如 hsa / ath")
-    org_db: str = Field(..., description="R OrgDb 包名，如 org.Hs.eg.db")
-    id_type: str = Field(..., description="基因 ID 类型，如 SYMBOL / TAIR")
+    kegg_code: str = Field(default="", description="KEGG API 物种三字码，如 hsa / ath")
+    org_db: str = Field(default="", description="R OrgDb 包名，如 org.Hs.eg.db")
+    id_type: str = Field(default="", description="基因 ID 类型，如 SYMBOL / TAIR")
     # 前向兼容：离线 KEGG.RData 路径（在线失败时 enricher fallback 用）
     kegg_rdata: str | None = Field(default=None, description="离线 KEGG 数据路径（预留）")
     # 前向兼容：物种是否被 KEGG 注释覆盖（前端灰度用）
     kegg_supported: bool = Field(default=True, description="该物种是否支持 KEGG 注释")
+    go_annotation: str | None = Field(
+        default=None,
+        description="本地 GO 注释文件；gene_id<TAB>GO:xxxx，允许第三列附加描述",
+    )
+    go_obo: str | None = Field(
+        default=None,
+        description="GO OBO 文件；用于补充 GO term 名称和 BP/MF/CC 命名空间",
+    )
+    kegg_id_map: str | None = Field(
+        default=None,
+        description="本地 gene_id→NCBI/KEGG ID 映射，供 R 容器提交 enrichKEGG",
+    )
+    kegg_key_type: str = Field(
+        default="kegg",
+        description="clusterProfiler::enrichKEGG 的 keyType，例如 kegg 或 ncbi-geneid",
+    )
+    p_value_cutoff: float = Field(
+        default=0.05,
+        gt=0,
+        le=1,
+        description="传给 R clusterProfiler 的默认 p-value 截断阈值",
+    )
+    q_value_cutoff: float = Field(
+        default=0.1,
+        gt=0,
+        le=1,
+        description="传给 R clusterProfiler 的默认 q-value 截断阈值",
+    )
+
+    @property
+    def analysis_types(self) -> list[str]:
+        """当前物种可提交给 R Docker 容器的分析类型，供 API/UI 提示。"""
+        result: list[str] = []
+        if self.go_annotation:
+            result.append("GO")
+        if self.kegg_id_map or self.kegg_code:
+            result.append("KEGG")
+        return result
 
 
 class EnrichmentConfig(BaseModel):

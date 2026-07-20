@@ -11,13 +11,34 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from omichub.core.config import get_settings
+
+logger = logging.getLogger(__name__)
+
+
+class ToolMeta(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    name: str = "phylogenetic-tree"
+    version: str = "1.0.0"
+    description: str = "多序列比对与系统发育树构建工具"
+
+
+class FeatureFlags(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    multiple_sequence_alignment: bool = True
+    tree_building: bool = True
+    bootstrap_analysis: bool = True
+    model_selection: bool = True
+    format_conversion: bool = True
 
 
 class InputLimits(BaseModel):
@@ -43,18 +64,103 @@ class OutputFormat(BaseModel):
     mime: str
 
 
+class CeleryExecution(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    queue: str = "phylo_tree"
+    time_limit_seconds: int = Field(default=7200, ge=60)
+    soft_time_limit_seconds: int = Field(default=3600, ge=30)
+
+
+class ResourceExecution(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    default_threads: int = Field(default=4, ge=1)
+    max_threads: int = Field(default=16, ge=1)
+    max_memory_mb: int = Field(default=32768, ge=256)
+
+
+class ExecutionConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    celery: CeleryExecution = Field(default_factory=CeleryExecution)
+    resources: ResourceExecution = Field(default_factory=ResourceExecution)
+
+
+class OutputConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    default_formats: list[str] = Field(default_factory=lambda: ["newick", "statistics"])
+    available_formats: list[OutputFormat] = Field(default_factory=list)
+
+
+class MethodOption(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    key: str
+    label: str
+    description: str = ""
+    supports_bootstrap: bool | None = None
+
+
+class SupportedMethods(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    alignment_tools: list[MethodOption] = Field(
+        default_factory=lambda: [
+            MethodOption(key="mafft", label="MAFFT", description="通用首选，快速准确"),
+            MethodOption(key="clustalo", label="Clustal Omega", description="适合大规模序列"),
+            MethodOption(key="muscle5", label="MUSCLE5", description="高精度比对"),
+            MethodOption(key="prealigned", label="已比对（跳过）", description="输入已经完成多序列比对"),
+        ]
+    )
+    tree_methods: list[MethodOption] = Field(
+        default_factory=lambda: [
+            MethodOption(key="nj", label="Neighbor-Joining", supports_bootstrap=True),
+            MethodOption(key="upgma", label="UPGMA", supports_bootstrap=False),
+            MethodOption(key="fasttree", label="FastTree", supports_bootstrap=True),
+            MethodOption(key="iqtree", label="IQ-TREE", supports_bootstrap=True),
+            MethodOption(key="mrbayes", label="MrBayes", supports_bootstrap=False),
+        ]
+    )
+    substitution_models: dict[str, list[str]] = Field(
+        default_factory=lambda: {
+            "dna": ["JC69", "K2P", "HKY", "GTR", "GTR+I", "GTR+G", "GTR+I+G", "auto"],
+            "protein": ["LG", "WAG", "JTT", "auto"],
+        }
+    )
+    bootstrap_types: list[MethodOption] = Field(
+        default_factory=lambda: [
+            MethodOption(key="standard", label="标准 Bootstrap"),
+            MethodOption(key="ultrafast", label="UFBoot (IQ-TREE)"),
+        ]
+    )
+
+
+class PhyloPreset(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    alignment_tool: str = "mafft"
+    alignment_mode: str = "auto"
+    tree_method: str = "iqtree"
+    substitution_model: str = "auto"
+    bootstrap_enabled: bool = True
+    bootstrap_type: str = "ultrafast"
+    bootstrap_replicates: int = Field(default=1000, ge=10, le=10000)
+
+
 class PhyloConfig(BaseModel):
     """系统发育树工具完整配置。"""
 
     model_config = ConfigDict(extra="ignore")
 
-    meta: dict[str, Any] = Field(default_factory=dict)
-    features: dict[str, bool] = Field(default_factory=dict)
+    meta: ToolMeta = Field(default_factory=ToolMeta)
+    features: FeatureFlags = Field(default_factory=FeatureFlags)
     input_limits: InputLimits = Field(default_factory=InputLimits)
-    execution: dict[str, Any] = Field(default_factory=dict)
+    execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     tools: dict[str, ToolBinary] = Field(default_factory=dict)
-    output: dict[str, Any] = Field(default_factory=dict)
-    supported_methods: dict[str, Any] = Field(default_factory=dict)
+    output: OutputConfig = Field(default_factory=OutputConfig)
+    supported_methods: SupportedMethods = Field(default_factory=SupportedMethods)
 
     def binary_path(self, tool_name: str) -> str | None:
         """返回工具二进制名（优先配置中的 binary，否则回退工具名本身）。"""
@@ -67,7 +173,7 @@ class PhyloDefaults(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    defaults: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    defaults: dict[str, PhyloPreset] = Field(default_factory=dict)
 
 
 class PhyloConfigManager:
@@ -89,16 +195,19 @@ class PhyloConfigManager:
         self._defaults: PhyloDefaults | None = None
         self._config_mtime: float = 0.0
         self._defaults_mtime: float = 0.0
+        self._config_error: str | None = None
+        self._defaults_error: str | None = None
+
+    @property
+    def last_error(self) -> str | None:
+        return self._config_error or self._defaults_error
 
     @staticmethod
     def _load_yaml(path: Path) -> dict[str, Any]:
         if not path.exists():
             return {}
-        try:
-            with path.open("r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-        except (yaml.YAMLError, OSError):
-            return {}
+        with path.open("r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
         return data if isinstance(data, dict) else {}
 
     def _maybe_reload(self) -> None:
@@ -114,19 +223,25 @@ class PhyloConfigManager:
         except OSError:
             defaults_mtime = 0.0
 
-        if self._config is None or config_mtime > self._config_mtime:
-            raw = self._load_yaml(config_path)
+        if self._config is None or config_mtime != self._config_mtime:
             try:
+                raw = self._load_yaml(config_path)
                 self._config = PhyloConfig(**raw)
-            except Exception:
+                self._config_error = None
+            except (OSError, yaml.YAMLError, ValidationError) as exc:
+                self._config_error = f"config.yaml 加载失败: {exc}"
+                logger.warning(self._config_error)
                 self._config = PhyloConfig()
             self._config_mtime = config_mtime
 
-        if self._defaults is None or defaults_mtime > self._defaults_mtime:
-            raw = self._load_yaml(defaults_path)
+        if self._defaults is None or defaults_mtime != self._defaults_mtime:
             try:
+                raw = self._load_yaml(defaults_path)
                 self._defaults = PhyloDefaults(**raw)
-            except Exception:
+                self._defaults_error = None
+            except (OSError, yaml.YAMLError, ValidationError) as exc:
+                self._defaults_error = f"defaults.yaml 加载失败: {exc}"
+                logger.warning(self._defaults_error)
                 self._defaults = PhyloDefaults()
             self._defaults_mtime = defaults_mtime
 
