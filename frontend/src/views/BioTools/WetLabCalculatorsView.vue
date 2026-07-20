@@ -282,27 +282,12 @@ function loadNucSample() {
   message.info('已载入示例：50 ng/µL、3000 bp 双链 DNA 质粒')
 }
 
-// ---------------------------------------------------------------------------
-// 通用示例入口
-// ---------------------------------------------------------------------------
-function loadSample() {
-  const loaders = [loadDilSample, loadQpcrSample, loadMolarSample, loadNucSample]
-  loaders[Number(activeTab.value) - 1]?.()
-}
-
 const activeTab = ref('1')
 </script>
 
 <template>
   <div class="wetlab-calculators-page">
-    <PageHeader title="湿实验计算器" subtitle="母液稀释、qPCR 相对表达、摩尔浓度与核酸浓度换算" back-to="/tools" back-label="返回工具箱">
-      <template #actions>
-        <NButton size="small" quaternary @click="loadSample">
-          <template #icon><NIcon><SparklesOutline /></NIcon></template>
-          示例数据
-        </NButton>
-      </template>
-    </PageHeader>
+    <PageHeader title="湿实验计算器" subtitle="母液稀释、qPCR 相对表达、摩尔浓度与核酸浓度换算" back-to="/tools" back-label="返回工具箱" />
 
     <NAlert type="info" :bordered="false" class="local-alert">
       <template #icon><NIcon><FlaskOutline /></NIcon></template>
@@ -316,6 +301,12 @@ const activeTab = ref('1')
           <NCard size="small" :bordered="false">
             <div class="calc-grid">
               <div class="calc-form">
+                <div class="sample-row">
+                  <NButton text size="tiny" class="sample-link" @click="loadDilSample">
+                    <template #icon><NIcon><SparklesOutline /></NIcon></template>
+                    试试示例数据
+                  </NButton>
+                </div>
                 <div class="form-row">
                   <span class="form-label">母液浓度 C1</span>
                   <NInputNumber v-model:value="dilC1" size="small" :show-button="false" :min="0" placeholder="如 100" />
@@ -333,7 +324,6 @@ const activeTab = ref('1')
                   <NSelect v-model:value="dilVolUnit" size="small" class="unit-select"
                     :options="DIL_VOL_UNITS.map((u) => ({ label: u, value: u }))" />
                 </div>
-                <div class="formula-hint">C1·V1 = C2·V2 → V1 = C2·V2 / C1</div>
               </div>
               <div class="calc-result">
                 <NAlert v-if="dilution.error" type="warning" :bordered="false">{{ dilution.error }}</NAlert>
@@ -346,6 +336,11 @@ const activeTab = ref('1')
                   </div>
                 </template>
                 <div v-else class="result-empty">输入 C1、C2、V2 后自动计算</div>
+                <!-- 计算原理说明（任务2），始终展示在结果卡底部 -->
+                <div class="result-formula">
+                  计算原理：C1·V1 = C2·V2 → V1 = C2·V2 / C1，加水/溶剂量 = V2 − V1。
+                  目标浓度高于母液浓度（C2 &gt; C1）时无法通过稀释达成。
+                </div>
               </div>
             </div>
           </NCard>
@@ -357,6 +352,12 @@ const activeTab = ref('1')
             <div class="qpcr-grid">
               <div class="calc-form">
                 <div class="panel-title">粘贴 Ct 数据（Tab 分隔：样本名 | 分组 | 目的基因Ct | 内参Ct）</div>
+                <div class="sample-row">
+                  <NButton text size="tiny" class="sample-link" @click="loadQpcrSample">
+                    <template #icon><NIcon><SparklesOutline /></NIcon></template>
+                    试试示例数据
+                  </NButton>
+                </div>
                 <NInput v-model:value="ctText" type="textarea" :autosize="{ minRows: 8, maxRows: 14 }"
                   placeholder="支持从 Excel 直接粘贴，如：&#10;Ctrl-1&#9;对照组&#9;22.35&#9;17.12&#10;Treat-1&#9;处理组&#9;19.82&#9;17.31" />
                 <div class="qpcr-meta">
@@ -401,6 +402,12 @@ const activeTab = ref('1')
                   {{ qpcrResult.error }}
                 </NAlert>
                 <div v-else class="result-empty">粘贴 Ct 数据后自动计算 2^-ΔΔCt</div>
+                <!-- 计算原理说明（任务2） -->
+                <div class="result-formula">
+                  计算方法：2^(-ΔΔCt) 法（Livak 法）。ΔCt = 目的基因Ct − 内参基因Ct；
+                  ΔΔCt = ΔCt(样本) − ΔCt(对照组均值)；相对表达量 = 2^(−ΔΔCt)，对照组归一化为 1。
+                  同一分组技术/生物学重复自动取均值，误差棒可选 SD 或 SEM。
+                </div>
               </div>
             </div>
           </NCard>
@@ -411,6 +418,12 @@ const activeTab = ref('1')
           <NCard size="small" :bordered="false">
             <div class="calc-grid">
               <div class="calc-form">
+                <div class="sample-row">
+                  <NButton text size="tiny" class="sample-link" @click="loadMolarSample">
+                    <template #icon><NIcon><SparklesOutline /></NIcon></template>
+                    试试示例数据
+                  </NButton>
+                </div>
                 <div class="form-row">
                   <span class="form-label">要求解的量</span>
                   <NRadioGroup v-model:value="molarTarget" size="small">
@@ -439,7 +452,6 @@ const activeTab = ref('1')
                   <NInputNumber v-model:value="molarConc" size="small" :show-button="false" :min="0" placeholder="如 1" />
                   <NSelect v-model:value="molarConcUnit" size="small" class="unit-select" :options="concUnitOptions" />
                 </div>
-                <div class="formula-hint">n = m / MW，c = n / V</div>
               </div>
               <div class="calc-result">
                 <NAlert v-if="molar.error" type="warning" :bordered="false">{{ molar.error }}</NAlert>
@@ -448,6 +460,11 @@ const activeTab = ref('1')
                   <div class="result-sub">SI 值：{{ formatNum(molar.value) }} {{ molar.unit }}</div>
                 </template>
                 <div v-else class="result-empty">输入其余三项后自动求解</div>
+                <!-- 计算原理说明（任务2） -->
+                <div class="result-formula">
+                  计算原理：n = m / MW（物质的量 = 质量 ÷ 分子量），c = n / V（浓度 = 物质的量 ÷ 体积）。
+                  已知其中任意三项即可求解第四项，单位在内部统一换算为 SI 后计算。
+                </div>
               </div>
             </div>
           </NCard>
@@ -458,6 +475,12 @@ const activeTab = ref('1')
           <NCard size="small" :bordered="false">
             <div class="calc-grid">
               <div class="calc-form">
+                <div class="sample-row">
+                  <NButton text size="tiny" class="sample-link" @click="loadNucSample">
+                    <template #icon><NIcon><SparklesOutline /></NIcon></template>
+                    试试示例数据
+                  </NButton>
+                </div>
                 <div class="form-row">
                   <span class="form-label">换算方向</span>
                   <NRadioGroup v-model:value="nucDirection" size="small">
@@ -491,6 +514,12 @@ const activeTab = ref('1')
                   </div>
                 </template>
                 <div v-else class="result-empty">输入浓度与长度后自动换算</div>
+                <!-- 计算原理说明（任务2）：换算常数按核酸类型列出 -->
+                <div class="result-formula">
+                  换算常数（平均分子量）：双链 DNA ≈ 660 g/mol/bp；单链 DNA ≈ 330 g/mol/nt；
+                  单链 RNA ≈ 340 g/mol/nt。分子量 = 长度 × 对应常数，
+                  nM = (ng/µL × 10⁶) / 分子量，ng/µL = nM × 分子量 / 10⁶。
+                </div>
               </div>
             </div>
           </NCard>
@@ -540,6 +569,13 @@ const activeTab = ref('1')
   flex-direction: column;
   gap: 12px;
 }
+.sample-row {
+  display: flex;
+  margin-bottom: -4px;
+}
+.sample-link {
+  font-weight: 400;
+}
 .form-row {
   display: flex;
   align-items: center;
@@ -558,16 +594,16 @@ const activeTab = ref('1')
   font-size: 13px;
   color: var(--neutral-text-3, #86909c);
 }
-.formula-hint {
-  font-size: 12px;
-  color: var(--neutral-text-3, #86909c);
-  padding-left: 118px;
-}
 .calc-result {
   background: var(--neutral-bg, #f7f8fa);
   border: 1px dashed var(--neutral-border, #e5e6eb);
   border-radius: 12px;
-  padding: 16px;
+  /* 任务1：flex 列布局 + 垂直居中，无论结果文字多少都居中分布 */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  /* 任务1：内边距与外层 grid 24px 间距形成协调比例，文字保持左对齐 */
+  padding: 20px 24px;
   min-height: 120px;
 }
 .result-hero {
@@ -589,6 +625,15 @@ const activeTab = ref('1')
   display: flex;
   align-items: center;
   min-height: 80px;
+}
+/* 任务2：结果卡片底部的计算原理说明，小字号浅灰、顶部分隔线，不喧宾夺主 */
+.result-formula {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--neutral-border, #e5e6eb);
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--neutral-text-3, #86909c);
 }
 .qpcr-meta {
   display: flex;
@@ -619,9 +664,6 @@ const activeTab = ref('1')
   }
   .form-label {
     flex-basis: 90px;
-  }
-  .formula-hint {
-    padding-left: 98px;
   }
 }
 </style>

@@ -126,7 +126,7 @@ onMounted(async () => {
           {{ content.hero.description }}
         </p>
         <div class="hero-actions">
-          <NButton type="primary" size="large" @click="goTo('/flows')">
+          <NButton size="large" class="hero-btn-primary" @click="goTo('/flows')">
             <template #icon>
               <NIcon><RocketOutline /></NIcon>
             </template>
@@ -270,13 +270,71 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 
-.hero-btn-secondary {
-  --n-color: rgba(255, 255, 255, 0.2);
-  --n-color-hover: rgba(255, 255, 255, 0.3);
-  --n-text-color: #fff;
-  --n-text-color-hover: #fff;
-  --n-border: none;
-  --n-border-hover: none;
+/* Hero 渐变背景上的按钮：毛玻璃 + 高亮边框方案（规范见 ARCHITECTURE_DESIN/fontend.md §5.7）。
+   注意：Naive 将 --n-* 变量内联在元素上，class 级变量覆盖无效；
+   这里直接用 CSS 属性 + 双类选择器提高特异性覆盖。 */
+.n-button.hero-btn-primary {
+  background-color: rgba(255, 255, 255, 0.95);
+  color: #4f46e5;
+  height: auto;
+  padding: 8px 20px;
+  font-size: 14px;
+  border: none;
+  border-radius: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3), 0 4px 20px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+.n-button.hero-btn-primary:hover,
+.n-button.hero-btn-primary:focus {
+  background-color: #ffffff;
+  color: #4f46e5;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.45), 0 6px 24px rgba(0, 0, 0, 0.22);
+  transform: translateY(-1px);
+}
+/* Naive 的描边由 __border / __state-border 两个元素绘制，需一并隐藏，否则与外发光环叠成"两圈" */
+.n-button.hero-btn-primary :deep(.n-button__border),
+.n-button.hero-btn-primary :deep(.n-button__state-border) {
+  display: none;
+}
+.n-button.hero-btn-primary :deep(.n-button__icon) {
+  color: #4f46e5;
+}
+
+.n-button.hero-btn-secondary {
+  background-color: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  height: auto;
+  padding: 8px 20px;
+  font-size: 14px;
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  border-radius: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  /* 内高光制造玻璃厚度 */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: all 0.2s ease;
+}
+.n-button.hero-btn-secondary:hover,
+.n-button.hero-btn-secondary:focus {
+  background-color: rgba(255, 255, 255, 0.25);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.8);
+}
+.n-button.hero-btn-secondary :deep(.n-button__border),
+.n-button.hero-btn-secondary :deep(.n-button__state-border) {
+  display: none;
+}
+.n-button.hero-btn-secondary :deep(.n-button__icon) {
+  color: #fff;
+}
+
+/* 图标与文字间距统一 8px */
+.hero-actions :deep(.n-button__icon) {
+  margin-right: 8px;
 }
 
 /* ===== 通用 section ===== */

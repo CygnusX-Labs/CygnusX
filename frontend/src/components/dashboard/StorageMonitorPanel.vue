@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { NSpin, NEmpty, NIcon, NButton, NProgress } from 'naive-ui'
 import { RefreshOutline, ServerOutline } from '@vicons/ionicons5'
 import { use } from 'echarts/core'
@@ -8,12 +8,27 @@ import { PieChart } from 'echarts/charts'
 import { TooltipComponent, LegendComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
 import apiClient from '@/api/client'
+import { useThemeStore } from '@/stores/theme'
 import type { StorageUsage, UserStorageUsage } from '@/types/stats'
 
 use([CanvasRenderer, PieChart, TooltipComponent, LegendComponent])
 
 const loading = ref(false)
 const data = ref<StorageUsage | null>(null)
+
+// ECharts 在 canvas 上绘制，无法解析 CSS var()（会得到黑色），
+// 必须用 getComputedStyle 解析为具体色值；主题切换后重新解析。
+const themeStore = useThemeStore()
+const themeVersion = ref(0)
+watch(() => themeStore.isDark, async () => {
+  await nextTick()
+  themeVersion.value++
+})
+
+function cssVar(name: string, fallback: string): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return v || fallback
+}
 
 // 生信目录可能很大，首次统计耗时；单独放宽超时避免前端误判接口超时
 const REQUEST_TIMEOUT = 60000
@@ -61,7 +76,11 @@ function rankClass(i: number): string {
   return i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : ''
 }
 
-const pieOption = computed(() => ({
+const pieOption = computed(() => {
+  void themeVersion.value
+  const colorText2 = cssVar('--neutral-text-2', '#4e5969')
+  const colorCard = cssVar('--neutral-card', '#ffffff')
+  return {
   tooltip: {
     trigger: 'item',
     formatter: (p: { name: string; value: number; percent: number }) =>
@@ -69,7 +88,7 @@ const pieOption = computed(() => ({
   },
   legend: {
     bottom: 0,
-    textStyle: { color: 'var(--neutral-text-2)', fontSize: 12 },
+    textStyle: { color: colorText2, fontSize: 12 },
     itemWidth: 10,
     itemHeight: 10,
     type: 'scroll',
@@ -81,13 +100,14 @@ const pieOption = computed(() => ({
       radius: ['40%', '68%'],
       center: ['50%', '46%'],
       avoidLabelOverlap: true,
-      itemStyle: { borderRadius: 6, borderColor: 'var(--neutral-card)', borderWidth: 2 },
+      itemStyle: { borderRadius: 6, borderColor: colorCard, borderWidth: 2 },
       label: { show: false },
       emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
       data: users.value.map((u) => ({ name: u.nickname || u.username, value: u.size })),
     },
   ],
-}))
+  }
+})
 </script>
 
 <template>

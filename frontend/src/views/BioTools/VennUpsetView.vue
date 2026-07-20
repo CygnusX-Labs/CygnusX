@@ -1,22 +1,28 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import {
-  NAlert, NButton, NDataTable, NEmpty, NIcon, NInput, NRadioButton, NRadioGroup,
-  NSwitch, NTag, useMessage,
+  NAlert, NButton, NDataTable, NEmpty, NIcon, NInput, NInputNumber, NRadioButton, NRadioGroup,
+  NSelect, NSlider, NSwitch, NTag, useMessage,
   type DataTableColumns,
 } from 'naive-ui'
 import {
-  AddOutline, CopyOutline, DownloadOutline, SparklesOutline, TrashOutline,
+  AddOutline, BarChartOutline, CopyOutline, DownloadOutline, SparklesOutline, TrashOutline,
 } from '@vicons/ionicons5'
+import * as Plotly from 'plotly.js-dist-min'
 import {
-  computeRegions, describeRegion, genSampleLists, parseListText,
-  type NamedSet,
+  buildUpsetFigure, buildVennFigure, computeRegions, DEFAULT_STYLE, describeRegion,
+  genSampleLists, PALETTE_OPTIONS, parseListText, resolvePaletteColors,
+  type NamedSet, type PaletteKey, type ParsedList, type VennUpsetStyleConfig,
 } from '@/utils/vennUpsetProcessor'
 import PageHeader from '@/components/PageHeader.vue'
+import ToolActionBar from '@/components/ToolActionBar.vue'
 import { useThemeStore } from '@/stores/theme'
 
 const message = useMessage()
 const themeStore = useThemeStore()
+const isDark = computed(() => themeStore.isDark)
+
+const PLOT_DIV_ID = 'venn-upset-plot'
 
 const MIN_LISTS = 2
 const MAX_LISTS = 6
@@ -37,49 +43,40 @@ const lists = ref<ListEntry[]>([newList('集合 A'), newList('集合 B')])
 const caseSensitive = ref(false)
 const viewMode = ref<'auto' | 'venn' | 'upset'>('auto')
 
+const style = reactive<VennUpsetStyleConfig>({ ...DEFAULT_STYLE })
+
+const exportDpi = ref(1000)
+const dpiOptions = [
+  { label: '300 DPI', value: 300 },
+  { label: '600 DPI', value: 600 },
+  { label: '1000 DPI', value: 1000 },
+]
+
+const plotting = ref(false)
+
 type Selection = { kind: 'region'; key: string } | { kind: 'set'; index: number } | null
 const selection = ref<Selection>(null)
 
-/* ---------- 颜色（从 CSS 变量解析，导出 SVG/PNG 时不含 var() 引用） ---------- */
-
-const CHART_FALLBACKS = ['#165DFF', '#F53F3F', '#00B42A', '#8E54E9', '#FF7D00', '#14C8D4']
-const palette = ref<string[]>([...CHART_FALLBACKS])
-const textColor = ref('#1d2129')
-const subTextColor = ref('#86909c')
-const cardColor = ref('#ffffff')
-const primaryColor = ref('#165DFF')
-const dotMutedColor = ref('#e5e6eb')
-
-function resolveColors() {
-  const cs = getComputedStyle(document.documentElement)
-  palette.value = CHART_FALLBACKS.map(
-    (fb, i) => cs.getPropertyValue(`--kimi-chart-${i + 1}`).trim() || fb,
-  )
-  textColor.value = cs.getPropertyValue('--neutral-text-1').trim() || '#1d2129'
-  subTextColor.value = cs.getPropertyValue('--neutral-text-3').trim() || '#86909c'
-  cardColor.value = cs.getPropertyValue('--neutral-card').trim() || '#ffffff'
-  primaryColor.value = cs.getPropertyValue('--arco-primary').trim() || '#165DFF'
-  dotMutedColor.value = cs.getPropertyValue('--neutral-border').trim() || '#e5e6eb'
-}
-
-function setColor(i: number): string {
-  return palette.value[i % palette.value.length]
-}
-
 /* ---------- 数据管线 ---------- */
 
-const parsedLists = computed(() =>
-  lists.value.map((l) => ({ ...l, parsed: parseListText(l.text, caseSensitive.value) })),
-)
+const parsedById = computed(() => {
+  const m = new Map<number, ParsedList>()
+  for (const l of lists.value) m.set(l.id, parseListText(l.text, caseSensitive.value))
+  return m
+})
+
+function parsedOf(id: number): ParsedList {
+  return parsedById.value.get(id) ?? { items: [], rawCount: 0, dupCount: 0 }
+}
 
 const nonEmptySets = computed<NamedSet[]>(() =>
-  parsedLists.value
-    .filter((l) => l.parsed.items.length > 0)
-    .map((l) => ({ name: l.name.trim() || '未命名集合', items: l.parsed.items })),
+  lists.value
+    .filter((l) => parsedOf(l.id).items.length > 0)
+    .map((l) => ({ name: l.name.trim() || '未命名集合', items: parsedOf(l.id).items })),
 )
 
 const emptyListNames = computed(() =>
-  parsedLists.value.filter((l) => !l.parsed.items.length).map((l) => l.name.trim() || '未命名集合'),
+  lists.value.filter((l) => !parsedOf(l.id).items.length).map((l) => l.name.trim() || '未命名集合'),
 )
 
 const regions = computed(() => computeRegions(nonEmptySets.value, caseSensitive.value))
@@ -91,8 +88,16 @@ const effectiveMode = computed<'venn' | 'upset'>(() => {
   return n <= 3 ? 'venn' : 'upset'
 })
 
+const paletteResult = computed(() => resolvePaletteColors(style.palette, nonEmptySets.value.length))
+const chartColors = computed(() => paletteResult.value.colors)
+const paletteOverflow = computed(() => paletteResult.value.overflow)
+
+const selectedRegionKey = computed(() =>
+  selection.value?.kind === 'region' ? selection.value.key : null,
+)
+
 watch(
-  () => parsedLists.value.map((l) => `${l.text}|${l.name}`).join('') + caseSensitive.value,
+  () => lists.value.map((l) => `${l.text}|${l.name}`).join('') + caseSensitive.value,
   () => { selection.value = null },
 )
 
@@ -116,118 +121,87 @@ function loadSample(silent = false) {
   if (!silent) message.success('已载入示例数据（3 个基因列表）')
 }
 
-function refresh() {
-  resolveColors()
-  message.success('图表已根据当前列表刷新')
+/* ---------- 渲染 ---------- */
+
+let renderedMode: 'venn' | 'upset' | '' = ''
+
+function renderPlot() {
+  if (nonEmptySets.value.length < 2) return
+  plotting.value = true
+  nextTick(() => {
+    const container = document.getElementById(PLOT_DIV_ID)
+    if (!container) {
+      plotting.value = false
+      return
+    }
+    const mode = effectiveMode.value
+    const figure =
+      mode === 'venn'
+        ? buildVennFigure(nonEmptySets.value, regions.value, style, isDark.value, chartColors.value, selectedRegionKey.value)
+        : buildUpsetFigure(nonEmptySets.value, regions.value, style, isDark.value, chartColors.value, selectedRegionKey.value)
+
+    if (renderedMode !== mode) {
+      Plotly.purge(container)
+      container.removeAttribute('data-events-bound')
+      renderedMode = mode
+    }
+    Plotly.react(container, figure.data, figure.layout, figure.config)
+
+    if (!container.hasAttribute('data-events-bound')) {
+      bindPlotEvents(container)
+      container.setAttribute('data-events-bound', 'true')
+    }
+    if (!container.hasAttribute('data-native-bound')) {
+      bindNativeEvents(container)
+      container.setAttribute('data-native-bound', 'true')
+    }
+    plotting.value = false
+  })
 }
 
-/* ---------- 韦恩图布局 ---------- */
-
-interface CircleSpec { cx: number; cy: number; r: number }
-interface PointSpec { x: number; y: number }
-
-const VENN_VIEWBOX = '0 0 560 400'
-const VENN_LAYOUT: Record<number, { circles: CircleSpec[]; labels: Record<string, PointSpec>; names: PointSpec[] }> = {
-  2: {
-    circles: [
-      { cx: 215, cy: 190, r: 130 },
-      { cx: 345, cy: 190, r: 130 },
-    ],
-    labels: { '0': { x: 165, y: 190 }, '1': { x: 395, y: 190 }, '0,1': { x: 280, y: 190 } },
-    names: [{ x: 150, y: 50 }, { x: 410, y: 50 }],
-  },
-  3: {
-    circles: [
-      { cx: 225, cy: 160, r: 118 },
-      { cx: 335, cy: 160, r: 118 },
-      { cx: 280, cy: 250, r: 118 },
-    ],
-    labels: {
-      '0': { x: 195, y: 125 },
-      '1': { x: 365, y: 125 },
-      '2': { x: 280, y: 345 },
-      '0,1': { x: 280, y: 112 },
-      '0,2': { x: 190, y: 255 },
-      '1,2': { x: 370, y: 255 },
-      '0,1,2': { x: 280, y: 195 },
-    },
-    names: [{ x: 150, y: 50 }, { x: 410, y: 50 }, { x: 280, y: 392 }],
-  },
-}
-
-const vennLayout = computed(() => VENN_LAYOUT[nonEmptySets.value.length] ?? null)
-
-const vennRegions = computed(() => {
-  const layout = vennLayout.value
-  if (!layout) return []
-  const names = nonEmptySets.value.map((s) => s.name)
-  return regions.value
-    .filter((r) => layout.labels[r.key])
-    .map((r) => ({
-      ...r,
-      x: layout.labels[r.key].x,
-      y: layout.labels[r.key].y,
-      label: describeRegion(r.indices, names),
-    }))
-})
-
-/* ---------- UpSet 图布局 ---------- */
-
-const UPSET_MAX_COLS = 24
-const UPSET = { leftPad: 150, colW: 44, topPad: 26, barAreaH: 130, gapY: 14, rowH: 28, bottomPad: 16 }
-
-interface UpsetCol {
-  key: string
-  label: string
-  count: number
-  x: number
-  barH: number
-  barY: number
-  memberRows: number[]
-  selected: boolean
-}
-
-const upsetCols = computed<UpsetCol[]>(() => {
-  const sets = nonEmptySets.value
-  const names = sets.map((s) => s.name)
-  const sorted = [...regions.value].sort(
-    (a, b) => b.elements.length - a.elements.length || a.key.localeCompare(b.key),
-  )
-  const cols = sorted.slice(0, UPSET_MAX_COLS)
-  const maxCount = Math.max(1, ...cols.map((c) => c.elements.length))
-  return cols.map((r, i) => {
-    const barH = Math.max(2, (r.elements.length / maxCount) * UPSET.barAreaH)
-    return {
-      key: r.key,
-      label: describeRegion(r.indices, names),
-      count: r.elements.length,
-      x: UPSET.leftPad + i * UPSET.colW,
-      barH,
-      barY: UPSET.topPad + UPSET.barAreaH - barH,
-      memberRows: r.indices,
-      selected: selection.value?.kind === 'region' && selection.value.key === r.key,
+function bindPlotEvents(container: any) {
+  container.on('plotly_click' as any, (event: any) => {
+    const key = event.points?.[0]?.customdata
+    if (typeof key !== 'string' || !key) return
+    if (selection.value?.kind === 'region' && selection.value.key === key) {
+      selection.value = null
+    } else {
+      selection.value = { kind: 'region', key }
     }
   })
-})
-
-const upsetTruncated = computed(() => regions.value.length > UPSET_MAX_COLS)
-
-const upsetGeom = computed(() => {
-  const nCols = upsetCols.value.length
-  const nSets = nonEmptySets.value.length
-  const matrixTop = UPSET.topPad + UPSET.barAreaH + UPSET.gapY
-  return {
-    width: UPSET.leftPad + nCols * UPSET.colW + 12,
-    height: matrixTop + nSets * UPSET.rowH + UPSET.bottomPad,
-    matrixTop,
-    colCenter: (i: number) => UPSET.leftPad + i * UPSET.colW + UPSET.colW / 2 - 3,
-    rowCenter: (i: number) => matrixTop + i * UPSET.rowH + UPSET.rowH / 2,
-  }
-})
-
-function truncateName(name: string, max = 12): string {
-  return name.length > max ? `${name.slice(0, max)}…` : name
 }
+
+function bindNativeEvents(container: HTMLElement) {
+  // 重渲染会替换光标下的节点，浏览器可能不再派发 dblclick，这里兜底清空选中
+  container.addEventListener('dblclick', () => {
+    selection.value = null
+  })
+}
+
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
+function scheduleRender() {
+  if (debounceTimer) clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(() => renderPlot(), 300)
+}
+
+function generate() {
+  if (debounceTimer) clearTimeout(debounceTimer)
+  renderPlot()
+  message.success('图表已生成')
+}
+
+watch(
+  () => [
+    nonEmptySets.value, regions.value, effectiveMode.value,
+    style.title, style.width, style.height, style.showLegend, style.palette, style.barGap,
+    caseSensitive.value,
+  ],
+  () => scheduleRender(),
+  { deep: false },
+)
+
+watch(selectedRegionKey, () => renderPlot())
+watch(isDark, () => renderPlot())
 
 /* ---------- 选中区域与结果表 ---------- */
 
@@ -248,18 +222,6 @@ const selectedTitle = computed(() => {
   const r = regions.value.find((x) => x.key === sel.key)
   return r ? describeRegion(r.indices, names) : ''
 })
-
-function selectRegion(key: string) {
-  selection.value = { kind: 'region', key }
-}
-
-function selectSet(index: number) {
-  selection.value = { kind: 'set', index }
-}
-
-function isRegionSelected(key: string): boolean {
-  return selection.value?.kind === 'region' && selection.value.key === key
-}
 
 interface ElementRow { value: string }
 const elementColumns: DataTableColumns<ElementRow> = [
@@ -298,86 +260,56 @@ function exportCsv() {
   downloadBlob(new Blob([content], { type: 'text/csv;charset=utf-8' }), 'venn_upset_elements.csv')
 }
 
-/* ---------- 图表导出 ---------- */
+/* ---------- 图片导出 ---------- */
 
-const svgRef = ref<SVGSVGElement | null>(null)
-
-function buildExportSvg(): string | null {
-  const svg = svgRef.value
-  if (!svg) return null
-  const clone = svg.cloneNode(true) as SVGSVGElement
-  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
-  const vb = svg.viewBox.baseVal
-  clone.setAttribute('width', String(Math.round(vb.width)))
-  clone.setAttribute('height', String(Math.round(vb.height)))
-  const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
-  bg.setAttribute('width', '100%')
-  bg.setAttribute('height', '100%')
-  bg.setAttribute('fill', cardColor.value)
-  clone.insertBefore(bg, clone.firstChild)
-  return new XMLSerializer().serializeToString(clone)
+function formatTimestamp(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
 }
 
-function exportSvg() {
-  const data = buildExportSvg()
-  if (!data) {
+function exportImage(format: 'png' | 'svg') {
+  const container = document.getElementById(PLOT_DIV_ID)
+  if (!container || nonEmptySets.value.length < 2) {
     message.warning('暂无可导出的图表')
     return
   }
-  downloadBlob(new Blob([data], { type: 'image/svg+xml;charset=utf-8' }), 'venn_upset_plot.svg')
-}
-
-function exportPng() {
-  const data = buildExportSvg()
-  const svg = svgRef.value
-  if (!data || !svg) {
-    message.warning('暂无可导出的图表')
+  const baseName = 'venn_upset_plot'
+  const width = style.width
+  const height = style.height
+  if (format === 'svg') {
+    Plotly.downloadImage(container, {
+      format: 'svg',
+      filename: `${baseName}_${formatTimestamp()}`,
+      width,
+      height,
+    })
     return
   }
-  const vb = svg.viewBox.baseVal
-  const scale = 2
-  const url = URL.createObjectURL(new Blob([data], { type: 'image/svg+xml;charset=utf-8' }))
-  const img = new Image()
-  img.onload = () => {
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.round(vb.width * scale)
-    canvas.height = Math.round(vb.height * scale)
-    const ctx = canvas.getContext('2d')
-    if (!ctx) {
-      URL.revokeObjectURL(url)
-      message.error('导出失败：无法创建画布')
-      return
-    }
-    ctx.fillStyle = cardColor.value
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-    URL.revokeObjectURL(url)
-    canvas.toBlob((blob) => {
-      if (blob) downloadBlob(blob, 'venn_upset_plot.png')
-      else message.error('导出 PNG 失败')
-    }, 'image/png')
-  }
-  img.onerror = () => {
-    URL.revokeObjectURL(url)
-    message.error('导出 PNG 失败')
-  }
-  img.src = url
+  const dpi = exportDpi.value
+  const scale = dpi / 96
+  // @types/plotly.js-dist-min 的 DownloadImgopts 缺 scale 字段，实际 Plotly 支持，用 as any 逃逸。
+  Plotly.downloadImage(container, {
+    format: 'png',
+    filename: `${baseName}_${formatTimestamp()}_${dpi}dpi`,
+    width,
+    height,
+    scale,
+  } as any)
 }
 
 /* ---------- 生命周期 ---------- */
 
 onMounted(() => {
-  resolveColors()
-  if (parsedLists.value.every((l) => !l.parsed.items.length)) loadSample(true)
+  if (lists.value.every((l) => !parsedOf(l.id).items.length)) loadSample(true)
+  renderPlot()
 })
 
-watch(
-  () => themeStore.isDark,
-  async () => {
-    await nextTick()
-    resolveColors()
-  },
-)
+onUnmounted(() => {
+  if (debounceTimer) clearTimeout(debounceTimer)
+  const el = document.getElementById(PLOT_DIV_ID)
+  if (el) Plotly.purge(el)
+})
 </script>
 
 <template>
@@ -387,25 +319,21 @@ watch(
       subtitle="2~3 个集合绘制韦恩图，4~6 个集合自动切换 UpSet 图，全部在浏览器本地完成"
       back-to="/tools"
       back-label="返回工具箱"
-    >
-      <template #actions>
-        <NButton size="small" quaternary @click="loadSample()">
-          <template #icon><NIcon><SparklesOutline /></NIcon></template>
-          示例数据
-        </NButton>
-        <NButton size="small" type="primary" @click="refresh">生成图表</NButton>
-      </template>
-    </PageHeader>
+    />
 
     <NAlert type="info" class="local-alert" :bordered="false">
-      纯本地运算，数据不离开浏览器
+      纯本地运算，数据不离开浏览器；图内标注为英文，可直接用于论文配图
     </NAlert>
 
     <div class="venn-upset-layout">
-      <!-- 左：列表输入 -->
+      <!-- 左：列表输入 + 样式 -->
       <aside class="param-panel">
         <div class="panel-header">
           <span class="panel-title">集合列表（{{ lists.length }}/{{ MAX_LISTS }}）</span>
+          <NButton size="tiny" text class="sample-link" @click="loadSample()">
+            <template #icon><NIcon><SparklesOutline /></NIcon></template>
+            试试示例数据
+          </NButton>
           <NButton size="tiny" secondary :disabled="lists.length >= MAX_LISTS" @click="addList">
             <template #icon><NIcon><AddOutline /></NIcon></template>
             添加列表
@@ -421,11 +349,11 @@ watch(
           列表「{{ emptyListNames.join('、') }}」为空，已自动忽略空列表。
         </NAlert>
 
-        <div v-for="(l, i) in parsedLists" :key="l.id" class="list-card">
+        <div v-for="(l, i) in lists" :key="l.id" class="list-card">
           <div class="list-card-head">
-            <span class="list-dot" :style="{ background: setColor(i) }" />
+            <span class="list-dot" :style="{ background: chartColors[i % chartColors.length] }" />
             <NInput v-model:value="l.name" size="small" placeholder="列表名称" class="list-name" />
-            <NTag size="small" :bordered="false">{{ l.parsed.items.length }} 条</NTag>
+            <NTag size="small" :bordered="false">{{ parsedOf(l.id).items.length }} 条</NTag>
             <NButton
               size="tiny" quaternary circle
               :disabled="lists.length <= MIN_LISTS"
@@ -440,9 +368,55 @@ watch(
             :autosize="{ minRows: 5, maxRows: 12 }"
             placeholder="粘贴基因 / ID 列表，支持换行、逗号、空格、Tab 混合分隔"
           />
-          <div v-if="l.parsed.dupCount > 0" class="dup-hint">
-            已自动去除 {{ l.parsed.dupCount }} 个重复条目
+          <div v-if="parsedOf(l.id).dupCount > 0" class="dup-hint">
+            已自动去除 {{ parsedOf(l.id).dupCount }} 个重复条目
           </div>
+        </div>
+
+        <!-- 图表样式与导出 -->
+        <div class="style-block">
+          <div class="panel-header">
+            <span class="panel-title">图表样式与导出</span>
+          </div>
+
+          <div class="field">
+            <label>图标题（留空用默认英文标题）</label>
+            <NInput v-model:value="style.title" size="small" placeholder="Venn Diagram / UpSet Plot" />
+          </div>
+
+          <div class="field">
+            <label>色板</label>
+            <NSelect v-model:value="style.palette" :options="PALETTE_OPTIONS" size="small" />
+          </div>
+
+          <NAlert v-if="paletteOverflow" type="warning" class="empty-alert" :bordered="false">
+            所选色板颜色数不足（需 {{ nonEmptySets.length }} 种），已自动改用色觉友好扩展色板。
+          </NAlert>
+
+          <div class="switch-row">
+            <span>显示图例</span>
+            <NSwitch v-model:value="style.showLegend" size="small" />
+          </div>
+
+          <div class="field" v-if="effectiveMode === 'upset'">
+            <label>柱宽（间隙 {{ Math.round(style.barGap * 100) }}%）</label>
+            <NSlider v-model:value="style.barGap" :min="0" :max="0.9" :step="0.05" />
+          </div>
+
+          <div class="row-2col">
+            <div class="field">
+              <label>导出宽度 (px)</label>
+              <NInputNumber v-model:value="style.width" :min="100" :max="8000" :step="10" :show-button="false" size="small" />
+            </div>
+            <div class="field">
+              <label>导出高度 (px)</label>
+              <NInputNumber v-model:value="style.height" :min="100" :max="8000" :step="10" :show-button="false" size="small" />
+            </div>
+          </div>
+          <p class="hint">
+            PNG 按 DPI 放大：{{ style.width }}×{{ style.height }} @ {{ exportDpi }} DPI →
+            {{ Math.round(style.width * exportDpi / 96) }}×{{ Math.round(style.height * exportDpi / 96) }} px
+          </p>
         </div>
       </aside>
 
@@ -456,126 +430,28 @@ watch(
               <NRadioButton value="upset">UpSet</NRadioButton>
             </NRadioGroup>
             <div class="chart-actions">
-              <NButton size="tiny" secondary :disabled="nonEmptySets.length < 2" @click="exportPng">
+              <NButton size="tiny" secondary :disabled="nonEmptySets.length < 2" @click="exportImage('png')">
                 <template #icon><NIcon><DownloadOutline /></NIcon></template>PNG
               </NButton>
-              <NButton size="tiny" secondary :disabled="nonEmptySets.length < 2" @click="exportSvg">
+              <NSelect
+                v-model:value="exportDpi"
+                :options="dpiOptions"
+                size="tiny"
+                style="width: 110px"
+              />
+              <NButton size="tiny" secondary :disabled="nonEmptySets.length < 2" @click="exportImage('svg')">
                 <template #icon><NIcon><DownloadOutline /></NIcon></template>SVG
               </NButton>
             </div>
           </div>
 
-          <NEmpty v-if="nonEmptySets.length < 2" description="至少需要 2 个非空列表才能绘制，请在左侧粘贴数据或载入示例" class="chart-empty" />
-
-          <!-- 韦恩图（2~3 个集合） -->
-          <svg
-            v-else-if="effectiveMode === 'venn' && vennLayout"
-            ref="svgRef"
-            :viewBox="VENN_VIEWBOX"
-            class="chart-svg"
-            role="img"
-          >
-            <circle
-              v-for="(c, i) in vennLayout.circles"
-              :key="`c${i}`"
-              :cx="c.cx" :cy="c.cy" :r="c.r"
-              :fill="setColor(i)" fill-opacity="0.22"
-              :stroke="setColor(i)" stroke-width="2"
-              class="venn-circle"
-              @click="selectSet(i)"
-            >
-              <title>{{ nonEmptySets[i].name }}：共 {{ nonEmptySets[i].items.length }} 个元素</title>
-            </circle>
-            <text
-              v-for="(p, i) in vennLayout.names"
-              :key="`n${i}`"
-              :x="p.x" :y="p.y"
-              text-anchor="middle"
-              class="venn-name"
-              :fill="setColor(i)"
-            >{{ truncateName(nonEmptySets[i].name, 14) }}</text>
-            <g
-              v-for="r in vennRegions"
-              :key="r.key"
-              class="venn-region"
-              @click="selectRegion(r.key)"
-            >
-              <title>{{ r.label }}：{{ r.elements.length }} 个元素（独占）</title>
-              <circle
-                :cx="r.x" :cy="r.y" r="24"
-                :fill="primaryColor"
-                :fill-opacity="isRegionSelected(r.key) ? 0.18 : 0"
-                class="region-hit"
-              />
-              <text
-                :x="r.x" :y="r.y"
-                text-anchor="middle" dominant-baseline="central"
-                class="region-count"
-                :fill="textColor"
-              >{{ r.elements.length }}</text>
-            </g>
-          </svg>
-
-          <!-- UpSet 图（4~6 个集合或手动切换） -->
-          <svg
-            v-else
-            ref="svgRef"
-            :viewBox="`0 0 ${upsetGeom.width} ${upsetGeom.height}`"
-            class="chart-svg"
-            role="img"
-          >
-            <!-- 集合行标签 -->
-            <g v-for="(s, i) in nonEmptySets" :key="`s${i}`">
-              <circle :cx="14" :cy="upsetGeom.rowCenter(i)" r="5" :fill="setColor(i)" />
-              <text
-                :x="26" :y="upsetGeom.rowCenter(i)"
-                dominant-baseline="central" class="upset-set-name" :fill="textColor"
-              >{{ truncateName(s.name) }} ({{ s.items.length }})</text>
-            </g>
-            <!-- 交集列 -->
-            <g
-              v-for="(col, ci) in upsetCols"
-              :key="col.key"
-              class="upset-col"
-              @click="selectRegion(col.key)"
-            >
-              <title>{{ col.label }}：{{ col.count }} 个元素</title>
-              <rect
-                :x="col.x" :y="8"
-                :width="UPSET.colW - 8" :height="upsetGeom.height - 24"
-                :fill="primaryColor" :fill-opacity="col.selected ? 0.1 : 0"
-                class="col-hit"
-              />
-              <rect
-                :x="col.x + 6" :y="col.barY"
-                :width="UPSET.colW - 20" :height="col.barH"
-                :fill="primaryColor" :fill-opacity="col.selected ? 1 : 0.75"
-                rx="2"
-              />
-              <text
-                :x="col.x + (UPSET.colW - 8) / 2" :y="col.barY - 4"
-                text-anchor="middle" class="upset-count" :fill="subTextColor"
-              >{{ col.count }}</text>
-              <!-- 连接线 -->
-              <line
-                v-if="col.memberRows.length > 1"
-                :x1="upsetGeom.colCenter(ci)" :x2="upsetGeom.colCenter(ci)"
-                :y1="upsetGeom.rowCenter(Math.min(...col.memberRows))"
-                :y2="upsetGeom.rowCenter(Math.max(...col.memberRows))"
-                :stroke="textColor" stroke-width="2" stroke-opacity="0.7"
-              />
-              <!-- 点阵 -->
-              <circle
-                v-for="(s, ri) in nonEmptySets"
-                :key="`d${ri}`"
-                :cx="upsetGeom.colCenter(ci)" :cy="upsetGeom.rowCenter(ri)"
-                r="6"
-                :fill="col.memberRows.includes(ri) ? setColor(ri) : dotMutedColor"
-              />
-            </g>
-          </svg>
-          <div v-if="effectiveMode === 'upset' && upsetTruncated" class="truncate-hint">
-            交集组合较多，仅展示元素数最多的前 {{ UPSET_MAX_COLS }} 个组合
+          <div class="plot-card">
+            <NEmpty
+              v-if="nonEmptySets.length < 2"
+              class="plot-placeholder"
+              description="至少需要 2 个非空列表才能绘制，请在左侧粘贴数据或载入示例"
+            />
+            <div v-else :id="PLOT_DIV_ID" class="plot-container" />
           </div>
         </div>
 
@@ -602,10 +478,21 @@ watch(
             :pagination="{ pageSize: 10 }"
             :max-height="320"
           />
-          <NEmpty v-else description="点击韦恩图区域或 UpSet 柱子，此处展示该交集的元素" />
+          <NEmpty v-else description="点击韦恩图区域或 UpSet 柱子，此处展示该交集的元素；双击图表空白处取消选择" />
         </div>
       </main>
     </div>
+
+    <ToolActionBar
+      :ready="nonEmptySets.length >= 2"
+      :ready-text="`${nonEmptySets.length} 个集合已就绪`"
+      not-ready-text="至少需要 2 个非空列表"
+      not-ready-tip="请在左侧粘贴基因列表或点击「试试示例数据」，至少填满 2 个列表"
+      primary-label="生成图表"
+      :primary-icon="BarChartOutline"
+      :loading="plotting"
+      @action="generate"
+    />
   </div>
 </template>
 
@@ -698,6 +585,44 @@ watch(
   color: var(--neutral-text-3, #86909c);
 }
 
+.style-block {
+  border-top: 1px solid var(--neutral-border, #e5e6eb);
+  margin-top: 4px;
+  padding-top: 12px;
+}
+
+.field {
+  margin-bottom: 10px;
+}
+
+.field label {
+  display: block;
+  font-size: 12px;
+  color: var(--neutral-text-2, #4e5969);
+  margin-bottom: 4px;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--neutral-text-2, #4e5969);
+  margin: 6px 0 10px;
+}
+
+.row-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--neutral-text-3, #86909c);
+  margin: 6px 0 0;
+}
+
 .work-area {
   display: flex;
   flex-direction: column;
@@ -717,63 +642,24 @@ watch(
 .chart-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
 }
 
-.chart-empty {
-  padding: 48px 0;
+.plot-card {
+  position: relative;
+  min-height: 540px;
 }
 
-.chart-svg {
+.plot-placeholder {
+  height: 520px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.plot-container {
   width: 100%;
-  height: auto;
-  display: block;
-}
-
-.venn-circle,
-.venn-region,
-.upset-col {
-  cursor: pointer;
-}
-
-.venn-name {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.region-count {
-  font-size: 15px;
-  font-weight: 600;
-  pointer-events: none;
-}
-
-.region-hit {
-  transition: fill-opacity 0.15s;
-}
-
-.venn-region:hover .region-hit {
-  fill-opacity: 0.14;
-}
-
-.upset-set-name {
-  font-size: 12px;
-}
-
-.upset-count {
-  font-size: 11px;
-}
-
-.col-hit {
-  transition: fill-opacity 0.15s;
-}
-
-.upset-col:hover .col-hit {
-  fill-opacity: 0.08;
-}
-
-.truncate-hint {
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--neutral-text-3, #86909c);
+  height: 560px;
 }
 
 @media (max-width: 1200px) {
@@ -787,7 +673,7 @@ watch(
 
 @media (max-width: 768px) {
   .venn-upset-page {
-    padding: 12px;
+    padding: 16px;
   }
 }
 </style>

@@ -407,6 +407,8 @@ export const PLOT_COLOR_PALETTES = {
   colors_discrete_ibm: ['#5B8DFE', '#725DEE', '#DD227D', '#FE5F00', '#FFB109'],
   colors_discrete_candy: ['#9b5de5', '#f15bb5', '#fee440', '#00bbf9', '#00f5d4'],
   color_1: ['#ECA669', '#E06681', '#8087E2', '#E2D269'],
+  // color_1 的登记扩展版：补充青绿与紫，覆盖 2–6 个离散组；Venn / UpSet 工具的默认色板
+  color_1_extended: ['#ECA669', '#E06681', '#8087E2', '#E2D269', '#66B2A0', '#A086C8'],
   // 仅用于有序连续数值；必须配合 colorbar，不可作为分类色板
   colors_continuous_bluepinkyellow: ['#00034D', '#000F9F', '#001CEF', '#241EF5', '#5823F6', '#A033E0', '#E85AB1', '#F1907C', '#F4AF63', '#FCE552', '#FFFB6D'],
 } as const
@@ -420,6 +422,7 @@ export const PLOT_COLOR_PALETTES = {
 | 7 个分类组 | `colors_discrete_friendly_long` | 按稳定类别顺序取色。 |
 | 8–12 个分类组 | `colors_discrete_friendly_long_2` | 必须保留清晰图例；建议同时提供筛选。 |
 | 工具明确要求特定视觉主题 | `colors_discrete_seaside` / `colors_discrete_apple` / `colors_discrete_ibm` / `colors_discrete_candy` / `color_1` | 只能选一套作为该图的离散默认色；在模块文档记录选择原因。 |
+| Venn / UpSet 集合分析（2–6 个集合） | `color_1_extended` | 默认色板；若用户改选容量不足的色板，须提示并回退到 `colors_discrete_friendly_long`，不得静默循环取色。 |
 | 连续数值映射 | `colors_continuous_bluepinkyellow` | 按数值从低到高映射，并展示 colorbar；若数值具有“零/基线”语义，需在模块文档说明中点颜色和范围。 |
 
 建议按原始数据或用户明确的类别顺序建立颜色字典，而不是按当前筛选结果临时排序：
@@ -477,6 +480,7 @@ GO / KEGG 等同时返回多个知识库来源的富集工具，结果不得混�
 5. **可解释 hover**：每个图元的 hover 至少展示主键/标签、关键数值和分组；格式化小数、p 值和科学计数法，禁止直接显示未处理的浮点数。
 6. **受控重绘**：参数、数据或主题变化后更新图表；避免重复创建图表实例。页面卸载时调用图表库的销毁方法（如 `Plotly.purge`）。
 7. **性能边界**：大数据量默认关闭过多文本标签，限制搜索结果/结果表首屏行数；必要时采用 WebGL trace、抽样或前端分页，并在设计文档说明阈值。
+8. **图内标注使用英文**：工具自身生成的图内可见文本——标题、坐标轴标签、图例条目、colorbar 标签、hover 字段名、默认标注——统一使用英文，使导出的 PNG/SVG 可直接作为论文配图；页面表单、帮助文案、错误信息与结果表表头继续使用中文。用户输入的数据（集合名、基因名等）按原样展示，不做翻译；工具提供示例数据时，示例的集合/分组名应使用英文，以展示导出效果。
 
 #### 5.6.5 结果区、交互与可追溯性
 
@@ -679,6 +683,15 @@ Plotly layout 的 `margin` 用紧凑值:`{ t: 40, r: 30, b: 60, l: 60 }`。
 import { NIcon } from 'naive-ui'
 import { ArrowBackOutline, BarChartOutline, DownloadOutline, SparklesOutline } from '@vicons/ionicons5'
 ```
+
+### 7.4 下拉浮层与提示文案防遮挡(强制)
+
+`NSelect`、`NDatePicker`、`NPopselect` 等组件的浮层默认 teleport 到 `<body>`，会覆盖在页面内容之上。参数面板空间窄、控件密，必须遵守：
+
+1. **提示文案放在下拉控件上方，不要放下方**：列映射说明、格式提示（如"状态兼容 1/0、Dead/Alive…"）写在该控件组的**顶部**或 label 行内，禁止紧跟在 `NSelect` 后面——下拉菜单向下展开时会正好盖住它。
+2. **连续多个下拉时，提示统一上移到组首**：一组 2 个以上的连续 `NSelect`（如列映射区），共用提示放在第一个控件之前，不要插在某个控件后面。
+3. **验证方式**：实现后必须实际点开每个下拉，确认展开态不遮挡任何说明文字、校验 `NAlert` 和其它控件的关键信息；窄屏（≤768px）下也要检查一遍。
+4. 浮层被裁剪（而非遮挡）时才考虑 `:to="false"` 挂回父容器；默认保持 teleport 到 body，不要在滚动面板内强行内联浮层。
 
 ---
 
@@ -885,14 +898,14 @@ Plotly.downloadImage(container, {
 - [ ] 用了新图标已在 `ToolsHubView.vue` 的 `ICON_MAP` 登记
 - [ ] 视图文件命名 `<Tool>View.vue`,根 class `<key>-page`,布局 class `<key>-layout`
 - [ ] 根容器 `padding: 16px`,无外层 wrapper、无 `max-width`
-- [ ] 工具栏:返回按钮 + 标题(flex:1) + 操作按钮,`margin-bottom: 8px`
+- [ ] 页头:返回按钮 + 标题 + 副标题(纯身份区,至多 1 个弱操作),`margin-bottom: 8px`;主操作不在页头,见 §十八
 - [ ] 主体 `gap: 16px`,卡片 `var(--neutral-card)` + 12px 圆角 + 12px padding
 - [ ] 响应式:`@media (max-width: 1200px)` 退化为单栏
 - [ ] 所有颜色走 CSS 变量,无硬编码
 - [ ] 暗黑模式:图表监听 `isDark` 重渲染
 - [ ] `onMounted` 载入示例数据,进入即见内容
 - [ ] 参数变化 300ms debounce 自动更新
-- [ ] 有 `type="primary"` 主操作按钮(生成/运行)
+- [ ] 有且仅有 1 个 `type="primary"` 主操作按钮,位于吸底操作栏 `ToolActionBar.vue`(生成/提交/检索);示例/刷新按钮弱化并归位语义卡片
 - [ ] `onUnmounted` 清理定时器与 Plotly 实例
 - [ ] 复杂逻辑已抽到 `<tool>Processor.ts`(纯函数)
 - [ ] `npm run build` 通过(`vue-tsc` 严格类型检查)
@@ -906,6 +919,7 @@ Plotly.downloadImage(container, {
 | 工具 | 视图 | 参考价值 |
 |------|------|---------|
 | 火山图 | `VolcanoPlotView.vue` + `volcanoProcessor.ts` | **首选样板**:三栏布局、参数折叠、坐标轴配置、高 DPI 导出、Plotly 暗黑模式 |
+| Venn / UpSet | `VennUpsetView.vue` + `vennUpsetProcessor.ts` | Plotly shapes 组合绘制韦恩/UpSet 图、图内全英文标注、`color_1_extended` 默认色板、点击选中联动、高 DPI 导出 |
 | BLAST | `BlastSearchView.vue` | 两栏(输入 + 结果)、表格结果展示 |
 | FASTQ 质控 | `FastqQCView.vue` | 两栏、文件上传、统计卡片 |
 | 绘图工坊 | `PlotWorkshopView.vue` | ECharts 集成、多图表类型切换 |
@@ -1145,8 +1159,73 @@ animation: cardIn 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
 - 标准工具页统一使用 `frontend/src/components/PageHeader.vue`。
 - `PageHeader` 的 `backTo` 通常指向 `/tools`，`backLabel` 使用“返回工具箱”。
 - 返回按钮在标题与副标题文本块之间垂直居中，而不是与 `h1` 顶部对齐；共享实现使用 `.page-header-main { align-items: center; }`。
-- 页面级操作继续放入 `PageHeader` 的 `#actions` 插槽，不能因为调整返回按钮位置而改变操作区的职责。
+- 页头是纯身份区：只放返回按钮 + 标题 + 副标题，最多保留 1 个弱全局操作（text/ghost），禁止出现主操作按钮与“示例数据/生成/刷新”类按钮；主操作一律进吸底操作栏，见 §十八。
 - 图标按钮必须保留 Tooltip 与无障碍名称；窄屏下页头允许换行，但返回按钮仍需保持可见和键盘可达。
 - JBrowse、YAML 驱动基因组浏览器、云端沙盒终端等全屏或专用工具栏可以保留专用结构，但返回按钮必须与标题信息块垂直居中，并保持现有全屏布局例外。
 
 新增或修改工具时，先检查共享 `PageHeader`，只有在全屏工具确有布局约束时才新增局部页头实现。
+
+## 十八、页头操作区与吸底操作栏规范（强制）
+
+背景：工具页的主操作（生成图表 / 提交分析 / 开始检索）曾放在页头，用户在下方表单填完数据后需滚回页面顶部才能点击；“示例数据 / 刷新”类按钮也堆在页头，与页面身份混在一起。本章统一操作区的归属与样式。
+
+### 18.1 三条归属规则
+
+1. **页头 = 纯身份区**。只放：返回按钮 + 标题 + 副标题。最多保留 1 个弱全局操作（`text`/`ghost`，如 BLAST 的“任务中心”）。页头禁止出现：主操作按钮（`type="primary"`）、示例数据按钮、生成/提交按钮、刷新按钮。
+2. **主操作 → 吸底操作栏**。每个有“生成/提交/检索”类主操作的页面，主按钮必须放入共享吸底操作栏 `frontend/src/components/ToolActionBar.vue`，保证在任意滚动位置都可见、可点。**全页全局只允许 1 个 `type="primary"` 按钮**，即吸底栏中的主按钮。
+3. **示例数据 / 刷新 → 归位语义卡片**。这两类按钮跟随其作用的数据区域，而不是页头：
+   - “示例数据”放进数据输入/上传卡片的标题行，弱化为 `text` 按钮，文案统一为“试试示例数据”（带 ✨ `SparklesOutline` 图标），永远不用主按钮权重。
+   - “下载示例数据”改为格式说明旁的文字链接“下载示例文件（.csv）”。
+   - “刷新物种”放进物种选择卡片（`NFormItem` 的 `#label` 插槽），“刷新历史”放进历史卡片（`NCollapseItem` 的 `#header-extra` 插槽）。均为 icon-only ghost 小按钮（⟳ `RefreshOutline` 16px），带 hover Tooltip，加载时图标旋转。
+
+### 18.2 吸底操作栏组件契约（`ToolActionBar.vue`）
+
+Props：
+
+| Prop | 类型 | 说明 |
+| --- | --- | --- |
+| `ready` | `boolean` | 表单是否满足提交条件，决定状态点颜色与主按钮可用性 |
+| `readyText` | `string` | 就绪时状态文案，如“参数已就绪” |
+| `notReadyText` | `string` | 未就绪时状态文案，如“待上传数据文件” |
+| `notReadyTip` | `string` | 未就绪时悬停主按钮的 Tooltip，说明缺什么 |
+| `primaryLabel` | `string` | 主按钮文案（生成图表 / 提交分析 / 开始检索） |
+| `primaryIcon` | `Component` | 主按钮图标（可选） |
+| `loading` | `boolean` | 主按钮 loading 态 |
+
+Emit：`action`（点击主按钮或按 ⌘/Ctrl+Enter 时触发）。
+
+### 18.3 视觉与交互规范
+
+- **定位**：`position: sticky; bottom: 0`（组件内实际 `bottom: 12px` 悬浮胶囊形态），`z-index` 高于内容卡片，滚动时始终悬浮在视口底部。
+- **玻璃拟态**：半透明白 + `backdrop-filter: blur(12px)`（站点既有玻璃配方为 `rgba(255,255,255,0.72)` + `blur(20-24px) saturate(170%)`，暗黑模式 `rgba(17,22,34,0.62)`，通过 `:root[data-theme="dark"]` 覆盖）；顶部 1px 高亮边（白色 `rgba` 0.6~0.8），向上投影。
+- **左侧 = 表单校验状态**：状态点（●）+ 文案。未就绪为灰色，文案如“待上传数据文件”；就绪为绿色（`#00b42a`），文案如“参数已就绪”。状态文案应具体指出还缺什么，而非泛泛的“未就绪”。
+- **右侧 = 主按钮**：未就绪时 `disabled`，并用 `NTooltip` 包裹说明缺什么（disabled 按钮不派发鼠标事件，需用 `<span>` 包裹承接 hover）。就绪时高亮可点。
+- **快捷键**：⌘+Enter（macOS）/ Ctrl+Enter（其他）触发主操作；按钮内以 `<kbd>⌘↵</kbd>` 提示（窄屏隐藏）。
+- **占位**：吸底栏会占据文档流高度，页面内容自然收尾，不需要额外 padding 补偿；但需保证最后一张卡片不被吸底栏视觉遮挡（栏体为悬浮胶囊，与内容保留间距）。
+- **动效**：遵循 §十六 Apple 动效规范，使用 `cubic-bezier(0.16, 1, 0.3, 1)`；状态点颜色变化、按钮 hover/`:active`（100ms）均需过渡；`prefers-reduced-motion` 下关闭动效。
+
+### 18.4 移动端规范（≤640px）
+
+- 吸底栏贴底通栏：`bottom: 0`、左右负 margin 撑满、去圆角；`padding-bottom: calc(12px + env(safe-area-inset-bottom))` 兼容全面屏 Home 指示条。
+- 主按钮 `min-height: 44px` 且 `flex: 1` 占满宽度，保证触控目标 ≥44px。
+- 隐藏 `⌘↵` 快捷键提示。
+- 375px 宽度下内容不被吸底栏遮挡，无需横向滚动。
+
+### 18.5 各页面落地映射
+
+| 页面 | 移出页头的按钮 | 落地位置 |
+| --- | --- | --- |
+| 韦恩图 / UpSet（`VennUpsetView`） | 示例数据、生成图表 | 示例→集合列表输入卡片标题行；生成图表→吸底栏 |
+| 组学绘图工坊（`PlotWorkshopView`） | 加载示例、下载示例数据 | 加载示例→数据上传卡片标题行（试试示例数据）；下载→格式说明旁文字链接；自动绘图，无吸底栏 |
+| 湿实验计算器（`WetLabCalculatorsView`） | 示例数据 | 每个计算器面板输入区顶部各放一个“试试示例数据”；反应式计算，无吸底栏 |
+| GO/KEGG 富集（`KeggEnrichmentView`） | COP1/HY5 示例、刷新物种、刷新历史、提交分析 | 示例→Gene ID 输入卡片；刷新物种→物种卡片；刷新历史→历史卡片；提交分析→吸底栏 |
+| 序列检索 BLAST（`BlastSearchView`） | 开始检索 | 开始检索→吸底栏；“任务中心”可弱化为 text 保留在页头 |
+
+### 18.6 验收清单
+
+- [ ] 各工具页页头结构一致（返回 + 标题 + 副标题，至多 1 个弱操作），工具之间页头零抖动。
+- [ ] 每页恰好 1 个 `type="primary"` 按钮，位于吸底栏。
+- [ ] 吸底栏在任意滚动位置均可见；未就绪时主按钮 disabled + 灰状态点 + 具体缺失文案 + Tooltip。
+- [ ] 示例数据 / 刷新按钮位于其语义卡片内，均为弱样式。
+- [ ] 375px 移动端无遮挡，触控目标 ≥44px，吸底栏适配 `env(safe-area-inset-bottom)`。
+- [ ] ⌘/Ctrl+Enter 可触发主操作。

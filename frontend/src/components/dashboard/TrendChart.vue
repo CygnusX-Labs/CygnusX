@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { NButton, NIcon, NSpin } from 'naive-ui'
 import { CalendarOutline } from '@vicons/ionicons5'
 import { use } from 'echarts/core'
@@ -14,6 +14,7 @@ import {
 import VChart from 'vue-echarts'
 import apiClient from '@/api/client'
 import EmptyState from '@/components/EmptyState.vue'
+import { useThemeStore } from '@/stores/theme'
 import type { TrendPoint } from '@/types/stats'
 
 use([
@@ -30,19 +31,42 @@ const selectedDays = ref<number>(7)
 const trendData = ref<TrendPoint[]>([])
 const loading = ref(false)
 
-const trendOption = computed(() => ({
+// ECharts 在 canvas 上绘制，无法解析 CSS var()（会得到黑色），
+// 必须用 getComputedStyle 解析为具体色值；主题切换后重新解析。
+const themeStore = useThemeStore()
+const themeVersion = ref(0)
+watch(() => themeStore.isDark, async () => {
+  await nextTick()
+  themeVersion.value++
+})
+
+function cssVar(name: string, fallback: string): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return v || fallback
+}
+
+const trendOption = computed(() => {
+  void themeVersion.value // 主题切换时触发重算
+  const colorCard = cssVar('--neutral-card', '#ffffff')
+  const colorBorder = cssVar('--neutral-border', '#e5e6eb')
+  const colorText1 = cssVar('--neutral-text-1', '#1d2129')
+  const colorText2 = cssVar('--neutral-text-2', '#4e5969')
+  const colorText3 = cssVar('--neutral-text-3', '#86909c')
+  const colorPrimary = cssVar('--arco-primary', '#165dff')
+  const colorWarning = cssVar('--arco-warning', '#ff7d00')
+  return {
   tooltip: {
     trigger: 'axis',
-    backgroundColor: 'var(--neutral-card)',
-    borderColor: 'var(--neutral-border)',
+    backgroundColor: colorCard,
+    borderColor: colorBorder,
     borderWidth: 1,
-    textStyle: { color: 'var(--neutral-text-1)', fontSize: 12 },
+    textStyle: { color: colorText1, fontSize: 12 },
     extraCssText: 'box-shadow: 0 4px 20px rgba(0,0,0,0.08); border-radius: 8px;',
   },
   legend: {
     data: ['分析任务数', '样本数量'],
     bottom: 0,
-    textStyle: { color: 'var(--neutral-text-2)', fontSize: 12 },
+    textStyle: { color: colorText2, fontSize: 12 },
     itemWidth: 10,
     itemHeight: 10,
   },
@@ -50,28 +74,28 @@ const trendOption = computed(() => ({
   xAxis: {
     type: 'category',
     data: trendData.value.map((d) => d.date),
-    axisLine: { lineStyle: { color: 'var(--neutral-border)' } },
+    axisLine: { lineStyle: { color: colorBorder } },
     axisTick: { show: false },
-    axisLabel: { color: 'var(--neutral-text-3)', fontSize: 12 },
+    axisLabel: { color: colorText3, fontSize: 12 },
   },
   yAxis: [
     {
       type: 'value',
       name: '任务数',
-      nameTextStyle: { color: 'var(--neutral-text-3)', fontSize: 11, align: 'left', padding: [0, 0, 0, -20] },
+      nameTextStyle: { color: colorText3, fontSize: 11, align: 'left', padding: [0, 0, 0, -20] },
       axisLine: { show: false },
       axisTick: { show: false },
-      splitLine: { lineStyle: { color: 'var(--neutral-border)', type: 'dashed' } },
-      axisLabel: { color: 'var(--neutral-text-3)', fontSize: 12 },
+      splitLine: { lineStyle: { color: colorBorder, type: 'dashed' } },
+      axisLabel: { color: colorText3, fontSize: 12 },
     },
     {
       type: 'value',
       name: '样本数',
-      nameTextStyle: { color: 'var(--neutral-text-3)', fontSize: 11, align: 'right', padding: [0, -20, 0, 0] },
+      nameTextStyle: { color: colorText3, fontSize: 11, align: 'right', padding: [0, -20, 0, 0] },
       axisLine: { show: false },
       axisTick: { show: false },
       splitLine: { show: false },
-      axisLabel: { color: 'var(--neutral-text-3)', fontSize: 12 },
+      axisLabel: { color: colorText3, fontSize: 12 },
     },
   ],
   series: [
@@ -79,7 +103,7 @@ const trendOption = computed(() => ({
       name: '分析任务数',
       type: 'bar',
       data: trendData.value.map((d) => d.tasks),
-      itemStyle: { color: 'var(--arco-primary)', borderRadius: [4, 4, 0, 0] },
+      itemStyle: { color: colorPrimary, borderRadius: [4, 4, 0, 0] },
       barMaxWidth: 32,
     },
     {
@@ -87,14 +111,15 @@ const trendOption = computed(() => ({
       type: 'line',
       yAxisIndex: 1,
       data: trendData.value.map((d) => d.samples),
-      itemStyle: { color: 'var(--arco-warning)' },
-      lineStyle: { color: 'var(--arco-warning)', width: 2 },
+      itemStyle: { color: colorWarning },
+      lineStyle: { color: colorWarning, width: 2 },
       symbol: 'circle',
       symbolSize: 6,
       smooth: true,
     },
   ],
-}))
+  }
+})
 
 async function fetchTrend() {
   loading.value = true

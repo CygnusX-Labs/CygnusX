@@ -13,8 +13,13 @@ import {
   type DiscretePaletteName,
 } from '@/components/charts/palettes'
 import { wrapEnrichmentLabel } from '@/utils/enrichmentProcessor'
+import { kaplanMeier } from '@/utils/survival/kmEstimator'
+import { logRankTest } from '@/utils/survival/logRankTest'
+import { groupByExpression, joinExpressionFollowup, parseSurvivalRecords } from '@/utils/survival/survivalData'
+import { buildSurvivalFigure } from '@/utils/survival/survivalPlot'
+import type { LogRankPair, SurvivalGroupStrategy, SurvivalRecord } from '@/utils/survival/survivalTypes'
 
-export type ChartKind = 'bar' | 'line' | 'scatter' | 'heatmap' | 'corr-heatmap' | 'boxplot' | 'violin' | 'histogram' | 'mean-error' | 'pca' | 'enrichment'
+export type ChartKind = 'bar' | 'line' | 'scatter' | 'heatmap' | 'corr-heatmap' | 'boxplot' | 'violin' | 'histogram' | 'mean-error' | 'pca' | 'enrichment' | 'survival'
 export type Severity = 'success' | 'warning' | 'error'
 export type Normalization = 'row-zscore' | 'column-zscore' | 'log2' | 'none'
 export type ErrorBarMode = 'sd' | 'sem' | 'ci95'
@@ -44,6 +49,7 @@ export const CHART_DEFINITIONS: Record<ChartKind, ChartDefinition> = {
   'mean-error': { kind: 'mean-error', label: '均值误差棒点图', requiredColumns: [{ role: 'group', label: '分组列', type: 'category' }, { role: 'value', label: '均值列', type: 'numeric' }, { role: 'error', label: '误差列', type: 'numeric' }] },
   pca: { kind: 'pca', label: 'PCA 主成分分析', requiredColumns: [{ role: 'id', label: 'ID 列', type: 'id' }] },
   enrichment: { kind: 'enrichment', label: '富集结果气泡图', requiredColumns: [] },
+  survival: { kind: 'survival', label: '生存分析 KM', requiredColumns: [{ role: 'x', label: '生存时间列', type: 'numeric' }, { role: 'y', label: '结局状态列', type: 'category' }, { role: 'group', label: '分组列', type: 'category', optional: true }] },
 }
 
 export interface ParsedTable {
@@ -128,6 +134,36 @@ export interface WorkshopResult {
   summaries: GroupSummary[]
   statistics: Array<Record<string, string | number>>
   validRows: number
+  /** Only populated for the survival (KM) chart. */
+  survival?: SurvivalSummary
+}
+
+export interface SurvivalSummary {
+  groups: Array<{ name: string; n: number; events: number; censored: number; medianSurvival: number | null }>
+  logRank: { chi2: number; df: number; p: number } | null
+  pairwise: LogRankPair[]
+  medianFollowup: number
+  /** Expression mode only: cutoff actually used for grouping. */
+  cutoff: number | null
+  strategy: SurvivalGroupStrategy | null
+  joinMatched: number | null
+  optimalP: number | null
+}
+
+/** Extra, chart-scoped inputs that do not belong in DEFAULT_WORKSHOP_CONFIG. */
+export interface SurvivalWorkshopOptions {
+  inputMode: 'combined' | 'expression'
+  followupTable: ParsedTable | null
+  strategy: SurvivalGroupStrategy
+  customCutoff: number
+  showCI: boolean
+  showCensors: boolean
+  showRiskTable: boolean
+  isDark: boolean
+}
+
+export interface WorkshopExtras {
+  survival?: SurvivalWorkshopOptions
 }
 
 const numberPattern = /^[-+]?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?$/i
@@ -161,6 +197,7 @@ export function inferColumnMap(headers: string[], kind: ChartKind): ColumnMap {
   const group = find('group', 'condition', 'treatment', 'class', 'line')
   const base = { ...DEFAULT_COLUMN_MAP, id: find('gene', 'id', 'feature', 'name'), group }
   if (kind === 'enrichment') return base
+  if (kind === 'survival') return { ...base, id: find('sample', 'id', 'patient'), x: find('time', 'os.time', 'days', 'months', 'follow') || numeric[0] || '', y: find('status', 'event', 'vital', 'outcome', 'censor'), value: find('expression', 'value', 'tpm', 'fpkm') || numeric[1] || '' }
   if (kind === 'heatmap' || kind === 'corr-heatmap' || kind === 'pca') return { ...base, id: base.id || headers[0] || '' }
   if (kind === 'scatter') return { ...base, x: find('x', 'expression', 'trait') || numeric[0] || '', y: find('y', 'trait', 'value') || numeric[1] || '' }
   if (kind === 'line') return { ...base, x: find('time', 'day', 'hour', 'x') || headers[0] || '', value: find('value', 'expression') || numeric[0] || '', series: find('line', 'series', 'group', 'condition') || group }
@@ -733,7 +770,123 @@ function processPca(table: ParsedTable, map: ColumnMap, config: WorkshopConfig):
   return { messages, traces, layout, config: { responsive: true, displaylogo: false }, summaries: [], statistics: [{ pc1_variance: pca.explainedVariance[0], pc2_variance: pca.explainedVariance[1] }], validRows: data.length }
 }
 
-export function buildWorkshopResult(kind: ChartKind, table: ParsedTable, map: ColumnMap, config: WorkshopConfig): WorkshopResult {
+function emptySurvivalResult(messages: ValidationMessage[], config: WorkshopConfig): WorkshopResult {
+  return { messages, traces: [], layout: layoutBase('survival', config), config: { responsive: true, displaylogo: false }, summaries: [], statistics: [], validRows: 0 }
+}
+
+function processSurvival(table: ParsedTable, map: ColumnMap, config: WorkshopConfig, options?: SurvivalWorkshopOptions): WorkshopResult {
+  const opts: SurvivalWorkshopOptions = options ?? {
+    inputMode: 'combined', followupTable: null, strategy: 'median', customCutoff: 0,
+    showCI: false, showCensors: true, showRiskTable: true, isDark: false,
+  }
+  const messages: ValidationMessage[] = []
+  let records: SurvivalRecord[] = []
+  let groupNames: string[] = []
+  let cutoff: number | null = null
+  let optimalP: number | null = null
+  let joinMatched: number | null = null
+  let timeLabel = 'Time'
+
+  if (opts.inputMode === 'combined') {
+    if (!map.x || !map.y) messages.push({ severity: 'error', text: '请选择生存时间列和结局状态列。' })
+    const parsed = parseSurvivalRecords(table, map.x, map.y, map.group)
+    parsed.errors.slice(0, 8).forEach((text) => messages.push({ severity: 'error', text }))
+    if (parsed.errors.length > 8) messages.push({ severity: 'error', text: `……另有 ${parsed.errors.length - 8} 行数据错误。` })
+    records = parsed.records
+    timeLabel = map.x || 'Time'
+    const names = Array.from(new Set(records.map((record) => record.group ?? 'All patients')))
+    groupNames = names.length ? names : ['All patients']
+    records = records.map((record) => ({ ...record, group: record.group ?? 'All patients' }))
+  } else {
+    if (!opts.followupTable || !opts.followupTable.headers.length) messages.push({ severity: 'error', text: '请上传随访表（包含样本 ID、生存时间、结局状态）。' })
+    const joined = joinExpressionFollowup(table, opts.followupTable ?? { headers: [], rows: [] }, map.id, map.value)
+    joined.errors.slice(0, 8).forEach((text) => messages.push({ severity: 'error', text }))
+    if (joined.errors.length > 8) messages.push({ severity: 'error', text: `……另有 ${joined.errors.length - 8} 行数据错误。` })
+    joined.warnings.forEach((text) => messages.push({ severity: 'warning', text }))
+    joinMatched = joined.report.matched
+    timeLabel = joined.timeColumn || 'Time'
+    if (joined.report.matched > 0 && joined.report.matched < 6) messages.push({ severity: 'error', text: `表达值表与随访表仅匹配 ${joined.report.matched} 个样本，不足以进行生存分析；请检查样本 ID 是否一致。` })
+    const grouping = groupByExpression(joined.records, opts.strategy, opts.customCutoff)
+    cutoff = grouping.cutoff
+    optimalP = grouping.optimalP ?? null
+    groupNames = grouping.names
+    records = grouping.groups.flat()
+    if (opts.strategy === 'optimal') messages.push({ severity: 'warning', text: `最佳截点 = ${cutoff.toFixed(4)}（min p）；该策略存在多重检验偏倚，p 值偏乐观。` })
+  }
+
+  if (messages.some((message) => message.severity === 'error')) return emptySurvivalResult(messages, config)
+  if (records.length < 6) {
+    messages.push({ severity: 'error', text: `有效样本仅 ${records.length} 例，至少需要 6 例。` })
+    return emptySurvivalResult(messages, config)
+  }
+
+  const groupedRecords = groupNames.map((name) => records.filter((record) => record.group === name))
+  const tooSmall = groupNames.filter((_, index) => groupedRecords[index].length < 3)
+  if (tooSmall.length) {
+    messages.push({ severity: 'error', text: `分组 ${tooSmall.map((name) => `「${name}」`).join('、')} 样本数不足 3 例。` })
+    return emptySurvivalResult(messages, config)
+  }
+
+  const groups = groupNames.map((name, index) => ({ name, records: groupedRecords[index], km: kaplanMeier(groupedRecords[index]) }))
+  let logRank: ReturnType<typeof logRankTest> | null = null
+  if (groups.length >= 2 && groups.every((group) => group.records.some((record) => record.status === 1))) {
+    try {
+      logRank = logRankTest(groupNames, groupedRecords)
+    } catch { logRank = null }
+  } else if (groups.length >= 2) {
+    messages.push({ severity: 'warning', text: '存在无事件的分组，无法计算 log-rank 检验。' })
+  }
+
+  const times = records.map((record) => record.time).sort((a, b) => a - b)
+  const medianFollowup = times.length % 2 ? times[(times.length - 1) / 2] : (times[times.length / 2 - 1] + times[times.length / 2]) / 2
+  messages.unshift({ severity: 'success', text: `检测通过：${records.length} 例样本，${groups.length} 组，中位随访时间 ${medianFollowup.toFixed(2)}。` })
+
+  const colors = DISCRETE_PALETTES[config.discretePalette]
+  const figure = buildSurvivalFigure(groups, logRank, {
+    title: config.title.trim() || 'Kaplan–Meier Survival Curves',
+    xTitle: config.xTitle.trim() || `Time (${timeLabel})`,
+    lineWidth: config.lineWidth,
+    showCI: opts.showCI,
+    showCensors: opts.showCensors,
+    showRiskTable: opts.showRiskTable,
+    width: config.plotWidth,
+    height: config.plotHeight,
+    legend: legendConfig(config),
+  }, opts.isDark, [...colors])
+
+  const statistics: Array<Record<string, string | number>> = groups.map((group) => ({
+    group: group.name,
+    n: group.km.n,
+    events: group.km.events,
+    censored: group.km.censored,
+    median_survival: group.km.medianSurvival === null ? 'NR' : Number(group.km.medianSurvival.toFixed(2)),
+  }))
+  if (logRank) statistics.push({ test: 'Log-rank', chi2: Number(logRank.chi2.toFixed(4)), df: logRank.df, p_value: logRank.p < 0.001 ? logRank.p.toExponential(3) : Number(logRank.p.toFixed(4)) })
+  statistics.push({ metric: 'Median follow-up', value: Number(medianFollowup.toFixed(2)) })
+  if (cutoff !== null) statistics.push({ metric: 'Expression cutoff', value: Number(cutoff.toFixed(4)) })
+
+  return {
+    messages,
+    traces: figure.traces,
+    layout: { ...layoutBase('survival', config), ...figure.layout, title: figure.layout.title, legend: figure.layout.legend },
+    config: { responsive: true, displaylogo: false },
+    summaries: groups.map((group) => ({ group: group.name, n: group.km.n, mean: mean(group.records.map((record) => record.time)), sd: sd(group.records.map((record) => record.time)) })),
+    statistics,
+    validRows: records.length,
+    survival: {
+      groups: groups.map((group) => ({ name: group.name, n: group.km.n, events: group.km.events, censored: group.km.censored, medianSurvival: group.km.medianSurvival })),
+      logRank: logRank ? { chi2: logRank.chi2, df: logRank.df, p: logRank.p } : null,
+      pairwise: logRank?.pairwise ?? [],
+      medianFollowup,
+      cutoff,
+      strategy: opts.inputMode === 'expression' ? opts.strategy : null,
+      joinMatched,
+      optimalP,
+    },
+  }
+}
+
+export function buildWorkshopResult(kind: ChartKind, table: ParsedTable, map: ColumnMap, config: WorkshopConfig, extras?: WorkshopExtras): WorkshopResult {
   if (!table.headers.length) return { messages: [{ severity: 'error', text: '请先上传 CSV、TSV 或分号分隔数据文件。' }], traces: [], layout: layoutBase(kind, config), config: { responsive: true, displaylogo: false }, summaries: [], statistics: [], validRows: 0 }
   if (kind === 'bar' || kind === 'boxplot' || kind === 'violin') return processGrouped(kind, table, map, config)
   if (kind === 'scatter') return processScatter(table, map, config)
@@ -743,6 +896,7 @@ export function buildWorkshopResult(kind: ChartKind, table: ParsedTable, map: Co
   if (kind === 'mean-error') return processMeanError(table, map, config)
   if (kind === 'pca') return processPca(table, map, config)
   if (kind === 'enrichment') return processEnrichment(table, config)
+  if (kind === 'survival') return processSurvival(table, map, config, extras?.survival)
   return processLine(table, map, config)
 }
 

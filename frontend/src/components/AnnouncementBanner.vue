@@ -201,20 +201,31 @@ onMounted(async () => {
   gap: 8px;
   flex-shrink: 0;
 }
-.banner-btn {
-  --n-color: transparent;
-  --n-color-hover: rgba(255, 255, 255, 0.14);
-  --n-color-pressed: rgba(255, 255, 255, 0.2);
-  --n-text-color: #fff;
-  --n-text-color-hover: #fff;
-  --n-text-color-pressed: #fff;
-  --n-border: 1px solid rgba(255, 255, 255, 0.8);
-  --n-border-hover: 1px solid #fff;
-  --n-border-pressed: 1px solid #fff;
-  font-weight: 500;
+/* Banner 渐变背景上的按钮：白底实心 + 品牌紫文字，与 Hero 按钮同一规范。
+   同 Hero：--n-* 变量被 Naive 内联覆盖无效，直接用 CSS 属性覆盖。 */
+.n-button.banner-btn {
+  background-color: rgba(255, 255, 255, 0.95);
+  color: #6366f1;
+  height: auto;
+  padding: 6px 16px;
+  font-size: 13px;
+  border: none;
+  border-radius: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4), 0 2px 12px rgba(0, 0, 0, 0.15);
+  transition: all 0.2s ease;
 }
-.banner-btn:hover {
-  background: rgba(255, 255, 255, 0.14);
+.n-button.banner-btn:hover,
+.n-button.banner-btn:focus {
+  background-color: #ffffff;
+  color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.5), 0 4px 16px rgba(0, 0, 0, 0.18);
+  transform: translateY(-1px);
+}
+.n-button.banner-btn :deep(.n-button__border),
+.n-button.banner-btn :deep(.n-button__state-border) {
+  display: none;
 }
 
 .banner-close {

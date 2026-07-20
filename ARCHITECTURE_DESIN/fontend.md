@@ -230,6 +230,34 @@ async function refreshDashboard() {
 - `NModal`、`NDrawer` 和受控 `NPopconfirm` 使用 `v-model:show` 管理可见性；打开时应将焦点落在标题、首个可操作项或表单首字段，关闭后将焦点返回触发元素。异步确认期间使用按钮 `loading` 并阻止重复提交。
 - 短暂、可逆的操作结果使用 `useMessage()`；需要说明原因、提供链接或持续可见的系统事件使用 `useNotification()`、`NAlert` 或 `NResult`。破坏性操作必须先通过 `NPopconfirm` 或包含后果说明的弹窗确认，不能只依赖红色按钮。
 
+### 5.7 渐变背景上的按钮（毛玻璃 + 高亮边框）
+
+Hero 区域（`HomeView.vue`）、通知条幅（`AnnouncementBanner.vue`）等深色渐变背景上的按钮，禁止使用半透明文字按钮或默认主题按钮（对比度不足），统一采用以下两套方案，确保按钮有明确的"浮起"层级感。
+
+**主按钮（白底实心 + 品牌色文字，如"开始分析"、Banner"立即查看"）：**
+
+| 属性 | 值 |
+| --- | --- |
+| 背景 | `rgba(255,255,255,0.95)`，hover 纯白 `#fff` |
+| 文字 | 品牌色（Hero 用 `#4f46e5`，Banner 用 `#6366f1`），`font-weight: 700` |
+| 阴影 | `0 0 0 2px rgba(255,255,255,0.3), 0 4px 20px rgba(0,0,0,0.2)`；hover 外发光加强到 3px 并 `translateY(-1px)` |
+| 圆角 / padding / 字号 | Hero `12px / 8px 20px / 14px`；Banner `10px / 6px 16px / 13px`（紧凑场景） |
+
+**次按钮（毛玻璃 + 高亮白边，如"查看仪表盘"）：**
+
+| 属性 | 值 |
+| --- | --- |
+| 背景 | `rgba(255,255,255,0.15)`，hover 加深到 `0.25` |
+| 边框 | `1.5px solid rgba(255,255,255,0.6)`（关键：高亮白边保证可见性），hover 亮度提升到 `0.8` |
+| 玻璃效果 | `backdrop-filter: blur(12px)` + 内高光 `box-shadow: inset 0 1px 0 rgba(255,255,255,0.1)` 制造玻璃厚度 |
+| 文字 | 纯白，`font-weight: 700` |
+
+**统一细节：**
+
+- 所有渐变背景按钮：`letter-spacing: 0.3px`、`transition: all 0.2s ease`、图标与文字间距 `8px`（`.n-button__icon { margin-right: 8px }`）。
+- **实现方式（踩坑记录）**：Naive UI 会把 `--n-*` 主题变量以内联 style 写在按钮元素上，class 级变量覆盖不生效。必须用 `.n-button.<自定义类>` 双类选择器直接写 `background-color`/`color`/`border` 等普通 CSS 属性；Naive 的描边由内部 `.n-button__border` 和 `.n-button__state-border` **两个**元素绘制，必须一并 `display: none`，否则会与外发光环叠成"两圈"；图标颜色用 `:deep(.n-button__icon)` 单独指定。
+- 响应式下按钮样式不变；移动端依赖 `.hero-actions` 的 `flex-wrap` 换行即可。
+
 ## 6. 动效与交互
 
 ### 6.1 时间与属性
@@ -383,6 +411,7 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 - 坐标轴文字使用 `--neutral-text-3`（12px），轴标题使用 `--neutral-text-2`（13px）。
 - 网格线使用 `--neutral-border`，虚线 `dashed`。
 - 深色模式下通过 CSS 变量自动适配；不得在 JS 中硬编码 `#fff` 或 `#333`。
+- **ECharts option 中禁止直接写 `'var(--xxx)'`**：ECharts 在 canvas 上绘制时无法解析 CSS 变量，会得到黑色（2026-07 仪表盘"任务提交趋势"黑色柱状图即此 bug）。必须先用 `getComputedStyle(document.documentElement).getPropertyValue(...)` 解析为具体色值再传入 option，并 watch 主题切换后 `nextTick` 重新解析（参考 `TrendChart.vue` 的 `cssVar` + `themeVersion` 模式）。DOM 内联样式不受此限。
 - 显著性标注（p-value 阈值线、差异基因高亮）使用 `--arco-danger` 和 `--arco-success`。
 
 ### 13.3 交互与响应式
@@ -406,6 +435,17 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 - 每个 processor 是纯函数，输入后端原始数据，输出 ECharts `option` 或 Plotly `data + layout`。
 - Processor 不得发起网络请求或访问全局状态。
 - 新增 processor 文件命名：`{domain}Processor.ts`，并在对应 View 中按需导入。
+
+### 13.6 仪表盘"任务提交趋势"图（TrendChart）
+
+`frontend/src/components/dashboard/TrendChart.vue` 是仪表盘的标准趋势图样板，描述与约定如下：
+
+- **图表形态**：双 Y 轴组合图。左轴"任务数"为柱状图（bar），右轴"样本数"为平滑折线（line, `smooth: true`）；两系列量级差异大，必须分轴（`yAxisIndex: 1`），禁止共用单轴压扁小数值系列。
+- **配色**：柱 `--arco-primary`（品牌蓝，圆角 `[4,4,0,0]`，`barMaxWidth: 32`），折线 `--arco-warning`（橙色，线宽 2，圆点 `symbolSize: 6`）。颜色一律经 `cssVar()` 解析后传入（见 §13.2 的 var() 禁令）。
+- **布局**：`grid: { left: 12, right: 12, top: 24, bottom: 32, containLabel: true }`；图例置底（`bottom: 0`），10×10 图例标记；双轴名称"任务数/样本数"分别左、右对齐（`align` + 负 `padding` 内收到绘图区上方）。
+- **交互**：`tooltip.trigger: 'axis'`；卡片头部右侧提供"近 7 天 / 近 30 天"切换（`ghost` 小按钮，选中态 `type="primary"`），切换即重新请求 `GET /stats/trend?days=N`。
+- **状态**：加载用 `NSpin` 包裹；无数据时显示 `EmptyState`（📈 + 引导文案），高度保持 260px 不塌缩。
+- **数据来源**：`/stats/trend` 返回 `TrendPoint[]`（`{ date, tasks, samples }`），X 轴为 MM/DD 日期类目轴。
 
 ## 14. 实时通信与 WebSocket
 

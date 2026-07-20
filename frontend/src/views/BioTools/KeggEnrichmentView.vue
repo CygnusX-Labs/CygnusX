@@ -20,12 +20,13 @@ import {
   NTabPane,
   NTabs,
   NTag,
+  NTooltip,
   NUpload,
   useMessage,
   type DataTableColumns,
   type UploadFileInfo,
 } from 'naive-ui'
-import { DownloadOutline, RefreshOutline, SparklesOutline } from '@vicons/ionicons5'
+import { DownloadOutline, RefreshOutline, SendOutline, SparklesOutline } from '@vicons/ionicons5'
 import * as Plotly from 'plotly.js-dist-min'
 import {
   downloadEnrichmentResult,
@@ -36,6 +37,7 @@ import {
   submitEnrichment,
 } from '@/api/enrichment'
 import PageHeader from '@/components/PageHeader.vue'
+import ToolActionBar from '@/components/ToolActionBar.vue'
 import { useThemeStore } from '@/stores/theme'
 import type { EnrichmentResult, EnrichmentRow, EnrichmentTask, SpeciesOption } from '@/types/enrichment'
 import {
@@ -315,6 +317,16 @@ function validateCutoffs(): boolean {
   return true
 }
 
+const submitBlocker = computed(() => {
+  if (speciesError.value) return '物种配置加载失败，请先在物种选择处重试'
+  if (!form.projectName.trim()) return '待填写项目 ID'
+  if (!form.speciesId) return '待选择物种'
+  if (inputMode.value === 'text' && !form.geneText.trim()) return '待输入 Gene ID 列表'
+  if (inputMode.value === 'file' && !form.geneFile) return '待上传基因 ID 文件'
+  return ''
+})
+const submitReady = computed(() => !submitBlocker.value)
+
 async function handleSubmit() {
   if (!form.projectName.trim()) {
     message.warning('请输入项目 ID')
@@ -557,30 +569,7 @@ onBeforeUnmount(() => {
       subtitle="提交单列 Gene ID 列表，由 R Docker 中的 clusterProfiler 分别执行 GO 与 KEGG 富集。"
       back-to="/tools"
       back-label="返回工具箱"
-    >
-      <template #actions>
-        <NSpace :size="4">
-          <NButton size="small" quaternary :loading="sampleLoading" @click="loadSample">
-            <template #icon>
-              <NIcon><SparklesOutline /></NIcon>
-            </template>
-            COP1/HY5 示例
-          </NButton>
-          <NButton size="small" quaternary :loading="speciesLoading" @click="loadSpecies">
-            <template #icon>
-              <NIcon><RefreshOutline /></NIcon>
-            </template>
-            刷新物种
-          </NButton>
-          <NButton size="small" quaternary :loading="historyLoading" @click="loadHistory">
-            <template #icon>
-              <NIcon><RefreshOutline /></NIcon>
-            </template>
-            刷新历史
-          </NButton>
-        </NSpace>
-      </template>
-    </PageHeader>
+    />
 
     <div class="kegg-layout">
       <aside class="param-panel" aria-label="富集分析参数">
@@ -613,7 +602,27 @@ onBeforeUnmount(() => {
             </div>
           </NFormItem>
 
-          <NFormItem label="物种">
+          <NFormItem>
+            <template #label>
+              <span class="label-with-action">
+                物种
+                <NTooltip placement="top" :delay="300">
+                  <template #trigger>
+                    <NButton
+                      text
+                      size="tiny"
+                      class="label-refresh"
+                      :loading="speciesLoading"
+                      aria-label="刷新物种列表"
+                      @click="loadSpecies"
+                    >
+                      <template #icon><NIcon :size="16"><RefreshOutline /></NIcon></template>
+                    </NButton>
+                  </template>
+                  刷新物种列表
+                </NTooltip>
+              </span>
+            </template>
             <NSelect
               v-model:value="form.speciesId"
               :options="speciesSelectOptions"
@@ -631,7 +640,16 @@ onBeforeUnmount(() => {
             <span class="species-summary-detail">基因 ID 类型：{{ selectedSpecies.id_type || '由本地参考库识别' }}</span>
           </NAlert>
 
-          <NFormItem label="基因 ID 列表">
+          <NFormItem>
+            <template #label>
+              <span class="label-with-action">
+                基因 ID 列表
+                <NButton text size="tiny" class="sample-link" :loading="sampleLoading" @click="loadSample">
+                  <template #icon><NIcon><SparklesOutline /></NIcon></template>
+                  试试 COP1/HY5 示例
+                </NButton>
+              </span>
+            </template>
             <NTabs v-model:value="inputMode" type="line" animated>
               <NTabPane name="text" tab="手动输入">
                 <NInput
@@ -705,10 +723,7 @@ onBeforeUnmount(() => {
             <p class="parameter-hint">PNG 按所选 DPI 输出，SVG 保持矢量；未启用自定义尺寸时沿用当前图宽和图高。</p>
           </div>
 
-          <NSpace>
-            <NButton type="primary" :loading="submitting" :disabled="Boolean(speciesError)" @click="handleSubmit">提交分析</NButton>
-            <NButton :disabled="submitting" @click="handleReset">重置</NButton>
-          </NSpace>
+          <NButton :disabled="submitting" @click="handleReset">重置</NButton>
         </NForm>
       </aside>
 
@@ -738,6 +753,23 @@ onBeforeUnmount(() => {
 
           <NCollapse class="history-section" :default-expanded-names="[]" arrow-placement="left">
             <NCollapseItem :name="'history'" :title="`历史分析结果（${historyTasks.length}）`">
+              <template #header-extra>
+                <NTooltip :delay="300">
+                  <template #trigger>
+                    <NButton
+                      text
+                      size="tiny"
+                      class="label-refresh"
+                      :loading="historyLoading"
+                      aria-label="刷新历史"
+                      @click.stop="loadHistory"
+                    >
+                      <template #icon><NIcon :size="16"><RefreshOutline /></NIcon></template>
+                    </NButton>
+                  </template>
+                  刷新历史
+                </NTooltip>
+              </template>
               <NDataTable
                 :columns="historyColumns"
                 :data="historyTasks"
@@ -848,6 +880,17 @@ onBeforeUnmount(() => {
         </NCard>
       </main>
     </div>
+
+    <ToolActionBar
+      :ready="submitReady"
+      ready-text="参数已就绪，可提交分析"
+      not-ready-text="待完善提交参数"
+      :not-ready-tip="submitBlocker"
+      primary-label="提交分析"
+      :primary-icon="SendOutline"
+      :loading="submitting"
+      @action="handleSubmit"
+    />
   </div>
 </template>
 
@@ -962,6 +1005,34 @@ onBeforeUnmount(() => {
 
 .export-size-grid {
   margin-bottom: 8px;
+}
+
+.label-with-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.label-refresh {
+  color: var(--neutral-text-2);
+  transition: color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.label-refresh:hover {
+  color: var(--primary-color, #18a058);
+}
+
+.label-refresh:hover :deep(.n-icon) {
+  animation: kegg-refresh-spin 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes kegg-refresh-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.sample-link {
+  font-weight: 400;
 }
 
 .style-section {

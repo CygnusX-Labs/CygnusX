@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { NIcon, NEmpty, NSpin, NTag } from 'naive-ui'
 import { AlertCircleOutline, PeopleOutline, FlashOutline } from '@vicons/ionicons5'
 import { useRouter } from 'vue-router'
@@ -14,6 +14,7 @@ import {
 import VChart from 'vue-echarts'
 import apiClient from '@/api/client'
 import StorageMonitorPanel from '@/components/dashboard/StorageMonitorPanel.vue'
+import { useThemeStore } from '@/stores/theme'
 import type {
   AdminStatus,
   AdminUserStats,
@@ -24,6 +25,20 @@ import type {
 use([CanvasRenderer, PieChart, BarChart, GridComponent, TooltipComponent, LegendComponent])
 
 const router = useRouter()
+
+// ECharts 在 canvas 上绘制，无法解析 CSS var()（会得到黑色），
+// 必须用 getComputedStyle 解析为具体色值；主题切换后重新解析。
+const themeStore = useThemeStore()
+const themeVersion = ref(0)
+watch(() => themeStore.isDark, async () => {
+  await nextTick()
+  themeVersion.value++
+})
+
+function cssVar(name: string, fallback: string): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return v || fallback
+}
 
 const statusData = ref<AdminStatus>({})
 const flowUsage = ref<FlowUsage[]>([])
@@ -53,9 +68,13 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: '#86909C',
 }
 
-const pieOption = computed(() => ({
+const pieOption = computed(() => {
+  void themeVersion.value
+  const colorText2 = cssVar('--neutral-text-2', '#4e5969')
+  const colorCard = cssVar('--neutral-card', '#ffffff')
+  return {
   tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-  legend: { bottom: 0, textStyle: { color: 'var(--neutral-text-2)', fontSize: 12 }, itemWidth: 10, itemHeight: 10 },
+  legend: { bottom: 0, textStyle: { color: colorText2, fontSize: 12 }, itemWidth: 10, itemHeight: 10 },
   series: [
     {
       name: '任务状态',
@@ -63,7 +82,7 @@ const pieOption = computed(() => ({
       radius: ['40%', '68%'],
       center: ['50%', '46%'],
       avoidLabelOverlap: true,
-      itemStyle: { borderRadius: 6, borderColor: 'var(--neutral-card)', borderWidth: 2 },
+      itemStyle: { borderRadius: 6, borderColor: colorCard, borderWidth: 2 },
       label: { show: false },
       emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
       data: Object.entries(statusData.value).map(([k, v]) => ({
@@ -73,24 +92,31 @@ const pieOption = computed(() => ({
       })),
     },
   ],
-}))
+  }
+})
 
-const flowOption = computed(() => ({
+const flowOption = computed(() => {
+  void themeVersion.value
+  const colorText2 = cssVar('--neutral-text-2', '#4e5969')
+  const colorText3 = cssVar('--neutral-text-3', '#86909c')
+  const colorBorder = cssVar('--neutral-border', '#e5e6eb')
+  const colorPrimary = cssVar('--arco-primary', '#165dff')
+  return {
   tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
   grid: { left: 12, right: 24, top: 16, bottom: 8, containLabel: true },
   xAxis: {
     type: 'value',
     axisLine: { show: false },
     axisTick: { show: false },
-    splitLine: { lineStyle: { color: 'var(--neutral-border)', type: 'dashed' } },
-    axisLabel: { color: 'var(--neutral-text-3)', fontSize: 12 },
+    splitLine: { lineStyle: { color: colorBorder, type: 'dashed' } },
+    axisLabel: { color: colorText3, fontSize: 12 },
   },
   yAxis: {
     type: 'category',
     data: flowUsage.value.map((f) => f.name).reverse(),
-    axisLine: { lineStyle: { color: 'var(--neutral-border)' } },
+    axisLine: { lineStyle: { color: colorBorder } },
     axisTick: { show: false },
-    axisLabel: { color: 'var(--neutral-text-2)', fontSize: 12 },
+    axisLabel: { color: colorText2, fontSize: 12 },
   },
   series: [
     {
@@ -98,12 +124,13 @@ const flowOption = computed(() => ({
       data: flowUsage.value.map((f) => f.count).reverse(),
       barMaxWidth: 18,
       itemStyle: {
-        color: 'var(--arco-primary)',
+        color: colorPrimary,
         borderRadius: [0, 4, 4, 0],
       },
     },
   ],
-}))
+  }
+})
 
 const totalTasks = computed(() =>
   Object.values(statusData.value).reduce((a, b) => a + b, 0),

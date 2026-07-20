@@ -17,6 +17,7 @@ import BlastGraphicSummary from '@/components/blast/BlastGraphicSummary.vue'
 import BlastHitDetailCard from '@/components/blast/BlastHitDetailCard.vue'
 import BlastParamsInfo from '@/components/blast/BlastParamsInfo.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import ToolActionBar from '@/components/ToolActionBar.vue'
 import { analyzeSequence, detectSequenceType } from '@/utils/sequenceAnalysis'
 import type { BlastDatabase, BlastHit, BlastResult, BlastTask, BlastTaskListItem, ProgramType } from '@/types/blast'
 
@@ -162,6 +163,8 @@ function validateInput(): string | null {
   if (queryType === 'unknown') return '无法识别查询序列类型，请检查输入'
   return null
 }
+
+const searchBlocker = computed(() => validateInput())
 
 async function handleSearch() {
   const error = validateInput()
@@ -510,7 +513,7 @@ onUnmounted(() => {
   <div class="blast-page">
     <PageHeader title="序列检索 BLAST" subtitle="在本地和已配置数据库中执行序列相似性检索" back-to="/tools" back-label="返回工具箱">
       <template #actions>
-        <NButton size="small" secondary @click="router.push('/tools/blast/tasks')">
+        <NButton size="small" text @click="router.push('/tools/blast/tasks')">
           <template #icon><NIcon><ListOutline /></NIcon></template>
           任务中心
         </NButton>
@@ -591,11 +594,6 @@ onUnmounted(() => {
             <NInputNumber v-model:value="gapExtend" :show-button="false" placeholder="默认" />
           </div>
         </div>
-
-        <NButton type="primary" block size="large" :loading="isSearching" @click="handleSearch">
-          <template #icon><NIcon :size="18"><SearchOutline /></NIcon></template>
-          开始检索
-        </NButton>
       </div>
 
       <div class="results-section">
@@ -701,19 +699,26 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <ToolActionBar
+      :ready="!searchBlocker"
+      ready-text="序列与数据库已就绪"
+      :not-ready-text="searchBlocker || '待完善检索参数'"
+      :not-ready-tip="searchBlocker || ''"
+      primary-label="开始检索"
+      :primary-icon="SearchOutline"
+      :loading="isSearching"
+      @action="handleSearch"
+    />
   </div>
 </template>
 
 <style scoped>
 .blast-page {
   box-sizing: border-box;
-  width: 100%;
-  height: 100%;
   min-width: 0;
-  min-height: 0;
+  min-height: 100%;
   padding: 16px;
-  overflow-x: hidden;
-  overflow-y: auto;
 }
 .page-toolbar {
   display: flex;
