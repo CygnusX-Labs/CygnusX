@@ -145,6 +145,7 @@ class FileRepositoryImpl(IFileRepository):
             file_type=FileType(model.file_type) if model.file_type else FileType.OTHER,
             status=model.status,
             directory=model.directory or "",
+            source=model.source or "upload",
             created_at=model.created_at,
         )
 

@@ -413,15 +413,10 @@ class EnrichmentService:
             f.write("\n")
 
     def _work_dir(self, user_id: str, project_slug: str, task_id: str) -> Path:
-        """结果目录：{data_mount}/users/{user_id}/enrichments/{project}/{task_id}/。"""
-        return (
-            Path(self._settings.enrichment_data_mount)
-            / "users"
-            / str(user_id)
-            / "enrichments"
-            / project_slug
-            / task_id
-        )
+        """结果目录：users/{uid}/tasks/{task_id}/output/{project}/。"""
+        from omichub.infrastructure.storage import get_path_factory
+
+        return get_path_factory().task_output_dir(user_id, task_id) / project_slug
 
     @staticmethod
     def _read_result_csv(path: Path) -> list[EnrichmentRowDTO]:

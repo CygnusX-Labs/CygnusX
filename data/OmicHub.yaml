@@ -29,6 +29,22 @@ platform:
 storage:
   data_root: "/data/omichub"
   users_subdir: "users"
+  shared_subdir: "shared"
+  system_subdir: "system"
+
+  # 文件生命周期管理
+  lifecycle:
+    upload_session_timeout_hours: 24
+    work_retention_days: 30
+    output_archive_days: 90
+    archive_mode: "archive"  # archive（压缩归档）| delete（彻底删除）
+
+  # 共享资源路径（相对 data_root）
+  shared:
+    references: "shared/references"
+    blast_db: "shared/blast_db"
+    annotations: "shared/annotations"
+    bin: "shared/bin"
 
 hero:
   title: "OmicHub 星尘工作站 🌌"

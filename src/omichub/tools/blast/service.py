@@ -68,25 +68,28 @@ class BlastService:
     # ------------------------------------------------------------------
 
     def _db_root(self) -> Path:
-        return Path(self._settings.storage_path) / self._settings.blast_db_root
+        from omichub.infrastructure.storage import get_path_factory
+
+        return get_path_factory().blast_db_dir()
 
     def _upload_dir(self, user_id: str, task_id: str) -> Path:
-        return (
-            Path(self._settings.storage_path) / self._settings.blast_uploads_dir / user_id / task_id
-        )
+        from omichub.infrastructure.storage import get_path_factory
+
+        return get_path_factory().task_input_dir(user_id, task_id)
 
     def _result_dir(self, user_id: str, task_id: str) -> Path:
-        """用户隔离的结果目录：blast_results/{user_id}/{task_id}/"""
-        return (
-            Path(self._settings.storage_path)
-            / self._settings.blast_results_dir
-            / user_id
-            / task_id
-        )
+        """用户隔离的结果目录：users/{uid}/tasks/{task_id}/output/"""
+        from omichub.infrastructure.storage import get_path_factory
+
+        return get_path_factory().task_output_dir(user_id, task_id)
 
     def _legacy_result_dir(self, task_id: str) -> Path:
-        """旧版结果目录（兼容历史任务）：blast_results/{task_id}/"""
+        """旧版结果目录（兼容历史任务）：blast/results/{task_id}/"""
         return Path(self._settings.storage_path) / self._settings.blast_results_dir / task_id
+
+    def _db_upload_dir(self, user_id: str, upload_id: str) -> Path:
+        """数据库分片上传暂存目录。"""
+        return self._db_root() / ".uploads" / user_id / upload_id
 
     def _resolve_result_xml(self, task: BlastTaskModel) -> Path | None:
         """解析任务结果 XML 路径，优先使用记录路径，支持新版/旧版目录回退。"""

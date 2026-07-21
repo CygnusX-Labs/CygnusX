@@ -247,8 +247,12 @@ class FileService:
     # ------------------------------------------------------------------
     # 列表 / 配额
     # ------------------------------------------------------------------
-    async def list_files(self, user_id: UUID, directory: str | None = None) -> FileListResponse:
+    async def list_files(
+        self, user_id: UUID, directory: str | None = None, source: str | None = None
+    ) -> FileListResponse:
         items = await self._files.list_by_user(user_id, status="active", directory=directory)
+        if source:
+            items = [f for f in items if getattr(f, "source", None) == source]
         dtos = [
             DataFileDTO(
                 id=f.id,
@@ -263,6 +267,24 @@ class FileService:
             for f in items
         ]
         return FileListResponse(items=dtos, total=len(dtos))
+
+    async def get_file_tree(self, user_id: UUID) -> dict:
+        """聚合视图：按来源分组返回用户所有活跃文件。"""
+        items = await self._files.list_by_user(user_id, status="active")
+        tree: dict[str, list] = {}
+        for f in items:
+            src = getattr(f, "source", None) or "upload"
+            tree.setdefault(src, []).append(
+                {
+                    "id": str(f.id),
+                    "name": f.original_name,
+                    "size": f.size,
+                    "file_type": f.file_type.value if hasattr(f.file_type, "value") else str(f.file_type),
+                    "directory": f.directory,
+                    "created_at": f.created_at.isoformat() if f.created_at else None,
+                }
+            )
+        return {"user_id": str(user_id), "groups": tree, "total": len(items)}
 
     async def get_quota(self, user_id: UUID) -> QuotaResponse:
         user = await self._users.get_by_id(user_id)

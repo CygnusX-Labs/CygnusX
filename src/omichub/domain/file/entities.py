@@ -21,6 +21,7 @@ class DataFile(BaseModel):
     file_type: FileType = FileType.OTHER
     status: str = "active"
     directory: str = ""  # 相对 raw/ 子路径，"" = 根
+    source: str = "upload"  # 文件来源模块
     metadata: dict[str, Any] = {}
     created_at: datetime = Field(default_factory=datetime.now)
 

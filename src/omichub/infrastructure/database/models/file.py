@@ -14,6 +14,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     String,
     Text,
     UniqueConstraint,
@@ -32,6 +33,9 @@ class FileRecordModel(Base, TimestampMixin):
     """
 
     __tablename__ = "file_records"
+    __table_args__ = (
+        Index("ix_file_records_lifecycle_cleanup", "lifecycle_status", "cleanup_after"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -47,6 +51,16 @@ class FileRecordModel(Base, TimestampMixin):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # 用户自定义目录（相对 raw/ 的子路径，如 "projectA" 或 "projectA/sub1"，"" = raw 根）
     directory: Mapped[str] = mapped_column(String(500), default="", index=True)
+    # 文件来源模块：upload / pipeline / blast / enrichment / fastq_qc / phylogenetic / download / ai_chat / sandbox / report
+    source: Mapped[str] = mapped_column(String(32), default="upload", server_default="upload", index=True)
+    # 产生此文件的任务 ID（可为空，如手动上传）
+    task_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    # 生命周期状态：active / archived / pending_delete
+    lifecycle_status: Mapped[str] = mapped_column(
+        String(20), default="active", server_default="active", index=True
+    )
+    # 自动清理时间（由 cleanup_policy 计算）
+    cleanup_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class UploadSessionModel(Base, TimestampMixin):

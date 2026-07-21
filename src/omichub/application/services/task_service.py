@@ -242,17 +242,15 @@ class TaskService:
             return
 
     def _make_work_dir(self, flow_id: str, user_id: str, task_id: uuid.UUID) -> str:
-        """生成任务工作目录 — 统一收拢到 users/{uid}/results/{flow_id}/{task_id}/
+        """生成任务工作目录 — 使用统一路径工厂。
 
-        旧路径 tasks/{uid}/{flow_id}/{ts}/ 已废弃（旧任务保留原 work_dir 不动）。
+        新路径: users/{uid}/tasks/{task_id}/work/{flow_id}/
+        旧路径 users/{uid}/results/{flow_id}/{task_id}/ 保留给历史任务。
         """
-        work_dir = (
-            Path(self._settings.storage_path)
-            / "users"
-            / user_id
-            / "results"
-            / flow_id
-            / str(task_id)
-        )
+        from omichub.infrastructure.storage import get_path_factory
+
+        pf = get_path_factory()
+        pf.ensure_task_dirs(user_id, str(task_id))
+        work_dir = pf.task_work_dir(user_id, str(task_id)) / flow_id
         work_dir.mkdir(parents=True, exist_ok=True)
         return str(work_dir)

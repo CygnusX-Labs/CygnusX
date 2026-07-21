@@ -18,6 +18,29 @@ class FileType(str, Enum):
     OTHER = "other"
 
 
+class FileSource(str, Enum):
+    """文件来源 — 标识产生该文件的模块"""
+
+    UPLOAD = "upload"
+    PIPELINE = "pipeline"
+    BLAST = "blast"
+    ENRICHMENT = "enrichment"
+    FASTQ_QC = "fastq_qc"
+    PHYLOGENETIC = "phylogenetic"
+    DOWNLOAD = "download"
+    AI_CHAT = "ai_chat"
+    SANDBOX = "sandbox"
+    REPORT = "report"
+
+
+class LifecycleStatus(str, Enum):
+    """文件生命周期状态"""
+
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+    PENDING_DELETE = "pending_delete"
+
+
 class UploadStatus(str, Enum):
     """上传状态"""
 

@@ -24,8 +24,19 @@ from omichub.core.config import get_settings
 
 # 内置兜底：YAML 与 env 都缺失时的最终默认值
 _DEFAULT_DATA_ROOT = "/data/omichub"
-# 用户数据子目录名（与 FileService.user_raw_dir 等落盘约定一致）
 _DEFAULT_USERS_SUBDIR = "users"
+_DEFAULT_SHARED_SUBDIR = "shared"
+_DEFAULT_SYSTEM_SUBDIR = "system"
+
+
+@dataclass(frozen=True)
+class LifecycleConfig:
+    """文件生命周期管理配置"""
+
+    upload_session_timeout_hours: int = 24
+    work_retention_days: int = 30
+    output_archive_days: int = 90
+    archive_mode: str = "archive"
 
 
 @dataclass(frozen=True)
@@ -34,6 +45,9 @@ class StorageConfig:
 
     data_root: str
     users_subdir: str
+    shared_subdir: str = _DEFAULT_SHARED_SUBDIR
+    system_subdir: str = _DEFAULT_SYSTEM_SUBDIR
+    lifecycle: LifecycleConfig = LifecycleConfig()
 
 
 def _load_yaml_dict(path: Path) -> dict[str, Any]:
@@ -67,7 +81,25 @@ def get_storage_config(yaml_path: str | Path | None = None) -> StorageConfig:
         or _DEFAULT_DATA_ROOT
     )
     users_subdir = str(storage.get("users_subdir") or "").strip() or _DEFAULT_USERS_SUBDIR
-    return StorageConfig(data_root=data_root, users_subdir=users_subdir)
+    shared_subdir = str(storage.get("shared_subdir") or "").strip() or _DEFAULT_SHARED_SUBDIR
+    system_subdir = str(storage.get("system_subdir") or "").strip() or _DEFAULT_SYSTEM_SUBDIR
+
+    raw_lifecycle = storage.get("lifecycle")
+    lc: dict[str, Any] = raw_lifecycle if isinstance(raw_lifecycle, dict) else {}
+    lifecycle = LifecycleConfig(
+        upload_session_timeout_hours=int(lc.get("upload_session_timeout_hours", 24)),
+        work_retention_days=int(lc.get("work_retention_days", 30)),
+        output_archive_days=int(lc.get("output_archive_days", 90)),
+        archive_mode=str(lc.get("archive_mode", "archive")),
+    )
+
+    return StorageConfig(
+        data_root=data_root,
+        users_subdir=users_subdir,
+        shared_subdir=shared_subdir,
+        system_subdir=system_subdir,
+        lifecycle=lifecycle,
+    )
 
 
 def get_user_chat_upload_dir(user_id: str) -> Path:

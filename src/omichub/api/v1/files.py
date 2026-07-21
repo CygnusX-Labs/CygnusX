@@ -128,9 +128,19 @@ async def list_files(
     current_user_id: CurrentUserId,
     service: FileServiceDep,
     directory: Annotated[str | None, Query(description="按目录过滤，空串=根目录")] = None,
+    source: Annotated[str | None, Query(description="按来源过滤: upload/pipeline/blast/enrichment 等")] = None,
 ) -> FileListResponse:
-    """获取当前用户的文件列表（可按目录过滤，按创建时间倒序）"""
-    return await service.list_files(UUID(current_user_id), directory=directory)
+    """获取当前用户的文件列表（可按目录或来源过滤，按创建时间倒序）"""
+    return await service.list_files(UUID(current_user_id), directory=directory, source=source)
+
+
+@router.get("/tree", summary="统一文件树")
+async def file_tree(
+    current_user_id: CurrentUserId,
+    service: FileServiceDep,
+) -> dict[str, Any]:
+    """聚合视图：按来源分组返回用户所有文件，供前端渲染统一文件树。"""
+    return await service.get_file_tree(UUID(current_user_id))
 
 
 @router.get("/quota", response_model=QuotaResponse, summary="获取存储配额")
