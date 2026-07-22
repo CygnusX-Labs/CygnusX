@@ -1,5 +1,10 @@
 version: 1
 prompts:
+  agents.router:
+    file: agents/router.md
+    kind: system
+    owners:
+    - agent
   agents.general:
     file: agents/general.md
     kind: system

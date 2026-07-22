@@ -510,6 +510,15 @@ function handleEdit() {
             </div>
           </div>
           <span class="message-name ai-name">{{ aiIdentityName }}</span>
+          <span
+            v-if="message.routedAgent"
+            class="routed-agent-badge"
+            :style="{ borderColor: message.routedAgent.color || undefined }"
+            :title="message.routedAgent.reason || '由该专家回答'"
+          >
+            <span class="routed-agent-avatar">{{ message.routedAgent.avatar }}</span>
+            <span class="routed-agent-name">{{ message.routedAgent.name }}</span>
+          </span>
           <transition name="fade">
             <span v-if="showThinkingIndicator" class="thinking-badge">✨ 思考中...</span>
           </transition>
@@ -847,6 +856,28 @@ function handleEdit() {
   opacity: 0.7;
   animation: thinking-pulse 2s ease-in-out infinite;
   white-space: nowrap;
+}
+
+/* 智能路由：当前由哪位专家回答的徽标 */
+.routed-agent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  font-size: 11px;
+  line-height: 18px;
+  border: 1px solid var(--chat-border, #ddd);
+  border-radius: 999px;
+  background: var(--chat-bg-soft, rgba(127, 127, 127, 0.08));
+  color: var(--chat-text-muted, #666);
+  white-space: nowrap;
+  cursor: default;
+}
+.routed-agent-avatar {
+  font-size: 12px;
+}
+.routed-agent-name {
+  font-weight: 500;
 }
 @keyframes thinking-pulse {
   0%, 100% { opacity: 0.4; }

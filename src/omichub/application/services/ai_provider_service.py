@@ -151,8 +151,41 @@ class AIProviderConfigService:
         config = await self._repo.save(config)
         return _to_dto(config)
 
-    async def delete_config(self, config_id: UUID) -> bool:
-        return await self._repo.delete(config_id)
+    async def delete_config(self, config_id: UUID) -> dict[str, Any]:
+        """删除 Provider 配置；被会话/Agent 引用时降级为软删除（停用）。
+
+        chat_sessions.model_id / agent_templates.model_id 对 ai_provider_configs 有外键，
+        直接硬删会触发 FK 违例（500）。引用中的配置保留行并置 is_active=False，
+        既保证历史数据完整，也让其不再出现在可选模型中。
+        """
+        from sqlalchemy import func, select
+
+        from omichub.infrastructure.database.models.agent import AgentTemplateModel
+        from omichub.infrastructure.database.models.chat import ChatSessionModel
+
+        session_refs = await self._db.execute(
+            select(func.count())
+            .select_from(ChatSessionModel)
+            .where(ChatSessionModel.model_id == config_id)
+        )
+        agent_refs = await self._db.execute(
+            select(func.count())
+            .select_from(AgentTemplateModel)
+            .where(AgentTemplateModel.model_id == config_id)
+        )
+        referenced = (session_refs.scalar_one() or 0) + (agent_refs.scalar_one() or 0) > 0
+
+        if referenced:
+            config = await self._repo.get_by_id(config_id)
+            if config is None:
+                return {"deleted": False, "soft_deleted": False}
+            config.is_active = False
+            config.mark_updated()
+            await self._repo.save(config)
+            return {"deleted": True, "soft_deleted": True}
+
+        ok = await self._repo.delete(config_id)
+        return {"deleted": ok, "soft_deleted": False}
 
     async def set_default(self, config_id: UUID) -> AIProviderConfigDTO:
         config = await self._domain.set_default(config_id)

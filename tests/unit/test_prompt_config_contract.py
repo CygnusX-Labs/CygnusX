@@ -22,6 +22,9 @@ def test_all_enabled_agents_use_external_prompt_refs():
         agent = yaml.safe_load(Path(f"data/ai/{name}.yaml").read_text(encoding="utf-8"))
         assert "system_prompt" not in agent, name
         assert registry.get(agent["prompt_ref"]), name
+        # 智能路由器（features.router）是纯分派入口，无 Studio 工作台
+        if (agent.get("features") or {}).get("router"):
+            continue
         studio = agent.get("studio")
         assert isinstance(studio, dict) and studio.get("enabled") is True, name
         runtime = RuntimeImageRegistryManager("data/runtime_images.yaml").get_config()

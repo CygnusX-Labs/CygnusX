@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onBeforeUnmount, onMounted } from 'vue'
 import { NIcon, NButton, useMessage } from 'naive-ui'
-import { RocketOutline, FlaskOutline, ShieldCheckmarkOutline, TelescopeOutline, LogoGithub } from '@vicons/ionicons5'
+import { RocketOutline, FlaskOutline, ShieldCheckmarkOutline, TelescopeOutline, LogoGithub, SparklesOutline, ChatbubbleEllipsesOutline } from '@vicons/ionicons5'
 import { useRouter } from 'vue-router'
 import { useSiteConfigStore } from '@/stores/site-config'
 // 彩蛋图片：猫猫踩地球插画
@@ -48,8 +48,8 @@ onBeforeUnmount(() => {
 })
 
 const stars = Array.from({ length: 160 }, (_, i) => {
-  const size = Math.random() * 1.5 + 1
-  const baseOpacity = Math.random() * 0.6 + 0.4
+  const size = Math.random() * 1 + 0.6
+  const baseOpacity = Math.random() * 0.5 + 0.35
 
   const isBright = baseOpacity > 0.7
   const hasCross = isBright && Math.random() > 0.8
@@ -163,7 +163,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
       </div>
 
       <h1 class="about-title">OmicHub</h1>
-      <p class="about-subtitle">多组学数据分析平台</p>
+      <p class="about-subtitle">多组学数据分析平台<span class="subtitle-llm">· LLM 深度赋能</span></p>
 
       <div class="about-quote-box">
         <p class="about-quote-title">We are made of star-stuff</p>
@@ -176,6 +176,20 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 
       <!-- 特性 -->
       <div class="features">
+        <div class="feature-item feature-item--primary animate-fade-in-up delay-100">
+          <NIcon :size="24" class="feature-icon feature-icon--accent"><SparklesOutline /></NIcon>
+          <div class="feature-text">
+            <div class="feature-title">AI 智能分析</div>
+            <div class="feature-desc">LLM 解读结果 · 自动生成报告</div>
+          </div>
+        </div>
+        <div class="feature-item animate-fade-in-up delay-200">
+          <NIcon :size="24" class="feature-icon feature-icon--accent"><ChatbubbleEllipsesOutline /></NIcon>
+          <div class="feature-text">
+            <div class="feature-title">智能问答</div>
+            <div class="feature-desc">自然语言查询 · 对话式交互</div>
+          </div>
+        </div>
         <div class="feature-item animate-fade-in-up delay-200">
           <NIcon :size="24" class="feature-icon"><FlaskOutline /></NIcon>
           <div class="feature-text">
@@ -207,23 +221,22 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
       </div>
 
       <div class="about-actions">
-        <NButton type="primary" size="large" @click="router.push('/flows')">
+        <NButton class="about-btn-primary" size="large" @click="router.push('/flows')">
           <template #icon>
             <NIcon><RocketOutline /></NIcon>
           </template>
           开始分析
         </NButton>
-        <NButton size="large" ghost style="color: #fff; border-color: rgba(255,255,255,0.3);" @click="router.push('/dashboard')">
+        <NButton class="about-btn-ghost" size="large" @click="router.push('/dashboard')">
           进入控制台
         </NButton>
         <NButton
           v-if="siteConfig.platformGithub"
+          class="about-btn-ghost"
           size="large"
-          ghost
           tag="a"
           :href="siteConfig.platformGithub"
           target="_blank"
-          style="color: #fff; border-color: rgba(255,255,255,0.3);"
         >
           <template #icon>
             <NIcon><LogoGithub /></NIcon>
@@ -367,19 +380,19 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: var(--neutral-bg);
+  background: #5E8EF2;
 }
 
-/* 深空渐变背景 */
+/* 明亮浅蓝渐变背景：白昼星空（向品牌色 #4C6FFF 家族取色） */
 .space-bg {
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(ellipse at 20% 30%, rgba(22, 93, 255, 0.1) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 70%, rgba(107, 141, 214, 0.07) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 50%, rgba(20, 30, 60, 0.4) 0%, #050810 70%);
+    radial-gradient(ellipse at 20% 20%, rgba(255, 255, 255, 0.22) 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 80%, rgba(165, 243, 252, 0.16) 0%, transparent 50%),
+    linear-gradient(160deg, #93B4FF 0%, #5E8EF2 48%, #4C7DF0 100%);
 }
 
 /* 星河/星云带 */
@@ -397,9 +410,9 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(107, 141, 214, 0.32) 25%,
-    rgba(22, 93, 255, 0.38) 50%,
-    rgba(142, 84, 233, 0.24) 75%,
+    rgba(255, 255, 255, 0.28) 25%,
+    rgba(186, 230, 253, 0.34) 50%,
+    rgba(255, 255, 255, 0.2) 75%,
     transparent 100%
   );
   filter: blur(24px);
@@ -419,7 +432,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   position: absolute;
   border-radius: 50%;
   background: #ffffff;
-  box-shadow: 0 0 4px 1px rgba(255, 255, 255, 0.6);
+  box-shadow: 0 0 3px 1px rgba(255, 255, 255, 0.45);
   animation: twinkle linear infinite alternate;
   transform: translate(-50%, -50%);
 }
@@ -510,7 +523,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 .orb-1 {
   width: 280px;
   height: 280px;
-  background: var(--arco-primary);
+  background: #ffffff;
   top: 8%;
   left: 3%;
   animation: drift 14s ease-in-out infinite;
@@ -546,13 +559,13 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   inset: 0;
   border-radius: 50%;
   background: radial-gradient(circle at 35% 35%, #6B8DD6, #165DFF 50%, #1147C2 100%);
-  box-shadow: 0 0 30px rgba(107, 141, 214, 0.5), inset -8px -8px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 0 12px rgba(107, 141, 214, 0.18), inset -8px -8px 16px rgba(0, 0, 0, 0.3);
   animation: planetSpin 8s linear infinite;
 }
 .planet-ring {
   position: absolute;
   inset: -8px;
-  border: 2px solid rgba(107, 141, 214, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.35);
   border-radius: 50%;
   border-top-color: transparent;
   border-bottom-color: transparent;
@@ -570,33 +583,41 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer 4s linear infinite;
+  animation: shimmer 9s linear infinite;
 }
 .about-subtitle {
   font-size: 18px;
-  color: #cbd5e1;
+  color: #eaf4ff;
   margin: 0 0 24px;
   font-weight: 500;
 }
+.subtitle-llm {
+  margin-left: 8px;
+  font-weight: 600;
+  color: #a5f3fc;
+  text-shadow: 0 0 12px rgba(103, 232, 249, 0.35);
+}
 
-/* 玻璃面板（Glassmorphism）：引言盒子 */
+/* 苹果式毛玻璃面板：引言盒子 */
 .about-quote-box {
-  background: rgba(10, 15, 30, 0.6);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    0 8px 32px 0 rgba(76, 111, 255, 0.16);
+  border-radius: 16px;
   padding: 24px 28px;
   margin-bottom: 28px;
   transition: border-color 0.3s ease, transform 0.3s ease;
 }
 .about-quote-box:hover {
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.9);
   transform: translateY(-2px);
 }
 
-/* 题记：与标题同色系渐变，柔和高亮，不抢眼 */
+/* 题记：青蓝渐变斜体，与功能卡片标题同款 */
 .about-quote-title {
   font-size: 16px;
   font-weight: 600;
@@ -605,18 +626,18 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   margin: 0 0 14px;
   text-align: center;
   text-indent: 0;
-  background: linear-gradient(90deg, #6B8DD6, #67e8f9, #6B8DD6);
+  background: linear-gradient(90deg, #1E6FD9, #0e9bb5, #1E6FD9);
   background-size: 200% auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer 4s linear infinite;
+  animation: shimmer 9s linear infinite;
 }
 
 .about-quote {
   font-size: 14px;
   line-height: 1.9;
-  color: #dbe4f0;
+  color: #2f4763;
   text-align: justify;
   margin: 0;
   text-indent: 2em;
@@ -634,31 +655,54 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   align-items: center;
   gap: 10px;
   padding: 14px;
-  border-radius: 10px;
-  background: rgba(10, 15, 30, 0.6);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-  transition: border-color 0.3s ease, transform 0.3s ease;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    0 8px 32px 0 rgba(76, 111, 255, 0.16);
+  transition: border-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
   text-align: left;
 }
 .feature-item:hover {
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.9);
   transform: translateY(-2px);
+}
+/* 主推卡片：AI 智能分析，轻微青蓝描边高亮 */
+.feature-item--primary {
+  border-color: rgba(14, 155, 181, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    0 0 0 1px rgba(14, 155, 181, 0.2),
+    0 8px 24px rgba(76, 111, 255, 0.2);
+}
+.feature-item--primary:hover {
+  border-color: rgba(14, 155, 181, 0.8);
 }
 .feature-icon {
   color: var(--arco-primary);
   flex-shrink: 0;
 }
+.feature-icon--accent {
+  color: #0e9bb5;
+}
+/* 功能标题：青蓝渐变（非斜体，与卡片标题层级一致） */
 .feature-title {
   font-size: 14px;
   font-weight: 600;
-  color: var(--neutral-text-1);
+  letter-spacing: 0.5px;
+  background: linear-gradient(90deg, #1E6FD9, #0e9bb5, #1E6FD9);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 9s linear infinite;
 }
 .feature-desc {
   font-size: 12px;
-  color: #cbd5e1;
+  color: #4a6076;
   margin-top: 2px;
 }
 
@@ -670,16 +714,77 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   margin-bottom: 32px;
 }
 
+/* 渐变背景上的按钮：遵循设计规范 §5.7（白底主按钮 + 毛玻璃次按钮） */
+.n-button.about-btn-primary {
+  background-color: rgba(255, 255, 255, 0.95);
+  color: #4C6FFF;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  border: none;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3), 0 4px 20px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+.n-button.about-btn-primary:hover,
+.n-button.about-btn-primary:focus {
+  background-color: #ffffff;
+  color: #4C6FFF;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.45), 0 6px 24px rgba(0, 0, 0, 0.22);
+  transform: translateY(-1px);
+}
+.n-button.about-btn-ghost {
+  background-color: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: all 0.2s ease;
+}
+.n-button.about-btn-ghost:hover,
+.n-button.about-btn-ghost:focus {
+  background-color: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.8);
+  color: #ffffff;
+}
+/* Naive 的描边由内部两个元素绘制，隐藏以免与外发光叠成两圈（规范 §5.7 踩坑记录） */
+.about-btn-primary :deep(.n-button__border),
+.about-btn-primary :deep(.n-button__state-border),
+.about-btn-ghost :deep(.n-button__border),
+.about-btn-ghost :deep(.n-button__state-border) {
+  display: none;
+}
+.about-btn-primary :deep(.n-button__icon),
+.about-btn-ghost :deep(.n-button__icon) {
+  margin-right: 8px;
+}
+
+/* 减少透明度：毛玻璃回退为实色（规范 §4.2） */
+@media (prefers-reduced-transparency: reduce) {
+  .about-quote-box,
+  .feature-item {
+    background: #ffffff;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .n-button.about-btn-ghost {
+    background-color: rgba(255, 255, 255, 0.25);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
 /* 底部 */
 .about-footer {
   font-size: 13px;
-  color: #9aa7bd;
-  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  color: #dcebfb;
+  border-top: 1px solid rgba(255, 255, 255, 0.25);
   padding-top: 20px;
 }
 .about-brand {
   font-weight: 700;
-  color: var(--arco-primary);
+  color: #ffffff;
 }
 .about-divider {
   margin: 0 8px;
@@ -687,15 +792,15 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 .about-credit {
   margin-top: 8px;
   font-size: 12px;
-  color: #9aa7bd;
+  color: #c4dcf5;
 }
 .about-credit-link {
-  color: var(--arco-primary);
+  color: #a5f3fc;
   text-decoration: none;
   transition: color 0.2s ease;
 }
 .about-credit-link:hover {
-  color: #67e8f9;
+  color: #ffffff;
 }
 
 @media (max-width: 640px) {

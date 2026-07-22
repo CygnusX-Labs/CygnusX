@@ -6,6 +6,15 @@ export interface TokenInfo {
 }
 
 // ===== 聊天消息 =====
+/** 智能路由：目标专家信息（route 事件） */
+export interface RoutedAgentInfo {
+  agentId: string
+  name: string
+  avatar: string
+  color: string
+  reason: string
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
@@ -19,6 +28,8 @@ export interface ChatMessage {
   charts?: ChartData[]
   /** Studio ask_user 澄清卡片（AI 消息专属，回答后标记 answered） */
   askRequest?: AskRequest
+  /** 智能路由：本条 AI 消息实际由哪位专家回答（路由器会话专属） */
+  routedAgent?: RoutedAgentInfo
   attachments?: FileAttachment[]
   feedback?: 'like' | 'dislike'
   /** 是否被编辑过，用户消息专属 */

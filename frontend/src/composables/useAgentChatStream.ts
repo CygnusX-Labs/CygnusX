@@ -82,6 +82,15 @@ export interface AskRequestEvent {
   options?: string[]
 }
 
+/** 智能路由：route 事件（路由器 Agent 分派目标专家后、正文开始前推送） */
+export interface RouteEvent {
+  agent_id: string
+  name: string
+  avatar: string
+  color: string
+  reason: string
+}
+
 export interface TokenUsage {
   input?: number
   output?: number
@@ -107,8 +116,9 @@ export interface AgentStreamCallbacks {
   onApprovalRequest?: (event: ApprovalRequestEvent) => void
   onApprovalResolved?: (event: ApprovalResolvedEvent) => void
   onAskRequest?: (event: AskRequestEvent) => void
+  onRoute?: (event: RouteEvent) => void
   onError?: (error: string) => void
-  onDone?: (sessionId: string, messageId: string, usage?: TokenUsage) => void
+  onDone?: (sessionId: string, messageId: string, usage?: TokenUsage, finishReason?: string) => void
 }
 
 export function useAgentChatStream() {
@@ -269,13 +279,23 @@ export function useAgentChatStream() {
           options: Array.isArray(data.options) ? (data.options as string[]) : undefined,
         })
         break
+      case 'route':
+        cb.onRoute?.({
+          agent_id: (data.agent_id as string) || '',
+          name: (data.name as string) || '',
+          avatar: (data.avatar as string) || '',
+          color: (data.color as string) || '',
+          reason: (data.reason as string) || '',
+        })
+        break
       case 'error':
         cb.onError?.(content || '生成失败')
         break
       case 'done':
         {
           const usage = data.usage as TokenUsage | undefined
-          cb.onDone?.(sessionId || '', messageId || '', usage)
+          const finishReason = data.finish_reason as string | undefined
+          cb.onDone?.(sessionId || '', messageId || '', usage, finishReason)
         }
         break
     }

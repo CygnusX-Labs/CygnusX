@@ -1,6 +1,6 @@
 """AI Provider 配置管理 — 管理端路由"""
 
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
@@ -82,9 +82,16 @@ async def delete_config(
     _admin: AdminRequired,
     service: ServiceDep,
     config_id: UUID,
-) -> dict[str, bool]:
-    ok = await service.delete_config(config_id)
-    return {"deleted": ok}
+) -> dict[str, Any]:
+    # 被会话/Agent 引用时降级为软删除（is_active=False），避免外键违例 500
+    result = await service.delete_config(config_id)
+    if result.get("soft_deleted"):
+        result["message"] = "该模型已被会话或 Agent 引用，已改为停用（保留历史数据）"
+    elif result.get("deleted"):
+        result["message"] = "已删除"
+    else:
+        result["message"] = "配置不存在"
+    return result
 
 
 @router.post(

@@ -83,6 +83,7 @@ guide_steps:
 # 新增助手：1) 在 data/ai/ 下创建 yaml  2) 在此处加入文件名
 agents:
   enabled:
+    - router
     - general
     - rnaseq
     - scrna

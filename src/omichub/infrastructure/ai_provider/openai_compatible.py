@@ -136,6 +136,7 @@ class OpenAICompatibleProvider:
         has_yielded_text = False
         has_tool_calls = False
         last_usage: dict[str, Any] | None = None
+        last_finish_reason: str | None = None
 
         for attempt in range(2):
             attempt_had_text = False
@@ -163,6 +164,7 @@ class OpenAICompatibleProvider:
                     yield chunk
                 elif chunk.type == "done":
                     last_usage = chunk.metadata.get("usage")
+                    last_finish_reason = chunk.metadata.get("finish_reason") or last_finish_reason
                 elif chunk.type == "error":
                     attempt_had_error = True
                     if (
@@ -198,6 +200,8 @@ class OpenAICompatibleProvider:
             done_meta: dict[str, Any] = {}
             if last_usage:
                 done_meta["usage"] = last_usage
+            if last_finish_reason:
+                done_meta["finish_reason"] = last_finish_reason
             yield ChatChunk(type="done", metadata=done_meta)
 
     async def _stream_once(
@@ -286,6 +290,7 @@ class OpenAICompatibleProvider:
                 # 累积流式 tool_calls 分片（OpenAI 按 index 分片下发）
                 tool_acc: dict[int, dict[str, Any]] = {}
                 usage: dict[str, Any] | None = None
+                last_finish_reason: str | None = None
 
                 async for chunk in response.aiter_text():
                     buffer += chunk
@@ -307,6 +312,8 @@ class OpenAICompatibleProvider:
                             done_meta: dict[str, Any] = {}
                             if usage:
                                 done_meta["usage"] = usage
+                            if last_finish_reason:
+                                done_meta["finish_reason"] = last_finish_reason
                             yield ChatChunk(type="done", metadata=done_meta)
                             return
 
@@ -377,9 +384,11 @@ class OpenAICompatibleProvider:
                                 slot["function"]["arguments"] += fn["arguments"]
 
                         finish = choices[0].get("finish_reason")
-                        if finish and finish != "null" and finish == "content_filter":
-                            yield ChatChunk(type="error", content="输出被内容安全过滤器拦截")
-                            return
+                        if finish and finish != "null":
+                            last_finish_reason = finish
+                            if finish == "content_filter":
+                                yield ChatChunk(type="error", content="输出被内容安全过滤器拦截")
+                                return
 
                 # 流结束但未收到 [DONE]
                 if self._emit_tool_calls(tool_acc):
@@ -390,6 +399,8 @@ class OpenAICompatibleProvider:
                 done_meta = {}
                 if usage:
                     done_meta["usage"] = usage
+                if last_finish_reason:
+                    done_meta["finish_reason"] = last_finish_reason
                 yield ChatChunk(type="done", metadata=done_meta)
 
         except httpx.TimeoutException:

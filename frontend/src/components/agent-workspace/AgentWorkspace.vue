@@ -8,15 +8,31 @@ import { useAgentHubStore } from '@/stores/agentHub'
 import { NButton } from 'naive-ui'
 
 const store = useAgentHubStore()
-const collapsed = ref(false)
+// 菜单栏默认折叠：对话区占满宽度，需要历史会话时再手动展开
+const collapsed = ref(true)
 const loading = ref(false)
 const error = ref('')
+
+/** 统一入口 Agent：智能助手（router），落地页与新建对话默认直接进入它 */
+const ROUTER_AGENT_ID = 'agent-router'
+
+/** 无当前会话时自动开启一个「智能助手」会话（单一入口，不再让用户逐个挑专家） */
+function ensureDefaultSession() {
+  if (store.currentSession) return
+  const routerAgent =
+    store.activeAgents.find((a) => a.id === ROUTER_AGENT_ID) ||
+    store.activeAgents.find((a) => a.features?.router) ||
+    store.activeAgents.find((a) => a.is_default) ||
+    store.activeAgents[0]
+  if (routerAgent) store.startSessionFromAgent(routerAgent.id)
+}
 
 async function initAssets() {
   loading.value = true
   error.value = ''
   try {
     await store.initAssets()
+    ensureDefaultSession()
   } catch (e: any) {
     error.value = e?.message || '加载 Agent 数据失败'
   } finally {
@@ -27,6 +43,12 @@ async function initAssets() {
 onMounted(initAssets)
 
 function handleNewChat() {
+  store.newChat()
+  ensureDefaultSession()
+}
+
+/** 打开专家集市（仅供想手动指定专家的用户） */
+function handleOpenHub() {
   store.newChat()
 }
 
@@ -41,6 +63,7 @@ function handleSelectAgent(agentId: string) {
       :collapsed="collapsed"
       @toggle-collapse="collapsed = !collapsed"
       @new-chat="handleNewChat"
+      @open-hub="handleOpenHub"
       @select-session="store.selectSession"
       @delete-session="store.deleteSession"
     />

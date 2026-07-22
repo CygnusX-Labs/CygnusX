@@ -25,6 +25,7 @@ from omichub.infrastructure.database.repositories.mcp_repository import (
 )
 from omichub.infrastructure.mcp.client import MCPClient, validate_sse_url, validate_stdio_command
 from omichub.infrastructure.mcp.presets import (
+    OMICHUB_PLATFORM_SERVER_ID,
     OMICHUB_TOOLS_SERVER_ID,
     OMICHUB_TOOLS_SERVER_NAME,
     PRESET_SERVERS,
@@ -77,21 +78,32 @@ class MCPService:
 
     async def ensure_presets(self) -> None:
         """初始化预设 MCP 服务（含 omichub-tools 动态预设，幂等）"""
+        valid_names = {p["name"] for p in PRESET_SERVERS} | {OMICHUB_TOOLS_SERVER_NAME}
+        for server in await self._repo.list_all():
+            if server.is_preset and server.name not in valid_names:
+                # 清理已从代码中移除的过期预设（如早期的 literature/genome/code/knowledge）
+                await self._repo.delete(server.id)
+
         for preset in PRESET_SERVERS:
             existing = await self._repo.get_by_name(preset["name"])
             if existing is not None:
                 continue
+            preset_id = (
+                OMICHUB_PLATFORM_SERVER_ID
+                if preset["name"] == "omichub-platform"
+                else uuid4()
+            )
             tools = [
                 MCPToolRegistry(
                     tool_name=t["name"],
                     description=t["description"],
                     input_schema=t["inputSchema"],
-                    server_id=uuid4(),  # 占位，save 时会重建
+                    server_id=preset_id,
                 )
                 for t in preset["tools"]
             ]
             server = MCPServer(
-                id=uuid4(),
+                id=preset_id,
                 name=preset["name"],
                 description=preset["description"],
                 transport=Transport.BUILTIN,

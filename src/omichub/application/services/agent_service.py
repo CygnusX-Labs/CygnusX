@@ -32,6 +32,7 @@ from omichub.infrastructure.database.repositories.mcp_repository import (
     SqlAlchemyMCPServerRepository,
 )
 from omichub.infrastructure.mcp.presets import (
+    OMICHUB_PLATFORM_SERVER_ID,
     OMICHUB_TOOLS_SERVER_ID,
     OMICHUB_TOOLS_SERVER_NAME,
 )
@@ -110,7 +111,7 @@ class AgentService:
             # 构建落库字段
             mcp_ids = cfg.get("mcp_ids", [])
             if not mcp_ids:
-                mcp_ids = [str(OMICHUB_TOOLS_SERVER_ID)]
+                mcp_ids = [str(OMICHUB_TOOLS_SERVER_ID), str(OMICHUB_PLATFORM_SERVER_ID)]
             # 统一功能开关：yaml features 原样保留，studio 段归入 features["studio"]，
             # 不新增列（调度中枢经 AgentContext.features 读取）
             features = dict(cfg.get("features") or {})

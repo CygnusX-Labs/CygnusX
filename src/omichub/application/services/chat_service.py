@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import re
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import anyio
@@ -87,7 +88,39 @@ from omichub.infrastructure.database.models.chat import (
     ChatSessionModel,
 )
 
+if TYPE_CHECKING:
+    from omichub.application.services.agent_service import AgentContext
+
 DEFAULT_SYSTEM_PROMPT = get_prompt("agents.general")
+
+# 智能路由器 system prompt：让 router LLM 从候选专家清单中选一个最合适的
+ROUTER_SYSTEM_PROMPT = """你是一个意图路由器。根据用户消息，从下面的候选专家清单中选择一个最合适的专家来回答。
+
+候选专家（JSON 数组）：
+{catalog}
+
+规则：
+1. 直接输出一行 JSON：{{"agent_id": "...", "reason": "..."}}。
+2. 禁止输出思考过程、复述用户消息或列候选清单，第一个字符必须是 {{。
+3. agent_id 必须来自候选清单；reason 用一句中文简述分派理由。
+4. 无法判断意图时，选择通用（general）专家对应的 agent_id。"""
+
+
+def _extract_route_json(text: str) -> dict[str, Any] | None:
+    """从 router LLM 输出中容错提取路由 JSON。
+
+    模型可能在 JSON 前后输出思考过程，甚至多次输出 JSON（先错后对）。
+    逐个尝试所有 {...} 片段，取最后一个可解析且含 agent_id 的对象。
+    """
+    found: dict[str, Any] | None = None
+    for match in re.finditer(r"\{[^{}]*\}", text, re.DOTALL):
+        try:
+            data = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict) and data.get("agent_id"):
+            found = data
+    return found
 
 
 def _studio_risk_hint(tool_name: str, args: dict[str, Any]) -> str:
@@ -276,9 +309,9 @@ class ChatService:
             msg.content = content
             msg.status = status
             if metadata:
-                existing = msg.metadata_json or {}
-                existing.update(metadata)
-                msg.metadata_json = existing
+                # 必须构造新 dict：原地 update 后赋回同一对象，SQLAlchemy 判等不变，
+                # JSONB 列不会进 UPDATE（路由徽标 routed_agent 等元数据会丢）
+                msg.metadata_json = {**(msg.metadata_json or {}), **metadata}
             await self._db.flush()
 
     async def get_messages(
@@ -442,6 +475,95 @@ class ChatService:
 
     # --- Agent 调度中枢：SSE 流式聊天（含 MCP 工具调用闭环） ---
 
+    async def _route_to_agent(
+        self, router_ctx: AgentContext, user_text: str
+    ) -> tuple[AgentContext | None, dict[str, Any] | None]:
+        """智能路由：用路由器 Agent 的模型做意图分派，返回目标 Agent 上下文与路由信息。
+
+        任何失败（模型报错、解析失败、目标不存在）都静默回落 general 候选，绝不抛出。
+        """
+        from omichub.application.services.agent_service import AgentService
+
+        try:
+            agent_service = AgentService(self._db)
+            agents = await agent_service.list_agents(active_only=True)
+            candidates = [
+                a for a in agents if not (a.features or {}).get("router")
+            ]
+            if not candidates or router_ctx.model_config is None:
+                return None, None
+
+            def _general_fallback() -> Any:
+                for c in candidates:
+                    if c.category == "general" or "general" in c.agent_id:
+                        return c
+                return candidates[0]
+
+            catalog = json.dumps(
+                [
+                    {
+                        "agent_id": c.agent_id,
+                        "name": c.name,
+                        "description": c.description,
+                        "category": c.category,
+                    }
+                    for c in candidates
+                ],
+                ensure_ascii=False,
+            )
+            system_prompt = ROUTER_SYSTEM_PROMPT.replace("{catalog}", catalog)
+
+            # 路由过程 chunk 全部消费，仅累加 text，不向外 yield
+            route_text = ""
+            async for chunk in provider_manager.chat_stream(
+                config=router_ctx.model_config,
+                messages=[{"role": "user", "content": user_text}],
+                system_prompt=system_prompt,
+                temperature=0,
+                max_tokens=200,
+                tools=None,
+                deep_thinking=False,
+            ):
+                if chunk.type == "text":
+                    route_text += chunk.content
+
+            valid_ids = {c.agent_id for c in candidates}
+            target_id = ""
+            reason = ""
+            decision = _extract_route_json(route_text)
+            if decision:
+                target_id = str(decision.get("agent_id") or "")
+                reason = str(decision.get("reason") or "")
+            if target_id not in valid_ids:
+                fallback = _general_fallback()
+                target_id = fallback.agent_id
+                if not reason:
+                    reason = "未识别出明确领域，转接通用助手"
+
+            target_ctx = await agent_service.assemble_context(target_id)
+            if target_ctx is None or target_ctx.model_config is None:
+                fallback = _general_fallback()
+                target_id = fallback.agent_id
+                target_ctx = await agent_service.assemble_context(target_id)
+                if target_ctx is None:
+                    return None, None
+
+            target_dto = next(
+                (c for c in candidates if c.agent_id == target_id),
+                _general_fallback(),
+            )
+            route_info = {
+                "agent_id": target_dto.agent_id,
+                "name": target_dto.name,
+                "avatar": target_dto.avatar,
+                "color": target_dto.color,
+                "reason": reason,
+            }
+            return target_ctx, route_info
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[Agent路由] 意图分派失败，按原 Agent 继续: {e}")
+            return None, None
+
     async def stream_agent_chat(
         self,
         user_id: str,
@@ -578,6 +700,31 @@ class ChatService:
             metadata={"model": model_config.name, "agent_id": agent_id},
         )
 
+        # 3.5 智能路由：路由器 Agent 先做意图分派，再以目标 Agent 的上下文继续后续流程。
+        # 会话绑定校验与落库的 agent_id 始终保持路由器不变；同一会话的每条消息都重新路由。
+        if ctx.features.get("router"):
+            target_ctx, route_info = await self._route_to_agent(ctx, user_content)
+            if target_ctx is not None and route_info is not None:
+                ctx = target_ctx
+                if ctx.model_config is not None:
+                    model_config = ctx.model_config
+                bound_skills = list(getattr(ctx, "skills", []) or [])
+                bound_mcp_servers = list(ctx.mcp_servers or [])
+                await self.update_message_content(
+                    ai_message.message_id,
+                    "",
+                    "streaming",
+                    {"model": model_config.name, "routed_agent": route_info},
+                )
+                yield ChatChunk(
+                    type="route",
+                    metadata={
+                        **route_info,
+                        "session_id": current_session_id,
+                        "message_id": ai_message.message_id,
+                    },
+                )
+
         # 4. 送 LLM 的 messages（脱敏 + 附件多模态注入）
         llm_messages: list[dict[str, Any]] = sanitize_messages(messages, sensitive_keywords)
         if attachments:
@@ -656,6 +803,7 @@ class ChatService:
         first_chunk_sent = False
         max_rounds = 8
         last_usage: dict[str, Any] | None = None
+        last_finish_reason: str | None = None
         # Studio 工具调用落库累积（代码卡片 / 产物 / diff，供历史重载渲染）
         studio_invocations: list[dict[str, Any]] = []
 
@@ -760,6 +908,7 @@ class ChatService:
                         last_usage = merge_token_usage(
                             last_usage, chunk.metadata.get("usage")
                         )
+                        last_finish_reason = chunk.metadata.get("finish_reason") or last_finish_reason
 
                 # 本轮无工具调用 → 正常结束
                 if not round_tool_calls:
@@ -770,14 +919,14 @@ class ChatService:
                         {"usage": last_usage} if last_usage else None,
                     )
                     await self._apply_usage_to_session(ai_message.message_id, last_usage)
-                    yield ChatChunk(
-                        type="done",
-                        metadata={
+                    done_meta: dict[str, Any] = {
                             "session_id": current_session_id,
                             "message_id": ai_message.message_id,
                             "usage": last_usage,
-                        },
-                    )
+                        }
+                    if last_finish_reason:
+                        done_meta["finish_reason"] = last_finish_reason
+                    yield ChatChunk(type="done", metadata=done_meta)
                     return
 
                 # 有工具调用 → 执行并回灌，进入下一轮

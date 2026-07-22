@@ -535,6 +535,19 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           // backend row contains a stale tokens payload.
           tokens: m.role === 'assistant' ? (m.tokens || { input: 0, output: 0, total: 0 }) : undefined,
         }
+        // 智能路由：恢复本条消息的专家徽标
+        const routedAgent = m.metadata_json?.routed_agent as
+          | { agent_id?: string; name?: string; avatar?: string; color?: string; reason?: string }
+          | undefined
+        if (routedAgent?.name) {
+          msg.routedAgent = {
+            agentId: routedAgent.agent_id || '',
+            name: routedAgent.name,
+            avatar: routedAgent.avatar || '',
+            color: routedAgent.color || '',
+            reason: routedAgent.reason || '',
+          }
+        }
         // Studio 会话：历史消息随 metadata_json.tool_invocations 落库，
         // 重载时重建工具调用卡片（代码卡片凭 arguments + ui_payload 渲染）
         const invocations = m.metadata_json?.tool_invocations
@@ -674,8 +687,10 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         onText: (text, isReasoning) => {
           if (isReasoning) {
             streamingThought.value += text
+            aiMsg.thought = streamingThought.value
           } else {
             streamingContent.value += text
+            aiMsg.content = streamingContent.value
           }
           session.updated_at = new Date().toISOString()
         },
@@ -765,6 +780,16 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             answered: false,
           }
         },
+        onRoute: (event) => {
+          // 智能路由：记录本条消息实际由哪位专家回答（气泡头部徽标）
+          aiMsg.routedAgent = {
+            agentId: event.agent_id,
+            name: event.name,
+            avatar: event.avatar,
+            color: event.color,
+            reason: event.reason,
+          }
+        },
         onToolOutput: (tool, _stream, data, toolCallId) => {
           // 优先按 tool_call_id 精确匹配；无 id（旧事件）时回退为最后一个同名 running 工具
           const tcs = aiMsg.toolCalls || []
@@ -785,7 +810,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           streamingThought.value = ''
           releaseSessionIdLock()
         },
-        onDone: (_, messageId, usage) => {
+        onDone: (_, messageId, usage, finishReason) => {
           aiMsg.content = streamingContent.value || aiMsg.content
           aiMsg.thought = streamingThought.value || undefined
           if (usage) {
@@ -798,6 +823,9 @@ export const useAgentHubStore = defineStore('agentHub', () => {
               (item) => item.id === targetId && item.role === 'assistant',
             )
             ;(target || aiMsg).tokens = { input, output, total }
+          }
+          if (finishReason === 'length' && aiMsg.content.trim()) {
+            aiMsg.content += '\n\n---\n⚠️ *回答因达到最大长度限制而截断，可尝试缩短提问或分步追问。*'
           }
           if (!aiMsg.content.trim() && !aiMsg.toolCalls?.length) {
             aiMsg.status = aiMsg.thought ? 'empty' : 'error'

@@ -138,8 +138,10 @@ async function saveConfig() {
 }
 
 async function delConfig(id: string) {
-  await apiClient.delete(`/admin/ai-providers/${id}`)
-  message.success('已删除')
+  // 被会话/Agent 引用时后端会降级为停用（软删除），按返回的 message 提示
+  const res = await apiClient.delete(`/admin/ai-providers/${id}`)
+  const msg = (res.data as { message?: string; soft_deleted?: boolean })?.message || '已删除'
+  message.success(msg)
   await fetchConfigs()
 }
 

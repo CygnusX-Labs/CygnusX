@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { NButton, NIcon, NTooltip } from 'naive-ui'
 import {
-  AddOutline, CloseOutline, ChatbubbleOutline, MenuOutline,
+  AddOutline, CloseOutline, ChatbubbleOutline, MenuOutline, AppsOutline,
 } from '@vicons/ionicons5'
 import { useAgentHubStore, type AgentSession } from '@/stores/agentHub'
 
@@ -14,6 +14,7 @@ defineProps<{ collapsed?: boolean }>()
 const emit = defineEmits<{
   toggleCollapse: []
   newChat: []
+  openHub: []
   selectSession: [id: string]
   deleteSession: [id: string]
 }>()
@@ -51,12 +52,20 @@ function handleSelectSession(s: AgentSession) {
           </template>
           新建智能体对话
         </NTooltip>
+        <NTooltip trigger="hover" placement="right">
+          <template #trigger>
+            <NButton text class="nav-icon-btn menu-btn" @click="$emit('openHub')">
+              <NIcon size="18"><AppsOutline /></NIcon>
+            </NButton>
+          </template>
+          选择专家
+        </NTooltip>
       </div>
     </div>
 
     <div v-if="!collapsed" class="history">
       <div class="section-title">历史会话</div>
-      <div v-if="!grouped.length" class="history-empty">暂无会话，从应用集市开始吧</div>
+      <div v-if="!grouped.length" class="history-empty">暂无会话，直接向智能助手提问吧</div>
       <div v-for="g in grouped" :key="g.label" class="session-group">
         <div class="group-label">{{ g.label }}</div>
         <div
