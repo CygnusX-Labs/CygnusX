@@ -17,6 +17,8 @@ export interface ChatMessage {
   modelName?: string
   toolCalls?: ToolCall[]
   charts?: ChartData[]
+  /** Studio ask_user 澄清卡片（AI 消息专属，回答后标记 answered） */
+  askRequest?: AskRequest
   attachments?: FileAttachment[]
   feedback?: 'like' | 'dislike'
   /** 是否被编辑过，用户消息专属 */
@@ -45,11 +47,28 @@ export interface ToolCall {
   result?: unknown
   uiPayload?: Record<string, unknown>
   mcpServer?: string
-  status: 'pending' | 'running' | 'success' | 'error'
+  status: 'pending' | 'running' | 'awaiting_approval' | 'success' | 'error'
   /** Studio 工具执行过程中累计的 stdout/stderr 输出（流式填充） */
   output?: string
   /** Studio 代码卡片的语言（python / r / bash） */
   language?: string
+  /** Studio HITL 审批状态（仅内存态，刷新后丢失） */
+  approval?: ToolApproval
+}
+
+/** Studio 工具审批（supervised 模式下受控工具挂起等待用户决议） */
+export interface ToolApproval {
+  approval_id: string
+  status: 'pending' | 'approved' | 'edited' | 'rejected' | 'timeout'
+  risk_hint?: string
+  timeout_seconds?: number
+}
+
+/** Studio ask_user 澄清请求（附着在 AI 消息上，用户下一条消息回答） */
+export interface AskRequest {
+  question: string
+  options?: string[]
+  answered?: boolean
 }
 
 // ===== 文件附件 =====

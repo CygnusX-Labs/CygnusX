@@ -36,3 +36,4 @@ studio:
     - artifact_register
     - update_plan
     - pipeline_query
+    - ask_user

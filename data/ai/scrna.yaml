@@ -11,6 +11,8 @@ temperature: 0.3
 max_tokens: 4096
 mcp_ids: []
 skill_ids: []
+features:
+  engine: langgraph
 studio:
   enabled: true
   runtime_profile: analysis-scrna

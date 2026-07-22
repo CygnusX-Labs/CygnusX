@@ -112,6 +112,24 @@ class UpdateStudioUiRequest(BaseModel):
     terminal_collapsed: bool | None = None
 
 
+class UpdateStudioPermissionsRequest(BaseModel):
+    """会话级权限模式（§2）：supervised 写/执行类工具需用户批准；auto 即时执行。"""
+
+    mode: Literal["supervised", "auto"] = Field(..., description="权限模式")
+
+
+class StudioApprovalApproveRequest(BaseModel):
+    """批准工具审批；modified_args 为用户编辑后的参数（编辑后批准）。"""
+
+    modified_args: dict[str, Any] | None = Field(None, description="编辑后的工具参数")
+
+
+class StudioApprovalRejectRequest(BaseModel):
+    """退回工具审批；reason 回灌 LLM 让其修改后重试。"""
+
+    reason: str | None = Field(None, description="退回理由")
+
+
 class StudioShareStatusDTO(BaseModel):
     active: bool
     expires_at: datetime | None = None
@@ -130,6 +148,10 @@ class StudioSessionDetailDTO(BaseModel):
         None, description="会话级 MCP/Skill 加载状态与最近审计记录（sandbox_meta.capabilities）"
     )
     ui: dict[str, Any] = Field(default_factory=dict, description="代码工作室视图与交互设置")
+    permissions: dict[str, Any] = Field(
+        default_factory=lambda: {"mode": "supervised"},
+        description="会话级权限模式（sandbox_meta.permissions，默认 supervised）",
+    )
     sandbox_metrics: dict[str, Any] = Field(default_factory=dict, description="容器 CPU/内存快照")
     share: StudioShareStatusDTO | None = Field(
         None, description="只读分享状态；原始令牌永不从详情接口返回"

@@ -10,7 +10,7 @@
  */
 import { ref, reactive, computed, watch, onMounted, onUnmounted, provide, nextTick } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { NButton, NCheckbox, NIcon, NInput, NTag, NTooltip, NModal, NSpin, useMessage } from 'naive-ui'
+import { NButton, NCheckbox, NIcon, NInput, NSwitch, NTag, NTooltip, NModal, NSpin, useMessage } from 'naive-ui'
 import {
   ArrowBackOutline, RefreshOutline, FileTrayStackedOutline, ShareSocialOutline,
   PrintOutline, CloseCircleOutline, ConstructOutline, ChevronBackOutline, ChevronForwardOutline,
@@ -85,6 +85,28 @@ const workspaceEditorRef = ref<InstanceType<typeof StudioWorkspaceEditor> | null
 const followAi = ref(true)
 const terminalCollapsed = ref(false)
 const hibernateOnLeave = ref(true)
+
+// ---------- 权限模式（supervised/auto，P1 HITL） ----------
+const permissionMode = computed(() => store.studioPermissions.mode)
+const isAutoMode = computed(() => permissionMode.value === 'auto')
+const switchingPermissions = ref(false)
+
+async function handlePermissionToggle(auto: boolean) {
+  if (switchingPermissions.value) return
+  switchingPermissions.value = true
+  try {
+    await store.setStudioPermissions(auto ? 'auto' : 'supervised')
+    if (auto) {
+      message.warning('已切换到放权模式：所有工具将自动执行，不再等待批准')
+    } else {
+      message.success('已切换到监督模式：关键操作需你批准后执行')
+    }
+  } catch {
+    message.error('权限模式切换失败，请重试')
+  } finally {
+    switchingPermissions.value = false
+  }
+}
 
 function toggleRightSection(section: keyof typeof rightSections) {
   rightSections[section] = !rightSections[section]
@@ -202,6 +224,7 @@ async function enterSession(id: string) {
     }
     shareActive.value = detail.share?.active || false
     shareExpiresAt.value = detail.share?.expires_at || null
+    store.initStudioPermissions(detail.permissions?.mode)
     // 复用 agentHub 会话编排：注入 studio 会话后走统一的 selectSession/sendMessage 路径
     if (!store.sessions.find((s) => s.id === id)) {
       store.sessions.unshift({
@@ -630,6 +653,20 @@ function formatSessionTime(iso: string): string {
         <n-tag size="small" round :bordered="false" class="model-tag">{{ modelName }}</n-tag>
       </div>
       <div class="bar-right">
+        <n-tooltip v-if="sessionId" trigger="hover">
+          <template #trigger>
+            <span class="perm-switch" :class="{ auto: isAutoMode }">
+              <span class="perm-label">{{ isAutoMode ? '放权模式' : '监督模式' }}</span>
+              <n-switch
+                :value="isAutoMode"
+                size="small"
+                :loading="switchingPermissions"
+                @update:value="handlePermissionToggle"
+              />
+            </span>
+          </template>
+          {{ isAutoMode ? '放权模式：所有工具自动执行，不再等待批准（点击切回监督模式）' : '监督模式：关键操作（执行/写文件/登记产物）需你批准后执行' }}
+        </n-tooltip>
         <span class="sandbox-light" :title="`沙盒状态：${statusInfo.label}`">
           {{ statusInfo.icon }} {{ statusInfo.label }}
         </span>
@@ -978,6 +1015,31 @@ function formatSessionTime(iso: string): string {
   color: var(--chat-text-secondary, #666);
   margin-right: 6px;
   white-space: nowrap;
+}
+
+/* 权限模式开关（auto 放权模式警示色） */
+.perm-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 8px;
+  padding: 3px 10px;
+  border: 1px solid var(--chat-border, #e5e7eb);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.perm-label {
+  font-size: 12px;
+  color: var(--chat-text-secondary, #666);
+  white-space: nowrap;
+}
+.perm-switch.auto {
+  border-color: rgba(240, 100, 32, 0.6);
+  background: rgba(240, 100, 32, 0.08);
+}
+.perm-switch.auto .perm-label {
+  color: #e06420;
+  font-weight: 600;
 }
 
 /* ---------- 居中态 ---------- */

@@ -17,7 +17,7 @@ from omichub.application.services.ai_service import AIService
 from omichub.application.services.analysis_flow_tool_service import AnalysisFlowToolService
 from omichub.application.services.tool_confirmation_service import (
     ConfirmationError,
-    ToolConfirmationService,
+    get_tool_confirmation_service,
 )
 from omichub.core.security import decode_token
 from omichub.infrastructure.database.session import get_session_factory
@@ -203,7 +203,7 @@ async def reject_tool_confirmation(
         session_id="",
         db=db,
     )
-    confirmation_service = ToolConfirmationService()
+    confirmation_service = get_tool_confirmation_service()
     try:
         record = await confirmation_service.reject(
             context=context,

@@ -4,7 +4,7 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
-from fastapi import Depends, Header
+from fastapi import Depends, Header, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +16,7 @@ from omichub.infrastructure.database.models.user import UserModel
 from omichub.infrastructure.database.repositories import SqlAlchemyUserRepository
 from omichub.infrastructure.database.session import get_session_factory
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
@@ -34,8 +34,31 @@ async def get_db() -> AsyncIterator[AsyncSession]:
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
 
-async def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
-    """从 JWT Token 中解析当前用户 ID，并校验 token_version 与用户状态。"""
+async def get_current_user_id(
+    request: Request,
+    token: Annotated[str | None, Depends(oauth2_scheme)] = None,
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> str:
+    """解析当前用户 ID：优先 X-API-Key，其次 JWT Bearer token。"""
+    if x_api_key:
+        return await _authenticate_api_key(x_api_key)
+    if token:
+        return await _authenticate_jwt(token)
+    raise AuthenticationError("缺少认证凭证：需要 Bearer token 或 X-API-Key")
+
+
+async def _authenticate_api_key(api_key: str) -> str:
+    from omichub.application.services.api_key_service import APIKeyService
+
+    factory = get_session_factory()
+    async with factory() as db:
+        service = APIKeyService(db)
+        user_id = await service.authenticate(api_key)
+        await db.commit()
+    return user_id
+
+
+async def _authenticate_jwt(token: str) -> str:
     payload = decode_token(token)
     if payload is None or payload.get("type") != "access":
         raise AuthenticationError("无效的访问令牌")
@@ -43,7 +66,6 @@ async def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> 
     if user_id is None:
         raise AuthenticationError("令牌中缺少用户信息")
 
-    # 校验 token_version：改密/角色/状态变更后旧 token 失效
     try:
         uuid_val = uuid.UUID(str(user_id))
     except ValueError as exc:

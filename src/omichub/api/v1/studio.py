@@ -37,21 +37,25 @@ from omichub.application.schemas.studio import (
     ImportStudioDataFileResponse,
     RegisterStudioArtifactRequest,
     RegisterStudioArtifactResponse,
+    RenameStudioFileRequest,
     SaveStudioFileRequest,
     SaveStudioFileResponse,
-    StudioPathRequest,
-    RenameStudioFileRequest,
     SharedStudioSessionDTO,
+    StudioApprovalApproveRequest,
+    StudioApprovalRejectRequest,
     StudioInternalExecRequest,
+    StudioPathRequest,
     StudioRunRequest,
     StudioSessionDetailDTO,
     StudioShareResponse,
     StudioShareStatusDTO,
+    UpdateStudioPermissionsRequest,
     UpdateStudioUiRequest,
 )
 from omichub.application.services.agent_service import AgentService
 from omichub.application.services.chat_service import ChatService
 from omichub.application.services.skill_service import SkillService
+from omichub.application.services.studio_approval_service import get_studio_approval_service
 from omichub.application.services.studio_context_service import (
     create_session_from_report,
     import_datahub_file,
@@ -70,7 +74,12 @@ from omichub.application.services.studio_sharing import (
 from omichub.application.services.studio_skill_service import extract_skill_from_workspace
 from omichub.application.services.studio_tools import stream_studio_tool
 from omichub.core.config import get_settings
-from omichub.core.exceptions import AuthenticationError, BusinessError, NotFoundError
+from omichub.core.exceptions import (
+    AuthenticationError,
+    BusinessError,
+    ConflictError,
+    NotFoundError,
+)
 from omichub.core.security import decode_token
 from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
 from omichub.infrastructure.config.studio_loader import get_studio_config
@@ -372,6 +381,7 @@ async def get_studio_session(
         files=listing.get("entries") or [],
         plan=(session.sandbox_meta or {}).get("plan"),
         capabilities=(session.sandbox_meta or {}).get("capabilities"),
+        permissions=(session.sandbox_meta or {}).get("permissions") or {"mode": "supervised"},
         sandbox_metrics=sandbox_metrics,
         ui={
             "view_mode": (session.sandbox_meta or {}).get("ui", {}).get("view_mode", get_studio_config().ui.default_view_mode),
@@ -405,6 +415,71 @@ async def update_studio_ui(
     session.sandbox_meta = meta
     await db.flush()
     return current
+
+
+@router.post("/sessions/{session_id}/permissions", summary="设置 Studio 会话权限模式")
+async def update_studio_permissions(
+    current_user_id: CurrentUserId,
+    service: ChatServiceDep,
+    db: DbSession,
+    session_id: str,
+    req: UpdateStudioPermissionsRequest,
+) -> dict[str, Any]:
+    """会话级权限模式（§2）：supervised 写/执行类工具需用户批准；auto 即时执行。"""
+    session = await _get_studio_session(service, session_id, current_user_id)
+    meta = dict(session.sandbox_meta or {})
+    permissions = dict(meta.get("permissions") or {})
+    permissions["mode"] = req.mode
+    meta["permissions"] = permissions
+    session.sandbox_meta = meta
+    await db.flush()
+    return {"permissions": permissions}
+
+
+# ============================================================
+# 工具审批（supervised 模式 HITL，§3）
+# ============================================================
+
+
+@router.post("/approvals/{approval_id}/approve", summary="批准（或编辑后批准）工具审批")
+async def approve_studio_tool(
+    current_user_id: CurrentUserId,
+    approval_id: str,
+    req: StudioApprovalApproveRequest,
+) -> dict[str, Any]:
+    service = get_studio_approval_service()
+    record = await service.get(approval_id)
+    if record is None or record.get("user_id") != str(current_user_id):
+        raise NotFoundError("审批不存在或无权访问")
+    if record.get("status") != "pending":
+        raise ConflictError("审批已被消费")
+    action = "edited" if req.modified_args else "approved"
+    resolved = await service.resolve(
+        approval_id, str(current_user_id), action, modified_args=req.modified_args
+    )
+    if resolved is None:  # 并发消费兜底
+        raise ConflictError("审批已被消费")
+    return {"success": True, "status": action}
+
+
+@router.post("/approvals/{approval_id}/reject", summary="退回工具审批")
+async def reject_studio_tool(
+    current_user_id: CurrentUserId,
+    approval_id: str,
+    req: StudioApprovalRejectRequest,
+) -> dict[str, Any]:
+    service = get_studio_approval_service()
+    record = await service.get(approval_id)
+    if record is None or record.get("user_id") != str(current_user_id):
+        raise NotFoundError("审批不存在或无权访问")
+    if record.get("status") != "pending":
+        raise ConflictError("审批已被消费")
+    resolved = await service.resolve(
+        approval_id, str(current_user_id), "rejected", reason=req.reason
+    )
+    if resolved is None:
+        raise ConflictError("审批已被消费")
+    return {"success": True, "status": "rejected"}
 
 
 @router.post(

@@ -82,11 +82,11 @@ def fake_manager(monkeypatch) -> _FakeManager:
 
 
 @pytest.mark.unit
-def test_tool_schemas_cover_exactly_eleven_tools():
-    """11 个内置工具（含只读知识库检索），名称与 STUDIO_TOOL_NAMES 一致。"""
+def test_tool_schemas_cover_exactly_twelve_tools():
+    """12 个内置工具（含只读知识库检索与 ask_user 澄清），名称与 STUDIO_TOOL_NAMES 一致。"""
     names = {t["function"]["name"] for t in STUDIO_TOOL_SCHEMAS}
     assert names == set(STUDIO_TOOL_NAMES)
-    assert len(STUDIO_TOOL_SCHEMAS) == 11
+    assert len(STUDIO_TOOL_SCHEMAS) == 12
     assert {
         "datahub_import",
         "platform_result_import",
@@ -94,6 +94,7 @@ def test_tool_schemas_cover_exactly_eleven_tools():
         "update_plan",
         "pipeline_query",
         "knowledge_search",
+        "ask_user",
     } <= names
 
 

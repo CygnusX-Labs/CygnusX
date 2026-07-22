@@ -85,7 +85,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   left: -10 + Math.random() * 40,
   width: 60 + Math.random() * 40,
   height: 15 + Math.random() * 10,
-  opacity: 0.08 + Math.random() * 0.08,
+  opacity: 0.04 + Math.random() * 0.04,
   delay: Math.random() * 5,
   duration: 20 + Math.random() * 20,
 }))
@@ -374,9 +374,11 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 .space-bg {
   position: absolute;
   inset: 0;
+  z-index: 0;
+  pointer-events: none;
   background:
-    radial-gradient(ellipse at 20% 30%, rgba(22, 93, 255, 0.15) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 70%, rgba(107, 141, 214, 0.12) 0%, transparent 50%),
+    radial-gradient(ellipse at 20% 30%, rgba(22, 93, 255, 0.1) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 70%, rgba(107, 141, 214, 0.07) 0%, transparent 50%),
     radial-gradient(ellipse at 50% 50%, rgba(20, 30, 60, 0.4) 0%, #050810 70%);
 }
 
@@ -395,14 +397,14 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(107, 141, 214, 0.5) 25%,
-    rgba(22, 93, 255, 0.6) 50%,
-    rgba(142, 84, 233, 0.4) 75%,
+    rgba(107, 141, 214, 0.32) 25%,
+    rgba(22, 93, 255, 0.38) 50%,
+    rgba(142, 84, 233, 0.24) 75%,
     transparent 100%
   );
   filter: blur(24px);
   animation: nebulaDrift ease-in-out infinite;
-  --base-opacity: 0.1;
+  --base-opacity: 0.07;
 }
 
 /* 星空 */
@@ -501,21 +503,21 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   position: absolute;
   border-radius: 50%;
   filter: blur(70px);
-  opacity: 0.2;
+  opacity: 0.12;
   pointer-events: none;
   z-index: 1;
 }
 .orb-1 {
-  width: 340px;
-  height: 340px;
+  width: 280px;
+  height: 280px;
   background: var(--arco-primary);
   top: 8%;
   left: 3%;
   animation: drift 14s ease-in-out infinite;
 }
 .orb-2 {
-  width: 280px;
-  height: 280px;
+  width: 220px;
+  height: 220px;
   background: #8E54E9;
   bottom: 10%;
   right: 5%;
@@ -572,14 +574,14 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 }
 .about-subtitle {
   font-size: 18px;
-  color: var(--neutral-text-3);
+  color: #cbd5e1;
   margin: 0 0 24px;
   font-weight: 500;
 }
 
 /* 玻璃面板（Glassmorphism）：引言盒子 */
 .about-quote-box {
-  background: rgba(20, 25, 45, 0.3);
+  background: rgba(10, 15, 30, 0.6);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -614,7 +616,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 .about-quote {
   font-size: 14px;
   line-height: 1.9;
-  color: var(--neutral-text-2);
+  color: #dbe4f0;
   text-align: justify;
   margin: 0;
   text-indent: 2em;
@@ -633,7 +635,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   gap: 10px;
   padding: 14px;
   border-radius: 10px;
-  background: rgba(20, 25, 45, 0.3);
+  background: rgba(10, 15, 30, 0.6);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -656,7 +658,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 }
 .feature-desc {
   font-size: 12px;
-  color: var(--neutral-text-3);
+  color: #cbd5e1;
   margin-top: 2px;
 }
 
@@ -671,7 +673,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 /* 底部 */
 .about-footer {
   font-size: 13px;
-  color: var(--neutral-text-3);
+  color: #9aa7bd;
   border-top: 1px solid rgba(148, 163, 184, 0.12);
   padding-top: 20px;
 }
@@ -685,7 +687,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 .about-credit {
   margin-top: 8px;
   font-size: 12px;
-  color: var(--neutral-text-3);
+  color: #9aa7bd;
 }
 .about-credit-link {
   color: var(--arco-primary);

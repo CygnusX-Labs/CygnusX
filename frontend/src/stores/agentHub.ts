@@ -31,6 +31,7 @@ import {
   type StudioPlanStep,
   type TokenUsage,
 } from '@/composables/useAgentChatStream'
+import { studioApi, type StudioPermissionMode } from '@/api/studio'
 import { useChatStore } from '@/stores/chat'
 
 const STUDIO_OUTPUT_CAP = 20_000
@@ -87,6 +88,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   /** Studio（工作台）会话 ID 集合：供会话列表打 📊 角标（后端 ChatSessionDTO 无 mode 字段，前端绕道获取） */
   const studioSessionIds = ref<Set<string>>(new Set())
   const currentPlan = ref<StudioPlanStep[]>([])
+  /** 当前 Studio 会话的权限模式（supervised=关键操作需批准；auto=放权自动执行） */
+  const studioPermissions = ref<{ mode: StudioPermissionMode }>({ mode: 'supervised' })
 
   const { streamChat, abortStream } = useAgentChatStream()
 
@@ -468,6 +471,12 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     if (session && session.messages.length === 0 && !session.id.startsWith('sess-')) {
       await loadSessionMessages(id)
     }
+    // Studio 会话：同步权限模式（非 studio 会话保持默认 supervised，不在此展示开关）
+    if (studioSessionIds.value.has(id)) {
+      studioApi.getSession(id)
+        .then((detail) => initStudioPermissions(detail.permissions?.mode))
+        .catch(() => {})
+    }
   }
 
   function newChat() {
@@ -723,6 +732,39 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         onPlan: (steps) => {
           currentPlan.value = steps
         },
+        onApprovalRequest: (event) => {
+          // 找到对应工具卡片：置 awaiting_approval 并保存审批信息（卡片由 ApprovalCard 接管交互）
+          const tc = (aiMsg.toolCalls || []).find((t) => t.id === event.tool_call_id)
+          if (!tc) return
+          tc.status = 'awaiting_approval'
+          tc.approval = {
+            approval_id: event.approval_id,
+            status: 'pending',
+            risk_hint: event.risk_hint,
+            timeout_seconds: event.timeout_seconds,
+          }
+          // 审批事件的 arguments 可能比 tool_call 事件更全，以其为准补齐
+          tc.arguments = { ...tc.arguments, ...event.arguments }
+        },
+        onApprovalResolved: (event) => {
+          const tc = (aiMsg.toolCalls || []).find((t) => t.id === event.tool_call_id)
+          if (!tc?.approval) return
+          tc.approval.status = event.action
+          if (event.action === 'approved' || event.action === 'edited') {
+            // 批准后工具照常执行，回到 running 等待 tool_output/tool_result
+            tc.status = 'running'
+          } else {
+            // rejected/timeout：后端会以 rejected tool_result 收尾；先落定终态
+            tc.status = 'error'
+          }
+        },
+        onAskRequest: (event) => {
+          aiMsg.askRequest = {
+            question: event.question,
+            options: event.options,
+            answered: false,
+          }
+        },
         onToolOutput: (tool, _stream, data, toolCallId) => {
           // 优先按 tool_call_id 精确匹配；无 id（旧事件）时回退为最后一个同名 running 工具
           const tcs = aiMsg.toolCalls || []
@@ -804,11 +846,98 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     releaseSessionIdLock()
   }
 
+  // ========== Studio HITL：审批 / 澄清 / 权限模式 ==========
+
+  /** 在所有会话消息中定位待审批的工具卡片（审批仅内存态，限定当前会话即可） */
+  function findApprovalTool(approvalId: string): ToolCall | null {
+    const session = currentSession.value
+    if (!session) return null
+    for (const msg of session.messages) {
+      const tc = (msg.toolCalls || []).find((t) => t.approval?.approval_id === approvalId)
+      if (tc) return tc
+    }
+    return null
+  }
+
+  /** 批准待审批工具；带 modifiedArgs 即"编辑后批准"（乐观更新，后端决议经 approval_resolved 回写） */
+  async function approveToolCall(
+    approvalId: string,
+    modifiedArgs?: Record<string, unknown>,
+  ): Promise<void> {
+    const tc = findApprovalTool(approvalId)
+    if (tc?.approval && tc.approval.status === 'pending') {
+      tc.approval.status = modifiedArgs ? 'edited' : 'approved'
+      tc.status = 'running'
+    }
+    try {
+      await studioApi.approveApproval(approvalId, modifiedArgs)
+    } catch (e) {
+      if (tc?.approval) {
+        tc.approval.status = 'pending'
+        tc.status = 'awaiting_approval'
+      }
+      throw e
+    }
+  }
+
+  /** 退回待审批工具（理由回灌 LLM 让其修改后重试） */
+  async function rejectToolCall(approvalId: string, reason?: string): Promise<void> {
+    const tc = findApprovalTool(approvalId)
+    if (tc?.approval && tc.approval.status === 'pending') {
+      tc.approval.status = 'rejected'
+      tc.status = 'error'
+    }
+    try {
+      await studioApi.rejectApproval(approvalId, reason)
+    } catch (e) {
+      if (tc?.approval) {
+        tc.approval.status = 'pending'
+        tc.status = 'awaiting_approval'
+      }
+      throw e
+    }
+  }
+
+  /** 回答 ask_user 澄清：等价于把该文本作为下一条用户消息发送 */
+  async function answerAskRequest(text: string): Promise<void> {
+    const session = currentSession.value
+    if (session) {
+      for (let i = session.messages.length - 1; i >= 0; i--) {
+        const msg = session.messages[i]
+        if (msg.askRequest && !msg.askRequest.answered) {
+          msg.askRequest.answered = true
+          break
+        }
+      }
+    }
+    await sendMessage(text)
+  }
+
+  /** 进入会话时按后端 detail.permissions 初始化（默认 supervised） */
+  function initStudioPermissions(mode?: StudioPermissionMode): void {
+    studioPermissions.value = { mode: mode || 'supervised' }
+  }
+
+  /** 切换当前 Studio 会话权限模式（调 API 后更新本地态） */
+  async function setStudioPermissions(mode: StudioPermissionMode): Promise<void> {
+    const sessionId = currentSessionId.value
+    if (!sessionId || sessionId.startsWith('sess-')) return
+    const prev = studioPermissions.value.mode
+    studioPermissions.value = { mode }
+    try {
+      const saved = await studioApi.updatePermissions(sessionId, mode)
+      studioPermissions.value = { mode: saved.mode || mode }
+    } catch (e) {
+      studioPermissions.value = { mode: prev }
+      throw e
+    }
+  }
+
   return {
     // state
     mcps, skills, agents, sessions, currentSessionId,
     isStreaming, streamingContent, streamingThought, availableModels,
-    studioSessionIds, currentPlan,
+    studioSessionIds, currentPlan, studioPermissions,
     // getters
     activeAgents, currentSession, currentAgent, groupedSessions,
     // lookups
@@ -822,5 +951,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     // session actions
     startSessionFromAgent, selectSession, newChat, deleteSession, renameSession, switchSessionModel,
     loadSessionMessages, sendMessage, stopStreaming,
+    approveToolCall, rejectToolCall, answerAskRequest,
+    initStudioPermissions, setStudioPermissions,
   }
 })

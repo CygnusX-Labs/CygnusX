@@ -66,6 +66,45 @@ async def delete_session(
     return {"deleted": ok}
 
 
+@router.post("/sessions/{session_id}/execute", summary="同步执行代码（收集式）")
+async def execute_code_sync(
+    current_user_id: CurrentUserId,
+    service: SandboxServiceDep,
+    session_id: UUID,
+    req: dict,
+) -> dict:
+    """收集式代码执行：聚合所有流式事件后一次性返回。供 MCP Server / API 调用。"""
+    code = req.get("code", "")
+    timeout = int(req.get("timeout", 0) or 0)
+
+    stdout_parts: list[str] = []
+    stderr_parts: list[str] = []
+    images: list[str] = []
+    echarts: list[dict] = []
+    error: str | None = None
+
+    async for event in service.execute_code(UUID(current_user_id), session_id, code, timeout):
+        etype = event.get("type")
+        if etype == "stdout":
+            stdout_parts.append(event.get("data", ""))
+        elif etype == "stderr":
+            stderr_parts.append(event.get("data", ""))
+        elif etype == "image":
+            images.append(event.get("data", ""))
+        elif etype == "echarts":
+            echarts.append(event.get("data", {}))
+        elif etype == "error":
+            error = event.get("detail", "执行错误")
+
+    return {
+        "stdout": "".join(stdout_parts),
+        "stderr": "".join(stderr_parts),
+        "images": images,
+        "echarts": echarts,
+        "error": error,
+    }
+
+
 @router.websocket("/sessions/{session_id}/ws", name="sandbox_execute_websocket")
 async def sandbox_websocket(websocket: WebSocket, session_id: str) -> None:
     """沙盒代码执行 WebSocket

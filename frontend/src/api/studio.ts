@@ -93,9 +93,17 @@ export interface SharedStudioSession {
   artifacts: StudioArtifact[]
 }
 
+/** Studio 会话级权限模式（supervised=关键操作需用户批准；auto=放权自动执行） */
+export type StudioPermissionMode = 'supervised' | 'auto'
+
+export interface StudioPermissions {
+  mode: StudioPermissionMode
+}
+
 export interface StudioSessionDetail {
   session: StudioSessionDTO
   sandbox_status: SandboxStatus
+  permissions?: StudioPermissions
   workspace_id: string | null
   files: WorkspaceEntry[]
   plan: StudioPlan | null
@@ -197,6 +205,37 @@ export const studioApi = {
   async getSession(sessionId: string): Promise<StudioSessionDetail> {
     const res = await apiClient.get<StudioSessionDetail>(`/studio/sessions/${sessionId}`)
     return res.data
+  },
+
+  /** 更新会话级权限模式（supervised/auto，P1 HITL） */
+  async updatePermissions(
+    sessionId: string,
+    mode: StudioPermissionMode,
+  ): Promise<StudioPermissions> {
+    const res = await apiClient.post<StudioPermissions>(
+      `/studio/sessions/${sessionId}/permissions`,
+      { mode },
+    )
+    // 后端返回 {permissions: {mode}} 或直接 {mode}，两种封装都兼容
+    const data = res.data as StudioPermissions & { permissions?: StudioPermissions }
+    return data.permissions || data
+  },
+
+  /** 批准待审批的工具调用；带 modifiedArgs 即"编辑后批准" */
+  async approveApproval(
+    approvalId: string,
+    modifiedArgs?: Record<string, unknown>,
+  ): Promise<void> {
+    await apiClient.post(`/studio/approvals/${approvalId}/approve`, {
+      ...(modifiedArgs ? { modified_args: modifiedArgs } : {}),
+    })
+  },
+
+  /** 退回待审批的工具调用（理由回灌 LLM 让其修改后重试） */
+  async rejectApproval(approvalId: string, reason?: string): Promise<void> {
+    await apiClient.post(`/studio/approvals/${approvalId}/reject`, {
+      ...(reason ? { reason } : {}),
+    })
   },
 
   async updateUi(

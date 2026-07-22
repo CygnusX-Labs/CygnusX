@@ -6,6 +6,7 @@
 
 from omichub.infrastructure.database.models.agent import AgentTemplateModel
 from omichub.infrastructure.database.models.ai import ConversationModel, MessageModel
+from omichub.infrastructure.database.models.api_key import APIKeyModel
 from omichub.infrastructure.database.models.ai_provider import AIProviderConfigModel
 from omichub.infrastructure.database.models.announcement import AnnouncementModel
 from omichub.infrastructure.database.models.audit_log import AuditLogModel
@@ -58,6 +59,7 @@ from omichub.infrastructure.database.models.user import UserModel, WorkspaceMode
 
 __all__ = [
     "AgentTemplateModel",
+    "APIKeyModel",
     "UserModel",
     "WorkspaceModel",
     "TaskModel",

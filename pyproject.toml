@@ -58,6 +58,7 @@ dependencies = [
     "scipy>=1.11.0",
     "statsmodels>=0.14.0",
     "scikit-posthocs>=0.11.4",
+    "langgraph>=0.2.0",
 ]
 
 [project.scripts]
@@ -120,7 +121,7 @@ disallow_untyped_defs = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["celery.*", "flower.*", "snakemake.*", "mcp.*", "docker.*", "lunardate.*"]
+module = ["celery.*", "flower.*", "snakemake.*", "mcp.*", "docker.*", "lunardate.*", "langgraph.*", "langchain_core.*"]
 ignore_missing_imports = true
 
 # === Pytest 配置 ===

@@ -152,6 +152,50 @@ async def get_quota(
     return await service.get_quota(UUID(current_user_id))
 
 
+@router.get("/preview", summary="预览文件内容")
+async def preview_file(
+    current_user_id: CurrentUserId,
+    service: FileServiceDep,
+    path: Annotated[str, Query(description="相对于用户数据根目录的文件路径")],
+    max_lines: Annotated[int, Query(ge=1, le=500, description="最多返回行数")] = 50,
+) -> dict[str, Any]:
+    """读取用户目录下文本文件的前 N 行（供 MCP Server / AI 助手查看分析结果）。"""
+    from omichub.core.config import get_settings
+
+    settings = get_settings()
+    user_root = Path(settings.storage_path) / "users" / current_user_id
+    target = (user_root / path).resolve()
+
+    if not str(target).startswith(str(user_root.resolve())):
+        raise ValidationError("路径越权")
+    if not target.is_file():
+        raise ValidationError("文件不存在")
+
+    max_bytes = 200 * 1024
+    if target.stat().st_size > max_bytes * 2:
+        return {
+            "path": path,
+            "truncated": True,
+            "total_size": target.stat().st_size,
+            "lines": [],
+            "message": f"文件过大 ({target.stat().st_size} bytes)，仅返回前 {max_lines} 行",
+        }
+
+    lines: list[str] = []
+    async with await anyio.open_file(target, mode="r", errors="replace") as f:
+        for i, line in enumerate(f):
+            if i >= max_lines:
+                break
+            lines.append(line.rstrip("\n"))
+
+    return {
+        "path": path,
+        "truncated": len(lines) >= max_lines,
+        "total_size": target.stat().st_size,
+        "lines": lines,
+    }
+
+
 @router.post("/sync", response_model=SyncResponse, summary="同步磁盘文件到文件列表")
 async def sync_files(
     current_user_id: CurrentUserId,

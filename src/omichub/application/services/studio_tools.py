@@ -63,6 +63,7 @@ STUDIO_TOOL_NAMES: frozenset[str] = frozenset(
         "update_plan",
         "pipeline_query",
         "knowledge_search",
+        "ask_user",
     }
 )
 
@@ -308,6 +309,28 @@ STUDIO_TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ask_user",
+            "description": (
+                "向用户提问以澄清需求（缺物种、缺文件、缺参数等）。调用后问题会展示给用户，"
+                "本轮回复随即结束，用户将在下一条消息中回答。不要编造参数，信息不足时先用本工具。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string", "description": "要问用户的问题"},
+                    "options": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "可选的快捷选项列表，供用户一键回复",
+                    },
+                },
+                "required": ["question"],
             },
         },
     },

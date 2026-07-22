@@ -56,6 +56,32 @@ export interface StudioPlanStep {
   status: 'pending' | 'in_progress' | 'done'
 }
 
+/** Studio HITL：审批请求事件（supervised 模式下受控工具挂起等待用户决议） */
+export interface ApprovalRequestEvent {
+  approval_id: string
+  tool_call_id: string
+  tool_name: string
+  arguments: Record<string, unknown>
+  risk_hint?: string
+  timeout_seconds?: number
+}
+
+export type ApprovalAction = 'approved' | 'edited' | 'rejected' | 'timeout'
+
+/** Studio HITL：审批决议事件（批准后工具照常执行，随后有正常 tool_output/tool_result） */
+export interface ApprovalResolvedEvent {
+  approval_id: string
+  tool_call_id: string
+  action: ApprovalAction
+}
+
+/** Studio HITL：ask_user 澄清请求（本轮随后结束，用户在下一条消息回答） */
+export interface AskRequestEvent {
+  tool_call_id: string
+  question: string
+  options?: string[]
+}
+
 export interface TokenUsage {
   input?: number
   output?: number
@@ -78,6 +104,9 @@ export interface AgentStreamCallbacks {
    */
   onToolOutput?: (tool: string, stream: 'stdout' | 'stderr', data: string, toolCallId?: string) => void
   onPlan?: (steps: StudioPlanStep[]) => void
+  onApprovalRequest?: (event: ApprovalRequestEvent) => void
+  onApprovalResolved?: (event: ApprovalResolvedEvent) => void
+  onAskRequest?: (event: AskRequestEvent) => void
   onError?: (error: string) => void
   onDone?: (sessionId: string, messageId: string, usage?: TokenUsage) => void
 }
@@ -215,6 +244,30 @@ export function useAgentChatStream() {
         break
       case 'plan':
         cb.onPlan?.((Array.isArray(data.steps) ? data.steps : []) as StudioPlanStep[])
+        break
+      case 'approval_request':
+        cb.onApprovalRequest?.({
+          approval_id: (data.approval_id as string) || '',
+          tool_call_id: (data.tool_call_id as string) || '',
+          tool_name: (data.tool_name as string) || '',
+          arguments: (data.arguments as Record<string, unknown>) || {},
+          risk_hint: (data.risk_hint as string) || undefined,
+          timeout_seconds: (data.timeout_seconds as number) || undefined,
+        })
+        break
+      case 'approval_resolved':
+        cb.onApprovalResolved?.({
+          approval_id: (data.approval_id as string) || '',
+          tool_call_id: (data.tool_call_id as string) || '',
+          action: ((data.action as string) || 'approved') as ApprovalAction,
+        })
+        break
+      case 'ask_request':
+        cb.onAskRequest?.({
+          tool_call_id: (data.tool_call_id as string) || '',
+          question: (data.question as string) || content,
+          options: Array.isArray(data.options) ? (data.options as string[]) : undefined,
+        })
         break
       case 'error':
         cb.onError?.(content || '生成失败')

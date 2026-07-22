@@ -113,19 +113,24 @@ docker-logs-worker: ## 查看 Worker 日志
 docker-clean: ## 清理容器与网络（保留数据卷，不删镜像）
 	$(COMPOSE_ALL) down --remove-orphans
 
-docker-purge: ## [危险] 彻底清理：容器+数据卷+网络+本地镜像+前端构建产物（不可逆，重置到干净状态）
-	@echo "=> 停止并删除所有容器及命名数据卷..."
-	-$(COMPOSE_ALL) down --volumes --remove-orphans 2>/dev/null
-	-docker rm -f omichub-nginx omichub-web omichub-beat omichub-flower omichub-db omichub-cache omichub-worker omichub-phylo-worker 2>/dev/null
+docker-purge: ## [危险] 彻底清理 Docker 资源：容器+数据卷+网络+本地镜像+前端构建产物（保留宿主机 /data/omichub 数据）
+	@echo "=> 停止并删除主栈与 Worker 栈容器及命名数据卷..."
+	-$(COMPOSE_MAIN) down --volumes --remove-orphans 2>/dev/null
+	-$(COMPOSE_WORKER) down --volumes --remove-orphans 2>/dev/null
+	-docker rm -f omichub-nginx omichub-web omichub-beat omichub-flower omichub-db omichub-cache omichub-worker omichub-phylo-worker omichub-studio-egress-proxy 2>/dev/null
+	-@docker ps -a --filter "name=studio-" -q | xargs -r docker rm -f 2>/dev/null
 	@echo "=> 删除所有 OmicHub 数据卷（含 docker_ 前缀命名卷）..."
 	-docker volume rm $$(docker volume ls -q --filter name=docker_) 2>/dev/null
-	@echo "=> 删除 omichub 网络..."
-	-docker network rm $(DOCKER_NETWORK) 2>/dev/null
-	@echo "=> 删除本地构建镜像..."
-	-docker rmi $$(docker images --filter reference=docker-web --filter reference=docker-beat --filter reference=docker-flower --filter reference=docker-worker --filter reference=omichub-phylo-worker --filter reference=omichub-r-enrichment -q) 2>/dev/null
+	@echo "=> 删除 omichub 网络（含沙盒与 Studio 会话网络）..."
+	-docker network rm $(DOCKER_NETWORK) $(SANDBOX_NETWORK) 2>/dev/null
+	-@docker network ls --filter "name=studio-" -q | xargs -r docker network rm 2>/dev/null
+	@echo "=> 删除本地构建镜像（主栈 / Worker / 沙盒终端 / 分析运行时 / 富集 R）..."
+	-docker rmi $$(docker images --filter reference=docker-web --filter reference=docker-beat --filter reference=docker-flower --filter reference=docker-studio-egress-proxy --filter reference=omichub-worker --filter reference=omichub-phylo-worker --filter reference=omichub-r-enrichment --filter reference=omichub/sandbox-terminal --filter reference=omichub-analysis -q) 2>/dev/null
 	@echo "=> 清理前端构建产物..."
 	rm -rf frontend/dist
-	@echo "=> 清理完成"
+	@echo "=> Docker 资源清理完成"
+	@echo "   注：数据库/用户文件/日志等持久化在宿主机 $(DATA_ROOT)（bind mount），purge 不会删除；"
+	@echo "       如需一并清空数据，请手动执行: sudo rm -rf $(DATA_ROOT)"
 
 docker-start: ## 彻底重建：清空一切 + 重建镜像 + 构建前端 + 启动全部服务
 	@$(MAKE) --no-print-directory docker-purge
@@ -166,14 +171,24 @@ docker-reload: docker-network ## 重新构建前端并刷新主栈 + Worker (开
 	-@docker ps -a --filter "name=omichub-" -q | xargs -r docker rm -f 2>/dev/null
 	-@docker ps -a --filter "name=studio-" -q | xargs -r docker rm -f 2>/dev/null
 	@echo ""
-	@echo "🐳 步骤 2/8：构建终端沙盒镜像（如已存在则使用缓存）..."
-	-docker build -t omichub/sandbox-terminal:latest tool_configs/terminal/docker/
+	@echo "🐳 步骤 2/8：构建终端沙盒镜像（已存在则跳过，删除镜像后自动重建）..."
+	@docker image inspect omichub/sandbox-terminal:latest >/dev/null 2>&1 && \
+		echo "   ⏭️  omichub/sandbox-terminal:latest 已存在，跳过构建" || \
+		docker build -t omichub/sandbox-terminal:latest tool_configs/terminal/docker/
 	@echo ""
-	@echo "🧪 步骤 3/8：构建 Studio 运行时镜像（包含 sandbox-agent/PTY）..."
-	deploy/runtime-images/build.sh
+	@echo "🧪 步骤 3/8：构建 Studio 运行时镜像（core/plot/scrna 均已存在则跳过）..."
+	@if docker image inspect omichub-analysis:core-2026.07 >/dev/null 2>&1 && \
+	    docker image inspect omichub-analysis:plot-2026.07 >/dev/null 2>&1 && \
+	    docker image inspect omichub-analysis:scrna-2026.07 >/dev/null 2>&1; then \
+		echo "   ⏭️  omichub-analysis 三个运行时镜像均已存在，跳过构建"; \
+	else \
+		deploy/runtime-images/build.sh; \
+	fi
 	@echo ""
-	@echo "🧬 步骤 4/8：构建 GO / KEGG 富集 R 运行时镜像..."
-	@$(MAKE) --no-print-directory docker-build-enrichment
+	@echo "🧬 步骤 4/8：构建 GO / KEGG 富集 R 运行时镜像（已存在则跳过）..."
+	@docker image inspect $(ENRICHMENT_DOCKER_IMAGE) >/dev/null 2>&1 && \
+		echo "   ⏭️  $(ENRICHMENT_DOCKER_IMAGE) 已存在，跳过构建" || \
+		$(MAKE) --no-print-directory docker-build-enrichment
 	@echo ""
 	@echo "⚡ 步骤 5/8：重新构建前端生产包（vite build）..."
 	cd frontend && npm run build

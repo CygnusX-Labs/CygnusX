@@ -95,7 +95,7 @@ def merge_token_usage(
 class ChatChunk:
     """流式输出数据块 — SSE 事件的统一抽象"""
 
-    type: str  # "text" | "tool_calls" | "tool_call" | "tool_output" | "tool_result" | "plan" | "error" | "done"
+    type: str  # "text" | "tool_calls" | "tool_call" | "tool_output" | "tool_result" | "plan" | "ask_request" | "approval_request" | "approval_resolved" | "error" | "done"
     content: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 

@@ -16,7 +16,9 @@ import TaskProgressCard from './TaskProgressCard.vue'
 import MasPlanPreviewCard from './MasPlanPreviewCard.vue'
 import ChartPreviewModal from './ChartPreviewModal.vue'
 import StudioCodeCard from '@/components/studio/StudioCodeCard.vue'
+import ApprovalCard from './ApprovalCard.vue'
 import { StudioContextKey, isStudioCodeTool } from '@/components/studio/context'
+import { useAgentHubStore } from '@/stores/agentHub'
 import type { MasPlan } from '@/api/mas'
 import type { ChatMessage, CopyMode, ChartData, ToolCall } from './types'
 
@@ -208,6 +210,7 @@ const isEmptyWithThought = computed(() =>
   && !!(props.message.thought?.trim().length)
   && !props.message.toolCalls?.length
   && !props.message.charts?.length
+  && !props.message.askRequest
   && !isError.value,
 )
 
@@ -217,6 +220,7 @@ const isEmpty = computed(() =>
   && !(props.message.thought?.trim().length)
   && !props.message.toolCalls?.length
   && !props.message.charts?.length
+  && !props.message.askRequest
   && !isError.value,
 )
 
@@ -328,6 +332,19 @@ const taskToolCalls = computed(() =>
 // Studio 工作台上下文：仅在 /studio 页面被 provide；注入成功时 Studio 代码工具改渲染代码卡片，
 // 普通 /ai 聊天无此上下文，渲染分支完全不变。
 const studioCtx = inject(StudioContextKey, null)
+const agentHubStore = useAgentHubStore()
+
+/** Studio ask_user 快捷回复：点击即把选项文本作为下一条消息发送 */
+const answeringAsk = ref(false)
+async function handleAskOption(text: string) {
+  if (answeringAsk.value) return
+  answeringAsk.value = true
+  try {
+    await agentHubStore.answerAskRequest(text)
+  } finally {
+    answeringAsk.value = false
+  }
+}
 function isStudioCodeToolCall(tool: ToolCall): boolean {
   return !!studioCtx && isStudioCodeTool(tool.name)
 }
@@ -636,6 +653,8 @@ function handleEdit() {
 
           <div v-if="message.toolCalls?.length" class="tool-results">
             <template v-for="(tool, idx) in message.toolCalls" :key="idx">
+              <!-- Studio HITL 审批卡片（有 approval 数据时出现，决议后保留终态徽标） -->
+              <ApprovalCard v-if="tool.approval" :tool="tool" />
               <!-- Studio 代码工具（仅工作台页面）：代码卡片，支持编辑/重跑/产物 -->
               <StudioCodeCard v-if="isStudioCodeToolCall(tool)" :tool="tool" />
               <MasPlanPreviewCard
@@ -724,6 +743,32 @@ function handleEdit() {
 
           <!-- 流式光标 -->
           <span v-if="isStreaming && streamingHasContent" class="stream-cursor" />
+        </div>
+
+        <!-- Studio ask_user 澄清卡片：问题 + 选项快捷回复（回答后标记已回答） -->
+        <div v-if="message.askRequest" class="ask-card" :class="{ answered: message.askRequest.answered }">
+          <div class="ask-header">
+            <span class="ask-icon">💬</span>
+            <span class="ask-title">AI 想确认一下</span>
+            <n-tag v-if="message.askRequest.answered" size="tiny" round :bordered="false" type="success">
+              已回答
+            </n-tag>
+          </div>
+          <div class="ask-question">{{ message.askRequest.question }}</div>
+          <div v-if="!message.askRequest.answered && message.askRequest.options?.length" class="ask-options">
+            <n-button
+              v-for="opt in message.askRequest.options"
+              :key="opt"
+              size="small"
+              secondary
+              type="primary"
+              :loading="answeringAsk"
+              @click="handleAskOption(opt)"
+            >
+              {{ opt }}
+            </n-button>
+          </div>
+          <div v-else-if="!message.askRequest.answered" class="ask-hint">请在下方输入框回答</div>
         </div>
       </template>
 
@@ -1469,6 +1514,51 @@ function handleEdit() {
   font-size: 12px;
   max-height: 200px;
   overflow-y: auto;
+}
+
+/* Studio ask_user 澄清卡片 */
+.ask-card {
+  width: 90%;
+  margin-top: 10px;
+  padding: 12px 16px;
+  background: var(--chat-ai-card, #ffffff);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.ask-card.answered {
+  opacity: 0.75;
+  border-color: var(--chat-border, #e5e7eb);
+}
+.ask-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.ask-icon { font-size: 14px; }
+.ask-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--chat-accent, #4f8ef7);
+}
+.ask-question {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--chat-text-primary, #1a1a1a);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ask-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.ask-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--chat-text-muted, #999);
 }
 
 /* 响应式：窄屏下星辰动画高度缩减，宽度保持自适应 */

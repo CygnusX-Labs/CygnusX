@@ -257,3 +257,68 @@ async def setup_first_admin(
         expires_in=30 * 60,
         first_login=True,
     )
+
+
+# ====================== API Key 管理 ======================
+
+
+@router.post("/api-keys", status_code=status.HTTP_201_CREATED, summary="创建 API Key")
+async def create_api_key(
+    req: dict,
+    current_user_id: CurrentUserId,
+    db: DbSession,
+) -> dict:
+    """创建长期有效的 API Key（供 MCP Server / CLI 工具认证）。明文 key 仅返回一次。"""
+    from omichub.application.services.api_key_service import APIKeyService
+
+    service = APIKeyService(db)
+    record, plain_key = await service.create_key(
+        user_id=current_user_id,
+        name=req.get("name", "default"),
+        scopes=req.get("scopes"),
+    )
+    return {
+        "id": str(record.id),
+        "name": record.name,
+        "key": plain_key,
+        "key_prefix": record.key_prefix,
+        "scopes": record.scopes,
+        "created_at": record.created_at.isoformat() if record.created_at else None,
+    }
+
+
+@router.get("/api-keys", summary="列出 API Keys")
+async def list_api_keys(
+    current_user_id: CurrentUserId,
+    db: DbSession,
+) -> list[dict]:
+    """列出当前用户的所有活跃 API Key（不含明文）。"""
+    from omichub.application.services.api_key_service import APIKeyService
+
+    service = APIKeyService(db)
+    keys = await service.list_keys(current_user_id)
+    return [
+        {
+            "id": str(k.id),
+            "name": k.name,
+            "key_prefix": k.key_prefix,
+            "scopes": k.scopes,
+            "expires_at": k.expires_at.isoformat() if k.expires_at else None,
+            "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None,
+            "created_at": k.created_at.isoformat() if k.created_at else None,
+        }
+        for k in keys
+    ]
+
+
+@router.delete("/api-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT, summary="吊销 API Key")
+async def revoke_api_key(
+    key_id: str,
+    current_user_id: CurrentUserId,
+    db: DbSession,
+) -> None:
+    """吊销指定的 API Key。"""
+    from omichub.application.services.api_key_service import APIKeyService
+
+    service = APIKeyService(db)
+    await service.revoke_key(current_user_id, key_id)

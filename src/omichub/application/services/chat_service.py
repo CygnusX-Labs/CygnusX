@@ -30,6 +30,17 @@ from omichub.application.schemas.chat import (
     ChatSessionDTO,
     UpdateAssistantRequest,
 )
+from omichub.application.services.mas_plan_adapter import (
+    MAS_PLAN_PREVIEW_PROMPT_SUFFIX,
+    MAS_PLAN_PREVIEW_TOOL_NAME,
+    MAS_PLAN_PREVIEW_TOOL_SCHEMA,
+    MASPlanPreviewAdapter,
+)
+from omichub.application.services.studio_approval_service import (
+    APPROVAL_REQUIRED_TOOLS,
+    APPROVAL_TTL_SECONDS,
+    get_studio_approval_service,
+)
 from omichub.application.services.studio_capabilities import (
     CAPABILITY_LIST_TOOL,
     CAPABILITY_LOAD_TOOL,
@@ -61,12 +72,6 @@ from omichub.application.services.studio_tools import (
     normalize_plan_steps,
     stream_studio_tool,
 )
-from omichub.application.services.mas_plan_adapter import (
-    MAS_PLAN_PREVIEW_PROMPT_SUFFIX,
-    MAS_PLAN_PREVIEW_TOOL_NAME,
-    MAS_PLAN_PREVIEW_TOOL_SCHEMA,
-    MASPlanPreviewAdapter,
-)
 from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError, NotFoundError
 from omichub.infrastructure.ai_provider.openai_compatible import (
@@ -74,8 +79,8 @@ from omichub.infrastructure.ai_provider.openai_compatible import (
     merge_token_usage,
     provider_manager,
 )
-from omichub.infrastructure.database.models.ai_provider import AIProviderConfigModel
 from omichub.infrastructure.config.prompt_loader import get_prompt
+from omichub.infrastructure.database.models.ai_provider import AIProviderConfigModel
 from omichub.infrastructure.database.models.chat import (
     ChatAssistantModel,
     ChatMessageModel,
@@ -83,6 +88,20 @@ from omichub.infrastructure.database.models.chat import (
 )
 
 DEFAULT_SYSTEM_PROMPT = get_prompt("agents.general")
+
+
+def _studio_risk_hint(tool_name: str, args: dict[str, Any]) -> str:
+    """审批卡片上的单行风险提示（supervised 模式，§3.1）。"""
+    if tool_name == "sandbox_execute":
+        language = str(args.get("language") or "python")
+        return f"将在沙盒中执行 {language} 代码"
+    if tool_name == "workspace_write":
+        return f"将写入工作区文件 {args.get('path') or ''}".strip()
+    if tool_name == "workspace_edit":
+        return f"将修改工作区文件 {args.get('path') or ''}".strip()
+    if tool_name == "artifact_register":
+        return f"将把产物 {args.get('path') or ''} 登记到结果报告中心".strip()
+    return "该操作需要用户批准"
 
 BUILTIN_ASSISTANTS: list[dict[str, Any]] = [
     {
@@ -325,31 +344,18 @@ class ChatService:
             dto = await self.create_session(user_id, model_id, title, assistant_id)
             current_session_id = dto.session_id
 
-        # 3. 确定系统提示词
-        # [极简测试] 临时禁用所有系统提示词，直接和裸模型对话
-        final_system_prompt = None
-        # final_system_prompt = system_prompt
-        # if not final_system_prompt and assistant_id:
-        #     ast = await self.get_assistant(assistant_id)
-        #     if ast:
-        #         final_system_prompt = ast.system_prompt
-        # if not final_system_prompt:
-        #     final_system_prompt = DEFAULT_SYSTEM_PROMPT
-
-        # [极简测试] 临时禁用技能 prompt 注入
-        # try:
-        #     from omichub.application.services.skill_service import SkillService
-        #
-        #     skills = await SkillService(self._db).get_active_skills()
-        #     if skills:
-        #         final_system_prompt += SkillService.build_skills_prompt(skills)
-        # except Exception as e:  # noqa: BLE001
-        #     logger.warning(f"技能注入失败: {e}")
+        # 3. 确定系统提示词：参数 > 助手配置 > 默认
+        final_system_prompt = system_prompt
+        if not final_system_prompt and assistant_id:
+            ast = await self.get_assistant(assistant_id)
+            if ast:
+                final_system_prompt = ast.system_prompt
+        if not final_system_prompt:
+            final_system_prompt = DEFAULT_SYSTEM_PROMPT
 
         # 4. 保存用户消息
         # 敏感信息脱敏：落库前清洗用户消息，DB 不留存原始品种名等敏感词；
         # 同时构建送 LLM 的脱敏副本（不可逆，不还原）
-        from omichub.core.config import get_settings
         from omichub.core.sanitizer import sanitize_messages, sanitize_text
 
         sensitive_keywords = get_settings().sensitive_keywords
@@ -456,7 +462,6 @@ class ChatService:
         """
         from omichub.application.schemas.tool_invocation import ToolInvocationContext
         from omichub.application.services.agent_service import AgentService
-        from omichub.core.config import get_settings
         from omichub.core.sanitizer import sanitize_messages, sanitize_text
         from omichub.infrastructure.mcp.client import MCPClient
 
@@ -506,6 +511,8 @@ class ChatService:
         studio_mode = False
         studio_image: str | None = None
         studio_context_pack: dict[str, Any] | None = None
+        # 会话级权限模式（§2）：supervised（默认，写/执行类工具需用户批准）| auto
+        studio_permission_mode = "supervised"
         studio_capability_state = CapabilityState()
         bound_skills = list(getattr(ctx, "skills", []) or [])
         bound_mcp_servers = list(ctx.mcp_servers or [])
@@ -526,6 +533,9 @@ class ChatService:
                 sandbox_meta = session.sandbox_meta or {}
                 studio_image = sandbox_meta.get("image")
                 studio_context_pack = sandbox_meta.get("context_pack")
+                studio_permission_mode = (sandbox_meta.get("permissions") or {}).get(
+                    "mode", "supervised"
+                )
                 studio_capability_state = normalize_capability_state(
                     sandbox_meta.get("capabilities"), bound_skills, bound_mcp_servers
                 )
@@ -675,6 +685,27 @@ class ChatService:
                 await self._db.flush()
             return audited
 
+        # LangGraph 引擎分流：features.engine == "langgraph" 且非 Studio 模式时
+        # 走状态图运行时；其余（含 Studio 沙盒、未标记 engine）保持手写循环不变。
+        if ctx.features.get("engine") == "langgraph" and not studio_mode:
+            async for chunk in self._stream_agent_chat_langgraph(
+                user_id=user_id,
+                session_id=current_session_id,
+                ai_message_id=ai_message.message_id,
+                model_config=model_config,
+                llm_messages=llm_messages,
+                system_prompt=system_prompt,
+                tools=tools,
+                temperature=ctx.temperature,
+                max_tokens=ctx.max_tokens,
+                deep_thinking=deep_thinking,
+                active_mcp_servers=active_mcp_servers,
+                mcp_client=mcp_client,
+                tool_context=tool_context,
+            ):
+                yield chunk
+            return
+
         try:
             logger.info(
                 f"[Agent聊天] 开始调用模型 provider={model_config.name} model={model_config.model} "
@@ -765,6 +796,8 @@ class ChatService:
                         ai_message.message_id, full_content, "streaming"
                     )
 
+                # ask_user 拦截时置 True：回灌工具结果后收尾跳出大循环，等待用户下条消息
+                stop_after_tools = False
                 for tc in round_tool_calls:
                     fn = tc.get("function", {}) or {}
                     tool_name = fn.get("name", "")
@@ -913,22 +946,110 @@ class ChatService:
                                     "ui_payload": {"steps": steps},
                                 },
                             }
+                    elif is_studio_tool and tool_name == "ask_user":
+                        # 澄清交互（§3.4）：不进沙盒，产出 ask_request 事件并以"本轮结束"收尾，
+                        # 用户在下一条聊天消息中回答，对话自然继续。
+                        question = str(args.get("question") or "").strip()
+                        options_raw = args.get("options")
+                        options = (
+                            [str(o) for o in options_raw if str(o).strip()]
+                            if isinstance(options_raw, list)
+                            else []
+                        )
+                        yield ChatChunk(
+                            type="ask_request",
+                            metadata={
+                                "tool_call_id": tc.get("id", ""),
+                                "question": question,
+                                "options": options,
+                            },
+                        )
+                        ask_payload: dict[str, Any] = {
+                            "question": question,
+                            "options": options,
+                            "message": "问题已展示给用户，用户将在下一条消息中回答。本轮回复到此结束，请等待用户答复。",
+                        }
+                        result = {
+                            "success": True,
+                            "result": {"llm_payload": ask_payload, "ui_payload": dict(ask_payload)},
+                        }
+                        stop_after_tools = True
                     elif is_studio_tool:
-                        # 沙盒执行：sandbox_execute 的 stdout/stderr 以 tool_output 事件边跑边推
-                        result = {}
-                        async for item in stream_studio_tool(
-                            tool_name,
-                            args,
-                            current_session_id,
-                            image=studio_image,
-                            tool_call_id=tc.get("id", ""),
-                            user_id=user_id,
-                            db=self._db,
+                        # 审批闸（§3）：supervised 模式下写/执行类工具先经用户批准
+                        approval_passed = True
+                        if (
+                            studio_permission_mode == "supervised"
+                            and tool_name in APPROVAL_REQUIRED_TOOLS
                         ):
-                            if isinstance(item, ChatChunk):
-                                yield item
-                            else:
-                                result = item
+                            approval_service = get_studio_approval_service()
+                            approval = await approval_service.create(
+                                user_id=user_id,
+                                session_id=current_session_id,
+                                tool_call_id=tc.get("id", ""),
+                                tool_name=tool_name,
+                                arguments=args,
+                                risk_hint=_studio_risk_hint(tool_name, args),
+                            )
+                            yield ChatChunk(
+                                type="approval_request",
+                                metadata={
+                                    "approval_id": approval["approval_id"],
+                                    "tool_call_id": tc.get("id", ""),
+                                    "tool_name": tool_name,
+                                    "arguments": args,
+                                    "risk_hint": approval["risk_hint"],
+                                    "timeout_seconds": APPROVAL_TTL_SECONDS,
+                                },
+                            )
+                            resolution = await approval_service.wait_resolution(
+                                approval["approval_id"]
+                            )
+                            action = str(resolution.get("action") or "timeout")
+                            yield ChatChunk(
+                                type="approval_resolved",
+                                metadata={
+                                    "approval_id": approval["approval_id"],
+                                    "tool_call_id": tc.get("id", ""),
+                                    "action": action,
+                                },
+                            )
+                            if action == "edited" and isinstance(
+                                resolution.get("modified_args"), dict
+                            ):
+                                args = resolution["modified_args"]
+                                action = "approved"
+                            if action != "approved":
+                                approval_passed = False
+                                reason = resolution.get("reason") or (
+                                    "用户未响应（超时）"
+                                    if action == "timeout"
+                                    else "用户拒绝了该操作"
+                                )
+                                reject_payload = {"rejected": True, "error": reason}
+                                result = {
+                                    "success": False,
+                                    "rejected": True,
+                                    "result": {
+                                        "llm_payload": reject_payload,
+                                        "ui_payload": dict(reject_payload),
+                                    },
+                                }
+                        # 沙盒执行：sandbox_execute 的 stdout/stderr 以 tool_output 事件边跑边推
+                        if approval_passed:
+                            result = {}
+                            async for item in stream_studio_tool(
+                                tool_name,
+                                args,
+                                current_session_id,
+                                image=studio_image,
+                                tool_call_id=tc.get("id", ""),
+                                user_id=user_id,
+                                db=self._db,
+                            ):
+                                if isinstance(item, ChatChunk):
+                                    yield item
+                                else:
+                                    result = item
                     elif server is None:
                         if tool_name == "web_search":
                             result = await self._web_search(args)
@@ -997,6 +1118,25 @@ class ChatService:
                         }
                     )
 
+                # ask_user：问题已展示，收尾跳出工具大循环，等用户下一条消息
+                if stop_after_tools:
+                    await self.update_message_content(
+                        ai_message.message_id,
+                        full_content,
+                        "complete",
+                        {"usage": last_usage} if last_usage else None,
+                    )
+                    await self._apply_usage_to_session(ai_message.message_id, last_usage)
+                    yield ChatChunk(
+                        type="done",
+                        metadata={
+                            "session_id": current_session_id,
+                            "message_id": ai_message.message_id,
+                            "usage": last_usage,
+                        },
+                    )
+                    return
+
             # 超过最大轮次仍未结束
             await self.update_message_content(
                 ai_message.message_id,
@@ -1024,6 +1164,141 @@ class ChatService:
                 content=f"生成失败: {e}",
                 metadata={"session_id": current_session_id, "message_id": ai_message.message_id},
             )
+
+    async def _stream_agent_chat_langgraph(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        ai_message_id: str,
+        model_config: Any,
+        llm_messages: list[dict[str, Any]],
+        system_prompt: str | None,
+        tools: list[dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        deep_thinking: bool,
+        active_mcp_servers: list[Any],
+        mcp_client: Any,
+        tool_context: Any,
+    ) -> AsyncIterator[ChatChunk]:
+        """LangGraph 引擎路径：状态图驱动 ReAct 循环，事件协议与手写循环一致
+
+        tool_executor 复刻 legacy 非 Studio 工具路由：MCP server 匹配 →
+        MCPClient.call_tool；web_search → self._web_search；未挂载 → 报错信封。
+        """
+        from omichub.infrastructure.execution.langgraph_nodes import NodeDeps
+        from omichub.infrastructure.execution.langgraph_runtime import (
+            LangGraphRuntimeService,
+        )
+
+        def _find_server(tool_name: str) -> Any:
+            return next(
+                (
+                    s
+                    for s in active_mcp_servers
+                    if any(t.tool_name == tool_name for t in s.tools)
+                ),
+                None,
+            )
+
+        def _resolve_channel(tool_name: str) -> str | None:
+            server = _find_server(tool_name)
+            return server.name if server else None
+
+        async def _tool_executor(
+            tool_name: str, args: dict[str, Any], tool_call_id: str
+        ) -> dict[str, Any]:
+            if tool_name == "web_search":
+                return await self._web_search(args)
+            server = _find_server(tool_name)
+            if server is None:
+                return {"success": False, "error": f"工具 {tool_name} 未挂载到该 Agent"}
+            return await mcp_client.call_tool(
+                server,
+                tool_name,
+                args,
+                user_id=user_id,
+                context=tool_context,
+            )
+
+        deps = NodeDeps(
+            model_config=model_config,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            tools=tools or None,
+            deep_thinking=deep_thinking,
+            tool_executor=_tool_executor,
+            channel_resolver=_resolve_channel,
+            chat_stream=provider_manager.chat_stream,
+        )
+        runtime = LangGraphRuntimeService(deps)
+
+        full_content = ""
+        update_counter = 0
+        first_chunk_sent = False
+        try:
+            async for chunk in runtime.stream(llm_messages):
+                if chunk.type == "text":
+                    if chunk.metadata.get("is_reasoning"):
+                        # 推理过程不并入最终正文，但仍透传给前端
+                        yield chunk
+                        continue
+                    full_content += chunk.content
+                    update_counter += 1
+                    if update_counter % 5 == 0:
+                        await self.update_message_content(
+                            ai_message_id, full_content, "streaming"
+                        )
+                    if not first_chunk_sent:
+                        chunk.metadata["session_id"] = session_id
+                        chunk.metadata["message_id"] = ai_message_id
+                        first_chunk_sent = True
+                    yield chunk
+                elif chunk.type == "error":
+                    await self.update_message_content(
+                        ai_message_id,
+                        full_content or f"生成失败: {chunk.content}",
+                        "error",
+                        {"error": chunk.content},
+                    )
+                    yield chunk
+                    return
+                else:
+                    # tool_call / tool_result 直接透传（metadata 已对齐 legacy）
+                    yield chunk
+        except Exception as e:  # noqa: BLE001
+            await self.update_message_content(
+                ai_message_id,
+                full_content or f"生成失败: {e}",
+                "error",
+                {"error": str(e)},
+            )
+            yield ChatChunk(
+                type="error",
+                content=f"生成失败: {e}",
+                metadata={"session_id": session_id, "message_id": ai_message_id},
+            )
+            return
+
+        # 收尾：complete + usage + 会话用量累计 + done（与 legacy 一致）
+        last_usage = runtime.last_usage
+        await self.update_message_content(
+            ai_message_id,
+            full_content,
+            "complete",
+            {"usage": last_usage} if last_usage else None,
+        )
+        await self._apply_usage_to_session(ai_message_id, last_usage)
+        yield ChatChunk(
+            type="done",
+            metadata={
+                "session_id": session_id,
+                "message_id": ai_message_id,
+                "usage": last_usage,
+            },
+        )
 
     # --- 多模态与联网搜索辅助 ---
 

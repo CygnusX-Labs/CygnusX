@@ -138,6 +138,9 @@ onMounted(async () => {
             </template>
             查看仪表板
           </NButton>
+          <NButton size="large" class="hero-btn-secondary" @click="goTo('/ai')">
+            ✨ 问问星尘AI
+          </NButton>
         </div>
       </div>
     </section>
