@@ -28,6 +28,7 @@ use([
 ])
 
 const selectedDays = ref<number>(7)
+const chartMode = ref<'bar' | 'area'>('bar')
 const trendData = ref<TrendPoint[]>([])
 const loading = ref(false)
 
@@ -54,6 +55,7 @@ const trendOption = computed(() => {
   const colorText3 = cssVar('--neutral-text-3', '#86909c')
   const colorPrimary = cssVar('--arco-primary', '#165dff')
   const colorWarning = cssVar('--arco-warning', '#ff7d00')
+  const isAreaChart = chartMode.value === 'area'
   return {
   tooltip: {
     trigger: 'axis',
@@ -101,10 +103,15 @@ const trendOption = computed(() => {
   series: [
     {
       name: '分析任务数',
-      type: 'bar',
+      type: isAreaChart ? 'line' : 'bar',
       data: trendData.value.map((d) => d.tasks),
       itemStyle: { color: colorPrimary, borderRadius: [4, 4, 0, 0] },
-      barMaxWidth: 32,
+      lineStyle: isAreaChart ? { color: colorPrimary, width: 2 } : undefined,
+      areaStyle: isAreaChart ? { color: colorPrimary, opacity: 0.16 } : undefined,
+      symbol: isAreaChart ? 'circle' : undefined,
+      symbolSize: isAreaChart ? 6 : undefined,
+      smooth: isAreaChart,
+      barMaxWidth: isAreaChart ? undefined : 32,
     },
     {
       name: '样本数量',
@@ -116,6 +123,7 @@ const trendOption = computed(() => {
       symbol: 'circle',
       symbolSize: 6,
       smooth: true,
+      areaStyle: isAreaChart ? { color: colorWarning, opacity: 0.12 } : undefined,
     },
   ],
   }
@@ -140,6 +148,10 @@ function toggleDays(days: number) {
   selectedDays.value = days
 }
 
+function toggleChartMode(mode: 'bar' | 'area') {
+  chartMode.value = mode
+}
+
 watch(selectedDays, fetchTrend)
 onMounted(fetchTrend)
 </script>
@@ -148,24 +160,44 @@ onMounted(fetchTrend)
   <div class="arco-card trend-card">
     <div class="arco-card-header">
       <span class="arco-card-title">任务提交趋势</span>
-      <div class="days-toggle">
-        <NButton
-          size="small"
-          :type="selectedDays === 7 ? 'primary' : 'default'"
-          ghost
-          @click="toggleDays(7)"
-        >
-          近 7 天
-        </NButton>
-        <NButton
-          size="small"
-          :type="selectedDays === 30 ? 'primary' : 'default'"
-          ghost
-          @click="toggleDays(30)"
-        >
-          近 30 天
-        </NButton>
-        <NIcon :size="14" class="cal-icon"><CalendarOutline /></NIcon>
+      <div class="trend-controls">
+        <div class="omichub-segmented-toggle chart-toggle" role="group" aria-label="趋势图形态切换">
+          <button
+            type="button"
+            :class="{ active: chartMode === 'bar' }"
+            :aria-pressed="chartMode === 'bar'"
+            @click="toggleChartMode('bar')"
+          >
+            柱状
+          </button>
+          <button
+            type="button"
+            :class="{ active: chartMode === 'area' }"
+            :aria-pressed="chartMode === 'area'"
+            @click="toggleChartMode('area')"
+          >
+            面积
+          </button>
+        </div>
+        <div class="days-toggle">
+          <NButton
+            size="small"
+            :type="selectedDays === 7 ? 'primary' : 'default'"
+            ghost
+            @click="toggleDays(7)"
+          >
+            近 7 天
+          </NButton>
+          <NButton
+            size="small"
+            :type="selectedDays === 30 ? 'primary' : 'default'"
+            ghost
+            @click="toggleDays(30)"
+          >
+            近 30 天
+          </NButton>
+          <NIcon :size="14" class="cal-icon"><CalendarOutline /></NIcon>
+        </div>
       </div>
     </div>
     <div class="trend-chart-wrap">
@@ -216,6 +248,12 @@ onMounted(fetchTrend)
   gap: 6px;
 }
 
+.trend-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .cal-icon {
   color: var(--neutral-text-3);
   margin-left: 2px;
@@ -224,4 +262,17 @@ onMounted(fetchTrend)
 .trend-chart-wrap {
   width: 100%;
 }
+
+@media (max-width: 640px) {
+  .arco-card-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .trend-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
 </style>

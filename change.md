@@ -294,3 +294,26 @@
 - `python3 -m pytest tests/unit/test_stats_service.py tests/unit/test_cookie_ai_billing.py -q`：15 passed（含 7 条新增计费/聚合用例）。
 - `ruff check` 改动文件全部通过。
 - `cd frontend && npm run type-check`（vue-tsc --noEmit）通过。
+
+# 2026-07-23 变更记录
+
+## 今日完成
+
+### 仪表板任务提交趋势图形态切换
+
+- 为「任务提交趋势」新增「柱状 / 面积」切换，默认保留任务柱状图与样本折线图，面积模式将两个系列切换为双 Y 轴平滑面积图。
+- 图形态切换只更新前端 ECharts option，不重新请求趋势接口；「近 7 天 / 近 30 天」仍按原逻辑重新加载数据。
+- 补充窄屏工具栏布局、键盘焦点、`aria-pressed` 和 `prefers-reduced-motion` 适配。
+
+### 平台统一胶囊分段切换器
+
+- 新增全局 `.omichub-segmented-toggle` 样式，统一 Token K/M、柱状/面积等同层级二选一偏好控件。
+- 统一使用语义边框、浅色轨道、品牌主色选中态和 `--text-on-primary` 前景色，避免页面局部样式重复和漂移。
+- 将仪表板 OmicStudio 用量卡片和饼干账户 Token K/M 控件迁移到共享样式，并补充 `aria-pressed` 状态。
+- 在 `ARCHITECTURE_DESIN/fontend.md` 中记录适用边界、视觉参数、无障碍要求、响应式规则及趋势图实现约定，作为 OmicHub 平台统一规范。
+
+## 已验证
+
+- `cd frontend && npm run type-check`（vue-tsc --noEmit）通过。
+- `cd frontend && npx vite build` 通过。
+- `git diff --check` 通过。

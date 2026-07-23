@@ -153,6 +153,13 @@ OmicHub 是面向生物信息学任务、数据资产与 AI 工作流的科学�
 
 全局按压反馈已经通过共享样式提供轻微缩放。自定义按钮不得将按压缩放扩大为弹跳，不得在过渡期间禁止用户再次操作。
 
+#### 紧凑型胶囊分段切换器
+
+- 适用于 Token 单位、图表形态等同层级的二选一偏好，不用于主流程提交或危险操作。
+- 复用全局 `.omichub-segmented-toggle`：`1px` `--neutral-border` 边框、`999px` 圆角、`--neutral-fill-2` 轨道、`11px` 加粗标签；选中态使用 `--arco-primary` 背景和 `--text-on-primary` 文字。
+- 容器使用 `role="group"` 和可读 `aria-label`；按钮使用 `aria-pressed`，并提供 hover、focus-visible、键盘操作和 `prefers-reduced-motion` 适配。
+- 窄屏保持紧凑但不得裁切标签；图表卡片工具栏在 `640px` 以下允许换行。
+
 ### 5.2 卡片
 
 - 使用 `NCard` 或已有 `.arco-card` / `.omichub-card` 外观模式；新卡片优先复用 `NCard`。
@@ -443,7 +450,8 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 - **图表形态**：双 Y 轴组合图。左轴"任务数"为柱状图（bar），右轴"样本数"为平滑折线（line, `smooth: true`）；两系列量级差异大，必须分轴（`yAxisIndex: 1`），禁止共用单轴压扁小数值系列。
 - **配色**：柱 `--arco-primary`（品牌蓝，圆角 `[4,4,0,0]`，`barMaxWidth: 32`），折线 `--arco-warning`（橙色，线宽 2，圆点 `symbolSize: 6`）。颜色一律经 `cssVar()` 解析后传入（见 §13.2 的 var() 禁令）。
 - **布局**：`grid: { left: 12, right: 12, top: 24, bottom: 32, containLabel: true }`；图例置底（`bottom: 0`），10×10 图例标记；双轴名称"任务数/样本数"分别左、右对齐（`align` + 负 `padding` 内收到绘图区上方）。
-- **交互**：`tooltip.trigger: 'axis'`；卡片头部右侧提供"近 7 天 / 近 30 天"切换（`ghost` 小按钮，选中态 `type="primary"`），切换即重新请求 `GET /stats/trend?days=N`。
+- **交互**：`tooltip.trigger: 'axis'`；卡片头部右侧提供"柱状 / 面积"图形态切换和"近 7 天 / 近 30 天"时间范围切换。图形态切换使用与 Token "K / M" 相同的胶囊分段按钮：`1px` `--neutral-border` 边框、`999px` 圆角、`--neutral-fill-2` 轨道、`11px` 加粗标签，选中态使用 `--arco-primary` 背景和 `--text-on-primary` 文字；按钮必须提供 `aria-pressed`，并支持 hover、focus-visible、窄屏换行和 `prefers-reduced-motion`。时间范围继续使用 `ghost` 小按钮，选中态 `type="primary"`，切换即重新请求 `GET /stats/trend?days=N`。
+- **图形态**：默认显示柱状图：任务数为主色柱状系列，样本数为橙色平滑折线；切换到面积图后，任务数和样本数均使用平滑折线与低透明度面积填充，保留双 Y 轴与同一数据语义，不重新请求接口。
 - **状态**：加载用 `NSpin` 包裹；无数据时显示 `EmptyState`（📈 + 引导文案），高度保持 260px 不塌缩。
 - **数据来源**：`/stats/trend` 返回 `TrendPoint[]`（`{ date, tasks, samples }`），X 轴为 MM/DD 日期类目轴。
 

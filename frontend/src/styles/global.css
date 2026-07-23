@@ -14,6 +14,7 @@
   --arco-primary-hover: var(--brand-primary-hover);
   --arco-primary-active: var(--brand-primary-active);
   --arco-primary-light: var(--brand-primary-light);
+  --text-on-primary: #FFFFFF;
 
   --arco-success: #00B42A;
   --arco-success-light: #E8FFEA;
@@ -590,6 +591,48 @@ body {
 .focus-ring:focus-visible {
   outline: 2px solid var(--arco-primary);
   outline-offset: 3px;
+}
+
+.omichub-segmented-toggle {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--neutral-border);
+  border-radius: 999px;
+  background: var(--neutral-fill-2);
+}
+
+.omichub-segmented-toggle button {
+  padding: 2px 9px;
+  border: none;
+  background: transparent;
+  color: var(--neutral-text-3);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.omichub-segmented-toggle button:hover {
+  color: var(--neutral-text-1);
+}
+
+.omichub-segmented-toggle button.active {
+  background: var(--arco-primary);
+  color: var(--text-on-primary);
+}
+
+.omichub-segmented-toggle button:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--arco-primary);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .omichub-segmented-toggle button {
+    transition: none;
+  }
 }
 
 /* Native-feeling response without changing the visual language. */

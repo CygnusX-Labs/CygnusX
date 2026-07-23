@@ -166,9 +166,9 @@ onMounted(async () => {
 
       <NCard title="AI Token 用量" :bordered="false" class="arco-card">
         <template #header-extra>
-          <div class="unit-toggle" role="group" aria-label="Token 单位切换">
-            <button type="button" :class="{ active: tokenUnit === 'K' }" @click="tokenUnit = 'K'">K</button>
-            <button type="button" :class="{ active: tokenUnit === 'M' }" @click="tokenUnit = 'M'">M</button>
+          <div class="omichub-segmented-toggle unit-toggle" role="group" aria-label="Token 单位切换">
+            <button type="button" :class="{ active: tokenUnit === 'K' }" :aria-pressed="tokenUnit === 'K'" @click="tokenUnit = 'K'">K</button>
+            <button type="button" :class="{ active: tokenUnit === 'M' }" :aria-pressed="tokenUnit === 'M'" @click="tokenUnit = 'M'">M</button>
           </div>
         </template>
         <div class="ai-rate-banner">
@@ -247,28 +247,4 @@ onMounted(async () => {
   font-size: 12px;
 }
 
-.unit-toggle {
-  display: inline-flex;
-  overflow: hidden;
-  border: 1px solid var(--neutral-border);
-  border-radius: 999px;
-  background: var(--neutral-fill-2);
-}
-
-.unit-toggle button {
-  padding: 2px 10px;
-  border: none;
-  background: transparent;
-  color: var(--neutral-text-3);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.5;
-  cursor: pointer;
-  transition: background 0.18s ease, color 0.18s ease;
-}
-
-.unit-toggle button.active {
-  background: var(--arco-primary);
-  color: #fff;
-}
 </style>
