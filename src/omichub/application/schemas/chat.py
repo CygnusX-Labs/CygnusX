@@ -68,6 +68,7 @@ class ChatSessionDTO(BaseModel):
 
     session_id: str
     title: str
+    title_locked: bool = False
     assistant_id: str | None = None
     agent_id: str | None = None
     model_id: UUID
@@ -101,6 +102,28 @@ class CreateSessionRequest(BaseModel):
     title: str | None = "新对话"
     assistant_id: str | None = None
     model_id: UUID
+
+
+class UpdateSessionRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=64)
+
+
+class ChatSearchContentMatchDTO(BaseModel):
+    session_id: str
+    title: str
+    title_locked: bool = False
+    agent_id: str | None = None
+    model_id: UUID
+    mode: str = "chat"
+    message_id: str
+    snippet: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChatSessionSearchDTO(BaseModel):
+    title_matches: list[ChatSessionDTO] = Field(default_factory=list)
+    content_matches: list[ChatSearchContentMatchDTO] = Field(default_factory=list)
 
 
 class CreateAssistantRequest(BaseModel):

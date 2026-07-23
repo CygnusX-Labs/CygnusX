@@ -403,6 +403,29 @@ export interface CookiePricing {
   effective_until: string | null
 }
 
+export interface CookieDiscount {
+  id: number
+  name: string
+  discount_multiplier: number
+  date_start: string
+  date_end: string
+  daily_start: string | null
+  daily_end: string | null
+  timezone: string
+  priority: number
+  is_active: boolean
+  banner_title: string
+  banner_description: string
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface AiTokenRate {
+  base_rate: number
+  effective_rate: number
+  discount: CookieDiscount | null
+}
+
 export type QuickEntryColor = 'blue' | 'purple' | 'cyan' | 'green' | 'orange' | 'teal' | 'gray'
 
 export interface HomeQuickEntry {

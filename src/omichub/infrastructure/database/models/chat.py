@@ -33,6 +33,7 @@ class ChatSessionModel(Base, TimestampMixin):
         String(50), ForeignKey("agent_templates.agent_id"), nullable=True
     )
     title: Mapped[str] = mapped_column(String(200), default="新对话", nullable=False)
+    title_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     model_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("ai_provider_configs.id"), nullable=False
     )

@@ -1,17 +1,20 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import AgentSidebar from './AgentSidebar.vue'
 import AgentHub from './AgentHub.vue'
 import AgentSandbox from './AgentSandbox.vue'
+import SessionHistoryDrawer from './SessionHistoryDrawer.vue'
 import AppLoading from '@/components/AppLoading.vue'
-import { useAgentHubStore } from '@/stores/agentHub'
+import { useAgentHubStore, type AgentSession } from '@/stores/agentHub'
 import { NButton } from 'naive-ui'
 
 const store = useAgentHubStore()
-// 菜单栏默认折叠：对话区占满宽度，需要历史会话时再手动展开
-const collapsed = ref(true)
+const router = useRouter()
 const loading = ref(false)
 const error = ref('')
+const historyOpen = ref(false)
+const targetMessageId = ref('')
 
 /** 统一入口 Agent：智能助手（router），落地页与新建对话默认直接进入它 */
 const ROUTER_AGENT_ID = 'agent-router'
@@ -47,25 +50,26 @@ function handleNewChat() {
   ensureDefaultSession()
 }
 
-/** 打开专家集市（仅供想手动指定专家的用户） */
-function handleOpenHub() {
-  store.newChat()
-}
-
 function handleSelectAgent(agentId: string) {
   store.startSessionFromAgent(agentId)
+}
+
+function handleHistorySelect(session: AgentSession, messageId?: string) {
+  if (session.mode === 'studio' || store.studioSessionIds.has(session.id)) {
+    router.push({ name: 'studio', params: { sessionId: session.id }, query: messageId ? { message: messageId } : {} })
+    return
+  }
+  if (!store.sessions.some((item) => item.id === session.id)) store.sessions.unshift(session)
+  targetMessageId.value = messageId || ''
+  store.selectSession(session.id)
 }
 </script>
 
 <template>
   <div class="agent-workspace">
     <AgentSidebar
-      :collapsed="collapsed"
-      @toggle-collapse="collapsed = !collapsed"
       @new-chat="handleNewChat"
-      @open-hub="handleOpenHub"
-      @select-session="store.selectSession"
-      @delete-session="store.deleteSession"
+      @open-history="historyOpen = true"
     />
     <main class="workspace-main">
       <div v-if="loading" class="workspace-center">
@@ -76,10 +80,11 @@ function handleSelectAgent(agentId: string) {
         <NButton size="small" @click="initAssets">重试</NButton>
       </div>
       <template v-else>
-        <AgentSandbox v-if="store.currentSession" />
+        <AgentSandbox v-if="store.currentSession" :target-message-id="targetMessageId" />
         <AgentHub v-else @select="handleSelectAgent" />
       </template>
     </main>
+    <SessionHistoryDrawer v-model:show="historyOpen" mode="all" @select="handleHistorySelect" />
   </div>
 </template>
 

@@ -28,7 +28,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from omichub.application.schemas.chat import (
     ChatAssistantDTO,
     ChatMessageDTO,
+    ChatSearchContentMatchDTO,
     ChatSessionDTO,
+    ChatSessionSearchDTO,
     UpdateAssistantRequest,
 )
 from omichub.application.services.mas_plan_adapter import (
@@ -188,6 +190,74 @@ class ChatService:
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
 
+    @staticmethod
+    def _escape_like(value: str) -> str:
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    @staticmethod
+    def _clean_session_title(value: str) -> str:
+        cleaned = re.sub(r"[\"'《》「」\n\r]", "", value or "").strip()
+        return cleaned[:30]
+
+    @staticmethod
+    def _fallback_session_title(message: str = "") -> str:
+        text = re.sub(r"\s+", " ", message or "").strip()
+        if text:
+            return text[:20] + ("…" if len(text) > 20 else "")
+        return f"新会话 {datetime.now().strftime('%m-%d')}"
+
+    @staticmethod
+    def _build_search_snippet(content: str, keyword: str) -> str:
+        text = re.sub(r"\s+", " ", content or "")
+        index = text.casefold().find(keyword.casefold())
+        if index < 0:
+            return text[:120]
+        start = max(0, index - 45)
+        end = min(len(text), index + len(keyword) + 75)
+        prefix = "…" if start else ""
+        suffix = "…" if end < len(text) else ""
+        return f"{prefix}{text[start:end]}{suffix}"
+
+    async def _generate_title_with_llm(
+        self,
+        session: ChatSessionModel,
+        first_user: ChatMessageModel,
+        first_assistant: ChatMessageModel | None,
+    ) -> str:
+        result = await self._db.execute(
+            select(AIProviderConfigModel).where(AIProviderConfigModel.id == session.model_id)
+        )
+        config = result.scalar_one_or_none()
+        if not config or not config.api_key:
+            return ""
+        system_prompt = (
+            "你是会话标题生成器。根据用户的首条消息和助手的回复，用 8 到 15 个汉字概括这段对话的主题。"
+            "只输出标题本身，不要标点结尾，不要引号，不要解释。"
+        )
+        messages = [{"role": "user", "content": (
+            f"用户首条消息：{first_user.content[:1000]}\n"
+            f"助手回复摘要：{(first_assistant.content if first_assistant else '')[:500]}"
+        )}]
+        output = ""
+        try:
+            with anyio.fail_after(5):
+                async for chunk in provider_manager.chat_stream(
+                    config=config,
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    temperature=0,
+                    max_tokens=40,
+                    tools=None,
+                    deep_thinking=False,
+                ):
+                    if chunk.type == "text":
+                        output += chunk.content
+                    if chunk.type in {"done", "error"}:
+                        break
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"生成会话标题失败: {exc}")
+        return output
+
     # --- 会话管理 ---
 
     async def create_session(
@@ -232,25 +302,122 @@ class ChatService:
         )
         return result.scalar_one_or_none()
 
-    async def list_sessions(self, user_id: str, mode: str | None = None) -> list[ChatSessionDTO]:
+    async def list_sessions(
+        self,
+        user_id: str,
+        mode: str | None = None,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[ChatSessionDTO]:
         query = select(ChatSessionModel).where(
             ChatSessionModel.user_id == user_id, ChatSessionModel.status == "active"
         )
         if mode is not None:
             query = query.where(ChatSessionModel.mode == mode)
-        result = await self._db.execute(query.order_by(desc(ChatSessionModel.updated_at)))
+        result = await self._db.execute(
+            query.order_by(desc(ChatSessionModel.updated_at)).limit(limit).offset(offset)
+        )
         return [self._to_session_dto(s) for s in result.scalars().all()]
 
     async def update_session_title(
-        self, session_id: str, user_id: str, title: str
+        self, session_id: str, user_id: str, title: str, *, locked: bool = False
     ) -> ChatSessionDTO:
         session = await self.get_session(session_id, user_id)
         if not session:
             raise NotFoundError("会话不存在或无权访问")
-        session.title = title
+        session.title = self._clean_session_title(title) or self._fallback_session_title()
+        if locked:
+            session.title_locked = True
         session.updated_at = datetime.now(UTC)
         await self._db.flush()
         return self._to_session_dto(session)
+
+    async def search_sessions(self, user_id: str, keyword: str) -> ChatSessionSearchDTO:
+        normalized = keyword.strip()
+        if not normalized:
+            return ChatSessionSearchDTO()
+        pattern = f"%{self._escape_like(normalized)}%"
+
+        title_result = await self._db.execute(
+            select(ChatSessionModel)
+            .where(
+                ChatSessionModel.user_id == user_id,
+                ChatSessionModel.status == "active",
+                ChatSessionModel.title.ilike(pattern, escape="\\"),
+            )
+            .order_by(desc(ChatSessionModel.updated_at))
+            .limit(30)
+        )
+        title_matches = list(title_result.scalars().all())
+        title_session_ids = {s.session_id for s in title_matches}
+
+        content_result = await self._db.execute(
+            select(ChatSessionModel, ChatMessageModel)
+            .join(ChatMessageModel, ChatMessageModel.session_id == ChatSessionModel.session_id)
+            .where(
+                ChatSessionModel.user_id == user_id,
+                ChatSessionModel.status == "active",
+                ChatMessageModel.content.ilike(pattern, escape="\\"),
+                ChatSessionModel.session_id.not_in(title_session_ids or {"__none__"}),
+            )
+            .order_by(desc(ChatSessionModel.updated_at), ChatMessageModel.created_at)
+            .limit(40)
+        )
+
+        seen_content_sessions: set[str] = set()
+        content_matches: list[ChatSearchContentMatchDTO] = []
+        for session, message in content_result.all():
+            if session.session_id in seen_content_sessions:
+                continue
+            seen_content_sessions.add(session.session_id)
+            content_matches.append(
+                ChatSearchContentMatchDTO(
+                    session_id=session.session_id,
+                    title=session.title,
+                    title_locked=session.title_locked,
+                    agent_id=session.agent_id,
+                    model_id=session.model_id,
+                    mode=session.mode or "chat",
+                    message_id=message.message_id,
+                    snippet=self._build_search_snippet(message.content, normalized),
+                    created_at=session.created_at,
+                    updated_at=session.updated_at,
+                )
+            )
+
+        return ChatSessionSearchDTO(
+            title_matches=[self._to_session_dto(s) for s in title_matches],
+            content_matches=content_matches,
+        )
+
+    async def generate_session_title(self, session_id: str, user_id: str) -> str:
+        session = await self.get_session(session_id, user_id)
+        if not session:
+            raise NotFoundError("会话不存在或无权访问")
+        if session.title_locked:
+            return session.title
+
+        result = await self._db.execute(
+            select(ChatMessageModel)
+            .where(ChatMessageModel.session_id == session_id)
+            .order_by(ChatMessageModel.created_at)
+        )
+        messages = list(result.scalars().all())
+        first_user = next((m for m in messages if m.role == "user"), None)
+        first_assistant = next((m for m in messages if m.role == "assistant"), None)
+        fallback = self._fallback_session_title(first_user.content if first_user else "")
+        if not first_user or not first_user.content.strip():
+            session.title = fallback
+            session.updated_at = datetime.now(UTC)
+            await self._db.flush()
+            return session.title
+
+        title = await self._generate_title_with_llm(session, first_user, first_assistant)
+        session.title = self._clean_session_title(title) or fallback
+        session.updated_at = datetime.now(UTC)
+        await self._db.flush()
+        return session.title
 
     async def delete_session(self, session_id: str, user_id: str) -> bool:
         session = await self.get_session(session_id, user_id)
@@ -1682,7 +1849,7 @@ class ChatService:
             session = session_result.scalar_one_or_none()
             if session:
                 session.total_tokens += total
-                await self._deduct_ai_cookies(session, total)
+                await self._deduct_ai_cookies(session, total, message_id)
         except Exception as e:  # noqa: BLE001
             logger.warning(f"累加 token 用量失败: {e}")
 
@@ -1706,7 +1873,9 @@ class ChatService:
             "请先通过提交分析任务赚取饼干后再试。"
         )
 
-    async def _deduct_ai_cookies(self, session: ChatSessionModel, tokens: int) -> None:
+    async def _deduct_ai_cookies(
+        self, session: ChatSessionModel, tokens: int, message_id: str
+    ) -> None:
         """按 ai_token_cookie_rate 🥫/1K tokens 从会话属主账户扣减饼干。"""
         settings = get_settings()
         if not settings.enable_cookie_system or tokens <= 0:
@@ -1717,7 +1886,7 @@ class ChatService:
             await CookieService(self._db).spend_ai_tokens(
                 user_id=uuid.UUID(str(session.user_id)),
                 tokens=tokens,
-                source_id=str(session.session_id),
+                source_id=message_id,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"AI 对话饼干扣减失败: {e}")
@@ -1875,6 +2044,7 @@ class ChatService:
         return ChatSessionDTO(
             session_id=s.session_id,
             title=s.title,
+            title_locked=s.title_locked,
             assistant_id=s.assistant_id,
             agent_id=s.agent_id,
             model_id=s.model_id,

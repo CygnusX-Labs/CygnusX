@@ -57,12 +57,12 @@ class SqlAlchemyMCPServerRepository(IMCPServerRepository):
         await self._session.refresh(model)
         return self._to_entity(model)
 
-    async def delete(self, server_id: UUID) -> bool:
+    async def delete(self, server_id: UUID, *, force: bool = False) -> bool:
         model = await self._session.get(MCPServerModel, server_id)
         if model is None:
             return False
-        if model.is_preset:
-            return False  # 预设服务不可删除
+        if model.is_preset and not force:
+            return False
         await self._session.delete(model)
         await self._session.flush()
         return True

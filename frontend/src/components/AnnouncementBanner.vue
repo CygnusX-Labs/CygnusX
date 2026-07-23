@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { NButton, NIcon } from 'naive-ui'
 import { CloseOutline } from '@vicons/ionicons5'
 import { announcementApi } from '@/api/announcements'
+import { cookieApi } from '@/api/cookies'
 import {
   DEFAULT_ICON_BY_TYPE,
   type Announcement,
@@ -97,7 +98,30 @@ onMounted(async () => {
     return
   }
   try {
-    const list = await announcementApi.getActive()
+    const [announcementResult, rateResult] = await Promise.allSettled([
+      announcementApi.getActive(),
+      cookieApi.getAiTokenRate(),
+    ])
+    const list = announcementResult.status === 'fulfilled' ? announcementResult.value : []
+    if (rateResult.status === 'fulfilled' && rateResult.value.discount) {
+      const discount = rateResult.value.discount
+      list.unshift({
+        id: `cookie-discount-${discount.id}`,
+        title: discount.banner_title,
+        description: discount.banner_description,
+        type: 'success',
+        icon: '🥫',
+        link: '/cookies',
+        button_text: '查看用量',
+        start_time: `${discount.date_start}T00:00:00+08:00`,
+        end_time: `${discount.date_end}T23:59:59+08:00`,
+        dismiss_behavior: 'daily',
+        priority: 10000,
+        is_enabled: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+    }
     // 后端已按优先级排序，取第一条未被当前用户关闭的
     const first = list.find((b) => !isDismissed(b)) || null
     banner.value = first

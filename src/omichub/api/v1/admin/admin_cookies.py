@@ -11,6 +11,8 @@ from omichub.application.schemas.cookie import (
     AdjustBalanceRequest,
     AdminCookieAccountDTO,
     CookieAccountDTO,
+    CookieDiscountDTO,
+    CookieDiscountRequest,
     CookieStatsDTO,
     CookieTransactionDTO,
     PricingCreateRequest,
@@ -139,6 +141,41 @@ async def delete_pricing(
 ):
     ok = await service.delete_pricing(pricing_id)
     return {"deleted": ok}
+
+
+@router.get("/discounts", response_model=list[CookieDiscountDTO], summary="Token 优惠规则")
+async def list_discounts(_admin: AdminRequired, service: CookieServiceDep):
+    return await service.list_discounts()
+
+
+@router.post("/discounts", response_model=CookieDiscountDTO, summary="创建 Token 优惠规则")
+async def create_discount(
+    req: CookieDiscountRequest,
+    current_user_id: CurrentUserId,
+    _admin: AdminRequired,
+    service: CookieServiceDep,
+):
+    return await service.create_discount(req, UUID(current_user_id))
+
+
+@router.put("/discounts/{discount_id}", response_model=CookieDiscountDTO, summary="更新 Token 优惠规则")
+async def update_discount(
+    discount_id: int,
+    req: CookieDiscountRequest,
+    current_user_id: CurrentUserId,
+    _admin: AdminRequired,
+    service: CookieServiceDep,
+):
+    return await service.update_discount(discount_id, req, UUID(current_user_id))
+
+
+@router.delete("/discounts/{discount_id}", summary="删除 Token 优惠规则")
+async def delete_discount(
+    discount_id: int,
+    _admin: AdminRequired,
+    service: CookieServiceDep,
+):
+    return {"deleted": await service.delete_discount(discount_id)}
 
 
 @router.get("/transactions/filtered", summary="全局交易流水审计(多维度过滤)")

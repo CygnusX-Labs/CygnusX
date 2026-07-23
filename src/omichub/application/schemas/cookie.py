@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from uuid import UUID
+
+from pydantic import model_validator
 
 from omichub.application.schemas.base import OmicsHubBaseSchema
 
@@ -107,6 +109,42 @@ class PricingCreateRequest(OmicsHubBaseSchema):
     priority: int = 0
     description: str = ""
     effective_until: datetime | None = None
+
+
+class CookieDiscountRequest(OmicsHubBaseSchema):
+    name: str
+    discount_multiplier: Decimal
+    date_start: date
+    date_end: date
+    daily_start: time | None = None
+    daily_end: time | None = None
+    timezone: str = "Asia/Shanghai"
+    priority: int = 0
+    is_active: bool = True
+    banner_title: str
+    banner_description: str
+
+    @model_validator(mode="after")
+    def validate_window(self):
+        if self.date_end < self.date_start:
+            raise ValueError("结束日期不能早于开始日期")
+        if (self.daily_start is None) != (self.daily_end is None):
+            raise ValueError("每日开始时间和结束时间必须同时设置或同时留空")
+        if not Decimal("0") <= self.discount_multiplier <= Decimal("1"):
+            raise ValueError("折扣倍率必须在 0 到 1 之间")
+        return self
+
+
+class CookieDiscountDTO(CookieDiscountRequest):
+    id: int
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class AiTokenRateDTO(OmicsHubBaseSchema):
+    base_rate: Decimal
+    effective_rate: Decimal
+    discount: CookieDiscountDTO | None = None
 
 
 class AdjustBalanceRequest(OmicsHubBaseSchema):

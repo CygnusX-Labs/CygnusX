@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 from omichub.api.deps import CurrentUserId, DbSession, get_active_user_from_token_payload
 from omichub.application.schemas.cookie import (
     CookieAccountDTO,
+    AiTokenRateDTO,
     CookieTransactionDTO,
     CostEstimateDTO,
 )
@@ -46,6 +47,11 @@ async def list_transactions(
 @router.get("/pricing", summary="查看定价策略")
 async def list_pricing(service: CookieServiceDep):
     return await service.list_pricing(active_only=True)
+
+
+@router.get("/ai-token-rate", response_model=AiTokenRateDTO, summary="查看当前 AI Token 换算")
+async def get_ai_token_rate(service: CookieServiceDep) -> AiTokenRateDTO:
+    return await service.get_ai_token_rate()
 
 
 @router.get("/estimate", response_model=CostEstimateDTO, summary="预估任务费用")

@@ -17,6 +17,7 @@ interface Props {
   agentName?: string
   agentAvatar?: string
   agentColor?: string
+  targetMessageId?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -29,6 +30,7 @@ const props = withDefaults(defineProps<Props>(), {
   agentName: 'OmicHub AI',
   agentAvatar: '🤖',
   agentColor: '#4f8ef7',
+  targetMessageId: '',
 })
 
 const emit = defineEmits<{
@@ -45,6 +47,7 @@ const emit = defineEmits<{
 
 interface ScrollerExpose {
   scrollToBottom: () => void
+  scrollToItem?: (index: number) => void
 }
 
 const scrollerRef = ref<InstanceType<typeof DynamicScroller> & ScrollerExpose>()
@@ -60,6 +63,12 @@ const streamingMessageId = computed(() => {
 
 function scrollToBottom() {
   scrollerRef.value?.scrollToBottom()
+}
+
+function scrollToMessage(messageId: string) {
+  const index = props.messages.findIndex((m) => m.id === messageId)
+  if (index < 0) return
+  scrollerRef.value?.scrollToItem?.(index)
 }
 
 function handleScroll() {
@@ -84,6 +93,14 @@ watch(
     nextTick(() => {
       if (!showScrollToBottom.value) scrollToBottom()
     })
+  },
+)
+
+watch(
+  () => [props.targetMessageId, props.messages.length] as const,
+  ([messageId]) => {
+    if (!messageId) return
+    nextTick(() => scrollToMessage(messageId))
   },
 )
 
@@ -122,6 +139,7 @@ onUnmounted(() => {
             streamingMessageId === item.id ? streamingThought : '',
           ]"
           :data-index="index"
+          :class="{ 'message-target': targetMessageId === item.id }"
         >
           <KimiMessageItem
             :message="item"
@@ -177,6 +195,10 @@ onUnmounted(() => {
     margin: 0 auto;
   }
 
+  :deep(.message-target) {
+    animation: messagePulse 1.4s ease;
+  }
+
   /* typing-indicator 跳动点已移除 */
 
   .scroll-to-bottom {
@@ -212,5 +234,10 @@ onUnmounted(() => {
   30% {
     transform: translateY(-6px);
   }
+}
+
+@keyframes messagePulse {
+  0%, 100% { background: transparent; }
+  18%, 70% { background: color-mix(in srgb, var(--brand-primary-light, #EEF1FF) 70%, transparent); }
 }
 </style>

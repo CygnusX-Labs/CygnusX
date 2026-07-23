@@ -1,122 +1,60 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useRouter } from 'vue-router'
 import { NButton, NIcon, NTooltip } from 'naive-ui'
-import {
-  AddOutline, CloseOutline, ChatbubbleOutline, MenuOutline, AppsOutline,
-} from '@vicons/ionicons5'
-import { useAgentHubStore, type AgentSession } from '@/stores/agentHub'
+import { AddOutline, TimeOutline } from '@vicons/ionicons5'
 
-const store = useAgentHubStore()
-const router = useRouter()
-
-defineProps<{ collapsed?: boolean }>()
-const emit = defineEmits<{
-  toggleCollapse: []
+defineEmits<{
   newChat: []
-  openHub: []
-  selectSession: [id: string]
-  deleteSession: [id: string]
+  openHistory: []
 }>()
-
-const grouped = computed(() => store.groupedSessions)
-
-/** Studio（工作台）会话直接跳转 /studio/:id，普通会话保持原地切换 */
-function handleSelectSession(s: AgentSession) {
-  if (store.studioSessionIds.has(s.id)) {
-    router.push({ name: 'studio', params: { sessionId: s.id } })
-    return
-  }
-  emit('selectSession', s.id)
-}
 </script>
 
 <template>
-  <aside class="agent-sidebar" :class="{ collapsed }">
+  <aside class="agent-sidebar">
     <div class="sidebar-top">
-      <span v-if="!collapsed" class="brand">AI 助手 · 多智能体</span>
-      <div class="nav-top-controls" :class="{ collapsed }">
-        <NTooltip trigger="hover" placement="right">
-          <template #trigger>
-            <NButton text class="nav-icon-btn menu-btn" @click="$emit('toggleCollapse')">
-              <NIcon size="18"><MenuOutline /></NIcon>
-            </NButton>
-          </template>
-          {{ collapsed ? '展开菜单' : '折叠菜单' }}
-        </NTooltip>
+      <div class="nav-top-controls">
         <NTooltip trigger="hover" placement="right">
           <template #trigger>
             <NButton text class="nav-icon-btn add-btn" @click="$emit('newChat')">
               <NIcon size="18"><AddOutline /></NIcon>
             </NButton>
           </template>
-          新建智能体对话
+          新建对话
         </NTooltip>
         <NTooltip trigger="hover" placement="right">
           <template #trigger>
-            <NButton text class="nav-icon-btn menu-btn" @click="$emit('openHub')">
-              <NIcon size="18"><AppsOutline /></NIcon>
+            <NButton text class="nav-icon-btn menu-btn" @click="$emit('openHistory')">
+              <NIcon size="18"><TimeOutline /></NIcon>
             </NButton>
           </template>
-          选择专家
+          历史会话
         </NTooltip>
       </div>
     </div>
 
-    <div v-if="!collapsed" class="history">
-      <div class="section-title">历史会话</div>
-      <div v-if="!grouped.length" class="history-empty">暂无会话，直接向智能助手提问吧</div>
-      <div v-for="g in grouped" :key="g.label" class="session-group">
-        <div class="group-label">{{ g.label }}</div>
-        <div
-          v-for="s in g.sessions"
-          :key="s.id"
-          class="session-item"
-          :class="{ active: s.id === store.currentSessionId }"
-          @click="handleSelectSession(s)"
-        >
-          <NIcon size="14" class="s-icon"><ChatbubbleOutline /></NIcon>
-          <span class="s-title">{{ s.title }}</span>
-          <NTooltip v-if="store.studioSessionIds.has(s.id)" trigger="hover">
-            <template #trigger>
-              <span class="s-studio-badge">📊</span>
-            </template>
-            工作台会话，点击打开 AI 工作台
-          </NTooltip>
-          <NButton text size="tiny" class="s-del" @click.stop="$emit('deleteSession', s.id)">
-            <NIcon size="12"><CloseOutline /></NIcon>
-          </NButton>
-        </div>
-      </div>
-    </div>
   </aside>
 </template>
 
 <style scoped lang="scss">
 .agent-sidebar {
-  width: var(--chat-sidebar-width, 260px);
-  min-width: var(--chat-sidebar-width, 260px);
+  width: 60px;
+  min-width: 60px;
   height: 100%;
   background: var(--chat-sidebar-bg);
   border-right: 1px solid var(--chat-border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: width .25s ease, min-width .25s ease;
 }
-.agent-sidebar.collapsed { width: 60px; min-width: 60px; }
 
 .sidebar-top {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 14px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 12px;
 }
-.brand { font-size: 13px; font-weight: 600; }
 
 .nav-top-controls {
-  display: flex; align-items: center; gap: 10px;
-}
-.nav-top-controls.collapsed {
+  display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 8px;
   width: 100%;
 }
@@ -144,31 +82,14 @@ function handleSelectSession(s: AgentSession) {
   background: var(--chat-surface-hover, rgba(0,0,0,.06));
   color: var(--chat-text-primary, #1d2129);
 }
-
 .nav-icon-btn.add-btn {
-  background: var(--chat-accent, #165DFF);
   color: #fff;
+  background: var(--brand-gradient);
 }
 .nav-icon-btn.add-btn:hover {
-  background: var(--chat-accent-hover, #0e42d2);
-  transform: scale(1.05);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(76, 111, 255, .24);
+  transform: translateY(-1px);
 }
 
-.history { flex: 1; overflow-y: auto; padding: 0 8px; }
-.section-title { font-size: 11px; color: var(--chat-text-muted, #999); padding: 8px 8px 4px; }
-.history-empty { font-size: 12px; color: var(--chat-text-muted, #aaa); padding: 8px; }
-.group-label { font-size: 11px; color: var(--chat-text-muted, #999); padding: 10px 8px 4px; }
-
-.session-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 10px; border-radius: 8px; cursor: pointer;
-  transition: background .15s ease;
-}
-.session-item:hover { background: var(--chat-surface-hover, rgba(0,0,0,.04)); }
-.session-item.active { background: rgba(79,142,247,.12); color: var(--chat-accent); }
-.s-icon { flex-shrink: 0; opacity: .7; }
-.s-title { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.s-del { opacity: 0; transition: opacity .15s; }
-.session-item:hover .s-del { opacity: 1; }
-.s-studio-badge { font-size: 11px; flex-shrink: 0; }
 </style>

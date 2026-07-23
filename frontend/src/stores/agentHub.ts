@@ -53,7 +53,9 @@ export const CATEGORY_LABELS: Record<AgentCategory, string> = {
 export interface AgentSession {
   id: string
   title: string
+  title_locked?: boolean
   agent_id: string
+  mode?: 'chat' | 'studio'
   messages: ChatMessage[]
   created_at: string
   updated_at: string
@@ -240,8 +242,10 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       const res = await apiClient.get<Array<{
         session_id: string
         title: string
+        title_locked?: boolean
         agent_id: string | null
         model_id: string
+        mode?: 'chat' | 'studio'
         created_at: string
         updated_at: string
       }>>('/chat/sessions')
@@ -250,7 +254,9 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         .map((s) => ({
           id: s.session_id,
           title: s.title,
+          title_locked: s.title_locked ?? false,
           agent_id: s.agent_id as string,
+          mode: s.mode || 'chat',
           messages: [] as ChatMessage[],
           created_at: s.created_at,
           updated_at: s.updated_at,
@@ -450,7 +456,9 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     const session: AgentSession = {
       id: `sess-${Date.now()}`,
       title: agent.name,
+      title_locked: false,
       agent_id: agentId,
+      mode: 'chat',
       messages: [],
       created_at: now,
       updated_at: now,
@@ -498,9 +506,78 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     if (currentSessionId.value === id) currentSessionId.value = ''
   }
 
-  function renameSession(id: string, title: string) {
+  async function renameSession(id: string, title: string) {
     const s = sessions.value.find((x) => x.id === id)
-    if (s) s.title = title
+    const cleaned = title.trim()
+    if (!s || !cleaned) return
+    if (id.startsWith('sess-')) {
+      s.title = cleaned
+      s.title_locked = true
+      return
+    }
+    const previous = s.title
+    s.title = cleaned
+    s.title_locked = true
+    try {
+      const res = await apiClient.patch<{
+        session_id: string
+        title: string
+        title_locked?: boolean
+      }>(`/chat/sessions/${id}`, { title: cleaned })
+      s.title = res.data.title
+      s.title_locked = res.data.title_locked ?? true
+    } catch (e) {
+      s.title = previous
+      console.error('重命名会话失败:', e)
+      throw e
+    }
+  }
+
+  async function generateSessionTitle(id: string): Promise<void> {
+    if (!id || id.startsWith('sess-')) return
+    const session = sessions.value.find((s) => s.id === id)
+    if (!session || session.title_locked) return
+    try {
+      const res = await apiClient.post<{ title: string }>(`/chat/sessions/${id}/generate-title`)
+      if (res.data?.title) session.title = res.data.title
+    } catch (e) {
+      console.error('生成会话标题失败:', e)
+    }
+  }
+
+  async function searchSessions(keyword: string): Promise<{
+    title_matches: AgentSession[]
+      content_matches: Array<{ session_id: string; title: string; title_locked: boolean; agent_id: string | null; model_id: string; mode: 'chat' | 'studio'; message_id: string; snippet: string; created_at: string; updated_at: string }>
+  }> {
+    const res = await apiClient.get('/chat/sessions/search', { params: { keyword } })
+    const title_matches = (res.data?.title_matches || [])
+      .filter((s: any) => s.agent_id)
+      .map((s: any) => ({
+        id: s.session_id,
+        title: s.title,
+        title_locked: s.title_locked ?? false,
+        agent_id: s.agent_id,
+        mode: s.mode || 'chat',
+        messages: [] as ChatMessage[],
+        created_at: s.created_at,
+        updated_at: s.updated_at,
+        model_id: s.model_id || undefined,
+      }))
+    return {
+      title_matches,
+      content_matches: (res.data?.content_matches || []).map((m: any) => ({
+        session_id: m.session_id,
+        title: m.title,
+        title_locked: m.title_locked ?? false,
+        agent_id: m.agent_id,
+        model_id: m.model_id,
+        mode: m.mode || 'chat',
+        message_id: m.message_id,
+        snippet: m.snippet,
+        created_at: m.created_at,
+        updated_at: m.updated_at,
+      })),
+    }
   }
 
   /** 切换指定会话当前使用的模型 */
@@ -637,11 +714,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     }
     session.messages.push(aiMsg)
 
-    // 首条用户消息后自动生成标题
-    if (session.title === agent.name) {
-      const t = content.trim().slice(0, 24)
-      session.title = t + (content.trim().length > 24 ? '...' : '')
-    }
+    const shouldGenerateTitle = !session.title_locked && session.messages.filter((m) => m.role === 'user').length === 1
+    if (shouldGenerateTitle) session.title = '生成中...'
 
     // 构建送后端的上下文（含历史，排除当前 AI 占位）
     const ctxLen = chatStore.conversationSettings.contextLength ?? 20
@@ -842,6 +916,10 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       },
     )
 
+    if (shouldGenerateTitle && !isStreaming.value) {
+      void generateSessionTitle(session.id)
+    }
+
     // 兜底：若流异常中断未触发 onDone/onError（极罕见，onDone 已有内部兜底）
     if (isStreaming.value) {
       aiMsg.content = streamingContent.value || aiMsg.content
@@ -978,8 +1056,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     upsertAgent, toggleAgent, deleteAgent, setDefaultAgent,
     importSkillFromUrl, importSkillFromJson, toggleSkill, deleteSkill,
     // session actions
-    startSessionFromAgent, selectSession, newChat, deleteSession, renameSession, switchSessionModel,
-    loadSessionMessages, sendMessage, stopStreaming,
+    startSessionFromAgent, selectSession, newChat, deleteSession, renameSession, generateSessionTitle,
+    searchSessions, switchSessionModel, loadSessionMessages, sendMessage, stopStreaming,
     approveToolCall, rejectToolCall, answerAskRequest,
     initStudioPermissions, setStudioPermissions,
   }

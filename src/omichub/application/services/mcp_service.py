@@ -81,8 +81,7 @@ class MCPService:
         valid_names = {p["name"] for p in PRESET_SERVERS} | {OMICHUB_TOOLS_SERVER_NAME}
         for server in await self._repo.list_all():
             if server.is_preset and server.name not in valid_names:
-                # 清理已从代码中移除的过期预设（如早期的 literature/genome/code/knowledge）
-                await self._repo.delete(server.id)
+                await self._repo.delete(server.id, force=True)
 
         for preset in PRESET_SERVERS:
             existing = await self._repo.get_by_name(preset["name"])

@@ -1,11 +1,12 @@
 """饼干积分系统 ORM 模型 — 5 张表"""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    Time,
     func,
     text,
 )
@@ -144,6 +146,38 @@ class CookiePricingModel(Base, TimestampMixin):
     effective_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     priority: Mapped[int] = mapped_column(Integer, default=0)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+
+
+class CookieDiscountModel(Base, TimestampMixin):
+    """AI Token 饼干换算优惠规则。"""
+
+    __tablename__ = "cookie_discounts"
+    __table_args__ = (
+        CheckConstraint(
+            "discount_multiplier >= 0 AND discount_multiplier <= 1",
+            name="chk_cookie_discount_multiplier",
+        ),
+        Index("idx_cookie_discount_active", "is_active", "date_start", "date_end"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    discount_multiplier: Mapped[Decimal] = mapped_column(Numeric(8, 4), nullable=False)
+    date_start: Mapped[date] = mapped_column(Date, nullable=False)
+    date_end: Mapped[date] = mapped_column(Date, nullable=False)
+    daily_start: Mapped[time | None] = mapped_column(Time, nullable=True)
+    daily_end: Mapped[time | None] = mapped_column(Time, nullable=True)
+    timezone: Mapped[str] = mapped_column(String(64), default="Asia/Shanghai")
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    banner_title: Mapped[str] = mapped_column(String(200), nullable=False)
+    banner_description: Mapped[str] = mapped_column(Text, nullable=False)
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )

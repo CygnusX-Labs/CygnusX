@@ -18,9 +18,11 @@ from omichub.application.schemas.chat import (
     ChatAssistantDTO,
     ChatMessageDTO,
     ChatSessionDTO,
+    ChatSessionSearchDTO,
     ChatStreamRequest,
     CreateAssistantRequest,
     CreateSessionRequest,
+    UpdateSessionRequest,
 )
 from omichub.application.schemas.skill import SkillDTO
 from omichub.application.services.chat_service import ChatService
@@ -154,9 +156,21 @@ async def create_session(
 
 @router.get("/sessions", response_model=list[ChatSessionDTO], summary="会话列表")
 async def list_sessions(
-    current_user_id: CurrentUserId, service: ChatServiceDep
+    current_user_id: CurrentUserId,
+    service: ChatServiceDep,
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
 ) -> list[ChatSessionDTO]:
-    return await service.list_sessions(current_user_id)
+    return await service.list_sessions(current_user_id, limit=limit, offset=offset)
+
+
+@router.get("/sessions/search", response_model=ChatSessionSearchDTO, summary="搜索会话")
+async def search_sessions(
+    current_user_id: CurrentUserId,
+    service: ChatServiceDep,
+    keyword: str = Query(..., min_length=1, max_length=80),
+) -> ChatSessionSearchDTO:
+    return await service.search_sessions(current_user_id, keyword)
 
 
 @router.get(
@@ -184,6 +198,26 @@ async def update_title(
 ) -> dict[str, bool]:
     await service.update_session_title(session_id, current_user_id, title)
     return {"success": True}
+
+
+@router.patch("/sessions/{session_id}", response_model=ChatSessionDTO, summary="重命名会话")
+async def patch_session(
+    current_user_id: CurrentUserId,
+    service: ChatServiceDep,
+    session_id: str,
+    req: UpdateSessionRequest,
+) -> ChatSessionDTO:
+    return await service.update_session_title(session_id, current_user_id, req.title, locked=True)
+
+
+@router.post("/sessions/{session_id}/generate-title", response_model=dict, summary="生成会话标题")
+async def generate_title(
+    current_user_id: CurrentUserId,
+    service: ChatServiceDep,
+    session_id: str,
+) -> dict[str, str]:
+    title = await service.generate_session_title(session_id, current_user_id)
+    return {"title": title}
 
 
 @router.delete("/sessions/{session_id}", summary="删除会话")

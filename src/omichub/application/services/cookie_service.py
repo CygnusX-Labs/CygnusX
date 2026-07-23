@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.cookie import (
     CookieAccountDTO,
+    CookieDiscountDTO,
+    CookieDiscountRequest,
     CookieStatsDTO,
     CookieTransactionDTO,
     CostEstimateDTO,
@@ -25,7 +28,11 @@ from omichub.domain.cookie.value_objects import (
     PricingUnit,
     TransactionType,
 )
-from omichub.infrastructure.database.models.cookie import CookieAccountModel, CookieTransactionModel
+from omichub.infrastructure.database.models.cookie import (
+    CookieAccountModel,
+    CookieDiscountModel,
+    CookieTransactionModel,
+)
 from omichub.infrastructure.database.repositories.cookie_repository import (
     SqlAlchemyAccountRepository,
     SqlAlchemyConsumptionLogRepository,
@@ -204,12 +211,17 @@ class CookieService:
         """
         if tokens <= 0:
             return Decimal("0")
-        rate = Decimal(str(self._settings.ai_token_cookie_rate))
+        _, rate, discount = await self.resolve_ai_token_rate()
         cost = (Decimal(tokens) / Decimal(1000) * rate).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
         if cost <= 0:
             return Decimal("0")
+
+        existing = await self._txn_repo.list_by_source("ai_chat", source_id)
+        if any(txn.txn_type == TransactionType.SPEND for txn in existing):
+            return Decimal("0")
+
         account = await self.get_or_create_account(user_id)
         if not account.is_active or account.available_balance <= 0:
             return Decimal("0")
@@ -224,9 +236,104 @@ class CookieService:
             source_type="ai_chat",
             source_id=source_id,
             task_type="ai_chat",
-            description=f"AI 对话消耗 {tokens} tokens，扣减 {cost} 🥫（{rate} 🥫/1K tokens）",
+            description=(
+                f"AI 对话消耗 {tokens} tokens，扣减 {cost} 🥫（{rate} 🥫/1K tokens"
+                f"{'，优惠：' + discount.name if discount else ''}）"
+            ),
         )
         return cost
+
+    async def resolve_ai_token_rate(
+        self, at: datetime | None = None
+    ) -> tuple[Decimal, Decimal, CookieDiscountModel | None]:
+        base_rate = Decimal(str(self._settings.ai_token_cookie_rate))
+        moment = at or datetime.now(UTC)
+        result = await self._session.execute(
+            select(CookieDiscountModel)
+            .where(CookieDiscountModel.is_active == True)  # noqa: E712
+            .order_by(CookieDiscountModel.priority.desc(), CookieDiscountModel.id.desc())
+        )
+        for discount in result.scalars().all():
+            if self._discount_matches(discount, moment):
+                effective = (base_rate * discount.discount_multiplier).quantize(
+                    Decimal("0.0001"), rounding=ROUND_HALF_UP
+                )
+                return base_rate, effective, discount
+        return base_rate, base_rate, None
+
+    async def get_ai_token_rate(self, at: datetime | None = None) -> dict:
+        base_rate, effective_rate, discount = await self.resolve_ai_token_rate(at)
+        return {
+            "base_rate": base_rate,
+            "effective_rate": effective_rate,
+            "discount": self._discount_to_dto(discount) if discount else None,
+        }
+
+    async def list_discounts(self) -> list[CookieDiscountDTO]:
+        result = await self._session.execute(
+            select(CookieDiscountModel).order_by(
+                CookieDiscountModel.priority.desc(), CookieDiscountModel.date_start.desc()
+            )
+        )
+        return [self._discount_to_dto(item) for item in result.scalars().all()]
+
+    async def create_discount(
+        self, req: CookieDiscountRequest, admin_id: UUID
+    ) -> CookieDiscountDTO:
+        model = CookieDiscountModel(**req.model_dump(), created_by=admin_id)
+        self._session.add(model)
+        await self._session.flush()
+        await self._session.refresh(model)
+        return self._discount_to_dto(model)
+
+    async def update_discount(
+        self, discount_id: int, req: CookieDiscountRequest, admin_id: UUID
+    ) -> CookieDiscountDTO:
+        model = await self._session.get(CookieDiscountModel, discount_id)
+        if model is None:
+            raise NotFoundError(f"优惠规则 {discount_id} 不存在")
+        for key, value in req.model_dump().items():
+            setattr(model, key, value)
+        model.updated_by = admin_id
+        await self._session.flush()
+        await self._session.refresh(model)
+        return self._discount_to_dto(model)
+
+    async def delete_discount(self, discount_id: int) -> bool:
+        model = await self._session.get(CookieDiscountModel, discount_id)
+        if model is None:
+            return False
+        await self._session.delete(model)
+        await self._session.flush()
+        return True
+
+    @staticmethod
+    def _discount_matches(discount: CookieDiscountModel, moment: datetime) -> bool:
+        try:
+            timezone = ZoneInfo(discount.timezone)
+        except ZoneInfoNotFoundError:
+            timezone = ZoneInfo("Asia/Shanghai")
+        local = moment.astimezone(timezone)
+        local_date = local.date()
+        if discount.daily_start is None or discount.daily_end is None:
+            return discount.date_start <= local_date <= discount.date_end
+        local_time = local.timetz().replace(tzinfo=None)
+        if discount.daily_start <= discount.daily_end:
+            return (
+                discount.date_start <= local_date <= discount.date_end
+                and discount.daily_start <= local_time < discount.daily_end
+            )
+        return (
+            discount.date_start <= local_date <= discount.date_end
+            and local_time >= discount.daily_start
+        ) or (
+            discount.date_start <= local_date - timedelta(days=1) <= discount.date_end
+            and local_time < discount.daily_end
+        )
+
+    @staticmethod
+    def _discount_to_dto(discount: CookieDiscountModel) -> CookieDiscountDTO:
+        return CookieDiscountDTO.model_validate(discount)
 
     async def freeze_account(self, user_id: UUID, reason: str, admin_id: UUID) -> CookieAccountDTO:
         account = await self.get_or_create_account(user_id)

@@ -17,6 +17,8 @@ const authStore = useAuthStore()
 const router = useRouter()
 const message = useMessage()
 
+defineProps<{ targetMessageId?: string }>()
+
 const input = ref('')
 const showCap = ref(false)
 const modelSwitchNotice = ref('')
@@ -27,6 +29,13 @@ let noticeTimer: ReturnType<typeof setTimeout> | null = null
 const agent = computed(() => store.currentAgent)
 const session = computed(() => store.currentSession)
 const engineLabel = computed(() => agent.value?.model_engine || '')
+const agentDisplayName = computed(() => agent.value?.features?.router ? '星尘 AI' : agent.value?.name || '星尘 AI')
+const quickPrompts = [
+  { label: '查看工作区数据文件', prompt: '帮我看看工作区里有哪些数据文件' },
+  { label: '开始差异表达分析', prompt: 'RNA-seq 差异表达分析怎么开始' },
+  { label: '绘制样本相关性热图', prompt: '画一个样本间相关性热图' },
+  { label: '生成分析报告模板', prompt: '生成一份可复现的分析报告模板' },
+]
 
 const userDisplayName = computed(() =>
   authStore.user?.nickname || authStore.user?.username || '我',
@@ -165,7 +174,7 @@ onUnmounted(() => {
         <div class="agent-identity">
           <div class="id-avatar" :style="{ background: agent.color }">{{ agent.avatar }}</div>
           <div class="id-meta">
-            <div class="id-name">{{ agent.name }}</div>
+            <div class="id-name">{{ agentDisplayName }}</div>
             <div class="id-sub">{{ agent.description }}</div>
           </div>
         </div>
@@ -214,7 +223,7 @@ onUnmounted(() => {
             <div class="welcome-content">
               <div class="welcome-avatar" :style="{ background: agent.color }">{{ agent.avatar }}</div>
               <div class="welcome-text">
-                <div class="welcome-title">{{ agent.name }}</div>
+                <div class="welcome-title">{{ agentDisplayName }}</div>
                 <div class="welcome-desc">{{ agent.welcome_message || agent.description }}</div>
               </div>
             </div>
@@ -224,14 +233,22 @@ onUnmounted(() => {
           </div>
         </transition>
 
+        <div v-if="session.messages.length === 0" class="quick-prompts">
+          <button v-for="(item, index) in quickPrompts" :key="item.prompt" :class="`prompt-${index + 1}`" @click="handleSend(item.prompt)">
+            <span class="prompt-icon">✦</span>
+            <span>{{ item.label }}</span>
+          </button>
+        </div>
+
         <KimiMessageList
           :messages="session.messages"
           :is-typing="store.isStreaming"
           :streaming-content="store.streamingContent"
           :streaming-thought="store.streamingThought"
-          :model-name="agent.name"
+          :model-name="agentDisplayName"
           :user-name="userDisplayName"
           :user-avatar="userAvatarUrl"
+          :target-message-id="targetMessageId"
           @confirm-tool="handleConfirmTool"
           @open-tool-page="handleOpenToolPage"
         />
@@ -308,10 +325,10 @@ onUnmounted(() => {
   gap: 16px;
   margin: 16px 24px 0;
   padding: 16px 18px;
-  background: var(--chat-surface, #ffffff);
+  background: var(--brand-gradient-soft);
   border: 1px solid var(--chat-border, #f0f0f0);
   border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-card);
 }
 .welcome-content {
   display: flex;
@@ -351,6 +368,13 @@ onUnmounted(() => {
 .welcome-close:hover {
   color: var(--chat-text-primary, #1a1a1a);
 }
+.quick-prompts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 12px 24px 0; }
+.quick-prompts button { display: flex; align-items: center; gap: 9px; min-height: 42px; padding: 9px 12px; border: 1px solid var(--chat-border); border-radius: 8px; color: var(--chat-text-primary); background: var(--chat-surface); font-size: 12px; text-align: left; cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.quick-prompts button:hover { border-color: var(--brand-primary); box-shadow: var(--shadow-card); transform: translateY(-1px); }
+.prompt-icon { display: grid; place-items: center; width: 26px; height: 26px; flex: 0 0 26px; border-radius: 8px; color: var(--brand-primary); background: var(--icon-blue-bg); }
+.prompt-2 .prompt-icon { color: #8B5CF6; background: var(--icon-purple-bg); }
+.prompt-3 .prompt-icon { color: #0891B2; background: var(--icon-cyan-bg); }
+.prompt-4 .prompt-icon { color: #059669; background: var(--icon-green-bg); }
 
 .sandbox-input {
   flex-shrink: 0;
@@ -368,5 +392,6 @@ onUnmounted(() => {
   .id-sub { display: none; }
   .header-right .n-button__content { font-size: 12px; }
   .model-switch-notice { display: none; }
+  .quick-prompts { grid-template-columns: 1fr; margin-inline: 14px; }
 }
 </style>

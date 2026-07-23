@@ -490,6 +490,12 @@ onUnmounted(() => {
       }
     }
 
+    .toolbar-left > :nth-child(1) .toolbar-btn { color: #4C6FFF; background: var(--icon-blue-bg); }
+    .toolbar-left > :nth-child(2) .toolbar-btn { color: #8B5CF6; background: var(--icon-purple-bg); }
+    .toolbar-left > :nth-child(3) .toolbar-btn { color: #0891B2; background: var(--icon-cyan-bg); }
+    .toolbar-left > :nth-child(4) .toolbar-btn { color: #059669; background: var(--icon-green-bg); }
+    .toolbar-left > :nth-child(5) .toolbar-btn { color: #D97706; background: var(--icon-orange-bg); }
+
     .send-btn {
       width: 32px;
       height: 32px;
@@ -500,7 +506,7 @@ onUnmounted(() => {
       &:hover,
       &.active {
         color: #fff;
-        background: var(--chat-accent);
+        background: var(--brand-gradient);
       }
 
       &:disabled {
