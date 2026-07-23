@@ -296,12 +296,12 @@ uiPayload 渲染、工具卡按序分流：`ApprovalCard`（有 approval 时）�
 
 | Agent | ID | 引擎 | 备注 |
 |---|---|---|---|
-| 智能助手 | `agent-router` | legacy + router | **统一入口（本次默认）** |
-| 通用助手 | `agent-general` | legacy | |
+| 智能助手 | `agent-router` | legacy + router | **统一入口（本次默认）**；Studio: analysis-core（本分支补齐） |
+| 通用助手 | `agent-general` | **langgraph**（本分支切换） | Studio: analysis-core |
 | 代码助手 | `agent-code` | legacy | Studio: analysis-core |
 | 可视化助手 | `agent-viz` | legacy | |
 | RNA-seq 分析师 | `agent-rnaseq` | legacy | Studio: analysis-core |
-| 单细胞分析师 | `agent-scrna` | **langgraph** | Studio: analysis-scrna，唯一框架引擎试点 |
+| 单细胞分析师 | `agent-scrna` | **langgraph** | Studio: analysis-scrna，框架引擎首个试点 |
 | 傻妞 | `agent-shania` | legacy | 专属背景 |
 | 多智能体编排器 | `agent-orchestrator` | legacy + MAS | 仅 MAS Feature Flag 开启时启用 |
 
@@ -312,20 +312,38 @@ uiPayload 渲染、工具卡按序分流：`ApprovalCard`（有 approval 时）�
 
 ## 3. 待修改清单（按优先级）
 
+> 2026-07-22 更新：P0 preset 回填、P1 router Studio、P1 LangGraph 扩展（general）、
+> P2 AgentHub 分组已在分支 `feat/ai-assistant-framework` 落地（见下方"已落地"小节）。
+
 | 优先级 | 事项 | 位置 | 说明 |
 |---|---|---|---|
-| ~~P0~~ | ~~空历史文案仍指向"应用集市"~~ | `AgentSidebar.vue` | ✅ 本次已修 |
-| P0 | Agent YAML 未绑定 `omichub-platform` preset | `data/ai/*.yaml` | MCP 联动阶段 1（`mcp_ai_assistant_integration.md` §4.1）：5 个平台操作工具（任务列表/详情、流程查询、沙箱执行、文件读取）尚未对任何 Agent 开放，改 YAML 即可，零代码 |
-| P1 | router 会话的 Studio 能力路径未明 | `data/ai/router.yaml` + `chat_service.py` | router 无 `studio` 配置；转接到 scrna 等 Studio 型专家后，沙盒工具循环是否可用/走哪个 runtime_profile 未验证。单一入口成为默认后这是主要能力缺口，需决策：router 会话禁用 Studio，还是按被路由专家动态加载能力 |
-| P1 | LangGraph 引擎仅 scrna 一家 | `data/ai/*.yaml` `features.engine` | general/router/rnaseq 等仍走手写循环；且 Studio 模式被排除在 LangGraph 分流之外（`chat_service.py:838`），沙盒工具循环入图（review §3.4-1）未做 |
-| P1 | `web_search` 是占位实现 | `chat_service.py:1678-1694` | 返回模拟结果，正式接入搜索源前不应在生产开启 |
-| P2 | 旧 Copilot 双轨待删除 | `api/v1/ai.py`（`/ai/ws`）、`ai_conversations` 表、`BUILTIN_ASSISTANTS`/`chat_assistants`、前端 `ai-chat/legacy/`、`stores/chatAssistant.ts`、`stores/chatSession.ts` | review U2：新功能已全部 Agent-first，建议标记废弃版本后排期删除 |
-| P2 | AgentHub 无分类筛选 | `AgentHub.vue` | review U3：集市已降为次级入口，可按 `category` 分组展示，优先级降低 |
+| ~~P0~~ | ~~空历史文案仍指向"应用集市"~~ | `AgentSidebar.vue` | ✅ 已修 |
+| ~~P0~~ | ~~Agent YAML 未绑定 `omichub-platform` preset~~ | `data/ai/*.yaml` | ✅ 本分支落地（见下） |
+| ~~P1~~ | ~~router 会话的 Studio 能力路径未明~~ | `data/ai/router.yaml` | ✅ 本分支补齐 analysis-core；按被路由专家动态切换镜像留作后续 |
+| P1 | LangGraph 引擎扩展中 | `data/ai/*.yaml` `features.engine` | ✅ general 已切换（本分支）；router/code/rnaseq/viz/shania 观察后跟进；Studio 模式仍排除在分流之外（`chat_service.py:838`），沙盒工具循环入图未做 |
+| P1 | `web_search` 是占位实现 | `chat_service.py:1678-1694` | 返回模拟结果，需选定搜索源（API key）后实施，本分支未动 |
+| P2 | 旧 Copilot 双轨待删除 | `api/v1/ai.py`（`/ai/ws`）、`ai_conversations` 表、`BUILTIN_ASSISTANTS`/`chat_assistants`、前端 `ai-chat/legacy/`、`stores/chatAssistant.ts`、`stores/chatSession.ts` | review U2：删除面较大，建议单独版本排期，本分支未动 |
+| ~~P2~~ | ~~AgentHub 无分类筛选~~ | `AgentHub.vue` | ✅ 本分支按 `category` 分组展示 |
 | P2 | HITL × LangGraph 融合 | `langgraph_nodes.py` | 阶段 3：审批闸改 interrupt 节点、Postgres checkpointer 断线恢复 |
 | P3 | 单细胞子图 | — | QC/聚类/注释拆确定性节点，模型只做参数决策与解读（review §3.4-3） |
+
+### 3.1 本分支已落地（`feat/ai-assistant-framework`，相对 main）
+
+| 事项 | 实现 |
+|---|---|
+| 存量 Agent 回填 omichub-platform | alembic 数据迁移 `a5b6c7d8e9f0`：内置 Agent 且 mcp_ids 保持默认绑定（含 omichub-tools 不含 platform）的行追加 platform preset UUID；管理员自定义过绑定的行不动。新 Agent 由 `agent_service.py:114` 默认注入两个 preset，无需处理 |
+| router 会话 Studio 能力 | `data/ai/router.yaml` 增加 `studio: {enabled, runtime_profile: analysis-core, required_capabilities: [python, r, bash]}`；`ensure_builtin_agents` 对已存在内置 Agent 同步 features（含 studio 段），刷新即生效。限制：转接到 scrna 等专家后仍用 router 的镜像 |
+| LangGraph 扩展 | `data/ai/general.yaml` 增加 `features.engine: langgraph`（features 幂等同步，即时生效） |
+| AgentHub 分类分组 | `AgentHub.vue` 按 通用/分析/编程/可视化 分组渲染，未知分类归末尾 |
 
 ## 4. 验证
 
 - `vue-tsc --noEmit` 类型检查通过（2026-07-22，两次）。
+- 本分支验证（2026-07-22）：`scripts/check_migrations.py` 迁移链检查通过（head 唯一）；
+  `pytest tests/unit/test_agent_loader_studio.py test_agent_router.py
+  test_langgraph_runtime.py test_prompt_config_contract.py` 21 个用例全过；
+  `vue-tsc --noEmit` 本分支改动文件无错误（`kimi-message-item.ssr.test.ts`
+  有一处类型错误来自工作区他人未提交的 finishReason 改动，与本分支无关）。
 - 手动验证路径：打开 `/ai` → 默认折叠窄侧栏 + 直接进入智能助手对话 →
-  提问触发路由徽标 → ▦ 按钮可进集市选指定专家。
+  提问触发路由徽标 → ▦ 按钮进集市（分类分组）选指定专家；
+  迁移后对话中可问"我有哪些正在跑的任务？"验证 platform 工具。

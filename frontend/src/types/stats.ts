@@ -113,6 +113,13 @@ export interface StudioUsageQuota {
   storage_used_percent: number
 }
 
+export interface StudioUsageCookie {
+  /** 饼干转换比例：每 1K tokens 消耗的饼干数 */
+  rate_per_1k_tokens: number
+  /** 本周期 token 折算的饼干消耗 */
+  cost: number
+}
+
 export interface StudioUsageDay {
   date: string
   sessions: number
@@ -128,5 +135,38 @@ export interface StudioUsage {
   to: string
   summary: StudioUsageSummary
   quota: StudioUsageQuota
+  cookie: StudioUsageCookie
   daily: StudioUsageDay[]
+}
+
+export interface AiTokenUsageRecord {
+  time: string | null
+  session_id: string
+  title: string
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  cookie_cost: number
+}
+
+export interface AiTokenUsageDay {
+  date: string
+  messages: number
+  total_tokens: number
+  cookie_cost: number
+}
+
+export interface AiTokenUsage {
+  period_days: number
+  rate_per_1k_tokens: number
+  summary: {
+    messages: number
+    sessions: number
+    input_tokens: number
+    output_tokens: number
+    total_tokens: number
+    cookie_cost: number
+  }
+  daily: AiTokenUsageDay[]
+  records: AiTokenUsageRecord[]
 }

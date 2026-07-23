@@ -32,9 +32,7 @@ COPY tool_configs/ ./tool_configs/
 RUN uv sync --frozen --no-dev
 
 # Snakemake logger plugin used by the workflow monitor.
-# The plugin must be installed in the same venv that provides the snakemake CLI.
-ARG SNAKEMAKE_LOGGER_PLUGIN_REF=main
-RUN uv pip install --python /app/.venv/bin/python --no-cache "snakemake-logger-plugin-rich-loguru @ git+https://github.com/xsx123123/JZ_Tools.git@${SNAKEMAKE_LOGGER_PLUGIN_REF}#subdirectory=src/logger_plugin" && /app/.venv/bin/python -c "import re; from importlib.metadata import version; v = version('snakemake-logger-plugin-rich-loguru'); m = re.match(r'^(\d+)\.(\d+)\.(\d+)', v); assert m and tuple(map(int, m.groups())) >= (0, 2, 1), f'snakemake-logger-plugin-rich-loguru >=0.2.1 required, got {v}'; import snakemake_logger_plugin_rich_loguru; print(f'snakemake-logger-plugin-rich-loguru {v} installed')"
+RUN uv pip install --python /app/.venv/bin/python --no-cache "snakemake-logger-plugin-rich-loguru>=0.3.0"
 
 # ----- 阶段 2: 运行 -----
 FROM python:3.11-slim AS runtime

@@ -37,14 +37,25 @@ async def stats_trend(
     return await service.user_trend(current_user_id, days)
 
 
-@router.get("/studio", summary="当前用户 Studio 用量与配额")
+@router.get("/studio", summary="当前用户 AI 对话用量与配额")
 async def stats_studio_usage(
     current_user_id: CurrentUserId,
     service: StatsServiceDep,
     days: Annotated[int, Query(ge=1, le=90, description="统计天数")] = 30,
 ) -> dict:
-    """Studio token、沙盒运行、产物与存储配额汇总。"""
+    """AI 对话 token、沙盒运行、产物与存储配额汇总（含普通对话与 Studio 会话）。"""
     return await service.user_studio_usage(current_user_id, days)
+
+
+@router.get("/ai-usage", summary="当前用户 AI Token 消耗与饼干折算")
+async def stats_ai_usage(
+    current_user_id: CurrentUserId,
+    service: StatsServiceDep,
+    days: Annotated[int, Query(ge=1, le=90, description="统计天数")] = 30,
+    limit: Annotated[int, Query(ge=1, le=200, description="最近用量记录条数")] = 50,
+) -> dict:
+    """AI 对话 token 使用记录、消耗汇总与饼干转换比例。"""
+    return await service.user_ai_token_usage(current_user_id, days, limit)
 
 
 @router.get("/progress", summary="当前用户引导进度画像")

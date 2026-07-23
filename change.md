@@ -267,3 +267,30 @@
 - StudioView 作为全屏工具保留专用 topbar，未强制替换为 PageHeader。
 - 前端测试基础设施（Vitest、Playwright）尚未搭建，§22 测试策略为规划性内容。
 
+# 2026-07-22 变更记录
+
+## 今日完成
+
+### 仪表板 OmicStudio 用量卡片
+
+- 修复「近 30 天」活跃度看不全的问题：移除 `daily.slice(-14)` 截断，趋势图完整展示所选周期（7/30 天）。
+- 活跃度列表改为固定高度（约 7 行）+ 框内上下滚动，避免 30 天数据把页面撑高。
+- Token 数值默认以 K 为单位，新增 K / M 小按钮切换（Token 汇总与每日活跃度同步生效）。
+- Token 汇总新增饼干折算行（≈ X 🥫 · 10 🥫/1K tokens），数据来自 `/stats/studio` 新增的 `cookie` 字段。
+
+### AI 对话饼干计费（10 🥫 = 1K tokens）
+
+- 新增配置 `ai_token_cookie_rate`（默认 10.0，🥫/1K tokens）。
+- `CookieService.spend_ai_tokens`：按比率扣减饼干，余额不足时按可用余额封顶（不为负），写入 `source_type="ai_chat"` 交易流水并实时推送余额。
+- `ChatService`：`stream_chat` / `stream_agent_chat` 入口增加饼干准入闸门，余额为 0 时返回「饼干余额不足」错误事件，饼干耗尽即无法使用 AI 助手；`_apply_usage_to_session` 在累加会话 token 后同步扣减饼干。
+
+### 用量统计页（饼干账户）
+
+- 新增「AI Token 用量」卡片：转换比例横幅（10 🥫 = 1K tokens，饼干耗尽不可用 AI 助手）、近 30 天汇总（Token / 折合饼干 / 消息数 / 会话数）、逐条使用记录表（时间 / 会话 / Token 消耗 / 饼干扣减），同样支持 K / M 切换。
+- 新增后端接口 `GET /api/v1/stats/ai-usage`（`StatsService.user_ai_token_usage`），聚合带 usage 的 assistant 消息并按比率折算饼干。
+
+## 已验证
+
+- `python3 -m pytest tests/unit/test_stats_service.py tests/unit/test_cookie_ai_billing.py -q`：15 passed（含 7 条新增计费/聚合用例）。
+- `ruff check` 改动文件全部通过。
+- `cd frontend && npm run type-check`（vue-tsc --noEmit）通过。

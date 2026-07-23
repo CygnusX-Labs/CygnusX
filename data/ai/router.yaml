@@ -14,3 +14,10 @@ mcp_ids: []
 skill_ids: []
 features:
   router: true
+
+# Studio 工作台：router 会话共享一个沙盒镜像（取最通用的 analysis-core）。
+# 注意：转接到 scrna 等专家后仍使用该镜像；按被路由专家动态切换镜像是后续工作。
+studio:
+  enabled: true
+  runtime_profile: analysis-core
+  required_capabilities: [python, r, bash]

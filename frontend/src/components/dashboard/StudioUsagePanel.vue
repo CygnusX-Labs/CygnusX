@@ -7,16 +7,18 @@ import type { StudioUsage } from '@/types/stats'
 const selectedDays = ref(30)
 const loading = ref(false)
 const usage = ref<StudioUsage | null>(null)
+const tokenUnit = ref<'K' | 'M'>('K')
 
 const maxDailyValue = computed(() => {
   const values = usage.value?.daily.flatMap((item) => [item.total_tokens, item.sandbox_runs * 1000]) ?? []
   return Math.max(1, ...values)
 })
 
-const recentDaily = computed(() => usage.value?.daily.slice(-14) ?? [])
+const trendDaily = computed(() => usage.value?.daily ?? [])
 
-function compactNumber(value: number): string {
-  return new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
+function formatTokens(value: number): string {
+  if (tokenUnit.value === 'M') return `${(value / 1_000_000).toFixed(2)} M`
+  return `${(value / 1000).toFixed(1)} K`
 }
 
 function formatDuration(milliseconds: number): string {
@@ -61,7 +63,7 @@ onMounted(fetchUsage)
     <div class="arco-card-header">
       <div>
         <span class="arco-card-title">OmicStudio 用量</span>
-        <p class="card-subtitle">Token、沙盒执行与当前存储配额</p>
+        <p class="card-subtitle">AI 对话 Token、沙盒执行与当前存储配额汇总</p>
       </div>
       <div class="days-toggle">
         <NButton size="small" :type="selectedDays === 7 ? 'primary' : 'default'" ghost @click="selectedDays = 7">
@@ -77,9 +79,18 @@ onMounted(fetchUsage)
       <div v-if="usage" class="usage-layout">
         <div class="metric-grid">
           <div class="metric-item">
-            <span class="metric-label">Token</span>
-            <strong>{{ compactNumber(usage.summary.total_tokens) }}</strong>
-            <small>输入 {{ compactNumber(usage.summary.input_tokens) }} · 输出 {{ compactNumber(usage.summary.output_tokens) }}</small>
+            <div class="metric-label-row">
+              <span class="metric-label">Token</span>
+              <div class="unit-toggle" role="group" aria-label="Token 单位切换">
+                <button type="button" :class="{ active: tokenUnit === 'K' }" @click="tokenUnit = 'K'">K</button>
+                <button type="button" :class="{ active: tokenUnit === 'M' }" @click="tokenUnit = 'M'">M</button>
+              </div>
+            </div>
+            <strong>{{ formatTokens(usage.summary.total_tokens) }}</strong>
+            <small>输入 {{ formatTokens(usage.summary.input_tokens) }} · 输出 {{ formatTokens(usage.summary.output_tokens) }}</small>
+            <small v-if="usage.cookie" class="cookie-equiv">
+              ≈ {{ usage.cookie.cost.toFixed(1) }} 🥫 · {{ usage.cookie.rate_per_1k_tokens }} 🥫/1K tokens
+            </small>
           </div>
           <div class="metric-item">
             <span class="metric-label">沙盒运行</span>
@@ -100,16 +111,16 @@ onMounted(fetchUsage)
 
         <div class="trend-panel">
           <div class="trend-heading">
-            <span>最近 {{ recentDaily.length }} 天活跃度</span>
+            <span>最近 {{ trendDaily.length }} 天活跃度</span>
             <small>Token / 执行次数</small>
           </div>
           <div class="daily-bars">
-            <div v-for="item in recentDaily" :key="item.date" class="daily-row">
+            <div v-for="item in trendDaily" :key="item.date" class="daily-row">
               <span>{{ item.date.slice(5) }}</span>
               <div class="bar-track">
                 <div class="bar-fill" :style="{ width: barWidth(item.total_tokens, item.sandbox_runs) }" />
               </div>
-              <small>{{ compactNumber(item.total_tokens) }} / {{ item.sandbox_runs }}</small>
+              <small>{{ formatTokens(item.total_tokens) }} / {{ item.sandbox_runs }}</small>
             </div>
           </div>
         </div>
@@ -212,6 +223,43 @@ onMounted(fetchUsage)
   font-size: 12px;
 }
 
+.metric-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.unit-toggle {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--neutral-border);
+  border-radius: 999px;
+  background: var(--neutral-fill-2);
+}
+
+.unit-toggle button {
+  padding: 1px 8px;
+  border: none;
+  background: transparent;
+  color: var(--neutral-text-3);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.unit-toggle button.active {
+  background: var(--arco-primary);
+  color: #fff;
+}
+
+.metric-item .cookie-equiv {
+  color: var(--arco-primary);
+  font-weight: 500;
+}
+
 .metric-item strong {
   color: var(--neutral-text-1);
   font-size: 23px;
@@ -226,6 +274,20 @@ onMounted(fetchUsage)
   display: grid;
   gap: 7px;
   margin-top: 12px;
+  max-height: 92px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--neutral-border) transparent;
+}
+
+.daily-bars::-webkit-scrollbar {
+  width: 4px;
+}
+
+.daily-bars::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--neutral-border);
 }
 
 .daily-row {

@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker test lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-runtime-dirs docker-fix-permissions docker-up docker-build-enrichment docker-build-worker docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge docker-start clean init-admin init-cookies check-alembic-heads sync-knowledge
+.PHONY: help dev dev-worker test lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-runtime-dirs docker-fix-permissions docker-up docker-build-enrichment docker-build-worker docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge docker-start docker-reload docker-dev-refresh clean init-admin init-cookies check-alembic-heads sync-knowledge
 
 help: ## 显示所有可用命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -204,6 +204,23 @@ docker-reload: docker-network ## 重新构建前端并刷新主栈 + Worker (开
 	@$(MAKE) --no-print-directory sync-knowledge
 	@echo ""
 	@echo "✅ 热重载完成！访问地址：http://localhost:8888"
+	@echo ""
+
+docker-dev-refresh: ## 轻量热刷新：前端 build + 重启 web/beat/nginx + 跑迁移（日常改代码/YAML 用，秒级，不重建镜像）
+	@echo ""
+	@echo "⚡ 步骤 1/3：前端生产包构建（vite build；nginx 直接读挂载的 dist）..."
+	cd frontend && npm run build
+	@echo ""
+	@echo "🔄 步骤 2/3：重启 web / beat / nginx（src/data/alembic/flows/tool_configs 均为 bind mount，重启即生效；"
+	@echo "   vite 重建 dist 后旧 nginx 进程持有旧目录句柄，必须一并重启）..."
+	$(COMPOSE_MAIN) restart web beat nginx
+	@echo ""
+	@echo "🗄️  步骤 3/3：应用数据库迁移（web entrypoint 启动时也会自动执行，这里确保即时生效）..."
+	@docker exec omichub-web alembic upgrade head
+	@echo ""
+	@echo "✅ 刷新完成！访问地址：http://localhost:8888"
+	@echo "   提示：仅 pyproject.toml / uv.lock / Dockerfile 变更时才需要 make docker-reload（--build 重建镜像）；"
+	@echo "        data/ai/*.yaml 与提示词按 mtime/调用热重载，改完刷新页面即可，无需执行本命令。"
 	@echo ""
 
 sync-knowledge: ## 将 docs/knowledge/*.md 同步到数据库（开发/本地文件编辑后使用）

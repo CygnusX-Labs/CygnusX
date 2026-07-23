@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 
 from sqlalchemy import desc, func, or_, select
@@ -190,6 +190,43 @@ class CookieService:
             source_id=source_id,
             description=description or f"退还预扣 {amount} 🥫",
         )
+
+    async def spend_ai_tokens(
+        self,
+        user_id: UUID,
+        tokens: int,
+        source_id: str,
+    ) -> Decimal:
+        """AI 对话 token 计费 — 按 ai_token_cookie_rate 🥫/1K tokens 直接扣减。
+
+        返回实际扣减的饼干数；余额不足时按可用余额封顶（不为负），
+        账户非 active 或余额为 0 时跳过（准入闸门已在对话入口拦截）。
+        """
+        if tokens <= 0:
+            return Decimal("0")
+        rate = Decimal(str(self._settings.ai_token_cookie_rate))
+        cost = (Decimal(tokens) / Decimal(1000) * rate).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        if cost <= 0:
+            return Decimal("0")
+        account = await self.get_or_create_account(user_id)
+        if not account.is_active or account.available_balance <= 0:
+            return Decimal("0")
+        if cost > account.available_balance:
+            cost = account.available_balance.quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+        await self._record_transaction(
+            account,
+            TransactionType.SPEND,
+            -cost,
+            source_type="ai_chat",
+            source_id=source_id,
+            task_type="ai_chat",
+            description=f"AI 对话消耗 {tokens} tokens，扣减 {cost} 🥫（{rate} 🥫/1K tokens）",
+        )
+        return cost
 
     async def freeze_account(self, user_id: UUID, reason: str, admin_id: UUID) -> CookieAccountDTO:
         account = await self.get_or_create_account(user_id)

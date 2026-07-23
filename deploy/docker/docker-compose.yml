@@ -191,7 +191,8 @@ services:
       - omichub_net          # flower 经网络发现跨栈 worker
     command: celery -A omichub.infrastructure.celery_app.celery flower --port=5555 --basic_auth=${FLOWER_BASIC_AUTH:-admin:flower}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5555/"]
+      # flower 启用了 basic_auth，健康检查必须带凭据，否则恒 401 → unhealthy
+      test: ["CMD", "curl", "-f", "-u", "${FLOWER_BASIC_AUTH:-admin:flower}", "http://localhost:5555/"]
       interval: 30s
       timeout: 10s
       start_period: 30s

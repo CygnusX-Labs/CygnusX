@@ -106,9 +106,16 @@ docker exec omichub-web uv run python scripts/init_cookies.py
 > ⚠️ **改前端后必须重启 nginx 才能生效**：nginx 通过 bind mount 挂载 `frontend/dist`，
 > 但 `docker up -d` **不会重启已运行的容器**。Vite 构建会清空重建 dist（新 inode），
 > 旧的 nginx 进程仍持有旧目录句柄，导致页面不更新。
+> - 日常改代码/前端/YAML 用：`make docker-dev-refresh`（前端 build + 重启 web/beat/nginx + 跑迁移，秒级，不重建镜像）
 > - 改动前端后用：`make docker-reload`（含 build + restart nginx）
 > - 或手动：`cd frontend && npm run build && cd .. && docker restart omichub-nginx`
 > - 浏览器端强制刷新：Ctrl+Shift+R（避免缓存旧 chunk）
+>
+> 💡 **dev compose 已把 `src/`、`data/`、`alembic/`、`flows/`、`tool_configs/`、`docs/` 全部 bind mount 进容器**，
+> 所以日常改动不需要 `--build` 重建镜像：
+> - 改 `src/` Python 代码 / 新增迁移 / 改前端 → `make docker-dev-refresh`
+> - 改 `data/ai/*.yaml`（Agent 声明）或提示词 → 刷新页面即生效（每次调用幂等同步 + mtime 热重载），无需任何命令
+> - **只有** `pyproject.toml` / `uv.lock` / Dockerfile 变更才需要 `make docker-reload`（依赖层缓存失效会全量重装，属一次性成本）
 
 ### 首次使用与管理员注册
 
@@ -363,7 +370,8 @@ rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov
 | 命令 | 容器 | 数据卷 | 镜像 | 前端 dist | 用途 |
 |------|------|--------|------|-----------|------|
 | `docker-clean` | down | 保留 | 保留 | 保留 | 停服务，数据不动 |
-| `docker-reload` | restart | 保留 | 保留 | 重建 | 开发时刷代码 |
+| `docker-dev-refresh` | restart web/beat/nginx | 保留 | 保留 | 重建 | 日常改代码/YAML/前端后热刷新（秒级） |
+| `docker-reload` | restart | 保留 | 保留 | 重建 | 依赖（uv.lock/Dockerfile）变更后重建镜像刷新 |
 | `docker-purge` | down + 强制删除 | 清空 | 删除 | 删除 | 只清理，不启动 |
 | `docker-start` | purge + build + up | 清空 | 重建 | 重建 | 彻底重建，从头启动 |
 

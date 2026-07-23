@@ -813,6 +813,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         onDone: (_, messageId, usage, finishReason) => {
           aiMsg.content = streamingContent.value || aiMsg.content
           aiMsg.thought = streamingThought.value || undefined
+          if (finishReason) aiMsg.finishReason = finishReason
           if (usage) {
             const input = usage.prompt_tokens ?? usage.input_tokens ?? usage.input ?? 0
             const output = usage.completion_tokens ?? usage.output_tokens ?? usage.output ?? 0

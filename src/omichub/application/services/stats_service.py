@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 from uuid import UUID
 
@@ -14,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.services.flow_service import FlowService
+from omichub.core.config import get_settings
 from omichub.domain.task.value_objects import TaskStatus
 from omichub.infrastructure.cache.stats_cache import cached_json
 from omichub.infrastructure.database.models.chat import ChatMessageModel, ChatSessionModel
@@ -104,7 +106,11 @@ class StatsService:
         return await cached_json(f"stats:progress:{user_id}", _TTL_USER, _compute)
 
     async def user_studio_usage(self, user_id: str, days: int) -> dict[str, Any]:
-        """近 N 天 Studio token、沙盒执行与存储配额汇总。"""
+        """近 N 天 AI 对话 token、沙盒执行与存储配额汇总。
+
+        覆盖该用户全部会话（普通对话 mode="chat" 与工作台 mode="studio"），
+        确保 AI 对话中产生的 token/消息量都能汇总显示。
+        """
 
         async def _compute() -> dict[str, Any]:
             cutoff = datetime.now(UTC) - timedelta(days=days)
@@ -114,7 +120,6 @@ class StatsService:
                     ChatSessionModel.created_at,
                 ).where(
                     ChatSessionModel.user_id == user_id,
-                    ChatSessionModel.mode == "studio",
                     ChatSessionModel.created_at >= cutoff,
                 )
             )
@@ -130,7 +135,6 @@ class StatsService:
                 )
                 .where(
                     ChatSessionModel.user_id == user_id,
-                    ChatSessionModel.mode == "studio",
                     ChatMessageModel.created_at >= cutoff,
                 )
             )
@@ -157,6 +161,115 @@ class StatsService:
             )
 
         return await cached_json(f"stats:studio:{user_id}:{days}", _TTL_USER, _compute)
+
+    async def user_ai_token_usage(self, user_id: str, days: int, limit: int = 50) -> dict[str, Any]:
+        """近 N 天 AI 对话 token 消耗与饼干折算（用量统计页）。
+
+        记录取自带 usage 的 assistant 消息，饼干按 ai_token_cookie_rate 🥫/1K tokens 折算。
+        """
+
+        async def _compute() -> dict[str, Any]:
+            cutoff = datetime.now(UTC) - timedelta(days=days)
+            result = await self._db.execute(
+                select(
+                    ChatMessageModel.created_at,
+                    ChatMessageModel.metadata_json,
+                    ChatSessionModel.session_id,
+                    ChatSessionModel.title,
+                )
+                .join(
+                    ChatSessionModel,
+                    ChatSessionModel.session_id == ChatMessageModel.session_id,
+                )
+                .where(
+                    ChatSessionModel.user_id == user_id,
+                    ChatMessageModel.role == "assistant",
+                    ChatMessageModel.created_at >= cutoff,
+                )
+                .order_by(ChatMessageModel.created_at.desc())
+            )
+            rows = list(result.all())
+
+            rate = Decimal(str(get_settings().ai_token_cookie_rate))
+
+            def _cookie_cost(tokens: int) -> float:
+                return float(
+                    (Decimal(tokens) / Decimal(1000) * rate).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
+                )
+
+            today = datetime.now(UTC).date()
+            dates = [today - timedelta(days=index) for index in range(days - 1, -1, -1)]
+            daily = {
+                d: {"date": d.isoformat(), "messages": 0, "total_tokens": 0, "cookie_cost": 0.0}
+                for d in dates
+            }
+
+            input_tokens = 0
+            output_tokens = 0
+            total_tokens = 0
+            billed_messages = 0
+            session_ids: set[str] = set()
+            records: list[dict[str, Any]] = []
+
+            for created_at, metadata, session_id, title in rows:
+                usage = (metadata or {}).get("usage") or {}
+                prompt = int(usage.get("prompt_tokens") or usage.get("input_tokens") or usage.get("input") or 0)
+                completion = int(
+                    usage.get("completion_tokens")
+                    or usage.get("output_tokens")
+                    or usage.get("output")
+                    or 0
+                )
+                message_total = int(
+                    usage.get("total_tokens") or usage.get("total") or prompt + completion
+                )
+                if message_total <= 0:
+                    continue
+                input_tokens += prompt
+                output_tokens += completion
+                total_tokens += message_total
+                billed_messages += 1
+                session_ids.add(session_id)
+                day = created_at.date() if created_at else None
+                if day in daily:
+                    daily[day]["messages"] += 1
+                    daily[day]["total_tokens"] += message_total
+                    daily[day]["cookie_cost"] = round(
+                        daily[day]["cookie_cost"] + _cookie_cost(message_total), 2
+                    )
+                if len(records) < limit:
+                    records.append(
+                        {
+                            "time": created_at.isoformat() if created_at else None,
+                            "session_id": session_id,
+                            "title": title or "未命名对话",
+                            "input_tokens": prompt,
+                            "output_tokens": completion,
+                            "total_tokens": message_total,
+                            "cookie_cost": _cookie_cost(message_total),
+                        }
+                    )
+
+            return {
+                "period_days": days,
+                "rate_per_1k_tokens": float(rate),
+                "summary": {
+                    "messages": billed_messages,
+                    "sessions": len(session_ids),
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": total_tokens,
+                    "cookie_cost": _cookie_cost(total_tokens),
+                },
+                "daily": list(daily.values()),
+                "records": records,
+            }
+
+        return await cached_json(
+            f"stats:ai_usage:{user_id}:{days}:{limit}", _TTL_USER, _compute
+        )
 
     # ------------------------------------------------------------------
     # 管理员全平台指标
@@ -230,7 +343,7 @@ class StatsService:
         storage_used: int,
         storage_quota: int,
     ) -> dict[str, Any]:
-        """聚合已持久化的 Studio 会话、消息和长任务记录。"""
+        """聚合已持久化的会话（chat + studio）、消息和长任务记录。"""
         today = datetime.now(UTC).date()
         dates = [today - timedelta(days=index) for index in range(days - 1, -1, -1)]
         daily = {
@@ -327,6 +440,11 @@ class StatsService:
         storage_available = max(0, storage_quota - storage_used)
         storage_percent = round(storage_used / storage_quota * 100, 2) if storage_quota else 0.0
 
+        cookie_rate = Decimal(str(get_settings().ai_token_cookie_rate))
+        cookie_cost = (Decimal(total_tokens) / Decimal(1000) * cookie_rate).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+
         return {
             "period_days": days,
             "from": dates[0].isoformat(),
@@ -352,6 +470,10 @@ class StatsService:
                 "storage_quota": storage_quota,
                 "storage_available": storage_available,
                 "storage_used_percent": storage_percent,
+            },
+            "cookie": {
+                "rate_per_1k_tokens": float(cookie_rate),
+                "cost": float(cookie_cost),
             },
             "daily": list(daily.values()),
         }

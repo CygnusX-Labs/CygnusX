@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import type { CookieTransaction } from '@/types'
+import type { AiTokenUsage, AiTokenUsageRecord } from '@/types/stats'
 import apiClient from '@/api/client'
 import {
   NCard,
   NDataTable,
   NDescriptions,
   NDescriptionsItem,
+  NEmpty,
   NGrid,
   NGridItem,
   NStatistic,
@@ -18,6 +20,13 @@ import PageHeader from '@/components/PageHeader.vue'
 const account = ref<any>(null)
 const transactions = ref<CookieTransaction[]>([])
 const loading = ref(false)
+const aiUsage = ref<AiTokenUsage | null>(null)
+const tokenUnit = ref<'K' | 'M'>('K')
+
+function formatTokens(value: number): string {
+  if (tokenUnit.value === 'M') return `${(value / 1_000_000).toFixed(2)} M`
+  return `${(value / 1000).toFixed(1)} K`
+}
 
 const statusTagType = computed(() => {
   const map: Record<string, 'success' | 'warning' | 'error'> = {
@@ -67,6 +76,34 @@ const columns = [
   { title: '说明', key: 'description' },
 ]
 
+const aiColumns = computed(() => [
+  {
+    title: '时间',
+    key: 'time',
+    width: 170,
+    render(row: AiTokenUsageRecord) {
+      return row.time ? new Date(row.time).toLocaleString('zh-CN') : '-'
+    },
+  },
+  { title: '会话', key: 'title', ellipsis: { tooltip: true } },
+  {
+    title: `Token 消耗（${tokenUnit.value}）`,
+    key: 'total_tokens',
+    width: 130,
+    render(row: AiTokenUsageRecord) {
+      return formatTokens(row.total_tokens)
+    },
+  },
+  {
+    title: '饼干扣减',
+    key: 'cookie_cost',
+    width: 110,
+    render(row: AiTokenUsageRecord) {
+      return h('span', { style: { color: 'var(--arco-danger)', fontWeight: 500 } }, `-${Number(row.cookie_cost).toFixed(2)} 🥫`)
+    },
+  },
+])
+
 onMounted(async () => {
   loading.value = true
   try {
@@ -78,6 +115,12 @@ onMounted(async () => {
     transactions.value = txnRes.data
   } finally {
     loading.value = false
+  }
+  try {
+    const aiRes = await apiClient.get<AiTokenUsage>('/stats/ai-usage', { params: { days: 30 } })
+    aiUsage.value = aiRes.data
+  } catch {
+    aiUsage.value = null
   }
 })
 </script>
@@ -121,6 +164,51 @@ onMounted(async () => {
         </NDescriptions>
       </NCard>
 
+      <NCard title="AI Token 用量" :bordered="false" class="arco-card">
+        <template #header-extra>
+          <div class="unit-toggle" role="group" aria-label="Token 单位切换">
+            <button type="button" :class="{ active: tokenUnit === 'K' }" @click="tokenUnit = 'K'">K</button>
+            <button type="button" :class="{ active: tokenUnit === 'M' }" @click="tokenUnit = 'M'">M</button>
+          </div>
+        </template>
+        <div class="ai-rate-banner">
+          <span class="rate-chip">转换比例：{{ aiUsage?.rate_per_1k_tokens ?? 10 }} 🥫 = 1K tokens</span>
+          <span class="rate-note">饼干耗尽后将无法使用 AI 助手，可通过提交分析任务赚取饼干</span>
+        </div>
+        <template v-if="aiUsage && aiUsage.summary.messages > 0">
+          <NGrid :cols="4" :x-gap="16" :y-gap="16" responsive="screen" style="margin-top: 16px">
+            <NGridItem>
+              <NStatistic label="近 30 天 Token 消耗" :value="formatTokens(aiUsage.summary.total_tokens)" />
+            </NGridItem>
+            <NGridItem>
+              <NStatistic label="折合饼干" :value="aiUsage.summary.cookie_cost.toFixed(1)">
+                <template #suffix>🥫</template>
+              </NStatistic>
+            </NGridItem>
+            <NGridItem>
+              <NStatistic label="AI 消息数" :value="aiUsage.summary.messages">
+                <template #suffix>条</template>
+              </NStatistic>
+            </NGridItem>
+            <NGridItem>
+              <NStatistic label="会话数" :value="aiUsage.summary.sessions">
+                <template #suffix>个</template>
+              </NStatistic>
+            </NGridItem>
+          </NGrid>
+          <NDataTable
+            :columns="aiColumns"
+            :data="aiUsage.records"
+            :row-key="(row: AiTokenUsageRecord) => `${row.time}-${row.session_id}`"
+            :pagination="{ pageSize: 10 }"
+            :bordered="false"
+            size="small"
+            style="margin-top: 16px"
+          />
+        </template>
+        <NEmpty v-else description="近 30 天暂无 AI 对话记录" style="margin-top: 16px" />
+      </NCard>
+
       <NCard title="交易流水" :bordered="false" class="arco-card">
         <NDataTable
           :columns="columns"
@@ -135,3 +223,52 @@ onMounted(async () => {
     </NSpace>
   </div>
 </template>
+
+<style scoped>
+.ai-rate-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--neutral-border);
+  border-radius: 10px;
+  background: var(--neutral-fill-2);
+}
+
+.rate-chip {
+  color: var(--arco-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rate-note {
+  color: var(--neutral-text-3);
+  font-size: 12px;
+}
+
+.unit-toggle {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--neutral-border);
+  border-radius: 999px;
+  background: var(--neutral-fill-2);
+}
+
+.unit-toggle button {
+  padding: 2px 10px;
+  border: none;
+  background: transparent;
+  color: var(--neutral-text-3);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.unit-toggle button.active {
+  background: var(--arco-primary);
+  color: #fff;
+}
+</style>

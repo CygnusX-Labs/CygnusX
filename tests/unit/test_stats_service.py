@@ -234,3 +234,61 @@ def test_aggregate_studio_usage_does_not_count_queued_tool_as_sync_run():
     assert result["summary"]["sandbox_runs"] == 1
     assert result["summary"]["sandbox_failures"] == 1
     assert result["summary"]["sandbox_duration_ms"] == 0
+
+
+def test_aggregate_studio_usage_includes_cookie_cost():
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC)
+    result = StatsService._aggregate_studio_usage(
+        days=1,
+        session_rows=[],
+        message_rows=[
+            ("assistant", {"usage": {"prompt_tokens": 900, "completion_tokens": 600}}, now),
+        ],
+        task_rows=[],
+        storage_used=0,
+        storage_quota=0,
+    )
+
+    assert result["summary"]["total_tokens"] == 1500
+    assert result["cookie"]["rate_per_1k_tokens"] == 10.0
+    assert result["cookie"]["cost"] == 15.0  # 1500 / 1000 * 10 🥫
+
+
+@pytest.mark.asyncio
+async def test_user_ai_token_usage_aggregates_records_and_daily(service):
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    rows = [
+        (now, {"usage": {"prompt_tokens": 800, "completion_tokens": 200}}, "sess-1", "对话 A"),
+        (
+            now - timedelta(days=1),
+            {"usage": {"prompt_tokens": 300, "completion_tokens": 200}},
+            "sess-2",
+            "对话 B",
+        ),
+        (now - timedelta(days=2), {}, "sess-3", "无 usage 消息"),
+    ]
+    db_result = MagicMock()
+    db_result.all.return_value = rows
+    service._db.execute = AsyncMock(return_value=db_result)
+
+    result = await service.user_ai_token_usage(USER_ID, days=7, limit=10)
+
+    assert result["rate_per_1k_tokens"] == 10.0
+    assert result["summary"] == {
+        "messages": 2,
+        "sessions": 2,
+        "input_tokens": 1100,
+        "output_tokens": 400,
+        "total_tokens": 1500,
+        "cookie_cost": 15.0,
+    }
+    assert len(result["records"]) == 2
+    assert result["records"][0]["title"] == "对话 A"
+    assert result["records"][0]["cookie_cost"] == 10.0
+    assert result["daily"][-1]["total_tokens"] == 1000
+    assert result["daily"][-1]["cookie_cost"] == 10.0
+    assert result["daily"][-2]["total_tokens"] == 500

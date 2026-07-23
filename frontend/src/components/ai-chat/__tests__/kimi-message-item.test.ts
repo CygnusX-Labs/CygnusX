@@ -32,7 +32,7 @@ function mountItem(props: Record<string, unknown>) {
   document.body.appendChild(el)
   const app = createApp({
     render() {
-      return h(KimiMessageItem, props)
+      return h(KimiMessageItem, props as never)
     },
   })
   app.mount(el)
@@ -83,5 +83,49 @@ describe('KimiMessageItem 渲染分支', () => {
     }) as ChatMessage
     const { el } = mountItem({ message: msg, isStreaming: false })
     expect(el.textContent).toContain('最终正文内容')
+  })
+
+  it('finishReason=length 且正文为空：提示调大 max_tokens 而不是通用文案', () => {
+    const { el } = mountItem({
+      message: {
+        ...baseMsg,
+        content: '',
+        thought: '思考预算耗尽',
+        status: 'empty',
+        finishReason: 'length',
+      },
+      isStreaming: false,
+    })
+    expect(el.textContent).toContain('max_tokens')
+    expect(el.textContent).toContain('finish_reason=length')
+  })
+})
+
+describe('KimiMessageItem 渲染异常兜底', () => {
+  it('markdown 渲染抛异常：回退纯文本且后续渲染不被卡死', async () => {
+    const md = (await import('@/components/ai-chat/setup')).default
+    const spy = vi.spyOn(md, 'render').mockImplementation(() => {
+      throw new Error('boom')
+    })
+    try {
+      const msg = reactive({ ...baseMsg, status: 'streaming' }) as ChatMessage
+      const props = reactive({
+        message: msg,
+        isStreaming: true,
+        streamingContent: '第一段正文',
+        streamingThought: '',
+      })
+      const { el } = mountItem(props)
+      // 渲染异常 → 回退转义纯文本，正文不空白
+      expect(el.textContent).toContain('第一段正文')
+
+      // 模拟后续流式更新：rAF 句柄未被异常卡死，新内容仍能渲染
+      spy.mockRestore()
+      props.streamingContent = '第一段正文 + 第二段正文'
+      await nextTick()
+      expect(el.textContent).toContain('第二段正文')
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

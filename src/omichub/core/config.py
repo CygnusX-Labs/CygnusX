@@ -105,6 +105,7 @@ class Settings(BaseSettings):
     enable_cookie_system: bool = True
     initial_cookie_balance: float = 100.0
     cookie_sandbox_base_cost: float = 0.5
+    ai_token_cookie_rate: float = 10.0  # AI 对话每 1K tokens 折算消耗的饼干数
 
     # ===== 仪表板统计缓存 =====
     enable_stats_cache: bool = True  # Redis 不可用时自动降级为直查 DB

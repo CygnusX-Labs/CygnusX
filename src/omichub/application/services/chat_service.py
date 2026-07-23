@@ -343,6 +343,11 @@ class ChatService:
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> AsyncIterator[ChatChunk]:
+        cookie_error = await self._ensure_cookie_balance(user_id)
+        if cookie_error:
+            yield ChatChunk(type="error", content=cookie_error)
+            return
+
         # 1. 获取并验证模型配置
         result = await self._db.execute(
             select(AIProviderConfigModel).where(
@@ -586,6 +591,11 @@ class ChatService:
         from omichub.application.services.agent_service import AgentService
         from omichub.core.sanitizer import sanitize_messages, sanitize_text
         from omichub.infrastructure.mcp.client import MCPClient
+
+        cookie_error = await self._ensure_cookie_balance(user_id)
+        if cookie_error:
+            yield ChatChunk(type="error", content=cookie_error)
+            return
 
         ctx = await AgentService(self._db).assemble_context(agent_id)
         if ctx is None:
@@ -1672,8 +1682,45 @@ class ChatService:
             session = session_result.scalar_one_or_none()
             if session:
                 session.total_tokens += total
+                await self._deduct_ai_cookies(session, total)
         except Exception as e:  # noqa: BLE001
             logger.warning(f"累加 token 用量失败: {e}")
+
+    async def _ensure_cookie_balance(self, user_id: str) -> str | None:
+        """AI 对话准入闸门：饼干余额不足时返回错误文案，放行返回 None。"""
+        settings = get_settings()
+        if not settings.enable_cookie_system:
+            return None
+        try:
+            from omichub.application.services.cookie_service import CookieService
+
+            balance = await CookieService(self._db).check_balance(uuid.UUID(user_id))
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"AI 对话饼干余额检查失败，放行: {e}")
+            return None
+        if balance > 0:
+            return None
+        rate = settings.ai_token_cookie_rate
+        return (
+            f"饼干余额不足，无法使用 AI 助手（每 1K tokens 消耗 {rate} 🥫）。"
+            "请先通过提交分析任务赚取饼干后再试。"
+        )
+
+    async def _deduct_ai_cookies(self, session: ChatSessionModel, tokens: int) -> None:
+        """按 ai_token_cookie_rate 🥫/1K tokens 从会话属主账户扣减饼干。"""
+        settings = get_settings()
+        if not settings.enable_cookie_system or tokens <= 0:
+            return
+        try:
+            from omichub.application.services.cookie_service import CookieService
+
+            await CookieService(self._db).spend_ai_tokens(
+                user_id=uuid.UUID(str(session.user_id)),
+                tokens=tokens,
+                source_id=str(session.session_id),
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"AI 对话饼干扣减失败: {e}")
 
     async def _web_search(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """联网搜索占位实现：返回模拟结果，后续可替换为真实搜索引擎。"""

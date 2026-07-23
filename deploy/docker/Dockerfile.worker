@@ -27,12 +27,9 @@ COPY src/ ./src/
 COPY alembic.ini ./
 COPY alembic/ ./alembic/
 COPY tool_configs/ ./tool_configs/
-COPY pipelines/RNAFlow/src/src/logger_plugin/ ./logger_plugin/
 RUN uv sync --frozen --no-dev
 
-RUN uv pip install --python /app/.venv/bin/python --no-cache \
-      ./logger_plugin \
-    && /app/.venv/bin/python -c "from importlib.metadata import version; print(f'snakemake-logger-plugin-rich-loguru {version(\"snakemake-logger-plugin-rich-loguru\")} installed')"
+RUN uv pip install --python /app/.venv/bin/python --no-cache "snakemake-logger-plugin-rich-loguru>=0.3.0"
 
 FROM mambaorg/micromamba:2.0.5 AS micromamba
 

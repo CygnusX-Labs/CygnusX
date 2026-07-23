@@ -262,7 +262,17 @@ const renderedContent = ref('')
 let renderRafId: number | null = null
 
 function renderMarkdown(source: string) {
-  renderedContent.value = source ? DOMPurify.sanitize(md.render(source)) : ''
+  if (!source) {
+    renderedContent.value = ''
+    return
+  }
+  try {
+    renderedContent.value = DOMPurify.sanitize(md.render(source))
+  } catch (e) {
+    // markdown/DOMPurify 渲染异常时回退转义纯文本，保证正文不空白
+    console.error('[KimiMessageItem] markdown 渲染失败，回退纯文本:', e)
+    renderedContent.value = `<p>${escapeHtml(source)}</p>`
+  }
 }
 
 watch(
@@ -271,8 +281,10 @@ watch(
     if (props.isStreaming) {
       if (renderRafId) return
       renderRafId = requestAnimationFrame(() => {
-        renderMarkdown(displayContent.value)
+        // 先复位句柄再渲染：渲染抛异常时 rAF 不会重排，
+        // 不复位会导致后续所有正文更新被 `if (renderRafId) return` 永久吞掉
         renderRafId = null
+        renderMarkdown(displayContent.value)
       })
     } else {
       renderMarkdown(source || '')
@@ -545,7 +557,11 @@ function handleEdit() {
       <div v-else-if="isEmptyWithThought" class="ai-empty-state">
         <div class="empty-icon">💭</div>
         <div class="empty-title">思考完成，但未生成正式回复</div>
-        <div class="empty-desc">模型完成了推理，但未输出正式回复内容，请重试或切换模型。</div>
+        <div v-if="message.finishReason === 'length'" class="empty-desc">
+          模型的思考过程已耗尽 max_tokens 输出预算（finish_reason=length），未能输出正文。<br>
+          请在「系统设置 → AI 模型配置」中调大该模型的 max_tokens 后重新发送。
+        </div>
+        <div v-else class="empty-desc">模型完成了推理，但未输出正式回复内容，请重试或切换模型。</div>
         <details class="thought-details">
           <summary class="thought-summary">🔍 查看思考过程</summary>
           <div class="thought-text">{{ message.thought }}</div>

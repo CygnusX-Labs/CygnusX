@@ -12,6 +12,8 @@ temperature: 0.7
 max_tokens: 4096
 mcp_ids: []
 skill_ids: []
+features:
+  engine: langgraph
 
 studio:
   enabled: true

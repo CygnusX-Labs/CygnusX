@@ -40,6 +40,8 @@ export interface ChatMessage {
   tokens?: TokenInfo
   /** 消息状态，用于流式错误/空内容识别 */
   status?: 'complete' | 'streaming' | 'error' | 'empty'
+  /** 模型结束原因（done 事件透传），length 表示输出预算耗尽 */
+  finishReason?: string
   createdAt: string
 }
 
