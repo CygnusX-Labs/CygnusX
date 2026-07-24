@@ -14,6 +14,8 @@ import UserAvatar from '@/components/UserAvatar.vue'
 import MessageActionBar from './MessageActionBar.vue'
 import AiLoading from './AiLoading.vue'
 import TaskProgressCard from './TaskProgressCard.vue'
+import PipelineTaskCard from './PipelineTaskCard.vue'
+import type { PipelineType } from '@/types/pipeline'
 import MasPlanPreviewCard from './MasPlanPreviewCard.vue'
 import ChartPreviewModal from './ChartPreviewModal.vue'
 import StudioCodeCard from '@/components/studio/StudioCodeCard.vue'
@@ -333,6 +335,24 @@ const taskToolCalls = computed(() =>
     (t) => t.uiPayload?.task_id,
   ),
 )
+
+function isPipelineTask(tool: ToolCall): boolean {
+  return ['rna_seq', 'atac_seq'].includes(String(tool.uiPayload?.pipeline_type || ''))
+}
+
+function pipelineType(tool: ToolCall): PipelineType {
+  return String(tool.uiPayload?.pipeline_type) as PipelineType
+}
+
+function handlePipelineVisualization(taskId: string, type: PipelineType): void {
+  void agentHubStore.sendMessage(
+    `请读取 ${type} 任务 ${taskId} 的结果，并为关键质量指标和差异分析结果生成可视化。`,
+  )
+}
+
+function handleAdjustPipeline(type: PipelineType): void {
+  void agentHubStore.sendMessage(`请帮我检查并调整这次 ${type} 分析的参数，然后重新预检。`)
+}
 
 // Studio 工作台上下文：仅在 /studio 页面被 provide；注入成功时 Studio 代码工具改渲染代码卡片，
 // 普通 /ai 聊天无此上下文，渲染分支完全不变。
@@ -742,8 +762,18 @@ function handleEdit() {
               </div>
 
               <!-- 异步任务进度卡 -->
+              <PipelineTaskCard
+                v-if="tool.uiPayload?.task_id && isPipelineTask(tool)"
+                :task-id="String(tool.uiPayload.task_id)"
+                :pipeline-type="pipelineType(tool)"
+                :initial-status="tool.uiPayload.status ? String(tool.uiPayload.status) : undefined"
+                :initial-progress="tool.uiPayload.progress ? Number(tool.uiPayload.progress) : 0"
+                :prepared-params="tool.arguments?.prepared_params as Record<string, unknown> | undefined"
+                @generate-visualization="handlePipelineVisualization"
+                @adjust-parameters="handleAdjustPipeline"
+              />
               <TaskProgressCard
-                v-if="tool.uiPayload?.task_id"
+                v-else-if="tool.uiPayload?.task_id"
                 :task-id="String(tool.uiPayload.task_id)"
                 :progress-url="tool.uiPayload.progress_url ? String(tool.uiPayload.progress_url) : undefined"
                 :result-url="tool.uiPayload.result_url ? String(tool.uiPayload.result_url) : undefined"

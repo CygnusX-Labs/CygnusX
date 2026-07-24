@@ -34,6 +34,12 @@ import {
 } from '@/composables/useAgentChatStream'
 import { studioApi, type StudioPermissionMode } from '@/api/studio'
 import { useChatStore } from '@/stores/chat'
+import type {
+  PipelineSubmitResult,
+  PipelineTask,
+  PipelineTaskStatus,
+  PipelineType,
+} from '@/types/pipeline'
 
 const STUDIO_OUTPUT_CAP = 20_000
 
@@ -87,6 +93,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   const streamingContent = ref('')
   const streamingThought = ref('')
   const availableModels = ref<AvailableModel[]>([])
+  const pipelineTasks = ref<Record<string, PipelineTask>>({})
+  const pipelinePollTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   /** Studio（工作台）会话 ID 集合：供会话列表打 📊 角标（后端 ChatSessionDTO 无 mode 字段，前端绕道获取） */
   const studioSessionIds = ref<Set<string>>(new Set())
@@ -117,6 +125,136 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     pendingSessionIdResolver?.()
     pendingSessionIdResolver = null
     pendingSessionIdPromise = null
+  }
+
+  async function invokePipelineTool(
+    toolName: string,
+    arguments_: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const response = await apiClient.post(`/mcp/pipelines/tools/${toolName}/invoke`, {
+      tool_name: toolName,
+      arguments: arguments_,
+    })
+    const envelope = response.data as {
+      success?: boolean
+      error?: string
+      result?: Record<string, unknown>
+    }
+    if (!envelope.success) throw new Error(envelope.error || `${toolName} 调用失败`)
+    const result = envelope.result || {}
+    return (result.llm_payload as Record<string, unknown>) || result
+  }
+
+  function upsertPipelineTask(
+    taskId: string,
+    pipelineType: PipelineType,
+    patch: Partial<PipelineTask> = {},
+  ): PipelineTask {
+    const current = pipelineTasks.value[taskId]
+    const task: PipelineTask = {
+      ...current,
+      ...patch,
+      taskId,
+      pipelineType,
+      status: patch.status || current?.status || 'queued',
+      progress: patch.progress ?? current?.progress ?? 0,
+      polling: patch.polling ?? current?.polling ?? false,
+    }
+    pipelineTasks.value[taskId] = task
+    return task
+  }
+
+  function stopPipelinePolling(taskId: string): void {
+    const timer = pipelinePollTimers.get(taskId)
+    if (timer) clearTimeout(timer)
+    pipelinePollTimers.delete(taskId)
+    const task = pipelineTasks.value[taskId]
+    if (task) task.polling = false
+  }
+
+  async function loadPipelineResults(task: PipelineTask): Promise<void> {
+    const data = await invokePipelineTool(`${task.pipelineType}_results`, {
+      task_id: task.taskId,
+      result_types: ['summary', 'artifacts'],
+    })
+    upsertPipelineTask(task.taskId, task.pipelineType, {
+      reportUrl: data.report_url as string | undefined,
+      metrics: (data.metrics as PipelineTask['metrics']) || {},
+      artifacts: (data.artifacts as PipelineTask['artifacts']) || [],
+    })
+  }
+
+  async function pollPipelineTask(taskId: string): Promise<void> {
+    const task = pipelineTasks.value[taskId]
+    if (!task || task.polling) return
+    task.polling = true
+    try {
+      const data = await invokePipelineTool(`${task.pipelineType}_status`, { task_id: taskId })
+      const status = String(data.status || 'running').toLowerCase() as PipelineTaskStatus
+      const progressValue = Number(data.progress || 0)
+      upsertPipelineTask(taskId, task.pipelineType, {
+        status,
+        progress: progressValue <= 1 ? progressValue * 100 : progressValue,
+        resultUrl: data.result_url as string | undefined,
+        error: (data.error_summary as string | undefined) || undefined,
+        polling: false,
+      })
+      if (status === 'success') {
+        await loadPipelineResults(pipelineTasks.value[taskId])
+        stopPipelinePolling(taskId)
+        return
+      }
+      if (['failed', 'cancelled'].includes(status)) {
+        stopPipelinePolling(taskId)
+        return
+      }
+    } catch (error) {
+      upsertPipelineTask(taskId, task.pipelineType, {
+        error: error instanceof Error ? error.message : '任务状态获取失败',
+        polling: false,
+      })
+    }
+    pipelinePollTimers.set(taskId, setTimeout(() => pollPipelineTask(taskId), 2500))
+  }
+
+  async function submitPipelineTask(
+    pipelineType: PipelineType,
+    preparedParams: Record<string, unknown>,
+  ): Promise<PipelineTask> {
+    const data = (await invokePipelineTool(`${pipelineType}_submit`, {
+      prepared_params: preparedParams,
+    })) as unknown as PipelineSubmitResult
+    const task = upsertPipelineTask(data.task_id, pipelineType, {
+      status: String(data.status || 'queued').toLowerCase() as PipelineTaskStatus,
+      progress: Number(data.progress || 0),
+      resultUrl: data.result_url,
+      preparedParams,
+    })
+    void pollPipelineTask(task.taskId)
+    return task
+  }
+
+  function trackPipelineTask(
+    taskId: string,
+    pipelineType: PipelineType,
+    initial?: Partial<PipelineTask>,
+  ): PipelineTask {
+    const existing = pipelineTasks.value[taskId]
+    const task = upsertPipelineTask(
+      taskId,
+      pipelineType,
+      existing
+        ? { preparedParams: existing.preparedParams || initial?.preparedParams }
+        : initial,
+    )
+    if (!['success', 'failed', 'cancelled'].includes(task.status)) void pollPipelineTask(taskId)
+    return task
+  }
+
+  async function retryPipelineTask(taskId: string): Promise<PipelineTask> {
+    const task = pipelineTasks.value[taskId]
+    if (!task?.preparedParams) throw new Error('缺少原始预检参数，无法直接重试')
+    return submitPipelineTask(task.pipelineType, task.preparedParams)
   }
 
   // ========== Getters ==========
@@ -1066,7 +1204,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   return {
     // state
     mcps, skills, agents, sessions, currentSessionId,
-    isStreaming, streamingContent, streamingThought, availableModels,
+    isStreaming, streamingContent, streamingThought, availableModels, pipelineTasks,
     studioSessionIds, currentPlan, studioPermissions,
     // getters
     activeAgents, currentSession, currentAgent, groupedSessions,
@@ -1083,5 +1221,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     searchSessions, switchSessionModel, loadSessionMessages, sendMessage, stopStreaming,
     approveToolCall, rejectToolCall, answerAskRequest,
     initStudioPermissions, setStudioPermissions,
+    invokePipelineTool, submitPipelineTask, trackPipelineTask, pollPipelineTask,
+    retryPipelineTask, stopPipelinePolling,
   }
 })

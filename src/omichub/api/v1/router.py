@@ -18,6 +18,7 @@ from omichub.api.v1 import (
     mas,
     mcp,
     notification,
+    pipelines,
     platform_config,
     plot_stats,
     prompts,
@@ -54,6 +55,7 @@ api_router.include_router(site_content.router, prefix="/site-content", tags=["Si
 api_router.include_router(docs.router, prefix="/docs", tags=["Docs"])
 api_router.include_router(flows.router, prefix="/flows", tags=["Flows"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["Tasks"])
+api_router.include_router(pipelines.router, prefix="/pipelines", tags=["Pipelines"])
 api_router.include_router(stats.router, prefix="/stats", tags=["Stats"])
 api_router.include_router(plot_stats.router, prefix="/stats", tags=["PlotStats"])
 api_router.include_router(prompts.router, prefix="/prompts", tags=["Prompts"])

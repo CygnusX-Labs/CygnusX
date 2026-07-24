@@ -5,9 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
-
 from core.config import settings
-from core.logger import logger
 
 
 class OmicHubAPIError(Exception):
@@ -88,6 +86,36 @@ class OmicHubAPIClient:
     # ===== Analysis =====
     async def submit_task(self, payload: dict) -> dict:
         return await self.post("/tasks", json=payload)
+
+    # ===== Pipelines =====
+    async def list_available_pipelines(self) -> list[dict[str, Any]]:
+        return await self.get("/pipelines")
+
+    async def check_workspace_data(self, analysis_type: str, data_path: str) -> dict:
+        return await self.post(
+            "/pipelines/check-workspace",
+            json={"analysis_type": analysis_type, "data_path": data_path},
+        )
+
+    async def prepare_pipeline(self, pipeline_type: str, payload: dict[str, Any]) -> dict:
+        return await self.post(f"/pipelines/{pipeline_type}/prepare", json=payload)
+
+    async def submit_pipeline(self, pipeline_type: str, prepared_params: dict[str, Any]) -> dict:
+        return await self.post(
+            f"/pipelines/{pipeline_type}/submit",
+            json={"prepared_params": prepared_params},
+        )
+
+    async def get_pipeline_status(self, pipeline_type: str, task_id: str) -> dict:
+        return await self.get(f"/pipelines/{pipeline_type}/{task_id}/status")
+
+    async def get_pipeline_results(
+        self, pipeline_type: str, task_id: str, result_types: list[str]
+    ) -> dict:
+        return await self.post(
+            f"/pipelines/{pipeline_type}/{task_id}/results",
+            json={"result_types": result_types},
+        )
 
     # ===== Downloads =====
     async def list_downloads(self) -> dict:

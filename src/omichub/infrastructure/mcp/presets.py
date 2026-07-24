@@ -12,6 +12,11 @@ from typing import Any
 
 from omichub.application.schemas.tool_invocation import ToolInvocationContext
 from omichub.application.services.tool_bridge_service import get_tool_bridge_service
+from omichub.infrastructure.mcp.pipeline_preset import (
+    OMICHUB_PIPELINES_SERVER_ID,
+    OMICHUB_PIPELINES_SERVER_NAME,
+    build_pipeline_preset,
+)
 
 # omichub-tools builtin preset 的确定性 UUID（uuid5 DNS namespace + name）
 OMICHUB_TOOLS_SERVER_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "omichub-tools.builtin")
@@ -220,6 +225,7 @@ PRESET_SERVERS: list[dict[str, Any]] = [
         "tools": PLATFORM_PRESET_TOOLS,
         "handlers": PLATFORM_HANDLERS,
     },
+    build_pipeline_preset(),
 ]
 
 
@@ -294,6 +300,8 @@ def _build_omichub_tools_preset() -> dict[str, Any]:
 def get_preset_by_name(name: str) -> dict[str, Any] | None:
     if name == "omichub-tools":
         return _build_omichub_tools_preset()
+    if name == OMICHUB_PIPELINES_SERVER_NAME:
+        return build_pipeline_preset()
     for p in PRESET_SERVERS:
         if p["name"] == name:
             return p
@@ -305,6 +313,8 @@ __all__ = [
     "OMICHUB_TOOLS_SERVER_ID",
     "OMICHUB_TOOLS_SERVER_NAME",
     "OMICHUB_PLATFORM_SERVER_ID",
+    "OMICHUB_PIPELINES_SERVER_ID",
+    "OMICHUB_PIPELINES_SERVER_NAME",
     "PLATFORM_PRESET_TOOLS",
     "PLATFORM_HANDLERS",
     "get_preset_by_name",

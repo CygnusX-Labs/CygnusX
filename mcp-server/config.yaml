@@ -35,3 +35,4 @@ tool_groups:
   reports: true      # 报告 (list/get/content)
   sandbox: true      # 沙箱执行 (create/execute/list/destroy)
   platform: true     # 平台信息 (user_info/platform_status)
+  pipelines: true    # 完整分析流程 (RNA-seq/ATAC-seq prepare/submit/status/results)

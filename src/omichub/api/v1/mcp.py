@@ -1,11 +1,11 @@
-"""MCP 服务路由 - CRUD、工具发现、工具调用（全部管理员守卫）"""
+"""MCP 服务路由 - 管理端 CRUD 与用户级流水线工具调用。"""
 
 from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
 
-from omichub.api.deps import DbSession
+from omichub.api.deps import CurrentUserId, DbSession
 from omichub.api.v1.admin.users import AdminRequired
 from omichub.application.schemas.mcp import (
     CreateMCPServerDTO,
@@ -117,6 +117,27 @@ async def invoke_tool(
 
         raise ValidationError("tool_name 与路径不一致")
     return await service.invoke_tool(server_id, tool_name, req.arguments)
+
+
+@router.post(
+    "/pipelines/tools/{tool_name}/invoke",
+    summary="当前用户调用内置分析流水线 MCP 工具",
+)
+async def invoke_pipeline_tool(
+    current_user_id: CurrentUserId,
+    service: MCPServiceDep,
+    tool_name: str,
+    req: InvokeToolDTO,
+) -> dict[str, Any]:
+    if req.tool_name and req.tool_name != tool_name:
+        from omichub.core.exceptions import ValidationError
+
+        raise ValidationError("tool_name 与路径不一致")
+    return await service.invoke_pipeline_tool(
+        current_user_id,
+        tool_name,
+        req.arguments,
+    )
 
 
 @router.get(

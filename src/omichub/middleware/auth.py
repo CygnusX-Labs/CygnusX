@@ -53,6 +53,26 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if path.startswith(("/docs", "/redoc", "/assets")):
             return await call_next(request)
 
+        api_key = request.headers.get("X-API-Key")
+        if api_key:
+            try:
+                from omichub.application.services.api_key_service import APIKeyService
+                from omichub.infrastructure.database.session import get_session_factory
+
+                factory = get_session_factory()
+                async with factory() as db:
+                    user_id = await APIKeyService(db).authenticate(api_key)
+                    await db.commit()
+            except Exception:  # noqa: BLE001
+                return Response(
+                    status_code=401,
+                    content='{"detail":"API Key 无效或已过期"}',
+                    media_type="application/json",
+                )
+            request.state.user_id = user_id
+            request.state.auth_type = "api_key"
+            return await call_next(request)
+
         auth_header = request.headers.get("Authorization")
         if not auth_header or not auth_header.startswith("Bearer "):
             return Response(

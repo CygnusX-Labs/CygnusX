@@ -15,6 +15,7 @@ _GROUP_REGISTRY: dict[str, str] = {
     "reports": "tools.reports",
     "sandbox": "tools.sandbox",
     "platform": "tools.platform",
+    "pipelines": "tools.pipelines",
 }
 
 

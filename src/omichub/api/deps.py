@@ -40,6 +40,10 @@ async def get_current_user_id(
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
 ) -> str:
     """解析当前用户 ID：优先 X-API-Key，其次 JWT Bearer token。"""
+    if x_api_key and getattr(request.state, "auth_type", "") == "api_key":
+        user_id = getattr(request.state, "user_id", None)
+        if user_id:
+            return str(user_id)
     if x_api_key:
         return await _authenticate_api_key(x_api_key)
     if token:

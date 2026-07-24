@@ -14,6 +14,7 @@ from omichub.application.schemas.mcp import (
     MCPToolDTO,
     UpdateMCPServerDTO,
 )
+from omichub.application.schemas.tool_invocation import ToolInvocationContext
 from omichub.core.config import get_settings
 from omichub.core.exceptions import ConflictError, NotFoundError, ValidationError
 from omichub.domain.mcp.entities import MCPServer, MCPToolRegistry
@@ -25,11 +26,14 @@ from omichub.infrastructure.database.repositories.mcp_repository import (
 )
 from omichub.infrastructure.mcp.client import MCPClient, validate_sse_url, validate_stdio_command
 from omichub.infrastructure.mcp.presets import (
+    OMICHUB_PIPELINES_SERVER_ID,
+    OMICHUB_PIPELINES_SERVER_NAME,
     OMICHUB_PLATFORM_SERVER_ID,
     OMICHUB_TOOLS_SERVER_ID,
     OMICHUB_TOOLS_SERVER_NAME,
     PRESET_SERVERS,
     _build_omichub_tools_preset,
+    get_preset_by_name,
 )
 
 
@@ -86,10 +90,25 @@ class MCPService:
         for preset in PRESET_SERVERS:
             existing = await self._repo.get_by_name(preset["name"])
             if existing is not None:
+                if preset["name"] == OMICHUB_PIPELINES_SERVER_NAME:
+                    existing.tools = [
+                        MCPToolRegistry(
+                            tool_name=tool["name"],
+                            description=tool["description"],
+                            input_schema=tool["inputSchema"],
+                            server_id=existing.id,
+                        )
+                        for tool in preset["tools"]
+                    ]
+                    existing.status = ServerStatus.ONLINE
+                    existing.is_enabled = True
+                    await self._repo.save(existing)
                 continue
             preset_id = (
                 OMICHUB_PLATFORM_SERVER_ID
                 if preset["name"] == "omichub-platform"
+                else OMICHUB_PIPELINES_SERVER_ID
+                if preset["name"] == OMICHUB_PIPELINES_SERVER_NAME
                 else uuid4()
             )
             tools = [
@@ -269,6 +288,45 @@ class MCPService:
             )
         else:
             await self._add_log(server_id, "info", f"工具调用成功 {tool_name}", "internal")
+        return result
+
+    async def invoke_pipeline_tool(
+        self,
+        user_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        session_id: str = "pipeline-frontend",
+    ) -> dict[str, Any]:
+        """以当前用户上下文调用内置 omichub-pipelines 工具。"""
+        await self.ensure_presets()
+        server = await self._repo.get_by_id(OMICHUB_PIPELINES_SERVER_ID)
+        if server is None or server.name != OMICHUB_PIPELINES_SERVER_NAME:
+            raise NotFoundError("omichub-pipelines MCP Server 不存在")
+        preset = get_preset_by_name(OMICHUB_PIPELINES_SERVER_NAME)
+        tool_names = {tool["name"] for tool in (preset or {}).get("tools", [])}
+        if tool_name not in tool_names:
+            raise NotFoundError(f"流水线工具不存在: {tool_name}")
+        context = ToolInvocationContext(
+            user_id=user_id,
+            session_id=session_id,
+            db=self._db,
+        )
+        result = await self._client.call_tool(
+            server,
+            tool_name,
+            arguments,
+            user_id=user_id,
+            context=context,
+        )
+        if result.get("success"):
+            await self._add_log(server.id, "info", f"用户调用成功 {tool_name}", "frontend")
+        else:
+            await self._add_log(
+                server.id,
+                "error",
+                f"用户调用失败 {tool_name}: {result.get('error', '')}",
+                "frontend",
+            )
         return result
 
     async def list_logs(self, server_id: UUID, tail: int = 100) -> list[MCPLogEntryDTO]:
