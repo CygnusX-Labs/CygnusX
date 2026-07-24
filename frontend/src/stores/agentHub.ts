@@ -26,6 +26,7 @@ import type {
 import type { ChatMessage, ToolCall, FileAttachment, ChartData } from '@/components/ai-chat/types'
 import { agentApi, adminAgentApi } from '@/api/agent'
 import apiClient from '@/api/client'
+import { reportChatDiagnostic } from '@/utils/chatDiagnostics'
 import {
   useAgentChatStream,
   type StudioPlanStep,
@@ -707,6 +708,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       id: aiId,
       role: 'assistant',
       content: '',
+      status: 'streaming',
       modelName: agent.model_engine || agent.name,
       toolCalls: [],
       createdAt: new Date().toISOString(),
@@ -884,7 +886,13 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           streamingThought.value = ''
           releaseSessionIdLock()
         },
-        onDone: (_, messageId, usage, finishReason) => {
+        onDone: (_, messageId, usage, finishReason, finalContent, finalReasoning) => {
+          if (!streamingContent.value && finalContent) {
+            streamingContent.value = finalContent
+          }
+          if (!streamingThought.value && finalReasoning) {
+            streamingThought.value = finalReasoning
+          }
           aiMsg.content = streamingContent.value || aiMsg.content
           aiMsg.thought = streamingThought.value || undefined
           if (finishReason) aiMsg.finishReason = finishReason
@@ -904,10 +912,21 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           }
           if (!aiMsg.content.trim() && !aiMsg.toolCalls?.length) {
             aiMsg.status = aiMsg.thought ? 'empty' : 'error'
+            reportChatDiagnostic({
+              phase: 'stream-empty',
+              messageId: aiMsg.id,
+              sessionId: session.id,
+              rawResponseSummary: {
+                usage,
+                finishReason,
+                hasThought: Boolean(aiMsg.thought?.trim()),
+              },
+            })
             if (!aiMsg.thought) {
               aiMsg.content = '当前模型响应为空，请重新发送'
             }
           }
+          if (aiMsg.status !== 'error' && aiMsg.status !== 'empty') aiMsg.status = 'complete'
           isStreaming.value = false
           streamingContent.value = ''
           streamingThought.value = ''

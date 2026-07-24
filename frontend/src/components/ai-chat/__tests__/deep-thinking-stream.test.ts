@@ -108,4 +108,36 @@ describe('深度思考流式聊天全链路', () => {
     expect(el.textContent).toContain('思考过程')
     expect(el.textContent).toContain('你好')
   }, 15000)
+
+  it('仅 done 事件携带 answer：仍写入正文并完成消息状态', async () => {
+    mockFetchWithSse([
+      'data: {"type":"done","session_id":"session-final","message_id":"message-final","answer":"来自 done 事件的完整正文","usage":{"prompt_tokens":12,"completion_tokens":8,"total_tokens":20}}',
+      '',
+    ].join('\n'))
+
+    const store = useAgentHubStore()
+    store.agents = [
+      {
+        id: 'agent-general',
+        agent_id: 'agent-general',
+        name: '通用助手',
+        description: '',
+        avatar: '🤖',
+        color: '#4f8ef7',
+        model_engine: 'test-model',
+        model_id: 'model-id',
+        is_active: true,
+        features: {},
+      } as unknown as AgentTemplate,
+    ]
+    const session = store.startSessionFromAgent('agent-general')!
+
+    await store.sendMessage('测试全量响应')
+
+    const aiMsg = session.messages.find((message) => message.role === 'assistant')!
+    expect(aiMsg.id).toBe('message-final')
+    expect(aiMsg.content).toBe('来自 done 事件的完整正文')
+    expect(aiMsg.status).toBe('complete')
+    expect(aiMsg.tokens).toEqual({ input: 12, output: 8, total: 20 })
+  })
 })

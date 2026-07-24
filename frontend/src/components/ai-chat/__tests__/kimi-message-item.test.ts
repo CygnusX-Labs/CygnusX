@@ -64,6 +64,21 @@ describe('KimiMessageItem 渲染分支', () => {
     expect(el.textContent).toContain('思考完成，但未生成正式回复')
   })
 
+  it('有 output Token 但正文为空：显示加载异常和可操作重试入口', () => {
+    const { el } = mountItem({
+      message: {
+        ...baseMsg,
+        content: '',
+        thought: '模型已完成推理',
+        status: 'empty',
+        tokens: { input: 128, output: 32, total: 160 },
+      },
+      isStreaming: false,
+    })
+    expect(el.textContent).toContain('回复内容加载异常')
+    expect(el.textContent).toContain('点击重试')
+  })
+
   it('流式中：streamingContent 应实时渲染', () => {
     const { el } = mountItem({
       message: { ...baseMsg, status: 'streaming' },

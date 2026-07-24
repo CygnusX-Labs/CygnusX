@@ -7,6 +7,7 @@
  *  - 解析 tool_call / tool_result 事件，供前端渲染工具调用气泡
  */
 import { ref } from 'vue'
+import { reportChatDiagnostic } from '@/utils/chatDiagnostics'
 
 export interface AgentChatStreamOptions {
   agentId: string
@@ -118,7 +119,93 @@ export interface AgentStreamCallbacks {
   onAskRequest?: (event: AskRequestEvent) => void
   onRoute?: (event: RouteEvent) => void
   onError?: (error: string) => void
-  onDone?: (sessionId: string, messageId: string, usage?: TokenUsage, finishReason?: string) => void
+  onDone?: (
+    sessionId: string,
+    messageId: string,
+    usage?: TokenUsage,
+    finishReason?: string,
+    finalContent?: string,
+    finalReasoning?: string,
+  ) => void
+}
+
+export interface NormalizedAgentStreamEvent {
+  type: string
+  content: string
+  reasoning: string
+  isReasoning: boolean
+  sessionId?: string
+  messageId?: string
+  raw: Record<string, unknown>
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined
+}
+
+function firstString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.length > 0) return value
+  }
+  return ''
+}
+
+export function normalizeAgentStreamEvent(data: Record<string, unknown>): NormalizedAgentStreamEvent {
+  const nestedData = asRecord(data.data)
+  const delta = asRecord(data.delta) || asRecord(nestedData?.delta)
+  const message = asRecord(data.message) || asRecord(nestedData?.message)
+  const firstChoice = Array.isArray(data.choices) ? asRecord(data.choices[0]) : undefined
+  const choiceDelta = asRecord(firstChoice?.delta)
+  const choiceMessage = asRecord(firstChoice?.message)
+
+  const reasoning = firstString(
+    data.reasoning_content,
+    data.reasoning,
+    nestedData?.reasoning_content,
+    nestedData?.reasoning,
+    delta?.reasoning_content,
+    delta?.reasoning,
+    message?.reasoning_content,
+    choiceDelta?.reasoning_content,
+    choiceDelta?.reasoning,
+    choiceMessage?.reasoning_content,
+  )
+  const content = firstString(
+    data.content,
+    data.text,
+    data.answer,
+    typeof data.delta === 'string' ? data.delta : undefined,
+    nestedData?.content,
+    nestedData?.text,
+    nestedData?.answer,
+    delta?.content,
+    delta?.text,
+    delta?.answer,
+    message?.content,
+    message?.text,
+    message?.answer,
+    choiceDelta?.content,
+    choiceDelta?.text,
+    choiceMessage?.content,
+    firstChoice?.text,
+  )
+  const declaredType = firstString(data.type, data.event, nestedData?.type)
+  const isReasoning = Boolean(data.is_reasoning)
+    || declaredType === 'reasoning'
+    || (!!reasoning && !content)
+  const type = declaredType || (content || reasoning ? 'text' : '')
+
+  return {
+    type,
+    content,
+    reasoning,
+    isReasoning,
+    sessionId: firstString(data.session_id, data.sessionId, nestedData?.session_id) || undefined,
+    messageId: firstString(data.message_id, data.messageId, nestedData?.message_id) || undefined,
+    raw: data,
+  }
 }
 
 export function useAgentChatStream() {
@@ -179,12 +266,17 @@ export function useAgentChatStream() {
         const data = trimmed.slice(5).trimStart()
         if (!data) return
         try {
-          const parsed = JSON.parse(data)
-          handleStreamEvent(parsed, callbacks)
-          if (parsed.type === "done") doneReceived = true
-          if (parsed.type === "error") errorReceived = true
-        } catch {
-          console.warn("[AgentChatStream] 无法解析 SSE 事件:", data)
+          const parsed = JSON.parse(data) as Record<string, unknown>
+          const normalized = normalizeAgentStreamEvent(parsed)
+          handleStreamEvent(normalized, callbacks)
+          if (normalized.type === 'done') doneReceived = true
+          if (normalized.type === 'error') errorReceived = true
+        } catch (error) {
+          reportChatDiagnostic({
+            phase: 'stream-parse',
+            rawResponseSummary: data.slice(0, 1000),
+            error,
+          })
         }
       }
 
@@ -216,16 +308,17 @@ export function useAgentChatStream() {
     }
   }
 
-  function handleStreamEvent(data: Record<string, unknown>, cb: AgentStreamCallbacks): void {
-    const type = data.type as string
-    const content = (data.content as string) || ''
-    const sessionId = data.session_id as string | undefined
-    const messageId = data.message_id as string | undefined
-    const isReasoning = data.is_reasoning as boolean | undefined
+  function handleStreamEvent(event: NormalizedAgentStreamEvent, cb: AgentStreamCallbacks): void {
+    const data = event.raw
+    const { type, content, reasoning, sessionId, messageId, isReasoning } = event
 
     switch (type) {
       case 'text':
-        cb.onText?.(content, isReasoning)
+      case 'content':
+      case 'message':
+      case 'delta':
+      case 'reasoning':
+        cb.onText?.(isReasoning ? reasoning || content : content, isReasoning)
         if (sessionId && messageId) cb.onSessionCreated?.(sessionId, messageId)
         break
       case 'tool_call':
@@ -293,9 +386,17 @@ export function useAgentChatStream() {
         break
       case 'done':
         {
+          if (sessionId && messageId) cb.onSessionCreated?.(sessionId, messageId)
           const usage = data.usage as TokenUsage | undefined
           const finishReason = data.finish_reason as string | undefined
-          cb.onDone?.(sessionId || '', messageId || '', usage, finishReason)
+          cb.onDone?.(
+            sessionId || '',
+            messageId || '',
+            usage,
+            finishReason,
+            content,
+            reasoning,
+          )
         }
         break
     }
