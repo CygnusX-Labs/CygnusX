@@ -4,7 +4,6 @@ import DOMPurify from 'dompurify'
 import { NButton, NIcon, NTag, NDataTable } from 'naive-ui'
 import {
   DocumentOutline,
-  BuildOutline,
 } from '@vicons/ionicons5'
 import { Vue3Lottie } from 'vue3-lottie'
 import { useRouter } from 'vue-router'
@@ -20,6 +19,7 @@ import MasPlanPreviewCard from './MasPlanPreviewCard.vue'
 import ChartPreviewModal from './ChartPreviewModal.vue'
 import StudioCodeCard from '@/components/studio/StudioCodeCard.vue'
 import ApprovalCard from './ApprovalCard.vue'
+import McpToolCallCard from './McpToolCallCard.vue'
 import { StudioContextKey, isStudioCodeTool } from '@/components/studio/context'
 import { useAgentHubStore } from '@/stores/agentHub'
 import { reportChatDiagnostic } from '@/utils/chatDiagnostics'
@@ -707,79 +707,14 @@ function handleEdit() {
                   </div>
                 </div>
               </div>
-              <div v-else class="tool-card">
-              <div class="tool-header">
-                <n-icon size="16"><BuildOutline /></n-icon>
-                <span>{{ tool.name }}</span>
-                <n-tag v-if="tool.mcpServer" size="tiny" type="info" class="server-tag">
-                  MCP: {{ tool.mcpServer }}
-                </n-tag>
-                <n-tag
-                  v-if="tool.status"
-                  size="tiny"
-                  :type="tool.status === 'success' ? 'success' : tool.status === 'error' ? 'error' : 'warning'"
-                  class="status-tag"
-                >
-                  {{ tool.status === 'running' ? '执行中' : tool.status === 'success' ? '成功' : tool.status === 'error' ? '失败' : tool.status }}
-                </n-tag>
-              </div>
-              <div v-if="tool.arguments && Object.keys(tool.arguments).length" class="tool-args">
-                <div class="tool-section-title">参数</div>
-                <pre>{{ JSON.stringify(tool.arguments, null, 2) }}</pre>
-              </div>
-              <div class="tool-content">
-                <div class="tool-section-title">结果</div>
-                <pre>{{ JSON.stringify(tool.result, null, 2) }}</pre>
-              </div>
-
-              <!-- 二次确认卡 -->
-              <div v-if="tool.uiPayload?.confirm_card" class="confirm-card">
-                <div class="confirm-title">⚠️ 需要确认</div>
-                <div class="confirm-desc">
-                  该操作将执行 {{ tool.name }}，确认后继续？
-                </div>
-                <div v-if="tool.uiPayload?.args" class="confirm-preview">
-                  <pre>{{ JSON.stringify(tool.uiPayload.args, null, 2) }}</pre>
-                </div>
-                <div class="confirm-actions">
-                  <n-button size="small" type="primary" @click="handleConfirmTool(tool.name, tool.arguments)">
-                    确认执行
-                  </n-button>
-                </div>
-              </div>
-
-              <!-- open_page 引导卡 -->
-              <div v-if="tool.uiPayload?.route" class="open-page-card">
-                <div class="open-page-title">🔗 前往工具页</div>
-                <div class="open-page-desc">
-                  {{ tool.uiPayload.message || `${tool.name} 需要在专用工具页完成` }}
-                </div>
-                <div class="open-page-actions">
-                  <n-button size="small" type="info" @click="handleOpenToolPage(String(tool.uiPayload.route), tool.arguments)">
-                    打开 {{ tool.uiPayload.route }}
-                  </n-button>
-                </div>
-              </div>
-
-              <!-- 异步任务进度卡 -->
-              <PipelineTaskCard
-                v-if="tool.uiPayload?.task_id && isPipelineTask(tool)"
-                :task-id="String(tool.uiPayload.task_id)"
-                :pipeline-type="pipelineType(tool)"
-                :initial-status="tool.uiPayload.status ? String(tool.uiPayload.status) : undefined"
-                :initial-progress="tool.uiPayload.progress ? Number(tool.uiPayload.progress) : 0"
-                :prepared-params="tool.arguments?.prepared_params as Record<string, unknown> | undefined"
+              <McpToolCallCard
+                v-else
+                :tool="tool"
+                @confirm-tool="handleConfirmTool"
+                @open-tool-page="handleOpenToolPage"
                 @generate-visualization="handlePipelineVisualization"
                 @adjust-parameters="handleAdjustPipeline"
               />
-              <TaskProgressCard
-                v-else-if="tool.uiPayload?.task_id"
-                :task-id="String(tool.uiPayload.task_id)"
-                :progress-url="tool.uiPayload.progress_url ? String(tool.uiPayload.progress_url) : undefined"
-                :result-url="tool.uiPayload.result_url ? String(tool.uiPayload.result_url) : undefined"
-                :task-url="tool.uiPayload.task_url ? String(tool.uiPayload.task_url) : undefined"
-              />
-              </div>
             </template>
           </div>
 
@@ -957,7 +892,7 @@ function handleEdit() {
   align-items: flex-end;
 }
 .kimi-message-item.user .message-content.user-bubble {
-  max-width: 80%;
+  max-width: 70%;
   padding: 12px 16px;
   background: linear-gradient(135deg, #4A6CF7, #6B4B96);
   color: #ffffff;
@@ -1010,7 +945,7 @@ function handleEdit() {
 }
 .kimi-message-item.assistant .message-content.ai-card {
   position: relative;
-  max-width: 90%;
+  max-width: min(100% - 48px, var(--chat-content-max-width, 860px));
   padding: 16px 20px;
   background: var(--chat-ai-card, #ffffff);
   border: 1px solid var(--chat-border, #f0f0f0);
@@ -1055,6 +990,14 @@ function handleEdit() {
   background: linear-gradient(180deg, #6366f1, #a855f7);
   border-radius: 2px;
   animation: cursor-blink 1s step-end infinite;
+}
+
+/* Markdown 表格和代码块横向滚动 */
+.kimi-message-item.assistant :deep(.markdown-body table),
+.kimi-message-item.assistant :deep(.markdown-body pre) {
+  overflow-x: auto;
+  min-width: 320px;
+  max-width: 100%;
 }
 
 @keyframes cursor-blink {
@@ -1347,64 +1290,6 @@ function handleEdit() {
   border: 1px solid var(--chat-border, #f0f0f0);
 }
 
-/* 二次确认卡 */
-.confirm-card {
-  margin-top: 12px;
-  padding: 14px;
-  background: var(--chat-surface, #fffbe6);
-  border: 1px solid #ffe58f;
-  border-radius: 8px;
-}
-.confirm-title {
-  font-weight: 600;
-  color: #d48806;
-  margin-bottom: 6px;
-}
-.confirm-desc {
-  font-size: 13px;
-  color: var(--chat-text-secondary, #666);
-  margin-bottom: 10px;
-}
-.confirm-preview {
-  margin-bottom: 10px;
-  max-height: 160px;
-  overflow-y: auto;
-}
-.confirm-preview pre {
-  margin: 0;
-  font-size: 12px;
-  background: rgba(0, 0, 0, 0.03);
-  padding: 8px;
-  border-radius: 4px;
-}
-.confirm-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-/* open_page 引导卡 */
-.open-page-card {
-  margin-top: 12px;
-  padding: 14px;
-  background: var(--chat-surface, #e6f7ff);
-  border: 1px solid #91d5ff;
-  border-radius: 8px;
-}
-.open-page-title {
-  font-weight: 600;
-  color: #096dd9;
-  margin-bottom: 6px;
-}
-.open-page-desc {
-  font-size: 13px;
-  color: var(--chat-text-secondary, #666);
-  margin-bottom: 10px;
-}
-.open-page-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
 /* 工具调用结果卡 */
 .tool-results {
   display: flex;
@@ -1440,40 +1325,6 @@ function handleEdit() {
   font-size: 11px;
   color: var(--chat-text-muted, #888);
 }
-.tool-card {
-  padding: 12px;
-  background: var(--chat-surface, #f8f9fa);
-  border: 1px solid var(--chat-border, #e8e8e8);
-  border-radius: 8px;
-}
-.tool-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--chat-text-primary, #1a1a1a);
-}
-.server-tag,
-.status-tag {
-  margin-left: auto;
-}
-.tool-section-title {
-  font-size: 12px;
-  color: var(--chat-text-muted, #999);
-  margin: 10px 0 6px;
-}
-.tool-args pre,
-.tool-content pre {
-  margin: 0;
-  padding: 8px;
-  background: rgba(0, 0, 0, 0.03);
-  border-radius: 4px;
-  font-size: 12px;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
 /* Studio ask_user 澄清卡片 */
 .ask-card {
   width: 90%;

@@ -79,6 +79,9 @@
   --page-padding: 32px;
   --section-gap: 32px;
 
+  /* ===== AI 对话内容宽度（消息列表与输入框共享）===== */
+  --chat-content-max-width: 860px;
+
   /* ===== Type Scale（字体层级）===== */
   --font-display-size: 28px;      --font-display-height: 36px;      --font-display-weight: 600;  --font-display-spacing: -0.02em;
   --font-page-title-size: 24px;   --font-page-title-height: 32px;   --font-page-title-weight: 600; --font-page-title-spacing: -0.02em;

@@ -210,6 +210,7 @@ export function normalizeAgentStreamEvent(data: Record<string, unknown>): Normal
 
 export function useAgentChatStream() {
   const isStreaming = ref(false)
+  const isPaused = ref(false)
   const abortController = ref<AbortController | null>(null)
 
   async function streamChat(
@@ -218,6 +219,7 @@ export function useAgentChatStream() {
   ): Promise<void> {
     if (isStreaming.value) return
     isStreaming.value = true
+    isPaused.value = false
     abortController.value = new AbortController()
 
     try {
@@ -405,7 +407,20 @@ export function useAgentChatStream() {
   function abortStream(): void {
     abortController.value?.abort()
     isStreaming.value = false
+    isPaused.value = false
   }
 
-  return { isStreaming, streamChat, abortStream }
+  /** 暂停流式输出：中断连接但保留已输出文本，标记为暂停态 */
+  function pauseStream(): void {
+    abortController.value?.abort()
+    isStreaming.value = false
+    isPaused.value = true
+  }
+
+  /** 重置暂停状态（重新生成前调用） */
+  function resetPause(): void {
+    isPaused.value = false
+  }
+
+  return { isStreaming, isPaused, streamChat, abortStream, pauseStream, resetPause }
 }

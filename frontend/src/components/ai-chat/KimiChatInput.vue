@@ -9,11 +9,15 @@ import {
   TerminalOutline,
   SparklesOutline,
   TrashOutline,
+  PauseOutline,
+  PlayOutline,
+  RefreshOutline,
 } from '@vicons/ionicons5'
 import SlashCommandMenu from './SlashCommandMenu.vue'
 import PromptSidebar from './PromptSidebar.vue'
 import { useChatStore } from '@/stores/chat'
 import { useSiteConfigStore } from '@/stores/site-config'
+import { matchWorkbenchIntent } from '@/config/aiIntents'
 import apiClient from '@/api/client'
 import type { FileAttachment } from './types'
 
@@ -21,18 +25,27 @@ interface Props {
   modelValue: string
   placeholder?: string
   disabled?: boolean
+  /** 是否正在流式输出 */
+  isStreaming?: boolean
+  /** 是否已暂停 */
+  isPaused?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   modelValue: '',
   placeholder: '输入消息，或点击左侧工具唤起能力...',
   disabled: false,
+  isStreaming: false,
+  isPaused: false,
 })
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
-  send: [content: string, options: { attachments?: FileAttachment[]; enableWebSearch?: boolean; enableCodeExecution?: boolean }]
+  send: [content: string, options: { attachments?: FileAttachment[]; enableWebSearch?: boolean; enableCodeExecution?: boolean; workbenchIntent?: boolean }]
   triggerSandbox: []
+  pause: []
+  resume: []
+  regenerate: []
 }>()
 
 const chatStore = useChatStore()
@@ -132,9 +145,17 @@ function handleSlashSelect(command: string) {
 function handleSend() {
   const content = localValue.value.trim()
   if ((!content && !attachments.value.length) || props.disabled) return
+
+  // Feature 5: 意图匹配 → 自动切换工作台模式
+  const workbenchIntent = matchWorkbenchIntent(content)
+  if (workbenchIntent) {
+    message.info('已为您切换至工作台模式，便于跟踪任务进度')
+  }
+
   emit('send', content, {
     attachments: attachments.value.length ? [...attachments.value] : undefined,
     enableWebSearch: chatStore.enableWebSearch,
+    workbenchIntent,
   })
   localValue.value = ''
   attachments.value = []
@@ -143,6 +164,18 @@ function handleSend() {
       textareaRef.value.style.height = 'auto'
     }
   })
+}
+
+function handlePause() {
+  emit('pause')
+}
+
+function handleResume() {
+  emit('resume')
+}
+
+function handleRegenerate() {
+  emit('regenerate')
 }
 
 let blurTimer: ReturnType<typeof setTimeout> | null = null
@@ -358,7 +391,45 @@ onUnmounted(() => {
           </div>
         </n-popover>
 
+        <!-- 流式输出中：暂停按钮 -->
+        <n-tooltip v-if="isStreaming" trigger="hover">
+          <template #trigger>
+            <n-button circle class="send-btn pause-btn" @click="handlePause">
+              <template #icon>
+                <n-icon size="18"><PauseOutline /></n-icon>
+              </template>
+            </n-button>
+          </template>
+          暂停生成
+        </n-tooltip>
+
+        <!-- 已暂停：继续 + 重新生成 -->
+        <template v-else-if="isPaused">
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-button circle class="send-btn resume-btn" @click="handleResume">
+                <template #icon>
+                  <n-icon size="18"><PlayOutline /></n-icon>
+                </template>
+              </n-button>
+            </template>
+            继续生成
+          </n-tooltip>
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-button circle class="send-btn regenerate-btn" @click="handleRegenerate">
+                <template #icon>
+                  <n-icon size="18"><RefreshOutline /></n-icon>
+                </template>
+              </n-button>
+            </template>
+            重新生成
+          </n-tooltip>
+        </template>
+
+        <!-- 默认：发送按钮 -->
         <n-button
+          v-else
           circle
           class="send-btn"
           :class="{ active: canSend }"
@@ -373,7 +444,12 @@ onUnmounted(() => {
     </div>
 
     <div class="input-hint">
-      {{ siteConfigStore.aiInputHint }}
+      <template v-if="isPaused">
+        <span class="paused-hint">生成已暂停</span>
+      </template>
+      <template v-else>
+        {{ siteConfigStore.aiInputHint }}
+      </template>
     </div>
 
     <PromptSidebar
@@ -512,6 +588,27 @@ onUnmounted(() => {
       &:disabled {
         opacity: 0.4;
       }
+
+      &.pause-btn {
+        color: #fff;
+        background: var(--arco-warning, #FF7D00);
+        animation: pause-pulse 1.6s ease-in-out infinite;
+      }
+
+      &.resume-btn {
+        color: #fff;
+        background: var(--arco-success, #00B42A);
+      }
+
+      &.regenerate-btn {
+        color: var(--chat-text-secondary);
+        background: var(--chat-surface);
+
+        &:hover {
+          color: #fff;
+          background: var(--brand-gradient);
+        }
+      }
     }
   }
 
@@ -521,6 +618,22 @@ onUnmounted(() => {
     color: var(--chat-text-muted);
     margin-top: 8px;
     line-height: 1.4;
+  }
+
+  .paused-hint {
+    color: var(--arco-warning, #FF7D00);
+    font-weight: 500;
+  }
+}
+
+@keyframes pause-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pause-btn {
+    animation: none !important;
   }
 }
 </style>
