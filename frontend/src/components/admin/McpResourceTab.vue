@@ -3,11 +3,12 @@ import { h, ref, reactive, computed } from 'vue'
 import {
   NButton, NDataTable, NDrawer, NDrawerContent, NForm, NFormItem, NInput,
   NSelect, NIcon, NTag, NSpace, NTooltip, NPopconfirm, NSwitch, NModal,
-  NTabs, NTabPane, useMessage,
+  NTabs, NTabPane, NCollapse, NCollapseItem, useMessage,
 } from 'naive-ui'
 import {
   RefreshOutline, BuildOutline, PulseOutline, AddOutline, TrashOutline,
   SettingsOutline, DocumentTextOutline, EllipsisHorizontalOutline,
+  ChatboxOutline, FolderOpenOutline, AlertCircleOutline,
 } from '@vicons/ionicons5'
 import { useAgentHubStore } from '@/stores/agentHub'
 import type { McpService, McpTool, McpLogEntry } from '@/types/agent'
@@ -108,11 +109,12 @@ async function handleAddSubmit() {
 // ===== 配置 MCP 抽屉 =====
 const showConfigDrawer = ref(false)
 const configLoading = ref(false)
+const activeTab = ref('general')
 const editingMcp = ref<McpService | null>(null)
 const configForm = reactive({
   name: '',
   description: '',
-  transport: 'stdio' as 'stdio' | 'sse',
+  transport: 'stdio' as 'stdio' | 'sse' | 'builtin',
   command: '',
   args: '',
   url: '',
@@ -129,9 +131,10 @@ function parseEnvPairs(env: Record<string, string>) {
 
 function openConfig(row: McpService) {
   editingMcp.value = row
+  activeTab.value = 'general'
   configForm.name = row.name
   configForm.description = row.description
-  configForm.transport = row.transport as 'stdio' | 'sse'
+  configForm.transport = row.transport
   configForm.command = row.command
   configForm.args = (row.args || []).join(' ')
   configForm.url = row.url
@@ -150,6 +153,57 @@ function removeConfigEnvPair(idx: number) {
   configForm.envPairs.splice(idx, 1)
 }
 
+// ===== 通用 Tab：按传输类型联动 =====
+/** builtin（平台内置，进程内执行）或 stdio（外部本地进程）都归为「本地」一类 */
+const configIsBuiltin = computed(() => editingMcp.value?.transport === 'builtin')
+const configIsLocal = computed(
+  () => configForm.transport === 'stdio' || configForm.transport === 'builtin',
+)
+const configIsOffline = computed(() => editingMcp.value?.status !== 'online')
+const configTransportOptions = computed(() => {
+  const opts: Array<{ label: string; value: string }> = [
+    { label: 'Stdio（本地命令）', value: 'stdio' },
+    { label: 'SSE（远程 HTTP）', value: 'sse' },
+  ]
+  if (configForm.transport === 'builtin') {
+    opts.unshift({ label: 'Builtin（平台内置）', value: 'builtin' })
+  }
+  return opts
+})
+
+// ===== 工具 Tab：回填 + 重新发现 =====
+const rediscoverLoading = ref(false)
+/** 详情卡「工具」Tab 展示的工具：优先取重新发现后的缓存，否则取列表接口回填的快照 */
+const configTools = computed<McpTool[]>(() => {
+  if (!editingMcp.value) return []
+  return toolsCache.value[editingMcp.value.id] ?? editingMcp.value.tools ?? []
+})
+
+async function handleRediscover() {
+  if (!editingMcp.value) return
+  const id = editingMcp.value.id
+  rediscoverLoading.value = true
+  try {
+    const tools = await store.fetchMcpTools(id)
+    toolsCache.value[id] = tools
+    // 同步回详情卡与列表行，保持两处工具数据同源
+    if (editingMcp.value) {
+      editingMcp.value.tools = tools
+      editingMcp.value.tool_count = tools.length
+    }
+    const row = store.mcps.find((m) => m.id === id)
+    if (row) {
+      row.tools = tools
+      row.tool_count = tools.length
+    }
+    message.success(`重新发现完成，共 ${tools.length} 个工具`)
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail || '重新发现失败，请检查服务连接')
+  } finally {
+    rediscoverLoading.value = false
+  }
+}
+
 async function handleConfigSubmit() {
   if (!editingMcp.value) return
   const env: Record<string, string> = {}
@@ -164,7 +218,9 @@ async function handleConfigSubmit() {
     registry: configForm.registry,
     working_dir: configForm.working_dir.trim(),
   }
-  if (configForm.transport === 'stdio') {
+  if (configForm.transport === 'builtin') {
+    // 内置服务进程内执行，启动命令/参数/环境变量/URL 由平台管理，不下发以免清空
+  } else if (configForm.transport === 'stdio') {
     payload.command = configForm.command.trim()
     payload.args = configForm.args.trim() ? configForm.args.trim().split(/\s+/) : []
     payload.url = ''
@@ -268,23 +324,37 @@ function handleExpand(row: McpService) {
   }
 }
 
+/** 从工具的 inputSchema 中提取「参数名: 类型」列表（用于标签展示） */
+function schemaParams(t: McpTool): string[] {
+  const schema = (t.input_schema || {}) as Record<string, any>
+  const props = (schema.properties ?? {}) as Record<string, any>
+  return Object.entries(props).map(([k, v]) => `${k}: ${v?.type ?? 'any'}`)
+}
+
 function renderTools(tools: McpTool[]) {
   if (!tools.length) return h('div', { class: 'tools-empty' }, '该服务暂无工具（展开时自动加载）')
   return h('div', { class: 'tools-grid' },
-    tools.map((t) =>
-      h('div', { class: 'tool-cell' }, [
+    tools.map((t) => {
+      const params = schemaParams(t)
+      return h('div', { class: 'tool-cell' }, [
         h('div', { class: 'tool-head' }, [
           h(NIcon, { component: BuildOutline, size: 14 }),
           h('span', { class: 'tool-name' }, t.name),
         ]),
-        h('div', { class: 'tool-desc' }, t.description),
-        h('div', { class: 'tool-schema' },
-          Object.entries(t.input_schema).map(([k, v]) =>
-            h(NTag, { size: 'tiny', bordered: false }, { default: () => `${k}: ${String(v)}` }),
-          ),
-        ),
-      ]),
-    ),
+        h('div', { class: 'tool-desc' }, t.description || '暂无描述'),
+        params.length
+          ? h(NCollapse, { class: 'tool-schema-collapse' }, {
+              default: () =>
+                h(NCollapseItem, { title: `参数 Schema（${params.length}）`, name: 'schema' }, {
+                  default: () =>
+                    h('div', { class: 'tool-schema' },
+                      params.map((p) => h(NTag, { size: 'tiny', bordered: false }, { default: () => p })),
+                    ),
+                }),
+            })
+          : null,
+      ])
+    }),
   )
 }
 
@@ -481,40 +551,59 @@ const columns = [
           </NSpace>
         </template>
 
-        <NTabs type="line" animated>
+        <NTabs v-model:value="activeTab" type="line" animated>
           <NTabPane tab="通用" name="general">
             <NForm label-placement="left" :label-width="90">
               <NFormItem label="服务名称">
-                <NInput v-model:value="configForm.name" disabled />
+                <NTooltip>
+                  <template #trigger>
+                    <span class="field-fill">
+                      <NInput v-model:value="configForm.name" disabled />
+                    </span>
+                  </template>
+                  服务名称创建后不可修改
+                </NTooltip>
               </NFormItem>
 
               <NFormItem label="传输方式">
-                <NSelect v-model:value="configForm.transport" :options="[
-                  { label: 'Stdio（本地命令）', value: 'stdio' },
-                  { label: 'SSE（远程 HTTP）', value: 'sse' },
-                ]" />
+                <NTooltip :disabled="!configIsBuiltin">
+                  <template #trigger>
+                    <span class="field-fill">
+                      <NSelect
+                        v-model:value="configForm.transport"
+                        :options="configTransportOptions"
+                        :disabled="configIsBuiltin"
+                      />
+                    </span>
+                  </template>
+                  内置服务的传输方式由平台决定，不可更改
+                </NTooltip>
               </NFormItem>
 
-              <template v-if="configForm.transport === 'stdio'">
+              <template v-if="configIsLocal">
+                <div v-if="configIsBuiltin" class="builtin-note">
+                  <NIcon :component="AlertCircleOutline" :size="14" />
+                  <span>平台内置服务，进程内执行。启动命令 / 参数 / 环境变量由平台统一管理，无需手动配置。</span>
+                </div>
                 <NFormItem label="启动命令">
-                  <NInput v-model:value="configForm.command" placeholder="例如：npx、python、uvx" />
+                  <NInput v-model:value="configForm.command" :disabled="configIsBuiltin" placeholder="例如：npx、python、uvx" />
                 </NFormItem>
                 <NFormItem label="启动参数">
-                  <NInput v-model:value="configForm.args" type="textarea" :rows="2" placeholder="参数以空格或换行分隔" />
+                  <NInput v-model:value="configForm.args" type="textarea" :rows="2" :disabled="configIsBuiltin" placeholder="参数以空格或换行分隔" />
                 </NFormItem>
                 <NFormItem label="包管理源">
-                  <NSelect v-model:value="configForm.registry" :options="registryOptions" />
+                  <NSelect v-model:value="configForm.registry" :options="registryOptions" :disabled="configIsBuiltin" />
                 </NFormItem>
                 <NFormItem label="环境变量">
                   <div class="env-pairs">
                     <div v-for="(pair, idx) in configForm.envPairs" :key="idx" class="env-row">
-                      <NInput v-model:value="pair.key" placeholder="KEY" size="small" style="flex: 1" />
-                      <NInput v-model:value="pair.value" placeholder="VALUE" size="small" style="flex: 1" />
-                      <NButton size="tiny" quaternary type="error" @click="removeConfigEnvPair(idx)" :disabled="configForm.envPairs.length <= 1">
+                      <NInput v-model:value="pair.key" placeholder="KEY" size="small" :disabled="configIsBuiltin" style="flex: 1" />
+                      <NInput v-model:value="pair.value" placeholder="VALUE" size="small" :disabled="configIsBuiltin" style="flex: 1" />
+                      <NButton size="tiny" quaternary type="error" @click="removeConfigEnvPair(idx)" :disabled="configIsBuiltin || configForm.envPairs.length <= 1">
                         <template #icon><NIcon :component="TrashOutline" /></template>
                       </NButton>
                     </div>
-                    <NButton size="tiny" text type="primary" @click="addConfigEnvPair">+ 添加环境变量</NButton>
+                    <NButton v-if="!configIsBuiltin" size="tiny" text type="primary" @click="addConfigEnvPair">+ 添加环境变量</NButton>
                   </div>
                 </NFormItem>
               </template>
@@ -541,30 +630,70 @@ const columns = [
 
           <NTabPane tab="工具" name="tools">
             <div v-if="editingMcp" class="tools-panel">
-              <div v-if="!editingMcp.tools.length && !toolsCache[editingMcp.id]?.length" class="tools-empty">
-                暂无工具，点击"测试"可重新发现。
+              <div class="tools-toolbar">
+                <span class="tools-count">共 {{ configTools.length }} 个工具</span>
+                <span v-if="configIsOffline" class="tools-offline">
+                  <NIcon :component="AlertCircleOutline" :size="13" />
+                  服务当前离线，展示为最近一次的发现结果
+                </span>
+                <NTooltip :disabled="!configIsOffline">
+                  <template #trigger>
+                    <span class="tools-rediscover">
+                      <NButton size="tiny" :loading="rediscoverLoading" :disabled="configIsOffline" @click="handleRediscover">
+                        <template #icon><NIcon :component="RefreshOutline" /></template>
+                        重新发现
+                      </NButton>
+                    </span>
+                  </template>
+                  服务离线，暂不能重新发现
+                </NTooltip>
               </div>
+
+              <div v-if="!configTools.length" class="tab-empty">
+                <NIcon :component="BuildOutline" :size="36" class="tab-empty-icon" />
+                <div class="tab-empty-title">暂无工具</div>
+                <div class="tab-empty-desc">
+                  {{ configIsOffline ? '服务当前离线，尚未获取到工具列表' : '尚未发现该服务的工具，可尝试重新发现' }}
+                </div>
+                <NButton v-if="!configIsOffline" size="small" type="primary" :loading="rediscoverLoading" @click="handleRediscover">
+                  <template #icon><NIcon :component="RefreshOutline" /></template>
+                  重新发现
+                </NButton>
+              </div>
+
               <div v-else class="tools-grid">
-                <div v-for="t in (toolsCache[editingMcp.id] ?? editingMcp.tools)" :key="t.name" class="tool-cell">
+                <div v-for="t in configTools" :key="t.name" class="tool-cell">
                   <div class="tool-head">
                     <NIcon :component="BuildOutline" :size="14" />
                     <span class="tool-name">{{ t.name }}</span>
                   </div>
-                  <div class="tool-desc">{{ t.description }}</div>
-                  <div class="tool-schema">
-                    <NTag v-for="([k, v]) in Object.entries(t.input_schema)" :key="k" size="tiny" bordered>{{ k }}: {{ String(v) }}</NTag>
-                  </div>
+                  <div class="tool-desc">{{ t.description || '暂无描述' }}</div>
+                  <NCollapse v-if="schemaParams(t).length" class="tool-schema-collapse">
+                    <NCollapseItem :title="`参数 Schema（${schemaParams(t).length}）`" name="schema">
+                      <div class="tool-schema">
+                        <NTag v-for="p in schemaParams(t)" :key="p" size="tiny" :bordered="false">{{ p }}</NTag>
+                      </div>
+                    </NCollapseItem>
+                  </NCollapse>
                 </div>
               </div>
             </div>
           </NTabPane>
 
           <NTabPane tab="提示" name="prompts">
-            <div class="placeholder-tab">提示词资源将在后续版本支持。</div>
+            <div class="tab-empty">
+              <NIcon :component="ChatboxOutline" :size="36" class="tab-empty-icon" />
+              <div class="tab-empty-title">暂无提示词</div>
+              <div class="tab-empty-desc">平台暂未支持 MCP 提示词发现（prompts/list），将在后续版本提供。</div>
+            </div>
           </NTabPane>
 
           <NTabPane tab="资源" name="resources">
-            <div class="placeholder-tab">资源文件将在后续版本支持。</div>
+            <div class="tab-empty">
+              <NIcon :component="FolderOpenOutline" :size="36" class="tab-empty-icon" />
+              <div class="tab-empty-title">暂无资源</div>
+              <div class="tab-empty-desc">平台暂未支持 MCP 资源发现（resources/list），将在后续版本提供。</div>
+            </div>
           </NTabPane>
         </NTabs>
 
@@ -626,7 +755,33 @@ const columns = [
 :deep(.tools-empty) { font-size: 12px; color: var(--neutral-text-3, #999); }
 
 .tools-panel { padding: 8px 0; }
-.placeholder-tab { padding: 24px; text-align: center; color: var(--neutral-text-3, #999); font-size: 13px; }
+.field-fill { display: block; width: 100%; }
+.builtin-note {
+  display: flex; align-items: flex-start; gap: 6px;
+  padding: 8px 10px; margin-bottom: 12px;
+  font-size: 12px; line-height: 1.5; color: var(--neutral-text-2, #666);
+  background: rgba(79, 142, 247, 0.08); border: 1px solid rgba(79, 142, 247, 0.2);
+  border-radius: 6px;
+}
+.builtin-note .n-icon { flex-shrink: 0; margin-top: 2px; color: #4f8ef7; }
+
+.tools-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.tools-count { font-size: 13px; font-weight: 600; color: var(--neutral-text-1, #333); }
+.tools-offline { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #ff8a30; }
+.tools-rediscover { display: inline-flex; margin-left: auto; }
+
+.tab-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; padding: 40px 24px; text-align: center;
+}
+.tab-empty-icon { color: var(--neutral-text-3, #ccc); margin-bottom: 4px; }
+.tab-empty-title { font-size: 14px; font-weight: 500; color: var(--neutral-text-2, #666); }
+.tab-empty-desc { font-size: 12px; color: var(--neutral-text-3, #999); max-width: 320px; line-height: 1.6; }
+.tab-empty .n-button { margin-top: 10px; }
+
+.tool-schema-collapse { margin-top: 4px; }
+:deep(.tool-schema-collapse .n-collapse-item__header) { font-size: 12px; }
+:deep(.tool-schema-collapse .n-collapse-item__content-wrapper .n-collapse-item__content-inner) { padding-top: 6px; }
 
 .log-container { max-height: 480px; overflow-y: auto; }
 .log-empty { padding: 24px; text-align: center; color: var(--neutral-text-3, #999); font-size: 13px; }
