@@ -51,6 +51,10 @@ const expandedKeys = ref<string[]>(['analysis-center'])
 const userCollapsed = ref(false)
 const lastAutoCollapsed = ref(false)
 
+// Feature 6: AI 页面（/ai, /studio）自动折叠侧边栏；手动锁定后不再自动控制
+const sidebarLocked = ref<string | null>(localStorage.getItem('omichub:sidebar-locked'))
+const autoCollapsePages = ['/studio', '/ai']
+
 const isAdmin = computed(() => authStore.user?.role === 'admin')
 const isDarkTheme = computed(() => themeStore.isDark)
 
@@ -95,30 +99,38 @@ function updateWindowWidth() {
 }
 
 // 路由 Meta 驱动：进入带 autoCollapseSidebar 的页面强制折叠，离开后恢复用户最后一次手动状态
+// Feature 6: 进入 /studio 或 /ai 时也自动折叠（除非用户手动锁定了侧边栏）
 watch(
   () => route.fullPath,
   () => {
-    const autoCollapse = route.meta.autoCollapseSidebar === true
+    const metaCollapse = route.meta.autoCollapseSidebar === true
+    const aiPageCollapse = sidebarLocked.value === null
+      && autoCollapsePages.some((p) => route.path.startsWith(p))
+    const autoCollapse = metaCollapse || aiPageCollapse
     if (autoCollapse) {
-      // 进入「关于」页：若当前未折叠则记录原状态后折叠
+      // 进入自动折叠页面：若当前未折叠则记录原状态后折叠
       if (!lastAutoCollapsed.value) {
         userCollapsed.value = collapsed.value
       }
       collapsed.value = true
     } else if (lastAutoCollapsed.value) {
-      // 离开「关于」页：恢复用户最后一次手动状态（desktop 下生效）
+      // 离开自动折叠页面：恢复用户最后一次手动状态（desktop 下生效）
       collapsed.value = isTablet.value ? true : userCollapsed.value
     }
     lastAutoCollapsed.value = autoCollapse
   },
 )
 
-// 汉堡按钮手动切换：同时记录用户偏好，供离开「关于」页后恢复
+// 汉堡按钮手动切换：同时记录用户偏好，供离开自动折叠页面后恢复
+// Feature 6: 手动切换后写入 localStorage 锁定，后续不再自动控制
 function toggleCollapsed() {
   collapsed.value = !collapsed.value
   if (!route.meta.autoCollapseSidebar) {
     userCollapsed.value = collapsed.value
   }
+  // 手动操作后锁定侧边栏偏好，不再自动折叠
+  sidebarLocked.value = String(collapsed.value)
+  localStorage.setItem('omichub:sidebar-locked', sidebarLocked.value)
 }
 
 onMounted(() => {

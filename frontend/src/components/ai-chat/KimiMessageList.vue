@@ -191,7 +191,7 @@ onUnmounted(() => {
 
   :deep(.vue-recycle-scroller__item-wrapper) {
     padding: 0 24px;
-    max-width: 900px;
+    max-width: var(--chat-content-max-width, 860px);
     margin: 0 auto;
   }
 

@@ -102,7 +102,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   /** 当前 Studio 会话的权限模式（supervised=关键操作需批准；auto=放权自动执行） */
   const studioPermissions = ref<{ mode: StudioPermissionMode }>({ mode: 'supervised' })
 
-  const { streamChat, abortStream } = useAgentChatStream()
+  const { streamChat, abortStream, isPaused, pauseStream, resetPause } = useAgentChatStream()
 
   /**
    * 临时会话 ID 解析锁。
@@ -1114,6 +1114,21 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     releaseSessionIdLock()
   }
 
+  /** 暂停流式输出：保留已输出文本，标记暂停态供 UI 显示继续/重新生成按钮 */
+  function pauseStreaming() {
+    pauseStream()
+    const session = currentSession.value
+    if (session) {
+      const last = session.messages[session.messages.length - 1]
+      if (last && last.role === 'assistant') {
+        last.content = streamingContent.value || last.content
+        last.thought = streamingThought.value || undefined
+        last.status = 'streaming'
+      }
+    }
+    releaseSessionIdLock()
+  }
+
   // ========== Studio HITL：审批 / 澄清 / 权限模式 ==========
 
   /** 在所有会话消息中定位待审批的工具卡片（审批仅内存态，限定当前会话即可） */
@@ -1204,7 +1219,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   return {
     // state
     mcps, skills, agents, sessions, currentSessionId,
-    isStreaming, streamingContent, streamingThought, availableModels, pipelineTasks,
+    isStreaming, isPaused, streamingContent, streamingThought, availableModels, pipelineTasks,
     studioSessionIds, currentPlan, studioPermissions,
     // getters
     activeAgents, currentSession, currentAgent, groupedSessions,
@@ -1218,7 +1233,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     importSkillFromUrl, importSkillFromJson, toggleSkill, deleteSkill,
     // session actions
     startSessionFromAgent, selectSession, newChat, deleteSession, renameSession, generateSessionTitle,
-    searchSessions, switchSessionModel, loadSessionMessages, sendMessage, stopStreaming,
+    searchSessions, switchSessionModel, loadSessionMessages, sendMessage, stopStreaming, pauseStreaming,
     approveToolCall, rejectToolCall, answerAskRequest,
     initStudioPermissions, setStudioPermissions,
     invokePipelineTool, submitPipelineTask, trackPipelineTask, pollPipelineTask,
