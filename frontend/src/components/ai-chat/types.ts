@@ -17,6 +17,8 @@ export interface RoutedAgentInfo {
 
 export interface ChatMessage {
   id: string
+  /** 后端持久化消息 ID；流式期间不覆盖 id，避免虚拟列表 key 变化导致渲染缓存错位 */
+  backendMessageId?: string
   role: 'user' | 'assistant' | 'system'
   content: string
   thought?: string

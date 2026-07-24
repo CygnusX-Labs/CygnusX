@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.services.flow_service import FlowService
+from omichub.application.services.cookie_service import CookieService
 from omichub.core.config import get_settings
 from omichub.domain.task.value_objects import TaskStatus
 from omichub.infrastructure.cache.stats_cache import cached_json
@@ -190,7 +191,7 @@ class StatsService:
             )
             rows = list(result.all())
 
-            rate = Decimal(str(get_settings().ai_token_cookie_rate))
+            _, rate, _ = await CookieService(self._db).resolve_ai_token_rate()
 
             def _cookie_cost(tokens: int) -> float:
                 return float(

@@ -19,7 +19,10 @@ vi.mock('vue3-lottie', () => ({
 vi.mock('vue-echarts', () => ({ default: { template: '<div />' } }))
 
 import KimiMessageItem from '@/components/ai-chat/KimiMessageItem.vue'
+import KimiMessageList from '@/components/ai-chat/KimiMessageList.vue'
 import type { ChatMessage } from '@/components/ai-chat/types'
+import type { AgentTemplate } from '@/types/agent'
+import { useAgentHubStore } from '@/stores/agentHub'
 
 beforeEach(() => {
   global.requestAnimationFrame = ((cb: FrameRequestCallback) => { cb(0); return 0 }) as typeof requestAnimationFrame
@@ -73,5 +76,86 @@ describe('KimiMessageItem 活体 streaming→done 切换', () => {
     // 刷新前就应可见正文与 token
     expect(el.textContent).toContain('你好！我是 OmicHub AI 助手。')
     expect(el.textContent).toContain('Tokens:')
+  })
+
+  it('后端回填 message_id 后，后续正文帧仍实时更新同一消息气泡', async () => {
+    let streamController: ReadableStreamDefaultController<Uint8Array> | undefined
+    const encoder = new TextEncoder()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          streamController = controller
+        },
+      }),
+    }))
+
+    const store = useAgentHubStore()
+    store.agents = [{
+      id: 'agent-general',
+      agent_id: 'agent-general',
+      name: '通用助手',
+      description: '',
+      avatar: '🤖',
+      color: '#4f8ef7',
+      model_engine: 'qwen3.7-max',
+      model_id: 'model-id',
+      is_active: true,
+      features: {},
+    } as unknown as AgentTemplate]
+    const session = store.startSessionFromAgent('agent-general')!
+    session.title_locked = true
+    const sending = store.sendMessage('测试流式正文')
+    await nextTick()
+
+    const el = document.createElement('div')
+    document.body.appendChild(el)
+    const app = createApp({
+      render() {
+        return h(KimiMessageList, {
+          messages: session.messages,
+          isTyping: store.isStreaming,
+          streamingContent: store.streamingContent,
+          streamingThought: store.streamingThought,
+        })
+      },
+    })
+    app.mount(el)
+
+    const pushFrame = async (frame: Record<string, unknown>) => {
+      streamController!.enqueue(encoder.encode(`data: ${JSON.stringify(frame)}\n\n`))
+      await nextTick()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+
+    await pushFrame({ type: 'text', content: '正在分析', is_reasoning: true })
+    await pushFrame({
+      type: 'text',
+      content: '第一段正文',
+      model: 'qwen3.7-max',
+      session_id: 'server-session-id',
+      message_id: 'server-message-id',
+    })
+    await pushFrame({ type: 'text', content: '，第二段正文', model: 'qwen3.7-max' })
+
+    expect(session.messages.at(-1)?.id).toMatch(/^msg-ai-/)
+    expect(session.messages.at(-1)?.backendMessageId).toBe('server-message-id')
+    expect(el.textContent).toContain('第一段正文，第二段正文')
+
+    await pushFrame({
+      type: 'done',
+      content: '',
+      session_id: 'server-session-id',
+      message_id: 'server-message-id',
+      usage: { prompt_tokens: 10, completion_tokens: 6, total_tokens: 16 },
+    })
+    streamController!.close()
+    await sending
+    await nextTick()
+
+    expect(el.textContent).toContain('第一段正文，第二段正文')
+    expect(session.messages.at(-1)?.tokens).toEqual({ input: 10, output: 6, total: 16 })
+    app.unmount()
+    vi.unstubAllGlobals()
   })
 })

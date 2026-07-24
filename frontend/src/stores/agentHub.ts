@@ -704,7 +704,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
 
     // 助手占位消息（流式填充）
     const aiId = `msg-ai-${Date.now()}`
-    const aiMsg: ChatMessage = {
+    const aiMsgSeed: ChatMessage = {
       id: aiId,
       role: 'assistant',
       content: '',
@@ -714,7 +714,11 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       createdAt: new Date().toISOString(),
       tokens: { input: 0, output: 0, total: 0 },
     }
-    session.messages.push(aiMsg)
+    session.messages.push(aiMsgSeed)
+    // 必须使用响应式数组返回的代理对象继续写入。
+    // 若继续修改 push 前的普通对象，message_id/content/thought 的流式更新不会触发 Vue，
+    // 会出现 Token 已更新但正文气泡保持空白，刷新后才显示的现象。
+    const aiMsg = session.messages[session.messages.length - 1]!
 
     const shouldGenerateTitle = !session.title_locked && session.messages.filter((m) => m.role === 'user').length === 1
     if (shouldGenerateTitle) session.title = '生成中...'
@@ -776,7 +780,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           if (session.id.startsWith('sess-')) {
             session.id = sessionId
             currentSessionId.value = sessionId
-            if (messageId) aiMsg.id = messageId
+            if (messageId) aiMsg.backendMessageId = messageId
             releaseSessionIdLock()
           }
         },
@@ -901,9 +905,9 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             const output = usage.completion_tokens ?? usage.output_tokens ?? usage.output ?? 0
             const total = usage.total_tokens ?? usage.total ?? input + output
             // 以服务端返回的 assistant message_id 定位，避免流期间对象被替换后写入旧引用。
-            const targetId = messageId || aiMsg.id
+            const targetId = messageId || aiMsg.backendMessageId || aiMsg.id
             const target = session.messages.find(
-              (item) => item.id === targetId && item.role === 'assistant',
+              (item) => (item.id === targetId || item.backendMessageId === targetId) && item.role === 'assistant',
             )
             ;(target || aiMsg).tokens = { input, output, total }
           }
@@ -914,7 +918,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             aiMsg.status = aiMsg.thought ? 'empty' : 'error'
             reportChatDiagnostic({
               phase: 'stream-empty',
-              messageId: aiMsg.id,
+              messageId: aiMsg.backendMessageId || aiMsg.id,
               sessionId: session.id,
               rawResponseSummary: {
                 usage,
