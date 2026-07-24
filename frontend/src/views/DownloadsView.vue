@@ -5,7 +5,7 @@ import { NSelect, useMessage } from 'naive-ui'
 import apiClient from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 
-type SourceTab = 'sra' | 'cloud-drive' | 'cloud-storage'
+type SourceTab = 'sra' | 'cloud-drive' | 'cloud-storage' | 'direct-link'
 
 interface DownloadTask {
   id: string
@@ -48,6 +48,7 @@ const targetDirectory = ref('')
 
 // ── 高级选项：仅 4 个正则过滤字段 ──
 const advancedOpen = ref(false)
+const directAdvancedOpen = ref(false)
 const includeSample = ref('')
 const excludeSample = ref('')
 const includeRun = ref('')
@@ -63,6 +64,12 @@ const storageProvider = ref<'aliyun' | 'volc' | 'huawei'>('aliyun')
 const storageUri = ref('')
 const storageRecursive = ref(true)
 
+// ── 直链 / FTP 表单 ──
+const directLinks = ref('')
+const directThreads = ref(4)
+const directOverwritePolicy = ref<'auto_rename' | 'overwrite' | 'skip'>('auto_rename')
+const directRecursive = ref(false)
+
 // ── 任务列表状态筛选 ──
 const statusFilter = ref<'all' | DownloadTask['status']>('all')
 
@@ -70,12 +77,14 @@ const tabs: { key: SourceTab; icon: string; label: string }[] = [
   { key: 'sra', icon: '🧬', label: '公共数据库' },
   { key: 'cloud-drive', icon: '☁️', label: '云盘极速提取' },
   { key: 'cloud-storage', icon: '🏢', label: '云存储直拉' },
+  { key: 'direct-link', icon: '🔗', label: '直链与 FTP' },
 ]
 
 const tabDescriptions: Record<SourceTab, string> = {
   'sra': '输入 NCBI/EBI 登录号（如 PRJNA），通过高并发节点直接将原始测序数据同步至您的工作空间。',
   'cloud-drive': '支持解析百度网盘或 123 云盘分享链接，无需消耗本地带宽，云端内网极速拉取交接数据。',
   'cloud-storage': '通过云厂商内网（阿里云、火山、华为等）调用对象存储 CLI 拉取数据，完成后自动入库。',
+  'direct-link': '粘贴 HTTP、HTTPS 或 FTP 直链，支持批量下载、断点续传和并发加速，文件完成后自动入库。',
 }
 
 const statusConfig: Record<string, { label: string; badge: string; icon: string }> = {
@@ -196,7 +205,20 @@ async function handleSubmit() {
   }
 
   let payload: Record<string, unknown>
-  if (activeTab.value === 'sra') {
+  if (activeTab.value === 'direct-link') {
+    const links = directLinks.value.split(/\r?\n|,/).map(link => link.trim()).filter(Boolean)
+    if (!links.length) { message.warning('请输入至少一个 HTTP / HTTPS / FTP 下载链接'); return }
+    const invalid = links.find(link => !/^(https?|ftp):\/\/[^\s]+$/i.test(link))
+    if (invalid) { message.warning(`链接格式不正确：${invalid}`); return }
+    payload = {
+      source: 'direct_link',
+      links: [...new Set(links)],
+      download_threads: directThreads.value,
+      overwrite_policy: directOverwritePolicy.value,
+      recursive: directRecursive.value,
+      target_directory: targetDirectory.value,
+    }
+  } else if (activeTab.value === 'sra') {
     if (!sraAccession.value.trim()) { message.warning('请输入登录号'); return }
     payload = {
       source: 'sra',
@@ -221,6 +243,7 @@ async function handleSubmit() {
     message.success('已提交下载任务')
     if (activeTab.value === 'sra') sraAccession.value = ''
     if (activeTab.value === 'cloud-storage') storageUri.value = ''
+    if (activeTab.value === 'direct-link') directLinks.value = ''
     await fetchDownloads()
     router.push(`/tasks/${res.data.id}`)
   } catch (e: any) {
@@ -280,6 +303,63 @@ onMounted(fetchDownloads)
 
     <!-- ═══ 参数配置卡片 ═══ -->
     <div class="bg-neutral-card rounded-xl mb-5" style="box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05); border: 1px solid var(--neutral-border)">
+
+      <!-- ── 直链 / FTP 表单 ── -->
+      <div v-if="activeTab === 'direct-link'" class="p-6 space-y-5">
+        <div class="flex items-start gap-4">
+          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">
+            资源链接 <span class="text-red-400">*</span>
+          </label>
+          <div class="flex-1 max-w-3xl">
+            <div class="relative">
+              <textarea
+                v-model="directLinks"
+                rows="5"
+                placeholder="支持 HTTP / HTTPS / FTP 协议的直接下载链接。支持多行批量输入，每行一个链接..."
+                class="w-full px-3.5 py-3 pr-28 text-sm font-mono border resize-y transition-all duration-200 focus:outline-none"
+                style="border-color: var(--neutral-border); border-radius: 8px; color: var(--neutral-text-1); min-height: 128px"
+                v-on="inputFocusStyle"
+              />
+              <div class="absolute top-2 right-2 flex items-center gap-1">
+                <button type="button" class="direct-inline-action" @click="directLinks = ''">清空</button>
+                <button type="button" class="direct-inline-action" @click="directLinks = [...new Set(directLinks.split(/\r?\n|,/).map(link => link.trim()).filter(Boolean))].join('\n')">去重</button>
+              </div>
+            </div>
+            <p class="mt-1.5 text-xs" style="color: var(--neutral-text-3)">每行一个链接；支持 Ensembl、UCSC、ENA 等公共数据源。</p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-4">
+          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">下载到</label>
+          <NSelect v-model:value="targetDirectory" :options="targetDirectoryOptions" size="large" style="width: 240px" />
+        </div>
+
+        <div class="flex items-start gap-4">
+          <div class="w-20 shrink-0"></div>
+          <div class="flex-1 max-w-3xl">
+            <button type="button" class="direct-advanced-toggle" :aria-expanded="directAdvancedOpen" @click="directAdvancedOpen = !directAdvancedOpen">
+              <span>高级选项</span>
+              <span class="text-xs" style="color: var(--neutral-text-3)">{{ directAdvancedOpen ? '收起' : '下载并发、同名策略与目录解析' }}</span>
+              <span class="text-base" :class="directAdvancedOpen ? 'rotate-180' : ''">⌄</span>
+            </button>
+            <div v-if="directAdvancedOpen" class="direct-advanced-panel">
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <label class="direct-field"><span>下载并发</span><select v-model.number="directThreads"><option :value="1">1 线程</option><option :value="4">4 线程（推荐）</option><option :value="8">8 线程</option><option :value="16">16 线程</option></select></label>
+                <label class="direct-field"><span>同名文件</span><select v-model="directOverwritePolicy"><option value="auto_rename">自动重命名</option><option value="overwrite">强制覆盖</option><option value="skip">跳过</option></select></label>
+                <label class="direct-switch"><input v-model="directRecursive" type="checkbox" /> <span>解析 FTP 目录</span></label>
+              </div>
+              <p class="mt-3 text-xs" style="color: var(--neutral-text-3)">任务在后台执行，支持断点续传和失败重试；FTP 目录会先展开为文件清单。</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-4 pt-1">
+          <div class="w-20 shrink-0"></div>
+          <button class="h-10 px-6 text-sm font-semibold text-white transition-all duration-200 flex items-center gap-2 disabled:opacity-50 hover:-translate-y-px active:scale-[0.98]" :disabled="submitting" style="background: linear-gradient(135deg, #4F8EF7, #9B59B6); box-shadow: 0 4px 14px rgba(79,142,247,0.3); border-radius: 8px" @click="handleSubmit">
+            提交下载任务
+          </button>
+        </div>
+      </div>
 
       <!-- ── SRA 表单 ── -->
       <div v-if="activeTab === 'sra'" class="p-6 space-y-5">
@@ -708,4 +788,35 @@ onMounted(fetchDownloads)
 .download-action--primary:hover { color: var(--arco-primary); }
 .download-action--success:hover { color: var(--arco-success); }
 .download-action--danger:hover { color: var(--arco-danger); }
+
+.direct-inline-action {
+  border: 0;
+  background: var(--neutral-hover);
+  color: var(--neutral-text-2);
+  border-radius: 5px;
+  padding: 3px 7px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.direct-inline-action:hover { color: var(--arco-primary); }
+.direct-advanced-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--neutral-border);
+  border-radius: 8px;
+  background: var(--neutral-bg);
+  color: var(--neutral-text-1);
+  text-align: left;
+  cursor: pointer;
+}
+.direct-advanced-toggle span:nth-child(2) { margin-left: auto; }
+.direct-advanced-toggle span:last-child { transition: transform 200ms ease; }
+.direct-advanced-panel { padding: 16px 12px 4px; border: 1px solid var(--neutral-border); border-top: 0; border-radius: 0 0 8px 8px; }
+.direct-field { display: flex; flex-direction: column; gap: 6px; color: var(--neutral-text-2); font-size: 13px; }
+.direct-field select { height: 36px; padding: 0 10px; border: 1px solid var(--neutral-border); border-radius: 8px; background: var(--neutral-card); color: var(--neutral-text-1); }
+.direct-switch { display: flex; align-items: center; gap: 8px; min-height: 36px; color: var(--neutral-text-1); font-size: 13px; }
+.direct-switch input { width: 16px; height: 16px; accent-color: var(--arco-primary); }
 </style>

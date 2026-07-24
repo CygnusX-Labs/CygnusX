@@ -14,6 +14,8 @@ import os
 import re
 from datetime import datetime
 from uuid import UUID
+from ftplib import FTP
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 from celery import shared_task
 
@@ -22,6 +24,7 @@ from omichub.domain.task.value_objects import LogLevel, TaskStatus
 from omichub.infrastructure.cache.pubsub import publish_task_log
 from omichub.infrastructure.execution.base import ExecutionContext
 from omichub.infrastructure.execution.registry import get_executor
+from omichub.tools.download.config import get_download_config
 
 
 @shared_task(name="omichub.infrastructure.celery_app.tasks.download.run_download")
@@ -76,10 +79,11 @@ _CLOUD_PROVIDER_LABELS = {
 
 
 def _cloud_binary_path(settings, provider: str) -> str:
+    config = get_download_config()
     return {
-        "aliyun": settings.cloud_ossutil_binary,
-        "volc": settings.cloud_tosutil_binary,
-        "huawei": settings.cloud_obsutil_binary,
+        "aliyun": config.binaries.ossutil or settings.cloud_ossutil_binary,
+        "volc": config.binaries.tosutil or settings.cloud_tosutil_binary,
+        "huawei": config.binaries.obsutil or settings.cloud_obsutil_binary,
     }[provider]
 
 
@@ -212,6 +216,17 @@ async def _execute_download(task_id: str) -> dict:
                 domain=domain,
                 add_and_publish_log=_add_and_publish_log,
             )
+        if source == "direct_link":
+            return await _execute_direct_link_download(
+                task_id=task_id,
+                task_uuid=task_uuid,
+                task=task,
+                params=params,
+                session=session,
+                repo=repo,
+                domain=domain,
+                add_and_publish_log=_add_and_publish_log,
+            )
 
         settings = get_settings()
         accession = str(params.get("accession", ""))
@@ -228,7 +243,7 @@ async def _execute_download(task_id: str) -> dict:
 
         binary_args = [
             "--yaml",
-            settings.ebi_download_yaml,
+            get_download_config().binaries.ebi_config or settings.ebi_download_yaml,
             "--log-format",
             "json",
             "download",
@@ -252,7 +267,7 @@ async def _execute_download(task_id: str) -> dict:
         ctx = ExecutionContext(
             engine="binary",
             work_dir=work_dir,
-            binary=settings.ebi_download_binary,
+            binary=get_download_config().binaries.ebi or settings.ebi_download_binary,
             binary_args=binary_args,
             on_log=_on_log,
             on_progress=_on_progress,
@@ -456,6 +471,7 @@ async def _execute_cloud_storage_download(
         await session.commit()
         return {"status": "failed", "task_id": task_id, "error": str(exc)}
 
+
     binary_exists = bool(binary) and await asyncio.to_thread(os.path.exists, binary)
     if not binary_exists:
         msg = f"{label} 下载工具未找到: {binary}"
@@ -544,6 +560,178 @@ async def _execute_cloud_storage_download(
         task = await domain.transition_status(task, TaskStatus.FAILED)
         task.error_message = str(exc)[:2000]
         await repo.save(task)
+        await session.commit()
+        return {"status": "failed", "task_id": task_id, "error": str(exc)}
+
+
+def _build_direct_link_args(
+    links: list[str], work_dir: str, threads: int, overwrite_policy: str
+) -> list[str]:
+    """构造 aria2c 直链参数；URL 作为独立参数传入，避免 shell 拼接注入。"""
+    aria2 = get_download_config().aria2
+    args = [
+        "--dir", work_dir, "--continue=true",
+        "--max-tries", str(aria2.max_tries), "--retry-wait", str(aria2.retry_wait),
+        "--connect-timeout", str(aria2.connect_timeout), "--timeout", str(aria2.timeout),
+        "--file-allocation", aria2.file_allocation,
+        "--check-integrity", str(aria2.check_integrity).lower(),
+        "--max-concurrent-downloads", str(aria2.max_concurrent_downloads),
+        "--split", str(threads), "--max-connection-per-server", str(threads),
+        "--ftp-reuse-connection", str(aria2.ftp_reuse_connection).lower(),
+    ]
+    if overwrite_policy == "overwrite":
+        args.extend(["--allow-overwrite=true", "--auto-file-renaming=false"])
+    elif overwrite_policy == "skip":
+        args.extend(["--allow-overwrite=false", "--auto-file-renaming=false"])
+    else:
+        args.extend(["--allow-overwrite=false", "--auto-file-renaming=true"])
+    return args + links
+
+
+def _expand_ftp_directories(links: list[str], recursive: bool) -> list[str]:
+    """展开以 / 结尾的匿名 FTP 目录；普通文件链接原样返回。"""
+    if not recursive:
+        return links
+    expanded: list[str] = []
+    for link in links:
+        parsed = urlsplit(link)
+        if parsed.scheme.lower() != "ftp" or not parsed.path.endswith("/"):
+            expanded.append(link)
+            continue
+        ftp = FTP(parsed.hostname or "", timeout=30)
+        try:
+            ftp.login()
+            root = unquote(parsed.path)
+            files: list[str] = []
+
+            def walk(path: str) -> None:
+                current = ftp.pwd()
+                ftp.cwd(path)
+                for name in ftp.nlst():
+                    child = f"{path.rstrip('/')}/{name.rsplit('/', 1)[-1]}"
+                    try:
+                        ftp.cwd(child)
+                    except Exception:
+                        files.append(child)
+                    else:
+                        ftp.cwd(current)
+                        walk(child)
+                ftp.cwd(current)
+
+            walk(root)
+            for path in files:
+                expanded.append(urlunsplit(("ftp", parsed.netloc, quote(path), "", "")))
+        finally:
+            try:
+                ftp.quit()
+            except Exception:
+                ftp.close()
+    return expanded
+
+
+async def _execute_direct_link_download(
+    *, task_id: str, task_uuid: UUID, task, params: dict, session, repo, domain, add_and_publish_log
+) -> dict:
+    """使用 aria2c 下载 HTTP/HTTPS/FTP 直链，并复用文件入库链路。"""
+    settings = get_settings()
+    config = get_download_config()
+    links = [str(link).strip() for link in params.get("links", []) if str(link).strip()]
+    work_dir = task.work_dir or ""
+    directory = str(params.get("target_directory", "") or "")
+    threads = max(1, min(config.aria2.max_threads, int(params.get("download_threads", config.aria2.default_threads))))
+    overwrite_policy = str(params.get("overwrite_policy", "auto_rename"))
+    recursive = bool(params.get("recursive", False))
+    binary = config.binaries.aria2c or settings.direct_download_binary
+
+    if not links:
+        task = await domain.transition_status(task, TaskStatus.FAILED)
+        task.error_message = "没有可下载的直链"
+        await repo.save(task)
+        await add_and_publish_log(LogLevel.ERROR, task.error_message, source="aria2c")
+        await session.commit()
+        return {"status": "failed", "task_id": task_id, "error": task.error_message}
+    if not binary or not await asyncio.to_thread(os.path.exists, binary):
+        msg = f"aria2c 下载工具未找到: {binary}"
+        task = await domain.transition_status(task, TaskStatus.FAILED)
+        task.error_message = msg
+        await repo.save(task)
+        await add_and_publish_log(LogLevel.ERROR, msg, source="aria2c")
+        await session.commit()
+        return {"status": "failed", "task_id": task_id, "error": msg}
+
+    os.makedirs(work_dir, exist_ok=True)
+    try:
+        links = await asyncio.to_thread(_expand_ftp_directories, links, recursive)
+    except Exception as exc:  # noqa: BLE001
+        task = await domain.transition_status(task, TaskStatus.FAILED)
+        task.error_message = f"FTP 目录解析失败: {exc}"[:2000]
+        await repo.save(task)
+        await add_and_publish_log(LogLevel.ERROR, task.error_message, source="aria2c")
+        await session.commit()
+        return {"status": "failed", "task_id": task_id, "error": task.error_message}
+    if not links:
+        task = await domain.transition_status(task, TaskStatus.FAILED)
+        task.error_message = "FTP 目录中没有可下载文件"
+        await repo.save(task)
+        await add_and_publish_log(LogLevel.ERROR, task.error_message, source="aria2c")
+        await session.commit()
+        return {"status": "failed", "task_id": task_id, "error": task.error_message}
+    last_progress = -1.0
+
+    async def _on_direct_log(level: str, message: str, source: str = "aria2c") -> None:
+        nonlocal last_progress, task
+        parsed = _parse_cloud_storage_progress(message)
+        if parsed is not None and (parsed - last_progress >= 0.02 or parsed >= 1.0):
+            last_progress = parsed
+            task.progress = parsed
+            await repo.save(task)
+            await add_and_publish_log(LogLevel.INFO, f"直链下载进度 {parsed * 100:.0f}%", source=source)
+            await session.commit()
+            return
+        try:
+            lvl = LogLevel(level)
+        except ValueError:
+            lvl = LogLevel.INFO
+        await add_and_publish_log(lvl, message[:1000], source=source)
+        await session.commit()
+
+    await add_and_publish_log(
+        LogLevel.INFO,
+        f"调用 aria2c 下载 {len(links)} 个直链，线程 {threads}，策略 {overwrite_policy}",
+        source="aria2c",
+    )
+    await session.commit()
+    ctx = ExecutionContext(
+        engine="binary", work_dir=work_dir, binary=binary,
+        binary_args=_build_direct_link_args(links, work_dir, threads, overwrite_policy),
+        on_log=_on_direct_log,
+    )
+    try:
+        result = await get_executor("binary").execute(ctx)
+        if result.status == "success":
+            task.progress = 1.0
+            task.result_path = work_dir
+            await repo.save(task)
+            await _register_downloaded_files(
+                session=session, user_id=task.user_id, work_dir=work_dir,
+                directory=directory, storage_root=settings.storage_path,
+            )
+            task = await domain.transition_status(task, TaskStatus.SUCCESS)
+            await add_and_publish_log(LogLevel.INFO, "直链下载完成，文件已入库", source="aria2c")
+            status = "success"
+        else:
+            task = await domain.transition_status(task, TaskStatus.FAILED)
+            task.error_message = (result.stderr or result.stdout)[:2000]
+            await repo.save(task)
+            await add_and_publish_log(LogLevel.ERROR, "直链下载失败", source="aria2c")
+            status = "failed"
+        await session.commit()
+        return {"status": status, "task_id": task_id, "returncode": result.returncode}
+    except Exception as exc:  # noqa: BLE001
+        task = await domain.transition_status(task, TaskStatus.FAILED)
+        task.error_message = str(exc)[:2000]
+        await repo.save(task)
+        await add_and_publish_log(LogLevel.ERROR, f"直链下载执行异常: {exc}", source="aria2c")
         await session.commit()
         return {"status": "failed", "task_id": task_id, "error": str(exc)}
 

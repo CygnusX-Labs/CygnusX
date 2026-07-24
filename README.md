@@ -215,6 +215,10 @@ python3 scripts/render_worker_config.py --check
 
 ## 配置说明
 
+### YAML 配置总览
+
+仓库中所有主要 YAML/YML 配置文件、加载入口、热重载方式和部署注意事项集中整理在 [`config_readme.me`](config_readme.me)。新增或修改配置前请先查阅该清单。
+
 ### AI Provider 配置
 
 支持两种方式（可共存，方式 1 优先）：

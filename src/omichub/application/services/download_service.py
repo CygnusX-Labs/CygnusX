@@ -63,6 +63,19 @@ class DownloadService:
                 "recursive": req.recursive,
                 "target_directory": directory,
             }
+        elif req.source == "direct_link":
+            links = req.links
+            safe_label = self._safe_path_label(links[0].split("/")[-1], fallback="direct_link")
+            work_dir = self._make_work_dir(user_id, safe_label, directory)
+            task_name = f"直链下载 {len(links)} 个文件"
+            parameters = {
+                "source": "direct_link",
+                "links": links,
+                "download_threads": req.download_threads,
+                "overwrite_policy": req.overwrite_policy,
+                "recursive": req.recursive,
+                "target_directory": directory,
+            }
         else:
             accession = req.accession.strip()
             safe_accession = self._safe_path_label(accession, fallback="sra")

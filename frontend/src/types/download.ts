@@ -33,13 +33,16 @@ export function createDefaultAdvancedOptions(): AdvancedDownloadOptions {
 }
 
 export interface DownloadRequest {
-  source?: 'sra' | 'cloud_storage'
+  source?: 'sra' | 'cloud_storage' | 'direct_link'
   accession?: string
   download_method?: 'aws' | 'aspera' | 'ftp'
   multithreads?: number
   aws_threads?: number
   cloud_provider?: 'aliyun' | 'volc' | 'huawei'
   object_uri?: string
+  links?: string[]
+  download_threads?: number
+  overwrite_policy?: 'auto_rename' | 'overwrite' | 'skip'
   recursive?: boolean
   target_directory?: string
   /** 高级选项；后端暂未消费，预留字段，便于后续 CLI 透传 */
