@@ -23,18 +23,19 @@ OmicHub 是面向生物信息学任务、数据资产与 AI 工作流的科学�
 | 范畴 | 当前选择 | 规则 |
 | --- | --- | --- |
 | 框架 | Vue 3 + TypeScript + Vite | 新组件使用 `<script setup lang="ts">` 与 Composition API。 |
-| 组件库 | Naive UI | 新控件优先使用 `NButton`、`NForm`、`NDataTable` 等现有 Naive UI 组件。 |
+| 组件库 | Naive UI + Arco Design Vue | 可按页面和交互场景选择 `NButton`/`NDataTable` 或 `<a-button>`/`<a-table>`；两套组件必须共享平台令牌和状态语义。 |
 | 图标 | `@vicons/*` | 使用与现有页面一致的图标集；图标按钮必须提供 Tooltip 或可访问名称。 |
 | 样式 | CSS 变量、Tailwind CSS、Sass | 页面优先消费变量和共享工具类；不要复制常量。 |
 | 主题 | Pinia 主题状态 + Naive UI `themeOverrides` | 主题由应用层统一提供，业务页面不得覆写全局组件主题。 |
 
-### 2.2 不混用组件库
+### 2.2 组件库并行使用
 
-本仓库**不安装或混用** `@arco-design/web-vue`。`--arco-*` 是历史兼容的设计令牌命名，并不代表页面应使用 `a-*` 组件。
+本仓库允许并行使用 `naive-ui` 与 `@arco-design/web-vue`。两套组件库服务于同一个平台，不要求每个页面只能使用其中一套；但视觉令牌、主题状态、图标策略、可访问性和交互反馈必须保持统一。
 
-- 在 OmicHub 中：继续使用 Naive UI，并通过 `frontend/src/App.vue` 的 `themeOverrides` 统一主题。
-- 在新平台中：可选择 Arco Design Vue，使用 `<a-button>`、`<a-table>`、`<a-form>` 等组件，并将本规范中的语义令牌映射到 Arco 主题；不要在同一应用同时引入 Naive UI 与 Arco Design Vue。
-- 迁移到 Arco 时：先完成全局注册、主题、语言和图标策略，再逐页替换。不要只替换单个按钮或表格。
+- 现有页面可以继续使用 Naive UI，并通过 `frontend/src/App.vue` 的 `themeOverrides` 维护 Naive UI 主题。
+- 新页面、实验性页面或适合 Arco 交互模型的页面可以使用 Arco Design Vue，并通过 `a-config-provider` 与平台令牌接入统一主题。
+- 同一页面可以混用两套组件，但不应让同一个交互控件同时由两套组件叠加实现；优先保持页面内部的组件风格连续。
+- 两套组件库都必须在应用入口完成注册、样式加载、语言配置和主题配置；不得在业务页面重复初始化全局 Provider。
 
 ### 2.3 权威实现位置
 
@@ -48,10 +49,11 @@ OmicHub 是面向生物信息学任务、数据资产与 AI 工作流的科学�
 | 仪表盘实时状态模式 | `frontend/src/views/DashboardView.vue` | 系统健康、局部刷新、任务列表与进度条的推荐实现。 |
 | 认证页材质与引言 | `frontend/src/views/LoginView.vue`、`frontend/src/views/RegisterView.vue`、`frontend/src/components/StardustQuote.vue` | 认证场景可使用星空和玻璃材质，普通工作台页面保持克制。 |
 
-### 2.4 Naive UI 应用层约定
+### 2.4 组件库应用层约定
 
 - `frontend/src/main.ts` 负责注册 Naive UI；不要为单个页面重复安装组件库或引入第二套全局初始化方式。
-- `frontend/src/App.vue` 是唯一的 `NConfigProvider` 与 `themeOverrides` 维护入口。语言、日期语言、明暗主题、通用色彩、圆角及组件级覆盖必须在此集中配置，业务页面不得嵌套新的全局主题提供者。
+- `frontend/src/main.ts` 同时负责注册 Arco Design Vue；两套组件库只在应用入口初始化一次。
+- `frontend/src/App.vue` 负责 Naive UI 的 `NConfigProvider` 与 `themeOverrides`；Arco 的 `a-config-provider` 也必须在应用壳层统一维护。语言、日期语言、明暗主题、通用色彩、圆角及组件级覆盖不得分散到业务页面。
 - `NMessageProvider`、`NDialogProvider` 与 `NNotificationProvider` 已在应用根部提供。`useMessage()`、`useDialog()`、`useNotification()` 只能在这些 Provider 的后代组件或组合式函数调用；需要新增 Provider 时，先说明其覆盖范围和全局影响。
 - 本项目当前采用显式导入与全局注册的既有方式。未经构建体积、类型声明和现有代码验证，不要仅为局部页面迁移到自动导入或实验性 Naive UI 功能。
 - Tailwind 基础样式、全局 CSS 与 Naive UI 外观发生冲突时，先检查 `global.css` 的选择器和加载顺序；不要用高优先级、深层穿透或 `!important` 批量覆盖 `n-*` 组件。确需控制 Naive UI 样式注入位置或禁用其 preflight 时，应作为应用层变更处理并验证所有页面。
@@ -333,7 +335,7 @@ Hero 区域（`HomeView.vue`）、通知条幅（`AnnouncementBanner.vue`）等�
 | 弹窗 | `NModal` / `NPopconfirm` | `<a-modal>` / `<a-popconfirm>` |
 | 全局主题 | `NConfigProvider` + `themeOverrides` | `app.use(ArcoVue)` + `<a-config-provider>` / Arco 主题变量 |
 
-Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`v-model`、`#slot`、`dayjs` 日期处理和 Arco 图标入口的约定。该对照仅用于迁移决策，不是将 Arco 组件引入 OmicHub 的理由。
+Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`v-model`、`#slot`、`dayjs` 日期处理和 Arco 图标入口的约定。该对照用于保证 Naive UI 与 Arco Design Vue 并行时的实现一致性。
 
 ## 9. 实施流程
 
@@ -351,7 +353,7 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 ## 10. 变更验收清单
 
 - [ ] 页面是否复用 `tokens.css`、`global.css` 与 `App.vue` 的主题体系？
-- [ ] 是否只使用一个组件库，且没有将 Arco 与 Naive UI 混入同一应用？
+- [ ] Naive UI 与 Arco Design Vue 是否共享同一套令牌、主题状态、可访问性和交互语义？
 - [ ] 是否复用了 `PageHeader`，并把页面级操作放入 `#actions`？
 - [ ] 是否避免硬编码只适用于浅色模式的背景、边框、图表轨道和状态颜色？
 - [ ] 按钮、卡片、输入和表格是否具备 hover、active、focus-visible、disabled、loading 和 error 等适用状态？
