@@ -86,7 +86,7 @@ withDefaults(defineProps<{
 }
 
 .page-header-copy p {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   color: var(--text-secondary);
   font-size: 14px;
   line-height: 1.57;

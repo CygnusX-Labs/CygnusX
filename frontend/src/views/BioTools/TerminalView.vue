@@ -177,7 +177,7 @@ watch(
 </script>
 
 <template>
-  <div class="terminal-page" :class="{ 'terminal-fullscreen': fullScreen }" role="main" aria-label="云端沙盒终端">
+  <div class="terminal-page" :class="{ 'terminal-fullscreen': fullScreen, 'terminal-config-page': !session }" role="main" aria-label="云端沙盒终端">
     <div v-if="session" class="terminal-header session-header">
       <div class="header-left">
         <NIcon :size="20" color="#2e5bff">
@@ -356,7 +356,12 @@ watch(
   display: flex;
   flex-direction: column;
   min-height: 100%;
+  box-sizing: border-box;
   background: var(--terminal-bg);
+}
+
+.terminal-config-page {
+  padding: 40px 24px 24px;
 }
 
 .terminal-fullscreen {
@@ -609,6 +614,9 @@ watch(
 }
 
 @media (max-width: 900px) {
+  .terminal-config-page {
+    padding: 24px 12px 16px;
+  }
   .terminal-selector {
     padding: 16px;
   }
