@@ -175,7 +175,7 @@ tools:
 
   - key: "wetlab-calculators"
     title: "湿实验计算器"
-    description: "母液稀释、qPCR 2^-ΔΔCt、摩尔浓度与核酸换算四合一，纯本地运算数据不离开浏览器"
+    description: "PCR/克隆、NGS 建库、序列处理与溶液配制四大类 12 个常用湿实验计算器，纯本地运算数据不离开浏览器"
     icon: "CalculatorOutline"
     gradient: "linear-gradient(135deg, #00B42A 0%, #7BE188 100%)"
     route: "/tools/wetlab-calculators"

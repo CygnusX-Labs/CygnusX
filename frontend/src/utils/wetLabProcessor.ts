@@ -1,11 +1,23 @@
 /**
  * 湿实验计算器核心算法（纯函数，无 Vue 依赖）。
  *
- * 覆盖 4 个子计算器：
- * 1. 母液稀释 C1V1 = C2V2
- * 2. qPCR 相对表达 2^-ΔΔCt
- * 3. 摩尔浓度 / 质量 / 体积换算
- * 4. 核酸浓度 ng/µL ↔ nM 换算
+ * 覆盖 12 个子计算器（四大类）：
+ * PCR / 克隆：
+ *   1. 母液稀释 C1V1 = C2V2
+ *   2. qPCR 相对表达 2^-ΔΔCt
+ *   3. PCR 体系与 Master Mix 批量配制
+ *   4. 载体/片段连接反应摩尔比 (Ligation)
+ *   5. DNA / RNA 绝对拷贝数
+ * NGS 建库：
+ *   6. NGS 文库等摩尔 Pooling
+ *   7. 磁珠纯化与选段比例 (AMPure XP)
+ * 序列处理：
+ *   8. 引物 Tm / 反向互补 / GC%
+ * 溶液 / 缓冲液：
+ *   9. 摩尔浓度 / 质量 / 体积换算
+ *  10. 核酸浓度 ng/µL ↔ nM 换算
+ *  11. 离心机转速 RPM ↔ 相对离心力 RCF
+ *  12. 常用缓冲液配方生成器
  */
 
 // ---------------------------------------------------------------------------
@@ -373,6 +385,439 @@ export function nmToNgUl(nM: number, length: number, type: NucleicType): Nucleic
   const mw = length * NUC_MW_PER_NT[type]
   const ngPerUl = ((nM * 1e-9) * mw) / 1e-3
   return { valid: true, error: null, ngPerUl, nM, mw }
+}
+
+// ---------------------------------------------------------------------------
+// 子计算器 5：PCR 体系与 Master Mix 批量配制
+// ---------------------------------------------------------------------------
+
+export interface MasterMixComponent {
+  name: string
+  /** 单孔用量（µL） */
+  perReaction: number
+  /** 是否模板（不计入预混液、不加损耗余量） */
+  isTemplate: boolean
+}
+
+export interface MasterMixInput {
+  components: MasterMixComponent[]
+  reactionCount: number
+  extraPercent: number
+}
+
+export interface MasterMixRow {
+  name: string
+  perReaction: number
+  total: number
+  isTemplate: boolean
+}
+
+export interface MasterMixResult {
+  valid: boolean
+  error: string | null
+  rows: MasterMixRow[]
+  /** 预混液每孔合计（不含模板）µL */
+  mixPerReaction: number
+  /** 预混液总配制量（含损耗余量、不含模板）µL */
+  mixTotal: number
+  /** 单反应体系总体积（含模板）µL */
+  totalReactionVolume: number
+}
+
+export function computeMasterMix(input: MasterMixInput): MasterMixResult {
+  const factor = 1 + (input.extraPercent || 0) / 100
+  const rows: MasterMixRow[] = []
+  let mixPerReaction = 0
+  let mixTotal = 0
+  let totalReactionVolume = 0
+  for (const c of input.components) {
+    if (!c.name.trim() || !(c.perReaction > 0)) continue
+    totalReactionVolume += c.perReaction
+    if (c.isTemplate) {
+      rows.push({ name: c.name.trim(), perReaction: c.perReaction, total: c.perReaction * input.reactionCount, isTemplate: true })
+    } else {
+      mixPerReaction += c.perReaction
+      const total = c.perReaction * input.reactionCount * factor
+      mixTotal += total
+      rows.push({ name: c.name.trim(), perReaction: c.perReaction, total, isTemplate: false })
+    }
+  }
+  if (!rows.length) {
+    return { valid: false, error: '请至少填写一个组分（名称 + 单孔用量）', rows, mixPerReaction, mixTotal, totalReactionVolume }
+  }
+  if (!(input.reactionCount > 0)) {
+    return { valid: false, error: '反应样品数必须为正数', rows, mixPerReaction, mixTotal, totalReactionVolume }
+  }
+  return { valid: true, error: null, rows, mixPerReaction, mixTotal, totalReactionVolume }
+}
+
+export function genSampleMasterMix(): { components: MasterMixComponent[]; reactionCount: number; extraPercent: number } {
+  return {
+    components: [
+      { name: '2× Master Mix', perReaction: 10, isTemplate: false },
+      { name: '正向引物 F (10 µM)', perReaction: 0.8, isTemplate: false },
+      { name: '反向引物 R (10 µM)', perReaction: 0.8, isTemplate: false },
+      { name: '无核酸酶水', perReaction: 7.4, isTemplate: false },
+      { name: '模板 DNA', perReaction: 1, isTemplate: true },
+    ],
+    reactionCount: 96,
+    extraPercent: 10,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 子计算器 6：载体/片段连接反应摩尔比 (Ligation)
+// ---------------------------------------------------------------------------
+
+export interface LigationInput {
+  vectorLength: number
+  vectorMass: number
+  insertLength: number
+  /** 插入片段:载体 摩尔比（如 3 表示 1:3） */
+  molarRatio: number
+  /** 插入片段浓度（ng/µL），可选，用于换算吸取体积 */
+  insertConc: number | null
+}
+
+export interface LigationResult {
+  valid: boolean
+  error: string | null
+  insertMass: number
+  insertVolume: number | null
+}
+
+export function computeLigation(input: LigationInput): LigationResult {
+  const { vectorLength, vectorMass, insertLength, molarRatio, insertConc } = input
+  if (!(vectorLength > 0) || !(vectorMass > 0) || !(insertLength > 0) || !(molarRatio > 0)) {
+    return { valid: false, error: '载体/片段长度、载体用量与摩尔比均需为正数', insertMass: 0, insertVolume: null }
+  }
+  const insertMass = vectorMass * (insertLength / vectorLength) * molarRatio
+  const insertVolume = insertConc && insertConc > 0 ? insertMass / insertConc : null
+  return { valid: true, error: null, insertMass, insertVolume }
+}
+
+// ---------------------------------------------------------------------------
+// 子计算器 7：DNA / RNA 绝对拷贝数
+// ---------------------------------------------------------------------------
+
+export interface CopyNumberResult {
+  valid: boolean
+  error: string | null
+  copiesPerUl: number
+  mw: number
+}
+
+/** 拷贝数/µL = C(ng/µL) × 6.022e23 / (长度 × 1e9 × 每 bp/nt 平均分子量) */
+export function computeCopyNumber(concNgUl: number, length: number, type: NucleicType): CopyNumberResult {
+  if (!(concNgUl > 0) || !(length > 0)) {
+    return { valid: false, error: '浓度与长度必须为正数', copiesPerUl: 0, mw: 0 }
+  }
+  const perNt = NUC_MW_PER_NT[type]
+  const mw = length * perNt
+  const copiesPerUl = (concNgUl * 6.022e23) / (length * 1e9 * perNt)
+  return { valid: true, error: null, copiesPerUl, mw }
+}
+
+// ---------------------------------------------------------------------------
+// 子计算器 8：NGS 文库等摩尔 Pooling
+// ---------------------------------------------------------------------------
+
+export interface PoolLibrary {
+  name: string
+  massConc: number
+  avgSize: number
+}
+
+export interface PoolInput {
+  libraries: PoolLibrary[]
+  /** 目标总摩尔浓度（nM） */
+  targetConc: number
+  /** 目标总体积（µL） */
+  targetVolume: number
+}
+
+export interface PoolRow {
+  name: string
+  /** 该文库摩尔浓度（nM） */
+  molarConc: number
+  /** 需吸取体积（µL） */
+  volume: number
+}
+
+export interface PoolResult {
+  valid: boolean
+  error: string | null
+  rows: PoolRow[]
+  diluentVolume: number
+}
+
+export function computePooling(input: PoolInput): PoolResult {
+  const libs = input.libraries.filter((l) => l.name.trim() && l.massConc > 0 && l.avgSize > 0)
+  if (libs.length === 0) {
+    return { valid: false, error: '请至少填写一个有效文库（名称 + 质量浓度 + 平均片段大小）', rows: [], diluentVolume: 0 }
+  }
+  if (!(input.targetConc > 0) || !(input.targetVolume > 0)) {
+    return { valid: false, error: '目标摩尔浓度与目标总体积必须为正数', rows: [], diluentVolume: 0 }
+  }
+  const totalFmol = input.targetConc * input.targetVolume
+  const fmolEach = totalFmol / libs.length
+  const rows: PoolRow[] = libs.map((l) => {
+    const molarConc = (l.massConc * 1e6) / (l.avgSize * 660)
+    return { name: l.name.trim(), molarConc, volume: fmolEach / molarConc }
+  })
+  const usedVolume = rows.reduce((sum, r) => sum + r.volume, 0)
+  const diluentVolume = Math.max(input.targetVolume - usedVolume, 0)
+  return { valid: true, error: null, rows, diluentVolume }
+}
+
+export function genSamplePooling(): { libraries: PoolLibrary[]; targetConc: number; targetVolume: number } {
+  return {
+    libraries: [
+      { name: 'Lib-A', massConc: 4.2, avgSize: 450 },
+      { name: 'Lib-B', massConc: 3.1, avgSize: 380 },
+      { name: 'Lib-C', massConc: 5.6, avgSize: 520 },
+      { name: 'Lib-D', massConc: 2.8, avgSize: 410 },
+    ],
+    targetConc: 4,
+    targetVolume: 20,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 子计算器 9：磁珠纯化与选段比例 (AMPure XP)
+// ---------------------------------------------------------------------------
+
+export type BeadsMode = 'single' | 'double'
+
+export interface BeadsInput {
+  mode: BeadsMode
+  sampleVolume: number
+  /** 单向比例，或双向第一步比例（如 0.6×） */
+  ratio1: number
+  /** 双向目标总比例（如 0.8×，须 > ratio1） */
+  ratio2: number
+}
+
+export interface BeadsResult {
+  valid: boolean
+  error: string | null
+  beads1: number
+  supernatant: number
+  beads2: number | null
+  elutionHint: string
+}
+
+export function computeBeads(input: BeadsInput): BeadsResult {
+  const { mode, sampleVolume, ratio1, ratio2 } = input
+  if (!(sampleVolume > 0) || !(ratio1 > 0)) {
+    return { valid: false, error: '样品体积与磁珠比例必须为正数', beads1: 0, supernatant: 0, beads2: null, elutionHint: '' }
+  }
+  const beads1 = sampleVolume * ratio1
+  if (mode === 'single') {
+    return {
+      valid: true, error: null, beads1, supernatant: 0, beads2: null,
+      elutionHint: '结合后磁吸去上清，70% 乙醇洗涤两次，晾干后按需用低盐缓冲液/水洗脱。',
+    }
+  }
+  if (!(ratio2 > ratio1)) {
+    return { valid: false, error: '双向选段的目标总比例须大于第一步比例', beads1, supernatant: 0, beads2: null, elutionHint: '' }
+  }
+  const supernatant = sampleVolume + beads1
+  const beads2 = sampleVolume * (ratio2 - ratio1)
+  return {
+    valid: true, error: null, beads1, supernatant, beads2,
+    elutionHint: '第一步磁吸后转移全部上清（含目标及小片段），补加第二步磁珠结合目标片段，洗涤后洗脱。',
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 子计算器 10：引物 Tm / 反向互补 / GC%
+// ---------------------------------------------------------------------------
+
+const COMPLEMENT_MAP: Record<string, string> = {
+  A: 'T', T: 'A', G: 'C', C: 'G', N: 'N',
+  R: 'Y', Y: 'R', S: 'S', W: 'W', K: 'M', M: 'K',
+  B: 'V', V: 'B', D: 'H', H: 'D',
+}
+
+/** 清洗序列：去除空格、数字与非碱基字符，统一大写。 */
+export function cleanSequence(text: string): string {
+  return (text || '').toUpperCase().replace(/[^ATGCRYWSKMBDHVN]/g, '')
+}
+
+export function complementSeq(seq: string): string {
+  return seq.split('').map((c) => COMPLEMENT_MAP[c] ?? 'N').join('')
+}
+
+export function reverseComplementSeq(seq: string): string {
+  return complementSeq(seq).split('').reverse().join('')
+}
+
+export interface PrimerAnalysis {
+  valid: boolean
+  error: string | null
+  length: number
+  gcPercent: number
+  tmWallace: number
+  tmSalt: number
+  reverse: string
+  complement: string
+  reverseComplement: string
+  counts: { A: number; T: number; G: number; C: number; other: number }
+}
+
+/**
+ * Tm 估算：
+ * - Wallace 法则（短引物）：Tm = 2(A+T) + 4(G+C)
+ * - 盐校正经验式（≥14 nt）：Tm = 81.5 + 16.6·log10([Na+]) + 0.41·GC% − 675/L
+ */
+export function analyzePrimer(text: string, sodiumMolar = 0.05): PrimerAnalysis {
+  const seq = cleanSequence(text)
+  const empty: PrimerAnalysis = {
+    valid: false, error: '请输入有效 DNA 序列', length: 0, gcPercent: 0,
+    tmWallace: 0, tmSalt: 0, reverse: '', complement: '', reverseComplement: '',
+    counts: { A: 0, T: 0, G: 0, C: 0, other: 0 },
+  }
+  if (!seq.length) return empty
+  const counts = { A: 0, T: 0, G: 0, C: 0, other: 0 }
+  for (const c of seq) {
+    if (c === 'A') counts.A += 1
+    else if (c === 'T') counts.T += 1
+    else if (c === 'G') counts.G += 1
+    else if (c === 'C') counts.C += 1
+    else counts.other += 1
+  }
+  const gc = counts.G + counts.C
+  const at = counts.A + counts.T
+  const gcPercent = (gc / seq.length) * 100
+  const tmWallace = 2 * at + 4 * gc
+  const tmSalt = 81.5 + 16.6 * Math.log10(sodiumMolar) + 0.41 * gcPercent - 675 / seq.length
+  return {
+    valid: true, error: null, length: seq.length, gcPercent,
+    tmWallace, tmSalt,
+    reverse: seq.split('').reverse().join(''),
+    complement: complementSeq(seq),
+    reverseComplement: reverseComplementSeq(seq),
+    counts,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 子计算器 11：离心机转速 RPM ↔ 相对离心力 RCF
+// ---------------------------------------------------------------------------
+
+export type RcfDirection = 'rpm2rcf' | 'rcf2rpm'
+
+/** RCF = 1.118e-5 × r(cm) × RPM² */
+export function rpmToRcf(rpm: number, radiusCm: number): number {
+  return 1.118e-5 * radiusCm * rpm * rpm
+}
+
+/** RPM = √(RCF / (1.118e-5 × r)) */
+export function rcfToRpm(rcf: number, radiusCm: number): number {
+  return Math.sqrt(rcf / (1.118e-5 * radiusCm))
+}
+
+// ---------------------------------------------------------------------------
+// 子计算器 12：常用缓冲液配方生成器
+// ---------------------------------------------------------------------------
+
+export interface BufferComponent {
+  name: string
+  /** 每 1 L 用量 */
+  perLiter: number
+  unit: 'g' | 'mL'
+}
+
+export interface BufferRecipe {
+  key: string
+  label: string
+  note: string
+  components: BufferComponent[]
+}
+
+export const BUFFER_RECIPES: BufferRecipe[] = [
+  {
+    key: 'tae50x',
+    label: '50× TAE',
+    note: '用去离子水定容，无需调 pH；工作液为 1× TAE。',
+    components: [
+      { name: 'Tris 碱', perLiter: 242, unit: 'g' },
+      { name: '冰乙酸', perLiter: 57.1, unit: 'mL' },
+      { name: '0.5 M EDTA (pH 8.0)', perLiter: 100, unit: 'mL' },
+    ],
+  },
+  {
+    key: 'tbe10x',
+    label: '10× TBE',
+    note: '用去离子水定容，无需调 pH；工作液为 0.5× 或 1× TBE。',
+    components: [
+      { name: 'Tris 碱', perLiter: 108, unit: 'g' },
+      { name: '硼酸', perLiter: 55, unit: 'g' },
+      { name: '0.5 M EDTA (pH 8.0)', perLiter: 40, unit: 'mL' },
+    ],
+  },
+  {
+    key: 'tris1m',
+    label: '1 M Tris-HCl (pH 8.0)',
+    note: '溶解后用浓 HCl 调 pH 至 8.0（冷却至室温再定容，pH 随温度变化）。',
+    components: [{ name: 'Tris 碱', perLiter: 121.14, unit: 'g' }],
+  },
+  {
+    key: 'edta05m',
+    label: '0.5 M EDTA (pH 8.0)',
+    note: 'EDTA 二钠盐需接近 pH 8.0 才完全溶解，边加 NaOH 边搅拌后定容。',
+    components: [{ name: 'EDTA 二钠盐 (EDTA·2Na)', perLiter: 186.1, unit: 'g' }],
+  },
+  {
+    key: 'pbs10x',
+    label: '10× PBS',
+    note: '溶解后用 HCl 调 pH 至 7.4，定容后高压灭菌；工作液为 1× PBS。',
+    components: [
+      { name: 'NaCl', perLiter: 80, unit: 'g' },
+      { name: 'KCl', perLiter: 2, unit: 'g' },
+      { name: 'Na₂HPO₄', perLiter: 14.4, unit: 'g' },
+      { name: 'KH₂PO₄', perLiter: 2.4, unit: 'g' },
+    ],
+  },
+  {
+    key: 'te1x',
+    label: 'TE 缓冲液 (1×, pH 8.0)',
+    note: '由 1 M Tris-HCl (pH 8.0) 与 0.5 M EDTA (pH 8.0) 稀释而成，终浓度 10 mM Tris / 1 mM EDTA。',
+    components: [
+      { name: '1 M Tris-HCl (pH 8.0)', perLiter: 10, unit: 'mL' },
+      { name: '0.5 M EDTA (pH 8.0)', perLiter: 2, unit: 'mL' },
+    ],
+  },
+]
+
+export interface BufferResultRow {
+  name: string
+  amount: number
+  unit: 'g' | 'mL'
+}
+
+export interface BufferResult {
+  valid: boolean
+  error: string | null
+  label: string
+  note: string
+  rows: BufferResultRow[]
+}
+
+export function generateBufferRecipe(key: string, volumeMl: number): BufferResult {
+  const recipe = BUFFER_RECIPES.find((r) => r.key === key)
+  if (!recipe) {
+    return { valid: false, error: '请选择缓冲液类型', label: '', note: '', rows: [] }
+  }
+  if (!(volumeMl > 0)) {
+    return { valid: false, error: '目标体积必须为正数', label: recipe.label, note: recipe.note, rows: [] }
+  }
+  const scale = volumeMl / 1000
+  const rows: BufferResultRow[] = recipe.components.map((c) => ({
+    name: c.name, amount: c.perLiter * scale, unit: c.unit,
+  }))
+  return { valid: true, error: null, label: recipe.label, note: recipe.note, rows }
 }
 
 // ---------------------------------------------------------------------------
