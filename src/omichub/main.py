@@ -152,7 +152,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as e:
             logger.warning(f"内置聊天助手初始化失败，降级运行: {e}")
 
-    await asyncio.gather(_sync_ai_providers(), _init_default_provider(), _init_assistants())
+    async def _init_mcp_presets() -> None:
+        # 初始化/同步内置 MCP 预设（omichub-platform / omichub-tools / omichub-pipelines），
+        # 确保预设工具清单（含新增的工作区文件工具）随代码演进同步进库，供 Agent 上下文组装使用。
+        try:
+            from omichub.application.services.mcp_service import MCPService
+            from omichub.infrastructure.database.session import get_session_factory
+
+            factory = get_session_factory()
+            if factory is not None:
+                async with factory() as session:
+                    await MCPService(session).ensure_presets()
+                    await session.commit()
+                    logger.info("内置 MCP 预设初始化完成")
+        except Exception as e:
+            logger.warning(f"内置 MCP 预设初始化失败，降级运行: {e}")
+
+    await asyncio.gather(
+        _sync_ai_providers(), _init_default_provider(), _init_assistants(), _init_mcp_presets()
+    )
 
     # 欢迎词补齐：须在 AI Provider 同步完成之后（依赖默认 provider），
     # 故串行执行而非并入上方 gather。条数 < 阈值才调 LLM 补齐；失败仅 log，不阻塞启动。
