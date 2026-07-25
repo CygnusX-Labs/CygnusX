@@ -56,6 +56,7 @@ def _server_to_dto(s: MCPServer) -> MCPServerDTO:
         auto_restart=s.auto_restart,
         is_preset=s.is_preset,
         tool_count=len(s.tools),
+        tools=[_tool_to_dto(t) for t in s.tools],
         created_at=s.created_at,
     )
 
@@ -90,7 +91,9 @@ class MCPService:
         for preset in PRESET_SERVERS:
             existing = await self._repo.get_by_name(preset["name"])
             if existing is not None:
-                if preset["name"] == OMICHUB_PIPELINES_SERVER_NAME:
+                # 预设工具随代码演进（如新增工作区文件工具），需把最新工具清单同步进库，
+                # 否则已存在部署的 builtin 预设工具不会出现在 LLM 工具清单里。
+                if preset["name"] in (OMICHUB_PIPELINES_SERVER_NAME, "omichub-platform"):
                     existing.tools = [
                         MCPToolRegistry(
                             tool_name=tool["name"],

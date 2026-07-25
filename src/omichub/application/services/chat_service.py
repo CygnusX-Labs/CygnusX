@@ -1669,9 +1669,12 @@ class ChatService:
             max_len = 8000
             snippets: list[str] = []
             if file_id:
+                # file_id 可能已带 scheme（file://uuid 或 upload://hex）；无 scheme 时按上传文件处理
+                ref = file_id if "://" in file_id else f"upload://{file_id}"
                 snippets.append(
-                    f"[文件: {att.get('name', '')} 已上传，file_id: {file_id}，"
-                    f"可在工具参数中通过 upload://{file_id} 或直接作为 file_id 引用]"
+                    f"[文件: {att.get('name', '')}，file_id: {ref}，"
+                    f"可用 workspace_read_file(file_id=\"{ref}\") 读取内容，"
+                    f"或在其它工具参数中直接引用该 file_id]"
                 )
             if text:
                 snippet = text[:max_len] + ("\n...（已截断）" if len(text) > max_len else "")

@@ -1,3 +1,6 @@
+import type { DataFile } from '@/types'
+import type { AgentTemplate, SkillItem } from '@/types/agent'
+
 // ===== Token 统计 =====
 export interface TokenInfo {
   input?: number
@@ -93,6 +96,24 @@ export interface FileAttachment {
   type: string
   url?: string
   file_id?: string
+  /** 来源：upload=输入框上传；workspace=@ 引用的工作区文件 */
+  source?: 'upload' | 'workspace'
+}
+
+// ===== @ 提及项（文件 / 智能体 / 技能）=====
+export type MentionKind = 'file' | 'agent' | 'skill'
+
+/** @ 补全面板中的一个可选项 */
+export interface MentionItem {
+  kind: MentionKind
+  /** 列表渲染唯一 key */
+  key: string
+  name: string
+  /** 文件为所在路径；智能体/技能为一句话能力描述 */
+  description: string
+  file?: DataFile
+  agent?: AgentTemplate
+  skill?: SkillItem
 }
 
 // ===== 会话 =====

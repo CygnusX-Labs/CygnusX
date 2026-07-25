@@ -12,14 +12,21 @@ import {
   PauseOutline,
   PlayOutline,
   RefreshOutline,
+  PersonOutline,
+  ExtensionPuzzleOutline,
+  DocumentTextOutline,
 } from '@vicons/ionicons5'
 import SlashCommandMenu from './SlashCommandMenu.vue'
+import MentionMenu from './MentionMenu.vue'
 import PromptSidebar from './PromptSidebar.vue'
 import { useChatStore } from '@/stores/chat'
 import { useSiteConfigStore } from '@/stores/site-config'
+import { useAgentHubStore } from '@/stores/agentHub'
 import { matchWorkbenchIntent } from '@/config/aiIntents'
 import apiClient from '@/api/client'
-import type { FileAttachment } from './types'
+import type { DataFile } from '@/types'
+import type { AgentTemplate, SkillItem } from '@/types/agent'
+import type { FileAttachment, MentionItem } from './types'
 
 interface Props {
   modelValue: string
@@ -33,7 +40,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   modelValue: '',
-  placeholder: '输入消息，或点击左侧工具唤起能力...',
+  placeholder: '输入消息，@ 引用工作区文件或指定智能体 / 技能...',
   disabled: false,
   isStreaming: false,
   isPaused: false,
@@ -41,7 +48,19 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
-  send: [content: string, options: { attachments?: FileAttachment[]; enableWebSearch?: boolean; enableCodeExecution?: boolean; workbenchIntent?: boolean }]
+  send: [
+    content: string,
+    options: {
+      attachments?: FileAttachment[]
+      enableWebSearch?: boolean
+      enableCodeExecution?: boolean
+      workbenchIntent?: boolean
+      /** @ 显式指定的智能体（本条消息转交给该专家回答） */
+      explicitAgentId?: string
+      /** @ 挂载到本次对话的技能名 */
+      skillNames?: string[]
+    },
+  ]
   triggerSandbox: []
   pause: []
   resume: []
@@ -50,6 +69,7 @@ const emit = defineEmits<{
 
 const chatStore = useChatStore()
 const siteConfigStore = useSiteConfigStore()
+const agentHub = useAgentHubStore()
 const message = useMessage()
 
 const textareaRef = ref<HTMLTextAreaElement>()
@@ -62,6 +82,19 @@ const showPromptSidebar = ref(false)
 const showClearConfirm = ref(false)
 const attachments = ref<FileAttachment[]>([])
 const uploading = ref(false)
+
+// ===== @ 引用状态 =====
+const showMentionMenu = ref(false)
+const mentionQuery = ref('')
+const mentionActiveIndex = ref(0)
+const mentionPosition = ref({ top: 0, left: 0 })
+const workspaceFiles = ref<DataFile[]>([])
+const mentionLoading = ref(false)
+const mentionError = ref(false)
+/** @ 显式指定的智能体（随下一条消息发送） */
+const pendingAgent = ref<AgentTemplate | null>(null)
+/** @ 挂载的技能（随下一条消息发送） */
+const pendingSkills = ref<SkillItem[]>([])
 
 const localValue = ref(props.modelValue)
 
@@ -81,6 +114,7 @@ watch(
 watch(localValue, () => {
   nextTick(autoResize)
   detectSlashCommand()
+  detectMention()
 })
 
 function autoResize() {
@@ -90,9 +124,41 @@ function autoResize() {
   el.style.height = Math.min(el.scrollHeight, 200) + 'px'
 }
 
-const canSend = computed(() => localValue.value.trim().length > 0 || attachments.value.length > 0)
+const canSend = computed(
+  () =>
+    localValue.value.trim().length > 0 ||
+    attachments.value.length > 0 ||
+    pendingAgent.value !== null ||
+    pendingSkills.value.length > 0,
+)
 
 function handleKeydown(e: KeyboardEvent) {
+  // @ 补全面板打开时，优先接管方向键 / Enter / Esc
+  if (showMentionMenu.value) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      mentionActiveIndex.value = (mentionActiveIndex.value + 1) % Math.max(mentionItems.value.length, 1)
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      mentionActiveIndex.value =
+        (mentionActiveIndex.value - 1 + mentionItems.value.length) % Math.max(mentionItems.value.length, 1)
+      return
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      const item = mentionItems.value[mentionActiveIndex.value]
+      if (item) selectMention(item)
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      showMentionMenu.value = false
+      return
+    }
+  }
+
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     if (canSend.value && !props.disabled) {
@@ -124,6 +190,169 @@ function detectSlashCommand() {
   }
 }
 
+// ===== @ 引用：检测 / 数据 / 选择 =====
+
+/** 提取光标处活跃的 @ 查询词；不在 @ 上下文中返回 null */
+function readMentionQuery(): string | null {
+  const el = textareaRef.value
+  const text = localValue.value
+  const caret = el?.selectionStart ?? text.length
+  const before = text.slice(0, caret)
+  // @ 需在行首或空白后，且到光标间不含空白
+  const m = before.match(/(?:^|[\s\n])@([\w./\-@一-龥]*)$/)
+  return m ? m[1] : null
+}
+
+function detectMention() {
+  const q = readMentionQuery()
+  if (q === null) {
+    showMentionMenu.value = false
+    return
+  }
+  // 与 slash 菜单互斥
+  showSlashMenu.value = false
+  showMentionMenu.value = true
+  mentionQuery.value = q
+  mentionActiveIndex.value = 0
+  updateMentionPosition()
+  ensureMentionData()
+}
+
+function updateMentionPosition() {
+  const el = textareaRef.value
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  mentionPosition.value = {
+    top: Math.max(8, rect.top - 360),
+    left: rect.left + 12,
+  }
+}
+
+/** 首次打开 @ 面板时加载工作区文件与智能体 / 技能资产 */
+async function ensureMentionData() {
+  if (!workspaceFiles.value.length && !mentionLoading.value) {
+    await loadWorkspaceFiles()
+  }
+  if (!agentHub.agents.length) agentHub.fetchAgents()
+  if (!agentHub.skills.length) agentHub.fetchSkills()
+}
+
+async function loadWorkspaceFiles() {
+  mentionLoading.value = true
+  mentionError.value = false
+  try {
+    const res = await apiClient.get<{ items: DataFile[]; total: number }>('/files')
+    workspaceFiles.value = res.data.items || []
+  } catch (e) {
+    mentionError.value = true
+    console.error('加载工作区文件失败:', e)
+  } finally {
+    mentionLoading.value = false
+  }
+}
+
+/** 简单模糊匹配：名称 / 路径包含查询词（不区分大小写） */
+function fuzzyMatch(text: string, q: string): boolean {
+  if (!q) return true
+  return text.toLowerCase().includes(q.toLowerCase())
+}
+
+const mentionItems = computed<MentionItem[]>(() => {
+  const q = mentionQuery.value
+  const files: MentionItem[] = workspaceFiles.value
+    .filter((f) => fuzzyMatch(`${f.original_name} ${f.directory || ''}`, q))
+    .slice(0, 30)
+    .map((f) => ({
+      kind: 'file' as const,
+      key: `file-${f.id}`,
+      name: f.original_name,
+      description: f.directory ? `${f.directory}/ · ${formatBytes(f.size)}` : formatBytes(f.size),
+      file: f,
+    }))
+
+  const agents: MentionItem[] = agentHub.activeAgents
+    .filter((a) => fuzzyMatch(`${a.name} ${a.description}`, q))
+    .slice(0, 8)
+    .map((a) => ({
+      kind: 'agent' as const,
+      key: `agent-${a.id}`,
+      name: a.name,
+      description: a.description || '智能体',
+      agent: a,
+    }))
+
+  const skills: MentionItem[] = agentHub.skills
+    .filter((s) => s.is_active && fuzzyMatch(`${s.name} ${s.description}`, q))
+    .slice(0, 8)
+    .map((s) => ({
+      kind: 'skill' as const,
+      key: `skill-${s.id}`,
+      name: s.name,
+      description: s.description || '技能',
+      skill: s,
+    }))
+
+  return [...files, ...agents, ...skills]
+})
+
+function formatBytes(size: number): string {
+  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)}MB`
+  if (size >= 1024) return `${(size / 1024).toFixed(1)}KB`
+  return `${size}B`
+}
+
+/** 把光标处活跃的 @查询词 替换为 @名称 + 空格，返回是否替换成功 */
+function replaceMentionToken(name: string): void {
+  const el = textareaRef.value
+  const text = localValue.value
+  const caret = el?.selectionStart ?? text.length
+  const before = text.slice(0, caret).replace(/@([\w./\-@一-龥]*)$/, `@${name} `)
+  localValue.value = before + text.slice(caret)
+  nextTick(() => {
+    if (el) {
+      const pos = before.length
+      el.focus()
+      el.setSelectionRange(pos, pos)
+    }
+  })
+}
+
+function selectMention(item: MentionItem) {
+  if (item.kind === 'file' && item.file) {
+    const f = item.file
+    const fileId = `file://${f.id}`
+    // 去重：已引用则不重复添加
+    if (!attachments.value.some((a) => a.file_id === fileId)) {
+      attachments.value.push({
+        name: f.original_name,
+        size: f.size,
+        type: 'application/octet-stream',
+        url: `/api/v1/files/${f.id}/download`,
+        file_id: fileId,
+        source: 'workspace',
+      })
+    }
+    replaceMentionToken(f.original_name)
+  } else if (item.kind === 'agent' && item.agent) {
+    pendingAgent.value = item.agent
+    replaceMentionToken(item.agent.name)
+  } else if (item.kind === 'skill' && item.skill) {
+    if (!pendingSkills.value.some((s) => s.id === item.skill!.id)) {
+      pendingSkills.value.push(item.skill)
+    }
+    replaceMentionToken(item.skill.name)
+  }
+  showMentionMenu.value = false
+}
+
+function removePendingAgent() {
+  pendingAgent.value = null
+}
+
+function removePendingSkill(idx: number) {
+  pendingSkills.value.splice(idx, 1)
+}
+
 function updateSlashMenuPosition() {
   if (!textareaRef.value) return
   const rect = textareaRef.value.getBoundingClientRect()
@@ -144,7 +373,12 @@ function handleSlashSelect(command: string) {
 
 function handleSend() {
   const content = localValue.value.trim()
-  if ((!content && !attachments.value.length) || props.disabled) return
+  const hasPayload =
+    content.length > 0 ||
+    attachments.value.length > 0 ||
+    pendingAgent.value !== null ||
+    pendingSkills.value.length > 0
+  if (!hasPayload || props.disabled) return
 
   // Feature 5: 意图匹配 → 自动切换工作台模式
   const workbenchIntent = matchWorkbenchIntent(content)
@@ -156,9 +390,14 @@ function handleSend() {
     attachments: attachments.value.length ? [...attachments.value] : undefined,
     enableWebSearch: chatStore.enableWebSearch,
     workbenchIntent,
+    explicitAgentId: pendingAgent.value?.id,
+    skillNames: pendingSkills.value.length ? pendingSkills.value.map((s) => s.name) : undefined,
   })
   localValue.value = ''
   attachments.value = []
+  pendingAgent.value = null
+  pendingSkills.value = []
+  showMentionMenu.value = false
   nextTick(() => {
     if (textareaRef.value) {
       textareaRef.value.style.height = 'auto'
@@ -185,6 +424,7 @@ function handleBlur() {
   blurTimer = setTimeout(() => {
     isFocused.value = false
     showSlashMenu.value = false
+    showMentionMenu.value = false
   }, 200)
 }
 
@@ -283,16 +523,56 @@ onUnmounted(() => {
       @change="handleFileChange"
     />
 
-    <div v-if="attachments.length" class="attachment-list">
+    <div
+      v-if="attachments.length || pendingAgent || pendingSkills.length"
+      class="ref-bar"
+    >
+      <!-- @ 指定的智能体 -->
       <NTag
-        v-for="(att, idx) in attachments"
-        :key="idx"
+        v-if="pendingAgent"
         size="small"
         round
         closable
+        class="ref-chip ref-agent"
+        @close="removePendingAgent"
+      >
+        <template #icon>
+          <n-icon><PersonOutline /></n-icon>
+        </template>
+        {{ pendingAgent.name }}
+      </NTag>
+
+      <!-- @ 挂载的技能 -->
+      <NTag
+        v-for="(sk, idx) in pendingSkills"
+        :key="`skill-${sk.id}`"
+        size="small"
+        round
+        closable
+        class="ref-chip ref-skill"
+        @close="removePendingSkill(idx)"
+      >
+        <template #icon>
+          <n-icon><ExtensionPuzzleOutline /></n-icon>
+        </template>
+        {{ sk.name }}
+      </NTag>
+
+      <!-- 附件 / @ 引用的工作区文件 -->
+      <NTag
+        v-for="(att, idx) in attachments"
+        :key="`att-${idx}`"
+        size="small"
+        round
+        closable
+        class="ref-chip"
+        :class="{ 'ref-file': att.source === 'workspace' }"
         :disabled="uploading"
         @close="removeAttachment(idx)"
       >
+        <template v-if="att.source === 'workspace'" #icon>
+          <n-icon><DocumentTextOutline /></n-icon>
+        </template>
         {{ att.name }}
       </NTag>
     </div>
@@ -303,6 +583,19 @@ onUnmounted(() => {
       :position="slashMenuPosition"
       @select="handleSlashSelect"
       @close="showSlashMenu = false"
+    />
+
+    <MentionMenu
+      v-if="showMentionMenu"
+      :items="mentionItems"
+      :active-index="mentionActiveIndex"
+      :position="mentionPosition"
+      :loading="mentionLoading"
+      :error="mentionError"
+      @select="selectMention"
+      @hover="mentionActiveIndex = $event"
+      @retry="loadWorkspaceFiles"
+      @close="showMentionMenu = false"
     />
 
     <div class="input-toolbar">
@@ -487,11 +780,30 @@ onUnmounted(() => {
     margin-bottom: 8px;
   }
 
-  .attachment-list {
+  .ref-bar {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
     margin-bottom: 10px;
+
+    .ref-chip {
+      max-width: 240px;
+    }
+
+    .ref-file {
+      color: var(--arco-primary, #4c6fff);
+      background: var(--arco-primary-light, rgba(76, 111, 255, 0.12));
+    }
+
+    .ref-agent {
+      color: var(--icon-visualization, #8b5cf6);
+      background: var(--icon-purple-bg, rgba(139, 92, 246, 0.12));
+    }
+
+    .ref-skill {
+      color: #059669;
+      background: var(--icon-green-bg, rgba(5, 150, 105, 0.12));
+    }
   }
 
   .chat-textarea {

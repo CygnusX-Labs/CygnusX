@@ -808,11 +808,16 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       attachments?: FileAttachment[]
       enableWebSearch?: boolean
       enableCodeExecution?: boolean
+      /** @ 显式指定的智能体：本条消息转交该专家回答 */
+      explicitAgentId?: string
+      /** @ 挂载到本次对话的技能名 */
+      skillNames?: string[]
     } = {},
   ): Promise<void> {
     const session = currentSession.value
     if (!session || isStreaming.value || !content.trim()) return
-    const agent = getAgent(session.agent_id)
+    // @ 显式指定的智能体优先，否则回落到会话绑定的智能体
+    const agent = getAgent(options.explicitAgentId || session.agent_id) || getAgent(session.agent_id)
     if (!agent) return
 
     // 若当前临时会话 ID 正在解析为真实 ID，排队等待，防止创建重复会话
@@ -836,6 +841,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         size: a.size,
         type: a.type,
         url: a.url,
+        file_id: a.file_id,
+        source: a.source,
       }))
     }
     session.messages.push(userMsg)
@@ -867,6 +874,14 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       .filter((m) => m.id !== aiId && m.role !== 'assistant' || (m.role === 'assistant' && m.content.length > 0))
       .slice(-ctxLen)
       .map((m) => ({ role: m.role, content: m.content }))
+
+    // @ 挂载技能：在最后一条用户消息注入显式技能上下文，使模型优先运用对应能力
+    if (options.skillNames?.length) {
+      const lastUser = [...apiMessages].reverse().find((m) => m.role === 'user')
+      if (lastUser) {
+        lastUser.content += `\n\n[用户为本次对话挂载技能：${options.skillNames.join('、')}，请优先运用相关能力作答。]`
+      }
+    }
 
     // 当前消息的附件（仅最后一条用户消息需要）
     const apiAttachments = options.attachments?.map((a) => ({

@@ -37,6 +37,7 @@ class MCPServerDTO(OmicsHubBaseSchema):
     auto_restart: bool = True
     is_preset: bool = False
     tool_count: int = 0
+    tools: list[MCPToolDTO] = []
     created_at: datetime | None = None
 
 

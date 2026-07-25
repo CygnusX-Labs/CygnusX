@@ -117,7 +117,16 @@ function closeWelcomeCard() {
   }
 }
 
-function handleSend(content: string, options: { attachments?: FileAttachment[]; enableWebSearch?: boolean; enableCodeExecution?: boolean } = {}) {
+function handleSend(
+  content: string,
+  options: {
+    attachments?: FileAttachment[]
+    enableWebSearch?: boolean
+    enableCodeExecution?: boolean
+    explicitAgentId?: string
+    skillNames?: string[]
+  } = {},
+) {
   if (!content.trim() && !options.attachments?.length) return
   if (store.isStreaming) return
   // sendMessage 是 async；不 await，让 UI 立即清空输入框
