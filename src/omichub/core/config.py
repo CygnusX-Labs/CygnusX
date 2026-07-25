@@ -81,12 +81,15 @@ class Settings(BaseSettings):
 
     # ===== 数据下载 (EBIDownload Rust 二进制 + 云存储 CLI) =====
     enable_ebi_download: bool = False  # 装好二进制 + sra-tools 后再开
+    enable_direct_download: bool = False  # 装好 aria2c 后再开
+    download_config_yaml: str = "tool_configs/download/download_config.yaml"
     ebi_download_binary: str = "/data/omichub/bin/EBIDownload"
     ebi_download_yaml: str = "/data/omichub/bin/EBIDownload.yaml"
     enable_cloud_storage_download: bool = False  # 装好 ossutil/tosutil/obsutil 并配置凭据后再开
     cloud_ossutil_binary: str = "/data/omichub/bin/ossutil"
     cloud_tosutil_binary: str = "/data/omichub/bin/tosutil"
     cloud_obsutil_binary: str = "/data/omichub/bin/obsutil"
+    direct_download_binary: str = "/usr/bin/aria2c"
 
     # ===== 流程 YAML 配置 =====
     flow_yaml_dir: str = "flows"

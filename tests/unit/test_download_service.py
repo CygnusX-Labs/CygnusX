@@ -70,6 +70,37 @@ def test_download_request_rejects_empty_accession():
         DownloadRequest(accession="   ")
 
 
+def test_download_request_accepts_batch_direct_links_and_rejects_other_schemes():
+    from pydantic import ValidationError
+
+    request = DownloadRequest(
+        source="direct_link",
+        links=[" https://example.org/ref.fa.gz ", "ftp://ftp.example.org/ref.gff3"],
+        download_threads=8,
+        overwrite_policy="skip",
+    )
+    assert request.links == ["https://example.org/ref.fa.gz", "ftp://ftp.example.org/ref.gff3"]
+    assert request.download_threads == 8
+    assert request.overwrite_policy == "skip"
+
+    with pytest.raises(ValidationError):
+        DownloadRequest(source="direct_link", links=["file:///tmp/secret"])
+
+
+def test_build_direct_link_args_keeps_urls_as_argv_values():
+    from omichub.infrastructure.celery_app.tasks.download import _build_direct_link_args
+
+    args = _build_direct_link_args(
+        ["https://example.org/a file.gz", "ftp://example.org/b.gz"],
+        "/tmp/work",
+        4,
+        "auto_rename",
+    )
+    assert "--continue=true" in args
+    assert "--split" in args
+    assert args[-2:] == ["https://example.org/a file.gz", "ftp://example.org/b.gz"]
+
+
 @pytest.mark.asyncio
 async def test_submit_sanitizes_accession_path(service):
     """accession 含路径分隔符时清理，防越权写目录。"""
@@ -130,6 +161,37 @@ async def test_submit_cloud_storage_task_and_dispatches(service):
     assert "aliyun_oss_bucket_raw" in created_task.work_dir
     mock_delay.delay.assert_called_once_with(task_id=str(created_task.id))
     assert result.flow_id == DOWNLOAD_FLOW_ID
+
+
+@pytest.mark.asyncio
+async def test_submit_direct_link_task_persists_batch_options(service):
+    user_id = str(uuid4())
+    req = DownloadRequest(
+        source="direct_link",
+        links=["https://example.org/ref.fa.gz", "ftp://example.org/genes.gff3"],
+        download_threads=8,
+        overwrite_policy="skip",
+        recursive=True,
+        target_directory="reference",
+    )
+    created = Task(
+        id=uuid4(), flow_id=DOWNLOAD_FLOW_ID, user_id=uuid4(), name="direct",
+        status=TaskStatus.PENDING, parameters={},
+    )
+    service._domain.submit.return_value = created
+    service._repo.save.return_value = created
+    service._domain.transition_status.return_value = created
+
+    with patch("omichub.application.services.download_service.run_download") as mock_delay:
+        await service.submit(user_id, req)
+
+    params = service._domain.submit.call_args.kwargs["parameters"]
+    assert params["source"] == "direct_link"
+    assert params["links"] == req.links
+    assert params["download_threads"] == 8
+    assert params["overwrite_policy"] == "skip"
+    assert params["recursive"] is True
+    mock_delay.delay.assert_called_once_with(task_id=str(created.id))
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, h, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NButton, NIcon, NSelect, NInput, NTag, NSpace, NSpin, NEmpty,
   NModal, NUpload, NUploadDragger, NCheckbox, NProgress,
@@ -50,10 +50,18 @@ const showScanDrawer = ref(false)
 // ==================== 计算属性 ====================
 const assemblyOptions = computed(() =>
   assemblies.value.map((a) => ({
-    label: a.name + (a.species ? ` · ${a.species}` : ''),
+    label: a.name,
     value: a.id,
+    species: a.species,
   })),
 )
+
+function renderAssemblyLabel(option: { label: string; species?: string }) {
+  return h('div', { class: 'assembly-option' }, [
+    h('span', { class: 'assembly-name' }, option.label),
+    option.species ? h('span', { class: 'assembly-species' }, option.species) : null,
+  ])
+}
 
 // 已选轨道路径（传给抽屉回显勾选态）
 const selectedPaths = computed(() => selectedTracks.value.map((t) => t.path))
@@ -218,7 +226,15 @@ function onAssemblyChange() {
 }
 
 function jumpToRegion() {
+  regionInput.value = formatRegion(regionInput.value)
   loadBrowser()
+}
+
+function formatRegion(value: string): string {
+  const match = value.trim().match(/^([A-Za-z0-9_.]+)\s*:\s*([\d,]+)\s*-\s*([\d,]+)$/)
+  if (!match) return value
+  const formatNumber = (part: string) => Number(part.replace(/,/g, '')).toLocaleString('en-US')
+  return `${match[1]}:${formatNumber(match[2])}-${formatNumber(match[3])}`
 }
 
 /** 校验 chr:start-end（支持逗号千分位与空白） */
@@ -315,14 +331,15 @@ function onDrawerLoad() {
 
 <template>
   <div class="jbrowse-page" role="main" aria-label="Web 基因组浏览器">
-    <!-- 统一工具栏 -->
     <PageHeader
-      title="🧬 Web 基因组浏览器"
+      title="Web 基因组浏览器"
       subtitle="基于 JBrowse 2 · 支持 BAM / BigWig / VCF / GFF3 流式浏览"
       back-to="/tools"
       back-label="返回工具箱"
-    >
-      <template #actions>
+    />
+
+    <section class="browser-toolbar" aria-label="基因组浏览器工具栏">
+      <div class="toolbar-primary">
         <span class="ctrl-label">参考基因组</span>
         <NSelect
           v-model:value="selectedAssembly"
@@ -330,32 +347,34 @@ function onDrawerLoad() {
           :loading="assembliesLoading"
           placeholder="选择参考基因组"
           size="small"
-          style="width: 220px"
+          :render-label="renderAssemblyLabel"
+          class="assembly-select"
           @update:value="onAssemblyChange"
         />
         <NInput
           v-model:value="regionInput"
-          placeholder="chr1:1000000-2000000"
+          placeholder="chr1:1,000,000-2,000,000"
           size="small"
-          style="width: 220px"
+          class="region-input"
+          @blur="regionInput = formatRegion(regionInput)"
           @keyup.enter="jumpToRegion"
-        >
-          <template #prefix><span class="loc-prefix">🧭</span></template>
-        </NInput>
-        <NButton size="small" type="primary" @click="jumpToRegion">
+        />
+        <NButton class="jump-button" size="small" type="primary" @click="jumpToRegion">
           <template #icon><NIcon><LocationOutline /></NIcon></template>
           跳转
         </NButton>
-        <NButton size="small" @click="showUploadModal = true">
+      </div>
+      <div class="toolbar-actions">
+        <NButton class="outline-button" size="small" @click="showUploadModal = true">
           <template #icon><NIcon><CloudUploadOutline /></NIcon></template>
           上传文件
         </NButton>
-        <NButton size="small" @click="showScanDrawer = true">
+        <NButton class="outline-button" size="small" @click="showScanDrawer = true">
           <template #icon><NIcon><FolderOpenOutline /></NIcon></template>
           我的文件
         </NButton>
-      </template>
-    </PageHeader>
+      </div>
+    </section>
 
     <!-- 已选轨道 -->
     <div v-if="selectedTracks.length > 0" class="track-bar">
@@ -491,17 +510,43 @@ function onDrawerLoad() {
   flex-direction: column;
   overflow: hidden;
   background: var(--neutral-bg);
+  box-sizing: border-box;
+  padding: 40px 24px 24px;
 }
 
-/* ===== 统一工具栏（48px，白底 + 底边框） ===== */
+.browser-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--neutral-border, #e5e7eb);
+  border-radius: 12px;
+  background: var(--neutral-card, #fff);
+}
+.toolbar-primary,
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.toolbar-actions { margin-left: auto; }
+.browser-toolbar :deep(.n-button),
+.browser-toolbar :deep(.n-base-selection),
+.browser-toolbar :deep(.n-input) { height: 36px; border-radius: 8px; }
+.assembly-select { width: 240px; min-width: 240px; }
+.region-input { width: 220px; min-width: 220px; }
+.outline-button { border-color: #d1d5db; color: #374151; background: #fff; }
+.outline-button:hover { border-color: #9ca3af; color: #1f2937; }
+.assembly-option { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.assembly-name { color: #111827; font-size: 14px; white-space: nowrap; }
+.assembly-species { color: #6b7280; font-size: 12px; font-style: italic; white-space: nowrap; }
 .ctrl-label {
   font-size: 13px;
   color: var(--neutral-text-2, #4e5969);
   white-space: nowrap;
-}
-.loc-prefix {
-  font-size: 13px;
-  line-height: 1;
 }
 
 /* ===== 已选轨道条 ===== */
@@ -617,6 +662,13 @@ function onDrawerLoad() {
 }
 
 @media (max-width: 768px) {
+  .jbrowse-page { padding: 24px 12px 16px; }
+  .browser-toolbar { align-items: stretch; flex-direction: column; }
+  .toolbar-primary, .toolbar-actions { width: 100%; flex-wrap: wrap; margin-left: 0; }
+  .toolbar-primary { align-items: stretch; }
+  .toolbar-primary .ctrl-label { width: 100%; }
+  .assembly-select, .region-input { flex: 1 1 100%; width: 100%; min-width: 0; }
+  .toolbar-actions :deep(.n-button) { flex: 1 1 0; }
   .ctrl-label {
     display: none;
   }

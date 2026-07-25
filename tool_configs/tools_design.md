@@ -4,7 +4,7 @@
 > 新增工具**必须遵循本规范**,以保证视觉一致、交互统一、维护成本低。
 > 现有参考实现:火山图(`VolcanoPlotView.vue`)为最完整的样板,优先参照;BLAST / FASTQ 质控 / 绘图工坊 / KEGG 为次参照;JBrowse 为**全屏工具特例**,不作为紧凑布局参照。
 >
-> 最后更新:2026-07-17
+> 最后更新:2026-07-25
 
 ---
 
@@ -245,7 +245,7 @@ tool_configs/enrichments/
 
 - 所有工具路由是 `DefaultLayout` 的 children,path 不带前导 `/`(相对父级 `/`)。
 - `requiresAuth: true` 必填。
-- **全屏工具**(如 JBrowse,需要占满视口、自带滚动)额外加 `meta: { fullscreen: true }`。全屏工具走 `DefaultLayout` 的 fullscreen 分支(`padding: 0`),**不适用本文档的紧凑布局规范**,其页面内部布局自理。详见 §十一。
+- **全屏工具**(如 JBrowse,需要占满视口、自带滚动)额外加 `meta: { fullscreen: true }`。全屏工具走 `DefaultLayout` 的 fullscreen 分支(`padding: 0`)，外层不套普通页面边距；内部页头、工具栏和响应式规则仍遵守 §十九，浏览器画布区域可自行铺满剩余高度。详见 §十一。
 
 ### 5.3 图标登记(`ToolsHubView.vue`)
 
@@ -533,18 +533,8 @@ await Plotly.downloadImage(plotElement, {
 ```vue
 <template>
   <div class="xxx-page">
-    <!-- 1. 工具栏:返回 + 标题 + 操作 -->
-    <div class="page-toolbar">
-      <NButton text @click="router.push('/tools')">
-        <template #icon><NIcon :size="18"><ArrowBackOutline /></NIcon></template>
-        返回工具箱
-      </NButton>
-      <h1 class="page-title">工具标题</h1>
-      <NButton size="small" quaternary @click="loadSample">
-        <template #icon><NIcon><SparklesOutline /></NIcon></template>
-        示例数据
-      </NButton>
-    </div>
+    <!-- 1. 纯身份页头:共享 PageHeader，不放主操作 -->
+    <PageHeader title="工具标题" subtitle="一句话说明工具用途" back-to="/tools" back-label="返回工具箱" />
 
     <!-- 2. 主体:左参数 + 中工作区 + 右辅助(可选) -->
     <div class="xxx-layout">
@@ -562,22 +552,11 @@ await Plotly.downloadImage(plotElement, {
 
 ```css
 .xxx-page {
-  padding: 16px;          /* 统一四周留白,禁止 > 20px */
+  padding: 40px 24px 24px; /* 桌面端页头与导航留白；DefaultLayout 外层为 0 */
   min-height: 100%;
+  box-sizing: border-box;
 }
-.page-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;     /* 工具栏到主体间距,紧凑 */
-}
-.page-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--neutral-text-1, #1d2129);
-  margin: 0;
-  flex: 1;                /* 标题占满中间,把右侧操作按钮推到最右 */
-}
+.page-header { margin-bottom: 24px; }
 .xxx-layout {
   display: grid;
   grid-template-columns: 300px 1fr 280px;  /* 左参数 / 中工作区 / 右辅助 */
@@ -615,7 +594,7 @@ await Plotly.downloadImage(plotElement, {
   .param-panel, .side-panel { max-height: none; }
 }
 @media (max-width: 768px) {
-  .xxx-page { padding: 12px; }
+  .xxx-page { padding: 24px 12px 16px; }
 }
 ```
 
@@ -838,11 +817,11 @@ const contentStyle = computed(() => {
 ```
 
 - 非工具页(首页、仪表板、任务、报告等)**保持 24px**,不受影响。
-- 工具页(非全屏)外层 `padding: 0`,由页面根 16px 自控。
+- 工具页(非全屏)外层 `padding: 0`,由页面根统一控制桌面 `40px 24px 24px`、移动端 `24px 12px 16px`。
 
 ### 11.2 全屏工具(JBrowse 模式)排外
 
-**「Web 基因组浏览器」(JBrowse)及任何 `fullscreen: true` 的工具,不适用本文档的紧凑布局规范**,其四周空隙与现有样式必须完全保持现状。
+**「Web 基因组浏览器」(JBrowse)及任何 `fullscreen: true` 的工具,外层仍不受 DefaultLayout 的普通 padding 影响**,但页面内部必须遵守本规范的页头与工具栏层级；浏览器画布区域可继续使用 flex 铺满剩余高度。
 
 技术保证(双重保险):
 1. `fullscreen` 分支在 `contentStyle` 中**最先判断**,直接返回 `padding: 0`,不进入工具箱分支。
@@ -897,8 +876,8 @@ Plotly.downloadImage(container, {
 - [ ] `router/index.ts` 已加 `tools/<key>` 子路由,`name` 为 `tools-<key>`,`requiresAuth: true`
 - [ ] 用了新图标已在 `ToolsHubView.vue` 的 `ICON_MAP` 登记
 - [ ] 视图文件命名 `<Tool>View.vue`,根 class `<key>-page`,布局 class `<key>-layout`
-- [ ] 根容器 `padding: 16px`,无外层 wrapper、无 `max-width`
-- [ ] 页头:返回按钮 + 标题 + 副标题(纯身份区,至多 1 个弱操作),`margin-bottom: 8px`;主操作不在页头,见 §十八
+- [ ] 根容器桌面 `padding: 40px 24px 24px`、移动端 `24px 12px 16px`,无外层 wrapper、无 `max-width`
+- [ ] 页头使用 `PageHeader`:返回按钮 + 标题 + 副标题(纯身份区,至多 1 个弱操作),`margin-bottom: 24px`;主操作不在页头,见 §十八
 - [ ] 主体 `gap: 16px`,卡片 `var(--neutral-card)` + 12px 圆角 + 12px padding
 - [ ] 响应式:`@media (max-width: 1200px)` 退化为单栏
 - [ ] 所有颜色走 CSS 变量,无硬编码
@@ -1229,3 +1208,100 @@ Emit：`action`（点击主按钮或按 ⌘/Ctrl+Enter 时触发）。
 - [ ] 示例数据 / 刷新按钮位于其语义卡片内，均为弱样式。
 - [ ] 375px 移动端无遮挡，触控目标 ≥44px，吸底栏适配 `env(safe-area-inset-bottom)`。
 - [ ] ⌘/Ctrl+Enter 可触发主操作。
+
+## 十九、工具页面视觉统一实施基线（2026-07-25，新增工具直接复用）
+
+本节是当前工具页的统一视觉基线，优先级高于本文档中早期的“16px 紧凑页边距”示例。新增工具先复制以下结构，再填充自己的参数和结果内容；不要为每个页面重新发明页头、间距或按钮样式。
+
+### 19.1 页面层级
+
+标准工具页固定为三层：
+
+1. **标准页头**：共享 `frontend/src/components/PageHeader.vue`，只放返回按钮、标题和副标题。标题不添加 emoji；副标题为 `14px`、`var(--text-secondary)`，与标题间距 `8px`。页头与主体间距 `24px`。
+2. **工具操作区**：只有确实需要一组全局控件时才使用独立工具栏卡片；不要把选择器、坐标框、上传按钮塞进 `PageHeader` 的 `actions` 插槽。
+3. **工作区**：参数面板、图表、表格和结果卡片按工具功能组织，卡片之间统一 `16px` 间距。
+
+标准根容器：
+
+```css
+.xxx-page {
+  min-height: 100%;
+  padding: 40px 24px 24px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 768px) {
+  .xxx-page { padding: 24px 12px 16px; }
+}
+```
+
+`DefaultLayout.vue` 的工具区域外层保持 `padding: 0`，避免出现双层留白。全屏路由也保持外层 `padding: 0`，但内部页头仍按上述间距设置，画布/终端区域再通过 flex 铺满剩余空间。
+
+### 19.2 独立工具栏卡片
+
+JBrowse、基因组浏览器、终端控制区等拥有多项全局控件的页面，工具栏使用以下基线：
+
+```css
+.tool-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--neutral-border, #e5e7eb);
+  border-radius: 12px;
+  background: var(--neutral-card, #fff);
+}
+
+.tool-toolbar__primary,
+.tool-toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.tool-toolbar__actions { margin-left: auto; }
+```
+
+左侧放选择器、输入框和唯一主操作；右侧放上传、文件、帮助等弱操作。控件统一高度 `36px`、圆角 `8px`。窄屏时工具栏纵向堆叠，右侧操作取消 `margin-left: auto`，禁止横向滚动。
+
+### 19.3 控件与按钮
+
+- 唯一主操作使用项目主题蓝和 `type="primary"`，例如“跳转”“运行”“提交”。
+- 上传、我的文件、刷新、帮助等次要操作使用白底 outline：`1px solid #d1d5db`、文字 `#374151`，hover 边框加深至 `#9ca3af`。
+- 普通控件高度统一 `36px`，圆角统一 `8px`，同一工具栏内间距统一 `12px`。
+- 图标统一使用 `@vicons/ionicons5` 线性图标；禁止用 emoji 作为坐标、状态或导航图标。
+- 图标按钮必须有 Tooltip 和 `aria-label`；文字按钮必须保证文字不被截断。
+
+### 19.4 选择器、坐标与长文本
+
+- 参考基因组/资源选择器最小宽度 `240px`；选中态第一行显示中文名和版本号，第二行用 `12px` 灰色斜体显示拉丁学名或补充信息。
+- 选项使用两行排版，不把完整信息拼成一行再依赖省略号；中文名、版本号不得截断。
+- 坐标输入宽度建议 `220px`，placeholder 使用带千分位的示例，例如 `chr1:1,000,000-2,000,000`。
+- 展示值可以自动补千分位，但解析必须兼容无逗号、带空格、大小写 `chr` 前缀的输入；格式化只改变展示，不改变业务解析。
+- 同一个状态值只保留一个主展示位置。若视图区必须显示当前坐标，使用 `12px` 等宽字体状态条，并避免与工具栏重复渲染。
+
+### 19.5 375px 验收标准
+
+- 页头与导航之间至少 `24px`，标题、副标题、返回按钮不重叠。
+- 工具栏控件可以换行或纵向堆叠，文字完整可读，无横向滚动。
+- 主按钮和关键次要按钮触控区域不小于 `36px`；吸底主操作遵守 §十八的 `44px` 移动端要求。
+- 卡片、弹窗、状态徽标完整显示，不被父级 `overflow: hidden` 或绝对定位裁切。
+
+### 19.6 新增工具最小模板
+
+```vue
+<template>
+  <div class="xxx-page" role="main" aria-label="工具名称">
+    <PageHeader title="工具名称" subtitle="一句话说明" back-to="/tools" back-label="返回工具箱" />
+    <section class="tool-toolbar" aria-label="工具控制栏">
+      <div class="tool-toolbar__primary"><!-- 选择器、输入、唯一主按钮 --></div>
+      <div class="tool-toolbar__actions"><!-- 上传、文件、帮助等 outline 操作 --></div>
+    </section>
+    <main class="xxx-layout"><!-- 参数 / 工作区 / 结果 --></main>
+  </div>
+</template>
+```
+
+提交前按 §十三检查清单验收，并额外检查桌面 `>=1024px` 与移动 `375px` 两个视口；涉及全屏画布的工具再确认画布仍能占满页头和工具栏以外的剩余高度。

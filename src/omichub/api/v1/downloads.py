@@ -18,6 +18,7 @@ from omichub.application.services.download_service import DownloadService
 from omichub.core.config import get_settings
 from omichub.core.exceptions import ValidationError
 from omichub.infrastructure.cache.redis_client import get_redis
+from omichub.tools.download.config import get_download_config
 
 router = APIRouter()
 
@@ -33,11 +34,20 @@ DownloadServiceDep = Annotated[DownloadService, Depends(get_download_service)]
 def _ensure_enabled(req: DownloadRequest) -> None:
     """按下载来源检查对应运行时是否启用。"""
     settings = get_settings()
+    config = get_download_config()
+    if req.source == "direct_link":
+        if not (config.features.direct_link or settings.enable_direct_download):
+            raise ValidationError("直链与 FTP 下载功能未启用")
+        if len(req.links) > config.validation.max_links_per_task:
+            raise ValidationError(
+                f"单次最多提交 {config.validation.max_links_per_task} 个下载链接"
+            )
+        return
     if req.source == "cloud_storage":
-        if not settings.enable_cloud_storage_download:
+        if not (config.features.cloud_storage or settings.enable_cloud_storage_download):
             raise ValidationError("云存储下载功能未启用")
         return
-    if not settings.enable_ebi_download:
+    if not (config.features.ebi or settings.enable_ebi_download):
         raise ValidationError("数据下载功能未启用")
 
 
