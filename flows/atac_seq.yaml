@@ -7,7 +7,7 @@ meta:
   id: atac_seq
   name: "ATAC-seq 染色质可及性分析"
   category: epigenomics
-  version: "0.0.5"
+  version: "0.1.0"
   description: "基于已搭建好的 ATACFlow 流程（Bowtie2/Chromap + MACS2 + TOBIAS）的标准 ATAC-seq 分析。提交后自动生成 ATACFlow 所需 analysis yaml、samples.csv、contrasts.csv。"
   author: "OmicsHub Team"
   tags: ["atacseq", "chromatin-accessibility", "Bowtie2", "Chromap", "MACS2", "TOBIAS", "ATACFlow"]
@@ -52,10 +52,24 @@ ai:
     - user: "我想分析小鼠 ATAC-seq 数据"
       assistant: "我可以帮您使用 ATAC-seq 染色质可及性分析流程。请提供样本信息、分组以及原始数据目录路径。"
 
+groups:
+  - id: basic
+    title: "基本信息"
+    desc: "项目标识与执行方式"
+  - id: data
+    title: "参考与数据"
+    desc: "参考基因组、物种与输入输出路径"
+  - id: modules
+    title: "分析模块"
+    desc: "选择本次运行的分析内容"
+    collapsible: false
+  - id: advanced
+    title: "高级参数"
+    desc: "一般无需修改"
+    collapsible: true
+    collapsed: true
+
 parameters:
-  # ----------------------------------------------------------
-  # 一、项目基本信息
-  # ----------------------------------------------------------
   - name: project_name
     label: "项目名称"
     type: string
@@ -64,6 +78,61 @@ parameters:
     help_text: "为该 ATAC-seq 项目命名"
     placeholder: "PRJNA427322"
     order: 1
+    ui:
+      group: basic
+      order: 10
+      span: 1
+      widget: input
+
+  - name: client
+    label: "客户 / 课题组"
+    type: string
+    required: true
+    default: "内部测试"
+    help_text: "客户或课题组标识"
+    order: 4
+    ui:
+      group: basic
+      order: 20
+      span: 1
+      widget: input
+
+  - name: execution_mode
+    label: "执行模式"
+    type: select
+    required: true
+    default: "local"
+    help_text: "选择本地执行或集群执行"
+    order: 20
+    select_config:
+      options:
+        - label: "本地执行 (local)"
+          value: "local"
+        - label: "集群执行 (cluster)"
+          value: "cluster"
+    ui:
+      group: basic
+      order: 30
+      span: 1
+      widget: select
+
+  - name: queue_id
+    label: "集群队列"
+    type: string
+    required: true
+    default: "default"
+    help_text: "集群调度队列（仅集群模式需要）"
+    placeholder: "default"
+    order: 21
+    condition:
+      field: "execution_mode"
+      operator: "eq"
+      value: "cluster"
+    ui:
+      group: basic
+      order: 40
+      span: 1
+      widget: input
 
   - name: Genome_Version
     label: "参考基因组版本"
@@ -86,6 +155,11 @@ parameters:
           value: "Lsat_Salinas_v11_wx"
         - label: "生菜 Lsat_Salinas_v8_wx"
           value: "Lsat_Salinas_v8_wx"
+    ui:
+      group: data
+      order: 10
+      span: 1
+      widget: select
 
   - name: species
     label: "物种"
@@ -94,63 +168,11 @@ parameters:
     default: "Homo_sapiens"
     help_text: "物种名称，请勿包含空格（ataqv 要求），如 Homo_sapiens"
     order: 3
-
-  - name: client
-    label: "客户 / 课题组"
-    type: string
-    required: true
-    default: "内部测试"
-    help_text: "客户或课题组标识"
-    order: 4
-
-  # ----------------------------------------------------------
-  # 二、输入数据路径
-  # ----------------------------------------------------------
-  - name: raw_data_path
-    label: "原始数据目录"
-    type: string
-    required: true
-    help_text: "存放原始 FASTQ 文件的目录路径（ATACFlow 会根据 sample 列自动匹配 _R1.fq.gz / _R2.fq.gz）"
-    placeholder: "/data/project/00.raw_data"
-    order: 10
-
-  - name: data_deliver
-    label: "结果交付目录"
-    type: string
-    required: false
-    help_text: "最终结果输出目录，留空则使用 workflow 父目录下的 data_deliver"
-    placeholder: "/data/project/02.data_deliver"
-    order: 11
-
-  # ----------------------------------------------------------
-  # 三、执行与资源参数
-  # ----------------------------------------------------------
-  - name: execution_mode
-    label: "执行模式"
-    type: select
-    required: true
-    default: "local"
-    help_text: "选择本地执行或集群执行"
-    order: 20
-    select_config:
-      options:
-        - label: "本地执行 (local)"
-          value: "local"
-        - label: "集群执行 (cluster)"
-          value: "cluster"
-
-  - name: queue_id
-    label: "集群队列"
-    type: string
-    required: true
-    default: "default"
-    help_text: "集群调度队列（仅集群模式需要）"
-    placeholder: "default"
-    order: 21
-    condition:
-      field: "execution_mode"
-      operator: "eq"
-      value: "cluster"
+    ui:
+      group: data
+      order: 20
+      span: 1
+      widget: input
 
   - name: Library_Types
     label: "链特异性"
@@ -167,6 +189,11 @@ parameters:
           value: "fr-firststrand"
         - label: "正向链 (fr-secondstrand)"
           value: "fr-secondstrand"
+    ui:
+      group: data
+      order: 30
+      span: 1
+      widget: select
 
   - name: mapping_tools
     label: "比对工具"
@@ -181,10 +208,38 @@ parameters:
           value: "bowtie2"
         - label: "Chromap（速度快，适合大规模数据）"
           value: "chromap"
+    ui:
+      group: data
+      order: 40
+      span: 1
+      widget: select
 
-  # ----------------------------------------------------------
-  # 四、分析模块开关
-  # ----------------------------------------------------------
+  - name: raw_data_path
+    label: "原始数据目录"
+    type: string
+    required: true
+    help_text: "存放原始 FASTQ 文件的目录路径（ATACFlow 会根据 sample 列自动匹配 _R1.fq.gz / _R2.fq.gz）"
+    placeholder: "/data/project/00.raw_data"
+    order: 10
+    ui:
+      group: data
+      order: 50
+      span: 2
+      widget: path
+
+  - name: data_deliver
+    label: "结果交付目录"
+    type: string
+    required: false
+    help_text: "最终结果输出目录，留空则使用 workflow 父目录下的 data_deliver"
+    placeholder: "/data/project/02.data_deliver"
+    order: 11
+    ui:
+      group: data
+      order: 60
+      span: 2
+      widget: path
+
   - name: only_qc
     label: "仅运行 QC"
     type: boolean
@@ -192,14 +247,11 @@ parameters:
     default: false
     help_text: "仅执行质控模块，不进行后续比对/Peak Calling/Diff Peak"
     order: 30
-
-  - name: report
-    label: "生成 HTML 报告"
-    type: boolean
-    required: false
-    default: true
-    help_text: "生成完整分析结果报告"
-    order: 31
+    ui:
+      group: modules
+      order: 10
+      subgroup: "质控"
+      exclusive: true
 
   - name: fastq_screen
     label: "运行 FastQ Screen 污染检查"
@@ -208,6 +260,22 @@ parameters:
     default: true
     help_text: "检查样品是否存在外源污染"
     order: 32
+    ui:
+      group: modules
+      order: 20
+      subgroup: "质控"
+
+  - name: report
+    label: "生成 HTML 报告"
+    type: boolean
+    required: false
+    default: true
+    help_text: "生成完整分析结果报告"
+    order: 31
+    ui:
+      group: modules
+      order: 30
+      subgroup: "报告"
 
   - name: diff_peaks
     label: "运行差异 Peak 分析"
@@ -216,6 +284,10 @@ parameters:
     default: true
     help_text: "使用 DESeq2 进行差异开放区域分析"
     order: 33
+    ui:
+      group: modules
+      order: 40
+      subgroup: "差异分析"
 
   - name: use_pooled_peaks
     label: "使用 Pooled Peaks"
@@ -224,10 +296,11 @@ parameters:
     default: true
     help_text: "合并组内生物学重复后 call peak（提升弱信号灵敏度）；关闭则使用单样本共识 peaks"
     order: 34
+    ui:
+      group: modules
+      order: 50
+      subgroup: "差异分析"
 
-  # ----------------------------------------------------------
-  # 五、差异比较组（可重复 Group）
-  # ----------------------------------------------------------
   - name: comparisons
     label: "差异比较组"
     type: group
@@ -253,10 +326,12 @@ parameters:
           required: true
           help_text: "实验组名称（需与样本表中 group 列一致）"
           placeholder: "treatment"
+    ui:
+      show_when:
+        field: "diff_peaks"
+        value: true
+      linked_group_column: "group"
 
-  # ----------------------------------------------------------
-  # 六、高级参数（折叠 Section）
-  # ----------------------------------------------------------
   - name: advanced_params
     label: "高级参数"
     type: section
@@ -272,6 +347,8 @@ parameters:
           required: false
           help_text: "可选：ATACFlow 将日志推送到 Loki 的地址"
           placeholder: "http://loki:3100"
+    ui:
+      group: advanced
 
 # ============================================================
 # 执行配置
@@ -320,6 +397,10 @@ sample_sheet:
     - type: unique_combination
       columns: ["sample"]
       message: "sample 必须唯一"
+
+  ui:
+    import: [paste, csv, datacenter]
+    group_column: group
 
 # ============================================================
 # 前端参数到底层流程输入文件映射（通用构建器使用）

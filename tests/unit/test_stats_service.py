@@ -22,6 +22,7 @@ def service() -> StatsService:
     svc = StatsService(db=MagicMock(), flow_service=MagicMock())
     svc._task_repo = AsyncMock()
     svc._user_repo = AsyncMock()
+    svc._sample_repo = AsyncMock()
     svc._flow_service = MagicMock()
 
     async def _passthrough(_key, _ttl, factory):
@@ -38,12 +39,13 @@ async def test_user_overview_aggregates_status_and_samples(service):
         ("success", 3),
         ("failed", 1),
     ]
-    service._task_repo.sum_sample_count.return_value = 10
+    # 数据样本取登记的样本表，而非各任务 sample_count 之和
+    service._sample_repo.count_by_user.return_value = 10
 
     result = await service.user_overview(USER_ID)
 
     assert result == {"running": 2, "total": 6, "samples": 10}
-    service._task_repo.sum_sample_count.assert_called_once()
+    service._sample_repo.count_by_user.assert_called_once()
 
 
 @pytest.mark.asyncio

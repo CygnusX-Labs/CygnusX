@@ -57,7 +57,7 @@ class StorageService:
 
         结果缓存 5 分钟。Redis 不可用时每次实时计算（仍走线程池，不阻塞事件循环）。
         """
-        cache_key = f"stats:admin:storage:v2:{top_n}"
+        cache_key = f"stats:admin:storage:v3:{top_n}"
 
         async def _compute() -> dict:
             return await self._compute_raw(top_n)
@@ -101,7 +101,10 @@ class StorageService:
         return await asyncio.to_thread(_disk_usage)
 
     async def _user_usage_raw(self) -> list[dict]:
-        """遍历 users/ 下子目录，统计每个用户目录的磁盘占用（降序）。"""
+        """遍历 users/ 下子目录，统计每个用户目录的磁盘占用（降序）。
+
+        仅统计数据库中存在的用户目录，过滤孤儿/已删除用户残留目录。
+        """
         if not self._users_dir.exists():
             return []
 
@@ -110,6 +113,13 @@ class StorageService:
             child_dirs = [p for p in self._users_dir.iterdir() if p.is_dir()]
         except (PermissionError, OSError):
             return []
+        if not child_dirs:
+            return []
+
+        # 查询数据库中所有有效用户标识（UUID + username），过滤孤儿目录
+        valid_names = await self._get_valid_user_names()
+        if valid_names:
+            child_dirs = [p for p in child_dirs if p.name in valid_names]
         if not child_dirs:
             return []
 
@@ -205,31 +215,61 @@ class StorageService:
     # user_id → username / nickname 批量映射
     # ------------------------------------------------------------------
 
-    async def _map_user_display(self, names: list[str]) -> dict[str, dict[str, str | None]]:
-        """把 users/ 下目录名（user_id）批量映射为 {username, nickname}。
+    async def _get_valid_user_names(self) -> set[str]:
+        """返回数据库中所有用户的 UUID 字符串和 username 集合。
 
-        非法 UUID 或库中不存在的用户不会被映射，调用方回退用目录名展示。
+        用于过滤 users/ 下的孤儿目录（已删除/不存在的用户残留）。
+        DB 不可用时返回空 set，调用方据此跳过过滤（保留所有目录）。
+        """
+        if self._db is None:
+            return set()
+        try:
+            rows = await self._db.execute(
+                select(UserModel.id, UserModel.username)
+            )
+            names: set[str] = set()
+            for r in rows.all():
+                names.add(str(r[0]))
+                names.add(r[1])
+            return names
+        except Exception:
+            return set()
+
+    async def _map_user_display(self, names: list[str]) -> dict[str, dict[str, str | None]]:
+        """把 users/ 下目录名（user_id 或 username）批量映射为 {username, nickname}。
+
+        同时支持 UUID 和 username 命名的目录。
         DB 不可用时返回空 dict，不影响统计结果。
         """
         if not names or self._db is None:
             return {}
 
         user_ids: list[UUID] = []
+        plain_names: list[str] = []
         for name in names:
             try:
                 user_ids.append(UUID(name))
             except ValueError:
-                continue  # 非 UUID 目录名（系统/孤儿目录），跳过 DB 查询
-        if not user_ids:
-            return {}
+                plain_names.append(name)
 
+        result: dict[str, dict[str, str | None]] = {}
         try:
-            rows = await self._db.execute(
-                select(UserModel.id, UserModel.username, UserModel.nickname).where(
-                    UserModel.id.in_(user_ids)
+            if user_ids:
+                rows = await self._db.execute(
+                    select(UserModel.id, UserModel.username, UserModel.nickname).where(
+                        UserModel.id.in_(user_ids)
+                    )
                 )
-            )
-            return {str(r[0]): {"username": r[1], "nickname": r[2]} for r in rows.all()}
+                for r in rows.all():
+                    result[str(r[0])] = {"username": r[1], "nickname": r[2]}
+            if plain_names:
+                rows = await self._db.execute(
+                    select(UserModel.id, UserModel.username, UserModel.nickname).where(
+                        UserModel.username.in_(plain_names)
+                    )
+                )
+                for r in rows.all():
+                    result[r[1]] = {"username": r[1], "nickname": r[2]}
         except Exception:
-            # DB 异常不影响磁盘统计，回退用目录名
-            return {}
+            pass
+        return result

@@ -126,7 +126,9 @@ class EnrichmentService:
             },
             work_dir=str(work_dir),
             progress=0,
-            sample_count=len(genes),
+            # 富集分析对象是基因列表而非生物样本：基因数已记入 parameters.gene_count，
+            # 这里不能写 len(genes)，否则仪表板/趋势图按 sample_count 聚合时会把基因数误计为样本。
+            sample_count=0,
         )
         db.add(task)
         await db.commit()

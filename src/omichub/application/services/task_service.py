@@ -28,6 +28,9 @@ from omichub.infrastructure.database.repositories.task_repository import (
     TaskRepositoryImpl,
 )
 from omichub.infrastructure.database.repositories.mas_repository import MASRepository
+from omichub.infrastructure.database.repositories.user_repository import (
+    SqlAlchemyUserRepository,
+)
 from omichub.infrastructure.execution.generic_builder import GenericFlowBuilder
 from omichub.infrastructure.execution.local import LocalSnakemakeExecutor
 
@@ -145,16 +148,46 @@ class TaskService:
             raise NotFoundError("任务不存在")
         return projected
 
-    async def list_tasks(self, user_id: str, status: str | None = None) -> TaskListResponse:
-        """获取用户任务列表"""
+    async def list_tasks(
+        self,
+        user_id: str,
+        status: str | None = None,
+        limit: int | None = None,
+    ) -> TaskListResponse:
+        """获取用户任务列表。
+
+        ``limit`` 为 None 时返回全部（任务中心整表）；传入正整数时仅返回
+        按提交时间倒序的前 N 条（仪表板「最近任务」卡片用），``total`` 仍为
+        未截断前的总数，保证分页 / 概览计数语义不变。
+        """
         tasks = await self._repo.list_by_user(UUID(user_id), status=status)
         mas_tasks = await self._mas_projection.list_for_user(UUID(user_id), status=status)
         items = [*(task_to_response(task) for task in tasks), *mas_tasks]
         items.sort(key=lambda item: item.created_at, reverse=True)
+        await self._attach_usernames(items)
+        total = len(items)
+        if limit is not None:
+            items = items[:limit]
         return TaskListResponse(
             items=items,
-            total=len(items),
+            total=total,
         )
+
+    async def _attach_usernames(self, items: list[TaskResponse]) -> None:
+        """按 user_id 回填用户名（去重后逐个查询，单用户列表仅一次查询）。"""
+        user_ids = {item.user_id for item in items if item.user_id is not None}
+        if not user_ids:
+            return
+        user_repo = SqlAlchemyUserRepository(self._db)
+        names: dict[UUID, str] = {}
+        for uid in user_ids:
+            user = await user_repo.get_by_id(uid)
+            if user is not None:
+                names[uid] = user.username
+        for item in items:
+            name = names.get(item.user_id)
+            if name:
+                item.username = name
 
     async def cancel_task(self, task_id: UUID, user_id: str) -> TaskResponse:
         """取消任务"""

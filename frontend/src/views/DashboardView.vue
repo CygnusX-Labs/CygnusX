@@ -43,66 +43,39 @@ const loadingBlastTasks = ref(false)
 
 const message = useMessage()
 
-// ===== 最近任务：管理员视角迭代期 mock 预览 =====
-// 真实接口 GET /tasks 暂未返回 username 字段，先用 mock 预览多用户混合效果。
-// 接口就绪后置 USE_MOCK_TASKS = false 即可切回真实数据。
-const USE_MOCK_TASKS = true
+// ===== 最近任务：真实接口 =====
+// 操作列与「任务中心」TaskTable 行为对齐：查看 → 任务详情；删除 → 真实删除；
+// 重新运行暂无后端接口，按终态禁用并提示「即将上线」（不再用假 toast 占位）。
 
-const MOCK_TASKS: Task[] = [
-  {
-    id: 't-001', flow_id: 'rna-seq', user_id: 'u-1001', username: 'zhang_san',
-    name: '番茄叶片 RNA-seq 重复', status: 'running', execution_mode: 'celery',
-    parameters: {}, work_dir: '', result_path: '', error_message: '',
-    progress: 0.62, logs: [], created_at: '2026-07-03T09:12:00',
-    started_at: '2026-07-03T09:13:00', finished_at: null,
-  },
-  {
-    id: 't-002', flow_id: 'ebi_download', user_id: 'u-1002', username: 'li_si',
-    name: 'EBI PRJEB12345 原始数据下载', status: 'failed', execution_mode: 'celery',
-    parameters: {}, work_dir: '', result_path: '', error_message: '远程连接超时',
-    progress: 0.18, logs: [], created_at: '2026-07-03T08:40:00',
-    started_at: '2026-07-03T08:41:00', finished_at: '2026-07-03T09:05:00',
-  },
-  {
-    id: 't-003', flow_id: 'atac-seq', user_id: 'u-1003', username: 'wang_wu',
-    name: '拟南芥根尖 ATAC-seq', status: 'success', execution_mode: 'celery',
-    parameters: {}, work_dir: '', result_path: '', error_message: '',
-    progress: 1, logs: [], created_at: '2026-07-02T16:20:00',
-    started_at: '2026-07-02T16:21:00', finished_at: '2026-07-02T18:02:00',
-  },
-  {
-    id: 't-004', flow_id: 'rna-seq', user_id: 'u-1001', username: 'zhang_san',
-    name: '黄瓜果实转录组分析', status: 'queued', execution_mode: 'celery',
-    parameters: {}, work_dir: '', result_path: '', error_message: '',
-    progress: 0, logs: [], created_at: '2026-07-03T09:30:00',
-    started_at: null, finished_at: null,
-  },
-  {
-    id: 't-005', flow_id: 'variant_calling', user_id: 'u-1004', username: 'zhao_liu',
-    name: '水稻群体变异检测', status: 'pending', execution_mode: 'celery',
-    parameters: {}, work_dir: '', result_path: '', error_message: '',
-    progress: 0, logs: [], created_at: '2026-07-03T09:45:00',
-    started_at: null, finished_at: null,
-  },
-]
-
-// 操作列：功能接口对接中，先占位（console + Message）
+// 查看任务详情：跳转任务详情页（与 TaskTable 一致）
 function handleView(row: Task) {
-  console.log('[dashboard] handleView', row.id)
-  message.info('该功能接口对接中')
-}
-function handleRetry(row: Task) {
-  console.log('[dashboard] handleRetry', row.id)
-  message.info('该功能接口对接中')
-}
-function handleDelete(row: Task) {
-  console.log('[dashboard] handleDelete', row.id)
-  message.info('该功能接口对接中')
+  router.push({ name: 'task-detail', params: { taskId: row.id } })
 }
 
-// 重试仅在非进行态可用：running / queued / pending 视为进行中，禁止重试
-function canRetry(status: Task['status']): boolean {
-  return !['running', 'queued', 'pending'].includes(status)
+// 删除任务：调用真实 DELETE 接口，成功后局部刷新最近任务
+async function handleDelete(row: Task) {
+  try {
+    await apiClient.delete(`/tasks/${row.id}`)
+    message.success(`已删除「${row.name}」`)
+    await loadRecentTasks()
+  } catch (e: unknown) {
+    const detail = axios.isAxiosError(e) ? e.response?.data?.detail : undefined
+    message.error((detail as string) || '删除失败，请稍后重试')
+  }
+}
+
+// 终态判定：success / failed / cancelled 视为已结束（与 TaskTable 一致）
+function isTerminal(status: Task['status']): boolean {
+  return ['success', 'failed', 'cancelled'].includes(status)
+}
+
+// 进度归一化为 0–100 整数。
+// 后端进度尺度并不统一：分析任务在富集 / arq 路径写 0–100、下载路径写 0–1，
+// BLAST 进度为 0–100 整数。这里用 >1 启发式兼容两种尺度，
+// 避免「已完成=100」被再次 ×100 渲染成 1000%。
+function pct(value: number | null | undefined): number {
+  const n = Number(value) || 0
+  return Math.round(n > 1 ? n : n * 100)
 }
 
 const healthTone = computed(() => {
@@ -152,25 +125,8 @@ async function loadDashboard() {
     loadingOverview.value = false
   }
 
-  // 最近任务：USE_MOCK_TASKS=true 用 mock 预览多用户混合；false 走真实接口
-  if (USE_MOCK_TASKS) {
-    recentTasks.value = MOCK_TASKS
-    totalTaskCount.value = MOCK_TASKS.length
-    loadingTasks.value = false
-  } else {
-    loadingTasks.value = true
-    try {
-      const res = await apiClient.get<{ total: number; items: Task[] }>('/tasks', {
-        params: { limit: 5 },
-      })
-      totalTaskCount.value = res.data.total ?? 0
-      recentTasks.value = res.data.items ?? []
-    } catch {
-      recentTasks.value = []
-    } finally {
-      loadingTasks.value = false
-    }
-  }
+  // 最近任务（真实接口，仅取最近 5 条）
+  await loadRecentTasks()
 
   // 最近 BLAST 任务
   loadingBlastTasks.value = true
@@ -181,6 +137,22 @@ async function loadDashboard() {
     blastTasks.value = []
   } finally {
     loadingBlastTasks.value = false
+  }
+}
+
+// 拉取「最近任务」卡片的真实数据（最近 5 条）。
+// 注意：不在此处覆盖 totalTaskCount —— 概览「总任务」以 /stats/overview 为准。
+async function loadRecentTasks() {
+  loadingTasks.value = true
+  try {
+    const res = await apiClient.get<{ total: number; items: Task[] }>('/tasks', {
+      params: { limit: 5 },
+    })
+    recentTasks.value = res.data.items ?? []
+  } catch {
+    recentTasks.value = []
+  } finally {
+    loadingTasks.value = false
   }
 }
 
@@ -227,11 +199,12 @@ const columns: DataTableColumns<Task> = [
   {
     title: '所属用户',
     key: 'user_id',
-    width: 120,
+    width: 90,
+    align: 'center',
     render: (row) => row.username || row.user_id,
   },
-  { title: '任务名称', key: 'name', ellipsis: { tooltip: true } },
-  { title: '分析流程', key: 'flow_id', width: 120 },
+  { title: '任务名称', key: 'name', width: 220, ellipsis: { tooltip: true } },
+  { title: '分析流程', key: 'flow_id', width: 130, align: 'center' },
   {
     title: '提交时间',
     key: 'created_at',
@@ -241,7 +214,8 @@ const columns: DataTableColumns<Task> = [
   {
     title: '状态',
     key: 'status',
-    width: 110,
+    width: 100,
+    align: 'center',
     render: (row) => {
       const cfg = statusConfig(row.status)
       return h(NTag, { type: cfg.type, size: 'small', round: true }, { default: () => cfg.text })
@@ -250,10 +224,10 @@ const columns: DataTableColumns<Task> = [
   {
     title: '进度',
     key: 'progress',
-    width: 160,
+    width: 170,
     render: (row) => h(NProgress, {
       type: 'line',
-      percentage: Math.round(row.progress * 100),
+      percentage: pct(row.progress),
       height: 6,
       color: { stops: ['var(--kimi-chart-1)', 'var(--brand-primary-hover)'] },
       railColor: 'var(--neutral-border)',
@@ -263,7 +237,8 @@ const columns: DataTableColumns<Task> = [
   {
     title: '操作',
     key: 'actions',
-    width: 168,
+    width: 110,
+    align: 'center',
     render: (row) => h(NSpace, { size: 4 }, {
       default: () => [
         // 查看任务详情
@@ -274,15 +249,15 @@ const columns: DataTableColumns<Task> = [
           }, { icon: () => h(NIcon, null, { default: () => h(EyeOutline) }) }),
           default: () => '查看任务详情',
         }),
-        // 重新运行：进行中（running/queued/pending）禁用
-        h(NTooltip, null, {
-          trigger: () => h(NButton, {
-            size: 'tiny', quaternary: true, circle: true,
-            disabled: !canRetry(row.status),
-            onClick: () => handleRetry(row),
-          }, { icon: () => h(NIcon, null, { default: () => h(RefreshOutline) }) }),
-          default: () => canRetry(row.status) ? '重新运行' : '任务进行中，无法重试',
-        }),
+        // 重新运行：后端接口未上线，仅终态展示并禁用提示（与 TaskTable 一致）
+        ...(isTerminal(row.status)
+          ? [h(NTooltip, null, {
+            trigger: () => h(NButton, {
+              size: 'tiny', quaternary: true, circle: true, disabled: true,
+            }, { icon: () => h(NIcon, null, { default: () => h(RefreshOutline) }) }),
+            default: () => '重新运行功能即将上线',
+          })]
+          : []),
         // 删除：Popconfirm 二次确认（提示会清理底层计算资源与文件目录）
         h(NPopconfirm, {
           positiveText: '确认删除',
@@ -316,15 +291,22 @@ function blastStatusConfig(status: string) {
 
 const blastColumns: DataTableColumns<BlastTaskListItem> = [
   {
+    title: '所属用户',
+    key: 'user_id',
+    width: 90,
+    align: 'center',
+    render: (row) => row.username || row.user_id || '-',
+  },
+  {
     title: '任务 ID',
     key: 'task_id',
-    width: 160,
+    width: 140,
     ellipsis: { tooltip: true },
     render: (row) => row.task_id.slice(0, 12),
   },
-  { title: '查询标题', key: 'query_title', ellipsis: { tooltip: true } },
-  { title: '数据库', key: 'db_name', width: 140, ellipsis: { tooltip: true } },
-  { title: 'Program', key: 'program', width: 90 },
+  { title: '查询标题', key: 'query_title', width: 200, ellipsis: { tooltip: true } },
+  { title: '数据库', key: 'db_name', width: 100, align: 'center', ellipsis: { tooltip: true } },
+  { title: 'Program', key: 'program', width: 100, align: 'center' },
   {
     title: '提交时间',
     key: 'submitted_at',
@@ -334,7 +316,8 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
   {
     title: '状态',
     key: 'status',
-    width: 110,
+    width: 100,
+    align: 'center',
     render: (row) => {
       const cfg = blastStatusConfig(row.status)
       return h(NTag, { type: cfg.type, size: 'small', round: true }, { default: () => cfg.text })
@@ -346,7 +329,7 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
     width: 160,
     render: (row) => h(NProgress, {
       type: 'line',
-      percentage: row.progress,
+      percentage: pct(row.progress),
       height: 6,
       color: { stops: ['var(--kimi-chart-1)', 'var(--brand-primary-hover)'] },
       railColor: 'var(--neutral-border)',
@@ -357,6 +340,7 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
     title: '操作',
     key: 'actions',
     width: 80,
+    align: 'center',
     render: (row) => h(NTooltip, null, {
       trigger: () => h(NButton, {
         size: 'tiny', quaternary: true, circle: true,
@@ -450,7 +434,7 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
           :bordered="false"
           size="small"
           :single-line="false"
-          :scroll-x="980"
+          :scroll-x="970"
           class="recent-table"
         />
         <NEmpty v-else description="暂无任务">
@@ -486,7 +470,7 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
           :bordered="false"
           size="small"
           :single-line="false"
-          :scroll-x="900"
+          :scroll-x="1020"
           class="recent-table"
         />
         <NEmpty v-else description="暂无 BLAST 任务">
@@ -635,9 +619,10 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
   color: var(--arco-primary);
 }
 
-/* 最近任务 */
+/* 最近任务 / 最近 BLAST 任务：与其他卡片保持统一的 24px 垂直间距 */
 .recent-tasks {
   overflow: hidden;
+  margin-bottom: 24px;
 }
 
 .recent-table :deep(th) {
@@ -656,6 +641,16 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
 
 .recent-table :deep(tr:hover td) {
   background: var(--neutral-hover);
+}
+
+/* 进度列：让进度条可在 flex 行内收缩，使「100%」与条同行显示，
+   避免百分比被挤到第二行（naive-ui 的 .n-progress-graph 为 flex:1 但
+   默认 min-width:auto 不会收缩，故显式置 0；指示器再 nowrap 兜底）。 */
+.recent-table :deep(.n-progress-graph) {
+  min-width: 0;
+}
+.recent-table :deep(.n-progress-graph-line-indicator) {
+  white-space: nowrap;
 }
 
 .empty-extra {

@@ -411,6 +411,9 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 - [ ] 是否通过 `npm run type-check`、`npm run build` 和 `git diff --check`？
 - [ ] 叠层与装饰覆盖层是否符合 §31：无 `.x > *` 等过宽定位/布局选择器；装饰层保持出流并 `pointer-events:none`、`aria-hidden`？
 - [ ] 样式改动是否在**构建产物或 nginx 实际响应**中 grep 到对应选择器/属性（注意路由分包 chunk，不在主 `index-*.css`），并硬刷新验证（§31.5）？
+- [ ] 数据表格/卡片是否符合 §33.2：进度经归一化函数渲染、`NProgress` 百分比不换行（`.n-progress-graph{min-width:0}`）、**所有列固定 `width` 且 `scroll-x`=列宽之和**、短值列 `align:'center'`、卡片垂直间距 24px？
+- [ ] 进度/百分比/计数等派生数值是否在任何数据尺度下都正确（§33.2 进度尺度归一化），而非依赖单一写死约定？
+- [ ] 设计是否规避 §33.1 的「AI 默认」清单（纯白无氛围、三列等宽 hero、统一间距/圆角、通用无衬线、对称留白），在不破坏 §1 克制原则的前提下具备品牌辨识度与层次？
 
 ## 11. 可复用 Skill 入口
 
@@ -1009,3 +1012,307 @@ frontend/src/
   - 校验服务响应：`curl -s --compressed http://localhost:<port>/assets/<chunk>.css` 后 grep；务必带 `--compressed`（否则拿到 gzip 字节，grep 不到），路径务必带 `/assets/` 前缀（漏写会命中 404/回退页，得到误导性的极短响应）。
 - 浏览器侧需**硬刷新**（Ctrl/Cmd + Shift + R）丢弃旧 `index.html` 与旧 chunk 缓存，否则看不到改动。
 - 重发前端时优先"构建到临时目录 + `rsync -a --delete tmp/ dist/`"：保留 `dist` 目录 inode，规避 nginx bind mount 失效，且构建失败时不会清空线上产物（运维细节见 nginx bind mount 相关说明）。
+
+## 32. Hero 背景动画系统（OmicBackgroundAnimation）
+
+> 权威实现：`frontend/src/components/OmicBackgroundAnimation.vue`（canvas 容器 + 生命周期）、`frontend/src/utils/animationLibrary.ts`（动画引擎，IIFE 副作用脚本，挂载 `window.initHeroAnimation` / `window.initLoginAnimation`）、`frontend/src/views/HomeView.vue`（hero 区接入点）。Hero 与登录页共用同一引擎，仅 `context` 不同导致密度/速度/不透明度档位不同。本节为该系统的设计基线；新增或调整模式必须同步本文件。
+
+### 32.1 三层叠加架构
+
+Hero 横幅（`HomeView.vue` 的 `<section class="hero">`）背景不是位图，而是自下而上三层叠加：
+
+| 层 | 实现 | 是否持续 | 权威位置 |
+| --- | --- | --- | --- |
+| ① 渐变底色 | CSS `linear-gradient(135deg, #165DFF → #6B8DD6 → #8E54E9)` | 静态 | `HomeView.vue` `.hero` |
+| ② 入场动效 | CSS `@keyframes fadeInUp`，0.5s 一次性淡入上滑 | 否 | `HomeView.vue` `.animate-fade-in-up` + `global.css` |
+| ③ Canvas 动画 | JS Canvas 2D + `requestAnimationFrame`，19 模式随机命中其一 + 共享极光氛围层 | 是 | `OmicBackgroundAnimation.vue` → `animationLibrary.ts` |
+
+Canvas 层必须遵守 §31 的装饰覆盖层契约：`position:absolute; inset:0; pointer-events:none; z-index:0`，并 `aria-hidden`，置于 `.hero-content` 之下、渐变底色之上；**严禁**被父级 `.hero > *` 之类通配选择器命中（否则 `absolute` 被拉成 `relative`，撑高 hero 并顶坏布局，见 §31.2 / §31.4）。内容层只允许按**类名**显式抬升 `z-index`。
+
+引擎对外契约不变：组件 `onMounted` 动态 `import('@/utils/animationLibrary')`，按 `context` 取 `window.initHeroAnimation(canvas)`，返回的 cleanup 在 `onUnmounted` 调用；引擎内部监听 `resize` 与 `visibilitychange`（切后台停 rAF、回前台续），cleanup 一并解绑，杜绝句柄/内存泄漏。Hero 档位 `opacity:0.82 / density:5000 / speed:0.8 / glow:true`，登录页档位更淡更慢（`0.3 / 10000 / 0.6`）。渐变太抢眼，动画既要"压得住被看见"，又必须**克制、舒缓**——`speed` 取慢档、`opacity` 留余量，避免频率过高或过亮而喧宾夺主、抢标题与按钮（见 §32.3 频率克制原则）。整体转速另由主循环 **60fps 封顶**兜底（见 §32.3 原则 5），与 `speed` 解耦——保证高刷屏不会比 60Hz 转得更快。
+
+### 32.2 模式目录（19 种，互斥随机命中）
+
+引擎在 `MODES` 数组里登记全部模式，每次加载 `Math.random()` 命中**一种**运行（不叠加），并 `console.log('[Animation:<ctx>] Mode:', ...)` 便于核对。模式分四类语义，命名贴合「星尘 + 基因组学」：
+
+| # | key | 类别 | 视觉描述 |
+| --- | --- | --- | --- |
+| 1 | `particles` | 粒子 | 漂移圆点 + 邻近连线（星座/神经网络感）+ 呼吸 + 辉光 |
+| 2 | `stars` | 粒子 | 上飘星点 + 闪烁 + 大星四向/斜向星芒 |
+| 3 | `aura` | 几何环 | 中心光源 + 向外扩散同心环 + 放射射线 |
+| 4 | `orbitals` | 几何环 | 倾斜透视椭圆轨道 + 轨道亮点 + 中心恒星 |
+| 5 | `meteor` | 流线 | 斜向流星 + 渐变尾迹 + 发光头部 |
+| 6 | `ripple` | 几何环 | 多点三层同心回声涟漪 |
+| 7 | `firefly` | 粒子 | 暖黄漫游明灭光点（与冷底形成冷暖对比） |
+| 8 | `matrix` | 数据 | 0/1 字符列下落 + 头部光点 |
+| 9 | `bubbles` | 流线 | 半透明气泡上浮 + 摇摆 + 玻璃高光 |
+| 10 | `dna` | 生物语义 | 多列双螺旋：正弦相位驱动核苷酸节点 + 碱基对横档，按深度调亮度制造立体旋转 |
+| 11 | `constellation` | 数据 | 慢漂移节点 + 距离阈值动态连线（数据节点网络） |
+| 12 | `flowfield` | 流线 | 伪 Perlin 风场驱动微粒描迹，带生命周期淡入淡出 |
+| 13 | `shards` | 几何 | 漂浮旋转多边形碎片 + 边缘棱光 shimmer（晶体/棱镜感） |
+| 14 | `hexgrid` | 几何 | 六边形蜂窝网格相位呼吸波 + 高相位点辉光（测序芯片感） |
+| 15 | `waves` | 信号 | 多条叠加正弦波带 + 波峰亮点（电泳/信号图谱感） |
+| 16 | `gravity` | 轨道 | 中心吸积核 + 开普勒近快远慢椭圆轨道粒子 |
+| 17 | `datastream` | 数据 | 上升渐变光柱 + 柱顶光点（上传/测序产出均衡器感） |
+| 18 | `aurora` | 氛围 | 水平漂移多层极光彩带（`lighter` 合成） |
+| 19 | `nebula` | 氛围 | 漂移柔光星云团（`lighter` 合成）+ 深空闪烁星尘 |
+
+新增模式必须：① 实现 `init<Mode>()` 返回纯数据 state 与 `draw<Mode>(state)` 每帧绘制两函数；② 在 `MODES` 数组、`initForMode`、`drawForMode` 三处分派登记（漏任一处会落到 `default` 即 `particles`）；③ 颜色沿用软蓝白/品牌冷色族（暖色仅 `firefly` 作冷暖点缀），强度乘以 `CONFIG.opacity`、速度乘以 `CONFIG.speed`，发光受 `CONFIG.glow` 门控，保证 Hero/登录两档都成立；④ 每帧先 `ctx.clearRect`，合成模式（`lighter` 等）必须 `ctx.save()/restore()` 包裹，避免污染后续绘制的描边/文字。
+
+### 32.3 观感强化设计（"更强的观感"如何落地）
+
+v5 在 19 模式之上统一引入三件强化手段，使背景从"平淡描边圆"升级为"有体积、有呼吸、有光源"的活背景，且不依赖任何第三方粒子库、SVG 或视频：
+
+1. **共享极光氛围层 `drawAtmosphere`**：2~3 团品牌色（蓝/靛/紫/青）大半径径向渐变，`globalCompositeOperation='lighter'` 叠加、缓慢漂移 + 正弦呼吸，置于每个模式绘制**之下**。这是"渐变底色会呼吸"的来源，也是观感提升的最大单一杠杆。Hero 峰值不透明度（约 `0.072`）高于登录页（约 `0.03`）但整体偏淡，漂移/呼吸取慢速，避免登录页过噪、也避免 Hero 背景抢戏。
+2. **多停径向辉光 `glowDot`**：所有发光点统一改用它（内核亮、0.35 处衰减、外圈归零的三停径向渐变），替代旧版单色实心圆 + 单层光晕，粒子更通透、有体积；`CONFIG.glow` 为真时才放大辉光半径。
+3. **中心光源/旧模式增强**：`aura`/`gravity` 增加中心辉光核作为"光源"；`stars` 大星补斜向星芒；`ripple` 改三层同心回声；`meteor`/`orbitals`/`matrix` 头部改用 `glowDot` 更亮。
+
+调参守则：观感强弱优先调 `CONFIG` 档位与 `drawAtmosphere` 峰值，而非把单个模式的不透明度写死到刺眼；任何"更亮/更快"的改动都必须在蓝紫渐变上肉眼核对——目标是"压得住、看得见、不抢标题"，不是喧宾夺主。Hero 文案与按钮（见 §5.7）的对比度优先级永远高于背景动效。
+
+4. **频率克制（与亮度同等重要）**：所有"会动"的自增（旋转、漂移、相位、呼吸、闪烁、风场推进等）必须乘以 `CONFIG.speed`，**禁止**写死与档位脱钩的常量自增——否则改 `speed` 调不出整体节奏，且容易出现个别模式过快、喧宾夺主。默认 Hero `speed:0.8` 是"舒缓环境动效"档：背景应像缓慢呼吸的星尘，而非抢眼的频闪。新增模式若引入相位/旋转/推进自增，一律 `* CONFIG.speed` 并以"慢一档"为起点核对。
+5. **帧率归一（高刷屏不加速，与频率克制同等重要）**：所有 per-frame 自增都按 **60Hz** 调参，主循环用累加器把绘制**封顶在 ~60fps**（`frameAcc += dt; if (frameAcc < 1000/60) return; frameAcc %= 1000/60`，余量进位、长期不漂移）。这是必须的：若不限速，120/144Hz 屏上 rAF 回调翻倍，旋转/漂移/闪烁会比设计值快 2–2.4 倍，肉眼即「转太快、频闪」，而 60Hz 开发机上却完全看不出来——这是 Hero「旋转太快」投诉的典型根因。**禁止**用「调小 `CONFIG.speed`」去补偿高刷屏：那会让 60Hz 屏过慢，帧率问题只能在主循环解决。带整体自旋/轨道的模式（如 `orbitals`、`gravity`），旋转/角速度常量本身也要取舒缓档，与封顶叠加才得到「星尘缓缓流转」而非「转动的风车」；历史上曾有 `spiral` 三旋臂模式，因即使取舒缓档体感仍偏快，已整体移除。
+
+### 32.4 可访问性与性能
+
+- **`prefers-reduced-motion: reduce`**：引擎在初始化时读取该媒体查询；命中则**只绘制一帧静态画面**（氛围层 + 当前模式各一帧），**不启动 `requestAnimationFrame` 循环**，亦不响应 `visibilitychange` 续播。落实 §6.3「装饰循环在减少动态下停止」与 §1 原则 6。新增模式不得在 reduce 路径下引入持续动画。
+- **性能**：单模式 + 单氛围层，粒子数由 `面积 / density` 约束，连线类（`particles`/`constellation`）有最大连接数/双重循环上限；切后台 `cancelAnimationFrame`，组件卸载 cleanup 解绑 `resize`/`visibilitychange`。禁止为观感引入逐帧 `filter: blur` 或超大阴影等昂贵操作——辉光一律用径向渐变模拟。
+- **帧率封顶**：主循环以累加器把绘制封顶在 ~60fps（见 §32.3 原则 5），高刷屏不加倍转速与功耗，且与 60Hz 体感一致；切后台 `cancelAnimationFrame`、回前台续播时大 `dt` 只补一帧、不突进。
+- **DPR**：`resize` 按 `devicePixelRatio` 设置画布物理尺寸并 `setTransform` 归一，保证高分屏清晰；改 `setTransform` 参数时务必保留五/六参形式正确。
+
+### 32.5 验收清单（在 §10 通用清单之上补充）
+
+- [ ] `animationLibrary.ts` 的 `MODES` 长度与 `initForMode`/`drawForMode` 分支数一致（当前 19），无遗漏导致静默回退到 `particles`。
+- [ ] 新增/调整模式在 Hero 与登录两档（不透明度/速度差异）下均可见且不刺眼，蓝紫底上肉眼核对。
+- [ ] 所有发光点走 `glowDot`；使用 `lighter` 等合成模式的绘制已用 `save()/restore()` 隔离。
+- [ ] `prefers-reduced-motion: reduce` 下背景为静态单帧、无持续运动（可临时在系统设置或 DevTools 模拟验证）。
+- [ ] Canvas 装饰层仍满足 §31：`absolute + pointer-events:none + aria-hidden + z-index:0`，未被任何通配选择器命中；hero 布局未因装饰层塌陷。
+- [ ] `npm run type-check` 与 `npm run build` 通过；按 §31.5 在构建产物/响应中核对，硬刷新多刷几次以覆盖随机模式。
+- [ ] 在 ≥120Hz 屏（或 DevTools 模拟高刷新率）下核对 Hero 旋转/漂移速度与 60Hz 一致，无「转太快」；主循环仍为单一 rAF 链、切后台停、回前台不突进。
+
+### 32.6 实现方式与代码模板（how-to）
+
+> §32.1–32.5 讲"是什么/为什么"，本节讲"怎么写"。下列片段摘自权威实现，可直接照抄扩展；改引擎时以 `animationLibrary.ts` 实际代码为准，本节目的是让任何人无需通读 800 行也能安全新增/调整一个模式。
+
+**① 容器组件：副作用引擎 + 生命周期。** 引擎是 IIFE 副作用脚本，`import` 即挂载 `window` 方法；组件只管拿 canvas、按 `context` 选入口、卸载时 cleanup。`context="hero"` 走 `initHeroAnimation`，登录页走 `initLoginAnimation`，二者共用同一引擎、仅档位不同。
+
+```vue
+<!-- OmicBackgroundAnimation.vue -->
+<script setup lang="ts">
+import { ref, onMounted, onUnmounted } from 'vue'
+const props = defineProps<{ context: 'hero' | 'login' }>()
+const canvasRef = ref<HTMLCanvasElement | null>(null)
+let cleanup: (() => void) | null = null
+
+onMounted(async () => {
+  await import('@/utils/animationLibrary')          // 副作用脚本，执行即挂 window.*
+  if (!canvasRef.value) return
+  const fn = props.context === 'hero'
+    ? (window as any).initHeroAnimation
+    : (window as any).initLoginAnimation
+  const destroy = fn?.(canvasRef.value)
+  if (destroy) cleanup = destroy
+})
+onUnmounted(() => cleanup?.())
+</script>
+
+<template>
+  <canvas ref="canvasRef" class="omic-canvas" aria-hidden="true" />
+</template>
+
+<style scoped>
+/* §31 装饰层契约：出流 + 不挡点击 + 低层级，绝不可被父级通配选择器命中 */
+.omic-canvas { position: absolute; inset: 0; width: 100%; height: 100%;
+  pointer-events: none; z-index: 0; }
+</style>
+```
+
+接入点（`HomeView.vue`）：`<section class="hero animate-fade-in-up">` 设 `position:relative; overflow:hidden` 与渐变底色，首子节点放 `<OmicBackgroundAnimation context="hero" />`，`.hero-content` 用**类名**显式 `position:relative; z-index:2` 抬到 canvas 之上。
+
+**② 引擎骨架：档位 / DPR / 减少动效 / 随机命中 / 主循环。** `CONFIG` 决定 Hero 与登录两套强度；`resize` 按 `devicePixelRatio` 设物理尺寸并 `setTransform` 归一（**必须 6 参**，传 5 参 vue-tsc 报 TS2575）；`reduceMotion` 命中只画一帧、不启 rAF。
+
+```ts
+export {}
+;(function () {
+  ;(window as any).initHeroAnimation = (c: HTMLCanvasElement) => initAnimation(c, 'hero')
+  ;(window as any).initLoginAnimation = (c: HTMLCanvasElement) => initAnimation(c, 'login')
+
+  function initAnimation(canvas: HTMLCanvasElement, context: 'hero' | 'login') {
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return () => {}
+    let w = 0, h = 0, dpr = 1, animationId: number | null = null
+
+    const CONFIG = {
+      hero:  { opacity: 0.82, density: 5000, speed: 0.8, glow: true }, // 压得住但克制：慢档+留余量，不喧宾夺主
+      login: { opacity: 0.3, density: 10000, speed: 0.6, glow: true },
+    }[context]
+
+    function resize() {
+      const rect = canvas.parentElement?.getBoundingClientRect()
+      if (!rect) return
+      dpr = window.devicePixelRatio || 1
+      canvas.width = rect.width * dpr; canvas.height = rect.height * dpr
+      w = rect.width; h = rect.height
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)        // 6 参，勿省末参
+    }
+    resize(); window.addEventListener('resize', resize)
+
+    const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
+    const MODES = ['particles', /* …共 19 个 key… */ 'nebula']
+    const currentMode = MODES[Math.floor(Math.random() * MODES.length)]  // 互斥随机命中
+
+    let state: any = null
+    const tick = () => { state ||= initForMode(); drawAtmosphere(); drawForMode(state) }
+    // 主循环封顶 ~60fps：per-frame 增量按 60Hz 调参，高刷屏不限速会快 2–2.4 倍（见 §32.3 原则 5）
+    let lastTs = 0, frameAcc = 0
+    const FRAME_MS = 1000 / 60
+    const animate = (ts: number = performance.now()) => {
+      animationId = requestAnimationFrame(animate)
+      if (!lastTs) lastTs = ts
+      frameAcc += ts - lastTs; lastTs = ts
+      if (frameAcc < FRAME_MS) return
+      frameAcc %= FRAME_MS        // 余量进位；切回前台的大 dt 只补一帧、不突进
+      tick()
+    }
+
+    if (reduceMotion) { state = initForMode(); drawAtmosphere(); drawForMode(state) } // 静态单帧
+    else animate()
+
+    const onVis = () => { if (reduceMotion) return
+      document.hidden ? (animationId && cancelAnimationFrame(animationId)) : animate() }
+    document.addEventListener('visibilitychange', onVis)
+
+    return () => { animationId && cancelAnimationFrame(animationId)       // cleanup
+      window.removeEventListener('resize', resize)
+      document.removeEventListener('visibilitychange', onVis) }
+  }
+})()
+```
+
+**③ 新增一个模式的最小模板。** 每个模式 = `initX()` 返回**纯数据 state** + `drawX(state)` 每帧绘制；强度乘 `CONFIG.opacity`、速度乘 `CONFIG.speed`、发光受 `CONFIG.glow` 门控，保证两档都成立；每帧先 `clearRect`。登记**三处缺一不可**：`MODES` 数组、`initForMode` 的 switch、`drawForMode` 的 switch（漏任一处静默回退 `particles`）。
+
+```ts
+// —— 模式实现：以 flowfield（风场微粒描迹）为例 ——
+function initFlowfield() {
+  const pts: any[] = []
+  const count = Math.floor((w * h) / (CONFIG.density * 0.9))   // 粒子数受面积/密度约束
+  const spawn = () => ({ x: Math.random() * w, y: Math.random() * h,
+    life: 0, maxLife: 80 + Math.random() * 120, px: 0, py: 0 })
+  for (let i = 0; i < count; i++) { const p = spawn(); p.px = p.x; p.py = p.y; pts.push(p) }
+  return { pts, t: 0 }
+}
+function drawFlowfield(state: any) {
+  ctx.clearRect(0, 0, w, h)                                    // 每帧清空
+  state.t += 0.0008 * CONFIG.speed                             // 速度乘档位（舒缓）
+  const scale = 0.0042
+  state.pts.forEach((p: any) => {
+    const ang = Math.sin(p.x * scale + state.t * 60) * 1.8
+              + Math.cos(p.y * scale - state.t * 40) * 1.8     // 伪 Perlin 风场
+    p.px = p.x; p.py = p.y
+    p.x += Math.cos(ang) * 1.1 * CONFIG.speed
+    p.y += Math.sin(ang) * 1.1 * CONFIG.speed
+    if (++p.life > p.maxLife || p.x < 0 || p.x > w || p.y < 0 || p.y > h)
+      Object.assign(p, { x: Math.random() * w, y: Math.random() * h, life: 0 })
+    const fade = Math.sin((p.life / p.maxLife) * Math.PI)
+    ctx.strokeStyle = `rgba(195,210,255,${fade * 0.28 * CONFIG.opacity})`  // 强度乘 opacity
+    ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(p.px, p.py); ctx.lineTo(p.x, p.y); ctx.stroke()
+    glowDot(p.x, p.y, 1.6, fade * 0.5 * CONFIG.opacity)
+  })
+}
+// —— 登记三处 ——
+// MODES:  [... , 'flowfield']
+// initForMode:  case 'flowfield': return initFlowfield()
+// drawForMode:  case 'flowfield': return drawFlowfield(s)
+```
+
+**④ 观感两助手（直接复用，勿另造）。** `glowDot` 用三停径向渐变画"有体积"的发光点，替代单色实心圆；`drawAtmosphere` 在每个模式之下铺一层品牌色漂移辉光（`lighter` 合成，`save/restore` 隔离），是"背景会呼吸"的来源。合成模式（`lighter` 等）**必须** `save()/restore()` 包裹，否则污染后续描边/文字。
+
+```ts
+function glowDot(x: number, y: number, r: number, a: number,
+  core = '225,230,255', halo = '170,185,255') {                 // 多停径向辉光
+  if (a <= 0.001 || r <= 0) return
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r)
+  g.addColorStop(0, `rgba(${core},${Math.min(1, a * 1.15)})`)
+  g.addColorStop(0.35, `rgba(${core},${a * 0.55})`)
+  g.addColorStop(1, `rgba(${halo},0)`)
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill()
+}
+function drawAtmosphere() {                                     // 共享氛围层，置于模式之下
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'
+  /* 2~3 团品牌色大半径径向渐变：缓慢漂移 + sin 呼吸，峰值 hero 0.072 / login 0.03，乘 CONFIG.opacity（偏淡，避免抢戏） */
+  ctx.restore()
+}
+```
+
+**⑤ 调色与强度守则。** 颜色沿用软蓝白/品牌冷色族（`rgba(200,210,255,α)` 系），暖色仅 `firefly` 作冷暖点缀；所有 alpha 一律 `* CONFIG.opacity`，禁止写死刺眼值。观感强弱优先调 `CONFIG` 档位与 `drawAtmosphere` 峰值，而不是把单模式不透明度拉满——目标是"压得住、看得见、不抢标题"，Hero 文案与按钮对比度（§5.7）永远优先于背景动效。**频率同样要克制**：任何旋转/漂移/相位/呼吸/闪烁自增都必须 `* CONFIG.speed`，勿写死常量自增（否则个别模式会过快、喧宾夺主，且 `speed` 调不出整体节奏）；新增模式以"慢一档"为起点核对。禁止用逐帧 `filter: blur` 或大阴影堆观感，辉光一律径向渐变模拟。
+
+**⑥ 调试与验收。** 随机命中使单刷难覆盖全部模式，临时在 `initAnimation` 内把 `currentMode` 改成读 `new URLSearchParams(location.search).get('bgmode') || 随机` 即可用 `?bgmode=dna` 逐一目检（**调试用，勿提交**，或加 `import.meta.env.DEV` 守卫）。验收：`cd frontend && npm run type-check && npm run build`；按 §31.5 grep 产物——新模式 **key 字符串**会保留可核对，但 `drawAtmosphere`/`glowDot` 等**局部函数名会被压缩混淆、grep 不到属正常**，勿误判"没生效"；上线硬刷新多次，并注意 nginx bind mount 的 dist inode（重发勿 `rm -rf dist`）。
+
+## 33. 设计质感基线：做出"被设计过"而非"被生成出来"的界面
+
+> 本节是质量上限（ceiling）规则，与 §1 的"平静、清晰、克制"下限（floor）规则**叠加生效，不互相取消**。克制指"不为装饰而装饰、不为炫技而加动效"；质感指"每一处留白、字号、圆角、节奏都像是有意为之，而非框架/模型默认值"。一个界面可以同时是克制的与精致的——单调、对称、毫无特征的"白卡片 + 灰文字"不是克制，而是**没设计**。新增或改版任何页面/组件时，先对照 §33.1 自查是否落入"AI 默认"，再按 §33.2 落实数据表格/卡片的具体样式契约。
+
+### 33.1 规避"AI 默认"清单（设计哲学）
+
+把每个交付物当作作品集产物：用户会截图、会对比、会注意到细节。下列是模型/脚手架最容易产出的"通用模板味"，**应主动规避**，用本仓库已有的设计系统去反制：
+
+1. **纯白、无氛围的背景** → 用 §3.2 令牌的分层表面（`--neutral-bg` 页面 / `--neutral-card` 卡片 / 玻璃导航），并在 Hero、登录等场景接入 §32 的活的画布氛围层；让背景有"被设计过"的层次而非一张白纸。
+2. **三列等宽 hero / 卡片网格** → 用主次分明的非对称布局、`grid-template-columns` 的混合轨道（如仪表盘 `320px 1fr`），让视觉重心明确。
+3. **处处相同的间距** → 严格走 §3.3 的间距阶梯，但**用节奏而非均分**：组内紧、组间松，区块用 24/32px、卡片内用 8/12/16px，制造信息分组。
+4. **统一的圆角** → 按 §3.3 圆角层级区分控件 / 卡片 / 面板 / 胶囊，不要全场一个值。
+5. **通用无衬线、无层级** → 用 §3.3 字体栈与文本层级（字号 + 字重 + 行高 + 色阶共同建立层级，大标题负字距）；避免"全是 14px 灰字"。
+6. **对称、空旷、无特征的留白** → 留白要服务于分组与呼吸，配合 §3.2 的辅助色阶、§5.2 的可选卡片状态线、§5.7 的浮起按钮，让空白处也有意图。
+
+**与克制原则的调和（重要）**：§33.1 不是鼓励堆砌装饰或加 gratuitous 动效。"丰富"必须**成系统、有目的**——氛围层、状态线、玻璃材质都已在 §31/§32/§5 中受 `prefers-reduced-motion` / `prefers-reduced-transparency` 约束、受对比度与可访问性约束。判定标准：去掉某处装饰/层次后，界面是否变得更"通用、更默认"？是，则它是有价值的设计；否，则它是噪声，删掉。可读性、对比度、键盘可达性永远优先于氛围与装饰。
+
+### 33.2 数据表格与卡片：具体样式契约（dashboard 样板）
+
+> 权威实现：`frontend/src/views/DashboardView.vue`（最近任务 / 最近 BLAST 任务两表与卡片）、`frontend/src/components/task/TaskTable.vue`（任务中心整表）、`frontend/src/components/dashboard/*`（仪表盘各面板）。下列为反复踩坑后沉淀的硬规则，新增/修改任何 `NDataTable` 或仪表盘卡片时遵守。
+
+**① 进度条百分比不换行（`NProgress` line，indicator 在外侧）。** "100 %" 折成两行的**根因不是指示器文字换行**，而是条容器 `.n-progress-graph` 为 `flex:1` 且默认 `min-width:auto` 不肯收缩，把 `white-space:nowrap` 的指示器整块挤到第二行。只给指示器加 `nowrap` 无效。正确修复（scoped 深穿透）：
+
+```css
+/* 让进度条可在 flex 行内收缩，使百分比与条同行；指示器 nowrap 兜底 */
+.recent-table :deep(.n-progress-graph) { min-width: 0; }
+.recent-table :deep(.n-progress-graph-line-indicator) { white-space: nowrap; }
+```
+
+注意 naive-ui 真实类名是 `n-progress-graph` / `n-progress-graph-line-indicator`，**不是** `n-progress__indicator`（写错选择器会静默不生效，按 §31.5 在产物里 grep 确认）。
+
+**② 进度尺度归一化（后端尺度可能不统一，前端必须容错）。** 进度字段在后端**尺度并不统一**：分析任务的下载路径写 0–1（`task.progress = 1.0`、`progress / 100.0`），富集 / arq 路径写 0–100（实测已完成任务库内即 `100.0`）；BLAST 的 progress 是 `int` 0–100。直接 `Math.round(progress * 100)` 会把已完成的 `100.0` 渲染成 **1000%**；直接当百分比又会让 0–1 的下载任务显示成 1%。统一用归一化函数渲染，分析与 BLAST 进度列都用它：
+
+```ts
+// >1 视为已是百分比，否则按 0–1 折算；两种尺度都对，且不依赖单一写死约定
+function pct(value: number | null | undefined): number {
+  const n = Number(value) || 0
+  return Math.round(n > 1 ? n : n * 100)
+}
+```
+
+彻底修复应在后端统一写入尺度（任选 0–1 或 0–100 其一）并刷历史数据；在此之前前端归一化是必须的兜底，**不要**移除。
+
+**③ 列宽：全部固定 `width`，禁止"弹性列"吞宽度。** `NDataTable` 中带 `minWidth` 或无 `width` 的列是**弹性列**，会吸收容器全部剩余宽度。把任务名称 / 查询标题设成 `minWidth` 时，该列会 ballooning 到 ~900px，反过来把分析流程 / 状态 / 进度等挤窄、自身文字换行——这正是"其它列被压缩"的根因。规则：
+
+- **每一列都给固定 `width`，不留弹性列**；长文本列（名称 / 标题）给一个克制的固定宽 + `ellipsis: { tooltip: true }` 兜底长内容。
+- 把 `scroll-x` 设成**各列固定宽之和**（≈ 容器宽，如分析表 `970`、BLAST 表 `1020`）。这样表格按比例铺满整行，没有任何一列 ballooning，也没有列被挤压；列宽之和大于容器时退化为水平滚动，符合 §7.1。
+- **短值/离散列居中**：所属用户、分析流程、数据库、Program、状态、操作等用列级 `align: 'center'`（naive-ui 会**同时居中对齐表头与表体**，不必再单独写表头 CSS）。
+- **进度列不要居中**：进度条 + 百分比是从左到右的组合单元，居中会在条左侧留下随宽度变化的空白，显得错位；进度列保持左对齐，只靠 ① 解决换行。
+
+**④ 真实数据，不展示裸 UUID/假数据。** 任何带"所属用户"列的表格，必须由后端回填真实 `username`，而非在前端展示 `user_id`（UUID）或用写死的 mock 行占位：
+
+- 分析 `GET /api/v1/tasks` 的 `TaskResponse.username` 由 `TaskService.list_tasks` 经用户仓储按 `user_id` 回填（去重后查询，单用户列表只查一次）。
+- BLAST 列表 `BlastTaskListItemDTO.user_id` / `username`：`list_user_tasks` 用 `outerjoin UserModel` 取 username，`list_all_tasks` 复用其既有 `UserModel` join（不要丢弃已 select 的 username）。
+- 前端 `row.username || row.user_id` 仅作最后降级，**不是**设计预期。仪表板"最近任务"在迭代期曾用 mock 预览多用户混合，接口就绪后必须切回真实接口（按当前用户视角），空数据走 `NEmpty` 真实空态，不用假行填充。
+- 操作列同理：查看/删除接真实接口（查看跳详情、删除走 `DELETE` 并局部刷新），后端未上线的能力（如"重新运行"）按终态 `disabled` + Tooltip"即将上线"诚实表达，**不要**用 `message.info('对接中')` 之类的假 toast 冒充可用。
+
+**⑤ 卡片垂直节奏统一为 24px。** 仪表盘各区块（概览网格 / 快速开始 / 监控面板 / 最近任务 / 最近 BLAST）每个根 section 自带 `margin-bottom: 24px`，构成统一的 24px 垂直节奏。新增卡片 section 必须同样带 `margin-bottom: 24px`，**不要**让相邻卡片间距塌缩为 0（只写 `overflow:hidden` 而漏掉外边距是常见错误，会导致两张卡片贴在一起、与其它卡片间距不一致）。
+
+### 33.3 验收清单（在 §10 通用清单之上补充）
+
+- [ ] 进度/百分比/计数等派生数值是否经归一化或确定性公式渲染，在 0–1 与 0–100 两种数据尺度下都正确（无 1000% / 无 1% 误显）？
+- [ ] `NProgress` 百分比是否单行显示（产物中 grep 到 `.n-progress-graph{min-width:0}` 与指示器 `nowrap`，类名拼写正确）？
+- [ ] 数据表格是否**所有列固定 `width`、无弹性列**，且 `scroll-x` 等于列宽之和；长文本列有 `ellipsis` + Tooltip？
+- [ ] 短值/离散列是否 `align:'center'`（表头+表体一致），进度列是否保持左对齐？
+- [ ] 带"所属用户"的表格是否展示真实 `username`（后端回填），而非 UUID 或 mock；空数据是否走真实 `NEmpty`？
+- [ ] 操作列是否接真实接口；未上线能力是否诚实 `disabled` + Tooltip，无假 toast？
+- [ ] 仪表盘卡片 section 是否都带 `margin-bottom: 24px`，相邻卡片间距与其它卡片一致？
+- [ ] 设计是否规避 §33.1 的"AI 默认"清单，在不破坏 §1 克制与可访问性的前提下具备品牌层次与辨识度？

@@ -301,6 +301,11 @@ class SampleRepositoryImpl(ISampleRepository):
         result = await self._session.execute(stmt)
         return [self._to_entity(m) for m in result.scalars().all()]
 
+    async def count_by_user(self, user_id: UUID) -> int:
+        stmt = select(func.count(SampleModel.id)).where(SampleModel.user_id == user_id)
+        result = await self._session.execute(stmt)
+        return int(result.scalar_one())
+
     async def save(self, sample: Sample) -> Sample:
         existing = await self._session.get(SampleModel, sample.id)
         if existing:

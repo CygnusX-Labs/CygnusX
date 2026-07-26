@@ -1,5 +1,3 @@
-/** 流程 YAML 解析后的类型定义，供 DynamicForm 使用 */
-
 export type ParameterType =
   | 'string'
   | 'int'
@@ -84,6 +82,18 @@ export interface SectionConfig {
   parameters: Parameter[]
 }
 
+export interface ParameterUIHint {
+  group?: string | null
+  order?: number | null
+  span?: 1 | 2 | null
+  widget?: string | null
+  placeholder?: string | null
+  subgroup?: string | null
+  exclusive?: boolean
+  show_when?: Record<string, unknown> | null
+  linked_group_column?: string | null
+}
+
 export interface Parameter {
   name: string
   label: string
@@ -100,6 +110,7 @@ export interface Parameter {
   file_config?: FileConfig
   group_config?: GroupConfig
   section_config?: SectionConfig
+  ui?: ParameterUIHint | null
 }
 
 export interface SampleSheetColumn {
@@ -119,9 +130,15 @@ export interface ValidationRule {
   regex_pattern?: string | null
 }
 
+export interface SampleSheetUIConfig {
+  import?: string[]
+  group_column?: string | null
+}
+
 export interface SampleSheetConfig {
   columns: SampleSheetColumn[]
   validation_rules?: ValidationRule[]
+  ui?: SampleSheetUIConfig | null
 }
 
 export interface ExecutionConfig {
@@ -137,6 +154,14 @@ export interface ExecutionConfig {
   extra_args?: string[]
 }
 
+export interface FlowGroupDefinition {
+  id: string
+  title: string
+  desc?: string
+  collapsible?: boolean
+  collapsed?: boolean
+}
+
 export interface FlowMeta {
   id: string
   name: string
@@ -146,15 +171,17 @@ export interface FlowMeta {
   author?: string | null
   tags?: string[]
   icon?: string | null
+  color?: string | null
   docs_url?: string | null
+  github_url?: string | null
 }
 
 export interface FlowConfig {
   meta: FlowMeta
   parameters: Parameter[]
   execution: ExecutionConfig
+  groups?: FlowGroupDefinition[] | null
   sample_sheet?: SampleSheetConfig | null
 }
 
-/** 表单值统一结构 */
 export type FormValues = Record<string, unknown>

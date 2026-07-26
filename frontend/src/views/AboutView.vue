@@ -71,9 +71,9 @@ const stars = Array.from({ length: 160 }, (_, i) => {
 
 const shootingStars = Array.from({ length: 3 }, (_, i) => ({
   id: i,
-  // 长周期循环：每颗约 18~24s 才划过一次（可见段仅占约 12%，靠 keyframes 压缩）
-  delay: i * 6 + Math.random() * 4,
-  duration: 18 + Math.random() * 6,
+  // 每颗仅在长周期中的短暂时刻划过，保持背景安静。
+  delay: i * 11 + Math.random() * 3,
+  duration: 34 + Math.random() * 8,
   top: Math.random() * 50,
   left: Math.random() * 60,
   scale: 0.8 + Math.random() * 0.7,
@@ -107,7 +107,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
           left: n.left + '%',
           width: n.width + '%',
           height: n.height + '%',
-          opacity: n.opacity,
+          '--base-opacity': n.opacity,
           animationDelay: n.delay + 's',
           animationDuration: n.duration + 's',
         }"
@@ -126,7 +126,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
           left: s.left + '%',
           width: s.size + 'px',
           height: s.size + 'px',
-          opacity: s.opacity,
+          '--star-opacity': s.opacity,
           animationDelay: s.delay + 's',
           animationDuration: s.duration + 's',
           '--cross-scale': s.crossScale
@@ -328,16 +328,16 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
     transform: translateX(0) translateY(0) rotate(35deg) scaleX(0) scale(var(--star-scale, 1));
     opacity: 0;
   }
-  20% {
-    opacity: 1;
-    transform: translateX(60px) translateY(42px) rotate(35deg) scaleX(1) scale(var(--star-scale, 1));
+  3% {
+    opacity: 0.72;
+    transform: translateX(36px) translateY(25px) rotate(35deg) scaleX(0.82) scale(var(--star-scale, 1));
   }
-  32% {
-    opacity: 1;
-    transform: translateX(420px) translateY(294px) rotate(35deg) scaleX(1) scale(var(--star-scale, 1));
+  9% {
+    opacity: 0.62;
+    transform: translateX(330px) translateY(231px) rotate(35deg) scaleX(1) scale(var(--star-scale, 1));
   }
-  42% {
-    transform: translateX(600px) translateY(420px) rotate(35deg) scaleX(0.6) scale(var(--star-scale, 1));
+  13% {
+    transform: translateX(460px) translateY(322px) rotate(35deg) scaleX(0.42) scale(var(--star-scale, 1));
     opacity: 0;
   }
   100% {
@@ -347,19 +347,19 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 }
 
 @keyframes twinkle {
-  0% {
-    opacity: 0.2;
-    transform: translate(-50%, -50%) scale(0.8);
+  0%, 100% {
+    opacity: calc(var(--star-opacity, 0.55) * 0.68);
+    transform: translate(-50%, -50%) scale(0.94);
   }
-  100% {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1.2);
+  50% {
+    opacity: var(--star-opacity, 0.55);
+    transform: translate(-50%, -50%) scale(1.04);
   }
 }
 
 @keyframes nebulaDrift {
-  0%, 100% { transform: translateX(0) scale(1); opacity: var(--base-opacity, 0.1); }
-  50% { transform: translateX(8%) scale(1.05); opacity: calc(var(--base-opacity, 0.1) * 1.5); }
+  0%, 100% { transform: translateX(0) scale(1); opacity: var(--base-opacity, 0.05); }
+  50% { transform: translateX(3%) scale(1.02); opacity: calc(var(--base-opacity, 0.05) * 1.16); }
 }
 
 @keyframes planetSpin {
@@ -380,19 +380,20 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: #5E8EF2;
+  background: #080d24;
 }
 
-/* 明亮浅蓝渐变背景：白昼星空（向品牌色 #4C6FFF 家族取色） */
+/* 深空蓝紫：以低饱和星云保留层次，不干扰正文阅读。 */
 .space-bg {
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(ellipse at 20% 20%, rgba(255, 255, 255, 0.22) 0%, transparent 50%),
-    radial-gradient(ellipse at 85% 80%, rgba(165, 243, 252, 0.16) 0%, transparent 50%),
-    linear-gradient(160deg, #93B4FF 0%, #5E8EF2 48%, #4C7DF0 100%);
+    radial-gradient(ellipse at 20% 12%, rgba(76, 111, 255, 0.20) 0%, transparent 42%),
+    radial-gradient(ellipse at 82% 82%, rgba(122, 92, 214, 0.16) 0%, transparent 46%),
+    radial-gradient(ellipse at 52% 46%, rgba(24, 42, 99, 0.34) 0%, transparent 58%),
+    linear-gradient(145deg, #071127 0%, #101840 50%, #17123b 100%);
 }
 
 /* 星河/星云带 */
@@ -410,14 +411,14 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.28) 25%,
-    rgba(186, 230, 253, 0.34) 50%,
-    rgba(255, 255, 255, 0.2) 75%,
+    rgba(129, 151, 255, 0.14) 25%,
+    rgba(170, 133, 255, 0.20) 50%,
+    rgba(129, 151, 255, 0.12) 75%,
     transparent 100%
   );
-  filter: blur(24px);
+  filter: blur(36px);
   animation: nebulaDrift ease-in-out infinite;
-  --base-opacity: 0.07;
+  --base-opacity: 0.05;
 }
 
 /* 星空 */
@@ -432,7 +433,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   position: absolute;
   border-radius: 50%;
   background: #ffffff;
-  box-shadow: 0 0 3px 1px rgba(255, 255, 255, 0.45);
+  box-shadow: 0 0 4px 1px rgba(190, 209, 255, 0.34);
   animation: twinkle linear infinite alternate;
   transform: translate(-50%, -50%);
 }
@@ -483,8 +484,8 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 }
 .shooting-star {
   position: absolute;
-  width: 140px;
-  height: 2px;
+  width: 112px;
+  height: 1px;
   border-radius: 50%;
   opacity: 0;
   animation: shooting linear infinite;
@@ -494,9 +495,9 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(to left, rgba(255, 255, 255, 0.9), rgba(107, 141, 214, 0.6), transparent);
+  background: linear-gradient(to left, rgba(255, 255, 255, 0.74), rgba(147, 171, 255, 0.42), transparent);
   border-radius: 50%;
-  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.9));
+  filter: drop-shadow(0 0 4px rgba(194, 211, 255, 0.52));
 }
 .shooting-star::after {
   content: '';
@@ -504,11 +505,11 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   right: -3px;
   top: 50%;
   transform: translateY(-50%);
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 0 12px 2px rgba(255, 255, 255, 0.8), 0 0 20px 4px rgba(107, 141, 214, 0.5);
+  box-shadow: 0 0 8px 1px rgba(255, 255, 255, 0.6), 0 0 14px 3px rgba(128, 153, 255, 0.30);
 }
 
 /* 浮动光球 */
@@ -516,25 +517,23 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   position: absolute;
   border-radius: 50%;
   filter: blur(70px);
-  opacity: 0.12;
+  opacity: 0.06;
   pointer-events: none;
   z-index: 1;
 }
 .orb-1 {
   width: 280px;
   height: 280px;
-  background: #ffffff;
+  background: #5b7cff;
   top: 8%;
   left: 3%;
-  animation: drift 14s ease-in-out infinite;
 }
 .orb-2 {
   width: 220px;
   height: 220px;
-  background: #8E54E9;
+  background: #8b6be8;
   bottom: 10%;
   right: 5%;
-  animation: drift 18s ease-in-out infinite reverse;
 }
 
 /* 内容容器 */
@@ -558,9 +557,9 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #6B8DD6, #165DFF 50%, #1147C2 100%);
-  box-shadow: 0 0 12px rgba(107, 141, 214, 0.18), inset -8px -8px 16px rgba(0, 0, 0, 0.3);
-  animation: planetSpin 8s linear infinite;
+  background: radial-gradient(circle at 35% 35%, #8097ed, #3149b9 52%, #171a5c 100%);
+  box-shadow: 0 0 18px rgba(107, 141, 214, 0.22), inset -8px -8px 16px rgba(0, 0, 0, 0.42);
+  animation: planetSpin 36s linear infinite;
 }
 .planet-ring {
   position: absolute;
@@ -569,7 +568,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   border-radius: 50%;
   border-top-color: transparent;
   border-bottom-color: transparent;
-  animation: ringSpin 6s linear infinite;
+  animation: ringSpin 28s linear infinite;
 }
 
 /* 标题 */
@@ -578,32 +577,30 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   font-weight: 700;
   margin: 0 0 8px;
   letter-spacing: 1px;
-  background: linear-gradient(90deg, #6B8DD6, #67e8f9, #6B8DD6);
-  background-size: 200% auto;
+  background: linear-gradient(90deg, #d9e2ff, #a8bbff, #d9e2ff);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer 9s linear infinite;
 }
 .about-subtitle {
   font-size: 18px;
-  color: #eaf4ff;
+  color: #d6def8;
   margin: 0 0 24px;
   font-weight: 500;
 }
 .subtitle-llm {
   margin-left: 8px;
   font-weight: 600;
-  color: #a5f3fc;
-  text-shadow: 0 0 12px rgba(103, 232, 249, 0.35);
+  color: #aebfff;
+  text-shadow: 0 0 10px rgba(117, 143, 255, 0.22);
 }
 
 /* 苹果式毛玻璃面板：引言盒子 */
 .about-quote-box {
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(18, 29, 68, 0.72);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(179, 197, 255, 0.22);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
     0 8px 32px 0 rgba(76, 111, 255, 0.16);
@@ -637,7 +634,7 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 .about-quote {
   font-size: 14px;
   line-height: 1.9;
-  color: #2f4763;
+  color: #d8e1fb;
   text-align: justify;
   margin: 0;
   text-indent: 2em;
@@ -656,53 +653,51 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   gap: 10px;
   padding: 14px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(18, 29, 68, 0.66);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(179, 197, 255, 0.20);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    0 8px 32px 0 rgba(76, 111, 255, 0.16);
+    inset 0 1px 0 rgba(220, 228, 255, 0.12),
+    0 12px 32px 0 rgba(3, 7, 25, 0.26);
   transition: border-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
   text-align: left;
 }
 .feature-item:hover {
-  border-color: rgba(255, 255, 255, 0.9);
+  border-color: rgba(184, 202, 255, 0.46);
   transform: translateY(-2px);
 }
 /* 主推卡片：AI 智能分析，轻微青蓝描边高亮 */
 .feature-item--primary {
-  border-color: rgba(14, 155, 181, 0.55);
+  border-color: rgba(123, 150, 255, 0.56);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    0 0 0 1px rgba(14, 155, 181, 0.2),
-    0 8px 24px rgba(76, 111, 255, 0.2);
+    inset 0 1px 0 rgba(220, 228, 255, 0.14),
+    0 0 0 1px rgba(123, 150, 255, 0.15),
+    0 12px 28px rgba(4, 10, 33, 0.30);
 }
 .feature-item--primary:hover {
-  border-color: rgba(14, 155, 181, 0.8);
+  border-color: rgba(146, 169, 255, 0.72);
 }
 .feature-icon {
-  color: var(--arco-primary);
+  color: #aebfff;
   flex-shrink: 0;
 }
 .feature-icon--accent {
-  color: #0e9bb5;
+  color: #c3d0ff;
 }
 /* 功能标题：青蓝渐变（非斜体，与卡片标题层级一致） */
 .feature-title {
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.5px;
-  background: linear-gradient(90deg, #1E6FD9, #0e9bb5, #1E6FD9);
-  background-size: 200% auto;
+  background: linear-gradient(90deg, #dbe4ff, #aac0ff, #dbe4ff);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer 9s linear infinite;
 }
 .feature-desc {
   font-size: 12px;
-  color: #4a6076;
+  color: #afbddf;
   margin-top: 2px;
 }
 
@@ -764,12 +759,12 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 @media (prefers-reduced-transparency: reduce) {
   .about-quote-box,
   .feature-item {
-    background: #ffffff;
+    background: #15204a;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
   .n-button.about-btn-ghost {
-    background-color: rgba(255, 255, 255, 0.25);
+    background-color: #26366f;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }

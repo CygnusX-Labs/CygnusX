@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { NSelect, useMessage } from 'naive-ui'
+import {
+  NSelect, NTabs, NTabPane, NIcon, NButton, NPopconfirm, NSpin, useMessage,
+} from 'naive-ui'
+import {
+  LibraryOutline, CloudDownloadOutline, ServerOutline, LinkOutline,
+  InformationCircleOutline, ChevronDownOutline, DownloadOutline, RefreshOutline,
+} from '@vicons/ionicons5'
 import apiClient from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 
@@ -73,18 +79,11 @@ const directRecursive = ref(false)
 // ── 任务列表状态筛选 ──
 const statusFilter = ref<'all' | DownloadTask['status']>('all')
 
-const tabs: { key: SourceTab; icon: string; label: string }[] = [
-  { key: 'sra', icon: '🧬', label: '公共数据库' },
-  { key: 'cloud-drive', icon: '☁️', label: '云盘极速提取' },
-  { key: 'cloud-storage', icon: '🏢', label: '云存储直拉' },
-  { key: 'direct-link', icon: '🔗', label: '直链与 FTP' },
-]
-
 const tabDescriptions: Record<SourceTab, string> = {
-  'sra': '输入 NCBI/EBI 登录号（如 PRJNA），通过高并发节点直接将原始测序数据同步至您的工作空间。',
-  'cloud-drive': '支持解析百度网盘或 123 云盘分享链接，无需消耗本地带宽，云端内网极速拉取交接数据。',
-  'cloud-storage': '通过云厂商内网（阿里云、火山、华为等）调用对象存储 CLI 拉取数据，完成后自动入库。',
-  'direct-link': '粘贴 HTTP、HTTPS 或 FTP 直链，支持批量下载、断点续传和并发加速，文件完成后自动入库。',
+  'sra': '输入 NCBI / EBI 登录号（如 PRJNA、SRR），支持 AWS S3 / Aspera 高并发节点拉取原始测序数据，完成后自动入库。',
+  'cloud-drive': '支持解析百度网盘、123 云盘分享链接，云端内网极速提取交接数据、不消耗本地带宽，完成后自动入库。',
+  'cloud-storage': '支持通过云厂商内网（阿里云 / 火山 / 华为）对象存储 CLI 拉取数据，完成后自动入库。',
+  'direct-link': '支持 HTTP / HTTPS / FTP 直链批量下载，断点续传、并发加速，完成后自动入库。',
 }
 
 const statusConfig: Record<string, { label: string; badge: string; icon: string }> = {
@@ -104,7 +103,6 @@ function pct(task: DownloadTask) {
   return Math.round(task.progress * 100)
 }
 
-const gradientBar = 'background: linear-gradient(90deg, var(--arco-primary), var(--kimi-chart-4))'
 const tasks = ref<DownloadTask[]>([])
 
 const stats = computed(() => {
@@ -139,6 +137,19 @@ const storageProviderOptions = [
   { label: '阿里云 OSS', value: 'aliyun' },
   { label: '火山引擎 TOS', value: 'volc' },
   { label: '华为云 OBS', value: 'huawei' },
+]
+
+const threadOptions = [
+  { label: '1 线程', value: 1 },
+  { label: '4 线程（推荐）', value: 4 },
+  { label: '8 线程', value: 8 },
+  { label: '16 线程', value: 16 },
+]
+
+const overwritePolicyOptions = [
+  { label: '自动重命名', value: 'auto_rename' },
+  { label: '强制覆盖', value: 'overwrite' },
+  { label: '跳过', value: 'skip' },
 ]
 
 const statusFilterOptions = [
@@ -198,6 +209,12 @@ async function toggleAdvanced() {
   }
 }
 
+function dedupLinks() {
+  directLinks.value = [...new Set(
+    directLinks.value.split(/\r?\n|,/).map(link => link.trim()).filter(Boolean),
+  )].join('\n')
+}
+
 async function handleSubmit() {
   if (activeTab.value === 'cloud-drive') {
     message.warning('云盘极速提取尚未接入后端，当前先支持公共数据库与云存储直拉')
@@ -253,570 +270,885 @@ async function handleSubmit() {
   }
 }
 
-const inputFocusStyle = {
-  onFocus: (e: Event) => {
-    const el = e.target as HTMLInputElement | HTMLTextAreaElement
-    el.style.borderColor = 'var(--arco-primary)'
-    el.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--arco-primary) 15%, transparent)'
-  },
-  onBlur: (e: Event) => {
-    const el = e.target as HTMLInputElement | HTMLTextAreaElement
-    el.style.borderColor = 'var(--neutral-border)'
-    el.style.boxShadow = 'none'
-  },
+async function handleDelete(task: DownloadTask) {
+  try {
+    await apiClient.delete(`/tasks/${task.id}`)
+    message.success(`已删除「${task.name}」`)
+    await fetchDownloads()
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail || '删除失败，请稍后重试')
+  }
 }
 
 onMounted(fetchDownloads)
 </script>
 
 <template>
-  <div class="downloads-page">
+  <div class="page-container downloads-page">
+    <div class="downloads-content">
+      <!-- ═══ 页面标题区 ═══ -->
+      <PageHeader
+        title="数据下载与聚合"
+        subtitle="从 NCBI/EBI 公共数据库、网盘或云存储拉取测序数据，下载完成后自动入库"
+      />
 
-    <!-- ═══ 页面标题区 ═══ -->
-    <PageHeader
-      title="数据下载与聚合"
-      subtitle="从 NCBI/EBI 公共数据库、网盘或云存储拉取测序数据，下载完成后自动入库"
-    />
+      <!-- ═══ 来源切换 Tabs（平台统一下划线式）═══ -->
+      <NTabs v-model:value="activeTab" type="line" class="source-tabs">
+        <!-- ── 公共数据库（SRA）── -->
+        <NTabPane name="sra">
+          <template #tab>
+            <span class="source-tab"><NIcon :size="16"><LibraryOutline /></NIcon>公共数据库</span>
+          </template>
 
-    <!-- ═══ Pill 胶囊式 Tab 栏 ═══ -->
-    <div class="flex items-center gap-2 mb-5">
-      <button
-        v-for="tab in tabs"
-        :key="tab.key"
-        class="flex items-center gap-1.5 px-4 py-2 text-sm rounded-full transition-all duration-200"
-        :class="activeTab === tab.key
-          ? 'text-white shadow-md shadow-blue-500/20'
-          : 'text-gray-500 hover:text-gray-800'"
-        :style="activeTab === tab.key ? 'background: linear-gradient(135deg, #4F8EF7, #7C6FD4)' : 'background: var(--neutral-hover)'"
-        @click="activeTab = tab.key"
-      >
-        <span class="text-sm">{{ tab.icon }}</span>
-        {{ tab.label }}
-      </button>
-    </div>
+          <div class="source-tip">
+            <NIcon :size="16" class="source-tip__icon"><InformationCircleOutline /></NIcon>
+            <span>{{ tabDescriptions['sra'] }}</span>
+          </div>
 
-    <!-- ═══ 动态描述条 ═══ -->
-    <div class="flex items-start gap-2.5 text-sm p-3.5 rounded-lg mb-5" style="background: color-mix(in srgb, var(--arco-primary) 6%, transparent); color: var(--neutral-text-2); border-radius: 8px">
-      <svg class="w-4 h-4 mt-0.5 flex-shrink-0" style="color: var(--arco-primary)" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" /></svg>
-      <span class="leading-relaxed">{{ tabDescriptions[activeTab] }}</span>
-    </div>
-
-    <!-- ═══ 参数配置卡片 ═══ -->
-    <div class="bg-neutral-card rounded-xl mb-5" style="box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05); border: 1px solid var(--neutral-border)">
-
-      <!-- ── 直链 / FTP 表单 ── -->
-      <div v-if="activeTab === 'direct-link'" class="p-6 space-y-5">
-        <div class="flex items-start gap-4">
-          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">
-            资源链接 <span class="text-red-400">*</span>
-          </label>
-          <div class="flex-1 max-w-3xl">
-            <div class="relative">
+          <div class="form-card">
+            <div class="field">
+              <label class="field-label">登录号 <span class="req">*</span></label>
               <textarea
-                v-model="directLinks"
-                rows="5"
-                placeholder="支持 HTTP / HTTPS / FTP 协议的直接下载链接。支持多行批量输入，每行一个链接..."
-                class="w-full px-3.5 py-3 pr-28 text-sm font-mono border resize-y transition-all duration-200 focus:outline-none"
-                style="border-color: var(--neutral-border); border-radius: 8px; color: var(--neutral-text-1); min-height: 128px"
-                v-on="inputFocusStyle"
+                v-model="sraAccession"
+                rows="1"
+                placeholder="PRJNA1251654 或 SRRxxxxxx，多个用逗号或换行分隔"
+                class="text-input text-input--textarea"
               />
-              <div class="absolute top-2 right-2 flex items-center gap-1">
-                <button type="button" class="direct-inline-action" @click="directLinks = ''">清空</button>
-                <button type="button" class="direct-inline-action" @click="directLinks = [...new Set(directLinks.split(/\r?\n|,/).map(link => link.trim()).filter(Boolean))].join('\n')">去重</button>
-              </div>
+              <p class="field-help">支持 Project / Sample / Run 级登录号，多个用逗号或换行分隔。</p>
             </div>
-            <p class="mt-1.5 text-xs" style="color: var(--neutral-text-3)">每行一个链接；支持 Ensembl、UCSC、ENA 等公共数据源。</p>
-          </div>
-        </div>
 
-        <div class="flex items-start gap-4">
-          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">下载到</label>
-          <NSelect v-model:value="targetDirectory" :options="targetDirectoryOptions" size="large" style="width: 240px" />
-        </div>
-
-        <div class="flex items-start gap-4">
-          <div class="w-20 shrink-0"></div>
-          <div class="flex-1 max-w-3xl">
-            <button type="button" class="direct-advanced-toggle" :aria-expanded="directAdvancedOpen" @click="directAdvancedOpen = !directAdvancedOpen">
-              <span>高级选项</span>
-              <span class="text-xs" style="color: var(--neutral-text-3)">{{ directAdvancedOpen ? '收起' : '下载并发、同名策略与目录解析' }}</span>
-              <span class="text-base" :class="directAdvancedOpen ? 'rotate-180' : ''">⌄</span>
-            </button>
-            <div v-if="directAdvancedOpen" class="direct-advanced-panel">
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <label class="direct-field"><span>下载并发</span><select v-model.number="directThreads"><option :value="1">1 线程</option><option :value="4">4 线程（推荐）</option><option :value="8">8 线程</option><option :value="16">16 线程</option></select></label>
-                <label class="direct-field"><span>同名文件</span><select v-model="directOverwritePolicy"><option value="auto_rename">自动重命名</option><option value="overwrite">强制覆盖</option><option value="skip">跳过</option></select></label>
-                <label class="direct-switch"><input v-model="directRecursive" type="checkbox" /> <span>解析 FTP 目录</span></label>
-              </div>
-              <p class="mt-3 text-xs" style="color: var(--neutral-text-3)">任务在后台执行，支持断点续传和失败重试；FTP 目录会先展开为文件清单。</p>
+            <div class="field">
+              <label class="field-label">下载方式</label>
+              <NSelect v-model:value="sraMethod" :options="sraMethodOptions" class="field-select" />
             </div>
-          </div>
-        </div>
 
-        <div class="flex items-start gap-4 pt-1">
-          <div class="w-20 shrink-0"></div>
-          <button class="h-10 px-6 text-sm font-semibold text-white transition-all duration-200 flex items-center gap-2 disabled:opacity-50 hover:-translate-y-px active:scale-[0.98]" :disabled="submitting" style="background: linear-gradient(135deg, #4F8EF7, #9B59B6); box-shadow: 0 4px 14px rgba(79,142,247,0.3); border-radius: 8px" @click="handleSubmit">
-            提交下载任务
-          </button>
-        </div>
-      </div>
-
-      <!-- ── SRA 表单 ── -->
-      <div v-if="activeTab === 'sra'" class="p-6 space-y-5">
-
-        <!-- 登录号（Textarea 自适应高度） -->
-        <div class="flex items-start gap-4">
-          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">
-            登录号 <span class="text-red-400">*</span>
-          </label>
-          <div class="flex-1 max-w-lg">
-            <textarea
-              v-model="sraAccession"
-              rows="1"
-              placeholder="PRJNA1251654 或 SRRxxxxxx，多个用逗号或换行分隔"
-              class="w-full px-3.5 py-2.5 text-sm border resize-none transition-all duration-200 focus:outline-none"
-              style="border-color: var(--neutral-border); border-radius: 8px; color: var(--neutral-text-1); min-height: 40px; max-height: 120px"
-              v-on="inputFocusStyle"
-            />
-          </div>
-        </div>
-
-        <!-- 下载方式（NSelect 下拉，统一浅色主题） -->
-        <div class="flex items-start gap-4">
-          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">下载方式</label>
-          <NSelect
-            v-model:value="sraMethod"
-            :options="sraMethodOptions"
-            size="large"
-            style="width: 280px"
-          />
-        </div>
-
-        <!-- 下载到 -->
-        <div class="flex items-start gap-4">
-          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">下载到</label>
-          <NSelect
-            v-model:value="targetDirectory"
-            :options="targetDirectoryOptions"
-            size="large"
-            style="width: 240px"
-          />
-        </div>
-
-        <!-- ── 高级选项折叠面板 ── -->
-        <div class="flex items-start gap-4">
-          <div class="w-20 shrink-0"></div>
-          <div class="flex-1 max-w-lg">
-            <button
-              class="w-full flex items-center justify-between px-4 py-3 rounded-lg border transition-all duration-200"
-              :style="advancedOpen
-                ? 'background: var(--neutral-hover); border-color: var(--neutral-border); border-style: solid; border-radius: 8px 8px 0 0'
-                : 'background: var(--neutral-bg); border-color: var(--neutral-border); border-style: dashed'"
-              @mouseenter="($event.currentTarget as HTMLElement).style.background='var(--neutral-hover)'; ($event.currentTarget as HTMLElement).style.borderStyle='solid'"
-              @mouseleave="($event.currentTarget as HTMLElement).style.background=advancedOpen ? '#F3F4F6' : '#F9FAFB'; ($event.currentTarget as HTMLElement).style.borderStyle=advancedOpen ? 'solid' : 'dashed'"
-              @click="toggleAdvanced"
-            >
-              <span class="text-sm font-medium" style="color: var(--neutral-text-1)">高级选项：样本与 Run 过滤</span>
-              <svg class="w-4 h-4 transition-transform duration-300" style="color: var(--neutral-text-2)" :class="advancedOpen ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
-            </button>
-
-            <!-- 展开内容：2x2 正则过滤 -->
-            <div
-              v-if="advancedOpen"
-              id="advanced-panel-bottom"
-              class="border rounded-b-lg bg-neutral-card p-5"
-              style="border-color: var(--neutral-border); border-top: none; border-radius: 0 0 8px 8px"
-            >
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <!-- 包含样本 -->
-                <div class="flex flex-col gap-1.5">
-                  <label class="text-sm font-medium flex items-center gap-1.5" style="color: var(--neutral-text-1)">
-                    <span class="inline-flex items-center justify-center w-5 h-5 rounded text-xs font-semibold" style="background: var(--arco-primary-light); color: #4F8EF7; border-radius: 4px">+</span>
-                    包含样本 (Include)
-                  </label>
-                  <input
-                    v-model="includeSample"
-                    type="text"
-                    placeholder="如：^SAMN.*"
-                    class="h-10 px-3.5 text-sm border rounded-lg transition-all duration-200 focus:outline-none"
-                    style="border-color: var(--neutral-border); color: var(--neutral-text-1); border-radius: 8px"
-                    v-on="inputFocusStyle"
-                  />
-                  <span class="text-xs" style="color: var(--neutral-text-3)">正则匹配样本 ID，留空不过滤</span>
-                </div>
-
-                <!-- 排除样本 -->
-                <div class="flex flex-col gap-1.5">
-                  <label class="text-sm font-medium flex items-center gap-1.5" style="color: var(--neutral-text-1)">
-                    <span class="inline-flex items-center justify-center w-5 h-5 rounded text-xs font-semibold" style="background: var(--arco-danger-light); color: #EF4444; border-radius: 4px">−</span>
-                    排除样本 (Exclude)
-                  </label>
-                  <input
-                    v-model="excludeSample"
-                    type="text"
-                    placeholder="如：.control."
-                    class="h-10 px-3.5 text-sm border rounded-lg transition-all duration-200 focus:outline-none"
-                    style="border-color: var(--neutral-border); color: var(--neutral-text-1); border-radius: 8px"
-                    v-on="inputFocusStyle"
-                  />
-                  <span class="text-xs" style="color: var(--neutral-text-3)">匹配到的样本将被跳过</span>
-                </div>
-
-                <!-- 包含 Run -->
-                <div class="flex flex-col gap-1.5">
-                  <label class="text-sm font-medium flex items-center gap-1.5" style="color: var(--neutral-text-1)">
-                    <span class="inline-flex items-center justify-center w-5 h-5 rounded text-xs font-semibold" style="background: var(--arco-primary-light); color: #4F8EF7; border-radius: 4px">+</span>
-                    包含 Run (Include)
-                  </label>
-                  <input
-                    v-model="includeRun"
-                    type="text"
-                    placeholder="如：SRR123.*"
-                    class="h-10 px-3.5 text-sm border rounded-lg transition-all duration-200 focus:outline-none"
-                    style="border-color: var(--neutral-border); color: var(--neutral-text-1); border-radius: 8px"
-                    v-on="inputFocusStyle"
-                  />
-                  <span class="text-xs" style="color: var(--neutral-text-3)">正则匹配 Run 编号</span>
-                </div>
-
-                <!-- 排除 Run -->
-                <div class="flex flex-col gap-1.5">
-                  <label class="text-sm font-medium flex items-center gap-1.5" style="color: var(--neutral-text-1)">
-                    <span class="inline-flex items-center justify-center w-5 h-5 rounded text-xs font-semibold" style="background: var(--arco-danger-light); color: #EF4444; border-radius: 4px">−</span>
-                    排除 Run (Exclude)
-                  </label>
-                  <input
-                    v-model="excludeRun"
-                    type="text"
-                    placeholder="如：.test."
-                    class="h-10 px-3.5 text-sm border rounded-lg transition-all duration-200 focus:outline-none"
-                    style="border-color: var(--neutral-border); color: var(--neutral-text-1); border-radius: 8px"
-                    v-on="inputFocusStyle"
-                  />
-                  <span class="text-xs" style="color: var(--neutral-text-3)">匹配到的 Run 将被跳过</span>
-                </div>
-              </div>
-
-              <p class="text-xs mt-4" style="color: var(--neutral-text-3)">支持正则表达式过滤，留空表示不过滤。多个模式用逗号分隔。</p>
+            <div class="field">
+              <label class="field-label">下载到</label>
+              <NSelect v-model:value="targetDirectory" :options="targetDirectoryOptions" class="field-select" />
             </div>
-          </div>
-        </div>
 
-        <!-- ── 提交按钮组 ── -->
-        <div class="flex items-start gap-4 pt-1">
-          <div class="w-20 shrink-0"></div>
-          <div class="flex items-center gap-3">
-            <button
-              class="h-10 px-6 text-sm font-semibold text-white transition-all duration-200 flex items-center gap-2 disabled:opacity-50 hover:-translate-y-px active:scale-[0.98]"
-              :disabled="submitting"
-              style="background: linear-gradient(135deg, #4F8EF7, #9B59B6); box-shadow: 0 4px 14px rgba(79,142,247,0.3); border-radius: 8px"
-              @mouseenter="($event.currentTarget as HTMLElement).style.boxShadow='0 6px 20px rgba(79,142,247,0.4)'"
-              @mouseleave="($event.currentTarget as HTMLElement).style.boxShadow='0 4px 14px rgba(79,142,247,0.3)'"
-              @click="handleSubmit"
-            >
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-              提交拉取任务
-            </button>
-            <button
-              class="h-10 px-5 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 border hover:-translate-y-px active:scale-[0.98]"
-              style="border-color: var(--neutral-border); color: var(--neutral-text-1); border-radius: 8px; background: transparent"
-              @mouseenter="($event.currentTarget as HTMLElement).style.background='var(--neutral-bg)'"
-              @mouseleave="($event.currentTarget as HTMLElement).style.background='transparent'"
-            >
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
-              Dry Run
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── 云盘表单 ── -->
-      <div v-if="activeTab === 'cloud-drive'" class="p-6 space-y-5">
-        <div class="flex items-start gap-4">
-          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">网盘来源</label>
-          <div class="flex items-center gap-4 h-10">
-            <label class="flex items-center gap-1.5 text-sm cursor-pointer" style="color: var(--neutral-text-1)"><input v-model="driveProvider" type="radio" value="baidu" class="accent-blue-500 w-3.5 h-3.5" /> 百度网盘</label>
-            <label class="flex items-center gap-1.5 text-sm cursor-pointer" style="color: var(--neutral-text-1)"><input v-model="driveProvider" type="radio" value="123" class="accent-blue-500 w-3.5 h-3.5" /> 123 云盘</label>
-          </div>
-        </div>
-        <div class="flex items-start gap-4">
-          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">分享链接 <span class="text-red-400">*</span></label>
-          <input v-model="driveLink" type="text" placeholder="粘贴网盘分享链接" class="flex-1 max-w-lg h-10 px-3.5 text-sm border transition-all duration-200 focus:outline-none" style="border-color: var(--neutral-border); border-radius: 8px; color: var(--neutral-text-1)" v-on="inputFocusStyle" />
-        </div>
-        <div class="flex items-start gap-4">
-          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">提取码</label>
-          <input v-model="driveCode" type="text" placeholder="可选" maxlength="8" class="w-36 h-10 px-3.5 text-sm border text-center transition-all duration-200 focus:outline-none" style="border-color: var(--neutral-border); border-radius: 8px; color: var(--neutral-text-1)" v-on="inputFocusStyle" />
-        </div>
-        <div class="flex items-start gap-4 pt-1">
-          <div class="w-20 shrink-0"></div>
-          <button class="h-10 px-6 text-sm font-semibold text-white rounded-lg transition-all duration-200 flex items-center gap-2 disabled:opacity-50 hover:-translate-y-px active:scale-[0.98]" :disabled="submitting" style="background: linear-gradient(135deg, #4F8EF7, #9B59B6); box-shadow: 0 4px 14px rgba(79,142,247,0.3); border-radius: 8px" @click="handleSubmit">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-            提交拉取任务
-          </button>
-        </div>
-      </div>
-
-      <!-- ── 云存储表单 ── -->
-      <div v-if="activeTab === 'cloud-storage'" class="p-6 space-y-5">
-        <div class="flex items-start gap-4">
-          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">云服务商</label>
-          <NSelect
-            v-model:value="storageProvider"
-            :options="storageProviderOptions"
-            size="large"
-            style="width: 240px"
-          />
-        </div>
-        <div class="flex items-start gap-4">
-          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">对象 URI <span class="text-red-400">*</span></label>
-          <input v-model="storageUri" type="text" placeholder="oss://bucket-name/path/to/data/" class="flex-1 max-w-lg h-10 px-3.5 text-sm font-mono border transition-all duration-200 focus:outline-none" style="border-color: var(--neutral-border); border-radius: 8px; color: var(--neutral-text-1)" v-on="inputFocusStyle" />
-        </div>
-        <div class="flex items-start gap-4">
-          <label class="w-20 text-right text-sm font-medium pt-2.5 shrink-0" style="color: var(--neutral-text-1)">下载到</label>
-          <NSelect
-            v-model:value="targetDirectory"
-            :options="targetDirectoryOptions"
-            size="large"
-            style="width: 240px"
-          />
-        </div>
-        <div class="flex items-start gap-4">
-          <div class="w-20 shrink-0"></div>
-          <label class="flex items-center gap-2 text-sm cursor-pointer" style="color: var(--neutral-text-1)">
-            <input v-model="storageRecursive" type="checkbox" class="accent-blue-500 w-4 h-4" />
-            递归拉取目录
-          </label>
-        </div>
-        <div class="flex items-start gap-4 pt-1">
-          <div class="w-20 shrink-0"></div>
-          <button class="h-10 px-6 text-sm font-semibold text-white rounded-lg transition-all duration-200 flex items-center gap-2 disabled:opacity-50 hover:-translate-y-px active:scale-[0.98]" :disabled="submitting" style="background: linear-gradient(135deg, #4F8EF7, #9B59B6); box-shadow: 0 4px 14px rgba(79,142,247,0.3); border-radius: 8px" @click="handleSubmit">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-            提交拉取任务
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ═══ 下载任务卡片 ═══ -->
-    <div class="bg-neutral-card rounded-xl" style="box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05); border: 1px solid var(--neutral-border)">
-
-      <!-- 队列头部 -->
-      <div class="flex items-center justify-between px-5 py-3.5 border-b" style="border-color: var(--neutral-border)">
-        <div class="flex items-center gap-4">
-          <h3 class="text-sm font-semibold" style="color: var(--neutral-text-1)">下载任务</h3>
-          <div class="flex items-center gap-3 text-xs" style="color: var(--neutral-text-3)">
-            <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span> 共 {{ stats.total }} 个</span>
-            <span v-if="stats.running" class="download-metric download-metric--running"><span class="download-metric-dot animate-pulse"></span> {{ stats.running }} 下载中</span>
-            <span v-if="stats.success" class="download-metric download-metric--success"><span class="download-metric-dot"></span> {{ stats.success }} 已完成</span>
-          </div>
-        </div>
-        <div class="flex items-center gap-2">
-          <NSelect
-            v-model:value="statusFilter"
-            :options="statusFilterOptions"
-            size="small"
-            style="width: 120px"
-          />
-          <button type="button" class="queue-refresh focus-ring" :disabled="loadingTasks" @click="fetchDownloads">
-            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-            {{ loadingTasks ? '刷新中' : '刷新' }}
-          </button>
-        </div>
-      </div>
-
-      <!-- 表格 -->
-      <div class="overflow-x-auto">
-        <table class="min-w-full text-left">
-          <thead class="border-b" style="background: var(--neutral-bg); border-color: var(--neutral-border)">
-            <tr>
-              <th class="text-xs font-medium px-5 py-2.5" style="color: var(--neutral-text-2)">任务名称</th>
-              <th class="text-xs font-medium px-5 py-2.5 w-[100px]" style="color: var(--neutral-text-2)">登录号</th>
-              <th class="text-xs font-medium px-5 py-2.5 w-[100px]" style="color: var(--neutral-text-2)">状态</th>
-              <th class="text-xs font-medium px-5 py-2.5 w-[180px]" style="color: var(--neutral-text-2)">进度</th>
-              <th class="text-xs font-medium px-5 py-2.5 w-[120px]" style="color: var(--neutral-text-2)">提交时间</th>
-              <th class="text-xs font-medium px-5 py-2.5 w-[100px] text-right" style="color: var(--neutral-text-2)">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="task in filteredTasks"
-              :key="task.id"
-              class="download-row group"
-              style="height: 52px"
-            >
-              <!-- 任务名称 -->
-              <td class="px-5 py-3 border-b" style="border-color: var(--neutral-border)">
-                <span class="text-sm font-medium truncate block max-w-[280px]" style="color: var(--neutral-text-1)" :title="task.name">{{ task.name }}</span>
-              </td>
-
-              <!-- 登录号 -->
-              <td class="px-5 py-3 border-b" style="border-color: var(--neutral-border)">
-                <span class="text-xs font-mono truncate block max-w-[110px]" style="color: var(--neutral-text-2)" :title="task.accession">{{ task.accession }}</span>
-              </td>
-
-              <!-- 状态 -->
-              <td class="px-5 py-3 border-b" style="border-color: var(--neutral-border)">
-                <span class="download-status inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium" :class="scfg(task.status).badge">
-                  <svg v-if="scfg(task.status).icon === 'check'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-                  <svg v-else-if="scfg(task.status).icon === 'loading'" class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" /></svg>
-                  <svg v-else-if="scfg(task.status).icon === 'x'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                  <svg v-else class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                  {{ scfg(task.status).label }}
-                </span>
-              </td>
-
-              <!-- 进度条 -->
-              <td class="px-5 py-3 border-b" style="border-color: var(--neutral-border)">
-                <div class="flex items-center gap-2">
-                  <div class="flex-1 h-1.5 rounded-full overflow-hidden" style="background: var(--neutral-hover); border-radius: 3px">
-                    <div
-                      class="h-full rounded-full transition-all duration-500"
-                      :style="`${gradientBar}; width: ${pct(task)}%; border-radius: 3px`"
-                    ></div>
+            <!-- 高级选项折叠条 -->
+            <div class="field">
+              <button
+                type="button"
+                class="adv-toggle"
+                :class="{ 'is-open': advancedOpen }"
+                :aria-expanded="advancedOpen"
+                @click="toggleAdvanced"
+              >
+                <span class="adv-toggle__title">高级选项：样本与 Run 过滤</span>
+                <span class="adv-toggle__desc">{{ advancedOpen ? '收起' : '支持正则匹配，留空不过滤' }}</span>
+                <NIcon :size="16" class="adv-toggle__chevron" :class="{ 'is-open': advancedOpen }">
+                  <ChevronDownOutline />
+                </NIcon>
+              </button>
+              <div v-if="advancedOpen" id="advanced-panel-bottom" class="adv-panel">
+                <div class="filter-grid">
+                  <div class="filter-field">
+                    <label class="field-label"><span class="filter-badge filter-badge--include">+</span>包含样本（Include）</label>
+                    <input v-model="includeSample" type="text" placeholder="如：^SAMN.*" class="text-input" />
+                    <span class="field-help">正则匹配样本 ID，留空不过滤</span>
                   </div>
-                  <span class="text-xs font-medium tabular-nums w-8 text-right" style="color: var(--neutral-text-2)">{{ pct(task) }}%</span>
+                  <div class="filter-field">
+                    <label class="field-label"><span class="filter-badge filter-badge--exclude">−</span>排除样本（Exclude）</label>
+                    <input v-model="excludeSample" type="text" placeholder="如：.control." class="text-input" />
+                    <span class="field-help">匹配到的样本将被跳过</span>
+                  </div>
+                  <div class="filter-field">
+                    <label class="field-label"><span class="filter-badge filter-badge--include">+</span>包含 Run（Include）</label>
+                    <input v-model="includeRun" type="text" placeholder="如：SRR123.*" class="text-input" />
+                    <span class="field-help">正则匹配 Run 编号</span>
+                  </div>
+                  <div class="filter-field">
+                    <label class="field-label"><span class="filter-badge filter-badge--exclude">−</span>排除 Run（Exclude）</label>
+                    <input v-model="excludeRun" type="text" placeholder="如：.test." class="text-input" />
+                    <span class="field-help">匹配到的 Run 将被跳过</span>
+                  </div>
                 </div>
-              </td>
+                <p class="adv-panel__note">支持正则表达式过滤，留空表示不过滤。多个模式用逗号分隔。</p>
+              </div>
+            </div>
 
-              <!-- 时间 -->
-              <td class="px-5 py-3 border-b" style="border-color: var(--neutral-border)">
-                <span class="text-xs" style="color: var(--neutral-text-3)">{{ formatTime(task.createdAt) }}</span>
-              </td>
+            <div class="form-actions">
+              <NButton type="primary" :loading="submitting" @click="handleSubmit">
+                <template #icon><NIcon><DownloadOutline /></NIcon></template>
+                提交拉取任务
+              </NButton>
+              <NButton secondary :disabled="submitting">Dry Run</NButton>
+            </div>
+          </div>
+        </NTabPane>
 
-              <!-- 操作 -->
-              <td class="px-5 py-3 border-b text-right" style="border-color: var(--neutral-border)">
-                <div class="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button v-if="task.status === 'running'" type="button" class="download-action download-action--warning focus-ring" title="暂停">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25v13.5m-7.5-13.5v13.5" /></svg>
-                  </button>
-                  <button type="button" class="download-action download-action--primary focus-ring" title="查看日志" @click="router.push(`/tasks/${task.id}`)">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
-                  </button>
-                  <button v-if="task.status === 'failed'" type="button" class="download-action download-action--success focus-ring" title="重新下载">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                  </button>
-                  <button type="button" class="download-action download-action--danger focus-ring" title="删除">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                  </button>
+        <!-- ── 云盘极速提取 ── -->
+        <NTabPane name="cloud-drive">
+          <template #tab>
+            <span class="source-tab"><NIcon :size="16"><CloudDownloadOutline /></NIcon>云盘极速提取</span>
+          </template>
+
+          <div class="source-tip">
+            <NIcon :size="16" class="source-tip__icon"><InformationCircleOutline /></NIcon>
+            <span>{{ tabDescriptions['cloud-drive'] }}</span>
+          </div>
+
+          <div class="form-card">
+            <div class="field">
+              <label class="field-label">网盘来源</label>
+              <div class="radio-row">
+                <label class="radio-item"><input v-model="driveProvider" type="radio" value="baidu" />百度网盘</label>
+                <label class="radio-item"><input v-model="driveProvider" type="radio" value="123" />123 云盘</label>
+              </div>
+            </div>
+            <div class="field">
+              <label class="field-label">分享链接 <span class="req">*</span></label>
+              <input v-model="driveLink" type="text" placeholder="粘贴网盘分享链接" class="text-input" />
+            </div>
+            <div class="field">
+              <label class="field-label">提取码</label>
+              <input v-model="driveCode" type="text" placeholder="可选" maxlength="8" class="text-input text-input--code" />
+              <p class="field-help">无提取码可留空。</p>
+            </div>
+            <div class="form-actions">
+              <NButton type="primary" :loading="submitting" @click="handleSubmit">
+                <template #icon><NIcon><DownloadOutline /></NIcon></template>
+                提交拉取任务
+              </NButton>
+            </div>
+          </div>
+        </NTabPane>
+
+        <!-- ── 云存储直拉 ── -->
+        <NTabPane name="cloud-storage">
+          <template #tab>
+            <span class="source-tab"><NIcon :size="16"><ServerOutline /></NIcon>云存储直拉</span>
+          </template>
+
+          <div class="source-tip">
+            <NIcon :size="16" class="source-tip__icon"><InformationCircleOutline /></NIcon>
+            <span>{{ tabDescriptions['cloud-storage'] }}</span>
+          </div>
+
+          <div class="form-card">
+            <div class="field">
+              <label class="field-label">云服务商</label>
+              <NSelect v-model:value="storageProvider" :options="storageProviderOptions" class="field-select" />
+            </div>
+            <div class="field">
+              <label class="field-label">对象 URI <span class="req">*</span></label>
+              <input v-model="storageUri" type="text" placeholder="oss://bucket-name/path/to/data/" class="text-input text-input--mono" />
+              <p class="field-help">支持 oss:// / tos:// / obs:// 等对象存储路径。</p>
+            </div>
+            <div class="field">
+              <label class="field-label">下载到</label>
+              <NSelect v-model:value="targetDirectory" :options="targetDirectoryOptions" class="field-select" />
+            </div>
+            <div class="field">
+              <label class="checkbox-item"><input v-model="storageRecursive" type="checkbox" />递归拉取目录</label>
+            </div>
+            <div class="form-actions">
+              <NButton type="primary" :loading="submitting" @click="handleSubmit">
+                <template #icon><NIcon><DownloadOutline /></NIcon></template>
+                提交拉取任务
+              </NButton>
+            </div>
+          </div>
+        </NTabPane>
+
+        <!-- ── 直链与 FTP ── -->
+        <NTabPane name="direct-link">
+          <template #tab>
+            <span class="source-tab"><NIcon :size="16"><LinkOutline /></NIcon>直链与 FTP</span>
+          </template>
+
+          <div class="source-tip">
+            <NIcon :size="16" class="source-tip__icon"><InformationCircleOutline /></NIcon>
+            <span>{{ tabDescriptions['direct-link'] }}</span>
+          </div>
+
+          <div class="form-card">
+            <div class="field">
+              <label class="field-label">资源链接 <span class="req">*</span></label>
+              <div class="links-wrap">
+                <textarea
+                  v-model="directLinks"
+                  rows="5"
+                  placeholder="支持 HTTP / HTTPS / FTP 协议的直接下载链接，每行一个，可批量粘贴…"
+                  class="text-input text-input--textarea text-input--mono links-input"
+                />
+                <div class="links-actions">
+                  <NButton size="tiny" quaternary @click="directLinks = ''">清空</NButton>
+                  <NButton size="tiny" quaternary @click="dedupLinks">去重</NButton>
                 </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+              </div>
+              <p class="field-help">每行一个链接；支持 Ensembl、UCSC、ENA 等公共数据源。</p>
+            </div>
 
-        <!-- 空状态 -->
-        <div v-if="filteredTasks.length === 0" class="flex flex-col items-center justify-center py-20">
-          <svg class="w-16 h-16 mb-4" style="color: var(--neutral-border)" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="0.8">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 16v-4m0 0V8m0 4h4m-4 0H8m12 4v1a3 3 0 01-3 3H7a3 3 0 01-3-3v-1" />
-          </svg>
-          <p class="text-sm font-medium mb-1" style="color: var(--neutral-text-2)">暂无下载任务</p>
-          <p class="text-xs" style="color: var(--neutral-text-3)">输入登录号后开始拉取数据，下载完成的文件将自动出现在「数据管理」中</p>
+            <div class="field">
+              <label class="field-label">下载到</label>
+              <NSelect v-model:value="targetDirectory" :options="targetDirectoryOptions" class="field-select" />
+            </div>
+
+            <!-- 高级选项折叠条 -->
+            <div class="field">
+              <button
+                type="button"
+                class="adv-toggle"
+                :class="{ 'is-open': directAdvancedOpen }"
+                :aria-expanded="directAdvancedOpen"
+                @click="directAdvancedOpen = !directAdvancedOpen"
+              >
+                <span class="adv-toggle__title">高级选项</span>
+                <span class="adv-toggle__desc">{{ directAdvancedOpen ? '收起' : '下载并发、同名策略与目录解析' }}</span>
+                <NIcon :size="16" class="adv-toggle__chevron" :class="{ 'is-open': directAdvancedOpen }">
+                  <ChevronDownOutline />
+                </NIcon>
+              </button>
+              <div v-if="directAdvancedOpen" class="adv-panel">
+                <div class="adv-grid">
+                  <div class="field">
+                    <label class="field-label">下载并发</label>
+                    <NSelect v-model:value="directThreads" :options="threadOptions" class="field-select" />
+                  </div>
+                  <div class="field">
+                    <label class="field-label">同名文件</label>
+                    <NSelect v-model:value="directOverwritePolicy" :options="overwritePolicyOptions" class="field-select" />
+                  </div>
+                  <div class="field">
+                    <label class="field-label">目录解析</label>
+                    <label class="checkbox-item"><input v-model="directRecursive" type="checkbox" />解析 FTP 目录</label>
+                  </div>
+                </div>
+                <p class="adv-panel__note">任务在后台执行，支持断点续传和失败重试；FTP 目录会先展开为文件清单。</p>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <NButton type="primary" :loading="submitting" @click="handleSubmit">
+                <template #icon><NIcon><DownloadOutline /></NIcon></template>
+                提交下载任务
+              </NButton>
+            </div>
+          </div>
+        </NTabPane>
+      </NTabs>
+
+      <!-- ═══ 下载任务卡片 ═══ -->
+      <div class="tasks-card">
+        <div class="tasks-card__header">
+          <div class="tasks-card__heading">
+            <h3 class="tasks-card__title">下载任务</h3>
+            <span class="tasks-card__count">共 <em>{{ stats.total }}</em> 个</span>
+            <span v-if="stats.running" class="download-metric download-metric--running">
+              <span class="download-metric-dot"></span>{{ stats.running }} 下载中
+            </span>
+            <span v-if="stats.success" class="download-metric download-metric--success">
+              <span class="download-metric-dot"></span>{{ stats.success }} 已完成
+            </span>
+          </div>
+          <div class="tasks-card__tools">
+            <NSelect
+              v-model:value="statusFilter"
+              :options="statusFilterOptions"
+              size="small"
+              class="tasks-filter"
+            />
+            <NButton size="small" quaternary :loading="loadingTasks" @click="fetchDownloads">
+              <template #icon><NIcon><RefreshOutline /></NIcon></template>
+              刷新
+            </NButton>
+          </div>
+        </div>
+
+        <!-- 初次加载 -->
+        <div v-if="loadingTasks && !tasks.length" class="tasks-loading">
+          <NSpin size="small" />
+        </div>
+
+        <!-- 表格 -->
+        <div v-else-if="filteredTasks.length" class="tasks-card__body">
+          <table class="tasks-table">
+            <thead>
+              <tr>
+                <th class="col-name">任务名称</th>
+                <th class="col-acc">登录号</th>
+                <th class="col-status">状态</th>
+                <th class="col-progress">进度</th>
+                <th class="col-time">提交时间</th>
+                <th class="col-actions">操作</th>
+              </tr>
+            </thead>
+            <tbody v-animate-list>
+              <tr v-for="task in filteredTasks" :key="task.id" class="task-row">
+                <td class="col-name">
+                  <span class="cell-name" :title="task.name">{{ task.name }}</span>
+                </td>
+                <td class="col-acc">
+                  <span class="cell-acc" :title="task.accession">{{ task.accession }}</span>
+                </td>
+                <td class="col-status">
+                  <span class="download-status" :class="scfg(task.status).badge">
+                    <svg v-if="scfg(task.status).icon === 'check'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                    <svg v-else-if="scfg(task.status).icon === 'loading'" class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" /></svg>
+                    <svg v-else-if="scfg(task.status).icon === 'x'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                    <svg v-else class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    {{ scfg(task.status).label }}
+                  </span>
+                </td>
+                <td class="col-progress">
+                  <div class="progress">
+                    <div class="progress__track">
+                      <div class="progress__bar" :style="{ width: pct(task) + '%' }"></div>
+                    </div>
+                    <span class="progress__pct">{{ pct(task) }}%</span>
+                  </div>
+                </td>
+                <td class="col-time">
+                  <span class="cell-time">{{ formatTime(task.createdAt) }}</span>
+                </td>
+                <td class="col-actions">
+                  <div class="row-actions">
+                    <NButton text size="tiny" @click="router.push(`/tasks/${task.id}`)">查看</NButton>
+                    <NPopconfirm @positive-click="handleDelete(task)">
+                      <template #trigger>
+                        <NButton text size="tiny" type="error">删除</NButton>
+                      </template>
+                      确定要删除「{{ task.name }}」吗？此操作不可恢复。
+                    </NPopconfirm>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 空状态（收敛至 240px）-->
+        <div v-else class="tasks-empty">
+          <NIcon :size="48" class="tasks-empty__icon"><CloudDownloadOutline /></NIcon>
+          <p class="tasks-empty__title">暂无下载任务</p>
+          <p class="tasks-empty__desc">提交任务后，下载完成的文件将自动出现在「数据管理」中</p>
         </div>
       </div>
     </div>
-
-    <!-- 底部留白 -->
-    <div class="h-20"></div>
   </div>
 </template>
 
 <style scoped>
 .downloads-page {
-  padding-bottom: 80px;
+  padding-bottom: 40px;
 }
 
-.queue-refresh,
-.download-action {
-  border: 0;
-  background: transparent;
-  color: var(--neutral-text-3);
-  cursor: pointer;
-  transition: background-color var(--motion-quick) ease-out, color var(--motion-quick) ease-out;
+/* 内容与其他工作台页面一致：撑满 .page-container，不做窄列居中 */
+.downloads-content {
+  width: 100%;
 }
 
-.queue-refresh {
+/* ═══ 来源切换 Tabs ═══ */
+.source-tabs {
+  margin-bottom: 20px;
+}
+.source-tab {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border-radius: 6px;
-  color: var(--neutral-text-2);
+  gap: 6px;
 }
 
-.queue-refresh:hover:not(:disabled) {
-  background: var(--neutral-hover);
+/* ═══ 提示条 ═══ */
+.source-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  margin-bottom: 20px;
+  border-radius: 8px;
+  background: var(--arco-primary-light);
+  color: var(--neutral-text-2);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.source-tip__icon {
+  flex-shrink: 0;
+  margin-top: 3px;
   color: var(--arco-primary);
 }
 
-.queue-refresh:disabled {
-  cursor: wait;
-  opacity: 0.65;
+/* ═══ 表单卡片 ═══ */
+.form-card {
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
+  border-radius: 12px;
+  padding: 24px;
 }
 
-.download-row:hover {
-  background: var(--neutral-hover);
+/* ═══ 字段（label 上置）═══ */
+.field {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 20px;
 }
-
-.download-metric {
+.field:last-child {
+  margin-bottom: 0;
+}
+.field-label {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--neutral-text-1);
+}
+.req {
+  color: var(--arco-danger);
+}
+.field-help {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--neutral-text-3);
+}
+.field-select {
+  max-width: 320px;
 }
 
+/* ═══ 输入控件 ═══ */
+.text-input {
+  width: 100%;
+  max-width: 520px;
+  padding: 9px 12px;
+  border: 1px solid var(--neutral-border);
+  border-radius: 8px;
+  background: var(--neutral-card);
+  color: var(--neutral-text-1);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  transition:
+    border-color var(--motion-quick) ease-out,
+    box-shadow var(--motion-quick) ease-out;
+}
+.text-input::placeholder {
+  color: var(--neutral-text-3);
+}
+.text-input:focus {
+  outline: none;
+  border-color: var(--arco-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--arco-primary) 15%, transparent);
+}
+.text-input--textarea {
+  min-height: 44px;
+  resize: vertical;
+}
+.text-input--mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+.text-input--code {
+  max-width: 160px;
+  text-align: center;
+}
+
+/* 直链批量输入（整行宽度，便于批量粘贴）*/
+.links-wrap {
+  position: relative;
+  width: 100%;
+}
+.links-input {
+  max-width: none;
+  width: 100%;
+  min-height: 128px;
+  padding-right: 96px;
+}
+.links-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 2px;
+}
+
+/* ═══ 高级选项折叠条（统一组件）═══ */
+.adv-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid var(--neutral-border);
+  border-radius: 8px;
+  background: var(--neutral-bg);
+  color: var(--neutral-text-1);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--motion-quick) ease-out;
+}
+.adv-toggle:hover {
+  background: var(--neutral-hover);
+}
+.adv-toggle.is-open {
+  border-bottom-color: transparent;
+  border-radius: 8px 8px 0 0;
+}
+.adv-toggle__title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--neutral-text-1);
+}
+.adv-toggle__desc {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--neutral-text-3);
+}
+.adv-toggle__chevron {
+  flex-shrink: 0;
+  color: var(--neutral-text-3);
+  transition: transform 200ms ease;
+}
+.adv-toggle__chevron.is-open {
+  transform: rotate(180deg);
+}
+.adv-panel {
+  width: 100%;
+  padding: 16px 14px;
+  border: 1px solid var(--neutral-border);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  background: var(--neutral-card);
+}
+.adv-panel__note {
+  margin: 14px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--neutral-text-3);
+}
+
+/* SRA 过滤网格（随宽度自适应列数，避免单元格过宽）*/
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+.filter-field {
+  display: flex;
+  flex-direction: column;
+}
+.filter-field .text-input {
+  max-width: none;
+}
+.filter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
+.filter-badge--include {
+  background: var(--arco-primary-light);
+  color: var(--arco-primary);
+}
+.filter-badge--exclude {
+  background: var(--arco-danger-light);
+  color: var(--arco-danger);
+}
+
+/* 直链高级选项（随宽度自适应列数）*/
+.adv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.adv-grid .field {
+  margin-bottom: 0;
+}
+.adv-grid .field-select {
+  max-width: none;
+}
+
+/* ═══ 单选 / 复选 ═══ */
+.radio-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.radio-item,
+.checkbox-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--neutral-text-1);
+  cursor: pointer;
+}
+.radio-item input,
+.checkbox-item input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--arco-primary);
+  cursor: pointer;
+}
+
+/* ═══ 提交区 ═══ */
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+/* ═══ 任务卡片 ═══ */
+.tasks-card {
+  margin-top: 24px;
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.tasks-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--neutral-border);
+}
+.tasks-card__heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.tasks-card__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--neutral-text-1);
+}
+.tasks-card__count {
+  font-size: 12px;
+  color: var(--neutral-text-3);
+}
+.tasks-card__count em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--arco-primary);
+}
+.tasks-card__tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tasks-filter {
+  width: 160px;
+}
+.tasks-card__body {
+  overflow-x: auto;
+}
+.tasks-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 240px;
+}
+
+/* 统计徽标 */
+.download-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
 .download-metric-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: currentColor;
 }
+.download-metric--running {
+  color: var(--arco-primary);
+}
+.download-metric--success {
+  color: var(--arco-success);
+}
+.download-metric--running .download-metric-dot {
+  animation: metric-pulse 1.4s ease-in-out infinite;
+}
+@keyframes metric-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .download-metric--running .download-metric-dot {
+    animation: none;
+  }
+}
 
-.download-metric--running { color: var(--arco-primary); }
-.download-metric--success { color: var(--arco-success); }
+/* ═══ 表格 ═══ */
+.tasks-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.tasks-table thead {
+  background: var(--neutral-bg);
+}
+.tasks-table th {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--neutral-border);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--neutral-text-3);
+  text-align: left;
+  white-space: nowrap;
+}
+.tasks-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--neutral-border);
+  vertical-align: middle;
+}
+.tasks-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.task-row {
+  transition: background-color var(--motion-quick) ease-out;
+}
+.task-row:hover {
+  background: var(--neutral-hover);
+}
 
-.download-status { border-radius: 4px; }
+.col-acc { width: 130px; }
+.col-status { width: 108px; }
+.col-progress { width: 190px; }
+.col-time { width: 132px; }
+.col-actions { width: 116px; }
+th.col-actions { text-align: right; }
+
+.cell-name {
+  display: block;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--neutral-text-1);
+}
+.cell-acc {
+  display: block;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--neutral-text-2);
+}
+.cell-time {
+  font-size: 12px;
+  color: var(--neutral-text-3);
+  white-space: nowrap;
+}
+
+/* 状态徽标（平台语义色）*/
+.download-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
 .download-status--success { background: color-mix(in srgb, var(--arco-success) 12%, transparent); color: var(--arco-success); }
 .download-status--running { background: color-mix(in srgb, var(--arco-primary) 12%, transparent); color: var(--arco-primary); }
 .download-status--failed { background: color-mix(in srgb, var(--arco-danger) 12%, transparent); color: var(--arco-danger); }
 .download-status--neutral { background: var(--neutral-hover); color: var(--neutral-text-2); }
 
-.download-action {
-  padding: 6px;
-  border-radius: 6px;
-}
-
-.download-action--warning:hover { color: var(--arco-warning); }
-.download-action--primary:hover { color: var(--arco-primary); }
-.download-action--success:hover { color: var(--arco-success); }
-.download-action--danger:hover { color: var(--arco-danger); }
-
-.direct-inline-action {
-  border: 0;
-  background: var(--neutral-hover);
-  color: var(--neutral-text-2);
-  border-radius: 5px;
-  padding: 3px 7px;
-  font-size: 12px;
-  cursor: pointer;
-}
-.direct-inline-action:hover { color: var(--arco-primary); }
-.direct-advanced-toggle {
-  width: 100%;
+/* 进度条（细条 + 百分比）*/
+.progress {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px dashed var(--neutral-border);
-  border-radius: 8px;
-  background: var(--neutral-bg);
-  color: var(--neutral-text-1);
-  text-align: left;
-  cursor: pointer;
+  gap: 8px;
 }
-.direct-advanced-toggle span:nth-child(2) { margin-left: auto; }
-.direct-advanced-toggle span:last-child { transition: transform 200ms ease; }
-.direct-advanced-panel { padding: 16px 12px 4px; border: 1px solid var(--neutral-border); border-top: 0; border-radius: 0 0 8px 8px; }
-.direct-field { display: flex; flex-direction: column; gap: 6px; color: var(--neutral-text-2); font-size: 13px; }
-.direct-field select { height: 36px; padding: 0 10px; border: 1px solid var(--neutral-border); border-radius: 8px; background: var(--neutral-card); color: var(--neutral-text-1); }
-.direct-switch { display: flex; align-items: center; gap: 8px; min-height: 36px; color: var(--neutral-text-1); font-size: 13px; }
-.direct-switch input { width: 16px; height: 16px; accent-color: var(--arco-primary); }
+.progress__track {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--neutral-hover);
+  overflow: hidden;
+}
+.progress__bar {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--arco-primary);
+  transition: width 400ms ease;
+}
+.progress__pct {
+  width: 36px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--neutral-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 操作列（文字按钮）*/
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* ═══ 空状态 ═══ */
+.tasks-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 240px;
+  padding: 0 16px;
+  text-align: center;
+}
+.tasks-empty__icon {
+  margin-bottom: 4px;
+  color: var(--neutral-text-3);
+  opacity: 0.6;
+}
+.tasks-empty__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--neutral-text-2);
+}
+.tasks-empty__desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--neutral-text-3);
+}
+
+/* ═══ 响应式 ═══ */
+@media (max-width: 768px) {
+  .adv-grid {
+    grid-template-columns: 1fr;
+  }
+  .tasks-card__header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .tasks-card__tools {
+    justify-content: space-between;
+  }
+}
+@media (max-width: 640px) {
+  .filter-grid {
+    grid-template-columns: 1fr;
+  }
+  .field-select {
+    max-width: none;
+  }
+}
 </style>

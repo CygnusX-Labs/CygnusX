@@ -10,7 +10,7 @@ import {
   NSwitch,
   NUpload,
 } from 'naive-ui'
-import { CloudUploadOutline } from '@vicons/ionicons5'
+import { CloudUploadOutline, FolderOpenOutline } from '@vicons/ionicons5'
 import { computed } from 'vue'
 
 const props = defineProps<{
@@ -20,6 +20,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [value: unknown]
+  openPathPicker: [paramName: string]
 }>()
 
 const value = computed({
@@ -27,11 +28,23 @@ const value = computed({
   set: (v) => emit('update:modelValue', v),
 })
 
-const placeholder = computed(() => props.parameter.placeholder || '')
+const placeholder = computed(() =>
+  props.parameter.ui?.placeholder || props.parameter.placeholder || '',
+)
 
-const isTextarea = computed(() => {
-  return props.parameter.type === 'string' && props.parameter.string_config?.multiline
+const widgetType = computed(() => {
+  if (props.parameter.ui?.widget) return props.parameter.ui.widget
+  if (props.parameter.type === 'boolean') return 'switch'
+  if (props.parameter.type === 'select') return 'select'
+  const n = props.parameter.name.toLowerCase()
+  if (props.parameter.type === 'string' && /dir|path/.test(n)) return 'path'
+  if (props.parameter.type === 'string' && props.parameter.string_config?.multiline)
+    return 'textarea'
+  return props.parameter.type
 })
+
+const isTextarea = computed(() => widgetType.value === 'textarea')
+const isPath = computed(() => widgetType.value === 'path')
 
 const numberConfig = computed(() => props.parameter.number_config)
 
@@ -52,12 +65,28 @@ function handleFileChange(options: { fileList: unknown[] }) {
     value.value = options.fileList[0] || null
   }
 }
+
+function emitOpenPathPicker() {
+  emit('openPathPicker', props.parameter.name)
+}
 </script>
 
 <template>
   <div class="form-field">
-    <!-- 文本输入 -->
-    <template v-if="parameter.type === 'string'">
+    <template v-if="parameter.type === 'string' && isPath">
+      <div class="path-input-wrap">
+        <NInput
+          v-model:value="value as string"
+          :placeholder="placeholder"
+          class="path-input"
+        />
+        <NButton quaternary size="small" title="选择目录" @click="emitOpenPathPicker">
+          <template #icon><NIcon><FolderOpenOutline /></NIcon></template>
+        </NButton>
+      </div>
+    </template>
+
+    <template v-else-if="parameter.type === 'string'">
       <NInput
         v-if="isTextarea"
         v-model:value="value as string"
@@ -68,7 +97,6 @@ function handleFileChange(options: { fileList: unknown[] }) {
       <NInput v-else v-model:value="value as string" :placeholder="placeholder" />
     </template>
 
-    <!-- 整数 -->
     <NInputNumber
       v-else-if="parameter.type === 'int'"
       v-model:value="value as number | null"
@@ -79,7 +107,6 @@ function handleFileChange(options: { fileList: unknown[] }) {
       clearable
     />
 
-    <!-- 浮点数 / 滑块 -->
     <template v-else-if="parameter.type === 'float'">
       <NSlider
         v-if="numberConfig?.use_slider"
@@ -100,7 +127,6 @@ function handleFileChange(options: { fileList: unknown[] }) {
       />
     </template>
 
-    <!-- 下拉选择 -->
     <NSelect
       v-else-if="parameter.type === 'select'"
       v-model:value="value as string | number | string[] | number[] | null"
@@ -111,10 +137,8 @@ function handleFileChange(options: { fileList: unknown[] }) {
       :placeholder="placeholder"
     />
 
-    <!-- 布尔开关 -->
     <NSwitch v-else-if="parameter.type === 'boolean'" v-model:value="value as boolean" />
 
-    <!-- 文件上传（简化占位，后续可对接真实上传 API） -->
     <NUpload
       v-else-if="parameter.type === 'file'"
       :multiple="parameter.file_config?.multiple"
@@ -128,13 +152,20 @@ function handleFileChange(options: { fileList: unknown[] }) {
         上传文件
       </NButton>
     </NUpload>
-
-    <!-- group / section 不在此组件渲染 -->
   </div>
 </template>
 
 <style scoped>
 .form-field {
   width: 100%;
+}
+.path-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.path-input :deep(.n-input__input-el) {
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 13px;
 }
 </style>

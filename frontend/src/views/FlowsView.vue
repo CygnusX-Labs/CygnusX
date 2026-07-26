@@ -241,7 +241,7 @@ onMounted(fetchFlows)
           {{ activeType ? '筛选结果' : '全部流程' }}
         </h2>
 
-        <div class="flow-grid">
+        <div v-animate-list class="flow-grid">
           <div
             v-for="p in gridPipelines"
             :key="p.id"

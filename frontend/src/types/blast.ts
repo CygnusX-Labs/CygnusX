@@ -149,6 +149,10 @@ export interface BlastSubmitRequest {
 
 export interface BlastTaskListItem {
   task_id: string
+  /** 所属用户 ID（列表为当前用户视角，用于「所属用户」列展示） */
+  user_id?: string
+  /** 所属用户名（后端按 user_id 回填，缺失时前端降级展示 user_id） */
+  username?: string
   db_id: string
   db_name: string
   program: string

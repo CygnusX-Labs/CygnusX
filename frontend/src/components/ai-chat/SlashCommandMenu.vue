@@ -177,7 +177,7 @@ defineExpose({ moveSelection, selectCurrent })
       <span class="header-sub">技能命令与智能体，输入即筛选</span>
     </div>
 
-    <div ref="listRef" class="command-list">
+    <div ref="listRef" v-animate-list.200 class="command-list">
       <div
         v-for="row in rows"
         :key="row.id"

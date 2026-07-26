@@ -22,6 +22,9 @@ from omichub.infrastructure.cache.stats_cache import cached_json
 from omichub.infrastructure.database.models.chat import ChatMessageModel, ChatSessionModel
 from omichub.infrastructure.database.models.task import TaskModel
 from omichub.infrastructure.database.models.user import UserModel
+from omichub.infrastructure.database.repositories.file_repository import (
+    SampleRepositoryImpl,
+)
 from omichub.infrastructure.database.repositories.task_repository import (
     TaskRepositoryImpl,
 )
@@ -45,6 +48,7 @@ class StatsService:
         self._db = db
         self._task_repo = TaskRepositoryImpl(db)
         self._user_repo = SqlAlchemyUserRepository(db)
+        self._sample_repo = SampleRepositoryImpl(db)
         self._flow_service = flow_service or FlowService()
 
     # ------------------------------------------------------------------
@@ -52,7 +56,11 @@ class StatsService:
     # ------------------------------------------------------------------
 
     async def user_overview(self, user_id: str) -> dict:
-        """状态卡：运行中 / 总任务 / 累计样本数。"""
+        """状态卡：运行中 / 总任务 / 数据样本数。
+
+        数据样本取「数据管理」登记的样本表（与 /files/samples 同源），
+        而非各任务 sample_count 之和——后者会把富集工具的基因数误计为样本。
+        """
 
         async def _compute() -> dict:
             uid = UUID(user_id)
@@ -61,7 +69,7 @@ class StatsService:
             return {
                 "running": statuses.get(TaskStatus.RUNNING.value, 0),
                 "total": total,
-                "samples": await self._task_repo.sum_sample_count(uid),
+                "samples": await self._sample_repo.count_by_user(uid),
             }
 
         return await cached_json(f"stats:overview:{user_id}", _TTL_USER, _compute)

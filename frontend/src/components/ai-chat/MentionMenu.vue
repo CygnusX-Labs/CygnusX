@@ -66,7 +66,7 @@ function itemTitle(item: MentionItem): string {
       <span class="header-sub">输入文件名筛选上下文 · 找智能体请用 /</span>
     </div>
 
-    <div ref="listRef" class="mention-list" role="listbox" aria-label="@ 引用列表">
+    <div ref="listRef" v-animate-list.200 class="mention-list" role="listbox" aria-label="@ 引用列表">
       <div v-if="loading" class="menu-state">
         <n-spin size="small" />
         <span>正在搜索工作区文件…</span>

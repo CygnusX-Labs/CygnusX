@@ -230,6 +230,9 @@ class BlastTaskListItemDTO(OmicsHubBaseSchema):
     """任务列表单项。"""
 
     task_id: str
+    # 所属用户：列表卡片「所属用户」列展示用，由服务层按 user_id 回填。
+    user_id: str | None = None
+    username: str | None = None
     db_id: str
     db_name: str
     program: str

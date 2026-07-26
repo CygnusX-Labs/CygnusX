@@ -45,9 +45,12 @@ async def list_tasks(
     current_user_id: CurrentUserId,
     service: TaskServiceDep,
     status: Annotated[str | None, Query(description="按状态过滤")] = None,
+    limit: Annotated[
+        int | None, Query(ge=1, le=100, description="最多返回条数（按提交时间倒序的最近 N 条）")
+    ] = None,
 ) -> TaskListResponse:
     """获取当前用户的任务列表"""
-    return await service.list_tasks(current_user_id, status=status)
+    return await service.list_tasks(current_user_id, status=status, limit=limit)
 
 
 @router.post(

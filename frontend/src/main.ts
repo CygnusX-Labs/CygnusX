@@ -10,6 +10,7 @@ import '@/styles/chat-theme.css'
 import 'highlight.js/styles/github-dark.css'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { useThemeStore } from '@/stores/theme'
+import { registerAnimateList } from '@/directives/animateList'
 
 const app = createApp(App)
 
@@ -22,5 +23,6 @@ themeStore.initTheme()
 app.use(router)
 app.use(naive)
 app.use(MotionPlugin)
+registerAnimateList(app)
 
 app.mount('#app')

@@ -148,14 +148,6 @@ class TaskRepositoryImpl(ITaskRepository):
         result = await self._session.execute(stmt)
         return [self._to_entity(m) for m in result.scalars().all()]
 
-    async def sum_sample_count(self, user_id: UUID | None = None) -> int:
-        """累计样本数。user_id 为 None 时为全平台。"""
-        stmt = select(func.coalesce(func.sum(TaskModel.sample_count), 0))
-        if user_id is not None:
-            stmt = stmt.where(TaskModel.user_id == user_id)
-        result = await self._session.execute(stmt)
-        return int(result.scalar_one())
-
     # ------------------------------------------------------------------
     # 模型 ↔ 实体转换
     # ------------------------------------------------------------------

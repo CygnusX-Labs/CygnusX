@@ -682,8 +682,9 @@ class BlastService:
     ) -> BlastTaskListResponse:
         """分页返回当前用户的 BLAST 任务历史。"""
         stmt = (
-            select(BlastTaskModel, BlastDatabaseModel.name)
+            select(BlastTaskModel, BlastDatabaseModel.name, UserModel.username)
             .join(BlastDatabaseModel, BlastTaskModel.db_id == BlastDatabaseModel.id)
+            .outerjoin(UserModel, BlastTaskModel.user_id == UserModel.id)
             .where(BlastTaskModel.user_id == uuid.UUID(user_id))
         )
         if status:
@@ -708,10 +709,12 @@ class BlastService:
         result = await db.execute(stmt)
 
         items: list[BlastTaskListItemDTO] = []
-        for task, db_name in result.all():
+        for task, db_name, username in result.all():
             items.append(
                 BlastTaskListItemDTO(
                     task_id=task.task_id,
+                    user_id=str(task.user_id) if task.user_id else None,
+                    username=username,
                     db_id=str(task.db_id),
                     db_name=db_name or "",
                     program=task.program,
@@ -759,10 +762,12 @@ class BlastService:
         result = await db.execute(stmt)
 
         items: list[BlastTaskListItemDTO] = []
-        for task, db_name, _username in result.all():
+        for task, db_name, username in result.all():
             items.append(
                 BlastTaskListItemDTO(
                     task_id=task.task_id,
+                    user_id=str(task.user_id) if task.user_id else None,
+                    username=username,
                     db_id=str(task.db_id),
                     db_name=db_name or "",
                     program=task.program,

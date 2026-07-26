@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
 
@@ -15,9 +16,16 @@ class ReportRepositoryImpl:
     def __init__(self, session: AsyncSession):
         self._session = session
 
+    @staticmethod
+    def _report_query():
+        """构建包含报告文件的查询，避免异步会话中触发延迟加载。"""
+        return select(ReportModel).options(selectinload(ReportModel.files))
+
     async def get_by_id(self, report_id: UUID) -> ReportModel | None:
         """根据 ID 获取报告"""
-        result = await self._session.execute(select(ReportModel).where(ReportModel.id == report_id))
+        result = await self._session.execute(
+            self._report_query().where(ReportModel.id == report_id)
+        )
         return result.scalar_one_or_none()
 
     async def list_by_user(
@@ -33,8 +41,14 @@ class ReportRepositoryImpl:
         page_size: int = 20,
     ) -> tuple[list[ReportModel], int]:
         """列出用户报告，返回 (items, total)"""
-        query = select(ReportModel).where(ReportModel.user_id == user_id)
-        count_query = select(func.count(ReportModel.id)).where(ReportModel.user_id == user_id)
+        query = self._report_query().where(
+            ReportModel.user_id == user_id,
+            ReportModel.flow_id != "studio",
+        )
+        count_query = select(func.count(ReportModel.id)).where(
+            ReportModel.user_id == user_id,
+            ReportModel.flow_id != "studio",
+        )
 
         if keyword:
             like = f"%{keyword}%"
@@ -76,8 +90,8 @@ class ReportRepositoryImpl:
     async def list_version_candidates(self, user_id: UUID) -> list[ReportModel]:
         """列出用户可参与版本树构建的报告。"""
         result = await self._session.execute(
-            select(ReportModel)
-            .where(ReportModel.user_id == user_id)
+            self._report_query()
+            .where(ReportModel.user_id == user_id, ReportModel.flow_id != "studio")
             .order_by(ReportModel.version, ReportModel.created_at)
         )
         return list(result.scalars().all())
@@ -85,7 +99,7 @@ class ReportRepositoryImpl:
     async def get_by_task_id(self, task_id: UUID) -> ReportModel | None:
         """根据任务 ID 获取报告"""
         result = await self._session.execute(
-            select(ReportModel).where(ReportModel.task_id == task_id)
+            self._report_query().where(ReportModel.task_id == task_id)
         )
         return result.scalar_one_or_none()
 
@@ -120,26 +134,34 @@ class ReportRepositoryImpl:
 
     async def count_by_user(self, user_id: UUID) -> dict[str, int]:
         """用户报告统计"""
-        total_stmt = select(func.count(ReportModel.id)).where(ReportModel.user_id == user_id)
+        total_stmt = select(func.count(ReportModel.id)).where(
+            ReportModel.user_id == user_id,
+            ReportModel.flow_id != "studio",
+        )
         total_result = await self._session.execute(total_stmt)
         total = total_result.scalar_one()
 
         starred_stmt = select(func.count(ReportModel.id)).where(
             ReportModel.user_id == user_id,
+            ReportModel.flow_id != "studio",
             ReportModel.is_starred == True,  # noqa: E712
         )
         starred_result = await self._session.execute(starred_stmt)
         starred = starred_result.scalar_one()
 
         generating_stmt = select(func.count(ReportModel.id)).where(
-            ReportModel.user_id == user_id, ReportModel.status == "generating"
+            ReportModel.user_id == user_id,
+            ReportModel.flow_id != "studio",
+            ReportModel.status == "generating",
         )
         generating_result = await self._session.execute(generating_stmt)
         generating = generating_result.scalar_one()
 
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         today_stmt = select(func.count(ReportModel.id)).where(
-            ReportModel.user_id == user_id, ReportModel.created_at >= today
+            ReportModel.user_id == user_id,
+            ReportModel.flow_id != "studio",
+            ReportModel.created_at >= today,
         )
         today_result = await self._session.execute(today_stmt)
         today_count = today_result.scalar_one()

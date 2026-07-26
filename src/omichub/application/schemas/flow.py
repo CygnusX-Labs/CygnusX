@@ -50,6 +50,7 @@ class FlowDetailDTO(OmicsHubBaseSchema):
     meta: FlowMetaDTO
     parameters: list[Parameter]
     execution: dict[str, Any]
+    groups: list[dict[str, Any]] | None = None
     sample_sheet: dict[str, Any] | None = None
     pipeline_mapping: dict[str, Any] | None = None
 
@@ -105,7 +106,8 @@ def flow_config_to_detail(config: FlowConfig) -> FlowDetailDTO:
         ),
         parameters=config.parameters,
         execution=config.execution.model_dump(),
-        sample_sheet=config.sample_sheet.model_dump() if config.sample_sheet else None,
+        groups=[g.model_dump() for g in config.groups] if config.groups else None,
+        sample_sheet=config.sample_sheet.model_dump(by_alias=True) if config.sample_sheet else None,
         pipeline_mapping=config.pipeline_mapping.model_dump() if config.pipeline_mapping else None,
     )
 

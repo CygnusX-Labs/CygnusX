@@ -547,6 +547,67 @@ ai:
 
 实现时需在 `FlowConfig` Pydantic 模型中正式声明该字段；不要仅依赖 `extra=ignore` 静默吞掉配置错误。
 
+### 9.3 Flow YAML 的 UI Schema 扩展（前端表单渲染）
+
+> 详见 `docs/26.7.27/OmicHub分析中心前端优化方案-YAML驱动表单.md`
+
+在现有 Flow YAML 基础上，增加**可选** `ui` 提示块与流程级 `groups` 定义，
+使通用渲染器能够按分组、双列网格、模块卡等方式动态生成表单，**无需为每个流程硬编码页面**。
+
+**流程级分组定义 `groups`**（与 `parameters` 同级，可选）：
+
+```yaml
+groups:
+  - id: basic
+    title: "基本信息"
+    desc: "项目标识与执行方式"
+  - id: data
+    title: "参考与数据"
+    desc: "参考基因组、物种与输入输出路径"
+  - id: modules
+    title: "分析模块"
+    desc: "选择本次运行的分析内容"
+    collapsible: false
+  - id: advanced
+    title: "高级参数"
+    desc: "一般无需修改"
+    collapsible: true
+    collapsed: true
+```
+
+**参数级 `ui` 提示块**（每个参数可选，全部字段可缺省，向后兼容）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `group` | string | 分组 id；缺省按默认规则（required→basic, boolean→modules, 其余→advanced） |
+| `order` | int | 组内排序；缺省按声明顺序 |
+| `span` | 1\|2 | 占列数；默认短字段 1、长字段 2 |
+| `widget` | string | `input`\|`select`\|`switch`\|`path`\|`textarea`；缺省按 type 推断 |
+| `placeholder` | string | 输入占位文本 |
+| `subgroup` | string | 模块组内二级小标题（仅 modules 组） |
+| `exclusive` | bool | 互斥开关（如"仅运行 QC"开启时其余模块置灰） |
+
+**差异比较组联动 `ui`**（`type: group` 参数）：
+
+```yaml
+ui:
+  show_when:
+    field: "deg"
+    value: true
+  linked_group_column: "group"
+```
+
+**样本表 `ui` 提示**：
+
+```yaml
+sample_sheet:
+  ui:
+    import: [paste, csv, datacenter]
+    group_column: group
+```
+
+**向后兼容保证**：所有 `ui` 字段均可缺省，旧 YAML 零改动可正常运行；`groups` 未定义时渲染器使用默认三组。
+
 ---
 
 ## 10. 前端交互设计
@@ -580,6 +641,228 @@ Flow 已有 Task/Celery/Workflow Monitor 通道。AI 页面不应创建新的长
 - 卡片复用已有任务状态 API / WebSocket / SSE；
 - 用户可进入现有任务中心与 workflow monitor；
 - AI 想了解进度时，通过 read-only `omichub_get_analysis_task_status` 查询摘要。
+
+### 10.4 分析中心表单渲染器设计与实现（已落地）
+
+> 对应优化方案：`docs/26.7.27/OmicHub分析中心前端优化方案-YAML驱动表单.md`
+
+#### 10.4.1 设计原则
+
+1. **Schema 驱动，不硬编码**：一切分组 / 布局 / 控件偏好通过 YAML 的 `ui` 提示表达；
+   渲染器对缺失提示有合理默认（向后兼容，旧 YAML 零改动可运行）。
+2. **三段式心智模型**：提交页 = 基础配置（必填主链）→ 样本表 → 吸底提交栏；
+   功能开关收进"分析模块"分组。
+3. **宽屏收敛**：表单内容区 `max-width: 1080px`；同组内短字段双列排布。
+4. **提交前可见代价**：费用、必填校验状态、样本数统计在提交栏聚合并常驻可见。
+
+#### 10.4.2 后端模型扩展
+
+所有 Pydantic 模型使用 `extra="forbid"` 严格校验，因此新增的 YAML 字段必须同步注册到后端模型：
+
+| 文件 | 新增模型 / 字段 |
+|---|---|
+| `src/omichub/domain/flow/value_objects.py` | `ParameterUIHint`、`FlowGroupDefinition`、`SampleSheetUIConfig` |
+| `src/omichub/domain/flow/entities.py` | `Parameter.ui`、`FlowConfig.groups` |
+| `src/omichub/application/schemas/flow.py` | `FlowDetailDTO.groups`、`sample_sheet` 序列化使用 `by_alias=True` |
+
+**`ParameterUIHint`** 字段：`group`、`order`、`span`(1|2)、`widget`、`placeholder`、`subgroup`、`exclusive`、`show_when`、`linked_group_column`。
+
+**`FlowGroupDefinition`** 字段：`id`、`title`、`desc`、`collapsible`、`collapsed`。
+
+**`SampleSheetUIConfig`** 字段：`import`(alias，YAML 中写 `import`，序列化为 `import`)、`group_column`。
+
+#### 10.4.3 前端类型定义
+
+`frontend/src/types/schema.ts` 同步新增对应 TypeScript 接口：
+
+```typescript
+export interface ParameterUIHint {
+  group?: string | null
+  order?: number | null
+  span?: 1 | 2 | null
+  widget?: string | null
+  placeholder?: string | null
+  subgroup?: string | null
+  exclusive?: boolean
+  show_when?: Record<string, unknown> | null
+  linked_group_column?: string | null
+}
+
+export interface FlowGroupDefinition {
+  id: string
+  title: string
+  desc?: string
+  collapsible?: boolean
+  collapsed?: boolean
+}
+
+export interface SampleSheetUIConfig {
+  import?: string[]
+  group_column?: string | null
+}
+```
+
+`Parameter` 接口增加 `ui?: ParameterUIHint | null`；`FlowConfig` 增加 `groups?: FlowGroupDefinition[] | null`。
+
+#### 10.4.4 页面整体结构
+
+```text
+┌ PageHeader：流程名称 + 一句话说明 + 右侧按钮（GitHub / 文档）─────────────┐
+├ 内容区（max-width 1080px，居中，padding 24px）────────────────────────────┤
+│  任务名称输入框                                                            │
+│  ▎基本信息（分组标题 16px/600 + 4px 主题色竖条 + 12px 灰说明）             │
+│    项目名称*        │ 客户/课题组*        （双列网格，gap 20px）            │
+│    执行模式*        │ 集群队列（条件显示）                                  │
+│  ▎参考与数据                                                               │
+│    参考基因组版本*  │ 物种*                                                │
+│    链特异性*        │ 比对工具*（仅 ATAC-seq）                              │
+│    原始数据目录*（path 控件，整行 span=2）                                  │
+│    结果交付目录（path 控件，整行 span=2）                                    │
+│  ▎分析模块（模块卡网格，subgroup 分簇）                                     │
+│    ┌ 质控 ────────────────────────────────────────────┐                    │
+│    │ [仅运行QC]  [FastQ Screen]                       │                    │
+│    ├ 差异与注释 ─────────────────────────────────────┤                    │
+│    │ [DEG]  [HTML 报告]  [rMATS]                      │                    │
+│    ├ 结构变异 ───────────────────────────────────────┤                    │
+│    │ [变异]  [新转录本]  [基因融合]                    │                    │
+│    └─────────────────────────────────────────────────┘                    │
+│  ▸ 高级参数（折叠面板，默认收起，展开动画 200ms）                            │
+│  ▎样本表（独立区域，行号 + 批量导入 + 行内校验 + 分组统计）                  │
+│  ▎差异比较组（独立区域，与样本表 group 列联动）                              │
+├ 吸底提交栏（毛玻璃 backdrop-filter blur 12px）───────────────────────────┤
+│  [费用/余额/徽标]     [校验状态 + 样本统计]      [提交按钮 140px]          │
+└───────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 10.4.5 分组布局渲染（DynamicForm.vue）
+
+`DynamicForm.vue` 接收 `parameters` + `groups` 两个 prop，根据 `groups` 是否存在自动选择渲染模式：
+
+**分组模式（groups 非空）**：
+1. 遍历 `groups` 定义，按 `id` 收集属于该组的参数（依据 `parameter.ui.group`）；
+2. 组内参数按 `ui.order` 排序；
+3. `modules` 组渲染为**模块卡网格**（2~3 列 `auto-fill minmax(240px, 1fr)`）；
+4. `advanced` 组（`collapsible: true`）渲染为折叠面板（`NCollapse`）；
+5. 其余组渲染为**双列网格**（`grid-template-columns: 1fr 1fr`，`span=2` 跨整行）；
+6. `<768px` 退化为单列。
+
+**平铺模式（groups 为空 / null）**：
+1. 按 `parameter.order` 排序所有可见参数；
+2. 逐行渲染 `label + control + help_text`；
+3. 保持与旧版一致的布局，向后兼容。
+
+**分组标题样式**：16px/600 + 左侧 4px×18px 主题色竖条（`var(--brand-primary)`）+ 同行右侧 12px 灰说明。
+
+**参数缺省分组规则**（YAML 未声明 `ui.group` 时）：
+- `required: true` → `basic`
+- `type: boolean` → `modules`
+- 其余 → `advanced`
+
+#### 10.4.6 分析模块卡片（modules 组）
+
+模块组不使用常规双列网格，而是渲染为**网格卡片**：
+
+```text
+┌─────────────────┐  ┌─────────────────┐
+│ [SWITCH] DEG    │  │ [SWITCH] 报告   │
+│ 使用 DESeq2...  │  │ 生成完整分析... │
+└─────────────────┘  └─────────────────┘
+```
+
+- 卡片 `padding: 12px 16px`，`border: 1px`，`border-radius: 8px`；
+- **开启态**：边框 `var(--brand-primary)` + 背景 `rgba(76,111,255,0.04)`；
+- **互斥禁用**：当 `ui.exclusive: true` 的开关（如"仅运行 QC"）开启时，
+  其余所有模块卡 `opacity: 0.45; pointer-events: none`；
+- `subgroup` 分簇：同一 `subgroup` 值内的卡片归为一簇，簇上方显示 13px/500 二级小标题。
+
+#### 10.4.7 path 控件（FormField.vue）
+
+当 `ui.widget === 'path'` 或参数 name 包含 `dir|path` 时：
+- `NInput` 使用等宽字体（`'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace`）；
+- 右侧附加「选择目录」图标按钮（复用 `FilePickerModal`）；
+- 选中后回填路径到 `formValues[name]`。
+
+#### 10.4.8 样本表组件（FlowSubmitView.vue 内联）
+
+**表头**：行号列（40px `<th>#</th>`）+ 各列名 + 红色 `*` 标记必填（弃用红底胶囊 NTag）+ 操作列。
+
+**批量导入三入口**（按 `sample_sheet.ui.import` 声明渲染按钮组，置于区域标题右侧）：
+1. **粘贴导入**：弹层（`NModal`）内粘贴 Excel/TSV 文本，按 Tab 或逗号分隔解析后写入；
+2. **上传 CSV**：`<input type="file">` hidden + FileReader 解析，支持列名映射（表头比对 + 索引对齐）；
+3. **从数据管理选择**：复用 `FilePickerModal`。
+
+**行内校验**：
+- `sample` 重复 → 单元格红框（`cell-error`）；
+- 必填列为空 → 单元格黄框（`cell-warning`）；
+- 校验函数 `isSampleRowValid(row)` 返回每列的状态。
+
+**底部统计**：`共 N 样本 · M 个分组 (Tumor: 3, Control: 3)`，从 `sampleSheet` 动态计算。
+
+**添加样本**：虚线描边全宽按钮 `<NButton dashed block>`。
+
+**删除**：行尾图标按钮（`TrashOutline`），`hover` 变红，`<768px` 时仍可用（单行不可删）。
+
+#### 10.4.9 差异比较组联动（FlowSubmitView.vue 内联）
+
+- 从 `parameters` 中提取 `type: 'group'` 且有 `comparisons` name 的参数；
+- **条件显示**：读取 `ui.show_when`（如 `{ field: 'deg', value: true }`），仅对应开关为 `true` 时渲染；
+- **选项联动**：对照组 / 实验组 select 的选项 = 样本表 `group_column` 列的去重值（`groupValues` computed），样本表变更即时联动；
+- **无分组引导**：当 `groupValues` 为空时显示引导文案：`请先在样本表填写 group 列`；
+- **方向明示**：每组渲染为 `对照 [select] ──vs──→ 实验 [select]` 结构，避免 DEG 最常见错误（方向搞反）；
+- **失效清理**：watch `groupValues`，当已选的 Control/Treat 不在新 groupValues 中时自动清空；
+- **多组**：列表堆叠，可单独删除。
+
+#### 10.4.10 吸底提交栏
+
+固定在页面底部（`position: fixed; bottom: 0; z-index: 100`）：
+
+| 区域 | 内容 |
+|---|---|
+| 左 | 预估费用 + 当前余额 + 余额状态 NTag（充足绿 / 不足红） |
+| 中 | 必填校验提示（`还有 N 项必填未填写`，红色）+ 样本统计摘要 |
+| 右 | 提交按钮（主按钮，高 40px，宽 140px），提交中 loading + 禁用 |
+
+**视觉**：毛玻璃效果 `background: rgba(255,255,255,0.85); backdrop-filter: blur(12px)` + 顶部 1px 分割线；暗色模式自动切换为 `rgba(21,26,37,0.88)`。
+
+**提交前校验**：
+1. 点击提交时先检查 `requiredFields`（遍历 required 参数判断空值）；
+2. 若有缺失 → 不提交，`message.warning` 提示首个缺失字段名；
+3. 余额不足 → 禁用按钮，不提交；
+4. 全部通过 → 发送 `POST /tasks`，成功后 toast + 跳转任务详情。
+
+**内容区底部 padding** = 80px（确保提交栏不遮挡最后内容）。
+
+#### 10.4.11 组件文件清单
+
+| 文件 | 角色 | 行数 |
+|---|---|---|
+| `frontend/src/types/schema.ts` | 类型契约（后端 → 前端） | ~170 |
+| `frontend/src/views/FlowSubmitView.vue` | 页面编排：分组表单 + 样本表 + 比较组 + 吸底栏 | ~580 |
+| `frontend/src/components/dynamic-form/DynamicForm.vue` | 通用表单渲染器：分组 / 双列网格 / 模块卡 / 折叠 / 平铺 | ~300 |
+| `frontend/src/components/dynamic-form/FormField.vue` | 单字段控件：input / select / switch / path / textarea / file | ~140 |
+| `frontend/src/components/dynamic-form/RepeatableGroup.vue` | 可重复参数组（group 类型参数） | 104 |
+| `frontend/src/components/dynamic-form/CollapsibleSection.vue` | 折叠区域（section 类型参数） | 45 |
+| `frontend/src/composables/useConditionEvaluator.ts` | 条件渲染评估器（与后端 condition.py 对齐） | 78 |
+| `frontend/src/components/FilePickerModal.vue` | 文件/目录选择弹层 | 244 |
+| `frontend/src/stores/cookie.ts` | 饼干预估 Pinia store | 72 |
+
+#### 10.4.12 向后兼容与验收
+
+- **旧 YAML 零改动**：`groups` 和 `ui` 均为可选，后端 `model_validate` 和前端渲染器都有默认分支；
+- **渲染器默认规则**：无 `ui.group` 时按 `required` / `type` 自动归类；无 `groups` 定义时走平铺模式；
+- **API 序列化**：`FlowDetailDTO` 的 `groups` 字段缺省为 `null`（旧流程无 groups 时不返回）；
+- **已完成的 YAML**：`flows/rna_seq.yaml` v2.3.0、`flows/atac_seq.yaml` v0.1.0 均已补充完整 UI 提示。
+
+| 验收项 | 状态 |
+|---|---|
+| RNA-seq 页面呈现 基本信息/参考与数据/分析模块/高级参数 四分组 | done |
+| 开关以网格卡呈现，仅运行 QC 的互斥禁用生效 | done |
+| 样本表三种批量导入可用，行内校验与底部分组统计正确 | done |
+| 差异比较组选项随样本表 group 列联动，方向明示 | done |
+| 提交栏吸底，未填必填时提交被拦截并提示 | done |
+| 不修改任何 YAML 时，旧流程按默认规则渲染无异常 | done |
+| `vue-tsc --noEmit` + `vite build` 零错误 | done |
+| 25 个 flow 相关单测全部通过 | done |
 
 ---
 

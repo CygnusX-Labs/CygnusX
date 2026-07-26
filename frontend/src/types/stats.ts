@@ -5,7 +5,7 @@ export interface StatsOverview {
   running: number
   /** 总任务数 */
   total: number
-  /** 累计样本数 */
+  /** 数据样本数（与「数据管理」登记的样本同源） */
   samples: number
 }
 

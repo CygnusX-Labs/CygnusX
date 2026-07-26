@@ -1116,6 +1116,164 @@ execution:
 
 ---
 
+## 15A. Flow YAML 的 UI Schema 扩展（前端表单渲染，细化）
+
+> 详见 `docs/26.7.27/OmicHub分析中心前端优化方案-YAML驱动表单.md`
+
+### 15A.1 设计目标
+
+分析中心提交页由**解析各流程 YAML 动态生成**。核心不是改某个页面，
+而是 ① 升级通用渲染器 + ② 扩展 YAML 的 UI 提示 schema——所有流程页一次性受益，
+单个流程只需补 UI 提示字段，不硬编码。
+
+### 15A.2 流程级分组定义 `groups`
+
+在 `parameters` 同级新增 `groups` 列表（可选，缺省时渲染器使用默认三组）：
+
+```yaml
+groups:
+  - id: basic
+    title: "基本信息"
+    desc: "项目标识与执行方式"
+  - id: data
+    title: "参考与数据"
+    desc: "参考基因组、物种与输入输出路径"
+  - id: modules
+    title: "分析模块"
+    desc: "选择本次运行的分析内容"
+    collapsible: false
+  - id: advanced
+    title: "高级参数"
+    desc: "一般无需修改"
+    collapsible: true
+    collapsed: true
+```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | string | 分组唯一标识，参数 `ui.group` 引用 |
+| `title` | string | 分组标题（16px/600） |
+| `desc` | string | 分组说明（12px 灰色，标题右侧） |
+| `collapsible` | bool | 是否可折叠（默认 false） |
+| `collapsed` | bool | 默认是否收起（需 collapsible=true） |
+
+### 15A.3 参数级 `ui` 提示块
+
+每个参数可选增加 `ui` 块，**全部字段可缺省**（向后兼容）：
+
+```yaml
+parameters:
+  - name: project_name
+    label: "项目名称"
+    type: string
+    required: true
+    ui:
+      group: basic
+      order: 10
+      span: 1
+      widget: input
+      placeholder: "PRJNA1224991"
+
+  - name: raw_data_path
+    label: "原始数据目录"
+    type: string
+    required: true
+    ui:
+      group: data
+      widget: path
+      span: 2
+
+  - name: only_qc
+    label: "仅运行 QC"
+    type: boolean
+    default: false
+    ui:
+      group: modules
+      subgroup: "质控"
+      exclusive: true
+```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `group` | string | 分组 id；缺省按默认规则（required→basic, boolean→modules, 其余→advanced） |
+| `order` | int | 组内排序；缺省按声明顺序 |
+| `span` | 1\|2 | 占列数（组内 2 列网格）；默认短字段 1、长字段 2 |
+| `widget` | string | `input`\|`select`\|`switch`\|`path`\|`textarea`；缺省按 type 推断 |
+| `placeholder` | string | 输入占位文本 |
+| `subgroup` | string | 模块组内二级小标题（仅 modules 组） |
+| `exclusive` | bool | 互斥开关（开启时其余模块置灰 + tooltip） |
+
+**渲染器默认规则（YAML 无 `ui` 提示时）**：
+
+| 条件 | 默认行为 |
+|---|---|
+| 未声明 `group` | `required=true` → basic；`boolean` → modules；其余 → advanced |
+| `string` 且 key 含 `dir`/`path` | `widget=path` |
+| `boolean` | `widget=switch` |
+| `select`/`enum` | `widget=select` |
+
+### 15A.4 差异比较组联动 `ui`
+
+`comparisons`（`type: group`）参数增加 `ui` 提示，实现与样本表联动：
+
+```yaml
+  - name: comparisons
+    type: group
+    ui:
+      show_when:
+        field: "deg"
+        value: true
+      linked_group_column: "group"
+```
+
+- `show_when`：仅当指定开关为 true 时显示比较组卡片；
+- `linked_group_column`：对照组/实验组 select 选项取自样本表该列的去重值，样本表变更即联动。
+
+### 15A.5 样本表 `ui` 提示
+
+```yaml
+sample_sheet:
+  columns: [sample, sample_name, group]
+  ui:
+    import: [paste, csv, datacenter]
+    group_column: group
+```
+
+- `import`：声明允许的批量导入方式（渲染器按此渲染导入按钮组）；
+- `group_column`：标记分组列（供比较组联动）。
+
+### 15A.6 页面结构规范（渲染器实现）
+
+| 区域 | 规范 |
+|---|---|
+| 内容区 | `max-width: 1080px`，居中，左右 24px padding |
+| 分组标题 | 16px/600 + 左侧 4px×18px 主题色竖条 + 右侧 12px 灰说明 |
+| 双列网格 | `span=1` 两列排布（gap 16px），`span=2` 整行；<768px 单列 |
+| 字段行 | label 上置（14px/500，必填红 *）+ 控件 + help（12px 灰，控件下 4px） |
+| 分析模块 | 2~3 列网格卡（switch + 名称 + 说明），开启态主题色描边 + 浅底；`subgroup` 分簇 |
+| 高级参数 | 折叠面板默认收起，展开动画 200ms |
+| 样本表 | 行号列 40px；批量导入按钮组右上；行内校验（重复标红、空值标黄）；底部统计 |
+| 比较组 | 独立卡片置于样本表后；`对照 ──vs──> 实验` 方向明示；多组堆叠可删除 |
+| 吸底提交栏 | 毛玻璃固定栏：左（费用/余额/徽标）| 中（校验状态 + 样本统计）| 右（提交按钮 40px，loading 禁用） |
+
+### 15A.7 向后兼容保证
+
+- 所有 `ui` 字段**均可缺省**，旧 YAML 零改动可正常运行；
+- `groups` 未定义时渲染器使用默认三组（basic / modules / advanced）；
+- 现有 `order`、`condition`、`select_config`、`group_config`、`section_config` 保持不变；
+- 验收时抽查一个未改 YAML 的旧流程，确认按默认规则渲染无异常。
+
+### 15A.8 已完成的 YAML 配置
+
+以下流程 YAML 已按本规范补充 `groups`、参数 `ui` 提示、`sample_sheet.ui` 和 `comparisons.ui`：
+
+| 文件 | 版本 | 分组 | 模块 subgroup |
+|---|---|---|---|
+| `flows/rna_seq.yaml` | 2.3.0 | basic / data / modules / advanced | 质控 / 差异与注释 / 结构变异 |
+| `flows/atac_seq.yaml` | 0.1.0 | basic / data / modules / advanced | 质控 / 报告 / 差异分析 |
+
+---
+
 ## 16. 实施路线图（调整版）
 
 ### Phase 0：基础设施（2-3 周）

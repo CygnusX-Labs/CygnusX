@@ -26,7 +26,7 @@ function selectImage(id: string) {
 </script>
 
 <template>
-  <div class="image-selector" role="radiogroup" aria-label="终端镜像">
+  <div v-animate-list class="image-selector" role="radiogroup" aria-label="终端镜像">
     <button
       v-for="img in images"
       :key="img.id"

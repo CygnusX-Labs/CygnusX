@@ -210,11 +210,73 @@ class ValidationRule(_StrictModel):
     regex_pattern: str | None = Field(default=None, description="正则模式（regex类型）")
 
 
+# ============================================================
+# 4A. 前端 UI 提示模型（YAML 驱动表单渲染）
+# ============================================================
+
+
+class ParameterUIHint(_StrictModel):
+    """参数级前端渲染提示 — 全部字段可选，向后兼容。
+
+    渲染器对缺失提示有合理默认：
+    - 未声明 group → 按 required 归 basic / boolean 归 modules / 其余归 advanced
+    - string 且 key 含 dir|path → widget=path；boolean → switch；enum → select
+    """
+
+    group: str | None = Field(default=None, description="分组 id（对应 FlowGroupDefinition.id）")
+    order: int | None = Field(default=None, description="组内排序权重")
+    span: Literal[1, 2] | None = Field(default=None, description="占列数：1=半行 2=整行")
+    widget: str | None = Field(
+        default=None, description="控件类型：input|select|switch|path|textarea"
+    )
+    placeholder: str | None = Field(default=None, description="输入占位文本")
+    subgroup: str | None = Field(default=None, description="模块组内二级小标题")
+    exclusive: bool = Field(
+        default=False, description="互斥开关：开启时其余模块置灰"
+    )
+    show_when: dict[str, Any] | None = Field(
+        default=None, description="条件显示规则，如 {field: 'deg', value: true}"
+    )
+    linked_group_column: str | None = Field(
+        default=None, description="联动样本表分组列（供比较组 select 取值）"
+    )
+
+
+class FlowGroupDefinition(_StrictModel):
+    """流程级分组定义 — 用于前端表单分区渲染。
+
+    缺省时渲染器使用默认三组（basic / modules / advanced）。
+    """
+
+    id: str = Field(..., pattern=r"^[a-z][a-z0-9_]*$", description="分组唯一标识")
+    title: str = Field(..., min_length=1, description="分组标题")
+    desc: str = Field(default="", description="分组说明（标题右侧灰色文字）")
+    collapsible: bool = Field(default=False, description="是否可折叠")
+    collapsed: bool = Field(default=False, description="默认是否收起（需 collapsible=true）")
+
+
+class SampleSheetUIConfig(_StrictModel):
+    """样本表前端渲染提示"""
+
+    import_: list[str] = Field(
+        default=[],
+        alias="import",
+        serialization_alias="import",
+        description="允许的批量导入方式：paste|csv|datacenter",
+    )
+    group_column: str | None = Field(
+        default=None, description="标记分组列（供比较组联动去重取值）"
+    )
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
 class SampleSheetConfig(_StrictModel):
     """样本表整体配置"""
 
     columns: list[SampleSheetColumn] = Field(..., min_length=1, description="列定义列表")
     validation_rules: list[ValidationRule] = Field(default=[], description="自定义校验规则")
+    ui: SampleSheetUIConfig | None = Field(default=None, description="样本表前端渲染提示")
 
 
 # ============================================================

@@ -19,10 +19,6 @@ import ReportPreviewModal from '@/components/report/ReportPreviewModal.vue'
 import ReportEmptyState from '@/components/report/ReportEmptyState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 
-import { mockReports, mockStats } from '@/components/report/mockData'
-
-const USE_MOCK = import.meta.env.VITE_USE_MOCK_REPORTS === 'true'
-
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
@@ -67,42 +63,6 @@ const {
   loading,
   execute: fetchReports,
 } = useApi(() => {
-  if (USE_MOCK) {
-    // 开发阶段：本地 mock 过滤 + 分页
-    const f = { ...filter.value, page: filter.value.page || 1, page_size: filter.value.page_size || 10 }
-    let list = [...mockReports]
-    const q = (f.keyword || '').trim().toLowerCase()
-    if (q) {
-      list = list.filter(
-        r =>
-          r.title.toLowerCase().includes(q)
-          || r.flow_name.toLowerCase().includes(q)
-          || r.flow_id.toLowerCase().includes(q)
-          || r.task_id.toLowerCase().includes(q),
-      )
-    }
-    if (f.flow_id) {
-      list = list.filter(r => r.flow_id === f.flow_id || r.flow_id === (f.flow_id || '').replace('_', '-'))
-    }
-    if (f.status) {
-      list = list.filter(r => r.status === f.status)
-    }
-    if (f.date_range) {
-      const days = { '7d': 7, '30d': 30, '90d': 90 }[f.date_range] || 0
-      if (days) {
-        const cutoff = new Date()
-        cutoff.setDate(cutoff.getDate() - days)
-        list = list.filter(r => new Date(r.created_at) >= cutoff)
-      }
-    }
-    if (f.is_starred !== undefined) {
-      list = list.filter(r => r.is_starred === f.is_starred)
-    }
-    const total = list.length
-    const start = (f.page - 1) * f.page_size
-    list = list.slice(start, start + f.page_size)
-    return Promise.resolve({ items: list, total })
-  }
   return reportApi.getReports(filter.value).then(res => res.data)
 }, {
   initialData: { items: [], total: 0 },
@@ -112,9 +72,6 @@ const {
   data: stats,
   execute: fetchStats,
 } = useApi(() => {
-  if (USE_MOCK) {
-    return Promise.resolve(mockStats)
-  }
   return reportApi.getReportStats().then(res => res.data)
 }, {
   initialData: { total: 0, starred: 0, generating: 0, today: 0 },
@@ -155,10 +112,6 @@ function handleViewTask(report: Report) {
 }
 
 async function handleOptimize(report: Report) {
-  if (USE_MOCK) {
-    message.info('当前报告中心使用 mock 数据，切换真实报告接口后可创建工作台会话')
-    return
-  }
   try {
     const session = await studioApi.createSessionFromReport({
       report_id: report.id,
@@ -171,13 +124,6 @@ async function handleOptimize(report: Report) {
 }
 
 async function handleToggleStar(report: Report) {
-  if (USE_MOCK) {
-    report.is_starred = !report.is_starred
-    mockStats.starred = mockReports.filter(r => r.is_starred).length
-    message.success(report.is_starred ? '已收藏' : '已取消收藏')
-    await loadData()
-    return
-  }
   try {
     await reportApi.toggleStar(report.id, !report.is_starred)
     message.success(report.is_starred ? '已取消收藏' : '已收藏')
@@ -188,16 +134,6 @@ async function handleToggleStar(report: Report) {
 }
 
 async function handleDelete(report: Report) {
-  if (USE_MOCK) {
-    const idx = mockReports.findIndex(r => r.id === report.id)
-    if (idx >= 0) {
-      mockReports.splice(idx, 1)
-    }
-    mockStats.total = mockReports.length
-    message.success('已删除')
-    await loadData()
-    return
-  }
   try {
     await reportApi.deleteReport(report.id)
     message.success('已删除')

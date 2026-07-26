@@ -18,10 +18,12 @@ from omichub.domain.flow.value_objects import (
     ExecutionConfig,
     FileConfig,
     FlowAIConfig,
+    FlowGroupDefinition,
     FlowMeta,
     GroupConfig,
     NumberConfig,
     ParameterTypeEnum,
+    ParameterUIHint,
     PipelineMappingConfig,
     SampleSheetConfig,
     SectionConfig,
@@ -106,6 +108,9 @@ class Parameter(BaseModel):
     file_config: FileConfig | None = None
     group_config: GroupConfig | None = None
     section_config: SectionConfig | None = None
+
+    # 前端渲染提示（可选，向后兼容）
+    ui: ParameterUIHint | None = Field(default=None, description="前端 UI 渲染提示")
 
     @model_validator(mode="after")
     def validate_type_specific_config(self) -> Parameter:
@@ -193,6 +198,9 @@ class FlowConfig(BaseModel):
     meta: FlowMeta = Field(..., description="流程元信息")
     parameters: list[Parameter] = Field(..., min_length=1, description="参数定义列表")
     execution: ExecutionConfig = Field(..., description="执行配置")
+    groups: list[FlowGroupDefinition] | None = Field(
+        default=None, description="前端分组定义（缺省使用默认三组）"
+    )
     ai: FlowAIConfig | None = Field(default=None, description="AI 助手接入配置")
     sample_sheet: SampleSheetConfig | None = Field(
         default=None, description="样本表配置（如流程需要样本表）"
