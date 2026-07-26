@@ -19,6 +19,10 @@ import { computed, h, onMounted, ref } from 'vue'
 import PageHeader from '@/components/PageHeader.vue'
 import type { CookieDiscount } from '@/types'
 
+withDefaults(defineProps<{ embedded?: boolean }>(), {
+  embedded: false,
+})
+
 const message = useMessage()
 const pricing = ref<any[]>([])
 const discounts = ref<CookieDiscount[]>([])
@@ -228,8 +232,8 @@ onMounted(fetchDiscounts)
 </script>
 
 <template>
-  <div class="page-container">
-    <PageHeader title="饼干定价管理" subtitle="维护任务、资源和奖励的计费策略" />
+  <div class="page-container" :class="{ 'page-container--embedded': embedded }">
+    <PageHeader v-if="!embedded" title="饼干定价管理" subtitle="维护任务、资源和奖励的计费策略" />
     <NSpace vertical :size="24">
       <NCard title="定价策略管理" :bordered="false" class="arco-card">
         <template #header-extra>
@@ -301,6 +305,7 @@ onMounted(fetchDiscounts)
 </template>
 
 <style scoped>
+.page-container--embedded { padding: 0; background: transparent; }
 .helper-text { color: var(--neutral-text-2); margin: 0 0 16px; font-size: 13px; }
 .time-separator { line-height: 34px; color: var(--neutral-text-2); }
 </style>

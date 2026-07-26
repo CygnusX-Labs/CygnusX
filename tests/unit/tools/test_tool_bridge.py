@@ -91,6 +91,43 @@ async def test_unknown_tool_returns_error() -> None:
 
 
 @pytest.mark.asyncio
+async def test_backend_sync_passes_context_when_service_declares_it(monkeypatch) -> None:
+    """需要数据库事务的 builtin 工具可安全取得内部调用上下文。"""
+    schema = ToolSchema(
+        key="memory-search",
+        name="omichub_search_memory",
+        description="检索记忆",
+        invocation_mode="backend_sync",
+        service="omichub.application.services.agent_memory_tool_service.AgentMemoryToolService",
+        method="search_memory",
+        input_schema={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+        llm_result_fields=["summary", "success"],
+        ui_result_fields=[],
+    )
+    captured = {}
+
+    async def fake_search(self, *, user_id, query, context=None, **_kwargs):
+        captured.update(user_id=user_id, query=query, context=context)
+        return {"success": True, "summary": "找到 1 条记忆"}
+
+    monkeypatch.setattr(
+        "omichub.application.services.agent_memory_tool_service.AgentMemoryToolService.search_memory",
+        fake_search,
+    )
+    context = MagicMock()
+    result = await ToolBridgeService(_FakeLoader([schema])).execute(
+        "user-1", "omichub_search_memory", {"query": "小鼠脑"}, context=context
+    )
+
+    assert result["success"] is True
+    assert captured == {"user_id": "user-1", "query": "小鼠脑", "context": context}
+
+
+@pytest.mark.asyncio
 async def test_llm_payload_size_limit() -> None:
     schema = _volcano_schema()
     # 让 llm_result_fields 包含大字段，触发 3KB 截断

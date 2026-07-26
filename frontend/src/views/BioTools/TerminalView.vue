@@ -7,7 +7,7 @@ import {
   NTag,
   NSpace,
   NIcon,
-  NEmpty,
+  NTooltip,
   useMessage,
   useDialog,
 } from 'naive-ui'
@@ -24,6 +24,7 @@ import ImageSelector from '@/components/terminal/ImageSelector.vue'
 import ResourceSettings from '@/components/terminal/ResourceSettings.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { useTerminalStore } from '@/stores/terminal'
+import { formatMemoryMb } from '@/utils/terminal'
 
 const router = useRouter()
 const message = useMessage()
@@ -59,28 +60,6 @@ const cpuCores = computed({
 const selectedImageLabel = computed(() => {
   if (!selectedImage.value) return '未选择'
   return `${selectedImage.value.icon} ${selectedImage.value.name}`
-})
-
-const preinstalledToolCount = computed(() => {
-  const desc = selectedImage.value?.description ?? ''
-  const tools = desc
-    .split(/[、，,]/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-  return Math.max(tools.length, selectedImage.value?.tags.length ?? 0)
-})
-
-const imageSizeGb = computed(() => {
-  if (!selectedImage.value) return '0.0'
-  const memoryFactor = selectedImage.value.resources.memory_mb / 1024
-  const toolFactor = preinstalledToolCount.value * 0.03
-  const estimate = Math.max(1.2, Math.min(4.8, 0.75 + memoryFactor * 0.55 + toolFactor))
-  return estimate.toFixed(1)
-})
-
-const estimatedStartupSeconds = computed(() => {
-  if (!selectedImage.value) return 0
-  return Math.max(3, Math.min(9, Math.ceil(2 + memoryMb.value / 2048 + cpuCores.value / 4)))
 })
 
 const mountDirectory = computed(() => '/home/omichub/workspace')
@@ -236,25 +215,21 @@ watch(
 
       <div v-else class="terminal-selector">
         <div class="main-layout">
-          <aside class="left-column">
-            <section class="config-card">
-              <div class="card-heading">
-                <h2>选择分析环境</h2>
-                <p>点击镜像卡片切换预装工具链</p>
-              </div>
-              <ImageSelector v-model="store.selectedImageId" :images="images" />
-              <NEmpty
-                v-if="images.length === 0 && !loading"
-                class="empty-state"
-                description="暂无可用镜像，请联系管理员配置 terminal_images.yaml"
-              />
-            </section>
+          <section class="environment-column">
+            <div class="card-heading">
+              <h2>选择分析环境</h2>
+              <p>点击镜像卡片切换预装工具链</p>
+            </div>
+            <ImageSelector v-model="store.selectedImageId" :images="images" />
+          </section>
 
-            <section class="config-card">
-              <div class="card-heading">
-                <h2>资源设置</h2>
-                <p>资源调整会实时同步到右侧启动预览</p>
-              </div>
+          <aside class="configuration-column">
+            <div class="card-heading">
+              <h2>资源设置</h2>
+              <p>切换环境后会恢复该镜像的推荐资源</p>
+            </div>
+
+            <section class="config-card resource-column">
               <ResourceSettings
                 v-model:memory-mb="memoryMb"
                 v-model:cpu-cores="cpuCores"
@@ -264,26 +239,11 @@ watch(
                 :cpu-min="cpuRange.min"
                 :cpu-max="cpuRange.max"
                 :cpu-step="cpuRange.step"
+                :recommended-memory-mb="selectedImage?.resources.memory_mb"
+                :recommended-cpu-cores="selectedImage?.resources.cpu_cores"
                 :disabled="loading"
               />
             </section>
-          </aside>
-
-          <main class="right-column">
-            <div class="stats-row">
-              <div class="stat-card">
-                <span class="stat-label">镜像大小</span>
-                <span class="stat-value">{{ imageSizeGb }}<span class="stat-unit">GB</span></span>
-              </div>
-              <div class="stat-card">
-                <span class="stat-label">预装工具</span>
-                <span class="stat-value">{{ preinstalledToolCount }}<span class="stat-unit">个</span></span>
-              </div>
-              <div class="stat-card">
-                <span class="stat-label">预计启动</span>
-                <span class="stat-value">{{ estimatedStartupSeconds }}<span class="stat-unit">秒</span></span>
-              </div>
-            </div>
 
             <section class="preview-panel">
               <div class="preview-title">
@@ -299,7 +259,7 @@ watch(
               </div>
               <div class="preview-row">
                 <span class="preview-key">分配内存</span>
-                <span class="preview-val">{{ memoryMb }} MB</span>
+                <span class="preview-val">{{ formatMemoryMb(memoryMb) }}</span>
               </div>
               <div class="preview-row">
                 <span class="preview-key">分配 CPU</span>
@@ -307,11 +267,12 @@ watch(
               </div>
               <div class="preview-row">
                 <span class="preview-key">挂载目录</span>
-                <span class="preview-val monospace">{{ mountDirectory }}</span>
-              </div>
-              <div class="preview-row">
-                <span class="preview-key">网络模式</span>
-                <span class="preview-val">隔离桥接网络</span>
+                <NTooltip :show-arrow="false">
+                  <template #trigger>
+                    <span class="preview-val monospace mount-directory">{{ mountDirectory }}</span>
+                  </template>
+                  {{ mountDirectory }}
+                </NTooltip>
               </div>
               <div class="preview-row">
                 <span class="preview-key">生命周期</span>
@@ -335,7 +296,7 @@ watch(
                 启动 {{ selectedImage?.name || '终端' }}
               </NButton>
             </section>
-          </main>
+          </aside>
         </div>
       </div>
     </div>
@@ -361,7 +322,7 @@ watch(
 }
 
 .terminal-config-page {
-  padding: 40px 24px 24px;
+  padding: 32px 24px 24px;
 }
 
 .terminal-fullscreen {
@@ -455,38 +416,36 @@ watch(
 
 .terminal-selector {
   width: 100%;
-  max-width: 1240px;
+  max-width: 1600px;
   margin: 0 auto;
-  padding: 20px;
+  padding: 24px;
+  box-sizing: border-box;
 }
 
 .main-layout {
   display: grid;
-  grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
   gap: 20px;
   align-items: start;
 }
 
-.left-column,
-.right-column {
+.environment-column,
+.configuration-column {
   min-width: 0;
 }
 
-.left-column {
+.configuration-column {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.right-column {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.configuration-column > .card-heading {
+  margin-bottom: 0;
 }
 
 .config-card,
-.preview-panel,
-.stat-card {
+.preview-panel {
   background: var(--terminal-card);
   border: 1px solid var(--terminal-border);
   border-radius: 12px;
@@ -494,7 +453,7 @@ watch(
 }
 
 .config-card {
-  padding: 20px;
+  padding: 24px;
 }
 
 .card-heading {
@@ -504,8 +463,8 @@ watch(
 .card-heading h2 {
   margin: 0;
   color: var(--terminal-text);
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .card-heading p {
@@ -519,42 +478,8 @@ watch(
   margin-top: 16px;
 }
 
-.stats-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.stat-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 104px;
-  padding: 20px;
-}
-
-.stat-label {
-  color: var(--terminal-subtext);
-  font-size: 12px;
-}
-
-.stat-value {
-  color: var(--terminal-text);
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
-}
-
-.stat-unit {
-  margin-left: 2px;
-  color: var(--terminal-subtext);
-  font-size: 14px;
-  font-weight: 500;
-}
-
 .preview-panel {
-  padding: 24px;
+  padding: 20px 24px 24px;
 }
 
 .preview-title {
@@ -571,10 +496,8 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  min-height: 46px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--terminal-soft-border);
+  gap: 12px;
+  min-height: 30px;
 }
 
 .preview-key {
@@ -596,13 +519,21 @@ watch(
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+.mount-directory {
+  display: block;
+  max-width: 174px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .preview-val.danger {
   color: #dc2626;
 }
 
 .launch-button {
-  height: 48px;
-  margin-top: 20px;
+  height: 40px;
+  margin-top: 16px;
   border-radius: 10px;
   font-size: 15px;
   font-weight: 700;
@@ -613,7 +544,7 @@ watch(
   box-shadow: none;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1199px) {
   .terminal-config-page {
     padding: 24px 12px 16px;
   }
@@ -625,15 +556,32 @@ watch(
     grid-template-columns: 1fr;
   }
 
-  .right-column {
-    order: 1;
+  .configuration-column {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+    align-items: start;
   }
 
-  .left-column {
-    order: 2;
+  .configuration-column > .card-heading {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 720px) {
+  .terminal-config-page {
+    padding: 20px 12px 16px;
   }
 
-  .stats-row {
+  .terminal-selector {
+    padding: 12px;
+  }
+
+  .config-card,
+  .preview-panel {
+    padding: 18px;
+  }
+
+  .configuration-column {
     grid-template-columns: 1fr;
   }
 }

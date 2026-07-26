@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { NButton, NIcon, NTooltip, NPopover, useMessage, NTag } from 'naive-ui'
 import {
   ArrowUpOutline,
@@ -15,10 +16,14 @@ import {
   PersonOutline,
   ExtensionPuzzleOutline,
   DocumentTextOutline,
+  HammerOutline,
 } from '@vicons/ionicons5'
 import SlashCommandMenu from './SlashCommandMenu.vue'
 import MentionMenu from './MentionMenu.vue'
+import { readActiveMentionQuery } from './mentionQuery'
+import { pushRecent, recentRank } from './recentItems'
 import PromptSidebar from './PromptSidebar.vue'
+import McpSelectionMenu from './McpSelectionMenu.vue'
 import { useChatStore } from '@/stores/chat'
 import { useSiteConfigStore } from '@/stores/site-config'
 import { useAgentHubStore } from '@/stores/agentHub'
@@ -26,7 +31,7 @@ import { matchWorkbenchIntent } from '@/config/aiIntents'
 import apiClient from '@/api/client'
 import type { DataFile } from '@/types'
 import type { AgentTemplate, SkillItem } from '@/types/agent'
-import type { FileAttachment, MentionItem } from './types'
+import type { FileAttachment, MentionDirectory, MentionItem } from './types'
 
 interface Props {
   modelValue: string
@@ -40,7 +45,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   modelValue: '',
-  placeholder: '输入消息，@ 引用工作区文件或指定智能体 / 技能...',
+  placeholder: '输入需求，@ 引用文件、技能或智能体，/ 查看快捷命令',
   disabled: false,
   isStreaming: false,
   isPaused: false,
@@ -59,6 +64,8 @@ const emit = defineEmits<{
       explicitAgentId?: string
       /** @ 挂载到本次对话的技能名 */
       skillNames?: string[]
+      mcpMode?: 'off' | 'auto' | 'manual'
+      extraMcpServers?: string[]
     },
   ]
   triggerSandbox: []
@@ -71,13 +78,14 @@ const chatStore = useChatStore()
 const siteConfigStore = useSiteConfigStore()
 const agentHub = useAgentHubStore()
 const message = useMessage()
+const router = useRouter()
 
 const textareaRef = ref<HTMLTextAreaElement>()
 const fileInputRef = ref<HTMLInputElement>()
 const isFocused = ref(false)
 const showSlashMenu = ref(false)
 const slashQuery = ref('')
-const slashMenuPosition = ref({ top: 0, left: 0 })
+const slashMenuRef = ref<InstanceType<typeof SlashCommandMenu>>()
 const showPromptSidebar = ref(false)
 const showClearConfirm = ref(false)
 const attachments = ref<FileAttachment[]>([])
@@ -87,14 +95,39 @@ const uploading = ref(false)
 const showMentionMenu = ref(false)
 const mentionQuery = ref('')
 const mentionActiveIndex = ref(0)
-const mentionPosition = ref({ top: 0, left: 0 })
 const workspaceFiles = ref<DataFile[]>([])
+const workspaceDirectories = ref<MentionDirectory[]>([])
+const workspaceSynced = ref(false)
+const workspaceSyncAttempted = ref(false)
 const mentionLoading = ref(false)
-const mentionError = ref(false)
+const mentionState = ref<'idle' | 'loading' | 'error' | 'empty' | 'forbidden'>('idle')
 /** @ 显式指定的智能体（随下一条消息发送） */
 const pendingAgent = ref<AgentTemplate | null>(null)
 /** @ 挂载的技能（随下一条消息发送） */
 const pendingSkills = ref<SkillItem[]>([])
+type McpMode = 'off' | 'auto' | 'manual'
+const showMcpMenu = ref(false)
+const mcpMenuRef = ref<InstanceType<typeof McpSelectionMenu>>()
+const mcpMode = ref<McpMode>('auto')
+const extraMcpServers = ref<string[]>([])
+const defaultMcpIds = computed(() => new Set(agentHub.currentAgent?.mcp_ids || []))
+const extraMcpCount = computed(() => extraMcpServers.value.filter((id) => !defaultMcpIds.value.has(id)).length)
+const mcpButtonActive = computed(() => mcpMode.value !== 'auto')
+
+function syncMcpSelection() {
+  mcpMode.value = agentHub.currentSession?.mcp_mode || 'auto'
+  extraMcpServers.value = [...(agentHub.currentSession?.extra_mcp_servers || [])]
+}
+
+function handleMcpSelection(selection: { mode: McpMode; extraServers: string[] }) {
+  mcpMode.value = selection.mode
+  extraMcpServers.value = [...selection.extraServers]
+  const session = agentHub.currentSession
+  if (session) {
+    session.mcp_mode = mcpMode.value
+    session.extra_mcp_servers = [...extraMcpServers.value]
+  }
+}
 
 const localValue = ref(props.modelValue)
 
@@ -133,6 +166,39 @@ const canSend = computed(
 )
 
 function handleKeydown(e: KeyboardEvent) {
+  if (showMcpMenu.value && e.key === 'Escape') {
+    e.preventDefault()
+    showMcpMenu.value = false
+    return
+  }
+  if (showMcpMenu.value && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    e.preventDefault()
+    mcpMenuRef.value?.moveSelection(e.key === 'ArrowDown' ? 1 : -1)
+    return
+  }
+  if (showMcpMenu.value && e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    mcpMenuRef.value?.selectCurrent()
+    return
+  }
+  if (showSlashMenu.value) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      slashMenuRef.value?.moveSelection(e.key === 'ArrowDown' ? 1 : -1)
+      return
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      slashMenuRef.value?.selectCurrent()
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      showSlashMenu.value = false
+      return
+    }
+  }
+
   // @ 补全面板打开时，优先接管方向键 / Enter / Esc
   if (showMentionMenu.value) {
     if (e.key === 'ArrowDown') {
@@ -172,7 +238,6 @@ function handleKeydown(e: KeyboardEvent) {
     nextTick(() => {
       showSlashMenu.value = true
       slashQuery.value = ''
-      updateSlashMenuPosition()
     })
   }
 }
@@ -184,7 +249,6 @@ function detectSlashCommand() {
   if (lastLine.startsWith('/')) {
     showSlashMenu.value = true
     slashQuery.value = lastLine.slice(1)
-    updateSlashMenuPosition()
   } else {
     showSlashMenu.value = false
   }
@@ -198,9 +262,14 @@ function readMentionQuery(): string | null {
   const text = localValue.value
   const caret = el?.selectionStart ?? text.length
   const before = text.slice(0, caret)
-  // @ 需在行首或空白后，且到光标间不含空白
-  const m = before.match(/(?:^|[\s\n])@([\w./\-@一-龥]*)$/)
-  return m ? m[1] : null
+  const committedLabels = [
+    ...attachments.value.filter((attachment) => attachment.source === 'workspace').map((attachment) => attachment.name),
+    ...(pendingAgent.value ? [pendingAgent.value.name] : []),
+    ...pendingSkills.value.map((skill) => skill.name),
+  ]
+  // 已选择的引用以空格作为提交边界，避免其后的正文再次打开面板；
+  // 尚未选择时仍允许目录与文件名包含空格，例如 @docs/report copy.csv。
+  return readActiveMentionQuery(before, committedLabels)
 }
 
 function detectMention() {
@@ -214,85 +283,137 @@ function detectMention() {
   showMentionMenu.value = true
   mentionQuery.value = q
   mentionActiveIndex.value = 0
-  updateMentionPosition()
+  if (workspaceSynced.value || workspaceSyncAttempted.value) searchWorkspaceFiles(q)
+  else syncAndSearchWorkspaceFiles(q)
   ensureMentionData()
-}
-
-function updateMentionPosition() {
-  const el = textareaRef.value
-  if (!el) return
-  const rect = el.getBoundingClientRect()
-  mentionPosition.value = {
-    top: Math.max(8, rect.top - 360),
-    left: rect.left + 12,
-  }
 }
 
 /** 首次打开 @ 面板时加载工作区文件与智能体 / 技能资产 */
 async function ensureMentionData() {
-  if (!workspaceFiles.value.length && !mentionLoading.value) {
-    await loadWorkspaceFiles()
-  }
   if (!agentHub.agents.length) agentHub.fetchAgents()
   if (!agentHub.skills.length) agentHub.fetchSkills()
 }
 
-async function loadWorkspaceFiles() {
+let mentionSearchRequest = 0
+let workspaceSyncPromise: Promise<void> | null = null
+
+async function syncAndSearchWorkspaceFiles(query: string) {
+  if (!workspaceSyncPromise) {
+    workspaceSyncAttempted.value = true
+    workspaceSyncPromise = apiClient.post('/files/sync')
+      .then(() => { workspaceSynced.value = true })
+      .catch((error) => {
+        console.warn('同步工作区文件索引失败，将使用现有索引:', error)
+      })
+      .finally(() => { workspaceSyncPromise = null })
+  }
+  await workspaceSyncPromise
+  await searchWorkspaceFiles(query)
+}
+
+async function searchWorkspaceFiles(query = mentionQuery.value) {
+  const requestId = ++mentionSearchRequest
   mentionLoading.value = true
-  mentionError.value = false
+  mentionState.value = 'loading'
   try {
-    const res = await apiClient.get<{ items: DataFile[]; total: number }>('/files')
+    const res = await apiClient.get<{ items: DataFile[]; directories: MentionDirectory[]; total: number }>('/files/search', {
+      params: { q: query, root: '', limit: 50 },
+    })
+    if (requestId !== mentionSearchRequest) return
     workspaceFiles.value = res.data.items || []
+    workspaceDirectories.value = res.data.directories || []
+    mentionState.value = workspaceFiles.value.length || workspaceDirectories.value.length ? 'idle' : 'empty'
   } catch (e) {
-    mentionError.value = true
-    console.error('加载工作区文件失败:', e)
+    if (requestId !== mentionSearchRequest) return
+    mentionState.value = (e as { response?: { status?: number } })?.response?.status === 403 ? 'forbidden' : 'error'
+    console.error('搜索工作区文件失败:', e)
   } finally {
-    mentionLoading.value = false
+    if (requestId === mentionSearchRequest) mentionLoading.value = false
   }
 }
 
-/** 简单模糊匹配：名称 / 路径包含查询词（不区分大小写） */
-function fuzzyMatch(text: string, q: string): boolean {
-  if (!q) return true
-  return text.toLowerCase().includes(q.toLowerCase())
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
 }
 
+function normalizedMentionQuery(query: string): string {
+  return normalizePath(query)
+}
+
+/** 按文件名与路径模糊匹配；`@/` 中的斜杠表示路径分隔符。 */
+function fuzzyMatch(text: string, q: string): boolean {
+  const normalizedQuery = normalizedMentionQuery(q).toLowerCase()
+  if (!normalizedQuery) return true
+  return normalizePath(text).toLowerCase().includes(normalizedQuery)
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * 友好名称：主行禁止裸显 UUID。
+ * 名称本身是 UUID 时，回退到路径末段；末段仍是 UUID 时用类型/占位名。
+ * 返回 [展示名, uuid 或 null]。
+ */
+function friendlyName(raw: string, fallbackPath: string, typeHint: string): [string, string | null] {
+  const uuid = UUID_RE.test(raw) ? raw : null
+  if (!uuid) return [raw, null]
+  const segments = normalizePath(fallbackPath).split('/').filter(Boolean)
+  const last = segments[segments.length - 1] || ''
+  if (last && !UUID_RE.test(last)) return [last, uuid]
+  return [`${typeHint}-${uuid.slice(0, 8)}`, uuid]
+}
+
+/**
+ * @ 面板条目：仅"上下文引用"类（文件夹 / 文件）。
+ * Agent / Skill 属于"能力调用"，改由 / 面板分组承载（Part C 语义拆分）。
+ */
 const mentionItems = computed<MentionItem[]>(() => {
   const q = mentionQuery.value
+  const directories: MentionItem[] = workspaceDirectories.value
+    .filter((directory) => fuzzyMatch(directory.path, q))
+    .slice(0, 20)
+    .map((directory) => {
+      const [name, uuid] = friendlyName(directory.name || '', directory.path, '未命名目录')
+      return {
+        kind: 'directory' as const,
+        key: `directory-${directory.path}`,
+        name,
+        description: `${normalizePath(directory.path)}/`,
+        uuid: uuid ?? undefined,
+        directory,
+      }
+    })
   const files: MentionItem[] = workspaceFiles.value
-    .filter((f) => fuzzyMatch(`${f.original_name} ${f.directory || ''}`, q))
+    .filter((f) => fuzzyMatch(f.path || `${f.directory ? `${f.directory}/` : ''}${f.original_name}`, q))
     .slice(0, 30)
-    .map((f) => ({
-      kind: 'file' as const,
-      key: `file-${f.id}`,
-      name: f.original_name,
-      description: f.directory ? `${f.directory}/ · ${formatBytes(f.size)}` : formatBytes(f.size),
-      file: f,
-    }))
+    .map((f) => {
+      const fullPath = f.path || `${f.directory ? `${f.directory}/` : ''}${f.original_name}`
+      const [name] = friendlyName(f.original_name || '', fullPath, f.file_type || 'file')
+      return {
+        kind: 'file' as const,
+        key: `file-${f.id}`,
+        name,
+        description: `${fullPath} · ${formatBytes(f.size)}`,
+        uuid: f.id,
+        file: f,
+      }
+    })
 
-  const agents: MentionItem[] = agentHub.activeAgents
-    .filter((a) => fuzzyMatch(`${a.name} ${a.description}`, q))
-    .slice(0, 8)
-    .map((a) => ({
-      kind: 'agent' as const,
-      key: `agent-${a.id}`,
-      name: a.name,
-      description: a.description || '智能体',
-      agent: a,
-    }))
-
-  const skills: MentionItem[] = agentHub.skills
-    .filter((s) => s.is_active && fuzzyMatch(`${s.name} ${s.description}`, q))
-    .slice(0, 8)
-    .map((s) => ({
-      kind: 'skill' as const,
-      key: `skill-${s.id}`,
-      name: s.name,
-      description: s.description || '技能',
-      skill: s,
-    }))
-
-  return [...files, ...agents, ...skills]
+  const items = [...directories, ...files]
+  const normalizedQuery = normalizedMentionQuery(q).toLowerCase()
+  // 排序：查询相关度 → 最近使用置顶 → 名称
+  return items.sort((left, right) => {
+    const relevance = (item: MentionItem) => {
+      if (!normalizedQuery) return 0
+      const text = `${item.name} ${item.description}`.toLowerCase()
+      return text.startsWith(normalizedQuery) ? 0 : text.includes(normalizedQuery) ? 1 : 2
+    }
+    return (
+      relevance(left) - relevance(right) ||
+      recentRank('mention', left.key) - recentRank('mention', right.key) ||
+      left.name.localeCompare(right.name, 'zh')
+    )
+  })
 })
 
 function formatBytes(size: number): string {
@@ -302,11 +423,11 @@ function formatBytes(size: number): string {
 }
 
 /** 把光标处活跃的 @查询词 替换为 @名称 + 空格，返回是否替换成功 */
-function replaceMentionToken(name: string): void {
+function replaceMentionToken(name: string, appendSpace = true): void {
   const el = textareaRef.value
   const text = localValue.value
   const caret = el?.selectionStart ?? text.length
-  const before = text.slice(0, caret).replace(/@([\w./\-@一-龥]*)$/, `@${name} `)
+  const before = text.slice(0, caret).replace(/@([^@\n]*)$/, `@${name}${appendSpace ? ' ' : ''}`)
   localValue.value = before + text.slice(caret)
   nextTick(() => {
     if (el) {
@@ -318,13 +439,20 @@ function replaceMentionToken(name: string): void {
 }
 
 function selectMention(item: MentionItem) {
-  if (item.kind === 'file' && item.file) {
+  if (item.kind === 'directory' && item.directory) {
+    pushRecent('mention', item.key)
+    replaceMentionToken(`${normalizePath(item.directory.path)}/`, false)
+    nextTick(() => detectMention())
+    return
+  } else if (item.kind === 'file' && item.file) {
+    pushRecent('mention', item.key)
     const f = item.file
     const fileId = `file://${f.id}`
+    const relativePath = normalizePath(f.path || `${f.directory ? `${f.directory}/` : ''}${f.original_name}`)
     // 去重：已引用则不重复添加
     if (!attachments.value.some((a) => a.file_id === fileId)) {
       attachments.value.push({
-        name: f.original_name,
+        name: relativePath || f.original_name,
         size: f.size,
         type: 'application/octet-stream',
         url: `/api/v1/files/${f.id}/download`,
@@ -332,7 +460,7 @@ function selectMention(item: MentionItem) {
         source: 'workspace',
       })
     }
-    replaceMentionToken(f.original_name)
+    replaceMentionToken(relativePath || f.original_name)
   } else if (item.kind === 'agent' && item.agent) {
     pendingAgent.value = item.agent
     replaceMentionToken(item.agent.name)
@@ -353,22 +481,40 @@ function removePendingSkill(idx: number) {
   pendingSkills.value.splice(idx, 1)
 }
 
-function updateSlashMenuPosition() {
-  if (!textareaRef.value) return
-  const rect = textareaRef.value.getBoundingClientRect()
-  slashMenuPosition.value = {
-    top: rect.top - 220,
-    left: rect.left + 20,
-  }
-}
-
 function handleSlashSelect(command: string) {
+  pushRecent('slash', command)
   const text = localValue.value
   const lines = text.split('\n')
   lines[lines.length - 1] = command + ' '
   localValue.value = lines.join('\n')
   showSlashMenu.value = false
   nextTick(() => textareaRef.value?.focus())
+}
+
+/**
+ * / 面板选中智能体：插入与手动 @ 完全一致的 mention 标签。
+ * 与 selectMention 的 agent 分支同款状态（pendingAgent）+ 同款 `@名称 ` 文本，
+ * 保证标签渲染与提交数据结构不变；替换的是行首 `/查询词`（而非 @ 查询词）。
+ */
+function handleSlashSelectAgent(agent: AgentTemplate) {
+  pushRecent('slash', `agent-${agent.id}`)
+  pendingAgent.value = agent
+  const el = textareaRef.value
+  const text = localValue.value
+  const caret = el?.selectionStart ?? text.length
+  const beforeCaret = text.slice(0, caret)
+  const replaced = beforeCaret.replace(
+    /(^|\n)\/[^\n]*$/,
+    (match, prefix: string) => `${prefix}@${agent.name} `,
+  )
+  localValue.value = replaced + text.slice(caret)
+  showSlashMenu.value = false
+  nextTick(() => {
+    if (el) {
+      el.focus()
+      el.setSelectionRange(replaced.length, replaced.length)
+    }
+  })
 }
 
 function handleSend() {
@@ -392,12 +538,15 @@ function handleSend() {
     workbenchIntent,
     explicitAgentId: pendingAgent.value?.id,
     skillNames: pendingSkills.value.length ? pendingSkills.value.map((s) => s.name) : undefined,
+    mcpMode: mcpMode.value,
+    extraMcpServers: mcpMode.value === 'manual' ? [...extraMcpServers.value] : [],
   })
   localValue.value = ''
   attachments.value = []
   pendingAgent.value = null
   pendingSkills.value = []
   showMentionMenu.value = false
+  showMcpMenu.value = false
   nextTick(() => {
     if (textareaRef.value) {
       textareaRef.value.style.height = 'auto'
@@ -419,7 +568,11 @@ function handleRegenerate() {
 
 let blurTimer: ReturnType<typeof setTimeout> | null = null
 
-function handleBlur() {
+function handleBlur(e: FocusEvent) {
+  const nextTarget = e.relatedTarget as Node | null
+  if (nextTarget && (e.currentTarget as HTMLElement).closest('.kimi-chat-input')?.contains(nextTarget)) {
+    return
+  }
   if (blurTimer) clearTimeout(blurTimer)
   blurTimer = setTimeout(() => {
     isFocused.value = false
@@ -463,8 +616,22 @@ function removeAttachment(idx: number) {
   attachments.value.splice(idx, 1)
 }
 
-function handleWebSearchToggle() {
-  chatStore.toggleWebSearch()
+async function handleWebSearchToggle() {
+  if (chatStore.enableWebSearch) {
+    chatStore.toggleWebSearch()
+    return
+  }
+  try {
+    const { data } = await apiClient.get<{ available: boolean }>('/chat/web-search/availability')
+    if (data.available) {
+      chatStore.toggleWebSearch()
+      return
+    }
+  } catch {
+    // 配置检查失败时保守地阻止开关，避免用户以为已经联网。
+  }
+  message.warning('请先到 AI 配置中心 · 资源中心 · 联网搜索 配置服务商')
+  void router.push('/admin/ai-config/resources')
 }
 
 function handleSandboxStub() {
@@ -489,18 +656,73 @@ function handleClearConfirm() {
 
 onMounted(() => {
   siteConfigStore.fetchSiteConfig()
+  syncMcpSelection()
+  document.addEventListener('pointerdown', handleDocumentPointerDown)
 })
 
 onUnmounted(() => {
   if (blurTimer) clearTimeout(blurTimer)
+  document.removeEventListener('pointerdown', handleDocumentPointerDown)
 })
+
+function handleDocumentPointerDown(event: PointerEvent) {
+  const target = event.target as Element | null
+  if (showMcpMenu.value && target && !target.closest('.mcp-selection-menu') && !target.closest('.mcp-toolbar-trigger')) {
+    showMcpMenu.value = false
+  }
+}
+
+watch(() => agentHub.currentSessionId, syncMcpSelection)
 </script>
 
 <template>
   <div
     class="kimi-chat-input"
-    :class="{ focused: isFocused, disabled, 'deep-thinking': chatStore.deepThinking }"
+    :class="{
+      focused: isFocused,
+      disabled,
+      'deep-thinking': chatStore.deepThinking,
+      'popup-open': showSlashMenu || showMentionMenu || showMcpMenu,
+    }"
   >
+    <Transition name="composer-menu" appear>
+      <SlashCommandMenu
+        v-if="showSlashMenu"
+        ref="slashMenuRef"
+        :query="slashQuery"
+        :agents="agentHub.activeAgents"
+        @select="handleSlashSelect"
+        @select-agent="handleSlashSelectAgent"
+        @close="showSlashMenu = false"
+      />
+    </Transition>
+
+    <Transition name="composer-menu" appear>
+      <McpSelectionMenu
+        v-if="showMcpMenu"
+        ref="mcpMenuRef"
+        :mode="mcpMode"
+        :extra-servers="extraMcpServers"
+        @update="handleMcpSelection"
+        @close="showMcpMenu = false"
+      />
+    </Transition>
+
+    <Transition name="composer-menu" appear>
+      <MentionMenu
+        v-if="showMentionMenu"
+        :items="mentionItems"
+        :active-index="mentionActiveIndex"
+        :loading="mentionLoading"
+        :state="mentionState"
+        :query="mentionQuery"
+        @select="selectMention"
+        @hover="mentionActiveIndex = $event"
+          @retry="searchWorkspaceFiles"
+        @close="showMentionMenu = false"
+      />
+    </Transition>
+
     <div class="input-wrapper">
       <textarea
         ref="textareaRef"
@@ -577,27 +799,6 @@ onUnmounted(() => {
       </NTag>
     </div>
 
-    <SlashCommandMenu
-      v-if="showSlashMenu"
-      :query="slashQuery"
-      :position="slashMenuPosition"
-      @select="handleSlashSelect"
-      @close="showSlashMenu = false"
-    />
-
-    <MentionMenu
-      v-if="showMentionMenu"
-      :items="mentionItems"
-      :active-index="mentionActiveIndex"
-      :position="mentionPosition"
-      :loading="mentionLoading"
-      :error="mentionError"
-      @select="selectMention"
-      @hover="mentionActiveIndex = $event"
-      @retry="loadWorkspaceFiles"
-      @close="showMentionMenu = false"
-    />
-
     <div class="input-toolbar">
       <div class="toolbar-left">
         <!-- 提示词模板 -->
@@ -643,6 +844,23 @@ onUnmounted(() => {
             </n-button>
           </template>
           代码执行
+        </n-tooltip>
+
+        <n-tooltip trigger="hover">
+          <template #trigger>
+            <n-button
+              text
+              class="toolbar-btn mcp-toolbar-trigger"
+              :class="{ active: mcpButtonActive }"
+              @click="showMcpMenu = !showMcpMenu"
+            >
+              <span class="mcp-button-icon">
+                <n-icon size="18"><HammerOutline /></n-icon>
+                <span v-if="mcpMode === 'manual' && extraMcpCount" class="mcp-count-badge">+{{ extraMcpCount }}</span>
+              </span>
+            </n-button>
+          </template>
+          MCP 工具：{{ mcpMode === 'off' ? '关闭' : mcpMode === 'manual' ? '手动选择' : '自动' }}
         </n-tooltip>
 
         <!-- 深度思考 -->
@@ -755,20 +973,23 @@ onUnmounted(() => {
 
 <style scoped lang="scss">
 .kimi-chat-input {
+  position: relative;
+  z-index: 20;
+  isolation: isolate;
   background: var(--chat-input-bg);
   border: 1px solid var(--chat-input-border);
-  border-radius: 20px;
+  border-radius: var(--chat-radius-xl, 20px);
   padding: 12px 16px;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 
   &.focused {
-    border-color: var(--chat-accent);
-    box-shadow: 0 0 0 2px rgba(79, 142, 247, 0.15);
+    border-color: var(--stardust-blue);
+    box-shadow: 0 0 0 3px rgba(46, 91, 255, 0.12);
   }
 
   &.deep-thinking {
-    border-color: var(--chat-deep-thinking);
-    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.3);
+    border-color: var(--stardust-blue);
+    box-shadow: 0 0 0 3px rgba(46, 91, 255, 0.12);
   }
 
   &.disabled {
@@ -777,7 +998,47 @@ onUnmounted(() => {
   }
 
   .input-wrapper {
+    position: relative;
+    z-index: 1;
     margin-bottom: 8px;
+  }
+
+  .ref-bar,
+  .input-toolbar,
+  .input-hint {
+    position: relative;
+    z-index: 1;
+  }
+
+  &.popup-open {
+    border-radius: var(--chat-radius-xl, 20px);
+  }
+
+  &.popup-open :deep(.slash-command-menu),
+  &.popup-open :deep(.mention-menu),
+  &.popup-open :deep(.mcp-selection-menu) {
+    position: relative;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    width: calc(100% + 32px);
+    margin: -12px -16px 12px;
+    border: none;
+    border-bottom: 1px solid var(--chat-input-border);
+    border-radius: var(--chat-radius-xl, 20px) var(--chat-radius-xl, 20px) 0 0;
+    box-shadow: none;
+  }
+
+  :deep(.composer-menu-enter-active),
+  :deep(.composer-menu-leave-active) {
+    transition: opacity 180ms ease-out, transform 180ms ease-out;
+    transform-origin: bottom;
+  }
+
+  :deep(.composer-menu-enter-from),
+  :deep(.composer-menu-leave-to) {
+    opacity: 0;
+    transform: translateY(8px);
   }
 
   .ref-bar {
@@ -859,8 +1120,9 @@ onUnmounted(() => {
       }
 
       &.active {
-        color: var(--chat-accent);
-        background: rgba(79, 142, 247, 0.12);
+        color: var(--stardust-blue);
+        background: rgba(46, 91, 255, 0.1);
+        border: 1px solid rgba(46, 91, 255, 0.35);
       }
 
       .btn-label {
@@ -869,8 +1131,9 @@ onUnmounted(() => {
       }
 
       &.deep-thinking-btn.active {
-        color: var(--chat-deep-thinking);
-        background: rgba(245, 158, 11, 0.12);
+        color: var(--stardust-blue);
+        background: rgba(46, 91, 255, 0.1);
+        border: 1px solid rgba(46, 91, 255, 0.35);
       }
 
       &.clear-btn:hover {
@@ -878,11 +1141,34 @@ onUnmounted(() => {
       }
     }
 
-    .toolbar-left > :nth-child(1) .toolbar-btn { color: #4C6FFF; background: var(--icon-blue-bg); }
-    .toolbar-left > :nth-child(2) .toolbar-btn { color: #8B5CF6; background: var(--icon-purple-bg); }
-    .toolbar-left > :nth-child(3) .toolbar-btn { color: #0891B2; background: var(--icon-cyan-bg); }
-    .toolbar-left > :nth-child(4) .toolbar-btn { color: #059669; background: var(--icon-green-bg); }
-    .toolbar-left > :nth-child(5) .toolbar-btn { color: #D97706; background: var(--icon-orange-bg); }
+    .mcp-toolbar-trigger {
+      position: relative;
+    }
+
+    .mcp-button-icon {
+      position: relative;
+      display: inline-flex;
+    }
+
+    .mcp-count-badge {
+      position: absolute;
+      top: -8px;
+      right: -10px;
+      min-width: 15px;
+      padding: 0 3px;
+      color: #fff;
+      background: var(--chat-accent);
+      border-radius: 8px;
+      font-size: 9px;
+      line-height: 15px;
+      text-align: center;
+    }
+
+    .toolbar-left > :nth-child(1) .toolbar-btn { color: var(--stardust-blue); }
+    .toolbar-left > :nth-child(2) .toolbar-btn { color: var(--stardust-purple); }
+    .toolbar-left > :nth-child(3) .toolbar-btn { color: #0891B2; }
+    .toolbar-left > :nth-child(4) .toolbar-btn { color: #64748B; }
+    .toolbar-left > :nth-child(5) .toolbar-btn { color: var(--stardust-purple); }
 
     .send-btn {
       width: 32px;
@@ -894,16 +1180,20 @@ onUnmounted(() => {
       &:hover,
       &.active {
         color: #fff;
-        background: var(--brand-gradient);
+        background: var(--stardust-gradient);
+        box-shadow: 0 4px 12px rgba(46, 91, 255, 0.35);
       }
 
       &:disabled {
-        opacity: 0.4;
+        color: #fff;
+        background: #d4dbf5;
+        opacity: 1;
+        cursor: not-allowed;
       }
 
       &.pause-btn {
         color: #fff;
-        background: var(--arco-warning, #FF7D00);
+        background: var(--stardust-gradient);
         animation: pause-pulse 1.6s ease-in-out infinite;
       }
 
@@ -933,7 +1223,7 @@ onUnmounted(() => {
   }
 
   .paused-hint {
-    color: var(--arco-warning, #FF7D00);
+    color: var(--stardust-blue);
     font-weight: 500;
   }
 }

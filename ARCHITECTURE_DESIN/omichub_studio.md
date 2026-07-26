@@ -68,14 +68,14 @@ sandbox-agent 端点（容器内工作区 Unix Socket `/workspace/.agent.sock`�
 2. 容器进程就绪 ≠ agent 已监听，曾出现 ConnectError 竞态 → 加 `/healthz` 轮询（30s 超时）。
 3. `tool_output` 事件原先不带 `tool_call_id`，并行同名工具输出会串卡 → 已补上（前后端均已适配）。
 
-**网络安全契约（已落地）**：默认 `none` 使用 Docker `network_mode=none`，沙盒完全断网；`whitelist` 使用每会话 Docker `internal` 网络，仅连接沙盒与独立出站代理。代理按 `data/studio.yaml` 热加载精确域名/子域名白名单，只允许 HTTP 80 与 HTTPS CONNECT 443，拒绝 IP 字面量、通配符、私网/保留地址，并在代理侧解析后固定公网 IP，防止 DNS rebinding。Manager 校验网络只挂载预期端点，失败关闭并清理临时网络。Redis 不可用时活跃态降级为进程内记录，多副本部署需确保 Redis 可用。
+**网络安全契约（已落地）**：默认 `none` 使用 Docker `network_mode=none`，沙盒完全断网；`whitelist` 使用每会话 Docker `internal` 网络，仅连接沙盒与独立出站代理。代理按 `data/ai/studio.yaml` 热加载精确域名/子域名白名单，只允许 HTTP 80 与 HTTPS CONNECT 443，拒绝 IP 字面量、通配符、私网/保留地址，并在代理侧解析后固定公网 IP，防止 DNS rebinding。Manager 校验网络只挂载预期端点，失败关闭并清理临时网络。Redis 不可用时活跃态降级为进程内记录，多副本部署需确保 Redis 可用。
 
 ### 1.3 配置
 
-- `data/studio.yaml`：`studio.enabled`、`default_image: omichub-sandbox:bio`、`session.idle_ttl_minutes: 30`、`session.workspace_retention_days: 7`、`sandbox.cpu: 2 / memory: 4g / exec_timeout_seconds: 600`、`sandbox.network.mode: none|whitelist`、`sandbox.network.docker_network: omichub-studio-egress`（每会话网络前缀）、代理容器/别名/端口及 `allow` 域名列表、`mounts.workspace: "{storage_path}/studio"`（加载时解析为 `settings.storage_path` 下）、`session.prewarm_on_create`、`images.base/bio/full`、`tools.builtin`（10 个工具清单）。默认配置 `mode: none`，白名单模式需显式配置非空 `allow`。
+- `data/ai/studio.yaml`：`studio.enabled`、`default_image: omichub-sandbox:bio`、`session.idle_ttl_minutes: 30`、`session.workspace_retention_days: 7`、`sandbox.cpu: 2 / memory: 4g / exec_timeout_seconds: 600`、`sandbox.network.mode: none|whitelist`、`sandbox.network.docker_network: omichub-studio-egress`（每会话网络前缀）、代理容器/别名/端口及 `allow` 域名列表、`mounts.workspace: "{storage_path}/studio"`（加载时解析为 `settings.storage_path` 下）、`session.prewarm_on_create`、`images.base/bio/full`、`tools.builtin`（10 个工具清单）。默认配置 `mode: none`，白名单模式需显式配置非空 `allow`。
 - `src/omichub/core/config.py`：Worker 默认调用 `http://web:8000/api/v1/studio/internal`；控制 token 可由 `STUDIO_CONTROL_TOKEN` 显式提供，未提供时从 `APP_SECRET_KEY` 以 HMAC-SHA256 域隔离派生，不直接复用应用密钥。
 - `src/omichub/infrastructure/config/studio_loader.py`：`StudioConfig` pydantic 模型 + mtime 热重载，`get_studio_config()` / `studio_config_manager`。
-- `src/omichub/core/config.py` 新增 `studio_config_yaml: str = "data/studio.yaml"`。
+- `src/omichub/core/config.py` 新增 `studio_config_yaml: str = "data/ai/studio.yaml"`。
 - 5 个智能体 yaml（`data/ai/{general,code,viz,rnaseq,shania}.yaml`）已追加 `studio: {enabled: true, image: ...}` 段（viz/general/code→base，rnaseq/傻妞→bio）。`agent_loader.py` 解析该段；`agent_service.ensure_builtin_agents` 写入 `features["studio"]`（**注意：既有同步逻辑对已有 agent 跳过，studio 段只对首次落库生效**；但 Studio 会话创建对未声明 agent 默认开放，显式 `enabled: false` 才拒绝）。
 
 ### 1.4 数据库迁移（均已应用到本地 dev DB）
@@ -222,7 +222,7 @@ Studio 新增：
 
 - `workspace.py`：`platform_user_rel()`（剥离 `users/{uid}/` 前缀，拒绝他人目录/`..`/绝对路径）、`link_platform_file()`（basename 消毒 + `name (2).ext` 去重）、`list_input_links()`；`disk_read_file/disk_list_files` 支持 `platform_host_root`。
 - `pipeline_query` 数据源：`FlowService().list_flows()` + `schema_loader.list_tools()`。
-- `data/studio.yaml` tools.builtin 已同步 10 工具清单，并注释记录 per-user 挂载。
+- `data/ai/studio.yaml` tools.builtin 已同步 10 工具清单，并注释记录 per-user 挂载。
 
 ---
 

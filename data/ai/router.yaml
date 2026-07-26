@@ -6,7 +6,7 @@ avatar: "🧭"
 color: "#8e6cf0"
 category: general
 model: qwen3.7-max
-prompt_ref: agents.router
+prompt_file: prompts/router.md
 welcome_message: "你好！我是智能助手，直接描述你的需求即可，我会自动转接给最合适的专家为你解答。"
 temperature: 0.7
 max_tokens: 4096
@@ -14,6 +14,10 @@ mcp_ids: []
 skill_ids: []
 features:
   router: true
+  web_search:
+    mode: required_for_freshness
+    triggers: [实时, 最新, 今天, 新闻, 天气, 文献, 论文, 研究进展]
+tool_packs: [workspace]
 
 # Studio 工作台：router 会话共享一个沙盒镜像（取最通用的 analysis-core）。
 # 注意：转接到 scrna 等专家后仍使用该镜像；按被路由专家动态切换镜像是后续工作。

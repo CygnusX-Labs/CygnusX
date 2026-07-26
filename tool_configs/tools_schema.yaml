@@ -30,6 +30,107 @@
 # --------------------------------------------
 
 tools:
+  - key: agent-handoff-transfer
+    name: transfer_to_agent
+    description: 将当前会话交接给白名单中的下一位专业 Agent。必须提供已完成工作、用户诉求和工作区产物摘要；不能用于绕过 Agent 授权。
+    category: agent-handoff
+    invocation_mode: backend_sync
+    service: omichub.application.services.agent_handoff_tool_service.AgentHandoffToolService
+    method: transfer_to_agent
+    requires_confirm: false
+    annotations: {readOnlyHint: false, destructiveHint: false, openWorld: false, idempotent: false}
+    extra: {user_scoped: true, control_tool: handoff}
+    input_schema:
+      type: object
+      properties:
+        target_agent: {type: string, description: 白名单中的目标 Agent ID}
+        reason: {type: string, description: 转交原因，回转交时必须说明新增信息}
+        handoff_summary: {type: string, description: 已完成工作的自包含摘要}
+        user_intent: {type: string, description: 用户当前希望继续完成的任务}
+        artifacts: {type: array, items: {type: string}, description: 用户 workspace 内相关产物的相对路径}
+        constraints: {type: array, items: {type: string}, description: 分组、参考基因组和输出格式等约束}
+      required: [target_agent, reason, handoff_summary, user_intent]
+    llm_result_fields: [summary, handoff, success, error]
+    ui_result_fields: []
+
+  - key: agent-memory-save
+    name: omichub_save_memory
+    description: 保存用户明确透露、跨会话仍有价值的研究偏好或项目事实。禁止保存密钥、密码、Token、原始数据内容或临时细节。
+    category: agent-memory
+    invocation_mode: backend_sync
+    service: omichub.application.services.agent_memory_tool_service.AgentMemoryToolService
+    method: save_memory
+    requires_confirm: false
+    annotations: {readOnlyHint: false, destructiveHint: false, openWorld: false, idempotent: true}
+    extra: {user_scoped: true}
+    input_schema:
+      type: object
+      properties:
+        content: {type: string, description: 一句自包含的长期记忆，最多 200 字符}
+        scope: {type: string, enum: [profile, project, preference, summary], description: 记忆范围}
+        keywords: {type: array, items: {type: string}, description: 用于后续召回的关键词，最多 8 个}
+      required: [content, scope]
+    llm_result_fields: [memory_id, action, summary, success, error]
+    ui_result_fields: []
+
+  - key: agent-memory-update
+    name: omichub_update_memory
+    description: 修正或更新一条已有的跨会话用户记忆。
+    category: agent-memory
+    invocation_mode: backend_sync
+    service: omichub.application.services.agent_memory_tool_service.AgentMemoryToolService
+    method: update_memory
+    requires_confirm: false
+    annotations: {readOnlyHint: false, destructiveHint: false, openWorld: false, idempotent: true}
+    extra: {user_scoped: true}
+    input_schema:
+      type: object
+      properties:
+        memory_id: {type: string, description: 要更新的记忆 ID}
+        content: {type: string, description: 更新后的一句自包含记忆，最多 200 字符}
+        keywords: {type: array, items: {type: string}, description: 新的召回关键词}
+      required: [memory_id, content]
+    llm_result_fields: [memory_id, action, summary, success, error]
+    ui_result_fields: []
+
+  - key: agent-memory-forget
+    name: omichub_forget_memory
+    description: 遗忘用户明确要求删除的一条跨会话记忆。
+    category: agent-memory
+    invocation_mode: backend_sync
+    service: omichub.application.services.agent_memory_tool_service.AgentMemoryToolService
+    method: forget_memory
+    requires_confirm: false
+    annotations: {readOnlyHint: false, destructiveHint: false, openWorld: false, idempotent: true}
+    extra: {user_scoped: true}
+    input_schema:
+      type: object
+      properties:
+        memory_id: {type: string, description: 要遗忘的记忆 ID}
+      required: [memory_id]
+    llm_result_fields: [memory_id, forgotten, summary, success, error]
+    ui_result_fields: []
+
+  - key: agent-memory-search
+    name: omichub_search_memory
+    description: 在当前用户自己的跨会话记忆中检索与当前任务相关的信息。
+    category: agent-memory
+    invocation_mode: backend_sync
+    service: omichub.application.services.agent_memory_tool_service.AgentMemoryToolService
+    method: search_memory
+    requires_confirm: false
+    annotations: {readOnlyHint: true, destructiveHint: false, openWorld: false, idempotent: true}
+    extra: {user_scoped: true}
+    input_schema:
+      type: object
+      properties:
+        query: {type: string, description: 要检索的研究项目、物种、数据类型或偏好}
+        scope: {type: string, enum: [profile, project, preference, summary], description: 可选范围过滤}
+        limit: {type: integer, minimum: 1, maximum: 5, default: 5}
+      required: [query]
+    llm_result_fields: [memories, count, summary, success, error]
+    ui_result_fields: []
+
   - key: kegg-enrichment
     name: omichub_run_kegg_enrichment
     description: 对基因列表进行 KEGG 通路富集分析，返回 Top 通路摘要与 Plotly 气泡图。

@@ -8,6 +8,19 @@ export interface TokenInfo {
   total?: number
 }
 
+export interface WebSearchSource {
+  title: string
+  url: string
+  snippet: string
+  publishedAt?: string | null
+}
+
+export interface WebSearchStatus {
+  query?: string
+  status: 'searching' | 'empty' | 'failed' | 'complete'
+  message?: string
+}
+
 // ===== 聊天消息 =====
 /** 智能路由：目标专家信息（route 事件） */
 export interface RoutedAgentInfo {
@@ -16,6 +29,10 @@ export interface RoutedAgentInfo {
   avatar: string
   color: string
   reason: string
+}
+
+export interface ExpertConsultation {
+  experts: Array<{ agent_id: string; name: string; opinion: string }>
 }
 
 export interface ChatMessage {
@@ -30,11 +47,16 @@ export interface ChatMessage {
   /** 实际使用的模型名，AI 消息专属 */
   modelName?: string
   toolCalls?: ToolCall[]
+  /** 联网搜索的标准化来源；用于预搜索和历史重载。 */
+  webSources?: WebSearchSource[]
+  /** 联网搜索进行中的反馈。 */
+  webSearchStatus?: WebSearchStatus
   charts?: ChartData[]
   /** Studio ask_user 澄清卡片（AI 消息专属，回答后标记 answered） */
   askRequest?: AskRequest
   /** 智能路由：本条 AI 消息实际由哪位专家回答（路由器会话专属） */
   routedAgent?: RoutedAgentInfo
+  consultation?: ExpertConsultation
   attachments?: FileAttachment[]
   feedback?: 'like' | 'dislike'
   /** 是否被编辑过，用户消息专属 */
@@ -101,7 +123,14 @@ export interface FileAttachment {
 }
 
 // ===== @ 提及项（文件 / 智能体 / 技能）=====
-export type MentionKind = 'file' | 'agent' | 'skill'
+export type MentionKind = 'directory' | 'file' | 'agent' | 'skill'
+
+export interface MentionDirectory {
+  path: string
+  name: string
+  parent_path?: string | null
+  is_system?: boolean
+}
 
 /** @ 补全面板中的一个可选项 */
 export interface MentionItem {
@@ -111,7 +140,10 @@ export interface MentionItem {
   name: string
   /** 文件为所在路径；智能体/技能为一句话能力描述 */
   description: string
+  /** 条目对应的 UUID（仅作为 tooltip 展示，主行禁止裸显） */
+  uuid?: string
   file?: DataFile
+  directory?: MentionDirectory
   agent?: AgentTemplate
   skill?: SkillItem
 }

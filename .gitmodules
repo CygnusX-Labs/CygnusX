@@ -7,3 +7,6 @@
 [submodule "pipelines/EBIDownload"]
 	path = pipelines/EBIDownload
 	url = git@github.com:xsx123123/EBIDownload.git
+[submodule "Protocol/FlowFrame"]
+	path = Protocol/FlowFrame
+	url = git@github.com:xsx123123/FlowFrame.git

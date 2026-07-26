@@ -8,6 +8,38 @@ from client.api_client import OmicHubAPIClient, OmicHubAPIError
 def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
 
     @mcp.tool()
+    async def list_workspace_files(path: str = "", pattern: str = "") -> dict:
+        """列出当前用户工作区目录的文件和文件夹，返回 file_id、类型、大小和修改时间。"""
+        try:
+            data = await api.list_workspace_files(path=path or None, pattern=pattern or None)
+            return {
+                "success": True,
+                "summary": data.get("summary", "工作区文件列表"),
+                "data": data,
+            }
+        except OmicHubAPIError as e:
+            return {"success": False, "summary": f"列出工作区文件失败: {e.detail}"}
+
+    @mcp.tool()
+    async def search_workspace_files(query: str, limit: int = 50) -> dict:
+        """递归按文件名模糊搜索当前用户工作区文件。"""
+        try:
+            data = await api.search_workspace_files(query=query, limit=limit)
+            items = data.get("items", []) if isinstance(data, dict) else []
+            lines = [
+                f"- {item.get('name', '?')} · {item.get('relative_path', '')} · "
+                f"file_id={item.get('file_id', '')}"
+                for item in items
+            ]
+            return {
+                "success": True,
+                "summary": data.get("summary", "搜索结果:\n" + "\n".join(lines)),
+                "data": data,
+            }
+        except OmicHubAPIError as e:
+            return {"success": False, "summary": f"搜索工作区文件失败: {e.detail}"}
+
+    @mcp.tool()
     async def omichub_list_files(directory: str = "", file_type: str = "") -> dict:
         """列出用户文件。可按目录和文件类型过滤。"""
         try:

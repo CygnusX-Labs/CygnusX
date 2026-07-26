@@ -1,6 +1,6 @@
 """OmicStudio 沙盒出站 HTTP CONNECT 代理。
 
-仅允许 data/studio.yaml 中 studio.sandbox.network.allow 声明的域名；
+仅允许 data/ai/studio.yaml 中 studio.sandbox.network.allow 声明的域名；
 拒绝 IP 字面量、私网/回环/保留地址，并将 DNS 解析结果固定为已校验公网 IP，
 避免沙盒通过代理访问平台内网或利用 DNS rebinding 绕过白名单。
 """

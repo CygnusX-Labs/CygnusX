@@ -31,6 +31,8 @@ from omichub.infrastructure.ai_provider.openai_compatible import (
 
 # 与 legacy 循环一致：tool 结果回灌 LLM 前按 4000 字符截断
 TOOL_RESULT_MAX_CHARS = 4000
+# 技能 L2 正文（use_skill）允许更长回灌，与 legacy 循环的 llm_limit 保持一致
+SKILL_TOOL_MAX_CHARS = 24000
 
 ChatStreamFn = Callable[..., AsyncIterator[ChatChunk]]
 ToolExecutorFn = Callable[[str, dict[str, Any], str], Awaitable[dict[str, Any]]]
@@ -169,11 +171,20 @@ async def tool_exec_node(state: AgentState, deps: NodeDeps) -> dict[str, Any]:
         )
 
         llm_content = json.dumps(llm_result, ensure_ascii=False, default=str)
-        if len(llm_content) > TOOL_RESULT_MAX_CHARS:
-            llm_content = llm_content[:TOOL_RESULT_MAX_CHARS]
+        from omichub.domain.skill.services import SKILL_TOOL_NAMES
+
+        limit = SKILL_TOOL_MAX_CHARS if tool_name in SKILL_TOOL_NAMES else TOOL_RESULT_MAX_CHARS
+        if len(llm_content) > limit:
+            llm_content = llm_content[:limit]
         new_messages.append(
             {"role": "tool", "tool_call_id": tool_call_id, "content": llm_content}
         )
+        candidate = result.get("result", result) if isinstance(result, dict) else result
+        if isinstance(candidate, dict):
+            candidate = candidate.get("llm_payload", candidate)
+        directive = candidate.get("handoff") if isinstance(candidate, dict) else None
+        if isinstance(directive, dict) and bool(result.get("success", False)):
+            return {"messages": new_messages, "handoff": dict(directive), "error": None}
     return {"messages": new_messages, "error": None}
 
 
@@ -191,6 +202,8 @@ def route_after_llm(state: AgentState) -> str:
 def route_after_tool(state: AgentState, max_rounds: int) -> str:
     """工具执行后路由：正常且未达轮次上限 → llm_call；否则 → end"""
     if state.get("error"):
+        return "end"
+    if state.get("handoff"):
         return "end"
     if state.get("rounds", 0) >= max_rounds:
         return "end"

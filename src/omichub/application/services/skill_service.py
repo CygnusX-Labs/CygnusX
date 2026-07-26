@@ -80,6 +80,10 @@ class SkillService:
             raise BusinessError("内置技能不可删除，可停用")
         await self._db.delete(model)
         await self._db.flush()
+        # 同步清理磁盘上的 SKILL.md 标准文件夹
+        from omichub.infrastructure.skills.skill_store import remove_skill_folder
+
+        remove_skill_folder(skill_id)
         return True
 
     async def toggle_skill(self, skill_id: str) -> SkillDTO:
@@ -99,32 +103,45 @@ class SkillService:
             .order_by(SkillModel.created_at)
             .limit(MAX_ACTIVE_SKILLS)
         )
-        return [
-            Skill(
-                id=m.id,
-                skill_id=m.skill_id,
-                name=m.name,
-                description=m.description,
-                prompt=m.prompt,
-                tool_definition=m.tool_definition,
-                icon=m.icon,
-                category=m.category,
-                is_active=m.is_active,
-                is_builtin=m.is_builtin,
-                created_at=m.created_at,
-                updated_at=m.updated_at,
-            )
-            for m in result.scalars().all()
-        ]
+        return [self._to_entity(m) for m in result.scalars().all()]
 
     @staticmethod
     def build_skills_prompt(skills: list[Skill]) -> str:
         """组装技能 prompt 注入文本"""
         return SkillDomainService.build_prompt(skills)
 
+    @staticmethod
+    def build_skills_index(skills: list[Skill]) -> str:
+        """L1：仅注入 name + description 索引（渐进式披露，正文经 use_skill 按需加载）"""
+        return SkillDomainService.build_index(skills)
+
     async def get_by_skill_id(self, skill_id: str) -> SkillModel | None:
         result = await self._db.execute(select(SkillModel).where(SkillModel.skill_id == skill_id))
         return result.scalar_one_or_none()
+
+    @staticmethod
+    def _to_entity(m: SkillModel) -> Skill:
+        return Skill(
+            id=m.id,
+            skill_id=m.skill_id,
+            name=m.name,
+            description=m.description,
+            prompt=m.prompt,
+            tool_definition=m.tool_definition,
+            icon=m.icon,
+            category=m.category,
+            is_active=m.is_active,
+            is_builtin=m.is_builtin,
+            version=m.version,
+            author=m.author,
+            source_type=m.source_type,
+            source_ref=m.source_ref,
+            source_commit=m.source_commit,
+            has_scripts=m.has_scripts,
+            frontmatter=m.frontmatter,
+            created_at=m.created_at,
+            updated_at=m.updated_at,
+        )
 
     @staticmethod
     def _to_dto(m: SkillModel) -> SkillDTO:
@@ -139,6 +156,13 @@ class SkillService:
             category=m.category,
             is_active=m.is_active,
             is_builtin=m.is_builtin,
+            version=m.version,
+            author=m.author,
+            source_type=m.source_type,
+            source_ref=m.source_ref,
+            source_commit=m.source_commit,
+            has_scripts=m.has_scripts,
+            frontmatter=m.frontmatter,
             created_at=m.created_at,
             updated_at=m.updated_at,
         )

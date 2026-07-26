@@ -4,12 +4,13 @@ from collections.abc import AsyncIterator
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.agent import CreateAgentRequest, UpdateAgentRequest
 from omichub.application.services.agent_service import AgentService
 from omichub.core.exceptions import BusinessError
+from omichub.infrastructure.database.models.agent import AgentTemplateModel
 from omichub.infrastructure.database.models.ai_provider import AIProviderConfigModel
 from omichub.infrastructure.database.session import get_session_factory
 
@@ -206,3 +207,49 @@ async def test_update_agent_rejects_inactive_model(service: AgentService, db: As
             agent.agent_id,
             UpdateAgentRequest(model_id=provider.id),
         )
+
+
+async def test_list_agents_reconciles_stale_binding_to_active_default(
+    service: AgentService, db: AsyncSession
+) -> None:
+    """停用 Provider 的历史绑定应迁移到当前默认模型，并刷新助手展示名称。"""
+    await db.execute(update(AIProviderConfigModel).values(is_default=False))
+    retired_provider = AIProviderConfigModel(
+        id=uuid4(),
+        name="旧模型配置",
+        provider_type="openai",
+        model="legacy-model",
+        base_url="https://example.com/v1",
+        api_key="sk-old",
+        is_active=False,
+    )
+    qwen_provider = AIProviderConfigModel(
+        id=uuid4(),
+        name="Qwen 3.7 Flash",
+        provider_type="openai_compatible",
+        model="qwen3.7-flash",
+        base_url="https://example.com/v1",
+        api_key="sk-qwen",
+        is_active=True,
+        is_default=True,
+    )
+    db.add_all([retired_provider, qwen_provider])
+    await db.flush()
+
+    stale_agent = AgentTemplateModel(
+        agent_id=f"stale-model-{uuid4().hex[:8]}",
+        name="旧模型助手",
+        category="general",
+        model_id=retired_provider.id,
+        model_name=retired_provider.name,
+        model_engine=retired_provider.model,
+    )
+    db.add(stale_agent)
+    await db.flush()
+
+    agents = await service.list_agents()
+    repaired = next(agent for agent in agents if agent.agent_id == stale_agent.agent_id)
+
+    assert repaired.model_id == qwen_provider.id
+    assert repaired.model_name == "Qwen 3.7 Flash"
+    assert repaired.model_engine == "qwen3.7-flash"

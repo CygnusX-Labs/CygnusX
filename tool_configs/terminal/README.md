@@ -432,6 +432,46 @@ make docker-reload
 5. 启动主栈 + Worker 栈
 6. 检查 Alembic 迁移状态
 
+### 用途镜像
+
+除基础镜像外，终端提供三种按用途划分的派生镜像。它们均继承
+`omichub/sandbox-terminal:latest` 的 ttyd、zsh 和非 root 运行环境，并在安装完成后切回 UID 1000。
+
+| ID | Dockerfile | 镜像名 | 默认资源 | 主要工具 |
+|---|---|---|---|---|
+| `scrna` | `docker/Dockerfile.scrna` | `omichub/sandbox-scrna:latest` | 4 GB / 2 核 | scanpy、anndata、leiden、Harmony、Scrublet、scVelo |
+| `gatk` | `docker/Dockerfile.gatk` | `omichub/sandbox-gatk:latest` | 4 GB / 4 核 | GATK4、PLINK1.9、PLINK2、tabix |
+| `ggplot2` | `docker/Dockerfile.ggplot2` | `omichub/sandbox-ggplot2:latest` | 1 GB / 1 核 | R、ggplot2、tidyverse、ggrepel、cowplot、plotnine、中文字体 |
+| `rnaseq` | `docker/Dockerfile.rnaseq` | `omichub/sandbox-rnaseq:latest` | 4 GB / 4 核 | hisat2、salmon、kallisto、featureCounts、DESeq2、tximport |
+| `assembly` | `docker/Dockerfile.assembly` | `omichub/sandbox-assembly:latest` | 8 GB / 4 核 | SPAdes、flye、QUAST、BUSCO、minimap2 |
+| `metagenomics` | `docker/Dockerfile.metagenomics` | `omichub/sandbox-metagenomics:latest` | 8 GB / 4 核 | kraken2、bracken、centrifuge、fastp、MultiQC |
+
+构建顺序必须先构建基础镜像：
+
+```bash
+docker build -t omichub/sandbox-terminal:latest tool_configs/terminal/docker/
+docker build -t omichub/sandbox-scrna:latest -f tool_configs/terminal/docker/Dockerfile.scrna tool_configs/terminal/docker/
+docker build -t omichub/sandbox-gatk:latest -f tool_configs/terminal/docker/Dockerfile.gatk tool_configs/terminal/docker/
+docker build -t omichub/sandbox-ggplot2:latest -f tool_configs/terminal/docker/Dockerfile.ggplot2 tool_configs/terminal/docker/
+docker build -t omichub/sandbox-rnaseq:latest -f tool_configs/terminal/docker/Dockerfile.rnaseq tool_configs/terminal/docker/
+docker build -t omichub/sandbox-assembly:latest -f tool_configs/terminal/docker/Dockerfile.assembly tool_configs/terminal/docker/
+docker build -t omichub/sandbox-metagenomics:latest -f tool_configs/terminal/docker/Dockerfile.metagenomics tool_configs/terminal/docker/
+```
+
+每个镜像构建后，使用下列命令验证关键工具与普通用户身份：
+
+```bash
+docker run --rm --entrypoint sh omichub/sandbox-scrna:latest -lc 'id -u; python3 -c "import scanpy, scvelo"'
+docker run --rm --entrypoint sh omichub/sandbox-gatk:latest -lc 'id -u; gatk --version; plink --version; plink2 --version'
+docker run --rm --entrypoint sh omichub/sandbox-ggplot2:latest -lc 'id -u; R --version; R -q -e "library(ggplot2)"; python3 -c "import plotnine"'
+docker run --rm --entrypoint sh omichub/sandbox-rnaseq:latest -lc 'id -u; hisat2 --version; salmon --version; kallisto version; featureCounts -v; R -q -e "library(DESeq2); library(tximport)"'
+docker run --rm --entrypoint sh omichub/sandbox-assembly:latest -lc 'id -u; spades.py --version; flye --version; quast.py --version; busco --version; minimap2 --version'
+docker run --rm --entrypoint sh omichub/sandbox-metagenomics:latest -lc 'id -u; kraken2 --version; bracken -v; centrifuge --version; fastp --version; multiqc --version'
+```
+
+`terminal_images.yaml` 已注册上述镜像，配置加载器检测 mtime 后自动热加载；镜像必须先在运行终端服务的 Docker 主机上构建或拉取，再允许用户创建会话。
+组装与宏基因组镜像默认申请 8 GB 内存，部署前请确保 `terminal_config.yaml` 的 `max_resources.memory_mb` 不低于 8192（当前配置为 32000）。Kraken2 / Bracken 数据库不会内置到宏基因组镜像中，需放到用户 `workspace` 或 `raw_data` 后在命令中通过 `--db` 指定。
+
 ## 后端代码分布
 
 | 层 | 路径 | 作用 |

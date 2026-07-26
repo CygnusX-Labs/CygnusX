@@ -86,6 +86,22 @@
           </NCard>
 
           <NCard :bordered="false" class="arco-card profile-card profile-card--wide">
+            <template #header><CardTitle :icon="ListOutline" title="我的记忆" /></template>
+            <template #header-extra>
+              <NButton v-if="memories.length" text type="error" size="small" @click="clearMemories">清空全部</NButton>
+            </template>
+            <p class="memory-hint">仅保存你允许 Agent 跨会话使用的研究偏好与项目事实；可随时删除。</p>
+            <div v-if="memories.length" class="memory-list">
+              <div v-for="memory in memories" :key="memory.id" class="memory-row">
+                <span><NTag size="small" round>{{ memoryScopeLabel(memory.scope) }}</NTag></span>
+                <div><strong>{{ memory.content }}</strong><small>{{ memory.agent_id || '全局记忆' }} · {{ formatRelative(memory.updated_at) }}</small></div>
+                <NButton text type="error" size="small" @click="deleteMemory(memory.id)">删除</NButton>
+              </div>
+            </div>
+            <NEmpty v-else size="small" description="暂无跨会话记忆。Agent 在你明确授权或提供稳定研究背景时才会保存。" />
+          </NCard>
+
+          <NCard :bordered="false" class="arco-card profile-card profile-card--wide">
             <template #header><CardTitle :icon="SettingsOutline" title="平台偏好" /></template>
             <NGrid cols="1 m:2" responsive="screen" :x-gap="20" :y-gap="20">
               <NGridItem><label class="field-label">默认首页<NSelect v-model:value="preferences.default_page" :options="defaultPageOptions" :loading="savingPreferences" @update:value="savePreferences" /></label></NGridItem>
@@ -122,6 +138,7 @@ import type { Task, User } from '@/types'
 import PageHeader from '@/components/PageHeader.vue'
 
 interface AuditLog { type: string; type_label: string; description: string; created_at: string }
+interface AgentMemory { id: string; agent_id: string | null; scope: 'profile' | 'project' | 'preference' | 'summary'; content: string; updated_at: string | null }
 interface UserPreferences { default_page: string; theme: 'system' | 'light' | 'dark'; language: string; notifications: { email: boolean; in_app: boolean; webhook: boolean } }
 
 const CardTitle = defineComponent({ props: { icon: { type: Object, required: true }, title: { type: String, required: true } }, setup: props => () => h(NSpace, { align: 'center', size: 8 }, { default: () => [h(NIcon, { size: 18 }, { default: () => h(props.icon as never) }), h('span', props.title)] }) })
@@ -131,6 +148,7 @@ const themeStore = useThemeStore()
 const message = useMessage()
 const tasks = ref<Task[]>([])
 const auditLogs = ref<AuditLog[]>([])
+const memories = ref<AgentMemory[]>([])
 const isLoading = ref(true)
 const isRefreshing = ref(false)
 const exporting = ref(false)
@@ -161,13 +179,17 @@ function percentage(value: string | number, total: number) { return total > 0 ? 
 function taskStatus(status: string) { return ({ pending: '等待中', queued: '排队中', running: '运行中', success: '已完成', failed: '失败', cancelled: '已取消' }[status] || status) }
 function taskTagType(status: string) { return ({ success: 'success', running: 'success', failed: 'error', pending: 'warning', queued: 'warning', cancelled: 'default' }[status] || 'default') as 'success' | 'error' | 'warning' | 'default' }
 function auditTagType(type: string) { return ({ password: 'warning', security: 'success', delete: 'error', email: 'default' }[type] || 'default') as 'success' | 'error' | 'warning' | 'default' }
+function memoryScopeLabel(scope: AgentMemory['scope']) { return ({ profile: '用户画像', project: '项目', preference: '偏好', summary: '摘要' }[scope]) }
 function applyTheme(theme: UserPreferences['theme']) { const resolved = theme === 'system' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme; themeStore.setTheme(resolved) }
 
 async function loadProfile() { await authStore.fetchUser(); const saved = user.value?.preferences?.profile; if (saved && typeof saved === 'object') preferences.value = { ...preferences.value, ...(saved as Partial<UserPreferences>), notifications: { ...preferences.value.notifications, ...((saved as Partial<UserPreferences>).notifications || {}) } }; applyTheme(preferences.value.theme) }
 async function loadTasks() { const { data } = await apiClient.get<{ items: Task[] }>('/tasks'); tasks.value = data.items || [] }
 async function loadAuditLogs() { const { data } = await apiClient.get<AuditLog[]>('/users/me/audit-logs', { params: { limit: 5 } }); auditLogs.value = data }
+async function loadMemories() { const { data } = await apiClient.get<AgentMemory[]>('/users/me/memories'); memories.value = data }
 async function loadSecurity() { twoFactorEnabled.value = (await authStore.fetch2FAStatus()).enabled }
-async function loadAll(refresh = false) { refresh ? isRefreshing.value = true : isLoading.value = true; try { await Promise.all([loadProfile(), loadTasks(), loadAuditLogs(), loadSecurity()]) } catch (error: any) { if (error.response?.status === 401) { authStore.logout(); await router.push('/login') } else message.error(error.response?.data?.detail || '个人中心加载失败，请稍后重试') } finally { isLoading.value = false; isRefreshing.value = false } }
+async function loadAll(refresh = false) { refresh ? isRefreshing.value = true : isLoading.value = true; try { await Promise.all([loadProfile(), loadTasks(), loadAuditLogs(), loadMemories(), loadSecurity()]) } catch (error: any) { if (error.response?.status === 401) { authStore.logout(); await router.push('/login') } else message.error(error.response?.data?.detail || '个人中心加载失败，请稍后重试') } finally { isLoading.value = false; isRefreshing.value = false } }
+async function deleteMemory(memoryId: string) { try { await apiClient.delete(`/users/me/memories/${memoryId}`); memories.value = memories.value.filter(memory => memory.id !== memoryId); message.success('记忆已删除') } catch (error: any) { message.error(error.response?.data?.detail || '删除记忆失败') } }
+async function clearMemories() { if (!window.confirm('确定清空全部跨会话记忆吗？此操作不会影响聊天记录。')) return; try { await apiClient.delete('/users/me/memories'); memories.value = []; message.success('已清空全部记忆') } catch (error: any) { message.error(error.response?.data?.detail || '清空记忆失败') } }
 async function refreshProfile() { await loadAll(true); message.success('个人中心已刷新') }
 async function savePreferences() { if (!user.value) return; savingPreferences.value = true; try { await apiClient.put(`/users/${user.value.id}`, { preferences: { ...(user.value.preferences || {}), profile: preferences.value } }); await authStore.fetchUser(); message.success('偏好已保存') } catch (error: any) { message.error(error.response?.data?.detail || '保存偏好失败') } finally { savingPreferences.value = false } }
 async function onThemeChange(theme: UserPreferences['theme']) { applyTheme(theme); await savePreferences() }
@@ -188,7 +210,7 @@ onUnmounted(() => { if (mediaQuery && handleSystemThemeChange) mediaQuery.remove
 .profile-hero, .profile-name-row, .detail-list > div, .privacy-row, .task-row, .audit-row { display: flex; align-items: center; }
 .profile-hero { gap: 20px; }.profile-identity { min-width: 0; flex: 1; }.profile-name-row { gap: 8px; flex-wrap: wrap; }.profile-name-row h2 { margin: 0; color: var(--neutral-text-1); font-size: 20px; letter-spacing: -0.015em; }.profile-identity p, .profile-identity span, .privacy-row p, .task-copy small, .audit-row small { display: block; margin: 4px 0 0; color: var(--neutral-text-3); font-size: 13px; }.profile-avatar { flex: 0 0 auto; background: var(--arco-primary-light); color: var(--arco-primary); font-size: 28px; }
 .task-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: -4px 0 20px; border: 1px solid var(--neutral-border); border-radius: var(--radius-sm); background: var(--neutral-bg); }.task-summary-item { min-width: 0; padding: 14px 16px; border-right: 1px solid var(--neutral-border); }.task-summary-item:last-child { border-right: 0; }.task-summary-item > span { display: block; color: var(--neutral-text-3); font-size: 12px; line-height: 18px; }.task-summary-item strong { display: block; margin-top: 4px; font-size: 22px; font-weight: 600; line-height: 28px; letter-spacing: -0.015em; }.task-summary-item em { margin-left: 4px; color: var(--neutral-text-3); font-size: 12px; font-style: normal; font-weight: 400; letter-spacing: 0; }
-.task-list, .quick-flow-list, .detail-list, .audit-list { display: flex; flex-direction: column; }.task-row { width: calc(100% + 64px); gap: 12px; margin: 0 -32px; padding: 12px 32px; border: 0; border-bottom: 1px solid var(--neutral-border); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background-color 120ms ease-out, transform 120ms ease-out; }.task-row:hover { background: var(--neutral-hover); }.task-row:active { transform: scale(.995); }.task-status { width: 52px; color: var(--neutral-text-3); font-size: 12px; }.task-status--running { color: var(--arco-success); }.task-status--failed { color: var(--arco-danger); }.task-copy { min-width: 0; flex: 1; }.task-copy strong { display: block; overflow: hidden; color: var(--neutral-text-1); text-overflow: ellipsis; white-space: nowrap; }.quick-flow-list { gap: 8px; }.quick-flow { justify-content: flex-start; gap: 8px; }.detail-list { margin-bottom: 20px; }.detail-list > div { justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--neutral-border); color: var(--neutral-text-2); font-size: 13px; }.detail-list > div:last-child { border-bottom: 0; }.detail-list strong { color: var(--neutral-text-1); font-weight: 500; }.field-label { display: grid; gap: 8px; color: var(--neutral-text-2); font-size: 13px; }.privacy-row { justify-content: space-between; gap: 20px; padding: 16px 0; border-bottom: 1px solid var(--neutral-border); }.privacy-row:last-child { border-bottom: 0; }.privacy-row strong, .audit-row strong { color: var(--neutral-text-1); font-size: 14px; }.audit-row { align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--neutral-border); }.audit-row:last-child { border-bottom: 0; }.audit-row > span { min-width: 0; flex: 1; }
+.task-list, .quick-flow-list, .detail-list, .audit-list, .memory-list { display: flex; flex-direction: column; }.task-row { width: calc(100% + 64px); gap: 12px; margin: 0 -32px; padding: 12px 32px; border: 0; border-bottom: 1px solid var(--neutral-border); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background-color 120ms ease-out, transform 120ms ease-out; }.task-row:hover { background: var(--neutral-hover); }.task-row:active { transform: scale(.995); }.task-status { width: 52px; color: var(--neutral-text-3); font-size: 12px; }.task-status--running { color: var(--arco-success); }.task-status--failed { color: var(--arco-danger); }.task-copy { min-width: 0; flex: 1; }.task-copy strong { display: block; overflow: hidden; color: var(--neutral-text-1); text-overflow: ellipsis; white-space: nowrap; }.quick-flow-list { gap: 8px; }.quick-flow { justify-content: flex-start; gap: 8px; }.detail-list { margin-bottom: 20px; }.detail-list > div { justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--neutral-border); color: var(--neutral-text-2); font-size: 13px; }.detail-list > div:last-child { border-bottom: 0; }.detail-list strong { color: var(--neutral-text-1); font-weight: 500; }.field-label { display: grid; gap: 8px; color: var(--neutral-text-2); font-size: 13px; }.privacy-row { justify-content: space-between; gap: 20px; padding: 16px 0; border-bottom: 1px solid var(--neutral-border); }.privacy-row:last-child { border-bottom: 0; }.privacy-row strong, .audit-row strong, .memory-row strong { color: var(--neutral-text-1); font-size: 14px; }.audit-row { align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--neutral-border); }.audit-row:last-child { border-bottom: 0; }.audit-row > span { min-width: 0; flex: 1; }.memory-hint { margin: 0 0 12px; color: var(--neutral-text-3); font-size: 13px; }.memory-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--neutral-border); }.memory-row:last-child { border-bottom: 0; }.memory-row > div { min-width: 0; flex: 1; }.memory-row small { display: block; margin-top: 4px; color: var(--neutral-text-3); font-size: 12px; }
 @media (min-width: 1440px) { .profile-content { max-width: 1152px; padding-left: 32px; padding-right: 32px; } }
 @media (max-width: 900px) { .profile-grid { grid-template-columns: repeat(2, 1fr); gap: 20px; }.profile-card--hero, .profile-card--wide { grid-column: span 2; } }
 @media (max-width: 640px) { .profile-page-wrapper { padding: 24px 0 40px; }.profile-content { padding: 0 16px; }.profile-grid { grid-template-columns: 1fr; gap: 16px; }.profile-card, .profile-card--hero, .profile-card--wide { grid-column: span 1; padding: 24px; }.profile-hero { align-items: flex-start; flex-wrap: wrap; }.task-summary { grid-template-columns: 1fr; }.task-summary-item { border-right: 0; border-bottom: 1px solid var(--neutral-border); }.task-summary-item:last-child { border-bottom: 0; }.task-row { width: calc(100% + 48px); margin: 0 -24px; padding-left: 24px; padding-right: 24px; }.privacy-row { align-items: flex-start; flex-direction: column; gap: 12px; } }

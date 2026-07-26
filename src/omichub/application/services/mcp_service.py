@@ -180,14 +180,16 @@ class MCPService:
         if existing is not None:
             raise ConflictError(f"MCP Server 名称已存在: {req.name}")
         transport = (
-            Transport(req.transport) if req.transport in ("stdio", "sse") else Transport.STDIO
+            Transport(req.transport)
+            if req.transport in ("stdio", "sse", "streamable_http")
+            else Transport.STDIO
         )
         if transport == Transport.STDIO:
             try:
                 validate_stdio_command(req.command or "")
             except ValueError as exc:
                 raise ValidationError(str(exc)) from exc
-        elif transport == Transport.SSE:
+        elif transport in (Transport.SSE, Transport.STREAMABLE_HTTP):
             try:
                 validate_sse_url(req.url or "")
             except ValueError as exc:
@@ -229,7 +231,7 @@ class MCPService:
                 validate_stdio_command(server.command or "")
             except ValueError as exc:
                 raise ValidationError(str(exc)) from exc
-        elif transport == Transport.SSE:
+        elif transport in (Transport.SSE, Transport.STREAMABLE_HTTP):
             try:
                 validate_sse_url(server.url or "")
             except ValueError as exc:

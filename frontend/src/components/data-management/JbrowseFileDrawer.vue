@@ -20,6 +20,12 @@ const props = defineProps<{
   show: boolean
   /** 父级已选轨道路径（selectedTracks.map(t => t.path)），用于回显勾选态与计数 */
   selectedPaths: string[]
+  /**
+   * NDrawer teleport 目标（透传 naive-ui `to`）。
+   * 全屏模式下 fullscreen 元素之外的节点不可见，父级需传入页面根元素让抽屉渲染在其内部；
+   * 不传则保持默认（teleport 到 body）。
+   */
+  to?: string | HTMLElement | null
 }>()
 const emit = defineEmits<{
   'update:show': [v: boolean]
@@ -117,7 +123,7 @@ function formatDate(iso: string): string {
 </script>
 
 <template>
-  <NDrawer :show="show" :width="480" @update:show="emit('update:show', $event)">
+  <NDrawer :show="show" :width="480" :to="to || undefined" @update:show="emit('update:show', $event)">
     <NDrawerContent title="我的文件" closable :body-content-style="{ padding: '20px' }">
       <NSpin :show="scanLoading">
         <!-- 顶部操作栏：刷新 + 选中所有已索引 -->

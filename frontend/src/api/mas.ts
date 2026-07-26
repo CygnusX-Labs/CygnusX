@@ -51,13 +51,41 @@ export interface MasRunCreateRequest {
   workspace_id?: string
 }
 
+export interface MasArtifact {
+  id: string
+  logical_name: string
+  kind: string
+  workspace_path: string
+  media_type: string
+  size_bytes: number
+  sha256: string
+  state: string
+  version: number
+  created_at: string
+}
+
 export const masApi = {
   createRun: (request: MasRunCreateRequest) =>
     apiClient.post<MasRun>('/mas/runs', request).then((response) => response.data),
   approveRun: (runId: string) =>
     apiClient.post<MasRun>(`/mas/runs/${runId}/approve`).then((response) => response.data),
+  retryNode: (runId: string, nodeKey: string) =>
+    apiClient.post<MasRun>(`/mas/runs/${runId}/nodes/${nodeKey}/retry`).then((response) => response.data),
   getProgress: (runId: string) =>
     apiClient.get<MasRunProgress>(`/mas/runs/${runId}/progress`).then((response) => response.data),
+  listArtifacts: (runId: string) =>
+    apiClient.get<MasArtifact[]>(`/mas/runs/${runId}/artifacts`).then((response) => response.data),
+  downloadArtifact: async (runId: string, artifact: MasArtifact): Promise<void> => {
+    const response = await apiClient.get(`/mas/runs/${runId}/artifacts/${artifact.id}/download`, {
+      responseType: 'blob',
+    })
+    const url = URL.createObjectURL(response.data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = artifact.logical_name || artifact.workspace_path.split('/').pop() || 'artifact'
+    link.click()
+    URL.revokeObjectURL(url)
+  },
   streamProgress: async (
     runId: string,
     onProgress: (progress: MasRunProgress) => void,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -16,6 +16,8 @@ class ChatAttachment(BaseModel):
     url: str
     name: str = ""
     mime_type: str = ""
+    file_id: str = ""
+    source: str = ""
 
 
 class ChatStreamRequest(BaseModel):
@@ -42,6 +44,8 @@ class ChatStreamRequest(BaseModel):
         None,
         description="会话模式 chat/studio；新建会话时生效，已有会话以会话行 mode 为准",
     )
+    mcp_mode: Literal["off", "auto", "manual"] | None = None
+    extra_mcp_servers: list[str] | None = Field(default=None)
 
 
 class ChatMessageDTO(BaseModel):
@@ -55,6 +59,20 @@ class ChatMessageDTO(BaseModel):
     metadata_json: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     tokens: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChatHandoffEventDTO(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    source_agent_id: str
+    target_agent_id: str
+    reason: str
+    handoff_summary: str
+    user_intent: str
+    artifacts: list[str] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    hop_index: int
+    created_at: datetime
 
 
 class TokenUsage(BaseModel):
@@ -78,6 +96,8 @@ class ChatSessionDTO(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_message_at: datetime | None = None
+    mcp_mode: Literal["off", "auto", "manual"] = "auto"
+    extra_mcp_servers: list[str] = Field(default_factory=list)
 
 
 class ChatAssistantDTO(BaseModel):

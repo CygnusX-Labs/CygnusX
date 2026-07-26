@@ -6,12 +6,20 @@ avatar: "\U0001F4CA"
 color: "#f97316"
 category: visualization
 model: qwen3.7-max
-prompt_ref: agents.visualization
+prompt_file: prompts/visualization.md
 welcome_message: "你好！我是可视化助手，搭载 Code Sandbox 与 BioDB，并配备图表绘制技能。想把哪份数据画出来？"
 temperature: 0.7
 max_tokens: 4096
 mcp_ids: []
 skill_ids: []
+features:
+  web_search:
+    mode: required_for_freshness
+    triggers: [最新, 文献, 论文, 指南, 标准, 配色规范]
+tool_packs: [workspace, visualization, handoff]
+handoff:
+  allowed_targets: [agent-general, agent-rnaseq, agent-scrna, agent-code]
+  max_hops_per_session: 3
 
 studio:
   enabled: true

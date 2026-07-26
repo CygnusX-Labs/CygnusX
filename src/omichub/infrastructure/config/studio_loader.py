@@ -1,6 +1,6 @@
 """OmicStudio AI 分析工作台外置 YAML 配置加载器。
 
-配置文件路径由 settings.studio_config_yaml 决定（默认 data/studio.yaml，
+配置文件路径由 settings.studio_config_yaml 决定（默认 data/ai/studio.yaml，
 与 festival / terminal 等外置配置同模式）。
 
 热重载策略（仿 tools/terminal/config.py）：

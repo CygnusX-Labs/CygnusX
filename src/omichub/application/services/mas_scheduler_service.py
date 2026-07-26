@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.services.a2a_event_service import A2AEventService
+from omichub.domain.mas.errors import classify_error
 from omichub.domain.mas.models import (
     A2AEvent,
     A2AEventType,
@@ -14,7 +15,6 @@ from omichub.domain.mas.models import (
     AgentSender,
     NodeState,
 )
-from omichub.domain.mas.errors import classify_error
 from omichub.infrastructure.database.models.mas import MASNodeModel
 from omichub.infrastructure.database.repositories.mas_repository import MASRepository
 
@@ -125,6 +125,10 @@ class MASSchedulerService:
             from omichub.infrastructure.celery_app.tasks.mas import run_ebi_download_node
 
             run_ebi_download_node.delay(str(run_id), node.node_key)
+        elif node.resources.get("executor") == "scanpy-qc":
+            from omichub.infrastructure.celery_app.tasks.mas import run_scanpy_qc_node
+
+            run_scanpy_qc_node.delay(str(run_id), node.node_key)
         return True
 
     async def mark_node_succeeded(self, event: A2AEvent) -> bool:

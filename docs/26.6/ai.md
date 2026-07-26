@@ -258,14 +258,14 @@ chat.py → ChatService.stream_agent_chat()
 | `AI_TEMPERATURE` | `0.7` | 默认温度 |
 | `AI_DEFAULT_PROVIDER_ID` | `""` | DB 中默认 Provider UUID |
 | `AI_PROVIDER_KEY_ENCRYPTION_KEY` | `""` | Fernet 密钥，API Key 加密存储 |
-| `AI_PROVIDER_CONFIG_YAML` | `"data/ai_providers.yaml"` | 外部 YAML 配置路径 |
+| `AI_PROVIDER_CONFIG_YAML` | `"data/ai/providers.yaml"` | 外部 YAML 配置路径 |
 | `SENSITIVE_KEYWORDS` | `[]` | 敏感词列表，发送给 LLM 前脱敏 |
 
 ### 5.2 YAML 配置
 
 | 文件 | 说明 |
 |------|------|
-| `data/ai_providers.yaml` | Provider 定义，支持 `${ENV_VAR}` 插值 |
+| `data/ai/providers.yaml` | Provider 定义，支持 `${ENV_VAR}` 插值 |
 | `data/ai/general.yaml` | 通用助手 Agent |
 | `data/ai/rnaseq.yaml` | RNA-seq 分析 Agent |
 | `data/ai/viz.yaml` | 可视化 Agent |

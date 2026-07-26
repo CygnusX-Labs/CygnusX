@@ -13,9 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from omichub.domain.mas.models import ExecutionPlan, MASArtifact
 from omichub.infrastructure.database.models.mas import (
     MASA2AEventModel,
+    MASApprovalModel,
     MASArtifactModel,
     MASNodeModel,
-    MASApprovalModel,
     MASPlanModel,
     MASRunModel,
 )
@@ -123,6 +123,15 @@ class MASRepository:
             .order_by(MASArtifactModel.logical_name, MASArtifactModel.version.desc())
         )
         return list(result.scalars())
+
+    async def get_artifact(self, run_id: UUID, artifact_id: UUID) -> MASArtifactModel | None:
+        result = await self._session.execute(
+            select(MASArtifactModel).where(
+                MASArtifactModel.run_id == run_id,
+                MASArtifactModel.id == artifact_id,
+            )
+        )
+        return result.scalar_one_or_none()
 
     async def node_id_for_key(self, run_id: UUID, node_key: str) -> UUID | None:
         result = await self._session.execute(

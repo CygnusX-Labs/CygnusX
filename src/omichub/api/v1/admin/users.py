@@ -7,7 +7,9 @@ from fastapi import APIRouter, Query
 from sqlalchemy import desc, func, select
 
 from omichub.api.deps import AdminTotpRequired, CurrentUserId, DbSession
+from omichub.application.schemas.agent_memory import AgentMemoryDTO
 from omichub.application.schemas.auth import UserRegisterRequest
+from omichub.application.services.agent_memory_service import AgentMemoryService
 from omichub.core.exceptions import AuthorizationError, ConflictError, NotFoundError
 from omichub.core.security import hash_password
 from omichub.domain.user.entities import User
@@ -70,6 +72,24 @@ async def list_users(
         }
         for row in result.all()
     ]
+
+
+@router.get("/{user_id}/memories", response_model=list[AgentMemoryDTO], summary="查看用户 Agent 记忆")
+async def list_user_memories(
+    user_id: UUID,
+    _admin: AdminRequired,
+    db: DbSession,
+    agent_id: str | None = Query(None, max_length=50),
+    scope: str | None = Query(None, pattern="^(profile|project|preference|summary)$"),
+) -> list[AgentMemoryDTO]:
+    """管理员只读查看用户长期记忆，含归档记录以支持审计。"""
+    memories = await AgentMemoryService(db).list_memories(
+        str(user_id),
+        agent_id=agent_id,
+        scope=scope,
+        include_archived=True,
+    )
+    return [AgentMemoryDTO(**AgentMemoryService._serialize(memory)) for memory in memories]
 
 
 @router.post("", summary="管理员添加用户")
@@ -341,6 +361,7 @@ async def delete_user(
     - 交易流水的 admin_id、饼干定价 created_by/updated_by（可空）：置 NULL 保留审计；
     - 通知：删除该用户创建的及定向发给该用户的通知。
     """
+    from omichub.infrastructure.database.models.agent_memory import AgentMemoryModel
     from omichub.infrastructure.database.models.cookie import (
         ConsumptionLogModel,
         CookiePricingModel,
@@ -401,8 +422,12 @@ async def delete_user(
             | (NotificationModel.target_user_id == user_id)
         )
     )
+    await db.execute(AgentMemoryModel.__table__.delete().where(AgentMemoryModel.user_id == str(user_id)))
 
     # 4) 最后删除用户本体（CASCADE 表由数据库自动清理）
     await db.delete(user)
-    await db.flush()
+    await db.commit()
+    from omichub.infrastructure.storage import get_path_factory
+
+    get_path_factory().remove_user_root(str(user_id))
     return {"id": str(user_id), "username": username, "deleted": True}

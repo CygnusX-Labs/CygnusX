@@ -23,7 +23,7 @@ RUN mamba create -n phylo python=3.11 pip -y
 
 # 科学计算基础
 RUN mamba install -n phylo -c bioconda -c conda-forge \
-    biopython=1.83 numpy scipy pandas dendropy -y && mamba clean -a -y
+    biopython=1.83 numpy scipy pandas dendropy greenlet -y && mamba clean -a -y
 
 # MSA 工具
 RUN mamba install -n phylo -c bioconda \

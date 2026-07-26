@@ -90,6 +90,6 @@ docker restart omichub-web omichub-worker omichub-beat
 
 ## AI 助手无法回复
 
-- 确认已配置 AI Provider（`data/ai_providers.yaml` 或 `.env`）
+- 确认已配置 AI Provider（`data/ai/providers.yaml` 或 `.env`）
 - 检查网络能否访问模型 API
 - 查看后端日志中的 API 调用失败记录

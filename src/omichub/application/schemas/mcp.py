@@ -46,7 +46,7 @@ class CreateMCPServerDTO(OmicsHubBaseSchema):
 
     name: str
     description: str = ""
-    transport: str = "stdio"  # stdio | sse
+    transport: str = "stdio"  # stdio | sse | streamable_http
     command: str = ""
     args: list[str] = []
     url: str = ""

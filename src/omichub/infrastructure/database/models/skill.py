@@ -1,4 +1,8 @@
-"""Skill ORM 模型 — 纯 prompt 注入型技能"""
+"""Skill ORM 模型 — SKILL.md 标准技能（L1 元数据 + L2 正文缓存）
+
+prompt 列保存 SKILL.md 正文（L2 指令，use_skill 按需加载）；
+scripts/references/assets 落盘于 data/ai/skills/<skill_id>/（L3 按需读取）。
+"""
 
 import uuid
 from typing import Any
@@ -27,3 +31,20 @@ class SkillModel(Base, TimestampMixin):
     category: Mapped[str] = mapped_column(String(50), nullable=False, default="general")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_builtin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # --- SKILL.md 标准化字段（Part A 存储层） ---
+    version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    author: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # 来源类型：market / github / zip / json / builtin
+    source_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="json", server_default="json"
+    )
+    # 来源引用：GitHub 仓库 URL / 原始 JSON URL 等，用于"检查更新"
+    source_ref: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # 导入时的上游 commit / 分支快照，与 source_ref 配套做更新检测
+    source_commit: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    has_scripts: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    # 原始 frontmatter 全量留档
+    frontmatter: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)

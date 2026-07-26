@@ -240,7 +240,12 @@ class MCPClient:
                 env=server.env or None,
             )
             return stdio_client(params)
-        if server.transport == Transport.SSE:
+        if server.transport in (Transport.SSE, Transport.STREAMABLE_HTTP):
+            if server.transport == Transport.STREAMABLE_HTTP:
+                from mcp.client.streamable_http import streamable_http_client
+
+                validate_sse_url(server.url)
+                return streamable_http_client(server.url)
             from mcp.client.sse import sse_client
 
             validate_sse_url(server.url)

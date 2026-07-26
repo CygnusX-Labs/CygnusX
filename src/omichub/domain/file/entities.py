@@ -24,6 +24,7 @@ class DataFile(BaseModel):
     source: str = "upload"  # 文件来源模块
     metadata: dict[str, Any] = {}
     created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
 
 
 class Directory(BaseModel):

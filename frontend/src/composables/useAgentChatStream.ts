@@ -27,6 +27,8 @@ export interface AgentChatStreamOptions {
   enableWebSearch?: boolean
   /** 是否启用代码执行（仅作标记，实际由前端 Pyodide 执行） */
   enableCodeExecution?: boolean
+  mcpMode?: 'off' | 'auto' | 'manual'
+  extraMcpServers?: string[]
 }
 
 export interface ChatAttachment {
@@ -92,6 +94,24 @@ export interface RouteEvent {
   reason: string
 }
 
+/** 同一会话内 Agent 交接事件。完整摘要仍由同名工具结果卡片保存和渲染。 */
+export interface HandoffEvent {
+  source_agent_id: string
+  source_agent_name?: string
+  target_agent_id: string
+  target_agent_name?: string
+  reason: string
+  handoff_summary?: string
+  user_intent?: string
+  artifacts?: string[]
+  constraints?: string[]
+  hop_index: number
+}
+
+export interface ConsultationEvent {
+  experts: Array<{ agent_id: string; name: string; opinion: string }>
+}
+
 export interface TokenUsage {
   input?: number
   output?: number
@@ -103,11 +123,26 @@ export interface TokenUsage {
   total_tokens?: number
 }
 
+export interface WebSearchEvent {
+  query: string
+  status: 'searching' | 'empty' | 'failed' | 'complete'
+  message?: string
+}
+
+export interface WebSearchSource {
+  title: string
+  url: string
+  snippet: string
+  publishedAt?: string | null
+}
+
 export interface AgentStreamCallbacks {
   onText?: (text: string, isReasoning?: boolean) => void
   onSessionCreated?: (sessionId: string, messageId: string) => void
   onToolCall?: (event: ToolCallEvent) => void
   onToolResult?: (event: ToolResultEvent) => void
+  onWebSearch?: (event: WebSearchEvent) => void
+  onWebSearchResults?: (sources: WebSearchSource[]) => void
   /**
    * Studio 工具执行过程中的 stdout/stderr 增量输出
    * （sandbox_execute 边跑边推；Studio 工具事件带 tool_call_id，旧事件可能仅带工具名）
@@ -118,6 +153,8 @@ export interface AgentStreamCallbacks {
   onApprovalResolved?: (event: ApprovalResolvedEvent) => void
   onAskRequest?: (event: AskRequestEvent) => void
   onRoute?: (event: RouteEvent) => void
+  onHandoff?: (event: HandoffEvent) => void
+  onConsultation?: (event: ConsultationEvent) => void
   onError?: (error: string) => void
   onDone?: (
     sessionId: string,
@@ -242,6 +279,8 @@ export function useAgentChatStream() {
           attachments: options.attachments || [],
           enable_web_search: options.enableWebSearch || false,
           enable_code_execution: options.enableCodeExecution || false,
+          mcp_mode: options.mcpMode || 'auto',
+          extra_mcp_servers: options.extraMcpServers || [],
         }),
         signal: abortController.value.signal,
       })
@@ -339,6 +378,40 @@ export function useAgentChatStream() {
           ui_payload: (data.ui_payload as Record<string, unknown>) || undefined,
         })
         break
+      case 'web_search':
+        cb.onWebSearch?.({
+          query: content,
+          status: (data.status as WebSearchEvent['status']) || 'searching',
+          message: typeof data.message === 'string' ? data.message : undefined,
+        })
+        break
+      case 'web_search_results':
+        cb.onWebSearchResults?.(
+          (Array.isArray(data.sources) ? data.sources : [])
+            .filter((source): source is Record<string, unknown> => !!source && typeof source === 'object')
+            .filter((source) => typeof source.title === 'string' && typeof source.url === 'string')
+            .map((source) => ({
+              title: source.title as string,
+              url: source.url as string,
+              snippet: typeof source.snippet === 'string' ? source.snippet : '',
+              publishedAt: typeof source.publishedAt === 'string' ? source.publishedAt : null,
+            })),
+        )
+        break
+      case 'handoff':
+        cb.onHandoff?.({
+          source_agent_id: (data.source_agent_id as string) || '',
+          source_agent_name: typeof data.source_agent_name === 'string' ? data.source_agent_name : undefined,
+          target_agent_id: (data.target_agent_id as string) || '',
+          target_agent_name: typeof data.target_agent_name === 'string' ? data.target_agent_name : undefined,
+          reason: (data.reason as string) || '',
+          handoff_summary: typeof data.handoff_summary === 'string' ? data.handoff_summary : undefined,
+          user_intent: typeof data.user_intent === 'string' ? data.user_intent : undefined,
+          artifacts: Array.isArray(data.artifacts) ? data.artifacts.filter((item): item is string => typeof item === 'string') : [],
+          constraints: Array.isArray(data.constraints) ? data.constraints.filter((item): item is string => typeof item === 'string') : [],
+          hop_index: Number(data.hop_index) || 1,
+        })
+        break
       case 'tool_output':
         cb.onToolOutput?.(
           (data.tool as string) || '',
@@ -381,6 +454,19 @@ export function useAgentChatStream() {
           avatar: (data.avatar as string) || '',
           color: (data.color as string) || '',
           reason: (data.reason as string) || '',
+        })
+        break
+      case 'consultation':
+        cb.onConsultation?.({
+          experts: Array.isArray(data.experts)
+            ? data.experts
+                .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+                .map((item) => ({
+                  agent_id: typeof item.agent_id === 'string' ? item.agent_id : '',
+                  name: typeof item.name === 'string' ? item.name : '专家',
+                  opinion: typeof item.opinion === 'string' ? item.opinion : '',
+                }))
+            : [],
         })
         break
       case 'error':

@@ -99,12 +99,15 @@ onMounted(() => {
   gap: 24px;
   align-items: flex-start;
   min-width: 0; /* ← 防吹爆：允许整行窄于 min-content */
+  background-color: var(--neutral-card);
+  color: var(--neutral-text-1);
 }
 
 .reader-preview {
   flex: 0 0 80%;
   min-width: 0; /* 允许窄于 min-content，长字符串不再顶开本格 */
   overflow-wrap: anywhere; /* Markdown 长 URL / 长字符串自动折行，不撑爆预览区 */
+  background-color: var(--neutral-card);
 }
 
 .pending-alert {
@@ -120,6 +123,7 @@ onMounted(() => {
   overflow-y: auto;
   border-left: 1px solid var(--neutral-border);
   padding-left: 16px;
+  background-color: var(--neutral-card);
 }
 
 .toc-title {
@@ -149,17 +153,6 @@ onMounted(() => {
   font-weight: 500;
 }
 
-/* ===== 统一 md-editor-v3 背景到平台主题变量，消除正文区"纯黑洞"色差 =====
-   背景：md-editor dark 主题默认 --md-bk-color:#000（见 md-editor-v3/lib/preview.css
-   .md-editor-dark），与外层 NCard（--neutral-card，深色 #151A25）形成强色差，阅读时
-   产生明显"黑洞"感。
-   方案：把 md-editor 内部变量映射到平台中性色变量——
-   - 正文背景 → --neutral-card：与外层 NCard 完全一致，消除色差
-   - 代码块/引用块/表格表头 → --neutral-hover：比 card 高 5-10% 明度，保留层级但不纯黑
-   - 正文文字 → --neutral-text-1（对比度充足），边框 → --neutral-border
-   全部走 var()，:root[data-theme] 切换时自动适配，无任何硬编码颜色。
-   :deep 编译为 [data-v-xxx] .md-editor，优先级高于全局 .md-editor / .md-editor-dark，
-   可稳定覆盖 md-editor 自带变量。 */
 .reader-preview :deep(.md-editor),
 .reader-preview :deep(.md-editor-dark) {
   --md-bk-color: var(--neutral-card);
@@ -173,19 +166,21 @@ onMounted(() => {
   border-color: transparent; /* 预览模式去外框，与外层卡片无缝融合 */
 }
 
-/* 代码块、引用块、表格表头：用 --neutral-hover 形成 subtle 层级（非纯黑）。
-   变量映射已让依赖 --md-bk-color-outstand 的元素跟随，此处对 pre/blockquote/th 显式
-   兜底，防止 codeTheme（github）自带背景色压过变量。 */
+.reader-preview :deep(.md-editor-content),
+.reader-preview :deep(.md-editor-preview-wrapper),
+.reader-preview :deep(.md-editor-preview) {
+  background-color: var(--neutral-card);
+  color: var(--neutral-text-1);
+}
+
 .reader-preview :deep(.md-editor-preview pre),
 .reader-preview :deep(.md-editor-preview blockquote),
 .reader-preview :deep(.md-editor-preview table thead th) {
   background-color: var(--neutral-hover);
 }
-/* 行内 code：轻微底色，与代码块同色系 */
 .reader-preview :deep(.md-editor-preview :not(pre) > code) {
   background-color: var(--neutral-hover);
 }
-/* 引用块/表格边框统一到中性边框 */
 .reader-preview :deep(.md-editor-preview blockquote) {
   border-left-color: var(--neutral-border);
 }
@@ -193,9 +188,8 @@ onMounted(() => {
 .reader-preview :deep(.md-editor-preview table th) {
   border-color: var(--neutral-border);
 }
-/* TOC 大纲区：透明背景，跟随外层卡片底色，与正文同底（MdCatalog 自身无背景，此处兜底） */
 .reader-toc :deep(.md-editor-catalog) {
-  background: transparent;
+  background-color: var(--neutral-card);
 }
 
 @media (max-width: 1024px) {

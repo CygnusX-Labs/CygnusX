@@ -515,7 +515,7 @@ Orchestrator 不负责：执行 shell、读取大文件、生成最终统计结�
 
 ### 7.4 Prompt 与配置变更原则
 
-1. 在 `data/prompts/` 新增 `agents.orchestrator` 和 `mas.common_guardrails`，不要在现有 Prompt 中复制长篇公共规则。
+1. 在 `data/ai/prompts/` 新增 `agents.orchestrator` 和 `mas.common_guardrails`，不要在现有 Prompt 中复制长篇公共规则。
 2. 在 `data/ai/*.yaml` 为可参与 MAS 的 Agent 增加 `mas` 段，例如 `roles`、`intents`、`artifact_contracts`、`max_parallel_nodes`、`risk_tier`；保留现有 `studio` 段。
 3. Agent 可调用工具由后端强制裁剪，Prompt 中的“允许工具”只用于引导，不作为授权来源。
 4. 先在测试/管理员白名单用户启用该路由开关，避免所有普通聊天被误判为 MAS。
@@ -869,8 +869,8 @@ src/omichub/infrastructure/mas/redis_streams.py
 src/omichub/infrastructure/mas/outbox_publisher.py
 src/omichub/infrastructure/execution/container_gateway.py
 data/ai/orchestrator.yaml
-data/prompts/agents/orchestrator.md
-data/prompts/mas/common_guardrails.md
+data/ai/prompts/orchestrator.md
+data/ai/prompts/mas/common_guardrails.md
 alembic/versions/<revision>_add_mas_runs_artifacts_events.py
 tests/unit/domain/mas/
 tests/integration/test_mas_*.py
@@ -890,7 +890,7 @@ src/omichub/tools/schema_loader.py
 data/ai/code.yaml
 data/ai/rnaseq.yaml
 data/ai/viz.yaml
-data/prompts/registry.yaml
+data/ai/prompts/registry.yaml
 tool_configs/tools_schema.yaml
 tool_configs/tools_setting.yaml
 deploy/docker/Dockerfile.worker

@@ -1,0 +1,12 @@
+# OmicHub 基因组组装沙盒镜像
+# 构建: docker build -t omichub/sandbox-assembly:latest -f tool_configs/terminal/docker/Dockerfile.assembly tool_configs/terminal/docker/
+FROM omichub/sandbox-terminal:latest
+
+USER root
+
+# 二代 SPAdes、三代 flye、组装质量评估与长读段比对。
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      spades flye quast busco minimap2 samtools \
+    && rm -rf /var/lib/apt/lists/*
+
+USER 1000

@@ -6,7 +6,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from omichub.infrastructure.config.storage_config import StorageConfig
 from omichub.infrastructure.config.studio_loader import StudioConfigManager
+from omichub.infrastructure.storage.path_factory import StoragePathFactory
 from omichub.infrastructure.studio import manager as manager_module
 from omichub.infrastructure.studio.manager import (
     StudioSandboxManager,
@@ -92,6 +94,22 @@ def test_workspace_dir_rejects_traversal(tmp_path: Path):
         manager.workspace_dir("../evil")
     with pytest.raises(StudioSandboxUnavailableError):
         manager.workspace_dir("a/../../evil")
+
+
+@pytest.mark.unit
+def test_remove_user_root_only_removes_user_directory(tmp_path: Path):
+    factory = StoragePathFactory(
+        StorageConfig(data_root=str(tmp_path), users_subdir="users")
+    )
+    user_root = factory.user_root("user-1")
+    user_root.mkdir(parents=True)
+    (user_root / "workspace").mkdir()
+    (user_root / "workspace" / "marker.txt").write_text("x")
+
+    assert factory.remove_user_root("user-1") is True
+    assert not user_root.exists()
+    assert (tmp_path / "users").exists()
+    assert factory.remove_user_root("user-1") is False
 
 
 @pytest.mark.unit
@@ -345,4 +363,3 @@ async def test_hibernate_removes_container_but_preserves_workspace(tmp_path: Pat
 
     assert await manager.hibernate("sess-idle") == "hibernated"
     assert marker.read_text(encoding="utf-8") == "print(1)\n"
-

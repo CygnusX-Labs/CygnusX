@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.mas import (
-    MASArtifactRegisterRequest,
-    MASArtifactResponse,
     MASApprovalResolveRequest,
     MASApprovalResponse,
+    MASArtifactRegisterRequest,
+    MASArtifactResponse,
     MASNodeProgressResponse,
     MASRunCreateRequest,
     MASRunProgressResponse,
@@ -28,6 +29,7 @@ from omichub.domain.mas.workspace import WorkspaceLayout
 from omichub.infrastructure.database.models.mas import MASArtifactModel, MASRunModel
 from omichub.infrastructure.database.repositories.mas_repository import MASRepository
 from omichub.infrastructure.mas.agent_capabilities import load_agent_capabilities
+from omichub.infrastructure.mas.artifact_schemas import load_artifact_schemas
 
 
 class MASService:
@@ -38,7 +40,8 @@ class MASService:
         self._workspace = WorkspaceLayout(self._settings.mas_workspace_root)
         self._artifacts = ArtifactService(self._workspace)
         self._plan_validator = MASPlanValidator(
-            load_agent_capabilities(self._settings.mas_agent_capabilities_yaml)
+            load_agent_capabilities(self._settings.mas_agent_capabilities_yaml),
+            load_artifact_schemas(self._settings.mas_artifact_schemas_yaml),
         )
 
     def _ensure_enabled(self) -> None:
@@ -77,6 +80,57 @@ class MASService:
         if run.status != "cancelling":
             run.status = "cancelling"
             run.version += 1
+        return self._run_response(run)
+
+    async def retry_failed_node(
+        self, user_id: str, run_id: UUID, node_key: str
+    ) -> MASRunResponse:
+        """用户显式重试一个失败节点，仍经既有 A2A outbox 调度。"""
+        self._ensure_enabled()
+        run = await self._owned_run(user_id, run_id)
+        node = await self._repository.get_node(run_id, node_key)
+        if node is None:
+            raise NotFoundError("MAS 节点不存在")
+        if node.status != "failed":
+            raise BusinessError("仅失败节点可手动重试")
+        if node.attempt_count >= node.max_attempts:
+            raise BusinessError("节点已达到最大重试次数")
+        if not await self._repository.transition_node(
+            node_id=node.id,
+            expected_version=node.version,
+            current_status="failed",
+            target_status="ready",
+            attempt_count=node.attempt_count + 1,
+        ):
+            raise BusinessError("重试节点时发生并发冲突")
+        node_version = node.version + 1
+        if run.status == "failed":
+            if not await self._repository.transition_run(
+                run_id=run.id,
+                expected_version=run.version,
+                current_status="failed",
+                target_status="running",
+            ):
+                raise BusinessError("恢复 MAS Run 时发生并发冲突")
+            run.status = "running"
+            run.version += 1
+        await A2AEventService(self._session).record(
+            A2AEvent(
+                event_type=A2AEventType.NODE_READY,
+                trace_id=f"mas:{run.id}:manual-retry",
+                run_id=run.id,
+                node_key=node.node_key,
+                sender=AgentSender(kind="user", id=user_id, attempt_count=node.attempt_count + 1),
+                recipient=AgentRecipient(kind="worker", id=node.agent_id),
+                status="ready",
+                intent=node.intent,
+                dedupe_key=(
+                    f"{run.id}:{node.node_key}:attempt_{node.attempt_count + 1}:"
+                    f"node.ready:state_version_{node_version}"
+                ),
+                state_version=node_version,
+            )
+        )
         return self._run_response(run)
 
     async def approve_run(self, user_id: str, run_id: UUID) -> MASRunResponse:
@@ -119,6 +173,26 @@ class MASService:
         return [
             self._artifact_response(item) for item in await self._repository.list_artifacts(run_id)
         ]
+
+    async def resolve_artifact_download(
+        self, user_id: str, run_id: UUID, artifact_id: UUID
+    ) -> tuple[MASArtifactModel, Path]:
+        """返回经 Run 归属和 workspace 边界校验的单个文件产物。"""
+        self._ensure_enabled()
+        await self._owned_run(user_id, run_id)
+        artifact = await self._repository.get_artifact(run_id, artifact_id)
+        if artifact is None:
+            raise NotFoundError("MAS Artifact 不存在")
+        try:
+            path = self._workspace.resolve_container_path(
+                run_id,
+                self._workspace.to_container_path(run_id, artifact.workspace_path),
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise BusinessError("MAS Artifact 路径不合法") from exc
+        if not path.is_file():
+            raise NotFoundError("MAS Artifact 文件不存在或不可下载")
+        return artifact, path
 
     async def get_progress(self, user_id: str, run_id: UUID) -> MASRunProgressResponse:
         self._ensure_enabled()

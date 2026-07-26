@@ -59,6 +59,7 @@ services:
       - HOME=/tmp                          # uid 1000 无 passwd 条目，显式 HOME 防 expanduser 失败
       - RUN_MIGRATIONS=1                   # 容器启动时由 entrypoint 自动跑 alembic upgrade head
       - OMICHUB_LOG_DIR=/app/logs          # 挂载到宿主机 /data/omichub/logs/app，保证容器重建后不丢失
+      - SKILLS_DIR=/data/omichub/skills    # SKILL.md 技能库落可写共享卷（/app/data 只读；Settings 无 env_prefix）
     depends_on:
       db:
         condition: service_healthy
@@ -111,7 +112,7 @@ services:
       - STUDIO_PROXY_PORT=3128
       - STUDIO_PROXY_MAX_CONNECTIONS=128
     volumes:
-      - ../../data/studio.yaml:/config/studio.yaml:ro
+      - ../../data/ai/studio.yaml:/config/studio.yaml:ro
     networks:
       - studio_proxy_egress
     healthcheck:

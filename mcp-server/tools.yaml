@@ -77,6 +77,12 @@ groups:
     module: tools.files
     description: "文件浏览 — 查看用户数据和分析结果"
     tools:
+      - name: list_workspace_files
+        description: "列出当前用户工作区文件和文件夹"
+        read_only: true
+      - name: search_workspace_files
+        description: "递归搜索当前用户工作区文件"
+        read_only: true
       - name: omichub_list_files
         description: "列出用户文件"
         read_only: true

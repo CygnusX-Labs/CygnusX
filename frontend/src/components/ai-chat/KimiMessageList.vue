@@ -187,6 +187,25 @@ onUnmounted(() => {
   .message-scroller {
     height: 100%;
     padding: 16px 0;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(46, 91, 255, 0.2) transparent;
+  }
+
+  .message-scroller::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .message-scroller::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .message-scroller::-webkit-scrollbar-thumb {
+    background: rgba(46, 91, 255, 0.2);
+    border-radius: 999px;
+  }
+
+  .message-scroller::-webkit-scrollbar-thumb:hover {
+    background: rgba(46, 91, 255, 0.35);
   }
 
   :deep(.vue-recycle-scroller__item-wrapper) {
@@ -205,14 +224,17 @@ onUnmounted(() => {
     position: absolute;
     bottom: 20px;
     right: 40px;
-    background: var(--chat-surface);
-    border: 1px solid var(--chat-border);
-    color: var(--chat-text-secondary);
+    width: 36px;
+    height: 36px;
+    background: var(--bg-card);
+    border: 1px solid rgba(46, 91, 255, 0.08);
+    box-shadow: 0 2px 8px rgba(30, 50, 100, 0.12);
+    color: var(--stardust-blue);
   }
 
   .scroll-to-bottom:hover {
-    background: var(--chat-surface-hover);
-    color: var(--chat-text-primary);
+    background: var(--stardust-bg-soft);
+    color: var(--stardust-blue);
   }
 }
 

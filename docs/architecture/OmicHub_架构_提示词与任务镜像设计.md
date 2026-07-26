@@ -2,7 +2,7 @@
 
 > 文档状态：当前实现基线 + 后续演进规范  
 > 更新日期：2026-07-17  
-> 权威配置：`data/prompts/registry.yaml`、`data/runtime_images.yaml`、`data/ai/*.yaml`、`data/studio.yaml`
+> 权威配置：`data/ai/prompts/registry.yaml`、`data/ai/runtime_images.yaml`、`data/ai/*.yaml`、`data/ai/studio.yaml`
 
 ## 1. 目标与结论
 
@@ -126,7 +126,7 @@ Studio 的核心安全边界：
 ### 3.1 目录结构
 
 ```text
-data/prompts/
+data/ai/prompts/
 ├── registry.yaml
 ├── agents/
 │   ├── general.md
@@ -173,7 +173,7 @@ render_prompt("skills.extracted_skill", name=..., source=...)
 - 不支持 Jinja 表达式、过滤器、include 或代码执行；
 - registry 必须声明允许的变量；
 - 未声明变量和缺失变量都会报错；
-- 文件路径必须位于 `data/prompts/` 内，拒绝 `../` 路径逃逸；
+- 文件路径必须位于 `data/ai/prompts/` 内，拒绝 `../` 路径逃逸；
 - Prompt 内容按文件 mtime 热重载。
 
 ### 3.4 Agent 配置
@@ -237,7 +237,7 @@ studio:
 
 ### 4.3 Runtime Image Registry
 
-`data/runtime_images.yaml` 对每个 profile 描述：
+`data/ai/runtime_images.yaml` 对每个 profile 描述：
 
 - 镜像名与 Dockerfile；
 - 镜像家族和隔离等级；
@@ -299,7 +299,7 @@ required_capabilities: [python, plotting, tabular]
 每次升级必须同步：
 
 1. Dockerfile 的精确包版本；
-2. `data/runtime_images.yaml` 软件清单；
+2. `data/ai/runtime_images.yaml` 软件清单；
 3. 镜像 digest；
 4. SBOM 与漏洞扫描结果；
 5. 最小功能测试；
@@ -313,7 +313,7 @@ required_capabilities: [python, plotting, tabular]
 
 1. 新建 `deploy/runtime-images/spatial.Dockerfile`，FROM 最接近的父镜像；
 2. 固定 Python/R/软件版本；
-3. 在 `data/runtime_images.yaml` 注册 `analysis-spatial`；
+3. 在 `data/ai/runtime_images.yaml` 注册 `analysis-spatial`；
 4. 声明 capabilities，例如 `spatial-transcriptomics`、`single-cell`、`plotting`；
 5. 声明 Studio/toolbox 兼容性；
 6. 增加契约测试，验证 Dockerfile 存在和能力继承；
@@ -323,7 +323,7 @@ required_capabilities: [python, plotting, tabular]
 
 ## 6. 提示词新增与修改流程
 
-1. 在 `data/prompts/<domain>/` 创建 Markdown/YAML；
+1. 在 `data/ai/prompts/<domain>/` 创建 Markdown/YAML；
 2. 在 registry 注册唯一 key、kind、owners、variables；
 3. 代码只引用 key；
 4. 为模板添加缺失变量、未知变量和路径越界测试；
@@ -348,7 +348,7 @@ required_capabilities: [python, plotting, tabular]
 ### 后续建议
 
 - 将 Studio tool function descriptions 也迁到结构化 YAML；
-- 将 BioReport/RNAFlow/ATACFlow 中重复 Prompt 统一到 `data/prompts/report/`；
+- 将 BioReport/RNAFlow/ATACFlow 中重复 Prompt 统一到 `data/ai/prompts/report/`；
 - 为工具箱实现真正的 Docker task executor，消费 `resolve_runtime_image()`；
 - 保存和校验镜像 digest，而不只保存 tag；
 - 增加镜像 SBOM、签名、CVE 阈值和 CI 构建；

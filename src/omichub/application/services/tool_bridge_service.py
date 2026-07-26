@@ -77,7 +77,7 @@ class ToolBridgeService:
             }
 
         try:
-            raw = await self._dispatch(user_id, schema, args)
+            raw = await self._dispatch(user_id, schema, args, context)
         except Exception as e:  # noqa: BLE001
             return self._error(str(e))
 
@@ -164,12 +164,16 @@ class ToolBridgeService:
             return None
 
     async def _dispatch(
-        self, user_id: str, schema: ToolSchema, args: dict[str, Any]
+        self,
+        user_id: str,
+        schema: ToolSchema,
+        args: dict[str, Any],
+        context: ToolInvocationContext | None = None,
     ) -> dict[str, Any]:
         """按 invocation_mode 分发执行。"""
         mode = schema.invocation_mode
         if mode == "backend_sync":
-            return await self._run_service_sync(user_id, schema, args)
+            return await self._run_service_sync(user_id, schema, args, context)
         if mode == "backend_shim":
             return await self._run_shim(user_id, schema, args)
         if mode == "backend_async":
@@ -317,7 +321,11 @@ class ToolBridgeService:
             }
 
     async def _run_service_sync(
-        self, user_id: str, schema: ToolSchema, args: dict[str, Any]
+        self,
+        user_id: str,
+        schema: ToolSchema,
+        args: dict[str, Any],
+        context: ToolInvocationContext | None = None,
     ) -> dict[str, Any]:
         """反射实例化 service 并调用方法。"""
         if not schema.service or not schema.method:
@@ -332,7 +340,10 @@ class ToolBridgeService:
         instance = cls() if inspect.isclass(cls) else cls
 
         method = getattr(instance, schema.method)
-        result = await method(user_id=user_id, **args)
+        kwargs = {"user_id": user_id, **args}
+        if context is not None and "context" in inspect.signature(method).parameters:
+            kwargs["context"] = context
+        result = await method(**kwargs)
 
         if hasattr(result, "model_dump"):
             return {"success": True, **result.model_dump()}

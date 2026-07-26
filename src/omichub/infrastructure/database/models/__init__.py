@@ -5,6 +5,7 @@
 """
 
 from omichub.infrastructure.database.models.agent import AgentTemplateModel
+from omichub.infrastructure.database.models.agent_memory import AgentMemoryModel
 from omichub.infrastructure.database.models.ai import ConversationModel, MessageModel
 from omichub.infrastructure.database.models.api_key import APIKeyModel
 from omichub.infrastructure.database.models.ai_provider import AIProviderConfigModel
@@ -16,6 +17,7 @@ from omichub.infrastructure.database.models.blast import (
 )
 from omichub.infrastructure.database.models.chat import (
     ChatAssistantModel,
+    ChatHandoffEventModel,
     ChatMessageModel,
     ChatSessionModel,
 )
@@ -51,6 +53,7 @@ from omichub.infrastructure.database.models.mas import (
 from omichub.infrastructure.database.models.notification import NotificationModel
 from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
 from omichub.infrastructure.database.models.sandbox import SandboxSessionModel
+from omichub.infrastructure.database.models.search_provider import SearchProviderConfigModel
 from omichub.infrastructure.database.models.site_settings import SiteSettingModel
 from omichub.infrastructure.database.models.skill import SkillModel
 from omichub.infrastructure.database.models.task import TaskModel
@@ -59,6 +62,7 @@ from omichub.infrastructure.database.models.user import UserModel, WorkspaceMode
 
 __all__ = [
     "AgentTemplateModel",
+    "AgentMemoryModel",
     "APIKeyModel",
     "UserModel",
     "WorkspaceModel",
@@ -74,6 +78,7 @@ __all__ = [
     "ChatSessionModel",
     "ChatMessageModel",
     "ChatAssistantModel",
+    "ChatHandoffEventModel",
     "AIProviderConfigModel",
     "AnnouncementModel",
     "AuditLogModel",
@@ -95,6 +100,7 @@ __all__ = [
     "ReportModel",
     "ReportFileModel",
     "SandboxSessionModel",
+    "SearchProviderConfigModel",
     "TerminalSessionModel",
     "NotificationModel",
     "SiteSettingModel",

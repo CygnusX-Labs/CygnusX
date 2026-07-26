@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { NTag, NSpace } from 'naive-ui'
+import { NEmpty, NTag, NSpace } from 'naive-ui'
 import type { TerminalImage } from '@/types/terminal'
+import { formatMemoryMb } from '@/utils/terminal'
 
 interface Props {
   images: TerminalImage[]
@@ -21,6 +22,7 @@ const selectedId = computed({
 function selectImage(id: string) {
   selectedId.value = id
 }
+
 </script>
 
 <template>
@@ -30,88 +32,84 @@ function selectImage(id: string) {
       :key="img.id"
       type="button"
       class="image-item omichub-selectable-card"
-      :class="{ active: selectedId === img.id, 'is-selected': selectedId === img.id }"
+      :class="{ 'is-selected': selectedId === img.id }"
       role="radio"
       :aria-checked="selectedId === img.id"
       @click="selectImage(img.id)"
     >
-      <span class="image-radio" aria-hidden="true">
-        <span v-if="selectedId === img.id" class="radio-dot" />
-      </span>
+      <span v-if="selectedId === img.id" class="selection-badge" aria-hidden="true">✓</span>
       <span class="image-info">
-        <span class="image-name">{{ img.icon }} {{ img.name }}</span>
+        <span class="image-title">
+          <span class="image-icon">{{ img.icon }}</span>
+          <span class="image-name">{{ img.name }}</span>
+        </span>
         <span class="image-desc">{{ img.description }}</span>
         <NSpace size="small" class="image-tags">
           <NTag v-for="tag in img.tags" :key="tag" size="tiny" round>{{ tag }}</NTag>
         </NSpace>
-        <span class="image-resources">
-          默认资源：{{ img.resources.memory_mb }} MB / {{ img.resources.cpu_cores }} 核
+        <span class="image-meta">
+          默认 {{ formatMemoryMb(img.resources.memory_mb) }} / {{ img.resources.cpu_cores }} 核
+          <span v-if="img.tags.length"> · {{ img.tags.length }} 类工具</span>
         </span>
       </span>
     </button>
+    <NEmpty v-if="images.length === 0" size="small" description="暂无可用镜像" />
   </div>
 </template>
 
 <style scoped>
 .image-selector {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+  gap: 14px;
+  align-items: stretch;
   width: 100%;
 }
 
 .image-item {
+  position: relative;
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  flex-direction: column;
+  box-sizing: border-box;
   width: 100%;
-  min-height: 132px;
-  padding: 16px;
-  border: 2px solid var(--neutral-border);
-  border-radius: 10px;
+  height: 100%;
+  min-height: 0;
+  padding: 18px;
+  border: 2px solid transparent;
+  border-radius: 12px;
   background: var(--neutral-card);
+  box-shadow: inset 0 0 0 1px var(--neutral-border);
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
 .image-item:hover {
-  border-color: var(--arco-primary);
-  background: var(--neutral-hover);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
-.image-item.active {
-  border-color: var(--arco-primary);
-  background: var(--neutral-hover);
-  box-shadow: 0 0 0 3px rgba(46, 91, 255, 0.08);
+.image-item:focus-visible {
+  outline: 3px solid var(--arco-primary);
+  outline-offset: 2px;
 }
 
-.image-radio {
-  position: relative;
+.selection-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  margin-top: 2px;
-  border: 2px solid var(--neutral-border);
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: var(--neutral-card);
-  flex: 0 0 auto;
-}
-
-.image-item.active .image-radio {
-  border-color: var(--arco-primary);
   background: var(--arco-primary);
-}
-
-.radio-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #fff;
+  color: var(--neutral-card);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .image-info {
@@ -121,27 +119,77 @@ function selectImage(id: string) {
   flex: 1;
 }
 
+.image-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.image-icon {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  line-height: 1;
+}
+
 .image-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.3;
   color: var(--neutral-text-1);
 }
 
 .image-desc {
-  margin-top: 6px;
+  margin-top: 8px;
   font-size: 13px;
-  line-height: 1.55;
+  line-height: 1.6;
+  min-height: 41.6px;
   color: var(--neutral-text-3);
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .image-tags {
   margin-top: 8px;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
-.image-resources {
-  margin-top: 8px;
+.image-tags :deep(.n-space) {
+  flex-wrap: nowrap;
+}
+
+.image-tags :deep(.n-tag) {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.image-meta {
+  margin-top: auto;
+  padding-top: 12px;
   font-size: 12px;
   color: var(--neutral-text-3);
+}
+
+@media (max-width: 640px) {
+  .image-selector {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .image-item {
+    transition: none;
+  }
 }
 </style>

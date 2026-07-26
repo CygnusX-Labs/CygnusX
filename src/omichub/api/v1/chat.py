@@ -16,6 +16,7 @@ from sqlalchemy import select
 from omichub.api.deps import CurrentUserId, DbSession
 from omichub.application.schemas.chat import (
     ChatAssistantDTO,
+    ChatHandoffEventDTO,
     ChatMessageDTO,
     ChatSessionDTO,
     ChatSessionSearchDTO,
@@ -73,6 +74,8 @@ async def chat_stream(
                 enable_code_execution=request.enable_code_execution,
                 deep_thinking=request.deep_thinking,
                 mode=request.mode,
+                mcp_mode=request.mcp_mode,
+                extra_mcp_servers=request.extra_mcp_servers,
             )
         else:
             if not request.model_id:
@@ -87,6 +90,7 @@ async def chat_stream(
                 system_prompt=request.system_prompt,
                 temperature=request.temperature,
                 max_tokens=request.max_tokens,
+                enable_web_search=request.enable_web_search,
             )
         async for chunk in gen:
             data: dict = {"type": chunk.type, "content": chunk.content}
@@ -106,6 +110,14 @@ async def chat_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/web-search/availability", summary="联网搜索是否已配置")
+async def web_search_availability(current_user_id: CurrentUserId, db: DbSession) -> dict[str, object]:
+    from omichub.application.services.search_provider_service import SearchProviderService
+
+    availability = await SearchProviderService(db).availability()
+    return availability.model_dump()
 
 
 # ============================================================
@@ -187,6 +199,19 @@ async def get_messages(
 
         raise NotFoundError("会话不存在或无权访问")
     return await service.get_messages(session_id, current_user_id)
+
+
+@router.get(
+    "/sessions/{session_id}/handoffs",
+    response_model=list[ChatHandoffEventDTO],
+    summary="会话 Agent 转交审计",
+)
+async def get_session_handoffs(
+    current_user_id: CurrentUserId,
+    service: ChatServiceDep,
+    session_id: str,
+) -> list[ChatHandoffEventDTO]:
+    return await service.get_handoff_events(session_id, current_user_id)
 
 
 @router.put("/sessions/{session_id}/title", summary="更新标题")

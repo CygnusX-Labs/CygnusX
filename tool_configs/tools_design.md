@@ -2,9 +2,9 @@
 
 > 本文档规定「生信工具箱」(`/tools`)下所有工具页面的架构、布局、样式、交互约定。
 > 新增工具**必须遵循本规范**,以保证视觉一致、交互统一、维护成本低。
-> 现有参考实现:火山图(`VolcanoPlotView.vue`)为最完整的样板,优先参照;BLAST / FASTQ 质控 / 绘图工坊 / KEGG 为次参照;JBrowse 为**全屏工具特例**,不作为紧凑布局参照。
+> 现有参考实现:火山图(`VolcanoPlotView.vue`)为最完整的样板,优先参照;BLAST / FASTQ 质控 / 绘图工坊 / KEGG 为次参照;JBrowse 为**全屏画布工具特例**,其沉浸式布局基线见 §19.7,不作为普通紧凑布局参照。
 >
-> 最后更新:2026-07-25
+> 最后更新:2026-07-26
 
 ---
 
@@ -245,7 +245,7 @@ tool_configs/enrichments/
 
 - 所有工具路由是 `DefaultLayout` 的 children,path 不带前导 `/`(相对父级 `/`)。
 - `requiresAuth: true` 必填。
-- **全屏工具**(如 JBrowse,需要占满视口、自带滚动)额外加 `meta: { fullscreen: true }`。全屏工具走 `DefaultLayout` 的 fullscreen 分支(`padding: 0`)，外层不套普通页面边距；内部页头、工具栏和响应式规则仍遵守 §十九，浏览器画布区域可自行铺满剩余高度。详见 §十一。
+- **全屏工具**(如 JBrowse,需要占满视口、自带滚动)额外加 `meta: { fullscreen: true }`。全屏工具走 `DefaultLayout` 的 fullscreen 分支(`padding: 0`)，外层不套普通页面边距；内部页头、工具栏和响应式规则仍遵守 §十九，画布区域按 §19.7 沉浸布局基线铺满剩余高度。详见 §十一。
 
 ### 5.3 图标登记(`ToolsHubView.vue`)
 
@@ -821,7 +821,7 @@ const contentStyle = computed(() => {
 
 ### 11.2 全屏工具(JBrowse 模式)排外
 
-**「Web 基因组浏览器」(JBrowse)及任何 `fullscreen: true` 的工具,外层仍不受 DefaultLayout 的普通 padding 影响**,但页面内部必须遵守本规范的页头与工具栏层级；浏览器画布区域可继续使用 flex 铺满剩余高度。
+**「Web 基因组浏览器」(JBrowse)及任何 `fullscreen: true` 的工具,外层仍不受 DefaultLayout 的普通 padding 影响**,但页面内部必须遵守本规范的页头与工具栏层级；画布区域按 §19.7「全屏画布工具沉浸布局基线」铺满剩余高度（flex 链 + 480px 兜底、页面级无纵向滚动、全屏沉浸模式与弹层 teleport 规则）。
 
 技术保证(双重保险):
 1. `fullscreen` 分支在 `contentStyle` 中**最先判断**,直接返回 `padding: 0`,不进入工具箱分支。
@@ -903,7 +903,7 @@ Plotly.downloadImage(container, {
 | FASTQ 质控 | `FastqQCView.vue` | 两栏、文件上传、统计卡片 |
 | 绘图工坊 | `PlotWorkshopView.vue` | ECharts 集成、多图表类型切换 |
 | GO / KEGG 富集 | `KeggEnrichmentView.vue` | 两栏、R Docker、后端配置驱动(`config_dir`) |
-| JBrowse | `JBrowseViewer.vue` | **全屏工具特例**,仅参考全屏模式,不参考紧凑布局 |
+| JBrowse | `JBrowseViewer.vue` | **全屏画布工具样板**(§19.7):查看区 flex 铺满 + 480px 兜底、48px 扁平工具条、`PageHeader` compact 变体、全屏沉浸模式(Fullscreen API + fixed 兜底)、弹层 teleport 到页根、同源 iframe 欢迎屏居中注入;不参考普通紧凑布局 |
 | 工具箱列表 | `ToolsHubView.vue` | 卡片网格、ICON_MAP、API 拉取 |
 
 ---
@@ -1140,7 +1140,17 @@ animation: cardIn 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
 - 返回按钮在标题与副标题文本块之间垂直居中，而不是与 `h1` 顶部对齐；共享实现使用 `.page-header-main { align-items: center; }`。
 - 页头是纯身份区：只放返回按钮 + 标题 + 副标题，最多保留 1 个弱全局操作（text/ghost），禁止出现主操作按钮与“示例数据/生成/刷新”类按钮；主操作一律进吸底操作栏，见 §十八。
 - 图标按钮必须保留 Tooltip 与无障碍名称；窄屏下页头允许换行，但返回按钮仍需保持可见和键盘可达。
-- JBrowse、YAML 驱动基因组浏览器、云端沙盒终端等全屏或专用工具栏可以保留专用结构，但返回按钮必须与标题信息块垂直居中，并保持现有全屏布局例外。
+- JBrowse、云端沙盒终端等全屏画布工具同样复用共享 `PageHeader`，通过 `compact` 变体压缩空间（见下条与 §19.7），不再自建页头。
+
+`PageHeader` 的 `compact` 变体（可选 prop，默认 `false`，不传则行为与原版完全一致）：
+
+| 行为 | 默认 | `compact` |
+| --- | --- | --- |
+| 垂直内边距 | 无（仅 `margin-bottom: 24px`） | `padding: 12px 0`、`margin-bottom: 0` |
+| 副标题 | 标题下方 14px、`var(--text-secondary)` | 标题右侧内联、`12px` 灰色小字（`var(--text-tertiary)`），超长省略；≤640px 折行到标题下方 |
+| 标题与返回按钮 | 字号/字重/配色不变 | 同左（压缩的是空间分配，不是视觉语言） |
+
+`compact` 只允许用于 `fullscreen: true` 的画布类工具页（查看区需要最大化视口占比）；普通工具页继续使用默认页头，保证工具之间页头零抖动。
 
 新增或修改工具时，先检查共享 `PageHeader`，只有在全屏工具确有布局约束时才新增局部页头实现。
 
@@ -1235,7 +1245,7 @@ Emit：`action`（点击主按钮或按 ⌘/Ctrl+Enter 时触发）。
 }
 ```
 
-`DefaultLayout.vue` 的工具区域外层保持 `padding: 0`，避免出现双层留白。全屏路由也保持外层 `padding: 0`，但内部页头仍按上述间距设置，画布/终端区域再通过 flex 铺满剩余空间。
+`DefaultLayout.vue` 的工具区域外层保持 `padding: 0`，避免出现双层留白。全屏路由也保持外层 `padding: 0`，但内部页头仍按上述间距设置，画布/终端区域再通过 flex 铺满剩余空间。例外：`fullscreen: true` 的画布类工具改用 §19.7 沉浸布局基线（`PageHeader` compact 变体 + 48px 扁平工具条 + 页面根 `padding: 0 16px 12px`）。
 
 ### 19.2 独立工具栏卡片
 
@@ -1305,3 +1315,100 @@ JBrowse、基因组浏览器、终端控制区等拥有多项全局控件的页�
 ```
 
 提交前按 §十三检查清单验收，并额外检查桌面 `>=1024px` 与移动 `375px` 两个视口；涉及全屏画布的工具再确认画布仍能占满页头和工具栏以外的剩余高度。
+
+### 19.7 全屏画布工具沉浸布局基线（2026-07-26，JBrowse 落地）
+
+本节是 `fullscreen: true` 的**画布类工具**（嵌入外部渲染器、查看区即产品主体：JBrowse 基因组浏览器、云端沙盒终端等）的空间分配基线，由「Web 基因组浏览器」空间优化落地提炼。与 §19.1–19.3 的关系：
+
+- **§19.2 卡片式工具栏**（border + radius 12 + card 背景）用于普通工具页；
+- **本节扁平工具条**（透明背景 + 底部分隔线，约 48px）用于画布类工具——工具条与页头处于同一视觉层级，把全部纵向空间让给画布。
+
+普通参数表单类工具**不要**套用本节，继续使用 §19.1–19.6。
+
+#### 19.7.1 空间分配（强制）
+
+```text
+100vh
+ ├─ 平台页头 56px（DefaultLayout top-nav，非工具页自有）
+ ├─ 标题区 ≈64px（PageHeader compact：12px 垂直 padding + 内容）
+ ├─ 工具条 ≈48px（控件 28px + 10px 垂直 padding + 1px 分隔线）
+ ├─ 已选轨道条（可选，仅有选中项时出现）
+ └─ 查看区 = 剩余全部高度（flex:1，min-height 480px 兜底）
+页面左右仅 16px padding，不设 max-width、不做居中限宽
+```
+
+根容器与查看区：
+
+```css
+.xxx-page {
+  height: 100%;            /* 依赖路由 meta.fullscreen 提供的有界 flex 链 */
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;        /* 页面级永不出现纵向滚动条 */
+  padding: 0 16px 12px;    /* 左右 16px，垂直空间让给 PageHeader compact */
+}
+
+.xxx-canvas {
+  flex: 1 1 auto;          /* 铺满剩余高度，禁止固定 px / auto 高度 */
+  min-height: 480px;       /* 兜底：极端矮视口下查看区不被压缩到不可用 */
+  position: relative;
+  overflow: hidden;        /* 滚动交给画布内部（如 JBrowse iframe） */
+}
+
+@media (max-width: 768px) {
+  .xxx-page { padding: 0 12px 12px; }
+  .xxx-canvas { min-height: 360px; }
+}
+```
+
+验收数值：打开会话后画布高度 ≥ 视口高度的 **70%**（720p 下约 75%，1080p 下约 84%）；1280px 与 1920px 宽度下页面无纵向滚动条，无双重滚动条。
+
+#### 19.7.2 页头与工具条压缩合并
+
+- 页头使用共享 `PageHeader` 的 `compact` 变体（见 §十七）：垂直 padding 12px、副标题内联为标题旁 12px 灰色小字。压缩的是空间分配，**标题字号/字重/配色/返回按钮样式与平台其他工具页一致**。
+- 工具条去除卡片式大圆角大留白，改为与页头同层级的紧凑横条：
+
+```css
+.xxx-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;          /* 窄屏折行，禁止横向滚动 */
+  box-sizing: border-box;
+  min-height: 48px;
+  padding: 10px 0;
+  gap: 10px;
+  border-bottom: 1px solid var(--neutral-border, #e5e6eb);
+  background: transparent;  /* 与页头同一视觉层级，不用 card 背景 */
+}
+.xxx-toolbar :deep(.n-button),
+.xxx-toolbar :deep(.n-base-selection),
+.xxx-toolbar :deep(.n-input) { height: 28px; border-radius: 8px; }
+```
+
+- 控件排布沿用 §19.2/§19.4：左侧选择器（≥240px）+ 坐标输入（220px）+ 唯一主操作，右侧上传/我的文件等 outline 弱操作；选择器、输入、按钮的样式规则不变。
+
+#### 19.7.3 全屏沉浸模式（画布类工具推荐配置）
+
+工具条右侧放「全屏」图标按钮（`ExpandOutline` / 退出态 `ContractOutline`，Tooltip + `aria-label`）。行为契约：
+
+1. **优先 Fullscreen API**：对页面根元素调用 `requestFullscreen()`，根元素进入浏览器 top layer，平台页头与侧边导航天然被隔离在外，无需手动隐藏；Esc 由浏览器原生退出。
+2. **fixed 定位兜底**：API 不可用或请求被拒（旧 Safari、权限策略）时，给根元素加 `position: fixed; inset: 0; z-index: 1500; background: var(--neutral-bg);` 覆盖视口，并自行监听 `keydown` Esc 退出；再次点击按钮也可退出。两条路径用一个 `computed`（`isFullscreen || immersiveFallback`）统一驱动图标与文案。
+3. **全屏态工具条保留可操作**：跳转、上传、我的文件等在全屏下必须可用——引出下条弹层规则。
+4. **弹层 teleport 规则（强制）**：Fullscreen top layer 会屏蔽 fullscreen 元素之外的一切节点。页面内的 `NModal` / `NDrawer` 默认 teleport 到 `body`，全屏下会**不可见**。必须把弹层的 `to` 指向页面根元素（如 `:to="pageRootRef || undefined"`）；封装组件（如 `JbrowseFileDrawer`）需透传可选 `to` prop。非全屏时弹层行为不变（`to` 为空走默认 body）。
+5. **卸载清理**：`onUnmounted` 中移除 `fullscreenchange` / `keydown` 监听；若离开页面时仍处于原生全屏，主动 `exitFullscreen()` 避免残留黑屏。
+6. **z-index 分层**：兜底态 `1500` 高于平台 chrome（top-nav 100），低于 naive 弹层（2000+），保证全屏兜底态下弹层仍浮在页面之上。
+
+#### 19.7.4 嵌入式画布的空状态适配（同源 iframe 场景）
+
+当画布是同域嵌入的第三方应用（如 nginx 同域挂载的 `/jbrowse2/` iframe），其自带欢迎页往往顶部对齐，画布撑满后会出现「上半截内容、下半截大段空白」的割裂感。适配方式（**仅展示层，禁止触碰配置生成、数据接口与集成逻辑**）：
+
+1. iframe `load` 后访问同源 `contentDocument`（跨域或不可访问时 `try/catch` 静默忽略）；
+2. 按**文案特征**（如 "Start a new session"）定位欢迎屏容器，避免误伤正常工作视图；
+3. 对容器祖先链补 `height: 100%`（已有内联高度的节点不动），父级设 flex 纵列，容器 `margin: auto` 吸收剩余空间实现垂直居中；欢迎屏自带的浮动按钮在 flex 上下文中改为绝对定位保持原视觉位置；
+4. 用元素 `id` 标记做幂等快路径；因第三方应用可能在用户关闭会话后重新挂载欢迎屏（新节点丢标记），用节流（≥200ms）的 `MutationObserver` 重跑适配，组件卸载时 `disconnect()`。
+
+#### 19.7.5 向后兼容约束
+
+- `PageHeader` 的 `compact`、弹层组件的 `to` 均为**可选参数默认关闭**，其他工具页零变化；共用外壳（`DefaultLayout`）不新增分支。
+- 本节改动只作用于画布类工具页自身；新增画布工具时复制本节结构，不修改其他工具页的页头/工具栏实现。

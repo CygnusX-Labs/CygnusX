@@ -10,6 +10,7 @@ from omichub.core.exceptions import AuthenticationError, ConflictError, NotFound
 from omichub.core.security import hash_password, verify_password
 from omichub.domain.user.entities import User
 from omichub.domain.user.repositories import IUserRepository
+from omichub.infrastructure.storage import get_path_factory
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,11 @@ class UserService:
     async def delete_user(self, user_id: str) -> bool:
         """删除用户"""
         try:
-            return await self.user_repo.delete(uuid.UUID(user_id))
+            uid = uuid.UUID(user_id)
+            deleted = await self.user_repo.delete(uid)
+            if deleted:
+                get_path_factory().remove_user_root(str(uid))
+            return deleted
         except ValueError as exc:
             raise NotFoundError("用户 ID 格式不正确") from exc
 

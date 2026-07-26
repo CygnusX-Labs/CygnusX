@@ -2864,10 +2864,14 @@ dependencies = [
     { name = "scikit-posthocs" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "snakemake" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "statsmodels" },
     { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.optional-dependencies]
+workflow = [
+    { name = "snakemake" },
 ]
 
 [package.dev-dependencies]
@@ -2914,11 +2918,12 @@ requires-dist = [
     { name = "rich-argparse", specifier = ">=1.7.0" },
     { name = "scikit-posthocs", specifier = ">=0.11.4" },
     { name = "scipy", specifier = ">=1.11.0" },
-    { name = "snakemake", specifier = ">=8.0.0" },
+    { name = "snakemake", marker = "extra == 'workflow'", specifier = ">=8.0.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.25" },
     { name = "statsmodels", specifier = ">=0.14.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.27.0" },
 ]
+provides-extras = ["workflow"]
 
 [package.metadata.requires-dev]
 dev = [

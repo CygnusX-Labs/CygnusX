@@ -45,15 +45,19 @@ export interface McpLogEntry {
   source: string
 }
 
-/** 技能（支持 URL 拉取 / JSON 粘贴导入） */
+/** 技能（SKILL.md 标准；支持市场 / GitHub / zip / JSON 四入口导入） */
 export interface SkillItem {
   id: string
   name: string
   description: string
   icon: string
   category: string
-  source: 'url' | 'json' | 'builtin'
+  source: 'market' | 'github' | 'zip' | 'json' | 'builtin' | 'url'
   source_url?: string
+  version?: string
+  author?: string
+  /** 是否包含可执行脚本（挂载选择器需带标识） */
+  has_scripts?: boolean
   /** JSON 模式下原始配置文本 */
   config?: string
   is_active: boolean

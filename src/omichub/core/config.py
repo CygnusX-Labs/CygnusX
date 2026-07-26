@@ -66,11 +66,25 @@ class Settings(BaseSettings):
     # ===== 多智能体编排（MAS，默认关闭，待灰度启用）=====
     mas_enabled: bool = False
     mas_workspace_root: str = "/data/omichub"
-    mas_tool_policies_yaml: str = "data/mas/tool_policies.yaml"
-    mas_agent_capabilities_yaml: str = "data/mas/agent_capabilities.yaml"
+    mas_tool_policies_yaml: str = "data/ai/mas/tool_policies.yaml"
+    mas_agent_capabilities_yaml: str = "data/ai/mas/agent_capabilities.yaml"
+    mas_artifact_schemas_yaml: str = "data/ai/mas/artifact_schemas.yaml"
     mas_apptainer_binary: str = "apptainer"
     mas_apptainer_image: str = ""
     mas_apptainer_pipeline_root: str = "/opt/omichub/pipelines/RNAFlow"
+    mas_scrna_docker_image: str = "omichub-analysis:scrna-2026.07"
+    mas_scrna_timeout_seconds: int = 7200
+    # ===== P4 记忆语义召回（默认关闭；失败时回退关键词召回） =====
+    agent_memory_semantic_retrieval_enabled: bool = False
+    agent_memory_embedding_model: str = ""
+    agent_memory_semantic_candidate_limit: int = 100
+    agent_memory_auto_summary_enabled: bool = False
+    agent_memory_auto_summary_min_messages: int = 6
+    agent_memory_summary_model: str = ""
+    agent_memory_conflict_adjudication_enabled: bool = False
+    agent_memory_conflict_adjudication_model: str = ""
+    multi_expert_consultation_enabled: bool = False
+    multi_expert_consultation_max_experts: int = 3
     upload_dir: str = "uploads"
     results_dir: str = "results"
     # 文件生命周期：临时分片会话超 24h 视为僵尸；中间文件保留期；冷数据归档期
@@ -114,15 +128,17 @@ class Settings(BaseSettings):
     enable_stats_cache: bool = True  # Redis 不可用时自动降级为直查 DB
 
     # ===== AI Copilot =====
-    ai_system_prompt: str = ""  # 已迁移到 data/prompts/copilot/system.md；仅保留环境变量兼容覆盖
+    ai_system_prompt: str = ""  # 已迁移到 data/ai/prompts/copilot/system.md；仅保留环境变量兼容覆盖
     ai_max_context_messages: int = 20
     ai_temperature: float = 0.7
     ai_default_provider_id: str = ""  # 默认 AI provider 配置 UUID，空则使用环境变量兜底
     ai_provider_key_encryption_key: str = ""  # Fernet 密钥，为空则 API key 明文存储
-    ai_provider_config_yaml: str = "data/ai_providers.yaml"  # 外置 AI Provider YAML 配置路径
+    ai_provider_config_yaml: str = "data/ai/providers.yaml"  # 外置 AI Provider YAML 配置路径
     site_content_yaml: str = "data/OmicHub.yaml"  # 首页文案外置 YAML 路径（改文件即生效）
-    prompts_registry_yaml: str = "data/prompts/registry.yaml"
-    runtime_images_yaml: str = "data/runtime_images.yaml"
+    prompts_registry_yaml: str = "data/ai/prompts/registry.yaml"
+    skills_dir: str = "data/ai/skills"  # SKILL.md 标准技能库目录（每个技能一个文件夹）
+    skill_marketplace_dir: str = "data/ai/skill_marketplace"  # 内置技能市场：随仓库发布的可安装技能文件夹
+    runtime_images_yaml: str = "data/ai/runtime_images.yaml"
     # JBrowse 2 基因组浏览器外置配置：参考基因组 / 预设轨道 / 扫描与上传策略。
     # 改文件后调用 POST /api/v1/jbrowse/config/reload 即时生效（或等配置加载器 mtime 热重载）。
     # 集中配置：与富集分析同放 tool_configs/<工具名>/，仓库内源码管控；容器内经 tool_configs/ 挂载(:ro) 可读。
@@ -238,7 +254,7 @@ class Settings(BaseSettings):
 
     # ===== OmicStudio AI 分析工作台 =====
     # 功能配置 YAML（仓库内源码管控）；改文件后由加载器 mtime 热重载。
-    studio_config_yaml: str = "data/studio.yaml"
+    studio_config_yaml: str = "data/ai/studio.yaml"
     # Celery worker 无 Docker socket；通过 web 的受认证内部控制面执行/回收沙盒。
     studio_control_internal_url: str = "http://web:8000/api/v1/studio/internal"
     studio_control_token: str = ""

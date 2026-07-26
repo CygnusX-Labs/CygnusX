@@ -292,8 +292,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'admin/cookies/accounts',
         name: 'admin-cookies-accounts',
-        component: () => import('@/views/AdminCookieManagementView.vue'),
-        meta: { title: '饼干账户管理', requiresAuth: true }
+        redirect: { name: 'admin-biscuits-accounts' },
       },
       {
         path: 'admin/cookies/transactions',
@@ -304,8 +303,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'admin/cookies/pricing',
         name: 'admin-cookies-pricing',
-        component: () => import('@/views/AdminCookiePricingView.vue'),
-        meta: { title: '饼干定价管理', requiresAuth: true }
+        redirect: { name: 'admin-biscuits-pricing' },
       },
       {
         path: 'admin/users',
@@ -320,16 +318,38 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '首页入口管理', requiresAuth: true }
       },
       {
+        path: 'admin/biscuits/accounts',
+        name: 'admin-biscuits-accounts',
+        component: () => import('@/views/AdminBiscuitsCenterView.vue'),
+        meta: { title: '饼干中心 · 账户管理', requiresAuth: true }
+      },
+      {
+        path: 'admin/biscuits/pricing',
+        name: 'admin-biscuits-pricing',
+        component: () => import('@/views/AdminBiscuitsCenterView.vue'),
+        meta: { title: '饼干中心 · 定价管理', requiresAuth: true }
+      },
+      {
         path: 'admin/ai-providers',
         name: 'admin-ai-providers',
-        component: () => import('@/views/AdminAIProvidersView.vue'),
-        meta: { title: 'AI 模型配置', requiresAuth: true }
+        redirect: { name: 'admin-ai-config-providers' },
       },
       {
         path: 'admin/ai-resources',
         name: 'admin-ai-resources',
-        component: () => import('@/views/AdminAIResourceCenterView.vue'),
-        meta: { title: 'AI 资源中心', requiresAuth: true }
+        redirect: { name: 'admin-ai-config-resources' },
+      },
+      {
+        path: 'admin/ai-config/providers',
+        name: 'admin-ai-config-providers',
+        component: () => import('@/views/AdminAIConfigCenterView.vue'),
+        meta: { title: 'AI 配置中心 · 模型配置', requiresAuth: true }
+      },
+      {
+        path: 'admin/ai-config/resources',
+        name: 'admin-ai-config-resources',
+        component: () => import('@/views/AdminAIConfigCenterView.vue'),
+        meta: { title: 'AI 配置中心 · 资源中心', requiresAuth: true }
       },
       {
         path: 'admin/announcements',

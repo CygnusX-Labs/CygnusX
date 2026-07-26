@@ -44,6 +44,20 @@ async def _omichub_tools_handler(
 
 OMICHUB_PLATFORM_SERVER_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "omichub-platform.builtin")
 
+WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX = """## 工作区文件工具
+
+你拥有当前会话用户工作区的只读文件工具：
+- `list_workspace_files(path?, pattern?)`：列出目录直接子项；`path` 为空时列根目录，`pattern` 支持 `*.csv` 等 glob。
+- `search_workspace_files(query, limit?)`：从工作区根目录递归按文件名模糊搜索。
+- 找到文件后，将返回的 `file_id` 直接交给已有的 `workspace_read_file(file_id)` 读取或分析。
+
+强制行为：
+- 用户询问“工作区里有什么文件 / 有哪些数据文件”时，必须先调用 `list_workspace_files` 获取真实结果，禁止声称没有浏览文件的工具。
+- 用户要求寻找某个文件时，必须先调用 `search_workspace_files` 获取真实结果。
+- 回答时用列表展示名称、类型和修改时间；找到文件后询问用户希望对哪个文件执行什么操作。
+- 文件工具仅限当前用户工作区且只读；不得尝试绝对路径、`..` 或其他用户目录。
+"""
+
 
 async def _platform_list_tasks(
     arguments: dict[str, Any], user_id: str | None = None, **_kw: Any
@@ -244,6 +258,10 @@ async def _resolve_workspace_file(
             return None, {"error": f"文件不存在或无权限: {fid}"}
         service = FileService(db)
         target = await service.get_file_path(uuid.UUID(user_id), file_uuid)  # 已做路径越权校验
+        try:
+            target.resolve().relative_to(service.user_workspace_root(uuid.UUID(user_id)).resolve())
+        except ValueError:
+            return None, {"error": "文件不在当前用户工作区内"}
         meta = {
             "file_id": fid,
             "ref": f"file://{fid}",
@@ -287,60 +305,119 @@ async def _resolve_workspace_file(
 
 
 async def _workspace_list_files(
-    arguments: dict[str, Any], user_id: str | None = None, **_kw: Any
+    arguments: dict[str, Any],
+    user_id: str | None = None,
+    context: ToolInvocationContext | None = None,
+    **_kw: Any,
 ) -> dict[str, Any]:
-    """列出用户工作区某目录下的文件/文件夹（名称、类型、大小、修改时间、file_id）。"""
+    """兼容旧工具名，委托规范的 ``list_workspace_files`` 实现。"""
+    result = await _list_workspace_files(arguments, user_id=user_id, context=context)
+    result["files"] = [
+        {**item, "file_id": f"file://{item['file_id']}"}
+        for item in result["items"]
+        if item["type"] == "file"
+    ]
+    result["directories"] = [
+        item["relative_path"] for item in result["items"] if item["type"] == "folder"
+    ]
+    return result
+
+
+async def _list_workspace_files(
+    arguments: dict[str, Any],
+    user_id: str | None = None,
+    context: ToolInvocationContext | None = None,
+) -> dict[str, Any]:
+    """列出当前用户工作区目录的文件和文件夹。"""
     from omichub.application.services.file_service import FileService
     from omichub.infrastructure.database.session import get_session_factory
 
-    path = (arguments.get("path") or "").strip()
-    # 空路径 = 工作区根目录（directory="" 精确匹配根目录文件，而非全量）
-    directory = "" if path in ("", "/") else path
     uid = uuid.UUID(user_id) if user_id else None
     if uid is None:
         return {"error": "无法识别当前用户"}
-
-    factory = get_session_factory()
-    async with factory() as db:
-        service = FileService(db)
-        listing = await service.list_files(uid, directory=directory)
-        directories = await service.list_directories(uid)
-
-    files = []
-    for f in listing.items[:100]:
-        files.append(
-            {
-                "name": f.original_name,
-                "file_id": f"file://{f.id}",
-                "type": f.file_type.value if hasattr(f.file_type, "value") else str(f.file_type),
-                "size": f.size,
-                "size_human": _human_size(f.size),
-                "directory": f.directory,
-                "created_at": f.created_at.isoformat() if f.created_at else None,
-            }
+    if context is not None:
+        result = await FileService(context.db).list_workspace_files(
+            uid,
+            path=arguments.get("path"),
+            pattern=arguments.get("pattern"),
         )
-    # 仅展示当前目录直接子目录
-    subdirs = [
-        d.path
-        for d in directories
-        if (d.parent_path or "") == directory and d.path != directory
-    ][:50]
+    else:
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await FileService(db).list_workspace_files(
+                uid,
+                path=arguments.get("path"),
+                pattern=arguments.get("pattern"),
+            )
 
-    scope = directory or "工作区根目录"
-    lines = [f"- [目录] {d}/" for d in subdirs]
-    lines += [
-        f"- {f['name']} ({f['size_human']}, {f['type']}) id={f['file_id']}" for f in files
+    lines = []
+    for item in result["items"]:
+        if item["type"] == "folder":
+            lines.append(f"- [文件夹] {item['name']}/ · 修改于 {item['modified_at']}")
+        else:
+            lines.append(
+                f"- {item['name']} · {_human_size(int(item['size']))} · "
+                f"修改于 {item['modified_at']} · file_id={item['file_id']}"
+            )
+    scope = result["path"] or "工作区根目录"
+    result["summary"] = (
+        f"{scope} 下共 {result['total']} 项：\n" + "\n".join(lines)
+        if lines
+        else f"{scope} 为空"
+    )
+    result["hint"] = "可将文件项的 file_id 直接交给 workspace_read_file 读取或分析。"
+    return result
+
+
+async def _search_workspace_files(
+    arguments: dict[str, Any],
+    user_id: str | None = None,
+    context: ToolInvocationContext | None = None,
+) -> dict[str, Any]:
+    """按文件名模糊搜索当前用户工作区的统一文件索引。"""
+    from omichub.application.services.file_service import FileService
+    from omichub.infrastructure.database.session import get_session_factory
+
+    uid = uuid.UUID(user_id) if user_id else None
+    if uid is None:
+        return {"error": "无法识别当前用户"}
+    query = str(arguments.get("query") or "").strip()
+    try:
+        limit = max(1, min(int(arguments.get("limit", 50)), 50))
+    except (TypeError, ValueError):
+        limit = 50
+
+    if context is not None:
+        listing = await FileService(context.db).search_files(uid, query=query, limit=limit)
+    else:
+        factory = get_session_factory()
+        async with factory() as db:
+            listing = await FileService(db).search_files(uid, query=query, limit=limit)
+
+    items = [
+        {
+            "file_id": str(file.id),
+            "name": file.original_name,
+            "relative_path": file.path,
+            "modified_at": file.modified_at.isoformat(),
+        }
+        for file in listing.items
     ]
-    summary = f"{scope} 下共 {len(files)} 个文件"
-    if subdirs:
-        summary += f"、{len(subdirs)} 个子目录"
+    lines = [
+        f"- {item['name']} · {item['relative_path']} · 修改于 {item['modified_at']} · "
+        f"file_id={item['file_id']}"
+        for item in items
+    ]
     return {
-        "path": scope,
-        "files": files,
-        "directories": subdirs,
-        "total": len(files),
-        "summary": summary + ":\n" + "\n".join(lines) if lines else summary + "（空）",
-        "hint": "使用 workspace_read_file(file_id) 读取文本文件内容，二进制文件仅返回元数据。",
+        "query": query,
+        "items": items,
+        "total": len(items),
+        "summary": (
+            f"找到 {len(items)} 个匹配文件：\n" + "\n".join(lines)
+            if lines
+            else f"未找到名称包含“{query}”的文件"
+        ),
+        "hint": "可将匹配项的 file_id 直接交给 workspace_read_file 读取或分析。",
     }
 
 
@@ -470,10 +547,50 @@ PLATFORM_PRESET_TOOLS = [
         },
     },
     {
+        "name": "list_workspace_files",
+        "description": (
+            "列出当前会话用户工作区指定目录的直接子项，返回 file_id、名称、文件/文件夹类型、"
+            "大小、相对路径和修改时间。用户询问工作区有什么文件时必须调用。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "工作区内相对目录，留空表示根目录；禁止绝对路径和 ..",
+                },
+                "pattern": {
+                    "type": "string",
+                    "description": "可选 glob 过滤，如 *.csv、sample_*.fastq.gz",
+                },
+            },
+        },
+    },
+    {
+        "name": "search_workspace_files",
+        "description": (
+            "从当前会话用户工作区根目录递归按文件名模糊搜索，返回 file_id、名称、相对路径和修改时间。"
+            "用户要求寻找某个数据文件时必须调用。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "文件名搜索词"},
+                "limit": {
+                    "type": "integer",
+                    "default": 50,
+                    "minimum": 1,
+                    "maximum": 50,
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
         "name": "workspace_list_files",
         "description": (
-            "列出当前用户工作区某目录下的文件与子目录（名称、类型、大小、修改时间、file_id）。"
-            "当用户询问“工作区里有哪些数据/文件”时直接调用此工具。"
+            "兼容旧版名称；列出当前用户工作区某目录下的文件与子目录。"
+            "新调用优先使用 list_workspace_files。"
         ),
         "inputSchema": {
             "type": "object",
@@ -482,6 +599,7 @@ PLATFORM_PRESET_TOOLS = [
                     "type": "string",
                     "description": "相对目录路径，空串=工作区根目录（如 raw_data、results、enrichment）",
                 },
+                "pattern": {"type": "string", "description": "可选 glob 过滤，如 *.csv"},
             },
         },
     },
@@ -525,6 +643,8 @@ PLATFORM_HANDLERS = {
     "platform_list_flows": _platform_list_flows,
     "platform_sandbox_execute": _platform_sandbox_execute,
     "platform_read_file": _platform_read_file,
+    "list_workspace_files": _list_workspace_files,
+    "search_workspace_files": _search_workspace_files,
     "workspace_list_files": _workspace_list_files,
     "workspace_read_file": _workspace_read_file,
     "workspace_get_file_info": _workspace_get_file_info,
@@ -628,6 +748,7 @@ __all__ = [
     "OMICHUB_TOOLS_SERVER_ID",
     "OMICHUB_TOOLS_SERVER_NAME",
     "OMICHUB_PLATFORM_SERVER_ID",
+    "WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX",
     "OMICHUB_PIPELINES_SERVER_ID",
     "OMICHUB_PIPELINES_SERVER_NAME",
     "PLATFORM_PRESET_TOOLS",

@@ -2,7 +2,7 @@
 
 设计思路（避免运行时调 LLM 的 2~5s 延迟）：
 1. **启动补齐**：服务启动时若 ``data/welcome.yaml`` 条数不足阈值，调用默认 AI provider
-   （``data/ai_providers.yaml`` 中 ``is_default: true`` 的模型）预生成补齐。失败仅 log，不阻塞启动。
+   （``data/ai/providers.yaml`` 中 ``is_default: true`` 的模型）预生成补齐。失败仅 log，不阻塞启动。
 2. **运行时轮询**：登录时仅读盘 + 游标前进，返回下一条；20 条轮完一圈才重复。
    游标独立存 ``data/welcome_state.yaml``，避免污染生成结果；重启不丢。
 3. **兜底**：两文件缺失/空列表/解析失败时，返回内置默认文案，保证登录必有弹窗。

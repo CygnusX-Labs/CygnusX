@@ -16,6 +16,8 @@ import TaskProgressCard from './TaskProgressCard.vue'
 import PipelineTaskCard from './PipelineTaskCard.vue'
 import type { PipelineType } from '@/types/pipeline'
 import MasPlanPreviewCard from './MasPlanPreviewCard.vue'
+import HandoffCard from './HandoffCard.vue'
+import ExpertConsultationCard from './ExpertConsultationCard.vue'
 import ChartPreviewModal from './ChartPreviewModal.vue'
 import StudioCodeCard from '@/components/studio/StudioCodeCard.vue'
 import ApprovalCard from './ApprovalCard.vue'
@@ -195,6 +197,48 @@ const isError = computed(() =>
 
 const hasOutputTokens = computed(() => (props.message.tokens?.output ?? 0) > 0)
 
+const webSources = computed(() => {
+  const sources: Array<{ title: string; url: string; snippet: string }> = [
+    ...(props.message.webSources || []),
+  ]
+  for (const tool of props.message.toolCalls || []) {
+    if (tool.name !== 'web_search' || !tool.result || typeof tool.result !== 'object') continue
+    const result = tool.result as { results?: unknown; result?: { results?: unknown } }
+    const resultRows = Array.isArray(result.results) ? result.results : result.result?.results
+    if (!Array.isArray(resultRows)) continue
+    for (const source of resultRows) {
+      if (!source || typeof source !== 'object') continue
+      const item = source as Record<string, unknown>
+      if (typeof item.title === 'string' && typeof item.url === 'string') {
+        sources.push({ title: item.title, url: item.url, snippet: typeof item.snippet === 'string' ? item.snippet : '' })
+      }
+    }
+  }
+  return sources.filter((source, index) => sources.findIndex((item) => item.url === source.url) === index)
+})
+
+function sourceDomain(url: string): string {
+  try { return new URL(url).hostname } catch { return url }
+}
+
+function sourceHref(url: string): string {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.href : ''
+  } catch {
+    return ''
+  }
+}
+
+function sourceFavicon(url: string): string {
+  const domain = sourceDomain(url)
+  return domain ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32` : ''
+}
+
+function hideSourceFavicon(event: Event) {
+  ;(event.currentTarget as HTMLImageElement).style.display = 'none'
+}
+
 const isEmptyWithThought = computed(() =>
   !props.isStreaming
   && !props.message.content?.trim().length
@@ -258,7 +302,50 @@ function renderMarkdown(source: string) {
     return
   }
   try {
-    renderedContent.value = DOMPurify.sanitize(md.render(source))
+    const container = document.createElement('div')
+    container.innerHTML = DOMPurify.sanitize(md.render(source))
+    const sources = webSources.value
+    if (sources.length) {
+      const nodes: Text[] = []
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+      let node = walker.nextNode()
+      while (node) {
+        const parent = node.parentElement
+        if (!parent?.closest('a, code, pre') && /\[(\d+)\]/.test(node.textContent || '')) {
+          nodes.push(node as Text)
+        }
+        node = walker.nextNode()
+      }
+      for (const textNode of nodes) {
+        const fragment = document.createDocumentFragment()
+        const value = textNode.textContent || ''
+        let cursor = 0
+        for (const match of value.matchAll(/\[(\d+)\]/g)) {
+          const index = Number(match[1]) - 1
+          const sourceItem = sources[index]
+          if (!sourceItem || match.index === undefined) continue
+          fragment.append(value.slice(cursor, match.index))
+          const href = sourceHref(sourceItem.url)
+          if (href) {
+            const anchor = document.createElement('a')
+            anchor.className = 'web-citation'
+            anchor.href = href
+            anchor.target = '_blank'
+            anchor.rel = 'noopener noreferrer'
+            anchor.title = sourceItem.snippet || sourceItem.title
+            anchor.setAttribute('aria-label', `来源 ${index + 1}：${sourceItem.title}`)
+            anchor.textContent = match[0]
+            fragment.append(anchor)
+          } else {
+            fragment.append(match[0])
+          }
+          cursor = match.index + match[0].length
+        }
+        fragment.append(value.slice(cursor))
+        textNode.replaceWith(fragment)
+      }
+    }
+    renderedContent.value = DOMPurify.sanitize(container.innerHTML)
   } catch (e) {
     reportChatDiagnostic({
       phase: 'markdown-render',
@@ -271,8 +358,8 @@ function renderMarkdown(source: string) {
 }
 
 watch(
-  () => displayContent.value,
-  (source) => {
+  () => [displayContent.value, webSources.value] as const,
+  ([source]) => {
     if (props.isStreaming) {
       if (renderRafId) return
       renderRafId = requestAnimationFrame(() => {
@@ -376,6 +463,10 @@ function isStudioCodeToolCall(tool: ToolCall): boolean {
 
 function isArtifactRegisterTool(tool: ToolCall): boolean {
   return tool.name === 'artifact_register' && tool.status === 'success' && !!tool.uiPayload?.report_id
+}
+
+function isHandoffTool(tool: ToolCall): boolean {
+  return tool.name === 'transfer_to_agent' && tool.status === 'success'
 }
 
 function hasMasPlan(tool: ToolCall): boolean {
@@ -628,6 +719,16 @@ function handleEdit() {
           </transition>
         </div>
 
+        <div
+          v-if="isStreaming && message.webSearchStatus && message.webSearchStatus.status !== 'complete'"
+          class="web-search-status"
+          role="status"
+          aria-live="polite"
+        >
+          <span aria-hidden="true">🔍</span>
+          <span>{{ message.webSearchStatus?.message || (message.webSearchStatus?.status === 'searching' ? `正在联网搜索：${message.webSearchStatus?.query || ''}` : message.webSearchStatus?.status === 'empty' ? '未找到相关网页，继续基于模型知识回答' : '联网搜索失败，继续基于模型知识回答') }}</span>
+        </div>
+
         <!-- 首 Token 前加载态；按等待时长轮换动画与文案。
              不套外层 transition：AiLoading 内部已有 out-in 过渡，外层 leave 过渡
              会在其内部过渡进行时移除节点，触发 Vue parentNode null 崩溃。 -->
@@ -696,6 +797,7 @@ function handleEdit() {
                 :session-id="stringPayloadValue(tool, 'session_id')"
                 :workspace-id="stringPayloadValue(tool, 'workspace_id')"
               />
+              <HandoffCard v-else-if="isHandoffTool(tool)" :tool="tool" />
               <div v-else-if="isArtifactRegisterTool(tool)" class="artifact-register-card">
                 <div class="artifact-register-icon">✓</div>
                 <div>
@@ -717,6 +819,38 @@ function handleEdit() {
               />
             </template>
           </div>
+
+          <ExpertConsultationCard
+            v-if="message.consultation?.experts.length"
+            :experts="message.consultation.experts"
+          />
+
+          <details v-if="webSources.length" class="web-sources">
+            <summary class="web-sources-title">来源（{{ webSources.length }}）</summary>
+            <div class="web-source-list">
+              <a
+                v-for="(source, index) in webSources"
+                :key="source.url"
+                class="web-source"
+                :href="sourceHref(source.url) || undefined"
+                target="_blank"
+                rel="noopener noreferrer"
+                :title="source.snippet"
+              >
+                <span class="source-index">[{{ index + 1 }}]</span>
+                <img
+                  v-if="sourceFavicon(source.url)"
+                  class="source-favicon"
+                  :src="sourceFavicon(source.url)"
+                  :alt="`${sourceDomain(source.url)} favicon`"
+                  loading="lazy"
+                  @error="hideSourceFavicon"
+                >
+                <span class="source-title">{{ source.title }}</span>
+                <span class="source-domain">{{ sourceDomain(source.url) }}</span>
+              </a>
+            </div>
+          </details>
 
           <!-- 流式光标 -->
           <span v-if="isStreaming && streamingHasContent" class="stream-cursor" />
@@ -859,6 +993,17 @@ function handleEdit() {
   font-size: 12px;
   color: var(--chat-text-muted, #999);
 }
+.web-search-status { display:flex; align-items:center; gap:6px; margin:0 0 12px; color:var(--neutral-text-2); font-size:13px; }
+.web-sources { margin-top:16px; padding-top:12px; border-top:1px solid var(--neutral-border); }
+.web-sources-title { cursor:pointer; font-size:12px; font-weight:600; color:var(--neutral-text-2); }
+.web-source-list { display:flex; flex-direction:column; gap:7px; margin-top:9px; }
+.web-source { display:flex; align-items:center; gap:7px; min-width:0; font-size:12px; text-decoration:none; color:var(--neutral-text-2); }
+.web-source:hover .source-title, .web-citation:hover { color:var(--arco-primary); text-decoration:underline; }
+.source-index { flex:0 0 auto; color:var(--arco-primary); }
+.source-favicon { width:14px; height:14px; flex:0 0 auto; border-radius:3px; }
+.source-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.source-domain { margin-left:auto; flex:0 0 auto; color:var(--neutral-text-3); font-size:11px; }
+:deep(.web-citation) { color:var(--arco-primary); font-weight:600; text-decoration:none; }
 .message-header.user-header .message-meta {
   justify-content: flex-end;
 }
@@ -945,7 +1090,8 @@ function handleEdit() {
 }
 .kimi-message-item.assistant .message-content.ai-card {
   position: relative;
-  max-width: min(100% - 48px, var(--chat-content-max-width, 860px));
+  width: 100%;
+  box-sizing: border-box;
   padding: 16px 20px;
   background: var(--chat-ai-card, #ffffff);
   border: 1px solid var(--chat-border, #f0f0f0);
@@ -1377,5 +1523,71 @@ function handleEdit() {
   .plotly-container {
     min-height: 280px;
   }
+}
+
+.kimi-message-item {
+  padding-block: 24px;
+}
+
+.kimi-message-item.assistant .message-name,
+.kimi-message-item.assistant .ai-name {
+  color: var(--stardust-blue);
+  font-weight: 600;
+}
+
+.kimi-message-item.assistant .message-content.ai-card {
+  border: 1px solid rgba(46, 91, 255, 0.06);
+  border-radius: var(--radius-card, 12px);
+  box-shadow: var(--stardust-card-shadow);
+  line-height: 1.75;
+}
+
+.kimi-message-item.user .message-content.user-bubble {
+  background: var(--stardust-gradient);
+  box-shadow: 0 4px 12px rgba(46, 91, 255, 0.2);
+}
+
+.kimi-message-item.assistant .thought-block,
+.kimi-message-item.assistant .thought-details {
+  border-color: rgba(46, 91, 255, 0.08);
+  border-radius: 8px;
+  background: var(--stardust-bg-soft);
+}
+
+.kimi-message-item.assistant .thought-toggle,
+.kimi-message-item.assistant .thought-summary {
+  background: var(--stardust-bg-soft);
+  color: var(--stardust-blue);
+}
+
+.kimi-message-item.assistant :deep(.markdown-body table) {
+  overflow: hidden;
+  border: 1px solid rgba(46, 91, 255, 0.08);
+  border-radius: 8px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.kimi-message-item.assistant :deep(.markdown-body th) {
+  background: var(--stardust-bg-soft);
+  color: #3b4262;
+  font-weight: 600;
+}
+
+.kimi-message-item.assistant :deep(.markdown-body th),
+.kimi-message-item.assistant :deep(.markdown-body td) {
+  padding: 12px 16px;
+  min-height: 48px;
+}
+
+.kimi-message-item.assistant :deep(.markdown-body tbody tr:hover) {
+  background: #f8f9ff;
+}
+
+:root[data-theme="dark"] .kimi-message-item.assistant :deep(.markdown-body th) {
+  color: var(--text-primary);
+}
+:root[data-theme="dark"] .kimi-message-item.assistant :deep(.markdown-body tbody tr:hover) {
+  background: rgba(118, 145, 255, 0.08);
 }
 </style>

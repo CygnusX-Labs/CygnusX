@@ -1,0 +1,6 @@
+schema_version: "1.0"
+agents:
+  agent-code: [workspace-inspect, artifact-validate, python]
+  agent-rnaseq: [ebi-download, rnaflow, quality-gate, artifact-validate]
+  agent-viz: [deg-volcano, quality-gate, artifact-validate]
+  agent-scrna: [scanpy-qc, artifact-validate]

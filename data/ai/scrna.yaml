@@ -5,14 +5,23 @@ avatar: "🔬"
 color: "#e74c3c"
 category: analysis
 model: qwen3.7-max
-prompt_ref: agents.scrna
+prompt_file: prompts/scrna.md
 welcome_message: "你好！请提供 10x 矩阵、h5ad/rds 文件或单细胞分析目标。"
 temperature: 0.3
 max_tokens: 4096
 mcp_ids: []
-skill_ids: []
+skill_ids:
+  - human-mouse-cell-annotation
+  - plant-cell-annotation
 features:
   engine: langgraph
+  web_search:
+    mode: required_for_freshness
+    triggers: [最新, 文献, 论文, 研究进展, 细胞图谱, 数据库更新]
+tool_packs: [workspace, research, memory, handoff]
+handoff:
+  allowed_targets: [agent-rnaseq, agent-viz, agent-code, agent-general]
+  max_hops_per_session: 3
 studio:
   enabled: true
   runtime_profile: analysis-scrna

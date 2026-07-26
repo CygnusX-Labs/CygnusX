@@ -185,4 +185,5 @@ async def test_update_plan_not_intercepted_for_chat_session(mocked_agent_runtime
     assert "plan" not in [c.type for c in chunks]
     tool_result = next(c for c in chunks if c.type == "tool_result")
     assert tool_result.metadata["success"] is False
-    assert session.sandbox_meta is None
+    # 会话级 mcp_mode 元数据会记入 sandbox_meta，但非 Studio 会话不落 plan 数据
+    assert "plan" not in (session.sandbox_meta or {})

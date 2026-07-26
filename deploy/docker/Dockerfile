@@ -19,7 +19,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock* README.md ./
 
 # 安装依赖到虚拟环境
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --extra workflow --no-install-project
 
 # 复制源代码
 COPY src/ ./src/
@@ -29,7 +29,7 @@ COPY alembic/ ./alembic/
 COPY tool_configs/ ./tool_configs/
 
 # 安装项目本身
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --extra workflow
 
 # Snakemake logger plugin used by the workflow monitor.
 RUN uv pip install --python /app/.venv/bin/python --no-cache "snakemake-logger-plugin-rich-loguru>=0.3.0"

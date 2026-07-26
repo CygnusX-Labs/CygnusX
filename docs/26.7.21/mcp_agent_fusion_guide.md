@@ -89,13 +89,13 @@ features:
   engine: langgraph               # 可选：走 LangGraph 引擎（默认 legacy）
 studio:
   enabled: true
-  runtime_profile: analysis-core  # 对应 data/runtime_images.yaml 的 profile
+  runtime_profile: analysis-core  # 对应 data/ai/runtime_images.yaml 的 profile
   required_capabilities: [python]
 EOF
 
-# 2. 提示词：data/prompts/agents/atac.md（自由编写）
+# 2. 提示词：data/ai/prompts/atac.md（自由编写）
 
-# 3. 注册提示词 key：data/prompts/registry.yaml 增加
+# 3. 注册提示词 key：data/ai/prompts/registry.yaml 增加
 #   agents.atac:
 #     file: agents/atac.md
 #     kind: system
@@ -115,12 +115,12 @@ EOF
 | `skill_ids` | 绑定技能（注入提示词后缀） |
 | `features.engine` | `langgraph` 启用框架引擎；缺省走 legacy 循环 |
 | `features.enable_web_search` / `mas_orchestrator` | 功能开关（见 agent_service 注释） |
-| `studio.runtime_profile` | `data/runtime_images.yaml` 的 profile（决定沙盒镜像与能力） |
+| `studio.runtime_profile` | `data/ai/runtime_images.yaml` 的 profile（决定沙盒镜像与能力） |
 
 ### 什么时候才需要写代码
 
 - **新工具能力**（如调用一个新的数据库/算法）：按 §2.3 加内部 preset handler
   （+ 可选的外部 MCP 工具组），然后 Agent yaml 的 `mcp_ids` 挂上即可。
 - **新沙盒运行时**（如新依赖环境）：`deploy/runtime-images/` 加 Dockerfile +
-  `data/runtime_images.yaml` 加 profile。
+  `data/ai/runtime_images.yaml` 加 profile。
 - **新交互类型**：才需要动 chat_service / 前端（极少）。

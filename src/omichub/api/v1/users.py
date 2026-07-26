@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 
 from omichub.api.deps import CurrentUserId, DbSession
+from omichub.application.schemas.agent_memory import AgentMemoryClearResponse, AgentMemoryDTO
 from omichub.application.schemas.user import (
     ChangePasswordRequest,
     UserListItem,
@@ -14,9 +15,10 @@ from omichub.application.schemas.user import (
     UserUpdateRequest,
 )
 from omichub.application.services import UserService
+from omichub.application.services.agent_memory_service import AgentMemoryService
 from omichub.core.exceptions import AuthorizationError
-from omichub.infrastructure.database.repositories import SqlAlchemyUserRepository
 from omichub.infrastructure.database.models.audit_log import AuditLogModel
+from omichub.infrastructure.database.repositories import SqlAlchemyUserRepository
 from omichub.middleware.rbac import require_roles
 
 router = APIRouter()
@@ -25,6 +27,43 @@ router = APIRouter()
 def get_user_service(db: DbSession) -> UserService:
     """获取用户服务实例"""
     return UserService(SqlAlchemyUserRepository(db))
+
+
+@router.get("/me/memories", response_model=list[AgentMemoryDTO])
+async def list_my_memories(
+    current_user_id: CurrentUserId,
+    db: DbSession,
+    agent_id: str | None = Query(None, max_length=50),
+    scope: str | None = Query(None, pattern="^(profile|project|preference|summary)$"),
+) -> list[AgentMemoryDTO]:
+    """列出当前用户可管理的跨会话 Agent 记忆。"""
+    memories = await AgentMemoryService(db).list_memories(
+        current_user_id, agent_id=agent_id, scope=scope
+    )
+    return [AgentMemoryDTO(**AgentMemoryService._serialize(memory)) for memory in memories]
+
+
+@router.delete("/me/memories/{memory_id}", status_code=204)
+async def delete_my_memory(
+    memory_id: str,
+    current_user_id: CurrentUserId,
+    db: DbSession,
+) -> None:
+    """永久删除当前用户的一条记忆。"""
+    await AgentMemoryService(db).delete_memory(current_user_id, memory_id)
+
+
+@router.delete("/me/memories", response_model=AgentMemoryClearResponse)
+async def clear_my_memories(
+    current_user_id: CurrentUserId,
+    db: DbSession,
+    agent_id: str | None = Query(None, max_length=50),
+) -> AgentMemoryClearResponse:
+    """归档清空当前用户全部或指定 Agent 的记忆。"""
+    cleared_count = await AgentMemoryService(db).clear_memories(
+        current_user_id, agent_id=agent_id
+    )
+    return AgentMemoryClearResponse(cleared_count=cleared_count)
 
 
 @router.get("/me/audit-logs")

@@ -23,7 +23,14 @@ export interface ProviderTemplate {
 
 export const adminProviderApi = {
   /** 列出所有 AI Provider 配置（/admin/ai-providers） */
-  async list(): Promise<Array<{ id: string; name: string; model: string; provider_type: string }>> {
+  async list(): Promise<Array<{
+    id: string
+    name: string
+    model: string
+    provider_type: string
+    is_active: boolean
+    is_default: boolean
+  }>> {
     const res = await apiClient.get('/admin/ai-providers')
     return res.data || []
   },

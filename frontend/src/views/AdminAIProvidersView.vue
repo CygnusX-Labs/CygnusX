@@ -19,6 +19,10 @@ import {
 import { h, onMounted, ref } from 'vue'
 import PageHeader from '@/components/PageHeader.vue'
 
+withDefaults(defineProps<{ embedded?: boolean }>(), {
+  embedded: false,
+})
+
 const message = useMessage()
 
 const configs = ref<AIProviderConfig[]>([])
@@ -169,8 +173,8 @@ onMounted(fetchConfigs)
 </script>
 
 <template>
-  <div class="page-container">
-    <PageHeader title="AI 模型配置" subtitle="管理应用可用的模型 Provider 与调用参数" />
+  <div class="page-container" :class="{ 'page-container--embedded': embedded }">
+    <PageHeader v-if="!embedded" title="AI 模型配置" subtitle="管理应用可用的模型 Provider 与调用参数" />
     <NSpace vertical :size="24">
       <NCard title="Provider 配置" :bordered="false" class="arco-card">
         <template #header-extra>
@@ -241,6 +245,10 @@ onMounted(fetchConfigs)
   padding: 24px;
   min-height: 100%;
   background: var(--neutral-bg);
+}
+.page-container--embedded {
+  padding: 0;
+  background: transparent;
 }
 .page-title {
   font-size: 24px;

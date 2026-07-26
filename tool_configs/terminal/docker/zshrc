@@ -40,3 +40,8 @@ cat <<'EOF'
   会话超时: 30 分钟无操作自动销毁
 
 EOF
+
+if [[ -n "${OMICHUB_IMAGE_NOTICE:-}" ]]; then
+  echo "  注意: ${OMICHUB_IMAGE_NOTICE}"
+  echo ""
+fi

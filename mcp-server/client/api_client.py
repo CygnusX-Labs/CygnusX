@@ -146,6 +146,17 @@ class OmicHubAPIClient:
     async def preview_file(self, path: str, max_lines: int = 50) -> dict:
         return await self.get("/files/preview", params={"path": path, "max_lines": max_lines})
 
+    async def list_workspace_files(
+        self, path: str | None = None, pattern: str | None = None
+    ) -> dict:
+        params = {key: value for key, value in {"path": path, "pattern": pattern}.items() if value}
+        return await self.get("/files/workspace", params=params)
+
+    async def search_workspace_files(self, query: str, limit: int = 50) -> dict:
+        return await self.get(
+            "/files/search", params={"q": query, "root": "", "limit": limit}
+        )
+
     # ===== Reports =====
     async def list_reports(self, **filters: Any) -> dict:
         params = {k: v for k, v in filters.items() if v is not None}

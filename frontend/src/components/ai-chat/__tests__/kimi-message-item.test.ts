@@ -89,6 +89,26 @@ describe('KimiMessageItem 渲染分支', () => {
     expect(el.textContent).toContain('正在输出的正文')
   })
 
+  it('流式首帧尚未收到搜索状态时，不应误报联网搜索失败', () => {
+    const { el } = mountItem({
+      message: { ...baseMsg, status: 'streaming' },
+      isStreaming: true,
+    })
+    expect(el.textContent).not.toContain('联网搜索失败')
+  })
+
+  it('收到搜索中状态后，显示联网搜索进度', () => {
+    const { el } = mountItem({
+      message: {
+        ...baseMsg,
+        status: 'streaming',
+        webSearchStatus: { status: 'searching', query: 'OmicHub' },
+      },
+      isStreaming: true,
+    })
+    expect(el.textContent).toContain('正在联网搜索：OmicHub')
+  })
+
   it('流式结束瞬间（content 已写入 message）：正文不丢失', () => {
     const msg = reactive({
       ...baseMsg,

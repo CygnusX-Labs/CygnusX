@@ -1,0 +1,7 @@
+# 代码 Agent 的基础只读上下文工具。
+# Studio 中的代码执行能力由 studio.required_capabilities 管理；不要在 YAML 中直接执行任意脚本。
+id: development
+description: 代码编写前查看当前用户的输入文件。
+platform_tools:
+  - list_workspace_files
+  - search_workspace_files

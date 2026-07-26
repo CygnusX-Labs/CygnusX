@@ -11,7 +11,7 @@ import {
   InformationCircleOutline, PersonOutline, LogOutOutline, MoonOutline, SunnyOutline,
   MenuOutline, ChevronForwardOutline, ChevronDownOutline,
   NotificationsOutline, HelpCircleOutline, ChatbubblesOutline, Planet,
-  WalletOutline, PricetagOutline, SparklesOutline, ConstructOutline, LayersOutline,
+  WalletOutline, SparklesOutline, ConstructOutline, LayersOutline,
   TerminalOutline, SearchOutline, DesktopOutline,
 } from '@vicons/ionicons5'
 import CookieBalanceBadge from '@/components/CookieBalanceBadge.vue'
@@ -45,7 +45,21 @@ const mobileDrawerOpen = ref(false)
 const notificationDrawerOpen = ref(false)
 // 首次登录迎新弹窗：由 authStore.consumeOnboarding() 触发
 const onboardingVisible = ref(false)
-const expandedKeys = ref<string[]>(['analysis-center'])
+function loadExpandedKeys(): string[] {
+  const saved = localStorage.getItem('omichub:sidebar-expanded')
+  if (!saved) return ['analysis-center']
+
+  try {
+    const parsed = JSON.parse(saved)
+    return Array.isArray(parsed) && parsed.every((key) => typeof key === 'string')
+      ? parsed
+      : ['analysis-center']
+  } catch {
+    return ['analysis-center']
+  }
+}
+
+const expandedKeys = ref<string[]>(loadExpandedKeys())
 
 // 记录用户最后一次手动折叠状态：进入「关于」页强制折叠前保存，离开后恢复。
 const userCollapsed = ref(false)
@@ -215,10 +229,8 @@ const adminNavItems = computed<NavItem[]>(() => [
     children: [
       { key: 'admin-users', label: '用户管理', to: '/admin/users', icon: PersonOutline },
       { key: 'admin-home-quick-entries', label: '首页入口管理', to: '/admin/home-quick-entries', icon: GridOutline },
-      { key: 'admin-cookies-accounts', label: '饼干账户管理', to: '/admin/cookies/accounts', icon: WalletOutline },
-      { key: 'admin-cookies-pricing', label: '饼干定价管理', to: '/admin/cookies/pricing', icon: PricetagOutline },
-      { key: 'admin-ai-providers', label: 'AI 模型配置', to: '/admin/ai-providers', icon: SparklesOutline },
-      { key: 'admin-ai-resources', label: 'AI 资源中心', to: '/admin/ai-resources', icon: SparklesOutline },
+      { key: 'admin-biscuits', label: '饼干中心', to: '/admin/biscuits/accounts', icon: WalletOutline },
+      { key: 'admin-ai-config', label: 'AI 配置中心', to: '/admin/ai-config/providers', icon: SparklesOutline },
       { key: 'admin-announcements', label: '通知公告', to: '/admin/announcements', icon: NotificationsOutline },
       { key: 'admin-terminals', label: '沙盒终端管理', to: '/admin/terminals', icon: TerminalOutline },
       { key: 'admin-blast-databases', label: 'BLAST 数据库管理', to: '/admin/blast-databases', icon: SearchOutline },
@@ -270,6 +282,7 @@ function toggleExpanded(key: string) {
   } else {
     expandedKeys.value.push(key)
   }
+  localStorage.setItem('omichub:sidebar-expanded', JSON.stringify(expandedKeys.value))
 }
 
 function isExpanded(key: string): boolean {
@@ -429,6 +442,7 @@ const UserAvatar = () => {
                   :class="{
                     'nav-item--active': isActive(item),
                     'nav-item--collapsed': collapsed,
+                    'nav-item--group': item.key === 'admin-center',
                   }"
                   @click="handleNavClick(item)"
                 >
@@ -618,23 +632,25 @@ const UserAvatar = () => {
                     </div>
                   </div>
                   <!-- 子菜单 -->
-                  <div
-                    v-if="item.children && !collapsed && isExpanded(item.key)"
-                    class="sub-nav"
-                  >
-                    <RouterLink
-                      v-for="child in item.children"
-                      :key="child.key"
-                      :to="child.to"
-                      class="sub-nav-item"
-                      :class="{ 'sub-nav-item--active': isActive(child) }"
+                  <Transition name="subnav-expand">
+                    <div
+                      v-if="item.children && !collapsed && isExpanded(item.key)"
+                      class="sub-nav"
                     >
-                      <NIcon :size="16" class="sub-nav-icon">
-                        <component :is="child.icon" />
-                      </NIcon>
-                      <span>{{ child.label }}</span>
-                    </RouterLink>
-                  </div>
+                      <RouterLink
+                        v-for="child in item.children"
+                        :key="child.key"
+                        :to="child.to"
+                        class="sub-nav-item"
+                        :class="{ 'sub-nav-item--active': isActive(child) }"
+                      >
+                        <NIcon :size="16" class="sub-nav-icon">
+                          <component :is="child.icon" />
+                        </NIcon>
+                        <span>{{ child.label }}</span>
+                      </RouterLink>
+                    </div>
+                  </Transition>
                 </div>
               </nav>
             </template>
@@ -1049,6 +1065,22 @@ const UserAvatar = () => {
   border-radius: 0 3px 3px 0;
 }
 
+.nav-item--group.nav-item--active {
+  background: transparent;
+  color: var(--neutral-text-1);
+  font-weight: 500;
+}
+
+.nav-item--group.nav-item--active::before {
+  display: none;
+}
+
+.nav-item--group:hover {
+  background: var(--neutral-hover);
+  box-shadow: none;
+  transform: none;
+}
+
 .nav-item-inner {
   display: flex;
   align-items: center;
@@ -1093,6 +1125,24 @@ const UserAvatar = () => {
 
 .nav-chevron--expanded {
   transform: rotate(90deg);
+}
+
+.subnav-expand-enter-active,
+.subnav-expand-leave-active {
+  overflow: hidden;
+  transition: max-height 220ms ease-in-out, opacity 180ms ease-in-out;
+}
+
+.subnav-expand-enter-from,
+.subnav-expand-leave-to {
+  max-height: 0;
+  opacity: 0;
+}
+
+.subnav-expand-enter-to,
+.subnav-expand-leave-from {
+  max-height: 520px;
+  opacity: 1;
 }
 
 /* 子菜单 */

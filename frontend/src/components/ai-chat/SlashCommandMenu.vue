@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, nextTick, watch } from 'vue'
 import { NIcon } from 'naive-ui'
 import {
   SearchOutline,
@@ -12,29 +12,33 @@ import {
   GridOutline,
   DocumentTextOutline,
   HelpCircleOutline,
+  PersonOutline,
 } from '@vicons/ionicons5'
+import type { AgentTemplate } from '@/types/agent'
+import { recentRank } from './recentItems'
 
 interface Props {
   query?: string
-  position: { top: number; left: number }
+  /** / 面板「智能体」分组数据源（选中后插入 @mention 标签） */
+  agents?: AgentTemplate[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
   query: '',
+  agents: () => [],
 })
 
 const emit = defineEmits<{
   select: [command: string]
+  selectAgent: [agent: AgentTemplate]
   close: []
 }>()
 
-const menuRef = ref<HTMLDivElement>()
-const searchRef = ref<HTMLInputElement>()
 const listRef = ref<HTMLDivElement>()
-const searchQuery = ref(props.query)
 const selectedIndex = ref(0)
 
-interface Command {
+interface Row {
+  /** 唯一 id（最近使用记录键）；命令为 /xxx，智能体为 agent-<id> */
   id: string
   name: string
   description: string
@@ -42,87 +46,103 @@ interface Command {
   icon: any
   shortcut?: string
   isCategory?: boolean
+  agent?: AgentTemplate
 }
 
-const commands: Command[] = [
-  { id: 'category-analysis', name: '分析', isCategory: true, icon: null, description: '' },
+/** 技能分组：能力调用命令（现有 /analysis、/rna、/go 等） */
+const SKILL_COMMANDS: Row[] = [
   { id: '/analysis', name: '分析流程', description: '启动生物信息分析流程', icon: AnalyticsOutline, shortcut: '/analysis' },
   { id: '/rna', name: 'RNA-seq 分析', description: '差异表达基因分析', icon: BarChartOutline, shortcut: '/rna' },
   { id: '/go', name: 'GO 富集分析', description: '基因功能富集分析', icon: BarChartOutline, shortcut: '/go' },
   { id: '/kegg', name: 'KEGG 通路分析', description: '代谢通路富集分析', icon: BarChartOutline, shortcut: '/kegg' },
-
-  { id: 'category-data', name: '数据', isCategory: true, icon: null, description: '' },
   { id: '/data', name: '查询项目数据', description: '查看您的实验数据', icon: FolderOutline, shortcut: '/data' },
   { id: '/task', name: '查看分析任务', description: '查看正在运行的任务', icon: DocumentTextOutline, shortcut: '/task' },
-
-  { id: 'category-tools', name: '工具', isCategory: true, icon: null, description: '' },
   { id: '/code', name: '代码执行', description: '在沙盒中执行 Python/R 代码', icon: CodeSlashOutline, shortcut: '/code' },
   { id: '/search', name: '文献搜索', description: '搜索 PubMed 等数据库', icon: SearchOutline, shortcut: '/search' },
   { id: '/plugin', name: '插件市场', description: '浏览可用插件', icon: ExtensionPuzzleOutline, shortcut: '/plugin' },
-  { id: '/agent', name: 'Agent 模式', description: '切换到 Agent 自主模式', icon: RocketOutline, shortcut: '/agent' },
+]
 
-  { id: 'category-help', name: '帮助', isCategory: true, icon: null, description: '' },
+/** 内置命令分组（平台内置，非技能） */
+const BUILTIN_COMMANDS: Row[] = [
+  { id: '/agent', name: 'Agent 模式', description: '切换到 Agent 自主模式', icon: RocketOutline, shortcut: '/agent' },
   { id: '/help', name: '使用帮助', description: '查看 AI 助手使用指南', icon: HelpCircleOutline, shortcut: '/help' },
   { id: '/grid', name: '数据表格', description: '查看数据表格视图', icon: GridOutline, shortcut: '/grid' },
 ]
 
-const filteredCommands = computed(() => {
-  const q = searchQuery.value.toLowerCase().trim()
-  if (!q) return commands
+const CATEGORY = (id: string, name: string): Row => ({ id, name, description: '', icon: null, isCategory: true })
 
-  const filtered = commands.filter((cmd) => {
-    if (cmd.isCategory) return false
-    return (
-      cmd.name.toLowerCase().includes(q) ||
-      cmd.description.toLowerCase().includes(q) ||
-      cmd.id.toLowerCase().includes(q)
-    )
-  })
+function matches(q: string, name: string, description: string, id: string): boolean {
+  if (!q) return true
+  return (
+    name.toLowerCase().includes(q) ||
+    description.toLowerCase().includes(q) ||
+    id.toLowerCase().includes(q)
+  )
+}
 
-  const result: Command[] = []
-  for (let i = 0; i < commands.length; i++) {
-    const cmd = commands[i]
-    if (cmd.isCategory) {
-      const hasChildren = commands.slice(i + 1).some((c) => !c.isCategory && filtered.includes(c))
-      if (hasChildren) result.push(cmd)
-    } else if (filtered.includes(cmd)) {
-      result.push(cmd)
-    }
+/** 组内排序：最近使用置顶，其余按名称 */
+function sortRows(rows: Row[]): Row[] {
+  return [...rows].sort(
+    (a, b) =>
+      recentRank('slash', a.id) - recentRank('slash', b.id) ||
+      a.name.localeCompare(b.name, 'zh'),
+  )
+}
+
+const rows = computed<Row[]>(() => {
+  const q = props.query.toLowerCase().trim()
+
+  const skills = sortRows(
+    SKILL_COMMANDS.filter((c) => matches(q, c.name, c.description, c.id)),
+  )
+  const agentRows = sortRows(
+    props.agents
+      .filter((a) => matches(q, a.name, a.description || '', a.name))
+      .map<Row>((a) => ({
+        id: `agent-${a.id}`,
+        name: a.name,
+        description: a.description || '智能体',
+        icon: PersonOutline,
+        shortcut: `@${a.name}`,
+        agent: a,
+      })),
+  )
+  const builtins = sortRows(
+    BUILTIN_COMMANDS.filter((c) => matches(q, c.name, c.description, c.id)),
+  )
+
+  const result: Row[] = []
+  if (skills.length) {
+    result.push(CATEGORY('category-skills', '技能'))
+    result.push(...skills)
+  }
+  if (agentRows.length) {
+    result.push(CATEGORY('category-agents', '智能体'))
+    result.push(...agentRows)
+  }
+  if (builtins.length) {
+    result.push(CATEGORY('category-builtin', '内置命令'))
+    result.push(...builtins)
   }
   return result
 })
 
-function handleMenuKeydown(e: KeyboardEvent) {
-  const items = filteredCommands.value.filter((c) => !c.isCategory)
-  const itemCount = items.length
+const selectableCommands = computed(() => rows.value.filter((row) => !row.isCategory))
 
-  switch (e.key) {
-    case 'ArrowDown':
-      e.preventDefault()
-      selectedIndex.value = (selectedIndex.value + 1) % Math.max(itemCount, 1)
-      scrollToSelected()
-      break
-    case 'ArrowUp':
-      e.preventDefault()
-      selectedIndex.value = (selectedIndex.value - 1 + itemCount) % Math.max(itemCount, 1)
-      scrollToSelected()
-      break
-    case 'Enter': {
-      e.preventDefault()
-      const selected = items[selectedIndex.value]
-      if (selected) handleSelect(selected)
-      break
-    }
-    case 'Escape':
-      e.preventDefault()
-      emit('close')
-      break
+watch(
+  () => props.query,
+  () => {
+    selectedIndex.value = 0
+  },
+)
+
+function handleSelect(row: Row) {
+  if (row.isCategory) return
+  if (row.agent) {
+    emit('selectAgent', row.agent)
+    return
   }
-}
-
-function handleSelect(command: Command) {
-  if (command.isCategory) return
-  emit('select', command.id)
+  emit('select', row.id)
 }
 
 function scrollToSelected() {
@@ -134,57 +154,59 @@ function scrollToSelected() {
   })
 }
 
-onMounted(() => {
-  nextTick(() => {
-    searchRef.value?.focus()
-    selectedIndex.value = 0
-  })
-})
+function moveSelection(delta: number) {
+  selectedIndex.value =
+    (selectedIndex.value + delta + selectableCommands.value.length) % Math.max(selectableCommands.value.length, 1)
+  scrollToSelected()
+}
+
+function selectCurrent() {
+  const row = selectableCommands.value[selectedIndex.value]
+  if (row) handleSelect(row)
+}
+
+defineExpose({ moveSelection, selectCurrent })
 </script>
 
 <template>
   <div
-    ref="menuRef"
     class="slash-command-menu"
-    :style="{ top: position.top + 'px', left: position.left + 'px' }"
   >
-    <div class="menu-search">
-      <n-icon size="16" class="search-icon"><SearchOutline /></n-icon>
-      <input
-        ref="searchRef"
-        v-model="searchQuery"
-        class="search-input"
-        placeholder="搜索命令..."
-        @keydown="handleMenuKeydown"
-      />
+    <div class="menu-header">
+      <span class="header-title">/ 唤起</span>
+      <span class="header-sub">技能命令与智能体，输入即筛选</span>
     </div>
 
     <div ref="listRef" class="command-list">
       <div
-        v-for="(command, index) in filteredCommands"
-        :key="command.id"
+        v-for="row in rows"
+        :key="row.id"
         class="command-item"
-        :class="{ active: selectedIndex === index, category: command.isCategory }"
-        @click="handleSelect(command)"
-        @mouseenter="selectedIndex = index"
+        :class="{
+          active: !row.isCategory && selectableCommands[selectedIndex]?.id === row.id,
+          category: row.isCategory,
+          'is-agent': !!row.agent,
+        }"
+        @click="handleSelect(row)"
+        @mouseenter="!row.isCategory && (selectedIndex = selectableCommands.findIndex((item) => item.id === row.id))"
       >
-        <template v-if="command.isCategory">
-          <span class="category-label">{{ command.name }}</span>
+        <template v-if="row.isCategory">
+          <span class="category-label">{{ row.name }}</span>
         </template>
         <template v-else>
-          <div class="command-icon">
-            <n-icon size="18"><component :is="command.icon" /></n-icon>
+          <div class="command-icon" :class="{ 'agent-icon': !!row.agent }">
+            <n-icon size="18"><component :is="row.icon" /></n-icon>
           </div>
           <div class="command-info">
-            <div class="command-name">{{ command.name }}</div>
-            <div class="command-desc">{{ command.description }}</div>
+            <div class="command-name">{{ row.name }}</div>
+            <div class="command-desc">{{ row.description }}</div>
           </div>
-          <div class="command-shortcut">{{ command.shortcut || command.id }}</div>
+          <div class="command-shortcut">{{ row.shortcut || row.id }}</div>
         </template>
       </div>
 
-      <div v-if="filteredCommands.length === 0" class="menu-empty">
-        未找到匹配的命令
+      <div v-if="rows.length === 0" class="menu-empty">
+        没有匹配的技能或智能体
       </div>
     </div>
 
@@ -204,44 +226,43 @@ onMounted(() => {
 
 <style scoped lang="scss">
 .slash-command-menu {
-  position: fixed;
-  z-index: 1000;
-  width: 360px;
-  background: var(--chat-surface);
-  border: 1px solid var(--chat-border);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  bottom: calc(100% - 1px);
+  z-index: 0;
+  width: auto;
+  max-width: none;
+  background: var(--chat-input-bg);
+  border: 1px solid var(--chat-input-border);
+  border-bottom: none;
+  border-radius: var(--chat-radius-xl, 20px) var(--chat-radius-xl, 20px) 0 0;
+  box-shadow: none;
+  max-height: 320px;
   overflow: hidden;
-  animation: menuPopup 0.2s ease-out;
+  transform-origin: bottom;
 
-  .menu-search {
+  .menu-header {
     display: flex;
-    align-items: center;
-    gap: 10px;
+    align-items: baseline;
+    gap: 8px;
     padding: 10px 14px;
-    border-bottom: 1px solid var(--chat-border);
+    border-bottom: 1px solid var(--chat-input-border);
 
-    .search-icon {
-      color: var(--chat-text-muted);
-      flex-shrink: 0;
+    .header-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--chat-text-primary);
     }
 
-    .search-input {
-      flex: 1;
-      background: transparent;
-      border: none;
-      outline: none;
-      color: var(--chat-text-primary);
-      font-size: 14px;
-
-      &::placeholder {
-        color: var(--chat-text-muted);
-      }
+    .header-sub {
+      font-size: 12px;
+      color: var(--chat-text-secondary);
     }
   }
 
   .command-list {
-    max-height: 320px;
+    max-height: 220px;
     overflow-y: auto;
     padding: 4px;
 
@@ -252,7 +273,7 @@ onMounted(() => {
       padding: 8px 12px;
       border-radius: 8px;
       cursor: pointer;
-      transition: all 0.15s ease;
+      transition: background 0.15s ease;
       color: var(--chat-text-primary);
 
       &:hover,
@@ -284,10 +305,15 @@ onMounted(() => {
         display: flex;
         align-items: center;
         justify-content: center;
-        background: rgba(79, 142, 247, 0.1);
+        background: var(--icon-blue-bg, rgba(79, 142, 247, 0.1));
         border-radius: 8px;
         color: var(--chat-accent);
         flex-shrink: 0;
+
+        &.agent-icon {
+          background: var(--icon-purple-bg, rgba(124, 111, 212, 0.12));
+          color: var(--icon-visualization, #7c6fd4);
+        }
       }
 
       .command-info {
@@ -328,16 +354,17 @@ onMounted(() => {
   .menu-footer {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 16px;
     padding: 8px 14px;
-    border-top: 1px solid var(--chat-border);
-    background: rgba(0, 0, 0, 0.2);
+    border-top: 1px solid var(--chat-input-border);
+    background: transparent;
 
     .footer-hint {
       display: flex;
       align-items: center;
       gap: 4px;
-      font-size: 11px;
+      font-size: 12px;
       color: var(--chat-text-muted);
 
       kbd {
@@ -346,21 +373,11 @@ onMounted(() => {
         background: var(--chat-surface-hover);
         border: 1px solid var(--chat-border);
         border-radius: 4px;
-        font-size: 10px;
-        font-family: monospace;
+        font-size: 11px;
+        font-family: inherit;
       }
     }
   }
 }
 
-@keyframes menuPopup {
-  from {
-    opacity: 0;
-    transform: translateY(8px) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
 </style>

@@ -36,17 +36,17 @@
 | [`data/ai/scrna.yaml`](data/ai/scrna.yaml) | 单细胞分析师 Agent 声明 | Agent 配置加载器 |
 | [`data/ai/shania.yaml`](data/ai/shania.yaml) | 傻妞 Agent 声明 | Agent 配置加载器 |
 | [`data/ai/viz.yaml`](data/ai/viz.yaml) | 可视化助手 Agent 声明 | Agent 配置加载器 |
-| [`data/ai_providers.yaml`](data/ai_providers.yaml) | AI Provider 地址、模型、默认参数和加密配置示例 | `core.config.ai_provider_config_yaml`；密钥使用环境变量/管理端加密值 |
-| [`data/provider_templates.yaml`](data/provider_templates.yaml) | 管理端快速创建 AI Provider 的内置模板 | Provider 模板加载器 |
-| [`data/prompts/registry.yaml`](data/prompts/registry.yaml) | Prompt 名称到文件的注册表 | Prompt Registry；按需读取 |
-| [`data/prompts/chat/legacy_assistants.yaml`](data/prompts/chat/legacy_assistants.yaml) | 旧版助手名称到 Agent Prompt 的映射 | Prompt 兼容层 |
-| [`data/prompts/user_templates/bio.yaml`](data/prompts/user_templates/bio.yaml) | 用户可选的生物信息学提示词模板 | Prompt/模板服务 |
-| [`data/runtime_images.yaml`](data/runtime_images.yaml) | 运行时镜像 profile、镜像标签、能力和资源 | `core.config.runtime_images_yaml`；运行时镜像加载器 |
-| [`data/studio.yaml`](data/studio.yaml) | Studio 默认镜像、资源、会话和产物策略 | Studio 配置加载器；按 mtime 热重载 |
+| [`data/ai/providers.yaml`](data/ai/providers.yaml) | AI Provider 地址、模型、默认参数和加密配置示例 | `core.config.ai_provider_config_yaml`；密钥使用环境变量/管理端加密值 |
+| [`data/ai/provider_templates.yaml`](data/ai/provider_templates.yaml) | 管理端快速创建 AI Provider 的内置模板 | Provider 模板加载器 |
+| [`data/ai/prompts/registry.yaml`](data/ai/prompts/registry.yaml) | Prompt 名称到文件的注册表 | Prompt Registry；按需读取 |
+| [`data/ai/prompts/chat/legacy_assistants.yaml`](data/ai/prompts/chat/legacy_assistants.yaml) | 旧版助手名称到 Agent Prompt 的映射 | Prompt 兼容层 |
+| [`data/ai/prompts/user_templates/bio.yaml`](data/ai/prompts/user_templates/bio.yaml) | 用户可选的生物信息学提示词模板 | Prompt/模板服务 |
+| [`data/ai/runtime_images.yaml`](data/ai/runtime_images.yaml) | 运行时镜像 profile、镜像标签、能力和资源 | `core.config.runtime_images_yaml`；运行时镜像加载器 |
+| [`data/ai/studio.yaml`](data/ai/studio.yaml) | Studio 默认镜像、资源、会话和产物策略 | Studio 配置加载器；按 mtime 热重载 |
 | [`data/worker_config.yaml`](data/worker_config.yaml) | Worker 跨机器共享目录和 pipeline 宿主路径 | `scripts/render_worker_config.py` 校验并生成 `data/.worker-config.env` |
 | [`data/festival_config.yaml`](data/festival_config.yaml) | 节日彩蛋、动画和日期规则 | Festival YAML loader；支持管理端重载/写回 |
-| [`data/mas/agent_capabilities.yaml`](data/mas/agent_capabilities.yaml) | MAS Agent 可用能力集合 | MAS 配置加载器 |
-| [`data/mas/tool_policies.yaml`](data/mas/tool_policies.yaml) | MAS 工具执行策略、允许镜像和资源约束 | MAS Tool Policy loader |
+| [`data/ai/mas/agent_capabilities.yaml`](data/ai/mas/agent_capabilities.yaml) | MAS Agent 可用能力集合 | MAS 配置加载器 |
+| [`data/ai/mas/tool_policies.yaml`](data/ai/mas/tool_policies.yaml) | MAS 工具执行策略、允许镜像和资源约束 | MAS Tool Policy loader |
 
 ## 流程配置：`flows/`
 

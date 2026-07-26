@@ -71,8 +71,8 @@ class AIProviderConfigService:
     async def list_templates(self) -> list[AIProviderTemplate]:
         """加载内置 Provider 模板，并标记是否已在数据库中存在。"""
         settings = get_settings()
-        path = anyio.Path(settings.ai_provider_config_yaml or "data/provider_templates.yaml")
-        fallback = anyio.Path("data/provider_templates.yaml")
+        path = anyio.Path(settings.ai_provider_config_yaml or "data/ai/provider_templates.yaml")
+        fallback = anyio.Path("data/ai/provider_templates.yaml")
         if not await path.exists():
             path = fallback
         templates: list[dict[str, Any]] = []

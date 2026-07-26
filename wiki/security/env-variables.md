@@ -33,7 +33,7 @@ FLOWER_BASIC_AUTH=admin:your-strong-password
 
 ### 方式 1（推荐）：外置 YAML
 
-编辑 `data/ai_providers.yaml`，支持 `${ENV_VAR}` 插值：
+编辑 `data/ai/providers.yaml`，支持 `${ENV_VAR}` 插值：
 
 ```yaml
 providers:

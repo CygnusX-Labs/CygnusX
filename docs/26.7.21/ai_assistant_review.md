@@ -12,7 +12,7 @@
 | 应用服务 | `application/services/chat_service.py`（1472 行） | `stream_chat`（直连模型）+ `stream_agent_chat`（Agent 调度中枢） |
 | 应用服务 | `application/services/agent_service.py` | Agent 模板 CRUD、`ensure_builtin_agents()`（YAML 幂等落库）、`assemble_context()` |
 | 基础设施 | `infrastructure/ai_provider/openai_compatible.py` | 主力 Provider：httpx 直连 OpenAI 兼容 SSE，`provider_manager` 单例 |
-| 基础设施 | `infrastructure/config/prompt_loader.py` | 提示词仓库（`data/prompts/registry.yaml`，mtime 热重载） |
+| 基础设施 | `infrastructure/config/prompt_loader.py` | 提示词仓库（`data/ai/prompts/registry.yaml`，mtime 热重载） |
 | 基础设施 | `infrastructure/config/agent_loader.py` | `data/ai/*.yaml` 内置 Agent 声明加载 |
 | 基础设施 | `infrastructure/mcp/` | MCP client + 内置 omichub-tools 预设 server |
 | 数据表 | `agent_templates` / `chat_sessions` / `chat_messages` / `ai_provider_configs` / `skills` / MCP / MAS | — |
@@ -66,7 +66,7 @@
 ### 3.3 单细胞分析 Agent
 
 - `data/ai/scrna.yaml`：`features.engine: langgraph`，保留 `studio.runtime_profile: analysis-scrna`（Studio 模式下仍用沙盒镜像跑 Scanpy）。
-- `data/prompts/agents/scrna.md`：升级为结构化工作流提示词（质控 → 归一化 → HVG → PCA/聚类 → 注释 → 差异/轨迹，明确输入要求与产物规范）。
+- `data/ai/prompts/scrna.md`：升级为结构化工作流提示词（质控 → 归一化 → HVG → PCA/聚类 → 注释 → 差异/轨迹，明确输入要求与产物规范）。
 - Docker 镜像需重建以装入 langgraph（`make docker-reload` / `make docker-start` 会基于 pyproject 重新安装依赖）。
 
 ### 3.4 后续路线

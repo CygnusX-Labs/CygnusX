@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
+from omichub.infrastructure.config import agent_loader
 from omichub.infrastructure.config.agent_loader import _load_single_agent
+from omichub.infrastructure.mcp.presets import (
+    OMICHUB_PLATFORM_SERVER_ID,
+    OMICHUB_TOOLS_SERVER_ID,
+)
 
 
 def _write_yaml(tmp_path: Path, body: str) -> Path:
@@ -63,6 +68,92 @@ def test_no_studio_section_untouched(tmp_path: Path):
     assert data is not None
     assert "studio" not in data
     assert data["agent_id"] == "a1"
+
+
+@pytest.mark.unit
+def test_local_prompt_and_tool_pack_are_loaded(tmp_path: Path):
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir()
+    (prompts_dir / "agent.md").write_text("详细系统提示词", encoding="utf-8")
+    tools_dir = tmp_path / "tools"
+    tools_dir.mkdir()
+    (tools_dir / "research.yaml").write_text(
+        "id: research\nbuiltin_tools: [omichub_run_kegg_enrichment]\n"
+        "platform_tools: [list_workspace_files]\n",
+        encoding="utf-8",
+    )
+    path = _write_yaml(
+        tmp_path,
+        "agent_id: a1\nprompt_file: prompts/agent.md\ntool_packs: [research]\n",
+    )
+
+    data = _load_single_agent(path)
+
+    assert data is not None
+    assert data["system_prompt"] == "详细系统提示词"
+    assert str(OMICHUB_TOOLS_SERVER_ID) in data["mcp_ids"]
+    assert str(OMICHUB_PLATFORM_SERVER_ID) in data["mcp_ids"]
+    assert data["features"]["tool_packs"] == [
+        {
+            "id": "research",
+            "description": "",
+            "builtin_tools": ["omichub_run_kegg_enrichment"],
+            "mcp_tools": {
+                str(OMICHUB_PLATFORM_SERVER_ID): ["list_workspace_files"],
+            },
+        }
+    ]
+
+
+@pytest.mark.unit
+def test_handoff_section_is_synced_into_features(tmp_path: Path):
+    path = _write_yaml(
+        tmp_path,
+        """agent_id: a1
+handoff:
+  allowed_targets: [agent-rnaseq]
+  max_hops_per_session: 3
+""",
+    )
+
+    data = _load_single_agent(path)
+
+    assert data is not None
+    assert data["features"]["handoff"] == {
+        "allowed_targets": ["agent-rnaseq"],
+        "max_hops_per_session": 3,
+    }
+    assert "handoff" not in data
+
+
+@pytest.mark.unit
+def test_local_prompt_path_cannot_escape_agent_directory(tmp_path: Path):
+    path = _write_yaml(tmp_path, "agent_id: a1\nprompt_file: ../outside.md\n")
+
+    assert _load_single_agent(path) is None
+
+
+@pytest.mark.unit
+def test_mas_enabled_loads_orchestrator_without_site_yaml_edit(tmp_path: Path, monkeypatch):
+    site_yaml = tmp_path / "OmicHub.yaml"
+    site_yaml.write_text("agents:\n  enabled: [general]\n", encoding="utf-8")
+    agents_dir = tmp_path / "ai"
+    agents_dir.mkdir()
+    (agents_dir / "general.yaml").write_text("agent_id: agent-general\n", encoding="utf-8")
+    (agents_dir / "orchestrator.yaml").write_text(
+        "agent_id: agent-orchestrator\nfeatures:\n  mas_orchestrator: true\n",
+        encoding="utf-8",
+    )
+    settings = type(
+        "SettingsStub",
+        (),
+        {"site_content_yaml": str(site_yaml), "mas_enabled": True},
+    )()
+    monkeypatch.setattr(agent_loader, "get_settings", lambda: settings)
+
+    configs = agent_loader.load_agent_configs()
+
+    assert [item["agent_id"] for item in configs] == ["agent-general", "agent-orchestrator"]
 
 
 @pytest.mark.asyncio
@@ -134,3 +225,62 @@ async def test_existing_custom_agent_is_not_overwritten(monkeypatch):
 
     assert existing.features == {"studio": {"enabled": False}}
     db.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_existing_builtin_agent_merges_declared_skill_ids(monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+
+    from omichub.application.services.agent_service import AgentService
+    from omichub.infrastructure.database.models.agent import AgentTemplateModel
+
+    existing = AgentTemplateModel(
+        agent_id="a1",
+        name="既有内置 Agent",
+        is_builtin=True,
+        skill_ids=["existing-skill"],
+    )
+    db = AsyncMock()
+    provider_result = MagicMock()
+    provider_result.scalars.return_value.all.return_value = []
+    db.execute.return_value = provider_result
+    service = AgentService(db)
+    service.get_agent = AsyncMock(return_value=existing)
+    service._ensure_configured_marketplace_skills = AsyncMock()
+    monkeypatch.setattr(
+        "omichub.application.services.agent_service.load_agent_configs",
+        lambda: [{"agent_id": "a1", "skill_ids": ["existing-skill", "annotation-skill"]}],
+    )
+
+    await service.ensure_builtin_agents()
+
+    assert existing.skill_ids == ["existing-skill", "annotation-skill"]
+    service._ensure_configured_marketplace_skills.assert_awaited_once_with(
+        {"existing-skill", "annotation-skill"}
+    )
+
+
+@pytest.mark.asyncio
+async def test_configured_marketplace_skill_is_installed(monkeypatch, tmp_path: Path):
+    from unittest.mock import AsyncMock, MagicMock
+
+    from omichub.application.services.agent_service import AgentService
+    from omichub.application.services.skill_import_service import SkillImportService
+
+    skill_dir = tmp_path / "annotation-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("---\nname: 注释\ndescription: 测试\n---\n正文", encoding="utf-8")
+    settings = type("SettingsStub", (), {"skill_marketplace_dir": str(tmp_path)})()
+    monkeypatch.setattr("omichub.core.config.get_settings", lambda: settings)
+
+    db = AsyncMock()
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = []
+    db.execute.return_value = result
+    service = AgentService(db)
+    install_marketplace = AsyncMock()
+    monkeypatch.setattr(SkillImportService, "install_marketplace", install_marketplace)
+
+    await service._ensure_configured_marketplace_skills({"annotation-skill", "external-skill"})
+
+    install_marketplace.assert_awaited_once_with("annotation-skill")

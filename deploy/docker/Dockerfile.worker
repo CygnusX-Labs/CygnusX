@@ -21,13 +21,13 @@ ENV UV_HTTP_TIMEOUT=120 \
     UV_HTTP_RETRIES=5
 
 COPY pyproject.toml uv.lock* README.md ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --extra workflow --no-install-project
 
 COPY src/ ./src/
 COPY alembic.ini ./
 COPY alembic/ ./alembic/
 COPY tool_configs/ ./tool_configs/
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --extra workflow
 
 RUN uv pip install --python /app/.venv/bin/python --no-cache "snakemake-logger-plugin-rich-loguru>=0.3.0"
 

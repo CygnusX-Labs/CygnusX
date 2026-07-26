@@ -8,6 +8,7 @@ class Transport(str, Enum):
 
     STDIO = "stdio"
     SSE = "sse"
+    STREAMABLE_HTTP = "streamable_http"
     BUILTIN = "builtin"  # 内置预设（进程内执行，无需外部进程）
 
 

@@ -963,3 +963,57 @@ def _run_command_to_log(command: list[str], log_path) -> subprocess.CompletedPro
             text=True,
             timeout=86_400,
         )
+
+@shared_task(name="omichub.infrastructure.celery_app.tasks.mas.scanpy_qc.run_node")
+def run_scanpy_qc_node(run_id: str, node_key: str) -> dict[str, str]:
+    return asyncio.run(_run_scanpy_qc_node(UUID(run_id), node_key))
+
+
+async def _run_scanpy_qc_node(run_id: UUID, node_key: str) -> dict[str, str]:
+    from omichub.application.services.a2a_event_service import A2AEventService
+    from omichub.application.services.artifact_service import ArtifactService
+    from omichub.core.config import get_settings
+    from omichub.domain.mas.models import A2AEvent, A2AEventType, AgentRecipient, AgentSender, ArtifactPointer, NodeState
+    from omichub.domain.mas.workspace import WorkspaceLayout
+    from omichub.infrastructure.database.repositories.mas_repository import MASRepository
+    from omichub.infrastructure.database.session import get_session_factory
+    from omichub.infrastructure.mas.scanpy import ScanpyQCError, build_scanpy_qc_command
+
+    async with get_session_factory()() as session:
+        repository = MASRepository(session)
+        node = await repository.get_node(run_id, node_key)
+        if node is None or node.status != NodeState.DISPATCHED.value:
+            return {"status": "ignored", "node_key": node_key}
+        if not await repository.transition_node(node_id=node.id, expected_version=node.version, current_status=NodeState.DISPATCHED.value, target_status=NodeState.RUNNING.value):
+            return {"status": "contended", "node_key": node_key}
+        settings = get_settings()
+        workspace = WorkspaceLayout(settings.mas_workspace_root)
+        events, artifacts = A2AEventService(session), ArtifactService(workspace)
+        version = node.version + 1
+        sender = AgentSender(kind="worker", id="mas-scanpy-qc", attempt_count=node.attempt_count)
+        await events.record(A2AEvent(event_type=A2AEventType.NODE_STARTED, trace_id=f"mas:{run_id}", run_id=run_id, node_key=node_key, sender=sender, recipient=AgentRecipient(kind="orchestrator", id="mas-scheduler"), status="running", intent=node.intent, dedupe_key=f"{run_id}:{node_key}:attempt_{node.attempt_count}:node.started:state_version_{version}", state_version=version))
+        log_path = workspace.resolve_container_path(run_id, f"/workspace/logs/{node_key}.scanpy.log", require_writable=True)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            command = build_scanpy_qc_command(workspace, run_id, str(node.parameters.get("input_h5ad_path", "")), int(node.parameters.get("min_genes", 200)), int(node.parameters.get("min_cells", 3)), settings.mas_scrna_docker_image)
+            process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+            output, _ = await asyncio.wait_for(process.communicate(), timeout=settings.mas_scrna_timeout_seconds)
+            log_path.write_bytes(output or b"")
+            if process.returncode != 0:
+                raise ScanpyQCError(f"scanpy container exited with {process.returncode}")
+            h5ad = workspace.resolve_container_path(run_id, "/workspace/results/scrna_qc_filtered.h5ad")
+            metrics = workspace.resolve_container_path(run_id, "/workspace/results/scrna_qc_metrics.json")
+            if not h5ad.is_file() or not metrics.is_file():
+                raise ScanpyQCError("scanpy container did not produce required artifacts")
+        except (OSError, ScanpyQCError, TimeoutError, ValueError) as exc:
+            log_path.write_text(f"{log_path.read_text(encoding='utf-8') if log_path.exists() else ''}\n{exc}\n", encoding="utf-8")
+            log = await _save_validated_file_artifact(repository, artifacts, run_id, node_key, f"{node_key}-scanpy-log", log_path, "text/plain")
+            await _record_node_failure(events, run_id, node, sender, version, "SCANPY_QC_FAILED", "Scanpy QC failed; inspect the diagnostic log and retry.", log.id, f"/workspace/logs/{node_key}.scanpy.log")
+            await session.commit()
+            return {"status": "failed", "node_key": node_key}
+        h5ad_artifact = await _save_validated_file_artifact(repository, artifacts, run_id, node_key, f"{node_key}-filtered-h5ad", h5ad, "application/x-hdf5")
+        metrics_artifact = await _save_validated_file_artifact(repository, artifacts, run_id, node_key, f"{node_key}-qc-metrics", metrics, "application/json")
+        await events.record(A2AEvent(event_type=A2AEventType.ARTIFACT_VALIDATED, trace_id=f"mas:{run_id}", run_id=run_id, node_key=node_key, sender=sender, recipient=AgentRecipient(kind="orchestrator", id="mas-scheduler"), status="validated", intent=node.intent, context_pointers={"filtered_h5ad": ArtifactPointer(artifact_id=h5ad_artifact.id, container_path="/workspace/results/scrna_qc_filtered.h5ad", media_type="application/x-hdf5"), "qc_metrics": ArtifactPointer(artifact_id=metrics_artifact.id, container_path="/workspace/results/scrna_qc_metrics.json", media_type="application/json")}, summary={"message": "Scanpy QC artifacts validated"}, dedupe_key=f"{run_id}:{node_key}:attempt_{node.attempt_count}:artifact.validated:{h5ad_artifact.id}", state_version=version))
+        await events.record(A2AEvent(event_type=A2AEventType.NODE_SUCCEEDED, trace_id=f"mas:{run_id}", run_id=run_id, node_key=node_key, sender=sender, recipient=AgentRecipient(kind="orchestrator", id="mas-scheduler"), status="succeeded", intent=node.intent, dedupe_key=f"{run_id}:{node_key}:attempt_{node.attempt_count}:node.succeeded:state_version_{version}", state_version=version))
+        await session.commit()
+        return {"status": "succeeded", "node_key": node_key}

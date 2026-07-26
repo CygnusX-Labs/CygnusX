@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, h, type VNodeChild } from 'vue'
 import { NSlider, NInputNumber } from 'naive-ui'
+import { formatMemoryMb, parseMemoryMb } from '@/utils/terminal'
 
 interface Props {
   memoryMb: number
@@ -11,6 +12,8 @@ interface Props {
   cpuMin?: number
   cpuMax?: number
   cpuStep?: number
+  recommendedMemoryMb?: number
+  recommendedCpuCores?: number
   disabled?: boolean
 }
 
@@ -21,6 +24,8 @@ const props = withDefaults(defineProps<Props>(), {
   cpuMin: 0.5,
   cpuMax: 4.0,
   cpuStep: 0.5,
+  recommendedMemoryMb: undefined,
+  recommendedCpuCores: undefined,
   disabled: false,
 })
 
@@ -39,62 +44,62 @@ const cpuModel = computed({
   set: (val) => emit('update:cpuCores', val),
 })
 
-function formatMarkNumber(value: number) {
-  if (Number.isInteger(value)) return `${value}`
-  return value.toFixed(1).replace(/\.0$/, '')
-}
-
-function normalizeMarkValue(value: number) {
-  return Number(value.toFixed(3))
-}
-
-function buildSliderMarks(
-  min: number,
-  max: number,
-  step: number,
-  formatter: (value: number) => string,
-) {
-  const marks: Record<number, string> = {}
-  const boundedMin = Math.min(min, max)
-  const boundedMax = Math.max(min, max)
-  const baseStep = Math.max(step, 0.001)
-
-  marks[normalizeMarkValue(boundedMin)] = formatter(boundedMin)
-  if (boundedMax === boundedMin) return marks
-
-  const targetSegments = 6
-  const rawStep = (boundedMax - boundedMin) / targetSegments
-  const markStep = Math.max(baseStep, Math.ceil(rawStep / baseStep) * baseStep)
-
-  for (let value = boundedMin + markStep; value < boundedMax; value += markStep) {
-    const normalized = normalizeMarkValue(value)
-    marks[normalized] = formatter(normalized)
-  }
-
-  marks[normalizeMarkValue(boundedMax)] = formatter(boundedMax)
-  return marks
-}
-
-function formatMemoryMark(value: number) {
-  if (value >= 1024) return `${formatMarkNumber(value / 1024)}G`
-  return `${formatMarkNumber(value)}M`
-}
-
-const memoryMarks = computed(() =>
-  buildSliderMarks(props.memoryMin, props.memoryMax, props.memoryStep, formatMemoryMark),
-)
-
-const cpuMarks = computed(() =>
-  buildSliderMarks(props.cpuMin, props.cpuMax, props.cpuStep, (value) => `${formatMarkNumber(value)}核`),
-)
-
 function formatCpuLabel(value: number) {
   return `${value} 核`
 }
 
-function formatMemoryLabel(value: number) {
-  return `${value} MB`
+function compactMemoryLabel(value: number) {
+  const gigabytes = value / 1024
+  return `${Number.isInteger(gigabytes) ? gigabytes : gigabytes.toFixed(1)}G`
 }
+
+function buildMarks(
+  values: number[],
+  recommendedValue: number | undefined,
+  formatter: (value: number) => string,
+) {
+  return values.reduce<Record<string, () => VNodeChild>>((marks, value, index) => {
+    const isRecommended = value === recommendedValue
+    marks[String(index)] = () => h(
+      'span',
+      { class: ['slider-mark-label', { 'is-recommended': isRecommended }] },
+      `${formatter(value)}${isRecommended ? '·推荐' : ''}`,
+    )
+    return marks
+  }, {})
+}
+
+function buildPresetValues(values: number[], currentValue: number, min: number, max: number) {
+  const presets = values.filter((value) => value >= min && value <= max)
+  if (!presets.includes(currentValue)) presets.push(currentValue)
+  return presets.sort((a, b) => a - b)
+}
+
+const memoryPresetValues = computed(() =>
+  buildPresetValues([512, 1024, 2048, 4096, 8192], props.memoryMb, props.memoryMin, props.memoryMax),
+)
+
+const cpuPresetValues = computed(() =>
+  buildPresetValues([0.5, 1, 2, 4, 8], props.cpuCores, props.cpuMin, props.cpuMax),
+)
+
+const memorySliderModel = computed({
+  get: () => memoryPresetValues.value.indexOf(props.memoryMb),
+  set: (index: number) => emit('update:memoryMb', memoryPresetValues.value[index]),
+})
+
+const cpuSliderModel = computed({
+  get: () => cpuPresetValues.value.indexOf(props.cpuCores),
+  set: (index: number) => emit('update:cpuCores', cpuPresetValues.value[index]),
+})
+
+const memoryMarks = computed(() =>
+  buildMarks(memoryPresetValues.value, props.recommendedMemoryMb, compactMemoryLabel),
+)
+
+const cpuMarks = computed(() =>
+  buildMarks(cpuPresetValues.value, props.recommendedCpuCores, (value) => `${value}核`),
+)
 </script>
 
 <template>
@@ -102,57 +107,67 @@ function formatMemoryLabel(value: number) {
     <div class="resource-section">
       <div class="resource-label">
         <span>分配内存</span>
-        <span class="current-value">{{ memoryMb }} MB</span>
+        <div class="resource-value">
+          <NInputNumber
+            v-model:value="memoryModel"
+            :min="memoryMin"
+            :max="memoryMax"
+            :step="memoryStep"
+            :disabled="disabled"
+            :format="formatMemoryMb"
+            :parse="parseMemoryMb"
+            size="small"
+            class="resource-input"
+          />
+        </div>
       </div>
       <NSlider
-        v-model:value="memoryModel"
-        :min="memoryMin"
-        :max="memoryMax"
-        :step="memoryStep"
+        v-model:value="memorySliderModel"
+        :min="0"
+        :max="memoryPresetValues.length - 1"
+        :step="1"
         :marks="memoryMarks"
         :disabled="disabled"
-        :format-tooltip="formatMemoryLabel"
+        :format-tooltip="(index) => formatMemoryMb(memoryPresetValues[index])"
         class="resource-slider"
       />
-      <NInputNumber
-        v-model:value="memoryModel"
-        :min="memoryMin"
-        :max="memoryMax"
-        :step="memoryStep"
-        :disabled="disabled"
-        size="small"
-        class="resource-input"
-      >
-        <template #suffix>MB</template>
-      </NInputNumber>
+      <div class="resource-range" aria-hidden="true">
+        <span>{{ formatMemoryMb(memoryMin) }}</span>
+        <span>上限 {{ formatMemoryMb(memoryMax, { ceiling: true }) }}</span>
+      </div>
     </div>
 
     <div class="resource-section">
       <div class="resource-label">
         <span>分配 CPU</span>
-        <span class="current-value">{{ cpuCores }} 核</span>
+        <div class="resource-value">
+          <NInputNumber
+            v-model:value="cpuModel"
+            :min="cpuMin"
+            :max="cpuMax"
+            :step="cpuStep"
+            :disabled="disabled"
+            size="small"
+            class="resource-input"
+          >
+            <template #suffix>核</template>
+          </NInputNumber>
+        </div>
       </div>
       <NSlider
-        v-model:value="cpuModel"
-        :min="cpuMin"
-        :max="cpuMax"
-        :step="cpuStep"
+        v-model:value="cpuSliderModel"
+        :min="0"
+        :max="cpuPresetValues.length - 1"
+        :step="1"
         :marks="cpuMarks"
         :disabled="disabled"
-        :format-tooltip="formatCpuLabel"
+        :format-tooltip="(index) => formatCpuLabel(cpuPresetValues[index])"
         class="resource-slider"
       />
-      <NInputNumber
-        v-model:value="cpuModel"
-        :min="cpuMin"
-        :max="cpuMax"
-        :step="cpuStep"
-        :disabled="disabled"
-        size="small"
-        class="resource-input"
-      >
-        <template #suffix>核</template>
-      </NInputNumber>
+      <div class="resource-range" aria-hidden="true">
+        <span>{{ cpuMin }} 核</span>
+        <span>上限 {{ cpuMax }} 核</span>
+      </div>
     </div>
   </section>
 </template>
@@ -161,13 +176,13 @@ function formatMemoryLabel(value: number) {
 .resource-settings {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 24px;
 }
 
 .resource-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .resource-label {
@@ -177,49 +192,50 @@ function formatMemoryLabel(value: number) {
   gap: 12px;
   font-size: 13px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--neutral-text-1);
 }
 
-.current-value {
-  flex: 0 0 auto;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: #e8eeff;
-  color: #2e5bff;
-  font-size: 12px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
+.resource-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .resource-input {
-  width: 120px;
-  align-self: flex-end;
+  width: 114px;
 }
 
 .resource-slider {
-  --n-rail-height: 6px;
-  --n-fill-color: #2e5bff;
-  --n-fill-color-hover: #2e5bff;
-  --n-rail-color: #e5e7eb;
-  --n-rail-color-hover: #e5e7eb;
-  --n-handle-size: 18px;
-  --n-handle-color: #fff;
-  --n-handle-box-shadow: 0 0 0 2px #2e5bff, 0 2px 6px rgba(46, 91, 255, 0.25);
-  --n-handle-box-shadow-hover: 0 0 0 2px #2e5bff, 0 4px 10px rgba(46, 91, 255, 0.3);
+  --n-rail-height: 5px;
+  --n-fill-color: var(--arco-primary);
+  --n-fill-color-hover: var(--arco-primary);
+  --n-rail-color: var(--neutral-border);
+  --n-rail-color-hover: var(--neutral-border);
+  --n-handle-size: 16px;
+  --n-handle-color: var(--neutral-card);
+  --n-handle-box-shadow: 0 0 0 2px var(--arco-primary);
+  --n-handle-box-shadow-hover: 0 0 0 2px var(--arco-primary);
 }
 
-:deep(.n-slider-mark) {
-  margin-top: 7px;
-  color: #6b7280;
+.resource-range {
+  display: flex;
+  justify-content: space-between;
+  color: var(--neutral-text-3);
   font-size: 11px;
 }
 
-:deep(.n-slider-mark::before) {
-  content: '';
-  display: block;
-  width: 1px;
-  height: 5px;
-  margin: 0 auto 4px;
-  background: #d1d5db;
+:deep(.n-slider-mark) {
+  margin-top: 8px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+:deep(.slider-mark-label) {
+  color: var(--neutral-text-3);
+}
+
+:deep(.slider-mark-label.is-recommended) {
+  color: var(--arco-primary);
+  font-weight: 700;
 }
 </style>

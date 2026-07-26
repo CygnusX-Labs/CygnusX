@@ -14,6 +14,10 @@ import RechargeModal from '@/components/admin-cookie/RechargeModal.vue'
 import CookieTransactionDrawer from '@/components/admin-cookie/CookieTransactionDrawer.vue'
 import PageHeader from '@/components/PageHeader.vue'
 
+withDefaults(defineProps<{ embedded?: boolean }>(), {
+  embedded: false,
+})
+
 const message = useMessage()
 const store = useAdminCookieStore()
 
@@ -133,8 +137,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="page-container">
-    <PageHeader title="饼干账户管理" subtitle="查看用户余额、账户状态与交易明细" />
+  <div class="page-container" :class="{ 'page-container--embedded': embedded }">
+    <PageHeader v-if="!embedded" title="饼干账户管理" subtitle="查看用户余额、账户状态与交易明细" />
 
     <NSpace vertical :size="20">
       <CookieStatsDashboard :stats="store.stats" :loading="store.loading" />
@@ -201,6 +205,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.page-container--embedded { padding: 0; background: transparent; }
 .toolbar-card :deep(.n-card__content) { padding: 16px 20px; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .toolbar-search { display: flex; align-items: center; gap: 12px; }

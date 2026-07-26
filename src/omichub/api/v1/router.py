@@ -36,6 +36,7 @@ from omichub.api.v1 import (
 from omichub.api.v1.admin import admin_cookies
 from omichub.api.v1.admin import agents as admin_agents
 from omichub.api.v1.admin import ai_providers as admin_ai_providers
+from omichub.api.v1.admin import search_providers as admin_search_providers
 from omichub.api.v1.admin import assistants as admin_assistants
 from omichub.api.v1.admin import festival as admin_festival
 from omichub.api.v1.admin import platform_config as admin_platform_config
@@ -75,6 +76,9 @@ api_router.include_router(
 api_router.include_router(admin_storage.router, prefix="/admin/storage", tags=["Admin-Storage"])
 api_router.include_router(
     admin_ai_providers.router, prefix="/admin/ai-providers", tags=["Admin-AI-Providers"]
+)
+api_router.include_router(
+    admin_search_providers.router, prefix="/admin/search-providers", tags=["Admin-Search-Providers"]
 )
 api_router.include_router(admin_skills.router, prefix="/admin/skills", tags=["Admin-Skills"])
 api_router.include_router(

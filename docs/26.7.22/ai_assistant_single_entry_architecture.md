@@ -204,7 +204,7 @@ Redis 建审批记录（`studio:approval:{id}`，TTL 1800s）→ yield `approval
 
 ### 2.9 配置加载
 
-- **PromptRegistry**（`prompt_loader.py`）：读 `data/prompts/registry.yaml`，按 mtime
+- **PromptRegistry**（`prompt_loader.py`）：读 `data/ai/prompts/registry.yaml`，按 mtime
   缓存热重载；`render(key, **variables)` 做 `{{var}}` 安全替换（未声明/缺变量抛错）；
   约 20 个 key（agents.*、studio.*、tools.omichub_system_hint、skills.* 等）。
 - **agent_loader**：加载 `data/ai/*.yaml`，`studio.runtime_profile` 经

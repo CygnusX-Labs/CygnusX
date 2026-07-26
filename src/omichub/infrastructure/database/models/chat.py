@@ -97,6 +97,33 @@ class ChatMessageModel(Base):
     __table_args__ = (Index("idx_chat_messages_session_created", "session_id", "created_at"),)
 
 
+class ChatHandoffEventModel(Base):
+    """同一聊天会话内 Agent 转交的可审计事件。"""
+
+    __tablename__ = "chat_handoff_events"
+    __table_args__ = (Index("idx_chat_handoff_session_created", "session_id", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    session_id: Mapped[str] = mapped_column(
+        String(50),
+        ForeignKey("chat_sessions.session_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    source_agent_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    target_agent_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    handoff_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    user_intent: Mapped[str] = mapped_column(Text, nullable=False)
+    artifacts: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    constraints: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    hop_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ChatAssistantModel(Base, TimestampMixin):
     """AI 助手表（对应 Cherry Studio 的 Assistant）"""
 

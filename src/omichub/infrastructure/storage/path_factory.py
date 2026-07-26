@@ -8,6 +8,7 @@ BlastService._result_dir、EnrichmentService._work_dir 等），确保全平台�
 
 from __future__ import annotations
 
+import shutil
 from functools import lru_cache
 from pathlib import Path
 
@@ -34,6 +35,19 @@ class StoragePathFactory:
 
     def user_root(self, user_id: str) -> Path:
         return self._root / self._users_subdir / str(user_id)
+
+    def remove_user_root(self, user_id: str) -> bool:
+        """删除指定用户的完整存储目录，且只允许删除 users/{user_id}。"""
+        user_root = self.user_root(user_id).resolve()
+        users_root = (self._root / self._users_subdir).resolve()
+        try:
+            user_root.relative_to(users_root)
+        except ValueError as exc:
+            raise ValueError("用户存储路径越权") from exc
+        if user_root == users_root or not user_root.exists():
+            return False
+        shutil.rmtree(user_root)
+        return True
 
     def inbox_dir(self, user_id: str) -> Path:
         """用户上传入口（原 raw/）。"""

@@ -12,6 +12,7 @@ from omichub.core.config import get_settings
 from omichub.core.exceptions import ValidationError
 from omichub.domain.mas.models import ExecutionPlan
 from omichub.infrastructure.mas.agent_capabilities import load_agent_capabilities
+from omichub.infrastructure.mas.artifact_schemas import load_artifact_schemas
 
 MAS_PLAN_PREVIEW_TOOL_NAME = "mas_plan_preview"
 MAS_PLAN_PREVIEW_TOOL_SCHEMA: dict[str, Any] = {
@@ -60,7 +61,8 @@ class MASPlanPreviewAdapter:
     def __init__(self) -> None:
         settings = get_settings()
         self._validator = MASPlanValidator(
-            load_agent_capabilities(settings.mas_agent_capabilities_yaml)
+            load_agent_capabilities(settings.mas_agent_capabilities_yaml),
+            load_artifact_schemas(settings.mas_artifact_schemas_yaml),
         )
 
     def adapt(self, payload: dict[str, Any]) -> dict[str, Any]:

@@ -468,7 +468,7 @@ async function refreshModels() {
 **内置 Provider 模板（参考 Cherry Studio）：**
 
 ```yaml
-# data/provider_templates.yaml
+# data/ai/provider_templates.yaml
 providers:
   - name: "OpenAI"
     type: "openai_compatible"

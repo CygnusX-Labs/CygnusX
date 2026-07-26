@@ -1,0 +1,6 @@
+# 绑定当前用户工作区的只读浏览工具。
+id: workspace
+description: 查看、搜索当前会话用户的工作区文件。
+platform_tools:
+  - list_workspace_files
+  - search_workspace_files

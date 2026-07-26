@@ -1,0 +1,34 @@
+# OmicHub 变异检测 GATK & PLINK 沙盒镜像
+# 构建: docker build -t omichub/sandbox-gatk:latest -f tool_configs/terminal/docker/Dockerfile.gatk tool_configs/terminal/docker/
+FROM omichub/sandbox-terminal:latest
+
+USER root
+
+ARG GATK_VERSION=4.5.0.0
+ARG PLINK1_BUILD=20231211
+ARG PLINK2_BUILD=20240105
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      openjdk-17-jre-headless tabix \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN wget -q "https://github.com/broadinstitute/gatk/releases/download/${GATK_VERSION}/gatk-${GATK_VERSION}.zip" -O /tmp/gatk.zip \
+    && unzip -q /tmp/gatk.zip -d /opt \
+    && ln -s "/opt/gatk-${GATK_VERSION}/gatk" /usr/local/bin/gatk \
+    && rm /tmp/gatk.zip
+
+RUN wget -q "https://s3.amazonaws.com/plink1-assets/plink_linux_x86_64_${PLINK1_BUILD}.zip" -O /tmp/plink1.zip \
+    && unzip -q /tmp/plink1.zip -d /opt/plink1 \
+    && ln -s /opt/plink1/plink /usr/local/bin/plink \
+    && rm /tmp/plink1.zip
+
+RUN wget -q "https://s3.amazonaws.com/plink2-assets/alpha5/plink2_linux_x86_64_${PLINK2_BUILD}.zip" -O /tmp/plink2.zip \
+    && unzip -q /tmp/plink2.zip -d /opt/plink2 \
+    && ln -s /opt/plink2/plink2 /usr/local/bin/plink2 \
+    && rm /tmp/plink2.zip
+
+ENV JAVA_OPTS="-Xmx3g"
+
+RUN ln -s /usr/bin/python3 /usr/local/bin/python
+
+USER 1000

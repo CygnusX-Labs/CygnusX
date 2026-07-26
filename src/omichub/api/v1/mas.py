@@ -4,14 +4,14 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from omichub.api.deps import CurrentUserId, DbSession
 from omichub.application.schemas.mas import (
-    MASArtifactRegisterRequest,
-    MASArtifactResponse,
     MASApprovalResolveRequest,
     MASApprovalResponse,
+    MASArtifactRegisterRequest,
+    MASArtifactResponse,
     MASRunCreateRequest,
     MASRunProgressResponse,
     MASRunResponse,
@@ -59,6 +59,16 @@ async def approve_run(
     run_id: UUID, current_user_id: CurrentUserId, service: MASServiceDep
 ) -> MASRunResponse:
     return await service.approve_run(current_user_id, run_id)
+
+
+@router.post("/runs/{run_id}/nodes/{node_key}/retry", response_model=MASRunResponse)
+async def retry_failed_node(
+    run_id: UUID,
+    node_key: str,
+    current_user_id: CurrentUserId,
+    service: MASServiceDep,
+) -> MASRunResponse:
+    return await service.retry_failed_node(current_user_id, run_id, node_key)
 
 
 @router.get("/runs/{run_id}/progress", response_model=MASRunProgressResponse)
@@ -116,3 +126,14 @@ async def list_artifacts(
     run_id: UUID, current_user_id: CurrentUserId, service: MASServiceDep
 ) -> list[MASArtifactResponse]:
     return await service.list_artifacts(current_user_id, run_id)
+
+
+@router.get("/runs/{run_id}/artifacts/{artifact_id}/download", summary="下载 MAS 产物")
+async def download_artifact(
+    run_id: UUID,
+    artifact_id: UUID,
+    current_user_id: CurrentUserId,
+    service: MASServiceDep,
+) -> FileResponse:
+    artifact, path = await service.resolve_artifact_download(current_user_id, run_id, artifact_id)
+    return FileResponse(path, media_type=artifact.media_type, filename=path.name)

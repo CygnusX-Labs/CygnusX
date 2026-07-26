@@ -9,10 +9,11 @@
 | `omichub_studio.md` | OmicStudio AI 分析工作台的实施进度与交接文档，记录沙盒、Agent、API、前端、验证状态、运维注意事项和待办事项。 |
 | `fontend.md` | 前端视觉与交互规范，涵盖设计令牌、页面层级、组件状态、动效、响应式设计和可访问性要求。 |
 | `plan_ai.md` | 多智能体编排、共享工作区与 A2A 架构实施方案，说明目标架构、状态管理、数据模型、事件协议和落地路径。 |
+| `agent_architecture_and_extension_guide.md` | 当前 Agent 运行架构、P1–P3 实施状态、灰度条件，以及修改提示词和新增内置/MCP 工具的操作指南。 |
+| `agent_framework_final_baseline.md` | 2026-07-26 最终 AI 助手基线：Agent 装配、提示词与工具契约、路由、Studio、Handoff、MAS 边界及发布验收清单。 |
 | `worker_images_plan.md` | Worker 轻量镜像与 Workspace 动态安装计划，定义 Worker 镜像边界、运行时挂载、Conda 环境缓存及实施步骤。 |
 
 ## 相关文档（目录外）
 
 - `docs/26.7.22/ai_assistant_single_entry_architecture.md`：AI 助手模块详细架构（统一入口「智能助手」、双引擎分流 LangGraph/手写循环、智能路由、MCP preset、Studio HITL、SSE 事件协议、前后端组件链）及优化待办清单与落地记录。
 - 开发环境热刷新约定见根目录 `README.md`「Docker 部署」一节：日常改代码/YAML/前端用 `make docker-dev-refresh`（秒级，bind mount 免重建镜像），仅依赖（`uv.lock`/Dockerfile）变更才用 `make docker-reload`。
-

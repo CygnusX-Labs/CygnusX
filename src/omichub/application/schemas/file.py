@@ -18,13 +18,25 @@ class DataFileDTO(BaseModel):
     status: str = "active"
     checksum: str = ""
     directory: str = ""
+    path: str = ""
     created_at: datetime
+    modified_at: datetime
+
+
+class DirectorySearchDTO(BaseModel):
+    """工作区目录搜索结果。"""
+
+    path: str
+    name: str
+    parent_path: str | None = None
+    is_system: bool = False
 
 
 class FileListResponse(BaseModel):
     """文件列表响应"""
 
     items: list[DataFileDTO] = Field(default_factory=list)
+    directories: list[DirectorySearchDTO] = Field(default_factory=list)
     total: int = 0
 
 
@@ -115,6 +127,7 @@ class DirectoryDTO(BaseModel):
     parent_path: str | None = None
     is_system: bool = False
     created_at: datetime
+    modified_at: datetime
 
 
 class MoveFileRequest(BaseModel):

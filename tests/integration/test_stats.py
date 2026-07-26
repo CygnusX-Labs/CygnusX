@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from omichub.api.v1.admin.stats import require_admin
 from omichub.core.exceptions import AuthorizationError
 from omichub.core.security import create_access_token
 from omichub.main import app
+from omichub.middleware.rbac import require_admin
 
 
 @pytest.fixture

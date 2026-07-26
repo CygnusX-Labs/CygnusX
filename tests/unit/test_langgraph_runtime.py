@@ -139,6 +139,33 @@ async def test_one_tool_round_then_finish() -> None:
     }
 
 
+async def test_handoff_tool_ends_current_graph_without_another_llm_round() -> None:
+    """Handoff 是控制指令：工具回灌后结束旧 Agent 图，由 ChatService 启动目标图。"""
+    directive = {
+        "source_agent_id": "agent-scrna",
+        "target_agent_id": "agent-rnaseq",
+        "reason": "质控已完成，进入差异表达阶段",
+        "packet": "## 会话交接",
+    }
+
+    async def _executor(
+        tool_name: str, args: dict[str, Any], tool_call_id: str
+    ) -> dict[str, Any]:
+        assert tool_name == "transfer_to_agent"
+        return {"success": True, "llm_payload": {"handoff": directive}}
+
+    runtime, calls = _make_runtime(
+        [[_tool_calls_chunk("transfer_to_agent", {"target_agent": "agent-rnaseq"})]],
+        tool_executor=_executor,
+    )
+
+    chunks = await _collect(runtime)
+
+    assert [chunk.type for chunk in chunks] == ["tool_call", "tool_result"]
+    assert runtime.last_handoff == directive
+    assert len(calls) == 1
+
+
 async def test_tool_executor_exception_yields_error_chunk() -> None:
     """tool_executor 抛异常：产 error chunk 优雅结束，不向外抛错"""
 

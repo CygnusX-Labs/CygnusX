@@ -6,9 +6,11 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
@@ -35,6 +37,8 @@ from omichub.infrastructure.mcp.presets import (
     OMICHUB_PLATFORM_SERVER_ID,
     OMICHUB_TOOLS_SERVER_ID,
     OMICHUB_TOOLS_SERVER_NAME,
+    WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX,
+    get_preset_by_name,
 )
 from omichub.tools.schema_loader import schema_loader
 
@@ -76,6 +80,14 @@ class AgentService:
         if not yaml_configs:
             return
 
+        configured_skill_ids = {
+            str(skill_id).strip()
+            for cfg in yaml_configs
+            for skill_id in (cfg.get("skill_ids") or [])
+            if str(skill_id).strip()
+        }
+        await self._ensure_configured_marketplace_skills(configured_skill_ids)
+
         # 预加载所有启用的模型配置，按 name 建索引
         model_result = await self._db.execute(
             select(AIProviderConfigModel).where(
@@ -97,6 +109,31 @@ class AgentService:
                     else:
                         existing_features.pop("studio", None)
                     existing.features = existing_features
+                    configured_mcp_ids = [
+                        str(value) for value in (existing.mcp_ids or []) if self._parse_uuid(value)
+                    ]
+                    # 旧版本已落库的内置 Agent 可能没有平台 MCP；回填工作区文件工具，
+                    # 不覆盖管理员额外绑定的 MCP。
+                    if (
+                        not configured_mcp_ids
+                        or str(OMICHUB_TOOLS_SERVER_ID) in configured_mcp_ids
+                    ) and str(OMICHUB_PLATFORM_SERVER_ID) not in configured_mcp_ids:
+                        configured_mcp_ids.append(str(OMICHUB_PLATFORM_SERVER_ID))
+                        existing.mcp_ids = configured_mcp_ids
+                    configured_skills = [
+                        str(skill_id).strip()
+                        for skill_id in (cfg.get("skill_ids") or [])
+                        if str(skill_id).strip()
+                    ]
+                    if configured_skills:
+                        existing_skill_ids = [
+                            str(skill_id).strip()
+                            for skill_id in (existing.skill_ids or [])
+                            if str(skill_id).strip()
+                        ]
+                        existing.skill_ids = list(
+                            dict.fromkeys([*existing_skill_ids, *configured_skills])
+                        )
                 continue
 
             # 按 model name 解析 model_id
@@ -140,10 +177,41 @@ class AgentService:
             self._db.add(AgentTemplateModel(**agent_data))
         await self._db.flush()
 
+    async def _ensure_configured_marketplace_skills(self, skill_ids: set[str]) -> None:
+        """安装 YAML 声明且存在于内置市场的 Skill，保留外部 Skill 的管理方式。"""
+        if not skill_ids:
+            return
+
+        from omichub.application.services.skill_import_service import SkillImportService
+        from omichub.core.config import get_settings
+
+        marketplace = get_settings().skill_marketplace_dir
+        available_ids = {
+            skill_id
+            for skill_id in skill_ids
+            if (Path(marketplace) / skill_id / "SKILL.md").is_file()
+        }
+        if not available_ids:
+            return
+
+        result = await self._db.execute(
+            select(SkillModel.skill_id).where(SkillModel.skill_id.in_(available_ids))
+        )
+        installed_ids = {str(skill_id) for skill_id in result.scalars().all()}
+        installer = SkillImportService(self._db)
+        for skill_id in sorted(available_ids - installed_ids):
+            try:
+                await installer.install_marketplace(skill_id)
+            except BusinessError as exc:
+                logging.getLogger(__name__).warning(
+                    "内置 Agent Skill 自动安装失败 %s: %s", skill_id, exc
+                )
+
     # --- 查询 ---
 
     async def list_agents(self, active_only: bool = False) -> list[AgentTemplateDTO]:
         await self.ensure_builtin_agents()
+        await self._reconcile_model_bindings()
         query = select(AgentTemplateModel)
         if active_only:
             query = query.where(AgentTemplateModel.is_active == True)  # noqa: E712
@@ -158,6 +226,7 @@ class AgentService:
         return result.scalar_one_or_none()
 
     async def get_agent_dto(self, agent_id: str) -> AgentTemplateDTO:
+        await self._reconcile_model_bindings()
         agent = await self.get_agent(agent_id)
         if not agent:
             raise NotFoundError("Agent 不存在")
@@ -174,8 +243,10 @@ class AgentService:
             if data.get("is_default"):
                 await self._clear_other_defaults()
             self._normalize_json_lists(data)
-            await self._validate_model_id(data)
-            await self._sync_model_labels(data)
+            # 部分更新未提交 model_id 时，必须保留既有绑定及其展示标签。
+            if "model_id" in data:
+                await self._validate_model_id(data)
+                await self._sync_model_labels(data)
             for key, value in data.items():
                 setattr(agent, key, value)
             await self._db.flush()
@@ -262,6 +333,46 @@ class AgentService:
             data["model_engine"] = ""
             data["model_name"] = ""
 
+    async def _reconcile_model_bindings(self) -> None:
+        """修复历史失效绑定，并让助手展示标签与当前 Provider 配置保持一致。"""
+        providers_result = await self._db.execute(
+            select(AIProviderConfigModel)
+            .where(AIProviderConfigModel.is_active == True)  # noqa: E712
+            .order_by(
+                AIProviderConfigModel.is_default.desc(),
+                AIProviderConfigModel.updated_at.desc(),
+            )
+        )
+        active_providers = list(providers_result.scalars().all())
+        providers_by_id = {provider.id: provider for provider in active_providers}
+        fallback_provider = active_providers[0] if active_providers else None
+
+        agents_result = await self._db.execute(
+            select(AgentTemplateModel).where(AgentTemplateModel.model_id.is_not(None))
+        )
+        changed = False
+        for agent in agents_result.scalars().all():
+            provider = providers_by_id.get(agent.model_id) or fallback_provider
+            if provider is None:
+                agent.model_id = None
+                agent.model_name = ""
+                agent.model_engine = ""
+                changed = True
+                continue
+
+            if (
+                agent.model_id != provider.id
+                or agent.model_name != provider.name
+                or agent.model_engine != provider.model
+            ):
+                agent.model_id = provider.id
+                agent.model_name = provider.name
+                agent.model_engine = provider.model
+                changed = True
+
+        if changed:
+            await self._db.flush()
+
     async def delete_agent(self, agent_id: str) -> bool:
         agent = await self.get_agent(agent_id)
         if not agent:
@@ -338,6 +449,7 @@ class AgentService:
 
         Agent 自身不存在时返回 None；模型缺失/未启用通过 ChatChunk.error 在调用方处理。
         """
+        await self._reconcile_model_bindings()
         agent = await self.get_agent(agent_id)
         if agent is None or not agent.is_active:
             return None
@@ -354,6 +466,7 @@ class AgentService:
         # 2. 收集绑定的 MCP server 及其工具，转成 OpenAI tools
         mcp_servers: list[MCPServer] = []
         tools: list[dict[str, Any]] = []
+        tool_pack_config = self._tool_pack_config(agent.features or {})
         mcp_uuids: list[uuid.UUID] = [
             u for u in (self._parse_uuid(mid) for mid in (agent.mcp_ids or [])) if u is not None
         ]
@@ -362,7 +475,10 @@ class AgentService:
         if other_uuids:
             mcp_servers = await self._mcp_repo.get_by_ids(other_uuids)
             for server in mcp_servers:
+                allowed_names = tool_pack_config["mcp_tools"].get(str(server.id))
                 for t in server.tools:
+                    if allowed_names and t.tool_name not in allowed_names:
+                        continue
                     tools.append(
                         {
                             "type": "function",
@@ -375,23 +491,92 @@ class AgentService:
                         }
                     )
 
+        # 内置 preset 可能在应用启动并发初始化期间尚未落库；使用代码定义的
+        # preset 作为运行时兜底，确保已绑定平台 MCP 的 Agent 不会丢失工具。
+        if OMICHUB_PLATFORM_SERVER_ID in mcp_uuids and not any(
+            server.id == OMICHUB_PLATFORM_SERVER_ID for server in mcp_servers
+        ):
+            platform_preset = get_preset_by_name("omichub-platform")
+            if platform_preset is not None:
+                allowed_platform_names = tool_pack_config["mcp_tools"].get(
+                    str(OMICHUB_PLATFORM_SERVER_ID)
+                )
+                preset_tools = [
+                    tool
+                    for tool in platform_preset["tools"]
+                    if not allowed_platform_names or tool["name"] in allowed_platform_names
+                ]
+                platform_tools = [
+                    MCPToolRegistry(
+                        tool_name=tool["name"],
+                        description=tool["description"],
+                        input_schema=tool["inputSchema"],
+                        server_id=OMICHUB_PLATFORM_SERVER_ID,
+                    )
+                    for tool in preset_tools
+                ]
+                mcp_servers.append(
+                    MCPServer(
+                        id=OMICHUB_PLATFORM_SERVER_ID,
+                        name="omichub-platform",
+                        description=platform_preset["description"],
+                        transport=Transport.BUILTIN,
+                        status=ServerStatus.ONLINE,
+                        is_enabled=True,
+                        is_preset=True,
+                        tools=platform_tools,
+                    )
+                )
+                tools.extend(
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": tool.tool_name,
+                            "description": tool.description,
+                            "parameters": tool.input_schema
+                            or {"type": "object", "properties": {}},
+                        },
+                    }
+                    for tool in platform_tools
+                )
+
         # 2.5 自动注入 omichub-tools builtin preset（显式选中，或为空时保持默认）
         omichub_tools_server = self._build_omichub_tools_server()
         if omichub_tools_server and (omichub_selected or not mcp_uuids):
             mcp_servers.append(omichub_tools_server)
-            tools.extend(schema_loader.to_openai_tools())
+            builtin_tools = schema_loader.to_openai_tools()
+            allowed_builtin_names = tool_pack_config["builtin_tools"]
+            if allowed_builtin_names:
+                builtin_tools = [
+                    tool
+                    for tool in builtin_tools
+                    if tool.get("function", {}).get("name") in allowed_builtin_names
+                ]
+            tools.extend(builtin_tools)
 
-        # 3. 系统提示词 = Agent 设定 + 绑定技能 prompt 后缀 + omichub-tools 清单。
-        # Studio 会话使用结构化 skills 重新组装渐进式披露上下文；普通聊天保持全量兼容。
+        # 3. 系统提示词 = Agent 设定 + 技能 L1 索引 + omichub-tools 清单。
+        # 技能采用三层渐进式披露：L1 仅注入 name+description 索引（每技能约 100 tokens）；
+        # L2 正文由模型命中后调用 use_skill 工具按需加载；L3 references/assets 用
+        # skill_resource 按需读取。Studio 会话另用结构化 capability_catalog 机制。
         system_prompt = agent.system_prompt
         skills = await self._load_skills(agent.skill_ids or [])
-        skill_suffix = self._build_skills_prompt(skills)
-        if skill_suffix:
-            system_prompt = f"{system_prompt}\n\n{skill_suffix}" if system_prompt else skill_suffix
+        skill_index = self._build_skills_index(skills)
+        if skill_index:
+            system_prompt = f"{system_prompt}\n\n{skill_index}" if system_prompt else skill_index
+        if skills:
+            from omichub.domain.skill.services import build_skill_tools
+
+            tools.extend(build_skill_tools(skills))
         if omichub_tools_server and (omichub_selected or not mcp_uuids):
             tool_hint = schema_loader.build_system_hint()
             if tool_hint:
                 system_prompt = f"{system_prompt}\n\n{tool_hint}" if system_prompt else tool_hint
+        if any(server.id == OMICHUB_PLATFORM_SERVER_ID for server in mcp_servers):
+            system_prompt = (
+                f"{system_prompt}\n\n{WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX}"
+                if system_prompt
+                else WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX
+            )
 
         return AgentContext(
             agent=agent,
@@ -420,29 +605,15 @@ class AgentService:
     async def _load_skills(self, skill_ids: list[Any]) -> list[Skill]:
         if not skill_ids:
             return []
+        from omichub.application.services.skill_service import SkillService
+
         result = await self._db.execute(
             select(SkillModel).where(
                 SkillModel.skill_id.in_([str(skill_id) for skill_id in skill_ids]),
                 SkillModel.is_active == True,  # noqa: E712
             )
         )
-        return [
-            Skill(
-                id=model.id,
-                skill_id=model.skill_id,
-                name=model.name,
-                description=model.description,
-                prompt=model.prompt,
-                tool_definition=model.tool_definition,
-                icon=model.icon,
-                category=model.category,
-                is_active=model.is_active,
-                is_builtin=model.is_builtin,
-                created_at=model.created_at,
-                updated_at=model.updated_at,
-            )
-            for model in result.scalars().all()
-        ]
+        return [SkillService._to_entity(model) for model in result.scalars().all()]
 
     @staticmethod
     def _build_skills_prompt(skills: list[Skill]) -> str:
@@ -451,6 +622,15 @@ class AgentService:
         from omichub.application.services.skill_service import SkillService
 
         return SkillService.build_skills_prompt(skills)
+
+    @staticmethod
+    def _build_skills_index(skills: list[Skill]) -> str:
+        """L1：仅 name+description 元数据索引，正文经 use_skill 按需加载"""
+        if not skills:
+            return ""
+        from omichub.application.services.skill_service import SkillService
+
+        return SkillService.build_skills_index(skills)
 
     async def _build_skill_prompt(self, skill_ids: list[Any]) -> str:
         """兼容旧调用方；新代码优先使用结构化 skills。"""
@@ -480,6 +660,29 @@ class AgentService:
                 for t in tools
             ],
         )
+
+    @staticmethod
+    def _tool_pack_config(features: dict[str, Any]) -> dict[str, Any]:
+        """汇总 YAML 工具包的内置/MCP 工具白名单。"""
+        builtin_tools: set[str] = set()
+        mcp_tools: dict[str, set[str]] = {}
+        for pack in features.get("tool_packs", []) if isinstance(features, dict) else []:
+            if not isinstance(pack, dict):
+                continue
+            builtin_tools.update(
+                str(tool).strip()
+                for tool in pack.get("builtin_tools", [])
+                if str(tool).strip()
+            )
+            for server_id, tool_names in (pack.get("mcp_tools") or {}).items():
+                if not isinstance(tool_names, list):
+                    continue
+                names = {
+                    str(tool).strip() for tool in tool_names if str(tool).strip()
+                }
+                if names:
+                    mcp_tools.setdefault(str(server_id), set()).update(names)
+        return {"builtin_tools": builtin_tools, "mcp_tools": mcp_tools}
 
     @staticmethod
     def _parse_uuid(value: Any) -> uuid.UUID | None:

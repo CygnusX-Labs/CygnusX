@@ -117,7 +117,13 @@ class AuthService:
         user.status = UserStatus.PENDING
 
         # 保存用户
-        return await self.user_repo.save(user)
+        saved = await self.user_repo.save(user)
+
+        # 注册成功即创建用户默认目录；FileService 内部幂等，兼容重试和历史数据修复。
+        from omichub.application.services.file_service import FileService
+
+        await FileService(self._db).ensure_default_directories(saved.id)
+        return saved
 
     async def login(self, username: str, password: str) -> LoginSuccess | LoginTwoFactorRequired:
         """用户登录（密码阶段）。

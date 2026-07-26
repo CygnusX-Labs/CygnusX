@@ -46,6 +46,7 @@ OmicHub 是面向生物信息学任务、数据资产与 AI 工作流的科学�
 | Naive UI 主题覆盖 | `frontend/src/App.vue` | Naive UI 的色彩、圆角、菜单和组件基础外观只在此维护。 |
 | 主框架、顶部栏、侧栏 | `frontend/src/layouts/DefaultLayout.vue` | 新导航或壳层变更遵循已有折叠、移动端和滚动规则。 |
 | 通用页头 | `frontend/src/components/PageHeader.vue` | 统一标题、说明和右侧操作区；不要在页面重复造页头。 |
+| 管理配置中心布局 | `frontend/src/styles/global.css` | 管理中心使用 `.admin-config-center` 和 `.admin-config-tabs`；嵌套资源页使用 `.admin-config-section`，不得以独立 `max-width` 收窄内容。 |
 | 仪表盘实时状态模式 | `frontend/src/views/DashboardView.vue` | 系统健康、局部刷新、任务列表与进度条的推荐实现。 |
 | 认证页材质与引言 | `frontend/src/views/LoginView.vue`、`frontend/src/views/RegisterView.vue`、`frontend/src/components/StardustQuote.vue` | 认证场景可使用星空和玻璃材质，普通工作台页面保持克制。 |
 
@@ -140,6 +141,50 @@ OmicHub 是面向生物信息学任务、数据资产与 AI 工作流的科学�
 5. 模态任务使用遮罩与实体表面；并行、非阻塞面板可使用半透明与偏移，不必强制遮罩。
 
 在 `prefers-reduced-transparency: reduce` 下，玻璃表面必须回退到 `--neutral-card` 实色背景并移除模糊。
+
+### 4.3 管理配置中心与嵌套标签页
+
+AI 配置、饼干中心及后续同类后台配置页面使用统一的全宽配置配方。配置中心的顶层标签页、嵌套资源标签页和其中的卡片/表格必须共享同一条内容边界，避免切换标签页时内容区域突然收窄。
+
+| 场景 | 结构与类名 | 规则 |
+| --- | --- | --- |
+| 配置中心根容器 | `.admin-config-center` | 使用 `width: min(100%, 1440px)` 与 `margin-inline: auto`，承载 `PageHeader` 和顶层 `NTabs`。 |
+| 独立配置资源页 | `.admin-config-section.admin-config-section--standalone` | 使用与配置中心相同的最大宽度，独立访问时保留自己的 `PageHeader`。 |
+| 嵌入式资源页 | `.admin-config-section` | 必须 `width: 100%` 与 `min-width: 0`；嵌入顶层标签页时不得再设置 `max-width` 或居中外边距。 |
+| 配置标签页 | `.admin-config-tabs` | 应用于所有顶层和嵌套 `NTabs type="line"`；导航下方统一保留 `var(--space-xl)` 间距。 |
+
+```vue
+<div class="admin-config-center">
+  <PageHeader title="AI 配置中心" subtitle="统一维护模型与资源" />
+  <NTabs v-model:value="activeTab" type="line" animated class="admin-config-tabs">
+    <NTabPane name="providers" tab="模型配置">
+      <AdminAIProvidersView embedded />
+    </NTabPane>
+    <NTabPane name="resources" tab="资源中心">
+      <AdminAIResourceCenterView embedded />
+    </NTabPane>
+  </NTabs>
+</div>
+```
+
+嵌入的资源页继续使用相同的标签页类，而不重新定义一个较窄的容器：
+
+```vue
+<div class="admin-config-section" :class="{ 'admin-config-section--standalone': !embedded }">
+  <PageHeader v-if="!embedded" title="AI 资源中心" subtitle="集中管理 MCP、技能与助手资源" />
+  <NTabs type="line" animated class="admin-config-tabs">
+    <!-- MCP 服务、技能、助手等二级标签页 -->
+  </NTabs>
+</div>
+```
+
+实现规则：
+
+1. 共享样式只定义在 `frontend/src/styles/global.css`；页面不复制 `.n-tabs-nav` 间距或各自维护不同的最大宽度。
+2. 顶层与嵌套标签页都使用 Naive UI `type="line"`，沿用应用主题提供的激活态、焦点态和深色模式颜色；不要以局部硬编码颜色覆盖它们。
+3. 资源中心处于嵌入模式时，MCP、技能、助手等二级标签的导航、工具栏、表格和空状态应与“模型配置”卡片的左右边界对齐。
+4. 新增配置中心应优先复用 `.admin-config-center`、`.admin-config-section` 与 `.admin-config-tabs`；若确实需要较窄的阅读型内容，请建立明确的内容列，而不要修改配置页根容器的宽度。
+5. 窄屏下保持 `width: 100%`，由页面壳层的现有水平内边距负责留白；不得通过固定宽度让标签或表格横向溢出。
 
 ## 5. 组件实现契约
 
@@ -364,6 +409,8 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 - [ ] 动效是否短促、必要、可中断，并在减少动态下安全回退？
 - [ ] 是否验证了浅色、深色、窄屏、高对比度和键盘焦点？
 - [ ] 是否通过 `npm run type-check`、`npm run build` 和 `git diff --check`？
+- [ ] 叠层与装饰覆盖层是否符合 §31：无 `.x > *` 等过宽定位/布局选择器；装饰层保持出流并 `pointer-events:none`、`aria-hidden`？
+- [ ] 样式改动是否在**构建产物或 nginx 实际响应**中 grep 到对应选择器/属性（注意路由分包 chunk，不在主 `index-*.css`），并硬刷新验证（§31.5）？
 
 ## 11. 可复用 Skill 入口
 
@@ -594,6 +641,7 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 - 消息气泡最大宽度 `720px`；代码块和表格允许占满气泡宽度。
 - 长对话启用虚拟滚动或"加载更多历史"分页，不一次性渲染全部消息。
 - 新消息自动滚动到底部；用户向上滚动时暂停自动滚动并显示"回到底部"按钮。
+- 对话区若叠加装饰背景/光晕（如 `ShaniaChatBackground` 全息层），必须遵守 §31：装饰层保持出流、`pointer-events:none`，内容层按**类名**显式抬升；**禁止**用 `.容器 > *` 通配设置 `position`/`z-index`（该反模式曾把仅 `shania` 渲染的装饰层拉进文档流，导致顶栏塌陷、顶部整块空白）。
 
 ### 18.2 流式输出
 
@@ -909,3 +957,55 @@ frontend/src/
 - 失败任务提供"重试"（重新提交相同参数）和"查看日志"。
 - 任务列表支持按状态筛选、按时间排序、关键词搜索。
 - 任务结果页提供"重新运行"（预填参数到表单）和"下载结果"。
+
+## 31. 叠层、装饰覆盖层与定位选择器规范
+
+许多页面/组件会在内容之上或之后叠加**装饰覆盖层**：聊天背景光晕、全息/粒子装饰、点阵网格、水印、渐变光斑等。这类层必须是"出流（out-of-flow）"的纯装饰，**绝不能参与布局**。下列为强制项；违反会直接导致布局塌陷（顶栏被顶到视口中部、出现整块空白、装饰残影错位等）。
+
+### 31.1 装饰覆盖层契约
+
+- 装饰层根元素必须 `position: absolute`（或 `fixed`），并加 `pointer-events: none` 与 `aria-hidden="true"`，赋低 `z-index`（通常 `0`）。
+- 其定位锚点（最近的 `position: relative` 祖先）必须是布局容器本身；装饰层**不得**是 flex/grid 容器里"会被排布"的 in-flow 子项。
+- 装饰层组件应与 `header`/`body`/`footer` 等内容层**平级**作为容器直接子节点，仅靠定位与 `z-index` 区分层级，**不靠**文档流顺序。
+
+### 31.2 禁止用通配/过宽选择器抬升内容层（核心反模式）
+
+- **禁止**用 `.container > *`、`.container > div`、漏网式 `:not(...)` 等**过宽选择器**统一设置会影响布局或层叠的属性：`position`、`z-index`、`display`、`margin`、`flex` 等。
+  - 原因：它会一并命中装饰覆盖层，把 `absolute` 改成 `relative`，将装饰层拉回文档流，撑出空白并把后续内容（如顶栏）顶离原位。
+  - **Vue scoped 不能挡住它**：`.parent > *` 会被编译成 `.parent > *[data-v-xxx]`，而子组件根节点会带上**父级** scope id，因此子组件的装饰根节点同样被命中。不要以为 scoped 样式能隔离。
+- **正确做法**：只把"真正的内容层"按**类名**显式抬升，让装饰层保留自己的 `absolute + z-index:0`，自然落在内容之下、容器背景之上。
+
+```css
+/* 错误：通配命中装饰层，把 absolute 拉成 relative，布局塌陷 */
+.agent-sandbox > * { position: relative; z-index: 1; }
+
+/* 正确：逐个列举内容层；新增内容层时同步加入此列表 */
+.sandbox-body,
+.sandbox-input { position: relative; z-index: 1; }
+.sandbox-header { position: sticky; z-index: 10; } /* sticky 顶栏自带更高层级，不必并入通配 */
+```
+
+- 抬升内容层时**逐个列举**类名；新增内容层时同步加入该列表，**不要**改用通配"图省事"。
+
+### 31.3 叠层顺序约定
+
+- 容器 `position: relative` 建立定位上下文；其 `::before`/`::after` 装饰（点阵、渐变）与装饰覆盖层组件同处 `z-index: 0` 层。
+- 内容层（header / body / footer / 输入区）`z-index: 1`；sticky 顶栏可用 `z-index: 10`。
+- 弹层、抽屉、菜单走全局层级（见 §5.6、§28），不在容器局部叠层里争抢。
+- 内容层背景应允许装饰透出：消息区/内容区背景保持透明或半透明，使底层装饰可见；顶栏/输入区可用半透明 + `backdrop-filter` 适度遮挡。
+
+### 31.4 案例：傻妞（shania）全息背景导致顶栏塌陷
+
+- **现象**：AI 助手 `@傻妞` 选中该 agent 后，页面顶部出现整块空白，agent 顶栏被挤到视口中部，左上角出现淡色圆角残影。
+- **根因**：`AgentSandbox.vue` 曾用 `.agent-sandbox > * { position: relative; z-index: 1; }` 抬升内容层，误伤 `ShaniaChatBackground.vue`（仅 `agent.id === 'shania'` 渲染、本应 `position: absolute` 的右下角全息装饰层），使其变成 in-flow 的 `300×400` 块，撑高顶部并把 header 顶下；淡色残影即被挤到左上角的手机框/光环。
+- **修复**：删除通配规则，改为 `.sandbox-body`、`.sandbox-input` 显式 `position: relative; z-index: 1`（header 维持 `sticky + z-index: 10`），装饰层回归绝对定位。
+- **教训**：任何"仅某个 agent / 路由 / 开关下才渲染"的**条件装饰层**，最容易在通配选择器下暴露问题；新增此类层时务必确认它不会被父级过宽选择器命中，并在该条件下肉眼/截图验收布局。
+
+### 31.5 样式改动的构建与上线校验
+
+- 组件样式会被 Vite **代码分包**到路由 chunk（如 AI 助手页落在 `AIChatView-<hash>.css`），**不在主 `index-<hash>.css`**。验收时不要只 grep 主包，更不能因主包没变就判定"没生效"。
+- 不要以"构建成功"为验收终点：必须在**构建产物或 nginx 实际响应**里 grep 到你改动的选择器/属性，确认改动真的编进去了。
+  - 定位 chunk：`grep -rl '<改动类名>' frontend/dist/assets`。
+  - 校验服务响应：`curl -s --compressed http://localhost:<port>/assets/<chunk>.css` 后 grep；务必带 `--compressed`（否则拿到 gzip 字节，grep 不到），路径务必带 `/assets/` 前缀（漏写会命中 404/回退页，得到误导性的极短响应）。
+- 浏览器侧需**硬刷新**（Ctrl/Cmd + Shift + R）丢弃旧 `index.html` 与旧 chunk 缓存，否则看不到改动。
+- 重发前端时优先"构建到临时目录 + `rsync -a --delete tmp/ dist/`"：保留 `dist` 目录 inode，规避 nginx bind mount 失效，且构建失败时不会清空线上产物（运维细节见 nginx bind mount 相关说明）。

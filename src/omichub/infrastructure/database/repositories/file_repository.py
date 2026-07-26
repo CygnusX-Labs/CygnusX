@@ -147,6 +147,7 @@ class FileRepositoryImpl(IFileRepository):
             directory=model.directory or "",
             source=model.source or "upload",
             created_at=model.created_at,
+            updated_at=model.updated_at,
         )
 
 

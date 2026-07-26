@@ -27,6 +27,7 @@ celery_app = Celery(
         "omichub.infrastructure.celery_app.tasks.storage",
         "omichub.infrastructure.celery_app.tasks.studio",
         "omichub.infrastructure.celery_app.tasks.mas",
+        "omichub.infrastructure.celery_app.tasks.memory",
     ],
 )
 
@@ -64,6 +65,7 @@ celery_app.conf.task_routes = {
     "omichub.infrastructure.celery_app.tasks.studio.*": {"queue": "analysis"},
     "omichub.infrastructure.celery_app.tasks.mas.rnaflow.*": {"queue": "mas_apptainer"},
     "omichub.infrastructure.celery_app.tasks.mas.*": {"queue": "analysis"},
+    "omichub.infrastructure.celery_app.tasks.memory.*": {"queue": "analysis"},
 }
 
 # 定时任务

@@ -241,7 +241,7 @@ AI 聊天助手体现了 OmicHub「**智能增强科研**」的理念。大语�
 
 #### 注意事项
 
-- AI 助手需要管理员先配置 AI Provider（`data/ai_providers.yaml` 或 `.env` 环境变量）才能使用。
+- AI 助手需要管理员先配置 AI Provider（`data/ai/providers.yaml` 或 `.env` 环境变量）才能使用。
 - AI 生成内容仅供参考，关键分析结论需由研究者自行验证。
 - 请不要向 AI 输入涉及隐私或未脱敏的样本信息。
 
@@ -454,7 +454,7 @@ MCP（Model Context Protocol）工具扩展体现了 OmicHub「**让 AI 真正�
 
 ### AI 助手无法回复
 
-- 确认管理员已配置 AI Provider（`data/ai_providers.yaml` 或 `.env` 中的 `KIMI_API_KEY` / `OPENAI_API_KEY`）。
+- 确认管理员已配置 AI Provider（`data/ai/providers.yaml` 或 `.env` 中的 `KIMI_API_KEY` / `OPENAI_API_KEY`）。
 - 确认网络可以访问对应的模型 API 服务。
 - 检查后端日志中是否有 API 调用失败记录。
 

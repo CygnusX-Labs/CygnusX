@@ -3,10 +3,11 @@ import { computed, h, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NButton, NIcon, NSelect, NInput, NTag, NSpace, NSpin, NEmpty,
   NModal, NUpload, NUploadDragger, NCheckbox, NProgress,
-  NDivider, NForm, NFormItem, useMessage } from 'naive-ui'
+  NDivider, NForm, NFormItem, NTooltip, useMessage } from 'naive-ui'
 import {
   LocationOutline, CloudUploadOutline,
   FolderOpenOutline, DesktopOutline,
+  ExpandOutline, ContractOutline,
 } from '@vicons/ionicons5'
 import { jbrowseApi } from '@/api/jbrowse'
 import { absolutizeUris } from '@/utils/jbrowse'
@@ -47,6 +48,44 @@ const uploadProgress = ref<UploadProgress[]>([])
 // 我的文件抽屉
 const showScanDrawer = ref(false)
 
+// ==================== 全屏沉浸模式 ====================
+// 优先 Fullscreen API（把页面根元素置入 top layer，平台页头 / 侧边导航自然被隔离在外），
+// Esc 由浏览器原生退出；API 不可用（旧 Safari / 非手势触发被拒）时退回 fixed 定位兜底，
+// 兜底态下自行监听 Esc。两条路径统一由 immersiveActive 驱动图标与提示文案。
+const pageRootRef = ref<HTMLElement | null>(null)
+const isFullscreen = ref(false)
+const immersiveFallback = ref(false)
+const immersiveActive = computed(() => isFullscreen.value || immersiveFallback.value)
+
+function onFullscreenChange() {
+  isFullscreen.value = document.fullscreenElement === pageRootRef.value
+}
+
+async function toggleFullscreen() {
+  // 兜底态：再次点击即退出
+  if (immersiveFallback.value) {
+    immersiveFallback.value = false
+    return
+  }
+  if (document.fullscreenElement) {
+    try { await document.exitFullscreen() } catch { /* 已被浏览器退出，忽略 */ }
+    return
+  }
+  const el = pageRootRef.value
+  if (el?.requestFullscreen) {
+    try {
+      await el.requestFullscreen()
+      return
+    } catch { /* 请求被拒（如权限策略），落入 fixed 兜底 */ }
+  }
+  immersiveFallback.value = true
+}
+
+/** 兜底态监听 Esc 退出（Fullscreen API 路径由浏览器原生处理 Esc） */
+function onImmersiveKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && immersiveFallback.value) immersiveFallback.value = false
+}
+
 // ==================== 计算属性 ====================
 const assemblyOptions = computed(() =>
   assemblies.value.map((a) => ({
@@ -68,6 +107,8 @@ const selectedPaths = computed(() => selectedTracks.value.map((t) => t.path))
 
 // ==================== 生命周期 ====================
 onMounted(async () => {
+  document.addEventListener('fullscreenchange', onFullscreenChange)
+  window.addEventListener('keydown', onImmersiveKeydown)
   await loadAssemblies()
 
   // 从 URL 参数恢复状态（方便从「数据管理」模块深链跳转）
@@ -103,6 +144,15 @@ onUnmounted(() => {
   if (initTimer) clearTimeout(initTimer)
   if (iframeLoadTimer) clearTimeout(iframeLoadTimer)
   if (uploadCloseTimer) clearTimeout(uploadCloseTimer)
+  if (centeringTimer) clearTimeout(centeringTimer)
+  welcomeObserver?.disconnect()
+  welcomeObserver = null
+  document.removeEventListener('fullscreenchange', onFullscreenChange)
+  window.removeEventListener('keydown', onImmersiveKeydown)
+  // 离开页面时若仍处于原生全屏，主动退出，避免残留黑屏
+  if (document.fullscreenElement === pageRootRef.value) {
+    document.exitFullscreen().catch(() => {})
+  }
 })
 
 function revokeBlobUrl() {
@@ -205,8 +255,9 @@ async function loadBrowser() {
   }
 }
 
-/** iframe HTML 加载完成（JBrowse app 开始引导）→ 隐藏 loading */
-function onIframeLoad() {
+/** iframe HTML 加载完成（JBrowse app 开始引导）→ 隐藏 loading + 适配欢迎屏 */
+function onIframeLoad(event: Event) {
+  setupWelcomeCentering(event.target as HTMLIFrameElement)
   // 留一帧让 JBindView 完成首屏渲染，避免 loading 闪烁与 Logo 残影叠加
   if (iframeLoadTimer) clearTimeout(iframeLoadTimer)
   iframeLoadTimer = setTimeout(() => {
@@ -216,6 +267,63 @@ function onIframeLoad() {
       initTimer = null
     }
   }, 300)
+}
+
+// ==================== 欢迎屏垂直居中（同源 iframe 纯展示层注入） ====================
+// JBrowse 2 无会话时的欢迎界面（Start a new session / Recent sessions）是一个顶部对齐的
+// MUI Container，查看区撑满后会出现"上半截内容、下半截大段空白"的割裂感。
+// iframe 与主站同源（nginx 同域挂载 /jbrowse2/），这里仅注入展示层样式：
+// 祖先链补全高度 + flex 居中该 Container。不触碰配置生成 / blob URL / 轨道数据等集成逻辑。
+let welcomeObserver: MutationObserver | null = null
+let centeringTimer: ReturnType<typeof setTimeout> | null = null
+
+function applyWelcomeCentering(doc: Document) {
+  // 按文案识别欢迎屏 Container，避免误伤会话视图；id 标记做幂等快路径
+  const marked = doc.getElementById('omichub-welcome-center')
+  if (marked) return
+  const container = Array.from(doc.querySelectorAll<HTMLElement>('.MuiContainer-root'))
+    .find((el) => el.textContent?.includes('Start a new session'))
+  if (!container) return
+  const parent = container.parentElement
+  if (!parent) return
+  container.id = 'omichub-welcome-center'
+  // 祖先链逐层补 100% 高度（已有内联高度的节点不动），让 flex 居中生效
+  let node: HTMLElement | null = parent
+  while (node) {
+    if (!node.style.height) node.style.height = '100%'
+    node = node.parentElement
+  }
+  parent.style.display = 'flex'
+  parent.style.flexDirection = 'column'
+  // 设置按钮原为 float:right；flex 上下文 float 失效，固定到右上角保持原视觉位置
+  const settings = parent.querySelector<HTMLElement>(':scope > button')
+  if (settings) {
+    parent.style.position = 'relative'
+    settings.style.position = 'absolute'
+    settings.style.top = '4px'
+    settings.style.right = '4px'
+  }
+  // flex 纵列中 margin auto 吸收剩余空间 → 垂直居中；内容超高时退化为顶部对齐
+  container.style.marginTop = 'auto'
+  container.style.marginBottom = 'auto'
+}
+
+/** 建立观察：欢迎屏可能在用户关闭会话后重新挂载（React 新建节点，标记丢失），故节流重跑 */
+function setupWelcomeCentering(iframe: HTMLIFrameElement) {
+  try {
+    const doc = iframe.contentDocument
+    if (!doc?.body) return
+    applyWelcomeCentering(doc)
+    welcomeObserver?.disconnect()
+    welcomeObserver = new MutationObserver(() => {
+      if (centeringTimer) return
+      centeringTimer = setTimeout(() => {
+        centeringTimer = null
+        try { applyWelcomeCentering(doc) } catch { /* iframe 文档已销毁 */ }
+      }, 200)
+    })
+    welcomeObserver.observe(doc.body, { childList: true, subtree: true })
+  } catch { /* 跨域或文档未就绪，静默忽略 */ }
 }
 
 function onAssemblyChange() {
@@ -330,8 +438,15 @@ function onDrawerLoad() {
 </script>
 
 <template>
-  <div class="jbrowse-page" role="main" aria-label="Web 基因组浏览器">
+  <div
+    ref="pageRootRef"
+    class="jbrowse-page"
+    :class="{ 'jbrowse-page--immersive': immersiveFallback }"
+    role="main"
+    aria-label="Web 基因组浏览器"
+  >
     <PageHeader
+      compact
       title="Web 基因组浏览器"
       subtitle="基于 JBrowse 2 · 支持 BAM / BigWig / VCF / GFF3 流式浏览"
       back-to="/tools"
@@ -373,6 +488,21 @@ function onDrawerLoad() {
           <template #icon><NIcon><FolderOpenOutline /></NIcon></template>
           我的文件
         </NButton>
+        <NTooltip placement="bottom" :delay="300">
+          <template #trigger>
+            <NButton
+              class="outline-button fullscreen-toggle"
+              size="small"
+              :aria-label="immersiveActive ? '退出全屏' : '全屏沉浸模式'"
+              @click="toggleFullscreen"
+            >
+              <template #icon>
+                <NIcon><ContractOutline v-if="immersiveActive" /><ExpandOutline v-else /></NIcon>
+              </template>
+            </NButton>
+          </template>
+          {{ immersiveActive ? '退出全屏（Esc）' : '全屏沉浸模式' }}
+        </NTooltip>
       </div>
     </section>
 
@@ -408,7 +538,7 @@ function onDrawerLoad() {
         :src="jbrowseUrl"
         frameborder="0"
         class="jbrowse-iframe"
-        @load="onIframeLoad"
+        @load="onIframeLoad($event)"
       />
       <div v-else-if="!loading" class="empty-state">
         <NEmpty>
@@ -422,12 +552,15 @@ function onDrawerLoad() {
     </div>
 
     <!-- 上传弹窗 -->
+    <!-- to 指向页面根元素：全屏模式下 fullscreen 元素之外的节点不可见，
+         弹窗必须渲染在页面子树内才能在沉浸态正常使用 -->
     <NModal
       v-model:show="showUploadModal"
       preset="card"
       title="上传轨道文件"
       style="width: 600px; max-width: 92vw"
       :mask-closable="false"
+      :to="pageRootRef || undefined"
     >
       <NForm label-placement="top">
         <NFormItem label="选择文件" required>
@@ -496,6 +629,7 @@ function onDrawerLoad() {
     <JbrowseFileDrawer
       v-model:show="showScanDrawer"
       :selected-paths="selectedPaths"
+      :to="pageRootRef"
       @toggle="onDrawerToggle"
       @load="onDrawerLoad"
     />
@@ -503,39 +637,59 @@ function onDrawerLoad() {
 </template>
 
 <style scoped>
-/* ===== 全高 flex 布局：依赖路由 meta.fullscreen 提供有界高度的 flex 链 ===== */
+/* ===== 全高 flex 布局：依赖路由 meta.fullscreen 提供有界高度的 flex 链 =====
+   空间分配：查看区 = 100vh - 平台页头(56) - 标题区 - 工具条 - 页面 padding，
+   左右仅保留 16px 页面 padding（全宽，不做居中限宽） */
 .jbrowse-page {
   height: 100%;
+  width: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background: var(--neutral-bg);
   box-sizing: border-box;
-  padding: 40px 24px 24px;
+  padding: 0 16px 12px;
 }
 
+/* Fullscreen API 路径：页面根元素进入 top layer，平台页头 / 侧边导航自然不可见。
+   UA 会把 fullscreen 元素底色置黑，这里显式声明背景保持平台观感 */
+.jbrowse-page:fullscreen {
+  background: var(--neutral-bg);
+}
+
+/* fixed 兜底路径：Fullscreen API 不可用时以 fixed 覆盖整个视口，
+   z-index 高于平台 chrome、低于 naive 弹层（modal/drawer 起始 2000+） */
+.jbrowse-page--immersive {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  background: var(--neutral-bg);
+}
+
+/* ===== 工具条：与页头同层级的紧凑横条（约 48px），去卡片化 ===== */
 .browser-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
   flex-shrink: 0;
-  padding: 12px 16px;
-  border: 1px solid var(--neutral-border, #e5e7eb);
-  border-radius: 12px;
-  background: var(--neutral-card, #fff);
+  box-sizing: border-box;
+  min-height: 48px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--neutral-border, #e5e6eb);
+  background: transparent;
 }
 .toolbar-primary,
 .toolbar-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
 }
 .toolbar-actions { margin-left: auto; }
 .browser-toolbar :deep(.n-button),
 .browser-toolbar :deep(.n-base-selection),
-.browser-toolbar :deep(.n-input) { height: 36px; border-radius: 8px; }
+.browser-toolbar :deep(.n-input) { height: 28px; border-radius: 8px; }
 .assembly-select { width: 240px; min-width: 240px; }
 .region-input { width: 220px; min-width: 220px; }
 .outline-button { border-color: #d1d5db; color: #374151; background: #fff; }
@@ -549,14 +703,14 @@ function onDrawerLoad() {
   white-space: nowrap;
 }
 
-/* ===== 已选轨道条 ===== */
+/* ===== 已选轨道条：与工具条同层级，仅在选中轨道时出现 ===== */
 .track-bar {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 16px;
-  background: var(--neutral-card, #fff);
+  padding: 4px 0;
+  background: transparent;
   border-bottom: 1px solid var(--neutral-border, #e5e6eb);
   flex-wrap: wrap;
 }
@@ -566,13 +720,17 @@ function onDrawerLoad() {
   white-space: nowrap;
 }
 
-/* ===== JBrowse 渲染区：flex:1 铺满，iframe 100% 继承 ===== */
+/* ===== JBrowse 渲染区：flex:1 铺满剩余高度，iframe 100% 继承 =====
+   min-height 480px 兜底：极端矮视口下查看区不被压缩到不可用；
+   overflow hidden，滚动完全交给 JBrowse 内部 */
 .browser-view {
-  flex: 1;
-  min-height: 0;
+  flex: 1 1 auto;
+  min-height: 480px;
   position: relative;
   overflow: hidden;
   background: var(--neutral-card, #fff);
+  border: 1px solid var(--neutral-border, #e5e6eb);
+  border-radius: 8px;
 }
 .jbrowse-iframe {
   width: 100%;
@@ -662,13 +820,14 @@ function onDrawerLoad() {
 }
 
 @media (max-width: 768px) {
-  .jbrowse-page { padding: 24px 12px 16px; }
-  .browser-toolbar { align-items: stretch; flex-direction: column; }
+  .jbrowse-page { padding: 0 12px 12px; }
+  .browser-toolbar { align-items: stretch; flex-direction: column; min-height: 0; }
   .toolbar-primary, .toolbar-actions { width: 100%; flex-wrap: wrap; margin-left: 0; }
   .toolbar-primary { align-items: stretch; }
   .toolbar-primary .ctrl-label { width: 100%; }
   .assembly-select, .region-input { flex: 1 1 100%; width: 100%; min-width: 0; }
   .toolbar-actions :deep(.n-button) { flex: 1 1 0; }
+  .browser-view { min-height: 360px; }
   .ctrl-label {
     display: none;
   }

@@ -1,0 +1,16 @@
+# OmicHub 宏基因组沙盒镜像
+# 构建: docker build -t omichub/sandbox-metagenomics:latest -f tool_configs/terminal/docker/Dockerfile.metagenomics tool_configs/terminal/docker/
+FROM omichub/sandbox-terminal:latest
+
+USER root
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      kraken2 bracken centrifuge fastp \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip3 install --no-cache-dir multiqc
+
+# Kraken2 / Bracken 数据库体积通常为数十 GB，不随镜像发布；
+# 请放入 workspace 或 raw_data 并在命令中通过 --db 显式指定。
+ENV OMICHUB_IMAGE_NOTICE="Kraken2/Bracken 数据库未内置，请在 workspace 或 raw_data 中准备数据库后使用 --db 指定。"
+
+USER 1000

@@ -6,7 +6,7 @@ avatar: "\U0001F916"
 color: "#4f8ef7"
 category: general
 model: qwen3.7-max
-prompt_ref: agents.general
+prompt_file: prompts/general.md
 welcome_message: "你好！我是通用助手，可以帮你解答生信分析的一般问题。今天想做点什么？"
 temperature: 0.7
 max_tokens: 4096
@@ -14,6 +14,13 @@ mcp_ids: []
 skill_ids: []
 features:
   engine: langgraph
+  web_search:
+    mode: required_for_freshness
+    triggers: [实时, 最新, 最近, 今天, 新闻, 天气, 文献, 论文, 研究进展, 临床试验, 指南]
+tool_packs: [workspace, research, memory, handoff]
+handoff:
+  allowed_targets: [agent-scrna, agent-rnaseq, agent-code, agent-viz, shania]
+  max_hops_per_session: 3
 
 studio:
   enabled: true

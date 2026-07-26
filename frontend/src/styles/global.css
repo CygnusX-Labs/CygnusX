@@ -138,6 +138,21 @@
   --page-bg: #0B0F19;
 }
 
+.admin-config-center,
+.admin-config-section--standalone {
+  width: min(100%, 1440px);
+  margin-inline: auto;
+}
+
+.admin-config-section {
+  width: 100%;
+  min-width: 0;
+}
+
+.admin-config-tabs > .n-tabs-nav {
+  margin-bottom: var(--space-xl);
+}
+
 /* 让 AI 助手区域在深色模式下也使用统一的平台深色背景 */
 :root[data-theme="dark"] .kimi-layout {
   --chat-bg: var(--neutral-bg);
@@ -252,8 +267,9 @@ body {
 }
 
 :where(.n-card, .arco-card, .omichub-card, .omichub-selectable-card):not(:is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [aria-checked='true'], [data-selected='true'])):hover {
-  background-color: rgba(64, 158, 255, 0.025);
-  border-color: rgba(64, 158, 255, 0.12);
+  /* 在卡片自身底色上叠色（不透明），避免替换为透明色导致悬停时透出背后内容 */
+  background-color: color-mix(in srgb, var(--arco-primary, #4080ff) 4%, var(--n-color, var(--neutral-card, #fff)));
+  border-color: color-mix(in srgb, var(--arco-primary, #4080ff) 14%, var(--n-border-color, var(--neutral-border)));
 }
 
 :where(.n-card, .arco-card, .omichub-card, .omichub-selectable-card):not(:is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [aria-checked='true'], [data-selected='true'])):hover::before {
@@ -262,8 +278,8 @@ body {
 }
 
 :where(.n-card, .arco-card, .omichub-card, .omichub-selectable-card):is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [aria-checked='true'], [data-selected='true']) {
-  background-color: rgba(64, 158, 255, 0.05);
-  border-color: rgba(64, 158, 255, 0.18);
+  background-color: color-mix(in srgb, var(--arco-primary, #4080ff) 7%, var(--n-color, var(--neutral-card, #fff)));
+  border-color: color-mix(in srgb, var(--arco-primary, #4080ff) 20%, var(--n-border-color, var(--neutral-border)));
   box-shadow: inset 0 0 0 1px var(--arco-primary);
 }
 
@@ -273,13 +289,30 @@ body {
 }
 
 :root[data-theme="dark"] :where(.n-card, .arco-card, .omichub-card, .omichub-selectable-card):not(:is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [aria-checked='true'], [data-selected='true'])):hover {
-  background-color: rgba(76, 111, 255, 0.08);
-  border-color: rgba(76, 111, 255, 0.2);
+  background-color: color-mix(in srgb, var(--arco-primary, #4c6fff) 12%, var(--n-color, var(--neutral-card, #151a25)));
+  border-color: color-mix(in srgb, var(--arco-primary, #4c6fff) 24%, var(--n-border-color, var(--neutral-border)));
 }
 
 :root[data-theme="dark"] :where(.n-card, .arco-card, .omichub-card, .omichub-selectable-card):is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [aria-checked='true'], [data-selected='true']) {
-  background-color: rgba(76, 111, 255, 0.14);
-  border-color: rgba(76, 111, 255, 0.28);
+  background-color: color-mix(in srgb, var(--arco-primary, #4c6fff) 18%, var(--n-color, var(--neutral-card, #151a25)));
+  border-color: color-mix(in srgb, var(--arco-primary, #4c6fff) 32%, var(--n-border-color, var(--neutral-border)));
+}
+
+/* 弹窗 / 抽屉内的卡片必须保持不透明，并禁用全局卡片的左侧装饰条
+   （该装饰条会与弹窗内分区自带的竖条重复，且悬停透明底色会让弹窗"看穿"背后页面）。 */
+.n-modal .n-card,
+.n-modal.n-card,
+.n-drawer .n-card,
+.n-drawer.n-card {
+  background-color: var(--n-color, var(--neutral-card, #fff)) !important;
+  border-color: var(--n-border-color, var(--neutral-border)) !important;
+  opacity: 1;
+}
+.n-modal .n-card::before,
+.n-modal.n-card::before,
+.n-drawer .n-card::before,
+.n-drawer.n-card::before {
+  display: none !important;
 }
 
 .arco-card-hover:hover {

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import type {
   TerminalSession,
   CreateTerminalRequest,
@@ -15,7 +15,7 @@ import {
   getTerminalConfig,
 } from '@/api/terminal'
 
-const DEFAULT_MIN_MEMORY_MB = 256
+const DEFAULT_MIN_MEMORY_MB = 512
 const DEFAULT_MAX_MEMORY_MB = 4096
 const DEFAULT_MIN_CPU_CORES = 0.5
 const DEFAULT_MAX_CPU_CORES = 4.0
@@ -45,12 +45,10 @@ export const useTerminalStore = defineStore('terminal', () => {
 
   const memoryRange = computed(() => {
     const configuredMax = Math.max(DEFAULT_MIN_MEMORY_MB, maxMemoryMb.value)
-    const imageDefault = selectedImage.value?.resources.memory_mb
-    const min = imageDefault ? Math.min(imageDefault, DEFAULT_MIN_MEMORY_MB) : DEFAULT_MIN_MEMORY_MB
     return {
-      min: Math.min(min, configuredMax),
-      max: Math.max(min, configuredMax),
-      step: configuredMax > 8192 ? 512 : 128,
+      min: DEFAULT_MIN_MEMORY_MB,
+      max: configuredMax,
+      step: 512,
     }
   })
 
@@ -87,6 +85,12 @@ export const useTerminalStore = defineStore('terminal', () => {
     customMemoryMb.value = null
     customCpuCores.value = null
   }
+
+  watch(selectedImageId, (imageId, previousImageId) => {
+    if (previousImageId && imageId !== previousImageId) {
+      resetCustomResources()
+    }
+  })
 
   async function fetchSessions() {
     try {

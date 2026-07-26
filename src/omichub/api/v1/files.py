@@ -6,7 +6,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 import anyio
-from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from omichub.api.deps import CurrentUserId, DbSession
@@ -132,6 +132,39 @@ async def list_files(
 ) -> FileListResponse:
     """获取当前用户的文件列表（可按目录或来源过滤，按创建时间倒序）"""
     return await service.list_files(UUID(current_user_id), directory=directory, source=source)
+
+
+@router.get("/search", response_model=FileListResponse, summary="搜索工作区文件")
+async def search_files(
+    current_user_id: CurrentUserId,
+    service: FileServiceDep,
+    q: Annotated[str, Query(max_length=500)] = "",
+    root: Annotated[str, Query(max_length=500)] = "",
+    limit: Annotated[int, Query(ge=1, le=50)] = 50,
+) -> FileListResponse:
+    """在当前用户根目录递归搜索已索引文件，root 仅保留为前端协议字段。"""
+    if root not in ("", ".", "/"):
+        raise HTTPException(status_code=403, detail="无权限访问该目录")
+    try:
+        return await service.search_files(UUID(current_user_id), query=q, limit=limit)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail="无权限访问该目录") from exc
+
+
+@router.get("/workspace", summary="列出工作区文件")
+async def list_workspace_files(
+    current_user_id: CurrentUserId,
+    service: FileServiceDep,
+    path: Annotated[str | None, Query(max_length=500)] = None,
+    pattern: Annotated[str | None, Query(max_length=500)] = None,
+) -> dict[str, Any]:
+    """列出当前用户工作区目录，供内置 Agent 与外置 MCP 共用。"""
+    try:
+        return await service.list_workspace_files(
+            UUID(current_user_id), path=path, pattern=pattern
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 @router.get("/tree", summary="统一文件树")

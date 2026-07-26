@@ -23,6 +23,11 @@ import type {
   McpTool,
   SkillItem,
 } from '@/types/agent'
+import type {
+  SkillImportPreview,
+  SkillMarketplaceItem,
+  SkillUpdateCheck,
+} from '@/types/skill'
 import type { ChatMessage, ToolCall, FileAttachment, ChartData } from '@/components/ai-chat/types'
 import { agentApi, adminAgentApi } from '@/api/agent'
 import apiClient from '@/api/client'
@@ -68,6 +73,8 @@ export interface AgentSession {
   updated_at: string
   /** 当前会话使用的模型配置 ID（覆盖 Agent 默认模型） */
   model_id?: string
+  mcp_mode?: 'off' | 'auto' | 'manual'
+  extra_mcp_servers?: string[]
 }
 
 /** 可用模型选项（来自 /api/v1/chat/models） */
@@ -349,7 +356,11 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         description: s.description ?? '',
         icon: s.icon ?? '🔧',
         category: s.category ?? '通用',
-        source: s.is_builtin ? 'builtin' : 'json',
+        source: s.is_builtin ? 'builtin' : (s.source_type ?? 'json'),
+        source_url: s.source_ref ?? undefined,
+        version: s.version ?? undefined,
+        author: s.author ?? undefined,
+        has_scripts: !!s.has_scripts,
         is_active: s.is_active ?? true,
       }))
     } catch (e) {
@@ -385,6 +396,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         agent_id: string | null
         model_id: string
         mode?: 'chat' | 'studio'
+        mcp_mode?: 'off' | 'auto' | 'manual'
+        extra_mcp_servers?: string[]
         created_at: string
         updated_at: string
       }>>('/chat/sessions')
@@ -400,6 +413,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           created_at: s.created_at,
           updated_at: s.updated_at,
           model_id: s.model_id || undefined,
+          mcp_mode: s.mcp_mode || 'auto',
+          extra_mcp_servers: s.extra_mcp_servers || [],
         }))
       // 合并正在流式中的临时会话，避免刷新时丢失
       const tempSessions = sessions.value.filter((s) => s.id.startsWith('sess-'))
@@ -458,9 +473,14 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     registry?: string
     working_dir?: string
     timeout?: number
-  }): Promise<void> {
-    await apiClient.post('/mcp/servers', data)
+  }): Promise<McpService> {
+    const res = await apiClient.post<McpService>('/mcp/servers', data)
     await fetchMcps()
+    const id = String(res.data?.id || '')
+    const created = mcps.value.find((server) => server.id === id)
+      || mcps.value.find((server) => server.name === data.name)
+    if (!created) throw new Error('MCP 创建成功但未能读取服务信息')
+    return created
   }
 
   async function updateMcpServer(id: string, data: Record<string, unknown>): Promise<void> {
@@ -526,42 +546,54 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     await fetchAgents(false)
   }
 
-  // ========== 技能管理（后台 CRUD，调 /admin/skills） ==========
+  // ========== 技能管理（后台 CRUD + SKILL.md 四入口导入，调 /admin/skills） ==========
 
-  /** URL 拉取导入（当前后端无 URL 抓取，落库为一条自定义技能记录） */
-  async function importSkillFromUrl(url: string): Promise<void> {
-    const skillId = `skill-url-${Date.now()}`
-    await apiClient.post('/admin/skills', {
-      skill_id: skillId,
-      name: '自定义技能',
-      description: `从 ${url} 拉取的技能配置`,
-      icon: '🧩',
-      category: '自定义',
-      prompt: '',
-      is_active: true,
+  /** 入口一：GitHub 仓库/子目录 URL → 解析预览（不入库） */
+  async function previewSkillFromGithub(url: string): Promise<SkillImportPreview> {
+    const res = await apiClient.post<SkillImportPreview>('/admin/skills/import/github', { url })
+    return res.data
+  }
+
+  /** 入口二：本地 zip 上传 → 解析预览（不入库） */
+  async function previewSkillFromZip(file: File): Promise<SkillImportPreview> {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await apiClient.post<SkillImportPreview>('/admin/skills/import/zip', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return res.data
+  }
+
+  /** 入口三：JSON 粘贴（兼容旧格式）→ 解析预览（不入库） */
+  async function previewSkillFromJson(text: string): Promise<SkillImportPreview> {
+    const res = await apiClient.post<SkillImportPreview>('/admin/skills/import/json', { text })
+    return res.data
+  }
+
+  /** 预览确认后入库 */
+  async function confirmSkillImport(preview: SkillImportPreview, overwrite = false): Promise<void> {
+    await apiClient.post('/admin/skills/import/confirm', { preview, overwrite })
+    await fetchSkills(true)
+  }
+
+  /** 入口四：技能市场列表（随仓库发布的内置技能） */
+  async function fetchSkillMarketplace(): Promise<SkillMarketplaceItem[]> {
+    const res = await apiClient.get<SkillMarketplaceItem[]>('/admin/skills/marketplace')
+    return res.data || []
+  }
+
+  /** 一键安装市场技能 */
+  async function installMarketplaceSkill(skillId: string, overwrite = false): Promise<void> {
+    await apiClient.post(`/admin/skills/marketplace/${skillId}/install`, null, {
+      params: { overwrite },
     })
     await fetchSkills(true)
   }
 
-  /** JSON 粘贴导入：解析 {name, description?, icon?, category?, prompt?} */
-  async function importSkillFromJson(text: string): Promise<void> {
-    let obj: Record<string, unknown>
-    try {
-      obj = JSON.parse(text)
-    } catch {
-      throw new Error('JSON 格式错误，请检查配置内容')
-    }
-    if (!obj.name) throw new Error('配置缺少必填字段 name')
-    await apiClient.post('/admin/skills', {
-      skill_id: `skill-json-${Date.now()}`,
-      name: String(obj.name),
-      description: String(obj.description ?? ''),
-      icon: String(obj.icon ?? '🧩'),
-      category: String(obj.category ?? '自定义'),
-      prompt: String(obj.prompt ?? ''),
-      is_active: true,
-    })
-    await fetchSkills(true)
+  /** 检查上游更新（GitHub 来源） */
+  async function checkSkillUpdate(skillId: string): Promise<SkillUpdateCheck> {
+    const res = await apiClient.post<SkillUpdateCheck>(`/admin/skills/${skillId}/check-update`)
+    return res.data
   }
 
   async function toggleSkill(id: string): Promise<void> {
@@ -602,6 +634,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       created_at: now,
       updated_at: now,
       model_id: agent.model_id || undefined,
+      mcp_mode: 'auto',
+      extra_mcp_servers: [],
     }
     sessions.value.unshift(session)
     currentSessionId.value = session.id
@@ -681,6 +715,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       if (res.data?.title) session.title = res.data.title
     } catch (e) {
       console.error('生成会话标题失败:', e)
+      // 首轮 LLM 失败时把“生成中...”占位回退，避免历史列表标题卡在占位文案
+      if (session.title === '生成中...') session.title = '新对话'
     }
   }
 
@@ -764,6 +800,18 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             reason: routedAgent.reason || '',
           }
         }
+        const webSources = m.metadata_json?.web_sources
+        if (Array.isArray(webSources)) {
+          msg.webSources = webSources
+            .filter((source): source is Record<string, unknown> => !!source && typeof source === 'object')
+            .filter((source) => typeof source.title === 'string' && typeof source.url === 'string')
+            .map((source) => ({
+              title: source.title as string,
+              url: source.url as string,
+              snippet: typeof source.snippet === 'string' ? source.snippet : '',
+              publishedAt: typeof source.publishedAt === 'string' ? source.publishedAt : null,
+            }))
+        }
         // Studio 会话：历史消息随 metadata_json.tool_invocations 落库，
         // 重载时重建工具调用卡片（代码卡片凭 arguments + ui_payload 渲染）
         const invocations = m.metadata_json?.tool_invocations
@@ -812,6 +860,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       explicitAgentId?: string
       /** @ 挂载到本次对话的技能名 */
       skillNames?: string[]
+      mcpMode?: 'off' | 'auto' | 'manual'
+      extraMcpServers?: string[]
     } = {},
   ): Promise<void> {
     const session = currentSession.value
@@ -819,6 +869,15 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     // @ 显式指定的智能体优先，否则回落到会话绑定的智能体
     const agent = getAgent(options.explicitAgentId || session.agent_id) || getAgent(session.agent_id)
     if (!agent) return
+    // 临时会话尚未在后端落库时，@Agent 会决定该会话的实际绑定对象。
+    // 必须同步本地绑定，否则首轮后端创建的是显式 Agent 会话，第二轮却会按旧 Agent 发请求，
+    // 触发“会话绑定的 Agent 与当前请求不一致”。
+    if (options.explicitAgentId && session.id.startsWith('sess-')) {
+      session.agent_id = agent.id
+      session.model_id = agent.model_id || undefined
+    }
+    if (options.mcpMode) session.mcp_mode = options.mcpMode
+    if (options.extraMcpServers) session.extra_mcp_servers = [...options.extraMcpServers]
 
     // 若当前临时会话 ID 正在解析为真实 ID，排队等待，防止创建重复会话
     if (session.id.startsWith('sess-') && pendingSessionIdPromise) {
@@ -865,8 +924,14 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     // 会出现 Token 已更新但正文气泡保持空白，刷新后才显示的现象。
     const aiMsg = session.messages[session.messages.length - 1]!
 
-    const shouldGenerateTitle = !session.title_locked && session.messages.filter((m) => m.role === 'user').length === 1
-    if (shouldGenerateTitle) session.title = '生成中...'
+    // 标题随对话演进刷新：首轮必算，之后每满 3 条用户消息重算一次，以捕捉后续多轮里
+    // 用户真正关心的基因/流程/文件等细节；锁定或超过 12 轮后停止，避免无谓的 LLM 调用。
+    // 仅首轮显示“生成中...”占位，刷新轮静默替换，避免已成型标题闪烁成占位文案。
+    const userCount = session.messages.filter((m) => m.role === 'user').length
+    const isFirstTurn = userCount === 1
+    const shouldGenerateTitle =
+      !session.title_locked && userCount <= 12 && (isFirstTurn || userCount % 3 === 0)
+    if (isFirstTurn) session.title = '生成中...'
 
     // 构建送后端的上下文（含历史，排除当前 AI 占位）
     const ctxLen = chatStore.conversationSettings.contextLength ?? 20
@@ -915,6 +980,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         attachments: apiAttachments,
         enableWebSearch: options.enableWebSearch ?? chatStore.enableWebSearch,
         enableCodeExecution: options.enableCodeExecution ?? false,
+        mcpMode: options.mcpMode ?? session.mcp_mode ?? 'auto',
+        extraMcpServers: options.extraMcpServers ?? session.extra_mcp_servers ?? [],
       },
       {
         onText: (text, isReasoning) => {
@@ -932,6 +999,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           // 此时后端助手行仍是 streaming/0 token，会替换正在更新的 aiMsg。
           if (session.id.startsWith('sess-')) {
             session.id = sessionId
+            session.agent_id = agent.id
             currentSessionId.value = sessionId
             if (messageId) aiMsg.backendMessageId = messageId
             releaseSessionIdLock()
@@ -976,6 +1044,17 @@ export const useAgentHubStore = defineStore('agentHub', () => {
               }
             }
           }
+        },
+        onWebSearch: (event) => {
+          aiMsg.webSearchStatus = {
+            query: event.query,
+            status: event.status,
+            message: event.message,
+          }
+        },
+        onWebSearchResults: (sources) => {
+          aiMsg.webSources = sources
+          aiMsg.webSearchStatus = { status: 'complete' }
         },
         onPlan: (steps) => {
           currentPlan.value = steps
@@ -1022,6 +1101,23 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             color: event.color,
             reason: event.reason,
           }
+        },
+        onHandoff: (event) => {
+          // 交接后会话绑定目标 Agent，下一轮消息直接由目标继续；当前消息的工具卡保留完整交接摘要。
+          session.agent_id = event.target_agent_id
+          const target = getAgent(event.target_agent_id)
+          if (target) {
+            aiMsg.routedAgent = {
+              agentId: target.id,
+              name: target.name,
+              avatar: target.avatar,
+              color: target.color,
+              reason: event.reason,
+            }
+          }
+        },
+        onConsultation: (event) => {
+          aiMsg.consultation = { experts: event.experts }
         },
         onToolOutput: (tool, _stream, data, toolCallId) => {
           // 优先按 tool_call_id 精确匹配；无 id（旧事件）时回退为最后一个同名 running 工具
@@ -1245,7 +1341,9 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     fetchStudioSessionIds, markStudioSession,
     toggleMcpStatus, addMcpServer, updateMcpServer, removeMcpServer, testMcpServer, fetchMcpTools, fetchMcpLogs,
     upsertAgent, toggleAgent, deleteAgent, setDefaultAgent,
-    importSkillFromUrl, importSkillFromJson, toggleSkill, deleteSkill,
+    previewSkillFromGithub, previewSkillFromZip, previewSkillFromJson, confirmSkillImport,
+    fetchSkillMarketplace, installMarketplaceSkill, checkSkillUpdate,
+    toggleSkill, deleteSkill,
     // session actions
     startSessionFromAgent, selectSession, newChat, deleteSession, renameSession, generateSessionTitle,
     searchSessions, switchSessionModel, loadSessionMessages, sendMessage, stopStreaming, pauseStreaming,

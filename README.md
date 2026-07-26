@@ -135,6 +135,23 @@ http://<服务器IP>:8888/setup        # 例：http://192.168.5.102:8888/setup
 
 > 💡 一键拉起主栈 + Worker（含前端构建）：`make docker-up-all`。
 
+### 用户默认存储目录
+
+每个用户在创建成功后，系统会以用户 UUID 创建独立的存储根目录：
+
+```text
+/data/omichub/users/{user_id}/
+├── raw_data/    # 用户上传的原始数据
+├── workspace/   # 用户工作区及分析过程文件
+└── temp/        # 用户临时文件
+```
+
+- `{user_id}` 必须对应数据库 `users.id`，不同用户之间的目录相互隔离。
+- 用户注册或由管理员创建用户时，系统会幂等创建上述三个默认目录。
+- 应用启动时会检查现有用户的默认目录，并自动补齐缺失的目录记录和物理目录。
+- 用户删除成功后，系统会清理对应的 `/data/omichub/users/{user_id}` 存储根目录。
+- 不属于数据库现有用户的 UUID 目录属于孤儿目录，应在确认无文件和数据库引用后再清理，不能直接按目录名批量删除。
+
 ### 生产环境部署
 
 ```bash
@@ -225,7 +242,7 @@ python3 scripts/render_worker_config.py --check
 
 **方式 1（推荐）：外置 YAML**
 
-编辑 `data/ai_providers.yaml`，支持 `${ENV_VAR}` 插值引用 `.env` 中的密钥：
+编辑 `data/ai/providers.yaml`，支持 `${ENV_VAR}` 插值引用 `.env` 中的密钥：
 
 ```yaml
 providers:
@@ -1232,7 +1249,7 @@ MCP Server 注册/调用为**管理员功能**，已做以下限制：
 
 #### data
 - data/OmicHub.yaml
-- data/ai_providers.yaml
+- data/ai/providers.yaml
 
 #### deploy/docker
 - deploy/docker/Dockerfile

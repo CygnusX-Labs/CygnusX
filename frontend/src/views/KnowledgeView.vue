@@ -473,6 +473,7 @@ onMounted(async () => {
   margin-bottom: 16px;
   border-bottom: 1px solid var(--neutral-border);
   flex-shrink: 0;
+  background-color: var(--neutral-card);
 }
 
 .doc-title {
@@ -491,6 +492,8 @@ onMounted(async () => {
   padding: 24px 24px;
   width: 100%;
   box-sizing: border-box;
+  background-color: var(--neutral-card);
+  color: var(--neutral-text-1);
 }
 
 .content-body::-webkit-scrollbar {

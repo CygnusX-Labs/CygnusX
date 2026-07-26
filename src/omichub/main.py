@@ -111,7 +111,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # --- 三个独立的写库初始化并行执行 ---
     async def _sync_ai_providers() -> None:
-        # 从外置 YAML 同步 AI Provider 配置（推荐方式：data/ai_providers.yaml）
+        # 从外置 YAML 同步 AI Provider 配置（推荐方式：data/ai/providers.yaml）
         try:
             from omichub.application.services.ai_provider_yaml_loader import (
                 AIProviderYamlLoader,
@@ -168,9 +168,50 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as e:
             logger.warning(f"内置 MCP 预设初始化失败，降级运行: {e}")
 
+    async def _init_builtin_agents() -> None:
+        """同步内置 Agent，并安装其 YAML 声明的内置市场 Skill。"""
+        try:
+            from omichub.application.services.agent_service import AgentService
+            from omichub.infrastructure.database.session import get_session_factory
+
+            factory = get_session_factory()
+            if factory is not None:
+                async with factory() as session:
+                    await AgentService(session).ensure_builtin_agents()
+                    await session.commit()
+                    logger.info("内置 Agent 与声明的 Skill 初始化完成")
+        except Exception as e:
+            logger.warning(f"内置 Agent 初始化失败，降级运行: {e}")
+
+    async def _repair_user_storage_directories() -> None:
+        """启动时为所有存量用户补齐默认目录和物理目录。"""
+        try:
+            from sqlalchemy import select
+
+            from omichub.application.services.file_service import FileService
+            from omichub.infrastructure.database.models.user import UserModel
+            from omichub.infrastructure.database.session import get_session_factory
+
+            factory = get_session_factory()
+            if factory is None:
+                return
+            async with factory() as session:
+                result = await session.execute(select(UserModel.id))
+                user_ids = [row[0] for row in result.all()]
+                for user_id in user_ids:
+                    await FileService(session).ensure_default_directories(user_id)
+                logger.info("用户默认目录校验完成：%d 个用户", len(user_ids))
+        except Exception as e:
+            logger.warning(f"用户默认目录补偿失败，降级运行: {e}")
+
     await asyncio.gather(
-        _sync_ai_providers(), _init_default_provider(), _init_assistants(), _init_mcp_presets()
+        _sync_ai_providers(),
+        _init_default_provider(),
+        _init_assistants(),
+        _init_mcp_presets(),
+        _repair_user_storage_directories(),
     )
+    await _init_builtin_agents()
 
     # 欢迎词补齐：须在 AI Provider 同步完成之后（依赖默认 provider），
     # 故串行执行而非并入上方 gather。条数 < 阈值才调 LLM 补齐；失败仅 log，不阻塞启动。

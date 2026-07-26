@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import re
 import shutil
@@ -21,6 +22,7 @@ from omichub.application.schemas.file import (
     DataFileDTO,
     DirectoryCreateRequest,
     DirectoryDTO,
+    DirectorySearchDTO,
     FileListResponse,
     FilePickerItemDTO,
     QuotaResponse,
@@ -196,6 +198,32 @@ class FileService:
         d.mkdir(parents=True, exist_ok=True)
         return d
 
+    def user_workspace_root(self, user_id: UUID) -> Path:
+        """当前用户工作区根目录，文件搜索只允许在此目录内进行。"""
+        return self._storage_root / "users" / str(user_id)
+
+    @staticmethod
+    def validate_workspace_path(path: str | None) -> str:
+        """校验并规范工作区相对路径，显式拒绝绝对路径与 ``..``。"""
+        raw = (path or "").strip().replace("\\", "/")
+        if not raw or raw == ".":
+            return ""
+        if raw.startswith("/") or re.match(r"^[A-Za-z]:/", raw):
+            raise PermissionError("路径越权：仅允许当前用户工作区内的相对路径")
+        parts = raw.split("/")
+        if ".." in parts:
+            raise PermissionError("路径越权：禁止使用 .. 访问工作区外目录")
+        return "/".join(part for part in parts if part not in ("", "."))
+
+    @staticmethod
+    def _workspace_relative_path(storage_path: str, user_id: UUID) -> str:
+        prefix = Path("users") / str(user_id)
+        path = Path(storage_path)
+        try:
+            return path.relative_to(prefix).as_posix()
+        except ValueError:
+            return path.name
+
     def user_results_dir(self, user_id: UUID) -> Path:
         d = self._storage_root / "users" / str(user_id) / "results"
         d.mkdir(parents=True, exist_ok=True)
@@ -262,7 +290,9 @@ class FileService:
                 status=f.status,
                 checksum=f.checksum,
                 directory=f.directory,
+                path=self._workspace_relative_path(f.path, user_id),
                 created_at=f.created_at,
+                modified_at=f.updated_at,
             )
             for f in items
         ]
@@ -285,6 +315,146 @@ class FileService:
                 }
             )
         return {"user_id": str(user_id), "groups": tree, "total": len(items)}
+
+    async def list_workspace_files(
+        self,
+        user_id: UUID,
+        path: str | None = None,
+        pattern: str | None = None,
+    ) -> dict[str, object]:
+        """列出工作区目录的直接子项，文件数据来自统一文件索引。"""
+        directory = self.validate_workspace_path(path)
+        normalized_pattern = (pattern or "").strip()
+        prefix_parts = tuple(Path(directory).parts) if directory else ()
+        indexed_files = await self._files.list_by_user(user_id, status="active")
+        indexed_directories = await self._dirs.list_by_user(user_id)
+
+        folders: dict[str, dict[str, object]] = {}
+        files: list[dict[str, object]] = []
+        for file in indexed_files:
+            relative_path = self._workspace_relative_path(file.path, user_id)
+            relative_parts = tuple(Path(relative_path).parts)
+            if relative_parts[: len(prefix_parts)] != prefix_parts:
+                continue
+            remainder = relative_parts[len(prefix_parts) :]
+            if not remainder:
+                continue
+            if len(remainder) > 1:
+                folder_name = remainder[0]
+                folder_path = "/".join((*prefix_parts, folder_name))
+                existing = folders.get(folder_path)
+                if existing is None or str(existing["modified_at"]) < file.updated_at.isoformat():
+                    folders[folder_path] = {
+                        "file_id": None,
+                        "name": folder_name,
+                        "type": "folder",
+                        "size": None,
+                        "relative_path": folder_path,
+                        "modified_at": file.updated_at.isoformat(),
+                    }
+                continue
+            files.append(
+                {
+                    "file_id": str(file.id),
+                    "name": file.original_name,
+                    "type": "file",
+                    "file_type": file.file_type.value
+                    if hasattr(file.file_type, "value")
+                    else str(file.file_type),
+                    "size": file.size,
+                    "relative_path": relative_path,
+                    "modified_at": file.updated_at.isoformat(),
+                }
+            )
+
+        for child in indexed_directories:
+            child_parts = tuple(Path(child.path).parts)
+            if child_parts[: len(prefix_parts)] != prefix_parts:
+                continue
+            remainder = child_parts[len(prefix_parts) :]
+            if len(remainder) != 1:
+                continue
+            folders.setdefault(
+                child.path,
+                {
+                    "file_id": None,
+                    "name": child.name,
+                    "type": "folder",
+                    "size": None,
+                    "relative_path": child.path,
+                    "modified_at": child.updated_at.isoformat(),
+                },
+            )
+
+        items = [*folders.values(), *files]
+        if normalized_pattern:
+            items = [
+                item
+                for item in items
+                if fnmatch.fnmatchcase(str(item["name"]).casefold(), normalized_pattern.casefold())
+            ]
+
+        items.sort(key=lambda item: (item["type"] != "folder", str(item["name"]).casefold()))
+        return {
+            "path": directory,
+            "pattern": normalized_pattern or None,
+            "items": items,
+            "total": len(items),
+        }
+
+    async def search_files(
+        self, user_id: UUID, query: str = "", limit: int = 50
+    ) -> FileListResponse:
+        """在当前用户根目录的已索引文件中递归搜索。"""
+        root = self.user_workspace_root(user_id)
+        if root.exists() and not root.is_dir():
+            raise PermissionError("用户工作区根目录不可访问")
+        if root.exists() and not root.stat().st_mode & 0o444:
+            raise PermissionError("用户工作区根目录不可读")
+
+        normalized_query = query.replace("\\", "/").strip("/").casefold()
+        items = await self._files.list_by_user(user_id, status="active")
+        directories = await self._dirs.list_by_user(user_id)
+        excluded_parts = {".git", "node_modules", "__pycache__"}
+        matches = []
+        for file in items:
+            relative_path = self._workspace_relative_path(file.path, user_id)
+            parts = set(Path(relative_path).parts)
+            if parts & excluded_parts:
+                continue
+            if normalized_query and normalized_query not in relative_path.casefold():
+                continue
+            matches.append(
+                DataFileDTO(
+                    id=file.id,
+                    original_name=file.original_name,
+                    size=file.size,
+                    file_type=file.file_type,
+                    status=file.status,
+                    checksum=file.checksum,
+                    directory=file.directory,
+                    path=relative_path,
+                    created_at=file.created_at,
+                    modified_at=file.updated_at,
+                )
+            )
+            if len(matches) >= limit:
+                break
+        directory_matches = [
+            DirectorySearchDTO(
+                path=directory.path,
+                name=directory.name,
+                parent_path=directory.parent_path,
+                is_system=directory.is_system,
+            )
+            for directory in directories
+            if not normalized_query or normalized_query in directory.path.casefold()
+        ][:limit]
+        return FileListResponse(
+            items=matches,
+            directories=directory_matches,
+            total=len(matches) + len(directory_matches),
+        )
 
     async def get_quota(self, user_id: UUID) -> QuotaResponse:
         user = await self._users.get_by_id(user_id)
@@ -521,7 +691,9 @@ class FileService:
             status=saved.status,
             checksum=saved.checksum,
             directory=saved.directory,
+            path=self._workspace_relative_path(saved.path, user_id),
             created_at=saved.created_at,
+            modified_at=saved.updated_at,
         )
 
     def user_system_dir(self, user_id: UUID, name: str) -> Path:
@@ -534,29 +706,27 @@ class FileService:
     # 用户目录 CRUD
     # ------------------------------------------------------------------
     async def ensure_default_directories(self, user_id: UUID) -> None:
-        """懒初始化系统默认目录 raw_data / workspace / temp。
+        """幂等创建用户默认目录 raw_data / workspace / temp。
 
-        任何用户首次访问目录列表时补齐，避免改动注册/激活流程。
-        已存在则跳过；新建的标记 is_system=True 并预创建物理目录。
-        物理目录统一放在 users/{uid}/<name>/，与下载服务、沙盒挂载约定一致。
+        目录记录和物理目录分别校验，确保历史用户即使已有部分 DB 记录，
+        或目录被手工删除，也能在注册、启动补偿和目录访问时恢复完整结构。
         """
         existing = await self._dirs.list_by_user(user_id)
         existing_paths = {d.path for d in existing}
         created_any = False
         for name in SYSTEM_DIRECTORIES:
-            if name in existing_paths:
-                continue
-            directory = Directory(
-                id=uuid.uuid4(),
-                user_id=user_id,
-                path=name,
-                name=name,
-                parent_path=None,
-                is_system=True,
-            )
-            await self._dirs.save(directory)
-            self.user_system_dir(user_id, name)  # 预创建物理目录
-            created_any = True
+            if name not in existing_paths:
+                directory = Directory(
+                    id=uuid.uuid4(),
+                    user_id=user_id,
+                    path=name,
+                    name=name,
+                    parent_path=None,
+                    is_system=True,
+                )
+                await self._dirs.save(directory)
+                created_any = True
+            self.user_system_dir(user_id, name)  # 无论 DB 是否已有记录，都补建物理目录
         if created_any:
             await self._session.commit()
 
@@ -571,6 +741,7 @@ class FileService:
                 parent_path=d.parent_path,
                 is_system=d.is_system,
                 created_at=d.created_at,
+                modified_at=d.updated_at,
             )
             for d in dirs
         ]
@@ -615,6 +786,7 @@ class FileService:
             name=saved.name,
             parent_path=saved.parent_path,
             created_at=saved.created_at,
+            modified_at=saved.updated_at,
         )
 
     async def delete_directory(self, user_id: UUID, path: str) -> bool:
@@ -709,6 +881,15 @@ class FileService:
         added = 0
         added_size = 0
         if user_root.exists():
+            for directory_path in user_root.rglob("*"):
+                if not directory_path.is_dir():
+                    continue
+                relative_parts = directory_path.relative_to(user_root).parts
+                if any(part.startswith(".") for part in relative_parts):
+                    continue
+                relative_directory = "/".join(relative_parts)
+                if relative_directory:
+                    await ensure_directory_chain(self._session, user_id, relative_directory)
             for f in user_root.rglob("*"):
                 if not f.is_file():
                     continue
