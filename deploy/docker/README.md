@@ -10,6 +10,7 @@
 | `Dockerfile.worker` | 通用 Celery 计算 Worker，包含 Snakemake、Micromamba 和 Docker CLI；入口脚本降权时保留 Docker Socket GID | 仓库根目录 | `make docker-build-worker` |
 | `Dockerfile.phylo` | 系统发育树专用 Worker，提供独立 Conda/生物信息学环境 | 仓库根目录 | `make docker-build-worker` |
 | `Dockerfile.enrichment` | GO / KEGG 富集 R 运行时，提供 `clusterProfiler`、`enrichplot` | `tool_configs/enrichments` | `make docker-build-enrichment` |
+| `Dockerfile.deg` | DEG 差异表达分析 R 运行时，提供 `DESeq2`、`edgeR`（含 1v1 无重复的固定 BCV 模式），脚本契约见 `tool_configs/deg/README.md` | `tool_configs/deg` | `make docker-build-deg` |
 
 ## 命名和构建约定
 

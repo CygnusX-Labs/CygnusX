@@ -14,7 +14,39 @@ LABEL description="Bioinformatics sandbox for OmicHub AI Copilot (scanpy + Seura
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     LANG=C.UTF-8 \
-    MAMBA_NO_BANNER=1
+    MAMBA_NO_BANNER=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    TZ=Asia/Shanghai
+
+# 预置清华镜像源，加速容器内 mamba/conda 环境安装
+RUN printf '%s\n' \
+      'show_channel_urls: true' \
+      'default_channels:' \
+      '  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main' \
+      '  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/r' \
+      '  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/msys2' \
+      'custom_channels:' \
+      '  conda-forge: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud' \
+      '  bioconda: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud' \
+      '  pytorch: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud' \
+      'channel_priority: flexible' \
+      'channels:' \
+      '  - conda-forge' \
+      '  - bioconda' \
+      '  - defaults' \
+      > /root/.condarc
+
+# 预置清华 PyPI 镜像，加速构建期与运行期 pip 安装
+RUN printf '%s\n' \
+      '[global]' \
+      'index-url = https://pypi.tuna.tsinghua.edu.cn/simple' \
+      'extra-index-url = https://mirrors.aliyun.com/pypi/simple/' \
+      'timeout = 60' \
+      'retries = 10' \
+      > /etc/pip.conf
+
+# 构建期切换清华 apt 源，加速 apt-get（基础镜像为 Ubuntu focal）
+RUN sed -i 's@//.*archive.ubuntu.com@//mirrors.tuna.tsinghua.edu.cn@g; s@//security.ubuntu.com@//mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list
 
 # 系统依赖（R 编译需要 build-essential；hdf5/lapack 为数值栈运行时依赖）
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -31,10 +63,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         procps \
         && rm -rf /var/lib/apt/lists/*
 
-# conda 渠道：bioconda 优先于 conda-forge（生信包冲突最少）
-RUN conda config --add channels bioconda \
-    && conda config --add channels conda-forge \
-    && conda config --set channel_priority strict
+# conda 渠道已在 /root/.condarc 配好（conda-forge/bioconda → tuna，channel_priority flexible），
+# 不再用 conda config 调整（strict + 重复加渠道会导致混渠道求解脆弱）。
 
 # 创建 omichub 环境（Python 3.11），预装核心生信 Python 栈
 RUN mamba create -n omichub python=3.11 -y \
@@ -48,7 +78,7 @@ RUN mamba create -n omichub python=3.11 -y \
         scikit-learn=1.5.0 \
         statsmodels=0.14.0 \
         seaborn=0.13.2 \
-        matplotlib=3.9.0 \
+        matplotlib=3.9 \
         matplotlib-venn \
         numpy=1.26.4 \
         pandas=2.2.2 \
@@ -60,18 +90,28 @@ RUN mamba create -n omichub python=3.11 -y \
         requests \
     && mamba clean --all -y
 
+# 先装 CPU-only PyTorch（走 tuna 镜像的 pytorch 渠道）：
+# 否则下一步 pip 装 scvi-tools 时会从 PyPI 拉 torch 及其 NVIDIA CUDA 依赖（约 3GB），极慢且沙盒用不到 CUDA。
+# conda 的 pytorch 包自带 torch dist-info，pip 会判定 torch 依赖已满足。
+RUN mamba install -n omichub -y -c pytorch -c conda-forge \
+        pytorch=2.4 \
+        cpuonly \
+    && mamba clean --all -y
+
 # conda 缺少的较新单细胞工具走 pip
 SHELL ["conda", "run", "-n", "omichub", "/bin/bash", "-c"]
-RUN pip install --no-cache-dir \
+RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
         "squidpy>=1.4.0" \
         "scvi-tools>=1.1.0" \
         "celltypist>=1.6.0" \
         "decoupler>=1.6.0" \
         "kaleido>=0.2.1"
 
-# R + Seurat + IRkernel（按文档启用，原 Dockerfile 此段被注释）
+# R + Seurat + IRkernel
+# 注意：r-base 必须 >=4.5 —— Python 栈已引入 icu 78（libharfbuzz 依赖），
+# r-base 4.3/4.4 仅接受 icu 72~75，会与 Python 栈无解（2026-07-28 实测）。
 RUN mamba install -n omichub -c conda-forge -c bioconda -y \
-        r-base=4.3 \
+        r-base=4.5 \
         r-irkernel \
         r-seurat \
         r-seuratobject \

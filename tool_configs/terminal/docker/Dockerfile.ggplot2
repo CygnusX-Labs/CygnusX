@@ -14,7 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && fc-cache -f
 
-RUN pip3 install --no-cache-dir plotnine matplotlib seaborn
+RUN pip3 install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
+      plotnine matplotlib seaborn
 
 ENV MPLCONFIGDIR=/tmp
 

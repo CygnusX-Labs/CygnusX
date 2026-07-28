@@ -145,13 +145,13 @@ const routes: RouteRecordRaw[] = [
         path: 'knowledge',
         name: 'knowledge',
         component: () => import('@/views/KnowledgeView.vue'),
-        meta: { title: '实验室知识库', requiresAuth: true, fullscreen: true }
+        meta: { title: '实验室知识库', requiresAuth: true, fullscreen: true, autoCollapseSidebar: true }
       },
       {
         path: 'knowledge/:docId',
         name: 'knowledge-doc',
         component: () => import('@/views/KnowledgeView.vue'),
-        meta: { title: '实验室知识库', requiresAuth: true, fullscreen: true }
+        meta: { title: '实验室知识库', requiresAuth: true, fullscreen: true, autoCollapseSidebar: true }
       },
       {
         path: 'sandbox',
@@ -204,6 +204,12 @@ const routes: RouteRecordRaw[] = [
         name: 'tools-kegg-enrichment',
         component: () => import('@/views/BioTools/KeggEnrichmentView.vue'),
         meta: { title: 'GO / KEGG 富集分析', requiresAuth: true }
+      },
+      {
+        path: 'tools/deg-analysis',
+        name: 'tools-deg-analysis',
+        component: () => import('@/views/BioTools/DegAnalysisView.vue'),
+        meta: { title: 'DEG 差异表达分析', requiresAuth: true }
       },
       {
         path: 'tools/seq-manipulator',

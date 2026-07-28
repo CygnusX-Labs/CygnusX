@@ -18,6 +18,7 @@ class PipelinePrepareRequest(OmicsHubBaseSchema):
     sample_sheet: list[dict[str, Any]]
     comparisons: list[dict[str, Any]] = Field(default_factory=list)
     library_type: str
+    task_name: str = Field(min_length=1, max_length=128, description="用户提供的分析任务名称")
     project_name: str
     extra_parameters: dict[str, Any] = Field(default_factory=dict)
 

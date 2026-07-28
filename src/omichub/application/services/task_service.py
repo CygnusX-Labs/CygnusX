@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -24,10 +23,10 @@ from omichub.core.exceptions import NotFoundError, ValidationError
 from omichub.domain.task.services import TaskDomainService
 from omichub.domain.task.value_objects import TaskStatus
 from omichub.infrastructure.celery_app.tasks.analysis import run_snakemake
+from omichub.infrastructure.database.repositories.mas_repository import MASRepository
 from omichub.infrastructure.database.repositories.task_repository import (
     TaskRepositoryImpl,
 )
-from omichub.infrastructure.database.repositories.mas_repository import MASRepository
 from omichub.infrastructure.database.repositories.user_repository import (
     SqlAlchemyUserRepository,
 )
@@ -92,7 +91,7 @@ class TaskService:
         task = await self._domain.submit(
             flow_id=req.flow_id,
             user_id=UUID(user_id),
-            name=req.name or f"{flow_detail.meta.name} - {datetime.now().strftime('%Y%m%d%H%M%S')}",
+            name=req.name,
             parameters=parameter_snapshot,
             execution_mode=req.execution_mode,
             sample_count=len(req.sample_sheet),
@@ -215,6 +214,26 @@ class TaskService:
                 await consumer.on_cancel(UUID(user_id), str(task.id), Decimal(str(pre_deducted)))
 
         return task_to_response(task)
+
+    async def delete_task(self, task_id: UUID, user_id: str) -> None:
+        """删除任务（硬删除）。
+
+        所有权校验：仅任务拥有者可删；MAS 任务为只读投影，不允许经此接口删除
+        （前端已对 execution_mode=='mas' 隐藏删除按钮，此处再做后端兜底）。
+        任务表无被外键引用的子表（日志为 JSON 列随行删除），故直接删行即可，
+        会话 commit 由 ``get_db`` 依赖在请求结束时统一完成。
+        """
+        task = await self._repo.get_by_id(task_id)
+        if task is None:
+            projected = await self._mas_projection.get_for_user(task_id, UUID(user_id))
+            if projected is not None:
+                raise ValidationError("MAS 任务为只读投影，无法删除")
+            raise NotFoundError("任务不存在")
+        if str(task.user_id) != user_id:
+            raise NotFoundError("任务不存在")
+        deleted = await self._repo.delete(task_id)
+        if not deleted:
+            raise NotFoundError("任务不存在")
 
     async def get_task_dag(self, task_id: UUID, user_id: str) -> dict[str, Any]:
         """获取任务 DAG 可视化"""

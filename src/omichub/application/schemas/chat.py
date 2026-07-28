@@ -46,6 +46,10 @@ class ChatStreamRequest(BaseModel):
     )
     mcp_mode: Literal["off", "auto", "manual"] | None = None
     extra_mcp_servers: list[str] | None = Field(default=None)
+    extend_max_rounds: bool = Field(
+        False,
+        description="工具调用轮次上限扩展：False=100 轮，True=1000 轮（用户确认继续后由前端置位）",
+    )
 
 
 class ChatMessageDTO(BaseModel):

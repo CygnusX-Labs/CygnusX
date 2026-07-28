@@ -2,11 +2,11 @@
 import { computed, h, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  NAlert, NButton, NCard, NDataTable, NDivider, NIcon, NInput, NInputNumber, NProgress, NSelect,
+  NAlert, NButton, NCard, NDataTable, NIcon, NInput, NInputNumber, NProgress, NSelect,
   NSpace, NSpin, NStatistic, NTag, NTooltip, NUpload, useMessage, type UploadFileInfo,
 } from 'naive-ui'
 import {
-  ArrowBackOutline, DownloadOutline, FileTrayFullOutline, ListOutline, SearchOutline,
+  ChevronDownOutline, DownloadOutline, FileTrayFullOutline, ListOutline, SearchOutline,
 } from '@vicons/ionicons5'
 import {
   cancelBlastTask, downloadBlastResult, fetchBlastDatabases, fetchBlastResult, fetchBlastTasks,
@@ -43,6 +43,7 @@ const maxTargetSeqs = ref(10)
 const wordSize = ref<number | undefined>(undefined)
 const gapOpen = ref<number | undefined>(undefined)
 const gapExtend = ref<number | undefined>(undefined)
+const advancedParamsExpanded = ref(false)
 
 const isSearching = ref(false)
 const currentTask = ref<BlastTask | null>(null)
@@ -376,7 +377,24 @@ function renderEvalue(evalue: number) {
   if (evalue < 1e-100) {
     return h(NTag, { type: 'error', size: 'small' }, { default: () => evalue.toExponential(1) })
   }
-  return h('span', { style: { fontFamily: 'monospace', fontSize: '12px' } }, evalue.toExponential(2))
+  return h('span', { class: 'blast-table-number' }, evalue.toExponential(2))
+}
+
+function renderCoverage(coverage: number) {
+  const value = Math.max(0, Math.min(100, coverage || 0))
+  return h('div', { class: 'blast-coverage' }, [
+    h(NProgress, {
+      percentage: value,
+      showIndicator: false,
+      railColor: '#eef0f2',
+      color: value >= 90 ? '#22c55e' : value >= 70 ? '#3b82f6' : value >= 40 ? '#f59e0b' : '#ef4444',
+    }),
+    h('span', { class: 'blast-coverage__value' }, `${value.toFixed(1)}%`),
+  ])
+}
+
+function scrollToHit(hitNum: number) {
+  document.getElementById(`blast-hit-${hitNum}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 const columns = [
@@ -391,6 +409,7 @@ const columns = [
     title: 'Subject ID',
     key: 'hit_id',
     width: 110,
+    align: 'center' as const,
     render: (row: BlastHit) => h(
       NTooltip,
       { trigger: 'hover' },
@@ -409,16 +428,17 @@ const columns = [
   {
     title: 'Subject Description',
     key: 'hit_def',
-    minWidth: 200,
+    width: 240,
+    align: 'left' as const,
     ellipsis: { tooltip: true },
     render: (row: BlastHit) => h('span', { style: { fontSize: '12px', color: 'var(--neutral-text-3)' } }, row.hit_def || '-'),
   },
   {
     title: 'Length',
     key: 'hit_len',
-    width: 90,
-    align: 'right' as const,
-    render: (row: BlastHit) => `${row.hit_len.toLocaleString()} bp`,
+    width: 140,
+    align: 'center' as const,
+    render: (row: BlastHit) => h('span', { class: 'blast-table-number blast-table-nowrap' }, `${row.hit_len.toLocaleString()} bp`),
   },
   {
     title: 'Identity %',
@@ -428,7 +448,7 @@ const columns = [
     sorter: (a: BlastHit, b: BlastHit) => a.identity_percent - b.identity_percent,
     render: (row: BlastHit) => h(
       NTag,
-      { type: getIdentityTagType(row.identity_percent), size: 'small' },
+      { type: getIdentityTagType(row.identity_percent), size: 'small', round: true, class: 'identity-pill' },
       { default: () => `${row.identity_percent.toFixed(1)}%` },
     ),
   },
@@ -436,6 +456,7 @@ const columns = [
     title: 'E-value',
     key: 'evalue',
     width: 120,
+    align: 'center' as const,
     sorter: (a: BlastHit, b: BlastHit) => a.evalue - b.evalue,
     render: (row: BlastHit) => renderEvalue(row.evalue),
   },
@@ -443,41 +464,37 @@ const columns = [
     title: 'Bit Score',
     key: 'bit_score',
     width: 100,
-    align: 'right' as const,
+    align: 'center' as const,
     sorter: (a: BlastHit, b: BlastHit) => a.bit_score - b.bit_score,
-    render: (row: BlastHit) => h('span', { style: { fontFamily: 'monospace' } }, row.bit_score.toFixed(1)),
+    render: (row: BlastHit) => h('span', { class: 'blast-table-number' }, row.bit_score.toFixed(1)),
   },
   {
     title: 'Align Len',
     key: 'align_length',
     width: 100,
-    align: 'right' as const,
-    render: (row: BlastHit) => `${row.align_length} bp`,
+    align: 'center' as const,
+    render: (row: BlastHit) => h('span', { class: 'blast-table-number blast-table-nowrap' }, `${row.align_length} bp`),
   },
   {
     title: 'Query Range',
     key: 'q_range',
     width: 110,
     align: 'center' as const,
-    render: (row: BlastHit) => h('span', { style: { fontFamily: 'monospace', fontSize: '12px' } }, `${row.q_start}-${row.q_end}`),
+    render: (row: BlastHit) => h('span', { class: 'blast-table-number blast-table-nowrap' }, `${row.q_start}-${row.q_end}`),
   },
   {
     title: 'Subject Range',
     key: 's_range',
     width: 110,
     align: 'center' as const,
-    render: (row: BlastHit) => h('span', { style: { fontFamily: 'monospace', fontSize: '12px' } }, `${row.s_start}-${row.s_end}`),
+    render: (row: BlastHit) => h('span', { class: 'blast-table-number blast-table-nowrap' }, `${row.s_start}-${row.s_end}`),
   },
   {
     title: 'Coverage',
-    key: 'subject_coverage',
-    width: 130,
-    sorter: (a: BlastHit, b: BlastHit) => a.subject_coverage - b.subject_coverage,
-    render: (row: BlastHit) => h(NProgress, {
-      percentage: row.subject_coverage,
-      'show-indicator': false,
-      status: row.subject_coverage > 80 ? 'success' : row.subject_coverage > 50 ? 'default' : 'warning',
-    }),
+    key: 'query_coverage',
+    width: 160,
+    sorter: (a: BlastHit, b: BlastHit) => a.query_coverage - b.query_coverage,
+    render: (row: BlastHit) => renderCoverage(row.query_coverage),
   },
 ]
 
@@ -527,18 +544,10 @@ onUnmounted(() => {
     <div class="blast-layout">
       <div class="input-section">
         <div class="input-card">
-          <h3 class="section-title">目标数据库</h3>
-          <NSelect
-            v-model:value="selectedDbId"
-            :options="dbOptions"
-            :loading="loadingDatabases"
-            placeholder="选择 BLAST 数据库"
-            @update:value="autoRecommendProgram"
-          />
-        </div>
-
-        <div class="input-card">
-          <h3 class="section-title">查询序列 (FASTA)</h3>
+          <h3 class="section-title">查询设置</h3>
+          <label class="field-label">目标数据库</label>
+          <NSelect v-model:value="selectedDbId" :options="dbOptions" :loading="loadingDatabases" placeholder="选择 BLAST 数据库" @update:value="autoRecommendProgram" />
+          <label class="field-label">查询序列 (FASTA)</label>
           <NInput
             v-model:value="fastaInput"
             type="textarea"
@@ -557,41 +566,38 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="input-card">
-          <h3 class="section-title">比对算法</h3>
+        <div class="input-card parameter-card">
+          <h3 class="section-title">比对参数</h3>
+          <label class="field-label">比对算法</label>
           <NSelect v-model:value="program" :options="programOptions" clearable placeholder="自动推断" />
-        </div>
-
-        <div class="input-card params-row">
-          <div style="flex: 1;">
-            <h3 class="section-title">E-value 阈值</h3>
+          <div class="params-row">
+            <div>
+              <label class="field-label">E-value 阈值</label>
             <NInputNumber v-model:value="evalue" :min="1e-100" :max="10" :show-button="false" placeholder="1e-5" />
-          </div>
-          <div style="flex: 1;">
-            <h3 class="section-title">最大匹配数</h3>
+            </div>
+            <div>
+              <label class="field-label">最大匹配数</label>
             <NInputNumber v-model:value="maxTargetSeqs" :min="1" :max="100" :show-button="false" />
+            </div>
           </div>
-        </div>
-
-        <div class="input-card params-row">
-          <div style="flex: 1;">
-            <h3 class="section-title">查询名称</h3>
-            <NInput v-model:value="queryTitle" placeholder="自定义查询名称" />
-          </div>
-        </div>
-
-        <div class="input-card params-row">
-          <div style="flex: 1;">
-            <h3 class="section-title">Word Size</h3>
-            <NInputNumber v-model:value="wordSize" :show-button="false" placeholder="默认" />
-          </div>
-          <div style="flex: 1;">
-            <h3 class="section-title">Gap Open</h3>
-            <NInputNumber v-model:value="gapOpen" :show-button="false" placeholder="默认" />
-          </div>
-          <div style="flex: 1;">
-            <h3 class="section-title">Gap Extend</h3>
-            <NInputNumber v-model:value="gapExtend" :show-button="false" placeholder="默认" />
+          <label class="field-label">查询名称</label>
+          <NInput v-model:value="queryTitle" placeholder="自定义查询名称" />
+          <button type="button" class="advanced-toggle" :aria-expanded="advancedParamsExpanded" @click="advancedParamsExpanded = !advancedParamsExpanded">
+            高级参数 <NIcon :class="{ 'is-expanded': advancedParamsExpanded }"><ChevronDownOutline /></NIcon>
+          </button>
+          <div v-if="advancedParamsExpanded" class="params-row advanced-params">
+            <div>
+              <label class="field-label">Word Size</label>
+              <NInputNumber v-model:value="wordSize" :show-button="false" placeholder="默认" />
+            </div>
+            <div>
+              <label class="field-label">Gap Open</label>
+              <NInputNumber v-model:value="gapOpen" :show-button="false" placeholder="默认" />
+            </div>
+            <div>
+              <label class="field-label">Gap Extend</label>
+              <NInputNumber v-model:value="gapExtend" :show-button="false" placeholder="默认" />
+            </div>
           </div>
         </div>
       </div>
@@ -633,16 +639,7 @@ onUnmounted(() => {
 
         <template v-if="currentResult">
           <NCard size="small" class="stats-card">
-            <div class="stats-row">
-              <NStatistic label="数据库" :value="currentResult.db_display_name || currentResult.statistics.db_name" />
-              <NStatistic label="算法" :value="(currentResult.program || currentResult.statistics.program || '').toUpperCase()" />
-              <NStatistic label="Query 长度" :value="`${currentResult.query_len} bp`" />
-              <NStatistic label="命中数" :value="currentResult.statistics.hit_count" />
-              <NStatistic label="最佳 E-value" :value="currentResult.hits[0]?.best_hsp?.evalue?.toExponential(2) || '-'" />
-              <NStatistic label="最佳 Identity" :value="`${currentResult.hits[0]?.identity_percent?.toFixed(1) || 0}%`" />
-            </div>
-            <NDivider style="margin: 12px 0;" />
-            <NSpace>
+            <div class="summary-header"><div><NTag :type="taskStatusType" size="small" round>{{ taskStatusText }}</NTag><strong>{{ currentResult.statistics.query_title || currentResult.query_def || 'BLAST 结果' }}</strong></div><NSpace class="summary-downloads">
               <NButton size="small" @click="handleDownload('xml')">
                 <template #icon><NIcon><DownloadOutline /></NIcon></template>
                 XML
@@ -655,13 +652,22 @@ onUnmounted(() => {
                 <template #icon><NIcon><DownloadOutline /></NIcon></template>
                 Text
               </NButton>
-            </NSpace>
+            </NSpace></div>
+            <div class="stats-row">
+              <NStatistic label="数据库" :value="currentResult.db_display_name || currentResult.statistics.db_name" />
+              <NStatistic label="算法" :value="(currentResult.program || currentResult.statistics.program || '').toUpperCase()" />
+              <NStatistic label="Query 长度" :value="`${currentResult.query_len.toLocaleString()} bp`" />
+              <NStatistic label="命中数" :value="currentResult.statistics.hit_count" />
+              <NStatistic label="最佳 E-value" :value="currentResult.hits[0]?.best_hsp?.evalue?.toExponential(2) || '-'" />
+              <NStatistic label="最佳 Identity" :value="`${currentResult.hits[0]?.identity_percent?.toFixed(1) || 0}%`" />
+            </div>
           </NCard>
 
           <BlastGraphicSummary
             v-if="currentResult.statistics.hit_count > 0"
             :query-len="currentResult.query_len"
             :hits="currentResult.hits"
+            @select-hit="scrollToHit"
           />
 
           <BlastParamsInfo v-if="currentResult.query_params" :params="currentResult.query_params" />
@@ -674,8 +680,8 @@ onUnmounted(() => {
               :bordered="false"
               size="small"
               :single-line="false"
-              :pagination="{ pageSize: 50, showSizePicker: true, pageSizes: [20, 50, 100] }"
-              :scroll-x="1220"
+              :pagination="currentResult.hits.length > 10 ? { pageSize: 10, showSizePicker: false } : false"
+              :scroll-x="1340"
               :max-height="560"
               virtual-scroll
               class="results-table"
@@ -689,7 +695,6 @@ onUnmounted(() => {
               :key="hit.hit_num"
               :hit="hit"
               :query-len="currentResult.query_len"
-              :default-expanded="hit.hit_num === 1"
             />
           </div>
         </template>
@@ -749,6 +754,7 @@ onUnmounted(() => {
   border: 1px solid var(--neutral-border);
   border-radius: 12px;
   padding: 16px;
+  box-shadow: var(--shadow-card);
 }
 .section-title {
   font-size: 13px;
@@ -763,10 +769,36 @@ onUnmounted(() => {
 .upload-row {
   margin-top: 8px;
 }
-.params-row {
-  display: flex;
-  gap: 16px;
+.field-label {
+  display: block;
+  margin: 14px 0 6px;
+  color: var(--neutral-text-2);
+  font-size: 12px;
+  font-weight: 500;
 }
+.section-title + .field-label { margin-top: 0; }
+.params-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.advanced-params { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 14px;
+  padding: 0;
+  color: var(--arco-primary);
+  font: inherit;
+  font-size: 12px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.advanced-toggle :deep(.n-icon) { transition: transform 200ms ease; }
+.advanced-toggle :deep(.n-icon.is-expanded) { transform: rotate(180deg); }
+.advanced-toggle:focus-visible { outline: 2px solid var(--arco-primary); outline-offset: 3px; border-radius: 4px; }
 .data-retention-alert {
   margin-bottom: 12px;
 }
@@ -809,14 +841,53 @@ onUnmounted(() => {
   font-size: 12px;
   font-weight: 500;
   background: var(--neutral-bg);
+  height: 52px;
+  text-align: center;
+  white-space: nowrap;
 }
+.results-table :deep(th:nth-child(3)) { text-align: left; }
+.results-table :deep(td) {
+  height: 52px;
+  font-variant-numeric: tabular-nums;
+}
+.results-table :deep(tr:hover > td) { background: var(--neutral-hover); }
+.results-table :deep(.n-data-table-td:last-child) { text-align: center; }
+.results-table :deep(.identity-pill) { padding-inline: 8px; font-variant-numeric: tabular-nums; }
+.results-table :deep(.blast-table-number) {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.results-table :deep(.blast-table-nowrap) { white-space: nowrap; }
+.results-table :deep(.blast-coverage) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.results-table :deep(.blast-coverage .n-progress) { flex: 1 1 auto; min-width: 64px; }
+.results-table :deep(.blast-coverage__value) { flex: 0 0 48px; text-align: right; font-variant-numeric: tabular-nums; }
+.summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.summary-header > div { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.summary-header strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.summary-downloads { flex: 0 0 auto; }
+.stats-card :deep(.n-card__content) { padding: 16px; }
+.stats-card :deep(.n-statistic) { min-width: 0; }
+.stats-card :deep(.n-statistic-value) { font-variant-numeric: tabular-nums; }
 .stats-card {
   margin-bottom: 16px;
 }
 .stats-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 12px;
 }
 .results-table-card {
   min-width: 0;
@@ -873,5 +944,7 @@ onUnmounted(() => {
   .blast-layout {
     grid-template-columns: 1fr;
   }
+  .advanced-params { grid-template-columns: 1fr; }
+  .summary-header { align-items: flex-start; flex-direction: column; }
 }
 </style>

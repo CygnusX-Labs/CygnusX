@@ -19,14 +19,16 @@ const props = defineProps<{
   hits: HitData[]
 }>()
 
+const emit = defineEmits<{ selectHit: [hitNum: number] }>()
+
 const svgWidth = 800
-const padding = { left: 70, right: 50, top: 24, bottom: 28 }
+const padding = { left: 96, right: 42, top: 28, bottom: 28 }
 const barHeight = 16
 const trackGap = 6
 const trackHeight = barHeight + trackGap
 const legendHeight = 20
 
-const contentHeight = computed(() => 20 + 8 + props.hits.length * trackHeight)
+const contentHeight = computed(() => 26 + props.hits.length * trackHeight)
 const svgHeight = computed(() => padding.top + contentHeight.value + padding.bottom + legendHeight)
 
 function scale(pos: number): number {
@@ -41,7 +43,18 @@ function getColor(identity: number): string {
 }
 
 const rulerY = padding.top + 10
-const firstHitY = rulerY + 18
+const firstHitY = rulerY + 24
+
+const ticks = computed(() => {
+  const roughStep = Math.max(1, props.queryLen / 6)
+  const magnitude = 10 ** Math.floor(Math.log10(roughStep))
+  const normalized = roughStep / magnitude
+  const step = (normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10) * magnitude
+  const values = [1]
+  for (let value = step; value < props.queryLen; value += step) values.push(Math.round(value))
+  if (props.queryLen > 1) values.push(props.queryLen)
+  return [...new Set(values)]
+})
 
 const legendItems = [
   { c: '#10b981', l: '≥90%' },
@@ -78,21 +91,10 @@ const legendItems = [
         stroke-width="2"
       />
 
-      <!-- 标尺刻度 -->
-      <text
-        :x="padding.left"
-        :y="rulerY - 6"
-        text-anchor="middle"
-        fill="#9ca3af"
-        font-size="9"
-      >1</text>
-      <text
-        :x="svgWidth - padding.right"
-        :y="rulerY - 6"
-        text-anchor="middle"
-        fill="#9ca3af"
-        font-size="9"
-      >{{ queryLen }}</text>
+      <g v-for="tick in ticks" :key="tick">
+        <line :x1="scale(tick)" :x2="scale(tick)" :y1="rulerY - 5" :y2="rulerY + 5" stroke="#9ca3af" stroke-width="1" />
+        <text :x="scale(tick)" :y="rulerY - 10" text-anchor="middle" fill="#6b7280" font-size="9">{{ tick.toLocaleString() }}</text>
+      </g>
 
       <!-- Hit tracks -->
       <g
@@ -123,6 +125,7 @@ const legendItems = [
               :fill="getColor(hsp.identity_percent)"
               opacity="0.9"
               style="cursor: pointer;"
+              @click="emit('selectHit', hit.hit_num)"
             />
           </template>
           <div style="font-size: 12px; line-height: 1.5;">
@@ -136,14 +139,14 @@ const legendItems = [
 
       <!-- 图例 - 固定在底部，不与任何元素重叠 -->
       <g :transform="`translate(${padding.left}, ${svgHeight - 18})`">
-        <text x="0" y="0" font-size="10" fill="#6b7280" font-weight="500">Identity:</text>
+        <text x="0" y="0" font-size="12" fill="#6b7280" font-weight="500">Identity:</text>
         <g
           v-for="(item, i) in legendItems"
           :key="i"
           :transform="`translate(${55 + i * 60}, -8)`"
         >
           <rect width="12" height="12" rx="3" :fill="item.c" />
-          <text x="16" y="10" font-size="10" fill="#6b7280">{{ item.l }}</text>
+          <text x="16" y="10" font-size="12" fill="#6b7280">{{ item.l }}</text>
         </g>
       </g>
     </svg>
@@ -155,6 +158,6 @@ const legendItems = [
   margin-bottom: 12px;
 }
 .graphic-summary-card :deep(.n-card__content) {
-  padding: 8px 16px 12px;
+  padding: 10px 16px 12px;
 }
 </style>

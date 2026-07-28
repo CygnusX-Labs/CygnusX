@@ -129,7 +129,17 @@ async function renderPlotlyCharts() {
           el,
           (chart.option.data || []) as Plotly.Data[],
           (chart.option.layout || {}) as Partial<Plotly.Layout>,
-          { responsive: true, displayModeBar: true, displaylogo: false },
+          {
+            responsive: true,
+            displayModeBar: true,
+            displaylogo: false,
+            // 默认 600 DPI 导出（scale = 600/96）
+            toImageButtonOptions: {
+              format: 'png',
+              filename: 'omichub_plot_600dpi',
+              scale: 6.25,
+            } as Plotly.Config['toImageButtonOptions'],
+          },
         )
       } catch (e) {
         el.textContent = `Plotly 渲染失败: ${e instanceof Error ? e.message : String(e)}`
@@ -188,6 +198,13 @@ const showStarAnimation = computed(() =>
 
 const showThinkingIndicator = computed(() =>
   props.isStreaming && isThinking.value,
+)
+
+// 流式中、正文尚未开始生成（典型：工具调用已全部返回「成功」，模型仍在酝酿正文）。
+// 此时尾部不再放孤零零的闪烁光标，而是显示一个优雅的「正在生成回复」行内指示；
+// 正文首个 token 一到 streamingHasContent 变 true，该指示即平滑淡出，由正文接管。
+const showGeneratingTail = computed(() =>
+  props.isStreaming && !streamingHasContent.value,
 )
 
 const isError = computed(() =>
@@ -852,7 +869,17 @@ function handleEdit() {
             </div>
           </details>
 
-          <!-- 流式光标 -->
+          <!-- 正文尚未生成时的优雅行内指示：替代孤立的闪烁光标，
+               正文首个 token 到达后平滑淡出（不套 out-in：避免卸载竞态）。 -->
+          <transition name="gen-tail">
+            <div v-if="showGeneratingTail" class="generating-tail" role="status" aria-live="polite">
+              <span class="gen-spark" aria-hidden="true">✨</span>
+              <span class="gen-text">正在生成回复</span>
+              <span class="gen-dots" aria-hidden="true"><i /><i /><i /></span>
+            </div>
+          </transition>
+
+          <!-- 流式光标：正文流式输出时跟随在文本末尾 -->
           <span v-if="isStreaming && streamingHasContent" class="stream-cursor" />
         </div>
 
@@ -1151,6 +1178,72 @@ function handleEdit() {
   50% { opacity: 0; }
 }
 
+/* 正文生成前的优雅行内指示：呼吸微光 + 跳动点，明确「仍在生成」而非「卡住/没完成」 */
+.generating-tail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 8px 14px;
+  width: fit-content;
+  max-width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--arco-primary, #6366f1) 7%, transparent),
+    color-mix(in srgb, #a855f7 9%, transparent),
+    color-mix(in srgb, var(--arco-primary, #6366f1) 7%, transparent)
+  );
+  background-size: 200% 100%;
+  animation: gen-shimmer 2.2s ease-in-out infinite;
+  color: var(--chat-text-secondary, #555);
+  font-size: 13px;
+  line-height: 1;
+}
+.generating-tail .gen-spark {
+  font-size: 13px;
+  animation: gen-spark-pulse 1.8s ease-in-out infinite;
+}
+.generating-tail .gen-text {
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+.generating-tail .gen-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.generating-tail .gen-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--chat-accent, #6366f1);
+  animation: gen-dot-bounce 1.2s ease-in-out infinite;
+}
+.generating-tail .gen-dots i:nth-child(2) { animation-delay: 0.16s; }
+.generating-tail .gen-dots i:nth-child(3) { animation-delay: 0.32s; }
+
+@keyframes gen-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@keyframes gen-spark-pulse {
+  0%, 100% { opacity: 0.5; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.12); }
+}
+@keyframes gen-dot-bounce {
+  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
+}
+
+/* 行内指示平滑淡入/淡出（正文出现时优雅退场） */
+.gen-tail-enter-active,
+.gen-tail-leave-active {
+  transition: opacity 0.32s ease, transform 0.32s ease;
+}
+.gen-tail-enter-from { opacity: 0; transform: translateY(6px); }
+.gen-tail-leave-to { opacity: 0; transform: translateY(-4px); }
+
 .content-swap-enter-active,
 .content-swap-leave-active {
   transition: opacity 0.2s ease, transform 0.2s ease;
@@ -1168,6 +1261,11 @@ function handleEdit() {
   .content-swap-enter-active,
   .content-swap-leave-active,
   .stream-cursor,
+  .generating-tail,
+  .generating-tail .gen-spark,
+  .generating-tail .gen-dots i,
+  .gen-tail-enter-active,
+  .gen-tail-leave-active,
   .kimi-message-item.assistant .message-content.ai-card.streaming-active {
     animation: none;
     transition: none;

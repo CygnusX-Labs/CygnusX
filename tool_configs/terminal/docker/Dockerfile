@@ -15,6 +15,9 @@ RUN groupadd -r -g 1000 omichub && \
     mkdir -p /home/omichub/workspace /home/omichub/tmp /home/omichub/.cache && \
     chown -R omichub:omichub /home/omichub
 
+# 构建期切换清华 apt 源，加速 apt-get（子镜像 FROM 本镜像，自动继承）
+RUN sed -i 's@//.*archive.ubuntu.com@//mirrors.tuna.tsinghua.edu.cn@g; s@//security.ubuntu.com@//mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list
+
 # 2. 安装系统依赖，增加 zsh, git, btop, unzip
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget curl ca-certificates gnupg2 git unzip \
@@ -32,8 +35,17 @@ RUN wget -qO /usr/local/bin/ttyd \
     https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64 && \
     chmod +x /usr/local/bin/ttyd
 
-# 4. 安装 Python 依赖
-RUN pip3 install --no-cache-dir \
+# 3.5 预置清华 PyPI 镜像，加速构建期与运行期 pip 安装（全局，对所有用户生效）
+RUN printf '%s\n' \
+    '[global]' \
+    'index-url = https://pypi.tuna.tsinghua.edu.cn/simple' \
+    'extra-index-url = https://mirrors.aliyun.com/pypi/simple/' \
+    'timeout = 60' \
+    'retries = 10' \
+    > /etc/pip.conf
+
+# 4. 安装 Python 依赖（显式 -i 指定 tuna，与 /etc/pip.conf 双保险）
+RUN pip3 install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
     numpy pandas biopython pysam
 
 # 5. 全局安装 oh-my-posh（root 下安装到系统路径，主题目录全局可读）

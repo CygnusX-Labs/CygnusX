@@ -39,7 +39,7 @@ const statItems = computed(() => {
     { label: 'E-value', value: h.evalue.toExponential(2) },
     { label: 'Bit Score', value: h.bit_score.toFixed(1) },
     { label: 'Align', value: `${h.align_length} bp` },
-    { label: 'Coverage', value: `${props.hit.subject_coverage.toFixed(1)}%` },
+    { label: 'Query Coverage', value: `${props.hit.query_coverage.toFixed(1)}%` },
     { label: 'Query', value: `${h.query_from}-${h.query_to}` },
     { label: 'Subject', value: `${h.hit_from}-${h.hit_to}` },
     { label: 'Mismatch', value: String(h.mismatches) },
@@ -50,7 +50,7 @@ const statItems = computed(() => {
 </script>
 
 <template>
-  <NCard size="small" class="blast-hit-card">
+  <NCard :id="`blast-hit-${hit.hit_num}`" size="small" class="blast-hit-card">
     <template #header>
       <div class="hit-header">
         <span class="hit-title">Hit #{{ hit.hit_num }}</span>
@@ -72,7 +72,7 @@ const statItems = computed(() => {
 
     <div class="stats-grid">
       <div v-for="(item, idx) in statItems" :key="idx" class="stat-item">
-        <span class="stat-label">{{ item.label }}:</span>
+        <span class="stat-label">{{ item.label }}</span>
         <span class="stat-value">{{ item.value }}</span>
       </div>
     </div>
@@ -83,6 +83,7 @@ const statItems = computed(() => {
         :hit-len="queryLen"
         :hsps="barHsps"
         :bar-height="12"
+        @select="expanded = true"
       />
     </div>
 
@@ -131,28 +132,37 @@ const statItems = computed(() => {
 }
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px 16px;
-  font-size: 12px;
-  margin-bottom: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
 }
 .stat-item {
-  white-space: nowrap;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--neutral-bg);
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .stat-label {
-  color: #6b7280;
+  display: block;
+  color: var(--neutral-text-3);
+  font-size: 12px;
 }
 .stat-value {
+  display: block;
+  margin-top: 3px;
   color: var(--neutral-text-1);
+  font-size: 14px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 .bar-section {
   margin-bottom: 8px;
 }
 .bar-label {
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--neutral-text-3);
   margin-bottom: 4px;
 }
 @media (max-width: 900px) {

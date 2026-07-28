@@ -358,7 +358,12 @@ ChatService
   "parameters": {
     "type": "object",
     "properties": {
-      "name": {"type": "string", "description": "用户可读的任务名"},
+      "name": {
+        "type": "string",
+        "description": "用户必须提供的、用于任务中心识别的任务名称",
+        "minLength": 1,
+        "maxLength": 128
+      },
       "parameters": {"type": "object", "description": "由 RNA-seq Flow 参数 schema 约束"},
       "sample_sheet": {
         "type": "array",
@@ -369,10 +374,12 @@ ChatService
         "description": "差异比较组；Control/Treat 必须存在于样本 group 中"
       }
     },
-    "required": ["parameters", "sample_sheet"]
+    "required": ["name", "parameters", "sample_sheet"]
   }
 }
 ```
+
+**任务名称为所有分析流程的必填提交字段。** Web 表单、`POST /api/v1/tasks`、MCP Prepare 工具和确认提交链路都必须要求用户提供去除首尾空白后非空、最长 128 个字符的 `name`；不得自动生成任务名称或以流程名称、项目名称替代。
 
 Prepare 不创建 Task，不投递 Celery，不扣费。它的成功结果应包含：
 
@@ -709,7 +716,7 @@ export interface SampleSheetUIConfig {
 ```text
 ┌ PageHeader：流程名称 + 一句话说明 + 右侧按钮（GitHub / 文档）─────────────┐
 ├ 内容区（max-width 1080px，居中，padding 24px）────────────────────────────┤
-│  任务名称输入框                                                            │
+│  任务名称* 输入框（必填，非空，最长 128 字符）                              │
 │  ▎基本信息（分组标题 16px/600 + 4px 主题色竖条 + 12px 灰说明）             │
 │    项目名称*        │ 客户/课题组*        （双列网格，gap 20px）            │
 │    执行模式*        │ 集群队列（条件显示）                                  │

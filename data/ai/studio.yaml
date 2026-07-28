@@ -16,12 +16,13 @@ studio:
     memory: 4g
     exec_timeout_seconds: 600
     network:
-      mode: none
+      mode: whitelist
       docker_network: omichub-studio-egress
       proxy_container: omichub-studio-egress-proxy
       proxy_host: studio-egress-proxy
       proxy_port: 3128
-      allow: []
+      # 包源白名单：允许沙盒内 uv/micromamba 现场安装依赖；仅放行包源域名，保持其余断网
+      allow: [conda.anaconda.org, pypi.org, files.pythonhosted.org, mirrors.aliyun.com, mirrors.tuna.tsinghua.edu.cn]
   mounts:
     workspace: '{storage_path}/studio'
   tools:

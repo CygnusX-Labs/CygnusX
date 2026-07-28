@@ -13,13 +13,39 @@ RUN usermod --uid 10001 "$MAMBA_USER" \
     && chown -R 10001:10001 /home/"$MAMBA_USER" /opt/conda \
     && chown -R 10001:10001 /opt/omichub /tmp/requirements-agent.txt \
     && mkdir -p /workspace/.logs \
-    && chown -R 10001:10001 /workspace
+    && chown -R 10001:10001 /workspace \
+    && printf '%s\n' \
+      '[global]' \
+      'index-url = https://pypi.tuna.tsinghua.edu.cn/simple' \
+      'extra-index-url = https://mirrors.aliyun.com/pypi/simple/' \
+      'timeout = 60' \
+      'retries = 10' \
+      > /etc/pip.conf
 
 USER "$MAMBA_USER"
+# 预置清华镜像源，加速容器内 micromamba/conda 环境安装
+RUN printf '%s\n' \
+      'show_channel_urls: true' \
+      'default_channels:' \
+      '  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main' \
+      '  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/r' \
+      '  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/msys2' \
+      'custom_channels:' \
+      '  conda-forge: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud' \
+      '  bioconda: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud' \
+      '  pytorch: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud' \
+      'channel_priority: flexible' \
+      'channels:' \
+      '  - conda-forge' \
+      '  - bioconda' \
+      '  - defaults' \
+      > ~/.condarc
 RUN micromamba install -y -n base -c conda-forge -c bioconda \
       python=3.12 \
       r-base=4.4 \
       pip=24.3 \
+      uv=0.5 \
+
       pandas=2.2.3 \
       numpy=2.1.3 \
       scipy=1.14.1 \

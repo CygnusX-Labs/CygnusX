@@ -255,7 +255,7 @@ parameters:
     type: boolean
     required: false
     default: true
-    help_text: "使用 DESeq2 进行差异表达分析"
+    help_text: "差异表达分析：所有比较组均有生物学重复时使用 DESeq2；存在无重复(1v1)比较组时自动切换 edgeR（预设 BCV 的 exactTest）"
     order: 31
     ui:
       group: modules

@@ -76,6 +76,7 @@ async def chat_stream(
                 mode=request.mode,
                 mcp_mode=request.mcp_mode,
                 extra_mcp_servers=request.extra_mcp_servers,
+                extend_max_rounds=request.extend_max_rounds,
             )
         else:
             if not request.model_id:

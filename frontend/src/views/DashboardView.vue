@@ -195,6 +195,22 @@ function blastTaskRowKey(row: BlastTaskListItem): string {
   return row.task_id
 }
 
+function renderTaskProgress(value: number | null | undefined) {
+  const progress = pct(value)
+
+  return h('div', { class: 'recent-task-progress' }, [
+    h(NProgress, {
+      type: 'line',
+      percentage: progress,
+      height: 6,
+      color: { stops: ['var(--kimi-chart-1)', 'var(--brand-primary-hover)'] },
+      railColor: 'var(--neutral-border)',
+      showIndicator: false,
+    }),
+    h('span', { class: 'recent-task-progress__value' }, `${progress}%`),
+  ])
+}
+
 const columns: DataTableColumns<Task> = [
   {
     title: '所属用户',
@@ -203,12 +219,13 @@ const columns: DataTableColumns<Task> = [
     align: 'center',
     render: (row) => row.username || row.user_id,
   },
-  { title: '任务名称', key: 'name', width: 220, ellipsis: { tooltip: true } },
+  { title: '任务名称', key: 'name', width: 220, align: 'center', ellipsis: { tooltip: true } },
   { title: '分析流程', key: 'flow_id', width: 130, align: 'center' },
   {
     title: '提交时间',
     key: 'created_at',
     width: 150,
+    align: 'center',
     render: (row) => formatTime(row.created_at),
   },
   {
@@ -225,21 +242,14 @@ const columns: DataTableColumns<Task> = [
     title: '进度',
     key: 'progress',
     width: 170,
-    render: (row) => h(NProgress, {
-      type: 'line',
-      percentage: pct(row.progress),
-      height: 6,
-      color: { stops: ['var(--kimi-chart-1)', 'var(--brand-primary-hover)'] },
-      railColor: 'var(--neutral-border)',
-      showIndicator: true,
-    }),
+    render: (row) => renderTaskProgress(row.progress),
   },
   {
     title: '操作',
     key: 'actions',
     width: 110,
     align: 'center',
-    render: (row) => h(NSpace, { size: 4 }, {
+    render: (row) => h(NSpace, { size: 12, justify: 'center' }, {
       default: () => [
         // 查看任务详情
         h(NTooltip, null, {
@@ -301,16 +311,18 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
     title: '任务 ID',
     key: 'task_id',
     width: 140,
+    align: 'center',
     ellipsis: { tooltip: true },
     render: (row) => row.task_id.slice(0, 12),
   },
-  { title: '查询标题', key: 'query_title', width: 200, ellipsis: { tooltip: true } },
+  { title: '查询标题', key: 'query_title', width: 200, align: 'center', ellipsis: { tooltip: true } },
   { title: '数据库', key: 'db_name', width: 100, align: 'center', ellipsis: { tooltip: true } },
   { title: 'Program', key: 'program', width: 100, align: 'center' },
   {
     title: '提交时间',
     key: 'submitted_at',
     width: 150,
+    align: 'center',
     render: (row) => formatTime(row.submitted_at || null),
   },
   {
@@ -327,14 +339,7 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
     title: '进度',
     key: 'progress',
     width: 160,
-    render: (row) => h(NProgress, {
-      type: 'line',
-      percentage: pct(row.progress),
-      height: 6,
-      color: { stops: ['var(--kimi-chart-1)', 'var(--brand-primary-hover)'] },
-      railColor: 'var(--neutral-border)',
-      showIndicator: true,
-    }),
+    render: (row) => renderTaskProgress(row.progress),
   },
   {
     title: '操作',
@@ -435,7 +440,7 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
           size="small"
           :single-line="false"
           :scroll-x="970"
-          class="recent-table"
+          class="recent-table recent-table-surface"
         />
         <NEmpty v-else description="暂无任务">
           <template #extra>
@@ -471,7 +476,7 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
           size="small"
           :single-line="false"
           :scroll-x="1020"
-          class="recent-table"
+          class="recent-table recent-table-surface"
         />
         <NEmpty v-else description="暂无 BLAST 任务">
           <template #extra>
@@ -639,18 +644,47 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
   border-bottom: 1px solid var(--neutral-border);
 }
 
+.recent-tasks:is(.is-selected, .card--selected, .card--active, .selected, .active, [aria-selected='true'], [aria-checked='true'], [data-selected='true']) {
+  background-color: color-mix(in srgb, var(--arco-primary) 4%, var(--neutral-card));
+  border-color: color-mix(in srgb, var(--arco-primary) 40%, var(--neutral-border));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--arco-primary) 40%, transparent);
+}
+
+.recent-table-surface :deep(th) {
+  background: var(--neutral-bg);
+}
+
+.recent-table-surface :deep(.n-data-table-wrapper),
+.recent-table-surface :deep(.n-data-table-base-table) {
+  background: var(--neutral-card);
+}
+
+.recent-table-surface :deep(td) {
+  background: var(--neutral-card);
+}
+
 .recent-table :deep(tr:hover td) {
   background: var(--neutral-hover);
 }
 
-/* 进度列：让进度条可在 flex 行内收缩，使「100%」与条同行显示，
-   避免百分比被挤到第二行（naive-ui 的 .n-progress-graph 为 flex:1 但
-   默认 min-width:auto 不会收缩，故显式置 0；指示器再 nowrap 兜底）。 */
-.recent-table :deep(.n-progress-graph) {
+.recent-table-surface :deep(.recent-task-progress) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
-}
-.recent-table :deep(.n-progress-graph-line-indicator) {
   white-space: nowrap;
+}
+
+.recent-table-surface :deep(.recent-task-progress .n-progress) {
+  flex: 1 1 auto;
+  min-width: 60px;
+}
+
+.recent-table-surface :deep(.recent-task-progress__value) {
+  flex: 0 0 44px;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .empty-extra {

@@ -211,6 +211,17 @@ class Settings(BaseSettings):
     enrichment_memory: str = "2g"  # 容器内存上限
     enrichment_cpus: float = 2.0  # 容器 CPU 核数
 
+    # ===== DEG 差异表达分析（DESeq2 / edgeR 双引擎，R Docker 容器）=====
+    # 运行配置 YAML（镜像资源、默认参数、输入限制）；改文件后由加载器 mtime 热重载。
+    deg_config_yaml: str = "tool_configs/deg/deg_config.yaml"
+    # R 计算容器镜像（make docker-build-deg 构建，契约见 tool_configs/deg/README.md）
+    deg_docker_image: str = "omichub-r-deg:v1"
+    # 容器加入的 Docker 网络（与主栈 app 网络一致）
+    deg_docker_network: str = "omichub_app_net"
+    # 宿主→容器挂载源（容器内固定为 /data/omichub，输入与结果经此交换）
+    deg_data_mount: str = "/data/omichub"
+    deg_exec_timeout: int = 7200  # 单次 DEG 分析超时（秒）；0 回退 YAML execution.timeout
+
     # ===== 管理员欢迎彩蛋（预生成 + 顺序轮询）=====
     # 启动时若 welcome.yaml 条数 < threshold，调用默认 AI provider 补齐到 threshold 条；
     # 运行时登录仅读盘 + 游标前进，零延迟、不调 AI。两文件均缺失时回退内置兜底文案。

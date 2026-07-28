@@ -66,14 +66,14 @@ const costEstimate = ref<CostEstimate | null>(null)
 const estimating = ref(false)
 let estimateTimer: ReturnType<typeof setTimeout> | null = null
 
-/* ── Synthetic task_name param injected into basic group ── */
+/* ── Synthetic required task-name parameter injected into basic group ── */
 const TASK_NAME_PARAM: Parameter = {
   name: '_task_name',
-  label: '任务名称（可选）',
+  label: '任务名称',
   type: 'string',
-  required: false,
+  required: true,
   default: '',
-  help_text: '为该分析任务命名，便于在任务中心识别',
+  help_text: '请为该分析任务命名，便于在任务中心识别',
   ui: { group: 'basic', order: 5, span: 2, widget: 'input', placeholder: '如 T细胞活化分析_2024Q3' },
 }
 
@@ -143,6 +143,7 @@ const comparisonShowWhen = computed(() => {
 /* ── Required fields validation ── */
 const requiredFields = computed(() => {
   const missing: string[] = []
+  if (!taskName.value.trim()) missing.push(TASK_NAME_PARAM.label)
   for (const p of parameters.value) {
     if (!p.required) continue
     if (p.type === 'group' || p.type === 'section') continue
@@ -423,7 +424,7 @@ async function submitTask() {
     const comps = buildComparisons()
     const payload: Record<string, unknown> = {
       flow_id: flowId.value,
-      name: taskName.value || undefined,
+      name: taskName.value.trim(),
       parameters: formValues.value,
       sample_sheet: sampleSheet.value,
       execution_mode: 'local',

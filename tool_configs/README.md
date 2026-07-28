@@ -22,9 +22,14 @@ tool_configs/
 │   └── config.yaml             # fastp / MultiQC 镜像、资源、参数与存储策略
 ├── jbrowse/
 │   └── jbrowse_config.yaml     # JBrowse 2 参考基因组 / 预设轨道 / 扫描上传策略
-└── enrichments/
-    ├── README.md
-    └── species_config.yaml     # KEGG/GO 富集分析物种列表（KEGG 三字码 / OrgDb / ID 类型）
+├── enrichments/
+│   ├── README.md
+│   └── species_config.yaml     # KEGG/GO 富集分析物种列表（KEGG 三字码 / OrgDb / ID 类型）
+└── deg/
+    ├── README.md               # 引擎口径与 R 容器契约
+    ├── deg_config.yaml         # 镜像 / 资源 / 默认参数 / 输入限制（mtime 热重载）
+    ├── scripts/                # run_deseq2.r / run_edger.r（打包进 omichub-r-deg:v1）
+    └── examples/               # 示例 counts/metadata/pairs/annotation
 ```
 
 > 仅**有后端配置**的工具才建子目录。纯前端 mock 工具（blast / plot）的展示信息统一在 `tool_configs/tools_setting.yaml`；FASTQ 极速质控已使用 `fastq_qc/config.yaml` 管理 Worker 默认行为。
@@ -39,8 +44,9 @@ tool_configs/
 | FASTQ 极速质控 | `omichub.tools.fastq_qc`（待接入） | `fastq_qc_config_yaml`（待接入） | `/api/v1/qc/*` |
 | JBrowse | `omichub.tools.jbrowse`（api/service/schema/config/tasks） | `jbrowse_config_yaml` | `/api/v1/jbrowse/*` |
 | 富集分析 | `omichub.tools.enrichments`（api/service/schema/config/runner） | `enrichment_config_yaml` | `/api/v1/enrichment/*` |
+| DEG 差异表达分析 | `omichub.tools.deg`（api/service/schema/config/runner/tasks） | `deg_config_yaml` | `/api/v1/deg/*` |
 
-三个工具的配置加载器同模式：单例 + mtime 热重载，文件缺失/解析失败回退默认空配置，绝不抛异常。
+各工具的配置加载器同模式：单例 + mtime 热重载，文件缺失/解析失败回退默认配置，绝不抛异常。
 
 ## 新增工具（模块化流程）
 
@@ -59,6 +65,7 @@ tool_configs/
 - `tool_configs/fastq_qc/config.yaml` → API 与 QC Worker 的配置加载器按 mtime 热重载；已创建任务仍使用各自的 `task.yaml` 快照。
 - `tool_configs/jbrowse/jbrowse_config.yaml` → 调 `POST /api/v1/jbrowse/config/reload`（管理员）或等 mtime 热重载。
 - `tool_configs/enrichments/species_config.yaml` → 等加载器 mtime 热重载。
+- `tool_configs/deg/deg_config.yaml` → 等加载器 mtime 热重载（镜像资源、默认参数、输入限制）。
 
 ## 新增工具（旧流程，已自动化）
 

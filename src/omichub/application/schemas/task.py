@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from pydantic import Field
+
 from omichub.application.schemas.base import OmicsHubBaseSchema
 from omichub.domain.task.value_objects import ExecutionMode, LogLevel, TaskStatus
 
@@ -14,7 +16,7 @@ class TaskSubmitRequest(OmicsHubBaseSchema):
     """任务提交请求"""
 
     flow_id: str
-    name: str = ""
+    name: str = Field(min_length=1, max_length=128, description="用户提供的分析任务名称")
     parameters: dict[str, Any] = {}
     sample_sheet: list[dict[str, Any]] = []
     comparisons: list[dict[str, Any]] | None = None

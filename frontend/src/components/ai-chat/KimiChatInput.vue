@@ -593,6 +593,10 @@ async function handleFileChange(e: Event) {
   for (const file of Array.from(files)) {
     const formData = new FormData()
     formData.append('file', file)
+    // 带上当前会话 ID，后端会把会话短标记写入上传文件名，便于按会话检索；
+    // 仅真实后端会话 ID 才传（sess- 开头的是尚未落库的临时 ID，无检索意义）
+    const sid = agentHub.currentSessionId
+    if (sid && !sid.startsWith('sess-')) formData.append('session_id', sid)
     try {
       const res = await apiClient.post('/files/chat-upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },

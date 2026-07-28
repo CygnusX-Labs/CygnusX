@@ -358,6 +358,7 @@ def parse_blast_xml(xml_path: Path) -> dict[str, Any]:
                 "query_seq": best_hsp["query_seq"],
                 "subject_seq": best_hsp["hit_seq"],
                 "midline": best_hsp["midline"],
+                "query_coverage": round((best_hsp["align_length"] / query_len) * 100, 2) if query_len else 0.0,
                 "subject_coverage": round((best_hsp["align_length"] / hit_len) * 100, 2) if hit_len else 0.0,
                 "total_score": sum(h["bit_score"] for h in hsps),
                 "best_hsp": best_hsp,
@@ -397,6 +398,8 @@ def parse_blast_xml(xml_path: Path) -> dict[str, Any]:
                 query_seq=hit["query_seq"],
                 subject_seq=hit["subject_seq"],
                 midline=hit["midline"],
+                query_coverage=hit["query_coverage"],
+                subject_coverage=hit["subject_coverage"],
             )
         )
 

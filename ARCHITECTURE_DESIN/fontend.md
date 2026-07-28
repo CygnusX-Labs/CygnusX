@@ -1306,13 +1306,77 @@ function pct(value: number | null | undefined): number {
 
 **⑤ 卡片垂直节奏统一为 24px。** 仪表盘各区块（概览网格 / 快速开始 / 监控面板 / 最近任务 / 最近 BLAST）每个根 section 自带 `margin-bottom: 24px`，构成统一的 24px 垂直节奏。新增卡片 section 必须同样带 `margin-bottom: 24px`，**不要**让相邻卡片间距塌缩为 0（只写 `overflow:hidden` 而漏掉外边距是常见错误，会导致两张卡片贴在一起、与其它卡片间距不一致）。
 
+**⑥ 表格任务卡片的表面、选中态与进度单元格。** 仪表盘的“最近任务”和“最近 BLAST 任务”是同一类任务表格卡片；两者必须使用相同的表面和进度布局契约。当前权威实现位于 `frontend/src/views/DashboardView.vue`。
+
+- 两张 `NDataTable` 均保留基础类 `.recent-table`，并附加 `.recent-table-surface`。后者负责不透明分层：表格容器与单元格使用 `var(--neutral-card)`，表头使用 `var(--neutral-bg)`；不得在表格区域使用 `rgba()`、`opacity` 或半透明白色叠加。浅色主题下分别对应白色表面和浅灰表头，深色主题自动跟随令牌。
+- 可选卡片使用共享选中态类（例如 `.is-selected`、`.card--selected` 或 `aria-selected="true"`）。任务卡片选中时必须保留全局 `4px` 左侧状态条，并使用 `color-mix()` 生成约 `4%` 主题色的极浅底、约 `40%` 主题色的描边和内描边；未选中卡片继续使用既有 `--neutral-card`，不得改变默认中性外观。
+- 表头与表体沿用 `.recent-table` 的字号、文字颜色和 `--neutral-border` 分隔线；行悬停仅使用 `var(--neutral-hover)`，不能覆盖卡片选中态的边框和状态条。
+- 所有列必须给出固定 `width`，`scroll-x` 等于列宽总和。当前分析任务表为 `970`，BLAST 任务表为 `1020`；窄屏在现有表格滚动容器内滚动，不为适配窄屏压缩列、折行百分比或在页面根部新增横向滚动。
+- 短值和离散列通过 Naive UI 列配置 `align: 'center'` 同时对齐表头与表体。任务名称、查询标题和时间等在当前仪表盘任务表中也保持居中；进度列例外，保持左对齐，避免进度条组合在居中列中产生随列宽变化的空白。
+- 进度单元格统一由 `renderTaskProgress()` 生成：外层 `.recent-task-progress` 使用 `display: flex`、`align-items: center`、`min-width: 0` 和 `white-space: nowrap`；内部 `.n-progress` 使用 `flex: 1 1 auto` 和 `min-width: 60px`；百分比 `.recent-task-progress__value` 使用 `flex: 0 0 44px`、右对齐、`white-space: nowrap` 与 `font-variant-numeric: tabular-nums`。`NProgress` 关闭内置指示器，百分比由固定宽度文本单独渲染，保证 `0%`、`45%`、`100%` 均不折行。
+- 操作列使用列级居中；多图标操作组通过 `NSpace` 的 `justify: 'center'` 和 `size: 12` 布局。图标按钮仍必须保留 `NTooltip`，删除操作仍通过 `NPopconfirm` 确认；本规范只约束样式与布局，不改变刷新、查看、重试或删除逻辑。
+
+**⑦ 平台通用卡片表格基线。** 除仪表盘任务表的专属进度规则外，所有嵌入 `NCard`、`.arco-card`、`.omichub-card`、`.table-card`、`.work-card`、`.result-card`、`.bottom-table`、`.table-wrap` 或 `.resource-tab` 的 `NDataTable` 都由 `frontend/src/styles/global.css` 的“卡片内数据表格”规则统一提供不透明 `--neutral-card` 表面、`--neutral-bg` 表头、`--neutral-border` 分隔线、`--neutral-hover` 行悬停色以及 `max-width: 100%` 容器约束。因此，任务/结果表、管理表和实验计算器结果表不得在局部样式中重新引入半透明表格底色或硬编码白色；业务页面只需按数据密度配置列宽、`scroll-x`、省略与对齐策略。
+
+参考结构：
+
+```ts
+const columns: DataTableColumns<Task> = [
+  { title: '任务名称', key: 'name', width: 220, align: 'center', ellipsis: { tooltip: true } },
+  { title: '进度', key: 'progress', width: 170, render: (row) => renderTaskProgress(row.progress) },
+  { title: '操作', key: 'actions', width: 110, align: 'center', render: renderActions },
+]
+```
+
 ### 33.3 验收清单（在 §10 通用清单之上补充）
 
 - [ ] 进度/百分比/计数等派生数值是否经归一化或确定性公式渲染，在 0–1 与 0–100 两种数据尺度下都正确（无 1000% / 无 1% 误显）？
-- [ ] `NProgress` 百分比是否单行显示（产物中 grep 到 `.n-progress-graph{min-width:0}` 与指示器 `nowrap`，类名拼写正确）？
+- [ ] `renderTaskProgress()` 是否关闭 `NProgress` 内置指示器，并由 `.recent-task-progress`、`.n-progress` 与 `.recent-task-progress__value` 的 flex/固定宽度组合保证百分比单行显示？
 - [ ] 数据表格是否**所有列固定 `width`、无弹性列**，且 `scroll-x` 等于列宽之和；长文本列有 `ellipsis` + Tooltip？
 - [ ] 短值/离散列是否 `align:'center'`（表头+表体一致），进度列是否保持左对齐？
 - [ ] 带"所属用户"的表格是否展示真实 `username`（后端回填），而非 UUID 或 mock；空数据是否走真实 `NEmpty`？
 - [ ] 操作列是否接真实接口；未上线能力是否诚实 `disabled` + Tooltip，无假 toast？
 - [ ] 仪表盘卡片 section 是否都带 `margin-bottom: 24px`，相邻卡片间距与其它卡片一致？
+- [ ] “最近任务”与“最近 BLAST 任务”是否都附加 `.recent-table-surface`，在选中和未选中状态下均保持不透明表格表面与清晰边界？
+- [ ] 卡片内 `NDataTable` 是否依赖全局“卡片内数据表格”规则获得主题表面，而没有通过局部 `rgba()`、`opacity` 或硬编码白色破坏明暗主题？
 - [ ] 设计是否规避 §33.1 的"AI 默认"清单，在不破坏 §1 克制与可访问性的前提下具备品牌层次与辨识度？
+
+## 34. 知识库阅读页三要素冻结规范（卡片 / 侧栏 / 大纲）
+
+> **状态：冻结（2026-07-28）**。本节规定知识库阅读页（快速入门等）的星尘引言卡片、文档树侧栏、右侧大纲三要素的样式与实现方式。**冻结期内不得修改其结构、样式与交互**；确需调整必须先修订本节并明确告知，再改代码。权威实现：
+> - `frontend/src/components/knowledge/DocReader.vue`（阅读布局 + 大纲）
+> - `frontend/src/components/knowledge/KnowledgeStardustQuote.vue`（星尘引言卡片）
+> - `frontend/src/components/knowledge/DocTree.vue`（文档树侧栏）
+
+### 34.1 星尘引言卡片（KnowledgeStardustQuote）
+
+**使用契约**：仅快速入门（`doc.id === 'getting-started'`）使用。`DocReader` 用正则 `OPENING_STARDUST_QUOTE` 匹配正文开头的萨根引言 blockquote，命中则**从 Markdown 中剥离**并以组件渲染；未命中则保留原文，不渲染组件。文档正文的开头引言段不得随意改写，否则卡片静默失效（2026-07-28 事故的教训：任何改动必须同步检查正则）。
+
+**样式契约**：
+- 容器：圆角卡片（`--radius-card`），`1px` 品牌浅边框（`--stardust-border-soft`），背景 = 双层 radial 星尘光晕 + `--neutral-card` 基底，`--stardust-card-shadow` 浅阴影；顶部 kicker `FROM STARDUST, TO DISCOVERY`（11px / 700 / 0.16em 字距 / `--stardust-blue`）。
+- 引文：英文主句用 Georgia 衬线斜体 `clamp(22px, 2.2vw, 30px)`，中文段落 15px / 1.9 行高 / `--neutral-text-2`；左侧 2px 渐变竖轨 + 大号 `“` 装饰引号；署名右对齐。
+- 装饰：两个描边圆环（缓慢漂移）+ 三颗闪烁星点（`box-shadow` 光晕），纯 CSS，`pointer-events: none`。
+- 动效：光束扫过 14s、竖轨呼吸 4.8s、圆环漂移 18/22s、星点闪烁 3.8s；`prefers-reduced-motion` 全停，`prefers-reduced-transparency` 退化为纯色卡片，`forced-colors` 有兜底。
+- 响应式：`≤680px` 缩小 padding/字号，隐藏第二圆环与第二星点。
+- 主题：全部经 `--stardust-*` / `--neutral-*` 令牌（`tokens.css` 亮暗双定义），禁止硬编码色值。
+
+### 34.2 文档树侧栏（DocTree）
+
+- 组件：naive-ui `NTree`，`block-line` + `block-node` + `expand-on-click`；展开态受控（`expandedKeys` / `update:expandedKeys`），选中态 `:selected-keys="['doc:'+activeId]"`。
+- 节点：图标（分类 `FolderOutline` / 文档 `DocumentTextOutline`，15px）+ 标签文本（`NTooltip` 悬浮显示全名，长名省略）+ 状态点（`NBadge` dot，仅对有权限用户显示审核状态）。
+- 样式：节点内容区 `padding: 3px 4px`、`--radius-sm` 圆角；hover `--neutral-hover`；选中 `--arco-primary-light` 背景；字号 `--font-body-size`，颜色 `--neutral-text-2`；过渡 `--motion-quick`。
+- 交互：`expand-on-click` 点击即展开并触发选择；选择经 `findNode` 回溯 `doc:` 前缀 key 后 emit `select`。
+
+### 34.3 右侧大纲（reader-toc）
+
+**实现方式（冻结）**：不用 md-editor-v3 的 `MdCatalog`（其内部事件总线曾导致大纲不渲染）。大纲从 `resolvedContent` 源码自行解析——跳过围栏代码块与引用块内的井号行，提取 `#{1,6}` 标题并剥离内联标记（图片/链接/强调/HTML）；活动项经滚动容器（`.content-body`）`scroll` 监听 + 标题 DOM `getBoundingClientRect` 校准；点击大纲项按矩形差值 `scrollTo` 平滑定位。文档切换时重置活动项并 `nextTick` 校准。
+
+**布局**：`reader-layout` flex 双栏 = 预览 `0 0 80%` + 大纲 `0 0 20%`，均 `min-width: 0` 防长串吹爆；大纲 `position: sticky; top: 16px`，`max-height: calc(100vh - 180px)` 自滚动，左缘 `1px --neutral-border` 分隔线。`≤1024px` 转单列，大纲移至文末（`position: static`，`max-height: 240px`，改上缘分隔线）。
+
+**样式**：标题 `大纲`（caption 字号 / 600 / 0.06em 字距 / 大写 / `--neutral-text-3`）；条目 5px 10px padding、`--radius-sm`、hover `--neutral-hover`；**活动条目** = `--arco-primary` 文字 + `--arco-primary-light` 背景 + 左缘 3px×14px 品牌状态线（呼应平台侧栏选中态）；`focus-visible` 2px 主色 outline；大纲区自有细滚动条（亮 `rgba(29,33,41,.15)` / 暗 `rgba(255,255,255,.16)`，6px 圆角 thumb）。
+
+### 34.4 变更纪律
+
+1. 三要素的结构/样式/交互改动一律先改本节规范再改代码，禁止"先改后补"。
+2. 任何涉及 `getting-started` 正文开头、引言正则、`resolvedContent` 的改动，必须回归验证：卡片渲染、大纲非空、锚点定位、活动项跟随四项全绿。
+3. 构建后抽查 dist 产物含 `knowledge-stardust-quote` 与 `暂无大纲` 特征串（防"改了没进包"）。

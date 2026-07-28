@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { h } from 'vue'
-import { NTree, NIcon, NBadge } from 'naive-ui'
+import { NTree, NIcon, NBadge, NTooltip } from 'naive-ui'
 import type { TreeOption } from 'naive-ui'
 import { FolderOutline, DocumentTextOutline } from '@vicons/ionicons5'
 import { useAuthStore } from '@/stores/auth'
@@ -9,10 +9,12 @@ import type { DocTreeNode, KnowledgeDocStatus } from '@/types/knowledge'
 const props = defineProps<{
   treeData: DocTreeNode[]
   activeId?: string
+  expandedKeys?: string[]
 }>()
 
 const emit = defineEmits<{
   select: [docId: string]
+  'update:expandedKeys': [keys: string[]]
 }>()
 
 const authStore = useAuthStore()
@@ -59,7 +61,10 @@ function renderLabel({
       h(NIcon, { size: 15, class: 'tree-icon' }, {
         default: () => h(node.isCategory ? FolderOutline : DocumentTextOutline),
       }),
-      h('span', { class: 'tree-label-text' }, node.label),
+      h(NTooltip, { placement: 'top' }, {
+        trigger: () => h('span', { class: 'tree-label-text' }, node.label),
+        default: () => node.label,
+      }),
       showStatus
         ? h(NBadge, {
             dot: true,
@@ -69,6 +74,10 @@ function renderLabel({
         : null,
     ],
   )
+}
+
+function handleUpdateExpandedKeys(keys: Array<string | number>) {
+  emit('update:expandedKeys', keys.map(String))
 }
 
 function handleSelect(keys: string[]) {
@@ -95,12 +104,15 @@ function findNode(nodes: DocTreeNode[], key: string): DocTreeNode | undefined {
   <div class="doc-tree">
     <NTree
       block-line
+      block-node
       expand-on-click
       :data="treeOptions()"
       :selected-keys="activeId ? [`doc:${activeId}`] : []"
+      :expanded-keys="expandedKeys"
       :render-switcher-icon="renderSwitcherIcon"
       :render-label="renderLabel"
       @update:selected-keys="handleSelect"
+      @update:expanded-keys="handleUpdateExpandedKeys"
     />
   </div>
 </template>
@@ -115,7 +127,21 @@ function findNode(nodes: DocTreeNode[], key: string): DocTreeNode | undefined {
 }
 
 .doc-tree :deep(.n-tree-node-content) {
-  padding: 2px 0;
+  padding: 3px 4px;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--motion-quick) ease-out;
+}
+
+.doc-tree :deep(.n-tree-node-content:hover) {
+  background-color: var(--neutral-hover);
+}
+
+.doc-tree :deep(.n-tree-node--selected .n-tree-node-content) {
+  background-color: var(--arco-primary-light);
+}
+
+.doc-tree :deep(.n-tree-node--selected .n-tree-node-content:hover) {
+  background-color: var(--arco-primary-light);
 }
 
 .doc-tree :deep(.n-tree-node-switcher) {
@@ -125,11 +151,13 @@ function findNode(nodes: DocTreeNode[], key: string): DocTreeNode | undefined {
 .tree-label {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  color: var(--neutral-text-2);
-  transition: color 0.2s ease;
+  gap: 8px;
   width: 100%;
+  min-width: 0;
+  color: var(--neutral-text-2);
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-height);
+  transition: color var(--motion-quick) ease-out;
 }
 
 .tree-label--active {
@@ -146,8 +174,13 @@ function findNode(nodes: DocTreeNode[], key: string): DocTreeNode | undefined {
 }
 
 .tree-icon {
-  color: var(--neutral-text-3);
   flex-shrink: 0;
+  color: var(--neutral-text-3);
+  transition: color var(--motion-quick) ease-out;
+}
+
+.doc-tree :deep(.n-tree-node-content:hover) .tree-icon {
+  color: var(--neutral-text-2);
 }
 
 .tree-label--active .tree-icon {

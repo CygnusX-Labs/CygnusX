@@ -190,6 +190,28 @@ tools:
     llm_result_fields: [stats, top_up_genes, top_down_genes, success, error]
     ui_result_fields: [plotly_figure, result_ref]
 
+  - key: deg-analysis
+    name: omichub_run_deg_analysis
+    description: 打开 DEG 差异表达分析工作台，由用户上传 Counts 矩阵、样本分组与比较对文件，自动选择 DESeq2（有重复）或 edgeR（1v1 无重复）完成差异分析。
+    category: analysis
+    invocation_mode: open_page
+    route: /tools/deg-analysis
+    requires_confirm: false
+    annotations:
+      readOnlyHint: false
+      destructiveHint: false
+      openWorld: false
+      idempotent: true
+    input_schema:
+      type: object
+      properties:
+        method:
+          type: string
+          enum: [auto, deseq2, edger]
+          description: 希望使用的差异分析引擎；auto 表示按重复数自动路由，页面仍允许用户随时切换
+    llm_result_fields: [route, message, success, error]
+    ui_result_fields: [route, arguments]
+
   - key: phylogenetic-tree
     name: omichub_build_phylogenetic_tree
     description: 打开系统发育树工作台，由用户上传序列、配置参数，并通过专用 Celery worker 完成建树与可视化。

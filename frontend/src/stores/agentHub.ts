@@ -99,6 +99,26 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   const isStreaming = ref(false)
   const streamingContent = ref('')
   const streamingThought = ref('')
+  /** 助手回复要求用户提供数据时置位（以 📤 需要您提供数据 开头），聊天界面据此弹窗提醒 */
+  const dataRequestNotice = ref<{ sessionId: string; text: string } | null>(null)
+  /** 工具调用轮次触顶时置位，聊天界面据此弹窗询问是否以扩展上限（1000 轮）继续 */
+  const roundLimitPrompt = ref<{ sessionId: string; maxRounds: number } | null>(null)
+  /** 上下文超窗触发历史压缩时置位（值为压缩前估算 token），聊天界面据此提示 */
+  const contextCompressedNotice = ref<number | null>(null)
+  /** 路由/交接命中 default_mode=studio 的 Agent 时置位，聊天界面据此自动跳转 AI 工作台 */
+  const studioRedirect = ref<{ agentId: string; agentName: string } | null>(null)
+
+  /** 目标 Agent 声明默认工作台模式且当前是普通聊天会话时，发起工作台跳转 */
+  function maybeRedirectToStudio(agentId: string, agentName: string): void {
+    const session = currentSession.value
+    if (!session || session.mode === 'studio') return
+    if (studioSessionIds.value.has(session.id)) return
+    if (studioRedirect.value?.agentId === agentId) return
+    const target = getAgent(agentId)
+    if ((target?.features as any)?.studio?.default_mode === 'studio') {
+      studioRedirect.value = { agentId, agentName }
+    }
+  }
   const availableModels = ref<AvailableModel[]>([])
   const pipelineTasks = ref<Record<string, PipelineTask>>({})
   const pipelinePollTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -862,6 +882,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       skillNames?: string[]
       mcpMode?: 'off' | 'auto' | 'manual'
       extraMcpServers?: string[]
+      /** 工具轮次触顶后用户确认继续：本次请求上限扩展到 1000 轮 */
+      extendMaxRounds?: boolean
     } = {},
   ): Promise<void> {
     const session = currentSession.value
@@ -982,6 +1004,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         enableCodeExecution: options.enableCodeExecution ?? false,
         mcpMode: options.mcpMode ?? session.mcp_mode ?? 'auto',
         extraMcpServers: options.extraMcpServers ?? session.extra_mcp_servers ?? [],
+        extendMaxRounds: options.extendMaxRounds ?? false,
       },
       {
         onText: (text, isReasoning) => {
@@ -1059,6 +1082,14 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         onPlan: (steps) => {
           currentPlan.value = steps
         },
+        onRoundLimit: (event) => {
+          if (event.canExtend) {
+            roundLimitPrompt.value = { sessionId: event.sessionId, maxRounds: event.maxRounds }
+          }
+        },
+        onContextCompressed: (estimatedTokens) => {
+          contextCompressedNotice.value = estimatedTokens
+        },
         onApprovalRequest: (event) => {
           // 找到对应工具卡片：置 awaiting_approval 并保存审批信息（卡片由 ApprovalCard 接管交互）
           const tc = (aiMsg.toolCalls || []).find((t) => t.id === event.tool_call_id)
@@ -1101,6 +1132,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             color: event.color,
             reason: event.reason,
           }
+          maybeRedirectToStudio(event.agent_id, event.name)
         },
         onHandoff: (event) => {
           // 交接后会话绑定目标 Agent，下一轮消息直接由目标继续；当前消息的工具卡保留完整交接摘要。
@@ -1114,6 +1146,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
               color: target.color,
               reason: event.reason,
             }
+            maybeRedirectToStudio(target.id, target.name)
           }
         },
         onConsultation: (event) => {
@@ -1180,6 +1213,9 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             }
           }
           if (aiMsg.status !== 'error' && aiMsg.status !== 'empty') aiMsg.status = 'complete'
+          if (aiMsg.content.trimStart().startsWith('📤 需要您提供数据')) {
+            dataRequestNotice.value = { sessionId: session.id, text: aiMsg.content.trim() }
+          }
           isStreaming.value = false
           streamingContent.value = ''
           streamingThought.value = ''
@@ -1331,6 +1367,10 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     // state
     mcps, skills, agents, sessions, currentSessionId,
     isStreaming, isPaused, streamingContent, streamingThought, availableModels, pipelineTasks,
+    dataRequestNotice,
+    roundLimitPrompt,
+    contextCompressedNotice,
+    studioRedirect,
     studioSessionIds, currentPlan, studioPermissions,
     // getters
     activeAgents, currentSession, currentAgent, groupedSessions,

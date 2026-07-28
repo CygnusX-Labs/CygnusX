@@ -349,11 +349,15 @@ async def cancel_upload(
 async def upload_chat_file(
     request: Request,
     file: UploadFile = File(...),  # noqa: B008 — FastAPI 上传参数标准写法
+    session_id: str | None = Form(None),
 ) -> dict[str, Any]:
     """接收聊天附件，保存到用户隔离目录并返回访问 URL。
 
     用户身份直接取自 AuthMiddleware 注入的 request.state.user_id，
     避免上传接口重复查询数据库，降低抖动/版本校验带来的失败面。
+
+    可选 session_id（聊天会话唯一 ID）：提供时会作为短标记写入文件名
+    （``{file_id}.s{session_id前8位}{suffix}``），便于按会话检索上传文件。
     """
     current_user_id: str = getattr(request.state, "user_id", "") or ""
     if not current_user_id:
@@ -366,7 +370,12 @@ async def upload_chat_file(
 
     suffix = Path(file.filename or "").suffix
     file_id = uuid.uuid4().hex
-    filename = f"{file_id}{suffix}"
+    session_tag = ""
+    if session_id:
+        safe_sid = "".join(ch for ch in session_id if ch.isalnum() or ch == "-")
+        if safe_sid:
+            session_tag = f".s{safe_sid[:8]}"
+    filename = f"{file_id}{session_tag}{suffix}"
     dest = upload_dir / filename
     body = await file.read()
     async with await anyio.open_file(dest, "wb") as buffer:

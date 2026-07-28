@@ -79,6 +79,7 @@ async def test_valid_rna_submission(validator: FlowSubmissionValidator, rna_flow
 async def test_missing_required_parameter(validator: FlowSubmissionValidator, rna_flow) -> None:
     context = _make_context()
     arguments = {
+        "name": "Local RNA-seq",
         "parameters": {
             "project_name": "",  # 显式空字符串，覆盖默认值
             "Genome_Version": "hg38",
@@ -93,9 +94,32 @@ async def test_missing_required_parameter(validator: FlowSubmissionValidator, rn
 
 
 @pytest.mark.asyncio
+async def test_missing_task_name(validator: FlowSubmissionValidator, rna_flow) -> None:
+    context = _make_context()
+    arguments = {
+        "parameters": {
+            "project_name": "Test",
+            "Genome_Version": "hg38",
+            "species": "Homo sapiens",
+            "client": "Test",
+            "raw_data_path": "/data/raw",
+            "execution_mode": "local",
+            "Library_Types": "fr-unstranded",
+        },
+        "sample_sheet": [{"sample": "S1", "sample_name": "Sample1", "group": "ctrl"}],
+    }
+
+    result = await validator.validate(context, rna_flow, arguments)
+
+    assert result.valid is False
+    assert any(e.field == "name" and e.code == "MISSING_REQUIRED" for e in result.errors)
+
+
+@pytest.mark.asyncio
 async def test_invalid_enum_value(validator: FlowSubmissionValidator, rna_flow) -> None:
     context = _make_context()
     arguments = {
+        "name": "Local RNA-seq",
         "parameters": {
             "project_name": "Test",
             "Genome_Version": "not_a_genome",
@@ -119,6 +143,7 @@ async def test_invalid_enum_value(validator: FlowSubmissionValidator, rna_flow) 
 async def test_comparisons_group_not_found(validator: FlowSubmissionValidator, rna_flow) -> None:
     context = _make_context()
     arguments = {
+        "name": "Referenced sample sheet RNA-seq",
         "parameters": {
             "project_name": "Test",
             "Genome_Version": "hg38",
@@ -169,6 +194,7 @@ async def test_condition_param_ignored_when_not_met(
 ) -> None:
     context = _make_context()
     arguments = {
+        "name": "Conditional RNA-seq",
         "parameters": {
             "project_name": "Test",
             "Genome_Version": "hg38",
@@ -204,6 +230,7 @@ async def test_sample_sheet_ref_resolution(validator: FlowSubmissionValidator, r
     validator = FlowSubmissionValidator(file_resolver=resolver)
 
     arguments = {
+        "name": "Referenced sample sheet RNA-seq",
         "parameters": {
             "project_name": "Test",
             "Genome_Version": "hg38",

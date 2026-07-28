@@ -26,7 +26,17 @@ async function renderPlotly() {
     plotlyContainer.value,
     (props.chart.option.data || []) as Plotly.Data[],
     (props.chart.option.layout || {}) as Partial<Plotly.Layout>,
-    { responsive: true, displayModeBar: true, displaylogo: false },
+    {
+      responsive: true,
+      displayModeBar: true,
+      displaylogo: false,
+      // 默认 600 DPI 导出（scale = 600/96）
+      toImageButtonOptions: {
+        format: 'png',
+        filename: 'omichub_plot_600dpi',
+        scale: 6.25,
+      } as Plotly.Config['toImageButtonOptions'],
+    },
   )
 }
 

@@ -7,6 +7,7 @@ import AgentSandbox from './AgentSandbox.vue'
 import SessionHistoryDrawer from './SessionHistoryDrawer.vue'
 import AppLoading from '@/components/AppLoading.vue'
 import { useAgentHubStore, type AgentSession } from '@/stores/agentHub'
+import { studioApi } from '@/api/studio'
 import { NButton } from 'naive-ui'
 
 const store = useAgentHubStore()
@@ -51,7 +52,24 @@ function handleNewChat() {
 }
 
 function handleSelectAgent(agentId: string) {
+  const agent = store.getAgent(agentId)
+  // 声明了 default_mode: studio 的 Agent（如代码助手）：默认直接进入 AI 工作台
+  if (agent && (agent.features as any)?.studio?.default_mode === 'studio') {
+    void enterStudioForAgent(agentId)
+    return
+  }
   store.startSessionFromAgent(agentId)
+}
+
+/** 为指定 Agent 创建 Studio 工作台会话并跳转 */
+async function enterStudioForAgent(agentId: string) {
+  try {
+    const created = await studioApi.createSession({ agent_id: agentId })
+    store.markStudioSession(created.session_id)
+    router.push({ name: 'studio', params: { sessionId: created.session_id } })
+  } catch (e: any) {
+    error.value = e?.response?.data?.detail || '创建工作台会话失败'
+  }
 }
 
 function handleHistorySelect(session: AgentSession, messageId?: string) {

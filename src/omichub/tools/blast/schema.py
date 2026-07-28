@@ -132,6 +132,7 @@ class BlastHitDTO(OmicsHubBaseSchema):
     hit_accession: str = ""
     hit_len: int = 0
     identity_percent: float = 0.0
+    query_coverage: float = 0.0
     subject_coverage: float = 0.0
     total_score: float = 0.0
     best_hsp: BlastHspDetailDTO | None = None

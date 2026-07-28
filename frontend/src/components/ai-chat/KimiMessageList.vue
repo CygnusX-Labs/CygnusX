@@ -51,7 +51,11 @@ interface ScrollerExpose {
 }
 
 const scrollerRef = ref<InstanceType<typeof DynamicScroller> & ScrollerExpose>()
+/** 用户是否已上翻离开底部（true 时暂停自动跟随，并显示"回到底部"悬浮按钮） */
 const showScrollToBottom = ref(false)
+
+/** 距底多少像素内视为"接近底部"，自动跟随流式输出 */
+const NEAR_BOTTOM_THRESHOLD = 100
 
 const streamingMessageId = computed(() => {
   const lastMsg = props.messages[props.messages.length - 1]
@@ -61,8 +65,67 @@ const streamingMessageId = computed(() => {
   return ''
 })
 
-function scrollToBottom() {
-  scrollerRef.value?.scrollToBottom()
+function getScrollerEl(): HTMLElement | undefined {
+  return scrollerRef.value?.$el as HTMLElement | undefined
+}
+
+/** 自动跟随滚动的缓动时长（ms）。每个流式 token 会重启该动画，形成连续"缓跟"。 */
+const SCROLL_EASE_MS = 220
+
+/** 正在进行的平滑跟随动画句柄；新一轮滚动前先取消，避免叠加抖动。 */
+let scrollAnim: number | null = null
+
+function cancelScrollAnim() {
+  if (scrollAnim !== null) {
+    cancelAnimationFrame(scrollAnim)
+    scrollAnim = null
+  }
+}
+
+/**
+ * 平滑跟随到底部。
+ * 用 easeOutCubic 把 scrollTop 从当前位置缓动到 scrollHeight，而非每帧硬设：
+ * 流式期间每个 token 触发一次调用，新动画读取"当前"scrollTop 向新目标缓动，
+ * 视觉上是一条连续、丝滑的跟随曲线，而不是逐 token 的"跳动"。
+ * force=true（点击"回到底部" / 新审批 / 澄清事件）时取消缓动并立即贴底。
+ */
+function scrollToBottom(force = false) {
+  if (!force && showScrollToBottom.value) return
+  const el = getScrollerEl()
+  if (!el) return
+  if (force) {
+    showScrollToBottom.value = false
+    cancelScrollAnim()
+    el.scrollTop = el.scrollHeight
+    return
+  }
+  // 已有跟随动画在跑时直接返回，不重启缓动：
+  // 动画每帧重读 scrollHeight 会自动追上持续增长的内容；
+  // 若每个 token 都重启动画，缓动曲线反复从 0 开始，速度突变形成肉眼可见的"窗口抖动"。
+  if (scrollAnim !== null) return
+  smoothScrollTo(el, el.scrollHeight, SCROLL_EASE_MS)
+}
+
+/** easeOutCubic 平滑滚动；每帧重读 scrollHeight，自动追上新增内容高度。 */
+function smoothScrollTo(el: HTMLElement, target: number, duration: number) {
+  cancelScrollAnim()
+  const start = el.scrollTop
+  const delta = target - start
+  if (delta <= 0) return // 已在底部或目标更小，无需移动
+  const startTime = performance.now()
+  const step = (now: number) => {
+    const t = Math.min(1, (now - startTime) / duration)
+    const eased = 1 - Math.pow(1 - t, 3)
+    // 重读 scrollHeight：流式内容在动画期间仍在增长，目标随之上移，避免"跟不上"
+    const currentTarget = el.scrollHeight - el.clientHeight
+    el.scrollTop = start + (currentTarget - start) * eased
+    if (t < 1) {
+      scrollAnim = requestAnimationFrame(step)
+    } else {
+      scrollAnim = null
+    }
+  }
+  scrollAnim = requestAnimationFrame(step)
 }
 
 function scrollToMessage(messageId: string) {
@@ -72,27 +135,25 @@ function scrollToMessage(messageId: string) {
 }
 
 function handleScroll() {
-  const el = scrollerRef.value?.$el as HTMLElement | undefined
+  const el = getScrollerEl()
   if (!el) return
   const { scrollTop, scrollHeight, clientHeight } = el
-  showScrollToBottom.value = scrollHeight - scrollTop - clientHeight > 100
+  showScrollToBottom.value = scrollHeight - scrollTop - clientHeight > NEAR_BOTTOM_THRESHOLD
 }
+
+defineExpose({ scrollToBottom, scrollToMessage })
 
 watch(
   () => props.messages.length,
   () => {
-    nextTick(() => {
-      if (!showScrollToBottom.value) scrollToBottom()
-    })
+    nextTick(() => scrollToBottom())
   },
 )
 
 watch(
-  () => props.streamingContent,
+  () => [props.streamingContent, props.streamingThought],
   () => {
-    nextTick(() => {
-      if (!showScrollToBottom.value) scrollToBottom()
-    })
+    nextTick(() => scrollToBottom())
   },
 )
 
@@ -111,6 +172,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  cancelScrollAnim()
   const el = scrollerRef.value?.$el as HTMLElement | undefined
   el?.removeEventListener('scroll', handleScroll)
 })
@@ -168,7 +230,7 @@ onUnmounted(() => {
     </DynamicScroller>
 
     <transition name="fade">
-      <n-button v-if="showScrollToBottom" circle class="scroll-to-bottom" @click="scrollToBottom">
+      <n-button v-if="showScrollToBottom" circle class="scroll-to-bottom" @click="scrollToBottom(true)">
         <template #icon>
           <n-icon><ChevronDownOutline /></n-icon>
         </template>

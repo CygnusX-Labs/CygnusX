@@ -177,10 +177,12 @@ def test_parse_blast_xml_extracts_hit_statistics(tmp_path: Path) -> None:
     assert hit["hit_id"] == "Arabidopsis"
     assert hit["hit_def"] == "protein"
     assert hit["identity_percent"] == pytest.approx(83.33)
+    assert hit["query_coverage"] == pytest.approx(100.0)
     assert hit["best_hsp"]["evalue"] == pytest.approx(1e-20)
 
     # 兼容旧版 DTO 列表仍可通过 hit_dtos 访问
     assert result["hit_dtos"][0].subject_id == "Arabidopsis"
+    assert result["hit_dtos"][0].query_coverage == pytest.approx(100.0)
 
 
 def test_parse_blast_xml_rejects_missing_file(tmp_path: Path) -> None:

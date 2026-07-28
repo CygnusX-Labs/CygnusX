@@ -40,6 +40,7 @@ def _prepare_request() -> PipelinePrepareRequest:
         ],
         comparisons=[{"name": "TvsC", "Control": "control", "Treat": "treat"}],
         library_type="fr-unstranded",
+        task_name="MCP RNA task",
         project_name="MCP RNA",
     )
 
@@ -60,6 +61,11 @@ def test_pipeline_preset_exposes_required_tools() -> None:
         "check_workspace_data",
     }
     assert set(preset["handlers"]) == names
+
+    rna_prepare = next(tool for tool in preset["tools"] if tool["name"] == "rna_seq_prepare")
+    schema = rna_prepare["inputSchema"]
+    assert "task_name" in schema["required"]
+    assert schema["properties"]["task_name"]["minLength"] == 1
 
 
 @pytest.mark.asyncio
@@ -85,6 +91,7 @@ async def test_rna_prepare_maps_public_parameters_to_existing_flow() -> None:
     assert flow_id == "rna_seq"
     assert arguments["parameters"]["Genome_Version"] == "hg38"
     assert arguments["parameters"]["Library_Types"] == "fr-unstranded"
+    assert arguments["name"] == "MCP RNA task"
     assert arguments["sample_sheet"][0]["sample"] == "S1"
     assert result["prepared_params"] == {
         "confirmation_id": "confirm-1",

@@ -20,12 +20,27 @@ const props = withDefaults(defineProps<{
   showRuler: true,
 })
 
+const emit = defineEmits<{ select: [] }>()
+
 const svgWidth = 700
 const padding = computed(() => ({
   left: props.showRuler ? 50 : 10,
   right: 30,
 }))
-const svgHeight = computed(() => props.barHeight + 16)
+const svgHeight = computed(() => props.barHeight + 32)
+
+const ticks = computed(() => {
+  const targetCount = 6
+  const roughStep = Math.max(1, props.hitLen / targetCount)
+  const magnitude = 10 ** Math.floor(Math.log10(roughStep))
+  const normalized = roughStep / magnitude
+  const nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10
+  const step = nice * magnitude
+  const values = [1]
+  for (let value = step; value < props.hitLen; value += step) values.push(Math.round(value))
+  if (props.hitLen > 1) values.push(props.hitLen)
+  return [...new Set(values)]
+})
 
 function scale(pos: number): number {
   return padding.value.left + (pos / props.hitLen) * (svgWidth - padding.value.left - padding.value.right)
@@ -48,26 +63,16 @@ function getColor(identity: number): string {
     <g v-if="showRuler">
       <line
         :x1="padding.left"
-        :y1="barHeight / 2 + 6"
+        :y1="barHeight + 14"
         :x2="svgWidth - padding.right"
-        :y2="barHeight / 2 + 6"
-        stroke="#e5e7eb"
+        :y2="barHeight + 14"
+        stroke="var(--neutral-border)"
         stroke-width="1.5"
       />
-      <text
-        :x="padding.left - 4"
-        :y="barHeight / 2 + 10"
-        text-anchor="end"
-        fill="#9ca3af"
-        font-size="9"
-      >1</text>
-      <text
-        :x="svgWidth - padding.right + 4"
-        :y="barHeight / 2 + 10"
-        text-anchor="start"
-        fill="#9ca3af"
-        font-size="9"
-      >{{ hitLen.toLocaleString() }}</text>
+      <g v-for="tick in ticks" :key="tick">
+        <line :x1="scale(tick)" :x2="scale(tick)" :y1="barHeight + 10" :y2="barHeight + 18" stroke="var(--neutral-text-3)" stroke-width="1" />
+        <text :x="scale(tick)" :y="barHeight + 30" text-anchor="middle" fill="var(--neutral-text-3)" font-size="9">{{ tick.toLocaleString() }}</text>
+      </g>
     </g>
 
     <NTooltip
@@ -86,6 +91,7 @@ function getColor(identity: number): string {
           :fill="getColor(hsp.identity_percent)"
           opacity="0.9"
           style="cursor: pointer;"
+          @click="emit('select')"
         />
       </template>
       <div style="font-size: 12px; line-height: 1.5;">

@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker test lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-runtime-dirs docker-fix-permissions docker-up docker-build-enrichment docker-build-worker docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge docker-start docker-reload docker-dev-refresh clean init-admin init-cookies check-alembic-heads sync-knowledge
+.PHONY: help dev dev-worker test lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-runtime-dirs docker-fix-permissions docker-up docker-build-enrichment docker-build-deg docker-build-sandboxes docker-build-all-images docker-build-worker docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge docker-start docker-reload docker-dev-refresh clean init-admin init-cookies check-alembic-heads sync-knowledge
 
 help: ## 显示所有可用命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -53,6 +53,7 @@ COMPOSE_ALL    := docker compose -f deploy/docker/docker-compose.yml
 DOCKER_NETWORK := omichub_net
 SANDBOX_NETWORK := omichub-sandbox-net
 ENRICHMENT_DOCKER_IMAGE ?= omichub-r-enrichment:v1
+DEG_DOCKER_IMAGE ?= omichub-r-deg:v1
 DATA_ROOT ?= /data/omichub
 PUID ?= $(shell id -u)
 PGID ?= $(shell id -g)
@@ -80,10 +81,66 @@ docker-up: docker-network ## 启动主栈 (web/db/redis/nginx/beat/flower)
 docker-build-enrichment: ## 构建 GO / KEGG 富集分析 R 运行时镜像
 	docker build -t $(ENRICHMENT_DOCKER_IMAGE) -f deploy/docker/Dockerfile.enrichment tool_configs/enrichments
 
-docker-build-worker: docker-build-enrichment ## 构建富集运行时、通用 Worker 与系统发育 Worker 镜像
+docker-build-deg: ## 构建 DEG 差异表达分析 R 运行时镜像（DESeq2 + edgeR，支持 1v1 无重复）
+	docker build -t $(DEG_DOCKER_IMAGE) -f deploy/docker/Dockerfile.deg tool_configs/deg
+
+docker-build-sandboxes: ## 重建全部沙盒/分析运行时镜像（runtime 三件套 + 旧沙盒池 + studio base/bio + 终端全家桶，任一失败即中止）
+	@echo ""
+	@echo "╔══════════════════════════════════════════════════════════════╗"
+	@echo "║  🐳 OmicHub 沙盒/分析运行时镜像全量重建（共 12 个镜像）        ║"
+	@echo "╚══════════════════════════════════════════════════════════════╝"
+	@echo ""
+	@echo "🧪 步骤 1/5：Studio 运行时三件套（omichub-analysis core/plot/scrna）..."
+	deploy/runtime-images/build.sh
+	@echo "   ✅ 步骤 1/5 完成"
+	@echo ""
+	@echo "📦 步骤 2/5：旧沙盒池镜像（omichub/sandbox-base:latest）..."
+	docker build -t omichub/sandbox-base:latest -f deploy/sandbox/Dockerfile deploy/sandbox
+	@echo "   ✅ 步骤 2/5 完成"
+	@echo ""
+	@echo "🛠️  步骤 3/5：Studio 旧镜像（omichub-sandbox base/bio）..."
+	deploy/studio/build.sh
+	@echo "   ✅ 步骤 3/5 完成"
+	@echo ""
+	@echo "💻 步骤 4/5：终端基础镜像（omichub/sandbox-terminal:latest）..."
+	docker build -t omichub/sandbox-terminal:latest tool_configs/terminal/docker/
+	@echo "   ✅ 步骤 4/5 完成"
+	@echo ""
+	@echo "🧬 步骤 5/5：终端子镜像 6 个（rnaseq/scrna/gatk/ggplot2/assembly/metagenomics）..."
+	@i=0; for t in rnaseq scrna gatk ggplot2 assembly metagenomics; do \
+		i=$$((i+1)); \
+		echo ""; \
+		echo "   ▶ [$$i/6] 构建 omichub/sandbox-$$t:latest ..."; \
+		docker build -t omichub/sandbox-$$t:latest -f tool_configs/terminal/docker/Dockerfile.$$t tool_configs/terminal/docker/ || exit 1; \
+		echo "   ✅ [$$i/6] omichub/sandbox-$$t:latest 完成"; \
+	done
+	@echo ""
+	@echo "📋 镜像清单核对："
+	@ok=0; miss=0; \
+	for img in omichub-analysis:core-2026.07 omichub-analysis:plot-2026.07 omichub-analysis:scrna-2026.07 \
+		omichub/sandbox-base:latest omichub-sandbox:base omichub-sandbox:bio omichub/sandbox-terminal:latest \
+		omichub/sandbox-rnaseq:latest omichub/sandbox-scrna:latest omichub/sandbox-gatk:latest \
+		omichub/sandbox-ggplot2:latest omichub/sandbox-assembly:latest omichub/sandbox-metagenomics:latest; do \
+		if docker image inspect $$img >/dev/null 2>&1; then \
+			echo "   ✅ $$img"; ok=$$((ok+1)); \
+		else \
+			echo "   ❌ 缺失 $$img"; miss=$$((miss+1)); \
+		fi; \
+	done; \
+	echo ""; \
+	echo "=> 共 13 个镜像：就位 $$ok 个，缺失 $$miss 个"; \
+	if [ $$miss -gt 0 ]; then echo "=> ⚠️  有镜像缺失，请检查上方构建日志"; exit 1; fi
+	@echo "=> ✅ 全部沙盒/分析运行时镜像构建完成"
+
+docker-build-all-images: docker-build-sandboxes docker-build-worker ## 一键重建所有镜像（沙盒/分析运行时 + 富集/DEG/Worker + 主栈/Worker compose 栈）
+	$(COMPOSE_MAIN) build
+	$(COMPOSE_WORKER) build
+	@echo "=> ✅ 所有镜像重建完成"
+
+docker-build-worker: docker-build-enrichment docker-build-deg ## 构建富集/DEG 运行时、通用 Worker 与系统发育 Worker 镜像
 	$(COMPOSE_WORKER) build worker phylo-worker
 
-docker-up-worker: docker-network docker-build-enrichment ## 构建并启动富集运行时、通用与系统发育 Worker 栈
+docker-up-worker: docker-network docker-build-enrichment docker-build-deg ## 构建并启动富集/DEG 运行时、通用与系统发育 Worker 栈
 	@python3 scripts/render_worker_config.py
 	@set -a; . data/.worker-config.env; set +a; \
 		$(MAKE) --no-print-directory docker-runtime-dirs DATA_ROOT="$$WORKER_SHARED_DATA_DIR"
@@ -140,6 +197,7 @@ docker-start: ## 彻底重建：清空一切 + 重建镜像 + 构建前端 + 启
 	$(COMPOSE_MAIN) build --no-cache
 	$(COMPOSE_WORKER) build --no-cache
 	@$(MAKE) --no-print-directory docker-build-enrichment
+	@$(MAKE) --no-print-directory docker-build-deg
 	@echo "=> 启动全部服务..."
 	@$(MAKE) --no-print-directory docker-network
 	@$(MAKE) --no-print-directory docker-runtime-dirs
@@ -189,6 +247,11 @@ docker-reload: docker-network ## 重新构建前端并刷新主栈 + Worker (开
 	@docker image inspect $(ENRICHMENT_DOCKER_IMAGE) >/dev/null 2>&1 && \
 		echo "   ⏭️  $(ENRICHMENT_DOCKER_IMAGE) 已存在，跳过构建" || \
 		$(MAKE) --no-print-directory docker-build-enrichment
+	@echo ""
+	@echo "📊 构建 DEG 差异表达分析 R 运行时镜像（已存在则跳过）..."
+	@docker image inspect $(DEG_DOCKER_IMAGE) >/dev/null 2>&1 && \
+		echo "   ⏭️  $(DEG_DOCKER_IMAGE) 已存在，跳过构建" || \
+		$(MAKE) --no-print-directory docker-build-deg
 	@echo ""
 	@echo "⚡ 步骤 5/8：重新构建前端生产包（vite build）..."
 	cd frontend && npm run build

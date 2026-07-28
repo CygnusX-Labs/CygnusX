@@ -8,6 +8,7 @@ import {
   NSpace,
   NIcon,
   NPopconfirm,
+  NTooltip,
   useMessage,
 } from 'naive-ui'
 import {
@@ -15,6 +16,9 @@ import {
   SaveOutline,
   CloseOutline,
   AddOutline,
+  ChevronBackOutline,
+  ChevronForwardOutline,
+  DocumentTextOutline,
   HourglassOutline,
   TrashOutline,
 } from '@vicons/ionicons5'
@@ -37,6 +41,7 @@ const navTitle = ref('实验室知识库')
 const navItems = ref<KnowledgeItem[]>([])
 const activeDoc = ref<KnowledgeDoc | null>(null)
 const isEditMode = ref(false)
+const isNavigationCollapsed = ref(false)
 
 const loadingNav = ref(false)
 const loadingDoc = ref(false)
@@ -48,6 +53,7 @@ const draftSummary = ref('')
 
 const showCreateModal = ref(false)
 const showAuditPanel = ref(false)
+const expandedKeys = ref<string[]>([])
 
 const isAdmin = computed(() => authStore.isAdmin)
 
@@ -110,6 +116,10 @@ function selectDoc(docId: string) {
     return
   }
   router.push({ name: 'knowledge-doc', params: { docId } })
+}
+
+function toggleNavigation() {
+  isNavigationCollapsed.value = !isNavigationCollapsed.value
 }
 
 function startEdit() {
@@ -207,48 +217,122 @@ onMounted(async () => {
 <template>
   <main class="docs-layout page-container" aria-label="知识库">
     <!-- 左侧目录树 -->
-    <div class="docs-sider">
+    <div class="docs-sider" :class="{ 'docs-sider--collapsed': isNavigationCollapsed }">
       <NCard :bordered="false" class="arco-card nav-card">
-        <div class="nav-title">{{ navTitle }}</div>
+        <div v-if="isNavigationCollapsed" class="collapsed-rail">
+          <div class="collapsed-rail__header">
+            <NTooltip placement="right" :delay="300">
+              <template #trigger>
+                <button
+                  class="collapse-toggle-btn"
+                  aria-label="展开文档导航"
+                  aria-expanded="false"
+                  aria-controls="knowledge-document-navigation"
+                  title="展开文档导航"
+                  @click="toggleNavigation"
+                >
+                  <NIcon :size="16"><ChevronForwardOutline /></NIcon>
+                </button>
+              </template>
+              展开文档导航
+            </NTooltip>
+          </div>
 
-        <!-- 核心操作：新建文档 -->
-        <NButton
-          size="medium"
-          type="primary"
-          block
-          class="create-doc-btn"
-          @click="showCreateModal = true"
-        >
-          <template #icon><NIcon><AddOutline /></NIcon></template>
-          新建文档
-        </NButton>
+          <div class="collapsed-rail__context" aria-hidden="true">
+            <span class="collapsed-rail__icon">
+              <NIcon :size="18"><DocumentTextOutline /></NIcon>
+            </span>
+          </div>
 
-        <!-- 管理员额外菜单 -->
-        <div v-if="isAdmin" class="sider-menu">
-          <div class="sider-menu-item" @click="showAuditPanel = true">
-            <NIcon size="16"><HourglassOutline /></NIcon>
-            <span>待审核</span>
+          <div class="collapsed-rail__actions">
+            <NTooltip placement="right" :delay="300">
+              <template #trigger>
+                <button
+                  class="collapsed-rail__action"
+                  aria-label="新建文档"
+                  @click="showCreateModal = true"
+                >
+                  <NIcon :size="18"><AddOutline /></NIcon>
+                </button>
+              </template>
+              新建文档
+            </NTooltip>
+            <NTooltip v-if="isAdmin" placement="right" :delay="300">
+              <template #trigger>
+                <button
+                  class="collapsed-rail__action"
+                  aria-label="待审核文档"
+                  @click="showAuditPanel = true"
+                >
+                  <NIcon :size="18"><HourglassOutline /></NIcon>
+                </button>
+              </template>
+              待审核
+            </NTooltip>
           </div>
         </div>
 
-        <NSpin :show="loadingNav" :aria-busy="loadingNav">
-          <DocTree
-            v-if="documentTree.length"
-            :tree-data="documentTree"
-            :active-id="activeDoc?.id"
-            @select="selectDoc"
-          />
-          <EmptyState
-            v-else
-            icon="📚"
-            title="暂无文档"
-            description="创建第一篇文档，沉淀实验室知识。"
-          >
-            <template #actions>
-              <NButton size="small" type="primary" @click="showCreateModal = true">新建文档</NButton>
-            </template>
-          </EmptyState>
-        </NSpin>
+        <!-- ====== 展开态：原有导航 ====== -->
+        <template v-else>
+          <div class="nav-header">
+            <div class="nav-title">{{ navTitle }}</div>
+            <NButton
+              quaternary
+              circle
+              size="small"
+              class="nav-collapse-button"
+              aria-label="收起文档导航"
+              aria-expanded="true"
+              aria-controls="knowledge-document-navigation"
+              title="收起文档导航"
+              @click="toggleNavigation"
+            >
+              <template #icon>
+                <NIcon><ChevronBackOutline /></NIcon>
+              </template>
+            </NButton>
+          </div>
+
+          <div id="knowledge-document-navigation" class="nav-content">
+            <NButton
+              size="medium"
+              type="primary"
+              block
+              class="create-doc-btn"
+              @click="showCreateModal = true"
+            >
+              <template #icon><NIcon><AddOutline /></NIcon></template>
+              新建文档
+            </NButton>
+
+            <div v-if="isAdmin" class="sider-menu">
+              <div class="sider-menu-item" @click="showAuditPanel = true">
+                <NIcon size="16"><HourglassOutline /></NIcon>
+                <span>待审核</span>
+              </div>
+            </div>
+
+            <NSpin :show="loadingNav" :aria-busy="loadingNav">
+              <DocTree
+                v-if="documentTree.length"
+                :tree-data="documentTree"
+                :active-id="activeDoc?.id"
+                v-model:expanded-keys="expandedKeys"
+                @select="selectDoc"
+              />
+              <EmptyState
+                v-else
+                icon="📚"
+                title="暂无文档"
+                description="创建第一篇文档，沉淀实验室知识。"
+              >
+                <template #actions>
+                  <NButton size="small" type="primary" @click="showCreateModal = true">新建文档</NButton>
+                </template>
+              </EmptyState>
+            </NSpin>
+          </div>
+        </template>
       </NCard>
     </div>
 
@@ -329,51 +413,208 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* 面板浮于平台灰底之上：内边距露出 --neutral-bg，与 TasksView 等工作台页一致 */
 .docs-layout {
   display: flex;
-  gap: 12px;
+  gap: var(--space-lg);
   flex: 1;
   min-height: 0 !important;
   overflow: hidden;
-  padding: 0;
+  padding: var(--space-lg);
+  background: var(--neutral-bg);
 }
 
+/* ============================================================
+   侧边栏容器 — 宽度过渡 250ms ease-in-out
+   ============================================================ */
 .docs-sider {
   width: 240px;
   flex-shrink: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  transition: width 250ms ease-in-out;
 }
 
+.docs-sider--collapsed {
+  width: 56px;
+}
+
+/* 卡片容器：纵向滚动保留，显式阻断水平滚动条 */
 .docs-sider :deep(.arco-card) {
   flex: 1;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
+  box-shadow: var(--shadow-card);
 }
 
 .docs-sider :deep(.n-card > .n-card-content) {
   padding: 16px 12px;
+  transition: padding 250ms ease-in-out;
+}
+
+/* ============================================================
+   折叠态 · 紧凑工具轨道
+   ============================================================ */
+.docs-sider--collapsed :deep(.arco-card) {
+  display: flex;
+  flex-direction: column;
+  background: var(--neutral-card);
+  border-color: var(--neutral-border);
+  box-shadow: var(--shadow-card);
+}
+
+.docs-sider--collapsed :deep(.n-card > .n-card-content) {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+}
+
+.collapsed-rail {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-lg) 0;
+}
+
+.collapsed-rail__header,
+.collapsed-rail__actions {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.collapsed-rail__actions {
+  flex-direction: column;
+  gap: var(--space-md);
+  padding-top: var(--space-lg);
+}
+
+.collapsed-rail__header {
+  margin-bottom: var(--space-xl);
+}
+
+.collapse-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--neutral-border);
+  border-radius: var(--radius-sm);
+  background: var(--neutral-card);
+  color: var(--neutral-text-2);
+  cursor: pointer;
+  transition: background-color var(--motion-quick) ease-out,
+    border-color var(--motion-quick) ease-out,
+    color var(--motion-quick) ease-out,
+    transform var(--motion-quick) ease-out;
+}
+
+.collapse-toggle-btn:hover {
+  background: var(--neutral-hover);
+  border-color: var(--arco-primary);
+  color: var(--arco-primary);
+}
+
+.collapse-toggle-btn:active {
+  transform: scale(0.96);
+}
+
+.collapse-toggle-btn:focus-visible {
+  outline: 2px solid var(--arco-primary);
+  outline-offset: 2px;
+}
+
+.collapsed-rail__context {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: var(--space-xs);
+}
+
+.collapsed-rail__icon,
+.collapsed-rail__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+}
+
+.collapsed-rail__icon {
+  background: var(--neutral-hover);
+  color: var(--arco-primary);
+}
+
+.collapsed-rail__action {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--neutral-text-2);
+  cursor: pointer;
+  transition: background-color var(--motion-quick) ease-out,
+    border-color var(--motion-quick) ease-out,
+    color var(--motion-quick) ease-out,
+    transform var(--motion-quick) ease-out;
+}
+
+.collapsed-rail__action:hover {
+  background: var(--neutral-hover);
+  border-color: var(--neutral-border);
+  color: var(--arco-primary);
+}
+
+.collapsed-rail__action:active {
+  transform: scale(0.96);
+}
+
+.collapsed-rail__action:focus-visible {
+  outline: 2px solid var(--arco-primary);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   展开态 · 导航头部
+   ============================================================ */
+.nav-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 
 .nav-title {
+  flex: 1;
+  min-width: 0;
   font-size: 16px;
   font-weight: 600;
   color: var(--neutral-text-1);
-  margin-bottom: 16px;
   padding: 0;
   text-align: center;
 }
 
-/* 新建文档：全宽 CTA 按钮 */
-.create-doc-btn {
-  margin-bottom: 8px;
-  border-radius: 6px !important;
-  font-weight: 500;
+.nav-collapse-button {
+  flex-shrink: 0;
 }
 
-.create-doc-btn :deep(.n-button__content) {
-  gap: 6px;
+.nav-content {
+  min-width: 0;
+}
+
+/* 新建文档：回归平台主按钮规范，仅保留布局间距 */
+.create-doc-btn {
+  margin-bottom: var(--space-sm);
 }
 
 /* 侧边栏菜单项（待审核、收藏夹等） */
@@ -408,19 +649,11 @@ onMounted(async () => {
 
 .docs-sider :deep(.n-tree-node-content) {
   padding: 6px 8px;
-  border-radius: 6px;
-  transition: background-color 0.2s ease;
 }
 
-.docs-sider :deep(.n-tree-node-content:hover) {
-  background-color: var(--neutral-hover);
-}
-
-.docs-sider :deep(.n-tree-node--selected .n-tree-node-content) {
-  background-color: var(--arco-primary-light);
-  color: var(--arco-primary);
-}
-
+/* ============================================================
+   右侧主体
+   ============================================================ */
 .docs-main {
   flex: 1;
   min-width: 0;
@@ -437,6 +670,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: var(--shadow-card);
 }
 
 .docs-main > :deep(.n-card > .n-card-content) {
@@ -469,18 +703,24 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 24px 12px;
-  margin-bottom: 16px;
+  gap: var(--space-lg);
+  padding: var(--space-lg) var(--space-2xl);
   border-bottom: 1px solid var(--neutral-border);
   flex-shrink: 0;
   background-color: var(--neutral-card);
 }
 
 .doc-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--neutral-text-1);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   margin: 0;
+  color: var(--neutral-text-1);
+  font-size: var(--font-section-size);
+  font-weight: var(--font-section-weight);
+  letter-spacing: var(--font-section-spacing);
+  line-height: var(--font-section-height);
 }
 
 .content-body {
@@ -489,7 +729,7 @@ onMounted(async () => {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 24px 24px;
+  padding: var(--space-2xl);
   width: 100%;
   box-sizing: border-box;
   background-color: var(--neutral-card);
@@ -503,27 +743,81 @@ onMounted(async () => {
   background: transparent;
 }
 .content-body::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(29, 33, 41, 0.15);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 .content-body::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: rgba(29, 33, 41, 0.32);
+  background-clip: padding-box;
 }
 
 :root[data-theme="dark"] .content-body::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.16);
+  background-clip: padding-box;
 }
 :root[data-theme="dark"] .content-body::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.28);
+  background-clip: padding-box;
 }
 
+/* ============================================================
+   无障碍三件套
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .docs-sider,
+  .docs-sider :deep(.n-card > .n-card-content),
+  .collapse-toggle-btn,
+  .collapsed-rail__action {
+    transition: none;
+  }
+  .collapse-toggle-btn:active,
+  .collapsed-rail__action:active {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .docs-sider--collapsed :deep(.arco-card),
+  .collapse-toggle-btn,
+  .collapsed-rail__icon {
+    background: var(--neutral-card);
+  }
+}
+
+@media (prefers-contrast: more) {
+  .collapse-toggle-btn,
+  .collapsed-rail__icon,
+  .collapsed-rail__action {
+    border-color: currentColor;
+  }
+}
+
+@media (forced-colors: active) {
+  .docs-sider--collapsed :deep(.arco-card),
+  .collapse-toggle-btn,
+  .collapsed-rail__icon,
+  .collapsed-rail__action {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+    box-shadow: none;
+  }
+}
+
+/* ============================================================
+   移动端
+   ============================================================ */
 @media (max-width: 768px) {
   .docs-layout {
     flex-direction: column;
   }
   .docs-sider {
+    width: 100%;
+  }
+
+  .docs-sider.docs-sider--collapsed {
     width: 100%;
   }
 }

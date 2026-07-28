@@ -4,7 +4,7 @@
 > 新增工具**必须遵循本规范**,以保证视觉一致、交互统一、维护成本低。
 > 现有参考实现:火山图(`VolcanoPlotView.vue`)为最完整的样板,优先参照;BLAST / FASTQ 质控 / 绘图工坊 / KEGG 为次参照;JBrowse 为**全屏画布工具特例**,其沉浸式布局基线见 §19.7,不作为普通紧凑布局参照。
 >
-> 最后更新:2026-07-26
+> 最后更新:2026-07-27
 
 ---
 
@@ -270,9 +270,10 @@ const ICON_MAP: Record<string, Component> = {
 |---|---|---|---:|---|
 | `sequence` | 序列分析 | `CodeSlashOutline` | 1 | FASTQ 极速质控、序列检索 BLAST、序列魔术师、PrimerForge 引物锻造工坊 |
 | `visualization` | 数据可视化 | `ColorPaletteOutline` | 2 | 组学绘图工坊、火山图绘制 |
-| `genome` | 基因组与进化 | `LayersOutline` | 3 | Web 基因组浏览器、系统发育树构建、格式轻量转换器 |
-| `function` | 功能注释 | `BarChartOutline` | 4 | GO / KEGG 富集分析 |
-| `environment` | 计算环境 | `TerminalOutline` | 5 | 云端沙盒终端 |
+| `analysis` | 表达分析 | `StatsChartOutline` | 3 | DEG 差异表达分析 |
+| `genome` | 基因组与进化 | `LayersOutline` | 4 | Web 基因组浏览器、系统发育树构建、格式轻量转换器 |
+| `function` | 功能注释 | `BarChartOutline` | 5 | GO / KEGG 富集分析 |
+| `environment` | 计算环境 | `TerminalOutline` | 6 | 云端沙盒终端 |
 
 分组与卡片排序规则：
 
@@ -1412,3 +1413,88 @@ JBrowse、基因组浏览器、终端控制区等拥有多项全局控件的页�
 
 - `PageHeader` 的 `compact`、弹层组件的 `to` 均为**可选参数默认关闭**，其他工具页零变化；共用外壳（`DefaultLayout`）不新增分支。
 - 本节改动只作用于画布类工具页自身；新增画布工具时复制本节结构，不修改其他工具页的页头/工具栏实现。
+
+## 二十、BLAST 结果工具页面专项规范（2026-07-27）
+
+BLAST 是工具箱中“参数输入 + 异步任务 + 多层结果可视化”的参考实现。权威页面为
+`frontend/src/views/BioTools/BlastSearchView.vue`；Graphic Summary、命中详情和覆盖条分别位于
+`frontend/src/components/blast/BlastGraphicSummary.vue`、`BlastHitDetailCard.vue` 和
+`BlastAlignmentBar.vue`。新增同类检索工具可复用本节的页面层级和数据展示方式，但不得复制
+BLAST 专属业务字段。
+
+### 20.1 页面层级与参数区
+
+1. 使用共享 `PageHeader`、结果保留提示和 `ToolActionBar`；提交、轮询、取消、历史任务跳转与
+   XML/JSON/Text 下载均保留原有业务逻辑，视觉改动不得以页面刷新替代局部状态更新。
+2. 桌面端使用“左侧参数列 + 右侧工作区”的两列网格：参数列 `320–360px`，工作区
+   `min-width: 0`；`900px` 以下切为单列，禁止页面级横向滚动。
+3. 参数区合并为两张卡片：
+   - **查询设置**：目标数据库、FASTA 输入和上传入口；
+   - **比对参数**：算法、E-value、最大匹配数和查询名称。
+4. `word_size`、`gapopen`、`gapextend` 属于高级参数，默认折叠；折叠触发器使用
+   `button`、`aria-expanded` 和 `200ms` 箭头旋转，必须保留 `focus-visible` 焦点环。
+5. 序列实时分析与最近任务卡片按内容高度自适应（`align-self: start` / 不强行拉伸），避免三列
+   网格造成卡片底部无意义留白。
+
+### 20.2 Coverage 数据口径（强制）
+
+结果表和命中详情展示的 **Coverage** 是查询覆盖率，不是 Subject 覆盖率：
+
+```text
+query_coverage = align_length / query_len * 100
+subject_coverage = align_length / hit_len * 100
+```
+
+- `query_coverage` 由后端 XML 解析层计算并通过 `BlastHitDTO` 返回；权威实现为
+  `src/omichub/tools/blast/core.py`、`src/omichub/tools/blast/schema.py`。
+- 结果页与命中详情均消费 `query_coverage`，显示范围夹紧在 `0–100`、保留一位小数。
+- 不得用 `hit_len` / `subject_len` 计算查询 Coverage。对于全长命中（`align_length === query_len`），
+  Coverage 必须为 `100.0%`；该场景必须在 `tests/unit/tools/test_blast_core.py` 保留回归断言。
+- `subject_coverage` 可作为未来 Subject 覆盖率的独立字段保留，但不能替代当前 Coverage 列。
+
+### 20.3 结果摘要与下载入口
+
+1. 已完成任务使用一张结果摘要卡：左侧为状态徽章和查询标题，中部为数据库、算法、Query 长度、
+   命中数、最佳 E-value、最佳 Identity 六项统计，右侧为 XML/JSON/Text 下载按钮。
+2. 统计项 label 使用 `12px` 次要色，value 使用 `16px/600` 主色；数值必须使用
+   `font-variant-numeric: tabular-nums`。
+3. 下载按钮保持局部操作，不移动到页面级 `PageHeader`；窄屏时摘要头允许纵向排列，下载入口仍可见。
+
+### 20.4 比对结果表格
+
+BLAST 结果表沿用任务中心表格规范，并额外满足检索结果密度要求：
+
+- 所有列使用固定 `width`，`scroll-x` 等于列宽总和；长文本 Description 唯一左对齐，固定宽度并用
+  `ellipsis: { tooltip: true }`。其余短值列（编号、ID、长度、Identity、E-value、分数、长度、Range、
+  Coverage）用列级 `align: 'center'` 同时居中表头和表体。
+- 表头使用 `--neutral-bg`，行高 `52–56px`，表体与数值列使用 `tabular-nums`，行 hover 使用
+  `--neutral-hover`。Length、E-value、Score、Range 与 Coverage 百分比均 `white-space: nowrap`。
+- Length 列至少 `140px`，Range 列至少 `110px`，不得把 `30,427,671 bp` 一类数值折行；Identity 使用
+  `12px` 圆角胶囊和四档 identity 色。
+- Coverage 单元格结构为“可收缩进度条 + 固定宽度百分比”：轨道 `#eef0f2`，填充色按
+  identity/coverage 档位使用 `#22c55e / #3b82f6 / #f59e0b / #ef4444`，进度条最小宽度 `64px`，
+  数值固定 `48px`、右对齐、单行显示。
+- 数据不超过一页时 `pagination=false`，仅保留结果数量语义；超过 10 条时才显示每页 10 条的分页，
+  不显示页大小切换器。
+
+### 20.5 Graphic Summary 与命中详情
+
+1. Graphic Summary 使用轻量 SVG，不引入图表依赖。Query 标尺必须按 Query 长度生成 nice-number
+   自适应刻度；色条按 Identity 四档着色，Tooltip 至少展示 HSP、Query Range、Identity 和 E-value。
+2. Graphic Summary 色条可点击，并用 `scrollIntoView({ behavior: 'smooth', block: 'start' })` 定位到
+   对应命中详情卡片；详情卡片 id 使用稳定的 `blast-hit-<hit_num>` 约定。
+3. 图例使用 `12px`，卡片 SVG 高度由命中轨道数推导，禁止固定 `min-height` 制造底部空白。
+4. 命中详情卡片头部保持 `Hit #`、Subject ID、描述省略、Identity 胶囊和查看对齐按钮的清晰层级；
+   统计区使用 `repeat(auto-fit, minmax(140px, 1fr))` 网格，每项为上 label、下 value，value 使用
+   `14px/500` 与 `tabular-nums`。
+5. Query 覆盖位置条复用同一 identity 色阶、刻度和 Tooltip 语义；点击色条可以展开序列对齐。
+
+### 20.6 BLAST 验收清单
+
+- [ ] 全长 HSP 的 `query_coverage` 为 `100.0%`，结果表和详情值一致，且后端解析单测覆盖该场景。
+- [ ] 结果表的长数字、Range、百分比都不折行；Description 省略并有 Tooltip；单页无分页器。
+- [ ] Graphic Summary 有可读刻度、12px 图例、Tooltip 和点击详情联动，卡片无大面积底部留白。
+- [ ] 参数区为两张卡，高级参数默认折叠，窄屏无新增横向滚动。
+- [ ] 结果摘要的六项统计与下载按钮在桌面/窄屏均可读可操作。
+- [ ] `npm --prefix frontend run type-check`、`npm --prefix frontend run build` 与
+  `uv run pytest tests/unit/tools/test_blast_core.py` 通过。

@@ -69,6 +69,16 @@ class FlowSubmissionValidator:
         errors: list[ValidationErrorItem] = []
         warnings: list[ValidationWarningItem] = []
 
+        task_name = arguments.get("name")
+        if not isinstance(task_name, str) or not task_name.strip():
+            errors.append(
+                ValidationErrorItem(
+                    field="name",
+                    code="MISSING_REQUIRED",
+                    message="必须提供非空的任务名称",
+                )
+            )
+
         # 1. 白名单校验
         raw_params = arguments.get("parameters", {})
         if not isinstance(raw_params, dict):
@@ -231,7 +241,7 @@ class FlowSubmissionValidator:
 
         request = TaskSubmitRequest(
             flow_id=flow.meta.id,
-            name=arguments.get("name", f"{flow.meta.name} - AI"),
+            name=task_name.strip(),
             parameters=clean_params,
             sample_sheet=sample_rows,
             comparisons=comparisons,

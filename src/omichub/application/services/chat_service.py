@@ -282,6 +282,13 @@ class ChatService:
         cleaned = re.sub(r"[\"'《》「」\n\r]", "", value or "").strip()
         # 去除模型偶尔带回的前缀（如“标题：”“Title:”），让标题更干净
         cleaned = re.sub(r"^(标题|主题|title)\s*[:：]\s*", "", cleaned, flags=re.IGNORECASE)
+        # 剥掉第三人称叙述前缀（如“用户想要…”“最初询问了…”），标题应是主题而非摘要
+        cleaned = re.sub(
+            r"^(用户|该用户|这位用户)\s*(想要|想|希望|询问|咨询|请教|请求|问|需要|要求|讨论了|了解)\s*",
+            "",
+            cleaned,
+        )
+        cleaned = re.sub(r"^(最初|一开始|首先)\s*(询问|问|咨询|提到|讨论)了?\s*", "", cleaned)
         return cleaned[:40]
 
     @staticmethod
@@ -352,11 +359,16 @@ class ChatService:
             "你是会话标题生成器。阅读下面用户与助手的对话，生成一个简短但**具体**的标题。"
             "要求：1) 标题必须包含对话里出现的**具体对象与意图**，如基因/蛋白/通路名、样本或文件名、"
             "分析流程或工具名、要做的动作（差异分析、富集、画火山图、解读结果、排查报错等）；"
-            "2) 抓住用户**最主要的诉求**，若多轮且话题演进，以最近/最核心的诉求为准，不要只复述第一轮；"
+            "2) 抓住对话**最主要的诉求**，若多轮且话题演进，以最近/最核心的诉求为准，不要只复述第一轮；"
             "3) 优先具体，禁止空泛主题词。"
             "反例（太泛，禁止）：转录组分析咨询、生物信息问题、数据分析帮助。"
             "正例（具体，推荐）：DESeq2 差异分析与火山图、TP53 通路富集结果解读、FASTQ 质控报错排查。"
-            "4) 用 10 到 22 个汉字，不加结尾标点、不加引号、不要解释，只输出标题本身。"
+            "4) 标题是**对话主题本身**，不是对话摘要：禁止出现「用户」「助手」等人称或叙述词，"
+            "禁止「用户想要…」「最初询问…」「讨论了…」这类第三人称叙述句式，"
+            "直接用名词短语或动宾短语点出主题。"
+            "反例（叙述句，禁止）：用户想要处理VCF文件并询问安装、用户咨询差异分析流程。"
+            "正例（主题式，推荐）：VCF 文件处理与工具安装、RNA-seq 差异分析流程咨询。"
+            "5) 用 10 到 22 个汉字，不加结尾标点、不加引号、不要解释，只输出标题本身。"
         )
         payload = [{"role": "user", "content": f"对话内容：\n{context}"}]
         output = ""
@@ -638,6 +650,207 @@ class ChatService:
             .order_by(ChatMessageModel.created_at)
         )
         return [self._to_msg_dto(m) for m in result.scalars().all()]
+
+    async def _collect_session_file_context(
+        self, session_id: str, exclude_file_ids: set[str] | None = None,
+        user_id: str | None = None,
+    ) -> str:
+        """汇总本会话历史消息中的附件引用，供后续轮次继承文件上下文。
+
+        返回空串表示没有可继承的历史文件。附件元数据在消息落库时写入
+        metadata_json.attachments，这里只做读取与去重。
+        额外兜底：扫描该用户 chat-uploads 目录，把最近上传（含其它会话）的
+        少量文件一并列出，覆盖"上一个聊天窗口上传的数据在新窗口继续用"。
+        """
+        exclude = exclude_file_ids or set()
+        result = await self._db.execute(
+            select(ChatMessageModel)
+            .where(ChatMessageModel.session_id == session_id)
+            .order_by(ChatMessageModel.created_at)
+        )
+        lines: list[str] = []
+        seen: set[str] = set()
+        for msg in result.scalars().all():
+            if msg.role != "user":
+                continue
+            for att in (msg.metadata_json or {}).get("attachments") or []:
+                file_id = str(att.get("file_id") or "")
+                if not file_id or file_id in seen or file_id in exclude:
+                    continue
+                seen.add(file_id)
+                ref = file_id if "://" in file_id else f"upload://{file_id}"
+                lines.append(
+                    f"- {att.get('name', '')}（file_id: {ref}，"
+                    f"可用 workspace_read_file(file_id=\"{ref}\") 读取）"
+                )
+
+        sections: list[str] = []
+        if lines:
+            sections.append(
+                "[本会话中用户历史上传过的文件，可直接用 file_id 引用，无需重新搜索。"
+                "仅当用户请求涉及这些文件时才使用；与当前请求无关时忽略，不要主动读取或提及]\n"
+                + "\n".join(lines)
+            )
+
+        if user_id:
+            recent_lines = self._collect_recent_upload_lines(user_id, seen | exclude)
+            if recent_lines:
+                sections.append(
+                    "[用户最近上传的文件（含其它会话），仅供备用：仅当用户请求与这些文件相关"
+                    "或用户明确引用时才可使用；与当前请求无关时忽略，不要主动读取、检查或提及。"
+                    "纯代码编写/概念问答类请求无需任何数据文件]\n"
+                    + "\n".join(recent_lines)
+                )
+
+        return "\n\n".join(sections)
+
+    @staticmethod
+    def _collect_recent_upload_lines(
+        user_id: str, skip_file_ids: set[str], limit: int = 5
+    ) -> list[str]:
+        """扫描用户 chat-uploads 目录，返回最近上传文件的引用行（按修改时间倒序）。"""
+        from omichub.infrastructure.config.storage_config import get_user_chat_upload_dir
+
+        upload_dir = get_user_chat_upload_dir(user_id)
+        if not upload_dir.is_dir():
+            return []
+        try:
+            recent = sorted(
+                (p for p in upload_dir.iterdir() if p.is_file()),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+        except OSError:
+            return []
+        lines: list[str] = []
+        for path in recent:
+            fid = path.name.split(".", 1)[0]
+            if not fid or fid in skip_file_ids:
+                continue
+            ref = f"upload://{fid}"
+            lines.append(
+                f"- {path.name}（file_id: {ref}，"
+                f"可用 workspace_read_file(file_id=\"{ref}\") 读取）"
+            )
+            if len(lines) >= limit:
+                break
+        return lines
+
+    @staticmethod
+    def _append_context_to_last_user_message(
+        messages: list[dict[str, Any]], context_text: str
+    ) -> list[dict[str, Any]]:
+        """把补充上下文追加到最后一条用户消息（仅影响送 LLM 的视图，不落库）。"""
+        if not messages:
+            return messages
+        target_index = max(
+            (i for i, m in enumerate(messages) if m.get("role") == "user"),
+            default=-1,
+        )
+        if target_index == -1:
+            return messages
+        target = messages[target_index]
+        content = target.get("content", "")
+        new_messages = list(messages)
+        if isinstance(content, list):
+            new_messages[target_index] = {
+                **target,
+                "content": content + [{"type": "text", "text": f"\n\n{context_text}"}],
+            }
+        else:
+            new_messages[target_index] = {
+                **target,
+                "content": f"{content}\n\n{context_text}",
+            }
+        return new_messages
+
+    # --- 上下文压缩（256K 窗口保护） ---
+
+    # 256K 上下文窗口预留输出/系统词/工具定义空间后的触发阈值
+    _CONTEXT_COMPRESS_THRESHOLD_TOKENS = 200_000
+    # 压缩时保留原文的最近消息条数
+    _CONTEXT_KEEP_RECENT_MESSAGES = 10
+
+    @staticmethod
+    def _message_text(message: dict[str, Any]) -> str:
+        content = message.get("content", "")
+        if isinstance(content, list):
+            return "".join(
+                str(part.get("text", "")) for part in content if isinstance(part, dict)
+            )
+        return str(content)
+
+    @classmethod
+    def _estimate_messages_tokens(cls, messages: list[dict[str, Any]]) -> int:
+        """粗略估算 token 数：中英混合按 2 字符 ≈ 1 token 的保守口径。"""
+        return sum(len(cls._message_text(m)) // 2 + 4 for m in messages)
+
+    async def _compress_context_if_needed(
+        self,
+        messages: list[dict[str, Any]],
+        model_config: Any,
+    ) -> tuple[list[dict[str, Any]], bool, int]:
+        """估算 token 超过阈值时，把较早消息压缩为摘要，仅保留最近若干条原文。
+
+        返回 (messages, 是否压缩, 压缩前估算 token)。摘要复用当前模型生成；
+        摘要调用失败时降级为"保留首条 + 最近 N 条"的硬截断，保证请求可继续。
+        """
+        tokens = self._estimate_messages_tokens(messages)
+        keep = self._CONTEXT_KEEP_RECENT_MESSAGES
+        if tokens <= self._CONTEXT_COMPRESS_THRESHOLD_TOKENS or len(messages) <= keep + 2:
+            return messages, False, tokens
+
+        old, recent = messages[:-keep], messages[-keep:]
+        digest_lines: list[str] = []
+        for m in old:
+            text = self._message_text(m)[:2000]
+            if text.strip():
+                digest_lines.append(f"[{m.get('role', '?')}] {text}")
+        summary = ""
+        try:
+            from omichub.infrastructure.ai_provider.openai_compatible import provider_manager
+
+            parts: list[str] = []
+            async for chunk in provider_manager.chat_stream(
+                config=model_config,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            "请将以下对话历史压缩为一份结构化摘要，必须保留：用户的分析目标与需求、"
+                            "关键数据文件引用（file_id / 文件名 / 路径）、已完成的分析步骤与结论、"
+                            "生成的产物（图表/文件）、以及未完成的待办事项。\n\n"
+                            + "\n\n".join(digest_lines)
+                        ),
+                    }
+                ],
+                system_prompt="你是对话压缩器，只输出摘要本身，不超过 1500 字。",
+                max_tokens=2048,
+            ):
+                if chunk.type == "text":
+                    parts.append(chunk.content)
+            summary = "".join(parts).strip()
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"上下文压缩摘要生成失败，降级为硬截断: {e}")
+
+        if summary:
+            compressed = [
+                {
+                    "role": "system",
+                    "content": (
+                        "[早期对话已压缩为摘要，后续请基于摘要与最近对话继续]\n" + summary
+                    )
+                }
+            ] + recent
+            logger.info(
+                f"上下文已压缩: 估算 {tokens} tokens，{len(old)} 条早期消息 → 摘要 + 最近 {len(recent)} 条"
+            )
+            return compressed, True, tokens
+
+        # 降级：摘要失败时保留首条用户消息 + 最近 N 条
+        fallback = [m for m in old[:1] if m.get("role") == "user"] + recent
+        logger.info(f"上下文硬截断: 估算 {tokens} tokens，保留 {len(fallback)}/{len(messages)} 条")
+        return fallback, True, tokens
 
     async def get_handoff_events(
         self, session_id: str, user_id: str
@@ -951,6 +1164,7 @@ class ChatService:
         mode: str | None = None,
         mcp_mode: str | None = None,
         extra_mcp_servers: list[str] | None = None,
+        extend_max_rounds: bool = False,
     ) -> AsyncIterator[ChatChunk]:
         """Agent 编排闭环：查 Agent → 组装模型/系统词/工具 → 打 LLM → 执行 tool_call 回灌 → 流式返回
 
@@ -1127,6 +1341,34 @@ class ChatService:
         llm_messages: list[dict[str, Any]] = sanitize_messages(messages, sensitive_keywords)
         if attachments:
             llm_messages = await self._build_multimodal_messages(llm_messages, attachments)
+
+        # 4.1 上下文继承：把本会话历史消息中上传过的文件（file_id 引用）注入本轮，
+        # 避免后续轮次丢失附件上下文后模型重新全局搜索文件。
+        current_file_ids = {
+            str(att.get("file_id") or "") for att in attachment_dicts if att.get("file_id")
+        }
+        history_file_ctx = await self._collect_session_file_context(
+            current_session_id, exclude_file_ids=current_file_ids, user_id=user_id
+        )
+        if history_file_ctx:
+            llm_messages = self._append_context_to_last_user_message(
+                llm_messages, history_file_ctx
+            )
+
+        # 4.2 上下文压缩：估算 token 接近模型上下文窗口（256K）时，
+        # 把较早的对话压缩为摘要，只保留最近若干条原文，避免超窗报错。
+        llm_messages, context_compressed, tokens_before = await self._compress_context_if_needed(
+            llm_messages, model_config
+        )
+        if context_compressed:
+            yield ChatChunk(
+                type="context_compressed",
+                content="对话历史较长，已将早期内容压缩为摘要后继续",
+                metadata={
+                    "session_id": current_session_id,
+                    "estimated_tokens_before": tokens_before,
+                },
+            )
 
         # 动态追加联网搜索工具。普通聊天保持 Agent 全量 MCP/Skill 行为；
         # Studio 使用元数据目录 + 会话级按需加载，未加载能力不进入 prompt/tools。
@@ -1359,7 +1601,8 @@ class ChatService:
         web_sources: list[dict[str, Any]] = list(presearch_sources)
         update_counter = 0
         first_chunk_sent = False
-        max_rounds = 8
+        # 默认 100 轮；用户在弹窗中确认继续后前端传 extend_max_rounds=True 扩展到 1000 轮
+        max_rounds = 1000 if extend_max_rounds else 100
         last_usage: dict[str, Any] | None = None
         last_finish_reason: str | None = None
         # Studio 工具调用落库累积（代码卡片 / 产物 / diff，供历史重载渲染）
@@ -2024,6 +2267,17 @@ class ChatService:
                 {
                     "warning": "工具调用轮次达上限，已提前结束",
                     **({"web_sources": web_sources} if web_sources else {}),
+                },
+            )
+            # 通知前端轮次触顶：由用户弹窗选择是否以扩展上限继续
+            yield ChatChunk(
+                type="round_limit",
+                content=f"工具调用轮次达到上限（{max_rounds}），任务提前结束",
+                metadata={
+                    "session_id": current_session_id,
+                    "message_id": ai_message.message_id,
+                    "max_rounds": max_rounds,
+                    "can_extend": max_rounds < 1000,
                 },
             )
             yield ChatChunk(

@@ -102,6 +102,16 @@ async def cancel_task(
     return await service.cancel_task(task_id, current_user_id)
 
 
+@router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT, summary="删除任务")
+async def delete_task(
+    task_id: UUID,
+    current_user_id: CurrentUserId,
+    service: TaskServiceDep,
+) -> None:
+    """删除指定任务（硬删除，同时清理随行的日志等数据）"""
+    await service.delete_task(task_id, current_user_id)
+
+
 @router.get("/{task_id}/dag", summary="获取任务 DAG 可视化")
 async def get_task_dag(
     task_id: UUID,

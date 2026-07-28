@@ -25,7 +25,7 @@ class ATACSeqPipeline:
             **request.extra_parameters,
         }
         return {
-            "name": request.project_name,
+            "name": request.task_name,
             "parameters": parameters,
             "sample_sheet": request.sample_sheet,
             "comparisons": request.comparisons,

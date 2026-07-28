@@ -49,13 +49,26 @@ WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX = """## 工作区文件工具
 你拥有当前会话用户工作区的只读文件工具：
 - `list_workspace_files(path?, pattern?)`：列出目录直接子项；`path` 为空时列根目录，`pattern` 支持 `*.csv` 等 glob。
 - `search_workspace_files(query, limit?)`：从工作区根目录递归按文件名模糊搜索。
+- `find_session_uploads(session_id?)`：按会话 ID 检索该聊天窗口中用户上传过的文件；`session_id` 留空表示当前会话。
 - 找到文件后，将返回的 `file_id` 直接交给已有的 `workspace_read_file(file_id)` 读取或分析。
 
 强制行为：
 - 用户询问“工作区里有什么文件 / 有哪些数据文件”时，必须先调用 `list_workspace_files` 获取真实结果，禁止声称没有浏览文件的工具。
-- 用户要求寻找某个文件时，必须先调用 `search_workspace_files` 获取真实结果。
+- 用户明确要求寻找某个文件时，必须先调用 `search_workspace_files` 获取真实结果。
+- 需要找回本会话之前上传的数据文件时，优先调用 `find_session_uploads`（当前会话 ID 自动生效），而不是漫无目的地全局搜索。
 - 回答时用列表展示名称、类型和修改时间；找到文件后询问用户希望对哪个文件执行什么操作。
 - 文件工具仅限当前用户工作区且只读；不得尝试绝对路径、`..` 或其他用户目录。
+
+数据缺失时的行为（所有绘图/分析任务通用）：
+- 用户要求绘图或分析，但对话中没有提供任何数据（无附件、无 file_id、用户也未指明工作区中的具体文件）时，禁止自行全局搜索猜测数据。
+- 此时直接回复用户，开头固定使用“📤 需要您提供数据：”，简要说明需要什么数据（格式、必要列/字段），并引导用户上传文件或告知工作区中的具体文件路径。
+- 只有在用户提供了附件、file_id，或明确指定了工作区文件时，才继续执行绘图/分析。
+
+多选项澄清的交互形式（所有任务通用）：
+- 需要用户在多个选项/方向/方案中做选择时，若当前环境提供 `ask_user` 工具，**必须**调用
+  `ask_user` 并通过 `options` 给出可一键点击的选项（弹窗选择），禁止用纯文本罗列
+  “选项 1/2/3”让用户手动回复编号；问题要具体、选项互斥且覆盖主要分支。
+- 没有 `ask_user` 工具的普通会话中，才允许用编号列表呈现选项，且每个选项一句话说清。
 """
 
 
@@ -231,12 +244,16 @@ async def _resolve_workspace_file(
     )
 
     fid = (file_id or "").strip()
-    # 兼容 file://uuid、upload://hex，以及被二次包裹的 upload://file://uuid
+    # 兼容 file://uuid、upload://hex，以及被二次包裹的 upload://file://uuid。
+    # 显式 upload://  scheme 直接走聊天上传通道：32 位 hex 的聊天上传 id
+    # 也能被 uuid.UUID() 解析，误判会错路由到文件中心分支导致"文件不存在"。
+    explicit_upload_scheme = False
     for _ in range(3):
         if fid.startswith("file://"):
             fid = fid[len("file://"):]
         elif fid.startswith("upload://"):
             fid = fid[len("upload://"):]
+            explicit_upload_scheme = True
         else:
             break
     fid = fid.strip()
@@ -249,36 +266,36 @@ async def _resolve_workspace_file(
     except ValueError:
         file_uuid = None
 
-    if file_uuid is not None:
+    if file_uuid is not None and not explicit_upload_scheme:
         from omichub.application.services.file_service import FileService
 
         repo = FileRepositoryImpl(db)
         data_file = await repo.get_by_id(uuid.UUID(user_id), file_uuid)
-        if data_file is None:
-            return None, {"error": f"文件不存在或无权限: {fid}"}
-        service = FileService(db)
-        target = await service.get_file_path(uuid.UUID(user_id), file_uuid)  # 已做路径越权校验
-        try:
-            target.resolve().relative_to(service.user_workspace_root(uuid.UUID(user_id)).resolve())
-        except ValueError:
-            return None, {"error": "文件不在当前用户工作区内"}
-        meta = {
-            "file_id": fid,
-            "ref": f"file://{fid}",
-            "name": data_file.original_name,
-            "size": data_file.size,
-            "size_human": _human_size(data_file.size),
-            "file_type": (
-                data_file.file_type.value
-                if hasattr(data_file.file_type, "value")
-                else str(data_file.file_type)
-            ),
-            "directory": getattr(data_file, "directory", "") or "",
-            "created_at": (
-                data_file.created_at.isoformat() if getattr(data_file, "created_at", None) else None
-            ),
-        }
-        return target, meta
+        if data_file is not None:
+            service = FileService(db)
+            target = await service.get_file_path(uuid.UUID(user_id), file_uuid)  # 已做路径越权校验
+            try:
+                target.resolve().relative_to(service.user_workspace_root(uuid.UUID(user_id)).resolve())
+            except ValueError:
+                return None, {"error": "文件不在当前用户工作区内"}
+            meta = {
+                "file_id": fid,
+                "ref": f"file://{fid}",
+                "name": data_file.original_name,
+                "size": data_file.size,
+                "size_human": _human_size(data_file.size),
+                "file_type": (
+                    data_file.file_type.value
+                    if hasattr(data_file.file_type, "value")
+                    else str(data_file.file_type)
+                ),
+                "directory": getattr(data_file, "directory", "") or "",
+                "created_at": (
+                    data_file.created_at.isoformat() if getattr(data_file, "created_at", None) else None
+                ),
+            }
+            return target, meta
+        # 文件中心未命中：可能是裸 hex 的聊天上传 id，继续走聊天上传分支兜底
 
     # 2) 聊天上传文件（hex id，落盘名可能带扩展名，用前缀 glob 匹配）
     upload_dir = get_user_chat_upload_dir(user_id)
@@ -418,6 +435,98 @@ async def _search_workspace_files(
             else f"未找到名称包含“{query}”的文件"
         ),
         "hint": "可将匹配项的 file_id 直接交给 workspace_read_file 读取或分析。",
+    }
+
+
+async def _find_session_uploads(
+    arguments: dict[str, Any],
+    user_id: str | None = None,
+    context: ToolInvocationContext | None = None,
+) -> dict[str, Any]:
+    """按会话 ID 检索该聊天窗口中上传过的文件。
+
+    聊天上传文件名内嵌会话短标记（``.s{session_id前8位}``），本工具按标记
+    在 chat-uploads 目录中匹配；session_id 缺省时取当前调用上下文中的会话 ID。
+    """
+    from omichub.infrastructure.config.storage_config import get_user_chat_upload_dir
+
+    session_id = str(arguments.get("session_id") or "").strip()
+    if not session_id and context is not None:
+        session_id = (context.session_id or "").strip()
+    short = session_id[:8]
+    if not short:
+        return {"error": "缺少 session_id，且当前调用上下文无会话信息"}
+    if not user_id:
+        return {"error": "无法识别当前用户"}
+
+    upload_dir = get_user_chat_upload_dir(user_id)
+    marker = f".s{short}"
+    items: list[dict[str, Any]] = []
+    if upload_dir.is_dir():
+        for path in sorted(upload_dir.iterdir()):
+            if not path.is_file() or marker not in path.name:
+                continue
+            fid = path.name.split(".", 1)[0]
+            stat = path.stat()
+            items.append(
+                {
+                    "file_id": fid,
+                    "ref": f"upload://{fid}",
+                    "name": path.name,
+                    "size": stat.st_size,
+                    "size_human": _human_size(stat.st_size),
+                    "session_id": session_id,
+                }
+            )
+    lines = [f"- {item['name']} · {item['size_human']} · file_id={item['ref']}" for item in items]
+    if not items:
+        # 跨会话兜底：本（或指定）会话没有标记上传时，列出该用户最近上传的文件，
+        # 覆盖"上一个聊天窗口上传的数据在新窗口要继续用"的场景；
+        # 老文件（无会话标记）也能在这里被找回。
+        try:
+            recent = sorted(
+                (p for p in upload_dir.iterdir() if p.is_file()),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )[:10]
+        except OSError:
+            recent = []
+        for path in recent:
+            fid = path.name.split(".", 1)[0]
+            stat = path.stat()
+            items.append(
+                {
+                    "file_id": fid,
+                    "ref": f"upload://{fid}",
+                    "name": path.name,
+                    "size": stat.st_size,
+                    "size_human": _human_size(stat.st_size),
+                    "session_id": None,
+                }
+            )
+        if items:
+            lines = [f"- {item['name']} · {item['size_human']} · file_id={item['ref']}" for item in items]
+            return {
+                "session_id": session_id,
+                "items": items,
+                "total": len(items),
+                "fallback": "recent_uploads",
+                "summary": (
+                    f"会话 {session_id} 下没有检索到上传文件；"
+                    f"以下是您最近上传的 {len(items)} 个文件（含其它会话）：\n" + "\n".join(lines)
+                ),
+                "hint": "可将 file_id（upload://…）直接交给 workspace_read_file 读取或分析。",
+            }
+    return {
+        "session_id": session_id,
+        "items": items,
+        "total": len(items),
+        "summary": (
+            f"会话 {session_id} 上传过 {len(items)} 个文件：\n" + "\n".join(lines)
+            if items
+            else f"会话 {session_id} 下没有检索到上传文件，也没有可回溯的历史上传"
+        ),
+        "hint": "可将 file_id（upload://…）直接交给 workspace_read_file 读取或分析。",
     }
 
 
@@ -622,6 +731,22 @@ PLATFORM_PRESET_TOOLS = [
         },
     },
     {
+        "name": "find_session_uploads",
+        "description": (
+            "按会话 ID 检索该聊天窗口中用户上传过的文件（聊天上传文件名内嵌会话标记）。"
+            "session_id 留空时默认使用当前会话。需要找回本会话之前上传的数据文件时调用。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "聊天会话 ID（UUID），留空表示当前会话",
+                },
+            },
+        },
+    },
+    {
         "name": "workspace_get_file_info",
         "description": "按 file_id 返回工作区文件的元数据（名称、大小、类型、目录、创建时间），不读内容。",
         "inputSchema": {
@@ -648,6 +773,7 @@ PLATFORM_HANDLERS = {
     "workspace_list_files": _workspace_list_files,
     "workspace_read_file": _workspace_read_file,
     "workspace_get_file_info": _workspace_get_file_info,
+    "find_session_uploads": _find_session_uploads,
 }
 
 

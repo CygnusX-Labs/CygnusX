@@ -110,7 +110,7 @@ onMounted(fetchTasks)
           style="width: 140px"
           @update:value="fetchTasks"
         />
-        <NButton :loading="loading" @click="fetchTasks">
+        <NButton type="primary" :loading="loading" @click="fetchTasks">
           <template #icon>
             <NIcon><RefreshOutline /></NIcon>
           </template>
@@ -133,7 +133,6 @@ onMounted(fetchTasks)
       v-else
       :tasks="filteredTasks"
       :loading="loading"
-      @refresh="fetchTasks"
       @delete="handleDelete"
     />
   </div>

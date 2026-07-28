@@ -102,6 +102,7 @@ async def test_rna_pipeline_prepare_submit_status_and_results(client) -> None:
                     ],
                     "comparisons": [],
                     "library_type": "fr-unstranded",
+                    "task_name": "RNA MCP task",
                     "project_name": "RNA MCP",
                 },
                 headers=headers,

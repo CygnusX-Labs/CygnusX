@@ -6,12 +6,24 @@
 # ----- 阶段 1: 构建依赖 -----
 FROM python:3.11-slim AS builder
 
+# 构建期切换清华 apt 源，加速 apt-get（兼容 debian.sources 与旧版 sources.list）
+RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i 's@//deb.debian.org@//mirrors.tuna.tsinghua.edu.cn@g; s@//security.debian.org@//mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list.d/debian.sources; \
+    else \
+        sed -i 's@//deb.debian.org@//mirrors.tuna.tsinghua.edu.cn@g; s@//security.debian.org@//mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list; \
+    fi
+
 # Git is required to install the Snakemake logger plugin from the JZ_Tools
 # repository subdirectory during image build.
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git && rm -rf /var/lib/apt/lists/*
 
-# 安装 uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# 安装 uv（从 PyPI 而非 GHCR——GHCR 在国内常被墙，与 Dockerfile.worker 同路线）
+RUN python -m pip install --no-cache-dir --disable-pip-version-check \
+    -i https://pypi.tuna.tsinghua.edu.cn/simple "uv==0.6.14"
+
+# uv 不读 /etc/pip.conf，必须显式指定 index（tuna 主源 + 阿里云兜底）
+ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+    UV_EXTRA_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 
 WORKDIR /app
 
@@ -36,6 +48,13 @@ RUN uv pip install --python /app/.venv/bin/python --no-cache "snakemake-logger-p
 
 # ----- 阶段 2: 运行 -----
 FROM python:3.11-slim AS runtime
+
+# 构建期切换清华 apt 源，加速 apt-get（兼容 debian.sources 与旧版 sources.list）
+RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i 's@//deb.debian.org@//mirrors.tuna.tsinghua.edu.cn@g; s@//security.debian.org@//mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list.d/debian.sources; \
+    else \
+        sed -i 's@//deb.debian.org@//mirrors.tuna.tsinghua.edu.cn@g; s@//security.debian.org@//mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list; \
+    fi
 
 # 安装运行时系统依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+from datetime import UTC, datetime
 from typing import Annotated, Any
 from urllib.parse import quote
 
@@ -35,6 +36,7 @@ from omichub.application.schemas.studio import (
     ExtractStudioSkillRequest,
     ImportStudioDataFileRequest,
     ImportStudioDataFileResponse,
+    PromoteStudioSessionRequest,
     RegisterStudioArtifactRequest,
     RegisterStudioArtifactResponse,
     RenameStudioFileRequest,
@@ -329,6 +331,54 @@ async def create_studio_session(
     )
     _schedule_sandbox_prewarm(dto.session_id, current_user_id, image)
     return dto
+
+
+@router.post(
+    "/sessions/{session_id}/promote",
+    response_model=ChatSessionDTO,
+    summary="将普通聊天会话升级为 Studio 工作台（保留历史消息）",
+)
+async def promote_session_to_studio(
+    current_user_id: CurrentUserId,
+    service: ChatServiceDep,
+    db: DbSession,
+    session_id: str,
+    req: PromoteStudioSessionRequest | None = None,
+) -> ChatSessionDTO:
+    """把已有普通会话就地升级为 mode="studio"，消息记录完整保留。
+
+    用于"路由/交接命中默认工作台的 Agent 后自动进入工作台"的场景：
+    不新建空白会话，沙盒按会话 ID 懒启动/预热。可选 agent_id 将会话
+    重绑定到目标 Agent（路由场景下会话仍绑定 router），其 studio.image
+    写入 sandbox_meta 供沙盒懒启动。
+    """
+    session = await service.get_session(session_id, current_user_id)
+    if session is None:
+        raise NotFoundError("会话不存在或已被删除")
+
+    target_agent_id = (req.agent_id if req else None) or session.agent_id
+    image: str | None = None
+    if target_agent_id:
+        agent = await AgentService(db).get_agent(target_agent_id)
+        if agent is not None:
+            studio_cfg = (agent.features or {}).get("studio") or {}
+            image = studio_cfg.get("image")
+
+    if session.mode == "studio":
+        return ChatService._to_session_dto(session)
+
+    if target_agent_id:
+        session.agent_id = target_agent_id
+    session.mode = "studio"
+    sandbox_meta = dict(session.sandbox_meta or {})
+    if image:
+        sandbox_meta["image"] = image
+    session.sandbox_meta = sandbox_meta
+    session.updated_at = datetime.now(UTC)
+    await db.flush()
+
+    _schedule_sandbox_prewarm(session.session_id, current_user_id, image)
+    return ChatService._to_session_dto(session)
 
 
 @router.post("/sessions/from-report", response_model=ChatSessionDTO, summary="从报告创建 Studio 会话")

@@ -19,6 +19,14 @@ class CreateStudioSessionRequest(BaseModel):
     model_id: UUID | None = Field(None, description="模型配置 ID，缺省用 Agent 绑定模型")
 
 
+class PromoteStudioSessionRequest(BaseModel):
+    """普通会话升级为 Studio 工作台请求（保留历史消息）"""
+
+    agent_id: str | None = Field(
+        None, description="可选：将会话重绑定到该 Agent（路由场景缺省沿用会话绑定 Agent）"
+    )
+
+
 class CreateStudioSessionFromReportRequest(BaseModel):
     """从报告创建 Studio 会话请求（结果报告中心「在 AI 工作台中优化」，§7.2）"""
 

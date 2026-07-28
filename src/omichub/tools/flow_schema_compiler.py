@@ -46,12 +46,13 @@ class FlowToolSchemaCompiler:
         properties: dict[str, Any] = {
             "name": {
                 "type": "string",
-                "description": "用户可读的任务名称",
+                "description": "用户必须提供的、便于在任务中心识别的任务名称",
+                "minLength": 1,
                 "maxLength": 128,
             },
             "parameters": self._compile_parameters(flow, ai),
         }
-        required = ["parameters"]
+        required = ["name", "parameters"]
 
         if flow.sample_sheet is not None:
             properties["sample_sheet"] = self._compile_sample_sheet(flow.sample_sheet)

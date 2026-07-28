@@ -27,8 +27,10 @@ def test_compile_prepare_tool_for_rna_seq(compiler: FlowToolSchemaCompiler, rna_
 
     schema = tool_def["input_schema"]
     assert schema["type"] == "object"
+    assert "name" in schema["required"]
     assert "parameters" in schema["required"]
     assert "sample_sheet" in schema["required"]
+    assert schema["properties"]["name"]["minLength"] == 1
 
     params = schema["properties"]["parameters"]
     assert params["type"] == "object"

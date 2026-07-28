@@ -23,6 +23,12 @@ def _prepare_schema() -> dict[str, Any]:
             "sample_sheet": {"type": "array", "items": {"type": "object"}},
             "comparisons": {"type": "array", "items": {"type": "object"}, "default": []},
             "library_type": {"type": "string", "description": "文库链特异性"},
+            "task_name": {
+                "type": "string",
+                "description": "用户必须提供的分析任务名称",
+                "minLength": 1,
+                "maxLength": 128,
+            },
             "project_name": {"type": "string", "description": "项目名称"},
             "extra_parameters": {"type": "object", "default": {}},
         },
@@ -32,6 +38,7 @@ def _prepare_schema() -> dict[str, Any]:
             "genome_version",
             "sample_sheet",
             "library_type",
+            "task_name",
             "project_name",
         ],
     }

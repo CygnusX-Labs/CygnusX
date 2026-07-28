@@ -18,6 +18,10 @@ import {
 } from '@vicons/ionicons5'
 import KimiMessageList from '@/components/ai-chat/KimiMessageList.vue'
 import KimiChatInput from '@/components/ai-chat/KimiChatInput.vue'
+import PendingApprovalBar, {
+  type PendingApprovalItem,
+  type PendingAskItem,
+} from '@/components/ai-chat/PendingApprovalBar.vue'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 import StudioFileTree from '@/components/studio/StudioFileTree.vue'
 import StudioArtifactsPanel from '@/components/studio/StudioArtifactsPanel.vue'
@@ -332,6 +336,49 @@ watch(
 // ---------- 顶栏信息 ----------
 const session = computed(() => store.currentSession)
 const agent = computed(() => (session.value ? store.getAgent(session.value.agent_id) : null))
+
+// ---------- Studio HITL：待审批 / 待澄清浮动条 ----------
+const messageListRef = ref<InstanceType<typeof KimiMessageList> | null>(null)
+
+/** 当前会话所有待审批的工具调用（状态源为消息的 tool.approval，此处仅派生） */
+const pendingApprovals = computed<PendingApprovalItem[]>(() => {
+  const items: PendingApprovalItem[] = []
+  for (const msg of session.value?.messages || []) {
+    for (const tc of msg.toolCalls || []) {
+      if (tc.approval?.status === 'pending') {
+        items.push({ approvalId: tc.approval.approval_id, messageId: msg.id, tool: tc })
+      }
+    }
+  }
+  return items
+})
+
+/** 最近一条待回答的 ask_user 澄清 */
+const pendingAsk = computed<PendingAskItem | null>(() => {
+  const msgs = session.value?.messages || []
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const ask = msgs[i].askRequest
+    if (ask && !ask.answered) {
+      return { messageId: msgs[i].id, question: ask.question, options: ask.options }
+    }
+  }
+  return null
+})
+
+/** 新审批/澄清到达时强制滚动到底部，确保用户注意到浮动条与内联卡片 */
+watch(
+  () => pendingApprovals.value.length + (pendingAsk.value ? 1 : 0),
+  (count, prev) => {
+    if (count > (prev ?? 0)) {
+      nextTick(() => messageListRef.value?.scrollToBottom(true))
+    }
+  },
+)
+
+/** 点击浮动条条目：定位到消息流中的对应内联卡片 */
+function locateMessage(messageId: string) {
+  messageListRef.value?.scrollToMessage(messageId)
+}
 
 const modelName = computed(() => {
   const id = session.value?.model_id
@@ -829,6 +876,7 @@ function formatSessionTime(iso: string): string {
           >
             <div v-if="!session.messages.length" class="studio-chat-empty"><div class="empty-stars">✦ · ˚ ✧</div><strong>把工作台交给星光，把问题交给我们</strong><span>描述一个分析目标，AI 会在沙盒中创建代码、运行并整理产物。</span></div>
             <KimiMessageList
+              ref="messageListRef"
               :messages="session.messages"
               :is-typing="store.isStreaming"
               :streaming-content="store.streamingContent"
@@ -840,6 +888,11 @@ function formatSessionTime(iso: string): string {
               :agent-avatar="agent?.avatar"
               :agent-color="agent?.color"
               :target-message-id="String(route.query.message || '')"
+            />
+            <PendingApprovalBar
+              :approvals="pendingApprovals"
+              :ask="pendingAsk"
+              @locate="locateMessage"
             />
             <div class="input-area">
               <KimiChatInput

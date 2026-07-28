@@ -6,6 +6,13 @@ FROM docker:27-cli AS docker-cli
 
 FROM python:3.11-slim AS builder
 
+# 构建期切换清华 apt 源，加速 apt-get（兼容 debian.sources 与旧版 sources.list）
+RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i 's@//deb.debian.org@//mirrors.tuna.tsinghua.edu.cn@g; s@//security.debian.org@//mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list.d/debian.sources; \
+    else \
+        sed -i 's@//deb.debian.org@//mirrors.tuna.tsinghua.edu.cn@g; s@//security.debian.org@//mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list; \
+    fi
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates git \
     && rm -rf /var/lib/apt/lists/*
@@ -13,12 +20,16 @@ RUN apt-get update \
 # Install the pinned uv release from PyPI instead of copying the binary from
 # GHCR. This keeps the build reproducible while avoiding a hard dependency on
 # the GHCR registry, which is commonly unavailable in restricted networks.
-RUN python -m pip install --no-cache-dir --disable-pip-version-check "uv==0.6.14"
+RUN python -m pip install --no-cache-dir --disable-pip-version-check \
+    -i https://pypi.tuna.tsinghua.edu.cn/simple "uv==0.6.14"
 
 WORKDIR /app
 
+# uv 不读 /etc/pip.conf，必须显式指定 index（tuna 主源 + 阿里云兜底）
 ENV UV_HTTP_TIMEOUT=120 \
-    UV_HTTP_RETRIES=5
+    UV_HTTP_RETRIES=5 \
+    UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+    UV_EXTRA_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 
 COPY pyproject.toml uv.lock* README.md ./
 RUN uv sync --frozen --no-dev --extra workflow --no-install-project
@@ -36,6 +47,13 @@ FROM mambaorg/micromamba:2.0.5 AS micromamba
 FROM python:3.11-slim AS runtime
 
 ARG OH_MY_ZSH_REF=master
+
+# 构建期切换清华 apt 源，加速 apt-get（兼容 debian.sources 与旧版 sources.list）
+RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i 's@//deb.debian.org@//mirrors.tuna.tsinghua.edu.cn@g; s@//security.debian.org@//mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list.d/debian.sources; \
+    else \
+        sed -i 's@//deb.debian.org@//mirrors.tuna.tsinghua.edu.cn@g; s@//security.debian.org@//mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list; \
+    fi
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

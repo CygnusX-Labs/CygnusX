@@ -186,6 +186,15 @@ export const studioApi = {
     return res.data
   },
 
+  /** 将普通聊天会话升级为 Studio 工作台（保留历史消息），可选重绑定 Agent */
+  async promoteSession(sessionId: string, agentId?: string): Promise<StudioSessionDTO> {
+    const res = await apiClient.post<StudioSessionDTO>(
+      `/studio/sessions/${sessionId}/promote`,
+      agentId ? { agent_id: agentId } : {},
+    )
+    return res.data
+  },
+
   /** 从结果报告创建 Studio 会话并注入来源上下文 */
   async createSessionFromReport(payload: {
     report_id: string

@@ -29,6 +29,8 @@ export interface AgentChatStreamOptions {
   enableCodeExecution?: boolean
   mcpMode?: 'off' | 'auto' | 'manual'
   extraMcpServers?: string[]
+  /** 工具调用轮次上限扩展：true 时后端按 1000 轮执行（用户在触顶弹窗确认继续后置位） */
+  extendMaxRounds?: boolean
 }
 
 export interface ChatAttachment {
@@ -136,6 +138,13 @@ export interface WebSearchSource {
   publishedAt?: string | null
 }
 
+export interface RoundLimitEvent {
+  sessionId: string
+  messageId: string
+  maxRounds: number
+  canExtend: boolean
+}
+
 export interface AgentStreamCallbacks {
   onText?: (text: string, isReasoning?: boolean) => void
   onSessionCreated?: (sessionId: string, messageId: string) => void
@@ -155,6 +164,10 @@ export interface AgentStreamCallbacks {
   onRoute?: (event: RouteEvent) => void
   onHandoff?: (event: HandoffEvent) => void
   onConsultation?: (event: ConsultationEvent) => void
+  /** 工具调用轮次触顶：can_extend 为 true 时可由用户确认后以扩展上限继续 */
+  onRoundLimit?: (event: RoundLimitEvent) => void
+  /** 上下文超窗触发历史压缩时回调（estimatedTokens 为压缩前估算值） */
+  onContextCompressed?: (estimatedTokens: number) => void
   onError?: (error: string) => void
   onDone?: (
     sessionId: string,
@@ -281,6 +294,7 @@ export function useAgentChatStream() {
           enable_code_execution: options.enableCodeExecution || false,
           mcp_mode: options.mcpMode || 'auto',
           extra_mcp_servers: options.extraMcpServers || [],
+          extend_max_rounds: options.extendMaxRounds || false,
         }),
         signal: abortController.value.signal,
       })
@@ -455,6 +469,17 @@ export function useAgentChatStream() {
           color: (data.color as string) || '',
           reason: (data.reason as string) || '',
         })
+        break
+      case 'round_limit':
+        cb.onRoundLimit?.({
+          sessionId: sessionId || '',
+          messageId: messageId || '',
+          maxRounds: Number(data.max_rounds) || 0,
+          canExtend: Boolean(data.can_extend),
+        })
+        break
+      case 'context_compressed':
+        cb.onContextCompressed?.(Number(data.estimated_tokens_before) || 0)
         break
       case 'consultation':
         cb.onConsultation?.({

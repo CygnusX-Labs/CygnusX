@@ -6,7 +6,7 @@ import { NButton, NCollapseTransition, NIcon, NSkeleton } from 'naive-ui'
 import {
   ScanOutline, SearchOutline, CodeSlashOutline, ColorPaletteOutline, LayersOutline, BarChartOutline,
   AppsOutline, FlaskOutline, BonfireOutline, CalculatorOutline, SwapHorizontalOutline,
-  TerminalOutline, GitNetworkOutline, GitBranchOutline, GridOutline,
+  TerminalOutline, GitNetworkOutline, GitBranchOutline, GridOutline, StatsChartOutline,
   ChevronForwardOutline,
 } from '@vicons/ionicons5'
 import ToolCard from '@/components/bio-tools/ToolCard.vue'
@@ -22,9 +22,10 @@ const COLLAPSED_STORAGE_KEY = 'omicHub_tools_group_collapsed'
 const GROUP_MAP: Record<string, { label: string; icon: string; order: number }> = {
   sequence: { label: '序列分析', icon: 'CodeSlashOutline', order: 1 },
   visualization: { label: '数据可视化', icon: 'ColorPaletteOutline', order: 2 },
-  genome: { label: '基因组与进化', icon: 'LayersOutline', order: 3 },
-  function: { label: '功能注释', icon: 'BarChartOutline', order: 4 },
-  environment: { label: '计算环境', icon: 'TerminalOutline', order: 5 },
+  analysis: { label: '表达分析', icon: 'StatsChartOutline', order: 3 },
+  genome: { label: '基因组与进化', icon: 'LayersOutline', order: 4 },
+  function: { label: '功能注释', icon: 'BarChartOutline', order: 5 },
+  environment: { label: '计算环境', icon: 'TerminalOutline', order: 6 },
 }
 
 const OTHER_GROUP = {
@@ -53,6 +54,7 @@ const ICON_MAP: Record<string, Component> = {
   GitNetworkOutline,
   GitBranchOutline,
   GridOutline,
+  StatsChartOutline,
 }
 
 function resolveIcon(key: string): Component {

@@ -158,6 +158,10 @@ def _load_single_agent(yaml_path: Path) -> dict[str, Any] | None:
                 cleaned["image"] = profile.image
             elif studio.get("image"):
                 cleaned["image"] = str(studio["image"])
+            # 默认会话模式：studio 表示选中该 Agent 时直接进入 AI 工作台
+            default_mode = str(studio.get("default_mode") or "").strip().lower()
+            if default_mode in {"studio", "chat"}:
+                cleaned["default_mode"] = default_mode
             data["studio"] = cleaned
 
     return data

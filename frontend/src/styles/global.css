@@ -239,6 +239,31 @@ body {
   border-radius: var(--radius-card);
 }
 
+:is(.n-card, .arco-card, .omichub-card, .table-card, .work-card, .result-card, .bottom-table, .table-wrap, .resource-tab) .n-data-table {
+  min-width: 0;
+  background-color: var(--neutral-card);
+}
+
+:is(.n-card, .arco-card, .omichub-card, .table-card, .work-card, .result-card, .bottom-table, .table-wrap, .resource-tab) .n-data-table-wrapper,
+:is(.n-card, .arco-card, .omichub-card, .table-card, .work-card, .result-card, .bottom-table, .table-wrap, .resource-tab) .n-data-table-base-table {
+  max-width: 100%;
+  background-color: var(--neutral-card);
+}
+
+:is(.n-card, .arco-card, .omichub-card, .table-card, .work-card, .result-card, .bottom-table, .table-wrap, .resource-tab) .n-data-table th {
+  background-color: var(--neutral-bg);
+  border-bottom-color: var(--neutral-border);
+}
+
+:is(.n-card, .arco-card, .omichub-card, .table-card, .work-card, .result-card, .bottom-table, .table-wrap, .resource-tab) .n-data-table td {
+  background-color: var(--neutral-card);
+  border-bottom-color: var(--neutral-border);
+}
+
+:is(.n-card, .arco-card, .omichub-card, .table-card, .work-card, .result-card, .bottom-table, .table-wrap, .resource-tab) .n-data-table tr:hover > td {
+  background-color: var(--neutral-hover);
+}
+
 :where(.n-card, .arco-card, .omichub-card, .omichub-selectable-card) {
   position: relative;
   transition:

@@ -80,6 +80,7 @@ export interface BlastHit {
   hit_accession: string
   hit_len: number
   identity_percent: number
+  query_coverage: number
   subject_coverage: number
   total_score: number
   best_hsp?: BlastHspDetail
