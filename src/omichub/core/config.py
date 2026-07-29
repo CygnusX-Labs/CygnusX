@@ -263,7 +263,7 @@ class Settings(BaseSettings):
     mcp_builder_requires_review: bool = True  # 发布是否需要管理员审核
     mcp_builder_max_per_user: int = 5  # 每用户最大实验 MCP 数量
     mcp_builder_default_ttl_hours: int = 24  # 实验 MCP 默认 TTL
-    mcp_builder_default_model: str = "deepseek-v4-pro"  # 代码生成默认模型
+    mcp_builder_default_model: str = "qwen3.7-plus"  # 代码生成默认模型（与平台 agent 标准一致）
 
     # ===== 限流（全局每 IP 滑动窗口，Redis 不可用时降级放行）=====
     rate_limit_enabled: bool = True
