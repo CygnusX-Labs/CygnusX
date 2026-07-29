@@ -13,6 +13,7 @@
 | `agent_framework_final_baseline.md` | 2026-07-26 最终 AI 助手基线：Agent 装配、提示词与工具契约、路由、Studio、Handoff、MAS 边界及发布验收清单。 |
 | `worker_images_plan.md` | Worker 轻量镜像与 Workspace 动态安装计划，定义 Worker 镜像边界、运行时挂载、Conda 环境缓存及实施步骤。 |
 | `mcp_architecture.md` | MCP 子系统完整架构（三层体系、注册/发现/调用、安全验证、沙箱隔离、AI 模型接入），以及 Agent 自生成 MCP 的可行性分析与分阶段实施方案。 |
+| `mcp_builder_agent.md` | MCP 构建师（agent-mcp-builder）实现架构：六阶段生成流水线、AST 安全检查器规则表、沙箱 STDIO 执行层、mcp_builds/versions/reviews 数据模型、12 条 Builder API、TTL/配额/审核生命周期与运维要点。 |
 
 ## 相关文档（目录外）
 
