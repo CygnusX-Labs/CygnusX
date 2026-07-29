@@ -29,6 +29,7 @@ celery_app = Celery(
         "omichub.infrastructure.celery_app.tasks.studio",
         "omichub.infrastructure.celery_app.tasks.mas",
         "omichub.infrastructure.celery_app.tasks.memory",
+        "omichub.infrastructure.celery_app.tasks.mcp_builder",
     ],
 )
 
@@ -95,6 +96,11 @@ celery_app.conf.beat_schedule = {
     # 每 5 分钟回收空闲 Studio 沙盒容器
     "studio-sandbox-recycle": {
         "task": "omichub.infrastructure.celery_app.tasks.studio.recycle_idle_sandboxes",
+        "schedule": crontab(minute="*/5"),
+    },
+    # 每 5 分钟下线过期实验 MCP（MCP Builder TTL 机制）
+    "mcp-builder-expire-experimental": {
+        "task": "omichub.infrastructure.celery_app.tasks.mcp_builder.expire_experimental",
         "schedule": crontab(minute="*/5"),
     },
     "mas-outbox-publish": {

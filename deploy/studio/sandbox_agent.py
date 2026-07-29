@@ -47,6 +47,9 @@ DEFAULT_READ_LIMIT = 200  # 文件分页读取默认行数
 MAX_READ_LIMIT = 2000
 DEFAULT_EXEC_TIMEOUT = 600  # 单次执行默认超时（秒）
 MAX_EXEC_TIMEOUT = 3600
+MCP_BUILDS_DIR = "mcp-builds"  # MCP Builder 生成代码约定目录（相对 /workspace）
+MCP_MAX_SERVERS = 8  # 单容器内同时运行的实验 MCP 上限
+MCP_SESSION_TIMEOUT = 30  # MCP 初始化/工具调用默认超时（秒）
 
 @contextlib.asynccontextmanager
 async def _lifespan(_: FastAPI):
@@ -641,4 +644,202 @@ async def edit_file(req: EditRequest) -> dict[str, Any]:
         "diff": diff,
         "size": target.stat().st_size,
         "reverse_edit": reverse_edit,
+    }
+
+
+# ===== MCP Builder：容器内实验 MCP Server 生命周期管理 =====
+# 生成的 MCP Server 以 STDIO 子进程运行在本容器内（网络隔离 + 资源限制天然继承），
+# 宿主侧经 UDS 调用本组端点完成 tools/list 与 tools/call，无需暴露任何 TCP 端口。
+# 设计参考：docs/26.7.30/mcp_builder_framework.md §8.1 / ARCHITECTURE_DESIN/mcp_architecture.md §5.3
+
+
+class MCPStartRequest(BaseModel):
+    path: str = Field(description="server 代码路径（相对 /workspace 或绝对，必须在 /workspace 内）")
+    server_id: str | None = Field(default=None, description="自定义 ID，缺省自动生成")
+    timeout: int | None = Field(default=None, description="初始化超时秒数")
+
+
+class MCPCallRequest(BaseModel):
+    server_id: str
+    tool: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    timeout: int | None = None
+
+
+class MCPIdRequest(BaseModel):
+    server_id: str
+
+
+# server_id -> 运行态记录
+_MCP_SERVERS: dict[str, dict[str, Any]] = {}
+_MCP_LOCK = asyncio.Lock()
+
+
+async def _mcp_session_for_start(script: Path, timeout: float):
+    """在容器内以 STDIO 方式启动 MCP Server 并完成协议握手.
+
+    返回 (exit_stack, session)。失败时 exit_stack 已清理，直接抛异常。
+    """
+    import sys
+
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    stack = contextlib.AsyncExitStack()
+    try:
+        read, write = await stack.enter_async_context(
+            stdio_client(
+                StdioServerParameters(
+                    command=sys.executable,
+                    args=[str(script)],
+                    cwd=str(script.parent),
+                )
+            )
+        )
+        session = await stack.enter_async_context(ClientSession(read, write))
+        await asyncio.wait_for(session.initialize(), timeout=timeout)
+        return stack, session
+    except BaseException:
+        await stack.aclose()
+        raise
+
+
+@app.post("/mcp/start")
+async def mcp_start(req: MCPStartRequest) -> dict[str, Any]:
+    """启动一个实验 MCP Server 子进程并完成 MCP 握手，返回工具清单。"""
+    script = _resolve_or_400(req.path)
+    if not script.is_file() or script.suffix != ".py":
+        raise HTTPException(status_code=404, detail=f"MCP Server 脚本不存在: {req.path}")
+    timeout = float(req.timeout or MCP_SESSION_TIMEOUT)
+
+    async with _MCP_LOCK:
+        if len(_MCP_SERVERS) >= MCP_MAX_SERVERS:
+            raise HTTPException(
+                status_code=429,
+                detail=f"容器内实验 MCP 数量已达上限 {MCP_MAX_SERVERS}",
+            )
+        try:
+            stack, session = await _mcp_session_for_start(script, timeout)
+        except TimeoutError as e:
+            raise HTTPException(status_code=504, detail="MCP Server 初始化超时") from e
+        except Exception as e:
+            raise HTTPException(
+                status_code=400, detail=f"MCP Server 启动失败: {type(e).__name__}: {e}"
+            ) from e
+
+        server_id = req.server_id or f"exp-{uuid.uuid4().hex[:12]}"
+        # 若同 ID 已存在，先替换（停止旧进程）
+        old = _MCP_SERVERS.pop(server_id, None)
+        if old is not None:
+            with contextlib.suppress(Exception):
+                await old["stack"].aclose()
+
+        try:
+            listing = await asyncio.wait_for(session.list_tools(), timeout=timeout)
+            tools = [
+                {
+                    "name": t.name,
+                    "description": t.description or "",
+                    "inputSchema": t.inputSchema,
+                }
+                for t in listing.tools
+            ]
+        except Exception as e:
+            with contextlib.suppress(Exception):
+                await stack.aclose()
+            raise HTTPException(
+                status_code=400, detail=f"tools/list 失败: {type(e).__name__}: {e}"
+            ) from e
+
+        _MCP_SERVERS[server_id] = {
+            "stack": stack,
+            "session": session,
+            "path": _relative(script),
+            "tools": tools,
+            "started_at": time.time(),
+        }
+
+    return {
+        "server_id": server_id,
+        "path": _relative(script),
+        "tools": tools,
+    }
+
+
+@app.post("/mcp/call")
+async def mcp_call(req: MCPCallRequest) -> dict[str, Any]:
+    """调用容器内实验 MCP 的指定工具（宿主侧 MCPClient 的容器代理入口）。"""
+    record = _MCP_SERVERS.get(req.server_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"实验 MCP 未运行: {req.server_id}")
+    timeout = float(req.timeout or MCP_SESSION_TIMEOUT)
+    try:
+        result = await asyncio.wait_for(
+            record["session"].call_tool(req.tool, req.arguments), timeout=timeout
+        )
+    except TimeoutError as e:
+        raise HTTPException(status_code=504, detail=f"工具调用超时: {req.tool}") from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=400, detail=f"工具调用失败: {type(e).__name__}: {e}"
+        ) from e
+    return {
+        "server_id": req.server_id,
+        "tool": req.tool,
+        "is_error": bool(getattr(result, "isError", False)),
+        "content": [
+            {"type": getattr(c, "type", "text"), "text": getattr(c, "text", str(c))}
+            for c in (result.content or [])
+        ],
+    }
+
+
+@app.get("/mcp/tools")
+async def mcp_tools(server_id: str = Query(...)) -> dict[str, Any]:
+    """获取实验 MCP 的工具清单（优先返回启动时缓存，失效则重查）。"""
+    record = _MCP_SERVERS.get(server_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"实验 MCP 未运行: {server_id}")
+    try:
+        listing = await asyncio.wait_for(
+            record["session"].list_tools(), timeout=MCP_SESSION_TIMEOUT
+        )
+        record["tools"] = [
+            {
+                "name": t.name,
+                "description": t.description or "",
+                "inputSchema": t.inputSchema,
+            }
+            for t in listing.tools
+        ]
+    except Exception:
+        pass  # 握手失效时退回缓存值
+    return {"server_id": server_id, "tools": record["tools"]}
+
+
+@app.post("/mcp/stop")
+async def mcp_stop(req: MCPIdRequest) -> dict[str, Any]:
+    """停止指定实验 MCP Server 子进程。"""
+    async with _MCP_LOCK:
+        record = _MCP_SERVERS.pop(req.server_id, None)
+    if record is None:
+        return {"server_id": req.server_id, "stopped": False}
+    with contextlib.suppress(Exception):
+        await record["stack"].aclose()
+    return {"server_id": req.server_id, "stopped": True}
+
+
+@app.get("/mcp/list")
+async def mcp_list() -> dict[str, Any]:
+    """列出容器内运行中的实验 MCP Server。"""
+    return {
+        "servers": [
+            {
+                "server_id": sid,
+                "path": rec["path"],
+                "tools": [t["name"] for t in rec["tools"]],
+                "started_at": rec["started_at"],
+            }
+            for sid, rec in _MCP_SERVERS.items()
+        ]
     }

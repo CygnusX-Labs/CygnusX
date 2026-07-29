@@ -90,6 +90,7 @@ agents:
     - code
     - viz
     - shania
+    - mcp_builder
 
 # --------------------------------------------
 # EBI 下载进度 key

@@ -41,6 +41,12 @@ from omichub.infrastructure.database.models.knowledge_editor import DocEditorMod
 from omichub.infrastructure.database.models.knowledge_issue import KbIssueModel
 from omichub.infrastructure.database.models.knowledge_revision import DocRevisionModel
 from omichub.infrastructure.database.models.mcp import MCPServerModel
+from omichub.infrastructure.database.models.mcp_builder import (
+    MCPBuildModel,
+    MCPReviewModel,
+    MCPVersionModel,
+    MCPVisibilityModel,
+)
 from omichub.infrastructure.database.models.mas import (
     MASA2AEventModel,
     MASApprovalModel,

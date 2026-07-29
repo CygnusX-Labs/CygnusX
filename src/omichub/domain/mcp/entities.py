@@ -6,7 +6,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from omichub.domain.mcp.value_objects import ServerStatus, Transport
+from omichub.domain.mcp.value_objects import (
+    ReviewStatus,
+    ServerPool,
+    ServerStatus,
+    Transport,
+)
 
 
 class MCPToolRegistry(BaseModel):
@@ -38,8 +43,25 @@ class MCPServer(BaseModel):
     timeout: int = 30  # 超时秒数
     auto_restart: bool = True
     is_preset: bool = False
+    # --- MCP Builder 扩展字段 ---
+    pool: ServerPool = ServerPool.PRODUCTION  # 正式池 / 实验池（AI 生成）
+    expires_at: datetime | None = None  # 实验 MCP 过期时间（NULL=永久）
+    created_by: UUID | None = None  # 创建者（实验 MCP 的所属用户）
+    current_version: str = "1.0.0"  # 当前生效版本号
+    generation_meta: dict[str, Any] = {}  # 生成元数据 {build_id, model, safety_report}
+    review_status: ReviewStatus = ReviewStatus.APPROVED  # 审核状态
+    is_template: bool = False  # 是否作为模板供其他用户复用
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
     def is_available(self) -> bool:
         return self.is_enabled and self.status == ServerStatus.ONLINE
+
+    def is_expired(self, now: datetime | None = None) -> bool:
+        """实验 MCP 是否已过 TTL（production 池永不过期）"""
+        if self.expires_at is None:
+            return False
+        now = now or datetime.now()
+        ref = self.expires_at.replace(tzinfo=None) if self.expires_at.tzinfo else self.expires_at
+        now_ref = now.replace(tzinfo=None) if now.tzinfo else now
+        return ref <= now_ref

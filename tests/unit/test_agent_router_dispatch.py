@@ -440,6 +440,6 @@ def test_router_prompt_candidates_match_registry():
 def test_site_yaml_enabled_agents_have_config_files():
     """data/OmicHub.yaml agents.enabled 中的每个 agent 都有对应配置文件"""
     enabled = agent_loader._load_enabled_agents(SITE_YAML)
-    assert enabled == ["router", "general", "rnaseq", "scrna", "code", "viz", "shania"]
+    assert enabled == ["router", "general", "rnaseq", "scrna", "code", "viz", "shania", "mcp_builder"]
     for name in enabled:
         assert (AI_DIR / f"{name}.yaml").exists(), f"{name}.yaml 不存在"

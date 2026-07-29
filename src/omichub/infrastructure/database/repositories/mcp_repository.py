@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.domain.mcp.entities import MCPServer, MCPToolRegistry
 from omichub.domain.mcp.repositories import IMCPServerRepository
-from omichub.domain.mcp.value_objects import ServerStatus, Transport
+from omichub.domain.mcp.value_objects import ReviewStatus, ServerPool, ServerStatus, Transport
 from omichub.infrastructure.database.models.mcp import MCPServerModel
 
 
@@ -102,6 +102,13 @@ class SqlAlchemyMCPServerRepository(IMCPServerRepository):
             timeout=m.timeout,
             auto_restart=m.auto_restart,
             is_preset=m.is_preset,
+            pool=ServerPool(m.pool or "production"),
+            expires_at=m.expires_at,
+            created_by=m.created_by,
+            current_version=m.current_version or "1.0.0",
+            generation_meta=m.generation_meta or {},
+            review_status=ReviewStatus(m.review_status or "approved"),
+            is_template=bool(m.is_template),
             created_at=m.created_at,
             updated_at=m.updated_at,
         )
@@ -129,6 +136,13 @@ class SqlAlchemyMCPServerRepository(IMCPServerRepository):
             timeout=s.timeout,
             auto_restart=s.auto_restart,
             is_preset=s.is_preset,
+            pool=s.pool.value,
+            expires_at=s.expires_at,
+            created_by=s.created_by,
+            current_version=s.current_version,
+            generation_meta=s.generation_meta or {},
+            review_status=s.review_status.value,
+            is_template=s.is_template,
         )
 
     @staticmethod
@@ -150,4 +164,11 @@ class SqlAlchemyMCPServerRepository(IMCPServerRepository):
         ]
         m.timeout = s.timeout
         m.auto_restart = s.auto_restart
+        m.pool = s.pool.value
+        m.expires_at = s.expires_at
+        m.created_by = s.created_by
+        m.current_version = s.current_version
+        m.generation_meta = s.generation_meta or {}
+        m.review_status = s.review_status.value
+        m.is_template = s.is_template
         return m

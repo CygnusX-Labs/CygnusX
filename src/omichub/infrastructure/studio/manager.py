@@ -119,7 +119,8 @@ class StudioSandboxManager:
         """预建工作区子目录并放权给容器内 uid 10001。
 
         布局与「沙盒目录使用规范」提示词一致：input/ref 只读数据、scripts 脚本、
-        output/{results,figures,logs,tmp} 产物、.logs 执行溢出日志。
+        output/{results,figures,logs,tmp} 产物、.logs 执行溢出日志、
+        mcp-builds MCP Builder 生成代码约定目录。
         容器以非 root（uid 10001）运行，宿主目录默认 root 所有会导致写失败；
         优先 chown 10001，无权限时退化 chmod 0777（P0 单机部署可接受）。
         """
@@ -134,6 +135,7 @@ class StudioSandboxManager:
             "output/logs",
             "output/tmp",
             ".logs",
+            "mcp-builds",  # MCP Builder 生成代码约定目录
         )
         for sub in subs:
             (workspace / sub).mkdir(parents=True, exist_ok=True)
@@ -725,6 +727,97 @@ class StudioSandboxManager:
             json={"path": path, "old_string": old_string, "new_string": new_string},
             image=image,
             user_id=user_id,
+        )
+
+    # ------------------------------------------------------------------
+    # MCP Builder（/mcp/* 薄封装）
+    # 在会话沙箱容器内以 STDIO 子进程运行 AI 生成的实验 MCP Server，
+    # 宿主侧经 UDS 代理完成 tools/list 与 tools/call，不暴露任何 TCP 端口。
+    # ------------------------------------------------------------------
+    async def start_mcp_server(
+        self,
+        session_id: str,
+        path: str,
+        server_id: str | None = None,
+        timeout: int | None = None,
+        image: str | None = None,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        """容器内启动实验 MCP Server 并握手，返回 {server_id, path, tools}。"""
+        payload: dict[str, Any] = {"path": path}
+        if server_id:
+            payload["server_id"] = server_id
+        if timeout:
+            payload["timeout"] = timeout
+        return await self._agent_call(
+            session_id, "POST", "/mcp/start", json=payload, image=image, user_id=user_id
+        )
+
+    async def stop_mcp_server(
+        self,
+        session_id: str,
+        server_id: str,
+        image: str | None = None,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        """停止容器内指定实验 MCP Server。"""
+        return await self._agent_call(
+            session_id,
+            "POST",
+            "/mcp/stop",
+            json={"server_id": server_id},
+            image=image,
+            user_id=user_id,
+        )
+
+    async def list_mcp_servers(
+        self,
+        session_id: str,
+        image: str | None = None,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        """列出容器内运行中的实验 MCP Server。"""
+        return await self._agent_call(
+            session_id, "GET", "/mcp/list", image=image, user_id=user_id
+        )
+
+    async def mcp_list_tools(
+        self,
+        session_id: str,
+        server_id: str,
+        image: str | None = None,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        """获取实验 MCP 的工具清单。"""
+        return await self._agent_call(
+            session_id,
+            "GET",
+            "/mcp/tools",
+            params={"server_id": server_id},
+            image=image,
+            user_id=user_id,
+        )
+
+    async def mcp_call_tool(
+        self,
+        session_id: str,
+        server_id: str,
+        tool: str,
+        arguments: dict[str, Any] | None = None,
+        timeout: int | None = None,
+        image: str | None = None,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        """调用实验 MCP 的工具，返回 {content, is_error}。"""
+        payload: dict[str, Any] = {
+            "server_id": server_id,
+            "tool": tool,
+            "arguments": arguments or {},
+        }
+        if timeout:
+            payload["timeout"] = timeout
+        return await self._agent_call(
+            session_id, "POST", "/mcp/call", json=payload, image=image, user_id=user_id
         )
 
     async def _agent_call(

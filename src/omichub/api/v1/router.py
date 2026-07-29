@@ -17,6 +17,7 @@ from omichub.api.v1 import (
     llm,
     mas,
     mcp,
+    mcp_builder,
     notification,
     pipelines,
     platform_config,
@@ -99,6 +100,7 @@ api_router.include_router(announcements.router, prefix="/announcements", tags=["
 api_router.include_router(festival.router, prefix="/festival", tags=["Festival"])
 api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])
 api_router.include_router(mcp.router, prefix="/mcp", tags=["MCP"])
+api_router.include_router(mcp_builder.router, prefix="/mcp-builder", tags=["MCP Builder"])
 api_router.include_router(sandbox.router, prefix="/sandbox", tags=["Sandbox"])
 api_router.include_router(studio.router, prefix="/studio", tags=["Studio"])
 api_router.include_router(terminal.router, prefix="/terminal", tags=["Terminal"])

@@ -258,6 +258,13 @@ class Settings(BaseSettings):
     mcp_enabled: bool = True
     mcp_default_timeout: int = 30
 
+    # ===== MCP Builder（AI 自生成 MCP）=====
+    mcp_builder_enabled: bool = True  # 是否启用 MCP Builder 功能
+    mcp_builder_requires_review: bool = True  # 发布是否需要管理员审核
+    mcp_builder_max_per_user: int = 5  # 每用户最大实验 MCP 数量
+    mcp_builder_default_ttl_hours: int = 24  # 实验 MCP 默认 TTL
+    mcp_builder_default_model: str = "deepseek-v4-pro"  # 代码生成默认模型
+
     # ===== 限流（全局每 IP 滑动窗口，Redis 不可用时降级放行）=====
     rate_limit_enabled: bool = True
     rate_limit_max: int = 100  # 窗口内最大请求数
