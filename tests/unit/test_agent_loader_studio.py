@@ -284,3 +284,39 @@ async def test_configured_marketplace_skill_is_installed(monkeypatch, tmp_path: 
     await service._ensure_configured_marketplace_skills({"annotation-skill", "external-skill"})
 
     install_marketplace.assert_awaited_once_with("annotation-skill")
+
+
+@pytest.mark.unit
+def test_mcp_builder_agent_loads_successfully():
+    """验证 mcp_builder.yaml 可被 agent_loader 正确加载"""
+    mcp_builder_yaml = Path("data/ai/mcp_builder.yaml")
+    if not mcp_builder_yaml.exists():
+        pytest.skip("mcp_builder.yaml 不存在")
+
+    data = _load_single_agent(mcp_builder_yaml)
+
+    # 基础字段验证
+    assert data is not None, "mcp_builder.yaml 加载失败"
+    assert data["agent_id"] == "agent-mcp-builder"
+    assert data["name"] == "MCP 构建师"
+    assert data["model"] == "qwen3.7-plus"
+
+    # Studio 配置验证
+    assert "studio" in data
+    assert data["studio"]["enabled"] is True
+    assert data["studio"]["default_mode"] == "studio"
+    assert data["studio"]["runtime_profile"] == "analysis-core"
+
+    # 系统提示词验证
+    assert "system_prompt" in data
+    assert len(data["system_prompt"]) > 1000, "system_prompt 过短，可能未正确加载"
+    assert "MCP 构建师" in data["system_prompt"] or "MCP Builder" in data["system_prompt"]
+
+    # 关键约束验证（禁止代为提交）
+    assert "绝不代为提交" in data["system_prompt"] or "禁止调用" in data["system_prompt"]
+
+    # STDIO 说明验证
+    assert "STDIO" in data["system_prompt"]
+
+    # 生成标记验证
+    assert "__exp_mcp_generated__" in data["system_prompt"]
