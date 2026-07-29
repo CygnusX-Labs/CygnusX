@@ -47,6 +47,9 @@ export interface ChatMessage {
   /** 实际使用的模型名，AI 消息专属 */
   modelName?: string
   toolCalls?: ToolCall[]
+  /** 正文/工具调用的交错时间线（AI 消息专属）：按实际发生顺序记录 text 段与 tool 段，
+   *  前端据此把工具卡片渲染在对应正文之后，而不是全部堆在消息底部 */
+  timeline?: TimelineSegment[]
   /** 联网搜索的标准化来源；用于预搜索和历史重载。 */
   webSources?: WebSearchSource[]
   /** 联网搜索进行中的反馈。 */
@@ -80,6 +83,15 @@ export interface ChartData {
 }
 
 // ===== 工具调用 =====
+/** 交错时间线中的一段：正文文本或一次工具调用（按发生顺序排列） */
+export interface TimelineSegment {
+  kind: 'text' | 'tool'
+  /** kind=text 时的 Markdown 文本 */
+  text?: string
+  /** kind=tool 时对应的 ToolCall.id */
+  toolCallId?: string
+}
+
 export interface ToolCall {
   id: string
   name: string
@@ -92,7 +104,7 @@ export interface ToolCall {
   output?: string
   /** Studio 代码卡片的语言（python / r / bash） */
   language?: string
-  /** Studio HITL 审批状态（仅内存态，刷新后丢失） */
+  /** Studio HITL 审批状态（内存态；刷新/断流后由 loadSessionMessages 从 Redis 重建） */
   approval?: ToolApproval
 }
 
@@ -104,10 +116,19 @@ export interface ToolApproval {
   timeout_seconds?: number
 }
 
+/** Studio ask_user 澄清请求中的单个问题 */
+export interface AskQuestion {
+  question: string
+  /** 可点选的互斥选项；用户也可选"其他"自由输入 */
+  options?: string[]
+}
+
 /** Studio ask_user 澄清请求（附着在 AI 消息上，用户下一条消息回答） */
 export interface AskRequest {
-  question: string
-  options?: string[]
+  /** 一次可包含多个问题，前端逐个分页收集 */
+  questions: AskQuestion[]
+  /** 用户按问题顺序给出的答案；空串表示该问题被跳过 */
+  answers?: string[]
   answered?: boolean
 }
 

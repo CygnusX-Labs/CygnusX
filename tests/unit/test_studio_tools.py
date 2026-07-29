@@ -570,3 +570,59 @@ async def test_stream_studio_tool_non_exec_has_no_output_events(fake_manager: _F
     assert len(items) == 1
     assert isinstance(items[0], dict)
     assert items[0]["success"] is True
+
+
+# ===== ask_user 参数归一化 =====
+
+
+@pytest.mark.unit
+def test_normalize_ask_questions_multi():
+    """questions[] 多问题原样保留，过滤空问题与非字符串选项"""
+    from omichub.application.services.chat_service import _normalize_ask_questions
+
+    result = _normalize_ask_questions(
+        {
+            "questions": [
+                {"question": "过滤标准？", "options": ["bcftools 推荐阈值", "自定义", ""]},
+                {"question": ""},
+                "not-a-dict",
+                {"question": "输出格式？"},
+            ]
+        }
+    )
+    assert result == [
+        {"question": "过滤标准？", "options": ["bcftools 推荐阈值", "自定义"]},
+        {"question": "输出格式？", "options": []},
+    ]
+
+
+@pytest.mark.unit
+def test_normalize_ask_questions_legacy_single():
+    """兼容旧单问题 question+options"""
+    from omichub.application.services.chat_service import _normalize_ask_questions
+
+    result = _normalize_ask_questions({"question": "物种？", "options": ["人", "小鼠"]})
+    assert result == [{"question": "物种？", "options": ["人", "小鼠"]}]
+
+
+@pytest.mark.unit
+def test_normalize_ask_questions_empty_fallback():
+    """模型未给出有效问题时兜底一个空问题（前端渲染自由输入，保证用户可回复）"""
+    from omichub.application.services.chat_service import _normalize_ask_questions
+
+    assert _normalize_ask_questions({}) == [{"question": "", "options": []}]
+    assert _normalize_ask_questions({"question": "  "}) == [{"question": "", "options": []}]
+    assert _normalize_ask_questions({"questions": "not-a-list"}) == [
+        {"question": "", "options": []}
+    ]
+
+
+@pytest.mark.unit
+def test_normalize_ask_questions_capped_at_five():
+    """问题数量上限 5 个"""
+    from omichub.application.services.chat_service import _normalize_ask_questions
+
+    result = _normalize_ask_questions(
+        {"questions": [{"question": f"q{i}"} for i in range(8)]}
+    )
+    assert len(result) == 5

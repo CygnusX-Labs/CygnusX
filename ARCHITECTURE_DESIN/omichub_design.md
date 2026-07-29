@@ -2,7 +2,7 @@
 
 > **用途**：本文件是 OmicHub 新增、扩展或重构模块时的项目级设计基线。新增模块先按本文档完成设计，再开始编码；模块级设计文档可在此基础上补充领域细节。
 >
-> **最后更新**：2026-07-12  
+> **最后更新**：2026-07-29  
 > **适用范围**：平台功能、管理功能、生信工具、分析流程、数据资源、AI/Agent、异步任务与外部服务集成。
 
 ---
@@ -290,5 +290,72 @@ npm run build
 - `tool_configs/tools_design.md`：生信工具页面、工具注册表、分组展示与图形绘制专项规范（含完整标准调色板）。
 - `docs/26.7.10/platform_workflow_monitor_template_architecture.md`：复杂跨层模块的完整设计样例。
 - `docs/26.7.11/Kimi_Agent_系统发育树工具架构/`：工具模块前后端拆分与实现样例。
+- 本文 **附录 A（任务中心体验增强设计）**：在既有任务/工具/报告能力上做“展示补全 + 纯前端导出 + 结果入口按类型分流”的跨模块增强样例，演示如何复用既有契约与组件、用集中映射表达 flow_id 分类约定。
 
 > 新模块若需要突破本指南中的约定，必须在模块设计文档中说明原因、替代方案、兼容性影响和回滚策略。
+
+---
+
+## 附录 A：任务中心体验增强设计（2026-07-29）
+
+> 本节记录一次“在既有模块上做体验补全”的设计落地，作为本指南第 1.3「渐进式接入 / 复用优先」
+> 与第 5.1「纯转换进 utils」原则的实例：三处改动均**不引入平行基础设施**、**不改后端契约与数据库**，
+> 而是复用既有数据契约与组件，并把跨组件约定收敛到集中的纯函数映射。
+
+### A.1 背景与目标
+
+任务中心（`views/TasksView.vue` + `components/task/TaskTable.vue`）把分析中心流程与工具箱工具产出的
+任务混在同一张表里。本期在不改变后端的前提下补齐三项体验：
+
+1. **用户名列**：表格此前缺少提交者列。
+2. **导出 Excel**：把当前视图的任务信息一键导出为 `.xlsx`。
+3. **工具箱结果分流**：只有分析流程（`rna_seq` / `atac_seq` 等）会生成「报告」（`/reports?taskId=`）；
+   工具箱任务**不产出报告**，原「查看报告」按钮对它们是误导（点进去是空报告页）。应改为跳回对应
+   工具页并按 `taskId` 直接打开该次分析的结果。
+
+### A.2 设计要点与文件清单
+
+| 关注点 | 决策 | 文件 |
+|---|---|---|
+| 用户名列 | 后端 `GET /tasks` 列表早已通过 `task_service._attach_usernames` 按 `user_id` 回填 `username`，前端 `Task` 类型与 `TaskTable` 用户列渲染（`username \|\| user_id`）均已具备，仅由 `showUser` prop 控制且默认关闭。**只在前端开启**，零后端改动。 | `views/TasksView.vue`（传 `show-user`） |
+| 导出 Excel | 纯前端生成、即时下载；列与状态/流程标签与表格**同口径**；导出对象为**当前筛选视图**。新增依赖 `xlsx`（原仅有 `papaparse`，只能出 CSV，不满足 `.xlsx` 诉求）。转换逻辑放 `utils` 纯函数（§5.1）。 | `utils/taskExport.ts`、`views/TasksView.vue`、`package.json` |
+| 工具箱结果分流 | 用**集中映射**表达 `flow_id` 分类：分析流程 → 报告页；工具箱 → 工具页 + `?taskId=` 深链。两项目前会进任务中心的工具箱工具（`kegg-enrichment`、`deg-analysis`；BLAST 走独立 `BlastTaskModel`、不进任务中心）原本**不支持**深链，需在视图补读 query 并复用既有「打开结果」路径，避免重写渲染。 | `utils/toolboxResultRoute.ts`、`components/task/TaskTable.vue`、`views/BioTools/KeggEnrichmentView.vue`、`views/BioTools/DegAnalysisView.vue` |
+
+**契约对齐（§1.2）**：`TaskResponse.username` / 前端 `Task.username?` 已存在并被列表接口回填，前端只做展示开关，不新增隐式字段。
+
+**纯函数与标签一致（§2.2 / §5.1）**：`taskExport.ts` 内状态/流程标签映射与 `TaskTable` 保持一致，
+进度按表格同口径归一化（兼容后端 `0–100` 与 `0–1` 混用，规避历史「1000%」问题），时间格式化为
+「M月D日 HH:mm」。表头列：`用户 / 任务名称 / 流程 / 状态 / 进度(%) / 提交时间 / 错误信息`，
+文件名默认 `omichub-tasks-YYYYMMDD.xlsx`。导出按钮带 `loading` 与空数据禁用 + 文案提示。
+
+**flow_id 分类约定（集中维护）**：
+
+```ts
+// utils/toolboxResultRoute.ts —— 仅登记「会写 TaskModel、出现在任务中心」的工具箱工具
+const TOOLBOX_RESULT_ROUTE: Record<string, string> = {
+  'kegg-enrichment': 'tools-kegg-enrichment',
+  'deg-analysis':    'tools-deg-analysis',
+}
+export const TOOLBOX_RESULT_QUERY = 'taskId' // 工具页深链统一 query 参数名
+export function getToolboxResultRoute(flowId, taskId): RouteLocationRaw | null
+```
+
+- `TaskTable` 操作列：成功且 `getToolboxResultRoute` 命中 → 文案「查看结果」、跳工具页带 `?taskId=`；
+  否则维持「查看报告」→ `/reports?taskId=`。按钮可见性仍为 `status === 'success'`，与原行为等价。
+- 工具页深链：`onMounted` 在默认数据就绪后读 `route.query[TOOLBOX_RESULT_QUERY]`，KEGG 经抽出的
+  `openTaskById`、DEG 经 `fetchDegTask(id)` + 既有 `openHistoryTask` 打开结果——**复用页面内已验证的渲染路径**，不重复实现图表绘制。
+- 顺带在 `TaskTable.flowLabel` 补 `kegg-enrichment`→`GO/KEGG 富集`、`deg-analysis`→`DEG 差异表达`，
+  修复表格流程列此前显示原始 id 的问题。
+
+**扩展规约**：新增会产生任务的工具箱工具时，在 `TOOLBOX_RESULT_ROUTE` 登记一行，并在对应视图接住
+`TOOLBOX_RESULT_QUERY` 这一个 query 参数即可，无需改 TaskTable 分支逻辑。
+
+### A.3 验证与回滚
+
+- 自动验证（§8.1）：`cd frontend && npm run type-check && npm run build`
+  （`vue-tsc -b` + `vite build` 通过；改前删除 `tsconfig*.tsbuildinfo` 规避脏缓存幻影报错）。
+- 人工验收：用户名列显示真实用户名；导出 `.xlsx` 可打开且标签为中文、进度无 `1000%`；
+  工具箱成功任务点「查看结果」直达对应工具页结果；分析流程成功任务仍为「查看报告」。
+- 部署：重建前端后 `docker restart` nginx（`dist` 为 bind mount，重建后旧 inode 需重启才生效）。
+- 回滚：用户名列移除 `show-user` 即关；导出与分流为纯前端新增，回退按钮/映射即可；
+  **无迁移、无后端契约变更**，回滚不影响数据与接口兼容。`xlsx` 为新增依赖，回滚后可从 `package.json` 移除。

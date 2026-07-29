@@ -24,5 +24,7 @@ handoff:
   max_hops_per_session: 3
 studio:
   enabled: true
+  # 选中该 Agent 时默认直接进入 AI 工作台（Studio）会话，而非普通聊天
+  default_mode: studio
   runtime_profile: analysis-scrna
   required_capabilities: [python, r, plotting, single-cell, hdf5]

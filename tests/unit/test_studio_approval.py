@@ -47,6 +47,16 @@ class _FakeRedis:
                 return key, self.lists[key].pop(0)
         return None
 
+    async def scan_iter(self, match: str = "*") -> Any:
+        # 最小实现：仅支持测试中用到的 "studio:approval:*" 前缀匹配
+        prefix = match.rstrip("*")
+        for key in list(self.kv) + list(self.lists):
+            if key.startswith(prefix):
+                yield key
+
+    async def ttl(self, key: str) -> int:
+        return self.expirations.get(key, -1)
+
 
 @pytest.fixture
 def fake_redis(monkeypatch: pytest.MonkeyPatch) -> _FakeRedis:
@@ -75,7 +85,7 @@ async def test_create_persists_pending_record_with_ttl(fake_redis: _FakeRedis) -
     assert len(record["approval_id"]) == 32  # uuid4 hex
     stored = fake_redis.kv[f"studio:approval:{record['approval_id']}"]
     assert json.loads(stored)["tool_name"] == "sandbox_execute"
-    assert fake_redis.expirations[f"studio:approval:{record['approval_id']}"] == 1800
+    assert fake_redis.expirations[f"studio:approval:{record['approval_id']}"] == 300
 
     fetched = await service.get(record["approval_id"])
     assert fetched is not None and fetched["user_id"] == "u-1"
@@ -84,6 +94,37 @@ async def test_create_persists_pending_record_with_ttl(fake_redis: _FakeRedis) -
 @pytest.mark.unit
 async def test_get_returns_none_for_unknown_id(fake_redis: _FakeRedis) -> None:
     assert await StudioApprovalService().get("nonexistent") is None
+
+
+@pytest.mark.unit
+async def test_list_pending_filters_by_user_session_and_status(fake_redis: _FakeRedis) -> None:
+    service = StudioApprovalService()
+    mine = await service.create(**_create_kwargs())
+    other_session = await service.create(**{**_create_kwargs(), "session_id": "sess-2"})
+    other_user = await service.create(**{**_create_kwargs(), "user_id": "u-2"})
+    consumed = await service.create(**_create_kwargs())
+    await service.resolve(consumed["approval_id"], "u-1", "rejected")
+
+    records = await service.list_pending("u-1", "sess-1")
+
+    ids = {r["approval_id"] for r in records}
+    assert ids == {mine["approval_id"]}
+    assert other_session["approval_id"] not in ids
+    assert other_user["approval_id"] not in ids
+    assert consumed["approval_id"] not in ids
+    # 附带剩余可审批秒数（来自 Redis TTL），供前端重建审批卡时展示
+    assert records[0]["expires_in"] == 300
+    # 决议 list 的 key（含 ":result:"）不应被误当审批记录
+    assert all(":result:" not in f"studio:approval:{r['approval_id']}" for r in records)
+
+
+@pytest.mark.unit
+async def test_list_pending_empty_when_none_match(fake_redis: _FakeRedis) -> None:
+    service = StudioApprovalService()
+    await service.create(**_create_kwargs())
+
+    assert await service.list_pending("u-1", "sess-9") == []
+    assert await service.list_pending("u-9", "sess-1") == []
 
 
 @pytest.mark.unit
@@ -193,5 +234,9 @@ def test_studio_tool_schemas_include_ask_user() -> None:
         item for item in STUDIO_TOOL_SCHEMAS if item["function"]["name"] == "ask_user"
     )
     params = schema["function"]["parameters"]
-    assert params["required"] == ["question"]
+    # 多问题 questions[]（优先）+ 兼容单问题 question/options
+    questions = params["properties"]["questions"]
+    assert questions["type"] == "array"
+    assert questions["items"]["required"] == ["question"]
+    assert questions["items"]["properties"]["options"]["type"] == "array"
     assert params["properties"]["options"]["type"] == "array"

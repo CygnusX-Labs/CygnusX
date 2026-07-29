@@ -252,7 +252,7 @@ async def _stream_exec(req: ExecRequest):
             if in_stream:
                 sent += len(in_stream)
                 streamed_prefix.extend(in_stream)
-                text = in_stream.decode("utf-8", errors="replace").rstrip("\n")
+                text = in_stream.decode("utf-8", errors="replace")
                 yield emit({"type": channel, "data": text})
             if overflow:
                 if not truncated:
@@ -379,13 +379,23 @@ async def interactive_terminal(websocket: WebSocket) -> None:
         "COLORTERM": "truecolor",
         "HOME": str(WORKSPACE_ROOT),
         "PWD": str(WORKSPACE_ROOT),
-        "PS1": "\\[\\033[38;5;111m\\]studio@omicbox\\[\\033[0m\\]:\\[\\033[38;5;150m\\]\\\\w\\[\\033[0m\\]$ ",
+        # PS1 单层级转义：Python 字符串 \\[ → bash 收到 \[（颜色定界），
+        # \\w → bash 收到 \w（当前目录）。此前 \w 多写了一层（\\\\w），
+        # 提示符会原样打印字面量 "\w" 而不是真实目录。
+        # 仅作 bash 兜底；zsh 提示符由 oh-my-posh 渲染（见下方 zsh 分支）。
+        "PS1": "\\[\\033[38;5;111m\\]studio@omicbox\\[\\033[0m\\]:\\[\\033[38;5;150m\\]\\w\\[\\033[0m\\]$ ",
     }
+    # 优先 zsh（镜像内置 /opt/conda/bin/zsh + /opt/omichub/zdotdir/.zshrc，
+    # oh-my-zsh + oh-my-posh）；缺失时回退 bash + PS1。
+    zsh_path = "/opt/conda/bin/zsh"
+    zdotdir = "/opt/omichub/zdotdir"
+    if os.path.isfile(zsh_path) and os.path.isfile(os.path.join(zdotdir, ".zshrc")):
+        shell_argv = [zsh_path, "-i"]
+        env["ZDOTDIR"] = zdotdir
+    else:
+        shell_argv = ["/bin/bash", "--noprofile", "--norc", "-i"]
     proc = await asyncio.create_subprocess_exec(
-        "/bin/bash",
-        "--noprofile",
-        "--norc",
-        "-i",
+        *shell_argv,
         stdin=slave_fd,
         stdout=slave_fd,
         stderr=slave_fd,

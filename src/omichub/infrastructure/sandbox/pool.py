@@ -35,9 +35,19 @@ class SandboxPool:
     def __init__(self) -> None:
         self._settings = get_settings()
         self._client: Any = None
-        self._warm_pool: asyncio.Queue[str] = asyncio.Queue()
+        self._warm_pool: asyncio.Queue[str] = asyncio.Queue(
+            maxsize=self._warm_pool_target()
+        )
+        self._managed_container_ids: set[str] = set()
         self._available: bool | None = None
         self._init_lock = asyncio.Lock()
+        self._container_lock = asyncio.Lock()
+
+    def _max_pool_size(self) -> int:
+        return max(self._settings.sandbox_max_pool_size, 0)
+
+    def _warm_pool_target(self) -> int:
+        return min(max(self._settings.sandbox_warm_pool_size, 0), self._max_pool_size())
 
     # ------------------------------------------------------------------
     # Docker 客户端 & 可用性
@@ -67,13 +77,16 @@ class SandboxPool:
             logger.info("沙盒 Docker 不可用，跳过预热")
             return
         async with self._init_lock:
-            for _ in range(self._settings.sandbox_warm_pool_size):
+            while self._warm_pool.qsize() < self._warm_pool_target():
                 try:
                     container_id = await self._warm_one()
                     if container_id:
                         await self._warm_pool.put(container_id)
+                    else:
+                        break
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"预热容器失败: {e}")
+                    break
         logger.info(f"沙盒预热完成，池内 {self._warm_pool.qsize()} 个容器")
 
     # ------------------------------------------------------------------
@@ -87,17 +100,23 @@ class SandboxPool:
             asyncio.create_task(self._warm_and_put())
             return container_id
         except asyncio.QueueEmpty:
-            return await self._warm_one(container_name)
+            container_id = await self._warm_one(container_name)
+            if container_id:
+                return container_id
+            raise SandboxUnavailableError("沙盒容器池已达到最大容量") from None
 
     async def _warm_and_put(self) -> None:
         try:
             cid = await self._warm_one()
             if cid:
-                await self._warm_pool.put(cid)
+                try:
+                    self._warm_pool.put_nowait(cid)
+                except asyncio.QueueFull:
+                    await self.destroy(cid)
         except Exception as e:  # noqa: BLE001
             logger.debug(f"补充预热失败: {e}")
 
-    async def _warm_one(self, name: str = "") -> str:
+    async def _warm_one(self, name: str = "") -> str | None:
         client = self._get_client()
         mem_limit = self._settings.sandbox_default_memory
         cpu_shares = int(self._settings.sandbox_default_cpu * 1024)
@@ -123,7 +142,12 @@ class SandboxPool:
             )
             return str(container.id)
 
-        return await asyncio.to_thread(_run)
+        async with self._container_lock:
+            if len(self._managed_container_ids) >= self._max_pool_size():
+                return None
+            container_id = await asyncio.to_thread(_run)
+            self._managed_container_ids.add(container_id)
+            return container_id
 
     async def destroy(self, container_id: str | None) -> None:
         if not container_id:
@@ -139,11 +163,13 @@ class SandboxPool:
                 pass
 
         await asyncio.to_thread(_destroy)
+        async with self._container_lock:
+            self._managed_container_ids.discard(container_id)
 
     async def release(self, container_id: str | None) -> None:
         if not container_id:
             return
-        if self._warm_pool.qsize() < self._settings.sandbox_warm_pool_size:
+        if not self._warm_pool.full():
             await self._warm_pool.put(container_id)
         else:
             await self.destroy(container_id)

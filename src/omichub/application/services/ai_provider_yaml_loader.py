@@ -75,6 +75,16 @@ class AIProviderYamlLoader:
             logger.debug(f"AI Provider YAML 未配置或为空: {path}")
             return 0
 
+        # uvicorn 多 worker 会并发执行启动同步；本函数是"先查再插"的 check-then-act，
+        # 并发下会对不存在的 name 重复 INSERT。用 PG 事务级咨询锁串行化：
+        # 后到的 worker 等前者提交后再读，看到的即是已同步状态，只更新不新建。
+        # 锁随会话上下文退出（commit/rollback）自动释放。
+        from sqlalchemy import text
+
+        await self._db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext('omichub_ai_provider_yaml_sync'))")
+        )
+
         existing = {c.name: c for c in await self._repo.list_all()}
         synced = 0
         default_name: str | None = None

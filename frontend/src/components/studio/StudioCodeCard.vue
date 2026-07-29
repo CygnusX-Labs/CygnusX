@@ -220,9 +220,13 @@ const baseOutput = computed(() => {
   return so + se
 })
 
-const displayOutput = computed(() =>
-  stripAnsi(rerunHappened.value ? rerunOutput.value : baseOutput.value),
-)
+const displayOutput = computed(() => {
+  // 归一化 \r\n / \r：PTY 风格的输出若直接 split('\n') 会把多行误算成 1 行（问题⑨）
+  const raw = (rerunHappened.value ? rerunOutput.value : baseOutput.value)
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+  return stripAnsi(raw)
+})
 
 const outputLines = computed(() => (displayOutput.value ? displayOutput.value.split('\n').length : 0))
 const showOutput = ref(true)
@@ -385,8 +389,8 @@ onUnmounted(() => {
 <style scoped lang="scss">
 .studio-code-card {
   margin-top: 10px;
-  border: 1px solid var(--chat-border, #e5e7eb);
-  border-radius: 10px;
+  border: 1px solid var(--bubble-border, var(--chat-border, #e5e7eb));
+  border-radius: var(--card-radius, 12px);
   overflow: hidden;
   background: var(--chat-surface, #fff);
 }
@@ -420,6 +424,10 @@ onUnmounted(() => {
 
 .editor-wrap {
   height: 220px;
+  margin: 8px 10px;
+  border: 1px solid var(--code-block-border, rgba(0, 0, 0, 0.08));
+  border-radius: 8px;
+  overflow: hidden;
 }
 .editor-wrap.editing {
   outline: 2px solid var(--chat-accent, #4f8ef7);
@@ -459,14 +467,16 @@ onUnmounted(() => {
   word-break: break-word;
 }
 .diff-view {
-  margin: 0;
+  margin: 0 10px 10px;
   padding: 10px 12px;
   max-height: 260px;
   overflow: auto;
-  background: #282c34;
+  background: var(--code-block-bg, #24292f);
+  border: 1px solid var(--code-block-border, rgba(0, 0, 0, 0.08));
+  border-radius: 8px;
   color: #d7dae0;
   font-size: 12px;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'JetBrains Mono', monospace;
   line-height: 1.6;
 }
 
@@ -487,14 +497,17 @@ onUnmounted(() => {
 }
 .output-toggle:hover { color: var(--chat-text-primary, #333); }
 .output-view {
-  margin: 0;
+  /* 深色块与白卡片之间留白 + 圆角嵌套 + 过渡描边，避免"黑贴白"硬切（问题⑥） */
+  margin: 0 10px 10px;
   padding: 8px 12px;
   max-height: 240px;
   overflow: auto;
-  background: #1e2127;
+  background: var(--code-block-bg, #1f2329);
+  border: 1px solid var(--code-block-border, rgba(0, 0, 0, 0.08));
+  border-radius: 8px;
   color: #d7dae0;
   font-size: 12px;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'JetBrains Mono', monospace;
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-all;

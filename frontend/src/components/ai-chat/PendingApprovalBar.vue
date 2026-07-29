@@ -118,7 +118,7 @@ async function handleAnswer(text: string) {
   if (answering.value) return
   answering.value = true
   try {
-    await store.answerAskRequest(text)
+    await store.answerAskRequest([text])
   } finally {
     answering.value = false
   }

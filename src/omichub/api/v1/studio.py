@@ -22,6 +22,7 @@ import httpx
 from fastapi import APIRouter, Depends, Header, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from loguru import logger
+from sqlalchemy import text as sql_text
 
 from omichub.api.deps import CurrentUserId, DbSession, get_active_user_from_token_payload
 from omichub.api.v1.admin.users import AdminRequired
@@ -370,10 +371,17 @@ async def promote_session_to_studio(
     if target_agent_id:
         session.agent_id = target_agent_id
     session.mode = "studio"
-    sandbox_meta = dict(session.sandbox_meta or {})
     if image:
-        sandbox_meta["image"] = image
-    session.sandbox_meta = sandbox_meta
+        # sandbox_meta 可能被进行中的聊天流并发写入（plan 等键），
+        # image 键用 jsonb_set 原子写入，避免整体回写擦除并发更新
+        await db.execute(
+            sql_text(
+                "UPDATE chat_sessions SET sandbox_meta = jsonb_set("
+                "COALESCE(sandbox_meta, '{}'::jsonb), '{image}', "
+                "to_jsonb(CAST(:image AS text)), true) WHERE session_id = :sid"
+            ),
+            {"image": image, "sid": session_id},
+        )
     session.updated_at = datetime.now(UTC)
     await db.flush()
 
@@ -457,14 +465,23 @@ async def update_studio_ui(
     req: UpdateStudioUiRequest,
 ) -> dict[str, Any]:
     session = await _get_studio_session(service, session_id, current_user_id)
-    meta = dict(session.sandbox_meta or {})
-    current = dict(meta.get("ui") or {})
-    for key, value in req.model_dump(exclude_none=True).items():
-        current[key] = value
-    meta["ui"] = current
-    session.sandbox_meta = meta
-    await db.flush()
-    return current
+    patch = {k: v for k, v in req.model_dump(exclude_none=True).items()}
+    if patch:
+        # sandbox_meta 是多请求共享的 JSONB：聊天流事务会并发写入 plan 等键并长时间持有行锁。
+        # 读-改-写整体回写会用陈旧快照覆盖并发写入（曾导致 update_plan 的计划被擦除），
+        # 改为 jsonb_set 原子合并：行锁等待后 PG 基于最新已提交版本合并，互不丢更新。
+        await db.execute(
+            sql_text(
+                "UPDATE chat_sessions SET sandbox_meta = jsonb_set("
+                "COALESCE(sandbox_meta, '{}'::jsonb), '{ui}', "
+                "COALESCE(sandbox_meta->'ui', '{}'::jsonb) || CAST(:patch AS jsonb), true), "
+                "updated_at = now() WHERE session_id = :sid"
+            ),
+            {"patch": json.dumps(patch, ensure_ascii=False), "sid": session_id},
+        )
+        await db.flush()
+        await db.refresh(session)
+    return dict((session.sandbox_meta or {}).get("ui") or {})
 
 
 @router.post("/sessions/{session_id}/permissions", summary="设置 Studio 会话权限模式")
@@ -477,18 +494,37 @@ async def update_studio_permissions(
 ) -> dict[str, Any]:
     """会话级权限模式（§2）：supervised 写/执行类工具需用户批准；auto 即时执行。"""
     session = await _get_studio_session(service, session_id, current_user_id)
-    meta = dict(session.sandbox_meta or {})
-    permissions = dict(meta.get("permissions") or {})
-    permissions["mode"] = req.mode
-    meta["permissions"] = permissions
-    session.sandbox_meta = meta
+    # 与 update_studio_ui 同理：jsonb_set 原子合并，避免覆盖聊天流并发写入的 plan 等键
+    await db.execute(
+        sql_text(
+            "UPDATE chat_sessions SET sandbox_meta = jsonb_set("
+            "COALESCE(sandbox_meta, '{}'::jsonb), '{permissions}', "
+            "COALESCE(sandbox_meta->'permissions', '{}'::jsonb) || CAST(:patch AS jsonb), true), "
+            "updated_at = now() WHERE session_id = :sid"
+        ),
+        {"patch": json.dumps({"mode": req.mode}), "sid": session_id},
+    )
     await db.flush()
+    await db.refresh(session)
+    permissions = dict((session.sandbox_meta or {}).get("permissions") or {})
     return {"permissions": permissions}
 
 
 # ============================================================
 # 工具审批（supervised 模式 HITL，§3）
 # ============================================================
+
+
+@router.get("/approvals", summary="列出指定会话待审批的工具审批")
+async def list_pending_studio_approvals(
+    current_user_id: CurrentUserId,
+    service: ChatServiceDep,
+    session_id: str,
+) -> dict[str, Any]:
+    """审批提示是瞬态 SSE 事件，不落库；前端刷新/断流重进会话时用本端点重建待审批卡片。"""
+    await _get_studio_session(service, session_id, current_user_id)
+    records = await get_studio_approval_service().list_pending(str(current_user_id), session_id)
+    return {"approvals": records}
 
 
 @router.post("/approvals/{approval_id}/approve", summary="批准（或编辑后批准）工具审批")

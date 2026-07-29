@@ -12,6 +12,7 @@
 | `agent_architecture_and_extension_guide.md` | 当前 Agent 运行架构、P1–P3 实施状态、灰度条件，以及修改提示词和新增内置/MCP 工具的操作指南。 |
 | `agent_framework_final_baseline.md` | 2026-07-26 最终 AI 助手基线：Agent 装配、提示词与工具契约、路由、Studio、Handoff、MAS 边界及发布验收清单。 |
 | `worker_images_plan.md` | Worker 轻量镜像与 Workspace 动态安装计划，定义 Worker 镜像边界、运行时挂载、Conda 环境缓存及实施步骤。 |
+| `mcp_architecture.md` | MCP 子系统完整架构（三层体系、注册/发现/调用、安全验证、沙箱隔离、AI 模型接入），以及 Agent 自生成 MCP 的可行性分析与分阶段实施方案。 |
 
 ## 相关文档（目录外）
 

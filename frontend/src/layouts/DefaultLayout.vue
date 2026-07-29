@@ -65,8 +65,7 @@ const expandedKeys = ref<string[]>(loadExpandedKeys())
 const userCollapsed = ref(false)
 const lastAutoCollapsed = ref(false)
 
-// Feature 6: AI 页面（/ai, /studio）自动折叠侧边栏；手动锁定后不再自动控制
-const sidebarLocked = ref<string | null>(localStorage.getItem('omichub:sidebar-locked'))
+// Feature 6: AI 页面（/ai, /studio）无条件默认折叠侧边栏，离开后恢复用户原状态
 const autoCollapsePages = ['/studio', '/ai']
 
 const isAdmin = computed(() => authStore.user?.role === 'admin')
@@ -103,6 +102,11 @@ function updateWindowWidth() {
     collapsed.value = true
     return
   }
+  // AI 助手/工作台页：与路由 watcher 一致的自动折叠规则，避免 resize 时覆盖回展开态
+  if (autoCollapsePages.some((p) => route.path.startsWith(p))) {
+    collapsed.value = true
+    return
+  }
   if (isMobile.value) {
     collapsed.value = false
   } else if (isTablet.value) {
@@ -118,8 +122,8 @@ watch(
   () => route.fullPath,
   () => {
     const metaCollapse = route.meta.autoCollapseSidebar === true
-    const aiPageCollapse = sidebarLocked.value === null
-      && autoCollapsePages.some((p) => route.path.startsWith(p))
+    // AI 助手/工作台页：无条件默认折叠（忽略手动锁定偏好），离开后恢复原状
+    const aiPageCollapse = autoCollapsePages.some((p) => route.path.startsWith(p))
     const autoCollapse = metaCollapse || aiPageCollapse
     if (autoCollapse) {
       // 进入自动折叠页面：若当前未折叠则记录原状态后折叠
@@ -133,18 +137,16 @@ watch(
     }
     lastAutoCollapsed.value = autoCollapse
   },
+  // immediate：直接打开/刷新 /ai、/studio 时首屏即折叠，不必等下一次路由跳转
+  { immediate: true },
 )
 
 // 汉堡按钮手动切换：同时记录用户偏好，供离开自动折叠页面后恢复
-// Feature 6: 手动切换后写入 localStorage 锁定，后续不再自动控制
 function toggleCollapsed() {
   collapsed.value = !collapsed.value
   if (!route.meta.autoCollapseSidebar) {
     userCollapsed.value = collapsed.value
   }
-  // 手动操作后锁定侧边栏偏好，不再自动折叠
-  sidebarLocked.value = String(collapsed.value)
-  localStorage.setItem('omichub:sidebar-locked', sidebarLocked.value)
 }
 
 onMounted(() => {
@@ -406,7 +408,7 @@ const UserAvatar = () => {
         </NTooltip>
         <NTooltip placement="bottom" :delay="300">
           <template #trigger>
-            <NButton text class="top-icon-btn" @click="$router.push('/about')">
+            <NButton text class="top-icon-btn" @click="$router.push('/knowledge')">
               <NIcon :size="20">
                 <HelpCircleOutline />
               </NIcon>

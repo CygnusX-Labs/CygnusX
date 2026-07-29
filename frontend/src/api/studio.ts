@@ -100,6 +100,19 @@ export interface StudioPermissions {
   mode: StudioPermissionMode
 }
 
+/** 待审批的工具审批记录（GET /studio/approvals，对应 Redis 中的 pending 记录） */
+export interface StudioPendingApproval {
+  approval_id: string
+  session_id: string
+  tool_call_id: string
+  tool_name: string
+  arguments: Record<string, unknown>
+  risk_hint: string
+  status: 'pending'
+  /** 剩余可审批秒数（Redis TTL） */
+  expires_in: number
+}
+
 export interface StudioSessionDetail {
   session: StudioSessionDTO
   sandbox_status: SandboxStatus
@@ -228,6 +241,15 @@ export const studioApi = {
     // 后端返回 {permissions: {mode}} 或直接 {mode}，两种封装都兼容
     const data = res.data as StudioPermissions & { permissions?: StudioPermissions }
     return data.permissions || data
+  },
+
+  /** 列出指定会话仍处于 pending 的工具审批（刷新/断流重进会话时重建审批卡） */
+  async listPendingApprovals(sessionId: string): Promise<StudioPendingApproval[]> {
+    const res = await apiClient.get<{ approvals: StudioPendingApproval[] }>(
+      '/studio/approvals',
+      { params: { session_id: sessionId } },
+    )
+    return res.data?.approvals || []
   },
 
   /** 批准待审批的工具调用；带 modifiedArgs 即"编辑后批准" */

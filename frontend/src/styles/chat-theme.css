@@ -82,6 +82,14 @@
   --chat-radius-lg: 16px;
   --chat-radius-xl: 20px;
 
+  /* 深色块 / 气泡描边过渡（工作台与 AI 助手两页统一口径） */
+  --code-block-bg: #1f2329;
+  --code-block-header-bg: #161b22;
+  --code-block-border: rgba(255, 255, 255, 0.06);
+  --bubble-border: #333333;
+  --card-radius: 12px;
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.24), 0 4px 12px rgba(0, 0, 0, 0.16);
+
   /* 过渡 */
   --chat-transition-fast: 0.15s ease;
   --chat-transition-normal: 0.25s ease;
@@ -157,6 +165,14 @@
   --chat-radius-md: 10px;
   --chat-radius-lg: 16px;
   --chat-radius-xl: 20px;
+
+  /* 深色块 / 气泡描边过渡（工作台与 AI 助手两页统一口径） */
+  --code-block-bg: #1f2329;
+  --code-block-header-bg: #161b22;
+  --code-block-border: rgba(0, 0, 0, 0.08);
+  --bubble-border: #e5e7eb;
+  --card-radius: 12px;
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.04);
 
   --chat-transition-fast: 0.15s ease;
   --chat-transition-normal: 0.25s ease;
@@ -353,8 +369,9 @@
   color: var(--chat-accent);
 }
 .kimi-message-item .message-body pre.hljs {
-  background: #0d1117;
-  border-radius: 10px;
+  background: var(--code-block-bg, #1f2329);
+  border: 1px solid var(--code-block-border, rgba(0, 0, 0, 0.08));
+  border-radius: 8px;
   padding: 0;
   margin: 12px 0;
   overflow: hidden;
@@ -364,8 +381,8 @@
   justify-content: space-between;
   align-items: center;
   padding: 8px 16px;
-  background: #161b22;
-  border-bottom: 1px solid #30363d;
+  background: var(--code-block-header-bg, #161b22);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 .kimi-message-item .message-body .code-lang {
   font-size: 12px;

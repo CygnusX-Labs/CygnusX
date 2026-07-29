@@ -124,7 +124,7 @@ const statusMeta = computed(() => STATUS_META[approval.value?.status || ''] || n
         {{ statusMeta.text }}
       </n-tag>
       <span v-if="isPending && approval?.timeout_seconds" class="timeout-hint">
-        {{ Math.round(approval.timeout_seconds / 60) }} 分钟内未响应将自动退回
+        {{ Math.max(1, Math.round(approval.timeout_seconds / 60)) }} 分钟内未响应将自动退回
       </span>
     </div>
 

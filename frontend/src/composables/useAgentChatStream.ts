@@ -83,7 +83,9 @@ export interface ApprovalResolvedEvent {
 /** Studio HITL：ask_user 澄清请求（本轮随后结束，用户在下一条消息回答） */
 export interface AskRequestEvent {
   tool_call_id: string
-  question: string
+  /** 多问题列表（优先）；兼容后端平铺的 question/options 单问题字段 */
+  questions?: Array<{ question: string; options?: string[] }>
+  question?: string
   options?: string[]
 }
 
@@ -455,11 +457,30 @@ export function useAgentChatStream() {
         })
         break
       case 'ask_request':
-        cb.onAskRequest?.({
-          tool_call_id: (data.tool_call_id as string) || '',
-          question: (data.question as string) || content,
-          options: Array.isArray(data.options) ? (data.options as string[]) : undefined,
-        })
+        {
+          const rawQuestions = Array.isArray(data.questions) ? data.questions : []
+          const questions = rawQuestions
+            .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+            .map((item) => ({
+              question: typeof item.question === 'string' ? item.question : '',
+              options: Array.isArray(item.options) ? (item.options as string[]) : undefined,
+            }))
+            .filter((item) => item.question)
+          // 兼容旧后端：无 questions 数组时退回平铺的 question/options
+          if (!questions.length) {
+            const single = (data.question as string) || content
+            if (single) {
+              questions.push({
+                question: single,
+                options: Array.isArray(data.options) ? (data.options as string[]) : undefined,
+              })
+            }
+          }
+          cb.onAskRequest?.({
+            tool_call_id: (data.tool_call_id as string) || '',
+            questions,
+          })
+        }
         break
       case 'route':
         cb.onRoute?.({

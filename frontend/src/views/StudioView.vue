@@ -29,6 +29,7 @@ import StudioWorkspaceEditor from '@/components/studio/StudioWorkspaceEditor.vue
 import SessionHistoryDrawer from '@/components/agent-workspace/SessionHistoryDrawer.vue'
 import { StudioContextKey } from '@/components/studio/context'
 import { studioApi, type StudioSessionDTO, type SandboxStatus } from '@/api/studio'
+import { shouldApplyServerUi, shouldApplyServerViewMode } from '@/utils/studioViewGuard'
 import { useAgentHubStore } from '@/stores/agentHub'
 import { useAuthStore } from '@/stores/auth'
 import type { FileAttachment, ToolCall } from '@/components/ai-chat/types'
@@ -80,10 +81,20 @@ const leftCollapsed = ref(false)
 const rightCollapsed = ref(false)
 const rightSections = reactive({ artifacts: true, plan: true, sandbox: true })
 const leftWidth = ref(260)
-const rightWidth = ref(300)
+const RIGHT_WIDTH_KEY = 'omichub:studio:right-width'
+function loadRightWidth(): number {
+  const saved = Number(localStorage.getItem(RIGHT_WIDTH_KEY))
+  return Number.isFinite(saved) && saved >= 220 && saved <= 360 ? saved : 260
+}
+// 右侧状态栏默认收窄到 260px，可拖拽 220~360px 并记忆（问题⑧）
+const rightWidth = ref(loadRightWidth())
 
 type StudioViewMode = 'chat' | 'split' | 'code'
 const viewMode = ref<StudioViewMode>('chat')
+// 用户已手动接管视图：会话内不再接受服务端 view_mode 回写（新会话时重置）。
+// 流式期间 PATCH /ui 会被聊天事务行锁阻塞，服务端返回的是旧值，
+// 轮询若无条件回写会把用户刚打开的分屏/代码面板打回 chat（问题⑦根因）。
+const viewModeTouched = ref(false)
 const splitRatio = ref(40)
 const chatDrawerOpen = ref(false)
 const historyOpen = ref(false)
@@ -134,6 +145,7 @@ function handleTerminalCollapsedChanged(collapsed: boolean) {
   persistUiState()
 }
 function setViewMode(mode: StudioViewMode) {
+  viewModeTouched.value = true
   viewMode.value = mode
   if (sessionId.value) localStorage.setItem(modeStorageKey(), mode)
   if (mode !== 'code') chatDrawerOpen.value = false
@@ -186,14 +198,20 @@ async function refreshStatus() {
     sandboxMetrics.value = detail.sandbox_metrics || { cpu_percent: 0, memory_percent: 0, memory_used: 0, memory_limit: 0 }
     workspaceId.value = detail.workspace_id
     if (!wasRunning && detail.sandbox_status === 'running' && store.isStreaming) message.success('沙盒已点火，工作区准备就绪 🚀')
-    store.currentPlan = detail.plan?.steps || []
+    // 流式进行中服务端的 plan 可能尚未提交（聊天事务末尾才 commit），
+    // 此时空值不覆盖面板上的实时计划，避免待办"出现一下就消失"
+    if (detail.plan?.steps?.length) store.currentPlan = detail.plan.steps
+    else if (!store.isStreaming) store.currentPlan = []
     if (detail.ui) {
-      followAi.value = detail.ui.follow_ai
-      terminalCollapsed.value = detail.ui.terminal_collapsed
-      hibernateOnLeave.value = detail.ui.hibernate_on_leave
-      splitRatio.value = detail.ui.split_ratio
-      const serverMode = detail.ui.view_mode
-      if (serverMode === 'chat' || serverMode === 'split' || serverMode === 'code') viewMode.value = serverMode
+      // 流式期间 PATCH /ui 被聊天事务行锁阻塞，GET 拿到的是旧值；
+      // 此时一律不用服务端 UI 状态覆盖本地（用户手动操作优先，见 studioViewGuard）。
+      if (shouldApplyServerUi(store.isStreaming)) {
+        followAi.value = detail.ui.follow_ai
+        terminalCollapsed.value = detail.ui.terminal_collapsed
+        hibernateOnLeave.value = detail.ui.hibernate_on_leave
+        splitRatio.value = detail.ui.split_ratio
+        if (shouldApplyServerViewMode(store.isStreaming, viewModeTouched.value, detail.ui.view_mode)) viewMode.value = detail.ui.view_mode
+      }
     }
     shareActive.value = detail.share?.active || false
     shareExpiresAt.value = detail.share?.expires_at || null
@@ -219,14 +237,19 @@ async function enterSession(id: string) {
     sandboxMetrics.value = detail.sandbox_metrics || { cpu_percent: 0, memory_percent: 0, memory_used: 0, memory_limit: 0 }
     workspaceId.value = detail.workspace_id
     if (!wasRunning && detail.sandbox_status === 'running' && store.isStreaming) message.success('沙盒已点火，工作区准备就绪 🚀')
-    store.currentPlan = detail.plan?.steps || []
+    // 同 refreshStatus：流式中服务端 plan 未提交时用空值覆盖会清掉面板实时计划
+    if (detail.plan?.steps?.length) store.currentPlan = detail.plan.steps
+    else if (!store.isStreaming) store.currentPlan = []
     if (detail.ui) {
-      followAi.value = detail.ui.follow_ai
-      terminalCollapsed.value = detail.ui.terminal_collapsed
-      hibernateOnLeave.value = detail.ui.hibernate_on_leave
-      splitRatio.value = detail.ui.split_ratio
-      const serverMode = detail.ui.view_mode
-      if (serverMode === 'chat' || serverMode === 'split' || serverMode === 'code') viewMode.value = serverMode
+      // 同 refreshStatus：流式中服务端 UI 状态可能是未提交的旧值，不覆盖本地；
+      // 用户手动接管视图后也不再接受服务端 view_mode 回写。
+      if (shouldApplyServerUi(store.isStreaming)) {
+        followAi.value = detail.ui.follow_ai
+        terminalCollapsed.value = detail.ui.terminal_collapsed
+        hibernateOnLeave.value = detail.ui.hibernate_on_leave
+        splitRatio.value = detail.ui.split_ratio
+        if (shouldApplyServerViewMode(store.isStreaming, viewModeTouched.value, detail.ui.view_mode)) viewMode.value = detail.ui.view_mode
+      }
     }
     shareActive.value = detail.share?.active || false
     shareExpiresAt.value = detail.share?.expires_at || null
@@ -257,6 +280,8 @@ async function enterSession(id: string) {
 watch(
   sessionId,
   async (id) => {
+    // 新会话重置"用户已接管视图"标记，恢复服务端同步
+    viewModeTouched.value = false
     const savedMode = id ? localStorage.getItem(modeStorageKey(id)) : null
     viewMode.value = savedMode === 'split' || savedMode === 'code' ? savedMode : 'chat'
     loading.value = true
@@ -329,7 +354,11 @@ onUnmounted(() => {
 watch(
   () => store.isStreaming,
   (cur, prev) => {
-    if (prev && !cur) refreshWorkspace()
+    if (prev && !cur) {
+      // 流式期间 PATCH /ui 会被行锁阻塞，结束后补写一次让服务端收敛到本地状态
+      persistUiState()
+      refreshWorkspace()
+    }
   },
 )
 
@@ -358,8 +387,12 @@ const pendingAsk = computed<PendingAskItem | null>(() => {
   const msgs = session.value?.messages || []
   for (let i = msgs.length - 1; i >= 0; i--) {
     const ask = msgs[i].askRequest
-    if (ask && !ask.answered) {
-      return { messageId: msgs[i].id, question: ask.question, options: ask.options }
+    if (ask && !ask.answered && ask.questions.length) {
+      const first = ask.questions[0]
+      const summary = ask.questions.length > 1
+        ? `${first.question}（共 ${ask.questions.length} 问）`
+        : first.question
+      return { messageId: msgs[i].id, question: summary, options: first.options }
     }
   }
   return null
@@ -670,13 +703,14 @@ function startResizeRight(e: MouseEvent) {
   const startX = e.clientX
   const startW = rightWidth.value
   const onMove = (ev: MouseEvent) => {
-    rightWidth.value = Math.min(480, Math.max(240, startW - (ev.clientX - startX)))
+    rightWidth.value = Math.min(360, Math.max(220, startW - (ev.clientX - startX)))
   }
   const onUp = () => {
     document.removeEventListener('mousemove', onMove)
     document.removeEventListener('mouseup', onUp)
     document.body.style.cursor = ''
     document.body.style.userSelect = ''
+    localStorage.setItem(RIGHT_WIDTH_KEY, String(rightWidth.value))
   }
   document.body.style.cursor = 'col-resize'
   document.body.style.userSelect = 'none'
@@ -726,7 +760,7 @@ function formatSessionTime(iso: string): string {
           {{ isAutoMode ? '放权模式：所有工具自动执行，不再等待批准（点击切回监督模式）' : '监督模式：关键操作（执行/写文件/登记产物）需你批准后执行' }}
         </n-tooltip>
         <span class="sandbox-light" :title="`沙盒状态：${statusInfo.label}`">
-          {{ statusInfo.icon }} {{ statusInfo.label }}
+          <span class="light-icon" :class="{ pulsing: store.isStreaming && sandboxStatus === 'running' }">{{ statusInfo.icon }}</span> {{ statusInfo.label }}
         </span>
         <n-tooltip v-if="authStore.isAdmin" trigger="hover">
           <template #trigger>
@@ -1085,6 +1119,18 @@ function formatSessionTime(iso: string): string {
   color: var(--chat-text-secondary, #666);
   margin-right: 6px;
   white-space: nowrap;
+}
+/* 流式执行期间绿点轻微脉动，与对话内的运行指示呼应（问题⑤） */
+.sandbox-light .light-icon.pulsing {
+  display: inline-block;
+  animation: sandbox-light-pulse 1.4s ease-in-out infinite;
+}
+@keyframes sandbox-light-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sandbox-light .light-icon.pulsing { animation: none; }
 }
 
 /* 权限模式开关（auto 放权模式警示色） */

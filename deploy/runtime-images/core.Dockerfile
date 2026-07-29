@@ -7,10 +7,10 @@ LABEL org.omichub.runtime.profile="analysis-core"
 
 USER root
 COPY requirements-agent.txt /tmp/requirements-agent.txt
-COPY sandbox_agent.py /opt/omichub/sandbox_agent.py
 RUN usermod --uid 10001 "$MAMBA_USER" \
     && groupmod --gid 10001 "$MAMBA_USER" \
     && chown -R 10001:10001 /home/"$MAMBA_USER" /opt/conda \
+    && mkdir -p /opt/omichub \
     && chown -R 10001:10001 /opt/omichub /tmp/requirements-agent.txt \
     && mkdir -p /workspace/.logs \
     && chown -R 10001:10001 /workspace \
@@ -58,6 +58,21 @@ RUN micromamba install -y -n base -c conda-forge -c bioconda \
       bioconductor-limma=3.62.1 \
     && micromamba run -n base pip install -r /tmp/requirements-agent.txt \
     && micromamba clean --all --yes
+
+# agent 脚本变动频繁，放在重型依赖层之后，改动时不触发 micromamba 重装
+COPY --chown=10001:10001 sandbox_agent.py /opt/omichub/sandbox_agent.py
+
+# 终端体验工具（独立层，与科学生态栈解耦）：btop / zsh / oh-my-posh / oh-my-zsh
+# 参考 tool_configs/terminal/docker/Dockerfile；plot/scrna 派生镜像自动继承本层
+RUN micromamba install -y -n base -c conda-forge \
+      btop \
+      zsh \
+      git \
+      oh-my-posh \
+    && micromamba clean --all --yes \
+    && micromamba run -n base git clone --depth 1 https://github.com/ohmyzsh/ohmyzsh.git /opt/omichub/oh-my-zsh
+COPY --chown=10001:10001 studio-zshrc /opt/omichub/zdotdir/.zshrc
+COPY --chown=10001:10001 studio.omp.json /opt/omichub/themes/studio.omp.json
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 MPLBACKEND=Agg SANDBOX_WORKSPACE=/workspace
 WORKDIR /workspace

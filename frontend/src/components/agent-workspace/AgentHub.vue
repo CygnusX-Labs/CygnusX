@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { NGrid, NGridItem } from 'naive-ui'
+import { NEmpty, NGrid, NGridItem } from 'naive-ui'
 import AgentCard from './AgentCard.vue'
 import { useAgentHubStore, CATEGORY_LABELS } from '@/stores/agentHub'
 import type { AgentCategory, AgentTemplate } from '@/types/agent'
@@ -37,8 +37,16 @@ const groupedAgents = computed(() => {
 <template>
   <div class="agent-hub">
     <div class="hub-inner">
-      <h1 class="hub-title">今天需要哪位专家为您服务？</h1>
-      <p class="hub-sub">选择一位搭载专属能力组合的智能体，进入按需隔离的对话沙盒</p>
+      <header class="hub-header">
+        <h1 class="hub-title">今天需要哪位专家为您服务？</h1>
+        <p class="hub-sub">选择一位搭载专属能力组合的智能体，进入按需隔离的对话沙盒</p>
+      </header>
+
+      <NEmpty
+        v-if="!groupedAgents.length"
+        description="暂无可用智能体"
+        class="hub-empty"
+      />
 
       <section v-for="group in groupedAgents" :key="group.key" class="hub-section">
         <h2 class="section-label">{{ group.label }}</h2>
@@ -53,27 +61,43 @@ const groupedAgents = computed(() => {
 </template>
 
 <style scoped lang="scss">
+/* 布局要点：容器为 flex，内容用 margin:auto 居中——内容少时垂直居中；
+   内容超出时从顶部自然起始并可滚动，不会像 align-items:center 那样把页头裁出可视区 */
 .agent-hub {
   flex: 1;
   overflow-y: auto;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 24px 80px;
+  padding: 40px var(--page-padding, 32px) 80px;
 }
-.hub-inner { width: 100%; max-width: 1100px; }
+.hub-inner {
+  width: 100%;
+  max-width: 1100px;
+  margin: auto;
+}
+.hub-header {
+  text-align: center;
+  margin-bottom: 40px;
+}
 .hub-title {
-  font-size: 30px; font-weight: 700; margin: 0 0 8px;
-  text-align: center; color: var(--chat-text-primary, inherit);
+  font-size: 28px; line-height: 36px; font-weight: 600;
+  letter-spacing: -0.02em; margin: 0 0 8px;
+  color: var(--chat-text-primary, var(--neutral-text-1));
 }
 .hub-sub {
-  font-size: 14px; text-align: center; margin: 0 0 36px;
-  color: var(--chat-text-muted, #999);
+  font-size: 14px; line-height: 22px; margin: 0;
+  color: var(--chat-text-muted, var(--neutral-text-3));
 }
-.hub-section { margin-bottom: 28px; }
+.hub-empty { padding: 48px 0; }
+.hub-section { margin-bottom: 32px; }
+.hub-section:last-child { margin-bottom: 0; }
 .section-label {
-  font-size: 13px; font-weight: 600; margin: 0 0 12px 4px;
-  color: var(--chat-text-muted, #999);
+  font-size: 13px; line-height: 20px; font-weight: 600; margin: 0 0 12px 4px;
+  color: var(--chat-text-muted, var(--neutral-text-3));
 }
 .card-grid { justify-content: center; }
+
+@media (max-width: 768px) {
+  .agent-hub { padding: 24px 16px 64px; }
+  .hub-header { margin-bottom: 24px; }
+}
 </style>

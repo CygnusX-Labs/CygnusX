@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { NButton, NIcon, NTooltip } from 'naive-ui'
 import {
   AddOutline, ChevronDownOutline, ChevronUpOutline, CloseOutline, PlayOutline,
@@ -48,7 +48,23 @@ const loading = ref(false)
 const line = ref(1)
 const column = ref(1)
 const terminalOpen = ref(!props.terminalCollapsed)
-const terminalHeight = ref(190)
+// 终端高度：默认容器 40%（≥280px、≤60%），可拖拽 160px~70%，写入 localStorage 记忆（问题⑧）
+const TERMINAL_HEIGHT_KEY = 'omichub:studio:terminal-height'
+const shellRef = ref<HTMLElement | null>(null)
+const terminalDragging = ref(false)
+function loadTerminalHeight(): number | null {
+  const saved = Number(localStorage.getItem(TERMINAL_HEIGHT_KEY))
+  return Number.isFinite(saved) && saved > 0 ? saved : null
+}
+function maxTerminalHeight(): number {
+  return Math.max(160, Math.round((shellRef.value?.clientHeight || 600) * 0.7))
+}
+function defaultTerminalHeight(): number {
+  const host = shellRef.value?.clientHeight || 0
+  if (!host) return 280
+  return Math.round(Math.min(host * 0.6, Math.max(280, host * 0.4)))
+}
+const terminalHeight = ref(280)
 const terminalRef = ref<InstanceType<typeof StudioTerminal> | null>(null)
 const terminalConnected = ref(false)
 const isRunning = ref(false)
@@ -354,17 +370,28 @@ function startTerminalResize(event: PointerEvent) {
   const startHeight = terminalHeight.value
   const target = event.currentTarget as HTMLElement
   target.setPointerCapture(event.pointerId)
+  terminalDragging.value = true
   const move = (next: PointerEvent) => {
-    terminalHeight.value = Math.min(420, Math.max(96, startHeight + startY - next.clientY))
+    terminalHeight.value = Math.min(maxTerminalHeight(), Math.max(160, startHeight + startY - next.clientY))
   }
   const up = (next: PointerEvent) => {
     target.releasePointerCapture(next.pointerId)
     target.removeEventListener('pointermove', move)
     target.removeEventListener('pointerup', up)
+    terminalDragging.value = false
+    localStorage.setItem(TERMINAL_HEIGHT_KEY, String(terminalHeight.value))
   }
   target.addEventListener('pointermove', move)
   target.addEventListener('pointerup', up)
 }
+
+onMounted(() => {
+  // 恢复用户上次拖拽的高度（越界钳制），否则按容器 40% 计算默认高度
+  const saved = loadTerminalHeight()
+  terminalHeight.value = saved !== null
+    ? Math.min(maxTerminalHeight(), Math.max(160, saved))
+    : defaultTerminalHeight()
+})
 
 onUnmounted(() => {
   if (externallyChangedTimer) clearTimeout(externallyChangedTimer)
@@ -374,7 +401,7 @@ defineExpose({ openFile, markFileChanged })
 </script>
 
 <template>
-  <section class="workspace-editor-shell">
+  <section ref="shellRef" class="workspace-editor-shell">
     <div class="editor-tabs">
       <button
         v-for="tab in tabs"
@@ -427,7 +454,7 @@ defineExpose({ openFile, markFileChanged })
           @cursor="(l, c) => { line = l; column = c }"
         />
       </div>
-      <div v-if="terminalOpen" class="terminal-panel" :style="{ height: `${terminalHeight}px` }">
+      <div v-if="terminalOpen" class="terminal-panel" :class="{ dragging: terminalDragging }" :style="{ height: `${terminalHeight}px` }">
         <div class="terminal-resize" @pointerdown="startTerminalResize" />
         <div class="terminal-titlebar">
           <div class="traffic"><i /><i /><i /></div>
@@ -469,7 +496,7 @@ defineExpose({ openFile, markFileChanged })
 .editor-tab.preview span { font-style: italic; }.editor-tab.active { color: var(--studio-text, #2b2b3d); background: #fff; box-shadow: inset 0 2px var(--studio-primary, #6c5ce7); }.editor-tab:active,.new-tab:active { transform: scale(.97); }
 .tab-close { opacity: 0; }.editor-tab:hover .tab-close,.editor-tab.active .tab-close { opacity: .65; }.dirty-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--studio-primary, #6c5ce7); }.new-tab { width: 36px; }.tabs-spacer,.terminal-spacer { flex: 1; }
 .editor-toolbar { height: 40px; display: flex; align-items: center; padding: 0 10px 0 14px; border-bottom: 1px solid var(--studio-border, #e8e8f2); }.breadcrumb { display: flex; gap: 7px; min-width: 0; font-size: 12px; color: var(--studio-text-sub, #8a8aa3); }.breadcrumb span:last-child { color: var(--studio-text, #2b2b3d); }.editor-actions { margin-left: auto; display: flex; gap: 2px; }
-.conflict-banner { display:flex; align-items:center; gap:12px; padding:8px 14px; border-bottom:1px solid #f2cf7a; background:#fff8df; color:#7a5a10; font-size:12px; }.conflict-banner > div{margin-left:auto;display:flex;gap:6px}.conflict-banner button{border:1px solid #dbc06e;border-radius:7px;padding:4px 8px;background:rgba(255,255,255,.7);color:#6c5313;cursor:pointer}.conflict-banner button.primary{border-color:var(--studio-primary,#6c5ce7);background:var(--studio-primary,#6c5ce7);color:#fff}.inline-diff{max-height:180px;overflow:auto;border-bottom:1px solid var(--studio-border,#e8e8f2);font:11px/1.55 SFMono-Regular,Menlo,monospace}.inline-diff>div{display:flex;gap:8px;padding:2px 12px}.diff-hunk{border-bottom:1px solid var(--studio-border,#e8e8f2)}.diff-hunk-lines>div{display:flex;gap:8px;padding:2px 12px}.diff-hunk-actions{display:flex;justify-content:flex-end;gap:6px;padding:4px 10px}.diff-hunk-actions button{border:1px solid var(--studio-border,#e8e8f2);border-radius:6px;padding:3px 8px;background:#fff;color:var(--studio-primary,#6c5ce7);cursor:pointer}.inline-diff .old{background:#fff0f1;color:#9a3342}.inline-diff .new{background:#edf9f3;color:#23704d}.inline-diff code{white-space:pre-wrap}.conflict-diff{flex:1;min-height:260px;overflow:hidden;border-bottom:1px solid var(--studio-border,#e8e8f2)}.monaco-wrap { flex: 1; min-height: 180px; }.terminal-panel { position: relative; flex-shrink: 0; display: flex; flex-direction: column; background: var(--studio-terminal, #1b1b2e); color: #d7d6e8; }.terminal-resize { position: absolute; top: -3px; width: 100%; height: 6px; cursor: row-resize; touch-action: none; }.terminal-titlebar { height: 34px; display: flex; align-items: center; gap: 9px; padding: 0 10px; border-bottom: 1px solid rgba(255,255,255,.08); font-size: 11px; }.traffic { display: flex; gap: 5px; }.traffic i { width: 8px; height: 8px; border-radius: 50%; background: #ff5f57; }.traffic i:nth-child(2){background:#febc2e}.traffic i:nth-child(3){background:#28c840}.terminal-command { color: #85839a; font-family: monospace; }.terminal-titlebar button { border: 0; background: transparent; color: inherit; }.terminal-connection { color: #f8d57e; }.terminal-connection.connected { color: #83e1a9; }.exit-badge { padding: 2px 7px; border-radius: 999px; }.exit-badge.success { background: rgba(46,204,113,.18); color: #83e1a9; }.exit-badge.error { background: rgba(255,107,107,.18); color: #ff9d9d; }.terminal-artifacts { display: flex; gap: 6px; padding: 7px 12px; border-top: 1px solid rgba(255,255,255,.08); font-size: 11px; }.terminal-artifacts button { border: 0; border-radius: 999px; padding: 3px 8px; color: #d8d4ff; background: rgba(108,92,231,.22); }
+.conflict-banner { display:flex; align-items:center; gap:12px; padding:8px 14px; border-bottom:1px solid #f2cf7a; background:#fff8df; color:#7a5a10; font-size:12px; }.conflict-banner > div{margin-left:auto;display:flex;gap:6px}.conflict-banner button{border:1px solid #dbc06e;border-radius:7px;padding:4px 8px;background:rgba(255,255,255,.7);color:#6c5313;cursor:pointer}.conflict-banner button.primary{border-color:var(--studio-primary,#6c5ce7);background:var(--studio-primary,#6c5ce7);color:#fff}.inline-diff{max-height:180px;overflow:auto;border-bottom:1px solid var(--studio-border,#e8e8f2);font:11px/1.55 SFMono-Regular,Menlo,monospace}.inline-diff>div{display:flex;gap:8px;padding:2px 12px}.diff-hunk{border-bottom:1px solid var(--studio-border,#e8e8f2)}.diff-hunk-lines>div{display:flex;gap:8px;padding:2px 12px}.diff-hunk-actions{display:flex;justify-content:flex-end;gap:6px;padding:4px 10px}.diff-hunk-actions button{border:1px solid var(--studio-border,#e8e8f2);border-radius:6px;padding:3px 8px;background:#fff;color:var(--studio-primary,#6c5ce7);cursor:pointer}.inline-diff .old{background:#fff0f1;color:#9a3342}.inline-diff .new{background:#edf9f3;color:#23704d}.inline-diff code{white-space:pre-wrap}.conflict-diff{flex:1;min-height:260px;overflow:hidden;border-bottom:1px solid var(--studio-border,#e8e8f2)}.monaco-wrap { flex: 1; min-height: 180px; }.terminal-panel { position: relative; flex-shrink: 0; display: flex; flex-direction: column; background: var(--studio-terminal, #1b1b2e); color: #d7d6e8; transition: height .2s ease; }.terminal-panel.dragging { transition: none; }.terminal-resize { position: absolute; top: -3px; width: 100%; height: 6px; cursor: row-resize; touch-action: none; }.terminal-resize:hover { background: rgba(76,111,255,.35); }.terminal-titlebar { height: 34px; display: flex; align-items: center; gap: 9px; padding: 0 10px; border-bottom: 1px solid rgba(255,255,255,.08); font-size: 11px; }.traffic { display: flex; gap: 5px; }.traffic i { width: 8px; height: 8px; border-radius: 50%; background: #ff5f57; }.traffic i:nth-child(2){background:#febc2e}.traffic i:nth-child(3){background:#28c840}.terminal-command { color: #85839a; font-family: monospace; }.terminal-titlebar button { border: 0; background: transparent; color: inherit; }.terminal-connection { color: #f8d57e; }.terminal-connection.connected { color: #83e1a9; }.exit-badge { padding: 2px 7px; border-radius: 999px; }.exit-badge.success { background: rgba(46,204,113,.18); color: #83e1a9; }.exit-badge.error { background: rgba(255,107,107,.18); color: #ff9d9d; }.terminal-artifacts { display: flex; gap: 6px; padding: 7px 12px; border-top: 1px solid rgba(255,255,255,.08); font-size: 11px; }.terminal-artifacts button { border: 0; border-radius: 999px; padding: 3px 8px; color: #d8d4ff; background: rgba(108,92,231,.22); }
 .editor-statusbar { height: 24px; display: flex; align-items: center; gap: 12px; padding: 0 10px; color: var(--studio-text-sub, #8a8aa3); background: #f8f7fc; border-top: 1px solid var(--studio-border, #e8e8f2); font-size: 10px; }.status-dot { width: 6px; height: 6px; border-radius: 50%; background: #aaa; }.status-dot.running { background: #2ecc71; box-shadow: 0 0 0 3px rgba(46,204,113,.12); }
 .editor-empty { flex: 1; display: grid; place-content: center; justify-items: center; padding: 32px; text-align: center; background: radial-gradient(circle at 50% 35%, #f0edff, #fff 48%); }.editor-empty h3 { margin: 8px 0 4px; }.editor-empty p { max-width: 420px; color: var(--studio-text-sub, #8a8aa3); }.star-orbit { font-size: 38px; color: var(--studio-primary, #6c5ce7); filter: drop-shadow(0 8px 18px rgba(108,92,231,.25)); }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }

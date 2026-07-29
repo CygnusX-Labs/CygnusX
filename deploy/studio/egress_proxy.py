@@ -58,11 +58,23 @@ def domain_allowed(host: str, allowed: tuple[str, ...]) -> bool:
 
 
 def public_ip(value: str) -> bool:
-    """只允许全局可路由单播地址。"""
+    """只允许全局可路由单播地址。
+
+    例外：198.18.0.0/15（RFC 2544 基准测试段）——本机翻墙客户端（Clash/Surge 等）
+    的 fake-ip DNS 会把域名解析到该段，由宿主机的 TUN 拦截后代理出站。
+    该段不具备内网 SSRF 价值（不会被路由到平台内网），故与公网地址同等放行。
+    """
     try:
-        return ipaddress.ip_address(value).is_global
+        ip = ipaddress.ip_address(value)
     except ValueError:
         return False
+    if ip.is_global:
+        return True
+    return ip in _FAKE_IP_RANGE
+
+
+# 本机代理客户端 fake-ip 常用段（198.18.0.0/15）
+_FAKE_IP_RANGE = ipaddress.ip_network("198.18.0.0/15")
 
 
 class AllowlistLoader:

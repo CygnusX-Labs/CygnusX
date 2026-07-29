@@ -18,20 +18,6 @@ const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
 
-// 助手要求用户提供数据时，弹窗提醒上传/指定数据文件
-watch(
-  () => store.dataRequestNotice,
-  (notice) => {
-    if (!notice) return
-    store.dataRequestNotice = null
-    dialog.warning({
-      title: '需要提供数据',
-      content: notice.text.length > 600 ? `${notice.text.slice(0, 600)}…` : notice.text,
-      positiveText: '知道了',
-    })
-  },
-)
-
 // 工具调用轮次触顶时，弹窗询问是否以扩展上限（1000 轮）继续执行
 watch(
   () => store.roundLimitPrompt,
@@ -61,13 +47,24 @@ watch(
   },
 )
 
+// 直接在聊天页打开/创建绑定"默认工作台"Agent（如代码助手）的普通会话时，
+// 同样自动进入其 AI 工作台——此前只有路由/交接事件会触发，直接对话不会。
+// maybeRedirectToStudio 内部已去重并校验 default_mode / 会话 mode，幂等可调。
+watch(
+  () => [store.currentAgent?.id, store.currentSession?.id] as const,
+  ([agentId]) => {
+    if (!agentId) return
+    store.maybeRedirectToStudio(agentId, store.currentAgent?.name || '')
+  },
+  { immediate: true },
+)
+
 // 路由/交接命中默认工作台的 Agent（如代码助手）时，本轮回答结束后自动进入其 AI 工作台
 watch(
   () => store.studioRedirect,
   async (target) => {
     if (!target) return
-    store.studioRedirect = null
-    // 等当前流式回答结束再跳转，避免打断正在输出的内容
+    store.studioRedirect = null    // 等当前流式回答结束再跳转，避免打断正在输出的内容
     while (store.isStreaming) {
       await new Promise((resolve) => setTimeout(resolve, 300))
     }
@@ -80,6 +77,11 @@ watch(
         try {
           const promoted = await studioApi.promoteSession(sid, target.agentId)
           sessionId = promoted.session_id
+          // 后端已把会话重绑定到工作台 Agent，本地会话同步绑定，
+          // 否则下一轮请求仍按旧 Agent 发送，触发"会话绑定的 Agent 与当前请求不一致"
+          if (store.currentSession && store.currentSession.id === sessionId) {
+            store.currentSession.agent_id = promoted.agent_id || target.agentId
+          }
         } catch {
           sessionId = ''
         }

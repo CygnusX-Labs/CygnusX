@@ -99,8 +99,6 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   const isStreaming = ref(false)
   const streamingContent = ref('')
   const streamingThought = ref('')
-  /** 助手回复要求用户提供数据时置位（以 📤 需要您提供数据 开头），聊天界面据此弹窗提醒 */
-  const dataRequestNotice = ref<{ sessionId: string; text: string } | null>(null)
   /** 工具调用轮次触顶时置位，聊天界面据此弹窗询问是否以扩展上限（1000 轮）继续 */
   const roundLimitPrompt = ref<{ sessionId: string; maxRounds: number } | null>(null)
   /** 上下文超窗触发历史压缩时置位（值为压缩前估算 token），聊天界面据此提示 */
@@ -857,6 +855,18 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             return tc
           })
         }
+        // 交错时间线：后端按发生顺序落库的 text/tool 段，重载后保持交错布局
+        const timeline = m.metadata_json?.timeline
+        if (Array.isArray(timeline) && timeline.length) {
+          msg.timeline = timeline
+            .filter((s): s is Record<string, unknown> => !!s && typeof s === 'object')
+            .map((s) => ({
+              kind: s.kind === 'tool' ? ('tool' as const) : ('text' as const),
+              text: typeof s.text === 'string' ? s.text : undefined,
+              toolCallId:
+                typeof s.tool_call_id === 'string' && s.tool_call_id ? s.tool_call_id : undefined,
+            }))
+        }
         return msg
       })
       // 保留当前正在流式中的占位消息，避免闪烁
@@ -864,6 +874,34 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         (m) => m.role === 'assistant' && m.content === '' && !existingIds.has(m.id),
       )
       session.messages = [...loaded, ...streamingPlaceholders]
+      // 恢复历史中最近一次 update_plan 的待办计划（流式进行中不覆盖实时计划）
+      if (!isStreaming.value) {
+        currentPlan.value = restoredPlan
+      }
+      // Studio 会话：审批提示是瞬态 SSE 事件，不落库；刷新/断流重进时从 Redis
+      // 拉取仍 pending 的审批，把对应工具卡恢复成待审批态（ApprovalCard 接管交互）
+      if (studioSessionIds.value.has(sessionId)) {
+        try {
+          const pendingApprovals = await studioApi.listPendingApprovals(sessionId)
+          for (const approval of pendingApprovals) {
+            const tc = session.messages
+              .flatMap((m) => m.toolCalls || [])
+              .find((t) => t.id === approval.tool_call_id)
+            if (!tc || tc.approval) continue
+            tc.status = 'awaiting_approval'
+            tc.approval = {
+              approval_id: approval.approval_id,
+              status: 'pending',
+              risk_hint: approval.risk_hint,
+              timeout_seconds: approval.expires_in,
+            }
+            // 审批记录里的 arguments 可能比落库的 tool_invocations 更全，以其为准补齐
+            tc.arguments = { ...tc.arguments, ...approval.arguments }
+          }
+        } catch (e) {
+          console.error('恢复待审批状态失败:', e)
+        }
+      }
     } catch (e) {
       console.error('加载会话历史消息失败:', e)
     }
@@ -937,6 +975,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       status: 'streaming',
       modelName: agent.model_engine || agent.name,
       toolCalls: [],
+      timeline: [],
       createdAt: new Date().toISOString(),
       tokens: { input: 0, output: 0, total: 0 },
     }
@@ -1014,6 +1053,14 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           } else {
             streamingContent.value += text
             aiMsg.content = streamingContent.value
+            // 交错时间线：连续正文并入上一个 text 段；工具调用之后另起新段
+            const segs = aiMsg.timeline
+            const last = segs?.[segs.length - 1]
+            if (last?.kind === 'text') {
+              last.text = (last.text || '') + text
+            } else {
+              segs?.push({ kind: 'text', text })
+            }
           }
           session.updated_at = new Date().toISOString()
         },
@@ -1030,13 +1077,16 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         },
         onToolCall: (event) => {
           if (!aiMsg.toolCalls) aiMsg.toolCalls = []
+          const toolCallId = event.tool_call_id || `tc-${Date.now()}`
           aiMsg.toolCalls.push({
-            id: event.tool_call_id || `tc-${Date.now()}`,
+            id: toolCallId,
             name: event.tool_name,
             arguments: event.arguments,
             status: 'running',
             mcpServer: event.mcp_server,
           })
+          // 交错时间线：记录这次工具调用的位置，正文段在其后另起
+          aiMsg.timeline?.push({ kind: 'tool', toolCallId })
         },
         onToolResult: (event) => {
           const tc = (aiMsg.toolCalls || []).find((t) => t.id === event.tool_call_id)
@@ -1118,8 +1168,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         },
         onAskRequest: (event) => {
           aiMsg.askRequest = {
-            question: event.question,
-            options: event.options,
+            questions: event.questions || [],
             answered: false,
           }
         },
@@ -1213,9 +1262,6 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             }
           }
           if (aiMsg.status !== 'error' && aiMsg.status !== 'empty') aiMsg.status = 'complete'
-          if (aiMsg.content.trimStart().startsWith('📤 需要您提供数据')) {
-            dataRequestNotice.value = { sessionId: session.id, text: aiMsg.content.trim() }
-          }
           isStreaming.value = false
           streamingContent.value = ''
           streamingThought.value = ''
@@ -1328,18 +1374,37 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     }
   }
 
-  /** 回答 ask_user 澄清：等价于把该文本作为下一条用户消息发送 */
-  async function answerAskRequest(text: string): Promise<void> {
+  /**
+   * 回答 ask_user 澄清：把按问题顺序收集的答案拼成结构化文本，作为下一条用户消息发送。
+   * 空串答案视为跳过（由 AI 自行决定）。
+   */
+  async function answerAskRequest(answers: string[]): Promise<void> {
     const session = currentSession.value
+    let target: ChatMessage['askRequest'] | null = null
     if (session) {
       for (let i = session.messages.length - 1; i >= 0; i--) {
         const msg = session.messages[i]
         if (msg.askRequest && !msg.askRequest.answered) {
           msg.askRequest.answered = true
+          msg.askRequest.answers = answers
+          target = msg.askRequest
           break
         }
       }
     }
+    const questions = target?.questions || []
+    const text = questions.length
+      ? questions
+          .map((q, i) => {
+            const answer = (answers[i] || '').trim()
+            return q.question
+              ? `${q.question}\n回答：${answer || '无偏好，由你决定'}`
+              : answer || '无偏好，由你决定'
+          })
+          .join('\n\n')
+          .trim()
+      : (answers[0] || '').trim()
+    if (!text) return
     await sendMessage(text)
   }
 
@@ -1367,10 +1432,10 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     // state
     mcps, skills, agents, sessions, currentSessionId,
     isStreaming, isPaused, streamingContent, streamingThought, availableModels, pipelineTasks,
-    dataRequestNotice,
     roundLimitPrompt,
     contextCompressedNotice,
     studioRedirect,
+    maybeRedirectToStudio,
     studioSessionIds, currentPlan, studioPermissions,
     // getters
     activeAgents, currentSession, currentAgent, groupedSessions,

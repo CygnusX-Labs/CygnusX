@@ -50,6 +50,51 @@ from omichub.tools.schema_loader import schema_loader
 
 # ===== 工具名与 OpenAI schema =====
 
+# ask_user 澄清工具：Studio 与普通聊天会话均挂载（普通会话同样以交互卡片收集回答），
+# 因此 schema 独立成常量；其余 Studio 工具仍只在 Studio 会话可用。
+ASK_USER_TOOL_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "ask_user",
+        "description": (
+            "向用户提问以澄清需求（缺物种、缺文件、缺参数等）。问题会以可交互卡片展示："
+            "用户可点选选项、选择“其他”自由输入或跳过。调用后本轮回复随即结束，"
+            "用户将在下一条消息中回答。不要编造参数，信息不足时先用本工具。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "questions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "question": {"type": "string", "description": "要问用户的问题"},
+                            "options": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "可一键点选的互斥选项；用户也可选“其他”自由输入",
+                            },
+                        },
+                        "required": ["question"],
+                    },
+                    "description": "一次可向用户提 1~3 个问题，前端逐个分页收集回答（优先使用）",
+                },
+                "question": {
+                    "type": "string",
+                    "description": "要问用户的单个问题（兼容字段；提供了 questions 时忽略）",
+                },
+                "options": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "单个问题的快捷选项（兼容字段，与 question 搭配）",
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
 STUDIO_TOOL_NAMES: frozenset[str] = frozenset(
     {
         "sandbox_execute",
@@ -312,28 +357,7 @@ STUDIO_TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "ask_user",
-            "description": (
-                "向用户提问以澄清需求（缺物种、缺文件、缺参数等）。调用后问题会展示给用户，"
-                "本轮回复随即结束，用户将在下一条消息中回答。不要编造参数，信息不足时先用本工具。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "question": {"type": "string", "description": "要问用户的问题"},
-                    "options": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "可选的快捷选项列表，供用户一键回复",
-                    },
-                },
-                "required": ["question"],
-            },
-        },
-    },
+    ASK_USER_TOOL_SCHEMA,
 ]
 
 # ===== Studio 系统提示词后缀（架构设计 §5.2，中文紧凑版）=====

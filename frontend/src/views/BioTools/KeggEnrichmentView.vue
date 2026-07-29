@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { TOOLBOX_RESULT_QUERY } from '@/utils/toolboxResultRoute'
 import {
   NAlert,
   NButton,
@@ -49,6 +51,7 @@ import {
 
 const message = useMessage()
 const themeStore = useThemeStore()
+const route = useRoute()
 
 const form = reactive({
   projectName: '',
@@ -231,12 +234,13 @@ async function loadHistory() {
   }
 }
 
-async function openHistoryTask(historyTask: EnrichmentTask) {
-  if (historyTask.status !== 'completed') return
-  openingHistoryTaskId.value = historyTask.task_id
+// 按任务 id 拉取详情并渲染结果。历史列表「查看结果」与任务中心深链（?taskId=）共用此入口，
+// 返回是否成功打开，便于深链在失败时给出提示。
+async function openTaskById(taskId: string): Promise<boolean> {
+  openingHistoryTaskId.value = taskId
   taskError.value = ''
   try {
-    const task = await fetchEnrichmentTask(historyTask.task_id)
+    const task = await fetchEnrichmentTask(taskId)
     if (!task.result) throw new Error('历史任务结果不存在')
     stopTaskPolling()
     activeTask.value = task
@@ -246,11 +250,26 @@ async function openHistoryTask(historyTask: EnrichmentTask) {
     await nextTick()
     await renderPlots()
     message.success(`已打开项目：${task.project_name}`)
+    return true
   } catch (error) {
     message.error(error instanceof Error ? error.message : '历史结果加载失败')
+    return false
   } finally {
     openingHistoryTaskId.value = ''
   }
+}
+
+async function openHistoryTask(historyTask: EnrichmentTask) {
+  if (historyTask.status !== 'completed') return
+  await openTaskById(historyTask.task_id)
+}
+
+// 任务中心「查看结果」深链：?taskId= 直达时，等物种配置就绪后直接打开对应任务结果。
+async function openDeepLinkedTask() {
+  const taskId = route.query[TOOLBOX_RESULT_QUERY]
+  if (typeof taskId !== 'string' || !taskId) return
+  await loadSpecies()
+  await openTaskById(taskId)
 }
 
 async function downloadOriginalResult(task: EnrichmentTask) {
@@ -553,7 +572,7 @@ watch(
 )
 
 onMounted(() => {
-  void Promise.all([loadSpecies(), loadHistory()])
+  void Promise.all([loadSpecies(), loadHistory()]).then(() => openDeepLinkedTask())
 })
 onBeforeUnmount(() => {
   stopTaskPolling()

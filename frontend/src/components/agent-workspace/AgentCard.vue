@@ -21,7 +21,15 @@ const caps = computed(() => [
 <template>
   <NPopover trigger="hover" placement="top" :width="240">
     <template #trigger>
-      <div class="agent-card" :style="{ '--agent-color': agent.color }" @click="$emit('select')">
+      <div
+        class="agent-card"
+        :style="{ '--agent-color': agent.color }"
+        role="button"
+        tabindex="0"
+        @click="$emit('select')"
+        @keydown.enter.prevent="$emit('select')"
+        @keydown.space.prevent="$emit('select')"
+      >
         <div class="avatar" :style="{ background: agent.color }">{{ agent.avatar }}</div>
         <div class="name">{{ agent.name }}</div>
         <div class="desc">{{ agent.description }}</div>
@@ -56,17 +64,21 @@ const caps = computed(() => [
   position: relative;
   display: flex; flex-direction: column; align-items: center;
   padding: 24px 18px;
-  background: var(--chat-surface, #fff);
-  border: 1px solid var(--chat-border, #eee);
-  border-radius: var(--chat-radius-lg, 14px);
+  background: var(--chat-surface, var(--neutral-card, #fff));
+  border: 1px solid var(--chat-border, var(--neutral-border, #eee));
+  border-radius: var(--chat-radius-lg, 12px);
   cursor: pointer;
-  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
   height: 100%;
 }
 .agent-card:hover {
-  transform: translateY(-4px);
+  transform: translateY(-2px);
   border-color: var(--agent-color);
-  box-shadow: 0 8px 28px rgba(0,0,0,.08);
+  box-shadow: var(--shadow-card-hover, 0 8px 24px rgba(0,0,0,.08));
+}
+.agent-card:focus-visible {
+  outline: 2px solid var(--arco-primary, #4C6FFF);
+  outline-offset: 3px;
 }
 .avatar {
   width: 56px; height: 56px; border-radius: 50%;

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted, nextTick, inject } from 'vue'
+import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
 import DOMPurify from 'dompurify'
 import { NButton, NIcon, NTag, NDataTable } from 'naive-ui'
 import {
@@ -14,18 +14,12 @@ import MessageActionBar from './MessageActionBar.vue'
 import AiLoading from './AiLoading.vue'
 import TaskProgressCard from './TaskProgressCard.vue'
 import PipelineTaskCard from './PipelineTaskCard.vue'
-import type { PipelineType } from '@/types/pipeline'
-import MasPlanPreviewCard from './MasPlanPreviewCard.vue'
-import HandoffCard from './HandoffCard.vue'
 import ExpertConsultationCard from './ExpertConsultationCard.vue'
 import ChartPreviewModal from './ChartPreviewModal.vue'
-import StudioCodeCard from '@/components/studio/StudioCodeCard.vue'
-import ApprovalCard from './ApprovalCard.vue'
-import McpToolCallCard from './McpToolCallCard.vue'
-import { StudioContextKey, isStudioCodeTool } from '@/components/studio/context'
+import AskUserCard from './AskUserCard.vue'
+import ToolCallEntry from './ToolCallEntry.vue'
 import { useAgentHubStore } from '@/stores/agentHub'
 import { reportChatDiagnostic } from '@/utils/chatDiagnostics'
-import type { MasPlan } from '@/api/mas'
 import type { ChatMessage, CopyMode, ChartData, ToolCall } from './types'
 
 interface Props {
@@ -311,13 +305,13 @@ const aiIdentityName = computed(() => {
 })
 
 const renderedContent = ref('')
+/** 交错时间线中各 text 段的渲染结果（与 message.timeline 按下标对齐） */
+const renderedTimelineHtml = ref<string[]>([])
 let renderRafId: number | null = null
 
-function renderMarkdown(source: string) {
-  if (!source) {
-    renderedContent.value = ''
-    return
-  }
+/** Markdown → 安全 HTML（含联网引用 [n] 角标重写）；渲染失败降级为纯文本并上报 */
+function markdownToHtml(source: string): string {
+  if (!source) return ''
   try {
     const container = document.createElement('div')
     container.innerHTML = DOMPurify.sanitize(md.render(source))
@@ -362,7 +356,7 @@ function renderMarkdown(source: string) {
         textNode.replaceWith(fragment)
       }
     }
-    renderedContent.value = DOMPurify.sanitize(container.innerHTML)
+    return DOMPurify.sanitize(container.innerHTML)
   } catch (e) {
     reportChatDiagnostic({
       phase: 'markdown-render',
@@ -370,26 +364,65 @@ function renderMarkdown(source: string) {
       contentPreview: source.slice(0, 500),
       error: e,
     })
-    renderedContent.value = `<p>${escapeHtml(source)}</p>`
+    return `<p>${escapeHtml(source)}</p>`
   }
 }
 
+/** 统一渲染入口：有时间线则逐段渲染（正文/工具交错），否则渲染整段正文 blob */
+function renderAll() {
+  const tl = props.message.timeline
+  if (tl?.length) {
+    renderedTimelineHtml.value = tl.map((seg) =>
+      seg.kind === 'text' ? markdownToHtml(seg.text || '') : '',
+    )
+    renderedContent.value = ''
+  } else {
+    renderedTimelineHtml.value = []
+    renderedContent.value = markdownToHtml(displayContent.value)
+  }
+}
+
+type TimelineViewSegment =
+  | { kind: 'text'; html: string }
+  | { kind: 'tool'; tool: ToolCall }
+
+/** 时间线视图：text 段用渲染后的 HTML，tool 段按 toolCallId 找回 ToolCall；
+ *  引用缺失（空文本段 / 历史消息未落库的工具调用）的段直接跳过 */
+const timelineView = computed<TimelineViewSegment[]>(() => {
+  const tl = props.message.timeline
+  if (!tl?.length) return []
+  const tools = props.message.toolCalls || []
+  return tl
+    .map((seg, i): TimelineViewSegment | null => {
+      if (seg.kind === 'text') {
+        const html = renderedTimelineHtml.value[i] || ''
+        return html ? { kind: 'text', html } : null
+      }
+      const tool = tools.find((t) => t.id === seg.toolCallId)
+      if (!tool) return null
+      // ask_user 由 AskUserCard 呈现，跳过对应工具卡片避免重复
+      if (props.message.askRequest && tool.name === 'ask_user') return null
+      return { kind: 'tool', tool }
+    })
+    .filter((s): s is TimelineViewSegment => s !== null)
+})
+
 watch(
-  () => [displayContent.value, webSources.value] as const,
-  ([source]) => {
+  () => [displayContent.value, webSources.value, props.message.timeline] as const,
+  () => {
     if (props.isStreaming) {
       if (renderRafId) return
       renderRafId = requestAnimationFrame(() => {
         // 先复位句柄再渲染：渲染抛异常时 rAF 不会重排，
         // 不复位会导致后续所有正文更新被 `if (renderRafId) return` 永久吞掉
         renderRafId = null
-        renderMarkdown(displayContent.value)
+        renderAll()
       })
     } else {
-      renderMarkdown(source || '')
+      renderAll()
     }
   },
-  { immediate: true },
+  { immediate: true, deep: true },
 )
 
 onUnmounted(() => {
@@ -440,70 +473,26 @@ const taskToolCalls = computed(() =>
   ),
 )
 
-function isPipelineTask(tool: ToolCall): boolean {
-  return ['rna_seq', 'atac_seq'].includes(String(tool.uiPayload?.pipeline_type || ''))
-}
-
-function pipelineType(tool: ToolCall): PipelineType {
-  return String(tool.uiPayload?.pipeline_type) as PipelineType
-}
-
-function handlePipelineVisualization(taskId: string, type: PipelineType): void {
-  void agentHubStore.sendMessage(
-    `请读取 ${type} 任务 ${taskId} 的结果，并为关键质量指标和差异分析结果生成可视化。`,
-  )
-}
-
-function handleAdjustPipeline(type: PipelineType): void {
-  void agentHubStore.sendMessage(`请帮我检查并调整这次 ${type} 分析的参数，然后重新预检。`)
-}
-
-// Studio 工作台上下文：仅在 /studio 页面被 provide；注入成功时 Studio 代码工具改渲染代码卡片，
-// 普通 /ai 聊天无此上下文，渲染分支完全不变。
-const studioCtx = inject(StudioContextKey, null)
 const agentHubStore = useAgentHubStore()
 
-/** Studio ask_user 快捷回复：点击即把选项文本作为下一条消息发送 */
+/** Studio ask_user 澄清提交：把分页收集的答案数组交给 store 拼成下一条用户消息 */
 const answeringAsk = ref(false)
-async function handleAskOption(text: string) {
+async function handleAskSubmit(answers: string[]) {
   if (answeringAsk.value) return
   answeringAsk.value = true
   try {
-    await agentHubStore.answerAskRequest(text)
+    await agentHubStore.answerAskRequest(answers)
   } finally {
     answeringAsk.value = false
   }
 }
-function isStudioCodeToolCall(tool: ToolCall): boolean {
-  return !!studioCtx && isStudioCodeTool(tool.name)
-}
 
-function isArtifactRegisterTool(tool: ToolCall): boolean {
-  return tool.name === 'artifact_register' && tool.status === 'success' && !!tool.uiPayload?.report_id
-}
-
-function isHandoffTool(tool: ToolCall): boolean {
-  return tool.name === 'transfer_to_agent' && tool.status === 'success'
-}
-
-function hasMasPlan(tool: ToolCall): boolean {
-  const plan = tool.uiPayload?.mas_plan
-  return !!plan && typeof plan === 'object' && Array.isArray((plan as MasPlan).nodes)
-}
-
-function masPlanFromTool(tool: ToolCall): MasPlan {
-  return tool.uiPayload?.mas_plan as MasPlan
-}
-
-function contextSummaryFromTool(tool: ToolCall): Record<string, unknown> | undefined {
-  const summary = tool.uiPayload?.context_summary
-  return summary && typeof summary === 'object' ? summary as Record<string, unknown> : undefined
-}
-
-function stringPayloadValue(tool: ToolCall, key: string): string | undefined {
-  const value = tool.uiPayload?.[key]
-  return value === undefined || value === null ? undefined : String(value)
-}
+/** ask_user 由 AskUserCard 呈现，过滤掉对应的工具卡片避免重复（历史重载无 askRequest 时仍显示工具卡） */
+const visibleToolCalls = computed(() => {
+  const tools = props.message.toolCalls || []
+  if (props.message.askRequest) return tools.filter((t) => t.name !== 'ask_user')
+  return tools
+})
 
 let copyBtnTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -759,7 +748,25 @@ function handleEdit() {
              同帧 enter/leave 曾触发 Vue parentNode null 补丁崩溃，导致正文/tokens
              刷新前不渲染）。 -->
         <div v-if="streamingHasContent || !isStreaming" class="message-content ai-card" :class="{ 'streaming-active': isStreaming }">
-          <div class="message-body markdown-body" v-html="renderedContent" @click="handleBodyClick" />
+          <!-- 交错时间线：正文与工具调用按实际发生顺序渲染（内容→工具→内容），
+               最终结论永远在最底部，不用翻回顶部看结果 -->
+          <template v-if="timelineView.length">
+            <template v-for="(seg, segIdx) in timelineView" :key="segIdx">
+              <div
+                v-if="seg.kind === 'text'"
+                class="message-body markdown-body"
+                v-html="seg.html"
+                @click="handleBodyClick"
+              />
+              <ToolCallEntry
+                v-else
+                :tool="seg.tool"
+                @confirm-tool="handleConfirmTool"
+                @open-tool-page="handleOpenToolPage"
+              />
+            </template>
+          </template>
+          <div v-else class="message-body markdown-body" v-html="renderedContent" @click="handleBodyClick" />
 
           <div v-if="plotlyCharts.length" class="chart-results">
             <div
@@ -801,40 +808,15 @@ function handleEdit() {
             />
           </div>
 
-          <div v-if="message.toolCalls?.length" class="tool-results">
-            <template v-for="(tool, idx) in message.toolCalls" :key="idx">
-              <!-- Studio HITL 审批卡片（有 approval 数据时出现，决议后保留终态徽标） -->
-              <ApprovalCard v-if="tool.approval" :tool="tool" />
-              <!-- Studio 代码工具（仅工作台页面）：代码卡片，支持编辑/重跑/产物 -->
-              <StudioCodeCard v-if="isStudioCodeToolCall(tool)" :tool="tool" />
-              <MasPlanPreviewCard
-                v-else-if="hasMasPlan(tool)"
-                :plan="masPlanFromTool(tool)"
-                :context-summary="contextSummaryFromTool(tool)"
-                :session-id="stringPayloadValue(tool, 'session_id')"
-                :workspace-id="stringPayloadValue(tool, 'workspace_id')"
-              />
-              <HandoffCard v-else-if="isHandoffTool(tool)" :tool="tool" />
-              <div v-else-if="isArtifactRegisterTool(tool)" class="artifact-register-card">
-                <div class="artifact-register-icon">✓</div>
-                <div>
-                  <div class="artifact-register-title">
-                    已登记为《{{ tool.uiPayload?.title }}》v{{ tool.uiPayload?.version }}
-                  </div>
-                  <div v-if="tool.uiPayload?.parent_id" class="artifact-register-sub">
-                    已挂到原报告版本树
-                  </div>
-                </div>
-              </div>
-              <McpToolCallCard
-                v-else
-                :tool="tool"
-                @confirm-tool="handleConfirmTool"
-                @open-tool-page="handleOpenToolPage"
-                @generate-visualization="handlePipelineVisualization"
-                @adjust-parameters="handleAdjustPipeline"
-              />
-            </template>
+          <!-- 无时间线的历史消息：沿用旧的"底部工具列表"布局 -->
+          <div v-if="!timelineView.length && visibleToolCalls.length" class="tool-results">
+            <ToolCallEntry
+              v-for="(tool, idx) in visibleToolCalls"
+              :key="idx"
+              :tool="tool"
+              @confirm-tool="handleConfirmTool"
+              @open-tool-page="handleOpenToolPage"
+            />
           </div>
 
           <ExpertConsultationCard
@@ -879,35 +861,21 @@ function handleEdit() {
             </div>
           </transition>
 
-          <!-- 流式光标：正文流式输出时跟随在文本末尾 -->
-          <span v-if="isStreaming && streamingHasContent" class="stream-cursor" />
+          <!-- 流式光标 + typing 指示：正文流式输出时跟随在文本末尾，结束后 200ms 淡出 -->
+          <transition name="cursor-fade">
+            <span v-if="isStreaming && streamingHasContent" class="stream-tail">
+              <span class="stream-cursor" />
+              <span class="stream-dots" aria-hidden="true"><i /><i /><i /></span>
+            </span>
+          </transition>
         </div>
 
-        <!-- Studio ask_user 澄清卡片：问题 + 选项快捷回复（回答后标记已回答） -->
-        <div v-if="message.askRequest" class="ask-card" :class="{ answered: message.askRequest.answered }">
-          <div class="ask-header">
-            <span class="ask-icon">💬</span>
-            <span class="ask-title">AI 想确认一下</span>
-            <n-tag v-if="message.askRequest.answered" size="tiny" round :bordered="false" type="success">
-              已回答
-            </n-tag>
-          </div>
-          <div class="ask-question">{{ message.askRequest.question }}</div>
-          <div v-if="!message.askRequest.answered && message.askRequest.options?.length" class="ask-options">
-            <n-button
-              v-for="opt in message.askRequest.options"
-              :key="opt"
-              size="small"
-              secondary
-              type="primary"
-              :loading="answeringAsk"
-              @click="handleAskOption(opt)"
-            >
-              {{ opt }}
-            </n-button>
-          </div>
-          <div v-else-if="!message.askRequest.answered" class="ask-hint">请在下方输入框回答</div>
-        </div>
+        <!-- Studio ask_user 澄清卡片：分页交互收集（选项/自由输入/跳过），回答后折叠为工具卡片样式 -->
+        <AskUserCard
+          v-if="message.askRequest"
+          :ask="message.askRequest"
+          @submit="handleAskSubmit"
+        />
       </template>
 
       <!-- 错误/空内容态下直接显示操作栏 -->
@@ -1121,9 +1089,9 @@ function handleEdit() {
   box-sizing: border-box;
   padding: 16px 20px;
   background: var(--chat-ai-card, #ffffff);
-  border: 1px solid var(--chat-border, #f0f0f0);
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--bubble-border, var(--chat-border, #e5e7eb));
+  border-radius: var(--card-radius, 12px);
+  box-shadow: var(--card-shadow, 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.04));
   font-size: 14px;
   line-height: 1.8;
   color: var(--chat-text-primary, #1a1a1a);
@@ -1153,7 +1121,11 @@ function handleEdit() {
   }
 }
 
-/* 流式光标 */
+/* 流式光标：呼吸闪烁（opacity 1 ↔ 0.2，ease-in-out），替代生硬硬闪 */
+.stream-tail {
+  display: inline-flex;
+  align-items: center;
+}
 .stream-cursor {
   display: inline-block;
   width: 2px;
@@ -1162,7 +1134,31 @@ function handleEdit() {
   vertical-align: text-bottom;
   background: linear-gradient(180deg, #6366f1, #a855f7);
   border-radius: 2px;
-  animation: cursor-blink 1s step-end infinite;
+  animation: cursor-breathe 1s ease-in-out infinite;
+}
+/* 光标旁三点 typing 指示：相位错开 0.15s，配色沿用浅紫强调色 */
+.stream-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+}
+.stream-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--chat-accent, #6366f1);
+  animation: gen-dot-bounce 1.2s ease-in-out infinite;
+}
+.stream-dots i:nth-child(2) { animation-delay: 0.15s; }
+.stream-dots i:nth-child(3) { animation-delay: 0.3s; }
+
+/* 流式结束后光标与指示 200ms 淡出，不闪跳 */
+.cursor-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.cursor-fade-leave-to {
+  opacity: 0;
 }
 
 /* Markdown 表格和代码块横向滚动 */
@@ -1173,9 +1169,9 @@ function handleEdit() {
   max-width: 100%;
 }
 
-@keyframes cursor-blink {
+@keyframes cursor-breathe {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  50% { opacity: 0.2; }
 }
 
 /* 正文生成前的优雅行内指示：呼吸微光 + 跳动点，明确「仍在生成」而非「卡住/没完成」 */
@@ -1261,11 +1257,13 @@ function handleEdit() {
   .content-swap-enter-active,
   .content-swap-leave-active,
   .stream-cursor,
+  .stream-dots i,
   .generating-tail,
   .generating-tail .gen-spark,
   .generating-tail .gen-dots i,
   .gen-tail-enter-active,
   .gen-tail-leave-active,
+  .cursor-fade-leave-active,
   .kimi-message-item.assistant .message-content.ai-card.streaming-active {
     animation: none;
     transition: none;
@@ -1568,50 +1566,6 @@ function handleEdit() {
   margin-top: 2px;
   font-size: 11px;
   color: var(--chat-text-muted, #888);
-}
-/* Studio ask_user 澄清卡片 */
-.ask-card {
-  width: 90%;
-  margin-top: 10px;
-  padding: 12px 16px;
-  background: var(--chat-ai-card, #ffffff);
-  border: 1px solid rgba(99, 102, 241, 0.35);
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-}
-.ask-card.answered {
-  opacity: 0.75;
-  border-color: var(--chat-border, #e5e7eb);
-}
-.ask-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
-}
-.ask-icon { font-size: 14px; }
-.ask-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--chat-accent, #4f8ef7);
-}
-.ask-question {
-  font-size: 14px;
-  line-height: 1.7;
-  color: var(--chat-text-primary, #1a1a1a);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.ask-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-}
-.ask-hint {
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--chat-text-muted, #999);
 }
 
 @media (max-width: 640px) {

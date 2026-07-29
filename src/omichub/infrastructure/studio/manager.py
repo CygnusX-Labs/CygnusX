@@ -116,20 +116,34 @@ class StudioSandboxManager:
 
     @staticmethod
     def ensure_workspace_dirs(workspace: Path) -> None:
-        """预建工作区子目录 input/output/ref/.logs，并放权给容器内 uid 10001。
+        """预建工作区子目录并放权给容器内 uid 10001。
 
+        布局与「沙盒目录使用规范」提示词一致：input/ref 只读数据、scripts 脚本、
+        output/{results,figures,logs,tmp} 产物、.logs 执行溢出日志。
         容器以非 root（uid 10001）运行，宿主目录默认 root 所有会导致写失败；
         优先 chown 10001，无权限时退化 chmod 0777（P0 单机部署可接受）。
         """
-        for sub in ("", "input", "output", "ref", ".logs"):
+        subs = (
+            "",
+            "input",
+            "ref",
+            "scripts",
+            "output",
+            "output/results",
+            "output/figures",
+            "output/logs",
+            "output/tmp",
+            ".logs",
+        )
+        for sub in subs:
             (workspace / sub).mkdir(parents=True, exist_ok=True)
         try:
             import os
 
-            for sub in ("", "input", "output", "ref", ".logs"):
+            for sub in subs:
                 os.chown(workspace / sub, 10001, 10001)
         except (AttributeError, PermissionError, OSError):
-            for sub in ("", "input", "output", "ref", ".logs"):
+            for sub in subs:
                 with contextlib.suppress(OSError):
                     (workspace / sub).chmod(0o777)
 

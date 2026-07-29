@@ -52,9 +52,11 @@ const stars = Array.from({ length: 160 }, (_, i) => {
   const baseOpacity = Math.random() * 0.5 + 0.35
 
   const isBright = baseOpacity > 0.7
-  const hasCross = isBright && Math.random() > 0.8
+  // 十字高光稍微多一些、亮一些：保证任意时刻都有"几处高光"稳定可见，
+  // 不会因闪烁集体变暗而让夜空显得发平。
+  const hasCross = isBright && Math.random() > 0.7
 
-  const crossScale = hasCross ? (size * baseOpacity * 0.8).toFixed(2) : 0
+  const crossScale = hasCross ? (size * baseOpacity * 0.9).toFixed(2) : 0
 
   return {
     id: i,
@@ -79,15 +81,17 @@ const shootingStars = Array.from({ length: 3 }, (_, i) => ({
   scale: 0.8 + Math.random() * 0.7,
 }))
 
-const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
+// 星云带：加宽、加多、抬高不透明下限，只做极慢漂移，
+// 让斜向紫蓝光雾始终铺在内容周围，避免某一帧"高光走空"。
+const nebulaLayers = Array.from({ length: 4 }, (_, i) => ({
   id: i,
   top: 10 + Math.random() * 60,
   left: -10 + Math.random() * 40,
-  width: 60 + Math.random() * 40,
-  height: 15 + Math.random() * 10,
-  opacity: 0.04 + Math.random() * 0.04,
+  width: 70 + Math.random() * 30,
+  height: 16 + Math.random() * 12,
+  opacity: 0.05 + Math.random() * 0.05,
   delay: Math.random() * 5,
-  duration: 20 + Math.random() * 20,
+  duration: 24 + Math.random() * 22,
 }))
 </script>
 
@@ -95,6 +99,9 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   <div class="about-page" role="main" aria-label="关于 OmicHub">
     <!-- 深空背景 -->
     <div class="space-bg" />
+
+    <!-- 常驻呼吸高光：保证内容周围始终有柔和辉光，不随流星/闪烁而消失 -->
+    <div class="ambient-core" />
 
     <!-- 星河/星云带 -->
     <div class="milky-way">
@@ -348,8 +355,8 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
 
 @keyframes twinkle {
   0%, 100% {
-    opacity: calc(var(--star-opacity, 0.55) * 0.68);
-    transform: translate(-50%, -50%) scale(0.94);
+    opacity: calc(var(--star-opacity, 0.55) * 0.82);
+    transform: translate(-50%, -50%) scale(0.97);
   }
   50% {
     opacity: var(--star-opacity, 0.55);
@@ -357,9 +364,21 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   }
 }
 
+/* 十字高光用更浅的呼吸下限，星芒始终清晰，不会闪没 */
+@keyframes twinkleCross {
+  0%, 100% {
+    opacity: calc(var(--star-opacity, 0.7) * 0.88);
+    transform: translate(-50%, -50%) scale(0.97);
+  }
+  50% {
+    opacity: var(--star-opacity, 0.7);
+    transform: translate(-50%, -50%) scale(1.06);
+  }
+}
+
 @keyframes nebulaDrift {
   0%, 100% { transform: translateX(0) scale(1); opacity: var(--base-opacity, 0.05); }
-  50% { transform: translateX(3%) scale(1.02); opacity: calc(var(--base-opacity, 0.05) * 1.16); }
+  50% { transform: translateX(1.2%) scale(1.01); opacity: calc(var(--base-opacity, 0.05) * 1.18); }
 }
 
 @keyframes planetSpin {
@@ -394,6 +413,26 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
     radial-gradient(ellipse at 82% 82%, rgba(122, 92, 214, 0.16) 0%, transparent 46%),
     radial-gradient(ellipse at 52% 46%, rgba(24, 42, 99, 0.34) 0%, transparent 58%),
     linear-gradient(145deg, #071127 0%, #101840 50%, #17123b 100%);
+}
+
+/* 常驻呼吸高光：在内容正中、右中、左上各铺一团柔光，呼吸下限高、绝不消失，
+   让"几处高光"成为恒定底色，流星只是在其上叠加的瞬时光迹。 */
+.ambient-core {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 58% 48% at 50% 44%, rgba(96, 124, 230, 0.16) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 40% at 80% 58%, rgba(132, 98, 214, 0.14) 0%, transparent 62%),
+    radial-gradient(ellipse 34% 34% at 16% 24%, rgba(76, 111, 255, 0.12) 0%, transparent 60%);
+  filter: blur(6px);
+  animation: ambientCoreBreathe 11s ease-in-out infinite;
+  will-change: opacity, transform;
+}
+@keyframes ambientCoreBreathe {
+  0%, 100% { opacity: 0.8; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.03); }
 }
 
 /* 星河/星云带 */
@@ -438,6 +477,11 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   transform: translate(-50%, -50%);
 }
 
+/* 十字星芒单独走 twinkleCross：下限更高，星芒始终清晰，分布稳定 */
+.star.has-cross {
+  animation-name: twinkleCross;
+}
+
 .star.has-cross::before,
 .star.has-cross::after {
   content: '';
@@ -446,6 +490,8 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   left: 50%;
   pointer-events: none;
   transform: translate(-50%, -50%) scale(var(--cross-scale));
+  /* 给星芒叠一层柔光晕，即便呼吸到低点也保留"高光"印象 */
+  filter: drop-shadow(0 0 3px rgba(186, 208, 255, 0.55));
 }
 
 .star.has-cross::before {
@@ -512,14 +558,16 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   box-shadow: 0 0 8px 1px rgba(255, 255, 255, 0.6), 0 0 14px 3px rgba(128, 153, 255, 0.30);
 }
 
-/* 浮动光球 */
+/* 浮动光球：常驻柔光，缓慢漂移+呼吸，作为边缘恒定的高光 */
 .orb {
   position: absolute;
   border-radius: 50%;
   filter: blur(70px);
-  opacity: 0.06;
+  opacity: 0.12;
   pointer-events: none;
-  z-index: 1;
+  z-index: 0;
+  animation: orbBreathe 14s ease-in-out infinite;
+  will-change: transform, opacity;
 }
 .orb-1 {
   width: 280px;
@@ -534,6 +582,11 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
   background: #8b6be8;
   bottom: 10%;
   right: 5%;
+  animation-delay: -6s;
+}
+@keyframes orbBreathe {
+  0%, 100% { opacity: 0.10; transform: translate3d(0, 0, 0) scale(1); }
+  50% { opacity: 0.17; transform: translate3d(2%, -2%, 0) scale(1.08); }
 }
 
 /* 内容容器 */
@@ -862,5 +915,19 @@ const nebulaLayers = Array.from({ length: 3 }, (_, i) => ({
     padding: 10px 16px;
     font-size: 13px;
   }
+}
+
+/* 减少动画：冻结背景动效，但保留静态高光，夜空不发平 */
+@media (prefers-reduced-motion: reduce) {
+  .nebula-band,
+  .orb,
+  .ambient-core,
+  .star,
+  .star.has-cross,
+  .shooting-star {
+    animation: none !important;
+  }
+  .ambient-core { opacity: 0.92; }
+  .orb { opacity: 0.13; }
 }
 </style>

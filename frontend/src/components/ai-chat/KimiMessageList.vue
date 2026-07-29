@@ -53,6 +53,8 @@ interface ScrollerExpose {
 const scrollerRef = ref<InstanceType<typeof DynamicScroller> & ScrollerExpose>()
 /** 用户是否已上翻离开底部（true 时暂停自动跟随，并显示"回到底部"悬浮按钮） */
 const showScrollToBottom = ref(false)
+/** 暂停吸底期间是否有新内容到达（悬浮按钮上的红点提示） */
+const hasNewWhileAway = ref(false)
 
 /** 距底多少像素内视为"接近底部"，自动跟随流式输出 */
 const NEAR_BOTTOM_THRESHOLD = 100
@@ -90,11 +92,16 @@ function cancelScrollAnim() {
  * force=true（点击"回到底部" / 新审批 / 澄清事件）时取消缓动并立即贴底。
  */
 function scrollToBottom(force = false) {
-  if (!force && showScrollToBottom.value) return
+  if (!force && showScrollToBottom.value) {
+    // 用户上滑暂停吸底期间有新内容到达：标记红点，不打断阅读位置
+    hasNewWhileAway.value = true
+    return
+  }
   const el = getScrollerEl()
   if (!el) return
   if (force) {
     showScrollToBottom.value = false
+    hasNewWhileAway.value = false
     cancelScrollAnim()
     el.scrollTop = el.scrollHeight
     return
@@ -134,11 +141,23 @@ function scrollToMessage(messageId: string) {
   scrollerRef.value?.scrollToItem?.(index)
 }
 
+/** 点击"回到底部"：平滑滚动回底部（scroll-behavior: smooth 由缓动动画实现），并恢复自动吸底。 */
+function scrollBackToBottom() {
+  const el = getScrollerEl()
+  if (!el) return
+  showScrollToBottom.value = false
+  hasNewWhileAway.value = false
+  smoothScrollTo(el, el.scrollHeight, 400)
+}
+
 function handleScroll() {
   const el = getScrollerEl()
   if (!el) return
   const { scrollTop, scrollHeight, clientHeight } = el
-  showScrollToBottom.value = scrollHeight - scrollTop - clientHeight > NEAR_BOTTOM_THRESHOLD
+  const awayFromBottom = scrollHeight - scrollTop - clientHeight > NEAR_BOTTOM_THRESHOLD
+  showScrollToBottom.value = awayFromBottom
+  // 用户自行滚回底部附近：清除新内容提示，恢复自动跟随
+  if (!awayFromBottom) hasNewWhileAway.value = false
 }
 
 defineExpose({ scrollToBottom, scrollToMessage })
@@ -230,10 +249,17 @@ onUnmounted(() => {
     </DynamicScroller>
 
     <transition name="fade">
-      <n-button v-if="showScrollToBottom" circle class="scroll-to-bottom" @click="scrollToBottom(true)">
+      <n-button
+        v-if="showScrollToBottom"
+        circle
+        class="scroll-to-bottom"
+        :title="hasNewWhileAway ? '有新消息，回到底部' : '回到底部'"
+        @click="scrollBackToBottom"
+      >
         <template #icon>
           <n-icon><ChevronDownOutline /></n-icon>
         </template>
+        <span v-if="hasNewWhileAway" class="new-message-dot" aria-label="有新消息" />
       </n-button>
     </transition>
   </div>
@@ -249,6 +275,9 @@ onUnmounted(() => {
   .message-scroller {
     height: 100%;
     padding: 16px 0;
+    /* 预留滚动条位置：流式期间内容高度反复跨过"出现滚动条"临界值时，
+       容器宽度不再变化，消除整列内容的水平抖动 */
+    scrollbar-gutter: stable;
     scrollbar-width: thin;
     scrollbar-color: rgba(46, 91, 255, 0.2) transparent;
   }
@@ -292,11 +321,26 @@ onUnmounted(() => {
     border: 1px solid rgba(46, 91, 255, 0.08);
     box-shadow: 0 2px 8px rgba(30, 50, 100, 0.12);
     color: var(--stardust-blue);
+    overflow: visible;
   }
 
   .scroll-to-bottom:hover {
     background: var(--stardust-bg-soft);
     color: var(--stardust-blue);
+  }
+
+  /* 暂停吸底期间有新内容到达的红点提示 */
+  .new-message-dot {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #f5222d;
+    border: 2px solid var(--bg-card, #fff);
+    box-shadow: 0 1px 3px rgba(245, 34, 45, 0.4);
+    pointer-events: none;
   }
 }
 

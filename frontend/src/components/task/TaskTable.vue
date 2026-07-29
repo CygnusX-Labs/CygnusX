@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import AppLoading from '@/components/AppLoading.vue'
 import { NTooltip } from 'naive-ui'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { Task } from '@/types'
+import { getToolboxResultRoute } from '@/utils/toolboxResultRoute'
 
 const props = withDefaults(defineProps<{
   tasks: Task[]
@@ -16,10 +17,84 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (e: 'delete', task: Task): void
+  (e: 'batch-delete', tasks: Task[]): void
+  (e: 'batch-cancel', tasks: Task[]): void
 }>()
 
 const router = useRouter()
 const deleteTarget = ref<Task | null>(null)
+
+// ---------------------------------------------------------------- 批量选择
+// 选中集合：以 task.id 为键。选择态由表格自管，批量动作上抛给父级执行。
+const selectedIds = ref<Set<string>>(new Set())
+
+// 删除与单行一致：MAS 多智能体任务不可删（行内删除按钮同样隐藏）。
+function isDeletable(task: Task): boolean {
+  return task.execution_mode !== 'mas'
+}
+// 取消仅对未结束任务有意义（与后端 cancel_task「取消未结束的任务」一致）。
+function isCancellable(task: Task): boolean {
+  return !isTerminal(task.status)
+}
+// 一行「可选」= 至少能对它做一种批量动作；全不可用的行不渲染勾选框。
+function isSelectable(task: Task): boolean {
+  return isDeletable(task) || isCancellable(task)
+}
+
+const selectableTasks = computed(() => props.tasks.filter(isSelectable))
+const deletableSelected = computed(() =>
+  props.tasks.filter((t) => selectedIds.value.has(t.id) && isDeletable(t)),
+)
+const cancellableSelected = computed(() =>
+  props.tasks.filter((t) => selectedIds.value.has(t.id) && isCancellable(t)),
+)
+
+const selectedCount = computed(() => selectedIds.value.size)
+const allSelected = computed(
+  () => selectableTasks.value.length > 0 && selectableTasks.value.every((t) => selectedIds.value.has(t.id)),
+)
+const someSelected = computed(
+  () => selectableTasks.value.some((t) => selectedIds.value.has(t.id)) && !allSelected.value,
+)
+
+function toggleRow(task: Task) {
+  if (!isSelectable(task)) return
+  const next = new Set(selectedIds.value)
+  if (next.has(task.id)) next.delete(task.id)
+  else next.add(task.id)
+  selectedIds.value = next
+}
+function toggleAll() {
+  if (allSelected.value) {
+    selectedIds.value = new Set()
+  } else {
+    selectedIds.value = new Set(selectableTasks.value.map((t) => t.id))
+  }
+}
+function clearSelection() {
+  selectedIds.value = new Set()
+}
+
+// 列表变化（筛选/搜索/刷新）后，剔除已不在当前视图的选中项，避免「幽灵选中」。
+watch(
+  () => props.tasks,
+  (list) => {
+    if (!selectedIds.value.size) return
+    const visible = new Set(list.map((t) => t.id))
+    const next = new Set<string>()
+    for (const id of selectedIds.value) if (visible.has(id)) next.add(id)
+    selectedIds.value = next
+  },
+)
+
+function requestBatchDelete() {
+  if (!deletableSelected.value.length) return
+  emit('batch-delete', deletableSelected.value)
+}
+function requestBatchCancel() {
+  if (!cancellableSelected.value.length) return
+  emit('batch-cancel', cancellableSelected.value)
+}
 
 const statusMap: Record<string, { label: string; badge: string; dot: string; bar: string }> = {
   pending:   { label: '待审核', badge: 'bg-gray-100 text-gray-600',    dot: 'bg-gray-400',    bar: 'bg-gray-300' },
@@ -66,6 +141,8 @@ function flowLabel(flowId: string): string {
     'variant_calling': 'Variant Calling',
     'spatial-transcriptomics': 'Spatial TX',
     'scrna-seq': 'scRNA-seq',
+    'kegg-enrichment': 'GO/KEGG 富集',
+    'deg-analysis': 'DEG 差异表达',
     studio_sandbox: 'AI 工作台',
     mas: 'MAS 多智能体',
   }
@@ -74,6 +151,17 @@ function flowLabel(flowId: string): string {
 
 function isTerminal(status: string): boolean {
   return ['success', 'failed', 'cancelled'].includes(status)
+}
+
+// 成功任务的「结果」入口分流：工具箱任务跳回对应工具页（按 taskId 深链打开结果），
+// 分析流程任务才走报告页。返回 null 表示该任务无对应结果入口（非成功 / 未知类型）。
+function resultRouteFor(task: Task) {
+  if (task.status !== 'success') return null
+  return getToolboxResultRoute(task.flow_id, task.id) ?? { path: '/reports', query: { taskId: task.id } }
+}
+
+function isToolboxTask(task: Task): boolean {
+  return getToolboxResultRoute(task.flow_id, task.id) !== null
 }
 
 function confirmDelete() {
@@ -132,6 +220,7 @@ const stats = computed(() => {
       <div v-else class="task-table-wrapper">
         <table class="task-table">
           <colgroup>
+            <col class="task-select-column">
             <col v-if="showUser" class="task-user-column">
             <col class="task-name-column">
             <col class="task-flow-column">
@@ -142,6 +231,19 @@ const stats = computed(() => {
           </colgroup>
           <thead>
             <tr>
+            <th class="task-select-column">
+              <button
+                class="row-check"
+                :class="{ 'is-on': allSelected, 'is-mid': someSelected }"
+                :disabled="!selectableTasks.length"
+                :aria-label="allSelected ? '取消全选' : '全选当前列表'"
+                :aria-pressed="allSelected"
+                @click="toggleAll"
+              >
+                <svg v-if="allSelected" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                <svg v-else-if="someSelected" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14" /></svg>
+              </button>
+            </th>
             <th v-if="showUser" class="task-user-column">用户</th>
             <th class="task-name-column">任务名称</th>
             <th class="task-flow-column">流程</th>
@@ -156,7 +258,22 @@ const stats = computed(() => {
             v-for="task in tasks"
             :key="task.id"
             class="task-table__row"
+            :class="{ 'is-selected': selectedIds.has(task.id) }"
           >
+            <!-- 选择 -->
+            <td class="task-select-column">
+              <button
+                v-if="isSelectable(task)"
+                class="row-check"
+                :class="{ 'is-on': selectedIds.has(task.id) }"
+                :aria-label="selectedIds.has(task.id) ? `取消选择 ${task.name}` : `选择 ${task.name}`"
+                :aria-pressed="selectedIds.has(task.id)"
+                @click="toggleRow(task)"
+              >
+                <svg v-if="selectedIds.has(task.id)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+              </button>
+            </td>
+
             <!-- 用户 -->
             <td v-if="showUser" class="task-user-column">
               <span class="task-user-name">{{ task.username || task.user_id }}</span>
@@ -226,16 +343,16 @@ const stats = computed(() => {
                   查看详情
                 </NTooltip>
 
-                <!-- 查看报告 -->
-                <NTooltip v-if="task.status === 'success'" placement="top">
+                <!-- 查看结果 / 查看报告：工具箱任务跳回工具页打开结果，分析流程才走报告页 -->
+                <NTooltip v-if="resultRouteFor(task)" placement="top">
                   <template #trigger>
-                    <button class="task-action" aria-label="查看报告" @click="router.push({ path: '/reports', query: { taskId: task.id } })">
+                    <button class="task-action" :aria-label="isToolboxTask(task) ? '查看结果' : '查看报告'" @click="router.push(resultRouteFor(task)!)">
                       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
                       </svg>
                     </button>
                   </template>
-                  查看报告
+                  {{ isToolboxTask(task) ? '查看结果' : '查看报告' }}
                 </NTooltip>
 
               <!-- 重新运行（暂无后端接口，禁用并提示） -->
@@ -275,6 +392,45 @@ const stats = computed(() => {
         <AppLoading text="加载中..." size="small" />
       </div>
     </div>
+
+    <!-- 批量操作栏：选中 ≥1 项时从底部滑入 -->
+    <transition name="batch-bar">
+      <div v-if="selectedCount > 0" class="batch-bar" role="region" aria-label="批量操作">
+        <div class="batch-bar__count">
+          <span class="batch-bar__num">{{ selectedCount }}</span>
+          <span>项已选</span>
+        </div>
+        <div class="batch-bar__hint">
+          <span v-if="deletableSelected.length" class="batch-bar__seg">可删除 {{ deletableSelected.length }}</span>
+          <span v-if="cancellableSelected.length" class="batch-bar__seg">可取消 {{ cancellableSelected.length }}</span>
+          <span v-if="selectedCount && !deletableSelected.length && !cancellableSelected.length" class="batch-bar__seg batch-bar__seg--muted">所选任务当前不可批量操作</span>
+        </div>
+        <div class="batch-bar__actions">
+          <button
+            class="batch-btn batch-btn--ghost"
+            @click="clearSelection"
+          >
+            取消选择
+          </button>
+          <button
+            class="batch-btn batch-btn--warn"
+            :disabled="!cancellableSelected.length"
+            @click="requestBatchCancel"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6 6h12M6 12h12M6 18h7" /></svg>
+            批量取消
+          </button>
+          <button
+            class="batch-btn batch-btn--danger"
+            :disabled="!deletableSelected.length"
+            @click="requestBatchDelete"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            批量删除
+          </button>
+        </div>
+      </div>
+    </transition>
 
     <!-- 删除确认弹窗 -->
     <Teleport to="body">
@@ -389,6 +545,7 @@ const stats = computed(() => {
 }
 
 /* 全部列固定宽，禁止弹性列吞宽度；长文本「任务名称」给克制固定宽 + 省略（§33.2 ③） */
+.task-select-column { width: 44px; }
 .task-user-column { width: 120px; }
 .task-name-column { width: 260px; }
 .task-flow-column { width: 140px; }
@@ -410,6 +567,7 @@ const stats = computed(() => {
 }
 
 /* 短值/离散列表头居中，与表体一致（贴合仪表盘任务表样板，§33.2 ③） */
+.task-table th.task-select-column,
 .task-table th.task-user-column,
 .task-table th.task-flow-column,
 .task-table th.task-status-column,
@@ -431,11 +589,40 @@ const stats = computed(() => {
 }
 
 .task-table__row:hover { background: var(--neutral-hover); }
+.task-table__row.is-selected { background: color-mix(in srgb, var(--arco-primary) 7%, transparent); }
+.task-table__row.is-selected:hover { background: color-mix(in srgb, var(--arco-primary) 11%, transparent); }
 .task-table__row:last-child td { border-bottom: 0; }
+.task-table td.task-select-column,
 .task-table td.task-user-column,
 .task-table td.task-flow-column,
 .task-table td.task-status-column,
 .task-table td.task-actions-column { text-align: center; }
+
+/* 行内勾选框：自定义方框，选中/半选用品牌色填充 */
+.row-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1.5px solid var(--neutral-border);
+  border-radius: 5px;
+  background: var(--neutral-card);
+  color: #fff;
+  cursor: pointer;
+  transition: background-color var(--motion-quick, 160ms) ease-out, border-color var(--motion-quick, 160ms) ease-out, transform var(--motion-quick, 160ms) ease-out;
+}
+.row-check svg { width: 12px; height: 12px; }
+.row-check:hover:not(:disabled) { border-color: var(--arco-primary); }
+.row-check:focus-visible { outline: 2px solid color-mix(in srgb, var(--arco-primary) 45%, transparent); outline-offset: 1px; }
+.row-check.is-on,
+.row-check.is-mid {
+  background: var(--arco-primary);
+  border-color: var(--arco-primary);
+}
+.row-check:active:not(:disabled) { transform: scale(0.9); }
+.row-check:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .task-user-name,
 .task-time {
@@ -575,6 +762,100 @@ const stats = computed(() => {
   50% { opacity: 0.35; transform: scale(0.8); }
 }
 
+/* 批量操作栏：粘性贴底，选中时滑入；分层背景 + 投影营造浮起感 */
+.batch-bar {
+  position: sticky;
+  bottom: 16px;
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 18px;
+  margin-top: 16px;
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--arco-primary) 22%, var(--neutral-border));
+  border-radius: 14px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--neutral-card) 92%, transparent), var(--neutral-card));
+  box-shadow: 0 10px 30px -12px rgba(30, 50, 100, 0.28), 0 2px 8px rgba(30, 50, 100, 0.08);
+  backdrop-filter: blur(8px);
+}
+.batch-bar__count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--neutral-text-2);
+}
+.batch-bar__num {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--arco-primary);
+  font-variant-numeric: tabular-nums;
+}
+.batch-bar__hint {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-right: auto;
+}
+.batch-bar__seg {
+  font-size: 12px;
+  color: var(--neutral-text-2);
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--neutral-bg);
+}
+.batch-bar__seg--muted { color: var(--neutral-text-3); }
+.batch-bar__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.batch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--motion-quick, 160ms) ease-out, color var(--motion-quick, 160ms) ease-out, border-color var(--motion-quick, 160ms) ease-out, transform var(--motion-quick, 160ms) ease-out;
+}
+.batch-btn svg { width: 16px; height: 16px; }
+.batch-btn:active:not(:disabled) { transform: translateY(1px); }
+.batch-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.batch-btn--ghost {
+  background: transparent;
+  color: var(--neutral-text-2);
+  border-color: var(--neutral-border);
+}
+.batch-btn--ghost:hover { color: var(--neutral-text-1); border-color: var(--neutral-text-3); }
+.batch-btn--warn {
+  background: color-mix(in srgb, #f59e0b 12%, var(--neutral-card));
+  color: #b45309;
+  border-color: color-mix(in srgb, #f59e0b 35%, transparent);
+}
+.batch-btn--warn:hover:not(:disabled) { background: color-mix(in srgb, #f59e0b 20%, var(--neutral-card)); }
+.batch-btn--danger {
+  background: #ef4444;
+  color: #fff;
+}
+.batch-btn--danger:hover:not(:disabled) { background: #dc2626; }
+
+.batch-bar-enter-active,
+.batch-bar-leave-active {
+  transition: opacity 220ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.batch-bar-enter-from,
+.batch-bar-leave-to {
+  opacity: 0;
+  transform: translateY(16px);
+}
+
 @media (max-width: 960px) {
   .task-name-column { width: 220px; }
   .task-time-column { display: none; }
@@ -582,6 +863,7 @@ const stats = computed(() => {
 }
 
 @media (max-width: 720px) {
+  .task-select-column { width: 38px; }
   .task-name-column { width: 188px; }
   .task-flow-column { display: none; }
   .task-table th,
@@ -589,6 +871,10 @@ const stats = computed(() => {
   .task-progress-column { width: 152px; }
   .task-actions-column { width: 120px; }
   .task-actions { gap: 4px; }
+  .batch-bar { gap: 10px 12px; }
+  .batch-bar__hint { width: 100%; margin-right: 0; }
+  .batch-bar__actions { width: 100%; }
+  .batch-btn { flex: 1 1 auto; justify-content: center; }
 }
 
 @media (max-width: 560px) {
@@ -602,11 +888,18 @@ const stats = computed(() => {
   .task-name__running-dot { animation: none; }
   .task-progress__bar,
   .task-table__row,
-  .task-action { transition: none; }
+  .task-action,
+  .row-check,
+  .batch-btn,
+  .batch-bar-enter-active,
+  .batch-bar-leave-active { transition: none; }
 }
 
 /* 表格表面/分隔线/行悬停/进度轨道全部消费 --neutral-* 语义令牌（自带明暗成对值），
    无需再写 :global([data-theme='dark']) 硬编码补丁（§3.1 / §33.2 ⑦）。
    统计胶囊在深色下回退页面底色，避免与卡片表面混色。 */
 :global(:root[data-theme='dark']) .task-stat-chip { background: var(--neutral-bg); }
+:global(:root[data-theme='dark']) .batch-bar__seg { background: var(--neutral-bg); }
+:global(:root[data-theme='dark']) .batch-btn--warn { color: #fbbf24; }
+:global(:root[data-theme='dark']) .row-check { background: var(--neutral-bg); }
 </style>

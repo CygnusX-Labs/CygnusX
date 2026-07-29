@@ -75,6 +75,7 @@ from omichub.application.services.studio_capabilities import (
     render_prompt as render_capability_prompt,
 )
 from omichub.application.services.studio_tools import (
+    ASK_USER_TOOL_SCHEMA,
     STUDIO_SYSTEM_PROMPT_SUFFIX,
     STUDIO_TOOL_NAMES,
     STUDIO_TOOL_SCHEMAS,
@@ -150,6 +151,44 @@ def _studio_risk_hint(tool_name: str, args: dict[str, Any]) -> str:
     if tool_name == "artifact_register":
         return f"将把产物 {args.get('path') or ''} 登记到结果报告中心".strip()
     return "该操作需要用户批准"
+
+
+def _normalize_ask_questions(args: dict[str, Any]) -> list[dict[str, Any]]:
+    """ask_user 参数归一化为问题列表（最多 5 个）。
+
+    优先取 questions[]（多问题分页收集），兼容单问题 question+options；
+    模型未给出有效问题时兜底一个空问题，前端据此渲染自由输入，保证用户总能回复。
+    """
+    questions: list[dict[str, Any]] = []
+    raw = args.get("questions")
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            q = str(item.get("question") or "").strip()
+            if not q:
+                continue
+            opts_raw = item.get("options")
+            opts = (
+                [str(o) for o in opts_raw if str(o).strip()]
+                if isinstance(opts_raw, list)
+                else []
+            )
+            questions.append({"question": q, "options": opts})
+    if not questions:
+        single_q = str(args.get("question") or "").strip()
+        opts_raw = args.get("options")
+        single_opts = (
+            [str(o) for o in opts_raw if str(o).strip()]
+            if isinstance(opts_raw, list)
+            else []
+        )
+        if single_q:
+            questions.append({"question": single_q, "options": single_opts})
+    if not questions:
+        logger.warning("ask_user 调用缺少有效问题，降级为自由输入卡片，args={}", args)
+        questions.append({"question": "", "options": []})
+    return questions[:5]
 
 BUILTIN_ASSISTANTS: list[dict[str, Any]] = [
     {
@@ -1399,6 +1438,12 @@ class ChatService:
                     if server.is_enabled and server.name not in defaults_by_name:
                         active_mcp_servers.append(server)
         tools = list(ctx.tools or []) + base_tools
+        # ask_user 澄清弹窗在普通聊天同样可用（Studio 由 STUDIO_TOOL_SCHEMAS 携带），
+        # 让所有 Agent 的多选项澄清都走弹窗而不是纯文本罗列编号。
+        if not studio_mode and supports_function_tools and not any(
+            t.get("function", {}).get("name") == "ask_user" for t in tools
+        ):
+            tools.append(ASK_USER_TOOL_SCHEMA)
         system_prompt = ctx.system_prompt or None
         if any(
             tool.get("function", {}).get("name") in MEMORY_TOOL_NAMES
@@ -1607,6 +1652,9 @@ class ChatService:
         last_finish_reason: str | None = None
         # Studio 工具调用落库累积（代码卡片 / 产物 / diff，供历史重载渲染）
         studio_invocations: list[dict[str, Any]] = []
+        # 正文/工具调用的时间线：按发生顺序记录 text 段与 tool 段，
+        # 供前端按"内容→工具→内容"的实际过程交错渲染，而不是上正文下工具两段式
+        timeline: list[dict[str, Any]] = []
 
         mcp_client = MCPClient()
 
@@ -1749,9 +1797,12 @@ class ChatService:
 
                 # 本轮无工具调用 → 正常结束
                 if not round_tool_calls:
+                    if round_text:
+                        timeline.append({"kind": "text", "text": round_text})
                     completion_metadata = {
                         **({"usage": last_usage} if last_usage else {}),
                         **({"web_sources": web_sources} if web_sources else {}),
+                        **({"timeline": timeline} if timeline else {}),
                     }
                     await self.update_message_content(
                         ai_message.message_id,
@@ -1781,6 +1832,7 @@ class ChatService:
                 )
                 if round_text:
                     full_content += "\n\n" if full_content else ""
+                    timeline.append({"kind": "text", "text": round_text})
                     # 工具调用阶段的正文并入落库内容
                     await self.update_message_content(
                         ai_message.message_id, full_content, "streaming"
@@ -1800,9 +1852,11 @@ class ChatService:
 
                     # Studio 内置工具优先路由到沙盒，其余仍按 MCP server 匹配
                     is_capability_tool = studio_mode and tool_name in CAPABILITY_TOOL_NAMES
-                    is_studio_tool = studio_mode and (
-                        tool_name in STUDIO_TOOL_NAMES or is_capability_tool
-                    )
+                    # ask_user 在普通会话也挂载，两种模式下都走澄清拦截分支
+                    is_studio_tool = (
+                        studio_mode
+                        and (tool_name in STUDIO_TOOL_NAMES or is_capability_tool)
+                    ) or tool_name == "ask_user"
                     is_mas_plan_tool = (
                         mas_plan_tool_enabled and tool_name == MAS_PLAN_PREVIEW_TOOL_NAME
                     )
@@ -1972,24 +2026,22 @@ class ChatService:
                     elif is_studio_tool and tool_name == "ask_user":
                         # 澄清交互（§3.4）：不进沙盒，产出 ask_request 事件并以"本轮结束"收尾，
                         # 用户在下一条聊天消息中回答，对话自然继续。
-                        question = str(args.get("question") or "").strip()
-                        options_raw = args.get("options")
-                        options = (
-                            [str(o) for o in options_raw if str(o).strip()]
-                            if isinstance(options_raw, list)
-                            else []
-                        )
+                        questions = _normalize_ask_questions(args)
+                        first = questions[0]
                         yield ChatChunk(
                             type="ask_request",
                             metadata={
                                 "tool_call_id": tc.get("id", ""),
-                                "question": question,
-                                "options": options,
+                                "questions": questions,
+                                # 兼容旧前端：首问题的平铺字段
+                                "question": first["question"],
+                                "options": first["options"],
                             },
                         )
                         ask_payload: dict[str, Any] = {
-                            "question": question,
-                            "options": options,
+                            "questions": questions,
+                            "question": first["question"],
+                            "options": first["options"],
                             "message": "问题已展示给用户，用户将在下一条消息中回答。本轮回复到此结束，请等待用户答复。",
                         }
                         result = {
@@ -2145,6 +2197,13 @@ class ChatService:
                             "ui_payload": ui_payload,
                         },
                     )
+                    timeline.append(
+                        {
+                            "kind": "tool",
+                            "tool_call_id": tc.get("id", ""),
+                            "tool_name": tool_name,
+                        }
+                    )
                     # Studio 工具调用随消息落库：历史重载时凭 ui_payload 渲染代码卡片/产物/diff
                     if is_studio_tool or is_mas_plan_tool:
                         studio_invocations.append(
@@ -2161,7 +2220,7 @@ class ChatService:
                             ai_message.message_id,
                             full_content,
                             "streaming",
-                            {"tool_invocations": studio_invocations},
+                            {"tool_invocations": studio_invocations, "timeline": timeline},
                         )
                     llm_content = json.dumps(llm_result, ensure_ascii=False, default=str)
                     # 技能正文（L2）允许更长回灌，其余工具结果保持 4000 字符护栏
@@ -2241,6 +2300,7 @@ class ChatService:
                     completion_metadata = {
                         **({"usage": last_usage} if last_usage else {}),
                         **({"web_sources": web_sources} if web_sources else {}),
+                        **({"timeline": timeline} if timeline else {}),
                     }
                     await self.update_message_content(
                         ai_message.message_id,
@@ -2267,6 +2327,7 @@ class ChatService:
                 {
                     "warning": "工具调用轮次达上限，已提前结束",
                     **({"web_sources": web_sources} if web_sources else {}),
+                    **({"timeline": timeline} if timeline else {}),
                 },
             )
             # 通知前端轮次触顶：由用户弹窗选择是否以扩展上限继续

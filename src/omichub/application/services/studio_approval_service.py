@@ -2,11 +2,13 @@
 
 设计文档 docs/26.7.21/studio_hitl_design.md §3：
 - supervised 模式下写/执行类工具（APPROVAL_REQUIRED_TOOLS）需用户批准后才进沙盒；
-- 记录存 Redis（``studio:approval:{id}``，TTL 1800s），多进程安全，
+- 记录存 Redis（``studio:approval:{id}``，TTL 300s），多进程安全，
   规避 tool_confirmation_service 进程内内存无法跨进程消费的坑；
 - chat_service 发出 approval_request 事件后 await BLPOP
   （``studio:approval:result:{id}``）等 REST 端点写入的决议；
   超时按拒绝处理（action="timeout"）。
+- 审批提示是瞬态 SSE 事件，不落库；前端刷新/断流后通过
+  ``GET /studio/approvals?session_id=`` 拉取 pending 记录重建审批卡。
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ APPROVAL_REQUIRED_TOOLS: frozenset[str] = frozenset(
     }
 )
 
-APPROVAL_TTL_SECONDS = 1800
+APPROVAL_TTL_SECONDS = 300
 
 _RECORD_KEY = "studio:approval:{approval_id}"
 _RESULT_KEY = "studio:approval:result:{approval_id}"
@@ -47,7 +49,7 @@ class StudioApprovalService:
         arguments: dict[str, Any],
         risk_hint: str = "",
     ) -> dict[str, Any]:
-        """创建 pending 审批记录并写入 Redis（TTL 1800s），返回记录字典。"""
+        """创建 pending 审批记录并写入 Redis（TTL 300s），返回记录字典。"""
         record: dict[str, Any] = {
             "approval_id": uuid.uuid4().hex,
             "user_id": str(user_id),
@@ -74,6 +76,35 @@ class StudioApprovalService:
         except (TypeError, ValueError):
             return None
         return record if isinstance(record, dict) else None
+
+    async def list_pending(self, user_id: str, session_id: str) -> list[dict[str, Any]]:
+        """列出指定会话仍处于 pending 的审批记录（附带剩余秒数 expires_in）。
+
+        审批提示本是瞬态 SSE 事件，不落库；前端刷新/断流重进会话时用本方法
+        重建待审批卡片。记录量极小（单会话同一时刻通常 ≤1 条），SCAN 全量
+        匹配代价可忽略；决议 list 的 key 含 ":result:"，需排除。
+        """
+        redis = get_redis()
+        records: list[dict[str, Any]] = []
+        async for key in redis.scan_iter(match="studio:approval:*"):
+            key_str = key.decode() if isinstance(key, bytes) else str(key)
+            if ":result:" in key_str:
+                continue
+            raw = await redis.get(key_str)
+            if raw is None:
+                continue
+            try:
+                record = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(record, dict) or record.get("status") != "pending":
+                continue
+            if record.get("user_id") != str(user_id) or record.get("session_id") != session_id:
+                continue
+            ttl = await cast(Awaitable[int], redis.ttl(key_str))
+            record["expires_in"] = ttl if ttl > 0 else 0
+            records.append(record)
+        return records
 
     async def wait_resolution(
         self,

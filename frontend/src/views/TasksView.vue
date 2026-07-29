@@ -7,8 +7,9 @@ import EmptyState from '@/components/EmptyState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import apiClient from '@/api/client'
 import { useApi } from '@/composables/useApi'
+import { exportTasksToExcel } from '@/utils/taskExport'
 import { NInput, NSelect, NButton, NIcon, useMessage } from 'naive-ui'
-import { RefreshOutline, SearchOutline } from '@vicons/ionicons5'
+import { DownloadOutline, RefreshOutline, SearchOutline } from '@vicons/ionicons5'
 
 const message = useMessage()
 
@@ -16,6 +17,7 @@ const statusFilter = ref<Task['status'] | 'all'>('all')
 const searchQuery = ref('')
 const knownCompletedTaskIds = ref(new Set<string>())
 const hasInitializedTaskSnapshot = ref(false)
+const exporting = ref(false)
 
 const statusOptions = [
   { label: '全部状态', value: 'all' },
@@ -86,6 +88,70 @@ async function handleDelete(task: Task) {
   }
 }
 
+/** 受限并发：把任务切成最多 concurrency 路并行，避免批量时打爆后端连接。 */
+async function runWithConcurrency<T>(items: T[], concurrency: number, worker: (item: T) => Promise<void>) {
+  const results: PromiseSettledResult<void>[] = []
+  for (let i = 0; i < items.length; i += concurrency) {
+    const chunk = items.slice(i, i + concurrency)
+    const settled = await Promise.allSettled(chunk.map(worker))
+    results.push(...settled)
+  }
+  return results
+}
+
+const failDetail = (r: PromiseSettledResult<void>) =>
+  r.status === 'rejected' ? (r.reason?.response?.data?.detail || r.reason?.message || '') : ''
+
+/** 批量删除：复用单删接口 DELETE /tasks/{id}，逐项容错，结束统一刷新并汇总结果。 */
+async function handleBatchDelete(list: Task[]) {
+  if (!list.length) return
+  const results = await runWithConcurrency(list, 6, async (t) => {
+    await apiClient.delete(`/tasks/${t.id}`)
+  })
+  const failed = results.filter((r) => r.status === 'rejected')
+  await fetchTasks()
+  if (!failed.length) {
+    message.success(`已删除 ${list.length} 个任务`)
+  } else {
+    const detail = failDetail(failed[0] as PromiseRejectedResult)
+    message.warning(`已删除 ${list.length - failed.length} 个，${failed.length} 个失败${detail ? `（${detail}）` : ''}`)
+  }
+}
+
+/** 批量取消：复用 POST /tasks/{id}/cancel，仅对未结束任务有意义（表格已据此过滤）。 */
+async function handleBatchCancel(list: Task[]) {
+  if (!list.length) return
+  const results = await runWithConcurrency(list, 6, async (t) => {
+    await apiClient.post(`/tasks/${t.id}/cancel`)
+  })
+  const failed = results.filter((r) => r.status === 'rejected')
+  await fetchTasks()
+  if (!failed.length) {
+    message.success(`已取消 ${list.length} 个任务`)
+  } else {
+    const detail = failDetail(failed[0] as PromiseRejectedResult)
+    message.warning(`已取消 ${list.length - failed.length} 个，${failed.length} 个失败${detail ? `（${detail}）` : ''}`)
+  }
+}
+
+/** 导出当前视图（已应用搜索 / 状态筛选）为 Excel，纯前端生成、即时下载。 */
+function handleExport() {
+  const list = filteredTasks.value
+  if (!list.length) {
+    message.warning('当前没有可导出的任务')
+    return
+  }
+  exporting.value = true
+  try {
+    exportTasksToExcel(list)
+    message.success(`已导出 ${list.length} 条任务`)
+  } catch (e: any) {
+    message.error(e?.message || '导出失败，请稍后重试')
+  } finally {
+    exporting.value = false
+  }
+}
+
 onMounted(fetchTasks)
 </script>
 
@@ -110,6 +176,12 @@ onMounted(fetchTasks)
           style="width: 140px"
           @update:value="fetchTasks"
         />
+        <NButton :loading="exporting" :disabled="!filteredTasks.length" @click="handleExport">
+          <template #icon>
+            <NIcon><DownloadOutline /></NIcon>
+          </template>
+          导出 Excel
+        </NButton>
         <NButton type="primary" :loading="loading" @click="fetchTasks">
           <template #icon>
             <NIcon><RefreshOutline /></NIcon>
@@ -133,7 +205,10 @@ onMounted(fetchTasks)
       v-else
       :tasks="filteredTasks"
       :loading="loading"
+      show-user
       @delete="handleDelete"
+      @batch-delete="handleBatchDelete"
+      @batch-cancel="handleBatchCancel"
     />
   </div>
 </template>

@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, type ComponentPublicInstance } from 'vue'
+import { useRoute } from 'vue-router'
+import { TOOLBOX_RESULT_QUERY } from '@/utils/toolboxResultRoute'
 import {
   NAlert,
   NButton,
@@ -61,6 +63,7 @@ import {
 
 const message = useMessage()
 const themeStore = useThemeStore()
+const route = useRoute()
 const formRef = ref<FormInst | null>(null)
 // 用户是否已尝试提交：提交前不显示任何校验红字，避免一进来就"满屏报错"。
 const submitAttempted = ref(false)
@@ -448,6 +451,19 @@ async function openHistoryTask(task: DegTask) {
   }
 }
 
+// 任务中心「查看结果」深链：?taskId= 直达时，拉取详情后复用历史结果打开流程。
+async function openDeepLinkedTask() {
+  const taskId = route.query[TOOLBOX_RESULT_QUERY]
+  if (typeof taskId !== 'string' || !taskId) return
+  try {
+    const detail = await fetchDegTask(taskId)
+    await openHistoryTask(detail)
+  } catch (error) {
+    taskError.value = extractError(error) || '加载历史结果失败'
+    message.error(taskError.value)
+  }
+}
+
 async function loadPca(task: DegTask) {
   revokeObjectUrls()
   const pca = task.result?.pca_png
@@ -515,8 +531,7 @@ function statusTagType(status: string): 'default' | 'info' | 'success' | 'error'
 }
 
 onMounted(() => {
-  void loadDefaults()
-  void loadHistory()
+  void Promise.all([loadDefaults(), loadHistory()]).then(() => openDeepLinkedTask())
 })
 
 onBeforeUnmount(() => {

@@ -44,32 +44,30 @@ async def _omichub_tools_handler(
 
 OMICHUB_PLATFORM_SERVER_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "omichub-platform.builtin")
 
-WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX = """## 工作区文件工具
+# 工作区文件工具系统提示后缀 —— 外置到 data/ai/mcp/workspace_files_prompt.md，
+# 便于直接编辑提示词而无需改代码；文件缺失时回退到内置精简版。
+_WORKSPACE_FILES_PROMPT_MD = Path("data/ai/mcp/workspace_files_prompt.md")
 
-你拥有当前会话用户工作区的只读文件工具：
-- `list_workspace_files(path?, pattern?)`：列出目录直接子项；`path` 为空时列根目录，`pattern` 支持 `*.csv` 等 glob。
-- `search_workspace_files(query, limit?)`：从工作区根目录递归按文件名模糊搜索。
-- `find_session_uploads(session_id?)`：按会话 ID 检索该聊天窗口中用户上传过的文件；`session_id` 留空表示当前会话。
-- 找到文件后，将返回的 `file_id` 直接交给已有的 `workspace_read_file(file_id)` 读取或分析。
+_WORKSPACE_FILES_PROMPT_FALLBACK = """## 工作区文件工具
 
-强制行为：
-- 用户询问“工作区里有什么文件 / 有哪些数据文件”时，必须先调用 `list_workspace_files` 获取真实结果，禁止声称没有浏览文件的工具。
-- 用户明确要求寻找某个文件时，必须先调用 `search_workspace_files` 获取真实结果。
-- 需要找回本会话之前上传的数据文件时，优先调用 `find_session_uploads`（当前会话 ID 自动生效），而不是漫无目的地全局搜索。
-- 回答时用列表展示名称、类型和修改时间；找到文件后询问用户希望对哪个文件执行什么操作。
-- 文件工具仅限当前用户工作区且只读；不得尝试绝对路径、`..` 或其他用户目录。
-
-数据缺失时的行为（所有绘图/分析任务通用）：
-- 用户要求绘图或分析，但对话中没有提供任何数据（无附件、无 file_id、用户也未指明工作区中的具体文件）时，禁止自行全局搜索猜测数据。
-- 此时直接回复用户，开头固定使用“📤 需要您提供数据：”，简要说明需要什么数据（格式、必要列/字段），并引导用户上传文件或告知工作区中的具体文件路径。
-- 只有在用户提供了附件、file_id，或明确指定了工作区文件时，才继续执行绘图/分析。
-
-多选项澄清的交互形式（所有任务通用）：
-- 需要用户在多个选项/方向/方案中做选择时，若当前环境提供 `ask_user` 工具，**必须**调用
-  `ask_user` 并通过 `options` 给出可一键点击的选项（弹窗选择），禁止用纯文本罗列
-  “选项 1/2/3”让用户手动回复编号；问题要具体、选项互斥且覆盖主要分支。
-- 没有 `ask_user` 工具的普通会话中，才允许用编号列表呈现选项，且每个选项一句话说清。
+你拥有当前会话用户工作区的只读文件工具：`list_workspace_files`、`search_workspace_files`、
+`find_session_uploads`（按会话找回上传文件），找到文件后将 `file_id` 交给 `workspace_read_file` 读取。
+数据缺失或任务背景不清晰时，必须先调用 `ask_user` 弹窗向用户澄清（options 给可点选选项，
+推荐项放第一个标注“（推荐）”），禁止自行假设开干；用户已给出关键信息时直接执行，不重复澄清。
 """
+
+
+def _load_workspace_files_prompt() -> str:
+    try:
+        text = _WORKSPACE_FILES_PROMPT_MD.read_text(encoding="utf-8").strip()
+        if text:
+            return text
+    except OSError:
+        pass
+    return _WORKSPACE_FILES_PROMPT_FALLBACK
+
+
+WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX = _load_workspace_files_prompt()
 
 
 async def _platform_list_tasks(
