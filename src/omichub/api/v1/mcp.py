@@ -12,7 +12,9 @@ from omichub.application.schemas.mcp import (
     InvokeToolDTO,
     MCPLogEntryDTO,
     MCPServerDTO,
+    MCPServerVersionDTO,
     MCPToolDTO,
+    RollbackMCPServerDTO,
     UpdateMCPServerDTO,
 )
 from omichub.application.services.mcp_service import MCPService
@@ -25,6 +27,16 @@ def get_mcp_service(db: DbSession) -> MCPService:
 
 
 MCPServiceDep = Annotated[MCPService, Depends(get_mcp_service)]
+
+
+@router.post("/presets/reload", summary="热加载内置 MCP 预设（Admin）")
+async def reload_presets(
+    _admin: AdminRequired, service: MCPServiceDep
+) -> dict[str, Any]:
+    """重新同步代码/YAML 定义的内置 MCP（omichub-platform / omichub-tools /
+    omichub-pipelines）工具清单进库，新增内置工具无需重启容器即可被 Agent 使用。"""
+    await service.ensure_presets()
+    return {"success": True}
 
 
 @router.get("/servers", response_model=list[MCPServerDTO], summary="MCP Server 列表")
@@ -53,11 +65,40 @@ async def register_server(
 @router.put("/servers/{server_id}", response_model=MCPServerDTO, summary="更新 MCP Server")
 async def update_server(
     _admin: AdminRequired,
+    current_user_id: CurrentUserId,
     service: MCPServiceDep,
     server_id: UUID,
     req: UpdateMCPServerDTO,
 ) -> MCPServerDTO:
-    return await service.update_server(server_id, req)
+    return await service.update_server(server_id, req, actor_id=current_user_id)
+
+
+@router.get(
+    "/servers/{server_id}/versions",
+    response_model=list[MCPServerVersionDTO],
+    summary="MCP Server 版本历史",
+)
+async def list_server_versions(
+    _admin: AdminRequired,
+    service: MCPServiceDep,
+    server_id: UUID,
+) -> list[MCPServerVersionDTO]:
+    return await service.list_server_versions(server_id)
+
+
+@router.post(
+    "/servers/{server_id}/rollback",
+    response_model=MCPServerDTO,
+    summary="回滚 MCP Server 到指定版本",
+)
+async def rollback_server(
+    _admin: AdminRequired,
+    current_user_id: CurrentUserId,
+    service: MCPServiceDep,
+    server_id: UUID,
+    req: RollbackMCPServerDTO,
+) -> MCPServerDTO:
+    return await service.rollback_server(server_id, req.version, actor_id=current_user_id)
 
 
 @router.get("/servers/{server_id}", response_model=MCPServerDTO, summary="Server 详情")

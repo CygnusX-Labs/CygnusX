@@ -38,6 +38,9 @@ from omichub.application.services.agent_handoff_service import (
     AgentHandoffService,
     extract_handoff_directive,
 )
+from omichub.application.services.parallel_subagent_service import (
+    PARALLEL_SUBAGENTS_TOOL_NAME,
+)
 from omichub.application.services.mas_plan_adapter import (
     MAS_PLAN_PREVIEW_PROMPT_SUFFIX,
     MAS_PLAN_PREVIEW_TOOL_NAME,
@@ -157,10 +160,18 @@ def _normalize_ask_questions(args: dict[str, Any]) -> list[dict[str, Any]]:
     """ask_user 参数归一化为问题列表（最多 5 个）。
 
     优先取 questions[]（多问题分页收集），兼容单问题 question+options；
+    模型偶尔把 questions 数组序列化成 JSON 字符串传来，先尝试解析还原；
     模型未给出有效问题时兜底一个空问题，前端据此渲染自由输入，保证用户总能回复。
     """
     questions: list[dict[str, Any]] = []
     raw = args.get("questions")
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except (ValueError, TypeError):
+            parsed = None
+        if isinstance(parsed, list):
+            raw = parsed
     if isinstance(raw, list):
         for item in raw:
             if not isinstance(item, dict):
@@ -235,6 +246,33 @@ WEB_SEARCH_TOOL = {
     },
 }
 
+# 知识库检索：普通聊天同样挂载（Studio 由 STUDIO_TOOL_SCHEMAS 携带），
+# 让 Agent 能检索平台知识库（含用户个人笔记/实验经验文档）再作答。
+KNOWLEDGE_SEARCH_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "knowledge_search",
+        "description": (
+            "检索平台知识库（含用户个人笔记与实验经验文档），返回标题、分类和短摘录。"
+            "涉及单细胞/生信分析流程、参数阈值、实验经验或平台使用方法的问题，先查知识库再回答。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "知识检索关键词"},
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 8,
+                    "description": "最多返回条数，缺省 5",
+                },
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 FRESHNESS_SEARCH_TRIGGERS = (
     "实时",
     "最新",
@@ -285,6 +323,22 @@ HANDOFF_SYSTEM_PROMPT_SUFFIX = """## Agent 转交协议
 当用户当前任务已进入明确的下一专业阶段、且你已完成自己负责的部分时，可以调用
 `transfer_to_agent` 将会话交给白名单中的下一位 Agent。交接必须包含已完成工作的摘要、
 用户后续诉求、相关 workspace 产物和约束；不要为了回避简单问题或重复工作而转交。"""
+
+ASK_USER_SYSTEM_PROMPT_SUFFIX = """## 用户澄清协议（强制）
+
+当任务缺少关键信息、存在多种可行方案、或需要用户在候选项中做选择时：
+- **必须**调用 `ask_user` 工具，通过弹窗 options 让用户点选作答，而不是等待用户手动输入。
+- **禁止**在回复正文中用纯文本罗列"方案 1 / 方案 2"或"选项 1/2/3"，让用户回复编号或文字作答。
+- `questions` 参数必须按 schema 传结构化数组，不要把 JSON 序列化成字符串。
+- 选项有推荐项时放在第一位，并在选项文本中以（推荐）标注。
+- 只有问题完全无法用预设选项表达时，才允许在正文直接提问。
+"""
+
+KNOWLEDGE_SEARCH_SYSTEM_PROMPT_SUFFIX = """## 知识库检索
+
+平台知识库已收录用户的个人笔记与实验经验文档。涉及单细胞/生信分析流程、参数阈值、
+实验经验或平台使用方法的问题，先调用 `knowledge_search` 检索再作答；
+检索不到相关内容时如实说明，不要假装查过。"""
 
 
 class ChatService:
@@ -698,8 +752,9 @@ class ChatService:
 
         返回空串表示没有可继承的历史文件。附件元数据在消息落库时写入
         metadata_json.attachments，这里只做读取与去重。
-        额外兜底：扫描该用户 chat-uploads 目录，把最近上传（含其它会话）的
-        少量文件一并列出，覆盖"上一个聊天窗口上传的数据在新窗口继续用"。
+        额外兜底：扫描该用户 chat-uploads 目录，按文件名内嵌的会话标记
+        （``.s{session_id前8位}``）找回本会话上传过、但未进入消息元数据的文件。
+        严格按会话隔离：其它会话的上传不注入，避免跨对话污染。
         """
         exclude = exclude_file_ids or set()
         result = await self._db.execute(
@@ -732,10 +787,12 @@ class ChatService:
             )
 
         if user_id:
-            recent_lines = self._collect_recent_upload_lines(user_id, seen | exclude)
+            recent_lines = self._collect_recent_upload_lines(
+                user_id, seen | exclude, session_id=session_id
+            )
             if recent_lines:
                 sections.append(
-                    "[用户最近上传的文件（含其它会话），仅供备用：仅当用户请求与这些文件相关"
+                    "[本会话最近上传的文件，仅供备用：仅当用户请求与这些文件相关"
                     "或用户明确引用时才可使用；与当前请求无关时忽略，不要主动读取、检查或提及。"
                     "纯代码编写/概念问答类请求无需任何数据文件]\n"
                     + "\n".join(recent_lines)
@@ -745,17 +802,26 @@ class ChatService:
 
     @staticmethod
     def _collect_recent_upload_lines(
-        user_id: str, skip_file_ids: set[str], limit: int = 5
+        user_id: str, skip_file_ids: set[str], session_id: str = "", limit: int = 5
     ) -> list[str]:
-        """扫描用户 chat-uploads 目录，返回最近上传文件的引用行（按修改时间倒序）。"""
+        """扫描用户 chat-uploads 目录，返回本会话最近上传文件的引用行（按修改时间倒序）。
+
+        聊天上传文件名内嵌会话标记（``.s{session_id前8位}``）；给了 session_id 时
+        只保留带本会话标记的文件，其它会话的上传一律不注入（会话隔离）。
+        """
         from omichub.infrastructure.config.storage_config import get_user_chat_upload_dir
 
         upload_dir = get_user_chat_upload_dir(user_id)
         if not upload_dir.is_dir():
             return []
+        session_marker = f".s{session_id[:8]}" if session_id else ""
         try:
             recent = sorted(
-                (p for p in upload_dir.iterdir() if p.is_file()),
+                (
+                    p
+                    for p in upload_dir.iterdir()
+                    if p.is_file() and (not session_marker or session_marker in p.name)
+                ),
                 key=lambda p: p.stat().st_mtime,
                 reverse=True,
             )
@@ -1444,6 +1510,12 @@ class ChatService:
             t.get("function", {}).get("name") == "ask_user" for t in tools
         ):
             tools.append(ASK_USER_TOOL_SCHEMA)
+        # 知识库检索在普通聊天同样可用（Studio 由 STUDIO_TOOL_SCHEMAS 携带），
+        # 让 Agent 能检索平台知识库（含用户个人笔记/实验经验文档）再作答。
+        if not studio_mode and supports_function_tools and not any(
+            t.get("function", {}).get("name") == "knowledge_search" for t in tools
+        ):
+            tools.append(KNOWLEDGE_SEARCH_TOOL)
         system_prompt = ctx.system_prompt or None
         if any(
             tool.get("function", {}).get("name") in MEMORY_TOOL_NAMES
@@ -1464,6 +1536,26 @@ class ChatService:
                 f"{system_prompt}\n\n{HANDOFF_SYSTEM_PROMPT_SUFFIX}"
                 if system_prompt
                 else HANDOFF_SYSTEM_PROMPT_SUFFIX
+            )
+        if not studio_mode and any(
+            tool.get("function", {}).get("name") == "ask_user"
+            for tool in tools
+            if isinstance(tool, dict)
+        ):
+            system_prompt = (
+                f"{system_prompt}\n\n{ASK_USER_SYSTEM_PROMPT_SUFFIX}"
+                if system_prompt
+                else ASK_USER_SYSTEM_PROMPT_SUFFIX
+            )
+        if not studio_mode and any(
+            tool.get("function", {}).get("name") == "knowledge_search"
+            for tool in tools
+            if isinstance(tool, dict)
+        ):
+            system_prompt = (
+                f"{system_prompt}\n\n{KNOWLEDGE_SEARCH_SYSTEM_PROMPT_SUFFIX}"
+                if system_prompt
+                else KNOWLEDGE_SEARCH_SYSTEM_PROMPT_SUFFIX
             )
         if self._db is not None:
             try:
@@ -1579,6 +1671,17 @@ class ChatService:
             target_servers = [] if effective_mcp_mode == "off" else list(target_ctx.mcp_servers or [])
             target_tools = list(target_ctx.tools or []) + list(base_tools)
             target_prompt = target_ctx.system_prompt or ""
+            # 与主路径一致：ask_user 澄清弹窗兜底挂载，多选项澄清走弹窗而非纯文本罗列
+            if supports_function_tools and not any(
+                t.get("function", {}).get("name") == "ask_user" for t in target_tools
+            ):
+                target_tools.append(ASK_USER_TOOL_SCHEMA)
+            if any(
+                item.get("function", {}).get("name") == "ask_user"
+                for item in target_tools
+                if isinstance(item, dict)
+            ):
+                target_prompt = f"{target_prompt}\n\n{ASK_USER_SYSTEM_PROMPT_SUFFIX}".strip()
             if any(
                 item.get("function", {}).get("name") in MEMORY_TOOL_NAMES
                 for item in target_tools
@@ -1747,6 +1850,8 @@ class ChatService:
             for _round in range(max_rounds):
                 round_text = ""
                 round_tool_calls: list[dict[str, Any]] = []
+                # 父单轮工具回合内 fan-out 调用计数（subagent_max_children_per_message 护栏）
+                subagent_calls_this_round = 0
 
                 async for chunk in provider_manager.chat_stream(
                     config=model_config,
@@ -1861,6 +1966,7 @@ class ChatService:
                         mas_plan_tool_enabled and tool_name == MAS_PLAN_PREVIEW_TOOL_NAME
                     )
                     is_handoff_tool = (not studio_mode) and tool_name == HANDOFF_TOOL_NAME
+                    is_subagent_tool = (not studio_mode) and tool_name == PARALLEL_SUBAGENTS_TOOL_NAME
                     # Skills 三层渐进式披露内部工具（非 Studio；Studio 走 capability_load 机制）
                     is_skill_tool = (not studio_mode) and tool_name in SKILL_TOOL_NAMES
 
@@ -1871,6 +1977,7 @@ class ChatService:
                         and not is_mas_plan_tool
                         and not is_skill_tool
                         and not is_handoff_tool
+                        and not is_subagent_tool
                     ):
                         server = next(
                             (
@@ -1887,6 +1994,8 @@ class ChatService:
                         if is_mas_plan_tool
                         else "handoff"
                         if is_handoff_tool
+                        else "subagents"
+                        if is_subagent_tool
                         else "skills"
                         if is_skill_tool
                         else "studio"
@@ -1921,6 +2030,73 @@ class ChatService:
                             "success": bool(bridge_result.get("success")),
                             "result": bridge_result,
                         }
+                    elif is_subagent_tool:
+                        # 并行子 Agent fan-out：mas_plan_preview 同款特判直调，不经
+                        # ToolBridge._package（其 llm_payload 3KB 上限会截断汇总结果）
+                        if (
+                            subagent_calls_this_round
+                            >= get_settings().subagent_max_children_per_message
+                        ):
+                            limit_error = "本轮已执行过子 Agent 并行分派，请先消化汇总结果再决定下一步"
+                            result = {
+                                "success": False,
+                                "result": {
+                                    "llm_payload": {"success": False, "error": limit_error},
+                                    "ui_payload": {"error": limit_error},
+                                },
+                            }
+                        else:
+                            subagent_calls_this_round += 1
+                            fanout_tasks = [
+                                item for item in (args.get("tasks") or []) if isinstance(item, dict)
+                            ]
+                            yield ChatChunk(
+                                type="subagents",
+                                metadata={
+                                    "phase": "started",
+                                    "tool_call_id": tc.get("id", ""),
+                                    "tasks": [
+                                        {
+                                            "index": fanout_index,
+                                            "agent_id": str(item.get("agent_id") or ""),
+                                            "task": str(item.get("task") or "")[:120],
+                                        }
+                                        for fanout_index, item in enumerate(fanout_tasks, start=1)
+                                    ],
+                                },
+                            )
+                            from omichub.application.services.parallel_subagent_tool_service import (
+                                ParallelSubAgentToolService,
+                            )
+
+                            fanout_envelope = await ParallelSubAgentToolService().run_parallel_subagents(
+                                context_summary=str(args.get("context_summary") or ""),
+                                tasks=fanout_tasks,
+                                context=tool_context,
+                            )
+                            result = {
+                                "success": bool(fanout_envelope.get("success")),
+                                "result": {
+                                    "llm_payload": fanout_envelope.get("llm_payload"),
+                                    "ui_payload": fanout_envelope.get("ui_payload"),
+                                },
+                            }
+                            yield ChatChunk(
+                                type="subagents",
+                                metadata={
+                                    "phase": "aggregated",
+                                    "tool_call_id": tc.get("id", ""),
+                                    "success": bool(fanout_envelope.get("success")),
+                                    "summary": str(
+                                        (fanout_envelope.get("llm_payload") or {}).get("summary")
+                                        or ""
+                                    ),
+                                    "progress": (fanout_envelope.get("ui_payload") or {}).get(
+                                        "progress"
+                                    )
+                                    or [],
+                                },
+                            )
                     elif is_skill_tool:
                         # L2 use_skill / L3 skill_resource：按需加载技能正文与资源
                         result = await self._execute_skill_tool(
@@ -2126,7 +2302,9 @@ class ChatService:
                                 else:
                                     result = item
                     elif server is None:
-                        if tool_name == "web_search":
+                        if tool_name == "knowledge_search":
+                            result = await self._knowledge_search_chat(args)
+                        elif tool_name == "web_search":
                             query = str(args.get("query") or "")
                             yield ChatChunk(
                                 type="web_search",
@@ -2223,8 +2401,9 @@ class ChatService:
                             {"tool_invocations": studio_invocations, "timeline": timeline},
                         )
                     llm_content = json.dumps(llm_result, ensure_ascii=False, default=str)
-                    # 技能正文（L2）允许更长回灌，其余工具结果保持 4000 字符护栏
-                    llm_limit = 24000 if is_skill_tool else 4000
+                    # 技能正文（L2）允许更长回灌；fan-out 汇总含多个子任务结论放宽到 12000；
+                    # 其余工具结果保持 4000 字符护栏
+                    llm_limit = 24000 if is_skill_tool else 12000 if is_subagent_tool else 4000
                     if len(llm_content) > llm_limit:
                         llm_content = llm_content[:llm_limit]
                     llm_messages.append(
@@ -2385,8 +2564,10 @@ class ChatService:
         """LangGraph 引擎路径：状态图驱动 ReAct 循环，事件协议与手写循环一致
 
         tool_executor 复刻 legacy 非 Studio 工具路由：技能内部工具（use_skill /
-        skill_resource）→ self._execute_skill_tool；MCP server 匹配 →
-        MCPClient.call_tool；web_search → self._web_search；未挂载 → 报错信封。
+        skill_resource）→ self._execute_skill_tool；ask_user → 澄清信封（图经
+        state["ask_request"] 收尾，由本函数产出 ask_request 事件）；knowledge_search →
+        self._knowledge_search_chat；MCP server 匹配 → MCPClient.call_tool；
+        web_search → self._web_search；未挂载 → 报错信封。
         """
         runtime_state: dict[str, Any] = {
             "model_config": model_config,
@@ -2443,6 +2624,23 @@ class ChatService:
                 }
             if tool_name in SKILL_TOOL_NAMES:
                 return await self._execute_skill_tool(tool_name, args, runtime_state["skills"])
+            if tool_name == "ask_user":
+                # 与 legacy stop_after_tools 同一信封；图经 state["ask_request"]
+                # 结束后由下方产出 ask_request 事件并收尾本轮。
+                questions = _normalize_ask_questions(args)
+                first = questions[0]
+                ask_payload: dict[str, Any] = {
+                    "questions": questions,
+                    "question": first["question"],
+                    "options": first["options"],
+                    "message": "问题已展示给用户，用户将在下一条消息中回答。本轮回复到此结束，请等待用户答复。",
+                }
+                return {
+                    "success": True,
+                    "result": {"llm_payload": ask_payload, "ui_payload": dict(ask_payload)},
+                }
+            if tool_name == "knowledge_search":
+                return await self._knowledge_search_chat(args)
             if tool_name == "web_search":
                 result = await self._web_search(args)
                 search_payload = result.get("result") if isinstance(result, dict) else None
@@ -2516,6 +2714,23 @@ class ChatService:
                         yield chunk
 
                 accumulated_usage = merge_token_usage(accumulated_usage, runtime.last_usage)
+                # ask_user 澄清：问题经 ask_request 事件展示给用户，收尾本轮，
+                # 等用户下一条消息回答（对齐 legacy stop_after_tools 语义）。
+                ask_request = runtime.last_ask_request
+                if ask_request is not None:
+                    questions = _normalize_ask_questions(ask_request.get("args") or {})
+                    first = questions[0]
+                    yield ChatChunk(
+                        type="ask_request",
+                        metadata={
+                            "tool_call_id": ask_request.get("tool_call_id", ""),
+                            "questions": questions,
+                            # 兼容旧前端：首问题的平铺字段
+                            "question": first["question"],
+                            "options": first["options"],
+                        },
+                    )
+                    break
                 directive = runtime.last_handoff
                 if directive is None:
                     break
@@ -2918,6 +3133,16 @@ class ChatService:
         except Exception as exc:  # noqa: BLE001
             logger.warning("联网搜索工具调用失败: %s", exc)
             return {"success": False, "error": "联网搜索失败，已跳过搜索结果"}
+
+    async def _knowledge_search_chat(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """普通聊天的知识库检索：复用 Studio 工具实现（只检索已发布文档的当前修订）。"""
+        from omichub.application.services.studio_tools import _knowledge_search
+
+        try:
+            return await _knowledge_search(arguments, self._db)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("知识库检索工具调用失败: %s", exc)
+            return {"success": False, "error": "知识库检索失败，已跳过"}
 
     # --- 助手管理 ---
 

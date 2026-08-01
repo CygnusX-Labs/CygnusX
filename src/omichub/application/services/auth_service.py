@@ -107,12 +107,16 @@ class AuthService:
         # 哈希密码
         hashed_pwd = hash_password(req.password)
 
+        # 注册表 default_locked: true 的模块，新用户默认锁定
+        from omichub.infrastructure.config.module_registry import get_module_registry
+
         # 创建用户实体 — 默认 pending 状态，需管理员审批
         user = User(
             username=req.username,
             email=req.email,
             hashed_password=hashed_pwd,
             lab_group=req.lab_group,
+            disabled_modules=get_module_registry().default_locked_keys(),
         )
         user.status = UserStatus.PENDING
 

@@ -419,7 +419,7 @@ onUnmounted(() => {
   width: 38px; height: 38px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0;
   color: #fff;
-  background: linear-gradient(120deg, #1E6FFF 0%, #4F6DF5 45%, #8B5CF6 100%);
+  background: var(--agent-hero-gradient);
   box-shadow: 0 2px 8px rgba(79, 109, 245, 0.35);
 }
 .id-meta { min-width: 0; }
@@ -486,7 +486,7 @@ onUnmounted(() => {
   gap: 16px;
   margin: 16px 24px 0;
   padding: 24px 32px;
-  background: linear-gradient(120deg, #1E6FFF 0%, #4F6DF5 45%, #8B5CF6 100%);
+  background: var(--agent-hero-gradient);
   border: none;
   border-radius: 16px;
   box-shadow: var(--shadow-card);

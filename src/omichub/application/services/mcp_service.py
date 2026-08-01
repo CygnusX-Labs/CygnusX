@@ -2,29 +2,55 @@
 
 from __future__ import annotations
 
+import asyncio
+from functools import cmp_to_key
 from typing import Any
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.mcp import (
     CreateMCPServerDTO,
     MCPLogEntryDTO,
     MCPServerDTO,
+    MCPServerVersionDTO,
     MCPToolDTO,
     UpdateMCPServerDTO,
 )
 from omichub.application.schemas.tool_invocation import ToolInvocationContext
 from omichub.core.config import get_settings
-from omichub.core.exceptions import ConflictError, NotFoundError, ValidationError
+from omichub.core.exceptions import (
+    ConflictError,
+    MCPConnectionError,
+    NotFoundError,
+    ValidationError,
+)
 from omichub.domain.mcp.entities import MCPServer, MCPToolRegistry
 from omichub.domain.mcp.services import MCPDomainService
 from omichub.domain.mcp.value_objects import ServerStatus, Transport
+from omichub.infrastructure.database.models.mcp_builder import MCPVersionModel
 from omichub.infrastructure.database.models.mcp_log import MCPLogModel
 from omichub.infrastructure.database.repositories.mcp_repository import (
     SqlAlchemyMCPServerRepository,
 )
-from omichub.infrastructure.mcp.client import MCPClient, validate_sse_url, validate_stdio_command
+from omichub.infrastructure.mcp.builder.versioning import (
+    CONFIG_SNAPSHOT_FIELDS as _CONFIG_SNAPSHOT_FIELDS,
+)
+from omichub.infrastructure.mcp.builder.versioning import (
+    compare_versions,
+    is_valid_semver,
+    parse_semver,
+)
+from omichub.infrastructure.mcp.builder.versioning import (
+    extract_config_snapshot as _config_snapshot,
+)
+from omichub.infrastructure.mcp.client import (
+    MCPClient,
+    validate_sse_url,
+    validate_stdio_command,
+    validate_working_dir,
+)
 from omichub.infrastructure.mcp.presets import (
     OMICHUB_PIPELINES_SERVER_ID,
     OMICHUB_PIPELINES_SERVER_NAME,
@@ -35,6 +61,47 @@ from omichub.infrastructure.mcp.presets import (
     _build_omichub_tools_preset,
     get_preset_by_name,
 )
+
+#: 启停/状态类噪音字段：仅这些字段变化时不打配置快照、不 bump 版本
+_NOISE_UPDATE_FIELDS = frozenset({"is_enabled", "status", "tools"})
+
+#: 连接类字段：变更后需重新发现工具，保证 Agent 侧工具清单与新连接一致
+_CONNECTION_FIELDS = frozenset(
+    {"transport", "command", "args", "url", "env", "working_dir", "registry"}
+)
+
+#: 注册/更新后自动发现工具的最长等待（秒）：挂死的 server 不能拖住管理端请求
+_AUTODISCOVER_TIMEOUT = 15.0
+
+
+def _enum_str(value: Any, fallback: str) -> str:
+    """枚举/字符串统一取枚举值；None 时回退默认"""
+    if value is None:
+        return fallback
+    return value.value if hasattr(value, "value") else str(value)
+
+
+async def next_patch_version(db: AsyncSession, server: MCPServer) -> str:
+    """在 server 当前最大版本（含历史版本行）上 bump patch，保证 (server, version) 唯一。
+
+    无法解析任何版本号时从 1.0.0 起算。MCPService 与 MCPBuilderService 共用，
+    保证两条版本管理路径的版本号递进口径一致。
+    """
+    result = await db.execute(
+        select(MCPVersionModel.version).where(
+            MCPVersionModel.mcp_server_id == server.id
+        )
+    )
+    candidates = [
+        v
+        for v in [server.current_version, *result.scalars().all()]
+        if is_valid_semver(v)
+    ]
+    if not candidates:
+        return "1.0.0"
+    base = max(candidates, key=cmp_to_key(compare_versions))
+    major, minor, patch, _pre = parse_semver(base)
+    return f"{major}.{minor}.{patch + 1}"
 
 
 def _server_to_dto(s: MCPServer) -> MCPServerDTO:
@@ -49,7 +116,12 @@ def _server_to_dto(s: MCPServer) -> MCPServerDTO:
         env=dict(s.env or {}),
         registry=s.registry,
         working_dir=s.working_dir,
-        version=s.version,
+        # 遗留 version 字段兜底读 current_version，保证前端版本标签可见
+        version=s.version or s.current_version,
+        current_version=s.current_version,
+        pool=_enum_str(s.pool, "production"),
+        review_status=_enum_str(s.review_status, "approved"),
+        expires_at=s.expires_at,
         status=s.status.value if hasattr(s.status, "value") else str(s.status),
         is_enabled=s.is_enabled,
         timeout=s.timeout,
@@ -187,6 +259,7 @@ class MCPService:
         if transport == Transport.STDIO:
             try:
                 validate_stdio_command(req.command or "")
+                validate_working_dir(req.working_dir)
             except ValueError as exc:
                 raise ValidationError(str(exc)) from exc
         elif transport in (Transport.SSE, Transport.STREAMABLE_HTTP):
@@ -211,17 +284,39 @@ class MCPService:
             is_preset=False,
         )
         server = await self._domain.register_server(server)
+        # 注册后即时发现工具（热加载）：新 MCP 立刻进入 Agent 可用工具清单，
+        # 无需重启容器或手工点「测试」。发现失败不阻断注册（保留离线/错误状态 + 日志）。
+        await self._autodiscover_tools(server.id, action="注册")
+        server = await self._repo.get_by_id(server.id) or server
+        # 写入初始版本快照：注册即产生 v1.0.0 历史记录，版本历史不为空
+        await self._snapshot_config_version(
+            server,
+            source="register",
+            changelog="注册 MCP Server（初始配置）",
+        )
         return _server_to_dto(server)
 
     async def delete_server(self, server_id: UUID) -> bool:
         return await self._repo.delete(server_id)
 
-    async def update_server(self, server_id: UUID, req: UpdateMCPServerDTO) -> MCPServerDTO:
-        """更新 MCP Server 配置"""
+    async def update_server(
+        self,
+        server_id: UUID,
+        req: UpdateMCPServerDTO,
+        actor_id: UUID | str | None = None,
+    ) -> MCPServerDTO:
+        """更新 MCP Server 配置（配置类变更自动打版本快照）"""
         server = await self._repo.get_by_id(server_id)
         if server is None:
             raise NotFoundError("MCP Server 不存在")
         data = req.model_dump(exclude_unset=True)
+        # DTO 中 transport 是字符串，直接 setattr 会污染实体的枚举类型，
+        # 导致仓储 save() 取 s.transport.value 时报 AttributeError
+        if data.get("transport") is not None:
+            try:
+                data["transport"] = Transport(data["transport"])
+            except ValueError as exc:
+                raise ValidationError(f"不支持的传输方式: {data['transport']}") from exc
         for key, value in data.items():
             setattr(server, key, value)
         # 校验更新后的配置
@@ -229,6 +324,7 @@ class MCPService:
         if transport == Transport.STDIO:
             try:
                 validate_stdio_command(server.command or "")
+                validate_working_dir(server.working_dir)
             except ValueError as exc:
                 raise ValidationError(str(exc)) from exc
         elif transport in (Transport.SSE, Transport.STREAMABLE_HTTP):
@@ -236,8 +332,139 @@ class MCPService:
                 validate_sse_url(server.url or "")
             except ValueError as exc:
                 raise ValidationError(str(exc)) from exc
+        # 仅启停/状态噪音字段变更时不打快照
+        changed_fields = sorted(set(data) - _NOISE_UPDATE_FIELDS)
+        if changed_fields:
+            server.current_version = await self._next_patch_version(server)
+            server.version = server.current_version  # 同步遗留字段，保证展示一致
         await self._repo.save(server)
+        if changed_fields:
+            await self._snapshot_config_version(
+                server,
+                source="admin",
+                changelog=f"管理员更新配置：{', '.join(changed_fields)}",
+                actor_id=actor_id,
+            )
+        # 连接类配置变更后重新发现工具，保证工具清单跟随新连接热更新
+        if set(data) & _CONNECTION_FIELDS:
+            await self._autodiscover_tools(server_id, action="更新")
+            server = await self._repo.get_by_id(server_id) or server
         return _server_to_dto(server)
+
+    async def list_server_versions(self, server_id: UUID) -> list[MCPServerVersionDTO]:
+        """MCP Server 版本历史（按创建时间倒序）
+
+        历史版本行为空时（如版本控制上线前注册的存量 server），按当前配置
+        懒回填一条初始快照，保证版本历史与展示的版本号一致。
+        """
+        server = await self._repo.get_by_id(server_id)
+        if server is None:
+            raise NotFoundError("MCP Server 不存在")
+
+        async def _query_rows() -> list[MCPVersionModel]:
+            result = await self._db.execute(
+                select(MCPVersionModel)
+                .where(MCPVersionModel.mcp_server_id == server_id)
+                .order_by(MCPVersionModel.created_at.desc())
+            )
+            return list(result.scalars().all())
+
+        rows = await _query_rows()
+        if not rows:
+            await self._snapshot_config_version(
+                server,
+                source="register",
+                changelog="注册 MCP Server（初始配置）",
+            )
+            await self._db.flush()
+            rows = await _query_rows()
+        return [
+            MCPServerVersionDTO(
+                id=v.id,
+                version=v.version,
+                is_major=v.is_major,
+                source=v.source,
+                changelog=v.changelog,
+                created_by=v.created_by,
+                created_at=v.created_at,
+                has_config_snapshot=bool(v.config_snapshot),
+            )
+            for v in rows
+        ]
+
+    async def rollback_server(
+        self,
+        server_id: UUID,
+        version: str,
+        actor_id: UUID | str | None = None,
+    ) -> MCPServerDTO:
+        """回滚到指定版本（任意 server 均可），回滚本身产生一条新版本记录"""
+        server = await self._repo.get_by_id(server_id)
+        if server is None:
+            raise NotFoundError("MCP Server 不存在")
+        result = await self._db.execute(
+            select(MCPVersionModel).where(
+                MCPVersionModel.mcp_server_id == server_id,
+                MCPVersionModel.version == version,
+            )
+        )
+        target = result.scalar_one_or_none()
+        if target is None:
+            raise NotFoundError(f"版本 {version} 不存在")
+        # 还原配置快照（只还原快照里有的键）
+        snapshot = target.config_snapshot or {}
+        for key, value in snapshot.items():
+            if key == "transport":
+                server.transport = Transport(value)
+            elif key in _CONFIG_SNAPSHOT_FIELDS:
+                setattr(server, key, value)
+        if target.tools_snapshot:
+            server.tools = [
+                MCPToolRegistry(
+                    tool_name=t.get("name", ""),
+                    description=t.get("description", ""),
+                    input_schema=t.get("inputSchema") or {},
+                    server_id=server.id,
+                )
+                for t in target.tools_snapshot
+            ]
+        server.current_version = target.version
+        server.version = target.version  # 同步遗留字段
+        await self._repo.save(server)
+        # 回滚本身作为一条新版本记录（版本号在当前最大版本上 bump patch，保证唯一）
+        new_version = await self._next_patch_version(server)
+        await self._snapshot_config_version(
+            server,
+            version=new_version,
+            source="rollback",
+            changelog=f"回滚到 v{target.version}",
+            actor_id=actor_id,
+        )
+        return _server_to_dto(server)
+
+    async def _autodiscover_tools(self, server_id: UUID, *, action: str) -> None:
+        """注册/更新后即时发现工具（热加载入口）.
+
+        复用 test_server 的发现 + 落库 + 日志逻辑；任何失败（连不上、超时、
+        协议错误）都只落日志、不抛异常——注册/更新主流程绝不被发现环节阻断。
+        builtin/预设的工具清单由 ensure_presets 从代码同步（热加载走
+        POST /mcp/presets/reload），不参与外部发现。
+        """
+        server = await self._repo.get_by_id(server_id)
+        if server is None or server.is_preset or server.transport == Transport.BUILTIN:
+            return
+        try:
+            await asyncio.wait_for(self.test_server(server_id), timeout=_AUTODISCOVER_TIMEOUT)
+        except TimeoutError:
+            await self._add_log(
+                server_id, "warning",
+                f"{action}后自动发现工具超时（{_AUTODISCOVER_TIMEOUT:.0f}s），可稍后手动「测试」连接",
+                "internal",
+            )
+        except Exception as e:  # noqa: BLE001
+            await self._add_log(
+                server_id, "warning", f"{action}后自动发现工具失败: {e}", "internal"
+            )
 
     async def test_server(self, server_id: UUID) -> dict[str, Any]:
         """测试连接并发现工具"""
@@ -256,7 +483,15 @@ class MCPService:
         server = await self._repo.get_by_id(server_id)
         if server is None:
             raise NotFoundError("MCP Server 不存在")
-        tools = await self._client.list_tools(server)
+        try:
+            tools = await self._client.list_tools(server)
+        except Exception as e:  # noqa: BLE001
+            # 连接/发现失败：标 error + 落日志，并抛 MCPConnectionError(503) 把真实原因回传前端，
+            # 避免「连不上却显示 online、0 工具」的误导状态。
+            server.status = ServerStatus.ERROR
+            await self._repo.save(server)
+            await self._add_log(server_id, "error", f"连接/发现工具失败: {e}", "internal")
+            raise MCPConnectionError(f"MCP Server 连接失败: {e}") from e
         # 更新存储的工具快照 + 状态
         server.tools = [
             MCPToolRegistry(
@@ -267,7 +502,9 @@ class MCPService:
             )
             for t in tools
         ]
-        await self._domain.mark_online(server.id)
+        # 直接在实体上置 online 再 save：mark_online 走 update_status 改的是同一会话身份映射里的
+        # model，紧随其后的 save() 会用实体里陈旧的 status 覆盖回 offline，导致连上了仍显示离线。
+        server.status = ServerStatus.ONLINE
         await self._repo.save(server)
         return [_tool_to_dto(t) for t in tools]
 
@@ -368,6 +605,49 @@ class MCPService:
                 level=level,
                 message=message,
                 source=source,
+            )
+        )
+        await self._db.flush()
+
+    async def _next_patch_version(self, server: MCPServer) -> str:
+        return await next_patch_version(self._db, server)
+
+    async def _snapshot_config_version(
+        self,
+        server: MCPServer,
+        *,
+        version: str | None = None,
+        source: str,
+        changelog: str,
+        actor_id: UUID | str | None = None,
+    ) -> None:
+        """写入一行配置版本快照（幂等：同 (server, version) 已存在则跳过）"""
+        version = version or server.current_version
+        existing = await self._db.execute(
+            select(MCPVersionModel).where(
+                MCPVersionModel.mcp_server_id == server.id,
+                MCPVersionModel.version == version,
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            return
+        self._db.add(
+            MCPVersionModel(
+                mcp_server_id=server.id,
+                version=version,
+                is_major=False,
+                config_snapshot=_config_snapshot(server),
+                tools_snapshot=[
+                    {
+                        "name": t.tool_name,
+                        "description": t.description,
+                        "inputSchema": t.input_schema,
+                    }
+                    for t in server.tools
+                ],
+                source=source,
+                changelog=changelog,
+                created_by=UUID(str(actor_id)) if actor_id else None,
             )
         )
         await self._db.flush()

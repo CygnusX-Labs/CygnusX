@@ -24,6 +24,7 @@ from omichub.infrastructure.celery_app.celery import celery_app  # noqa: F401
 from omichub.middleware.audit import AuditMiddleware
 from omichub.middleware.auth import AuthMiddleware
 from omichub.middleware.cookie import CookieRequiredMiddleware
+from omichub.middleware.module_gate import ModuleGateMiddleware
 from omichub.middleware.rate_limit import RateLimitMiddleware
 
 
@@ -88,6 +89,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     logger.info(f"启动 {settings.app_name} (env={settings.app_env})")
 
+    # --- 模块注册表：启动时硬校验，语法错误/key 重复/缺字段直接拒绝启动 ---
+    from omichub.infrastructure.config.module_registry import init_module_registry
+
+    registry = init_module_registry()
+    logger.info(f"模块注册表已加载，共 {len(registry.modules)} 个模块")
+
     from omichub.infrastructure.database.session import init_db
 
     # --- 第 0 步：数据库连接必须先就绪（后续步骤依赖它）---
@@ -102,7 +109,32 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             from omichub.infrastructure.sandbox import get_sandbox_pool
 
-            await get_sandbox_pool().initialize()
+            # 活跃会话绑定的容器要保留（只登记计数，不当孤儿收割/收养）
+            keep: set[str] = set()
+            try:
+                from sqlalchemy import select
+
+                from omichub.infrastructure.database.models.sandbox import (
+                    SandboxSessionModel,
+                )
+                from omichub.infrastructure.database.session import get_session_factory
+
+                factory = get_session_factory()
+                if factory is not None:
+                    async with factory() as session:
+                        rows = await session.execute(
+                            select(SandboxSessionModel.container_id).where(
+                                SandboxSessionModel.container_id.isnot(None),
+                                SandboxSessionModel.status.in_(
+                                    ["creating", "ready", "executing", "idle", "paused"]
+                                ),
+                            )
+                        )
+                        keep = {r for (r,) in rows.all() if r}
+            except Exception as e:
+                logger.warning(f"查询活跃沙盒会话失败，按无保留处理: {e}")
+
+            await get_sandbox_pool().initialize(keep_container_ids=keep)
             logger.info("沙盒容器池预热完成")
         except Exception as e:
             logger.warning(f"沙盒容器池未预热，降级运行: {e}")
@@ -265,6 +297,10 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # 模块权限拦截中间件：受管控模块 API 的授权守卫。
+    # 注册在 AuthMiddleware 之前（更内层），请求进入时 user_id 已注入 request.state。
+    app.add_middleware(ModuleGateMiddleware)
 
     # JWT 认证中间件（全局拦截，公开路径在 PUBLIC_PATHS 中配置）
     app.add_middleware(AuthMiddleware)

@@ -189,3 +189,63 @@ async def test_tool_executor_exception_yields_error_chunk() -> None:
     assert [c.type for c in chunks] == ["tool_call", "error"]
     assert "MCP 连接断开" in chunks[-1].content
     assert runtime.error == "MCP 连接断开"
+
+
+async def test_ask_user_tool_ends_current_graph_without_another_llm_round() -> None:
+    """ask_user 是澄清中断：工具回灌后结束当前图，等用户下条消息回答。
+
+    对齐 legacy 手写循环的 stop_after_tools 语义：state["ask_request"]
+    携带 tool_call_id 与原始 args，由 ChatService 产出 ask_request 事件。
+    """
+
+    async def _executor(
+        tool_name: str, args: dict[str, Any], tool_call_id: str
+    ) -> dict[str, Any]:
+        assert tool_name == "ask_user"
+        payload = {
+            "questions": args["questions"],
+            "question": args["questions"][0]["question"],
+            "options": args["questions"][0]["options"],
+            "message": "问题已展示给用户，用户将在下一条消息中回答。",
+        }
+        return {"success": True, "result": {"llm_payload": payload, "ui_payload": payload}}
+
+    ask_args = {
+        "questions": [
+            {"question": "要分析哪个文件？", "options": ["工作区已有文件", "上传新文件"]}
+        ]
+    }
+    runtime, calls = _make_runtime(
+        [[_tool_calls_chunk("ask_user", ask_args)]],
+        tool_executor=_executor,
+    )
+
+    chunks = await _collect(runtime)
+
+    assert [chunk.type for chunk in chunks] == ["tool_call", "tool_result"]
+    assert runtime.last_ask_request == {"tool_call_id": "call_1", "args": ask_args}
+    # 图立即结束，不再触发第二轮 LLM
+    assert len(calls) == 1
+
+
+async def test_ask_user_failure_does_not_interrupt_graph() -> None:
+    """ask_user 执行失败时按普通工具失败处理：回灌报错信封，循环继续。"""
+
+    async def _executor(
+        tool_name: str, args: dict[str, Any], tool_call_id: str
+    ) -> dict[str, Any]:
+        return {"success": False, "error": "工具 ask_user 未挂载到该 Agent"}
+
+    runtime, calls = _make_runtime(
+        [
+            [_tool_calls_chunk("ask_user", {"question": "？"}), ChatChunk(type="done")],
+            [ChatChunk(type="text", content="好的"), ChatChunk(type="done")],
+        ],
+        tool_executor=_executor,
+    )
+
+    chunks = await _collect(runtime)
+
+    assert [chunk.type for chunk in chunks] == ["tool_call", "tool_result", "text"]
+    assert runtime.last_ask_request is None
+    assert len(calls) == 2

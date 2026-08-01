@@ -10,7 +10,7 @@ from typing import Any, Literal, overload
 
 import anyio
 import yaml
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,9 +48,27 @@ class DocsService:
 
         合并数据库与 docs/knowledge/meta.yaml：数据库中存在的优先使用数据库状态，
         仅存在 meta.yaml 中但尚未导入数据库的文档也会显示出来。
+        仅展示所属知识库标记为 show_in_lab 的文档（如单细胞知识库不在此展示）。
         """
+        from omichub.infrastructure.database.models.knowledge_base import (
+            KnowledgeBaseModel,
+        )
+
         result = await db.execute(
-            select(KbDocumentModel).order_by(KbDocumentModel.category, KbDocumentModel.title)
+            select(KbDocumentModel)
+            .outerjoin(
+                KnowledgeBaseModel, KbDocumentModel.kb_id == KnowledgeBaseModel.id
+            )
+            .where(
+                or_(
+                    KbDocumentModel.kb_id.is_(None),
+                    and_(
+                        KnowledgeBaseModel.show_in_lab.is_(True),
+                        KnowledgeBaseModel.is_enabled.is_(True),
+                    ),
+                )
+            )
+            .order_by(KbDocumentModel.category, KbDocumentModel.title)
         )
         db_docs = {doc.doc_id: doc for doc in result.scalars().all()}
 

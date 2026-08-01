@@ -23,6 +23,7 @@ from omichub.application.schemas.mcp_builder import (
     MCPBuildDTO,
     SubmitBuildRequest,
 )
+from omichub.application.services.mcp_service import next_patch_version
 from omichub.core.config import get_settings
 from omichub.core.exceptions import AuthorizationError, NotFoundError, ValidationError
 from omichub.domain.mcp.entities import MCPServer, MCPToolRegistry
@@ -48,7 +49,12 @@ from omichub.infrastructure.mcp.builder.doc_generator import (
 )
 from omichub.infrastructure.mcp.builder.generator import MCPCodeGenerator
 from omichub.infrastructure.mcp.builder.safety import StaticSafetyChecker
-from omichub.infrastructure.mcp.builder.versioning import determine_version
+from omichub.infrastructure.mcp.builder.versioning import (
+    CONFIG_SNAPSHOT_FIELDS,
+    determine_version,
+    extract_config_snapshot,
+    parse_semver,
+)
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
@@ -137,6 +143,7 @@ class MCPBuilderService:
                     raise ValidationError(str(exc)) from exc
 
         build = MCPBuildModel(
+            id=uuid_mod.uuid4(),  # 显式分配：generation_meta 需在 flush 前引用 build_id
             user_id=uid,
             requirement=req.requirement.strip(),
             generated_code=code,
@@ -177,6 +184,7 @@ class MCPBuilderService:
             expires_at=datetime.now(timezone.utc) + timedelta(hours=ttl_hours),
             created_by=uid,
             current_version=version,
+            version=version,  # 同步遗留字段，保证列表版本标签可见
             generation_meta={
                 "build_id": str(build.id),
                 "model": model_used,
@@ -201,6 +209,10 @@ class MCPBuilderService:
         self._db.add(build)
         await self._db.flush()
         await self._db.refresh(build)
+        # 提交即落版本行：代码 + 全量配置快照入库，后续测试/审核阶段补齐工具快照
+        await self._snapshot_version(
+            server, build, changelog=f"初始构建：{build.requirement[:280]}"
+        )
         await self._log(server.id, "info",
                         f"实验 MCP 已注册: {name} v{version} (TTL {ttl_hours}h)", uid)
         logger.info(f"[MCPBuilder] 用户 {uid} 注册实验 MCP {name} v{version}")
@@ -488,10 +500,15 @@ class MCPBuilderService:
         if server.is_expired():
             raise ValidationError("该实验 MCP 已过期，请续期后调用")
 
-        code = (server.generation_meta or {}).get("code_path", "")
-        # 确保代码在沙箱内（构建产物随会话工作区持久化；缺失时从构建记录恢复）
+        code_path = (server.generation_meta or {}).get("code_path") or \
+            f"mcp-builds/{server.name.removeprefix('exp-')}/server.py"
+        # 按当前生效版本取代码并写回沙箱：回滚/多会话场景下保证运行的
+        # 始终是 current_version 对应的代码，而不是工作区里的历史残留
+        code = await self._version_code(server, server.current_version)
+        if code:
+            await studio_sandbox_manager.write_file(session_id, code_path, code)
         started = await studio_sandbox_manager.start_mcp_server(
-            session_id, code or f"mcp-builds/{server.name.removeprefix('exp-')}/server.py",
+            session_id, code_path,
             server_id=f"exp-{str(server.id)[:8]}",
         )
         try:
@@ -505,6 +522,68 @@ class MCPBuilderService:
                 pass
         await self._log(server.id, "info", f"工具调用: {tool}", UUID(str(user_id)))
         return result
+
+    async def promote_server(self, server_id: str, actor_id: str) -> dict[str, Any]:
+        """实验 MCP 转正：pool experimental → production.
+
+        转正后清除 TTL 永久有效，打一条 ``source=publish`` 版本行归档
+        （携带当前生效版本的代码快照），并写审计日志。仅 Admin 可调用
+        （权限由 API 层把关）；开启审核的平台要求实验 MCP 先通过审核。
+        """
+        server = await self._repo.get_by_id(UUID(str(server_id)))
+        if server is None:
+            raise NotFoundError(f"MCP Server 不存在: {server_id}")
+        if server.pool != ServerPool.EXPERIMENTAL:
+            raise ValidationError("仅实验池 MCP 可转正")
+        review_value = (
+            server.review_status.value
+            if hasattr(server.review_status, "value") else str(server.review_status)
+        )
+        if (
+            self._settings.mcp_builder_requires_review
+            and review_value != ReviewStatus.APPROVED.value
+        ):
+            raise ValidationError("实验 MCP 须通过审核后方可转正")
+
+        # 先归档当前生效版本的代码，再切换池与版本号
+        publish_code = await self._version_code(server, server.current_version)
+        old_version = server.current_version
+        server.pool = ServerPool.PRODUCTION
+        server.expires_at = None
+        server.is_enabled = True
+        new_version = await next_patch_version(self._db, server)
+        server.current_version = new_version
+        server.version = new_version  # 同步遗留字段
+        await self._repo.save(server)
+
+        self._db.add(MCPVersionModel(
+            mcp_server_id=server.id,
+            version=new_version,
+            is_major=False,
+            code_snapshot=publish_code,
+            tools_snapshot=[
+                {"name": t.tool_name, "description": t.description,
+                 "inputSchema": t.input_schema}
+                for t in server.tools
+            ],
+            config_snapshot=extract_config_snapshot(server),
+            source="publish",
+            changelog=f"转正发布：experimental → production（基于 v{old_version}）",
+            created_by=UUID(str(actor_id)),
+        ))
+        await self._db.flush()
+        await self._log(
+            server.id, "info",
+            f"转正发布: {server.name} v{new_version}（experimental → production）",
+            UUID(str(actor_id)),
+        )
+        logger.info(f"[MCPBuilder] 实验 MCP {server.name} 转正为 v{new_version}（actor={actor_id}）")
+        return {
+            "id": str(server.id),
+            "name": server.name,
+            "pool": ServerPool.PRODUCTION.value,
+            "current_version": new_version,
+        }
 
     async def expire_stale_servers(self) -> int:
         """Celery 定时任务入口：下线过期实验 MCP。返回处理数量。"""
@@ -541,6 +620,10 @@ class MCPBuilderService:
                 "version": v.version,
                 "version_tag": v.version_tag,
                 "is_major": v.is_major,
+                "source": v.source,
+                "has_config_snapshot": bool(v.config_snapshot),
+                "has_code_snapshot": bool(v.code_snapshot),
+                "build_id": str(v.build_id) if v.build_id else None,
                 "changelog": v.changelog,
                 "created_by": str(v.created_by) if v.created_by else None,
                 "created_at": v.created_at.isoformat() if v.created_at else None,
@@ -550,6 +633,17 @@ class MCPBuilderService:
 
     async def rollback(self, server_id: str, target_version: str, user_id: str,
                        is_admin: bool = False) -> dict[str, Any]:
+        """回滚实验 MCP 到指定版本.
+
+        与 admin 路径对齐的完整回滚：
+        1. 还原目标版本的 ``config_snapshot``（连接/行为配置）；
+        2. 还原 ``tools_snapshot``；
+        3. 切换代码指针——``generation_meta.build_id`` 指向目标版本的构建，
+           下次沙箱调用时 ``call_experimental_tool`` 会按 ``current_version``
+           把对应 ``code_snapshot`` 写回沙箱再启动，回滚后的代码真实生效；
+        4. 回滚本身记一条 ``source=rollback`` 新版本行（版本号在最大版本上
+           bump patch，保证唯一），与 admin 回滚口径一致。
+        """
         server = await self._require_experimental(UUID(str(server_id)))
         if not is_admin and str(server.created_by) != str(user_id):
             raise AuthorizationError("无权回滚该实验 MCP")
@@ -559,11 +653,19 @@ class MCPBuilderService:
                 MCPVersionModel.version == target_version,
             )
         )
-        version = result.scalar_one_or_none()
-        if version is None:
+        target = result.scalar_one_or_none()
+        if target is None:
             raise NotFoundError(f"版本 {target_version} 不存在")
-        server.current_version = target_version
-        if version.tools_snapshot:
+
+        # 1. 还原配置快照（只还原快照里有的键，与 admin 路径一致）
+        snapshot = target.config_snapshot or {}
+        for key, value in snapshot.items():
+            if key == "transport":
+                server.transport = Transport(value)
+            elif key in CONFIG_SNAPSHOT_FIELDS:
+                setattr(server, key, value)
+        # 2. 还原工具快照
+        if target.tools_snapshot:
             server.tools = [
                 MCPToolRegistry(
                     tool_name=t.get("name", ""),
@@ -571,15 +673,75 @@ class MCPBuilderService:
                     input_schema=t.get("inputSchema") or {},
                     server_id=server.id,
                 )
-                for t in version.tools_snapshot
+                for t in target.tools_snapshot
             ]
+        # 3. 切换代码指针到目标版本的构建
+        meta = dict(server.generation_meta or {})
+        if target.build_id:
+            meta["build_id"] = str(target.build_id)
+        meta["rolled_back_to"] = target_version
+        server.generation_meta = meta
+        server.current_version = target_version
+        server.version = target_version  # 同步遗留字段
         await self._repo.save(server)
-        await self._log(server.id, "info", f"回滚到 v{target_version}", UUID(str(user_id)))
-        return {"id": str(server.id), "current_version": target_version}
+
+        # 4. 回滚本身作为一条新版本记录
+        new_version = await next_patch_version(self._db, server)
+        self._db.add(MCPVersionModel(
+            mcp_server_id=server.id,
+            build_id=target.build_id,
+            version=new_version,
+            is_major=False,
+            code_snapshot=target.code_snapshot or "",
+            tools_snapshot=[
+                {"name": t.tool_name, "description": t.description,
+                 "inputSchema": t.input_schema}
+                for t in server.tools
+            ],
+            config_snapshot=extract_config_snapshot(server),
+            source="rollback",
+            changelog=f"回滚到 v{target_version}",
+            created_by=UUID(str(user_id)),
+        ))
+        await self._db.flush()
+        await self._log(server.id, "info",
+                        f"回滚到 v{target_version}（生成 v{new_version} 记录）",
+                        UUID(str(user_id)))
+        return {
+            "id": str(server.id),
+            "current_version": target_version,
+            "rollback_version": new_version,
+        }
 
     # ------------------------------------------------------------------
     # 内部工具
     # ------------------------------------------------------------------
+    async def _version_code(self, server: MCPServer, version: str | None) -> str:
+        """取指定版本的代码：版本行 code_snapshot 优先，缺失时回退到构建记录."""
+        if not version:
+            return ""
+        result = await self._db.execute(
+            select(MCPVersionModel).where(
+                MCPVersionModel.mcp_server_id == server.id,
+                MCPVersionModel.version == version,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row and row.code_snapshot:
+            return row.code_snapshot
+        build_id = row.build_id if row else None
+        if build_id is None:
+            raw = (server.generation_meta or {}).get("build_id")
+            try:
+                build_id = UUID(str(raw)) if raw else None
+            except ValueError:
+                build_id = None
+        if build_id:
+            build = await self._db.get(MCPBuildModel, build_id)
+            if build and build.generated_code:
+                return build.generated_code
+        return ""
+
     async def _check_quota(self, uid: UUID) -> None:
         active = await self._db.execute(
             select(func.count())
@@ -623,27 +785,60 @@ class MCPBuilderService:
             raise ValidationError("该操作仅适用于实验池 MCP")
         return server
 
-    async def _snapshot_version(self, server: MCPServer, build: MCPBuildModel) -> None:
-        existing = await self._db.execute(
+    async def _snapshot_version(
+        self,
+        server: MCPServer,
+        build: MCPBuildModel,
+        *,
+        source: str = "builder",
+        changelog: str | None = None,
+    ) -> None:
+        """写入/补齐一条 builder 版本快照.
+
+        与 admin 路径对齐：同时落 ``code_snapshot`` + ``tools_snapshot`` +
+        ``config_snapshot``，使该版本既可经 builder 路径也可经 admin 路径回滚。
+        同一 (server, version) 行已存在时（submit 阶段先创建、test/review 阶段
+        工具发现后补齐）做增量补齐而非跳过，保证最终快照信息完整。
+        """
+        version = build.version or "1.0.0"
+        tools_snapshot = [
+            {"name": t.tool_name, "description": t.description,
+             "inputSchema": t.input_schema}
+            for t in server.tools
+        ]
+        config_snapshot = extract_config_snapshot(server)
+        result = await self._db.execute(
             select(MCPVersionModel).where(
                 MCPVersionModel.mcp_server_id == server.id,
-                MCPVersionModel.version == (build.version or "1.0.0"),
+                MCPVersionModel.version == version,
             )
         )
-        if existing.scalar_one_or_none():
+        existing = result.scalar_one_or_none()
+        if existing is not None:
+            if not existing.code_snapshot and build.generated_code:
+                existing.code_snapshot = build.generated_code
+            if tools_snapshot:
+                existing.tools_snapshot = tools_snapshot
+            existing.config_snapshot = config_snapshot
+            if changelog and not existing.changelog:
+                existing.changelog = changelog
+            await self._db.flush()
             return
+        try:
+            major, _minor, _patch, _pre = parse_semver(version)
+            is_major = major > 1
+        except ValueError:
+            is_major = False
         self._db.add(MCPVersionModel(
             mcp_server_id=server.id,
             build_id=build.id,
-            version=build.version or "1.0.0",
-            is_major=(build.version or "1.0.0").startswith(("2.", "3.", "4.", "5.")),
+            version=version,
+            is_major=is_major,
             code_snapshot=build.generated_code or "",
-            tools_snapshot=[
-                {"name": t.tool_name, "description": t.description,
-                 "inputSchema": t.input_schema}
-                for t in server.tools
-            ],
-            changelog=build.requirement[:300],
+            tools_snapshot=tools_snapshot,
+            config_snapshot=config_snapshot,
+            source=source,
+            changelog=changelog or build.requirement[:300],
             created_by=build.user_id,
         ))
         await self._db.flush()

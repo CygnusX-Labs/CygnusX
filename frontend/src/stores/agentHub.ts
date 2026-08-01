@@ -21,7 +21,9 @@ import type {
   McpLogEntry,
   McpService,
   McpTool,
+  McpVersion,
   SkillItem,
+  SkillVersion,
 } from '@/types/agent'
 import type {
   SkillImportPreview,
@@ -506,6 +508,33 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     await fetchMcps()
   }
 
+  /** MCP 服务版本历史（created_at 倒序） */
+  async function fetchMcpVersions(id: string): Promise<McpVersion[]> {
+    const res = await apiClient.get<McpVersion[]>(`/mcp/servers/${id}/versions`)
+    return res.data || []
+  }
+
+  /** 回滚 MCP 服务到指定版本快照 */
+  async function rollbackMcpServer(id: string, version: string): Promise<void> {
+    await apiClient.post(`/mcp/servers/${id}/rollback`, { version })
+    await fetchMcps()
+  }
+
+  /** 实验 MCP 转正为正式池（Admin），返回 {id, name, pool, current_version} */
+  async function promoteMcpServer(id: string): Promise<{ id: string; name: string; pool: string; current_version: string }> {
+    const res = await apiClient.post<{ id: string; name: string; pool: string; current_version: string }>(
+      `/mcp-builder/servers/${id}/promote`,
+    )
+    await fetchMcps()
+    return res.data
+  }
+
+  /** 热加载内置 MCP 预设工具清单（Admin，免重启容器） */
+  async function syncMcpPresets(): Promise<void> {
+    await apiClient.post('/mcp/presets/reload')
+    await fetchMcps()
+  }
+
   async function fetchMcpLogs(id: string, tail = 100): Promise<McpLogEntry[]> {
     const res = await apiClient.get(`/mcp/servers/${id}/logs`, { params: { tail } })
     return (res.data || []).map((log: any) => ({
@@ -612,6 +641,18 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   async function checkSkillUpdate(skillId: string): Promise<SkillUpdateCheck> {
     const res = await apiClient.post<SkillUpdateCheck>(`/admin/skills/${skillId}/check-update`)
     return res.data
+  }
+
+  /** 技能版本历史（revision 倒序） */
+  async function fetchSkillVersions(skillId: string): Promise<SkillVersion[]> {
+    const res = await apiClient.get<SkillVersion[]>(`/admin/skills/${skillId}/versions`)
+    return res.data || []
+  }
+
+  /** 回滚技能到指定 revision */
+  async function rollbackSkill(skillId: string, revision: number): Promise<void> {
+    await apiClient.post(`/admin/skills/${skillId}/rollback`, { revision })
+    await fetchSkills(true)
   }
 
   async function toggleSkill(id: string): Promise<void> {
@@ -1445,9 +1486,11 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     fetchAgents, fetchMcps, fetchSkills, initAssets, fetchAvailableModels, fetchSessions,
     fetchStudioSessionIds, markStudioSession,
     toggleMcpStatus, addMcpServer, updateMcpServer, removeMcpServer, testMcpServer, fetchMcpTools, fetchMcpLogs,
+    fetchMcpVersions, rollbackMcpServer, promoteMcpServer, syncMcpPresets,
     upsertAgent, toggleAgent, deleteAgent, setDefaultAgent,
     previewSkillFromGithub, previewSkillFromZip, previewSkillFromJson, confirmSkillImport,
     fetchSkillMarketplace, installMarketplaceSkill, checkSkillUpdate,
+    fetchSkillVersions, rollbackSkill,
     toggleSkill, deleteSkill,
     // session actions
     startSessionFromAgent, selectSession, newChat, deleteSession, renameSession, generateSessionTitle,

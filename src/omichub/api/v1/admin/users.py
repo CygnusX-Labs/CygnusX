@@ -9,8 +9,9 @@ from sqlalchemy import desc, func, select
 from omichub.api.deps import AdminTotpRequired, CurrentUserId, DbSession
 from omichub.application.schemas.agent_memory import AgentMemoryDTO
 from omichub.application.schemas.auth import UserRegisterRequest
+from omichub.application.schemas.user import UserModulesUpdateRequest
 from omichub.application.services.agent_memory_service import AgentMemoryService
-from omichub.core.exceptions import AuthorizationError, ConflictError, NotFoundError
+from omichub.core.exceptions import AuthorizationError, BusinessError, ConflictError, NotFoundError
 from omichub.core.security import hash_password
 from omichub.domain.user.entities import User
 from omichub.domain.user.value_objects import Role, UserStatus
@@ -45,6 +46,7 @@ async def list_users(
         UserModel.used_storage,
         UserModel.admin_note,
         UserModel.lab_group,
+        UserModel.disabled_modules,
         CookieAccountModel.balance.label("cookie_balance"),
         CookieAccountModel.status.label("cookie_status"),
     ).outerjoin(CookieAccountModel, CookieAccountModel.user_id == UserModel.id)
@@ -66,6 +68,7 @@ async def list_users(
             "used_storage": row.used_storage,
             "admin_note": row.admin_note or "",
             "lab_group": row.lab_group or "",
+            "disabled_modules": row.disabled_modules or [],
             # 资产穿透：饼干余额与账户状态（无账户视为未发放，余额 0）
             "cookie_balance": float(row.cookie_balance) if row.cookie_balance is not None else 0.0,
             "cookie_status": row.cookie_status or None,
@@ -113,6 +116,9 @@ async def create_user(
     if await db.scalar(select(UserModel).where(UserModel.email == req.email)):
         raise ConflictError(f"邮箱 {req.email} 已被注册")
 
+    # 注册表 default_locked: true 的模块，新用户默认锁定
+    from omichub.infrastructure.config.module_registry import get_module_registry
+
     user = User(
         username=req.username,
         email=req.email,
@@ -120,6 +126,7 @@ async def create_user(
         role=Role.USER,
         status=UserStatus.ACTIVE,
         lab_group=req.lab_group,
+        disabled_modules=get_module_registry().default_locked_keys(),
     )
     # 领域实体落库
     from omichub.infrastructure.database.repositories import SqlAlchemyUserRepository
@@ -294,6 +301,42 @@ async def update_user_note(
         "username": user.username,
         "admin_note": user.admin_note or "",
     }
+
+
+@router.put("/{user_id}/modules", summary="配置用户模块权限")
+async def update_user_modules(
+    user_id: UUID,
+    req: UserModulesUpdateRequest,
+    _admin: AdminRequired,
+    db: DbSession,
+):
+    """按用户配置被禁用的模块列表（勾选矩阵保存入口）。
+
+    安全护栏：
+    - 目标用户是管理员时拒绝修改（管理员默认拥有全部模块权限，防自锁）；
+    - disabled_modules 中的 key 必须是注册表中 lockable=true 的模块，否则 400；
+    - 不做 token_version 变更（权限变更用户侧下次拉取用户信息即生效）。
+    """
+    from omichub.infrastructure.config.module_registry import get_module_registry
+    from omichub.infrastructure.database.models.user import UserModel
+
+    user = await db.get(UserModel, user_id)
+    if user is None:
+        raise NotFoundError("用户不存在")
+
+    # 管理员默认拥有全部模块权限，接口层强制不可取消（防自锁）
+    if user.role == "admin":
+        raise AuthorizationError("管理员默认拥有全部模块权限，不可取消")
+
+    lockable_keys = get_module_registry().lockable_keys()
+    invalid_keys = [key for key in req.disabled_modules if key not in lockable_keys]
+    if invalid_keys:
+        raise BusinessError(f"无效的模块 key（不存在或不可锁定）: {', '.join(invalid_keys)}")
+
+    # 去重并保持请求顺序
+    user.disabled_modules = list(dict.fromkeys(req.disabled_modules))
+    await db.flush()
+    return {"id": str(user.id), "disabled_modules": user.disabled_modules}
 
 
 @router.put("/{user_id}/status", summary="启用/禁用账号")

@@ -40,6 +40,12 @@ const currentAnswer = computed(
   () => otherTexts.value[currentIndex.value]?.trim() || selections.value[currentIndex.value] || '',
 )
 
+/** 选项展示顺序：含「推荐」标注的选项排在最前（稳定排序，其余保持模型给出的原顺序） */
+function sortedOptions(opts?: string[]): string[] {
+  if (!opts?.length) return []
+  return [...opts].sort((a, b) => Number(b.includes('推荐')) - Number(a.includes('推荐')))
+}
+
 function isSelected(opt: string): boolean {
   return !otherTexts.value[currentIndex.value]?.trim() && selections.value[currentIndex.value] === opt
 }
@@ -125,7 +131,7 @@ function displayAnswer(index: number): string {
 
     <div class="auc-options">
       <div
-        v-for="(opt, i) in current?.options || []"
+        v-for="(opt, i) in sortedOptions(current?.options)"
         :key="opt"
         class="auc-option"
         :class="{ selected: isSelected(opt) }"

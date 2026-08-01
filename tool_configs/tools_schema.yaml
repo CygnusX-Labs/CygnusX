@@ -53,6 +53,38 @@ tools:
     llm_result_fields: [summary, handoff, success, error]
     ui_result_fields: []
 
+  - key: agent-parallel-subagents
+    name: parallel_subagents
+    description: >
+      将多个相互独立的子任务并行分派给已注册且可派生的专业 Agent 执行，等待全部完成后返回结构化汇总。
+      仅用于真正独立、单任务可在数分钟内完成的子任务；有依赖关系的步骤应串行调用；
+      长耗时管道或需要用户确认的任务应改用 MAS 计划。不得用于需要向用户澄清的场景。
+    category: agent-orchestration
+    invocation_mode: backend_sync
+    service: omichub.application.services.parallel_subagent_tool_service.ParallelSubAgentToolService
+    method: run_parallel_subagents
+    requires_confirm: false
+    annotations: {readOnlyHint: false, destructiveHint: false, openWorld: true, idempotent: false}
+    extra: {user_scoped: true, control_tool: subagent_fanout}
+    input_schema:
+      type: object
+      properties:
+        context_summary: {type: string, description: 各子 Agent 共享的自包含背景（数据、约束、文件路径）}
+        tasks:
+          type: array
+          minItems: 2
+          maxItems: 5
+          description: 相互独立的子任务列表，2–5 个
+          items:
+            type: object
+            properties:
+              agent_id: {type: string, description: 目标 Agent ID，须标记 subagents_spawnable}
+              task: {type: string, description: 自包含的子任务指令，不超过 2000 字}
+            required: [agent_id, task]
+      required: [context_summary, tasks]
+    llm_result_fields: [summary, results, success, error]
+    ui_result_fields: [progress, fanout_run_id]
+
   - key: agent-memory-save
     name: omichub_save_memory
     description: 保存用户明确透露、跨会话仍有价值的研究偏好或项目事实。禁止保存密钥、密码、Token、原始数据内容或临时细节。

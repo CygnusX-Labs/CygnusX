@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useModulesStore } from '@/stores/modules'
 
 // 首次部署配置状态缓存
 let setupChecked = false
@@ -110,6 +111,18 @@ const routes: RouteRecordRaw[] = [
         name: 'ai',
         component: () => import('@/views/AIChatView.vue'),
         meta: { title: 'AI 助手', requiresAuth: true, fullscreen: true }
+      },
+      {
+        path: 'agent-teams',
+        name: 'agent-teams',
+        component: () => import('@/views/AgentTeamsView.vue'),
+        meta: { title: 'Agent 协作中心', requiresAuth: true }
+      },
+      {
+        path: 'agent-teams/cases/:caseId',
+        name: 'agent-teams-case',
+        component: () => import('@/views/AgentTeamsCaseView.vue'),
+        meta: { title: '协作案例', requiresAuth: true }
       },
       {
         path: 'studio/:sessionId?',
@@ -424,6 +437,15 @@ router.beforeEach(async (to, from, next) => {
     // 已登录且访问登录/注册页
     next('/')
   } else {
+    // 已登录访问受限页面：确保用户信息与模块注册表就绪，
+    // 保证 DefaultLayout 的模块锁定判断首跳即生效（拉取失败不阻塞导航）
+    if (isLoggedIn && to.meta.requiresAuth) {
+      if (!authStore.user) {
+        await authStore.fetchUser().catch(() => {})
+      }
+      // ensureLoaded 内部已捕获异常，永不 reject
+      await useModulesStore().ensureLoaded()
+    }
     // 设置页面标题
     if (to.meta.title) {
       document.title = `${to.meta.title} - OmicHub`

@@ -494,6 +494,20 @@ const visibleToolCalls = computed(() => {
   return tools
 })
 
+/** 气泡内是否有任何可渲染内容：消息只携带 askRequest（澄清弹窗）时正文为空，
+ *  不渲染空气泡，避免弹窗卡片上方出现一条空白圆角长条 */
+const hasBodyContent = computed(() =>
+  streamingHasContent.value
+  || !!props.message.content?.trim().length
+  || timelineView.value.length > 0
+  || visibleToolCalls.value.length > 0
+  || plotlyCharts.value.length > 0
+  || (props.message.charts?.length ?? 0) > 0
+  || !!tableData.value
+  || (props.message.consultation?.experts.length ?? 0) > 0
+  || webSources.value.length > 0,
+)
+
 let copyBtnTimer: ReturnType<typeof setTimeout> | null = null
 
 function handleBodyClick(e: MouseEvent) {
@@ -747,7 +761,7 @@ function handleEdit() {
         <!-- 内容气泡（常驻元素，不套外层 transition：流式→done 切换时与相邻加载态
              同帧 enter/leave 曾触发 Vue parentNode null 补丁崩溃，导致正文/tokens
              刷新前不渲染）。 -->
-        <div v-if="streamingHasContent || !isStreaming" class="message-content ai-card" :class="{ 'streaming-active': isStreaming }">
+        <div v-if="isStreaming ? streamingHasContent : hasBodyContent" class="message-content ai-card" :class="{ 'streaming-active': isStreaming }">
           <!-- 交错时间线：正文与工具调用按实际发生顺序渲染（内容→工具→内容），
                最终结论永远在最底部，不用翻回顶部看结果 -->
           <template v-if="timelineView.length">

@@ -1,0 +1,263 @@
+"""Stable Bridge contracts shared by AgentTeams skills and HTTP callers."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+BridgeRole = Literal[
+    "approval-authority",
+    "bioops-manager",
+    "data-steward",
+    "workflow-operator",
+    "quality-auditor",
+    "delivery-reporter",
+]
+ApprovalAction = Literal["submit_task", "cancel_task"]
+CaseStatus = Literal[
+    "received",
+    "preflight_running",
+    "preflight_blocked",
+    "waiting_for_correction",
+    "approval_pending",
+    "approved",
+    "executing",
+    "execution_failed",
+    "quality_running",
+    "quality_blocked",
+    "remediation_pending",
+    "delivery_ready",
+    "closed",
+    "cancelled",
+]
+WorkItemStatus = Literal["pending", "in_progress", "completed", "blocked", "failed", "cancelled"]
+
+
+class ContextRef(BaseModel):
+    kind: Literal["project", "workspace", "file", "flow", "task", "report"]
+    id: str = Field(min_length=1, max_length=256)
+    location: str | None = Field(default=None, max_length=512)
+
+
+class PreflightRequest(BaseModel):
+    case_id: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    work_item_id: str | None = Field(default=None, max_length=128)
+    flow_id: str = Field(min_length=1, max_length=128)
+    sample_sheet: list[dict[str, Any]] = Field(default_factory=list, max_length=10_000)
+    comparisons: list[dict[str, Any]] | None = Field(default=None, max_length=1_000)
+    context_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
+
+
+class Finding(BaseModel):
+    code: str
+    severity: Literal["error", "warning", "info"]
+    message: str
+    evidence_refs: list[ContextRef] = Field(default_factory=list)
+
+
+class PreflightResponse(BaseModel):
+    case_id: str
+    status: Literal["passed", "blocked"]
+    findings: list[Finding]
+    next_actions: list[str]
+
+
+class PreflightInputSnapshot(BaseModel):
+    """Bridge-owned input snapshot that must match the subsequent approved submission."""
+
+    flow_id: str
+    sample_sheet: list[dict[str, Any]]
+    comparisons: list[dict[str, Any]] | None = None
+    context_refs: list[ContextRef] = Field(default_factory=list)
+
+
+class TaskSpec(BaseModel):
+    flow_id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=128)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    sample_sheet: list[dict[str, Any]] = Field(default_factory=list, max_length=10_000)
+    comparisons: list[dict[str, Any]] | None = Field(default=None, max_length=1_000)
+    execution_mode: Literal["local", "cluster"] = "local"
+
+
+class SubmitTaskRequest(BaseModel):
+    case_id: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    work_item_id: str | None = Field(default=None, max_length=128)
+    idempotency_key: str = Field(min_length=8, max_length=256)
+    approval_token: str = Field(min_length=20, max_length=4096)
+    task: TaskSpec
+
+
+class TaskReceipt(BaseModel):
+    case_id: str
+    omic_task_id: str
+    status: str
+    idempotent_replay: bool = False
+    submitted_at: datetime
+
+
+class ApprovalRequest(BaseModel):
+    case_id: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    action: ApprovalAction
+    flow_id: str | None = Field(default=None, max_length=128)
+    task_id: str | None = Field(default=None, max_length=128)
+    ttl_seconds: int = Field(default=300, ge=30, le=3_600)
+
+
+class ApprovalResponse(BaseModel):
+    approval_id: str
+    token: str
+    expires_at: datetime
+
+
+class CancelTaskRequest(BaseModel):
+    case_id: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    approval_token: str = Field(min_length=20, max_length=4096)
+    reason: str = Field(min_length=3, max_length=512)
+
+
+class EvidenceRequest(BaseModel):
+    work_item_id: str = Field(min_length=1, max_length=128)
+    event_type: str = Field(min_length=3, max_length=128, pattern=r"^[a-z0-9_.-]+$")
+    summary: str = Field(min_length=1, max_length=4_000)
+    context_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
+    omic_task_id: str | None = Field(default=None, max_length=128)
+    skill_name: str | None = Field(default=None, max_length=128)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class EvidenceResponse(BaseModel):
+    event_id: str
+    recorded_at: datetime
+
+
+class CaseEventResponse(BaseModel):
+    case_id: str
+    events: list[dict[str, Any]]
+    next_cursor: str | None = None
+
+
+class CaseCreateRequest(BaseModel):
+    case_id: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    project_ref: ContextRef
+    intent: str = Field(min_length=1, max_length=256)
+    requester_ref: str = Field(min_length=1, max_length=256)
+    team_id: str = Field(default="bioops-delivery", min_length=1, max_length=128)
+
+
+class CaseRecord(BaseModel):
+    case_id: str
+    project_ref: ContextRef
+    intent: str
+    requester_ref: str
+    team_id: str
+    status: CaseStatus = "received"
+    omic_task_ids: list[str] = Field(default_factory=list)
+    task_specs: list[dict[str, Any]] = Field(default_factory=list)
+    preflight_input: PreflightInputSnapshot | None = None
+    work_items: list[WorkItemRecord] = Field(default_factory=list)
+    mas_run_ids: list[str] = Field(default_factory=list)
+    quality_decision: str | None = None
+    manifest_uri: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class WorkItemRecord(BaseModel):
+    work_item_id: str = Field(min_length=1, max_length=128)
+    parent_work_item_id: str | None = Field(default=None, max_length=128)
+    target: BridgeRole
+    objective: str = Field(min_length=1, max_length=1_000)
+    skill_name: str = Field(min_length=1, max_length=128)
+    context_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
+    read_only: bool = True
+    approval_required: bool = False
+    deadline_seconds: int = Field(default=300, ge=1, le=86_400)
+    status: WorkItemStatus = "pending"
+    summary: str | None = Field(default=None, max_length=4_000)
+    findings: list[Finding] = Field(default_factory=list, max_length=100)
+    updated_at: datetime
+
+
+class WorkItemCreateRequest(BaseModel):
+    work_item_id: str = Field(min_length=1, max_length=128)
+    parent_work_item_id: str | None = Field(default=None, max_length=128)
+    target: BridgeRole
+    objective: str = Field(min_length=1, max_length=1_000)
+    skill_name: str = Field(min_length=1, max_length=128)
+    context_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
+    read_only: bool = True
+    approval_required: bool = False
+    deadline_seconds: int = Field(default=300, ge=1, le=86_400)
+
+
+class WorkItemUpdateRequest(BaseModel):
+    status: WorkItemStatus
+    summary: str = Field(min_length=1, max_length=4_000)
+    findings: list[Finding] = Field(default_factory=list, max_length=100)
+
+
+class WorkerInboxItem(BaseModel):
+    """Minimal assignment envelope returned to a single Worker identity."""
+
+    case_id: str
+    project_ref: ContextRef
+    intent: str
+    status: CaseStatus
+    omic_task_ids: list[str] = Field(default_factory=list)
+    quality_decision: str | None = None
+    work_item: WorkItemRecord
+
+
+class WorkerInboxResponse(BaseModel):
+    items: list[WorkerInboxItem]
+    total: int
+
+
+class CaseListResponse(BaseModel):
+    items: list[CaseRecord]
+    total: int
+    next_cursor: str | None = None
+
+
+class CaseStateUpdate(BaseModel):
+    status: CaseStatus
+    reason: str = Field(min_length=1, max_length=1_000)
+    work_item_id: str | None = Field(default=None, max_length=128)
+
+
+class QualityGateRequest(BaseModel):
+    case_id: str
+    work_item_id: str | None = Field(default=None, max_length=128)
+    rule_version: str = Field(min_length=1, max_length=128)
+    decision: Literal["passed", "warning", "blocked", "manual_review"]
+    summary: str = Field(min_length=1, max_length=4_000)
+    evidence_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
+    artifact_hashes: dict[str, str] = Field(default_factory=dict, max_length=100)
+
+
+class QualityGateResponse(BaseModel):
+    case_id: str
+    task_id: str
+    decision: Literal["passed", "warning", "blocked", "manual_review"]
+    rule_version: str
+    summary: str
+    evidence_refs: list[ContextRef]
+    artifact_hashes: dict[str, str]
+    recorded_at: datetime
+
+
+class CaseCloseRequest(BaseModel):
+    case_id: str
+    quality_decision: Literal["passed", "warning", "manual_review"]
+    runbook_ref: ContextRef | None = None
+    remediation_summary: str | None = Field(default=None, max_length=2_000)
+
+
+class CaseCloseResponse(BaseModel):
+    case_id: str
+    status: Literal["closed"]
+    manifest_uri: str
+    manifest: dict[str, Any]

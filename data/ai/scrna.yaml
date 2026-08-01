@@ -14,6 +14,7 @@ skill_ids:
   - human-mouse-cell-annotation
   - plant-cell-annotation
 features:
+  subagents_spawnable: true  # 可作为并行子 Agent 被 fan-out 派生
   engine: langgraph
   web_search:
     mode: required_for_freshness

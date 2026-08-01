@@ -1,5 +1,6 @@
 import axios from 'axios'
 import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios'
+import { createDiscreteApi } from 'naive-ui'
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: '/api/v1',
@@ -8,6 +9,36 @@ const apiClient: AxiosInstance = axios.create({
     'Content-Type': 'application/json',
   },
 })
+
+// 文件级单例：MODULE_LOCKED 拦截弹窗用（脱离组件树，拦截器内无法 useDialog）
+const { dialog: moduleLockedDialog } = createDiscreteApi(['dialog'])
+
+/**
+ * 模块未开通（403 + MODULE_LOCKED）：会话级去重弹一次提示，不当普通错误 toast。
+ * 与占位页首弹共用 sessionStorage「module_locked_seen_」去重规则。
+ */
+async function notifyModuleLocked(url?: string): Promise<void> {
+  // 未登录（登录页等场景）不弹
+  if (!localStorage.getItem('access_token')) return
+  try {
+    // 动态引入避免与 stores/modules 产生静态循环依赖（modules store 依赖本模块）
+    const [{ useModulesStore }, { consumeModuleLockedNotice }] = await Promise.all([
+      import('@/stores/modules'),
+      import('@/utils/moduleGuard'),
+    ])
+    const modulesStore = useModulesStore()
+    const mod = url ? modulesStore.moduleForApiUrl(url) : null
+    const key = mod?.key ?? 'unknown'
+    if (!consumeModuleLockedNotice(key)) return
+    moduleLockedDialog.warning({
+      title: '模块未开通',
+      content: `您暂无「${mod?.name ?? '该模块'}」模块的使用权限，请联系管理员解锁后使用。`,
+      positiveText: '我知道了',
+    })
+  } catch {
+    // 弹窗失败不影响原始错误流转
+  }
+}
 
 // 请求拦截器 - 附加 JWT Token
 apiClient.interceptors.request.use(
@@ -73,6 +104,12 @@ apiClient.interceptors.response.use(
       } finally {
         isRefreshing = false
       }
+    }
+
+    // 模块未开通：统一占位/弹窗逻辑（会话级去重），随后照常 reject 让调用方拿到错误
+    if (error.response?.status === 403 && error.response?.data?.code === 'MODULE_LOCKED') {
+      void notifyModuleLocked(originalRequest?.url)
+      return Promise.reject(error)
     }
 
     return Promise.reject(error)

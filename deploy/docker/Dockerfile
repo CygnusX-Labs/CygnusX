@@ -57,8 +57,13 @@ RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
     fi
 
 # 安装运行时系统依赖
+# nodejs/npm：stdio 传输的 node/npx 型 MCP server 由 web 进程内 spawn，
+# validate_stdio_command 走 shutil.which，容器内必须有 node 运行时（python:3.11-slim 默认不带）。
+# bookworm apt 源（已切清华镜像）提供 nodejs 18 / npm 9，满足绝大多数 MCP server。
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

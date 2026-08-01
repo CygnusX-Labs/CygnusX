@@ -6,8 +6,11 @@ import {
   NDataTable,
   NDropdown,
   NIcon,
+  NModal,
   NSpace,
+  NSpin,
   NTag,
+  NTooltip,
   useMessage,
 } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
@@ -19,15 +22,20 @@ import {
   TrashOutline,
   CashOutline,
   DocumentTextOutline,
+  LockClosedOutline,
+  CheckmarkCircle,
+  CloseCircleOutline,
 } from '@vicons/ionicons5'
-import { h, onMounted, ref } from 'vue'
+import { h, computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AddUserModal from '@/components/AddUserModal.vue'
 import QuotaEditModal from '@/components/QuotaEditModal.vue'
 import NoteEditModal from '@/components/NoteEditModal.vue'
+import ModulePermissionsModal from '@/components/ModulePermissionsModal.vue'
 import AdminTOTPConfirmModal from '@/components/AdminTOTPConfirmModal.vue'
 import RechargeModal from '@/components/admin-cookie/RechargeModal.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useModulesStore } from '@/stores/modules'
 import PageHeader from '@/components/PageHeader.vue'
 
 interface AdminUser {
@@ -45,10 +53,12 @@ interface AdminUser {
   lab_group?: string | null
   cookie_balance?: number | null
   cookie_status?: string | null
+  disabled_modules?: string[]
 }
 
 const message = useMessage()
 const authStore = useAuthStore()
+const modulesStore = useModulesStore()
 const router = useRouter()
 const users = ref<AdminUser[]>([])
 const loading = ref(false)
@@ -67,6 +77,10 @@ const quotaTarget = ref<AdminUser | null>(null)
 // 编辑备注弹窗
 const noteModalVisible = ref(false)
 const noteTarget = ref<AdminUser | null>(null)
+
+// 模块权限弹窗
+const modulePermModalVisible = ref(false)
+const modulePermTarget = ref<AdminUser | null>(null)
 
 // 高敏感操作：TOTP 二次确认弹窗
 const totpModalVisible = ref(false)
@@ -91,6 +105,23 @@ function buildMoreOptions(row: AdminUser) {
     { label: '修改配额', key: 'quota', icon: () => h(NIcon, null, { default: () => h(ServerOutline) }) },
     { label: '💰 快捷充值饼干', key: 'recharge', icon: () => h(NIcon, null, { default: () => h(CashOutline) }) },
     { label: '📄 查看资产流水', key: 'txns', icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }) },
+    // 模块权限：管理员行禁用（防自锁），tooltip 说明原因
+    {
+      label: () =>
+        row.role === 'admin'
+          ? h(
+              NTooltip,
+              { placement: 'left' },
+              {
+                trigger: () => h('span', '模块权限'),
+                default: () => '管理员默认拥有全部模块权限',
+              },
+            )
+          : '模块权限',
+      key: 'module-permissions',
+      disabled: row.role === 'admin',
+      icon: () => h(NIcon, null, { default: () => h(LockClosedOutline) }),
+    },
   ]
   // 升降管理员：仅 active 用户可调权（已拒绝账号调权无意义）
   if (row.status === 'active') {
@@ -110,6 +141,7 @@ function handleMoreSelect(key: string, row: AdminUser) {
   else if (key === 'role') toggleRole(row)
   else if (key === 'recharge') openRecharge(row)
   else if (key === 'txns') viewTxns(row)
+  else if (key === 'module-permissions') openModulePermissions(row)
 }
 
 function openRecharge(row: AdminUser) {
@@ -365,13 +397,140 @@ function openNoteModal(row: AdminUser) {
   noteModalVisible.value = true
 }
 
+function openModulePermissions(row: AdminUser) {
+  modulePermTarget.value = row
+  modulePermModalVisible.value = true
+}
+
 // 备注保存成功后，本地同步更新该行备注（免一次全量拉取）
 function onNoteSaved(userId: string, note: string) {
   const row = users.value.find((u) => u.id === userId)
   if (row) row.admin_note = note
 }
 
-onMounted(fetchUsers)
+/* ===== 模块权限矩阵（页面下半部分，表格样式） ===== */
+// 可锁模块列：从注册表渲染（禁止写死模块名），AI 模块排前
+const lockableModules = computed(() =>
+  [...modulesStore.registry.filter((m) => m.lockable)].sort(
+    (a, b) => Number(b.ai) - Number(a.ai),
+  ),
+)
+
+// 单元格保存中状态：key = `${userId}:${moduleKey}`
+const moduleCellSaving = ref<Record<string, boolean>>({})
+
+// 管理员行彩蛋：点管理员的对号时弹出搞怪提示
+const adminEggVisible = ref(false)
+const adminEggQuips = [
+  '权限结界生效中：管理员的模块一个都关不掉 ✨',
+  '想关管理员？管理员笑而不语 🔒',
+  '这枚对号被神秘力量焊死了，放弃吧 🛡️',
+  '管理员：我就静静看着你点，反正关不掉 😼',
+]
+const adminEggQuip = ref(adminEggQuips[0])
+
+function openAdminEgg() {
+  adminEggQuip.value = adminEggQuips[Math.floor(Math.random() * adminEggQuips.length)]
+  adminEggVisible.value = true
+}
+
+function isModuleEnabled(row: AdminUser, moduleKey: string): boolean {
+  if (row.role === 'admin') return true
+  return !(row.disabled_modules ?? []).includes(moduleKey)
+}
+
+function enabledCount(row: AdminUser): number {
+  return lockableModules.value.filter((m) => isModuleEnabled(row, m.key)).length
+}
+
+// 开关 = 开通；切换即保存该用户的完整禁用列表，失败回滚（受控组件未改数据即回退）
+async function toggleModule(row: AdminUser, moduleKey: string, enabled: boolean) {
+  if (row.role === 'admin') return
+  const cellKey = `${row.id}:${moduleKey}`
+  moduleCellSaving.value[cellKey] = true
+  const lockableKeys = lockableModules.value.map((m) => m.key)
+  const disabled = new Set((row.disabled_modules ?? []).filter((k) => lockableKeys.includes(k)))
+  if (enabled) disabled.delete(moduleKey)
+  else disabled.add(moduleKey)
+  try {
+    const res = await apiClient.put(`/admin/users/${row.id}/modules`, {
+      disabled_modules: [...disabled],
+    })
+    row.disabled_modules = res.data?.disabled_modules ?? [...disabled]
+    message.success('模块权限已更新')
+  } catch (error: any) {
+    message.error(error?.response?.data?.detail || '保存失败')
+  } finally {
+    moduleCellSaving.value[cellKey] = false
+  }
+}
+
+const moduleColumns = computed<DataTableColumns<AdminUser>>(() => {
+  const cols: DataTableColumns<AdminUser> = [
+    {
+      title: '用户',
+      key: 'username',
+      width: 200,
+      fixed: 'left',
+      render: (row) =>
+        h('div', { class: 'perm-user-cell' }, [
+          h('div', { class: 'perm-user-name' }, row.nickname ? `${row.nickname}（${row.username}）` : row.username),
+          h('div', { class: 'perm-user-email' }, row.email),
+        ]),
+    },
+    ...lockableModules.value.map((mod) => ({
+      title: mod.name,
+      key: `mod_${mod.key}`,
+      width: 120,
+      align: 'center' as const,
+      render: (row: AdminUser) => {
+        const cellKey = `${row.id}:${mod.key}`
+        const isAdminRow = row.role === 'admin'
+        const enabled = isModuleEnabled(row, mod.key)
+        const body = moduleCellSaving.value[cellKey]
+          ? h(NSpin, { size: 14 })
+          : h(
+              NIcon,
+              { size: 18, class: enabled ? 'perm-icon-on' : 'perm-icon-off' },
+              { default: () => h(enabled ? CheckmarkCircle : CloseCircleOutline) },
+            )
+        // 整格点击切换；管理员行只读，点击弹彩蛋
+        return h(
+          'span',
+          {
+            class: ['perm-cell', { 'perm-cell-readonly': isAdminRow }],
+            title: isAdminRow ? '管理员默认拥有全部模块权限' : enabled ? '点击禁用该模块' : '点击开通该模块',
+            onClick: () => {
+              if (isAdminRow) openAdminEgg()
+              else if (!moduleCellSaving.value[cellKey]) toggleModule(row, mod.key, !enabled)
+            },
+          },
+          [body],
+        )
+      },
+    })),
+    {
+      title: '已开通',
+      key: 'enabled_count',
+      width: 90,
+      align: 'center' as const,
+      render: (row: AdminUser) =>
+        h(
+          'span',
+          { class: 'perm-count' },
+          row.role === 'admin' ? '全部' : `${enabledCount(row)} / ${lockableModules.value.length}`,
+        ),
+    },
+  ]
+  return cols
+})
+
+const moduleScrollX = computed(() => 200 + lockableModules.value.length * 120 + 90)
+
+onMounted(() => {
+  fetchUsers()
+  modulesStore.ensureLoaded()
+})
 </script>
 
 <template>
@@ -394,7 +553,22 @@ onMounted(fetchUsers)
       />
     </NCard>
 
-    <!-- 添加用户弹窗 -->
+    <!-- 模块权限矩阵：行=用户，列=可锁模块（AI 模块排前），开关 = 开通，切换即保存 -->
+    <NCard title="模块权限" :bordered="false" class="arco-card module-perm-card">
+      <p class="module-perm-desc">
+        对号 = 开通该模块，叉号 = 禁用（点击即可切换，即时保存）；禁用后用户侧显示锁定，接口同步拦截。管理员默认拥有全部模块权限。
+      </p>
+      <NDataTable
+        :columns="moduleColumns"
+        :data="users"
+        :row-key="(row) => row.id"
+        :loading="loading || !modulesStore.loaded"
+        :pagination="{ pageSize: 20 }"
+        :bordered="false"
+        size="small"
+        :scroll-x="moduleScrollX"
+      />
+    </NCard>
     <AddUserModal v-model:show="addUserModalVisible" @success="fetchUsers" />
 
     <!-- 调整存储配额弹窗 -->
@@ -407,12 +581,31 @@ onMounted(fetchUsers)
       @success="(note: string) => onNoteSaved(noteTarget?.id || '', note)"
     />
 
+    <!-- 模块权限弹窗 -->
+    <ModulePermissionsModal
+      v-model:show="modulePermModalVisible"
+      :user="modulePermTarget"
+      @success="fetchUsers"
+    />
+
     <!-- 快捷充值饼干（与饼干账户管理共用同一全局组件） -->
     <RechargeModal
       v-model:show="showRecharge"
       :user-id="rechargeUserId"
       @success="fetchUsers"
     />
+    <!-- 管理员模块权限彩蛋弹窗 -->
+    <NModal v-model:show="adminEggVisible" :auto-focus="false" transform-origin="center">
+      <div class="admin-egg">
+        <div class="admin-egg-icon">
+          <NIcon :size="30"><LockClosedOutline /></NIcon>
+        </div>
+        <h3 class="admin-egg-title">权限结界</h3>
+        <p class="admin-egg-text">{{ adminEggQuip }}</p>
+        <NButton type="primary" @click="adminEggVisible = false">知道啦</NButton>
+      </div>
+    </NModal>
+
     <!-- 删除用户 TOTP 二次确认弹窗 -->
     <AdminTOTPConfirmModal
       v-model:show="totpModalVisible"
@@ -438,6 +631,99 @@ onMounted(fetchUsers)
 .note-cell {
   color: var(--neutral-text-2, #4e5969);
   font-size: 13px;
+}
+.module-perm-card {
+  margin-top: 16px;
+}
+/* 模块列表头不换行（长模块名由列宽与横向滚动兜底） */
+.module-perm-card :deep(.n-data-table-th) {
+  white-space: nowrap;
+}
+.module-perm-desc {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--neutral-text-3, #86909c);
+}
+/* 注意：矩阵单元格是 h() 渲染函数创建、由 NDataTable 内部渲染，
+   元素不会带本组件的 scoped 属性，必须经 :deep() 从容器穿透 */
+.module-perm-card :deep(.perm-user-cell) {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.module-perm-card :deep(.perm-user-name) {
+  font-size: 13px;
+  color: var(--neutral-text-1, #1d2129);
+}
+.module-perm-card :deep(.perm-user-email) {
+  font-size: 12px;
+  color: var(--neutral-text-3, #86909c);
+}
+.module-perm-card :deep(.perm-count) {
+  font-size: 12px;
+  color: var(--neutral-text-3, #86909c);
+}
+.module-perm-card :deep(.perm-cell) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.module-perm-card :deep(.perm-cell:hover) {
+  background: var(--neutral-hover, #f2f3f5);
+}
+.module-perm-card :deep(.perm-cell-readonly) {
+  cursor: pointer;
+}
+.admin-egg {
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  background: var(--neutral-card, #fff);
+  border-radius: 12px;
+  padding: 28px 24px 24px;
+  box-sizing: border-box;
+  text-align: center;
+}
+.admin-egg-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f3f0ff;
+  color: #8b5cf6;
+  animation: admin-egg-shake 0.5s ease;
+}
+.admin-egg-title {
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--neutral-text-1, #1d2129);
+}
+.admin-egg-text {
+  margin: 0 0 20px;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--neutral-text-3, #86909c);
+}
+/* 一次性抖动，彩蛋打开时执行一次 */
+@keyframes admin-egg-shake {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-12deg); }
+  50% { transform: rotate(10deg); }
+  75% { transform: rotate(-6deg); }
+}
+.module-perm-card :deep(.perm-icon-on) {
+  color: var(--arco-success, #00b42a);
+}
+.module-perm-card :deep(.perm-icon-off) {
+  color: var(--arco-danger, #f53f3f);
 }
 .note-empty {
   color: var(--neutral-text-4, #c9cdd4);

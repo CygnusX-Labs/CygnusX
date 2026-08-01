@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import TYPE_CHECKING
 
 from sqlalchemy import ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
@@ -10,6 +11,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from omichub.infrastructure.database.base import Base, TimestampMixin
 from omichub.infrastructure.database.models.knowledge_revision import DocRevisionModel
+
+if TYPE_CHECKING:
+    from omichub.infrastructure.database.models.knowledge_chunk import KbChunkModel
 
 
 class KbDocumentModel(Base, TimestampMixin):
@@ -33,6 +37,10 @@ class KbDocumentModel(Base, TimestampMixin):
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
+    # 所属知识库（knowledge_bases.id）；NULL 视为实验室知识库（向后兼容）
+    kb_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("knowledge_bases.id"), nullable=True, index=True
+    )
 
     # 关联关系（仅用于编程便利，不依赖级联删除，避免误删历史）
     current_revision: Mapped[DocRevisionModel | None] = relationship(
@@ -43,5 +51,12 @@ class KbDocumentModel(Base, TimestampMixin):
     pending_revision: Mapped[DocRevisionModel | None] = relationship(
         "DocRevisionModel",
         foreign_keys=[pending_rev],
+        lazy="selectin",
+    )
+    # 语义块（kb_chunks）：文档删除时级联清理
+    chunks: Mapped[list[KbChunkModel]] = relationship(
+        "KbChunkModel",
+        primaryjoin="KbDocumentModel.doc_id == foreign(KbChunkModel.document_id)",
+        cascade="all, delete-orphan",
         lazy="selectin",
     )

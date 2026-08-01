@@ -3,7 +3,8 @@
 设计（轻量版，符合 1 人运维 / 单机部署原则）：
 - warm pool 维护若干常驻容器（base image，sleep 保持存活）
 - 会话亲和性：会话绑定一个 container_id，复用直至超时回收
-- 代码执行：`docker exec -i <container> python -` 经 stdin 投递，stdout/stderr 流式回传
+- 代码执行：Docker SDK exec 在容器内跑 `python -c <base64 包裹>`，stdout/stderr 流式回传
+  （web 容器内无 docker CLI，只有 /var/run/docker.sock，不能走 `docker exec` 子进程）
 - 图表协议：脚本输出 `%%ECHARTS%%<json>` / `%%IMAGE%%<base64>` 标记行，由池解析为结构化输出
 - Docker 不可用时优雅降级：is_available() 返回 False，调用方给出友好错误
 """
@@ -11,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from collections.abc import AsyncIterator
 from datetime import datetime
@@ -23,6 +25,7 @@ from omichub.core.config import get_settings
 _ECHARTS_PREFIX = "%%ECHARTS%%"
 _IMAGE_PREFIX = "%%IMAGE%%"
 _SENTINEL = object()
+_TIMEOUT = object()
 
 
 class SandboxUnavailableError(Exception):
@@ -71,12 +74,18 @@ class SandboxPool:
             self._available = False
         return self._available
 
-    async def initialize(self) -> None:
-        """预热容器池"""
+    async def initialize(self, keep_container_ids: set[str] | None = None) -> None:
+        """预热容器池；启动时先治理上一轮进程遗留的孤儿容器。
+
+        keep_container_ids: 数据库中仍活跃会话绑定的容器 id（仅登记计数，不进 warm 队列）。
+        其余 warm 标签容器：warm 队列有位子则收养复用，超出 max_pool_size 的销毁。
+        """
         if not await self.is_available():
             logger.info("沙盒 Docker 不可用，跳过预热")
             return
+        keep = keep_container_ids or set()
         async with self._init_lock:
+            await self._reconcile_orphans(keep)
             while self._warm_pool.qsize() < self._warm_pool_target():
                 try:
                     container_id = await self._warm_one()
@@ -88,6 +97,50 @@ class SandboxPool:
                     logger.warning(f"预热容器失败: {e}")
                     break
         logger.info(f"沙盒预热完成，池内 {self._warm_pool.qsize()} 个容器")
+
+    async def _reconcile_orphans(self, keep: set[str]) -> None:
+        """收养/收割带 warm 标签的存量容器（web 重启后内存态丢失，容器变孤儿）"""
+        client = self._get_client()
+
+        def _list() -> list[Any]:
+            try:
+                return client.containers.list(
+                    all=True, filters={"label": "omicshub.sandbox=warm"}
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"列举存量沙盒容器失败: {e}")
+                return []
+
+        containers = await asyncio.to_thread(_list)
+        adopted = destroyed = 0
+        for container in containers:
+            cid = str(container.id)
+            if cid in keep:
+                async with self._container_lock:
+                    self._managed_container_ids.add(cid)
+                continue
+            if container.status != "running":
+                await self.destroy(cid)
+                destroyed += 1
+                continue
+            async with self._container_lock:
+                if len(self._managed_container_ids) >= self._max_pool_size():
+                    room = False
+                else:
+                    self._managed_container_ids.add(cid)
+                    room = True
+            if not room:
+                await self.destroy(cid)
+                destroyed += 1
+                continue
+            try:
+                self._warm_pool.put_nowait(cid)
+                adopted += 1
+            except asyncio.QueueFull:
+                await self.destroy(cid)
+                destroyed += 1
+        if adopted or destroyed:
+            logger.info(f"沙盒孤儿容器治理：收养 {adopted} 个，销毁 {destroyed} 个")
 
     # ------------------------------------------------------------------
     # 容器生命周期
@@ -138,6 +191,15 @@ class SandboxPool:
                 network=network,
                 network_mode=network_mode,
                 labels={"omicshub.sandbox": "warm"},
+                # 覆盖镜像内重量级 HEALTHCHECK（每 60s import scanpy 等，满 CPU 数秒），
+                # 否则几十个 warm 容器会让后台持续出现 import 进程。
+                healthcheck={
+                    "Test": ["CMD-SHELL", "python -c \"print('sandbox OK')\""],
+                    "Interval": 60000000000,
+                    "Timeout": 15000000000,
+                    "StartPeriod": 120000000000,
+                    "Retries": 3,
+                },
                 tty=True,
             )
             return str(container.id)
@@ -180,81 +242,114 @@ class SandboxPool:
     async def stream_execute(
         self, container_id: str, code: str, timeout_sec: int | None = None
     ) -> AsyncIterator[dict[str, Any]]:
-        """流式执行代码：docker exec -i <container> python -，stdin 投递代码"""
+        """流式执行代码：Docker SDK exec 在容器内跑 `python -c <base64 包裹>`。
+
+        注意：web 容器内没有 docker CLI 二进制（只有 /var/run/docker.sock），
+        不能走 `docker exec` 子进程；base64 包裹是为了避开 stdin 投递。
+        """
         timeout = timeout_sec or self._settings.sandbox_exec_timeout
         started = datetime.now()
+        client = self._get_client()
+        api = client.api
 
-        proc = await asyncio.create_subprocess_exec(
-            "docker",
-            "exec",
-            "-i",
-            container_id,
-            "python",
-            "-",
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        encoded = base64.b64encode(code.encode("utf-8")).decode("ascii")
+        wrapper = (
+            "import base64;"
+            f"exec(compile(base64.b64decode('{encoded}').decode('utf-8'),'<sandbox>','exec'))"
         )
-        assert proc.stdin is not None and proc.stdout is not None and proc.stderr is not None
 
-        proc.stdin.write(code.encode("utf-8"))
-        await proc.stdin.drain()
-        proc.stdin.close()
+        exec_id = await asyncio.to_thread(
+            lambda: api.exec_create(
+                container_id, cmd=["python", "-c", wrapper], tty=False
+            )["Id"]
+        )
 
+        loop = asyncio.get_running_loop()
         queue: asyncio.Queue[Any] = asyncio.Queue()
-        returncode = -1
 
-        async def _reader(stream: asyncio.StreamReader, channel: str) -> None:
-            while True:
-                line = await stream.readline()
-                if not line:
-                    break
-                await queue.put((channel, line.decode("utf-8", errors="replace").rstrip("\n")))
-            await queue.put(_SENTINEL)
+        def _pump() -> None:
+            """阻塞线程：按 demux 流读取 stdout/stderr 块，按行切分后投递到 asyncio 队列"""
+            buffers = {"stdout": "", "stderr": ""}
+            try:
+                stream = api.exec_start(exec_id, stream=True, demux=True)
+                for out_chunk, err_chunk in stream:
+                    for channel, chunk in (("stdout", out_chunk), ("stderr", err_chunk)):
+                        if not chunk:
+                            continue
+                        buffers[channel] += chunk.decode("utf-8", errors="replace")
+                        while "\n" in buffers[channel]:
+                            line, buffers[channel] = buffers[channel].split("\n", 1)
+                            loop.call_soon_threadsafe(queue.put_nowait, (channel, line))
+                for channel, rest in buffers.items():
+                    if rest:
+                        loop.call_soon_threadsafe(queue.put_nowait, (channel, rest))
+            except Exception as e:  # noqa: BLE001
+                loop.call_soon_threadsafe(queue.put_nowait, ("__error__", f"{e}"))
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, _SENTINEL)
 
-        async def _wait() -> int:
-            return await proc.wait()
+        async def _kill_exec() -> None:
+            """杀掉容器内本次执行（超时兜底，best-effort）。
 
-        reader_out = asyncio.create_task(_reader(proc.stdout, "stdout"))
-        reader_err = asyncio.create_task(_reader(proc.stderr, "stderr"))
-        wait_task = asyncio.create_task(_wait())
-        pending_sentinels = 2
+            exec_inspect 的 Pid 是宿主机 PID，容器命名空间内对不上，
+            所以按 wrapper 命令行特征 pkill（镜像内有 /usr/bin/pkill）。
+            """
+            try:
+                kill_id = await asyncio.to_thread(
+                    lambda: api.exec_create(
+                        container_id,
+                        cmd=["pkill", "-9", "-f", "python -c import base64"],
+                    )["Id"]
+                )
+                await asyncio.to_thread(api.exec_start, kill_id)
+            except Exception:  # noqa: BLE001
+                pass
+
+        pump = asyncio.create_task(asyncio.to_thread(_pump))
         timed_out = False
 
         async def _timeout_guard() -> None:
+            nonlocal timed_out
             await asyncio.sleep(timeout)
-            proc.kill()
+            timed_out = True
+            await _kill_exec()
+            await queue.put(_TIMEOUT)
 
         guard = asyncio.create_task(_timeout_guard())
 
         try:
-            while pending_sentinels > 0:
-                try:
-                    item = await asyncio.wait_for(queue.get(), timeout=5)
-                except TimeoutError:
-                    if wait_task.done():
-                        break
-                    continue
-                if item is _SENTINEL:
-                    pending_sentinels -= 1
-                    continue
+            while True:
+                item = await queue.get()
+                if item is _SENTINEL or item is _TIMEOUT:
+                    break
                 channel, line = item
+                if channel == "__error__":
+                    yield {"type": "error", "detail": f"代码执行异常：{line}"}
+                    continue
                 event = self._parse_line(channel, line)
                 if event is not None:
                     yield event
-        except TimeoutError:
-            timed_out = True
         finally:
             guard.cancel()
-            if not wait_task.done():
-                proc.kill()
-            returncode = await proc.wait() if not timed_out else -1
-            for t in (reader_out, reader_err, wait_task, guard):
-                t.cancel()
+            if not pump.done():
+                await _kill_exec()
+                try:
+                    await asyncio.wait_for(asyncio.shield(pump), timeout=5)
+                except TimeoutError:
+                    logger.warning(f"沙盒执行线程未能随超时退出: container={container_id}")
+            else:
+                await pump
+            exit_code = -1
+            if not timed_out:
+                try:
+                    info = await asyncio.to_thread(api.exec_inspect, exec_id)
+                    exit_code = int(info.get("ExitCode") or 0)
+                except Exception:  # noqa: BLE001
+                    pass
             duration = int((datetime.now() - started).total_seconds() * 1000)
             if timed_out:
                 yield {"type": "error", "detail": f"代码执行超时（{timeout}s）"}
-            yield {"type": "done", "exit_code": returncode, "duration_ms": duration}
+            yield {"type": "done", "exit_code": exit_code, "duration_ms": duration}
 
     @staticmethod
     def _parse_line(channel: str, line: str) -> dict[str, Any] | None:

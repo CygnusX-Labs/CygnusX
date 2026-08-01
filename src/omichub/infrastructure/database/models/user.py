@@ -47,6 +47,10 @@ class UserModel(Base, TimestampMixin):
     # is_2fa_enabled 仅在用户绑定验证器并成功校验一次后置 true。
     totp_secret: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
     is_2fa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # ===== 模块权限管控 =====
+    # 被禁用的模块 key 列表（数据源为 data/MODULE_LOCKED.yaml 注册表）；
+    # 空列表 = 全部模块可用。管理员角色接口层强制全开，本字段对其不生效
+    disabled_modules: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="'[]'")
 
 
 class WorkspaceModel(Base, TimestampMixin):

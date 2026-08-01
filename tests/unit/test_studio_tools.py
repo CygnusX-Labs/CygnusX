@@ -597,6 +597,22 @@ def test_normalize_ask_questions_multi():
 
 
 @pytest.mark.unit
+def test_normalize_ask_questions_json_string():
+    """模型把 questions 数组序列化成 JSON 字符串传来时，解析还原为问题列表"""
+    from omichub.application.services.chat_service import _normalize_ask_questions
+
+    result = _normalize_ask_questions(
+        {
+            "questions": '\n[{"question": "数据在哪里？", "options": ["工作区已有文件", "现在上传", "用平台示例数据演示（推荐）"]}, {"question": "数据格式？"}]\n'
+        }
+    )
+    assert result == [
+        {"question": "数据在哪里？", "options": ["工作区已有文件", "现在上传", "用平台示例数据演示（推荐）"]},
+        {"question": "数据格式？", "options": []},
+    ]
+
+
+@pytest.mark.unit
 def test_normalize_ask_questions_legacy_single():
     """兼容旧单问题 question+options"""
     from omichub.application.services.chat_service import _normalize_ask_questions

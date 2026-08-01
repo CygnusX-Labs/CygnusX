@@ -45,6 +45,8 @@ class User(BaseModel):
     # totp_secret 为加密后的密文（Fernet）；未配置加密密钥时为明文
     totp_secret: str | None = None
     is_2fa_enabled: bool = False
+    # 模块权限管控：被禁用的模块 key 列表（空 = 全部可用）；管理员角色强制全开
+    disabled_modules: list[str] = Field(default_factory=list)
     # JWT 版本号：改密/角色变更/状态禁用时递增，使旧 token 失效
     token_version: int = 0
     created_at: datetime = Field(default_factory=datetime.now)

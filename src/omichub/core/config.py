@@ -85,6 +85,14 @@ class Settings(BaseSettings):
     agent_memory_conflict_adjudication_model: str = ""
     multi_expert_consultation_enabled: bool = False
     multi_expert_consultation_max_experts: int = 3
+    # ===== 对话内子 Agent 并行 fan-out（默认关闭，按 Agent 白名单灰度）=====
+    # 设计见 ARCHITECTURE_DESIN/multi-agent.md §4
+    subagent_fanout_enabled: bool = False
+    subagent_max_parallel: int = 4  # 单次 fan-out 最大子任务数
+    subagent_max_concurrent: int = 3  # 实际并发信号量（给主链路 LLM 调用留余量）
+    subagent_child_timeout_seconds: int = 180  # 单个子任务墙钟上限
+    subagent_max_rounds_per_child: int = 6  # 子循环工具轮数上限
+    subagent_max_children_per_message: int = 1  # 父单轮工具回合内允许的 fan-out 调用次数
     upload_dir: str = "uploads"
     results_dir: str = "results"
     # 文件生命周期：临时分片会话超 24h 视为僵尸；中间文件保留期；冷数据归档期
@@ -137,7 +145,9 @@ class Settings(BaseSettings):
     site_content_yaml: str = "data/OmicHub.yaml"  # 首页文案外置 YAML 路径（改文件即生效）
     prompts_registry_yaml: str = "data/ai/prompts/registry.yaml"
     skills_dir: str = "data/ai/skills"  # SKILL.md 标准技能库目录（每个技能一个文件夹）
-    skill_marketplace_dir: str = "data/ai/skill_marketplace"  # 内置技能市场：随仓库发布的可安装技能文件夹
+    skill_marketplace_dir: str = (
+        "data/ai/skill_marketplace"  # 内置技能市场：随仓库发布的可安装技能文件夹
+    )
     runtime_images_yaml: str = "data/ai/runtime_images.yaml"
     # JBrowse 2 基因组浏览器外置配置：参考基因组 / 预设轨道 / 扫描与上传策略。
     # 改文件后调用 POST /api/v1/jbrowse/config/reload 即时生效（或等配置加载器 mtime 热重载）。
@@ -192,6 +202,16 @@ class Settings(BaseSettings):
     workflow_monitor_event_ttl_seconds: int = 86400
     workflow_monitor_recent_event_limit: int = 1000
     workflow_monitor_stale_after_seconds: int = 600
+
+    # ===== AgentTeams 协作控制面（独立 Bridge 的受控用户代理） =====
+    # 浏览器不接触 Bridge 身份凭证；Data Steward 仅可执行只读预检。
+    agentteams_bridge_enabled: bool = False
+    agentteams_bridge_url: str = ""
+    agentteams_bridge_manager_token: str = ""
+    agentteams_bridge_data_steward_token: str = ""
+    agentteams_bridge_approval_token: str = ""
+    agentteams_bridge_workflow_operator_token: str = ""
+    agentteams_bridge_timeout_seconds: float = 10.0
 
     # ===== 节日彩蛋系统 =====
     festival_config_yaml: str = "data/festival_config.yaml"  # 节日彩蛋外置 YAML 配置路径
@@ -339,7 +359,26 @@ class Settings(BaseSettings):
             raise ValueError("生产环境必须设置 AI_PROVIDER_KEY_ENCRYPTION_KEY")
         if self.workflow_monitor_enabled and not self.workflow_monitor_ingest_token:
             raise ValueError("生产环境启用流程监控时必须设置 WORKFLOW_MONITOR_INGEST_TOKEN")
+        if self.agentteams_bridge_enabled and (
+            not self.agentteams_bridge_url
+            or self._is_placeholder(self.agentteams_bridge_manager_token)
+            or self._is_placeholder(self.agentteams_bridge_data_steward_token)
+            or self._is_placeholder(self.agentteams_bridge_approval_token)
+            or self._is_placeholder(self.agentteams_bridge_workflow_operator_token)
+        ):
+            raise ValueError(
+                "生产环境启用 AgentTeams Bridge 时必须设置地址、Manager、Data Steward、审批和 Workflow Operator 凭证"
+            )
         return self
+
+    @staticmethod
+    def _is_placeholder(value: str) -> bool:
+        normalized = value.strip().lower()
+        return (
+            not normalized
+            or normalized.startswith("replace-")
+            or normalized.startswith("change-me")
+        )
 
     @property
     def redis_url(self) -> str:

@@ -1,0 +1,34 @@
+schema_version: "1.0"
+team_id: bioops-delivery
+description: >-
+  AgentTeams-side coordination only. Workers have no OmicHub database, Redis, Docker,
+  shell, or data-volume access; every OmicHub action goes through the Bridge.
+manager:
+  identity: bioops-manager
+  skills: [task-intake, approval-request, case-closeout]
+  forbidden_capabilities: [workflow_submit, database_access, shell]
+approval_gateway:
+  identity: approval-authority
+  purpose: "Human approval card resolution service; signs only short-lived scoped tokens."
+  forbidden_capabilities: [workflow_submit, workflow_cancel, database_access, shell]
+workers:
+  - identity: data-steward
+    skills: [project-preflight, evidence-retrieval]
+    bridge_identity_env: AGENTTEAMS_DATA_STEWARD_TOKEN
+    work_inbox: "GET /v1/work-items/assigned"
+    forbidden_capabilities: [workflow_submit, workflow_cancel, shell]
+  - identity: workflow-operator
+    skills: [workflow-submit, workflow-monitor, workflow-cancel]
+    bridge_identity_env: AGENTTEAMS_WORKFLOW_OPERATOR_TOKEN
+    work_inbox: "GET /v1/work-items/assigned"
+    forbidden_capabilities: [database_access, shell, flow_configuration_write]
+  - identity: quality-auditor
+    skills: [quality-gate, artifact-inspect]
+    bridge_identity_env: AGENTTEAMS_QUALITY_AUDITOR_TOKEN
+    work_inbox: "GET /v1/work-items/assigned"
+    forbidden_capabilities: [workflow_submit, workflow_cancel, shell]
+  - identity: delivery-reporter
+    skills: [delivery-pack, runbook-capture]
+    bridge_identity_env: AGENTTEAMS_DELIVERY_REPORTER_TOKEN
+    work_inbox: "GET /v1/work-items/assigned"
+    forbidden_capabilities: [workflow_submit, workflow_cancel, shell]

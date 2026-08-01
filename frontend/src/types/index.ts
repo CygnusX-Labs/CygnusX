@@ -19,6 +19,19 @@ export interface User {
   last_login_at?: string | null
   created_at: string
   updated_at: string
+  /** 被管理员禁用的模块 key 列表（空数组 = 全部模块可用） */
+  disabled_modules?: string[]
+}
+
+/** 模块注册表条目（GET /modules/registry 下发，全平台模块权限管控的唯一数据源） */
+export interface ModuleRegistryItem {
+  key: string
+  name: string
+  route_prefix: string[]
+  api_prefix: string[]
+  lockable: boolean
+  default_locked: boolean
+  ai: boolean
 }
 
 export interface TokenResponse {
@@ -426,7 +439,7 @@ export interface AiTokenRate {
   discount: CookieDiscount | null
 }
 
-export type QuickEntryColor = 'blue' | 'purple' | 'cyan' | 'green' | 'orange' | 'teal' | 'gray'
+export type QuickEntryColor = 'blue' | 'purple' | 'violet' | 'cyan' | 'green' | 'orange' | 'teal' | 'gray'
 
 export interface HomeQuickEntry {
   key: string
@@ -441,12 +454,15 @@ export interface SiteSettings {
   registration_enabled: boolean
   totp_policy: 'off' | 'optional' | 'required'
   home_quick_entries?: HomeQuickEntry[]
+  /** 对话内并行子 Agent fan-out 开关（管理端运行时主开关） */
+  subagent_fanout_enabled: boolean
 }
 
 export interface UpdateSiteSettings {
   registration_enabled?: boolean
   totp_policy?: 'off' | 'optional' | 'required'
   home_quick_entries?: HomeQuickEntry[]
+  subagent_fanout_enabled?: boolean
 }
 
 export interface CostEstimate {

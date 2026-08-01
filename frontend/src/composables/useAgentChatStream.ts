@@ -465,7 +465,6 @@ export function useAgentChatStream() {
               question: typeof item.question === 'string' ? item.question : '',
               options: Array.isArray(item.options) ? (item.options as string[]) : undefined,
             }))
-            .filter((item) => item.question)
           // 兼容旧后端：无 questions 数组时退回平铺的 question/options
           if (!questions.length) {
             const single = (data.question as string) || content
@@ -475,6 +474,10 @@ export function useAgentChatStream() {
                 options: Array.isArray(data.options) ? (data.options as string[]) : undefined,
               })
             }
+          }
+          // 兜底一个空问题：卡片渲染自由输入，保证用户总能回复、已回答摘要不会空白
+          if (!questions.length) {
+            questions.push({ question: '', options: undefined })
           }
           cb.onAskRequest?.({
             tool_call_id: (data.tool_call_id as string) || '',

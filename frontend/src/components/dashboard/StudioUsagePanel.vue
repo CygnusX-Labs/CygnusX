@@ -154,6 +154,11 @@ onMounted(fetchUsage)
   box-shadow: var(--shadow-card);
 }
 
+/* 与页面其他卡片保持统一的 24px 垂直间距 */
+.studio-usage-card {
+  margin-bottom: 24px;
+}
+
 .arco-card-header,
 .trend-heading,
 .quota-heading {

@@ -52,6 +52,21 @@ def write_skill_folder(parsed: ParsedSkill) -> Path:
     return target
 
 
+def rewrite_skill_md(parsed: ParsedSkill) -> bool:
+    """仅重写已存在技能文件夹内的 SKILL.md（保留 scripts/references/assets）。
+
+    供 DB 内容变更（更新/回滚）后同步磁盘用；文件夹不存在时跳过返回 False。
+    """
+    try:
+        target = _safe_skill_dir(parsed.skill_id)
+    except ValueError:
+        return False
+    if not target.is_dir():
+        return False
+    (target / "SKILL.md").write_text(render_skill_md(parsed), encoding="utf-8")
+    return True
+
+
 def read_skill_body(skill_id: str) -> str | None:
     """L2：读取技能 SKILL.md 正文（frontmatter 已剥离）"""
     try:

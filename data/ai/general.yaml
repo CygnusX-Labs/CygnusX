@@ -14,10 +14,11 @@ mcp_ids: []
 skill_ids: []
 features:
   engine: langgraph
+  subagents_spawnable: true  # 可作为并行子 Agent 被 fan-out 派生
   web_search:
     mode: required_for_freshness
     triggers: [实时, 最新, 最近, 今天, 新闻, 天气, 文献, 论文, 研究进展, 临床试验, 指南]
-tool_packs: [workspace, research, memory, handoff]
+tool_packs: [workspace, research, memory, handoff, subagents]
 handoff:
   allowed_targets: [agent-scrna, agent-rnaseq, agent-code, agent-viz, shania]
   max_hops_per_session: 3

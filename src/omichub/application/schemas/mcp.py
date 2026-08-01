@@ -31,6 +31,10 @@ class MCPServerDTO(OmicsHubBaseSchema):
     registry: str = "default"
     working_dir: str = ""
     version: str = ""
+    current_version: str = "1.0.0"  # 当前生效版本号（版本管理真实指针）
+    pool: str = "production"  # production / experimental / deprecated
+    review_status: str = "approved"  # draft / pending / approved / rejected
+    expires_at: datetime | None = None  # 实验池 TTL（NULL=永久）
     status: str = "offline"
     is_enabled: bool = True
     timeout: int = 30
@@ -73,6 +77,25 @@ class UpdateMCPServerDTO(OmicsHubBaseSchema):
     timeout: int | None = None
     auto_restart: bool | None = None
     is_enabled: bool | None = None
+
+
+class MCPServerVersionDTO(OmicsHubBaseSchema):
+    """MCP Server 版本历史条目"""
+
+    id: UUID
+    version: str
+    is_major: bool = False
+    source: str = "builder"  # builder / admin / rollback / publish
+    changelog: str = ""
+    created_by: UUID | None = None
+    created_at: datetime | None = None
+    has_config_snapshot: bool = False
+
+
+class RollbackMCPServerDTO(OmicsHubBaseSchema):
+    """回滚 MCP Server 到指定版本"""
+
+    version: str
 
 
 class MCPLogEntryDTO(OmicsHubBaseSchema):

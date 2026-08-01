@@ -16,6 +16,8 @@ class SiteSettingModel(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     registration_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     totp_policy: Mapped[str] = mapped_column(String(16), default="optional", nullable=False)
+    # 对话内并行子 Agent fan-out 管理端开关（与 env SUBAGENT_FANOUT_ENABLED 任一为真即启用）
+    subagent_fanout_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     home_quick_entries: Mapped[list[dict[str, Any]]] = mapped_column(
         JSON,
         default=list,

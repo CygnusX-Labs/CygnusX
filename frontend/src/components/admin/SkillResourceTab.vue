@@ -8,11 +8,12 @@ import {
 import {
   AddOutline, TrashOutline, LinkOutline, CodeSlashOutline, StorefrontOutline,
   LogoGithub, CloudUploadOutline, WarningOutline, ArrowBackOutline,
-  RefreshOutline, TerminalOutline,
+  RefreshOutline, TerminalOutline, TimeOutline,
 } from '@vicons/ionicons5'
 import { useAgentHubStore } from '@/stores/agentHub'
-import type { SkillItem } from '@/types/agent'
+import type { SkillItem, SkillVersion } from '@/types/agent'
 import type { SkillImportPreview, SkillMarketplaceItem } from '@/types/skill'
+import VersionHistoryDrawer, { type VersionHistoryItem } from './VersionHistoryDrawer.vue'
 
 const message = useMessage()
 const store = useAgentHubStore()
@@ -189,6 +190,68 @@ function formatSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`
 }
+
+// ---------- 版本历史抽屉 ----------
+const showVersionDrawer = ref(false)
+const versionLoading = ref(false)
+const versionRollingBack = ref(false)
+const versionSkill = ref<SkillItem | null>(null)
+const versionItems = ref<SkillVersion[]>([])
+
+const VERSION_SOURCE_LABELS: Record<string, string> = {
+  admin: '手工更新',
+  import: '导入升级',
+  rollback: '回滚',
+}
+const VERSION_SOURCE_TYPES: Record<string, 'info' | 'default' | 'warning'> = {
+  admin: 'default',
+  import: 'info',
+  rollback: 'warning',
+}
+
+/** 归一化为共用抽屉组件的行模型 */
+const versionDrawerItems = computed<VersionHistoryItem[]>(() =>
+  versionItems.value.map((v) => ({
+    label: `r${v.revision}`,
+    subLabel: v.version ? `v${v.version}` : undefined,
+    sourceLabel: VERSION_SOURCE_LABELS[v.source] ?? v.source,
+    sourceType: VERSION_SOURCE_TYPES[v.source] ?? 'default',
+    changelog: v.changelog ?? '',
+    createdBy: v.created_by,
+    createdAt: v.created_at,
+    rollbackTarget: `r${v.revision}`,
+    raw: v,
+  })),
+)
+
+async function openVersions(skill: SkillItem) {
+  versionSkill.value = skill
+  showVersionDrawer.value = true
+  versionLoading.value = true
+  try {
+    versionItems.value = await store.fetchSkillVersions(skill.id)
+  } catch (e) {
+    message.error(apiErrorMessage(e))
+    versionItems.value = []
+  } finally {
+    versionLoading.value = false
+  }
+}
+
+async function handleVersionRollback(item: VersionHistoryItem) {
+  const v = item.raw as SkillVersion
+  if (!versionSkill.value) return
+  versionRollingBack.value = true
+  try {
+    await store.rollbackSkill(versionSkill.value.id, v.revision)
+    message.success(`已回滚到 r${v.revision}`)
+    versionItems.value = await store.fetchSkillVersions(versionSkill.value.id)
+  } catch (e) {
+    message.error(apiErrorMessage(e))
+  } finally {
+    versionRollingBack.value = false
+  }
+}
 </script>
 
 <template>
@@ -243,6 +306,14 @@ function formatSize(bytes: number): string {
               </template>
               检查上游更新
             </NTooltip>
+            <NTooltip trigger="hover">
+              <template #trigger>
+                <NButton size="tiny" quaternary @click="openVersions(skill)">
+                  <template #icon><NIcon :component="TimeOutline" /></template>
+                </NButton>
+              </template>
+              版本历史
+            </NTooltip>
             <NPopconfirm @positive-click="handleDelete(skill)">
               <template #trigger>
                 <NButton size="tiny" quaternary type="error">
@@ -258,6 +329,16 @@ function formatSize(bytes: number): string {
     <div v-if="!store.skills.length" class="list-empty">
       <NEmpty description="暂无技能，点击右上角「导入技能」添加" />
     </div>
+
+    <!-- 版本历史抽屉 -->
+    <VersionHistoryDrawer
+      v-model:show="showVersionDrawer"
+      :title="`版本历史 · ${versionSkill?.name || ''}`"
+      :items="versionDrawerItems"
+      :loading="versionLoading"
+      :rolling-back="versionRollingBack"
+      @rollback="handleVersionRollback"
+    />
 
     <!-- 导入技能：四入口 + 统一预览 -->
     <NModal v-model:show="showImport" preset="card" :title="preview ? '导入预览' : '导入技能'" style="width: 680px" :segmented="{ content: true, footer: true }">

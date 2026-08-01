@@ -54,6 +54,8 @@ _WORKSPACE_FILES_PROMPT_FALLBACK = """## 工作区文件工具
 `find_session_uploads`（按会话找回上传文件），找到文件后将 `file_id` 交给 `workspace_read_file` 读取。
 数据缺失或任务背景不清晰时，必须先调用 `ask_user` 弹窗向用户澄清（options 给可点选选项，
 推荐项放第一个标注“（推荐）”），禁止自行假设开干；用户已给出关键信息时直接执行，不重复澄清。
+会话隔离：只允许使用本会话中用户上传或明确指定的文件；其它会话的文件禁止主动读取或
+当作本次任务数据，确需使用必须先经 `ask_user` 弹窗得到用户明确确认。
 """
 
 
@@ -511,9 +513,13 @@ async def _find_session_uploads(
                 "fallback": "recent_uploads",
                 "summary": (
                     f"会话 {session_id} 下没有检索到上传文件；"
-                    f"以下是您最近上传的 {len(items)} 个文件（含其它会话）：\n" + "\n".join(lines)
+                    f"以下 {len(items)} 个文件来自其它会话的上传历史：\n" + "\n".join(lines)
                 ),
-                "hint": "可将 file_id（upload://…）直接交给 workspace_read_file 读取或分析。",
+                "hint": (
+                    "这些文件不属于当前会话，禁止直接当作本次任务的数据使用。"
+                    "必须先调用 ask_user 弹窗向用户确认是否使用其中某个文件"
+                    "（或请用户重新上传），得到用户明确确认后方可读取。"
+                ),
             }
     return {
         "session_id": session_id,
@@ -802,9 +808,7 @@ def _build_omichub_tools_preset() -> dict[str, Any]:
     flow_service = FlowService()
     dynamic_tools: list[dict[str, Any]] = []
     try:
-        for flow_config in flow_service.list_flows().items:
-            if not (flow_config.ai and flow_config.ai.enabled):
-                continue
+        for flow_config in flow_service.list_ai_enabled_flows():
             try:
                 tool_def = compiler.compile_prepare_tool(flow_config)
                 tool_name = tool_def["name"]
@@ -840,18 +844,21 @@ def _build_omichub_tools_preset() -> dict[str, Any]:
         logging.getLogger(__name__).warning("加载动态 Flow tools 失败", exc_info=True)
 
     all_tools = static_tools + dynamic_tools
+
+    def _tool_view(t: dict[str, Any]) -> dict[str, Any]:
+        # 静态工具是 OpenAI function 格式，动态 Flow 工具已是 {name, description, inputSchema}
+        f = t.get("function", t)
+        return {
+            "name": f["name"],
+            "description": f.get("description", ""),
+            "inputSchema": f.get("parameters") or f.get("inputSchema") or {},
+        }
+
     return {
         "name": "omichub-tools",
         "description": "OmicHub 生信工具箱 MCP - KEGG 富集、火山图、系统发育树及分析中心流程",
         "transport": "builtin",
-        "tools": [
-            {
-                "name": t["function"]["name"],
-                "description": t["function"]["description"],
-                "inputSchema": t["function"]["parameters"],
-            }
-            for t in all_tools
-        ],
+        "tools": [_tool_view(t) for t in all_tools],
         "handlers": handlers,
     }
 

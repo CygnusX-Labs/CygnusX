@@ -12,9 +12,47 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from omichub.domain.mcp.entities import MCPServer
 
 #: 合法变更类型 → 版本段递进规则
 CHANGE_TYPES = ("feature", "fix", "breaking", "refactor")
+
+#: config_snapshot 覆盖的配置字段（与 MCPServer 实体属性同名，transport 存枚举值）
+CONFIG_SNAPSHOT_FIELDS = (
+    "name",
+    "description",
+    "transport",
+    "command",
+    "args",
+    "url",
+    "env",
+    "registry",
+    "working_dir",
+    "version",
+    "timeout",
+    "auto_restart",
+    "is_enabled",
+)
+
+
+def extract_config_snapshot(server: MCPServer) -> dict[str, Any]:
+    """提取 MCP Server 当前连接/行为配置快照（供版本行完整归档）.
+
+    admin 手工更新、builder 构建发布、回滚、转正四条路径共用，
+    保证任意来源的版本行都能被完整还原。
+    """
+    data: dict[str, Any] = {}
+    for field in CONFIG_SNAPSHOT_FIELDS:
+        value = getattr(server, field)
+        if field == "transport":
+            value = value.value if hasattr(value, "value") else str(value)
+        elif isinstance(value, (list, dict)):
+            value = type(value)(value)
+        data[field] = value
+    return data
 
 _SEMVER_RE = re.compile(
     r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)"

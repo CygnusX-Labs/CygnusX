@@ -5,3 +5,6 @@ description: 代码编写前查看当前用户的输入文件。
 platform_tools:
   - list_workspace_files
   - search_workspace_files
+  - workspace_read_file
+  - workspace_get_file_info
+  - find_session_uploads

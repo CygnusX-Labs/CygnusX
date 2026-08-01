@@ -47,9 +47,14 @@ onBeforeUnmount(() => {
   if (pawTimer) clearTimeout(pawTimer)
 })
 
+// 负相位延迟：让每颗星"开局即处于自己呼吸周期的随机中段"。
+// 若用正延迟，动画开始前元素停留在基础样式（.star 无 opacity → 1.0 全亮），
+// 随后逐颗跌到呼吸下限，开页前几秒会出现"满天亮星一颗颗暗下去"的级联，
+// 用户感知为"高光消失"。负延迟从首帧起就是稳态夜空，无亮→暗跳变。
 const stars = Array.from({ length: 160 }, (_, i) => {
   const size = Math.random() * 1 + 0.6
   const baseOpacity = Math.random() * 0.5 + 0.35
+  const duration = Math.random() * 5 + 5
 
   const isBright = baseOpacity > 0.7
   // 十字高光稍微多一些、亮一些：保证任意时刻都有"几处高光"稳定可见，
@@ -64,8 +69,8 @@ const stars = Array.from({ length: 160 }, (_, i) => {
     left: Math.random() * 100,
     size: size,
     opacity: baseOpacity,
-    delay: Math.random() * 8,
-    duration: Math.random() * 5 + 5,
+    delay: -(Math.random() * duration),
+    duration,
     hasCross: hasCross,
     crossScale: crossScale
   }
@@ -74,25 +79,32 @@ const stars = Array.from({ length: 160 }, (_, i) => {
 const shootingStars = Array.from({ length: 3 }, (_, i) => ({
   id: i,
   // 每颗仅在长周期中的短暂时刻划过，保持背景安静。
-  delay: i * 11 + Math.random() * 3,
-  duration: 34 + Math.random() * 8,
+  // 首颗推迟到 ~7s 后：开页瞬间先呈现稳态高光夜空，流星随后才"添光"，
+  // 避免一进来就和"高光"抢视觉、重现"流星出现→高光消失"的错觉。
+  delay: 7 + i * 13 + Math.random() * 4,
+  duration: 36 + Math.random() * 8,
   top: Math.random() * 50,
   left: Math.random() * 60,
   scale: 0.8 + Math.random() * 0.7,
 }))
 
-// 星云带：加宽、加多、抬高不透明下限，只做极慢漂移，
-// 让斜向紫蓝光雾始终铺在内容周围，避免某一帧"高光走空"。
-const nebulaLayers = Array.from({ length: 4 }, (_, i) => ({
-  id: i,
-  top: 10 + Math.random() * 60,
-  left: -10 + Math.random() * 40,
-  width: 70 + Math.random() * 30,
-  height: 16 + Math.random() * 12,
-  opacity: 0.05 + Math.random() * 0.05,
-  delay: Math.random() * 5,
-  duration: 24 + Math.random() * 22,
-}))
+// 星云带：加宽、加多，不透明度*固定*在一个清晰可见的区间、只做极慢漂移，
+// 让斜向紫蓝光雾成为"恒定底色"，任何时刻（含流星划过）都不会突然消失。
+// 同样用负相位延迟：避免开页前几秒星云停在基础 opacity 1.0、动画启动后再跌回
+// 0.7~0.95 的闪变（与星星同理的"高光消失"来源之一）。
+const nebulaLayers = Array.from({ length: 4 }, (_, i) => {
+  const duration = 24 + Math.random() * 22
+  return {
+    id: i,
+    top: 10 + Math.random() * 60,
+    left: -10 + Math.random() * 40,
+    width: 70 + Math.random() * 30,
+    height: 16 + Math.random() * 12,
+    opacity: 0.7 + Math.random() * 0.25,
+    delay: -(Math.random() * duration),
+    duration,
+  }
+})
 </script>
 
 <template>
@@ -167,6 +179,7 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => ({
       <div class="planet-wrap" style="cursor: pointer" title="点我看看？" @click="openEasterEgg">
         <div class="planet" />
         <div class="planet-ring" />
+        <div class="planet-orbit" aria-hidden="true"><span class="planet-moon" /></div>
       </div>
 
       <h1 class="about-title">OmicHub</h1>
@@ -353,9 +366,11 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => ({
   }
 }
 
+/* 呼吸下限抬高（0.87）：配合负延迟，星点最暗时也接近满亮，
+   夜空高光"恒定"，不会因集体走到波谷而发平。 */
 @keyframes twinkle {
   0%, 100% {
-    opacity: calc(var(--star-opacity, 0.55) * 0.82);
+    opacity: calc(var(--star-opacity, 0.55) * 0.87);
     transform: translate(-50%, -50%) scale(0.97);
   }
   50% {
@@ -364,10 +379,10 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => ({
   }
 }
 
-/* 十字高光用更浅的呼吸下限，星芒始终清晰，不会闪没 */
+/* 十字高光用更浅的呼吸下限（0.93），星芒始终清晰，不会闪没 */
 @keyframes twinkleCross {
   0%, 100% {
-    opacity: calc(var(--star-opacity, 0.7) * 0.88);
+    opacity: calc(var(--star-opacity, 0.7) * 0.93);
     transform: translate(-50%, -50%) scale(0.97);
   }
   50% {
@@ -377,18 +392,19 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => ({
 }
 
 @keyframes nebulaDrift {
-  0%, 100% { transform: translateX(0) scale(1); opacity: var(--base-opacity, 0.05); }
-  50% { transform: translateX(1.2%) scale(1.01); opacity: calc(var(--base-opacity, 0.05) * 1.18); }
+  /* 不透明固定（仅 transform 极慢漂移）：星云高光被"钉住"，不会随相位发平而消失 */
+  0%, 100% { transform: translateX(0) scale(1); opacity: var(--base-opacity, 0.7); }
+  50% { transform: translateX(1.2%) scale(1.01); opacity: var(--base-opacity, 0.7); }
 }
 
-@keyframes planetSpin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+@keyframes ringSheen {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
 }
 
-@keyframes ringSpin {
-  from { transform: rotateX(75deg) rotateZ(0deg); }
-  to { transform: rotateX(75deg) rotateZ(360deg); }
+@keyframes orbitSpin {
+  from { transform: rotateX(66deg) rotateZ(0deg); }
+  to { transform: rotateX(66deg) rotateZ(360deg); }
 }
 
 .about-page {
@@ -399,7 +415,7 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => ({
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: #080d24;
+  background: #11193c;
 }
 
 /* 深空蓝紫：以低饱和星云保留层次，不干扰正文阅读。 */
@@ -409,13 +425,15 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => ({
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(ellipse at 20% 12%, rgba(76, 111, 255, 0.20) 0%, transparent 42%),
-    radial-gradient(ellipse at 82% 82%, rgba(122, 92, 214, 0.16) 0%, transparent 46%),
-    radial-gradient(ellipse at 52% 46%, rgba(24, 42, 99, 0.34) 0%, transparent 58%),
-    linear-gradient(145deg, #071127 0%, #101840 50%, #17123b 100%);
+    radial-gradient(ellipse 56% 46% at 50% 26%, rgba(110, 140, 255, 0.16) 0%, transparent 60%),
+    radial-gradient(ellipse at 16% 16%, rgba(90, 120, 255, 0.14) 0%, transparent 44%),
+    radial-gradient(ellipse at 86% 82%, rgba(130, 98, 214, 0.14) 0%, transparent 48%),
+    radial-gradient(ellipse at 6% 90%, rgba(80, 110, 220, 0.10) 0%, transparent 42%),
+    radial-gradient(ellipse at 95% 14%, rgba(120, 104, 210, 0.10) 0%, transparent 42%),
+    linear-gradient(150deg, #141d44 0%, #1c2556 50%, #221d4e 100%);
 }
 
-/* 常驻呼吸高光：在内容正中、右中、左上各铺一团柔光，呼吸下限高、绝不消失，
+/* 常驻高光：在内容正中、右中、左上各铺一团柔光，不透明固定、绝不消失，
    让"几处高光"成为恒定底色，流星只是在其上叠加的瞬时光迹。 */
 .ambient-core {
   position: absolute;
@@ -423,15 +441,18 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => ({
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(ellipse 58% 48% at 50% 44%, rgba(96, 124, 230, 0.16) 0%, transparent 60%),
-    radial-gradient(ellipse 40% 40% at 80% 58%, rgba(132, 98, 214, 0.14) 0%, transparent 62%),
-    radial-gradient(ellipse 34% 34% at 16% 24%, rgba(76, 111, 255, 0.12) 0%, transparent 60%);
-  filter: blur(6px);
+    radial-gradient(ellipse 60% 44% at 50% 22%, rgba(120, 150, 255, 0.32) 0%, transparent 62%),
+    radial-gradient(ellipse 44% 42% at 82% 60%, rgba(152, 110, 236, 0.28) 0%, transparent 64%),
+    radial-gradient(ellipse 40% 40% at 14% 26%, rgba(96, 130, 255, 0.28) 0%, transparent 62%);
+  filter: blur(8px);
+  /* screen 加性提亮：让辉光在较亮的暮光底上依然醒目成形（底越亮越需要 screen） */
+  mix-blend-mode: screen;
   animation: ambientCoreBreathe 11s ease-in-out infinite;
   will-change: opacity, transform;
 }
 @keyframes ambientCoreBreathe {
-  0%, 100% { opacity: 0.8; transform: scale(1); }
+  /* 不透明固定，仅 scale 微呼吸：辉光"钉住"为恒定底色，流星只是其上的瞬时光迹 */
+  0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 1; transform: scale(1.03); }
 }
 
@@ -450,14 +471,16 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => ({
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(129, 151, 255, 0.14) 25%,
-    rgba(170, 133, 255, 0.20) 50%,
-    rgba(129, 151, 255, 0.12) 75%,
+    rgba(150, 170, 255, 0.40) 25%,
+    rgba(190, 150, 255, 0.52) 50%,
+    rgba(150, 170, 255, 0.34) 75%,
     transparent 100%
   );
-  filter: blur(36px);
+  filter: blur(40px);
+  /* screen 加性：斜向星云在亮底上成为清晰、恒定的极光带 */
+  mix-blend-mode: screen;
   animation: nebulaDrift ease-in-out infinite;
-  --base-opacity: 0.05;
+  --base-opacity: 0.85;
 }
 
 /* 星空 */
@@ -563,7 +586,8 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => ({
   position: absolute;
   border-radius: 50%;
   filter: blur(70px);
-  opacity: 0.12;
+  opacity: 0.3;
+  mix-blend-mode: screen;
   pointer-events: none;
   z-index: 0;
   animation: orbBreathe 14s ease-in-out infinite;
@@ -585,8 +609,9 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => ({
   animation-delay: -6s;
 }
 @keyframes orbBreathe {
-  0%, 100% { opacity: 0.10; transform: translate3d(0, 0, 0) scale(1); }
-  50% { opacity: 0.17; transform: translate3d(2%, -2%, 0) scale(1.08); }
+  /* 不透明固定，仅漂移+缩放：边缘高光恒定，不随呼吸发平 */
+  0%, 100% { opacity: 0.3; transform: translate3d(0, 0, 0) scale(1); }
+  50% { opacity: 0.3; transform: translate3d(2%, -2%, 0) scale(1.08); }
 }
 
 /* 内容容器 */
@@ -599,29 +624,77 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => ({
   text-align: center;
 }
 
-/* 旋转行星 */
+/* 旋转行星：preserve-3d 让"球体圆盘(z=0)"与"倾斜 66° 的环/轨平面"
+   共享同一 3D 渲染上下文，按真实深度逐像素排序——于是卫星公转到后弧时
+   被不透明球体遮挡、到前弧时掠过球面，光环也呈土星式前后包裹（后弧藏于球后、
+   前弧浮于球前）。perspective 给环/卫星加轻微近大远小的纵深，球体本身在 z=0 不受影响。
+   注：祖先 .about-page 的 overflow:hidden 只把整个 wrap 压平合成到页面，
+   wrap 内部这套 3D 遮挡在压平前已算好，故不受影响。 */
 .planet-wrap {
   position: relative;
-  width: 80px;
-  height: 80px;
-  margin: 0 auto 24px;
+  width: 92px;
+  height: 92px;
+  margin: 0 auto 26px;
+  transform-style: preserve-3d;
+  perspective: 520px;
 }
+/* 发光行星：固定左上受光 + 大气辉光，静态球体（不整球自转，避免明暗面翻滚）。
+   完全不透明，在 3D 上下文里充当"遮挡体"——后弧卫星/环在此圆盘之后即不可见。 */
 .planet {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #8097ed, #3149b9 52%, #171a5c 100%);
-  box-shadow: 0 0 18px rgba(107, 141, 214, 0.22), inset -8px -8px 16px rgba(0, 0, 0, 0.42);
-  animation: planetSpin 36s linear infinite;
+  background: radial-gradient(circle at 34% 30%, #b6c6ff 0%, #7189ef 32%, #3450c4 62%, #141a52 100%);
+  box-shadow:
+    0 0 22px rgba(120, 150, 255, 0.45),
+    0 0 50px rgba(92, 122, 232, 0.25),
+    inset -7px -8px 16px rgba(0, 0, 0, 0.5),
+    inset 4px 4px 10px rgba(186, 204, 255, 0.28);
 }
+/* 光环：mask 裁出的连续倾斜渐变真环（66° 不再压成线），流光靠背景位移而非几何旋转。
+   与球体同处 3D 上下文：环平面被球体圆盘沿水平中线切开，自动呈现土星式前后遮挡。 */
 .planet-ring {
   position: absolute;
-  inset: -8px;
-  border: 2px solid rgba(255, 255, 255, 0.35);
+  inset: -12px;
   border-radius: 50%;
-  border-top-color: transparent;
-  border-bottom-color: transparent;
-  animation: ringSpin 28s linear infinite;
+  transform: rotateX(66deg);
+  padding: 2.5px;
+  background: linear-gradient(
+    115deg,
+    rgba(205, 220, 255, 0.9) 0%,
+    rgba(150, 172, 255, 0.12) 38%,
+    rgba(176, 150, 255, 0.10) 62%,
+    rgba(210, 222, 255, 0.85) 100%
+  );
+  background-size: 220% 220%;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  filter: drop-shadow(0 0 4px rgba(150, 180, 255, 0.55));
+  animation: ringSheen 7s linear infinite;
+}
+/* 沿环轨公转的小卫星：轨道与光环同尺寸同倾斜，故目视正好沿环椭圆运行。
+   公转时 z 值正负交替：后弧落入球体圆盘之后被真实遮挡，前弧掠过球面，
+   穿过球缘时由平面相交几何裁剪，呈现平滑"钻到球后/探出球前"的掠过感。 */
+.planet-orbit {
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  transform: rotateX(66deg);
+  pointer-events: none;
+  animation: orbitSpin 9s linear infinite;
+}
+.planet-moon {
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  margin-left: -3.5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ffffff, #c2d4ff 55%, #7f9bf0 100%);
+  box-shadow: 0 0 8px 2px rgba(184, 206, 255, 0.7);
 }
 
 /* 标题 */
@@ -648,49 +721,90 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => ({
   text-shadow: 0 0 10px rgba(117, 143, 255, 0.22);
 }
 
-/* 苹果式毛玻璃面板：引言盒子 */
+/* 引言：无边框磨砂"题记"块——去掉整圈亮描边/白内高光/hover 白闪（旧版像被框选），
+   仅以顶/底两条两端渐隐的细光痕 + 柔投影成形；正文靠文字阴影在星场上保持可读。 */
 .about-quote-box {
-  background: rgba(18, 29, 68, 0.72);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border: 1px solid rgba(179, 197, 255, 0.22);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    0 8px 32px 0 rgba(76, 111, 255, 0.16);
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(26, 36, 80, 0.46) 0%, rgba(17, 25, 60, 0.32) 100%);
+  backdrop-filter: saturate(140%) blur(14px);
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+  border: 0;
+  box-shadow: 0 14px 44px rgba(6, 10, 34, 0.42);
   border-radius: 16px;
-  padding: 24px 28px;
+  padding: 26px 30px 24px;
   margin-bottom: 28px;
-  transition: border-color 0.3s ease, transform 0.3s ease;
 }
-.about-quote-box:hover {
-  border-color: rgba(255, 255, 255, 0.9);
-  transform: translateY(-2px);
+/* 顶/底渐隐光痕：有意为之的"题记框"线索，而非矩形描边 */
+.about-quote-box::before,
+.about-quote-box::after {
+  content: '';
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  height: 1px;
+  pointer-events: none;
+}
+.about-quote-box::before {
+  top: 0;
+  background: linear-gradient(90deg, transparent, rgba(178, 204, 255, 0.5), transparent);
+}
+.about-quote-box::after {
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(150, 178, 255, 0.26), transparent);
 }
 
-/* 题记：青蓝渐变斜体，与功能卡片标题同款 */
+/* 题记英文行：对齐权威 StardustQuote 的 gilded 流光 + 衬线显示体，
+   与正文无衬线构成"展示体/正文体"配对（§33.1#5）；辉光恒定，仅流光平移，不呼吸、不消失。 */
 .about-quote-title {
-  font-size: 16px;
+  font-family: Georgia, 'Times New Roman', 'Songti SC', serif;
+  font-size: 18px;
   font-weight: 600;
   font-style: italic;
-  letter-spacing: 1px;
-  margin: 0 0 14px;
+  letter-spacing: 1.5px;
+  margin: 0 0 18px;
+  padding-bottom: 14px;
+  position: relative;
   text-align: center;
   text-indent: 0;
-  background: linear-gradient(90deg, #1E6FD9, #0e9bb5, #1E6FD9);
+  background: linear-gradient(
+    90deg,
+    rgba(238, 248, 255, 0.92) 0%,
+    #ffffff 24%,
+    #6fb4ff 50%,
+    #ffffff 76%,
+    rgba(238, 248, 255, 0.92) 100%
+  );
   background-size: 200% auto;
   -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer 9s linear infinite;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 10px rgba(112, 181, 255, 0.55));
+  animation: shimmer 10s linear infinite;
+}
+/* 标题下一道居中渐隐细分隔线：编辑式题记节奏 */
+.about-quote-title::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 56px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(150, 185, 255, 0.7), transparent);
 }
 
 .about-quote {
   font-size: 14px;
-  line-height: 1.9;
-  color: #d8e1fb;
+  line-height: 1.95;
+  color: #eef2ff;
   text-align: justify;
   margin: 0;
   text-indent: 2em;
+  /* 文字阴影晕：在更亮的星场/磨砂底上保证正文对比（对齐 StardustQuote 做法） */
+  text-shadow:
+    0 1px 2px rgba(4, 8, 24, 0.55),
+    0 2px 10px rgba(4, 8, 24, 0.4);
 }
 
 /* 特性：玻璃面板 */
@@ -700,36 +814,61 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => ({
   gap: 12px;
   margin-bottom: 28px;
 }
+/* 特性卡片：与引言框同一套磨砂配方（同半透渐变 + 同模糊/饱和 + 去硬边 + 同柔投影 + 同渐隐光痕），
+   仅圆角保留 12px（卡片级，对引言面板 16px 形成 §3.3 圆角层级，避免"全场一个值"）。 */
 .feature-item {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px;
+  padding: 14px 16px;
   border-radius: 12px;
-  background: rgba(18, 29, 68, 0.66);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border: 1px solid rgba(179, 197, 255, 0.20);
-  box-shadow:
-    inset 0 1px 0 rgba(220, 228, 255, 0.12),
-    0 12px 32px 0 rgba(3, 7, 25, 0.26);
-  transition: border-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+  background: linear-gradient(180deg, rgba(26, 36, 80, 0.46) 0%, rgba(17, 25, 60, 0.32) 100%);
+  backdrop-filter: saturate(140%) blur(14px);
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+  border: 0;
+  box-shadow: 0 12px 36px rgba(6, 10, 34, 0.40);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, filter 0.25s ease;
   text-align: left;
 }
-.feature-item:hover {
-  border-color: rgba(184, 202, 255, 0.46);
-  transform: translateY(-2px);
+/* 与引言框一致的顶/底渐隐光痕 */
+.feature-item::before,
+.feature-item::after {
+  content: '';
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  height: 1px;
+  pointer-events: none;
 }
-/* 主推卡片：AI 智能分析，轻微青蓝描边高亮 */
+.feature-item::before {
+  top: 0;
+  background: linear-gradient(90deg, transparent, rgba(178, 204, 255, 0.5), transparent);
+}
+.feature-item::after {
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(150, 178, 255, 0.22), transparent);
+}
+/* 悬停：无描边闪烁，改为整体微提亮 + 上浮 + 加深投影的"点亮"反馈 */
+.feature-item:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+  box-shadow: 0 16px 40px rgba(6, 10, 34, 0.5);
+}
+/* 主推卡片：AI 智能分析——材质与其余卡片完全相同，仅以品牌色光痕 + 柔品牌辉光区分主次 */
 .feature-item--primary {
-  border-color: rgba(123, 150, 255, 0.56);
   box-shadow:
-    inset 0 1px 0 rgba(220, 228, 255, 0.14),
-    0 0 0 1px rgba(123, 150, 255, 0.15),
-    0 12px 28px rgba(4, 10, 33, 0.30);
+    0 12px 36px rgba(6, 10, 34, 0.40),
+    0 0 24px rgba(99, 130, 255, 0.20);
+}
+.feature-item--primary::before {
+  background: linear-gradient(90deg, transparent, rgba(150, 182, 255, 0.9), transparent);
 }
 .feature-item--primary:hover {
-  border-color: rgba(146, 169, 255, 0.72);
+  box-shadow:
+    0 16px 40px rgba(6, 10, 34, 0.5),
+    0 0 30px rgba(99, 130, 255, 0.30);
 }
 .feature-icon {
   color: #aebfff;
@@ -747,11 +886,14 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => ({
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  filter: drop-shadow(0 1px 2px rgba(4, 8, 24, 0.45));
 }
 .feature-desc {
   font-size: 12px;
-  color: #afbddf;
+  color: #c6d2ef;
   margin-top: 2px;
+  /* 更通透的磨砂底上保护小字对比 */
+  text-shadow: 0 1px 2px rgba(4, 8, 24, 0.55);
 }
 
 /* 操作按钮 */
@@ -812,7 +954,7 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => ({
 @media (prefers-reduced-transparency: reduce) {
   .about-quote-box,
   .feature-item {
-    background: #15204a;
+    background: #1b2552;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
@@ -924,10 +1066,17 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => ({
   .ambient-core,
   .star,
   .star.has-cross,
-  .shooting-star {
+  .shooting-star,
+  .planet-ring,
+  .planet-orbit {
     animation: none !important;
   }
-  .ambient-core { opacity: 0.92; }
-  .orb { opacity: 0.13; }
+  .ambient-core { opacity: 1; }
+  .orb { opacity: 0.3; }
+  /* 减少动画下用各自"呼吸稳态值"钉住透明度，静态夜空与动效夜空观感一致，
+     不会因动画关闭而退回基础 opacity 1.0 的过曝满亮。 */
+  .star { opacity: var(--star-opacity, 0.55); }
+  .star.has-cross { opacity: var(--star-opacity, 0.7); }
+  .nebula-band { opacity: var(--base-opacity, 0.85); }
 }
 </style>

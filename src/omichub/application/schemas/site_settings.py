@@ -7,7 +7,7 @@ from pydantic import Field, field_validator
 from omichub.application.schemas.base import OmicsHubBaseSchema
 
 TOTPPolicy = Literal["off", "optional", "required"]
-QuickEntryColor = Literal["blue", "purple", "cyan", "green", "orange", "teal", "gray"]
+QuickEntryColor = Literal["blue", "purple", "violet", "cyan", "green", "orange", "teal", "gray"]
 
 
 class HomeQuickEntryDTO(OmicsHubBaseSchema):
@@ -41,6 +41,7 @@ class SiteSettingsDTO(OmicsHubBaseSchema):
     registration_enabled: bool
     totp_policy: TOTPPolicy
     home_quick_entries: list[HomeQuickEntryDTO]
+    subagent_fanout_enabled: bool = False
 
 
 class UpdateSiteSettingsDTO(OmicsHubBaseSchema):
@@ -48,6 +49,7 @@ class UpdateSiteSettingsDTO(OmicsHubBaseSchema):
 
     registration_enabled: bool | None = None
     totp_policy: TOTPPolicy | None = None
+    subagent_fanout_enabled: bool | None = None
     home_quick_entries: list[HomeQuickEntryDTO] | None = Field(
         default=None,
         min_length=1,

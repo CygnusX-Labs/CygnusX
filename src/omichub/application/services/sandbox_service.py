@@ -8,6 +8,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from loguru import logger
 
 from omichub.application.schemas.sandbox import SandboxSessionDTO
 from omichub.core.config import get_settings
@@ -114,6 +115,7 @@ class SandboxService:
             ):
                 yield event
         except Exception as e:  # noqa: BLE001
+            logger.exception(f"沙盒代码执行异常: session={session_id}")
             yield {"type": "error", "detail": f"执行异常：{e}"}
             await self._domain.mark_error(session_id)
             return

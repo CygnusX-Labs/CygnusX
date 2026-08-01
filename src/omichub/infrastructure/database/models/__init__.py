@@ -5,6 +5,7 @@
 """
 
 from omichub.infrastructure.database.models.agent import AgentTemplateModel
+from omichub.infrastructure.database.models.agentteams_bridge import AgentTeamsBridgeSettingsModel
 from omichub.infrastructure.database.models.agent_memory import AgentMemoryModel
 from omichub.infrastructure.database.models.ai import ConversationModel, MessageModel
 from omichub.infrastructure.database.models.api_key import APIKeyModel
@@ -36,6 +37,8 @@ from omichub.infrastructure.database.models.file import (
     UploadSessionModel,
 )
 from omichub.infrastructure.database.models.knowledge_audit_log import DocAuditLogModel
+from omichub.infrastructure.database.models.knowledge_base import KnowledgeBaseModel
+from omichub.infrastructure.database.models.knowledge_chunk import KbChunkModel
 from omichub.infrastructure.database.models.knowledge_document import KbDocumentModel
 from omichub.infrastructure.database.models.knowledge_editor import DocEditorModel
 from omichub.infrastructure.database.models.knowledge_issue import KbIssueModel
@@ -61,13 +64,14 @@ from omichub.infrastructure.database.models.report import ReportFileModel, Repor
 from omichub.infrastructure.database.models.sandbox import SandboxSessionModel
 from omichub.infrastructure.database.models.search_provider import SearchProviderConfigModel
 from omichub.infrastructure.database.models.site_settings import SiteSettingModel
-from omichub.infrastructure.database.models.skill import SkillModel
+from omichub.infrastructure.database.models.skill import SkillModel, SkillVersionModel
 from omichub.infrastructure.database.models.task import TaskModel
 from omichub.infrastructure.database.models.terminal import TerminalSessionModel
 from omichub.infrastructure.database.models.user import UserModel, WorkspaceModel
 
 __all__ = [
     "AgentTemplateModel",
+    "AgentTeamsBridgeSettingsModel",
     "AgentMemoryModel",
     "APIKeyModel",
     "UserModel",
@@ -91,6 +95,7 @@ __all__ = [
     "BlastDatabaseModel",
     "BlastTaskModel",
     "KbDocumentModel",
+    "KnowledgeBaseModel",
     "DocRevisionModel",
     "DocEditorModel",
     "KbIssueModel",
@@ -115,6 +120,7 @@ __all__ = [
     "NotificationModel",
     "SiteSettingModel",
     "SkillModel",
+    "SkillVersionModel",
     "FileRecordModel",
     "UploadSessionModel",
     "SampleModel",

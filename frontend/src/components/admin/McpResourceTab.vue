@@ -8,10 +8,12 @@ import {
 import {
   RefreshOutline, BuildOutline, PulseOutline, AddOutline, TrashOutline,
   SettingsOutline, DocumentTextOutline, EllipsisHorizontalOutline,
-  ChatboxOutline, FolderOpenOutline, AlertCircleOutline,
+  ChatboxOutline, FolderOpenOutline, AlertCircleOutline, TimeOutline,
+  RocketOutline, SyncOutline,
 } from '@vicons/ionicons5'
 import { useAgentHubStore } from '@/stores/agentHub'
-import type { McpService, McpTool, McpLogEntry } from '@/types/agent'
+import type { McpService, McpTool, McpLogEntry, McpVersion } from '@/types/agent'
+import VersionHistoryDrawer, { type VersionHistoryItem } from './VersionHistoryDrawer.vue'
 
 const message = useMessage()
 const store = useAgentHubStore()
@@ -276,7 +278,95 @@ function formatLogTime(ts: string) {
   }
 }
 
+// ===== 版本历史抽屉 =====
+const showVersionDrawer = ref(false)
+const versionLoading = ref(false)
+const versionRollingBack = ref(false)
+const versionMcp = ref<McpService | null>(null)
+const versionItems = ref<McpVersion[]>([])
+
+const MCP_SOURCE_LABELS: Record<string, string> = {
+  builder: '构建发布',
+  admin: '手工更新',
+  rollback: '回滚',
+  publish: '转正发布',
+}
+const MCP_SOURCE_TYPES: Record<string, 'info' | 'default' | 'warning' | 'success'> = {
+  builder: 'info',
+  admin: 'default',
+  rollback: 'warning',
+  publish: 'success',
+}
+
+/** 归一化为共用抽屉组件的行模型 */
+const versionDrawerItems = computed<VersionHistoryItem[]>(() =>
+  versionItems.value.map((v) => ({
+    label: `v${v.version}`,
+    primary: v.is_major,
+    sourceLabel: MCP_SOURCE_LABELS[v.source] ?? v.source,
+    sourceType: MCP_SOURCE_TYPES[v.source] ?? 'default',
+    changelog: v.changelog ?? '',
+    createdBy: v.created_by,
+    createdAt: v.created_at,
+    rollbackTarget: `v${v.version}`,
+    rollbackDisabled: !v.has_config_snapshot,
+    rollbackDisabledReason: '该版本无配置快照，无法回滚',
+    raw: v,
+  })),
+)
+
+async function openVersions(row: McpService) {
+  versionMcp.value = row
+  showVersionDrawer.value = true
+  await loadVersions(row.id)
+}
+
+async function loadVersions(id: string) {
+  versionLoading.value = true
+  try {
+    versionItems.value = await store.fetchMcpVersions(id)
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail || '加载版本历史失败')
+    versionItems.value = []
+  } finally {
+    versionLoading.value = false
+  }
+}
+
+async function handleVersionRollback(item: VersionHistoryItem) {
+  const v = item.raw as McpVersion
+  if (!versionMcp.value) return
+  versionRollingBack.value = true
+  try {
+    await store.rollbackMcpServer(versionMcp.value.id, v.version)
+    message.success(`已回滚到 v${v.version}`)
+    await loadVersions(versionMcp.value.id)
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail || '回滚失败')
+  } finally {
+    versionRollingBack.value = false
+  }
+}
+
 // ===== 表格操作 =====
+async function handleSyncPresets() {
+  try {
+    await store.syncMcpPresets()
+    message.success('内置 MCP 预设已同步（免重启生效）')
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail || '同步预设失败')
+  }
+}
+
+async function handlePromote(row: McpService) {
+  try {
+    const res = await store.promoteMcpServer(row.id)
+    message.success(`${row.name} 已转正为正式 MCP（v${res?.current_version ?? ''}）`)
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail || '转正失败')
+  }
+}
+
 async function toggleEnabled(row: McpService) {
   try {
     await store.toggleMcpStatus(row.id)
@@ -382,14 +472,17 @@ const registryOptions = [
 
 const columns = [
   {
-    title: '服务', key: 'name', width: 260,
+    // 不设固定宽度：作为弹性列吸收多余空间，避免末尾「操作」列被拉伸出大片空白
+    title: '服务', key: 'name',
     render: (row: McpService) =>
       h('div', { class: 'mcp-name' }, [
         h('span', { class: 'mcp-icon' }, '🔌'),
         h('div', { class: 'mcp-meta' }, [
           h('div', { class: 'mcp-title' }, [
             row.name,
-            row.version && h(NTag, { size: 'tiny', round: true, style: 'margin-left: 6px' }, { default: () => `v${row.version}` }),
+            (row.current_version || row.version) && h(NTag, { size: 'tiny', round: true, style: 'margin-left: 6px' }, { default: () => `v${row.current_version || row.version}` }),
+            row.pool === 'experimental' && h(NTag, { size: 'tiny', round: true, type: 'warning', bordered: false, style: 'margin-left: 4px' }, { default: () => '实验' }),
+            row.pool === 'deprecated' && h(NTag, { size: 'tiny', round: true, type: 'error', bordered: false, style: 'margin-left: 4px' }, { default: () => '废弃' }),
           ]),
           h('div', { class: 'mcp-desc' }, row.description),
         ]),
@@ -434,6 +527,19 @@ const columns = [
               { default: () => [h(NIcon, { component: BuildOutline })] }),
             default: () => '测试',
           }),
+          h(NTooltip, null, {
+            trigger: () => h(NButton, { size: 'tiny', quaternary: true, onClick: () => openVersions(row) },
+              { default: () => [h(NIcon, { component: TimeOutline })] }),
+            default: () => '版本历史',
+          }),
+          row.pool === 'experimental' && h(NPopconfirm, { onPositiveClick: () => handlePromote(row) }, {
+            trigger: () => h(NTooltip, null, {
+              trigger: () => h(NButton, { size: 'tiny', quaternary: true, type: 'success' },
+                { default: () => [h(NIcon, { component: RocketOutline })] }),
+              default: () => '转正为正式 MCP',
+            }),
+            default: () => `将 ${row.name} 转正为正式 MCP？转正后永久有效、不再受 TTL 限制。`,
+          }),
           !row.is_preset && h(NPopconfirm, { onPositiveClick: () => handleDelete(row) }, {
             trigger: () => h(NButton, { size: 'tiny', quaternary: true, type: 'error' },
               { default: () => [h(NIcon, { component: TrashOutline })] }),
@@ -454,6 +560,15 @@ const columns = [
           <template #icon><NIcon :component="RefreshOutline" /></template>
           刷新
         </NButton>
+        <NTooltip>
+          <template #trigger>
+            <NButton size="small" quaternary @click="handleSyncPresets">
+              <template #icon><NIcon :component="SyncOutline" /></template>
+              同步预设
+            </NButton>
+          </template>
+          重新同步内置 MCP（platform/tools/pipelines）工具清单，新增内置工具免重启容器生效
+        </NTooltip>
         <NButton type="primary" size="small" @click="showAddDrawer = true">
           <template #icon><NIcon :component="AddOutline" /></template>
           添加 MCP 服务
@@ -706,9 +821,18 @@ const columns = [
       </NDrawerContent>
     </NDrawer>
 
+    <!-- 版本历史抽屉 -->
+    <VersionHistoryDrawer
+      v-model:show="showVersionDrawer"
+      :title="`版本历史 · ${versionMcp?.name || ''}`"
+      :items="versionDrawerItems"
+      :loading="versionLoading"
+      :rolling-back="versionRollingBack"
+      @rollback="handleVersionRollback"
+    />
+
     <!-- 日志弹窗 -->
-    <NModal v-model:show="showLogModal" preset="card" :title="`${logMcp?.name || 'MCP'} 运行日志`" style="width: 720px">
-      <div class="log-container">
+    <NModal v-model:show="showLogModal" preset="card" :title="`${logMcp?.name || 'MCP'} 运行日志`" style="width: 720px">      <div class="log-container">
         <div v-if="logLoading" class="log-empty">加载中...</div>
         <div v-else-if="!logEntries.length" class="log-empty">暂无日志，点击"测试"可产生新日志。</div>
         <div v-else class="log-list">

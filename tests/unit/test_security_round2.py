@@ -10,7 +10,11 @@ from omichub.application.schemas.task import TaskSubmitRequest
 from omichub.application.services.ai_tools import AIToolExecutor
 from omichub.application.services.chat_service import ChatService
 from omichub.core.security import create_access_token, decode_token
-from omichub.infrastructure.mcp.client import validate_stdio_args, validate_stdio_command
+from omichub.infrastructure.mcp.client import (
+    validate_stdio_args,
+    validate_stdio_command,
+    validate_working_dir,
+)
 from omichub.middleware.login_rate_limit import _client_ip
 
 
@@ -68,6 +72,18 @@ class TestMCPArgsValidation:
     def test_stdio_args_reject_path_traversal(self):
         with pytest.raises(ValueError):
             validate_stdio_args(["../../etc/shadow"])
+
+    def test_working_dir_allows_empty_and_absolute(self):
+        # 空值与绝对路径均合法：cwd 需要绝对路径才能定位本地脚本型 MCP（如 node build/index.js）
+        validate_working_dir("")
+        validate_working_dir(None)
+        validate_working_dir("/data/omichub/mcp/Ensembl-MCP-Server")
+
+    def test_working_dir_rejects_traversal_and_metachar(self):
+        with pytest.raises(ValueError):
+            validate_working_dir("/data/../etc")
+        with pytest.raises(ValueError):
+            validate_working_dir("/data/x; rm -rf /")
 
 
 class TestChatAttachmentSSRF:

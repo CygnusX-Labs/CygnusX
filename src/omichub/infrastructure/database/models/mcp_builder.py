@@ -81,6 +81,11 @@ class MCPVersionModel(Base, TimestampMixin):
 
     code_snapshot: Mapped[str] = mapped_column(Text, default="")
     tools_snapshot: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    # 连接/行为配置快照（transport/command/args/url/env/registry/working_dir/timeout/
+    # auto_restart/is_enabled/description），admin 手工更新与回滚场景据此完整还原
+    config_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    # 快照来源：builder（构建发布）/ admin（手工更新）/ rollback（回滚产生）/ publish（转正发布）
+    source: Mapped[str] = mapped_column(String(20), default="builder")
     changelog: Mapped[str] = mapped_column(Text, default="")
 
     created_by: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)

@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from omichub.api.v1 import (
+    agentteams,
     agents,
     ai,
     announcements,
@@ -18,6 +19,7 @@ from omichub.api.v1 import (
     mas,
     mcp,
     mcp_builder,
+    modules,
     notification,
     pipelines,
     platform_config,
@@ -39,7 +41,9 @@ from omichub.api.v1.admin import agents as admin_agents
 from omichub.api.v1.admin import ai_providers as admin_ai_providers
 from omichub.api.v1.admin import search_providers as admin_search_providers
 from omichub.api.v1.admin import assistants as admin_assistants
+from omichub.api.v1.admin import knowledge_bases as admin_knowledge_bases
 from omichub.api.v1.admin import festival as admin_festival
+from omichub.api.v1.admin import agentteams_bridge as admin_agentteams_bridge
 from omichub.api.v1.admin import platform_config as admin_platform_config
 from omichub.api.v1.admin import skills as admin_skills
 from omichub.api.v1.admin import stats as admin_stats
@@ -85,12 +89,19 @@ api_router.include_router(admin_skills.router, prefix="/admin/skills", tags=["Ad
 api_router.include_router(
     admin_assistants.router, prefix="/admin/assistants", tags=["Admin-Assistants"]
 )
+api_router.include_router(
+    admin_knowledge_bases.router, prefix="/admin/knowledge-bases", tags=["Admin-Knowledge-Bases"]
+)
 api_router.include_router(admin_agents.router, prefix="/admin/agents", tags=["Admin-Agents"])
 api_router.include_router(admin_festival.router, prefix="/admin", tags=["Admin-Festival"])
 api_router.include_router(
     admin_platform_config.router, prefix="/admin", tags=["Admin-PlatformConfig"]
 )
+api_router.include_router(
+    admin_agentteams_bridge.router, prefix="/admin", tags=["Admin-AgentTeamsBridge"]
+)
 api_router.include_router(agents.router, prefix="/agents", tags=["Agents"])
+api_router.include_router(agentteams.router, prefix="/agent-teams", tags=["AgentTeams"])
 api_router.include_router(ai.router, prefix="/ai", tags=["AI Copilot"])
 api_router.include_router(chat.router, prefix="/chat", tags=["AI Chat"])
 api_router.include_router(llm.router, prefix="/llm", tags=["LLM"])
@@ -104,6 +115,7 @@ api_router.include_router(mcp_builder.router, prefix="/mcp-builder", tags=["MCP 
 api_router.include_router(sandbox.router, prefix="/sandbox", tags=["Sandbox"])
 api_router.include_router(studio.router, prefix="/studio", tags=["Studio"])
 api_router.include_router(terminal.router, prefix="/terminal", tags=["Terminal"])
+api_router.include_router(modules.router, prefix="/modules", tags=["Modules"])
 
 # 生信工具箱：自动发现 omichub.tools.<工具>.api 并挂载（每个工具自声明 prefix/tags）
 # 新增工具无需改本文件 —— 在 src/omichub/tools/<工具名>/api.py 声明 router/prefix/tags 即可。

@@ -53,7 +53,7 @@ const shareExpiresAt = ref<string | null>(null)
 const input = ref('')
 const longRunSeconds = ref(0)
 const longRunPlaceholder = computed(() => {
-  if (!store.isStreaming) return `向 ${agent.value?.name || 'AI 助手'} 描述分析任务`
+  if (!store.isStreaming) return `向 ${agent.value?.name || 'AI 助手'} 描述分析任务（@ 引用文件，/ 调用技能或智能体）`
   if (longRunSeconds.value > 90) return '正在跑长任务，去倒杯咖啡？'
   if (longRunSeconds.value > 30) return '沙盒正在计算，代码和产物会实时同步…'
   return 'AI 正在执行，稍等片刻…'

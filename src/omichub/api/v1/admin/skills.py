@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, UploadFile
 
-from omichub.api.deps import DbSession
+from omichub.api.deps import CurrentUserId, DbSession
 from omichub.api.v1.admin.users import AdminRequired
 from omichub.application.schemas.skill import (
     CreateSkillDTO,
@@ -16,7 +17,9 @@ from omichub.application.schemas.skill import (
     SkillImportConfirmDTO,
     SkillImportPreviewDTO,
     SkillMarketplaceItemDTO,
+    SkillRollbackRequest,
     SkillUpdateCheckDTO,
+    SkillVersionDTO,
     UpdateSkillDTO,
 )
 from omichub.application.services.skill_import_service import SkillImportService
@@ -57,10 +60,11 @@ async def list_skills(
 @router.post("", response_model=SkillDTO, status_code=201, summary="创建技能")
 async def create_skill(
     _admin: AdminRequired,
+    current_user_id: CurrentUserId,
     service: SkillServiceDep,
     req: CreateSkillDTO,
 ) -> SkillDTO:
-    return await service.create_skill(req)
+    return await service.create_skill(req, actor_id=uuid.UUID(current_user_id))
 
 
 # ---------- 技能市场（内置可安装技能） ----------
@@ -174,11 +178,12 @@ async def get_skill(
 @router.put("/{skill_id}", response_model=SkillDTO, summary="更新技能")
 async def update_skill(
     _admin: AdminRequired,
+    current_user_id: CurrentUserId,
     service: SkillServiceDep,
     skill_id: str,
     req: UpdateSkillDTO,
 ) -> SkillDTO:
-    return await service.update_skill(skill_id, req)
+    return await service.update_skill(skill_id, req, actor_id=uuid.UUID(current_user_id))
 
 
 @router.delete("/{skill_id}", summary="删除技能")
@@ -198,6 +203,35 @@ async def toggle_skill(
     skill_id: str,
 ) -> SkillDTO:
     return await service.toggle_skill(skill_id)
+
+
+# ---------- 版本控制（快照 + 回滚） ----------
+
+
+@router.get(
+    "/{skill_id}/versions",
+    response_model=list[SkillVersionDTO],
+    summary="技能版本历史",
+)
+async def list_skill_versions(
+    _admin: AdminRequired,
+    service: SkillServiceDep,
+    skill_id: str,
+) -> list[SkillVersionDTO]:
+    return await service.list_skill_versions(skill_id)
+
+
+@router.post("/{skill_id}/rollback", response_model=SkillDTO, summary="回滚技能到指定版本")
+async def rollback_skill(
+    _admin: AdminRequired,
+    current_user_id: CurrentUserId,
+    service: SkillServiceDep,
+    skill_id: str,
+    req: SkillRollbackRequest,
+) -> SkillDTO:
+    return await service.rollback_skill(
+        skill_id, req.revision, actor_id=uuid.UUID(current_user_id)
+    )
 
 
 @router.post(

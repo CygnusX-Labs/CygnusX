@@ -1,0 +1,42 @@
+schema_version: "1.0"
+bridge_base_path: /v1
+worker_inbox:
+  request: "GET /work-items/assigned"
+  boundary: "Returns only the authenticated Worker's pending/in_progress work items and logical project/task references."
+worker_claim:
+  request: "POST /cases/{case_id}/work-items/{work_item_id}/claim"
+  boundary: "Atomically moves only the authenticated target's pending work item to in_progress; an expired deadline may be reclaimed."
+skills:
+  project-preflight:
+    actor: data-steward
+    request: "POST /projects/{project_id}/preflight"
+    success_statuses: [passed, blocked]
+    failure_handling: "Return blocked; never submit a task."
+    boundary: read_only
+  workflow-submit:
+    actor: workflow-operator
+    request: "POST /tasks"
+    requires: [approval_token, idempotency_key, allowed_flow]
+    failure_handling: "Retry only with the same idempotency key after transient upstream failures."
+    boundary: "No flow YAML or shell access."
+  workflow-monitor:
+    actor: workflow-operator
+    request: "GET /tasks/{task_id}"
+    failure_handling: "Report timeout; never enlarge resources automatically."
+    boundary: read_only
+  workflow-cancel:
+    actor: workflow-operator
+    request: "POST /tasks/{task_id}/cancel"
+    requires: [approval_token]
+    failure_handling: "Idempotently record the cancellation reason."
+    boundary: approval_required
+  quality-gate:
+    actor: quality-auditor
+    request: "GET /tasks/{task_id}; GET /tasks/{task_id}/artifacts"
+    failure_handling: "Use manual_review if no rule version is available."
+    boundary: "Read-only; artifacts are logical omic:// references, never filesystem paths."
+  delivery-pack:
+    actor: delivery-reporter
+    request: "POST /cases/{case_id}/evidence"
+    failure_handling: "Block delivery if required artifacts are absent."
+    boundary: evidence_only

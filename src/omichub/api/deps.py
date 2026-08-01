@@ -118,6 +118,26 @@ async def require_admin_totp(
 AdminTotpRequired = Annotated[str, Depends(require_admin_totp)]
 
 
+async def require_admin(
+    current_user_id: CurrentUserId,
+    db: DbSession,
+) -> str:
+    """管理员操作校验（不含 TOTP）：仅校验登录态与角色。
+
+    用于非高敏感的管理操作（如功能灰度开关）。高敏感操作仍用 ``AdminTotpRequired``。
+    """
+    repo = SqlAlchemyUserRepository(db)
+    user = await repo.get_by_id(uuid.UUID(current_user_id))
+    if not user:
+        raise AuthenticationError("无效的访问令牌")
+    if user.role != Role.ADMIN:
+        raise AuthorizationError("仅管理员可执行此操作")
+    return current_user_id
+
+
+AdminRequired = Annotated[str, Depends(require_admin)]
+
+
 async def get_active_user_from_token_payload(payload: dict[str, Any]) -> UserModel | None:
     """从已解码的 JWT payload 中解析用户并校验其处于 active 状态与 token_version。
 

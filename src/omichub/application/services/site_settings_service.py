@@ -47,11 +47,11 @@ DEFAULT_HOME_QUICK_ENTRIES: list[dict[str, str]] = [
     },
     {
         "key": "ai",
-        "title": "AI 助手",
-        "desc": "智能分析与问答",
+        "title": "星尘AI",
+        "desc": "对话式生信分析与结果解读",
         "to": "/ai",
-        "icon": "ChatbubblesOutline",
-        "icon_bg": "green",
+        "icon": "SparklesOutline",
+        "icon_bg": "violet",
     },
     {
         "key": "tasks",
@@ -119,11 +119,17 @@ class SiteSettingsService:
             registration_enabled=model.registration_enabled,
             totp_policy=cast(TOTPPolicy, policy),
             home_quick_entries=_normalize_home_quick_entries(model.home_quick_entries),
+            subagent_fanout_enabled=model.subagent_fanout_enabled,
         )
 
     async def is_registration_enabled(self) -> bool:
         model = await self._get_or_create()
         return model.registration_enabled
+
+    async def is_subagent_fanout_enabled(self) -> bool:
+        """管理端平台设置中的 fan-out 开关（与 env 开关任一为真即启用）。"""
+        model = await self._get_or_create()
+        return model.subagent_fanout_enabled
 
     async def get_totp_policy(self) -> TOTPPolicy:
         model = await self._get_or_create()
@@ -139,6 +145,8 @@ class SiteSettingsService:
                 model.registration_enabled = req.registration_enabled
             if req.totp_policy is not None:
                 model.totp_policy = req.totp_policy
+            if req.subagent_fanout_enabled is not None:
+                model.subagent_fanout_enabled = req.subagent_fanout_enabled
             if req.home_quick_entries is not None:
                 model.home_quick_entries = [entry.model_dump() for entry in req.home_quick_entries]
             await self._db.flush()

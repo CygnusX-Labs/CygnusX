@@ -61,8 +61,8 @@ quick_entries:
     title: "数据管理"
     desc: "上传与管理样本数据"
   - key: ai
-    title: "AI 助手"
-    desc: "智能分析与问答"
+    title: "星尘AI"
+    desc: "对话式生信分析与结果解读"
   - key: tasks
     title: "任务中心"
     desc: "查看分析任务进度"

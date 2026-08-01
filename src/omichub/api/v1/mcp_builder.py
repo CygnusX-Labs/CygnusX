@@ -104,9 +104,10 @@ async def review_queue(
 
 @router.post("/builds/{build_id}/review", response_model=MCPBuildDTO, summary="提交审核决定（Admin）")
 async def review_build(
-    admin: AdminRequired, build_id: UUID, req: ReviewRequest, service: BuilderDep
+    user_id: CurrentUserId, _admin: AdminRequired, build_id: UUID, req: ReviewRequest, service: BuilderDep
 ) -> MCPBuildDTO:
-    return await service.review_build(str(build_id), str(admin.id), req.decision, req.comment)
+    # AdminRequired 是纯权限闸门（注入值为 None），操作者 ID 取自 CurrentUserId
+    return await service.review_build(str(build_id), user_id, req.decision, req.comment)
 
 
 # ----------------------------------------------------------------------
@@ -131,6 +132,14 @@ async def delete_server(
     user_id: CurrentUserId, server_id: UUID, service: BuilderDep
 ) -> None:
     await service.delete_experimental_server(str(server_id), user_id)
+
+
+@router.post("/servers/{server_id}/promote", summary="实验 MCP 转正为正式（Admin）")
+async def promote_server(
+    user_id: CurrentUserId, _admin: AdminRequired, server_id: UUID, service: BuilderDep
+) -> dict[str, Any]:
+    """把实验池 MCP 提升为正式池：清除 TTL、打 publish 版本行并写审计日志。"""
+    return await service.promote_server(str(server_id), user_id)
 
 
 @router.post("/servers/{server_id}/invoke", summary="调用实验 MCP 工具（沙箱桥接）")

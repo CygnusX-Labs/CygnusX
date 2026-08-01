@@ -138,9 +138,10 @@ ENV PATH=/opt/conda/envs/omichub/bin:$PATH \
 WORKDIR /workspace
 RUN mkdir -p /workspace/data /workspace/output
 
-# 健康检查：验证核心生信栈可导入
+# 健康检查：轻量探活即可（池在 run 时也会覆盖此 HEALTHCHECK）。
+# 不要在这里 import scanpy 等重栈 —— 每个 warm 容器每 60s 跑一次会吃满 CPU。
 HEALTHCHECK --interval=60s --timeout=15s --start-period=120s --retries=3 \
-    CMD python -c "import scanpy, numpy, pandas, anndata; print('sandbox OK')" || exit 1
+    CMD python -c "print('sandbox OK')" || exit 1
 
 # 容器保持存活（由池通过 sleep infinity 接管，此处兜底）
 CMD ["sleep", "infinity"]

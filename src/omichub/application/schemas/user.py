@@ -25,6 +25,9 @@ class UserResponse(OmicsHubBaseSchema):
     storage_quota: int = Field(default=0, description="存储配额（字节）")
     used_storage: int = Field(default=0, description="已用存储（字节）")
     last_login_at: datetime | None = Field(default=None, description="最后登录时间")
+    disabled_modules: list[str] = Field(
+        default_factory=list, description="被禁用的模块 key 列表（空 = 全部模块可用）"
+    )
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")
 
@@ -56,6 +59,15 @@ class UserUpdateRequest(OmicsHubBaseSchema):
         if v is not None and not isinstance(v, dict):
             raise ValueError("Preferences must be a JSON object")
         return v
+
+
+class UserModulesUpdateRequest(OmicsHubBaseSchema):
+    """模块权限更新请求（管理端按用户配置被禁模块）"""
+
+    disabled_modules: list[str] = Field(
+        default_factory=list,
+        description="被禁用的模块 key 列表（须为注册表中 lockable=true 的模块）",
+    )
 
 
 class UserListItem(OmicsHubBaseSchema):

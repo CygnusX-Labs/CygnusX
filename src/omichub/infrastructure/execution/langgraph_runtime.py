@@ -41,6 +41,7 @@ class LangGraphRuntimeService:
         self.last_messages: list[dict[str, Any]] = []
         self.error: str | None = None
         self.last_handoff: dict[str, Any] | None = None
+        self.last_ask_request: dict[str, Any] | None = None
         self._graph = self._build_graph()
 
     def _build_graph(self) -> Any:
@@ -88,6 +89,7 @@ class LangGraphRuntimeService:
             "usage": None,
             "error": None,
             "handoff": None,
+            "ask_request": None,
         }
 
         async def _run() -> None:
@@ -103,6 +105,7 @@ class LangGraphRuntimeService:
                 self.last_messages = final.get("messages", [])
                 self.error = final.get("error")
                 self.last_handoff = final.get("handoff")
+                self.last_ask_request = final.get("ask_request")
             except Exception as e:  # noqa: BLE001
                 self.error = str(e)
                 await queue.put(ChatChunk(type="error", content=f"运行时异常: {e}"))

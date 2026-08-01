@@ -53,6 +53,63 @@ async def test_chat_upload_csv(client: AsyncClient, auth_headers: dict[str, str]
     assert file_path.read_text() == csv_content
 
 
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("ml_tree.iqtree", "IQ-TREE 2.3.0\nSeed: 42\n"),
+        ("ml.treefile", "((A:0.1,B:0.2):0.3,C:0.4);\n"),
+        ("ml.contree", "((A:0.1,B:0.2):0.3,C:0.4);\n"),
+        ("nj.bionj", "((A:0.1,B:0.2):0.3,C:0.4);\n"),
+        ("beast_run.trees", "#NEXUS\nBegin trees;\nEnd;\n"),
+        ("ml.mldist", "3\nA 0.0 0.1 0.2\n"),
+        ("ml.ufboot", "(A,B,C);\n"),
+        ("iqtree_run.log", "IQ-TREE multicore version 2.3.0\n"),
+        ("msa.aln", "CLUSTAL W alignment\n"),
+        ("msa.phy", " 3 42\nA ACGT\n"),
+        ("msa.phylip", " 3 42\nA ACGT\n"),
+        ("rfam.sto", "# STOCKHOLM 1.0\n"),
+        ("seqs.faa", ">protA\nMKLV\n"),
+        ("cds.ffn", ">geneA\nATGC\n"),
+        ("genes.gff3", "##gff-version 3\n"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_chat_upload_accepts_phylogenetic_formats(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    storage_path: Path,
+    filename: str,
+    content: str,
+) -> None:
+    """建树产物（IQ-TREE/BEAST 等）与比对格式应被成功接收并落盘。"""
+    suffix = Path(filename).suffix
+    response = await client.post(
+        "/api/v1/files/chat-upload",
+        files={"file": (filename, io.BytesIO(content.encode()), "application/octet-stream")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["name"] == filename
+
+    expected_dir = storage_path / "users" / "test-user" / "workspace" / "chat-uploads"
+    file_path = expected_dir / f"{body['id']}{suffix}"
+    assert file_path.exists()
+    assert file_path.read_text() == content
+
+
+@pytest.mark.asyncio
+async def test_chat_upload_rejects_unknown_suffix(client: AsyncClient, auth_headers: dict[str, str]) -> None:
+    """未登记的扩展名仍应被拒绝（白名单语义不放松）。"""
+    response = await client.post(
+        "/api/v1/files/chat-upload",
+        files={"file": ("mystery.xyz", io.BytesIO(b"x"), "application/octet-stream")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+    assert "不支持的文件类型" in response.text
+
+
 @pytest.mark.asyncio
 async def test_chat_upload_rejects_executable(client: AsyncClient, auth_headers: dict[str, str]) -> None:
     """可执行扩展名应被拒绝。"""

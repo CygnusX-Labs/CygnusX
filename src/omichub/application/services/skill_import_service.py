@@ -179,8 +179,16 @@ class SkillImportService:
             )
             self._db.add(model)
         await self._db.flush()
-        from omichub.application.services.skill_service import SkillService
+        from omichub.application.services.skill_service import SkillService, _snapshot_skill
 
+        # 版本留档：覆盖升级为 import 快照；新装技能不经 create_skill，也在此留首版
+        await _snapshot_skill(
+            self._db,
+            model,
+            source="import",
+            changelog="导入覆盖升级" if existing else "导入技能",
+        )
+        await self._db.flush()
         return SkillService._to_dto(model)
 
     async def delete_skill_folder(self, skill_id: str) -> None:

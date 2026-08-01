@@ -26,13 +26,31 @@ PUBLIC_PATHS = frozenset(
     }
 )
 
-PUBLIC_PREFIXES = (
-    "/api/v1/studio/shared/",
-)
+PUBLIC_PREFIXES = ("/api/v1/studio/shared/",)
 
-SELF_AUTHENTICATED_PREFIXES = (
-    "/api/v1/studio/internal/",
-)
+SELF_AUTHENTICATED_PREFIXES = ("/api/v1/studio/internal/",)
+
+
+def required_api_key_scope(method: str, path: str) -> str | None:
+    """Return the least privilege required for Bridge-accessed OmicHub endpoints."""
+    if path.startswith("/api/v1/flows") and method == "GET":
+        return "flows:read"
+    if path == "/api/v1/tasks" and method == "POST":
+        return "tasks:submit"
+    if path.startswith("/api/v1/tasks/") and method == "POST" and path.endswith("/cancel"):
+        return "tasks:cancel"
+    if path == "/api/v1/tasks" and method == "GET":
+        return "tasks:read"
+    if path.startswith("/api/v1/tasks/") and method == "GET":
+        return "tasks:read"
+    return None
+
+
+def api_key_allows_scope(scopes: frozenset[str], required_scope: str | None) -> bool:
+    """Legacy unrestricted keys retain compatibility; restricted keys deny unmapped routes."""
+    if "*" in scopes:
+        return True
+    return required_scope is not None and required_scope in scopes
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -61,7 +79,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
                 factory = get_session_factory()
                 async with factory() as db:
-                    user_id = await APIKeyService(db).authenticate(api_key)
+                    user_id, scopes = await APIKeyService(db).authenticate_with_scopes(api_key)
                     await db.commit()
             except Exception:  # noqa: BLE001
                 return Response(
@@ -71,6 +89,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 )
             request.state.user_id = user_id
             request.state.auth_type = "api_key"
+            request.state.api_key_scopes = scopes
+            required_scope = required_api_key_scope(request.method, path)
+            if not api_key_allows_scope(scopes, required_scope):
+                return Response(
+                    status_code=403,
+                    content='{"detail":"API Key 缺少该操作所需权限范围"}',
+                    media_type="application/json",
+                )
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization")

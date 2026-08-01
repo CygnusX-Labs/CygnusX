@@ -27,7 +27,7 @@ DEFAULT_CONTENT: dict[str, Any] = {
         {"key": "rna-seq", "title": "RNA-seq 分析", "desc": "转录组差异表达分析"},
         {"key": "atac-seq", "title": "ATAC-seq 分析", "desc": "染色质开放性分析"},
         {"key": "files", "title": "数据管理", "desc": "上传与管理样本数据"},
-        {"key": "ai", "title": "AI 助手", "desc": "智能分析与问答"},
+        {"key": "ai", "title": "星尘AI", "desc": "对话式生信分析与结果解读"},
         {"key": "tasks", "title": "任务中心", "desc": "查看分析任务进度"},
         {"key": "sandbox", "title": "代码沙盒", "desc": "在线编写分析脚本"},
     ],

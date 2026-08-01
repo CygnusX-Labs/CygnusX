@@ -185,6 +185,18 @@ async def tool_exec_node(state: AgentState, deps: NodeDeps) -> dict[str, Any]:
         directive = candidate.get("handoff") if isinstance(candidate, dict) else None
         if isinstance(directive, dict) and bool(result.get("success", False)):
             return {"messages": new_messages, "handoff": dict(directive), "error": None}
+        # ask_user 澄清：对齐 legacy 的 stop_after_tools —— 结束当前图，
+        # 由 ChatService 产出 ask_request 事件并收尾本轮，等用户下条消息回答。
+        if (
+            tool_name == "ask_user"
+            and isinstance(result, dict)
+            and bool(result.get("success", False))
+        ):
+            return {
+                "messages": new_messages,
+                "ask_request": {"tool_call_id": tool_call_id, "args": args},
+                "error": None,
+            }
     return {"messages": new_messages, "error": None}
 
 
@@ -204,6 +216,8 @@ def route_after_tool(state: AgentState, max_rounds: int) -> str:
     if state.get("error"):
         return "end"
     if state.get("handoff"):
+        return "end"
+    if state.get("ask_request"):
         return "end"
     if state.get("rounds", 0) >= max_rounds:
         return "end"

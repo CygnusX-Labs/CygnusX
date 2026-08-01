@@ -38,6 +38,7 @@ class SqlAlchemyUserRepository(IUserRepository):
             lab_group=db_user.lab_group,
             totp_secret=db_user.totp_secret,
             is_2fa_enabled=db_user.is_2fa_enabled,
+            disabled_modules=list(db_user.disabled_modules or []),
             token_version=db_user.token_version,
             created_at=db_user.created_at,
             updated_at=db_user.updated_at,
@@ -106,6 +107,7 @@ class SqlAlchemyUserRepository(IUserRepository):
             db_user.lab_group = user.lab_group
             db_user.totp_secret = user.totp_secret
             db_user.is_2fa_enabled = user.is_2fa_enabled
+            db_user.disabled_modules = list(user.disabled_modules)
             db_user.token_version = user.token_version
         else:
             # 创建新用户
@@ -128,6 +130,7 @@ class SqlAlchemyUserRepository(IUserRepository):
                 lab_group=user.lab_group,
                 totp_secret=user.totp_secret,
                 is_2fa_enabled=user.is_2fa_enabled,
+                disabled_modules=list(user.disabled_modules),
             )
             self.session.add(db_user)
 

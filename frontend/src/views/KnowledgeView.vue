@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useStorage } from '@vueuse/core'
 import {
   NCard,
   NSpin,
@@ -41,7 +42,8 @@ const navTitle = ref('实验室知识库')
 const navItems = ref<KnowledgeItem[]>([])
 const activeDoc = ref<KnowledgeDoc | null>(null)
 const isEditMode = ref(false)
-const isNavigationCollapsed = ref(false)
+// 侧边栏默认折叠（图6 窄条样式），并把用户的展开/折叠选择持久化到 localStorage
+const isNavigationCollapsed = useStorage('omichub:knowledge:sider-collapsed', true)
 
 const loadingNav = ref(false)
 const loadingDoc = ref(false)

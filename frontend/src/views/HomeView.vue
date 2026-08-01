@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { NButton, NIcon } from 'naive-ui'
 import {
   RocketOutline, BarChartOutline,
-  CheckmarkCircleOutline,
+  CheckmarkCircleOutline, SparklesOutline,
 } from '@vicons/ionicons5'
 import apiClient from '@/api/client'
 import { festivalApi } from '@/api/festival'
@@ -33,7 +33,7 @@ const DEFAULT_CONTENT: SiteContent = {
     { key: 'rna-seq', title: 'RNA-seq 分析', desc: '转录组差异表达分析' },
     { key: 'atac-seq', title: 'ATAC-seq 分析', desc: '染色质开放性分析' },
     { key: 'files', title: '数据管理', desc: '上传与管理样本数据' },
-    { key: 'ai', title: 'AI 助手', desc: '智能分析与问答' },
+    { key: 'ai', title: '星尘AI', desc: '对话式生信分析与结果解读' },
     { key: 'tasks', title: '任务中心', desc: '查看分析任务进度' },
   ],
   guide_steps: [
@@ -87,6 +87,9 @@ const quickEntries = computed<QuickEntry[]>(() => {
 })
 
 const guideSteps = computed(() => content.value.guide_steps)
+
+// 三步引导卡对应的站内页面：数据管理 → 分析中心 → 结果报告中心
+const guideStepLinks = ['/files', '/flows', '/reports']
 
 function goTo(path: string) {
   router.push(path)
@@ -181,7 +184,8 @@ onMounted(async () => {
         <div
           v-for="(step, index) in guideSteps"
           :key="step.title"
-          class="guide-card arco-card"
+          class="guide-card arco-card arco-card-hover"
+          @click="goTo(guideStepLinks[index] || '/flows')"
         >
           <div class="guide-step">
             <span class="guide-number">{{ index + 1 }}</span>
@@ -193,11 +197,25 @@ onMounted(async () => {
           <p class="guide-desc">{{ step.desc }}</p>
         </div>
       </div>
+      <!-- Agent 路径：与手动三步并列的替代路径，跳星尘AI 对话页 -->
+      <div class="agent-banner" @click="goTo('/ai')">
+        <div
+          class="agent-icon"
+          :style="{ background: quickEntryBgColors.violet, color: quickEntryIconColors.violet }"
+        >
+          <NIcon :size="22"><SparklesOutline /></NIcon>
+        </div>
+        <div class="agent-text">
+          <h4 class="agent-title">交给星尘AI</h4>
+          <p class="agent-desc">一句话描述需求，星尘AI 自动完成数据上传、流程执行与结果解读</p>
+        </div>
+        <NButton class="agent-cta" @click.stop="goTo('/ai')">开始对话</NButton>
+      </div>
     </section>
 
     <!-- 管理员入口 -->
     <section v-if="isAdmin" class="section animate-fade-in-up delay-200">
-      <div class="admin-banner arco-card" @click="goTo('/admin/users')">
+      <div class="admin-banner" @click="goTo('/admin/users')">
         <div class="admin-icon">
           <NIcon :size="20"><BarChartOutline /></NIcon>
         </div>
@@ -205,7 +223,7 @@ onMounted(async () => {
           <h4 class="admin-title">系统管理</h4>
           <p class="admin-desc">用户、AI 模型、饼干账户与资源中心管理</p>
         </div>
-        <NButton type="primary" size="small">进入管理</NButton>
+        <NButton class="admin-cta">进入管理</NButton>
       </div>
     </section>
     <!-- 节日彩蛋弹窗 -->
@@ -415,6 +433,8 @@ onMounted(async () => {
 
 .guide-card {
   padding: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .guide-step {
@@ -456,18 +476,143 @@ onMounted(async () => {
   margin: 0;
 }
 
-/* ===== 管理员入口 ===== */
-.admin-banner {
+/* ===== Agent 路径卡（白卡 + 左侧渐变竖条的次级高亮，避免大色块压过步骤卡） ===== */
+.agent-banner {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: 16px;
+  margin-top: 20px;
   padding: 20px;
+  border-radius: var(--radius-card);
+  background: var(--neutral-card);
+  box-shadow: var(--shadow-card);
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
+/* 左侧渐变竖条：与星尘AI hero 同源的品牌点缀 */
+.agent-banner::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--agent-hero-gradient);
+}
+
+.agent-banner:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.agent-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.agent-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-title {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 24px;
+  color: var(--neutral-text-1);
+  margin: 0 0 4px;
+}
+
+.agent-desc {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--neutral-text-3);
+  margin: 0;
+}
+
+/* 通栏卡渐变 CTA：Agent 卡与系统管理卡同尺寸同样式，仅渐变色相不同；
+   覆盖方式同 hero 按钮（见上方注释） */
+.n-button.agent-cta,
+.n-button.admin-cta {
+  color: #ffffff;
+  height: auto;
+  padding: 8px 20px;
+  font-size: 14px;
+  border: none;
+  border-radius: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+.n-button.agent-cta {
+  background: var(--agent-hero-gradient);
+}
+.n-button.admin-cta {
+  background: var(--admin-hero-gradient);
+}
+.n-button.agent-cta:hover,
+.n-button.agent-cta:focus,
+.n-button.admin-cta:hover,
+.n-button.admin-cta:focus {
+  color: #ffffff;
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+.n-button.agent-cta:hover,
+.n-button.agent-cta:focus {
+  background: var(--agent-hero-gradient);
+}
+.n-button.admin-cta:hover,
+.n-button.admin-cta:focus {
+  background: var(--admin-hero-gradient);
+}
+.n-button.agent-cta :deep(.n-button__border),
+.n-button.agent-cta :deep(.n-button__state-border),
+.n-button.admin-cta :deep(.n-button__border),
+.n-button.admin-cta :deep(.n-button__state-border) {
+  display: none;
+}
+
+/* ===== 管理员入口 ===== */
+/* 不挂 arco-card 类：全局 .arco-card::before 是 opacity:0 的 hover 装饰条，会顶掉渐变竖条 */
+.admin-banner {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  border-radius: var(--radius-card);
+  background: var(--neutral-card);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+/* 左侧渐变竖条：与 Agent 卡同构、蓝青色相区分 */
+.admin-banner::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--admin-hero-gradient);
+}
+
 .admin-banner:hover {
-  background: var(--neutral-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
 }
 
 .admin-icon {
@@ -528,7 +673,8 @@ onMounted(async () => {
     grid-template-columns: 1fr;
   }
 
-  .admin-banner {
+  .admin-banner,
+  .agent-banner {
     flex-wrap: wrap;
   }
 }

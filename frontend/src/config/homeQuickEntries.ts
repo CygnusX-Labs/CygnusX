@@ -9,6 +9,7 @@ import {
   DocumentTextOutline,
   DownloadOutline,
   FitnessOutline,
+  GitNetworkOutline,
   FlaskOutline,
   GridOutline,
   HomeOutline,
@@ -18,6 +19,7 @@ import {
   ListOutline,
   MapOutline,
   SettingsOutline,
+  SparklesOutline,
   StatsChartOutline,
   TerminalOutline,
 } from '@vicons/ionicons5'
@@ -26,6 +28,7 @@ import type { HomeQuickEntry, QuickEntryColor } from '@/types'
 export const quickEntryBgColors: Record<QuickEntryColor, string> = {
   blue: '#E8F3FF',
   purple: '#F0E8FF',
+  violet: '#F3F0FF',
   cyan: '#E6FFFB',
   green: '#E8FFEA',
   orange: '#FFF2E8',
@@ -36,6 +39,7 @@ export const quickEntryBgColors: Record<QuickEntryColor, string> = {
 export const quickEntryIconColors: Record<QuickEntryColor, string> = {
   blue: '#165DFF',
   purple: '#722ED1',
+  violet: '#8B5CF6',
   cyan: '#14C9C9',
   green: '#00B42A',
   orange: '#F77234',
@@ -46,6 +50,7 @@ export const quickEntryIconColors: Record<QuickEntryColor, string> = {
 export const quickEntryColorOptions: Array<{ label: string; value: QuickEntryColor }> = [
   { label: '蓝色', value: 'blue' },
   { label: '紫色', value: 'purple' },
+  { label: '亮紫', value: 'violet' },
   { label: '青色', value: 'cyan' },
   { label: '绿色', value: 'green' },
   { label: '橙色', value: 'orange' },
@@ -72,6 +77,7 @@ export const homeQuickEntryIconMap: Record<string, Component> = {
   ListOutline,
   MapOutline,
   SettingsOutline,
+  SparklesOutline,
   StatsChartOutline,
   TerminalOutline,
 }
@@ -156,11 +162,19 @@ export const homeQuickRouteCatalog: HomeQuickEntry[] = [
   },
   {
     key: 'ai',
-    title: 'AI 助手',
-    desc: '智能分析与问答',
+    title: '星尘AI',
+    desc: '对话式生信分析与结果解读',
     to: '/ai',
-    icon: 'ChatbubblesOutline',
-    icon_bg: 'green',
+    icon: 'SparklesOutline',
+    icon_bg: 'violet',
+  },
+  {
+    key: 'agent-teams',
+    title: 'Agent 协作中心',
+    desc: '发起并追踪多 Agent 协作案例',
+    to: '/agent-teams',
+    icon: 'GitNetworkOutline',
+    icon_bg: 'violet',
   },
   {
     key: 'tools',

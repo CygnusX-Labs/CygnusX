@@ -93,6 +93,16 @@ def validate_stdio_args(args: list[str] | None) -> None:
             raise ValueError(f"stdio args 包含非法字符: {arg}")
 
 
+def validate_working_dir(working_dir: str | None) -> None:
+    """校验 stdio 工作目录（子进程 cwd）：可为空或绝对路径，但禁止路径穿越与 shell 元字符。"""
+    if not working_dir:
+        return
+    if ".." in working_dir:
+        raise ValueError("working_dir 禁止路径遍历")
+    if _DENIED_STDIO_ARG_PATTERN.search(working_dir):
+        raise ValueError(f"working_dir 包含非法字符: {working_dir}")
+
+
 class MCPClient:
     """MCP 客户端 - 统一管理 builtin / stdio / sse 三种传输
 
@@ -115,9 +125,9 @@ class MCPClient:
                 for t in preset["tools"]
             ]
 
-        # stdio / sse：尝试连接获取工具列表
-        tools = await self._safe_external(server, lambda s: self._list_tools_external(s))
-        return tools or []
+        # stdio / sse：发现工具时让连接/校验错误向上抛（区别于 call_tool 的错误隔离），
+        # 由上层把失败标成 error 并回传真实原因，而不是误报 online + 0 工具。
+        return await asyncio.wait_for(self._list_tools_external(server), timeout=server.timeout)
 
     async def call_tool(
         self,
@@ -234,10 +244,14 @@ class MCPClient:
             if server.args:
                 args = list(server.args)
             validate_stdio_args(args)
+            validate_working_dir(server.working_dir)
             params = StdioServerParameters(
                 command=command,
                 args=args,
                 env=server.env or None,
+                # working_dir 作为子进程 cwd：本地脚本型 MCP（如 node build/index.js）
+                # 用「工作目录 + 相对脚本路径」运行，规避 args 绝对路径禁令。
+                cwd=server.working_dir or None,
             )
             return stdio_client(params)
         if server.transport in (Transport.SSE, Transport.STREAMABLE_HTTP):

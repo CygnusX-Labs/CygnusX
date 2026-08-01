@@ -7,7 +7,7 @@ scripts/references/assets 落盘于 data/ai/skills/<skill_id>/（L3 按需读取
 import uuid
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, String, Text
+from sqlalchemy import JSON, Boolean, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -48,3 +48,33 @@ class SkillModel(Base, TimestampMixin):
     )
     # 原始 frontmatter 全量留档
     frontmatter: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+
+class SkillVersionModel(Base, TimestampMixin):
+    """技能版本历史快照（每次内容变更留档，支撑回滚与审计）"""
+
+    __tablename__ = "skill_versions"
+    __table_args__ = (
+        UniqueConstraint("skill_id", "revision", name="uq_skill_versions_skill_revision"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    skill_id: Mapped[str] = mapped_column(String(50), index=True)
+    # 平台递增序号（1,2,3...）；version 是 SKILL.md frontmatter 声明版本的留档
+    revision: Mapped[int] = mapped_column(Integer)
+    version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    name: Mapped[str] = mapped_column(String(100), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    prompt: Mapped[str] = mapped_column(Text, default="")
+    tool_definition: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    icon: Mapped[str] = mapped_column(String(10), default="")
+    category: Mapped[str] = mapped_column(String(50), default="")
+    frontmatter: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    # 快照来源：admin（手工更新）/ import（导入覆盖）/ rollback（回滚产生）
+    source: Mapped[str] = mapped_column(String(20), default="admin")
+    changelog: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)

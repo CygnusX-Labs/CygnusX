@@ -1,6 +1,7 @@
 # OmicHub AI 助手最终框架基线
 
 > **基线日期**：2026-07-26  
+> **最近更新**：2026-07-29 — ask_user 全执行器中断语义、会话隔离与数据缺失澄清契约（§5.5）、工作区工具包白名单扩至读取类工具（§5.1）。  
 > **适用范围**：当前 `data/ai/` Agent 配置、`data/ai/prompts/` 系统提示词、普通聊天、OmicStudio、Handoff 与 MAS 灰度链路。  
 > **定位**：本文描述“当前可运行的最终基线”，用于提示词发布、工具授权、Agent 扩展和部署验收。历史演进和更完整的扩展说明见 `agent_architecture_and_extension_guide.md`。
 
@@ -110,22 +111,25 @@ ChatService.stream_agent_chat()
 
 ### 5.1 工作区文件能力（当前最终边界）
 
-所有配置了 `tool_packs: [workspace, ...]` 的 Agent 当前只获得：
+所有配置了 `tool_packs: [workspace, ...]` 的 Agent 当前获得（`data/ai/tools/workspace.yaml` 与 `development.yaml` 白名单一致）：
 
 | 工具 | 用途 |
 | --- | --- |
 | `list_workspace_files(path?, pattern?)` | 列出当前用户工作区目录项，返回文件 ID、名称、类型、大小、路径和时间。 |
 | `search_workspace_files(query, limit?)` | 递归按文件名搜索当前用户工作区。 |
+| `workspace_read_file(file_id, max_bytes?)` | 按 file_id 读取文本文件内容预览（默认前 100KB）；二进制/测序文件只回元数据。 |
+| `workspace_get_file_info(file_id)` | 按 file_id 返回文件元数据，不读内容。 |
+| `find_session_uploads(session_id?)` | 按会话标记找回该聊天窗口上传过的文件；跨会话兜底列表仅用于向用户确认（见 §5.5）。 |
 
-当前 `data/ai/tools/workspace.yaml` 没有授权 `workspace_read_file` 或 `workspace_get_file_info`。因此最终提示词遵循以下边界：
+提示词边界：
 
 - 用户问“工作区有什么”必须先调用 `list_workspace_files`；
 - 用户要求找文件必须先调用 `search_workspace_files`；
-- 不得宣称已读取 `@` 引用文件内容、已读表或已查看文件元数据；
-- 需要内容预览、读表、绘图或真实执行时，引导至对应专家 Agent 或「AI 工作台」；
+- 需要找回本会话上传文件时优先 `find_session_uploads`（当前会话 ID 自动生效），而不是漫无目的地全局搜索；
+- 找到文件后将 `file_id` 交给 `workspace_read_file` 读取；不得宣称读取了未授权读取的内容；
 - 不得让用户用文件面板代替 Agent 应可完成的目录列举和文件搜索。
 
-平台 MCP 中虽然实现了 `workspace_read_file` 和 `workspace_get_file_info`，但在把它们加入工具包白名单并做权限回归前，不得重新写入 Agent 提示词。
+**白名单一致性约束（2026-07-29 起强制执行）**：工具包白名单、`data/ai/mcp/workspace_files_prompt.md` 与各 Agent 提示词三者指引的工具集合必须一致。提示词诱导模型调用一个被白名单过滤掉的工具，会在运行时表现为“工具 X 未挂载到该 Agent”报错信封——修改任一侧时必须同步对账其余两侧。
 
 ### 5.2 Skill 契约
 
@@ -145,6 +149,25 @@ ChatService.stream_agent_chat()
 - 配置 `handoff` 工具包的 Agent 可调用 `transfer_to_agent`，但目标必须在其 `allowed_targets` 白名单中，且跳数受 `max_hops_per_session` 限制。
 - Handoff 使用受长度、路径和审计约束的交接包；源 Agent 结束后才以交接包启动目标 Agent，不能把控制工具当作普通文本结果继续回答。
 
+### 5.5 ask_user 澄清与会话隔离契约（2026-07-29 新增）
+
+**ask_user 是所有对话 Agent 的标配澄清工具**，新增对话 Agent 时不得移除：
+
+- 普通聊天由 ChatService 统一注入 schema（`chat_service.py`，`supports_function_tools` 为真时）；Studio 由 `STUDIO_TOOL_SCHEMAS` 携带。Agent YAML 无需单独授权。
+- **两种执行器必须实现同一中断语义**：模型调用 `ask_user` → 产出 `ask_request` SSE 事件（可交互卡片）→ 本轮收尾落库 → 等用户下条消息回答。手写 ReAct 走 `stop_after_tools` 分支；LangGraph 经 `AgentState["ask_request"]` 结束当前图，由 ChatService 补发事件。禁止出现“schema 已挂载但调用落到‘未挂载’报错信封”的执行路径——模型会被提示词诱导调用 `ask_user`，该调用必须永远有正确出口。
+- 设计性例外：并行子 Agent（fan-out 子循环无用户应答，强制剥离，防死锁）；旧 copilot WebSocket 链路（遗留系统，不扩展新能力）。
+
+**数据缺失澄清（所有绘图/分析任务通用）**：
+
+- 用户要求绘图/分析，但对话中没有提供任何数据（无附件、无 file_id、未指明工作区具体文件）时，**必须**先调用 `ask_user` 弹窗确认数据来源（选项：工作区已有文件 / 上传新文件 / 使用平台示例数据演示），**禁止**自行 `search_workspace_files` / `find_session_uploads` 搜索猜测、挑一个文件名相近的文件充数。
+- 多选项澄清一律走 `ask_user` 弹窗，禁止用纯文本罗列“选项 1/2/3”让用户手动回复编号；推荐项放第一个并标注“（推荐）”。
+
+**会话隔离（每个对话窗口是独立工作上下文）**：
+
+- 只允许使用本会话中用户上传或明确指定的文件；其它会话/历史对话中的文件一律不得主动读取、检查或当作本次任务的数据。
+- 运行时注入的历史文件上下文（`_collect_session_file_context`）按聊天上传文件名内嵌的会话标记（`.s{session_id前8位}`）过滤，其它会话的上传不注入。
+- `find_session_uploads` 的跨会话兜底列表仅保留给“新窗口继续用旧数据”场景：返回结果明确标注“来自其它会话”，且必须先经 `ask_user` 弹窗得到用户明确确认后方可使用。
+
 ---
 
 ## 6. 路由、执行器与 Studio
@@ -157,7 +180,7 @@ ChatService.stream_agent_chat()
 
 - `agent-general`、`agent-scrna` 的 `features.engine: langgraph` 在非 Studio 会话使用 LangGraph 图化 ReAct。
 - 其他普通 Agent 使用 ChatService 内的手写 ReAct 循环。
-- 两种执行器都必须支持工具结果回灌、Handoff 控制信号、错误信封和最大工具轮数限制；业务语义不得因执行器不同而改变。
+- 两种执行器都必须支持工具结果回灌、Handoff 控制信号、ask_user 澄清中断（`ask_request` 事件 + 本轮收尾，见 §5.5）、错误信封和最大工具轮数限制；业务语义不得因执行器不同而改变。
 
 ### 6.3 OmicStudio
 
@@ -224,6 +247,7 @@ MAS_ENABLED=true   → 加载 orchestrator；仍需部署 Celery/outbox 与目�
 
 - [ ] 每份 `prompt_file` 存在、非空，且与优化版规范文档对应代码块一致；
 - [ ] 提示词不声明未被工具包白名单授权的工具；
+- [ ] 工具包白名单、`workspace_files_prompt.md` 与各 Agent 提示词指引的工具集合三者一致（§5.1 白名单一致性约束）；
 - [ ] `skill_ids` 为空时，提示词对 Skill 使用条件表述；
 - [ ] Handoff 目标均为已启用或可加载的 Agent；
 - [ ] 时效检索触发词和提示词要求一致；
@@ -234,6 +258,8 @@ MAS_ENABLED=true   → 加载 orchestrator；仍需部署 Celery/outbox 与目�
 - [ ] 绑定模型处于启用状态且支持所需 function calling；
 - [ ] Router 能路由、错误时回退 `agent-general`；
 - [ ] 文件列表与搜索均使用当前用户工作区，不泄露其他用户数据；
+- [ ] ask_user 在手写 ReAct 与 LangGraph 两种执行器下都能弹出澄清卡片、本轮收尾并等待用户答复，无“未挂载”报错路径（§5.5）；
+- [ ] 新对话上下文不注入其它会话的上传文件；跨会话兜底文件必须经 ask_user 确认后才被使用（§5.5）；
 - [ ] Handoff、记忆和工具错误均产生可解释的 SSE/审计结果；
 - [ ] Studio 任务只在可用镜像与能力范围内运行；
 - [ ] MAS 灰度部署已完整验证，不把“代码存在”当作“产品已启用”。
@@ -252,6 +278,13 @@ MAS_ENABLED=true   → 加载 orchestrator；仍需部署 Celery/outbox 与目�
 
 LangGraph 运行时测试在当前本地环境中曾出现首项通过后无法在 90 秒内收尾的情况；这属于测试稳定性或外部依赖问题，不能据此声称 LangGraph 全量回归已绿。发布前应在具备完整模型与依赖环境的部署链路中复跑该测试。
 
+**2026-07-29 增量验证**（ask_user / 会话隔离 / 白名单一致性）：
+
+- LangGraph `ask_user` 中断语义新增单测（中断当前图、失败不中断）：`test_langgraph_runtime.py 6/6 passed`；
+- Studio 工具、审批、Router 相关回归：`102 passed`；
+- `tests/unit` 全量中 14 个失败经 stash 基线对照确认为既有失败，与本次改动无关；
+- 工具包白名单与 `PLATFORM_HANDLERS` 运行时校验通过；`workspace_files_prompt.md` 已含会话隔离规则。
+
 ---
 
 ## 11. 关键实现位置
@@ -265,7 +298,10 @@ LangGraph 运行时测试在当前本地环境中曾出现首项通过后无法�
 | 聊天调度、路由、预搜索、Handoff | `src/omichub/application/services/chat_service.py` |
 | LangGraph ReAct | `src/omichub/infrastructure/execution/langgraph_runtime.py` |
 | LangGraph 节点 | `src/omichub/infrastructure/execution/langgraph_nodes.py` |
-| 工作区平台 MCP 工具 | `src/omichub/infrastructure/mcp/presets.py` |
+| LangGraph 状态（handoff / ask_request） | `src/omichub/domain/execution/agent_state.py` |
+| ask_user schema 与 Studio 工具 | `src/omichub/application/services/studio_tools.py` |
+| 工作区平台 MCP 工具与会话隔离兜底 | `src/omichub/infrastructure/mcp/presets.py` |
+| 工作区文件提示词（澄清与会话隔离规则） | `data/ai/mcp/workspace_files_prompt.md` |
 | Skill 渐进式披露 | `src/omichub/domain/skill/services.py` |
 | MAS 功能开关 | `src/omichub/core/config.py` |
 | MAS 能力与产物契约 | `data/ai/mas/` |

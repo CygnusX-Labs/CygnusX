@@ -29,6 +29,12 @@ export interface McpService {
   registry: string
   working_dir: string
   version: string
+  /** 当前生效版本号（版本管理真实指针，展示优先于遗留 version 字段） */
+  current_version?: string
+  /** 所属池：production 正式 / experimental 实验（AI 生成，带 TTL）/ deprecated 废弃 */
+  pool?: 'production' | 'experimental' | 'deprecated'
+  review_status?: string
+  expires_at?: string | null
   is_enabled: boolean
   tools: McpTool[]
   timeout: number
@@ -37,12 +43,40 @@ export interface McpService {
   is_preset: boolean
 }
 
+/** MCP 服务版本历史条目（GET /mcp/servers/{id}/versions） */
+export interface McpVersion {
+  id: string | number
+  version: string
+  /** 是否主版本（列表用主色 tag 突出） */
+  is_major: boolean
+  /** 变更来源：builder 构建发布 / admin 手工更新 / rollback 回滚 / publish 转正发布 */
+  source: 'builder' | 'admin' | 'rollback' | 'publish'
+  changelog?: string
+  created_by?: string
+  created_at?: string
+  /** 该版本是否有配置快照，无快照则不可回滚 */
+  has_config_snapshot: boolean
+}
+
 /** MCP 日志条目 */
 export interface McpLogEntry {
   timestamp: string
   level: 'info' | 'stderr' | 'error' | 'warn'
   message: string
   source: string
+}
+
+/** 技能版本历史条目（GET /admin/skills/{id}/versions，revision 倒序） */
+export interface SkillVersion {
+  /** 修订号（回滚 body 使用该字段） */
+  revision: number
+  version?: string
+  name?: string
+  /** 变更来源：admin 手工更新 / import 导入升级 / rollback 回滚 */
+  source: 'admin' | 'import' | 'rollback'
+  changelog?: string
+  created_by?: string
+  created_at?: string
 }
 
 /** 技能（SKILL.md 标准；支持市场 / GitHub / zip / JSON 四入口导入） */

@@ -23,5 +23,7 @@ handoff:
 
 studio:
   enabled: true
+  # 绘图/可视化属于分析交付任务：选中该 Agent（含路由/转介进入）时默认进入 AI 工作台会话
+  default_mode: studio
   runtime_profile: analysis-plot
   required_capabilities: [python, r, plotting]

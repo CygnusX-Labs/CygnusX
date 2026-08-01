@@ -76,6 +76,11 @@ class APIKeyService:
 
     async def authenticate(self, plain_key: str) -> str:
         """验证 API Key，返回 user_id。失败抛 AuthenticationError。"""
+        user_id, _ = await self.authenticate_with_scopes(plain_key)
+        return user_id
+
+    async def authenticate_with_scopes(self, plain_key: str) -> tuple[str, frozenset[str]]:
+        """验证 API Key，返回用户 ID 与该 Key 的已声明权限范围。"""
         key_hash = hash_api_key(plain_key)
         stmt = select(APIKeyModel).where(
             APIKeyModel.key_hash == key_hash,
@@ -94,4 +99,4 @@ class APIKeyService:
             raise AuthenticationError("关联用户不存在或已被禁用")
 
         record.last_used_at = datetime.now(UTC)
-        return str(record.user_id)
+        return str(record.user_id), frozenset(str(scope) for scope in (record.scopes or []))

@@ -13,6 +13,7 @@ max_tokens: 4096
 mcp_ids: []
 skill_ids: []
 features:
+  subagents_spawnable: true  # 可作为并行子 Agent 被 fan-out 派生
   web_search:
     mode: required_for_freshness
     triggers: [最新, 文献, 论文, 研究进展, 临床试验, 指南, 数据库更新]
@@ -23,5 +24,7 @@ handoff:
 
 studio:
   enabled: true
+  # 差异表达等正式分析属于交付任务：选中该 Agent（含路由/转介进入）时默认进入 AI 工作台会话
+  default_mode: studio
   runtime_profile: analysis-core
   required_capabilities: [python, r, statistics]

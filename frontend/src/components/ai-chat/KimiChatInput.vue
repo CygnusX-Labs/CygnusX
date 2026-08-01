@@ -741,10 +741,12 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
       />
     </div>
 
+    <!-- accept 镜像后端 _CHAT_UPLOAD_ALLOWED_SUFFIXES（含建树格式），仅作系统选择框引导，真正拦截仍以后端校验为准 -->
     <input
       ref="fileInputRef"
       type="file"
       multiple
+      accept=".png,.jpg,.jpeg,.gif,.svg,.webp,.bmp,.ico,.pdf,.txt,.md,.doc,.docx,.csv,.tsv,.json,.yaml,.yml,.fastq,.fq,.fasta,.fa,.fna,.faa,.ffn,.bam,.cram,.sam,.vcf,.gff,.gff3,.gtf,.bed,.h5ad,.rds,.gz,.zip,.tar,.bz2,.xz,.nwk,.newick,.nhx,.nh,.tree,.tre,.trees,.dnd,.nex,.nexus,.iqtree,.treefile,.contree,.bionj,.mldist,.ufboot,.log,.aln,.phy,.phylip,.sto"
       style="display: none"
       @change="handleFileChange"
     />

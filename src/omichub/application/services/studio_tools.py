@@ -28,7 +28,7 @@ from typing import Any
 
 import httpx
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -73,7 +73,10 @@ ASK_USER_TOOL_SCHEMA: dict[str, Any] = {
                             "options": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "可一键点选的互斥选项；用户也可选“其他”自由输入",
+                                "description": (
+                                    "可一键点选的互斥选项；用户也可选“其他”自由输入。"
+                                    "有推荐项时必须放在数组首位，并在选项文本中以（推荐）标注"
+                                ),
                             },
                         },
                         "required": ["question"],
@@ -805,6 +808,7 @@ async def _knowledge_search(
     except (TypeError, ValueError):
         limit = 5
 
+    from omichub.infrastructure.database.models.knowledge_base import KnowledgeBaseModel
     from omichub.infrastructure.database.models.knowledge_document import KbDocumentModel
     from omichub.infrastructure.database.models.knowledge_revision import DocRevisionModel
 
@@ -816,9 +820,21 @@ async def _knowledge_search(
             DocRevisionModel.content,
         )
         .join(DocRevisionModel, KbDocumentModel.current_rev == DocRevisionModel.id)
+        .outerjoin(KnowledgeBaseModel, KbDocumentModel.kb_id == KnowledgeBaseModel.id)
         .where(KbDocumentModel.status == 1)
+        # 只检索标记为 ai_searchable 且未停用的知识库（kb_id 为空按可检索处理，向后兼容）
+        .where(
+            or_(
+                KbDocumentModel.kb_id.is_(None),
+                and_(
+                    KnowledgeBaseModel.ai_searchable.is_(True),
+                    KnowledgeBaseModel.is_enabled.is_(True),
+                ),
+            )
+        )
         .order_by(KbDocumentModel.updated_at.desc())
-        .limit(100)
+        # 单细胞笔记批量导入后文档量超 200，子串扫描 500 篇（约几 MB 文本）开销可接受
+        .limit(500)
     )
     matches: list[dict[str, Any]] = []
     for doc_id, title, category, content in result.all():

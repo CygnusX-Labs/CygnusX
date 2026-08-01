@@ -54,6 +54,27 @@ class UpdateSkillDTO(BaseModel):
     is_active: bool | None = None
 
 
+# --- 版本控制 DTO ---
+
+
+class SkillVersionDTO(BaseModel):
+    """技能版本历史条目（列表用，不含正文 prompt）"""
+
+    revision: int
+    version: str | None = None
+    name: str = ""
+    source: str = "admin"
+    changelog: str = ""
+    created_by: UUID | None = None
+    created_at: datetime
+
+
+class SkillRollbackRequest(BaseModel):
+    """回滚到指定 revision"""
+
+    revision: int
+
+
 # --- 导入层 DTO（Part A） ---
 
 

@@ -12,9 +12,10 @@ import {
   MenuOutline, ChevronForwardOutline, ChevronDownOutline,
   NotificationsOutline, HelpCircleOutline, ChatbubblesOutline, Planet,
   WalletOutline, SparklesOutline, ConstructOutline, LayersOutline,
-  TerminalOutline, SearchOutline, DesktopOutline,
+  TerminalOutline, SearchOutline, DesktopOutline, LockClosedOutline, GitNetworkOutline,
 } from '@vicons/ionicons5'
 import CookieBalanceBadge from '@/components/CookieBalanceBadge.vue'
+import NotAuthorized from '@/components/NotAuthorized.vue'
 import NotificationDrawer from '@/components/NotificationDrawer.vue'
 import OnboardingPopup from '@/components/OnboardingPopup.vue'
 import ChunkUploader from '@/components/ChunkUploader.vue'
@@ -24,11 +25,13 @@ import { displayName } from '@/utils/displayName'
 import { useUploadStore } from '@/stores/upload'
 import { useNotificationStore } from '@/stores/notification'
 import { useSiteConfigStore } from '@/stores/site-config'
+import { useModulesStore } from '@/stores/modules'
 import { useAdminWelcome } from '@/composables/useAdminWelcome'
 import { useThemeStore } from '@/stores/theme'
-import type { User } from '@/types'
+import type { ModuleRegistryItem, User } from '@/types'
 
 const authStore = useAuthStore()
+const modulesStore = useModulesStore()
 const notificationStore = useNotificationStore()
 const siteConfig = useSiteConfigStore()
 const uploadStore = useUploadStore()
@@ -70,6 +73,25 @@ const autoCollapsePages = ['/studio', '/ai']
 
 const isAdmin = computed(() => authStore.user?.role === 'admin')
 const isDarkTheme = computed(() => themeStore.isDark)
+
+// ===== 模块权限管控（UX 层；后端中间件才是硬门槛） =====
+// 当前用户被禁用的模块 key 列表（/auth/me 下发）
+const disabledModules = computed<string[]>(() => authStore.user?.disabled_modules ?? [])
+
+// 当前路由命中的已锁定模块：命中时主内容区渲染 NotAuthorized 占位页。
+// 管理员永不锁定（后端保证其 disabled_modules 为空，前端再短路一层）。
+const lockedModule = computed<ModuleRegistryItem | null>(() => {
+  if (isAdmin.value) return null
+  return modulesStore.lockedModuleForPath(route.path, disabledModules.value)
+})
+
+// 菜单项是否命中锁定模块：按 item.to 的路由前缀从注册表匹配，不写死模块 key。
+// lockable=false 的模块（首页、系统管理组）在匹配层就被跳过，永不显示锁。
+function navItemLocked(item: NavItem): boolean {
+  if (isAdmin.value) return false
+  const mod = modulesStore.moduleForRoutePath(item.to)
+  return mod !== null && disabledModules.value.includes(mod.key)
+}
 
 const contentStyle = computed(() => {
   if (route.meta.fullscreen) {
@@ -154,6 +176,8 @@ onMounted(() => {
   window.addEventListener('resize', updateWindowWidth)
   window.addEventListener('storage', handleStorageChange)
   if (authStore.isLoggedIn) {
+    // 模块注册表：菜单锁图标与占位页判断的数据源（并发去重，失败静默重试）
+    modulesStore.ensureLoaded()
     authStore.fetchUser().then(() => {
       currentUser.value = authStore.user
       notificationStore.fetchNotifications()
@@ -212,6 +236,7 @@ const mainNavItems = computed<NavItem[]>(() => [
   { key: 'workflow-monitor', label: '流程监控', to: '/workflow-monitor', icon: BarChartOutline },
   { key: 'reports', label: '结果报告中心', to: '/reports', icon: DocumentTextOutline },
   { key: 'ai', label: 'AI 助手', to: '/ai', icon: ChatbubblesOutline },
+  { key: 'agent-teams', label: 'Agent 协作中心', to: '/agent-teams', icon: GitNetworkOutline },
   { key: 'studio', label: 'AI 工作台', to: '/studio', icon: DesktopOutline },
   { key: 'tools', label: '生信工具箱', to: '/tools', icon: ConstructOutline },
 ])
@@ -385,9 +410,12 @@ const UserAvatar = () => {
             :key="item.key"
             :to="item.to"
             class="top-nav-item"
-            :class="{ 'top-nav-item--active': isTopActive(item) }"
+            :class="{ 'top-nav-item--active': isTopActive(item), 'top-nav-item--locked': navItemLocked(item) }"
           >
             {{ item.label }}
+            <NIcon v-if="navItemLocked(item)" :size="12" class="nav-lock-icon">
+              <LockClosedOutline />
+            </NIcon>
             <span v-if="isTopActive(item)" class="top-nav-indicator" />
           </RouterLink>
         </nav>
@@ -445,6 +473,7 @@ const UserAvatar = () => {
                     'nav-item--active': isActive(item),
                     'nav-item--collapsed': collapsed,
                     'nav-item--group': item.key === 'admin-center',
+                    'nav-item--locked': navItemLocked(item),
                   }"
                   @click="handleNavClick(item)"
                 >
@@ -481,12 +510,18 @@ const UserAvatar = () => {
                         :key="child.key"
                         :to="child.to"
                         class="collapsed-submenu-item"
-                        :class="{ 'collapsed-submenu-item--active': isActive(child) }"
+                        :class="{
+                          'collapsed-submenu-item--active': isActive(child),
+                          'collapsed-submenu-item--locked': navItemLocked(child),
+                        }"
                       >
                         <NIcon :size="16">
                           <component :is="child.icon" />
                         </NIcon>
                         <span>{{ child.label }}</span>
+                        <NIcon v-if="navItemLocked(child)" :size="12" class="nav-lock-icon">
+                          <LockClosedOutline />
+                        </NIcon>
                       </RouterLink>
                     </div>
                   </NPopover>
@@ -495,6 +530,13 @@ const UserAvatar = () => {
                       <component :is="item.icon" />
                     </NIcon>
                     <span v-show="!collapsed" class="nav-label">{{ item.label }}</span>
+                    <NIcon
+                      v-if="!collapsed && navItemLocked(item)"
+                      :size="13"
+                      class="nav-lock-icon"
+                    >
+                      <LockClosedOutline />
+                    </NIcon>
                     <NIcon
                       v-if="item.children && !collapsed"
                       :size="14"
@@ -515,12 +557,18 @@ const UserAvatar = () => {
                     :key="child.key"
                     :to="child.to"
                     class="sub-nav-item"
-                    :class="{ 'sub-nav-item--active': isActive(child) }"
+                    :class="{
+                      'sub-nav-item--active': isActive(child),
+                      'sub-nav-item--locked': navItemLocked(child),
+                    }"
                   >
                     <NIcon :size="16" class="sub-nav-icon">
                       <component :is="child.icon" />
                     </NIcon>
                     <span>{{ child.label }}</span>
+                    <NIcon v-if="navItemLocked(child)" :size="12" class="nav-lock-icon">
+                      <LockClosedOutline />
+                    </NIcon>
                   </RouterLink>
                 </div>
               </div>
@@ -537,6 +585,7 @@ const UserAvatar = () => {
                 :class="{
                   'nav-item--active': isActive(item),
                   'nav-item--collapsed': collapsed,
+                  'nav-item--locked': navItemLocked(item),
                 }"
                 @click="handleNavClick(item)"
               >
@@ -555,6 +604,9 @@ const UserAvatar = () => {
                     <component :is="item.icon" />
                   </NIcon>
                   <span class="nav-label">{{ item.label }}</span>
+                  <NIcon v-if="navItemLocked(item)" :size="13" class="nav-lock-icon">
+                    <LockClosedOutline />
+                  </NIcon>
                 </div>
               </div>
             </nav>
@@ -710,13 +762,19 @@ const UserAvatar = () => {
                 :key="item.key"
                 :to="item.to"
                 class="mobile-nav-item"
-                :class="{ 'mobile-nav-item--active': isActive(item) }"
+                :class="{
+                  'mobile-nav-item--active': isActive(item),
+                  'mobile-nav-item--locked': navItemLocked(item),
+                }"
                 @click="mobileDrawerOpen = false"
               >
                 <NIcon :size="18">
                   <component :is="item.icon" />
                 </NIcon>
                 <span>{{ item.label }}</span>
+                <NIcon v-if="navItemLocked(item)" :size="13" class="nav-lock-icon">
+                  <LockClosedOutline />
+                </NIcon>
               </RouterLink>
             </nav>
             <div class="nav-divider" />
@@ -726,13 +784,19 @@ const UserAvatar = () => {
                 :key="item.key"
                 :to="item.to"
                 class="mobile-nav-item"
-                :class="{ 'mobile-nav-item--active': isActive(item) }"
+                :class="{
+                  'mobile-nav-item--active': isActive(item),
+                  'mobile-nav-item--locked': navItemLocked(item),
+                }"
                 @click="mobileDrawerOpen = false"
               >
                 <NIcon :size="18">
                   <component :is="item.icon" />
                 </NIcon>
                 <span>{{ item.label }}</span>
+                <NIcon v-if="navItemLocked(item)" :size="13" class="nav-lock-icon">
+                  <LockClosedOutline />
+                </NIcon>
               </RouterLink>
             </nav>
             <template v-if="isAdmin">
@@ -770,7 +834,14 @@ const UserAvatar = () => {
           :content-style="contentStyle"
           :native-scrollbar="useNativeScrollbar"
         >
-          <RouterView v-slot="{ Component }">
+          <!-- 模块未开通：统一占位页（覆盖 fullscreen 页面，锁定页内容不可见） -->
+          <NotAuthorized
+            v-if="lockedModule"
+            :key="lockedModule.key"
+            :module-key="lockedModule.key"
+            :module-name="lockedModule.name"
+          />
+          <RouterView v-else v-slot="{ Component }">
             <Transition name="route" mode="out-in">
               <component :is="Component" />
             </Transition>
@@ -1123,6 +1194,21 @@ const UserAvatar = () => {
 .nav-chevron {
   flex-shrink: 0;
   transition: transform 0.2s ease;
+}
+
+/* ===== 模块未开通：菜单项锁图标 + 降透明度（保持可点击） ===== */
+.nav-item--locked,
+.sub-nav-item--locked,
+.collapsed-submenu-item--locked,
+.top-nav-item--locked,
+.mobile-nav-item--locked {
+  opacity: 0.6;
+}
+
+.nav-lock-icon {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--neutral-text-3);
 }
 
 .nav-chevron--expanded {

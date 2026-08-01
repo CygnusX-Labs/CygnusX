@@ -24,7 +24,7 @@ const isAdmin = computed(() => authStore.user?.role === 'admin')
 const displayName = computed(() => authStore.user?.nickname || authStore.user?.username || '')
 
 // ===== 平台全局配置 =====
-const platformConfig = ref<SiteSettings>({ registration_enabled: true, totp_policy: 'optional' })
+const platformConfig = ref<SiteSettings>({ registration_enabled: true, totp_policy: 'optional', subagent_fanout_enabled: false })
 const platformLoading = ref(false)
 const platformPending = ref<Partial<SiteSettings> | null>(null)
 const platformTotpModalVisible = ref(false)
@@ -221,8 +221,28 @@ function updateFestivalEffects(enabled: boolean) {
 }
 
 function requestPlatformChange(patch: Partial<SiteSettings>) {
+  // 高敏感改动需 TOTP；账号未开 2FA 时给明确提示，而非弹一个填不上的验证码框
+  if (!faEnabled.value) {
+    message.warning('该操作为高敏感操作，请先在「账号安全」处开启二次验证（2FA）后再试')
+    return
+  }
   platformPending.value = patch
   platformTotpModalVisible.value = true
+}
+
+// 非敏感平台配置（功能灰度开关等）免 TOTP 直连保存
+async function patchPlatformDirect(patch: Partial<SiteSettings>) {
+  platformLoading.value = true
+  try {
+    const res = await apiClient.patch<SiteSettings>('/admin/platform-config', patch)
+    platformConfig.value = res.data
+    message.success('平台全局配置已保存')
+  } catch (e: any) {
+    console.error('平台配置保存失败:', e, 'payload:', patch)
+    message.error(e.response?.data?.detail || '保存失败')
+  } finally {
+    platformLoading.value = false
+  }
 }
 
 async function confirmPlatformChange(code: string) {
@@ -253,6 +273,11 @@ function cancelPlatformChange() {
 function onRegistrationChange(value: boolean) {
   if (value === platformConfig.value.registration_enabled) return
   requestPlatformChange({ registration_enabled: value })
+}
+
+function onSubagentFanoutChange(value: boolean) {
+  if (value === platformConfig.value.subagent_fanout_enabled) return
+  void patchPlatformDirect({ subagent_fanout_enabled: value })
 }
 
 function onTOTPPolicyChange(value: SiteSettings['totp_policy']) {
@@ -570,6 +595,27 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
                 :value="platformConfig.registration_enabled"
                 :loading="platformLoading"
                 @update:value="onRegistrationChange"
+              />
+            </NCard>
+
+            <!-- 并行子 Agent（灰度） -->
+            <NCard :bordered="false" class="arco-card settings-card">
+              <template #header>
+                <NSpace align="center">
+                  <span class="text-xl">🤖</span>
+                  <span>对话内并行子 Agent</span>
+                  <NTag size="small" type="warning">灰度</NTag>
+                </NSpace>
+              </template>
+              <p class="text-sm text-gray-500 mb-6">
+                开启后，助手可用 parallel_subagents 工具把相互独立的子任务并行分派给多个专业
+                Agent 执行并汇总，显著缩短复合请求耗时。环境变量
+                SUBAGENT_FANOUT_ENABLED=true 也会强制启用（此时本开关关闭不生效）。
+              </p>
+              <NSwitch
+                :value="platformConfig.subagent_fanout_enabled"
+                :loading="platformLoading"
+                @update:value="onSubagentFanoutChange"
               />
             </NCard>
 
