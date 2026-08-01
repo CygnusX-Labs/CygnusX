@@ -19,6 +19,8 @@ def service() -> AgentTeamsService:
             agentteams_bridge_data_steward_token="steward-token",
             agentteams_bridge_approval_token="approval-token",
             agentteams_bridge_workflow_operator_token="operator-token",
+            # 显式置空：避免仓库 .env 中的 AGENTTEAMS_ELEMENT_URL 污染"未配置"语义
+            agentteams_element_url="",
         )
     )
 
@@ -254,6 +256,129 @@ async def test_public_case_view_strips_internal_preflight_input(
     assert "task_specs" not in case
 
 
+@pytest.fixture
+def element_settings() -> Settings:
+    return Settings(
+        agentteams_bridge_enabled=True,
+        agentteams_bridge_url="http://bridge.test",
+        agentteams_bridge_manager_token="manager-token",
+        agentteams_bridge_data_steward_token="steward-token",
+        agentteams_bridge_approval_token="approval-token",
+        agentteams_bridge_workflow_operator_token="operator-token",
+        agentteams_element_url="https://element.example/#/room/!global:example.org",
+    )
+
+
+@pytest.mark.asyncio
+async def test_chat_room_without_case_id_uses_global_room(element_settings: Settings) -> None:
+    service = AgentTeamsService(element_settings)
+
+    result = await service.chat_room(None, "current-user")
+
+    assert result == {
+        "available": True,
+        "element_url": "https://element.example/#/room/!global:example.org",
+        "reason": None,
+        "case_id": None,
+        "source": "global",
+    }
+
+
+@pytest.mark.asyncio
+async def test_chat_room_without_case_id_reports_not_configured(service: AgentTeamsService) -> None:
+    result = await service.chat_room(None, "current-user")
+
+    assert result == {
+        "available": False,
+        "element_url": "",
+        "reason": "not_configured",
+        "case_id": None,
+        "source": "global",
+    }
+
+
+@pytest.mark.asyncio
+async def test_chat_room_prefers_case_room_url(
+    element_settings: Settings, monkeypatch
+) -> None:
+    service = AgentTeamsService(element_settings)
+
+    async def fake_request(path: str, **kwargs):
+        assert path == "/v1/cases/bioops_001"
+        return {
+            "case_id": "bioops_001",
+            "requester_ref": "current-user",
+            "element_room_url": "https://element.example/#/room/!case:example.org",
+            "preflight_input": {"sample_sheet": [{"sample": "S01"}]},
+        }
+
+    monkeypatch.setattr(service, "_request", fake_request)
+
+    result = await service.chat_room("bioops_001", "current-user")
+
+    assert result == {
+        "available": True,
+        "element_url": "https://element.example/#/room/!case:example.org",
+        "reason": None,
+        "case_id": "bioops_001",
+        "source": "case",
+    }
+
+
+@pytest.mark.asyncio
+async def test_chat_room_falls_back_to_global_when_case_has_no_room(
+    element_settings: Settings, monkeypatch
+) -> None:
+    service = AgentTeamsService(element_settings)
+
+    async def fake_request(path: str, **kwargs):
+        return {"case_id": "bioops_001", "requester_ref": "current-user", "element_room_url": ""}
+
+    monkeypatch.setattr(service, "_request", fake_request)
+
+    result = await service.chat_room("bioops_001", "current-user")
+
+    assert result["element_url"] == "https://element.example/#/room/!global:example.org"
+    assert result["source"] == "global"
+    assert result["case_id"] == "bioops_001"
+
+
+@pytest.mark.asyncio
+async def test_chat_room_rejects_case_room_url_with_access_token(
+    element_settings: Settings, monkeypatch
+) -> None:
+    service = AgentTeamsService(element_settings)
+
+    async def fake_request(path: str, **kwargs):
+        return {
+            "case_id": "bioops_001",
+            "requester_ref": "current-user",
+            "element_room_url": "https://element.example/#/room/!case:example.org?access_token=secret",
+        }
+
+    monkeypatch.setattr(service, "_request", fake_request)
+
+    result = await service.chat_room("bioops_001", "current-user")
+
+    assert result["element_url"] == "https://element.example/#/room/!global:example.org"
+    assert result["source"] == "global"
+
+
+@pytest.mark.asyncio
+async def test_chat_room_propagates_case_access_errors(
+    element_settings: Settings, monkeypatch
+) -> None:
+    service = AgentTeamsService(element_settings)
+
+    async def fake_request(path: str, **kwargs):
+        return {"case_id": "bioops_001", "requester_ref": "other-user"}
+
+    monkeypatch.setattr(service, "_request", fake_request)
+
+    with pytest.raises(BusinessError, match="无权查看"):
+        await service.chat_room("bioops_001", "current-user")
+
+
 def test_bridge_proxy_is_unavailable_without_all_server_settings() -> None:
     assert (
         AgentTeamsService(
@@ -375,3 +500,64 @@ async def test_status_uses_bridge_health_not_only_configuration(
 
     monkeypatch.setattr(service, "_request", failed_request)
     assert await service.is_connected() is False
+
+
+@pytest.mark.asyncio
+async def test_connection_status_distinguishes_missing_configuration_from_unreachable_bridge(
+    service: AgentTeamsService, monkeypatch
+) -> None:
+    async def failed_request(path: str, **kwargs):
+        assert path == "/healthz"
+        raise BusinessError("Agent 协作中心暂时不可用")
+
+    monkeypatch.setattr(service, "_request", failed_request)
+    assert await service.connection_status() == {
+        "available": False,
+        "enabled": True,
+        "configured": True,
+        "connected": False,
+        "configuration_source": "environment",
+        "reason": "bridge_unreachable",
+    }
+
+    unconfigured = AgentTeamsService(
+        Settings(
+            agentteams_bridge_enabled=False,
+            agentteams_bridge_url="",
+            agentteams_bridge_manager_token="",
+            agentteams_bridge_data_steward_token="",
+            agentteams_bridge_approval_token="",
+            agentteams_bridge_workflow_operator_token="",
+        )
+    )
+    assert await unconfigured.connection_status() == {
+        "available": False,
+        "enabled": False,
+        "configured": False,
+        "connected": False,
+        "configuration_source": "environment",
+        "reason": "disabled",
+    }
+
+
+@pytest.mark.asyncio
+async def test_connection_status_reports_enabled_but_incomplete_configuration() -> None:
+    service = AgentTeamsService(
+        Settings(
+            agentteams_bridge_enabled=True,
+            agentteams_bridge_url="http://bridge.test",
+            agentteams_bridge_manager_token="",
+            agentteams_bridge_data_steward_token="",
+            agentteams_bridge_approval_token="",
+            agentteams_bridge_workflow_operator_token="",
+        )
+    )
+
+    assert await service.connection_status() == {
+        "available": False,
+        "enabled": True,
+        "configured": False,
+        "connected": False,
+        "configuration_source": "environment",
+        "reason": "incomplete_configuration",
+    }

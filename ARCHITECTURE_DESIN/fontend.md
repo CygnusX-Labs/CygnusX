@@ -1328,6 +1328,14 @@ const columns: DataTableColumns<Task> = [
 ]
 ```
 
+**⑧ 主标识列与用户列：双行单元格（标题/名称在上，等宽 ID 在下）。** 列表的主标识列（Case、会话、资源名）和用户列统一采用"双行单元格"结构，权威实现：`frontend/src/views/AdminSessionLogsView.vue`（会话排查列表）、`frontend/src/components/task/AgentTeamsCasesPanel.vue`（任务中心 AgentTeams 协作 tab）。
+
+- **结构**：单元格为纵向 flex（`gap: 2–3px`）；第一行是主文本（标题/名称/用户名），第二行是等宽字体（`var(--font-mono, ui-monospace, …)`）的辅助 ID（UUID / session_id / case_id），颜色 `--neutral-text-3`、字号 `12px`。
+- **主文本层级**：可跳转的主标识列第一行用 `14px / 600 / --neutral-text-1`，整格作为链接但**不渲染成整行蓝色链接**——保持正文色，hover 才变 `--arco-primary`；用户列第一行用 `13px / 500 / --neutral-text-1`。
+- **溢出**：两行都必须 `text-overflow: ellipsis + white-space: nowrap`，ID 行带 `title` 悬浮查看完整值；需要复制 ID 时按 AdminSessionLogsView 的做法附加 quaternary 小按钮。
+- **用户列数据契约**：用户名必须由**后端按 user_id / requester_ref 回填真实 username**（如 `TaskService._attach_usernames`、`/api/v1/agent-teams/cases` 的 `_attach_requester_usernames`，去重后逐查询），前端 `username || '未知用户'` 仅作降级，不得把裸 UUID 当作设计预期（与 ④ 同一纪律）。
+- 双行单元格仍遵守 ③：该列给一个克制的固定 `width`，不计入弹性列。
+
 ### 33.3 验收清单（在 §10 通用清单之上补充）
 
 - [ ] 进度/百分比/计数等派生数值是否经归一化或确定性公式渲染，在 0–1 与 0–100 两种数据尺度下都正确（无 1000% / 无 1% 误显）？
@@ -1339,6 +1347,7 @@ const columns: DataTableColumns<Task> = [
 - [ ] 仪表盘卡片 section 是否都带 `margin-bottom: 24px`，相邻卡片间距与其它卡片一致？
 - [ ] “最近任务”与“最近 BLAST 任务”是否都附加 `.recent-table-surface`，在选中和未选中状态下均保持不透明表格表面与清晰边界？
 - [ ] 卡片内 `NDataTable` 是否依赖全局“卡片内数据表格”规则获得主题表面，而没有通过局部 `rgba()`、`opacity` 或硬编码白色破坏明暗主题？
+- [ ] 主标识列 / 用户列是否采用 §33.2 ⑧ 的双行单元格（标题 + 等宽 ID；用户名 + UUID），且用户名由后端回填真实值？
 - [ ] 设计是否规避 §33.1 的"AI 默认"清单，在不破坏 §1 克制与可访问性的前提下具备品牌层次与辨识度？
 
 ## 34. 知识库阅读页三要素冻结规范（卡片 / 侧栏 / 大纲）

@@ -17,7 +17,7 @@ features:
   web_search:
     mode: required_for_freshness
     triggers: [实时, 最新, 今天, 新闻, 天气, 文献, 论文, 研究进展]
-tool_packs: [workspace]
+tool_packs: [workspace, agentteams_case]
 
 # Studio 工作台：router 会话共享一个沙盒镜像（取最通用的 analysis-core）。
 # 注意：转接到 scrna 等专家后仍使用该镜像；按被路由专家动态切换镜像是后续工作。

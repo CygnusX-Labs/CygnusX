@@ -85,6 +85,37 @@ tools:
     llm_result_fields: [summary, results, success, error]
     ui_result_fields: [progress, fanout_run_id]
 
+  - key: agentteams-create-case
+    name: create_agentteams_case
+    description: >
+      仅在用户已确认后，为需要多人协作、人工审批、长耗时执行或交付验收的任务创建 AgentTeams Case。
+      不得用于普通问答、轻量并行或意图不明确的请求。
+    category: agent-orchestration
+    invocation_mode: backend_sync
+    service: omichub.application.services.agentteams_case_tool_service.AgentTeamsCaseToolService
+    method: run
+    requires_confirm: true
+    annotations: {readOnlyHint: false, destructiveHint: false, openWorld: false, idempotent: true}
+    extra: {user_scoped: true, control_tool: agentteams_case}
+    input_schema:
+      type: object
+      properties:
+        objective: {type: string, maxLength: 500, description: 自包含的交付目标，不含原始样本内容或凭证}
+        project_id: {type: string, description: 当前受控会话已绑定的项目引用 ID}
+        flow_id: {type: string, description: 已在平台白名单中的流程 ID}
+        sample_context_refs:
+          type: array
+          description: 仅样本上下文引用，不得包含原始样本内容
+          items:
+            type: object
+            properties:
+              kind: {type: string}
+              id: {type: string}
+            required: [kind, id]
+      required: [objective, project_id, flow_id]
+    llm_result_fields: [case_id, title, status, summary, success, error]
+    ui_result_fields: [case_card]
+
   - key: agent-memory-save
     name: omichub_save_memory
     description: 保存用户明确透露、跨会话仍有价值的研究偏好或项目事实。禁止保存密钥、密码、Token、原始数据内容或临时细节。

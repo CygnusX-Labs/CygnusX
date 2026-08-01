@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -18,6 +19,7 @@ from typing import Any
 import httpx
 from loguru import logger
 
+from omichub.core.telemetry import get_meter, get_tracer
 from omichub.infrastructure.database.models.ai_provider import AIProviderConfigModel
 
 
@@ -98,6 +100,50 @@ class ChatChunk:
     type: str  # "text" | "tool_calls" | "tool_call" | "tool_output" | "tool_result" | "plan" | "ask_request" | "approval_request" | "approval_resolved" | "error" | "done"
     content: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+# ===== AI 调用遥测指标（全局代理 meter，未初始化时为 noop）=====
+_ai_meter = get_meter("omichub.ai")
+_ai_duration = _ai_meter.create_histogram(
+    "ai.chat.duration", unit="ms", description="AI 模型调用耗时"
+)
+_ai_tokens = _ai_meter.create_counter(
+    "ai.tokens", description="AI 模型 token 用量（按 prompt/completion 分）"
+)
+
+
+def record_ai_call_metrics(
+    provider: str,
+    model: str,
+    status: str,
+    duration_ms: float,
+    usage: dict[str, Any] | None,
+) -> None:
+    """记录一次 AI 调用的耗时与 token 指标（容错，绝不抛异常）。
+
+    同时把调用写入应用内指标缓冲（core.ai_metrics），供管理端趋势聚合与告警；
+    该落库路径与 OTel 导出互补，任何失败都被吞掉，不影响调用链。
+    """
+    try:
+        attrs = {"ai.provider": provider, "ai.model": model, "ai.status": status}
+        _ai_duration.record(duration_ms, attrs)
+        if usage:
+            _ai_tokens.add(
+                int(usage.get("prompt_tokens", 0)), {**attrs, "ai.token.kind": "prompt"}
+            )
+            _ai_tokens.add(
+                int(usage.get("completion_tokens", 0)),
+                {**attrs, "ai.token.kind": "completion"},
+            )
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from omichub.core.ai_metrics import record_ai_call
+        from omichub.middleware.trace_context import get_session_id
+
+        record_ai_call(provider, model, status, duration_ms, usage, get_session_id() or None)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 class OpenAICompatibleProvider:
@@ -506,10 +552,51 @@ class ProviderManager:
         system_prompt: str | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[ChatChunk]:
-        """统一入口：流式聊天"""
+        """统一入口：流式聊天（带 Trace/Log/Metrics 埋点）"""
         provider = self.get_or_create(config)
-        async for chunk in provider.chat_stream(messages, system_prompt, **kwargs):
-            yield chunk
+        tracer = get_tracer("omichub.ai")
+        with tracer.start_as_current_span(
+            "ai.chat",
+            attributes={"ai.provider": provider.name, "ai.model": provider.model},
+        ) as span:
+            start = time.perf_counter()
+            status = "success"
+            usage: dict[str, Any] | None = None
+            finish_reason: str | None = None
+            try:
+                async for chunk in provider.chat_stream(messages, system_prompt, **kwargs):
+                    if chunk.type == "done":
+                        usage = normalize_token_usage(chunk.metadata.get("usage"))
+                        finish_reason = chunk.metadata.get("finish_reason") or finish_reason
+                    elif chunk.type == "error":
+                        status = "error"
+                    yield chunk
+            except Exception as exc:  # noqa: BLE001
+                status = "error"
+                span.record_exception(exc)
+                raise
+            finally:
+                duration_ms = (time.perf_counter() - start) * 1000
+                span.set_attribute("ai.status", status)
+                span.set_attribute("ai.duration_ms", round(duration_ms, 2))
+                if finish_reason:
+                    span.set_attribute("ai.finish_reason", finish_reason)
+                if usage:
+                    span.set_attribute("ai.prompt_tokens", usage.get("prompt_tokens", 0))
+                    span.set_attribute("ai.completion_tokens", usage.get("completion_tokens", 0))
+                    span.set_attribute("ai.total_tokens", usage.get("total_tokens", 0))
+                record_ai_call_metrics(
+                    provider.name, provider.model, status, duration_ms, usage
+                )
+                logger.bind(
+                    event="ai.chat",
+                    provider=provider.name,
+                    model=provider.model,
+                    status=status,
+                    duration_ms=round(duration_ms, 2),
+                    finish_reason=finish_reason,
+                    usage=usage,
+                ).info("ai.chat completed")
 
 
 # 全局 Provider 管理器实例

@@ -42,6 +42,7 @@ class SiteSettingsDTO(OmicsHubBaseSchema):
     totp_policy: TOTPPolicy
     home_quick_entries: list[HomeQuickEntryDTO]
     subagent_fanout_enabled: bool = False
+    agentteams_chat_entry_enabled: bool = False
 
 
 class UpdateSiteSettingsDTO(OmicsHubBaseSchema):
@@ -50,6 +51,7 @@ class UpdateSiteSettingsDTO(OmicsHubBaseSchema):
     registration_enabled: bool | None = None
     totp_policy: TOTPPolicy | None = None
     subagent_fanout_enabled: bool | None = None
+    agentteams_chat_entry_enabled: bool | None = None
     home_quick_entries: list[HomeQuickEntryDTO] | None = Field(
         default=None,
         min_length=1,

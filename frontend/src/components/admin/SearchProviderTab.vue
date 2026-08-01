@@ -97,7 +97,11 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="search-provider-tab" :aria-busy="loading">
+  <div class="search-provider-tab-page" :aria-busy="loading">
+    <div class="tab-header">
+      <span class="tab-hint">选择搜索服务商并配置密钥与参数，设为默认后 AI 助手将优先使用该来源。</span>
+    </div>
+    <div class="search-provider-tab">
     <aside class="provider-list" aria-label="联网搜索服务商">
       <div class="provider-group-title">API 服务商</div>
       <button v-for="provider in apiProviders" :key="provider.id" class="provider-item" :class="{ active: provider.id === selectedId }" @click="selectedId = provider.id">
@@ -124,10 +128,13 @@ onMounted(load)
       </template>
     </section>
     <NEmpty v-else description="选择左侧服务商并填入 API 密钥" />
+    </div>
   </div>
 </template>
 
 <style scoped>
+.tab-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:14px; }
+.tab-hint { font-size:12px; color:var(--neutral-text-3); }
 .search-provider-tab { display:grid; grid-template-columns:minmax(190px, .32fr) minmax(0, 1fr); min-height:440px; border:1px solid var(--neutral-border); border-radius:12px; overflow:hidden; background:var(--neutral-card); }
 .provider-list { padding:12px; border-right:1px solid var(--neutral-border); background:var(--neutral-bg); }
 .provider-group-title { margin:10px 8px 6px; font-size:12px; color:var(--neutral-text-3); font-weight:600; }

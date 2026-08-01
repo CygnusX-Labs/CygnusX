@@ -104,6 +104,41 @@ def _console_format() -> str:
     )
 
 
+def _telemetry_patch(record: "logging.LogRecord") -> None:  # type: ignore[type-arg]
+    """向每条日志注入 trace_id / span_id / request_id，实现 Log↔Trace 关联。
+
+    从当前 OpenTelemetry span 读取 trace/span id（无有效 span 时为 0），从
+    trace_context 的 ContextVar 读取 request_id。所有导入均做容错，遥测缺失时
+    仅写入空值，绝不影响日志本身。
+    """
+    extra = record["extra"]  # type: ignore[index]
+    trace_id = 0
+    span_id = 0
+    try:
+        from opentelemetry import trace as _otel_trace
+
+        span = _otel_trace.get_current_span()
+        ctx = span.get_span_context()
+        if ctx is not None and ctx.trace_id:
+            trace_id = ctx.trace_id
+            span_id = ctx.span_id
+    except Exception:  # noqa: BLE001
+        pass
+    request_id = ""
+    session_id = ""
+    try:
+        from omichub.middleware.trace_context import request_id_var, session_id_var
+
+        request_id = request_id_var.get()
+        session_id = session_id_var.get()
+    except Exception:  # noqa: BLE001
+        pass
+    extra.setdefault("trace_id", f"{trace_id:032x}" if trace_id else "")
+    extra.setdefault("span_id", f"{span_id:016x}" if span_id else "")
+    extra.setdefault("request_id", request_id)
+    extra.setdefault("session_id", session_id)
+
+
 def setup_logging() -> None:
     """初始化日志配置。
 
@@ -177,8 +212,8 @@ def setup_logging() -> None:
         diagnose=True,
     )
 
-    # 绑定服务名到上下文
-    logger.configure(extra={"service": service_name})
+    # 绑定服务名到上下文，并注入 trace/span/request 关联字段
+    logger.configure(extra={"service": service_name}, patcher=_telemetry_patch)
 
     # 兼容仍使用 logging.getLogger(...) 的旧代码和第三方库日志。
     logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)

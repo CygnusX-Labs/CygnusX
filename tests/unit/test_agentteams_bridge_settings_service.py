@@ -56,6 +56,41 @@ async def test_public_config_uses_environment_fallback_and_masks_tokens() -> Non
     assert config.configured is True
     assert config.manager_token == MASKED_SECRET
     assert config.workflow_operator_token == MASKED_SECRET
+    assert config.element_url == ""
+
+
+@pytest.mark.asyncio
+async def test_empty_disabled_database_placeholder_keeps_environment_fallback() -> None:
+    session = FakeSession()
+    session.model = AgentTeamsBridgeSettingsModel(id=1)
+    service = AgentTeamsBridgeSettingsService(session, bridge_settings())  # type: ignore[arg-type]
+
+    config = await service.get_public_config()
+
+    assert config.source == "environment"
+    assert config.enabled is True
+    assert config.configured is True
+
+
+@pytest.mark.asyncio
+async def test_disabled_database_config_with_values_remains_an_explicit_override() -> None:
+    session = FakeSession()
+    session.model = AgentTeamsBridgeSettingsModel(
+        id=1,
+        enabled=False,
+        bridge_url="http://bridge.database",
+        manager_token="encrypted-manager",
+        data_steward_token="encrypted-steward",
+        approval_token="encrypted-approval",
+        workflow_operator_token="encrypted-operator",
+        timeout_seconds=10,
+    )
+    service = AgentTeamsBridgeSettingsService(session, bridge_settings())  # type: ignore[arg-type]
+
+    config = await service.get_public_config()
+
+    assert config.source == "database"
+    assert config.enabled is False
 
 
 @pytest.mark.asyncio
@@ -94,5 +129,40 @@ async def test_enabled_config_requires_all_worker_tokens() -> None:
             AgentTeamsBridgeConfigUpdateDTO(
                 enabled=True,
                 bridge_url="http://bridge.test",
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_element_room_url_is_persisted_without_exposing_credentials() -> None:
+    session = FakeSession()
+    service = AgentTeamsBridgeSettingsService(session, bridge_settings())  # type: ignore[arg-type]
+
+    result = await service.update_config(
+        AgentTeamsBridgeConfigUpdateDTO(
+            enabled=True,
+            bridge_url="http://bridge.database",
+            manager_token=MASKED_SECRET,
+            data_steward_token=MASKED_SECRET,
+            approval_token=MASKED_SECRET,
+            workflow_operator_token=MASKED_SECRET,
+            element_url="https://element.example/#/room/!bioops:example.org",
+        )
+    )
+
+    assert result.element_url == "https://element.example/#/room/!bioops:example.org"
+    assert session.model is not None
+    assert session.model.element_url == result.element_url
+
+
+@pytest.mark.asyncio
+async def test_element_room_url_rejects_embedded_access_token() -> None:
+    service = AgentTeamsBridgeSettingsService(FakeSession(), bridge_settings())  # type: ignore[arg-type]
+
+    with pytest.raises(BusinessError, match="不能包含访问令牌"):
+        await service.update_config(
+            AgentTeamsBridgeConfigUpdateDTO(
+                enabled=False,
+                element_url="https://element.example/#/room/!bioops:example.org?access_token=secret",
             )
         )

@@ -12,7 +12,7 @@ def test_fallback_session_title_truncates_long_message():
     title = ChatService._fallback_session_title("请帮我分析这个项目中的所有RNA测序样本并绘制火山图")
 
     assert title.endswith("…")
-    assert len(title) == 25
+    assert len(title) == 16
 
 
 def test_clean_session_title_strips_third_person_narration():
@@ -38,3 +38,18 @@ def test_search_snippet_centers_keyword_and_marks_truncation():
     assert "差异表达" in snippet
     assert snippet.startswith("…")
     assert snippet.endswith("…")
+
+
+def test_is_topic_title_rejects_summary_style_output():
+    # 摘要式/叙述式产出应被拒（走 fallback）
+    assert not ChatService._is_topic_title(
+        "用户输入了hi，助手回复了自我介绍和能提供的帮助列表，并询问有什么可以帮忙的。对"
+    )
+    assert not ChatService._is_topic_title("助手回复了差异分析步骤")
+    assert not ChatService._is_topic_title("用户咨询RNA-seq流程。")
+    assert not ChatService._is_topic_title("")
+    assert not ChatService._is_topic_title("x" * 16)
+    # 主题短语式标题放行
+    assert ChatService._is_topic_title("DESeq2 差异分析与火山图")
+    assert ChatService._is_topic_title("日常问候")
+    assert ChatService._is_topic_title("FASTQ 质控报错排查")

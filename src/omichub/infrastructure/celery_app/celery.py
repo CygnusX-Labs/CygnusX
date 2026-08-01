@@ -10,6 +10,10 @@ from omichub.infrastructure.celery_app.logging import LoggedTask
 settings = get_settings()
 setup_logging()
 
+from omichub.core.telemetry import setup_telemetry  # noqa: E402
+
+setup_telemetry("worker")
+
 celery_app = Celery(
     "omichub",
     broker=settings.celery_broker_url,
@@ -30,6 +34,9 @@ celery_app = Celery(
         "omichub.infrastructure.celery_app.tasks.mas",
         "omichub.infrastructure.celery_app.tasks.memory",
         "omichub.infrastructure.celery_app.tasks.mcp_builder",
+        "omichub.infrastructure.celery_app.tasks.agentteams",
+        "omichub.infrastructure.celery_app.tasks.ai_metrics",
+        "omichub.infrastructure.celery_app.tasks.observability",
     ],
 )
 
@@ -69,6 +76,9 @@ celery_app.conf.task_routes = {
     "omichub.infrastructure.celery_app.tasks.mas.rnaflow.*": {"queue": "mas_apptainer"},
     "omichub.infrastructure.celery_app.tasks.mas.*": {"queue": "analysis"},
     "omichub.infrastructure.celery_app.tasks.memory.*": {"queue": "analysis"},
+    "omichub.infrastructure.celery_app.tasks.agentteams.*": {"queue": "analysis"},
+    "omichub.infrastructure.celery_app.tasks.ai_metrics.*": {"queue": "analysis"},
+    "omichub.infrastructure.celery_app.tasks.observability.*": {"queue": "analysis"},
 }
 
 # 定时任务
@@ -110,5 +120,19 @@ celery_app.conf.beat_schedule = {
     "mas-event-consume": {
         "task": "omichub.infrastructure.celery_app.tasks.mas.consume_events",
         "schedule": 5.0,
+    },
+    "agentteams-case-watch": {
+        "task": "omichub.infrastructure.celery_app.tasks.agentteams.watch_cases",
+        "schedule": float(settings.agentteams_case_watch_interval_seconds),
+    },
+    # 每 5 分钟评估 AI 指标告警（错误率/p95 延迟/日成本）
+    "ai-metrics-alert-check": {
+        "task": "omichub.infrastructure.celery_app.tasks.ai_metrics.check_alerts",
+        "schedule": crontab(minute="*/5"),
+    },
+    # 每天凌晨 2:15 清理超期可观测性归档（C6 冷数据留存）
+    "observability-retention": {
+        "task": "omichub.infrastructure.celery_app.tasks.observability.prune_archives",
+        "schedule": crontab(hour=2, minute=15),
     },
 }

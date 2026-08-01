@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -9,8 +10,13 @@ import litellm
 from loguru import logger
 
 from omichub.core.config import get_settings
+from omichub.core.telemetry import get_tracer
 from omichub.domain.ai_provider.entities import AIProviderConfig
 from omichub.infrastructure.ai_provider.base import StreamEvent
+from omichub.infrastructure.ai_provider.openai_compatible import (
+    normalize_token_usage,
+    record_ai_call_metrics,
+)
 
 
 class LiteLLMProvider:
@@ -149,8 +155,42 @@ class LiteLLMProvider:
         config = await self._get_config()
         kwargs = self._build_kwargs(config, messages, **overrides)
         logger.debug(f"LiteLLM chat call: model={kwargs.get('model')}")
-        response = await litellm.acompletion(**kwargs)
-        return response.model_dump() if hasattr(response, "model_dump") else dict(response)
+        tracer = get_tracer("omichub.ai")
+        with tracer.start_as_current_span(
+            "ai.chat",
+            attributes={"ai.provider": "litellm", "ai.model": str(kwargs.get("model", ""))},
+        ) as span:
+            start = time.perf_counter()
+            status = "success"
+            usage: dict[str, Any] | None = None
+            try:
+                response = await litellm.acompletion(**kwargs)
+                data = response.model_dump() if hasattr(response, "model_dump") else dict(response)
+                usage = normalize_token_usage(data.get("usage"))
+                if usage:
+                    span.set_attribute("ai.prompt_tokens", usage.get("prompt_tokens", 0))
+                    span.set_attribute("ai.completion_tokens", usage.get("completion_tokens", 0))
+                    span.set_attribute("ai.total_tokens", usage.get("total_tokens", 0))
+                return data
+            except Exception as exc:  # noqa: BLE001
+                status = "error"
+                span.record_exception(exc)
+                raise
+            finally:
+                duration_ms = (time.perf_counter() - start) * 1000
+                span.set_attribute("ai.status", status)
+                span.set_attribute("ai.duration_ms", round(duration_ms, 2))
+                record_ai_call_metrics(
+                    "litellm", str(kwargs.get("model", "")), status, duration_ms, usage
+                )
+                logger.bind(
+                    event="ai.chat",
+                    provider="litellm",
+                    model=str(kwargs.get("model", "")),
+                    status=status,
+                    duration_ms=round(duration_ms, 2),
+                    usage=usage,
+                ).info("ai.chat completed")
 
     async def stream_chat(
         self,
@@ -168,18 +208,53 @@ class LiteLLMProvider:
         config = await self._get_config()
         kwargs = self._build_kwargs(config, messages, **overrides)
         logger.debug(f"LiteLLM stream call: model={kwargs.get('model')}")
-        try:
-            stream = await litellm.acompletion(**kwargs)
-            async for chunk in stream:
-                delta = chunk.choices[0].delta if chunk.choices else None
-                if delta is None:
-                    continue
-                content = delta.content or ""
-                if content:
-                    yield content
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"LiteLLM 流式调用失败: {e}")
-            raise
+        tracer = get_tracer("omichub.ai")
+        with tracer.start_as_current_span(
+            "ai.chat",
+            attributes={"ai.provider": "litellm", "ai.model": str(kwargs.get("model", ""))},
+        ) as span:
+            start = time.perf_counter()
+            status = "success"
+            usage: dict[str, Any] | None = None
+            try:
+                stream = await litellm.acompletion(**kwargs)
+                async for chunk in stream:
+                    chunk_usage = getattr(chunk, "usage", None)
+                    if chunk_usage:
+                        usage = normalize_token_usage(
+                            chunk_usage.model_dump()
+                            if hasattr(chunk_usage, "model_dump")
+                            else dict(chunk_usage)
+                        )
+                    delta = chunk.choices[0].delta if chunk.choices else None
+                    if delta is None:
+                        continue
+                    content = delta.content or ""
+                    if content:
+                        yield content
+            except Exception as e:  # noqa: BLE001
+                status = "error"
+                span.record_exception(e)
+                logger.warning(f"LiteLLM 流式调用失败: {e}")
+                raise
+            finally:
+                duration_ms = (time.perf_counter() - start) * 1000
+                span.set_attribute("ai.status", status)
+                span.set_attribute("ai.duration_ms", round(duration_ms, 2))
+                if usage:
+                    span.set_attribute("ai.prompt_tokens", usage.get("prompt_tokens", 0))
+                    span.set_attribute("ai.completion_tokens", usage.get("completion_tokens", 0))
+                record_ai_call_metrics(
+                    "litellm", str(kwargs.get("model", "")), status, duration_ms, usage
+                )
+                logger.bind(
+                    event="ai.chat",
+                    provider="litellm",
+                    model=str(kwargs.get("model", "")),
+                    status=status,
+                    duration_ms=round(duration_ms, 2),
+                    usage=usage,
+                ).info("ai.chat completed")
 
     async def stream_chat_with_tools(
         self,
@@ -209,81 +284,118 @@ class LiteLLMProvider:
         kwargs = self._build_kwargs(config, messages, **overrides)
 
         tc_acc: dict[int, dict[str, Any]] = {}
+        tracer = get_tracer("omichub.ai")
+        with tracer.start_as_current_span(
+            "ai.chat",
+            attributes={"ai.provider": "litellm", "ai.model": str(kwargs.get("model", ""))},
+        ) as span:
+            start = time.perf_counter()
+            status = "success"
+            usage: dict[str, Any] | None = None
+            try:
+                try:
+                    logger.debug(f"LiteLLM stream+tools call: model={kwargs.get('model')}")
+                    stream = await litellm.acompletion(**kwargs)
+                    async for chunk in stream:
+                        chunk_usage = getattr(chunk, "usage", None)
+                        if chunk_usage:
+                            usage = normalize_token_usage(
+                                chunk_usage.model_dump()
+                                if hasattr(chunk_usage, "model_dump")
+                                else dict(chunk_usage)
+                            )
+                        if not chunk.choices:
+                            continue
+                        delta = chunk.choices[0].delta
+                        finish = chunk.choices[0].finish_reason
 
-        try:
-            logger.debug(f"LiteLLM stream+tools call: model={kwargs.get('model')}")
-            stream = await litellm.acompletion(**kwargs)
-            async for chunk in stream:
-                if not chunk.choices:
-                    continue
-                delta = chunk.choices[0].delta
-                finish = chunk.choices[0].finish_reason
+                        # 1. 内容 token
+                        content = getattr(delta, "content", None) or ""
+                        if content:
+                            yield StreamEvent(type="text", content=content)
 
-                # 1. 内容 token
-                content = getattr(delta, "content", None) or ""
-                if content:
-                    yield StreamEvent(type="text", content=content)
+                        # 2. 工具调用增量累积（按 index 分片拼接）
+                        raw_tc = getattr(delta, "tool_calls", None)
+                        if raw_tc:
+                            for tc in raw_tc:
+                                idx = getattr(tc, "index", 0) or 0
+                                if idx not in tc_acc:
+                                    tc_acc[idx] = {
+                                        "id": "",
+                                        "type": "function",
+                                        "function": {"name": "", "arguments": ""},
+                                    }
+                                if getattr(tc, "id", None):
+                                    tc_acc[idx]["id"] = tc.id
+                                func = getattr(tc, "function", None)
+                                if func:
+                                    if getattr(func, "name", None):
+                                        tc_acc[idx]["function"]["name"] += func.name
+                                    if getattr(func, "arguments", None):
+                                        tc_acc[idx]["function"]["arguments"] += func.arguments
 
-                # 2. 工具调用增量累积（按 index 分片拼接）
-                raw_tc = getattr(delta, "tool_calls", None)
-                if raw_tc:
-                    for tc in raw_tc:
-                        idx = getattr(tc, "index", 0) or 0
-                        if idx not in tc_acc:
-                            tc_acc[idx] = {
-                                "id": "",
+                        # 3. finish_reason 处理
+                        if finish and finish != "null" and finish == "content_filter":
+                            yield StreamEvent(type="text", content="[输出被内容安全过滤器拦截]")
+                        # 注意：不在此处 return，等流自然结束
+
+                except litellm.BadRequestError as e:
+                    # 降级：provider 不支持 stream+tools
+                    logger.warning(f"Stream+tools 不支持，降级非流式: {e}")
+                    response = await self.chat(
+                        messages, model=model, temperature=temperature, tools=tools
+                    )
+                    message = response.get("choices", [{}])[0].get("message", {})
+                    content = message.get("content", "") or ""
+                    if content:
+                        yield StreamEvent(type="text", content=content)
+                    raw_tool_calls = message.get("tool_calls") or []
+                    if raw_tool_calls:
+                        yield StreamEvent(type="tool_calls", tool_calls=raw_tool_calls)
+                    yield StreamEvent(type="done")
+                    return
+                except Exception as e:  # noqa: BLE001
+                    status = "error"
+                    span.record_exception(e)
+                    logger.warning(f"LiteLLM stream+tools 调用失败: {e}")
+                    raise
+
+                # 流结束：组装 tool_calls
+                if tc_acc:
+                    assembled: list[dict[str, Any]] = []
+                    for idx in sorted(tc_acc):
+                        tc = tc_acc[idx]
+                        assembled.append(
+                            {
+                                "id": tc["id"] or f"call_{idx}",
                                 "type": "function",
-                                "function": {"name": "", "arguments": ""},
+                                "function": {
+                                    "name": tc["function"]["name"],
+                                    "arguments": tc["function"]["arguments"],
+                                },
                             }
-                        if getattr(tc, "id", None):
-                            tc_acc[idx]["id"] = tc.id
-                        func = getattr(tc, "function", None)
-                        if func:
-                            if getattr(func, "name", None):
-                                tc_acc[idx]["function"]["name"] += func.name
-                            if getattr(func, "arguments", None):
-                                tc_acc[idx]["function"]["arguments"] += func.arguments
+                        )
+                    yield StreamEvent(type="tool_calls", tool_calls=assembled)
 
-                # 3. finish_reason 处理
-                if finish and finish != "null" and finish == "content_filter":
-                    yield StreamEvent(type="text", content="[输出被内容安全过滤器拦截]")
-                # 注意：不在此处 return，等流自然结束
-
-        except litellm.BadRequestError as e:
-            # 降级：provider 不支持 stream+tools
-            logger.warning(f"Stream+tools 不支持，降级非流式: {e}")
-            response = await self.chat(messages, model=model, temperature=temperature, tools=tools)
-            message = response.get("choices", [{}])[0].get("message", {})
-            content = message.get("content", "") or ""
-            if content:
-                yield StreamEvent(type="text", content=content)
-            raw_tool_calls = message.get("tool_calls") or []
-            if raw_tool_calls:
-                yield StreamEvent(type="tool_calls", tool_calls=raw_tool_calls)
-            yield StreamEvent(type="done")
-            return
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"LiteLLM stream+tools 调用失败: {e}")
-            raise
-
-        # 流结束：组装 tool_calls
-        if tc_acc:
-            assembled: list[dict[str, Any]] = []
-            for idx in sorted(tc_acc):
-                tc = tc_acc[idx]
-                assembled.append(
-                    {
-                        "id": tc["id"] or f"call_{idx}",
-                        "type": "function",
-                        "function": {
-                            "name": tc["function"]["name"],
-                            "arguments": tc["function"]["arguments"],
-                        },
-                    }
+                yield StreamEvent(type="done")
+            finally:
+                duration_ms = (time.perf_counter() - start) * 1000
+                span.set_attribute("ai.status", status)
+                span.set_attribute("ai.duration_ms", round(duration_ms, 2))
+                if usage:
+                    span.set_attribute("ai.prompt_tokens", usage.get("prompt_tokens", 0))
+                    span.set_attribute("ai.completion_tokens", usage.get("completion_tokens", 0))
+                record_ai_call_metrics(
+                    "litellm", str(kwargs.get("model", "")), status, duration_ms, usage
                 )
-            yield StreamEvent(type="tool_calls", tool_calls=assembled)
-
-        yield StreamEvent(type="done")
+                logger.bind(
+                    event="ai.chat",
+                    provider="litellm",
+                    model=str(kwargs.get("model", "")),
+                    status=status,
+                    duration_ms=round(duration_ms, 2),
+                    usage=usage,
+                ).info("ai.chat completed")
 
     async def is_configured(self) -> bool:
         """检查是否已配置有效 API Key 与模型"""
@@ -313,10 +425,41 @@ class LiteLLMProvider:
         else:
             kwargs["api_key"] = self._settings.openai_api_key or self._settings.kimi_api_key
 
-        response = await litellm.aembedding(**kwargs)
-        data: dict[str, Any] = (
-            response.model_dump() if hasattr(response, "model_dump") else dict(response)
-        )
-        embedding_data: list[dict[str, Any]] = data.get("data", [{}])
-        embedding: list[float] = embedding_data[0].get("embedding", []) if embedding_data else []
-        return embedding
+        tracer = get_tracer("omichub.ai")
+        with tracer.start_as_current_span(
+            "ai.embedding",
+            attributes={"ai.provider": "litellm", "ai.model": str(kwargs.get("model", ""))},
+        ) as span:
+            start = time.perf_counter()
+            status = "success"
+            usage: dict[str, Any] | None = None
+            try:
+                response = await litellm.aembedding(**kwargs)
+                data: dict[str, Any] = (
+                    response.model_dump() if hasattr(response, "model_dump") else dict(response)
+                )
+                usage = normalize_token_usage(data.get("usage"))
+                embedding_data: list[dict[str, Any]] = data.get("data", [{}])
+                embedding: list[float] = (
+                    embedding_data[0].get("embedding", []) if embedding_data else []
+                )
+                return embedding
+            except Exception as exc:  # noqa: BLE001
+                status = "error"
+                span.record_exception(exc)
+                raise
+            finally:
+                duration_ms = (time.perf_counter() - start) * 1000
+                span.set_attribute("ai.status", status)
+                span.set_attribute("ai.duration_ms", round(duration_ms, 2))
+                record_ai_call_metrics(
+                    "litellm", str(kwargs.get("model", "")), status, duration_ms, usage
+                )
+                logger.bind(
+                    event="ai.embedding",
+                    provider="litellm",
+                    model=str(kwargs.get("model", "")),
+                    status=status,
+                    duration_ms=round(duration_ms, 2),
+                    usage=usage,
+                ).info("ai.embedding completed")

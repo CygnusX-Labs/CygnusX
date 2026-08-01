@@ -389,6 +389,130 @@ async def test_case_list_is_manager_only_and_filters_requester(client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_case_element_room_url_is_stored_and_returned(client) -> None:
+    request_client, _ = client
+    room_url = "https://element.example.com/#/room/!case-006:matrix.example.com"
+    created = await request_client.post(
+        "/v1/cases",
+        headers=headers("bioops-manager", "manager"),
+        json={
+            "case_id": "bioops_006",
+            "project_ref": {"kind": "project", "id": "project-1"},
+            "intent": "bulk_rnaseq_delivery",
+            "requester_ref": "user-1",
+            "element_room_url": room_url,
+        },
+    )
+    assert created.status_code == 201
+    assert created.json()["element_room_url"] == room_url
+
+    fetched = await request_client.get(
+        "/v1/cases/bioops_006", headers=headers("bioops-manager", "manager")
+    )
+    assert fetched.status_code == 200
+    assert fetched.json()["element_room_url"] == room_url
+
+    listed = await request_client.get("/v1/cases", headers=headers("bioops-manager", "manager"))
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["element_room_url"] == room_url
+
+    transitioned = await request_client.post(
+        "/v1/cases/bioops_006/state",
+        headers=headers("bioops-manager", "manager"),
+        json={"status": "cancelled", "reason": "no longer needed"},
+    )
+    assert transitioned.status_code == 200
+    assert transitioned.json()["element_room_url"] == room_url
+
+
+@pytest.mark.asyncio
+async def test_case_element_room_url_appears_in_worker_case_view(client) -> None:
+    request_client, _ = client
+    room_url = "https://element.example.com/#/room/!case-007:matrix.example.com"
+    created = await request_client.post(
+        "/v1/cases",
+        headers=headers("bioops-manager", "manager"),
+        json={
+            "case_id": "bioops_007",
+            "project_ref": {"kind": "project", "id": "project-1"},
+            "intent": "bulk_rnaseq_delivery",
+            "requester_ref": "user-1",
+            "element_room_url": room_url,
+        },
+    )
+    assert created.status_code == 201
+    assigned = await request_client.post(
+        "/v1/cases/bioops_007/work-items",
+        headers=headers("bioops-manager", "manager"),
+        json={
+            "work_item_id": "preflight-01",
+            "target": "data-steward",
+            "objective": "Run project-preflight",
+            "skill_name": "project-preflight",
+        },
+    )
+    assert assigned.status_code == 201
+    worker_case = await request_client.get(
+        "/v1/cases/bioops_007", headers=headers("data-steward", "steward")
+    )
+    assert worker_case.status_code == 200
+    assert worker_case.json()["element_room_url"] == room_url
+
+
+@pytest.mark.asyncio
+async def test_case_without_element_room_url_defaults_to_none(client) -> None:
+    request_client, _ = client
+    await create_case(request_client, "bioops_008")
+    fetched = await request_client.get(
+        "/v1/cases/bioops_008", headers=headers("bioops-manager", "manager")
+    )
+    assert fetched.status_code == 200
+    assert fetched.json()["element_room_url"] is None
+
+    created_empty = await request_client.post(
+        "/v1/cases",
+        headers=headers("bioops-manager", "manager"),
+        json={
+            "case_id": "bioops_009",
+            "project_ref": {"kind": "project", "id": "project-1"},
+            "intent": "bulk_rnaseq_delivery",
+            "requester_ref": "user-1",
+            "element_room_url": "",
+        },
+    )
+    assert created_empty.status_code == 201
+    assert created_empty.json()["element_room_url"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "room_url",
+    [
+        "https://element.example.com/?access_token=secret-token",
+        "https://element.example.com/?login_token=secret-token",
+        "https://element.example.com/login?PASSWORD=hunter2",
+        "ftp://element.example.com/room",
+        "element.example.com/#/room/!case:matrix.example.com",
+        "https:///no-host",
+    ],
+)
+async def test_case_create_rejects_invalid_element_room_url(client, room_url: str) -> None:
+    request_client, _ = client
+    response = await request_client.post(
+        "/v1/cases",
+        headers=headers("bioops-manager", "manager"),
+        json={
+            "case_id": "bioops_bad_url",
+            "project_ref": {"kind": "project", "id": "project-1"},
+            "intent": "bulk_rnaseq_delivery",
+            "requester_ref": "user-1",
+            "element_room_url": room_url,
+        },
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_case_block_can_be_corrected_and_retried(client) -> None:
     request_client, _ = client
     await create_case(request_client, "bioops_003")

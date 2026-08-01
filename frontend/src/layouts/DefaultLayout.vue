@@ -12,7 +12,7 @@ import {
   MenuOutline, ChevronForwardOutline, ChevronDownOutline,
   NotificationsOutline, HelpCircleOutline, ChatbubblesOutline, Planet,
   WalletOutline, SparklesOutline, ConstructOutline, LayersOutline,
-  TerminalOutline, SearchOutline, DesktopOutline, LockClosedOutline, GitNetworkOutline,
+  TerminalOutline, SearchOutline, DesktopOutline, LockClosedOutline,
 } from '@vicons/ionicons5'
 import CookieBalanceBadge from '@/components/CookieBalanceBadge.vue'
 import NotAuthorized from '@/components/NotAuthorized.vue'
@@ -236,7 +236,6 @@ const mainNavItems = computed<NavItem[]>(() => [
   { key: 'workflow-monitor', label: '流程监控', to: '/workflow-monitor', icon: BarChartOutline },
   { key: 'reports', label: '结果报告中心', to: '/reports', icon: DocumentTextOutline },
   { key: 'ai', label: 'AI 助手', to: '/ai', icon: ChatbubblesOutline },
-  { key: 'agent-teams', label: 'Agent 协作中心', to: '/agent-teams', icon: GitNetworkOutline },
   { key: 'studio', label: 'AI 工作台', to: '/studio', icon: DesktopOutline },
   { key: 'tools', label: '生信工具箱', to: '/tools', icon: ConstructOutline },
 ])
@@ -255,6 +254,8 @@ const adminNavItems = computed<NavItem[]>(() => [
     icon: SettingsOutline,
     children: [
       { key: 'admin-users', label: '用户管理', to: '/admin/users', icon: PersonOutline },
+      { key: 'admin-session-logs', label: '会话日志排查', to: '/admin/session-logs', icon: DocumentTextOutline },
+      { key: 'admin-ai-metrics', label: 'AI 指标仪表盘', to: '/admin/ai-metrics', icon: BarChartOutline },
       { key: 'admin-home-quick-entries', label: '首页入口管理', to: '/admin/home-quick-entries', icon: GridOutline },
       { key: 'admin-biscuits', label: '饼干中心', to: '/admin/biscuits/accounts', icon: WalletOutline },
       { key: 'admin-ai-config', label: 'AI 配置中心', to: '/admin/ai-config/providers', icon: SparklesOutline },

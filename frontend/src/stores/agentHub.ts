@@ -26,11 +26,22 @@ import type {
   SkillVersion,
 } from '@/types/agent'
 import type {
+  AliyunMarketStatus,
   SkillImportPreview,
+  SkillInvocationRecord,
+  SkillInvocationStat,
   SkillMarketplaceItem,
+  SkillReference,
   SkillUpdateCheck,
+  SkillVersionDetail,
 } from '@/types/skill'
-import type { ChatMessage, ToolCall, FileAttachment, ChartData } from '@/components/ai-chat/types'
+import type {
+  AgentTeamsCaseCardPayload,
+  ChatMessage,
+  ToolCall,
+  FileAttachment,
+  ChartData,
+} from '@/components/ai-chat/types'
 import { agentApi, adminAgentApi } from '@/api/agent'
 import apiClient from '@/api/client'
 import { reportChatDiagnostic } from '@/utils/chatDiagnostics'
@@ -77,6 +88,8 @@ export interface AgentSession {
   model_id?: string
   mcp_mode?: 'off' | 'auto' | 'manual'
   extra_mcp_servers?: string[]
+  /** 当前会话启用 AgentTeams multi-agent 协作运行时 */
+  multi_agent?: boolean
 }
 
 /** 可用模型选项（来自 /api/v1/chat/models） */
@@ -138,6 +151,84 @@ export const useAgentHubStore = defineStore('agentHub', () => {
    */
   let pendingSessionIdResolver: (() => void) | null = null
   let pendingSessionIdPromise: Promise<void> | null = null
+  let agentTeamsEventAbort: AbortController | null = null
+
+  type AgentTeamsCaseStreamEvent = AgentTeamsCaseCardPayload & {
+    type: 'agentteams_case'
+    phase: 'status_changed'
+    session_id?: string
+    message_id?: string
+  }
+
+  function applyAgentTeamsCaseEvent(event: AgentTeamsCaseStreamEvent) {
+    const session = sessions.value.find((item) => item.id === event.session_id) || currentSession.value
+    if (!session || !event.case_id) return
+    const card: AgentTeamsCaseCardPayload = {
+      case_id: event.case_id,
+      title: event.title || '协作 Case',
+      status: event.status || 'received',
+      next_actor: event.next_actor || '协作团队',
+      case_url: event.case_url || `/agent-teams/cases/${event.case_id}`,
+      updated_at: new Date().toISOString(),
+    }
+    const existing = session.messages.find((message) => message.id === event.message_id)
+    if (existing) return
+    session.messages.push({
+      id: event.message_id || `agentteams-${event.case_id}-${event.status}-${Date.now()}`,
+      role: 'system',
+      content: `协作 Case「${card.title}」状态更新为「${card.status}」，下一步请由 ${card.next_actor} 处理。`,
+      agentTeamsCases: [card],
+      createdAt: new Date().toISOString(),
+    })
+    session.updated_at = new Date().toISOString()
+  }
+
+  function stopAgentTeamsCaseEvents() {
+    agentTeamsEventAbort?.abort()
+    agentTeamsEventAbort = null
+  }
+
+  async function startAgentTeamsCaseEvents(sessionId: string) {
+    if (!sessionId || sessionId.startsWith('sess-')) return
+    stopAgentTeamsCaseEvents()
+    const controller = new AbortController()
+    agentTeamsEventAbort = controller
+    try {
+      const token = localStorage.getItem('access_token')
+      const response = await fetch(`/api/v1/chat/sessions/${sessionId}/agentteams-events`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        signal: controller.signal,
+      })
+      if (!response.ok || !response.body) return
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (!controller.signal.aborted) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue
+          try {
+            const event = JSON.parse(line.slice(5).trim()) as AgentTeamsCaseStreamEvent
+            if (event.type === 'agentteams_case' && event.phase === 'status_changed') {
+              applyAgentTeamsCaseEvent(event)
+            }
+          } catch {
+            // 忽略单条不可解析事件，长连接保持可用。
+          }
+        }
+      }
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        console.warn('AgentTeams Case 状态事件连接异常', error)
+      }
+    } finally {
+      if (agentTeamsEventAbort === controller) agentTeamsEventAbort = null
+    }
+  }
 
   function createSessionIdLock(): Promise<void> {
     if (!pendingSessionIdPromise) {
@@ -418,6 +509,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         mode?: 'chat' | 'studio'
         mcp_mode?: 'off' | 'auto' | 'manual'
         extra_mcp_servers?: string[]
+        multi_agent?: boolean
         created_at: string
         updated_at: string
       }>>('/chat/sessions')
@@ -435,6 +527,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           model_id: s.model_id || undefined,
           mcp_mode: s.mcp_mode || 'auto',
           extra_mcp_servers: s.extra_mcp_servers || [],
+          multi_agent: Boolean(s.multi_agent),
         }))
       // 合并正在流式中的临时会话，避免刷新时丢失
       const tempSessions = sessions.value.filter((s) => s.id.startsWith('sess-'))
@@ -637,10 +730,49 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     await fetchSkills(true)
   }
 
+  /** 阿里云官方技能源：同步状态（不触网） */
+  async function fetchAliyunMarketStatus(): Promise<AliyunMarketStatus> {
+    const res = await apiClient.get<AliyunMarketStatus>('/admin/skills/marketplace/aliyun/status')
+    return res.data
+  }
+
+  /** 阿里云官方技能源：通过 AgentExplorer OpenAPI 拉取目录（未配置凭证时回退 GitHub） */
+  async function syncAliyunMarket(force = false): Promise<AliyunMarketStatus> {
+    const res = await apiClient.post<AliyunMarketStatus>(
+      '/admin/skills/marketplace/aliyun/sync',
+      null,
+      { params: { force } },
+    )
+    return res.data
+  }
+
+  /** 一键安装阿里云官方技能（走统一预览校验入库） */
+  async function installAliyunMarketSkill(skillId: string, overwrite = false): Promise<void> {
+    await apiClient.post(`/admin/skills/marketplace/aliyun/${skillId}/install`, null, {
+      params: { overwrite },
+    })
+    await fetchSkills(true)
+  }
+
   /** 检查上游更新（GitHub 来源） */
   async function checkSkillUpdate(skillId: string): Promise<SkillUpdateCheck> {
     const res = await apiClient.post<SkillUpdateCheck>(`/admin/skills/${skillId}/check-update`)
     return res.data
+  }
+
+  /** 技能调用聚合统计（资源中心技能卡片"最近调用 · 累计 N 次"） */
+  async function fetchSkillInvocationStats(): Promise<SkillInvocationStat[]> {
+    const res = await apiClient.get<SkillInvocationStat[]>('/admin/skills/invocation-stats')
+    return res.data || []
+  }
+
+  /** 某技能的最近调用记录（倒序） */
+  async function fetchSkillInvocations(skillId: string, limit = 20): Promise<SkillInvocationRecord[]> {
+    const res = await apiClient.get<SkillInvocationRecord[]>(
+      `/admin/skills/${skillId}/invocations`,
+      { params: { limit } },
+    )
+    return res.data || []
   }
 
   /** 技能版本历史（revision 倒序） */
@@ -664,15 +796,24 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     }
   }
 
-  async function deleteSkill(id: string): Promise<void> {
-    try {
-      await apiClient.delete(`/admin/skills/${id}`)
-      await fetchSkills(true)
-      // 同步解绑 Agent 上的引用（前端缓存）
-      agents.value.forEach((a) => (a.skill_ids = a.skill_ids.filter((x) => x !== id)))
-    } catch (e) {
-      console.error('删除技能失败:', e)
-    }
+  /** 删除技能。被助手引用时后端返回 400，需 force=true 二次确认；错误上抛由组件处理。 */
+  async function deleteSkill(id: string, force = false): Promise<void> {
+    await apiClient.delete(`/admin/skills/${id}`, { params: { force } })
+    await fetchSkills(true)
+    // 同步解绑 Agent 上的引用（前端缓存）
+    agents.value.forEach((a) => (a.skill_ids = a.skill_ids.filter((x) => x !== id)))
+  }
+
+  /** 版本快照详情（含正文，供 diff 查看） */
+  async function fetchSkillVersionDetail(skillId: string, revision: number): Promise<SkillVersionDetail> {
+    const res = await apiClient.get<SkillVersionDetail>(`/admin/skills/${skillId}/versions/${revision}`)
+    return res.data
+  }
+
+  /** 引用该技能的助手列表（删除保护） */
+  async function fetchSkillReferences(skillId: string): Promise<SkillReference[]> {
+    const res = await apiClient.get<SkillReference[]>(`/admin/skills/${skillId}/references`)
+    return res.data || []
   }
 
   // ========== 会话编排 ==========
@@ -695,6 +836,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       model_id: agent.model_id || undefined,
       mcp_mode: 'auto',
       extra_mcp_servers: [],
+      multi_agent: false,
     }
     sessions.value.unshift(session)
     currentSessionId.value = session.id
@@ -707,6 +849,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       currentPlan.value = []
     }
     currentSessionId.value = id
+    void startAgentTeamsCaseEvents(id)
     const session = sessions.value.find((s) => s.id === id)
     if (session && session.messages.length === 0 && !session.id.startsWith('sess-')) {
       await loadSessionMessages(id)
@@ -721,11 +864,13 @@ export const useAgentHubStore = defineStore('agentHub', () => {
 
   function newChat() {
     stopStreaming()
+    stopAgentTeamsCaseEvents()
     currentSessionId.value = ''
   }
 
   async function deleteSession(id: string) {
     if (currentSessionId.value === id) stopStreaming()
+    if (currentSessionId.value === id) stopAgentTeamsCaseEvents()
     if (!id.startsWith('sess-')) {
       try {
         await apiClient.delete(`/chat/sessions/${id}`)
@@ -871,6 +1016,36 @@ export const useAgentHubStore = defineStore('agentHub', () => {
               publishedAt: typeof source.publishedAt === 'string' ? source.publishedAt : null,
             }))
         }
+        const agentTeamsCases = m.metadata_json?.agentteams_cases
+        if (Array.isArray(agentTeamsCases)) {
+          msg.agentTeamsCases = agentTeamsCases
+            .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+            .filter((item) => typeof item.case_id === 'string' && typeof item.status === 'string')
+            .map((item) => ({
+              case_id: item.case_id as string,
+              title: typeof item.title === 'string' ? item.title : '协作 Case',
+              status: item.status as string,
+              next_actor: typeof item.next_actor === 'string' ? item.next_actor : '协作团队',
+              case_url: typeof item.case_url === 'string' ? item.case_url : '',
+              updated_at: typeof item.updated_at === 'string' ? item.updated_at : undefined,
+            }))
+        }
+        if (m.role === 'system' && m.metadata_json?.type === 'agentteams_case') {
+          const caseId = m.metadata_json.case_id
+          const status = m.metadata_json.status
+          if (typeof caseId === 'string' && typeof status === 'string') {
+            msg.agentTeamsCases = [{
+              case_id: caseId,
+              title: '协作 Case 状态更新',
+              status,
+              next_actor: typeof m.metadata_json.next_actor === 'string'
+                ? m.metadata_json.next_actor
+                : '协作团队',
+              case_url: typeof m.metadata_json.case_url === 'string' ? m.metadata_json.case_url : '',
+              updated_at: m.created_at,
+            }]
+          }
+        }
         // Studio 会话：历史消息随 metadata_json.tool_invocations 落库，
         // 重载时重建工具调用卡片（代码卡片凭 arguments + ui_payload 渲染）
         const invocations = m.metadata_json?.tool_invocations
@@ -961,6 +1136,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       skillNames?: string[]
       mcpMode?: 'off' | 'auto' | 'manual'
       extraMcpServers?: string[]
+      multiAgent?: boolean
       /** 工具轮次触顶后用户确认继续：本次请求上限扩展到 1000 轮 */
       extendMaxRounds?: boolean
     } = {},
@@ -979,6 +1155,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     }
     if (options.mcpMode) session.mcp_mode = options.mcpMode
     if (options.extraMcpServers) session.extra_mcp_servers = [...options.extraMcpServers]
+    if (options.multiAgent !== undefined) session.multi_agent = options.multiAgent
 
     // 若当前临时会话 ID 正在解析为真实 ID，排队等待，防止创建重复会话
     if (session.id.startsWith('sess-') && pendingSessionIdPromise) {
@@ -1084,6 +1261,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         enableCodeExecution: options.enableCodeExecution ?? false,
         mcpMode: options.mcpMode ?? session.mcp_mode ?? 'auto',
         extraMcpServers: options.extraMcpServers ?? session.extra_mcp_servers ?? [],
+        multiAgent: options.multiAgent ?? session.multi_agent ?? false,
         extendMaxRounds: options.extendMaxRounds ?? false,
       },
       {
@@ -1112,6 +1290,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             session.id = sessionId
             session.agent_id = agent.id
             currentSessionId.value = sessionId
+            void startAgentTeamsCaseEvents(sessionId)
             if (messageId) aiMsg.backendMessageId = messageId
             releaseSessionIdLock()
           }
@@ -1158,6 +1337,76 @@ export const useAgentHubStore = defineStore('agentHub', () => {
               }
             }
           }
+        },
+        onSkill: (event) => {
+          // Skill 调用可视化：同一消息内同技能多次调用合并为一张卡片（计数），不刷屏
+          if (!event.skill_id) return
+          const cards = aiMsg.skillInvocations || (aiMsg.skillInvocations = [])
+          let card = cards.find((c) => c.skill_id === event.skill_id)
+          if (event.phase === 'invoked') {
+            if (card) {
+              card.count += 1
+              card.status = 'running'
+              card.error = undefined
+              card.ts = Date.now()
+            } else {
+              card = {
+                id: `skill-${event.skill_id}-${Date.now()}`,
+                skill_id: event.skill_id,
+                name: event.name || event.skill_id,
+                icon: event.icon || '🧩',
+                version: event.version || '',
+                source: event.source || '',
+                agent: event.agent,
+                status: 'running',
+                count: 1,
+                ts: Date.now(),
+              }
+              cards.push(card)
+              // 交错时间线：技能卡片渲染在发生位置的正文之后
+              aiMsg.timeline?.push({ kind: 'skill', skillCardId: card.id })
+              // 首次调用通知：宿主组件监听后按 localStorage 去重弹轻提示
+              window.dispatchEvent(new CustomEvent('omichub:skill-invoked', {
+                detail: { skill_id: event.skill_id, name: card.name, version: card.version },
+              }))
+            }
+          } else if (card) {
+            card.status = event.phase === 'completed' ? 'success' : 'error'
+            card.duration_ms = event.duration_ms
+            card.summary = event.summary
+            card.error = event.error
+          } else {
+            // 漏掉 invoked（如断线重连）也要补一张结果卡片
+            cards.push({
+              id: `skill-${event.skill_id}-${Date.now()}`,
+              skill_id: event.skill_id,
+              name: event.name || event.skill_id,
+              icon: event.icon || '🧩',
+              version: event.version || '',
+              source: event.source || '',
+              agent: event.agent,
+              status: event.phase === 'completed' ? 'success' : 'error',
+              duration_ms: event.duration_ms,
+              summary: event.summary,
+              error: event.error,
+              count: 1,
+              ts: Date.now(),
+            })
+          }
+        },
+        onAgentTeamsCase: (event) => {
+          if (!event.case_id) return
+          const cards = aiMsg.agentTeamsCases || (aiMsg.agentTeamsCases = [])
+          const index = cards.findIndex((card) => card.case_id === event.case_id)
+          const card = {
+            case_id: event.case_id,
+            title: event.title,
+            status: event.status,
+            next_actor: event.next_actor,
+            case_url: event.case_url,
+          }
+          if (index >= 0) cards[index] = card
+          else cards.push(card)
         },
         onWebSearch: (event) => {
           aiMsg.webSearchStatus = {
@@ -1490,7 +1739,9 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     upsertAgent, toggleAgent, deleteAgent, setDefaultAgent,
     previewSkillFromGithub, previewSkillFromZip, previewSkillFromJson, confirmSkillImport,
     fetchSkillMarketplace, installMarketplaceSkill, checkSkillUpdate,
-    fetchSkillVersions, rollbackSkill,
+    fetchAliyunMarketStatus, syncAliyunMarket, installAliyunMarketSkill,
+    fetchSkillInvocationStats, fetchSkillInvocations,
+    fetchSkillVersions, rollbackSkill, fetchSkillVersionDetail, fetchSkillReferences,
     toggleSkill, deleteSkill,
     // session actions
     startSessionFromAgent, selectSession, newChat, deleteSession, renameSession, generateSessionTitle,

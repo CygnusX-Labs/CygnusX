@@ -76,6 +76,7 @@ async def chat_stream(
                 mode=request.mode,
                 mcp_mode=request.mcp_mode,
                 extra_mcp_servers=request.extra_mcp_servers,
+                multi_agent=request.multi_agent,
                 extend_max_rounds=request.extend_max_rounds,
             )
         else:
@@ -119,6 +120,46 @@ async def web_search_availability(current_user_id: CurrentUserId, db: DbSession)
 
     availability = await SearchProviderService(db).availability()
     return availability.model_dump()
+
+
+@router.get(
+    "/sessions/{session_id}/agentteams-events",
+    summary="订阅聊天会话的 AgentTeams Case 状态事件",
+)
+async def agentteams_case_events(
+    session_id: str,
+    current_user_id: CurrentUserId,
+    db: DbSession,
+) -> StreamingResponse:
+    """为当前用户已打开的聊天会话提供后台 Case 状态 SSE。"""
+    session = await ChatService(db).get_session(session_id, current_user_id)
+    if session is None:
+        async def missing_session():
+            yield f"data: {json.dumps({'type': 'error', 'content': '会话不存在或无权访问'}, ensure_ascii=False)}\n\n"
+
+        return StreamingResponse(missing_session(), media_type="text/event-stream", status_code=404)
+
+    async def generate_sse():
+        from omichub.infrastructure.cache.chat_case_pubsub import subscribe_chat_case_events
+
+        pubsub = await subscribe_chat_case_events(session_id)
+        try:
+            async for message in pubsub.listen():
+                if message["type"] == "message":
+                    yield f"data: {message['data']}\n\n"
+        finally:
+            await pubsub.unsubscribe()
+            await pubsub.close()
+
+    return StreamingResponse(
+        generate_sse(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ============================================================

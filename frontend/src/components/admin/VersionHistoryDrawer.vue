@@ -47,6 +47,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   (e: 'update:show', value: boolean): void
   (e: 'rollback', item: VersionHistoryItem): void
+  /** 查看该版本与当前版本的 diff（父组件实现） */
+  (e: 'diff', item: VersionHistoryItem): void
 }>()
 
 function formatTime(ts?: string): string {
@@ -87,8 +89,11 @@ function formatTime(ts?: string): string {
               <span class="vh-time">
                 {{ formatTime(item.createdAt) }}<template v-if="item.createdBy"> · {{ item.createdBy }}</template>
               </span>
-              <!-- 最新一条（第一行）为当前版本，不提供回滚 -->
+              <!-- 最新一条（第一行）为当前版本，不提供回滚/diff -->
               <template v-if="idx > 0">
+                <span class="vh-action">
+                  <NButton size="tiny" quaternary @click="emit('diff', item)">对比</NButton>
+                </span>
                 <NTooltip :disabled="!item.rollbackDisabled" trigger="hover">
                   <template #trigger>
                     <span class="vh-action">

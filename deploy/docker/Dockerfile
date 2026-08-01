@@ -46,6 +46,12 @@ RUN uv sync --frozen --no-dev --extra workflow
 # Snakemake logger plugin used by the workflow monitor.
 RUN uv pip install --python /app/.venv/bin/python --no-cache "snakemake-logger-plugin-rich-loguru>=0.3.0"
 
+# AgentExplorer SDK powers the optional Alibaba Cloud official Skills marketplace.
+# Keep it separate from uv.lock because this integration is lazy-loaded and only the web service
+# needs it when an Alibaba Cloud AccessKey is configured.
+RUN uv pip install --python /app/.venv/bin/python --no-cache \
+    "alibabacloud_agentexplorer20260317==1.0.1"
+
 # ----- 阶段 2: 运行 -----
 FROM python:3.11-slim AS runtime
 

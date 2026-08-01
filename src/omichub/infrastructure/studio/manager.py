@@ -35,6 +35,7 @@ import httpx
 from loguru import logger
 
 from omichub.core.config import get_settings
+from omichub.core.telemetry import get_meter, get_tracer
 from omichub.infrastructure.cache.redis_client import get_redis
 from omichub.infrastructure.config.studio_loader import (
     StudioConfig,
@@ -48,6 +49,15 @@ _ACTIVITY_KEY = "studio:sandbox:last_activity"
 _BUSY_KEY_PREFIX = "studio:sandbox:busy:"
 _AGENT_SOCKET_NAME = ".agent.sock"
 _AGENT_BASE_URL = "http://studio-agent"
+
+# ===== Studio 沙箱 MCP 调用遥测指标（全局代理 meter，未初始化时为 noop）=====
+_studio_meter = get_meter("omichub.studio")
+_studio_mcp_duration = _studio_meter.create_histogram(
+    "mcp.sandbox.call.duration", unit="ms", description="Studio 沙箱 MCP 工具调用耗时"
+)
+_studio_mcp_count = _studio_meter.create_counter(
+    "mcp.sandbox.call.count", description="Studio 沙箱 MCP 工具调用次数"
+)
 
 
 class StudioSandboxUnavailableError(Exception):
@@ -808,7 +818,7 @@ class StudioSandboxManager:
         image: str | None = None,
         user_id: str | None = None,
     ) -> dict[str, Any]:
-        """调用实验 MCP 的工具，返回 {content, is_error}。"""
+        """调用实验 MCP 的工具，返回 {content, is_error}（带 Trace/Log/Metrics 埋点）。"""
         payload: dict[str, Any] = {
             "server_id": server_id,
             "tool": tool,
@@ -816,9 +826,45 @@ class StudioSandboxManager:
         }
         if timeout:
             payload["timeout"] = timeout
-        return await self._agent_call(
-            session_id, "POST", "/mcp/call", json=payload, image=image, user_id=user_id
-        )
+        tracer = get_tracer("omichub.studio")
+        with tracer.start_as_current_span(
+            "mcp.sandbox.call_tool",
+            attributes={"mcp.server_id": server_id, "mcp.tool": tool},
+        ) as span:
+            start = time.perf_counter()
+            status = "success"
+            try:
+                result = await self._agent_call(
+                    session_id, "POST", "/mcp/call", json=payload, image=image, user_id=user_id
+                )
+                if result.get("is_error"):
+                    status = "error"
+                return result
+            except Exception as exc:  # noqa: BLE001
+                status = "error"
+                span.record_exception(exc)
+                raise
+            finally:
+                duration_ms = (time.perf_counter() - start) * 1000
+                attrs = {
+                    "mcp.server_id": server_id,
+                    "mcp.tool": tool,
+                    "mcp.status": status,
+                }
+                span.set_attribute("mcp.status", status)
+                span.set_attribute("mcp.duration_ms", round(duration_ms, 2))
+                try:
+                    _studio_mcp_duration.record(duration_ms, attrs)
+                    _studio_mcp_count.add(1, attrs)
+                except Exception:  # noqa: BLE001
+                    pass
+                logger.bind(
+                    event="mcp.sandbox.call_tool",
+                    server_id=server_id,
+                    tool=tool,
+                    status=status,
+                    duration_ms=round(duration_ms, 2),
+                ).info("mcp.sandbox.call_tool completed")
 
     async def _agent_call(
         self,

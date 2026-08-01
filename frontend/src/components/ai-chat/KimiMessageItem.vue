@@ -15,12 +15,14 @@ import AiLoading from './AiLoading.vue'
 import TaskProgressCard from './TaskProgressCard.vue'
 import PipelineTaskCard from './PipelineTaskCard.vue'
 import ExpertConsultationCard from './ExpertConsultationCard.vue'
+import AgentTeamsCaseCard from './AgentTeamsCaseCard.vue'
 import ChartPreviewModal from './ChartPreviewModal.vue'
 import AskUserCard from './AskUserCard.vue'
 import ToolCallEntry from './ToolCallEntry.vue'
+import SkillInvocationCardView from './SkillInvocationCard.vue'
 import { useAgentHubStore } from '@/stores/agentHub'
 import { reportChatDiagnostic } from '@/utils/chatDiagnostics'
-import type { ChatMessage, CopyMode, ChartData, ToolCall } from './types'
+import type { ChatMessage, CopyMode, ChartData, ToolCall, SkillInvocationCard } from './types'
 
 interface Props {
   message: ChatMessage
@@ -256,6 +258,7 @@ const isEmptyWithThought = computed(() =>
   && !!(props.message.thought?.trim().length)
   && !props.message.toolCalls?.length
   && !props.message.charts?.length
+  && !props.message.agentTeamsCases?.length
   && !props.message.askRequest
   && !isError.value,
 )
@@ -266,9 +269,12 @@ const isEmpty = computed(() =>
   && !(props.message.thought?.trim().length)
   && !props.message.toolCalls?.length
   && !props.message.charts?.length
+  && !props.message.agentTeamsCases?.length
   && !props.message.askRequest
   && !isError.value,
 )
+
+const systemCase = computed(() => props.message.agentTeamsCases?.[0])
 
 const formattedTime = computed(() => {
   const d = new Date(props.message.createdAt)
@@ -385,6 +391,7 @@ function renderAll() {
 type TimelineViewSegment =
   | { kind: 'text'; html: string }
   | { kind: 'tool'; tool: ToolCall }
+  | { kind: 'skill'; card: SkillInvocationCard }
 
 /** 时间线视图：text 段用渲染后的 HTML，tool 段按 toolCallId 找回 ToolCall；
  *  引用缺失（空文本段 / 历史消息未落库的工具调用）的段直接跳过 */
@@ -392,11 +399,16 @@ const timelineView = computed<TimelineViewSegment[]>(() => {
   const tl = props.message.timeline
   if (!tl?.length) return []
   const tools = props.message.toolCalls || []
+  const skillCards = props.message.skillInvocations || []
   return tl
     .map((seg, i): TimelineViewSegment | null => {
       if (seg.kind === 'text') {
         const html = renderedTimelineHtml.value[i] || ''
         return html ? { kind: 'text', html } : null
+      }
+      if (seg.kind === 'skill') {
+        const card = skillCards.find((c) => c.id === seg.skillCardId)
+        return card ? { kind: 'skill', card } : null
       }
       const tool = tools.find((t) => t.id === seg.toolCallId)
       if (!tool) return null
@@ -500,6 +512,7 @@ const hasBodyContent = computed(() =>
   streamingHasContent.value
   || !!props.message.content?.trim().length
   || timelineView.value.length > 0
+  || !!props.message.agentTeamsCases?.length
   || visibleToolCalls.value.length > 0
   || plotlyCharts.value.length > 0
   || (props.message.charts?.length ?? 0) > 0
@@ -773,10 +786,14 @@ function handleEdit() {
                 @click="handleBodyClick"
               />
               <ToolCallEntry
-                v-else
+                v-else-if="seg.kind === 'tool'"
                 :tool="seg.tool"
                 @confirm-tool="handleConfirmTool"
                 @open-tool-page="handleOpenToolPage"
+              />
+              <SkillInvocationCardView
+                v-else-if="seg.kind === 'skill'"
+                :card="seg.card"
               />
             </template>
           </template>
@@ -836,6 +853,12 @@ function handleEdit() {
           <ExpertConsultationCard
             v-if="message.consultation?.experts.length"
             :experts="message.consultation.experts"
+          />
+
+          <AgentTeamsCaseCard
+            v-for="caseInfo in message.agentTeamsCases || []"
+            :key="caseInfo.case_id"
+            :case-info="caseInfo"
           />
 
           <details v-if="webSources.length" class="web-sources">
@@ -908,8 +931,9 @@ function handleEdit() {
     </template>
 
     <template v-else-if="message.role === 'system'">
-      <div class="system-message">
+      <div class="system-message" role="status" aria-live="polite">
         <span>{{ message.content }}</span>
+        <a v-if="systemCase?.case_url" :href="systemCase.case_url">查看协作</a>
       </div>
     </template>
 
@@ -1429,6 +1453,17 @@ function handleEdit() {
   padding: 8px 0;
   font-size: 13px;
   color: var(--chat-text-muted);
+
+  a {
+    margin-left: 8px;
+    color: var(--chat-accent);
+    text-decoration: none;
+  }
+
+  a:hover,
+  a:focus-visible {
+    text-decoration: underline;
+  }
 }
 
 :deep(.code-header) {

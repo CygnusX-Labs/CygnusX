@@ -9,9 +9,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import json
 import re
+import time
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -38,14 +40,14 @@ from omichub.application.services.agent_handoff_service import (
     AgentHandoffService,
     extract_handoff_directive,
 )
-from omichub.application.services.parallel_subagent_service import (
-    PARALLEL_SUBAGENTS_TOOL_NAME,
-)
 from omichub.application.services.mas_plan_adapter import (
     MAS_PLAN_PREVIEW_PROMPT_SUFFIX,
     MAS_PLAN_PREVIEW_TOOL_NAME,
     MAS_PLAN_PREVIEW_TOOL_SCHEMA,
     MASPlanPreviewAdapter,
+)
+from omichub.application.services.parallel_subagent_service import (
+    PARALLEL_SUBAGENTS_TOOL_NAME,
 )
 from omichub.application.services.search_provider_service import SearchProviderService
 from omichub.application.services.studio_approval_service import (
@@ -87,6 +89,7 @@ from omichub.application.services.studio_tools import (
 )
 from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError, NotFoundError
+from omichub.core.telemetry import get_meter, get_tracer
 from omichub.domain.skill.services import (
     SKILL_RESOURCE_TOOL_NAME,
     SKILL_TOOL_NAMES,
@@ -105,11 +108,33 @@ from omichub.infrastructure.database.models.chat import (
     ChatMessageModel,
     ChatSessionModel,
 )
+from omichub.middleware.trace_context import session_id_var
+from omichub.tools.schema_loader import schema_loader
 
 if TYPE_CHECKING:
     from omichub.application.services.agent_service import AgentContext
 
+# ===== 技能 / Agent 编排遥测指标（全局代理 meter，未初始化时为 noop）=====
+_chat_meter = get_meter("omichub.chat")
+_skill_count = _chat_meter.create_counter("skill.execute.count", description="技能工具执行次数")
+_skill_duration = _chat_meter.create_histogram(
+    "skill.execute.duration", unit="ms", description="技能工具执行耗时"
+)
+_agent_duration = _chat_meter.create_histogram(
+    "agent.run.duration", unit="ms", description="Agent 单次运行耗时"
+)
+
 DEFAULT_SYSTEM_PROMPT = get_prompt("agents.general")
+
+MULTI_AGENT_SYSTEM_PROMPT_SUFFIX = """## Multi-agent 协作模式
+
+当前会话已开启 multi-agent 协作。对于可拆成 2–5 个彼此独立的专业子任务，应优先调用
+`parallel_subagents` 并行分派、等待汇总后给出统一结论；不要为了简单问答而无意义拆分。
+
+当用户明确要求跨角色协作、人工审批、长耗时流程执行或可审计交付时，可以提出创建
+AgentTeams Case，并在用户确认后调用 `create_agentteams_case`。"""
+
+MULTI_AGENT_TOOL_NAMES = frozenset({PARALLEL_SUBAGENTS_TOOL_NAME, "create_agentteams_case"})
 
 # 智能路由器 system prompt：让 router LLM 从候选专家清单中选一个最合适的
 ROUTER_SYSTEM_PROMPT = """你是一个意图路由器。根据用户消息，从下面的候选专家清单中选择一个最合适的专家来回答。
@@ -118,11 +143,12 @@ ROUTER_SYSTEM_PROMPT = """你是一个意图路由器。根据用户消息，从
 {catalog}
 
 规则：
-1. 直接输出一行 JSON：{{"agent_id": "...", "reason": "...", "expect_handoff": false, "consult_agent_ids": []}}。
+1. 直接输出一行 JSON：{{"agent_id": "...", "reason": "...", "expect_handoff": false, "consult_agent_ids": [], "intent": "chat|light_collab|delivery_case", "confidence": 0.0}}。
 2. 禁止输出思考过程、复述用户消息或列候选清单，第一个字符必须是 {{。
 3. agent_id 必须来自候选清单；reason 用一句中文简述分派理由。
 4. 当用户请求明显横跨两个以上专业阶段时，选择第一阶段最合适的专家，并将 expect_handoff 设为 true；它仅供审计，不改变本次分派。
-5. 无法判断意图时，选择通用（general）专家对应的 agent_id。"""
+5. delivery_case 仅用于明确要求真实流程执行且要得到报告、结果文件或可审计交付物的请求；流程咨询、参数解释、普通问答和轻量并行一律不是 delivery_case。
+6. 无法判断意图时，选择通用（general）专家对应的 agent_id，intent 设为 chat，confidence 保守取低值。"""
 
 
 def _extract_route_json(text: str) -> dict[str, Any] | None:
@@ -385,10 +411,26 @@ class ChatService:
         return cleaned[:40]
 
     @staticmethod
+    def _is_topic_title(title: str) -> bool:
+        """校验 LLM 产出是"主题短语"而非"对话摘要"；摘要式产出应弃用并走 fallback。
+
+        模型不遵守提示时会把对话复述成一句话（如"用户输入了hi，助手回复了……并询问
+        有什么可以帮忙的"），这类产出有稳定特征：含人称词、叙述动词+了、句末标点或超长。
+        """
+        t = (title or "").strip()
+        if not t or len(t) > 15:
+            return False
+        if re.search(r"[。，；！？、…]$", t):
+            return False
+        if re.search(r"用户|助手", t):
+            return False
+        return not re.search(r"(输入|回复|回答|询问|提问|提供|表达|说明|介绍|讨论|描述)了", t)
+
+    @staticmethod
     def _fallback_session_title(message: str = "") -> str:
         text = re.sub(r"\s+", " ", message or "").strip()
         if text:
-            return text[:24] + ("…" if len(text) > 24 else "")
+            return text[:15] + ("…" if len(text) > 15 else "")
         return f"新会话 {datetime.now().strftime('%m-%d')}"
 
     @staticmethod
@@ -461,7 +503,11 @@ class ChatService:
             "直接用名词短语或动宾短语点出主题。"
             "反例（叙述句，禁止）：用户想要处理VCF文件并询问安装、用户咨询差异分析流程。"
             "正例（主题式，推荐）：VCF 文件处理与工具安装、RNA-seq 差异分析流程咨询。"
-            "5) 用 10 到 22 个汉字，不加结尾标点、不加引号、不要解释，只输出标题本身。"
+            "5) 用 6 到 15 个汉字，不加结尾标点、不加引号、不要解释，只输出标题本身；"
+            "标题必须是**完整短语**，宁可更短也不要写半句话。"
+            "6) 若对话只是打招呼/闲聊、没有具体任务或对象（如“hi”“你好”“在吗”），"
+            "输出 2 到 6 个字的场景主题即可，如：日常问候、闲聊。"
+            "禁止把问候过程复述成摘要。"
         )
         payload = [{"role": "user", "content": f"对话内容：\n{context}"}]
         output = ""
@@ -482,7 +528,12 @@ class ChatService:
                         break
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"生成会话标题失败: {exc}")
-        return output
+        cleaned = self._clean_session_title(output)
+        if cleaned and not self._is_topic_title(cleaned):
+            # 模型没遵守提示、把对话复述成了摘要句：弃用，让调用方走 fallback
+            logger.info(f"会话标题形似摘要，弃用 LLM 产出: {cleaned!r}")
+            return ""
+        return cleaned
 
     # --- 会话管理 ---
 
@@ -1024,6 +1075,16 @@ class ChatService:
             dto = await self.create_session(user_id, model_id, title, assistant_id)
             current_session_id = dto.session_id
 
+        # 发布会话 ID 到上下文：本次流式任务内所有 AI 调用日志都会带上 session_id，
+        # 供管理端按会话聚合排查。每个请求运行在独立的 asyncio 上下文副本中，无需 reset。
+        session_id_var.set(current_session_id)
+        try:
+            from opentelemetry import trace as _otel_trace
+
+            _otel_trace.get_current_span().set_attribute("session.id", current_session_id)
+        except Exception:  # noqa: BLE001
+            pass
+
         # 3. 确定系统提示词：参数 > 助手配置 > 默认
         final_system_prompt = system_prompt
         if not final_system_prompt and assistant_id:
@@ -1204,11 +1265,25 @@ class ChatService:
             reason = ""
             expect_handoff = False
             consult_agent_ids: list[str] = []
+            intent = "chat"
+            confidence = 0.0
             decision = _extract_route_json(route_text)
             if decision:
                 target_id = str(decision.get("agent_id") or "")
                 reason = str(decision.get("reason") or "")
                 expect_handoff = bool(decision.get("expect_handoff"))
+                parsed_intent = str(decision.get("intent") or "chat")
+                intent = (
+                    parsed_intent
+                    if parsed_intent in {"chat", "light_collab", "delivery_case"}
+                    else "chat"
+                )
+                try:
+                    confidence = min(1.0, max(0.0, float(decision.get("confidence", 0))))
+                except (TypeError, ValueError):
+                    confidence = 0.0
+                if intent == "delivery_case" and confidence < 0.7:
+                    intent = "light_collab"
                 raw_consults = decision.get("consult_agent_ids")
                 if get_settings().multi_expert_consultation_enabled and isinstance(
                     raw_consults, list
@@ -1249,6 +1324,8 @@ class ChatService:
                 "reason": reason,
                 "expect_handoff": expect_handoff,
                 "consult_agent_ids": consult_agent_ids,
+                "intent": intent,
+                "confidence": confidence,
             }
             return target_ctx, route_info
         except Exception as e:  # noqa: BLE001
@@ -1269,6 +1346,70 @@ class ChatService:
         mode: str | None = None,
         mcp_mode: str | None = None,
         extra_mcp_servers: list[str] | None = None,
+        multi_agent: bool | None = None,
+        extend_max_rounds: bool = False,
+    ) -> AsyncIterator[ChatChunk]:
+        """Agent 编排入口（带 Trace/Log/Metrics 埋点）：作为 AI/MCP/技能 span 的父 span。"""
+        tracer = get_tracer("omichub.chat")
+        span_attrs: dict[str, Any] = {"agent.id": agent_id}
+        if model_id is not None:
+            span_attrs["agent.model_id"] = str(model_id)
+        with tracer.start_as_current_span("agent.run", attributes=span_attrs) as span:
+            start = time.perf_counter()
+            status = "success"
+            try:
+                async for chunk in self._stream_agent_chat_inner(
+                    user_id,
+                    agent_id,
+                    messages,
+                    session_id=session_id,
+                    model_id=model_id,
+                    attachments=attachments,
+                    enable_web_search=enable_web_search,
+                    enable_code_execution=enable_code_execution,
+                    deep_thinking=deep_thinking,
+                    mode=mode,
+                    mcp_mode=mcp_mode,
+                    extra_mcp_servers=extra_mcp_servers,
+                    multi_agent=multi_agent,
+                    extend_max_rounds=extend_max_rounds,
+                ):
+                    if chunk.type == "error":
+                        status = "error"
+                    yield chunk
+            except Exception as exc:  # noqa: BLE001
+                status = "error"
+                span.record_exception(exc)
+                raise
+            finally:
+                duration_ms = (time.perf_counter() - start) * 1000
+                attrs = {"agent.id": agent_id, "agent.status": status}
+                span.set_attribute("agent.status", status)
+                span.set_attribute("agent.duration_ms", round(duration_ms, 2))
+                with contextlib.suppress(Exception):
+                    _agent_duration.record(duration_ms, attrs)
+                logger.bind(
+                    event="agent.run",
+                    agent_id=agent_id,
+                    status=status,
+                    duration_ms=round(duration_ms, 2),
+                ).info("agent.run completed")
+
+    async def _stream_agent_chat_inner(
+        self,
+        user_id: str,
+        agent_id: str,
+        messages: list[dict[str, str]],
+        session_id: str | None = None,
+        model_id: uuid.UUID | None = None,
+        attachments: list[dict[str, Any]] | None = None,
+        enable_web_search: bool = False,
+        enable_code_execution: bool = False,
+        deep_thinking: bool = False,
+        mode: str | None = None,
+        mcp_mode: str | None = None,
+        extra_mcp_servers: list[str] | None = None,
+        multi_agent: bool | None = None,
         extend_max_rounds: bool = False,
     ) -> AsyncIterator[ChatChunk]:
         """Agent 编排闭环：查 Agent → 组装模型/系统词/工具 → 打 LLM → 执行 tool_call 回灌 → 流式返回
@@ -1361,6 +1502,39 @@ class ChatService:
                 "mcp_mode": effective_mcp_mode,
                 "extra_mcp_servers": effective_extra_mcp_servers,
             })
+            effective_multi_agent = (
+                bool(multi_agent)
+                if multi_agent is not None
+                else bool(session_mcp_meta.get("multi_agent", False))
+            )
+            session_mcp_meta["multi_agent"] = effective_multi_agent
+            # Skill 版本 pin：会话首轮快照挂载技能的活跃版本号（skill_id → revision）。
+            # 整个会话内 use_skill 读取被 pin 的快照正文，会话中途升级不影响进行中的任务；
+            # 新会话取新版本。pin 失败不阻断对话（回落到当前内容）。
+            if bound_skills and "skill_pins" not in session_mcp_meta:
+                try:
+                    from sqlalchemy import func as _sa_func
+
+                    from omichub.infrastructure.database.models.skill import (
+                        SkillVersionModel,
+                    )
+
+                    pins: dict[str, int] = {}
+                    for _s in bound_skills:
+                        _rev = (
+                            await self._db.execute(
+                                select(_sa_func.max(SkillVersionModel.revision)).where(
+                                    SkillVersionModel.skill_id == _s.skill_id
+                                )
+                            )
+                        ).scalar()
+                        if _rev:
+                            pins[_s.skill_id] = int(_rev)
+                    if pins:
+                        session_mcp_meta["skill_pins"] = pins
+                        session.sandbox_meta = session_mcp_meta
+                except Exception as pin_exc:  # noqa: BLE001
+                    logger.warning("skill_pins 写入失败（忽略，回落当前版本）: {}", pin_exc)
             session.sandbox_meta = session_mcp_meta
             if studio_mode:
                 sandbox_meta = session.sandbox_meta or {}
@@ -1375,6 +1549,7 @@ class ChatService:
             current_session_id = session_id
         else:
             studio_mode = mode == "studio"
+            effective_multi_agent = bool(multi_agent)
             if studio_mode:
                 studio_image = (ctx.features.get("studio") or {}).get("image")
             title = f"与 {ctx.agent.name} 的对话"
@@ -1388,9 +1563,20 @@ class ChatService:
                     **({"image": studio_image} if studio_image else {}),
                     "mcp_mode": effective_mcp_mode,
                     "extra_mcp_servers": effective_extra_mcp_servers,
+                    "multi_agent": bool(multi_agent),
                 },
             )
             current_session_id = dto.session_id
+
+        # 发布会话 ID 到上下文（覆盖 Agent + Studio 工作台）：本次流式任务内所有
+        # AI/MCP/技能日志都会带上 session_id；同时写入 agent.run span 便于按会话查 trace。
+        session_id_var.set(current_session_id)
+        try:
+            from opentelemetry import trace as _otel_trace
+
+            _otel_trace.get_current_span().set_attribute("session.id", current_session_id)
+        except Exception:  # noqa: BLE001
+            pass
 
         # 2. 落库用户消息（脱敏）
         user_content_raw = messages[-1].get("content", "") if messages else ""
@@ -1504,6 +1690,18 @@ class ChatService:
                     if server.is_enabled and server.name not in defaults_by_name:
                         active_mcp_servers.append(server)
         tools = list(ctx.tools or []) + base_tools
+        if effective_multi_agent and supports_function_tools:
+            known_tool_names = {
+                str(item.get("function", {}).get("name") or "")
+                for item in tools
+                if isinstance(item, dict)
+            }
+            tools.extend(
+                tool
+                for tool in schema_loader.to_openai_tools()
+                if tool.get("function", {}).get("name") in MULTI_AGENT_TOOL_NAMES
+                and tool.get("function", {}).get("name") not in known_tool_names
+            )
         # ask_user 澄清弹窗在普通聊天同样可用（Studio 由 STUDIO_TOOL_SCHEMAS 携带），
         # 让所有 Agent 的多选项澄清都走弹窗而不是纯文本罗列编号。
         if not studio_mode and supports_function_tools and not any(
@@ -1517,6 +1715,12 @@ class ChatService:
         ):
             tools.append(KNOWLEDGE_SEARCH_TOOL)
         system_prompt = ctx.system_prompt or None
+        if effective_multi_agent:
+            system_prompt = (
+                f"{system_prompt}\n\n{MULTI_AGENT_SYSTEM_PROMPT_SUFFIX}"
+                if system_prompt
+                else MULTI_AGENT_SYSTEM_PROMPT_SUFFIX
+            )
         if any(
             tool.get("function", {}).get("name") in MEMORY_TOOL_NAMES
             for tool in tools
@@ -1671,6 +1875,19 @@ class ChatService:
             target_servers = [] if effective_mcp_mode == "off" else list(target_ctx.mcp_servers or [])
             target_tools = list(target_ctx.tools or []) + list(base_tools)
             target_prompt = target_ctx.system_prompt or ""
+            if effective_multi_agent and supports_function_tools:
+                target_tool_names = {
+                    str(item.get("function", {}).get("name") or "")
+                    for item in target_tools
+                    if isinstance(item, dict)
+                }
+                target_tools.extend(
+                    tool
+                    for tool in schema_loader.to_openai_tools()
+                    if tool.get("function", {}).get("name") in MULTI_AGENT_TOOL_NAMES
+                    and tool.get("function", {}).get("name") not in target_tool_names
+                )
+                target_prompt = f"{target_prompt}\n\n{MULTI_AGENT_SYSTEM_PROMPT_SUFFIX}".strip()
             # 与主路径一致：ask_user 澄清弹窗兜底挂载，多选项澄清走弹窗而非纯文本罗列
             if supports_function_tools and not any(
                 t.get("function", {}).get("name") == "ask_user" for t in target_tools
@@ -1836,6 +2053,7 @@ class ChatService:
                 mcp_client=mcp_client,
                 tool_context=tool_context,
                 skills=bound_skills,
+                skill_pins=session_mcp_meta.get("skill_pins"),
                 web_sources=presearch_sources,
                 handoff_handler=_activate_langgraph_handoff,
             ):
@@ -1966,7 +2184,8 @@ class ChatService:
                         mas_plan_tool_enabled and tool_name == MAS_PLAN_PREVIEW_TOOL_NAME
                     )
                     is_handoff_tool = (not studio_mode) and tool_name == HANDOFF_TOOL_NAME
-                    is_subagent_tool = (not studio_mode) and tool_name == PARALLEL_SUBAGENTS_TOOL_NAME
+                    is_subagent_tool = tool_name == PARALLEL_SUBAGENTS_TOOL_NAME
+                    is_agentteams_case_tool = tool_name == "create_agentteams_case"
                     # Skills 三层渐进式披露内部工具（非 Studio；Studio 走 capability_load 机制）
                     is_skill_tool = (not studio_mode) and tool_name in SKILL_TOOL_NAMES
 
@@ -1978,6 +2197,7 @@ class ChatService:
                         and not is_skill_tool
                         and not is_handoff_tool
                         and not is_subagent_tool
+                        and not is_agentteams_case_tool
                     ):
                         server = next(
                             (
@@ -1996,6 +2216,8 @@ class ChatService:
                         if is_handoff_tool
                         else "subagents"
                         if is_subagent_tool
+                        else "agentteams-case"
+                        if is_agentteams_case_tool
                         else "skills"
                         if is_skill_tool
                         else "studio"
@@ -2097,11 +2319,137 @@ class ChatService:
                                     or [],
                                 },
                             )
+                    elif is_agentteams_case_tool:
+                        from omichub.application.services.agentteams_case_tool_service import (
+                            AgentTeamsCaseToolService,
+                        )
+                        from omichub.application.services.tool_bridge_service import (
+                            get_tool_bridge_service,
+                        )
+
+                        if not args.get("_confirmed"):
+                            bridge_result = await get_tool_bridge_service().execute(
+                                user_id=user_id,
+                                tool_name=tool_name,
+                                arguments=args,
+                                context=tool_context,
+                            )
+                            if (bridge_result.get("llm_payload") or {}).get("needs_confirm"):
+                                await AgentTeamsCaseToolService().record_confirmation_request(
+                                    objective=str(args.get("objective") or ""),
+                                    project_id=str(args.get("project_id") or ""),
+                                    flow_id=str(args.get("flow_id") or ""),
+                                    context=tool_context,
+                                )
+                            result = {"success": bool(bridge_result.get("success")), "result": bridge_result}
+                        else:
+                            case_envelope = await AgentTeamsCaseToolService().run(
+                                objective=str(args.get("objective") or ""),
+                                project_id=str(args.get("project_id") or ""),
+                                flow_id=str(args.get("flow_id") or ""),
+                                sample_context_refs=args.get("sample_context_refs") or [],
+                                context=tool_context,
+                            )
+                            card = (case_envelope.get("ui_payload") or {}).get("case_card") or {}
+                            result = {
+                                "success": bool(case_envelope.get("success")),
+                                "result": {
+                                    "llm_payload": case_envelope.get("llm_payload"),
+                                    "ui_payload": case_envelope.get("ui_payload"),
+                                },
+                            }
+                            yield ChatChunk(
+                                type="agentteams_case",
+                                metadata={
+                                    "phase": "created",
+                                    "tool_call_id": tc.get("id", ""),
+                                    "session_id": current_session_id,
+                                    "message_id": ai_message.message_id,
+                                    **card,
+                                },
+                            )
                     elif is_skill_tool:
                         # L2 use_skill / L3 skill_resource：按需加载技能正文与资源
-                        result = await self._execute_skill_tool(
-                            tool_name, args, bound_skills
+                        # Skill 调用可视化：use_skill（技能加载）发 invoked/completed/failed
+                        # 事件并落库 skill_invocations；skill_resource（资源读取）不发事件避免刷屏
+                        skill_key_evt = str(
+                            args.get("skill_id") or args.get("name") or ""
+                        ).strip()
+                        bound_skill = next(
+                            (
+                                s
+                                for s in bound_skills
+                                if s.skill_id == skill_key_evt or s.name == skill_key_evt
+                            ),
+                            None,
                         )
+                        evt_skill_meta = {
+                            "skill_id": bound_skill.skill_id if bound_skill else skill_key_evt,
+                            "name": bound_skill.name if bound_skill else skill_key_evt,
+                            "version": (bound_skill.version if bound_skill else "") or "",
+                            "source": (bound_skill.source_type if bound_skill else "") or "",
+                            "icon": (bound_skill.icon if bound_skill else "") or "",
+                        }
+                        emit_skill_event = tool_name == USE_SKILL_TOOL_NAME
+                        if emit_skill_event:
+                            yield ChatChunk(
+                                type="skill",
+                                metadata={
+                                    "phase": "invoked",
+                                    "tool_call_id": tc.get("id", ""),
+                                    "message_id": ai_message.message_id,
+                                    "agent": ctx.agent.name if ctx and ctx.agent else "",
+                                    **evt_skill_meta,
+                                },
+                            )
+                        skill_start = time.perf_counter()
+                        skill_exc: Exception | None = None
+                        try:
+                            result = await self._execute_skill_tool(
+                                tool_name,
+                                args,
+                                bound_skills,
+                                skill_pins=session_mcp_meta.get("skill_pins"),
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            skill_exc = exc
+                            result = {"success": False, "error": str(exc)}
+                        skill_ms = (time.perf_counter() - skill_start) * 1000
+                        if emit_skill_event:
+                            skill_ok = bool(result.get("success"))
+                            if skill_ok:
+                                resources = ((result.get("result") or {}).get("resources")) or []
+                                skill_summary = (
+                                    f"已加载技能指令正文"
+                                    + (f"（含 {len(resources)} 个资源文件）" if resources else "")
+                                )
+                            else:
+                                skill_summary = ""
+                            skill_error = "" if skill_ok else str(result.get("error") or "")
+                            yield ChatChunk(
+                                type="skill",
+                                metadata={
+                                    "phase": "completed" if skill_ok else "failed",
+                                    "tool_call_id": tc.get("id", ""),
+                                    "message_id": ai_message.message_id,
+                                    "duration_ms": round(skill_ms, 1),
+                                    "summary": skill_summary,
+                                    "error": skill_error,
+                                    **evt_skill_meta,
+                                },
+                            )
+                            await self._record_skill_invocation(
+                                skill_meta=evt_skill_meta,
+                                status="completed" if skill_ok else "failed",
+                                duration_ms=round(skill_ms, 1),
+                                summary=skill_summary,
+                                error=skill_error,
+                                session_id=current_session_id,
+                                message_id=ai_message.message_id,
+                                user_id=user_id,
+                            )
+                        if skill_exc is not None:
+                            raise skill_exc
                     elif is_capability_tool and tool_name == CAPABILITY_LIST_TOOL:
                         event = audit_event("list", None, None, True)
                         studio_capability_state = await _persist_capability_state(
@@ -2400,10 +2748,25 @@ class ChatService:
                             "streaming",
                             {"tool_invocations": studio_invocations, "timeline": timeline},
                         )
+                    elif is_agentteams_case_tool and bool(result.get("success")):
+                        case_card = (ui_payload or {}).get("case_card")
+                        if isinstance(case_card, dict):
+                            await self.update_message_content(
+                                ai_message.message_id,
+                                full_content,
+                                "streaming",
+                                {"agentteams_cases": [case_card], "timeline": timeline},
+                            )
                     llm_content = json.dumps(llm_result, ensure_ascii=False, default=str)
                     # 技能正文（L2）允许更长回灌；fan-out 汇总含多个子任务结论放宽到 12000；
                     # 其余工具结果保持 4000 字符护栏
-                    llm_limit = 24000 if is_skill_tool else 12000 if is_subagent_tool else 4000
+                    llm_limit = (
+                        24000
+                        if is_skill_tool
+                        else 12000
+                        if is_subagent_tool or is_agentteams_case_tool
+                        else 4000
+                    )
                     if len(llm_content) > llm_limit:
                         llm_content = llm_content[:llm_limit]
                     llm_messages.append(
@@ -2558,6 +2921,7 @@ class ChatService:
         mcp_client: Any,
         tool_context: Any,
         skills: list[Any] | None = None,
+        skill_pins: dict[str, int] | None = None,
         web_sources: list[dict[str, Any]] | None = None,
         handoff_handler: Any | None = None,
     ) -> AsyncIterator[ChatChunk]:
@@ -2579,6 +2943,7 @@ class ChatService:
             "active_mcp_servers": list(active_mcp_servers),
             "tool_context": tool_context,
             "skills": list(skills or []),
+            "skill_pins": skill_pins or {},
         }
         persisted_web_sources = web_sources if web_sources is not None else []
         from omichub.infrastructure.execution.langgraph_nodes import NodeDeps
@@ -2623,7 +2988,12 @@ class ChatService:
                     "result": bridge_result,
                 }
             if tool_name in SKILL_TOOL_NAMES:
-                return await self._execute_skill_tool(tool_name, args, runtime_state["skills"])
+                return await self._execute_skill_tool(
+                    tool_name,
+                    args,
+                    runtime_state["skills"],
+                    skill_pins=runtime_state.get("skill_pins"),
+                )
             if tool_name == "ask_user":
                 # 与 legacy stop_after_tools 同一信封；图经 state["ask_request"]
                 # 结束后由下方产出 ask_request 事件并收尾本轮。
@@ -3057,12 +3427,101 @@ class ChatService:
         except Exception as e:  # noqa: BLE001
             logger.warning(f"AI 对话饼干扣减失败: {e}")
 
+    async def _record_skill_invocation(
+        self,
+        *,
+        skill_meta: dict[str, Any],
+        status: str,
+        duration_ms: float,
+        summary: str,
+        error: str,
+        session_id: str,
+        message_id: Any,
+        user_id: str | None,
+    ) -> None:
+        """落库一条技能调用记录（绝不阻断对话流：任何失败只记日志）。"""
+        try:
+            from omichub.application.services.skill_service import SkillService
+
+            def _to_uuid(value: Any) -> uuid.UUID | None:
+                try:
+                    return uuid.UUID(str(value)) if value else None
+                except (ValueError, AttributeError, TypeError):
+                    return None
+
+            await SkillService(self._db).record_invocation(
+                skill_id=str(skill_meta.get("skill_id") or ""),
+                skill_name=str(skill_meta.get("name") or ""),
+                skill_version=str(skill_meta.get("version") or "") or None,
+                source=str(skill_meta.get("source") or ""),
+                tool_name=USE_SKILL_TOOL_NAME,
+                status=status,
+                duration_ms=duration_ms,
+                summary=summary,
+                error=error,
+                session_id=_to_uuid(session_id),
+                message_id=_to_uuid(message_id),
+                user_id=_to_uuid(user_id),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("技能调用记录落库失败（忽略）: {}", exc)
+
     async def _execute_skill_tool(
-        self, tool_name: str, args: dict[str, Any], skills: list[Any]
+        self,
+        tool_name: str,
+        args: dict[str, Any],
+        skills: list[Any],
+        skill_pins: dict[str, int] | None = None,
+    ) -> dict[str, Any]:
+        """技能工具执行入口（带 Trace/Log/Metrics 埋点）。"""
+        skill_key = str(args.get("skill_id") or args.get("name") or "").strip()
+        tracer = get_tracer("omichub.chat")
+        with tracer.start_as_current_span(
+            "skill.execute",
+            attributes={"skill.tool_name": tool_name, "skill.skill_id": skill_key},
+        ) as span:
+            start = time.perf_counter()
+            status = "success"
+            try:
+                result = await self._execute_skill_tool_inner(
+                    tool_name, args, skills, skill_pins=skill_pins
+                )
+                if not result.get("success"):
+                    status = "error"
+                return result
+            except Exception as exc:  # noqa: BLE001
+                status = "error"
+                span.record_exception(exc)
+                raise
+            finally:
+                duration_ms = (time.perf_counter() - start) * 1000
+                attrs = {"skill.tool_name": tool_name, "skill.status": status}
+                span.set_attribute("skill.status", status)
+                span.set_attribute("skill.duration_ms", round(duration_ms, 2))
+                try:
+                    _skill_count.add(1, attrs)
+                    _skill_duration.record(duration_ms, attrs)
+                except Exception:  # noqa: BLE001
+                    pass
+                logger.bind(
+                    event="skill.execute",
+                    tool_name=tool_name,
+                    skill_id=skill_key,
+                    status=status,
+                    duration_ms=round(duration_ms, 2),
+                ).info("skill.execute completed")
+
+    async def _execute_skill_tool_inner(
+        self,
+        tool_name: str,
+        args: dict[str, Any],
+        skills: list[Any],
+        skill_pins: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         """技能渐进式披露内部工具：
 
-        - use_skill（L2）：返回已挂载技能的 SKILL.md 正文（磁盘优先，DB prompt 兜底）
+        - use_skill（L2）：返回已挂载技能的 SKILL.md 正文。会话 pin 优先（会话启动时
+          锁定的版本快照），其次磁盘优先，最后 DB prompt 兜底
         - skill_resource（L3）：按需读取技能 references/assets 文件，代码不进上下文
         """
         from omichub.infrastructure.skills import skill_store
@@ -3079,7 +3538,32 @@ class ChatService:
             }
 
         if tool_name == USE_SKILL_TOOL_NAME:
-            body = skill_store.read_skill_body(skill.skill_id) or (skill.prompt or "")
+            body: str | None = None
+            pinned_from: str | None = None
+            pinned_rev = (skill_pins or {}).get(skill.skill_id)
+            if pinned_rev:
+                # 会话 pin：读取会话启动时锁定 revision 的快照正文，
+                # 会话中途升级/回滚不影响进行中的任务
+                try:
+                    from omichub.infrastructure.database.models.skill import (
+                        SkillVersionModel,
+                    )
+
+                    snap = (
+                        await self._db.execute(
+                            select(SkillVersionModel).where(
+                                SkillVersionModel.skill_id == skill.skill_id,
+                                SkillVersionModel.revision == int(pinned_rev),
+                            )
+                        )
+                    ).scalar_one_or_none()
+                    if snap and (snap.prompt or "").strip():
+                        body = snap.prompt
+                        pinned_from = f"r{snap.revision}"
+                except Exception as pin_exc:  # noqa: BLE001
+                    logger.warning("读取 pin 版本失败（回落当前内容）: {}", pin_exc)
+            if body is None:
+                body = skill_store.read_skill_body(skill.skill_id) or (skill.prompt or "")
             if not body.strip():
                 return {"success": False, "error": f"技能 '{skill.name}' 暂无指令正文"}
             resources = skill_store.list_skill_files(skill.skill_id)
@@ -3089,6 +3573,7 @@ class ChatService:
                     "skill_id": skill.skill_id,
                     "name": skill.name,
                     "instructions": body,
+                    "pinned_revision": pinned_from,
                     "resources": resources or None,
                     "resource_hint": (
                         "正文引用的 references/assets 文件请用 skill_resource 工具读取"
@@ -3291,6 +3776,7 @@ class ChatService:
             last_message_at=s.last_message_at,
             mcp_mode=(s.sandbox_meta or {}).get("mcp_mode", "auto"),
             extra_mcp_servers=[str(value) for value in (s.sandbox_meta or {}).get("extra_mcp_servers", [])],
+            multi_agent=bool((s.sandbox_meta or {}).get("multi_agent", False)),
         )
 
     @staticmethod

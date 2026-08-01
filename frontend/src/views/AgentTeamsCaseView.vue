@@ -25,11 +25,13 @@ import {
 } from 'naive-ui'
 import {
   ArrowBackOutline,
+  ChatbubbleEllipsesOutline,
   RefreshOutline,
   ShieldCheckmarkOutline,
   SyncOutline,
 } from '@vicons/ionicons5'
 import PageHeader from '@/components/PageHeader.vue'
+import AgentTeamsChatDrawer from '@/components/agent-workspace/AgentTeamsChatDrawer.vue'
 import {
   agentTeamsApi,
   type AgentTeamsCase,
@@ -57,6 +59,7 @@ const approvalConfirmed = ref(false)
 const submitForm = ref({
   task_name: '',
 })
+const chatDrawer = ref<InstanceType<typeof AgentTeamsChatDrawer> | null>(null)
 let pollingTimer: ReturnType<typeof setInterval> | null = null
 
 const caseId = computed(() => String(route.params.caseId || ''))
@@ -153,6 +156,10 @@ function openSubmit() {
   }
   approvalConfirmed.value = false
   submitVisible.value = true
+}
+
+function openChatRoom() {
+  void chatDrawer.value?.open(caseId.value || undefined)
 }
 
 async function confirmSubmit() {
@@ -253,14 +260,17 @@ onBeforeUnmount(stopPolling)
       <template #leading>
         <NTooltip trigger="hover">
           <template #trigger>
-            <NButton quaternary circle aria-label="返回协作中心" @click="router.push('/agent-teams')">
+            <NButton quaternary circle aria-label="返回任务中心" @click="router.push('/tasks?tab=agent-teams')">
               <NIcon><ArrowBackOutline /></NIcon>
             </NButton>
           </template>
-          返回协作中心
+          返回任务中心
         </NTooltip>
       </template>
       <template #actions>
+        <NButton secondary :disabled="!caseId" @click="openChatRoom">
+          <template #icon><NIcon><ChatbubbleEllipsesOutline /></NIcon></template>协作聊天室
+        </NButton>
         <NButton secondary :loading="loading" @click="refresh({ resetEvents: true })">
           <template #icon><NIcon><RefreshOutline /></NIcon></template>刷新
         </NButton>
@@ -369,6 +379,7 @@ onBeforeUnmount(stopPolling)
         <div class="submit-actions"><NButton :disabled="submitting" @click="submitVisible = false">取消</NButton><NButton type="primary" attr-type="submit" :disabled="!approvalConfirmed" :loading="submitting">确认并提交</NButton></div>
       </NForm>
     </NModal>
+    <AgentTeamsChatDrawer ref="chatDrawer" />
   </main>
 </template>
 

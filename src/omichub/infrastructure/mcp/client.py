@@ -6,14 +6,23 @@ import asyncio
 import ipaddress
 import re
 import shutil
+import time
 from typing import Any
 from urllib.parse import urlparse
 
 from loguru import logger
 
+from omichub.core.telemetry import get_meter, get_tracer
 from omichub.domain.mcp.entities import MCPServer
 from omichub.domain.mcp.value_objects import ServerStatus, Transport
 from omichub.infrastructure.mcp.presets import get_preset_by_name
+
+# ===== MCP 调用遥测指标（全局代理 meter，未初始化时为 noop）=====
+_mcp_meter = get_meter("omichub.mcp")
+_mcp_duration = _mcp_meter.create_histogram(
+    "mcp.call.duration", unit="ms", description="MCP 工具调用耗时"
+)
+_mcp_count = _mcp_meter.create_counter("mcp.call.count", description="MCP 工具调用次数")
 
 # stdio transport 禁止使用的 shell 解释器（大小写不敏感）
 _DENIED_STDIO_COMMANDS = {
@@ -137,7 +146,61 @@ class MCPClient:
         user_id: str | None = None,
         context: Any | None = None,
     ) -> dict[str, Any]:
-        """调用某 MCP Server 的指定工具"""
+        """调用某 MCP Server 的指定工具（带 Trace/Log/Metrics 埋点）"""
+        tracer = get_tracer("omichub.mcp")
+        with tracer.start_as_current_span(
+            "mcp.call_tool",
+            attributes={
+                "mcp.server": server.name,
+                "mcp.transport": str(server.transport),
+                "mcp.tool": tool_name,
+            },
+        ) as span:
+            start = time.perf_counter()
+            status = "success"
+            try:
+                result = await self._call_tool_inner(
+                    server, tool_name, arguments, user_id, context
+                )
+                if not result.get("success"):
+                    status = "error"
+                return result
+            except Exception as exc:  # noqa: BLE001
+                status = "error"
+                span.record_exception(exc)
+                raise
+            finally:
+                duration_ms = (time.perf_counter() - start) * 1000
+                attrs = {
+                    "mcp.server": server.name,
+                    "mcp.tool": tool_name,
+                    "mcp.status": status,
+                }
+                span.set_attribute("mcp.status", status)
+                span.set_attribute("mcp.duration_ms", round(duration_ms, 2))
+                try:
+                    _mcp_duration.record(duration_ms, attrs)
+                    _mcp_count.add(1, attrs)
+                except Exception:  # noqa: BLE001
+                    pass
+                logger.bind(
+                    event="mcp.call_tool",
+                    server=server.name,
+                    transport=str(server.transport),
+                    tool=tool_name,
+                    status=status,
+                    duration_ms=round(duration_ms, 2),
+                ).info("mcp.call_tool completed")
+
+    async def _call_tool_inner(
+        self,
+        server: MCPServer,
+        tool_name: str,
+        arguments: dict[str, Any],
+        user_id: str | None = None,
+        context: Any | None = None,
+    ) -> dict[str, Any]:
+        """call_tool 的实际分发逻辑（builtin / stdio / sse）"""
         if server.transport == Transport.BUILTIN:
             preset = get_preset_by_name(server.name)
             if preset is None:

@@ -22,6 +22,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
+from omichub.core.telemetry import get_tracer
 from omichub.domain.execution.agent_state import AgentState
 from omichub.infrastructure.ai_provider.openai_compatible import (
     ChatChunk,
@@ -133,13 +134,19 @@ async def tool_exec_node(state: AgentState, deps: NodeDeps) -> dict[str, Any]:
             )
         )
 
-        try:
-            result = await deps.tool_executor(tool_name, args, tool_call_id)
-        except Exception as e:  # noqa: BLE001
-            await deps.emit_chunk(
-                ChatChunk(type="error", content=f"工具 {tool_name} 执行失败: {e}")
-            )
-            return {"messages": new_messages, "error": str(e)}
+        tracer = get_tracer("omichub.chat")
+        with tracer.start_as_current_span(
+            "agent.tool_dispatch",
+            attributes={"tool.name": tool_name, "tool.call_id": tool_call_id},
+        ) as span:
+            try:
+                result = await deps.tool_executor(tool_name, args, tool_call_id)
+            except Exception as e:  # noqa: BLE001
+                span.record_exception(e)
+                await deps.emit_chunk(
+                    ChatChunk(type="error", content=f"工具 {tool_name} 执行失败: {e}")
+                )
+                return {"messages": new_messages, "error": str(e)}
 
         # 双通道：llm_payload 给 LLM，ui_payload 给前端（对齐 legacy 拆分逻辑）
         tool_output = result.get("result") if isinstance(result, dict) else result

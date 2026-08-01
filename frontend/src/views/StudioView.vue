@@ -27,6 +27,7 @@ import StudioFileTree from '@/components/studio/StudioFileTree.vue'
 import StudioArtifactsPanel from '@/components/studio/StudioArtifactsPanel.vue'
 import StudioWorkspaceEditor from '@/components/studio/StudioWorkspaceEditor.vue'
 import SessionHistoryDrawer from '@/components/agent-workspace/SessionHistoryDrawer.vue'
+import MultiAgentToggle from '@/components/agent-workspace/MultiAgentToggle.vue'
 import { StudioContextKey } from '@/components/studio/context'
 import { studioApi, type StudioSessionDTO, type SandboxStatus } from '@/api/studio'
 import { shouldApplyServerUi, shouldApplyServerViewMode } from '@/utils/studioViewGuard'
@@ -264,7 +265,11 @@ async function enterSession(id: string) {
         created_at: detail.session.created_at,
         updated_at: detail.session.updated_at,
         model_id: detail.session.model_id || undefined,
+        multi_agent: Boolean(detail.session.multi_agent),
       })
+    } else {
+      const current = store.sessions.find((s) => s.id === id)
+      if (current) current.multi_agent = Boolean(detail.session.multi_agent)
     }
     await store.selectSession(id)
   } catch {
@@ -365,6 +370,12 @@ watch(
 // ---------- 顶栏信息 ----------
 const session = computed(() => store.currentSession)
 const agent = computed(() => (session.value ? store.getAgent(session.value.agent_id) : null))
+const multiAgentEnabled = computed({
+  get: () => Boolean(session.value?.multi_agent),
+  set: (value: boolean) => {
+    if (session.value) session.value.multi_agent = value
+  },
+})
 
 // ---------- Studio HITL：待审批 / 待澄清浮动条 ----------
 const messageListRef = ref<InstanceType<typeof KimiMessageList> | null>(null)
@@ -745,6 +756,7 @@ function formatSessionTime(iso: string): string {
         <n-tag size="small" round :bordered="false" class="model-tag">{{ modelName }}</n-tag>
       </div>
       <div class="bar-right">
+        <MultiAgentToggle v-model="multiAgentEnabled" :disabled="store.isStreaming" compact />
         <n-tooltip v-if="sessionId" trigger="hover">
           <template #trigger>
             <span class="perm-switch" :class="{ auto: isAutoMode }">

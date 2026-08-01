@@ -33,6 +33,7 @@ const config = ref<AgentTeamsBridgeConfig>({
   data_steward_token: '',
   approval_token: '',
   workflow_operator_token: '',
+  element_url: '',
   source: 'database',
   configured: false,
   connected: false,
@@ -74,19 +75,23 @@ onMounted(() => { void load() })
 </script>
 
 <template>
-  <NSpin :show="loading">
-    <NCard class="bridge-card" :segmented="{ content: true }">
-      <template #header>
-        <div class="bridge-heading">
-          <strong>AgentTeams Bridge</strong>
-          <span>为协作 Case 提供隔离的多 Agent 编排、审批与审计通道。</span>
-        </div>
-      </template>
-      <template #header-extra>
-        <NTag :type="config.connected ? 'success' : config.enabled ? 'warning' : 'default'" :bordered="false">
-          {{ config.connected ? '已接通' : config.enabled ? '等待接通' : '未启用' }}
-        </NTag>
-      </template>
+  <div class="agentteams-bridge-tab">
+    <div class="tab-header">
+      <span class="tab-hint">配置协作中心的多 Agent 编排接入地址与加密身份令牌，保存需 TOTP 二次验证。</span>
+    </div>
+    <NSpin :show="loading">
+      <NCard class="bridge-card" :segmented="{ content: true }">
+        <template #header>
+          <div class="bridge-heading">
+            <strong>AgentTeams Bridge</strong>
+            <span>为协作 Case 提供隔离的多 Agent 编排、审批与审计通道。</span>
+          </div>
+        </template>
+        <template #header-extra>
+          <NTag :type="config.connected ? 'success' : config.enabled ? 'warning' : 'default'" :bordered="false">
+            {{ config.connected ? '已接通' : config.enabled ? '等待接通' : '未启用' }}
+          </NTag>
+        </template>
 
       <NAlert type="info" :show-icon="true" class="bridge-note">
         此配置仅限管理员。四个身份令牌以加密形式保存，读取时始终脱敏；保存、启用和切换地址均需 TOTP 二次验证。
@@ -108,6 +113,10 @@ onMounted(() => { void load() })
         </NFormItem>
         <NFormItem label="请求超时（秒）">
           <NInputNumber v-model:value="config.timeout_seconds" :min="1" :max="120" :precision="0" />
+        </NFormItem>
+        <NFormItem label="Element 协作房间地址">
+          <NInput v-model:value="config.element_url" placeholder="例如 https://element.example/#/room/!bioops:example.org" />
+          <template #feedback>仅填写用户可访问的 Element 房间链接；不得包含 access token、登录令牌或密码。</template>
         </NFormItem>
         <div class="bridge-secret-grid">
           <NFormItem label="Manager 令牌"><NInput v-model:value="config.manager_token" type="password" show-password-on="click" placeholder="未填写则保留已配置令牌" /></NFormItem>
@@ -131,16 +140,19 @@ onMounted(() => { void load() })
     :loading="saving"
     @confirm="save"
   />
+  </div>
 </template>
 
 <style scoped>
-.bridge-card { background: var(--card-color, var(--bg-card)); }
+.tab-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 14px; }
+.tab-hint { font-size: 12px; color: var(--neutral-text-3); }
 .bridge-heading { display: grid; gap: 4px; }
-.bridge-heading span, .bridge-status-row p { color: var(--text-secondary); font-size: 13px; font-weight: 400; line-height: 1.5; }
+.bridge-heading strong { color: var(--neutral-text-1); }
+.bridge-heading span, .bridge-status-row p { color: var(--neutral-text-2); font-size: 13px; font-weight: 400; line-height: 1.5; }
 .bridge-note { margin-bottom: 16px; }
 .bridge-form { max-width: 980px; }
 .bridge-status-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 0 20px; }
-.bridge-status-row strong { color: var(--text-primary); font-size: 14px; }
+.bridge-status-row strong { color: var(--neutral-text-1); font-size: 14px; }
 .bridge-status-row p { max-width: 700px; margin: 4px 0 0; }
 .bridge-secret-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
 .bridge-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }

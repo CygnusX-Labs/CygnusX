@@ -5,12 +5,16 @@
 """
 
 from omichub.infrastructure.database.models.agent import AgentTemplateModel
-from omichub.infrastructure.database.models.agentteams_bridge import AgentTeamsBridgeSettingsModel
 from omichub.infrastructure.database.models.agent_memory import AgentMemoryModel
+from omichub.infrastructure.database.models.agentteams_bridge import AgentTeamsBridgeSettingsModel
 from omichub.infrastructure.database.models.ai import ConversationModel, MessageModel
-from omichub.infrastructure.database.models.api_key import APIKeyModel
+from omichub.infrastructure.database.models.ai_metric import (
+    AiCallMetricModel,
+    AiMetricAlertModel,
+)
 from omichub.infrastructure.database.models.ai_provider import AIProviderConfigModel
 from omichub.infrastructure.database.models.announcement import AnnouncementModel
+from omichub.infrastructure.database.models.api_key import APIKeyModel
 from omichub.infrastructure.database.models.audit_log import AuditLogModel
 from omichub.infrastructure.database.models.blast import (
     BlastDatabaseModel,
@@ -43,13 +47,6 @@ from omichub.infrastructure.database.models.knowledge_document import KbDocument
 from omichub.infrastructure.database.models.knowledge_editor import DocEditorModel
 from omichub.infrastructure.database.models.knowledge_issue import KbIssueModel
 from omichub.infrastructure.database.models.knowledge_revision import DocRevisionModel
-from omichub.infrastructure.database.models.mcp import MCPServerModel
-from omichub.infrastructure.database.models.mcp_builder import (
-    MCPBuildModel,
-    MCPReviewModel,
-    MCPVersionModel,
-    MCPVisibilityModel,
-)
 from omichub.infrastructure.database.models.mas import (
     MASA2AEventModel,
     MASApprovalModel,
@@ -59,12 +56,23 @@ from omichub.infrastructure.database.models.mas import (
     MASReworkGuardModel,
     MASRunModel,
 )
+from omichub.infrastructure.database.models.mcp import MCPServerModel
+from omichub.infrastructure.database.models.mcp_builder import (
+    MCPBuildModel,
+    MCPReviewModel,
+    MCPVersionModel,
+    MCPVisibilityModel,
+)
 from omichub.infrastructure.database.models.notification import NotificationModel
 from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
 from omichub.infrastructure.database.models.sandbox import SandboxSessionModel
 from omichub.infrastructure.database.models.search_provider import SearchProviderConfigModel
 from omichub.infrastructure.database.models.site_settings import SiteSettingModel
-from omichub.infrastructure.database.models.skill import SkillModel, SkillVersionModel
+from omichub.infrastructure.database.models.skill import (
+    SkillInvocationModel,
+    SkillModel,
+    SkillVersionModel,
+)
 from omichub.infrastructure.database.models.task import TaskModel
 from omichub.infrastructure.database.models.terminal import TerminalSessionModel
 from omichub.infrastructure.database.models.user import UserModel, WorkspaceModel
@@ -90,11 +98,14 @@ __all__ = [
     "ChatAssistantModel",
     "ChatHandoffEventModel",
     "AIProviderConfigModel",
+    "AiCallMetricModel",
+    "AiMetricAlertModel",
     "AnnouncementModel",
     "AuditLogModel",
     "BlastDatabaseModel",
     "BlastTaskModel",
     "KbDocumentModel",
+    "KbChunkModel",
     "KnowledgeBaseModel",
     "DocRevisionModel",
     "DocEditorModel",
@@ -119,6 +130,7 @@ __all__ = [
     "TerminalSessionModel",
     "NotificationModel",
     "SiteSettingModel",
+    "SkillInvocationModel",
     "SkillModel",
     "SkillVersionModel",
     "FileRecordModel",

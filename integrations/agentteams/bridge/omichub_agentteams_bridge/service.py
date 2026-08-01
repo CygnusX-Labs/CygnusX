@@ -201,6 +201,7 @@ class BridgeService:
                 intent=request.intent,
                 requester_ref=request.requester_ref,
                 team_id=request.team_id,
+                element_room_url=request.element_room_url,
                 created_at=now,
                 updated_at=now,
             )
@@ -227,6 +228,7 @@ class BridgeService:
             "project_ref": case.project_ref.model_dump(mode="json"),
             "intent": case.intent,
             "team_id": case.team_id,
+            "element_room_url": case.element_room_url,
             "status": case.status,
             "omic_task_ids": case.omic_task_ids,
             "quality_decision": case.quality_decision,

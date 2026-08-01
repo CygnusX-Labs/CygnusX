@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 BridgeRole = Literal[
     "approval-authority",
@@ -139,12 +140,34 @@ class CaseEventResponse(BaseModel):
     next_cursor: str | None = None
 
 
+def _validate_element_room_url(value: str | None) -> str | None:
+    """Element room URLs must be plain http(s) links without embedded credentials."""
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("element_room_url must be a full http or https URL")
+    lowered_url = value.lower()
+    if any(key in lowered_url for key in ("access_token", "login_token", "password")):
+        raise ValueError("element_room_url must not contain access tokens or passwords")
+    return value
+
+
 class CaseCreateRequest(BaseModel):
     case_id: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
     project_ref: ContextRef
     intent: str = Field(min_length=1, max_length=256)
     requester_ref: str = Field(min_length=1, max_length=256)
     team_id: str = Field(default="bioops-delivery", min_length=1, max_length=128)
+    element_room_url: str | None = Field(default=None, max_length=2_048)
+
+    @field_validator("element_room_url")
+    @classmethod
+    def _check_element_room_url(cls, value: str | None) -> str | None:
+        return _validate_element_room_url(value)
 
 
 class CaseRecord(BaseModel):
@@ -153,6 +176,7 @@ class CaseRecord(BaseModel):
     intent: str
     requester_ref: str
     team_id: str
+    element_room_url: str | None = None
     status: CaseStatus = "received"
     omic_task_ids: list[str] = Field(default_factory=list)
     task_specs: list[dict[str, Any]] = Field(default_factory=list)

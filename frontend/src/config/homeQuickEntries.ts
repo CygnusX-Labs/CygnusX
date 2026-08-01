@@ -169,14 +169,6 @@ export const homeQuickRouteCatalog: HomeQuickEntry[] = [
     icon_bg: 'violet',
   },
   {
-    key: 'agent-teams',
-    title: 'Agent 协作中心',
-    desc: '发起并追踪多 Agent 协作案例',
-    to: '/agent-teams',
-    icon: 'GitNetworkOutline',
-    icon_bg: 'violet',
-  },
-  {
     key: 'tools',
     title: '生信工具箱',
     desc: '进入常用生信工具集合',

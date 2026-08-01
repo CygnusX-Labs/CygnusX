@@ -29,6 +29,8 @@ export interface AgentChatStreamOptions {
   enableCodeExecution?: boolean
   mcpMode?: 'off' | 'auto' | 'manual'
   extraMcpServers?: string[]
+  /** 当前会话是否启用 multi-agent 协作运行时 */
+  multiAgent?: boolean
   /** 工具调用轮次上限扩展：true 时后端按 1000 轮执行（用户在触顶弹窗确认继续后置位） */
   extendMaxRounds?: boolean
 }
@@ -116,6 +118,17 @@ export interface ConsultationEvent {
   experts: Array<{ agent_id: string; name: string; opinion: string }>
 }
 
+export interface AgentTeamsCaseEvent {
+  phase: 'created' | 'status_changed'
+  case_id: string
+  title: string
+  status: string
+  next_actor: string
+  case_url: string
+  session_id?: string
+  message_id?: string
+}
+
 export interface TokenUsage {
   input?: number
   output?: number
@@ -131,6 +144,23 @@ export interface WebSearchEvent {
   query: string
   status: 'searching' | 'empty' | 'failed' | 'complete'
   message?: string
+}
+
+/** Skill 调用生命周期事件（skill.invoked / skill.completed / skill.failed 三时机） */
+export interface SkillStreamEvent {
+  /** invoked=技能被匹配加载；completed=加载成功；failed=加载失败/技能不可用 */
+  phase: 'invoked' | 'completed' | 'failed'
+  tool_call_id: string
+  message_id?: string
+  skill_id: string
+  name: string
+  version: string
+  source: string
+  icon: string
+  agent?: string
+  duration_ms?: number
+  summary?: string
+  error?: string
 }
 
 export interface WebSearchSource {
@@ -152,6 +182,8 @@ export interface AgentStreamCallbacks {
   onSessionCreated?: (sessionId: string, messageId: string) => void
   onToolCall?: (event: ToolCallEvent) => void
   onToolResult?: (event: ToolResultEvent) => void
+  /** Skill 调用生命周期（invoked/completed/failed），驱动会话流内技能调用卡片 */
+  onSkill?: (event: SkillStreamEvent) => void
   onWebSearch?: (event: WebSearchEvent) => void
   onWebSearchResults?: (sources: WebSearchSource[]) => void
   /**
@@ -166,6 +198,7 @@ export interface AgentStreamCallbacks {
   onRoute?: (event: RouteEvent) => void
   onHandoff?: (event: HandoffEvent) => void
   onConsultation?: (event: ConsultationEvent) => void
+  onAgentTeamsCase?: (event: AgentTeamsCaseEvent) => void
   /** 工具调用轮次触顶：can_extend 为 true 时可由用户确认后以扩展上限继续 */
   onRoundLimit?: (event: RoundLimitEvent) => void
   /** 上下文超窗触发历史压缩时回调（estimatedTokens 为压缩前估算值） */
@@ -296,6 +329,7 @@ export function useAgentChatStream() {
           enable_code_execution: options.enableCodeExecution || false,
           mcp_mode: options.mcpMode || 'auto',
           extra_mcp_servers: options.extraMcpServers || [],
+          multi_agent: options.multiAgent ?? false,
           extend_max_rounds: options.extendMaxRounds || false,
         }),
         signal: abortController.value.signal,
@@ -428,6 +462,18 @@ export function useAgentChatStream() {
           hop_index: Number(data.hop_index) || 1,
         })
         break
+      case 'agentteams_case':
+        cb.onAgentTeamsCase?.({
+          phase: data.phase === 'status_changed' ? 'status_changed' : 'created',
+          case_id: (data.case_id as string) || '',
+          title: (data.title as string) || '协作 Case',
+          status: (data.status as string) || 'received',
+          next_actor: (data.next_actor as string) || '协作团队',
+          case_url: (data.case_url as string) || '',
+          session_id: typeof data.session_id === 'string' ? data.session_id : undefined,
+          message_id: typeof data.message_id === 'string' ? data.message_id : undefined,
+        })
+        break
       case 'tool_output':
         cb.onToolOutput?.(
           (data.tool as string) || '',
@@ -435,6 +481,25 @@ export function useAgentChatStream() {
           (data.data as string) || '',
           (data.tool_call_id as string) || undefined,
         )
+        break
+      case 'skill':
+        {
+          const phase = data.phase === 'completed' || data.phase === 'failed' ? data.phase : 'invoked'
+          cb.onSkill?.({
+            phase,
+            tool_call_id: (data.tool_call_id as string) || '',
+            message_id: typeof data.message_id === 'string' ? data.message_id : undefined,
+            skill_id: (data.skill_id as string) || '',
+            name: (data.name as string) || '',
+            version: (data.version as string) || '',
+            source: (data.source as string) || '',
+            icon: (data.icon as string) || '🧩',
+            agent: typeof data.agent === 'string' ? data.agent : undefined,
+            duration_ms: typeof data.duration_ms === 'number' ? data.duration_ms : undefined,
+            summary: typeof data.summary === 'string' ? data.summary : undefined,
+            error: typeof data.error === 'string' ? data.error : undefined,
+          })
+        }
         break
       case 'plan':
         cb.onPlan?.((Array.isArray(data.steps) ? data.steps : []) as StudioPlanStep[])

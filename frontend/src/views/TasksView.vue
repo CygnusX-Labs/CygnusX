@@ -1,17 +1,27 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import type { Task } from '@/types'
 import TaskTable from '@/components/task/TaskTable.vue'
+import AgentTeamsCasesPanel from '@/components/task/AgentTeamsCasesPanel.vue'
 import AppLoading from '@/components/AppLoading.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import apiClient from '@/api/client'
 import { useApi } from '@/composables/useApi'
 import { exportTasksToExcel } from '@/utils/taskExport'
-import { NInput, NSelect, NButton, NIcon, useMessage } from 'naive-ui'
+import { NInput, NSelect, NButton, NIcon, NTabs, NTabPane, useMessage } from 'naive-ui'
 import { DownloadOutline, RefreshOutline, SearchOutline } from '@vicons/ionicons5'
 
 const message = useMessage()
+const route = useRoute()
+const router = useRouter()
+
+// tab 与地址栏 query 同步，支持 /tasks?tab=agent-teams 深链（如 Case 详情页返回）
+const activeTab = ref<'analysis' | 'agent-teams'>(route.query.tab === 'agent-teams' ? 'agent-teams' : 'analysis')
+watch(activeTab, (tab) => {
+  router.replace({ query: tab === 'analysis' ? {} : { tab } })
+})
 
 const statusFilter = ref<Task['status'] | 'all'>('all')
 const searchQuery = ref('')
@@ -157,59 +167,64 @@ onMounted(fetchTasks)
 
 <template>
   <div class="page-container tasks-page">
-    <PageHeader title="任务中心" subtitle="管理和监控所有生信分析任务的执行状态">
-      <template #actions>
-        <div class="tasks-header__actions">
-        <NInput
-          v-model:value="searchQuery"
-          placeholder="搜索任务名称、流程、错误信息..."
-          clearable
-          class="task-search"
-        >
-          <template #prefix>
-            <NIcon :size="14"><SearchOutline /></NIcon>
-          </template>
-        </NInput>
-        <NSelect
-          v-model:value="statusFilter"
-          :options="statusOptions"
-          style="width: 140px"
-          @update:value="fetchTasks"
-        />
-        <NButton :loading="exporting" :disabled="!filteredTasks.length" @click="handleExport">
-          <template #icon>
-            <NIcon><DownloadOutline /></NIcon>
-          </template>
-          导出 Excel
-        </NButton>
-        <NButton type="primary" :loading="loading" @click="fetchTasks">
-          <template #icon>
-            <NIcon><RefreshOutline /></NIcon>
-          </template>
-          刷新
-        </NButton>
-        </div>
-      </template>
-    </PageHeader>
+    <PageHeader title="任务中心" subtitle="管理和监控所有生信分析任务的执行状态" />
 
-    <div v-if="loading && !filteredTasks.length" class="tasks-loading">
-      <AppLoading text="加载任务列表..." />
-    </div>
-    <EmptyState
-      v-else-if="!filteredTasks.length"
-      icon="🧪"
-      :title="searchQuery || statusFilter !== 'all' ? '没有匹配的任务' : '暂时没有分析任务'"
-      :description="searchQuery || statusFilter !== 'all' ? '请调整搜索关键词或筛选条件后重试。' : '前往分析中心提交第一个任务后，执行进度会显示在这里。'"
-    />
-    <TaskTable
-      v-else
-      :tasks="filteredTasks"
-      :loading="loading"
-      show-user
-      @delete="handleDelete"
-      @batch-delete="handleBatchDelete"
-      @batch-cancel="handleBatchCancel"
-    />
+    <NTabs v-model:value="activeTab" type="line" animated class="tasks-tabs">
+      <NTabPane name="analysis" tab="分析任务">
+        <div class="tasks-toolbar">
+          <NInput
+            v-model:value="searchQuery"
+            placeholder="搜索任务名称、流程、错误信息..."
+            clearable
+            class="task-search"
+          >
+            <template #prefix>
+              <NIcon :size="14"><SearchOutline /></NIcon>
+            </template>
+          </NInput>
+          <NSelect
+            v-model:value="statusFilter"
+            :options="statusOptions"
+            style="width: 140px"
+            @update:value="fetchTasks"
+          />
+          <NButton :loading="exporting" :disabled="!filteredTasks.length" @click="handleExport">
+            <template #icon>
+              <NIcon><DownloadOutline /></NIcon>
+            </template>
+            导出 Excel
+          </NButton>
+          <NButton type="primary" :loading="loading" @click="fetchTasks">
+            <template #icon>
+              <NIcon><RefreshOutline /></NIcon>
+            </template>
+            刷新
+          </NButton>
+        </div>
+
+        <div v-if="loading && !filteredTasks.length" class="tasks-loading">
+          <AppLoading text="加载任务列表..." />
+        </div>
+        <EmptyState
+          v-else-if="!filteredTasks.length"
+          icon="🧪"
+          :title="searchQuery || statusFilter !== 'all' ? '没有匹配的任务' : '暂时没有分析任务'"
+          :description="searchQuery || statusFilter !== 'all' ? '请调整搜索关键词或筛选条件后重试。' : '前往分析中心提交第一个任务后，执行进度会显示在这里。'"
+        />
+        <TaskTable
+          v-else
+          :tasks="filteredTasks"
+          :loading="loading"
+          show-user
+          @delete="handleDelete"
+          @batch-delete="handleBatchDelete"
+          @batch-cancel="handleBatchCancel"
+        />
+      </NTabPane>
+      <NTabPane name="agent-teams" tab="AgentTeams 协作">
+        <AgentTeamsCasesPanel />
+      </NTabPane>
+    </NTabs>
   </div>
 </template>
 
@@ -219,12 +234,17 @@ onMounted(fetchTasks)
   background: var(--neutral-bg);
 }
 
-.tasks-header__actions {
+.tasks-tabs {
+  margin-top: 8px;
+}
+
+.tasks-toolbar {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  margin-bottom: 16px;
 }
 
 .task-search {
@@ -239,12 +259,11 @@ onMounted(fetchTasks)
 }
 
 @media (max-width: 768px) {
-  .tasks-header__actions {
-    width: 100%;
+  .tasks-toolbar {
     justify-content: flex-start;
   }
-  .tasks-header__actions :deep(.n-input),
-  .tasks-header__actions :deep(.n-select) {
+  .tasks-toolbar :deep(.n-input),
+  .tasks-toolbar :deep(.n-select) {
     width: 100% !important;
   }
 

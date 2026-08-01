@@ -14,9 +14,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from dataclasses import dataclass
 
 from omichub.core.config import get_settings
+from omichub.core.telemetry import get_tracer
 
 logger = logging.getLogger(__name__)
 
@@ -119,34 +121,49 @@ class EnrichmentDockerRunner:
         cmd = self.build_command(params, container_name)
         logger.info("enrichment docker run: %s", " ".join(cmd))
 
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        tracer = get_tracer("omichub.toolbox")
+        with tracer.start_as_current_span(
+            "toolbox.runner",
+            attributes={"toolbox.runner": "enrichment", "toolbox.command": " ".join(cmd)[:1000]},
+        ) as span:
+            start = time.perf_counter()
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
 
-        timeout = self._settings.enrichment_exec_timeout
-        try:
-            stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        except TimeoutError:
-            # 超时：杀掉 docker run 主进程（--rm 会清理容器）
-            with contextlib.suppress(ProcessLookupError):
-                proc.kill()
-            # 给被杀进程一点时间回收 stdout/stderr，收不到也无所谓
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(proc.communicate(), timeout=10)
-            return EnrichmentRunResult(
-                returncode=-1,
-                stdout="",
-                stderr=f"富集分析执行超时（>{timeout}s）",
-                timed_out=True,
-            )
+                timeout = self._settings.enrichment_exec_timeout
+                try:
+                    stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+                except TimeoutError:
+                    # 超时：杀掉 docker run 主进程（--rm 会清理容器）
+                    with contextlib.suppress(ProcessLookupError):
+                        proc.kill()
+                    # 给被杀进程一点时间回收 stdout/stderr，收不到也无所谓
+                    with contextlib.suppress(TimeoutError):
+                        await asyncio.wait_for(proc.communicate(), timeout=10)
+                    span.set_attribute("toolbox.returncode", -1)
+                    span.set_attribute("toolbox.timed_out", True)
+                    return EnrichmentRunResult(
+                        returncode=-1,
+                        stdout="",
+                        stderr=f"富集分析执行超时（>{timeout}s）",
+                        timed_out=True,
+                    )
 
-        return EnrichmentRunResult(
-            returncode=proc.returncode if proc.returncode is not None else -1,
-            stdout=stdout_b.decode("utf-8", errors="replace"),
-            stderr=stderr_b.decode("utf-8", errors="replace"),
-        )
+                returncode = proc.returncode if proc.returncode is not None else -1
+                span.set_attribute("toolbox.returncode", returncode)
+                return EnrichmentRunResult(
+                    returncode=returncode,
+                    stdout=stdout_b.decode("utf-8", errors="replace"),
+                    stderr=stderr_b.decode("utf-8", errors="replace"),
+                )
+            finally:
+                duration_ms = (time.perf_counter() - start) * 1000
+                span.set_attribute("toolbox.duration_ms", round(duration_ms, 2))
+                logger.info("enrichment runner finished in %.2f ms", duration_ms)
 
 
 # 模块级单例

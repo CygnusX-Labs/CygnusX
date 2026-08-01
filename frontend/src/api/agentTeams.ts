@@ -10,6 +10,8 @@ export interface AgentTeamsCase {
   project_ref: { kind: string; id: string; location?: string | null }
   intent: string
   requester_ref: string
+  /** 后端按 requester_ref 回填的真实用户名（§33.2 ④）；缺省时不展示 UUID 兜底由列渲染处理 */
+  requester_username?: string | null
   team_id: string
   status: AgentTeamsCaseStatus
   omic_task_ids: string[]
@@ -70,9 +72,31 @@ export interface AgentTeamsEventListResponse {
   next_cursor?: string | null
 }
 
+export interface AgentTeamsBridgeStatus {
+  available: boolean
+  enabled: boolean
+  configured: boolean
+  connected: boolean
+  configuration_source: 'database' | 'environment'
+  reason: 'disabled' | 'incomplete_configuration' | 'bridge_unreachable' | null
+}
+
+export interface AgentTeamsChatRoom {
+  available: boolean
+  element_url: string
+  reason: 'not_configured' | null
+  case_id?: string
+  source?: 'case' | 'global'
+}
+
 export const agentTeamsApi = {
-  async status(): Promise<{ available: boolean }> {
+  async status(): Promise<AgentTeamsBridgeStatus> {
     return (await apiClient.get('/agent-teams/status')).data
+  },
+  async getChatRoom(caseId?: string): Promise<AgentTeamsChatRoom> {
+    return (await apiClient.get<AgentTeamsChatRoom>('/agent-teams/chat-room', {
+      params: caseId ? { case_id: caseId } : undefined,
+    })).data
   },
   async listCases(params: AgentTeamsCaseListParams = {}): Promise<AgentTeamsCaseListResponse> {
     return (await apiClient.get<AgentTeamsCaseListResponse>('/agent-teams/cases', { params })).data

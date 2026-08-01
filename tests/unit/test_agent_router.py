@@ -115,8 +115,54 @@ async def test_route_pure_json(service: ChatService, router_ctx: Any, monkeypatc
     assert info["agent_id"] == "agent-rnaseq"
     assert info["name"] == "RNA-seq 分析师"
     assert info["reason"] == "转录组问题"
-    # route chunk 元数据字段齐全
     assert {"agent_id", "name", "avatar", "color", "reason"} <= set(info)
+
+
+@pytest.mark.unit
+async def test_route_keeps_high_confidence_delivery_case(service: ChatService, router_ctx: Any, monkeypatch):
+    monkeypatch.setattr(
+        chat_service_module.provider_manager,
+        "chat_stream",
+        _fake_chat_stream(
+            json.dumps(
+                {
+                    "agent_id": "agent-rnaseq",
+                    "reason": "需要完整 RNA-seq 交付",
+                    "intent": "delivery_case",
+                    "confidence": 0.91,
+                }
+            )
+        ),
+    )
+
+    _ctx, info = await service._route_to_agent(router_ctx, "帮我跑完 RNA-seq 并出报告")
+
+    assert info is not None
+    assert info["intent"] == "delivery_case"
+    assert info["confidence"] == 0.91
+
+
+@pytest.mark.unit
+async def test_route_downgrades_low_confidence_delivery_case(service: ChatService, router_ctx: Any, monkeypatch):
+    monkeypatch.setattr(
+        chat_service_module.provider_manager,
+        "chat_stream",
+        _fake_chat_stream(
+            json.dumps(
+                {
+                    "agent_id": "agent-rnaseq",
+                    "reason": "不确定",
+                    "intent": "delivery_case",
+                    "confidence": 0.4,
+                }
+            )
+        ),
+    )
+
+    _ctx, info = await service._route_to_agent(router_ctx, "RNA-seq 怎么做")
+
+    assert info is not None
+    assert info["intent"] == "light_collab"
 
 
 @pytest.mark.unit

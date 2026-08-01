@@ -35,6 +35,15 @@ export interface ExpertConsultation {
   experts: Array<{ agent_id: string; name: string; opinion: string }>
 }
 
+export interface AgentTeamsCaseCardPayload {
+  case_id: string
+  title: string
+  status: string
+  next_actor: string
+  case_url: string
+  updated_at?: string
+}
+
 export interface ChatMessage {
   id: string
   /** 后端持久化消息 ID；流式期间不覆盖 id，避免虚拟列表 key 变化导致渲染缓存错位 */
@@ -50,6 +59,8 @@ export interface ChatMessage {
   /** 正文/工具调用的交错时间线（AI 消息专属）：按实际发生顺序记录 text 段与 tool 段，
    *  前端据此把工具卡片渲染在对应正文之后，而不是全部堆在消息底部 */
   timeline?: TimelineSegment[]
+  /** 技能调用卡片（AI 消息专属）：Agent 加载技能时由 skill 事件驱动 */
+  skillInvocations?: SkillInvocationCard[]
   /** 联网搜索的标准化来源；用于预搜索和历史重载。 */
   webSources?: WebSearchSource[]
   /** 联网搜索进行中的反馈。 */
@@ -60,6 +71,7 @@ export interface ChatMessage {
   /** 智能路由：本条 AI 消息实际由哪位专家回答（路由器会话专属） */
   routedAgent?: RoutedAgentInfo
   consultation?: ExpertConsultation
+  agentTeamsCases?: AgentTeamsCaseCardPayload[]
   attachments?: FileAttachment[]
   feedback?: 'like' | 'dislike'
   /** 是否被编辑过，用户消息专属 */
@@ -83,13 +95,36 @@ export interface ChartData {
 }
 
 // ===== 工具调用 =====
-/** 交错时间线中的一段：正文文本或一次工具调用（按发生顺序排列） */
+/** 交错时间线中的一段：正文文本 / 工具调用 / 技能调用（按发生顺序排列） */
 export interface TimelineSegment {
-  kind: 'text' | 'tool'
+  kind: 'text' | 'tool' | 'skill'
   /** kind=text 时的 Markdown 文本 */
   text?: string
   /** kind=tool 时对应的 ToolCall.id */
   toolCallId?: string
+  /** kind=skill 时对应的 SkillInvocationCard.id */
+  skillCardId?: string
+}
+
+/** 技能调用卡片（会话流内可视化：加载 spinner → 成功✓/失败✗ + 耗时；同技能多次调用合并计数） */
+export interface SkillInvocationCard {
+  id: string
+  skill_id: string
+  name: string
+  icon: string
+  version: string
+  source: string
+  /** 触发加载的 Agent 名称 */
+  agent?: string
+  status: 'running' | 'success' | 'error'
+  duration_ms?: number
+  summary?: string
+  error?: string
+  /** 同一消息内对同一技能的调用次数（合并展示，不刷屏） */
+  count: number
+  /** 技能不可用回退通用流程时的标注 */
+  fallback?: boolean
+  ts: number
 }
 
 export interface ToolCall {

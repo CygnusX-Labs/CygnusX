@@ -19,6 +19,11 @@ The browser never receives a Bridge secret or invokes Worker operations. OmicHub
 reads by `requester_ref` using a server-only Manager identity; high-risk operations remain in
 AgentTeams and the dedicated approval gateway.
 
+When Matrix / Element Web is deployed by the AgentTeams control plane, OmicHub can surface an
+administrator-configured public Element room URL in its existing AI assistant page. This is an
+embedded launch surface only: Matrix remains the authority for sign-in, room membership, and
+message permissions, and OmicHub must never store Matrix passwords or access tokens.
+
 For a separately deployed staging Bridge, run the safe preflight success and blocked demos from
 `demo/README.md`. The full workflow mode requires explicit staging approval opt-in and a real
 OmicHub demo task payload; it is not a substitute for human approval in production.

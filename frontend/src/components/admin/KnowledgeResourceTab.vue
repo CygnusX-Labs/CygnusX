@@ -124,7 +124,11 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="kb-tab" :aria-busy="loading">
+  <div class="kb-tab-page" :aria-busy="loading">
+    <div class="tab-header">
+      <span class="tab-hint">管理知识库的可见性与 AI 检索范围，新建或删除知识库前先选择左侧条目。</span>
+    </div>
+    <div class="kb-tab">
     <aside class="kb-list" aria-label="知识库列表">
       <button
         v-for="kb in bases" :key="kb.id" class="kb-item"
@@ -181,6 +185,7 @@ onMounted(load)
       <p v-if="selected()!.doc_count > 0" class="hint">知识库内仍有文档时不可删除。</p>
     </section>
     <NEmpty v-else description="选择左侧知识库进行配置" />
+    </div>
 
     <NModal v-model:show="showCreate" preset="card" title="新建知识库" style="width: 480px">
       <div class="field"><label>标识（小写字母/数字/连字符）</label><NInput v-model:value="createForm.id" placeholder="如 scseq、proteomics" /></div>
@@ -208,6 +213,8 @@ onMounted(load)
 </template>
 
 <style scoped>
+.tab-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:14px; }
+.tab-hint { font-size:12px; color:var(--neutral-text-3); }
 .kb-tab { display:grid; grid-template-columns:minmax(190px, .32fr) minmax(0, 1fr); min-height:440px; border:1px solid var(--neutral-border); border-radius:12px; overflow:hidden; background:var(--neutral-card); }
 .kb-list { padding:12px; border-right:1px solid var(--neutral-border); background:var(--neutral-bg); }
 .kb-item { width:100%; min-height:36px; display:flex; align-items:center; gap:8px; padding:0 8px; border:0; border-radius:7px; background:transparent; color:var(--neutral-text-2); text-align:left; cursor:pointer; }

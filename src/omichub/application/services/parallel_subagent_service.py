@@ -43,6 +43,7 @@ _CONTROL_TOOL_NAMES = frozenset(
     {
         PARALLEL_SUBAGENTS_TOOL_NAME,  # C2 防递归 fan-out
         "transfer_to_agent",  # C3 子任务不能切换父会话
+        "create_agentteams_case",  # 子任务不得创建跨会话交付 Case
         "ask_user",  # C3 子任务无用户应答，会死锁
         "omichub_save_memory",  # 子任务是临时工，不写长期记忆
     }

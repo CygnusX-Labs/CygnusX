@@ -19,6 +19,7 @@ export interface StudioSessionDTO {
   created_at: string
   updated_at: string
   last_message_at: string | null
+  multi_agent?: boolean
 }
 
 export type SandboxStatus = 'running' | 'stopped' | 'absent' | 'unavailable'

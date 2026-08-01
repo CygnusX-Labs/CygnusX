@@ -1,21 +1,29 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, h, onMounted, ref } from 'vue'
 import {
   NButton, NIcon, NTag, NSwitch, NGrid, NGridItem, NModal, NTabs, NTabPane,
   NInput, NSpace, NPopconfirm, NUpload, NAlert, NEmpty, NScrollbar, NTooltip,
-  NCheckbox, useMessage, type UploadFileInfo,
+  NCheckbox, NDataTable, useMessage, useDialog, type UploadFileInfo, type DataTableColumns,
 } from 'naive-ui'
 import {
   AddOutline, TrashOutline, LinkOutline, CodeSlashOutline, StorefrontOutline,
   LogoGithub, CloudUploadOutline, WarningOutline, ArrowBackOutline,
-  RefreshOutline, TerminalOutline, TimeOutline,
+  RefreshOutline, TerminalOutline, TimeOutline, CloudOutline,
 } from '@vicons/ionicons5'
 import { useAgentHubStore } from '@/stores/agentHub'
 import type { SkillItem, SkillVersion } from '@/types/agent'
-import type { SkillImportPreview, SkillMarketplaceItem } from '@/types/skill'
+import type {
+  AliyunMarketStatus,
+  SkillImportPreview,
+  SkillInvocationRecord,
+  SkillInvocationStat,
+  SkillMarketplaceItem,
+  SkillVersionDetail,
+} from '@/types/skill'
 import VersionHistoryDrawer, { type VersionHistoryItem } from './VersionHistoryDrawer.vue'
 
 const message = useMessage()
+const dialog = useDialog()
 const store = useAgentHubStore()
 
 // ---------- 导入弹窗状态 ----------
@@ -34,8 +42,33 @@ const marketplace = ref<SkillMarketplaceItem[]>([])
 const marketplaceLoading = ref(false)
 const installingId = ref('')
 
+// ---------- 阿里云官方源状态 ----------
+const aliyunStatus = ref<AliyunMarketStatus | null>(null)
+const aliyunSyncing = ref(false)
+
+/** 平台内置分组 */
+const builtinMarket = computed(() =>
+  marketplace.value.filter((i) => (i.source ?? 'builtin') !== 'aliyun_official'),
+)
+/** 阿里云官方分组 */
+const aliyunMarket = computed(() =>
+  marketplace.value.filter((i) => i.source === 'aliyun_official'),
+)
+
 const SOURCE_LABELS: Record<string, string> = {
   market: '市场', github: 'GitHub', zip: 'ZIP', json: 'JSON', builtin: '内置', url: 'URL',
+  aliyun_official: '阿里云官方',
+}
+
+function formatRelativeTime(iso: string | null): string {
+  if (!iso) return ''
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return ''
+  const diff = Date.now() - t
+  if (diff < 60_000) return '刚刚'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`
+  return `${Math.floor(diff / 86_400_000)} 天前`
 }
 
 const sampleJson = `{
@@ -48,6 +81,7 @@ const sampleJson = `{
 
 onMounted(() => {
   store.fetchSkills(true)
+  void loadInvocationStats()
 })
 
 /** 预览技能是否已存在（用于覆盖升级提示） */
@@ -69,11 +103,41 @@ async function openImport() {
 async function loadMarketplace() {
   marketplaceLoading.value = true
   try {
-    marketplace.value = await store.fetchSkillMarketplace()
-  } catch (e) {
-    console.error('加载技能市场失败:', e)
+    // 状态与市场列表并行拉取；官方源状态失败不阻塞内置列表
+    const [items, status] = await Promise.allSettled([
+      store.fetchSkillMarketplace(),
+      store.fetchAliyunMarketStatus(),
+    ])
+    if (items.status === 'fulfilled') marketplace.value = items.value
+    else console.error('加载技能市场失败:', items.reason)
+    if (status.status === 'fulfilled') {
+      aliyunStatus.value = status.value
+      // 从未同步过：后台自动首同步一次（网络失败保留空态，不影响内置条目）
+      if (status.value && status.value.last_synced_at === null && !aliyunSyncing.value) {
+        void handleSyncAliyun(false)
+      }
+    }
   } finally {
     marketplaceLoading.value = false
+  }
+}
+
+/** 同步阿里云官方技能源，完成后刷新列表与状态 */
+async function handleSyncAliyun(force: boolean) {
+  if (aliyunSyncing.value) return
+  aliyunSyncing.value = true
+  try {
+    aliyunStatus.value = await store.syncAliyunMarket(force)
+    marketplace.value = await store.fetchSkillMarketplace()
+    if (aliyunStatus.value?.error && !aliyunStatus.value.available) {
+      message.warning(`官方源同步失败：${aliyunStatus.value.error}`)
+    } else {
+      message.success(`阿里云官方源已同步（${aliyunStatus.value?.count ?? 0} 项）`)
+    }
+  } catch (e) {
+    message.error(apiErrorMessage(e))
+  } finally {
+    aliyunSyncing.value = false
   }
 }
 
@@ -132,7 +196,11 @@ async function handleParseJson() {
 async function handleInstallMarket(item: SkillMarketplaceItem) {
   installingId.value = item.skill_id
   try {
-    await store.installMarketplaceSkill(item.skill_id, item.installed)
+    if (item.source === 'aliyun_official') {
+      await store.installAliyunMarketSkill(item.skill_id, item.installed)
+    } else {
+      await store.installMarketplaceSkill(item.skill_id, item.installed)
+    }
     message.success(`已安装「${item.name}」`)
     await loadMarketplace()
   } catch (e) {
@@ -167,9 +235,32 @@ function handleToggle(skill: SkillItem) {
   store.toggleSkill(skill.id)
 }
 
-function handleDelete(skill: SkillItem) {
-  store.deleteSkill(skill.id)
-  message.success('已删除')
+/** 删除保护：先查引用，被助手引用时弹二次确认（force 删除）；版本快照保留可恢复 */
+async function handleDelete(skill: SkillItem) {
+  try {
+    const refs = await store.fetchSkillReferences(skill.id)
+    if (refs.length) {
+      dialog.warning({
+        title: '删除保护',
+        content: `该技能正被 ${refs.length} 个助手引用（${refs.map((r) => r.name).join('、')}）。强制删除后这些助手将失去该技能（版本快照保留），确定继续？`,
+        positiveText: '强制删除',
+        negativeText: '取消',
+        onPositiveClick: async () => {
+          try {
+            await store.deleteSkill(skill.id, true)
+            message.success('已删除')
+          } catch (e) {
+            message.error(apiErrorMessage(e))
+          }
+        },
+      })
+      return
+    }
+    await store.deleteSkill(skill.id)
+    message.success('已删除')
+  } catch (e) {
+    message.error(apiErrorMessage(e))
+  }
 }
 
 async function handleCheckUpdate(skill: SkillItem) {
@@ -252,6 +343,143 @@ async function handleVersionRollback(item: VersionHistoryItem) {
     versionRollingBack.value = false
   }
 }
+
+// ---------- 版本 diff（与当前版本对比） ----------
+const showDiff = ref(false)
+const diffLoading = ref(false)
+const diffTitle = ref('')
+const diffLines = ref<Array<{ type: 'same' | 'add' | 'del'; text: string }>>([])
+
+function versionDoc(d: SkillVersionDetail): string {
+  return `# ${d.name}\n\n${d.description}\n\n---\n\n${d.prompt}`
+}
+
+/** 行级 LCS diff（技能正文为文本，规模小，O(mn) 足够） */
+function computeLineDiff(oldText: string, newText: string) {
+  const a = oldText.split('\n')
+  const b = newText.split('\n')
+  const m = a.length
+  const n = b.length
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0))
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1])
+    }
+  }
+  const out: Array<{ type: 'same' | 'add' | 'del'; text: string }> = []
+  let i = 0
+  let j = 0
+  while (i < m && j < n) {
+    if (a[i] === b[j]) {
+      out.push({ type: 'same', text: a[i] })
+      i++
+      j++
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      out.push({ type: 'del', text: a[i] })
+      i++
+    } else {
+      out.push({ type: 'add', text: b[j] })
+      j++
+    }
+  }
+  while (i < m) out.push({ type: 'del', text: a[i++] })
+  while (j < n) out.push({ type: 'add', text: b[j++] })
+  return out
+}
+
+async function openVersionDiff(item: VersionHistoryItem) {
+  const v = item.raw as SkillVersion
+  const skill = versionSkill.value
+  const latest = versionItems.value[0]
+  if (!skill || !latest) return
+  showDiff.value = true
+  diffLoading.value = true
+  diffTitle.value = `版本对比 · r${v.revision} → 当前 r${latest.revision}`
+  diffLines.value = []
+  try {
+    const [oldDetail, newDetail] = await Promise.all([
+      store.fetchSkillVersionDetail(skill.id, v.revision),
+      store.fetchSkillVersionDetail(skill.id, latest.revision),
+    ])
+    diffLines.value = computeLineDiff(versionDoc(oldDetail), versionDoc(newDetail))
+  } catch (e) {
+    message.error(apiErrorMessage(e))
+    showDiff.value = false
+  } finally {
+    diffLoading.value = false
+  }
+}
+
+// ---------- 调用记录（Skill 调用可视化 · 资源中心侧） ----------
+/** skill_id → 聚合统计（最近调用时间 · 累计次数） */
+const invocationStats = ref<Record<string, SkillInvocationStat>>({})
+const showInvocations = ref(false)
+const invocationsSkill = ref<SkillItem | null>(null)
+const invocations = ref<SkillInvocationRecord[]>([])
+const invocationsLoading = ref(false)
+
+async function loadInvocationStats() {
+  try {
+    const stats = await store.fetchSkillInvocationStats()
+    const map: Record<string, SkillInvocationStat> = {}
+    for (const s of stats) map[s.skill_id] = s
+    invocationStats.value = map
+  } catch (e) {
+    console.error('加载技能调用统计失败:', e)
+  }
+}
+
+async function openInvocations(skill: SkillItem) {
+  invocationsSkill.value = skill
+  showInvocations.value = true
+  invocationsLoading.value = true
+  try {
+    invocations.value = await store.fetchSkillInvocations(skill.id, 50)
+  } catch (e) {
+    message.error(apiErrorMessage(e))
+    invocations.value = []
+  } finally {
+    invocationsLoading.value = false
+  }
+}
+
+const invocationColumns: DataTableColumns<SkillInvocationRecord> = [
+  {
+    title: '时间',
+    key: 'created_at',
+    width: 160,
+    render: (row) => new Date(row.created_at).toLocaleString('zh-CN', { hour12: false }),
+  },
+  {
+    title: '状态',
+    key: 'status',
+    width: 80,
+    render: (row) =>
+      h(
+        NTag,
+        { size: 'tiny', type: row.status === 'completed' ? 'success' : 'error', bordered: false },
+        { default: () => (row.status === 'completed' ? '成功' : '失败') },
+      ),
+  },
+  {
+    title: '版本',
+    key: 'skill_version',
+    width: 70,
+    render: (row) => (row.skill_version ? `v${row.skill_version}` : '-'),
+  },
+  {
+    title: '耗时',
+    key: 'duration_ms',
+    width: 80,
+    render: (row) =>
+      row.duration_ms == null
+        ? '-'
+        : row.duration_ms < 1000
+          ? `${Math.round(row.duration_ms)}ms`
+          : `${(row.duration_ms / 1000).toFixed(1)}s`,
+  },
+  { title: '结果', key: 'summary', ellipsis: { tooltip: true }, render: (row) => row.error || row.summary || '-' },
+]
 </script>
 
 <template>
@@ -289,6 +517,19 @@ async function handleVersionRollback(item: VersionHistoryItem) {
               </NTooltip>
             </div>
             <div class="skill-desc">{{ skill.description }}</div>
+            <div
+              v-if="invocationStats[skill.id]"
+              class="skill-invocation-meta"
+              @click="openInvocations(skill)"
+            >
+              <NIcon :component="TimeOutline" size="12" />
+              <template v-if="invocationStats[skill.id].last_invoked_at">
+                最近调用 {{ formatRelativeTime(invocationStats[skill.id].last_invoked_at) }}
+              </template>
+              <template v-else>尚无调用</template>
+              · 累计 {{ invocationStats[skill.id].total }} 次
+              <span class="invocation-detail-hint">查看详情</span>
+            </div>
             <div v-if="skill.source_url || skill.author" class="skill-meta">
               <span v-if="skill.author" class="skill-author">✍️ {{ skill.author }}</span>
               <span v-if="skill.source_url" class="skill-url">
@@ -298,7 +539,7 @@ async function handleVersionRollback(item: VersionHistoryItem) {
           </div>
           <div class="skill-actions">
             <NSwitch size="small" :value="skill.is_active" @update:value="handleToggle(skill)" />
-            <NTooltip v-if="skill.source === 'github'" trigger="hover">
+            <NTooltip v-if="skill.source === 'github' || skill.source === 'aliyun_official'" trigger="hover">
               <template #trigger>
                 <NButton size="tiny" quaternary @click="handleCheckUpdate(skill)">
                   <template #icon><NIcon :component="RefreshOutline" /></template>
@@ -338,7 +579,37 @@ async function handleVersionRollback(item: VersionHistoryItem) {
       :loading="versionLoading"
       :rolling-back="versionRollingBack"
       @rollback="handleVersionRollback"
+      @diff="openVersionDiff"
     />
+
+    <!-- 版本 diff 弹窗 -->
+    <NModal v-model:show="showDiff" preset="card" :title="diffTitle" style="width: 760px">
+      <div v-if="diffLoading" class="diff-loading">加载中…</div>
+      <NScrollbar v-else style="max-height: 480px">
+        <pre class="diff-view"><template
+          v-for="(line, i) in diffLines"
+          :key="i"
+        ><span class="diff-line" :class="`diff-${line.type}`">{{ line.type === 'add' ? '+ ' : line.type === 'del' ? '- ' : '  ' }}{{ line.text }}
+</span></template></pre>
+      </NScrollbar>
+    </NModal>
+
+    <!-- 调用记录弹窗 -->
+    <NModal
+      v-model:show="showInvocations"
+      preset="card"
+      :title="`调用记录 · ${invocationsSkill?.name || ''}`"
+      style="width: 760px"
+    >
+      <NDataTable
+        :columns="invocationColumns"
+        :data="invocations"
+        :loading="invocationsLoading"
+        :row-key="(row: SkillInvocationRecord) => row.id"
+        size="small"
+        :max-height="420"
+      />
+    </NModal>
 
     <!-- 导入技能：四入口 + 统一预览 -->
     <NModal v-model:show="showImport" preset="card" :title="preview ? '导入预览' : '导入技能'" style="width: 680px" :segmented="{ content: true, footer: true }">
@@ -416,32 +687,95 @@ async function handleVersionRollback(item: VersionHistoryItem) {
         <NTabPane name="market">
           <template #tab><NIcon :component="StorefrontOutline" /> &nbsp;技能市场</template>
           <div class="import-pane">
-            <p class="pane-hint">平台内置的标准技能，一键安装入库。</p>
-            <NScrollbar style="max-height: 320px">
+            <p class="pane-hint">平台内置技能与阿里云官方用云 Skills，一键安装入库。</p>
+            <NScrollbar style="max-height: 380px">
               <div v-if="marketplaceLoading" class="market-loading">加载中…</div>
-              <div v-else-if="!marketplace.length" class="market-empty">
-                <NEmpty description="市场暂无内置技能" />
-              </div>
-              <div v-for="item in marketplace" :key="item.skill_id" class="market-card">
-                <div class="skill-icon">{{ item.icon }}</div>
-                <div class="skill-body">
-                  <div class="skill-head">
-                    <span class="skill-name">{{ item.name }}</span>
-                    <NTag v-if="item.version" size="tiny" :bordered="false">v{{ item.version }}</NTag>
-                    <NTag size="tiny" round :bordered="false">{{ item.category }}</NTag>
-                    <NTag v-if="item.has_scripts" size="tiny" type="warning" round :bordered="false">含脚本</NTag>
+              <template v-else>
+                <!-- 平台内置分组 -->
+                <div v-if="builtinMarket.length" class="market-group-title">平台内置</div>
+                <div v-for="item in builtinMarket" :key="item.skill_id" class="market-card">
+                  <div class="skill-icon">{{ item.icon }}</div>
+                  <div class="skill-body">
+                    <div class="skill-head">
+                      <span class="skill-name">{{ item.name }}</span>
+                      <NTag v-if="item.version" size="tiny" :bordered="false">v{{ item.version }}</NTag>
+                      <NTag size="tiny" round :bordered="false">{{ item.category }}</NTag>
+                      <NTag v-if="item.has_scripts" size="tiny" type="warning" round :bordered="false">含脚本</NTag>
+                    </div>
+                    <div class="skill-desc">{{ item.description }}</div>
                   </div>
-                  <div class="skill-desc">{{ item.description }}</div>
+                  <NButton
+                    size="tiny"
+                    :type="item.installed ? 'default' : 'primary'"
+                    :loading="installingId === item.skill_id"
+                    @click="handleInstallMarket(item)"
+                  >
+                    {{ item.installed ? '重新安装' : '安装' }}
+                  </NButton>
                 </div>
-                <NButton
-                  size="tiny"
-                  :type="item.installed ? 'default' : 'primary'"
-                  :loading="installingId === item.skill_id"
-                  @click="handleInstallMarket(item)"
-                >
-                  {{ item.installed ? '重新安装' : '安装' }}
-                </NButton>
-              </div>
+                <div v-if="!builtinMarket.length && !aliyunMarket.length" class="market-empty">
+                  <NEmpty description="市场暂无内置技能" />
+                </div>
+
+                <!-- 阿里云官方分组 -->
+                <div class="market-group-title market-group-aliyun">
+                  <span class="group-name"><NIcon :component="CloudOutline" size="13" /> 阿里云官方</span>
+                  <NTag size="tiny" type="info" :bordered="false">官方源</NTag>
+                  <span class="aliyun-sync-meta">
+                    <template v-if="aliyunStatus?.last_synced_at">
+                      同步于 {{ formatRelativeTime(aliyunStatus.last_synced_at) }}
+                      <NTag v-if="aliyunStatus.stale" size="tiny" type="warning" :bordered="false">可更新</NTag>
+                    </template>
+                    <template v-else>未同步</template>
+                  </span>
+                  <NTooltip trigger="hover">
+                    <template #trigger>
+                      <NButton size="tiny" quaternary :loading="aliyunSyncing" @click="handleSyncAliyun(aliyunStatus?.stale ?? false)">
+                        <template #icon><NIcon :component="RefreshOutline" /></template>
+                      </NButton>
+                    </template>
+                    通过 AgentExplorer OpenAPI 同步官方 Skills；未配置 AccessKey 时回退 GitHub（{{ aliyunStatus?.repo || 'AgentExplorer OpenAPI' }}）
+                  </NTooltip>
+                </div>
+                <div v-if="!aliyunMarket.length" class="market-empty aliyun-empty">
+                  <NEmpty
+                    :description="
+                      aliyunStatus?.error && !aliyunStatus.available
+                        ? `官方源暂不可用：${aliyunStatus.error}`
+                        : aliyunStatus?.last_synced_at
+                          ? '官方源暂无技能条目'
+                          : '尚未同步官方源，点击同步拉取阿里云官方 Skills'
+                    "
+                  >
+                    <template #extra>
+                      <NButton size="tiny" :loading="aliyunSyncing" @click="handleSyncAliyun(true)">
+                        同步官方源
+                      </NButton>
+                    </template>
+                  </NEmpty>
+                </div>
+                <div v-for="item in aliyunMarket" :key="item.skill_id" class="market-card">
+                  <div class="skill-icon">{{ item.icon }}</div>
+                  <div class="skill-body">
+                    <div class="skill-head">
+                      <span class="skill-name">{{ item.name }}</span>
+                      <NTag v-if="item.official" size="tiny" type="info" round :bordered="false">官方</NTag>
+                      <NTag v-if="item.version" size="tiny" :bordered="false">v{{ item.version }}</NTag>
+                      <NTag size="tiny" round :bordered="false">{{ item.category }}</NTag>
+                      <NTag v-if="item.has_scripts" size="tiny" type="warning" round :bordered="false">含脚本</NTag>
+                    </div>
+                    <div class="skill-desc">{{ item.description }}</div>
+                  </div>
+                  <NButton
+                    size="tiny"
+                    :type="item.installed ? 'default' : 'primary'"
+                    :loading="installingId === item.skill_id"
+                    @click="handleInstallMarket(item)"
+                  >
+                    {{ item.installed ? '重新安装' : '安装' }}
+                  </NButton>
+                </div>
+              </template>
             </NScrollbar>
           </div>
         </NTabPane>
@@ -536,6 +870,32 @@ async function handleVersionRollback(item: VersionHistoryItem) {
 .pane-hint { font-size: 12px; color: var(--neutral-text-3, #888); margin: 0; line-height: 1.6; }
 .market-loading { padding: 24px; text-align: center; font-size: 12px; color: var(--n-text-color-3); }
 .market-empty { padding: 16px 0; }
+.market-group-title {
+  display: flex; align-items: center; gap: 8px;
+  margin: 14px 0 10px; padding-bottom: 6px;
+  font-size: 13px; font-weight: 600; color: var(--n-text-color-2, #666);
+  border-bottom: 1px dashed var(--n-border-color, #e8e8e8);
+}
+.market-group-title:first-child { margin-top: 0; }
+.market-group-aliyun { margin-top: 20px; }
+.market-group-aliyun .group-name { display: inline-flex; align-items: center; gap: 5px; }
+.aliyun-sync-meta { margin-left: auto; font-size: 11px; font-weight: 400; color: var(--n-text-color-3, #999); display: inline-flex; align-items: center; gap: 4px; }
+.aliyun-empty { padding: 8px 0 4px; }
+.skill-invocation-meta {
+  display: flex; align-items: center; gap: 4px;
+  margin-top: 4px; font-size: 11px;
+  color: var(--n-text-color-3, #999);
+  cursor: pointer; width: fit-content;
+}
+.skill-invocation-meta:hover { color: var(--n-color-target, #18a058); }
+.skill-invocation-meta .invocation-detail-hint { opacity: 0; transition: opacity 120ms; margin-left: 2px; }
+.skill-invocation-meta:hover .invocation-detail-hint { opacity: 1; }
+.diff-loading { padding: 24px; text-align: center; color: var(--n-text-color-3, #999); font-size: 12px; }
+.diff-view { margin: 0; font-family: var(--n-font-family-mono, monospace); font-size: 12px; line-height: 1.7; white-space: pre-wrap; word-break: break-all; }
+.diff-line { display: block; padding: 0 8px; }
+.diff-add { background: rgba(24, 160, 88, 0.12); color: #18a058; }
+.diff-del { background: rgba(208, 48, 80, 0.10); color: #d03050; }
+.diff-same { color: var(--n-text-color-2, #666); }
 .market-card { display: flex; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--n-border-color, #eee); border-radius: 10px; margin-bottom: 10px; }
 
 /* 统一预览页 */

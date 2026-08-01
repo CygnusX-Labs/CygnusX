@@ -6,6 +6,7 @@ import { ArrowBackOutline, BulbOutline, FlashOutline, CloseOutline, DesktopOutli
 import KimiMessageList from '@/components/ai-chat/KimiMessageList.vue'
 import KimiChatInput from '@/components/ai-chat/KimiChatInput.vue'
 import AgentCapabilityDrawer from './AgentCapabilityDrawer.vue'
+import MultiAgentToggle from './MultiAgentToggle.vue'
 import ShaniaChatBackground from './ShaniaChatBackground.vue'
 import { useAgentHubStore } from '@/stores/agentHub'
 import { useAuthStore } from '@/stores/auth'
@@ -110,6 +111,12 @@ let noticeTimer: ReturnType<typeof setTimeout> | null = null
 
 const agent = computed(() => store.currentAgent)
 const session = computed(() => store.currentSession)
+const multiAgentEnabled = computed({
+  get: () => Boolean(session.value?.multi_agent),
+  set: (value: boolean) => {
+    if (session.value) session.value.multi_agent = value
+  },
+})
 const engineLabel = computed(() => agent.value?.model_engine || '')
 const agentDisplayName = computed(() => agent.value?.features?.router ? '星尘 AI' : agent.value?.name || '星尘 AI')
 const quickPrompts = [
@@ -126,12 +133,35 @@ const userAvatarUrl = computed(() => authStore.user?.avatar_url || '')
 
 const welcomeStorageKey = computed(() => `agent-welcome-closed:${agent.value?.id || 'global'}`)
 
+/** 首次调用某技能的轻提示（localStorage 去重，全生命周期只弹一次，可关=不再提示同技能） */
+const SKILL_NOTICE_KEY = 'omichub-notified-skills'
+function handleSkillInvokedNotice(e: Event) {
+  const detail = (e as CustomEvent<{ skill_id: string; name: string; version?: string }>).detail
+  if (!detail?.skill_id) return
+  try {
+    const seen: string[] = JSON.parse(localStorage.getItem(SKILL_NOTICE_KEY) || '[]')
+    if (seen.includes(detail.skill_id)) return
+    seen.push(detail.skill_id)
+    localStorage.setItem(SKILL_NOTICE_KEY, JSON.stringify(seen.slice(-200)))
+  } catch {
+    /* localStorage 不可用时每次都会提示，不影响功能 */
+  }
+  message.info(
+    `Agent 正在使用技能「${detail.name}」${detail.version ? ` v${detail.version}` : ''}`,
+  )
+}
+
 onMounted(() => {
   try {
     showWelcomeCard.value = localStorage.getItem(welcomeStorageKey.value) !== 'true'
   } catch {
     showWelcomeCard.value = true
   }
+  window.addEventListener('omichub:skill-invoked', handleSkillInvokedNotice)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('omichub:skill-invoked', handleSkillInvokedNotice)
 })
 
 const modelOptions = computed(() =>
@@ -216,8 +246,9 @@ function handleSend(
 }
 
 function handleConfirmTool(toolName: string, args: Record<string, unknown>) {
-  // 发送确认消息，依赖 LLM 根据上下文再次调用同一工具并附加 _confirmed: true
-  const content = `确认执行 ${toolName}`
+  const content = toolName === 'create_agentteams_case'
+    ? `我确认创建协作 Case。请仅使用以下已确认参数再次调用 ${toolName}，并携带 _confirmed: true：\n${JSON.stringify(args, null, 2)}`
+    : `确认执行 ${toolName}`
   store.sendMessage(content, {})
 }
 
@@ -270,6 +301,7 @@ onUnmounted(() => {
         </div>
       </div>
       <div class="header-right">
+        <MultiAgentToggle v-model="multiAgentEnabled" :disabled="store.isStreaming" />
         <div class="model-selector">
           <n-select
             v-if="modelOptions.length"

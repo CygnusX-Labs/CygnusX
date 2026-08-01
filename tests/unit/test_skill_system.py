@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import io
+import tarfile
 import uuid
 from pathlib import Path
 
 import pytest
 
-from omichub.application.services.skill_import_service import _parse_github_url
+from omichub.application.services.skill_import_service import (
+    _extract_aliyun_skills,
+    _parse_github_url,
+)
 from omichub.domain.skill.entities import Skill
 from omichub.domain.skill.services import (
     SKILL_TOOL_NAMES,
@@ -214,3 +219,17 @@ class TestGithubUrlParser:
     def test_invalid(self):
         assert _parse_github_url("https://gitlab.com/o/r") is None
         assert _parse_github_url("not a url") is None
+
+
+class TestAliyunSkillExtraction:
+    def test_extracts_skill_from_deeply_nested_directory(self):
+        blob = io.BytesIO()
+        with tarfile.open(fileobj=blob, mode="w:gz") as archive:
+            content = b"---\nname: Deep Skill\ndescription: nested\n---\nbody"
+            member = tarfile.TarInfo("official-main/catalog/cloud/ecs/diagnostics/deep-skill/SKILL.md")
+            member.size = len(content)
+            archive.addfile(member, io.BytesIO(content))
+
+        skills = _extract_aliyun_skills(blob.getvalue())
+
+        assert skills == {"deep-skill": {"SKILL.md": content}}

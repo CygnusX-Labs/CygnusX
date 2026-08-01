@@ -79,14 +79,14 @@ export interface SkillVersion {
   created_at?: string
 }
 
-/** 技能（SKILL.md 标准；支持市场 / GitHub / zip / JSON 四入口导入） */
+/** 技能（SKILL.md 标准；支持市场 / GitHub / zip / JSON 四入口导入 + 阿里云官方源） */
 export interface SkillItem {
   id: string
   name: string
   description: string
   icon: string
   category: string
-  source: 'market' | 'github' | 'zip' | 'json' | 'builtin' | 'url'
+  source: 'market' | 'github' | 'zip' | 'json' | 'builtin' | 'url' | 'aliyun_official'
   source_url?: string
   version?: string
   author?: string

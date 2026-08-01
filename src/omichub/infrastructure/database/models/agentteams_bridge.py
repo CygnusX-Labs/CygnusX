@@ -19,3 +19,4 @@ class AgentTeamsBridgeSettingsModel(Base, TimestampMixin):
     approval_token: Mapped[str] = mapped_column(Text, nullable=False, default="")
     workflow_operator_token: Mapped[str] = mapped_column(Text, nullable=False, default="")
     timeout_seconds: Mapped[float] = mapped_column(Float, nullable=False, default=10.0)
+    element_url: Mapped[str] = mapped_column(String(1024), nullable=False, default="")

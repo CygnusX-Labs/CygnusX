@@ -17,7 +17,7 @@ features:
   web_search:
     mode: required_for_freshness
     triggers: [最新, 文献, 论文, 研究进展, 临床试验, 指南, 数据库更新]
-tool_packs: [workspace, research, memory, handoff]
+tool_packs: [workspace, research, memory, handoff, agentteams_case]
 handoff:
   allowed_targets: [agent-viz, agent-code, agent-general]
   max_hops_per_session: 3

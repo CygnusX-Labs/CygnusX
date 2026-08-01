@@ -1,0 +1,165 @@
+"""将 AgentTeams Case 的关键状态变化可靠回流到聊天会话。"""
+
+from __future__ import annotations
+
+import logging
+import uuid
+from datetime import UTC, datetime
+from typing import Any
+
+from sqlalchemy import select
+
+from omichub.application.services.agentteams_bridge_settings_service import (
+    AgentTeamsBridgeSettingsService,
+)
+from omichub.application.services.agentteams_case_tool_service import agentteams_next_actor
+from omichub.application.services.agentteams_service import AgentTeamsService
+from omichub.application.services.site_settings_service import SiteSettingsService
+from omichub.core.config import get_settings
+from omichub.infrastructure.cache.chat_case_pubsub import publish_chat_case_event
+from omichub.infrastructure.database.models.chat import ChatMessageModel, ChatSessionModel
+
+logger = logging.getLogger(__name__)
+
+WATCHED_STATUSES = frozenset(
+    {"approval_pending", "quality_blocked", "delivery_ready", "execution_failed", "cancelled"}
+)
+TERMINAL_STATUSES = frozenset({"closed", "cancelled"})
+
+
+class AgentTeamsCaseWatchService:
+    """按会话绑定扫描非终态 Case；读取失败不会影响其它会话。"""
+
+    def __init__(self, db: Any) -> None:
+        self._db = db
+
+    async def scan(self) -> dict[str, int]:
+        settings = get_settings()
+        if not (
+            settings.agentteams_chat_entry_enabled
+            or await SiteSettingsService(self._db).is_agentteams_chat_entry_enabled()
+        ):
+            return {"scanned": 0, "notified": 0, "failed": 0}
+
+        runtime = await AgentTeamsBridgeSettingsService(self._db, settings).get_runtime_config()
+        agentteams = AgentTeamsService(settings, runtime)
+        if not agentteams.available:
+            return {"scanned": 0, "notified": 0, "failed": 0}
+
+        sessions = list(
+            (
+                await self._db.scalars(
+                    select(ChatSessionModel).where(ChatSessionModel.sandbox_meta.is_not(None))
+                )
+            ).all()
+        )
+        scanned = notified = failed = 0
+        for session in sessions:
+            try:
+                result = await self._scan_session(session, agentteams)
+            except Exception as exc:  # noqa: BLE001
+                failed += 1
+                logger.warning("AgentTeams Case watch session failed for %s: %s", session.session_id, exc)
+                continue
+            scanned += result["scanned"]
+            notified += result["notified"]
+            failed += result["failed"]
+        await self._db.flush()
+        return {"scanned": scanned, "notified": notified, "failed": failed}
+
+    async def _scan_session(
+        self, session: ChatSessionModel, agentteams: AgentTeamsService
+    ) -> dict[str, int]:
+        meta = dict(session.sandbox_meta or {})
+        case_ids = [item for item in meta.get("agentteams_case_ids", []) if isinstance(item, str)]
+        statuses = dict(meta.get("agentteams_case_status") or {})
+        notifications = dict(meta.get("agentteams_case_notified") or {})
+        titles = dict(meta.get("agentteams_case_titles") or {})
+        changed = scanned = notified = failed = 0
+
+        for case_id in case_ids:
+            if statuses.get(case_id) in TERMINAL_STATUSES:
+                continue
+            scanned += 1
+            try:
+                case = await agentteams.get_case(case_id, requester_ref=session.user_id)
+            except Exception as exc:  # noqa: BLE001
+                failed += 1
+                logger.warning("AgentTeams Case watch read failed for %s: %s", case_id, exc)
+                continue
+            status = str(case.get("status") or "")
+            if not status:
+                continue
+            title = str(case.get("intent") or titles.get(case_id) or "协作 Case")[:80]
+            previous = str(statuses.get(case_id) or "")
+            statuses[case_id] = status
+            titles[case_id] = title
+            seen = {value for value in notifications.get(case_id, []) if isinstance(value, str)}
+            if status != previous and status in WATCHED_STATUSES and status not in seen:
+                event = await self._add_notification(session.session_id, case_id, title, status)
+                seen.add(status)
+                notifications[case_id] = sorted(seen)
+                try:
+                    await publish_chat_case_event(session.session_id, event)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("AgentTeams Case watch SSE publish failed for %s: %s", case_id, exc)
+                notified += 1
+            changed = changed or status != previous
+
+        if changed:
+            meta["agentteams_case_status"] = statuses
+            meta["agentteams_case_notified"] = notifications
+            meta["agentteams_case_titles"] = titles
+            session.sandbox_meta = meta
+            session.updated_at = datetime.now(UTC)
+        return {"scanned": scanned, "notified": notified, "failed": failed}
+
+    async def _add_notification(
+        self, session_id: str, case_id: str, title: str, status: str
+    ) -> dict[str, str]:
+        next_actor = agentteams_next_actor(status)
+        message_id = str(uuid.uuid4())
+        case_url = f"/agent-teams/cases/{case_id}"
+        self._db.add(
+            ChatMessageModel(
+                id=uuid.uuid4(),
+                message_id=message_id,
+                session_id=session_id,
+                role="system",
+                content=(
+                    f"协作 Case「{title}」已进入「{status}」，"
+                    f"下一步请由 {next_actor} 处理。"
+                ),
+                content_type="text",
+                status="complete",
+                metadata_json={
+                    "type": "agentteams_case",
+                    "phase": "status_changed",
+                    "case_id": case_id,
+                    "title": title,
+                    "status": status,
+                    "next_actor": next_actor,
+                    "case_url": case_url,
+                    "session_id": session_id,
+                    "message_id": message_id,
+                },
+            )
+        )
+        session = await self._db.scalar(
+            select(ChatSessionModel).where(ChatSessionModel.session_id == session_id)
+        )
+        if session is not None:
+            session.message_count += 1
+            session.last_message_at = datetime.now(UTC)
+            session.updated_at = datetime.now(UTC)
+        return {
+            "type": "agentteams_case",
+            "phase": "status_changed",
+            "case_id": case_id,
+            "title": title,
+            "status": status,
+            "next_actor": next_actor,
+            "case_url": case_url,
+            "session_id": session_id,
+            "message_id": message_id,
+        }

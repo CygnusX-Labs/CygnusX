@@ -24,7 +24,7 @@ const isAdmin = computed(() => authStore.user?.role === 'admin')
 const displayName = computed(() => authStore.user?.nickname || authStore.user?.username || '')
 
 // ===== 平台全局配置 =====
-const platformConfig = ref<SiteSettings>({ registration_enabled: true, totp_policy: 'optional', subagent_fanout_enabled: false })
+const platformConfig = ref<SiteSettings>({ registration_enabled: true, totp_policy: 'optional', subagent_fanout_enabled: false, agentteams_chat_entry_enabled: false })
 const platformLoading = ref(false)
 const platformPending = ref<Partial<SiteSettings> | null>(null)
 const platformTotpModalVisible = ref(false)
@@ -280,6 +280,11 @@ function onSubagentFanoutChange(value: boolean) {
   void patchPlatformDirect({ subagent_fanout_enabled: value })
 }
 
+function onAgentTeamsChatEntryChange(value: boolean) {
+  if (value === platformConfig.value.agentteams_chat_entry_enabled) return
+  void patchPlatformDirect({ agentteams_chat_entry_enabled: value })
+}
+
 function onTOTPPolicyChange(value: SiteSettings['totp_policy']) {
   if (value === platformConfig.value.totp_policy) return
   requestPlatformChange({ totp_policy: value })
@@ -411,6 +416,24 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
                   <NButton type="primary" :loading="savingPassword" @click="savePassword">修改密码</NButton>
                 </div>
               </NForm>
+            </NCard>
+
+            <NCard :bordered="false" class="arco-card settings-card">
+              <template #header>
+                <NSpace align="center">
+                  <span class="text-xl">🧩</span>
+                  <span>聊天协作 Case</span>
+                  <NTag size="small" type="warning">灰度</NTag>
+                </NSpace>
+              </template>
+              <p class="text-sm text-gray-500 mb-6">
+                开启后，聊天可在用户确认后创建 AgentTeams 协作 Case；仍受 Bridge 配置与流程白名单限制。
+              </p>
+              <NSwitch
+                :value="platformConfig.agentteams_chat_entry_enabled"
+                :loading="platformLoading"
+                @update:value="onAgentTeamsChatEntryChange"
+              />
             </NCard>
 
             <!-- 二次验证（TOTP 2FA） -->

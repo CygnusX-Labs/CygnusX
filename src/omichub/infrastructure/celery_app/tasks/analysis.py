@@ -7,7 +7,9 @@ from decimal import Decimal
 from uuid import UUID
 
 from celery import shared_task
+from loguru import logger
 
+from omichub.core.telemetry import get_tracer
 from omichub.domain.task.value_objects import LogLevel, TaskStatus
 from omichub.infrastructure.cache.pubsub import publish_task_log
 from omichub.infrastructure.execution.local import LocalSnakemakeExecutor
@@ -87,14 +89,32 @@ async def _execute_snakemake(
         )
 
         try:
-            executor = LocalSnakemakeExecutor()
-            result = await executor._execute(
-                snakefile=snakefile,
-                work_dir=work_dir,
-                cores=cores,
-                config_file=config_file,
-                config_file_param=config_file_param,
-            )
+            tracer = get_tracer("omichub.toolbox")
+            with tracer.start_as_current_span(
+                "toolbox.flow.run",
+                attributes={"toolbox.flow_id": task.flow_id, "toolbox.task_id": task_id},
+            ) as flow_span:
+                executor = LocalSnakemakeExecutor()
+                result = await executor._execute(
+                    snakefile=snakefile,
+                    work_dir=work_dir,
+                    cores=cores,
+                    config_file=config_file,
+                    config_file_param=config_file_param,
+                )
+                returncode = result.get("returncode")
+                if returncode is not None:
+                    flow_span.set_attribute("toolbox.returncode", returncode)
+                flow_span.set_attribute(
+                    "toolbox.status", "success" if result.get("status") == "success" else "failed"
+                )
+                logger.bind(
+                    event="toolbox.flow.run",
+                    flow_id=task.flow_id,
+                    task_id=task_id,
+                    returncode=returncode,
+                    status=result.get("status"),
+                ).info("toolbox.flow.run completed")
 
             # 记录 stdout / stderr 摘要
             for line in (result.get("stdout") or "").splitlines()[-200:]:

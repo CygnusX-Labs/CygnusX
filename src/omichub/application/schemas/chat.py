@@ -46,6 +46,10 @@ class ChatStreamRequest(BaseModel):
     )
     mcp_mode: Literal["off", "auto", "manual"] | None = None
     extra_mcp_servers: list[str] | None = Field(default=None)
+    multi_agent: bool | None = Field(
+        None,
+        description="是否启用当前会话的 multi-agent 协作运行时；未传时沿用会话设置",
+    )
     extend_max_rounds: bool = Field(
         False,
         description="工具调用轮次上限扩展：False=100 轮，True=1000 轮（用户确认继续后由前端置位）",
@@ -102,6 +106,7 @@ class ChatSessionDTO(BaseModel):
     last_message_at: datetime | None = None
     mcp_mode: Literal["off", "auto", "manual"] = "auto"
     extra_mcp_servers: list[str] = Field(default_factory=list)
+    multi_agent: bool = False
 
 
 class ChatAssistantDTO(BaseModel):

@@ -75,6 +75,23 @@ class SkillRollbackRequest(BaseModel):
     revision: int
 
 
+class SkillVersionDetailDTO(SkillVersionDTO):
+    """版本快照详情（含正文，供 diff 查看）"""
+
+    description: str = ""
+    prompt: str = ""
+    icon: str = ""
+    category: str = ""
+    frontmatter: dict[str, Any] | None = None
+
+
+class SkillReferenceDTO(BaseModel):
+    """引用某技能的助手（删除保护二次确认用）"""
+
+    agent_id: str
+    name: str
+
+
 # --- 导入层 DTO（Part A） ---
 
 
@@ -121,7 +138,7 @@ class JsonImportRequest(BaseModel):
 
 
 class SkillMarketplaceItemDTO(BaseModel):
-    """技能市场条目：随仓库发布的内置可安装技能"""
+    """技能市场条目：内置源（随仓库发布）+ 阿里云官方源（同步自 GitHub）"""
 
     skill_id: str
     name: str
@@ -132,6 +149,22 @@ class SkillMarketplaceItemDTO(BaseModel):
     author: str = ""
     has_scripts: bool = False
     installed: bool = False
+    # 市场来源分组：builtin（平台内置）/ aliyun_official（阿里云官方）
+    source: str = "builtin"
+    official: bool = False  # 官方标识 badge（阿里云官方源为 True）
+
+
+class AliyunMarketplaceStatusDTO(BaseModel):
+    """阿里云官方技能源同步状态（空态展示与同步控制用）"""
+
+    available: bool  # 本地缓存是否有可用条目
+    count: int = 0  # 缓存中的技能条目数
+    repo: str = ""  # 上游来源标识（AgentExplorer OpenAPI 或 GitHub owner/repo）
+    branch: str = ""  # API 区域或 GitHub 分支
+    commit: str = ""  # GitHub 缓存对应的上游 commit（短 sha）
+    last_synced_at: datetime | None = None
+    stale: bool = False  # 缓存是否过期（超过 TTL）
+    error: str = ""  # 最近一次同步失败的错误信息
 
 
 class SkillUpdateCheckDTO(BaseModel):
@@ -141,3 +174,36 @@ class SkillUpdateCheckDTO(BaseModel):
     latest_commit: str = ""
     source_ref: str = ""
     message: str = ""
+
+
+# --- 调用记录 DTO（Skill 调用可视化） ---
+
+
+class SkillInvocationDTO(BaseModel):
+    """单次技能调用记录（资源中心调用记录列表用）"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    skill_id: str
+    skill_name: str = ""
+    skill_version: str | None = None
+    source: str = ""
+    tool_name: str = "use_skill"
+    status: str = "completed"  # completed | failed
+    duration_ms: float | None = None
+    summary: str = ""
+    error: str = ""
+    session_id: UUID | None = None
+    message_id: UUID | None = None
+    user_id: UUID | None = None
+    created_at: datetime
+
+
+class SkillInvocationStatDTO(BaseModel):
+    """技能调用聚合统计（技能卡片"最近调用 · 累计 N 次"用）"""
+
+    skill_id: str
+    total: int = 0
+    last_invoked_at: datetime | None = None
+    last_status: str = ""

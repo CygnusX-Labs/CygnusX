@@ -8,6 +8,7 @@ import httpx
 
 from omichub.application.services.agentteams_bridge_settings_service import (
     AgentTeamsBridgeRuntimeConfig,
+    AgentTeamsBridgeSettingsService,
 )
 from omichub.core.config import Settings
 from omichub.core.exceptions import BusinessError
@@ -26,10 +27,7 @@ class AgentTeamsService:
 
     @property
     def available(self) -> bool:
-        return bool(
-            self._bridge_config.enabled
-            and self._bridge_config.configured
-        )
+        return bool(self._bridge_config.enabled and self._bridge_config.configured)
 
     async def is_connected(self) -> bool:
         """Return whether the configured Bridge is reachable right now."""
@@ -40,6 +38,59 @@ class AgentTeamsService:
         except BusinessError:
             return False
         return health.get("status") == "ok"
+
+    async def connection_status(self) -> dict[str, bool | str | None]:
+        """Expose configuration and liveness separately for the browser-facing status endpoint."""
+        enabled = self._bridge_config.enabled
+        configured = self._bridge_config.configured
+        connected = await self.is_connected() if enabled and configured else False
+        reason: str | None = None
+        if not enabled:
+            reason = "disabled"
+        elif not configured:
+            reason = "incomplete_configuration"
+        elif not connected:
+            reason = "bridge_unreachable"
+        return {
+            "available": connected,
+            "enabled": enabled,
+            "configured": configured,
+            "connected": connected,
+            "configuration_source": self._bridge_config.source,
+            "reason": reason,
+        }
+
+    async def chat_room(self, case_id: str | None, requester_ref: str) -> dict[str, bool | str | None]:
+        """Resolve the Element chat room, preferring the room bound to the given Case."""
+        if case_id:
+            case = await self.get_case(case_id, requester_ref)
+            room_url = str(case.get("element_room_url") or "").strip()
+            if room_url:
+                try:
+                    AgentTeamsBridgeSettingsService._validate_element_url(room_url)
+                except BusinessError:
+                    room_url = ""
+            if room_url:
+                return {
+                    "available": True,
+                    "element_url": room_url,
+                    "reason": None,
+                    "case_id": case_id,
+                    "source": "case",
+                }
+        config = self._bridge_config
+        try:
+            AgentTeamsBridgeSettingsService._validate_element_url(config.element_url)
+            available = bool(config.enabled and config.element_url)
+        except BusinessError:
+            available = False
+        return {
+            "available": available,
+            "element_url": config.element_url if available else "",
+            "reason": None if available else "not_configured",
+            "case_id": case_id,
+            "source": "global",
+        }
 
     async def list_cases(
         self,

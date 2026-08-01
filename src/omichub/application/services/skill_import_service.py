@@ -9,16 +9,20 @@ from __future__ import annotations
 import io
 import json
 import re
+import shutil
 import tarfile
 import uuid
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.skill import (
+    AliyunMarketplaceStatusDTO,
     SkillDTO,
     SkillImportPreviewDTO,
     SkillMarketplaceItemDTO,
@@ -37,6 +41,10 @@ from omichub.infrastructure.skills.skill_store import remove_skill_folder, write
 
 # zip 解压总量护栏（防 zip bomb 打爆内存；技能包本身上限 1MiB）
 MAX_ZIP_TOTAL_BYTES = 4 * 1024 * 1024
+# 阿里云官方源整仓同步总量护栏（官方 Skills 仓库为纯文本，远小于此）
+MAX_ALIYUN_SYNC_BYTES = 16 * 1024 * 1024
+# 提取规则变更时强制重新索引缓存，即使上游 commit 尚未变化。
+ALIYUN_SKILL_EXTRACTOR_VERSION = 2
 GITHUB_API = "https://api.github.com"
 GITHUB_HEADERS = {"User-Agent": "OmicHub-SkillImporter", "Accept": "application/vnd.github+json"}
 HTTP_TIMEOUT = 30.0
@@ -87,7 +95,30 @@ class SkillImportService:
     # ---------- 市场 ----------
 
     async def list_marketplace(self) -> list[SkillMarketplaceItemDTO]:
-        market_dir = Path(get_settings().skill_marketplace_dir)
+        """市场列表 = 平台内置源 + 阿里云官方源（本地同步缓存，列表不触网）"""
+        items: list[SkillMarketplaceItemDTO] = []
+        items.extend(await self._list_market_dir(Path(get_settings().skill_marketplace_dir)))
+        # AgentExplorer API 的目录元数据存于 manifest；历史 GitHub 缓存保留兼容读取。
+        aliyun_items = await self._list_aliyun_catalog()
+        if aliyun_items:
+            items.extend(aliyun_items)
+        else:
+            items.extend(
+                await self._list_market_dir(
+                    Path(get_settings().aliyun_skills_cache_dir),
+                    source="aliyun_official",
+                    official=True,
+                )
+            )
+        return items
+
+    async def _list_market_dir(
+        self,
+        market_dir: Path,
+        *,
+        source: str = "builtin",
+        official: bool = False,
+    ) -> list[SkillMarketplaceItemDTO]:
         items: list[SkillMarketplaceItemDTO] = []
         if market_dir.is_dir():
             for folder in sorted(market_dir.iterdir()):
@@ -111,6 +142,8 @@ class SkillImportService:
                         author=parsed.author,
                         has_scripts=parsed.has_scripts,
                         installed=await self._exists(folder.name),
+                        source=source,
+                        official=official,
                     )
                 )
         return items
@@ -129,6 +162,361 @@ class SkillImportService:
         )
         preview.skill_id = skill_id  # 文件夹名为规范键，保证 DB/磁盘/市场三处一致
         return await self.confirm_import(preview, overwrite=overwrite)
+
+    # ---------- 阿里云官方技能源（市场第二分组） ----------
+
+    async def aliyun_status(self) -> AliyunMarketplaceStatusDTO:
+        """官方源状态：本地缓存条目数 + 同步元数据 + 过期标记（不触网）"""
+        return self._build_aliyun_status()
+
+    async def sync_aliyun_marketplace(self, force: bool = False) -> AliyunMarketplaceStatusDTO:
+        """同步阿里云官方 Skills 目录到本地缓存。
+
+        - 配置 AccessKey 时走 AgentExplorer OpenAPI；否则回退 GitHub 仓库同步
+        - 上游 commit 未变且非强制：GitHub 回退源直接返回当前状态（幂等，可高频调用）
+        - 下载/解析成功后整体替换缓存文件夹 + 写 manifest（旧缓存只在成功后删除）
+        - 网络失败：保留旧缓存、记录 last_error，内置条目与已缓存条目不受影响
+        """
+        settings = get_settings()
+        if settings.aliyun_skills_access_key_id and settings.aliyun_skills_access_key_secret:
+            return await self._sync_agentexplorer_marketplace(force=force)
+        cache_dir = Path(settings.aliyun_skills_cache_dir)
+        try:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            return self._aliyun_cache_error_status(cache_dir, exc)
+        repo = settings.aliyun_skills_repo
+        branch = settings.aliyun_skills_branch
+        manifest_path = cache_dir / "manifest.json"
+        manifest = _read_json(manifest_path)
+
+        try:
+            owner, _, repo_name = repo.partition("/")
+            if not owner or not repo_name:
+                raise SkillParseError(f"配置 aliyun_skills_repo 非法: {repo}（应为 owner/repo）")
+            latest = await self._latest_commit(owner, repo_name, branch)
+            if not latest:
+                # 配置分支拉取失败：回落仓库默认分支（如 main → master）
+                fallback = await self._default_branch(owner, repo_name)
+                if fallback and fallback != branch:
+                    logger.info("官方源分支 {} 不可用，回落默认分支 {}", branch, fallback)
+                    branch = fallback
+                    latest = await self._latest_commit(owner, repo_name, branch)
+            if not latest:
+                raise SkillParseError("无法获取上游仓库最新 commit（网络不可达或仓库不存在）")
+            if (
+                manifest.get("commit") == latest
+                and manifest.get("extractor_version") == ALIYUN_SKILL_EXTRACTOR_VERSION
+                and not force
+            ):
+                return self._build_aliyun_status()  # 已是最新，跳过下载
+            tar_url = f"https://codeload.github.com/{repo}/tar.gz/refs/heads/{branch}"
+            async with httpx.AsyncClient(timeout=60.0, headers=GITHUB_HEADERS) as client:
+                resp = await client.get(tar_url)
+                if resp.status_code == 404:
+                    raise SkillParseError(f"仓库或分支不存在: {repo}@{branch}")
+                resp.raise_for_status()
+                blob = resp.content
+            skills = _extract_aliyun_skills(blob)
+            if not skills:
+                raise SkillParseError(f"仓库 {repo} 中未找到包含 SKILL.md 的技能目录")
+            # 成功后才整体替换缓存
+            for sub in cache_dir.iterdir():
+                if sub.is_dir():
+                    shutil.rmtree(sub, ignore_errors=True)
+            for folder_name, files in skills.items():
+                target = cache_dir / folder_name
+                target.mkdir(parents=True, exist_ok=True)
+                for rel, content in files.items():
+                    rel_path = Path(rel)
+                    if rel_path.is_absolute() or ".." in rel_path.parts:
+                        continue
+                    dest = target / rel_path
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(content)
+            _write_json(
+                manifest_path,
+                {
+                    "repo": repo,
+                    "branch": branch,
+                    "commit": latest,
+                    "synced_at": datetime.now(timezone.utc).isoformat(),
+                    "count": len(skills),
+                    "extractor_version": ALIYUN_SKILL_EXTRACTOR_VERSION,
+                },
+            )
+            logger.info(
+                "阿里云官方技能源同步完成: repo={} commit={} skills={}",
+                repo,
+                latest,
+                len(skills),
+            )
+        except (httpx.HTTPError, SkillParseError) as exc:
+            # 同步失败不清缓存：manifest 追加错误信息供前端空态展示
+            manifest["last_error"] = str(exc)
+            manifest["last_error_at"] = datetime.now(timezone.utc).isoformat()
+            manifest.setdefault("repo", repo)
+            manifest.setdefault("branch", branch)
+            _write_json(manifest_path, manifest)
+            logger.warning("阿里云官方技能源同步失败（保留旧缓存）: {}", exc)
+        return self._build_aliyun_status()
+
+    async def _sync_agentexplorer_marketplace(
+        self, *, force: bool
+    ) -> AliyunMarketplaceStatusDTO:
+        """使用 AgentExplorer SearchSkills API 分页同步官方目录元数据。"""
+        settings = get_settings()
+        cache_dir = Path(settings.aliyun_skills_cache_dir)
+        try:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            return self._aliyun_cache_error_status(cache_dir, exc)
+        manifest_path = cache_dir / "manifest.json"
+        manifest = _read_json(manifest_path)
+        try:
+            catalog = await self._search_agentexplorer_skills()
+            if not catalog:
+                raise SkillParseError("AgentExplorer 未返回任何官方 Skill")
+            _write_json(
+                manifest_path,
+                {
+                    "provider": "agentexplorer_api",
+                    "repo": "AgentExplorer OpenAPI",
+                    "branch": settings.aliyun_skills_region_id,
+                    "commit": "",
+                    "synced_at": datetime.now(timezone.utc).isoformat(),
+                    "count": len(catalog),
+                    "items": catalog,
+                },
+            )
+            logger.info("阿里云 AgentExplorer 官方目录同步完成: skills={}", len(catalog))
+        except Exception as exc:
+            manifest["last_error"] = str(exc)
+            manifest["last_error_at"] = datetime.now(timezone.utc).isoformat()
+            manifest.setdefault("provider", "agentexplorer_api")
+            manifest.setdefault("repo", "AgentExplorer OpenAPI")
+            manifest.setdefault("branch", settings.aliyun_skills_region_id)
+            _write_json(manifest_path, manifest)
+            logger.warning("阿里云 AgentExplorer 官方目录同步失败（保留旧缓存）: {}", exc)
+        return self._build_aliyun_status()
+
+    def _aliyun_cache_error_status(
+        self, cache_dir: Path, exc: OSError
+    ) -> AliyunMarketplaceStatusDTO:
+        """缓存卷不可写时返回可展示错误，避免同步接口因写 manifest 而变成 500。"""
+        settings = get_settings()
+        message = f"阿里云官方 Skill 缓存目录不可写: {cache_dir}（{exc.strerror or exc}）"
+        logger.error(message)
+        return AliyunMarketplaceStatusDTO(
+            available=False,
+            repo="AgentExplorer OpenAPI",
+            branch=settings.aliyun_skills_region_id,
+            stale=True,
+            error=message,
+        )
+
+    async def _list_aliyun_catalog(self) -> list[SkillMarketplaceItemDTO]:
+        manifest = _read_json(Path(get_settings().aliyun_skills_cache_dir) / "manifest.json")
+        if manifest.get("provider") != "agentexplorer_api":
+            return []
+        raw_items = manifest.get("items")
+        if not isinstance(raw_items, list):
+            return []
+        items: list[SkillMarketplaceItemDTO] = []
+        for raw in raw_items:
+            if not isinstance(raw, dict):
+                continue
+            skill_id = str(raw.get("skill_name") or "").strip()
+            if not skill_id:
+                continue
+            category = str(
+                raw.get("sub_category_name") or raw.get("category_name") or "general"
+            )
+            items.append(
+                SkillMarketplaceItemDTO(
+                    skill_id=skill_id,
+                    name=str(raw.get("display_name") or skill_id),
+                    description=str(raw.get("description") or ""),
+                    icon="☁️",
+                    category=category,
+                    version=str(raw.get("updated_at") or ""),
+                    author="阿里云官方",
+                    has_scripts=False,
+                    installed=await self._exists(skill_id),
+                    source="aliyun_official",
+                    official=True,
+                )
+            )
+        return items
+
+    async def install_aliyun(self, skill_id: str, overwrite: bool = False) -> SkillDTO:
+        """从官方源本地缓存安装技能，走统一的预览校验入库流程。"""
+        settings = get_settings()
+        cache_dir = Path(settings.aliyun_skills_cache_dir)
+        manifest = _read_json(cache_dir / "manifest.json")
+        if manifest.get("provider") == "agentexplorer_api":
+            return await self._install_agentexplorer_skill(
+                skill_id, manifest=manifest, overwrite=overwrite
+            )
+        folder = (cache_dir / skill_id).resolve()
+        if (
+            not str(folder).startswith(str(cache_dir.resolve()))
+            or not (folder / "SKILL.md").is_file()
+        ):
+            raise NotFoundError(f"阿里云官方技能 '{skill_id}' 不存在，请先同步官方源")
+        repo = manifest.get("repo") or settings.aliyun_skills_repo
+        branch = manifest.get("branch") or settings.aliyun_skills_branch
+        source_ref = f"https://github.com/{repo}/tree/{branch}/{skill_id}"
+        parsed = self._read_folder(folder)
+        preview = self._preview(
+            parsed,
+            source_type="aliyun_official",
+            source_ref=source_ref,
+            source_commit=manifest.get("commit") or "",
+        )
+        preview.skill_id = skill_id  # 缓存文件夹名为规范键
+        return await self.confirm_import(preview, overwrite=overwrite)
+
+    async def _install_agentexplorer_skill(
+        self, skill_id: str, *, manifest: dict, overwrite: bool
+    ) -> SkillDTO:
+        catalog = manifest.get("items")
+        item = (
+            next(
+                (
+                    value
+                    for value in catalog
+                    if isinstance(value, dict) and value.get("skill_name") == skill_id
+                ),
+                None,
+            )
+            if isinstance(catalog, list)
+            else None
+        )
+        if item is None:
+            raise NotFoundError(f"阿里云官方技能 '{skill_id}' 不存在，请先同步官方源")
+        content = await self._get_agentexplorer_skill_content(skill_id)
+        parsed = parse_skill_folder(
+            {"SKILL.md": content.encode("utf-8")},
+            source_type="aliyun_official",
+            source_ref=f"aliyun://agentexplorer/skills/{skill_id}",
+        )
+        preview = self._preview(
+            parsed,
+            source_type="aliyun_official",
+            source_ref=f"aliyun://agentexplorer/skills/{skill_id}",
+            source_commit=str(item.get("updated_at") or ""),
+        )
+        preview.skill_id = skill_id
+        return await self.confirm_import(preview, overwrite=overwrite)
+
+    def _agentexplorer_client(self):
+        """延迟加载官方 SDK，避免未启用官方源的部署承担导入成本。"""
+        settings = get_settings()
+        if not settings.aliyun_skills_access_key_id or not settings.aliyun_skills_access_key_secret:
+            raise SkillParseError(
+                "未配置阿里云 AccessKey：请设置 ALIYUN_SKILLS_ACCESS_KEY_ID 和 "
+                "ALIYUN_SKILLS_ACCESS_KEY_SECRET"
+            )
+        try:
+            from alibabacloud_agentexplorer20260317.client import Client
+            from alibabacloud_tea_openapi import utils_models as open_api_models
+        except ImportError as exc:
+            raise SkillParseError(
+                "未安装 AgentExplorer SDK，请安装 alibabacloud_agentexplorer20260317"
+            ) from exc
+        config = open_api_models.Config(
+            access_key_id=settings.aliyun_skills_access_key_id,
+            access_key_secret=settings.aliyun_skills_access_key_secret,
+            region_id=settings.aliyun_skills_region_id,
+        )
+        return Client(config)
+
+    async def _search_agentexplorer_skills(self) -> list[dict[str, str]]:
+        """调用 SearchSkills，持续使用 nextToken 直至取完官方目录。"""
+        try:
+            from alibabacloud_agentexplorer20260317 import models as agentexplorer_models
+        except ImportError as exc:
+            raise SkillParseError(
+                "未安装 AgentExplorer SDK，请安装 alibabacloud_agentexplorer20260317"
+            ) from exc
+        client = self._agentexplorer_client()
+        next_token: str | None = None
+        seen_tokens: set[str] = set()
+        catalog: list[dict[str, str]] = []
+        while True:
+            response = await client.search_skills_async(
+                agentexplorer_models.SearchSkillsRequest(max_results=100, next_token=next_token)
+            )
+            body = response.body
+            for skill in body.data or []:
+                skill_name = str(skill.skill_name or "").strip()
+                if not skill_name:
+                    continue
+                catalog.append(
+                    {
+                        "skill_name": skill_name,
+                        "display_name": str(skill.display_name or skill_name),
+                        "description": str(skill.description or ""),
+                        "category_name": str(skill.category_name or ""),
+                        "sub_category_name": str(skill.sub_category_name or ""),
+                        "updated_at": str(skill.updated_at or ""),
+                    }
+                )
+            next_token = str(body.next_token or "").strip() or None
+            if not next_token:
+                break
+            if next_token in seen_tokens:
+                raise SkillParseError("AgentExplorer 返回了重复的 nextToken，已停止分页以避免循环")
+            seen_tokens.add(next_token)
+        return catalog
+
+    async def _get_agentexplorer_skill_content(self, skill_id: str) -> str:
+        try:
+            from alibabacloud_agentexplorer20260317 import models as agentexplorer_models
+        except ImportError as exc:
+            raise SkillParseError(
+                "未安装 AgentExplorer SDK，请安装 alibabacloud_agentexplorer20260317"
+            ) from exc
+        response = await self._agentexplorer_client().get_skill_content_async(
+            skill_id, agentexplorer_models.GetSkillContentRequest()
+        )
+        content = str(response.body.content or "")
+        if not content.strip():
+            raise SkillParseError(f"阿里云官方技能 '{skill_id}' 未返回 SKILL.md 内容")
+        return content
+
+    def _build_aliyun_status(self) -> AliyunMarketplaceStatusDTO:
+        settings = get_settings()
+        cache_dir = Path(settings.aliyun_skills_cache_dir)
+        manifest = _read_json(cache_dir / "manifest.json") if cache_dir.is_dir() else {}
+        catalog = manifest.get("items")
+        count = (
+            len(catalog)
+            if manifest.get("provider") == "agentexplorer_api" and isinstance(catalog, list)
+            else sum(1 for p in cache_dir.glob("*/SKILL.md")) if cache_dir.is_dir() else 0
+        )
+        synced_at: datetime | None = None
+        raw_synced = manifest.get("synced_at")
+        if raw_synced:
+            try:
+                synced_at = datetime.fromisoformat(str(raw_synced))
+            except ValueError:
+                synced_at = None
+        stale = True
+        if synced_at is not None:
+            base = synced_at if synced_at.tzinfo else synced_at.replace(tzinfo=timezone.utc)
+            stale = (datetime.now(timezone.utc) - base).total_seconds() > settings.aliyun_skills_cache_ttl
+        return AliyunMarketplaceStatusDTO(
+            available=count > 0,
+            count=count,
+            repo=str(manifest.get("repo") or settings.aliyun_skills_repo),
+            branch=str(manifest.get("branch") or settings.aliyun_skills_branch),
+            commit=str(manifest.get("commit") or ""),
+            last_synced_at=synced_at,
+            stale=stale,
+            error=str(manifest.get("last_error") or ""),
+        )
 
     # ---------- 确认入库 ----------
 
@@ -202,7 +590,7 @@ class SkillImportService:
         if model is None:
             raise NotFoundError(f"技能 '{skill_id}' 不存在")
         current_commit = model.source_commit or ""
-        if model.source_type != "github" or not model.source_ref:
+        if model.source_type not in ("github", "aliyun_official") or not model.source_ref:
             return SkillUpdateCheckDTO(
                 has_update=False,
                 current_version=model.version or "",
@@ -210,6 +598,51 @@ class SkillImportService:
                 source_ref=model.source_ref or "",
                 message="该技能来源不支持自动检查更新",
             )
+        # 阿里云官方源：基于本地同步目录零网络比对版本。
+        if model.source_type == "aliyun_official":
+            manifest = _read_json(
+                Path(get_settings().aliyun_skills_cache_dir) / "manifest.json"
+            )
+            if manifest.get("provider") == "agentexplorer_api":
+                catalog = manifest.get("items")
+                item = next(
+                    (
+                        value
+                        for value in catalog
+                        if isinstance(value, dict) and value.get("skill_name") == skill_id
+                    ),
+                    None,
+                ) if isinstance(catalog, list) else None
+                latest = str(item.get("updated_at") or "") if item else ""
+                if latest:
+                    has_update = bool(current_commit) and latest != current_commit
+                    return SkillUpdateCheckDTO(
+                        has_update=has_update,
+                        current_version=model.version or "",
+                        current_commit=current_commit,
+                        latest_commit=latest,
+                        source_ref=model.source_ref or "",
+                        message=(
+                            "官方源有新版本，可在技能市场重新安装升级"
+                            if has_update
+                            else "已是最新（基于本地同步目录）"
+                        ),
+                    )
+            latest = str(manifest.get("commit") or "")
+            if latest:
+                has_update = bool(current_commit) and latest != current_commit
+                return SkillUpdateCheckDTO(
+                    has_update=has_update,
+                    current_version=model.version or "",
+                    current_commit=current_commit,
+                    latest_commit=latest[:12],
+                    source_ref=model.source_ref or "",
+                    message=(
+                        "官方源有新版本，可在技能市场重新安装升级"
+                        if has_update
+                        else "已是最新（基于本地同步缓存）"
+                    ),
+                )
         info = _parse_github_url(model.source_ref)
         if info is None:
             return SkillUpdateCheckDTO(
@@ -407,3 +840,88 @@ def _extract_tar_subdir(blob: bytes, subpath: str) -> dict[str, bytes]:
             if extracted is not None:
                 files[rel] = extracted.read()
     return files
+
+
+# ---------- 阿里云官方源同步辅助 ----------
+
+
+def _read_json(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _write_json(path: Path, obj: dict) -> None:
+    """原子写：先落临时文件再 rename，避免读到半截 manifest"""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
+def _extract_aliyun_skills(blob: bytes) -> dict[str, dict[str, bytes]]:
+    """扫描整仓 tar.gz，提取所有含 SKILL.md 的目录为技能文件夹。
+
+    返回 {技能文件夹名: {相对路径: 内容}}。不假定仓库布局：
+    支持任意嵌套层级的 <path>/<skill>/SKILL.md，不假定上游仓库目录布局。
+    同名文件夹冲突保留先出现者；单技能超 4MB 跳过；整仓超 16MB 报错。
+    """
+    with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tar:
+        root_prefix = ""
+        entries: list[tuple[str, tarfile.TarInfo]] = []
+        for member in tar.getmembers():
+            if not member.isfile():
+                continue
+            name = member.name
+            if ".." in name.split("/") or name.startswith("/"):
+                continue
+            if not root_prefix:
+                root_prefix = name.split("/", 1)[0] + "/"
+            rel = name[len(root_prefix):] if name.startswith(root_prefix) else name
+            if rel:
+                entries.append((rel, member))
+
+        skills: dict[str, dict[str, bytes]] = {}
+        total = 0
+        # 技能目录 = 含 SKILL.md 的目录（按出现顺序）
+        skill_dirs: list[str] = []
+        for rel, _ in entries:
+            parts = rel.split("/")
+            if parts[-1].lower() != "skill.md" or not parts[:-1]:
+                continue
+            prefix = "/".join(parts[:-1])
+            if prefix not in skill_dirs:
+                skill_dirs.append(prefix)
+        for prefix in skill_dirs:
+            folder_name = prefix.rsplit("/", 1)[-1]
+            if folder_name in skills:
+                continue  # 同名冲突：保留先出现者
+            dir_prefix = prefix + "/"
+            files: dict[str, bytes] = {}
+            folder_total = 0
+            oversized = False
+            for rel, member in entries:
+                if not rel.startswith(dir_prefix):
+                    continue
+                sub = rel[len(dir_prefix):]
+                if not sub:
+                    continue
+                folder_total += member.size
+                if folder_total > MAX_ZIP_TOTAL_BYTES:
+                    oversized = True
+                    break
+                total += member.size
+                if total > MAX_ALIYUN_SYNC_BYTES:
+                    raise SkillParseError(
+                        f"官方源仓库超过 {MAX_ALIYUN_SYNC_BYTES // 1024 // 1024}MB 同步上限"
+                    )
+                extracted = tar.extractfile(member)
+                if extracted is not None:
+                    files[sub] = extracted.read()
+            if oversized:
+                logger.warning("官方源技能 {} 超过单技能 4MB 上限，已跳过", folder_name)
+                continue
+            if files.get("SKILL.md"):
+                skills[folder_name] = files
+        return skills

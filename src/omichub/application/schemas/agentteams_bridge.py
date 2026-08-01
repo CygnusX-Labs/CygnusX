@@ -11,6 +11,7 @@ class AgentTeamsBridgeConfigDTO(BaseModel):
     data_steward_token: str
     approval_token: str
     workflow_operator_token: str
+    element_url: str
     source: str
     configured: bool
     connected: bool = False
@@ -24,3 +25,4 @@ class AgentTeamsBridgeConfigUpdateDTO(BaseModel):
     data_steward_token: str = Field(default="", max_length=4096)
     approval_token: str = Field(default="", max_length=4096)
     workflow_operator_token: str = Field(default="", max_length=4096)
+    element_url: str = Field(default="", max_length=1024)

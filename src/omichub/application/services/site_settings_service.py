@@ -120,6 +120,7 @@ class SiteSettingsService:
             totp_policy=cast(TOTPPolicy, policy),
             home_quick_entries=_normalize_home_quick_entries(model.home_quick_entries),
             subagent_fanout_enabled=model.subagent_fanout_enabled,
+            agentteams_chat_entry_enabled=model.agentteams_chat_entry_enabled,
         )
 
     async def is_registration_enabled(self) -> bool:
@@ -130,6 +131,10 @@ class SiteSettingsService:
         """管理端平台设置中的 fan-out 开关（与 env 开关任一为真即启用）。"""
         model = await self._get_or_create()
         return model.subagent_fanout_enabled
+
+    async def is_agentteams_chat_entry_enabled(self) -> bool:
+        model = await self._get_or_create()
+        return model.agentteams_chat_entry_enabled
 
     async def get_totp_policy(self) -> TOTPPolicy:
         model = await self._get_or_create()
@@ -147,6 +152,8 @@ class SiteSettingsService:
                 model.totp_policy = req.totp_policy
             if req.subagent_fanout_enabled is not None:
                 model.subagent_fanout_enabled = req.subagent_fanout_enabled
+            if req.agentteams_chat_entry_enabled is not None:
+                model.agentteams_chat_entry_enabled = req.agentteams_chat_entry_enabled
             if req.home_quick_entries is not None:
                 model.home_quick_entries = [entry.model_dump() for entry in req.home_quick_entries]
             await self._db.flush()

@@ -29,6 +29,7 @@ class AgentTeamsBridgeRuntimeConfig:
     approval_token: str
     workflow_operator_token: str
     timeout_seconds: float
+    element_url: str
     source: str
 
     @classmethod
@@ -41,6 +42,7 @@ class AgentTeamsBridgeRuntimeConfig:
             approval_token=settings.agentteams_bridge_approval_token,
             workflow_operator_token=settings.agentteams_bridge_workflow_operator_token,
             timeout_seconds=settings.agentteams_bridge_timeout_seconds,
+            element_url=settings.agentteams_element_url,
             source="environment",
         )
 
@@ -66,7 +68,7 @@ class AgentTeamsBridgeSettingsService:
 
     async def get_runtime_config(self) -> AgentTeamsBridgeRuntimeConfig:
         model = await self._db.get(AgentTeamsBridgeSettingsModel, self._SINGLETON_ID)
-        if model is None:
+        if model is None or self._is_empty_initial_model(model):
             return AgentTeamsBridgeRuntimeConfig.from_settings(self._settings)
         return self._runtime_from_model(model)
 
@@ -88,13 +90,18 @@ class AgentTeamsBridgeSettingsService:
                 enabled=request.enabled,
                 bridge_url=request.bridge_url.strip(),
                 manager_token=self._resolve_secret(request.manager_token, existing.manager_token),
-                data_steward_token=self._resolve_secret(request.data_steward_token, existing.data_steward_token),
-                approval_token=self._resolve_secret(request.approval_token, existing.approval_token),
+                data_steward_token=self._resolve_secret(
+                    request.data_steward_token, existing.data_steward_token
+                ),
+                approval_token=self._resolve_secret(
+                    request.approval_token, existing.approval_token
+                ),
                 workflow_operator_token=self._resolve_secret(
                     request.workflow_operator_token,
                     existing.workflow_operator_token,
                 ),
                 timeout_seconds=request.timeout_seconds,
+                element_url=request.element_url.strip(),
                 source="database",
             )
             self._validate(runtime)
@@ -108,6 +115,7 @@ class AgentTeamsBridgeSettingsService:
             model.approval_token = encrypt_value(runtime.approval_token)
             model.workflow_operator_token = encrypt_value(runtime.workflow_operator_token)
             model.timeout_seconds = runtime.timeout_seconds
+            model.element_url = runtime.element_url
             await self._db.flush()
             return self._to_dto(runtime)
         except SQLAlchemyError as exc:
@@ -120,7 +128,26 @@ class AgentTeamsBridgeSettingsService:
         return existing if not normalized or normalized == MASKED_SECRET else normalized
 
     @staticmethod
+    def _is_empty_initial_model(model: AgentTeamsBridgeSettingsModel) -> bool:
+        """Treat an all-default legacy/admin placeholder row as absent.
+
+        A user can intentionally disable a configured Bridge: that row retains its URL and
+        encrypted identities and must continue to override environment settings. Only a fully
+        blank, disabled row is safe to treat as an unconfigured placeholder.
+        """
+        return bool(
+            not model.enabled
+            and not (model.bridge_url or "").strip()
+            and not model.manager_token
+            and not model.data_steward_token
+            and not model.approval_token
+            and not model.workflow_operator_token
+            and not (model.element_url or "").strip()
+        )
+
+    @staticmethod
     def _validate(config: AgentTeamsBridgeRuntimeConfig) -> None:
+        AgentTeamsBridgeSettingsService._validate_element_url(config.element_url)
         if not config.enabled:
             return
         parsed = urlparse(config.bridge_url)
@@ -128,6 +155,17 @@ class AgentTeamsBridgeSettingsService:
             raise BusinessError("Bridge 地址必须是完整的 http 或 https 地址")
         if not config.configured:
             raise BusinessError("启用 AgentTeams 前必须配置四个 Worker 身份令牌")
+
+    @staticmethod
+    def _validate_element_url(value: str) -> None:
+        if not value:
+            return
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise BusinessError("Element 聊天室地址必须是完整的 http 或 https 地址")
+        lowered_url = value.lower()
+        if any(key in lowered_url for key in ("access_token", "login_token", "password")):
+            raise BusinessError("Element 聊天室地址不能包含访问令牌或密码")
 
     @staticmethod
     def _runtime_from_model(model: AgentTeamsBridgeSettingsModel) -> AgentTeamsBridgeRuntimeConfig:
@@ -139,6 +177,7 @@ class AgentTeamsBridgeSettingsService:
             approval_token=decrypt_value(model.approval_token),
             workflow_operator_token=decrypt_value(model.workflow_operator_token),
             timeout_seconds=model.timeout_seconds,
+            element_url=(model.element_url or "").strip(),
             source="database",
         )
 
@@ -152,6 +191,7 @@ class AgentTeamsBridgeSettingsService:
             data_steward_token=MASKED_SECRET if config.data_steward_token else "",
             approval_token=MASKED_SECRET if config.approval_token else "",
             workflow_operator_token=MASKED_SECRET if config.workflow_operator_token else "",
+            element_url=config.element_url,
             source=config.source,
             configured=config.configured,
         )

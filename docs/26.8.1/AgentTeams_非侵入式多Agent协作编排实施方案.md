@@ -1,6 +1,6 @@
 # AgentTeams 非侵入式多 Agent 协作编排实施方案
 
-> **文档状态**：实施中（Bridge、OmicHub 代理、AI 资源中心配置与协作中心代码已落地；受控 Agent Gateway 与真实 AgentTeams/HiClaw 控制面待完成）
+> **文档状态**：实施中（Bridge、OmicHub 代理、AI 资源中心配置、协作中心与受控 Agent Gateway 代码已落地；真实 AgentTeams/HiClaw 控制面及 Gateway 对 OmicHub 专业 Agent 受控端点的联调待完成）
 > **创建日期**：2026-07-30
 > **适用目标**：以 AgentTeams 替换“谁来组织多个 Agent 协作”的外层控制面；不替换 OmicHub 的既有聊天、任务、流程、数据、权限与执行逻辑。
 > **推荐落地方式**：AgentTeams 独立部署 + OmicHub Bridge（适配服务）+ OmicHub 既有 API/MCP 能力。
@@ -23,7 +23,7 @@
 
 本轮新增的 AI 资源中心配置能力已通过前端 `vue-tsc --noEmit` 与生产构建、相关 Ruff 检查、`AgentTeamsBridgeSettingsService` 与 `AgentTeamsService` 的 14 项聚焦测试；Alembic 迁移已合并为唯一 head `q5r6s7t8u9v0`。这证明配置持久化、环境变量回退、凭证脱敏与启用校验可用，但不证明真实外部 Controller/Worker 或专业 Agent Gateway 已部署。
 
-尚未宣称上线的内容：真实 AgentTeams/HiClaw Controller、Matrix、MinIO、Higress 资源尚需按目标版本官方 Schema 在独立环境部署，并注入生产凭证后做真实跨服务演示；**AgentTeams 尚未通过受控 Gateway 调用现有 `agent-rnaseq`、`agent-scrna`、`agent-viz` 等专业 Agent**。当前闭环只调用确定性的预检/流程/任务 API。OmicHub 的 Celery、Snakemake、MAS DAG、ChatService 与领域数据保持不变。
+尚未宣称上线的内容：真实 AgentTeams/HiClaw Controller、Matrix、MinIO、Higress 资源尚需按目标版本官方 Schema 在独立环境部署，并注入生产凭证后做真实跨服务演示；受控 Gateway 已实现 `scientific-interpretation` REST 契约、专业 Agent/只读工具白名单、固定输出 Schema、成本护栏和 JSONL 审计，但 **尚未与 OmicHub 专业 Agent 的受控咨询端点完成真实联调**。当前闭环只调用确定性的预检/流程/任务 API。OmicHub 的 Celery、Snakemake、MAS DAG、ChatService 与领域数据保持不变。
 
 本机开发环境已启动独立 Bridge，并通过 OmicHub 浏览器代理回读真实 Case：一条缺少样本表的预检进入 `preflight_blocked`，一条完整样本表预检进入 `approval_pending`；另已验证从 OmicHub 创建 API 自动分派 Data Steward 并完成完整样本表预检。对阻断 Case 调用受控提交 API 会明确返回拒绝，且未创建计算任务。所有这些验证均未提交计算任务。该验证只证明 OmicHub → Bridge 的 Case/预检/审批提交门禁链路已接通，不等同于真实 AgentTeams/HiClaw Controller、Matrix、MinIO 或 Higress 已部署，也不替代生产服务令牌、人工审批和真实 Worker 的联调验收。
 
@@ -266,7 +266,7 @@ AgentTeams Manager
            └─ 结构化科学解读、建议与证据引用
 ```
 
-当前阶段只实现第一条确定性执行链路；第二条“Manager → Gateway → 现有专业 Agent”是最终目标，尚未实现。Gateway 应先以只读 `scientific-interpretation` Skill 落地：它允许 Manager 请求专业摘要，但禁止专业 Agent 自行提交任务、修改样本表、写入用户文件或再次编排同一 Case。这样既复用现有知识与会话能力，又避免两个编排器对同一任务独立拆解。
+当前阶段已完成第二条链路的 Gateway 侧代码实现：只读 `scientific-interpretation` Skill 允许 Manager 请求专业摘要，同时禁止专业 Agent 自行提交任务、修改样本表、写入用户文件或再次编排同一 Case。Gateway 对 OmicHub 专业 Agent 受控咨询端点的真实联调仍待完成；在此之前不得将该链路宣称为已部署或已上线。这样既复用现有知识与会话能力，又避免两个编排器对同一任务独立拆解。
 
 ---
 
@@ -379,7 +379,7 @@ Worker 输出：
 | `workflow-cancel` | task ID、原因、审批凭证 | 取消回执 | 高风险/异常或人工终止 | 幂等；保存取消原因 | 仅特定角色 |
 | `quality-gate` | task ID、产物引用、规则版本 | 通过/警告/阻断、证据 | 任务完成或关键阶段结束 | 规则缺失则 `manual_review` | 只读 |
 | `delivery-pack` | case、任务与质量结论 | manifest、报告索引、复盘草稿 | 质量通过或人工豁免 | 缺产物时阻断交付 | 只写证据包 |
-| `scientific-interpretation`（待实现） | Case 摘要、问题、已授权任务/产物引用、目标专业角色 | 固定 Schema 的结论、建议、证据引用、风险项 | Manager 需要专业规划、结果解释或 QC 建议 | 返回 `manual_review`，不降级为自动执行 | Gateway 白名单、只读、无任务提交权限；单次调用超时 + 每 Case 调用次数与 token 成本上限 |
+| `scientific-interpretation`（Gateway 代码已实现，专业端点联调待完成） | Case 摘要、问题、已授权任务/产物引用、目标专业角色 | 固定 Schema 的结论、建议、证据引用、风险项 | Manager 需要专业规划、结果解释或 QC 建议 | 返回 `manual_review`，不降级为自动执行 | Gateway 白名单、只读、无任务提交权限；单次调用超时 + 每 Case 调用次数与 token 成本上限 |
 | `runbook-capture` | 异常/恢复结果 | 去标识化经验条目 | case 关闭 | 审核后发布 | 禁止写密钥/PII |
 
 ### 7.3 Bridge 的最小 API
@@ -1085,7 +1085,8 @@ npm --prefix frontend run build
 - [x] **契约证据**：相同 `idempotency_key` 的重复提交只创建一次 OmicHub task；
 - [x] **代理/运行证据**：用户创建 Case 后，OmicHub 后端以独立 Data Steward 身份自动分派并执行只读预检；预检通过的 Case 才显示人工确认入口，确认后的审批令牌和 Workflow Operator 凭证均只保留在服务端；Bridge 保存的预检输入快照不会返回浏览器，后续提交若改变流程、样本表或分组对比会被拒绝；
 - [x] **界面/配置证据**：协作对话可整理并创建真实 Case，Case 详情以审批卡片展示执行范围并要求二次确认；AI 资源中心可由管理员以 TOTP 配置 Bridge，令牌加密保存且读取脱敏；
-- [ ] **Gateway 验收待执行**：实现 `scientific-interpretation` Skill 与受控 Agent Gateway，使 Manager 可按白名单调用现有 `agent-rnaseq`、`agent-scrna`、`agent-viz` 等专业 Agent，并验证其只返回结构化解读/建议/证据，不能提交或取消任务；
+- [x] **Gateway 代码与定向契约验证完成（2026-08-01）**：已实现 `scientific-interpretation` Skill 与独立受控 Agent Gateway；覆盖白名单、只读工具拦截、固定 Schema、超时/次数/token 护栏及 `agent.consultation` JSONL 审计的定向测试。
+- [ ] **Gateway 端到端验收待执行**：在真实受控咨询端点与 AgentTeams Manager 环境中，按白名单调用现有 `agent-rnaseq`、`agent-scrna`、`agent-viz` 等专业 Agent，并验证其只返回结构化解读/建议/证据，不能提交或取消任务；
 - [ ] **部署验收待执行**：以真实 AgentTeams Worker/Matrix 房间运行上述三角色演示。
 
 ### 15.3 安全与证据验收

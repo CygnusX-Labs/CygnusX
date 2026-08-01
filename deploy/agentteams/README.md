@@ -28,6 +28,18 @@ volume, or workflow-directory access. The external `omichub_bridge_gateway` is a
 gateway network: expose only the OmicHub API gateway on it, never the database, Redis, or
 Worker services. The `agentteams_control` network remains internal to AgentTeams services.
 
+## Element collaboration room in OmicHub AI
+
+After Matrix and Element Web are deployed and a user-accessible collaboration room exists,
+configure its **public room URL** in `AGENTTEAMS_ELEMENT_URL` or in the administrator UI at
+**Settings → AgentTeams Bridge → Element collaboration room URL**. Users can then select
+**协作聊天室** from the existing OmicHub AI assistant page to open the Element room in a drawer;
+the drawer also provides a new-window fallback for deployments that deny iframe embedding.
+
+Do not place a Matrix password, access token, login token, or invite-secret URL in this field.
+Element remains responsible for authentication, room membership, and message authorization;
+OmicHub only exposes the configured public room URL to authenticated OmicHub users.
+
 ## AgentTeams wiring
 
 - Team identities: `integrations/agentteams/teams/bioops-delivery.yaml`

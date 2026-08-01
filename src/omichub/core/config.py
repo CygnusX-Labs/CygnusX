@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     # ===== 对话内子 Agent 并行 fan-out（默认关闭，按 Agent 白名单灰度）=====
     # 设计见 ARCHITECTURE_DESIN/multi-agent.md §4
     subagent_fanout_enabled: bool = False
+    agentteams_chat_entry_enabled: bool = False
+    agentteams_element_url: str = ""
+    agentteams_chat_flow_whitelist: str = "rna_seq,atac_seq"
+    agentteams_case_watch_interval_seconds: int = 60
     subagent_max_parallel: int = 4  # 单次 fan-out 最大子任务数
     subagent_max_concurrent: int = 3  # 实际并发信号量（给主链路 LLM 调用留余量）
     subagent_child_timeout_seconds: int = 180  # 单个子任务墙钟上限
@@ -148,6 +152,17 @@ class Settings(BaseSettings):
     skill_marketplace_dir: str = (
         "data/ai/skill_marketplace"  # 内置技能市场：随仓库发布的可安装技能文件夹
     )
+    # ===== 阿里云官方技能源（市场第二分组）=====
+    # 配置 AccessKey 后通过 AgentExplorer OpenAPI 同步目录，安装时按需拉取 SKILL.md；
+    # 未配置时保留 GitHub 仓库同步作为兼容回退。网络不可达时内置条目不受影响。
+    aliyun_skills_access_key_id: str = ""
+    aliyun_skills_access_key_secret: str = ""
+    aliyun_skills_region_id: str = "cn-hangzhou"
+    aliyun_skills_repo: str = "aliyun/alibabacloud-aiops-skills"  # owner/repo
+    aliyun_skills_branch: str = "master"  # 该仓库默认分支为 master；配置分支拉取失败时自动回落默认分支
+    # 缓存是运行时同步产物，不能放在容器内只读挂载的 data/ 资源目录。
+    aliyun_skills_cache_dir: str = "/data/omichub/skill_marketplace_aliyun"
+    aliyun_skills_cache_ttl: int = 86400  # 缓存有效期（秒），超过视为过期，前端可触发重新同步
     runtime_images_yaml: str = "data/ai/runtime_images.yaml"
     # JBrowse 2 基因组浏览器外置配置：参考基因组 / 预设轨道 / 扫描与上传策略。
     # 改文件后调用 POST /api/v1/jbrowse/config/reload 即时生效（或等配置加载器 mtime 热重载）。
@@ -289,6 +304,50 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_max: int = 100  # 窗口内最大请求数
     rate_limit_window: int = 60  # 窗口秒数
+
+    # ===== 可观测性（OpenTelemetry：Trace / Log 关联 / Metrics）=====
+    # 总开关；关闭后所有埋点退化为 noop，不产生任何导出开销。
+    telemetry_enabled: bool = True
+    # OTLP gRPC 导出端点（如 http://otel-collector:4317）。为空时 traces 不导出
+    # （debug 下打印到控制台），metrics 仍经 Prometheus /metrics 暴露。
+    otel_exporter_endpoint: str = ""
+    # 服务名覆盖；为空时按入口（web/worker/beat）自动取值。
+    otel_service_name: str = ""
+    # 是否在 /metrics 暴露 Prometheus 指标。
+    metrics_enabled: bool = True
+    # 是否将 span 持久化到应用内 JSONL（omichub.spans.json.log），供管理端 Trace 瀑布图查询。
+    span_store_enabled: bool = True
+    # span 存储文件单个大小上限（MB），超过后轮转，避免无限增长。
+    span_store_max_mb: int = 50
+
+    # ===== AI 指标应用内持久化（Metrics 仪表盘 + 告警数据源）=====
+    # 总开关；关闭后 AI 调用不再落 ai_call_metrics 表（OTel 指标不受影响）。
+    ai_metrics_enabled: bool = True
+    # 内存缓冲上限（条）；写库在后台线程批量进行，缓冲满时丢弃最旧记录而非阻塞调用链。
+    ai_metrics_buffer_size: int = 10000
+    # 后台刷写间隔（秒）。
+    ai_metrics_flush_interval: int = 5
+
+    # ===== AI 告警（C4：错误率 / p95 延迟 / 日成本，超阈值推送平台通知）=====
+    ai_alert_enabled: bool = True
+    # 错误率阈值（0-1）；在窗口内超过则告警。
+    ai_alert_error_rate: float = 0.05
+    # 错误率统计窗口（分钟）。
+    ai_alert_error_rate_window_minutes: int = 5
+    # p95 延迟阈值（毫秒）。
+    ai_alert_p95_latency_ms: float = 10000.0
+    # 日成本超过近 7 日均值的倍数（如 1.5 = 150%）则告警。
+    ai_alert_cost_ratio: float = 1.5
+    # 同一规则告警冷却（分钟），避免持续超阈值时通知轰炸。
+    ai_alert_cooldown_minutes: int = 30
+
+    # ===== 可观测性数据留存（C6：热数据 / 冷数据周期）=====
+    # 总开关；关闭后不做任何日志/span 归档清理。
+    log_retention_enabled: bool = True
+    # 热数据保留天数（活动文件与近期轮转文件，供在线快速排查）。
+    log_retention_hot_days: int = 7
+    # 冷数据保留天数；超过该天数的轮转归档（.log.N / .zip）会被定时任务删除。
+    log_retention_cold_days: int = 90
 
     # ===== OmicStudio AI 分析工作台 =====
     # 功能配置 YAML（仓库内源码管控）；改文件后由加载器 mtime 热重载。

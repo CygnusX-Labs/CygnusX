@@ -8,11 +8,14 @@ Docker Worker 通过 OMICHUB_CELERY_LOG_DIR 覆盖到 /data/omichub/logs/celery/
 """
 
 import os
+import time
 from contextlib import suppress
 from pathlib import Path
 
 from celery import Task
 from loguru import logger
+
+from omichub.core.telemetry import get_tracer
 
 TASK_LOG_DIR = Path(
     os.getenv(
@@ -57,10 +60,33 @@ class LoggedTask(Task):
     def __call__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         task_id = self.request.id or "no-id"
         handler_id = _add_task_file_sink(task_id)
+        tracer = get_tracer("omichub.celery")
 
         try:
-            logger.info(f"Task {task_id} started: {self.name}")
-            return self.run(*args, **kwargs)
+            with tracer.start_as_current_span(
+                "celery.task",
+                attributes={"task.name": self.name or "", "task.id": task_id},
+            ) as span:
+                start = time.perf_counter()
+                status = "success"
+                try:
+                    logger.info(f"Task {task_id} started: {self.name}")
+                    return self.run(*args, **kwargs)
+                except Exception as exc:  # noqa: BLE001
+                    status = "error"
+                    span.record_exception(exc)
+                    raise
+                finally:
+                    duration_ms = (time.perf_counter() - start) * 1000
+                    span.set_attribute("task.status", status)
+                    span.set_attribute("task.duration_ms", round(duration_ms, 2))
+                    logger.bind(
+                        event="celery.task",
+                        task_name=self.name,
+                        task_id=task_id,
+                        status=status,
+                        duration_ms=round(duration_ms, 2),
+                    ).info("celery.task completed")
         finally:
             logger.info(f"Task {task_id} finished: {self.name}")
             if handler_id is not None:

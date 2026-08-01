@@ -22,6 +22,8 @@ from omichub.application.schemas.agent import (
     CreateAgentRequest,
     UpdateAgentRequest,
 )
+from omichub.application.services.site_settings_service import SiteSettingsService
+from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError, NotFoundError
 from omichub.domain.mcp.entities import MCPServer, MCPToolRegistry
 from omichub.domain.mcp.value_objects import ServerStatus, Transport
@@ -41,6 +43,19 @@ from omichub.infrastructure.mcp.presets import (
     get_preset_by_name,
 )
 from omichub.tools.schema_loader import schema_loader
+
+
+AGENTTEAMS_CASE_SYSTEM_PROMPT_SUFFIX = """## AgentTeams 协作 Case
+
+你可以使用 `create_agentteams_case` 创建 AgentTeams 协作 Case。它适用于需要跨角色协作、
+人工审批、长耗时流程执行、质量闸门或正式交付验收的任务。
+
+- 普通问答、参数解释、一次性小任务和轻量并行任务不要创建 Case。
+- 目标、项目、流程或交付物不明确时先澄清；不得默认创建 Case。
+- 仅当用户已明确同意创建后才调用该工具；工具会展示确认卡，用户确认后再以原参数
+  携带 `_confirmed: true` 调用。
+- 创建成功后告知用户打开协作 Case，继续完成预检、审批和交付验收。
+"""
 
 
 def _generate_agent_id(name: str) -> str:
@@ -552,6 +567,10 @@ class AgentService:
                     for tool in builtin_tools
                     if tool.get("function", {}).get("name") in allowed_builtin_names
                 ]
+            builtin_tools = self._filter_runtime_builtin_tools(
+                builtin_tools,
+                agentteams_chat_entry_enabled=await self._agentteams_chat_entry_enabled(),
+            )
             tools.extend(builtin_tools)
 
         # 3. 系统提示词 = Agent 设定 + 技能 L1 索引 + omichub-tools 清单。
@@ -568,9 +587,20 @@ class AgentService:
 
             tools.extend(build_skill_tools(skills))
         if omichub_tools_server and (omichub_selected or not mcp_uuids):
-            tool_hint = schema_loader.build_system_hint()
+            tool_hint = schema_loader.build_system_hint(
+                {
+                    str(tool.get("function", {}).get("name") or "")
+                    for tool in builtin_tools
+                }
+            )
             if tool_hint:
                 system_prompt = f"{system_prompt}\n\n{tool_hint}" if system_prompt else tool_hint
+        if self._has_builtin_tool(builtin_tools, "create_agentteams_case"):
+            system_prompt = (
+                f"{system_prompt}\n\n{AGENTTEAMS_CASE_SYSTEM_PROMPT_SUFFIX}"
+                if system_prompt
+                else AGENTTEAMS_CASE_SYSTEM_PROMPT_SUFFIX
+            )
         if any(server.id == OMICHUB_PLATFORM_SERVER_ID for server in mcp_servers):
             system_prompt = (
                 f"{system_prompt}\n\n{WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX}"
@@ -589,6 +619,29 @@ class AgentService:
             temperature=agent.temperature,
             max_tokens=agent.max_tokens,
         )
+
+    async def _agentteams_chat_entry_enabled(self) -> bool:
+        settings = get_settings()
+        return (
+            settings.agentteams_chat_entry_enabled
+            or await SiteSettingsService(self._db).is_agentteams_chat_entry_enabled()
+        )
+
+    @staticmethod
+    def _filter_runtime_builtin_tools(
+        tools: list[dict[str, Any]], *, agentteams_chat_entry_enabled: bool
+    ) -> list[dict[str, Any]]:
+        if agentteams_chat_entry_enabled:
+            return tools
+        return [
+            tool
+            for tool in tools
+            if tool.get("function", {}).get("name") != "create_agentteams_case"
+        ]
+
+    @staticmethod
+    def _has_builtin_tool(tools: list[dict[str, Any]], tool_name: str) -> bool:
+        return any(tool.get("function", {}).get("name") == tool_name for tool in tools)
 
     async def _resolve_model(self, model_id: uuid.UUID | None) -> AIProviderConfigModel | None:
         """严格按 Agent 绑定的 model_id 解析模型，避免 fallback 导致调用与设置不一致。"""

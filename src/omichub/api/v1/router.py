@@ -3,8 +3,8 @@
 from fastapi import APIRouter
 
 from omichub.api.v1 import (
-    agentteams,
     agents,
+    agentteams,
     ai,
     announcements,
     auth,
@@ -38,13 +38,15 @@ from omichub.api.v1 import (
 )
 from omichub.api.v1.admin import admin_cookies
 from omichub.api.v1.admin import agents as admin_agents
-from omichub.api.v1.admin import ai_providers as admin_ai_providers
-from omichub.api.v1.admin import search_providers as admin_search_providers
-from omichub.api.v1.admin import assistants as admin_assistants
-from omichub.api.v1.admin import knowledge_bases as admin_knowledge_bases
-from omichub.api.v1.admin import festival as admin_festival
 from omichub.api.v1.admin import agentteams_bridge as admin_agentteams_bridge
+from omichub.api.v1.admin import ai_metrics as admin_ai_metrics
+from omichub.api.v1.admin import ai_providers as admin_ai_providers
+from omichub.api.v1.admin import assistants as admin_assistants
+from omichub.api.v1.admin import festival as admin_festival
+from omichub.api.v1.admin import knowledge_bases as admin_knowledge_bases
 from omichub.api.v1.admin import platform_config as admin_platform_config
+from omichub.api.v1.admin import search_providers as admin_search_providers
+from omichub.api.v1.admin import session_logs as admin_session_logs
 from omichub.api.v1.admin import skills as admin_skills
 from omichub.api.v1.admin import stats as admin_stats
 from omichub.api.v1.admin import storage as admin_storage
@@ -75,6 +77,12 @@ api_router.include_router(cookies.router, prefix="/cookies", tags=["Cookies"])
 api_router.include_router(admin_cookies.router, prefix="/admin/cookies", tags=["Admin-Cookies"])
 api_router.include_router(admin_users.router, prefix="/admin/users", tags=["Admin-Users"])
 api_router.include_router(admin_stats.router, prefix="/admin/stats", tags=["Admin-Stats"])
+api_router.include_router(
+    admin_session_logs.router, prefix="/admin/session-logs", tags=["Admin-Session-Logs"]
+)
+api_router.include_router(
+    admin_ai_metrics.router, prefix="/admin/ai-metrics", tags=["Admin-AI-Metrics"]
+)
 api_router.include_router(
     admin_terminals.router, prefix="/admin/terminals", tags=["Admin-Terminals"]
 )

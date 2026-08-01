@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker test lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-runtime-dirs docker-fix-permissions docker-up docker-build-enrichment docker-build-deg docker-build-sandboxes docker-build-all-images docker-build-worker docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge docker-start docker-reload docker-dev-refresh clean init-admin init-cookies check-alembic-heads sync-knowledge
+.PHONY: help dev dev-worker test lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-runtime-dirs docker-fix-permissions docker-up docker-build-enrichment docker-build-deg docker-build-sandboxes docker-build-all-images docker-build-worker docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge docker-start docker-reload docker-dev-refresh wait-web clean init-admin init-cookies check-alembic-heads sync-knowledge
 
 help: ## 显示所有可用命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -48,10 +48,13 @@ migrate-merge: ## 自动合并 Alembic 多分支 (Multiple Heads 修复)
 
 # ===== Docker Compose 编排（主栈 + 独立 Worker 栈，单机逻辑解耦）=====
 COMPOSE_MAIN   := docker compose -f deploy/docker/docker-compose.yml
+COMPOSE_MAIN_AGENTTEAMS := $(COMPOSE_MAIN) -f deploy/agentteams/docker-compose.omichub-proxy.yml
+COMPOSE_AGENTTEAMS := docker compose -f deploy/agentteams/docker-compose.agentteams.yml
 COMPOSE_WORKER := ./scripts/worker-compose.sh
 COMPOSE_ALL    := docker compose -f deploy/docker/docker-compose.yml
 DOCKER_NETWORK := omichub_net
 SANDBOX_NETWORK := omichub-sandbox-net
+BRIDGE_GATEWAY_NETWORK ?= omichub_bridge_gateway
 ENRICHMENT_DOCKER_IMAGE ?= omichub-r-enrichment:v1
 DEG_DOCKER_IMAGE ?= omichub-r-deg:v1
 DATA_ROOT ?= /data/omichub
@@ -63,6 +66,7 @@ export REDIS_PASSWORD
 docker-network: ## 创建跨栈外部网络 + 终端网络（Studio 会话网络由 Manager 动态创建）
 	@docker network create $(DOCKER_NETWORK) 2>/dev/null || true
 	@docker network create $(SANDBOX_NETWORK) 2>/dev/null || true
+	@docker network create $(BRIDGE_GATEWAY_NETWORK) 2>/dev/null || true
 
 docker-runtime-dirs: ## 准备关键运行目录与非 root 容器写入权限（docker-up/reload 自动执行）
 	@echo "=> 准备运行目录权限..."
@@ -76,7 +80,27 @@ docker-fix-permissions: ## 手动修复 /data/omichub 权限事故（登录 500 
 docker-up: docker-network ## 启动主栈 (web/db/redis/nginx/beat/flower)
 	@$(MAKE) --no-print-directory docker-runtime-dirs
 	$(COMPOSE_MAIN) up -d
+	@$(MAKE) --no-print-directory wait-web
 	@$(MAKE) --no-print-directory check-alembic-heads
+
+wait-web: ## 等待 OmicHub Web API 健康（失败时输出后端日志）
+	@echo "=> 等待 omichub-web 健康..."
+	@for attempt in $$(seq 1 60); do \
+		status=$$(docker inspect --format '{{.State.Status}}' omichub-web 2>/dev/null || true); \
+		health=$$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' omichub-web 2>/dev/null || true); \
+		if [ "$$health" = "healthy" ]; then \
+			echo "=> omichub-web 已健康。"; exit 0; \
+		fi; \
+		if [ "$$status" = "exited" ] || [ "$$status" = "dead" ]; then \
+			echo "=> omichub-web 启动失败，最近日志：" >&2; \
+			docker logs --tail 120 omichub-web >&2 || true; \
+			exit 1; \
+		fi; \
+		sleep 2; \
+	done; \
+	echo "=> 等待 omichub-web 健康超时，最近日志：" >&2; \
+	docker logs --tail 120 omichub-web >&2 || true; \
+	exit 1
 
 docker-build-enrichment: ## 构建 GO / KEGG 富集分析 R 运行时镜像
 	docker build -t $(ENRICHMENT_DOCKER_IMAGE) -f deploy/docker/Dockerfile.enrichment tool_configs/enrichments
@@ -217,24 +241,24 @@ frontend-build: ## 构建前端生产版本
 runtime-images-build: ## 构建独立分析运行时镜像（core / plot / scrna）
 	deploy/runtime-images/build.sh
 
-docker-reload: docker-network ## 重新构建前端并刷新主栈 + Worker (开发用)
+docker-reload: docker-network ## 重新构建前端并刷新主栈 + AgentTeams Bridge + Worker (开发用)
 	@echo ""
 	@echo "╔══════════════════════════════════════════════════════════════╗"
 	@echo "║  🚀 OmicHub 开发环境热重载                                    ║"
-	@echo "║     重新构建前端 + 重启服务 + 同步知识库                      ║"
+	@echo "║  重新构建前端 + Bridge + 主栈/Worker + 同步知识库            ║"
 	@echo "╚══════════════════════════════════════════════════════════════╝"
 	@$(MAKE) --no-print-directory docker-runtime-dirs
 	@echo ""
-	@echo "📦 步骤 1/8：清理残留容器，避免旧容器占用端口或挂载..."
+	@echo "📦 步骤 1/9：清理残留容器，避免旧容器占用端口或挂载..."
 	-@docker ps -a --filter "name=omichub-" -q | xargs -r docker rm -f 2>/dev/null
 	-@docker ps -a --filter "name=studio-" -q | xargs -r docker rm -f 2>/dev/null
 	@echo ""
-	@echo "🐳 步骤 2/8：构建终端沙盒镜像（已存在则跳过，删除镜像后自动重建）..."
+	@echo "🐳 步骤 2/9：构建终端沙盒镜像（已存在则跳过，删除镜像后自动重建）..."
 	@docker image inspect omichub/sandbox-terminal:latest >/dev/null 2>&1 && \
 		echo "   ⏭️  omichub/sandbox-terminal:latest 已存在，跳过构建" || \
 		docker build -t omichub/sandbox-terminal:latest tool_configs/terminal/docker/
 	@echo ""
-	@echo "🧪 步骤 3/8：构建 Studio 运行时镜像（core/plot/scrna 均已存在则跳过）..."
+	@echo "🧪 步骤 3/9：构建 Studio 运行时镜像（core/plot/scrna 均已存在则跳过）..."
 	@if docker image inspect omichub-analysis:core-2026.07 >/dev/null 2>&1 && \
 	    docker image inspect omichub-analysis:plot-2026.07 >/dev/null 2>&1 && \
 	    docker image inspect omichub-analysis:scrna-2026.07 >/dev/null 2>&1; then \
@@ -243,7 +267,7 @@ docker-reload: docker-network ## 重新构建前端并刷新主栈 + Worker (开
 		deploy/runtime-images/build.sh; \
 	fi
 	@echo ""
-	@echo "🧬 步骤 4/8：构建 GO / KEGG 富集 R 运行时镜像（已存在则跳过）..."
+	@echo "🧬 步骤 4/9：构建 GO / KEGG 富集 R 运行时镜像（已存在则跳过）..."
 	@docker image inspect $(ENRICHMENT_DOCKER_IMAGE) >/dev/null 2>&1 && \
 		echo "   ⏭️  $(ENRICHMENT_DOCKER_IMAGE) 已存在，跳过构建" || \
 		$(MAKE) --no-print-directory docker-build-enrichment
@@ -253,16 +277,20 @@ docker-reload: docker-network ## 重新构建前端并刷新主栈 + Worker (开
 		echo "   ⏭️  $(DEG_DOCKER_IMAGE) 已存在，跳过构建" || \
 		$(MAKE) --no-print-directory docker-build-deg
 	@echo ""
-	@echo "⚡ 步骤 5/8：重新构建前端生产包（vite build）..."
+	@echo "⚡ 步骤 5/9：重新构建前端生产包（vite build）..."
 	cd frontend && npm run build
 	@echo ""
-	@echo "🌐 步骤 6/8：重新构建并启动主栈服务（web / db / redis / nginx / beat / flower）..."
-	$(COMPOSE_MAIN) up -d --build
+	@echo "🔗 步骤 6/9：构建并启动独立 AgentTeams Bridge..."
+	$(COMPOSE_AGENTTEAMS) up -d --build
 	@echo ""
-	@echo "🔧 步骤 7/8：构建并启动通用与系统发育 Worker 计算栈..."
+	@echo "🌐 步骤 7/9：重新构建并启动主栈服务（含 Bridge 网络代理）..."
+	$(COMPOSE_MAIN_AGENTTEAMS) up -d --build
+	@$(MAKE) --no-print-directory wait-web
+	@echo ""
+	@echo "🔧 步骤 8/9：构建并启动通用与系统发育 Worker 计算栈..."
 	$(COMPOSE_WORKER) up -d --build worker phylo-worker
 	@echo ""
-	@echo "🗄️  步骤 8/8：检查数据库迁移状态并同步知识库..."
+	@echo "🗄️  步骤 9/9：检查数据库迁移状态并同步知识库..."
 	@$(MAKE) --no-print-directory check-alembic-heads
 	@$(MAKE) --no-print-directory sync-knowledge
 	@echo ""
@@ -286,7 +314,7 @@ docker-dev-refresh: ## 轻量热刷新：前端 build + 重启 web/beat/nginx + 
 	@echo "        data/ai/*.yaml 与提示词按 mtime/调用热重载，改完刷新页面即可，无需执行本命令。"
 	@echo ""
 
-sync-knowledge: ## 将 docs/knowledge/*.md 同步到数据库（开发/本地文件编辑后使用）
+sync-knowledge: wait-web ## 将 docs/knowledge/*.md 同步到数据库（开发/本地文件编辑后使用）
 	@echo ""
 	@echo "📚 同步知识库：将 docs/knowledge/*.md 文件内容同步到数据库..."
 	@echo "   （说明：知识库以数据库为权威源，直接改 .md 文件后需要此步骤网页才生效）"

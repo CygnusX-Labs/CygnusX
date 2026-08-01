@@ -27,6 +27,8 @@ import McpSelectionMenu from './McpSelectionMenu.vue'
 import { useChatStore } from '@/stores/chat'
 import { useSiteConfigStore } from '@/stores/site-config'
 import { useAgentHubStore } from '@/stores/agentHub'
+import { useAuthStore } from '@/stores/auth'
+import { useModulesStore } from '@/stores/modules'
 import { matchWorkbenchIntent } from '@/config/aiIntents'
 import apiClient from '@/api/client'
 import type { DataFile } from '@/types'
@@ -77,6 +79,8 @@ const emit = defineEmits<{
 const chatStore = useChatStore()
 const siteConfigStore = useSiteConfigStore()
 const agentHub = useAgentHubStore()
+const authStore = useAuthStore()
+const modulesStore = useModulesStore()
 const message = useMessage()
 const router = useRouter()
 
@@ -113,6 +117,9 @@ const extraMcpServers = ref<string[]>([])
 const defaultMcpIds = computed(() => new Set(agentHub.currentAgent?.mcp_ids || []))
 const extraMcpCount = computed(() => extraMcpServers.value.filter((id) => !defaultMcpIds.value.has(id)).length)
 const mcpButtonActive = computed(() => mcpMode.value !== 'auto')
+const agentTeamsLocked = computed(() => modulesStore.isModuleLocked(
+  'agent_teams', authStore.user?.disabled_modules || [],
+))
 
 function syncMcpSelection() {
   mcpMode.value = agentHub.currentSession?.mcp_mode || 'auto'
@@ -642,6 +649,15 @@ function handleSandboxStub() {
   message.info('代码执行请在生成代码后点击代码块“运行”按钮')
 }
 
+function insertAgentTeamsCaseTemplate() {
+  const template = '请将以下工作转为协作 Case：\n- 交付目标：\n- 项目 ID：\n- 流程 ID：\n- 需要的审批/验收：\n'
+  localValue.value = localValue.value.trim() ? `${localValue.value}\n\n${template}` : template
+  nextTick(() => {
+    textareaRef.value?.focus()
+    autoResize()
+  })
+}
+
 function handlePromptSelect(content: string) {
   localValue.value = content
   nextTick(() => {
@@ -660,6 +676,7 @@ function handleClearConfirm() {
 
 onMounted(() => {
   siteConfigStore.fetchSiteConfig()
+  void modulesStore.ensureLoaded()
   syncMcpSelection()
   document.addEventListener('pointerdown', handleDocumentPointerDown)
 })
@@ -850,6 +867,20 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
             </n-button>
           </template>
           代码执行
+        </n-tooltip>
+
+        <n-tooltip v-if="!agentTeamsLocked" trigger="hover">
+          <template #trigger>
+            <n-button
+              text
+              class="toolbar-btn"
+              aria-label="转为协作 Case"
+              @click="insertAgentTeamsCaseTemplate"
+            >
+              <span class="btn-label">转为协作 Case</span>
+            </n-button>
+          </template>
+          插入协作 Case 信息模板；发送后仍需确认创建
         </n-tooltip>
 
         <n-tooltip trigger="hover">

@@ -26,6 +26,7 @@ from omichub.middleware.auth import AuthMiddleware
 from omichub.middleware.cookie import CookieRequiredMiddleware
 from omichub.middleware.module_gate import ModuleGateMiddleware
 from omichub.middleware.rate_limit import RateLimitMiddleware
+from omichub.middleware.trace_context import TraceContextMiddleware
 
 
 async def _init_default_ai_provider() -> None:
@@ -85,6 +86,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     setup_logging()
     from loguru import logger
+
+    from omichub.core.telemetry import setup_telemetry
+
+    setup_telemetry("web")
 
     settings = get_settings()
     logger.info(f"启动 {settings.app_name} (env={settings.app_env})")
@@ -319,6 +324,16 @@ def create_app() -> FastAPI:
         window_seconds=settings.rate_limit_window,
         enabled=settings.rate_limit_enabled,
     )
+
+    # 请求关联中间件：生成/透传 X-Request-ID 写入 ContextVar。
+    # 最后注册=最外层，确保所有后续中间件与业务日志都带同一 request_id。
+    app.add_middleware(TraceContextMiddleware)
+
+    # OpenTelemetry 自动埋点（HTTP server span + 出站 httpx）与 /metrics 暴露。
+    from omichub.core.telemetry import instrument_app, mount_metrics
+
+    instrument_app(app)
+    mount_metrics(app)
 
     # 全局异常处理
     @app.exception_handler(OmicHubError)

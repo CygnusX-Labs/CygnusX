@@ -40,3 +40,12 @@ skills:
     request: "POST /cases/{case_id}/evidence"
     failure_handling: "Block delivery if required artifacts are absent."
     boundary: evidence_only
+  scientific-interpretation:
+    actor: bioops-manager
+    request: "POST /v1/scientific-interpretation"
+    requires: [case_id, agent_id, question, capability]
+    success_statuses: [completed]
+    failure_handling: "Return manual_review or structured rejection; never submit, cancel, or replan a task."
+    boundary: "Gateway allowlists agent capabilities and read-only tools; no raw sessions, tool traces, files, database access, shell, or workflow actions."
+    response_schema: "{schema_version, status, conclusion, recommendations[], evidence_refs[], risks[], agent_id, schema_ver, duration_ms, token_usage, error}"
+    cost_guardrails: "120s default timeout; 5 calls and 200k tokens per case by default, all configurable."

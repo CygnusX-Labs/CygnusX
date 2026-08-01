@@ -268,11 +268,14 @@ class ToolsSchemaLoader:
             result.append(schema)
         return result
 
-    def build_system_hint(self) -> str:
+    def build_system_hint(self, allowed_names: set[str] | None = None) -> str:
         """生成注入系统提示词的工具清单。"""
+        tools = self.list_tools()
+        if allowed_names is not None:
+            tools = [tool for tool in tools if tool.name in allowed_names]
         catalog = "\n".join(
             f"{idx}. {tool.name} — {tool.description}"
-            for idx, tool in enumerate(self.list_tools(), 1)
+            for idx, tool in enumerate(tools, 1)
         )
         return render_prompt("tools.omichub_system_hint", tool_catalog=catalog)
 

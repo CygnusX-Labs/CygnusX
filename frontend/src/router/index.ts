@@ -113,12 +113,6 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'AI 助手', requiresAuth: true, fullscreen: true }
       },
       {
-        path: 'agent-teams',
-        name: 'agent-teams',
-        component: () => import('@/views/AgentTeamsView.vue'),
-        meta: { title: 'Agent 协作中心', requiresAuth: true }
-      },
-      {
         path: 'agent-teams/cases/:caseId',
         name: 'agent-teams-case',
         component: () => import('@/views/AgentTeamsCaseView.vue'),
@@ -329,6 +323,18 @@ const routes: RouteRecordRaw[] = [
         name: 'admin-users',
         component: () => import('@/views/AdminUserManagementView.vue'),
         meta: { title: '用户管理', requiresAuth: true }
+      },
+      {
+        path: 'admin/session-logs',
+        name: 'admin-session-logs',
+        component: () => import('@/views/AdminSessionLogsView.vue'),
+        meta: { title: '会话日志排查', requiresAuth: true }
+      },
+      {
+        path: 'admin/ai-metrics',
+        name: 'admin-ai-metrics',
+        component: () => import('@/views/AdminAiMetricsView.vue'),
+        meta: { title: 'AI 指标仪表盘', requiresAuth: true }
       },
       {
         path: 'admin/home-quick-entries',

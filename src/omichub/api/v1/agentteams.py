@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Annotated, Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, Field
@@ -14,8 +14,34 @@ from omichub.application.services.agentteams_bridge_settings_service import (
 )
 from omichub.application.services.agentteams_service import AgentTeamsService
 from omichub.core.config import get_settings
+from omichub.infrastructure.database.repositories.user_repository import (
+    SqlAlchemyUserRepository,
+)
 
 router = APIRouter()
+
+
+async def _attach_requester_usernames(db: DbSession, items: list[dict[str, Any]]) -> None:
+    """按 requester_ref 回填真实用户名（去重后逐个查询；列表通常只有当前用户，至多一次查询）。
+
+    与 TaskService._attach_usernames 同一约定：前端不得直接展示裸 UUID（§33.2 ④）。
+    """
+    refs = {item.get("requester_ref") for item in items if item.get("requester_ref")}
+    if not refs:
+        return
+    user_repo = SqlAlchemyUserRepository(db)
+    names: dict[str, str] = {}
+    for ref in refs:
+        try:
+            user = await user_repo.get_by_id(UUID(ref))
+        except ValueError:
+            continue
+        if user is not None:
+            names[ref] = user.username
+    for item in items:
+        name = names.get(item.get("requester_ref") or "")
+        if name:
+            item["requester_username"] = name
 
 
 async def get_agentteams_service(db: DbSession) -> AgentTeamsService:
@@ -40,26 +66,38 @@ class AgentTeamsCaseSubmitRequest(BaseModel):
 
 
 @router.get("/status", summary="获取 AgentTeams Bridge 接入状态")
-async def get_status(service: AgentTeamsServiceDep) -> dict[str, bool]:
-    return {"available": await service.is_connected()}
+async def get_status(service: AgentTeamsServiceDep) -> dict[str, bool | str | None]:
+    return await service.connection_status()
+
+
+@router.get("/chat-room", summary="获取当前用户可打开的 AgentTeams Element 聊天室")
+async def get_chat_room(
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+    case_id: str | None = None,
+) -> dict[str, bool | str | None]:
+    return await service.chat_room(case_id, current_user_id)
 
 
 @router.get("/cases", summary="获取当前用户的 Agent 协作案例")
 async def list_cases(
     current_user_id: CurrentUserId,
     service: AgentTeamsServiceDep,
+    db: DbSession,
     case_status: Annotated[str | None, Query(alias="status")] = None,
     project_id: str | None = None,
     cursor: str | None = None,
     limit: int = 20,
 ) -> dict[str, Any]:
-    return await service.list_cases(
+    result = await service.list_cases(
         current_user_id,
         case_status=case_status,
         project_id=project_id,
         cursor=cursor,
         limit=limit,
     )
+    await _attach_requester_usernames(db, result.get("items", []))
+    return result
 
 
 @router.post("/cases", status_code=status.HTTP_201_CREATED, summary="创建当前用户的协作案例")

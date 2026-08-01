@@ -8,6 +8,7 @@ export interface AgentTeamsBridgeConfig {
   data_steward_token: string
   approval_token: string
   workflow_operator_token: string
+  element_url: string
   source: 'environment' | 'database'
   configured: boolean
   connected: boolean

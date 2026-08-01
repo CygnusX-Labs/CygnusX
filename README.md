@@ -681,6 +681,152 @@ jq 'select(.status >= 500)' /data/omichub/logs/nginx/access.log
 
 详细架构说明见 `ARCHITECTURE_DESIN/LOG_ARCHITECTURE.md`。
 
+## 可观测性（Trace / Log / Metrics）
+
+平台后端基于 **OpenTelemetry** 在关键链路统一埋点，同时产出三类信号：
+
+- **Trace（span）**：记录一次 AI 调用 / MCP 工具调用 / Agent 编排 / 工具箱任务的耗时、状态与父子关系。
+- **Log（结构化日志）**：每条 JSON 日志自动注入 `trace_id` / `span_id` / `request_id`，会话作用域内还会注入 `session_id`，可与 Trace 互相关联、并按聊天会话聚合。
+- **Metrics（指标）**：耗时直方图与计数计数器，经 Prometheus `/metrics` 端点暴露；AI 调用指标还会**应用内持久化**到 `ai_call_metrics` 表（缓冲 + 后台批量写库，不阻塞调用链），驱动管理端「AI 指标仪表盘」的按日趋势与阈值告警。
+
+> 本轮仅做**后端埋点**；采集链路（OTel Collector / Promtail / Grafana 看板）由部署侧自行接通。未配置 OTLP 端点时，traces 自动降级（debug 打印到控制台、生产 noop），metrics 仍通过 `/metrics` 暴露，**本地与测试零配置可用，遥测异常绝不中断业务**。
+
+### 初始化与接线
+
+- 统一入口 `src/omichub/core/telemetry.py::setup_telemetry(service_name)`，在 web（`main.py` lifespan）与 worker（`celery_app/celery.py`）启动时各调用一次，幂等。
+- `instrument_app(app)` 挂载 FastAPI / httpx 自动埋点（HTTP server span + 出站 LLM HTTP）；`mount_metrics(app)` 暴露 `/metrics`。
+- `middleware/trace_context.py::TraceContextMiddleware` 读/生成 `X-Request-ID` 并写入 ContextVar，响应头回写；注册为最外层中间件。
+- `core/logging.py` 通过 loguru `patcher` 从当前 OTel span + ContextVar 注入 `trace_id` / `span_id` / `request_id` / `session_id` 到每条日志的 `record.extra`。`session_id` 由会话入口（`chat_service.stream_chat` / `_stream_agent_chat_inner`，覆盖 AI 助手 / Agent / AI 工作台三条流）在解析出会话后写入 ContextVar。
+
+### 埋点覆盖（span 名称）
+
+| 链路 | span 名称 | 关键属性 | 指标 |
+|------|-----------|----------|------|
+| AI Stack A（ProviderManager） | `ai.chat` | provider / model / status / tokens | `ai.chat.duration`、`ai.tokens` |
+| AI Stack B（LiteLLM / Copilot） | `ai.chat`、`ai.embedding` | provider=litellm / model / tokens | 同上（补齐 Copilot 此前缺失的 usage） |
+| MCP（builtin/stdio/sse） | `mcp.call_tool` | server / transport / tool / status | `mcp.call.duration`、`mcp.call.count` |
+| Studio 沙箱 MCP | `mcp.sandbox.call_tool` | server_id / tool / status | `mcp.sandbox.call.duration`、`mcp.sandbox.call.count` |
+| 技能执行 | `skill.execute` | tool_name / skill_id / status | `skill.execute.count`、`skill.execute.duration` |
+| Agent 编排（父 span） | `agent.run` | agent_id / model_id / status | `agent.run.duration` |
+| Agent 工具分发 | `agent.tool_dispatch` | tool.name / tool.call_id | — |
+| Celery 任务（worker 根 span） | `celery.task` | task.name / task.id / status | — |
+| 工具箱状态迁移 | —（结构化日志） | flow_id / status / duration | `toolbox.task.count`、`toolbox.task.duration` |
+| Snakemake 流程执行 | `toolbox.flow.run` | flow_id / task_id / returncode | — |
+| Docker 计算容器 | `toolbox.runner` | runner(deg/enrichment) / returncode | — |
+| HTTP server | 自动（FastAPIInstrumentor） | route / status_code | `http_server_duration` 等 |
+
+所有埋点复用现有脱敏约束（`openai_compatible.py::_sanitize_log_message` / `core/sanitizer.py`），span 属性与日志**不落 api_key、令牌、明文密钥**。
+
+### 配置环境变量
+
+| 环境变量 | 说明 | 默认值 |
+|----------|------|--------|
+| `TELEMETRY_ENABLED` | 可观测性总开关；关闭后全部 noop | `true` |
+| `OTEL_EXPORTER_ENDPOINT` | OTLP gRPC 导出端点（如 `http://otel-collector:4317`）；为空时 traces 不导出 | 空 |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTel 标准变量，作为上一项的兜底 | 空 |
+| `OTEL_SERVICE_NAME` | 服务名覆盖；为空时按入口（web/worker/beat）自动取值 | 空 |
+| `METRICS_ENABLED` | 是否在 `/metrics` 暴露 Prometheus 指标 | `true` |
+| `SPAN_STORE_ENABLED` | 是否将 span 持久化到应用内 JSONL，供管理端 Trace 瀑布图查询 | `true` |
+| `AI_METRICS_ENABLED` | AI 调用指标是否应用内持久化（`ai_call_metrics` 表，仪表盘数据源） | `true` |
+| `AI_ALERT_ENABLED` | 是否启用 AI 指标阈值告警（错误率 / p95 / 日成本） | `true` |
+| `AI_ALERT_ERROR_RATE` | 错误率告警阈值（0-1） | `0.05` |
+| `AI_ALERT_P95_LATENCY_MS` | p95 延迟告警阈值（毫秒） | `10000` |
+| `AI_ALERT_COST_RATIO` | 日成本超过近 7 日均值的倍数阈值 | `1.5` |
+| `AI_ALERT_COOLDOWN_MINUTES` | 同一规则告警冷却（分钟） | `30` |
+| `LOG_RETENTION_ENABLED` | 是否启用日志/span 归档留存清理 | `true` |
+| `LOG_RETENTION_HOT_DAYS` | 热数据保留天数（在线快速排查窗口） | `7` |
+| `LOG_RETENTION_COLD_DAYS` | 冷数据保留天数；超期轮转归档由定时任务删除 | `90` |
+
+### 问题排查实战
+
+**1. 确认埋点与指标已生效**
+
+```bash
+# /metrics 返回 Prometheus 指标（含 ai_tokens_total、http_server_duration 等）
+curl -s http://localhost:8000/metrics | grep -E "ai_tokens_total|http_server_duration"
+```
+
+**2. 用 request_id 串起一次请求的全部日志**
+
+响应头会带 `X-Request-ID`；拿到它后在 JSON 日志里过滤，即可看到该请求从入口到 AI/MCP/工具调用的完整日志链：
+
+```bash
+REQ_ID=<响应头里的 X-Request-ID>
+jq -c 'select(.record.extra.request_id == "'$REQ_ID'")' \
+  /data/omichub/logs/app/omichub.json.log
+```
+
+**3. 用 trace_id 关联同一条 Trace 的日志**
+
+span 内产生的日志都带相同 `trace_id`；用它可把一次 Agent 运行里分散的 AI / MCP / 技能日志聚合起来：
+
+```bash
+# 找出所有带 trace 的日志，按 trace_id 分组计数
+jq -r '.record.extra.trace_id // empty' \
+  /data/omichub/logs/app/omichub.json.log | sort | uniq -c | sort -rn | head
+
+# 锁定某个 trace_id 看全链路
+jq -c 'select(.record.extra.trace_id == "<TRACE_ID>")' \
+  /data/omichub/logs/app/omichub.json.log
+```
+
+**4. 按事件类型定位链路耗时 / 失败**
+
+埋点结构化日志统一带 `event` 字段（`ai.chat` / `mcp.call_tool` / `skill.execute` / `agent.run` / `toolbox.*` / `celery.task`）：
+
+```bash
+# 看所有失败的 AI 调用（含 model / 耗时 / usage）
+jq -c 'select(.record.extra.event == "ai.chat" and .record.extra.status == "error")' \
+  /data/omichub/logs/app/omichub.json.log
+
+# 看慢 MCP 工具调用（>2s）
+jq -c 'select(.record.extra.event == "mcp.call_tool" and (.record.extra.duration_ms > 2000))' \
+  /data/omichub/logs/app/omichub.json.log
+
+# 看某个工具箱任务的流转与耗时
+jq -c 'select(.record.extra.event == "toolbox.task.transition" and .record.extra.flow_id == "rna_seq")' \
+  /data/omichub/logs/app/omichub.json.log
+```
+
+**5. 按会话（session）排查 AI 助手 / Agent / AI 工作台问题**
+
+会话作用域内的所有日志都带相同 `session_id`，可把一个会话里分散的 AI / MCP / 技能 / Agent 编排日志整体聚合：
+
+- **管理端可视化**：系统管理 → **会话日志排查**（`/admin/session-logs`）。左侧按 `session_id` / 标题 / 用户检索会话（来自 `chat_sessions` 表），点「查看日志」右侧以时间线展示该会话的全部可观测事件（按 `event` 分类着色、展开 `data` 字段与 `trace_id`）；勾选「包含轮转归档」可查较旧会话。
+- **命令行**：
+
+```bash
+# 聚合某个会话的全部日志（按时间）
+jq -c 'select(.record.extra.session_id == "<SESSION_ID>")' \
+  /data/omichub/logs/app/omichub.json.log
+
+# 只看该会话里的失败事件
+jq -c 'select(.record.extra.session_id == "<SESSION_ID>" and .record.extra.status == "error")' \
+  /data/omichub/logs/app/omichub.json.log
+```
+
+> 后端接口：`GET /api/v1/admin/session-logs/sessions`（会话列表）、`GET /api/v1/admin/session-logs/{session_id}/events`（事件时间线，`include_archives=true` 时扫描轮转归档）、`GET .../{session_id}/report`（单会话运行报告：token/成本/耗时/工具与技能统计/错误摘要）、`GET .../{session_id}/events/export?format=json|csv`（导出，SQL 原文始终脱敏）。均仅管理员可访问。
+
+**6. AI 指标仪表盘与告警**
+
+系统管理 → **AI 指标仪表盘**（`/admin/ai-metrics`）按日展示 AI 助手 / Agent / AI 工作台调用的 token 用量、成本（🥫，按 `AI_TOKEN_COOKIE_RATE` 折算）、错误率与延迟（平均 / p95），并支持按模型过滤。数据来自应用内 `ai_call_metrics` 表。
+
+告警（C4）由 Celery 每 5 分钟评估一次，超阈值且过冷却期时写入 `ai_metric_alerts` 并通过平台**通知公告**推送给全体用户：
+
+- 错误率 > `AI_ALERT_ERROR_RATE`（默认 5%，近 5 分钟窗口）
+- p95 延迟 > `AI_ALERT_P95_LATENCY_MS`（默认 10000ms）
+- 日成本 > 近 7 日均值 × `AI_ALERT_COST_RATIO`（默认 150%）
+
+> 后端接口：`GET /api/v1/admin/ai-metrics/trend`、`/models`、`/alerts/status`、`/alerts/history`（均仅管理员）。开关与阈值见 `AI_METRICS_ENABLED` / `AI_ALERT_*` 配置。
+
+**7. 本地调试查看完整 span（Console 导出）**
+
+开发环境（`APP_DEBUG=true`）且未配置 OTLP 端点时，span 会打印到控制台。触发一次对话 / 工具调用后，在 `docker logs omichub-web` 中即可看到 `ai.chat` / `mcp.call_tool` / `toolbox.*` 等 span 及其属性。
+
+**8. 接通后端采集（可选，部署侧）**
+
+配置 `OTEL_EXPORTER_ENDPOINT` 指向 OTel Collector 即可上报 traces/metrics；日志侧用 Promtail 采集 `/data/omichub/logs/app/omichub.json.log`，凭 `trace_id` 字段在 Grafana 中实现 Log ↔ Trace 互跳。
+
 ## 常用命令
 
 | 命令 | 说明 |
