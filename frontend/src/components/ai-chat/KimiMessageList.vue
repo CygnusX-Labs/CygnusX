@@ -4,7 +4,7 @@ import { NButton, NIcon } from 'naive-ui'
 import { ChevronDownOutline } from '@vicons/ionicons5'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import KimiMessageItem from './KimiMessageItem.vue'
-import type { ChatMessage, CopyMode } from './types'
+import type { ChatMessage, CollaborationRouteInfo, CopyMode } from './types'
 
 interface Props {
   messages: ChatMessage[]
@@ -43,6 +43,8 @@ const emit = defineEmits<{
   edit: [messageId: string]
   confirmTool: [toolName: string, args: Record<string, unknown>]
   openToolPage: [route: string, args: Record<string, unknown>]
+  createCaseFromConsultation: [summary: string, consultationId?: string]
+  correctCollaborationRoute: [route: CollaborationRouteInfo]
 }>()
 
 interface ScrollerExpose {
@@ -242,6 +244,8 @@ onUnmounted(() => {
             @edit="(id) => emit('edit', id)"
             @confirm-tool="(toolName, args) => emit('confirmTool', toolName, args)"
             @open-tool-page="(route, args) => emit('openToolPage', route, args)"
+            @create-case-from-consultation="(summary, consultationId) => emit('createCaseFromConsultation', summary, consultationId)"
+            @correct-collaboration-route="(route) => emit('correctCollaborationRoute', route)"
           />
         </DynamicScrollerItem>
       </template>

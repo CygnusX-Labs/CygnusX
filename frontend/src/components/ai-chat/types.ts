@@ -31,8 +31,21 @@ export interface RoutedAgentInfo {
   reason: string
 }
 
+export interface CollaborationRouteInfo {
+  intent: 'transfer' | 'fanout' | 'consult' | 'case' | 'dag' | 'chat'
+  label: string
+  reason: string
+  confidence: number
+  available: boolean
+  degraded: boolean
+  message: string
+}
+
 export interface ExpertConsultation {
   experts: Array<{ agent_id: string; name: string; opinion: string }>
+  consultationId?: string
+  consultationSummary?: string
+  caseAvailable?: boolean
 }
 
 export interface AgentTeamsCaseCardPayload {
@@ -70,6 +83,7 @@ export interface ChatMessage {
   askRequest?: AskRequest
   /** 智能路由：本条 AI 消息实际由哪位专家回答（路由器会话专属） */
   routedAgent?: RoutedAgentInfo
+  collaborationRoute?: CollaborationRouteInfo
   consultation?: ExpertConsultation
   agentTeamsCases?: AgentTeamsCaseCardPayload[]
   attachments?: FileAttachment[]

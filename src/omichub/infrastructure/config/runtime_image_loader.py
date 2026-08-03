@@ -60,7 +60,7 @@ class RuntimeImageRegistryConfig(BaseModel):
     boundaries: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def validate_references(self) -> "RuntimeImageRegistryConfig":
+    def validate_references(self) -> RuntimeImageRegistryConfig:
         if self.selection.default_profile not in self.profiles:
             raise ValueError("default_profile 必须引用已注册 profile")
         for profile_id, profile in self.profiles.items():
@@ -107,6 +107,36 @@ class RuntimeImageRegistryConfig(BaseModel):
             raise LookupError(f"没有运行时满足能力: {sorted(required_capabilities)}")
         candidates.sort(key=lambda item: (len(item[1].capabilities), item[0]))
         return candidates[0]
+
+    def profile_for_image(self, image: str) -> tuple[str, RuntimeProfile] | None:
+        """按实际镜像名反查已注册的解析后运行时 profile。"""
+        for profile_id in self.profiles:
+            profile = self.resolved_profile(profile_id)
+            if profile.image == image:
+                return profile_id, profile
+        return None
+
+
+def render_runtime_manifest(profile_id: str, profile: RuntimeProfile) -> str:
+    """渲染可注入 Agent 系统提示词的当前运行时软件清单。"""
+    languages = ", ".join(
+        f"{name} {version}" for name, version in sorted(profile.languages.items())
+    ) or "未声明"
+    software = ", ".join(
+        f"{name} ({version})" if version and version != "installed" else name
+        for name, version in sorted(profile.software.items())
+    ) or "未声明"
+    capabilities = ", ".join(sorted(profile.capabilities)) or "未声明"
+    return (
+        "## 当前 Studio 运行时（镜像声明）\n"
+        f"- Profile：`{profile_id}`\n"
+        f"- 镜像：`{profile.image}`\n"
+        f"- 语言：{languages}\n"
+        f"- 能力：{capabilities}\n"
+        f"- 已安装软件：{software}\n"
+        "- 使用规则：上述是当前镜像的已声明软件；优先直接使用，不要重复安装。"
+        "如果需要未列出的软件或验证实际版本，再在沙箱中检查。"
+    )
 
 
 class RuntimeImageRegistryManager:

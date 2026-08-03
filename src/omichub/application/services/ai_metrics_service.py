@@ -201,12 +201,13 @@ class AiMetricsService:
         if not s.ai_alert_enabled:
             return []
         status = await self.alert_status()
-        cooldown_since = datetime.now() - timedelta(minutes=s.ai_alert_cooldown_minutes)
+        now = datetime.now()
 
         fired: list[dict] = []
         for rule in status["rules"]:
             if not rule["breaching"]:
                 continue
+            cooldown_since = self._alert_cooldown_since(rule["rule"], now)
             recent = (
                 await self._db.execute(
                     select(AiMetricAlertModel.id)
@@ -242,6 +243,11 @@ class AiMetricsService:
 
 
     # ---- 内部聚合 ----
+
+    def _alert_cooldown_since(self, rule: str, now: datetime) -> datetime:
+        if rule == "daily_cost":
+            return now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return now - timedelta(minutes=self._settings.ai_alert_cooldown_minutes)
 
     def _apply_filters(self, stmt, model: str | None, provider: str | None):
         m = AiCallMetricModel

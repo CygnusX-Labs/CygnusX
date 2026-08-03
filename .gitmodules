@@ -10,3 +10,9 @@
 [submodule "Protocol/FlowFrame"]
 	path = Protocol/FlowFrame
 	url = git@github.com:xsx123123/FlowFrame.git
+[submodule "pipelines/scrna"]
+	path = pipelines/scrna
+	url = git@github.com:xsx123123/scRNAseqMulticommand.git
+[submodule "pipelines/tools"]
+	path = pipelines/tools
+	url = git@github.com:xsx123123/JZ_Tools.git

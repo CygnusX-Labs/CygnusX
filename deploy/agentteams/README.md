@@ -1,5 +1,8 @@
 # OmicHub AgentTeams sidecar deployment
 
+> 协作档位、Bridge 前置条件和专业 Worker 边界请参阅
+> `docs/configuration/多Agent协作配置指南.md`。
+
 This Compose project is deliberately independent of `deploy/docker/docker-compose.yml`.
 It deploys only the OmicHub Bridge: AgentTeams Controller, Matrix, MinIO, and optional
 Higress remain AgentTeams-owned services and should join `omichub_agentteams_control`

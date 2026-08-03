@@ -20,6 +20,14 @@ from omichub.infrastructure.mcp.presets import (
 )
 
 
+def test_platform_sandbox_tool_declares_native_r_execution() -> None:
+    tool = next(item for item in PLATFORM_PRESET_TOOLS if item["name"] == "platform_sandbox_execute")
+    properties = tool["inputSchema"]["properties"]
+
+    assert properties["language"]["enum"] == ["python", "r", "bash"]
+    assert "ggtree" in tool["description"]
+
+
 def test_canonical_original_name_strips_service_dedupe_suffix() -> None:
     assert canonical_original_name("sample_1a2b3c4d.fastq.gz") == "sample.fastq.gz"
     assert canonical_original_name("sample.fastq_1a2b3c4d.gz") == "sample.fastq.gz"
@@ -285,6 +293,12 @@ def test_workspace_system_prompt_forbids_no_tool_fallback() -> None:
     assert "必须先调用 `list_workspace_files`" in WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX
     assert "必须先调用 `search_workspace_files`" in WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX
     assert "禁止声称没有浏览文件的工具" in WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX
+
+
+def test_workspace_system_prompt_requires_a_parseable_tree_for_ggtree() -> None:
+    assert "`.iqtree` 是 IQ-TREE 的文本运行报告" in WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX
+    assert "`.treefile` 或 `.contree`" in WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX
+    assert "`ape::read.tree()`" in WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX
 
 
 @pytest.mark.asyncio

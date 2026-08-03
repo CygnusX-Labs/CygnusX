@@ -14,6 +14,20 @@ export interface AgentTeamsBridgeConfig {
   connected: boolean
 }
 
+export interface AgentTeamsBridgeHealth {
+  connection: { connected: boolean; enabled: boolean; configured: boolean; reason?: string | null }
+  identities: Array<{ identity: string; valid: boolean }>
+  workers: Array<{
+    identity: string
+    configured: boolean
+    active: boolean
+    last_seen_at?: string | null
+    age_seconds?: number | null
+  }>
+  allowed_flows: string[]
+  scrna_submit_available: boolean
+}
+
 export type AgentTeamsBridgeConfigUpdate = Pick<
   AgentTeamsBridgeConfig,
   | 'enabled'
@@ -33,5 +47,8 @@ export const agentTeamsBridgeAdminApi = {
     return (await apiClient.put<AgentTeamsBridgeConfig>('/admin/agentteams-bridge', payload, {
       headers: { 'X-TOTP-Code': totpCode },
     })).data
+  },
+  async health(): Promise<AgentTeamsBridgeHealth> {
+    return (await apiClient.get<AgentTeamsBridgeHealth>('/admin/agentteams-bridge/health')).data
   },
 }

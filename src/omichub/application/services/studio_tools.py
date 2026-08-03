@@ -28,7 +28,7 @@ from typing import Any
 
 import httpx
 from loguru import logger
-from sqlalchemy import and_, or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -793,73 +793,36 @@ async def _update_plan(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _knowledge_search(
-    args: dict[str, Any], db: AsyncSession | None
+    args: dict[str, Any], db: AsyncSession | None, *, project_id: str | None = None
 ) -> dict[str, Any]:
-    """只检索已发布知识库的当前修订，并限制结果摘要长度。"""
+    """权限过滤后执行向量召回、关键词重排并返回可追溯引用。"""
     if db is None:
         return _error_result("知识库查询上下文不可用")
     query = str(args.get("query") or "").strip()
     if not query:
         return _error_result("query 不能为空")
-    query_lower = query.lower()[:200]
     limit_raw = args.get("limit", 5)
     try:
         limit = max(1, min(int(limit_raw), 8))
     except (TypeError, ValueError):
         limit = 5
 
-    from omichub.infrastructure.database.models.knowledge_base import KnowledgeBaseModel
-    from omichub.infrastructure.database.models.knowledge_document import KbDocumentModel
-    from omichub.infrastructure.database.models.knowledge_revision import DocRevisionModel
+    from omichub.application.services.vector_retrieval_service import VectorRetrievalService
 
-    result = await db.execute(
-        select(
-            KbDocumentModel.doc_id,
-            KbDocumentModel.title,
-            KbDocumentModel.category,
-            DocRevisionModel.content,
+    matches = [
+        {
+            "doc_id": item.doc_id,
+            "title": item.title,
+            "category": item.category,
+            "excerpt": item.excerpt,
+            "section_path": item.section_path,
+            "url": item.url,
+            "score": round(item.score, 4),
+        }
+        for item in await VectorRetrievalService(db).search_knowledge(
+            query=query, limit=limit, project_id=project_id
         )
-        .join(DocRevisionModel, KbDocumentModel.current_rev == DocRevisionModel.id)
-        .outerjoin(KnowledgeBaseModel, KbDocumentModel.kb_id == KnowledgeBaseModel.id)
-        .where(KbDocumentModel.status == 1)
-        # 只检索标记为 ai_searchable 且未停用的知识库（kb_id 为空按可检索处理，向后兼容）
-        .where(
-            or_(
-                KbDocumentModel.kb_id.is_(None),
-                and_(
-                    KnowledgeBaseModel.ai_searchable.is_(True),
-                    KnowledgeBaseModel.is_enabled.is_(True),
-                ),
-            )
-        )
-        .order_by(KbDocumentModel.updated_at.desc())
-        # 单细胞笔记批量导入后文档量超 200，子串扫描 500 篇（约几 MB 文本）开销可接受
-        .limit(500)
-    )
-    matches: list[dict[str, Any]] = []
-    for doc_id, title, category, content in result.all():
-        body = str(content or "")
-        haystack = f"{title} {category} {body}".lower()
-        if query_lower not in haystack:
-            continue
-        position = body.lower().find(query_lower)
-        start = max(0, position - 180) if position >= 0 else 0
-        excerpt = body[start : start + 600].strip()
-        if start > 0:
-            excerpt = "…" + excerpt
-        if start + 600 < len(body):
-            excerpt += "…"
-        matches.append(
-            {
-                "doc_id": str(doc_id),
-                "title": str(title),
-                "category": str(category),
-                "excerpt": excerpt,
-                "url": f"/knowledge/{doc_id}",
-            }
-        )
-        if len(matches) >= limit:
-            break
+    ]
     payload = {"query": query, "results": matches, "total": len(matches)}
     return _ok_result(payload, payload)
 
@@ -956,7 +919,13 @@ async def execute_studio_tool(
         if name == "pipeline_query":
             return await _pipeline_query(args)
         if name == "knowledge_search":
-            return await _knowledge_search(args, db)
+            project_id = None
+            if db is not None:
+                session = await db.scalar(
+                    select(ChatSessionModel).where(ChatSessionModel.session_id == session_id)
+                )
+                project_id = session.project_id if session else None
+            return await _knowledge_search(args, db, project_id=project_id)
         return _error_result(f"未知 Studio 工具: {name}")
     except StudioSandboxUnavailableError as e:
         logger.info(f"[Studio] 沙盒不可用（会话 {session_id[:8]}）: {e}")

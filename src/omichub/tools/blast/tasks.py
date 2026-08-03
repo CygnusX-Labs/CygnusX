@@ -78,14 +78,17 @@ def run_blast_search_task(self: Any, task_id: str) -> dict[str, Any]:
             await db.commit()
             await publish_blast_event(task_id, "running", 10, "BLAST 任务开始执行")
 
-            settings = get_settings()
-            user_id = str(task.user_id)
-            result_dir = (
-                Path(settings.storage_path)
-                / settings.blast_results_dir
-                / user_id
-                / task_id
-            )
+            query_file_path = Path(task.query_file_path or "")
+            if query_file_path.name == "query.fasta" and query_file_path.parent.name == "input":
+                result_dir = query_file_path.parent.parent / "output"
+            else:
+                settings = get_settings()
+                result_dir = (
+                    Path(settings.storage_path)
+                    / settings.blast_results_dir
+                    / str(task.user_id)
+                    / task_id
+                )
 
             def progress_callback(phase: str, progress: int, message: str) -> None:
                 publish_blast_event_sync(task_id, phase, int(progress), message)

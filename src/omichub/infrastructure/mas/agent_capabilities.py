@@ -6,6 +6,8 @@ from pathlib import Path
 
 import yaml
 
+from omichub.application.services.flow_registry import get_flow_registry
+
 
 def load_agent_capabilities(path: str | Path) -> dict[str, set[str]]:
     config_path = Path(path)
@@ -16,8 +18,11 @@ def load_agent_capabilities(path: str | Path) -> dict[str, set[str]]:
     agents = raw.get("agents", {}) if isinstance(raw, dict) else {}
     if not isinstance(agents, dict):
         return {}
-    return {
+    capabilities = {
         str(agent_id): {str(capability) for capability in capabilities}
         for agent_id, capabilities in agents.items()
         if isinstance(capabilities, list)
     }
+    for agent_id, derived in get_flow_registry().agent_capabilities().items():
+        capabilities.setdefault(agent_id, set()).update(derived)
+    return capabilities

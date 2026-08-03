@@ -56,6 +56,10 @@ _WORKSPACE_FILES_PROMPT_FALLBACK = """## 工作区文件工具
 推荐项放第一个标注“（推荐）”），禁止自行假设开干；用户已给出关键信息时直接执行，不重复澄清。
 会话隔离：只允许使用本会话中用户上传或明确指定的文件；其它会话的文件禁止主动读取或
 当作本次任务数据，确需使用必须先经 `ask_user` 弹窗得到用户明确确认。
+系统发育树 / ggtree：必须先确认输入是 `.treefile` / `.contree` / `.nwk` / `.newick` / `.tree`
+等可解析树文件；`.iqtree` 是文本报告，不能整份直接交给 `ape::read.tree()` 或 `ggtree`。
+若用户只提供 `.iqtree`，先检查并可靠提取 `Tree in newick format:` 段到独立 `.nwk`，否则调用
+`ask_user` 请求同批产物中的 `.treefile` 或 `.contree`；解析验证通过后才绘图。
 """
 
 
@@ -111,21 +115,27 @@ async def _platform_get_task(
 
 
 async def _platform_sandbox_execute(
-    arguments: dict[str, Any], user_id: str | None = None, **_kw: Any
+    arguments: dict[str, Any],
+    user_id: str | None = None,
+    context: ToolInvocationContext | None = None,
+    **_kw: Any,
 ) -> dict[str, Any]:
     from omichub.application.services.sandbox_service import SandboxService
     from omichub.infrastructure.database.session import get_session_factory
 
-    code = arguments.get("code", "")
-    factory = get_session_factory()
-    async with factory() as db:
+    code = str(arguments.get("code", ""))
+    language = str(arguments.get("language") or "python")
+    if language not in {"python", "r", "bash"}:
+        return {"stdout": "", "stderr": "", "error": f"不支持的语言: {language}"}
+
+    async def execute(db: Any) -> dict[str, Any]:
         service = SandboxService(db)
         uid = uuid.UUID(user_id) if user_id else uuid.UUID(int=0)
-        session = await service.create_session(uid, "python")
+        session = await service.create_session(uid, language)
         stdout_parts: list[str] = []
         stderr_parts: list[str] = []
         error = None
-        async for event in service.execute_code(uid, session.id, code, 300):
+        async for event in service.execute_code(uid, session.id, code, 300, language):
             etype = event.get("type")
             if etype == "stdout":
                 stdout_parts.append(event.get("data", ""))
@@ -133,13 +143,21 @@ async def _platform_sandbox_execute(
                 stderr_parts.append(event.get("data", ""))
             elif etype == "error":
                 error = event.get("detail")
-        await db.commit()
         return {
             "stdout": "".join(stdout_parts)[-3000:],
             "stderr": "".join(stderr_parts)[-1000:],
             "error": error,
             "session_id": str(session.id),
         }
+
+    if context is not None:
+        return await execute(context.db)
+
+    factory = get_session_factory()
+    async with factory() as db:
+        result = await execute(db)
+        await db.commit()
+        return result
 
 
 async def _platform_list_flows(arguments: dict[str, Any], **_kw: Any) -> dict[str, Any]:
@@ -157,7 +175,10 @@ async def _platform_list_flows(arguments: dict[str, Any], **_kw: Any) -> dict[st
 
 
 async def _platform_read_file(
-    arguments: dict[str, Any], user_id: str | None = None, **_kw: Any
+    arguments: dict[str, Any],
+    user_id: str | None = None,
+    context: ToolInvocationContext | None = None,
+    **_kw: Any,
 ) -> dict[str, Any]:
     from omichub.core.config import get_settings
 
@@ -612,6 +633,147 @@ async def _workspace_read_file(
     return meta
 
 
+async def _platform_submit_download(
+    arguments: dict[str, Any], user_id: str | None = None, **_kw: Any
+) -> dict[str, Any]:
+    """提交数据下载任务（SRA/GEO 公共数据库、云存储、直链）。"""
+    from omichub.application.schemas.download import DownloadRequest
+    from omichub.application.services.download_service import DownloadService
+    from omichub.core.config import get_settings
+    from omichub.infrastructure.database.session import get_session_factory
+    from omichub.tools.download.config import get_download_config
+
+    if not user_id:
+        return {"error": "无法识别当前用户"}
+
+    payload = {k: v for k, v in arguments.items() if v is not None}
+    try:
+        req = DownloadRequest(**payload)
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"下载参数不合法: {e}"}
+
+    # 与 REST 路由 _ensure_enabled 保持一致的功能开关校验
+    settings = get_settings()
+    config = get_download_config()
+    if req.source == "direct_link":
+        if not (config.features.direct_link or settings.enable_direct_download):
+            return {"error": "直链下载功能未启用"}
+    elif req.source == "cloud_storage":
+        if not (config.features.cloud_storage or settings.enable_cloud_storage_download):
+            return {"error": "云存储下载功能未启用"}
+    elif not (config.features.ebi or settings.enable_ebi_download):
+        return {"error": "公共数据库下载功能未启用"}
+
+    factory = get_session_factory()
+    async with factory() as db:
+        service = DownloadService(db)
+        resp = await service.submit(user_id, req)
+        await db.commit()
+        work_dir = getattr(resp, "work_dir", "") or ""
+        return {
+            "task_id": str(resp.id),
+            "name": resp.name,
+            "status": resp.status,
+            "work_dir": work_dir,
+            "summary": (
+                f"下载任务已提交: {resp.name}（task_id={resp.id}）\n"
+                f"产物目录: {work_dir or '用户 raw_data'}（完成后自动登记到数据管理）"
+            ),
+            "next_steps": [
+                f"调用 platform_get_download_progress(task_id='{resp.id}') 查看下载进度",
+            ],
+        }
+
+
+async def _platform_list_downloads(
+    arguments: dict[str, Any], user_id: str | None = None, **_kw: Any
+) -> dict[str, Any]:
+    """列出当前用户的数据下载任务。"""
+    from omichub.application.services.download_service import DownloadService
+    from omichub.infrastructure.database.session import get_session_factory
+
+    if not user_id:
+        return {"error": "无法识别当前用户"}
+    factory = get_session_factory()
+    async with factory() as db:
+        resp = await DownloadService(db).list_downloads(user_id)
+    items = [
+        {"id": str(t.id), "name": t.name, "status": t.status, "progress": t.progress}
+        for t in resp.items
+    ]
+    lines = [
+        f"- [{t['status']}] {t['name']} (progress={t['progress']:.0%}, id={t['id']})"
+        for t in items
+    ]
+    return {
+        "downloads": items,
+        "summary": "下载任务:\n" + "\n".join(lines) if lines else "暂无下载任务",
+    }
+
+
+async def _platform_get_download_progress(
+    arguments: dict[str, Any], user_id: str | None = None, **_kw: Any
+) -> dict[str, Any]:
+    """获取下载任务的逐 run 分阶段进度（下载/解压/压缩）。"""
+    from omichub.application.services.download_service import DownloadService
+    from omichub.infrastructure.cache.redis_client import get_redis
+    from omichub.infrastructure.database.session import get_session_factory
+
+    if not user_id:
+        return {"error": "无法识别当前用户"}
+    task_id = str(arguments.get("task_id", "")).strip()
+    if not task_id:
+        return {"error": "缺少 task_id"}
+    try:
+        task_uuid = uuid.UUID(task_id)
+    except ValueError:
+        return {"error": f"task_id 不合法: {task_id}"}
+
+    factory = get_session_factory()
+    async with factory() as db:
+        service = DownloadService(db)
+        try:
+            task_resp = await service.get_task_for_user(task_uuid, user_id)
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)}
+
+    redis = get_redis()
+    raw = await redis.get(f"download_progress:{task_uuid}")
+    if raw is None:
+        return {
+            "task_id": task_id,
+            "task_status": task_resp.status,
+            "overall_percent": task_resp.progress * 100,
+            "runs": {},
+            "summary": (
+                f"进度暂不可用（任务状态 {task_resp.status}，排队中或进度接口未就绪），"
+                f"任务整体进度 {task_resp.progress * 100:.1f}%，可稍后再查。"
+            ),
+        }
+
+    import json
+
+    runs_data = json.loads(raw)
+    runs: dict[str, Any] = {}
+    lines = []
+    for run_id, rp in runs_data.items():
+        runs[run_id] = {
+            "stage": rp["stage"],
+            "overall_percent": rp["overall_percent"],
+        }
+        lines.append(f"- {run_id}: {rp['stage']} ({rp['overall_percent']:.1f}%)")
+    overall = (
+        sum(r["overall_percent"] for r in runs.values()) / len(runs) if runs else 0.0
+    )
+    return {
+        "task_id": task_id,
+        "task_status": task_resp.status,
+        "overall_percent": overall,
+        "runs": runs,
+        "summary": f"总进度: {overall:.1f}%\n" + "\n".join(lines),
+    }
+
+
 PLATFORM_PRESET_TOOLS = [
     {
         "name": "platform_list_tasks",
@@ -640,10 +802,18 @@ PLATFORM_PRESET_TOOLS = [
     },
     {
         "name": "platform_sandbox_execute",
-        "description": "在沙箱中执行代码（mambaforge 环境，预装 scanpy/Seurat 等）",
+        "description": "在沙箱中执行 Python、R 或 Bash 代码（mambaforge 环境，含 ggtree 绘图依赖）",
         "inputSchema": {
             "type": "object",
-            "properties": {"code": {"type": "string", "description": "Python 代码"}},
+            "properties": {
+                "language": {
+                    "type": "string",
+                    "enum": ["python", "r", "bash"],
+                    "default": "python",
+                    "description": "执行语言；ggtree 必须使用 r",
+                },
+                "code": {"type": "string", "description": "要执行的完整代码"},
+            },
             "required": ["code"],
         },
     },
@@ -764,6 +934,94 @@ PLATFORM_PRESET_TOOLS = [
             "required": ["file_id"],
         },
     },
+    {
+        "name": "platform_submit_download",
+        "description": (
+            "提交数据下载任务，产物落到当前用户工作区 raw_data 目录（可选子目录），完成后自动登记到数据管理。"
+            "支持三类来源（source）："
+            "① sra（公共数据库高速下载，默认）：支持 NCBI SRA/GEO 系列登录号，包括项目号（PRJNA/PRJEB/PRJ 开头，"
+            "如 PRJNA1285930）、测序 run（SRR/ERR/DRR 开头）、GEO 样本（GSM 开头）等；"
+            "download_method 可选 aws（推荐，S3 全球镜像最快）/aspera/ftp，multithreads 控制并发 run 数，"
+            "aws_threads 控制单文件 AWS 并发线程，dry_run=True 可先验证登录号不实际下载。"
+            "② cloud_storage（多云服务商对象存储高速下载）：cloud_provider 取 aliyun(oss://)/volc(tos://)/huawei(obs://)，"
+            "object_uri 需带对应前缀，recursive 控制是否递归。"
+            "③ direct_link：links 传 HTTP/HTTPS/FTP 链接列表批量下载。"
+            "提交前必须先用 ask_user 向用户确认登录号/地址与目标目录；用户已明确给出时直接提交。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "type": "string",
+                    "enum": ["sra", "cloud_storage", "direct_link"],
+                    "default": "sra",
+                    "description": "下载来源：sra=公共数据库，cloud_storage=云存储，direct_link=直链",
+                },
+                "accession": {
+                    "type": "string",
+                    "description": "公共数据库登录号（PRJNA…/PRJEB…/SRR…/ERR…/DRR…/GSM…），source=sra 时必填",
+                },
+                "download_method": {
+                    "type": "string",
+                    "enum": ["aws", "aspera", "ftp"],
+                    "default": "aws",
+                    "description": "SRA 下载方式，aws 最快（仅 source=sra 有效）",
+                },
+                "multithreads": {
+                    "type": "integer", "default": 4, "minimum": 1, "maximum": 32,
+                    "description": "并发下载 run 数",
+                },
+                "aws_threads": {
+                    "type": "integer", "default": 8, "minimum": 1, "maximum": 64,
+                    "description": "单文件 AWS 并发线程数",
+                },
+                "cloud_provider": {
+                    "type": "string",
+                    "enum": ["aliyun", "volc", "huawei"],
+                    "description": "云商（source=cloud_storage 时必填）",
+                },
+                "object_uri": {
+                    "type": "string",
+                    "description": "对象路径，如 oss://bucket/path、tos://bucket/path、obs://bucket/path（source=cloud_storage 时必填）",
+                },
+                "recursive": {
+                    "type": "boolean", "default": True,
+                    "description": "云存储目录是否递归下载",
+                },
+                "links": {
+                    "type": "array", "items": {"type": "string"},
+                    "description": "HTTP/HTTPS/FTP 下载链接列表（source=direct_link 时必填）",
+                },
+                "target_directory": {
+                    "type": "string",
+                    "description": "下载到用户 raw_data 下的子目录（如 project_x），留空=raw_data 根目录",
+                },
+                "dry_run": {
+                    "type": "boolean", "default": False,
+                    "description": "仅模拟下载验证登录号（仅 SRA）",
+                },
+            },
+        },
+    },
+    {
+        "name": "platform_list_downloads",
+        "description": "列出当前用户的数据下载任务（名称、状态、进度、任务 ID）。用户询问下载情况/下载历史时调用。",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "platform_get_download_progress",
+        "description": (
+            "获取下载任务的逐 run 分阶段进度（下载/解压/压缩）与总进度百分比。"
+            "提交下载任务后可轮询此工具向用户汇报进度。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string", "description": "下载任务 ID（UUID）"},
+            },
+            "required": ["task_id"],
+        },
+    },
 ]
 
 PLATFORM_HANDLERS = {
@@ -778,6 +1036,9 @@ PLATFORM_HANDLERS = {
     "workspace_read_file": _workspace_read_file,
     "workspace_get_file_info": _workspace_get_file_info,
     "find_session_uploads": _find_session_uploads,
+    "platform_submit_download": _platform_submit_download,
+    "platform_list_downloads": _platform_list_downloads,
+    "platform_get_download_progress": _platform_get_download_progress,
 }
 
 
@@ -785,7 +1046,7 @@ PLATFORM_HANDLERS = {
 PRESET_SERVERS: list[dict[str, Any]] = [
     {
         "name": "omichub-platform",
-        "description": "平台操作 MCP - 任务管理、流程查询、沙箱执行、结果读取",
+        "description": "平台操作 MCP - 任务管理、流程查询、沙箱执行、结果读取、数据下载（SRA/GEO 公共数据库与多云存储）",
         "transport": "builtin",
         "tools": PLATFORM_PRESET_TOOLS,
         "handlers": PLATFORM_HANDLERS,

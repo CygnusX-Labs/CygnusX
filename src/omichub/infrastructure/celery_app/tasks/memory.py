@@ -96,6 +96,7 @@ async def _summarize_session(session_id: str) -> dict[str, str]:
             await memory_service.save_memory(
                 user_id=chat_session.user_id,
                 agent_id=chat_session.agent_id or None,
+                project_id=chat_session.project_id,
                 scope="summary",
                 content=content,
                 source_session=session_id,

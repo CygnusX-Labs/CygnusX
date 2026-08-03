@@ -26,6 +26,7 @@ class ChatSessionModel(Base, TimestampMixin):
     )
     session_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     user_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    project_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     assistant_id: Mapped[str | None] = mapped_column(
         String(50), ForeignKey("chat_assistants.assistant_id"), nullable=True
     )
@@ -121,6 +122,26 @@ class ChatHandoffEventModel(Base):
     artifacts: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     constraints: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     hop_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CollaborationDegradationEventModel(Base):
+    """Records a disabled collaboration capability selected by the unified router."""
+
+    __tablename__ = "collaboration_degradation_events"
+    __table_args__ = (
+        Index("idx_collab_degradation_intent_created", "intent", "created_at"),
+        Index("idx_collab_degradation_session_created", "session_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    session_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    message_id: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    user_id: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    intent: Mapped[str] = mapped_column(String(20), nullable=False)
+    reason: Mapped[str] = mapped_column(String(180), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

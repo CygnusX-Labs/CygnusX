@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -53,7 +53,7 @@ async def _run_enrichment(task_id: str) -> dict[str, Any]:
 
         task.status = TaskStatus.RUNNING.value
         task.progress = 10
-        task.started_at = datetime.now(timezone.utc)
+        task.started_at = datetime.now(UTC)
         task.error_message = ""
         await db.commit()
 
@@ -64,8 +64,11 @@ async def _run_enrichment(task_id: str) -> dict[str, Any]:
                 raise RuntimeError(f"物种不可用: {species_id or '未指定'}")
 
             work_dir = Path(task.work_dir)
-            input_path = work_dir / "gene_list.txt"
-            output_path = work_dir / "enrichment_result.csv"
+            input_path = work_dir / "input" / "gene_list.txt"
+            if not input_path.exists():
+                input_path = work_dir / "gene_list.txt"
+            output_path = work_dir / "output" / "enrichment_result.csv"
+            output_path.parent.mkdir(parents=True, exist_ok=True)
             if not input_path.exists():
                 raise RuntimeError("任务输入基因列表不存在")
 
@@ -102,7 +105,7 @@ async def _run_enrichment(task_id: str) -> dict[str, Any]:
             )
             task.status = TaskStatus.SUCCESS.value
             task.progress = 100
-            task.finished_at = datetime.now(timezone.utc)
+            task.finished_at = datetime.now(UTC)
             task.result_path = str(output_path)
             task.parameters = {**(task.parameters or {}), "result": result.model_dump(mode="json")}
             await db.commit()
@@ -111,7 +114,7 @@ async def _run_enrichment(task_id: str) -> dict[str, Any]:
             logger.exception("富集任务失败: %s", task_id)
             task.status = TaskStatus.FAILED.value
             task.progress = 100
-            task.finished_at = datetime.now(timezone.utc)
+            task.finished_at = datetime.now(UTC)
             task.error_message = str(error)[:2000]
             await db.commit()
             return {"status": "failed", "task_id": task_id, "error": task.error_message}

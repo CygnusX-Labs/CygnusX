@@ -33,6 +33,7 @@ class MASRunModel(Base, TimestampMixin):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    project_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     workspace_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
@@ -87,6 +88,7 @@ class MASArtifactModel(Base, TimestampMixin):
         nullable=False,
         index=True,
     )
+    project_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     node_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     logical_name: Mapped[str] = mapped_column(String(128), nullable=False)
     kind: Mapped[str] = mapped_column(String(32), nullable=False)

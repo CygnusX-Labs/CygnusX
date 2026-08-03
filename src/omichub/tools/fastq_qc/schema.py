@@ -40,7 +40,7 @@ class FastqSampleInput(BaseModel):
 class CreateQCTaskRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(default="FASTQ QC", min_length=1, max_length=255)
+    name: str = Field(min_length=1, max_length=255, description="用户提供的项目名称")
     samples: list[FastqSampleInput] = Field(min_length=1, max_length=500)
     params: dict[str, Any] = Field(default_factory=dict)
 

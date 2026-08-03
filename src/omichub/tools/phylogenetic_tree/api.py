@@ -17,7 +17,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, UploadFile
 from fastapi.responses import FileResponse
 
-from omichub.api.deps import CurrentUserId
+from omichub.api.deps import CurrentUserId, DbSession
 from omichub.tools.phylogenetic_tree.config import config_manager
 from omichub.tools.phylogenetic_tree.schema import (
     PhyloMethodsResponse,
@@ -48,10 +48,11 @@ async def upload_file(
 @router.post("/submit", response_model=PhyloTaskResponse, summary="提交系统发育树构建任务")
 async def submit_task(
     current_user_id: CurrentUserId,
+    db: DbSession,
     request: PhyloSubmitRequest,
 ) -> PhyloTaskResponse:
     """根据 file_id 与参数投递 Celery 异步任务。"""
-    return await phylo_service.submit(current_user_id, request)
+    return await phylo_service.submit(current_user_id, request, db)
 
 
 @router.get(

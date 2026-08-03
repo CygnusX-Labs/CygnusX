@@ -4,6 +4,7 @@ set -euo pipefail
 repository_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 config_path=${OMICHUB_WORKER_CONFIG:-"${repository_root}/data/worker_config.yaml"}
 rendered_env="${repository_root}/data/.worker-config.env"
+compose_overlay=${OMICHUB_WORKER_COMPOSE_OVERLAY:-""}
 
 cd "${repository_root}"
 python3 scripts/render_worker_config.py --config "${config_path}" --output "${rendered_env}"
@@ -29,4 +30,13 @@ else
         "${docker_socket}" >&2
 fi
 
-exec docker compose -f deploy/docker/docker-compose.worker.yml "$@"
+compose_files=(-f deploy/docker/docker-compose.worker.yml)
+if [[ -n "${compose_overlay}" ]]; then
+    if [[ ! -f "${compose_overlay}" ]]; then
+        printf 'Worker Compose overlay does not exist: %s\n' "${compose_overlay}" >&2
+        exit 1
+    fi
+    compose_files+=(-f "${compose_overlay}")
+fi
+
+exec docker compose "${compose_files[@]}" "$@"

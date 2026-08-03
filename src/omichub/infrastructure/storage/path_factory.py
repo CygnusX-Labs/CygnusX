@@ -8,11 +8,22 @@ BlastService._result_dir、EnrichmentService._work_dir 等），确保全平台�
 
 from __future__ import annotations
 
+import re
 import shutil
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 
 from omichub.infrastructure.config.storage_config import StorageConfig, get_storage_config
+
+_PATH_SEGMENT_RE = re.compile(r"[^\w\u4e00-\u9fff.-]+", re.UNICODE)
+
+
+def project_slug(project_name: str, *, fallback: str = "untitled-project") -> str:
+    """将项目名称规范为可读、安全的目录名。"""
+    normalized = " ".join(str(project_name or "").strip().split())
+    slug = _PATH_SEGMENT_RE.sub("_", normalized).strip("._")[:80]
+    return slug or fallback
 
 
 class StoragePathFactory:
@@ -86,6 +97,30 @@ class StoragePathFactory:
 
     def project_dir(self, user_id: str, project_slug: str) -> Path:
         return self.projects_dir(user_id) / project_slug
+
+    def create_project_run_dir(
+        self, user_id: str, project_name: str, analysis_name: str
+    ) -> Path:
+        """创建用户可见的项目运行目录。
+
+        UUID 继续作为数据库主键与审计标识，不再作为用户工作区的目录名。重复运行以
+        ``分析名-时间戳[-序号]`` 区分，避免覆盖已有结果。
+        """
+        project = project_slug(project_name)
+        analysis = project_slug(analysis_name, fallback="analysis")
+        base = self.project_dir(user_id, project) / "runs"
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+        for sequence in range(1, 10_000):
+            suffix = "" if sequence == 1 else f"-{sequence}"
+            candidate = base / f"{analysis}-{stamp}{suffix}"
+            try:
+                candidate.mkdir(parents=True, exist_ok=False)
+                for directory_name in ("input", "output", "work", "logs"):
+                    (candidate / directory_name).mkdir(exist_ok=True)
+                return candidate
+            except FileExistsError:
+                continue
+        raise RuntimeError("无法创建唯一的项目运行目录")
 
     def workspace_dir(self, user_id: str) -> Path:
         return self.user_root(user_id) / "workspace"

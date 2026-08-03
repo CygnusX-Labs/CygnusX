@@ -38,6 +38,7 @@ import type {
 import type {
   AgentTeamsCaseCardPayload,
   ChatMessage,
+  CollaborationRouteInfo,
   ToolCall,
   FileAttachment,
   ChartData,
@@ -52,6 +53,7 @@ import {
 } from '@/composables/useAgentChatStream'
 import { studioApi, type StudioPermissionMode } from '@/api/studio'
 import { useChatStore } from '@/stores/chat'
+import { sortPersistedChatMessages } from '@/utils/chatMessageOrder'
 import type {
   PipelineSubmitResult,
   PipelineTask,
@@ -131,6 +133,10 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     if ((target?.features as any)?.studio?.default_mode === 'studio') {
       studioRedirect.value = { agentId, agentName }
     }
+  }
+
+  function clearStudioRedirect(): void {
+    studioRedirect.value = null
   }
   const availableModels = ref<AvailableModel[]>([])
   const pipelineTasks = ref<Record<string, PipelineTask>>({})
@@ -686,7 +692,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     await fetchAgents(false)
   }
 
-  // ========== 技能管理（后台 CRUD + SKILL.md 四入口导入，调 /admin/skills） ==========
+  // ========== 技能管理（后台 CRUD + SKILL.md 五入口导入，调 /admin/skills） ==========
 
   /** 入口一：GitHub 仓库/子目录 URL → 解析预览（不入库） */
   async function previewSkillFromGithub(url: string): Promise<SkillImportPreview> {
@@ -704,7 +710,17 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     return res.data
   }
 
-  /** 入口三：JSON 粘贴（兼容旧格式）→ 解析预览（不入库） */
+  /** 入口三：独立 Markdown 指令文件 → 解析预览（自动生成标准 SKILL.md） */
+  async function previewSkillFromMarkdown(file: File): Promise<SkillImportPreview> {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await apiClient.post<SkillImportPreview>('/admin/skills/import/markdown', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return res.data
+  }
+
+  /** 入口四：JSON 粘贴（兼容旧格式）→ 解析预览（不入库） */
   async function previewSkillFromJson(text: string): Promise<SkillImportPreview> {
     const res = await apiClient.post<SkillImportPreview>('/admin/skills/import/json', { text })
     return res.data
@@ -829,7 +845,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       title: agent.name,
       title_locked: false,
       agent_id: agentId,
-      mode: 'chat',
+      mode: agent.features?.studio?.default_mode === 'studio' ? 'studio' : 'chat',
       messages: [],
       created_at: now,
       updated_at: now,
@@ -980,7 +996,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       if (!session) return
       const existingIds = new Set(session.messages.map((m) => m.id))
       let restoredPlan: StudioPlanStep[] = []
-      const loaded = (res.data || []).map((m) => {
+      const loaded = sortPersistedChatMessages(res.data || []).map((m) => {
         const msg: ChatMessage = {
           id: m.message_id,
           role: m.role as 'user' | 'assistant' | 'system',
@@ -1002,6 +1018,43 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             avatar: routedAgent.avatar || '',
             color: routedAgent.color || '',
             reason: routedAgent.reason || '',
+          }
+        }
+        const collaborationRoute = m.metadata_json?.collaboration_route
+        if (collaborationRoute && typeof collaborationRoute === 'object') {
+          const item = collaborationRoute as Record<string, unknown>
+          const intent = item.intent
+          if (typeof intent === 'string' && ['transfer', 'fanout', 'consult', 'case', 'dag', 'chat'].includes(intent)) {
+            msg.collaborationRoute = {
+              intent: intent as CollaborationRouteInfo['intent'],
+              label: typeof item.label === 'string' ? item.label : '协作路径',
+              reason: typeof item.reason === 'string' ? item.reason : '',
+              confidence: Number(item.confidence) || 0,
+              available: Boolean(item.available),
+              degraded: Boolean(item.degraded),
+              message: typeof item.message === 'string' ? item.message : '',
+            }
+          }
+        }
+        const consultation = m.metadata_json?.consultation
+        if (consultation && typeof consultation === 'object') {
+          const item = consultation as Record<string, unknown>
+          const experts = Array.isArray(item.experts)
+            ? item.experts
+              .filter((expert): expert is Record<string, unknown> => !!expert && typeof expert === 'object')
+              .map((expert) => ({
+                agent_id: typeof expert.agent_id === 'string' ? expert.agent_id : '',
+                name: typeof expert.name === 'string' ? expert.name : '专家',
+                opinion: typeof expert.opinion === 'string' ? expert.opinion : '',
+              }))
+            : []
+          if (experts.length) {
+            msg.consultation = {
+              experts,
+              consultationId: typeof item.consultation_id === 'string' ? item.consultation_id : undefined,
+              consultationSummary: typeof item.consultation_summary === 'string' ? item.consultation_summary : undefined,
+              caseAvailable: typeof item.case_available === 'boolean' ? item.case_available : undefined,
+            }
           }
         }
         const webSources = m.metadata_json?.web_sources
@@ -1252,6 +1305,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         agentId: agent.id,
         messages: apiMessages,
         sessionId: backendSessionId,
+        mode: session.mode,
         modelId: session.model_id,
         temperature: chatStore.conversationSettings.temperature,
         maxTokens: chatStore.conversationSettings.maxTokens,
@@ -1489,7 +1543,15 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           }
         },
         onConsultation: (event) => {
-          aiMsg.consultation = { experts: event.experts }
+          aiMsg.consultation = {
+            experts: event.experts,
+            consultationId: event.consultation_id,
+            consultationSummary: event.consultation_summary,
+            caseAvailable: event.case_available,
+          }
+        },
+        onCollaborationRoute: (event) => {
+          aiMsg.collaborationRoute = event
         },
         onToolOutput: (tool, _stream, data, toolCallId) => {
           // 优先按 tool_call_id 精确匹配；无 id（旧事件）时回退为最后一个同名 running 工具
@@ -1726,6 +1788,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     contextCompressedNotice,
     studioRedirect,
     maybeRedirectToStudio,
+    clearStudioRedirect,
     studioSessionIds, currentPlan, studioPermissions,
     // getters
     activeAgents, currentSession, currentAgent, groupedSessions,
@@ -1737,7 +1800,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     toggleMcpStatus, addMcpServer, updateMcpServer, removeMcpServer, testMcpServer, fetchMcpTools, fetchMcpLogs,
     fetchMcpVersions, rollbackMcpServer, promoteMcpServer, syncMcpPresets,
     upsertAgent, toggleAgent, deleteAgent, setDefaultAgent,
-    previewSkillFromGithub, previewSkillFromZip, previewSkillFromJson, confirmSkillImport,
+    previewSkillFromGithub, previewSkillFromZip, previewSkillFromMarkdown, previewSkillFromJson, confirmSkillImport,
     fetchSkillMarketplace, installMarketplaceSkill, checkSkillUpdate,
     fetchAliyunMarketStatus, syncAliyunMarket, installAliyunMarketSkill,
     fetchSkillInvocationStats, fetchSkillInvocations,

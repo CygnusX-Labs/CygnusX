@@ -74,6 +74,7 @@ async def chat_stream(
                 enable_code_execution=request.enable_code_execution,
                 deep_thinking=request.deep_thinking,
                 mode=request.mode,
+                project_id=request.project_id,
                 mcp_mode=request.mcp_mode,
                 extra_mcp_servers=request.extra_mcp_servers,
                 multi_agent=request.multi_agent,
@@ -93,6 +94,7 @@ async def chat_stream(
                 temperature=request.temperature,
                 max_tokens=request.max_tokens,
                 enable_web_search=request.enable_web_search,
+                project_id=request.project_id,
             )
         async for chunk in gen:
             data: dict = {"type": chunk.type, "content": chunk.content}
@@ -204,7 +206,11 @@ async def create_session(
     req: CreateSessionRequest,
 ) -> ChatSessionDTO:
     return await service.create_session(
-        current_user_id, req.model_id, req.title or "新对话", req.assistant_id
+        current_user_id,
+        req.model_id,
+        req.title or "新对话",
+        req.assistant_id,
+        project_id=req.project_id,
     )
 
 

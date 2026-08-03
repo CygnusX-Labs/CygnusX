@@ -1,0 +1,36 @@
+agent_id: agent-scrna-advanced
+name: 单细胞注释与高级分析专家
+description: 负责细胞类型注释验证、pseudobulk 差异表达、通路、可视化、轨迹与细胞通讯问题。
+avatar: "🔎"
+color: "#16a085"
+category: analysis
+model: qwen3.7-plus
+prompt_file: prompts/scrna_team/advanced.md
+welcome_message: "你好！我可以协助细胞注释、差异分析、轨迹、细胞通讯和结果可视化。"
+temperature: 0.2
+max_tokens: 4096
+mcp_ids: []
+skill_ids:
+  - human-mouse-cell-annotation
+  - plant-cell-annotation
+  # scRNA 下游分析技能（来源：pipelines/scrna/skills/）
+  - scrna-object-convert
+  - scrna-recluster
+  - scrna-annotation-ref
+  - scrna-tcell-projectils
+  - scrna-deg-analysis
+  - scrna-annotation-stats
+  - scrna-quarto-report
+features:
+  subagents_spawnable: true
+  engine: langgraph
+  routing_hints: [细胞注释, marker, 差异表达, pseudobulk, 轨迹, 拟时序, velocity, 细胞通讯, 可视化]
+tool_packs: [workspace, research, memory, handoff, agentteams_case]
+handoff:
+  allowed_targets: [agent-scrna-upstream, agent-scrna-integration, agent-scrna, agent-general]
+  max_hops_per_session: 3
+studio:
+  enabled: true
+  default_mode: studio
+  runtime_profile: analysis-scrna
+  required_capabilities: [python, r, plotting, single-cell, hdf5]

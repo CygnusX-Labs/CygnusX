@@ -1,7 +1,14 @@
 <script setup lang="ts">
-defineProps<{
+import { NButton } from 'naive-ui'
+
+const props = defineProps<{
   experts: Array<{ agent_id: string; name: string; opinion: string }>
+  consultationId?: string
+  consultationSummary?: string
+  caseAvailable?: boolean
 }>()
+
+const emit = defineEmits<{ createCase: [summary: string, consultationId?: string] }>()
 </script>
 
 <template>
@@ -11,6 +18,12 @@ defineProps<{
       <strong>{{ expert.name }}</strong>
       <p>{{ expert.opinion }}</p>
     </div>
+    <div v-if="props.consultationSummary" class="consultation-actions">
+      <NButton size="tiny" type="primary" :disabled="props.caseAvailable === false" @click="emit('createCase', props.consultationSummary, props.consultationId)">
+        基于此创建协作 Case
+      </NButton>
+      <span v-if="props.caseAvailable === false" class="case-unavailable">协作 Case 尚未接通，请联系管理员启用 AgentTeams。</span>
+    </div>
   </details>
 </template>
 
@@ -19,4 +32,6 @@ defineProps<{
 summary { cursor: pointer; font-weight: 600; }
 .expert-opinion { padding-top: 8px; }
 .expert-opinion p { margin: 4px 0 0; white-space: pre-wrap; }
+.consultation-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; align-items: center; margin-top: 10px; }
+.case-unavailable { color: #a56700; font-size: 12px; }
 </style>

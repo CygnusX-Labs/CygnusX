@@ -13,6 +13,8 @@ export interface AgentChatStreamOptions {
   agentId: string
   messages: { role: string; content: string }[]
   sessionId?: string
+  /** 当前会话运行模式；Studio 模式会由后端装配工作区工具与上下文。 */
+  mode?: 'chat' | 'studio'
   /** 当前请求强制使用的模型配置 ID（覆盖 Agent 默认模型） */
   modelId?: string
   /** 温度（0-1），后端 Agent 编排层可透传给底层模型 */
@@ -116,6 +118,19 @@ export interface HandoffEvent {
 
 export interface ConsultationEvent {
   experts: Array<{ agent_id: string; name: string; opinion: string }>
+  consultation_id?: string
+  consultation_summary?: string
+  case_available?: boolean
+}
+
+export interface CollaborationRouteEvent {
+  intent: 'transfer' | 'fanout' | 'consult' | 'case' | 'dag' | 'chat'
+  label: string
+  reason: string
+  confidence: number
+  available: boolean
+  degraded: boolean
+  message: string
 }
 
 export interface AgentTeamsCaseEvent {
@@ -198,6 +213,7 @@ export interface AgentStreamCallbacks {
   onRoute?: (event: RouteEvent) => void
   onHandoff?: (event: HandoffEvent) => void
   onConsultation?: (event: ConsultationEvent) => void
+  onCollaborationRoute?: (event: CollaborationRouteEvent) => void
   onAgentTeamsCase?: (event: AgentTeamsCaseEvent) => void
   /** 工具调用轮次触顶：can_extend 为 true 时可由用户确认后以扩展上限继续 */
   onRoundLimit?: (event: RoundLimitEvent) => void
@@ -318,6 +334,7 @@ export function useAgentChatStream() {
         body: JSON.stringify({
           agent_id: options.agentId,
           session_id: options.sessionId,
+          mode: options.mode,
           model_id: options.modelId,
           messages: options.messages,
           stream: true,
@@ -581,6 +598,20 @@ export function useAgentChatStream() {
                   opinion: typeof item.opinion === 'string' ? item.opinion : '',
                 }))
             : [],
+          consultation_id: typeof data.consultation_id === 'string' ? data.consultation_id : undefined,
+          consultation_summary: typeof data.consultation_summary === 'string' ? data.consultation_summary : undefined,
+          case_available: typeof data.case_available === 'boolean' ? data.case_available : undefined,
+        })
+        break
+      case 'collaboration_route':
+        cb.onCollaborationRoute?.({
+          intent: ((data.intent as CollaborationRouteEvent['intent']) || 'chat'),
+          label: (data.label as string) || '协作路径',
+          reason: (data.reason as string) || '',
+          confidence: Number(data.confidence) || 0,
+          available: Boolean(data.available),
+          degraded: Boolean(data.degraded),
+          message: (data.message as string) || '',
         })
         break
       case 'error':

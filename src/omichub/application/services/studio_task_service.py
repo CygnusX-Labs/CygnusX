@@ -14,6 +14,7 @@ from omichub.infrastructure.celery_app.tasks.studio import run_studio_sandbox
 from omichub.infrastructure.database.repositories.task_repository import TaskRepositoryImpl
 from omichub.infrastructure.database.session import get_session_factory
 from omichub.infrastructure.studio.manager import studio_sandbox_manager
+from omichub.infrastructure.task_queue.dispatcher import enqueue_task
 
 STUDIO_SANDBOX_FLOW_ID = "studio_sandbox"
 STUDIO_LONG_TASK_THRESHOLD_SECONDS = 600
@@ -63,7 +64,8 @@ async def submit_studio_sandbox_task(
         await db.commit()
 
     try:
-        run_studio_sandbox.delay(
+        enqueue_task(
+            run_studio_sandbox,
             task_id=str(task_id),
             user_id=user_id,
             session_id=session_id,

@@ -1,13 +1,12 @@
 """数据下载应用服务 — 编排公共数据库与云存储下载任务。
 
 复用通用 Task 聚合根承载下载任务（历史 flow_id="ebi_download"），不引入新领域表。
-下载产物落到 `storage_path/users/<user_id>/raw_data/...`，完成后登记为 FileRecord，
+下载产物落到 `storage_path/users/<user_id>/inbox/downloads/...`，完成后登记为 FileRecord，
 自动出现在「数据管理」中。
 """
 
 from __future__ import annotations
 
-import contextlib
 import re
 from pathlib import Path
 from uuid import UUID
@@ -16,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.download import DownloadRequest
 from omichub.application.schemas.task import TaskListResponse, TaskResponse, task_to_response
-from omichub.core.config import get_settings
 from omichub.core.exceptions import NotFoundError, ValidationError
 from omichub.domain.task.services import TaskDomainService
 from omichub.domain.task.value_objects import TaskStatus
@@ -24,6 +22,7 @@ from omichub.infrastructure.celery_app.tasks.download import run_download
 from omichub.infrastructure.database.repositories.task_repository import (
     TaskRepositoryImpl,
 )
+from omichub.infrastructure.task_queue.dispatcher import enqueue_task
 
 DOWNLOAD_FLOW_ID = "ebi_download"  # 兼容既有任务筛选；语义已扩展为数据下载聚合
 
@@ -43,11 +42,14 @@ class DownloadService:
         self._db = db
         self._repo = TaskRepositoryImpl(db)
         self._domain = TaskDomainService(self._repo)
-        self._settings = get_settings()
 
     async def submit(self, user_id: str, req: DownloadRequest) -> TaskResponse:
         """提交一个数据下载任务。"""
         directory = self._normalize_directory(req.target_directory)
+        if not directory:
+            directory = "inbox/downloads"
+        elif directory != "inbox" and not directory.startswith("inbox/"):
+            directory = f"inbox/{directory}"
 
         if req.source == "cloud_storage":
             provider = self._normalize_cloud_provider(req.cloud_provider or "")
@@ -91,17 +93,13 @@ class DownloadService:
                 "dry_run": req.dry_run,
             }
 
-        # 若指定了目标目录且尚未登记，自动创建 Directory 记录（物理目录已由 _make_work_dir 创建）
-        if directory:
-            from omichub.application.schemas.file import DirectoryCreateRequest
-            from omichub.application.services.file_service import FileService
+        from omichub.application.services.file_service import ensure_directory_chain
+        from omichub.infrastructure.storage import get_path_factory
 
-            file_svc = FileService(self._db)
-            # 目录已存在则忽略（ConflictError），其他异常不阻断下载提交
-            with contextlib.suppress(Exception):
-                await file_svc.create_directory(
-                    UUID(user_id), DirectoryCreateRequest(path=directory)
-                )
+        relative_work_dir = Path(work_dir).relative_to(
+            get_path_factory().user_root(user_id)
+        ).as_posix()
+        await ensure_directory_chain(self._db, UUID(user_id), relative_work_dir)
 
         # 创建任务聚合根（复用通用 Task，flow_id 标记为数据下载）
         task = await self._domain.submit(
@@ -114,8 +112,7 @@ class DownloadService:
         task.work_dir = work_dir
         task = await self._repo.save(task)
 
-        # 投递 Celery 下载任务
-        run_download.delay(task_id=str(task.id))
+        enqueue_task(run_download, str(task.id), task_id=str(task.id))
 
         # 状态推进为已入队
         task = await self._domain.transition_status(task, TaskStatus.QUEUED)
@@ -163,13 +160,10 @@ class DownloadService:
         return (label or fallback)[:120]
 
     def _make_work_dir(self, user_id: str, label: str, directory: str = "") -> str:
-        """下载产物目录 — 统一收拢到 users/{uid}/raw_data/{directory}/{label}/
+        """下载产物落在用户 inbox，避免创建新的 raw_data 目录。"""
+        from omichub.infrastructure.storage import get_path_factory
 
-        directory 为空时落到 raw_data 根目录。
-        """
-        base = Path(self._settings.storage_path) / "users" / user_id / "raw_data"
-        if directory:
-            base = base / directory
+        base = get_path_factory().user_root(user_id) / directory
         work_dir = base / label
         work_dir.mkdir(parents=True, exist_ok=True)
         return str(work_dir)

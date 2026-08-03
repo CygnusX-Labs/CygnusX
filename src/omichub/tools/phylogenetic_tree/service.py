@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
 import uuid
@@ -10,10 +11,12 @@ from typing import Any
 
 from celery.result import AsyncResult
 from fastapi import UploadFile
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.core.config import get_settings
 from omichub.core.exceptions import NotFoundError, TaskExecutionError, ValidationError
 from omichub.infrastructure.celery_app.celery import celery_app
+from omichub.infrastructure.task_queue.dispatcher import enqueue_task
 from omichub.tools.phylogenetic_tree.config import config_manager
 from omichub.tools.phylogenetic_tree.runner import (
     parse_and_validate_input,
@@ -118,7 +121,12 @@ class PhylogeneticTreeService:
             raise NotFoundError(f"找不到文件记录: {file_id}")
         return json.loads(meta_path.read_text(encoding="utf-8"))
 
-    async def submit(self, user_id: str, request: PhyloSubmitRequest) -> PhyloTaskResponse:
+    async def submit(
+        self,
+        user_id: str,
+        request: PhyloSubmitRequest,
+        db: AsyncSession | None = None,
+    ) -> PhyloTaskResponse:
         """提交树构建任务。"""
         meta = self._load_meta(user_id, request.file_id)
 
@@ -145,8 +153,33 @@ class PhylogeneticTreeService:
         if request.alignment_tool == "prealigned" and not meta.get("is_aligned"):
             raise ValidationError("选择跳过比对时，输入序列长度必须一致")
 
+        from omichub.infrastructure.storage import get_path_factory
+
+        run_dir = get_path_factory().create_project_run_dir(
+            user_id,
+            request.project_name,
+            "phylogenetic-tree",
+        )
+        for name in ("input", "output", "work", "logs"):
+            (run_dir / name).mkdir(parents=True, exist_ok=True)
+
+        source_input = Path(str(meta["input_path"]))
+        if not await asyncio.to_thread(source_input.exists):
+            raise NotFoundError("上传文件已不存在，请重新上传")
+        input_name = Path(str(meta.get("filename") or source_input.name)).name or source_input.name
+        project_input = run_dir / "input" / input_name
+        await asyncio.to_thread(shutil.copy2, source_input, project_input)
+
+        if db is not None:
+            from omichub.application.services.file_service import ensure_directory_chain
+
+            relative_run_dir = run_dir.relative_to(get_path_factory().user_root(user_id)).as_posix()
+            await ensure_directory_chain(db, uuid.UUID(user_id), relative_run_dir)
+
         task_input = {
-            "input_path": meta["input_path"],
+            "input_path": str(project_input),
+            "work_dir": str(run_dir),
+            "project_name": request.project_name,
             "alignment_tool": request.alignment_tool,
             "alignment_mode": request.alignment_mode,
             "tree_method": request.tree_method,
@@ -165,8 +198,9 @@ class PhylogeneticTreeService:
         profile = select_resource_profile(seq_count, avg_length, request.tree_method)
         task_input["resource_profile"] = profile
 
-        task = build_phylogenetic_tree.apply_async(
-            args=[task_input],
+        task = enqueue_task(
+            build_phylogenetic_tree,
+            task_input,
             queue=profile.get("queue", "phylo_tree"),
         )
 
@@ -291,11 +325,17 @@ class PhylogeneticTreeService:
         sm = cfg.supported_methods
 
         return PhyloMethodsResponse(
-            alignment_tools=[PhyloMethodOptionDTO(**item.model_dump()) for item in sm.alignment_tools],
+            alignment_tools=[
+                PhyloMethodOptionDTO(**item.model_dump()) for item in sm.alignment_tools
+            ],
             tree_methods=[PhyloMethodOptionDTO(**item.model_dump()) for item in sm.tree_methods],
             substitution_models=sm.substitution_models,
-            bootstrap_types=[PhyloMethodOptionDTO(**item.model_dump()) for item in sm.bootstrap_types],
-            presets={key: value.model_dump(exclude_none=True) for key, value in defaults.defaults.items()},
+            bootstrap_types=[
+                PhyloMethodOptionDTO(**item.model_dump()) for item in sm.bootstrap_types
+            ],
+            presets={
+                key: value.model_dump(exclude_none=True) for key, value in defaults.defaults.items()
+            },
         )
 
     # ------------------------------------------------------------------

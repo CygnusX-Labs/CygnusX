@@ -41,6 +41,7 @@ def bridge_settings(**overrides: object) -> Settings:
         "agentteams_bridge_data_steward_token": "steward-env-token",
         "agentteams_bridge_approval_token": "approval-env-token",
         "agentteams_bridge_workflow_operator_token": "operator-env-token",
+        "agentteams_element_url": "",
     }
     values.update(overrides)
     return Settings(**values)

@@ -16,6 +16,7 @@ class CreateStudioSessionRequest(BaseModel):
 
     agent_id: str = Field(..., description="绑定的 Agent ID")
     title: str | None = Field(None, description="会话标题，缺省为「与 <Agent名> 的工作台」")
+    project_id: str | None = Field(None, max_length=64, description="项目边界标识")
     model_id: UUID | None = Field(None, description="模型配置 ID，缺省用 Agent 绑定模型")
 
 
@@ -54,9 +55,9 @@ class RegisterStudioArtifactResponse(BaseModel):
 
 
 class ImportStudioDataFileRequest(BaseModel):
-    """从数据管理引入文件请求（左栏「从数据管理引入」按钮）"""
+    """从数据管理或聊天上传记录引入文件请求。"""
 
-    file_id: str = Field(..., description="数据管理中的文件 ID")
+    file_id: str = Field(..., description="file://{uuid} 数据管理文件或 upload://{hex} 聊天上传文件")
     name: str | None = Field(None, description="工作区内显示名，缺省用原文件名")
 
 
@@ -105,7 +106,7 @@ class ImportStudioDataFileResponse(BaseModel):
     sandbox_path: str = Field(..., description="沙盒内可读路径，如 /workspace/input/a.csv")
     name: str = Field(..., description="工作区内链接名（重名自动加序号）")
     size: int = Field(..., description="文件大小（字节）")
-    file_type: str = Field(..., description="数据管理中的文件类型")
+    file_type: str = Field(..., description="数据管理或聊天上传文件类型")
     input_files: list[str] = Field(
         default_factory=list, description="当前 /workspace/input/ 下全部已引入路径"
     )

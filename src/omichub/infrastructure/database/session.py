@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -11,9 +12,31 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 
 from omichub.core.config import get_settings
+from omichub.core.telemetry import get_meter
 
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
+_meter = get_meter("omichub.database")
+_pool_checked_out = _meter.create_up_down_counter(
+    "omichub.database.pool.checked_out",
+    unit="{connection}",
+    description="Database connections currently checked out from the SQLAlchemy pool.",
+)
+_pool_checkout_total = _meter.create_counter(
+    "omichub.database.pool.checkouts",
+    unit="{connection}",
+    description="Successful SQLAlchemy database pool checkouts.",
+)
+_pool_connect_total = _meter.create_counter(
+    "omichub.database.pool.connects",
+    unit="{connection}",
+    description="Database connections opened by SQLAlchemy.",
+)
+_pool_invalidated_total = _meter.create_counter(
+    "omichub.database.pool.invalidations",
+    unit="{connection}",
+    description="Database connections invalidated by SQLAlchemy.",
+)
 
 
 def get_engine() -> AsyncEngine:
@@ -21,16 +44,51 @@ def get_engine() -> AsyncEngine:
     global _engine
     if _engine is None:
         settings = get_settings()
-        _engine = create_async_engine(
-            settings.database_url,
-            echo=settings.app_debug,
-            pool_pre_ping=True,
-            # Celery 任务用 asyncio.run() 每次新建事件循环；QueuePool 会跨循环保留连接，
-            # 复用时抛 "Future attached to a different loop"。NullPool 不保留连接、每次新建，
-            # web(FastAPI 单循环) 与 celery(每任务新循环) 共用本单例引擎均安全。
-            poolclass=NullPool,
-        )
+        engine_options: dict[str, object] = {
+            "echo": settings.app_debug,
+            "pool_pre_ping": True,
+        }
+        pool_name = "NullPool"
+        if settings.service_name == "web":
+            # AsyncEngine 默认创建 AsyncAdaptedQueuePool；显式传入同步 QueuePool
+            # 会被 SQLAlchemy 拒绝，因此这里只提供容量参数。
+            pool_name = "AsyncAdaptedQueuePool"
+            engine_options.update(
+                pool_size=settings.database_pool_size,
+                max_overflow=settings.database_max_overflow,
+                pool_timeout=settings.database_pool_timeout_seconds,
+                pool_recycle=settings.database_pool_recycle_seconds,
+            )
+        else:
+            # Celery/Beat 每个任务可由 asyncio.run() 建立新事件循环；保留连接会导致
+            # "Future attached to a different loop"，因此 Worker 仍使用 NullPool。
+            engine_options["poolclass"] = NullPool
+        _engine = create_async_engine(settings.database_url, **engine_options)
+        _instrument_pool(_engine, service_name=settings.service_name, pool_name=pool_name)
     return _engine
+
+
+def _instrument_pool(engine: AsyncEngine, *, service_name: str, pool_name: str) -> None:
+    """Expose SQLAlchemy connection-pool lifecycle metrics through OTel/Prometheus."""
+    attributes = {"service": service_name, "pool": pool_name}
+    pool = engine.sync_engine.pool
+
+    @event.listens_for(pool, "connect")
+    def _on_connect(*_args: object) -> None:
+        _pool_connect_total.add(1, attributes)
+
+    @event.listens_for(pool, "checkout")
+    def _on_checkout(*_args: object) -> None:
+        _pool_checked_out.add(1, attributes)
+        _pool_checkout_total.add(1, attributes)
+
+    @event.listens_for(pool, "checkin")
+    def _on_checkin(*_args: object) -> None:
+        _pool_checked_out.add(-1, attributes)
+
+    @event.listens_for(pool, "invalidate")
+    def _on_invalidate(*_args: object) -> None:
+        _pool_invalidated_total.add(1, attributes)
 
 
 def get_session_factory() -> async_sessionmaker[AsyncSession]:

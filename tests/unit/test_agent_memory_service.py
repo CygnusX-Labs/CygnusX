@@ -9,7 +9,10 @@ import pytest
 from omichub.application.services.agent_memory_service import AgentMemoryService
 from omichub.application.services.agent_memory_tool_service import AgentMemoryToolService
 from omichub.core.exceptions import BusinessError
-from omichub.infrastructure.database.models.agent_memory import AgentMemoryModel
+from omichub.infrastructure.database.models.agent_memory import (
+    EMBEDDING_DIMENSIONS,
+    AgentMemoryModel,
+)
 
 
 def test_memory_content_rejects_sensitive_credentials() -> None:
@@ -67,14 +70,20 @@ async def test_semantic_rank_prefers_embedding_similarity(monkeypatch) -> None:
     class EmbeddingClient:
         async def embeddings(self, _text: str, *, model: str) -> list[float]:
             assert model == "text-embedding-3-small"
-            return [1.0, 0.0]
+            return [1.0, *([0.0] * (EMBEDDING_DIMENSIONS - 1))]
 
     now = datetime.now(UTC)
     lexical_only = AgentMemoryModel(
-        content="小鼠脑单细胞项目", keywords=["小鼠"], embedding=[0.0, 1.0], updated_at=now
+        content="小鼠脑单细胞项目",
+        keywords=["小鼠"],
+        embedding=[0.0, 1.0, *([0.0] * (EMBEDDING_DIMENSIONS - 2))],
+        updated_at=now,
     )
     semantic_match = AgentMemoryModel(
-        content="肿瘤转录组分析偏好", keywords=[], embedding=[1.0, 0.0], updated_at=now
+        content="肿瘤转录组分析偏好",
+        keywords=[],
+        embedding=[1.0, *([0.0] * (EMBEDDING_DIMENSIONS - 1))],
+        updated_at=now,
     )
     service = AgentMemoryService(AsyncMock(), embedding_client=EmbeddingClient())
 
@@ -101,5 +110,26 @@ async def test_embedding_failure_returns_empty_vector_for_keyword_fallback(monke
             raise RuntimeError("embedding service unavailable")
 
     service = AgentMemoryService(AsyncMock(), embedding_client=BrokenEmbeddingClient())
+
+    assert await service._embed("测试") == []
+
+
+@pytest.mark.asyncio
+async def test_wrong_dimension_embedding_returns_empty_vector_for_keyword_fallback(monkeypatch) -> None:
+    settings = SimpleNamespace(
+        agent_memory_semantic_retrieval_enabled=True,
+        agent_memory_embedding_model="text-embedding-3-small",
+        agent_memory_semantic_candidate_limit=100,
+    )
+    monkeypatch.setattr(
+        "omichub.application.services.agent_memory_service.get_settings", lambda: settings
+    )
+
+    class WrongDimensionEmbeddingClient:
+        async def embeddings(self, _text: str, *, model: str) -> list[float]:
+            assert model == "text-embedding-3-small"
+            return [0.1, 0.2]
+
+    service = AgentMemoryService(AsyncMock(), embedding_client=WrongDimensionEmbeddingClient())
 
     assert await service._embed("测试") == []

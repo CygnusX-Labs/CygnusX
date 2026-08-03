@@ -36,6 +36,7 @@ export interface PhyloUploadResponse {
 
 export interface PhyloSubmitRequest {
   file_id: string
+  project_name: string
   alignment_tool: AlignmentTool
   alignment_mode: string
   tree_method: TreeMethod

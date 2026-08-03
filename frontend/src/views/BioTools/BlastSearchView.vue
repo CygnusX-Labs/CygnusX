@@ -36,6 +36,7 @@ const loadingDatabases = ref(false)
 
 const selectedDbId = ref<string | null>(null)
 const fastaInput = ref('')
+const projectName = ref('')
 const queryTitle = ref('Untitled Query')
 const program = ref<ProgramType | undefined>(undefined)
 const evalue = ref(1e-5)
@@ -155,6 +156,7 @@ function ensureFasta(text: string, title: string): string {
 
 function validateInput(): string | null {
   if (!selectedDbId.value) return '请选择目标数据库'
+  if (!projectName.value.trim()) return '请填写项目名称'
   const trimmed = fastaInput.value.trim()
   if (!trimmed) return '请输入查询序列'
   const { sequence } = parseFasta(trimmed)
@@ -184,6 +186,7 @@ async function handleSearch() {
     const requestTitle = queryTitle.value.trim() || title || 'Untitled Query'
     const request = {
       db_id: db.id,
+      project_name: projectName.value.trim(),
       query_sequence: ensureFasta(fastaInput.value, requestTitle),
       query_title: requestTitle,
       program: program.value,
@@ -582,6 +585,8 @@ onUnmounted(() => {
           </div>
           <label class="field-label">查询名称</label>
           <NInput v-model:value="queryTitle" placeholder="自定义查询名称" />
+          <label class="field-label">项目名称</label>
+          <NInput v-model:value="projectName" placeholder="例如：水稻抗病基因检索" />
           <button type="button" class="advanced-toggle" :aria-expanded="advancedParamsExpanded" @click="advancedParamsExpanded = !advancedParamsExpanded">
             高级参数 <NIcon :class="{ 'is-expanded': advancedParamsExpanded }"><ChevronDownOutline /></NIcon>
           </button>

@@ -32,6 +32,7 @@ from omichub.infrastructure.database.repositories.user_repository import (
 )
 from omichub.infrastructure.execution.generic_builder import GenericFlowBuilder
 from omichub.infrastructure.execution.local import LocalSnakemakeExecutor
+from omichub.infrastructure.task_queue.dispatcher import enqueue_task
 
 
 class TaskService:
@@ -63,9 +64,16 @@ class TaskService:
         flow_config = self._flow_service.get_flow_config(req.flow_id)
         flow_detail = self._flow_service.get_flow(req.flow_id)
 
-        # 预生成 task_id 用于工作目录路径（统一收拢到 users/{uid}/results/{flow_id}/{task_id}/）
+        # 预生成 task_id 用于数据库、队列和审计关联；用户目录由项目名和运行时间生成。
         task_id = uuid.uuid4()
-        work_dir = self._make_work_dir(req.flow_id, user_id, task_id)
+        work_dir = self._make_work_dir(req.flow_id, req.name, user_id)
+        from omichub.application.services.file_service import ensure_directory_chain
+        from omichub.infrastructure.storage import get_path_factory
+
+        project_relative = Path(work_dir).parent.relative_to(
+            get_path_factory().user_root(user_id)
+        ).as_posix()
+        await ensure_directory_chain(self._db, UUID(user_id), project_relative)
 
         # 参数快照：复制一份不可变的提交时参数
         parameter_snapshot = dict(req.parameters)
@@ -85,6 +93,7 @@ class TaskService:
             task_id=str(task_id),
             flow_id=req.flow_id,
             user_id=user_id,
+            project_name=req.name,
         )
 
         # 创建任务聚合根（复用预生成的 task_id，保证 work_dir 路径与 task id 一致）
@@ -102,8 +111,8 @@ class TaskService:
         task.work_dir = work_dir
         await self._repo.save(task)
 
-        # 投递 Celery 任务
-        run_snakemake.delay(
+        enqueue_task(
+            run_snakemake,
             snakefile=flow_detail.execution["snakefile"],
             task_id=str(task.id),
             config_file=config_file,
@@ -259,7 +268,9 @@ class TaskService:
             work_dir=task.work_dir,
         )
 
-    def _write_monitor_config(self, work_dir: str, task_id: str, flow_id: str, user_id: str) -> None:
+    def _write_monitor_config(
+        self, work_dir: str, task_id: str, flow_id: str, user_id: str, project_name: str
+    ) -> None:
         """Write per-task monitor config for the Snakemake logger plugin."""
         if not self._settings.workflow_monitor_enabled:
             return
@@ -275,7 +286,7 @@ class TaskService:
             )
             token_placeholder = "${" + self._settings.workflow_monitor_plugin_token_env + "}"
             data = {
-                "project_name": task_id,
+                "project_name": project_name,
                 "omichub_monitor_url": monitor_event_url,
                 "omichub_monitor_token": token_placeholder,
                 "omichub_task_id": task_id,
@@ -293,16 +304,18 @@ class TaskService:
             # Monitoring must not block task submission; the workflow can still run without it.
             return
 
-    def _make_work_dir(self, flow_id: str, user_id: str, task_id: uuid.UUID) -> str:
+    def _make_work_dir(self, flow_id: str, project_name: str, user_id: str) -> str:
         """生成任务工作目录 — 使用统一路径工厂。
 
-        新路径: users/{uid}/tasks/{task_id}/work/{flow_id}/
+        新路径: users/{uid}/projects/{project}/runs/{flow}-{timestamp}/work/
         旧路径 users/{uid}/results/{flow_id}/{task_id}/ 保留给历史任务。
         """
         from omichub.infrastructure.storage import get_path_factory
 
         pf = get_path_factory()
-        pf.ensure_task_dirs(user_id, str(task_id))
-        work_dir = pf.task_work_dir(user_id, str(task_id)) / flow_id
+        run_dir = pf.create_project_run_dir(user_id, project_name, flow_id)
+        for name in ("input", "output", "work", "logs"):
+            (run_dir / name).mkdir(parents=True, exist_ok=True)
+        work_dir = run_dir / "work"
         work_dir.mkdir(parents=True, exist_ok=True)
         return str(work_dir)

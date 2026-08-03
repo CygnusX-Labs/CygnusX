@@ -15,6 +15,7 @@ MemoryScope = Literal["profile", "project", "preference", "summary"]
 class AgentMemoryDTO(OmicsHubBaseSchema):
     id: str
     agent_id: str | None = None
+    project_id: str | None = None
     scope: MemoryScope
     content: str
     keywords: list[str] = Field(default_factory=list)

@@ -130,7 +130,7 @@ disallow_untyped_defs = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["celery.*", "flower.*", "snakemake.*", "mcp.*", "docker.*", "lunardate.*", "langgraph.*", "langchain_core.*"]
+module = ["celery.*", "flower.*", "snakemake.*", "mcp.*", "docker.*", "lunardate.*", "langgraph.*", "langchain_core.*", "rocketmq.*"]
 ignore_missing_imports = true
 
 # === Pytest 配置 ===

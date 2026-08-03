@@ -17,6 +17,7 @@ from omichub.domain.mas.models import (
 )
 from omichub.infrastructure.database.models.mas import MASNodeModel
 from omichub.infrastructure.database.repositories.mas_repository import MASRepository
+from omichub.infrastructure.task_queue.dispatcher import enqueue_task
 
 
 class MASSchedulerService:
@@ -108,27 +109,27 @@ class MASSchedulerService:
         if node.resources.get("executor") == "fake":
             from omichub.infrastructure.celery_app.tasks.mas import run_fake_node
 
-            run_fake_node.delay(str(run_id), node.node_key)
+            enqueue_task(run_fake_node, str(run_id), node.node_key)
         elif node.resources.get("executor") == "apptainer-rnaflow":
             from omichub.infrastructure.celery_app.tasks.mas import run_rnaflow_node
 
-            run_rnaflow_node.delay(str(run_id), node.node_key)
+            enqueue_task(run_rnaflow_node, str(run_id), node.node_key)
         elif node.resources.get("executor") == "deg-volcano":
             from omichub.infrastructure.celery_app.tasks.mas import run_volcano_node
 
-            run_volcano_node.delay(str(run_id), node.node_key)
+            enqueue_task(run_volcano_node, str(run_id), node.node_key)
         elif node.resources.get("executor") == "quality-gate":
             from omichub.infrastructure.celery_app.tasks.mas import run_quality_gate_node
 
-            run_quality_gate_node.delay(str(run_id), node.node_key)
+            enqueue_task(run_quality_gate_node, str(run_id), node.node_key)
         elif node.resources.get("executor") == "ebi-download":
             from omichub.infrastructure.celery_app.tasks.mas import run_ebi_download_node
 
-            run_ebi_download_node.delay(str(run_id), node.node_key)
+            enqueue_task(run_ebi_download_node, str(run_id), node.node_key)
         elif node.resources.get("executor") == "scanpy-qc":
             from omichub.infrastructure.celery_app.tasks.mas import run_scanpy_qc_node
 
-            run_scanpy_qc_node.delay(str(run_id), node.node_key)
+            enqueue_task(run_scanpy_qc_node, str(run_id), node.node_key)
         return True
 
     async def mark_node_succeeded(self, event: A2AEvent) -> bool:
@@ -136,7 +137,11 @@ class MASSchedulerService:
         if event.node_key is None:
             return False
         node = await self._repository.get_node(event.run_id, event.node_key)
-        if node is None or node.status != NodeState.RUNNING.value or node.version != event.state_version:
+        if (
+            node is None
+            or node.status != NodeState.RUNNING.value
+            or node.version != event.state_version
+        ):
             return False
         if not await self._repository.transition_node(
             node_id=node.id,
@@ -147,7 +152,9 @@ class MASSchedulerService:
             return False
         await self.unlock_ready_nodes(event.run_id, event.trace_id)
         nodes = await self._repository.list_nodes(event.run_id)
-        if all(node.status in {NodeState.SUCCEEDED.value, NodeState.SKIPPED.value} for node in nodes):
+        if all(
+            node.status in {NodeState.SUCCEEDED.value, NodeState.SKIPPED.value} for node in nodes
+        ):
             run = await self._repository.get_run(event.run_id)
             if run is not None and run.status == "running":
                 await self._repository.transition_run(
@@ -163,7 +170,11 @@ class MASSchedulerService:
         if event.node_key is None:
             return False
         node = await self._repository.get_node(event.run_id, event.node_key)
-        if node is None or node.status != NodeState.RUNNING.value or node.version != event.state_version:
+        if (
+            node is None
+            or node.status != NodeState.RUNNING.value
+            or node.version != event.state_version
+        ):
             return False
         error_code = str(event.summary.metrics.get("error_code", "UNKNOWN"))
         decision = classify_error(error_code)
@@ -193,7 +204,9 @@ class MASSchedulerService:
                     trace_id=event.trace_id,
                     run_id=event.run_id,
                     node_key=node.node_key,
-                    sender=AgentSender(kind="system", id="mas-scheduler", attempt_count=next_attempt),
+                    sender=AgentSender(
+                        kind="system", id="mas-scheduler", attempt_count=next_attempt
+                    ),
                     recipient=AgentRecipient(kind="worker", id=node.agent_id),
                     status="retry_scheduled",
                     intent=node.intent,
@@ -210,7 +223,9 @@ class MASSchedulerService:
                     trace_id=event.trace_id,
                     run_id=event.run_id,
                     node_key=node.node_key,
-                    sender=AgentSender(kind="system", id="mas-scheduler", attempt_count=next_attempt),
+                    sender=AgentSender(
+                        kind="system", id="mas-scheduler", attempt_count=next_attempt
+                    ),
                     recipient=AgentRecipient(kind="worker", id=node.agent_id),
                     status="ready",
                     intent=node.intent,
@@ -222,7 +237,9 @@ class MASSchedulerService:
                 )
             )
             return True
-        target_state = NodeState.WAITING_APPROVAL if decision.requires_approval else NodeState.FAILED
+        target_state = (
+            NodeState.WAITING_APPROVAL if decision.requires_approval else NodeState.FAILED
+        )
         if not await self._repository.transition_node(
             node_id=node.id,
             expected_version=node.version,
@@ -237,7 +254,10 @@ class MASSchedulerService:
                 node_id=node.id,
                 kind=error_code.lower(),
                 prompt=event.summary.message or f"节点 {node.node_key} 需要人工处理：{error_code}",
-                options=[{"value": "approve", "label": "确认继续"}, {"value": "reject", "label": "终止运行"}],
+                options=[
+                    {"value": "approve", "label": "确认继续"},
+                    {"value": "reject", "label": "终止运行"},
+                ],
             )
             if run is not None and run.status == "running":
                 await self._repository.transition_run(

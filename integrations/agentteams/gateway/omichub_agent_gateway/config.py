@@ -27,6 +27,8 @@ class GatewaySettings(BaseSettings):
         "agent-scrna|interpretation,planning_advice,result_interpretation,qc_advice|"
         "ensembl.lookup_gene,ensembl.search_genes;"
         "agent-viz|interpretation,result_interpretation,qc_advice|"
+        "ensembl.lookup_gene,ensembl.search_genes;"
+        "agent-code|interpretation,planning_advice,result_interpretation,qc_advice|"
         "ensembl.lookup_gene,ensembl.search_genes"
     )
 

@@ -253,3 +253,37 @@ async def test_list_agents_reconciles_stale_binding_to_active_default(
     assert repaired.model_id == qwen_provider.id
     assert repaired.model_name == "Qwen 3.7 Flash"
     assert repaired.model_engine == "qwen3.7-flash"
+
+
+async def test_reconcile_binds_unbound_builtin_agent_to_active_default(
+    service: AgentService, db: AsyncSession
+) -> None:
+    """历史内置 Agent 缺失 model_id 时应恢复到可用默认模型。"""
+    await db.execute(update(AIProviderConfigModel).values(is_default=False))
+    provider = AIProviderConfigModel(
+        id=uuid4(),
+        name="Studio 默认模型",
+        provider_type="openai_compatible",
+        model="qwen3.7-plus",
+        base_url="https://example.com/v1",
+        api_key="sk-default",
+        is_active=True,
+        is_default=True,
+    )
+    builtin_agent = AgentTemplateModel(
+        agent_id=f"builtin-unbound-{uuid4().hex[:8]}",
+        name="单细胞分析师",
+        category="scrna",
+        is_builtin=True,
+        model_id=None,
+        model_name="qwen3.7-max",
+        model_engine="",
+    )
+    db.add_all([provider, builtin_agent])
+    await db.flush()
+
+    await service._reconcile_model_bindings()
+
+    assert builtin_agent.model_id == provider.id
+    assert builtin_agent.model_name == "Studio 默认模型"
+    assert builtin_agent.model_engine == "qwen3.7-plus"

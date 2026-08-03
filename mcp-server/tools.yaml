@@ -60,17 +60,17 @@ groups:
 
   - id: downloads
     module: tools.downloads
-    description: "数据下载 — EBI/SRA 和云存储下载"
+    description: "数据下载 — 公共数据库(SRA/GEO, PRJ/SRR/GSM 登录号, aws/aspera/ftp 高速下载)、多云存储(aliyun/volc/huawei)、HTTP 直链下载到用户 raw_data"
     tools:
       - name: omichub_submit_download
-        description: "提交下载任务"
+        description: "提交下载任务(SRA/GEO 公共数据库、云存储、直链三类来源)"
         read_only: false
         requires_confirm: true
       - name: omichub_list_downloads
         description: "列出下载任务"
         read_only: true
       - name: omichub_get_download_progress
-        description: "获取下载进度"
+        description: "获取逐 run 分阶段下载进度"
         read_only: true
 
   - id: files

@@ -21,7 +21,11 @@ def settings(tmp_path):
         omichub_base_url="http://omic.test",
         omichub_service_token="service-token",
         approval_signing_secret="test-signing-secret",
-        identities="approval-authority:approval,bioops-manager:manager,data-steward:steward,workflow-operator:operator,quality-auditor:auditor,delivery-reporter:reporter",
+        identities=(
+            "approval-authority:approval,bioops-manager:manager,data-steward:steward,"
+            "workflow-operator:operator,quality-auditor:auditor,delivery-reporter:reporter,"
+            "agent-code:code,agent-viz:viz,agent-scrna:scrna"
+        ),
         allowed_flow_ids="rna_seq",
         audit_log_path=str(tmp_path / "audit.jsonl"),
         case_store_path=str(tmp_path / "cases.json"),
@@ -122,6 +126,78 @@ async def test_flow_allowlist_and_identity_boundary(client) -> None:
     response = await request_client.get("/v1/flows", headers=headers("data-steward", "steward"))
     assert response.status_code == 200
     assert response.json() == {"items": [{"id": "rna_seq"}], "total": 1}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("worker", "token", "skill_name"),
+    [
+        ("agent-code", "code", "code-review"),
+        ("agent-viz", "viz", "visualization-review"),
+        ("agent-scrna", "scrna", "scrna-interpretation"),
+    ],
+)
+async def test_professional_agent_worker_can_claim_and_complete_own_read_only_work_item(
+    client, worker: str, token: str, skill_name: str
+) -> None:
+    request_client, _ = client
+    case_id = f"{worker}-case"
+    work_item_id = f"{worker}-review"
+    await create_case(request_client, case_id)
+
+    assigned = await request_client.post(
+        f"/v1/cases/{case_id}/work-items",
+        headers=headers("bioops-manager", "manager"),
+        json={
+            "work_item_id": work_item_id,
+            "target": worker,
+            "objective": "提供可追溯的只读专业建议。",
+            "skill_name": skill_name,
+            "context_refs": [{"kind": "project", "id": "project-1"}],
+            "read_only": True,
+        },
+    )
+    assert assigned.status_code == 201
+
+    inbox = await request_client.get("/v1/work-items/assigned", headers=headers(worker, token))
+    assert inbox.status_code == 200
+    assert [item["work_item_id"] for item in inbox.json()["items"]] == [work_item_id]
+
+    claimed = await request_client.post(
+        f"/v1/cases/{case_id}/work-items/{work_item_id}/claim",
+        headers=headers(worker, token),
+    )
+    assert claimed.status_code == 200
+    assert claimed.json()["status"] == "in_progress"
+
+    completed = await request_client.post(
+        f"/v1/cases/{case_id}/work-items/{work_item_id}",
+        headers=headers(worker, token),
+        json={"status": "completed", "summary": "已完成只读专业建议。"},
+    )
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_professional_agent_worker_rejects_writable_work_item(client) -> None:
+    request_client, _ = client
+    await create_case(request_client, "code-write-case")
+
+    response = await request_client.post(
+        "/v1/cases/code-write-case/work-items",
+        headers=headers("bioops-manager", "manager"),
+        json={
+            "work_item_id": "code-write",
+            "target": "agent-code",
+            "objective": "尝试创建可写任务。",
+            "skill_name": "code-review",
+            "read_only": False,
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Professional agent work items must be read-only"
 
 
 @pytest.mark.asyncio
@@ -1160,6 +1236,72 @@ async def test_manager_cannot_use_worker_inbox_endpoint(client) -> None:
         "/v1/work-items/assigned", headers=headers("bioops-manager", "manager")
     )
     assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_health_probes_validate_identity_and_worker_inbox_heartbeat(client) -> None:
+    request_client, _ = client
+
+    identity = await request_client.get(
+        "/v1/health/identity", headers=headers("data-steward", "steward")
+    )
+    assert identity.status_code == 200
+    assert identity.json() == {"status": "ok", "identity": "data-steward"}
+
+    before = await request_client.get(
+        "/v1/health/workers", headers=headers("bioops-manager", "manager")
+    )
+    assert before.status_code == 200
+    assert not next(item for item in before.json()["workers"] if item["identity"] == "agent-code")["active"]
+
+    inbox = await request_client.get(
+        "/v1/work-items/assigned", headers=headers("agent-code", "code")
+    )
+    assert inbox.status_code == 200
+
+    after = await request_client.get(
+        "/v1/health/workers", headers=headers("bioops-manager", "manager")
+    )
+    agent_code = next(item for item in after.json()["workers"] if item["identity"] == "agent-code")
+    assert agent_code["configured"] is True
+    assert agent_code["active"] is True
+    assert agent_code["last_seen_at"]
+    assert after.json()["allowed_flows"] == ["rna_seq"]
+
+
+@pytest.mark.asyncio
+async def test_preflight_preserves_consultation_summary_as_non_blocking_evidence(client) -> None:
+    request_client, _ = client
+    await create_case(request_client, "bioops_consultation")
+    response = await request_client.post(
+        "/v1/projects/project-1/preflight",
+        headers=headers("data-steward", "steward"),
+        json={
+            "case_id": "bioops_consultation",
+            "flow_id": "rna_seq",
+            "sample_sheet": [{"sample": "S01"}],
+            "consultation_summary": "优先核验样本质量，再进行差异设计。",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "passed"
+    assert response.json()["next_actions"] == ["request_submission_approval"]
+    assert response.json()["findings"][0]["code"] == "CONSULTATION_CONTEXT"
+
+    case = await request_client.get(
+        "/v1/cases/bioops_consultation", headers=headers("bioops-manager", "manager")
+    )
+    assert case.json()["status"] == "approval_pending"
+    assert case.json()["preflight_input"]["consultation_summary"] == "优先核验样本质量，再进行差异设计。"
+
+    events = await request_client.get(
+        "/v1/cases/bioops_consultation/events", headers=headers("bioops-manager", "manager")
+    )
+    preflight_event = next(
+        item for item in events.json()["events"] if item["event_type"] == "skill.finished"
+    )
+    assert preflight_event["payload"]["summary"] == "预检已引用会诊纪要并通过。"
 
 
 @pytest.mark.asyncio

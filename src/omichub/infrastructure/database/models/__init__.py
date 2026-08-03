@@ -22,6 +22,7 @@ from omichub.infrastructure.database.models.blast import (
 )
 from omichub.infrastructure.database.models.chat import (
     ChatAssistantModel,
+    CollaborationDegradationEventModel,
     ChatHandoffEventModel,
     ChatMessageModel,
     ChatSessionModel,
@@ -97,6 +98,7 @@ __all__ = [
     "ChatMessageModel",
     "ChatAssistantModel",
     "ChatHandoffEventModel",
+    "CollaborationDegradationEventModel",
     "AIProviderConfigModel",
     "AiCallMetricModel",
     "AiMetricAlertModel",

@@ -17,6 +17,7 @@ import {
   ChatbubbleEllipsesOutline, GridOutline, CodeSlashOutline, PowerOutline, TimeOutline,
 } from '@vicons/ionicons5'
 import KimiMessageList from '@/components/ai-chat/KimiMessageList.vue'
+import type { CollaborationRouteInfo } from '@/components/ai-chat/types'
 import KimiChatInput from '@/components/ai-chat/KimiChatInput.vue'
 import PendingApprovalBar, {
   type PendingApprovalItem,
@@ -82,12 +83,12 @@ const leftCollapsed = ref(false)
 const rightCollapsed = ref(false)
 const rightSections = reactive({ artifacts: true, plan: true, sandbox: true })
 const leftWidth = ref(260)
-const RIGHT_WIDTH_KEY = 'omichub:studio:right-width'
+const RIGHT_WIDTH_KEY = 'omichub:studio:right-width-v2'
 function loadRightWidth(): number {
   const saved = Number(localStorage.getItem(RIGHT_WIDTH_KEY))
-  return Number.isFinite(saved) && saved >= 220 && saved <= 360 ? saved : 260
+  return Number.isFinite(saved) && saved >= 200 && saved <= 320 ? saved : 232
 }
-// 右侧状态栏默认收窄到 260px，可拖拽 220~360px 并记忆（问题⑧）
+// 右侧状态栏默认收窄到 232px，可拖拽 200~320px 并记忆。
 const rightWidth = ref(loadRightWidth())
 
 type StudioViewMode = 'chat' | 'split' | 'code'
@@ -452,14 +453,49 @@ const statusInfo = computed(() => {
 })
 
 // ---------- 交互 ----------
-function handleSend(
+async function handleSend(
   content: string,
   options: { attachments?: FileAttachment[]; enableWebSearch?: boolean; enableCodeExecution?: boolean } = {},
 ) {
   if (!content.trim() && !options.attachments?.length) return
   if (store.isStreaming) return
-  store.sendMessage(content, options)
+  const currentId = sessionId.value
+  const previousArtifactPaths = new Set<string>()
+  if (currentId) {
+    try {
+      const artifacts = await studioApi.listArtifacts(currentId)
+      artifacts.forEach((artifact) => previousArtifactPaths.add(artifact.path))
+    } catch {
+      // 产物列表暂不可用时不阻塞用户发起分析，结束后仍会统一刷新。
+    }
+  }
+  try {
+    await store.sendMessage(content, options)
+  } finally {
+    refreshWorkspace()
+    if (currentId) {
+      try {
+        const artifacts = await studioApi.listArtifacts(currentId)
+        const latestReport = artifacts
+          .filter((artifact) => !previousArtifactPaths.has(artifact.path))
+          .filter((artifact) => /\.(md|markdown)$/i.test(artifact.path))
+          .sort((left, right) => right.mtime - left.mtime)[0]
+        if (latestReport) await openFileInEditor(latestReport.path, { pin: true })
+      } catch {
+        // 右栏会保留可重试错误状态；报告自动打开失败不影响本轮对话结果。
+      }
+    }
+  }
   input.value = ''
+}
+
+function handleCreateCaseFromConsultation(summary: string, consultationId?: string) {
+  const source = consultationId ? `\n会诊来源 ID：${consultationId}` : ''
+  input.value = `请基于以下会诊纪要创建协作 Case。请先向我确认项目和流程信息，并将纪要作为预检参考；创建时请携带会诊来源字段。${source}\n会诊纪要：${summary}`
+}
+
+function handleCorrectCollaborationRoute(route: CollaborationRouteInfo) {
+  input.value = `我不想走“${route.label}”这条路径。请改为：`
 }
 
 function handleInsertArtifact(path: string) {
@@ -714,7 +750,7 @@ function startResizeRight(e: MouseEvent) {
   const startX = e.clientX
   const startW = rightWidth.value
   const onMove = (ev: MouseEvent) => {
-    rightWidth.value = Math.min(360, Math.max(220, startW - (ev.clientX - startX)))
+    rightWidth.value = Math.min(320, Math.max(200, startW - (ev.clientX - startX)))
   }
   const onUp = () => {
     document.removeEventListener('mousemove', onMove)
@@ -934,6 +970,8 @@ function formatSessionTime(iso: string): string {
               :agent-avatar="agent?.avatar"
               :agent-color="agent?.color"
               :target-message-id="String(route.query.message || '')"
+              @create-case-from-consultation="handleCreateCaseFromConsultation"
+              @correct-collaboration-route="handleCorrectCollaborationRoute"
             />
             <PendingApprovalBar
               :approvals="pendingApprovals"
@@ -980,6 +1018,7 @@ function formatSessionTime(iso: string): string {
               :session-id="sessionId"
               :refresh-key="artifactsKey"
               @insert="handleInsertArtifact"
+              @open="openFileInEditor"
             />
           </div>
         </div>

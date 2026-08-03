@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import uuid
 from datetime import datetime
@@ -25,12 +26,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from omichub.application.schemas.chat import ChatSessionDTO
+from omichub.application.services.file_service import ensure_directory_chain
 from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError, NotFoundError
+from omichub.infrastructure.config.storage_config import get_user_chat_upload_dir
 from omichub.infrastructure.database.models.chat import ChatSessionModel
 from omichub.infrastructure.database.models.file import FileRecordModel
 from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
 from omichub.infrastructure.database.models.task import TaskModel
+from omichub.infrastructure.storage import get_path_factory
 from omichub.infrastructure.studio.manager import studio_sandbox_manager
 from omichub.infrastructure.studio.paths import PathEscapeError
 from omichub.infrastructure.studio.workspace import (
@@ -51,13 +55,34 @@ CONTEXT_PACK_HINT = (
     "登记为原报告的新版本（版本树）。"
 )
 
+_CHAT_UPLOAD_ID_RE = re.compile(r"^[a-fA-F0-9]{16,128}$")
+
+
+def _resolve_chat_upload_file(user_id: str, upload_id: str) -> tuple[Path, str, int]:
+    """解析当前用户聊天上传文件，返回路径、平台相对路径与大小。"""
+    upload_dir = get_user_chat_upload_dir(user_id)
+    candidates = sorted(
+        upload_dir.glob(f"{upload_id}*"), key=lambda path: (len(path.suffix), path.name)
+    )
+    if not candidates:
+        raise NotFoundError("聊天上传文件不存在或无权访问")
+    upload_path = candidates[0]
+    try:
+        resolved_upload = upload_path.resolve()
+        resolved_upload.relative_to(upload_dir.resolve())
+        storage_rel = resolved_upload.relative_to(
+            Path(get_settings().storage_path).resolve()
+        ).as_posix()
+    except ValueError as exc:
+        raise BusinessError("聊天上传文件路径异常") from exc
+    if not resolved_upload.is_file():
+        raise NotFoundError("聊天上传文件已丢失，请重新上传")
+    return resolved_upload, storage_rel, resolved_upload.stat().st_size
+
 
 def user_platform_root(user_id: str) -> Path:
-    """当前用户的平台数据根（{storage_path}/users/{user_id}）。
-
-    即沙盒容器内 /data/platform 只读挂载的宿主源目录。
-    """
-    return Path(get_settings().storage_path) / "users" / str(user_id)
+    """当前用户的平台数据根；保留给 Studio 路由的兼容接口。"""
+    return get_path_factory().user_root(user_id)
 
 
 def report_file_mount_rel(file_path: str, user_id: str) -> str | None:
@@ -230,17 +255,45 @@ async def import_datahub_file(
     name: str | None,
     db: AsyncSession,
 ) -> dict[str, Any]:
-    """把数据管理文件引入 Studio 工作区（/workspace/input/ 只读软链，数据不搬家）。
+    """把数据管理文件或聊天上传文件引入 Studio 工作区。
 
     校验文件归属（强制 user_id 匹配，杜绝跨租户水平越权）与 active 状态，
     软链目标为容器内 /data/platform/<用户相对路径>。返回
     {sandbox_path, name, size, file_type, original_name, input_files}；
     失败抛 NotFoundError / BusinessError（由调用方按通道收敛）。
     """
-    if not file_id:
+    raw_file_id = str(file_id or "").strip()
+    if not raw_file_id:
         raise BusinessError("file_id 不能为空")
+
+    if raw_file_id.startswith("upload://"):
+        upload_id = raw_file_id.removeprefix("upload://").strip()
+        if not _CHAT_UPLOAD_ID_RE.fullmatch(upload_id):
+            raise BusinessError("聊天上传 file_id 格式非法")
+
+        upload_path, storage_rel, upload_size = await asyncio.to_thread(
+            _resolve_chat_upload_file, str(user_id), upload_id
+        )
+
+        workspace = studio_sandbox_manager.workspace_dir(session_id)
+        studio_sandbox_manager.ensure_workspace_dirs(workspace)
+        try:
+            mount_rel = platform_user_rel(storage_rel, str(user_id))
+        except PathEscapeError as exc:
+            raise BusinessError(str(exc)) from exc
+        link_name = link_platform_file(workspace, mount_rel, name or upload_path.name)
+        return {
+            "sandbox_path": f"/workspace/input/{link_name}",
+            "name": link_name,
+            "size": upload_size,
+            "file_type": "chat_upload",
+            "original_name": upload_path.name,
+            "input_files": [f"/workspace/input/{item}" for item in list_input_links(workspace)],
+        }
+
+    normalized_file_id = raw_file_id.removeprefix("file://")
     try:
-        file_uuid = uuid.UUID(file_id)
+        file_uuid = uuid.UUID(normalized_file_id)
         user_uuid = uuid.UUID(str(user_id))
     except ValueError as exc:
         raise BusinessError("file_id 格式非法") from exc
@@ -294,8 +347,8 @@ async def register_artifact_report(
     """把 /workspace/output/ 下的产物登记为结果报告中心的新报告。
 
     - path 强制落在工作区 output/ 内（resolve_artifact_path 守卫）；
-    - 产物复制到 {storage_path}/users/{user_id}/results/studio/{session_id}/
-      （工作区保留期仅 7 天，报告需独立存续，故复制而非软链）；
+    - 产物复制到项目运行目录的 ``output/``（工作区保留期仅 7 天，报告需独立
+      存续，故复制而非软链）；
     - 会话 sandbox_meta.context_pack.source.report_id 存在时挂为原报告的
       下一版本（parent_id + version=父版本+1），否则 version=1。
     """
@@ -322,8 +375,14 @@ async def register_artifact_report(
             parent = candidate
     version = (parent.version or 1) + 1 if parent is not None else 1
 
-    dest_dir = user_platform_root(user_id) / "results" / "studio" / session.session_id
-    dest_dir.mkdir(parents=True, exist_ok=True)
+    project_name = session.title.strip()
+    if not project_name or project_name == "新对话":
+        raise BusinessError("请先将 Studio 会话标题设置为项目名称，再登记分析产物")
+    path_factory = get_path_factory()
+    run_dir = path_factory.create_project_run_dir(user_id, project_name, "studio")
+    dest_dir = run_dir / "output"
+    relative_run_dir = run_dir.relative_to(path_factory.user_root(user_id)).as_posix()
+    await ensure_directory_chain(db, UUID(str(user_id)), relative_run_dir)
     dest = dest_dir / target.name
     n = 1
     while dest.exists():

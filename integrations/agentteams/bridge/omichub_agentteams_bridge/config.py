@@ -19,13 +19,15 @@ class BridgeSettings(BaseSettings):
     identities: str = (
         "approval-authority:approval-secret,bioops-manager:manager-secret,data-steward:steward-secret,"
         "workflow-operator:operator-secret,quality-auditor:auditor-secret,"
-        "delivery-reporter:reporter-secret"
+        "delivery-reporter:reporter-secret,agent-code:code-secret,agent-viz:viz-secret,"
+        "agent-scrna:scrna-secret"
     )
-    allowed_flow_ids: str = "rna_seq"
+    allowed_flow_ids: str = "rna_seq,scrna_seq"
     request_timeout_seconds: float = 20.0
     max_request_bytes: int = Field(default=1_048_576, ge=1_024, le=16_777_216)
     max_response_bytes: int = Field(default=1_048_576, ge=1_024, le=16_777_216)
     max_evidence_bytes: int = 16_384
+    worker_heartbeat_ttl_seconds: int = Field(default=180, ge=30, le=3_600)
     audit_log_path: str = "/tmp/omichub-agentteams-bridge-audit.jsonl"
     case_store_path: str = "/tmp/omichub-agentteams-bridge-cases.json"
     manifest_dir: str = "/tmp/omichub-agentteams-bridge-manifests"
@@ -39,7 +41,8 @@ class BridgeSettings(BaseSettings):
             "identities": (
                 "approval-authority:approval-secret,bioops-manager:manager-secret,data-steward:steward-secret,"
                 "workflow-operator:operator-secret,quality-auditor:auditor-secret,"
-                "delivery-reporter:reporter-secret"
+                "delivery-reporter:reporter-secret,agent-code:code-secret,agent-viz:viz-secret,"
+                "agent-scrna:scrna-secret"
             ),
         }
         configured_upstream_credentials = [

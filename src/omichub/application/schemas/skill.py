@@ -114,7 +114,7 @@ class SkillImportPreviewDTO(BaseModel):
     category: str = "general"
     version: str = ""
     author: str = ""
-    source_type: str = "json"  # market | github | zip | json
+    source_type: str = "json"  # market | github | zip | markdown | json
     source_ref: str = ""
     source_commit: str = ""
     has_scripts: bool = False

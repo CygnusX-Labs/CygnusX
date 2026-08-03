@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import AgentSidebar from './AgentSidebar.vue'
 import AgentHub from './AgentHub.vue'
@@ -16,6 +16,7 @@ const loading = ref(false)
 const error = ref('')
 const historyOpen = ref(false)
 const targetMessageId = ref('')
+const redirectingToStudio = ref(false)
 
 /** 统一入口 Agent：智能助手（router），落地页与新建对话默认直接进入它 */
 const ROUTER_AGENT_ID = 'agent-router'
@@ -45,6 +46,29 @@ async function initAssets() {
 }
 
 onMounted(initAssets)
+
+watch(
+  () => [store.studioRedirect, store.currentSession?.id] as const,
+  async ([redirect, currentSessionId]) => {
+    if (!redirect || !currentSessionId || currentSessionId.startsWith('sess-') || redirectingToStudio.value) return
+    redirectingToStudio.value = true
+    try {
+      const promoted = await studioApi.promoteSession(currentSessionId, redirect.agentId)
+      const session = store.currentSession
+      if (session) {
+        session.mode = 'studio'
+        session.agent_id = redirect.agentId
+      }
+      store.markStudioSession(promoted.session_id)
+      await router.replace({ name: 'studio', params: { sessionId: promoted.session_id } })
+    } catch (e: any) {
+      error.value = e?.response?.data?.detail || '切换到 AI 工作台失败'
+    } finally {
+      store.clearStudioRedirect()
+      redirectingToStudio.value = false
+    }
+  },
+)
 
 function handleNewChat() {
   store.newChat()

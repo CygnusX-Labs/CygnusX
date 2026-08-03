@@ -15,6 +15,9 @@ BridgeRole = Literal[
     "workflow-operator",
     "quality-auditor",
     "delivery-reporter",
+    "agent-code",
+    "agent-viz",
+    "agent-scrna",
 ]
 ApprovalAction = Literal["submit_task", "cancel_task"]
 CaseStatus = Literal[
@@ -49,6 +52,7 @@ class PreflightRequest(BaseModel):
     sample_sheet: list[dict[str, Any]] = Field(default_factory=list, max_length=10_000)
     comparisons: list[dict[str, Any]] | None = Field(default=None, max_length=1_000)
     context_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
+    consultation_summary: str | None = Field(default=None, max_length=1_800)
 
 
 class Finding(BaseModel):
@@ -72,6 +76,7 @@ class PreflightInputSnapshot(BaseModel):
     sample_sheet: list[dict[str, Any]]
     comparisons: list[dict[str, Any]] | None = None
     context_refs: list[ContextRef] = Field(default_factory=list)
+    consultation_summary: str | None = None
 
 
 class TaskSpec(BaseModel):
@@ -163,6 +168,8 @@ class CaseCreateRequest(BaseModel):
     requester_ref: str = Field(min_length=1, max_length=256)
     team_id: str = Field(default="bioops-delivery", min_length=1, max_length=128)
     element_room_url: str | None = Field(default=None, max_length=2_048)
+    origin_consultation_id: str | None = Field(default=None, max_length=256)
+    consultation_summary: str | None = Field(default=None, max_length=1_800)
 
     @field_validator("element_room_url")
     @classmethod
@@ -177,6 +184,8 @@ class CaseRecord(BaseModel):
     requester_ref: str
     team_id: str
     element_room_url: str | None = None
+    origin_consultation_id: str | None = None
+    consultation_summary: str | None = None
     status: CaseStatus = "received"
     omic_task_ids: list[str] = Field(default_factory=list)
     task_specs: list[dict[str, Any]] = Field(default_factory=list)

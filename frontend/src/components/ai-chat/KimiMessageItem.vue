@@ -15,6 +15,7 @@ import AiLoading from './AiLoading.vue'
 import TaskProgressCard from './TaskProgressCard.vue'
 import PipelineTaskCard from './PipelineTaskCard.vue'
 import ExpertConsultationCard from './ExpertConsultationCard.vue'
+import CollaborationRouteNotice from './CollaborationRouteNotice.vue'
 import AgentTeamsCaseCard from './AgentTeamsCaseCard.vue'
 import ChartPreviewModal from './ChartPreviewModal.vue'
 import AskUserCard from './AskUserCard.vue'
@@ -22,7 +23,14 @@ import ToolCallEntry from './ToolCallEntry.vue'
 import SkillInvocationCardView from './SkillInvocationCard.vue'
 import { useAgentHubStore } from '@/stores/agentHub'
 import { reportChatDiagnostic } from '@/utils/chatDiagnostics'
-import type { ChatMessage, CopyMode, ChartData, ToolCall, SkillInvocationCard } from './types'
+import type {
+  ChatMessage,
+  CollaborationRouteInfo,
+  CopyMode,
+  ChartData,
+  ToolCall,
+  SkillInvocationCard,
+} from './types'
 
 interface Props {
   message: ChatMessage
@@ -63,6 +71,8 @@ const emit = defineEmits<{
   edit: [messageId: string]
   confirmTool: [toolName: string, args: Record<string, unknown>]
   openToolPage: [route: string, args: Record<string, unknown>]
+  createCaseFromConsultation: [summary: string, consultationId?: string]
+  correctCollaborationRoute: [route: CollaborationRouteInfo]
 }>()
 
 const router = useRouter()
@@ -738,6 +748,12 @@ function handleEdit() {
 
       <!-- 正常内容区 -->
       <template v-else>
+        <CollaborationRouteNotice
+          v-if="message.collaborationRoute"
+          :route="message.collaborationRoute"
+          @correct="(route) => emit('correctCollaborationRoute', route)"
+        />
+
         <!-- 可折叠的思考过程 -->
         <div v-if="hasThought" class="thought-block">
           <button class="thought-toggle" @click="thoughtExpanded = !thoughtExpanded">
@@ -853,6 +869,10 @@ function handleEdit() {
           <ExpertConsultationCard
             v-if="message.consultation?.experts.length"
             :experts="message.consultation.experts"
+            :consultation-id="message.consultation.consultationId"
+            :consultation-summary="message.consultation.consultationSummary"
+            :case-available="message.consultation.caseAvailable"
+            @create-case="(summary, consultationId) => emit('createCaseFromConsultation', summary, consultationId)"
           />
 
           <AgentTeamsCaseCard

@@ -1,6 +1,6 @@
-"""技能导入应用服务 —— 四入口统一"先解析预览、确认后入库"
+"""技能导入应用服务 —— 五入口统一"先解析预览、确认后入库"
 
-入口：技能市场（仓库内置）/ GitHub 仓库或子目录 URL / 本地 zip 上传 / JSON 粘贴（兼容）。
+入口：技能市场（仓库内置）/ GitHub 仓库或子目录 URL / 本地 zip 上传 / Markdown 文件 / JSON 粘贴（兼容）。
 解析产出 SkillImportPreviewDTO；确认后写 data/ai/skills/<skill_id>/ 文件夹 + skills 表。
 """
 
@@ -31,13 +31,16 @@ from omichub.application.schemas.skill import (
 from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError, NotFoundError
 from omichub.infrastructure.database.models.skill import SkillModel
+from omichub.infrastructure.skills.skill_store import remove_skill_folder, write_skill_folder
 from omichub.infrastructure.skills.skillmd import (
+    BODY_SOFT_LIMIT_CHARS,
     ParsedSkill,
+    SkillFileEntry,
     SkillParseError,
     parse_skill_folder,
     parsed_from_legacy_json,
+    slugify_skill_id,
 )
-from omichub.infrastructure.skills.skill_store import remove_skill_folder, write_skill_folder
 
 # zip 解压总量护栏（防 zip bomb 打爆内存；技能包本身上限 1MiB）
 MAX_ZIP_TOTAL_BYTES = 4 * 1024 * 1024
@@ -82,8 +85,72 @@ class SkillImportService:
                     files[name] = zf.read(info)
         except zipfile.BadZipFile as exc:
             raise SkillParseError("不是有效的 zip 文件") from exc
-        parsed = parse_skill_folder(files, source_type="zip")
+        try:
+            parsed = parse_skill_folder(files, source_type="zip")
+        except SkillParseError as exc:
+            markdown_files = [
+                (path, content)
+                for path, content in files.items()
+                if path.lower().endswith(".md") and Path(path).name.lower() != "skill.md"
+            ]
+            if "未找到 SKILL.md" not in str(exc) or len(markdown_files) != 1:
+                raise
+            filename, markdown = markdown_files[0]
+            preview = await self.parse_from_markdown(markdown, filename)
+            preview.source_type = "zip"
+            preview.warnings.insert(
+                0,
+                "检测到 ZIP 内仅包含一份 Markdown 指令文件，已按 Markdown 技能导入处理。",
+            )
+            return preview
         return self._preview(parsed, source_type="zip")
+
+    async def parse_from_markdown(self, data: bytes, filename: str) -> SkillImportPreviewDTO:
+        """Convert a standalone Markdown instruction file into a standard Skill preview."""
+        try:
+            text = data.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise SkillParseError("Markdown 文件不是有效的 UTF-8 文本") from exc
+        body = text.strip()
+        if not body:
+            raise SkillParseError("Markdown 文件内容为空")
+
+        safe_name = Path(filename or "skill.md").name
+        stem = Path(safe_name).stem.strip() or "skill"
+        # Existing SKILL.md files retain their frontmatter when valid; ordinary
+        # Markdown is deliberately accepted without any packaging convention.
+        if body.startswith("---"):
+            try:
+                parsed = parse_skill_folder({"SKILL.md": data}, source_type="markdown")
+                return self._preview(parsed, source_type="markdown")
+            except SkillParseError:
+                pass
+
+        name = re.sub(r"[-_]+", " ", stem).strip() or "未命名技能"
+        warnings = [
+            "已将独立 Markdown 作为技能指令正文；请在预览中补全名称、版本和描述后确认导入。"
+        ]
+        if len(body) > BODY_SOFT_LIMIT_CHARS:
+            warnings.append(
+                f"正文约 {len(body) // 4} tokens，超过建议上限 5000 tokens，"
+                "建议将细节拆分到 references/ 按需加载"
+            )
+        parsed = ParsedSkill(
+            skill_id=slugify_skill_id(stem),
+            name=name,
+            description="",
+            body=body,
+            files=[
+                SkillFileEntry(
+                    path="SKILL.md",
+                    size=len(data),
+                    kind="skill_md",
+                    content=body,
+                )
+            ],
+            warnings=warnings,
+        )
+        return self._preview(parsed, source_type="markdown")
 
     async def parse_from_github(self, url: str) -> SkillImportPreviewDTO:
         files, source_ref, source_commit = await self._fetch_github(url.strip())
@@ -523,6 +590,13 @@ class SkillImportService:
     async def confirm_import(
         self, preview: SkillImportPreviewDTO, overwrite: bool = False
     ) -> SkillDTO:
+        preview.name = preview.name.strip()
+        preview.description = preview.description.strip()
+        preview.version = preview.version.strip()
+        if not preview.name:
+            raise SkillParseError("请填写技能名称")
+        if not preview.description:
+            raise SkillParseError("请填写技能描述（用于判断何时调用该技能）")
         parsed = ParsedSkill.from_preview_dict(preview.model_dump())
         existing = await self._get_model(parsed.skill_id)
         if existing and not overwrite:

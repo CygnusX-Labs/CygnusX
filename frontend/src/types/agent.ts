@@ -102,6 +102,9 @@ export interface AgentFeatures {
   enable_code_execution?: boolean
   enable_file_upload?: boolean
   enable_deep_thinking?: boolean
+  studio?: {
+    default_mode?: 'chat' | 'studio'
+  }
   /** 智能路由：统一入口，自动识别需求并转接对应专家 */
   router?: boolean
 }

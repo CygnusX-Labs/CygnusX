@@ -4,7 +4,7 @@ description: 面向单细胞转录组质控、聚类、注释与下游分析。
 avatar: "🔬"
 color: "#e74c3c"
 category: analysis
-model: qwen3.7-max
+model: qwen3.7-plus
 prompt_file: prompts/scrna.md
 welcome_message: "你好！请提供 10x 矩阵、h5ad/rds 文件或单细胞分析目标。"
 temperature: 0.3
@@ -13,13 +13,22 @@ mcp_ids: []
 skill_ids:
   - human-mouse-cell-annotation
   - plant-cell-annotation
+  # scRNA 可执行技能集（来源：pipelines/scrna/skills/，规范：Protocol/Skill_design.md）
+  - scrna-pipeline-overview
+  - scrna-object-convert
+  - scrna-recluster
+  - scrna-annotation-ref
+  - scrna-tcell-projectils
+  - scrna-deg-analysis
+  - scrna-annotation-stats
+  - scrna-quarto-report
 features:
   subagents_spawnable: true  # 可作为并行子 Agent 被 fan-out 派生
   engine: langgraph
   web_search:
     mode: required_for_freshness
     triggers: [最新, 文献, 论文, 研究进展, 细胞图谱, 数据库更新]
-tool_packs: [workspace, research, memory, handoff]
+tool_packs: [workspace, research, memory, handoff, agentteams_case]
 handoff:
   allowed_targets: [agent-rnaseq, agent-viz, agent-code, agent-general]
   max_hops_per_session: 3

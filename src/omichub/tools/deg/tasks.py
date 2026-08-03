@@ -10,7 +10,7 @@ import asyncio
 import csv
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -59,7 +59,7 @@ async def _run_deg(task_id: str) -> dict[str, Any]:
 
         task.status = TaskStatus.RUNNING.value
         task.progress = 10
-        task.started_at = datetime.now(timezone.utc)
+        task.started_at = datetime.now(UTC)
         task.error_message = ""
         await db.commit()
 
@@ -107,7 +107,7 @@ async def _run_deg(task_id: str) -> dict[str, Any]:
             stats_path = results_dir / "All_Contrast_DEG_Statistics.csv"
             task.status = TaskStatus.SUCCESS.value
             task.progress = 100
-            task.finished_at = datetime.now(timezone.utc)
+            task.finished_at = datetime.now(UTC)
             task.result_path = str(stats_path) if stats_path.exists() else str(results_dir)
             task.parameters = {**parameters, "result": result.model_dump(mode="json")}
             await db.commit()
@@ -116,7 +116,7 @@ async def _run_deg(task_id: str) -> dict[str, Any]:
             logger.exception("DEG 任务失败: %s", task_id)
             task.status = TaskStatus.FAILED.value
             task.progress = 100
-            task.finished_at = datetime.now(timezone.utc)
+            task.finished_at = datetime.now(UTC)
             task.error_message = str(error)[:2000]
             await db.commit()
             return {"status": "failed", "task_id": task_id, "error": task.error_message}

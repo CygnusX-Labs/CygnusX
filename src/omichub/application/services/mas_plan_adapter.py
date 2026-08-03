@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import ValidationError as PydanticValidationError
 
+from omichub.application.services.flow_registry import get_flow_registry
 from omichub.application.services.mas_plan_validator import MASPlanValidator
 from omichub.core.config import get_settings
 from omichub.core.exceptions import ValidationError
@@ -63,6 +64,7 @@ class MASPlanPreviewAdapter:
         self._validator = MASPlanValidator(
             load_agent_capabilities(settings.mas_agent_capabilities_yaml),
             load_artifact_schemas(settings.mas_artifact_schemas_yaml),
+            get_flow_registry(),
         )
 
     def adapt(self, payload: dict[str, Any]) -> dict[str, Any]:

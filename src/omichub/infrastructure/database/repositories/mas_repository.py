@@ -33,6 +33,7 @@ class MASRepository:
         context_summary: dict[str, object],
         session_id: UUID | None,
         workspace_id: UUID | None,
+        project_id: str | None,
     ) -> MASRunModel:
         plan_payload = plan.model_dump(mode="json")
         plan_hash = hashlib.sha256(
@@ -54,6 +55,7 @@ class MASRepository:
             user_id=user_id,
             session_id=session_id,
             workspace_id=workspace_id,
+            project_id=project_id,
             plan_id=plan_id,
             status="awaiting_approval",
             context_summary=context_summary,
@@ -93,9 +95,13 @@ class MASRepository:
         return list(result.scalars())
 
     async def save_artifact(self, artifact: MASArtifact) -> MASArtifactModel:
+        project_id = await self._session.scalar(
+            select(MASRunModel.project_id).where(MASRunModel.id == artifact.run_id)
+        )
         model = MASArtifactModel(
             id=artifact.id,
             run_id=artifact.run_id,
+            project_id=project_id,
             logical_name=artifact.logical_name,
             kind=artifact.kind.value,
             workspace_path=artifact.workspace_path,

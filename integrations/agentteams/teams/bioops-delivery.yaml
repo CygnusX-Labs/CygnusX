@@ -32,3 +32,18 @@ workers:
     bridge_identity_env: AGENTTEAMS_DELIVERY_REPORTER_TOKEN
     work_inbox: "GET /v1/work-items/assigned"
     forbidden_capabilities: [workflow_submit, workflow_cancel, shell]
+  - identity: agent-code
+    skills: [code-review, reproducibility-advice]
+    bridge_identity_env: AGENTTEAMS_AGENT_CODE_TOKEN
+    work_inbox: "GET /v1/work-items/assigned"
+    forbidden_capabilities: [workflow_submit, workflow_cancel, database_access, shell, file_write]
+  - identity: agent-viz
+    skills: [visualization-review, figure-specification]
+    bridge_identity_env: AGENTTEAMS_AGENT_VIZ_TOKEN
+    work_inbox: "GET /v1/work-items/assigned"
+    forbidden_capabilities: [workflow_submit, workflow_cancel, database_access, shell, file_write]
+  - identity: agent-scrna
+    skills: [scrna-interpretation, cell-annotation-advice]
+    bridge_identity_env: AGENTTEAMS_AGENT_SCRNA_TOKEN
+    work_inbox: "GET /v1/work-items/assigned"
+    forbidden_capabilities: [workflow_submit, workflow_cancel, database_access, shell, file_write]

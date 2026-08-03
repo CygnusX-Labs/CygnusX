@@ -5,6 +5,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { Task } from '@/types'
 import { getToolboxResultRoute } from '@/utils/toolboxResultRoute'
+import { redactUserHomePaths } from '@/utils/userPathDisplay'
 
 const props = withDefaults(defineProps<{
   tasks: Task[]
@@ -127,7 +128,7 @@ function formatTime(iso: string | null): string {
 // 从源头保证名称列内容为短文本，绝不撑宽固定列（§33.2 ③ / §5.4 长文本省略）。
 function truncError(msg: string | null | undefined, max = 28): string {
   if (!msg) return ''
-  const t = msg.replace(/\s+/g, ' ').trim()
+  const t = redactUserHomePaths(msg).replace(/\s+/g, ' ').trim()
   return t.length > max ? `${t.slice(0, max).trimEnd()}…` : t
 }
 
@@ -288,7 +289,7 @@ const stats = computed(() => {
                   class="task-name__running-dot"
                 ></span>
               </div>
-              <p v-if="task.error_message" class="task-name__error" :title="task.error_message">
+              <p v-if="task.error_message" class="task-name__error" :title="redactUserHomePaths(task.error_message)">
                 {{ truncError(task.error_message) }}
               </p>
             </td>
@@ -534,12 +535,10 @@ const stats = computed(() => {
 
 /* 列宽策略：每列都给固定 width（无 auto 列），表格 width:100% 按比例铺满卡片，
    杜绝最初「名称列独吞余量 ballooning」的根因（CSS2 §17.5.2.1：余量只灌进 auto 列）。
-   max-width 封顶读宽（与 §4.3 配置中心 1440 同惯例）：普通屏铺满零空白、名称列温和；
-   超宽屏表格不再无限拉宽，名称列封顶 ~377px、右侧空白封顶不刺眼。
-   窄屏列宽之和 > 容器时由 .task-table-wrapper 横向滚动兜底（§33.2 / §7.1）。 */
+   禁止给表格设 max-width：1440px 封顶曾在宽屏留下左对齐的右侧空白条（2026-08-03 用户反馈），
+   表格必须与卡片左右边界对齐铺满；列宽之和大于容器时由 .task-table-wrapper 横向滚动兜底（§33.2 / §7.1）。 */
 .task-table {
   width: 100%;
-  max-width: 1440px;
   table-layout: fixed;
   border-collapse: collapse;
 }

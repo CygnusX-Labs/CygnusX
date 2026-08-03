@@ -25,6 +25,7 @@ class AgentTemplateDTO(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     agent_id: str
+    project_id: str | None = None
     name: str
     description: str = ""
     avatar: str = "\U0001f916"
@@ -49,6 +50,7 @@ class AgentTemplateDTO(BaseModel):
 
 class CreateAgentRequest(BaseModel):
     agent_id: str = ""
+    project_id: str | None = Field(None, max_length=64)
     name: str
     description: str = ""
     avatar: str = "\U0001f916"
@@ -68,6 +70,7 @@ class CreateAgentRequest(BaseModel):
 
 class UpdateAgentRequest(BaseModel):
     name: str | None = None
+    project_id: str | None = Field(None, max_length=64)
     description: str | None = None
     avatar: str | None = None
     color: str | None = None

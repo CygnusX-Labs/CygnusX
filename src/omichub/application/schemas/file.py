@@ -68,7 +68,7 @@ class UploadInitRequest(BaseModel):
     chunk_size: int = Field(..., gt=0)
     total_chunks: int = Field(..., gt=0)
     file_md5: str | None = Field(None, max_length=64)
-    # 上传目标目录（相对 raw/ 子路径，如 "projectA"，默认 "" = raw 根）
+    # 上传目标目录；默认 "" 会写入 inbox，自定义目录保持相对用户工作区。
     directory: str = Field("", max_length=500)
 
 

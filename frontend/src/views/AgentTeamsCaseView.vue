@@ -356,6 +356,12 @@ onBeforeUnmount(stopPolling)
             <NDescriptions :column="1" label-placement="top" size="small">
               <NDescriptionsItem label="当前阶段"><NTag type="info" :bordered="false">{{ statusLabel[detail.status] || detail.status }}</NTag></NDescriptionsItem>
               <NDescriptionsItem label="项目引用">{{ detail.project_ref.id }}</NDescriptionsItem>
+              <NDescriptionsItem label="来源会诊">
+                {{ detail.origin_consultation_id || '非会诊创建' }}
+              </NDescriptionsItem>
+              <NDescriptionsItem v-if="detail.consultation_summary" label="会诊纪要">
+                {{ detail.consultation_summary }}
+              </NDescriptionsItem>
               <NDescriptionsItem label="关联任务">{{ detail.omic_task_ids.length ? detail.omic_task_ids.join(', ') : '尚未提交' }}</NDescriptionsItem>
               <NDescriptionsItem label="质量结论">{{ detail.quality_decision || '尚未形成' }}</NDescriptionsItem>
               <NDescriptionsItem label="交付 Manifest">{{ detail.manifest_uri || '尚未生成' }}</NDescriptionsItem>

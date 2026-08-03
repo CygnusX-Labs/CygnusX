@@ -1,4 +1,7 @@
-"""AI 指标告警定时任务 — 每 5 分钟评估 C4 规则并推送平台通知"""
+"""AI 指标告警定时任务 — 每 5 分钟评估 C4 规则并推送平台通知。
+
+错误率和延迟按短冷却重试；日成本在同一自然日内只推送一次。
+"""
 
 from __future__ import annotations
 
@@ -12,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 @shared_task(name="omichub.infrastructure.celery_app.tasks.ai_metrics.check_alerts")
 def check_alerts() -> dict:
-    """评估错误率/p95 延迟/日成本三条规则，超阈值且过冷却期则推送通知。"""
+    """评估三条规则，超阈值且通过规则对应的去重窗口才推送通知。"""
     return asyncio.run(_run_check_alerts())
 
 

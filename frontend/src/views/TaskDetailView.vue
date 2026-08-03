@@ -25,6 +25,7 @@ import { useClipboard } from '@vueuse/core'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import PageHeader from '@/components/PageHeader.vue'
+import { formatUserPath, redactUserHomePaths } from '@/utils/userPathDisplay'
 
 const route = useRoute()
 const taskId = computed(() => route.params.taskId as string)
@@ -128,15 +129,17 @@ const runList = computed<RunProgress[]>(() => {
   return Object.values(downloadProgress.value.runs)
 })
 
-// 数据路径：仅任务成功且有 result_path 时才有值，用于概览展示与复制
+// 数据路径：仅任务成功且有 result_path 时才有值。展示、通知和复制都不暴露平台用户目录前缀。
 const dataPath = computed(() => {
   if (!task.value || task.value.status !== 'success') return ''
-  return task.value.result_path?.trim() || ''
+  return formatUserPath(task.value.result_path)
 })
+
+const workDirectory = computed(() => formatUserPath(task.value?.work_dir))
 
 // 任务完成提示：在「运行中 → 成功」转换时弹通知，并在文案中给出最终数据路径
 function notifyOnSuccess(t: Task) {
-  const path = t.result_path?.trim() || ''
+  const path = formatUserPath(t.result_path)
   if (t.flow_id === DOWNLOAD_FLOW_ID) {
     // 下载任务：明确告知数据落地路径，并引导至「数据管理」
     const text = path
@@ -296,7 +299,7 @@ watch(taskId, async () => {
             <NTag :type="statusType" round>{{ statusText }}</NTag>
           </NDescriptionsItem>
           <NDescriptionsItem label="执行模式">{{ task.execution_mode }}</NDescriptionsItem>
-          <NDescriptionsItem label="工作目录">{{ task.work_dir }}</NDescriptionsItem>
+          <NDescriptionsItem label="工作目录">{{ workDirectory || '-' }}</NDescriptionsItem>
           <NDescriptionsItem v-if="dataPath" label="数据路径">
             <NSpace align="center" :size="6" wrap>
               <span class="data-path">{{ dataPath }}</span>
@@ -356,7 +359,7 @@ watch(taskId, async () => {
             >
               <span class="log-time">{{ log.timestamp }}</span>
               <span class="log-level">{{ log.level.toUpperCase() }}</span>
-              <span class="log-message">{{ log.message }}</span>
+              <span class="log-message">{{ redactUserHomePaths(log.message) }}</span>
             </div>
             <div v-if="logs.length === 0" class="empty-logs">暂无日志</div>
           </div>

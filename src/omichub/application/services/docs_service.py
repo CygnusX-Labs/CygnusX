@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.services.knowledge_audit_service import KnowledgeAuditService
+from omichub.application.services.knowledge_index_service import KnowledgeIndexService
 from omichub.application.services.knowledge_issue_service import KnowledgeIssueService
 from omichub.core.exceptions import AuthorizationError, NotFoundError, ValidationError
 from omichub.infrastructure.database.models.knowledge_audit_log import DocAuditLogModel
@@ -235,6 +236,7 @@ class DocsService:
         doc_id = payload.get("docId", "").strip()
         title = payload.get("title", "").strip()
         category = (payload.get("category") or "未分类").strip()
+        project_id = str(payload.get("projectId") or "").strip() or None
         content = payload.get("content", "")
         edit_summary = (payload.get("editSummary") or "新建文档").strip()
 
@@ -258,6 +260,7 @@ class DocsService:
 
         document = KbDocumentModel(
             doc_id=doc_id,
+            project_id=project_id,
             title=title,
             category=category,
             file_path=str(file_path),
@@ -285,6 +288,7 @@ class DocsService:
 
         if is_admin:
             document.current_rev = revision.id
+            await KnowledgeIndexService(db).index_document(document, content)
             await self._write_md_file(file_path, content)
             await self._ensure_meta_entry(document)
         else:
@@ -362,6 +366,7 @@ class DocsService:
             document.current_rev = revision.id
             document.pending_rev = None
             document.status = 1
+            await KnowledgeIndexService(db).index_document(document, content)
             await self._write_md_file(Path(document.file_path), content)
         else:
             # 普通用户：覆盖 pending_rev
@@ -423,6 +428,7 @@ class DocsService:
 
         if action == "approve":
             await self._audit.approve(db, document, revision, actor_id, actor_name, reason)
+            await KnowledgeIndexService(db).index_document(document, revision.content)
         elif action == "reject":
             await self._audit.reject(db, document, revision, actor_id, actor_name, reason)
         else:

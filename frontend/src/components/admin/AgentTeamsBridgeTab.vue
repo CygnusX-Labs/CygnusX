@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   NAlert,
   NButton,
@@ -9,6 +9,10 @@ import {
   NIcon,
   NInput,
   NInputNumber,
+  NModal,
+  NRadioButton,
+  NRadioGroup,
+  NSelect,
   NSpin,
   NTag,
   NSwitch,
@@ -19,7 +23,9 @@ import AdminTOTPConfirmModal from '@/components/AdminTOTPConfirmModal.vue'
 import {
   agentTeamsBridgeAdminApi,
   type AgentTeamsBridgeConfig,
+  type AgentTeamsBridgeHealth,
 } from '@/api/admin/agentTeamsBridge'
+import apiClient from '@/api/client'
 
 const message = useMessage()
 const loading = ref(false)
@@ -38,15 +44,90 @@ const config = ref<AgentTeamsBridgeConfig>({
   configured: false,
   connected: false,
 })
+type CollaborationPreset = 'custom' | 'light' | 'parallel' | 'full'
+const preset = ref<CollaborationPreset>('custom')
+const presetSaving = ref(false)
+const presetConfirmVisible = ref(false)
+const health = ref<AgentTeamsBridgeHealth | null>(null)
+const degradationCounts = ref<Record<string, number>>({ fanout: 0, consult: 0, case: 0, dag: 0 })
+const degradationLocale = ref<'zh-CN' | 'en'>('zh-CN')
+const degradationTemplateZh = ref('')
+const degradationTemplateEn = ref('')
+const templateSaving = ref(false)
+const presetDescription = computed(() => ({
+  light: '轻量协作：专家转交与多专家会诊。',
+  parallel: '并行增强：轻量协作 + 对话内 Fan-out。',
+  full: '全流程闭环：并行增强 + AgentTeams Case 入口；仍需保存并接通 Bridge。',
+  custom: '自定义：保留当前各项开关组合。',
+})[preset.value])
+const presetDiff = computed(() => ({
+  light: ['统一意图路由：开启', '多专家会诊：开启', '并行 Fan-out：关闭', '协作 Case 入口：关闭'],
+  parallel: ['统一意图路由：开启', '多专家会诊：开启', '并行 Fan-out：开启', '协作 Case 入口：关闭'],
+  full: ['统一意图路由：开启', '多专家会诊：开启', '并行 Fan-out：开启', '协作 Case 入口：开启'],
+  custom: ['不改动现有功能开关，仅将档位标记为“自定义”。'],
+})[preset.value])
+const inactiveWorkers = computed(() => health.value?.workers.filter((worker) => !worker.active) || [])
 
 async function load() {
   loading.value = true
   try {
     config.value = await agentTeamsBridgeAdminApi.get()
+    const [platform, healthResponse, observability] = await Promise.all([
+      apiClient.get<{
+        collaboration_preset?: CollaborationPreset
+        collaboration_degradation_locale?: 'zh-CN' | 'en'
+        collaboration_degradation_template_zh?: string
+        collaboration_degradation_template_en?: string
+      }>('/platform/config'),
+      agentTeamsBridgeAdminApi.health(),
+      apiClient.get<{ degradation_counts?: Record<string, number> }>('/admin/platform-config/collaboration-observability'),
+    ])
+    preset.value = platform.data.collaboration_preset || 'custom'
+    degradationLocale.value = platform.data.collaboration_degradation_locale || 'zh-CN'
+    degradationTemplateZh.value = platform.data.collaboration_degradation_template_zh || ''
+    degradationTemplateEn.value = platform.data.collaboration_degradation_template_en || ''
+    health.value = healthResponse
+    degradationCounts.value = { ...degradationCounts.value, ...(observability.data.degradation_counts || {}) }
   } catch (cause: any) {
     message.error(cause?.response?.data?.detail || '无法读取 AgentTeams Bridge 配置。')
   } finally {
     loading.value = false
+  }
+}
+
+async function saveDegradationTemplates() {
+  templateSaving.value = true
+  try {
+    await apiClient.patch('/admin/platform-config', {
+      collaboration_degradation_locale: degradationLocale.value,
+      collaboration_degradation_template_zh: degradationTemplateZh.value,
+      collaboration_degradation_template_en: degradationTemplateEn.value,
+    })
+    message.success('协作降级文案已保存。')
+  } catch (cause: any) {
+    message.error(cause?.response?.data?.detail || '保存协作降级文案失败。')
+  } finally {
+    templateSaving.value = false
+  }
+}
+
+function requestApplyPreset() {
+  presetConfirmVisible.value = true
+}
+
+async function applyPreset() {
+  presetSaving.value = true
+  try {
+    await apiClient.patch('/admin/platform-config', { collaboration_preset: preset.value })
+    presetConfirmVisible.value = false
+    message.success(`已应用“${presetDescription.value.split('：')[0]}”档位。`)
+    if (preset.value === 'full' && !config.value.connected) {
+      message.warning('全流程闭环还需要保存并接通下方 Bridge 配置。')
+    }
+  } catch (cause: any) {
+    message.error(cause?.response?.data?.detail || '应用协作档位失败。')
+  } finally {
+    presetSaving.value = false
   }
 }
 
@@ -100,6 +181,64 @@ onMounted(() => { void load() })
         当前配置来自服务端环境变量。保存后会迁移为数据库加密配置，并覆盖该运行实例的环境变量回退值。
       </NAlert>
 
+      <NCard size="small" class="preset-card" :bordered="true">
+        <template #header>协作能力档位</template>
+        <p class="preset-hint">{{ presetDescription }}</p>
+        <NRadioGroup v-model:value="preset" name="collaboration-preset" class="preset-options">
+          <NRadioButton value="light">轻量协作</NRadioButton>
+          <NRadioButton value="parallel">并行增强</NRadioButton>
+          <NRadioButton value="full">全流程闭环</NRadioButton>
+          <NRadioButton value="custom">自定义</NRadioButton>
+        </NRadioGroup>
+        <div class="preset-actions">
+          <NButton size="small" type="primary" :loading="presetSaving" @click="requestApplyPreset">查看变更并应用</NButton>
+        </div>
+        <div class="degradation-counts" aria-label="近七天协作降级次数">
+          <span>近 7 天降级：</span>
+          <span>并行 {{ degradationCounts.fanout || 0 }}</span>
+          <span>会诊 {{ degradationCounts.consult || 0 }}</span>
+          <span>Case {{ degradationCounts.case || 0 }}</span>
+          <span>MAS {{ degradationCounts.dag || 0 }}</span>
+        </div>
+      </NCard>
+
+      <NCard size="small" class="health-card" :bordered="true">
+        <template #header>协作部署健康检查</template>
+        <NAlert v-if="!health?.connection.connected" type="error" :show-icon="true" class="bridge-note">
+          Bridge 尚未接通，无法验证身份令牌和外部 Worker。仅修改平台配置不会启动外部 Worker。
+        </NAlert>
+        <template v-else>
+          <div class="health-row"><strong>Bridge 与身份令牌</strong><span>{{ health.identities.filter((item) => item.valid).length }}/{{ health.identities.length }} 有效</span></div>
+          <div class="health-row"><strong>外部 Worker</strong><span>{{ health.workers.filter((item) => item.active).length }}/{{ health.workers.length }} 活跃</span></div>
+          <NAlert v-if="inactiveWorkers.length" type="error" :show-icon="true" class="bridge-note">
+            {{ inactiveWorkers.map((worker) => worker.identity).join('、') }} 未在心跳窗口内轮询任务。请按 `deploy/agentteams/README.md` 部署对应 Worker。
+          </NAlert>
+          <NAlert :type="health.scrna_submit_available ? 'success' : 'warning'" :show-icon="true" class="bridge-note">
+            {{ health.scrna_submit_available ? 'Bridge 白名单已包含 scrna_seq。' : `当前白名单：${health.allowed_flows.join(', ') || '未读取'}；scrna 流程暂不可提交。` }}
+          </NAlert>
+        </template>
+      </NCard>
+
+      <NCard size="small" class="template-card" :bordered="true">
+        <template #header>协作降级文案</template>
+        <p class="preset-hint">可使用占位符：<code>{intent}</code>、<code>{setting}</code>、<code>{alternative}</code>。</p>
+        <NForm label-placement="top">
+          <NFormItem label="默认展示语言">
+            <NSelect
+              v-model:value="degradationLocale"
+              :options="[{ label: '中文', value: 'zh-CN' }, { label: 'English', value: 'en' }]"
+            />
+          </NFormItem>
+          <NFormItem label="中文模板">
+            <NInput v-model:value="degradationTemplateZh" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" />
+          </NFormItem>
+          <NFormItem label="English template">
+            <NInput v-model:value="degradationTemplateEn" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" />
+          </NFormItem>
+          <div class="preset-actions"><NButton size="small" :loading="templateSaving" @click="saveDegradationTemplates">保存文案</NButton></div>
+        </NForm>
+      </NCard>
+
       <NForm label-placement="top" class="bridge-form">
         <div class="bridge-status-row">
           <div>
@@ -140,6 +279,12 @@ onMounted(() => { void load() })
     :loading="saving"
     @confirm="save"
   />
+  <NModal v-model:show="presetConfirmVisible" preset="dialog" title="确认应用协作档位" positive-text="确认应用" negative-text="取消" @positive-click="applyPreset">
+    <p>将应用“{{ presetDescription.split('：')[0] }}”，并原子性写入以下开关：</p>
+    <ul class="preset-diff">
+      <li v-for="item in presetDiff" :key="item">{{ item }}</li>
+    </ul>
+  </NModal>
   </div>
 </template>
 
@@ -150,6 +295,16 @@ onMounted(() => { void load() })
 .bridge-heading strong { color: var(--neutral-text-1); }
 .bridge-heading span, .bridge-status-row p { color: var(--neutral-text-2); font-size: 13px; font-weight: 400; line-height: 1.5; }
 .bridge-note { margin-bottom: 16px; }
+.preset-card { margin-bottom: 16px; }
+.preset-hint { margin: 0 0 10px; color: var(--neutral-text-2); font-size: 13px; line-height: 1.5; }
+.preset-options { display: flex; flex-wrap: wrap; }
+.preset-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+.degradation-counts { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 12px; color: var(--neutral-text-2); font-size: 12px; }
+.health-card { margin-bottom: 16px; }
+.template-card { margin-bottom: 16px; }
+.health-row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; color: var(--neutral-text-2); font-size: 13px; }
+.health-row strong { color: var(--neutral-text-1); }
+.preset-diff { margin: 8px 0 0; padding-left: 20px; line-height: 1.8; color: var(--neutral-text-2); }
 .bridge-form { max-width: 980px; }
 .bridge-status-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 0 20px; }
 .bridge-status-row strong { color: var(--neutral-text-1); font-size: 14px; }

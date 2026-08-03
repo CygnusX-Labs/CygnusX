@@ -11,14 +11,37 @@ from fastapi import APIRouter, Header
 
 from omichub.api.deps import AdminRequired, DbSession, require_admin_totp
 from omichub.application.schemas.site_settings import SiteSettingsDTO, UpdateSiteSettingsDTO
+from omichub.application.services.collaboration_observability_service import (
+    CollaborationObservabilityService,
+)
 from omichub.application.services.site_settings_service import SiteSettingsService
 
 router = APIRouter()
 
 # 免 TOTP 的非敏感字段：仅这些字段被改动时无需二次校验
 _NON_SENSITIVE_PLATFORM_KEYS = frozenset(
-    {"subagent_fanout_enabled", "agentteams_chat_entry_enabled"}
+    {
+        "subagent_fanout_enabled",
+        "agentteams_chat_entry_enabled",
+        "multi_expert_consultation_enabled",
+        "unified_intent_router_enabled",
+        "collaboration_preset",
+        "collaboration_degradation_locale",
+        "collaboration_degradation_template_zh",
+        "collaboration_degradation_template_en",
+    }
 )
+
+
+@router.get("/platform-config/collaboration-observability", summary="协作能力近 7 天降级统计")
+async def collaboration_observability(
+    _admin: AdminRequired,
+    db: DbSession,
+) -> dict[str, object]:
+    return {
+        "days": 7,
+        "degradation_counts": await CollaborationObservabilityService(db).degradation_counts(days=7),
+    }
 
 
 @router.patch(

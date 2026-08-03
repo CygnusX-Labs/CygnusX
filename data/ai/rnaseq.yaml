@@ -5,7 +5,7 @@ description: 擅长转录组差异表达、富集分析与通路解读。
 avatar: "\U0001F9EC"
 color: "#16a34a"
 category: analysis
-model: qwen3.7-max
+model: qwen3.7-plus
 prompt_file: prompts/rnaseq.md
 welcome_message: "你好！我是 RNA-seq 分析师，搭载 BioDB 生信数据库与数据预处理能力。把你的 count 矩阵或问题发给我吧。"
 temperature: 0.7

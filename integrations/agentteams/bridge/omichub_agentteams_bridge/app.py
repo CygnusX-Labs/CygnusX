@@ -81,6 +81,19 @@ def create_app(
         require_role(identity, "bioops-manager", "delivery-reporter")
         return await service.metrics()
 
+    @app.get("/v1/health/identity", tags=["Health"])
+    async def identity_health(identity: Annotated[str, Depends(authenticate_identity)]) -> dict[str, str]:
+        """Authenticated probe used by OmicHub to validate its four Bridge credentials."""
+        return {"status": "ok", "identity": identity}
+
+    @app.get("/v1/health/workers", tags=["Health"])
+    async def worker_health(
+        identity: Annotated[str, Depends(authenticate_identity)],
+        service: Annotated[BridgeService, Depends(get_service)],
+    ) -> dict:
+        require_role(identity, "bioops-manager")
+        return await service.worker_health()
+
     @app.get("/v1/flows", tags=["Flows"])
     async def list_flows(
         identity: Annotated[str, Depends(authenticate_identity)],
@@ -149,6 +162,9 @@ def create_app(
             "workflow-operator",
             "quality-auditor",
             "delivery-reporter",
+            "agent-code",
+            "agent-viz",
+            "agent-scrna",
         )
         return await service.get_case_view(case_id, identity)
 
@@ -163,6 +179,9 @@ def create_app(
             "workflow-operator",
             "quality-auditor",
             "delivery-reporter",
+            "agent-code",
+            "agent-viz",
+            "agent-scrna",
         )
         return (await service.list_worker_inbox(identity)).model_dump(mode="json")
 
@@ -210,6 +229,9 @@ def create_app(
             "workflow-operator",
             "quality-auditor",
             "delivery-reporter",
+            "agent-code",
+            "agent-viz",
+            "agent-scrna",
         )
         return (
             await service.update_work_item(case_id, work_item_id, payload, identity)
@@ -228,6 +250,9 @@ def create_app(
             "workflow-operator",
             "quality-auditor",
             "delivery-reporter",
+            "agent-code",
+            "agent-viz",
+            "agent-scrna",
         )
         return (await service.claim_work_item(case_id, work_item_id, identity)).model_dump(
             mode="json"

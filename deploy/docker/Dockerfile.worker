@@ -42,6 +42,9 @@ RUN uv sync --frozen --no-dev --extra workflow
 
 RUN uv pip install --python /app/.venv/bin/python --no-cache "snakemake-logger-plugin-rich-loguru>=0.3.0"
 
+# Optional RocketMQ transport used by the parallel rocketmq-worker service.
+RUN uv pip install --python /app/.venv/bin/python --no-cache "rocketmq-client-python==2.0.0"
+
 FROM mambaorg/micromamba:2.0.5 AS micromamba
 
 FROM python:3.11-slim AS runtime

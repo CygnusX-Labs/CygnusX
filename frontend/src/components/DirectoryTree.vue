@@ -20,6 +20,15 @@ const dialog = useDialog()
 const directories = ref<Directory[]>([])
 const loading = ref(false)
 
+const LEGACY_INTERNAL_ROOTS = new Set([
+  'raw', 'raw-data', 'raw_data', 'results', 'tasks', 'temp', 'workspace', 'enrichment',
+])
+
+const visibleDirectories = computed(() => directories.value.filter((directory) => {
+  const root = directory.path.split('/')[0]
+  return !LEGACY_INTERNAL_ROOTS.has(root)
+}))
+
 /** 选中目录："" = 根 */
 const selected = computed({
   get: () => props.modelValue,
@@ -35,11 +44,11 @@ const treeData = computed<TreeOption[]>(() => {
   }
   const nodeMap = new Map<string, TreeOption>()
   nodeMap.set('', root)
-  for (const d of directories.value) {
+  for (const d of visibleDirectories.value) {
     const node: TreeOption = { key: d.path, label: d.name, children: [] }
     nodeMap.set(d.path, node)
   }
-  for (const d of directories.value) {
+  for (const d of visibleDirectories.value) {
     const parent = nodeMap.get(d.parent_path ?? '') ?? root
     parent.children!.push(nodeMap.get(d.path)!)
   }
@@ -55,7 +64,7 @@ function renderLabel({ option }: { option: TreeOption }) {
   const name = option.label as string
   const counts = props.fileCounts || {}
   const total = counts[path] || 0
-  const dir = directories.value.find((d) => d.path === path)
+  const dir = visibleDirectories.value.find((d) => d.path === path)
   const showCount = total > 0 && !dir?.is_system
   return h('span', { class: 'tree-label' }, [
     h('span', null, name),

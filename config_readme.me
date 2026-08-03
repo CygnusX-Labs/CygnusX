@@ -161,3 +161,23 @@ curl -X POST http://localhost:8000/api/v1/jbrowse/config/reload
 - [ ] 修改 Worker/Compose 前运行 `scripts/render_worker_config.py --check`；修改流程后调用流程 reload；修改工具配置后检查对应 loader 的热重载行为。
 - [ ] 修改前端静态 YAML（如 `frontend/public/genomes.yaml`）后重新执行 `npm run build`。
 - [ ] 生产环境配置修改后确认 bind mount/镜像内路径与 Web、Beat、Worker 实际看到的路径一致。
+
+## 任务队列：Celery 与 RocketMQ 并行
+
+默认 `TASK_QUEUE_BACKEND=celery`，现有 Worker、Beat 与 Flower 无需变更。
+启用 RocketMQ 基础设施后，推荐使用灰度模式而不是将相同任务同时投递两次：
+
+```env
+TASK_QUEUE_BACKEND=hybrid
+ROCKETMQ_TASK_ROUTES=["omichub.tools.blast.tasks.*"]
+ROCKETMQ_NAMESRV_ADDR=rocketmq-namesrv:9876
+```
+
+启动 RocketMQ NameServer/Broker 与消费者：
+
+```bash
+make docker-up-rocketmq
+make docker-up-rocketmq-worker
+```
+
+`hybrid` 仅把 `ROCKETMQ_TASK_ROUTES` 匹配的任务投递到 RocketMQ，其他任务继续由 Celery 消费；两套 worker 可并行运行且不会对同一任务重复执行。确认后可将 `TASK_QUEUE_BACKEND` 切换为 `rocketmq`。RocketMQ 任务状态会镜像到现有 Celery Redis result backend，已有的任务状态查询接口保持可用。

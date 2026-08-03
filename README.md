@@ -63,45 +63,7 @@ OmicHub 的 Web 控制面与 Celery Worker 计算面已拆分为**两个独立�
 - **主栈** `docker-compose.yml`：`web` / `db` / `redis` / `nginx` / `beat` / `flower`
 - **Worker 栈** `docker-compose.worker.yml`：仅 `worker`，挂载流程 Workspace，并将动态 Conda 环境缓存写入共享盘
 
-```bash
-# 0. 宿主目录前置（首次部署，需 sudo；让 web 与 worker 共享同一任务数据目录）
-sudo mkdir -p /data/omichub
-sudo chown $USER:$USER /data/omichub
-
-# 1. 检查环境变量（.env 已存在，按需编辑）
-#    必须修改：
-#    - JWT_SECRET_KEY（随机长字符串）
-#    - AL_API_KEY（阿里云 DashScope API Key）
-#    - OMICHBUB_INIT_ADMIN_PASSWORD（生产环境必填）
-#    - AI_CONFIG_ENCRYPTION_KEY（固定值，用于加密 API Key）
-
-# 2. 构建前端
-cd frontend && npm install && npm run build && cd ..
-
-# 3. 启动主栈（自动创建跨栈外部网络 omichub_net）
-make docker-up
-
-# 4. 编辑 Worker 宿主机路径（迁移到新计算节点时只需改此文件）
-#    data/worker_config.yaml
-
-# 5. 启动独立 Worker 栈（计算节点）
-#    该命令通过 docker-compose.worker.yml 构建并运行 omichub-worker:dev。
-make docker-up-worker
-
-# 6. 执行数据库迁移
-docker exec omichub-web uv run alembic upgrade head
-
-# 7. 初始化管理员账号（二选一，推荐方式 A）
-#    方式 A：浏览器访问 /setup 网页注册（见下方「首次使用与管理员注册」）
-#    方式 B：命令行脚本
-docker exec omichub-web uv run python scripts/init_admin.py
-
-# 8. 初始化饼干定价策略（可选）
-docker exec omichub-web uv run python scripts/init_cookies.py
-
-# 9. 访问
-# 开发环境: http://localhost:8888
-```
+详细的单机、跨服务器和 AgentTeams 部署步骤见下方「**部署配置与 Make 命令**」。日常部署优先使用 `make docker-up-all`；跨服务器时使用 `make docker-up-cross-web` 和 `make docker-up-cross-worker`。
 
 > ⚠️ **改前端后必须重启 nginx 才能生效**：nginx 通过 bind mount 挂载 `frontend/dist`，
 > 但 `docker up -d` **不会重启已运行的容器**。Vite 构建会清空重建 dist（新 inode），
@@ -116,6 +78,366 @@ docker exec omichub-web uv run python scripts/init_cookies.py
 > - 改 `src/` Python 代码 / 新增迁移 / 改前端 → `make docker-dev-refresh`
 > - 改 `data/ai/*.yaml`（Agent 声明）或提示词 → 刷新页面即生效（每次调用幂等同步 + mtime 热重载），无需任何命令
 > - **只有** `pyproject.toml` / `uv.lock` / Dockerfile 变更才需要 `make docker-reload`（依赖层缓存失效会全量重装，属一次性成本）
+
+### 部署配置与 Make 命令
+
+`.env` 是**声明式部署配置**：密码、服务发布端口、宿主机绑定地址、Docker 网络名和共享存储挂载路径都在这里设置。`make` 是**执行入口**：读取 `.env` 后创建网络、准备目录、构建镜像并启动相应 Compose 栈。
+
+容器不需要固定 IP。容器内部始终通过 Compose 服务名（`web`、`db`、`cache`）通信；需要配置的是宿主机对外发布的私网地址和端口。
+
+#### 自动化边界
+
+`make` 可以完成 Docker 网络、运行目录、镜像构建、容器启动和健康检查；以下前置条件必须由部署人员或基础设施自动化先完成：
+
+- 已安装 Docker、Docker Compose、GNU Make 和前端构建依赖。
+- 已创建每台机器私有的 `.env`，并替换所有默认密码、令牌和密钥。
+- 跨机器部署时，NAS/NFS/CephFS 等共享存储已挂载到每台机器的宿主机路径。
+- 控制面与 Worker 的防火墙/VPN/DNS 已只放行必要的私网流量。
+- 生产环境的 HTTPS 证书、备份和 Secret 管理已按组织规范配置。
+
+#### 私有镜像仓库：推荐的云部署选项
+
+是。对于云服务器、Kubernetes、多个计算节点或没有源码检出的交付环境，建议在 CI 或一台受控构建机上构建 OmicHub 自有镜像并推送到组织的私有镜像仓库（如 Harbor、阿里云 ACR、腾讯云 TCR、AWS ECR 或 GitHub Container Registry）。云端节点只需要拉取**已验证的不可变镜像**，无需安装 Node.js、uv、前端依赖或在部署时执行镜像构建；这会显著缩短扩容、回滚和跨地域部署时间。
+
+这套方式适合推送 OmicHub 自己维护的镜像：后端控制面、通用 Worker、前端和各类分析运行时。`pgvector`、PgBouncer、Redis、PostgreSQL exporter 等第三方依赖仍可直接使用其固定上游 tag；若云环境不能稳定访问 Docker Hub，也可以先镜像同步到同一个私有仓库。
+
+**构建并推送应用镜像**（在 CI / 构建机执行）：
+
+```bash
+# 使用 Git commit 作为不可变版本，不要只依赖 latest。
+export REGISTRY=registry.example.com/omics
+export VERSION="$(git rev-parse --short=12 HEAD)"
+
+docker login "$REGISTRY"
+
+docker build -f deploy/docker/Dockerfile \
+  -t "$REGISTRY/omichub-backend:$VERSION" .
+docker build -f deploy/docker/Dockerfile.worker \
+  -t "$REGISTRY/omichub-worker:$VERSION" .
+docker build -f deploy/docker/Dockerfile.frontend \
+  -t "$REGISTRY/omichub-frontend:$VERSION" .
+
+docker push "$REGISTRY/omichub-backend:$VERSION"
+docker push "$REGISTRY/omichub-worker:$VERSION"
+docker push "$REGISTRY/omichub-frontend:$VERSION"
+```
+
+分析运行时镜像（例如富集、差异分析、系统发育或 Studio runtime）也应以相同版本或兼容版本单独构建、扫描并推送。镜像构建完成后，先在预发布环境运行数据库迁移、`make pgvector-acceptance` 和业务冒烟测试，再将**同一个 digest**提升到生产环境。
+
+**云端拉取部署原则**：生产 Compose / Kubernetes 清单应仅使用 `image: <registry>/<name>@sha256:<digest>`（或固定版本 tag），不要保留 `build:`、开发环境 bind mount 或 `make docker-reload`。部署节点通过 `docker login`、云厂商工作负载身份或 Kubernetes `imagePullSecrets` 获得拉取权限；Secret、`DATABASE_URL`、`READONLY_DATABASE_URL` 和 AI Provider 密钥继续由云端 Secret 管理服务注入，不写入镜像。
+
+示意性 Compose 服务配置如下；`web`、`beat`、`flower` 可复用后端镜像，Worker 使用 Worker 镜像：
+
+```yaml
+services:
+  web:
+    image: registry.example.com/omics/omichub-backend@sha256:<immutable-digest>
+    # 生产环境不设置 build:，不挂载 ../../src、../../alembic 等开发目录。
+  worker:
+    image: registry.example.com/omics/omichub-worker@sha256:<immutable-digest>
+```
+
+第三方依赖的私有镜像同步示例：
+
+```bash
+docker pull pgvector/pgvector:pg14
+docker tag pgvector/pgvector:pg14 "$REGISTRY/third-party/pgvector:pg14"
+docker push "$REGISTRY/third-party/pgvector:pg14"
+```
+
+镜像仓库只解决应用和依赖镜像分发；生产数据仍应使用 PolarDB PostgreSQL writer/read-only endpoint、托管备份/PITR、共享对象存储或共享文件系统。不要把数据库数据目录、`.env`、上传文件、运行日志或任何密钥打进镜像。
+
+#### 1. 单机部署：一份 `.env` + 一条 Make 命令
+
+适合开发、演示和小型课题组。Web、数据库、Redis 和 Worker 均在同一台机器运行。
+
+```bash
+# 首次复制模板并限制文件权限
+cp .env.example .env
+chmod 600 .env
+
+# 编辑 .env：至少替换 JWT_SECRET_KEY、APP_SECRET_KEY、REDIS_PASSWORD、
+# POSTGRES_PASSWORD、OMICHBUB_INIT_ADMIN_PASSWORD 和实际 AI Provider 密钥。
+# 如数据盘不使用默认目录，修改：OMICHUB_DATA_ROOT=/mnt/omichub
+
+# 构建前端并启动主栈 + Worker；Make 自动创建网络、运行目录和所需镜像。
+make frontend-build
+make docker-up-all
+```
+
+访问 `http://<服务器地址>:<OMICHUB_HTTP_PORT>`；模板默认端口为 `8888`。首次没有管理员时，访问 `http://<服务器地址>:8888/setup` 创建首位管理员，或执行 `make init-admin`。
+
+单机常用命令：
+
+| 命令 | 作用 |
+|---|---|
+| `make docker-up` | 启动主栈（Nginx、Web、PostgreSQL、Redis、Beat、Flower） |
+| `make docker-up-worker` | 构建并启动通用与系统发育 Worker |
+| `make docker-up-all` | 启动单机完整平台，优先使用 |
+| `make docker-logs` / `make docker-logs-worker` | 查看控制面 / Worker 日志 |
+| `make docker-down-all` | 停止主栈和 Worker，保留数据 |
+| `make docker-reload` | 开发环境重建前端并刷新服务 |
+| `make docker-fix-permissions` | 修复共享数据盘目录属主或权限错误 |
+
+#### 2. 跨服务器部署：控制面与计算节点各自一份 `.env`
+
+跨服务器不应共享同一个 `.env` 文件：所有节点需要使用相同的数据库、Redis、JWT、AI 和监控密钥，但控制面发布地址、Docker 网络名和 Worker 宿主机挂载路径属于**节点本地配置**。
+
+**控制面服务器**运行 Nginx、Web、PostgreSQL、Redis、Beat 和 Flower。编辑控制面机器的 `.env`：
+
+```dotenv
+APP_ENV=production
+APP_DEBUG=false
+OMICHUB_CONTROL_HOST=10.0.0.10
+OMICHUB_HTTP_BIND_HOST=0.0.0.0
+OMICHUB_WEB_BIND_HOST=10.0.0.10
+OMICHUB_POSTGRES_BIND_HOST=10.0.0.10
+OMICHUB_REDIS_BIND_HOST=10.0.0.10
+OMICHUB_DATA_ROOT=/mnt/omichub-control-data
+```
+
+然后在控制面机器执行：
+
+```bash
+make frontend-build
+make docker-up-cross-web
+```
+
+**每台 Worker 计算服务器**挂载 NAS 后，编辑本机 `.env`。`WORKER_SHARED_DATA_DIR` 与控制面数据根可以不同，但都必须是同一共享存储在本机的挂载点；容器内会统一映射为 `/data/omichub`。
+
+```dotenv
+APP_ENV=production
+APP_DEBUG=false
+OMICHUB_CONTROL_HOST=10.0.0.10
+OMICHUB_CONTROL_WEB_PORT=8000
+OMICHUB_CONTROL_POSTGRES_PORT=5432
+OMICHUB_CONTROL_REDIS_PORT=6379
+WORKER_SHARED_DATA_DIR=/mnt/omichub-worker-data
+WORKER_PIPELINE_DIR=/srv/omichub/pipelines
+```
+
+然后在每台 Worker 机器执行：
+
+```bash
+make docker-up-cross-worker
+```
+
+`make docker-up-cross-worker` 会使用 `deploy/docker/docker-compose.cross-worker.yml` 覆盖 Worker 的数据库、Redis、监控地址与本地网络，不会要求 Worker 加入控制面机器的 Docker 网络。关闭命令分别为 `make docker-down-cross-web` 与 `make docker-down-cross-worker`。
+
+#### 3. 配置项速查
+
+| `.env` 分类 | 核心变量 | 何时修改 |
+|---|---|---|
+| 数据根 | `OMICHUB_DATA_ROOT` | 控制面数据盘或 NAS 挂载点改变时 |
+| 浏览器入口 | `OMICHUB_HTTP_BIND_HOST`、`OMICHUB_HTTP_PORT` | 更换 Nginx 监听地址或端口时 |
+| 跨机 API | `OMICHUB_WEB_BIND_HOST`、`OMICHUB_WEB_PORT` | Worker 需要上报 workflow-monitor 时 |
+| 跨机数据服务 | `OMICHUB_POSTGRES_*`、`OMICHUB_REDIS_*` | 控制面向 Worker 暴露私网端口时 |
+| Worker 连接 | `OMICHUB_CONTROL_HOST`、`OMICHUB_CONTROL_*_PORT` | Worker 指向控制面私网 DNS/IP 时 |
+| Worker 挂载 | `WORKER_SHARED_DATA_DIR`、`WORKER_PIPELINE_DIR` | 每台计算节点的 NAS/流程目录不同的时候 |
+| Docker 网络 | `OMICHUB_NETWORK_NAME`、`OMICHUB_*_NETWORK_NAME` | 同机多套 OmicHub、已有网络命名冲突时 |
+| AgentTeams | `AGENTTEAMS_*` | Bridge、Element 房间或角色令牌启用时 |
+
+`.env.example` 保持安全默认值：单机时数据库、Redis、Flower 和 Web 内部 API 只监听 `127.0.0.1`；跨机器时才将它们绑定到控制面的私网 IP。不要将 PostgreSQL、Redis、Flower 或 Bridge 直接暴露到公网。
+
+## 从单机扩展到 HPC 与 Kubernetes
+
+OmicHub 的部署目标是以同一套应用代码支持三种规模：单机实验室、跨机器计算节点，以及高可用 Kubernetes 平台。核心原则是：**容器负责运行环境隔离；共享存储负责数据可见性；调度器负责把计算分配到合适的机器。**
+
+### 当前能力与后续目标
+
+| 能力 | 当前状态 | 实现入口 / 后续方式 |
+|---|---|---|
+| 单机控制面与计算 | 已支持 | `make docker-up-all`，Web 与 Worker 使用同一台机器的 `/data/omichub` |
+| 独立 Worker 节点 | 已支持 | `deploy/docker/docker-compose.cross-web.yml` 与 `deploy/docker/docker-compose.cross-worker.yml`；Worker 通过内网访问控制面 |
+| 多个 Celery Worker 水平扩展 | 已支持 | 每台计算机使用同一 Worker 镜像和队列配置，并挂载共享数据路径 |
+| 分层 NAS / 对象存储 | 架构已定义，需按站点配置挂载与归档服务 | 用户数据、参考库、工作目录分别映射到 NAS；历史产物转对象存储 |
+| Slurm 高性能计算 | 规划中，需接入执行器 | Worker 提交 `sbatch`；Snakemake 以 Slurm profile 在计算节点执行 |
+| Kubernetes 高可用 | 规划中，需提供 Helm/Manifest 与执行器 | 控制面 Deployment + Worker Deployment/Job + RWX PVC + HPA |
+
+> 不要把“Docker 容器”理解为自动实现跨机器存储：不同机器上的容器只有在挂载**同一份共享文件系统**、或通过对象存储 API 读写同一份数据时，才能安全地协同执行同一个分析任务。
+
+### 统一逻辑目录与分层存储
+
+应用内始终使用容器路径 `/data/omichub`，避免业务代码依赖某台宿主机的实际挂载点。运维侧通过 NFS、CephFS、Lustre、云 NAS 或对象存储网关，把不同的物理后端映射到此逻辑目录的不同子路径。
+
+```text
+/data/omichub/
+├── users/                    # 用户上传、任务输入、活跃任务与近期结果（RW）
+├── shared/
+│   ├── references/            # 参考基因组、索引：高性能 NAS，计算节点只读（RO）
+│   ├── blast_db/              # BLAST 数据库：高性能 NAS，计算节点只读（RO）
+│   ├── annotations/           # 公共注释资源（RO）
+│   └── bin/                   # 平台共享二进制（受控写入）
+├── system/
+│   ├── .conda_envs/           # Conda/Mamba 缓存：独立高速盘或 NAS（RW）
+│   ├── .tmp/                  # 可清理的中间临时数据（RW）
+│   └── archive/               # 等待迁移或归档的结果（RW）
+└── logs/                      # 应用、Worker、Snakemake 日志（RW）
+```
+
+推荐的数据放置策略：
+
+| 数据类别 | 推荐存储 | 访问权限 | 原因 |
+|---|---|---|---|
+| `shared/references`、`shared/blast_db` | 高性能 NAS / 并行文件系统 | Worker、Slurm 节点只读 | 比对和检索会产生高并发随机读取，避免重复复制参考库 |
+| `users/*/inbox`、`users/*/tasks/*/work` | 支持 RWX 的 NAS | Web、Worker、Slurm 节点读写 | 上传、流程工作目录和产物必须被多个节点以相同路径访问 |
+| `users/*/tasks/*/output` | NAS 温存储 | 读写 | 保留近期结果，支持在线预览与下载 |
+| 历史原始数据、已完成结果 | OSS / S3 / COS 等对象存储 | API / 预签名 URL | 低成本长期保存；建议异步归档，不在运行中的流程中直接写冷存储 |
+| PostgreSQL、Redis | 专用 SSD、托管数据库或高可用集群 | 仅控制面 | 不建议放在普通 NFS 共享目录 |
+
+运行任务时，**Web、Celery Worker、Slurm 计算节点必须看到一致的绝对路径**，例如都能访问 `/data/omichub/users/<user_id>/tasks/<task_id>/work`。这是 Snakemake 输入、日志和输出可被不同节点接力处理的前提。
+
+### 阶段一：单机与跨机器 Worker
+
+单机模式适合开发、小型课题组或验证流程：
+
+```text
+Browser → Nginx → Web/API → Redis/Celery → Worker → Snakemake
+                                            └──────→ /data/omichub
+```
+
+当分析计算需要迁移到独立机器时，控制面继续运行在管理节点；计算节点仅运行 Worker。仓库已提供跨机 Compose 覆盖文件：
+
+```text
+管理节点
+  ├── nginx / web / db / redis / beat / flower
+  ├── 内网暴露 PostgreSQL、Redis 与 workflow-monitor API
+  └── 挂载共享存储到 /data/omichub
+
+计算节点 A、B、...
+  ├── worker / phylo-worker（可按队列部署不同镜像）
+  ├── 通过内网连接管理节点 Redis、PostgreSQL 与监控 API
+  └── 将同一共享存储挂载到 /data/omichub
+```
+
+部署要点：
+
+1. 在每一台 Worker 机器挂载用户数据 NAS、参考库 NAS 和必要的日志目录；容器内保持 `/data/omichub` 的统一目录契约。
+2. 在 Worker 机器的 `.env` 设置 `WORKER_SHARED_DATA_DIR` 和 `WORKER_PIPELINE_DIR`；若留空则回退读取 `data/worker_config.yaml`。
+3. 管理节点和 Worker 节点都通过 `.env` 配置私网地址与端口；不再修改 Compose 文件中的示例 IP。
+4. 数据库与 Redis 只对可信内网或 VPN 开放；不要直接暴露到公网。Worker 与控制面之间应使用防火墙、TLS/VPN 或 Kubernetes NetworkPolicy 限制访问。
+5. 按队列拆分 Worker：`analysis` 用高 CPU/内存节点，`download` 用高网络吞吐节点，交互沙盒使用隔离能力更强的节点池。
+
+跨机 Worker 示例：
+
+```bash
+# 管理节点：在 .env 写入控制面私网 IP、统一存储根目录与需要开放的端口。
+# 容器无需固定 IP；容器内部继续通过 web、db、cache 等服务名通信。
+# .env（管理节点）
+OMICHUB_CONTROL_HOST=10.0.0.10
+OMICHUB_WEB_BIND_HOST=10.0.0.10
+OMICHUB_POSTGRES_BIND_HOST=10.0.0.10
+OMICHUB_REDIS_BIND_HOST=10.0.0.10
+OMICHUB_DATA_ROOT=/mnt/omichub-nas
+```
+
+```bash
+make docker-up-cross-web
+```
+
+```bash
+# 每台 Worker 计算节点：使用相同的密钥和 CONTROL_HOST，
+# 但 WORKER_SHARED_DATA_DIR 与 WORKER_PIPELINE_DIR 使用该机器实际的挂载路径。
+# .env（Worker 节点）
+OMICHUB_CONTROL_HOST=10.0.0.10
+WORKER_SHARED_DATA_DIR=/mnt/omichub-nas
+WORKER_PIPELINE_DIR=/srv/omichub/pipelines
+```
+
+```bash
+make docker-up-cross-worker
+```
+
+上述变量必须写入每台机器各自私有的 `.env`，不能只在终端临时赋值。完整端口、网络和 Worker 路径模板见 [`.env.example`](.env.example)。控制面与 Worker 的 `WORKER_SHARED_DATA_DIR` 可以是不同的宿主机路径，但它们在容器内必须都挂载到 `/data/omichub`；这样流程配置和任务记录才能使用一致路径。
+
+### 阶段二：接入 Slurm 高性能集群
+
+对于大规模 RNA-seq、ATAC-seq 或多用户并发分析，Celery Worker 应从“实际执行计算”转为“提交和跟踪作业”。实际 Snakemake rule 由 Slurm 分配给 HPC 计算节点：
+
+```text
+Web/API → Redis → Celery Worker（提交器） → sbatch / Slurm controller
+                                             ↓
+                               Slurm compute nodes / Snakemake
+                                             ↓
+                                   共享 NAS / 对象存储归档
+```
+
+建议实现方式：
+
+1. **共享路径**：所有 Slurm 节点挂载与 Worker 一致的 `/data/omichub`；参考库单独挂载为只读高性能路径。
+2. **流程可移植性**：为每个流程构建版本化 OCI 镜像，或提供 Apptainer/Singularity 镜像；不要依赖某台 Worker 本机的 Conda 环境。
+3. **Snakemake profile**：为每个 Slurm 分区维护 profile，声明 `partition`、CPU、内存、运行时限、日志路径和重试策略；任务资源来自流程 YAML 的 `default_resources`，而不是由前端随意传入。
+4. **执行器契约**：新增 `SlurmExecutor`，其职责是生成作业脚本、调用 `sbatch --parsable`、记录 Slurm job ID、通过 `sacct`/`squeue` 查询状态，并将失败原因和日志回写 OmicHub 任务状态。
+5. **取消与清理**：OmicHub 任务取消时调用 `scancel <job_id>`；作业结束后保留结构化日志，按生命周期策略归档结果和清理工作目录。
+6. **最小权限**：Worker 使用专用 Slurm 服务账号；不向应用容器挂载管理员 SSH 私钥。优先使用 Slurm REST API 或受限 `sudo`/命令白名单。
+
+Slurm 接入完成前，当前平台仍是由本地 `LocalSnakemakeExecutor` 在 Worker 容器中运行流程；因此不能将“流程表单中的集群模式”视为已完成的 HPC 调度能力。
+
+### 阶段三：Kubernetes 高可用平台
+
+当需要高可用、弹性扩缩、多租户隔离或云上部署时，将 Docker Compose 的服务拆分为 Kubernetes 工作负载：
+
+```text
+Internet
+   ↓
+Ingress / LoadBalancer
+   ↓
+Web Deployment (N replicas) ──────── PostgreSQL HA / Managed RDS
+   ↓                                   Redis HA / Managed Redis
+Celery Worker Deployments
+   ├── analysis workers ──┐
+   ├── download workers ──┼── RWX PVC (NAS / CephFS)
+   ├── sandbox workers ───┘
+   └── Slurm submitter or Kubernetes Job executor
+
+Per-task Job / workflow Pod → RWX PVC + Object Storage
+```
+
+推荐的 Kubernetes 资源划分：
+
+| 组件 | 建议对象 | 高可用 / 隔离策略 |
+|---|---|---|
+| `web`、`nginx` | Deployment + Service + Ingress | 至少 2 副本、滚动更新、readiness/liveness probes、HPA |
+| `beat` | 单副本 Deployment 或 Kubernetes CronJob | 避免重复调度；优先把独立周期任务改为 CronJob |
+| `analysis`、`download` Worker | 按队列拆分 Deployment | 独立资源 requests/limits、nodeSelector、HPA/KEDA 按队列深度扩缩 |
+| 单次重计算工作流 | Kubernetes Job 或 Snakemake Kubernetes executor | `ttlSecondsAfterFinished` 自动清理；每任务独立资源与服务账号 |
+| PostgreSQL / Redis | 托管服务或专用 Operator/StatefulSet | 备份、故障转移、监控与连接池；不与无状态应用混部 |
+| 用户/任务数据 | RWX PVC | NAS CSI、CephFS、Lustre CSI 等；挂载路径仍保持 `/data/omichub` |
+| 长期归档 | 对象存储 | 预签名上传/下载、生命周期规则、跨区域备份（如需要） |
+
+Kubernetes 上的关键实施要求：
+
+- **无状态控制面**：Web 不保存本地会话和任务文件；会话、队列和任务元数据分别进入 Redis、PostgreSQL 与共享存储。
+- **资源隔离**：每类 Worker 设置 CPU/内存 requests 与 limits；对 GPU、超大内存或高 I/O 任务使用 node taint/toleration 与专用节点池。
+- **存储权限**：参考库 PVC 以只读方式挂载；用户数据按应用服务账号与访问范围控制；避免以 root 写入共享 NAS。
+- **安全网络**：默认拒绝跨 namespace 通信，只放行 Web→DB/Redis、Worker→Redis/存储/Slurm、Ingress→Web 的必要路径。
+- **可观测性**：收集 API 延迟、Celery 队列长度、任务状态、Slurm/Kubernetes Job 状态、NAS 容量与 I/O；以这些指标驱动告警和自动扩缩。
+- **备份与演练**：定期执行 PostgreSQL PITR/恢复演练、对象存储版本控制、基础设施清单备份和跨节点故障演练。
+
+### 推荐演进顺序
+
+1. **先稳定单机**：完成备份、权限、日志、运行目录清理和流程镜像版本管理。
+2. **再拆分 Worker**：使用已有 cross-machine Compose，把控制面与多个计算节点分离，并用共享 NAS 保证路径一致。
+3. **再接 Slurm**：先从提交单个 Snakemake 驱动作业开始，再演进为每个 rule 独立调度；保留 Celery 作为任务状态与用户通知通道。
+4. **最后迁移 Kubernetes**：先迁移无状态 Web 和 Worker，再迁移任务 Job；数据库、Redis 与共享存储优先使用成熟托管服务或经过验证的集群方案。
+
+此顺序避免在流程、存储与权限契约尚未稳定时直接引入 Kubernetes 的复杂度，同时保证单机、HPC 和云原生环境共享同一份任务数据模型与运行目录规范。
+
+### 开启 Multi-Agent 与 AgentTeams
+
+完整环境变量模板见 [`.env.example`](.env.example)。复制后先以默认关闭状态启动；协作能力应按“轻量协作 → 并行增强 → 全流程闭环”的顺序灰度启用。
+
+```bash
+cp .env.example .env
+chmod 600 .env
+```
+
+1. **平台内 Multi-Agent**：在 `.env` 设置 `UNIFIED_INTENT_ROUTER_ENABLED=true` 和 `MULTI_EXPERT_CONSULTATION_ENABLED=true`，重启 Web/Worker 后启用路由与只读专家会诊。确认模型调用配额、降级记录和延迟可接受后，再设置 `SUBAGENT_FANOUT_ENABLED=true` 开启并行子 Agent。
+2. **AgentTeams Bridge**：先复制 `deploy/agentteams/bridge.env.example` 为私有的 `deploy/agentteams/bridge.env`，为 Manager、Data Steward、Approval、Workflow Operator 以及独立 Worker 身份设置不同的随机令牌；按 `deploy/agentteams/README.md` 部署 Bridge 与 AgentTeams Worker。
+3. **连接 OmicHub**：仅在 Bridge 的健康检查、令牌校验和最小权限网络策略都通过后，将 `.env` 中 `AGENTTEAMS_BRIDGE_ENABLED=true`、`AGENTTEAMS_CHAT_ENTRY_ENABLED=true`，并填入 Bridge URL、四个角色令牌与已授权的 Element 房间地址。
+4. **部署前检查**：执行 `deploy/agentteams/check_setup.sh deploy/agentteams/bridge.env`；生产环境还应运行文档规定的 Bridge 预检与健康检查。仅修改 OmicHub `.env` 不会启动 AgentTeams 的独立 Worker。
+
+不要在 `.env`、`bridge.env`、README、Issue 或日志中保存真实云密钥、Bridge 身份令牌、数据库密码或管理员密码；生产部署应通过 Secret 管理服务注入，并在泄露后立即撤销和轮换。
 
 ### 首次使用与管理员注册
 
@@ -732,7 +1054,7 @@ jq 'select(.status >= 500)' /data/omichub/logs/nginx/access.log
 | `AI_ALERT_ERROR_RATE` | 错误率告警阈值（0-1） | `0.05` |
 | `AI_ALERT_P95_LATENCY_MS` | p95 延迟告警阈值（毫秒） | `10000` |
 | `AI_ALERT_COST_RATIO` | 日成本超过近 7 日均值的倍数阈值 | `1.5` |
-| `AI_ALERT_COOLDOWN_MINUTES` | 同一规则告警冷却（分钟） | `30` |
+| `AI_ALERT_COOLDOWN_MINUTES` | 错误率 / p95 延迟告警冷却（分钟；日成本按自然日去重） | `30` |
 | `LOG_RETENTION_ENABLED` | 是否启用日志/span 归档留存清理 | `true` |
 | `LOG_RETENTION_HOT_DAYS` | 热数据保留天数（在线快速排查窗口） | `7` |
 | `LOG_RETENTION_COLD_DAYS` | 冷数据保留天数；超期轮转归档由定时任务删除 | `90` |
@@ -816,6 +1138,8 @@ jq -c 'select(.record.extra.session_id == "<SESSION_ID>" and .record.extra.statu
 - 错误率 > `AI_ALERT_ERROR_RATE`（默认 5%，近 5 分钟窗口）
 - p95 延迟 > `AI_ALERT_P95_LATENCY_MS`（默认 10000ms）
 - 日成本 > 近 7 日均值 × `AI_ALERT_COST_RATIO`（默认 150%）
+
+持续超阈值时，错误率和 p95 延迟沿用 `AI_ALERT_COOLDOWN_MINUTES`（默认 30 分钟）重试提醒；日成本因按自然日汇总，同一条规则每天最多推送一次，避免全天重复通知。
 
 > 后端接口：`GET /api/v1/admin/ai-metrics/trend`、`/models`、`/alerts/status`、`/alerts/history`（均仅管理员）。开关与阈值见 `AI_METRICS_ENABLED` / `AI_ALERT_*` 配置。
 

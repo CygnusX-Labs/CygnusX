@@ -21,6 +21,20 @@ class SiteSettingModel(Base, TimestampMixin):
     agentteams_chat_entry_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )
+    collaboration_preset: Mapped[str] = mapped_column(String(16), default="custom", nullable=False)
+    multi_expert_consultation_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    unified_intent_router_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    collaboration_degradation_locale: Mapped[str] = mapped_column(
+        String(8), default="zh-CN", nullable=False
+    )
+    collaboration_degradation_template_zh: Mapped[str] = mapped_column(
+        String(1_000), default="", nullable=False
+    )
+    collaboration_degradation_template_en: Mapped[str] = mapped_column(
+        String(1_000), default="", nullable=False
+    )
     home_quick_entries: Mapped[list[dict[str, Any]]] = mapped_column(
         JSON,
         default=list,

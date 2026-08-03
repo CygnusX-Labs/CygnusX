@@ -13,6 +13,8 @@ export interface AgentTeamsCase {
   /** 后端按 requester_ref 回填的真实用户名（§33.2 ④）；缺省时不展示 UUID 兜底由列渲染处理 */
   requester_username?: string | null
   team_id: string
+  origin_consultation_id?: string | null
+  consultation_summary?: string | null
   status: AgentTeamsCaseStatus
   omic_task_ids: string[]
   work_items: AgentTeamsWorkItem[]

@@ -137,6 +137,7 @@ export interface BlastTask {
 
 export interface BlastSubmitRequest {
   db_id: string
+  project_name: string
   query_sequence?: string
   query_title: string
   program?: ProgramType

@@ -57,6 +57,7 @@ class MASService:
             context_summary=request.context_summary,
             session_id=request.session_id,
             workspace_id=request.workspace_id,
+            project_id=request.project_id,
         )
         self._workspace.initialize_run(run.id)
         return self._run_response(run)
@@ -352,6 +353,7 @@ class MASService:
             status=run.status,
             version=run.version,
             context_summary=run.context_summary,
+            project_id=run.project_id,
             created_at=run.created_at,
             finished_at=run.finished_at,
         )
@@ -368,6 +370,7 @@ class MASService:
             sha256=artifact.sha256,
             state=artifact.state,
             version=artifact.version,
+            project_id=artifact.project_id,
             created_at=artifact.created_at,
         )
 

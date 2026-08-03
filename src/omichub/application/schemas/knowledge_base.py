@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 class KnowledgeBaseDTO(BaseModel):
     id: str
+    project_id: str | None = None
     name: str
     description: str = ""
     show_in_lab: bool = True
@@ -18,6 +19,7 @@ class KnowledgeBaseDTO(BaseModel):
 
 class KnowledgeBaseCreateDTO(BaseModel):
     id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9-]*$")
+    project_id: str | None = Field(None, max_length=64)
     name: str = Field(min_length=1, max_length=128)
     description: str = ""
     show_in_lab: bool = True
@@ -25,6 +27,7 @@ class KnowledgeBaseCreateDTO(BaseModel):
 
 
 class KnowledgeBaseUpdateDTO(BaseModel):
+    project_id: str | None = Field(None, max_length=64)
     name: str = Field(min_length=1, max_length=128)
     description: str = ""
     show_in_lab: bool = True

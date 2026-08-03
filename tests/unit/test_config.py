@@ -11,3 +11,5 @@ def test_settings_loads_defaults():
     settings = get_settings()
     assert settings.app_name == "OmicHub"
     assert settings.app_debug is True
+    assert settings.task_queue_backend == "celery"
+    assert settings.rocketmq_task_routes == []

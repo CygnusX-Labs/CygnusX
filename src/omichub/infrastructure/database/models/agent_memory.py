@@ -10,6 +10,9 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from omichub.infrastructure.database.base import Base, TimestampMixin
+from omichub.infrastructure.database.vector import Vector
+
+EMBEDDING_DIMENSIONS = 1024
 
 
 class AgentMemoryModel(Base, TimestampMixin):
@@ -19,11 +22,12 @@ class AgentMemoryModel(Base, TimestampMixin):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     user_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    project_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     agent_id: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     scope: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     keywords: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
-    embedding: Mapped[list[float] | None] = mapped_column(JSONB, nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIMENSIONS), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(120), nullable=True)
     source_session: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
@@ -34,4 +38,5 @@ class AgentMemoryModel(Base, TimestampMixin):
     __table_args__ = (
         Index("idx_agent_memories_user_agent_status", "user_id", "agent_id", "status"),
         Index("idx_agent_memories_user_scope_status", "user_id", "scope", "status"),
+        Index("idx_agent_memories_project_status", "project_id", "status"),
     )

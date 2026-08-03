@@ -44,6 +44,7 @@ from .security import ApprovalSigner
 
 
 class BridgeService:
+    _EXTERNAL_WORKERS = frozenset({"agent-code", "agent-viz", "agent-scrna"})
     def __init__(
         self, settings: BridgeSettings, client: OmicHubClient, audit: AuditStore, cases: CaseStore
     ) -> None:
@@ -61,9 +62,17 @@ class BridgeService:
             "workflow-operator",
             "quality-auditor",
             "delivery-reporter",
+            "agent-code",
+            "agent-viz",
+            "agent-scrna",
         }:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid work item target"
+            )
+        if request.target in {"agent-code", "agent-viz", "agent-scrna"} and not request.read_only:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Professional agent work items must be read-only",
             )
         work_item = WorkItemRecord(**request.model_dump(), updated_at=datetime.now(UTC))
         case = await self._cases.add_work_item(case_id, work_item)
@@ -202,6 +211,8 @@ class BridgeService:
                 requester_ref=request.requester_ref,
                 team_id=request.team_id,
                 element_room_url=request.element_room_url,
+                origin_consultation_id=request.origin_consultation_id,
+                consultation_summary=request.consultation_summary,
                 created_at=now,
                 updated_at=now,
             )
@@ -210,7 +221,11 @@ class BridgeService:
             case_id=case.case_id,
             actor=actor,
             event_type="case.created",
-            payload={"project_ref": request.project_ref.model_dump(), "intent": request.intent},
+            payload={
+                "project_ref": request.project_ref.model_dump(),
+                "intent": request.intent,
+                "origin_consultation_id": request.origin_consultation_id,
+            },
         )
         return case
 
@@ -229,6 +244,8 @@ class BridgeService:
             "intent": case.intent,
             "team_id": case.team_id,
             "element_room_url": case.element_room_url,
+            "origin_consultation_id": case.origin_consultation_id,
+            "consultation_summary": case.consultation_summary,
             "status": case.status,
             "omic_task_ids": case.omic_task_ids,
             "quality_decision": case.quality_decision,
@@ -243,6 +260,13 @@ class BridgeService:
         }
 
     async def list_worker_inbox(self, actor: str) -> WorkerInboxResponse:
+        if actor in self._EXTERNAL_WORKERS:
+            await self._audit.record(
+                case_id="__bridge_health__",
+                actor=actor,
+                event_type="worker.inbox_polled",
+                payload={},
+            )
         assignments = await self._cases.list_assigned_work_items(actor, {"pending", "in_progress"})
         items = [
             WorkerInboxItem(
@@ -323,6 +347,31 @@ class BridgeService:
     async def metrics(self) -> dict[str, int]:
         return await self._audit.metrics()
 
+    async def worker_health(self) -> dict[str, Any]:
+        now = datetime.now(UTC)
+        configured_identities = self._settings.identity_secrets()
+        heartbeats = await self._audit.worker_heartbeats(set(self._EXTERNAL_WORKERS))
+        workers = []
+        for worker in sorted(self._EXTERNAL_WORKERS):
+            last_seen = heartbeats[worker]
+            age_seconds = int((now - last_seen).total_seconds()) if last_seen else None
+            configured = worker in configured_identities
+            active = bool(configured and age_seconds is not None and age_seconds <= self._settings.worker_heartbeat_ttl_seconds)
+            workers.append(
+                {
+                    "identity": worker,
+                    "configured": configured,
+                    "active": active,
+                    "last_seen_at": last_seen.isoformat() if last_seen else None,
+                    "age_seconds": age_seconds,
+                }
+            )
+        return {
+            "allowed_flows": sorted(self._settings.allowed_flows()),
+            "worker_heartbeat_ttl_seconds": self._settings.worker_heartbeat_ttl_seconds,
+            "workers": workers,
+        }
+
     async def list_flows(self) -> dict[str, Any]:
         flows = await self._client.list_flows()
         items = flows.get("items", [])
@@ -337,6 +386,15 @@ class BridgeService:
 
     async def preflight(self, request: PreflightRequest, actor: str) -> PreflightResponse:
         findings = []
+        consultation_summary = " ".join(str(request.consultation_summary or "").split())
+        if consultation_summary:
+            findings.append(
+                (
+                    "CONSULTATION_CONTEXT",
+                    "info",
+                    f"预检已引用会诊纪要：{consultation_summary[:300]}",
+                )
+            )
         if request.flow_id not in self._settings.allowed_flows():
             findings.append(("FLOW_NOT_ALLOWED", "error", "请求的流程不在 Bridge 白名单中。"))
         if not request.sample_sheet:
@@ -350,9 +408,10 @@ class BridgeService:
             findings.append(
                 ("INVALID_COMPARISON", "error", "comparison 必须同时包含 control 和 treatment。")
             )
+        has_errors = any(item[1] == "error" for item in findings)
         response = PreflightResponse(
             case_id=request.case_id,
-            status="blocked" if findings else "passed",
+            status="blocked" if has_errors else "passed",
             findings=[
                 {
                     "code": code,
@@ -362,9 +421,7 @@ class BridgeService:
                 }
                 for code, severity, message in findings
             ],
-            next_actions=["request_user_correction"]
-            if findings
-            else ["request_submission_approval"],
+            next_actions=["request_user_correction"] if has_errors else ["request_submission_approval"],
         )
         case = await self._cases.get(request.case_id)
         if case.status == "preflight_blocked":
@@ -375,16 +432,18 @@ class BridgeService:
         await self._cases.save_preflight_input(
             request.case_id,
             None
-            if findings
+            if has_errors
             else PreflightInputSnapshot(
                 flow_id=request.flow_id,
                 sample_sheet=request.sample_sheet,
                 comparisons=request.comparisons,
                 context_refs=request.context_refs,
+                consultation_summary=request.consultation_summary,
             ),
         )
         await self._cases.transition(
-            request.case_id, "preflight_blocked" if findings else "approval_pending"
+            request.case_id,
+            "preflight_blocked" if has_errors else "approval_pending",
         )
         await self._audit.record(
             case_id=request.case_id,
@@ -394,6 +453,16 @@ class BridgeService:
                 "skill_name": "project-preflight",
                 "status": response.status,
                 "finding_count": len(findings),
+                "summary": (
+                    "预检已引用会诊纪要并通过。"
+                    if consultation_summary and not has_errors
+                    else "预检已引用会诊纪要，但仍需修正输入问题。"
+                    if consultation_summary
+                    else "预检已通过。"
+                    if not has_errors
+                    else "预检发现需要修正的输入问题。"
+                ),
+                "findings": response.findings,
             },
         )
         if request.work_item_id:
@@ -401,7 +470,7 @@ class BridgeService:
                 request.case_id,
                 request.work_item_id,
                 actor,
-                work_item_status="blocked" if findings else "completed",
+                work_item_status="blocked" if has_errors else "completed",
                 summary=response.next_actions[0],
                 findings=response.findings,
             )

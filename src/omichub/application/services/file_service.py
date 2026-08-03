@@ -1,8 +1,8 @@
 """文件应用服务 — DB 文件记录 + 分块上传 + 配额控制
 
 落盘规范：
-  原始上传：{storage_path}/users/{user_id}/raw/{filename}
-  分析输出：{storage_path}/users/{user_id}/results/{task_id}/...
+  原始上传：{storage_path}/users/{user_id}/inbox/{filename}
+  分析输出：{storage_path}/users/{user_id}/projects/{project}/runs/{analysis-time}/output/...
   分片临时：{storage_path}/.tmp/{upload_id}/{index}
 """
 
@@ -59,7 +59,7 @@ from omichub.infrastructure.database.repositories.user_repository import (
 DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024  # 5 MiB
 
 # 系统默认目录：用户首次访问时懒初始化，锁定不可删除/重命名
-SYSTEM_DIRECTORIES: tuple[str, ...] = ("raw_data", "workspace", "temp")
+SYSTEM_DIRECTORIES: tuple[str, ...] = ("inbox", "projects", "raw_data", "workspace", "temp")
 
 _DEDUPE_SUFFIX_RE = re.compile(r"^(?P<stem>.+)_[0-9a-f]{8}$", re.IGNORECASE)
 _LEGACY_GZIP_DEDUPE_RE = re.compile(
@@ -150,7 +150,7 @@ async def ensure_directory_chain(session: AsyncSession, user_id: UUID, path: str
     """确保 path 及其各级父目录在 user_directories 中存在（幂等）。
 
     path 形如 ``raw_data/PRJNA1259417``。逐段创建缺失的 Directory 记录；系统默认目录段
-    （raw_data/workspace/temp）标记 is_system=True，其余为用户数据目录。
+    （inbox/projects/raw_data/workspace/temp）标记 is_system=True，其余为用户数据目录。
     供文件同步与下载产物登记共用。
     """
     repo = DirectoryRepositoryImpl(session)
@@ -194,7 +194,8 @@ class FileService:
     # 路径工厂
     # ------------------------------------------------------------------
     def user_raw_dir(self, user_id: UUID) -> Path:
-        d = self._storage_root / "users" / str(user_id) / "raw"
+        """用户上传入口；历史方法名保留，物理目录统一为 inbox。"""
+        d = self._storage_root / "users" / str(user_id) / "inbox"
         d.mkdir(parents=True, exist_ok=True)
         return d
 
@@ -265,10 +266,15 @@ class FileService:
         return "/".join(parts)
 
     def _raw_subdir(self, user_id: UUID, directory: str) -> Path:
-        """用户 raw/ 下的指定子目录（自动创建）"""
+        """用户 inbox/ 下的指定子目录（自动创建）。"""
         d = self.user_raw_dir(user_id)
-        if directory:
-            d = d / directory
+        normalized_directory = self._normalize_directory(directory)
+        if normalized_directory == "inbox":
+            normalized_directory = ""
+        elif normalized_directory.startswith("inbox/"):
+            normalized_directory = normalized_directory.removeprefix("inbox/")
+        if normalized_directory:
+            d = d / normalized_directory
         d.mkdir(parents=True, exist_ok=True)
         return d
 
@@ -473,7 +479,7 @@ class FileService:
         if user is None:
             raise NotFoundError("用户不存在")
 
-        directory = self._normalize_directory(req.directory)
+        directory = self._normalize_directory(req.directory) or "inbox"
 
         # 配额前置校验
         if user.used_storage + req.total_size > user.storage_quota:
@@ -493,7 +499,7 @@ class FileService:
                 chunk_size=completed.chunk_size,
             )
 
-        # 预创建目标物理目录（raw/{directory}/）
+        # 预创建目标物理目录（inbox/{directory}/）
         self._raw_subdir(user_id, directory)
 
         # 新建上传会话（断点续传由客户端在 chunk 阶段重传来补齐；
@@ -574,7 +580,7 @@ class FileService:
 
         tmp_dir = self._tmp_dir(upload_id)
         directory = self._normalize_directory(session.directory)
-        raw_subdir = self._raw_subdir(user_id, directory)  # raw/{directory}/，自动创建
+        raw_subdir = self._raw_subdir(user_id, directory)  # inbox/{directory}/，自动创建
         final_path = raw_subdir / session.file_name
         # 同名冲突：追加短 uuid
         if final_path.exists():
@@ -706,7 +712,7 @@ class FileService:
     # 用户目录 CRUD
     # ------------------------------------------------------------------
     async def ensure_default_directories(self, user_id: UUID) -> None:
-        """幂等创建用户默认目录 raw_data / workspace / temp。
+        """幂等创建用户默认目录 inbox / projects 及内部运行目录。
 
         目录记录和物理目录分别校验，确保历史用户即使已有部分 DB 记录，
         或目录被手工删除，也能在注册、启动补偿和目录访问时恢复完整结构。

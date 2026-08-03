@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 
 from omichub.api.deps import CurrentUserId
 from omichub.core.exceptions import NotFoundError, ValidationError
+from omichub.infrastructure.task_queue.dispatcher import enqueue_task
 from omichub.middleware.rbac import AdminRequired
 from omichub.tools.jbrowse.config import config_manager
 from omichub.tools.jbrowse.schema import (
@@ -182,7 +183,7 @@ async def upload_track(
     )
 
     if auto_index:
-        task = index_file.delay(str(file_path))
+        task = enqueue_task(index_file, str(file_path))
         result.index_task_id = task.id
         result.index_status = "queued"
 
@@ -224,7 +225,7 @@ async def upload_batch(
                 success=True,
             )
             if auto_index:
-                task = index_file.delay(str(file_path))
+                task = enqueue_task(index_file, str(file_path))
                 item.index_task_id = task.id
             results.append(item)
         except Exception as e:
@@ -271,7 +272,7 @@ async def create_index(
     if not await asyncio.to_thread(os.path.exists, file_path):
         raise NotFoundError("文件不存在")
 
-    task = index_file.delay(file_path)
+    task = enqueue_task(index_file, file_path)
     return IndexTaskSubmitDTO(
         message="索引任务已提交",
         task_id=task.id,

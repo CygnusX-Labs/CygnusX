@@ -32,7 +32,7 @@ class PipelineResultService:
         if str(task.status).lower() != "success":
             raise ValidationError("任务尚未成功完成，暂不能读取最终结果")
 
-        task_root = get_path_factory().task_dir(self.context.user_id, task_id).resolve()
+        task_root = self._task_root(task_id, task.work_dir)
         roots = self._result_roots(task_root, task.result_path, task.work_dir)
         artifacts = self._list_artifacts(task_root, roots)
         metrics = self._extract_metrics(roots) if "summary" in result_types else {}
@@ -48,6 +48,20 @@ class PipelineResultService:
         if "artifacts" in result_types:
             payload["artifacts"] = artifacts
         return payload
+
+    def _task_root(self, task_id: str, work_dir: str) -> Path:
+        """新项目目录与历史 UUID 任务目录兼容解析。"""
+        factory = get_path_factory()
+        work_path = Path(work_dir).resolve() if work_dir else None
+        projects_root = factory.projects_dir(self.context.user_id).resolve()
+        if work_path is not None:
+            try:
+                work_path.relative_to(projects_root)
+            except ValueError:
+                pass
+            else:
+                return work_path.parent if work_path.name == "work" else work_path
+        return factory.task_dir(self.context.user_id, task_id).resolve()
 
     @staticmethod
     def _result_roots(task_root: Path, result_path: str, work_dir: str) -> list[Path]:

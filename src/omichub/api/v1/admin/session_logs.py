@@ -495,8 +495,8 @@ def _build_session_report(
             m["tokens"] += tt
             if (s.get("status_code") or "") == "ERROR":
                 m["errors"] += 1
-        elif name.startswith("mcp."):
-            tool = str(_attr(s, "tool", "mcp.tool") or name)
+        elif name.startswith("mcp.") or name == "agent.tool_dispatch":
+            tool = str(_attr(s, "tool.name", "tool", "mcp.tool") or name)
             tool_stats[tool] = tool_stats.get(tool, 0) + 1
         elif name == "skill.execute":
             tool = str(_attr(s, "tool_name", "skill_id") or "unknown")

@@ -49,3 +49,33 @@ skills:
     boundary: "Gateway allowlists agent capabilities and read-only tools; no raw sessions, tool traces, files, database access, shell, or workflow actions."
     response_schema: "{schema_version, status, conclusion, recommendations[], evidence_refs[], risks[], agent_id, schema_ver, duration_ms, token_usage, error}"
     cost_guardrails: "120s default timeout; 5 calls and 200k tokens per case by default, all configurable."
+  code-review:
+    actor: agent-code
+    request: "GET /work-items/assigned; POST /cases/{case_id}/work-items/{work_item_id}/claim; POST /cases/{case_id}/work-items/{work_item_id}"
+    failure_handling: "Return blocked or failed with evidence; never execute code or modify files."
+    boundary: read_only
+  visualization-review:
+    actor: agent-viz
+    request: "GET /work-items/assigned; POST /cases/{case_id}/work-items/{work_item_id}/claim; POST /cases/{case_id}/work-items/{work_item_id}"
+    failure_handling: "Return blocked or failed with evidence; never render, write, or publish files."
+    boundary: read_only
+  scrna-interpretation:
+    actor: agent-scrna
+    request: "GET /work-items/assigned; POST /cases/{case_id}/work-items/{work_item_id}/claim; POST /cases/{case_id}/work-items/{work_item_id}"
+    failure_handling: "Return blocked or failed with evidence; never submit or modify a workflow."
+    boundary: read_only
+  upstream-review:
+    actor: agent-scrna
+    request: "GET /work-items/assigned; POST /cases/{case_id}/work-items/{work_item_id}/claim; POST /cases/{case_id}/work-items/{work_item_id}"
+    failure_handling: "Return blocked with logical artifact references; never run Cell Ranger or access raw FASTQ."
+    boundary: read_only
+  integration-review:
+    actor: agent-scrna
+    request: "GET /work-items/assigned; POST /cases/{case_id}/work-items/{work_item_id}/claim; POST /cases/{case_id}/work-items/{work_item_id}"
+    failure_handling: "Return blocked with QC and integration evidence; never modify a workflow or artifact."
+    boundary: read_only
+  annotation-review:
+    actor: agent-scrna
+    request: "GET /work-items/assigned; POST /cases/{case_id}/work-items/{work_item_id}/claim; POST /cases/{case_id}/work-items/{work_item_id}"
+    failure_handling: "Return evidence, uncertainty and scientific risks; never submit or alter a workflow."
+    boundary: read_only

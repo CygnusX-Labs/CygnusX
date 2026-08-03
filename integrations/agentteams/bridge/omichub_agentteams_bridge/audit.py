@@ -75,9 +75,14 @@ class AuditStore:
 
     async def metrics(self) -> dict[str, int]:
         async with self._lock:
-            all_events = [event for events in self._events.values() for event in events]
+            all_events = [
+                event
+                for case_id, events in self._events.items()
+                if case_id != "__bridge_health__"
+                for event in events
+            ]
             return {
-                "case_count": len(self._events),
+                "case_count": sum(case_id != "__bridge_health__" for case_id in self._events),
                 "event_count": len(all_events),
                 "submitted_task_count": sum(
                     event["event_type"] == "omic_task.submitted" for event in all_events
@@ -89,6 +94,25 @@ class AuditStore:
                     event["event_type"] == "case.closed" for event in all_events
                 ),
             }
+
+    async def worker_heartbeats(self, workers: set[str]) -> dict[str, datetime | None]:
+        """Return the latest inbox-poll event for each Worker identity."""
+        async with self._lock:
+            latest = {worker: None for worker in workers}
+            events = self._events.get("__bridge_health__", [])
+            for event in events:
+                actor = event.get("actor")
+                if actor not in latest or event.get("event_type") != "worker.inbox_polled":
+                    continue
+                try:
+                    recorded_at = datetime.fromisoformat(str(event["recorded_at"]))
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if recorded_at.tzinfo is None:
+                    recorded_at = recorded_at.replace(tzinfo=UTC)
+                if latest[actor] is None or recorded_at > latest[actor]:
+                    latest[actor] = recorded_at
+            return latest
 
 
 def _append(path: Path, value: str) -> None:

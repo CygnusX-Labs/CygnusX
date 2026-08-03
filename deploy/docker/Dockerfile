@@ -37,6 +37,7 @@ RUN uv sync --frozen --no-dev --extra workflow --no-install-project
 COPY src/ ./src/
 COPY alembic.ini ./
 COPY alembic/ ./alembic/
+COPY scripts/ ./scripts/
 # 工具箱配置（tools_setting.yaml + 各工具子目录 YAML）；prod 不挂源码，须打进镜像
 COPY tool_configs/ ./tool_configs/
 
@@ -51,6 +52,12 @@ RUN uv pip install --python /app/.venv/bin/python --no-cache "snakemake-logger-p
 # needs it when an Alibaba Cloud AccessKey is configured.
 RUN uv pip install --python /app/.venv/bin/python --no-cache \
     "alibabacloud_agentexplorer20260317==1.0.1"
+
+# RocketMQ is optional at runtime. Keep it outside uv.lock so the default
+# Celery-only environment remains reproducible while RocketMQ-enabled images
+# have the native client available.
+RUN uv pip install --python /app/.venv/bin/python --no-cache \
+    "rocketmq-client-python==2.0.0"
 
 # ----- 阶段 2: 运行 -----
 FROM python:3.11-slim AS runtime
@@ -70,6 +77,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     nodejs \
     npm \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -79,6 +87,7 @@ COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src /app/src
 COPY --from=builder /app/alembic.ini /app/alembic.ini
 COPY --from=builder /app/alembic /app/alembic
+COPY --from=builder /app/scripts /app/scripts
 COPY --from=builder /app/tool_configs /app/tool_configs
 
 # 设置环境变量

@@ -27,17 +27,17 @@ import uuid
 from pathlib import Path
 
 import yaml
-from rich.console import Console
-from rich.table import Table
-from rich.theme import Theme
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
+from omichub.application.services.knowledge_index_service import KnowledgeIndexService
 from omichub.infrastructure.database.models.knowledge_document import KbDocumentModel
 from omichub.infrastructure.database.models.knowledge_editor import DocEditorModel
 from omichub.infrastructure.database.models.knowledge_revision import DocRevisionModel
 from omichub.infrastructure.database.models.user import UserModel
 from omichub.infrastructure.database.session import get_engine, get_session_factory
+from rich.console import Console
+from rich.table import Table
+from rich.theme import Theme
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # 抑制 SQLAlchemy 引擎日志输出，避免同步时打印大量 SQL
 logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
@@ -102,6 +102,7 @@ async def sync(
     created = 0
     skipped = 0
     results: list[tuple[str, str, str]] = []
+    indexer = KnowledgeIndexService(session)
 
     for item in meta.get("items", []):
         doc_id = item.get("id")
@@ -151,6 +152,7 @@ async def sync(
             await session.flush()
 
             document.current_rev = revision.id
+            await indexer.index_document(document, content)
 
             editor = DocEditorModel(
                 document_id=document.id,
@@ -189,6 +191,7 @@ async def sync(
 
             document.current_rev = revision.id
             document.status = 1
+            await indexer.index_document(document, content)
 
             # 更新编辑者统计
             editor_result = await session.execute(

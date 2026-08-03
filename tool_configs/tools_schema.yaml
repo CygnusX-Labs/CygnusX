@@ -112,6 +112,14 @@ tools:
               kind: {type: string}
               id: {type: string}
             required: [kind, id]
+        origin_consultation_id:
+          type: string
+          maxLength: 256
+          description: 可选。由多专家会诊升级而来时携带的会诊来源 ID。
+        consultation_summary:
+          type: string
+          maxLength: 1800
+          description: 可选。由多专家会诊升级而来时携带的结论摘要，供预检与审批追溯。
       required: [objective, project_id, flow_id]
     llm_result_fields: [case_id, title, status, summary, success, error]
     ui_result_fields: [case_card]

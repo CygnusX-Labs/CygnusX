@@ -239,10 +239,30 @@ class SandboxPool:
     # ------------------------------------------------------------------
     # 代码执行（流式）
     # ------------------------------------------------------------------
+    @staticmethod
+    def _build_exec_command(language: str, code: str) -> list[str]:
+        """构建以 base64 投递源码的容器执行命令。"""
+        encoded = base64.b64encode(code.encode("utf-8")).decode("ascii")
+        if language == "python":
+            wrapper = (
+                "import base64;"
+                f"exec(compile(base64.b64decode('{encoded}').decode('utf-8'),'<sandbox>','exec'))"
+            )
+            return ["python", "-c", wrapper]
+        if language == "r":
+            return ["/bin/sh", "-lc", f"printf '%s' '{encoded}' | base64 -d | Rscript -"]
+        if language == "bash":
+            return ["/bin/sh", "-lc", f"printf '%s' '{encoded}' | base64 -d | bash -s"]
+        raise ValueError(f"不支持的沙盒语言: {language}")
+
     async def stream_execute(
-        self, container_id: str, code: str, timeout_sec: int | None = None
+        self,
+        container_id: str,
+        code: str,
+        timeout_sec: int | None = None,
+        language: str = "python",
     ) -> AsyncIterator[dict[str, Any]]:
-        """流式执行代码：Docker SDK exec 在容器内跑 `python -c <base64 包裹>`。
+        """流式执行 Python、R 或 Bash 代码。
 
         注意：web 容器内没有 docker CLI 二进制（只有 /var/run/docker.sock），
         不能走 `docker exec` 子进程；base64 包裹是为了避开 stdin 投递。
@@ -252,15 +272,11 @@ class SandboxPool:
         client = self._get_client()
         api = client.api
 
-        encoded = base64.b64encode(code.encode("utf-8")).decode("ascii")
-        wrapper = (
-            "import base64;"
-            f"exec(compile(base64.b64decode('{encoded}').decode('utf-8'),'<sandbox>','exec'))"
-        )
+        command = self._build_exec_command(language, code)
 
         exec_id = await asyncio.to_thread(
             lambda: api.exec_create(
-                container_id, cmd=["python", "-c", wrapper], tty=False
+                container_id, cmd=command, tty=False
             )["Id"]
         )
 
@@ -295,10 +311,15 @@ class SandboxPool:
             所以按 wrapper 命令行特征 pkill（镜像内有 /usr/bin/pkill）。
             """
             try:
+                process_pattern = {
+                    "python": "python -c import base64",
+                    "r": "Rscript -",
+                    "bash": "bash -s",
+                }.get(language, "")
                 kill_id = await asyncio.to_thread(
                     lambda: api.exec_create(
                         container_id,
-                        cmd=["pkill", "-9", "-f", "python -c import base64"],
+                        cmd=["pkill", "-9", "-f", process_pattern],
                     )["Id"]
                 )
                 await asyncio.to_thread(api.exec_start, kill_id)

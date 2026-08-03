@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -81,9 +82,18 @@ async def build_tree(
     start_time = time.time()
     phases_completed: list[str] = []
 
-    settings = get_settings()
-    work_dir = Path(settings.storage_path) / "results" / "phylo" / task_id
+    configured_run_dir = task_input.get("work_dir")
+    output_dir: Path | None = None
+    if configured_run_dir:
+        run_dir = Path(str(configured_run_dir))
+        work_dir = run_dir / "work"
+        output_dir = run_dir / "output"
+    else:
+        settings = get_settings()
+        work_dir = Path(settings.storage_path) / "results" / "phylo" / task_id
     work_dir.mkdir(parents=True, exist_ok=True)
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         # ═══ PHASE 1: 多序列比对 ═══
@@ -134,6 +144,14 @@ async def build_tree(
         # ═══ PHASE 4: 结果格式化 ═══
         await _call_progress(progress, "FORMATTING", 0.95, "格式化输出结果...")
         output_files = format_results(task_input, work_dir)
+        if output_dir is not None:
+            delivered_files: dict[str, str] = {}
+            for format_key, source_path in output_files.items():
+                source = Path(source_path)
+                destination = output_dir / source.name
+                await asyncio.to_thread(shutil.copy2, source, destination)
+                delivered_files[format_key] = str(destination)
+            output_files = delivered_files
         newick_path = (
             Path(output_files["newick"])
             if isinstance(output_files["newick"], str)

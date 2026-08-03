@@ -1,9 +1,13 @@
 """Agent YAML studio 段解析单元测试（agent_loader._load_single_agent）"""
 
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 
+from omichub.application.services.agent_service import AgentService
 from omichub.infrastructure.config import agent_loader
 from omichub.infrastructure.config.agent_loader import _load_single_agent
 from omichub.infrastructure.mcp.presets import (
@@ -154,6 +158,55 @@ def test_mas_enabled_loads_orchestrator_without_site_yaml_edit(tmp_path: Path, m
     configs = agent_loader.load_agent_configs()
 
     assert [item["agent_id"] for item in configs] == ["agent-general", "agent-orchestrator"]
+
+
+class _Result:
+    def __init__(self, values):
+        self._values = values
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self._values
+
+    def scalar_one_or_none(self):
+        return self._values[0] if self._values else None
+
+
+@pytest.mark.unit
+async def test_unbound_builtin_agent_resolves_default_model_for_studio():
+    """Studio 创建时应为历史空绑定的内置 Agent 解析默认模型。"""
+    provider = SimpleNamespace(
+        id=uuid4(),
+        name="qwen3.7-plus",
+        model="qwen3.7-plus",
+        is_active=True,
+        is_default=True,
+    )
+    agent = SimpleNamespace(
+        is_builtin=True,
+        model_id=None,
+        model_name="qwen3.7-max",
+        model_engine="",
+    )
+    db = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[
+                _Result([provider]),
+                _Result([agent]),
+                _Result([provider]),
+            ]
+        ),
+        flush=AsyncMock(),
+    )
+
+    model_id = await AgentService(db).resolve_model_id_for_agent(agent)
+
+    assert model_id == provider.id
+    assert agent.model_id == provider.id
+    assert agent.model_name == "qwen3.7-plus"
+    assert agent.model_engine == "qwen3.7-plus"
 
 
 @pytest.mark.asyncio

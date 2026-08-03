@@ -23,6 +23,7 @@ class KbDocumentModel(Base, TimestampMixin):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     doc_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    project_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     category: Mapped[str] = mapped_column(String(128), nullable=False)
     file_path: Mapped[str] = mapped_column(String(500), nullable=False)

@@ -7,8 +7,8 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.sandbox import SandboxSessionDTO
 from omichub.core.config import get_settings
@@ -97,7 +97,12 @@ class SandboxService:
         return await self._domain.destroy(session_id)
 
     async def execute_code(
-        self, user_id: UUID, session_id: UUID, code: str, timeout_sec: int = 0
+        self,
+        user_id: UUID,
+        session_id: UUID,
+        code: str,
+        timeout_sec: int = 0,
+        language: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """流式执行代码"""
         session = await self._repo.get_by_id(session_id)
@@ -108,10 +113,18 @@ class SandboxService:
             yield {"type": "error", "detail": "沙盒容器未就绪"}
             return
 
+        effective_language = language or session.language or "python"
+        if effective_language not in {"python", "r", "bash"}:
+            yield {"type": "error", "detail": f"不支持的沙盒语言: {effective_language}"}
+            return
+
         await self._domain.mark_executing(session_id)
         try:
             async for event in self._pool.stream_execute(
-                session.container_id, code, timeout_sec=timeout_sec or None
+                session.container_id,
+                code,
+                timeout_sec=timeout_sec or None,
+                language=effective_language,
             ):
                 yield event
         except Exception as e:  # noqa: BLE001

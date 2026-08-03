@@ -13,6 +13,7 @@ from omichub.application.services import studio_context_service
 from omichub.application.services.agent_service import AgentService
 from omichub.application.services.studio_context_service import (
     create_session_from_report,
+    import_datahub_file,
     register_artifact_report,
     render_context_pack_hint,
 )
@@ -178,6 +179,40 @@ def test_render_context_pack_hint_tolerates_missing_fields():
     """缺字段时不抛异常（防御渲染）"""
     text = render_context_pack_hint({"source": {}, "files": []})
     assert "本次会话来源" in text
+
+
+@pytest.mark.unit
+async def test_import_chat_upload_links_current_user_file(platform_env, monkeypatch):
+    """upload:// 聊天附件可安全软链进当前 Studio 工作区。"""
+    storage, uid, workspace = platform_env
+    upload_id = "74a2448c593a4c9caa19bb2214339c54"
+    upload = storage / "users" / uid / "workspace" / "chat-uploads" / f"{upload_id}.treefile"
+    upload.parent.mkdir(parents=True, exist_ok=True)
+    upload.write_text("(A:1,B:1);\n", encoding="utf-8")
+    monkeypatch.setattr(
+        studio_context_service,
+        "get_user_chat_upload_dir",
+        lambda _user_id: upload.parent,
+    )
+
+    result = await import_datahub_file(
+        uid, "sess-new", f"upload://{upload_id}", "TnpD_treefile", _FakeDb()
+    )
+
+    link = workspace / "input" / "TnpD_treefile"
+    assert result["sandbox_path"] == "/workspace/input/TnpD_treefile"
+    assert result["file_type"] == "chat_upload"
+    assert _lexists(link)
+    assert _readlink(link) == f"/data/platform/workspace/chat-uploads/{upload_id}.treefile"
+
+
+@pytest.mark.unit
+async def test_import_chat_upload_rejects_non_hex_identifier(platform_env):
+    """聊天上传 ID 不得携带路径或任意文件名。"""
+    _, uid, _ = platform_env
+
+    with pytest.raises(BusinessError, match="聊天上传 file_id 格式非法"):
+        await import_datahub_file(uid, "sess-new", "upload://../secret", None, _FakeDb())
 
 
 # ===== create_session_from_report =====

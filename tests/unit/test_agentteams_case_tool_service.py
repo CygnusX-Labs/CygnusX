@@ -13,6 +13,18 @@ from omichub.application.services.agentteams_case_tool_service import AgentTeams
 from omichub.core.exceptions import BusinessError
 
 
+@pytest.mark.parametrize("agent_file", ["code.yaml", "viz.yaml", "scrna.yaml"])
+def test_specialist_agents_expose_agentteams_case_creation_tool(agent_file: str) -> None:
+    from pathlib import Path
+
+    import yaml
+
+    config_path = Path(__file__).parents[2] / "data" / "ai" / agent_file
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+
+    assert "agentteams_case" in config["tool_packs"]
+
+
 def test_case_tool_contract_is_confirmed_and_idempotent() -> None:
     from omichub.tools.schema_loader import schema_loader
 
@@ -23,6 +35,8 @@ def test_case_tool_contract_is_confirmed_and_idempotent() -> None:
     assert schema.annotations.idempotent is True
     assert schema.extra["control_tool"] == "agentteams_case"
     assert schema.input_schema["required"] == ["objective", "project_id", "flow_id"]
+    assert "origin_consultation_id" in schema.input_schema["properties"]
+    assert "consultation_summary" in schema.input_schema["properties"]
 
 
 def test_session_project_ownership_accepts_only_bound_project() -> None:
@@ -79,6 +93,22 @@ def test_chat_case_flow_whitelist_defaults_and_parsing() -> None:
     assert AgentTeamsCaseToolService._allowed_flows("rna_seq, atac_seq, rna_seq") == {
         "rna_seq",
         "atac_seq",
+    }
+
+
+def test_consultation_source_is_normalized_and_bounded() -> None:
+    source = AgentTeamsCaseToolService._consultation_source(
+        "  consult-001  ",
+        "  建议先核验样本质量，\n再确认差异分析设计。  ",
+    )
+
+    assert source == {
+        "origin_consultation_id": "consult-001",
+        "consultation_summary": "建议先核验样本质量， 再确认差异分析设计。",
+    }
+    assert AgentTeamsCaseToolService._consultation_source(None, None) == {
+        "origin_consultation_id": None,
+        "consultation_summary": None,
     }
 
 

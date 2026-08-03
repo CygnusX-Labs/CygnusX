@@ -44,7 +44,6 @@ from omichub.infrastructure.mcp.presets import (
 )
 from omichub.tools.schema_loader import schema_loader
 
-
 AGENTTEAMS_CASE_SYSTEM_PROMPT_SUFFIX = """## AgentTeams 协作 Case
 
 你可以使用 `create_agentteams_case` 创建 AgentTeams 协作 Case。它适用于需要跨角色协作、
@@ -54,6 +53,8 @@ AGENTTEAMS_CASE_SYSTEM_PROMPT_SUFFIX = """## AgentTeams 协作 Case
 - 目标、项目、流程或交付物不明确时先澄清；不得默认创建 Case。
 - 仅当用户已明确同意创建后才调用该工具；工具会展示确认卡，用户确认后再以原参数
   携带 `_confirmed: true` 调用。
+- 若请求来自多专家会诊，须把会诊事件提供的 `consultation_id` 和 `consultation_summary`
+  分别填入 `origin_consultation_id`、`consultation_summary`，以保留 Case 来源追溯。
 - 创建成功后告知用户打开协作 Case，继续完成预检、审批和交付验收。
 """
 
@@ -109,7 +110,11 @@ class AgentService:
                 AIProviderConfigModel.is_active == True  # noqa: E712
             )
         )
-        models_by_name = {m.name: m for m in model_result.scalars().all()}
+        active_models = list(model_result.scalars().all())
+        models_by_name = {m.name: m for m in active_models}
+        models_by_id = {m.id: m for m in active_models}
+        default_model = next((model for model in active_models if model.is_default), None)
+        fallback_model = default_model or (active_models[0] if active_models else None)
 
         for cfg in yaml_configs:
             existing = await self.get_agent(cfg["agent_id"])
@@ -149,6 +154,16 @@ class AgentService:
                         existing.skill_ids = list(
                             dict.fromkeys([*existing_skill_ids, *configured_skills])
                         )
+
+                    if existing.model_id not in models_by_id:
+                        configured_model = models_by_name.get(str(cfg.get("model") or ""))
+                        target_model = configured_model or fallback_model
+                    else:
+                        target_model = None
+                    if target_model is not None:
+                        existing.model_id = target_model.id
+                        existing.model_name = target_model.name
+                        existing.model_engine = target_model.model
                 continue
 
             # 按 model name 解析 model_id
@@ -363,16 +378,19 @@ class AgentService:
         fallback_provider = active_providers[0] if active_providers else None
 
         agents_result = await self._db.execute(
-            select(AgentTemplateModel).where(AgentTemplateModel.model_id.is_not(None))
+            select(AgentTemplateModel).where(
+                AgentTemplateModel.model_id.is_not(None) | (AgentTemplateModel.is_builtin == True)  # noqa: E712
+            )
         )
         changed = False
         for agent in agents_result.scalars().all():
             provider = providers_by_id.get(agent.model_id) or fallback_provider
             if provider is None:
-                agent.model_id = None
-                agent.model_name = ""
-                agent.model_engine = ""
-                changed = True
+                if agent.model_id is not None or agent.model_name or agent.model_engine:
+                    agent.model_id = None
+                    agent.model_name = ""
+                    agent.model_engine = ""
+                    changed = True
                 continue
 
             if (
@@ -654,6 +672,14 @@ class AgentService:
             )
         )
         return result.scalar_one_or_none()
+
+    async def resolve_model_id_for_agent(
+        self, agent: AgentTemplateModel
+    ) -> uuid.UUID | None:
+        """返回 Agent 当前可用的模型 ID，并修复内置 Agent 的历史空绑定。"""
+        await self._reconcile_model_bindings()
+        model = await self._resolve_model(agent.model_id)
+        return model.id if model is not None else None
 
     async def _load_skills(self, skill_ids: list[Any]) -> list[Skill]:
         if not skill_ids:

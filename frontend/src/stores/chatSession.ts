@@ -14,6 +14,7 @@ import { ref, computed } from 'vue'
 import apiClient from '@/api/client'
 import { useChatStream } from '@/composables/useChatStream'
 import type { ChatSessionDTO, ChatMessageDTO, ChatModelOption, DisplayMessage } from '@/types/chat'
+import { sortPersistedChatMessages } from '@/utils/chatMessageOrder'
 
 export const useChatSessionStore = defineStore('chatSession', () => {
   // ========== State ==========
@@ -75,7 +76,7 @@ export const useChatSessionStore = defineStore('chatSession', () => {
     loadingMessages.value = true
     try {
       const res = await apiClient.get<ChatMessageDTO[]>(`/chat/sessions/${sessionId}/messages`)
-      messages.value = res.data.map((m) => ({
+      messages.value = sortPersistedChatMessages(res.data).map((m) => ({
         message_id: m.message_id,
         role: m.role as 'user' | 'assistant',
         content: m.content,

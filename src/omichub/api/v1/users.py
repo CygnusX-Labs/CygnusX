@@ -35,10 +35,11 @@ async def list_my_memories(
     db: DbSession,
     agent_id: str | None = Query(None, max_length=50),
     scope: str | None = Query(None, pattern="^(profile|project|preference|summary)$"),
+    project_id: str | None = Query(None, max_length=64),
 ) -> list[AgentMemoryDTO]:
     """列出当前用户可管理的跨会话 Agent 记忆。"""
     memories = await AgentMemoryService(db).list_memories(
-        current_user_id, agent_id=agent_id, scope=scope
+        current_user_id, agent_id=agent_id, scope=scope, project_id=project_id
     )
     return [AgentMemoryDTO(**AgentMemoryService._serialize(memory)) for memory in memories]
 

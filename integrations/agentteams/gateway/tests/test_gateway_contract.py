@@ -188,6 +188,13 @@ def test_timeout_returns_manual_review_and_audit_event(settings: GatewaySettings
     asyncio.run(_test_timeout_returns_manual_review_and_audit_event(settings))
 
 
+def test_code_agent_is_allowlisted_for_read_only_consultation(settings: GatewaySettings) -> None:
+    policy = settings.agent_policy_map()["agent-code"]
+
+    assert "interpretation" in policy[0]
+    assert "ensembl.lookup_gene" in policy[1]
+
+
 async def _test_timeout_returns_manual_review_and_audit_event(settings: GatewaySettings) -> None:
     async def slow_handler(_: httpx.Request) -> httpx.Response:
         await asyncio.sleep(0.1)

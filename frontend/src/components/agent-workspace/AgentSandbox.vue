@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { NButton, NIcon, NSelect, NTag, NTooltip, useMessage, useDialog } from 'naive-ui'
 import { ArrowBackOutline, BulbOutline, FlashOutline, CloseOutline, DesktopOutline } from '@vicons/ionicons5'
 import KimiMessageList from '@/components/ai-chat/KimiMessageList.vue'
+import type { CollaborationRouteInfo } from '@/components/ai-chat/types'
 import KimiChatInput from '@/components/ai-chat/KimiChatInput.vue'
 import AgentCapabilityDrawer from './AgentCapabilityDrawer.vue'
 import MultiAgentToggle from './MultiAgentToggle.vue'
@@ -252,6 +253,15 @@ function handleConfirmTool(toolName: string, args: Record<string, unknown>) {
   store.sendMessage(content, {})
 }
 
+function handleCreateCaseFromConsultation(summary: string, consultationId?: string) {
+  const source = consultationId ? `\n会诊来源 ID：${consultationId}` : ''
+  input.value = `请基于以下会诊纪要创建协作 Case。请先向我确认项目和流程信息，并将纪要作为预检参考；创建时请携带会诊来源字段。${source}\n会诊纪要：${summary}`
+}
+
+function handleCorrectCollaborationRoute(route: CollaborationRouteInfo) {
+  input.value = `我不想走“${route.label}”这条路径。请改为：`
+}
+
 function handleOpenToolPage(route: string, _args: Record<string, unknown>) {
   // open_page 工具直接跳转前端路由
   if (route.startsWith('/')) {
@@ -388,6 +398,8 @@ onUnmounted(() => {
           :target-message-id="targetMessageId"
           @confirm-tool="handleConfirmTool"
           @open-tool-page="handleOpenToolPage"
+          @create-case-from-consultation="handleCreateCaseFromConsultation"
+          @correct-collaboration-route="handleCorrectCollaborationRoute"
         />
       </div>
     </div>

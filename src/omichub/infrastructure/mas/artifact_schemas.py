@@ -7,6 +7,8 @@ from typing import Any
 
 import yaml
 
+from omichub.application.services.flow_registry import get_flow_registry
+
 
 def load_artifact_schemas(path: str | Path) -> dict[str, dict[str, Any]]:
     """返回以 artifact type 为 key 的注册表；畸形配置安全降级为空。"""
@@ -25,4 +27,7 @@ def load_artifact_schemas(path: str | Path) -> dict[str, dict[str, Any]]:
         artifact_type = str(entry.get("type") or "").strip()
         if artifact_type:
             registry[artifact_type] = dict(entry)
+    # Flow definitions are the authoritative source when they intentionally
+    # overlap legacy hand-maintained schema entries.
+    registry.update(get_flow_registry().artifact_schemas())
     return registry

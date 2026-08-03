@@ -458,6 +458,7 @@ const UserAvatar = () => {
         :collapsed="collapsed"
         collapse-mode="width"
         class="app-sider"
+        :class="{ 'app-sider--collapsed': collapsed }"
       >
         <div class="sider-inner">
           <div class="sider-nav-groups">
@@ -1050,6 +1051,11 @@ const UserAvatar = () => {
   transition: opacity 180ms ease-out;
 }
 
+.app-sider--collapsed .sider-inner {
+  padding-right: 8px;
+  padding-left: 8px;
+}
+
 .sider-nav-groups {
   flex: 1;
   overflow-y: auto;
@@ -1122,6 +1128,7 @@ const UserAvatar = () => {
   color: var(--sidebar-active-text);
   font-weight: 500;
   position: relative;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--arco-primary) 16%, transparent);
 }
 
 .nav-item--active:hover {
@@ -1131,12 +1138,17 @@ const UserAvatar = () => {
 .nav-item--active::before {
   content: '';
   position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
+  top: 50%;
+  height: 26px;
+  transform: translateY(-50%);
+  left: 4px;
   width: 3px;
   background: var(--arco-primary);
-  border-radius: 0 3px 3px 0;
+  border-radius: 999px;
+}
+
+.nav-item--collapsed.nav-item--active::before {
+  height: 30px;
 }
 
 .nav-item--group.nav-item--active {
@@ -1164,15 +1176,16 @@ const UserAvatar = () => {
 }
 
 .nav-item--collapsed .nav-item-inner {
-  width: 40px;
-  height: 40px;
+  width: 100%;
+  height: 44px;
   justify-content: center;
   padding: 0;
-  border-radius: 10px;
+  border-radius: 12px;
 }
 
 .nav-item--collapsed {
   margin: 0;
+  width: 100%;
 }
 
 .nav-icon {

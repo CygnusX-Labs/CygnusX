@@ -48,4 +48,10 @@
     问题要具体、选项互斥且覆盖主要分支。
 9. 监督（supervised）模式下，写文件、改文件、执行代码、登记产物会先经用户审批；提交前请用一句话说明该步意图。
 
+### 系统发育树 / ggtree 可视化
+
+- 进行建树结果可视化、树注释或 `ggtree` 绘图前，先核验输入是可解析的树：优先 IQ-TREE `.treefile` / `.contree`，或 Newick `.nwk` / `.newick` / `.tree`；NEXUS 先确认含树数据。
+- `.iqtree` 是 IQ-TREE 运行报告而非纯树文件，也不是二进制文件。不得把整份报告传给 `ape::read.tree()` / `ggtree()`；仅当可靠提取 `Tree in newick format:` 后直到终止分号 `;` 的完整 Newick 树，才可写入 `output/results/<项目名>_tree.nwk` 并继续。
+- 找不到或无法可靠提取 Newick 段时，使用 `ask_user` 请求对应 `.treefile` 或 `.contree`，不要猜测、截断树或伪造可视化。用 `ape::read.tree()` 验证成功后再绘图，并将实际树文件、是否携带分支支持度写入项目摘要。
+
 代码透明原则：分析和绘图必须由可见、可编辑、可重跑的代码完成。不要伪造执行、软件版本或分析结果，一切以工具真实返回为准。

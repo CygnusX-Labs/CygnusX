@@ -60,6 +60,42 @@ class AgentTeamsService:
             "reason": reason,
         }
 
+    async def health_check(self) -> dict[str, Any]:
+        """Validate Bridge reachability, the four OmicHub credentials, and Worker polls."""
+        status = await self.connection_status()
+        token_checks = {
+            "bioops-manager": self._bridge_config.manager_token,
+            "data-steward": self._bridge_config.data_steward_token,
+            "approval-authority": self._bridge_config.approval_token,
+            "workflow-operator": self._bridge_config.workflow_operator_token,
+        }
+        identities: list[dict[str, Any]] = []
+        for identity, token in token_checks.items():
+            valid = False
+            if status["connected"] and token:
+                try:
+                    response = await self._request_as(identity, token, "/v1/health/identity")
+                    valid = response.get("status") == "ok" and response.get("identity") == identity
+                except BusinessError:
+                    valid = False
+            identities.append({"identity": identity, "valid": valid})
+
+        bridge_health: dict[str, Any] = {}
+        if status["connected"]:
+            try:
+                bridge_health = await self._request("/v1/health/workers")
+            except BusinessError:
+                bridge_health = {}
+        workers = bridge_health.get("workers") if isinstance(bridge_health.get("workers"), list) else []
+        allowed_flows = bridge_health.get("allowed_flows") if isinstance(bridge_health.get("allowed_flows"), list) else []
+        return {
+            "connection": status,
+            "identities": identities,
+            "workers": workers,
+            "allowed_flows": allowed_flows,
+            "scrna_submit_available": "scrna_seq" in allowed_flows,
+        }
+
     async def chat_room(self, case_id: str | None, requester_ref: str) -> dict[str, bool | str | None]:
         """Resolve the Element chat room, preferring the room bound to the given Case."""
         if case_id:
@@ -122,16 +158,23 @@ class AgentTeamsService:
         flow_id: str,
         sample_sheet: list[dict[str, Any]],
         comparisons: list[dict[str, Any]] | None = None,
+        origin_consultation_id: str | None = None,
+        consultation_summary: str | None = None,
     ) -> dict[str, Any]:
+        case_payload: dict[str, Any] = {
+            "case_id": case_id,
+            "project_ref": {"kind": "project", "id": project_id},
+            "intent": intent,
+            "requester_ref": requester_ref,
+        }
+        if origin_consultation_id:
+            case_payload["origin_consultation_id"] = origin_consultation_id
+        if consultation_summary:
+            case_payload["consultation_summary"] = consultation_summary
         case = await self._request(
             "/v1/cases",
             method="POST",
-            json={
-                "case_id": case_id,
-                "project_ref": {"kind": "project", "id": project_id},
-                "intent": intent,
-                "requester_ref": requester_ref,
-            },
+            json=case_payload,
         )
         await self._request(
             f"/v1/cases/{case_id}/work-items",
@@ -145,19 +188,22 @@ class AgentTeamsService:
                 "read_only": True,
             },
         )
+        preflight_payload: dict[str, Any] = {
+            "case_id": case_id,
+            "work_item_id": "preflight-01",
+            "flow_id": flow_id,
+            "sample_sheet": sample_sheet,
+            "comparisons": comparisons,
+            "context_refs": [{"kind": "project", "id": project_id}],
+        }
+        if consultation_summary:
+            preflight_payload["consultation_summary"] = consultation_summary
         await self._request_as(
             "data-steward",
             self._bridge_config.data_steward_token,
             f"/v1/projects/{project_id}/preflight",
             method="POST",
-            json={
-                "case_id": case_id,
-                "work_item_id": "preflight-01",
-                "flow_id": flow_id,
-                "sample_sheet": sample_sheet,
-                "comparisons": comparisons,
-                "context_refs": [{"kind": "project", "id": project_id}],
-            },
+            json=preflight_payload,
         )
         return case
 
@@ -193,7 +239,7 @@ class AgentTeamsService:
                 json={
                     "work_item_id": "submit-01",
                     "target": "workflow-operator",
-                    "objective": "执行已获人工批准的 RNA-seq 流程提交并回写 OmicHub 任务证据。",
+                    "objective": "执行已获人工批准的分析流程提交并回写 OmicHub 任务证据。",
                     "skill_name": "workflow-submit",
                     "context_refs": [{"kind": "project", "id": case["project_ref"]["id"]}],
                     "read_only": False,

@@ -87,6 +87,9 @@ agents:
     - general
     - rnaseq
     - scrna
+    - scrna_upstream
+    - scrna_integration
+    - scrna_advanced
     - code
     - viz
     - shania

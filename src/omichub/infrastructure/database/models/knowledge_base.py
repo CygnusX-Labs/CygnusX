@@ -20,6 +20,7 @@ class KnowledgeBaseModel(Base, TimestampMixin):
     __tablename__ = "knowledge_bases"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     show_in_lab: Mapped[bool] = mapped_column(

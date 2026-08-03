@@ -68,3 +68,12 @@ class MultiExpertConsultationService:
         lines = ["## 多专家会诊意见（仅供综合，需自行核验）"]
         lines.extend(f"- {item['name']}：{item['opinion']}" for item in opinions)
         return "\n".join(lines)
+
+    @staticmethod
+    def summarize(opinions: list[dict[str, str]]) -> str:
+        """Return a conclusion-only handoff summary safe to prefill into a Case."""
+        if not opinions:
+            return ""
+        lines = ["会诊纪要（仅含专家结论，不含原始工具轨迹）："]
+        lines.extend(f"- {item['name']}：{item['opinion'][:360]}" for item in opinions)
+        return "\n".join(lines)[:1800]

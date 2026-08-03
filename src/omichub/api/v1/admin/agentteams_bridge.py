@@ -42,6 +42,15 @@ async def get_agentteams_bridge_config(
     return await _with_connection_state(service)
 
 
+@router.get("/agentteams-bridge/health", summary="检查 Bridge、身份令牌与外部 Worker 健康状态")
+async def get_agentteams_bridge_health(
+    _admin: AdminRequired,
+    service: BridgeServiceDep,
+) -> dict:
+    runtime = await service.get_runtime_config()
+    return await AgentTeamsService(get_settings(), runtime).health_check()
+
+
 @router.put("/agentteams-bridge", response_model=AgentTeamsBridgeConfigDTO)
 async def update_agentteams_bridge_config(
     request: AgentTeamsBridgeConfigUpdateDTO,

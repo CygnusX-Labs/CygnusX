@@ -24,6 +24,7 @@ import {
   DownloadOutline,
   EyeOutline,
   ImageOutline,
+  OpenOutline,
   SaveOutline,
 } from '@vicons/ionicons5'
 import MarkdownIt from 'markdown-it'
@@ -38,6 +39,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   insert: [path: string]
+  open: [path: string]
   registered: []
 }>()
 const message = useMessage()
@@ -54,6 +56,7 @@ const artifacts = ref<StudioArtifact[]>([])
 const artifactsInitialized = ref(false)
 const sparklePath = ref('')
 const loading = ref(false)
+const loadError = ref('')
 /** path -> Object URL（图片缩略图缓存） */
 const thumbUrls = ref<Record<string, string>>({})
 
@@ -106,6 +109,7 @@ function clearPreview() {
 async function loadArtifacts() {
   if (!props.sessionId) return
   loading.value = true
+  loadError.value = ''
   clearThumbs()
   try {
     const nextArtifacts = await studioApi.listArtifacts(props.sessionId)
@@ -129,7 +133,7 @@ async function loadArtifacts() {
       }
     }
   } catch {
-    artifacts.value = []
+    loadError.value = '产物列表加载失败，请刷新后重试'
   } finally {
     loading.value = false
   }
@@ -273,6 +277,10 @@ function formatTime(mtime: number): string {
     <div v-if="loading" class="panel-loading">
       <n-spin size="small" />
     </div>
+    <div v-else-if="loadError" class="panel-error" role="status" aria-live="polite">
+      {{ loadError }}
+      <n-button text size="tiny" @click="loadArtifacts">重试</n-button>
+    </div>
     <div v-else-if="!artifacts.length" class="panel-empty">
       暂无产物<br>执行生成的文件会出现在这里
     </div>
@@ -306,6 +314,14 @@ function formatTime(mtime: number): string {
             </n-button>
           </template>
           在线预览
+        </n-tooltip>
+        <n-tooltip v-if="MARKDOWN_EXTS.has(extension(artifact.path))" trigger="hover">
+          <template #trigger>
+            <n-button text size="tiny" @click="emit('open', artifact.path)">
+              <n-icon size="14"><OpenOutline /></n-icon>
+            </n-button>
+          </template>
+          在分屏中打开
         </n-tooltip>
         <n-tooltip trigger="hover">
           <template #trigger>
@@ -414,6 +430,17 @@ function formatTime(mtime: number): string {
   padding: 12px 10px;
   font-size: 12px;
   color: var(--chat-text-muted, #aaa);
+  line-height: 1.6;
+  text-align: center;
+}
+.panel-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px 10px;
+  color: var(--arco-danger, #d03050);
+  font-size: 12px;
   line-height: 1.6;
   text-align: center;
 }
@@ -563,4 +590,3 @@ function formatTime(mtime: number): string {
 @keyframes artifact-star { 0%{opacity:0;transform:translate(0,10px) scale(.6)} 35%{opacity:1} 100%{opacity:0;transform:translate(12px,-20px) scale(1.15)} }
 @media (prefers-reduced-motion: reduce){.artifact-item{transition:none}.artifact-item.sparkle::after{animation:none;opacity:1}}
 </style>
-

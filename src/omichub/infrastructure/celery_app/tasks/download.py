@@ -747,9 +747,8 @@ async def _register_downloaded_files(
     """下载产物入库为 FileRecord，并在 user_directories 登记 accession 子文件夹。
 
     扫描 work_dir 下的 .sra/.fastq.gz 等文件，每个 FileRecord 的 storage_path 为相对
-    storage_root 的路径。directory 字段（数据管理页的逻辑归属）按以下规则：
-      - target_directory 为空 → ``raw_data/{accession}``（与物理落盘 raw_data/{accession}/ 一致）
-      - target_directory 非空 → ``{target_directory}/{accession}``
+    storage_root 的路径。directory 字段（数据管理页的逻辑归属）由实际工作目录相对
+    ``users/<user_id>`` 的路径派生，避免与物理落盘路径脱节。
     并自动创建缺失的 Directory 记录（含父级），使文件以 accession 文件夹形式出现在数据管理页。
     幂等：同 storage_path 的 FileRecord 已存在则跳过（且不计配额）；Directory 已存在则跳过。
     新增文件累加进用户 used_storage。
@@ -778,14 +777,10 @@ async def _register_downloaded_files(
     if not await asyncio.to_thread(work_path.exists):
         return
 
-    # 规整 target_directory
-    d = (directory or "").strip().strip("/")
-    parts = [p for p in d.split("/") if p not in ("", ".", "..")]
-    directory_norm = "/".join(parts)
-
-    # accession = work_dir 末段（_make_work_dir 以 safe_acc 命名该目录）
-    accession = work_path.name
-    logical_dir = f"{directory_norm}/{accession}" if directory_norm else f"raw_data/{accession}"
+    try:
+        logical_dir = work_path.relative_to(root_path / "users" / str(user_id)).as_posix()
+    except ValueError:
+        return
 
     # 确保 Directory 记录链存在（含父级），使数据管理页目录树能展示该 accession 文件夹
     await ensure_directory_chain(session, user_id, logical_dir)

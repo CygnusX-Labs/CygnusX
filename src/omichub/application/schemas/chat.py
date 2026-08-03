@@ -44,6 +44,7 @@ class ChatStreamRequest(BaseModel):
         None,
         description="会话模式 chat/studio；新建会话时生效，已有会话以会话行 mode 为准",
     )
+    project_id: str | None = Field(None, max_length=64, description="新建会话的项目边界")
     mcp_mode: Literal["off", "auto", "manual"] | None = None
     extra_mcp_servers: list[str] | None = Field(default=None)
     multi_agent: bool | None = Field(
@@ -97,6 +98,7 @@ class ChatSessionDTO(BaseModel):
     title_locked: bool = False
     assistant_id: str | None = None
     agent_id: str | None = None
+    project_id: str | None = None
     model_id: UUID
     message_count: int
     status: str
@@ -131,6 +133,7 @@ class CreateSessionRequest(BaseModel):
     title: str | None = "新对话"
     assistant_id: str | None = None
     model_id: UUID
+    project_id: str | None = Field(None, max_length=64)
 
 
 class UpdateSessionRequest(BaseModel):

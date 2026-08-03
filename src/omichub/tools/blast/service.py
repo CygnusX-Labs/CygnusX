@@ -6,7 +6,6 @@ import asyncio
 import json
 import logging
 import math
-import os
 import re
 import shutil
 import uuid
@@ -24,6 +23,7 @@ from omichub.core.exceptions import NotFoundError, TaskExecutionError, Validatio
 from omichub.infrastructure.celery_app.celery import celery_app
 from omichub.infrastructure.database.models.blast import BlastDatabaseModel, BlastTaskModel
 from omichub.infrastructure.database.models.user import UserModel
+from omichub.infrastructure.task_queue.dispatcher import enqueue_task
 from omichub.tools.blast.cache import build_result_cache_key, get_cached_result
 from omichub.tools.blast.config import config_manager
 from omichub.tools.blast.core import detect_sequence_type, ensure_fasta, infer_program
@@ -72,13 +72,13 @@ class BlastService:
 
         return get_path_factory().blast_db_dir()
 
-    def _upload_dir(self, user_id: str, task_id: str) -> Path:
+    def _upload_dir(self, user_id: str, project_name: str) -> Path:
         from omichub.infrastructure.storage import get_path_factory
 
-        return get_path_factory().task_input_dir(user_id, task_id)
+        return get_path_factory().create_project_run_dir(user_id, project_name, "blast") / "input"
 
-    def _result_dir(self, user_id: str, task_id: str) -> Path:
-        """用户隔离的结果目录：users/{uid}/tasks/{task_id}/output/"""
+    def _legacy_task_result_dir(self, user_id: str, task_id: str) -> Path:
+        """历史 UUID 任务结果目录，仅用于读取兼容。"""
         from omichub.infrastructure.storage import get_path_factory
 
         return get_path_factory().task_output_dir(user_id, task_id)
@@ -98,11 +98,16 @@ class BlastService:
             if path.exists():
                 return path
 
-        # 新版用户隔离目录
+        query_path = Path(task.query_file_path or "")
+        if query_path.name == "query.fasta" and query_path.parent.name == "input":
+            project_path = query_path.parent.parent / "output" / "result.xml"
+            if project_path.exists():
+                return project_path
+
         user_id = str(task.user_id)
-        new_path = self._result_dir(user_id, task.task_id) / "result.xml"
-        if new_path.exists():
-            return new_path
+        legacy_task_path = self._legacy_task_result_dir(user_id, task.task_id) / "result.xml"
+        if legacy_task_path.exists():
+            return legacy_task_path
 
         # 旧版目录回退
         legacy_path = self._legacy_result_dir(task.task_id) / "result.xml"
@@ -218,7 +223,7 @@ class BlastService:
         await db.refresh(model)
 
         # 投递构建任务
-        build_blast_database_task.delay(str(model.id))
+        enqueue_task(build_blast_database_task, str(model.id))
 
         # 同步到 YAML
         all_models = (await db.execute(select(BlastDatabaseModel))).scalars().all()
@@ -334,7 +339,7 @@ class BlastService:
         model.build_status = "pending"
         model.build_log = None
         await db.commit()
-        build_blast_database_task.delay(str(model.id))
+        enqueue_task(build_blast_database_task, str(model.id))
 
         # 同步到 YAML（状态会由任务完成后再次同步，但 pending 时也可先写入）
         all_models = (await db.execute(select(BlastDatabaseModel))).scalars().all()
@@ -449,7 +454,7 @@ class BlastService:
         for model in created:
             await db.refresh(model)
             if model.build_status == "pending":
-                build_blast_database_task.delay(str(model.id))
+                enqueue_task(build_blast_database_task, str(model.id))
 
         # 重写 YAML，确保格式统一
         all_models = (await db.execute(select(BlastDatabaseModel))).scalars().all()
@@ -544,16 +549,23 @@ class BlastService:
         await db.commit()
         await db.refresh(model)
 
-        # 保存上传文件到工作目录
-        upload_dir = self._upload_dir(user_id, task_id)
+        # 查询序列保存到用户可见的项目目录；任务 UUID 只保留在数据库记录中。
+        upload_dir = self._upload_dir(user_id, request.project_name)
         upload_dir.mkdir(parents=True, exist_ok=True)
         query_file = upload_dir / "query.fasta"
         query_file.write_text(fasta_text, encoding="utf-8")
         model.query_file_path = str(query_file)
+        from omichub.application.services.file_service import ensure_directory_chain
+        from omichub.infrastructure.storage import get_path_factory
+
+        project_relative = upload_dir.parent.relative_to(
+            get_path_factory().user_root(user_id)
+        ).as_posix()
+        await ensure_directory_chain(db, uuid.UUID(user_id), project_relative)
         await db.commit()
 
         if not cached_result:
-            run_blast_search_task.apply_async(args=[task_id], task_id=task_id)
+            enqueue_task(run_blast_search_task, task_id, task_id=task_id)
 
         return BlastTaskResponse(
             task_id=task_id,
@@ -796,12 +808,10 @@ class BlastService:
         if source_xml is None:
             raise NotFoundError("结果文件不存在或已被清理")
 
-        result_dir = self._result_dir(user_id, task_id)
         if format_key == "xml":
             path = source_xml
         elif format_key == "json":
-            result_dir.mkdir(parents=True, exist_ok=True)
-            path = result_dir / "result.json"
+            path = source_xml.parent / "result.json"
             result = await self.get_result(db, task_id, user_id, "json")
             path.write_text(
                 json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2),
@@ -820,9 +830,7 @@ class BlastService:
     # 管理员数据清理
     # ------------------------------------------------------------------
 
-    async def cleanup_old_tasks(
-        self, db: AsyncSession, days: int = 7
-    ) -> dict[str, Any]:
+    async def cleanup_old_tasks(self, db: AsyncSession, days: int = 7) -> dict[str, Any]:
         """清理 N 天前完成的 BLAST 任务结果文件，保留数据库记录（状态改为 cleaned）。"""
         cutoff = datetime.utcnow() - timedelta(days=days)
 
@@ -850,9 +858,7 @@ class BlastService:
     async def cleanup_all_tasks(self, db: AsyncSession, confirm: bool) -> dict[str, Any]:
         """清理所有 BLAST 任务结果文件（保留数据库索引和元数据记录）。"""
         if not confirm:
-            raise ValidationError(
-                "请设置 confirm=true 以确认清理所有数据。此操作不可恢复！"
-            )
+            raise ValidationError("请设置 confirm=true 以确认清理所有数据。此操作不可恢复！")
 
         result = await db.execute(
             select(BlastTaskModel).where(
@@ -911,41 +917,50 @@ class BlastService:
     async def get_storage_stats(self, db: AsyncSession) -> dict[str, Any]:
         """获取 BLAST 结果存储统计。"""
         total_tasks = await db.scalar(select(func.count()).select_from(BlastTaskModel)) or 0
-        completed_tasks = await db.scalar(
-            select(func.count())
-            .select_from(BlastTaskModel)
-            .where(BlastTaskModel.status == "completed")
-        ) or 0
-        cleaned_tasks = await db.scalar(
-            select(func.count())
-            .select_from(BlastTaskModel)
-            .where(BlastTaskModel.status == "cleaned")
-        ) or 0
+        completed_tasks = (
+            await db.scalar(
+                select(func.count())
+                .select_from(BlastTaskModel)
+                .where(BlastTaskModel.status == "completed")
+            )
+            or 0
+        )
+        cleaned_tasks = (
+            await db.scalar(
+                select(func.count())
+                .select_from(BlastTaskModel)
+                .where(BlastTaskModel.status == "cleaned")
+            )
+            or 0
+        )
 
-        result_dir = Path(self._settings.storage_path) / self._settings.blast_results_dir
+        completed_paths = (
+            await db.scalars(
+                select(BlastTaskModel.result_path).where(BlastTaskModel.status == "completed")
+            )
+        ).all()
 
-        def _calc_directory_size(directory: Path) -> int:
+        def _calc_paths_size(paths: list[str | None]) -> int:
             total = 0
-            if not directory.exists():
-                return total
-            for root, _dirs, files in os.walk(directory):
-                for name in files:
-                    try:
-                        fp = Path(root) / name
-                        if fp.is_file():
-                            total += fp.stat().st_size
-                    except (OSError, PermissionError):
-                        continue
+            for path_value in paths:
+                if not path_value:
+                    continue
+                try:
+                    path = Path(path_value)
+                    if path.is_file():
+                        total += path.stat().st_size
+                except OSError:
+                    continue
             return total
 
-        total_size = await asyncio.to_thread(_calc_directory_size, result_dir)
+        total_size = await asyncio.to_thread(_calc_paths_size, completed_paths)
 
         return {
             "total_tasks": total_tasks,
             "completed_tasks": completed_tasks,
             "cleaned_tasks": cleaned_tasks,
             "storage_mb": round(total_size / (1024 * 1024), 2),
-            "result_dir": str(result_dir),
+            "result_dir": "按任务实际 result_path 统计",
         }
 
     # ------------------------------------------------------------------

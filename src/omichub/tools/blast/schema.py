@@ -197,6 +197,7 @@ class BlastSubmitRequest(OmicsHubBaseSchema):
     """提交 BLAST 查询任务请求。"""
 
     db_id: str
+    project_name: str = Field(min_length=1, max_length=100, description="用户提供的项目名称")
     query_sequence: str | None = None
     query_title: str = Field(default="Untitled Query", max_length=256)
     program: ProgramType | None = None

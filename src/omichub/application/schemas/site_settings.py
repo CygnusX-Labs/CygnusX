@@ -7,6 +7,8 @@ from pydantic import Field, field_validator
 from omichub.application.schemas.base import OmicsHubBaseSchema
 
 TOTPPolicy = Literal["off", "optional", "required"]
+CollaborationPreset = Literal["custom", "light", "parallel", "full"]
+CollaborationDegradationLocale = Literal["zh-CN", "en"]
 QuickEntryColor = Literal["blue", "purple", "violet", "cyan", "green", "orange", "teal", "gray"]
 
 
@@ -43,6 +45,12 @@ class SiteSettingsDTO(OmicsHubBaseSchema):
     home_quick_entries: list[HomeQuickEntryDTO]
     subagent_fanout_enabled: bool = False
     agentteams_chat_entry_enabled: bool = False
+    multi_expert_consultation_enabled: bool = False
+    unified_intent_router_enabled: bool = False
+    collaboration_preset: CollaborationPreset = "custom"
+    collaboration_degradation_locale: CollaborationDegradationLocale = "zh-CN"
+    collaboration_degradation_template_zh: str = ""
+    collaboration_degradation_template_en: str = ""
 
 
 class UpdateSiteSettingsDTO(OmicsHubBaseSchema):
@@ -52,6 +60,12 @@ class UpdateSiteSettingsDTO(OmicsHubBaseSchema):
     totp_policy: TOTPPolicy | None = None
     subagent_fanout_enabled: bool | None = None
     agentteams_chat_entry_enabled: bool | None = None
+    multi_expert_consultation_enabled: bool | None = None
+    unified_intent_router_enabled: bool | None = None
+    collaboration_preset: CollaborationPreset | None = None
+    collaboration_degradation_locale: CollaborationDegradationLocale | None = None
+    collaboration_degradation_template_zh: str | None = Field(default=None, max_length=1_000)
+    collaboration_degradation_template_en: str | None = Field(default=None, max_length=1_000)
     home_quick_entries: list[HomeQuickEntryDTO] | None = Field(
         default=None,
         min_length=1,

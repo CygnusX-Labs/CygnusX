@@ -15,6 +15,7 @@ class MASRunCreateRequest(OmicsHubBaseSchema):
     context_summary: dict[str, Any] = Field(default_factory=dict)
     session_id: UUID | None = None
     workspace_id: UUID | None = None
+    project_id: str | None = Field(None, max_length=64)
 
 
 class MASRunResponse(OmicsHubBaseSchema):
@@ -23,6 +24,7 @@ class MASRunResponse(OmicsHubBaseSchema):
     status: str
     version: int
     context_summary: dict[str, Any]
+    project_id: str | None = None
     created_at: datetime
     finished_at: datetime | None
 
@@ -41,6 +43,7 @@ class MASArtifactResponse(OmicsHubBaseSchema):
     sha256: str
     state: str
     version: int
+    project_id: str | None = None
     created_at: datetime
 
 

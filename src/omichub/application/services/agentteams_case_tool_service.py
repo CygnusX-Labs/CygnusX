@@ -14,6 +14,7 @@ from omichub.application.services.agentteams_bridge_settings_service import (
     AgentTeamsBridgeSettingsService,
 )
 from omichub.application.services.agentteams_service import AgentTeamsService
+from omichub.application.services.flow_registry import get_flow_registry
 from omichub.application.services.site_settings_service import SiteSettingsService
 from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError
@@ -50,6 +51,8 @@ class AgentTeamsCaseToolService:
         project_id: str,
         flow_id: str,
         sample_context_refs: list[dict[str, Any]] | None = None,
+        origin_consultation_id: str | None = None,
+        consultation_summary: str | None = None,
         context: ToolInvocationContext | None = None,
         **_kwargs: Any,
     ) -> dict[str, Any]:
@@ -63,6 +66,7 @@ class AgentTeamsCaseToolService:
             raise BusinessError("聊天协作 Case 入口尚未启用")
 
         allowed_flows = self._allowed_flows(settings.agentteams_chat_flow_whitelist)
+        allowed_flows.update(get_flow_registry().bridge_flow_ids())
         if flow_id not in allowed_flows:
             raise BusinessError("该流程不在聊天协作 Case 白名单中")
 
@@ -92,7 +96,11 @@ class AgentTeamsCaseToolService:
                 status=existing["status"],
                 reused=True,
             )
-        await self._require_pending_confirmation(context, meta, idempotency_key)
+        confirmation = await self._require_pending_confirmation(context, meta, idempotency_key)
+        source = self._consultation_source(
+            origin_consultation_id or confirmation.get("origin_consultation_id"),
+            consultation_summary or confirmation.get("consultation_summary"),
+        )
 
         runtime = await AgentTeamsBridgeSettingsService(context.db, settings).get_runtime_config()
         agentteams = AgentTeamsService(settings, runtime)
@@ -108,6 +116,8 @@ class AgentTeamsCaseToolService:
             requester_ref=context.user_id,
             flow_id=flow_id,
             sample_sheet=[{"context_ref": item} for item in safe_refs] or [{"context_ref": {"kind": "project", "id": project_id}}],
+            origin_consultation_id=source["origin_consultation_id"],
+            consultation_summary=source["consultation_summary"],
         )
         status = str(case.get("status") or "received")
         title = normalized_objective[:80]
@@ -123,6 +133,8 @@ class AgentTeamsCaseToolService:
         objective: str,
         project_id: str,
         flow_id: str,
+        origin_consultation_id: str | None = None,
+        consultation_summary: str | None = None,
         context: ToolInvocationContext | None = None,
     ) -> None:
         """记录已展示的确认卡，禁止模型首次调用伪造 `_confirmed` 直接创建。"""
@@ -140,9 +152,10 @@ class AgentTeamsCaseToolService:
         if not normalized_objective:
             raise BusinessError("协作目标不能为空")
         key = self._idempotency_key(normalized_objective, project_id, flow_id)
+        source = self._consultation_source(origin_consultation_id, consultation_summary)
         meta = dict(session.sandbox_meta or {})
         confirmations = dict(meta.get("agentteams_case_confirmation") or {})
-        confirmations[key] = {"requested_at": datetime.now(UTC).isoformat()}
+        confirmations[key] = {"requested_at": datetime.now(UTC).isoformat(), **source}
         meta["agentteams_case_confirmation"] = confirmations
         session.sandbox_meta = meta
         session.updated_at = datetime.now(UTC)
@@ -203,7 +216,7 @@ class AgentTeamsCaseToolService:
     @staticmethod
     async def _require_pending_confirmation(
         context: ToolInvocationContext, meta: dict[str, Any], key: str
-    ) -> None:
+    ) -> dict[str, Any]:
         confirmation = (meta.get("agentteams_case_confirmation") or {}).get(key)
         if not isinstance(confirmation, dict):
             raise BusinessError("请先展示并由用户确认协作 Case 创建卡片")
@@ -226,6 +239,18 @@ class AgentTeamsCaseToolService:
         )
         if user_confirmation is None:
             raise BusinessError("请先由用户在确认卡上确认协作 Case 创建")
+        return confirmation
+
+    @staticmethod
+    def _consultation_source(
+        origin_consultation_id: str | None, consultation_summary: str | None
+    ) -> dict[str, str | None]:
+        normalized_id = " ".join(str(origin_consultation_id or "").split())[:256] or None
+        normalized_summary = " ".join(str(consultation_summary or "").split())[:1800] or None
+        return {
+            "origin_consultation_id": normalized_id,
+            "consultation_summary": normalized_summary,
+        }
 
     @staticmethod
     def _bind_case(meta: dict[str, Any], key: str, case_id: str, title: str, status: str) -> None:

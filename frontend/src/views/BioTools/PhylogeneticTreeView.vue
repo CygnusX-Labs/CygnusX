@@ -100,6 +100,7 @@ const methods = ref<PhyloMethodsResponse>(FALLBACK_METHODS)
 
 const buildParams = reactive<PhyloSubmitRequest>({
   file_id: '',
+  project_name: '',
   alignment_tool: 'mafft',
   alignment_mode: 'auto',
   tree_method: 'nj',
@@ -136,7 +137,7 @@ const treeStats = ref<TreeStatistics>({
 
 const isDark = computed(() => themeStore.isDark)
 const hasTree = computed(() => newickString.value.length > 0)
-const canBuild = computed(() => Boolean(fileId.value) && fileFormat.value !== 'newick')
+const canBuild = computed(() => Boolean(fileId.value) && Boolean(buildParams.project_name.trim()) && fileFormat.value !== 'newick')
 const statusType = computed<'default' | 'info' | 'success' | 'warning' | 'error'>(() => {
   if (taskError.value) return 'error'
   if (isUploading.value || isBuilding.value) return 'info'
@@ -392,6 +393,10 @@ async function buildTree() {
     message.warning('请先上传序列文件')
     return
   }
+  if (!buildParams.project_name.trim()) {
+    message.warning('请填写项目名称')
+    return
+  }
   isBuilding.value = true
   taskError.value = ''
   taskProgress.value = 0
@@ -591,6 +596,10 @@ function handleRowClick(row: unknown) {
       <aside class="param-panel">
         <NCollapse :default-expanded-names="['data', 'alignment', 'tree', 'viz']" arrow-placement="left">
           <NCollapseItem title="数据输入" name="data">
+            <div class="form-row">
+              <span class="form-label">项目名称</span>
+              <NInput v-model:value="buildParams.project_name" size="small" placeholder="例如：TnpD 系统发育分析" />
+            </div>
             <NUpload
               accept=".fasta,.fa,.fas,.phylip,.phy,.nex,.nexus,.nwk,.newick"
               :max="1"

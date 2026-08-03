@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker test lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-runtime-dirs docker-fix-permissions docker-up docker-build-enrichment docker-build-deg docker-build-sandboxes docker-build-all-images docker-build-worker docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge docker-start docker-reload docker-dev-refresh wait-web clean init-admin init-cookies check-alembic-heads sync-knowledge
+.PHONY: help dev dev-worker dev-rocketmq-worker test lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-runtime-dirs docker-fix-permissions docker-up docker-up-pgvector pgvector-acceptance polardb-verify knowledge-reindex docker-up-rocketmq docker-up-rocketmq-worker docker-build-enrichment docker-build-deg docker-build-sandboxes docker-build-all-images docker-build-worker docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge docker-start docker-reload docker-dev-refresh wait-web clean init-admin init-cookies check-alembic-heads sync-knowledge
 
 help: ## 显示所有可用命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -8,6 +8,9 @@ dev: ## 启动后端开发服务器
 
 dev-worker: ## 启动 Celery Worker
 	uv run celery -A omichub.infrastructure.celery_app.celery worker --loglevel=info
+
+dev-rocketmq-worker: ## 启动 RocketMQ Worker（需先启动 RocketMQ broker）
+	uv run python -m omichub.infrastructure.task_queue.rocketmq_worker --queues analysis,blast_search,blast_db_build,phylo_tree,phylo_tree_highmem,mas_apptainer
 
 dev-beat: ## 启动 Celery Beat
 	uv run celery -A omichub.infrastructure.celery_app.celery beat --loglevel=info
@@ -48,16 +51,24 @@ migrate-merge: ## 自动合并 Alembic 多分支 (Multiple Heads 修复)
 
 # ===== Docker Compose 编排（主栈 + 独立 Worker 栈，单机逻辑解耦）=====
 COMPOSE_MAIN   := docker compose -f deploy/docker/docker-compose.yml
+COMPOSE_PGVECTOR := $(COMPOSE_MAIN) -f deploy/docker/docker-compose.pgvector.yml
+COMPOSE_CROSS_WEB := $(COMPOSE_MAIN) -f deploy/docker/docker-compose.cross-web.yml
 COMPOSE_MAIN_AGENTTEAMS := $(COMPOSE_MAIN) -f deploy/agentteams/docker-compose.omichub-proxy.yml
-COMPOSE_AGENTTEAMS := docker compose -f deploy/agentteams/docker-compose.agentteams.yml
+COMPOSE_PGVECTOR_AGENTTEAMS := $(COMPOSE_PGVECTOR) -f deploy/agentteams/docker-compose.omichub-proxy.yml
+COMPOSE_AGENTTEAMS := docker compose --project-name agentteams -f deploy/agentteams/docker-compose.agentteams.yml
 COMPOSE_WORKER := ./scripts/worker-compose.sh
 COMPOSE_ALL    := docker compose -f deploy/docker/docker-compose.yml
-DOCKER_NETWORK := omichub_net
-SANDBOX_NETWORK := omichub-sandbox-net
-BRIDGE_GATEWAY_NETWORK ?= omichub_bridge_gateway
+ENV_OMICHUB_NETWORK_NAME := $(shell test -f .env && sed -n 's/^OMICHUB_NETWORK_NAME=//p' .env | head -n 1)
+ENV_OMICHUB_SANDBOX_NETWORK_NAME := $(shell test -f .env && sed -n 's/^OMICHUB_SANDBOX_NETWORK_NAME=//p' .env | head -n 1)
+ENV_OMICHUB_BRIDGE_GATEWAY_NETWORK := $(shell test -f .env && sed -n 's/^OMICHUB_BRIDGE_GATEWAY_NETWORK=//p' .env | head -n 1)
+ENV_OMICHUB_DATA_ROOT := $(shell test -f .env && sed -n 's/^OMICHUB_DATA_ROOT=//p' .env | head -n 1)
+DOCKER_NETWORK ?= $(if $(ENV_OMICHUB_NETWORK_NAME),$(ENV_OMICHUB_NETWORK_NAME),omichub_net)
+SANDBOX_NETWORK ?= $(if $(ENV_OMICHUB_SANDBOX_NETWORK_NAME),$(ENV_OMICHUB_SANDBOX_NETWORK_NAME),omichub-sandbox-net)
+BRIDGE_GATEWAY_NETWORK ?= $(if $(ENV_OMICHUB_BRIDGE_GATEWAY_NETWORK),$(ENV_OMICHUB_BRIDGE_GATEWAY_NETWORK),omichub_bridge_gateway)
 ENRICHMENT_DOCKER_IMAGE ?= omichub-r-enrichment:v1
 DEG_DOCKER_IMAGE ?= omichub-r-deg:v1
-DATA_ROOT ?= /data/omichub
+ROCKETMQ_IMAGE ?= apache/rocketmq:5.3.2
+DATA_ROOT ?= $(if $(ENV_OMICHUB_DATA_ROOT),$(ENV_OMICHUB_DATA_ROOT),/data/omichub)
 PUID ?= $(shell id -u)
 PGID ?= $(shell id -g)
 REDIS_PASSWORD ?= omichub
@@ -82,6 +93,33 @@ docker-up: docker-network ## 启动主栈 (web/db/redis/nginx/beat/flower)
 	$(COMPOSE_MAIN) up -d
 	@$(MAKE) --no-print-directory wait-web
 	@$(MAKE) --no-print-directory check-alembic-heads
+
+docker-up-pgvector: docker-network ## 启动主栈并使用 pgvector/PgBouncer/Exporter 验收叠加
+	@$(MAKE) --no-print-directory docker-runtime-dirs
+	$(COMPOSE_PGVECTOR) up -d
+	@$(MAKE) --no-print-directory wait-web
+	@$(MAKE) --no-print-directory check-alembic-heads
+
+pgvector-acceptance: ## 执行本地 pgvector、备份恢复、指标和可选只读端点验收
+	./scripts/accept_pgvector_docker.sh
+
+polardb-verify: ## 验证 DATABASE_URL（及可选 READONLY_DATABASE_URL）的 pgvector/HNSW/副本状态
+	./scripts/verify_polardb_postgres.sh
+
+knowledge-reindex: ## 在 web 容器中重建已发布知识库的 chunk/向量
+	docker exec omichub-web python scripts/reindex_knowledge_vectors.py
+
+docker-up-cross-web: ## 启动跨机器控制面（要求 .env 已配置控制面私网 IP 与端口）
+	@$(MAKE) --no-print-directory docker-runtime-dirs
+	$(COMPOSE_CROSS_WEB) up -d
+	@$(MAKE) --no-print-directory wait-web
+	@$(MAKE) --no-print-directory check-alembic-heads
+
+docker-up-rocketmq: docker-network ## 启动 RocketMQ NameServer/Broker（保留 Celery）
+	$(COMPOSE_MAIN) --profile rocketmq up -d rocketmq-namesrv rocketmq-broker
+
+docker-up-rocketmq-worker: ## 启动 RocketMQ Worker（与 Celery worker 可并行）
+	$(COMPOSE_WORKER) --profile rocketmq up -d rocketmq-worker
 
 wait-web: ## 等待 OmicHub Web API 健康（失败时输出后端日志）
 	@echo "=> 等待 omichub-web 健康..."
@@ -166,9 +204,16 @@ docker-build-worker: docker-build-enrichment docker-build-deg ## 构建富集/DE
 
 docker-up-worker: docker-network docker-build-enrichment docker-build-deg ## 构建并启动富集/DEG 运行时、通用与系统发育 Worker 栈
 	@python3 scripts/render_worker_config.py
-	@set -a; . data/.worker-config.env; set +a; \
+	@set -a; . data/.worker-config.env; test ! -f .env || . ./.env; set +a; \
 		$(MAKE) --no-print-directory docker-runtime-dirs DATA_ROOT="$$WORKER_SHARED_DATA_DIR"
 	$(COMPOSE_WORKER) up -d --build worker phylo-worker
+
+docker-up-cross-worker: docker-build-enrichment docker-build-deg ## 启动跨机器 Worker（要求 .env 已配置 OMICHUB_CONTROL_HOST）
+	@python3 scripts/render_worker_config.py
+	@set -a; . data/.worker-config.env; test ! -f .env || . ./.env; set +a; \
+		$(MAKE) --no-print-directory docker-runtime-dirs DATA_ROOT="$$WORKER_SHARED_DATA_DIR"
+	OMICHUB_WORKER_COMPOSE_OVERLAY=deploy/docker/docker-compose.cross-worker.yml \
+		$(COMPOSE_WORKER) up -d --build worker phylo-worker
 
 docker-up-all: docker-network ## 启动主栈 + Worker（一键全启）
 	@$(MAKE) --no-print-directory docker-runtime-dirs
@@ -181,6 +226,13 @@ docker-down: ## 停止主栈
 
 docker-down-worker: ## 停止 Worker 栈
 	$(COMPOSE_WORKER) down
+
+docker-down-cross-web: ## 停止跨机器控制面
+	$(COMPOSE_CROSS_WEB) down
+
+docker-down-cross-worker: ## 停止跨机器 Worker
+	OMICHUB_WORKER_COMPOSE_OVERLAY=deploy/docker/docker-compose.cross-worker.yml \
+		$(COMPOSE_WORKER) down
 
 docker-down-all: ## 停止主栈 + Worker
 	$(COMPOSE_ALL) down
@@ -241,24 +293,26 @@ frontend-build: ## 构建前端生产版本
 runtime-images-build: ## 构建独立分析运行时镜像（core / plot / scrna）
 	deploy/runtime-images/build.sh
 
-docker-reload: docker-network ## 重新构建前端并刷新主栈 + AgentTeams Bridge + Worker (开发用)
+docker-reload: docker-network ## 重新构建前端并刷新 pgvector 主栈 + RocketMQ + AgentTeams Bridge + Worker (开发用)
 	@echo ""
 	@echo "╔══════════════════════════════════════════════════════════════╗"
 	@echo "║  🚀 OmicHub 开发环境热重载                                    ║"
-	@echo "║  重新构建前端 + Bridge + 主栈/Worker + 同步知识库            ║"
+	@echo "║  重新构建前端 + pgvector + RocketMQ + Bridge + Worker       ║"
 	@echo "╚══════════════════════════════════════════════════════════════╝"
 	@$(MAKE) --no-print-directory docker-runtime-dirs
 	@echo ""
-	@echo "📦 步骤 1/9：清理残留容器，避免旧容器占用端口或挂载..."
+	@echo "📦 步骤 1/10：清理残留容器，避免旧容器占用端口或挂载..."
 	-@docker ps -a --filter "name=omichub-" -q | xargs -r docker rm -f 2>/dev/null
 	-@docker ps -a --filter "name=studio-" -q | xargs -r docker rm -f 2>/dev/null
+	-@$(COMPOSE_AGENTTEAMS) down --remove-orphans 2>/dev/null || true
+	-@docker ps -a --filter "name=agentteams-" -q | xargs -r docker rm -f 2>/dev/null
 	@echo ""
-	@echo "🐳 步骤 2/9：构建终端沙盒镜像（已存在则跳过，删除镜像后自动重建）..."
+	@echo "🐳 步骤 2/10：构建终端沙盒镜像（已存在则跳过，删除镜像后自动重建）..."
 	@docker image inspect omichub/sandbox-terminal:latest >/dev/null 2>&1 && \
 		echo "   ⏭️  omichub/sandbox-terminal:latest 已存在，跳过构建" || \
 		docker build -t omichub/sandbox-terminal:latest tool_configs/terminal/docker/
 	@echo ""
-	@echo "🧪 步骤 3/9：构建 Studio 运行时镜像（core/plot/scrna 均已存在则跳过）..."
+	@echo "🧪 步骤 3/10：构建 Studio 运行时镜像（core/plot/scrna 均已存在则跳过）..."
 	@if docker image inspect omichub-analysis:core-2026.07 >/dev/null 2>&1 && \
 	    docker image inspect omichub-analysis:plot-2026.07 >/dev/null 2>&1 && \
 	    docker image inspect omichub-analysis:scrna-2026.07 >/dev/null 2>&1; then \
@@ -267,7 +321,7 @@ docker-reload: docker-network ## 重新构建前端并刷新主栈 + AgentTeams 
 		deploy/runtime-images/build.sh; \
 	fi
 	@echo ""
-	@echo "🧬 步骤 4/9：构建 GO / KEGG 富集 R 运行时镜像（已存在则跳过）..."
+	@echo "🧬 步骤 4/10：构建 GO / KEGG 富集 R 运行时镜像（已存在则跳过）..."
 	@docker image inspect $(ENRICHMENT_DOCKER_IMAGE) >/dev/null 2>&1 && \
 		echo "   ⏭️  $(ENRICHMENT_DOCKER_IMAGE) 已存在，跳过构建" || \
 		$(MAKE) --no-print-directory docker-build-enrichment
@@ -277,20 +331,23 @@ docker-reload: docker-network ## 重新构建前端并刷新主栈 + AgentTeams 
 		echo "   ⏭️  $(DEG_DOCKER_IMAGE) 已存在，跳过构建" || \
 		$(MAKE) --no-print-directory docker-build-deg
 	@echo ""
-	@echo "⚡ 步骤 5/9：重新构建前端生产包（vite build）..."
+	@echo "🚀 步骤 5/10：拉取 RocketMQ NameServer/Broker 官方镜像..."
+	@docker pull $(ROCKETMQ_IMAGE)
+	@echo ""
+	@echo "⚡ 步骤 6/10：重新构建前端生产包（vite build）..."
 	cd frontend && npm run build
 	@echo ""
-	@echo "🔗 步骤 6/9：构建并启动独立 AgentTeams Bridge..."
+	@echo "🔗 步骤 7/10：构建并启动独立 AgentTeams Bridge..."
 	$(COMPOSE_AGENTTEAMS) up -d --build
 	@echo ""
-	@echo "🌐 步骤 7/9：重新构建并启动主栈服务（含 Bridge 网络代理）..."
-	$(COMPOSE_MAIN_AGENTTEAMS) up -d --build
+	@echo "🌐 步骤 8/10：重新构建并启动 pgvector 主栈服务与 RocketMQ（含 Bridge 网络代理）..."
+	$(COMPOSE_PGVECTOR_AGENTTEAMS) --profile rocketmq up -d --build
 	@$(MAKE) --no-print-directory wait-web
 	@echo ""
-	@echo "🔧 步骤 8/9：构建并启动通用与系统发育 Worker 计算栈..."
-	$(COMPOSE_WORKER) up -d --build worker phylo-worker
+	@echo "🔧 步骤 9/10：构建并启动 Celery 与 RocketMQ Worker 计算栈..."
+	$(COMPOSE_WORKER) --profile rocketmq up -d --build worker phylo-worker rocketmq-worker
 	@echo ""
-	@echo "🗄️  步骤 9/9：检查数据库迁移状态并同步知识库..."
+	@echo "🗄️  步骤 10/10：检查数据库迁移状态并同步知识库..."
 	@$(MAKE) --no-print-directory check-alembic-heads
 	@$(MAKE) --no-print-directory sync-knowledge
 	@echo ""

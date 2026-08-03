@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic import Field, field_validator
+
 from omichub.application.schemas.base import OmicsHubBaseSchema
 
 
@@ -38,6 +40,7 @@ class PhyloSubmitRequest(OmicsHubBaseSchema):
     """提交树构建任务参数。"""
 
     file_id: str
+    project_name: str = Field(min_length=1, max_length=128, description="用户提供的项目名称")
     alignment_tool: str = "mafft"  # mafft | clustalo | muscle5 | prealigned
     alignment_mode: str = "auto"
     tree_method: str = "iqtree"  # nj | upgma | fasttree | iqtree | mrbayes
@@ -47,6 +50,14 @@ class PhyloSubmitRequest(OmicsHubBaseSchema):
     bootstrap_replicates: int = 1000
     sequence_type: str = "auto"  # auto | dna | protein
     advanced_params: str = ""
+
+    @field_validator("project_name")
+    @classmethod
+    def require_project_name(cls, value: str) -> str:
+        project_name = value.strip()
+        if not project_name:
+            raise ValueError("项目名称不能为空")
+        return project_name
 
 
 class PhyloTaskResponse(OmicsHubBaseSchema):

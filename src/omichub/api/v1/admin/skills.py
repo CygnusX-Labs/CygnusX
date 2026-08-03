@@ -1,4 +1,4 @@
-"""Skill 管理 API — 管理员 CRUD + SKILL.md 标准导入（四入口 + 预览确认）"""
+"""Skill 管理 API — 管理员 CRUD + SKILL.md 标准导入（五入口 + 预览确认）"""
 
 from __future__ import annotations
 
@@ -23,8 +23,8 @@ from omichub.application.schemas.skill import (
     SkillReferenceDTO,
     SkillRollbackRequest,
     SkillUpdateCheckDTO,
-    SkillVersionDTO,
     SkillVersionDetailDTO,
+    SkillVersionDTO,
     UpdateSkillDTO,
 )
 from omichub.application.services.skill_import_service import SkillImportService
@@ -34,7 +34,7 @@ from omichub.infrastructure.skills.skillmd import SkillParseError
 
 router = APIRouter()
 
-MAX_ZIP_UPLOAD_BYTES = 6 * 1024 * 1024
+MAX_SKILL_UPLOAD_BYTES = 6 * 1024 * 1024
 
 
 def get_skill_service(db: DbSession) -> SkillService:
@@ -188,10 +188,32 @@ async def import_from_zip(
     file: UploadFile = File(...),
 ) -> SkillImportPreviewDTO:
     data = await file.read()
-    if len(data) > MAX_ZIP_UPLOAD_BYTES:
-        raise BusinessError(f"上传文件超过 {MAX_ZIP_UPLOAD_BYTES // 1024 // 1024}MB 上限")
+    if len(data) > MAX_SKILL_UPLOAD_BYTES:
+        raise BusinessError(f"上传文件超过 {MAX_SKILL_UPLOAD_BYTES // 1024 // 1024}MB 上限")
     try:
         return await service.parse_from_zip(data)
+    except SkillParseError as exc:
+        raise _wrap_parse_error(exc) from exc
+
+
+@router.post(
+    "/import/markdown",
+    response_model=SkillImportPreviewDTO,
+    summary="上传 Markdown 指令文件（预览）",
+)
+async def import_from_markdown(
+    _admin: AdminRequired,
+    service: SkillImportServiceDep,
+    file: UploadFile = File(...),
+) -> SkillImportPreviewDTO:
+    filename = file.filename or "skill.md"
+    if not filename.lower().endswith(".md"):
+        raise BusinessError("仅支持上传 .md 格式的技能指令文件")
+    data = await file.read()
+    if len(data) > MAX_SKILL_UPLOAD_BYTES:
+        raise BusinessError(f"上传文件超过 {MAX_SKILL_UPLOAD_BYTES // 1024 // 1024}MB 上限")
+    try:
+        return await service.parse_from_markdown(data, filename)
     except SkillParseError as exc:
         raise _wrap_parse_error(exc) from exc
 

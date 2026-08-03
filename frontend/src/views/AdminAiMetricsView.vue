@@ -57,6 +57,7 @@ const daysOptions = [
   { label: '近 30 天', value: 30 },
 ]
 const modelFilter = ref<string | null>(null)
+const tokenUnit = ref<'K' | 'M'>('K')
 
 const loading = ref(false)
 const trend = ref<AiTrendResponse | null>(null)
@@ -96,6 +97,8 @@ const tokenOption = computed(() => {
   const text3 = cssVar('--neutral-text-3', '#86909c')
   const border = cssVar('--neutral-border', '#e5e6eb')
   const daily = trend.value?.daily ?? []
+  const divisor = tokenUnit.value === 'M' ? 1_000_000 : 1_000
+  const tokenData = daily.map((d) => d.total_tokens / divisor)
   return {
     tooltip: { trigger: 'axis' },
     legend: { bottom: 0, textStyle: { color: text3, fontSize: 12 }, itemWidth: 12, itemHeight: 8 },
@@ -107,11 +110,16 @@ const tokenOption = computed(() => {
       axisLabel: { color: text3, fontSize: 11 },
     },
     yAxis: [
-      { type: 'value', name: 'tokens', axisLabel: { color: text3 }, splitLine: { lineStyle: { color: border, type: 'dashed' } } },
+      {
+        type: 'value',
+        name: `${tokenUnit.value} tokens`,
+        axisLabel: { color: text3, formatter: (value: number) => `${value} ${tokenUnit.value}` },
+        splitLine: { lineStyle: { color: border, type: 'dashed' } },
+      },
       { type: 'value', name: '🥫', axisLabel: { color: text3 }, splitLine: { show: false } },
     ],
     series: [
-      { name: '总 tokens', type: 'bar', data: daily.map((d) => d.total_tokens), itemStyle: { color: '#165DFF', borderRadius: [3, 3, 0, 0] }, barMaxWidth: 22 },
+      { name: `总 tokens（${tokenUnit.value}）`, type: 'bar', data: tokenData, itemStyle: { color: '#165DFF', borderRadius: [3, 3, 0, 0] }, barMaxWidth: 22 },
       { name: '成本(🥫)', type: 'line', yAxisIndex: 1, smooth: true, data: daily.map((d) => d.cost_cookie), itemStyle: { color: '#FF7D00' } },
     ],
   }
@@ -261,6 +269,26 @@ const summary = computed(() => trend.value?.summary ?? { calls: 0, errors: 0, er
       <NGrid :x-gap="12" :y-gap="12" :cols="2" responsive="screen" item-responsive class="section">
         <NGi span="2 m:1">
           <NCard size="small" title="Token 用量与成本趋势">
+            <template #header-extra>
+              <div class="omichub-segmented-toggle" role="group" aria-label="Token 图表单位切换">
+                <button
+                  type="button"
+                  :class="{ active: tokenUnit === 'K' }"
+                  :aria-pressed="tokenUnit === 'K'"
+                  @click="tokenUnit = 'K'"
+                >
+                  K
+                </button>
+                <button
+                  type="button"
+                  :class="{ active: tokenUnit === 'M' }"
+                  :aria-pressed="tokenUnit === 'M'"
+                  @click="tokenUnit = 'M'"
+                >
+                  M
+                </button>
+              </div>
+            </template>
             <VChart v-if="trend && trend.daily.length" :option="tokenOption" autoresize style="width: 100%; height: 280px" />
             <NEmpty v-else description="暂无数据" />
           </NCard>

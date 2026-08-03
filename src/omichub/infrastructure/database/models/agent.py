@@ -59,6 +59,7 @@ class AgentTemplateModel(Base, TimestampMixin):
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     agent_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    project_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     avatar: Mapped[str] = mapped_column(String(10), default="\U0001f916", nullable=False)

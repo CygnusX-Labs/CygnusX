@@ -1,6 +1,7 @@
 """DownloadService 单元测试 — 任务创建 / 参数落库 / 目录生成 / dispatch。"""
 
 from unittest.mock import AsyncMock, MagicMock, patch
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -12,12 +13,14 @@ from omichub.application.services.download_service import (
 )
 from omichub.domain.task.entities import Task
 from omichub.domain.task.value_objects import TaskStatus
+from omichub.infrastructure.celery_app.tasks.download import run_download
 
 
 @pytest.fixture
-def service() -> DownloadService:
+def service(tmp_path: Path) -> DownloadService:
     """DownloadService，仓储/域服务 mock，Celery delay mock。"""
     svc = DownloadService(db=MagicMock())
+    svc._settings = svc._settings.model_copy(update={"storage_path": str(tmp_path)})
     svc._repo = AsyncMock()
     svc._domain = AsyncMock()
     return svc
@@ -42,7 +45,7 @@ async def test_submit_creates_download_task_and_dispatches(service):
     queued = created_task.model_copy(update={"status": TaskStatus.QUEUED})
     service._domain.transition_status.return_value = queued
 
-    with patch("omichub.application.services.download_service.run_download") as mock_delay:
+    with patch("omichub.application.services.download_service.enqueue_task") as mock_enqueue:
         result = await service.submit(user_id, req)
 
     # 域服务以 ebi_download flow_id 建任务
@@ -56,8 +59,8 @@ async def test_submit_creates_download_task_and_dispatches(service):
     assert "raw_data" in created_task.work_dir
     assert "PRJNA1251654" in created_task.work_dir
 
-    # Celery 任务已投递
-    mock_delay.delay.assert_called_once_with(task_id=str(created_task.id))
+    # 统一任务路由器已投递（默认仍可走 Celery）
+    mock_enqueue.assert_called_once_with(run_download, task_id=str(created_task.id))
     # 状态推进到 QUEUED
     service._domain.transition_status.assert_called_once()
     assert result.flow_id == DOWNLOAD_FLOW_ID
@@ -149,7 +152,7 @@ async def test_submit_cloud_storage_task_and_dispatches(service):
     queued = created_task.model_copy(update={"status": TaskStatus.QUEUED})
     service._domain.transition_status.return_value = queued
 
-    with patch("omichub.application.services.download_service.run_download") as mock_delay:
+    with patch("omichub.application.services.download_service.enqueue_task") as mock_enqueue:
         result = await service.submit(user_id, req)
 
     call_kwargs = service._domain.submit.call_args.kwargs
@@ -159,7 +162,7 @@ async def test_submit_cloud_storage_task_and_dispatches(service):
     assert call_kwargs["parameters"]["object_uri"] == "oss://bucket/raw/"
     assert "projects/rna-seq" in created_task.work_dir
     assert "aliyun_oss_bucket_raw" in created_task.work_dir
-    mock_delay.delay.assert_called_once_with(task_id=str(created_task.id))
+    mock_enqueue.assert_called_once_with(run_download, task_id=str(created_task.id))
     assert result.flow_id == DOWNLOAD_FLOW_ID
 
 
@@ -175,14 +178,18 @@ async def test_submit_direct_link_task_persists_batch_options(service):
         target_directory="reference",
     )
     created = Task(
-        id=uuid4(), flow_id=DOWNLOAD_FLOW_ID, user_id=uuid4(), name="direct",
-        status=TaskStatus.PENDING, parameters={},
+        id=uuid4(),
+        flow_id=DOWNLOAD_FLOW_ID,
+        user_id=uuid4(),
+        name="direct",
+        status=TaskStatus.PENDING,
+        parameters={},
     )
     service._domain.submit.return_value = created
     service._repo.save.return_value = created
     service._domain.transition_status.return_value = created
 
-    with patch("omichub.application.services.download_service.run_download") as mock_delay:
+    with patch("omichub.application.services.download_service.enqueue_task") as mock_enqueue:
         await service.submit(user_id, req)
 
     params = service._domain.submit.call_args.kwargs["parameters"]
@@ -191,7 +198,7 @@ async def test_submit_direct_link_task_persists_batch_options(service):
     assert params["download_threads"] == 8
     assert params["overwrite_policy"] == "skip"
     assert params["recursive"] is True
-    mock_delay.delay.assert_called_once_with(task_id=str(created.id))
+    mock_enqueue.assert_called_once_with(run_download, task_id=str(created.id))
 
 
 @pytest.mark.asyncio

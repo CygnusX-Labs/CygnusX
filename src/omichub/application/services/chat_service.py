@@ -40,6 +40,12 @@ from omichub.application.services.agent_handoff_service import (
     AgentHandoffService,
     extract_handoff_directive,
 )
+from omichub.application.services.agentteams_bridge_settings_service import (
+    AgentTeamsBridgeSettingsService,
+)
+from omichub.application.services.collaboration_observability_service import (
+    CollaborationObservabilityService,
+)
 from omichub.application.services.mas_plan_adapter import (
     MAS_PLAN_PREVIEW_PROMPT_SUFFIX,
     MAS_PLAN_PREVIEW_TOOL_NAME,
@@ -50,6 +56,7 @@ from omichub.application.services.parallel_subagent_service import (
     PARALLEL_SUBAGENTS_TOOL_NAME,
 )
 from omichub.application.services.search_provider_service import SearchProviderService
+from omichub.application.services.site_settings_service import SiteSettingsService
 from omichub.application.services.studio_approval_service import (
     APPROVAL_REQUIRED_TOOLS,
     APPROVAL_TTL_SECONDS,
@@ -87,6 +94,10 @@ from omichub.application.services.studio_tools import (
     normalize_plan_steps,
     stream_studio_tool,
 )
+from omichub.application.services.unified_intent_router import (
+    capability_notice,
+    normalize_decision,
+)
 from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError, NotFoundError
 from omichub.core.telemetry import get_meter, get_tracer
@@ -101,6 +112,10 @@ from omichub.infrastructure.ai_provider.openai_compatible import (
     provider_manager,
 )
 from omichub.infrastructure.config.prompt_loader import get_prompt
+from omichub.infrastructure.config.runtime_image_loader import (
+    get_runtime_images,
+    render_runtime_manifest,
+)
 from omichub.infrastructure.database.models.ai_provider import AIProviderConfigModel
 from omichub.infrastructure.database.models.chat import (
     ChatAssistantModel,
@@ -126,6 +141,12 @@ _agent_duration = _chat_meter.create_histogram(
 
 DEFAULT_SYSTEM_PROMPT = get_prompt("agents.general")
 
+USER_FACING_CHINESE_PROMPT_SUFFIX = """## 面向用户的语言
+
+默认使用简体中文完成所有面向用户的回复，包括行动说明、进度更新、工具执行前后的说明、
+结果摘要、产物清单和错误提示。只有用户明确要求其它语言时才切换。
+代码、命令、路径、文件名和必要的专业术语可以保留原样；不要先用英文叙述再重复中文。"""
+
 MULTI_AGENT_SYSTEM_PROMPT_SUFFIX = """## Multi-agent 协作模式
 
 当前会话已开启 multi-agent 协作。对于可拆成 2–5 个彼此独立的专业子任务，应优先调用
@@ -143,12 +164,21 @@ ROUTER_SYSTEM_PROMPT = """你是一个意图路由器。根据用户消息，从
 {catalog}
 
 规则：
-1. 直接输出一行 JSON：{{"agent_id": "...", "reason": "...", "expect_handoff": false, "consult_agent_ids": [], "intent": "chat|light_collab|delivery_case", "confidence": 0.0}}。
+1. 直接输出一行 JSON：{{"agent_id": "...", "reason": "...", "expect_handoff": false, "consult_agent_ids": [], "collaboration_intent": "transfer|fanout|consult|case|dag|chat", "fanout_tasks": [{{"agent_id":"...","task":"..."}}], "confidence": 0.0}}。
 2. 禁止输出思考过程、复述用户消息或列候选清单，第一个字符必须是 {{。
 3. agent_id 必须来自候选清单；reason 用一句中文简述分派理由。
 4. 当用户请求明显横跨两个以上专业阶段时，选择第一阶段最合适的专家，并将 expect_handoff 设为 true；它仅供审计，不改变本次分派。
-5. delivery_case 仅用于明确要求真实流程执行且要得到报告、结果文件或可审计交付物的请求；流程咨询、参数解释、普通问答和轻量并行一律不是 delivery_case。
-6. 无法判断意图时，选择通用（general）专家对应的 agent_id，intent 设为 chat，confidence 保守取低值。"""
+5. 出现 2–5 个相互独立的任务（同时、分别、并行、一起检查）→ fanout，并给出可执行的 fanout_tasks；需要多角度评估“合理吗/怎么解读/设计行不行”→ consult；正式执行、审批、交付、归档、给客户→ case；运行分钟到小时级管道→ dag；点名其他专家或当前领域不匹配→ transfer。
+6. case 必须只在真实流程执行与可审计交付场景使用；普通问答、流程解释和轻量并行不能标为 case。
+7. confidence < 0.6 表示需要向用户澄清协作方式；仍填写最可能的 collaboration_intent，禁止用 chat 掩盖不确定性。
+
+示例：
+- “这个结果应该怎么解读，注释策略合理吗” → consult
+- “帮我把代码、QC 和图表方案都看一下” → fanout
+- “这个 RNA-seq 流程要跑给客户，结果要归档” → case
+- “这个我答不了，需要单细胞的专家” → transfer，agent_id=agent-scrna
+- “帮我跑一下上游比对定量流程” → dag
+- 简单事实问答 → chat。"""
 
 
 def _extract_route_json(text: str) -> dict[str, Any] | None:
@@ -207,18 +237,14 @@ def _normalize_ask_questions(args: dict[str, Any]) -> list[dict[str, Any]]:
                 continue
             opts_raw = item.get("options")
             opts = (
-                [str(o) for o in opts_raw if str(o).strip()]
-                if isinstance(opts_raw, list)
-                else []
+                [str(o) for o in opts_raw if str(o).strip()] if isinstance(opts_raw, list) else []
             )
             questions.append({"question": q, "options": opts})
     if not questions:
         single_q = str(args.get("question") or "").strip()
         opts_raw = args.get("options")
         single_opts = (
-            [str(o) for o in opts_raw if str(o).strip()]
-            if isinstance(opts_raw, list)
-            else []
+            [str(o) for o in opts_raw if str(o).strip()] if isinstance(opts_raw, list) else []
         )
         if single_q:
             questions.append({"question": single_q, "options": single_opts})
@@ -227,31 +253,62 @@ def _normalize_ask_questions(args: dict[str, Any]) -> list[dict[str, Any]]:
         questions.append({"question": "", "options": []})
     return questions[:5]
 
+
 BUILTIN_ASSISTANTS: list[dict[str, Any]] = [
     {
-        "assistant_id": "general", "name": "通用助手", "description": "OmicHub 通用 AI 助手，回答各类问题",
-        "system_prompt": get_prompt("agents.general"), "default_temperature": 0.7, "default_max_tokens": 2048,
-        "icon": "🤖", "color": "#4f8ef7", "category": "general",
+        "assistant_id": "general",
+        "name": "通用助手",
+        "description": "OmicHub 通用 AI 助手，回答各类问题",
+        "system_prompt": get_prompt("agents.general"),
+        "default_temperature": 0.7,
+        "default_max_tokens": 2048,
+        "icon": "🤖",
+        "color": "#4f8ef7",
+        "category": "general",
     },
     {
-        "assistant_id": "rna_seq_analyst", "name": "RNA-seq 分析师", "description": "专注于 RNA-seq 差异表达分析、通路富集、可视化",
-        "system_prompt": get_prompt("agents.rnaseq"), "default_temperature": 0.3, "default_max_tokens": 4096,
-        "icon": "🧬", "color": "#4f8ef7", "category": "analysis",
+        "assistant_id": "rna_seq_analyst",
+        "name": "RNA-seq 分析师",
+        "description": "专注于 RNA-seq 差异表达分析、通路富集、可视化",
+        "system_prompt": get_prompt("agents.rnaseq"),
+        "default_temperature": 0.3,
+        "default_max_tokens": 4096,
+        "icon": "🧬",
+        "color": "#4f8ef7",
+        "category": "analysis",
     },
     {
-        "assistant_id": "scrna_analyst", "name": "单细胞分析师", "description": "专注于单细胞转录组分析、降维聚类、细胞注释",
-        "system_prompt": get_prompt("agents.scrna"), "default_temperature": 0.3, "default_max_tokens": 4096,
-        "icon": "🔬", "color": "#e74c3c", "category": "analysis",
+        "assistant_id": "scrna_analyst",
+        "name": "单细胞分析师",
+        "description": "专注于单细胞转录组分析、降维聚类、细胞注释",
+        "system_prompt": get_prompt("agents.scrna"),
+        "default_temperature": 0.3,
+        "default_max_tokens": 4096,
+        "icon": "🔬",
+        "color": "#e74c3c",
+        "category": "analysis",
     },
     {
-        "assistant_id": "code_helper", "name": "代码助手", "description": "帮助编写和调试生信分析代码（Python / R）",
-        "system_prompt": get_prompt("agents.code"), "default_temperature": 0.2, "default_max_tokens": 4096,
-        "icon": "💻", "color": "#f39c12", "category": "code",
+        "assistant_id": "code_helper",
+        "name": "代码助手",
+        "description": "帮助编写和调试生信分析代码（Python / R）",
+        "system_prompt": get_prompt("agents.code"),
+        "default_temperature": 0.2,
+        "default_max_tokens": 4096,
+        "icon": "💻",
+        "color": "#f39c12",
+        "category": "code",
     },
     {
-        "assistant_id": "visualization", "name": "可视化助手", "description": "帮助创建和优化科研图表",
-        "system_prompt": get_prompt("agents.visualization"), "default_temperature": 0.3, "default_max_tokens": 4096,
-        "icon": "📊", "color": "#27ae60", "category": "visualization",
+        "assistant_id": "visualization",
+        "name": "可视化助手",
+        "description": "帮助创建和优化科研图表",
+        "system_prompt": get_prompt("agents.visualization"),
+        "default_temperature": 0.3,
+        "default_max_tokens": 4096,
+        "icon": "📊",
+        "color": "#27ae60",
+        "category": "visualization",
     },
 ]
 
@@ -439,7 +496,9 @@ class ChatService:
         t = (title or "").strip()
         if not t or t in {"新对话", "生成中...", "新会话"}:
             return True
-        return bool(re.fullmatch(r"与 .+ 的对话", t)) or bool(re.fullmatch(r"新会话 \d{2}-\d{2}", t))
+        return bool(re.fullmatch(r"与 .+ 的对话", t)) or bool(
+            re.fullmatch(r"新会话 \d{2}-\d{2}", t)
+        )
 
     @staticmethod
     def _build_search_snippet(content: str, keyword: str) -> str:
@@ -548,11 +607,13 @@ class ChatService:
         mode: str = "chat",
         workspace_id: str | None = None,
         sandbox_meta: dict[str, Any] | None = None,
+        project_id: str | None = None,
     ) -> ChatSessionDTO:
         session = ChatSessionModel(
             id=uuid.uuid4(),
             session_id=str(uuid.uuid4()),
             user_id=user_id,
+            project_id=project_id,
             model_id=model_id,
             title=title,
             assistant_id=assistant_id,
@@ -680,7 +741,7 @@ class ChatService:
             .where(ChatMessageModel.session_id == session_id)
             .order_by(ChatMessageModel.created_at)
         )
-        messages = list(result.scalars().all())
+        messages = self._order_messages(result.scalars().all())
         first_user = next((m for m in messages if m.role == "user"), None)
         fallback = self._fallback_session_title(first_user.content if first_user else "")
         if not first_user or not first_user.content.strip():
@@ -722,7 +783,9 @@ class ChatService:
             from omichub.infrastructure.celery_app.tasks.memory import summarize_session
 
             # API 事务会在请求结束后提交；短延时防止 worker 读到提交前的会话状态。
-            summarize_session.apply_async(args=[session.session_id], countdown=5)
+            from omichub.infrastructure.task_queue.dispatcher import enqueue_task
+
+            enqueue_task(summarize_session, session.session_id, countdown=5)
         except Exception as exc:  # noqa: BLE001
             logger.warning("会话摘要任务投递失败，已跳过: {}", exc)
 
@@ -793,10 +856,13 @@ class ChatService:
             .where(ChatMessageModel.session_id == session_id)
             .order_by(ChatMessageModel.created_at)
         )
-        return [self._to_msg_dto(m) for m in result.scalars().all()]
+        messages = self._order_messages(result.scalars().all())
+        return [self._to_msg_dto(m) for m in messages]
 
     async def _collect_session_file_context(
-        self, session_id: str, exclude_file_ids: set[str] | None = None,
+        self,
+        session_id: str,
+        exclude_file_ids: set[str] | None = None,
         user_id: str | None = None,
     ) -> str:
         """汇总本会话历史消息中的附件引用，供后续轮次继承文件上下文。
@@ -815,7 +881,7 @@ class ChatService:
         )
         lines: list[str] = []
         seen: set[str] = set()
-        for msg in result.scalars().all():
+        for msg in self._order_messages(result.scalars().all()):
             if msg.role != "user":
                 continue
             for att in (msg.metadata_json or {}).get("attachments") or []:
@@ -826,7 +892,7 @@ class ChatService:
                 ref = file_id if "://" in file_id else f"upload://{file_id}"
                 lines.append(
                     f"- {att.get('name', '')}（file_id: {ref}，"
-                    f"可用 workspace_read_file(file_id=\"{ref}\") 读取）"
+                    f'可用 workspace_read_file(file_id="{ref}") 读取）'
                 )
 
         sections: list[str] = []
@@ -845,8 +911,7 @@ class ChatService:
                 sections.append(
                     "[本会话最近上传的文件，仅供备用：仅当用户请求与这些文件相关"
                     "或用户明确引用时才可使用；与当前请求无关时忽略，不要主动读取、检查或提及。"
-                    "纯代码编写/概念问答类请求无需任何数据文件]\n"
-                    + "\n".join(recent_lines)
+                    "纯代码编写/概念问答类请求无需任何数据文件]\n" + "\n".join(recent_lines)
                 )
 
         return "\n\n".join(sections)
@@ -885,8 +950,7 @@ class ChatService:
                 continue
             ref = f"upload://{fid}"
             lines.append(
-                f"- {path.name}（file_id: {ref}，"
-                f"可用 workspace_read_file(file_id=\"{ref}\") 读取）"
+                f'- {path.name}（file_id: {ref}，可用 workspace_read_file(file_id="{ref}") 读取）'
             )
             if len(lines) >= limit:
                 break
@@ -931,9 +995,7 @@ class ChatService:
     def _message_text(message: dict[str, Any]) -> str:
         content = message.get("content", "")
         if isinstance(content, list):
-            return "".join(
-                str(part.get("text", "")) for part in content if isinstance(part, dict)
-            )
+            return "".join(str(part.get("text", "")) for part in content if isinstance(part, dict))
         return str(content)
 
     @classmethod
@@ -993,9 +1055,7 @@ class ChatService:
             compressed = [
                 {
                     "role": "system",
-                    "content": (
-                        "[早期对话已压缩为摘要，后续请基于摘要与最近对话继续]\n" + summary
-                    )
+                    "content": ("[早期对话已压缩为摘要，后续请基于摘要与最近对话继续]\n" + summary),
                 }
             ] + recent
             logger.info(
@@ -1035,6 +1095,7 @@ class ChatService:
         temperature: float | None = None,
         max_tokens: int | None = None,
         enable_web_search: bool = False,
+        project_id: str | None = None,
     ) -> AsyncIterator[ChatChunk]:
         cookie_error = await self._ensure_cookie_balance(user_id)
         if cookie_error:
@@ -1072,7 +1133,9 @@ class ChatService:
                 ast = await self.get_assistant(assistant_id)
                 if ast:
                     title = f"与 {ast.name} 的对话"
-            dto = await self.create_session(user_id, model_id, title, assistant_id)
+            dto = await self.create_session(
+                user_id, model_id, title, assistant_id, project_id=project_id
+            )
             current_session_id = dto.session_id
 
         # 发布会话 ID 到上下文：本次流式任务内所有 AI 调用日志都会带上 session_id，
@@ -1093,6 +1156,9 @@ class ChatService:
                 final_system_prompt = ast.system_prompt
         if not final_system_prompt:
             final_system_prompt = DEFAULT_SYSTEM_PROMPT
+        final_system_prompt = (
+            f"{final_system_prompt}\n\n{USER_FACING_CHINESE_PROMPT_SUFFIX}"
+        ).strip()
 
         # 4. 保存用户消息
         # 敏感信息脱敏：落库前清洗用户消息，DB 不留存原始品种名等敏感词；
@@ -1133,10 +1199,18 @@ class ChatService:
                     )
                     yield ChatChunk(type="web_search_results", metadata={"sources": web_sources})
                 else:
-                    yield ChatChunk(type="web_search", content="未找到相关结果，已基于模型知识回答", metadata={"status": "empty"})
+                    yield ChatChunk(
+                        type="web_search",
+                        content="未找到相关结果，已基于模型知识回答",
+                        metadata={"status": "empty"},
+                    )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("联网搜索失败，降级为普通对话: %s", exc)
-                yield ChatChunk(type="web_search", content="联网搜索失败，已基于模型自身知识回答", metadata={"status": "failed"})
+                yield ChatChunk(
+                    type="web_search",
+                    content="联网搜索失败，已基于模型自身知识回答",
+                    metadata={"status": "failed"},
+                )
         full_content = ""
         update_counter = 0
         last_usage: dict[str, Any] | None = None
@@ -1220,9 +1294,7 @@ class ChatService:
         try:
             agent_service = AgentService(self._db)
             agents = await agent_service.list_agents(active_only=True)
-            candidates = [
-                a for a in agents if not (a.features or {}).get("router")
-            ]
+            candidates = [a for a in agents if not (a.features or {}).get("router")]
             if not candidates or router_ctx.model_config is None:
                 return None, None
 
@@ -1232,62 +1304,55 @@ class ChatService:
                         return c
                 return candidates[0]
 
-            catalog = json.dumps(
-                [
-                    {
-                        "agent_id": c.agent_id,
-                        "name": c.name,
-                        "description": c.description,
-                        "category": c.category,
-                    }
-                    for c in candidates
-                ],
-                ensure_ascii=False,
-            )
-            system_prompt = ROUTER_SYSTEM_PROMPT.replace("{catalog}", catalog)
-
-            # 路由过程 chunk 全部消费，仅累加 text，不向外 yield
-            route_text = ""
-            async for chunk in provider_manager.chat_stream(
-                config=router_ctx.model_config,
-                messages=[{"role": "user", "content": user_text}],
-                system_prompt=system_prompt,
-                temperature=0,
-                max_tokens=200,
-                tools=None,
-                deep_thinking=False,
-            ):
-                if chunk.type == "text":
-                    route_text += chunk.content
-
             valid_ids = {c.agent_id for c in candidates}
             target_id = ""
             reason = ""
             expect_handoff = False
             consult_agent_ids: list[str] = []
-            intent = "chat"
-            confidence = 0.0
-            decision = _extract_route_json(route_text)
+            from omichub.application.services.flow_registry import get_flow_registry
+
+            flow_target = get_flow_registry().route_agent(user_text, valid_ids)
+            decision = None
+            if flow_target:
+                decision = {
+                    "agent_id": flow_target,
+                    "reason": "命中单细胞流程阶段的 YAML 路由提示",
+                    "collaboration_intent": "chat",
+                    "confidence": 0.98,
+                }
+            else:
+                catalog = json.dumps(
+                    [
+                        {
+                            "agent_id": c.agent_id,
+                            "name": c.name,
+                            "description": c.description,
+                            "category": c.category,
+                        }
+                        for c in candidates
+                    ],
+                    ensure_ascii=False,
+                )
+                system_prompt = ROUTER_SYSTEM_PROMPT.replace("{catalog}", catalog)
+                route_text = ""
+                async for chunk in provider_manager.chat_stream(
+                    config=router_ctx.model_config,
+                    messages=[{"role": "user", "content": user_text}],
+                    system_prompt=system_prompt,
+                    temperature=0,
+                    max_tokens=200,
+                    tools=None,
+                    deep_thinking=False,
+                ):
+                    if chunk.type == "text":
+                        route_text += chunk.content
+                decision = _extract_route_json(route_text)
             if decision:
                 target_id = str(decision.get("agent_id") or "")
                 reason = str(decision.get("reason") or "")
                 expect_handoff = bool(decision.get("expect_handoff"))
-                parsed_intent = str(decision.get("intent") or "chat")
-                intent = (
-                    parsed_intent
-                    if parsed_intent in {"chat", "light_collab", "delivery_case"}
-                    else "chat"
-                )
-                try:
-                    confidence = min(1.0, max(0.0, float(decision.get("confidence", 0))))
-                except (TypeError, ValueError):
-                    confidence = 0.0
-                if intent == "delivery_case" and confidence < 0.7:
-                    intent = "light_collab"
                 raw_consults = decision.get("consult_agent_ids")
-                if get_settings().multi_expert_consultation_enabled and isinstance(
-                    raw_consults, list
-                ):
+                if get_settings().multi_expert_consultation_enabled and isinstance(raw_consults, list):
                     max_experts = max(
                         2, min(get_settings().multi_expert_consultation_max_experts, 3)
                     )
@@ -1303,6 +1368,15 @@ class ChatService:
                 target_id = fallback.agent_id
                 if not reason:
                     reason = "未识别出明确领域，转接通用助手"
+
+            fallback = _general_fallback()
+            normalized = normalize_decision(
+                decision,
+                fallback_agent_id=fallback.agent_id,
+                valid_agent_ids=valid_ids,
+            )
+            target_id = normalized.target_agent_id or target_id
+            reason = normalized.reason
 
             target_ctx = await agent_service.assemble_context(target_id)
             if target_ctx is None or target_ctx.model_config is None:
@@ -1324,8 +1398,9 @@ class ChatService:
                 "reason": reason,
                 "expect_handoff": expect_handoff,
                 "consult_agent_ids": consult_agent_ids,
-                "intent": intent,
-                "confidence": confidence,
+                "intent": normalized.intent,
+                "confidence": normalized.confidence,
+                "fanout_tasks": list(normalized.fanout_tasks),
             }
             return target_ctx, route_info
         except Exception as e:  # noqa: BLE001
@@ -1348,6 +1423,7 @@ class ChatService:
         extra_mcp_servers: list[str] | None = None,
         multi_agent: bool | None = None,
         extend_max_rounds: bool = False,
+        project_id: str | None = None,
     ) -> AsyncIterator[ChatChunk]:
         """Agent 编排入口（带 Trace/Log/Metrics 埋点）：作为 AI/MCP/技能 span 的父 span。"""
         tracer = get_tracer("omichub.chat")
@@ -1373,6 +1449,7 @@ class ChatService:
                     extra_mcp_servers=extra_mcp_servers,
                     multi_agent=multi_agent,
                     extend_max_rounds=extend_max_rounds,
+                    project_id=project_id,
                 ):
                     if chunk.type == "error":
                         status = "error"
@@ -1411,6 +1488,7 @@ class ChatService:
         extra_mcp_servers: list[str] | None = None,
         multi_agent: bool | None = None,
         extend_max_rounds: bool = False,
+        project_id: str | None = None,
     ) -> AsyncIterator[ChatChunk]:
         """Agent 编排闭环：查 Agent → 组装模型/系统词/工具 → 打 LLM → 执行 tool_call 回灌 → 流式返回
 
@@ -1431,6 +1509,8 @@ class ChatService:
         if ctx is None:
             yield ChatChunk(type="error", content="Agent 不存在或已停用")
             return
+
+        from omichub.application.services.project_scope import resolve_agent_project_scope
 
         # 若请求指定了 model_id，校验并覆盖 Agent 默认模型
         if model_id is not None:
@@ -1481,6 +1561,7 @@ class ChatService:
         session_mcp_meta = {}
         effective_mcp_mode = mcp_mode or "auto"
         effective_extra_mcp_servers = list(extra_mcp_servers or [])
+        session_project_id: str | None = None
         if session_id:
             session = await self.get_session(session_id, user_id)
             if not session:
@@ -1488,6 +1569,14 @@ class ChatService:
                 return
             if session.agent_id and session.agent_id != agent_id:
                 yield ChatChunk(type="error", content="会话绑定的 Agent 与当前请求不一致")
+                return
+            try:
+                resolve_agent_project_scope(
+                    agent_project_id=ctx.agent.project_id,
+                    session_project_id=session.project_id,
+                )
+            except BusinessError as exc:
+                yield ChatChunk(type="error", content=str(exc))
                 return
             # 若用户切换了模型，同步更新会话记录的 model_id
             if model_id is not None and session.model_id != model_id:
@@ -1498,10 +1587,12 @@ class ChatService:
             effective_mcp_mode = mcp_mode or session_mcp_meta.get("mcp_mode") or "auto"
             if extra_mcp_servers is None:
                 effective_extra_mcp_servers = list(session_mcp_meta.get("extra_mcp_servers") or [])
-            session_mcp_meta.update({
-                "mcp_mode": effective_mcp_mode,
-                "extra_mcp_servers": effective_extra_mcp_servers,
-            })
+            session_mcp_meta.update(
+                {
+                    "mcp_mode": effective_mcp_mode,
+                    "extra_mcp_servers": effective_extra_mcp_servers,
+                }
+            )
             effective_multi_agent = (
                 bool(multi_agent)
                 if multi_agent is not None
@@ -1547,7 +1638,16 @@ class ChatService:
                     sandbox_meta.get("capabilities"), bound_skills, bound_mcp_servers
                 )
             current_session_id = session_id
+            session_project_id = session.project_id
         else:
+            try:
+                project_id = resolve_agent_project_scope(
+                    agent_project_id=ctx.agent.project_id,
+                    session_project_id=project_id,
+                )
+            except BusinessError as exc:
+                yield ChatChunk(type="error", content=str(exc))
+                return
             studio_mode = mode == "studio"
             effective_multi_agent = bool(multi_agent)
             if studio_mode:
@@ -1565,6 +1665,7 @@ class ChatService:
                     "extra_mcp_servers": effective_extra_mcp_servers,
                     "multi_agent": bool(multi_agent),
                 },
+                project_id=project_id,
             )
             current_session_id = dto.session_id
 
@@ -1602,6 +1703,8 @@ class ChatService:
         )
 
         route_info: dict[str, Any] | None = None
+        unified_route_notice: dict[str, Any] | None = None
+        route_prompt_suffix = ""
 
         # 3.5 智能路由：路由器 Agent 先做意图分派，再以目标 Agent 的上下文继续后续流程。
         # 会话绑定校验与落库的 agent_id 始终保持路由器不变；同一会话的每条消息都重新路由。
@@ -1613,11 +1716,104 @@ class ChatService:
                     model_config = ctx.model_config
                 bound_skills = list(getattr(ctx, "skills", []) or [])
                 bound_mcp_servers = list(ctx.mcp_servers or [])
+                target_studio = dict(ctx.features.get("studio") or {})
+                if (
+                    not studio_mode
+                    and target_studio.get("default_mode") == "studio"
+                ):
+                    routed_session = await self.get_session(current_session_id, user_id)
+                    if routed_session is not None:
+                        studio_mode = True
+                        studio_image = target_studio.get("image")
+                        routed_meta = dict(routed_session.sandbox_meta or {})
+                        if studio_image:
+                            routed_meta["image"] = studio_image
+                        routed_session.mode = "studio"
+                        routed_session.workspace_id = routed_session.workspace_id or current_session_id
+                        routed_session.sandbox_meta = routed_meta
+                        routed_session.updated_at = datetime.now(UTC)
+                        await self._db.flush()
+                settings = get_settings()
+                site_settings = await SiteSettingsService(self._db).get_settings()
+                unified_intent_router_enabled = (
+                    settings.unified_intent_router_enabled
+                    or site_settings.unified_intent_router_enabled
+                )
+                consultation_enabled = (
+                    settings.multi_expert_consultation_enabled
+                    or site_settings.multi_expert_consultation_enabled
+                )
+                bridge_runtime = await AgentTeamsBridgeSettingsService(
+                    self._db, settings
+                ).get_runtime_config()
+                case_entry_enabled = (
+                    settings.agentteams_chat_entry_enabled
+                    or site_settings.agentteams_chat_entry_enabled
+                )
+                if unified_intent_router_enabled:
+                    degradation_template = (
+                        site_settings.collaboration_degradation_template_en
+                        if site_settings.collaboration_degradation_locale == "en"
+                        else site_settings.collaboration_degradation_template_zh
+                    )
+                    unified_route_notice = capability_notice(
+                        normalize_decision(
+                            route_info,
+                            fallback_agent_id=ctx.agent.agent_id,
+                            valid_agent_ids={ctx.agent.agent_id},
+                        ),
+                        fanout_enabled=(
+                            settings.subagent_fanout_enabled
+                            or site_settings.subagent_fanout_enabled
+                        ),
+                        consultation_enabled=consultation_enabled,
+                        case_enabled=bridge_runtime.enabled and bridge_runtime.configured and case_entry_enabled,
+                        mas_enabled=settings.mas_enabled,
+                        degradation_template=degradation_template,
+                        degradation_locale=site_settings.collaboration_degradation_locale,
+                    )
+                    route_info["collaboration"] = unified_route_notice
+                    if (
+                        unified_route_notice["available"]
+                        and route_info["intent"] == "consult"
+                        and not route_info["consult_agent_ids"]
+                    ):
+                        from omichub.application.services.agent_service import AgentService
+
+                        consultation_candidates = await AgentService(self._db).list_agents(
+                            active_only=True
+                        )
+                        route_info["consult_agent_ids"] = [
+                            candidate.agent_id
+                            for candidate in consultation_candidates
+                            if candidate.agent_id != ctx.agent.agent_id
+                            and not (candidate.features or {}).get("router")
+                        ][: settings.multi_expert_consultation_max_experts]
+                    if unified_route_notice["available"] and route_info["intent"] == "case":
+                        route_prompt_suffix = (
+                            "[统一协作路由] 当前请求已判定为正式协作 Case。"
+                            "请先澄清项目、流程和交付物；在用户明确同意后，调用"
+                            " `create_agentteams_case` 展示确认卡。"
+                        )
+                    elif unified_route_notice["available"] and route_info["intent"] == "dag":
+                        route_prompt_suffix = (
+                            "[统一协作路由] 当前请求已判定为分钟到小时级分析工作流。"
+                            "如当前会话提供 MAS 计划工具，优先生成 MAS 计划预览；否则说明所需"
+                            "输入并引导用户进入可用的分析工作流入口。"
+                        )
                 await self.update_message_content(
                     ai_message.message_id,
                     "",
                     "streaming",
-                    {"model": model_config.name, "routed_agent": route_info},
+                    {
+                        "model": model_config.name,
+                        "routed_agent": route_info,
+                        **(
+                            {"collaboration_route": unified_route_notice}
+                            if unified_route_notice is not None
+                            else {}
+                        ),
+                    },
                 )
                 yield ChatChunk(
                     type="route",
@@ -1627,6 +1823,51 @@ class ChatService:
                         "message_id": ai_message.message_id,
                     },
                 )
+                if unified_route_notice is not None:
+                    yield ChatChunk(
+                        type="collaboration_route",
+                        metadata={
+                            **unified_route_notice,
+                            "session_id": current_session_id,
+                            "message_id": ai_message.message_id,
+                        },
+                    )
+                    if not unified_route_notice["available"]:
+                        if unified_route_notice["degraded"]:
+                            await CollaborationObservabilityService(self._db).record_degradation(
+                                session_id=current_session_id,
+                                message_id=ai_message.message_id,
+                                user_id=user_id,
+                                intent=str(unified_route_notice["intent"]),
+                                reason=str(unified_route_notice["reason"]),
+                            )
+                        content = str(unified_route_notice["message"])
+                        await self.update_message_content(
+                            ai_message.message_id,
+                            content,
+                            "complete",
+                            {
+                                "model": model_config.name,
+                                "routed_agent": route_info,
+                                "collaboration_route": unified_route_notice,
+                            },
+                        )
+                        yield ChatChunk(
+                            type="text",
+                            content=content,
+                            metadata={
+                                "session_id": current_session_id,
+                                "message_id": ai_message.message_id,
+                            },
+                        )
+                        yield ChatChunk(
+                            type="done",
+                            metadata={
+                                "session_id": current_session_id,
+                                "message_id": ai_message.message_id,
+                            },
+                        )
+                        return
 
         # 4. 送 LLM 的 messages（脱敏 + 附件多模态注入）
         llm_messages: list[dict[str, Any]] = sanitize_messages(messages, sensitive_keywords)
@@ -1642,9 +1883,7 @@ class ChatService:
             current_session_id, exclude_file_ids=current_file_ids, user_id=user_id
         )
         if history_file_ctx:
-            llm_messages = self._append_context_to_last_user_message(
-                llm_messages, history_file_ctx
-            )
+            llm_messages = self._append_context_to_last_user_message(llm_messages, history_file_ctx)
 
         # 4.2 上下文压缩：估算 token 接近模型上下文窗口（256K）时，
         # 把较早的对话压缩为摘要，只保留最近若干条原文，避免超窗报错。
@@ -1665,11 +1904,11 @@ class ChatService:
         # Studio 使用元数据目录 + 会话级按需加载，未加载能力不进入 prompt/tools。
         search_required = self._requires_fresh_web_search(user_content, ctx.features)
         effective_web_search = (
-            enable_web_search
-            or bool(ctx.features.get("enable_web_search"))
-            or search_required
+            enable_web_search or bool(ctx.features.get("enable_web_search")) or search_required
         )
-        supports_function_tools = bool((model_config.extra_params or {}).get("supports_tools", True))
+        supports_function_tools = bool(
+            (model_config.extra_params or {}).get("supports_tools", True)
+        )
         base_tools: list[dict[str, Any]] = []
         if effective_web_search and supports_function_tools and not search_required:
             base_tools.append(WEB_SEARCH_TOOL)
@@ -1704,17 +1943,27 @@ class ChatService:
             )
         # ask_user 澄清弹窗在普通聊天同样可用（Studio 由 STUDIO_TOOL_SCHEMAS 携带），
         # 让所有 Agent 的多选项澄清都走弹窗而不是纯文本罗列编号。
-        if not studio_mode and supports_function_tools and not any(
-            t.get("function", {}).get("name") == "ask_user" for t in tools
+        if (
+            not studio_mode
+            and supports_function_tools
+            and not any(t.get("function", {}).get("name") == "ask_user" for t in tools)
         ):
             tools.append(ASK_USER_TOOL_SCHEMA)
         # 知识库检索在普通聊天同样可用（Studio 由 STUDIO_TOOL_SCHEMAS 携带），
         # 让 Agent 能检索平台知识库（含用户个人笔记/实验经验文档）再作答。
-        if not studio_mode and supports_function_tools and not any(
-            t.get("function", {}).get("name") == "knowledge_search" for t in tools
+        if (
+            not studio_mode
+            and supports_function_tools
+            and not any(t.get("function", {}).get("name") == "knowledge_search" for t in tools)
         ):
             tools.append(KNOWLEDGE_SEARCH_TOOL)
         system_prompt = ctx.system_prompt or None
+        if route_prompt_suffix:
+            system_prompt = (
+                f"{system_prompt}\n\n{route_prompt_suffix}"
+                if system_prompt
+                else route_prompt_suffix
+            )
         if effective_multi_agent:
             system_prompt = (
                 f"{system_prompt}\n\n{MULTI_AGENT_SYSTEM_PROMPT_SUFFIX}"
@@ -1766,7 +2015,10 @@ class ChatService:
                 from omichub.application.services.agent_memory_service import AgentMemoryService
 
                 memory_context = await AgentMemoryService(self._db).build_prompt_context(
-                    user_id, getattr(ctx.agent, "agent_id", agent_id), user_content
+                    user_id,
+                    getattr(ctx.agent, "agent_id", agent_id),
+                    user_content,
+                    project_id=session_project_id,
                 )
                 if memory_context:
                     system_prompt = (
@@ -1776,7 +2028,10 @@ class ChatService:
                 logger.warning("Agent 长期记忆召回失败，已跳过: %s", exc)
 
         if (
-            get_settings().multi_expert_consultation_enabled
+            (
+                get_settings().multi_expert_consultation_enabled
+                or (await SiteSettingsService(self._db).get_settings()).multi_expert_consultation_enabled
+            )
             and route_info is not None
             and route_info.get("consult_agent_ids")
         ):
@@ -1788,13 +2043,40 @@ class ChatService:
                 opinions = await MultiExpertConsultationService(AgentService(self._db)).collect(
                     list(route_info["consult_agent_ids"]), user_content
                 )
-                consultation_context = MultiExpertConsultationService.render_prompt_context(opinions)
+                consultation_context = MultiExpertConsultationService.render_prompt_context(
+                    opinions
+                )
                 if consultation_context:
+                    settings = get_settings()
+                    runtime_site_settings = await SiteSettingsService(self._db).get_settings()
+                    bridge_runtime = await AgentTeamsBridgeSettingsService(
+                        self._db, settings
+                    ).get_runtime_config()
+                    case_available = bool(
+                        bridge_runtime.enabled
+                        and bridge_runtime.configured
+                        and (
+                            settings.agentteams_chat_entry_enabled
+                            or runtime_site_settings.agentteams_chat_entry_enabled
+                        )
+                    )
                     system_prompt = f"{system_prompt}\n\n{consultation_context}".strip()
+                    consultation_metadata = {
+                        "experts": opinions,
+                        "consultation_id": f"{current_session_id}:{ai_message.message_id}",
+                        "consultation_summary": MultiExpertConsultationService.summarize(opinions),
+                        "case_available": case_available,
+                    }
+                    await self.update_message_content(
+                        ai_message.message_id,
+                        "",
+                        "streaming",
+                        {"consultation": consultation_metadata},
+                    )
                     yield ChatChunk(
                         type="consultation",
                         metadata={
-                            "experts": opinions,
+                            **consultation_metadata,
                             "session_id": current_session_id,
                             "message_id": ai_message.message_id,
                         },
@@ -1822,9 +2104,7 @@ class ChatService:
             runtime_tools = list(base_tools)
             runtime_tools.extend(STUDIO_TOOL_SCHEMAS)
             runtime_tools.extend(CAPABILITY_TOOL_SCHEMAS)
-            reserved_names = {
-                item.get("function", {}).get("name", "") for item in runtime_tools
-            }
+            reserved_names = {item.get("function", {}).get("name", "") for item in runtime_tools}
             safe_servers = []
             for server in loaded_capability_servers(bound_mcp_servers, state):
                 server_names = {tool.tool_name for tool in server.tools}
@@ -1845,6 +2125,28 @@ class ChatService:
                 if runtime_prompt
                 else STUDIO_SYSTEM_PROMPT_SUFFIX
             )
+            runtime_profile_id = str(
+                (ctx.features.get("studio") or {}).get("runtime_profile") or ""
+            ).strip()
+            try:
+                runtime_registry = get_runtime_images()
+                runtime_match = (
+                    runtime_registry.profile_for_image(studio_image)
+                    if studio_image
+                    else None
+                )
+                if runtime_match is not None:
+                    runtime_profile_id, runtime_profile = runtime_match
+                elif runtime_profile_id:
+                    runtime_profile = runtime_registry.resolved_profile(runtime_profile_id)
+                else:
+                    runtime_profile = None
+                if runtime_profile is not None:
+                    runtime_prompt += "\n\n" + render_runtime_manifest(
+                        runtime_profile_id, runtime_profile
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Studio 运行时软件清单加载失败，已跳过: {}", exc)
             if studio_context_pack:
                 from omichub.application.services.studio_context_service import (
                     render_context_pack_hint,
@@ -1854,9 +2156,7 @@ class ChatService:
             return runtime_tools, runtime_prompt, safe_servers
 
         if studio_mode:
-            tools, system_prompt, active_mcp_servers = _studio_runtime(
-                studio_capability_state
-            )
+            tools, system_prompt, active_mcp_servers = _studio_runtime(studio_capability_state)
         tools, system_prompt = _attach_mas_plan_tool(tools, system_prompt)
 
         async def _prepare_handoff_target(
@@ -1872,7 +2172,9 @@ class ChatService:
                 raise BusinessError("目标 Agent 的模型 API Key 未配置")
 
             target_skills = list(getattr(target_ctx, "skills", []) or [])
-            target_servers = [] if effective_mcp_mode == "off" else list(target_ctx.mcp_servers or [])
+            target_servers = (
+                [] if effective_mcp_mode == "off" else list(target_ctx.mcp_servers or [])
+            )
             target_tools = list(target_ctx.tools or []) + list(base_tools)
             target_prompt = target_ctx.system_prompt or ""
             if effective_multi_agent and supports_function_tools:
@@ -1918,12 +2220,16 @@ class ChatService:
                     user_id,
                     target_ctx.agent.agent_id,
                     user_content,
+                    project_id=session_project_id,
                 )
                 if memory_context:
                     target_prompt = f"{target_prompt}\n\n{memory_context}".strip()
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Handoff 目标 Agent 长期记忆召回失败，已跳过: %s", exc)
-            target_prompt = f"{target_prompt}\n\n{directive['packet']}".strip()
+            target_prompt = (
+                f"{target_prompt}\n\n{directive['packet']}\n\n"
+                f"{USER_FACING_CHINESE_PROMPT_SUFFIX}"
+            ).strip()
             return (
                 target_ctx,
                 target_ctx.model_config,
@@ -1936,10 +2242,18 @@ class ChatService:
         # 不支持 function calling 的模型总是在调用前搜索；对时效/文献类问题，
         # 即使模型支持工具也强制预搜索，保证先核验事实再回答。
         presearch_sources: list[dict[str, Any]] = []
-        if effective_web_search and (not supports_function_tools or search_required) and user_content.strip():
-            yield ChatChunk(type="web_search", content=user_content, metadata={"status": "searching"})
+        if (
+            effective_web_search
+            and (not supports_function_tools or search_required)
+            and user_content.strip()
+        ):
+            yield ChatChunk(
+                type="web_search", content=user_content, metadata={"status": "searching"}
+            )
             try:
-                presearch_sources = await SearchProviderService(self._db).search_default(user_content)
+                presearch_sources = await SearchProviderService(self._db).search_default(
+                    user_content
+                )
                 if presearch_sources:
                     context = "\n".join(
                         f"[{index}] {item['title']}\n{item['snippet']}\n来源: {item['url']}"
@@ -1949,9 +2263,15 @@ class ChatService:
                         f"{system_prompt}\n\n以下是联网搜索结果。仅在确有帮助时引用，"
                         "引用格式使用 [编号]，不要编造来源：\n" + context[:4000]
                     )
-                    yield ChatChunk(type="web_search_results", metadata={"sources": presearch_sources})
+                    yield ChatChunk(
+                        type="web_search_results", metadata={"sources": presearch_sources}
+                    )
                 else:
-                    yield ChatChunk(type="web_search", content="未找到相关结果，已基于模型知识回答", metadata={"status": "empty"})
+                    yield ChatChunk(
+                        type="web_search",
+                        content="未找到相关结果，已基于模型知识回答",
+                        metadata={"status": "empty"},
+                    )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Agent 预搜索失败，降级为普通对话: %s", exc)
                 if search_required:
@@ -1960,7 +2280,13 @@ class ChatService:
                         "必须先说明无法完成实时或文献核验；不得将模型记忆表述为最新事实，"
                         "不得编造引用。"
                     )
-                yield ChatChunk(type="web_search", content="联网搜索失败，已基于模型自身知识回答", metadata={"status": "failed"})
+                yield ChatChunk(
+                    type="web_search",
+                    content="联网搜索失败，已基于模型自身知识回答",
+                    metadata={"status": "failed"},
+                )
+
+        system_prompt = f"{system_prompt}\n\n{USER_FACING_CHINESE_PROMPT_SUFFIX}".strip()
 
         full_content = ""
         web_sources: list[dict[str, Any]] = list(presearch_sources)
@@ -1985,6 +2311,42 @@ class ChatService:
             db=self._db,
         )
 
+        if (
+            unified_route_notice is not None
+            and unified_route_notice["available"]
+            and route_info is not None
+            and route_info.get("intent") == "fanout"
+            and len(route_info.get("fanout_tasks") or []) >= 2
+        ):
+            try:
+                from omichub.application.services.parallel_subagent_tool_service import (
+                    ParallelSubAgentToolService,
+                )
+
+                fanout_result = await ParallelSubAgentToolService().run_parallel_subagents(
+                    context_summary=user_content,
+                    tasks=list(route_info["fanout_tasks"]),
+                    context=tool_context,
+                )
+                if fanout_result.get("success"):
+                    fanout_payload = json.dumps(
+                        fanout_result.get("llm_payload") or {}, ensure_ascii=False
+                    )
+                    system_prompt = (
+                        f"{system_prompt}\n\n## 已完成的并行子任务结果\n{fanout_payload}\n"
+                        "请基于这些结果给出统一、可核验的结论，不要重复执行同一批子任务。"
+                    ).strip()
+                    yield ChatChunk(
+                        type="collaboration_fanout",
+                        metadata={
+                            **(fanout_result.get("ui_payload") or {}),
+                            "session_id": current_session_id,
+                            "message_id": ai_message.message_id,
+                        },
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("统一路由 Fan-out 执行失败，回退专家单独回答: {}", exc)
+
         async def _persist_capability_state(
             state: CapabilityState, event: dict[str, Any]
         ) -> CapabilityState:
@@ -2004,9 +2366,14 @@ class ChatService:
 
         async def _activate_langgraph_handoff(directive: dict[str, Any]) -> dict[str, Any]:
             """持久化交接并返回下一段 LangGraph 运行时所需的完整配置。"""
-            target_ctx, target_model, target_skills, target_servers, target_tools, target_prompt = (
-                await _prepare_handoff_target(directive)
-            )
+            (
+                target_ctx,
+                target_model,
+                target_skills,
+                target_servers,
+                target_tools,
+                target_prompt,
+            ) = await _prepare_handoff_target(directive)
             await AgentHandoffService(self._db).record_handoff(
                 user_id=user_id,
                 session_id=current_session_id,
@@ -2113,10 +2480,10 @@ class ChatService:
 
                     elif chunk.type == "done":
                         # Studio 工具循环会产生多次模型请求，逐轮累计实际计费用量。
-                        last_usage = merge_token_usage(
-                            last_usage, chunk.metadata.get("usage")
+                        last_usage = merge_token_usage(last_usage, chunk.metadata.get("usage"))
+                        last_finish_reason = (
+                            chunk.metadata.get("finish_reason") or last_finish_reason
                         )
-                        last_finish_reason = chunk.metadata.get("finish_reason") or last_finish_reason
 
                 # 本轮无工具调用 → 正常结束
                 if not round_tool_calls:
@@ -2135,10 +2502,10 @@ class ChatService:
                     )
                     await self._apply_usage_to_session(ai_message.message_id, last_usage)
                     done_meta: dict[str, Any] = {
-                            "session_id": current_session_id,
-                            "message_id": ai_message.message_id,
-                            "usage": last_usage,
-                        }
+                        "session_id": current_session_id,
+                        "message_id": ai_message.message_id,
+                        "usage": last_usage,
+                    }
                     if last_finish_reason:
                         done_meta["finish_reason"] = last_finish_reason
                     yield ChatChunk(type="done", metadata=done_meta)
@@ -2177,8 +2544,7 @@ class ChatService:
                     is_capability_tool = studio_mode and tool_name in CAPABILITY_TOOL_NAMES
                     # ask_user 在普通会话也挂载，两种模式下都走澄清拦截分支
                     is_studio_tool = (
-                        studio_mode
-                        and (tool_name in STUDIO_TOOL_NAMES or is_capability_tool)
+                        studio_mode and (tool_name in STUDIO_TOOL_NAMES or is_capability_tool)
                     ) or tool_name == "ask_user"
                     is_mas_plan_tool = (
                         mas_plan_tool_enabled and tool_name == MAS_PLAN_PREVIEW_TOOL_NAME
@@ -2259,7 +2625,9 @@ class ChatService:
                             subagent_calls_this_round
                             >= get_settings().subagent_max_children_per_message
                         ):
-                            limit_error = "本轮已执行过子 Agent 并行分派，请先消化汇总结果再决定下一步"
+                            limit_error = (
+                                "本轮已执行过子 Agent 并行分派，请先消化汇总结果再决定下一步"
+                            )
                             result = {
                                 "success": False,
                                 "result": {
@@ -2291,10 +2659,12 @@ class ChatService:
                                 ParallelSubAgentToolService,
                             )
 
-                            fanout_envelope = await ParallelSubAgentToolService().run_parallel_subagents(
-                                context_summary=str(args.get("context_summary") or ""),
-                                tasks=fanout_tasks,
-                                context=tool_context,
+                            fanout_envelope = (
+                                await ParallelSubAgentToolService().run_parallel_subagents(
+                                    context_summary=str(args.get("context_summary") or ""),
+                                    tasks=fanout_tasks,
+                                    context=tool_context,
+                                )
                             )
                             result = {
                                 "success": bool(fanout_envelope.get("success")),
@@ -2339,15 +2709,22 @@ class ChatService:
                                     objective=str(args.get("objective") or ""),
                                     project_id=str(args.get("project_id") or ""),
                                     flow_id=str(args.get("flow_id") or ""),
+                                    origin_consultation_id=str(args.get("origin_consultation_id") or "") or None,
+                                    consultation_summary=str(args.get("consultation_summary") or "") or None,
                                     context=tool_context,
                                 )
-                            result = {"success": bool(bridge_result.get("success")), "result": bridge_result}
+                            result = {
+                                "success": bool(bridge_result.get("success")),
+                                "result": bridge_result,
+                            }
                         else:
                             case_envelope = await AgentTeamsCaseToolService().run(
                                 objective=str(args.get("objective") or ""),
                                 project_id=str(args.get("project_id") or ""),
                                 flow_id=str(args.get("flow_id") or ""),
                                 sample_context_refs=args.get("sample_context_refs") or [],
+                                origin_consultation_id=str(args.get("origin_consultation_id") or "") or None,
+                                consultation_summary=str(args.get("consultation_summary") or "") or None,
                                 context=tool_context,
                             )
                             card = (case_envelope.get("ui_payload") or {}).get("case_card") or {}
@@ -2372,9 +2749,7 @@ class ChatService:
                         # L2 use_skill / L3 skill_resource：按需加载技能正文与资源
                         # Skill 调用可视化：use_skill（技能加载）发 invoked/completed/failed
                         # 事件并落库 skill_invocations；skill_resource（资源读取）不发事件避免刷屏
-                        skill_key_evt = str(
-                            args.get("skill_id") or args.get("name") or ""
-                        ).strip()
+                        skill_key_evt = str(args.get("skill_id") or args.get("name") or "").strip()
                         bound_skill = next(
                             (
                                 s
@@ -2419,9 +2794,8 @@ class ChatService:
                             skill_ok = bool(result.get("success"))
                             if skill_ok:
                                 resources = ((result.get("result") or {}).get("resources")) or []
-                                skill_summary = (
-                                    f"已加载技能指令正文"
-                                    + (f"（含 {len(resources)} 个资源文件）" if resources else "")
+                                skill_summary = "已加载技能指令正文" + (
+                                    f"（含 {len(resources)} 个资源文件）" if resources else ""
                                 )
                             else:
                                 skill_summary = ""
@@ -2651,7 +3025,9 @@ class ChatService:
                                     result = item
                     elif server is None:
                         if tool_name == "knowledge_search":
-                            result = await self._knowledge_search_chat(args)
+                            result = await self._knowledge_search_chat(
+                                args, project_id=session_project_id
+                            )
                         elif tool_name == "web_search":
                             query = str(args.get("query") or "")
                             yield ChatChunk(
@@ -2660,7 +3036,9 @@ class ChatService:
                                 metadata={"status": "searching"},
                             )
                             result = await self._web_search(args)
-                            search_payload = result.get("result") if isinstance(result, dict) else None
+                            search_payload = (
+                                result.get("result") if isinstance(result, dict) else None
+                            )
                             search_results = (
                                 search_payload.get("results", [])
                                 if isinstance(search_payload, dict)
@@ -2703,7 +3081,9 @@ class ChatService:
 
                     # 双通道：llm_payload 给 LLM，ui_payload 给前端
                     tool_output = result.get("result") if isinstance(result, dict) else result
-                    if isinstance(tool_output, dict) and ("llm_payload" in tool_output or "ui_payload" in tool_output):
+                    if isinstance(tool_output, dict) and (
+                        "llm_payload" in tool_output or "ui_payload" in tool_output
+                    ):
                         ui_payload = tool_output.get("ui_payload")
                         llm_result = tool_output.get("llm_payload", tool_output)
                     else:
@@ -2778,9 +3158,14 @@ class ChatService:
                     )
                     directive = extract_handoff_directive(result) if is_handoff_tool else None
                     if directive is not None and bool(result.get("success")):
-                        target_ctx, target_model, target_skills, target_servers, target_tools, target_prompt = (
-                            await _prepare_handoff_target(directive)
-                        )
+                        (
+                            target_ctx,
+                            target_model,
+                            target_skills,
+                            target_servers,
+                            target_tools,
+                            target_prompt,
+                        ) = await _prepare_handoff_target(directive)
                         await AgentHandoffService(self._db).record_handoff(
                             user_id=user_id,
                             session_id=current_session_id,
@@ -3010,14 +3395,15 @@ class ChatService:
                     "result": {"llm_payload": ask_payload, "ui_payload": dict(ask_payload)},
                 }
             if tool_name == "knowledge_search":
-                return await self._knowledge_search_chat(args)
+                session = await self.get_session(session_id, user_id)
+                return await self._knowledge_search_chat(
+                    args, project_id=session.project_id if session else None
+                )
             if tool_name == "web_search":
                 result = await self._web_search(args)
                 search_payload = result.get("result") if isinstance(result, dict) else None
                 search_results = (
-                    search_payload.get("results", [])
-                    if isinstance(search_payload, dict)
-                    else []
+                    search_payload.get("results", []) if isinstance(search_payload, dict) else []
                 )
                 if isinstance(search_results, list):
                     persisted_web_sources.extend(
@@ -3190,8 +3576,7 @@ class ChatService:
         ]
 
         has_image = any(
-            att.get("type") == "image"
-            or (att.get("mime_type", "").startswith("image/"))
+            att.get("type") == "image" or (att.get("mime_type", "").startswith("image/"))
             for att in attachment_dicts
         )
 
@@ -3206,7 +3591,7 @@ class ChatService:
                 ref = file_id if "://" in file_id else f"upload://{file_id}"
                 snippets.append(
                     f"[文件: {att.get('name', '')}，file_id: {ref}，"
-                    f"可用 workspace_read_file(file_id=\"{ref}\") 读取内容，"
+                    f'可用 workspace_read_file(file_id="{ref}") 读取内容，'
                     f"或在其它工具参数中直接引用该 file_id]"
                 )
             if text:
@@ -3527,9 +3912,7 @@ class ChatService:
         from omichub.infrastructure.skills import skill_store
 
         skill_key = str(args.get("skill_id") or args.get("name") or "").strip()
-        skill = next(
-            (s for s in skills if s.skill_id == skill_key or s.name == skill_key), None
-        )
+        skill = next((s for s in skills if s.skill_id == skill_key or s.name == skill_key), None)
         if skill is None:
             mounted = "、".join(s.skill_id for s in skills) or "无"
             return {
@@ -3619,12 +4002,14 @@ class ChatService:
             logger.warning("联网搜索工具调用失败: %s", exc)
             return {"success": False, "error": "联网搜索失败，已跳过搜索结果"}
 
-    async def _knowledge_search_chat(self, arguments: dict[str, Any]) -> dict[str, Any]:
+    async def _knowledge_search_chat(
+        self, arguments: dict[str, Any], *, project_id: str | None = None
+    ) -> dict[str, Any]:
         """普通聊天的知识库检索：复用 Studio 工具实现（只检索已发布文档的当前修订）。"""
         from omichub.application.services.studio_tools import _knowledge_search
 
         try:
-            return await _knowledge_search(arguments, self._db)
+            return await _knowledge_search(arguments, self._db, project_id=project_id)
         except Exception as exc:  # noqa: BLE001
             logger.warning("知识库检索工具调用失败: %s", exc)
             return {"success": False, "error": "知识库检索失败，已跳过"}
@@ -3708,7 +4093,9 @@ class ChatService:
         )
         return [self._to_ast_dto(a) for a in result.scalars().all()]
 
-    async def update_assistant(self, assistant_id: str, req: UpdateAssistantRequest) -> ChatAssistantDTO:
+    async def update_assistant(
+        self, assistant_id: str, req: UpdateAssistantRequest
+    ) -> ChatAssistantDTO:
         ast = await self.get_assistant(assistant_id)
         if not ast:
             raise NotFoundError("助手不存在")
@@ -3767,6 +4154,7 @@ class ChatService:
             title_locked=s.title_locked,
             assistant_id=s.assistant_id,
             agent_id=s.agent_id,
+            project_id=s.project_id,
             model_id=s.model_id,
             message_count=s.message_count,
             status=s.status,
@@ -3775,22 +4163,37 @@ class ChatService:
             updated_at=s.updated_at,
             last_message_at=s.last_message_at,
             mcp_mode=(s.sandbox_meta or {}).get("mcp_mode", "auto"),
-            extra_mcp_servers=[str(value) for value in (s.sandbox_meta or {}).get("extra_mcp_servers", [])],
+            extra_mcp_servers=[
+                str(value) for value in (s.sandbox_meta or {}).get("extra_mcp_servers", [])
+            ],
             multi_agent=bool((s.sandbox_meta or {}).get("multi_agent", False)),
+        )
+
+    @staticmethod
+    def _order_messages(messages: Any) -> list[ChatMessageModel]:
+        """为历史消息提供稳定的会话顺序。
+
+        PostgreSQL 的 ``now()`` 在同一事务内返回相同时间戳。用户消息与其助手
+        回复若在同一事务落库，仅按 ``created_at`` 查询会得到未定义顺序，重开会话时
+        可能显示为“回复在问题之前”。同一时间戳下固定让用户消息优先，再按消息 ID
+        收敛到跨请求一致的顺序。
+        """
+        role_order = {"user": 0, "assistant": 1, "tool": 2, "system": 3}
+        return sorted(
+            messages,
+            key=lambda message: (
+                message.created_at,
+                role_order.get(message.role, 4),
+                message.message_id,
+            ),
         )
 
     @staticmethod
     def _to_msg_dto(m: ChatMessageModel) -> ChatMessageDTO:
         # Token usage belongs to the model response only; never expose it on user rows.
-        usage = (
-            (m.metadata_json or {}).get("usage") or {}
-            if m.role == "assistant"
-            else {}
-        )
+        usage = (m.metadata_json or {}).get("usage") or {} if m.role == "assistant" else {}
         input_tokens = (
-            usage.get("prompt_tokens", 0)
-            or usage.get("input_tokens", 0)
-            or usage.get("input", 0)
+            usage.get("prompt_tokens", 0) or usage.get("input_tokens", 0) or usage.get("input", 0)
         )
         output_tokens = (
             usage.get("completion_tokens", 0)
@@ -3798,9 +4201,7 @@ class ChatService:
             or usage.get("output", 0)
         )
         total_tokens = (
-            usage.get("total_tokens", 0)
-            or usage.get("total", 0)
-            or input_tokens + output_tokens
+            usage.get("total_tokens", 0) or usage.get("total", 0) or input_tokens + output_tokens
         )
         return ChatMessageDTO(
             message_id=m.message_id,

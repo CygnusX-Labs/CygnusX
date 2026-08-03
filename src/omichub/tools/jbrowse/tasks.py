@@ -16,6 +16,8 @@ from pathlib import Path
 from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
 
+from omichub.infrastructure.task_queue.dispatcher import enqueue_task
+
 # 扩展名 → 索引命令（首元素为二进制名，便于 shutil.which 探测可用性）
 _INDEX_COMMANDS: dict[str, list[str]] = {
     ".fasta": ["samtools", "faidx"],
@@ -165,7 +167,7 @@ async def _scan_and_index(user_id: str) -> dict:
 
     task_ids = []
     for file_info in to_index:
-        task = index_file.delay(file_info.path)
+        task = enqueue_task(index_file, file_info.path)
         task_ids.append({"file": file_info.path, "task_id": task.id})
 
     return {

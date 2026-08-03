@@ -10,10 +10,9 @@ from sqlalchemy import BigInteger, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from omichub.infrastructure.database.base import Base, TimestampMixin
+from omichub.infrastructure.database.vector import Vector
 
-# pgvector 维度在迁移中硬编码（默认 1024，bge-m3）；
-# ORM 层用 Text 占位避免 import 时依赖 pgvector 包（运行时由迁移建列）。
-# 实际向量读写走 knowledge_indexer / studio_tools 中的原生 SQL。
+EMBEDDING_DIMENSIONS = 1024
 
 
 class KbChunkModel(Base, TimestampMixin):
@@ -37,8 +36,5 @@ class KbChunkModel(Base, TimestampMixin):
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
     content_hash: Mapped[str] = mapped_column(String(32), nullable=False)
-    # embedding 列由迁移以 vector(1024) 类型创建；
-    # ORM 层不映射该列，通过原生 SQL 读写，避免对 pgvector 包的硬依赖。
-    # 若需在 ORM 层使用，可安装 pgvector 后取消注释：
-    # from pgvector.sqlalchemy import Vector
-    # embedding = mapped_column(Vector(1024), nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIMENSIONS), nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(120), nullable=True)

@@ -24,6 +24,7 @@ class KnowledgeBaseService:
     def _dto(model: KnowledgeBaseModel, doc_count: int) -> KnowledgeBaseDTO:
         return KnowledgeBaseDTO(
             id=model.id,
+            project_id=model.project_id,
             name=model.name,
             description=model.description,
             show_in_lab=model.show_in_lab,
@@ -56,6 +57,7 @@ class KnowledgeBaseService:
             raise BusinessError(f"知识库标识「{dto.id}」已存在")
         model = KnowledgeBaseModel(
             id=dto.id,
+            project_id=dto.project_id,
             name=dto.name.strip(),
             description=dto.description.strip(),
             show_in_lab=dto.show_in_lab,
@@ -71,6 +73,7 @@ class KnowledgeBaseService:
         if model is None:
             raise NotFoundError("知识库不存在")
         model.name = dto.name.strip()
+        model.project_id = dto.project_id
         model.description = dto.description.strip()
         model.show_in_lab = dto.show_in_lab
         model.ai_searchable = dto.ai_searchable

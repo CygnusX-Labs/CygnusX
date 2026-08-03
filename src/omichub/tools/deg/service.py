@@ -5,7 +5,7 @@
 2. 引擎解析（与 RNAFlow rules/utils/deg_method.py 同口径）：
    method=auto 时任一比较组最小样本数 < min_replicates → edgeR，否则 DESeq2；
    强制 deseq2 但存在 1v1 比较对时提前报错（DESeq2 无法估计离散度）；
-3. 生成 task_id + 任务目录 users/{uid}/tasks/{task_id}/output/{project}/，写入输入文件；
+3. 创建项目运行目录并写入输入文件快照；
 4. 创建通用 Task 记录（flow_id="deg-analysis"）并投递 Celery analysis 队列；
 5. Worker 运行 R 容器（DESeq2/edgeR），解析结果 CSV 回写任务；
 6. Web 轮询任务状态，完成时返回统计表 + Top 基因 + 产物名单；失败返回错误摘要。
@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import csv
 import io
-import re
 import unicodedata
 import uuid
 from pathlib import Path
@@ -28,18 +27,17 @@ from omichub.core.config import get_settings
 from omichub.core.exceptions import NotFoundError, TaskExecutionError, ValidationError
 from omichub.domain.task.value_objects import TaskStatus
 from omichub.infrastructure.database.models.task import TaskModel
+from omichub.infrastructure.storage.path_factory import project_slug
+from omichub.infrastructure.task_queue.dispatcher import enqueue_task
 from omichub.tools.deg.config import DegConfig, config_manager
 from omichub.tools.deg.schema import (
-    DegContrastResultDTO,
-    DegContrastStatDTO,
     DegDefaultsDTO,
-    DegGeneRowDTO,
     DegResultDTO,
     DegTaskDTO,
 )
 
 FLOW_ID = "deg-analysis"
-RESULTS_SUBDIR = "results"
+RESULTS_SUBDIR = "output"
 TOP_GENES_PER_CONTRAST = 500
 
 _SAMPLE_ALIASES = {"sample", "sample_name", "sampleid", "sample_id"}
@@ -82,9 +80,7 @@ class DegService:
         for key in ("counts", "metadata", "pairs", "annotation"):
             path = example_dir / f"{key}.csv"
             if path.exists():
-                payload[key] = await asyncio.to_thread(
-                    path.read_text, encoding="utf-8"
-                )
+                payload[key] = await asyncio.to_thread(path.read_text, encoding="utf-8")
         if not payload:
             raise NotFoundError("DEG 示例数据不存在")
         return payload
@@ -115,18 +111,12 @@ class DegService:
         cfg = config_manager.get_config()
         method_norm = self._validate_params(cfg, method, lfc, pval, bcv)
         normalized_project = self._normalize_project_name(project_name)
-        project_slug = self._project_slug(normalized_project)
+        project_slug_value = project_slug(normalized_project, fallback="deg-project")
 
         # ---- 输入解析与校验（全部在 Web 进程内完成，快速失败） ----
-        self._check_size(
-            "表达矩阵", counts_bytes, cfg.input_limits.max_counts_file_size_mb
-        )
-        self._check_size(
-            "样本信息表", metadata_bytes, cfg.input_limits.max_metadata_file_size_mb
-        )
-        self._check_size(
-            "比较对文件", pairs_bytes, cfg.input_limits.max_pairs_file_size_mb
-        )
+        self._check_size("表达矩阵", counts_bytes, cfg.input_limits.max_counts_file_size_mb)
+        self._check_size("样本信息表", metadata_bytes, cfg.input_limits.max_metadata_file_size_mb)
+        self._check_size("比较对文件", pairs_bytes, cfg.input_limits.max_pairs_file_size_mb)
         if annotation_bytes is not None:
             self._check_size(
                 "注释文件",
@@ -169,9 +159,7 @@ class DegService:
         group_counts: dict[str, int] = {}
         for _, g in samples:
             group_counts[g] = group_counts.get(g, 0) + 1
-        missing_groups = sorted(
-            {g for pair in contrasts for g in pair if g not in group_counts}
-        )
+        missing_groups = sorted({g for pair in contrasts for g in pair if g not in group_counts})
         if missing_groups:
             raise ValidationError(
                 f"比较对引用的分组在样本信息表中不存在: {missing_groups}；"
@@ -182,9 +170,7 @@ class DegService:
         counts_header = self._parse_counts_header(counts_bytes, counts_filename)
         missing_samples = sorted(sample_set - set(counts_header[1:]))
         if missing_samples:
-            raise ValidationError(
-                f"表达矩阵缺少样本信息表中的样本列: {missing_samples}"
-            )
+            raise ValidationError(f"表达矩阵缺少样本信息表中的样本列: {missing_samples}")
         gene_count = self._count_data_rows(counts_bytes)
         if gene_count > cfg.input_limits.max_genes:
             raise ValidationError(
@@ -199,27 +185,37 @@ class DegService:
         # ---- 任务目录与输入落盘 ----
         task_uuid = uuid.uuid4()
         task_id = str(task_uuid)
-        work_dir = self._work_dir(user_id, project_slug, task_id)
+        work_dir = self._work_dir(user_id, normalized_project)
         input_dir = work_dir / "input"
         results_dir = work_dir / RESULTS_SUBDIR
         await asyncio.to_thread(results_dir.mkdir, parents=True, exist_ok=True)
+        from omichub.application.services.file_service import ensure_directory_chain
+        from omichub.infrastructure.storage import get_path_factory
+
+        project_relative = work_dir.relative_to(get_path_factory().user_root(user_id)).as_posix()
+        await ensure_directory_chain(db, uuid.UUID(user_id), project_relative)
 
         counts_name = self._safe_input_name(counts_filename, "counts", {".csv", ".tsv", ".txt"})
-        metadata_name = self._safe_input_name(metadata_filename, "metadata", {".csv", ".tsv", ".txt"})
+        metadata_name = self._safe_input_name(
+            metadata_filename, "metadata", {".csv", ".tsv", ".txt"}
+        )
         pairs_name = self._safe_input_name(pairs_filename, "pairs", {".csv", ".tsv", ".txt"})
-        await asyncio.to_thread(self._write_inputs,
-                                input_dir,
-                                counts_name, counts_bytes,
-                                metadata_name, metadata_bytes,
-                                pairs_name, pairs_bytes)
+        await asyncio.to_thread(
+            self._write_inputs,
+            input_dir,
+            counts_name,
+            counts_bytes,
+            metadata_name,
+            metadata_bytes,
+            pairs_name,
+            pairs_bytes,
+        )
         annotation_name: str | None = None
         if annotation_bytes is not None:
             annotation_name = self._safe_input_name(
                 annotation_filename, "annotation", {".csv", ".tsv", ".txt"}
             )
-            await asyncio.to_thread(
-                (input_dir / annotation_name).write_bytes, annotation_bytes
-            )
+            await asyncio.to_thread((input_dir / annotation_name).write_bytes, annotation_bytes)
 
         task = TaskModel(
             id=task_uuid,
@@ -229,7 +225,7 @@ class DegService:
             status=TaskStatus.QUEUED.value,
             parameters={
                 "project_name": normalized_project,
-                "project_slug": project_slug,
+                "project_slug": project_slug_value,
                 "method_requested": method_norm,
                 "engine_resolved": engine,
                 "no_replicate_contrasts": no_rep_contrasts,
@@ -255,7 +251,7 @@ class DegService:
         try:
             from omichub.tools.deg.tasks import run_deg_task
 
-            run_deg_task.apply_async(args=[task_id], task_id=task_id)
+            enqueue_task(run_deg_task, task_id, task_id=task_id)
         except Exception as error:
             task.status = TaskStatus.FAILED.value
             task.error_message = f"DEG 任务投递失败: {error}"[:2000]
@@ -320,9 +316,7 @@ class DegService:
             **self._task_metadata(task),
         )
 
-    async def list_tasks(
-        self, db: AsyncSession, user_id: str, limit: int = 50
-    ) -> list[DegTaskDTO]:
+    async def list_tasks(self, db: AsyncSession, user_id: str, limit: int = 50) -> list[DegTaskDTO]:
         try:
             user_uuid = uuid.UUID(user_id)
         except ValueError as error:
@@ -365,9 +359,7 @@ class DegService:
     # 内部工具
     # ------------------------------------------------------------------
 
-    async def _require_task(
-        self, db: AsyncSession, task_id: str, user_id: str
-    ) -> TaskModel:
+    async def _require_task(self, db: AsyncSession, task_id: str, user_id: str) -> TaskModel:
         try:
             task_uuid = uuid.UUID(task_id)
             user_uuid = uuid.UUID(user_id)
@@ -386,9 +378,7 @@ class DegService:
         return task
 
     @staticmethod
-    def _validate_params(
-        cfg: DegConfig, method: str, lfc: float, pval: float, bcv: float
-    ) -> str:
+    def _validate_params(cfg: DegConfig, method: str, lfc: float, pval: float, bcv: float) -> str:
         method_norm = (method or "auto").strip().lower()
         if method_norm not in {"auto", "deseq2", "edger"}:
             raise ValidationError(f"不支持的分析方法: {method}（可选 auto / deseq2 / edger）")
@@ -416,8 +406,7 @@ class DegService:
         no_rep = [
             f"{treat}_vs_{ctrl}"
             for treat, ctrl in contrasts
-            if min(group_counts.get(ctrl, 0), group_counts.get(treat, 0))
-            < min_replicates
+            if min(group_counts.get(ctrl, 0), group_counts.get(treat, 0)) < min_replicates
         ]
         if method == "edger":
             return "edger", no_rep
@@ -440,9 +429,7 @@ class DegService:
     def _decode(data: bytes) -> str:
         return data.decode("utf-8-sig", errors="replace")
 
-    def _parse_table(
-        self, data: bytes, filename: str, label: str
-    ) -> list[dict[str, str]]:
+    def _parse_table(self, data: bytes, filename: str, label: str) -> list[dict[str, str]]:
         """解析 CSV/TSV 为 DictReader 行；分隔符按扩展名，.txt 自动嗅探。"""
         text = self._decode(data)
         suffix = Path(filename or "").suffix.lower()
@@ -502,9 +489,7 @@ class DegService:
         return max(data.count(b"\n") - 1, 0)
 
     @staticmethod
-    def _safe_input_name(
-        filename: str | None, stem: str, allowed_suffixes: set[str]
-    ) -> str:
+    def _safe_input_name(filename: str | None, stem: str, allowed_suffixes: set[str]) -> str:
         """保留原扩展名（R 按 .csv 后缀分流 csv/tsv 读取），文件名做安全化。"""
         suffix = Path(filename or "").suffix.lower()
         if suffix not in allowed_suffixes:
@@ -536,16 +521,11 @@ class DegService:
         return value
 
     @staticmethod
-    def _project_slug(project_name: str) -> str:
-        slug = re.sub(r"[^\w一-鿿.-]+", "_", project_name, flags=re.UNICODE)
-        slug = slug.strip("._")[:80]
-        return slug or "deg-project"
-
-    def _work_dir(self, user_id: str, project_slug: str, task_id: str) -> Path:
-        """任务目录：users/{uid}/tasks/{task_id}/output/{project}/（同富集工具口径）。"""
+    def _work_dir(self, user_id: str, project_name: str) -> Path:
+        """任务目录：users/{uid}/projects/{project}/runs/deg-时间戳/。"""
         from omichub.infrastructure.storage import get_path_factory
 
-        return get_path_factory().task_output_dir(user_id, task_id) / project_slug
+        return get_path_factory().create_project_run_dir(user_id, project_name, "deg")
 
     @staticmethod
     def _task_status(task: TaskModel) -> str:

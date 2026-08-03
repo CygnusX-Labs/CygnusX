@@ -50,7 +50,7 @@ export async function fetchPhyloMethods(): Promise<PhyloMethodsResponse> {
 }
 
 export async function validatePhyloParams(
-  request: Omit<PhyloSubmitRequest, 'file_id' | 'sequence_type' | 'advanced_params'>,
+  request: Omit<PhyloSubmitRequest, 'file_id' | 'project_name' | 'sequence_type' | 'advanced_params'>,
 ): Promise<PhyloValidateResponse> {
   const { data } = await apiClient.post<PhyloValidateResponse>('/phylogenetic-tree/validate', request)
   return data

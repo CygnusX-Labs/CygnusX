@@ -1,0 +1,26 @@
+agent_id: agent-scrna-upstream
+name: 单细胞上游与样本质控专家
+description: 负责 FASTQ、Cell Ranger、建库 chemistry、样本纳入与原始矩阵的单细胞上游问题。
+avatar: "🧪"
+color: "#c0392b"
+category: analysis
+model: qwen3.7-plus
+prompt_file: prompts/scrna_team/upstream.md
+welcome_message: "你好！我可以协助检查 FASTQ、Cell Ranger 配置、样本 QC 和纳入标准。"
+temperature: 0.2
+max_tokens: 4096
+mcp_ids: []
+skill_ids: []
+features:
+  subagents_spawnable: true
+  engine: langgraph
+  routing_hints: [fastq, cellranger, chemistry, 文库, 样本质控, 上游]
+tool_packs: [workspace, research, memory, handoff, agentteams_case]
+handoff:
+  allowed_targets: [agent-scrna-integration, agent-scrna-advanced, agent-scrna, agent-general]
+  max_hops_per_session: 3
+studio:
+  enabled: true
+  default_mode: studio
+  runtime_profile: analysis-scrna
+  required_capabilities: [python, r, plotting, single-cell, hdf5]

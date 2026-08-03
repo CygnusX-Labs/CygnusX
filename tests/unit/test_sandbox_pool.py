@@ -69,6 +69,29 @@ def _settings(*, warm_size: int = 2, max_size: int = 2) -> SimpleNamespace:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("language", "expected_prefix"),
+    [
+        ("python", ["python", "-c"]),
+        ("r", ["/bin/sh", "-lc"]),
+        ("bash", ["/bin/sh", "-lc"]),
+    ],
+)
+def test_build_exec_command_supports_declared_languages(
+    language: str, expected_prefix: list[str]
+) -> None:
+    command = SandboxPool._build_exec_command(language, "print('ok')")
+
+    assert command[:2] == expected_prefix
+
+
+@pytest.mark.unit
+def test_build_exec_command_rejects_unknown_language() -> None:
+    with pytest.raises(ValueError, match="不支持的沙盒语言"):
+        SandboxPool._build_exec_command("julia", "println(1)")
+
+
+@pytest.mark.unit
 async def test_initialize_is_idempotent_and_respects_pool_limit() -> None:
     pool = SandboxPool()
     client = _FakeClient()

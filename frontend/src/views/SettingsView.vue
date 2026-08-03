@@ -418,24 +418,6 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
               </NForm>
             </NCard>
 
-            <NCard :bordered="false" class="arco-card settings-card">
-              <template #header>
-                <NSpace align="center">
-                  <span class="text-xl">🧩</span>
-                  <span>聊天协作 Case</span>
-                  <NTag size="small" type="warning">灰度</NTag>
-                </NSpace>
-              </template>
-              <p class="text-sm text-gray-500 mb-6">
-                开启后，聊天可在用户确认后创建 AgentTeams 协作 Case；仍受 Bridge 配置与流程白名单限制。
-              </p>
-              <NSwitch
-                :value="platformConfig.agentteams_chat_entry_enabled"
-                :loading="platformLoading"
-                @update:value="onAgentTeamsChatEntryChange"
-              />
-            </NCard>
-
             <!-- 二次验证（TOTP 2FA） -->
             <NCard v-if="platformConfig.totp_policy === 'off'" :bordered="false" class="arco-card settings-card twofa-card twofa-disabled">
               <template #header>
@@ -639,6 +621,25 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
                 :value="platformConfig.subagent_fanout_enabled"
                 :loading="platformLoading"
                 @update:value="onSubagentFanoutChange"
+              />
+            </NCard>
+
+            <!-- 聊天协作 Case（灰度） -->
+            <NCard :bordered="false" class="arco-card settings-card">
+              <template #header>
+                <NSpace align="center">
+                  <span class="text-xl">🧩</span>
+                  <span>聊天协作 Case</span>
+                  <NTag size="small" type="warning">灰度</NTag>
+                </NSpace>
+              </template>
+              <p class="text-sm text-gray-500 mb-6">
+                开启后，聊天可在用户确认后创建 AgentTeams 协作 Case；仍受 Bridge 配置与流程白名单限制。
+              </p>
+              <NSwitch
+                :value="platformConfig.agentteams_chat_entry_enabled"
+                :loading="platformLoading"
+                @update:value="onAgentTeamsChatEntryChange"
               />
             </NCard>
 

@@ -10,7 +10,7 @@ export interface SkillFileEntry {
   content?: string | null
 }
 
-/** 四入口统一解析产出：确认后才入库 */
+/** 五入口统一解析产出：确认后才入库 */
 export interface SkillImportPreview {
   skill_id: string
   name: string
@@ -21,7 +21,7 @@ export interface SkillImportPreview {
   category: string
   version: string
   author: string
-  /** market | github | zip | json */
+  /** market | github | zip | markdown | json */
   source_type: string
   source_ref: string
   source_commit: string

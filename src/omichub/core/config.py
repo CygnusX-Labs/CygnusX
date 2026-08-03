@@ -1,7 +1,7 @@
 """应用配置 - 基于 Pydantic Settings，从环境变量读取"""
 
 from functools import lru_cache
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     postgres_password: str = "omichub"
     postgres_db: str = "omichub"
     database_url: str = ""
+    readonly_database_url: str = ""
+    database_pool_size: int = 10
+    database_max_overflow: int = 20
+    database_pool_timeout_seconds: int = 30
+    database_pool_recycle_seconds: int = 1800
 
     # ===== Redis 配置 =====
     redis_host: str = "localhost"
@@ -41,6 +46,15 @@ class Settings(BaseSettings):
     redis_db: int = 0
     celery_broker_url: str = ""
     celery_result_backend: str = ""
+    # ===== 任务队列传输 =====
+    # celery：保持现有行为；rocketmq：全部业务任务走 RocketMQ；
+    # hybrid：仅 ROCKETMQ_TASK_ROUTES 命中的任务走 RocketMQ，其余保持 Celery。
+    task_queue_backend: Literal["celery", "rocketmq", "hybrid"] = "celery"
+    rocketmq_namesrv_addr: str = "rocketmq-namesrv:9876"
+    rocketmq_producer_group: str = "omichub-task-producer"
+    rocketmq_consumer_group_prefix: str = "omichub-task-worker"
+    rocketmq_topic_prefix: str = "omichub_task"
+    rocketmq_task_routes: list[str] = []
 
     # ===== JWT 配置 =====
     jwt_secret_key: str = "change-me-in-production"
@@ -85,12 +99,14 @@ class Settings(BaseSettings):
     agent_memory_conflict_adjudication_model: str = ""
     multi_expert_consultation_enabled: bool = False
     multi_expert_consultation_max_experts: int = 3
+    # 统一协作意图路由：关闭时保持既有 Router 行为，用于灰度与一键回退。
+    unified_intent_router_enabled: bool = False
     # ===== 对话内子 Agent 并行 fan-out（默认关闭，按 Agent 白名单灰度）=====
     # 设计见 ARCHITECTURE_DESIN/multi-agent.md §4
     subagent_fanout_enabled: bool = False
     agentteams_chat_entry_enabled: bool = False
     agentteams_element_url: str = ""
-    agentteams_chat_flow_whitelist: str = "rna_seq,atac_seq"
+    agentteams_chat_flow_whitelist: str = "rna_seq,atac_seq,scrna_seq"
     agentteams_case_watch_interval_seconds: int = 60
     subagent_max_parallel: int = 4  # 单次 fan-out 最大子任务数
     subagent_max_concurrent: int = 3  # 实际并发信号量（给主链路 LLM 调用留余量）
@@ -338,7 +354,7 @@ class Settings(BaseSettings):
     ai_alert_p95_latency_ms: float = 10000.0
     # 日成本超过近 7 日均值的倍数（如 1.5 = 150%）则告警。
     ai_alert_cost_ratio: float = 1.5
-    # 同一规则告警冷却（分钟），避免持续超阈值时通知轰炸。
+    # 错误率/p95 延迟同一规则告警冷却（分钟）；日成本告警按自然日去重。
     ai_alert_cooldown_minutes: int = 30
 
     # ===== 可观测性数据留存（C6：热数据 / 冷数据周期）=====

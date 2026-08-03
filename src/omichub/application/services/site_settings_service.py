@@ -10,6 +10,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.site_settings import (
+    CollaborationDegradationLocale,
+    CollaborationPreset,
     HomeQuickEntryDTO,
     SiteSettingsDTO,
     TOTPPolicy,
@@ -19,6 +21,13 @@ from omichub.core.exceptions import BusinessError
 from omichub.infrastructure.database.models.site_settings import SiteSettingModel
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_COLLABORATION_DEGRADATION_TEMPLATE_ZH = (
+    "此请求适合“{intent}”，但当前未启用 {setting}。{alternative}"
+)
+DEFAULT_COLLABORATION_DEGRADATION_TEMPLATE_EN = (
+    "This request is best handled as {intent}, but {setting} is not enabled. {alternative}"
+)
 
 DEFAULT_HOME_QUICK_ENTRIES: list[dict[str, str]] = [
     {
@@ -121,6 +130,28 @@ class SiteSettingsService:
             home_quick_entries=_normalize_home_quick_entries(model.home_quick_entries),
             subagent_fanout_enabled=model.subagent_fanout_enabled,
             agentteams_chat_entry_enabled=model.agentteams_chat_entry_enabled,
+            collaboration_preset=cast(
+                CollaborationPreset,
+                model.collaboration_preset
+                if model.collaboration_preset in ("custom", "light", "parallel", "full")
+                else "custom",
+            ),
+            multi_expert_consultation_enabled=model.multi_expert_consultation_enabled,
+            unified_intent_router_enabled=model.unified_intent_router_enabled,
+            collaboration_degradation_locale=cast(
+                CollaborationDegradationLocale,
+                model.collaboration_degradation_locale
+                if model.collaboration_degradation_locale in ("zh-CN", "en")
+                else "zh-CN",
+            ),
+            collaboration_degradation_template_zh=(
+                model.collaboration_degradation_template_zh
+                or DEFAULT_COLLABORATION_DEGRADATION_TEMPLATE_ZH
+            ),
+            collaboration_degradation_template_en=(
+                model.collaboration_degradation_template_en
+                or DEFAULT_COLLABORATION_DEGRADATION_TEMPLATE_EN
+            ),
         )
 
     async def is_registration_enabled(self) -> bool:
@@ -154,6 +185,33 @@ class SiteSettingsService:
                 model.subagent_fanout_enabled = req.subagent_fanout_enabled
             if req.agentteams_chat_entry_enabled is not None:
                 model.agentteams_chat_entry_enabled = req.agentteams_chat_entry_enabled
+            if req.multi_expert_consultation_enabled is not None:
+                model.multi_expert_consultation_enabled = req.multi_expert_consultation_enabled
+            if req.unified_intent_router_enabled is not None:
+                model.unified_intent_router_enabled = req.unified_intent_router_enabled
+            if req.collaboration_preset is not None:
+                model.collaboration_preset = req.collaboration_preset
+                if req.collaboration_preset == "light":
+                    model.subagent_fanout_enabled = False
+                    model.agentteams_chat_entry_enabled = False
+                    model.multi_expert_consultation_enabled = True
+                    model.unified_intent_router_enabled = True
+                elif req.collaboration_preset == "parallel":
+                    model.subagent_fanout_enabled = True
+                    model.agentteams_chat_entry_enabled = False
+                    model.multi_expert_consultation_enabled = True
+                    model.unified_intent_router_enabled = True
+                elif req.collaboration_preset == "full":
+                    model.subagent_fanout_enabled = True
+                    model.agentteams_chat_entry_enabled = True
+                    model.multi_expert_consultation_enabled = True
+                    model.unified_intent_router_enabled = True
+            if req.collaboration_degradation_locale is not None:
+                model.collaboration_degradation_locale = req.collaboration_degradation_locale
+            if req.collaboration_degradation_template_zh is not None:
+                model.collaboration_degradation_template_zh = req.collaboration_degradation_template_zh
+            if req.collaboration_degradation_template_en is not None:
+                model.collaboration_degradation_template_en = req.collaboration_degradation_template_en
             if req.home_quick_entries is not None:
                 model.home_quick_entries = [entry.model_dump() for entry in req.home_quick_entries]
             await self._db.flush()

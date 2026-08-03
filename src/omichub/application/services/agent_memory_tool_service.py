@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy import select
+
 from omichub.application.schemas.tool_invocation import ToolInvocationContext
 from omichub.application.services.agent_memory_service import AgentMemoryService
 from omichub.core.exceptions import BusinessError
+from omichub.infrastructure.database.models.chat import ChatSessionModel
 
 
 class AgentMemoryToolService:
@@ -25,6 +28,15 @@ class AgentMemoryToolService:
             return None
         return context.agent_id if context else None
 
+    @staticmethod
+    async def _project_id(context: ToolInvocationContext | None) -> str | None:
+        if context is None:
+            return None
+        session = await context.db.scalar(
+            select(ChatSessionModel).where(ChatSessionModel.session_id == context.session_id)
+        )
+        return session.project_id if session else None
+
     async def save_memory(
         self,
         *,
@@ -41,6 +53,7 @@ class AgentMemoryToolService:
             scope=scope,
             keywords=keywords,
             agent_id=self._memory_agent_id(scope, context),
+            project_id=await self._project_id(context),
             source_session=context.session_id if context else None,
         )
         return {
@@ -101,5 +114,6 @@ class AgentMemoryToolService:
             scope=scope,
             limit=limit,
             agent_id=context.agent_id if context else None,
+            project_id=await self._project_id(context),
         )
         return {"success": True, **result, "summary": f"找到 {result['count']} 条相关记忆。"}

@@ -120,6 +120,10 @@ RUN mamba install -n omichub -c conda-forge -c bioconda -y \
         bioconductor-scater \
         bioconductor-scran \
         bioconductor-complexheatmap \
+        bioconductor-ggtree \
+        bioconductor-treeio \
+        r-ape \
+        r-phytools \
     && mamba clean --all -y
 
 # 注册 IRkernel（R 代码可在同一环境执行）

@@ -17,6 +17,59 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
+  rocketmq-worker:
+    image: ${OMICHUB_WORKER_IMAGE:-omichub-worker:dev}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.worker
+      args:
+        SNAKEMAKE_LOGGER_PLUGIN_REF: ${SNAKEMAKE_LOGGER_PLUGIN_REF:-main}
+    container_name: omichub-rocketmq-worker
+    profiles: ["rocketmq"]
+    restart: unless-stopped
+    logging: *default-logging
+    group_add:
+      - "${DOCKER_GID:?Run scripts/worker-compose.sh to detect the Docker socket GID}"
+    env_file:
+      - ../../.env
+    environment:
+      - APP_ENV=development
+      - POSTGRES_HOST=db
+      - REDIS_HOST=cache
+      - ROCKETMQ_NAMESRV_ADDR=rocketmq-namesrv:9876
+      - SERVICE_NAME=rocketmq-worker
+      - PYTHONPATH=/app/src
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@cache:6379/1
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@cache:6379/2
+      - OMICHUB_LOG_DIR=/app/logs
+      - SNAKEMAKE_MONITOR_LOGGER=rich_loguru
+      - SNAKEMAKE_USE_CONDA=true
+      - SNAKEMAKE_CONDA_PREFIX=/data/omichub/.conda_envs
+      - MAMBA_ROOT_PREFIX=/data/omichub/.mamba
+      - XDG_CACHE_HOME=/data/omichub/.cache
+    volumes:
+      - ../../src:/app/src:ro
+      - ../../tool_configs:/app/tool_configs
+      - ${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}:/data/omichub
+      - ${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}/logs/app:/app/logs
+      - ${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}/logs/snakemake:/logs
+      - ${WORKER_PIPELINE_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}:/opt/omichub/pipelines:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - omichub_net
+    command:
+      - python
+      - -m
+      - omichub.infrastructure.task_queue.rocketmq_worker
+      - --queues
+      - analysis,blast_search,blast_db_build,phylo_tree,phylo_tree_highmem,mas_apptainer
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
   worker:
     # Compose 同时负责构建与运行。可在 .env 覆盖为不可变发布标签，
     # 例如 OMICHUB_WORKER_IMAGE=registry.example.com/omichub-worker:2026.07.12-<sha>。
@@ -134,4 +187,5 @@ services:
 
 networks:
   omichub_net:
+    name: ${OMICHUB_NETWORK_NAME:-omichub_net}
     external: true

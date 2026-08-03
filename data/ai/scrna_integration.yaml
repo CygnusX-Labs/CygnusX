@@ -1,0 +1,26 @@
+agent_id: agent-scrna-integration
+name: 单细胞整合与聚类专家
+description: 负责细胞 QC、双细胞、批次校正、HVG、降维、聚类和 marker 初筛。
+avatar: "🧬"
+color: "#8e44ad"
+category: analysis
+model: qwen3.7-plus
+prompt_file: prompts/scrna_team/integration.md
+welcome_message: "你好！我可以协助细胞 QC、批次整合、UMAP/Leiden 聚类和 marker 检查。"
+temperature: 0.2
+max_tokens: 4096
+mcp_ids: []
+skill_ids: []
+features:
+  subagents_spawnable: true
+  engine: langgraph
+  routing_hints: [doublet, 批次效应, harmony, scanvi, 降维, umap, leiden, 聚类, hvg]
+tool_packs: [workspace, research, memory, handoff, agentteams_case]
+handoff:
+  allowed_targets: [agent-scrna-upstream, agent-scrna-advanced, agent-scrna, agent-general]
+  max_hops_per_session: 3
+studio:
+  enabled: true
+  default_mode: studio
+  runtime_profile: analysis-scrna
+  required_capabilities: [python, r, plotting, single-cell, hdf5]

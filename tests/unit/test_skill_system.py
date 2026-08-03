@@ -5,11 +5,13 @@ from __future__ import annotations
 import io
 import tarfile
 import uuid
+import zipfile
 from pathlib import Path
 
 import pytest
 
 from omichub.application.services.skill_import_service import (
+    SkillImportService,
     _extract_aliyun_skills,
     _parse_github_url,
 )
@@ -21,6 +23,7 @@ from omichub.domain.skill.services import (
 )
 from omichub.infrastructure.skills import skill_store
 from omichub.infrastructure.skills.skillmd import (
+    ParsedSkill,
     SkillParseError,
     parse_skill_folder,
     parsed_from_legacy_json,
@@ -107,6 +110,64 @@ class TestParseSkillFolder:
         assert again.name == "X"
         assert again.version == "1.2.0"
         assert again.body == "the body"
+
+
+class TestStandaloneMarkdownImport:
+    @pytest.mark.asyncio
+    async def test_markdown_without_skill_package_is_converted_to_preview(self):
+        preview = await SkillImportService(None).parse_from_markdown(
+            "# 分析说明\n\n请先检查输入数据。".encode(),
+            "single_cell_qc.md",
+        )
+
+        assert preview.source_type == "markdown"
+        assert preview.skill_id == "single-cell-qc"
+        assert preview.name == "single cell qc"
+        assert preview.description == ""
+        assert preview.body.startswith("# 分析说明")
+        assert preview.files[0].path == "SKILL.md"
+        assert any("补全名称、版本和描述" in warning for warning in preview.warnings)
+
+    @pytest.mark.asyncio
+    async def test_markdown_with_valid_frontmatter_preserves_metadata(self):
+        preview = await SkillImportService(None).parse_from_markdown(
+            b"---\nname: Markdown Skill\ndescription: Parse markdown directly\nversion: 1.0.0\n---\n\nBody",
+            "SKILL.md",
+        )
+
+        assert preview.source_type == "markdown"
+        assert preview.name == "Markdown Skill"
+        assert preview.description == "Parse markdown directly"
+        assert preview.version == "1.0.0"
+        assert preview.body == "Body"
+
+    @pytest.mark.asyncio
+    async def test_zip_with_a_single_markdown_file_uses_markdown_import(self):
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("sample-review.md", "# 审查说明\n\n请检查样本。")
+
+        preview = await SkillImportService(None).parse_from_zip(archive.getvalue())
+
+        assert preview.source_type == "zip"
+        assert preview.body.startswith("# 审查说明")
+        assert any("ZIP 内仅包含一份 Markdown" in warning for warning in preview.warnings)
+
+    @pytest.mark.asyncio
+    async def test_edited_markdown_preview_renders_standard_skill_metadata(self):
+        preview = await SkillImportService(None).parse_from_markdown(
+            b"Use this instruction as a standalone skill.", "draft.md"
+        )
+        preview.name = "可编辑的技能名称"
+        preview.description = "在用户需要测试 Markdown 导入时使用"
+        preview.version = "1.2.0"
+
+        rendered = render_skill_md(ParsedSkill.from_preview_dict(preview.model_dump()))
+        parsed = parse_skill_folder({"SKILL.md": rendered.encode("utf-8")})
+
+        assert parsed.name == "可编辑的技能名称"
+        assert parsed.description == "在用户需要测试 Markdown 导入时使用"
+        assert parsed.version == "1.2.0"
 
 
 # ---------- skill_store 磁盘存储 ----------

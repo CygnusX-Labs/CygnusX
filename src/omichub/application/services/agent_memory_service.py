@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import math
 import re
@@ -15,7 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError, NotFoundError
-from omichub.infrastructure.database.models.agent_memory import AgentMemoryModel
+from omichub.infrastructure.database.models.agent_memory import (
+    EMBEDDING_DIMENSIONS,
+    AgentMemoryModel,
+)
 
 MEMORY_SCOPES = {"profile", "project", "preference", "summary"}
 _MAX_MEMORIES_PER_USER = 500
@@ -42,6 +46,7 @@ class AgentMemoryService:
         scope: str,
         keywords: list[str] | None = None,
         agent_id: str | None = None,
+        project_id: str | None = None,
         source_session: str | None = None,
         confidence: float = 1.0,
     ) -> dict[str, Any]:
@@ -53,6 +58,7 @@ class AgentMemoryService:
         existing = await self._find_duplicate(
             user_id=user_id,
             agent_id=agent_id,
+            project_id=project_id,
             scope=normalized_scope,
             keywords=normalized_keywords,
         )
@@ -76,6 +82,7 @@ class AgentMemoryService:
         await self._archive_excess(user_id)
         memory = AgentMemoryModel(
             user_id=user_id,
+            project_id=project_id,
             agent_id=agent_id,
             scope=normalized_scope,
             content=normalized_content,
@@ -122,6 +129,7 @@ class AgentMemoryService:
         scope: str | None = None,
         limit: int = 5,
         agent_id: str | None = None,
+        project_id: str | None = None,
         **_kwargs: Any,
     ) -> dict[str, Any]:
         query_terms = self._query_terms(query)
@@ -129,6 +137,11 @@ class AgentMemoryService:
             AgentMemoryModel.user_id == user_id,
             AgentMemoryModel.status == "active",
             or_(AgentMemoryModel.agent_id.is_(None), AgentMemoryModel.agent_id == agent_id),
+            (
+                AgentMemoryModel.project_id == project_id
+                if project_id
+                else AgentMemoryModel.project_id.is_(None)
+            ),
         )
         if scope:
             statement = statement.where(AgentMemoryModel.scope == self._validate_scope(scope))
@@ -157,6 +170,7 @@ class AgentMemoryService:
         *,
         agent_id: str | None = None,
         scope: str | None = None,
+        project_id: str | None = None,
         status: str = "active",
         include_archived: bool = False,
         limit: int = 100,
@@ -166,6 +180,8 @@ class AgentMemoryService:
             statement = statement.where(AgentMemoryModel.agent_id == agent_id)
         if scope:
             statement = statement.where(AgentMemoryModel.scope == self._validate_scope(scope))
+        if project_id:
+            statement = statement.where(AgentMemoryModel.project_id == project_id)
         if status and not include_archived:
             statement = statement.where(AgentMemoryModel.status == status)
         statement = statement.order_by(AgentMemoryModel.updated_at.desc()).limit(max(1, min(limit, 500)))
@@ -183,12 +199,20 @@ class AgentMemoryService:
         await self._db.flush()
         return len(memories)
 
-    async def build_prompt_context(self, user_id: str, agent_id: str, query: str) -> str:
+    async def build_prompt_context(
+        self, user_id: str, agent_id: str, query: str, *, project_id: str | None = None
+    ) -> str:
         """构建固定 L1 + 当前 query 触发的 L2 记忆块，最大约 800 tokens。"""
         common = await self._query_active(
-            user_id, agent_id, scopes={"profile", "preference"}, limit=10
+            user_id,
+            agent_id,
+            project_id=project_id,
+            scopes={"profile", "preference"},
+            limit=10,
         )
-        recalled = await self._search_for_prompt(user_id, agent_id, query, limit=5)
+        recalled = await self._search_for_prompt(
+            user_id, agent_id, query, project_id=project_id, limit=5
+        )
         seen = {memory.id for memory in common}
         selected = [*common, *(memory for memory in recalled if memory.id not in seen)]
         if not selected:
@@ -214,7 +238,13 @@ class AgentMemoryService:
         )
 
     async def _query_active(
-        self, user_id: str, agent_id: str, *, scopes: set[str], limit: int
+        self,
+        user_id: str,
+        agent_id: str,
+        *,
+        project_id: str | None,
+        scopes: set[str],
+        limit: int,
     ) -> list[AgentMemoryModel]:
         statement = (
             select(AgentMemoryModel)
@@ -223,6 +253,11 @@ class AgentMemoryService:
                 AgentMemoryModel.status == "active",
                 AgentMemoryModel.scope.in_(scopes),
                 or_(AgentMemoryModel.agent_id.is_(None), AgentMemoryModel.agent_id == agent_id),
+                (
+                    AgentMemoryModel.project_id == project_id
+                    if project_id
+                    else AgentMemoryModel.project_id.is_(None)
+                ),
             )
             .order_by(AgentMemoryModel.use_count.desc(), AgentMemoryModel.updated_at.desc())
             .limit(limit)
@@ -230,7 +265,7 @@ class AgentMemoryService:
         return list((await self._db.scalars(statement)).all())
 
     async def _search_for_prompt(
-        self, user_id: str, agent_id: str, query: str, *, limit: int
+        self, user_id: str, agent_id: str, query: str, *, project_id: str | None, limit: int
     ) -> list[AgentMemoryModel]:
         terms = self._query_terms(query)
         if not terms:
@@ -241,6 +276,11 @@ class AgentMemoryService:
             AgentMemoryModel.status == "active",
             AgentMemoryModel.scope.in_({"project", "summary"}),
             or_(AgentMemoryModel.agent_id.is_(None), AgentMemoryModel.agent_id == agent_id),
+            (
+                AgentMemoryModel.project_id == project_id
+                if project_id
+                else AgentMemoryModel.project_id.is_(None)
+            ),
         )
         if not semantic_enabled:
             statement = statement.where(
@@ -258,11 +298,7 @@ class AgentMemoryService:
                 ).limit(candidate_limit)
             )).all()
         )
-        return (
-            await self._semantic_rank(rows, query, terms, limit)
-            if semantic_enabled
-            else rows
-        )
+        return await self._semantic_rank(rows, query, terms, limit) if semantic_enabled else rows
 
     @staticmethod
     def _cosine_similarity(left: list[float], right: list[float]) -> float:
@@ -289,6 +325,9 @@ class AgentMemoryService:
         if embedding:
             memory.embedding = embedding
             memory.embedding_model = get_settings().agent_memory_embedding_model.strip()
+        else:
+            memory.embedding = None
+            memory.embedding_model = None
 
     async def _semantic_rank(
         self,
@@ -300,6 +339,27 @@ class AgentMemoryService:
         query_embedding = await self._embed(query)
         if not query_embedding:
             return memories[:limit]
+
+        try:
+            from sqlalchemy import select
+
+            distance = AgentMemoryModel.embedding.cosine_distance(query_embedding)
+            statement = (
+                select(AgentMemoryModel)
+                .where(AgentMemoryModel.id.in_([memory.id for memory in memories]))
+                .where(AgentMemoryModel.embedding.is_not(None))
+                .order_by(distance)
+                .limit(limit)
+            )
+            result = await self._db.scalars(statement)
+            ranked_values = result.all()
+            if inspect.isawaitable(ranked_values):
+                ranked_values = await ranked_values
+            ranked = list(ranked_values)
+            if ranked:
+                return ranked
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("记忆 pgvector 召回失败，回退内存排序: {}", exc)
 
         def score(memory: AgentMemoryModel) -> tuple[float, int, datetime]:
             embedding = [float(value) for value in (memory.embedding or [])]
@@ -318,7 +378,15 @@ class AgentMemoryService:
             values = await self._embedding_client.embeddings(
                 text, model=get_settings().agent_memory_embedding_model.strip()
             )
-            return [float(value) for value in values] if values else []
+            embedding = [float(value) for value in values] if values else []
+            if embedding and len(embedding) != EMBEDDING_DIMENSIONS:
+                logger.warning(
+                    "记忆向量维度不匹配，期望 {}、实际 {}，回退关键词召回",
+                    EMBEDDING_DIMENSIONS,
+                    len(embedding),
+                )
+                return []
+            return embedding
         except Exception as exc:  # noqa: BLE001
             logger.warning("记忆语义向量生成失败，回退关键词召回: {}", exc)
             return []
@@ -370,11 +438,22 @@ class AgentMemoryService:
             return "update"
 
     async def _find_duplicate(
-        self, *, user_id: str, agent_id: str | None, scope: str, keywords: list[str]
+        self,
+        *,
+        user_id: str,
+        agent_id: str | None,
+        project_id: str | None,
+        scope: str,
+        keywords: list[str],
     ) -> AgentMemoryModel | None:
         statement = select(AgentMemoryModel).where(
             AgentMemoryModel.user_id == user_id,
             AgentMemoryModel.agent_id.is_(None) if agent_id is None else AgentMemoryModel.agent_id == agent_id,
+            (
+                AgentMemoryModel.project_id == project_id
+                if project_id
+                else AgentMemoryModel.project_id.is_(None)
+            ),
             AgentMemoryModel.scope == scope,
             AgentMemoryModel.status == "active",
         ).order_by(AgentMemoryModel.updated_at.desc()).limit(30)
@@ -465,6 +544,7 @@ class AgentMemoryService:
         return {
             "id": str(memory.id),
             "agent_id": memory.agent_id,
+            "project_id": memory.project_id,
             "scope": memory.scope,
             "content": memory.content,
             "keywords": list(memory.keywords or []),

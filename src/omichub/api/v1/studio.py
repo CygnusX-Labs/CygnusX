@@ -57,6 +57,7 @@ from omichub.application.schemas.studio import (
 )
 from omichub.application.services.agent_service import AgentService
 from omichub.application.services.chat_service import ChatService
+from omichub.application.services.project_scope import resolve_agent_project_scope
 from omichub.application.services.skill_service import SkillService
 from omichub.application.services.studio_approval_service import get_studio_approval_service
 from omichub.application.services.studio_context_service import (
@@ -309,19 +310,24 @@ async def create_studio_session(
     Agent yaml studio.image 解析后存入 sandbox_meta，供后续沙盒懒启动使用。
     Agent 未声明 studio 段时默认开放（P0），显式 enabled: false 才拒绝。
     """
-    agent = await AgentService(db).get_agent(req.agent_id)
+    agent_service = AgentService(db)
+    agent = await agent_service.get_agent(req.agent_id)
     if agent is None or not agent.is_active:
         raise NotFoundError("Agent 不存在或已停用")
     studio_cfg = (agent.features or {}).get("studio") or {}
     if studio_cfg and studio_cfg.get("enabled") is False:
         raise BusinessError("该 Agent 未启用 Studio 工作台")
 
-    model_id = req.model_id or agent.model_id
+    model_id = req.model_id or await agent_service.resolve_model_id_for_agent(agent)
     if model_id is None:
         raise BusinessError("Agent 未绑定模型，请显式指定 model_id")
 
     image = studio_cfg.get("image")
     title = req.title or f"与 {agent.name} 的工作台"
+    project_id = resolve_agent_project_scope(
+        agent_project_id=agent.project_id,
+        session_project_id=req.project_id,
+    )
     dto = await service.create_session(
         current_user_id,
         model_id,
@@ -329,6 +335,7 @@ async def create_studio_session(
         agent_id=req.agent_id,
         mode="studio",
         sandbox_meta={"image": image} if image else None,
+        project_id=project_id,
     )
     _schedule_sandbox_prewarm(dto.session_id, current_user_id, image)
     return dto
@@ -829,7 +836,7 @@ async def read_workspace_file(
 @router.post(
     "/sessions/{session_id}/import",
     response_model=ImportStudioDataFileResponse,
-    summary="从数据管理引入文件",
+    summary="从数据管理或聊天上传引入文件",
 )
 async def import_data_file(
     current_user_id: CurrentUserId,
@@ -838,10 +845,10 @@ async def import_data_file(
     session_id: str,
     req: ImportStudioDataFileRequest,
 ) -> ImportStudioDataFileResponse:
-    """左栏「从数据管理引入」按钮的用户入口（浏览器无法直接调 Agent 工具）。
+    """左栏文件导入入口（浏览器无法直接调 Agent 工具）。
 
-    与 datahub_import 工具同一服务路径（import_datahub_file）：校验文件归属与
-    active 状态后在 /workspace/input/ 下建立只读软链（数据不搬家），
+    与 datahub_import 工具同一服务路径（import_datahub_file）：校验数据管理文件
+    归属或聊天上传目录边界后，在 /workspace/input/ 下建立只读软链（数据不搬家），
     返回沙盒内路径与当前 input/ 清单。
     """
     session = await _get_studio_session(service, session_id, current_user_id)
