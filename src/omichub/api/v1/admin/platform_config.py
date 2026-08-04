@@ -29,6 +29,7 @@ _NON_SENSITIVE_PLATFORM_KEYS = frozenset(
         "collaboration_degradation_locale",
         "collaboration_degradation_template_zh",
         "collaboration_degradation_template_en",
+        "agent_memory_enabled",
     }
 )
 

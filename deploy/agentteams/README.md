@@ -21,6 +21,23 @@ The host health port binds to `127.0.0.1:8088` by default. OmicHub reaches the B
 dedicated Docker network; do not change `AGENTTEAMS_BRIDGE_BIND_HOST` to `0.0.0.0` unless an
 approved gateway/firewall policy requires a host-facing endpoint.
 
+### Controlled multi-Worker acceptance check
+
+For a non-production integration check, the `agentteams-acceptance` Compose profile starts three
+separate constrained Workers for `agent-code`, `agent-viz`, and `agent-scrna`:
+
+```bash
+docker compose -f docker-compose.agentteams.yml \
+  --profile agentteams-acceptance up --build -d
+```
+
+These Workers only poll their own Bridge identity. Their auto-complete behavior is explicitly
+enabled only in this profile and accepts only read-only Work Items whose Case ID begins with
+`agentteams-acceptance-`; all other Work Items remain for the configured official Worker skill
+runtime. A successful acceptance Case contains, for each identity, ordered Case audit events
+`worker.inbox_polled`, `work_item.claimed`, and `skill.finished`. Do not enable this profile for
+production scientific work.
+
 Use `.env.agentteams.example` as the separately managed environment template for the
 version-specific AgentTeams Controller/Manager/Worker, Matrix, MinIO, and optional Higress
 deployment. Those services must not be added to the OmicHub main Compose project.

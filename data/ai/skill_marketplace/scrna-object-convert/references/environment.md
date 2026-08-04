@@ -27,15 +27,14 @@
 | SeuratDisk | H5AD/H5Seurat 读写 |
 | reticulate | 调用 Python（H5AD 转换必需） |
 
-安装参考：
+安装参考（Studio 沙盒 CRAN/GitHub 不可达，一律走 conda 通道）：
 
-```r
-install.packages(c("Seurat", "getopt", "log4r", "yaml", "stringr", "crayon", "praise", "reticulate"))
-# sceasy / loomR / SeuratDisk 来自 GitHub：
-# remotes::install_github("cellgeni/sceasy")
-# remotes::install_github("mojaveazure/loomR", ref = "develop")
-# remotes::install_github("mojaveazure/seurat-disk")
+```bash
+micromamba install -y -n base r-seurat r-getopt r-log4r r-yaml r-stringr r-crayon r-praise r-reticulate
 ```
+
+sceasy / loomR / SeuratDisk 为 GitHub 独占包，Studio 白名单下无法现场安装；
+scrna 镜像已预装 SeuratDisk 等价能力时优先使用，否则需管理员预装进镜像。
 
 ## Python 环境（经 reticulate）
 
@@ -47,7 +46,7 @@ install.packages(c("Seurat", "getopt", "log4r", "yaml", "stringr", "crayon", "pr
 环境注入方式：默认由 reticulate 自动探测当前 Python/conda 环境；RDS_convert 可用 `--conda-env <环境名>` 显式指定。环境缺失 scanpy/anndata 时 H5AD 转换会报错，需先在目标 Python 环境中安装：
 
 ```bash
-pip install scanpy anndata
+uv pip install scanpy anndata   # 或 pip install -i https://pypi.org/simple scanpy anndata
 ```
 
 ## 自查命令

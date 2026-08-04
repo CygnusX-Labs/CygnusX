@@ -24,7 +24,7 @@ const isAdmin = computed(() => authStore.user?.role === 'admin')
 const displayName = computed(() => authStore.user?.nickname || authStore.user?.username || '')
 
 // ===== 平台全局配置 =====
-const platformConfig = ref<SiteSettings>({ registration_enabled: true, totp_policy: 'optional', subagent_fanout_enabled: false, agentteams_chat_entry_enabled: false })
+const platformConfig = ref<SiteSettings>({ registration_enabled: true, totp_policy: 'optional', subagent_fanout_enabled: false, agentteams_chat_entry_enabled: false, agent_memory_enabled: true })
 const platformLoading = ref(false)
 const platformPending = ref<Partial<SiteSettings> | null>(null)
 const platformTotpModalVisible = ref(false)
@@ -283,6 +283,11 @@ function onSubagentFanoutChange(value: boolean) {
 function onAgentTeamsChatEntryChange(value: boolean) {
   if (value === platformConfig.value.agentteams_chat_entry_enabled) return
   void patchPlatformDirect({ agentteams_chat_entry_enabled: value })
+}
+
+function onAgentMemoryChange(value: boolean) {
+  if (value === (platformConfig.value.agent_memory_enabled ?? true)) return
+  void patchPlatformDirect({ agent_memory_enabled: value })
 }
 
 function onTOTPPolicyChange(value: SiteSettings['totp_policy']) {
@@ -640,6 +645,26 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
                 :value="platformConfig.agentteams_chat_entry_enabled"
                 :loading="platformLoading"
                 @update:value="onAgentTeamsChatEntryChange"
+              />
+            </NCard>
+
+            <!-- Agent 长期记忆 -->
+            <NCard :bordered="false" class="arco-card settings-card">
+              <template #header>
+                <NSpace align="center">
+                  <span class="text-xl">🧠</span>
+                  <span>Agent 长期记忆</span>
+                </NSpace>
+              </template>
+              <p class="text-sm text-gray-500 mb-6">
+                开启后，助手会跨会话记住用户的研究偏好与项目事实（mem0 引擎，加密落盘），
+                并按对话自动沉淀。关闭后记忆召回、写入与自动沉淀全部停用，历史记忆保留。
+                需部署侧 MEM0_ENGINE_ENABLED=true 才具备该能力。
+              </p>
+              <NSwitch
+                :value="platformConfig.agent_memory_enabled ?? true"
+                :loading="platformLoading"
+                @update:value="onAgentMemoryChange"
               />
             </NCard>
 

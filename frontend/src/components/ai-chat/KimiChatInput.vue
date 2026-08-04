@@ -4,13 +4,11 @@ import { useRouter } from 'vue-router'
 import { NButton, NIcon, NTooltip, NPopover, useMessage, NTag } from 'naive-ui'
 import {
   ArrowUpOutline,
-  BulbOutline,
   AttachOutline,
   GlobeOutline,
   TerminalOutline,
   SparklesOutline,
   TrashOutline,
-  PauseOutline,
   PlayOutline,
   RefreshOutline,
   PersonOutline,
@@ -22,7 +20,6 @@ import SlashCommandMenu from './SlashCommandMenu.vue'
 import MentionMenu from './MentionMenu.vue'
 import { readActiveMentionQuery } from './mentionQuery'
 import { pushRecent, recentRank } from './recentItems'
-import PromptSidebar from './PromptSidebar.vue'
 import McpSelectionMenu from './McpSelectionMenu.vue'
 import { useChatStore } from '@/stores/chat'
 import { useSiteConfigStore } from '@/stores/site-config'
@@ -71,6 +68,7 @@ const emit = defineEmits<{
     },
   ]
   triggerSandbox: []
+  stop: []
   pause: []
   resume: []
   regenerate: []
@@ -90,7 +88,6 @@ const isFocused = ref(false)
 const showSlashMenu = ref(false)
 const slashQuery = ref('')
 const slashMenuRef = ref<InstanceType<typeof SlashCommandMenu>>()
-const showPromptSidebar = ref(false)
 const showClearConfirm = ref(false)
 const attachments = ref<FileAttachment[]>([])
 const uploading = ref(false)
@@ -561,8 +558,8 @@ function handleSend() {
   })
 }
 
-function handlePause() {
-  emit('pause')
+function handleStop() {
+  emit('stop')
 }
 
 function handleResume() {
@@ -652,14 +649,6 @@ function handleSandboxStub() {
 function insertAgentTeamsCaseTemplate() {
   const template = '请将以下工作转为协作 Case：\n- 交付目标：\n- 项目 ID：\n- 流程 ID：\n- 需要的审批/验收：\n'
   localValue.value = localValue.value.trim() ? `${localValue.value}\n\n${template}` : template
-  nextTick(() => {
-    textareaRef.value?.focus()
-    autoResize()
-  })
-}
-
-function handlePromptSelect(content: string) {
-  localValue.value = content
   nextTick(() => {
     textareaRef.value?.focus()
     autoResize()
@@ -824,20 +813,10 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
 
     <div class="input-toolbar">
       <div class="toolbar-left">
-        <!-- 提示词模板 -->
-        <n-tooltip trigger="hover">
-          <template #trigger>
-            <n-button text class="toolbar-btn" @click="showPromptSidebar = true">
-              <n-icon size="18"><BulbOutline /></n-icon>
-            </n-button>
-          </template>
-          提示词模板
-        </n-tooltip>
-
         <!-- 附件上传 -->
         <n-tooltip trigger="hover">
           <template #trigger>
-            <n-button text class="toolbar-btn" :loading="uploading" @click="handleAttach">
+            <n-button text class="toolbar-btn upload-btn" :loading="uploading" @click="handleAttach">
               <n-icon size="18"><AttachOutline /></n-icon>
             </n-button>
           </template>
@@ -849,7 +828,7 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
           <template #trigger>
             <n-button
               text
-              class="toolbar-btn"
+              class="toolbar-btn web-search-btn"
               :class="{ active: chatStore.enableWebSearch }"
               @click="handleWebSearchToggle"
             >
@@ -862,7 +841,7 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
         <!-- 代码执行提示 -->
         <n-tooltip trigger="hover">
           <template #trigger>
-            <n-button text class="toolbar-btn" @click="handleSandboxStub">
+            <n-button text class="toolbar-btn sandbox-btn" @click="handleSandboxStub">
               <n-icon size="18"><TerminalOutline /></n-icon>
             </n-button>
           </template>
@@ -873,7 +852,7 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
           <template #trigger>
             <n-button
               text
-              class="toolbar-btn"
+              class="toolbar-btn case-btn"
               aria-label="转为协作 Case"
               @click="insertAgentTeamsCaseTemplate"
             >
@@ -939,16 +918,19 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
           </div>
         </n-popover>
 
-        <!-- 流式输出中：暂停按钮 -->
+        <!-- 流式输出中：发送按钮切换为停止方块，立即中止当前请求 -->
         <n-tooltip v-if="isStreaming" trigger="hover">
           <template #trigger>
-            <n-button circle class="send-btn pause-btn" @click="handlePause">
-              <template #icon>
-                <n-icon size="18"><PauseOutline /></n-icon>
-              </template>
+            <n-button
+              circle
+              class="send-btn stop-btn"
+              aria-label="停止生成"
+              @click="handleStop"
+            >
+              <span class="stop-square" aria-hidden="true" />
             </n-button>
           </template>
-          暂停生成
+          停止生成
         </n-tooltip>
 
         <!-- 已暂停：继续 + 重新生成 -->
@@ -1000,11 +982,6 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
       </template>
     </div>
 
-    <PromptSidebar
-      :visible="showPromptSidebar"
-      @close="showPromptSidebar = false"
-      @select="handlePromptSelect"
-    />
   </div>
 </template>
 
@@ -1201,11 +1178,10 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
       text-align: center;
     }
 
-    .toolbar-left > :nth-child(1) .toolbar-btn { color: var(--stardust-blue); }
-    .toolbar-left > :nth-child(2) .toolbar-btn { color: var(--stardust-purple); }
-    .toolbar-left > :nth-child(3) .toolbar-btn { color: #0891B2; }
-    .toolbar-left > :nth-child(4) .toolbar-btn { color: #64748B; }
-    .toolbar-left > :nth-child(5) .toolbar-btn { color: var(--stardust-purple); }
+    .upload-btn { color: var(--stardust-purple); }
+    .web-search-btn { color: #0891B2; }
+    .sandbox-btn { color: #64748B; }
+    .case-btn { color: var(--stardust-purple); }
 
     .send-btn {
       width: 32px;
@@ -1228,10 +1204,17 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
         cursor: not-allowed;
       }
 
-      &.pause-btn {
+      &.stop-btn {
         color: #fff;
         background: var(--stardust-gradient);
-        animation: pause-pulse 1.6s ease-in-out infinite;
+      }
+
+      .stop-square {
+        display: block;
+        width: 11px;
+        height: 11px;
+        background: var(--text-on-primary, #fff);
+        border-radius: 2px;
       }
 
       &.resume-btn {
@@ -1265,14 +1248,4 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
   }
 }
 
-@keyframes pause-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pause-btn {
-    animation: none !important;
-  }
-}
 </style>

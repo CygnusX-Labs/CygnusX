@@ -49,8 +49,8 @@ export interface McpVersion {
   version: string
   /** 是否主版本（列表用主色 tag 突出） */
   is_major: boolean
-  /** 变更来源：builder 构建发布 / admin 手工更新 / rollback 回滚 / publish 转正发布 */
-  source: 'builder' | 'admin' | 'rollback' | 'publish'
+  /** 变更来源：register 初始注册 / preset 内置预设升级 / builder 构建发布 / admin 手工更新 / rollback 回滚 / publish 转正发布 */
+  source: 'register' | 'preset' | 'builder' | 'admin' | 'rollback' | 'publish'
   changelog?: string
   created_by?: string
   created_at?: string

@@ -22,6 +22,8 @@ export interface VersionHistoryItem {
   changelog?: string
   createdBy?: string
   createdAt?: string
+  /** 是否为服务当前生效版本；不能依赖历史列表的排序。 */
+  isCurrent?: boolean
   /** 回滚确认弹窗中的目标描述，如 v1.0.1 / r2 */
   rollbackTarget: string
   /** 禁用回滚（如无配置快照） */
@@ -89,8 +91,7 @@ function formatTime(ts?: string): string {
               <span class="vh-time">
                 {{ formatTime(item.createdAt) }}<template v-if="item.createdBy"> · {{ item.createdBy }}</template>
               </span>
-              <!-- 最新一条（第一行）为当前版本，不提供回滚/diff -->
-              <template v-if="idx > 0">
+              <template v-if="!item.isCurrent">
                 <span class="vh-action">
                   <NButton size="tiny" quaternary @click="emit('diff', item)">对比</NButton>
                 </span>

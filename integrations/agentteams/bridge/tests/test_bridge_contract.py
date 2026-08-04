@@ -161,7 +161,9 @@ async def test_professional_agent_worker_can_claim_and_complete_own_read_only_wo
 
     inbox = await request_client.get("/v1/work-items/assigned", headers=headers(worker, token))
     assert inbox.status_code == 200
-    assert [item["work_item_id"] for item in inbox.json()["items"]] == [work_item_id]
+    assert [item["work_item"]["work_item_id"] for item in inbox.json()["items"]] == [
+        work_item_id
+    ]
 
     claimed = await request_client.post(
         f"/v1/cases/{case_id}/work-items/{work_item_id}/claim",
@@ -794,6 +796,35 @@ async def test_manager_assigns_three_workers_and_only_targets_can_report(client)
     event_types = [event["event_type"] for event in events.json()["events"]]
     assert event_types.count("work_item.assigned") == 3
     assert event_types.count("skill.finished") == 3
+
+
+@pytest.mark.asyncio
+async def test_external_worker_inbox_poll_is_recorded_on_the_assigned_case(client) -> None:
+    request_client, _ = client
+    await create_case(request_client, "bioops_inbox_audit")
+    assigned = await request_client.post(
+        "/v1/cases/bioops_inbox_audit/work-items",
+        headers=headers("bioops-manager", "manager"),
+        json={
+            "work_item_id": "code-01",
+            "target": "agent-code",
+            "objective": "Review the assigned evidence.",
+            "skill_name": "code-review",
+            "read_only": True,
+        },
+    )
+    assert assigned.status_code == 201
+
+    inbox = await request_client.get("/v1/work-items/assigned", headers=headers("agent-code", "code"))
+    assert inbox.status_code == 200
+
+    events = await request_client.get(
+        "/v1/cases/bioops_inbox_audit/events", headers=headers("bioops-manager", "manager")
+    )
+    assert ("agent-code", "worker.inbox_polled", "code-01") in {
+        (event["actor"], event["event_type"], event["payload"].get("work_item_id"))
+        for event in events.json()["events"]
+    }
 
 
 @pytest.mark.asyncio

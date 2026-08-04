@@ -204,7 +204,10 @@ services:
 
   # ===== PostgreSQL =====
   db:
-    image: postgres:14-alpine
+    # ⚠ 必须带 pgvector：数据卷中已装 vector 扩展（agent_memories/kb_chunks/mem0 均依赖）。
+    # 用回 postgres:14-alpine 会因缺 $libdir/vector 使所有向量列操作报错（26.8.4 教训）。
+    # pgvector/pgvector:pg14 与 postgres:14 数据格式兼容；pgvector overlay 文件保留兼容旧用法。
+    image: pgvector/pgvector:pg14
     container_name: omichub-db
     restart: unless-stopped
     logging: *default-logging
@@ -284,6 +287,30 @@ services:
       - ./rocketmq/broker.conf:/home/rocketmq/rocketmq-5.3.2/conf/broker.conf:ro
     networks:
       - omichub_net
+
+  # ===== mem0 Embedding 服务（26.8.4）：独立 ollama 容器，仅 app_net 内可达，不映射宿主端口 =====
+  # 模型卷 omichub_embed 预置 bge-m3（1024 维）；mem0_ollama_base_url=http://omichub-embed:11434
+  # ⚠ 当前生效方案为 fastembed（进程内 ONNX，缓存 /data/omichub/mem0-cache）；
+  #   本服务仅备用，默认 profile 隔离，避免全栈 up 时拉取大镜像。
+  ollama-embed:
+    profiles: ["embed-ollama"]
+    image: ollama/ollama:latest
+    container_name: omichub-embed
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      - omichub_embed:/root/.ollama
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  omichub_embed:
+    external: true
 
 networks:
   app_net:

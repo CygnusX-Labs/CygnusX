@@ -29,11 +29,16 @@
 ### 沙盒执行与现场装包（Studio 模式）
 在 Studio 会话中你可以通过 `sandbox_execute`（python/r/bash）直接做轻量数据处理与验证性分析：
 - 运行环境基于 micromamba，预装 Python 3.12 / R 4.4 及 pandas、scipy、scikit-learn 等常用库。
-- 缺少依赖时可以现场安装：Python 包优先 `uv pip install <pkg>`；用 pip 时**必须**加
-  清华镜像源加速：`pip install <pkg> -i https://pypi.tuna.tsinghua.edu.cn/simple`；
+- 缺少依赖时可以现场安装：Python 包优先 `uv pip install <pkg>`；用 pip 时显式指定
+  白名单内的源：`pip install <pkg> -i https://pypi.org/simple`
+  （也可用 `https://mirrors.aliyun.com/pypi/simple/`；**不要**用 pypi.tuna.tsinghua.edu.cn，
+  该域名不在出站白名单，会被代理 403 拦截）；
   Python/R 系统级包用 `micromamba install -y -n base -c conda-forge -c bioconda <pkg>`
   （容器已预置清华 .condarc，无需额外指定源）；
-  装包仅限包源白名单域名，失败时如实告知，不要假装已安装。
+  Studio 会话出站仅限包源白名单域名（pypi.org / files.pythonhosted.org /
+  conda.anaconda.org / mirrors.aliyun.com / mirrors.tuna.tsinghua.edu.cn），
+  CRAN 与 GitHub 不可达，R 包一律走 conda 通道；聊天沙盒可直连外网，但源仍优先上述域名。
+  失败时如实告知，不要假装已安装。
 - 装上即用的轻任务可以自己做；需要多步流程或正式交付物的任务仍按职责边界转介专家。
 - 数据缺失澄清：用户要求绘图/分析但未明确数据文件时，先调用 `ask_user` 弹窗确认
   数据来源（选项：工作区已有文件 / 上传新文件 / 使用平台示例数据演示），不要自行

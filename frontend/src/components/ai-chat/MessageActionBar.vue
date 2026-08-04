@@ -53,7 +53,17 @@ async function doCopy(mode: CopyMode) {
   try {
     await navigator.clipboard.writeText(text)
   } catch {
-    /* 忽略剪贴板异常 */
+    // HTTP / 嵌入式 WebView 等非安全上下文无法使用 Clipboard API 时，
+    // 回退到浏览器仍支持的选区复制，避免按钮看似点击成功却没有内容。
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.setAttribute('readonly', '')
+    textarea.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    const copiedByFallback = document.execCommand('copy')
+    document.body.removeChild(textarea)
+    if (!copiedByFallback) return
   }
   copied.value = true
   emit('copy', mode)

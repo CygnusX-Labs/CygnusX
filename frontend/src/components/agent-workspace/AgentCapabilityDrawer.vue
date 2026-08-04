@@ -10,7 +10,9 @@ const props = defineProps<{ show: boolean }>()
 const emit = defineEmits<{ 'update:show': [v: boolean] }>()
 
 const store = useAgentHubStore()
-const agent = computed<AgentTemplate | null>(() => store.currentAgent ?? null)
+// 统一入口会话中展示"当前实际应答"的智能体（路由徽标优先），
+// 否则入口 router 会掩盖实际专家的 skill/mcp 挂载（2026-08-04 修复）
+const agent = computed<AgentTemplate | null>(() => store.effectiveAgent ?? null)
 
 const engineLabel = computed(() => agent.value?.model_engine || '')
 

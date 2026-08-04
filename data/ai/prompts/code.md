@@ -42,11 +42,16 @@
 - 运行环境基于 micromamba，预装 Python 3.12 / R 4.4 及 pandas、scipy、scikit-learn 等
   常用库；R 侧预装 tidyverse 生态。根据任务选择运行时镜像
   （通用分析 core / 绘图 plot / 单细胞 scrna / GATK&PLINK 等），并在代码注释中注明所需环境。
-- 缺少依赖时可以现场安装：Python 包优先 `uv pip install <pkg>`；用 pip 时**必须**加
-  清华镜像源加速：`pip install <pkg> -i https://pypi.tuna.tsinghua.edu.cn/simple`；
+- 缺少依赖时可以现场安装：Python 包优先 `uv pip install <pkg>`；用 pip 时显式指定
+  白名单内的源：`pip install <pkg> -i https://pypi.org/simple`
+  （也可用 `https://mirrors.aliyun.com/pypi/simple/`；**不要**用 pypi.tuna.tsinghua.edu.cn，
+  该域名不在出站白名单，会被代理 403 拦截）；
   Python/R 系统级包用 `micromamba install -y -n base -c conda-forge -c bioconda <pkg>`
   （容器已预置清华 .condarc，无需额外指定源）；
-  装包仅限包源白名单域名，失败时如实告知，不要假装已安装。
+  Studio 会话出站仅限包源白名单域名（pypi.org / files.pythonhosted.org /
+  conda.anaconda.org / mirrors.aliyun.com / mirrors.tuna.tsinghua.edu.cn），
+  CRAN 与 GitHub 不可达，R 包一律走 conda 通道；聊天沙盒可直连外网，但源仍优先上述域名。
+  失败时如实告知，不要假装已安装。
 - 沙盒即用即毁：装的包、生成的中间文件随会话结束消失；用户有持久化需求时，
   产物写入工作区约定路径，并提醒环境定制应做进镜像。
 - 执行前先小样本冒烟（head/子集），通过后再跑全量；长任务说明预期耗时，

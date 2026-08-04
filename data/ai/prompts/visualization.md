@@ -87,13 +87,16 @@ plotly 与 ECharts，目标是 publication-ready 图表。
 
 | 包 | 用途 | 安装方式 |
 |---|---|---|
-| `ggpubr` | `theme_pubclean()` 来源 | `install.packages("ggpubr")` |
-| `scCustomize` | `DimPlot_scCustom()` 来源，**非 Bioconductor 标准包**，来自 GitHub | `remotes::install_github("samuel-marsh/scCustomize")` |
-| `ggrastr` | 大规模散点栅格化 | `install.packages("ggrastr")` |
-| `patchwork` | 多图拼版 | `install.packages("patchwork")` |
+| `ggpubr` | `theme_pubclean()` 来源 | `micromamba install -y -n base r-ggpubr` |
+| `scCustomize` | `DimPlot_scCustom()` 来源，**GitHub 独占包** | 沙盒白名单无法访问 GitHub，**不可现场安装**；需要时告知用户联系管理员预装进镜像 |
+| `ggrastr` | 大规模散点栅格化 | `micromamba install -y -n base -c conda-forge r-ggrastr` |
+| `patchwork` | 多图拼版 | `micromamba install -y -n base r-patchwork` |
 
-沙盒内缺包时直接安装即可（CRAN 包走 `install.packages()`，GitHub 包走
-`remotes::install_github()`）。
+Studio 沙盒出站仅放行包源白名单：**CRAN（`install.packages()`）与 GitHub
+（`remotes::install_github()`）均不可达**。R 包一律走 conda 通道安装
+（`micromamba install -y -n base r-<pkg>`，Bioconductor 用 `bioconductor-<pkg>`）；
+GitHub 独占包（scCustomize、ProjecTILs、AnnoProbe、DoubletFinder 等）无法现场安装，
+依赖它们的代码要么换用已装包的等价实现，要么如实告知用户需管理员预装/加白名单。
 
 ### 主题与骨架（所有图默认执行）
 
@@ -269,10 +272,13 @@ ggsave("output/figures/<项目名>_<图型>.png",
 - 需要实际出图时使用「AI 工作台」沙盒的绘图镜像（R/ggplot2），
   图片输出到工作区约定路径并告知 file_id。
 - 任务与已挂载技能匹配时先 `use_skill` 加载再执行。
-- 沙盒内缺包现场安装：pip 一律加清华镜像源
-  `pip install <pkg> -i https://pypi.tuna.tsinghua.edu.cn/simple`
-  （也可用 `uv pip install <pkg>`）；conda/mamba 装包直接
-  `micromamba install -y -n base <pkg>`，镜像已预置清华 .condarc，无需指定源。
+- 沙盒内缺包现场安装：Python 包优先 `uv pip install <pkg>`；用 pip 时显式指定
+  白名单内的源 `pip install <pkg> -i https://pypi.org/simple`
+  （**不要**用 pypi.tuna.tsinghua.edu.cn，该域名不在出站白名单，会被代理 403 拦截）；
+  conda/mamba 装包直接 `micromamba install -y -n base <pkg>`，镜像已预置清华 .condarc，
+  无需指定源。Studio 会话出站仅放行包源白名单，CRAN（install.packages）与 GitHub
+  （remotes::install_github）不可达，R 包一律走 conda 通道（r-xxx / bioconductor-xxx）；
+  聊天沙盒可直连外网，但装包源仍优先白名单域名。
 
 ## 沙盒目录使用规范
 

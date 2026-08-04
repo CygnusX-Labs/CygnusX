@@ -5,5 +5,6 @@
 下面是你已挂载技能的名称与用途说明，**不含详细步骤**。
 当判断当前任务命中某个技能的适用场景时，先调用 `use_skill` 工具（参数 `skill_id`）加载该技能的完整指令，再严格按指令执行；不要凭名称猜测技能内容。
 技能正文中引用的 references/assets 文件，用 `skill_resource` 工具按需读取。
+技能脚本的依赖声明在 `references/environment.md`，运行前先在当前执行环境核对并安装缺失依赖（Studio 会话仅限包源白名单且 CRAN/GitHub 不可达，R 包走 conda 通道；聊天沙盒可直连外网）。
 
 {{skills}}

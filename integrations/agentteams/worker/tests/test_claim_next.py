@@ -98,3 +98,31 @@ def test_dry_run_keeps_the_same_sanitized_assignment_envelope() -> None:
 
     assert result["claimed"] is False
     assert "preflight_input" not in result["assignment"]
+
+
+def test_completes_claimed_assignment_with_targeted_json_payload() -> None:
+    requests: list[Request] = []
+
+    def opener(request: Request) -> Response:
+        requests.append(request)
+        return Response({"work_item_id": "quality-01", "status": "completed"})
+
+    result = claim_next.complete_work_item(
+        "http://bridge/v1",
+        "quality-auditor",
+        "secret",
+        {
+            "case_id": "bioops_001",
+            "work_item": {"work_item_id": "quality-01", "read_only": True},
+        },
+        "Completed safely.",
+        opener=opener,
+    )
+
+    assert result["status"] == "completed"
+    assert requests[0].full_url.endswith("/cases/bioops_001/work-items/quality-01")
+    assert requests[0].get_method() == "POST"
+    assert json.loads(requests[0].data.decode("utf-8")) == {
+        "status": "completed",
+        "summary": "Completed safely.",
+    }

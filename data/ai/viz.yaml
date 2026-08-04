@@ -11,7 +11,10 @@ welcome_message: "你好！我是可视化助手，搭载 Code Sandbox 与 BioDB
 temperature: 0.7
 max_tokens: 4096
 mcp_ids: []
-skill_ids: []
+skill_ids:
+  # 绘图工具技能（来源：pipelines/tools/skills/）
+  - r-plot-library
+  - dotplot
 features:
   web_search:
     mode: required_for_freshness

@@ -34,7 +34,7 @@ import { studioApi, type StudioSessionDTO, type SandboxStatus } from '@/api/stud
 import { shouldApplyServerUi, shouldApplyServerViewMode } from '@/utils/studioViewGuard'
 import { useAgentHubStore } from '@/stores/agentHub'
 import { useAuthStore } from '@/stores/auth'
-import type { FileAttachment, ToolCall } from '@/components/ai-chat/types'
+import type { ChatMessage, FileAttachment, ToolCall } from '@/components/ai-chat/types'
 import type { FilePickerItem } from '@/types'
 
 const route = useRoute()
@@ -487,6 +487,40 @@ async function handleSend(
     }
   }
   input.value = ''
+}
+
+function findUserMessage(messageId: string): ChatMessage | undefined {
+  const target = session.value?.messages.find((item) => item.id === messageId)
+  return target?.role === 'user' ? target : undefined
+}
+
+async function handleRegenerate(messageId: string) {
+  if (store.isStreaming) {
+    message.warning('请等待当前回复完成')
+    return
+  }
+  const target = findUserMessage(messageId)
+  if (!target) return
+  await handleSend(target.content, { attachments: target.attachments })
+}
+
+function handleEditMessage(messageId: string) {
+  const target = findUserMessage(messageId)
+  if (!target) return
+  input.value = target.content
+  message.info('已填入输入框，修改后发送即可')
+}
+
+function handleCopy() {
+  message.success('已复制')
+}
+
+function handleDeleteMessage(messageId: string) {
+  const messages = session.value?.messages
+  const index = messages?.findIndex((item) => item.id === messageId) ?? -1
+  if (index < 0 || !messages) return
+  messages.splice(index, 1)
+  message.success('已从当前会话视图删除')
 }
 
 function handleCreateCaseFromConsultation(summary: string, consultationId?: string) {
@@ -970,6 +1004,10 @@ function formatSessionTime(iso: string): string {
               :agent-avatar="agent?.avatar"
               :agent-color="agent?.color"
               :target-message-id="String(route.query.message || '')"
+              @copy="handleCopy"
+              @regenerate="handleRegenerate"
+              @delete="handleDeleteMessage"
+              @edit="handleEditMessage"
               @create-case-from-consultation="handleCreateCaseFromConsultation"
               @correct-collaboration-route="handleCorrectCollaborationRoute"
             />
@@ -981,9 +1019,10 @@ function formatSessionTime(iso: string): string {
             <div class="input-area">
               <KimiChatInput
                 v-model="input"
-                :disabled="store.isStreaming"
+                :is-streaming="store.isStreaming"
                 :placeholder="longRunPlaceholder"
                 @send="handleSend"
+                @stop="store.stopStreaming"
               />
             </div>
           </section>

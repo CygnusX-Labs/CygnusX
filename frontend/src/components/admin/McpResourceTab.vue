@@ -286,12 +286,16 @@ const versionMcp = ref<McpService | null>(null)
 const versionItems = ref<McpVersion[]>([])
 
 const MCP_SOURCE_LABELS: Record<string, string> = {
+  register: '初始注册',
+  preset: '预设升级',
   builder: '构建发布',
   admin: '手工更新',
   rollback: '回滚',
   publish: '转正发布',
 }
 const MCP_SOURCE_TYPES: Record<string, 'info' | 'default' | 'warning' | 'success'> = {
+  register: 'info',
+  preset: 'success',
   builder: 'info',
   admin: 'default',
   rollback: 'warning',
@@ -308,6 +312,7 @@ const versionDrawerItems = computed<VersionHistoryItem[]>(() =>
     changelog: v.changelog ?? '',
     createdBy: v.created_by,
     createdAt: v.created_at,
+    isCurrent: v.version === versionMcp.value?.current_version,
     rollbackTarget: `v${v.version}`,
     rollbackDisabled: !v.has_config_snapshot,
     rollbackDisabledReason: '该版本无配置快照，无法回滚',
@@ -339,6 +344,7 @@ async function handleVersionRollback(item: VersionHistoryItem) {
   versionRollingBack.value = true
   try {
     await store.rollbackMcpServer(versionMcp.value.id, v.version)
+    versionMcp.value = store.mcps.find((m) => m.id === versionMcp.value?.id) ?? versionMcp.value
     message.success(`已回滚到 v${v.version}`)
     await loadVersions(versionMcp.value.id)
   } catch (e: any) {

@@ -12,7 +12,7 @@ import ShaniaChatBackground from './ShaniaChatBackground.vue'
 import { useAgentHubStore } from '@/stores/agentHub'
 import { useAuthStore } from '@/stores/auth'
 import { studioApi } from '@/api/studio'
-import type { FileAttachment } from '@/components/ai-chat/types'
+import type { ChatMessage, FileAttachment } from '@/components/ai-chat/types'
 
 const store = useAgentHubStore()
 const authStore = useAuthStore()
@@ -246,6 +246,40 @@ function handleSend(
   input.value = ''
 }
 
+function findUserMessage(messageId: string): ChatMessage | undefined {
+  const target = session.value?.messages.find((item) => item.id === messageId)
+  return target?.role === 'user' ? target : undefined
+}
+
+async function handleRegenerate(messageId: string) {
+  if (store.isStreaming) {
+    message.warning('请等待当前回复完成')
+    return
+  }
+  const target = findUserMessage(messageId)
+  if (!target) return
+  await store.sendMessage(target.content, { attachments: target.attachments })
+}
+
+function handleEditMessage(messageId: string) {
+  const target = findUserMessage(messageId)
+  if (!target) return
+  input.value = target.content
+  message.info('已填入输入框，修改后发送即可')
+}
+
+function handleCopy() {
+  message.success('已复制')
+}
+
+function handleDeleteMessage(messageId: string) {
+  const messages = session.value?.messages
+  const index = messages?.findIndex((item) => item.id === messageId) ?? -1
+  if (index < 0 || !messages) return
+  messages.splice(index, 1)
+  message.success('已从当前会话视图删除')
+}
+
 function handleConfirmTool(toolName: string, args: Record<string, unknown>) {
   const content = toolName === 'create_agentteams_case'
     ? `我确认创建协作 Case。请仅使用以下已确认参数再次调用 ${toolName}，并携带 _confirmed: true：\n${JSON.stringify(args, null, 2)}`
@@ -396,6 +430,10 @@ onUnmounted(() => {
           :user-name="userDisplayName"
           :user-avatar="userAvatarUrl"
           :target-message-id="targetMessageId"
+          @copy="handleCopy"
+          @regenerate="handleRegenerate"
+          @delete="handleDeleteMessage"
+          @edit="handleEditMessage"
           @confirm-tool="handleConfirmTool"
           @open-tool-page="handleOpenToolPage"
           @create-case-from-consultation="handleCreateCaseFromConsultation"
@@ -408,9 +446,10 @@ onUnmounted(() => {
       <div class="chat-content-wrapper">
         <KimiChatInput
           v-model="input"
-          :disabled="store.isStreaming"
+          :is-streaming="store.isStreaming"
           :placeholder="inputPlaceholder"
           @send="handleSend"
+          @stop="store.stopStreaming"
         />
       </div>
     </div>

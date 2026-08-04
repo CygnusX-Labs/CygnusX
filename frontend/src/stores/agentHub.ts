@@ -404,6 +404,21 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     currentSession.value ? getAgent(currentSession.value.agent_id) : null,
   )
 
+  /** 当前实际应答的智能体：统一入口会话里路由徽标记录的专家优先，
+   *  否则回落到会话归属 Agent。能力抽屉等"展示当前 Agent 配置"的 UI 应使用它，
+   *  避免入口 Agent（如 router）掩盖实际应答专家的 skill/mcp 挂载。 */
+  const effectiveAgent = computed(() => {
+    const msgs = currentSession.value?.messages ?? []
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const ra = msgs[i].routedAgent
+      if (ra?.agentId) {
+        const target = getAgent(ra.agentId)
+        if (target) return target
+      }
+    }
+    return currentAgent.value
+  })
+
   /** 按 今天 / 昨天 / 更早 分组的历史会话 */
   const groupedSessions = computed(() => {
     const fit = (fn: (d: Date) => boolean) =>
@@ -1651,6 +1666,9 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       if (last && last.role === 'assistant') {
         last.content = streamingContent.value || last.content || '（已停止）'
         last.thought = streamingThought.value || undefined
+        // 流在 AbortError 后不会再触发 onDone；主动收束消息状态，
+        // 避免消息卡片一直保留为 streaming 状态。
+        last.status = 'complete'
       }
     }
     isStreaming.value = false
@@ -1791,7 +1809,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     clearStudioRedirect,
     studioSessionIds, currentPlan, studioPermissions,
     // getters
-    activeAgents, currentSession, currentAgent, groupedSessions,
+    activeAgents, currentSession, currentAgent, effectiveAgent, groupedSessions,
     // lookups
     getAgent, mcpsByIds, skillsByIds,
     // asset actions

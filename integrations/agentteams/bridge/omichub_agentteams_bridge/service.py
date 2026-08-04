@@ -268,6 +268,14 @@ class BridgeService:
                 payload={},
             )
         assignments = await self._cases.list_assigned_work_items(actor, {"pending", "in_progress"})
+        if actor in self._EXTERNAL_WORKERS:
+            for case, work_item in assignments:
+                await self._audit.record(
+                    case_id=case.case_id,
+                    actor=actor,
+                    event_type="worker.inbox_polled",
+                    payload={"work_item_id": work_item.work_item_id},
+                )
         items = [
             WorkerInboxItem(
                 case_id=case.case_id,

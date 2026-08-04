@@ -210,6 +210,13 @@ function handleDeleteMessage(id: string) {
   chatSessionStore.removeDisplayMessage(id)
 }
 
+function handleEditMessage(id: string) {
+  const target = chatSessionStore.messages.find((item) => item.message_id === id)
+  if (!target || target.role !== 'user') return
+  inputMessage.value = target.content
+  message.info('已填入输入框，修改后发送即可')
+}
+
 // ===== 生命周期 =====
 onMounted(async () => {
   await Promise.all([
@@ -276,6 +283,7 @@ onMounted(async () => {
             @retry-with-model="handleRetryWithModel"
             @translate="handleTranslate"
             @delete="handleDeleteMessage"
+            @edit="handleEditMessage"
           />
 
           <n-alert
@@ -294,8 +302,9 @@ onMounted(async () => {
       <div class="input-area-wrapper">
         <KimiChatInput
           v-model="inputMessage"
-          :disabled="chatSessionStore.isStreaming"
+          :is-streaming="chatSessionStore.isStreaming"
           @send="(content) => handleSend(content, { agentMode: chatStore.agentMode, model: chatSessionStore.selectedModelId, plugins: [] })"
+          @stop="chatSessionStore.stopStreaming"
           @upload-file="handleUploadFile"
           @toggle-web-search="handleToggleWebSearch"
           @trigger-sandbox="handleTriggerSandbox"

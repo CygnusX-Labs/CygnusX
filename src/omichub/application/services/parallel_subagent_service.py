@@ -46,6 +46,9 @@ _CONTROL_TOOL_NAMES = frozenset(
         "create_agentteams_case",  # 子任务不得创建跨会话交付 Case
         "ask_user",  # C3 子任务无用户应答，会死锁
         "omichub_save_memory",  # 子任务是临时工，不写长期记忆
+        "omichub_update_memory",  # 26.8.4：子任务同样不得改写主用户记忆
+        "omichub_forget_memory",  # 26.8.4：子任务不得删除主用户记忆
+        # 保留 omichub_search_memory：只读检索对子任务有用且无副作用
     }
 )
 

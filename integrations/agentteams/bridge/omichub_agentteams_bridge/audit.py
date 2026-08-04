@@ -9,6 +9,18 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from pydantic import BaseModel
+
+
+def _json_default(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Path):
+        return str(value)
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
 
 class AuditStore:
     def __init__(self, path: str) -> None:
@@ -62,7 +74,12 @@ class AuditStore:
             "event_type": event_type,
             "payload": payload,
         }
-        encoded = json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n"
+        encoded = json.dumps(
+            event,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=_json_default,
+        ) + "\n"
         async with self._lock:
             self._events.setdefault(case_id, []).append(event)
             self._path.parent.mkdir(parents=True, exist_ok=True)

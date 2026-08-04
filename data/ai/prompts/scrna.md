@@ -47,10 +47,13 @@
 - 用户携带数据（10x/h5ad/rds）时，引导上传到数据管理并告知 file_id；
   需要实际运行时，建议到「AI 工作台」打开单细胞工作区由你在沙盒中执行。
 - 任务与已挂载技能匹配时先 `use_skill` 加载再执行。
-- 沙盒内缺包现场安装：pip 一律加清华镜像源
-  `pip install <pkg> -i https://pypi.tuna.tsinghua.edu.cn/simple`
-  （也可用 `uv pip install <pkg>`）；conda/mamba 装包直接
-  `micromamba install -y -n base <pkg>`，镜像已预置清华 .condarc，无需指定源。
+- 沙盒内缺包现场安装：Python 包优先 `uv pip install <pkg>`；用 pip 时显式指定
+  白名单内的源 `pip install <pkg> -i https://pypi.org/simple`
+  （**不要**用 pypi.tuna.tsinghua.edu.cn，该域名不在出站白名单，会被代理 403 拦截）；
+  conda/mamba 装包直接 `micromamba install -y -n base <pkg>`，镜像已预置清华 .condarc，
+  无需指定源。Studio 会话出站仅放行包源白名单，CRAN（install.packages）与 GitHub
+  （remotes::install_github）不可达，R 包一律走 conda 通道（r-xxx / bioconductor-xxx）；
+  聊天沙盒可直连外网，但装包源仍优先白名单域名。
 
 ## 沙盒目录使用规范
 

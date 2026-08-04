@@ -73,6 +73,8 @@ _CONNECTION_FIELDS = frozenset(
 #: 注册/更新后自动发现工具的最长等待（秒）：挂死的 server 不能拖住管理端请求
 _AUTODISCOVER_TIMEOUT = 15.0
 
+_PRESET_VERSION_PIN_KEY = "preset_version_pinned"
+
 
 def _enum_str(value: Any, fallback: str) -> str:
     """枚举/字符串统一取枚举值；None 时回退默认"""
@@ -143,6 +145,29 @@ def _tool_to_dto(t: MCPToolRegistry | dict[str, Any]) -> MCPToolDTO:
     return MCPToolDTO(name=t.tool_name, description=t.description, input_schema=t.input_schema)
 
 
+def _tool_snapshot(tools: list[MCPToolRegistry]) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": tool.tool_name,
+            "description": tool.description,
+            "inputSchema": tool.input_schema,
+        }
+        for tool in tools
+    ]
+
+
+def _preset_tools(preset: dict[str, Any], server_id: UUID) -> list[MCPToolRegistry]:
+    return [
+        MCPToolRegistry(
+            tool_name=tool["name"],
+            description=tool["description"],
+            input_schema=tool["inputSchema"],
+            server_id=server_id,
+        )
+        for tool in preset["tools"]
+    ]
+
+
 class MCPService:
     """MCP 集成应用服务"""
 
@@ -153,7 +178,7 @@ class MCPService:
         self._client = MCPClient()
         self._settings = get_settings()
 
-    async def ensure_presets(self) -> None:
+    async def ensure_presets(self, *, force_preset_sync: bool = False) -> None:
         """初始化预设 MCP 服务（含 omichub-tools 动态预设，幂等）"""
         valid_names = {p["name"] for p in PRESET_SERVERS} | {OMICHUB_TOOLS_SERVER_NAME}
         for server in await self._repo.list_all():
@@ -166,15 +191,31 @@ class MCPService:
                 # 预设工具随代码演进（如新增工作区文件工具），需把最新工具清单同步进库，
                 # 否则已存在部署的 builtin 预设工具不会出现在 LLM 工具清单里。
                 if preset["name"] in (OMICHUB_PIPELINES_SERVER_NAME, "omichub-platform"):
-                    existing.tools = [
-                        MCPToolRegistry(
-                            tool_name=tool["name"],
-                            description=tool["description"],
-                            input_schema=tool["inputSchema"],
-                            server_id=existing.id,
+                    target_tools = _preset_tools(preset, existing.id)
+                    has_tool_changes = _tool_snapshot(existing.tools) != _tool_snapshot(target_tools)
+                    metadata = dict(existing.generation_meta or {})
+                    is_version_pinned = bool(metadata.get(_PRESET_VERSION_PIN_KEY))
+
+                    if has_tool_changes and (force_preset_sync or not is_version_pinned):
+                        # 存量预设也先补齐其现有工具的 v1.0.0 初始快照，随后再写入升级版本，
+                        # 以便管理端能显示并切换回注册时的配置。
+                        await self._snapshot_config_version(
+                            existing,
+                            source="register",
+                            changelog="注册 MCP Server（初始配置）",
                         )
-                        for tool in preset["tools"]
-                    ]
+                        existing.tools = target_tools
+                        existing.current_version = await self._next_patch_version(existing)
+                        existing.version = existing.current_version
+                        metadata.pop(_PRESET_VERSION_PIN_KEY, None)
+                        existing.generation_meta = metadata
+                        await self._repo.save(existing)
+                        await self._snapshot_config_version(
+                            existing,
+                            source="preset",
+                            changelog="内置 MCP 预设升级：同步最新工具清单",
+                        )
+
                     existing.status = ServerStatus.ONLINE
                     existing.is_enabled = True
                     await self._repo.save(existing)
@@ -207,6 +248,11 @@ class MCPService:
                 is_preset=True,
             )
             await self._repo.save(server)
+            await self._snapshot_config_version(
+                server,
+                source="register",
+                changelog="注册 MCP Server（初始配置）",
+            )
 
         # 动态生信工具箱 preset
         omichub_preset = _build_omichub_tools_preset()
@@ -428,6 +474,10 @@ class MCPService:
                 )
                 for t in target.tools_snapshot
             ]
+        if server.is_preset:
+            metadata = dict(server.generation_meta or {})
+            metadata[_PRESET_VERSION_PIN_KEY] = True
+            server.generation_meta = metadata
         server.current_version = target.version
         server.version = target.version  # 同步遗留字段
         await self._repo.save(server)
@@ -637,14 +687,7 @@ class MCPService:
                 version=version,
                 is_major=False,
                 config_snapshot=_config_snapshot(server),
-                tools_snapshot=[
-                    {
-                        "name": t.tool_name,
-                        "description": t.description,
-                        "inputSchema": t.input_schema,
-                    }
-                    for t in server.tools
-                ],
+                tools_snapshot=_tool_snapshot(server.tools),
                 source=source,
                 changelog=changelog,
                 created_by=UUID(str(actor_id)) if actor_id else None,

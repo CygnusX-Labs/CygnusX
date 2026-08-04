@@ -143,3 +143,78 @@ async def _backfill_embeddings(limit: int) -> dict[str, int | str]:
             await service._populate_embedding(memory)
         await session.commit()
         return {"status": "completed", "updated": len(rows)}
+
+
+@shared_task(name="omichub.infrastructure.celery_app.tasks.memory.settle_session_memory")
+def settle_session_memory(session_id: str) -> dict[str, Any]:
+    """mem0 引擎：把会话对话喂给 mem0 抽取事实沉淀为长期记忆。
+
+    与 summarize_session（旧引擎单句摘要）并存，由 mem0_engine_enabled 分流。
+    """
+    return asyncio.run(_settle_session_memory(session_id))
+
+
+async def _settle_session_memory(session_id: str) -> dict[str, Any]:
+    from omichub.core.config import get_settings
+    from omichub.infrastructure.database.models.chat import ChatMessageModel, ChatSessionModel
+    from omichub.infrastructure.database.session import get_session_factory
+
+    settings = get_settings()
+    if not settings.mem0_engine_enabled:
+        return {"status": "disabled"}
+
+    async with get_session_factory()() as session:
+        from omichub.application.services.site_settings_service import SiteSettingsService
+
+        if not await SiteSettingsService(session).is_agent_memory_enabled():
+            return {"status": "disabled_by_admin"}
+        chat_session = await session.scalar(
+            select(ChatSessionModel).where(ChatSessionModel.session_id == session_id)
+        )
+        if chat_session is None:
+            return {"status": "missing"}
+        if chat_session.status == "deleted":
+            pass  # 删除前触发的沉淀仍然有效，消息尚存
+        messages = list(
+            (await session.scalars(
+                select(ChatMessageModel)
+                .where(ChatMessageModel.session_id == session_id)
+                .order_by(ChatMessageModel.created_at.asc())
+            )).all()
+        )
+        if len(messages) < max(2, settings.agent_memory_auto_summary_min_messages):
+            return {"status": "too_short"}
+        # 会话归属字段在会话上下文内取出，避免脱离 greenlet 访问
+        owner = {
+            "user_id": chat_session.user_id,
+            "agent_id": chat_session.agent_id or None,
+            "project_id": chat_session.project_id,
+        }
+
+    payload = [
+        {
+            "role": m.role if m.role in {"user", "assistant"} else "user",
+            "content": str(m.content or "").strip(),
+        }
+        for m in messages[-30:]
+    ]
+    payload = [m for m in payload if m["content"]][:40]
+    if not payload:
+        return {"status": "empty"}
+
+    try:
+        from omichub.infrastructure.memory.mem0_engine import get_mem0_engine
+
+        engine = await get_mem0_engine()
+        results = await engine.add_inferred(
+            payload,
+            user_id=str(owner["user_id"]),
+            agent_id=owner["agent_id"],
+            run_id=session_id,
+            scope="summary",
+            project_id=owner["project_id"],
+            source_session=session_id,
+        )
+        return {"status": "settled", "facts": len(results)}
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "detail": str(exc)[:200]}

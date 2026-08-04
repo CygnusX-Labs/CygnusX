@@ -769,25 +769,72 @@ class ChatService:
         session.status = "deleted"
         session.updated_at = datetime.now(UTC)
         await self._db.flush()
-        self._enqueue_memory_summary(session)
+        await self._enqueue_memory_summary(session)
         return True
 
-    @staticmethod
-    def _enqueue_memory_summary(session: ChatSessionModel) -> None:
-        """删除会话后异步提炼低置信度摘要；关闭开关时不产生任何副作用。"""
+    async def _memory_runtime_enabled(self) -> bool:
+        """mem0 记忆功能是否处于可用状态（env 能力闸门 + 管理员运行时开关）。"""
         from omichub.core.config import get_settings
 
-        if not get_settings().agent_memory_auto_summary_enabled:
-            return
+        if not get_settings().mem0_engine_enabled:
+            return False
+        if self._db is None:
+            return True
         try:
-            from omichub.infrastructure.celery_app.tasks.memory import summarize_session
+            from omichub.application.services.site_settings_service import SiteSettingsService
 
+            return await SiteSettingsService(self._db).is_agent_memory_enabled()
+        except Exception:  # noqa: BLE001
+            return True
+
+    async def _enqueue_memory_summary(self, session: ChatSessionModel) -> None:
+        """删除会话后异步沉淀长期记忆；关闭开关时不产生任何副作用。
+
+        mem0 引擎开启 → settle_session_memory（mem0 抽取事实）；
+        否则沿用旧引擎 summarize_session（单句摘要）。
+        """
+        from omichub.core.config import get_settings
+
+        settings = get_settings()
+        try:
+            if settings.mem0_engine_enabled:
+                if not await self._memory_runtime_enabled():
+                    return
+                from omichub.infrastructure.celery_app.tasks.memory import settle_session_memory
+
+                task = settle_session_memory
+            elif settings.agent_memory_auto_summary_enabled:
+                from omichub.infrastructure.celery_app.tasks.memory import summarize_session
+
+                task = summarize_session
+            else:
+                return
             # API 事务会在请求结束后提交；短延时防止 worker 读到提交前的会话状态。
             from omichub.infrastructure.task_queue.dispatcher import enqueue_task
 
-            enqueue_task(summarize_session, session.session_id, countdown=5)
+            enqueue_task(task, session.session_id, countdown=5)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("会话摘要任务投递失败，已跳过: {}", exc)
+            logger.warning("会话记忆沉淀任务投递失败，已跳过: {}", exc)
+
+    async def _maybe_enqueue_memory_settle(self, session: ChatSessionModel) -> None:
+        """mem0 引擎：消息累计达到阈值时异步沉淀会话记忆（不等删除）。"""
+        from omichub.core.config import get_settings
+
+        settings = get_settings()
+        if not settings.mem0_engine_enabled:
+            return
+        if not await self._memory_runtime_enabled():
+            return
+        every = max(4, settings.mem0_settle_every_n_messages)
+        if session.message_count <= 0 or session.message_count % every != 0:
+            return
+        try:
+            from omichub.infrastructure.celery_app.tasks.memory import settle_session_memory
+            from omichub.infrastructure.task_queue.dispatcher import enqueue_task
+
+            enqueue_task(settle_session_memory, session.session_id, countdown=5)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("会话记忆定期沉淀任务投递失败，已跳过: {}", exc)
 
     # --- 消息管理 ---
 
@@ -819,6 +866,7 @@ class ChatService:
             session.message_count += 1
             session.last_message_at = datetime.now(UTC)
             session.updated_at = datetime.now(UTC)
+            await self._maybe_enqueue_memory_settle(session)
         await self._db.flush()
         return message
 
@@ -2025,7 +2073,7 @@ class ChatService:
                         f"{system_prompt}\n\n{memory_context}" if system_prompt else memory_context
                     )
             except Exception as exc:  # noqa: BLE001
-                logger.warning("Agent 长期记忆召回失败，已跳过: %s", exc)
+                logger.error("Agent 长期记忆召回失败，已跳过: %s", exc)
 
         if (
             (
@@ -2225,7 +2273,7 @@ class ChatService:
                 if memory_context:
                     target_prompt = f"{target_prompt}\n\n{memory_context}".strip()
             except Exception as exc:  # noqa: BLE001
-                logger.warning("Handoff 目标 Agent 长期记忆召回失败，已跳过: %s", exc)
+                logger.error("Handoff 目标 Agent 长期记忆召回失败，已跳过: %s", exc)
             target_prompt = (
                 f"{target_prompt}\n\n{directive['packet']}\n\n"
                 f"{USER_FACING_CHINESE_PROMPT_SUFFIX}"

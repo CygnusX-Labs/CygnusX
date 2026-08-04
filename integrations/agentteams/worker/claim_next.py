@@ -21,9 +21,19 @@ UrlOpen = Callable[[Request], Any]
 
 
 def request_json(
-    url: str, headers: dict[str, str], *, method: str, opener: UrlOpen
+    url: str,
+    headers: dict[str, str],
+    *,
+    method: str,
+    opener: UrlOpen,
+    payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    request = Request(url, headers=headers, method=method)
+    request_headers = dict(headers)
+    data = None
+    if payload is not None:
+        data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        request_headers["Content-Type"] = "application/json"
+    request = Request(url, data=data, headers=request_headers, method=method)
     with opener(request) as response:
         payload = json.loads(response.read().decode("utf-8"))
     if not isinstance(payload, dict):
@@ -91,6 +101,32 @@ def claim_next(
         },
         "claimed": True,
     }
+
+
+def complete_work_item(
+    bridge_url: str,
+    identity: str,
+    token: str,
+    assignment: dict[str, Any],
+    summary: str,
+    *,
+    opener: UrlOpen = urlopen,
+) -> dict[str, Any]:
+    """Mark an already claimed, read-only assignment completed."""
+    case_id = assignment.get("case_id")
+    work_item = assignment.get("work_item")
+    if not isinstance(case_id, str) or not isinstance(work_item, dict):
+        raise RuntimeError("Bridge returned malformed claimed assignment")
+    work_item_id = work_item.get("work_item_id")
+    if not isinstance(work_item_id, str):
+        raise RuntimeError("Bridge returned malformed Work Item identity")
+    return request_json(
+        f"{bridge_url.rstrip('/')}/cases/{case_id}/work-items/{work_item_id}",
+        {"X-Bridge-Identity": identity, "X-Bridge-Token": token},
+        method="POST",
+        opener=opener,
+        payload={"status": "completed", "summary": summary},
+    )
 
 
 def main() -> int:

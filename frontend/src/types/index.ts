@@ -457,6 +457,8 @@ export interface SiteSettings {
   /** 对话内并行子 Agent fan-out 开关（管理端运行时主开关） */
   subagent_fanout_enabled: boolean
   agentteams_chat_entry_enabled: boolean
+  /** Agent 长期记忆运行时开关（26.8.4；与 env MEM0_ENGINE_ENABLED 同时为真才启用） */
+  agent_memory_enabled?: boolean
 }
 
 export interface UpdateSiteSettings {
@@ -465,6 +467,7 @@ export interface UpdateSiteSettings {
   home_quick_entries?: HomeQuickEntry[]
   subagent_fanout_enabled?: boolean
   agentteams_chat_entry_enabled?: boolean
+  agent_memory_enabled?: boolean
 }
 
 export interface CostEstimate {

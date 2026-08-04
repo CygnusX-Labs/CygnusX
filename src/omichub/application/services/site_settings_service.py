@@ -152,6 +152,7 @@ class SiteSettingsService:
                 model.collaboration_degradation_template_en
                 or DEFAULT_COLLABORATION_DEGRADATION_TEMPLATE_EN
             ),
+            agent_memory_enabled=model.agent_memory_enabled,
         )
 
     async def is_registration_enabled(self) -> bool:
@@ -166,6 +167,11 @@ class SiteSettingsService:
     async def is_agentteams_chat_entry_enabled(self) -> bool:
         model = await self._get_or_create()
         return model.agentteams_chat_entry_enabled
+
+    async def is_agent_memory_enabled(self) -> bool:
+        """Agent 长期记忆运行时开关（管理端；与 env MEM0_ENGINE_ENABLED 同时为真才启用）。"""
+        model = await self._get_or_create()
+        return model.agent_memory_enabled
 
     async def get_totp_policy(self) -> TOTPPolicy:
         model = await self._get_or_create()
@@ -212,6 +218,8 @@ class SiteSettingsService:
                 model.collaboration_degradation_template_zh = req.collaboration_degradation_template_zh
             if req.collaboration_degradation_template_en is not None:
                 model.collaboration_degradation_template_en = req.collaboration_degradation_template_en
+            if req.agent_memory_enabled is not None:
+                model.agent_memory_enabled = req.agent_memory_enabled
             if req.home_quick_entries is not None:
                 model.home_quick_entries = [entry.model_dump() for entry in req.home_quick_entries]
             await self._db.flush()

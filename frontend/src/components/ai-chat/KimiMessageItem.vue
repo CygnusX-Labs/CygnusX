@@ -218,6 +218,11 @@ const isError = computed(() =>
   || (props.message.content?.startsWith('生成失败') ?? false),
 )
 
+// 错误是否属于用户无法自行处理的平台侧问题（密钥/配置/授权），用于提示联系管理员
+const isAdminConfigError = computed(() =>
+  /API Key|密钥|过期|授权|权限|配置|401|403|permission|unauthor/i.test(props.message.content || ''),
+)
+
 const hasOutputTokens = computed(() => (props.message.tokens?.output ?? 0) > 0)
 
 const webSources = computed(() => {
@@ -694,6 +699,11 @@ function handleEdit() {
         <div class="empty-icon">💫</div>
         <div class="empty-title">星尘信号受到了干扰</div>
         <div class="empty-desc">{{ message.content || '生成失败，请稍后重试或切换模型' }}</div>
+        <div class="error-admin-hint">
+          {{ isAdminConfigError
+            ? '此问题通常由模型密钥或配置失效引起，用户侧无法自行修复，请联系管理员解决。'
+            : '若重试或切换模型后仍失败，请联系管理员解决。' }}
+        </div>
         <div class="empty-actions">
           <n-button size="small" type="primary" @click="handleRegenerate">🔄 重试</n-button>
           <n-button size="small" @click="handleRetryWithModel">⚙️ 切换模型</n-button>
@@ -1460,6 +1470,12 @@ function handleEdit() {
   font-size: 13px;
   line-height: 1.6;
   color: var(--chat-text-secondary, #666);
+  max-width: 420px;
+}
+.error-admin-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--chat-text-tertiary, #999);
   max-width: 420px;
 }
 .empty-actions {

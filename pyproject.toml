@@ -65,6 +65,10 @@ dependencies = [
     "statsmodels>=0.14.0",
     "scikit-posthocs>=0.11.4",
     "langgraph>=0.2.0",
+    "mem0ai==2.0.15",
+    "psycopg[binary,pool]>=3.1",
+    "ollama>=0.6.2",
+    "fastembed>=0.8.0",
 ]
 
 [project.optional-dependencies]

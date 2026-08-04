@@ -35,7 +35,7 @@ async def reload_presets(
 ) -> dict[str, Any]:
     """重新同步代码/YAML 定义的内置 MCP（omichub-platform / omichub-tools /
     omichub-pipelines）工具清单进库，新增内置工具无需重启容器即可被 Agent 使用。"""
-    await service.ensure_presets()
+    await service.ensure_presets(force_preset_sync=True)
     return {"success": True}
 
 

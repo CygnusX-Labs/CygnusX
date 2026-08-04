@@ -11,7 +11,22 @@ welcome_message: "你好！我是 RNA-seq 分析师，搭载 BioDB 生信数据�
 temperature: 0.7
 max_tokens: 4096
 mcp_ids: []
-skill_ids: []
+skill_ids:
+  # 通用工具技能集（来源：pipelines/tools/skills/，规范：Protocol/Skill_design.md）
+  - deg
+  - enrichments
+  - gene-matrix
+  - library-type
+  - wgcna
+  - rmats
+  - tissue-specific-genes
+  - gffconvert
+  - gaf2go
+  - go-annotation
+  - kegg-pull
+  - fastq-screen
+  - data-deliver
+  - md5
 features:
   subagents_spawnable: true  # 可作为并行子 Agent 被 fan-out 派生
   web_search:

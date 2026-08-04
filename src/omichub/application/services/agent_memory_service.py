@@ -38,6 +38,27 @@ class AgentMemoryService:
         self._db = db
         self._embedding_client = embedding_client
 
+    async def _memory_mode(self) -> str:
+        """记忆引擎三态门控：'mem0'（新引擎）/ 'legacy'（自研旧链路）/ 'off'（管理员关闭）。
+
+        env MEM0_ENGINE_ENABLED 是部署级能力闸门；site_settings.agent_memory_enabled
+        是管理员运行时开关，两者同时为真才启用 mem0。
+        """
+        if not get_settings().mem0_engine_enabled:
+            return "legacy"
+        if self._db is None:
+            return "mem0"
+        try:
+            from omichub.application.services.site_settings_service import SiteSettingsService
+
+            if await SiteSettingsService(self._db).is_agent_memory_enabled():
+                return "mem0"
+            return "off"
+        except Exception:  # noqa: BLE001 平台配置读取异常不应导致整体失忆
+            return "mem0"
+
+    _MEMORY_DISABLED_MESSAGE = "平台记忆功能当前已被管理员关闭"
+
     async def save_memory(
         self,
         *,
@@ -54,6 +75,20 @@ class AgentMemoryService:
         normalized_scope = self._validate_scope(scope)
         normalized_keywords = self._normalize_keywords(keywords, normalized_content)
         normalized_confidence = self._validate_confidence(confidence)
+
+        mode = await self._memory_mode()
+        if mode == "mem0":
+            return await self._m0_save_memory(
+                user_id=user_id,
+                content=normalized_content,
+                scope=normalized_scope,
+                keywords=normalized_keywords,
+                agent_id=agent_id,
+                project_id=project_id,
+                source_session=source_session,
+            )
+        if mode == "off":
+            raise BusinessError(self._MEMORY_DISABLED_MESSAGE)
 
         existing = await self._find_duplicate(
             user_id=user_id,
@@ -105,6 +140,13 @@ class AgentMemoryService:
         keywords: list[str] | None = None,
         source_session: str | None = None,
     ) -> dict[str, Any]:
+        mode = await self._memory_mode()
+        if mode == "mem0":
+            return await self._m0_update_memory(
+                user_id=user_id, memory_id=memory_id, content=content, keywords=keywords
+            )
+        if mode == "off":
+            raise BusinessError(self._MEMORY_DISABLED_MESSAGE)
         memory = await self._get_owned_memory(user_id, memory_id)
         memory.content = self._validate_content(content)
         memory.keywords = self._normalize_keywords(keywords, memory.content)
@@ -116,6 +158,11 @@ class AgentMemoryService:
         return {"memory": self._serialize(memory), "action": "updated"}
 
     async def forget_memory(self, *, user_id: str, memory_id: str, **_kwargs: Any) -> dict[str, Any]:
+        mode = await self._memory_mode()
+        if mode == "mem0":
+            return await self._m0_forget_memory(user_id=user_id, memory_id=memory_id)
+        if mode == "off":
+            raise BusinessError(self._MEMORY_DISABLED_MESSAGE)
         memory = await self._get_owned_memory(user_id, memory_id)
         memory.status = "archived"
         await self._db.flush()
@@ -132,6 +179,18 @@ class AgentMemoryService:
         project_id: str | None = None,
         **_kwargs: Any,
     ) -> dict[str, Any]:
+        mode = await self._memory_mode()
+        if mode == "mem0":
+            return await self._m0_search_memory(
+                user_id=user_id,
+                query=query,
+                scope=scope,
+                limit=limit,
+                agent_id=agent_id,
+                project_id=project_id,
+            )
+        if mode == "off":
+            return {"memories": [], "count": 0}
         query_terms = self._query_terms(query)
         statement = select(AgentMemoryModel).where(
             AgentMemoryModel.user_id == user_id,
@@ -175,6 +234,18 @@ class AgentMemoryService:
         include_archived: bool = False,
         limit: int = 100,
     ) -> list[AgentMemoryModel]:
+        mode = await self._memory_mode()
+        if mode == "mem0":
+            return await self._m0_list_memories(
+                user_id,
+                agent_id=agent_id,
+                scope=scope,
+                project_id=project_id,
+                include_archived=include_archived,
+                limit=limit,
+            )
+        if mode == "off":
+            return []
         statement = select(AgentMemoryModel).where(AgentMemoryModel.user_id == user_id)
         if agent_id:
             statement = statement.where(AgentMemoryModel.agent_id == agent_id)
@@ -188,11 +259,22 @@ class AgentMemoryService:
         return list((await self._db.scalars(statement)).all())
 
     async def delete_memory(self, user_id: str, memory_id: str) -> None:
+        mode = await self._memory_mode()
+        if mode == "mem0":
+            await self._m0_delete_memory(user_id, memory_id)
+            return
+        if mode == "off":
+            raise BusinessError(self._MEMORY_DISABLED_MESSAGE)
         memory = await self._get_owned_memory(user_id, memory_id)
         await self._db.delete(memory)
         await self._db.flush()
 
     async def clear_memories(self, user_id: str, *, agent_id: str | None = None) -> int:
+        mode = await self._memory_mode()
+        if mode == "mem0":
+            return await self._m0_clear_memories(user_id, agent_id=agent_id)
+        if mode == "off":
+            return 0
         memories = await self.list_memories(user_id, agent_id=agent_id, limit=500)
         for memory in memories:
             memory.status = "archived"
@@ -203,6 +285,13 @@ class AgentMemoryService:
         self, user_id: str, agent_id: str, query: str, *, project_id: str | None = None
     ) -> str:
         """构建固定 L1 + 当前 query 触发的 L2 记忆块，最大约 800 tokens。"""
+        mode = await self._memory_mode()
+        if mode == "mem0":
+            return await self._m0_build_prompt_context(
+                user_id, agent_id, query, project_id=project_id
+            )
+        if mode == "off":
+            return ""
         common = await self._query_active(
             user_id,
             agent_id,
@@ -218,6 +307,199 @@ class AgentMemoryService:
         if not selected:
             return ""
         await self._mark_used(selected)
+
+        lines: list[str] = []
+        budget = 3200
+        used = 0
+        for memory in selected:
+            line = f"- {memory.content.strip()}"
+            size = len(line.encode("utf-8"))
+            if used + size > budget:
+                logger.info("长期记忆注入达到 800 token 预算，已截断 user_id={}", user_id)
+                break
+            lines.append(line)
+            used += size
+        if not lines:
+            return ""
+        return (
+            "## 用户记忆（跨会话，可能过时；与当前对话冲突时以当前对话为准）\n"
+            + "\n".join(lines)
+        )
+
+    # ===== mem0 引擎分支（mem0_engine_enabled=true；实现见 infrastructure/memory/mem0_engine.py）=====
+
+    @staticmethod
+    async def _m0_engine():
+        from omichub.infrastructure.memory.mem0_engine import get_mem0_engine
+
+        return await get_mem0_engine()
+
+    @staticmethod
+    def _m0_visible(model: AgentMemoryModel, agent_id: str | None, project_id: str | None) -> bool:
+        """复刻自研引擎可见性：共享(agent_id=None)或本 agent；project 精确匹配。"""
+        if agent_id is not None and model.agent_id is not None and model.agent_id != agent_id:
+            return False
+        if project_id:
+            return model.project_id == project_id
+        return model.project_id is None
+
+    @staticmethod
+    def _m0_sort_key(model: AgentMemoryModel) -> datetime:
+        return model.updated_at or datetime.min.replace(tzinfo=UTC)
+
+    async def _m0_save_memory(
+        self,
+        *,
+        user_id: str,
+        content: str,
+        scope: str,
+        keywords: list[str],
+        agent_id: str | None,
+        project_id: str | None,
+        source_session: str | None,
+    ) -> dict[str, Any]:
+        engine = await self._m0_engine()
+        memory_id, action = await engine.add_direct(
+            content,
+            user_id=user_id,
+            scope=scope,
+            keywords=keywords,
+            agent_id=agent_id,
+            project_id=project_id,
+            source_session=source_session,
+        )
+        memory = AgentMemoryModel(
+            user_id=user_id,
+            project_id=project_id,
+            agent_id=agent_id,
+            scope=scope,
+            content=content,
+            keywords=list(keywords or []),
+            source_session=source_session,
+            confidence=1.0,
+            use_count=0,
+            status="active",
+        )
+        try:
+            memory.id = uuid.UUID(memory_id)
+        except ValueError:
+            pass
+        memory.created_at = memory.updated_at = datetime.now(UTC)
+        return {"memory": self._serialize(memory), "action": action}
+
+    async def _m0_update_memory(
+        self,
+        *,
+        user_id: str,
+        memory_id: str,
+        content: str,
+        keywords: list[str] | None,
+    ) -> dict[str, Any]:
+        engine = await self._m0_engine()
+        normalized = self._validate_content(content)
+        record = await engine.find_record(user_id, memory_id)
+        if record is None:
+            raise NotFoundError("记忆不存在")
+        metadata = dict(record.get("metadata") or {})
+        metadata["keywords"] = self._normalize_keywords(keywords, normalized)
+        await engine.update(memory_id, text=normalized, metadata=metadata)
+        record["memory"] = normalized
+        record["metadata"] = metadata
+        record["updated_at"] = datetime.now(UTC).isoformat()
+        return {"memory": self._serialize(engine.to_model(record, user_id=user_id)), "action": "updated"}
+
+    async def _m0_forget_memory(self, *, user_id: str, memory_id: str) -> dict[str, Any]:
+        engine = await self._m0_engine()
+        if await engine.find_record(user_id, memory_id) is None:
+            raise NotFoundError("记忆不存在")
+        await engine.delete(memory_id)
+        return {"memory_id": memory_id, "forgotten": True}
+
+    async def _m0_search_memory(
+        self,
+        *,
+        user_id: str,
+        query: str,
+        scope: str | None,
+        limit: int,
+        agent_id: str | None,
+        project_id: str | None,
+    ) -> dict[str, Any]:
+        engine = await self._m0_engine()
+        normalized_scope = self._validate_scope(scope) if scope else None
+        hits = await engine.search(query, user_id=user_id, top_k=max(limit * 4, 20))
+        models = [engine.to_model(r, user_id=user_id) for r in hits]
+        selected = [
+            model
+            for model in models
+            if self._m0_visible(model, agent_id, project_id)
+            and (normalized_scope is None or model.scope == normalized_scope)
+        ][: max(1, min(limit, 10))]
+        return {"memories": [self._serialize(model) for model in selected], "count": len(selected)}
+
+    async def _m0_list_memories(
+        self,
+        user_id: str,
+        *,
+        agent_id: str | None,
+        scope: str | None,
+        project_id: str | None,
+        include_archived: bool,
+        limit: int,
+    ) -> list[AgentMemoryModel]:
+        engine = await self._m0_engine()
+        normalized_scope = self._validate_scope(scope) if scope else None
+        records = await engine.get_all_user(user_id, limit=500)
+        rows = [
+            model
+            for model in (engine.to_model(r, user_id=user_id) for r in records)
+            if (agent_id is None or model.agent_id == agent_id)
+            and (normalized_scope is None or model.scope == normalized_scope)
+            and (project_id is None or model.project_id == project_id)
+        ]
+        rows.sort(key=self._m0_sort_key, reverse=True)
+        return rows[: max(1, min(limit, 500))]
+
+    async def _m0_delete_memory(self, user_id: str, memory_id: str) -> None:
+        engine = await self._m0_engine()
+        if await engine.find_record(user_id, memory_id) is None:
+            raise NotFoundError("记忆不存在")
+        await engine.delete(memory_id)
+
+    async def _m0_clear_memories(self, user_id: str, *, agent_id: str | None) -> int:
+        engine = await self._m0_engine()
+        return await engine.delete_all(user_id, agent_id=agent_id)
+
+    async def _m0_build_prompt_context(
+        self, user_id: str, agent_id: str, query: str, *, project_id: str | None
+    ) -> str:
+        """mem0 版 L1+L2 注入：L1 画像/偏好常驻，L2 按当前消息语义召回。"""
+        engine = await self._m0_engine()
+        records = await engine.get_all_user(user_id, limit=500)
+        models = [engine.to_model(r, user_id=user_id) for r in records]
+        common = [
+            model
+            for model in models
+            if model.scope in {"profile", "preference"}
+            and self._m0_visible(model, agent_id, project_id)
+        ]
+        common.sort(key=self._m0_sort_key, reverse=True)
+        common = common[:10]
+
+        recalled: list[AgentMemoryModel] = []
+        if self._query_terms(query):
+            hits = await engine.search(query, user_id=user_id, top_k=20)
+            recalled = [
+                model
+                for model in (engine.to_model(r, user_id=user_id) for r in hits)
+                if model.scope in {"project", "summary"}
+                and self._m0_visible(model, agent_id, project_id)
+            ][:5]
+
+        seen = {model.id for model in common}
+        selected = [*common, *(model for model in recalled if model.id not in seen)]
+        if not selected:
+            return ""
 
         lines: list[str] = []
         budget = 3200

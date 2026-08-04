@@ -11,7 +11,13 @@ welcome_message: "你好！我是通用助手，可以帮你解答生信分析�
 temperature: 0.7
 max_tokens: 4096
 mcp_ids: []
-skill_ids: []
+skill_ids:
+  # 通用生信工具技能（来源：pipelines/tools/skills/）
+  - blast
+  - genome-tools
+  - atac-tools
+  - maftools-gistic2
+  - mutational-patterns
 features:
   engine: langgraph
   subagents_spawnable: true  # 可作为并行子 Agent 被 fan-out 派生

@@ -21,6 +21,66 @@ services:
       retries: 5
       start_period: 10s
 
+  agentteams-worker-code:
+    profiles: [agentteams-acceptance]
+    build:
+      context: ../../integrations/agentteams/worker
+    env_file:
+      - ${BRIDGE_ENV_FILE:-./bridge.env}
+    environment:
+      AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
+      AGENTTEAMS_WORKER_IDENTITY: agent-code
+      AGENTTEAMS_WORKER_AUTOCOMPLETE_DEMO: "true"
+      AGENTTEAMS_WORKER_ACCEPT_CASE_PREFIX: agentteams-acceptance-
+      AGENTTEAMS_WORKER_POLL_SECONDS: "2"
+    depends_on:
+      omichub-agentteams-bridge:
+        condition: service_healthy
+    networks: [agentteams_control]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+
+  agentteams-worker-viz:
+    profiles: [agentteams-acceptance]
+    build:
+      context: ../../integrations/agentteams/worker
+    env_file:
+      - ${BRIDGE_ENV_FILE:-./bridge.env}
+    environment:
+      AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
+      AGENTTEAMS_WORKER_IDENTITY: agent-viz
+      AGENTTEAMS_WORKER_AUTOCOMPLETE_DEMO: "true"
+      AGENTTEAMS_WORKER_ACCEPT_CASE_PREFIX: agentteams-acceptance-
+      AGENTTEAMS_WORKER_POLL_SECONDS: "2"
+    depends_on:
+      omichub-agentteams-bridge:
+        condition: service_healthy
+    networks: [agentteams_control]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+
+  agentteams-worker-scrna:
+    profiles: [agentteams-acceptance]
+    build:
+      context: ../../integrations/agentteams/worker
+    env_file:
+      - ${BRIDGE_ENV_FILE:-./bridge.env}
+    environment:
+      AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
+      AGENTTEAMS_WORKER_IDENTITY: agent-scrna
+      AGENTTEAMS_WORKER_AUTOCOMPLETE_DEMO: "true"
+      AGENTTEAMS_WORKER_ACCEPT_CASE_PREFIX: agentteams-acceptance-
+      AGENTTEAMS_WORKER_POLL_SECONDS: "2"
+    depends_on:
+      omichub-agentteams-bridge:
+        condition: service_healthy
+    networks: [agentteams_control]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+
 networks:
   agentteams_control:
     name: omichub_agentteams_control

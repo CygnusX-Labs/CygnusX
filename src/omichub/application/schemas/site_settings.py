@@ -51,6 +51,7 @@ class SiteSettingsDTO(OmicsHubBaseSchema):
     collaboration_degradation_locale: CollaborationDegradationLocale = "zh-CN"
     collaboration_degradation_template_zh: str = ""
     collaboration_degradation_template_en: str = ""
+    agent_memory_enabled: bool = True
 
 
 class UpdateSiteSettingsDTO(OmicsHubBaseSchema):
@@ -66,6 +67,7 @@ class UpdateSiteSettingsDTO(OmicsHubBaseSchema):
     collaboration_degradation_locale: CollaborationDegradationLocale | None = None
     collaboration_degradation_template_zh: str | None = Field(default=None, max_length=1_000)
     collaboration_degradation_template_en: str | None = Field(default=None, max_length=1_000)
+    agent_memory_enabled: bool | None = None
     home_quick_entries: list[HomeQuickEntryDTO] | None = Field(
         default=None,
         min_length=1,

@@ -317,3 +317,157 @@
 - `cd frontend && npm run type-check`（vue-tsc --noEmit）通过。
 - `cd frontend && npx vite build` 通过。
 - `git diff --check` 通过。
+
+# 2026-08-04 变更记录
+
+## 今日完成
+
+### Agent 记忆系统全面核查（前置调研）
+
+- 以 4 个并行子 Agent + 运行时实测核查平台记忆系统，确认：
+  - 短期记忆 = 前端滑窗 20 条 + 后端 200K-token 应急压缩，运行正常。
+  - 长期记忆 `agent_memories` 表 schema 完整（含 vector(1024) + HNSW 索引），但**开关全关、0 行数据**，自动摘要唯一触发点是删除会话。
+  - 跨 agent 索引为 scope 双轨制：profile/preference 全局共享，project/summary 按 agent 隔离。
+- 产出 mem0 适配性评估：与平台技术栈（Python 3.11 / pgvector 0.8.6 / LiteLLM）全面契合，且记忆表零数据、无迁移成本。
+
+### mem0 记忆引擎替换（核心变更，已灰度上线）
+
+- 新增 `src/omichub/infrastructure/memory/mem0_engine.py`：mem0 v2.0.15 引擎封装（进程级单例），
+  pgvector 独立 collection `mem0_memories`，不触碰旧 `agent_memories` 表。
+- `AgentMemoryService` 八个 public 方法按 `mem0_engine_enabled` 分流，**对外契约零改动**
+  （4 个 LLM 工具、用户/管理员 API、前端、prompt 注入格式全部保留）；开关关闭即回滚旧链路。
+- 跨 agent 语义保持双轨：共享记忆不带 agent_id，私有记忆 agent_id 存于 metadata，可见性全部客户端过滤。
+- 写入前语义查重（阈值 0.95）复刻旧引擎"最新值覆盖"去重行为。
+- 新增配置组 `mem0_*`（core/config.py）：引擎开关、抽取模型、embedder 三选一
+  （fastembed/ollama/openai）、collection、沉淀频率、检索/查重阈值等。
+- `.env` 与 `.env.example` 同步补充完整配置示例与注释。
+
+### 记忆沉淀时机修复（不再只有删会话才沉淀）
+
+- 新增 Celery 任务 `settle_session_memory`：mem0 引擎开启时，把会话最近 30 条消息
+  交给 mem0 做 LLM 事实抽取 + 实体合并，写入 `scope=summary` 记忆。
+- 触发点扩展为两处：会话消息每累计 `MEM0_SETTLE_EVERY_N_MESSAGES`（默认 20）条异步入库一次；
+  删除会话时仍触发（原 `summarize_session` 旧链路保留为回滚位）。
+
+### 结构性小修
+
+- 子 Agent 工具剥离名单补齐 `omichub_update_memory`、`omichub_forget_memory`
+  （原先子任务可改写/删除主用户记忆；`omichub_search_memory` 只读予以保留）。
+- 记忆注入失败日志 warning→error（主路径 + handoff 路径），不再静默无感。
+- `omichub_search_memory` 工具 limit 上限 5→10（底层本就支持）。
+- 管理员删除用户时，mem0 引擎开启则同步清理 mem0 存储中的该用户记忆。
+
+### Embedding 方案落地（fastembed 进程内 ONNX）
+
+- 云端 embedding 探针全部出局（阿里云 token-plan 无 embedding 模型、火山 coding key 401）；
+  ollama 容器镜像（~4GB）所有 registry 拉取卡死，改走 fastembed。
+- 选用 `intfloat/multilingual-e5-large`（1024 维、多语含中文、MIT），
+  模型缓存落 `/data/omichub/mem0-cache`（web/worker 共享卷，已预置），
+  下载源 `HF_ENDPOINT=https://hf-mirror.com`。
+- 按实测分数分布定阈值：检索下限 0.87、查重阈值 0.95
+  （e5 无前缀实测：无关≈0.80、跨话题≈0.85、同领域相关≥0.90、同义≥0.96）。
+
+### 部署基础设施修复
+
+- **db 镜像漂移陷阱**：基础 compose 的 db 原为 `postgres:14-alpine`，任何不带 pgvector
+  overlay 的 `docker compose up -d` 都会把 db 重建回无 pgvector 镜像（全部向量操作报
+  `$libdir/vector`）。已将基础 compose db 镜像改为 `pgvector/pgvector:pg14`。
+- pyproject 新增依赖：`mem0ai==2.0.15`、`psycopg[binary,pool]>=3.1`（worker 镜像缺 libpq，
+  binary wheel 自带）、`ollama>=0.6.2`、`fastembed>=0.8.0`，镜像重建后依赖固化。
+- compose 预留备用 `ollama-embed` 服务（profile `embed-ollama` 隔离，不影响全栈启动），
+  模型卷 `omichub_embed` 已预置 bge-m3。
+
+### 记忆引擎管理开关、用户可见性与加密落盘（同日二期）
+
+- **管理员平台设置新增「Agent 长期记忆」运行时开关**：
+  - `site_settings.agent_memory_enabled`（新增列 + alembic 迁移 `k5l6m7n8o9p0`，默认 true）；
+    管理端「设置 → 平台设置」可视化切换（免 TOTP 功能开关），非敏感字段名单已收录。
+  - 三态门控：env `MEM0_ENGINE_ENABLED` 为部署级能力闸门，管理端开关为运行时开关，
+    同时为真才启用；管理员关闭时——召回/注入返回空、列表为空、写入明确报
+    「平台记忆功能当前已被管理员关闭」、settle 沉淀任务返回 `disabled_by_admin`。
+  - 消费点全覆盖：AgentMemoryService 八个入口、chat_service 两处沉淀触发、
+    celery settle 任务。
+- **用户侧记忆可见性增强**（个人中心「我的记忆」）：
+  - 新增 scope 筛选（全部/用户画像/偏好/项目/对话沉淀）；
+  - 记忆行展示归属 Agent 友好名（10 个平台 Agent 映射）、来源会话标记（悬停显示会话 ID）、
+    更新时间；空态与提示文案改为说明"记忆来自与 AI 助手的对话，自动沉淀"。
+- **记忆加密落盘**（`/data/omichub/omichub_data/_mem0/`）：
+  - 向量库边界 Fernet 加密：mem0 payload.data 落库即密文，读取解密；mem0 内部
+    抽取/去重/实体合并仍见明文（补丁对 insert/search/update/get/list 全覆盖，
+    含 pgvector list 的嵌套返回结构与 ndarray→list 适配）。
+  - 密钥管理：`MEM0_ENCRYPTION_KEY` 优先；留空自动生成并持久化
+    `_mem0/master.key`（0600，web/worker 共享卷）。密钥丢失 = 存量记忆不可恢复。
+  - history 审计库（sqlite）从 /tmp 迁入 `_mem0/history/history.db`，
+    old/new memory 字段同样写前加密。
+  - 解密失败视为历史明文数据原样放行（换钥/迁移兼容）。
+
+### 智能体能力抽屉展示实际应答 Agent（路由会话修复）
+
+- 问题：统一入口（router）会话里，「查看该智能体能力」抽屉按 `session.agent_id`
+  取入口 router（无 skill），而实际应答的是路由徽标记录的专家（如通用助手，挂 5 个 skill），
+  导致"已挂载的 skill 在能力抽屉里显示 0 个"。
+- 修复：agentHub store 新增 `effectiveAgent`（最后一条带 `routed_agent` 徽标的消息
+  所指专家优先，回落到会话归属 Agent）；`AgentCapabilityDrawer` 改用它。
+  抽屉的 MCP/技能/系统设定现在与实际应答 Agent 一致。
+- `vue-tsc` / 构建通过，nginx 已重载。
+
+### 个人中心记忆卡片前置与增强
+
+- 「我的记忆」卡片从页面第 5 位上移至「最近任务」之后（第 2 位），换 ✨ SparklesOutline
+  图标，标题旁新增「N 条」计数徽章，首屏即可看到记忆沉淀情况。
+- 空态文案明确说明沉淀时机与前置条件：「与 AI 助手对话满约 20 条消息后自动沉淀
+  （需要平台 AI 模型密钥有效）」——密钥失效期间不会产出新记忆。
+
+### AI 错误态增加「联系管理员」提示
+
+- 聊天错误卡片（`KimiMessageItem.vue` 错误态）在错误描述与操作按钮之间新增一行引导：
+  - 密钥/配置/授权类错误（正则识别 API Key/密钥/过期/401/403 等）→
+    「此问题通常由模型密钥或配置失效引起，用户侧无法自行修复，请联系管理员解决。」
+  - 其他错误 → 「若重试或切换模型后仍失败，请联系管理员解决。」
+- `npm run type-check` / `npm run build` 通过，nginx 已重载。
+- 排查截图问题时发现：当日 11:06 起 providers.yaml 四个 Provider（qwen/deepseek/doubao/gpt-5.5）
+  密钥均已失效（Invalid API-key），全平台 AI 聊天与 mem0 抽取均不可用，
+  需管理员更新 `.env` 中 AL_API_KEY/ARK_API_KEY/COOL_API_KEY 并重启 web（启动时自动重同步入库）。
+
+### audit_logs 缺表修复（历史遗留）
+
+- 现象：web 日志持续出现 `审计日志写入失败: relation "audit_logs" does not exist`
+  （ORM 模型早已存在但从未建迁移，与 kb_chunks 同类问题），HTTP 写操作审计全丢，
+  个人中心「审计记录」始终为空。
+- 修复：新增 alembic 迁移 `l6m7n8o9p0q1_add_audit_logs.py`，按 `AuditLogModel` 建表
+  （12 列 + 6 个索引，detail 默认 `'{}'::json`、created_at 默认 now()），已应用。
+- 验证：登录探针 POST /api/v1/auth/login 与真实前端 refresh 请求均成功落审计表，
+  写入失败告警归零。
+
+### 文档
+
+- 新增 `docs/26.8.4/OmicHub_mem0记忆引擎替换实施方案.md`：架构与设计决策（D1-D8）、
+  PoC 验收记录、对外契约附录、分阶段施工计划、灰度部署记录与三大隐形坑、回滚方案。
+
+## 已验证
+
+- PoC（`scripts/poc/mem0_poc.py`）：5 项验收全过，同义事实写入 3 次经 mem0 实体合并仅存 1 条。
+- 适配层冒烟（`scripts/poc/mem0_adapter_smoke.py`）：15/15 通过（查重转 update、跨 agent 隔离、
+  L1+L2 注入、update/forget/clear）。
+- 生产容器金丝雀：web 端 7/7 通过；worker 端 settle 对真实会话（18 条消息）抽出 4 条
+  高质量 summary 记忆，scope/agent 归属正确，验证数据已清理。
+- 引擎初始化、`mem0_memories` 建表、HNSW 检索在 omichub-db 实测正常。
+- 二期验证：加密落盘 SQL 直查为 Fernet 密文（`gAAAAA…`）且明文零泄露；应用侧读回明文正常；
+  管理端开关 6 项联动全过（ON 保存/密文/读回，OFF 后 search/list/注入为空、写入被拒、恢复）；
+  `master.key`（0600）与 `history/history.db` 确认落盘 `/data/omichub/omichub_data/_mem0/`；
+  alembic 迁移 `k5l6m7n8o9p0` 应用成功；前端 `npm run type-check` / `npm run build` 通过。
+
+## 当前边界
+
+- mem0 抽取存在已知边界（均已在引擎层处理）：内容含 `<`/`>` 会破坏抽取（已前置净化为
+  "小于/大于"）；传原生 agent_id + assistant 消息会误入 mem0 agent-extraction 分支
+  （settle 路径已改为仅经 metadata 传递 agent_id）；fastembed 返回 ndarray 已打转换补丁。
+- `use_count`/`confidence` 在 mem0 轨不再维护（返回兼容值），管理端"含归档"审计在 mem0 轨
+  仅含活跃记忆（mem0 删除即物理删除）。
+- 回滚方式：`.env` 改 `MEM0_ENGINE_ENABLED=false` 并重建 web/worker 容器（restart 不重读
+  env_file）。旧 `agent_memories` 链路与全部旧配置项完整保留。
+- 阈值基于 e5-large 单模型实测，未来更换 embedder 需重新标定检索/查重阈值。
+- 加密密钥治理：`_mem0/master.key` 是当前唯一密钥来源，须纳入备份；多副本部署应显式配置
+  同一 `MEM0_ENCRYPTION_KEY`。`client.history()` 接口返回的 old/new memory 为密文，
+  平台暂未提供解密展示。
+- 管理端开关关闭期间，历史记忆仅隐藏不清除；重新开启即恢复可见。

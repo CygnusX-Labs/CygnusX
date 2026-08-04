@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+import omichub.application.services.mcp_service as mcp_service
 from omichub.application.schemas.mcp import CreateMCPServerDTO, UpdateMCPServerDTO
 from omichub.application.services.mcp_service import MCPService
 from omichub.core.exceptions import NotFoundError
@@ -163,6 +164,80 @@ async def test_list_server_versions_backfills_initial_snapshot():
     rows = [v for v in db.versions if isinstance(v, MCPVersionModel)]
     assert len(rows) == 1
     assert rows[0].config_snapshot["name"] == "go-server"
+
+
+@pytest.mark.unit
+async def test_builtin_preset_sync_creates_upgrade_snapshot(monkeypatch):
+    """内置工具变化：保留 v1.0.0 初始快照并升级到 v1.0.1。"""
+    server = _server(name="omichub-platform")
+    service, db = _make_service(server)
+    preset = {
+        "name": "omichub-platform",
+        "description": "平台操作 MCP",
+        "tools": [
+            {
+                "name": "platform_get_current_time",
+                "description": "获取当前时间",
+                "inputSchema": {"type": "object", "properties": {}},
+            }
+        ],
+    }
+    monkeypatch.setattr(mcp_service, "PRESET_SERVERS", [preset])
+    monkeypatch.setattr(
+        mcp_service,
+        "_build_omichub_tools_preset",
+        lambda: {"name": "omichub-tools", "description": "tools", "tools": []},
+    )
+    service._repo.list_all.return_value = [server]
+    service._repo.get_by_name.return_value = server
+    service._repo.get_by_id.return_value = server
+
+    await service.ensure_presets()
+
+    assert server.current_version == "1.0.1"
+    assert [tool.tool_name for tool in server.tools] == ["platform_get_current_time"]
+    versions = {row.version: row for row in db.versions}
+    assert versions["1.0.0"].source == "register"
+    assert versions["1.0.0"].changelog == "注册 MCP Server（初始配置）"
+    assert versions["1.0.1"].source == "preset"
+    assert versions["1.0.1"].changelog == "内置 MCP 预设升级：同步最新工具清单"
+
+
+@pytest.mark.unit
+async def test_builtin_preset_sync_keeps_user_selected_version(monkeypatch):
+    """回滚选择的内置版本在普通刷新中保持，不被最新代码工具清单覆盖。"""
+    server = _server(
+        name="omichub-platform",
+        current_version="1.0.0",
+        generation_meta={"preset_version_pinned": True},
+    )
+    service, db = _make_service(server)
+    preset = {
+        "name": "omichub-platform",
+        "description": "平台操作 MCP",
+        "tools": [
+            {
+                "name": "platform_get_current_time",
+                "description": "获取当前时间",
+                "inputSchema": {"type": "object", "properties": {}},
+            }
+        ],
+    }
+    monkeypatch.setattr(mcp_service, "PRESET_SERVERS", [preset])
+    monkeypatch.setattr(
+        mcp_service,
+        "_build_omichub_tools_preset",
+        lambda: {"name": "omichub-tools", "description": "tools", "tools": []},
+    )
+    service._repo.list_all.return_value = [server]
+    service._repo.get_by_name.return_value = server
+    service._repo.get_by_id.return_value = server
+
+    await service.ensure_presets()
+
+    assert server.current_version == "1.0.0"
+    assert [tool.tool_name for tool in server.tools] == ["tool_a"]
+    assert db.versions == []
 
 
 @pytest.mark.unit

@@ -97,6 +97,26 @@ class Settings(BaseSettings):
     agent_memory_summary_model: str = ""
     agent_memory_conflict_adjudication_enabled: bool = False
     agent_memory_conflict_adjudication_model: str = ""
+    # ===== mem0 记忆引擎（26.8.4：mem0 v2 替换自研记忆内核） =====
+    # 设计见 docs/26.8.4/OmicHub_mem0记忆引擎替换实施方案.md
+    # 关闭时完全走原 agent_memories 自研链路（回滚位）。
+    mem0_engine_enabled: bool = False
+    mem0_extraction_model: str = "qwen3.7-plus"  # 事实抽取 LLM（provider 名或模型名，从 provider 注册表解析凭据）
+    mem0_embedding_provider: str = "ollama"  # ollama | openai（openai 兼容端点）
+    mem0_embedding_model: str = "bge-m3"
+    mem0_embedding_dims: int = 1024
+    mem0_ollama_base_url: str = "http://127.0.0.1:11434"
+    mem0_openai_base_url: str = ""  # mem0_embedding_provider=openai 时的 embeddings 端点
+    mem0_openai_api_key: str = ""
+    mem0_collection: str = "mem0_memories"
+    mem0_data_dir: str = "/data/omichub/omichub_data/_mem0"  # 记忆数据目录：主密钥与 history 审计库
+    mem0_encryption_enabled: bool = True  # 记忆内容静态加密（Fernet）；密钥见 mem0_encryption_key
+    mem0_encryption_key: str = ""  # Fernet 密钥；留空则自动生成并持久化到 mem0_data_dir/master.key（0600）
+    mem0_history_dir: str = ""  # mem0 history sqlite 目录；留空则落 mem0_data_dir/history
+    mem0_llm_temperature: float = 0.1
+    mem0_dedup_similarity_threshold: float = 0.95  # 直存查重阈值（e5-large 无前缀实测：同义≥0.96，同领域不同工具≈0.90）
+    mem0_search_score_threshold: float = 0.87  # 检索分数下限（e5-large 实测：跨话题≈0.85，同领域相关≥0.90，无关≈0.80）
+    mem0_settle_every_n_messages: int = 20  # 每累计 N 条消息异步入库一次长期记忆
     multi_expert_consultation_enabled: bool = False
     multi_expert_consultation_max_experts: int = 3
     # 统一协作意图路由：关闭时保持既有 Router 行为，用于灰度与一键回退。

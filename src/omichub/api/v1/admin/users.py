@@ -466,6 +466,19 @@ async def delete_user(
         )
     )
     await db.execute(AgentMemoryModel.__table__.delete().where(AgentMemoryModel.user_id == str(user_id)))
+    # mem0 引擎启用时同步清理 mem0 存储中的记忆（26.8.4）
+    from omichub.core.config import get_settings
+
+    if get_settings().mem0_engine_enabled:
+        from loguru import logger
+
+        try:
+            from omichub.infrastructure.memory.mem0_engine import get_mem0_engine
+
+            engine = await get_mem0_engine()
+            await engine.delete_all(str(user_id))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("mem0 记忆清理失败（用户删除继续）: {}", exc)
 
     # 4) 最后删除用户本体（CASCADE 表由数据库自动清理）
     await db.delete(user)

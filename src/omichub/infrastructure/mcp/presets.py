@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from omichub.application.schemas.tool_invocation import ToolInvocationContext
 from omichub.application.services.tool_bridge_service import get_tool_bridge_service
@@ -168,9 +170,35 @@ async def _platform_list_flows(arguments: dict[str, Any], **_kw: Any) -> dict[st
     items = result.items if hasattr(result, "items") else []
     return {
         "flows": [
-            {"id": f.meta.id, "name": f.meta.name, "category": f.meta.category, "version": f.meta.version}
+            {"id": f.id, "name": f.name, "category": f.category, "version": f.version}
             for f in items
         ]
+    }
+
+
+async def _platform_get_current_time(
+    arguments: dict[str, Any], **_kw: Any
+) -> dict[str, Any]:
+    """Return the current platform-server time without starting a sandbox."""
+    timezone_name = str(arguments.get("timezone") or "").strip()
+    try:
+        timezone = ZoneInfo(timezone_name) if timezone_name else datetime.now().astimezone().tzinfo
+    except ZoneInfoNotFoundError:
+        return {
+            "error": "无效时区，请使用 IANA 时区名称，例如 Asia/Shanghai 或 America/Los_Angeles",
+            "timezone": timezone_name,
+        }
+
+    now = datetime.now(timezone)
+    return {
+        "datetime": now.isoformat(),
+        "date": now.date().isoformat(),
+        "time": now.time().replace(microsecond=0).isoformat(),
+        "weekday": now.strftime("%A"),
+        "timezone": now.tzname(),
+        "timezone_name": timezone_name or str(timezone),
+        "utc_offset": now.strftime("%z"),
+        "unix_timestamp": int(now.timestamp()),
     }
 
 
@@ -801,6 +829,22 @@ PLATFORM_PRESET_TOOLS = [
         },
     },
     {
+        "name": "platform_get_current_time",
+        "description": (
+            "获取平台服务器当前时间、今天日期、星期、时区偏移和 Unix 时间戳。"
+            "查询当前时间或日期时优先调用，不需要启动沙箱。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "timezone": {
+                    "type": "string",
+                    "description": "可选 IANA 时区，如 Asia/Shanghai、America/Los_Angeles；留空使用平台服务器本地时区",
+                }
+            },
+        },
+    },
+    {
         "name": "platform_sandbox_execute",
         "description": "在沙箱中执行 Python、R 或 Bash 代码（mambaforge 环境，含 ggtree 绘图依赖）",
         "inputSchema": {
@@ -1028,6 +1072,7 @@ PLATFORM_HANDLERS = {
     "platform_list_tasks": _platform_list_tasks,
     "platform_get_task": _platform_get_task,
     "platform_list_flows": _platform_list_flows,
+    "platform_get_current_time": _platform_get_current_time,
     "platform_sandbox_execute": _platform_sandbox_execute,
     "platform_read_file": _platform_read_file,
     "list_workspace_files": _list_workspace_files,

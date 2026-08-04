@@ -280,16 +280,6 @@ export type MessageAction = 'copy' | 'regenerate' | 'retry' | 'translate' | 'del
 // ===== 复制模式 =====
 export type CopyMode = 'plain' | 'markdown' | 'citation'
 
-// ===== 生信提示词模板 =====
-export interface BioPromptTemplate {
-  id: string
-  title: string
-  description: string
-  category: string
-  /** Markdown 内容，可含 {{param}} 占位符 */
-  content: string
-}
-
 // ===== 对话级设置 =====
 export interface ConversationSettings {
   temperature: number

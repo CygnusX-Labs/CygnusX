@@ -22,6 +22,8 @@ skill_ids:
   - scrna-deg-analysis
   - scrna-annotation-stats
   - scrna-quarto-report
+  # inferCNV 工具（来源：pipelines/tools/skills/）
+  - scrna-seq
 features:
   subagents_spawnable: true  # 可作为并行子 Agent 被 fan-out 派生
   engine: langgraph
