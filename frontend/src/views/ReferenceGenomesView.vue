@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NEmpty, NIcon, NInput, NSelect, NTag, useMessage } from 'naive-ui'
+import { NButton, NEmpty, NIcon, NInput, NSelect, NSpin, NTag, useMessage } from 'naive-ui'
 import {
   AddOutline,
   ArrowForwardOutline,
@@ -9,28 +9,26 @@ import {
   SearchOutline,
 } from '@vicons/ionicons5'
 import PageHeader from '@/components/PageHeader.vue'
-import {
-  DATABASE_SPECIES,
-  getDataFileEntries,
-  getDatabaseSummary,
-  getDefaultGenomeVersion,
-  getSpeciesBuildStatus,
-  type BuildStatus,
-  type DataFileType,
-  type GenomeVersion,
-  type SpeciesDatabase,
-} from '@/mock/referenceGenomes'
+import { fetchSpecies, globalSearch } from '@/api/referenceGenomes'
+import type {
+  BuildStatus,
+  DataFileType,
+  DatabaseDataFile,
+  GenomeVersion,
+  SearchResult,
+  SpeciesDatabase,
+} from '@/types/referenceGenomes'
 
 const router = useRouter()
 const message = useMessage()
 
+const speciesList = ref<SpeciesDatabase[]>([])
+const loading = ref(false)
 const searchQuery = ref('')
 const categoryFilter = ref<'all' | 'plant' | 'animal' | 'microbe'>('all')
 const statusFilter = ref<'all' | BuildStatus>('all')
 const sortBy = ref<'default' | 'species' | 'genes' | 'versions'>('default')
-const defaultVersionBySpecies = ref<Record<string, string>>(
-  Object.fromEntries(DATABASE_SPECIES.map((species) => [species.id, getDefaultGenomeVersion(species).versionId])),
-)
+const defaultVersionBySpecies = ref<Record<string, string>>({})
 
 const categoryOptions = [
   { label: '全部分类', value: 'all' },
@@ -62,11 +60,130 @@ const sourceLabel: Record<DataFileType, string> = {
   kegg: 'KEGG',
 }
 
-const summary = computed(() => getDatabaseSummary())
+/* ────── 辅助函数（原 mock 中内联） ────── */
+
+function getDefaultGenomeVersion(species: SpeciesDatabase): GenomeVersion {
+  return species.genomeVersions.find((v) => v.isDefault) ?? species.genomeVersions[0]
+}
+
+function getDataFileEntries(version: GenomeVersion): DatabaseDataFile[] {
+  return (['fasta', 'gff', 'go', 'kegg'] as DataFileType[])
+    .map((key) => version.dataFiles[key])
+    .filter((file): file is DatabaseDataFile => Boolean(file))
+}
+
+function getSpeciesBuildStatus(species: SpeciesDatabase): BuildStatus {
+  const files = species.genomeVersions.flatMap(getDataFileEntries)
+  if (files.some((f) => f.buildStatus === 'error')) return 'error'
+  if (files.some((f) => f.buildStatus === 'building')) return 'building'
+  if (files.some((f) => f.buildStatus === 'missing')) return 'missing'
+  return 'ready'
+}
+
+function countGenes(species: SpeciesDatabase) {
+  return species.genomeVersions.reduce((sum, v) => sum + v.stats.totalGenes, 0)
+}
+
+function countReadyFiles(species: SpeciesDatabase) {
+  return species.genomeVersions
+    .flatMap(getDataFileEntries)
+    .filter((file) => file.buildStatus === 'ready').length
+}
+
+/* ────── 数据加载 ────── */
+
+onMounted(async () => {
+  loading.value = true
+  try {
+    const res = await fetchSpecies()
+    speciesList.value = res.species
+    defaultVersionBySpecies.value = Object.fromEntries(
+      res.species.map((s) => [s.id, getDefaultGenomeVersion(s).versionId]),
+    )
+  } catch (e) {
+    message.error('加载参考基因组数据失败')
+  } finally {
+    loading.value = false
+  }
+})
+
+/* ────── 全局搜索（防抖 + 下拉） ────── */
+
+const searchResult = ref<SearchResult | null>(null)
+const searchLoading = ref(false)
+const showDropdown = ref(false)
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(searchQuery, (q) => {
+  if (searchTimer) clearTimeout(searchTimer)
+  if (!q.trim()) {
+    searchResult.value = null
+    showDropdown.value = false
+    return
+  }
+  searchTimer = setTimeout(async () => {
+    searchLoading.value = true
+    showDropdown.value = true
+    try {
+      searchResult.value = await globalSearch({ q: q.trim(), limit: 5 })
+    } catch {
+      searchResult.value = null
+    } finally {
+      searchLoading.value = false
+    }
+  }, 300)
+})
+
+function onSearchFocus() {
+  if (searchResult.value && searchQuery.value.trim()) showDropdown.value = true
+}
+
+function onSearchBlur() {
+  // 延迟关闭，让点击事件有机会触发
+  setTimeout(() => { showDropdown.value = false }, 200)
+}
+
+function hitGene(g: { versionId: string; geneId: string }) {
+  showDropdown.value = false
+  searchQuery.value = ''
+  router.push(`/database/${g.versionId}?gene=${encodeURIComponent(g.geneId)}`)
+}
+
+function hitSpecies(s: { commonName: string }) {
+  showDropdown.value = false
+  searchQuery.value = s.commonName
+}
+
+function hitGo(g: { versionId: string; goId: string }) {
+  showDropdown.value = false
+  searchQuery.value = ''
+  router.push(`/database/${g.versionId}?go=${encodeURIComponent(g.goId)}`)
+}
+
+function hitKegg(k: { versionId: string; id: string }) {
+  showDropdown.value = false
+  searchQuery.value = ''
+  router.push(`/database/${k.versionId}?kegg=${encodeURIComponent(k.id)}`)
+}
+
+/* ────── 列表过滤与排序 ────── */
+
+const summary = computed(() => {
+  const list = speciesList.value
+  const versions = list.flatMap((s) => s.genomeVersions)
+  const files = versions.flatMap(getDataFileEntries)
+  return {
+    totalSpecies: list.length,
+    totalVersions: versions.length,
+    totalGenes: versions.reduce((sum, v) => sum + v.stats.totalGenes, 0),
+    readyFiles: files.filter((f) => f.buildStatus === 'ready').length,
+    totalFiles: files.length,
+  }
+})
 
 const filteredSpecies = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
-  let list = DATABASE_SPECIES.filter((species) => {
+  let list = speciesList.value.filter((species) => {
     if (categoryFilter.value !== 'all' && species.category !== categoryFilter.value) return false
     const status = getSpeciesBuildStatus(species)
     if (statusFilter.value !== 'all' && status !== statusFilter.value) return false
@@ -76,7 +193,7 @@ const filteredSpecies = computed(() => {
       species.scientificName,
       species.taxonomyId,
       species.description,
-      ...species.genomeVersions.flatMap((version) => [version.versionName, version.assemblyName, ...version.tags]),
+      ...species.genomeVersions.flatMap((v) => [v.versionName, v.assemblyName, ...v.tags]),
     ].some((value) => value.toLowerCase().includes(query))
   })
 
@@ -92,18 +209,8 @@ const filteredSpecies = computed(() => {
   return list
 })
 
-function countGenes(species: SpeciesDatabase) {
-  return species.genomeVersions.reduce((sum, version) => sum + version.stats.totalGenes, 0)
-}
-
-function countReadyFiles(species: SpeciesDatabase) {
-  return species.genomeVersions
-    .flatMap(getDataFileEntries)
-    .filter((file) => file.buildStatus === 'ready').length
-}
-
 function effectiveDefaultVersion(species: SpeciesDatabase) {
-  return species.genomeVersions.find((version) => version.versionId === defaultVersionBySpecies.value[species.id])
+  return species.genomeVersions.find((v) => v.versionId === defaultVersionBySpecies.value[species.id])
     ?? getDefaultGenomeVersion(species)
 }
 
@@ -151,131 +258,196 @@ function openRegisterDialog() {
       </template>
     </PageHeader>
 
-    <section class="summary-grid">
-      <div class="summary-item">
-        <span class="summary-label">物种</span>
-        <span class="summary-value">{{ summary.totalSpecies }}</span>
-      </div>
-      <div class="summary-item">
-        <span class="summary-label">版本</span>
-        <span class="summary-value">{{ summary.totalVersions }}</span>
-      </div>
-      <div class="summary-item">
-        <span class="summary-label">基因</span>
-        <span class="summary-value">{{ summary.totalGenes.toLocaleString() }}</span>
-      </div>
-      <div class="summary-item">
-        <span class="summary-label">数据文件</span>
-        <span class="summary-value">{{ summary.readyFiles }}/{{ summary.totalFiles }}</span>
-      </div>
-    </section>
-
-    <section class="toolbar">
-      <NInput
-        v-model:value="searchQuery"
-        clearable
-        placeholder="搜索物种、版本、Taxonomy ID 或注释关键词"
-        class="search-input"
-      >
-        <template #prefix><NIcon><SearchOutline /></NIcon></template>
-      </NInput>
-      <NSelect v-model:value="categoryFilter" :options="categoryOptions" class="filter-select" />
-      <NSelect v-model:value="statusFilter" :options="statusOptions" class="filter-select" />
-      <NSelect v-model:value="sortBy" :options="sortOptions" class="sort-select" />
-    </section>
-
-    <section v-if="filteredSpecies.length" class="species-grid">
-      <article
-        v-for="species in filteredSpecies"
-        :key="species.id"
-        class="species-card"
-      >
-        <header class="species-header">
-          <div class="species-icon" :style="{ background: species.gradient }">{{ species.icon }}</div>
-          <div class="species-title-block">
-            <div class="species-title-row">
-              <h2>{{ species.commonName }}</h2>
-              <NTag size="small" :type="versionStatusType(getSpeciesBuildStatus(species))" round>
-                {{ statusText(getSpeciesBuildStatus(species)) }}
-              </NTag>
-            </div>
-            <p class="species-latin">{{ species.scientificName }}</p>
-            <p class="species-desc">{{ species.description }}</p>
-          </div>
-        </header>
-
-        <div class="default-version">
-          <div class="version-main">
-            <span class="version-name">{{ effectiveDefaultVersion(species).versionName }}</span>
-            <span class="assembly-name">{{ effectiveDefaultVersion(species).assemblyName }}</span>
-          </div>
-          <div class="version-tags">
-            <NTag
-              v-for="tag in effectiveDefaultVersion(species).tags"
-              :key="tag"
-              size="tiny"
-              round
-              type="info"
-            >{{ tag }}</NTag>
-          </div>
+    <NSpin :show="loading">
+      <section class="summary-grid">
+        <div class="summary-item">
+          <span class="summary-label">物种</span>
+          <span class="summary-value">{{ summary.totalSpecies }}</span>
         </div>
-
-        <div class="source-row">
-          <span
-            v-for="source in sourceOrder"
-            :key="source"
-            class="source-chip"
-            :class="{ ready: fileEnabled(effectiveDefaultVersion(species), source) }"
-          >{{ sourceLabel[source] }}</span>
+        <div class="summary-item">
+          <span class="summary-label">版本</span>
+          <span class="summary-value">{{ summary.totalVersions }}</span>
         </div>
-
-        <div class="metric-grid">
-          <div>
-            <span class="metric-value">{{ effectiveDefaultVersion(species).stats.chromosomes }}</span>
-            <span class="metric-label">染色体</span>
-          </div>
-          <div>
-            <span class="metric-value">{{ effectiveDefaultVersion(species).stats.totalGenes.toLocaleString() }}</span>
-            <span class="metric-label">基因</span>
-          </div>
-          <div>
-            <span class="metric-value">{{ effectiveDefaultVersion(species).stats.genomeSize }}</span>
-            <span class="metric-label">大小</span>
-          </div>
-          <div>
-            <span class="metric-value">{{ countReadyFiles(species) }}</span>
-            <span class="metric-label">就绪文件</span>
-          </div>
+        <div class="summary-item">
+          <span class="summary-label">基因</span>
+          <span class="summary-value">{{ summary.totalGenes.toLocaleString() }}</span>
         </div>
+        <div class="summary-item">
+          <span class="summary-label">数据文件</span>
+          <span class="summary-value">{{ summary.readyFiles }}/{{ summary.totalFiles }}</span>
+        </div>
+      </section>
 
-        <div class="version-list">
-          <button
-            v-for="version in species.genomeVersions"
-            :key="version.versionId"
-            class="version-pill"
-            :class="{ active: version.versionId === effectiveDefaultVersion(species).versionId }"
-            @click="setDefault(species, version)"
+      <section class="toolbar">
+        <div class="search-input-wrap">
+          <NInput
+            v-model:value="searchQuery"
+            clearable
+            placeholder="搜索物种、版本、Taxonomy ID 或注释关键词"
+            class="search-input"
+            @focus="onSearchFocus"
+            @blur="onSearchBlur"
           >
-            <span>{{ version.versionName }}</span>
-            <NIcon v-if="version.versionId === effectiveDefaultVersion(species).versionId" :size="14">
-              <CheckmarkCircleOutline />
-            </NIcon>
-          </button>
+            <template #prefix><NIcon><SearchOutline /></NIcon></template>
+          </NInput>
+          <div v-if="showDropdown && searchQuery.trim()" class="global-search-dropdown">
+            <div v-if="searchLoading" class="dropdown-loading">搜索中...</div>
+            <template v-else-if="searchResult">
+              <template v-if="searchResult.genes.length">
+                <div class="dropdown-group-title">基因</div>
+                <button
+                  v-for="g in searchResult.genes.slice(0, 5)"
+                  :key="`${g.versionId}-${g.geneId}`"
+                  class="dropdown-item"
+                  @mousedown.prevent="hitGene(g)"
+                >
+                  <span class="mono">{{ g.geneId }}</span>
+                  <span class="dropdown-item-sub">{{ g.geneName }} · {{ g.chromosome }}</span>
+                </button>
+              </template>
+              <template v-if="searchResult.goTerms.length">
+                <div class="dropdown-group-title">GO 术语</div>
+                <button
+                  v-for="g in searchResult.goTerms.slice(0, 5)"
+                  :key="`${g.versionId}-${g.goId}`"
+                  class="dropdown-item"
+                  @mousedown.prevent="hitGo(g)"
+                >
+                  <span class="mono">{{ g.goId }}</span>
+                  <span class="dropdown-item-sub">{{ g.name }} ({{ g.geneCount }})</span>
+                </button>
+              </template>
+              <template v-if="searchResult.kegg.length">
+                <div class="dropdown-group-title">KEGG 通路</div>
+                <button
+                  v-for="k in searchResult.kegg.slice(0, 5)"
+                  :key="`${k.versionId}-${k.id}`"
+                  class="dropdown-item"
+                  @mousedown.prevent="hitKegg(k)"
+                >
+                  <span class="mono">{{ k.id }}</span>
+                  <span class="dropdown-item-sub">{{ k.name }} ({{ k.geneCount }})</span>
+                </button>
+              </template>
+              <template v-if="searchResult.species.length">
+                <div class="dropdown-group-title">物种</div>
+                <button
+                  v-for="s in searchResult.species.slice(0, 5)"
+                  :key="s.speciesId"
+                  class="dropdown-item"
+                  @mousedown.prevent="hitSpecies(s)"
+                >
+                  <span>{{ s.commonName }}</span>
+                  <span class="dropdown-item-sub">{{ s.match }}</span>
+                </button>
+              </template>
+              <div
+                v-if="!searchResult.genes.length && !searchResult.goTerms.length && !searchResult.kegg.length && !searchResult.species.length"
+                class="dropdown-empty"
+              >
+                无匹配结果
+              </div>
+            </template>
+          </div>
         </div>
+        <NSelect v-model:value="categoryFilter" :options="categoryOptions" class="filter-select" />
+        <NSelect v-model:value="statusFilter" :options="statusOptions" class="filter-select" />
+        <NSelect v-model:value="sortBy" :options="sortOptions" class="sort-select" />
+      </section>
 
-        <footer class="card-actions">
-          <NButton type="primary" size="small" @click="openVersion(effectiveDefaultVersion(species))">
-            查看数据库
-            <template #icon><NIcon><ArrowForwardOutline /></NIcon></template>
-          </NButton>
-          <NButton size="small" quaternary @click="setDefault(species, effectiveDefaultVersion(species))">
-            设为默认
-          </NButton>
-        </footer>
-      </article>
-    </section>
+      <section v-if="filteredSpecies.length" class="species-grid">
+        <article
+          v-for="species in filteredSpecies"
+          :key="species.id"
+          class="species-card"
+        >
+          <header class="species-header">
+            <div class="species-icon" :style="{ background: species.gradient }">{{ species.icon }}</div>
+            <div class="species-title-block">
+              <div class="species-title-row">
+                <h2>{{ species.commonName }}</h2>
+                <NTag size="small" :type="versionStatusType(getSpeciesBuildStatus(species))" round>
+                  {{ statusText(getSpeciesBuildStatus(species)) }}
+                </NTag>
+              </div>
+              <p class="species-latin">{{ species.scientificName }}</p>
+              <p class="species-desc">{{ species.description }}</p>
+            </div>
+          </header>
 
-    <NEmpty v-else class="empty-state" description="暂无匹配的数据库" />
+          <div class="default-version">
+            <div class="version-main">
+              <span class="version-name">{{ effectiveDefaultVersion(species).versionName }}</span>
+              <span class="assembly-name">{{ effectiveDefaultVersion(species).assemblyName }}</span>
+            </div>
+            <div class="version-tags">
+              <NTag
+                v-for="tag in effectiveDefaultVersion(species).tags"
+                :key="tag"
+                size="tiny"
+                round
+                type="info"
+              >{{ tag }}</NTag>
+            </div>
+          </div>
+
+          <div class="source-row">
+            <span
+              v-for="source in sourceOrder"
+              :key="source"
+              class="source-chip"
+              :class="{ ready: fileEnabled(effectiveDefaultVersion(species), source) }"
+            >{{ sourceLabel[source] }}</span>
+          </div>
+
+          <div class="metric-grid">
+            <div>
+              <span class="metric-value">{{ effectiveDefaultVersion(species).stats.chromosomes }}</span>
+              <span class="metric-label">染色体</span>
+            </div>
+            <div>
+              <span class="metric-value">{{ effectiveDefaultVersion(species).stats.totalGenes.toLocaleString() }}</span>
+              <span class="metric-label">基因</span>
+            </div>
+            <div>
+              <span class="metric-value">{{ effectiveDefaultVersion(species).stats.genomeSize }}</span>
+              <span class="metric-label">大小</span>
+            </div>
+            <div>
+              <span class="metric-value">{{ countReadyFiles(species) }}</span>
+              <span class="metric-label">就绪文件</span>
+            </div>
+          </div>
+
+          <div class="version-list">
+            <button
+              v-for="version in species.genomeVersions"
+              :key="version.versionId"
+              class="version-pill"
+              :class="{ active: version.versionId === effectiveDefaultVersion(species).versionId }"
+              @click="setDefault(species, version)"
+            >
+              <span>{{ version.versionName }}</span>
+              <NIcon v-if="version.versionId === effectiveDefaultVersion(species).versionId" :size="14">
+                <CheckmarkCircleOutline />
+              </NIcon>
+            </button>
+          </div>
+
+          <footer class="card-actions">
+            <NButton type="primary" size="small" @click="openVersion(effectiveDefaultVersion(species))">
+              查看数据库
+              <template #icon><NIcon><ArrowForwardOutline /></NIcon></template>
+            </NButton>
+            <NButton size="small" quaternary @click="setDefault(species, effectiveDefaultVersion(species))">
+              设为默认
+            </NButton>
+          </footer>
+        </article>
+      </section>
+
+      <NEmpty v-else-if="!loading" class="empty-state" description="暂无匹配的数据库" />
+    </NSpin>
   </div>
 </template>
 
@@ -339,9 +511,14 @@ function openRegisterDialog() {
   background: var(--db-card);
 }
 
-.search-input {
+.search-input-wrap {
+  position: relative;
   flex: 1 1 340px;
   min-width: 220px;
+}
+
+.search-input {
+  width: 100%;
 }
 
 .filter-select {
@@ -350,6 +527,65 @@ function openRegisterDialog() {
 
 .sort-select {
   width: 148px;
+}
+
+.global-search-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 100;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  background: var(--db-card);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+}
+
+.dropdown-group-title {
+  padding: 6px 8px 4px;
+  color: var(--db-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--db-text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dropdown-item:hover {
+  background: #f2f3f5;
+}
+
+.dropdown-item-sub {
+  color: var(--db-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdown-loading,
+.dropdown-empty {
+  padding: 16px;
+  color: var(--db-muted);
+  font-size: 13px;
+  text-align: center;
 }
 
 .species-grid {
@@ -563,6 +799,11 @@ function openRegisterDialog() {
   border: 1px solid var(--db-border);
   border-radius: 8px;
   background: var(--db-card);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
 }
 
 @media (max-width: 1180px) {

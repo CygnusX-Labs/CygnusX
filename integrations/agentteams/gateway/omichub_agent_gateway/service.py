@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from .audit import AuditStore
 from .client import OmicHubConsultationClient
 from .config import GatewaySettings
+from .matrix_client import MatrixGatewayClient
 from .models import ConsultationError, ConsultationRequest, ScientificInterpretationResponse
 
 
@@ -21,10 +22,12 @@ class GatewayService:
         settings: GatewaySettings,
         client: OmicHubConsultationClient,
         audit: AuditStore,
+        matrix_client: MatrixGatewayClient | None = None,
     ) -> None:
         self._settings = settings
         self._client = client
         self._audit = audit
+        self._matrix = matrix_client
         self._case_calls: dict[str, int] = defaultdict(int)
         self._case_tokens: dict[str, int] = defaultdict(int)
         self._lock = asyncio.Lock()
@@ -182,3 +185,75 @@ class GatewayService:
     @staticmethod
     def _question_summary(question: str) -> str:
         return " ".join(question.split())[:500]
+
+    async def create_room(self, session_id: str, identities: list[str], actor: str):
+        from .models import RoomCreateResponse
+
+        matrix = self._require_matrix()
+        allowed_identities = self._validated_room_identities(identities)
+        room_name = f"omichub-session-{session_id}"
+        room_id = await matrix.create_room(room_name, actor, allowed_identities)
+        await self._audit.record(
+            case_id=session_id,
+            actor=actor,
+            event_type="matrix.room.created",
+            payload={"room_id": room_id, "identities": allowed_identities},
+        )
+        return RoomCreateResponse(
+            room_id=room_id,
+            room_name=room_name,
+            element_room_url=self._element_room_url(room_id),
+        )
+
+    async def post_room_message(self, room_id: str, request, actor: str):
+        matrix = self._require_matrix()
+        self._validated_room_identities([request.sender_identity])
+        event_id = await matrix.send_message(
+            room_id,
+            request.sender_identity,
+            request.content,
+            request.sender,
+            request.source,
+        )
+        await self._audit.record(
+            case_id=room_id,
+            actor=actor,
+            event_type="matrix.room.message",
+            payload={
+                "event_id": event_id,
+                "sender_identity": request.sender_identity,
+                "source": request.source,
+                "content_length": len(request.content),
+            },
+        )
+        return event_id
+
+    async def room_messages(self, room_id: str, since: str | None, limit: int):
+        matrix = self._require_matrix()
+        events, next_batch = await matrix.messages(room_id, since, limit)
+        from .models import RoomMessagesResponse
+
+        return RoomMessagesResponse(events=events, next_batch=next_batch)
+
+    async def room_sync(self, room_id: str, since: str | None):
+        matrix = self._require_matrix()
+        async for events, next_batch in matrix.stream_sync(room_id, since):
+            yield events, next_batch
+
+    def _require_matrix(self):
+        if self._matrix is None:
+            raise RuntimeError("Matrix Gateway is not configured")
+        return self._matrix
+
+    def _validated_room_identities(self, identities: list[str]) -> list[str]:
+        configured = self._settings.matrix_identity_map()
+        normalized = list(dict.fromkeys(identity.strip() for identity in identities if identity.strip()))
+        invalid = [identity for identity in normalized if identity not in configured]
+        if invalid:
+            raise ValueError(f"Matrix identity is not configured: {', '.join(invalid)}")
+        return normalized
+
+    def _element_room_url(self, room_id: str) -> str | None:
+        if not self._settings.element_base_url:
+            return None
+        return f"{self._settings.element_base_url.rstrip('/')}/#/room/{room_id}"

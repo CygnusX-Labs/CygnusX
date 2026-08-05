@@ -1,5 +1,6 @@
 """管理员维护 AgentTeams Bridge 的运行配置。"""
 
+import secrets
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header
@@ -8,6 +9,7 @@ from omichub.api.deps import AdminRequired, DbSession, require_admin_totp
 from omichub.application.schemas.agentteams_bridge import (
     AgentTeamsBridgeConfigDTO,
     AgentTeamsBridgeConfigUpdateDTO,
+    AgentTeamsBridgeTokenBundleDTO,
 )
 from omichub.application.services.agentteams_bridge_settings_service import (
     AgentTeamsBridgeSettingsService,
@@ -49,6 +51,48 @@ async def get_agentteams_bridge_health(
 ) -> dict:
     runtime = await service.get_runtime_config()
     return await AgentTeamsService(get_settings(), runtime).health_check()
+
+
+@router.get("/agentteams-bridge/resources", summary="获取 AgentTeams Worker、Team 与 Case 资源快照")
+async def get_agentteams_bridge_resources(
+    _admin: AdminRequired,
+    service: BridgeServiceDep,
+) -> dict:
+    runtime = await service.get_runtime_config()
+    return await AgentTeamsService(get_settings(), runtime).admin_resource_snapshot()
+
+
+@router.post("/agentteams-bridge/cases/{case_id}/reconcile", summary="以管理员身份重协调协作 Case")
+async def reconcile_agentteams_bridge_case(
+    case_id: str,
+    db: DbSession,
+    _admin_id: AdminRequired,
+    service: BridgeServiceDep,
+    x_totp_code: Annotated[str | None, Header(alias="X-TOTP-Code")] = None,
+) -> dict:
+    await require_admin_totp(_admin_id, db, x_totp_code)
+    runtime = await service.get_runtime_config()
+    return await AgentTeamsService(get_settings(), runtime).reconcile_case_as_admin(case_id)
+
+
+@router.post(
+    "/agentteams-bridge/tokens",
+    response_model=AgentTeamsBridgeTokenBundleDTO,
+    summary="生成一次性 AgentTeams Worker 令牌",
+)
+async def generate_agentteams_bridge_tokens(
+    db: DbSession,
+    _admin_id: AdminRequired,
+    x_totp_code: Annotated[str | None, Header(alias="X-TOTP-Code")] = None,
+) -> AgentTeamsBridgeTokenBundleDTO:
+    """Generate credentials for manual deployment without persisting or logging them."""
+    await require_admin_totp(_admin_id, db, x_totp_code)
+    return AgentTeamsBridgeTokenBundleDTO(
+        manager_token=secrets.token_urlsafe(32),
+        data_steward_token=secrets.token_urlsafe(32),
+        approval_token=secrets.token_urlsafe(32),
+        workflow_operator_token=secrets.token_urlsafe(32),
+    )
 
 
 @router.put("/agentteams-bridge", response_model=AgentTeamsBridgeConfigDTO)

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, h, ref } from 'vue'
+import { computed, h, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   NButton,
+  NButtonGroup,
   NDataTable,
   NDrawer,
   NDrawerContent,
@@ -10,6 +11,7 @@ import {
   NIcon,
   NInput,
   NSelect,
+  NSpin,
   NStatistic,
   NTabPane,
   NTabs,
@@ -29,24 +31,29 @@ import {
   SwapHorizontalOutline,
 } from '@vicons/ionicons5'
 import {
-  DATABASE_SPECIES,
-  MOCK_CHROMOSOMES,
-  MOCK_GENE_TYPES,
-  MOCK_ID_MAP,
-  MOCK_ID_MAP_REVERSE,
-  formatLocation,
-  getDataFileEntries,
-  getGeneById,
-  getGenesForVersion,
-  getGenomeVersionById,
-  getSpeciesByVersionId,
-  searchGenesForVersion,
-  type BuildStatus,
-  type DataFileType,
-  type Gene,
-  type GOAnnotation,
-  type KEGGAnnotation,
-} from '@/mock/referenceGenomes'
+  fetchVersionDetail,
+  fetchSpecies,
+  searchGenes,
+  fetchGeneDetail,
+  fetchGeneSequence,
+  fetchGoTerms,
+  fetchKeggPathways,
+  mapIds,
+} from '@/api/referenceGenomes'
+import type {
+  ApiGene,
+  BuildStatus,
+  Chromosome,
+  DataFileType,
+  DatabaseDataFile,
+  GeneDetail,
+  GeneTypeStat,
+  GoTermItem,
+  KeggPathwayItem,
+  SequenceResult,
+  SpeciesDatabase,
+  VersionDetailResponse,
+} from '@/types/referenceGenomes'
 import PageHeader from '@/components/PageHeader.vue'
 
 use([CanvasRenderer, PieChart, TooltipComponent, LegendComponent])
@@ -56,46 +63,82 @@ const router = useRouter()
 const message = useMessage()
 
 const versionId = computed(() => route.params.id as string)
-const version = computed(() => getGenomeVersionById(versionId.value))
-const species = computed(() => getSpeciesByVersionId(versionId.value))
-const genes = computed(() => getGenesForVersion(versionId.value))
-const dataFiles = computed(() => version.value ? getDataFileEntries(version.value) : [])
+
+/* ────── Core data ────── */
+const loading = ref(false)
+const versionDetail = ref<VersionDetailResponse | null>(null)
+const species = ref<SpeciesDatabase | null>(null)
+let speciesCache: SpeciesDatabase[] = []
 
 const activeTab = ref<'overview' | 'genes' | 'annotations' | 'mapping' | 'files'>('overview')
 const selectedChrom = ref('')
+
+/* ────── Genes tab ────── */
 const searchField = ref<'all' | 'geneId' | 'geneSymbol' | 'description'>('all')
 const searchQuery = ref('')
+const genePage = ref(1)
+const geneTotal = ref(0)
+const geneData = ref<ApiGene[]>([])
+const geneLoading = ref(false)
+let geneSearchTimer: ReturnType<typeof setTimeout> | null = null
+
+/* ────── Drawer ────── */
 const drawerVisible = ref(false)
-const drawerGene = ref<Gene | null>(null)
+const drawerGene = ref<GeneDetail | null>(null)
+const drawerLoading = ref(false)
+const seqType = ref<'genomic' | 'cds' | 'protein'>('genomic')
+const seqData = ref<SequenceResult | null>(null)
+const seqLoading = ref(false)
+
+/* ────── Mapping ────── */
 const mapInput = ref('')
 const mapResult = ref<{ input: string; output: string | null; status: 'success' | 'fail' }[]>([])
-const mappingDirection = ref<'v8tov11' | 'v11tov8'>('v8tov11')
+const mappingDirection = ref<'forward' | 'reverse'>('forward')
+
+/* ────── Annotations tab ────── */
+const goTerms = ref<GoTermItem[]>([])
+const keggPathways = ref<KeggPathwayItem[]>([])
+
+/* ────── Computed ────── */
+const version = computed(() => versionDetail.value)
 
 const versionSelect = computed({
   get: () => versionId.value,
   set: (next: string) => router.push(`/database/${next}`),
 })
 
-const versionOptions = computed(() => species.value?.genomeVersions.map((item) => ({
-  label: `${item.versionName} · ${item.assemblyName}`,
-  value: item.versionId,
-})) ?? [])
+const versionOptions = computed(() =>
+  species.value?.genomeVersions.map((item) => ({
+    label: `${item.versionName} · ${item.assemblyName}`,
+    value: item.versionId,
+  })) ?? [],
+)
 
-const searchFieldOptions = [
-  { label: '全部字段', value: 'all' },
-  { label: 'Gene ID', value: 'geneId' },
-  { label: 'Symbol', value: 'geneSymbol' },
-  { label: '功能描述', value: 'description' },
-]
+const currentMapping = computed(() => species.value?.versionMappings[0])
 
-const sourceLabel: Record<DataFileType, string> = {
-  fasta: 'FASTA',
-  gff: 'GFF',
-  go: 'GO',
-  kegg: 'KEGG',
-}
+const mappingDirLabel = computed(() => {
+  const m = currentMapping.value
+  if (!m) return { forward: '', reverse: '' }
+  return {
+    forward: `${m.source} → ${m.target}`,
+    reverse: `${m.target} → ${m.source}`,
+  }
+})
 
-const maxChromLength = Math.max(...MOCK_CHROMOSOMES.map((chrom) => chrom.length))
+const chromosomes = computed<Chromosome[]>(() => versionDetail.value?.chromosomes ?? [])
+const geneTypeStats = computed<GeneTypeStat[]>(() => versionDetail.value?.geneTypeStats ?? [])
+const dataFiles = computed<DatabaseDataFile[]>(() => {
+  if (!versionDetail.value) return []
+  const df = versionDetail.value.dataFiles
+  return (['fasta', 'gff', 'go', 'kegg'] as DataFileType[])
+    .map((key) => df[key])
+    .filter((f): f is DatabaseDataFile => Boolean(f))
+})
+
+const maxChromLength = computed(() =>
+  chromosomes.value.length ? Math.max(...chromosomes.value.map((c) => c.length)) : 1,
+)
+
 const pieOption = computed(() => ({
   tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
   legend: { bottom: 0, textStyle: { color: '#86909c', fontSize: 12 } },
@@ -105,7 +148,7 @@ const pieOption = computed(() => ({
       radius: ['45%', '70%'],
       avoidLabelOverlap: false,
       label: { show: false },
-      data: MOCK_GENE_TYPES.map((item) => ({
+      data: geneTypeStats.value.map((item) => ({
         name: item.name,
         value: item.value,
         itemStyle: { color: item.color },
@@ -114,100 +157,264 @@ const pieOption = computed(() => ({
   ],
 }))
 
-const filteredGenes = computed(() => searchGenesForVersion(
-  versionId.value,
-  searchQuery.value,
-  searchField.value,
-  selectedChrom.value || undefined,
-))
-
-const annotationRows = computed(() => {
-  const go = new Map<string, GOAnnotation>()
-  const kegg = new Map<string, KEGGAnnotation>()
-  genes.value.forEach((gene) => {
-    gene.goAnnotations.forEach((item) => go.set(item.goId, item))
-    gene.keggAnnotations.forEach((item) => kegg.set(item.pathwayId, item))
-  })
+const seqAvailable = computed(() => {
+  const sa = drawerGene.value?.sequenceAvailable
   return {
-    go: Array.from(go.values()),
-    kegg: Array.from(kegg.values()),
+    genomic: sa?.genomic ?? true,
+    cds: sa?.cds ?? false,
+    protein: sa?.protein ?? false,
   }
 })
 
-const drawerGoGroups = computed(() => {
-  const groups: Record<'BP' | 'MF' | 'CC', GOAnnotation[]> = { BP: [], MF: [], CC: [] }
-  drawerGene.value?.goAnnotations.forEach((item) => groups[item.namespace].push(item))
-  return groups
-})
-
-function buildStatusType(status: BuildStatus): 'success' | 'warning' | 'error' | 'default' {
-  if (status === 'ready') return 'success'
-  if (status === 'building') return 'warning'
-  if (status === 'error') return 'error'
-  return 'default'
-}
-
-function buildStatusText(status: BuildStatus) {
-  if (status === 'ready') return '就绪'
-  if (status === 'building') return '构建中'
-  if (status === 'missing') return '缺失'
-  return '异常'
-}
-
-function geneTypeText(type: Gene['geneType']) {
-  if (type === 'protein_coding') return '蛋白编码'
-  if (type === 'lncRNA') return 'lncRNA'
-  if (type === 'pseudogene') return '假基因'
-  if (type === 'transposable_element') return '转座元件'
-  return '其他'
-}
-
-function geneLength(gene: Gene) {
-  return gene.end - gene.start + 1
-}
-
-function selectChrom(name: string) {
-  selectedChrom.value = selectedChrom.value === name ? '' : name
-  if (selectedChrom.value) activeTab.value = 'genes'
-}
-
-function openGene(gene: Gene) {
-  drawerGene.value = gene
-  drawerVisible.value = true
-}
-
-function openGeneById(geneId: string) {
-  const gene = getGeneById(geneId, versionId.value)
-  if (gene) openGene(gene)
-}
-
-async function copyText(text: string, label = '内容') {
+/* ────── Data loading ────── */
+onMounted(async () => {
   try {
-    await navigator.clipboard.writeText(text)
-    message.success(`${label}已复制`)
+    const res = await fetchSpecies()
+    speciesCache = res.species
   } catch {
-    message.error('复制失败')
+    speciesCache = []
+  }
+  await loadVersionData()
+})
+
+let loadCounter = 0
+async function loadVersionData() {
+  const myCounter = ++loadCounter
+  loading.value = true
+  versionDetail.value = null
+  species.value = null
+  try {
+    const detail = await fetchVersionDetail(versionId.value)
+    if (myCounter !== loadCounter) return
+    versionDetail.value = detail
+    species.value = speciesCache.find((s) => s.id === detail.speciesId) ?? null
+    await Promise.all([loadAnnotations(), searchGenesApi(1), loadAutoOpenGene()])
+  } catch {
+    if (myCounter === loadCounter) {
+      versionDetail.value = null
+      species.value = null
+    }
+  } finally {
+    if (myCounter === loadCounter) loading.value = false
   }
 }
 
-function runMap() {
+watch(versionId, () => {
+  genePage.value = 1
+  searchQuery.value = ''
+  selectedChrom.value = ''
+  loadVersionData()
+})
+
+async function loadAnnotations() {
+  try {
+    const [go, kegg] = await Promise.all([
+      fetchGoTerms(versionId.value, { page: 1 }).catch(() => ({ total: 0, items: [] })),
+      fetchKeggPathways(versionId.value, {}).catch(() => ({ total: 0, items: [] })),
+    ])
+    goTerms.value = go.items.slice(0, 50)
+    keggPathways.value = kegg.items.slice(0, 50)
+  } catch {
+    goTerms.value = []
+    keggPathways.value = []
+  }
+}
+
+/* ────── Gene search ────── */
+const searchFieldOptions = [
+  { label: '全部字段', value: 'all' },
+  { label: 'Gene ID', value: 'geneId' },
+  { label: 'Symbol', value: 'geneSymbol' },
+  { label: '功能描述', value: 'description' },
+]
+
+const FIELD_MAP: Record<string, 'all' | 'gene_id' | 'gene_name' | 'annotation' | 'go' | 'kegg'> = {
+  all: 'all',
+  geneId: 'gene_id',
+  geneSymbol: 'gene_name',
+  description: 'annotation',
+}
+
+async function searchGenesApi(page = 1) {
+  if (!versionId.value) return
+  geneLoading.value = true
+  try {
+    const field = searchFieldOverride.value ?? (FIELD_MAP[searchField.value] ?? 'all')
+    const res = await searchGenes(versionId.value, {
+      field,
+      q: searchQuery.value.trim() || undefined,
+      chromosome: selectedChrom.value || undefined,
+      page,
+      page_size: 10,
+    })
+    geneData.value = res.items
+    geneTotal.value = res.total
+    genePage.value = page
+  } catch {
+    geneData.value = []
+    geneTotal.value = 0
+  } finally {
+    geneLoading.value = false
+  }
+}
+
+watch([searchField, selectedChrom], () => {
+  searchFieldOverride.value = null  // 用户手动切换字段 → 取消 GO/KEGG 反查 override
+  genePage.value = 1
+  searchGenesApi(1)
+})
+
+watch(searchQuery, () => {
+  if (!searchQuery.value.trim()) searchFieldOverride.value = null  // 清空查询 → 回到普通模式
+  if (geneSearchTimer) clearTimeout(geneSearchTimer)
+  geneSearchTimer = setTimeout(() => {
+    genePage.value = 1
+    searchGenesApi(1)
+  }, 300)
+})
+
+function onGenePageChange(page: number) {
+  searchGenesApi(page)
+}
+
+const sourceLabel: Record<DataFileType, string> = {
+  fasta: 'FASTA',
+  gff: 'GFF',
+  go: 'GO',
+  kegg: 'KEGG',
+}
+
+/* ────── Gene table columns ────── */
+const geneColumns: DataTableColumns<ApiGene> = [
+  {
+    title: 'Gene ID',
+    key: 'geneId',
+    width: 130,
+    render: (gene) => h('button', { class: 'gene-link', onClick: () => openGeneDetail(gene.geneId) }, gene.geneId),
+  },
+  { title: 'Symbol', key: 'geneName', width: 110 },
+  {
+    title: '位置',
+    key: 'location',
+    width: 210,
+    render: (gene) => h('span', { class: 'mono' }, `${gene.chromosome}:${gene.start.toLocaleString()}-${gene.end.toLocaleString()} (${gene.strand})`),
+  },
+  { title: '类型', key: 'geneType', width: 110, render: (gene) => geneTypeText(gene.geneType) },
+  { title: '长度', key: 'length', width: 90, render: (gene) => `${gene.length.toLocaleString()} bp` },
+  { title: '功能描述', key: 'annotation', ellipsis: { tooltip: true } },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 96,
+    render: (gene) => h(NButton, { size: 'tiny', tertiary: true, onClick: () => openGeneDetail(gene.geneId) }, { default: () => '详情' }),
+  },
+]
+
+/* ────── Gene drawer ────── */
+async function openGeneDetail(geneId: string) {
+  drawerLoading.value = true
+  drawerGene.value = null
+  seqData.value = null
+  drawerVisible.value = true
+  try {
+    const detail = await fetchGeneDetail(versionId.value, geneId)
+    drawerGene.value = detail
+    const sa = detail.sequenceAvailable
+    seqType.value = sa.genomic ? 'genomic' : sa.cds ? 'cds' : 'protein'
+    await loadSequence()
+  } catch {
+    message.error('加载基因详情失败')
+  } finally {
+    drawerLoading.value = false
+  }
+}
+
+async function loadSequence() {
+  if (!drawerGene.value) return
+  seqLoading.value = true
+  try {
+    seqData.value = await fetchGeneSequence(versionId.value, drawerGene.value.gene.geneId, {
+      type: seqType.value,
+      format: 'json',
+    })
+  } catch {
+    seqData.value = null
+  } finally {
+    seqLoading.value = false
+  }
+}
+
+function onSeqTypeChange(type: 'genomic' | 'cds' | 'protein') {
+  seqType.value = type
+  loadSequence()
+}
+
+function downloadFasta() {
+  if (!seqData.value || !drawerGene.value) return
+  const content = `>${seqData.value.header}\n${seqData.value.sequence}`
+  const blob = new Blob([content], { type: 'text/plain' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${drawerGene.value.gene.geneId}_${seqType.value}.fa`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+async function loadAutoOpenGene() {
+  const geneId = route.query.gene as string | undefined
+  if (geneId) await openGeneDetail(geneId)
+}
+
+/* ────── Annotations tab interactions ────── */
+// GO/KEGG 条目点击 → 基因 Tab 反查：用 override 强制后端 field=go/kegg
+const searchFieldOverride = ref<'go' | 'kegg' | null>(null)
+
+function clickGoTerm(goId: string) {
+  searchFieldOverride.value = 'go'
+  searchQuery.value = goId
+  activeTab.value = 'genes'
+}
+
+function clickKeggPathway(pathwayId: string) {
+  searchFieldOverride.value = 'kegg'
+  searchQuery.value = pathwayId
+  activeTab.value = 'genes'
+}
+
+function clearSearchOverride() {
+  searchFieldOverride.value = null
+  searchQuery.value = ''
+}
+
+/* ────── Mapping ────── */
+async function runMap() {
   const ids = mapInput.value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean)
   if (!ids.length) {
     message.warning('请输入要转换的基因 ID')
     return
   }
-  const map = mappingDirection.value === 'v8tov11' ? MOCK_ID_MAP : MOCK_ID_MAP_REVERSE
-  mapResult.value = ids.map((id) => ({
-    input: id,
-    output: map[id] || null,
-    status: map[id] ? 'success' : 'fail',
-  }))
-  const success = mapResult.value.filter((item) => item.status === 'success').length
-  message.success(`映射完成：${success}/${ids.length} 成功`)
+  const m = currentMapping.value
+  if (!m) {
+    message.warning('当前版本暂无映射配置')
+    return
+  }
+  const targetVersionId = mappingDirection.value === 'forward' ? m.target : m.source
+  try {
+    const res = await mapIds(versionId.value, { targetVersionId, ids })
+    mapResult.value = res.results.map((r) => ({
+      input: r.input,
+      output: r.output ?? null,
+      status: (r.status === 'success' ? 'success' : 'fail') as 'success' | 'fail',
+    }))
+    message.success(`映射完成：${res.successCount}/${res.totalCount} 成功`)
+  } catch {
+    message.error('映射失败')
+  }
 }
 
 function swapDirection() {
-  mappingDirection.value = mappingDirection.value === 'v8tov11' ? 'v11tov8' : 'v8tov11'
+  mappingDirection.value = mappingDirection.value === 'forward' ? 'reverse' : 'forward'
   mapInput.value = ''
   mapResult.value = []
 }
@@ -223,40 +430,55 @@ function downloadMap() {
   URL.revokeObjectURL(url)
 }
 
+/* ────── Helpers ────── */
+function buildStatusType(status: BuildStatus): 'success' | 'warning' | 'error' | 'default' {
+  if (status === 'ready') return 'success'
+  if (status === 'building') return 'warning'
+  if (status === 'error') return 'error'
+  return 'default'
+}
+
+function buildStatusText(status: BuildStatus) {
+  if (status === 'ready') return '就绪'
+  if (status === 'building') return '构建中'
+  if (status === 'missing') return '缺失'
+  return '异常'
+}
+
+function geneTypeText(type: string) {
+  if (type === 'protein_coding') return '蛋白编码'
+  if (type === 'lncRNA') return 'lncRNA'
+  if (type === 'pseudogene') return '假基因'
+  if (type === 'transposable_element') return '转座元件'
+  return '其他'
+}
+
+function selectChrom(name: string) {
+  selectedChrom.value = selectedChrom.value === name ? '' : name
+  if (selectedChrom.value) activeTab.value = 'genes'
+}
+
 function goNamespaceLabel(namespace: 'BP' | 'MF' | 'CC') {
   if (namespace === 'BP') return '生物过程'
   if (namespace === 'MF') return '分子功能'
   return '细胞组分'
 }
 
-const geneColumns: DataTableColumns<Gene> = [
-  {
-    title: 'Gene ID',
-    key: 'geneId',
-    width: 130,
-    render: (gene) => h('button', { class: 'gene-link', onClick: () => openGene(gene) }, gene.geneId),
-  },
-  { title: 'Symbol', key: 'geneSymbol', width: 110 },
-  {
-    title: '位置',
-    key: 'location',
-    width: 210,
-    render: (gene) => h('span', { class: 'mono' }, formatLocation(gene)),
-  },
-  { title: '类型', key: 'geneType', width: 110, render: (gene) => geneTypeText(gene.geneType) },
-  { title: '长度', key: 'length', width: 90, render: (gene) => `${geneLength(gene).toLocaleString()} bp` },
-  { title: '功能描述', key: 'description', ellipsis: { tooltip: true } },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 96,
-    render: (gene) => h(NButton, { size: 'tiny', tertiary: true, onClick: () => openGene(gene) }, { default: () => '详情' }),
-  },
-]
+async function copyText(text: string, label = '内容') {
+  try {
+    await navigator.clipboard.writeText(text)
+    message.success(`${label}已复制`)
+  } catch {
+    message.error('复制失败')
+  }
+}
 </script>
 
 <template>
-  <div v-if="version && species" class="database-detail-page" role="main" aria-label="参考基因组详情">
+  <!-- 单根节点：DefaultLayout 用 <Transition mode="out-in"> 包裹路由组件，
+       fragment（多根）会导致 SPA 跳转时组件不挂载（vuejs/core#6656）→ 空白页 -->
+  <div class="database-detail-page" role="main" aria-label="参考基因组详情">
+    <template v-if="version && species">
     <PageHeader
       :title="`${species.commonName} ${version.versionName}`"
       :subtitle="version.description"
@@ -332,9 +554,9 @@ const geneColumns: DataTableColumns<Gene> = [
                     <NButton size="tiny" quaternary @click="selectedChrom = ''">清除</NButton>
                   </span>
                 </div>
-                <div class="chrom-chart">
+                <div v-if="chromosomes.length" class="chrom-chart">
                   <div
-                    v-for="chrom in MOCK_CHROMOSOMES"
+                    v-for="chrom in chromosomes"
                     :key="chrom.name"
                     class="chrom-row"
                     :class="{ active: selectedChrom === chrom.name }"
@@ -350,11 +572,13 @@ const geneColumns: DataTableColumns<Gene> = [
                     <span class="chrom-length">{{ (chrom.length / 1e6).toFixed(1) }} Mb</span>
                   </div>
                 </div>
+                <NEmpty v-else description="暂无染色体数据" />
               </section>
 
               <section class="content-block">
                 <div class="block-title">基因类型</div>
-                <VChart :option="pieOption" autoresize style="height: 282px" />
+                <VChart v-if="geneTypeStats.length" :option="pieOption" autoresize style="height: 282px" />
+                <NEmpty v-else description="暂无基因类型统计" />
               </section>
             </div>
           </NTabPane>
@@ -377,31 +601,50 @@ const geneColumns: DataTableColumns<Gene> = [
               <NButton size="tiny" quaternary @click="selectedChrom = ''">清除筛选</NButton>
             </div>
 
-            <div v-if="filteredGenes.length" class="table-wrap">
-              <div class="result-count">共 {{ filteredGenes.length }} 条基因</div>
-              <NDataTable
-                :columns="geneColumns"
-                :data="filteredGenes"
-                :row-key="(row) => row.geneId"
-                :pagination="{ pageSize: 10 }"
-                size="small"
-                :bordered="false"
-                :max-height="440"
-              />
+            <div v-if="searchFieldOverride" class="filter-hint standalone">
+              {{ searchFieldOverride === 'go' ? 'GO' : 'KEGG' }} 反查：{{ searchQuery }}
+              <NButton size="tiny" quaternary @click="clearSearchOverride">清除反查</NButton>
             </div>
-            <NEmpty v-else class="tab-empty" description="暂无匹配基因" />
+
+            <NSpin :show="geneLoading">
+              <div v-if="geneData.length || geneLoading" class="table-wrap">
+                <div class="result-count">共 {{ geneTotal.toLocaleString() }} 条基因</div>
+                <NDataTable
+                  :columns="geneColumns"
+                  :data="geneData"
+                  :row-key="(row: ApiGene) => row.geneId"
+                  :pagination="{
+                    pageSize: 10,
+                    itemCount: geneTotal,
+                    page: genePage,
+                    showSizePicker: false,
+                    onUpdatePage: onGenePageChange,
+                  }"
+                  remote
+                  size="small"
+                  :bordered="false"
+                  :max-height="440"
+                />
+              </div>
+              <NEmpty v-else class="tab-empty" description="暂无匹配基因" />
+            </NSpin>
           </NTabPane>
 
           <NTabPane name="annotations" tab="GO / KEGG">
             <div class="annotation-grid">
               <section class="content-block">
                 <div class="block-title">GO 注释</div>
-                <div v-if="annotationRows.go.length" class="annotation-list">
-                  <div v-for="item in annotationRows.go" :key="item.goId" class="annotation-row">
+                <div v-if="goTerms.length" class="annotation-list">
+                  <div
+                    v-for="item in goTerms"
+                    :key="item.goId"
+                    class="annotation-row annotation-row-clickable"
+                    @click="clickGoTerm(item.goId)"
+                  >
                     <span class="mono strong">{{ item.goId }}</span>
-                    <span>{{ item.term }}</span>
-                    <NTag size="tiny" round>{{ goNamespaceLabel(item.namespace) }}</NTag>
-                    <span class="annotation-source">{{ item.evidenceCode }} · {{ item.source }}</span>
+                    <span>{{ item.name }}</span>
+                    <NTag size="tiny" round>{{ goNamespaceLabel(item.aspect as 'BP' | 'MF' | 'CC') }}</NTag>
+                    <span class="annotation-source">{{ item.geneCount }} genes</span>
                   </div>
                 </div>
                 <NEmpty v-else description="暂无 GO 注释" />
@@ -409,12 +652,17 @@ const geneColumns: DataTableColumns<Gene> = [
 
               <section class="content-block">
                 <div class="block-title">KEGG 通路</div>
-                <div v-if="annotationRows.kegg.length" class="annotation-list">
-                  <div v-for="item in annotationRows.kegg" :key="item.pathwayId" class="annotation-row">
+                <div v-if="keggPathways.length" class="annotation-list">
+                  <div
+                    v-for="item in keggPathways"
+                    :key="item.pathwayId"
+                    class="annotation-row annotation-row-clickable"
+                    @click="clickKeggPathway(item.pathwayId)"
+                  >
                     <span class="mono strong">{{ item.pathwayId }}</span>
-                    <span>{{ item.pathwayName }}</span>
-                    <NTag size="tiny" type="info" round>{{ item.category }}</NTag>
-                    <span class="annotation-source">{{ item.genesInPathway }} genes</span>
+                    <span>{{ item.name }}</span>
+                    <NTag size="tiny" type="info" round>pathway</NTag>
+                    <span class="annotation-source">{{ item.geneCount }} genes</span>
                   </div>
                 </div>
                 <NEmpty v-else description="暂无 KEGG 注释" />
@@ -427,7 +675,7 @@ const geneColumns: DataTableColumns<Gene> = [
               <div class="mapping-header">
                 <div>
                   <div class="block-title">基因 ID 映射</div>
-                  <p class="block-desc">{{ mappingDirection === 'v8tov11' ? 'Lsat_v8 → Lsat_v11' : 'Lsat_v11 → Lsat_v8' }}</p>
+                  <p class="block-desc">{{ mappingDirection === 'forward' ? mappingDirLabel.forward : mappingDirLabel.reverse }}</p>
                 </div>
                 <NButton size="small" quaternary @click="swapDirection">
                   <template #icon><NIcon><SwapHorizontalOutline /></NIcon></template>
@@ -455,10 +703,15 @@ const geneColumns: DataTableColumns<Gene> = [
                   <div class="mapping-label">映射结果</div>
                   <div class="mapping-result">
                     <div v-if="!mapResult.length" class="mapping-empty">等待映射...</div>
-                    <div v-for="row in mapResult" :key="row.input" class="mapping-row" :class="{ fail: row.status === 'fail' }">
+                    <div
+                      v-for="row in mapResult"
+                      :key="row.input"
+                      class="mapping-row"
+                      :class="{ fail: row.status === 'fail' }"
+                    >
                       <span class="mono">{{ row.input }}</span>
                       <span>→</span>
-                      <button v-if="row.output" class="gene-link" @click="openGeneById(row.output)">{{ row.output }}</button>
+                      <button v-if="row.output" class="gene-link" @click="openGeneDetail(row.output)">{{ row.output }}</button>
                       <span v-else class="mono">未找到</span>
                       <NTag size="tiny" :type="row.status === 'success' ? 'success' : 'error'" round>
                         {{ row.status === 'success' ? '成功' : '失败' }}
@@ -502,95 +755,141 @@ const geneColumns: DataTableColumns<Gene> = [
     </div>
 
     <NDrawer v-model:show="drawerVisible" :width="560" placement="right">
-      <NDrawerContent v-if="drawerGene" :title="drawerGene.geneId" closable>
-        <div class="gene-drawer">
-          <div class="gene-summary-card">
-            <div>
-              <div class="gene-symbol">{{ drawerGene.geneSymbol }}</div>
-              <div class="gene-name">{{ drawerGene.geneName }}</div>
+      <NDrawerContent v-if="drawerGene" :title="drawerGene.gene.geneId" closable>
+        <NSpin :show="drawerLoading">
+          <div class="gene-drawer">
+            <div class="gene-summary-card">
+              <div>
+                <div class="gene-symbol">{{ drawerGene.gene.geneName }}</div>
+                <div class="gene-name">{{ drawerGene.gene.annotation }}</div>
+              </div>
+              <NTag size="small" type="success" round>{{ drawerGene.gene.geneType }}</NTag>
             </div>
-            <NTag size="small" type="success" round>{{ drawerGene.status }}</NTag>
+
+            <NTabs type="segment" animated>
+              <NTabPane name="summary" tab="Summary">
+                <div class="detail-list">
+                  <div><span>基因类型</span><strong>{{ geneTypeText(drawerGene.gene.geneType) }}</strong></div>
+                  <div><span>位置</span><strong class="mono">{{ drawerGene.gene.chromosome }}:{{ drawerGene.gene.start.toLocaleString() }}-{{ drawerGene.gene.end.toLocaleString() }} ({{ drawerGene.gene.strand }})</strong></div>
+                  <div><span>长度</span><strong>{{ drawerGene.gene.length.toLocaleString() }} bp</strong></div>
+                </div>
+
+                <div v-if="drawerGene.transcripts[0]?.exons" class="gene-structure-section">
+                  <div class="drawer-section-title">外显子结构</div>
+                  <div class="gene-structure">
+                    <div class="strand-arrow">{{ drawerGene.gene.strand === '+' ? '→' : '←' }}</div>
+                    <div class="exon-track">
+                      <template v-for="exon in drawerGene.transcripts[0].exons" :key="exon.rank">
+                        <div v-if="exon.rank > 1" class="intron" />
+                        <div class="exon" :title="`E${exon.rank}`" />
+                      </template>
+                    </div>
+                  </div>
+                </div>
+              </NTabPane>
+
+              <NTabPane name="transcripts" tab="Transcripts">
+                <div v-for="tx in drawerGene.transcripts" :key="tx.transcriptId" class="tx-row">
+                  <div>
+                    <div class="mono strong">{{ tx.transcriptId }}</div>
+                    <div class="file-meta">{{ tx.biotype }} · {{ tx.length.toLocaleString() }} bp · {{ tx.exonCount }} exons</div>
+                  </div>
+                  <NTag v-if="tx.canonical" size="tiny" type="success" round>Canonical</NTag>
+                </div>
+                <NEmpty v-if="!drawerGene.transcripts.length" description="无转录本数据" />
+              </NTabPane>
+
+              <NTabPane name="go" tab="GO">
+                <div v-for="namespace in (['MF', 'BP', 'CC'] as const)" :key="namespace" class="drawer-annotation-group">
+                  <div class="drawer-section-title">{{ goNamespaceLabel(namespace) }}</div>
+                  <div
+                    v-if="drawerGene.go.filter((g) => g.namespace === namespace).length"
+                    class="drawer-annotation-list"
+                  >
+                    <div
+                      v-for="item in drawerGene.go.filter((g) => g.namespace === namespace)"
+                      :key="item.goId"
+                      class="drawer-annotation-row"
+                    >
+                      <span class="mono strong">{{ item.goId }}</span>
+                      <span>{{ item.term }}</span>
+                      <span class="annotation-source">{{ item.evidenceCode }} · {{ item.source }}</span>
+                    </div>
+                  </div>
+                  <div v-else class="subtle-empty small">无记录</div>
+                </div>
+              </NTabPane>
+
+              <NTabPane name="kegg" tab="KEGG">
+                <div v-if="drawerGene.kegg.pathways.length" class="drawer-annotation-list">
+                  <div
+                    v-for="item in drawerGene.kegg.pathways"
+                    :key="item.pathwayId"
+                    class="drawer-annotation-row"
+                  >
+                    <span class="mono strong">{{ item.pathwayId }}</span>
+                    <span>{{ item.name }}</span>
+                    <span class="annotation-source">{{ item.geneCount }} genes</span>
+                  </div>
+                </div>
+                <NEmpty v-else description="暂无 KEGG 注释" />
+              </NTabPane>
+
+              <NTabPane name="sequence" tab="Sequence">
+                <div class="sequence-type-bar">
+                  <NButtonGroup size="small">
+                    <NButton
+                      :type="seqType === 'genomic' ? 'primary' : 'default'"
+                      :disabled="!seqAvailable.genomic"
+                      @click="onSeqTypeChange('genomic')"
+                    >Genomic</NButton>
+                    <NButton
+                      :type="seqType === 'cds' ? 'primary' : 'default'"
+                      :disabled="!seqAvailable.cds"
+                      @click="onSeqTypeChange('cds')"
+                    >CDS</NButton>
+                    <NButton
+                      :type="seqType === 'protein' ? 'primary' : 'default'"
+                      :disabled="!seqAvailable.protein"
+                      @click="onSeqTypeChange('protein')"
+                    >Protein</NButton>
+                  </NButtonGroup>
+                </div>
+                <NSpin :show="seqLoading">
+                  <div v-if="seqData" class="sequence-block">
+                    <div class="drawer-section-title">FASTA 预览</div>
+                    <pre>&gt;{{ seqData.header }}
+{{ seqData.sequence }}</pre>
+                    <div class="sequence-actions">
+                      <NButton size="small" quaternary @click="copyText(seqData.sequence, '序列')">
+                        <template #icon><NIcon><CopyOutline /></NIcon></template>
+                        复制序列
+                      </NButton>
+                      <NButton size="small" quaternary @click="downloadFasta">
+                        <template #icon><NIcon><DownloadOutline /></NIcon></template>
+                        下载 FASTA
+                      </NButton>
+                    </div>
+                  </div>
+                  <div v-else-if="!seqLoading" class="sequence-block">
+                    <div class="subtle-empty">该序列类型暂不可用</div>
+                  </div>
+                </NSpin>
+              </NTabPane>
+            </NTabs>
           </div>
-
-          <NTabs type="segment" animated>
-            <NTabPane name="summary" tab="Summary">
-              <div class="detail-list">
-                <div><span>基因类型</span><strong>{{ geneTypeText(drawerGene.geneType) }}</strong></div>
-                <div><span>位置</span><strong class="mono">{{ formatLocation(drawerGene) }}</strong></div>
-                <div><span>长度</span><strong>{{ geneLength(drawerGene).toLocaleString() }} bp</strong></div>
-                <div><span>别名</span><strong>{{ drawerGene.aliases.join(', ') || '-' }}</strong></div>
-              </div>
-              <p class="gene-description">{{ drawerGene.description }}</p>
-
-              <div class="gene-structure-section">
-                <div class="drawer-section-title">外显子结构</div>
-                <div class="gene-structure">
-                  <div class="strand-arrow">{{ drawerGene.strand === '+' ? '→' : '←' }}</div>
-                  <div class="exon-track">
-                    <template v-for="exon in drawerGene.transcripts[0]?.exons" :key="exon.rank">
-                      <div v-if="exon.rank > 1" class="intron" />
-                      <div class="exon" :title="`E${exon.rank}`" />
-                    </template>
-                  </div>
-                </div>
-              </div>
-            </NTabPane>
-
-            <NTabPane name="transcripts" tab="Transcripts">
-              <div v-for="tx in drawerGene.transcripts" :key="tx.transcriptId" class="tx-row">
-                <div>
-                  <div class="mono strong">{{ tx.transcriptId }}</div>
-                  <div class="file-meta">{{ tx.biotype }} · {{ tx.length.toLocaleString() }} bp · {{ tx.exons.length }} exons</div>
-                </div>
-                <NTag v-if="tx.canonical" size="tiny" type="success" round>Canonical</NTag>
-              </div>
-            </NTabPane>
-
-            <NTabPane name="go" tab="GO">
-              <div v-for="namespace in (['MF', 'BP', 'CC'] as const)" :key="namespace" class="drawer-annotation-group">
-                <div class="drawer-section-title">{{ goNamespaceLabel(namespace) }}</div>
-                <div v-if="drawerGoGroups[namespace].length" class="drawer-annotation-list">
-                  <div v-for="item in drawerGoGroups[namespace]" :key="item.goId" class="drawer-annotation-row">
-                    <span class="mono strong">{{ item.goId }}</span>
-                    <span>{{ item.term }}</span>
-                    <span class="annotation-source">{{ item.evidenceCode }} · {{ item.source }}</span>
-                  </div>
-                </div>
-                <div v-else class="subtle-empty small">无记录</div>
-              </div>
-            </NTabPane>
-
-            <NTabPane name="kegg" tab="KEGG">
-              <div v-if="drawerGene.keggAnnotations.length" class="drawer-annotation-list">
-                <div v-for="item in drawerGene.keggAnnotations" :key="item.pathwayId" class="drawer-annotation-row">
-                  <span class="mono strong">{{ item.pathwayId }}</span>
-                  <span>{{ item.pathwayName }}</span>
-                  <span class="annotation-source">{{ item.koId || '-' }} · {{ item.genesInPathway }} genes</span>
-                </div>
-              </div>
-              <NEmpty v-else description="暂无 KEGG 注释" />
-            </NTabPane>
-
-            <NTabPane name="sequence" tab="Sequence">
-              <div class="sequence-block">
-                <div class="drawer-section-title">FASTA 预览</div>
-                <pre>&gt;{{ drawerGene.geneId }} {{ formatLocation(drawerGene) }}
-{{ drawerGene.sequence.genomic }}</pre>
-                <NButton size="small" quaternary @click="copyText(drawerGene.sequence.genomic, '序列')">
-                  <template #icon><NIcon><CopyOutline /></NIcon></template>
-                  复制序列
-                </NButton>
-              </div>
-            </NTabPane>
-          </NTabs>
-        </div>
+        </NSpin>
+      </NDrawerContent>
+      <NDrawerContent v-else-if="drawerLoading" title="加载中" closable>
+        <NSpin :show="true" style="min-height: 200px" />
       </NDrawerContent>
     </NDrawer>
-  </div>
+    </template>
 
-  <div v-else class="not-found">
-    <NEmpty description="未找到该数据库版本" />
-    <NButton size="small" type="primary" @click="router.push('/database')">返回数据库</NButton>
+    <div v-else-if="!loading" class="not-found">
+      <NEmpty description="未找到该数据库版本" />
+      <NButton size="small" type="primary" @click="router.push('/database')">返回数据库</NButton>
+    </div>
   </div>
 </template>
 
@@ -913,6 +1212,15 @@ const geneColumns: DataTableColumns<Gene> = [
   font-size: 12px;
 }
 
+.annotation-row-clickable {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.annotation-row-clickable:hover {
+  background: #eef0f4;
+}
+
 .mapping-header {
   display: flex;
   align-items: flex-start;
@@ -1098,6 +1406,16 @@ const geneColumns: DataTableColumns<Gene> = [
   margin-top: 14px;
 }
 
+.sequence-type-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sequence-block {
+  margin-top: 0;
+}
+
 .sequence-block pre {
   white-space: pre-wrap;
   word-break: break-all;
@@ -1107,6 +1425,12 @@ const geneColumns: DataTableColumns<Gene> = [
   background: #f7f8fa;
   font-size: 12px;
   line-height: 1.6;
+}
+
+.sequence-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .subtle-empty.small {

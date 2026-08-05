@@ -1,7 +1,7 @@
 [project]
 name = "omichub-agent-gateway"
 version = "0.1.0"
-description = "Controlled read-only professional Agent Gateway for OmicHub"
+description = "Controlled AgentTeams Matrix Gateway for OmicHub"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.110.0",

@@ -52,6 +52,7 @@ from omichub.api.v1.admin import stats as admin_stats
 from omichub.api.v1.admin import storage as admin_storage
 from omichub.api.v1.admin import terminals as admin_terminals
 from omichub.api.v1.admin import users as admin_users
+from omichub.reference_genomes.api import router as reference_genomes_router
 from omichub.tools import register_tool_routers
 
 api_router = APIRouter()
@@ -124,6 +125,11 @@ api_router.include_router(sandbox.router, prefix="/sandbox", tags=["Sandbox"])
 api_router.include_router(studio.router, prefix="/studio", tags=["Studio"])
 api_router.include_router(terminal.router, prefix="/terminal", tags=["Terminal"])
 api_router.include_router(modules.router, prefix="/modules", tags=["Modules"])
+
+# 常用物种基因数据库（参考基因组模块）：物种/版本/基因搜索/序列/GO/KEGG/统一搜索
+api_router.include_router(
+    reference_genomes_router, prefix="/reference-genomes", tags=["参考基因组"]
+)
 
 # 生信工具箱：自动发现 omichub.tools.<工具>.api 并挂载（每个工具自声明 prefix/tags）
 # 新增工具无需改本文件 —— 在 src/omichub/tools/<工具名>/api.py 声明 router/prefix/tags 即可。

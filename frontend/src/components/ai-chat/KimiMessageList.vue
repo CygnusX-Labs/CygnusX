@@ -63,7 +63,7 @@ const NEAR_BOTTOM_THRESHOLD = 100
 
 const streamingMessageId = computed(() => {
   const lastMsg = props.messages[props.messages.length - 1]
-  if (lastMsg?.role === 'assistant' && props.isTyping) {
+  if (lastMsg?.role === 'assistant' && props.isTyping && !lastMsg.senderAgent) {
     return lastMsg.id
   }
   return ''

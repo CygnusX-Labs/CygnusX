@@ -1,221 +1,152 @@
 # ============================================
-# OmicHub 参考基因组模块配置
+# OmicHub 常用物种基因数据库 · 注册表
 # ============================================
-# 用途：定义「参考基因组」模块（前端 /reference-genomes）的后端数据来源、
-# 文件路径、基因索引与 API 行为。前端列表页/详情页/基因搜索/版本映射
-# 全部依赖本配置。
+# 结构：species → versions 两级（设计文档 docs/26.8.4/常用物种基因数据库_实施方案.md §4.1）。
+# 热重载：加载器按文件 mtime 自动重载，改完无需重启后端；
+# 强制立即生效：POST /api/v1/reference-genomes/reload（管理员）。
 #
-# 热重载：配置加载器按文件 mtime 自动重载，改完无需重启后端；
-# 想强制立即生效可调 POST /api/v1/reference-genomes/reload（管理员）。
+# 路径约定：
+#   - data_dir 为版本数据目录（绝对路径），files.*.path 相对 data_dir 解析；
+#   - 文件缺失 / 本文件缺失 / 解析失败时，API 降级为空配置，绝不抛异常；
+#   - gene_index 为 indexer 构建产物（相对 data_dir），先写临时文件再原子替换。
 #
-# 路径约定（重要）：
-#   - 所有 fasta / gff3 / gtf / index / gene_index 均填【绝对路径】，
-#     运行时由 omichub-web 容器的 /data/omichub 挂载解析
-#     （与 data/OmicHub.yaml 的 storage.data_root 一致）。
-#   - 基因索引文件（gene_index，SQLite FTS5）由后端构建脚本从 GFF3 导入，
-#     首次启动或 GFF3 更新后需执行构建（见 dataset/README.md §6）。
-#   - 文件缺失时：列表页/详情页降级显示元数据，基因搜索返回空结果，
-#     不抛异常影响平台其他功能。
-#
-# 新增参考基因组：在 genomes 下追加一项即可，无需改代码。
-# 字段缺失/解析失败时回退到内置默认值，前端不会报错（只是相应功能空）。
+# files[key].format 决定 indexer 用哪个解析器：
+#   genomic_fasta     解压 gz（若有）+ 生成 .fai（纯 Python）
+#   gff3              gene/mRNA/exon → genes + transcripts
+#   tair_functional   TAIR functional_descriptions TSV → genes.annotation
+#   fasta_kv          CDS/蛋白 FASTA 登记转录本 ID + 序列偏移
+#   gaf               gene_association GAF 2.2 → go_annotations
+#   obo               go-basic.obo → go_terms
+#   kegg_ko           ath_ko.list（剥离 ath:/ko: 前缀）→ kegg_annotations
+#   kegg_pathway      ath_pathway.list（剥离 path: 前缀）→ kegg_annotations
+#   kegg_pathway_name ath_pathway_name.list → kegg_pathways 字典
+#   kegg_gene         ath_gene.list（4 列）→ 基因 symbol 补充
 # --------------------------------------------
 
-# ===== 全局设置 =====
-settings:
-  # 数据根目录（与平台 storage.data_root 一致，所有路径可基于此拼接）
-  data_root: /data/omichub
+species:
+  # ---------- 拟南芥 TAIR10（首个端到端接入的物种） ----------
+  - id: arabidopsis
+    common_name: 拟南芥
+    latin_name: Arabidopsis thaliana
+    taxonomy_id: "3702"
+    icon: 🌱
+    category: plant
+    gradient: "linear-gradient(90deg, #0FC6C2, #165DFF)"
+    description: 模式植物拟南芥 TAIR10 注释库（基因结构 + 序列 + GO + KEGG 全套）
+    versions:
+      - id: tair10
+        version_name: TAIR10
+        assembly_name: TAIR10
+        is_default: true
+        status: active
+        release_date: "2010-12"
+        description: 经典模式植物参考版本，GO/KEGG 注释完整
+        tags: [模式植物, 稳定版]
+        data_dir: /data/omichub/omichub_data/reference/TAIR10
+        stats:
+          chromosomes: 7          # Chr1-5 + ChrC + ChrM
+          total_genes: 28775
+          protein_coding: 27655
+          genome_size: "119.7 Mb"
+          n50: "23.5 Mb"
+        files:
+          fasta:       { path: TAIR10_chr_all.fas.gz,        format: genomic_fasta, type: genomic }
+          gff3:        { path: TAIR10_GFF3_genes.gff,        format: gff3 }
+          cds:         { path: TAIR10_cds_20101214,          format: fasta_kv }
+          protein:     { path: TAIR10_pep_20101214,          format: fasta_kv }
+          functional:  { path: TAIR10_functional_descriptions, format: tair_functional }
+          go:          { path: gene_association.tair.gz,     format: gaf }
+          go_obo:      { path: go-basic.obo,                 format: obo }
+          kegg_ko:     { path: ath_ko.list,                  format: kegg_ko }
+          kegg_pathway: { path: ath_pathway.list,            format: kegg_pathway }
+          kegg_pathway_name: { path: ath_pathway_name.list,  format: kegg_pathway_name }
+          kegg_gene:   { path: ath_gene.list,                format: kegg_gene }
+        gene_index: gene_index.db
 
-  # 基因组元数据缓存时长（秒），列表/详情接口走缓存
-  cache_ttl: 300
+  # ---------- 生菜（数据待接入，卡片显示 missing） ----------
+  - id: lettuce
+    common_name: 生菜
+    latin_name: Lactuca sativa
+    taxonomy_id: "4236"
+    icon: 🥬
+    category: plant
+    gradient: "linear-gradient(90deg, #165DFF, #722ED1)"
+    description: 生菜多版本参考基因组与功能注释库（数据待接入）
+    versions:
+      - id: lettuce-v11
+        version_name: v11
+        assembly_name: Lsat.1.v11
+        is_default: true
+        release_date: "2023-05"
+        description: 最新版染色体级组装（FASTA/GFF3 待下载接入）
+        tags: [最新版, 染色体级]
+        data_dir: /data/omichub/omichub_data/reference/Lettuce
+        stats: { chromosomes: 9, total_genes: 38678, genome_size: "2.69 Gb", n50: "120 Mb" }
+        files: {}
+        gene_index: gene_index.db
+      - id: lettuce-v8
+        version_name: v8
+        assembly_name: Lsat.1.v8
+        is_default: false
+        release_date: "2020-11"
+        description: 稳定版染色体级组装（FASTA/GFF3 待下载接入）
+        tags: [稳定版, 染色体级]
+        data_dir: /data/omichub/omichub_data/reference/Lettuce
+        stats: { chromosomes: 9, total_genes: 35241, genome_size: "2.65 Gb", n50: "95 Mb" }
+        files: {}
+        gene_index: gene_index.db
 
-  # 基因搜索单次最大返回条数（防止全表扫描）
-  max_search_results: 200
+  # ---------- 水稻（数据待接入） ----------
+  - id: rice
+    common_name: 水稻
+    latin_name: Oryza sativa
+    taxonomy_id: "4530"
+    icon: 🌾
+    category: plant
+    gradient: "linear-gradient(90deg, #F77234, #F7BA1E)"
+    description: 水稻 Nipponbare 参考基因组与注释库（数据待接入）
+    versions:
+      - id: irgsp-1.0
+        version_name: IRGSP-1.0
+        assembly_name: IRGSP-1.0
+        is_default: true
+        release_date: "2023-11"
+        description: 水稻主流参考版本（FASTA/GFF3 待下载接入）
+        tags: [主流版本, 染色体级]
+        data_dir: ""
+        stats: { chromosomes: 12, total_genes: 30600, genome_size: "373 Mb", n50: "31.1 Mb" }
+        files: {}
+        gene_index: gene_index.db
 
-  # 默认分页大小
-  default_page_size: 20
-
-  # 基因索引后端：sqlite-fts5（轻量，无额外服务）。
-  # 未来可扩展 postgres-fts / elasticsearch。
-  gene_index_backend: sqlite-fts5
-
-  # 是否启用数据库持久化基因（true 用 PostgreSQL，false 仅用 SQLite 索引）
-  use_database: false
-
-
-# ============================================
-# 参考基因组定义
-# ============================================
-# 每个基因组需要：FASTA + .fai + GFF3（注释）+ gene_index（搜索索引）
-# 可选：GTF、STAR/HISAT2 比对索引（用于分析流程）
-genomes:
-  # ---------- 生菜 v11（默认） ----------
-  - id: lettuce-v11
-    species:
-      emoji: "🥬"
-      common_name: "生菜"
-      latin_name: "Lactuca sativa"
-    version: "v11"
-    version_full: "Lsat.1.v11"
-    tags: ["最新版", "染色体级"]
-    is_default: true
-    release_date: "2023-05"
-
-    # 组装统计（展示用；genome_size_bp 用于染色体长度比例计算）
-    assembly:
-      genome_size: "2.69 Gb"
-      genome_size_bp: 2690000000
-      n50: "120 Mb"
-      chromosome_count: 9
-      total_genes: 38678
-
-    # 卡片底部渐变条（前端展示）
-    gradient: "linear-gradient(90deg, #3b82f6, #7c3aed)"
-
-    # 参考文件清单（绝对路径）
-    files:
-      fasta: "/data/omichub/reference/lettuce-v11/genome.fa"
-      fai: "/data/omichub/reference/lettuce-v11/genome.fa.fai"
-      gff3: "/data/omichub/reference/lettuce-v11/genes.gff3"
-      gtf: "/data/omichub/reference/lettuce-v11/genes.gtf"
-      # 比对索引（分析流程用，参考基因组模块仅展示状态）
-      star_index: "/data/omichub/reference/lettuce-v11/STAR/"
-      hisat2_index: "/data/omichub/reference/lettuce-v11/HISAT2/"
-
-    # 基因搜索索引（SQLite FTS5，由构建脚本从 GFF3 生成）
-    gene_index: "/data/omichub/reference/lettuce-v11/gene_index.db"
-
-    # 染色体信息（可从 .fai 自动生成；此处显式配置以带颜色）
-    chromosomes:
-      - { name: "Chr1", length: 425000000, color: "#6366f1" }
-      - { name: "Chr2", length: 380000000, color: "#7c3aed" }
-      - { name: "Chr3", length: 350000000, color: "#8b5cf6" }
-      - { name: "Chr4", length: 310000000, color: "#a855f7" }
-      - { name: "Chr5", length: 290000000, color: "#9333ea" }
-      - { name: "Chr6", length: 270000000, color: "#7c3aed" }
-      - { name: "Chr7", length: 250000000, color: "#6d28d9" }
-      - { name: "Chr8", length: 230000000, color: "#5b21b6" }
-      - { name: "Chr9", length: 195000000, color: "#4c1d95" }
-
-    # 基因类型分布（概览饼图）
-    gene_type_stats:
-      - { name: "mRNA",   value: 32104, color: "#6366f1" }
-      - { name: "lncRNA", value: 4218,  color: "#a855f7" }
-      - { name: "TE",     value: 1856,  color: "#ec4899" }
-      - { name: "Other",  value: 500,   color: "#94a3b8" }
-
-  # ---------- 生菜 v8（稳定版） ----------
-  - id: lettuce-v8
-    species:
-      emoji: "🥬"
-      common_name: "生菜"
-      latin_name: "Lactuca sativa"
-    version: "v8"
-    version_full: "Lsat.1.v8"
-    tags: ["稳定版", "染色体级"]
-    is_default: false
-    release_date: "2020-11"
-
-    assembly:
-      genome_size: "2.65 Gb"
-      genome_size_bp: 2650000000
-      n50: "95 Mb"
-      chromosome_count: 9
-      total_genes: 35241
-
-    gradient: "linear-gradient(90deg, #60a5fa, #6366f1)"
-
-    files:
-      fasta: "/data/omichub/reference/lettuce-v8/genome.fa"
-      fai: "/data/omichub/reference/lettuce-v8/genome.fa.fai"
-      gff3: "/data/omichub/reference/lettuce-v8/genes.gff3"
-      gtf: "/data/omichub/reference/lettuce-v8/genes.gtf"
-      star_index: "/data/omichub/reference/lettuce-v8/STAR/"
-      hisat2_index: "/data/omichub/reference/lettuce-v8/HISAT2/"
-
-    gene_index: "/data/omichub/reference/lettuce-v8/gene_index.db"
-
-    chromosomes:
-      - { name: "Chr1", length: 421000000, color: "#6366f1" }
-      - { name: "Chr2", length: 376000000, color: "#7c3aed" }
-      - { name: "Chr3", length: 348000000, color: "#8b5cf6" }
-      - { name: "Chr4", length: 308000000, color: "#a855f7" }
-      - { name: "Chr5", length: 288000000, color: "#9333ea" }
-      - { name: "Chr6", length: 268000000, color: "#7c3aed" }
-      - { name: "Chr7", length: 248000000, color: "#6d28d9" }
-      - { name: "Chr8", length: 228000000, color: "#5b21b6" }
-      - { name: "Chr9", length: 193000000, color: "#4c1d95" }
-
-    gene_type_stats:
-      - { name: "mRNA",   value: 29400, color: "#6366f1" }
-      - { name: "lncRNA", value: 3850,  color: "#a855f7" }
-      - { name: "TE",     value: 1620,  color: "#ec4899" }
-      - { name: "Other",  value: 371,   color: "#94a3b8" }
-
-
-# ============================================
-# 基因 ID 版本映射
-# ============================================
-# 用于详情页 Tab3「版本映射」：v8 ↔ v11 基因 ID 互转。
-# map_file 为 TSV（两列：source_id<TAB>target_id），或用 map_table 走数据库。
-id_mapping:
-  pairs:
-    - id: "lettuce-v8_to_lettuce-v11"
-      source: "lettuce-v8"
-      target: "lettuce-v11"
-      map_file: "/data/omichub/reference/id_mapping/lettuce_v8_to_v11.tsv"
-      # map_table: "gene_id_mapping_v8_v11"  # 启用 use_database 时使用
-
-    - id: "lettuce-v11_to_lettuce-v8"
-      source: "lettuce-v11"
-      target: "lettuce-v8"
-      map_file: "/data/omichub/reference/id_mapping/lettuce_v11_to_v8.tsv"
-
-
-# ============================================
-# API 行为配置
-# ============================================
-api:
-  # 路由前缀（对应前端 /reference-genomes）
-  prefix: "/api/v1/reference-genomes"
-
-  # 基因搜索字段配置
-  search:
-    # 可搜索字段（前端下拉选项）
-    fields:
-      - { key: "gene_id",    label: "Gene ID",   column: "gene_id" }
-      - { key: "gene_name",  label: "Gene Name", column: "gene_name" }
-      - { key: "annotation", label: "功能注释",  column: "annotation" }
-    default_field: "gene_id"
-    # 搜索模式：contains（包含）/ prefix（前缀）/ exact（精确）
-    mode: "contains"
-    page_size: 20
-    max_page_size: 100
-
-  # 基因详情抽屉外显子结构来源：
-  #   - gff3_parse：实时从 GFF3 解析该基因的 exon 记录（准确但慢）
-  #   - gene_index：从构建索引时预存的 exon 数量（快，仅数量）
-  exon_source: "gene_index"
-
-
-# ============================================
-# 文件清单展示配置
-# ============================================
-# 详情页左栏「参考文件」展示的文件项（顺序与命名）
-# 后端按 files 路径检查存在性，生成 size + indexed 状态
-file_list:
-  - { key: "fasta",        display_name: "genome.fa",     icon: "🧬" }
-  - { key: "gff3",         display_name: "genes.gff3",    icon: "📋" }
-  - { key: "gtf",          display_name: "genes.gtf",     icon: "📋" }
-  - { key: "star_index",   display_name: "STAR index",    icon: "📦" }
-  - { key: "hisat2_index", display_name: "HISAT2 index",  icon: "📦" }
-
-
-# ============================================
-# 缓存键配置
-# ============================================
-# 配置变更后 bump 版本号以失效旧缓存（参考 memory: cached_json 校验在缓存之后）
-cache:
-  key_version: "v1"
-  # 缓存键前缀
-  prefix: "ref_genomes"
+  # ---------- 番茄（数据待接入） ----------
+  - id: tomato
+    common_name: 番茄
+    latin_name: Solanum lycopersicum
+    taxonomy_id: "4081"
+    icon: 🍅
+    category: plant
+    gradient: "linear-gradient(90deg, #F53F3F, #F77234)"
+    description: 番茄 SL4.0 草案数据库，功能注释建设中
+    versions:
+      - id: sl4.0
+        version_name: SL4.0
+        assembly_name: SL4.0
+        is_default: true
+        release_date: "2024-03"
+        description: 番茄参考版本（FASTA/GFF3 待下载接入）
+        tags: [建设中]
+        data_dir: ""
+        stats: { chromosomes: 12, total_genes: 34120, genome_size: "828 Mb", n50: "67 Mb" }
+        files: {}
+        gene_index: gene_index.db
+      - id: itag4.1
+        version_name: ITAG4.1
+        assembly_name: ITAG4.1
+        is_default: false
+        release_date: "2024-03"
+        description: 番茄注释版本（GO/KEGG 注释文件在盘，FA/GFF3 待下载）
+        tags: [建设中]
+        data_dir: /data/omichub/omichub_data/reference/ITAG4.1
+        stats: { chromosomes: 12, total_genes: 0, genome_size: "", n50: "" }
+        files: {}
+        gene_index: gene_index.db

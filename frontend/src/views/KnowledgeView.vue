@@ -217,6 +217,9 @@ onMounted(async () => {
 </script>
 
 <template>
+  <!-- 单根节点：DefaultLayout 用 <Transition mode="out-in"> 包裹路由组件，
+       fragment（多根）会导致 SPA 跳转时组件不挂载（vuejs/core#6656）→ 空白页。
+       弹窗组件 teleport 到 body，移入 main 内不影响渲染位置 -->
   <main class="docs-layout page-container" aria-label="知识库">
     <!-- 左侧目录树 -->
     <div class="docs-sider" :class="{ 'docs-sider--collapsed': isNavigationCollapsed }">
@@ -400,18 +403,18 @@ onMounted(async () => {
         </NSpin>
       </NCard>
     </div>
+
+    <DocCreateModal
+      v-model:show="showCreateModal"
+      :existing-categories="existingCategories"
+      @created="handleCreated"
+    />
+
+    <AuditPendingPanel
+      v-model:show="showAuditPanel"
+      @audited="handleAudited"
+    />
   </main>
-
-  <DocCreateModal
-    v-model:show="showCreateModal"
-    :existing-categories="existingCategories"
-    @created="handleCreated"
-  />
-
-  <AuditPendingPanel
-    v-model:show="showAuditPanel"
-    @audited="handleAudited"
-  />
 </template>
 
 <style scoped>

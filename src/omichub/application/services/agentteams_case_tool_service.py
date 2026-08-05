@@ -118,6 +118,7 @@ class AgentTeamsCaseToolService:
             sample_sheet=[{"context_ref": item} for item in safe_refs] or [{"context_ref": {"kind": "project", "id": project_id}}],
             origin_consultation_id=source["origin_consultation_id"],
             consultation_summary=source["consultation_summary"],
+            element_room_url=str(meta.get("element_room_url") or "") or None,
         )
         status = str(case.get("status") or "received")
         title = normalized_objective[:80]

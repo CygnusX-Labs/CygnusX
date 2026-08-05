@@ -32,6 +32,7 @@ def test_runner_passes_local_go_and_kegg_references_to_r_container() -> None:
     command = runner.build_command(params, "omichub-enrich-test")
 
     assert command[:3] == ["docker", "run", "--rm"]
+    assert command[command.index("--network") + 1] == "omichub_app_net"
     assert "http_proxy=" not in " ".join(command)
     assert "--go_obo" in command
     assert "--go_annotation" in command
@@ -40,6 +41,28 @@ def test_runner_passes_local_go_and_kegg_references_to_r_container() -> None:
     assert command[command.index("--kegg_code") + 1] == "sly"
     assert command[command.index("--p_value_cutoff") + 1] == "0.05"
     assert command[command.index("--q_value_cutoff") + 1] == "0.1"
+
+
+def test_runner_uses_docker_default_bridge_when_network_is_not_configured() -> None:
+    runner = EnrichmentDockerRunner.__new__(EnrichmentDockerRunner)
+    runner._settings = SimpleNamespace(
+        enrichment_docker_network="",
+        enrichment_proxy_url="",
+        enrichment_data_mount="/data/omichub",
+        enrichment_memory="2g",
+        enrichment_cpus=2.0,
+        enrichment_docker_image="omichub-r-enrichment:v1",
+    )
+    params = EnrichmentRunParams(
+        input_path="/data/omichub/users/u1/enrichments/project/t1/gene_list.txt",
+        output_path="/data/omichub/users/u1/enrichments/project/t1/enrichment_result.csv",
+        kegg_code="hsa",
+        id_type="ENTREZID",
+    )
+
+    command = runner.build_command(params, "omichub-enrich-test")
+
+    assert "--network" not in command
 
 
 def test_uploaded_csv_and_tsv_accept_only_gene_id_column() -> None:

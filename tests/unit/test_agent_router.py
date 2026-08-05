@@ -119,7 +119,7 @@ async def test_route_pure_json(service: ChatService, router_ctx: Any, monkeypatc
 
 
 @pytest.mark.unit
-async def test_route_keeps_high_confidence_delivery_case(service: ChatService, router_ctx: Any, monkeypatch):
+async def test_route_normalizes_legacy_delivery_case_to_case(service: ChatService, router_ctx: Any, monkeypatch):
     monkeypatch.setattr(
         chat_service_module.provider_manager,
         "chat_stream",
@@ -138,12 +138,12 @@ async def test_route_keeps_high_confidence_delivery_case(service: ChatService, r
     _ctx, info = await service._route_to_agent(router_ctx, "帮我跑完 RNA-seq 并出报告")
 
     assert info is not None
-    assert info["intent"] == "delivery_case"
+    assert info["intent"] == "case"
     assert info["confidence"] == 0.91
 
 
 @pytest.mark.unit
-async def test_route_downgrades_low_confidence_delivery_case(service: ChatService, router_ctx: Any, monkeypatch):
+async def test_route_normalizes_low_confidence_legacy_delivery_case_to_case(service: ChatService, router_ctx: Any, monkeypatch):
     monkeypatch.setattr(
         chat_service_module.provider_manager,
         "chat_stream",
@@ -162,7 +162,7 @@ async def test_route_downgrades_low_confidence_delivery_case(service: ChatServic
     _ctx, info = await service._route_to_agent(router_ctx, "RNA-seq 怎么做")
 
     assert info is not None
-    assert info["intent"] == "light_collab"
+    assert info["intent"] == "case"
 
 
 @pytest.mark.unit

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from omichub.api.deps import CurrentUserId, DbSession
@@ -158,3 +160,25 @@ async def get_case_events(
     limit: int = 100,
 ) -> dict[str, Any]:
     return await service.get_case_events(case_id, current_user_id, cursor=cursor, limit=limit)
+
+
+@router.get("/cases/{case_id}/events/stream", summary="实时监听当前用户的协作案例事件")
+async def stream_case_events(
+    case_id: str,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+    cursor: str | None = None,
+) -> StreamingResponse:
+    async def event_generator():
+        async for event in service.stream_case_events(case_id, current_user_id, cursor=cursor):
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

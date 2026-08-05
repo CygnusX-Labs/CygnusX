@@ -17,7 +17,6 @@ Celery Worker 生成的命令形态如下：
 
 ```bash
 docker run --rm --name omichub-enrich-<task> \
-  --network omichub_app_net \
   -v /data/omichub:/data/omichub \
   --memory 2g --cpus 2.0 \
   omichub-r-enrichment:v1 \
@@ -30,6 +29,9 @@ docker run --rm --name omichub-enrich-<task> \
   --kegg_code sly --kegg_key_type kegg \
   --p_value_cutoff 0.05 --q_value_cutoff 0.1
 ```
+
+默认不传 `--network`，由 Docker 使用本机默认 `bridge` 网络。仅在容器需要访问指定代理或内网服务时，
+通过 `ENRICHMENT_DOCKER_NETWORK=<network-name>` 显式加入自定义网络。
 
 GO 参数可单独存在；KEGG 参数 `kegg_id_map + kegg_code` 可单独存在；同时存在时容器合并两类
 结果。所有路径都必须位于 `/data/omichub`，并在宿主和容器内保持相同绝对路径。

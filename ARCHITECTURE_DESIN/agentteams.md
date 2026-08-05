@@ -22,10 +22,13 @@
 
 ### 1.2 明确不做（第一期边界）
 
-- 第一期**不碰 Matrix/Element/Bridge**，"房间"是 OmicHub 内置编排语义，不是真 Matrix 房间。
+> **修订（2026-08-04）**：原定"第一期不碰 Matrix"的边界已在实施中突破——第二期的 Matrix 建房/消息镜像、room-events SSE 与第三期的管理面条目已随第一期**以默认关闭方式提前实现**（逐条状态见第 6、7 章标注）。以下为仍成立的边界。
+
+- ~~第一期不碰 Matrix/Element/Bridge~~（已提前实现，默认 `agentteams_gateway_enabled=false`；未配置时自动降级为内置编排语义，"房间"对未配置用户仍是 OmicHub 内置编排）。
 - 与现有 multi_agent 开关相互独立：multi_agent 控制 `parallel_subagents`/`create_agentteams_case` 工具挂载，超频控制"Manager 编排 + 多 Agent 发言"的会话形态。两者可同时开。
 - 子 Agent 发言不做 token 级流式（`parallel_subagents` 是结果粒度），后续可增强。
-- 不做常驻 Worker、不做房间成员管理——第一期超频是"每轮消息一次编排"。
+- 不做常驻 Worker、不做房间成员管理——超频是"每轮消息一次编排"（Worker 自主驻留房间仍属第二期未完成项，见 6.3）。
+
 
 ---
 
@@ -144,12 +147,24 @@
 
 沿用现有 `ChatChunk(type=..., metadata={...})` 形态：
 
+**线格式注意**：所有 chunk 经 SSE 序列化层（`api/v1/chat.py`）时会执行
+`data.update(chunk.metadata)`，把 metadata **拍平**到顶层——这是该层的既有惯例。
+因此线上实际格式为拍平结构，下文 JSON 示例中 `metadata` 内字段在线上位于顶层。
+前端按拍平格式读取。
+
 **`mode_changed`** —— 会话模式被切换（关键词触发或开关）时发出：
 
 ```json
 { "type": "mode_changed",
   "session_id": "...",
   "metadata": { "mode": "overdrive", "enabled": true } }
+```
+
+线上实际格式：
+
+```json
+// mode_changed 线上格式
+{ "type": "mode_changed", "session_id": "...", "mode": "overdrive", "enabled": true }
 ```
 
 **`room_speech`** —— 房间里一个 agent 的一次发言（Manager 与 Worker 通用）：
@@ -166,9 +181,19 @@
   } }
 ```
 
+线上实际格式：
+
+```json
+// room_speech 线上格式
+{ "type": "room_speech", "session_id": "...", "message_id": "msg-...",
+  "sender": { "agent_id": "...", "name": "...", "avatar": "...", "color": "...", "role": "manager" },
+  "content": "……", "round": 1 }
+```
+
 - `sender.role`：`"manager" | "worker"`。
 - 一轮超频回复的事件序列：`room_speech(manager 分工)` → `room_speech(worker)` × N → `room_speech(manager 汇总)` → `done`。
 - 每条 `room_speech` 同时落库为一条 `ChatMessageModel`（assistant），`metadata.senderAgent = sender`，保证刷新可回放。
+- 已知扩展字段（契约外但已实现）：`mode_changed` 可带 `degraded: true`（Matrix 降级时）；`room_speech`/会话可带 `matrix_room_id`（第二期 Matrix 绑定时）。第三方对接应忽略未知字段。
 
 ### 4.4 消息持久化元数据
 
@@ -323,16 +348,23 @@ OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_
 
 ## 6. 第二期实施详案（Matrix Gateway，真房间接管）
 
+> **提前实现状态**：第二期核心能力已按“默认关闭”方式提前实现；仅当 Gateway 配置完整且
+> `agentteams_gateway_enabled=true` 时启用，Gateway 不可达时自动降级为第一期内置编排。
+
 > 前置：第一期已完成。本章把"内置编排"升级为"真实 Matrix 房间"，与官方 AgentTeams 体验对齐。设计依据：`docs/26.8.1/agent_Case.md`（8.3 节 Matrix Gateway 规划）。
 
-### 6.1 组件与部署
+### 6.1 组件与部署 ✅ 已随第一期提前实现
+
+> 实现为**自研 HTTP/AppService 客户端**（`integrations/agentteams/gateway/omichub_agent_gateway/matrix_client.py`），未引入 matrix-nio；配置见 `config.py`，部署见 `deploy/agentteams/docker-compose.agentteams.yml` 的 gateway 容器与 `gateway.env.example`，冒烟脚本 `deploy/agentteams/matrix_gateway_smoke.py`。
 
 - 新建 **Matrix Gateway** 组件（建议放 `integrations/agentteams/gateway/`，该目录已存在占位）：一个轻量 Python 服务（FastAPI），内嵌 `matrix-nio` client，持有 homeserver 服务账号（bot 或 Application Service）。
 - 配置项：homeserver URL（dev=Synapse `http://127.0.0.1:8008`，prod=Tuwunel）、服务账号 token、与 Bridge 的身份映射表。
 - 部署：加入 `deploy/agentteams/docker-compose.agentteams.yml`，与 Bridge 同网络；K8s 走官方 Helm 思路（Tuwunel + Gateway 两个 Deployment）。
 - OmicHub 侧不直接依赖 matrix-nio，只通过 Gateway 的 HTTP API 访问房间（职责边界与 Bridge 一致：OmicHub 永不持有 Matrix 凭证）。
 
-### 6.2 Gateway HTTP API（新建 4 类端点）
+### 6.2 Gateway HTTP API（新建 4 类端点）✅ 已随第一期提前实现
+
+> Gateway `app.py` 已提供 rooms 四类端点（建房/发消息/读历史/sync），OmicHub 侧经 `agentteams_room_gateway_service.py` 代理调用。
 
 | 方法+路径 | 说明 |
 |---|---|
@@ -341,25 +373,32 @@ OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_
 | `GET /rooms/{room_id}/messages?since=` | 游标读房间消息历史（照 Bridge `/v1/cases/{id}/events` 的游标轮询范式） |
 | `GET /rooms/{room_id}/sync` | 长轮询 homeserver `/sync` 按 room_id 过滤，转 SSE 推给 OmicHub |
 
-### 6.3 身份映射
+### 6.3 身份映射 ⚠️ 部分提前实现
+
+> 已实现：Gateway 以 AppService 方式供给/代理 Matrix 身份（`matrix_client.py`），子 agent 结果由 **OmicHub 代发**进房间（即下文"过渡"方案）。
+> 未实现：**Worker 自主驻留房间**（监听 `m.mentions` 自主发言）——目前 Worker 仍是轮询 Bridge 的 HTTP 客户端，这是第二期剩余的最大一块工作。
 
 - 建一张映射表（Gateway 配置或 DB）：Bridge 身份 ↔ Matrix 用户（如 `bioops-manager` ↔ `@bioops-manager:localhost`）。
 - Gateway 用 Application Service 可为各身份**无密码批量供给 Matrix 用户**（官方 v1.2.0-beta 的 Matrix AppService 同款做法）。
 - Worker agent 要能在房间发言，需把现有轮询 Worker（`worker_runner.py`）升级或替换为"驻房间的 agent 进程"：监听房间 `m.mentions` → 调各自能力 → 回房间发言。**这是第二期最大的一块工作量**，可先用"OmicHub 代发"过渡：子 agent 结果由 OmicHub 经 Gateway 以该 agent 的 Matrix 身份代发进房间（房间里有真实消息记录，Element 旁观可见），后续再让 Worker 自主驻留。
 
-### 6.4 数据模型与绑定
+### 6.4 数据模型与绑定 ✅ 已随第一期提前实现（过渡方案）
+
+> `matrix_room_id` 按过渡方案存 `sandbox_meta`（**未做** alembic 列迁移）；Case 创建透传 `element_room_url` 已实现（`agentteams_case_tool_service.py`、`agentteams_service.py`）。
 
 - `ChatSessionModel` 新增 `matrix_room_id` 列（alembic 迁移；或先放 `sandbox_meta["matrix_room_id"]` 过渡）。
 - 开启超频且 Gateway 可用时：无 room_id → `POST /rooms` 创建并绑定；有则复用。
 - Case 的 `element_room_url` 字段改为可解析出 room_id，Case 房间与会话房间统一。
 
-### 6.5 OmicHub 与前端改造
+### 6.5 OmicHub 与前端改造 ✅ 已随第一期提前实现
+
+> 每条 speech 经 Gateway 镜像进 Matrix 房间（`chat_service.py:_run_overdrive_turn` 的 Matrix 分支，默认关闭、降级安全）；回流通道 `GET /api/v1/chat/sessions/{id}/room-events`（SSE）已实现，前端 `startRoomEvents`（agentHub.ts）照搬 agentteams-events 的 reader 模式；无房间会话返回 404 由前端静默降级。
 
 - 后端：`_run_overdrive_turn` 的每条 speech 增加"经 Gateway 写进 Matrix 房间"一步；新增房间消息回流通道——`GET /api/v1/chat/sessions/{id}/room-events`（SSE，内部桥接 Gateway `/sync`），把房间里**非 OmicHub 来源**的消息（如 Element 里用户的发言、Worker 自主发言）push 进会话消息流。前端照搬 `startAgentTeamsCaseEvents`（agentHub.ts:197-237）的 reader 模式。
 - 前端：传输层仍走 `/api/v1/chat/stream`；`AgentTeamsChatDrawer` 保留为"在 Element 中打开"的旁观入口（iframe 不动）。
 - 降级：Gateway 未配置/不可达时，超频自动回落第一期内置编排，并在 mode_changed metadata 里带 `degraded: true`。
 
-### 6.6 第二期验收标准
+### 6.6 第二期验收标准 ⬜ 未验收（端到端 Element 联调未做）
 
 1. 开启超频自动建房并绑定会话；会话内每条发言在 Element 客户端实时可见。
 2. Element 里用户发言能回流为 OmicHub 会话消息（双向同步）。
@@ -370,10 +409,13 @@ OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_
 
 ## 7. 第三期（可选，管理面优雅化）
 
-1. **Bridge 接入向导**：管理后台 AgentTeams Bridge Tab 增加"一键检测 + 分步引导"，token 自动生成/校验（对齐官方 `curl | bash` 体验）。
-2. **资源管理面板**：Worker/Team/Case 列表与生命周期操作（对齐官方 Dashboard）。
-3. **新建 Case 表单页**：后端 `POST /api/v1/agent-teams/cases` 已存在且不要求 multi_agent 开关，前端只差表单。
-4. **Case 状态实时化**：20s 轮询 + 60s watch → Matrix 事件直推 SSE。
+> **提前实现状态**：第三期的 Bridge 接入向导、Case 创建入口与 Case 事件实时化已提前实现；
+> Worker 生命周期仍由独立部署管理，管理面只展示心跳并提供已有的安全重协调操作。
+
+1. **Bridge 接入向导** ✅ 已随第一期提前实现：管理后台 AgentTeams Bridge Tab 增加"一键检测 + 分步引导"，token 自动生成/校验（对齐官方 `curl | bash` 体验）。实现：`api/v1/admin/agentteams_bridge.py`（含一次性 token 生成端点）+ `frontend/src/components/admin/AgentTeamsBridgeTab.vue`。
+2. **资源管理面板** ✅ 已随第一期提前实现：Worker/Team/Case 列表与生命周期操作（对齐官方 Dashboard）。实现：`agentteams_service.admin_resource_snapshot` + Bridge Tab 资源面板；Worker 生命周期仍由独立部署管理，面板只展示心跳并提供安全重协调。
+3. **新建 Case 表单页** ✅ 已随第一期提前实现：后端 `POST /api/v1/agent-teams/cases` 已存在且不要求 multi_agent 开关。实现：`frontend/src/components/task/AgentTeamsCasesPanel.vue` 新建 Case 表单。
+4. **Case 状态实时化** ✅ 已随第一期提前实现：20s 轮询 + 60s watch → SSE 直推。实现：`agentteams_service.stream_case_events` + `api/v1/agentteams.py` Case 事件 SSE + Bridge `events/stream`。
 
 ---
 
@@ -395,27 +437,27 @@ OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_
 
 ### 第一期
 
-- [ ] B1 schema/DTO/透传/sandbox_meta 三段式（schemas/chat.py、api/v1/chat.py、chat_service.py）
-- [ ] B2 关键词触发 + mode_changed 事件
-- [ ] B3 OVERDRIVE_MANAGER_PROMPT + `_run_overdrive_turn`（发现→分工→worker 发言→汇总，逐条落库）
-- [ ] B4 SSE 序列化穿透 + metadata.senderAgent 落库
-- [ ] B5 后端单测
-- [ ] F1 OverdriveToggle.vue + 两处挂载
-- [ ] F2 agentHub.ts（session 字段/传参/占位分叉/onRoomSpeech/onModeChanged/历史还原）
-- [ ] F3 useAgentChatStream.ts（body 字段/metadata 透传/两个新 case）
-- [ ] F4 types.ts + KimiMessageItem.vue senderAgent 渲染
-- [ ] F5 typecheck/build + 手动冒烟（5.2 冒烟脚本）
-- [ ] 第一期验收 5.3 全过
+- [x] B1 schema/DTO/透传/sandbox_meta 三段式（schemas/chat.py、api/v1/chat.py、chat_service.py）
+- [x] B2 关键词触发 + mode_changed 事件
+- [x] B3 OVERDRIVE_MANAGER_PROMPT + `_run_overdrive_turn`（发现→分工→worker 发言→汇总，逐条落库）
+- [x] B4 SSE 序列化穿透 + metadata.senderAgent 落库
+- [x] B5 后端单测
+- [x] F1 OverdriveToggle.vue + 两处挂载
+- [x] F2 agentHub.ts（session 字段/传参/占位分叉/onRoomSpeech/onModeChanged/历史还原）
+- [x] F3 useAgentChatStream.ts（body 字段/metadata 透传/两个新 case）
+- [x] F4 types.ts + KimiMessageItem.vue senderAgent 渲染
+- [ ] F5 typecheck/build 已通过；**手动冒烟（5.2 冒烟脚本）未做**
+- [ ] 第一期验收 5.3：1–5 条由测试/构建覆盖，**端到端手动验收未做**
 
 ### 第二期
 
-- [ ] G1 Matrix Gateway 服务骨架 + 配置 + 部署（6.1）
-- [ ] G2 四类端点（6.2）
-- [ ] G3 身份映射 + AppService 用户供给（6.3）
-- [ ] G4 matrix_room_id 迁移与绑定（6.4）
-- [ ] G5 OmicHub 桥接 + room-events SSE + 降级（6.5）
-- [ ] G6 第二期验收（6.6）
+- [x] G1 Matrix Gateway 服务骨架 + 配置 + 部署（6.1）—— 已随第一期提前实现（自研 AppService 客户端）
+- [x] G2 四类端点（6.2）—— 已随第一期提前实现
+- [~] G3 身份映射 + AppService 用户供给（6.3）—— AppService 供给与 OmicHub 代发已实现；**Worker 自主驻留房间未做**
+- [x] G4 matrix_room_id 迁移与绑定（6.4）—— 已按 sandbox_meta 过渡方案实现；alembic 列迁移未做
+- [x] G5 OmicHub 桥接 + room-events SSE + 降级（6.5）—— 已随第一期提前实现（默认关闭，降级有测试覆盖）
+- [ ] G6 第二期验收（6.6）—— 端到端 Element 联调未做
 
 ### 第三期（可选）
 
-- [ ] Bridge 接入向导 / 资源管理面板 / 新建 Case 表单 / Case 状态实时化（第 7 章）
+- [x] Bridge 接入向导 / 资源管理面板 / 新建 Case 表单 / Case 状态实时化（第 7 章）—— 均已随第一期提前实现

@@ -8,6 +8,7 @@ import {
 import { Vue3Lottie } from 'vue3-lottie'
 import { useRouter } from 'vue-router'
 import md, { VChart } from './setup'
+import { stripFakeToolCallMarkup } from './messageSanitize'
 import { usePyodide } from '@/composables/usePyodide'
 import UserAvatar from '@/components/UserAvatar.vue'
 import MessageActionBar from './MessageActionBar.vue'
@@ -190,27 +191,34 @@ const displayThought = computed(() =>
   props.isStreaming ? props.streamingThought : props.message.thought || '',
 )
 
+/** 超频/多智能体专家发言：内容由前端打字机渐进写入 message.content，
+ *  复用普通助手消息的流式动效（呼吸光标 / 加速头像 / 生成指示）。 */
+const isRoomStreaming = computed(() =>
+  !props.isStreaming && !!props.message.senderAgent && props.message.status === 'streaming',
+)
+const streamingActive = computed(() => props.isStreaming || isRoomStreaming.value)
+
 const streamingHasContent = computed(() => displayContent.value.length > 0)
 
 const hasThought = computed(() => displayThought.value.length > 0)
 
 const isThinking = computed(() =>
-  props.isStreaming && hasThought.value && !streamingHasContent.value,
+  streamingActive.value && hasThought.value && !streamingHasContent.value,
 )
 
 const showStarAnimation = computed(() =>
-  props.isStreaming && !streamingHasContent.value,
+  streamingActive.value && !streamingHasContent.value,
 )
 
 const showThinkingIndicator = computed(() =>
-  props.isStreaming && isThinking.value,
+  streamingActive.value && isThinking.value,
 )
 
 // 流式中、正文尚未开始生成（典型：工具调用已全部返回「成功」，模型仍在酝酿正文）。
 // 此时尾部不再放孤零零的闪烁光标，而是显示一个优雅的「正在生成回复」行内指示；
 // 正文首个 token 一到 streamingHasContent 变 true，该指示即平滑淡出，由正文接管。
 const showGeneratingTail = computed(() =>
-  props.isStreaming && !streamingHasContent.value,
+  streamingActive.value && !streamingHasContent.value,
 )
 
 const isError = computed(() =>
@@ -268,7 +276,7 @@ function hideSourceFavicon(event: Event) {
 }
 
 const isEmptyWithThought = computed(() =>
-  !props.isStreaming
+  !streamingActive.value
   && !props.message.content?.trim().length
   && !!(props.message.thought?.trim().length)
   && !props.message.toolCalls?.length
@@ -279,7 +287,7 @@ const isEmptyWithThought = computed(() =>
 )
 
 const isEmpty = computed(() =>
-  !props.isStreaming
+  !streamingActive.value
   && !props.message.content?.trim().length
   && !(props.message.thought?.trim().length)
   && !props.message.toolCalls?.length
@@ -300,7 +308,7 @@ const formattedTime = computed(() => {
 const lottieUrl = `${import.meta.env.BASE_URL}lottie/ai-avatar.json`
 
 watch(
-  () => props.isStreaming,
+  () => streamingActive.value,
   (streaming) => {
     lottieRef.value?.setSpeed(streaming ? 2 : 1)
     if (!streaming) {
@@ -321,9 +329,12 @@ const tokenText = computed(() => {
 })
 
 const aiIdentityName = computed(() => {
+  if (props.message.senderAgent?.name) return props.message.senderAgent.name
   if (props.message.modelName) return props.message.modelName
   return props.agentName
 })
+const displayAgentAvatar = computed(() => props.message.senderAgent?.avatar || props.agentAvatar)
+const displayAgentColor = computed(() => props.message.senderAgent?.color || props.agentColor)
 
 const renderedContent = ref('')
 /** 交错时间线中各 text 段的渲染结果（与 message.timeline 按下标对齐） */
@@ -332,6 +343,8 @@ let renderRafId: number | null = null
 
 /** Markdown → 安全 HTML（含联网引用 [n] 角标重写）；渲染失败降级为纯文本并上报 */
 function markdownToHtml(source: string): string {
+  if (!source) return ''
+  source = stripFakeToolCallMarkup(source)
   if (!source) return ''
   try {
     const container = document.createElement('div')
@@ -437,7 +450,7 @@ const timelineView = computed<TimelineViewSegment[]>(() => {
 watch(
   () => [displayContent.value, webSources.value, props.message.timeline] as const,
   () => {
-    if (props.isStreaming) {
+    if (streamingActive.value) {
       if (renderRafId) return
       renderRafId = requestAnimationFrame(() => {
         // 先复位句柄再渲染：渲染抛异常时 rAF 不会重排，
@@ -657,7 +670,7 @@ function handleEdit() {
         <div class="message-identity">
           <div class="ai-avatar">
             <Vue3Lottie
-              v-if="agentAvatar === '🤖' || !agentAvatar"
+              v-if="displayAgentAvatar === '🤖' || !displayAgentAvatar"
               ref="lottieRef"
               :animation-link="lottieUrl"
               :loop="true"
@@ -668,9 +681,9 @@ function handleEdit() {
             <div
               v-else
               class="avatar-fallback"
-              :style="{ background: agentColor }"
+              :style="{ background: displayAgentColor }"
             >
-              {{ agentAvatar }}
+              {{ displayAgentAvatar }}
             </div>
           </div>
           <span class="message-name ai-name">{{ aiIdentityName }}</span>
@@ -800,7 +813,7 @@ function handleEdit() {
         <!-- 内容气泡（常驻元素，不套外层 transition：流式→done 切换时与相邻加载态
              同帧 enter/leave 曾触发 Vue parentNode null 补丁崩溃，导致正文/tokens
              刷新前不渲染）。 -->
-        <div v-if="isStreaming ? streamingHasContent : hasBodyContent" class="message-content ai-card" :class="{ 'streaming-active': isStreaming }">
+        <div v-if="streamingActive ? streamingHasContent : hasBodyContent" class="message-content ai-card" :class="{ 'streaming-active': streamingActive }">
           <!-- 交错时间线：正文与工具调用按实际发生顺序渲染（内容→工具→内容），
                最终结论永远在最底部，不用翻回顶部看结果 -->
           <template v-if="timelineView.length">
@@ -930,7 +943,7 @@ function handleEdit() {
 
           <!-- 流式光标 + typing 指示：正文流式输出时跟随在文本末尾，结束后 200ms 淡出 -->
           <transition name="cursor-fade">
-            <span v-if="isStreaming && streamingHasContent" class="stream-tail">
+            <span v-if="streamingActive && streamingHasContent" class="stream-tail">
               <span class="stream-cursor" />
               <span class="stream-dots" aria-hidden="true"><i /><i /><i /></span>
             </span>

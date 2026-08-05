@@ -61,6 +61,7 @@ const submitForm = ref({
 })
 const chatDrawer = ref<InstanceType<typeof AgentTeamsChatDrawer> | null>(null)
 let pollingTimer: ReturnType<typeof setInterval> | null = null
+let eventStreamAbort: AbortController | null = null
 
 const caseId = computed(() => String(route.params.caseId || ''))
 const phases: { key: AgentTeamsCaseStatus[]; label: string }[] = [
@@ -242,16 +243,75 @@ function stopPolling() {
   pollingActive.value = false
 }
 
+function stopEventStream() {
+  eventStreamAbort?.abort()
+  eventStreamAbort = null
+}
+
+async function startEventStream() {
+  if (!caseId.value) return
+  stopEventStream()
+  const controller = new AbortController()
+  eventStreamAbort = controller
+  try {
+    const token = localStorage.getItem('access_token')
+    const params = new URLSearchParams()
+    if (eventCursor.value) params.set('cursor', eventCursor.value)
+    const response = await fetch(`/api/v1/agent-teams/cases/${caseId.value}/events/stream?${params.toString()}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: controller.signal,
+    })
+    if (!response.ok || !response.body) return
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    while (!controller.signal.aborted) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue
+        try {
+          const event = JSON.parse(line.slice(5).trim()) as AgentTeamsEvent
+          mergeEvents([event])
+          eventCursor.value = event.event_id || eventCursor.value
+          lastSyncedAt.value = new Date()
+          if (detail.value && event.event_type === 'case.state_changed') void refresh({ background: true })
+        } catch {
+          // Ignore malformed events and retain polling as a reliable fallback.
+        }
+      }
+    }
+  } catch (cause) {
+    if (!(cause instanceof DOMException && cause.name === 'AbortError')) {
+      console.warn('协作 Case 事件流连接异常，将继续使用轮询同步。', cause)
+    }
+  } finally {
+    if (eventStreamAbort === controller) {
+      eventStreamAbort = null
+      if (!controller.signal.aborted) window.setTimeout(() => void startEventStream(), 300)
+    }
+  }
+}
+
 watch(caseId, () => {
   events.value = []
   eventCursor.value = null
+  stopEventStream()
   void refresh({ resetEvents: true })
+  void startEventStream()
 })
 onMounted(() => {
   void refresh({ resetEvents: true })
   startPolling()
+  void startEventStream()
 })
-onBeforeUnmount(stopPolling)
+onBeforeUnmount(() => {
+  stopPolling()
+  stopEventStream()
+})
 </script>
 
 <template>

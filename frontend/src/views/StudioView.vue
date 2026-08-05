@@ -28,7 +28,7 @@ import StudioFileTree from '@/components/studio/StudioFileTree.vue'
 import StudioArtifactsPanel from '@/components/studio/StudioArtifactsPanel.vue'
 import StudioWorkspaceEditor from '@/components/studio/StudioWorkspaceEditor.vue'
 import SessionHistoryDrawer from '@/components/agent-workspace/SessionHistoryDrawer.vue'
-import MultiAgentToggle from '@/components/agent-workspace/MultiAgentToggle.vue'
+import OverdriveToggle from '@/components/agent-workspace/OverdriveToggle.vue'
 import { StudioContextKey } from '@/components/studio/context'
 import { studioApi, type StudioSessionDTO, type SandboxStatus } from '@/api/studio'
 import { shouldApplyServerUi, shouldApplyServerViewMode } from '@/utils/studioViewGuard'
@@ -371,10 +371,10 @@ watch(
 // ---------- 顶栏信息 ----------
 const session = computed(() => store.currentSession)
 const agent = computed(() => (session.value ? store.getAgent(session.value.agent_id) : null))
-const multiAgentEnabled = computed({
-  get: () => Boolean(session.value?.multi_agent),
+const overdriveEnabled = computed({
+  get: () => Boolean(session.value?.overdrive),
   set: (value: boolean) => {
-    if (session.value) session.value.multi_agent = value
+    if (session.value) session.value.overdrive = value
   },
 })
 
@@ -826,7 +826,7 @@ function formatSessionTime(iso: string): string {
         <n-tag size="small" round :bordered="false" class="model-tag">{{ modelName }}</n-tag>
       </div>
       <div class="bar-right">
-        <MultiAgentToggle v-model="multiAgentEnabled" :disabled="store.isStreaming" compact />
+        <OverdriveToggle v-model="overdriveEnabled" :disabled="store.isStreaming" compact />
         <n-tooltip v-if="sessionId" trigger="hover">
           <template #trigger>
             <span class="perm-switch" :class="{ auto: isAutoMode }">

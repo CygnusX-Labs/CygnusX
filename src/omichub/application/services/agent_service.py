@@ -35,6 +35,7 @@ from omichub.infrastructure.database.models.skill import SkillModel
 from omichub.infrastructure.database.repositories.mcp_repository import (
     SqlAlchemyMCPServerRepository,
 )
+from omichub.infrastructure.mcp.conda_meta_preset import CONDA_META_MCP_SERVER_ID
 from omichub.infrastructure.mcp.presets import (
     OMICHUB_PLATFORM_SERVER_ID,
     OMICHUB_TOOLS_SERVER_ID,
@@ -140,6 +141,11 @@ class AgentService:
                     ) and str(OMICHUB_PLATFORM_SERVER_ID) not in configured_mcp_ids:
                         configured_mcp_ids.append(str(OMICHUB_PLATFORM_SERVER_ID))
                         existing.mcp_ids = configured_mcp_ids
+                    # 同路径回填 conda-meta-mcp（装包前查 conda 元数据）：幂等追加，
+                    # 不动管理员额外绑定的 MCP。
+                    if str(CONDA_META_MCP_SERVER_ID) not in configured_mcp_ids:
+                        configured_mcp_ids.append(str(CONDA_META_MCP_SERVER_ID))
+                        existing.mcp_ids = configured_mcp_ids
                     configured_skills = [
                         str(skill_id).strip()
                         for skill_id in (cfg.get("skill_ids") or [])
@@ -178,7 +184,11 @@ class AgentService:
             # 构建落库字段
             mcp_ids = cfg.get("mcp_ids", [])
             if not mcp_ids:
-                mcp_ids = [str(OMICHUB_TOOLS_SERVER_ID), str(OMICHUB_PLATFORM_SERVER_ID)]
+                mcp_ids = [
+                    str(OMICHUB_TOOLS_SERVER_ID),
+                    str(OMICHUB_PLATFORM_SERVER_ID),
+                    str(CONDA_META_MCP_SERVER_ID),
+                ]
             # 统一功能开关：yaml features 原样保留，studio 段归入 features["studio"]，
             # 不新增列（调度中枢经 AgentContext.features 读取）
             features = dict(cfg.get("features") or {})

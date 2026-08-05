@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -96,6 +98,33 @@ class AgentTeamsService:
             "scrna_submit_available": "scrna_seq" in allowed_flows,
         }
 
+    async def admin_resource_snapshot(self) -> dict[str, Any]:
+        """Return the Bridge resources that an OmicHub administrator may operate."""
+        health = await self.health_check()
+        if not health["connection"].get("connected"):
+            return {"health": health, "teams": [], "cases": [], "total_cases": 0}
+        response = await self._request("/v1/cases", params={"limit": 100})
+        case_items = response.get("items") if isinstance(response.get("items"), list) else []
+        cases = [self._public_case(case) for case in case_items if isinstance(case, dict)]
+        team_counts: dict[str, int] = {}
+        for case in cases:
+            team_id = str(case.get("team_id") or "unassigned")
+            team_counts[team_id] = team_counts.get(team_id, 0) + 1
+        return {
+            "health": health,
+            "teams": [
+                {"team_id": team_id, "case_count": count}
+                for team_id, count in sorted(team_counts.items())
+            ],
+            "cases": cases,
+            "total_cases": int(response.get("total") or len(cases)),
+        }
+
+    async def reconcile_case_as_admin(self, case_id: str) -> dict[str, Any]:
+        return self._public_case(
+            await self._request(f"/v1/cases/{case_id}/reconcile", method="POST")
+        )
+
     async def chat_room(self, case_id: str | None, requester_ref: str) -> dict[str, bool | str | None]:
         """Resolve the Element chat room, preferring the room bound to the given Case."""
         if case_id:
@@ -160,6 +189,7 @@ class AgentTeamsService:
         comparisons: list[dict[str, Any]] | None = None,
         origin_consultation_id: str | None = None,
         consultation_summary: str | None = None,
+        element_room_url: str | None = None,
     ) -> dict[str, Any]:
         case_payload: dict[str, Any] = {
             "case_id": case_id,
@@ -171,6 +201,9 @@ class AgentTeamsService:
             case_payload["origin_consultation_id"] = origin_consultation_id
         if consultation_summary:
             case_payload["consultation_summary"] = consultation_summary
+        if element_room_url:
+            AgentTeamsBridgeSettingsService._validate_element_url(element_room_url)
+            case_payload["element_room_url"] = element_room_url
         case = await self._request(
             "/v1/cases",
             method="POST",
@@ -301,6 +334,55 @@ class AgentTeamsService:
         if cursor:
             params["cursor"] = cursor
         return await self._request(f"/v1/cases/{case_id}/events", params=params)
+
+    async def stream_case_events(
+        self,
+        case_id: str,
+        requester_ref: str,
+        *,
+        cursor: str | None = None,
+        watch_seconds: int = 60,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Proxy the Bridge's native bounded event stream after ownership verification."""
+        await self._get_case_for_requester(case_id, requester_ref)
+        if not self.available:
+            raise BusinessError("Agent 协作中心尚未接通")
+        params: dict[str, Any] = {"watch_seconds": max(1, min(watch_seconds, 60))}
+        if cursor:
+            params["cursor"] = cursor
+        headers = {
+            "X-Bridge-Identity": "bioops-manager",
+            "X-Bridge-Token": self._bridge_config.manager_token,
+        }
+        try:
+            async with (
+                httpx.AsyncClient(
+                    base_url=self._bridge_config.bridge_url.rstrip("/"),
+                    timeout=self._bridge_config.timeout_seconds + watch_seconds,
+                ) as client,
+                client.stream(
+                    "GET",
+                    f"/v1/cases/{case_id}/events/stream",
+                    params=params,
+                    headers=headers,
+                ) as response,
+            ):
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    try:
+                        event = json.loads(line[5:].strip())
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(event, dict):
+                        yield event
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                raise BusinessError("协作案例不存在") from exc
+            raise BusinessError("Agent 协作中心暂时不可用") from exc
+        except httpx.HTTPError as exc:
+            raise BusinessError("Agent 协作中心暂时不可用") from exc
 
     async def _request(self, path: str, *, method: str = "GET", **kwargs: Any) -> dict[str, Any]:
         return await self._request_as(

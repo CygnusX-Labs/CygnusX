@@ -1,20 +1,23 @@
 <script setup lang="ts">
 import { computed, h, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import {
   NAlert,
   NButton,
   NDataTable,
   NEmpty,
+  NForm,
+  NFormItem,
   NIcon,
   NInput,
+  NModal,
   NPagination,
   NSelect,
   NSpin,
   NTag,
   useMessage,
 } from 'naive-ui'
-import { CopyOutline, RefreshOutline, SearchOutline } from '@vicons/ionicons5'
+import { AddOutline, CopyOutline, RefreshOutline, SearchOutline } from '@vicons/ionicons5'
 import {
   agentTeamsApi,
   type AgentTeamsCase,
@@ -24,6 +27,7 @@ import { agentTeamsStatusLabel } from '@/utils/agentTeamsStatus'
 
 const PAGE_SIZE = 20
 const message = useMessage()
+const router = useRouter()
 const loading = ref(false)
 const available = ref(false)
 const cases = ref<AgentTeamsCase[]>([])
@@ -34,6 +38,16 @@ const page = ref(1)
 const error = ref('')
 const selectedStatus = ref<AgentTeamsCaseStatus | null>(null)
 const projectId = ref('')
+const createVisible = ref(false)
+const creating = ref(false)
+const createError = ref('')
+const createForm = ref({
+  project_id: '',
+  intent: '',
+  flow_id: 'scrna_seq',
+  sample_sheet: '[\n  {\n    "sample_id": "sample-001",\n    "group": "control"\n  }\n]',
+  comparisons: '',
+})
 
 const statusOptions = Object.entries(agentTeamsStatusLabel).map(([value, label]) => ({ value, label }))
 
@@ -185,6 +199,60 @@ async function loadCases(targetPage = 1) {
   }
 }
 
+function openCreateCase() {
+  createError.value = ''
+  createVisible.value = true
+}
+
+function parseJsonArray(value: string, label: string, required: boolean): Array<Record<string, unknown>> | undefined {
+  const normalized = value.trim()
+  if (!normalized && !required) return undefined
+  if (!normalized) throw new Error(`请填写${label}。`)
+  const parsed: unknown = JSON.parse(normalized)
+  if (!Array.isArray(parsed) || parsed.some((item) => !item || typeof item !== 'object' || Array.isArray(item))) {
+    throw new Error(`${label}必须是对象数组 JSON。`)
+  }
+  return parsed as Array<Record<string, unknown>>
+}
+
+async function createCase() {
+  createError.value = ''
+  const projectIdValue = createForm.value.project_id.trim()
+  const intent = createForm.value.intent.trim()
+  const flowId = createForm.value.flow_id.trim()
+  if (!projectIdValue || !intent || !flowId) {
+    createError.value = '请填写项目引用、分析目标和流程 ID。'
+    return
+  }
+  let sampleSheet: Array<Record<string, unknown>>
+  let comparisons: Array<Record<string, unknown>> | undefined
+  try {
+    sampleSheet = parseJsonArray(createForm.value.sample_sheet, '样本表', true)!
+    comparisons = parseJsonArray(createForm.value.comparisons, '分组对比', false)
+  } catch (cause: any) {
+    createError.value = cause instanceof SyntaxError ? '样本表或分组对比不是有效 JSON。' : cause.message
+    return
+  }
+
+  creating.value = true
+  try {
+    const created = await agentTeamsApi.createCase({
+      project_id: projectIdValue,
+      intent,
+      flow_id: flowId,
+      sample_sheet: sampleSheet,
+      comparisons,
+    })
+    createVisible.value = false
+    message.success('协作 Case 已创建，正在进入预检。')
+    await router.push(`/agent-teams/cases/${created.case_id}`)
+  } catch (cause: any) {
+    createError.value = cause?.response?.data?.detail || '创建协作 Case 失败。'
+  } finally {
+    creating.value = false
+  }
+}
+
 function resetAndLoad() {
   cursorHistory.value = [undefined]
   void loadCases(1)
@@ -220,6 +288,9 @@ onMounted(() => { void loadCases() })
       </div>
 
       <div class="case-filters" aria-label="协作 Case 筛选">
+        <NButton type="primary" @click="openCreateCase">
+          <template #icon><NIcon><AddOutline /></NIcon></template>新建 Case
+        </NButton>
         <NSelect
           v-model:value="selectedStatus"
           clearable
@@ -276,6 +347,20 @@ onMounted(() => { void loadCases() })
         </div>
       </div>
     </template>
+    <NModal v-model:show="createVisible" preset="card" title="新建协作 Case" :style="{ width: 'min(94vw, 720px)' }" :mask-closable="!creating">
+      <NAlert type="info" :show-icon="true" class="create-case-note">
+        提交后由 Data Steward 对项目、样本表和分组对比执行预检；真实计算仍需在审批阶段人工确认。
+      </NAlert>
+      <NAlert v-if="createError" type="error" :show-icon="true" class="create-case-note">{{ createError }}</NAlert>
+      <NForm label-placement="top" @submit.prevent="createCase">
+        <NFormItem label="项目引用" required><NInput v-model:value="createForm.project_id" placeholder="例如 project-001" /></NFormItem>
+        <NFormItem label="分析目标" required><NInput v-model:value="createForm.intent" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" placeholder="描述本次分析问题与预期产出" /></NFormItem>
+        <NFormItem label="流程 ID" required><NInput v-model:value="createForm.flow_id" placeholder="例如 scrna_seq" /></NFormItem>
+        <NFormItem label="样本表 JSON" required><NInput v-model:value="createForm.sample_sheet" type="textarea" :autosize="{ minRows: 7, maxRows: 12 }" /></NFormItem>
+        <NFormItem label="分组对比 JSON（可选）"><NInput v-model:value="createForm.comparisons" type="textarea" :autosize="{ minRows: 3, maxRows: 8 }" placeholder='例如 [{"name":"treated-vs-control","numerator":"treated","denominator":"control"}]' /></NFormItem>
+        <div class="create-case-actions"><NButton :disabled="creating" @click="createVisible = false">取消</NButton><NButton type="primary" attr-type="submit" :loading="creating">创建并预检</NButton></div>
+      </NForm>
+    </NModal>
   </div>
 </template>
 
@@ -339,6 +424,8 @@ onMounted(() => { void loadCases() })
 
 .case-filters__status { width: 160px; }
 .case-filters__project { width: 260px; }
+.create-case-note { margin-bottom: 16px; }
+.create-case-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 
 /* 表格卡片：复用 omichub-card 表面（global.css「卡片内数据表格」规则自动接管表头/分隔线/悬停） */
 .case-table-card {

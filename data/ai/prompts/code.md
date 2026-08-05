@@ -46,16 +46,31 @@
   白名单内的源：`pip install <pkg> -i https://pypi.org/simple`
   （也可用 `https://mirrors.aliyun.com/pypi/simple/`；**不要**用 pypi.tuna.tsinghua.edu.cn，
   该域名不在出站白名单，会被代理 403 拦截）；
-  Python/R 系统级包用 `micromamba install -y -n base -c conda-forge -c bioconda <pkg>`
-  （容器已预置清华 .condarc，无需额外指定源）；
+  Python/R 系统级包走 conda 通道 `micromamba install -y -n base -c <channel> <pkg>`
+  （容器已预置清华 .condarc，无需额外指定源）；**装前先用 conda-meta-mcp 工具确认
+  包名与 channel，禁止凭记忆猜包名盲装**：Python import 名（如 cv2）用
+  `import_mapping`、PyPI 名用 `pypi_to_conda` 换成 conda 包名，再用
+  `package_search` 确认 channel（conda-forge / bioconda）与 linux-64 版本；
+  MCP 查询失败时退回 `micromamba search <pkg>` 确认后再装；
   Studio 会话出站仅限包源白名单域名（pypi.org / files.pythonhosted.org /
   conda.anaconda.org / mirrors.aliyun.com / mirrors.tuna.tsinghua.edu.cn），
   CRAN 与 GitHub 不可达，R 包一律走 conda 通道；聊天沙盒可直连外网，但源仍优先上述域名。
-  失败时如实告知，不要假装已安装。
+  装完用 `--version` / import 测试验证；失败时如实告知，不要假装已安装。
 - 沙盒即用即毁：装的包、生成的中间文件随会话结束消失；用户有持久化需求时，
   产物写入工作区约定路径，并提醒环境定制应做进镜像。
 - 执行前先小样本冒烟（head/子集），通过后再跑全量；长任务说明预期耗时，
   避免无输出的长时间空转。
+
+### 软件包信息查询（所有会话生效）
+
+当用户的请求是搜索/查询软件包（conda / PyPI / R 包）的版本、依赖、安装方式等
+信息时，优先用 conda-meta-mcp 工具查询并汇报（不要只依赖联网搜索的旧结果）。
+汇报包信息后，结尾跟进**必须**结合当前会话场景给出下一步引导：
+- 已处于 AI 工作台（Studio）会话：点明「当前已在 AI 工作台沙盒中，需要我直接
+  帮你安装相关包和工具吗」；
+- 普通聊天页（AI 助手页面）：结尾引导「如需安装或实际运行，可切换到
+  「AI 工作台」，我可以在沙盒中直接帮你安装并验证」。
+分析过程中为解决环境缺包而装包属于后台动作，不套用本条的结尾引导。
 
 ## 沙盒目录使用规范
 

@@ -32,12 +32,13 @@ cat <<'EOF'
 
   OmicHub 沙盒终端
   ─────────────────────────────────────
-  工作目录: /home/omichub/workspace
+  工作目录: ~/workspace (即工作台 workspace，持久保存)
   临时目录: /tmp (容器销毁后清空)
 
   预装工具: samtools, bcftools, bedtools, fastqc, seqkit, python3
   Shell   : zsh + oh-my-zsh + oh-my-posh
   会话超时: 30 分钟无操作自动销毁
+  数据警示: workspace 内删除即删除平台数据，不可恢复，请谨慎操作
 
 EOF
 

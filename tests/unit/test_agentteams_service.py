@@ -143,6 +143,90 @@ async def test_list_cases_forwards_scoped_filters(service: AgentTeamsService, mo
 
 
 @pytest.mark.asyncio
+async def test_case_event_stream_checks_owner_before_connecting_to_bridge(
+    service: AgentTeamsService, monkeypatch
+) -> None:
+    async def fake_owner(case_id: str, requester_ref: str):
+        assert (case_id, requester_ref) == ("bioops_001", "current-user")
+        return {"case_id": case_id, "requester_ref": requester_ref}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        async def aiter_lines(self):
+            yield 'data: {"event_id":"evt-1","event_type":"case.created"}'
+
+    class FakeStream:
+        async def __aenter__(self):
+            return FakeResponse()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            assert kwargs["base_url"] == "http://bridge.test"
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        def stream(self, method: str, path: str, **kwargs):
+            assert method == "GET"
+            assert path == "/v1/cases/bioops_001/events/stream"
+            assert kwargs["params"] == {"watch_seconds": 1, "cursor": "evt-0"}
+            assert kwargs["headers"]["X-Bridge-Identity"] == "bioops-manager"
+            return FakeStream()
+
+    monkeypatch.setattr(service, "_get_case_for_requester", fake_owner)
+    monkeypatch.setattr("omichub.application.services.agentteams_service.httpx.AsyncClient", FakeClient)
+
+    events = [
+        event async for event in service.stream_case_events(
+            "bioops_001", "current-user", cursor="evt-0", watch_seconds=1
+        )
+    ]
+
+    assert events == [{"event_id": "evt-1", "event_type": "case.created"}]
+
+
+@pytest.mark.asyncio
+async def test_admin_resource_snapshot_groups_cases_by_team(
+    service: AgentTeamsService, monkeypatch
+) -> None:
+    async def fake_health():
+        return {"connection": {"connected": True}, "workers": []}
+
+    async def fake_request(path: str, **kwargs):
+        assert path == "/v1/cases"
+        assert kwargs == {"params": {"limit": 100}}
+        return {
+            "items": [
+                {"case_id": "case-a", "team_id": "team-red", "preflight_input": {}},
+                {"case_id": "case-b", "team_id": "team-red", "task_specs": {}},
+                {"case_id": "case-c", "team_id": "team-blue"},
+            ],
+            "total": 3,
+        }
+
+    monkeypatch.setattr(service, "health_check", fake_health)
+    monkeypatch.setattr(service, "_request", fake_request)
+
+    snapshot = await service.admin_resource_snapshot()
+
+    assert snapshot["total_cases"] == 3
+    assert snapshot["teams"] == [
+        {"team_id": "team-blue", "case_count": 1},
+        {"team_id": "team-red", "case_count": 2},
+    ]
+    assert "preflight_input" not in snapshot["cases"][0]
+    assert "task_specs" not in snapshot["cases"][1]
+
+
+@pytest.mark.asyncio
 async def test_case_owner_approval_submits_with_separate_bridge_identities(
     service: AgentTeamsService, monkeypatch
 ) -> None:

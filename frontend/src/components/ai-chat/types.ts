@@ -83,6 +83,7 @@ export interface ChatMessage {
   askRequest?: AskRequest
   /** 智能路由：本条 AI 消息实际由哪位专家回答（路由器会话专属） */
   routedAgent?: RoutedAgentInfo
+  senderAgent?: { id: string; name: string; avatar?: string; color?: string }
   collaborationRoute?: CollaborationRouteInfo
   consultation?: ExpertConsultation
   agentTeamsCases?: AgentTeamsCaseCardPayload[]

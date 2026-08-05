@@ -62,11 +62,13 @@ function selectImage(id: string) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-auto-rows: 1fr;
-  gap: 14px;
+  gap: 16px;
   align-items: stretch;
   width: 100%;
 }
 
+/* 单圈描边：默认 1px 中性边框，选中态由 .is-selected 提供连续主色描边，
+   不再使用 transparent 宽边框 + inset 灰环的双圈画法 */
 .image-item {
   position: relative;
   display: flex;
@@ -75,25 +77,38 @@ function selectImage(id: string) {
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: 18px;
-  border: 2px solid transparent;
+  padding: 16px;
+  border: 1px solid var(--neutral-border);
   border-radius: 12px;
   background: var(--neutral-card);
-  box-shadow: inset 0 0 0 1px var(--neutral-border);
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
-.image-item:hover {
+.image-item:hover:not(.is-selected) {
+  border-color: color-mix(in srgb, var(--arco-primary) 24%, var(--neutral-border));
+  background-color: color-mix(in srgb, var(--arco-primary) 4%, var(--neutral-card));
   transform: translateY(-2px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--shadow-card-hover, 0 2px 8px rgba(0, 0, 0, 0.06));
+}
+
+/* 选中态：1px 主色边框 + 1px 主色内描边连成单一连续描边，左缘状态线由
+   全局 .omichub-selectable-card::before 提供 */
+.image-item.is-selected {
+  border-color: var(--arco-primary);
+  background-color: color-mix(in srgb, var(--arco-primary) 5%, var(--neutral-card));
+  box-shadow: inset 0 0 0 1px var(--arco-primary);
+}
+
+:root[data-theme='dark'] .image-item.is-selected {
+  background-color: color-mix(in srgb, var(--arco-primary) 16%, var(--neutral-card));
 }
 
 .image-item:focus-visible {
-  outline: 3px solid var(--arco-primary);
-  outline-offset: 2px;
+  outline: 2px solid var(--arco-primary);
+  outline-offset: 3px;
 }
 
 .selection-badge {

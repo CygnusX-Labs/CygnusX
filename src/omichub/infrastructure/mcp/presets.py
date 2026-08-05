@@ -202,6 +202,97 @@ async def _platform_get_current_time(
     }
 
 
+async def _platform_get_user_info(
+    arguments: dict[str, Any],
+    user_id: str | None = None,
+    context: ToolInvocationContext | None = None,
+    **_kw: Any,
+) -> dict[str, Any]:
+    """返回当前用户的基本信息与饼干（积分）账户余额。
+
+    余额必须实时取自已落库的饼干账户（cookie_accounts），禁止由模型凭记忆/猜测
+    作答；本工具是"我还有多少饼干/积分/额度"类问题的唯一权威数据源。
+    """
+    from omichub.core.config import get_settings
+    from omichub.infrastructure.database.session import get_session_factory
+
+    settings = get_settings()
+
+    async def fetch(db: Any) -> dict[str, Any]:
+        from omichub.infrastructure.database.repositories.user_repository import (
+            SqlAlchemyUserRepository,
+        )
+
+        data: dict[str, Any] = {"success": True}
+        uid: uuid.UUID | None = None
+        if user_id:
+            try:
+                uid = uuid.UUID(str(user_id))
+            except (ValueError, TypeError):
+                uid = None
+        if uid is None:
+            return {"success": False, "error": "无法确定当前用户身份"}
+
+        user = await SqlAlchemyUserRepository(db).get_by_id(uid)
+        if user is not None:
+            role = getattr(user.role, "value", user.role)
+            data.update(
+                {
+                    "username": user.username,
+                    "nickname": getattr(user, "nickname", None) or user.username,
+                    "email": user.email,
+                    "role": str(role),
+                    "storage_quota_bytes": int(getattr(user, "storage_quota", 0) or 0),
+                    "used_storage_bytes": int(getattr(user, "used_storage", 0) or 0),
+                }
+            )
+
+        if settings.enable_cookie_system:
+            from omichub.application.services.cookie_service import CookieService
+
+            account = await CookieService(db).get_account(uid)
+            data.update(
+                {
+                    "cookie_balance": float(account.balance),
+                    "cookie_frozen_balance": float(account.frozen_balance),
+                    "cookie_available_balance": float(account.available_balance),
+                    "cookie_total_earned": float(account.total_earned),
+                    "cookie_total_spent": float(account.total_spent),
+                    "cookie_account_status": account.status,
+                }
+            )
+        return data
+
+    if context is not None:
+        data = await fetch(context.db)
+    else:
+        factory = get_session_factory()
+        async with factory() as db:
+            data = await fetch(db)
+
+    if not data.get("success"):
+        return data
+
+    def _fmt(num: float) -> str:
+        s = f"{num:,.1f}"
+        return s[:-2] if s.endswith(".0") else s
+
+    lines: list[str] = []
+    if "username" in data:
+        lines.append(f"用户: {data['username']}（{data.get('email', '?')}），角色: {data.get('role', '?')}")
+    if "cookie_available_balance" in data:
+        lines.append(
+            f"🍪 饼干余额: {_fmt(data['cookie_available_balance'])}"
+            + (f"（其中冻结 {_fmt(data['cookie_frozen_balance'])}）" if data["cookie_frozen_balance"] else "")
+        )
+    if data.get("storage_quota_bytes"):
+        used_gb = data["used_storage_bytes"] / 1024**3
+        total_gb = data["storage_quota_bytes"] / 1024**3
+        lines.append(f"存储: {used_gb:.1f}GB / {total_gb:.1f}GB")
+    data["summary"] = "\n".join(lines) if lines else "已获取用户信息"
+    return data
+
+
 async def _platform_read_file(
     arguments: dict[str, Any],
     user_id: str | None = None,
@@ -829,6 +920,15 @@ PLATFORM_PRESET_TOOLS = [
         },
     },
     {
+        "name": "platform_get_user_info",
+        "description": (
+            "获取当前用户的账户信息与饼干（积分）余额：用户名、角色、存储配额/已用空间，"
+            "以及饼干可用余额/冻结/累计收支。用户询问「我还有多少饼干/积分/额度/余额」时"
+            "必须调用本工具获取实时数据，禁止凭记忆或估计作答。"
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "platform_get_current_time",
         "description": (
             "获取平台服务器当前时间、今天日期、星期、时区偏移和 Unix 时间戳。"
@@ -1072,6 +1172,7 @@ PLATFORM_HANDLERS = {
     "platform_list_tasks": _platform_list_tasks,
     "platform_get_task": _platform_get_task,
     "platform_list_flows": _platform_list_flows,
+    "platform_get_user_info": _platform_get_user_info,
     "platform_get_current_time": _platform_get_current_time,
     "platform_sandbox_execute": _platform_sandbox_execute,
     "platform_read_file": _platform_read_file,
@@ -1091,7 +1192,7 @@ PLATFORM_HANDLERS = {
 PRESET_SERVERS: list[dict[str, Any]] = [
     {
         "name": "omichub-platform",
-        "description": "平台操作 MCP - 任务管理、流程查询、沙箱执行、结果读取、数据下载（SRA/GEO 公共数据库与多云存储）",
+        "description": "平台操作 MCP - 任务管理、流程查询、当前用户与饼干（积分）余额查询、沙箱执行、结果读取、数据下载（SRA/GEO 公共数据库与多云存储）",
         "transport": "builtin",
         "tools": PLATFORM_PRESET_TOOLS,
         "handlers": PLATFORM_HANDLERS,

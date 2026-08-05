@@ -50,10 +50,19 @@
 - 沙盒内缺包现场安装：Python 包优先 `uv pip install <pkg>`；用 pip 时显式指定
   白名单内的源 `pip install <pkg> -i https://pypi.org/simple`
   （**不要**用 pypi.tuna.tsinghua.edu.cn，该域名不在出站白名单，会被代理 403 拦截）；
-  conda/mamba 装包直接 `micromamba install -y -n base <pkg>`，镜像已预置清华 .condarc，
-  无需指定源。Studio 会话出站仅放行包源白名单，CRAN（install.packages）与 GitHub
+  conda/mamba 装包走 `micromamba install -y -n base -c <channel> <pkg>`（镜像已预置
+  清华 .condarc），**装前先用 conda-meta-mcp 工具确认包名与 channel，禁止凭记忆猜包名
+  盲装**：import 名用 `import_mapping`、PyPI 名用 `pypi_to_conda` 换成 conda 包名，
+  `package_search` 确认 channel 与 linux-64 版本；MCP 查询失败退回 `micromamba search`。
+  Studio 会话出站仅放行包源白名单，CRAN（install.packages）与 GitHub
   （remotes::install_github）不可达，R 包一律走 conda 通道（r-xxx / bioconductor-xxx）；
-  聊天沙盒可直连外网，但装包源仍优先白名单域名。
+  聊天沙盒可直连外网，但装包源仍优先白名单域名。装完用 `--version` / import 验证。
+- 软件包信息查询的结尾引导（所有会话生效，与分析中缺包安装无关）：当用户的请求
+  是搜索/查询软件包（conda / PyPI / R 包）的版本、依赖、安装方式等信息时，优先用
+  conda-meta-mcp 查询并汇报（不要只依赖联网搜索的旧结果）；汇报后结尾跟进**必须**
+  结合会话场景：已处于 AI 工作台（Studio）会话时点明「当前已在 AI 工作台沙盒中，
+  需要我直接帮你安装相关包和工具吗」；在普通聊天页（AI 助手页面）则引导「如需
+  安装或实际运行，可切换到「AI 工作台」，我可以在沙盒中直接帮你安装并验证」。
 
 ## 沙盒目录使用规范
 

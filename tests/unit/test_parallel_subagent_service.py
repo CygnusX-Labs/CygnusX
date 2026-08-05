@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from omichub.application.services import parallel_subagent_service as pss
 from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
 
-
 # --- 桩件 -----------------------------------------------------------------
 
 
@@ -403,8 +402,8 @@ async def test_fanout_validation_rules(env, monkeypatch) -> None:
         context_summary="",
         db=SimpleNamespace(),
     )
-    single = await service.run(tasks=[{"agent_id": "a", "task": "x"}], **kwargs)
-    assert single["success"] is False and "至少需要 2 个" in single["llm_payload"]["error"]
+    single = service._validate_tasks([{"agent_id": "a", "task": "x"}], max_parallel=4)
+    assert single == [{"agent_id": "a", "task": "x"}]
 
     too_many = await service.run(
         tasks=[{"agent_id": "a", "task": f"t{i}"} for i in range(5)], **kwargs

@@ -33,6 +33,7 @@ export interface AgentChatStreamOptions {
   extraMcpServers?: string[]
   /** 当前会话是否启用 multi-agent 协作运行时 */
   multiAgent?: boolean
+  overdrive?: boolean
   /** 工具调用轮次上限扩展：true 时后端按 1000 轮执行（用户在触顶弹窗确认继续后置位） */
   extendMaxRounds?: boolean
 }
@@ -161,6 +162,14 @@ export interface WebSearchEvent {
   message?: string
 }
 
+export interface RoomSpeechEvent {
+  sender: { agent_id: string; name: string; avatar?: string; color?: string; role: 'manager' | 'worker' }
+  content: string
+  round: number
+  messageId?: string
+  sessionId?: string
+}
+
 /** Skill 调用生命周期事件（skill.invoked / skill.completed / skill.failed 三时机） */
 export interface SkillStreamEvent {
   /** invoked=技能被匹配加载；completed=加载成功；failed=加载失败/技能不可用 */
@@ -219,6 +228,8 @@ export interface AgentStreamCallbacks {
   onRoundLimit?: (event: RoundLimitEvent) => void
   /** 上下文超窗触发历史压缩时回调（estimatedTokens 为压缩前估算值） */
   onContextCompressed?: (estimatedTokens: number) => void
+  onRoomSpeech?: (event: RoomSpeechEvent) => void
+  onModeChanged?: (enabled: boolean, degraded?: boolean) => void
   onError?: (error: string) => void
   onDone?: (
     sessionId: string,
@@ -237,6 +248,7 @@ export interface NormalizedAgentStreamEvent {
   isReasoning: boolean
   sessionId?: string
   messageId?: string
+  metadata?: Record<string, unknown>
   raw: Record<string, unknown>
 }
 
@@ -305,6 +317,7 @@ export function normalizeAgentStreamEvent(data: Record<string, unknown>): Normal
     isReasoning,
     sessionId: firstString(data.session_id, data.sessionId, nestedData?.session_id) || undefined,
     messageId: firstString(data.message_id, data.messageId, nestedData?.message_id) || undefined,
+    metadata: asRecord(data.metadata) || nestedData,
     raw: data,
   }
 }
@@ -347,6 +360,7 @@ export function useAgentChatStream() {
           mcp_mode: options.mcpMode || 'auto',
           extra_mcp_servers: options.extraMcpServers || [],
           multi_agent: options.multiAgent ?? false,
+          overdrive: options.overdrive,
           extend_max_rounds: options.extendMaxRounds || false,
         }),
         signal: abortController.value.signal,
@@ -436,6 +450,28 @@ export function useAgentChatStream() {
           arguments: (data.arguments as Record<string, unknown>) || {},
         })
         break
+      case 'mode_changed':
+        if (data.mode === 'overdrive') cb.onModeChanged?.(Boolean(data.enabled), Boolean(data.degraded))
+        break
+      case 'room_speech': {
+        const sender = asRecord(data.sender)
+        if (!sender) break
+        cb.onRoomSpeech?.({
+          sender: {
+            agent_id: String(sender.agent_id || ''),
+            name: String(sender.name || '专家'),
+            avatar: typeof sender.avatar === 'string' ? sender.avatar : undefined,
+            color: typeof sender.color === 'string' ? sender.color : undefined,
+            role: sender.role === 'worker' ? 'worker' : 'manager',
+          },
+          content,
+          round: Number(data.round) || 1,
+          messageId,
+          sessionId,
+        })
+        if (sessionId && messageId) cb.onSessionCreated?.(sessionId, messageId)
+        break
+      }
       case 'tool_result':
         cb.onToolResult?.({
           tool_call_id: (data.tool_call_id as string) || '',

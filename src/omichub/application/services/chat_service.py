@@ -180,6 +180,48 @@ ROUTER_SYSTEM_PROMPT = """你是一个意图路由器。根据用户消息，从
 - “帮我跑一下上游比对定量流程” → dag
 - 简单事实问答 → chat。"""
 
+OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_name}）。用户消息已进入超频模式。
+
+候选专家（JSON 数组）：
+{catalog}
+
+规则：
+1. 直接输出一行 JSON：{{"speech": "...", "assignments": [{{"agent_id": "...", "task": "..."}}]}}。
+2. speech 用简体中文，直接回应用户消息本身：
+   - 需要分工时：用一两句话自然说明你安排了哪些专家分别处理什么；
+   - 无需分工时：speech 就是你给用户的直接回答或自然回应；
+   - 若用户只是要求开启超频模式而没有具体任务：一句话简短确认并邀请用户下达具体任务。
+3. assignments 0–5 个；仅当任务可拆为相互独立的专业子任务时才拆分，agent_id 必须来自候选清单；同一专家可被指派多个相互独立的子任务（分身并行）。
+4. 简单问答、闲聊、单领域问题 → assignments 为空数组。
+5. 禁止在 speech 中提及“超频模式已开启/切换”“高性能响应状态”等系统状态，禁止复述用户指令，禁止空泛地吹嘘服务能力。
+6. 禁止输出思考过程，第一个字符必须是 {{。
+
+用户消息：{user_content}"""
+
+_OVERDRIVE_ON_HINTS = ("超频模式", "超频", "overdrive")
+_OVERDRIVE_OFF_HINTS = ("退出超频", "关闭超频", "取消超频", "overdrive off")
+_OVERDRIVE_NEGATED_ON_HINTS = ("别进超频", "不要进超频", "不进入超频", "不要开启超频", "别开启超频")
+
+
+def _effective_overdrive(request_value: bool | None, session_meta: dict[str, Any]) -> bool:
+    """请求显式值优先，否则沿用会话级开关。"""
+    return bool(request_value) if request_value is not None else bool(session_meta.get("overdrive", False))
+
+
+def _resolve_overdrive_keyword_toggle(text: str, enabled: bool) -> bool | None:
+    """返回关键词要求切换的状态；无切换时返回 ``None``。退出语义优先。"""
+    normalized = text.lower()
+    if enabled and any(hint in normalized for hint in _OVERDRIVE_OFF_HINTS):
+        return False
+    if (
+        not enabled
+        and any(hint in normalized for hint in _OVERDRIVE_ON_HINTS)
+        and not any(hint in normalized for hint in _OVERDRIVE_OFF_HINTS)
+        and not any(hint in normalized for hint in _OVERDRIVE_NEGATED_ON_HINTS)
+    ):
+        return True
+    return None
+
 
 def _extract_route_json(text: str) -> dict[str, Any] | None:
     """从 router LLM 输出中容错提取路由 JSON。
@@ -187,15 +229,22 @@ def _extract_route_json(text: str) -> dict[str, Any] | None:
     模型可能在 JSON 前后输出思考过程，甚至多次输出 JSON（先错后对）。
     逐个尝试所有 {...} 片段，取最后一个可解析且含 agent_id 的对象。
     """
-    found: dict[str, Any] | None = None
-    for match in re.finditer(r"\{[^{}]*\}", text, re.DOTALL):
+    found: tuple[int, dict[str, Any]] | None = None
+    manager_found: tuple[int, dict[str, Any]] | None = None
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", text):
         try:
-            data = json.loads(match.group(0))
+            data, end = decoder.raw_decode(text[match.start() :])
         except json.JSONDecodeError:
             continue
-        if isinstance(data, dict) and data.get("agent_id"):
-            found = data
-    return found
+        if not isinstance(data, dict):
+            continue
+        if "speech" in data and "assignments" in data:
+            if manager_found is None or match.start() + end > manager_found[0]:
+                manager_found = (match.start() + end, data)
+        elif data.get("agent_id") and (found is None or match.start() + end > found[0]):
+            found = (match.start() + end, data)
+    return (manager_found or found or (0, None))[1]
 
 
 def _studio_risk_hint(tool_name: str, args: dict[str, Any]) -> str:
@@ -1455,6 +1504,273 @@ class ChatService:
             logger.warning(f"[Agent路由] 意图分派失败，按原 Agent 继续: {e}")
             return None, None
 
+    async def _admin_subagent_fanout_enabled(self) -> bool:
+        """管理员后台「对话内并行子 Agent」灰度开关（环境变量或站点设置任一开启）。
+
+        Multi-agent（子 Agent 并行协作）现由管理员在后台统一控制，用户侧不再暴露开关；
+        该开关同时是 parallel_subagent_service 实际执行 fan-out 的闸门，保持单一事实来源。
+        """
+        from omichub.application.services.site_settings_service import SiteSettingsService
+        from omichub.core.config import get_settings
+
+        if get_settings().subagent_fanout_enabled:
+            return True
+        try:
+            return bool(
+                (await SiteSettingsService(self._db).get_settings()).subagent_fanout_enabled
+            )
+        except Exception:  # noqa: BLE001
+            return False
+
+    async def _run_overdrive_turn(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        user_content: str,
+        manager_ctx: AgentContext,
+    ) -> AsyncIterator[ChatChunk]:
+        """运行一次内置超频编排，不进入普通工具循环。"""
+        from omichub.application.schemas.tool_invocation import ToolInvocationContext
+        from omichub.application.services.agent_service import AgentService
+        from omichub.application.services.parallel_subagent_tool_service import (
+            ParallelSubAgentToolService,
+        )
+
+        manager = manager_ctx.agent
+        manager_sender = {
+            "agent_id": manager.agent_id,
+            "name": manager.name,
+            "avatar": manager.avatar,
+            "color": manager.color,
+            "role": "manager",
+        }
+
+        agents = await AgentService(self._db).list_agents(active_only=True)
+        candidates = [agent for agent in agents if not (agent.features or {}).get("router")]
+        catalog_items = [
+            {
+                "agent_id": agent.agent_id,
+                "name": agent.name,
+                "description": agent.description,
+                "category": agent.category,
+                "avatar": agent.avatar,
+                "color": agent.color,
+            }
+            for agent in candidates
+        ]
+        catalog = json.dumps(catalog_items, ensure_ascii=False)
+        catalog_by_id = {item["agent_id"]: item for item in catalog_items}
+
+        async def ask_manager(prompt: str, max_tokens: int = 1200) -> str:
+            answer = ""
+            if manager_ctx.model_config is None:
+                return answer
+            async for chunk in provider_manager.chat_stream(
+                config=manager_ctx.model_config,
+                messages=[{"role": "user", "content": prompt}],
+                system_prompt="",
+                temperature=0.2,
+                max_tokens=max_tokens,
+                tools=None,
+                deep_thinking=False,
+            ):
+                if chunk.type == "text":
+                    answer += chunk.content
+            return answer.strip()
+
+        manager_raw = await ask_manager(
+            OVERDRIVE_MANAGER_PROMPT.format(
+                manager_name=manager.name,
+                catalog=catalog,
+                user_content=user_content,
+            ),
+            max_tokens=900,
+        )
+        decision = _extract_route_json(manager_raw) or {}
+        speech = str(decision.get("speech") or manager_raw or "我来直接处理这个问题。")
+        raw_assignments = decision.get("assignments")
+        assignments: list[dict[str, str]] = []
+        if isinstance(raw_assignments, list):
+            for item in raw_assignments:
+                if not isinstance(item, dict):
+                    continue
+                target_id = str(item.get("agent_id") or "")
+                task = str(item.get("task") or "").strip()
+                # 允许同一 agent_id 出现多次：每个 assignment 都是一个独立分身，并行执行各自子任务
+                if target_id in catalog_by_id and task:
+                    assignments.append({"agent_id": target_id, "task": task})
+                if len(assignments) == 5:
+                    break
+
+        # 第二期提前实现，默认关闭：仅在 Gateway 可用时镜像到 Matrix，失败即回退内置编排。
+        matrix_room_id: str | None = None
+        matrix_degraded = False
+        room_gateway: Any | None = None
+        try:
+            from omichub.application.services.agentteams_room_gateway_service import (
+                AgentTeamsRoomGatewayService,
+            )
+
+            room_gateway = AgentTeamsRoomGatewayService()
+            if room_gateway.available:
+                session = await self.get_session(session_id, user_id)
+                session_meta = dict(session.sandbox_meta or {}) if session else {}
+                matrix_room_id = str(session_meta.get("matrix_room_id") or "") or None
+                if matrix_room_id is None:
+                    room = await room_gateway.create_room(
+                        session_id,
+                        [
+                            "omichub-user",
+                            "bioops-manager",
+                            *[assignment["agent_id"] for assignment in assignments],
+                        ],
+                    )
+                    matrix_room_id = str(room["room_id"])
+                    if session is not None:
+                        session.sandbox_meta = {
+                            **session_meta,
+                            "matrix_room_id": matrix_room_id,
+                            **(
+                                {"element_room_url": room["element_room_url"]}
+                                if room.get("element_room_url")
+                                else {}
+                            ),
+                        }
+                        await self._db.flush()
+        except Exception as exc:  # noqa: BLE001
+            matrix_degraded = True
+            logger.warning("超频 Matrix 房间不可用，回退内置编排: {}", exc)
+
+        if room_gateway is not None and room_gateway.available and matrix_room_id:
+            try:
+                await room_gateway.post_message(
+                    matrix_room_id,
+                    sender_identity="omichub-user",
+                    content=user_content,
+                    sender={"agent_id": "user", "name": "用户", "role": "user"},
+                )
+            except Exception as exc:  # noqa: BLE001
+                matrix_degraded = True
+                logger.warning("用户消息同步至 Matrix 失败，继续内置会话: {}", exc)
+
+        if matrix_degraded:
+            yield ChatChunk(
+                type="mode_changed",
+                metadata={"mode": "overdrive", "enabled": True, "degraded": True},
+            )
+
+        async def emit_speech(sender: dict[str, Any], content: str, round_number: int) -> ChatChunk:
+            nonlocal matrix_degraded
+            message = await self.add_message(
+                session_id,
+                "assistant",
+                content,
+                metadata={
+                    "senderAgent": sender,
+                    **({"matrix_room_id": matrix_room_id} if matrix_room_id else {}),
+                },
+            )
+            if room_gateway is not None and room_gateway.available and matrix_room_id:
+                try:
+                    identity = "bioops-manager" if sender["role"] == "manager" else sender["agent_id"]
+                    await room_gateway.post_message(
+                        matrix_room_id,
+                        sender_identity=identity,
+                        content=content,
+                        sender=sender,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    matrix_degraded = True
+                    logger.warning("超频发言同步至 Matrix 失败，继续内置会话: {}", exc)
+            return ChatChunk(
+                type="room_speech",
+                content=content,
+                metadata={
+                    "sender": sender,
+                    "round": round_number,
+                    "session_id": session_id,
+                    "message_id": message.message_id,
+                    **({"matrix_room_id": matrix_room_id} if matrix_room_id else {}),
+                    **({"degraded": True} if matrix_degraded else {}),
+                },
+            )
+
+        yield await emit_speech(manager_sender, speech, 1)
+        if not assignments:
+            return
+
+        tool_context = ToolInvocationContext(
+            user_id=user_id,
+            agent_id=manager.agent_id,
+            session_id=session_id,
+            db=self._db,
+        )
+        try:
+            fanout_result = await ParallelSubAgentToolService().run_parallel_subagents(
+                context_summary=user_content,
+                tasks=assignments,
+                context=tool_context,
+            )
+            payload = fanout_result.get("llm_payload") or {}
+            task_results = payload.get("results") if isinstance(payload, dict) else None
+            if not isinstance(task_results, list):
+                task_results = []
+            fanout_error = str(
+                fanout_result.get("error")
+                or (payload.get("error") if isinstance(payload, dict) else "")
+                or ""
+            )
+        except Exception as exc:  # noqa: BLE001
+            fanout_error = str(exc)
+            task_results = [
+                {"index": position, "agent_id": task["agent_id"], "status": "failed", "error": str(exc)}
+                for position, task in enumerate(assignments, start=1)
+            ]
+
+        # fan-out 结果按 assignments 下标（1 起）对齐，同一专家多个分身的结果不会互相覆盖
+        result_by_index = {
+            int(item.get("index") or 0): item
+            for item in task_results
+            if isinstance(item, dict)
+        }
+        clone_totals: dict[str, int] = {}
+        for assignment in assignments:
+            clone_totals[assignment["agent_id"]] = clone_totals.get(assignment["agent_id"], 0) + 1
+        clone_seq: dict[str, int] = {}
+        worker_summaries: list[dict[str, str]] = []
+        for position, assignment in enumerate(assignments, start=1):
+            target_id = assignment["agent_id"]
+            result = result_by_index.get(position, {})
+            answer = str(result.get("answer") or "").strip()
+            error = str(result.get("error") or "").strip()
+            content = answer or f"子任务执行失败：{error or fanout_error or '未返回可用结果'}"
+            candidate = catalog_by_id[target_id]
+            clone_seq[target_id] = clone_seq.get(target_id, 0) + 1
+            display_name = (
+                candidate["name"]
+                if clone_totals[target_id] == 1
+                else f"{candidate['name']} #{clone_seq[target_id]}"
+            )
+            sender = {
+                "agent_id": target_id,
+                "name": display_name,
+                "avatar": candidate["avatar"],
+                "color": candidate["color"],
+                "role": "worker",
+            }
+            worker_summaries.append({"agent_id": target_id, "name": display_name, "content": content})
+            yield await emit_speech(sender, content, 1)
+
+        summary_prompt = (
+            "基于以下专家结果给出统一、可核验的结论，不要重复执行同一批子任务。"
+            "请用简体中文直接回答用户。\n\n"
+            f"用户消息：{user_content}\n\n专家结果：\n"
+            f"{json.dumps(worker_summaries, ensure_ascii=False)}"
+        )
+        summary = await ask_manager(summary_prompt)
+        yield await emit_speech(manager_sender, summary or "专家结果已汇总，但 Manager 未返回额外结论。", 2)
+
     async def stream_agent_chat(
         self,
         user_id: str,
@@ -1470,6 +1786,7 @@ class ChatService:
         mcp_mode: str | None = None,
         extra_mcp_servers: list[str] | None = None,
         multi_agent: bool | None = None,
+        overdrive: bool | None = None,
         extend_max_rounds: bool = False,
         project_id: str | None = None,
     ) -> AsyncIterator[ChatChunk]:
@@ -1496,6 +1813,7 @@ class ChatService:
                     mcp_mode=mcp_mode,
                     extra_mcp_servers=extra_mcp_servers,
                     multi_agent=multi_agent,
+                    overdrive=overdrive,
                     extend_max_rounds=extend_max_rounds,
                     project_id=project_id,
                 ):
@@ -1535,6 +1853,7 @@ class ChatService:
         mcp_mode: str | None = None,
         extra_mcp_servers: list[str] | None = None,
         multi_agent: bool | None = None,
+        overdrive: bool | None = None,
         extend_max_rounds: bool = False,
         project_id: str | None = None,
     ) -> AsyncIterator[ChatChunk]:
@@ -1607,6 +1926,8 @@ class ChatService:
         bound_skills = list(getattr(ctx, "skills", []) or [])
         bound_mcp_servers = list(ctx.mcp_servers or [])
         session_mcp_meta = {}
+        effective_overdrive = bool(overdrive)
+        explicit_overdrive_changed: bool | None = None
         effective_mcp_mode = mcp_mode or "auto"
         effective_extra_mcp_servers = list(extra_mcp_servers or [])
         session_project_id: str | None = None
@@ -1641,12 +1962,22 @@ class ChatService:
                     "extra_mcp_servers": effective_extra_mcp_servers,
                 }
             )
-            effective_multi_agent = (
+            # Multi-agent（子 Agent）由管理员后台开关控制；用户侧标记仅作兼容兜底。
+            # 仅回写用户侧标记，避免管理员开关值被固化进会话、前端回传后绕过后台关闭。
+            user_multi_agent = (
                 bool(multi_agent)
                 if multi_agent is not None
                 else bool(session_mcp_meta.get("multi_agent", False))
             )
-            session_mcp_meta["multi_agent"] = effective_multi_agent
+            effective_multi_agent = (
+                user_multi_agent or await self._admin_subagent_fanout_enabled()
+            )
+            session_mcp_meta["multi_agent"] = user_multi_agent
+            stored_overdrive = bool(session_mcp_meta.get("overdrive", False))
+            effective_overdrive = _effective_overdrive(overdrive, session_mcp_meta)
+            if overdrive is not None and effective_overdrive != stored_overdrive:
+                explicit_overdrive_changed = effective_overdrive
+            session_mcp_meta["overdrive"] = effective_overdrive
             # Skill 版本 pin：会话首轮快照挂载技能的活跃版本号（skill_id → revision）。
             # 整个会话内 use_skill 读取被 pin 的快照正文，会话中途升级不影响进行中的任务；
             # 新会话取新版本。pin 失败不阻断对话（回落到当前内容）。
@@ -1675,6 +2006,7 @@ class ChatService:
                 except Exception as pin_exc:  # noqa: BLE001
                     logger.warning("skill_pins 写入失败（忽略，回落当前版本）: {}", pin_exc)
             session.sandbox_meta = session_mcp_meta
+            await self._db.flush()
             if studio_mode:
                 sandbox_meta = session.sandbox_meta or {}
                 studio_image = sandbox_meta.get("image")
@@ -1697,7 +2029,12 @@ class ChatService:
                 yield ChatChunk(type="error", content=str(exc))
                 return
             studio_mode = mode == "studio"
-            effective_multi_agent = bool(multi_agent)
+            # 与存量会话分支一致：管理员后台开关可启用 Multi-agent（子 Agent）。
+            effective_multi_agent = (
+                bool(multi_agent) or await self._admin_subagent_fanout_enabled()
+            )
+            effective_overdrive = bool(overdrive)
+            explicit_overdrive_changed = effective_overdrive if overdrive else None
             if studio_mode:
                 studio_image = (ctx.features.get("studio") or {}).get("image")
             title = f"与 {ctx.agent.name} 的对话"
@@ -1712,6 +2049,7 @@ class ChatService:
                     "mcp_mode": effective_mcp_mode,
                     "extra_mcp_servers": effective_extra_mcp_servers,
                     "multi_agent": bool(multi_agent),
+                    "overdrive": effective_overdrive,
                 },
                 project_id=project_id,
             )
@@ -1740,6 +2078,41 @@ class ChatService:
             user_content,
             metadata={"attachments": attachment_dicts},
         )
+
+        if explicit_overdrive_changed is not None:
+            yield ChatChunk(
+                type="mode_changed",
+                metadata={"mode": "overdrive", "enabled": explicit_overdrive_changed},
+            )
+
+        keyword_toggle = _resolve_overdrive_keyword_toggle(user_content, effective_overdrive)
+        if keyword_toggle is False:
+            effective_overdrive = False
+            session_mcp_meta["overdrive"] = False
+            session_row = await self.get_session(current_session_id, user_id)
+            if session_row is not None:
+                session_row.sandbox_meta = dict(session_mcp_meta)
+                await self._db.flush()
+            yield ChatChunk(type="mode_changed", metadata={"mode": "overdrive", "enabled": False})
+        elif keyword_toggle is True:
+            effective_overdrive = True
+            session_mcp_meta["overdrive"] = True
+            session_row = await self.get_session(current_session_id, user_id)
+            if session_row is not None:
+                session_row.sandbox_meta = dict(session_mcp_meta)
+                await self._db.flush()
+            yield ChatChunk(type="mode_changed", metadata={"mode": "overdrive", "enabled": True})
+
+        if effective_overdrive:
+            async for chunk in self._run_overdrive_turn(
+                user_id=user_id,
+                session_id=current_session_id,
+                user_content=user_content,
+                manager_ctx=ctx,
+            ):
+                yield chunk
+            yield ChatChunk(type="done", metadata={"session_id": current_session_id})
+            return
 
         # 3. AI 占位消息
         ai_message = await self.add_message(
@@ -4215,6 +4588,7 @@ class ChatService:
                 str(value) for value in (s.sandbox_meta or {}).get("extra_mcp_servers", [])
             ],
             multi_agent=bool((s.sandbox_meta or {}).get("multi_agent", False)),
+            overdrive=bool((s.sandbox_meta or {}).get("overdrive", False)),
         )
 
     @staticmethod

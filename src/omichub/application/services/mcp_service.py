@@ -7,7 +7,9 @@ from functools import cmp_to_key
 from typing import Any
 from uuid import UUID, uuid4
 
+from loguru import logger
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.mcp import (
@@ -50,6 +52,14 @@ from omichub.infrastructure.mcp.client import (
     validate_sse_url,
     validate_stdio_command,
     validate_working_dir,
+)
+from omichub.infrastructure.mcp.conda_meta_preset import (
+    CONDA_META_MCP_ARGS,
+    CONDA_META_MCP_COMMAND,
+    CONDA_META_MCP_DESCRIPTION,
+    CONDA_META_MCP_SERVER_ID,
+    CONDA_META_MCP_SERVER_NAME,
+    CONDA_META_MCP_TIMEOUT,
 )
 from omichub.infrastructure.mcp.presets import (
     OMICHUB_PIPELINES_SERVER_ID,
@@ -179,8 +189,11 @@ class MCPService:
         self._settings = get_settings()
 
     async def ensure_presets(self, *, force_preset_sync: bool = False) -> None:
-        """初始化预设 MCP 服务（含 omichub-tools 动态预设，幂等）"""
-        valid_names = {p["name"] for p in PRESET_SERVERS} | {OMICHUB_TOOLS_SERVER_NAME}
+        """初始化预设 MCP 服务（含 omichub-tools 动态预设与 conda-meta-mcp stdio 预设，幂等）"""
+        valid_names = {p["name"] for p in PRESET_SERVERS} | {
+            OMICHUB_TOOLS_SERVER_NAME,
+            CONDA_META_MCP_SERVER_NAME,
+        }
         for server in await self._repo.list_all():
             if server.is_preset and server.name not in valid_names:
                 await self._repo.delete(server.id, force=True)
@@ -216,6 +229,11 @@ class MCPService:
                             changelog="内置 MCP 预设升级：同步最新工具清单",
                         )
 
+                    # 描述随代码演进（如补充「饼干余额查询」能力说明），同步进库，
+                    # 否则能力目录仍按旧描述展示，模型不知道该预设可查余额。
+                    preset_desc = str(preset.get("description") or "")
+                    if preset_desc and existing.description != preset_desc:
+                        existing.description = preset_desc
                     existing.status = ServerStatus.ONLINE
                     existing.is_enabled = True
                     await self._repo.save(existing)
@@ -279,6 +297,61 @@ class MCPService:
                 is_preset=True,
             )
             await self._repo.save(server)
+
+        # stdio 预设：conda-meta-mcp（装包前查询 conda 元数据）
+        await self._ensure_conda_meta_mcp()
+
+    async def _ensure_conda_meta_mcp(self) -> None:
+        """种子化 conda-meta-mcp stdio 预设（幂等）。
+
+        - 镜像里没有 cmm（旧镜像）时优雅跳过，不产生坏记录；
+        - 已有记录但离线/无工具（如上次启动时 cmm 尚不可用）时重试工具发现；
+        - stdio 预设不走 _autodiscover_tools（该入口对 is_preset 早退，
+          为 builtin 预设服务），直接调 test_server 发现并落库工具快照。
+        """
+        existing = await self._repo.get_by_id(CONDA_META_MCP_SERVER_ID)
+        if existing is None:
+            try:
+                validate_stdio_command(CONDA_META_MCP_COMMAND)
+            except ValueError as exc:
+                logger.warning("conda-meta-mcp 预设跳过种子化: {}", exc)
+                return
+            server = MCPServer(
+                id=CONDA_META_MCP_SERVER_ID,
+                name=CONDA_META_MCP_SERVER_NAME,
+                description=CONDA_META_MCP_DESCRIPTION,
+                transport=Transport.STDIO,
+                command=CONDA_META_MCP_COMMAND,
+                args=list(CONDA_META_MCP_ARGS),
+                status=ServerStatus.OFFLINE,
+                timeout=CONDA_META_MCP_TIMEOUT,
+                auto_restart=True,
+                is_preset=True,
+            )
+            try:
+                await self._repo.save(server)
+            except IntegrityError:
+                # 多 worker 并发种子化：另一进程已写入同 ID 记录，回滚后复用它
+                await self._db.rollback()
+                server = await self._repo.get_by_id(CONDA_META_MCP_SERVER_ID)
+                if server is None:
+                    return
+            else:
+                await self._snapshot_config_version(
+                    server,
+                    source="register",
+                    changelog="注册内置 conda-meta-mcp 预设（初始配置）",
+                )
+        else:
+            server = existing
+            if server.status == ServerStatus.ONLINE and server.tools:
+                return
+        # 即时发现工具：成功则工具快照 + ONLINE 落库；失败仅记录日志（test_server
+        # 内部不抛异常），保留离线状态待下次启动重试，不阻断启动。
+        try:
+            await asyncio.wait_for(self.test_server(server.id), timeout=CONDA_META_MCP_TIMEOUT + 10)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("conda-meta-mcp 预设工具发现失败（稍后自动重试）: {}", exc)
 
     async def list_servers(self, active_only: bool = False) -> list[MCPServerDTO]:
         await self.ensure_presets()

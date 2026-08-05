@@ -26,7 +26,7 @@
                   <NTag :type="statusTagType" size="small" round>{{ statusLabel }}</NTag>
                 </div>
                 <p>{{ user?.email || '未设置邮箱' }}</p>
-                <span>ID: {{ shortId }} · 创建于 {{ formatDateOnly(user?.created_at) }}</span>
+                <span>ID: <code class="profile-id-code" :title="user?.id">{{ user?.id || '-' }}</code> · 创建于 {{ formatDateOnly(user?.created_at) }}</span>
               </div>
               <NButton text size="small" @click="router.push('/settings')">
                 <template #icon><NIcon><CreateOutline /></NIcon></template>
@@ -45,13 +45,17 @@
                 <NProgress v-if="stat.total" type="line" :percentage="percentage(stat.value, stat.total)" :show-indicator="false" :color="stat.color" />
               </div>
             </div>
-            <div v-if="recentTasks.length" class="task-list">
-              <button v-for="task in recentTasks" :key="task.id" type="button" class="task-row" @click="router.push(`/tasks/${task.id}`)">
-                <span class="task-status" :class="`task-status--${task.status}`">{{ taskStatus(task.status) }}</span>
-                <span class="task-copy"><strong>{{ task.name || task.flow_id }}</strong><small>{{ task.flow_id }} · {{ formatRelative(task.created_at) }}</small></span>
-                <NTag :type="taskTagType(task.status)" size="small" round>{{ taskStatus(task.status) }}</NTag>
-              </button>
-            </div>
+            <NDataTable
+              v-if="recentTasks.length"
+              :columns="profileTaskColumns"
+              :data="recentTasks"
+              :row-key="profileTaskRowKey"
+              :bordered="false"
+              size="small"
+              :single-line="false"
+              :scroll-x="780"
+              class="recent-table recent-table-surface"
+            />
             <NEmpty v-else description="还没有分析任务，提交流程后会在这里显示。"><template #extra><NButton size="small" type="primary" @click="router.push('/flows')">浏览流程</NButton></template></NEmpty>
           </NCard>
 
@@ -108,12 +112,18 @@
             <NButton block secondary @click="router.push('/settings')">管理安全设置</NButton>
           </NCard>
 
-          <NCard :bordered="false" class="arco-card profile-card">
+          <NCard :bordered="false" class="arco-card profile-card profile-card--audit">
             <template #header><CardTitle :icon="LockClosedOutline" title="审计记录" /></template>
             <div v-if="auditLogs.length" class="audit-list">
-              <div v-for="log in auditLogs" :key="`${log.created_at}-${log.description}`" class="audit-row">
+              <div v-for="log in auditLogs.slice(0, 3)" :key="`${log.created_at}-${log.description}`" class="audit-row">
                 <NTag :type="auditTagType(log.type)" size="small" round>{{ log.type_label }}</NTag>
-                <span><strong>{{ log.description }}</strong><small>{{ formatRelative(log.created_at) }}</small></span>
+                <span>
+                  <NTooltip :disabled="log.description.length <= 40">
+                    <template #trigger><strong class="audit-description">{{ log.description }}</strong></template>
+                    {{ log.description }}
+                  </NTooltip>
+                  <small>{{ formatRelative(log.created_at) }}</small>
+                </span>
               </div>
             </div>
             <NEmpty v-else size="small" description="暂无可显示的审计记录" />
@@ -144,8 +154,9 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { NAvatar, NButton, NCard, NCheckbox, NEmpty, NGrid, NGridItem, NIcon, NProgress, NRadioButton, NRadioGroup, NSelect, NSpace, NSpin, NTag, useMessage } from 'naive-ui'
-import { CreateOutline, FlashOutline, ListOutline, LockClosedOutline, RefreshOutline, SettingsOutline, ShieldCheckmarkOutline, ShieldOutline, SparklesOutline } from '@vicons/ionicons5'
+import { NAvatar, NButton, NCard, NCheckbox, NDataTable, NEmpty, NGrid, NGridItem, NIcon, NProgress, NRadioButton, NRadioGroup, NSelect, NSpace, NSpin, NTag, NTooltip, useMessage } from 'naive-ui'
+import type { DataTableColumns } from 'naive-ui'
+import { CreateOutline, EyeOutline, FlashOutline, ListOutline, LockClosedOutline, RefreshOutline, SettingsOutline, ShieldCheckmarkOutline, ShieldOutline, SparklesOutline } from '@vicons/ionicons5'
 import { format, formatDistanceToNow, parseISO } from 'date-fns'
 import { zhCN } from 'date-fns/locale'
 import { useAuthStore } from '@/stores/auth'
@@ -178,13 +189,12 @@ const defaultPageOptions = [{ label: '控制台', value: 'dashboard' }, { label:
 const languageOptions = [{ label: '简体中文', value: 'zh-CN' }, { label: 'English', value: 'en-US' }]
 const user = computed(() => authStore.user)
 const userInitial = computed(() => displayName(user.value).charAt(0).toUpperCase() || 'U')
-const shortId = computed(() => user.value?.id ? `${user.value.id.slice(0, 8)}…` : '-')
 const statusLabel = computed(() => {
   const labels: Record<string, string> = { active: '正常', inactive: '已禁用', locked: '已锁定' }
   return labels[user.value?.status || ''] || '未知'
 })
 const statusTagType = computed(() => user.value?.status === 'active' ? 'success' : user.value?.status === 'locked' ? 'error' : 'warning')
-const recentTasks = computed(() => tasks.value.slice(0, 5))
+const recentTasks = computed(() => tasks.value.slice(0, 3))
 const storageUsed = computed(() => Number(user.value?.used_storage || 0) / 1024 ** 3)
 const storageQuota = computed(() => Number(user.value?.storage_quota || 0) / 1024 ** 3)
 const statistics = computed(() => { const month = new Date().getMonth(); const analyses = tasks.value.filter(task => parseDate(task.created_at)?.getMonth() === month).length; const running = tasks.value.filter(task => ['pending', 'queued', 'running'].includes(task.status)).length; return [{ label: '本月分析', value: analyses, unit: '次', color: 'var(--arco-primary)' }, { label: '运行中', value: running, unit: '个', color: 'var(--arco-success)' }, { label: '存储空间', value: storageUsed.value.toFixed(1), unit: 'GB', total: storageQuota.value, color: 'var(--icon-visualization)' }] })
@@ -197,6 +207,16 @@ function percentage(value: string | number, total: number) { return total > 0 ? 
 function taskStatus(status: string) { return ({ pending: '等待中', queued: '排队中', running: '运行中', success: '已完成', failed: '失败', cancelled: '已取消' }[status] || status) }
 function taskTagType(status: string) { return ({ success: 'success', running: 'success', failed: 'error', pending: 'warning', queued: 'warning', cancelled: 'default' }[status] || 'default') as 'success' | 'error' | 'warning' | 'default' }
 function auditTagType(type: string) { return ({ password: 'warning', security: 'success', delete: 'error', email: 'default' }[type] || 'default') as 'success' | 'error' | 'warning' | 'default' }
+function pct(value: number | null | undefined): number { const n = Number(value) || 0; return Math.round(n > 1 ? n : n * 100) }
+function profileTaskRowKey(row: Task) { return row.id }
+const profileTaskColumns: DataTableColumns<Task> = [
+  { title: '任务名称', key: 'name', width: 200, align: 'center', ellipsis: { tooltip: true } },
+  { title: '分析流程', key: 'flow_id', width: 130, align: 'center' },
+  { title: '提交时间', key: 'created_at', width: 140, align: 'center', render: (row) => formatRelative(row.created_at) },
+  { title: '状态', key: 'status', width: 90, align: 'center', render: (row) => h(NTag, { type: taskTagType(row.status), size: 'small', round: true }, { default: () => taskStatus(row.status) }) },
+  { title: '进度', key: 'progress', width: 150, render: (row) => h('div', { class: 'recent-task-progress' }, [h(NProgress, { type: 'line', percentage: pct(row.progress), height: 6, railColor: 'var(--neutral-border)', showIndicator: false }), h('span', { class: 'recent-task-progress__value' }, `${pct(row.progress)}%`)]) },
+  { title: '操作', key: 'actions', width: 70, align: 'center', render: (row) => h(NTooltip, null, { trigger: () => h(NButton, { size: 'tiny', quaternary: true, circle: true, onClick: () => router.push(`/tasks/${row.id}`) }, { icon: () => h(NIcon, null, { default: () => h(EyeOutline) }) }), default: () => '查看任务详情' }) },
+]
 function memoryScopeLabel(scope: AgentMemory['scope']) { return ({ profile: '用户画像', project: '项目', preference: '偏好', summary: '摘要' }[scope]) }
 const memoryScopeFilter = ref<'all' | AgentMemory['scope']>('all')
 const filteredMemories = computed(() => memoryScopeFilter.value === 'all' ? memories.value : memories.value.filter(m => m.scope === memoryScopeFilter.value))
@@ -230,15 +250,26 @@ onUnmounted(() => { if (mediaQuery && handleSystemThemeChange) mediaQuery.remove
 <style scoped>
 .profile-page-wrapper { min-height: 100%; padding: 32px 0 48px; background: var(--neutral-bg); }
 .profile-content { width: 100%; max-width: 1024px; margin: 0 auto; padding: 0 24px; }
-.profile-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.profile-grid { display: grid; grid-template-columns: 1fr 1fr 1.6fr; gap: 24px; }
 .profile-card { min-width: 0; padding: 32px; }
 .profile-card--hero, .profile-card--wide { grid-column: span 3; }
-.profile-hero, .profile-name-row, .detail-list > div, .privacy-row, .task-row, .audit-row { display: flex; align-items: center; }
-.profile-hero { gap: 20px; }.profile-identity { min-width: 0; flex: 1; }.profile-name-row { gap: 8px; flex-wrap: wrap; }.profile-name-row h2 { margin: 0; color: var(--neutral-text-1); font-size: 20px; letter-spacing: -0.015em; }.profile-identity p, .profile-identity span, .privacy-row p, .task-copy small, .audit-row small { display: block; margin: 4px 0 0; color: var(--neutral-text-3); font-size: 13px; }.profile-avatar { flex: 0 0 auto; background: var(--arco-primary-light); color: var(--arco-primary); font-size: 28px; }
+.profile-card--hero { background: linear-gradient(135deg, var(--neutral-card) 55%, color-mix(in srgb, var(--arco-primary) 7%, var(--neutral-card))); }
+.profile-hero, .profile-name-row, .detail-list > div, .privacy-row, .audit-row { display: flex; align-items: center; }
+.profile-hero { gap: 20px; }.profile-identity { min-width: 0; flex: 1; }.profile-name-row { gap: 8px; flex-wrap: wrap; }.profile-name-row h2 { margin: 0; color: var(--neutral-text-1); font-size: 20px; letter-spacing: -0.015em; }.profile-identity p, .profile-identity span, .privacy-row p, .audit-row small { display: block; margin: 4px 0 0; color: var(--neutral-text-3); font-size: 13px; }.profile-avatar { flex: 0 0 auto; background: var(--arco-primary-light); color: var(--arco-primary); font-size: 28px; }.profile-id-code { padding: 1px 4px; border-radius: var(--radius-xs, 4px); background: var(--neutral-bg); color: var(--neutral-text-2); font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); font-size: 12px; word-break: break-all; }
 .task-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: -4px 0 20px; border: 1px solid var(--neutral-border); border-radius: var(--radius-sm); background: var(--neutral-bg); }.task-summary-item { min-width: 0; padding: 14px 16px; border-right: 1px solid var(--neutral-border); }.task-summary-item:last-child { border-right: 0; }.task-summary-item > span { display: block; color: var(--neutral-text-3); font-size: 12px; line-height: 18px; }.task-summary-item strong { display: block; margin-top: 4px; font-size: 22px; font-weight: 600; line-height: 28px; letter-spacing: -0.015em; }.task-summary-item em { margin-left: 4px; color: var(--neutral-text-3); font-size: 12px; font-style: normal; font-weight: 400; letter-spacing: 0; }
-.task-list, .quick-flow-list, .detail-list, .audit-list, .memory-list { display: flex; flex-direction: column; }.task-row { width: calc(100% + 64px); gap: 12px; margin: 0 -32px; padding: 12px 32px; border: 0; border-bottom: 1px solid var(--neutral-border); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background-color 120ms ease-out, transform 120ms ease-out; }.task-row:hover { background: var(--neutral-hover); }.task-row:active { transform: scale(.995); }.task-status { width: 52px; color: var(--neutral-text-3); font-size: 12px; }.task-status--running { color: var(--arco-success); }.task-status--failed { color: var(--arco-danger); }.task-copy { min-width: 0; flex: 1; }.task-copy strong { display: block; overflow: hidden; color: var(--neutral-text-1); text-overflow: ellipsis; white-space: nowrap; }.quick-flow-list { gap: 8px; }.quick-flow { justify-content: flex-start; gap: 8px; }.detail-list { margin-bottom: 20px; }.detail-list > div { justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--neutral-border); color: var(--neutral-text-2); font-size: 13px; }.detail-list > div:last-child { border-bottom: 0; }.detail-list strong { color: var(--neutral-text-1); font-weight: 500; }.field-label { display: grid; gap: 8px; color: var(--neutral-text-2); font-size: 13px; }.privacy-row { justify-content: space-between; gap: 20px; padding: 16px 0; border-bottom: 1px solid var(--neutral-border); }.privacy-row:last-child { border-bottom: 0; }.privacy-row strong, .audit-row strong, .memory-row strong { color: var(--neutral-text-1); font-size: 14px; }.audit-row { align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--neutral-border); }.audit-row:last-child { border-bottom: 0; }.audit-row > span { min-width: 0; flex: 1; }.memory-hint { margin: 0 0 12px; color: var(--neutral-text-3); font-size: 13px; }.memory-filter { margin-bottom: 10px; }.memory-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--neutral-border); }.memory-row:last-child { border-bottom: 0; }.memory-row > div { min-width: 0; flex: 1; }.memory-row small { display: block; margin-top: 4px; color: var(--neutral-text-3); font-size: 12px; }
+.quick-flow-list { gap: 8px; }.quick-flow { justify-content: flex-start; gap: 8px; }.detail-list { margin-bottom: 20px; }.detail-list > div { justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--neutral-border); color: var(--neutral-text-2); font-size: 13px; }.detail-list > div:last-child { border-bottom: 0; }.detail-list strong { color: var(--neutral-text-1); font-weight: 500; }.field-label { display: grid; gap: 8px; color: var(--neutral-text-2); font-size: 13px; }.privacy-row { justify-content: space-between; gap: 20px; padding: 16px 0; border-bottom: 1px solid var(--neutral-border); }.privacy-row:last-child { border-bottom: 0; }.privacy-row strong, .audit-row strong, .memory-row strong { color: var(--neutral-text-1); font-size: 14px; }.audit-row { align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--neutral-border); }.audit-row:last-child { border-bottom: 0; }.audit-row > span { min-width: 0; flex: 1; overflow: hidden; }.audit-row :deep(.n-tag) { flex-shrink: 0; }.audit-description { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }.memory-hint { margin: 0 0 20px; color: var(--neutral-text-3); font-size: 13px; }.memory-filter { margin-bottom: 10px; }.memory-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--neutral-border); }.memory-row:last-child { border-bottom: 0; }.memory-row > div { min-width: 0; flex: 1; }.memory-row small { display: block; margin-top: 4px; color: var(--neutral-text-3); font-size: 12px; }
+.recent-table :deep(th) { font-size: 12px; color: var(--neutral-text-3); font-weight: 500; background: transparent; border-bottom: 1px solid var(--neutral-border); }
+.recent-table :deep(td) { font-size: 13px; color: var(--neutral-text-1); border-bottom: 1px solid var(--neutral-border); }
+.recent-table-surface :deep(th) { background: var(--neutral-bg); }
+.recent-table-surface :deep(.n-data-table-wrapper), .recent-table-surface :deep(.n-data-table-base-table) { background: var(--neutral-card); }
+.recent-table-surface :deep(td) { background: var(--neutral-card); }
+.recent-table :deep(tr:hover td) { background: var(--neutral-hover); }
+.recent-table :deep(.n-progress-graph) { min-width: 0; }
+.recent-table :deep(.n-progress-graph-line-indicator) { white-space: nowrap; }
+.recent-task-progress { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; }
+.recent-task-progress .n-progress { flex: 1 1 auto; min-width: 60px; }
+.recent-task-progress__value { flex: 0 0 44px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 13px; color: var(--neutral-text-1); }
 @media (min-width: 1440px) { .profile-content { max-width: 1152px; padding-left: 32px; padding-right: 32px; } }
-@media (max-width: 900px) { .profile-grid { grid-template-columns: repeat(2, 1fr); gap: 20px; }.profile-card--hero, .profile-card--wide { grid-column: span 2; } }
-@media (max-width: 640px) { .profile-page-wrapper { padding: 24px 0 40px; }.profile-content { padding: 0 16px; }.profile-grid { grid-template-columns: 1fr; gap: 16px; }.profile-card, .profile-card--hero, .profile-card--wide { grid-column: span 1; padding: 24px; }.profile-hero { align-items: flex-start; flex-wrap: wrap; }.task-summary { grid-template-columns: 1fr; }.task-summary-item { border-right: 0; border-bottom: 1px solid var(--neutral-border); }.task-summary-item:last-child { border-bottom: 0; }.task-row { width: calc(100% + 48px); margin: 0 -24px; padding-left: 24px; padding-right: 24px; }.privacy-row { align-items: flex-start; flex-direction: column; gap: 12px; } }
-@media (prefers-reduced-motion: reduce) { .task-row { transition-duration: 1ms; } }
+@media (max-width: 900px) { .profile-grid { grid-template-columns: repeat(2, 1fr); gap: 20px; }.profile-card--hero, .profile-card--wide, .profile-card--audit { grid-column: span 2; } }
+@media (max-width: 640px) { .profile-page-wrapper { padding: 24px 0 40px; }.profile-content { padding: 0 16px; }.profile-grid { grid-template-columns: 1fr; gap: 16px; }.profile-card, .profile-card--hero, .profile-card--wide, .profile-card--audit { grid-column: span 1; padding: 24px; }.profile-hero { align-items: flex-start; flex-wrap: wrap; }.task-summary { grid-template-columns: 1fr; }.task-summary-item { border-right: 0; border-bottom: 1px solid var(--neutral-border); }.task-summary-item:last-child { border-bottom: 0; }.privacy-row { align-items: flex-start; flex-direction: column; gap: 12px; } }
 </style>

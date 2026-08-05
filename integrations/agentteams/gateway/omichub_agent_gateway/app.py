@@ -2,16 +2,26 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import StreamingResponse
 
 from .audit import AuditStore
 from .client import OmicHubConsultationClient
 from .config import GatewaySettings
-from .models import ConsultationRequest, ScientificInterpretationResponse
+from .matrix_client import MatrixGatewayClient
+from .models import (
+    ConsultationRequest,
+    RoomCreateRequest,
+    RoomCreateResponse,
+    RoomMessageRequest,
+    RoomMessagesResponse,
+    ScientificInterpretationResponse,
+)
 from .security import require_manager
 from .service import GatewayService
 
@@ -31,17 +41,26 @@ async def authenticate_manager(
 def create_app(
     settings: GatewaySettings | None = None,
     client: OmicHubConsultationClient | None = None,
+    matrix_client: MatrixGatewayClient | None = None,
 ) -> FastAPI:
     runtime_settings = settings or GatewaySettings()
     runtime_client = client or OmicHubConsultationClient(runtime_settings)
+    runtime_matrix_client = matrix_client or (
+        MatrixGatewayClient(runtime_settings) if runtime_settings.matrix_enabled else None
+    )
     service = GatewayService(
-        runtime_settings, runtime_client, AuditStore(runtime_settings.audit_log_path)
+        runtime_settings,
+        runtime_client,
+        AuditStore(runtime_settings.audit_log_path),
+        runtime_matrix_client,
     )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         yield
         await runtime_client.close()
+        if runtime_matrix_client is not None:
+            await runtime_matrix_client.close()
 
     app = FastAPI(
         title="OmicHub Controlled Agent Gateway",
@@ -66,6 +85,60 @@ def create_app(
         gateway_service: Annotated[GatewayService, Depends(get_service)],
     ) -> ScientificInterpretationResponse:
         return await gateway_service.consult(payload, actor)
+
+    @app.post("/rooms", response_model=RoomCreateResponse, tags=["Matrix"])
+    async def create_room(
+        payload: RoomCreateRequest,
+        actor: Annotated[str, Depends(authenticate_manager)],
+        gateway_service: Annotated[GatewayService, Depends(get_service)],
+    ) -> RoomCreateResponse:
+        try:
+            return await gateway_service.create_room(payload.session_id, payload.identities, actor)
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.post("/rooms/{room_id}/messages", tags=["Matrix"])
+    async def post_room_message(
+        room_id: str,
+        payload: RoomMessageRequest,
+        actor: Annotated[str, Depends(authenticate_manager)],
+        gateway_service: Annotated[GatewayService, Depends(get_service)],
+    ) -> dict[str, str]:
+        try:
+            return {"event_id": await gateway_service.post_room_message(room_id, payload, actor)}
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.get("/rooms/{room_id}/messages", response_model=RoomMessagesResponse, tags=["Matrix"])
+    async def room_messages(
+        room_id: str,
+        since: str | None = None,
+        limit: int = 100,
+        _: Annotated[str, Depends(authenticate_manager)] = None,
+        gateway_service: Annotated[GatewayService, Depends(get_service)] = None,
+    ) -> RoomMessagesResponse:
+        try:
+            return await gateway_service.room_messages(room_id, since, min(max(limit, 1), 1000))
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.get("/rooms/{room_id}/sync", tags=["Matrix"])
+    async def room_sync(
+        room_id: str,
+        since: str | None = None,
+        _: Annotated[str, Depends(authenticate_manager)] = None,
+        gateway_service: Annotated[GatewayService, Depends(get_service)] = None,
+    ) -> StreamingResponse:
+        async def event_stream():
+            try:
+                async for events, next_batch in gateway_service.room_sync(room_id, since):
+                    for event in events:
+                        yield f"data: {event.model_dump_json()}\n\n"
+                    yield f"event: cursor\ndata: {json.dumps({'next_batch': next_batch})}\n\n"
+            except RuntimeError as exc:
+                yield f"event: error\ndata: {json.dumps({'detail': str(exc)})}\n\n"
+
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
 
     return app
 

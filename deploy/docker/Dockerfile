@@ -74,11 +74,29 @@ RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
 # validate_stdio_command 走 shutil.which，容器内必须有 node 运行时（python:3.11-slim 默认不带）。
 # bookworm apt 源（已切清华镜像）提供 nodejs 18 / npm 9，满足绝大多数 MCP server。
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    bzip2 \
     curl \
     nodejs \
     npm \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
+
+# conda-meta-mcp（CLI 名 cmm）：conda 生态元数据 MCP server，Agent 沙盒现场装包前
+# 用它确认包名/channel/版本，避免凭记忆猜包名盲装。仅发布在 conda-forge（不在 PyPI）
+# 且要求 Python >=3.13，故用 micromamba 装独立 env /opt/cmm-env，并把 cmm 软链到
+# /usr/local/bin，让 validate_stdio_command 的 shutil.which 能按名字找到它。
+# /opt/micromamba 是 root prefix（缓存目录），运行时以 uid 1000 执行须可写。
+RUN set -eux; \
+    curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest \
+        | tar -xj -C /usr/local/bin --strip-components=1 bin/micromamba; \
+    micromamba create -y -r /opt/micromamba -p /opt/cmm-env \
+        -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge \
+        conda-meta-mcp=0.1.4; \
+    ln -s /opt/cmm-env/bin/cmm /usr/local/bin/cmm; \
+    micromamba clean -y -a; \
+    rm -f /usr/local/bin/micromamba; \
+    chmod -R a+rwX /opt/micromamba
+ENV MAMBA_ROOT_PREFIX=/opt/micromamba
 
 WORKDIR /app
 

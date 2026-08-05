@@ -92,6 +92,7 @@ export interface AgentSession {
   extra_mcp_servers?: string[]
   /** 当前会话启用 AgentTeams multi-agent 协作运行时 */
   multi_agent?: boolean
+  overdrive?: boolean
 }
 
 /** 可用模型选项（来自 /api/v1/chat/models） */
@@ -158,6 +159,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   let pendingSessionIdResolver: (() => void) | null = null
   let pendingSessionIdPromise: Promise<void> | null = null
   let agentTeamsEventAbort: AbortController | null = null
+  let roomEventAbort: AbortController | null = null
 
   type AgentTeamsCaseStreamEvent = AgentTeamsCaseCardPayload & {
     type: 'agentteams_case'
@@ -192,6 +194,81 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   function stopAgentTeamsCaseEvents() {
     agentTeamsEventAbort?.abort()
     agentTeamsEventAbort = null
+  }
+
+  type RoomSpeechStreamEvent = {
+    type: 'room_speech'
+    content: string
+    sender: { agent_id?: string; name?: string; avatar?: string; color?: string }
+    session_id?: string
+    message_id?: string
+  }
+
+  function applyRoomSpeechEvent(event: RoomSpeechStreamEvent) {
+    const session = sessions.value.find((item) => item.id === event.session_id) || currentSession.value
+    if (!session || !event.content) return
+    const id = event.message_id || `matrix-room-${Date.now()}`
+    if (session.messages.some((message) => message.id === id || message.backendMessageId === id)) return
+    session.messages.push({
+      id,
+      backendMessageId: event.message_id,
+      role: 'assistant',
+      content: event.content,
+      status: 'complete',
+      senderAgent: {
+        id: event.sender.agent_id || 'external',
+        name: event.sender.name || 'Matrix 成员',
+        avatar: event.sender.avatar,
+        color: event.sender.color,
+      },
+      createdAt: new Date().toISOString(),
+    })
+    session.updated_at = new Date().toISOString()
+  }
+
+  function stopRoomEvents() {
+    roomEventAbort?.abort()
+    roomEventAbort = null
+  }
+
+  async function startRoomEvents(sessionId: string) {
+    if (!sessionId || sessionId.startsWith('sess-')) return
+    stopRoomEvents()
+    const controller = new AbortController()
+    roomEventAbort = controller
+    try {
+      const token = localStorage.getItem('access_token')
+      const response = await fetch(`/api/v1/chat/sessions/${sessionId}/room-events`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        signal: controller.signal,
+      })
+      if (!response.ok || !response.body) return
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (!controller.signal.aborted) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue
+          try {
+            const event = JSON.parse(line.slice(5).trim()) as RoomSpeechStreamEvent
+            if (event.type === 'room_speech') applyRoomSpeechEvent(event)
+          } catch {
+            // 忽略单条不可解析事件，长连接保持可用。
+          }
+        }
+      }
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        console.warn('Matrix 房间事件连接异常', error)
+      }
+    } finally {
+      if (roomEventAbort === controller) roomEventAbort = null
+    }
   }
 
   async function startAgentTeamsCaseEvents(sessionId: string) {
@@ -531,6 +608,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         mcp_mode?: 'off' | 'auto' | 'manual'
         extra_mcp_servers?: string[]
         multi_agent?: boolean
+        overdrive?: boolean
         created_at: string
         updated_at: string
       }>>('/chat/sessions')
@@ -549,6 +627,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           mcp_mode: s.mcp_mode || 'auto',
           extra_mcp_servers: s.extra_mcp_servers || [],
           multi_agent: Boolean(s.multi_agent),
+          overdrive: Boolean(s.overdrive),
         }))
       // 合并正在流式中的临时会话，避免刷新时丢失
       const tempSessions = sessions.value.filter((s) => s.id.startsWith('sess-'))
@@ -868,6 +947,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       mcp_mode: 'auto',
       extra_mcp_servers: [],
       multi_agent: false,
+      overdrive: false,
     }
     sessions.value.unshift(session)
     currentSessionId.value = session.id
@@ -881,6 +961,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     }
     currentSessionId.value = id
     void startAgentTeamsCaseEvents(id)
+    void startRoomEvents(id)
     const session = sessions.value.find((s) => s.id === id)
     if (session && session.messages.length === 0 && !session.id.startsWith('sess-')) {
       await loadSessionMessages(id)
@@ -896,12 +977,16 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   function newChat() {
     stopStreaming()
     stopAgentTeamsCaseEvents()
+    stopRoomEvents()
     currentSessionId.value = ''
   }
 
   async function deleteSession(id: string) {
     if (currentSessionId.value === id) stopStreaming()
-    if (currentSessionId.value === id) stopAgentTeamsCaseEvents()
+    if (currentSessionId.value === id) {
+      stopAgentTeamsCaseEvents()
+      stopRoomEvents()
+    }
     if (!id.startsWith('sess-')) {
       try {
         await apiClient.delete(`/chat/sessions/${id}`)
@@ -1033,6 +1118,18 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             avatar: routedAgent.avatar || '',
             color: routedAgent.color || '',
             reason: routedAgent.reason || '',
+          }
+        }
+        const senderAgent = m.metadata_json?.senderAgent
+        if (senderAgent && typeof senderAgent === 'object') {
+          const sender = senderAgent as Record<string, unknown>
+          if (typeof sender.name === 'string') {
+            msg.senderAgent = {
+              id: typeof sender.agent_id === 'string' ? sender.agent_id : '',
+              name: sender.name,
+              avatar: typeof sender.avatar === 'string' ? sender.avatar : undefined,
+              color: typeof sender.color === 'string' ? sender.color : undefined,
+            }
           }
         }
         const collaborationRoute = m.metadata_json?.collaboration_route
@@ -1191,6 +1288,25 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     }
   }
 
+  // 超频/多智能体房间发言：后端一次性给出整段内容，前端按打字机节奏渐进展示，
+  // 让 Manager/专家发言与普通助手回复一样具备流式动画。
+  const roomSpeechTimers = new Set<number>()
+  const roomSpeechFullText = new Map<string, string>()
+  function finalizeRoomSpeeches() {
+    for (const timer of roomSpeechTimers) window.clearInterval(timer)
+    roomSpeechTimers.clear()
+    const session = currentSession.value
+    if (session) {
+      for (const m of session.messages) {
+        if (m.role === 'assistant' && m.senderAgent && m.status === 'streaming') {
+          m.content = roomSpeechFullText.get(m.id) ?? m.content
+          m.status = 'complete'
+        }
+      }
+    }
+    roomSpeechFullText.clear()
+  }
+
   /** 发送消息（真实 SSE 流式，走 Agent 调度中枢） */
   async function sendMessage(
     content: string,
@@ -1205,6 +1321,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       mcpMode?: 'off' | 'auto' | 'manual'
       extraMcpServers?: string[]
       multiAgent?: boolean
+      overdrive?: boolean
       /** 工具轮次触顶后用户确认继续：本次请求上限扩展到 1000 轮 */
       extendMaxRounds?: boolean
     } = {},
@@ -1224,6 +1341,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     if (options.mcpMode) session.mcp_mode = options.mcpMode
     if (options.extraMcpServers) session.extra_mcp_servers = [...options.extraMcpServers]
     if (options.multiAgent !== undefined) session.multi_agent = options.multiAgent
+    if (options.overdrive !== undefined) session.overdrive = options.overdrive
 
     // 若当前临时会话 ID 正在解析为真实 ID，排队等待，防止创建重复会话
     if (session.id.startsWith('sess-') && pendingSessionIdPromise) {
@@ -1252,7 +1370,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     }
     session.messages.push(userMsg)
 
-    // 助手占位消息（流式填充）
+    const effectiveOverdrive = options.overdrive ?? session.overdrive ?? false
+    // 助手占位消息（流式填充；超频发言由 room_speech 逐条创建）
     const aiId = `msg-ai-${Date.now()}`
     const aiMsgSeed: ChatMessage = {
       id: aiId,
@@ -1265,11 +1384,11 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       createdAt: new Date().toISOString(),
       tokens: { input: 0, output: 0, total: 0 },
     }
-    session.messages.push(aiMsgSeed)
+    if (!effectiveOverdrive) session.messages.push(aiMsgSeed)
     // 必须使用响应式数组返回的代理对象继续写入。
     // 若继续修改 push 前的普通对象，message_id/content/thought 的流式更新不会触发 Vue，
     // 会出现 Token 已更新但正文气泡保持空白，刷新后才显示的现象。
-    const aiMsg = session.messages[session.messages.length - 1]!
+    const aiMsg = effectiveOverdrive ? aiMsgSeed : session.messages[session.messages.length - 1]!
 
     // 标题随对话演进刷新：首轮必算，之后每满 3 条用户消息重算一次，以捕捉后续多轮里
     // 用户真正关心的基因/流程/文件等细节；锁定或超过 12 轮后停止，避免无谓的 LLM 调用。
@@ -1331,10 +1450,12 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         mcpMode: options.mcpMode ?? session.mcp_mode ?? 'auto',
         extraMcpServers: options.extraMcpServers ?? session.extra_mcp_servers ?? [],
         multiAgent: options.multiAgent ?? session.multi_agent ?? false,
+        overdrive: effectiveOverdrive,
         extendMaxRounds: options.extendMaxRounds ?? false,
       },
       {
         onText: (text, isReasoning) => {
+          if (effectiveOverdrive) return
           if (isReasoning) {
             streamingThought.value += text
             aiMsg.thought = streamingThought.value
@@ -1360,9 +1481,69 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             session.agent_id = agent.id
             currentSessionId.value = sessionId
             void startAgentTeamsCaseEvents(sessionId)
+            void startRoomEvents(sessionId)
             if (messageId) aiMsg.backendMessageId = messageId
             releaseSessionIdLock()
           }
+        },
+        onModeChanged: (enabled, degraded) => {
+          session.overdrive = enabled
+          if (enabled) {
+            const placeholderIndex = session.messages.findIndex((message) => message.id === aiId && !message.content)
+            if (placeholderIndex >= 0) session.messages.splice(placeholderIndex, 1)
+          }
+          session.messages.push({
+            id: `mode-overdrive-${Date.now()}`,
+            role: 'system',
+            content: degraded
+              ? 'Matrix Gateway 不可用：超频模式已降级为 OmicHub 内置协作。'
+              : enabled
+                ? '已进入超频模式：Manager 将组织专家协作。'
+                : '已退出超频模式：恢复普通对话。',
+            createdAt: new Date().toISOString(),
+          })
+        },
+        onRoomSpeech: (event) => {
+          const fullContent = event.content || ''
+          const message: ChatMessage = {
+            id: event.messageId || `room-${Date.now()}-${event.sender.agent_id}`,
+            backendMessageId: event.messageId,
+            role: 'assistant',
+            content: '',
+            status: fullContent ? 'streaming' : 'complete',
+            createdAt: new Date().toISOString(),
+            senderAgent: {
+              id: event.sender.agent_id,
+              name: event.sender.name,
+              avatar: event.sender.avatar,
+              color: event.sender.color,
+            },
+          }
+          session.messages.push(message)
+          // 分身/专家涉及工作台类 Agent（如代码沙箱）时，沿用既有路由语义：
+          // 本轮超频发言结束后自动 promote 并流转到 AI 工作台，历史保留。
+          if (event.sender.role === 'worker') {
+            maybeRedirectToStudio(event.sender.agent_id, event.sender.name)
+          }
+          if (!fullContent) return
+          // 必须使用响应式数组返回的代理对象继续写入，否则流式更新不触发 Vue
+          const proxy = session.messages[session.messages.length - 1]!
+          roomSpeechFullText.set(proxy.id, fullContent)
+          // 不论长短约 1.5s 播完：长文加速，短发言也不会一闪而过
+          const step = Math.max(1, Math.ceil(fullContent.length / 60))
+          const timer = window.setInterval(() => {
+            const shown = proxy.content.length
+            if (shown + step >= fullContent.length) {
+              proxy.content = fullContent
+              proxy.status = 'complete'
+              window.clearInterval(timer)
+              roomSpeechTimers.delete(timer)
+              roomSpeechFullText.delete(proxy.id)
+            } else {
+              proxy.content = fullContent.slice(0, shown + step)
+            }
+          }, 25)
+          roomSpeechTimers.add(timer)
         },
         onToolCall: (event) => {
           if (!aiMsg.toolCalls) aiMsg.toolCalls = []
@@ -1577,6 +1758,13 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           if (tc) tc.output = appendBoundedStudioOutput(tc.output || '', data)
         },
         onError: (error) => {
+          if (session.overdrive || effectiveOverdrive) {
+            finalizeRoomSpeeches()
+            session.messages.push({ id: `room-error-${Date.now()}`, role: 'system', content: `超频模式执行失败: ${error}`, createdAt: new Date().toISOString() })
+            isStreaming.value = false
+            releaseSessionIdLock()
+            return
+          }
           aiMsg.content = streamingContent.value || `生成失败: ${error}`
           aiMsg.thought = streamingThought.value || undefined
           aiMsg.status = 'error'
@@ -1589,6 +1777,12 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           releaseSessionIdLock()
         },
         onDone: (_, messageId, usage, finishReason, finalContent, finalReasoning) => {
+          if (session.overdrive || effectiveOverdrive) {
+            finalizeRoomSpeeches()
+            isStreaming.value = false
+            releaseSessionIdLock()
+            return
+          }
           if (!streamingContent.value && finalContent) {
             streamingContent.value = finalContent
           }
@@ -1643,12 +1837,15 @@ export const useAgentHubStore = defineStore('agentHub', () => {
 
     // 兜底：若流异常中断未触发 onDone/onError（极罕见，onDone 已有内部兜底）
     if (isStreaming.value) {
-      aiMsg.content = streamingContent.value || aiMsg.content
-      aiMsg.thought = streamingThought.value || undefined
-      if (!aiMsg.content.trim() && !aiMsg.toolCalls?.length) {
-        aiMsg.status = aiMsg.thought ? 'empty' : 'error'
-        if (!aiMsg.thought) {
-          aiMsg.content = '当前模型响应为空，请重新发送'
+      finalizeRoomSpeeches()
+      if (!session.overdrive) {
+        aiMsg.content = streamingContent.value || aiMsg.content
+        aiMsg.thought = streamingThought.value || undefined
+        if (!aiMsg.content.trim() && !aiMsg.toolCalls?.length) {
+          aiMsg.status = aiMsg.thought ? 'empty' : 'error'
+          if (!aiMsg.thought) {
+            aiMsg.content = '当前模型响应为空，请重新发送'
+          }
         }
       }
       isStreaming.value = false
@@ -1660,6 +1857,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
 
   function stopStreaming() {
     abortStream()
+    finalizeRoomSpeeches()
     const session = currentSession.value
     if (session) {
       const last = session.messages[session.messages.length - 1]

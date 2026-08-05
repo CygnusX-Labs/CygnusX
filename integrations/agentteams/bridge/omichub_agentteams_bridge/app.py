@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated, get_args
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi.responses import StreamingResponse
 
 from .audit import AuditStore
 from .case_store import CaseStore
@@ -286,6 +288,37 @@ def create_app(
         return (
             await service.get_case_events(case_id, identity, cursor=cursor, limit=page_limit)
         ).model_dump(mode="json")
+
+    @app.get("/v1/cases/{case_id}/events/stream", tags=["Cases"])
+    async def stream_case_events(
+        case_id: str,
+        request: Request,
+        identity: Annotated[str, Depends(authenticate_identity)],
+        service: Annotated[BridgeService, Depends(get_service)],
+    ) -> StreamingResponse:
+        require_role(identity, "bioops-manager", "data-steward", "workflow-operator", "quality-auditor", "delivery-reporter")
+        cursor = request.query_params.get("cursor")
+        if cursor is not None and len(cursor) > 128:
+            raise HTTPException(status_code=422, detail="cursor is too long")
+        watch_seconds = request.query_params.get("watch_seconds", "60")
+        try:
+            duration = int(watch_seconds)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="watch_seconds must be an integer") from exc
+        if not 1 <= duration <= 60:
+            raise HTTPException(status_code=422, detail="watch_seconds must be between 1 and 60")
+
+        async def event_generator() -> AsyncIterator[str]:
+            async for event in service.stream_case_events(
+                case_id, identity, cursor=cursor, watch_seconds=duration
+            ):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        )
 
     @app.post("/v1/projects/{project_id}/preflight", tags=["Preflight"])
     async def preflight(

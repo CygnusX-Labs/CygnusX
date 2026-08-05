@@ -72,9 +72,9 @@ tools:
         context_summary: {type: string, description: 各子 Agent 共享的自包含背景（数据、约束、文件路径）}
         tasks:
           type: array
-          minItems: 2
+          minItems: 1
           maxItems: 5
-          description: 相互独立的子任务列表，2–5 个
+          description: 相互独立的子任务列表，1–5 个
           items:
             type: object
             properties:

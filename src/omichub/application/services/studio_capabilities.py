@@ -10,6 +10,7 @@ from omichub.application.services.skill_service import SkillService
 from omichub.domain.mcp.entities import MCPServer
 from omichub.domain.skill.entities import Skill
 from omichub.infrastructure.config.prompt_loader import render_prompt as render_external_prompt
+from omichub.infrastructure.mcp.conda_meta_preset import CONDA_META_MCP_SERVER_ID
 
 CAPABILITY_LIST_TOOL = "studio_capabilities_list"
 CAPABILITY_LOAD_TOOL = "studio_capability_load"
@@ -75,12 +76,18 @@ class CapabilityState:
         }
 
 
+# 新 Studio 会话默认预加载的内置 MCP（现场装包前先查 conda 元数据）。
+# 会话一旦有了显式能力状态（含用户主动卸载），保留用户选择，不再重复默认。
+_DEFAULT_LOADED_MCP_IDS = frozenset({str(CONDA_META_MCP_SERVER_ID)})
+
+
 def normalize_state(
     raw: dict[str, Any] | None,
     skills: list[Skill],
     servers: list[MCPServer],
 ) -> CapabilityState:
     """只保留当前 Agent 绑定能力，防止会话状态跨 Agent/配置漂移越权。"""
+    is_new_session = not isinstance(raw, dict)
     raw = raw if isinstance(raw, dict) else {}
     skill_ids = {skill.skill_id for skill in skills if skill.is_active}
     mcp_ids = {str(server.id) for server in servers if server.is_enabled}
@@ -88,6 +95,9 @@ def normalize_state(
         item for item in _string_list(raw.get("loaded_skill_ids")) if item in skill_ids
     )
     loaded_mcps = tuple(item for item in _string_list(raw.get("loaded_mcp_ids")) if item in mcp_ids)
+    if is_new_session:
+        defaults = sorted(_DEFAULT_LOADED_MCP_IDS & mcp_ids)
+        loaded_mcps = tuple(dict.fromkeys([*loaded_mcps, *defaults]))
     audit = tuple(item for item in raw.get("audit", []) if isinstance(item, dict))[-MAX_AUDIT_EVENTS:]
     return CapabilityState(loaded_skills, loaded_mcps, audit)
 

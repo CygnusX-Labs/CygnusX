@@ -209,8 +209,9 @@ fan-out 不可接受，因此**不复用**该传输层（见 §4.8 边界划分�
         context_summary: {type: string, description: 各子 Agent 共享的自包含背景（数据、约束、路径）}
         tasks:
           type: array
-          minItems: 2
+          minItems: 1
           maxItems: 5
+          description: 相互独立的子任务列表，1–5 个
           items:
             type: object
             properties:

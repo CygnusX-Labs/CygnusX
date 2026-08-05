@@ -15,6 +15,7 @@ vi.mock('vue3-lottie', () => ({ Vue3Lottie: { template: '<div />' } }))
 vi.mock('vue-echarts', () => ({ default: { template: '<div />' } }))
 
 import KimiMessageItem from '@/components/ai-chat/KimiMessageItem.vue'
+import { stripFakeToolCallMarkup } from '@/components/ai-chat/messageSanitize'
 import type { ChatMessage } from '@/components/ai-chat/types'
 
 // rAF 同步化：让流式渲染立即落盘，便于断言
@@ -162,5 +163,63 @@ describe('KimiMessageItem 渲染异常兜底', () => {
     } finally {
       spy.mockRestore()
     }
+  })
+})
+
+describe('stripFakeToolCallMarkup（剔除文本形态的伪工具调用）', () => {
+  it('剔除 <tool_use> 块并保留前后正文', () => {
+    const src =
+      '让我帮你查一下！\n<tool_use>\n{"name": "platform_get_user_info", "arguments": {}}\n</tool_use>\n余额如下。'
+    const out = stripFakeToolCallMarkup(src)
+    expect(out).toContain('让我帮你查一下！')
+    expect(out).toContain('余额如下。')
+    expect(out).not.toContain('tool_use')
+    expect(out).not.toContain('platform_get_user_info')
+  })
+
+
+  it('剔除多种伪调用标签（tool_call / function_call / invoke）', () => {
+    const wrap = (name: string, body: string) => '<' + name + '>' + body + '</' + name + '>'
+    const src =
+      'a' +
+      wrap('tool_call', '{"x":1}') +
+      'b' +
+      wrap('function_call', '{"y":2}') +
+      'c' +
+      wrap('invoke', '{"z":3}') +
+      'd'
+    const out = stripFakeToolCallMarkup(src)
+    expect(out).toBe('abcd')
+  })
+
+  it('剔除带命名空间前缀的伪调用块（如 Claude 风格）', () => {
+    const wrap = (name: string, body: string) => '<' + name + '>' + body + '</' + name + '>'
+    const src =
+      '开始' + wrap('antml:function_calls', wrap('antml:invoke', '{"tool":"f"}')) + '结束'
+    const out = stripFakeToolCallMarkup(src)
+    expect(out).toBe('开始结束')
+  })
+
+  it('不误伤普通尖括号文本与代码', () => {
+    const src = 'mRNA < gene > lncRNA，且 a -> b'
+    expect(stripFakeToolCallMarkup(src)).toBe(src)
+  })
+})
+
+describe('KimiMessageItem 剔除正文里的伪工具调用', () => {
+  it('正文含 <tool_use> 伪调用：不显示原始标记，周围正文保留', () => {
+    const wrap = (name: string, body: string) => '<' + name + '>' + body + '</' + name + '>'
+    const content =
+      '让我帮你查一下！\n\n' +
+      wrap('tool_use', '{"name": "platform_get_user_info", "arguments": {}}') +
+      '\n\n你的余额是 81,297.4 个饼干。'
+    const { el } = mountItem({
+      message: { ...baseMsg, content, status: 'complete' },
+      isStreaming: false,
+    })
+    expect(el.textContent).toContain('让我帮你查一下！')
+    expect(el.textContent).toContain('81,297.4 个饼干')
+    expect(el.textContent).not.toContain('tool_use')
+    expect(el.textContent).not.toContain('platform_get_user_info')
   })
 })

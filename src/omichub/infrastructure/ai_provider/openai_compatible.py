@@ -48,6 +48,42 @@ def _usage_int(value: Any) -> int:
         return 0
 
 
+# 带 tools 首尝空响应后，会降级为不带 tools 重试；此时系统词里仍描述着工具，
+# 模型容易在正文里以文本形式「模拟」工具调用并编造结果。追加一条明确约束，
+# 让模型直接用自然语言作答，而不是输出 <tool_use> 之类的伪调用文本。
+_NO_TOOL_FALLBACK_NOTE = (
+    "\n\n[重要] 当前这一轮工具调用接口不可用。请不要尝试调用任何工具，"
+    "也不要在回复中以文本形式模拟工具调用（如 <tool_use> 标签或工具调用 JSON），"
+    "更不要编造工具的返回结果；请直接用自然语言、基于已有信息回答用户。"
+)
+
+
+def _strip_tool_artifacts(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """去掉历史消息里的工具调用痕迹，供「不带 tools」的降级重试使用。
+
+    - 丢弃 role=tool 的工具结果消息；
+    - 去掉 assistant 消息里的 tool_calls / tool_call_id 字段；
+    - 若 assistant 消息只有工具调用、没有正文，则整条丢弃。
+    """
+    cleaned: list[dict[str, Any]] = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            cleaned.append(msg)
+            continue
+        role = msg.get("role")
+        if role == "tool":
+            continue
+        if role == "assistant" and msg.get("tool_calls"):
+            content = msg.get("content")
+            if not content:
+                continue
+            stripped = {k: v for k, v in msg.items() if k not in {"tool_calls", "tool_call_id"}}
+            cleaned.append(stripped)
+            continue
+        cleaned.append({k: v for k, v in msg.items() if k != "tool_call_id"})
+    return cleaned
+
+
 def normalize_token_usage(usage: dict[str, Any] | None) -> dict[str, Any] | None:
     """把不同 OpenAI 兼容服务的 usage 字段统一为标准三字段。"""
     if not isinstance(usage, dict):
@@ -190,12 +226,19 @@ class OpenAICompatibleProvider:
             # 部分模型（如某些 Qwen 托管版本）不支持流式 function calling，
             # 首次带 tools 空响应后，第二次尝试不带 tools。
             attempt_tools = tools if attempt == 0 else None
+            attempt_messages = messages
+            attempt_system_prompt = system_prompt
             if attempt == 1 and tools:
                 logger.info(f"模型 '{self.name}' 带 tools 返回空，尝试不带 tools 重试")
+                # 降级为纯对话：系统词追加工具不可用说明，并清掉历史里的工具调用
+                # 痕迹（tool 角色消息 / assistant 的 tool_calls 字段），避免模型在
+                # 正文里以文本形式模拟工具调用、编造结果，也避免无 tools 时请求非法。
+                attempt_system_prompt = (system_prompt or "") + _NO_TOOL_FALLBACK_NOTE
+                attempt_messages = _strip_tool_artifacts(messages)
 
             async for chunk in self._stream_once(
-                messages,
-                system_prompt,
+                attempt_messages,
+                attempt_system_prompt,
                 temperature,
                 max_tokens,
                 attempt_tools,

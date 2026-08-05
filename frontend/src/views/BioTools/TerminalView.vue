@@ -62,7 +62,9 @@ const selectedImageLabel = computed(() => {
   return `${selectedImage.value.icon} ${selectedImage.value.name}`
 })
 
-const mountDirectory = computed(() => '/home/omichub/workspace')
+// 沙盒实际挂载的是用户工作台 workspace 目录，面向用户不暴露容器内路径（§5.4）
+const mountDirectory = computed(() => '我的 workspace')
+const mountDirectoryTip = '挂载工作台中的 workspace 目录，沙盒内修改实时同步、持久保存'
 
 const statusType = computed(() => {
   switch (session.value?.status) {
@@ -159,7 +161,7 @@ watch(
   <div class="terminal-page" :class="{ 'terminal-fullscreen': fullScreen, 'terminal-config-page': !session }" role="main" aria-label="云端沙盒终端">
     <div v-if="session" class="terminal-header session-header">
       <div class="header-left">
-        <NIcon :size="20" color="#2e5bff">
+        <NIcon :size="20" color="var(--arco-primary)">
           <TerminalOutline />
         </NIcon>
         <span class="header-title">云端沙盒终端</span>
@@ -171,7 +173,7 @@ watch(
       </div>
       <div class="header-right">
         <NSpace align="center" :size="8">
-          <NIcon :size="14" color="#6b7280">
+          <NIcon :size="14" color="var(--neutral-text-3)">
             <TimeOutline />
           </NIcon>
           <span class="remaining-time">{{ remainingMinutes }}分钟</span>
@@ -269,9 +271,9 @@ watch(
                 <span class="preview-key">挂载目录</span>
                 <NTooltip :show-arrow="false">
                   <template #trigger>
-                    <span class="preview-val monospace mount-directory">{{ mountDirectory }}</span>
+                    <span class="preview-val mount-directory">{{ mountDirectory }}</span>
                   </template>
-                  {{ mountDirectory }}
+                  {{ mountDirectoryTip }}
                 </NTooltip>
               </div>
               <div class="preview-row">
@@ -305,15 +307,16 @@ watch(
 
 <style scoped>
 .terminal-page {
-  --terminal-bg: #f5f6fa;
-  --terminal-card: #fff;
-  --terminal-primary: #2e5bff;
-  --terminal-primary-light: #e8eeff;
-  --terminal-text: #1f2937;
-  --terminal-subtext: #6b7280;
-  --terminal-border: #e5e7eb;
-  --terminal-soft-border: #f3f4f6;
-  --terminal-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+  /* 消费全局语义令牌，明暗主题自动适配（fontend.md §3） */
+  --terminal-bg: var(--neutral-bg);
+  --terminal-card: var(--neutral-card);
+  --terminal-primary: var(--arco-primary);
+  --terminal-primary-light: color-mix(in srgb, var(--arco-primary) 12%, var(--neutral-card));
+  --terminal-text: var(--neutral-text-1);
+  --terminal-subtext: var(--neutral-text-3);
+  --terminal-border: var(--neutral-border);
+  --terminal-soft-border: var(--neutral-border);
+  --terminal-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
   min-height: 100%;
@@ -338,7 +341,7 @@ watch(
   justify-content: space-between;
   padding: 8px 16px;
   border-bottom: 1px solid var(--terminal-border);
-  background: #fff;
+  background: var(--terminal-card);
   flex-shrink: 0;
 }
 
@@ -426,7 +429,8 @@ watch(
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
   gap: 20px;
-  align-items: start;
+  /* stretch：右列与左列同高，配合 .preview-panel flex:1 使预览底边与最后一张镜像卡片对齐 */
+  align-items: stretch;
 }
 
 .environment-column,
@@ -479,7 +483,19 @@ watch(
 }
 
 .preview-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
   padding: 20px 24px 24px;
+}
+
+/* 启动按钮沉底，预览面板拉伸后与左列卡片底边对齐 */
+.preview-panel .launch-button {
+  margin-top: auto;
+}
+
+.preview-panel .preview-row:last-of-type {
+  margin-bottom: 16px;
 }
 
 .preview-title {
@@ -515,10 +531,6 @@ watch(
   word-break: break-word;
 }
 
-.preview-val.monospace {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-}
-
 .mount-directory {
   display: block;
   max-width: 174px;
@@ -528,7 +540,7 @@ watch(
 }
 
 .preview-val.danger {
-  color: #dc2626;
+  color: var(--arco-danger);
 }
 
 .launch-button {
@@ -537,7 +549,7 @@ watch(
   border-radius: 10px;
   font-size: 15px;
   font-weight: 700;
-  box-shadow: 0 4px 12px rgba(46, 91, 255, 0.25);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--arco-primary) 25%, transparent);
 }
 
 :deep(.launch-button.n-button--disabled) {
@@ -559,7 +571,7 @@ watch(
   .configuration-column {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
-    align-items: start;
+    align-items: stretch;
   }
 
   .configuration-column > .card-heading {

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -38,16 +38,48 @@ class ScientificInterpretationResponse(BaseModel):
     risks: list[str] = Field(default_factory=list)
     agent_id: str
     schema_ver: str = SCIENTIFIC_INTERPRETATION_SCHEMA_VERSION
-    duration_ms: int = Field(ge=0)
-    token_usage: int = Field(ge=0)
+    duration_ms: int = 0
+    token_usage: int = 0
     error: ConsultationError | None = None
 
 
 class UpstreamConsultationResponse(BaseModel):
-    """The minimal sanctioned response expected from OmicHub's future controlled endpoint."""
+    conclusion: str
+    recommendations: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+    token_usage: int = 0
 
-    conclusion: str = Field(min_length=1, max_length=20_000)
-    recommendations: list[str] = Field(default_factory=list, max_length=50)
-    evidence_refs: list[str] = Field(default_factory=list, max_length=100)
-    risks: list[str] = Field(default_factory=list, max_length=50)
-    token_usage: int = Field(ge=0)
+
+class RoomCreateRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=128)
+    identities: list[str] = Field(default_factory=list, max_length=32)
+
+
+class RoomCreateResponse(BaseModel):
+    room_id: str
+    room_name: str
+    element_room_url: str | None = None
+
+
+class RoomMessageRequest(BaseModel):
+    sender_identity: str = Field(min_length=1, max_length=128)
+    content: str = Field(min_length=1, max_length=32_000)
+    sender: dict[str, Any] = Field(default_factory=dict)
+    source: Literal["omichub", "external"] = "omichub"
+
+
+class RoomMessage(BaseModel):
+    event_id: str
+    room_id: str
+    sender_identity: str | None = None
+    sender_matrix_id: str | None = None
+    content: str
+    origin: Literal["omichub", "external"] = "external"
+    sender: dict[str, Any] = Field(default_factory=dict)
+    created_at: str | None = None
+
+
+class RoomMessagesResponse(BaseModel):
+    events: list[RoomMessage] = Field(default_factory=list)
+    next_batch: str | None = None

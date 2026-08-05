@@ -183,10 +183,6 @@ class ParallelSubAgentService:
     ) -> list[dict[str, str]] | dict[str, Any]:
         if not isinstance(tasks, list) or not tasks:
             return ParallelSubAgentService._error("tasks 必须为非空列表")
-        if len(tasks) < 2:
-            return ParallelSubAgentService._error(
-                "fan-out 至少需要 2 个子任务；单个任务请直接调用对应 Agent 或工具"
-            )
         if len(tasks) > max_parallel:
             return ParallelSubAgentService._error(
                 f"单次 fan-out 最多 {max_parallel} 个子任务（SUBAGENT_MAX_PARALLEL）"

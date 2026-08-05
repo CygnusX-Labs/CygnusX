@@ -95,7 +95,29 @@ def validate_omichub_env(values: dict[str, str]) -> list[str]:
     return errors
 
 
-def check_healthz(base_url: str, retries: int = 1, retry_delay_seconds: float = 1.0) -> str:
+def validate_gateway_env(values: dict[str, str]) -> list[str]:
+    errors: list[str] = []
+    for key in (
+        "GATEWAY_IDENTITIES",
+        "GATEWAY_MATRIX_HOMESERVER_URL",
+        "GATEWAY_MATRIX_SERVICE_TOKEN",
+        "GATEWAY_MATRIX_IDENTITIES",
+        "GATEWAY_ELEMENT_BASE_URL",
+    ):
+        if is_placeholder(values.get(key)):
+            errors.append(f"{key} is missing or still a template placeholder")
+    if "bioops-manager:" not in values.get("GATEWAY_IDENTITIES", ""):
+        errors.append("GATEWAY_IDENTITIES is missing bioops-manager")
+    matrix_identities = values.get("GATEWAY_MATRIX_IDENTITIES", "")
+    for identity in ("bioops-manager", "omichub-user"):
+        if f"{identity}=" not in matrix_identities:
+            errors.append(f"GATEWAY_MATRIX_IDENTITIES is missing {identity}")
+    return errors
+
+
+def check_healthz(
+    base_url: str, label: str, retries: int = 1, retry_delay_seconds: float = 1.0
+) -> str:
     request = Request(f"{base_url.rstrip('/')}/healthz", headers={"Accept": "application/json"})
     last_error: RuntimeError | None = None
     for attempt in range(retries):
@@ -104,13 +126,13 @@ def check_healthz(base_url: str, retries: int = 1, retry_delay_seconds: float = 
                 payload = response.read().decode(errors="replace")
             if '"status":"ok"' not in payload.replace(" ", ""):
                 raise RuntimeError(
-                    "Bridge health probe did not return the expected status=ok response"
+                    f"{label} health probe did not return the expected status=ok response"
                 )
-            return f"Bridge health probe succeeded: {base_url.rstrip('/')}/healthz"
+            return f"{label} health probe succeeded: {base_url.rstrip('/')}/healthz"
         except HTTPError as exc:
-            last_error = RuntimeError(f"Bridge health probe returned HTTP {exc.code}")
+            last_error = RuntimeError(f"{label} health probe returned HTTP {exc.code}")
         except (URLError, ConnectionError, OSError) as exc:
-            last_error = RuntimeError(f"Bridge health probe could not connect: {exc}")
+            last_error = RuntimeError(f"{label} health probe could not connect: {exc}")
         if attempt + 1 < retries:
             time.sleep(retry_delay_seconds)
     assert last_error is not None
@@ -121,7 +143,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bridge-env", type=Path, required=True, help="Deployed Bridge env file")
     parser.add_argument("--omichub-env", type=Path, help="Deployed OmicHub env file")
+    parser.add_argument("--gateway-env", type=Path, help="Deployed Matrix Gateway env file")
     parser.add_argument("--bridge-url", help="Bridge URL used only with --check-health")
+    parser.add_argument("--gateway-url", help="Gateway URL used only with --check-health")
     parser.add_argument(
         "--health-retries",
         type=int,
@@ -143,8 +167,13 @@ def main() -> int:
             errors.append(f"OmicHub env file does not exist: {args.omichub_env}")
         else:
             errors.extend(validate_omichub_env(parse_env_file(args.omichub_env)))
-    if args.check_health and not args.bridge_url:
-        errors.append("--check-health requires --bridge-url")
+    if args.gateway_env:
+        if not args.gateway_env.is_file():
+            errors.append(f"Gateway env file does not exist: {args.gateway_env}")
+        else:
+            errors.extend(validate_gateway_env(parse_env_file(args.gateway_env)))
+    if args.check_health and not (args.bridge_url or args.gateway_url):
+        errors.append("--check-health requires --bridge-url and/or --gateway-url")
     if args.health_retries < 1:
         errors.append("--health-retries must be at least 1")
     if errors:
@@ -156,7 +185,10 @@ def main() -> int:
     print("AgentTeams configuration preflight passed.")
     if args.check_health:
         try:
-            print(check_healthz(args.bridge_url, retries=args.health_retries))
+            if args.bridge_url:
+                print(check_healthz(args.bridge_url, "Bridge", retries=args.health_retries))
+            if args.gateway_url:
+                print(check_healthz(args.gateway_url, "Matrix Gateway", retries=args.health_retries))
         except RuntimeError as exc:
             print(f"AgentTeams deployment preflight failed: {exc}", file=sys.stderr)
             return 1

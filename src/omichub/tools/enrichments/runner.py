@@ -64,9 +64,9 @@ class EnrichmentDockerRunner:
             "--rm",
             "--name",
             container_name,
-            "--network",
-            s.enrichment_docker_network,
         ]
+        if s.enrichment_docker_network:
+            command.extend(["--network", s.enrichment_docker_network])
         if s.enrichment_proxy_url:
             command.extend(
                 [

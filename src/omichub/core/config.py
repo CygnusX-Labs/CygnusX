@@ -205,6 +205,13 @@ class Settings(BaseSettings):
     # 集中配置：与富集分析同放 tool_configs/<工具名>/，仓库内源码管控；容器内经 tool_configs/ 挂载(:ro) 可读。
     jbrowse_config_yaml: str = "tool_configs/jbrowse/jbrowse_config.yaml"
 
+    # ===== 常用物种基因数据库（参考基因组模块）注册表 =====
+    # species → versions 两级注册表（dataset/reference_genomes.yaml）。
+    # 相对路径按进程工作目录解析：容器内 cwd=/app 即 /app/dataset/reference_genomes.yaml，
+    # 本地开发自仓库根目录运行时即仓库内 dataset/reference_genomes.yaml；
+    # 可用环境变量 REFERENCE_GENOMES_YAML 覆盖。
+    reference_genomes_yaml: str = "dataset/reference_genomes.yaml"
+
     # ===== 工具箱前端注册表（哪些工具加载到前端 + 展示元数据）=====
     # tool_configs/tools_setting.yaml 列出全部工具卡片（title/description/icon/gradient/route/enabled），
     # 前端 GET /api/v1/tools 拉取 enabled 项渲染 ToolsHub；改文件由加载器 mtime 热重载。
@@ -264,6 +271,12 @@ class Settings(BaseSettings):
     agentteams_bridge_workflow_operator_token: str = ""
     agentteams_bridge_timeout_seconds: float = 10.0
 
+    # ===== Matrix Gateway（OmicHub 仅持有 Gateway 服务凭证，绝不保存 Matrix 凭证） =====
+    agentteams_gateway_enabled: bool = False
+    agentteams_gateway_url: str = ""
+    agentteams_gateway_manager_token: str = ""
+    agentteams_gateway_timeout_seconds: float = 10.0
+
     # ===== 节日彩蛋系统 =====
     festival_config_yaml: str = "data/festival_config.yaml"  # 节日彩蛋外置 YAML 配置路径
 
@@ -272,8 +285,9 @@ class Settings(BaseSettings):
     enrichment_config_yaml: str = "tool_configs/enrichments/species_config.yaml"
     # R 计算容器镜像（用户自行构建，契约见 tool_configs/enrichments/KEGG_Docker_契约.md）
     enrichment_docker_image: str = "omichub-r-enrichment:v1"
-    # 容器加入的 Docker 网络；默认使用开发/生产主栈已创建的 app 网络。
-    enrichment_docker_network: str = "omichub_app_net"
+    # 可选容器网络；为空时交由 Docker 使用默认 bridge，避免依赖 Worker 宿主上
+    # 可能不存在或已失效的 Compose / Swarm 网络。需要代理或内网服务时可显式设置。
+    enrichment_docker_network: str = ""
     # 可选出站代理地址；为空时 KEGG REST 通过 Docker bridge 直接出网。
     enrichment_proxy_url: str = ""
     # 宿主→容器挂载源（容器内固定为 /data/omichub，基因列表与结果 CSV 经此交换）
@@ -464,6 +478,11 @@ class Settings(BaseSettings):
             raise ValueError(
                 "生产环境启用 AgentTeams Bridge 时必须设置地址、Manager、Data Steward、审批和 Workflow Operator 凭证"
             )
+        if self.agentteams_gateway_enabled and (
+            not self.agentteams_gateway_url
+            or self._is_placeholder(self.agentteams_gateway_manager_token)
+        ):
+            raise ValueError("生产环境启用 Matrix Gateway 时必须设置地址和 Gateway Manager 凭证")
         return self
 
     @staticmethod

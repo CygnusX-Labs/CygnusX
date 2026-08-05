@@ -101,6 +101,7 @@ docker compose -f deploy/docker/docker-compose.yml restart web
 第一条命令使用 `deploy/docker/Dockerfile.enrichment` 和 `tool_configs/enrichments` 构建上下文生成 R 镜像；
 第二条命令也会自动确保富集镜像已构建，并重建独立 Worker，使其加载 Docker CLI、Docker socket 挂载和最新的 Celery 富集任务；
 第三条命令仅在更新 Web API 代码后需要。只有独立计算 Worker 需要 Docker CLI 与 Docker socket；
-Web 仅投递和查询任务。默认 R 容器加入已存在的 `omichub_app_net`，通过 Docker bridge 直接访问
-KEGG REST；如部署 squid，可设置 `ENRICHMENT_PROXY_URL` 和自定义网络。参考文件和任务目录均通过
+Web 仅投递和查询任务。默认 R 容器不指定 `--network`，由 Docker 使用本机默认 `bridge` 网络直接访问
+KEGG REST，避免依赖可能失效的 Compose / Swarm 网络；如部署 squid 或需要访问内网服务，可设置
+`ENRICHMENT_PROXY_URL` 和 `ENRICHMENT_DOCKER_NETWORK`。参考文件和任务目录均通过
 `/data/omichub:/data/omichub` 挂载。

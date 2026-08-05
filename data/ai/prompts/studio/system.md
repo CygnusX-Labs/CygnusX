@@ -12,14 +12,29 @@
 - Python 包：优先 `uv pip install <pkg>`；用 pip 时显式指定白名单源
   `pip install <pkg> -i https://pypi.org/simple`（或 `-i https://mirrors.aliyun.com/pypi/simple/`）。
   **禁止**使用 pypi.tuna.tsinghua.edu.cn（不在白名单，403 拦截）。
-- R 包与系统级工具：一律走 conda 通道
-  `micromamba install -y -n base -c conda-forge -c bioconda <pkg>`
-  （R 包名 `r-<pkg>`，Bioconductor 包名 `bioconductor-<pkg>`；
-  bedtools / fastq-screen / snakemake 等生信 CLI 同样可 conda 安装）。
+- R 包与系统级工具：一律走 conda 通道，但**装前先确认包名与 channel，禁止凭记忆猜包名盲装**：
+  1. 本文档、技能 `references/environment.md` 已给出安装命令的常用包，直接按已知命令安装；
+  2. 不确定的包，先用 conda-meta-mcp 工具查询（新会话默认已加载；工具不在手边时先
+     `studio_capability_load` 加载 conda-meta-mcp）：
+     - Python import 名（如 cv2）用 `import_mapping`、PyPI 名用 `pypi_to_conda`
+       先换成正确的 conda 包名（R 包为 `r-<pkg>`，Bioconductor 为 `bioconductor-<pkg>`；
+       bedtools / fastq-screen / snakemake 等生信 CLI 同样可 conda 安装）；
+     - `package_search` 确认包在哪个 channel（conda-forge / bioconda）、
+       是否有 linux-64 build、最新稳定版本；依赖可能冲突时用 `repoquery`
+       （subcmd=depends）核对依赖；
+     - 按查询结果组装 `micromamba install -y -n base -c <channel> <pkg>[=<version>]`
+       （pin 版本便于复现）；
+  3. MCP 查询失败时退回 `micromamba search <pkg>` 确认后再装，不要卡死、不要编造包名。
   **禁止** `install.packages()`（CRAN 不可达）与 `remotes::install_github()`（GitHub 不可达）。
 - GitHub 独占 R 包（scCustomize、ProjecTILs、AnnoProbe、DoubletFinder 等）无法现场安装：
   改用已装包的等价实现，或如实告知用户需管理员预装进镜像/加白名单。
-- 装包失败时如实报告失败原因，**不要假装已安装**、不要伪造运行结果。
+- 安装完成必须验证：CLI 跑 `<cmd> --version`，Python/R 包做 import 测试；
+  实际装上的包名与版本记入项目 summary。装包失败时如实报告失败原因，
+  **不要假装已安装**、不要伪造运行结果。
+- 当用户的请求本身就是搜索/查询软件包信息（而非分析过程中缺包安装）时，
+  用 conda-meta-mcp 汇报包信息（版本、依赖、安装命令）后，结尾跟进要点明
+  当前场景：「当前已在 AI 工作台沙盒中，需要我直接帮你安装相关包和工具吗」，
+  不要只泛泛问"需要帮你安装吗"而让用户以为还要自己换环境操作。
 
 ## 沙盒目录使用规范
 

@@ -385,7 +385,18 @@ def test_all_enabled_agent_yamls_loadable():
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "yaml_name",
-    ["router", "general", "rnaseq", "scrna", "code", "viz", "shania"],
+    [
+        "router",
+        "general",
+        "rnaseq",
+        "scrna",
+        "scrna_upstream",
+        "scrna_integration",
+        "scrna_advanced",
+        "code",
+        "viz",
+        "shania",
+    ],
 )
 def test_single_agent_yaml_loadable(yaml_name: str):
     """每个已注册专家 agent 的 yaml 单独加载成功且 agent_id 字段非空"""
@@ -440,6 +451,18 @@ def test_router_prompt_candidates_match_registry():
 def test_site_yaml_enabled_agents_have_config_files():
     """data/OmicHub.yaml agents.enabled 中的每个 agent 都有对应配置文件"""
     enabled = agent_loader._load_enabled_agents(SITE_YAML)
-    assert enabled == ["router", "general", "rnaseq", "scrna", "code", "viz", "shania", "mcp_builder"]
+    assert enabled == [
+        "router",
+        "general",
+        "rnaseq",
+        "scrna",
+        "scrna_upstream",
+        "scrna_integration",
+        "scrna_advanced",
+        "code",
+        "viz",
+        "shania",
+        "mcp_builder",
+    ]
     for name in enabled:
         assert (AI_DIR / f"{name}.yaml").exists(), f"{name}.yaml 不存在"

@@ -7,7 +7,7 @@ import KimiMessageList from '@/components/ai-chat/KimiMessageList.vue'
 import type { CollaborationRouteInfo } from '@/components/ai-chat/types'
 import KimiChatInput from '@/components/ai-chat/KimiChatInput.vue'
 import AgentCapabilityDrawer from './AgentCapabilityDrawer.vue'
-import MultiAgentToggle from './MultiAgentToggle.vue'
+import OverdriveToggle from './OverdriveToggle.vue'
 import ShaniaChatBackground from './ShaniaChatBackground.vue'
 import { useAgentHubStore } from '@/stores/agentHub'
 import { useAuthStore } from '@/stores/auth'
@@ -112,10 +112,10 @@ let noticeTimer: ReturnType<typeof setTimeout> | null = null
 
 const agent = computed(() => store.currentAgent)
 const session = computed(() => store.currentSession)
-const multiAgentEnabled = computed({
-  get: () => Boolean(session.value?.multi_agent),
+const overdriveEnabled = computed({
+  get: () => Boolean(session.value?.overdrive),
   set: (value: boolean) => {
-    if (session.value) session.value.multi_agent = value
+    if (session.value) session.value.overdrive = value
   },
 })
 const engineLabel = computed(() => agent.value?.model_engine || '')
@@ -345,7 +345,7 @@ onUnmounted(() => {
         </div>
       </div>
       <div class="header-right">
-        <MultiAgentToggle v-model="multiAgentEnabled" :disabled="store.isStreaming" />
+        <OverdriveToggle v-model="overdriveEnabled" :disabled="store.isStreaming" />
         <div class="model-selector">
           <n-select
             v-if="modelOptions.length"
@@ -381,6 +381,16 @@ onUnmounted(() => {
         </NButton>
       </div>
     </header>
+
+    <transition name="fade">
+      <div v-if="overdriveEnabled" class="overdrive-banner" role="status">
+        <NIcon size="14" class="overdrive-banner-icon"><FlashOutline /></NIcon>
+        <span class="overdrive-banner-text">
+          超频模式已开启：Manager 将组织专家团队协作回复，各专家发言会依次单独展示
+        </span>
+        <button type="button" class="overdrive-banner-exit" @click="overdriveEnabled = false">退出超频</button>
+      </div>
+    </transition>
 
     <div class="sandbox-body">
       <div class="chat-content-wrapper">
@@ -548,6 +558,37 @@ onUnmounted(() => {
 .fade-leave-to {
   opacity: 0;
 }
+
+/* 超频模式提示条幅：开启时常驻在工具栏下方，避免与普通对话难以分辨 */
+.overdrive-banner {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 16px 0;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 8%, var(--card-color));
+  border: 1px solid color-mix(in srgb, var(--primary-color) 46%, var(--border-color));
+  border-radius: 10px;
+}
+.overdrive-banner-icon { flex-shrink: 0; }
+.overdrive-banner-text { flex: 1; min-width: 0; }
+.overdrive-banner-exit {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--primary-color);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+.overdrive-banner-exit:hover { background: color-mix(in srgb, var(--primary-color) 12%, transparent); }
 
 /* 内容层显式提升，确保位于点阵 ::before 与 ShaniaChatBackground 装饰层之上。
    注意：不能用 `.agent-sandbox > *` 通配提升，否则会把绝对定位的装饰背景

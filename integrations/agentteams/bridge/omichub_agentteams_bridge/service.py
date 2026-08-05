@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -351,6 +352,25 @@ class BridgeService:
         items = events[:limit]
         next_cursor = items[-1]["event_id"] if len(events) > len(items) else None
         return CaseEventResponse(case_id=case_id, events=items, next_cursor=next_cursor)
+
+    async def stream_case_events(
+        self,
+        case_id: str,
+        actor: str,
+        *,
+        cursor: str | None = None,
+        watch_seconds: int = 60,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Native bounded stream of newly recorded Bridge audit events."""
+        await self.get_case(case_id, actor)
+        next_cursor = cursor
+        for _ in range(max(1, watch_seconds)):
+            page = await self.get_case_events(case_id, actor, cursor=next_cursor, limit=100)
+            for event in page.events:
+                yield event
+            if page.events:
+                next_cursor = page.events[-1]["event_id"]
+            await asyncio.sleep(1)
 
     async def metrics(self) -> dict[str, int]:
         return await self._audit.metrics()

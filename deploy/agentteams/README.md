@@ -12,10 +12,15 @@ through a dedicated gateway rather than the OmicHub application network.
 
 ```bash
 cp bridge.env.example bridge.env
+cp gateway.env.example gateway.env
 # Replace every placeholder with deployment-managed secrets.
 docker network create omichub_bridge_gateway
 docker compose -f docker-compose.agentteams.yml up --build -d
 ```
+
+For a local development-only startup, `gateway.env` may use
+`GATEWAY_ENVIRONMENT=development` with Matrix settings left empty. Production requires
+deployment-managed Gateway and Matrix credentials; do not commit either environment file.
 
 The host health port binds to `127.0.0.1:8088` by default. OmicHub reaches the Bridge over the
 dedicated Docker network; do not change `AGENTTEAMS_BRIDGE_BIND_HOST` to `0.0.0.0` unless an
@@ -151,7 +156,8 @@ Worker identities; it does not start containers or submit any tasks.
 ```bash
 python3 deploy/agentteams/preflight.py \
   --bridge-env deploy/agentteams/bridge.env \
-  --omichub-env .env
+  --omichub-env .env \
+  --gateway-env deploy/agentteams/gateway.env
 ```
 
 After the Bridge is running, add a read-only health probe. Use the host-reachable port or an
@@ -161,11 +167,39 @@ internal service URL appropriate for the environment:
 python3 deploy/agentteams/preflight.py \
   --bridge-env deploy/agentteams/bridge.env \
   --omichub-env .env \
-  --check-health --bridge-url http://127.0.0.1:8088
+  --gateway-env deploy/agentteams/gateway.env \
+  --check-health \
+  --bridge-url http://127.0.0.1:8088 \
+  --gateway-url http://127.0.0.1:8089
 ```
 
 健康探针默认会在 Bridge 刚启动时重试 5 次；如需只检查一次可传
 `--health-retries 1`。
+
+## Matrix / Element round-trip smoke test
+
+After the Bridge and Matrix Gateway health probes succeed, an operator can verify the real
+room path without placing Matrix credentials in OmicHub. The command creates one disposable
+Matrix room and posts one marker message, so it requires an explicit confirmation flag. The
+Gateway Manager token can be supplied from the deployment secret store through the process
+environment; it is never written by the script.
+
+```bash
+export AGENTTEAMS_GATEWAY_MANAGER_TOKEN="<deployment-managed-manager-token>"
+python3 deploy/agentteams/matrix_gateway_smoke.py \
+  --gateway-url http://127.0.0.1:8089 \
+  --confirm-write
+```
+
+To verify Element-to-OmicHub return traffic, open the printed Element room URL in an authorized
+Element session, send any message, then run the same command with a bounded wait window:
+
+```bash
+python3 deploy/agentteams/matrix_gateway_smoke.py \
+  --gateway-url http://127.0.0.1:8089 \
+  --wait-external-seconds 120 \
+  --confirm-write
+```
 
 ## AgentTeams / HiClaw Controller deployment
 

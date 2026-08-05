@@ -26,3 +26,12 @@ class AgentTeamsBridgeConfigUpdateDTO(BaseModel):
     approval_token: str = Field(default="", max_length=4096)
     workflow_operator_token: str = Field(default="", max_length=4096)
     element_url: str = Field(default="", max_length=1024)
+
+
+class AgentTeamsBridgeTokenBundleDTO(BaseModel):
+    """One-time Worker credentials generated for an administrator to deploy."""
+
+    manager_token: str
+    data_steward_token: str
+    approval_token: str
+    workflow_operator_token: str
