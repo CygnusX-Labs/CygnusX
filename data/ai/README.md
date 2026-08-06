@@ -13,3 +13,8 @@
   对应 Agent；技能正文随后由模型通过 `use_skill` 按需加载。
 
 所有路径由 `src/omichub/core/config.py` 中的默认设置统一管理；可通过环境变量覆盖。
+
+## 提示词体积护栏
+
+新增或修改 `prompts/*.md` 时，单个提示词超过 120 行必须在 PR 说明为什么不能下沉到
+Skill、知识文件或 Domain Pack；跨 Agent 复用的协议应放入 `prompts/shared/`，由加载器统一追加。

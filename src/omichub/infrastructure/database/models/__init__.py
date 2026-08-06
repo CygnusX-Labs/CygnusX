@@ -22,6 +22,7 @@ from omichub.infrastructure.database.models.blast import (
 )
 from omichub.infrastructure.database.models.chat import (
     ChatAssistantModel,
+    ChatMessageFeedbackModel,
     CollaborationDegradationEventModel,
     ChatHandoffEventModel,
     ChatMessageModel,
@@ -65,6 +66,7 @@ from omichub.infrastructure.database.models.mcp_builder import (
     MCPVisibilityModel,
 )
 from omichub.infrastructure.database.models.notification import NotificationModel
+from omichub.infrastructure.database.models.project import ProjectModel
 from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
 from omichub.infrastructure.database.models.sandbox import SandboxSessionModel
 from omichub.infrastructure.database.models.search_provider import SearchProviderConfigModel
@@ -96,6 +98,7 @@ __all__ = [
     "MessageModel",
     "ChatSessionModel",
     "ChatMessageModel",
+    "ChatMessageFeedbackModel",
     "ChatAssistantModel",
     "ChatHandoffEventModel",
     "CollaborationDegradationEventModel",
@@ -139,4 +142,5 @@ __all__ = [
     "UploadSessionModel",
     "SampleModel",
     "DirectoryModel",
+    "ProjectModel",
 ]

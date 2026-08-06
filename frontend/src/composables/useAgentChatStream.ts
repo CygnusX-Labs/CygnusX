@@ -11,7 +11,7 @@ import { reportChatDiagnostic } from '@/utils/chatDiagnostics'
 
 export interface AgentChatStreamOptions {
   agentId: string
-  messages: { role: string; content: string }[]
+  messages: { role: string; content: string; metadata?: Record<string, unknown> }[]
   sessionId?: string
   /** 当前会话运行模式；Studio 模式会由后端装配工作区工具与上下文。 */
   mode?: 'chat' | 'studio'
@@ -101,6 +101,15 @@ export interface RouteEvent {
   avatar: string
   color: string
   reason: string
+  transition?: {
+    visible: boolean
+    stage: 'specialist_intake' | 'execution_ready'
+    title: string
+    message: string
+    next_step: string
+    requires_execution_confirmation: boolean
+    auto_start: boolean
+  }
 }
 
 /** 同一会话内 Agent 交接事件。完整摘要仍由同名工具结果卡片保存和渲染。 */
@@ -168,6 +177,41 @@ export interface RoomSpeechEvent {
   round: number
   messageId?: string
   sessionId?: string
+  workerKey?: string
+  isReasoning?: boolean
+  thought?: string
+  summary?: string
+  artifacts?: Record<string, string>
+  taskStatus?: string
+  errorSummary?: string
+}
+
+export interface OverdriveProgressEvent {
+  phase: 'manager_ready' | 'workers_starting' | 'worker_running' | 'tool_running' | 'worker_finished' | 'peer_reviewing' | 'summarizing' | 'awaiting_input' | 'paused' | 'completed'
+  label: string
+  completed: number
+  total: number
+  wave?: number
+  waveTotal?: number
+  waveMode?: 'parallel' | 'serial'
+  fallback?: boolean
+  warning?: string
+  stalledTaskId?: string
+  tasks?: Array<{ taskId: string; agentId: string; status: string; errorSummary?: string }>
+}
+
+export interface OverdriveApprovalEvent {
+  approval: {
+    approval_id: string
+    tool_name: string
+    arguments: Record<string, unknown>
+    status: 'pending' | 'executing' | 'completed' | 'rejected' | 'failed'
+    result?: Record<string, unknown>
+    error?: string
+    reason?: string
+  }
+  workerKey?: string
+  agentId?: string
 }
 
 /** Skill 调用生命周期事件（skill.invoked / skill.completed / skill.failed 三时机） */
@@ -229,6 +273,9 @@ export interface AgentStreamCallbacks {
   /** 上下文超窗触发历史压缩时回调（estimatedTokens 为压缩前估算值） */
   onContextCompressed?: (estimatedTokens: number) => void
   onRoomSpeech?: (event: RoomSpeechEvent) => void
+  onRoomSpeechDelta?: (event: RoomSpeechEvent) => void
+  onOverdriveProgress?: (event: OverdriveProgressEvent) => void
+  onOverdriveApproval?: (event: OverdriveApprovalEvent) => void
   onModeChanged?: (enabled: boolean, degraded?: boolean) => void
   onError?: (error: string) => void
   onDone?: (
@@ -468,8 +515,82 @@ export function useAgentChatStream() {
           round: Number(data.round) || 1,
           messageId,
           sessionId,
+          workerKey: typeof data.worker_key === 'string' ? data.worker_key : undefined,
+          thought: typeof data.thought === 'string' ? data.thought : undefined,
+          summary: typeof data.summary === 'string' ? data.summary : undefined,
+          artifacts: (asRecord(data.artifacts) || undefined) as Record<string, string> | undefined,
+          taskStatus: typeof data.task_status === 'string' ? data.task_status : undefined,
+          errorSummary: typeof data.error_summary === 'string' ? data.error_summary : undefined,
         })
         if (sessionId && messageId) cb.onSessionCreated?.(sessionId, messageId)
+        break
+      }
+      case 'room_speech_delta': {
+        const sender = asRecord(data.sender)
+        if (!sender) break
+        cb.onRoomSpeechDelta?.({
+          sender: {
+            agent_id: String(sender.agent_id || ''),
+            name: String(sender.name || '专家'),
+            avatar: typeof sender.avatar === 'string' ? sender.avatar : undefined,
+            color: typeof sender.color === 'string' ? sender.color : undefined,
+            role: sender.role === 'worker' ? 'worker' : 'manager',
+          },
+          content,
+          round: Number(data.round) || 1,
+          sessionId,
+          workerKey: typeof data.worker_key === 'string' ? data.worker_key : undefined,
+          isReasoning: Boolean(data.is_reasoning),
+        })
+        break
+      }
+      case 'overdrive_progress': {
+        const rawTasks = Array.isArray(data.tasks) ? data.tasks : []
+        cb.onOverdriveProgress?.({
+          phase: String(data.phase || 'worker_running') as OverdriveProgressEvent['phase'],
+          label: String(data.label || '超频协作进行中'),
+          completed: Number(data.completed || 0),
+          total: Number(data.total || 0),
+          wave: Number(data.wave) || undefined,
+          waveTotal: Number(data.wave_total) || undefined,
+          waveMode: data.wave_mode === 'parallel' ? 'parallel' : data.wave_mode === 'serial' ? 'serial' : undefined,
+          tasks: rawTasks.map((raw) => {
+            const task = asRecord(raw) || {}
+            return {
+              taskId: String(task.task_id || ''),
+              agentId: String(task.agent_id || ''),
+              status: String(task.status || 'pending'),
+              errorSummary: typeof task.error_summary === 'string' ? task.error_summary : undefined,
+            }
+          }),
+        })
+        break
+      }
+      case 'schedule_fallback':
+        cb.onOverdriveProgress?.({ phase: 'workers_starting', label: String(data.label || '已使用默认分工'), completed: 0, total: 0, fallback: true })
+        break
+      case 'schedule_warning':
+        cb.onOverdriveProgress?.({ phase: 'workers_starting', label: String(data.label || '调度已降级'), completed: 0, total: 0, warning: String(data.label || '') })
+        break
+      case 'worker_stalled':
+        cb.onOverdriveProgress?.({ phase: 'worker_running', label: String(data.label || '任务长时间无新进度'), completed: 0, total: 0, stalledTaskId: String(data.task_id || '') })
+        break
+      case 'overdrive_approval_request': {
+        const approval = asRecord(data.approval)
+        if (!approval || typeof approval.approval_id !== 'string' || typeof approval.tool_name !== 'string') break
+        cb.onOverdriveApproval?.({
+          approval: {
+            approval_id: approval.approval_id,
+            tool_name: approval.tool_name,
+            arguments: (asRecord(approval.arguments) || {}) as Record<string, unknown>,
+            status: String(approval.status || 'pending') as OverdriveApprovalEvent['approval']['status'],
+            result: asRecord(approval.result),
+            error: typeof approval.error === 'string' ? approval.error : undefined,
+            reason: typeof approval.reason === 'string' ? approval.reason : undefined,
+          },
+          workerKey: typeof data.worker_key === 'string' ? data.worker_key : undefined,
+          agentId: typeof data.agent_id === 'string' ? data.agent_id : undefined,
+        })
         break
       }
       case 'tool_result':
@@ -603,15 +724,31 @@ export function useAgentChatStream() {
           })
         }
         break
-      case 'route':
+      case 'route': {
+        const transition = asRecord(data.transition)
         cb.onRoute?.({
           agent_id: (data.agent_id as string) || '',
           name: (data.name as string) || '',
           avatar: (data.avatar as string) || '',
           color: (data.color as string) || '',
           reason: (data.reason as string) || '',
+          transition: transition
+            ? {
+                visible: Boolean(transition.visible),
+                stage:
+                  transition.stage === 'execution_ready'
+                    ? 'execution_ready'
+                    : 'specialist_intake',
+                title: String(transition.title || '已匹配专项专家'),
+                message: String(transition.message || ''),
+                next_step: String(transition.next_step || '专项 Agent 进行任务 intake'),
+                requires_execution_confirmation: Boolean(transition.requires_execution_confirmation),
+                auto_start: Boolean(transition.auto_start),
+              }
+            : undefined,
         })
         break
+      }
       case 'round_limit':
         cb.onRoundLimit?.({
           sessionId: sessionId || '',

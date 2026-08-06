@@ -172,7 +172,7 @@ class TaskService:
         mas_tasks = await self._mas_projection.list_for_user(UUID(user_id), status=status)
         items = [*(task_to_response(task) for task in tasks), *mas_tasks]
         items.sort(key=lambda item: item.created_at, reverse=True)
-        await self._attach_usernames(items)
+        await self._attach_user_display_info(items)
         total = len(items)
         if limit is not None:
             items = items[:limit]
@@ -181,21 +181,21 @@ class TaskService:
             total=total,
         )
 
-    async def _attach_usernames(self, items: list[TaskResponse]) -> None:
-        """按 user_id 回填用户名（去重后逐个查询，单用户列表仅一次查询）。"""
+    async def _attach_user_display_info(self, items: list[TaskResponse]) -> None:
+        """按 user_id 回填用户展示信息（去重后逐个查询）。"""
         user_ids = {item.user_id for item in items if item.user_id is not None}
         if not user_ids:
             return
         user_repo = SqlAlchemyUserRepository(self._db)
-        names: dict[UUID, str] = {}
+        users: dict[UUID, tuple[str, str | None]] = {}
         for uid in user_ids:
             user = await user_repo.get_by_id(uid)
             if user is not None:
-                names[uid] = user.username
+                users[uid] = (user.username, user.nickname)
         for item in items:
-            name = names.get(item.user_id)
-            if name:
-                item.username = name
+            user = users.get(item.user_id)
+            if user:
+                item.username, item.nickname = user
 
     async def cancel_task(self, task_id: UUID, user_id: str) -> TaskResponse:
         """取消任务"""

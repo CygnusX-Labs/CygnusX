@@ -57,6 +57,42 @@ beforeEach(() => {
 })
 
 describe('深度思考流式聊天全链路', () => {
+  it('超频 worker reasoning delta 写入 thought，正式 delta 只写入 content', async () => {
+    mockFetchWithSse([
+      'data: {"type":"mode_changed","mode":"overdrive","enabled":true}',
+      'data: {"type":"room_speech_delta","content":"WORKER_REASONING","sender":{"agent_id":"agent-general","name":"通用助手","role":"worker"},"worker_key":"worker-1","is_reasoning":true}',
+      'data: {"type":"room_speech_delta","content":"WORKER_FINAL","sender":{"agent_id":"agent-general","name":"通用助手","role":"worker"},"worker_key":"worker-1"}',
+      'data: {"type":"room_speech","content":"WORKER_FINAL","thought":"WORKER_REASONING","sender":{"agent_id":"agent-general","name":"通用助手","role":"worker"},"worker_key":"worker-1","round":1,"session_id":"session-overdrive","message_id":"message-worker"}',
+      'data: {"type":"done","session_id":"session-overdrive"}',
+      '',
+    ].join('\n'))
+
+    const store = useAgentHubStore()
+    store.agents = [
+      {
+        id: 'agent-general',
+        agent_id: 'agent-general',
+        name: '通用助手',
+        description: '',
+        avatar: '🤖',
+        color: '#4f8ef7',
+        model_engine: 'test-model',
+        model_id: 'model-id',
+        is_active: true,
+        features: {},
+      } as unknown as AgentTemplate,
+    ]
+    const session = store.startSessionFromAgent('agent-general')!
+    session.overdrive = true
+
+    await store.sendMessage('请协作分析')
+
+    const worker = session.messages.find((message) => message.senderAgent?.role === 'worker')!
+    expect(worker.content).toBe('WORKER_FINAL')
+    expect(worker.thought).toBe('WORKER_REASONING')
+    expect(worker.content).not.toContain('WORKER_REASONING')
+  })
+
   it('SSE(reasoning+content+done) → store → DOM：思考与正文分别展示，正文不空白', async () => {
     mockFetchWithSse(SSE_FIXTURE)
 

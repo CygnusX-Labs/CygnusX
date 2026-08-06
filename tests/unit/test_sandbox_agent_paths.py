@@ -1,5 +1,6 @@
 """sandbox-agent 路径防护单元测试（无需 Docker，直接导入纯函数）"""
 
+import asyncio
 import importlib.util
 import json
 import sys
@@ -135,6 +136,36 @@ async def test_exec_stream_caps_output_and_persists_full_log(tmp_path: Path, mon
     assert result["truncated_output_files"]
     log_path = tmp_path / result["truncated_output_files"][0]
     assert log_path.read_text(encoding="utf-8") == payload + "\n"
+
+
+@pytest.mark.unit
+async def test_exec_stream_termination_kills_process_group_when_consumer_disconnects(
+    tmp_path: Path, monkeypatch
+):
+    """关闭 NDJSON 消费者时，执行进程组必须立即被终止。"""
+    monkeypatch.setattr(sandbox_agent, "WORKSPACE_ROOT", tmp_path)
+    (tmp_path / "output").mkdir()
+    observed_signals: list[int] = []
+    original_killpg = sandbox_agent.os.killpg
+
+    def track_killpg(pid: int, sig: int) -> None:
+        observed_signals.append(sig)
+        original_killpg(pid, sig)
+
+    monkeypatch.setattr(sandbox_agent.os, "killpg", track_killpg)
+    stream = sandbox_agent._stream_exec(
+        sandbox_agent.ExecRequest(
+            language="python",
+            code="import time\nprint('ready', flush=True)\ntime.sleep(60)",
+            timeout=120,
+        )
+    )
+
+    first_event = json.loads((await anext(stream)).decode("utf-8"))
+    assert first_event == {"type": "stdout", "data": "ready\n"}
+    await asyncio.wait_for(stream.aclose(), timeout=5)
+
+    assert sandbox_agent.signal.SIGKILL in observed_signals
 
 
 # ===== workspace_edit 反向上下文 =====

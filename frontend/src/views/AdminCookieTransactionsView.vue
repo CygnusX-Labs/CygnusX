@@ -14,6 +14,7 @@ import {
 import { h, onMounted, ref, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 import PageHeader from '@/components/PageHeader.vue'
+import { displayName } from '@/utils/displayName'
 
 const route = useRoute()
 
@@ -21,6 +22,7 @@ interface TxnRow {
   id: number
   user_id: string
   username: string
+  nickname?: string | null
   email: string
   txn_type: string
   amount: number
@@ -83,7 +85,7 @@ const columns = [
     width: 180,
     render: (row: TxnRow) => (row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '-'),
   },
-  { title: '用户名', key: 'username', width: 100 },
+  { title: '用户', key: 'username', width: 100, render: (row: TxnRow) => displayName(row) || '-' },
   { title: '邮箱', key: 'email', ellipsis: { tooltip: true } },
   {
     title: '类型',

@@ -25,6 +25,7 @@ class ParallelSubAgentToolService:
         context_summary: str = "",
         tasks: list[dict[str, Any]] | None = None,
         context: ToolInvocationContext | None = None,
+        on_event: Any = None,
         **_kwargs: Any,
     ) -> dict[str, Any]:
         if context is None or not context.user_id or not context.session_id:
@@ -36,4 +37,5 @@ class ParallelSubAgentToolService:
             context_summary=context_summary or "",
             tasks=tasks or [],
             db=context.db,
+            on_event=on_event,
         )

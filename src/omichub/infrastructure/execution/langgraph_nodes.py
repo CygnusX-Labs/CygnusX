@@ -51,6 +51,7 @@ class NodeDeps:
     max_tokens: int = 4096
     tools: list[dict[str, Any]] | None = None
     deep_thinking: bool = False
+    max_tool_rounds: int | None = None
     tool_executor: ToolExecutorFn | None = None
     channel_resolver: ChannelResolver | None = None
     chat_stream: ChatStreamFn | None = None
@@ -67,6 +68,18 @@ async def llm_call_node(state: AgentState, deps: NodeDeps) -> dict[str, Any]:
     usage = state.get("usage")
     rounds = state.get("rounds", 0)
     stream = deps.chat_stream or provider_manager.chat_stream
+    force_final_response = (
+        deps.max_tool_rounds is not None and rounds >= deps.max_tool_rounds
+    )
+    system_prompt = deps.system_prompt
+    tools = deps.tools or None
+    if force_final_response:
+        tools = None
+        system_prompt = (
+            f"{system_prompt or ''}\n\n"
+            "工具调用额度已用尽。现在必须基于已有工具结果给出最终答复；"
+            "不要继续调用工具，也不要只描述下一步。"
+        )
 
     round_text = ""
     tool_calls: list[dict[str, Any]] = []
@@ -74,10 +87,10 @@ async def llm_call_node(state: AgentState, deps: NodeDeps) -> dict[str, Any]:
         async for chunk in stream(
             config=deps.model_config,
             messages=messages,
-            system_prompt=deps.system_prompt,
+            system_prompt=system_prompt,
             temperature=deps.temperature,
             max_tokens=deps.max_tokens,
-            tools=deps.tools or None,
+            tools=tools,
             deep_thinking=deps.deep_thinking,
         ):
             if chunk.type == "text":
@@ -95,6 +108,12 @@ async def llm_call_node(state: AgentState, deps: NodeDeps) -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001
         await deps.emit_chunk(ChatChunk(type="error", content=f"模型调用失败: {e}"))
         return {"rounds": rounds + 1, "usage": usage, "error": str(e)}
+
+    if force_final_response:
+        tool_calls = []
+        if not round_text:
+            round_text = "已完成可执行的工具步骤，请根据上方工具结果继续处理。"
+            await deps.emit_chunk(ChatChunk(type="text", content=round_text))
 
     assistant: dict[str, Any] = {"role": "assistant", "content": round_text}
     if tool_calls:
@@ -219,13 +238,11 @@ def route_after_llm(state: AgentState) -> str:
 
 
 def route_after_tool(state: AgentState, max_rounds: int) -> str:
-    """工具执行后路由：正常且未达轮次上限 → llm_call；否则 → end"""
+    """工具执行后路由：达到上限时进入无工具的最终总结轮。"""
     if state.get("error"):
         return "end"
     if state.get("handoff"):
         return "end"
     if state.get("ask_request"):
-        return "end"
-    if state.get("rounds", 0) >= max_rounds:
         return "end"
     return "llm_call"

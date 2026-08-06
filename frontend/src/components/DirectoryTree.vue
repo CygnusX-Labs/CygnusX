@@ -20,14 +20,8 @@ const dialog = useDialog()
 const directories = ref<Directory[]>([])
 const loading = ref(false)
 
-const LEGACY_INTERNAL_ROOTS = new Set([
-  'raw', 'raw-data', 'raw_data', 'results', 'tasks', 'temp', 'workspace', 'enrichment',
-])
-
-const visibleDirectories = computed(() => directories.value.filter((directory) => {
-  const root = directory.path.split('/')[0]
-  return !LEGACY_INTERNAL_ROOTS.has(root)
-}))
+/** 不再按硬编码白名单隐藏文件夹，所有目录树节点均可见 */
+const visibleDirectories = computed(() => directories.value)
 
 /** 选中目录："" = 根 */
 const selected = computed({

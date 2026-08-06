@@ -27,6 +27,14 @@ WATCHED_STATUSES = frozenset(
 TERMINAL_STATUSES = frozenset({"closed", "cancelled"})
 
 
+def _watchable_sessions_query():
+    """仅选择实际绑定了 AgentTeams Case 的会话。"""
+    return select(ChatSessionModel).where(
+        ChatSessionModel.sandbox_meta.is_not(None),
+        ChatSessionModel.sandbox_meta.op("?")("agentteams_case_ids"),
+    )
+
+
 class AgentTeamsCaseWatchService:
     """按会话绑定扫描非终态 Case；读取失败不会影响其它会话。"""
 
@@ -49,7 +57,7 @@ class AgentTeamsCaseWatchService:
         sessions = list(
             (
                 await self._db.scalars(
-                    select(ChatSessionModel).where(ChatSessionModel.sandbox_meta.is_not(None))
+                    _watchable_sessions_query()
                 )
             ).all()
         )

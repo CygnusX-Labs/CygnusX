@@ -29,7 +29,7 @@
 ### 2.1 目录结构
 
 ```
-/data/omichub/dataset/enrichments/
+/data/omichub/refdata/enrichments/
 ├── species_config.yaml    # 全局物种配置（含 KEGG 参数）
 ├── human/
 │   ├── GO_bp.gmt

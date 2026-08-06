@@ -75,6 +75,7 @@ export interface WorkflowTaskSnapshot {
   flow_id: string
   user_id: string
   username?: string | null
+  nickname?: string | null
   status: 'pending' | 'queued' | 'running' | 'success' | 'failed' | 'cancelled' | string
   progress: number
   progress_percent: number

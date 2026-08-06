@@ -415,7 +415,7 @@ async def _resolve_workspace_file(
             service = FileService(db)
             target = await service.get_file_path(uuid.UUID(user_id), file_uuid)  # 已做路径越权校验
             try:
-                target.resolve().relative_to(service.user_workspace_root(uuid.UUID(user_id)).resolve())
+                target.resolve().relative_to(service.user_root(uuid.UUID(user_id)).resolve())
             except ValueError:
                 return None, {"error": "文件不在当前用户工作区内"}
             meta = {

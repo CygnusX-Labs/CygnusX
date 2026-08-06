@@ -822,7 +822,7 @@ const UserAvatar = () => {
             <div class="mobile-user-card" @click="handleLogout">
               <UserAvatar />
               <div class="user-info">
-                <p class="user-name">{{ currentUser?.username || '未登录' }}</p>
+                <p class="user-name">{{ displayName(currentUser) || '未登录' }}</p>
                 <p class="user-role">{{ isAdmin ? '管理员' : '普通用户' }}</p>
               </div>
             </div>
@@ -904,8 +904,11 @@ const UserAvatar = () => {
 }
 
 :root[data-theme="dark"] .top-nav {
-  background: rgba(24, 24, 30, 0.58);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 8px 24px rgba(0, 0, 0, 0.16);
+  background: var(--surface-glass);
+  border-bottom-color: var(--border-subtle);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  box-shadow: none;
 }
 
 .top-nav-left {
@@ -1040,7 +1043,8 @@ const UserAvatar = () => {
 }
 
 :root[data-theme="dark"] .app-sider {
-  background: rgba(17, 22, 34, 0.62);
+  background: var(--surface-card);
+  border-right: 1px solid var(--border-subtle);
 }
 
 .sider-inner {
@@ -1062,7 +1066,7 @@ const UserAvatar = () => {
   overflow-x: hidden;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: rgba(144, 147, 153, 0.05) transparent;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
   transition: scrollbar-color 180ms ease-out;
 }
 
@@ -1076,7 +1080,7 @@ const UserAvatar = () => {
 }
 
 .sider-nav-groups::-webkit-scrollbar-thumb {
-  background-color: rgba(144, 147, 153, 0.05);
+  background-color: var(--scrollbar-thumb);
   border: 1px solid transparent;
   border-radius: 999px;
   background-clip: padding-box;
@@ -1084,15 +1088,15 @@ const UserAvatar = () => {
 }
 
 .app-sider:hover .sider-nav-groups {
-  scrollbar-color: rgba(144, 147, 153, 0.3) transparent;
+  scrollbar-color: var(--scrollbar-thumb-hover) transparent;
 }
 
 .app-sider:hover .sider-nav-groups::-webkit-scrollbar-thumb {
-  background-color: rgba(144, 147, 153, 0.3);
+  background-color: var(--scrollbar-thumb-hover);
 }
 
 .app-sider:hover .sider-nav-groups::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(144, 147, 153, 0.5);
+  background-color: var(--scrollbar-thumb-active);
 }
 
 .nav-group {
@@ -1129,6 +1133,10 @@ const UserAvatar = () => {
   font-weight: 500;
   position: relative;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--arco-primary) 16%, transparent);
+}
+
+:root[data-theme="dark"] .nav-item--active {
+  box-shadow: inset 0 0 0 1px var(--border-focus), var(--brand-glow);
 }
 
 .nav-item--active:hover {

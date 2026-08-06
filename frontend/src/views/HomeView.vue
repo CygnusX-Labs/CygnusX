@@ -22,6 +22,7 @@ import {
   resolveHomeQuickEntryIcon,
 } from '@/config/homeQuickEntries'
 import { isFestivalEffectsEnabled } from '@/utils/interfacePreferences'
+import { displayName as getDisplayName } from '@/utils/displayName'
 
 // 默认文案兜底：API 拉取失败时保证首页仍可正常渲染
 const DEFAULT_CONTENT: SiteContent = {
@@ -47,7 +48,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 // 展示名：优先昵称，未设置或为空则降级为用户名
-const displayName = computed(() => authStore.user?.nickname || authStore.user?.username || '')
+const displayName = computed(() => getDisplayName(authStore.user))
 const isAdmin = computed(() => authStore.user?.role === 'admin')
 
 // 根据当前时段返回问候语

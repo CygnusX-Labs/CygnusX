@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NIcon, NTooltip, NPopover, useMessage, NTag } from 'naive-ui'
+import { NButton, NIcon, NTooltip, NPopover, NDropdown, NInput, useMessage, NTag } from 'naive-ui'
 import {
   ArrowUpOutline,
   AttachOutline,
   GlobeOutline,
   TerminalOutline,
   SparklesOutline,
+  FlashOutline,
   TrashOutline,
   PlayOutline,
   RefreshOutline,
@@ -15,6 +16,7 @@ import {
   ExtensionPuzzleOutline,
   DocumentTextOutline,
   HammerOutline,
+  EllipsisHorizontalOutline,
 } from '@vicons/ionicons5'
 import SlashCommandMenu from './SlashCommandMenu.vue'
 import MentionMenu from './MentionMenu.vue'
@@ -26,7 +28,6 @@ import { useSiteConfigStore } from '@/stores/site-config'
 import { useAgentHubStore } from '@/stores/agentHub'
 import { useAuthStore } from '@/stores/auth'
 import { useModulesStore } from '@/stores/modules'
-import { matchWorkbenchIntent } from '@/config/aiIntents'
 import apiClient from '@/api/client'
 import type { DataFile } from '@/types'
 import type { AgentTemplate, SkillItem } from '@/types/agent'
@@ -40,6 +41,14 @@ interface Props {
   isStreaming?: boolean
   /** 是否已暂停 */
   isPaused?: boolean
+  /** 是否显示会话级超频模式开关 */
+  showOverdriveControl?: boolean
+  /** 当前超频模式状态 */
+  overdriveEnabled?: boolean
+  /** 是否显示进入工作台的入口 */
+  showWorkbenchControl?: boolean
+  /** 工作台会话正在创建中 */
+  workbenchLoading?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -48,6 +57,10 @@ const props = withDefaults(defineProps<Props>(), {
   disabled: false,
   isStreaming: false,
   isPaused: false,
+  showOverdriveControl: false,
+  overdriveEnabled: false,
+  showWorkbenchControl: false,
+  workbenchLoading: false,
 })
 
 const emit = defineEmits<{
@@ -58,7 +71,6 @@ const emit = defineEmits<{
       attachments?: FileAttachment[]
       enableWebSearch?: boolean
       enableCodeExecution?: boolean
-      workbenchIntent?: boolean
       /** @ 显式指定的智能体（本条消息转交给该专家回答） */
       explicitAgentId?: string
       /** @ 挂载到本次对话的技能名 */
@@ -72,6 +84,8 @@ const emit = defineEmits<{
   pause: []
   resume: []
   regenerate: []
+  toggleOverdrive: []
+  enterWorkbench: []
 }>()
 
 const chatStore = useChatStore()
@@ -82,15 +96,32 @@ const modulesStore = useModulesStore()
 const message = useMessage()
 const router = useRouter()
 
-const textareaRef = ref<HTMLTextAreaElement>()
+const inputWrapperRef = ref<HTMLElement>()
 const fileInputRef = ref<HTMLInputElement>()
-const isFocused = ref(false)
+const isComposing = ref(false)
 const showSlashMenu = ref(false)
 const slashQuery = ref('')
 const slashMenuRef = ref<InstanceType<typeof SlashCommandMenu>>()
 const showClearConfirm = ref(false)
 const attachments = ref<FileAttachment[]>([])
 const uploading = ref(false)
+const enableCodeExecution = ref(false)
+
+function getTextareaElement() {
+  return inputWrapperRef.value?.querySelector<HTMLTextAreaElement>('textarea')
+}
+
+/** 供页面侧在快捷任务预填后聚焦输入框 */
+function focus() {
+  getTextareaElement()?.focus()
+}
+defineExpose({ focus })
+
+// 「更多」菜单：低频长文字操作收纳于此（fontend.md §36.3）
+const moreMenuOptions = [{ label: '创建协作 Case', key: 'agentteams-case' }]
+function handleMoreSelect(key: string) {
+  if (key === 'agentteams-case') insertAgentTeamsCaseTemplate()
+}
 
 // ===== @ 引用状态 =====
 const showMentionMenu = ref(false)
@@ -149,17 +180,9 @@ watch(
 )
 
 watch(localValue, () => {
-  nextTick(autoResize)
   detectSlashCommand()
   detectMention()
 })
-
-function autoResize() {
-  const el = textareaRef.value
-  if (!el) return
-  el.style.height = 'auto'
-  el.style.height = Math.min(el.scrollHeight, 200) + 'px'
-}
 
 const canSend = computed(
   () =>
@@ -169,7 +192,16 @@ const canSend = computed(
     pendingSkills.value.length > 0,
 )
 
+const canClear = computed(
+  () =>
+    localValue.value.trim().length > 0 ||
+    attachments.value.length > 0 ||
+    pendingAgent.value !== null ||
+    pendingSkills.value.length > 0,
+)
+
 function handleKeydown(e: KeyboardEvent) {
+  if (isComposing.value || e.isComposing) return
   if (showMcpMenu.value && e.key === 'Escape') {
     e.preventDefault()
     showMcpMenu.value = false
@@ -262,7 +294,7 @@ function detectSlashCommand() {
 
 /** 提取光标处活跃的 @ 查询词；不在 @ 上下文中返回 null */
 function readMentionQuery(): string | null {
-  const el = textareaRef.value
+  const el = getTextareaElement()
   const text = localValue.value
   const caret = el?.selectionStart ?? text.length
   const before = text.slice(0, caret)
@@ -428,7 +460,7 @@ function formatBytes(size: number): string {
 
 /** 把光标处活跃的 @查询词 替换为 @名称 + 空格，返回是否替换成功 */
 function replaceMentionToken(name: string, appendSpace = true): void {
-  const el = textareaRef.value
+  const el = getTextareaElement()
   const text = localValue.value
   const caret = el?.selectionStart ?? text.length
   const before = text.slice(0, caret).replace(/@([^@\n]*)$/, `@${name}${appendSpace ? ' ' : ''}`)
@@ -492,7 +524,7 @@ function handleSlashSelect(command: string) {
   lines[lines.length - 1] = command + ' '
   localValue.value = lines.join('\n')
   showSlashMenu.value = false
-  nextTick(() => textareaRef.value?.focus())
+  nextTick(() => getTextareaElement()?.focus())
 }
 
 /**
@@ -503,7 +535,7 @@ function handleSlashSelect(command: string) {
 function handleSlashSelectAgent(agent: AgentTemplate) {
   pushRecent('slash', `agent-${agent.id}`)
   pendingAgent.value = agent
-  const el = textareaRef.value
+  const el = getTextareaElement()
   const text = localValue.value
   const caret = el?.selectionStart ?? text.length
   const beforeCaret = text.slice(0, caret)
@@ -530,16 +562,10 @@ function handleSend() {
     pendingSkills.value.length > 0
   if (!hasPayload || props.disabled) return
 
-  // Feature 5: 意图匹配 → 自动切换工作台模式
-  const workbenchIntent = matchWorkbenchIntent(content)
-  if (workbenchIntent) {
-    message.info('已为您切换至工作台模式，便于跟踪任务进度')
-  }
-
   emit('send', content, {
     attachments: attachments.value.length ? [...attachments.value] : undefined,
     enableWebSearch: chatStore.enableWebSearch,
-    workbenchIntent,
+    enableCodeExecution: enableCodeExecution.value,
     explicitAgentId: pendingAgent.value?.id,
     skillNames: pendingSkills.value.length ? pendingSkills.value.map((s) => s.name) : undefined,
     mcpMode: mcpMode.value,
@@ -551,11 +577,7 @@ function handleSend() {
   pendingSkills.value = []
   showMentionMenu.value = false
   showMcpMenu.value = false
-  nextTick(() => {
-    if (textareaRef.value) {
-      textareaRef.value.style.height = 'auto'
-    }
-  })
+  nextTick(() => getTextareaElement()?.focus())
 }
 
 function handleStop() {
@@ -579,7 +601,6 @@ function handleBlur(e: FocusEvent) {
   }
   if (blurTimer) clearTimeout(blurTimer)
   blurTimer = setTimeout(() => {
-    isFocused.value = false
     showSlashMenu.value = false
     showMentionMenu.value = false
   }, 200)
@@ -642,25 +663,37 @@ async function handleWebSearchToggle() {
   void router.push('/admin/ai-config/resources')
 }
 
-function handleSandboxStub() {
-  message.info('代码执行请在生成代码后点击代码块“运行”按钮')
+function handleWorkspaceReference() {
+  const textarea = getTextareaElement()
+  const caret = textarea?.selectionStart ?? localValue.value.length
+  const before = localValue.value.slice(0, caret)
+  const after = localValue.value.slice(caret)
+  const prefix = before && !/\s$/.test(before) ? ' ' : ''
+  const nextValue = `${before}${prefix}@${after}`
+
+  localValue.value = nextValue
+  nextTick(() => {
+    const nextCaret = caret + prefix.length + 1
+    textarea?.focus()
+    textarea?.setSelectionRange(nextCaret, nextCaret)
+  })
 }
 
 function insertAgentTeamsCaseTemplate() {
   const template = '请将以下工作转为协作 Case：\n- 交付目标：\n- 项目 ID：\n- 流程 ID：\n- 需要的审批/验收：\n'
   localValue.value = localValue.value.trim() ? `${localValue.value}\n\n${template}` : template
   nextTick(() => {
-    textareaRef.value?.focus()
-    autoResize()
+    getTextareaElement()?.focus()
   })
 }
 
 function handleClearConfirm() {
   localValue.value = ''
+  attachments.value = []
+  pendingAgent.value = null
+  pendingSkills.value = []
   showClearConfirm.value = false
-  nextTick(() => {
-    if (textareaRef.value) textareaRef.value.style.height = 'auto'
-  })
+  nextTick(() => getTextareaElement()?.focus())
 }
 
 onMounted(() => {
@@ -686,346 +719,340 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
 </script>
 
 <template>
-  <div
-    class="kimi-chat-input"
-    :class="{
-      focused: isFocused,
-      disabled,
-      'deep-thinking': chatStore.deepThinking,
-      'popup-open': showSlashMenu || showMentionMenu || showMcpMenu,
-    }"
-  >
-    <Transition name="composer-menu" appear>
-      <SlashCommandMenu
-        v-if="showSlashMenu"
-        ref="slashMenuRef"
-        :query="slashQuery"
-        :agents="agentHub.activeAgents"
-        @select="handleSlashSelect"
-        @select-agent="handleSlashSelectAgent"
-        @close="showSlashMenu = false"
-      />
-    </Transition>
-
-    <Transition name="composer-menu" appear>
-      <McpSelectionMenu
-        v-if="showMcpMenu"
-        ref="mcpMenuRef"
-        :mode="mcpMode"
-        :extra-servers="extraMcpServers"
-        @update="handleMcpSelection"
-        @close="showMcpMenu = false"
-      />
-    </Transition>
-
-    <Transition name="composer-menu" appear>
-      <MentionMenu
-        v-if="showMentionMenu"
-        :items="mentionItems"
-        :active-index="mentionActiveIndex"
-        :loading="mentionLoading"
-        :state="mentionState"
-        :query="mentionQuery"
-        @select="selectMention"
-        @hover="mentionActiveIndex = $event"
-          @retry="searchWorkspaceFiles"
-        @close="showMentionMenu = false"
-      />
-    </Transition>
-
-    <div class="input-wrapper">
-      <textarea
-        ref="textareaRef"
-        v-model="localValue"
-        class="chat-textarea"
-        :placeholder="placeholder"
-        :disabled="disabled"
-        rows="1"
-        @focus="isFocused = true"
-        @blur="handleBlur"
-        @keydown="handleKeydown"
-      />
-    </div>
-
-    <!-- accept 镜像后端 _CHAT_UPLOAD_ALLOWED_SUFFIXES（含建树格式），仅作系统选择框引导，真正拦截仍以后端校验为准 -->
-    <input
-      ref="fileInputRef"
-      type="file"
-      multiple
-      accept=".png,.jpg,.jpeg,.gif,.svg,.webp,.bmp,.ico,.pdf,.txt,.md,.doc,.docx,.csv,.tsv,.json,.yaml,.yml,.fastq,.fq,.fasta,.fa,.fna,.faa,.ffn,.bam,.cram,.sam,.vcf,.gff,.gff3,.gtf,.bed,.h5ad,.rds,.gz,.zip,.tar,.bz2,.xz,.nwk,.newick,.nhx,.nh,.tree,.tre,.trees,.dnd,.nex,.nexus,.iqtree,.treefile,.contree,.bionj,.mldist,.ufboot,.log,.aln,.phy,.phylip,.sto"
-      style="display: none"
-      @change="handleFileChange"
-    />
-
+  <div class="ai-composer-shell">
     <div
-      v-if="attachments.length || pendingAgent || pendingSkills.length"
-      class="ref-bar"
+      class="kimi-chat-input"
+      :class="{
+        disabled,
+        'popup-open': showSlashMenu || showMentionMenu || showMcpMenu,
+      }"
     >
-      <!-- @ 指定的智能体 -->
-      <NTag
-        v-if="pendingAgent"
-        size="small"
-        round
-        closable
-        class="ref-chip ref-agent"
-        @close="removePendingAgent"
-      >
-        <template #icon>
-          <n-icon><PersonOutline /></n-icon>
-        </template>
-        {{ pendingAgent.name }}
-      </NTag>
+      <Transition name="composer-menu" appear>
+        <SlashCommandMenu
+          v-if="showSlashMenu"
+          ref="slashMenuRef"
+          :query="slashQuery"
+          :agents="agentHub.activeAgents"
+          @select="handleSlashSelect"
+          @select-agent="handleSlashSelectAgent"
+          @close="showSlashMenu = false"
+        />
+      </Transition>
 
-      <!-- @ 挂载的技能 -->
-      <NTag
-        v-for="(sk, idx) in pendingSkills"
-        :key="`skill-${sk.id}`"
-        size="small"
-        round
-        closable
-        class="ref-chip ref-skill"
-        @close="removePendingSkill(idx)"
-      >
-        <template #icon>
-          <n-icon><ExtensionPuzzleOutline /></n-icon>
-        </template>
-        {{ sk.name }}
-      </NTag>
+      <Transition name="composer-menu" appear>
+        <McpSelectionMenu
+          v-if="showMcpMenu"
+          ref="mcpMenuRef"
+          :mode="mcpMode"
+          :extra-servers="extraMcpServers"
+          @update="handleMcpSelection"
+          @close="showMcpMenu = false"
+        />
+      </Transition>
 
-      <!-- 附件 / @ 引用的工作区文件 -->
-      <NTag
-        v-for="(att, idx) in attachments"
-        :key="`att-${idx}`"
-        size="small"
-        round
-        closable
-        class="ref-chip"
-        :class="{ 'ref-file': att.source === 'workspace' }"
-        :disabled="uploading"
-        @close="removeAttachment(idx)"
-      >
-        <template v-if="att.source === 'workspace'" #icon>
-          <n-icon><DocumentTextOutline /></n-icon>
-        </template>
-        {{ att.name }}
-      </NTag>
-    </div>
+      <Transition name="composer-menu" appear>
+        <MentionMenu
+          v-if="showMentionMenu"
+          :items="mentionItems"
+          :active-index="mentionActiveIndex"
+          :loading="mentionLoading"
+          :state="mentionState"
+          :query="mentionQuery"
+          @select="selectMention"
+          @hover="mentionActiveIndex = $event"
+          @retry="searchWorkspaceFiles"
+          @close="showMentionMenu = false"
+        />
+      </Transition>
 
-    <div class="input-toolbar">
-      <div class="toolbar-left">
-        <!-- 附件上传 -->
-        <n-tooltip trigger="hover">
+      <div v-if="attachments.length || pendingAgent || pendingSkills.length" class="ref-bar">
+        <NTag
+          v-if="pendingAgent"
+          size="small"
+          round
+          closable
+          class="ref-chip ref-agent"
+          :title="pendingAgent.name"
+          @close="removePendingAgent"
+        >
+          <template #icon><n-icon><PersonOutline /></n-icon></template>
+          {{ pendingAgent.name }}
+        </NTag>
+
+        <NTag
+          v-for="(sk, idx) in pendingSkills"
+          :key="`skill-${sk.id}`"
+          size="small"
+          round
+          closable
+          class="ref-chip ref-skill"
+          :title="sk.name"
+          @close="removePendingSkill(idx)"
+        >
+          <template #icon><n-icon><ExtensionPuzzleOutline /></n-icon></template>
+          {{ sk.name }}
+        </NTag>
+
+        <n-tooltip v-for="(att, idx) in attachments" :key="`att-${idx}`" trigger="hover">
           <template #trigger>
-            <n-button text class="toolbar-btn upload-btn" :loading="uploading" @click="handleAttach">
-              <n-icon size="18"><AttachOutline /></n-icon>
-            </n-button>
-          </template>
-          上传文件
-        </n-tooltip>
-
-        <!-- 联网搜索 -->
-        <n-tooltip trigger="hover">
-          <template #trigger>
-            <n-button
-              text
-              class="toolbar-btn web-search-btn"
-              :class="{ active: chatStore.enableWebSearch }"
-              @click="handleWebSearchToggle"
+            <NTag
+              size="small"
+              round
+              closable
+              class="ref-chip"
+              :class="{ 'ref-file': att.source === 'workspace' }"
+              :disabled="uploading"
+              @close="removeAttachment(idx)"
             >
-              <n-icon size="18"><GlobeOutline /></n-icon>
-            </n-button>
+              <template v-if="att.source === 'workspace'" #icon><n-icon><DocumentTextOutline /></n-icon></template>
+              {{ att.name }}
+            </NTag>
           </template>
-          {{ chatStore.enableWebSearch ? '关闭联网搜索' : '开启联网搜索' }}
-        </n-tooltip>
-
-        <!-- 代码执行提示 -->
-        <n-tooltip trigger="hover">
-          <template #trigger>
-            <n-button text class="toolbar-btn sandbox-btn" @click="handleSandboxStub">
-              <n-icon size="18"><TerminalOutline /></n-icon>
-            </n-button>
-          </template>
-          代码执行
-        </n-tooltip>
-
-        <n-tooltip v-if="!agentTeamsLocked" trigger="hover">
-          <template #trigger>
-            <n-button
-              text
-              class="toolbar-btn case-btn"
-              aria-label="转为协作 Case"
-              @click="insertAgentTeamsCaseTemplate"
-            >
-              <span class="btn-label">转为协作 Case</span>
-            </n-button>
-          </template>
-          插入协作 Case 信息模板；发送后仍需确认创建
-        </n-tooltip>
-
-        <n-tooltip trigger="hover">
-          <template #trigger>
-            <n-button
-              text
-              class="toolbar-btn mcp-toolbar-trigger"
-              :class="{ active: mcpButtonActive }"
-              @click="showMcpMenu = !showMcpMenu"
-            >
-              <span class="mcp-button-icon">
-                <n-icon size="18"><HammerOutline /></n-icon>
-                <span v-if="mcpMode === 'manual' && extraMcpCount" class="mcp-count-badge">+{{ extraMcpCount }}</span>
-              </span>
-            </n-button>
-          </template>
-          MCP 工具：{{ mcpMode === 'off' ? '关闭' : mcpMode === 'manual' ? '手动选择' : '自动' }}
-        </n-tooltip>
-
-        <!-- 深度思考 -->
-        <n-tooltip trigger="hover">
-          <template #trigger>
-            <n-button
-              text
-              class="toolbar-btn deep-thinking-btn"
-              :class="{ active: chatStore.deepThinking }"
-              @click="chatStore.toggleDeepThinking()"
-            >
-              <n-icon size="18"><SparklesOutline /></n-icon>
-              <span class="btn-label">深度思考</span>
-            </n-button>
-          </template>
-          {{ chatStore.deepThinking ? '关闭深度思考' : '开启深度思考' }}
+          {{ att.name }}
         </n-tooltip>
       </div>
 
-      <div class="toolbar-right">
-        <!-- 清空 -->
-        <n-popover v-model:show="showClearConfirm" trigger="click" placement="top-end" :width="200">
-          <template #trigger>
+      <div ref="inputWrapperRef" class="input-wrapper">
+        <n-input
+          v-model:value="localValue"
+          type="textarea"
+          class="chat-textarea"
+          :placeholder="placeholder"
+          :disabled="disabled"
+          :bordered="false"
+          :autosize="{ minRows: 1, maxRows: 8 }"
+          @blur="handleBlur"
+          @keydown="handleKeydown"
+          @compositionstart="isComposing = true"
+          @compositionend="isComposing = false"
+        />
+      </div>
+
+      <input
+        ref="fileInputRef"
+        type="file"
+        multiple
+        accept=".png,.jpg,.jpeg,.gif,.svg,.webp,.bmp,.ico,.pdf,.txt,.md,.doc,.docx,.csv,.tsv,.json,.yaml,.yml,.fastq,.fq,.fasta,.fa,.fna,.faa,.ffn,.bam,.cram,.sam,.vcf,.gff,.gff3,.gtf,.bed,.h5ad,.rds,.gz,.zip,.tar,.bz2,.xz,.nwk,.newick,.nhx,.nh,.tree,.tre,.trees,.dnd,.nex,.nexus,.iqtree,.treefile,.contree,.bionj,.mldist,.ufboot,.log,.aln,.phy,.phylip,.sto"
+        style="display: none"
+        @change="handleFileChange"
+      />
+
+      <div class="input-toolbar" role="group" aria-label="消息操作">
+        <div class="toolbar-left" aria-label="上下文操作">
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-button text class="toolbar-btn" :loading="uploading" aria-label="添加附件" @click="handleAttach">
+                <n-icon size="18"><AttachOutline /></n-icon>
+              </n-button>
+            </template>
+            添加附件
+          </n-tooltip>
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-button text class="toolbar-btn" aria-label="引用工作区文件" @click="handleWorkspaceReference">
+                <n-icon size="18"><DocumentTextOutline /></n-icon>
+              </n-button>
+            </template>
+            引用工作区文件
+          </n-tooltip>
+        </div>
+
+        <div class="toolbar-center" aria-label="工具和消息模式">
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-button
+                text
+                class="toolbar-btn"
+                :class="{ active: chatStore.enableWebSearch }"
+                :aria-label="chatStore.enableWebSearch ? '关闭联网搜索' : '开启联网搜索'"
+                :aria-pressed="chatStore.enableWebSearch"
+                @click="handleWebSearchToggle"
+              >
+                <n-icon size="18"><GlobeOutline /></n-icon>
+              </n-button>
+            </template>
+            {{ chatStore.enableWebSearch ? '关闭联网搜索' : '开启联网搜索' }}
+          </n-tooltip>
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-button
+                text
+                class="toolbar-btn"
+                :class="{ active: enableCodeExecution }"
+                :aria-label="enableCodeExecution ? '关闭终端执行' : '开启终端执行'"
+                :aria-pressed="enableCodeExecution"
+                @click="enableCodeExecution = !enableCodeExecution"
+              >
+                <n-icon size="18"><TerminalOutline /></n-icon>
+              </n-button>
+            </template>
+            {{ enableCodeExecution ? '关闭终端执行' : '开启终端执行' }}
+          </n-tooltip>
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-button
+                text
+                class="toolbar-btn mcp-toolbar-trigger"
+                :class="{ active: mcpButtonActive }"
+                :aria-label="`选择工具：${mcpMode === 'off' ? '关闭' : mcpMode === 'manual' ? '手动选择' : '自动'}`"
+                :aria-pressed="mcpButtonActive"
+                @click="showMcpMenu = !showMcpMenu"
+              >
+                <span class="mcp-button-icon">
+                  <n-icon size="18"><HammerOutline /></n-icon>
+                  <span v-if="mcpMode === 'manual' && extraMcpCount" class="mcp-count-badge">+{{ extraMcpCount }}</span>
+                </span>
+              </n-button>
+            </template>
+            MCP 工具：{{ mcpMode === 'off' ? '关闭' : mcpMode === 'manual' ? '手动选择' : '自动' }}
+          </n-tooltip>
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-button
+                text
+                class="toolbar-btn"
+                :class="{ active: chatStore.deepThinking }"
+                :aria-label="chatStore.deepThinking ? '关闭深度思考' : '开启深度思考'"
+                :aria-pressed="chatStore.deepThinking"
+                @click="chatStore.toggleDeepThinking()"
+              >
+                <n-icon size="18"><SparklesOutline /></n-icon>
+                <span class="btn-label">深度思考</span>
+              </n-button>
+            </template>
+            {{ chatStore.deepThinking ? '关闭深度思考' : '开启深度思考' }}
+          </n-tooltip>
+          <n-tooltip v-if="props.showOverdriveControl" trigger="hover">
+            <template #trigger>
+              <n-button
+                text
+                class="toolbar-btn"
+                :class="{ active: props.overdriveEnabled }"
+                :aria-label="props.overdriveEnabled ? '关闭超频模式' : '开启超频模式'"
+                :aria-pressed="props.overdriveEnabled"
+                :disabled="props.isStreaming || props.disabled"
+                @click="emit('toggleOverdrive')"
+              >
+                <n-icon size="18"><FlashOutline /></n-icon>
+                <span class="btn-label">超频模式</span>
+              </n-button>
+            </template>
+            {{ props.overdriveEnabled ? '关闭超频模式' : '开启超频模式：本轮临时组织专家协作，不创建协作 Case' }}
+          </n-tooltip>
+          <n-dropdown
+            v-if="!agentTeamsLocked"
+            trigger="click"
+            :options="moreMenuOptions"
+            @select="handleMoreSelect"
+          >
+            <n-button text class="toolbar-btn" aria-label="更多操作">
+              <n-icon size="18"><EllipsisHorizontalOutline /></n-icon>
+            </n-button>
+          </n-dropdown>
+        </div>
+
+        <div class="toolbar-right">
+          <n-popover v-if="canClear" v-model:show="showClearConfirm" trigger="click" placement="top-end" :width="200">
+            <template #trigger>
+              <n-tooltip trigger="hover">
+                <template #trigger>
+                  <n-button text class="toolbar-btn clear-btn" aria-label="清空输入">
+                    <n-icon size="18"><TrashOutline /></n-icon>
+                  </n-button>
+                </template>
+                清空输入
+              </n-tooltip>
+            </template>
+            <div class="clear-confirm">
+              <p>确认清空输入、附件和引用内容？</p>
+              <div>
+                <n-button size="small" @click="showClearConfirm = false">取消</n-button>
+                <n-button size="small" type="error" @click="handleClearConfirm">确认清空</n-button>
+              </div>
+            </div>
+          </n-popover>
+
+          <n-tooltip v-if="isStreaming" trigger="hover">
+            <template #trigger>
+              <n-button circle class="send-btn stop-btn" aria-label="停止生成" @click="handleStop">
+                <span class="stop-square" aria-hidden="true" />
+              </n-button>
+            </template>
+            停止生成
+          </n-tooltip>
+
+          <template v-else-if="isPaused">
             <n-tooltip trigger="hover">
               <template #trigger>
-                <n-button text class="toolbar-btn clear-btn" :disabled="!localValue">
-                  <n-icon size="18"><TrashOutline /></n-icon>
+                <n-button circle class="send-btn resume-btn" aria-label="继续生成" @click="handleResume">
+                  <template #icon><n-icon size="18"><PlayOutline /></n-icon></template>
                 </n-button>
               </template>
-              清空输入
+              继续生成
+            </n-tooltip>
+            <n-tooltip trigger="hover">
+              <template #trigger>
+                <n-button circle class="send-btn regenerate-btn" aria-label="重新生成" @click="handleRegenerate">
+                  <template #icon><n-icon size="18"><RefreshOutline /></n-icon></template>
+                </n-button>
+              </template>
+              重新生成
             </n-tooltip>
           </template>
-          <div style="text-align: center">
-            <p style="margin: 0 0 10px; font-size: 13px">确认清空输入框内容？</p>
-            <div style="display: flex; gap: 8px; justify-content: center">
-              <n-button size="small" @click="showClearConfirm = false">取消</n-button>
-              <n-button size="small" type="error" @click="handleClearConfirm">确认清空</n-button>
-            </div>
-          </div>
-        </n-popover>
 
-        <!-- 流式输出中：发送按钮切换为停止方块，立即中止当前请求 -->
-        <n-tooltip v-if="isStreaming" trigger="hover">
-          <template #trigger>
-            <n-button
-              circle
-              class="send-btn stop-btn"
-              aria-label="停止生成"
-              @click="handleStop"
-            >
-              <span class="stop-square" aria-hidden="true" />
-            </n-button>
-          </template>
-          停止生成
-        </n-tooltip>
-
-        <!-- 已暂停：继续 + 重新生成 -->
-        <template v-else-if="isPaused">
-          <n-tooltip trigger="hover">
-            <template #trigger>
-              <n-button circle class="send-btn resume-btn" @click="handleResume">
-                <template #icon>
-                  <n-icon size="18"><PlayOutline /></n-icon>
-                </template>
-              </n-button>
-            </template>
-            继续生成
-          </n-tooltip>
-          <n-tooltip trigger="hover">
-            <template #trigger>
-              <n-button circle class="send-btn regenerate-btn" @click="handleRegenerate">
-                <template #icon>
-                  <n-icon size="18"><RefreshOutline /></n-icon>
-                </template>
-              </n-button>
-            </template>
-            重新生成
-          </n-tooltip>
-        </template>
-
-        <!-- 默认：发送按钮 -->
-        <n-button
-          v-else
-          circle
-          class="send-btn"
-          :class="{ active: canSend }"
-          :disabled="!canSend || disabled"
-          @click="handleSend"
-        >
-          <template #icon>
-            <n-icon size="18"><ArrowUpOutline /></n-icon>
-          </template>
-        </n-button>
+          <n-button
+            v-else
+            circle
+            class="send-btn"
+            :class="{ active: canSend }"
+            :type="canSend ? 'primary' : 'default'"
+            :disabled="!canSend || disabled"
+            aria-label="发送消息"
+            @click="handleSend"
+          >
+            <template #icon><n-icon size="18"><ArrowUpOutline /></n-icon></template>
+          </n-button>
+        </div>
       </div>
     </div>
-
-    <div class="input-hint">
-      <template v-if="isPaused">
-        <span class="paused-hint">生成已暂停</span>
-      </template>
-      <template v-else>
-        {{ siteConfigStore.aiInputHint }}
-      </template>
-    </div>
-
+    <p class="ai-composer__disclaimer">
+      <span v-if="isPaused" class="paused-hint" role="status">生成已暂停。</span>
+      {{ siteConfigStore.aiInputHint }}
+    </p>
   </div>
 </template>
 
 <style scoped lang="scss">
+.ai-composer-shell {
+  width: 100%;
+  min-width: 0;
+}
+
 .kimi-chat-input {
   position: relative;
-  z-index: 20;
-  isolation: isolate;
-  background: var(--chat-input-bg);
-  border: 1px solid var(--chat-input-border);
-  border-radius: var(--chat-radius-xl, 20px);
-  padding: 12px 16px;
+  min-width: 0;
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-border);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+  padding: var(--space-md) var(--space-lg);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 
-  &.focused {
-    border-color: var(--stardust-blue);
-    box-shadow: 0 0 0 3px rgba(46, 91, 255, 0.12);
-  }
-
-  &.deep-thinking {
-    border-color: var(--stardust-blue);
-    box-shadow: 0 0 0 3px rgba(46, 91, 255, 0.12);
+  &:focus-within {
+    border-color: var(--arco-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--arco-primary) 18%, transparent);
   }
 
   &.disabled {
-    opacity: 0.6;
-    pointer-events: none;
+    opacity: 0.72;
   }
 
   .input-wrapper {
-    position: relative;
-    z-index: 1;
-    margin-bottom: 8px;
-  }
-
-  .ref-bar,
-  .input-toolbar,
-  .input-hint {
-    position: relative;
-    z-index: 1;
+    min-height: 0;
   }
 
   &.popup-open {
-    border-radius: var(--chat-radius-xl, 20px);
+    border-radius: var(--radius-lg);
   }
 
   &.popup-open :deep(.slash-command-menu),
@@ -1035,11 +1062,11 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
     left: auto;
     right: auto;
     bottom: auto;
-    width: calc(100% + 32px);
-    margin: -12px -16px 12px;
+    width: calc(100% + (var(--space-lg) * 2));
+    margin: calc(var(--space-md) * -1) calc(var(--space-lg) * -1) var(--space-md);
     border: none;
-    border-bottom: 1px solid var(--chat-input-border);
-    border-radius: var(--chat-radius-xl, 20px) var(--chat-radius-xl, 20px) 0 0;
+    border-bottom: 1px solid var(--neutral-border);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     box-shadow: none;
   }
 
@@ -1058,100 +1085,111 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
   .ref-bar {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-    margin-bottom: 10px;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-sm);
 
     .ref-chip {
       max-width: 240px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .ref-file {
-      color: var(--arco-primary, #4c6fff);
-      background: var(--arco-primary-light, rgba(76, 111, 255, 0.12));
+      color: var(--arco-primary);
+      background: var(--arco-primary-light);
     }
 
     .ref-agent {
-      color: var(--icon-visualization, #8b5cf6);
-      background: var(--icon-purple-bg, rgba(139, 92, 246, 0.12));
+      color: var(--neutral-text-1);
+      background: var(--neutral-hover);
     }
 
     .ref-skill {
-      color: #059669;
-      background: var(--icon-green-bg, rgba(5, 150, 105, 0.12));
+      color: var(--neutral-text-1);
+      background: var(--neutral-hover);
     }
   }
 
   .chat-textarea {
     width: 100%;
-    min-height: 24px;
-    max-height: 200px;
     background: transparent;
-    border: none;
-    outline: none;
-    color: var(--chat-text-primary);
-    font-size: 15px;
-    line-height: 1.6;
-    resize: none;
-    font-family: inherit;
 
-    &::placeholder {
-      color: var(--chat-text-muted);
+    :deep(.n-input-wrapper) {
+      padding: 0;
+      background: transparent;
+      border: 0;
+      box-shadow: none;
     }
 
-    &::-webkit-scrollbar {
-      width: 4px;
+    :deep(.n-input-wrapper:hover),
+    :deep(.n-input.n-input--focus .n-input-wrapper) {
+      box-shadow: none;
     }
 
-    &::-webkit-scrollbar-thumb {
-      background: var(--chat-border);
-      border-radius: 2px;
+    :deep(.n-input__textarea-el) {
+      max-height: 200px;
+      color: var(--neutral-text-1);
+      font-family: inherit;
+      font-size: 15px;
+      line-height: 24px;
+      resize: none;
+    }
+
+    :deep(.n-input__textarea-el::placeholder) {
+      color: var(--neutral-text-3);
     }
   }
 
   .input-toolbar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    border-top: 1px solid var(--chat-border);
-    padding-top: 8px;
+    flex-wrap: wrap;
+    gap: var(--space-xs) var(--space-sm);
+    border-top: 1px solid var(--neutral-border);
+    padding-top: var(--space-sm);
 
     .toolbar-left,
+    .toolbar-center,
     .toolbar-right {
       display: flex;
       align-items: center;
-      gap: 4px;
+      flex-wrap: wrap;
+      gap: var(--space-xs);
     }
 
+    .toolbar-center { flex: 1 1 auto; }
+    .toolbar-right { margin-left: auto; flex: 0 0 auto; }
+
     .toolbar-btn {
-      color: var(--chat-text-secondary);
-      padding: 4px 8px;
+      min-width: 40px;
+      min-height: 40px;
+      padding: 0 10px;
+      color: var(--neutral-text-2);
+      background: transparent;
+      border: 1px solid transparent;
       border-radius: 8px;
-      transition: all 0.15s ease;
+      box-shadow: none;
+      transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
 
       &:hover {
-        color: var(--chat-text-primary);
-        background: var(--chat-surface-hover);
+        color: var(--neutral-text-1);
+        background: var(--neutral-hover);
       }
 
       &.active {
-        color: var(--stardust-blue);
-        background: rgba(46, 91, 255, 0.1);
-        border: 1px solid rgba(46, 91, 255, 0.35);
+        color: var(--arco-primary);
+        background: var(--arco-primary-light);
+        border-color: color-mix(in srgb, var(--arco-primary) 30%, transparent);
       }
 
       .btn-label {
-        margin-left: 4px;
+        margin-left: var(--space-xs);
         font-size: 13px;
       }
 
-      &.deep-thinking-btn.active {
-        color: var(--stardust-blue);
-        background: rgba(46, 91, 255, 0.1);
-        border: 1px solid rgba(46, 91, 255, 0.35);
-      }
-
       &.clear-btn:hover {
-        color: var(--chat-error);
+        color: var(--arco-danger);
       }
     }
 
@@ -1170,82 +1208,123 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
       right: -10px;
       min-width: 15px;
       padding: 0 3px;
-      color: #fff;
-      background: var(--chat-accent);
+      color: var(--text-on-primary);
+      background: var(--arco-primary);
       border-radius: 8px;
       font-size: 9px;
       line-height: 15px;
       text-align: center;
     }
 
-    .upload-btn { color: var(--stardust-purple); }
-    .web-search-btn { color: #0891B2; }
-    .sandbox-btn { color: #64748B; }
-    .case-btn { color: var(--stardust-purple); }
-
     .send-btn {
-      width: 32px;
-      height: 32px;
-      color: var(--chat-text-muted);
-      background: var(--chat-surface);
-      transition: all 0.2s ease;
+      width: 40px;
+      height: 40px;
+      color: var(--neutral-text-3);
+      background: var(--neutral-hover);
+      border: 1px solid var(--neutral-border);
+      box-shadow: none;
+      transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
 
       &:hover,
       &.active {
-        color: #fff;
-        background: var(--stardust-gradient);
-        box-shadow: 0 4px 12px rgba(46, 91, 255, 0.35);
+        color: var(--text-on-primary);
+        background: var(--arco-primary);
+        border-color: var(--arco-primary);
+        box-shadow: none;
       }
 
       &:disabled {
-        color: #fff;
-        background: #d4dbf5;
+        color: var(--neutral-text-3);
+        background: var(--neutral-hover);
+        border-color: var(--neutral-border);
         opacity: 1;
         cursor: not-allowed;
       }
 
       &.stop-btn {
-        color: #fff;
-        background: var(--stardust-gradient);
+        color: var(--text-on-primary);
+        background: var(--arco-primary);
+        border-color: var(--arco-primary);
       }
 
       .stop-square {
         display: block;
         width: 11px;
         height: 11px;
-        background: var(--text-on-primary, #fff);
+        background: var(--text-on-primary);
         border-radius: 2px;
       }
 
       &.resume-btn {
-        color: #fff;
-        background: var(--arco-success, #00B42A);
+        color: var(--text-on-primary);
+        background: var(--arco-success);
+        border-color: var(--arco-success);
       }
 
       &.regenerate-btn {
-        color: var(--chat-text-secondary);
-        background: var(--chat-surface);
+        color: var(--neutral-text-2);
+        background: var(--neutral-hover);
 
         &:hover {
-          color: #fff;
-          background: var(--brand-gradient);
+          color: var(--text-on-primary);
+          background: var(--arco-primary);
+          border-color: var(--arco-primary);
         }
       }
     }
   }
+}
 
-  .input-hint {
-    text-align: center;
-    font-size: 12px;
-    color: var(--chat-text-muted);
-    margin-top: 8px;
-    line-height: 1.4;
-  }
+.clear-confirm {
+  text-align: center;
 
-  .paused-hint {
-    color: var(--stardust-blue);
-    font-weight: 500;
+  p { margin: 0 0 var(--space-sm); font-size: 13px; }
+  div { display: flex; justify-content: center; gap: var(--space-sm); }
+}
+
+.ai-composer__disclaimer {
+  margin: var(--space-xs) 0 0;
+  color: var(--neutral-text-3);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.paused-hint {
+  margin-right: var(--space-xs);
+  color: var(--arco-primary);
+  font-weight: 500;
+}
+
+@media (max-width: 640px) {
+  .kimi-chat-input { padding: var(--space-sm) var(--space-md); }
+  .input-toolbar { align-items: flex-start; }
+  .toolbar-center { flex-basis: 100%; order: 3; }
+  .toolbar-right { margin-left: auto; }
+  .toolbar-btn .btn-label { display: none; }
+  .ref-bar .ref-chip { max-width: min(220px, calc(100vw - 112px)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kimi-chat-input,
+  .input-toolbar .toolbar-btn,
+  .input-toolbar .send-btn,
+  :deep(.composer-menu-enter-active),
+  :deep(.composer-menu-leave-active) {
+    transition: none;
   }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .kimi-chat-input:focus-within {
+    border-width: 2px;
+    box-shadow: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .kimi-chat-input { border-width: 2px; }
+  .kimi-chat-input:focus-within { border-width: 3px; box-shadow: none; }
 }
 
 </style>

@@ -38,7 +38,7 @@ const DEFAULT_PLATFORM: PlatformContent = {
   github: '',
 }
 const DEFAULT_AI_ASSISTANT: AIAssistantContent = {
-  input_hint: '内容由 AI 生成，请仔细甄别',
+  input_hint: '星尘由硅基演算，请以你的判断为准。',
 }
 
 export const useSiteConfigStore = defineStore('site-config', () => {

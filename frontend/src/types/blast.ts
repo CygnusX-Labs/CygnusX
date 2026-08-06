@@ -155,6 +155,8 @@ export interface BlastTaskListItem {
   user_id?: string
   /** 所属用户名（后端按 user_id 回填，缺失时前端降级展示 user_id） */
   username?: string
+  /** 所属用户昵称（设置后优先于 username 展示） */
+  nickname?: string | null
   db_id: string
   db_name: string
   program: string

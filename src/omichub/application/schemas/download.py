@@ -72,9 +72,9 @@ class DownloadRequest(OmicsHubBaseSchema):
     object_uri: str = Field(default="", description="对象 URI，如 oss://bucket/path")
     recursive: bool = Field(default=True, description="云存储目录是否递归下载")
 
-    # 下载目标目录（相对 inbox；空串默认写入 inbox/downloads）
+    # 下载目标目录（相对用户根；空串默认写入顶层 downloads/）
     target_directory: str = Field(
-        default="", max_length=500, description="下载到用户目录下的指定子目录"
+        default="", max_length=500, description="下载到用户目录下的指定子目录（相对用户根）"
     )
     dry_run: bool = Field(
         default=False, description="模拟下载，不实际下载文件（测试用，仅 SRA 下载支持）"

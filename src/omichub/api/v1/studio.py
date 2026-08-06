@@ -378,6 +378,7 @@ async def promote_session_to_studio(
     if target_agent_id:
         session.agent_id = target_agent_id
     session.mode = "studio"
+    session.workspace_id = session.workspace_id or session.session_id
     if image:
         # sandbox_meta 可能被进行中的聊天流并发写入（plan 等键），
         # image 键用 jsonb_set 原子写入，避免整体回写擦除并发更新

@@ -44,12 +44,12 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 
 const mounted: Array<{ app: App; host: HTMLElement }> = []
 
-function mount(tasks: Task[]) {
+function mount(tasks: Task[], showUser = false) {
   const host = document.createElement('div')
   document.body.appendChild(host)
   const app = createApp(
     defineComponent({
-      render: () => h(TaskTable, { tasks }),
+      render: () => h(TaskTable, { tasks, showUser }),
     }),
   )
   const errors: unknown[] = []
@@ -130,5 +130,16 @@ describe('TaskTable', () => {
       makeTask({ id: 't3', status: 'cancelled', progress: 0 }),
     ])
     expect(errors).toEqual([])
+  })
+
+  it('用户列优先展示昵称，空昵称回退用户名', () => {
+    const { host } = mount([
+      makeTask({ id: 'nickname-task', username: 'account-name', nickname: '实验室小王' }),
+      makeTask({ id: 'username-task', username: 'fallback-account', nickname: '   ' }),
+    ], true)
+
+    expect(host.textContent).toContain('实验室小王')
+    expect(host.textContent).toContain('fallback-account')
+    expect(host.textContent).not.toContain('account-name')
   })
 })

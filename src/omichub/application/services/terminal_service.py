@@ -198,12 +198,12 @@ class TerminalService:
 
         sessions = await self._repo.list_all_active()
         user_ids = [s.user_id for s in sessions]
-        user_map: dict[UUID, str] = {}
+        user_map: dict[UUID, tuple[str, str | None]] = {}
         if user_ids:
             result = await self._db.execute(
-                select(UserModel.id, UserModel.username).where(UserModel.id.in_(user_ids))
+                select(UserModel.id, UserModel.username, UserModel.nickname).where(UserModel.id.in_(user_ids))
             )
-            user_map = {row.id: row.username for row in result.all()}
+            user_map = {row.id: (row.username, row.nickname) for row in result.all()}
 
         cfg = self._cfg
         images_cfg = self._images_cfg
@@ -222,7 +222,8 @@ class TerminalService:
                 AdminTerminalSessionDTO(
                     id=s.id,
                     user_id=s.user_id,
-                    username=user_map.get(s.user_id),
+                    username=(user_map.get(s.user_id) or (None, None))[0],
+                    nickname=(user_map.get(s.user_id) or (None, None))[1],
                     session_id=s.session_id,
                     status=s.status.value if hasattr(s.status, "value") else str(s.status),
                     container_id=s.container_id,

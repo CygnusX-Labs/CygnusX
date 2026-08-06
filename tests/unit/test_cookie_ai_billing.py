@@ -20,7 +20,7 @@ def _service_with_account(balance: str) -> tuple[CookieService, CookieAccount]:
     svc._record_transaction = AsyncMock()
     svc._txn_repo.list_by_source = AsyncMock(return_value=[])
     svc.resolve_ai_token_rate = AsyncMock(
-        return_value=(Decimal("10"), Decimal("10"), None)
+        return_value=(Decimal("1"), Decimal("1"), None)
     )
     return svc, account
 
@@ -31,21 +31,21 @@ async def test_spend_ai_tokens_deducts_by_rate():
 
     cost = await svc.spend_ai_tokens(account.user_id, tokens=1500, source_id="msg-1")
 
-    assert cost == Decimal("15.00")  # 1500 / 1000 * 10 🥫
+    assert cost == Decimal("1.50")  # 1500 / 1000 * 1 🥫
     svc._record_transaction.assert_awaited_once()
     kwargs = svc._record_transaction.call_args
-    assert kwargs.args[2] == Decimal("-15.00")
+    assert kwargs.args[2] == Decimal("-1.50")
     assert kwargs.kwargs["source_type"] == "ai_chat"
 
 
 @pytest.mark.asyncio
 async def test_spend_ai_tokens_caps_at_available_balance():
-    svc, account = _service_with_account("5.00")
+    svc, account = _service_with_account("1.00")
 
     cost = await svc.spend_ai_tokens(account.user_id, tokens=1500, source_id="msg-1")
 
-    assert cost == Decimal("5.00")
-    assert svc._record_transaction.call_args.args[2] == Decimal("-5.00")
+    assert cost == Decimal("1.00")
+    assert svc._record_transaction.call_args.args[2] == Decimal("-1.00")
 
 
 @pytest.mark.asyncio
@@ -75,13 +75,13 @@ async def test_spend_ai_tokens_applies_active_discount_rate():
     discount = MagicMock(name="夜间优惠")
     discount.name = "夜间优惠"
     svc.resolve_ai_token_rate = AsyncMock(
-        return_value=(Decimal("10"), Decimal("0.10"), discount)
+        return_value=(Decimal("1"), Decimal("0.01"), discount)
     )
 
     cost = await svc.spend_ai_tokens(account.user_id, tokens=1500, source_id="msg-2")
 
-    assert cost == Decimal("0.15")
-    assert svc._record_transaction.call_args.args[2] == Decimal("-0.15")
+    assert cost == Decimal("0.02")
+    assert svc._record_transaction.call_args.args[2] == Decimal("-0.02")
     assert "夜间优惠" in svc._record_transaction.call_args.kwargs["description"]
 
 

@@ -26,6 +26,8 @@ def _ctx(agent_id: str, tools: list | None = None, spawnable: bool = True):
         system_prompt="系统提示",
         tools=tools or [],
         features={"subagents_spawnable": spawnable},
+        mcp_servers=[],
+        skills=[],
         max_tokens=4096,
     )
 
@@ -198,16 +200,208 @@ async def test_fanout_parallel_success_and_tool_filtering(env, monkeypatch) -> N
     forbidden = {
         "parallel_subagents",
         "transfer_to_agent",
-        "danger_tool",
         "long_task",
         "some_mcp_tool",
     }
     name_sets = [
-        {(t.get("function") or {}).get("name") for t in (tools or [])}
-        for tools in seen["tools"]
+        {(t.get("function") or {}).get("name") for t in (tools or [])} for tools in seen["tools"]
     ]
     assert all(names.isdisjoint(forbidden) for names in name_sets)
-    assert {"workspace_read"} in name_sets
+    assert any("workspace_read" in names for names in name_sets)
+
+
+@pytest.mark.asyncio
+async def test_fanout_preserves_long_stage_output_for_downstream_agents(env, monkeypatch) -> None:
+    contexts = {"agent-general": _ctx("agent-general")}
+    monkeypatch.setattr(pss, "AgentService", lambda db: AgentServiceStub(contexts))
+    marker = "LONG_PLAN_FINAL_CONTRACT"
+    long_plan = "研究步骤与数据契约。" * 300 + marker
+
+    async def handler(_messages, _kwargs):
+        yield ChatChunk(type="text", content=long_plan)
+
+    _patch_provider(monkeypatch, handler)
+    result = await pss.ParallelSubAgentService().run(
+        user_id="user-1",
+        parent_agent_id="manager",
+        parent_session_id="sess-1",
+        context_summary="研究背景",
+        tasks=[{"agent_id": "agent-general", "task": "形成完整研究计划"}],
+        db=SimpleNamespace(),
+    )
+
+    answer = result["llm_payload"]["results"][0]["answer"]
+    assert marker in answer
+    assert len(answer) > 1200
+
+
+@pytest.mark.asyncio
+async def test_fanout_accumulates_text_across_tool_rounds(env, monkeypatch) -> None:
+    contexts = {"agent-code": _ctx("agent-code", tools=[{"function": {"name": "workspace_read"}}])}
+    monkeypatch.setattr(pss, "AgentService", lambda db: AgentServiceStub(contexts))
+
+    async def fake_execute(*_args, **_kwargs):
+        return {"success": True, "result": {"content": "upstream"}}
+
+    monkeypatch.setattr(pss, "execute_studio_tool", fake_execute)
+
+    async def handler(messages, _kwargs):
+        if len(messages) == 1:
+            yield ChatChunk(type="text", content="第一阶段完整设计。")
+            yield ChatChunk(
+                type="tool_calls",
+                metadata={
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "function": {
+                                "name": "workspace_read",
+                                "arguments": '{"path":"output/upstream.md"}',
+                            },
+                        }
+                    ]
+                },
+            )
+        else:
+            yield ChatChunk(type="text", content="第二阶段完整代码与交付说明。")
+
+    _patch_provider(monkeypatch, handler)
+    result = await pss.ParallelSubAgentService().run(
+        user_id="user-1",
+        parent_agent_id="manager",
+        parent_session_id="sess-1",
+        context_summary="",
+        tasks=[{"agent_id": "agent-code", "task": "生成完整代码", "workspace_access": True}],
+        db=SimpleNamespace(),
+    )
+
+    answer = result["llm_payload"]["results"][0]["answer"]
+    assert "第一阶段完整设计" in answer
+    assert "第二阶段完整代码与交付说明" in answer
+
+
+@pytest.mark.asyncio
+async def test_fanout_separates_reasoning_from_worker_answer(env, monkeypatch) -> None:
+    contexts = {"agent-general": _ctx("agent-general")}
+    monkeypatch.setattr(pss, "AgentService", lambda db: AgentServiceStub(contexts))
+    events: list[dict] = []
+
+    async def handler(_messages, _kwargs):
+        yield ChatChunk(
+            type="text",
+            content="INTERNAL_REASONING",
+            metadata={"is_reasoning": True},
+        )
+        yield ChatChunk(type="text", content="FINAL_ANSWER")
+
+    _patch_provider(monkeypatch, handler)
+    result = await pss.ParallelSubAgentService().run(
+        user_id="user-1",
+        parent_agent_id="manager",
+        parent_session_id="sess-1",
+        context_summary="",
+        tasks=[{"agent_id": "agent-general", "task": "形成方案"}],
+        db=SimpleNamespace(),
+        on_event=events.append,
+    )
+
+    worker = result["llm_payload"]["results"][0]
+    assert worker["answer"] == "FINAL_ANSWER"
+    assert worker["thought"] == "INTERNAL_REASONING"
+    assert any(event["type"] == "worker_reasoning_delta" for event in events)
+
+
+def test_child_tools_include_ask_user_web_search_and_bound_mcp() -> None:
+    ctx = _ctx("agent-general", tools=[{"function": {"name": "remote_lookup"}}])
+    ctx.features["web_search"] = {"mode": "required_for_freshness"}
+    ctx.mcp_servers = [SimpleNamespace(tools=[SimpleNamespace(tool_name="remote_lookup")])]
+
+    tools = pss.ParallelSubAgentService._prepare_child_tools(ctx)
+    names = {(tool.get("function") or {}).get("name") for tool in tools}
+
+    assert {"ask_user", "web_search", "remote_lookup"} <= names
+
+
+def test_child_tools_add_workspace_execution_only_after_explicit_access() -> None:
+    ctx = _ctx("agent-code")
+
+    default_names = {
+        (tool.get("function") or {}).get("name")
+        for tool in pss.ParallelSubAgentService._prepare_child_tools(ctx)
+    }
+    enabled_names = {
+        (tool.get("function") or {}).get("name")
+        for tool in pss.ParallelSubAgentService._prepare_child_tools(ctx, workspace_access=True)
+    }
+
+    assert "sandbox_execute" not in default_names
+    assert {"workspace_read", "workspace_write", "sandbox_execute"}.issubset(enabled_names)
+
+
+@pytest.mark.asyncio
+async def test_child_workspace_tool_uses_parent_workspace_after_user_confirmation(
+    env, monkeypatch
+) -> None:
+    calls: list[tuple[str, str, dict]] = []
+
+    async def fake_execute(name, args, session_id, **_kwargs):
+        calls.append((name, session_id, args))
+        return {"success": True, "result": {"llm_payload": {"path": args.get("path")}}}
+
+    monkeypatch.setattr(pss, "execute_studio_tool", fake_execute)
+    result = await pss.ParallelSubAgentService._execute_child_tool(
+        user_id="user-1",
+        agent_id="agent-code",
+        child_session_id="session:sub:run:1",
+        parent_session_id="session-parent",
+        tool_name="workspace_write",
+        args={"path": "scripts/run.py", "content": "print('ok')"},
+        workdir=env.tmp_path,
+        run_id="run",
+        ctx=_ctx("agent-code"),
+        workspace_access=True,
+    )
+
+    assert result["success"] is True
+    assert calls == [
+        (
+            "workspace_write",
+            "session-parent",
+            {"path": "scripts/run.py", "content": "print('ok')"},
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_child_executes_bound_mcp_tool_with_child_context(env, monkeypatch) -> None:
+    calls: list[tuple[str, dict, str]] = []
+
+    class FakeMCPClient:
+        async def call_tool(self, server, tool_name, arguments, *, user_id, context):
+            calls.append((tool_name, arguments, context.session_id))
+            return {"success": True, "result": {"source": server.name}}
+
+    monkeypatch.setattr("omichub.infrastructure.mcp.client.MCPClient", FakeMCPClient)
+    server = SimpleNamespace(
+        name="research-mcp",
+        tools=[SimpleNamespace(tool_name="remote_lookup")],
+    )
+    ctx = _ctx("agent-general")
+    ctx.mcp_servers = [server]
+
+    result = await pss.ParallelSubAgentService._execute_child_tool(
+        user_id="user-1",
+        agent_id="agent-general",
+        child_session_id="session:sub:run:1",
+        tool_name="remote_lookup",
+        args={"query": "TP53"},
+        workdir=env.tmp_path,
+        run_id="run",
+        ctx=ctx,
+    )
+
+    assert result["success"] is True
+    assert calls == [("remote_lookup", {"query": "TP53"}, "session:sub:run:1")]
 
 
 @pytest.mark.asyncio
@@ -393,6 +587,92 @@ async def test_fanout_child_tool_roundtrip_with_dedicated_session(env, monkeypat
 
 
 @pytest.mark.asyncio
+async def test_budget_exhaustion_with_user_request_becomes_awaiting_input(env, monkeypatch) -> None:
+    contexts = {
+        "agent-a": _ctx("agent-a", tools=[{"function": {"name": "workspace_read"}}]),
+    }
+    monkeypatch.setattr(pss, "AgentService", lambda db: AgentServiceStub(contexts))
+    model_calls = 0
+
+    async def handler(_messages, _kwargs):
+        nonlocal model_calls
+        model_calls += 1
+        yield ChatChunk(type="text", content="请补充 treefile 文件后继续。")
+        yield ChatChunk(
+            type="tool_calls",
+            metadata={
+                "tool_calls": [
+                    {
+                        "id": f"call-{model_calls}",
+                        "type": "function",
+                        "function": {
+                            "name": "workspace_read",
+                            "arguments": '{"path": "input/treefile"}',
+                        },
+                    }
+                ]
+            },
+        )
+
+    _patch_provider(monkeypatch, handler)
+    result = await pss.ParallelSubAgentService().run(
+        user_id="user-1",
+        parent_agent_id="agent-general",
+        parent_session_id="sess-1",
+        context_summary="",
+        tasks=[{"agent_id": "agent-a", "task": "读取树文件并继续处理"}],
+        db=SimpleNamespace(),
+    )
+
+    child = result["llm_payload"]["results"][0]
+    assert model_calls == 6
+    assert result["success"] is True
+    assert child["status"] == "awaiting_input"
+    assert child["packet"]["needs_user_input"] is True
+    assert child["packet"]["status"] == "awaiting_input"
+    assert child["packet"]["error"] == ""
+
+
+@pytest.mark.asyncio
+async def test_fanout_escalates_confirm_tool_without_child_execution(env, monkeypatch) -> None:
+    contexts = {
+        "agent-a": _ctx("agent-a", tools=[{"function": {"name": "danger_tool"}}]),
+    }
+    monkeypatch.setattr(pss, "AgentService", lambda db: AgentServiceStub(contexts))
+
+    async def handler(_messages, _kwargs):
+        yield ChatChunk(
+            type="tool_calls",
+            metadata={
+                "tool_calls": [
+                    {
+                        "id": "call-confirm",
+                        "type": "function",
+                        "function": {"name": "danger_tool", "arguments": '{"sample": "S1"}'},
+                    }
+                ]
+            },
+        )
+
+    _patch_provider(monkeypatch, handler)
+    result = await pss.ParallelSubAgentService().run(
+        user_id="user-1",
+        parent_agent_id="agent-general",
+        parent_session_id="sess-1",
+        context_summary="",
+        tasks=[{"agent_id": "agent-a", "task": "submit"}],
+        db=SimpleNamespace(),
+    )
+
+    child = result["llm_payload"]["results"][0]
+    assert child["status"] == "approval_pending"
+    assert child["packet"]["approval_requests"] == [
+        {"tool_name": "danger_tool", "arguments": {"sample": "S1"}}
+    ]
+    assert env.bridge.calls == []
+
+
+@pytest.mark.asyncio
 async def test_fanout_validation_rules(env, monkeypatch) -> None:
     service = pss.ParallelSubAgentService()
     kwargs = dict(
@@ -404,6 +684,12 @@ async def test_fanout_validation_rules(env, monkeypatch) -> None:
     )
     single = service._validate_tasks([{"agent_id": "a", "task": "x"}], max_parallel=4)
     assert single == [{"agent_id": "a", "task": "x"}]
+
+    long_dependency_packet = "上游研究计划。" * 1000
+    accepted = service._validate_tasks(
+        [{"agent_id": "a", "task": long_dependency_packet}], max_parallel=4
+    )
+    assert accepted == [{"agent_id": "a", "task": long_dependency_packet}]
 
     too_many = await service.run(
         tasks=[{"agent_id": "a", "task": f"t{i}"} for i in range(5)], **kwargs

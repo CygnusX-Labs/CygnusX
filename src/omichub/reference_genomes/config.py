@@ -1,7 +1,7 @@
 """参考基因组模块 YAML 配置加载器 —— 物种 → 版本两级注册表。
 
-配置文件路径由 settings.reference_genomes_yaml 决定（默认 dataset/reference_genomes.yaml，
-容器内解析为 /app/dataset/reference_genomes.yaml，本地为仓库内同名文件；可用环境变量
+配置文件路径由 settings.reference_genomes_yaml 决定（默认 refdata/reference_genomes.yaml，
+容器内解析为 /app/refdata/reference_genomes.yaml，本地为仓库内同名文件；可用环境变量
 REFERENCE_GENOMES_YAML 覆盖）。
 
 热重载策略（对齐 tools/jbrowse/config.py）：

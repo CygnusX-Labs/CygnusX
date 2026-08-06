@@ -2,6 +2,9 @@
 
 私有化多组学分析平台 - 华中农业大学园艺林学学院
 
+> 📜 **Licensed under Apache-2.0 + Commons Clause — non-commercial use only.**
+> See [LICENSE](./LICENSE) for details. Commercial use requires a separate agreement.
+
 ## 技术栈
 
 - **后端**: FastAPI + SQLAlchemy 2.0 + PostgreSQL 14+ + Redis 7+ + Celery
@@ -880,7 +883,7 @@ docs/                 架构设计文档
 ├── users/<user_id>/                # 用户私有数据（上传 / 结果 / 富集产物）
 ├── uploads/                        # 分片上传中转
 ├── bin/                            # 外置二进制（EBIDownload 等）
-├── dataset/                        # 公共数据集
+├── refdata/                        # 公共数据集
 └── .tmp/                           # 临时文件
 ```
 

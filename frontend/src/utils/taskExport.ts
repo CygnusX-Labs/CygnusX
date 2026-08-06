@@ -8,6 +8,7 @@
  */
 import * as XLSX from 'xlsx'
 import type { Task } from '@/types'
+import { displayName } from '@/utils/displayName'
 
 /** 状态枚举 → 中文标签（与 TaskTable.statusMap 对齐）。 */
 const STATUS_LABEL: Record<string, string> = {
@@ -59,9 +60,9 @@ function formatTime(iso: string | null | undefined): string {
   return `${d.getMonth() + 1}月${d.getDate()}日 ${hh}:${mm}`
 }
 
-/** 用户名降级：优先 username，缺失回退 user_id，再无则「-」。 */
+/** 用户展示名：优先昵称，缺失回退用户名、用户 ID，再无则「-」。 */
 function ownerOf(task: Task): string {
-  return task.username || task.user_id || '-'
+  return displayName(task) || task.user_id || '-'
 }
 
 /** 单行任务 → 导出行（数组顺序即列顺序，需与 HEADERS 对齐）。 */

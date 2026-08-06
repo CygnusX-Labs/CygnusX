@@ -27,6 +27,13 @@ skill_ids:
 features:
   subagents_spawnable: true  # 可作为并行子 Agent 被 fan-out 派生
   engine: langgraph
+  domain: omics
+  default_role: 单细胞 RNA-seq 专项分析
+  capability_scope: [单细胞质控, 整合聚类, 细胞注释, marker, 轨迹与通讯]
+  capability_tags: [single-cell-rna, qc, integration, clustering, annotation, marker-analysis]
+  accepts_inputs: [h5ad, rds, count-matrix, sample-metadata, research-plan]
+  produces_outputs: [domain-analysis-plan, annotated-object, marker-table, cell-composition]
+  default_stage: domain-analysis
   web_search:
     mode: required_for_freshness
     triggers: [最新, 文献, 论文, 研究进展, 细胞图谱, 数据库更新]

@@ -15,7 +15,7 @@ OmicHub 的运行时数据统一收口在宿主机 `/data/omichub` 下。为让�
 ├── users/                          # 用户私有数据（上传 / 分析结果 / 富集产物）
 ├── uploads/                        # 分片上传中转目录
 ├── bin/                            # 外置二进制工具（EBIDownload 等）
-├── dataset/                        # 公共数据集
+├── refdata/                        # 公共数据集
 └── .tmp/                           # 临时文件
 ```
 
@@ -79,7 +79,7 @@ OmicHub 的运行时数据统一收口在宿主机 `/data/omichub` 下。为让�
 | `users/<user_id>/` | 用户私有数据（上传 / 结果 / 富集） | 由 `storage.data_root + users_subdir` 拼接，路径深耦合于业务代码，保持原位避免大面积改造 |
 | `uploads/` | 分片上传中转 | 临时数据，与用户目录同属文件存储层 |
 | `bin/` | EBIDownload 等外置二进制 | 工具类，随镜像 / 对象存储分发，非运行时数据 |
-| `dataset/` | 公共数据集 | 独立数据集，按需管理 |
+| `refdata/` | 公共数据集 | 独立数据集，按需管理 |
 | `.tmp/` | 临时文件 | 易失数据 |
 
 > 以上目录仍位于 `data_root`（`/data/omichub`）之下，`rsync /data/omichub` 可整体带走全部数据（含 `omichub_data`）。

@@ -119,6 +119,7 @@ class AdminTerminalSessionDTO(OmicsHubBaseSchema):
     id: UUID
     user_id: UUID
     username: str | None = None
+    nickname: str | None = None
     session_id: str
     status: str = "creating"
     container_id: str | None = None

@@ -38,9 +38,10 @@ class TaskResponse(OmicsHubBaseSchema):
     id: UUID
     flow_id: str
     user_id: UUID
-    # 所属用户名：列表接口由服务层按 user_id 回填，便于「最近任务」等
-    # 卡片直接展示真实用户名（无需前端再拿 UUID 反查 / 退化展示）。
+    # 所属用户信息：列表接口由服务层按 user_id 回填，供前端按
+    # nickname → username 的统一规则展示（无需再拿 UUID 反查）。
     username: str | None = None
+    nickname: str | None = None
     name: str
     status: str
     execution_mode: str

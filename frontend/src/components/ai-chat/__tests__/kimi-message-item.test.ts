@@ -13,6 +13,13 @@ import { createPinia, setActivePinia } from 'pinia'
 // lottie-web / vue-echarts import 时依赖完整浏览器 API，打桩
 vi.mock('vue3-lottie', () => ({ Vue3Lottie: { template: '<div />' } }))
 vi.mock('vue-echarts', () => ({ default: { template: '<div />' } }))
+const studioApiMocks = vi.hoisted(() => ({
+  fetchArtifactBlob: vi.fn().mockResolvedValue('blob:heatmap-preview'),
+  downloadArtifact: vi.fn().mockResolvedValue(undefined),
+}))
+vi.mock('@/api/studio', () => ({
+  studioApi: studioApiMocks,
+}))
 
 import KimiMessageItem from '@/components/ai-chat/KimiMessageItem.vue'
 import { stripFakeToolCallMarkup } from '@/components/ai-chat/messageSanitize'
@@ -48,6 +55,107 @@ const baseMsg: ChatMessage = {
 }
 
 describe('KimiMessageItem 渲染分支', () => {
+  it('路由到专项 Agent 时显示完整过渡卡和执行确认提示', () => {
+    const { el } = mountItem({
+      message: {
+        ...baseMsg,
+        content: '我会先确认你的输入数据和分组信息。',
+        routedAgent: {
+          agentId: 'agent-rnaseq',
+          name: 'RNA-seq 分析师',
+          avatar: '🧬',
+          color: '#16a34a',
+          reason: '识别为 Bulk RNA-seq 差异表达任务',
+          transition: {
+            visible: true,
+            stage: 'specialist_intake',
+            title: '已匹配专项专家',
+            message: '将先确认任务目标与输入，涉及实际分析时会在启动前请求确认。',
+            nextStep: '专项 Agent 进行任务 intake',
+            requiresExecutionConfirmation: true,
+            autoStart: false,
+          },
+        },
+      },
+      isStreaming: false,
+    })
+
+    expect(el.textContent).toContain('Router 判定')
+    expect(el.textContent).toContain('星尘 AI')
+    expect(el.textContent).toContain('RNA-seq 分析师')
+    expect(el.textContent).toContain('专项 Agent 进行任务 intake')
+    expect(el.textContent).toContain('执行前需确认')
+  })
+
+  it('路由到通用助手时，即使正文为空也显示 Router 分发卡片', () => {
+    const { el } = mountItem({
+      message: {
+        ...baseMsg,
+        content: '',
+        routedAgent: {
+          agentId: 'agent-general',
+          name: '通用助手',
+          avatar: '🤖',
+          color: '#7691FF',
+          reason: '识别为工作区文件查看请求',
+          transition: {
+            visible: true,
+            stage: 'specialist_intake',
+            title: '已匹配通用助手',
+            message: '将由「通用助手」继续处理当前请求。',
+            nextStep: '通用助手继续处理',
+            requiresExecutionConfirmation: false,
+            autoStart: false,
+          },
+        },
+      },
+      isStreaming: false,
+    })
+
+    expect(el.textContent).toContain('Router 判定')
+    expect(el.textContent).toContain('通用助手')
+    expect(el.textContent).toContain('通用助手继续处理')
+  })
+
+  it('工具生成图片后在对话中显示预览并支持下载', async () => {
+    const { el } = mountItem({
+      sessionId: 'session-artifact',
+      message: {
+        ...baseMsg,
+        content: '相关性热图已生成。',
+        toolCalls: [
+          {
+            id: 'tool-heatmap',
+            name: 'sandbox_execute',
+            arguments: {},
+            status: 'success',
+            uiPayload: {
+              artifacts: [{ path: 'output/sample_correlation_heatmap.png', size: 1024 }],
+            },
+          },
+        ],
+      },
+      isStreaming: false,
+    })
+
+    await nextTick()
+    await Promise.resolve()
+    await nextTick()
+
+    expect(studioApiMocks.fetchArtifactBlob).toHaveBeenCalledWith(
+      'session-artifact',
+      'output/sample_correlation_heatmap.png',
+    )
+    expect(el.querySelector<HTMLImageElement>('.message-artifacts__preview img')?.src).toContain('blob:heatmap-preview')
+    expect(el.textContent).toContain('sample_correlation_heatmap.png')
+
+    el.querySelector<HTMLButtonElement>('.message-artifacts__download')?.click()
+    expect(studioApiMocks.downloadArtifact).toHaveBeenCalledWith(
+      'session-artifact',
+      'output/sample_correlation_heatmap.png',
+    )
+  })
+
   it('有 thought + 有 content：思考面板与正文都应渲染', () => {
     const { el } = mountItem({
       message: { ...baseMsg, content: '你好！我是 OmicHub AI 助手。', thought: '用户打招呼' },
@@ -221,5 +329,112 @@ describe('KimiMessageItem 剔除正文里的伪工具调用', () => {
     expect(el.textContent).toContain('81,297.4 个饼干')
     expect(el.textContent).not.toContain('tool_use')
     expect(el.textContent).not.toContain('platform_get_user_info')
+  })
+})
+
+describe('KimiMessageItem 超频专家产物折叠', () => {
+  it('worker 的思考过程与正式输出分区显示', () => {
+    const { el } = mountItem({
+      message: {
+        ...baseMsg,
+        content: 'FINAL_WORKER_OUTPUT',
+        thought: 'PRIVATE_REASONING_STREAM',
+        status: 'complete',
+        senderAgent: {
+          id: 'agent-general',
+          name: '通用助手',
+          role: 'worker',
+          round: 1,
+        },
+      },
+      isStreaming: false,
+    })
+
+    expect(el.querySelector('.thought-block')).not.toBeNull()
+    expect(el.querySelector('.thought-content')?.textContent).toContain('PRIVATE_REASONING_STREAM')
+    expect(el.querySelector('.worker-result-preview')?.textContent).toContain('FINAL WORKER OUTPUT')
+    expect(el.querySelector('.worker-result-preview')?.textContent).not.toContain('PRIVATE_REASONING_STREAM')
+  })
+
+  it('worker 完成后的长产物默认折叠，点击后展开全文', async () => {
+    const uniqueTail = 'UNIQUE_WORKER_RESULT_TAIL'
+    const content = `研究计划摘要。${'详细分析步骤。'.repeat(40)}${uniqueTail}`
+    const { el } = mountItem({
+      message: {
+        ...baseMsg,
+        content,
+        status: 'complete',
+        senderAgent: {
+          id: 'agent-general',
+          name: '通用助手',
+          role: 'worker',
+          round: 1,
+        },
+      },
+      isStreaming: false,
+    })
+
+    const toggle = el.querySelector<HTMLButtonElement>('.worker-result-toggle')
+    expect(toggle).not.toBeNull()
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false')
+    expect(el.textContent).toContain('专家阶段产物')
+    expect(el.textContent).toContain('展开查看')
+    expect(el.textContent).not.toContain(uniqueTail)
+
+    toggle?.click()
+    await nextTick()
+
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true')
+    expect(el.textContent).toContain('收起内容')
+    expect(el.textContent).toContain(uniqueTail)
+  })
+
+  it('worker 流式生成期间也默认折叠，可手动展开实时正文', async () => {
+    const liveTail = 'STREAMING_WORKER_TAIL'
+    const content = `正在生成研究计划。${'实时步骤。'.repeat(30)}${liveTail}`
+    const { el } = mountItem({
+      message: {
+        ...baseMsg,
+        content,
+        status: 'streaming',
+        senderAgent: {
+          id: 'agent-code',
+          name: '代码助手',
+          role: 'worker',
+          round: 2,
+        },
+      },
+      isStreaming: false,
+    })
+
+    const toggle = el.querySelector<HTMLButtonElement>('.worker-result-toggle')
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false')
+    expect(el.textContent).toContain('专家正在生成')
+    expect(el.textContent).not.toContain(liveTail)
+
+    toggle?.click()
+    await nextTick()
+    expect(el.textContent).toContain(liveTail)
+  })
+
+  it('Manager 综合报告保持展开，不显示专家折叠按钮', () => {
+    const content = `综合报告正文。${'整合结论。'.repeat(40)}MANAGER_REPORT_TAIL`
+    const { el } = mountItem({
+      message: {
+        ...baseMsg,
+        content,
+        status: 'complete',
+        senderAgent: {
+          id: 'manager',
+          name: 'Manager',
+          role: 'manager',
+          round: 4,
+        },
+      },
+      isStreaming: false,
+    })
+
+    expect(el.querySelector('.worker-result-toggle')).toBeNull()
+    expect(el.textContent).toContain('MANAGER_REPORT_TAIL')
   })
 })

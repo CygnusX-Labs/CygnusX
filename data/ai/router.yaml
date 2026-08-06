@@ -1,13 +1,13 @@
 # 智能路由器：统一对话入口，自动识别需求并转接对应专家
 agent_id: agent-router
-name: 智能助手
-description: 统一入口：自动识别你的需求并转接对应专家。
+name: 星尘 AI
+description: 统一入口：由星尘 AI 理解任务并分派给最合适的专家。
 avatar: "🧭"
 color: "#8e6cf0"
 category: general
 model: qwen3.7-plus
 prompt_file: prompts/router.md
-welcome_message: "你好！我是智能助手，直接描述你的需求即可，我会自动转接给最合适的专家为你解答。"
+welcome_message: "你好，我是星尘 AI。直接描述目标或当前问题，我会判断任务并分派给合适的专家。"
 temperature: 0.7
 max_tokens: 4096
 mcp_ids: []

@@ -1,3 +1,4 @@
+
 # OmicHub 知识库向量检索升级 · 实现计划（供 Claude Code 执行）
 
 > **用途**：指导 Claude Code 将知识库 AI 检索从「子串匹配」升级为「chunk 化 + pgvector 混合检索」。

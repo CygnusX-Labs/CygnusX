@@ -21,12 +21,18 @@ skill_ids:
 features:
   engine: langgraph
   subagents_spawnable: true  # 可作为并行子 Agent 被 fan-out 派生
+  default_role: 任务 intake、研究目标拆解、总体研究计划与数据契约
+  capability_scope: [需求澄清, 研究设计, 数据契约, 跨专家协调, 综合方案]
+  capability_tags: [intake, research-design, data-contract, quality-control, synthesis]
+  accepts_inputs: [research-question, modality, group-definition, sample-metadata]
+  produces_outputs: [research-plan, data-contract, quality-control-plan]
+  default_stage: research-plan
   web_search:
     mode: required_for_freshness
     triggers: [实时, 最新, 最近, 今天, 新闻, 天气, 文献, 论文, 研究进展, 临床试验, 指南]
 tool_packs: [workspace, research, memory, handoff, subagents, agentteams_case]
 handoff:
-  allowed_targets: [agent-scrna, agent-rnaseq, agent-code, agent-viz, shania]
+  allowed_targets: ["*"]
   max_hops_per_session: 3
 
 studio:

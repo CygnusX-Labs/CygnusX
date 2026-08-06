@@ -235,6 +235,7 @@ class BlastTaskListItemDTO(OmicsHubBaseSchema):
     # 所属用户：列表卡片「所属用户」列展示用，由服务层按 user_id 回填。
     user_id: str | None = None
     username: str | None = None
+    nickname: str | None = None
     db_id: str
     db_name: str
     program: str

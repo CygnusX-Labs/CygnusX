@@ -12,6 +12,7 @@ import {
   FlaskOutline, ChatbubbleEllipsesOutline, CashOutline, GiftOutline, PulseOutline,
 } from '@vicons/ionicons5'
 import type { AdminCookieAccount, AdminCookieTxn } from '@/stores/adminCookie'
+import { displayName } from '@/utils/displayName'
 
 const props = defineProps<{
   show: boolean
@@ -59,10 +60,10 @@ function usedGb(bytes: number): string {
         <!-- 用户概要 -->
         <div class="acct-head">
           <NAvatar round :size="44" :style="{ background: 'var(--arco-primary)' }">
-            {{ account.username.slice(0, 1).toUpperCase() }}
+            {{ displayName(account).slice(0, 1).toUpperCase() }}
           </NAvatar>
           <div class="acct-meta">
-            <div class="acct-name">{{ account.username }}</div>
+            <div class="acct-name">{{ displayName(account) }}</div>
             <div class="acct-email">{{ account.email }}</div>
             <NSpace :size="6">
               <NTag size="tiny" round :type="account.role === 'admin' ? 'success' : 'default'">

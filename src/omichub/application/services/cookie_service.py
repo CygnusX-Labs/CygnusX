@@ -486,6 +486,7 @@ class CookieService:
             select(
                 CookieAccountModel,
                 UserModel.username,
+                UserModel.nickname,
                 UserModel.email,
                 UserModel.role,
                 UserModel.lab_group,
@@ -507,12 +508,19 @@ class CookieService:
                 query = query.where(
                     or_(
                         UserModel.username.ilike(kw),
+                        UserModel.nickname.ilike(kw),
                         UserModel.email.ilike(kw),
                         CookieAccountModel.user_id == uid,
                     )
                 )
             except (ValueError, AttributeError):
-                query = query.where(or_(UserModel.username.ilike(kw), UserModel.email.ilike(kw)))
+                query = query.where(
+                    or_(
+                        UserModel.username.ilike(kw),
+                        UserModel.nickname.ilike(kw),
+                        UserModel.email.ilike(kw),
+                    )
+                )
         query = query.offset(offset).limit(limit)
         result = await self._session.execute(query)
         rows = result.all()
@@ -520,6 +528,7 @@ class CookieService:
             {
                 **self._account_to_dto(self._account_repo._to_entity(a)).model_dump(),
                 "username": username or "",
+                "nickname": nickname,
                 "email": email or "",
                 "role": role or "",
                 "lab_group": lab_group,
@@ -531,6 +540,7 @@ class CookieService:
             for (
                 a,
                 username,
+                nickname,
                 email,
                 role,
                 lab_group,
@@ -583,6 +593,7 @@ class CookieService:
             select(
                 CookieTransactionModel,
                 UserModel.username,
+                UserModel.nickname,
                 UserModel.email,
             )
             .outerjoin(UserModel, CookieTransactionModel.user_id == UserModel.id)
@@ -615,9 +626,10 @@ class CookieService:
                     created_at=t.created_at,
                 ).model_dump(),
                 "username": username or "",
+                "nickname": nickname,
                 "email": email or "",
             }
-            for t, username, email in result.all()
+            for t, username, nickname, email in result.all()
         ]
 
     async def count_all_transactions_filtered(

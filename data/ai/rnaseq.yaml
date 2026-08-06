@@ -29,6 +29,13 @@ skill_ids:
   - md5
 features:
   subagents_spawnable: true  # 可作为并行子 Agent 被 fan-out 派生
+  domain: omics
+  default_role: bulk RNA-seq 领域方案与统计分析
+  capability_scope: [bulk RNA-seq, QC, 差异表达, 通路富集, 网络分析]
+  capability_tags: [bulk-rnaseq, qc, differential-expression, enrichment, network-analysis]
+  accepts_inputs: [count-matrix, expression-matrix, sample-metadata, research-plan]
+  produces_outputs: [domain-analysis-plan, deg-table, pathway-table, biological-interpretation]
+  default_stage: domain-analysis
   web_search:
     mode: required_for_freshness
     triggers: [最新, 文献, 论文, 研究进展, 临床试验, 指南, 数据库更新]

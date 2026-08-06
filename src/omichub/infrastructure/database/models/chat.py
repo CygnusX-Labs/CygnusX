@@ -98,6 +98,42 @@ class ChatMessageModel(Base):
     __table_args__ = (Index("idx_chat_messages_session_created", "session_id", "created_at"),)
 
 
+class ChatMessageFeedbackModel(Base):
+    """用户对 AI 消息的点赞/点踩反馈。
+
+    点踩时会把当时的模型、Agent、回复与提问摘录等快照进 context，
+    供管理员在「会话日志排查 → 用户会话反馈」里做提示词 / Agent / 架构优化分析。
+    """
+
+    __tablename__ = "chat_message_feedbacks"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    feedback_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(
+        String(50),
+        ForeignKey("chat_sessions.session_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    message_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    rating: Mapped[str] = mapped_column(String(10), nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    context: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="open", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        Index("idx_chat_feedbacks_message_user", "message_id", "user_id", unique=True),
+        Index("idx_chat_feedbacks_created", "created_at"),
+    )
+
+
 class ChatHandoffEventModel(Base):
     """同一聊天会话内 Agent 转交的可审计事件。"""
 

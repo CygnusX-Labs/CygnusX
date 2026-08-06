@@ -90,14 +90,10 @@ def normalize_token_usage(usage: dict[str, Any] | None) -> dict[str, Any] | None
         return None
     source = usage.get("token_usage") if isinstance(usage.get("token_usage"), dict) else usage
     prompt_tokens = _usage_int(
-        source.get("prompt_tokens")
-        or source.get("input_tokens")
-        or source.get("input")
+        source.get("prompt_tokens") or source.get("input_tokens") or source.get("input")
     )
     completion_tokens = _usage_int(
-        source.get("completion_tokens")
-        or source.get("output_tokens")
-        or source.get("output")
+        source.get("completion_tokens") or source.get("output_tokens") or source.get("output")
     )
     total_tokens = _usage_int(source.get("total_tokens") or source.get("total"))
     if total_tokens <= 0:
@@ -164,9 +160,7 @@ def record_ai_call_metrics(
         attrs = {"ai.provider": provider, "ai.model": model, "ai.status": status}
         _ai_duration.record(duration_ms, attrs)
         if usage:
-            _ai_tokens.add(
-                int(usage.get("prompt_tokens", 0)), {**attrs, "ai.token.kind": "prompt"}
-            )
+            _ai_tokens.add(int(usage.get("prompt_tokens", 0)), {**attrs, "ai.token.kind": "prompt"})
             _ai_tokens.add(
                 int(usage.get("completion_tokens", 0)),
                 {**attrs, "ai.token.kind": "completion"},
@@ -219,16 +213,15 @@ class OpenAICompatibleProvider:
         has_tool_calls = False
         last_usage: dict[str, Any] | None = None
         last_finish_reason: str | None = None
+        retry_without_tools = False
 
         for attempt in range(2):
             attempt_had_text = False
             attempt_had_error = False
-            # 部分模型（如某些 Qwen 托管版本）不支持流式 function calling，
-            # 首次带 tools 空响应后，第二次尝试不带 tools。
-            attempt_tools = tools if attempt == 0 else None
+            attempt_tools = None if retry_without_tools else tools
             attempt_messages = messages
             attempt_system_prompt = system_prompt
-            if attempt == 1 and tools:
+            if retry_without_tools and tools:
                 logger.info(f"模型 '{self.name}' 带 tools 返回空，尝试不带 tools 重试")
                 # 降级为纯对话：系统词追加工具不可用说明，并清掉历史里的工具调用
                 # 痕迹（tool 角色消息 / assistant 的 tool_calls 字段），避免模型在
@@ -274,6 +267,7 @@ class OpenAICompatibleProvider:
             if attempt_had_text or attempt_had_error or has_tool_calls:
                 break
             if attempt == 0:
+                retry_without_tools = bool(tools)
                 logger.info(f"模型 '{self.name}' 返回空内容，自动重试一次")
 
         if not has_yielded_text and not has_tool_calls:
@@ -628,9 +622,7 @@ class ProviderManager:
                     span.set_attribute("ai.prompt_tokens", usage.get("prompt_tokens", 0))
                     span.set_attribute("ai.completion_tokens", usage.get("completion_tokens", 0))
                     span.set_attribute("ai.total_tokens", usage.get("total_tokens", 0))
-                record_ai_call_metrics(
-                    provider.name, provider.model, status, duration_ms, usage
-                )
+                record_ai_call_metrics(provider.name, provider.model, status, duration_ms, usage)
                 logger.bind(
                     event="ai.chat",
                     provider=provider.name,

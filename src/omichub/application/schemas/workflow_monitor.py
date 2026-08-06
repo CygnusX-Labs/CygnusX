@@ -50,6 +50,7 @@ class WorkflowTaskSnapshot(OmicsHubBaseSchema):
     flow_id: str
     user_id: str
     username: str | None = None
+    nickname: str | None = None
     status: str
     progress: float
     progress_percent: float

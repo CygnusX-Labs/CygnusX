@@ -1,17 +1,16 @@
 """文件应用服务 — DB 文件记录 + 分块上传 + 配额控制
 
-落盘规范：
-  原始上传：{storage_path}/users/{user_id}/inbox/{filename}
-  分析输出：{storage_path}/users/{user_id}/projects/{project}/runs/{analysis-time}/output/...
-  分片临时：{storage_path}/.tmp/{upload_id}/{index}
+落盘规范（统一由 StoragePathFactory 生成）：
+  原始上传：{data_root}/users/{user_id}/inbox/{filename}
+  分析输出：{data_root}/users/{user_id}/projects/{project}/runs/{analysis-time}/output/...
+  下载产物：{data_root}/users/{user_id}/downloads/{filename}
+  分片临时：{data_root}/system/.tmp/{upload_id}/{index}
 """
 
 from __future__ import annotations
 
 import fnmatch
-import hashlib
 import re
-import shutil
 import uuid
 from pathlib import Path
 from uuid import UUID
@@ -35,15 +34,12 @@ from omichub.application.schemas.file import (
     UploadInitResponse,
     UploadMergeResponse,
 )
-from omichub.core.config import get_settings
 from omichub.core.exceptions import (
     AuthorizationError,
-    ConflictError,
     NotFoundError,
-    QuotaExceededError,
     ValidationError,
 )
-from omichub.domain.file.entities import DataFile, Directory, Sample, UploadSession
+from omichub.domain.file.entities import DataFile, Sample
 from omichub.domain.file.value_objects import FileType
 from omichub.infrastructure.database.repositories import (
     DirectoryRepositoryImpl,
@@ -54,12 +50,40 @@ from omichub.infrastructure.database.repositories import (
 from omichub.infrastructure.database.repositories.user_repository import (
     SqlAlchemyUserRepository,
 )
+from omichub.infrastructure.storage.path_factory import get_path_factory
 
 # 默认分片大小（客户端未传时兜底）
 DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024  # 5 MiB
 
+# sync_user_files 跳过的系统内部目录（这些目录下的文件由各自服务登记，
+# 不应作为普通 file_records 出现在"数据管理"视图里，否则会污染目录树）。
+# 匹配规则：相对用户根的第一段目录名命中即跳过。
+_SYNC_SKIP_USER_TOP_DIRS: frozenset[str] = frozenset(
+    {
+        "tasks",        # 任务产物（各工具/流程自行登记）
+        "projects",     # 项目运行结果（由 pipeline/studio 服务登记）
+        "temp",         # 临时文件
+        "results",      # 旧版任务结果（legacy）
+        "raw",          # 旧版上传目录（legacy，迁移后应清空）
+    }
+)
+# workspace/ 下需要跳过的子目录（workspace/ 根允许登记，但 chat-uploads/ 由聊天服务登记）
+_SYNC_SKIP_WORKSPACE_SUBDIRS: frozenset[str] = frozenset(
+    {
+        "chat-uploads",
+        "sandbox",
+    }
+)
+
 # 系统默认目录：用户首次访问时懒初始化，锁定不可删除/重命名
-SYSTEM_DIRECTORIES: tuple[str, ...] = ("inbox", "projects", "raw_data", "workspace", "temp")
+SYSTEM_DIRECTORIES: tuple[str, ...] = (
+    "inbox",
+    "projects",
+    "raw_data",
+    "workspace",
+    "downloads",
+    "temp",
+)
 
 _DEDUPE_SUFFIX_RE = re.compile(r"^(?P<stem>.+)_[0-9a-f]{8}$", re.IGNORECASE)
 _LEGACY_GZIP_DEDUPE_RE = re.compile(
@@ -183,25 +207,23 @@ class FileService:
     def __init__(self, session: AsyncSession):
         self._session = session
         self._files = FileRepositoryImpl(session)
-        self._sessions = UploadSessionRepositoryImpl(session)
         self._samples = SampleRepositoryImpl(session)
         self._dirs = DirectoryRepositoryImpl(session)
         self._users = SqlAlchemyUserRepository(session)
-        settings = get_settings()
-        self._storage_root = Path(settings.storage_path)
+        # 统一路径工厂：所有磁盘路径由此生成，禁止在本类中再硬编码拼接
+        self._factory = get_path_factory()
 
     # ------------------------------------------------------------------
-    # 路径工厂
+    # 路径工具（统一委托给 StoragePathFactory）
     # ------------------------------------------------------------------
-    def user_raw_dir(self, user_id: UUID) -> Path:
-        """用户上传入口；历史方法名保留，物理目录统一为 inbox。"""
-        d = self._storage_root / "users" / str(user_id) / "inbox"
-        d.mkdir(parents=True, exist_ok=True)
-        return d
+    @property
+    def _storage_root(self) -> Path:
+        """向后兼容：等价于 path_factory.data_root。"""
+        return self._factory.data_root
 
-    def user_workspace_root(self, user_id: UUID) -> Path:
-        """当前用户工作区根目录，文件搜索只允许在此目录内进行。"""
-        return self._storage_root / "users" / str(user_id)
+    def user_root(self, user_id: UUID) -> Path:
+        """用户存储根目录：``{data_root}/users/{user_id}/``。"""
+        return self._factory.user_root(str(user_id))
 
     @staticmethod
     def validate_workspace_path(path: str | None) -> str:
@@ -225,35 +247,18 @@ class FileService:
         except ValueError:
             return path.name
 
-    def user_results_dir(self, user_id: UUID) -> Path:
-        d = self._storage_root / "users" / str(user_id) / "results"
-        d.mkdir(parents=True, exist_ok=True)
-        return d
-
-    def user_downloads_dir(self, user_id: UUID) -> Path:
-        d = self._storage_root / "users" / str(user_id) / "downloads"
-        d.mkdir(parents=True, exist_ok=True)
-        return d
-
-    def _tmp_dir(self, upload_id: UUID) -> Path:
-        d = self._storage_root / ".tmp" / str(upload_id)
-        d.mkdir(parents=True, exist_ok=True)
-        return d
-
     def _resolve_abs(self, storage_path: str) -> Path:
-        """storage_path 为相对根目录的路径；拼成绝对路径并做路径遍历校验。
+        """storage_path 为相对 data_root 的路径；拼成绝对路径并做路径遍历校验。
 
-        拒绝绝对路径输入，解析后必须仍位于 storage_root 内，否则视为越权。
+        拒绝绝对路径输入，解析后必须仍位于 data_root 内，否则视为越权。
         """
         if not storage_path:
             raise NotFoundError("文件路径不能为空")
         if Path(storage_path).is_absolute():
             raise AuthorizationError("非法文件路径：禁止绝对路径")
-        abs_path = (self._storage_root / storage_path).resolve()
-        try:
-            abs_path.relative_to(self._storage_root.resolve())
-        except ValueError as exc:
-            raise AuthorizationError("非法文件路径：路径越权") from exc
+        abs_path = (self._factory.data_root / storage_path).resolve()
+        if not self._factory.is_within_root(abs_path):
+            raise AuthorizationError("非法文件路径：路径越权")
         return abs_path
 
     def _normalize_directory(self, directory: str | None) -> str:
@@ -265,16 +270,29 @@ class FileService:
         parts = [p for p in d.split("/") if p not in ("", ".", "..")]
         return "/".join(parts)
 
-    def _raw_subdir(self, user_id: UUID, directory: str) -> Path:
-        """用户 inbox/ 下的指定子目录（自动创建）。"""
-        d = self.user_raw_dir(user_id)
+    def _inbox_subdir(self, user_id: UUID, directory: str) -> Path:
+        """用户 inbox/ 下的指定子目录（自动创建）。
+
+        ``directory`` 是相对 inbox 的路径；空串表示 inbox 根。兼容历史调用方
+        传入 ``"inbox"`` 或 ``"inbox/xxx"`` 前缀的情况。
+        """
         normalized_directory = self._normalize_directory(directory)
         if normalized_directory == "inbox":
             normalized_directory = ""
         elif normalized_directory.startswith("inbox/"):
             normalized_directory = normalized_directory.removeprefix("inbox/")
-        if normalized_directory:
-            d = d / normalized_directory
+        base = self._factory.inbox_dir(str(user_id))
+        target = base / normalized_directory if normalized_directory else base
+        target.mkdir(parents=True, exist_ok=True)
+        return target
+
+    # 向后兼容：外部若还有 ``_raw_subdir`` / ``user_raw_dir`` 调用，转发到新方法
+    def _raw_subdir(self, user_id: UUID, directory: str) -> Path:
+        return self._inbox_subdir(user_id, directory)
+
+    def user_raw_dir(self, user_id: UUID) -> Path:
+        """用户上传入口 inbox/（历史方法名保留，仅做转发）。"""
+        d = self._factory.inbox_dir(str(user_id))
         d.mkdir(parents=True, exist_ok=True)
         return d
 
@@ -412,7 +430,7 @@ class FileService:
         self, user_id: UUID, query: str = "", limit: int = 50
     ) -> FileListResponse:
         """在当前用户根目录的已索引文件中递归搜索。"""
-        root = self.user_workspace_root(user_id)
+        root = self.user_root(user_id)
         if root.exists() and not root.is_dir():
             raise PermissionError("用户工作区根目录不可访问")
         if root.exists() and not root.stat().st_mode & 0o444:
@@ -472,173 +490,30 @@ class FileService:
         return QuotaResponse(used=used, total=total, percent=percent)
 
     # ------------------------------------------------------------------
-    # 分块上传：init / chunk / merge
+    # 分块上传（委托给 UploadService）
     # ------------------------------------------------------------------
+    @property
+    def _upload_svc(self):
+        """懒加载上传服务，避免循环导入。"""
+        if not hasattr(self, "__upload_svc"):
+            from omichub.application.services.upload_service import UploadService
+
+            object.__setattr__(self, "_FileService__upload_svc", UploadService(self._session))
+        return self.__upload_svc
+
     async def init_upload(self, user_id: UUID, req: UploadInitRequest) -> UploadInitResponse:
-        user = await self._users.get_by_id(user_id)
-        if user is None:
-            raise NotFoundError("用户不存在")
-
-        directory = self._normalize_directory(req.directory) or "inbox"
-
-        # 配额前置校验
-        if user.used_storage + req.total_size > user.storage_quota:
-            raise QuotaExceededError(
-                f"存储空间不足：已用 {user.used_storage}，配额 {user.storage_quota}，"
-                f"本次需 {req.total_size}"
-            )
-
-        # 秒传：同名同大小且已 completed 的会话 → 视为已传完
-        completed = await self._sessions.find_completed(user_id, req.file_name, req.total_size)
-        if completed is not None:
-            return UploadInitResponse(
-                upload_id=completed.id,
-                completed=True,
-                file_id=None,
-                uploaded_chunks=list(range(completed.total_chunks)),
-                chunk_size=completed.chunk_size,
-            )
-
-        # 预创建目标物理目录（inbox/{directory}/）
-        self._raw_subdir(user_id, directory)
-
-        # 新建上传会话（断点续传由客户端在 chunk 阶段重传来补齐；
-        # 同一文件若中途中断重传，会创建新会话，旧 pending 会话由 Celery 清理）
-        session = UploadSession(
-            id=uuid.uuid4(),
-            user_id=user_id,
-            file_name=req.file_name,
-            total_size=req.total_size,
-            chunk_size=req.chunk_size,
-            total_chunks=req.total_chunks,
-            uploaded_chunks=[],
-            file_md5=req.file_md5,
-            status="pending",
-            directory=directory,
-        )
-        await self._sessions.save(session)
-        await self._session.commit()
-        return UploadInitResponse(
-            upload_id=session.id,
-            completed=False,
-            uploaded_chunks=[],
-            chunk_size=req.chunk_size,
-        )
+        return await self._upload_svc.init_upload(user_id, req)
 
     async def save_chunk(
-        self,
-        user_id: UUID,
-        upload_id: UUID,
-        index: int,
-        chunk_bytes: bytes,
-        md5: str,
+        self, user_id: UUID, upload_id: UUID, index: int, chunk_bytes: bytes, md5: str
     ) -> UploadChunkResponse:
-        session = await self._sessions.get_by_id(user_id, upload_id)
-        if session is None:
-            raise NotFoundError("上传会话不存在")
-        if session.status in ("completed", "merging"):
-            raise ValidationError("上传会话已结束")
-        if index < 0 or index >= session.total_chunks:
-            raise ValidationError(f"分片序号越界：{index}")
-
-        # 校验分片 MD5
-        actual_md5 = hashlib.md5(chunk_bytes).hexdigest()
-        if actual_md5 != md5:
-            raise ValidationError(f"分片 {index} 校验失败：MD5 不匹配")
-
-        # 落盘到临时目录
-        chunk_path = self._tmp_dir(upload_id) / str(index)
-        chunk_path.write_bytes(chunk_bytes)
-
-        # 更新会话（幂等：同 index 替换）
-        session = await self._sessions.add_chunk(user_id, upload_id, {"index": index, "md5": md5})
-        if session is None:
-            raise NotFoundError("上传会话不存在")
-        await self._session.commit()
-        return UploadChunkResponse(
-            upload_id=upload_id,
-            index=index,
-            accepted=True,
-            uploaded=len(session.uploaded_chunks),
-        )
+        return await self._upload_svc.save_chunk(user_id, upload_id, index, chunk_bytes, md5)
 
     async def merge_upload(self, user_id: UUID, upload_id: UUID) -> UploadMergeResponse:
-        session = await self._sessions.get_by_id(user_id, upload_id)
-        if session is None:
-            raise NotFoundError("上传会话不存在")
-        if session.status == "completed":
-            raise ValidationError("上传会话已合并完成")
-
-        if len(session.uploaded_chunks) != session.total_chunks:
-            raise ValidationError(
-                f"分片不齐全：已传 {len(session.uploaded_chunks)}/{session.total_chunks}"
-            )
-
-        # 标记 merging，防并发重复合并
-        await self._sessions.update_status(user_id, upload_id, "merging")
-        await self._session.commit()
-
-        tmp_dir = self._tmp_dir(upload_id)
-        directory = self._normalize_directory(session.directory)
-        raw_subdir = self._raw_subdir(user_id, directory)  # inbox/{directory}/，自动创建
-        final_path = raw_subdir / session.file_name
-        # 同名冲突：追加短 uuid
-        if final_path.exists():
-            final_path = _append_dedupe_suffix(final_path, uuid.uuid4().hex[:8])
-
-        hasher = hashlib.md5()
-        with final_path.open("wb") as out:
-            for chunk_meta in sorted(session.uploaded_chunks, key=lambda c: c["index"]):
-                cp = tmp_dir / str(chunk_meta["index"])
-                if not cp.exists():
-                    raise ValidationError(f"分片文件丢失：{chunk_meta['index']}")
-                data = cp.read_bytes()
-                out.write(data)
-                hasher.update(data)
-
-        checksum = hasher.hexdigest()
-        size = final_path.stat().st_size
-        rel_path = str(final_path.relative_to(self._storage_root))
-
-        # 创建文件记录
-        file_record = DataFile(
-            id=uuid.uuid4(),
-            user_id=user_id,
-            path=rel_path,
-            original_name=session.file_name,
-            size=size,
-            checksum=checksum,
-            file_type=_detect_file_type(session.file_name),
-            status="active",
-            directory=directory,
-        )
-        await self._files.save(file_record)
-
-        # 原子累加配额
-        new_used = await self._users.add_used_storage(user_id, size)
-
-        # 标记会话完成，清理临时分片
-        await self._sessions.update_status(user_id, upload_id, "completed")
-        await self._session.commit()
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-
-        return UploadMergeResponse(
-            file_id=file_record.id,
-            original_name=file_record.original_name,
-            size=size,
-            checksum=checksum,
-            used_storage=new_used,
-        )
+        return await self._upload_svc.merge_upload(user_id, upload_id)
 
     async def cancel_upload(self, user_id: UUID, upload_id: UUID) -> bool:
-        """取消上传：删会话 + 清理临时分片"""
-        session = await self._sessions.get_by_id(user_id, upload_id)
-        if session is None:
-            raise NotFoundError("上传会话不存在")
-        await self._sessions.delete(user_id, upload_id)
-        await self._session.commit()
-        shutil.rmtree(self._tmp_dir(upload_id), ignore_errors=True)
-        return True
+        return await self._upload_svc.cancel_upload(user_id, upload_id)
 
     # ------------------------------------------------------------------
     # 下载 / 删除
@@ -678,7 +553,7 @@ class FileService:
             raise NotFoundError("文件不存在")
         directory = self._normalize_directory(directory)
         old_abs = self._resolve_abs(file.path)
-        new_subdir = self._raw_subdir(user_id, directory)
+        new_subdir = self._inbox_subdir(user_id, directory)
         new_abs = new_subdir / old_abs.name
         if new_abs.exists() and new_abs != old_abs:
             # 目标已存在同名：追加短 uuid
@@ -686,7 +561,7 @@ class FileService:
         if old_abs.exists() and new_abs != old_abs:
             shutil.move(str(old_abs), str(new_abs))
         file.directory = directory
-        file.path = str(new_abs.relative_to(self._storage_root))
+        file.path = self._factory.relative_to_root(new_abs)
         saved = await self._files.save(file)
         await self._session.commit()
         return DataFileDTO(
@@ -702,124 +577,45 @@ class FileService:
             modified_at=saved.updated_at,
         )
 
-    def user_system_dir(self, user_id: UUID, name: str) -> Path:
-        """用户顶层系统目录（raw_data / workspace / temp）物理路径工厂"""
-        d = self._storage_root / "users" / str(user_id) / name
+    def _ensure_user_system_subdir(self, user_id: UUID, name: str) -> Path:
+        """确保用户顶层系统子目录（inbox/projects/raw_data/workspace/downloads/temp）存在。"""
+        mapping = {
+            "inbox": self._factory.inbox_dir(str(user_id)),
+            "projects": self._factory.projects_dir(str(user_id)),
+            "raw_data": self._factory.user_root(str(user_id)) / "raw_data",
+            "workspace": self._factory.workspace_dir(str(user_id)),
+            "downloads": self._factory.downloads_dir(str(user_id)),
+            "temp": self._factory.user_root(str(user_id)) / "temp",
+        }
+        d = mapping.get(name)
+        if d is None:
+            d = self._factory.user_root(str(user_id)) / name
         d.mkdir(parents=True, exist_ok=True)
         return d
 
     # ------------------------------------------------------------------
-    # 用户目录 CRUD
+    # 用户目录 CRUD（委托给 DirectoryService）
     # ------------------------------------------------------------------
-    async def ensure_default_directories(self, user_id: UUID) -> None:
-        """幂等创建用户默认目录 inbox / projects 及内部运行目录。
+    @property
+    def _dir_svc(self):
+        """懒加载目录服务，避免循环导入。"""
+        if not hasattr(self, "_FileService__dir_svc"):
+            from omichub.application.services.directory_service import DirectoryService
 
-        目录记录和物理目录分别校验，确保历史用户即使已有部分 DB 记录，
-        或目录被手工删除，也能在注册、启动补偿和目录访问时恢复完整结构。
-        """
-        existing = await self._dirs.list_by_user(user_id)
-        existing_paths = {d.path for d in existing}
-        created_any = False
-        for name in SYSTEM_DIRECTORIES:
-            if name not in existing_paths:
-                directory = Directory(
-                    id=uuid.uuid4(),
-                    user_id=user_id,
-                    path=name,
-                    name=name,
-                    parent_path=None,
-                    is_system=True,
-                )
-                await self._dirs.save(directory)
-                created_any = True
-            self.user_system_dir(user_id, name)  # 无论 DB 是否已有记录，都补建物理目录
-        if created_any:
-            await self._session.commit()
+            object.__setattr__(self, "_FileService__dir_svc", DirectoryService(self._session))
+        return self._FileService__dir_svc
+
+    async def ensure_default_directories(self, user_id: UUID) -> None:
+        return await self._dir_svc.ensure_default_directories(user_id)
 
     async def list_directories(self, user_id: UUID) -> list[DirectoryDTO]:
-        await self.ensure_default_directories(user_id)
-        dirs = await self._dirs.list_by_user(user_id)
-        return [
-            DirectoryDTO(
-                id=d.id,
-                path=d.path,
-                name=d.name,
-                parent_path=d.parent_path,
-                is_system=d.is_system,
-                created_at=d.created_at,
-                modified_at=d.updated_at,
-            )
-            for d in dirs
-        ]
+        return await self._dir_svc.list_directories(user_id)
 
     async def create_directory(self, user_id: UUID, req: DirectoryCreateRequest) -> DirectoryDTO:
-        path = self._normalize_directory(req.path)
-        if not path:
-            raise ValidationError("目录名不能为空")
-        if len(path) > 500:
-            raise ValidationError("目录路径过长")
-        # 顶层目录不得与系统默认目录同名，避免冲突
-        top = path.split("/")[0]
-        if (
-            path == top
-            and top in SYSTEM_DIRECTORIES
-            and not await self._dirs.get_by_path(user_id, top)
-        ):
-            # 允许在系统目录下建子目录，但不允许新建同名顶层系统目录
-            raise ConflictError(f"系统目录已存在：{path}")
-        if await self._dirs.get_by_path(user_id, path) is not None:
-            raise ConflictError(f"目录已存在：{path}")
-        # 父目录必须存在（若有多级）
-        parts = path.split("/")
-        name = parts[-1]
-        parent_path = "/".join(parts[:-1]) if len(parts) > 1 else None
-        if parent_path and await self._dirs.get_by_path(user_id, parent_path) is None:
-            raise NotFoundError(f"父目录不存在：{parent_path}")
-        directory = Directory(
-            id=uuid.uuid4(),
-            user_id=user_id,
-            path=path,
-            name=name,
-            parent_path=parent_path,
-        )
-        saved = await self._dirs.save(directory)
-        # 预创建物理目录
-        self._raw_subdir(user_id, path)
-        await self._session.commit()
-        return DirectoryDTO(
-            id=saved.id,
-            path=saved.path,
-            name=saved.name,
-            parent_path=saved.parent_path,
-            created_at=saved.created_at,
-            modified_at=saved.updated_at,
-        )
+        return await self._dir_svc.create_directory(user_id, req)
 
     async def delete_directory(self, user_id: UUID, path: str) -> bool:
-        path = self._normalize_directory(path)
-        if not path:
-            raise ValidationError("不能删除根目录")
-        # 校验归属
-        target = await self._dirs.get_by_path(user_id, path)
-        if target is None:
-            raise NotFoundError("目录不存在")
-        # 系统默认目录锁定，禁止删除
-        if target.is_system:
-            raise AuthorizationError(f"系统目录不可删除：{path}")
-        # 检查是否有子目录
-        all_dirs = await self._dirs.list_by_user(user_id)
-        if any(d.path.startswith(path + "/") for d in all_dirs):
-            raise ValidationError("目录下还有子目录，请先删除子目录")
-        # 删除目录记录（文件记录的 directory 字段不动，文件仍在原物理路径，
-        # 但会从该目录视图消失——实际上文件 directory 仍指向该路径，会显示为孤儿。
-        # 简化策略：连带把该目录下的文件 directory 置空回根，避免孤儿）
-        files = await self._files.list_by_user(user_id, status="active", directory=path)
-        for f in files:
-            f.directory = ""
-            await self._files.save(f)
-        ok = await self._dirs.delete(user_id, path)
-        await self._session.commit()
-        return ok
+        return await self._dir_svc.delete_directory(user_id, path)
 
     async def list_files_for_picker(
         self, user_id: UUID, directory: str | None = None, file_type: str | None = None
@@ -854,7 +650,7 @@ class FileService:
 
         from omichub.infrastructure.database.models.file import FileRecordModel
 
-        user_root = self._storage_root / "users" / str(user_id)
+        user_root = self.user_root(user_id)
 
         res = await self._session.execute(
             select(FileRecordModel).where(
@@ -891,7 +687,7 @@ class FileService:
                 if not directory_path.is_dir():
                     continue
                 relative_parts = directory_path.relative_to(user_root).parts
-                if any(part.startswith(".") for part in relative_parts):
+                if self._should_skip_sync_path(relative_parts):
                     continue
                 relative_directory = "/".join(relative_parts)
                 if relative_directory:
@@ -899,19 +695,20 @@ class FileService:
             for f in user_root.rglob("*"):
                 if not f.is_file():
                     continue
+                rel_user_parts = f.relative_to(user_root).parts
                 # 跳过隐藏目录/文件（.tmp 上传分片、.qoder 等 IDE 元数据）
-                if any(part.startswith(".") for part in f.relative_to(user_root).parts):
+                if any(part.startswith(".") for part in rel_user_parts):
+                    continue
+                # 跳过系统内部目录下的文件（tasks/projects/... 由各自服务登记）
+                if self._should_skip_sync_path(rel_user_parts):
                     continue
                 try:
-                    rel = str(f.relative_to(self._storage_root))
+                    rel = self._factory.relative_to_root(f)
                 except ValueError:
                     continue
                 if rel in existing_paths:
                     continue
-                try:
-                    rel_user = f.relative_to(user_root)
-                except ValueError:
-                    rel_user = None
+                rel_user = Path(*rel_user_parts) if rel_user_parts else None
                 directory = self._derive_directory(rel_user)
                 if directory:
                     await ensure_directory_chain(self._session, user_id, directory)
@@ -951,9 +748,11 @@ class FileService:
     def _derive_directory(rel_user: Path | None) -> str:
         """从「相对用户根的路径」推导 logical directory。
 
+        - ``inbox/myproj/x.fq`` → ``myproj``（上传布局，剥离 inbox/ 前缀）
+        - ``inbox/x.fq`` → ``""``（直接落在 inbox 根，归入用户根目录视图）
+        - ``raw/myproj/x.fq`` → ``myproj``（兼容 legacy 上传布局，剥离 raw/）
         - ``raw_data/PRJNA1259417/x.fq`` → ``raw_data/PRJNA1259417``（下载布局，保留）
-        - ``raw/myproj/x.fq`` → ``myproj``（上传布局，剥离 raw/ 前缀）
-        - ``raw/raw_data/x.fq`` → ``raw_data``（上传到系统目录 raw_data）
+        - ``downloads/x.fq`` → ``downloads``（下载产物）
         - 直接在用户根下的文件 → ``""``
         """
         if rel_user is None:
@@ -961,10 +760,30 @@ class FileService:
         parts = list(rel_user.parts)[:-1]  # 去掉文件名
         if not parts:
             return ""
-        if parts[0] == "raw":
+        # 剥离上传暂存目录前缀（inbox 是当前，raw 是 legacy）
+        if parts and parts[0] in ("inbox", "raw"):
             parts = parts[1:]
         parts = [p for p in parts if p and p not in (".", "..")]
         return "/".join(parts)
+
+    @staticmethod
+    def _should_skip_sync_path(parts: tuple[str, ...]) -> bool:
+        """判断该路径是否属于系统内部目录，sync 时应跳过（不登记为普通文件记录）。
+
+        - 顶层命中 _SYNC_SKIP_USER_TOP_DIRS（tasks/projects/temp/results/raw）→ 跳过
+        - workspace/{chat-uploads,sandbox,...} → 跳过；workspace/ 根下的文件允许登记
+        - 隐藏目录（以 . 开头）→ 跳过
+        """
+        if not parts:
+            return False
+        top = parts[0]
+        if top.startswith("."):
+            return True
+        if top in _SYNC_SKIP_USER_TOP_DIRS:
+            return True
+        if top == "workspace" and len(parts) >= 2 and parts[1] in _SYNC_SKIP_WORKSPACE_SUBDIRS:
+            return True
+        return False
 
     # ------------------------------------------------------------------
     # 样本（供流程引擎读取文件路径）

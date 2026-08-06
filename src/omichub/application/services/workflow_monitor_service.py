@@ -182,7 +182,7 @@ class WorkflowMonitorService:
         limit: int,
     ) -> list[Row]:
         stmt = (
-            select(TaskModel, UserModel.username)
+            select(TaskModel, UserModel.username, UserModel.nickname)
             .outerjoin(UserModel, UserModel.id == TaskModel.user_id)
             .order_by(desc(TaskModel.created_at))
             .limit(limit)
@@ -207,7 +207,7 @@ class WorkflowMonitorService:
 
     async def _get_task_row(self, task_id: str) -> Row | None:
         stmt = (
-            select(TaskModel, UserModel.username)
+            select(TaskModel, UserModel.username, UserModel.nickname)
             .outerjoin(UserModel, UserModel.id == TaskModel.user_id)
             .where(TaskModel.id == UUID(task_id))
         )
@@ -217,16 +217,18 @@ class WorkflowMonitorService:
     async def _row_to_snapshot(self, row: Row) -> WorkflowTaskSnapshot:
         model: TaskModel = row[0]
         username = row[1]
+        nickname = row[2]
         cached = await self._safe_get_summary(str(model.id))
         if cached:
             cached["username"] = username
+            cached["nickname"] = nickname
             cached["name"] = model.name
             cached["status"] = model.status
             cached["progress"] = model.progress
             cached["progress_percent"] = round(model.progress * 100, 2)
             cached["last_error"] = model.error_message or cached.get("last_error", "")
             return WorkflowTaskSnapshot(**cached)
-        return self._model_to_snapshot(model, None, username=username)
+        return self._model_to_snapshot(model, None, username=username, nickname=nickname)
 
     async def _build_summary(
         self, *, current_user_id: str, role: str, tasks: list[WorkflowTaskSnapshot]
@@ -310,6 +312,7 @@ class WorkflowMonitorService:
         event: WorkflowEvent | None,
         *,
         username: str | None = None,
+        nickname: str | None = None,
     ) -> WorkflowTaskSnapshot:
         snakemake = event.snakemake if event else {}
         return WorkflowTaskSnapshot(
@@ -318,6 +321,7 @@ class WorkflowMonitorService:
             flow_id=model.flow_id,
             user_id=str(model.user_id),
             username=username,
+            nickname=nickname,
             status=model.status,
             progress=model.progress,
             progress_percent=round(model.progress * 100, 2),

@@ -13,6 +13,7 @@ import CookieStatsDashboard from '@/components/admin-cookie/CookieStatsDashboard
 import RechargeModal from '@/components/admin-cookie/RechargeModal.vue'
 import CookieTransactionDrawer from '@/components/admin-cookie/CookieTransactionDrawer.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import { displayName } from '@/utils/displayName'
 
 withDefaults(defineProps<{ embedded?: boolean }>(), {
   embedded: false,
@@ -80,9 +81,9 @@ const columns: DataTableColumns<AdminCookieAccount> = [
     render: (row) =>
       h('div', { class: 'user-cell' }, [
         h(NAvatar, { round: true, size: 34, style: { background: 'var(--arco-primary)' } },
-          { default: () => row.username.slice(0, 1).toUpperCase() }),
+          { default: () => displayName(row).slice(0, 1).toUpperCase() }),
         h('div', { class: 'user-meta' }, [
-          h('div', { class: 'user-name' }, row.username),
+          h('div', { class: 'user-name' }, displayName(row)),
           h('div', { class: 'user-email' }, row.email),
         ]),
       ]),

@@ -125,9 +125,23 @@ class LiteLLMProvider:
                 )
 
         # 覆盖参数
-        for key in ("stream", "temperature", "max_tokens", "top_p", "timeout", "tools"):
+        for key in (
+            "stream",
+            "temperature",
+            "max_tokens",
+            "top_p",
+            "timeout",
+            "tools",
+            "stream_options",
+        ):
             if key in overrides:
                 kwargs[key] = overrides[key]
+
+        kwargs.setdefault("num_retries", 2)
+        if kwargs.get("stream"):
+            stream_options = dict(kwargs.get("stream_options") or {})
+            stream_options.setdefault("include_usage", True)
+            kwargs["stream_options"] = stream_options
 
         # litellm 路由：自定义 OpenAI 兼容端点需 openai/ 前缀，否则 BadRequestError
         kwargs["model"] = self._route_model(

@@ -24,6 +24,7 @@ import {
   type AgentTeamsCaseStatus,
 } from '@/api/agentTeams'
 import { agentTeamsStatusLabel } from '@/utils/agentTeamsStatus'
+import { displayName } from '@/utils/displayName'
 
 const PAGE_SIZE = 20
 const message = useMessage()
@@ -119,7 +120,10 @@ const columns = [
     key: 'requester',
     width: 220,
     render: (row: AgentTeamsCase) => h('div', { class: 'case-user' }, [
-      h('span', { class: 'case-user__name' }, row.requester_username || '未知用户'),
+      h('span', { class: 'case-user__name' }, displayName({
+        nickname: row.requester_nickname,
+        username: row.requester_username,
+      }) || '未知用户'),
       renderIdentifier(row.requester_ref, '用户 ID', 'case-user__id'),
     ]),
   },

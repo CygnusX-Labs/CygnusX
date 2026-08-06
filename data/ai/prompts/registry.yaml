@@ -50,6 +50,12 @@ prompts:
     kind: system
     owners:
     - studio
+  shared.sandbox_protocol:
+    file: shared/sandbox_protocol.md
+    kind: system
+    owners:
+    - agent
+    - studio
   studio.capability_catalog:
     file: studio/capability_catalog.md
     kind: template

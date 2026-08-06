@@ -19,7 +19,7 @@ import yaml
 
 import omichub.application.services.chat_service as chat_service_module
 from omichub.application.schemas.agent import AgentTemplateDTO
-from omichub.application.services.chat_service import ChatService
+from omichub.application.services.chat_service import ROUTER_SYSTEM_PROMPT, ChatService
 from omichub.infrastructure.config import agent_loader
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -31,6 +31,7 @@ ROUTER_PROMPT_MD = AI_DIR / "prompts" / "router.md"
 # ---------------------------------------------------------------------------
 # fixtures / 桩
 # ---------------------------------------------------------------------------
+
 
 def _candidate(agent_id: str, category: str, name: str, router: bool = False) -> AgentTemplateDTO:
     return AgentTemplateDTO(
@@ -56,6 +57,14 @@ CANDIDATES = [
 ]
 
 EXPERT_IDS = [c.agent_id for c in CANDIDATES if not c.features.get("router")]
+
+
+def test_runtime_router_prompt_keeps_decision_on_stardust_ai() -> None:
+    assert "星尘 AI" in ROUTER_SYSTEM_PROMPT
+    assert "不要执行分析" in ROUTER_SYSTEM_PROMPT
+    assert "前端关键词规则" in ROUTER_SYSTEM_PROMPT
+    assert "运行时候选专家目录" in ROUTER_SYSTEM_PROMPT
+    assert "emoji" in ROUTER_SYSTEM_PROMPT
 
 
 class _FakeAgentService:
@@ -116,6 +125,7 @@ def _enable_consultation(monkeypatch: pytest.MonkeyPatch, max_experts: int = 3) 
 # a. 分派正确性：每个已注册专家 agent
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 @pytest.mark.parametrize("agent_id", EXPERT_IDS)
 async def test_dispatch_to_each_registered_expert(
@@ -123,9 +133,7 @@ async def test_dispatch_to_each_registered_expert(
 ):
     """router 模型输出各专家 agent_id 时，_route_to_agent 正确分派且 reason 透传"""
     reason = f"转接 {agent_id} 的理由"
-    _mock_router_output(
-        monkeypatch, json.dumps({"agent_id": agent_id, "reason": reason})
-    )
+    _mock_router_output(monkeypatch, json.dumps({"agent_id": agent_id, "reason": reason}))
     ctx, info = await service._route_to_agent(router_ctx, "用户需求")
     assert ctx is not None and ctx.agent_id == agent_id
     assert info is not None
@@ -141,12 +149,12 @@ async def test_router_agent_itself_never_dispatched(
     service: ChatService, router_ctx: Any, monkeypatch
 ):
     """features.router=true 的 agent-router 被排除在候选之外，幻觉选中时回退"""
-    _mock_router_output(
-        monkeypatch, json.dumps({"agent_id": "agent-router", "reason": "选自己"})
-    )
+    _mock_router_output(monkeypatch, json.dumps({"agent_id": "agent-router", "reason": "选自己"}))
     ctx, info = await service._route_to_agent(router_ctx, "随便聊聊")
     assert ctx is not None and ctx.agent_id == "agent-general"
     assert info is not None and info["agent_id"] == "agent-general"
+    assert info["transition"]["visible"] is True
+    assert info["transition"]["title"] == "已匹配通用助手"
 
 
 # ---------------------------------------------------------------------------
@@ -175,13 +183,15 @@ QUESTION_ROUTING_CASES = [
     ids=[c[0] for c in QUESTION_ROUTING_CASES],
 )
 async def test_question_routes_to_expected_expert(
-    service: ChatService, router_ctx: Any, monkeypatch,
-    question: str, expected_agent: str, reason: str,
+    service: ChatService,
+    router_ctx: Any,
+    monkeypatch,
+    question: str,
+    expected_agent: str,
+    reason: str,
 ):
     """模拟 router 对典型问句的决策输出，断言分派落到期望专家且 reason 透传"""
-    _mock_router_output(
-        monkeypatch, json.dumps({"agent_id": expected_agent, "reason": reason})
-    )
+    _mock_router_output(monkeypatch, json.dumps({"agent_id": expected_agent, "reason": reason}))
     ctx, info = await service._route_to_agent(router_ctx, question)
     assert ctx is not None and ctx.agent_id == expected_agent
     assert info is not None
@@ -189,9 +199,54 @@ async def test_question_routes_to_expected_expert(
     assert info["reason"] == reason
 
 
+@pytest.mark.unit
+async def test_bulk_rnaseq_guard_corrects_scrna_model_misroute(
+    service: ChatService, router_ctx: Any, monkeypatch
+):
+    _mock_router_output(
+        monkeypatch,
+        json.dumps(
+            {
+                "agent_id": "agent-scrna",
+                "reason": "误把怎么开始理解为单细胞上游",
+                "confidence": 0.82,
+            }
+        ),
+    )
+
+    ctx, info = await service._route_to_agent(router_ctx, "RNA-seq 差异表达分析怎么开始")
+
+    assert ctx is not None and ctx.agent_id == "agent-rnaseq"
+    assert info is not None and info["agent_id"] == "agent-rnaseq"
+    assert "纠正单细胞专家误匹配" in info["reason"]
+
+
+@pytest.mark.unit
+async def test_ambiguous_tp53_plan_routes_to_general_intake_before_experts(
+    service: ChatService, router_ctx: Any, monkeypatch
+):
+    async def should_not_route_with_model(**_kwargs: Any):
+        raise AssertionError("模糊研究计划应由确定性 intake 门槛拦截")
+        yield SimpleNamespace(type="text", content="", metadata={})
+
+    monkeypatch.setattr(
+        chat_service_module.provider_manager, "chat_stream", should_not_route_with_model
+    )
+    ctx, info = await service._route_to_agent(
+        router_ctx,
+        "我有两个 TP53 分组，想挖掘新颖发现，请写详细计划",
+    )
+
+    assert ctx is not None and ctx.agent_id == "agent-general"
+    assert info is not None and info["needs_clarification"] is True
+    assert len(info["clarification_questions"]) == 3
+    assert "先由通用助手" in info["reason"]
+
+
 # ---------------------------------------------------------------------------
 # c. 边界与容错
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 async def test_empty_model_output_falls_back_general(
@@ -227,9 +282,7 @@ async def test_empty_agent_id_falls_back_general(
 
 
 @pytest.mark.unit
-async def test_null_agent_id_falls_back_general(
-    service: ChatService, router_ctx: Any, monkeypatch
-):
+async def test_null_agent_id_falls_back_general(service: ChatService, router_ctx: Any, monkeypatch):
     _mock_router_output(monkeypatch, '{"agent_id": null, "reason": "null id"}')
     ctx, info = await service._route_to_agent(router_ctx, "你好")
     assert ctx is not None and ctx.agent_id == "agent-general"
@@ -249,11 +302,11 @@ async def test_hallucinated_consult_agents_filtered(
                 "agent_id": "agent-rnaseq",
                 "reason": "主专家",
                 "consult_agent_ids": [
-                    "agent-scrna",            # 合法
-                    "agent-not-exist",        # 幻觉 → 过滤
-                    "agent-rnaseq",           # 与主专家相同 → 过滤
+                    "agent-scrna",  # 合法
+                    "agent-not-exist",  # 幻觉 → 过滤
+                    "agent-rnaseq",  # 与主专家相同 → 过滤
                     "agent-code",
-                    "agent-code",             # 重复 → 去重
+                    "agent-code",  # 重复 → 去重
                 ],
             }
         ),
@@ -286,9 +339,7 @@ async def test_consult_agents_capped_by_max_experts(
 
 
 @pytest.mark.unit
-async def test_consult_disabled_by_default(
-    service: ChatService, router_ctx: Any, monkeypatch
-):
+async def test_consult_disabled_by_default(service: ChatService, router_ctx: Any, monkeypatch):
     """multi_expert_consultation_enabled 默认关闭时 consult_agent_ids 恒为空"""
     _mock_router_output(
         monkeypatch,
@@ -310,7 +361,7 @@ async def test_consult_disabled_by_default(
     [
         (True, True),
         (False, False),
-        ("true", True),      # 非空字符串被 bool() 视为 True
+        ("true", True),  # 非空字符串被 bool() 视为 True
         ("yes", True),
         ("", False),
         (None, False),
@@ -341,22 +392,16 @@ async def test_consult_agent_ids_not_a_list_ignored(
     _enable_consultation(monkeypatch)
     _mock_router_output(
         monkeypatch,
-        json.dumps(
-            {"agent_id": "agent-rnaseq", "reason": "r", "consult_agent_ids": "agent-scrna"}
-        ),
+        json.dumps({"agent_id": "agent-rnaseq", "reason": "r", "consult_agent_ids": "agent-scrna"}),
     )
     ctx, info = await service._route_to_agent(router_ctx, "需求")
     assert info is not None and info["consult_agent_ids"] == []
 
 
 @pytest.mark.unit
-async def test_json_embedded_in_code_block(
-    service: ChatService, router_ctx: Any, monkeypatch
-):
+async def test_json_embedded_in_code_block(service: ChatService, router_ctx: Any, monkeypatch):
     """模型把 JSON 包在 markdown 代码块里也能容错提取"""
-    _mock_router_output(
-        monkeypatch, '```json\n{"agent_id": "agent-viz", "reason": "绘图"}\n```'
-    )
+    _mock_router_output(monkeypatch, '```json\n{"agent_id": "agent-viz", "reason": "绘图"}\n```')
     ctx, info = await service._route_to_agent(router_ctx, "画个热图")
     assert ctx is not None and ctx.agent_id == "agent-viz"
     assert info is not None and info["agent_id"] == "agent-viz"
@@ -365,6 +410,7 @@ async def test_json_embedded_in_code_block(
 # ---------------------------------------------------------------------------
 # d. 配置一致性
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 def test_all_enabled_agent_yamls_loadable():
@@ -436,12 +482,8 @@ def test_router_prompt_candidates_match_registry():
 
     missing_in_registry = prompt_ids - registry_ids
     missing_in_prompt = registry_ids - prompt_ids
-    assert not missing_in_registry, (
-        f"router.md 中存在未注册的 agent_id: {missing_in_registry}"
-    )
-    assert not missing_in_prompt, (
-        f"已注册专家未出现在 router.md 候选表中: {missing_in_prompt}"
-    )
+    assert not missing_in_registry, f"router.md 中存在未注册的 agent_id: {missing_in_registry}"
+    assert not missing_in_prompt, f"已注册专家未出现在 router.md 候选表中: {missing_in_prompt}"
     assert not (prompt_ids & router_ids), (
         f"router agent 不应出现在 router.md 候选表: {prompt_ids & router_ids}"
     )

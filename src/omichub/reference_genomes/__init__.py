@@ -12,5 +12,5 @@
 - sequence.py 纯 Python faidx 读取器（不引入 pysam/pyfaidx 依赖）
 
 设计文档：docs/26.8.4/常用物种基因数据库_实施方案.md（唯一权威设计）
-原始蓝图：dataset/README.md
+原始蓝图：refdata/README.md
 """

@@ -101,7 +101,7 @@ DATABASE_URL=postgresql+asyncpg://omichub:omichub_dev_password@db:5432/omichub
 | jbrowse/ref/ | 3.2G | GRCh38.p14.genome.fa 人类参考基因组 | 共享参考数据（只读、可重新下载）| 适合对象存储 / NAS 共享卷，无需备份 |
 | jbrowse/tracks/ | 3.0G | gencode.v50.basic.annotation.gff3 基因注释 | 共享参考数据（只读、可重新下载）| 同上 |
 | bin/ | 38M | EBIDownload 二进制 + yaml | 工具二进制 | 随镜像/脚本分发，可不入对象存储 |
-| dataset/enrichments/ | 248K | 富集分析前后端代码（docker-compose 子项目）| 第三方子应用代码 | 归入仓库或独立仓库 |
+| refdata/enrichments/ | 248K | 富集分析前后端代码（docker-compose 子项目）| 第三方子应用代码 | 归入仓库或独立仓库 |
 | users/&lt;uuid&gt;/ | 180K | 每用户独立目录，含 raw_data/ 等 | 用户私有数据（当前几乎为空）| 必须随迁移，适合 NAS / 对象存储 |
 | uploads/ | 28K | 上传会话临时目录（含 ebi_download 残留）| 临时/中转数据 | 可清理，迁移非必需 |
 | welcome/ | 12K | welcome.yaml + welcome_state.yaml 欢迎词与轮询游标 | 平台配置 | 随迁移（小）|

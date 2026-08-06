@@ -1,8 +1,8 @@
 """数据下载应用服务 — 编排公共数据库与云存储下载任务。
 
 复用通用 Task 聚合根承载下载任务（历史 flow_id="ebi_download"），不引入新领域表。
-下载产物落到 `storage_path/users/<user_id>/inbox/downloads/...`，完成后登记为 FileRecord，
-自动出现在「数据管理」中。
+下载产物落到 ``{data_root}/users/<user_id>/downloads/...``（顶层 downloads/），
+完成后登记为 FileRecord，自动出现在「数据管理」中。
 """
 
 from __future__ import annotations
@@ -44,12 +44,14 @@ class DownloadService:
         self._domain = TaskDomainService(self._repo)
 
     async def submit(self, user_id: str, req: DownloadRequest) -> TaskResponse:
-        """提交一个数据下载任务。"""
+        """提交一个数据下载任务。
+
+        下载产物默认落到顶层 ``downloads/``，与 ``inbox/``（用户上传暂存）解耦。
+        用户若显式指定 ``target_directory``，则按原样落盘（不再强制前缀 inbox/）。
+        """
         directory = self._normalize_directory(req.target_directory)
         if not directory:
-            directory = "inbox/downloads"
-        elif directory != "inbox" and not directory.startswith("inbox/"):
-            directory = f"inbox/{directory}"
+            directory = "downloads"
 
         if req.source == "cloud_storage":
             provider = self._normalize_cloud_provider(req.cloud_provider or "")
@@ -160,7 +162,10 @@ class DownloadService:
         return (label or fallback)[:120]
 
     def _make_work_dir(self, user_id: str, label: str, directory: str = "") -> str:
-        """下载产物落在用户 inbox，避免创建新的 raw_data 目录。"""
+        """下载产物落在 ``{user_root}/{directory}/{label}/``。
+
+        默认 directory="downloads"，即顶层 downloads/；用户显式指定其它目录时按原样使用。
+        """
         from omichub.infrastructure.storage import get_path_factory
 
         base = get_path_factory().user_root(user_id) / directory

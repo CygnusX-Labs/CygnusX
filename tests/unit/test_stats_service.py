@@ -254,8 +254,8 @@ def test_aggregate_studio_usage_includes_cookie_cost():
     )
 
     assert result["summary"]["total_tokens"] == 1500
-    assert result["cookie"]["rate_per_1k_tokens"] == 10.0
-    assert result["cookie"]["cost"] == 15.0  # 1500 / 1000 * 10 🥫
+    assert result["cookie"]["rate_per_1k_tokens"] == 1.0
+    assert result["cookie"]["cost"] == 1.5  # 1500 / 1000 * 1 🥫
 
 
 @pytest.mark.asyncio
@@ -279,18 +279,18 @@ async def test_user_ai_token_usage_aggregates_records_and_daily(service):
 
     result = await service.user_ai_token_usage(USER_ID, days=7, limit=10)
 
-    assert result["rate_per_1k_tokens"] == 10.0
+    assert result["rate_per_1k_tokens"] == 1.0
     assert result["summary"] == {
         "messages": 2,
         "sessions": 2,
         "input_tokens": 1100,
         "output_tokens": 400,
         "total_tokens": 1500,
-        "cookie_cost": 15.0,
+        "cookie_cost": 1.5,
     }
     assert len(result["records"]) == 2
     assert result["records"][0]["title"] == "对话 A"
-    assert result["records"][0]["cookie_cost"] == 10.0
+    assert result["records"][0]["cookie_cost"] == 1.0
     assert result["daily"][-1]["total_tokens"] == 1000
-    assert result["daily"][-1]["cookie_cost"] == 10.0
+    assert result["daily"][-1]["cookie_cost"] == 1.0
     assert result["daily"][-2]["total_tokens"] == 500

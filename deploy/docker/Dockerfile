@@ -22,16 +22,22 @@ RUN python -m pip install --no-cache-dir --disable-pip-version-check \
     -i https://pypi.tuna.tsinghua.edu.cn/simple "uv==0.6.14"
 
 # uv 不读 /etc/pip.conf，必须显式指定 index（tuna 主源 + 阿里云兜底）
+# HTTP 超时拉长到 120s + 5 次重试：国内拉 scipy/matplotlib 等大包容易 30s 默认超时
 ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
-    UV_EXTRA_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+    UV_EXTRA_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+    UV_HTTP_TIMEOUT=120 \
+    UV_HTTP_RETRIES=5 \
+    UV_LINK_MODE=copy
 
 WORKDIR /app
 
 # 先复制依赖文件（利用 Docker 层缓存）
 COPY pyproject.toml uv.lock* README.md ./
 
-# 安装依赖到虚拟环境
-RUN uv sync --frozen --no-dev --extra workflow --no-install-project
+# 安装依赖到虚拟环境（BuildKit cache mount：跨重建复用 uv 下载缓存，避免每次 --build 都重新下载）
+RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
+    uv sync --frozen --no-dev --extra workflow --no-install-project \
+    --index-url https://pypi.tuna.tsinghua.edu.cn/simple/
 
 # 复制源代码
 COPY src/ ./src/
@@ -42,21 +48,27 @@ COPY scripts/ ./scripts/
 COPY tool_configs/ ./tool_configs/
 
 # 安装项目本身
-RUN uv sync --frozen --no-dev --extra workflow
+RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
+    uv sync --frozen --no-dev --extra workflow \
+    --index-url https://pypi.tuna.tsinghua.edu.cn/simple/
 
 # Snakemake logger plugin used by the workflow monitor.
-RUN uv pip install --python /app/.venv/bin/python --no-cache "snakemake-logger-plugin-rich-loguru>=0.3.0"
+RUN uv pip install --python /app/.venv/bin/python --no-cache \
+    --index-url https://pypi.tuna.tsinghua.edu.cn/simple/ \
+    "snakemake-logger-plugin-rich-loguru>=0.3.0"
 
 # AgentExplorer SDK powers the optional Alibaba Cloud official Skills marketplace.
 # Keep it separate from uv.lock because this integration is lazy-loaded and only the web service
 # needs it when an Alibaba Cloud AccessKey is configured.
 RUN uv pip install --python /app/.venv/bin/python --no-cache \
+    --index-url https://pypi.tuna.tsinghua.edu.cn/simple/ \
     "alibabacloud_agentexplorer20260317==1.0.1"
 
 # RocketMQ is optional at runtime. Keep it outside uv.lock so the default
 # Celery-only environment remains reproducible while RocketMQ-enabled images
 # have the native client available.
 RUN uv pip install --python /app/.venv/bin/python --no-cache \
+    --index-url https://pypi.tuna.tsinghua.edu.cn/simple/ \
     "rocketmq-client-python==2.0.0"
 
 # ----- 阶段 2: 运行 -----

@@ -15,13 +15,14 @@ import { useAuthStore } from '@/stores/auth'
 import type { SiteSettings } from '@/types'
 import { isFestivalEffectsEnabled, setFestivalEffectsEnabled } from '@/utils/interfacePreferences'
 import PageHeader from '@/components/PageHeader.vue'
+import { displayName as getDisplayName } from '@/utils/displayName'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const message = useMessage()
 
 const isAdmin = computed(() => authStore.user?.role === 'admin')
-const displayName = computed(() => authStore.user?.nickname || authStore.user?.username || '')
+const displayName = computed(() => getDisplayName(authStore.user))
 
 // ===== 平台全局配置 =====
 const platformConfig = ref<SiteSettings>({ registration_enabled: true, totp_policy: 'optional', subagent_fanout_enabled: false, agentteams_chat_entry_enabled: false, agent_memory_enabled: true })
@@ -357,11 +358,9 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
 </script>
 
 <template>
-  <div class="settings-page-wrapper">
-    <div class="settings-page-content">
-      <PageHeader title="系统设置" subtitle="管理个人资料、登录安全与平台偏好" />
-      <div class="settings-page">
-        <NTabs type="line" animated>
+  <main class="admin-config-center settings-page">
+    <PageHeader title="系统设置" subtitle="管理个人资料、登录安全与平台偏好" />
+    <NTabs type="line" animated class="admin-config-tabs">
         <!-- 个人信息 -->
         <NTabPane name="profile" tab="个人信息">
           <NCard :bordered="false" class="arco-card settings-card">
@@ -466,7 +465,6 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
                   <NButton
                     :loading="faLoading"
                     :type="platformConfig.totp_policy === 'required' ? 'warning' : 'primary'"
-                    :class="platformConfig.totp_policy === 'required' ? 'totp-required-btn' : ''"
                     @click="startSetup2FA"
                   >
                     开启二次验证
@@ -589,165 +587,136 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
 
         <!-- 平台设置（仅管理员可见） -->
         <NTabPane v-if="isAdmin" name="platform" tab="平台设置">
-          <div class="settings-section-grid">
+          <section class="admin-config-section platform-settings-section" aria-label="平台设置">
+            <div class="platform-settings-grid">
             <!-- 开放注册 -->
-            <NCard :bordered="false" class="arco-card settings-card">
-              <template #header>
-                <NSpace align="center">
-                  <span class="text-xl">🌐</span>
-                  <span>开放用户注册</span>
-                </NSpace>
-              </template>
-              <p class="text-sm text-gray-500 mb-6">
+            <article class="platform-setting-card">
+              <div class="platform-setting-card__header">
+                <span class="platform-setting-card__icon" aria-hidden="true">🌐</span>
+                <h2>开放用户注册</h2>
+              </div>
+              <p class="platform-setting-card__description">
                 关闭后新用户将无法自助注册，需由管理员创建账号
               </p>
-              <NSwitch
-                :value="platformConfig.registration_enabled"
-                :loading="platformLoading"
-                @update:value="onRegistrationChange"
-              />
-            </NCard>
+              <div class="platform-setting-card__control">
+                <NSwitch
+                  :value="platformConfig.registration_enabled"
+                  :loading="platformLoading"
+                  aria-label="开放用户注册"
+                  @update:value="onRegistrationChange"
+                />
+              </div>
+            </article>
 
             <!-- 并行子 Agent（灰度） -->
-            <NCard :bordered="false" class="arco-card settings-card">
-              <template #header>
-                <NSpace align="center">
-                  <span class="text-xl">🤖</span>
-                  <span>对话内并行子 Agent</span>
-                  <NTag size="small" type="warning">灰度</NTag>
-                </NSpace>
-              </template>
-              <p class="text-sm text-gray-500 mb-6">
+            <article class="platform-setting-card">
+              <div class="platform-setting-card__header">
+                <span class="platform-setting-card__icon" aria-hidden="true">🤖</span>
+                <h2>对话内并行子 Agent</h2>
+                <NTag size="small" type="warning" :bordered="false">灰度</NTag>
+              </div>
+              <p class="platform-setting-card__description">
                 开启后，助手可用 parallel_subagents 工具把相互独立的子任务并行分派给多个专业
                 Agent 执行并汇总，显著缩短复合请求耗时。环境变量
                 SUBAGENT_FANOUT_ENABLED=true 也会强制启用（此时本开关关闭不生效）。
               </p>
-              <NSwitch
-                :value="platformConfig.subagent_fanout_enabled"
-                :loading="platformLoading"
-                @update:value="onSubagentFanoutChange"
-              />
-            </NCard>
+              <div class="platform-setting-card__control">
+                <NSwitch
+                  :value="platformConfig.subagent_fanout_enabled"
+                  :loading="platformLoading"
+                  aria-label="启用对话内并行子 Agent"
+                  @update:value="onSubagentFanoutChange"
+                />
+              </div>
+            </article>
 
             <!-- 聊天协作 Case（灰度） -->
-            <NCard :bordered="false" class="arco-card settings-card">
-              <template #header>
-                <NSpace align="center">
-                  <span class="text-xl">🧩</span>
-                  <span>聊天协作 Case</span>
-                  <NTag size="small" type="warning">灰度</NTag>
-                </NSpace>
-              </template>
-              <p class="text-sm text-gray-500 mb-6">
+            <article class="platform-setting-card">
+              <div class="platform-setting-card__header">
+                <span class="platform-setting-card__icon" aria-hidden="true">🧩</span>
+                <h2>聊天协作 Case</h2>
+                <NTag size="small" type="warning" :bordered="false">灰度</NTag>
+              </div>
+              <p class="platform-setting-card__description">
                 开启后，聊天可在用户确认后创建 AgentTeams 协作 Case；仍受 Bridge 配置与流程白名单限制。
               </p>
-              <NSwitch
-                :value="platformConfig.agentteams_chat_entry_enabled"
-                :loading="platformLoading"
-                @update:value="onAgentTeamsChatEntryChange"
-              />
-            </NCard>
+              <div class="platform-setting-card__control">
+                <NSwitch
+                  :value="platformConfig.agentteams_chat_entry_enabled"
+                  :loading="platformLoading"
+                  aria-label="启用聊天协作 Case"
+                  @update:value="onAgentTeamsChatEntryChange"
+                />
+              </div>
+            </article>
 
             <!-- Agent 长期记忆 -->
-            <NCard :bordered="false" class="arco-card settings-card">
-              <template #header>
-                <NSpace align="center">
-                  <span class="text-xl">🧠</span>
-                  <span>Agent 长期记忆</span>
-                </NSpace>
-              </template>
-              <p class="text-sm text-gray-500 mb-6">
+            <article class="platform-setting-card">
+              <div class="platform-setting-card__header">
+                <span class="platform-setting-card__icon" aria-hidden="true">🧠</span>
+                <h2>Agent 长期记忆</h2>
+              </div>
+              <p class="platform-setting-card__description">
                 开启后，助手会跨会话记住用户的研究偏好与项目事实（mem0 引擎，加密落盘），
                 并按对话自动沉淀。关闭后记忆召回、写入与自动沉淀全部停用，历史记忆保留。
                 需部署侧 MEM0_ENGINE_ENABLED=true 才具备该能力。
               </p>
-              <NSwitch
-                :value="platformConfig.agent_memory_enabled ?? true"
-                :loading="platformLoading"
-                @update:value="onAgentMemoryChange"
-              />
-            </NCard>
+              <div class="platform-setting-card__control">
+                <NSwitch
+                  :value="platformConfig.agent_memory_enabled ?? true"
+                  :loading="platformLoading"
+                  aria-label="启用 Agent 长期记忆"
+                  @update:value="onAgentMemoryChange"
+                />
+              </div>
+            </article>
 
             <!-- TOTP 策略 -->
-            <NCard :bordered="false" class="arco-card settings-card">
-              <template #header>
-                <NSpace align="center">
-                  <span class="text-xl">🔐</span>
-                  <span>二次验证（TOTP）</span>
-                </NSpace>
-              </template>
-              <div class="flex flex-col gap-3">
-                <div class="totp-segmented-control">
+            <article class="platform-setting-card">
+              <div class="platform-setting-card__header">
+                <span class="platform-setting-card__icon" aria-hidden="true">🔐</span>
+                <h2>二次验证（TOTP）</h2>
+              </div>
+              <p class="platform-setting-card__description">
+                {{ totpPolicyOptions.find(o => o.key === platformConfig.totp_policy)?.desc }}
+              </p>
+              <div class="platform-setting-card__control">
+                <div class="omichub-segmented-toggle" role="group" aria-label="二次验证 TOTP 策略">
                   <button
                     v-for="opt in totpPolicyOptions"
                     :key="opt.key"
                     type="button"
                     :disabled="platformLoading"
-                    class="totp-segment-btn"
                     :class="{ active: platformConfig.totp_policy === opt.key }"
+                    :aria-pressed="platformConfig.totp_policy === opt.key"
                     @click="onTOTPPolicyChange(opt.key)"
                   >
                     {{ opt.label }}
                   </button>
                 </div>
-                <p class="text-sm text-gray-500">
-                  {{ totpPolicyOptions.find(o => o.key === platformConfig.totp_policy)?.desc }}
-                </p>
               </div>
-            </NCard>
-          </div>
+            </article>
+            </div>
+          </section>
         </NTabPane>
-        </NTabs>
+    </NTabs>
 
-        <!-- 平台配置修改：TOTP 二次确认 -->
-        <AdminTOTPConfirmModal
-          v-model:show="platformTotpModalVisible"
-          title="修改平台全局配置"
-          description="开放/关闭用户注册或调整 TOTP 策略属于高敏感操作，请输入当前 6 位 TOTP 验证码以继续。"
-          confirm-text="确认修改"
-          :loading="platformTotpLoading"
-          @confirm="confirmPlatformChange"
-          @cancel="cancelPlatformChange"
-        />
-      </div>
-    </div>
-  </div>
+    <!-- 平台配置修改：TOTP 二次确认 -->
+    <AdminTOTPConfirmModal
+      v-model:show="platformTotpModalVisible"
+      title="修改平台全局配置"
+      description="开放/关闭用户注册或调整 TOTP 策略属于高敏感操作，请输入当前 6 位 TOTP 验证码以继续。"
+      confirm-text="确认修改"
+      :loading="platformTotpLoading"
+      @confirm="confirmPlatformChange"
+      @cancel="cancelPlatformChange"
+    />
+  </main>
 </template>
 
 <style scoped>
-.settings-page-wrapper {
-  min-height: 100%;
-  background: var(--neutral-bg);
-  padding: 32px 0 48px;
-}
-
-.settings-page-content {
-  width: 100%;
-  max-width: 1024px;
-  margin: 0 auto;
-  padding: 0 24px;
-}
-
 .settings-page {
-  width: 100%;
-}
-
-@media (min-width: 1440px) {
-  .settings-page-content {
-    max-width: 1152px;
-    padding-left: 32px;
-    padding-right: 32px;
-  }
-}
-
-@media (max-width: 640px) {
-  .settings-page-wrapper {
-    padding: 24px 0 40px;
-  }
-
-  .settings-page-content {
-    padding: 0 16px;
-  }
+  padding: 32px 24px 48px;
 }
 
 .settings-section-grid {
@@ -833,8 +802,8 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
 }
 
 .twofa-disabled {
-  background: #f9fafb;
-  border-color: #f3f4f6;
+  background: var(--neutral-fill-2);
+  border-color: var(--neutral-border);
 }
 
 .twofa-alert {
@@ -867,7 +836,7 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
   background: var(--neutral-hover);
 }
 .twofa-secret code {
-  background: var(--neutral-fill, #f2f3f5);
+  background: var(--neutral-fill-2);
   padding: 4px 8px;
   border-radius: 4px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -875,13 +844,6 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
 
 .secret-label {
   color: var(--neutral-text-3);
-}
-
-.totp-required-btn {
-  --n-color: #f97316;
-  --n-color-hover: #ea580c;
-  --n-text-color: #fff;
-  --n-text-color-hover: #fff;
 }
 
 @media (max-width: 480px) {
@@ -894,43 +856,95 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
   }
 }
 
-.totp-segmented-control {
-  display: inline-flex;
-  background: var(--neutral-bg);
-  border-radius: 8px;
-  padding: 3px;
-  gap: 2px;
-  width: fit-content;
+.platform-settings-section {
+  padding-bottom: 4px;
 }
 
-.totp-segment-btn {
-  position: relative;
-  border: none;
-  background: transparent;
-  padding: 6px 16px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--neutral-text-3);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-family: inherit;
-  z-index: 1;
+.platform-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
 }
 
-.totp-segment-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.totp-segment-btn.active {
+.platform-setting-card {
+  display: flex;
+  min-width: 0;
+  min-height: 224px;
+  flex-direction: column;
+  padding: 24px;
+  border: 1px solid var(--neutral-border);
+  border-radius: var(--radius-card);
   background: var(--neutral-card);
-  color: var(--neutral-text-1);
-  box-shadow: 0 1px 3px rgba(29, 33, 41, 0.08);
-  z-index: 2;
+  box-shadow: var(--shadow-card);
 }
 
-.totp-segment-btn:hover:not(.active):not(:disabled) {
+.platform-setting-card__header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.platform-setting-card__icon {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.platform-setting-card__header h2 {
+  min-width: 0;
+  margin: 0;
   color: var(--neutral-text-1);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.platform-setting-card__description {
+  margin: 16px 0 20px;
+  color: var(--neutral-text-2);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.platform-setting-card__control {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  margin-top: auto;
+}
+
+.platform-setting-card :deep(.n-switch) {
+  flex: 0 0 auto;
+}
+
+.platform-setting-card :deep(.omichub-segmented-toggle button:disabled) {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@media (max-width: 767px) {
+  .settings-page {
+    padding: 24px 16px 40px;
+  }
+
+  .platform-settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .platform-setting-card {
+    min-height: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .platform-setting-card {
+    transition: none;
+  }
 }
 </style>

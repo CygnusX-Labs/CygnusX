@@ -9,7 +9,10 @@ from typing import Any
 import pytest
 
 from omichub.application.services.agent_service import AgentService
-from omichub.application.services.agentteams_case_tool_service import AgentTeamsCaseToolService
+from omichub.application.services.agentteams_case_tool_service import (
+    AgentTeamsCaseToolService,
+    agentteams_next_actor,
+)
 from omichub.core.exceptions import BusinessError
 
 
@@ -43,7 +46,9 @@ def test_session_project_ownership_accepts_only_bound_project() -> None:
     service = AgentTeamsCaseToolService()
 
     assert service._session_owns_project({"project_ref": {"kind": "project", "id": "p-1"}}, "p-1")
-    assert not service._session_owns_project({"project_ref": {"kind": "project", "id": "p-1"}}, "p-2")
+    assert not service._session_owns_project(
+        {"project_ref": {"kind": "project", "id": "p-1"}}, "p-2"
+    )
 
 
 def test_idempotency_record_reuses_recent_case_without_objective_storage() -> None:
@@ -96,6 +101,10 @@ def test_chat_case_flow_whitelist_defaults_and_parsing() -> None:
     }
 
 
+def test_quality_running_is_assigned_to_quality_auditor() -> None:
+    assert agentteams_next_actor("quality_running") == "quality-auditor"
+
+
 def test_consultation_source_is_normalized_and_bounded() -> None:
     source = AgentTeamsCaseToolService._consultation_source(
         "  consult-001  ",
@@ -120,10 +129,60 @@ async def test_case_creation_requires_a_user_confirmation_after_card() -> None:
 
     context = SimpleNamespace(db=FakeDb(), session_id="session-1")
     meta = {
-        "agentteams_case_confirmation": {
-            "key": {"requested_at": datetime.now(UTC).isoformat()}
-        }
+        "agentteams_case_confirmation": {"key": {"requested_at": datetime.now(UTC).isoformat()}}
     }
 
     with pytest.raises(BusinessError, match="用户在确认卡上确认"):
         await AgentTeamsCaseToolService._require_pending_confirmation(context, meta, "key")
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "确认创建",
+        "同意",
+        "取消",
+        "不用了",
+        "换个方案",
+    ],
+)
+def test_case_confirmation_rejects_unstructured_text_reply(content: str) -> None:
+    message = SimpleNamespace(content=content, metadata_json={})
+
+    assert not AgentTeamsCaseToolService._is_explicit_confirmation_message(
+        message, "key", {"token": "random-token"}
+    )
+
+
+def test_case_confirmation_accepts_matching_structured_marker() -> None:
+    message = SimpleNamespace(
+        content="取消",
+        metadata_json={
+            "agentteams_case_confirmation": {
+                "key": "key",
+                "token": "random-token",
+                "confirmed": True,
+            }
+        },
+    )
+
+    assert AgentTeamsCaseToolService._is_explicit_confirmation_message(
+        message, "key", {"token": "random-token"}
+    )
+
+
+def test_case_confirmation_rejects_mismatched_structured_token() -> None:
+    message = SimpleNamespace(
+        content="确认创建",
+        metadata_json={
+            "agentteams_case_confirmation": {
+                "key": "key",
+                "token": "wrong-token",
+                "confirmed": True,
+            }
+        },
+    )
+
+    assert not AgentTeamsCaseToolService._is_explicit_confirmation_message(
+        message, "key", {"token": "random-token"}
+    )

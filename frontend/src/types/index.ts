@@ -189,7 +189,8 @@ export interface Task {
   id: string
   flow_id: string
   user_id: string
-  username?: string
+  username?: string | null
+  nickname?: string | null
   name: string
   status: 'pending' | 'queued' | 'running' | 'success' | 'failed' | 'cancelled'
   execution_mode: string

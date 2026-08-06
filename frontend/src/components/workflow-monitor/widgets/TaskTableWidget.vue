@@ -2,6 +2,7 @@
 import { NButton, NProgress, NTag } from 'naive-ui'
 import { useRouter } from 'vue-router'
 import type { MonitorWidget, WorkflowTaskSnapshot } from '@/types/workflowMonitor'
+import { displayName } from '@/utils/displayName'
 
 defineProps<{
   widget: MonitorWidget
@@ -62,7 +63,7 @@ function formatTime(value?: string | null): string {
           <tr v-for="task in tasks" :key="task.id">
             <td>
               <strong :title="task.name">{{ task.name }}</strong>
-              <small v-if="task.username">{{ task.username }}</small>
+              <small v-if="displayName(task)">{{ displayName(task) }}</small>
               <small v-if="task.last_error" class="error" :title="task.last_error">{{ task.last_error }}</small>
             </td>
             <td><span class="flow">{{ task.flow_id }}</span></td>

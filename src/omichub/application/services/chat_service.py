@@ -9,7 +9,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
+import inspect
 import ipaddress
 import json
 import re
@@ -46,11 +48,24 @@ from omichub.application.services.agentteams_bridge_settings_service import (
 from omichub.application.services.collaboration_observability_service import (
     CollaborationObservabilityService,
 )
+from omichub.application.services.domain_registry import get_domain_registry
 from omichub.application.services.mas_plan_adapter import (
     MAS_PLAN_PREVIEW_PROMPT_SUFFIX,
     MAS_PLAN_PREVIEW_TOOL_NAME,
     MAS_PLAN_PREVIEW_TOOL_SCHEMA,
     MASPlanPreviewAdapter,
+)
+from omichub.application.services.overdrive_runtime import (
+    OverdriveManifest,
+    build_upstream_context,
+    infer_contract_dependencies,
+    load_overdrive_limits,
+    normalize_contract_list,
+    normalize_retry,
+    relative_overdrive_root,
+)
+from omichub.application.services.overdrive_runtime import (
+    assignment_waves as build_assignment_waves,
 )
 from omichub.application.services.parallel_subagent_service import (
     PARALLEL_SUBAGENTS_TOOL_NAME,
@@ -91,6 +106,7 @@ from omichub.application.services.studio_tools import (
     STUDIO_SYSTEM_PROMPT_SUFFIX,
     STUDIO_TOOL_NAMES,
     STUDIO_TOOL_SCHEMAS,
+    execute_studio_tool,
     normalize_plan_steps,
     stream_studio_tool,
 )
@@ -99,7 +115,7 @@ from omichub.application.services.unified_intent_router import (
     normalize_decision,
 )
 from omichub.core.config import get_settings
-from omichub.core.exceptions import BusinessError, NotFoundError
+from omichub.core.exceptions import BusinessError, ConflictError, NotFoundError
 from omichub.core.telemetry import get_meter, get_tracer
 from omichub.domain.skill.services import (
     SKILL_RESOURCE_TOOL_NAME,
@@ -123,6 +139,7 @@ from omichub.infrastructure.database.models.chat import (
     ChatMessageModel,
     ChatSessionModel,
 )
+from omichub.infrastructure.database.session import get_session_factory
 from omichub.middleware.trace_context import session_id_var
 from omichub.tools.schema_loader import schema_loader
 
@@ -138,6 +155,32 @@ _skill_duration = _chat_meter.create_histogram(
 _agent_duration = _chat_meter.create_histogram(
     "agent.run.duration", unit="ms", description="Agent 单次运行耗时"
 )
+
+
+def _extract_user_message_metadata(message: dict[str, Any]) -> dict[str, Any]:
+    """仅持久化聊天入口允许的用户操作标记，避免任意客户端元数据入库。"""
+    metadata = message.get("metadata")
+    if not isinstance(metadata, dict):
+        return {}
+    marker = metadata.get("agentteams_case_confirmation")
+    if not isinstance(marker, dict):
+        return {}
+    key = marker.get("key")
+    token = marker.get("token")
+    if (
+        not isinstance(key, str)
+        or not isinstance(token, str)
+        or marker.get("confirmed") is not True
+    ):
+        return {}
+    return {
+        "agentteams_case_confirmation": {
+            "key": key[:128],
+            "token": token[:256],
+            "confirmed": True,
+        }
+    }
+
 
 DEFAULT_SYSTEM_PROMPT = get_prompt("agents.general")
 
@@ -157,28 +200,61 @@ AgentTeams Case，并在用户确认后调用 `create_agentteams_case`。"""
 
 MULTI_AGENT_TOOL_NAMES = frozenset({PARALLEL_SUBAGENTS_TOOL_NAME, "create_agentteams_case"})
 
-# 智能路由器 system prompt：让 router LLM 从候选专家清单中选一个最合适的
-ROUTER_SYSTEM_PROMPT = """你是一个意图路由器。根据用户消息，从下面的候选专家清单中选择一个最合适的专家来回答。
+# 星尘 AI 的实际运行时路由提示词：只做任务判断与 Agent 分派，不执行领域任务。
+ROUTER_SYSTEM_PROMPT = """你是星尘 AI，平台唯一的任务分派入口。根据用户消息、对话上下文和下面的
+运行时候选专家目录，选择一个最合适的专家处理本次请求。
 
-候选专家（JSON 数组）：
+你的职责仅限于判断与分派：不要执行分析、不要决定前端页面或工作台，也不要把领域判断交给
+前端关键词规则。工作台模式和后续执行由被选中的 Agent 及服务端能力决定。
+
+运行时候选专家目录（JSON 数组；这是唯一有效候选集）：
 {catalog}
 
 规则：
 1. 直接输出一行 JSON：{{"agent_id": "...", "reason": "...", "expect_handoff": false, "consult_agent_ids": [], "collaboration_intent": "transfer|fanout|consult|case|dag|chat", "fanout_tasks": [{{"agent_id":"...","task":"..."}}], "confidence": 0.0}}。
-2. 禁止输出思考过程、复述用户消息或列候选清单，第一个字符必须是 {{。
-3. agent_id 必须来自候选清单；reason 用一句中文简述分派理由。
+2. 禁止输出思考过程、复述用户消息、候选清单、寒暄、emoji 或面向用户的解释；第一个字符必须是 {{。
+3. agent_id 必须来自运行时候选目录；reason 用一句中文简述分派理由。
 4. 当用户请求明显横跨两个以上专业阶段时，选择第一阶段最合适的专家，并将 expect_handoff 设为 true；它仅供审计，不改变本次分派。
 5. 出现 2–5 个相互独立的任务（同时、分别、并行、一起检查）→ fanout，并给出可执行的 fanout_tasks；需要多角度评估“合理吗/怎么解读/设计行不行”→ consult；正式执行、审批、交付、归档、给客户→ case；运行分钟到小时级管道→ dag；点名其他专家或当前领域不匹配→ transfer。
 6. case 必须只在真实流程执行与可审计交付场景使用；普通问答、流程解释和轻量并行不能标为 case。
 7. confidence < 0.6 表示需要向用户澄清协作方式；仍填写最可能的 collaboration_intent，禁止用 chat 掩盖不确定性。
+8. 信息不足且缺失项会改变数据模态、分析路线或专家选择时，必须选择运行时目录中的通用入口 Agent，由通用助手先通过 ask_user 补全上下文；禁止直接猜测具体领域或专家。
+9. 选择专家时只依据候选目录中声明的 routing_notes、capability_scope 与 default_role，不得超出专家能力边界。
 
 示例：
 - “这个结果应该怎么解读，注释策略合理吗” → consult
 - “帮我把代码、QC 和图表方案都看一下” → fanout
 - “这个 RNA-seq 流程要跑给客户，结果要归档” → case
-- “这个我答不了，需要单细胞的专家” → transfer，agent_id=agent-scrna
+- “这个我答不了，需要对应领域的专家” → transfer
 - “帮我跑一下上游比对定量流程” → dag
 - 简单事实问答 → chat。"""
+
+ROUTED_SPECIALIST_HANDOFF_PROMPT = """[Router 专家交接]
+你已被 Router 选为本轮最合适的专项 Agent。请严格按以下顺序处理：
+1. 先用一句话说明你将负责什么，并结合当前请求进行任务 intake；不要重复 Router 的候选比较过程。
+2. 如果用户只是咨询“怎么做/如何开始/原理是什么”，直接提供指导，不启动分析工具或工作流。
+3. 如果用户要求实际分析、运行代码、读取数据或生成正式结果，先核对输入文件、分组、关键参数和交付物；缺失信息时必须调用 ask_user 一次性补齐。
+4. 即使输入已经齐全，也必须先给出简短执行摘要，并调用 ask_user 请求用户确认“开始分析”或“调整参数”；本轮不得同时启动执行。
+5. 只有当前用户消息明确确认了上轮执行摘要后，才可以调用分析、代码、绘图或工作流工具。
+6. 执行完成后明确区分已完成、未执行和需要继续确认的事项，并给出真实产物路径。"""
+
+ROUTED_SPECIALIST_EXECUTION_CONFIRMED_PROMPT = """[Router 执行确认]
+用户已经在前序 intake 和执行摘要之后明确确认开始分析。你可以进入专项执行阶段：
+1. 执行前再次核对已确认的输入、分组和关键参数，不得补造缺失值；
+2. 只调用完成本任务所需的最小工具集合；
+3. 如仍发现关键输入缺失，停止执行并调用 ask_user，不得带假设继续；
+4. 完成后交付真实结果、产物路径、关键参数与未完成事项。"""
+
+
+def _is_route_execution_confirmation(user_text: str) -> bool:
+    normalized = user_text.replace(" ", "").lower()
+    if any(marker in normalized for marker in ("暂不", "不要开始", "先不执行", "调整参数")):
+        return False
+    return any(
+        marker in normalized
+        for marker in ("开始分析", "确认开始", "开始执行", "确认执行", "按上述方案执行", "现在开始")
+    )
+
 
 OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_name}）。用户消息已进入超频模式。
 
@@ -186,17 +262,37 @@ OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_
 {catalog}
 
 规则：
-1. 直接输出一行 JSON：{{"speech": "...", "assignments": [{{"agent_id": "...", "task": "..."}}]}}。
+1. 直接输出一行 JSON：{{"speech": "...", "questions": [{{"question": "...", "options": ["..."]}}], "assignments": [{{"task_id": "research-plan", "agent_id": "...", "task": "...", "depends_on": []}}]}}。
 2. speech 用简体中文，直接回应用户消息本身：
    - 需要分工时：用一两句话自然说明你安排了哪些专家分别处理什么；
    - 无需分工时：speech 就是你给用户的直接回答或自然回应；
    - 若用户只是要求开启超频模式而没有具体任务：一句话简短确认并邀请用户下达具体任务。
-3. assignments 0–5 个；仅当任务可拆为相互独立的专业子任务时才拆分，agent_id 必须来自候选清单；同一专家可被指派多个相互独立的子任务（分身并行）。
-4. 简单问答、闲聊、单领域问题 → assignments 为空数组。
-5. 禁止在 speech 中提及“超频模式已开启/切换”“高性能响应状态”等系统状态，禁止复述用户指令，禁止空泛地吹嘘服务能力。
-6. 禁止输出思考过程，第一个字符必须是 {{。
+3. 当缺少会实质改变分析路线、专家选择或交付计划的关键信息时，优先提问而非猜测或分派：questions 填 1–3 个简洁问题（可附 2–5 个选项），assignments 必须为空数组。重点确认会改变路线、专家选择或交付计划的输入；已确认信息不得重复询问，用户最后一次明确回答优先。
+4. questions 非空时，speech 只简短说明为什么先确认这些信息；不要给出假定前提下的长计划。
+5. assignments 0–12 个；每项必须有唯一 task_id，depends_on 只能引用同一列表中的 task_id，并可声明 accepts_inputs、produces_outputs、retry、timeout_seconds、priority。没有依赖且数据契约无交集的任务必须并行；存在真实上下游关系时才串行。
+6. 采用满足任务所需的最小专家集合：单领域任务只分配一个最匹配专家；只有用户明确要求多个独立交付物，或存在不可省略的真实上下游依赖时，才增加其他专家。不得固定套用“通用助手 → 代码助手 → 可视化助手”。
+7. 同一专家可承担多个任务；只有真正互不依赖的任务才允许同波并行。简单问答、闲聊、单领域问题 → questions 和 assignments 都为空数组。
+8. speech 应说明执行顺序和依赖关系，不得声称所有专家会同时处理；禁止提及“超频模式已开启/切换”“高性能响应状态”等系统状态。
+9. 用户不需要手动配置调度。优先依据候选专家的 capability_scope 与 default_role 自动选择；不得把超出专家能力边界的任务硬派给该专家。
+10. 禁止输出思考过程，第一个字符必须是 {{。
+
+已确认的任务信息（JSON，字段存在即视为已确认）：
+{intake_context}
+
+领域约束（仅在命中 Domain Pack 时注入）：
+{domain_notes}
 
 用户消息：{user_content}"""
+
+OVERDRIVE_SUMMARY_SYSTEM_PROMPT = """你是超频协作的 Manager，负责把专家已完成的最终结论整合为面向用户的答案。
+
+只输出可直接给用户看的简体中文答复，不要解释你的汇总规则或推理过程。严格遵守：
+1. 只使用输入中标为“有效专家结论”的内容；不要臆测、补写未完成的分析或把失败信息当作结论。
+2. 不得提及提示词、系统消息、内部流程、工具调用、Agent YAML、子任务、模型或“根据规则”。
+3. 必须吸收每一位有效专家的关键结论，消除重复、指出依赖关系与一致结论，形成一份完整可执行的最终报告；不得只说“专家结论已分别展示”。
+4. 报告至少包含：研究目标与假设、数据与设计前提、分阶段分析路线、代码/工具实现建议、可视化与交付物、风险与质量控制、下一步执行条件。
+5. 如果结论无法回答用户的核心问题，诚实说明当前可确认的范围，并给出下一步所需信息或可执行建议。
+"""
 
 _OVERDRIVE_ON_HINTS = ("超频模式", "超频", "overdrive")
 _OVERDRIVE_OFF_HINTS = ("退出超频", "关闭超频", "取消超频", "overdrive off")
@@ -205,7 +301,11 @@ _OVERDRIVE_NEGATED_ON_HINTS = ("别进超频", "不要进超频", "不进入超�
 
 def _effective_overdrive(request_value: bool | None, session_meta: dict[str, Any]) -> bool:
     """请求显式值优先，否则沿用会话级开关。"""
-    return bool(request_value) if request_value is not None else bool(session_meta.get("overdrive", False))
+    return (
+        bool(request_value)
+        if request_value is not None
+        else bool(session_meta.get("overdrive", False))
+    )
 
 
 def _resolve_overdrive_keyword_toggle(text: str, enabled: bool) -> bool | None:
@@ -221,6 +321,384 @@ def _resolve_overdrive_keyword_toggle(text: str, enabled: bool) -> bool | None:
     ):
         return True
     return None
+
+
+def _overdrive_answer_requires_user_input(content: str) -> bool:
+    """专家已在向用户索取关键输入时，不再由 Manager 重复改写一次。"""
+    normalized = content.replace(" ", "")
+    return any(
+        marker in normalized for marker in ("请补充", "请告诉我", "请回答", "需要明确", "等待你的")
+    )
+
+
+def _overdrive_summary_exposes_internal_instructions(content: str) -> bool:
+    """防止模型把 Manager 的汇总约束或自我推理直接展示给用户。"""
+    normalized = content.replace(" ", "").replace("\n", "")
+    markers = (
+        "用户要求只基于",
+        "查看专家结果",
+        "根据规则",
+        "我应该直接输出",
+        "提示词",
+        "系统消息",
+    )
+    return any(marker in normalized for marker in markers)
+
+
+def _is_overdrive_planning_request(content: str) -> bool:
+    normalized = content.lower()
+    registry = get_domain_registry()
+    planning_markers = ("计划", "方案", "研究设计", "研究路线", "挖掘", "新颖发现")
+    return (
+        any(marker in normalized for marker in planning_markers)
+        or registry.has_planning_marker(normalized)
+    ) and registry.matches_any(normalized)
+
+
+def _analysis_intake_questions(user_content: str) -> list[dict[str, Any]]:
+    """为会改变组学研究路线的缺失上下文生成最小澄清集。"""
+    if not _is_overdrive_planning_request(user_content):
+        return []
+    return get_domain_registry().intake_questions(user_content)
+
+
+def _overdrive_preflight_questions(user_content: str) -> list[dict[str, Any]]:
+    """兼容旧调用名；普通路由与超频模式共用同一 intake 判断。"""
+    return _analysis_intake_questions(user_content)
+
+
+def _extract_overdrive_intake_slots(
+    user_content: str, existing: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """从用户最新回答提取稳定 intake 字段；最新明确回答覆盖旧值。"""
+    return get_domain_registry().extract_slots(user_content, existing)
+
+
+def _filter_overdrive_questions(
+    questions: list[dict[str, Any]], slots: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """移除已回答字段与当前任务分支无关的问题。"""
+    return get_domain_registry().filter_questions(questions, slots)
+
+
+def _normalize_overdrive_assignments(
+    raw_assignments: Any, valid_agent_ids: set[str]
+) -> list[dict[str, Any]]:
+    """归一化 Manager DAG；task_id 唯一，依赖仅保留当前任务集合内引用。"""
+    if not isinstance(raw_assignments, list):
+        return []
+    limits = load_overdrive_limits()
+    normalized: list[dict[str, Any]] = []
+    used_task_ids: set[str] = set()
+    for position, item in enumerate(raw_assignments, start=1):
+        if not isinstance(item, dict):
+            continue
+        agent_id = str(item.get("agent_id") or "").strip()
+        task = str(item.get("task") or "").strip()
+        if agent_id not in valid_agent_ids or not task:
+            continue
+        agent_limits = load_overdrive_limits(agent_id)
+        requested_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(item.get("task_id") or ""))
+        task_id = requested_id.strip("-") or f"task-{position}"
+        if task_id in used_task_ids:
+            task_id = f"{task_id}-{position}"
+        used_task_ids.add(task_id)
+        raw_dependencies = item.get("depends_on")
+        depends_on = (
+            [str(value).strip() for value in raw_dependencies if str(value).strip()]
+            if isinstance(raw_dependencies, list)
+            else []
+        )
+        normalized.append(
+            {
+                "task_id": task_id,
+                "agent_id": agent_id,
+                "task": task,
+                "depends_on": depends_on,
+                "workspace_access": bool(item.get("workspace_access")),
+                "accepts_inputs": normalize_contract_list(item.get("accepts_inputs")),
+                "produces_outputs": normalize_contract_list(item.get("produces_outputs")),
+                "retry": normalize_retry(item.get("retry"), agent_limits),
+                "timeout_seconds": max(
+                    1,
+                    int(item.get("timeout_seconds") or agent_limits["default_timeout_seconds"]),
+                ),
+                "priority": str(item.get("priority") or "normal")
+                if str(item.get("priority") or "normal") in {"high", "normal", "low"}
+                else "normal",
+            }
+        )
+        if len(normalized) == int(limits["max_tasks_per_session"]):
+            break
+    valid_task_ids = {item["task_id"] for item in normalized}
+    for item in normalized:
+        item["depends_on"] = list(
+            dict.fromkeys(
+                dependency
+                for dependency in item["depends_on"]
+                if dependency in valid_task_ids and dependency != item["task_id"]
+            )
+        )
+    return infer_contract_dependencies(normalized)
+
+
+def _overdrive_assignment_waves(
+    assignments: list[dict[str, Any]],
+) -> list[list[dict[str, Any]]]:
+    """按 depends_on 生成拓扑波次；循环依赖时按原顺序拆成单任务安全降级。"""
+    waves, _ = build_assignment_waves(
+        assignments,
+        max_parallel=int(load_overdrive_limits()["max_parallel_per_wave"]),
+    )
+    return waves
+
+
+def _overdrive_capability_profile(
+    *,
+    agent_id: str,
+    name: str,
+    category: str,
+    features: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """提供给 Manager 的稳定能力边界；YAML 仍是工具与提示词的最终执行约束。"""
+    configured = features or {}
+    profile = {
+        "default_role": str(
+            configured.get("default_role") or "仅处理其描述和已挂载工具覆盖的专业任务"
+        ),
+        "capability_scope": [category or "specialist"],
+    }
+    capability_scope = configured.get("capability_scope")
+    if not isinstance(capability_scope, list) or not capability_scope:
+        capability_scope = configured.get("capability_tags")
+    if isinstance(capability_scope, list) and capability_scope:
+        profile["capability_scope"] = [str(item) for item in capability_scope if str(item)]
+    for key in ("accepts_inputs", "produces_outputs"):
+        values = configured.get(key)
+        if isinstance(values, list) and values:
+            profile[key] = [str(item) for item in values if str(item)]
+    default_stage = str(configured.get("default_stage") or "").strip()
+    if default_stage:
+        profile["default_stage"] = default_stage
+    return profile
+
+
+def _default_overdrive_assignments(
+    user_content: str,
+    catalog_items: list[dict[str, Any]],
+    intake_slots: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Manager 未给出有效分工时，按任务所需的最小专家集合调度。"""
+    normalized = user_content.lower()
+    slots = intake_slots or {}
+
+    def find(*markers: str) -> dict[str, Any] | None:
+        return next(
+            (
+                item
+                for item in catalog_items
+                if any(
+                    marker
+                    in " ".join(
+                        (
+                            str(item.get("agent_id") or ""),
+                            str(item.get("name") or ""),
+                            str(item.get("category") or ""),
+                        )
+                    ).lower()
+                    for marker in markers
+                )
+            ),
+            None,
+        )
+
+    registry = get_domain_registry()
+    if registry.is_empty:
+        return []
+
+    general = find("agent-general", "通用助手")
+    code = find("agent-code", "代码助手")
+    visualization = find("agent-viz", "可视化助手", "visualization")
+    for rule in registry.assignment_rules(user_content, slots):
+        candidate = find(*rule.agent_match)
+        if candidate is None:
+            continue
+        assignment = {
+            "task_id": rule.task_id,
+            "agent_id": candidate["agent_id"],
+            "task": rule.task,
+            "depends_on": [],
+        }
+        if rule.minimize_to_single:
+            return [assignment]
+        return [assignment]
+
+    planning_or_analysis = _is_overdrive_planning_request(user_content) or any(
+        marker in normalized for marker in ("分析", "研究", "差异表达", "通路", "富集", "工作流")
+    )
+    if not planning_or_analysis:
+        if code and any(marker in normalized for marker in ("代码", "脚本", "python", " r ")):
+            return [
+                {
+                    "task_id": "code-task",
+                    "agent_id": code["agent_id"],
+                    "task": "根据用户要求完成代码或脚本任务，并给出可复现的使用说明。",
+                    "depends_on": [],
+                }
+            ]
+        if visualization and any(marker in normalized for marker in ("画图", "绘图", "可视化")):
+            return [
+                {
+                    "task_id": "visualization-task",
+                    "agent_id": visualization["agent_id"],
+                    "task": "根据用户提供的真实数据或结果完成可视化设计；缺少数据时明确请求输入。",
+                    "depends_on": [],
+                }
+            ]
+        return []
+
+    if general:
+        return [
+            {
+                "task_id": "research-plan",
+                "agent_id": general["agent_id"],
+                "task": "完成研究目标拆解、总体分析计划、数据契约、质量控制和交付结果定义。",
+                "depends_on": [],
+            }
+        ]
+    return []
+
+
+def _overdrive_followup_choices(user_content: str) -> tuple[bool, bool]:
+    """解析最终报告卡片的两个明确选择，避免把问题文本中的关键词当作答案。"""
+    normalized = user_content.replace(" ", "").lower()
+    save_requested = not any(
+        marker in normalized for marker in ("暂不保存", "不保存", "无需保存")
+    ) and any(
+        marker in normalized
+        for marker in ("保存到output/results", "保存报告", "请保存", "需要保存")
+    )
+    data_ready = not any(
+        marker in normalized for marker in ("尚未准备", "未准备好", "数据没准备")
+    ) and any(marker in normalized for marker in ("已准备好", "开始分析", "执行分析", "按计划开始"))
+    return save_requested, data_ready
+
+
+def _build_overdrive_followup_assignments(
+    *,
+    catalog_items: list[dict[str, Any]],
+    save_requested: bool,
+    data_ready: bool,
+) -> tuple[str, list[dict[str, Any]]]:
+    """把用户确认转换为确定性的保存/执行 DAG，而不是再次自由生成研究计划。"""
+
+    def find_candidate(*markers: str) -> dict[str, Any] | None:
+        return next(
+            (
+                item
+                for item in catalog_items
+                if any(
+                    marker
+                    in " ".join(
+                        (
+                            str(item.get("category") or ""),
+                            str(item.get("name") or ""),
+                            str(item.get("agent_id") or ""),
+                        )
+                    ).lower()
+                    for marker in markers
+                )
+            ),
+            None,
+        )
+
+    code_candidate = find_candidate("code", "代码") or find_candidate("general", "通用")
+    visualization_candidate = find_candidate("visualization", "visualisation", "viz", "可视化")
+    assignments: list[dict[str, Any]] = []
+    if data_ready and code_candidate is not None:
+        assignments.append(
+            {
+                "task_id": "execute-analysis",
+                "agent_id": code_candidate["agent_id"],
+                "depends_on": [],
+                "workspace_access": True,
+                "task": (
+                    "用户已确认数据准备完成。先使用 workspace_list/workspace_read 核验真实输入文件、"
+                    "列名、分组和样本匹配，再严格按照上轮综合报告执行当前可运行的分析阶段。"
+                    "必须先用 workspace_write 把完整脚本写入 scripts/，再用 sandbox_execute 运行；"
+                    "结果写入 output/results/，并更新 output/README.md。若数据缺失或格式不满足计划，"
+                    "列出具体缺失路径与修复要求后停止，禁止伪造分析结果。"
+                ),
+            }
+        )
+        if visualization_candidate is not None:
+            assignments.append(
+                {
+                    "task_id": "visualize-results",
+                    "agent_id": visualization_candidate["agent_id"],
+                    "depends_on": ["execute-analysis"],
+                    "workspace_access": True,
+                    "task": (
+                        "读取代码助手实际生成的结果文件和执行结论，结合上轮综合报告制作最终可视化。"
+                        "只使用真实输出数据；绘图脚本写入 scripts/，图表写入 output/figures/，"
+                        "并把图表说明和路径更新到 output/README.md。若上游未产生可绘制结果，"
+                        "明确说明阻塞原因，不得生成虚构图表。"
+                    ),
+                }
+            )
+
+    if save_requested and data_ready:
+        speech = "我会先保存最终综合报告，然后让代码助手核验并执行分析，最后由可视化助手基于真实结果完成图表交付。"
+    elif save_requested:
+        speech = "我会先把最终综合报告保存到工作目录；数据尚未准备好，本轮不会提前执行分析。"
+    elif data_ready:
+        speech = "数据已准备好，我会直接让代码助手核验并执行分析，再由可视化助手基于真实结果完成图表交付。"
+    else:
+        speech = "好的，本轮暂不保存报告，也不启动分析；当前综合计划会保留在会话中。"
+    return speech, assignments
+
+
+async def _save_overdrive_report_to_workspace(
+    *,
+    session_id: str,
+    user_id: str,
+    final_report: str,
+) -> tuple[bool, str, str]:
+    """在用户明确同意后，将报告和索引直接写入当前会话工作区。"""
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    report_path = f"output/results/overdrive-report-{timestamp}.md"
+    report_result = await execute_studio_tool(
+        "workspace_write",
+        {"path": report_path, "content": final_report},
+        session_id,
+        user_id=user_id,
+    )
+    if not report_result.get("success"):
+        return False, report_path, str(report_result.get("error") or "报告写入失败")
+
+    readme_result = await execute_studio_tool(
+        "workspace_read",
+        {"path": "output/README.md"},
+        session_id,
+        user_id=user_id,
+    )
+    readme_payload = (readme_result.get("result") or {}).get("llm_payload") or {}
+    existing_readme = str(readme_payload.get("content") or "").rstrip()
+    entry = f"- [超频协作综合报告 {timestamp}](results/{Path(report_path).name})"
+    readme_content = (
+        f"{existing_readme}\n\n## 综合报告\n\n{entry}\n"
+        if existing_readme
+        else f"# OmicHub 分析输出\n\n## 综合报告\n\n{entry}\n"
+    )
+    readme_write = await execute_studio_tool(
+        "workspace_write",
+        {"path": "output/README.md", "content": readme_content},
+        session_id,
+        user_id=user_id,
+    )
+    if not readme_write.get("success"):
+        return False, report_path, "报告已保存，但 output/README.md 更新失败"
+    return True, report_path, ""
 
 
 def _extract_route_json(text: str) -> dict[str, Any] | None:
@@ -479,6 +957,40 @@ class ChatService:
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
 
+    async def _commit_stream_anchor(self) -> None:
+        """提交流式对话中不可丢失的关键锚点，后续生成继续使用新事务。"""
+        commit = getattr(self._db, "commit", None)
+        if not callable(commit):
+            return
+        result = commit()
+        if inspect.isawaitable(result):
+            await result
+
+    async def _record_user_message_anchor(
+        self,
+        session_id: str,
+        content: str,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> ChatMessageModel:
+        """使用独立事务持久化用户消息，避免 SSE 断连回滚用户输入。"""
+        if not isinstance(self._db, AsyncSession):
+            message = await self.add_message(session_id, "user", content, metadata=metadata)
+            await self._commit_stream_anchor()
+            return message
+
+        # 新建会话仍在请求事务中时，先提交使独立事务能够看到会话行。
+        await self._commit_stream_anchor()
+        async with get_session_factory()() as anchor_db:
+            message = await ChatService(anchor_db).add_message(
+                session_id,
+                "user",
+                content,
+                metadata=metadata,
+            )
+            await anchor_db.commit()
+        return message
+
     @staticmethod
     def _escape_like(value: str) -> str:
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -688,6 +1200,178 @@ class ChatService:
             )
         )
         return result.scalar_one_or_none()
+
+    async def create_overdrive_approval(
+        self,
+        *,
+        session: ChatSessionModel,
+        run_id: str,
+        task_id: str,
+        manager_agent_id: str,
+        worker_agent_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        """在聊天会话中持久化一次待审批的 Worker 工具调用。"""
+        now = datetime.now(UTC).isoformat()
+        approval = {
+            "approval_id": f"overdrive-approval:{uuid.uuid4().hex}",
+            "run_id": run_id,
+            "task_id": task_id,
+            "manager_agent_id": manager_agent_id,
+            "worker_agent_id": worker_agent_id,
+            "tool_name": tool_name,
+            "arguments": dict(arguments),
+            "status": "pending",
+            "created_at": now,
+            "updated_at": now,
+        }
+        meta = dict(session.sandbox_meta or {})
+        approvals = list(meta.get("overdrive_approvals") or [])[-49:]
+        approvals.append(approval)
+        session.sandbox_meta = {**meta, "overdrive_approvals": approvals}
+        await self._db.flush()
+        return approval
+
+    async def control_overdrive(
+        self,
+        *,
+        session_id: str,
+        user_id: str,
+        action: str,
+        task_id: str = "",
+        directive: str = "",
+    ) -> dict[str, Any]:
+        session = await self.get_session(session_id, user_id)
+        if session is None:
+            raise ValueError("会话不存在")
+        if action == "skip" and not task_id:
+            raise ValueError("跳过任务时必须提供 task_id")
+        if action == "directive" and not directive.strip():
+            raise ValueError("补充指令不能为空")
+        runtime_action = "run" if action == "resume" else action
+        payload = OverdriveManifest(session_id).write_control(
+            runtime_action, task_id=task_id, directive=directive.strip()
+        )
+        return {"success": True, **payload}
+
+    async def _get_overdrive_approval(
+        self, session_id: str, user_id: str, approval_id: str
+    ) -> tuple[ChatSessionModel, dict[str, Any], list[dict[str, Any]]]:
+        session = await self.get_session(session_id, user_id)
+        if session is None:
+            raise NotFoundError("会话不存在或无权访问")
+        approvals = list((session.sandbox_meta or {}).get("overdrive_approvals") or [])
+        approval = next(
+            (
+                item
+                for item in approvals
+                if isinstance(item, dict) and item.get("approval_id") == approval_id
+            ),
+            None,
+        )
+        if approval is None:
+            raise NotFoundError("超频审批记录不存在")
+        return session, approval, approvals
+
+    @staticmethod
+    def _set_overdrive_task_status(session: ChatSessionModel, task_id: str, status: str) -> None:
+        meta = dict(session.sandbox_meta or {})
+        runs = list(meta.get("overdrive_runs") or [])
+        for run in runs:
+            if not isinstance(run, dict):
+                continue
+            for task in run.get("tasks") or []:
+                if isinstance(task, dict) and task.get("task_id") == task_id:
+                    task["status"] = status
+                    task["updated_at"] = datetime.now(UTC).isoformat()
+        meta["overdrive_runs"] = runs
+        session.sandbox_meta = meta
+
+    async def reject_overdrive_approval(
+        self, *, session_id: str, user_id: str, approval_id: str, reason: str | None = None
+    ) -> dict[str, Any]:
+        session, approval, approvals = await self._get_overdrive_approval(
+            session_id, user_id, approval_id
+        )
+        if approval.get("status") != "pending":
+            raise ConflictError("该超频审批已被处理")
+        approval.update(
+            {
+                "status": "rejected",
+                "reason": (reason or "").strip(),
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+        )
+        self._set_overdrive_task_status(session, str(approval.get("task_id") or ""), "rejected")
+        meta = dict(session.sandbox_meta or {})
+        meta["overdrive_approvals"] = approvals
+        session.sandbox_meta = meta
+        await self._db.flush()
+        return approval
+
+    async def approve_overdrive_approval(
+        self, *, session_id: str, user_id: str, approval_id: str
+    ) -> dict[str, Any]:
+        """批准后由主会话的可信上下文恢复 Worker 原始工具调用。"""
+        from omichub.application.schemas.tool_invocation import ToolInvocationContext
+        from omichub.application.services.tool_bridge_service import get_tool_bridge_service
+
+        session, approval, approvals = await self._get_overdrive_approval(
+            session_id, user_id, approval_id
+        )
+        if approval.get("status") != "pending":
+            raise ConflictError("该超频审批已被处理")
+
+        approval["status"] = "executing"
+        approval["updated_at"] = datetime.now(UTC).isoformat()
+        self._set_overdrive_task_status(session, str(approval.get("task_id") or ""), "running")
+        meta = dict(session.sandbox_meta or {})
+        meta["overdrive_approvals"] = approvals
+        session.sandbox_meta = meta
+        await self._db.flush()
+
+        try:
+            result = await get_tool_bridge_service().execute(
+                user_id=user_id,
+                tool_name=str(approval["tool_name"]),
+                arguments={**dict(approval.get("arguments") or {}), "_confirmed": True},
+                context=ToolInvocationContext(
+                    user_id=user_id,
+                    agent_id=str(approval.get("manager_agent_id") or session.agent_id or "")
+                    or None,
+                    session_id=session_id,
+                    db=self._db,
+                    extra={
+                        "overdrive_run_id": approval.get("run_id"),
+                        "overdrive_task_id": approval.get("task_id"),
+                        "overdrive_worker_agent_id": approval.get("worker_agent_id"),
+                        "overdrive_approval_id": approval_id,
+                        "approved_by_user": True,
+                    },
+                ),
+            )
+            approval["status"] = "completed" if result.get("success") else "failed"
+            approval["result"] = result
+            if not result.get("success"):
+                approval["error"] = str(
+                    (result.get("llm_payload") or {}).get("error") or "工具执行失败"
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("超频审批工具执行失败: {}", approval_id)
+            approval.update({"status": "failed", "error": str(exc)})
+
+        approval["updated_at"] = datetime.now(UTC).isoformat()
+        self._set_overdrive_task_status(
+            session,
+            str(approval.get("task_id") or ""),
+            "completed" if approval.get("status") == "completed" else "failed",
+        )
+        meta = dict(session.sandbox_meta or {})
+        meta["overdrive_approvals"] = approvals
+        session.sandbox_meta = meta
+        await self._db.flush()
+        return approval
 
     async def list_sessions(
         self,
@@ -908,7 +1592,9 @@ class ChatService:
         )
         self._db.add(message)
         result = await self._db.execute(
-            select(ChatSessionModel).where(ChatSessionModel.session_id == session_id)
+            select(ChatSessionModel)
+            .where(ChatSessionModel.session_id == session_id)
+            .execution_options(populate_existing=True)
         )
         session = result.scalar_one_or_none()
         if session:
@@ -1265,7 +1951,11 @@ class ChatService:
         sensitive_keywords = get_settings().sensitive_keywords
         user_content_raw = messages[-1].get("content", "") if messages else ""
         user_content = sanitize_text(user_content_raw, sensitive_keywords)
-        await self.add_message(current_session_id, "user", user_content)
+        await self._record_user_message_anchor(
+            current_session_id,
+            user_content,
+            metadata=_extract_user_message_metadata(messages[-1] if messages else {}),
+        )
 
         # 5. 创建 AI 消息记录
         ai_message = await self.add_message(
@@ -1278,7 +1968,13 @@ class ChatService:
 
         # 6. 调用 LLM 流式输出
         # 送外部 LLM 的 messages 用脱敏副本，避免敏感词外泄到第三方模型
-        llm_messages = sanitize_messages(messages, sensitive_keywords)
+        llm_messages = sanitize_messages(
+            [
+                {"role": item.get("role", ""), "content": item.get("content", "")}
+                for item in messages
+            ],
+            sensitive_keywords,
+        )
         web_sources: list[dict[str, Any]] = []
         if enable_web_search and user_content.strip():
             query = user_content.strip()
@@ -1406,14 +2102,27 @@ class ChatService:
             reason = ""
             expect_handoff = False
             consult_agent_ids: list[str] = []
+            clarification_questions = _analysis_intake_questions(user_text)
             from omichub.application.services.flow_registry import get_flow_registry
 
-            flow_target = get_flow_registry().route_agent(user_text, valid_ids)
+            flow_target = (
+                None
+                if clarification_questions
+                else get_flow_registry().route_agent(user_text, valid_ids)
+            )
             decision = None
-            if flow_target:
+            if clarification_questions:
+                fallback = _general_fallback()
+                decision = {
+                    "agent_id": fallback.agent_id,
+                    "reason": "缺少会改变分析路线的关键信息，先由通用助手澄清并补全任务上下文",
+                    "collaboration_intent": "chat",
+                    "confidence": 1.0,
+                }
+            elif flow_target:
                 decision = {
                     "agent_id": flow_target,
-                    "reason": "命中单细胞流程阶段的 YAML 路由提示",
+                    "reason": "命中分析流程阶段的 YAML 路由提示",
                     "collaboration_intent": "chat",
                     "confidence": 0.98,
                 }
@@ -1425,6 +2134,11 @@ class ChatService:
                             "name": c.name,
                             "description": c.description,
                             "category": c.category,
+                            "routing_hints": (c.features or {}).get("routing_hints") or [],
+                            "capability_tags": (c.features or {}).get("capability_tags") or [],
+                            "routing_notes": get_domain_registry().router_notes_for(
+                                c.agent_id, (c.features or {}).get("domain")
+                            ),
                         }
                         for c in candidates
                     ],
@@ -1449,7 +2163,9 @@ class ChatService:
                 reason = str(decision.get("reason") or "")
                 expect_handoff = bool(decision.get("expect_handoff"))
                 raw_consults = decision.get("consult_agent_ids")
-                if get_settings().multi_expert_consultation_enabled and isinstance(raw_consults, list):
+                if get_settings().multi_expert_consultation_enabled and isinstance(
+                    raw_consults, list
+                ):
                     max_experts = max(
                         2, min(get_settings().multi_expert_consultation_max_experts, 3)
                     )
@@ -1460,6 +2176,34 @@ class ChatService:
                             if str(item) in valid_ids and str(item) != target_id
                         )
                     )[:max_experts]
+            normalized_user_text = user_text.lower()
+            bulk_rnaseq_request = any(
+                marker in normalized_user_text
+                for marker in ("rna-seq", "rnaseq", "bulk rna", "转录组")
+            )
+            single_cell_request = any(
+                marker in normalized_user_text
+                for marker in (
+                    "单细胞",
+                    "scrna",
+                    "single-cell",
+                    "single cell",
+                    "seurat",
+                    "scanpy",
+                    "cell ranger",
+                    "cellranger",
+                )
+            )
+            if (
+                bulk_rnaseq_request
+                and not single_cell_request
+                and target_id.startswith("agent-scrna")
+                and "agent-rnaseq" in valid_ids
+            ):
+                target_id = "agent-rnaseq"
+                reason = "检测到明确的 Bulk RNA-seq/转录组语义，已纠正单细胞专家误匹配"
+                if isinstance(decision, dict):
+                    decision = {**decision, "agent_id": target_id, "reason": reason}
             if target_id not in valid_ids:
                 fallback = _general_fallback()
                 target_id = fallback.agent_id
@@ -1487,6 +2231,22 @@ class ChatService:
                 (c for c in candidates if c.agent_id == target_id),
                 _general_fallback(),
             )
+            is_specialist = target_dto.category in {"analysis", "code", "visualization"}
+            if is_specialist:
+                transition_title = "已匹配专项专家"
+                transition_message = (
+                    f"将由「{target_dto.name}」先确认任务目标与输入；"
+                    "涉及实际分析时，会在启动前向你展示执行摘要并请求确认。"
+                )
+                transition_next_step = "专项 Agent 进行任务 intake"
+            elif target_dto.category == "companion":
+                transition_title = "已匹配陪伴助手"
+                transition_message = f"将由「{target_dto.name}」继续陪你处理当前请求。"
+                transition_next_step = "陪伴助手继续处理"
+            else:
+                transition_title = "已匹配通用助手"
+                transition_message = f"将由「{target_dto.name}」继续处理当前请求。"
+                transition_next_step = "通用助手继续处理"
             route_info = {
                 "agent_id": target_dto.agent_id,
                 "name": target_dto.name,
@@ -1498,6 +2258,19 @@ class ChatService:
                 "intent": normalized.intent,
                 "confidence": normalized.confidence,
                 "fanout_tasks": list(normalized.fanout_tasks),
+                "needs_clarification": bool(clarification_questions),
+                "clarification_questions": clarification_questions,
+                "transition": {
+                    # 只要 Router 完成了目标 Agent 分派，就展示路由反馈；
+                    # 是否需要执行确认由 requires_execution_confirmation 单独表达。
+                    "visible": True,
+                    "stage": "specialist_intake",
+                    "title": transition_title,
+                    "message": transition_message,
+                    "next_step": transition_next_step,
+                    "requires_execution_confirmation": is_specialist,
+                    "auto_start": False,
+                },
             }
             return target_ctx, route_info
         except Exception as e:  # noqa: BLE001
@@ -1547,7 +2320,12 @@ class ChatService:
         }
 
         agents = await AgentService(self._db).list_agents(active_only=True)
-        candidates = [agent for agent in agents if not (agent.features or {}).get("router")]
+        candidates = [
+            agent
+            for agent in agents
+            if not (agent.features or {}).get("router")
+            and bool((agent.features or {}).get("subagents_spawnable"))
+        ]
         catalog_items = [
             {
                 "agent_id": agent.agent_id,
@@ -1556,20 +2334,120 @@ class ChatService:
                 "category": agent.category,
                 "avatar": agent.avatar,
                 "color": agent.color,
+                **_overdrive_capability_profile(
+                    agent_id=agent.agent_id,
+                    name=agent.name,
+                    category=agent.category,
+                    features=agent.features,
+                ),
             }
             for agent in candidates
         ]
         catalog = json.dumps(catalog_items, ensure_ascii=False)
         catalog_by_id = {item["agent_id"]: item for item in catalog_items}
 
-        async def ask_manager(prompt: str, max_tokens: int = 1200) -> str:
+        session_row: Any | None = None
+        pending_intake: dict[str, Any] | None = None
+        pending_followup: dict[str, Any] | None = None
+        pending_final_report = ""
+        followup_save_requested = False
+        followup_data_ready = False
+        try:
+            candidate_session = self.get_session(session_id, user_id)
+            for _ in range(2):
+                if not inspect.isawaitable(candidate_session):
+                    break
+                candidate_session = await candidate_session
+            if inspect.isawaitable(candidate_session):
+                if inspect.iscoroutine(candidate_session):
+                    candidate_session.close()
+                candidate_session = None
+            sandbox_meta = getattr(candidate_session, "sandbox_meta", None)
+            if isinstance(sandbox_meta, (dict, type(None))) and hasattr(
+                candidate_session, "sandbox_meta"
+            ):
+                session_row = candidate_session
+                raw_pending = (sandbox_meta or {}).get("overdrive_intake")
+                if isinstance(raw_pending, dict) and raw_pending.get("status") == "awaiting_input":
+                    pending_intake = raw_pending
+                raw_followup = (sandbox_meta or {}).get("overdrive_followup")
+                if (
+                    isinstance(raw_followup, dict)
+                    and raw_followup.get("status") == "awaiting_input"
+                ):
+                    pending_followup = raw_followup
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("读取超频 intake 状态失败，按新任务处理: {}", exc)
+
+        root_request = user_content
+        intake_slots = _extract_overdrive_intake_slots(user_content)
+        intake_supplements: list[str] = []
+        planning_content = user_content
+        limits = load_overdrive_limits(manager.agent_id)
+        intake_rounds = 0
+        if pending_intake:
+            root_request = str(
+                pending_intake.get("root_request")
+                or pending_intake.get("original_request")
+                or user_content
+            ).strip()
+            previous_slots = pending_intake.get("slots")
+            intake_slots = _extract_overdrive_intake_slots(
+                user_content, previous_slots if isinstance(previous_slots, dict) else None
+            )
+            previous_supplements = pending_intake.get("supplements")
+            intake_supplements = (
+                [str(item) for item in previous_supplements if str(item).strip()]
+                if isinstance(previous_supplements, list)
+                else []
+            )
+            intake_supplements.append(user_content)
+            planning_content = (
+                f"原始请求：\n{root_request}\n\n"
+                f"已确认信息：\n{json.dumps(intake_slots, ensure_ascii=False)}\n\n"
+                "用户补充信息：\n" + "\n\n".join(intake_supplements)
+            )
+            if session_row is not None:
+                session_meta = dict(session_row.sandbox_meta or {})
+                intake_rounds = int(session_meta.get("overdrive_intake_rounds") or 0) + 1
+                session_meta["overdrive_intake_rounds"] = intake_rounds
+                session_meta.pop("overdrive_intake", None)
+                session_row.sandbox_meta = session_meta
+                await self._db.flush()
+        elif pending_followup:
+            root_request = str(
+                pending_followup.get("root_request")
+                or pending_followup.get("original_request")
+                or user_content
+            ).strip()
+            pending_final_report = str(pending_followup.get("final_report") or "").strip()
+            followup_save_requested, followup_data_ready = _overdrive_followup_choices(user_content)
+            planning_content = (
+                f"原始任务：\n{root_request}\n\n"
+                f"上轮最终综合报告：\n{pending_final_report}\n\n"
+                f"用户对报告保存与数据准备状态的回答：\n{user_content}\n\n"
+                "请严格根据用户回答继续：若用户要求保存，安排具备工作区写入能力的 Agent "
+                "把综合报告保存到 output/results/ 并更新 output/README.md；若用户确认数据已准备好，"
+                "先核验工作区输入文件，再按报告中的顺序安排分析。不要重新生成一份相同计划。"
+            )
+            if session_row is not None:
+                session_meta = dict(session_row.sandbox_meta or {})
+                session_meta.pop("overdrive_followup", None)
+                session_row.sandbox_meta = session_meta
+                await self._db.flush()
+
+        async def ask_manager(
+            prompt: str,
+            max_tokens: int = 1200,
+            system_prompt: str = "",
+        ) -> str:
             answer = ""
             if manager_ctx.model_config is None:
                 return answer
             async for chunk in provider_manager.chat_stream(
                 config=manager_ctx.model_config,
                 messages=[{"role": "user", "content": prompt}],
-                system_prompt="",
+                system_prompt=system_prompt,
                 temperature=0.2,
                 max_tokens=max_tokens,
                 tools=None,
@@ -1579,29 +2457,119 @@ class ChatService:
                     answer += chunk.content
             return answer.strip()
 
-        manager_raw = await ask_manager(
-            OVERDRIVE_MANAGER_PROMPT.format(
-                manager_name=manager.name,
-                catalog=catalog,
-                user_content=user_content,
-            ),
-            max_tokens=900,
+        preflight_questions = (
+            []
+            if pending_intake or pending_followup
+            else _overdrive_preflight_questions(planning_content)
         )
-        decision = _extract_route_json(manager_raw) or {}
-        speech = str(decision.get("speech") or manager_raw or "我来直接处理这个问题。")
-        raw_assignments = decision.get("assignments")
-        assignments: list[dict[str, str]] = []
-        if isinstance(raw_assignments, list):
-            for item in raw_assignments:
-                if not isinstance(item, dict):
-                    continue
-                target_id = str(item.get("agent_id") or "")
-                task = str(item.get("task") or "").strip()
-                # 允许同一 agent_id 出现多次：每个 assignment 都是一个独立分身，并行执行各自子任务
-                if target_id in catalog_by_id and task:
-                    assignments.append({"agent_id": target_id, "task": task})
-                if len(assignments) == 5:
-                    break
+        if intake_rounds >= int(limits["max_intake_rounds"]):
+            preflight_questions = []
+            planning_content += (
+                "\n\n已达到信息预检追问上限。请基于现有信息给出保守方案，"
+                "并在最终报告中用“假设与限制”明确列出所有未经确认的前提。"
+            )
+        manager_raw = ""
+        decision: dict[str, Any] = {}
+        speech = "为了把计划做得可执行、并准确分配专家，我先补全会影响分析路线的关键信息。"
+        questions: list[dict[str, Any]] = []
+        raw_assignments: Any = []
+        if pending_followup:
+            speech, raw_assignments = _build_overdrive_followup_assignments(
+                catalog_items=catalog_items,
+                save_requested=followup_save_requested,
+                data_ready=followup_data_ready,
+            )
+        elif preflight_questions:
+            general_candidate = next(
+                (
+                    item
+                    for item in catalog_items
+                    if item["category"] == "general" or "general" in item["agent_id"]
+                ),
+                None,
+            )
+            if general_candidate is None:
+                questions = preflight_questions
+            else:
+                speech = "这个问题目前不足以判断应走 bulk、单细胞还是其他路线；我先让通用助手补全任务信息，再由我重新分派专家。"
+                raw_assignments = [
+                    {
+                        "task_id": "general-intake",
+                        "agent_id": general_candidate["agent_id"],
+                        "depends_on": [],
+                        "task": (
+                            "你负责本轮任务 intake。不要制定领域分析计划，也不要猜测数据模态。"
+                            "请调用 ask_user，一次性向用户提出以下问题；若问题涉及最新研究背景，"
+                            "可先用 web_search 补充公开信息，但用户私有数据条件必须由用户确认。\n"
+                            + json.dumps(preflight_questions, ensure_ascii=False)
+                        ),
+                    }
+                ]
+                if session_row is not None:
+                    session_meta = dict(session_row.sandbox_meta or {})
+                    session_meta["overdrive_intake"] = {
+                        "status": "awaiting_input",
+                        "root_request": root_request,
+                        "slots": intake_slots,
+                        "supplements": intake_supplements,
+                        "questions": preflight_questions,
+                        "intake_agent_id": general_candidate["agent_id"],
+                        "created_at": datetime.now(UTC).isoformat(),
+                    }
+                    session_row.sandbox_meta = session_meta
+                    await self._db.flush()
+        else:
+            manager_raw = await ask_manager(
+                OVERDRIVE_MANAGER_PROMPT.format(
+                    manager_name=manager.name,
+                    catalog=catalog,
+                    intake_context=json.dumps(intake_slots, ensure_ascii=False),
+                    domain_notes=get_domain_registry().manager_notes(planning_content),
+                    user_content=planning_content,
+                ),
+                max_tokens=900,
+            )
+            decision = _extract_route_json(manager_raw) or {}
+            speech = str(decision.get("speech") or manager_raw or "我来直接处理这个问题。")
+            raw_questions = decision.get("questions")
+            questions = (
+                [
+                    {
+                        "question": str(question.get("question") or "").strip(),
+                        "options": [
+                            str(option).strip()
+                            for option in question.get("options", [])
+                            if str(option).strip()
+                        ],
+                    }
+                    for question in raw_questions
+                    if isinstance(question, dict) and str(question.get("question") or "").strip()
+                ][:3]
+                if isinstance(raw_questions, list)
+                else []
+            )
+            questions = _filter_overdrive_questions(questions, intake_slots)
+            raw_assignments = decision.get("assignments")
+        assignments = _normalize_overdrive_assignments(raw_assignments, set(catalog_by_id))
+        minimized_assignments = get_domain_registry().minimize_assignments(
+            assignments, catalog_by_id, intake_slots
+        )
+        if len(minimized_assignments) != len(assignments):
+            assignments = minimized_assignments
+            if intake_slots.get("task_type") == "tree_visualization":
+                speech = "已确认这是已有系统发育树的处理与美化任务，将由可视化助手直接完成。"
+        schedule_fallback = False
+        if not assignments and not questions and not pending_followup:
+            assignments = _normalize_overdrive_assignments(
+                _default_overdrive_assignments(planning_content, catalog_items, intake_slots),
+                set(catalog_by_id),
+            )
+            if assignments:
+                schedule_fallback = True
+                speech = "我会按任务所需的最小专家集合直接处理；你不需要手动配置调度。"
+
+        if questions:
+            assignments = []
 
         # 第二期提前实现，默认关闭：仅在 Gateway 可用时镜像到 Matrix，失败即回退内置编排。
         matrix_room_id: str | None = None
@@ -1654,13 +2622,36 @@ class ChatService:
                 matrix_degraded = True
                 logger.warning("用户消息同步至 Matrix 失败，继续内置会话: {}", exc)
 
+        degradation_notice_key = "matrix_degraded_notice_emitted"
+        session_for_degradation = session_row
         if matrix_degraded:
-            yield ChatChunk(
-                type="mode_changed",
-                metadata={"mode": "overdrive", "enabled": True, "degraded": True},
-            )
+            degradation_meta = dict(getattr(session_for_degradation, "sandbox_meta", None) or {})
+            if not degradation_meta.get(degradation_notice_key):
+                degradation_meta[degradation_notice_key] = True
+                if session_for_degradation is not None:
+                    session_for_degradation.sandbox_meta = degradation_meta
+                    await self._db.flush()
+                yield ChatChunk(
+                    type="mode_changed",
+                    metadata={"mode": "overdrive", "enabled": True, "degraded": True},
+                )
+        elif session_for_degradation is not None:
+            degradation_meta = dict(session_for_degradation.sandbox_meta or {})
+            if degradation_meta.pop(degradation_notice_key, None):
+                session_for_degradation.sandbox_meta = degradation_meta
+                await self._db.flush()
 
-        async def emit_speech(sender: dict[str, Any], content: str, round_number: int) -> ChatChunk:
+        async def emit_speech(
+            sender: dict[str, Any],
+            content: str,
+            round_number: int,
+            worker_key: str | None = None,
+            thought: str = "",
+            summary_text: str = "",
+            artifacts: dict[str, Any] | None = None,
+            task_status: str = "",
+            error_summary: str = "",
+        ) -> ChatChunk:
             nonlocal matrix_degraded
             message = await self.add_message(
                 session_id,
@@ -1668,12 +2659,20 @@ class ChatService:
                 content,
                 metadata={
                     "senderAgent": sender,
+                    "overdriveRound": round_number,
+                    **({"thought": thought} if thought else {}),
+                    **({"summary": summary_text} if summary_text else {}),
+                    **({"artifacts": artifacts} if artifacts else {}),
+                    **({"taskStatus": task_status} if task_status else {}),
+                    **({"errorSummary": error_summary} if error_summary else {}),
                     **({"matrix_room_id": matrix_room_id} if matrix_room_id else {}),
                 },
             )
             if room_gateway is not None and room_gateway.available and matrix_room_id:
                 try:
-                    identity = "bioops-manager" if sender["role"] == "manager" else sender["agent_id"]
+                    identity = (
+                        "bioops-manager" if sender["role"] == "manager" else sender["agent_id"]
+                    )
                     await room_gateway.post_message(
                         matrix_room_id,
                         sender_identity=identity,
@@ -1691,14 +2690,195 @@ class ChatService:
                     "round": round_number,
                     "session_id": session_id,
                     "message_id": message.message_id,
+                    **({"thought": thought} if thought else {}),
+                    **({"summary": summary_text} if summary_text else {}),
+                    **({"artifacts": artifacts} if artifacts else {}),
+                    **({"task_status": task_status} if task_status else {}),
+                    **({"error_summary": error_summary} if error_summary else {}),
+                    **({"worker_key": worker_key} if worker_key else {}),
                     **({"matrix_room_id": matrix_room_id} if matrix_room_id else {}),
                     **({"degraded": True} if matrix_degraded else {}),
                 },
             )
 
+        yield ChatChunk(
+            type="overdrive_progress",
+            metadata={
+                "phase": "manager_ready",
+                "label": "Manager 正在制定协作方案",
+                "total": 0,
+                "completed": 0,
+            },
+        )
+        if pending_followup and followup_save_requested:
+            yield ChatChunk(
+                type="overdrive_progress",
+                metadata={
+                    "phase": "tool_running",
+                    "label": "正在将最终综合报告保存到工作目录",
+                    "total": len(assignments),
+                    "completed": 0,
+                },
+            )
+            saved, report_path, save_error = await _save_overdrive_report_to_workspace(
+                session_id=session_id,
+                user_id=user_id,
+                final_report=pending_final_report,
+            )
+            planning_content += (
+                f"\n\n报告保存结果：成功，路径为 {report_path}。"
+                if saved
+                else f"\n\n报告保存结果：失败，原因：{save_error}。"
+            )
+            speech += (
+                f" 报告已保存到 `{report_path}`。" if saved else f" 报告保存失败：{save_error}。"
+            )
         yield await emit_speech(manager_sender, speech, 1)
-        if not assignments:
+        if schedule_fallback:
+            yield ChatChunk(
+                type="schedule_fallback",
+                metadata={"label": "已使用默认分工", "reason": "Manager 未提供完整数据契约"},
+            )
+        if questions:
+            if session_row is not None:
+                session_meta = dict(session_row.sandbox_meta or {})
+                session_meta["overdrive_intake"] = {
+                    "status": "awaiting_input",
+                    "root_request": root_request,
+                    "slots": intake_slots,
+                    "supplements": intake_supplements,
+                    "questions": questions,
+                    "intake_agent_id": manager.agent_id,
+                    "created_at": datetime.now(UTC).isoformat(),
+                }
+                session_row.sandbox_meta = session_meta
+                await self._db.flush()
+            yield ChatChunk(
+                type="ask_request",
+                metadata={"questions": questions, "agent_id": manager.agent_id},
+            )
+            yield ChatChunk(
+                type="overdrive_progress",
+                metadata={
+                    "phase": "awaiting_input",
+                    "label": "等待你补充分析关键信息，Manager 将据此安排专家",
+                    "total": 0,
+                    "completed": 0,
+                },
+            )
             return
+        if not assignments:
+            yield ChatChunk(
+                type="overdrive_progress",
+                metadata={
+                    "phase": "completed",
+                    "label": "本轮由 Manager 直接完成",
+                    "total": 0,
+                    "completed": 0,
+                },
+            )
+            return
+
+        overdrive_run_id = f"overdrive:{uuid.uuid4().hex[:12]}"
+        manifest = OverdriveManifest(session_id)
+        manifest_data = manifest.initialize(
+            run_id=overdrive_run_id,
+            request=planning_content,
+            assignments=assignments,
+        )
+        if manifest_data.get("run_id"):
+            overdrive_run_id = str(manifest_data["run_id"])
+        if manifest_data.get("tasks"):
+            assignments = [
+                {
+                    key: value
+                    for key, value in task.items()
+                    if key
+                    in {
+                        "task_id",
+                        "agent_id",
+                        "task",
+                        "depends_on",
+                        "workspace_access",
+                        "accepts_inputs",
+                        "produces_outputs",
+                        "retry",
+                        "timeout_seconds",
+                        "priority",
+                    }
+                }
+                for task in manifest_data["tasks"]
+            ]
+
+        clone_totals: dict[str, int] = {}
+        for assignment in assignments:
+            clone_totals[assignment["agent_id"]] = clone_totals.get(assignment["agent_id"], 0) + 1
+        clone_seq: dict[str, int] = {}
+        worker_senders: dict[int, dict[str, Any]] = {}
+        for position, assignment in enumerate(assignments, start=1):
+            target_id = assignment["agent_id"]
+            candidate = catalog_by_id[target_id]
+            clone_seq[target_id] = clone_seq.get(target_id, 0) + 1
+            worker_senders[position] = {
+                "agent_id": target_id,
+                "name": candidate["name"]
+                if clone_totals[target_id] == 1
+                else f"{candidate['name']} #{clone_seq[target_id]}",
+                "avatar": candidate["avatar"],
+                "color": candidate["color"],
+                "role": "worker",
+            }
+
+        overdrive_session = self.get_session(session_id, user_id)
+        if inspect.isawaitable(overdrive_session):
+            overdrive_session = await overdrive_session
+        if inspect.isawaitable(overdrive_session):
+            if inspect.iscoroutine(overdrive_session):
+                overdrive_session.close()
+            overdrive_session = None
+        if not hasattr(overdrive_session, "sandbox_meta"):
+            overdrive_session = None
+        if overdrive_session is not None:
+            session_meta = dict(overdrive_session.sandbox_meta or {})
+            runs = list(session_meta.get("overdrive_runs") or [])[-9:]
+            runs.append(
+                {
+                    "run_id": overdrive_run_id,
+                    "status": "running",
+                    "created_at": datetime.now(UTC).isoformat(),
+                    "tasks": [
+                        {
+                            "task_id": f"agentteams:{overdrive_run_id}:{position}",
+                            "logical_task_id": assignment["task_id"],
+                            "agent_id": assignment["agent_id"],
+                            "depends_on": assignment.get("depends_on") or [],
+                            "status": "pending",
+                            "instruction": assignment["task"],
+                        }
+                        for position, assignment in enumerate(assignments, start=1)
+                    ],
+                }
+            )
+            overdrive_session.sandbox_meta = {**session_meta, "overdrive_runs": runs}
+            await self._db.flush()
+
+        async def update_overdrive_task(position: int, status: str) -> None:
+            if overdrive_session is None:
+                return
+            meta = dict(overdrive_session.sandbox_meta or {})
+            runs = list(meta.get("overdrive_runs") or [])
+            current = next(
+                (item for item in reversed(runs) if item.get("run_id") == overdrive_run_id), None
+            )
+            if not isinstance(current, dict):
+                return
+            for task in current.get("tasks") or []:
+                if task.get("task_id") == f"agentteams:{overdrive_run_id}:{position}":
+                    task["status"] = status
+                    task["updated_at"] = datetime.now(UTC).isoformat()
+            meta["overdrive_runs"] = runs
+            overdrive_session.sandbox_meta = meta
+            await self._db.flush()
 
         tool_context = ToolInvocationContext(
             user_id=user_id,
@@ -1706,70 +2886,750 @@ class ChatService:
             session_id=session_id,
             db=self._db,
         )
-        try:
-            fanout_result = await ParallelSubAgentToolService().run_parallel_subagents(
-                context_summary=user_content,
-                tasks=assignments,
-                context=tool_context,
+        yield ChatChunk(
+            type="overdrive_progress",
+            metadata={
+                "phase": "workers_starting",
+                "label": "Manager 正在按任务依赖加载专家与工具",
+                "total": len(assignments),
+                "completed": 0,
+                "tasks": manifest.load().get("tasks") or [],
+            },
+        )
+        position_by_task_id = {
+            assignment["task_id"]: position
+            for position, assignment in enumerate(assignments, start=1)
+        }
+        assignment_waves, schedule_warnings = build_assignment_waves(
+            assignments, max_parallel=int(limits["max_parallel_per_wave"])
+        )
+        for warning in schedule_warnings:
+            yield ChatChunk(type="schedule_warning", metadata={"label": warning})
+        task_results: list[dict[str, Any]] = []
+        fanout_errors: list[str] = []
+        completed_workers = 0
+        stalled_positions: set[int] = set()
+        chain_deadline = time.monotonic() + float(limits["chain_wall_timeout_minutes"]) * 60
+        for wave_number, wave in enumerate(assignment_waves, start=1):
+            pause_after_wave = False
+            control = manifest.control()
+            if control.get("action") == "terminate":
+                for pending in manifest.load().get("tasks") or []:
+                    if pending.get("status") in {"pending", "ready", "running"}:
+                        manifest.update_task(
+                            str(pending["task_id"]), "skipped", error_summary="用户终止整链"
+                        )
+                manifest.set_status("terminated")
+                break
+            while control.get("action") == "pause":
+                manifest.set_status("paused")
+                yield ChatChunk(
+                    type="overdrive_progress",
+                    metadata={
+                        "phase": "paused",
+                        "label": "已暂停下一 Wave 调度",
+                        "total": len(assignments),
+                        "completed": completed_workers,
+                    },
+                )
+                await asyncio.sleep(0.5)
+                control = manifest.control()
+                if control.get("action") == "terminate":
+                    break
+            manifest.set_status("running")
+
+            current_by_id = {
+                str(item.get("task_id")): item for item in manifest.load().get("tasks") or []
+            }
+            runnable: list[dict[str, Any]] = []
+            for assignment in wave:
+                task_id = assignment["task_id"]
+                current = current_by_id.get(task_id, {})
+                if current.get("status") == "succeeded":
+                    completed_workers += 1
+                    result_path = manifest.root / "tasks" / task_id / "result.md"
+                    answer = result_path.read_text(encoding="utf-8") if result_path.exists() else ""
+                    task_results.append(
+                        {
+                            "index": position_by_task_id[task_id],
+                            "agent_id": assignment["agent_id"],
+                            "status": "ok",
+                            "answer": answer,
+                            "packet": {"status": "ok", "final_answer": answer},
+                            "reused": True,
+                        }
+                    )
+                    continue
+                dependencies = assignment.get("depends_on") or []
+                blocked = [
+                    dependency
+                    for dependency in dependencies
+                    if current_by_id.get(dependency, {}).get("status") in {"failed", "skipped"}
+                ]
+                if blocked:
+                    reason = f"上游失败，已级联跳过：{', '.join(blocked)}"
+                    manifest.append_progress(task_id, reason)
+                    manifest.update_task(task_id, "skipped", error_summary=reason)
+                    await update_overdrive_task(position_by_task_id[task_id], "skipped")
+                    completed_workers += 1
+                    task_results.append(
+                        {
+                            "index": position_by_task_id[task_id],
+                            "agent_id": assignment["agent_id"],
+                            "status": "skipped",
+                            "error": reason,
+                            "packet": {"status": "skipped", "final_answer": "", "error": reason},
+                        }
+                    )
+                    continue
+                if control.get("action") == "skip" and control.get("task_id") == task_id:
+                    manifest.update_task(task_id, "skipped", error_summary="用户跳过任务")
+                    manifest.write_control("run")
+                    completed_workers += 1
+                    continue
+                manifest.update_task(task_id, "ready")
+                runnable.append(assignment)
+
+            if not runnable:
+                continue
+            global_positions = [position_by_task_id[item["task_id"]] for item in runnable]
+            wave_tasks: list[dict[str, Any]] = []
+            directive = manifest.consume_directive()
+            for assignment in runnable:
+                task_limits = load_overdrive_limits(assignment["agent_id"])
+                instruction = assignment["task"]
+                upstream_context = build_upstream_context(
+                    manifest,
+                    assignment.get("depends_on") or [],
+                    summary_chars=int(task_limits["summary_chars"]),
+                    total_chars=int(task_limits["upstream_context_chars"]),
+                )
+                if upstream_context:
+                    instruction = f"{instruction}\n\n{upstream_context}"
+                if directive:
+                    instruction += f"\n\n## 用户运行中补充指令\n{directive}"
+                instruction = instruction[: int(task_limits["task_instruction_chars"])]
+                wave_tasks.append(
+                    {
+                        "task_id": assignment["task_id"],
+                        "agent_id": assignment["agent_id"],
+                        "task": instruction,
+                        "workspace_access": bool(assignment.get("workspace_access")),
+                        "retry": assignment.get("retry") or {},
+                        "timeout_seconds": assignment.get("timeout_seconds"),
+                    }
+                )
+
+            event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+            async def on_worker_event(
+                event: dict[str, Any],
+                positions: list[int] = global_positions,
+                queue: asyncio.Queue[dict[str, Any]] = event_queue,
+            ) -> None:
+                local_index = int(event.get("index") or 0)
+                mapped = dict(event)
+                if 1 <= local_index <= len(positions):
+                    mapped["index"] = positions[local_index - 1]
+                await queue.put(mapped)
+
+            yield ChatChunk(
+                type="overdrive_progress",
+                metadata={
+                    "phase": "workers_starting",
+                    "label": f"正在执行第 {wave_number}/{len(assignment_waves)} Wave",
+                    "total": len(assignments),
+                    "completed": completed_workers,
+                    "wave": wave_number,
+                    "wave_total": len(assignment_waves),
+                    "wave_mode": "parallel" if len(runnable) > 1 else "serial",
+                    "tasks": manifest.load().get("tasks") or [],
+                },
             )
-            payload = fanout_result.get("llm_payload") or {}
-            task_results = payload.get("results") if isinstance(payload, dict) else None
-            if not isinstance(task_results, list):
-                task_results = []
-            fanout_error = str(
-                fanout_result.get("error")
-                or (payload.get("error") if isinstance(payload, dict) else "")
-                or ""
-            )
-        except Exception as exc:  # noqa: BLE001
-            fanout_error = str(exc)
-            task_results = [
-                {"index": position, "agent_id": task["agent_id"], "status": "failed", "error": str(exc)}
-                for position, task in enumerate(assignments, start=1)
-            ]
+            try:
+                fanout_task = asyncio.create_task(
+                    ParallelSubAgentToolService().run_parallel_subagents(
+                        context_summary=planning_content,
+                        tasks=wave_tasks,
+                        context=tool_context,
+                        on_event=on_worker_event,
+                    )
+                )
+                last_event_at = {position: time.monotonic() for position in global_positions}
+                terminate_requested = False
+                while not fanout_task.done() or not event_queue.empty():
+                    if time.monotonic() >= chain_deadline:
+                        fanout_task.cancel()
+                        fanout_errors.append("整链超过墙钟预算，已终止未完成任务")
+                        terminate_requested = True
+                        break
+                    live_control = manifest.control()
+                    if live_control.get("action") == "terminate":
+                        fanout_task.cancel()
+                        terminate_requested = True
+                        break
+                    try:
+                        event = await asyncio.wait_for(event_queue.get(), timeout=0.08)
+                    except TimeoutError:
+                        now = time.monotonic()
+                        for position, active_at in last_event_at.items():
+                            if position not in stalled_positions and now - active_at >= float(
+                                limits["stall_threshold_seconds"]
+                            ):
+                                stalled_positions.add(position)
+                                sender = worker_senders.get(position)
+                                yield ChatChunk(
+                                    type="worker_stalled",
+                                    metadata={
+                                        "index": position,
+                                        "task_id": assignments[position - 1]["task_id"],
+                                        "label": f"{sender['name'] if sender else '专家'} 长时间无新进度",
+                                    },
+                                )
+                        continue
+                    position = int(event.get("index") or 0)
+                    last_event_at[position] = time.monotonic()
+                    stalled_positions.discard(position)
+                    sender = worker_senders.get(position)
+                    event_type = str(event.get("type") or "")
+                    if event_type == "worker_started" and sender:
+                        task_id = assignments[position - 1]["task_id"]
+                        manifest.append_progress(task_id, "任务开始执行")
+                        manifest.update_task(task_id, "running")
+                        await update_overdrive_task(position, "running")
+                        yield ChatChunk(
+                            type="overdrive_progress",
+                            metadata={
+                                "phase": "worker_running",
+                                "label": f"{sender['name']} 正在处理",
+                                "total": len(assignments),
+                                "completed": completed_workers,
+                            },
+                        )
+                    elif event_type == "worker_tool_call" and sender:
+                        tool_name = str(event.get("tool_name") or "工具")
+                        manifest.append_progress(
+                            assignments[position - 1]["task_id"], f"调用工具 {tool_name}"
+                        )
+                        yield ChatChunk(
+                            type="overdrive_progress",
+                            metadata={
+                                "phase": "tool_running",
+                                "label": f"{sender['name']} 正在调用 {tool_name}",
+                                "total": len(assignments),
+                                "completed": completed_workers,
+                            },
+                        )
+                    elif event_type == "worker_text_delta" and sender:
+                        yield ChatChunk(
+                            type="room_speech_delta",
+                            content=str(event.get("content") or ""),
+                            metadata={
+                                "sender": sender,
+                                "worker_key": f"worker-{position}",
+                                "session_id": session_id,
+                            },
+                        )
+                    elif event_type == "worker_reasoning_delta" and sender:
+                        yield ChatChunk(
+                            type="room_speech_delta",
+                            content=str(event.get("content") or ""),
+                            metadata={
+                                "sender": sender,
+                                "worker_key": f"worker-{position}",
+                                "session_id": session_id,
+                                "is_reasoning": True,
+                            },
+                        )
+                    elif event_type == "worker_finished":
+                        completed_workers += 1
+                        event_status = str(event.get("status") or "")
+                        if event_status == "awaiting_input":
+                            label = (
+                                f"{sender['name']} 等待你补充信息" if sender else "专家等待补充信息"
+                            )
+                        elif event_status == "approval_pending":
+                            label = f"{sender['name']} 等待审批" if sender else "专家等待审批"
+                        else:
+                            label = f"{sender['name']} 已完成" if sender else "专家已完成"
+                        yield ChatChunk(
+                            type="overdrive_progress",
+                            metadata={
+                                "phase": "worker_finished",
+                                "label": label,
+                                "total": len(assignments),
+                                "completed": completed_workers,
+                            },
+                        )
+                if terminate_requested:
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await fanout_task
+                    wave_results = []
+                    for assignment in runnable:
+                        task_id = assignment["task_id"]
+                        manifest.update_task(task_id, "skipped", error_summary="用户终止整链")
+                    manifest.set_status("terminated")
+                    break
+                fanout_result = await fanout_task
+                payload = fanout_result.get("llm_payload") or {}
+                wave_results = payload.get("results") if isinstance(payload, dict) else None
+                if not isinstance(wave_results, list):
+                    wave_results = []
+                wave_error = str(
+                    fanout_result.get("error")
+                    or (payload.get("error") if isinstance(payload, dict) else "")
+                    or ""
+                )
+                if wave_error:
+                    fanout_errors.append(wave_error)
+            except Exception as exc:  # noqa: BLE001
+                fanout_errors.append(str(exc))
+                wave_results = [
+                    {
+                        "index": local_index,
+                        "agent_id": task["agent_id"],
+                        "status": "failed",
+                        "error": str(exc),
+                    }
+                    for local_index, task in enumerate(wave_tasks, start=1)
+                ]
+
+            for local_index, assignment in enumerate(runnable, start=1):
+                position = global_positions[local_index - 1]
+                raw_result = next(
+                    (
+                        item
+                        for item in wave_results
+                        if isinstance(item, dict) and int(item.get("index") or 0) == local_index
+                    ),
+                    {},
+                )
+                result = {**raw_result, "index": position}
+                task_results.append(result)
+                packet = result.get("packet") if isinstance(result.get("packet"), dict) else {}
+                result_content = str(
+                    packet.get("final_answer") or result.get("answer") or ""
+                ).strip()
+                status = str(result.get("status") or "failed")
+                if packet.get("needs_user_input"):
+                    status = "awaiting_input"
+                if status == "ok" and result_content:
+                    task_limits = load_overdrive_limits(assignment["agent_id"])
+                    artifacts = manifest.write_artifacts(
+                        assignment["task_id"], result_content, int(task_limits["summary_chars"])
+                    )
+                    manifest.update_task(
+                        assignment["task_id"],
+                        "succeeded",
+                        artifacts=artifacts,
+                        attempt=int(
+                            (manifest.load().get("tasks") or [])[position - 1].get("attempt") or 0
+                        )
+                        + 1,
+                    )
+                    await update_overdrive_task(position, "succeeded")
+                elif status in {"awaiting_input", "approval_pending"}:
+                    wait_reason = (
+                        "等待用户补充信息" if status == "awaiting_input" else "等待用户审批工具调用"
+                    )
+                    manifest.append_progress(assignment["task_id"], wait_reason)
+                    manifest.update_task(
+                        assignment["task_id"],
+                        status,
+                        error_summary="",
+                        wait_reason=wait_reason,
+                    )
+                    await update_overdrive_task(position, status)
+                    pause_after_wave = True
+                else:
+                    error = str(result.get("error") or "未返回有效结论")
+                    manifest.append_progress(assignment["task_id"], f"任务失败：{error}")
+                    error_summary = (error + "\n" + manifest.progress_tail(assignment["task_id"]))[
+                        -4000:
+                    ]
+                    manifest.update_task(
+                        assignment["task_id"], "failed", error_summary=error_summary
+                    )
+                    await update_overdrive_task(position, "failed")
+
+            if pause_after_wave:
+                manifest.set_status("paused")
+                break
+
+        fanout_error = "；".join(error for error in fanout_errors if error)
 
         # fan-out 结果按 assignments 下标（1 起）对齐，同一专家多个分身的结果不会互相覆盖
         result_by_index = {
-            int(item.get("index") or 0): item
-            for item in task_results
-            if isinstance(item, dict)
+            int(item.get("index") or 0): item for item in task_results if isinstance(item, dict)
         }
-        clone_totals: dict[str, int] = {}
-        for assignment in assignments:
-            clone_totals[assignment["agent_id"]] = clone_totals.get(assignment["agent_id"], 0) + 1
-        clone_seq: dict[str, int] = {}
         worker_summaries: list[dict[str, str]] = []
+        awaiting_user_input = False
+        awaiting_approval = False
         for position, assignment in enumerate(assignments, start=1):
+            if position not in result_by_index:
+                continue
             target_id = assignment["agent_id"]
             result = result_by_index.get(position, {})
             answer = str(result.get("answer") or "").strip()
+            thought = str(result.get("thought") or "").strip()
             error = str(result.get("error") or "").strip()
-            content = answer or f"子任务执行失败：{error or fanout_error or '未返回可用结果'}"
-            candidate = catalog_by_id[target_id]
-            clone_seq[target_id] = clone_seq.get(target_id, 0) + 1
-            display_name = (
-                candidate["name"]
-                if clone_totals[target_id] == 1
-                else f"{candidate['name']} #{clone_seq[target_id]}"
+            sender = worker_senders[position]
+            packet = result.get("packet") if isinstance(result.get("packet"), dict) else {}
+            manifest_task = next(
+                (
+                    item
+                    for item in manifest.load().get("tasks") or []
+                    if item.get("task_id") == assignment["task_id"]
+                ),
+                {},
             )
-            sender = {
-                "agent_id": target_id,
-                "name": display_name,
-                "avatar": candidate["avatar"],
-                "color": candidate["color"],
-                "role": "worker",
-            }
-            worker_summaries.append({"agent_id": target_id, "name": display_name, "content": content})
-            yield await emit_speech(sender, content, 1)
+            task_status = str(manifest_task.get("status") or result.get("status") or "failed")
+            summary_text = manifest.read_summary(
+                assignment["task_id"],
+                int(load_overdrive_limits(assignment["agent_id"])["summary_chars"]),
+            )
+            approval_requests = packet.get("approval_requests")
+            if not isinstance(approval_requests, list):
+                approval_requests = []
+            content = answer or (
+                "该工具调用需要你的批准后才能继续执行。"
+                if approval_requests
+                else f"子任务执行失败：{error or fanout_error or '未返回可用结果'}"
+            )
+            worker_summaries.append(
+                {
+                    "agent_id": target_id,
+                    "name": sender["name"],
+                    "content": summary_text or str(packet.get("final_answer") or content),
+                    "status": task_status,
+                    "task_id": assignment["task_id"],
+                }
+            )
+            awaiting_user_input = (
+                awaiting_user_input
+                or task_status == "awaiting_input"
+                or bool(packet.get("needs_user_input"))
+                or _overdrive_answer_requires_user_input(content)
+            )
+            yield await emit_speech(
+                sender,
+                content,
+                1,
+                worker_key=f"worker-{position}",
+                thought=thought,
+                summary_text=summary_text,
+                artifacts=manifest_task.get("artifacts") or {},
+                task_status=task_status,
+                error_summary=str(manifest_task.get("error_summary") or ""),
+            )
+            if packet.get("needs_user_input"):
+                questions = packet.get("questions")
+                if not isinstance(questions, list):
+                    questions = [{"question": content, "options": []}]
+                if overdrive_session is not None:
+                    meta = dict(overdrive_session.sandbox_meta or {})
+                    meta["overdrive_intake"] = {
+                        "status": "awaiting_input",
+                        "root_request": root_request,
+                        "slots": intake_slots,
+                        "supplements": intake_supplements,
+                        "questions": questions,
+                        "intake_agent_id": target_id,
+                        "source_task_id": assignment["task_id"],
+                        "created_at": datetime.now(UTC).isoformat(),
+                    }
+                    overdrive_session.sandbox_meta = meta
+                    await self._db.flush()
+                yield ChatChunk(
+                    type="ask_request",
+                    metadata={
+                        "questions": questions,
+                        "worker_key": f"worker-{position}",
+                        "agent_id": target_id,
+                    },
+                )
+            for request in approval_requests:
+                if not isinstance(request, dict) or overdrive_session is None:
+                    continue
+                tool_name = str(request.get("tool_name") or "")
+                arguments = request.get("arguments")
+                if not tool_name or not isinstance(arguments, dict):
+                    continue
+                approval = await self.create_overdrive_approval(
+                    session=overdrive_session,
+                    run_id=overdrive_run_id,
+                    task_id=f"agentteams:{overdrive_run_id}:{position}",
+                    manager_agent_id=manager.agent_id,
+                    worker_agent_id=target_id,
+                    tool_name=tool_name,
+                    arguments=arguments,
+                )
+                awaiting_approval = True
+                await update_overdrive_task(position, "awaiting_approval")
+                yield ChatChunk(
+                    type="overdrive_approval_request",
+                    metadata={
+                        "approval": approval,
+                        "worker_key": f"worker-{position}",
+                        "agent_id": target_id,
+                    },
+                )
 
-        summary_prompt = (
-            "基于以下专家结果给出统一、可核验的结论，不要重复执行同一批子任务。"
-            "请用简体中文直接回答用户。\n\n"
-            f"用户消息：{user_content}\n\n专家结果：\n"
-            f"{json.dumps(worker_summaries, ensure_ascii=False)}"
+        if awaiting_user_input or awaiting_approval:
+            manifest.set_status("paused")
+            yield ChatChunk(
+                type="overdrive_progress",
+                metadata={
+                    "phase": "awaiting_input",
+                    "label": "上游专家正在等待你的补充信息或审批，后续任务已暂停而非跳过",
+                    "total": len(assignments),
+                    "completed": sum(
+                        1
+                        for task in manifest.load().get("tasks") or []
+                        if task.get("status") in {"succeeded", "failed", "skipped"}
+                    ),
+                    "tasks": manifest.load().get("tasks") or [],
+                },
+            )
+            return
+
+        valid_summaries = [
+            summary
+            for summary in worker_summaries
+            if summary["content"]
+            and summary.get("status") == "succeeded"
+            and not summary["content"].startswith("子任务执行失败：")
+        ]
+        if not valid_summaries:
+            manifest.set_status("failed")
+            yield ChatChunk(
+                type="overdrive_progress",
+                metadata={
+                    "phase": "summarizing",
+                    "label": "专家任务未能完成，Manager 正在说明后续处理",
+                    "total": len(assignments),
+                    "completed": len(assignments),
+                },
+            )
+            yield await emit_speech(
+                manager_sender,
+                "本轮专家任务未能产出可用结论，因此暂不进行汇总。请稍后重试；若问题仍然存在，请附上相关数据、报错或分析目标，我会重新安排协作。",
+                2,
+            )
+            yield ChatChunk(
+                type="overdrive_progress",
+                metadata={
+                    "phase": "completed",
+                    "label": "本轮超频协作已结束",
+                    "total": len(assignments),
+                    "completed": len(assignments),
+                },
+            )
+            return
+
+        has_assignment_dependencies = any(
+            assignment.get("depends_on") for assignment in assignments
         )
-        summary = await ask_manager(summary_prompt)
-        yield await emit_speech(manager_sender, summary or "专家结果已汇总，但 Manager 未返回额外结论。", 2)
+        distinct_reviewers: list[tuple[int, dict[str, Any]]] = []
+        seen_reviewer_ids: set[str] = set()
+        valid_agent_ids = {summary["agent_id"] for summary in valid_summaries}
+        if len(valid_agent_ids) >= 2 and not has_assignment_dependencies:
+            for position, assignment in enumerate(assignments, start=1):
+                target_id = assignment["agent_id"]
+                if target_id not in valid_agent_ids or target_id in seen_reviewer_ids:
+                    continue
+                seen_reviewer_ids.add(target_id)
+                distinct_reviewers.append((position, assignment))
+
+        manager_round = 2
+        if distinct_reviewers:
+            peer_context = "\n\n".join(
+                f"【{summary['name']} / {summary['agent_id']}】\n{summary['content']}"
+                for summary in valid_summaries
+            )
+            review_tasks = [
+                {
+                    "agent_id": assignment["agent_id"],
+                    "task": (
+                        "你正在进行专家间交叉复核。下面包含所有专家的初步结论。"
+                        "请读取同伴观点，检查与你领域相关的遗漏、冲突、不可行假设和证据不足之处，"
+                        "然后输出你的修订版自包含结论。不要复述分工，不要调用 ask_user 或提交长任务；"
+                        "若同伴结论无需修改，也要明确说明交叉核对后一致。\n\n"
+                        f"初步结论：\n{peer_context}"
+                    ),
+                }
+                for _, assignment in distinct_reviewers
+            ]
+            yield ChatChunk(
+                type="overdrive_progress",
+                metadata={
+                    "phase": "peer_reviewing",
+                    "label": "专家正在读取彼此结论并交叉复核",
+                    "total": len(review_tasks),
+                    "completed": 0,
+                },
+            )
+            try:
+                review_result = await ParallelSubAgentToolService().run_parallel_subagents(
+                    context_summary=f"用户问题：\n{planning_content}",
+                    tasks=review_tasks,
+                    context=tool_context,
+                )
+                review_payload = review_result.get("llm_payload") or {}
+                review_rows = (
+                    review_payload.get("results") if isinstance(review_payload, dict) else None
+                )
+                if not isinstance(review_rows, list):
+                    review_rows = []
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("超频专家交叉复核失败，保留初步结论: {}", exc)
+                review_rows = []
+
+            review_by_index = {
+                int(item.get("index") or 0): item for item in review_rows if isinstance(item, dict)
+            }
+            revised_by_agent: dict[str, str] = {}
+            for review_index, (position, assignment) in enumerate(distinct_reviewers, start=1):
+                row = review_by_index.get(review_index, {})
+                packet = row.get("packet") if isinstance(row.get("packet"), dict) else {}
+                revised = str(packet.get("final_answer") or row.get("answer") or "").strip()
+                if not revised or str(row.get("status") or "") != "ok":
+                    continue
+                target_id = assignment["agent_id"]
+                revised_by_agent[target_id] = revised
+                sender = {
+                    **worker_senders[position],
+                    "name": f"{worker_senders[position]['name']}（交叉复核）",
+                }
+                yield await emit_speech(
+                    sender,
+                    revised,
+                    2,
+                    worker_key=f"peer-review-{position}",
+                )
+
+            if revised_by_agent:
+                valid_summaries = [
+                    {
+                        **summary,
+                        "content": revised_by_agent.get(summary["agent_id"], summary["content"]),
+                    }
+                    for summary in valid_summaries
+                ]
+                manager_round = 3
+
+        summary_source_label = (
+            "按依赖顺序完成并逐阶段传递的有效结论"
+            if has_assignment_dependencies
+            else "已完成专家间交叉复核的有效结论"
+        )
+        manifest_snapshot = manifest.load()
+        failure_rows = [
+            task
+            for task in manifest_snapshot.get("tasks") or []
+            if task.get("status") in {"failed", "skipped"}
+        ]
+        summary_prompt = (
+            f"用户问题：\n{planning_content}\n\n"
+            f"共享产物索引：{relative_overdrive_root(session_id)}/manifest.json\n"
+            + (
+                "失败或跳过任务：\n"
+                + "\n".join(
+                    f"- {task.get('task_id')}: {task.get('status')} - {task.get('error_summary') or '无错误摘要'}"
+                    for task in failure_rows
+                )
+                + "\n\n"
+                if failure_rows
+                else ""
+            )
+            + f"{summary_source_label}：\n"
+            + "\n\n".join(
+                f"【{summary['name']}】\n{summary['content']}" for summary in valid_summaries
+            )
+        )
+        summary = await ask_manager(
+            summary_prompt,
+            system_prompt=OVERDRIVE_SUMMARY_SYSTEM_PROMPT,
+        )
+        if not summary or _overdrive_summary_exposes_internal_instructions(summary):
+            summary = (
+                "## 综合报告\n\n"
+                "以下内容已按执行顺序整合；由于自动摘要未通过输出安全校验，"
+                "这里保留各阶段的最终有效结论，避免丢失专家产物。\n\n"
+                + "\n\n".join(
+                    f"### {item['name']}\n\n{item['content']}" for item in valid_summaries
+                )
+                + "\n\n## 下一步\n\n请确认是否保存本报告，以及分析数据是否已经准备好。"
+            )
+        yield ChatChunk(
+            type="overdrive_progress",
+            metadata={
+                "phase": "summarizing",
+                "label": "Manager 正在汇总可交付结论",
+                "total": len(assignments),
+                "completed": len(assignments),
+                "tasks": manifest.load().get("tasks") or [],
+            },
+        )
+        manifest.set_status("completed")
+        yield await emit_speech(
+            manager_sender,
+            summary,
+            manager_round,
+        )
+        if not pending_followup and _is_overdrive_planning_request(planning_content):
+            followup_questions = [
+                {
+                    "question": "是否将这份最终综合报告保存到你的工作目录？",
+                    "options": [
+                        "保存到 output/results/ 并更新 output/README.md（推荐）",
+                        "暂不保存",
+                    ],
+                },
+                {
+                    "question": "本次分析所需的数据是否已经准备好？",
+                    "options": [
+                        "已准备好，请按计划开始分析（推荐）",
+                        "尚未准备好，先保留分析计划",
+                    ],
+                },
+            ]
+            if session_row is not None:
+                session_meta = dict(session_row.sandbox_meta or {})
+                session_meta["overdrive_followup"] = {
+                    "status": "awaiting_input",
+                    "root_request": root_request,
+                    "final_report": summary,
+                    "questions": followup_questions,
+                    "created_at": datetime.now(UTC).isoformat(),
+                }
+                session_row.sandbox_meta = session_meta
+                await self._db.flush()
+            yield ChatChunk(
+                type="ask_request",
+                metadata={"questions": followup_questions, "agent_id": manager.agent_id},
+            )
+            yield ChatChunk(
+                type="overdrive_progress",
+                metadata={
+                    "phase": "awaiting_input",
+                    "label": "等待你确认报告保存方式与数据准备状态",
+                    "total": len(assignments),
+                    "completed": len(assignments),
+                    "tasks": manifest.load().get("tasks") or [],
+                },
+            )
+            return
+        yield ChatChunk(
+            type="overdrive_progress",
+            metadata={
+                "phase": "completed",
+                "label": "本轮超频协作已完成",
+                "total": len(assignments),
+                "completed": len(assignments),
+                "tasks": manifest.load().get("tasks") or [],
+            },
+        )
 
     async def stream_agent_chat(
         self,
@@ -1941,8 +3801,8 @@ class ChatService:
                 return
             try:
                 resolve_agent_project_scope(
-                    agent_project_id=ctx.agent.project_id,
-                    session_project_id=session.project_id,
+                    agent_project_id=getattr(ctx.agent, "project_id", None),
+                    session_project_id=getattr(session, "project_id", None),
                 )
             except BusinessError as exc:
                 yield ChatChunk(type="error", content=str(exc))
@@ -1969,15 +3829,15 @@ class ChatService:
                 if multi_agent is not None
                 else bool(session_mcp_meta.get("multi_agent", False))
             )
-            effective_multi_agent = (
-                user_multi_agent or await self._admin_subagent_fanout_enabled()
-            )
+            effective_multi_agent = user_multi_agent or await self._admin_subagent_fanout_enabled()
             session_mcp_meta["multi_agent"] = user_multi_agent
             stored_overdrive = bool(session_mcp_meta.get("overdrive", False))
             effective_overdrive = _effective_overdrive(overdrive, session_mcp_meta)
             if overdrive is not None and effective_overdrive != stored_overdrive:
                 explicit_overdrive_changed = effective_overdrive
             session_mcp_meta["overdrive"] = effective_overdrive
+            if effective_overdrive:
+                session_mcp_meta["overdrive_used"] = True
             # Skill 版本 pin：会话首轮快照挂载技能的活跃版本号（skill_id → revision）。
             # 整个会话内 use_skill 读取被 pin 的快照正文，会话中途升级不影响进行中的任务；
             # 新会话取新版本。pin 失败不阻断对话（回落到当前内容）。
@@ -2018,11 +3878,11 @@ class ChatService:
                     sandbox_meta.get("capabilities"), bound_skills, bound_mcp_servers
                 )
             current_session_id = session_id
-            session_project_id = session.project_id
+            session_project_id = getattr(session, "project_id", None)
         else:
             try:
                 project_id = resolve_agent_project_scope(
-                    agent_project_id=ctx.agent.project_id,
+                    agent_project_id=getattr(ctx.agent, "project_id", None),
                     session_project_id=project_id,
                 )
             except BusinessError as exc:
@@ -2030,9 +3890,7 @@ class ChatService:
                 return
             studio_mode = mode == "studio"
             # 与存量会话分支一致：管理员后台开关可启用 Multi-agent（子 Agent）。
-            effective_multi_agent = (
-                bool(multi_agent) or await self._admin_subagent_fanout_enabled()
-            )
+            effective_multi_agent = bool(multi_agent) or await self._admin_subagent_fanout_enabled()
             effective_overdrive = bool(overdrive)
             explicit_overdrive_changed = effective_overdrive if overdrive else None
             if studio_mode:
@@ -2050,6 +3908,7 @@ class ChatService:
                     "extra_mcp_servers": effective_extra_mcp_servers,
                     "multi_agent": bool(multi_agent),
                     "overdrive": effective_overdrive,
+                    "overdrive_used": effective_overdrive,
                 },
                 project_id=project_id,
             )
@@ -2072,11 +3931,11 @@ class ChatService:
             att.model_dump() if hasattr(att, "model_dump") else dict(att)
             for att in (attachments or [])
         ]
-        await self.add_message(
+        user_metadata = _extract_user_message_metadata(messages[-1] if messages else {})
+        await self._record_user_message_anchor(
             current_session_id,
-            "user",
             user_content,
-            metadata={"attachments": attachment_dicts},
+            metadata={"attachments": attachment_dicts, **user_metadata},
         )
 
         if explicit_overdrive_changed is not None:
@@ -2097,6 +3956,7 @@ class ChatService:
         elif keyword_toggle is True:
             effective_overdrive = True
             session_mcp_meta["overdrive"] = True
+            session_mcp_meta["overdrive_used"] = True
             session_row = await self.get_session(current_session_id, user_id)
             if session_row is not None:
                 session_row.sandbox_meta = dict(session_mcp_meta)
@@ -2138,22 +3998,53 @@ class ChatService:
                 bound_skills = list(getattr(ctx, "skills", []) or [])
                 bound_mcp_servers = list(ctx.mcp_servers or [])
                 target_studio = dict(ctx.features.get("studio") or {})
+                routed_session = await self.get_session(current_session_id, user_id)
+                transition = route_info.get("transition")
+                route_execution_confirmed = False
+                if routed_session is not None and isinstance(transition, dict):
+                    routed_meta = dict(routed_session.sandbox_meta or {})
+                    gate = routed_meta.get("route_execution_gate")
+                    route_execution_confirmed = (
+                        isinstance(gate, dict)
+                        and gate.get("target_agent_id") == ctx.agent.agent_id
+                        and _is_route_execution_confirmation(user_content)
+                    )
+                    if route_execution_confirmed:
+                        transition.update(
+                            {
+                                "stage": "execution_ready",
+                                "title": "执行已确认",
+                                "message": f"已确认由「{ctx.agent.name}」启动专项分析。",
+                                "next_step": "进入专项分析并执行",
+                                "requires_execution_confirmation": False,
+                                "auto_start": True,
+                            }
+                        )
+                        routed_meta.pop("route_execution_gate", None)
+                    elif target_studio.get("default_mode") == "studio":
+                        routed_meta["route_execution_gate"] = {
+                            "target_agent_id": ctx.agent.agent_id,
+                            "status": "awaiting_confirmation",
+                            "created_at": datetime.now(UTC).isoformat(),
+                        }
+                    routed_session.sandbox_meta = routed_meta
+                    await self._db.flush()
                 if (
-                    not studio_mode
+                    route_execution_confirmed
+                    and not studio_mode
                     and target_studio.get("default_mode") == "studio"
+                    and routed_session is not None
                 ):
-                    routed_session = await self.get_session(current_session_id, user_id)
-                    if routed_session is not None:
-                        studio_mode = True
-                        studio_image = target_studio.get("image")
-                        routed_meta = dict(routed_session.sandbox_meta or {})
-                        if studio_image:
-                            routed_meta["image"] = studio_image
-                        routed_session.mode = "studio"
-                        routed_session.workspace_id = routed_session.workspace_id or current_session_id
-                        routed_session.sandbox_meta = routed_meta
-                        routed_session.updated_at = datetime.now(UTC)
-                        await self._db.flush()
+                    studio_mode = True
+                    studio_image = target_studio.get("image")
+                    routed_meta = dict(routed_session.sandbox_meta or {})
+                    if studio_image:
+                        routed_meta["image"] = studio_image
+                    routed_session.mode = "studio"
+                    routed_session.workspace_id = routed_session.workspace_id or current_session_id
+                    routed_session.sandbox_meta = routed_meta
+                    routed_session.updated_at = datetime.now(UTC)
+                    await self._db.flush()
                 settings = get_settings()
                 site_settings = await SiteSettingsService(self._db).get_settings()
                 unified_intent_router_enabled = (
@@ -2188,7 +4079,9 @@ class ChatService:
                             or site_settings.subagent_fanout_enabled
                         ),
                         consultation_enabled=consultation_enabled,
-                        case_enabled=bridge_runtime.enabled and bridge_runtime.configured and case_entry_enabled,
+                        case_enabled=bridge_runtime.enabled
+                        and bridge_runtime.configured
+                        and case_entry_enabled,
                         mas_enabled=settings.mas_enabled,
                         degradation_template=degradation_template,
                         degradation_locale=site_settings.collaboration_degradation_locale,
@@ -2222,6 +4115,26 @@ class ChatService:
                             "如当前会话提供 MAS 计划工具，优先生成 MAS 计划预览；否则说明所需"
                             "输入并引导用户进入可用的分析工作流入口。"
                         )
+                if route_info.get("needs_clarification"):
+                    question_payload = json.dumps(
+                        route_info.get("clarification_questions") or [], ensure_ascii=False
+                    )
+                    route_prompt_suffix = (
+                        f"{route_prompt_suffix}\n\n" if route_prompt_suffix else ""
+                    ) + (
+                        "[任务 intake] 当前请求缺少会改变分析路线的关键信息。"
+                        "你现在是通用助手，必须先调用 ask_user，一次性询问下面的问题；"
+                        "本轮不得输出假定数据模态下的分析计划，也不得转交领域专家。\n"
+                        f"问题：{question_payload}"
+                    )
+                if isinstance(transition, dict) and transition.get("visible"):
+                    route_prompt_suffix = (
+                        f"{route_prompt_suffix}\n\n" if route_prompt_suffix else ""
+                    ) + (
+                        ROUTED_SPECIALIST_EXECUTION_CONFIRMED_PROMPT
+                        if transition.get("auto_start")
+                        else ROUTED_SPECIALIST_HANDOFF_PROMPT
+                    )
                 await self.update_message_content(
                     ai_message.message_id,
                     "",
@@ -2291,7 +4204,13 @@ class ChatService:
                         return
 
         # 4. 送 LLM 的 messages（脱敏 + 附件多模态注入）
-        llm_messages: list[dict[str, Any]] = sanitize_messages(messages, sensitive_keywords)
+        llm_messages: list[dict[str, Any]] = sanitize_messages(
+            [
+                {"role": item.get("role", ""), "content": item.get("content", "")}
+                for item in messages
+            ],
+            sensitive_keywords,
+        )
         if attachments:
             llm_messages = await self._build_multimodal_messages(llm_messages, attachments)
 
@@ -2451,7 +4370,9 @@ class ChatService:
         if (
             (
                 get_settings().multi_expert_consultation_enabled
-                or (await SiteSettingsService(self._db).get_settings()).multi_expert_consultation_enabled
+                or (
+                    await SiteSettingsService(self._db).get_settings()
+                ).multi_expert_consultation_enabled
             )
             and route_info is not None
             and route_info.get("consult_agent_ids")
@@ -2552,9 +4473,7 @@ class ChatService:
             try:
                 runtime_registry = get_runtime_images()
                 runtime_match = (
-                    runtime_registry.profile_for_image(studio_image)
-                    if studio_image
-                    else None
+                    runtime_registry.profile_for_image(studio_image) if studio_image else None
                 )
                 if runtime_match is not None:
                     runtime_profile_id, runtime_profile = runtime_match
@@ -2648,8 +4567,7 @@ class ChatService:
             except Exception as exc:  # noqa: BLE001
                 logger.error("Handoff 目标 Agent 长期记忆召回失败，已跳过: %s", exc)
             target_prompt = (
-                f"{target_prompt}\n\n{directive['packet']}\n\n"
-                f"{USER_FACING_CHINESE_PROMPT_SUFFIX}"
+                f"{target_prompt}\n\n{directive['packet']}\n\n{USER_FACING_CHINESE_PROMPT_SUFFIX}"
             ).strip()
             return (
                 target_ctx,
@@ -2795,7 +4713,7 @@ class ChatService:
                 target_tools,
                 target_prompt,
             ) = await _prepare_handoff_target(directive)
-            await AgentHandoffService(self._db).record_handoff(
+            await AgentHandoffService.record_handoff_anchor(
                 user_id=user_id,
                 session_id=current_session_id,
                 directive=directive,
@@ -3126,14 +5044,29 @@ class ChatService:
                                 context=tool_context,
                             )
                             if (bridge_result.get("llm_payload") or {}).get("needs_confirm"):
-                                await AgentTeamsCaseToolService().record_confirmation_request(
-                                    objective=str(args.get("objective") or ""),
-                                    project_id=str(args.get("project_id") or ""),
-                                    flow_id=str(args.get("flow_id") or ""),
-                                    origin_consultation_id=str(args.get("origin_consultation_id") or "") or None,
-                                    consultation_summary=str(args.get("consultation_summary") or "") or None,
-                                    context=tool_context,
+                                confirmation = (
+                                    await AgentTeamsCaseToolService().record_confirmation_request(
+                                        objective=str(args.get("objective") or ""),
+                                        project_id=str(args.get("project_id") or ""),
+                                        flow_id=str(args.get("flow_id") or ""),
+                                        origin_consultation_id=str(
+                                            args.get("origin_consultation_id") or ""
+                                        )
+                                        or None,
+                                        consultation_summary=str(
+                                            args.get("consultation_summary") or ""
+                                        )
+                                        or None,
+                                        context=tool_context,
+                                    )
                                 )
+                                bridge_result = {
+                                    **bridge_result,
+                                    "ui_payload": {
+                                        **dict(bridge_result.get("ui_payload") or {}),
+                                        "agentteams_case_confirmation": confirmation,
+                                    },
+                                }
                             result = {
                                 "success": bool(bridge_result.get("success")),
                                 "result": bridge_result,
@@ -3144,8 +5077,10 @@ class ChatService:
                                 project_id=str(args.get("project_id") or ""),
                                 flow_id=str(args.get("flow_id") or ""),
                                 sample_context_refs=args.get("sample_context_refs") or [],
-                                origin_consultation_id=str(args.get("origin_consultation_id") or "") or None,
-                                consultation_summary=str(args.get("consultation_summary") or "") or None,
+                                origin_consultation_id=str(args.get("origin_consultation_id") or "")
+                                or None,
+                                consultation_summary=str(args.get("consultation_summary") or "")
+                                or None,
                                 context=tool_context,
                             )
                             card = (case_envelope.get("ui_payload") or {}).get("case_card") or {}
@@ -3395,9 +5330,18 @@ class ChatService:
                                     "timeout_seconds": APPROVAL_TTL_SECONDS,
                                 },
                             )
-                            resolution = await approval_service.wait_resolution(
-                                approval["approval_id"]
+                            resolution_task = asyncio.create_task(
+                                approval_service.wait_resolution(approval["approval_id"])
                             )
+                            try:
+                                while not resolution_task.done():
+                                    await asyncio.wait({resolution_task}, timeout=15)
+                                    if not resolution_task.done():
+                                        yield ChatChunk(type="heartbeat")
+                                resolution = resolution_task.result()
+                            finally:
+                                if not resolution_task.done():
+                                    resolution_task.cancel()
                             action = str(resolution.get("action") or "timeout")
                             yield ChatChunk(
                                 type="approval_resolved",
@@ -3587,7 +5531,7 @@ class ChatService:
                             target_tools,
                             target_prompt,
                         ) = await _prepare_handoff_target(directive)
-                        await AgentHandoffService(self._db).record_handoff(
+                        await AgentHandoffService.record_handoff_anchor(
                             user_id=user_id,
                             session_id=current_session_id,
                             directive=directive,

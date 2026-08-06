@@ -89,6 +89,16 @@ dev = [
     "types-pyyaml>=6.0.12",
 ]
 
+# === uv 镜像源（清华主 + 阿里云备） ===
+[[tool.uv.index]]
+name = "tuna"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+default = true
+
+[[tool.uv.index]]
+name = "aliyun"
+url = "https://mirrors.aliyun.com/pypi/simple/"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

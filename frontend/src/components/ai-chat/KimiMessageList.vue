@@ -17,6 +17,7 @@ interface Props {
   agentName?: string
   agentAvatar?: string
   agentColor?: string
+  sessionId?: string
   targetMessageId?: string
 }
 
@@ -30,6 +31,7 @@ const props = withDefaults(defineProps<Props>(), {
   agentName: 'OmicHub AI',
   agentAvatar: '🤖',
   agentColor: '#4f8ef7',
+  sessionId: '',
   targetMessageId: '',
 })
 
@@ -218,6 +220,8 @@ onUnmounted(() => {
             JSON.stringify(item.tokens),
             JSON.stringify(item.toolCalls),
             JSON.stringify(item.charts),
+            JSON.stringify(item.routedAgent),
+            JSON.stringify(item.collaborationRoute),
             streamingMessageId === item.id ? streamingContent : '',
             streamingMessageId === item.id ? streamingThought : '',
           ]"
@@ -235,6 +239,7 @@ onUnmounted(() => {
             :agent-name="agentName"
             :agent-avatar="agentAvatar"
             :agent-color="agentColor"
+            :session-id="sessionId"
             @feedback="(id, type) => emit('feedback', id, type)"
             @copy="(mode) => emit('copy', mode)"
             @regenerate="(id) => emit('regenerate', id)"

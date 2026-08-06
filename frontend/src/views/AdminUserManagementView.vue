@@ -36,6 +36,7 @@ import AdminTOTPConfirmModal from '@/components/AdminTOTPConfirmModal.vue'
 import RechargeModal from '@/components/admin-cookie/RechargeModal.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useModulesStore } from '@/stores/modules'
+import { displayName } from '@/utils/displayName'
 import PageHeader from '@/components/PageHeader.vue'
 
 interface AdminUser {
@@ -157,7 +158,7 @@ const columns: DataTableColumns<AdminUser> = [
   {
     title: '用户',
     key: 'username',
-    render: (row) => (row.nickname ? `${row.nickname}（${row.username}）` : row.username),
+    render: (row) => displayName(row),
   },
   { title: '邮箱', key: 'email', ellipsis: { tooltip: true } },
   {
@@ -474,7 +475,7 @@ const moduleColumns = computed<DataTableColumns<AdminUser>>(() => {
       fixed: 'left',
       render: (row) =>
         h('div', { class: 'perm-user-cell' }, [
-          h('div', { class: 'perm-user-name' }, row.nickname ? `${row.nickname}（${row.username}）` : row.username),
+          h('div', { class: 'perm-user-name' }, displayName(row)),
           h('div', { class: 'perm-user-email' }, row.email),
         ]),
     },

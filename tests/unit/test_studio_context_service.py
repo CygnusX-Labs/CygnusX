@@ -19,9 +19,11 @@ from omichub.application.services.studio_context_service import (
 )
 from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError, NotFoundError
+from omichub.infrastructure.config.storage_config import StorageConfig
 from omichub.infrastructure.database.models.chat import ChatSessionModel
 from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
 from omichub.infrastructure.database.models.task import TaskModel
+from omichub.infrastructure.storage.path_factory import StoragePathFactory
 
 
 def _lexists(path: Path) -> bool:
@@ -50,6 +52,7 @@ class _FakeDb:
         self.task = task
         self.parent = parent
         self.added: list[Any] = []
+        self.commits = 0
 
     def add(self, obj: Any) -> None:
         self.added.append(obj)
@@ -70,6 +73,9 @@ class _FakeDb:
                 if obj.updated_at is None:
                     obj.updated_at = now
 
+    async def commit(self) -> None:
+        self.commits += 1
+
     async def execute(self, stmt: Any) -> _FakeResult:
         entity = None
         with contextlib.suppress(Exception):
@@ -77,9 +83,7 @@ class _FakeDb:
         if entity is ReportModel:
             return _FakeResult(self.report)
         if entity is ChatSessionModel:
-            sess = next(
-                (o for o in reversed(self.added) if isinstance(o, ChatSessionModel)), None
-            )
+            sess = next((o for o in reversed(self.added) if isinstance(o, ChatSessionModel)), None)
             return _FakeResult(sess)
         return _FakeResult(None)
 
@@ -111,8 +115,18 @@ def platform_env(tmp_path: Path, monkeypatch):
     workspace = tmp_path / "ws" / "sess-new"
     monkeypatch.setattr(get_settings(), "storage_path", str(storage))
     monkeypatch.setattr(
-        studio_context_service, "studio_sandbox_manager", _FakeManager(workspace)
+        studio_context_service,
+        "get_path_factory",
+        lambda: StoragePathFactory(StorageConfig(data_root=str(storage), users_subdir="users")),
     )
+
+    async def ensure_directory_chain_noop(*_args, **_kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(
+        studio_context_service, "ensure_directory_chain", ensure_directory_chain_noop
+    )
+    monkeypatch.setattr(studio_context_service, "studio_sandbox_manager", _FakeManager(workspace))
     return storage, uid, workspace
 
 
@@ -223,8 +237,12 @@ async def test_create_session_from_report_packs_context(platform_env, monkeypatc
     """端到端（fake db）：会话创建 + 产物软链 + context_pack 落 sandbox_meta"""
     storage, uid, workspace = platform_env
     report = _make_report(uid, storage)
-    task = TaskModel(id=report.task_id, flow_id="rnaseq_deseq2", user_id=uuid.UUID(uid),
-                     parameters={"qvalue": 0.05, "log2fc": 1.0})
+    task = TaskModel(
+        id=report.task_id,
+        flow_id="rnaseq_deseq2",
+        user_id=uuid.UUID(uid),
+        parameters={"qvalue": 0.05, "log2fc": 1.0},
+    )
     db = _FakeDb(report=report, task=task)
 
     agent = SimpleNamespace(
@@ -291,12 +309,11 @@ async def test_register_artifact_parent_missing_degrades_to_v1(platform_env):
     )
     db = _FakeDb(parent=None)  # 父报告已删除
 
-    report, file_model = await register_artifact_report(
-        uid, session, "output/a.png", "图 v1", db
-    )
+    report, file_model = await register_artifact_report(uid, session, "output/a.png", "图 v1", db)
     assert report.version == 1
     assert report.parent_id is None
     assert file_model.path.endswith("a.png")
+    assert db.commits == 1
 
 
 @pytest.mark.unit

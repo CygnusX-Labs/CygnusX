@@ -10,7 +10,7 @@
  */
 import { ref, reactive, computed, watch, onMounted, onUnmounted, provide, nextTick } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { NButton, NCheckbox, NIcon, NInput, NSwitch, NTag, NTooltip, NModal, NSpin, useMessage } from 'naive-ui'
+import { NButton, NCheckbox, NIcon, NInput, NSelect, NSwitch, NTag, NTooltip, NModal, NSpin, useMessage } from 'naive-ui'
 import {
   ArrowBackOutline, RefreshOutline, FileTrayStackedOutline, ShareSocialOutline,
   PrintOutline, CloseCircleOutline, ConstructOutline, ChevronBackOutline, ChevronForwardOutline,
@@ -34,6 +34,7 @@ import { studioApi, type StudioSessionDTO, type SandboxStatus } from '@/api/stud
 import { shouldApplyServerUi, shouldApplyServerViewMode } from '@/utils/studioViewGuard'
 import { useAgentHubStore } from '@/stores/agentHub'
 import { useAuthStore } from '@/stores/auth'
+import { displayName } from '@/utils/displayName'
 import type { ChatMessage, FileAttachment, ToolCall } from '@/components/ai-chat/types'
 import type { FilePickerItem } from '@/types'
 
@@ -262,15 +263,21 @@ async function enterSession(id: string) {
         id,
         title: detail.session.title,
         agent_id: detail.session.agent_id || '',
+        mode: detail.session.mode,
         messages: [],
         created_at: detail.session.created_at,
         updated_at: detail.session.updated_at,
         model_id: detail.session.model_id || undefined,
         multi_agent: Boolean(detail.session.multi_agent),
+        overdrive: Boolean(detail.session.overdrive),
       })
     } else {
       const current = store.sessions.find((s) => s.id === id)
-      if (current) current.multi_agent = Boolean(detail.session.multi_agent)
+      if (current) {
+        current.mode = detail.session.mode
+        current.multi_agent = Boolean(detail.session.multi_agent)
+        current.overdrive = Boolean(detail.session.overdrive)
+      }
     }
     await store.selectSession(id)
   } catch {
@@ -434,7 +441,24 @@ const modelName = computed(() => {
   return agent.value?.model_engine || '默认模型'
 })
 
-const userDisplayName = computed(() => authStore.user?.nickname || authStore.user?.username || '我')
+const modelOptions = computed(() => store.availableModels.map((model) => ({
+  label: model.name,
+  value: model.id,
+})))
+
+function handleModelSwitch(modelId: string | null) {
+  const current = session.value
+  if (!current || !modelId || current.model_id === modelId) return
+  store.switchSessionModel(current.id, modelId)
+  const name = store.availableModels.find((model) => model.id === modelId)?.name || modelId
+  message.success(`已切换至 ${name}，后续执行将使用该模型`)
+}
+
+function handleRetryWithModel() {
+  message.info('请先在顶栏切换模型，再点击“重试”重新执行当前任务')
+}
+
+const userDisplayName = computed(() => displayName(authStore.user) || '我')
 const userAvatarUrl = computed(() => authStore.user?.avatar_url || '')
 
 /** 沙盒状态灯：流式执行中按 启动中/运行中 展示，空闲展示真实状态 */
@@ -489,9 +513,14 @@ async function handleSend(
   input.value = ''
 }
 
-function findUserMessage(messageId: string): ChatMessage | undefined {
-  const target = session.value?.messages.find((item) => item.id === messageId)
-  return target?.role === 'user' ? target : undefined
+function findSourceUserMessage(messageId: string): ChatMessage | undefined {
+  const messages = session.value?.messages || []
+  const index = messages.findIndex((item) => item.id === messageId)
+  for (let cursor = index >= 0 ? index : messages.length - 1; cursor >= 0; cursor -= 1) {
+    const candidate = messages[cursor]
+    if (candidate.role === 'user') return candidate
+  }
+  return undefined
 }
 
 async function handleRegenerate(messageId: string) {
@@ -499,13 +528,13 @@ async function handleRegenerate(messageId: string) {
     message.warning('请等待当前回复完成')
     return
   }
-  const target = findUserMessage(messageId)
+  const target = findSourceUserMessage(messageId)
   if (!target) return
   await handleSend(target.content, { attachments: target.attachments })
 }
 
 function handleEditMessage(messageId: string) {
-  const target = findUserMessage(messageId)
+  const target = findSourceUserMessage(messageId)
   if (!target) return
   input.value = target.content
   message.info('已填入输入框，修改后发送即可')
@@ -823,7 +852,17 @@ function formatSessionTime(iso: string): string {
         <n-tag v-if="agent" size="small" round :bordered="false" type="info" class="agent-tag">
           {{ agent.avatar }} {{ agent.name }}
         </n-tag>
-        <n-tag size="small" round :bordered="false" class="model-tag">{{ modelName }}</n-tag>
+        <n-select
+          v-if="modelOptions.length"
+          :value="session?.model_id || null"
+          :options="modelOptions"
+          size="tiny"
+          class="model-select"
+          aria-label="选择工作台模型"
+          :disabled="store.isStreaming"
+          @update:value="handleModelSwitch"
+        />
+        <n-tag v-else size="small" round :bordered="false" class="model-tag">{{ modelName }}</n-tag>
       </div>
       <div class="bar-right">
         <OverdriveToggle v-model="overdriveEnabled" :disabled="store.isStreaming" compact />
@@ -1003,9 +1042,12 @@ function formatSessionTime(iso: string): string {
               :agent-name="agent?.name"
               :agent-avatar="agent?.avatar"
               :agent-color="agent?.color"
+              :session-id="sessionId"
               :target-message-id="String(route.query.message || '')"
               @copy="handleCopy"
+              @feedback="(id, type) => store.submitMessageFeedback(id, type)"
               @regenerate="handleRegenerate"
+              @retry-with-model="handleRetryWithModel"
               @delete="handleDeleteMessage"
               @edit="handleEditMessage"
               @create-case-from-consultation="handleCreateCaseFromConsultation"
@@ -1196,6 +1238,10 @@ function formatSessionTime(iso: string): string {
 }
 .agent-tag,
 .model-tag {
+  flex-shrink: 0;
+}
+.model-select {
+  width: 150px;
   flex-shrink: 0;
 }
 .bar-right {
@@ -1577,7 +1623,8 @@ function formatSessionTime(iso: string): string {
 
 @media (max-width: 900px) {
   .bar-title { max-width: 160px; }
-  .model-tag { display: none; }
+  .model-tag,
+  .model-select { display: none; }
 }
 
 /* ---------- Studio Apple surface overrides ---------- */

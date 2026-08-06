@@ -101,9 +101,9 @@ const rows = computed<Row[]>(() => {
       .map<Row>((a) => ({
         id: `agent-${a.id}`,
         name: a.name,
-        description: a.description || '智能体',
+        description: a.description || '指定此智能体处理本条消息',
         icon: PersonOutline,
-        shortcut: `@${a.name}`,
+        shortcut: `/${a.name}`,
         agent: a,
       })),
   )
@@ -174,7 +174,7 @@ defineExpose({ moveSelection, selectCurrent })
   >
     <div class="menu-header">
       <span class="header-title">/ 唤起</span>
-      <span class="header-sub">技能命令与智能体，输入即筛选</span>
+      <span class="header-sub">输入 / 筛选技能或指定本条消息的智能体</span>
     </div>
 
     <div ref="listRef" v-animate-list.200 class="command-list">

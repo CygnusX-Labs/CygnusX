@@ -55,10 +55,21 @@ def test_registry_loads_builtin_flows_and_derives_contracts() -> None:
 @pytest.mark.parametrize(
     ("mutate", "message"),
     [
-        (lambda payload: payload.update(edges=[["upstream", "integrate"], ["integrate", "upstream"]]), "存在环"),
-        (lambda payload: payload["stages"][0]["executors"][0]["outputs"].append("unknown"), "未声明 artifact"),
+        (
+            lambda payload: payload.update(
+                edges=[["upstream", "integrate"], ["integrate", "upstream"]]
+            ),
+            "存在环",
+        ),
+        (
+            lambda payload: payload["stages"][0]["executors"][0]["outputs"].append("unknown"),
+            "未声明 artifact",
+        ),
         (lambda payload: payload["stages"][0]["review"].update(capability="shell"), "schema 无效"),
-        (lambda payload: payload["stages"][0]["gate"].update(template="missing-template"), "审批模板"),
+        (
+            lambda payload: payload["stages"][0]["gate"].update(template="missing-template"),
+            "审批模板",
+        ),
         (lambda payload: payload["flow"].update(previous_artifacts=["legacy_h5ad"]), "aliases"),
         (lambda payload: payload.update(edges=[["upstream", "missing-stage"]]), "不存在阶段"),
     ],
@@ -76,9 +87,30 @@ def test_stage_hints_route_to_the_matching_scrna_assistant() -> None:
     registry = FlowRegistry.from_directory(FLOWS_DIR)
     available = {"agent-scrna-upstream", "agent-scrna-integration", "agent-scrna-advanced"}
 
-    assert registry.route_agent("Cell Ranger chemistry 该如何选？", available) == "agent-scrna-upstream"
-    assert registry.route_agent("Harmony 后 UMAP 聚类不稳定", available) == "agent-scrna-integration"
-    assert registry.route_agent("pseudobulk 差异表达和拟时序怎么解释", available) == "agent-scrna-advanced"
+    assert (
+        registry.route_agent("Cell Ranger chemistry 该如何选？", available)
+        == "agent-scrna-upstream"
+    )
+    assert (
+        registry.route_agent("Harmony 后 UMAP 聚类不稳定", available) == "agent-scrna-integration"
+    )
+    assert (
+        registry.route_agent("pseudobulk 差异表达和拟时序怎么解释", available)
+        == "agent-scrna-advanced"
+    )
+
+
+def test_bulk_rnaseq_differential_expression_does_not_route_to_scrna_stage() -> None:
+    registry = FlowRegistry.from_directory(FLOWS_DIR)
+    available = {
+        "agent-rnaseq",
+        "agent-scrna-upstream",
+        "agent-scrna-integration",
+        "agent-scrna-advanced",
+    }
+
+    assert registry.route_agent("RNA-seq 差异表达分析怎么开始", available) is None
+    assert registry.route_agent("单细胞差异表达怎么做", available) == "agent-scrna-advanced"
 
 
 def test_scrna_stage_specialists_are_enabled_for_agent_loading() -> None:

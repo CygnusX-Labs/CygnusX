@@ -131,12 +131,15 @@ async def test_agent_runs_step_by_step_to_correct_result() -> None:
 
 
 async def test_agent_respects_max_rounds_cap() -> None:
-    """若模型一直要求调工具，循环必须在 max_rounds 处停下，不能无限跑。"""
+    """工具达到上限后必须停调工具，并生成最终答复。"""
     calls = {"n": 0}
 
     async def _greedy_stream(**kwargs: Any) -> AsyncIterator[ChatChunk]:
         calls["n"] += 1
-        # 永远要求再调一次工具，从不收尾
+        if kwargs["tools"] is None:
+            yield ChatChunk(type="text", content="工具结果已汇总。")
+            yield ChatChunk(type="done", metadata={"usage": USAGE})
+            return
         yield _tool_call("add", {"a": 1, "b": 1}, f"call_{calls['n']}")
         yield ChatChunk(type="done", metadata={"usage": USAGE})
 
@@ -148,6 +151,7 @@ async def test_agent_respects_max_rounds_cap() -> None:
     deps = NodeDeps(
         model_config=None,
         system_prompt="sys",
+        tools=[{"name": "add"}],
         chat_stream=_greedy_stream,
         tool_executor=_executor,
     )
@@ -157,7 +161,8 @@ async def test_agent_respects_max_rounds_cap() -> None:
         async for c in runtime.stream([{"role": "user", "content": "无限循环"}])
     ]
 
-    # max_rounds=3 → 恰好 3 轮 tool_call/tool_result 后被强制收尾，不会无限执行
+    # max_rounds=3 → 恰好 3 轮 tool_call/tool_result，随后无工具总结，不会无限执行
     assert [c.type for c in chunks].count("tool_call") == 3
-    assert calls["n"] == 3
+    assert [c.content for c in chunks if c.type == "text"] == ["工具结果已汇总。"]
+    assert calls["n"] == 4
     assert runtime.error is None

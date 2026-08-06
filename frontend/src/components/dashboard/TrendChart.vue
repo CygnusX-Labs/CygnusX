@@ -236,6 +236,14 @@ onMounted(fetchTrend)
   margin-bottom: 12px;
 }
 
+:root[data-theme="dark"] .trend-card .arco-card-header {
+  margin: -16px -20px 12px;
+  padding: 12px 20px;
+  background: var(--surface-elevated);
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+
 .arco-card-title {
   font-size: 15px;
   font-weight: 600;

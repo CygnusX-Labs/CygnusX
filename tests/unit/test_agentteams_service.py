@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+from uuid import uuid4
+
 import pytest
 
+from omichub.api.v1.agentteams import (
+    AgentTeamsCaseCreateRequest,
+    _is_chat_case_flow_allowed,
+    create_case,
+)
 from omichub.application.services.agentteams_service import AgentTeamsService
+from omichub.application.services.project_service import ProjectService
 from omichub.core.config import Settings
-from omichub.core.exceptions import BusinessError
+from omichub.core.exceptions import BusinessError, NotFoundError
 
 
 @pytest.fixture
@@ -23,6 +33,89 @@ def service() -> AgentTeamsService:
             agentteams_element_url="",
         )
     )
+
+
+def test_direct_case_api_flow_guard_uses_configured_and_registry_flows(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "omichub.api.v1.agentteams.get_settings",
+        lambda: Settings(agentteams_chat_flow_whitelist="approved-flow"),
+    )
+    monkeypatch.setattr(
+        "omichub.api.v1.agentteams.get_flow_registry",
+        lambda: type("Registry", (), {"bridge_flow_ids": lambda self: {"registry-flow"}})(),
+    )
+
+    assert _is_chat_case_flow_allowed("approved-flow")
+    assert _is_chat_case_flow_allowed("registry-flow")
+    assert not _is_chat_case_flow_allowed("unapproved-flow")
+
+
+@pytest.mark.asyncio
+async def test_direct_case_api_rejects_project_not_owned_by_requester(monkeypatch) -> None:
+    request = AgentTeamsCaseCreateRequest(
+        project_id=str(uuid4()),
+        intent="bulk_rnaseq_delivery",
+        flow_id="approved-flow",
+        sample_sheet=[{"sample": "S01"}],
+    )
+    service = SimpleNamespace(create_case=AsyncMock())
+
+    monkeypatch.setattr("omichub.api.v1.agentteams._is_chat_case_flow_allowed", lambda _flow: True)
+
+    async def reject_project(*_args, **_kwargs):
+        raise NotFoundError("项目不存在")
+
+    monkeypatch.setattr(ProjectService, "get_project", reject_project)
+
+    with pytest.raises(NotFoundError, match="项目不存在"):
+        await create_case(request, str(uuid4()), service, SimpleNamespace())
+    service.create_case.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_direct_case_api_rejects_non_whitelisted_flow_before_project_lookup(
+    monkeypatch,
+) -> None:
+    request = AgentTeamsCaseCreateRequest(
+        project_id=str(uuid4()),
+        intent="bulk_rnaseq_delivery",
+        flow_id="not-allowed",
+        sample_sheet=[{"sample": "S01"}],
+    )
+    service = SimpleNamespace(create_case=AsyncMock())
+    get_project = AsyncMock()
+    monkeypatch.setattr(ProjectService, "get_project", get_project)
+    monkeypatch.setattr("omichub.api.v1.agentteams._is_chat_case_flow_allowed", lambda _flow: False)
+
+    with pytest.raises(BusinessError, match="白名单"):
+        await create_case(request, str(uuid4()), service, SimpleNamespace())
+    get_project.assert_not_awaited()
+    service.create_case.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_direct_case_api_creates_case_for_owned_project(monkeypatch) -> None:
+    user_id = uuid4()
+    project_id = uuid4()
+    request = AgentTeamsCaseCreateRequest(
+        project_id=str(project_id),
+        intent="bulk_rnaseq_delivery",
+        flow_id="approved-flow",
+        sample_sheet=[{"sample": "S01"}],
+        comparisons=[{"control": "control", "treatment": "treatment"}],
+    )
+    service = SimpleNamespace(create_case=AsyncMock(return_value={"case_id": "bioops_001"}))
+    get_project = AsyncMock(return_value={"id": str(project_id)})
+    monkeypatch.setattr(ProjectService, "get_project", get_project)
+    monkeypatch.setattr("omichub.api.v1.agentteams._is_chat_case_flow_allowed", lambda _flow: True)
+
+    response = await create_case(request, str(user_id), service, SimpleNamespace())
+
+    assert response == {"case_id": "bioops_001"}
+    get_project.assert_awaited_once_with(user_id, project_id)
+    service.create_case.assert_awaited_once()
+    assert service.create_case.await_args.kwargs["project_id"] == str(project_id)
+    assert service.create_case.await_args.kwargs["requester_ref"] == str(user_id)
 
 
 @pytest.mark.asyncio
@@ -182,10 +275,13 @@ async def test_case_event_stream_checks_owner_before_connecting_to_bridge(
             return FakeStream()
 
     monkeypatch.setattr(service, "_get_case_for_requester", fake_owner)
-    monkeypatch.setattr("omichub.application.services.agentteams_service.httpx.AsyncClient", FakeClient)
+    monkeypatch.setattr(
+        "omichub.application.services.agentteams_service.httpx.AsyncClient", FakeClient
+    )
 
     events = [
-        event async for event in service.stream_case_events(
+        event
+        async for event in service.stream_case_events(
             "bioops_001", "current-user", cursor="evt-0", watch_seconds=1
         )
     ]
@@ -382,9 +478,7 @@ async def test_chat_room_without_case_id_reports_not_configured(service: AgentTe
 
 
 @pytest.mark.asyncio
-async def test_chat_room_prefers_case_room_url(
-    element_settings: Settings, monkeypatch
-) -> None:
+async def test_chat_room_prefers_case_room_url(element_settings: Settings, monkeypatch) -> None:
     service = AgentTeamsService(element_settings)
 
     async def fake_request(path: str, **kwargs):

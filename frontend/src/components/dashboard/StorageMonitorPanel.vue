@@ -10,6 +10,7 @@ import VChart from 'vue-echarts'
 import apiClient from '@/api/client'
 import { useThemeStore } from '@/stores/theme'
 import type { StorageUsage, UserStorageUsage } from '@/types/stats'
+import { displayName } from '@/utils/displayName'
 
 use([CanvasRenderer, PieChart, TooltipComponent, LegendComponent])
 
@@ -103,7 +104,7 @@ const pieOption = computed(() => {
       itemStyle: { borderRadius: 6, borderColor: colorCard, borderWidth: 2 },
       label: { show: false },
       emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
-      data: users.value.map((u) => ({ name: u.nickname || u.username, value: u.size })),
+      data: users.value.map((u) => ({ name: displayName(u), value: u.size })),
     },
   ],
   }
@@ -176,7 +177,7 @@ const pieOption = computed(() => {
           <div class="users-list">
             <div v-for="(u, i) in users" :key="u.user_id" class="user-row">
               <span class="user-rank" :class="rankClass(i)">{{ i + 1 }}</span>
-              <span class="user-name" :title="u.nickname || u.username">{{ u.nickname || u.username }}</span>
+              <span class="user-name" :title="displayName(u)">{{ displayName(u) }}</span>
               <span class="user-size">{{ formatBytes(u.size) }}</span>
               <span class="user-percent">{{ u.percent.toFixed(1) }}%</span>
             </div>

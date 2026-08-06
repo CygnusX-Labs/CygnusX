@@ -27,6 +27,7 @@ export interface AdminCookieAccount {
   created_at: string | null
   // 关联用户身份
   username: string
+  nickname?: string | null
   email: string
   role: string
   lab_group: string | null
@@ -49,6 +50,7 @@ export interface AdminCookieTxn {
   id: number | null
   user_id: string
   username: string
+  nickname?: string | null
   email: string
   txn_type: string
   amount: number

@@ -44,6 +44,7 @@ import type {
   ChartData,
 } from '@/components/ai-chat/types'
 import { agentApi, adminAgentApi } from '@/api/agent'
+import { chatApi } from '@/api/chat'
 import apiClient from '@/api/client'
 import { reportChatDiagnostic } from '@/utils/chatDiagnostics'
 import {
@@ -169,7 +170,9 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   }
 
   function applyAgentTeamsCaseEvent(event: AgentTeamsCaseStreamEvent) {
-    const session = sessions.value.find((item) => item.id === event.session_id) || currentSession.value
+    const session = event.session_id
+      ? sessions.value.find((item) => item.id === event.session_id)
+      : currentSession.value
     if (!session || !event.case_id) return
     const card: AgentTeamsCaseCardPayload = {
       case_id: event.case_id,
@@ -199,13 +202,22 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   type RoomSpeechStreamEvent = {
     type: 'room_speech'
     content: string
-    sender: { agent_id?: string; name?: string; avatar?: string; color?: string }
+    sender: {
+      agent_id?: string
+      name?: string
+      avatar?: string
+      color?: string
+      role?: 'manager' | 'worker'
+    }
+    round?: number
     session_id?: string
     message_id?: string
   }
 
   function applyRoomSpeechEvent(event: RoomSpeechStreamEvent) {
-    const session = sessions.value.find((item) => item.id === event.session_id) || currentSession.value
+    const session = event.session_id
+      ? sessions.value.find((item) => item.id === event.session_id)
+      : currentSession.value
     if (!session || !event.content) return
     const id = event.message_id || `matrix-room-${Date.now()}`
     if (session.messages.some((message) => message.id === id || message.backendMessageId === id)) return
@@ -220,6 +232,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         name: event.sender.name || 'Matrix 成员',
         avatar: event.sender.avatar,
         color: event.sender.color,
+        role: event.sender.role,
+        round: event.round,
       },
       createdAt: new Date().toISOString(),
     })
@@ -954,18 +968,35 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     return session
   }
 
+  function shouldSubscribeToAgentTeamsEvents(session: AgentSession | undefined): boolean {
+    return Boolean(
+      session?.multi_agent
+      || session?.overdrive
+      || session?.messages.some((message) => message.agentTeamsCases?.length),
+    )
+  }
+
+  function syncAgentTeamsEventSubscriptions(session: AgentSession | undefined): void {
+    if (!session || !shouldSubscribeToAgentTeamsEvents(session)) {
+      stopAgentTeamsCaseEvents()
+      stopRoomEvents()
+      return
+    }
+    void startAgentTeamsCaseEvents(session.id)
+    void startRoomEvents(session.id)
+  }
+
   async function selectSession(id: string) {
     if (currentSessionId.value !== id) {
       stopStreaming()
       currentPlan.value = []
     }
     currentSessionId.value = id
-    void startAgentTeamsCaseEvents(id)
-    void startRoomEvents(id)
     const session = sessions.value.find((s) => s.id === id)
     if (session && session.messages.length === 0 && !session.id.startsWith('sess-')) {
       await loadSessionMessages(id)
     }
+    syncAgentTeamsEventSubscriptions(session)
     // Studio 会话：同步权限模式（非 studio 会话保持默认 supervised，不在此展示开关）
     if (studioSessionIds.value.has(id)) {
       studioApi.getSession(id)
@@ -1109,7 +1140,22 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         }
         // 智能路由：恢复本条消息的专家徽标
         const routedAgent = m.metadata_json?.routed_agent as
-          | { agent_id?: string; name?: string; avatar?: string; color?: string; reason?: string }
+          | {
+              agent_id?: string
+              name?: string
+              avatar?: string
+              color?: string
+              reason?: string
+              transition?: {
+                visible?: boolean
+                stage?: string
+                title?: string
+                message?: string
+                next_step?: string
+                requires_execution_confirmation?: boolean
+                auto_start?: boolean
+              }
+            }
           | undefined
         if (routedAgent?.name) {
           msg.routedAgent = {
@@ -1118,6 +1164,22 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             avatar: routedAgent.avatar || '',
             color: routedAgent.color || '',
             reason: routedAgent.reason || '',
+            transition: routedAgent.transition
+              ? {
+                  visible: Boolean(routedAgent.transition.visible),
+                  stage:
+                    routedAgent.transition.stage === 'execution_ready'
+                      ? 'execution_ready'
+                      : 'specialist_intake',
+                  title: routedAgent.transition.title || '已匹配专项专家',
+                  message: routedAgent.transition.message || '',
+                  nextStep: routedAgent.transition.next_step || '专项 Agent 进行任务 intake',
+                  requiresExecutionConfirmation: Boolean(
+                    routedAgent.transition.requires_execution_confirmation,
+                  ),
+                  autoStart: Boolean(routedAgent.transition.auto_start),
+                }
+              : undefined,
           }
         }
         const senderAgent = m.metadata_json?.senderAgent
@@ -1129,8 +1191,25 @@ export const useAgentHubStore = defineStore('agentHub', () => {
               name: sender.name,
               avatar: typeof sender.avatar === 'string' ? sender.avatar : undefined,
               color: typeof sender.color === 'string' ? sender.color : undefined,
+              role: sender.role === 'worker' ? 'worker' : 'manager',
+              round: Number(m.metadata_json?.overdriveRound) || undefined,
             }
           }
+        }
+        if (m.role === 'assistant' && typeof m.metadata_json?.thought === 'string') {
+          msg.thought = m.metadata_json.thought
+        }
+        if (m.role === 'assistant' && typeof m.metadata_json?.summary === 'string') {
+          msg.overdriveSummary = m.metadata_json.summary
+        }
+        if (m.role === 'assistant' && m.metadata_json?.artifacts && typeof m.metadata_json.artifacts === 'object') {
+          msg.overdriveArtifacts = m.metadata_json.artifacts as Record<string, string>
+        }
+        if (m.role === 'assistant' && typeof m.metadata_json?.taskStatus === 'string') {
+          msg.overdriveTaskStatus = m.metadata_json.taskStatus
+        }
+        if (m.role === 'assistant' && typeof m.metadata_json?.errorSummary === 'string') {
+          msg.overdriveErrorSummary = m.metadata_json.errorSummary
         }
         const collaborationRoute = m.metadata_json?.collaboration_route
         if (collaborationRoute && typeof collaborationRoute === 'object') {
@@ -1255,6 +1334,15 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         (m) => m.role === 'assistant' && m.content === '' && !existingIds.has(m.id),
       )
       session.messages = [...loaded, ...streamingPlaceholders]
+      // 恢复历史 AI 回复的点赞/点踩状态（失败不阻塞历史加载）
+      try {
+        const feedbackMap = await chatApi.getSessionFeedbacks(sessionId)
+        for (const msg of session.messages) {
+          if (msg.role === 'assistant') msg.feedback = feedbackMap[msg.id] || undefined
+        }
+      } catch {
+        /* 反馈状态恢复失败不影响历史消息展示 */
+      }
       // 恢复历史中最近一次 update_plan 的待办计划（流式进行中不覆盖实时计划）
       if (!isStreaming.value) {
         currentPlan.value = restoredPlan
@@ -1288,10 +1376,37 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     }
   }
 
+  /** 点赞/点踩 AI 消息：再次点击同一评价即撤销；乐观更新 UI，失败回滚 */
+  async function submitMessageFeedback(
+    messageId: string,
+    rating: 'like' | 'dislike',
+  ): Promise<void> {
+    const session = sessions.value.find((s) =>
+      s.messages.some((m) => m.id === messageId || m.backendMessageId === messageId),
+    )
+    if (!session || session.id.startsWith('sess-')) return
+    const message = session.messages.find(
+      (m) => m.id === messageId || m.backendMessageId === messageId,
+    )
+    if (!message) return
+    const backendMessageId = message.backendMessageId || message.id
+    const next = message.feedback === rating ? undefined : rating
+    const prev = message.feedback
+    message.feedback = next
+    try {
+      await chatApi.submitMessageFeedback(session.id, backendMessageId, next ?? 'none')
+    } catch (e) {
+      message.feedback = prev
+      console.error('提交消息反馈失败:', e)
+    }
+  }
+
   // 超频/多智能体房间发言：后端一次性给出整段内容，前端按打字机节奏渐进展示，
   // 让 Manager/专家发言与普通助手回复一样具备流式动画。
   const roomSpeechTimers = new Set<number>()
   const roomSpeechFullText = new Map<string, string>()
+  const roomSpeechLiveMessages = new Map<string, ChatMessage>()
+  const roomSpeechMessages = new Map<string, ChatMessage>()
   function finalizeRoomSpeeches() {
     for (const timer of roomSpeechTimers) window.clearInterval(timer)
     roomSpeechTimers.clear()
@@ -1305,6 +1420,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       }
     }
     roomSpeechFullText.clear()
+    roomSpeechLiveMessages.clear()
+    roomSpeechMessages.clear()
   }
 
   /** 发送消息（真实 SSE 流式，走 Agent 调度中枢） */
@@ -1322,6 +1439,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       extraMcpServers?: string[]
       multiAgent?: boolean
       overdrive?: boolean
+      /** 当前用户消息的受控操作元数据。 */
+      messageMetadata?: Record<string, unknown>
       /** 工具轮次触顶后用户确认继续：本次请求上限扩展到 1000 轮 */
       extendMaxRounds?: boolean
     } = {},
@@ -1356,6 +1475,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       id: `msg-${Date.now()}`,
       role: 'user',
       content: content.trim(),
+      metadata: options.messageMetadata,
       createdAt: now,
     }
     if (options.attachments?.length) {
@@ -1404,7 +1524,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     const apiMessages = session.messages
       .filter((m) => m.id !== aiId && m.role !== 'assistant' || (m.role === 'assistant' && m.content.length > 0))
       .slice(-ctxLen)
-      .map((m) => ({ role: m.role, content: m.content }))
+      .map((m) => ({ role: m.role, content: m.content, metadata: m.metadata }))
 
     // @ 挂载技能：在最后一条用户消息注入显式技能上下文，使模型优先运用对应能力
     if (options.skillNames?.length) {
@@ -1480,8 +1600,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             session.id = sessionId
             session.agent_id = agent.id
             currentSessionId.value = sessionId
-            void startAgentTeamsCaseEvents(sessionId)
-            void startRoomEvents(sessionId)
+            syncAgentTeamsEventSubscriptions(session)
             if (messageId) aiMsg.backendMessageId = messageId
             releaseSessionIdLock()
           }
@@ -1492,7 +1611,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             const placeholderIndex = session.messages.findIndex((message) => message.id === aiId && !message.content)
             if (placeholderIndex >= 0) session.messages.splice(placeholderIndex, 1)
           }
-          session.messages.push({
+          const progressMessage: ChatMessage = {
             id: `mode-overdrive-${Date.now()}`,
             role: 'system',
             content: degraded
@@ -1501,15 +1620,96 @@ export const useAgentHubStore = defineStore('agentHub', () => {
                 ? '已进入超频模式：Manager 将组织专家协作。'
                 : '已退出超频模式：恢复普通对话。',
             createdAt: new Date().toISOString(),
-          })
+          }
+          if (enabled) {
+            progressMessage.overdriveProgress = {
+              phase: 'workers_starting',
+              label: '正在准备协作环境',
+              completed: 0,
+              total: 0,
+            }
+          }
+          session.messages.push(progressMessage)
+        },
+        onOverdriveProgress: (event) => {
+          const progressMessage = [...session.messages].reverse().find(
+            (item) => item.role === 'system' && item.overdriveProgress,
+          )
+          const currentProgress = progressMessage?.overdriveProgress
+          if (!progressMessage || !currentProgress) return
+          progressMessage.overdriveProgress = {
+            ...currentProgress,
+            phase: event.phase,
+            label: event.label,
+            completed: event.total ? event.completed : currentProgress.completed,
+            total: event.total || currentProgress.total,
+            wave: event.wave ?? currentProgress.wave,
+            waveTotal: event.waveTotal ?? currentProgress.waveTotal,
+            waveMode: event.waveMode ?? currentProgress.waveMode,
+            fallback: event.fallback ?? currentProgress.fallback,
+            warning: event.warning ?? currentProgress.warning,
+            tasks: event.tasks?.length ? event.tasks : currentProgress.tasks,
+            stalledTaskIds: event.stalledTaskId
+              ? [...new Set([...(currentProgress.stalledTaskIds || []), event.stalledTaskId])]
+              : currentProgress.stalledTaskIds,
+          }
+          progressMessage.content = event.label
+          session.updated_at = new Date().toISOString()
+        },
+        onRoomSpeechDelta: (event) => {
+          const workerKey = event.workerKey || `worker-${event.sender.agent_id}`
+          let message = roomSpeechLiveMessages.get(workerKey)
+          if (!message) {
+            const liveMessage: ChatMessage = {
+              id: `room-live-${workerKey}-${Date.now()}`,
+              role: 'assistant',
+              content: '',
+              status: 'streaming',
+              createdAt: new Date().toISOString(),
+              senderAgent: {
+                id: event.sender.agent_id,
+                name: event.sender.name,
+                avatar: event.sender.avatar,
+                color: event.sender.color,
+                role: event.sender.role,
+                round: event.round,
+              },
+            }
+            session.messages.push(liveMessage)
+            message = session.messages[session.messages.length - 1]!
+            roomSpeechLiveMessages.set(workerKey, message)
+          }
+          if (event.isReasoning) {
+            message.thought = `${message.thought || ''}${event.content || ''}`
+          } else {
+            message.content += event.content || ''
+          }
+          message.status = 'streaming'
+          session.updated_at = new Date().toISOString()
         },
         onRoomSpeech: (event) => {
           const fullContent = event.content || ''
+          const workerKey = event.workerKey || `worker-${event.sender.agent_id}`
+          const liveMessage = roomSpeechLiveMessages.get(workerKey)
+          if (liveMessage) {
+            liveMessage.backendMessageId = event.messageId
+            liveMessage.content = fullContent || liveMessage.content
+            liveMessage.thought = event.thought || liveMessage.thought
+            liveMessage.status = 'complete'
+            liveMessage.overdriveSummary = event.summary
+            liveMessage.overdriveArtifacts = event.artifacts
+            liveMessage.overdriveTaskStatus = event.taskStatus
+            liveMessage.overdriveErrorSummary = event.errorSummary
+            roomSpeechLiveMessages.delete(workerKey)
+            roomSpeechMessages.set(workerKey, liveMessage)
+            return
+          }
           const message: ChatMessage = {
             id: event.messageId || `room-${Date.now()}-${event.sender.agent_id}`,
             backendMessageId: event.messageId,
             role: 'assistant',
             content: '',
+            thought: event.thought,
             status: fullContent ? 'streaming' : 'complete',
             createdAt: new Date().toISOString(),
             senderAgent: {
@@ -1517,17 +1717,24 @@ export const useAgentHubStore = defineStore('agentHub', () => {
               name: event.sender.name,
               avatar: event.sender.avatar,
               color: event.sender.color,
+              role: event.sender.role,
+              round: event.round,
             },
+            overdriveSummary: event.summary,
+            overdriveArtifacts: event.artifacts,
+            overdriveTaskStatus: event.taskStatus,
+            overdriveErrorSummary: event.errorSummary,
           }
           session.messages.push(message)
-          // 分身/专家涉及工作台类 Agent（如代码沙箱）时，沿用既有路由语义：
-          // 本轮超频发言结束后自动 promote 并流转到 AI 工作台，历史保留。
-          if (event.sender.role === 'worker') {
-            maybeRedirectToStudio(event.sender.agent_id, event.sender.name)
-          }
           if (!fullContent) return
           // 必须使用响应式数组返回的代理对象继续写入，否则流式更新不触发 Vue
           const proxy = session.messages[session.messages.length - 1]!
+          roomSpeechMessages.set(workerKey, proxy)
+          if (event.sender.role === 'worker') {
+            proxy.content = fullContent
+            proxy.status = 'complete'
+            return
+          }
           roomSpeechFullText.set(proxy.id, fullContent)
           // 不论长短约 1.5s 播完：长文加速，短发言也不会一闪而过
           const step = Math.max(1, Math.ceil(fullContent.length / 60))
@@ -1544,6 +1751,23 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             }
           }, 25)
           roomSpeechTimers.add(timer)
+        },
+        onOverdriveApproval: (event) => {
+          const target = (event.workerKey ? roomSpeechMessages.get(event.workerKey) : undefined)
+            || [...session.messages].reverse().find((message) => (
+              message.role === 'assistant'
+              && message.senderAgent?.id === event.agentId
+            ))
+          if (!target) return
+          target.overdriveApproval = {
+            approvalId: event.approval.approval_id,
+            toolName: event.approval.tool_name,
+            arguments: event.approval.arguments,
+            status: event.approval.status,
+            result: event.approval.result,
+            error: event.approval.error,
+            reason: event.approval.reason,
+          }
         },
         onToolCall: (event) => {
           if (!aiMsg.toolCalls) aiMsg.toolCalls = []
@@ -1657,6 +1881,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           }
           if (index >= 0) cards[index] = card
           else cards.push(card)
+          session.multi_agent = true
+          syncAgentTeamsEventSubscriptions(session)
         },
         onWebSearch: (event) => {
           aiMsg.webSearchStatus = {
@@ -1707,7 +1933,11 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           }
         },
         onAskRequest: (event) => {
-          aiMsg.askRequest = {
+          const target = effectiveOverdrive
+            ? [...session.messages].reverse().find((message) => message.role === 'assistant' && message.senderAgent)
+            : aiMsg
+          if (!target) return
+          target.askRequest = {
             questions: event.questions || [],
             answered: false,
           }
@@ -1720,8 +1950,21 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             avatar: event.avatar,
             color: event.color,
             reason: event.reason,
+            transition: event.transition
+              ? {
+                  visible: event.transition.visible,
+                  stage: event.transition.stage,
+                  title: event.transition.title,
+                  message: event.transition.message,
+                  nextStep: event.transition.next_step,
+                  requiresExecutionConfirmation: event.transition.requires_execution_confirmation,
+                  autoStart: event.transition.auto_start,
+                }
+              : undefined,
           }
-          maybeRedirectToStudio(event.agent_id, event.name)
+          if (event.transition?.auto_start) {
+            maybeRedirectToStudio(event.agent_id, event.name)
+          }
         },
         onHandoff: (event) => {
           // 交接后会话绑定目标 Agent，下一轮消息直接由目标继续；当前消息的工具卡保留完整交接摘要。
@@ -1908,6 +2151,9 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     approvalId: string,
     modifiedArgs?: Record<string, unknown>,
   ): Promise<void> {
+    if (!isStreaming.value) {
+      throw new Error('APPROVAL_STREAM_INACTIVE')
+    }
     const tc = findApprovalTool(approvalId)
     if (tc?.approval && tc.approval.status === 'pending') {
       tc.approval.status = modifiedArgs ? 'edited' : 'approved'
@@ -1942,6 +2188,59 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     }
   }
 
+  function findOverdriveApproval(approvalId: string): ChatMessage['overdriveApproval'] | null {
+    const session = currentSession.value
+    if (!session) return null
+    for (const message of session.messages) {
+      if (message.overdriveApproval?.approvalId === approvalId) return message.overdriveApproval
+    }
+    return null
+  }
+
+  async function approveOverdriveApproval(approvalId: string): Promise<void> {
+    const sessionId = currentSessionId.value
+    const approval = findOverdriveApproval(approvalId)
+    if (!sessionId || !approval || approval.status !== 'pending') return
+    approval.status = 'executing'
+    try {
+      const resolved = await chatApi.approveOverdriveApproval(sessionId, approvalId)
+      Object.assign(approval, {
+        approvalId: resolved.approval_id,
+        toolName: resolved.tool_name,
+        arguments: resolved.arguments,
+        status: resolved.status,
+        result: resolved.result,
+        error: resolved.error,
+        reason: resolved.reason,
+      })
+    } catch (error) {
+      approval.status = 'pending'
+      throw error
+    }
+  }
+
+  async function rejectOverdriveApproval(approvalId: string, reason?: string): Promise<void> {
+    const sessionId = currentSessionId.value
+    const approval = findOverdriveApproval(approvalId)
+    if (!sessionId || !approval || approval.status !== 'pending') return
+    approval.status = 'rejected'
+    try {
+      const resolved = await chatApi.rejectOverdriveApproval(sessionId, approvalId, reason)
+      Object.assign(approval, {
+        approvalId: resolved.approval_id,
+        toolName: resolved.tool_name,
+        arguments: resolved.arguments,
+        status: resolved.status,
+        result: resolved.result,
+        error: resolved.error,
+        reason: resolved.reason,
+      })
+    } catch (error) {
+      approval.status = 'pending'
+      throw error
+    }
+  }
+
   /**
    * 回答 ask_user 澄清：把按问题顺序收集的答案拼成结构化文本，作为下一条用户消息发送。
    * 空串答案视为跳过（由 AI 自行决定）。
@@ -1949,6 +2248,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   async function answerAskRequest(answers: string[]): Promise<void> {
     const session = currentSession.value
     let target: ChatMessage['askRequest'] | null = null
+    let originalRequest = ''
     if (session) {
       for (let i = session.messages.length - 1; i >= 0; i--) {
         const msg = session.messages[i]
@@ -1956,6 +2256,12 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           msg.askRequest.answered = true
           msg.askRequest.answers = answers
           target = msg.askRequest
+          originalRequest = session.messages
+            .slice(0, i)
+            .reverse()
+            .find((item) => item.role === 'user')
+            ?.content
+            .trim() || ''
           break
         }
       }
@@ -1973,7 +2279,10 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           .trim()
       : (answers[0] || '').trim()
     if (!text) return
-    await sendMessage(text)
+    const followUp = originalRequest
+      ? `原始任务：${originalRequest}\n\n补充信息：\n${text}`
+      : text
+    await sendMessage(followUp)
   }
 
   /** 进入会话时按后端 detail.permissions 初始化（默认 supervised） */
@@ -2025,7 +2334,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     // session actions
     startSessionFromAgent, selectSession, newChat, deleteSession, renameSession, generateSessionTitle,
     searchSessions, switchSessionModel, loadSessionMessages, sendMessage, stopStreaming, pauseStreaming,
-    approveToolCall, rejectToolCall, answerAskRequest,
+    submitMessageFeedback,
+    approveToolCall, rejectToolCall, approveOverdriveApproval, rejectOverdriveApproval, answerAskRequest,
     initStudioPermissions, setStudioPermissions,
     invokePipelineTool, submitPipelineTask, trackPipelineTask, pollPipelineTask,
     retryPipelineTask, stopPipelinePolling,

@@ -19,6 +19,12 @@ skill_ids:
   - data-deliver
 features:
   subagents_spawnable: true  # 可作为并行子 Agent 被 fan-out 派生
+  default_role: 把上游方案实现为可复现代码并在沙盒执行
+  capability_scope: [Python, R, Bash, 脚本设计, 调试, 沙盒执行]
+  capability_tags: [python, r, bash, reproducible-code, debugging, sandbox-execution]
+  accepts_inputs: [research-plan, domain-analysis-plan, data-contract, workspace-files]
+  produces_outputs: [analysis-script, execution-log, result-table, reproducibility-notes]
+  default_stage: code-design
   web_search:
     mode: required_for_freshness
     triggers: [最新, 版本, 发布说明, 文献, API, 文档, news]

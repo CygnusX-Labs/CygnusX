@@ -1,18 +1,33 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted, type Component } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NIcon, NSelect, NTag, NTooltip, useMessage, useDialog } from 'naive-ui'
-import { ArrowBackOutline, BulbOutline, FlashOutline, CloseOutline, DesktopOutline } from '@vicons/ionicons5'
+import { NButton, NIcon, NPopconfirm, NSelect, NTag, NTooltip, useMessage, useDialog } from 'naive-ui'
+import {
+  ArrowBackOutline,
+  BulbOutline,
+  FlashOutline,
+  FolderOpenOutline,
+  FlaskOutline,
+  GridOutline,
+  DocumentTextOutline,
+  AnalyticsOutline,
+} from '@vicons/ionicons5'
 import KimiMessageList from '@/components/ai-chat/KimiMessageList.vue'
+import OverdriveProgressCard from '@/components/ai-chat/OverdriveProgressCard.vue'
+import {
+  activeOverdriveProgress as selectActiveOverdriveProgress,
+  conversationMessagesWithoutProgress,
+} from '@/components/ai-chat/overdriveUi'
 import type { CollaborationRouteInfo } from '@/components/ai-chat/types'
 import KimiChatInput from '@/components/ai-chat/KimiChatInput.vue'
 import AgentCapabilityDrawer from './AgentCapabilityDrawer.vue'
-import OverdriveToggle from './OverdriveToggle.vue'
 import ShaniaChatBackground from './ShaniaChatBackground.vue'
+import StardustHero from './StardustHero.vue'
 import { useAgentHubStore } from '@/stores/agentHub'
 import { useAuthStore } from '@/stores/auth'
 import { studioApi } from '@/api/studio'
 import type { ChatMessage, FileAttachment } from '@/components/ai-chat/types'
+import { displayName } from '@/utils/displayName'
 
 const store = useAgentHubStore()
 const authStore = useAuthStore()
@@ -49,19 +64,7 @@ watch(
   },
 )
 
-// 直接在聊天页打开/创建绑定"默认工作台"Agent（如代码助手）的普通会话时，
-// 同样自动进入其 AI 工作台——此前只有路由/交接事件会触发，直接对话不会。
-// maybeRedirectToStudio 内部已去重并校验 default_mode / 会话 mode，幂等可调。
-watch(
-  () => [store.currentAgent?.id, store.currentSession?.id] as const,
-  ([agentId]) => {
-    if (!agentId) return
-    store.maybeRedirectToStudio(agentId, store.currentAgent?.name || '')
-  },
-  { immediate: true },
-)
-
-// 路由/交接命中默认工作台的 Agent（如代码助手）时，本轮回答结束后自动进入其 AI 工作台
+// 仅在星尘 AI 的后端路由/交接事件命中工作台 Agent 后，才进入 AI 工作台。
 watch(
   () => store.studioRedirect,
   async (target) => {
@@ -106,7 +109,6 @@ defineProps<{ targetMessageId?: string }>()
 const input = ref('')
 const showCap = ref(false)
 const modelSwitchNotice = ref('')
-const showWelcomeCard = ref(true)
 const creatingStudio = ref(false)
 let noticeTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -120,19 +122,73 @@ const overdriveEnabled = computed({
 })
 const engineLabel = computed(() => agent.value?.model_engine || '')
 const agentDisplayName = computed(() => agent.value?.features?.router ? '星尘 AI' : agent.value?.name || '星尘 AI')
-const quickPrompts = [
-  { label: '看看工作区文件', description: '快速了解当前可用的数据资产', prompt: '帮我看看工作区里有哪些数据文件' },
-  { label: '开始差异表达分析', description: '从 RNA-seq 结果找到关键变化', prompt: 'RNA-seq 差异表达分析怎么开始' },
-  { label: '画一张相关性热图', description: '探索样本之间的整体关系', prompt: '画一个样本间相关性热图' },
-  { label: '生成分析报告模板', description: '整理一份可复现的分析记录', prompt: '生成一份可复现的分析报告模板' },
+const greetingUserName = computed(() => displayName(authStore.user))
+/** 快捷任务：结构化配置驱动，语义图标 + 动词文案 + 真实 behavior（fontend.md §35.6 / §36.3）。
+ *  当前统一 behavior=prefill：预填输入框由用户确认发送，不自动提交。 */
+const quickActions: Array<{
+  id: string
+  title: string
+  description: string
+  icon: Component
+  behavior: 'prefill'
+  prompt: string
+}> = [
+  { id: 'files', title: '浏览工作区文件', description: '快速了解当前可用的数据资产', icon: FolderOpenOutline, behavior: 'prefill', prompt: '帮我看看工作区里有哪些数据文件' },
+  { id: 'deg', title: '进行差异表达分析', description: '从 RNA-seq 结果找到关键变化', icon: FlaskOutline, behavior: 'prefill', prompt: 'RNA-seq 差异表达分析怎么开始' },
+  { id: 'heatmap', title: '绘制相关性热图', description: '探索样本之间的整体关系', icon: GridOutline, behavior: 'prefill', prompt: '画一个样本间相关性热图' },
+  { id: 'report', title: '生成分析报告', description: '整理一份可复现的分析记录', icon: DocumentTextOutline, behavior: 'prefill', prompt: '生成一份可复现的分析报告模板' },
+  { id: 'single-cell', title: '帮我进行单细胞分析', description: '从单细胞数据开始细胞群体与 marker 分析', icon: FlaskOutline, behavior: 'prefill', prompt: '帮我进行单细胞分析' },
+  { id: 'rna-seq', title: '帮我进行 RNA-seq 分析', description: '从 RNA-seq 数据开始质量控制与差异分析', icon: AnalyticsOutline, behavior: 'prefill', prompt: '帮我进行 RNA-seq 分析' },
 ]
 
-const userDisplayName = computed(() =>
-  authStore.user?.nickname || authStore.user?.username || '我',
+/** 空会话（无消息）与活跃会话双布局（fontend.md §35.3） */
+const isEmpty = computed(() => (session.value?.messages.length ?? 0) === 0)
+const conversationMessages = computed(() =>
+  conversationMessagesWithoutProgress(session.value?.messages || []),
 )
-const userAvatarUrl = computed(() => authStore.user?.avatar_url || '')
+const activeOverdriveProgress = computed(() =>
+  selectActiveOverdriveProgress(session.value?.messages || []),
+)
+const composerRef = ref<InstanceType<typeof KimiChatInput>>()
+const recentSessions = computed(() =>
+  store.sessions
+    .filter((item) => item.id !== session.value?.id && !item.id.startsWith('sess-'))
+    .slice(0, 4),
+)
 
-const welcomeStorageKey = computed(() => `agent-welcome-closed:${agent.value?.id || 'global'}`)
+function formatRelativeTime(value: string): string {
+  const elapsed = Math.max(0, Date.now() - new Date(value).getTime())
+  const minutes = Math.floor(elapsed / 60_000)
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes} 分钟前`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} 小时前`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days} 天前`
+  return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' }).format(new Date(value))
+}
+
+function recentSessionState(item: typeof recentSessions.value[number]): string {
+  if (item.id === session.value?.id && store.isStreaming) return '运行中'
+  return item.mode === 'studio' || store.studioSessionIds.has(item.id) ? '工作台会话' : '已完成'
+}
+
+function openRecentSession(sessionId: string) {
+  void store.selectSession(sessionId)
+}
+
+async function deleteRecentSession(sessionId: string) {
+  await store.deleteSession(sessionId)
+  if (!store.currentSession) store.newChat()
+}
+
+function handleQuickAction(action: (typeof quickActions)[number]) {
+  input.value = action.prompt
+  nextTick(() => composerRef.value?.focus())
+}
+
+const userDisplayName = computed(() => displayName(authStore.user) || '我')
+const userAvatarUrl = computed(() => authStore.user?.avatar_url || '')
 
 /** 首次调用某技能的轻提示（localStorage 去重，全生命周期只弹一次，可关=不再提示同技能） */
 const SKILL_NOTICE_KEY = 'omichub-notified-skills'
@@ -153,11 +209,6 @@ function handleSkillInvokedNotice(e: Event) {
 }
 
 onMounted(() => {
-  try {
-    showWelcomeCard.value = localStorage.getItem(welcomeStorageKey.value) !== 'true'
-  } catch {
-    showWelcomeCard.value = true
-  }
   window.addEventListener('omichub:skill-invoked', handleSkillInvokedNotice)
 })
 
@@ -212,22 +263,8 @@ watch(
   () => agent.value?.id,
   () => {
     modelSwitchNotice.value = ''
-    try {
-      showWelcomeCard.value = localStorage.getItem(welcomeStorageKey.value) !== 'true'
-    } catch {
-      showWelcomeCard.value = true
-    }
   },
 )
-
-function closeWelcomeCard() {
-  showWelcomeCard.value = false
-  try {
-    localStorage.setItem(welcomeStorageKey.value, 'true')
-  } catch {
-    // ignore
-  }
-}
 
 function handleSend(
   content: string,
@@ -241,14 +278,18 @@ function handleSend(
 ) {
   if (!content.trim() && !options.attachments?.length) return
   if (store.isStreaming) return
-  // sendMessage 是 async；不 await，让 UI 立即清空输入框
-  store.sendMessage(content, options)
+  void store.sendMessage(content, options)
   input.value = ''
 }
 
-function findUserMessage(messageId: string): ChatMessage | undefined {
-  const target = session.value?.messages.find((item) => item.id === messageId)
-  return target?.role === 'user' ? target : undefined
+function findSourceUserMessage(messageId: string): ChatMessage | undefined {
+  const messages = session.value?.messages || []
+  const index = messages.findIndex((item) => item.id === messageId)
+  for (let cursor = index >= 0 ? index : messages.length - 1; cursor >= 0; cursor -= 1) {
+    const candidate = messages[cursor]
+    if (candidate.role === 'user') return candidate
+  }
+  return undefined
 }
 
 async function handleRegenerate(messageId: string) {
@@ -256,13 +297,17 @@ async function handleRegenerate(messageId: string) {
     message.warning('请等待当前回复完成')
     return
   }
-  const target = findUserMessage(messageId)
+  const target = findSourceUserMessage(messageId)
   if (!target) return
   await store.sendMessage(target.content, { attachments: target.attachments })
 }
 
+function handleRetryWithModel() {
+  message.info('请使用页面顶部的模型选择器切换模型后，再点击重试')
+}
+
 function handleEditMessage(messageId: string) {
-  const target = findUserMessage(messageId)
+  const target = findSourceUserMessage(messageId)
   if (!target) return
   input.value = target.content
   message.info('已填入输入框，修改后发送即可')
@@ -329,23 +374,28 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="agent-sandbox" v-if="agent && session">
+  <div class="agent-sandbox" :class="{ 'is-empty': isEmpty }" v-if="agent && session">
     <ShaniaChatBackground v-if="agent.id === 'shania'" />
-    <header class="sandbox-header">
+    <!-- 首页（空会话）不渲染上边栏，进入聊天态后才显示返回/模型选择等控件 -->
+    <header v-if="!isEmpty" class="sandbox-header">
       <div class="header-left">
-        <NButton text class="back-btn" @click="handleBack">
-          <NIcon size="18"><ArrowBackOutline /></NIcon>
-        </NButton>
+        <NTooltip trigger="hover">
+          <template #trigger>
+            <NButton text class="back-btn" aria-label="返回智能体中心" @click="handleBack">
+              <NIcon size="18"><ArrowBackOutline /></NIcon>
+            </NButton>
+          </template>
+          返回智能体中心
+        </NTooltip>
         <div class="agent-identity">
           <div class="id-avatar">✦</div>
           <div class="id-meta">
-            <div class="id-name">{{ agentDisplayName }}</div>
-            <div class="id-sub">{{ agent.description }}</div>
+            <h1 class="id-name">{{ agentDisplayName }}</h1>
+            <div class="agent-status" aria-live="polite">{{ store.isStreaming ? '正在处理请求' : '助手已就绪' }}</div>
           </div>
         </div>
       </div>
       <div class="header-right">
-        <OverdriveToggle v-model="overdriveEnabled" :disabled="store.isStreaming" />
         <div class="model-selector">
           <n-select
             v-if="modelOptions.length"
@@ -368,80 +418,41 @@ onUnmounted(() => {
         </div>
         <NTooltip trigger="hover">
           <template #trigger>
-            <NButton class="studio-mode-btn" size="small" :loading="creatingStudio" @click="handleEnterStudio">
-              <template #icon><NIcon><DesktopOutline /></NIcon></template>
-              工作台模式
+            <NButton class="capability-btn" size="small" quaternary aria-label="查看智能体能力" @click="showCap = true">
+              <template #icon><NIcon><BulbOutline /></NIcon></template>
+              查看该智能体能力
             </NButton>
           </template>
-          在 AI 分析工作台中打开该智能体（代码可改可跑）
+          查看智能体能力
         </NTooltip>
-        <NButton class="capability-btn" size="small" quaternary @click="showCap = true">
-          <template #icon><NIcon><BulbOutline /></NIcon></template>
-          查看该智能体能力
-        </NButton>
       </div>
     </header>
 
-    <transition name="fade">
-      <div v-if="overdriveEnabled" class="overdrive-banner" role="status">
-        <NIcon size="14" class="overdrive-banner-icon"><FlashOutline /></NIcon>
-        <span class="overdrive-banner-text">
-          超频模式已开启：Manager 将组织专家团队协作回复，各专家发言会依次单独展示
-        </span>
-        <button type="button" class="overdrive-banner-exit" @click="overdriveEnabled = false">退出超频</button>
-      </div>
-    </transition>
-
     <div class="sandbox-body">
       <div class="chat-content-wrapper">
-        <transition name="fade">
-          <div v-if="showWelcomeCard && session.messages.length === 0" class="welcome-card">
-            <div class="welcome-deco" aria-hidden="true">
-              <span class="welcome-ring welcome-ring-1"></span>
-              <span class="welcome-ring welcome-ring-2"></span>
-              <span class="welcome-ring welcome-ring-3"></span>
-              <span class="welcome-star" style="top: 22%; right: 34%; width: 4px; height: 4px; opacity: 0.9"></span>
-              <span class="welcome-star" style="top: 60%; right: 22%; width: 3px; height: 3px; opacity: 0.6"></span>
-              <span class="welcome-star" style="top: 35%; right: 12%; width: 5px; height: 5px; opacity: 0.8"></span>
-              <span class="welcome-star" style="top: 72%; right: 42%; width: 3px; height: 3px; opacity: 0.5"></span>
-              <span class="welcome-star" style="top: 15%; right: 52%; width: 4px; height: 4px; opacity: 0.7"></span>
-              <span class="welcome-star" style="top: 50%; right: 60%; width: 3px; height: 3px; opacity: 0.4"></span>
-            </div>
-            <div class="welcome-content">
-              <div class="welcome-avatar">✦</div>
-              <div class="welcome-text">
-                <div class="welcome-kicker">STARDUST AI ASSISTANT</div>
-                <div class="welcome-title">{{ agentDisplayName }}</div>
-                <div class="welcome-desc">{{ agent.welcome_message || agent.description }}</div>
-              </div>
-            </div>
-            <NButton text class="welcome-close" @click="closeWelcomeCard">
-              <NIcon size="16"><CloseOutline /></NIcon>
-            </NButton>
-          </div>
-        </transition>
+        <!-- 空会话首页：星星+AI 动画 hero + 打招呼文案 → 输入区 → 快捷任务芯片（fontend.md §35.3.1） -->
+        <StardustHero
+          v-if="isEmpty"
+          :title="agentDisplayName"
+          :user-name="greetingUserName"
+        />
 
-        <div v-if="session.messages.length === 0" class="quick-prompts">
-          <button v-for="(item, index) in quickPrompts" :key="item.prompt" :class="`prompt-${index + 1}`" @click="handleSend(item.prompt)">
-            <span class="prompt-icon">✦</span>
-            <span class="prompt-copy">
-              <span class="prompt-title">{{ item.label }}</span>
-              <span class="prompt-description">{{ item.description }}</span>
-            </span>
-          </button>
-        </div>
-
+        <!-- 活跃会话：消息列表（内部滚动 + 底部吸附输入区 §35.3.2） -->
         <KimiMessageList
-          :messages="session.messages"
+          v-if="!isEmpty"
+          :messages="conversationMessages"
           :is-typing="store.isStreaming"
           :streaming-content="store.streamingContent"
           :streaming-thought="store.streamingThought"
           :model-name="agentDisplayName"
           :user-name="userDisplayName"
           :user-avatar="userAvatarUrl"
+          :session-id="session.id"
           :target-message-id="targetMessageId"
           @copy="handleCopy"
+          @feedback="(id, type) => store.submitMessageFeedback(id, type)"
           @regenerate="handleRegenerate"
+          @retry-with-model="handleRetryWithModel"
           @delete="handleDeleteMessage"
           @edit="handleEditMessage"
           @confirm-tool="handleConfirmTool"
@@ -449,18 +460,83 @@ onUnmounted(() => {
           @create-case-from-consultation="handleCreateCaseFromConsultation"
           @correct-collaboration-route="handleCorrectCollaborationRoute"
         />
-      </div>
-    </div>
 
-    <div class="sandbox-input">
-      <div class="chat-content-wrapper">
-        <KimiChatInput
-          v-model="input"
-          :is-streaming="store.isStreaming"
-          :placeholder="inputPlaceholder"
-          @send="handleSend"
-          @stop="store.stopStreaming"
-        />
+        <transition name="progress-dock">
+          <div v-if="activeOverdriveProgress" class="overdrive-progress-dock">
+            <OverdriveProgressCard :progress="activeOverdriveProgress" compact />
+          </div>
+        </transition>
+
+        <!-- 输入区：单实例避免草稿/附件丢失；空会话在说明下方、活跃会话底部吸附（fontend.md §35.3） -->
+        <div class="composer-slot">
+          <KimiChatInput
+            ref="composerRef"
+            v-model="input"
+            :is-streaming="store.isStreaming"
+            :show-overdrive-control="true"
+            :overdrive-enabled="overdriveEnabled"
+            :show-workbench-control="true"
+            :workbench-loading="creatingStudio"
+            :placeholder="inputPlaceholder"
+            @send="handleSend"
+            @stop="store.stopStreaming"
+            @toggle-overdrive="overdriveEnabled = !overdriveEnabled"
+            @enter-workbench="handleEnterStudio"
+          />
+        </div>
+
+        <!-- 快捷任务：语义图标 + 动词文案 + 预填行为，首页以居中芯片呈现（fontend.md §35.6） -->
+        <section v-if="isEmpty" class="quick-actions" aria-label="快捷任务">
+          <button
+            v-for="action in quickActions"
+            :key="action.id"
+            type="button"
+            class="quick-chip"
+            :title="action.description"
+            @click="handleQuickAction(action)"
+          >
+            <NIcon :size="15" aria-hidden="true"><component :is="action.icon" /></NIcon>
+            <span>{{ action.title }}</span>
+          </button>
+        </section>
+
+        <section v-if="isEmpty" class="recent-context" aria-labelledby="recent-context-title">
+          <div class="recent-context-heading">
+            <h2 id="recent-context-title">最近会话</h2>
+            <span v-if="recentSessions.length">继续上次的分析</span>
+          </div>
+          <div v-if="recentSessions.length" class="recent-session-list">
+            <article v-for="item in recentSessions" :key="item.id" class="recent-session-item">
+              <button
+                type="button"
+                class="recent-session-main"
+                :title="item.title"
+                @click="openRecentSession(item.id)"
+              >
+                <span class="recent-session-title">{{ item.title }}</span>
+                <span class="recent-session-meta">
+                  <span>{{ store.getAgent(item.agent_id)?.name || '智能助手' }}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{{ formatRelativeTime(item.updated_at) }}</span>
+                </span>
+              </button>
+              <span class="recent-session-state">{{ recentSessionState(item) }}</span>
+              <NPopconfirm
+                positive-text="删除"
+                negative-text="取消"
+                @positive-click="deleteRecentSession(item.id)"
+              >
+                <template #trigger>
+                  <NButton text size="tiny" class="recent-session-delete" :aria-label="`删除会话：${item.title}`">
+                    删除
+                  </NButton>
+                </template>
+                删除此会话后无法恢复，确定继续吗？
+              </NPopconfirm>
+            </article>
+          </div>
+          <p v-else class="recent-context-empty">还没有历史会话；你可以从上方输入需求或选择快捷任务开始。</p>
+        </section>
       </div>
     </div>
 
@@ -475,6 +551,7 @@ onUnmounted(() => {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  --chat-content-max-width: 1120px;
   background:
     radial-gradient(circle at 12% 0%, rgba(46, 91, 255, 0.08), transparent 32%),
     radial-gradient(circle at 88% 8%, rgba(123, 77, 255, 0.07), transparent 30%),
@@ -516,16 +593,10 @@ onUnmounted(() => {
   box-shadow: 0 2px 8px rgba(79, 109, 245, 0.35);
 }
 .id-meta { min-width: 0; }
-.id-name { font-size: 15px; font-weight: 600; color: #1A1D33; }
-.id-sub { font-size: 12px; color: #8A8FA3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 360px; }
+.id-name { margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; color: var(--chat-text-primary, #1A1D33); }
+.agent-status { margin-top: 2px; color: var(--success-color, #18a058); font-size: 12px; line-height: 16px; }
 .header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.studio-mode-btn {
-  color: #fff;
-  border-radius: 8px;
-  background: var(--stardust-gradient);
-  box-shadow: 0 2px 8px rgba(46, 91, 255, 0.2);
-}
-.studio-mode-btn:hover { opacity: 0.9; box-shadow: 0 4px 12px rgba(46, 91, 255, 0.35); }
+/* 工作台模式归为页面操作组，用次要弱化按钮，不与发送按钮竞争主层级（fontend.md §35.8.3） */
 .capability-btn {
   color: var(--stardust-blue);
   border: 1px solid #d4dbf5;
@@ -559,37 +630,6 @@ onUnmounted(() => {
   opacity: 0;
 }
 
-/* 超频模式提示条幅：开启时常驻在工具栏下方，避免与普通对话难以分辨 */
-.overdrive-banner {
-  position: relative;
-  z-index: 1;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 8px 16px 0;
-  padding: 7px 14px;
-  font-size: 12.5px;
-  color: var(--primary-color);
-  background: color-mix(in srgb, var(--primary-color) 8%, var(--card-color));
-  border: 1px solid color-mix(in srgb, var(--primary-color) 46%, var(--border-color));
-  border-radius: 10px;
-}
-.overdrive-banner-icon { flex-shrink: 0; }
-.overdrive-banner-text { flex: 1; min-width: 0; }
-.overdrive-banner-exit {
-  flex-shrink: 0;
-  border: none;
-  background: transparent;
-  color: var(--primary-color);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 2px 8px;
-  border-radius: 6px;
-}
-.overdrive-banner-exit:hover { background: color-mix(in srgb, var(--primary-color) 12%, transparent); }
-
 /* 内容层显式提升，确保位于点阵 ::before 与 ShaniaChatBackground 装饰层之上。
    注意：不能用 `.agent-sandbox > *` 通配提升，否则会把绝对定位的装饰背景
    一并改成 position: relative 拉进文档流，撑出顶部空白并顶高 header。 */
@@ -600,109 +640,88 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
 }
-.welcome-card {
-  position: relative;
-  overflow: hidden;
-  flex-shrink: 0;
+/* 快捷任务：居中胶囊芯片行；描述收进 title 提示，保持首页轻量（fontend.md §35.6） */
+.quick-actions {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin: 16px 24px 0;
-  padding: 24px 32px;
-  background: var(--agent-hero-gradient);
-  border: none;
-  border-radius: 16px;
-  box-shadow: var(--shadow-card);
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+  animation: home-rise 480ms 180ms cubic-bezier(0.22, 0.8, 0.36, 1) both;
 }
-.welcome-deco {
-  position: absolute;
-  inset: 0;
+.quick-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border: 1px solid var(--stardust-border-soft, var(--neutral-border));
+  border-radius: 999px;
+  background: var(--chat-surface, var(--bg-card));
+  color: var(--text-secondary, var(--chat-text-muted, var(--neutral-text-3)));
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+  transition: box-shadow 200ms ease, transform 200ms ease, border-color 200ms ease, color 200ms ease;
+}
+.quick-chip:hover {
+  transform: translateY(-1px);
+  color: var(--stardust-blue, #4c6fff);
+  border-color: color-mix(in srgb, var(--stardust-blue, #4c6fff) 35%, transparent);
+  box-shadow: 0 8px 24px rgba(30, 111, 255, 0.10);
+}
+.quick-chip:focus-visible {
+  outline: 2px solid var(--arco-primary, var(--stardust-blue));
+  outline-offset: 3px;
+}
+@keyframes home-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+
+.recent-context { margin-top: 32px; animation: home-rise 480ms 240ms cubic-bezier(0.22, 0.8, 0.36, 1) both; }
+.recent-context-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.recent-context-heading h2 { margin: 0; color: var(--chat-text-primary, var(--neutral-text-1)); font-size: 15px; line-height: 22px; font-weight: 600; }
+.recent-context-heading span { color: var(--chat-text-muted, var(--neutral-text-3)); font-size: 12px; }
+.recent-session-list { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.recent-session-item { display: flex; align-items: center; gap: 10px; min-height: 72px; padding: 10px 12px 10px 14px; border: 1px solid var(--stardust-border-soft, var(--neutral-border)); border-radius: 12px; background: var(--chat-surface, var(--neutral-card)); }
+.recent-session-main { display: flex; flex: 1; min-width: 0; flex-direction: column; align-items: flex-start; gap: 5px; border: 0; padding: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.recent-session-main:focus-visible { outline: 2px solid var(--arco-primary, var(--stardust-blue)); outline-offset: 3px; border-radius: 4px; }
+.recent-session-title { width: 100%; overflow: hidden; color: var(--chat-text-primary, var(--neutral-text-1)); font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.recent-session-meta { display: flex; min-width: 0; gap: 5px; overflow: hidden; color: var(--chat-text-muted, var(--neutral-text-3)); font-size: 12px; white-space: nowrap; }
+.recent-session-meta span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.recent-session-state { flex: 0 0 auto; color: var(--chat-text-muted, var(--neutral-text-3)); font-size: 11px; white-space: nowrap; }
+.recent-session-delete { flex: 0 0 auto; color: var(--chat-text-muted, var(--neutral-text-3)); }
+.recent-session-delete:hover { color: var(--error-color, #d03050); }
+.recent-context-empty { margin: 0; padding: 14px 16px; border: 1px dashed var(--stardust-border-soft, var(--neutral-border)); border-radius: 12px; color: var(--chat-text-muted, var(--neutral-text-3)); font-size: 13px; line-height: 20px; }
+
+.overdrive-progress-dock {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-shrink: 0;
+  justify-content: center;
+  padding: 10px 24px 0;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.76) 38%);
   pointer-events: none;
 }
-.welcome-ring {
-  position: absolute;
-  border: 2px solid rgba(255, 255, 255, 0.18);
-  border-radius: 50%;
-}
-.welcome-ring-1 { width: 240px; height: 240px; top: -80px; right: -60px; }
-.welcome-ring-2 { width: 160px; height: 160px; top: 30%; right: 80px; border-width: 1px; }
-.welcome-ring-3 { width: 120px; height: 120px; bottom: -50px; right: 34%; border-width: 1px; }
-.welcome-star {
-  position: absolute;
-  background: #fff;
-  border-radius: 50%;
-}
-.welcome-content {
-  position: relative;
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  min-width: 0;
-}
-.welcome-avatar {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 24px;
-  color: #fff;
-  flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.35);
-}
-.welcome-text {
-  min-width: 0;
-}
-.welcome-kicker {
-  font-size: 12px;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.75);
-  margin-bottom: 8px;
-}
-.welcome-title {
-  font-size: 32px;
-  font-weight: 700;
-  color: #fff;
-  margin-bottom: 8px;
-}
-.welcome-desc {
-  font-size: 15px;
-  line-height: 1.7;
-  color: rgba(255, 255, 255, 0.85);
-  word-break: break-word;
-}
-.welcome-close {
-  position: relative;
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  transition: background-color 200ms ease;
-}
-.welcome-close:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.22);
-}
-.quick-prompts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 12px 24px 0; }
-.quick-prompts button { display: flex; align-items: center; gap: 9px; min-height: 64px; padding: 12px 14px; border: 1px solid #E8EAF6; border-radius: 12px; color: var(--chat-text-primary); background: var(--chat-surface); font-size: 12px; text-align: left; cursor: pointer; box-shadow: var(--stardust-card-shadow); transition: box-shadow 250ms ease, transform 250ms ease; }
-.quick-prompts button:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(30, 111, 255, 0.10); }
-.prompt-icon { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 40px; border-radius: 10px; color: #fff; background: linear-gradient(135deg, #6366F1, #3B82F6); }
-.prompt-2 .prompt-icon { background: linear-gradient(135deg, #8B5CF6, #6366F1); }
-.prompt-3 .prompt-icon { background: linear-gradient(135deg, #06B6D4, #3B82F6); }
-.prompt-4 .prompt-icon { background: linear-gradient(135deg, #14B8A6, #06B6D4); }
-.prompt-copy { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
-.prompt-title { font-size: 15px; font-weight: 600; color: #1A1D33; }
-.prompt-description { color: #8A8FA3; font-size: 13px; line-height: 1.4; }
 
-.sandbox-input {
+.overdrive-progress-dock :deep(.overdrive-progress-card) {
+  pointer-events: auto;
+}
+
+.progress-dock-enter-active,
+.progress-dock-leave-active {
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.progress-dock-enter-from,
+.progress-dock-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+/* 输入区：活跃会话底部吸附；空会话在说明下方、无边框底色（fontend.md §35.3） */
+.composer-slot {
   position: relative;
   z-index: 1;
   flex-shrink: 0;
@@ -711,33 +730,65 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.58);
   backdrop-filter: blur(10px);
 }
+.is-empty .composer-slot {
+  padding: 20px 0 0;
+  border-top: none;
+  background: transparent;
+  backdrop-filter: none;
+}
 .chat-content-wrapper {
-  max-width: 900px;
+  max-width: 1120px;
   margin: 0 auto;
   width: 100%;
 }
 
+/* 空会话首屏：居中内容列 + 顶部留白托出 hero，wrapper 整体滚动（fontend.md §35.3.1） */
+.is-empty .chat-content-wrapper {
+  max-width: 1120px;
+  display: block;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding: clamp(28px, 7vh, 84px) 24px 40px;
+}
+.is-empty .chat-content-wrapper::-webkit-scrollbar { width: 0; height: 0; }
+
+@media (max-width: 768px) {
+  .sandbox-header { padding-inline: 16px; }
+  .header-right { gap: 6px; }
+  .model-selector :deep(.n-base-selection) { min-width: 124px; }
+  .is-empty .chat-content-wrapper { padding: 24px 16px 32px; }
+  .overdrive-progress-dock { padding-inline: 16px; }
+}
+
 @media (max-width: 640px) {
-  .id-sub { display: none; }
   .header-right .n-button__content { font-size: 12px; }
+  .capability-btn { min-width: 40px; padding-inline: 8px; }
   .model-switch-notice { display: none; }
-  .quick-prompts { grid-template-columns: 1fr; margin-inline: 14px; }
-  .welcome-card { padding: 24px; }
-  .welcome-title { font-size: 24px; }
-  .welcome-avatar { width: 44px; height: 44px; font-size: 20px; }
-  .welcome-ring-2, .welcome-ring-3 { display: none; }
-  .welcome-ring-1 { width: 140px; height: 140px; top: -50px; right: -40px; }
+  .agent-status { display: none; }
+  .recent-context-heading span, .recent-session-state { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quick-chip,
+  .quick-chip:hover { transform: none; transition: none; }
+  .quick-actions, .recent-context { animation: none; }
+  .progress-dock-enter-active,
+  .progress-dock-leave-active { transition: none; }
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .sandbox-header, .sandbox-input { background: var(--bg-card); backdrop-filter: none; }
+  .sandbox-header, .composer-slot { background: var(--bg-card); backdrop-filter: none; }
 }
 
 :root[data-theme="dark"] .agent-sandbox {
   background: radial-gradient(circle at 12% 0%, rgba(118, 145, 255, 0.12), transparent 32%), var(--chat-bg);
 }
 :root[data-theme="dark"] .sandbox-header,
-:root[data-theme="dark"] .sandbox-input { background: rgba(15, 20, 32, 0.82); }
+:root[data-theme="dark"] .composer-slot { background: rgba(15, 20, 32, 0.82); }
+:root[data-theme="dark"] .overdrive-progress-dock { background: linear-gradient(180deg, transparent, rgba(15, 20, 32, 0.88) 38%); }
+:root[data-theme="dark"] .is-empty .composer-slot { background: transparent; }
+:root[data-theme="dark"] .quick-chip { background: var(--chat-surface, var(--neutral-card)); border-color: var(--neutral-border, #2a3040); }
 :root[data-theme="dark"] .model-selector :deep(.n-base-selection) { background: rgba(255, 255, 255, 0.08); }
 :root[data-theme="dark"] .capability-btn { border-color: rgba(118, 145, 255, 0.35); }
 </style>

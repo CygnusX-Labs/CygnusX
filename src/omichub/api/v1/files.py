@@ -150,18 +150,35 @@ def get_file_service(db: DbSession) -> FileService:
 FileServiceDep = Annotated[FileService, Depends(get_file_service)]
 
 
-@router.get("", response_model=FileListResponse, summary="获取文件列表")
+@router.get("", response_model=FileListResponse, summary="获取文件列表（含搜索）")
 async def list_files(
     current_user_id: CurrentUserId,
     service: FileServiceDep,
     directory: Annotated[str | None, Query(description="按目录过滤，空串=根目录")] = None,
     source: Annotated[str | None, Query(description="按来源过滤: upload/pipeline/blast/enrichment 等")] = None,
+    q: Annotated[str | None, Query(max_length=500, description="关键字搜索（递归匹配文件名/路径）")] = None,
+    limit: Annotated[int, Query(ge=1, le=200, description="搜索模式下最多返回条数")] = 50,
 ) -> FileListResponse:
-    """获取当前用户的文件列表（可按目录或来源过滤，按创建时间倒序）"""
+    """获取当前用户的文件列表。
+
+    - 不带 ``q``：按 ``directory`` / ``source`` 过滤当前目录直接子项
+    - 带 ``q``：递归搜索匹配的文件（等价于旧 ``/search`` 端点），同时返回目录匹配
+    """
+    if q is not None and q != "":
+        try:
+            return await service.search_files(UUID(current_user_id), query=q, limit=limit)
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail="无权限访问该目录") from exc
     return await service.list_files(UUID(current_user_id), directory=directory, source=source)
 
 
-@router.get("/search", response_model=FileListResponse, summary="搜索工作区文件")
+@router.get(
+    "/search",
+    response_model=FileListResponse,
+    summary="搜索工作区文件",
+    deprecated=True,
+    description="已废弃：请用 GET /files?q=<关键字> 替代。保留仅为向后兼容。",
+)
 async def search_files(
     current_user_id: CurrentUserId,
     service: FileServiceDep,
@@ -178,7 +195,13 @@ async def search_files(
         raise HTTPException(status_code=403, detail="无权限访问该目录") from exc
 
 
-@router.get("/workspace", summary="列出工作区文件")
+@router.get(
+    "/workspace",
+    summary="列出工作区文件",
+    deprecated=True,
+    description="已废弃：MCP/Agent 请直接用 Python 调用 FileService.list_workspace_files。"
+    "HTTP 端点保留仅为向后兼容，后续版本可能移除。",
+)
 async def list_workspace_files(
     current_user_id: CurrentUserId,
     service: FileServiceDep,
@@ -194,7 +217,13 @@ async def list_workspace_files(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
-@router.get("/tree", summary="统一文件树")
+@router.get(
+    "/tree",
+    summary="统一文件树",
+    deprecated=True,
+    description="已废弃：请用 GET /files 加 source 参数按来源分组查询。"
+    "HTTP 端点保留仅为向后兼容，后续版本可能移除。",
+)
 async def file_tree(
     current_user_id: CurrentUserId,
     service: FileServiceDep,

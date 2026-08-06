@@ -11,6 +11,7 @@ import {
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import type { IssueItem, IssueCreateRequest } from '@/types/knowledge'
+import { displayName } from '@/utils/displayName'
 
 const props = defineProps<{
   docId: string
@@ -25,7 +26,7 @@ const message = useMessage()
 const authStore = useAuthStore()
 
 const isAdmin = computed(() => authStore.isAdmin)
-const currentUserName = computed(() => authStore.user?.nickname || authStore.user?.username || '')
+const currentUserName = computed(() => displayName(authStore.user))
 
 const newContent = ref('')
 const replyTarget = ref<{ id: string; userName: string } | null>(null)

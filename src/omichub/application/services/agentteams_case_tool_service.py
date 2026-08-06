@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -34,7 +35,7 @@ def agentteams_next_actor(status: str) -> str:
         "approved": "workflow-operator",
         "executing": "workflow-operator",
         "execution_failed": "workflow-operator",
-        "quality_running": "quality-controller",
+        "quality_running": "quality-auditor",
         "quality_blocked": "workflow-operator",
         "remediation_pending": "workflow-operator",
         "delivery_ready": "requester",
@@ -61,7 +62,10 @@ class AgentTeamsCaseToolService:
 
         settings = get_settings()
         site_settings = SiteSettingsService(context.db)
-        enabled = settings.agentteams_chat_entry_enabled or await site_settings.is_agentteams_chat_entry_enabled()
+        enabled = (
+            settings.agentteams_chat_entry_enabled
+            or await site_settings.is_agentteams_chat_entry_enabled()
+        )
         if not enabled:
             raise BusinessError("聊天协作 Case 入口尚未启用")
 
@@ -115,7 +119,8 @@ class AgentTeamsCaseToolService:
             intent=normalized_objective,
             requester_ref=context.user_id,
             flow_id=flow_id,
-            sample_sheet=[{"context_ref": item} for item in safe_refs] or [{"context_ref": {"kind": "project", "id": project_id}}],
+            sample_sheet=[{"context_ref": item} for item in safe_refs]
+            or [{"context_ref": {"kind": "project", "id": project_id}}],
             origin_consultation_id=source["origin_consultation_id"],
             consultation_summary=source["consultation_summary"],
             element_room_url=str(meta.get("element_room_url") or "") or None,
@@ -137,7 +142,7 @@ class AgentTeamsCaseToolService:
         origin_consultation_id: str | None = None,
         consultation_summary: str | None = None,
         context: ToolInvocationContext | None = None,
-    ) -> None:
+    ) -> dict[str, str]:
         """记录已展示的确认卡，禁止模型首次调用伪造 `_confirmed` 直接创建。"""
         if context is None or not context.user_id or not context.session_id:
             raise BusinessError("协作 Case 工具需要受控的会话调用上下文")
@@ -156,11 +161,17 @@ class AgentTeamsCaseToolService:
         source = self._consultation_source(origin_consultation_id, consultation_summary)
         meta = dict(session.sandbox_meta or {})
         confirmations = dict(meta.get("agentteams_case_confirmation") or {})
-        confirmations[key] = {"requested_at": datetime.now(UTC).isoformat(), **source}
+        confirmation = {
+            "requested_at": datetime.now(UTC).isoformat(),
+            "token": secrets.token_urlsafe(24),
+            **source,
+        }
+        confirmations[key] = confirmation
         meta["agentteams_case_confirmation"] = confirmations
         session.sandbox_meta = meta
         session.updated_at = datetime.now(UTC)
         await context.db.flush()
+        return {"key": key, "token": str(confirmation["token"])}
 
     @staticmethod
     def _session_owns_project(meta: dict[str, Any] | None, project_id: str) -> bool:
@@ -210,7 +221,9 @@ class AgentTeamsCaseToolService:
             created_at = created_at.replace(tzinfo=UTC)
         if datetime.now(UTC) - created_at > _IDEMPOTENCY_WINDOW:
             return None
-        if not all(isinstance(item.get(key_name), str) for key_name in ("case_id", "title", "status")):
+        if not all(
+            isinstance(item.get(key_name), str) for key_name in ("case_id", "title", "status")
+        ):
             return None
         return {key_name: str(item[key_name]) for key_name in ("case_id", "title", "status")}
 
@@ -230,17 +243,38 @@ class AgentTeamsCaseToolService:
         if datetime.now(UTC) - requested_at > _CONFIRMATION_WINDOW:
             raise BusinessError("协作 Case 确认已过期，请重新发起确认")
         user_confirmation = await context.db.scalar(
-            select(ChatMessageModel.message_id)
+            select(ChatMessageModel)
             .where(
                 ChatMessageModel.session_id == context.session_id,
                 ChatMessageModel.role == "user",
                 ChatMessageModel.created_at > requested_at,
             )
+            .order_by(ChatMessageModel.created_at.desc())
             .limit(1)
         )
-        if user_confirmation is None:
+        if not AgentTeamsCaseToolService._is_explicit_confirmation_message(
+            user_confirmation, key, confirmation
+        ):
             raise BusinessError("请先由用户在确认卡上确认协作 Case 创建")
         return confirmation
+
+    @staticmethod
+    def _is_explicit_confirmation_message(
+        message: Any, key: str, confirmation: dict[str, Any]
+    ) -> bool:
+        if message is None:
+            return False
+        metadata = getattr(message, "metadata_json", None)
+        marker = (
+            metadata.get("agentteams_case_confirmation") if isinstance(metadata, dict) else None
+        )
+        if isinstance(marker, dict):
+            return (
+                marker.get("key") == key
+                and marker.get("token") == confirmation.get("token")
+                and marker.get("confirmed") is True
+            )
+        return False
 
     @staticmethod
     def _consultation_source(
@@ -255,7 +289,9 @@ class AgentTeamsCaseToolService:
 
     @staticmethod
     def _bind_case(meta: dict[str, Any], key: str, case_id: str, title: str, status: str) -> None:
-        case_ids = [str(item) for item in meta.get("agentteams_case_ids", []) if isinstance(item, str)]
+        case_ids = [
+            str(item) for item in meta.get("agentteams_case_ids", []) if isinstance(item, str)
+        ]
         if case_id not in case_ids:
             case_ids.append(case_id)
         statuses = dict(meta.get("agentteams_case_status") or {})
@@ -280,7 +316,9 @@ class AgentTeamsCaseToolService:
     @staticmethod
     def _envelope(*, case_id: str, title: str, status: str, reused: bool) -> dict[str, Any]:
         next_actor = agentteams_next_actor(status)
-        summary = f"{'复用已创建的' if reused else '已创建'}协作 Case：{title}（当前状态：{status}）。"
+        summary = (
+            f"{'复用已创建的' if reused else '已创建'}协作 Case：{title}（当前状态：{status}）。"
+        )
         card = {
             "case_id": case_id,
             "title": title,

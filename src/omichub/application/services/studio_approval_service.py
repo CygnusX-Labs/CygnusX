@@ -36,6 +36,20 @@ APPROVAL_TTL_SECONDS = 300
 _RECORD_KEY = "studio:approval:{approval_id}"
 _RESULT_KEY = "studio:approval:result:{approval_id}"
 
+_RESOLVE_APPROVAL_LUA = """
+local record_json = redis.call('GET', KEYS[1])
+if not record_json then return nil end
+local record = cjson.decode(record_json)
+if record.user_id ~= ARGV[1] or record.status ~= 'pending' then return nil end
+record.status = ARGV[2]
+if ARGV[4] ~= '' then record.reason = ARGV[4] end
+local updated = cjson.encode(record)
+redis.call('SETEX', KEYS[1], tonumber(ARGV[5]), updated)
+redis.call('RPUSH', KEYS[2], ARGV[3])
+redis.call('EXPIRE', KEYS[2], tonumber(ARGV[5]))
+return updated
+"""
+
 
 class StudioApprovalService:
     """Studio 工具审批记录与决议等待（Redis 存储，跨进程安全）。"""
@@ -118,7 +132,9 @@ class StudioApprovalService:
         """
         key = _RESULT_KEY.format(approval_id=approval_id)
         # redis.asyncio 类型标注为 Awaitable[T] | T，async 客户端实际恒为 Awaitable
-        item = await cast(Awaitable[tuple[str, str] | None], get_redis().blpop([key], timeout=timeout))
+        item = await cast(
+            Awaitable[tuple[str, str] | None], get_redis().blpop([key], timeout=timeout)
+        )
         if item is None:
             return {"action": "timeout"}
         _, raw = item
@@ -144,29 +160,33 @@ class StudioApprovalService:
         返回更新后的记录；记录不存在、归属不符或已被消费（含超时落账）时返回 None。
         """
         redis = get_redis()
-        record_key = _RECORD_KEY.format(approval_id=approval_id)
-        record = await self.get(approval_id)
-        if record is None:
-            return None
-        if record.get("user_id") != str(user_id) or record.get("status") != "pending":
-            return None
-
-        record["status"] = action
-        if reason:
-            record["reason"] = reason
-        await redis.setex(
-            record_key, APPROVAL_TTL_SECONDS, json.dumps(record, ensure_ascii=False, default=str)
-        )
-
         resolution: dict[str, Any] = {"action": action}
         if modified_args is not None:
             resolution["modified_args"] = modified_args
         if reason:
             resolution["reason"] = reason
-        result_key = _RESULT_KEY.format(approval_id=approval_id)
-        await cast(Awaitable[int], redis.rpush(result_key, json.dumps(resolution, ensure_ascii=False, default=str)))
-        await redis.expire(result_key, APPROVAL_TTL_SECONDS)
-        return record
+        raw = await cast(
+            Awaitable[str | bytes | None],
+            redis.eval(
+                _RESOLVE_APPROVAL_LUA,
+                2,
+                _RECORD_KEY.format(approval_id=approval_id),
+                _RESULT_KEY.format(approval_id=approval_id),
+                str(user_id),
+                action,
+                json.dumps(resolution, ensure_ascii=False, default=str),
+                reason or "",
+                str(APPROVAL_TTL_SECONDS),
+            ),
+        )
+        if raw is None:
+            return None
+        try:
+            record = json.loads(raw)
+        except (TypeError, ValueError):
+            logger.warning("[Studio] 审批 {} 原子决议返回非法记录", approval_id)
+            return None
+        return record if isinstance(record, dict) else None
 
 
 _studio_approval_service: StudioApprovalService | None = None

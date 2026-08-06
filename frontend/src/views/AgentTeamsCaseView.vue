@@ -41,6 +41,8 @@ import {
 import { mergeAgentTeamsEvents, shouldPollAgentTeamsCase } from '@/utils/agentTeamsState'
 
 const POLLING_INTERVAL_MS = 20_000
+const SSE_RETRY_INITIAL_MS = 1_000
+const SSE_RETRY_MAX_MS = 30_000
 const message = useMessage()
 const route = useRoute()
 const router = useRouter()
@@ -52,6 +54,7 @@ const events = ref<AgentTeamsEvent[]>([])
 const eventCursor = ref<string | null>(null)
 const error = ref('')
 const pollingActive = ref(false)
+const eventStreamHealthy = ref(false)
 const lastSyncedAt = ref<Date | null>(null)
 const submitVisible = ref(false)
 const submitting = ref(false)
@@ -62,6 +65,8 @@ const submitForm = ref({
 const chatDrawer = ref<InstanceType<typeof AgentTeamsChatDrawer> | null>(null)
 let pollingTimer: ReturnType<typeof setInterval> | null = null
 let eventStreamAbort: AbortController | null = null
+let eventStreamRetryTimer: number | null = null
+let eventStreamFailures = 0
 
 const caseId = computed(() => String(route.params.caseId || ''))
 const phases: { key: AgentTeamsCaseStatus[]; label: string }[] = [
@@ -226,7 +231,7 @@ async function refresh(options: { background?: boolean; resetEvents?: boolean } 
 
 function syncIfVisible() {
   pollingActive.value = shouldPollAgentTeamsCase(document.visibilityState)
-  if (pollingActive.value) void refresh({ background: true })
+  if (pollingActive.value && !eventStreamHealthy.value) void refresh({ background: true })
 }
 
 function startPolling() {
@@ -246,6 +251,10 @@ function stopPolling() {
 function stopEventStream() {
   eventStreamAbort?.abort()
   eventStreamAbort = null
+  if (eventStreamRetryTimer) clearTimeout(eventStreamRetryTimer)
+  eventStreamRetryTimer = null
+  eventStreamHealthy.value = false
+  eventStreamFailures = 0
 }
 
 async function startEventStream() {
@@ -261,7 +270,9 @@ async function startEventStream() {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       signal: controller.signal,
     })
-    if (!response.ok || !response.body) return
+    if (!response.ok || !response.body) throw new Error(`SSE 请求失败（${response.status}）`)
+    eventStreamHealthy.value = true
+    eventStreamFailures = 0
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
@@ -291,7 +302,18 @@ async function startEventStream() {
   } finally {
     if (eventStreamAbort === controller) {
       eventStreamAbort = null
-      if (!controller.signal.aborted) window.setTimeout(() => void startEventStream(), 300)
+      eventStreamHealthy.value = false
+      if (!controller.signal.aborted) {
+        const delay = Math.min(
+          SSE_RETRY_MAX_MS,
+          SSE_RETRY_INITIAL_MS * 2 ** Math.min(eventStreamFailures, 5),
+        )
+        eventStreamFailures += 1
+        eventStreamRetryTimer = window.setTimeout(() => {
+          eventStreamRetryTimer = null
+          void startEventStream()
+        }, delay)
+      }
     }
   }
 }
@@ -376,7 +398,7 @@ onBeforeUnmount(() => {
           <NCard title="协作时间线" size="small">
             <template #header-extra>
               <span class="sync-status" :aria-live="syncing ? 'polite' : 'off'">
-                <NIcon><SyncOutline /></NIcon>{{ syncing ? '同步中' : pollingActive ? '每 20 秒刷新' : '后台暂停刷新' }}
+                <NIcon><SyncOutline /></NIcon>{{ syncing ? '同步中' : eventStreamHealthy ? '实时同步' : pollingActive ? '每 20 秒刷新' : '后台暂停刷新' }}
               </span>
             </template>
             <NTimeline v-if="events.length">

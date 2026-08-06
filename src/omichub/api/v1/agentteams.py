@@ -15,7 +15,10 @@ from omichub.application.services.agentteams_bridge_settings_service import (
     AgentTeamsBridgeSettingsService,
 )
 from omichub.application.services.agentteams_service import AgentTeamsService
+from omichub.application.services.flow_registry import get_flow_registry
+from omichub.application.services.project_service import ProjectService
 from omichub.core.config import get_settings
+from omichub.core.exceptions import BusinessError
 from omichub.infrastructure.database.repositories.user_repository import (
     SqlAlchemyUserRepository,
 )
@@ -23,27 +26,27 @@ from omichub.infrastructure.database.repositories.user_repository import (
 router = APIRouter()
 
 
-async def _attach_requester_usernames(db: DbSession, items: list[dict[str, Any]]) -> None:
-    """按 requester_ref 回填真实用户名（去重后逐个查询；列表通常只有当前用户，至多一次查询）。
+async def _attach_requester_user_display_info(db: DbSession, items: list[dict[str, Any]]) -> None:
+    """按 requester_ref 回填用户展示信息（去重后逐个查询；列表通常只有当前用户，至多一次查询）。
 
-    与 TaskService._attach_usernames 同一约定：前端不得直接展示裸 UUID（§33.2 ④）。
+    与 TaskService 的用户展示信息回填同一约定：前端不得直接展示裸 UUID（§33.2 ④）。
     """
     refs = {item.get("requester_ref") for item in items if item.get("requester_ref")}
     if not refs:
         return
     user_repo = SqlAlchemyUserRepository(db)
-    names: dict[str, str] = {}
+    users: dict[str, tuple[str, str | None]] = {}
     for ref in refs:
         try:
             user = await user_repo.get_by_id(UUID(ref))
         except ValueError:
             continue
         if user is not None:
-            names[ref] = user.username
+            users[ref] = (user.username, user.nickname)
     for item in items:
-        name = names.get(item.get("requester_ref") or "")
-        if name:
-            item["requester_username"] = name
+        user = users.get(item.get("requester_ref") or "")
+        if user:
+            item["requester_username"], item["requester_nickname"] = user
 
 
 async def get_agentteams_service(db: DbSession) -> AgentTeamsService:
@@ -65,6 +68,24 @@ class AgentTeamsCaseCreateRequest(BaseModel):
 
 class AgentTeamsCaseSubmitRequest(BaseModel):
     task_name: str = Field(min_length=1, max_length=128)
+
+
+def _is_chat_case_flow_allowed(flow_id: str) -> bool:
+    settings = get_settings()
+    configured = {
+        item.strip() for item in settings.agentteams_chat_flow_whitelist.split(",") if item.strip()
+    }
+    return flow_id in configured | get_flow_registry().bridge_flow_ids()
+
+
+async def _require_owned_project(db: DbSession, user_id: str, project_id: str) -> None:
+    """验证项目属于当前请求用户，避免直接 Case API 绕过受控聊天入口。"""
+    try:
+        owner_id = UUID(user_id)
+        owned_project_id = UUID(project_id)
+    except ValueError as exc:
+        raise BusinessError("项目 ID 无效") from exc
+    await ProjectService(db).get_project(owner_id, owned_project_id)
 
 
 @router.get("/status", summary="获取 AgentTeams Bridge 接入状态")
@@ -98,7 +119,7 @@ async def list_cases(
         cursor=cursor,
         limit=limit,
     )
-    await _attach_requester_usernames(db, result.get("items", []))
+    await _attach_requester_user_display_info(db, result.get("items", []))
     return result
 
 
@@ -107,7 +128,11 @@ async def create_case(
     request: AgentTeamsCaseCreateRequest,
     current_user_id: CurrentUserId,
     service: AgentTeamsServiceDep,
+    db: DbSession,
 ) -> dict[str, Any]:
+    if not _is_chat_case_flow_allowed(request.flow_id):
+        raise BusinessError("该流程不在 AgentTeams Case 白名单中")
+    await _require_owned_project(db, current_user_id, request.project_id)
     return await service.create_case(
         case_id=f"bioops_{uuid4().hex}",
         project_id=request.project_id,

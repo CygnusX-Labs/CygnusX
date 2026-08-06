@@ -694,7 +694,7 @@ class BlastService:
     ) -> BlastTaskListResponse:
         """分页返回当前用户的 BLAST 任务历史。"""
         stmt = (
-            select(BlastTaskModel, BlastDatabaseModel.name, UserModel.username)
+            select(BlastTaskModel, BlastDatabaseModel.name, UserModel.username, UserModel.nickname)
             .join(BlastDatabaseModel, BlastTaskModel.db_id == BlastDatabaseModel.id)
             .outerjoin(UserModel, BlastTaskModel.user_id == UserModel.id)
             .where(BlastTaskModel.user_id == uuid.UUID(user_id))
@@ -721,12 +721,13 @@ class BlastService:
         result = await db.execute(stmt)
 
         items: list[BlastTaskListItemDTO] = []
-        for task, db_name, username in result.all():
+        for task, db_name, username, nickname in result.all():
             items.append(
                 BlastTaskListItemDTO(
                     task_id=task.task_id,
                     user_id=str(task.user_id) if task.user_id else None,
                     username=username,
+                    nickname=nickname,
                     db_id=str(task.db_id),
                     db_name=db_name or "",
                     program=task.program,
@@ -754,7 +755,7 @@ class BlastService:
     ) -> BlastAdminTaskListResponse:
         """管理员查看全平台 BLAST 任务。"""
         stmt = (
-            select(BlastTaskModel, BlastDatabaseModel.name, UserModel.username)
+            select(BlastTaskModel, BlastDatabaseModel.name, UserModel.username, UserModel.nickname)
             .join(BlastDatabaseModel, BlastTaskModel.db_id == BlastDatabaseModel.id)
             .join(UserModel, BlastTaskModel.user_id == UserModel.id)
         )
@@ -774,12 +775,13 @@ class BlastService:
         result = await db.execute(stmt)
 
         items: list[BlastTaskListItemDTO] = []
-        for task, db_name, username in result.all():
+        for task, db_name, username, nickname in result.all():
             items.append(
                 BlastTaskListItemDTO(
                     task_id=task.task_id,
                     user_id=str(task.user_id) if task.user_id else None,
                     username=username,
+                    nickname=nickname,
                     db_id=str(task.db_id),
                     db_name=db_name or "",
                     program=task.program,

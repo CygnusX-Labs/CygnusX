@@ -84,7 +84,44 @@ OmicHub 是面向生物信息学任务、数据资产与 AI 工作流的科学�
 | 边框/轨道 | `--neutral-border` | `#E5E6EB` | `#2A3040`。 |
 | 悬停底色 | `--neutral-hover` | `#F2F3F8` | 使用深色主题的语义变量或半透明主色。 |
 
-### 3.3 间距、圆角、阴影与排版
+### 3.3 Dark Mode Surface System
+
+OmicHub 深色工作台使用五级 Surface 空间层级，替代“页面背景 + 卡片”的二级结构。所有深色页面、Dashboard、对话区域和浮层优先消费这些语义令牌，不在业务组件中重复写 hex 或 rgba 颜色。
+
+#### 3.3.1 五级 Surface
+
+| 层级 | 令牌 | 深色值 | 使用场景 | 约束 |
+| --- | --- | --- | --- | --- |
+| Surface Base | `--surface-base` | `#080B12` | `body`、页面背景、Dashboard 空白区域、主容器 | 禁止使用 `#000000` 作为页面底色。 |
+| Surface Card | `--surface-card` | `#121824` | 普通信息卡、快捷入口、统计卡、图表主体 | 使用低存在感边框，不添加明显阴影。 |
+| Surface Elevated | `--surface-elevated` | `#182033` | 系统状态、当前任务、AI 输出、图表标题区、重要信息 | 相比普通卡片更亮，可使用 `--border-default`。 |
+| Surface Highlight | `--surface-highlight` | `#202A40` | `hover`、`active`、`selected` 等短时交互状态 | 不用于大面积常驻背景。选中态优先使用 `--border-focus`。 |
+| Surface Glass | `--surface-glass` | `rgba(255,255,255,0.06)` | Header、Hero、Modal 等特殊结构区 | 搭配 `backdrop-filter: blur(16px)`；减少透明度时必须退化为不透明 Surface。 |
+
+#### 3.3.2 Border 与文字层级
+
+- `--border-subtle`（`rgba(255,255,255,0.06)`）用于普通卡片、分隔线和 Header 底边。
+- `--border-default`（`rgba(255,255,255,0.10)`）用于 hover 或高优先级卡片边界。
+- `--border-focus`（`rgba(108,99,255,0.45)`）用于焦点、选中和品牌交互状态。
+- 深色文字使用 `--text-primary: #F5F7FF`、`--text-secondary: #A7B0C3`、`--text-tertiary: #68738A`；不得让所有文字都使用纯白。
+- 滚动条使用 `--scrollbar-thumb`、`--scrollbar-thumb-hover`、`--scrollbar-thumb-active`，宽度固定为 `6px`，避免使用高对比亮色滚动条。
+
+#### 3.3.3 卡片 Elevation 与 Glow
+
+- 普通卡片消费 `--surface-card`，边框使用 `--border-subtle`，默认不使用明显阴影。
+- 重点卡片消费 `--surface-elevated`，边框可使用 `--border-default`；Dashboard 系统状态卡属于此类。
+- 卡片 hover 仅做 `translateY(-2px)` 与 Surface Highlight 提升，过渡时间使用 `220ms`，并在 `prefers-reduced-motion: reduce` 下关闭位移。
+- `--brand-glow: 0 0 40px rgba(99,102,241,0.15)` 仅允许用于 Hero、活动导航和主按钮等品牌关键区域。
+- 禁止给所有卡片统一添加 Glow；Glow 不能替代 Surface、Border 或文本状态表达。
+
+#### 3.3.4 Header、Dashboard 与浮层
+
+- Header 使用 `--surface-glass`、`backdrop-filter: blur(16px)` 和 `--border-subtle` 底边，保持轻量玻璃层，不堆叠重阴影。
+- Dashboard 页面背景使用 `--surface-base`；普通图表主体使用 `--surface-card`，图表标题区使用 `--surface-elevated`，系统运行状态卡使用 `--surface-elevated`。
+- Modal、Popover、Drawer 等浮层优先使用 `--surface-elevated`；普通卡片不能通过透明度“看穿”页面背景。
+- Surface 只改变色彩、边框、阴影和材质，不改变页面布局、导航结构、组件功能、文案或业务逻辑。
+
+### 3.4 间距、圆角、阴影与排版
 
 | 类别 | 规定 |
 | --- | --- |
@@ -417,6 +454,17 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 - [ ] 数据表格/卡片是否符合 §33.2：进度经归一化函数渲染、`NProgress` 百分比不换行（`.n-progress-graph{min-width:0}`）、**所有列固定 `width` 且 `scroll-x`=列宽之和**、短值列 `align:'center'`、卡片垂直间距 24px？
 - [ ] 进度/百分比/计数等派生数值是否在任何数据尺度下都正确（§33.2 进度尺度归一化），而非依赖单一写死约定？
 - [ ] 设计是否规避 §33.1 的「AI 默认」清单（纯白无氛围、三列等宽 hero、统一间距/圆角、通用无衬线、对称留白），在不破坏 §1 克制原则的前提下具备品牌辨识度与层次？
+
+### 10.1 Dark Mode Checklist
+
+- [ ] 页面是否存在明确的 `Surface Base → Card → Elevated → Highlight → Glass` 层级？
+- [ ] 普通卡片与重点卡片是否分别使用 `--surface-card` 与 `--surface-elevated`，并具有可感知但克制的视觉区别？
+- [ ] 是否避免使用纯黑背景 `#000000`？
+- [ ] 是否避免大面积 Glow，并只在 Hero、活动导航和主按钮等品牌关键区域使用 `--brand-glow`？
+- [ ] Header 是否使用轻微玻璃层、低存在感底边和减少透明度回退？
+- [ ] Border 是否按 `subtle / default / focus` 语义分级，而不是在业务组件中重复硬编码？
+- [ ] 滚动条是否为 `6px`，并使用低对比度 Surface 令牌？
+- [ ] Primary、Secondary、Tertiary 文本是否分别满足深色对比层级，且没有全部使用纯白？
 
 ## 11. 可复用 Skill 入口
 
@@ -1311,11 +1359,17 @@ function pct(value: number | null | undefined): number {
 - **短值/离散列居中**：所属用户、分析流程、数据库、Program、状态、操作等用列级 `align: 'center'`（naive-ui 会**同时居中对齐表头与表体**，不必再单独写表头 CSS）。
 - **进度列不要居中**：进度条 + 百分比是从左到右的组合单元，居中会在条左侧留下随宽度变化的空白，显得错位；进度列保持左对齐，只靠 ① 解决换行。
 
-**④ 真实数据，不展示裸 UUID/假数据。** 任何带"所属用户"列的表格，必须由后端回填真实 `username`，而非在前端展示 `user_id`（UUID）或用写死的 mock 行占位：
+**④ 用户展示名：昵称优先，用户名兜底；不展示裸 UUID/假数据。** 所有平台中表示用户的列表列、表格单元格、卡片标题、图表标签和导出内容，统一使用“昵称（`nickname`）优先；昵称为空、空白或未设置时使用用户名（`username`）”的规则。前端必须调用 `frontend/src/utils/displayName.ts` 的 `displayName({ nickname, username })`，不得在各页面复制 `nickname || username` 判断；`user_id`（UUID）仅可作为 API 缺失用户资料时的最后技术降级，不能作为设计预期或主展示文本。
 
-- 分析 `GET /api/v1/tasks` 的 `TaskResponse.username` 由 `TaskService.list_tasks` 经用户仓储按 `user_id` 回填（去重后查询，单用户列表只查一次）。
-- BLAST 列表 `BlastTaskListItemDTO.user_id` / `username`：`list_user_tasks` 用 `outerjoin UserModel` 取 username，`list_all_tasks` 复用其既有 `UserModel` join（不要丢弃已 select 的 username）。
-- 前端 `row.username || row.user_id` 仅作最后降级，**不是**设计预期。仪表板"最近任务"在迭代期曾用 mock 预览多用户混合，接口就绪后必须切回真实接口（按当前用户视角），空数据走 `NEmpty` 真实空态，不用假行填充。
+- **接口契约**：凡返回用户归属的 DTO 必须同时提供 `username` 与可空 `nickname`，包括分析任务、BLAST、工作流监控、终端会话、AgentTeams Case、饼干账户与交易流水等；后端按 `user_id` / `requester_ref` 批量或去重回填，不能要求前端额外以 UUID 反查用户资料。
+- **展示与审计分离**：用户列第一行、导出“用户”字段、当前用户名称等均用展示名；需要排查或执行管理操作时，用户名 / UUID 可作为明确标注的辅助信息或内部操作参数，不应拼接进主展示名。
+- **前端类型**：上述记录类型应保留 `username?: string | null` 与 `nickname?: string | null`，让共享工具在昵称为空白时稳定回退。无用户资料时的占位使用 `未知用户` / `-`，而不是 UUID。
+
+任何带"所属用户"列的表格，必须由后端回填真实用户资料，而非在前端展示 `user_id`（UUID）或用写死的 mock 行占位：
+
+- 分析 `GET /api/v1/tasks` 的 `TaskResponse.username` / `nickname` 由 `TaskService.list_tasks` 经用户仓储按 `user_id` 回填（去重后查询，单用户列表只查一次）。
+- BLAST 列表 `BlastTaskListItemDTO.user_id` / `username` / `nickname`：`list_user_tasks` 用 `outerjoin UserModel` 取两项资料，`list_all_tasks` 复用其既有 `UserModel` join（不要丢弃已 select 的昵称）。
+- 前端 `displayName(row) || row.user_id` 仅作最后技术降级，**不是**设计预期。仪表板"最近任务"在迭代期曾用 mock 预览多用户混合，接口就绪后必须切回真实接口（按当前用户视角），空数据走 `NEmpty` 真实空态，不用假行填充。
 - 操作列同理：查看/删除接真实接口（查看跳详情、删除走 `DELETE` 并局部刷新），后端未上线的能力（如"重新运行"）按终态 `disabled` + Tooltip"即将上线"诚实表达，**不要**用 `message.info('对接中')` 之类的假 toast 冒充可用。
 
 **⑤ 卡片垂直节奏统一为 24px。** 仪表盘各区块（概览网格 / 快速开始 / 监控面板 / 最近任务 / 最近 BLAST）每个根 section 自带 `margin-bottom: 24px`，构成统一的 24px 垂直节奏。新增卡片 section 必须同样带 `margin-bottom: 24px`，**不要**让相邻卡片间距塌缩为 0（只写 `overflow:hidden` 而漏掉外边距是常见错误，会导致两张卡片贴在一起、与其它卡片间距不一致）。
@@ -1345,9 +1399,9 @@ const columns: DataTableColumns<Task> = [
 **⑧ 主标识列与用户列：双行单元格（标题/名称在上，等宽 ID 在下）。** 列表的主标识列（Case、会话、资源名）和用户列统一采用"双行单元格"结构，权威实现：`frontend/src/views/AdminSessionLogsView.vue`（会话排查列表）、`frontend/src/components/task/AgentTeamsCasesPanel.vue`（任务中心 AgentTeams 协作 tab）。
 
 - **结构**：单元格为纵向 flex（`gap: 2–3px`）；第一行是主文本（标题/名称/用户名），第二行是等宽字体（`var(--font-mono, ui-monospace, …)`）的辅助 ID（UUID / session_id / case_id），颜色 `--neutral-text-3`、字号 `12px`。
-- **主文本层级**：可跳转的主标识列第一行用 `14px / 600 / --neutral-text-1`，整格作为链接但**不渲染成整行蓝色链接**——保持正文色，hover 才变 `--arco-primary`；用户列第一行用 `13px / 500 / --neutral-text-1`。
+- **主文本层级**：可跳转的主标识列第一行用 `14px / 600 / --neutral-text-1`，整格作为链接但**不渲染成整行蓝色链接**——保持正文色，hover 才变 `--arco-primary`；用户列第一行用 `13px / 500 / --neutral-text-1`，并展示 `displayName({ nickname, username })` 的结果。
 - **溢出**：两行都必须 `text-overflow: ellipsis + white-space: nowrap`，ID 行带 `title` 悬浮查看完整值；需要复制 ID 时按 AdminSessionLogsView 的做法附加 quaternary 小按钮。
-- **用户列数据契约**：用户名必须由**后端按 user_id / requester_ref 回填真实 username**（如 `TaskService._attach_usernames`、`/api/v1/agent-teams/cases` 的 `_attach_requester_usernames`，去重后逐查询），前端 `username || '未知用户'` 仅作降级，不得把裸 UUID 当作设计预期（与 ④ 同一纪律）。
+- **用户列数据契约**：后端必须按 `user_id` / `requester_ref` 回填真实 `username` 与 `nickname`（如 `TaskService._attach_user_display_info`、`/api/v1/agent-teams/cases` 的 `_attach_requester_user_display_info`，去重后逐查询）；前端 `displayName({ nickname, username }) || '未知用户'` 仅作展示降级，不得把裸 UUID 当作设计预期（与 ④ 同一纪律）。
 - 双行单元格仍遵守 ③：该列给一个克制的固定 `width`，不计入弹性列。
 
 ### 33.3 验收清单（在 §10 通用清单之上补充）
@@ -1356,12 +1410,12 @@ const columns: DataTableColumns<Task> = [
 - [ ] `renderTaskProgress()` 是否关闭 `NProgress` 内置指示器，并由 `.recent-task-progress`、`.n-progress` 与 `.recent-task-progress__value` 的 flex/固定宽度组合保证百分比单行显示？
 - [ ] 数据表格是否**所有列固定 `width`、无弹性列**，且 `scroll-x` 等于列宽之和；长文本列有 `ellipsis` + Tooltip？
 - [ ] 短值/离散列是否 `align:'center'`（表头+表体一致），进度列是否保持左对齐？
-- [ ] 带"所属用户"的表格是否展示真实 `username`（后端回填），而非 UUID 或 mock；空数据是否走真实 `NEmpty`？
+- [ ] 带"所属用户"的表格、图表标签和导出是否经 `displayName()` 展示昵称优先、用户名兜底的真实用户资料（后端回填 `username` + `nickname`），而非 UUID 或 mock；空数据是否走真实 `NEmpty`？
 - [ ] 操作列是否接真实接口；未上线能力是否诚实 `disabled` + Tooltip，无假 toast？
 - [ ] 仪表盘卡片 section 是否都带 `margin-bottom: 24px`，相邻卡片间距与其它卡片一致？
 - [ ] “最近任务”与“最近 BLAST 任务”是否都附加 `.recent-table-surface`，在选中和未选中状态下均保持不透明表格表面与清晰边界？
 - [ ] 卡片内 `NDataTable` 是否依赖全局“卡片内数据表格”规则获得主题表面，而没有通过局部 `rgba()`、`opacity` 或硬编码白色破坏明暗主题？
-- [ ] 主标识列 / 用户列是否采用 §33.2 ⑧ 的双行单元格（标题 + 等宽 ID；用户名 + UUID），且用户名由后端回填真实值？
+- [ ] 主标识列 / 用户列是否采用 §33.2 ⑧ 的双行单元格（标题 + 等宽 ID；展示名 + UUID），且用户资料由后端回填真实 `username` + `nickname`？
 - [ ] 设计是否规避 §33.1 的"AI 默认"清单，在不破坏 §1 克制与可访问性的前提下具备品牌层次与辨识度？
 
 ## 34. 知识库阅读页三要素冻结规范（卡片 / 侧栏 / 大纲）

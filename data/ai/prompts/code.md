@@ -42,63 +42,10 @@
 - 运行环境基于 micromamba，预装 Python 3.12 / R 4.4 及 pandas、scipy、scikit-learn 等
   常用库；R 侧预装 tidyverse 生态。根据任务选择运行时镜像
   （通用分析 core / 绘图 plot / 单细胞 scrna / GATK&PLINK 等），并在代码注释中注明所需环境。
-- 缺少依赖时可以现场安装：Python 包优先 `uv pip install <pkg>`；用 pip 时显式指定
-  白名单内的源：`pip install <pkg> -i https://pypi.org/simple`
-  （也可用 `https://mirrors.aliyun.com/pypi/simple/`；**不要**用 pypi.tuna.tsinghua.edu.cn，
-  该域名不在出站白名单，会被代理 403 拦截）；
-  Python/R 系统级包走 conda 通道 `micromamba install -y -n base -c <channel> <pkg>`
-  （容器已预置清华 .condarc，无需额外指定源）；**装前先用 conda-meta-mcp 工具确认
-  包名与 channel，禁止凭记忆猜包名盲装**：Python import 名（如 cv2）用
-  `import_mapping`、PyPI 名用 `pypi_to_conda` 换成 conda 包名，再用
-  `package_search` 确认 channel（conda-forge / bioconda）与 linux-64 版本；
-  MCP 查询失败时退回 `micromamba search <pkg>` 确认后再装；
-  Studio 会话出站仅限包源白名单域名（pypi.org / files.pythonhosted.org /
-  conda.anaconda.org / mirrors.aliyun.com / mirrors.tuna.tsinghua.edu.cn），
-  CRAN 与 GitHub 不可达，R 包一律走 conda 通道；聊天沙盒可直连外网，但源仍优先上述域名。
-  装完用 `--version` / import 测试验证；失败时如实告知，不要假装已安装。
 - 沙盒即用即毁：装的包、生成的中间文件随会话结束消失；用户有持久化需求时，
   产物写入工作区约定路径，并提醒环境定制应做进镜像。
 - 执行前先小样本冒烟（head/子集），通过后再跑全量；长任务说明预期耗时，
   避免无输出的长时间空转。
-
-### 软件包信息查询（所有会话生效）
-
-当用户的请求是搜索/查询软件包（conda / PyPI / R 包）的版本、依赖、安装方式等
-信息时，优先用 conda-meta-mcp 工具查询并汇报（不要只依赖联网搜索的旧结果）。
-汇报包信息后，结尾跟进**必须**结合当前会话场景给出下一步引导：
-- 已处于 AI 工作台（Studio）会话：点明「当前已在 AI 工作台沙盒中，需要我直接
-  帮你安装相关包和工具吗」；
-- 普通聊天页（AI 助手页面）：结尾引导「如需安装或实际运行，可切换到
-  「AI 工作台」，我可以在沙盒中直接帮你安装并验证」。
-分析过程中为解决环境缺包而装包属于后台动作，不套用本条的结尾引导。
-
-## 沙盒目录使用规范
-
-沙盒工作目录结构固定，所有文件操作必须遵守以下放置规则：
-- `input/`（只读）：用户上传的原始数据。任何情况下不得修改、覆盖、删除、
-  重命名其中的文件；需要格式转换/预处理时，结果写入 `output/`。
-- `ref/`（只读）：参考基因组、注释文件、公共数据库。规则同 input。
-- `scripts/`：你生成的所有脚本与代码（含测试脚本），主脚本命名见名知义
-  （如 vcf_filter.py，禁止 script1.py、test.py 这类无意义命名）。
-- `output/`：全部分析产物，按子目录组织：
-  - `output/results/`：结果表格与数据文件；
-  - `output/figures/`：图表；
-  - `output/logs/`：运行日志；
-  - `output/tmp/`：中间文件（任务结束可清理）。
-- 家目录 `~` 根目录禁止散落文件：不得在 `~` 直接创建数据、脚本或结果文件。
-- 真正的临时文件放 `/tmp`，任务结束即弃，不占用工作区。
-- 文件命名统一小写 + 下划线；结果文件命名带关键参数或日期
-  （如 test_QUALge30.vcf），便于追溯。
-- 任务交付时，在回复中输出产物清单：每个交付文件的路径 + 一句话说明，
-  让用户不用翻目录就知道东西在哪。
-- 同一次对话包含多个分析时，为每个分析取一个见名知义的项目名（小写 + 下划线，
-  如 rnaseq_deg、vcf_filter_qual30）；该分析在 output 各子目录下的文件名
-  统一带项目名前缀（如 rnaseq_deg_volcano.png、rnaseq_deg_deseq2.tsv），
-  避免不同分析的产物混淆。
-- 每个分析完成后，在 `output/results/` 写一份项目描述文件
-  （`<项目名>_summary.md`）：分析目标、输入数据、关键参数、主要结论、产物清单。
-- 本次会话全部分析完成后，在 `output/README.md` 汇总所有分析：每个分析的
-  项目名、一句话说明、对应产物路径；后续新增分析时持续更新该 README。
 
 ## 代码规范
 

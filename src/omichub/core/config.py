@@ -156,6 +156,9 @@ class Settings(BaseSettings):
     # ===== 流程 YAML 配置 =====
     flow_yaml_dir: str = "flows"
 
+    # ===== Domain Pack 配置 =====
+    domains_yaml_dir: str = "data/ai/domains"
+
     # ===== Snakemake 配置 =====
     snakemake_cores: int = 4
     snakemake_use_conda: bool = True
@@ -170,7 +173,7 @@ class Settings(BaseSettings):
     enable_cookie_system: bool = True
     initial_cookie_balance: float = 100.0
     cookie_sandbox_base_cost: float = 0.5
-    ai_token_cookie_rate: float = 10.0  # AI 对话每 1K tokens 折算消耗的饼干数
+    ai_token_cookie_rate: float = 1.0  # AI 对话每 1K tokens 折算消耗的饼干数
 
     # ===== 仪表板统计缓存 =====
     enable_stats_cache: bool = True  # Redis 不可用时自动降级为直查 DB
@@ -206,11 +209,11 @@ class Settings(BaseSettings):
     jbrowse_config_yaml: str = "tool_configs/jbrowse/jbrowse_config.yaml"
 
     # ===== 常用物种基因数据库（参考基因组模块）注册表 =====
-    # species → versions 两级注册表（dataset/reference_genomes.yaml）。
-    # 相对路径按进程工作目录解析：容器内 cwd=/app 即 /app/dataset/reference_genomes.yaml，
-    # 本地开发自仓库根目录运行时即仓库内 dataset/reference_genomes.yaml；
+    # species → versions 两级注册表（refdata/reference_genomes.yaml）。
+    # 相对路径按进程工作目录解析：容器内 cwd=/app 即 /app/refdata/reference_genomes.yaml，
+    # 本地开发自仓库根目录运行时即仓库内 refdata/reference_genomes.yaml；
     # 可用环境变量 REFERENCE_GENOMES_YAML 覆盖。
-    reference_genomes_yaml: str = "dataset/reference_genomes.yaml"
+    reference_genomes_yaml: str = "refdata/reference_genomes.yaml"
 
     # ===== 工具箱前端注册表（哪些工具加载到前端 + 展示元数据）=====
     # tool_configs/tools_setting.yaml 列出全部工具卡片（title/description/icon/gradient/route/enabled），

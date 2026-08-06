@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import re
 import shutil
@@ -34,6 +35,7 @@ from omichub.infrastructure.database.models.chat import ChatSessionModel
 from omichub.infrastructure.database.models.file import FileRecordModel
 from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
 from omichub.infrastructure.database.models.task import TaskModel
+from omichub.infrastructure.database.session import get_session_factory
 from omichub.infrastructure.storage import get_path_factory
 from omichub.infrastructure.studio.manager import studio_sandbox_manager
 from omichub.infrastructure.studio.paths import PathEscapeError
@@ -100,9 +102,7 @@ def report_file_mount_rel(file_path: str, user_id: str) -> str | None:
         return None
 
 
-def link_report_files(
-    report: ReportModel, workspace: Path, user_id: str
-) -> list[dict[str, Any]]:
+def link_report_files(report: ReportModel, workspace: Path, user_id: str) -> list[dict[str, Any]]:
     """把报告全部产物文件软链进 workspace/input/。
 
     返回 [{name, sandbox_path, role, size}]；磁盘上已丢失或路径越权的文件跳过。
@@ -362,19 +362,6 @@ async def register_artifact_report(
     if not target.is_file():
         raise NotFoundError(f"产物不存在: {path}")
 
-    # 版本树：父报告来自会话 context_pack；父报告已删除/不属于本人时退化为 v1
-    parent: ReportModel | None = None
-    pack = (session.sandbox_meta or {}).get("context_pack") or {}
-    parent_id_raw = (pack.get("source") or {}).get("report_id")
-    if parent_id_raw:
-        try:
-            candidate = await db.get(ReportModel, UUID(str(parent_id_raw)))
-        except ValueError:
-            candidate = None
-        if candidate is not None and str(candidate.user_id) == str(user_id):
-            parent = candidate
-    version = (parent.version or 1) + 1 if parent is not None else 1
-
     project_name = session.title.strip()
     if not project_name or project_name == "新对话":
         raise BusinessError("请先将 Studio 会话标题设置为项目名称，再登记分析产物")
@@ -382,46 +369,72 @@ async def register_artifact_report(
     run_dir = path_factory.create_project_run_dir(user_id, project_name, "studio")
     dest_dir = run_dir / "output"
     relative_run_dir = run_dir.relative_to(path_factory.user_root(user_id)).as_posix()
-    await ensure_directory_chain(db, UUID(str(user_id)), relative_run_dir)
-    dest = dest_dir / target.name
-    n = 1
-    while dest.exists():
-        n += 1
-        dest = dest_dir / f"{target.stem} ({n}){target.suffix}"
-    await asyncio.to_thread(shutil.copy2, target, dest)
 
-    now = datetime.now()
-    report = ReportModel(
-        id=uuid.uuid4(),
-        # Studio 会话不是任务中心任务：task_id 用随机哨兵值，避免与真实任务混淆
-        task_id=uuid.uuid4(),
-        user_id=UUID(str(user_id)),
-        flow_id=STUDIO_FLOW_ID,
-        flow_name=STUDIO_FLOW_NAME,
-        flow_version="",
-        flow_icon=STUDIO_FLOW_ICON,
-        title=title.strip()[:200],
-        description=(description or "")[:2000] if description else "",
-        status="completed",
-        sample_count=0,
-        duration=0,
-        created_at=now,
-        completed_at=now,
-        parent_id=parent.id if parent is not None else None,
-        version=version,
-    )
-    db.add(report)
-    await db.flush()
+    async def persist(anchor_db: AsyncSession) -> tuple[ReportModel, ReportFileModel]:
+        # 版本树：父报告来自会话 context_pack；父报告已删除/不属于本人时退化为 v1
+        parent: ReportModel | None = None
+        pack = (session.sandbox_meta or {}).get("context_pack") or {}
+        parent_id_raw = (pack.get("source") or {}).get("report_id")
+        if parent_id_raw:
+            try:
+                candidate = await anchor_db.get(ReportModel, UUID(str(parent_id_raw)))
+            except ValueError:
+                candidate = None
+            if candidate is not None and str(candidate.user_id) == str(user_id):
+                parent = candidate
+        version = (parent.version or 1) + 1 if parent is not None else 1
 
-    file_model = ReportFileModel(
-        id=uuid.uuid4(),
-        report_id=report.id,
-        name=dest.name,
-        type=(artifact_type or _infer_artifact_type(dest.name))[:20],
-        size=dest.stat().st_size,
-        path=str(dest),
-        is_primary=True,
-    )
-    db.add(file_model)
-    await db.flush()
-    return report, file_model
+        await ensure_directory_chain(anchor_db, UUID(str(user_id)), relative_run_dir)
+        dest = dest_dir / target.name
+        n = 1
+        while dest.exists():
+            n += 1
+            dest = dest_dir / f"{target.stem} ({n}){target.suffix}"
+        await asyncio.to_thread(shutil.copy2, target, dest)
+
+        now = datetime.now()
+        report = ReportModel(
+            id=uuid.uuid4(),
+            # Studio 会话不是任务中心任务：task_id 用随机哨兵值，避免与真实任务混淆
+            task_id=uuid.uuid4(),
+            user_id=UUID(str(user_id)),
+            flow_id=STUDIO_FLOW_ID,
+            flow_name=STUDIO_FLOW_NAME,
+            flow_version="",
+            flow_icon=STUDIO_FLOW_ICON,
+            title=title.strip()[:200],
+            description=(description or "")[:2000] if description else "",
+            status="completed",
+            sample_count=0,
+            duration=0,
+            created_at=now,
+            completed_at=now,
+            parent_id=parent.id if parent is not None else None,
+            version=version,
+        )
+        try:
+            anchor_db.add(report)
+            await anchor_db.flush()
+
+            file_model = ReportFileModel(
+                id=uuid.uuid4(),
+                report_id=report.id,
+                name=dest.name,
+                type=(artifact_type or _infer_artifact_type(dest.name))[:20],
+                size=dest.stat().st_size,
+                path=str(dest),
+                is_primary=True,
+            )
+            anchor_db.add(file_model)
+            await anchor_db.flush()
+            await anchor_db.commit()
+        except Exception:
+            with contextlib.suppress(OSError):
+                dest.unlink()
+            raise
+        return report, file_model
+
+    if not isinstance(db, AsyncSession):
+        return await persist(db)
+    async with get_session_factory()() as anchor_db:
+        return await persist(anchor_db)

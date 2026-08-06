@@ -80,8 +80,12 @@ async function handleApprove(item: PendingApprovalItem) {
   try {
     await store.approveToolCall(item.approvalId)
     message.success('已批准，开始执行')
-  } catch {
-    message.error('批准失败，审批可能已超时，请重试')
+  } catch (error) {
+    message.error(
+      error instanceof Error && error.message === 'APPROVAL_STREAM_INACTIVE'
+        ? '该审批所属执行流已结束，请重新发送任务后再操作'
+        : '批准失败，审批可能已超时，请重试',
+    )
   } finally {
     submittingId.value = ''
   }

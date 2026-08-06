@@ -4,6 +4,9 @@ import DOMPurify from 'dompurify'
 import { NButton, NIcon, NTag, NDataTable } from 'naive-ui'
 import {
   DocumentOutline,
+  ThumbsUpOutline,
+  ThumbsDownOutline,
+  CopyOutline,
 } from '@vicons/ionicons5'
 import { Vue3Lottie } from 'vue3-lottie'
 import { useRouter } from 'vue-router'
@@ -17,9 +20,13 @@ import TaskProgressCard from './TaskProgressCard.vue'
 import PipelineTaskCard from './PipelineTaskCard.vue'
 import ExpertConsultationCard from './ExpertConsultationCard.vue'
 import CollaborationRouteNotice from './CollaborationRouteNotice.vue'
+import RouteTransitionCard from './RouteTransitionCard.vue'
+import MessageArtifactGallery from './MessageArtifactGallery.vue'
 import AgentTeamsCaseCard from './AgentTeamsCaseCard.vue'
 import ChartPreviewModal from './ChartPreviewModal.vue'
 import AskUserCard from './AskUserCard.vue'
+import OverdriveApprovalCard from './OverdriveApprovalCard.vue'
+import OverdriveProgressCard from './OverdriveProgressCard.vue'
 import ToolCallEntry from './ToolCallEntry.vue'
 import SkillInvocationCardView from './SkillInvocationCard.vue'
 import { useAgentHubStore } from '@/stores/agentHub'
@@ -48,6 +55,7 @@ interface Props {
   /** Agent 主题色 */
   agentColor?: string
   modelName?: string
+  sessionId?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -60,6 +68,7 @@ const props = withDefaults(defineProps<Props>(), {
   agentAvatar: '🤖',
   agentColor: '#4f8ef7',
   modelName: 'AI 助手',
+  sessionId: '',
 })
 
 const emit = defineEmits<{
@@ -81,6 +90,7 @@ const router = useRouter()
 const hovered = ref(false)
 const lottieRef = ref<InstanceType<typeof Vue3Lottie> | null>(null)
 const thoughtExpanded = ref(false)
+const workerExpanded = ref(false)
 const plotlyContainers = ref<Record<string, HTMLDivElement | null>>({})
 const plotlyRenderError = ref<string>('')
 
@@ -158,6 +168,15 @@ async function renderPlotlyCharts() {
 }
 
 watch(() => [props.message.toolCalls, props.message.charts], renderPlotlyCharts, { deep: true })
+watch(
+  () => props.message.id,
+  () => {
+    workerExpanded.value = false
+  },
+)
+watch(workerExpanded, (expanded) => {
+  if (expanded) void nextTick(renderPlotlyCharts)
+})
 
 // 表格数据（取第一个含 table_data 的 tool result）
 const tableData = computed(() => {
@@ -197,6 +216,19 @@ const isRoomStreaming = computed(() =>
   !props.isStreaming && !!props.message.senderAgent && props.message.status === 'streaming',
 )
 const streamingActive = computed(() => props.isStreaming || isRoomStreaming.value)
+const isWorkerSpeech = computed(() => props.message.senderAgent?.role === 'worker')
+const isWorkerCollapsed = computed(() =>
+  isWorkerSpeech.value && !workerExpanded.value,
+)
+const workerPreview = computed(() => {
+  const plain = (props.message.overdriveSummary || displayContent.value)
+    .replace(/```[\s\S]*?```/g, ' [代码块] ')
+    .replace(/[#>*_`|\[\]()~-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!plain) return '该专家已完成本阶段任务。'
+  return plain.length > 140 ? `${plain.slice(0, 140)}…` : plain
+})
 
 const streamingHasContent = computed(() => displayContent.value.length > 0)
 
@@ -283,6 +315,7 @@ const isEmptyWithThought = computed(() =>
   && !props.message.charts?.length
   && !props.message.agentTeamsCases?.length
   && !props.message.askRequest
+  && !props.message.routedAgent?.transition?.visible
   && !isError.value,
 )
 
@@ -294,6 +327,7 @@ const isEmpty = computed(() =>
   && !props.message.charts?.length
   && !props.message.agentTeamsCases?.length
   && !props.message.askRequest
+  && !props.message.routedAgent?.transition?.visible
   && !isError.value,
 )
 
@@ -546,7 +580,8 @@ const hasBodyContent = computed(() =>
   || (props.message.charts?.length ?? 0) > 0
   || !!tableData.value
   || (props.message.consultation?.experts.length ?? 0) > 0
-  || webSources.value.length > 0,
+  || webSources.value.length > 0
+  || !!props.message.routedAgent?.transition?.visible,
 )
 
 let copyBtnTimer: ReturnType<typeof setTimeout> | null = null
@@ -771,6 +806,10 @@ function handleEdit() {
 
       <!-- 正常内容区 -->
       <template v-else>
+        <RouteTransitionCard
+          v-if="message.routedAgent?.transition?.visible"
+          :route="message.routedAgent"
+        />
         <CollaborationRouteNotice
           v-if="message.collaborationRoute"
           :route="message.collaborationRoute"
@@ -813,7 +852,38 @@ function handleEdit() {
         <!-- 内容气泡（常驻元素，不套外层 transition：流式→done 切换时与相邻加载态
              同帧 enter/leave 曾触发 Vue parentNode null 补丁崩溃，导致正文/tokens
              刷新前不渲染）。 -->
-        <div v-if="streamingActive ? streamingHasContent : hasBodyContent" class="message-content ai-card" :class="{ 'streaming-active': streamingActive }">
+        <div
+          v-if="streamingActive ? streamingHasContent : hasBodyContent"
+          class="message-content ai-card"
+          :class="{
+            'streaming-active': streamingActive,
+            'worker-result-card': isWorkerSpeech,
+            'is-collapsed': isWorkerCollapsed,
+          }"
+        >
+          <button
+            v-if="isWorkerSpeech"
+            type="button"
+            class="worker-result-toggle"
+            :aria-expanded="workerExpanded"
+            @click="workerExpanded = !workerExpanded"
+          >
+            <span class="worker-result-toggle__meta">
+              <span class="worker-result-toggle__label">
+                {{ streamingActive ? '专家正在生成' : '专家阶段产物' }}
+              </span>
+              <span v-if="message.senderAgent?.round" class="worker-result-toggle__round">
+                第 {{ message.senderAgent.round }} 阶段
+              </span>
+              <span class="worker-result-toggle__count">{{ message.content.length }} 字</span>
+            </span>
+            <span class="worker-result-toggle__action">
+              {{ workerExpanded ? '收起内容' : '展开查看' }}
+              <span class="worker-result-toggle__chevron" :class="{ 'is-expanded': workerExpanded }" aria-hidden="true">⌄</span>
+            </span>
+          </button>
+          <p v-if="isWorkerCollapsed" class="worker-result-preview">{{ workerPreview }}</p>
+          <template v-else>
           <!-- 交错时间线：正文与工具调用按实际发生顺序渲染（内容→工具→内容），
                最终结论永远在最底部，不用翻回顶部看结果 -->
           <template v-if="timelineView.length">
@@ -889,6 +959,8 @@ function handleEdit() {
             />
           </div>
 
+          <MessageArtifactGallery :session-id="sessionId" :tools="message.toolCalls" />
+
           <ExpertConsultationCard
             v-if="message.consultation?.experts.length"
             :experts="message.consultation.experts"
@@ -948,6 +1020,7 @@ function handleEdit() {
               <span class="stream-dots" aria-hidden="true"><i /><i /><i /></span>
             </span>
           </transition>
+          </template>
         </div>
 
         <!-- Studio ask_user 澄清卡片：分页交互收集（选项/自由输入/跳过），回答后折叠为工具卡片样式 -->
@@ -956,7 +1029,47 @@ function handleEdit() {
           :ask="message.askRequest"
           @submit="handleAskSubmit"
         />
+        <OverdriveApprovalCard
+          v-if="message.overdriveApproval"
+          :approval="message.overdriveApproval"
+        />
       </template>
+
+      <!-- AI 回复操作栏：点赞 / 点踩 / 复制（完成且非错误/空态时展示） -->
+      <div
+        v-if="!streamingActive && !isError && !isEmpty && !isEmptyWithThought"
+        class="assistant-feedback-bar"
+      >
+        <button
+          type="button"
+          class="feedback-btn"
+          :class="{ active: message.feedback === 'like' }"
+          title="回答有帮助"
+          aria-label="点赞该回复"
+          @click="emit('feedback', message.id, 'like')"
+        >
+          <NIcon :component="ThumbsUpOutline" size="15" />
+        </button>
+        <button
+          type="button"
+          class="feedback-btn"
+          :class="{ active: message.feedback === 'dislike' }"
+          title="回答需改进"
+          aria-label="点踩该回复"
+          @click="emit('feedback', message.id, 'dislike')"
+        >
+          <NIcon :component="ThumbsDownOutline" size="15" />
+        </button>
+        <button
+          type="button"
+          class="feedback-btn"
+          title="复制回复"
+          aria-label="复制该回复"
+          @click="handleCopy('markdown')"
+        >
+          <NIcon :component="CopyOutline" size="15" />
+        </button>
+      </div>
 
       <!-- 错误/空内容态下直接显示操作栏 -->
       <MessageActionBar
@@ -974,7 +1087,8 @@ function handleEdit() {
     </template>
 
     <template v-else-if="message.role === 'system'">
-      <div class="system-message" role="status" aria-live="polite">
+      <OverdriveProgressCard v-if="message.overdriveProgress" :progress="message.overdriveProgress" />
+      <div v-else class="system-message" role="status" aria-live="polite">
         <span>{{ message.content }}</span>
         <a v-if="systemCase?.case_url" :href="systemCase.case_url">查看协作</a>
       </div>
@@ -987,10 +1101,39 @@ function handleEdit() {
 <style scoped lang="scss">
 .kimi-message-item {
   padding: 20px 24px;
-  transition: background 0.2s ease;
 }
-.kimi-message-item:hover {
-  background: rgba(0, 0, 0, 0.01);
+
+/* AI 回复操作栏：点赞 / 点踩 / 复制 */
+.assistant-feedback-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+
+  .feedback-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    color: var(--text-tertiary, #9aa3b2);
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease;
+
+    &:hover {
+      color: var(--chat-accent, #4f8ef7);
+      background: rgba(79, 142, 247, 0.08);
+    }
+
+    &.active {
+      color: var(--chat-accent, #4f8ef7);
+      background: rgba(79, 142, 247, 0.12);
+    }
+  }
 }
 
 /* 头部：身份 + 元信息 */
@@ -1172,19 +1315,96 @@ function handleEdit() {
   background: var(--chat-ai-card, #ffffff);
   border: 1px solid var(--bubble-border, var(--chat-border, #e5e7eb));
   border-radius: var(--card-radius, 12px);
-  box-shadow: var(--card-shadow, 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.04));
+  box-shadow: none;
   font-size: 14px;
   line-height: 1.8;
   color: var(--chat-text-primary, #1a1a1a);
   transition: box-shadow 0.3s ease, border-color 0.3s ease;
 }
 .kimi-message-item.assistant .message-content.ai-card.streaming-active {
-  border-color: rgba(99, 102, 241, 0.45);
-  box-shadow:
-    0 0 0 1px rgba(99, 102, 241, 0.12),
-    0 0 20px rgba(168, 85, 247, 0.12),
-    0 0 40px rgba(99, 102, 241, 0.08);
-  animation: stream-breathe 2.4s ease-in-out infinite;
+  border-color: color-mix(in srgb, var(--chat-accent, #6366f1) 42%, transparent);
+  box-shadow: none;
+}
+
+.worker-result-card {
+  padding-top: 12px !important;
+}
+
+.worker-result-card.is-collapsed {
+  background: color-mix(in srgb, var(--chat-ai-card, #fff) 92%, var(--chat-accent, #6366f1));
+}
+
+.worker-result-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0;
+  padding: 2px 0 10px;
+  color: var(--chat-text-primary, #1a1a1a);
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--bubble-border, var(--chat-border, #e5e7eb));
+  cursor: pointer;
+}
+
+.worker-result-toggle:focus-visible {
+  outline: 2px solid var(--chat-accent, #6366f1);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+
+.worker-result-toggle__meta,
+.worker-result-toggle__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.worker-result-toggle__label {
+  font-weight: 650;
+}
+
+.worker-result-toggle__round,
+.worker-result-toggle__count {
+  color: var(--chat-text-tertiary, #7b8494);
+  font-size: 12px;
+}
+
+.worker-result-toggle__action {
+  flex: none;
+  color: var(--chat-accent, #6366f1);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.worker-result-toggle__chevron {
+  display: inline-block;
+  transition: transform 160ms ease;
+}
+
+.worker-result-toggle__chevron.is-expanded {
+  transform: rotate(180deg);
+}
+
+.worker-result-preview {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 12px 0 0;
+  color: var(--chat-text-secondary, #555);
+  font-size: 13px;
+  line-height: 1.65;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .worker-result-toggle__chevron {
+    transition: none;
+  }
 }
 
 @keyframes stream-breathe {
@@ -1686,9 +1906,9 @@ function handleEdit() {
 }
 
 .kimi-message-item.assistant .message-content.ai-card {
-  border: 1px solid rgba(46, 91, 255, 0.06);
+  border: 1px solid var(--bubble-border, var(--chat-border, #e5e7eb));
   border-radius: var(--radius-card, 12px);
-  box-shadow: var(--stardust-card-shadow);
+  box-shadow: none;
   line-height: 1.75;
 }
 

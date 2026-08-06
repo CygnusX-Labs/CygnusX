@@ -31,13 +31,17 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 from loguru import logger
-from sqlalchemy import or_, select
+from sqlalchemy import Boolean, false, func, literal, or_, select
 
 from omichub.api.deps import CurrentUserId, DbSession
 from omichub.core.config import get_settings
 from omichub.core.logging import _resolve_log_dir
 from omichub.core.span_store import build_trace_tree, read_spans
-from omichub.infrastructure.database.models.chat import ChatSessionModel
+from omichub.infrastructure.database.models.chat import (
+    ChatMessageFeedbackModel,
+    ChatMessageModel,
+    ChatSessionModel,
+)
 from omichub.middleware.rbac import AdminRequired
 
 router = APIRouter()
@@ -61,6 +65,99 @@ _SQL_VERBS = {
     "SELECT", "INSERT", "UPDATE", "DELETE", "WITH", "BEGIN", "COMMIT",
     "ROLLBACK", "CREATE", "ALTER", "DROP", "PRAGMA", "SAVEPOINT",
 }
+
+
+def _has_overdrive_history(
+    session: ChatSessionModel,
+    *,
+    has_overdrive_messages: bool = False,
+) -> bool:
+    """Return whether this session has ever run through the overdrive runtime.
+
+    ``overdrive`` is the current toggle state, so it can legitimately become
+    false after an overdrive turn has finished.  The log explorer instead
+    attributes a session by durable execution evidence as well, preventing a
+    historical multi-agent run from being shown as a single-assistant chat.
+    """
+    meta = session.sandbox_meta or {}
+    return bool(
+        meta.get("overdrive")
+        or meta.get("overdrive_used")
+        or meta.get("overdrive_runs")
+        or meta.get("overdrive_approvals")
+        or meta.get("matrix_room_id")
+        or has_overdrive_messages
+    )
+
+
+def _has_studio_history(session: ChatSessionModel) -> bool:
+    """Return whether a session belongs to the AI workspace.
+
+    ``workspace_id`` is the durable storage binding for Studio sessions.  It
+    also lets the diagnostics list recognize older rows whose ``mode`` was
+    written before the mode field became authoritative.
+    """
+    return session.mode == "studio" or bool(session.workspace_id)
+
+
+def _execution_mode(
+    session: ChatSessionModel,
+    *,
+    has_overdrive_messages: bool = False,
+) -> str:
+    """Normalize a session into the three user-visible execution modes.
+
+    An overdrive run takes precedence over the workspace shell because it
+    describes how the selected task was executed.  Keeping the normalization
+    here ensures log search, export, and the admin UI use the same attribution
+    rule.
+    """
+    if _has_overdrive_history(session, has_overdrive_messages=has_overdrive_messages):
+        return "overdrive"
+    if _has_studio_history(session):
+        return "studio"
+    return "chat"
+
+
+def _json_key(col: Any, key: str) -> Any:
+    """``col -> 'key'`` 取值表达式。
+
+    SQLAlchemy 2.0.51 会把 ``col["key"]`` 编译成 ``col['key']`` 下标语法，
+    PostgreSQL 14 对 json / jsonb 均不支持（PG16+ 才有），直接报
+    DatatypeMismatchError。统一走 ``->`` 运算符兼容 PG14。
+    """
+    return col.op("->")(literal(key))
+
+
+def _json_text(col: Any, key: str) -> Any:
+    """``col ->> 'key'``：按键取文本值。"""
+    return col.op("->>")(literal(key))
+
+
+def _overdrive_history_predicate() -> Any:
+    """SQL predicate matching current or historical overdrive execution evidence."""
+    metadata = ChatSessionModel.sandbox_meta
+    message_evidence = select(ChatMessageModel.message_id).where(
+        ChatMessageModel.session_id == ChatSessionModel.session_id,
+        ChatMessageModel.role == "assistant",
+        _json_key(ChatMessageModel.metadata_json, "senderAgent").is_not(None),
+    ).exists()
+    return or_(
+        func.coalesce(_json_text(metadata, "overdrive").cast(Boolean), false()).is_(True),
+        func.coalesce(_json_text(metadata, "overdrive_used").cast(Boolean), false()).is_(True),
+        _json_key(metadata, "overdrive_runs").is_not(None),
+        _json_key(metadata, "overdrive_approvals").is_not(None),
+        _json_key(metadata, "matrix_room_id").is_not(None),
+        message_evidence,
+    )
+
+
+def _studio_history_predicate() -> Any:
+    """SQL predicate matching the durable Studio mode or workspace binding."""
+    return or_(
+        ChatSessionModel.mode == "studio",
+        ChatSessionModel.workspace_id.is_not(None),
+    )
 
 
 def _iter_json_log_files(log_dir: Path, include_archives: bool) -> list[Path]:
@@ -252,11 +349,13 @@ async def list_sessions(
     _admin: AdminRequired,
     db: DbSession,
     search: Annotated[str | None, Query(description="按 session_id / 标题 / 用户 模糊匹配")] = None,
-    mode: Annotated[str | None, Query(description="chat / studio")] = None,
+    mode: Annotated[str | None, Query(description="chat / studio / overdrive")] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> list[dict[str, Any]]:
     """按最近活跃倒序列出聊天会话，管理员据此挑选要排查的会话。"""
     stmt = select(ChatSessionModel)
+    overdrive_history = _overdrive_history_predicate()
+    studio_history = _studio_history_predicate()
     if search:
         pattern = f"%{search}%"
         stmt = stmt.where(
@@ -266,11 +365,37 @@ async def list_sessions(
                 ChatSessionModel.user_id.ilike(pattern),
             )
         )
-    if mode:
-        stmt = stmt.where(ChatSessionModel.mode == mode)
+    if mode == "studio":
+        stmt = stmt.where(studio_history, ~overdrive_history)
+    elif mode == "overdrive":
+        stmt = stmt.where(overdrive_history)
+    elif mode == "chat":
+        stmt = stmt.where(
+            ~studio_history,
+            ~overdrive_history,
+        )
+    elif mode:
+        raise HTTPException(status_code=422, detail="mode 仅支持 chat、studio 或 overdrive")
     stmt = stmt.order_by(ChatSessionModel.last_message_at.desc().nullslast()).limit(limit)
     result = await db.execute(stmt)
     sessions = result.scalars().all()
+
+    # ``senderAgent`` is recorded on every overdrive Manager/Worker response.
+    # It is a fallback for sessions created before ``overdrive_used`` existed
+    # or whose JSON metadata was later merged by a concurrent feature.
+    session_ids = [session.session_id for session in sessions]
+    overdrive_message_session_ids: set[str] = set()
+    if session_ids:
+        overdrive_messages = await db.execute(
+            select(ChatMessageModel.session_id)
+            .where(
+                ChatMessageModel.session_id.in_(session_ids),
+                ChatMessageModel.role == "assistant",
+                _json_key(ChatMessageModel.metadata_json, "senderAgent").is_not(None),
+            )
+            .distinct()
+        )
+        overdrive_message_session_ids = set(overdrive_messages.scalars().all())
 
     # 批量查用户名（F2：列表展示用户名而非裸 UUID）
     user_names: dict[str, str] = {}
@@ -294,6 +419,10 @@ async def list_sessions(
             "user_name": user_names.get(s.user_id, ""),
             "title": s.title,
             "mode": s.mode,
+            "execution_mode": _execution_mode(
+                s,
+                has_overdrive_messages=s.session_id in overdrive_message_session_ids,
+            ),
             "agent_id": s.agent_id,
             "assistant_id": s.assistant_id,
             "status": s.status,
@@ -303,6 +432,94 @@ async def list_sessions(
         }
         for s in sessions
     ]
+
+
+@router.get("/feedbacks", summary="用户会话反馈列表（点赞 / 点踩）")
+async def list_feedbacks(
+    _admin: AdminRequired,
+    db: DbSession,
+    rating: Annotated[str | None, Query(description="like / dislike")] = None,
+    search: Annotated[str | None, Query(description="按 session_id / 标题 / 用户 / 备注模糊匹配")] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
+    """列出用户对 AI 消息的反馈。点踩记录附带模型 / Agent / 提问与回复摘录快照，
+    用于提示词、Agent 与架构的优化分析。"""
+    stmt = select(ChatMessageFeedbackModel)
+    if rating in ("like", "dislike"):
+        stmt = stmt.where(ChatMessageFeedbackModel.rating == rating)
+    elif rating:
+        raise HTTPException(status_code=422, detail="rating 仅支持 like 或 dislike")
+
+    feedbacks = (
+        await db.execute(stmt.order_by(ChatMessageFeedbackModel.created_at.desc()))
+    ).scalars().all()
+
+    # 关联会话（标题 / 模式）与用户名
+    session_ids = sorted({f.session_id for f in feedbacks})
+    sessions: dict[str, ChatSessionModel] = {}
+    if session_ids:
+        res = await db.execute(
+            select(ChatSessionModel).where(ChatSessionModel.session_id.in_(session_ids))
+        )
+        sessions = {s.session_id: s for s in res.scalars().all()}
+
+    user_names: dict[str, str] = {}
+    user_uuids: list[uuid.UUID] = []
+    for f in feedbacks:
+        try:
+            user_uuids.append(uuid.UUID(f.user_id))
+        except (ValueError, AttributeError, TypeError):
+            continue
+    if user_uuids:
+        from omichub.infrastructure.database.models.user import UserModel
+
+        ures = await db.execute(select(UserModel).where(UserModel.id.in_(user_uuids)))
+        for u in ures.scalars().all():
+            user_names[str(u.id)] = u.nickname or u.username
+
+    if search:
+        search_l = search.lower()
+
+        def _match(f: ChatMessageFeedbackModel) -> bool:
+            session = sessions.get(f.session_id)
+            haystack = " ".join(
+                [
+                    f.session_id,
+                    f.user_id,
+                    user_names.get(f.user_id, ""),
+                    session.title if session else "",
+                    f.comment or "",
+                ]
+            ).lower()
+            return search_l in haystack
+
+        feedbacks = [f for f in feedbacks if _match(f)]
+
+    total = len(feedbacks)
+    page = feedbacks[offset : offset + limit]
+    return {
+        "total": total,
+        "items": [
+            {
+                "feedback_id": f.feedback_id,
+                "session_id": f.session_id,
+                "message_id": f.message_id,
+                "user_id": f.user_id,
+                "user_name": user_names.get(f.user_id, ""),
+                "rating": f.rating,
+                "comment": f.comment,
+                "status": f.status,
+                "context": f.context or {},
+                "session_title": sessions[f.session_id].title if f.session_id in sessions else "",
+                "execution_mode": _execution_mode(sessions[f.session_id])
+                if f.session_id in sessions
+                else "chat",
+                "created_at": f.created_at.isoformat() if f.created_at else None,
+            }
+            for f in page
+        ],
+    }
 
 
 @router.get("/{session_id}/events", summary="按会话聚合的日志事件时间线")

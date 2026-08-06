@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import uuid
@@ -23,6 +24,7 @@ from omichub.application.schemas.agent import (
     UpdateAgentRequest,
 )
 from omichub.application.services.site_settings_service import SiteSettingsService
+from omichub.application.services.agent_handoff_service import HANDOFF_TOOL_NAME
 from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError, NotFoundError
 from omichub.domain.mcp.entities import MCPServer, MCPToolRegistry
@@ -57,6 +59,29 @@ AGENTTEAMS_CASE_SYSTEM_PROMPT_SUFFIX = """## AgentTeams 协作 Case
 - 若请求来自多专家会诊，须把会诊事件提供的 `consultation_id` 和 `consultation_summary`
   分别填入 `origin_consultation_id`、`consultation_summary`，以保留 Case 来源追溯。
 - 创建成功后告知用户打开协作 Case，继续完成预检、审批和交付验收。
+"""
+
+AGENT_COMMUNICATION_SYSTEM_PROMPT_SUFFIX = """## 平台沟通与执行规范
+
+- 默认使用专业、自然、克制的中文：先说明当前结论或状态，再给出依据和下一步。
+- 不使用卖萌语气、颜文字或无必要的 emoji；不要以“请上传数据，我来一步步操作”一类
+  空泛话术收尾。缺少输入时，明确列出缺少的文件、字段、分组或参数，并说明如何提供。
+- 先检查当前会话已经给出的信息和可用工作区文件；能通过工具确认的事实必须调用工具，
+  工具返回后只陈述真实结果。已完成、待确认和未能执行的事项必须明确区分。
+- 用户要求执行分析或产出文件时，先给出简短执行计划；完成后交付结果路径、关键参数和
+  可复现的下一步。没有执行就不要暗示已经完成。
+- 任务不属于当前职责且系统提供了转交工具时，选择最合适的 Agent 并转交；不要让用户
+  自己在助手列表中猜测该选谁。
+"""
+
+ROUTER_COMMUNICATION_SYSTEM_PROMPT_SUFFIX = """## 路由输出纪律
+
+- 你的职责是理解意图、选择可用专家并输出规定的路由 JSON；不要执行分析、不要生成工作台
+  指令，也不要向用户输出解释性话术。
+- 不使用 emoji、寒暄或“请上传数据”式兜底。输入信息不足时仍须根据当前可用目录选择最
+  合适的首接 Agent，并将缺失项交由该 Agent 继续澄清。
+- 运行时提供的 Agent 目录是唯一有效候选集；不得引用目录外 Agent，也不得让前端规则替你
+  做领域判断。
 """
 
 
@@ -503,7 +528,7 @@ class AgentService:
             return AgentContext(
                 agent=agent,
                 model_config=None,
-                system_prompt=agent.system_prompt,
+                system_prompt=self._append_communication_contract(agent.system_prompt, agent),
             )
 
         # 2. 收集绑定的 MCP server 及其工具，转成 OpenAI tools
@@ -635,6 +660,11 @@ class AgentService:
                 if system_prompt
                 else WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX
             )
+        if self._has_builtin_tool(builtin_tools, HANDOFF_TOOL_NAME):
+            handoff_catalog = await self._build_handoff_catalog(agent)
+            if handoff_catalog:
+                system_prompt = f"{system_prompt}\n\n{handoff_catalog}" if system_prompt else handoff_catalog
+        system_prompt = self._append_communication_contract(system_prompt, agent)
 
         return AgentContext(
             agent=agent,
@@ -647,6 +677,17 @@ class AgentService:
             temperature=agent.temperature,
             max_tokens=agent.max_tokens,
         )
+
+    @staticmethod
+    def _append_communication_contract(system_prompt: str, agent: AgentTemplateModel) -> str:
+        """将统一沟通规范注入所有运行时 Agent，兼容数据库中已存在的内置提示词。"""
+        features = agent.features or {}
+        suffix = (
+            ROUTER_COMMUNICATION_SYSTEM_PROMPT_SUFFIX
+            if features.get("router")
+            else AGENT_COMMUNICATION_SYSTEM_PROMPT_SUFFIX
+        )
+        return f"{system_prompt}\n\n{suffix}" if system_prompt else suffix
 
     async def _agentteams_chat_entry_enabled(self) -> bool:
         settings = get_settings()
@@ -670,6 +711,38 @@ class AgentService:
     @staticmethod
     def _has_builtin_tool(tools: list[dict[str, Any]], tool_name: str) -> bool:
         return any(tool.get("function", {}).get("name") == tool_name for tool in tools)
+
+    async def _build_handoff_catalog(self, source: AgentTemplateModel) -> str:
+        handoff_config = dict((source.features or {}).get("handoff") or {})
+        allowed_targets = {str(item) for item in handoff_config.get("allowed_targets", [])}
+        if not allowed_targets:
+            return ""
+        allow_all_active_targets = "*" in allowed_targets
+        result = await self._db.execute(
+            select(AgentTemplateModel)
+            .where(AgentTemplateModel.is_active == True)  # noqa: E712
+            .order_by(AgentTemplateModel.category, AgentTemplateModel.name)
+        )
+        catalog = [
+            {
+                "agent_id": candidate.agent_id,
+                "name": candidate.name,
+                "description": candidate.description,
+                "category": candidate.category,
+            }
+            for candidate in result.scalars().all()
+            if candidate.agent_id != source.agent_id
+            and not (candidate.features or {}).get("router")
+            and (allow_all_active_targets or candidate.agent_id in allowed_targets)
+        ]
+        if not catalog:
+            return ""
+        return (
+            "## 当前可转交的 Agent（运行时目录）\n\n"
+            f"{json.dumps(catalog, ensure_ascii=False)}\n\n"
+            "当用户任务不属于你的职责且目标明确时，必须调用 `transfer_to_agent` 转交给目录中的目标。"
+            "不要让用户手动挑选 Agent，也不要编造目录外的 Agent。"
+        )
 
     async def _resolve_model(self, model_id: uuid.UUID | None) -> AIProviderConfigModel | None:
         """严格按 Agent 绑定的 model_id 解析模型，避免 fallback 导致调用与设置不一致。"""

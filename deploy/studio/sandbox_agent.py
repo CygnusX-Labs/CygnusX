@@ -177,6 +177,20 @@ _LANG_RUNNERS: dict[str, tuple[str, str]] = {
 }
 
 
+def _terminate_process_group(
+    proc: asyncio.subprocess.Process,
+    sig: signal.Signals = signal.SIGKILL,
+) -> None:
+    """终止执行进程及其派生子进程，忽略已退出进程的竞态。"""
+    if proc.returncode is not None:
+        return
+    try:
+        os.killpg(proc.pid, sig)
+    except (ProcessLookupError, PermissionError):
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+
+
 def _snapshot_output() -> dict[str, tuple[int, float]]:
     """记录 /workspace/output 下现有文件的 (size, mtime)，用于执行后比对产物。"""
     out_dir = WORKSPACE_ROOT / OUTPUT_DIR
@@ -271,6 +285,8 @@ async def _stream_exec(req: ExecRequest):
         logs_dir / f"exec-{exec_id}.stderr.log", "wb"
     )
     timed_out = False
+    tasks: list[asyncio.Task[None]] = []
+    wait_task: asyncio.Task[int] | None = None
     try:
         # 并发泵送 stdout/stderr 双通道，经队列汇流到主生成器
         queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=STREAM_QUEUE_MAX_CHUNKS)
@@ -302,10 +318,7 @@ async def _stream_exec(req: ExecRequest):
 
         if timed_out:
             # 整组强杀（start_new_session 保证子进程也在组内）
-            try:
-                os.killpg(proc.pid, 9)
-            except (ProcessLookupError, PermissionError):
-                proc.kill()
+            _terminate_process_group(proc)
             for t in tasks:
                 t.cancel()
             with contextlib.suppress(TimeoutError):
@@ -314,6 +327,18 @@ async def _stream_exec(req: ExecRequest):
         else:
             exit_code = await wait_task
     finally:
+        # StreamingResponse 在客户端断开时会关闭生成器。此时必须终止进程组，
+        # 否则长任务及其派生子进程会在没有消费者的情况下继续占用沙盒资源。
+        _terminate_process_group(proc)
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            # 已取消的管道读取任务可能等待底层 transport 收尾；断连清理不应
+            # 被其阻塞。进程组已杀，后续由事件循环完成回收即可。
+            await asyncio.wait(tasks, timeout=1)
+        if wait_task is not None and not wait_task.done():
+            await asyncio.wait({wait_task}, timeout=1)
         overflow_out.close()
         overflow_err.close()
         # 空溢出日志不留存，减少噪音

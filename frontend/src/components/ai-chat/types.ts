@@ -29,6 +29,15 @@ export interface RoutedAgentInfo {
   avatar: string
   color: string
   reason: string
+  transition?: {
+    visible: boolean
+    stage: 'specialist_intake' | 'execution_ready'
+    title: string
+    message: string
+    nextStep: string
+    requiresExecutionConfirmation: boolean
+    autoStart: boolean
+  }
 }
 
 export interface CollaborationRouteInfo {
@@ -57,10 +66,36 @@ export interface AgentTeamsCaseCardPayload {
   updated_at?: string
 }
 
+export interface OverdriveProgress {
+  label: string
+  completed: number
+  total: number
+  phase: 'manager_ready' | 'workers_starting' | 'worker_running' | 'tool_running' | 'worker_finished' | 'peer_reviewing' | 'summarizing' | 'awaiting_input' | 'paused' | 'completed'
+  wave?: number
+  waveTotal?: number
+  waveMode?: 'parallel' | 'serial'
+  fallback?: boolean
+  warning?: string
+  stalledTaskIds?: string[]
+  tasks?: Array<{ taskId: string; agentId: string; status: string; errorSummary?: string }>
+}
+
+export interface OverdriveApproval {
+  approvalId: string
+  toolName: string
+  arguments: Record<string, unknown>
+  status: 'pending' | 'executing' | 'completed' | 'rejected' | 'failed'
+  result?: Record<string, unknown>
+  error?: string
+  reason?: string
+}
+
 export interface ChatMessage {
   id: string
   /** 后端持久化消息 ID；流式期间不覆盖 id，避免虚拟列表 key 变化导致渲染缓存错位 */
   backendMessageId?: string
+  /** 用户操作的受控元数据；仅在当前请求中透传到后端。 */
+  metadata?: Record<string, unknown>
   role: 'user' | 'assistant' | 'system'
   content: string
   thought?: string
@@ -83,10 +118,25 @@ export interface ChatMessage {
   askRequest?: AskRequest
   /** 智能路由：本条 AI 消息实际由哪位专家回答（路由器会话专属） */
   routedAgent?: RoutedAgentInfo
-  senderAgent?: { id: string; name: string; avatar?: string; color?: string }
+  senderAgent?: {
+    id: string
+    name: string
+    avatar?: string
+    color?: string
+    role?: 'manager' | 'worker'
+    round?: number
+  }
   collaborationRoute?: CollaborationRouteInfo
   consultation?: ExpertConsultation
   agentTeamsCases?: AgentTeamsCaseCardPayload[]
+  /** 超频协作生命周期：Manager/专家/工具的实时进度卡片。 */
+  overdriveProgress?: OverdriveProgress
+  /** 普通超频聊天的持久化工具审批记录。 */
+  overdriveApproval?: OverdriveApproval
+  overdriveSummary?: string
+  overdriveArtifacts?: Record<string, string>
+  overdriveTaskStatus?: string
+  overdriveErrorSummary?: string
   attachments?: FileAttachment[]
   feedback?: 'like' | 'dislike'
   /** 是否被编辑过，用户消息专属 */

@@ -172,7 +172,7 @@ onMounted(async () => {
           </div>
         </template>
         <div class="ai-rate-banner">
-          <span class="rate-chip">转换比例：{{ aiUsage?.rate_per_1k_tokens ?? 10 }} 🥫 = 1K tokens</span>
+          <span class="rate-chip">转换比例：{{ aiUsage?.rate_per_1k_tokens ?? 1 }} 🥫 = 1K tokens</span>
           <span class="rate-note">饼干耗尽后将无法使用 AI 助手，可通过提交分析任务赚取饼干</span>
         </div>
         <template v-if="aiUsage && aiUsage.summary.messages > 0">

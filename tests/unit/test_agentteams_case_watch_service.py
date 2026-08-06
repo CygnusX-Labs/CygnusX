@@ -5,9 +5,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 import omichub.application.services.agentteams_case_watch_service as watch_module
 from omichub.application.services.agentteams_case_watch_service import AgentTeamsCaseWatchService
+from omichub.application.services.agentteams_case_watch_service import _watchable_sessions_query
 
 
 class FakeDb:
@@ -23,6 +25,15 @@ class FakeDb:
 
     async def flush(self) -> None:
         self.flushes += 1
+
+
+@pytest.mark.unit
+def test_watch_query_filters_sessions_without_case_bindings() -> None:
+    statement = _watchable_sessions_query()
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+
+    assert "sandbox_meta IS NOT NULL" in sql
+    assert " ? " in sql
 
 
 class FakeAgentTeams:

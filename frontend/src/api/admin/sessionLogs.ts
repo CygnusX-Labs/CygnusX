@@ -1,12 +1,14 @@
 import apiClient from '../client'
 
-/** 会话摘要（来自 chat_sessions 表） */
+/** 会话摘要（来自 chat_sessions 表及运行时编排配置） */
 export interface SessionSummary {
   session_id: string
   user_id: string
   user_name: string
   title: string
   mode: string
+  /** 统一归因后的执行模式：对话 / 工作台 / 超频（多 Agent 编排） */
+  execution_mode: 'chat' | 'studio' | 'overdrive'
   agent_id: string | null
   assistant_id: string | null
   status: string
@@ -101,6 +103,34 @@ export interface SessionEventsResponse {
   events: SessionLogEvent[]
 }
 
+/** 用户对 AI 消息的点赞/点踩反馈（点踩附带上下文快照） */
+export interface SessionFeedback {
+  feedback_id: string
+  session_id: string
+  message_id: string
+  user_id: string
+  user_name: string
+  rating: 'like' | 'dislike'
+  comment: string | null
+  status: string
+  context: {
+    session_mode?: string
+    execution_hint?: {
+      assistant_id?: string | null
+      agent_id?: string | null
+      overdrive?: boolean
+      sender_agent?: string | null
+    }
+    model?: string
+    message_excerpt?: string
+    user_question_excerpt?: string
+    message_status?: string
+  }
+  session_title: string
+  execution_mode: 'chat' | 'studio' | 'overdrive'
+  created_at: string | null
+}
+
 export const adminSessionLogsApi = {
   /** 会话列表（供排查选择） */
   async listSessions(params?: {
@@ -110,6 +140,17 @@ export const adminSessionLogsApi = {
   }): Promise<SessionSummary[]> {
     const res = await apiClient.get('/admin/session-logs/sessions', { params })
     return res.data || []
+  },
+
+  /** 用户会话反馈列表（点赞 / 点踩） */
+  async listFeedbacks(params?: {
+    rating?: 'like' | 'dislike'
+    search?: string
+    limit?: number
+    offset?: number
+  }): Promise<{ total: number; items: SessionFeedback[] }> {
+    const res = await apiClient.get('/admin/session-logs/feedbacks', { params })
+    return res.data || { total: 0, items: [] }
   },
 
   /** 按会话聚合的日志事件时间线 */

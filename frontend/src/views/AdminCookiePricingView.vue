@@ -246,7 +246,7 @@ onMounted(fetchDiscounts)
         <template #header-extra>
           <NButton type="primary" secondary @click="openDiscountEdit()">新增优惠</NButton>
         </template>
-        <p class="helper-text">默认换算为 10 🥫/1K tokens；倍率 0.01 表示按原价的 1% 计费。优惠生效时会自动显示在首页条幅。</p>
+        <p class="helper-text">默认换算为 1 🥫/1K tokens；倍率 0.01 表示按原价的 1% 计费。优惠生效时会自动显示在首页条幅。</p>
         <NDataTable :columns="discountColumns" :data="discounts" :loading="discountLoading" :row-key="(row) => row.id" :pagination="{ pageSize: 10 }" :bordered="false" size="small" />
       </NCard>
 

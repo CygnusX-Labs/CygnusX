@@ -14,6 +14,7 @@ import {
 } from 'naive-ui'
 import { useAdminCookieStore } from '@/stores/adminCookie'
 import apiClient from '@/api/client'
+import { displayName } from '@/utils/displayName'
 
 interface RechargeUserOption {
   id: string
@@ -54,7 +55,7 @@ const isPreset = computed(() => !!props.userId)
 // 选项来源：所有注册用户（含未开通饼干钱包的用户），避免「已有用户」选不到
 const userOptions = computed(() =>
   users.value.map((u) => ({
-    label: `${u.nickname || u.username}（${u.email}）`,
+    label: `${displayName(u)}（${u.email}）`,
     value: u.id,
   })),
 )

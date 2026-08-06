@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 会话日志排查（管理员）— 按会话聚合 AI 助手 / Agent / AI 工作台的可观测日志与调用链。
+ * 会话日志排查（管理员）— 按会话聚合对话 / AI 工作台 / 超频模式的可观测日志与调用链。
  * Phase 1：事件分类 / 级别过滤 / 会话内搜索 / SQL 脱敏（揭示需审计）/ 抽屉可用性。
  * Phase 2：Trace 调用链列表 + span 瀑布图；列表用户名、复制、排序、重置。
  */
@@ -14,11 +14,12 @@ import type { DataTableColumns } from 'naive-ui'
 import {
   SparklesOutline, GitNetworkOutline, ConstructOutline, FlashOutline,
   DocumentTextOutline, RefreshOutline, SearchOutline, CopyOutline, ServerOutline,
-  CogOutline, DownloadOutline,
+  CogOutline, DownloadOutline, ThumbsUpOutline, ThumbsDownOutline,
 } from '@vicons/ionicons5'
 import PageHeader from '@/components/PageHeader.vue'
 import {
   adminSessionLogsApi,
+  type SessionFeedback,
   type SessionLogEvent,
   type SessionReport,
   type SessionSummary,
@@ -37,9 +38,20 @@ const loadingSessions = ref(false)
 
 const modeOptions = [
   { label: '全部模式', value: '' },
-  { label: 'AI 助手 / 对话 (chat)', value: 'chat' },
-  { label: 'AI 工作台 (studio)', value: 'studio' },
+  { label: '对话 · 单助手 (chat)', value: 'chat' },
+  { label: 'AI 工作台 · 工具执行 (studio)', value: 'studio' },
+  { label: '超频模式 · 多 Agent 编排 (overdrive)', value: 'overdrive' },
 ]
+
+const executionModeMeta = {
+  chat: { label: '对话', type: 'default' as const },
+  studio: { label: 'AI 工作台', type: 'info' as const },
+  overdrive: { label: '超频模式', type: 'warning' as const },
+}
+
+function executionModeOf(row: SessionSummary) {
+  return executionModeMeta[row.execution_mode] || executionModeMeta.chat
+}
 
 async function fetchSessions() {
   loadingSessions.value = true
@@ -66,6 +78,22 @@ async function copyText(text: string, tip = '已复制') {
   try {
     await navigator.clipboard.writeText(text)
     message.success(tip)
+    return
+  } catch {
+    // HTTP / 嵌入式 WebView 等非安全上下文无法使用 Clipboard API 时，
+    // 回退到浏览器仍支持的选区复制。
+  }
+  try {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.setAttribute('readonly', '')
+    textarea.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(textarea)
+    if (ok) message.success(tip)
+    else message.error('复制失败')
   } catch {
     message.error('复制失败')
   }
@@ -107,13 +135,14 @@ const sessionColumns: DataTableColumns<SessionSummary> = [
       ]),
   },
   {
-    title: '模式',
-    key: 'mode',
-    width: 110,
+    title: '执行模式',
+    key: 'execution_mode',
+    width: 156,
     align: 'center',
-    render: (row) =>
-      h(NTag, { size: 'small', type: row.mode === 'studio' ? 'info' : 'default', bordered: false },
-        { default: () => (row.mode === 'studio' ? 'AI 工作台' : '对话') }),
+    render: (row) => {
+      const mode = executionModeOf(row)
+      return h(NTag, { size: 'small', type: mode.type, bordered: false }, { default: () => mode.label })
+    },
   },
   {
     title: '消息数',
@@ -520,13 +549,170 @@ function copyEvent(ev: SessionLogEvent) {
 }
 
 onMounted(fetchSessions)
+
+// ===== 页面级 Tabs：会话日志 / 用户会话反馈 =====
+const pageTab = ref<'logs' | 'feedback'>('logs')
+
+// ===== 用户会话反馈 =====
+const feedbacks = ref<SessionFeedback[]>([])
+const feedbackTotal = ref(0)
+const loadingFeedbacks = ref(false)
+const feedbackRating = ref<string>('')
+const feedbackSearch = ref('')
+
+const feedbackRatingOptions = [
+  { label: '全部评价', value: '' },
+  { label: '仅点踩（需优化）', value: 'dislike' },
+  { label: '仅点赞', value: 'like' },
+]
+
+async function fetchFeedbacks() {
+  loadingFeedbacks.value = true
+  try {
+    const res = await adminSessionLogsApi.listFeedbacks({
+      rating: (feedbackRating.value || undefined) as 'like' | 'dislike' | undefined,
+      search: feedbackSearch.value.trim() || undefined,
+      limit: 100,
+    })
+    feedbacks.value = res.items
+    feedbackTotal.value = res.total
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail || '加载用户反馈失败')
+  } finally {
+    loadingFeedbacks.value = false
+  }
+}
+
+function onPageTabChange(tab: string) {
+  pageTab.value = tab as 'logs' | 'feedback'
+  if (tab === 'feedback') fetchFeedbacks()
+}
+
+function resetFeedbackFilters() {
+  feedbackRating.value = ''
+  feedbackSearch.value = ''
+  fetchFeedbacks()
+}
+
+/** 从反馈行跳转到该会话的日志排查抽屉 */
+function investigateFromFeedback(row: SessionFeedback) {
+  openEvents({
+    session_id: row.session_id,
+    user_id: row.user_id,
+    user_name: row.user_name,
+    title: row.session_title || row.session_id,
+    mode: '',
+    execution_mode: row.execution_mode,
+    agent_id: null,
+    assistant_id: null,
+    status: '',
+    message_count: 0,
+    total_tokens: 0,
+    last_message_at: row.created_at,
+  })
+}
+
+function feedbackContextLines(row: SessionFeedback): Array<{ label: string; value: string }> {
+  const ctx = row.context || {}
+  const hint = ctx.execution_hint || {}
+  const lines: Array<{ label: string; value: string }> = []
+  if (ctx.user_question_excerpt) lines.push({ label: '用户提问', value: ctx.user_question_excerpt })
+  if (ctx.message_excerpt) lines.push({ label: 'AI 回复摘录', value: ctx.message_excerpt })
+  if (row.comment) lines.push({ label: '用户备注', value: row.comment })
+  const agentBits = [
+    ctx.model ? `模型: ${ctx.model}` : '',
+    hint.agent_id ? `Agent: ${hint.agent_id}` : '',
+    hint.assistant_id ? `助手: ${hint.assistant_id}` : '',
+    hint.sender_agent ? `发言专家: ${String((hint.sender_agent as any)?.name || hint.sender_agent)}` : '',
+    hint.overdrive ? '超频编排: 是' : '',
+  ].filter(Boolean)
+  if (agentBits.length) lines.push({ label: '执行信息', value: agentBits.join(' · ') })
+  return lines
+}
+
+const feedbackColumns: DataTableColumns<SessionFeedback> = [
+  {
+    title: '评价',
+    key: 'rating',
+    width: 90,
+    align: 'center',
+    render: (row) =>
+      h(
+        NTag,
+        {
+          size: 'small',
+          type: row.rating === 'dislike' ? 'error' : 'success',
+          bordered: false,
+        },
+        {
+          icon: () => h(NIcon, { component: row.rating === 'dislike' ? ThumbsDownOutline : ThumbsUpOutline }),
+          default: () => (row.rating === 'dislike' ? '点踩' : '点赞'),
+        },
+      ),
+  },
+  {
+    title: '用户',
+    key: 'user_name',
+    width: 140,
+    ellipsis: { tooltip: true },
+    render: (row) => row.user_name || row.user_id,
+  },
+  {
+    title: '会话',
+    key: 'session_title',
+    width: 220,
+    ellipsis: { tooltip: true },
+    render: (row) =>
+      h('div', { style: 'display:flex;flex-direction:column;gap:2px' }, [
+        h('span', { style: 'font-weight:500' }, row.session_title || '—'),
+        h('span', { class: 'mono dim' }, row.session_id),
+      ]),
+  },
+  {
+    title: '问题 / 回复摘录',
+    key: 'context',
+    minWidth: 260,
+    ellipsis: { tooltip: true },
+    render: (row) => {
+      const q = row.context?.user_question_excerpt || ''
+      const a = row.context?.message_excerpt || ''
+      return h('div', { style: 'display:flex;flex-direction:column;gap:2px' }, [
+        q ? h('span', {}, `问：${q.slice(0, 80)}${q.length > 80 ? '…' : ''}`) : null,
+        a ? h('span', { class: 'dim' }, `答：${a.slice(0, 80)}${a.length > 80 ? '…' : ''}`) : null,
+        !q && !a ? h('span', { class: 'dim' }, '—') : null,
+      ])
+    },
+  },
+  {
+    title: '备注',
+    key: 'comment',
+    width: 160,
+    ellipsis: { tooltip: true },
+    render: (row) => row.comment || '—',
+  },
+  {
+    title: '时间',
+    key: 'created_at',
+    width: 170,
+    render: (row) => fmtDateTime(row.created_at),
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 100,
+    align: 'center',
+    render: (row) =>
+      h(NButton, { size: 'small', tertiary: true, onClick: () => investigateFromFeedback(row) },
+        { default: () => '排查会话' }),
+  },
+]
 </script>
 
 <template>
   <div class="session-logs">
     <PageHeader
       title="会话日志排查"
-      subtitle="按聊天会话聚合 AI 助手 / Agent / AI 工作台的可观测日志与调用链，用于定位问题"
+      subtitle="按对话、AI 工作台、超频模式聚合可观测日志与调用链，避免多 Agent 协作被误归为普通会话"
     >
       <template #actions>
         <NButton secondary :loading="exportingList" @click="exportSessionsCsv">
@@ -536,44 +722,113 @@ onMounted(fetchSessions)
       </template>
     </PageHeader>
 
-    <NCard size="small" class="filter-bar">
-      <NSpace align="center" :wrap="false">
-        <NInput
-          v-model:value="search"
-          placeholder="搜索 session_id / 标题 / 用户"
-          clearable
-          style="width: 280px"
-          @keyup.enter="fetchSessions"
-        >
-          <template #prefix><NIcon :component="SearchOutline" /></template>
-        </NInput>
-        <NSelect
-          v-model:value="modeFilter"
-          :options="modeOptions"
-          style="width: 200px"
-          @update:value="fetchSessions"
-        />
-        <NButton type="primary" :loading="loadingSessions" @click="fetchSessions">查询</NButton>
-        <NButton @click="resetFilters">重置</NButton>
-      </NSpace>
-    </NCard>
+    <NTabs :value="pageTab" type="line" class="page-tabs" @update:value="onPageTabChange">
+      <NTabPane name="logs" tab="会话日志">
+        <section class="mode-guide" aria-label="AI 助手执行模式说明">
+          <div class="mode-guide-item mode-guide-item--chat">
+            <NIcon :component="SparklesOutline" aria-hidden="true" />
+            <div><strong>对话</strong><span>单助手直接响应，适合问答与轻量协助。</span></div>
+          </div>
+          <div class="mode-guide-item mode-guide-item--studio">
+            <NIcon :component="ConstructOutline" aria-hidden="true" />
+            <div><strong>AI 工作台</strong><span>面向文件、工具与可追踪任务执行。</span></div>
+          </div>
+          <div class="mode-guide-item mode-guide-item--overdrive">
+            <NIcon :component="FlashOutline" aria-hidden="true" />
+            <div><strong>超频模式</strong><span>由 Manager 调度多个专家协作完成复杂任务。</span></div>
+          </div>
+        </section>
 
-    <NCard size="small" class="table-card">
-      <template #header>
-        <span class="card-title">会话列表</span>
-      </template>
-      <template #header-extra>
-        <span class="card-count">共 {{ sessions.length }} 条</span>
-      </template>
-      <NDataTable
-        :columns="sessionColumns"
-        :data="sessions"
-        :loading="loadingSessions"
-        :pagination="{ pageSize: 20 }"
-        :scroll-x="1000"
-        size="small"
-      />
-    </NCard>
+        <NCard size="small" class="filter-bar">
+          <NSpace align="center" :wrap="false">
+            <NInput
+              v-model:value="search"
+              placeholder="搜索 session_id / 标题 / 用户"
+              clearable
+              style="width: 280px"
+              @keyup.enter="fetchSessions"
+            >
+              <template #prefix><NIcon :component="SearchOutline" /></template>
+            </NInput>
+            <NSelect
+              v-model:value="modeFilter"
+              :options="modeOptions"
+              style="width: 200px"
+              @update:value="fetchSessions"
+            />
+            <NButton type="primary" :loading="loadingSessions" @click="fetchSessions">查询</NButton>
+            <NButton @click="resetFilters">重置</NButton>
+          </NSpace>
+        </NCard>
+
+        <NCard size="small" class="table-card">
+          <template #header>
+            <span class="card-title">会话列表</span>
+          </template>
+          <template #header-extra>
+            <span class="card-count">共 {{ sessions.length }} 条</span>
+          </template>
+          <NDataTable
+            :columns="sessionColumns"
+            :data="sessions"
+            :loading="loadingSessions"
+            :pagination="{ pageSize: 20 }"
+            :scroll-x="1000"
+            size="small"
+          />
+        </NCard>
+      </NTabPane>
+
+      <NTabPane name="feedback" tab="用户会话反馈">
+        <NCard size="small" class="filter-bar">
+          <NSpace align="center" :wrap="false">
+            <NInput
+              v-model:value="feedbackSearch"
+              placeholder="搜索 session_id / 标题 / 用户 / 备注"
+              clearable
+              style="width: 280px"
+              @keyup.enter="fetchFeedbacks"
+            >
+              <template #prefix><NIcon :component="SearchOutline" /></template>
+            </NInput>
+            <NSelect
+              v-model:value="feedbackRating"
+              :options="feedbackRatingOptions"
+              style="width: 200px"
+              @update:value="fetchFeedbacks"
+            />
+            <NButton type="primary" :loading="loadingFeedbacks" @click="fetchFeedbacks">查询</NButton>
+            <NButton @click="resetFeedbackFilters">重置</NButton>
+          </NSpace>
+        </NCard>
+
+        <NCard size="small" class="table-card">
+          <template #header>
+            <span class="card-title">用户会话反馈</span>
+          </template>
+          <template #header-extra>
+            <span class="card-count">
+              共 {{ feedbackTotal }} 条 · 点踩自动快照模型 / Agent / 问答上下文，用于提示词与架构优化
+            </span>
+          </template>
+          <NDataTable
+            :columns="feedbackColumns"
+            :data="feedbacks"
+            :loading="loadingFeedbacks"
+            :pagination="{ pageSize: 20 }"
+            :scroll-x="1140"
+            :row-key="(row: SessionFeedback) => row.feedback_id"
+            :render-expand="(row: SessionFeedback) => h('div', { class: 'feedback-expand' }, feedbackContextLines(row).map((line) => h('div', { class: 'feedback-expand-line' }, [h('span', { class: 'feedback-expand-label' }, `${line.label}：`), h('span', {}, line.value)])))"
+            size="small"
+          />
+          <NEmpty
+            v-if="!loadingFeedbacks && !feedbacks.length"
+            description="暂无用户反馈；用户在 AI 回复下点赞 / 点踩后会汇聚到这里"
+            style="margin-top: 24px"
+          />
+        </NCard>
+      </NTabPane>
+    </NTabs>
 
     <!-- 会话排查抽屉 -->
     <NDrawer v-model:show="drawerShow" :width="640" placement="right" resizable>
@@ -581,7 +836,12 @@ onMounted(fetchSessions)
         <template #header>
           <div class="drawer-head">
             <div class="drawer-title">{{ activeSession?.title || '会话排查' }}</div>
-            <div class="drawer-sub mono">{{ activeSession?.session_id }}</div>
+            <div class="drawer-meta">
+              <NTag v-if="activeSession" size="small" :type="executionModeOf(activeSession).type" :bordered="false">
+                {{ executionModeOf(activeSession).label }}
+              </NTag>
+              <span class="drawer-sub mono">{{ activeSession?.session_id }}</span>
+            </div>
           </div>
         </template>
 
@@ -880,16 +1140,49 @@ onMounted(fetchSessions)
 <style scoped>
 .session-logs { display: flex; flex-direction: column; gap: var(--space-xl); }
 
+.page-tabs :deep(.n-tab-pane) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding-top: var(--space-md);
+}
+
+.feedback-expand { display: flex; flex-direction: column; gap: 6px; padding: 10px 18px; }
+.feedback-expand-line {
+  display: flex;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.feedback-expand-label { flex-shrink: 0; color: var(--text-color-3, #8a93a6); }
+
 .filter-bar :deep(.n-card__content) { padding: var(--space-md) var(--space-lg); }
 .table-card { border-radius: var(--radius-md); }
 .card-title { font-size: var(--font-card-title-size); font-weight: var(--font-card-title-weight); color: var(--neutral-text-1); }
 .card-count { font-size: var(--font-caption-size); color: var(--neutral-text-3); font-variant-numeric: tabular-nums; }
 
+.mode-guide { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-md); }
+.mode-guide-item {
+  display: flex; gap: 10px; align-items: flex-start; min-width: 0; padding: 12px 14px;
+  border: 1px solid var(--neutral-border); border-radius: var(--radius-md); background: var(--neutral-card);
+}
+.mode-guide-item :deep(.n-icon) { flex: 0 0 auto; margin-top: 2px; font-size: 18px; }
+.mode-guide-item div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mode-guide-item strong { font-size: var(--font-small-size); color: var(--neutral-text-1); }
+.mode-guide-item span { font-size: var(--font-caption-size); line-height: 1.5; color: var(--neutral-text-3); }
+.mode-guide-item--chat :deep(.n-icon) { color: var(--kimi-chart-4); }
+.mode-guide-item--studio :deep(.n-icon) { color: var(--kimi-chart-1); }
+.mode-guide-item--overdrive { border-color: color-mix(in srgb, var(--arco-warning) 38%, var(--neutral-border)); }
+.mode-guide-item--overdrive :deep(.n-icon) { color: var(--arco-warning); }
+
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .dim { font-size: var(--font-caption-size); color: var(--neutral-text-3); }
 
-.drawer-head { display: flex; flex-direction: column; gap: 2px; }
+.drawer-head { display: flex; flex-direction: column; gap: 4px; }
 .drawer-title { font-size: 15px; font-weight: 600; color: var(--neutral-text-1); }
+.drawer-meta { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; }
 .drawer-sub { font-size: var(--font-caption-size); color: var(--neutral-text-3); }
 
 .filters { display: flex; flex-direction: column; gap: var(--space-md); margin-bottom: var(--space-lg); }
@@ -962,4 +1255,8 @@ onMounted(fetchSessions)
 .wf-bar-track { position: relative; flex: 1; height: 14px; background: var(--neutral-bg); border-radius: 3px; }
 .wf-bar { position: absolute; top: 2px; bottom: 2px; border-radius: 3px; min-width: 3px; }
 .wf-detail { padding: 6px 8px 10px 24px; background: var(--neutral-bg); display: flex; flex-direction: column; gap: 2px; }
+
+@media (max-width: 900px) {
+  .mode-guide { grid-template-columns: 1fr; }
+}
 </style>

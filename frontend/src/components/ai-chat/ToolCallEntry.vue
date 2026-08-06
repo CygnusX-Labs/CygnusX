@@ -7,7 +7,8 @@
  *  - MAS 计划预览 / 交接卡片 / 产物登记卡片
  *  - 其余 MCP 工具走 McpToolCallCard
  */
-import { inject } from 'vue'
+import { computed, inject, ref } from 'vue'
+import { NButton, NTag, useMessage } from 'naive-ui'
 import ApprovalCard from './ApprovalCard.vue'
 import MasPlanPreviewCard from './MasPlanPreviewCard.vue'
 import HandoffCard from './HandoffCard.vue'
@@ -29,6 +30,8 @@ const emit = defineEmits<{
 // Studio 工作台上下文：仅在 /studio 页面被 provide；普通 /ai 聊天无此上下文
 const studioCtx = inject(StudioContextKey, null)
 const agentHubStore = useAgentHubStore()
+const message = useMessage()
+const confirmingCase = ref(false)
 
 function isStudioCodeToolCall(tool: ToolCall): boolean {
   return !!studioCtx && isStudioCodeTool(tool.name)
@@ -78,6 +81,34 @@ function handlePipelineVisualization(taskId: string, type: PipelineType): void {
 function handleAdjustPipeline(type: PipelineType): void {
   void agentHubStore.sendMessage(`请帮我检查并调整这次 ${type} 分析的参数，然后重新预检。`)
 }
+
+const caseConfirmation = computed(() => {
+  const value = props.tool.uiPayload?.agentteams_case_confirmation
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  return typeof record.key === 'string' && typeof record.token === 'string'
+    ? { key: record.key, token: record.token }
+    : null
+})
+
+async function confirmAgentTeamsCase(): Promise<void> {
+  if (!caseConfirmation.value || confirmingCase.value) return
+  confirmingCase.value = true
+  try {
+    await agentHubStore.sendMessage('确认创建协作 Case', {
+      messageMetadata: {
+        agentteams_case_confirmation: {
+          ...caseConfirmation.value,
+          confirmed: true,
+        },
+      },
+    })
+  } catch {
+    message.error('确认发送失败，请重试')
+  } finally {
+    confirmingCase.value = false
+  }
+}
 </script>
 
 <template>
@@ -93,6 +124,18 @@ function handleAdjustPipeline(type: PipelineType): void {
     :workspace-id="stringPayloadValue(tool, 'workspace_id')"
   />
   <HandoffCard v-else-if="isHandoffTool(tool)" :tool="tool" />
+  <section v-else-if="caseConfirmation" class="case-confirmation-card">
+    <div>
+      <strong>确认创建协作 Case</strong>
+      <p>确认后将创建可审计的协作流程，并进入后续预检与审批。</p>
+    </div>
+    <div class="case-confirmation-actions">
+      <NTag size="small" type="warning" :bordered="false">等待确认</NTag>
+      <NButton size="small" type="primary" :loading="confirmingCase" @click="confirmAgentTeamsCase">
+        确认创建
+      </NButton>
+    </div>
+  </section>
   <div v-else-if="isArtifactRegisterTool(tool)" class="artifact-register-card">
     <div class="artifact-register-icon">✓</div>
     <div>
@@ -124,6 +167,18 @@ function handleAdjustPipeline(type: PipelineType): void {
   border-radius: 10px;
   background: rgba(24, 160, 88, 0.08);
 }
+.case-confirmation-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.08);
+}
+.case-confirmation-card p { margin: 4px 0 0; font-size: 12px; color: var(--chat-text-muted, #888); }
+.case-confirmation-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .artifact-register-icon {
   width: 24px;
   height: 24px;

@@ -23,6 +23,7 @@ import QuickStartSteps from '@/components/dashboard/QuickStartSteps.vue'
 import AdminStatsPanel from '@/components/dashboard/AdminStatsPanel.vue'
 import AnnouncementBanner from '@/components/AnnouncementBanner.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import { displayName } from '@/utils/displayName'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -217,7 +218,7 @@ const columns: DataTableColumns<Task> = [
     key: 'user_id',
     width: 90,
     align: 'center',
-    render: (row) => row.username || row.user_id,
+    render: (row) => displayName(row) || row.user_id,
   },
   { title: '任务名称', key: 'name', width: 220, align: 'center', ellipsis: { tooltip: true } },
   { title: '分析流程', key: 'flow_id', width: 130, align: 'center' },
@@ -305,7 +306,7 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
     key: 'user_id',
     width: 90,
     align: 'center',
-    render: (row) => row.username || row.user_id || '-',
+    render: (row) => displayName(row) || row.user_id || '-',
   },
   {
     title: '任务 ID',
@@ -524,6 +525,11 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
   flex-direction: column;
 }
 
+:root[data-theme="dark"] .status-card {
+  background: var(--surface-elevated);
+  border-color: var(--border-default);
+}
+
 .status-main {
   display: flex;
   align-items: center;
@@ -628,6 +634,11 @@ const blastColumns: DataTableColumns<BlastTaskListItem> = [
 .recent-tasks {
   overflow: hidden;
   margin-bottom: 24px;
+}
+
+:root[data-theme="dark"] .recent-tasks {
+  background: var(--surface-card);
+  border-color: var(--border-subtle);
 }
 
 .recent-table :deep(th) {

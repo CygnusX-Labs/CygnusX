@@ -10,8 +10,9 @@ export interface AgentTeamsCase {
   project_ref: { kind: string; id: string; location?: string | null }
   intent: string
   requester_ref: string
-  /** 后端按 requester_ref 回填的真实用户名（§33.2 ④）；缺省时不展示 UUID 兜底由列渲染处理 */
+  /** 后端按 requester_ref 回填的用户名；昵称存在时由前端优先显示。 */
   requester_username?: string | null
+  requester_nickname?: string | null
   team_id: string
   origin_consultation_id?: string | null
   consultation_summary?: string | null

@@ -24,6 +24,7 @@ from omichub.api.v1 import (
     pipelines,
     platform_config,
     plot_stats,
+    projects,
     prompts,
     reports,
     sandbox,
@@ -73,6 +74,7 @@ api_router.include_router(
 )
 api_router.include_router(downloads.router, prefix="/downloads", tags=["Downloads"])
 api_router.include_router(files.router, prefix="/files", tags=["Files"])
+api_router.include_router(projects.router, prefix="/projects", tags=["Projects"])
 api_router.include_router(users.router, prefix="/users", tags=["Users"])
 api_router.include_router(cookies.router, prefix="/cookies", tags=["Cookies"])
 api_router.include_router(admin_cookies.router, prefix="/admin/cookies", tags=["Admin-Cookies"])

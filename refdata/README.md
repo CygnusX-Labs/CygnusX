@@ -35,7 +35,7 @@ src/omichub/reference_genomes/
 ├── config.py       # YAML 配置加载器（mtime 热重载，单例）
 └── indexer.py      # 基因索引构建（GFF3 → SQLite FTS5）
 
-dataset/
+refdata/
 ├── reference_genomes.yaml   # 配置文件（本目录）
 └── README.md                # 本文档
 ```
@@ -420,13 +420,13 @@ def human_size(nbytes):
 ```yaml
 volumes:
   - /data/omichub:/data/omichub:ro          # 参考基因组文件（只读）
-  - ../../dataset/reference_genomes.yaml:/app/dataset/reference_genomes.yaml:ro
+  - ../../refdata/reference_genomes.yaml:/app/refdata/reference_genomes.yaml:ro
 ```
 
 ### 8.2 配置路径
 `src/omichub/core/config.py` 的 Settings 追加：
 ```python
-reference_genomes_yaml: str = "/app/dataset/reference_genomes.yaml"
+reference_genomes_yaml: str = "/app/refdata/reference_genomes.yaml"
 ```
 
 ### 8.3 容器内依赖
@@ -533,7 +533,7 @@ config_manager = ReferenceGenomesConfigManager()
 - [ ] 8. `api/v1/router.py` 注册路由
 - [ ] 9. 准备 `/data/omichub/reference/lettuce-v11/` 与 `lettuce-v8/` 数据（FASTA / GFF3 / GTF / 索引）
 - [ ] 10. 执行索引构建：`python -m omichub.reference_genomes.indexer build --genome lettuce-v11`
-- [ ] 11. docker-compose 挂载 `/data/omichub` 与 `dataset/reference_genomes.yaml`
+- [ ] 11. docker-compose 挂载 `/data/omichub` 与 `refdata/reference_genomes.yaml`
 - [ ] 12. `docker restart omichub-web`
 - [ ] 13. 验证：`curl -H "Authorization: Bearer <token>" http://localhost:8888/api/v1/reference-genomes/` 返回 2 个基因组
 - [ ] 14. 前端：新建 `api/referenceGenomes.ts`，视图替换 mock 为 API 调用

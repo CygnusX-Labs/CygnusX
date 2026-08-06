@@ -12,6 +12,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from omichub.api.deps import CurrentUserId, DbSession
 from omichub.application.schemas.chat import (
@@ -23,10 +24,14 @@ from omichub.application.schemas.chat import (
     ChatStreamRequest,
     CreateAssistantRequest,
     CreateSessionRequest,
+    MessageFeedbackRequest,
+    OverdriveControlRequest,
+    RejectOverdriveApprovalRequest,
     UpdateSessionRequest,
 )
 from omichub.application.schemas.skill import SkillDTO
 from omichub.application.services.chat_service import ChatService
+from omichub.infrastructure.database.models.chat import ChatMessageModel
 
 router = APIRouter()
 
@@ -36,6 +41,59 @@ def get_chat_service(db: DbSession) -> ChatService:
 
 
 ChatServiceDep = Annotated[ChatService, Depends(get_chat_service)]
+
+
+@router.post(
+    "/sessions/{session_id}/overdrive/control",
+    summary="暂停、恢复、跳过或终止超频调度",
+)
+async def control_overdrive(
+    session_id: str,
+    request: OverdriveControlRequest,
+    current_user_id: CurrentUserId,
+    service: ChatServiceDep,
+) -> dict:
+    return await service.control_overdrive(
+        session_id=session_id,
+        user_id=current_user_id,
+        action=request.action,
+        task_id=request.task_id or "",
+        directive=request.directive or "",
+    )
+
+
+@router.post(
+    "/sessions/{session_id}/overdrive-approvals/{approval_id}/approve",
+    summary="批准并恢复执行超频 Worker 工具调用",
+)
+async def approve_overdrive_approval(
+    session_id: str,
+    approval_id: str,
+    current_user_id: CurrentUserId,
+    service: ChatServiceDep,
+) -> dict:
+    return await service.approve_overdrive_approval(
+        session_id=session_id, user_id=current_user_id, approval_id=approval_id
+    )
+
+
+@router.post(
+    "/sessions/{session_id}/overdrive-approvals/{approval_id}/reject",
+    summary="拒绝超频 Worker 工具调用",
+)
+async def reject_overdrive_approval(
+    session_id: str,
+    approval_id: str,
+    request: RejectOverdriveApprovalRequest,
+    current_user_id: CurrentUserId,
+    service: ChatServiceDep,
+) -> dict:
+    return await service.reject_overdrive_approval(
+        session_id=session_id,
+        user_id=current_user_id,
+        approval_id=approval_id,
+        reason=request.reason,
+    )
 
 
 # ============================================================
@@ -98,6 +156,9 @@ async def chat_stream(
                 project_id=request.project_id,
             )
         async for chunk in gen:
+            if chunk.type == "heartbeat":
+                yield ": heartbeat\n\n"
+                continue
             data: dict = {"type": chunk.type, "content": chunk.content}
             if chunk.metadata:
                 data.update(chunk.metadata)
@@ -118,7 +179,9 @@ async def chat_stream(
 
 
 @router.get("/web-search/availability", summary="联网搜索是否已配置")
-async def web_search_availability(current_user_id: CurrentUserId, db: DbSession) -> dict[str, object]:
+async def web_search_availability(
+    current_user_id: CurrentUserId, db: DbSession
+) -> dict[str, object]:
     from omichub.application.services.search_provider_service import SearchProviderService
 
     availability = await SearchProviderService(db).availability()
@@ -137,6 +200,7 @@ async def agentteams_case_events(
     """为当前用户已打开的聊天会话提供后台 Case 状态 SSE。"""
     session = await ChatService(db).get_session(session_id, current_user_id)
     if session is None:
+
         async def missing_session():
             yield f"data: {json.dumps({'type': 'error', 'content': '会话不存在或无权访问'}, ensure_ascii=False)}\n\n"
 
@@ -179,6 +243,7 @@ async def room_events(
     session = await service.get_session(session_id, current_user_id)
     room_id = str((session.sandbox_meta or {}).get("matrix_room_id") or "") if session else ""
     if session is None or not room_id:
+
         async def missing_room():
             yield f"data: {json.dumps({'type': 'error', 'content': '当前会话尚未绑定 Matrix 房间'}, ensure_ascii=False)}\n\n"
 
@@ -202,7 +267,7 @@ async def room_events(
                     if isinstance(next_batch, str) and next_batch:
                         meta = {**meta, "matrix_sync_cursor": next_batch}
                         session.sandbox_meta = meta
-                        await db.flush()
+                        await db.commit()
                     continue
                 if event.get("origin") == "omichub" or not event.get("content"):
                     continue
@@ -215,16 +280,32 @@ async def room_events(
                     "color": str(sender_data.get("color") or "#64748b"),
                     "role": "worker",
                 }
-                message = await service.add_message(
-                    session_id,
-                    "assistant",
-                    str(event["content"]),
-                    metadata={
-                        "senderAgent": sender,
-                        "matrix_event_id": event.get("event_id"),
-                        "matrix_room_id": room_id,
-                    },
-                )
+                event_id = str(event.get("event_id") or "")
+                if event_id:
+                    existing = await db.scalar(
+                        select(ChatMessageModel.message_id).where(
+                            ChatMessageModel.session_id == session_id,
+                            ChatMessageModel.metadata_json["matrix_event_id"].astext == event_id,
+                        )
+                    )
+                    if existing is not None:
+                        continue
+                try:
+                    message = await service.add_message(
+                        session_id,
+                        "assistant",
+                        str(event["content"]),
+                        metadata={
+                            "senderAgent": sender,
+                            "matrix_event_id": event_id or None,
+                            "matrix_room_id": room_id,
+                        },
+                    )
+                    await db.commit()
+                except IntegrityError:
+                    # 唯一索引覆盖并发 SSE 重连的检查-插入竞态；重复事件不再推送。
+                    await db.rollback()
+                    continue
                 payload = {
                     "type": "room_speech",
                     "content": str(event["content"]),
@@ -345,6 +426,154 @@ async def get_session_handoffs(
     session_id: str,
 ) -> list[ChatHandoffEventDTO]:
     return await service.get_handoff_events(session_id, current_user_id)
+
+
+# ============================================================
+# 消息反馈（点赞 / 点踩）
+# ============================================================
+
+_FEEDBACK_EXCERPT_LEN = 800
+
+
+async def _get_owned_session(db: DbSession, session_id: str, user_id: str):
+    from omichub.core.exceptions import NotFoundError
+    from omichub.infrastructure.database.models.chat import ChatSessionModel
+
+    session = (
+        await db.execute(
+            select(ChatSessionModel).where(
+                ChatSessionModel.session_id == session_id,
+                ChatSessionModel.user_id == user_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not session:
+        raise NotFoundError("会话不存在或无权访问")
+    return session
+
+
+@router.put(
+    "/sessions/{session_id}/messages/{message_id}/feedback",
+    summary="消息反馈（点赞 / 点踩 / 撤销）",
+)
+async def submit_message_feedback(
+    current_user_id: CurrentUserId,
+    db: DbSession,
+    session_id: str,
+    message_id: str,
+    req: MessageFeedbackRequest,
+) -> dict:
+    """点赞/点踩 AI 消息。点踩时服务端快照当时的模型、Agent、回复与提问上下文，
+    供管理员在会话日志排查中分析并优化提示词 / Agent / 架构。rating=none 撤销反馈。"""
+    import uuid as uuid_mod
+
+    from omichub.infrastructure.database.models.chat import (
+        ChatMessageFeedbackModel,
+        ChatMessageModel,
+    )
+
+    session = await _get_owned_session(db, session_id, current_user_id)
+    message = (
+        await db.execute(
+            select(ChatMessageModel).where(
+                ChatMessageModel.session_id == session_id,
+                ChatMessageModel.message_id == message_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not message:
+        from omichub.core.exceptions import NotFoundError
+
+        raise NotFoundError("消息不存在")
+
+    existing = (
+        await db.execute(
+            select(ChatMessageFeedbackModel).where(
+                ChatMessageFeedbackModel.message_id == message_id,
+                ChatMessageFeedbackModel.user_id == current_user_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if req.rating == "none":
+        if existing:
+            await db.delete(existing)
+        return {"feedback": None}
+
+    meta = message.metadata_json or {}
+    context: dict = {}
+    if req.rating == "dislike":
+        # 找到该回复前最近的一条用户提问，作为优化分析的上下文
+        prev_user = (
+            await db.execute(
+                select(ChatMessageModel)
+                .where(
+                    ChatMessageModel.session_id == session_id,
+                    ChatMessageModel.role == "user",
+                    ChatMessageModel.created_at <= message.created_at,
+                )
+                .order_by(ChatMessageModel.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        context = {
+            "session_mode": session.mode,
+            "execution_hint": {
+                "assistant_id": session.assistant_id,
+                "agent_id": session.agent_id,
+                "overdrive": bool((session.sandbox_meta or {}).get("overdrive_used")),
+                "sender_agent": meta.get("senderAgent"),
+            },
+            "model": meta.get("model") or meta.get("modelName") or "",
+            "message_excerpt": (message.content or "")[:_FEEDBACK_EXCERPT_LEN],
+            "user_question_excerpt": ((prev_user.content or "")[:_FEEDBACK_EXCERPT_LEN])
+            if prev_user
+            else "",
+            "message_status": message.status,
+        }
+
+    if existing:
+        existing.rating = req.rating
+        existing.comment = req.comment
+        if context:
+            existing.context = context
+    else:
+        db.add(
+            ChatMessageFeedbackModel(
+                feedback_id=f"fb-{uuid_mod.uuid4().hex}",
+                session_id=session_id,
+                message_id=message_id,
+                user_id=current_user_id,
+                rating=req.rating,
+                comment=req.comment,
+                context=context,
+            )
+        )
+    return {"feedback": {"rating": req.rating}}
+
+
+@router.get(
+    "/sessions/{session_id}/feedbacks",
+    summary="会话消息反馈状态（message_id → rating）",
+)
+async def get_session_feedbacks(
+    current_user_id: CurrentUserId,
+    db: DbSession,
+    session_id: str,
+) -> dict[str, str]:
+    """前端加载历史消息后，用它恢复每条 AI 消息的点赞/点踩高亮状态。"""
+    from omichub.infrastructure.database.models.chat import ChatMessageFeedbackModel
+
+    await _get_owned_session(db, session_id, current_user_id)
+    rows = (
+        await db.execute(
+            select(ChatMessageFeedbackModel.message_id, ChatMessageFeedbackModel.rating).where(
+                ChatMessageFeedbackModel.session_id == session_id,
+                ChatMessageFeedbackModel.user_id == current_user_id,
+            )
+        )
+    ).all()
+    return {row.message_id: row.rating for row in rows}
 
 
 @router.put("/sessions/{session_id}/title", summary="更新标题")

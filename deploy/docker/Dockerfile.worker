@@ -29,21 +29,30 @@ WORKDIR /app
 ENV UV_HTTP_TIMEOUT=120 \
     UV_HTTP_RETRIES=5 \
     UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
-    UV_EXTRA_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+    UV_EXTRA_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+    UV_LINK_MODE=copy
 
 COPY pyproject.toml uv.lock* README.md ./
-RUN uv sync --frozen --no-dev --extra workflow --no-install-project
+RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
+    uv sync --frozen --no-dev --extra workflow --no-install-project \
+    --index-url https://pypi.tuna.tsinghua.edu.cn/simple/
 
 COPY src/ ./src/
 COPY alembic.ini ./
 COPY alembic/ ./alembic/
 COPY tool_configs/ ./tool_configs/
-RUN uv sync --frozen --no-dev --extra workflow
+RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
+    uv sync --frozen --no-dev --extra workflow \
+    --index-url https://pypi.tuna.tsinghua.edu.cn/simple/
 
-RUN uv pip install --python /app/.venv/bin/python --no-cache "snakemake-logger-plugin-rich-loguru>=0.3.0"
+RUN uv pip install --python /app/.venv/bin/python --no-cache \
+    --index-url https://pypi.tuna.tsinghua.edu.cn/simple/ \
+    "snakemake-logger-plugin-rich-loguru>=0.3.0"
 
 # Optional RocketMQ transport used by the parallel rocketmq-worker service.
-RUN uv pip install --python /app/.venv/bin/python --no-cache "rocketmq-client-python==2.0.0"
+RUN uv pip install --python /app/.venv/bin/python --no-cache \
+    --index-url https://pypi.tuna.tsinghua.edu.cn/simple/ \
+    "rocketmq-client-python==2.0.0"
 
 FROM mambaorg/micromamba:2.0.5 AS micromamba
 

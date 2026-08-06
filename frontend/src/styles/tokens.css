@@ -48,9 +48,26 @@
   --error-gradient-3: #6B8DD6;
   --error-gradient-4: #8E54E9;
   --error-orb: #A5B4FC;
+  --scrollbar-thumb: rgba(29, 33, 41, 0.15);
+  --scrollbar-thumb-hover: rgba(29, 33, 41, 0.35);
+  --scrollbar-thumb-active: rgba(29, 33, 41, 0.45);
 }
 
 :root[data-theme="dark"] {
+  /* Dark Mode Surface System: base → card → elevated → highlight → glass. */
+  --surface-base: #080B12;
+  --surface-card: #121824;
+  --surface-elevated: #182033;
+  --surface-highlight: #202A40;
+  --surface-glass: rgba(255, 255, 255, 0.06);
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.10);
+  --border-focus: rgba(108, 99, 255, 0.45);
+  --brand-glow: 0 0 40px rgba(99, 102, 241, 0.15);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.15);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.25);
+  --scrollbar-thumb-active: rgba(255, 255, 255, 0.32);
+
   --stardust-blue: #7691FF;
   --stardust-purple: #9A7BFF;
   --stardust-gradient: linear-gradient(135deg, #4D6FFF 0%, #8A68F7 100%);
@@ -58,17 +75,17 @@
   --stardust-border-soft: rgba(118, 145, 255, 0.22);
   --stardust-glow: rgba(118, 145, 255, 0.35);
   --stardust-text-secondary: #9AA1B2;
-  --stardust-card-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  --stardust-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
 
   --brand-primary: #7691FF;
   --brand-primary-hover: #93A8FF;
   --brand-primary-active: #5D79F4;
   --brand-primary-light: rgba(118, 145, 255, 0.18);
-  --bg-page: #0B0F19;
-  --bg-card: #151A25;
-  --text-primary: #F2F3F8;
-  --text-secondary: #B8BCC8;
-  --text-tertiary: #7A8194;
+  --bg-page: var(--surface-base);
+  --bg-card: var(--surface-card);
+  --text-primary: #F5F7FF;
+  --text-secondary: #A7B0C3;
+  --text-tertiary: #68738A;
   --tag-neutral-bg: #252B38;
   --tag-neutral-text: #B8BCC8;
 
@@ -94,13 +111,13 @@
 }
 
 :root[data-theme="dark"] {
-  --studio-bg: #0B0F19;
-  --studio-card: #151A25;
-  --studio-border: #252B38;
+  --studio-bg: var(--surface-base);
+  --studio-card: var(--surface-card);
+  --studio-border: var(--border-subtle);
   --studio-primary: var(--brand-primary);
   --studio-primary-soft: var(--brand-primary-light);
-  --studio-text: #F2F3F8;
-  --studio-text-sub: #9AA1B2;
+  --studio-text: var(--text-primary);
+  --studio-text-sub: var(--text-secondary);
 }
 
 @media (prefers-reduced-transparency: reduce) {

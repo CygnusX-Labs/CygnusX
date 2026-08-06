@@ -15,7 +15,7 @@
 ├── users/{user_id}/       # 用户私有数据
 ├── uploads/               # 分片上传中转
 ├── bin/                   # 外置二进制（EBIDownload 等）
-├── dataset/               # 公共数据集
+├── refdata/               # 公共数据集
 └── .tmp/                  # 临时文件
 ```
 

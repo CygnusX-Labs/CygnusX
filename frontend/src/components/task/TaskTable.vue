@@ -4,6 +4,7 @@ import { NTooltip } from 'naive-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { Task } from '@/types'
+import { displayName } from '@/utils/displayName'
 import { getToolboxResultRoute } from '@/utils/toolboxResultRoute'
 import { redactUserHomePaths } from '@/utils/userPathDisplay'
 
@@ -277,7 +278,7 @@ const stats = computed(() => {
 
             <!-- 用户 -->
             <td v-if="showUser" class="task-user-column">
-              <span class="task-user-name">{{ task.username || task.user_id }}</span>
+              <span class="task-user-name">{{ displayName(task) || task.user_id }}</span>
             </td>
 
             <!-- 任务名称 -->

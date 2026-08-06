@@ -365,7 +365,9 @@ STUDIO_TOOL_SCHEMAS: list[dict[str, Any]] = [
 
 # ===== Studio 系统提示词后缀（架构设计 §5.2，中文紧凑版）=====
 
-STUDIO_SYSTEM_PROMPT_SUFFIX = get_prompt("studio.system")
+STUDIO_SYSTEM_PROMPT_SUFFIX = "\n\n".join(
+    value for value in (get_prompt("studio.system"), get_prompt("shared.sandbox_protocol")) if value
+)
 
 # ===== 通道截断常量 =====
 

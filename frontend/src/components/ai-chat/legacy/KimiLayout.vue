@@ -20,6 +20,7 @@ import KimiMessageList from '../KimiMessageList.vue'
 import KimiChatInput from '../KimiChatInput.vue'
 import ModelNavBar from './ModelNavBar.vue'
 import apiClient from '@/api/client'
+import { chatApi } from '@/api/chat'
 import { displayName } from '@/utils/displayName'
 import { useChatSessionStore } from '@/stores/chatSession'
 import { useChatAssistantStore } from '@/stores/chatAssistant'
@@ -181,8 +182,13 @@ function handleNavigate(path: string) {
   })
 }
 
-function handleFeedback(_id: string, type: 'like' | 'dislike') {
+function handleFeedback(id: string, type: 'like' | 'dislike') {
   message.success(type === 'like' ? '感谢反馈' : '会继续改进')
+  const sessionId = chatSessionStore.currentSessionId
+  if (!sessionId || id.startsWith('temp_')) return
+  chatApi.submitMessageFeedback(sessionId, id, type).catch(() => {
+    /* 反馈提交失败不打断交互 */
+  })
 }
 
 function handleCopy(_mode: CopyMode) {
@@ -277,6 +283,7 @@ onMounted(async () => {
             :streaming-content="streamingContent"
             :streaming-thought="streamingReasoning"
             :model-name="currentModelName"
+            :session-id="currentSessionId"
             @feedback="handleFeedback"
             @copy="handleCopy"
             @regenerate="handleRegenerate"

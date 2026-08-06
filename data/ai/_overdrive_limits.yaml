@@ -1,0 +1,14 @@
+summary_chars: 1500
+upstream_context_chars: 8000
+task_instruction_chars: 20000
+max_tasks_per_session: 12
+max_parallel_per_wave: 4
+chain_wall_timeout_minutes: 45
+stall_threshold_seconds: 120
+max_intake_rounds: 3
+max_repair_rounds: 1
+default_retry:
+  max_attempts: 2
+  backoff_seconds: 30
+default_timeout_seconds: 1800
+agents: {}

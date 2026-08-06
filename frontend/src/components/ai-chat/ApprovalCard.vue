@@ -81,8 +81,12 @@ async function handleApprove(withEdits: boolean) {
   try {
     await store.approveToolCall(id, withEdits ? buildModifiedArgs() : undefined)
     message.success(withEdits ? '已按修改后的参数批准，开始执行' : '已批准，开始执行')
-  } catch {
-    message.error('批准失败，审批可能已超时，请重试')
+  } catch (error) {
+    message.error(
+      error instanceof Error && error.message === 'APPROVAL_STREAM_INACTIVE'
+        ? '该审批所属执行流已结束，请重新发送任务后再操作'
+        : '批准失败，审批可能已超时，请重试',
+    )
   } finally {
     submitting.value = false
   }

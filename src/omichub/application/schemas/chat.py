@@ -23,7 +23,7 @@ class ChatAttachment(BaseModel):
 class ChatStreamRequest(BaseModel):
     """流式聊天请求"""
 
-    messages: list[dict[str, str]] = Field(..., description="消息列表 [{role, content}]")
+    messages: list[dict[str, Any]] = Field(..., description="消息列表 [{role, content, metadata?}]")
     model_id: UUID | None = Field(None, description="使用的模型配置 ID（与 agent_id 至少传一个）")
     agent_id: str | None = Field(None, description="Agent ID：传入则走 Agent 调度中枢")
     session_id: str | None = Field(None, description="会话 ID，新建则传 null")
@@ -72,6 +72,13 @@ class ChatMessageDTO(BaseModel):
     metadata_json: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     tokens: dict[str, Any] = Field(default_factory=dict)
+
+
+class MessageFeedbackRequest(BaseModel):
+    """消息点赞/点踩反馈请求。rating=none 表示撤销反馈。"""
+
+    rating: Literal["like", "dislike", "none"]
+    comment: str | None = Field(None, max_length=2000, description="点踩原因（可选）")
 
 
 class ChatHandoffEventDTO(BaseModel):
@@ -143,6 +150,20 @@ class CreateSessionRequest(BaseModel):
 
 class UpdateSessionRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=64)
+
+
+class RejectOverdriveApprovalRequest(BaseModel):
+    """超频普通聊天中拒绝一次 Worker 工具调用。"""
+
+    reason: str | None = Field(None, max_length=2_000)
+
+
+class OverdriveControlRequest(BaseModel):
+    """运行中的超频链控制指令。"""
+
+    action: Literal["pause", "resume", "skip", "terminate", "directive"]
+    task_id: str | None = Field(None, max_length=128)
+    directive: str | None = Field(None, max_length=4_000)
 
 
 class ChatSearchContentMatchDTO(BaseModel):

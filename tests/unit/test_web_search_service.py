@@ -1,7 +1,7 @@
 """联网搜索适配器的离线契约测试。"""
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -164,6 +164,10 @@ async def test_provider_search_passes_configured_depth(monkeypatch):
 
 
 def _configure_agent_stream(monkeypatch, *, supports_tools, provider_stream):
+    class FakeDb:
+        async def flush(self):
+            return None
+
     model = SimpleNamespace(
         id="model-1",
         api_key="model-key",
@@ -172,7 +176,7 @@ def _configure_agent_stream(monkeypatch, *, supports_tools, provider_stream):
         extra_params={"supports_tools": supports_tools},
     )
     context = AgentContext(
-        agent=SimpleNamespace(name="Test agent"),
+        agent=SimpleNamespace(name="Test agent", project_id=None),
         model_config=model,
         system_prompt="base system prompt",
         tools=[],
@@ -186,8 +190,9 @@ def _configure_agent_stream(monkeypatch, *, supports_tools, provider_stream):
         mode="chat",
         sandbox_meta={},
         model_id=model.id,
+        project_id=None,
     )
-    service = ChatService(None)
+    service = ChatService(FakeDb())
     message_ids = iter(["user-1", "assistant-1"])
 
     async def no_cookie_balance(_user_id):
@@ -205,12 +210,16 @@ def _configure_agent_stream(monkeypatch, *, supports_tools, provider_stream):
     async def ignore_update(*_args, **_kwargs):
         return None
 
+    async def no_session_file_context(*_args, **_kwargs):
+        return ""
+
     monkeypatch.setattr(service, "_ensure_cookie_balance", no_cookie_balance)
     monkeypatch.setattr(AgentService, "assemble_context", assemble_context)
     monkeypatch.setattr(service, "get_session", get_session)
     monkeypatch.setattr(service, "add_message", add_message)
     monkeypatch.setattr(service, "update_message_content", ignore_update)
     monkeypatch.setattr(service, "_apply_usage_to_session", ignore_update)
+    monkeypatch.setattr(service, "_collect_session_file_context", no_session_file_context)
     monkeypatch.setattr(chat_service.provider_manager, "chat_stream", provider_stream)
     monkeypatch.setattr(tool_invocation, "ToolInvocationContext", lambda **kwargs: kwargs)
     return service
@@ -270,7 +279,7 @@ async def test_agent_injects_user_memory_into_system_prompt(monkeypatch):
         fake_memory_context,
     )
     service = _configure_agent_stream(monkeypatch, supports_tools=False, provider_stream=fake_provider_stream)
-    service._db = MagicMock()
+    service._db = MagicMock(flush=AsyncMock())
 
     events = [
         event async for event in service.stream_agent_chat(

@@ -76,7 +76,7 @@ stages:
   - key: advanced
     title: 注释验证与高级分析
     assistant_agent_id: agent-scrna-advanced
-    trigger_hints: [细胞注释, marker, 差异表达, pseudobulk, 通路富集, 轨迹, 拟时序, velocity, 细胞通讯, 可视化]
+    trigger_hints: [细胞注释, marker, 单细胞差异表达, scRNA差异表达, pseudobulk, 轨迹, 拟时序, velocity, 细胞通讯]
     executors:
       - key: scrna-annotation-validate
         queue: scrna_analysis

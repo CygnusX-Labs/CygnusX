@@ -159,7 +159,7 @@ watch(
   },
 )
 
-const { isRunning, run } = useStudioRunStream()
+const { isRunning, run, abort } = useStudioRunStream()
 const rerunHappened = ref(false)
 const rerunOutput = ref('')
 const RERUN_OUTPUT_CAP = 20_000
@@ -263,13 +263,54 @@ const artifacts = computed(() => {
   return (props.tool.uiPayload?.artifacts as { path: string; size: number; mtime: number }[] | undefined) || []
 })
 
+const imageArtifacts = computed(() => artifacts.value.filter((artifact) => /\.(png|jpe?g|webp|gif|svg)$/i.test(artifact.path)))
+const imagePreviewUrls = ref<Record<string, string>>({})
+
+function revokeImagePreviewUrls() {
+  Object.values(imagePreviewUrls.value).forEach((url) => URL.revokeObjectURL(url))
+  imagePreviewUrls.value = {}
+}
+
+async function loadImagePreviews() {
+  const activeSessionId = ctx?.sessionId.value
+  if (!activeSessionId || !imageArtifacts.value.length) {
+    revokeImagePreviewUrls()
+    return
+  }
+  const currentPaths = new Set(imageArtifacts.value.map((artifact) => artifact.path))
+  for (const [path, url] of Object.entries(imagePreviewUrls.value)) {
+    if (!currentPaths.has(path)) {
+      URL.revokeObjectURL(url)
+      delete imagePreviewUrls.value[path]
+    }
+  }
+  await Promise.all(imageArtifacts.value.map(async (artifact) => {
+    if (imagePreviewUrls.value[artifact.path]) return
+    try {
+      imagePreviewUrls.value[artifact.path] = await studioApi.fetchArtifactBlob(activeSessionId, artifact.path)
+    } catch {
+      try {
+        imagePreviewUrls.value[artifact.path] = await studioApi.fetchWorkspaceBlob(activeSessionId, artifact.path)
+      } catch {}
+    }
+  }))
+}
+
+watch(
+  () => [ctx?.sessionId.value, imageArtifacts.value.map((artifact) => artifact.path).join('|')],
+  () => { void loadImagePreviews() },
+  { immediate: true },
+)
+
 function handleDownloadArtifact(path: string) {
   if (!ctx) return
   studioApi.downloadArtifact(ctx.sessionId.value, path).catch(() => {})
 }
 
 onUnmounted(() => {
+  abort()
   if (copyTimer) clearTimeout(copyTimer)
+  revokeImagePreviewUrls()
 })
 </script>
 
@@ -368,6 +409,14 @@ onUnmounted(() => {
         <span v-else>输出 {{ outputLines }} 行</span>
       </button>
       <pre v-show="showOutput" ref="outputRef" class="output-view">{{ displayOutput || '（暂无输出）' }}</pre>
+    </div>
+
+    <div v-if="imageArtifacts.length" class="artifact-previews">
+      <figure v-for="artifact in imageArtifacts" :key="artifact.path" class="artifact-preview">
+        <img v-if="imagePreviewUrls[artifact.path]" :src="imagePreviewUrls[artifact.path]" :alt="artifact.path.split('/').pop() || '生成图片'">
+        <div v-else class="artifact-preview-loading">正在加载图片预览…</div>
+        <figcaption>{{ artifact.path.split('/').pop() }}</figcaption>
+      </figure>
     </div>
 
     <!-- 产物 chips -->
@@ -520,6 +569,44 @@ onUnmounted(() => {
   gap: 6px;
   padding: 7px 12px;
   border-top: 1px solid var(--chat-border, #e5e7eb);
+}
+.artifact-previews {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border-top: 1px solid var(--chat-border, #e5e7eb);
+}
+.artifact-preview {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--chat-border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--chat-surface, #fff);
+}
+.artifact-preview img {
+  display: block;
+  width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+  background: var(--chat-surface-hover, #f7f8fa);
+}
+.artifact-preview-loading {
+  display: grid;
+  min-height: 160px;
+  place-items: center;
+  color: var(--chat-text-muted, #999);
+  font-size: 12px;
+}
+.artifact-preview figcaption {
+  overflow: hidden;
+  padding: 0 8px 8px;
+  color: var(--chat-text-secondary, #666);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .chips-label {
   font-size: 11px;

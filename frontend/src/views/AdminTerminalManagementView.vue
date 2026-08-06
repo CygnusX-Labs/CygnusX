@@ -12,6 +12,7 @@ import {
 } from 'naive-ui'
 import { h, onMounted, ref } from 'vue'
 import PageHeader from '@/components/PageHeader.vue'
+import { displayName } from '@/utils/displayName'
 
 interface TerminalStats {
   cpu_percent: number
@@ -25,6 +26,7 @@ interface AdminTerminalSession {
   id: string
   user_id: string
   username: string | null
+  nickname: string | null
   session_id: string
   status: string
   container_id: string | null
@@ -70,7 +72,7 @@ const columns = [
     title: '用户',
     key: 'username',
     width: 120,
-    render: (row: AdminTerminalSession) => row.username || row.user_id.slice(0, 8),
+    render: (row: AdminTerminalSession) => displayName(row) || row.user_id.slice(0, 8),
   },
   { title: '会话 ID', key: 'session_id', ellipsis: { tooltip: true }, width: 160 },
   {

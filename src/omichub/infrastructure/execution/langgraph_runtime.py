@@ -37,6 +37,7 @@ class LangGraphRuntimeService:
     def __init__(self, deps: NodeDeps, max_rounds: int = 8) -> None:
         self._deps = deps
         self._max_rounds = max_rounds
+        self._deps.max_tool_rounds = max_rounds
         self.last_usage: dict[str, Any] | None = None
         self.last_messages: list[dict[str, Any]] = []
         self.error: str | None = None

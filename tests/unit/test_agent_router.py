@@ -8,7 +8,11 @@ import pytest
 
 import omichub.application.services.chat_service as chat_service_module
 from omichub.application.schemas.agent import AgentTemplateDTO
-from omichub.application.services.chat_service import ChatService, _extract_route_json
+from omichub.application.services.chat_service import (
+    ChatService,
+    _extract_route_json,
+    _is_route_execution_confirmation,
+)
 
 
 def _candidate(agent_id: str, category: str, name: str = "") -> AgentTemplateDTO:
@@ -90,6 +94,24 @@ def test_extract_route_json_invalid():
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("user_text", "expected"),
+    [
+        ("确认开始分析", True),
+        ("按上述方案执行", True),
+        ("现在开始", True),
+        ("先不执行，想调整参数", False),
+        ("暂不开始分析", False),
+        ("我想知道 RNA-seq 怎么开始", False),
+    ],
+)
+def test_route_execution_confirmation_requires_explicit_opt_in(
+    user_text: str, expected: bool
+) -> None:
+    assert _is_route_execution_confirmation(user_text) is expected
+
+
+@pytest.mark.unit
 def test_extract_route_json_reasoning_then_duplicated_json():
     """模型先输出思考过程、再重复输出两次 JSON：取最后一个可解析且含 agent_id 的"""
     text = (
@@ -116,10 +138,16 @@ async def test_route_pure_json(service: ChatService, router_ctx: Any, monkeypatc
     assert info["name"] == "RNA-seq 分析师"
     assert info["reason"] == "转录组问题"
     assert {"agent_id", "name", "avatar", "color", "reason"} <= set(info)
+    assert info["transition"]["visible"] is True
+    assert info["transition"]["stage"] == "specialist_intake"
+    assert info["transition"]["requires_execution_confirmation"] is True
+    assert info["transition"]["auto_start"] is False
 
 
 @pytest.mark.unit
-async def test_route_normalizes_legacy_delivery_case_to_case(service: ChatService, router_ctx: Any, monkeypatch):
+async def test_route_normalizes_legacy_delivery_case_to_case(
+    service: ChatService, router_ctx: Any, monkeypatch
+):
     monkeypatch.setattr(
         chat_service_module.provider_manager,
         "chat_stream",
@@ -143,7 +171,9 @@ async def test_route_normalizes_legacy_delivery_case_to_case(service: ChatServic
 
 
 @pytest.mark.unit
-async def test_route_normalizes_low_confidence_legacy_delivery_case_to_case(service: ChatService, router_ctx: Any, monkeypatch):
+async def test_route_normalizes_low_confidence_legacy_delivery_case_to_case(
+    service: ChatService, router_ctx: Any, monkeypatch
+):
     monkeypatch.setattr(
         chat_service_module.provider_manager,
         "chat_stream",

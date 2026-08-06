@@ -30,6 +30,7 @@ class AdminCookieAccountDTO(CookieAccountDTO):
     """管理端账户信息 — 关联用户身份与存储资产，供「饼干账户管理」与「用户管理」共用同一份 JOIN 视图"""
 
     username: str = ""
+    nickname: str | None = None
     email: str = ""
     role: str = ""
     lab_group: str | None = None
