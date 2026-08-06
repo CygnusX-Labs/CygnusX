@@ -1,5 +1,5 @@
 <template>
-  <main class="profile-page-wrapper" :aria-busy="isLoading">
+  <main class="page-container profile-page-wrapper" :aria-busy="isLoading">
     <div class="profile-content">
       <PageHeader title="个人中心" subtitle="查看工作概览，管理个人偏好与账户安全。">
         <template #actions>
@@ -42,7 +42,7 @@
               <div v-for="stat in statistics" :key="stat.label" class="task-summary-item">
                 <span>{{ stat.label }}</span>
                 <strong :style="{ color: stat.color }">{{ stat.value }}<em>{{ stat.unit }}</em></strong>
-                <NProgress v-if="stat.total" type="line" :percentage="percentage(stat.value, stat.total)" :show-indicator="false" :color="stat.color" />
+                <NProgress v-if="stat.total" type="line" :percentage="stat.label === '存储空间' ? (storageQuotaInfo?.percent ?? 0) : percentage(stat.value, stat.total)" :show-indicator="false" :color="stat.color" />
               </div>
             </div>
             <NDataTable
@@ -67,18 +67,13 @@
               </NSpace>
             </template>
             <template #header-extra>
-              <NButton v-if="memories.length" text type="error" size="small" @click="clearMemories">清空全部</NButton>
+              <NButton text size="small" @click="router.push('/profile/memories')">
+                查看全部
+              </NButton>
             </template>
             <p class="memory-hint">这些记忆来自你与 AI 助手的对话：研究偏好、项目事实与对话沉淀，跨会话生效并加密存储；可随时删除。</p>
-            <NSpace v-if="memories.length" size="small" class="memory-filter">
-              <NButton
-                v-for="opt in memoryScopeOptions" :key="opt.key" size="tiny" secondary
-                :type="memoryScopeFilter === opt.key ? 'primary' : 'default'"
-                @click="memoryScopeFilter = opt.key"
-              >{{ opt.label }}</NButton>
-            </NSpace>
-            <div v-if="filteredMemories.length" class="memory-list">
-              <div v-for="memory in filteredMemories" :key="memory.id" class="memory-row">
+            <div v-if="previewMemories.length" class="memory-list">
+              <div v-for="memory in previewMemories" :key="memory.id" class="memory-row">
                 <span><NTag size="small" round>{{ memoryScopeLabel(memory.scope) }}</NTag></span>
                 <div>
                   <strong>{{ memory.content }}</strong>
@@ -90,7 +85,14 @@
                 <NButton text type="error" size="small" @click="deleteMemory(memory.id)">删除</NButton>
               </div>
             </div>
-            <NEmpty v-else size="small" :description="memories.length ? '该分类下暂无记忆。' : '暂无记忆。与 AI 助手对话满约 20 条消息后，研究偏好与项目事实会自动沉淀到这里（需要平台 AI 模型密钥有效）。'" />
+            <NEmpty v-else size="small" :description="'暂无记忆。与 AI 助手对话累计约 6 条消息后，研究偏好与项目事实会自动沉淀到这里（需要平台 AI 模型密钥有效）。'">
+              <template #extra>
+                <NSpace justify="center">
+                  <NButton size="small" :loading="isMemorySyncing" @click="rebuildMemories">整理已有对话</NButton>
+                  <NButton size="small" type="primary" @click="router.push('/ai')">继续对话</NButton>
+                </NSpace>
+              </template>
+            </NEmpty>
           </NCard>
 
           <NCard :bordered="false" class="arco-card profile-card">
@@ -163,7 +165,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { displayName } from '@/utils/displayName'
 import apiClient from '@/api/client'
-import type { Task, User } from '@/types'
+import type { QuotaInfo, Task, User } from '@/types'
 import PageHeader from '@/components/PageHeader.vue'
 
 interface AuditLog { type: string; type_label: string; description: string; created_at: string }
@@ -176,10 +178,12 @@ const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const message = useMessage()
 const tasks = ref<Task[]>([])
+const storageQuotaInfo = ref<QuotaInfo | null>(null)
 const auditLogs = ref<AuditLog[]>([])
 const memories = ref<AgentMemory[]>([])
 const isLoading = ref(true)
 const isRefreshing = ref(false)
+const isMemorySyncing = ref(false)
 const exporting = ref(false)
 const savingPreferences = ref(false)
 const twoFactorEnabled = ref(false)
@@ -195,9 +199,15 @@ const statusLabel = computed(() => {
 })
 const statusTagType = computed(() => user.value?.status === 'active' ? 'success' : user.value?.status === 'locked' ? 'error' : 'warning')
 const recentTasks = computed(() => tasks.value.slice(0, 3))
-const storageUsed = computed(() => Number(user.value?.used_storage || 0) / 1024 ** 3)
-const storageQuota = computed(() => Number(user.value?.storage_quota || 0) / 1024 ** 3)
-const statistics = computed(() => { const month = new Date().getMonth(); const analyses = tasks.value.filter(task => parseDate(task.created_at)?.getMonth() === month).length; const running = tasks.value.filter(task => ['pending', 'queued', 'running'].includes(task.status)).length; return [{ label: '本月分析', value: analyses, unit: '次', color: 'var(--arco-primary)' }, { label: '运行中', value: running, unit: '个', color: 'var(--arco-success)' }, { label: '存储空间', value: storageUsed.value.toFixed(1), unit: 'GB', total: storageQuota.value, color: 'var(--icon-visualization)' }] })
+const storageQuota = computed(() => Number(storageQuotaInfo.value?.total ?? user.value?.storage_quota ?? 0) / 1024 ** 3)
+function formatStorage(bytes: number) {
+  if (!bytes) return { value: '0', unit: 'B' }
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  return { value: (bytes / 1024 ** index).toFixed(2), unit: units[index] }
+}
+const storageDisplay = computed(() => formatStorage(storageQuotaInfo.value?.used ?? user.value?.used_storage ?? 0))
+const statistics = computed(() => { const month = new Date().getMonth(); const analyses = tasks.value.filter(task => parseDate(task.created_at)?.getMonth() === month).length; const running = tasks.value.filter(task => ['pending', 'queued', 'running'].includes(task.status)).length; return [{ label: '本月分析', value: analyses, unit: '次', color: 'var(--arco-primary)' }, { label: '运行中', value: running, unit: '个', color: 'var(--arco-success)' }, { label: '存储空间', value: storageDisplay.value.value, unit: storageDisplay.value.unit, total: storageQuota.value, color: 'var(--icon-visualization)' }] })
 
 function parseDate(value?: string | null) { if (!value) return null; const date = parseISO(value); return Number.isNaN(date.getTime()) ? null : date }
 function formatDateOnly(value?: string | null) { const date = parseDate(value); return date ? format(date, 'yyyy/MM/dd') : '-' }
@@ -219,23 +229,68 @@ const profileTaskColumns: DataTableColumns<Task> = [
 ]
 function memoryScopeLabel(scope: AgentMemory['scope']) { return ({ profile: '用户画像', project: '项目', preference: '偏好', summary: '摘要' }[scope]) }
 const memoryScopeFilter = ref<'all' | AgentMemory['scope']>('all')
-const filteredMemories = computed(() => memoryScopeFilter.value === 'all' ? memories.value : memories.value.filter(m => m.scope === memoryScopeFilter.value))
-const memoryScopeOptions: Array<{ key: 'all' | AgentMemory['scope']; label: string }> = [
-  { key: 'all', label: '全部' }, { key: 'profile', label: '用户画像' }, { key: 'preference', label: '偏好' },
-  { key: 'project', label: '项目' }, { key: 'summary', label: '对话沉淀' },
-]
+const previewMemories = computed(() => memories.value.slice(0, 4))
 const AGENT_LABELS: Record<string, string> = { 'agent-general': '通用助手', 'agent-rnaseq': 'RNA-seq 分析师', 'agent-scrna': '单细胞分析师', 'agent-scrna-upstream': '单细胞上游', 'agent-scrna-integration': '单细胞整合', 'agent-scrna-advanced': '单细胞进阶', 'agent-code': '代码助手', 'agent-viz': '可视化助手', 'agent-mcp-builder': 'MCP 构建师', shania: '傻妞' }
 function memoryAgentLabel(memory: AgentMemory) { if (!memory.agent_id) return '全局记忆'; return AGENT_LABELS[memory.agent_id] || memory.agent_id }
-function applyTheme(theme: UserPreferences['theme']) { const resolved = theme === 'system' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme; themeStore.setTheme(resolved) }
+function applyTheme(theme: UserPreferences['theme']) {
+  const resolved = theme === 'system'
+    ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+    : theme
+  themeStore.setTheme(resolved)
+}
 
-async function loadProfile() { await authStore.fetchUser(); const saved = user.value?.preferences?.profile; if (saved && typeof saved === 'object') preferences.value = { ...preferences.value, ...(saved as Partial<UserPreferences>), notifications: { ...preferences.value.notifications, ...((saved as Partial<UserPreferences>).notifications || {}) } }; applyTheme(preferences.value.theme) }
+async function loadProfile() {
+  await authStore.fetchUser()
+  try {
+    const { data } = await apiClient.get<QuotaInfo>('/files/quota')
+    storageQuotaInfo.value = data
+  } catch {
+    storageQuotaInfo.value = null
+  }
+  const saved = user.value?.preferences?.profile
+  const savedTheme = saved && typeof saved === 'object' ? (saved as Partial<UserPreferences>).theme : undefined
+  if (saved && typeof saved === 'object') {
+    preferences.value = {
+      ...preferences.value,
+      ...(saved as Partial<UserPreferences>),
+      notifications: {
+        ...preferences.value.notifications,
+        ...((saved as Partial<UserPreferences>).notifications || {}),
+      },
+    }
+  }
+  if (themeStore.hasStoredPreference) {
+    if (savedTheme !== 'system') preferences.value.theme = themeStore.theme
+  } else if (savedTheme === 'dark' || savedTheme === 'light' || savedTheme === 'system') {
+    preferences.value.theme = savedTheme
+    applyTheme(savedTheme)
+  } else {
+    preferences.value.theme = themeStore.theme
+  }
+}
 async function loadTasks() { const { data } = await apiClient.get<{ items: Task[] }>('/tasks'); tasks.value = data.items || [] }
 async function loadAuditLogs() { const { data } = await apiClient.get<AuditLog[]>('/users/me/audit-logs', { params: { limit: 5 } }); auditLogs.value = data }
 async function loadMemories() { const { data } = await apiClient.get<AgentMemory[]>('/users/me/memories'); memories.value = data }
+async function rebuildMemories() {
+  isMemorySyncing.value = true
+  try {
+    const { data } = await apiClient.post<{ status: string; queued: number }>('/users/me/memories/rebuild')
+    if (data.status === 'disabled') {
+      message.warning('平台记忆功能尚未启用，请联系管理员检查记忆引擎配置')
+    } else if (data.queued > 0) {
+      message.success(`已提交 ${data.queued} 个历史会话，稍后刷新即可查看记忆`)
+    } else {
+      message.info('暂时没有达到沉淀条件的历史会话')
+    }
+  } catch (error: any) {
+    message.error(error.response?.data?.detail || '历史记忆整理失败')
+  } finally {
+    isMemorySyncing.value = false
+  }
+}
 async function loadSecurity() { twoFactorEnabled.value = (await authStore.fetch2FAStatus()).enabled }
 async function loadAll(refresh = false) { refresh ? isRefreshing.value = true : isLoading.value = true; try { await Promise.all([loadProfile(), loadTasks(), loadAuditLogs(), loadMemories(), loadSecurity()]) } catch (error: any) { if (error.response?.status === 401) { authStore.logout(); await router.push('/login') } else message.error(error.response?.data?.detail || '个人中心加载失败，请稍后重试') } finally { isLoading.value = false; isRefreshing.value = false } }
 async function deleteMemory(memoryId: string) { try { await apiClient.delete(`/users/me/memories/${memoryId}`); memories.value = memories.value.filter(memory => memory.id !== memoryId); message.success('记忆已删除') } catch (error: any) { message.error(error.response?.data?.detail || '删除记忆失败') } }
-async function clearMemories() { if (!window.confirm('确定清空全部跨会话记忆吗？此操作不会影响聊天记录。')) return; try { await apiClient.delete('/users/me/memories'); memories.value = []; message.success('已清空全部记忆') } catch (error: any) { message.error(error.response?.data?.detail || '清空记忆失败') } }
 async function refreshProfile() { await loadAll(true); message.success('个人中心已刷新') }
 async function savePreferences() { if (!user.value) return; savingPreferences.value = true; try { await apiClient.put(`/users/${user.value.id}`, { preferences: { ...(user.value.preferences || {}), profile: preferences.value } }); await authStore.fetchUser(); message.success('偏好已保存') } catch (error: any) { message.error(error.response?.data?.detail || '保存偏好失败') } finally { savingPreferences.value = false } }
 async function onThemeChange(theme: UserPreferences['theme']) { applyTheme(theme); await savePreferences() }
@@ -248,10 +303,10 @@ onUnmounted(() => { if (mediaQuery && handleSystemThemeChange) mediaQuery.remove
 </script>
 
 <style scoped>
-.profile-page-wrapper { min-height: 100%; padding: 32px 0 48px; background: var(--neutral-bg); }
-.profile-content { width: 100%; max-width: 1024px; margin: 0 auto; padding: 0 24px; }
-.profile-grid { display: grid; grid-template-columns: 1fr 1fr 1.6fr; gap: 24px; }
-.profile-card { min-width: 0; padding: 32px; }
+.profile-page-wrapper { min-height: 100%; padding: var(--page-padding) var(--page-padding) var(--space-5xl); background: var(--neutral-bg); }
+.profile-content { width: 100%; min-width: 0; }
+.profile-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--section-gap); }
+.profile-card { min-width: 0; padding: var(--card-padding); }
 .profile-card--hero, .profile-card--wide { grid-column: span 3; }
 .profile-card--hero { background: linear-gradient(135deg, var(--neutral-card) 55%, color-mix(in srgb, var(--arco-primary) 7%, var(--neutral-card))); }
 .profile-hero, .profile-name-row, .detail-list > div, .privacy-row, .audit-row { display: flex; align-items: center; }
@@ -269,7 +324,6 @@ onUnmounted(() => { if (mediaQuery && handleSystemThemeChange) mediaQuery.remove
 .recent-task-progress { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; }
 .recent-task-progress .n-progress { flex: 1 1 auto; min-width: 60px; }
 .recent-task-progress__value { flex: 0 0 44px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 13px; color: var(--neutral-text-1); }
-@media (min-width: 1440px) { .profile-content { max-width: 1152px; padding-left: 32px; padding-right: 32px; } }
-@media (max-width: 900px) { .profile-grid { grid-template-columns: repeat(2, 1fr); gap: 20px; }.profile-card--hero, .profile-card--wide, .profile-card--audit { grid-column: span 2; } }
-@media (max-width: 640px) { .profile-page-wrapper { padding: 24px 0 40px; }.profile-content { padding: 0 16px; }.profile-grid { grid-template-columns: 1fr; gap: 16px; }.profile-card, .profile-card--hero, .profile-card--wide, .profile-card--audit { grid-column: span 1; padding: 24px; }.profile-hero { align-items: flex-start; flex-wrap: wrap; }.task-summary { grid-template-columns: 1fr; }.task-summary-item { border-right: 0; border-bottom: 1px solid var(--neutral-border); }.task-summary-item:last-child { border-bottom: 0; }.privacy-row { align-items: flex-start; flex-direction: column; gap: 12px; } }
+@media (max-width: 900px) { .profile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--card-gap); }.profile-card--hero, .profile-card--wide, .profile-card--audit { grid-column: span 2; } }
+@media (max-width: 640px) { .profile-page-wrapper { padding: var(--space-2xl) var(--space-lg) var(--space-5xl); }.profile-grid { grid-template-columns: 1fr; gap: var(--card-gap); }.profile-card, .profile-card--hero, .profile-card--wide, .profile-card--audit { grid-column: span 1; padding: var(--card-padding); }.profile-hero { align-items: flex-start; flex-wrap: wrap; }.task-summary { grid-template-columns: 1fr; }.task-summary-item { border-right: 0; border-bottom: 1px solid var(--neutral-border); }.task-summary-item:last-child { border-bottom: 0; }.privacy-row { align-items: flex-start; flex-direction: column; gap: 12px; } }
 </style>

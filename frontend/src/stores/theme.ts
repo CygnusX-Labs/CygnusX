@@ -6,16 +6,20 @@ export type AppTheme = 'dark' | 'light'
 
 export const useThemeStore = defineStore('theme', () => {
   const theme = ref<AppTheme>('dark')
+  const hasStoredPreference = ref(false)
   const isDark = computed(() => theme.value === 'dark')
 
-  function applyTheme(next: AppTheme) {
+  function applyTheme(next: AppTheme, persist = true) {
     theme.value = next
     document.documentElement.setAttribute('data-theme', next)
     document.documentElement.classList.toggle('dark', next === 'dark')
-    try {
-      localStorage.setItem(THEME_KEY, next)
-    } catch {
-      /* ignore */
+    if (persist) {
+      hasStoredPreference.value = true
+      try {
+        localStorage.setItem(THEME_KEY, next)
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -29,15 +33,18 @@ export const useThemeStore = defineStore('theme', () => {
 
   function initTheme() {
     let next: AppTheme = 'dark'
+    let stored = false
     try {
       const saved = localStorage.getItem(THEME_KEY) as AppTheme | null
       if (saved === 'light' || saved === 'dark') {
         next = saved
+        stored = true
       }
     } catch {
       /* ignore */
     }
-    applyTheme(next)
+    hasStoredPreference.value = stored
+    applyTheme(next, false)
   }
 
   initTheme()
@@ -45,6 +52,7 @@ export const useThemeStore = defineStore('theme', () => {
   return {
     theme,
     isDark,
+    hasStoredPreference,
     setTheme,
     toggleTheme,
     initTheme,

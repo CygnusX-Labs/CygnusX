@@ -1573,7 +1573,9 @@ function handleEdit() {
 
 /* 思考过程折叠块 */
 .thought-block {
-  width: 90%;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   margin-bottom: 8px;
   border-radius: 10px;
   overflow: hidden;

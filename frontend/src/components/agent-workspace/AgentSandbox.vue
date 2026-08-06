@@ -785,7 +785,11 @@ onUnmounted(() => {
   background: radial-gradient(circle at 12% 0%, rgba(118, 145, 255, 0.12), transparent 32%), var(--chat-bg);
 }
 :root[data-theme="dark"] .sandbox-header,
-:root[data-theme="dark"] .composer-slot { background: rgba(15, 20, 32, 0.82); }
+:root[data-theme="dark"] .composer-slot {
+  background: transparent;
+  border-top-color: transparent;
+  backdrop-filter: none;
+}
 :root[data-theme="dark"] .overdrive-progress-dock { background: linear-gradient(180deg, transparent, rgba(15, 20, 32, 0.88) 38%); }
 :root[data-theme="dark"] .is-empty .composer-slot { background: transparent; }
 :root[data-theme="dark"] .quick-chip { background: var(--chat-surface, var(--neutral-card)); border-color: var(--neutral-border, #2a3040); }

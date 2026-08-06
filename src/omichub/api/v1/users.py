@@ -16,9 +16,12 @@ from omichub.application.schemas.user import (
 )
 from omichub.application.services import UserService
 from omichub.application.services.agent_memory_service import AgentMemoryService
+from omichub.core.config import get_settings
 from omichub.core.exceptions import AuthorizationError
 from omichub.infrastructure.database.models.audit_log import AuditLogModel
+from omichub.infrastructure.database.models.chat import ChatSessionModel
 from omichub.infrastructure.database.repositories import SqlAlchemyUserRepository
+from omichub.infrastructure.task_queue.dispatcher import enqueue_task
 from omichub.middleware.rbac import require_roles
 
 router = APIRouter()
@@ -42,6 +45,35 @@ async def list_my_memories(
         current_user_id, agent_id=agent_id, scope=scope, project_id=project_id
     )
     return [AgentMemoryDTO(**AgentMemoryService._serialize(memory)) for memory in memories]
+
+
+@router.post("/me/memories/rebuild")
+async def rebuild_my_memories(
+    current_user_id: CurrentUserId,
+    db: DbSession,
+) -> dict[str, int | str]:
+    """为历史上尚未触发沉淀的长会话补投记忆任务。"""
+    settings = get_settings()
+    if not settings.mem0_engine_enabled:
+        return {"status": "disabled", "queued": 0}
+
+    minimum_messages = max(2, settings.agent_memory_auto_summary_min_messages)
+    sessions = list(
+        (
+            await db.scalars(
+                select(ChatSessionModel).where(
+                    ChatSessionModel.user_id == current_user_id,
+                    ChatSessionModel.status != "deleted",
+                    ChatSessionModel.message_count >= minimum_messages,
+                )
+            )
+        ).all()
+    )
+    from omichub.infrastructure.celery_app.tasks.memory import settle_session_memory
+
+    for session in sessions:
+        enqueue_task(settle_session_memory, session.session_id, countdown=5)
+    return {"status": "queued", "queued": len(sessions)}
 
 
 @router.delete("/me/memories/{memory_id}", status_code=204)

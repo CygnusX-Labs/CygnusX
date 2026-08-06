@@ -131,6 +131,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '个人中心', requiresAuth: true }
       },
       {
+        path: 'profile/memories',
+        name: 'profile-memories',
+        component: () => import('@/views/MemoryView.vue'),
+        meta: { title: '我的记忆', requiresAuth: true }
+      },
+      {
         path: 'settings',
         name: 'settings',
         component: () => import('@/views/SettingsView.vue'),

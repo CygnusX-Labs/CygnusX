@@ -247,6 +247,34 @@ onMounted(fetchTasks)
   margin-bottom: 16px;
 }
 
+.tasks-toolbar :deep(.n-input),
+.tasks-toolbar :deep(.n-base-selection) {
+  color: var(--neutral-text-1);
+  background: var(--neutral-card);
+  border-color: var(--neutral-border);
+}
+
+.tasks-toolbar :deep(.n-input__input-el),
+.tasks-toolbar :deep(.n-base-selection-input__content) {
+  color: var(--neutral-text-1);
+}
+
+.tasks-toolbar :deep(.n-input__input-el::placeholder) {
+  color: var(--neutral-text-3);
+}
+
+.tasks-toolbar :deep(.n-button:not(.n-button--primary-type)) {
+  color: var(--neutral-text-1);
+  background: var(--neutral-card);
+  border-color: var(--neutral-border);
+}
+
+.tasks-toolbar :deep(.n-button:not(.n-button--primary-type):hover) {
+  color: var(--neutral-text-1);
+  background: var(--neutral-hover);
+  border-color: var(--brand-primary);
+}
+
 .task-search {
   width: 260px;
 }

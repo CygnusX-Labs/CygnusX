@@ -121,6 +121,13 @@ OmicHub 深色工作台使用五级 Surface 空间层级，替代“页面背景
 - Modal、Popover、Drawer 等浮层优先使用 `--surface-elevated`；普通卡片不能通过透明度“看穿”页面背景。
 - Surface 只改变色彩、边框、阴影和材质，不改变页面布局、导航结构、组件功能、文案或业务逻辑。
 
+#### 3.3.5 AI 对话输入区
+
+- AI 助手与 AI 工作台复用同一个 `KimiChatInput` 输入组件，外层、文本编辑区和 Naive UI `NInput` 内部背景必须使用同一组语义变量：`--chat-input-bg: var(--neutral-card)`、`--chat-input-border: var(--neutral-border)`。
+- 深色模式下禁止在业务页面为输入区写死黑色背景（例如 `#1a1a1a`）或白色半透明背景；输入区各层保持同色，避免出现“外框深蓝、内部黑色”的割裂效果。
+- 工作台页面如果不在 `.kimi-layout` 作用域内，必须在页面根容器补齐上述两个变量，再消费 `KimiChatInput` 的默认样式；按钮激活态使用 `--arco-primary` 与 `--arco-primary-light`。
+- 输入区的边框、圆角和阴影遵循组件默认值；页面级覆盖只能用于布局尺寸，不得重新引入独立的表面色和阴影体系。
+
 ### 3.4 间距、圆角、阴影与排版
 
 | 类别 | 规定 |

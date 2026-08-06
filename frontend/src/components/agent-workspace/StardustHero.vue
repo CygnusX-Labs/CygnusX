@@ -211,11 +211,11 @@ function draw(ctx: CanvasRenderingContext2D, px: number, t: number, dpr: number)
       <canvas ref="canvasRef" aria-hidden="true"></canvas>
     </div>
     <div class="hero-greet">
+      <h1 class="hero-title">{{ title }}</h1>
       <div class="hero-eyebrow">
         <span class="pulse-dot" aria-hidden="true"></span>
         {{ greeting }}<template v-if="userName">，{{ userName }}</template>，助手已就绪
       </div>
-      <h1 class="hero-title">{{ title }}</h1>
     </div>
   </section>
 </template>
@@ -240,17 +240,19 @@ function draw(ctx: CanvasRenderingContext2D, px: number, t: number, dpr: number)
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 500;
+  margin-top: 10px;
+  font-size: clamp(16px, 2vw, 19px);
+  line-height: 1.45;
+  font-weight: 600;
   color: var(--stardust-text-secondary);
 }
 .pulse-dot {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
   border-radius: 50%;
   background: var(--success-color, #18a058);
-  animation: dot-pulse 2s ease-in-out infinite;
+  animation: dot-breathe 1.8s ease-in-out infinite;
 }
 .hero-title {
   margin: 8px 0 6px;
@@ -267,9 +269,17 @@ function draw(ctx: CanvasRenderingContext2D, px: number, t: number, dpr: number)
   from { opacity: 0; transform: translateY(14px); }
   to { opacity: 1; transform: none; }
 }
-@keyframes dot-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(24, 160, 88, 0.35); }
-  50% { box-shadow: 0 0 0 5px rgba(24, 160, 88, 0); }
+@keyframes dot-breathe {
+  0%, 100% {
+    opacity: 0.72;
+    transform: scale(0.86);
+    box-shadow: 0 0 0 0 rgba(24, 160, 88, 0.3);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(24, 160, 88, 0);
+  }
 }
 
 @media (max-width: 640px) {

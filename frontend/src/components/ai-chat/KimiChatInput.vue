@@ -1115,9 +1115,18 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
     width: 100%;
     background: transparent;
 
+    :deep(.n-input) {
+      color: var(--chat-text-primary, var(--neutral-text-1));
+      background: var(--chat-input-bg, var(--neutral-card));
+    }
+
+    :deep(.n-input__textarea) {
+      background: var(--chat-input-bg, var(--neutral-card));
+    }
+
     :deep(.n-input-wrapper) {
       padding: 0;
-      background: transparent;
+      background: var(--chat-input-bg, var(--neutral-card));
       border: 0;
       box-shadow: none;
     }
@@ -1129,7 +1138,8 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
 
     :deep(.n-input__textarea-el) {
       max-height: 200px;
-      color: var(--neutral-text-1);
+      color: var(--chat-text-primary, var(--neutral-text-1));
+      background: transparent;
       font-family: inherit;
       font-size: 15px;
       line-height: 24px;
@@ -1137,7 +1147,7 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
     }
 
     :deep(.n-input__textarea-el::placeholder) {
-      color: var(--neutral-text-3);
+      color: var(--chat-text-muted, var(--neutral-text-3));
     }
   }
 

@@ -453,15 +453,17 @@ function openRegisterDialog() {
 
 <style scoped>
 .database-page {
-  --db-primary: #165dff;
+  --db-primary: var(--brand-primary);
   --db-purple: #722ed1;
   --db-cyan: #0fc6c2;
-  --db-text: #1d2129;
-  --db-subtext: #4e5969;
-  --db-muted: #86909c;
-  --db-border: #e5e6eb;
-  --db-bg: #f7f8fa;
-  --db-card: #fff;
+  --db-text: var(--neutral-text-1);
+  --db-subtext: var(--neutral-text-2);
+  --db-muted: var(--neutral-text-3);
+  --db-border: var(--neutral-border);
+  --db-bg: var(--neutral-bg);
+  --db-card: var(--neutral-card);
+  --db-soft: var(--neutral-hover);
+  --db-accent-soft: var(--brand-primary-light);
   min-height: 100%;
 }
 
@@ -569,7 +571,7 @@ function openRegisterDialog() {
 }
 
 .dropdown-item:hover {
-  background: #f2f3f5;
+  background: var(--db-soft);
 }
 
 .dropdown-item-sub {
@@ -675,7 +677,7 @@ function openRegisterDialog() {
   gap: 12px;
   padding: 12px;
   border-radius: 8px;
-  background: #f7f8fa;
+  background: var(--db-soft);
 }
 
 .version-main,
@@ -725,10 +727,10 @@ function openRegisterDialog() {
   height: 26px;
   min-width: 48px;
   padding: 0 10px;
-  border: 1px dashed #c9cdd4;
+  border: 1px dashed var(--db-border);
   border-radius: 6px;
   color: var(--db-muted);
-  background: #fff;
+  background: var(--db-soft);
   font-size: 12px;
   font-weight: 700;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -736,9 +738,9 @@ function openRegisterDialog() {
 
 .source-chip.ready {
   border-style: solid;
-  border-color: rgba(22, 93, 255, 0.24);
+  border-color: color-mix(in srgb, var(--db-primary) 30%, transparent);
   color: var(--db-primary);
-  background: #e8f3ff;
+  background: var(--db-accent-soft);
 }
 
 .metric-grid {
@@ -750,7 +752,7 @@ function openRegisterDialog() {
 .metric-grid > div {
   padding: 9px 10px;
   border-radius: 8px;
-  background: #f7f8fa;
+  background: var(--db-soft);
 }
 
 .metric-value {
@@ -775,7 +777,7 @@ function openRegisterDialog() {
   padding: 0 10px;
   border: 1px solid var(--db-border);
   border-radius: 6px;
-  background: #fff;
+  background: var(--db-soft);
   color: var(--db-subtext);
   font-size: 12px;
   font-weight: 700;
@@ -783,9 +785,9 @@ function openRegisterDialog() {
 }
 
 .version-pill.active {
-  border-color: rgba(22, 93, 255, 0.24);
+  border-color: color-mix(in srgb, var(--db-primary) 30%, transparent);
   color: var(--db-primary);
-  background: #e8f3ff;
+  background: var(--db-accent-soft);
 }
 
 .card-actions {

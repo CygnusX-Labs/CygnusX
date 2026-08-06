@@ -99,7 +99,9 @@ onUnmounted(stopTimer)
 
 <style scoped>
 .ai-loading {
-  width: min(90%, 680px);
+  width: 100%;
+  max-width: 1120px;
+  box-sizing: border-box;
   min-height: 126px;
   padding: 18px 22px 14px;
   overflow: hidden;
