@@ -7,7 +7,8 @@
 - 正文中的相对图片/附件链接（image/xxx、file/xxx 等）重写为 /docs-static/ 绝对 URL
   （main.py 已将 docs/ 挂载为 /docs-static），保证 DocReader 能渲染图片；
 - 原始文件不动，重写后的内容只写入 DB 修订；
-- 附件（PDF/R/数据文件）保留在磁盘，经 /docs-static 链接可直接下载，不入库。
+- 附件（PDF/图片/R/数据文件）保留在磁盘；PDF 和图片会由索引服务提取可检索内容，
+  同时保留 /docs-static 链接供回答引用。
 
 用法:
     source .venv/bin/activate
@@ -26,6 +27,7 @@ import uuid
 from pathlib import Path
 from urllib.parse import quote
 
+from omichub.application.services.knowledge_index_service import KnowledgeIndexService
 from omichub.infrastructure.database.models.knowledge_base import KnowledgeBaseModel
 from omichub.infrastructure.database.models.knowledge_document import KbDocumentModel
 from omichub.infrastructure.database.models.knowledge_editor import DocEditorModel
@@ -33,7 +35,6 @@ from omichub.infrastructure.database.models.knowledge_revision import DocRevisio
 from omichub.infrastructure.database.models.user import UserModel
 from omichub.infrastructure.database.session import get_session_factory
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 SCSEQ_DIR = Path("docs/knowledge/sc-seq")
 DOCS_ROOT = Path("docs")
@@ -116,6 +117,7 @@ async def import_notes(admin_user_id: uuid.UUID, dry_run: bool) -> None:
 
         stats = {"rewritten": 0, "missing": 0}
         imported = skipped = 0
+        indexer = KnowledgeIndexService(session)
         for md_file in md_files:
             rel_path = md_file.relative_to(SCSEQ_DIR)
             doc_id = _doc_id(rel_path)
@@ -155,6 +157,7 @@ async def import_notes(admin_user_id: uuid.UUID, dry_run: bool) -> None:
             session.add(revision)
             await session.flush()
             document.current_rev = revision.id
+            await indexer.index_document(document, rewritten, include_unreferenced_assets=True)
 
             session.add(
                 DocEditorModel(

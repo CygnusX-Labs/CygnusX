@@ -4,6 +4,10 @@ import { NButton, NIcon } from 'naive-ui'
 import { ChevronDownOutline } from '@vicons/ionicons5'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import KimiMessageItem from './KimiMessageItem.vue'
+import StudioPlanTimeline from '@/components/studio/StudioPlanTimeline.vue'
+import StudioTaskUnderstanding from '@/components/studio/StudioTaskUnderstanding.vue'
+import type { StudioPlanStep } from '@/api/studio'
+import type { StudioTaskUnderstanding as TaskUnderstanding } from '@/utils/studioPresentation'
 import type { ChatMessage, CollaborationRouteInfo, CopyMode } from './types'
 
 interface Props {
@@ -19,6 +23,8 @@ interface Props {
   agentColor?: string
   sessionId?: string
   targetMessageId?: string
+  taskUnderstanding?: TaskUnderstanding | null
+  planSteps?: StudioPlanStep[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -33,7 +39,11 @@ const props = withDefaults(defineProps<Props>(), {
   agentColor: '#4f8ef7',
   sessionId: '',
   targetMessageId: '',
+  taskUnderstanding: null,
+  planSteps: () => [],
 })
+
+const firstUserMessageIndex = computed(() => props.messages.findIndex((message) => message.role === 'user'))
 
 const emit = defineEmits<{
   feedback: [messageId: string, type: 'like' | 'dislike']
@@ -231,6 +241,8 @@ onUnmounted(() => {
             JSON.stringify(item.charts),
             JSON.stringify(item.routedAgent),
             JSON.stringify(item.collaborationRoute),
+            index === firstUserMessageIndex ? JSON.stringify(taskUnderstanding) : '',
+            index === firstUserMessageIndex ? JSON.stringify(planSteps) : '',
           ]"
           :data-index="index"
           :class="{ 'message-target': targetMessageId === item.id }"
@@ -258,6 +270,14 @@ onUnmounted(() => {
             @open-tool-page="(route, args) => emit('openToolPage', route, args)"
             @create-case-from-consultation="(summary, consultationId) => emit('createCaseFromConsultation', summary, consultationId)"
             @correct-collaboration-route="(route) => emit('correctCollaborationRoute', route)"
+          />
+          <StudioTaskUnderstanding
+            v-if="index === firstUserMessageIndex && taskUnderstanding"
+            :understanding="taskUnderstanding"
+          />
+          <StudioPlanTimeline
+            v-if="index === firstUserMessageIndex && planSteps.length"
+            :steps="planSteps"
           />
         </DynamicScrollerItem>
       </template>

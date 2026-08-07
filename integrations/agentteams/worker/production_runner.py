@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Run a production read-only AgentTeams Worker without exposing Gateway credentials.
+
+The Worker only holds its role-scoped Bridge token.  It claims an assigned Work Item and asks the
+Bridge to invoke the Gateway's fixed consultation contract on its behalf.  The Bridge owns the
+Gateway Manager token, validates state/lease/role, and persists the result before returning.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import time
+import uuid
+from dataclasses import dataclass
+from typing import Any
+from urllib.error import HTTPError, URLError
+
+from claim_next import claim_next, execute_readonly_work_item, heartbeat_work_item
+
+
+@dataclass(frozen=True)
+class ProductionWorkerConfig:
+    bridge_url: str
+    identity: str
+    token: str
+    poll_seconds: float
+
+
+_AGENT_PROFILES: dict[str, tuple[str, str]] = {
+    "agent-code": ("agent-code", "planning_advice"),
+    "agent-viz": ("agent-viz", "result_interpretation"),
+    "agent-scrna": ("agent-scrna", "interpretation"),
+}
+
+
+def _identity_token(identity: str, identities: str) -> str:
+    for entry in identities.split(","):
+        configured_identity, separator, token = entry.partition(":")
+        if separator and configured_identity.strip() == identity:
+            return token.strip()
+    return ""
+
+
+def load_config(environ: dict[str, str] | None = None) -> ProductionWorkerConfig:
+    values = os.environ if environ is None else environ
+    identity = values.get("AGENTTEAMS_WORKER_IDENTITY", "").strip()
+    token = values.get("AGENTTEAMS_BRIDGE_TOKEN", "").strip() or _identity_token(
+        identity, values.get("BRIDGE_IDENTITIES", "")
+    )
+    bridge_url = values.get("AGENTTEAMS_BRIDGE_BASE_URL", "").strip()
+    if not bridge_url or not identity or not token:
+        raise ValueError("Bridge URL, Worker identity, and Bridge token are required")
+    if identity not in _AGENT_PROFILES:
+        raise ValueError(f"Production read-only runtime does not support identity: {identity}")
+    return ProductionWorkerConfig(
+        bridge_url=bridge_url,
+        identity=identity,
+        token=token,
+        poll_seconds=max(float(values.get("AGENTTEAMS_WORKER_POLL_SECONDS", "5")), 1.0),
+    )
+
+
+def _question(assignment: dict[str, Any]) -> str:
+    work_item = assignment.get("work_item")
+    if not isinstance(work_item, dict):
+        raise RuntimeError("Bridge returned malformed Work Item")
+    objective = str(work_item.get("objective") or "")
+    refs = work_item.get("context_refs") or []
+    return (
+        "请仅基于以下受控任务给出简洁、可核验的只读专业建议；"
+        "不要执行任务、修改文件、提交工作流或承诺后续操作。\n"
+        f"任务：{objective}\n逻辑上下文引用：{json.dumps(refs, ensure_ascii=False)}"
+    )
+
+
+def run_once(config: ProductionWorkerConfig) -> dict[str, Any]:
+    preview = claim_next(config.bridge_url, config.identity, config.token, dry_run=True)
+    if preview.get("assignment") is None:
+        return {"action": "idle", "identity": config.identity}
+
+    claimed = claim_next(config.bridge_url, config.identity, config.token)
+    assignment = claimed.get("assignment")
+    if assignment is None:
+        return {"action": "claim_raced", "identity": config.identity}
+
+    agent_id, capability = _AGENT_PROFILES[config.identity]
+    trace_id = uuid.uuid4().hex
+    heartbeat_work_item(
+        config.bridge_url,
+        config.identity,
+        config.token,
+        assignment,
+        summary="Production read-only worker started Gateway consultation.",
+        trace_id=trace_id,
+    )
+    result = execute_readonly_work_item(
+        config.bridge_url,
+        config.identity,
+        config.token,
+        assignment,
+        agent_id=agent_id,
+        capability=capability,
+        question=_question(assignment),
+        trace_id=trace_id,
+    )
+    work_item = result.get("work_item_id") or assignment["work_item"]["work_item_id"]
+    return {
+        "action": "completed" if result.get("status") == "completed" else "manual_review",
+        "identity": config.identity,
+        "case_id": assignment["case_id"],
+        "work_item_id": work_item,
+        "status": result.get("status"),
+        "trace_id": trace_id,
+    }
+
+
+def main() -> int:
+    try:
+        config = load_config()
+    except (TypeError, ValueError) as exc:
+        print(f"production worker configuration failed: {exc}", flush=True)
+        return 2
+    while True:
+        try:
+            print(json.dumps(run_once(config), ensure_ascii=False, separators=(",", ":")), flush=True)
+        except (HTTPError, URLError, RuntimeError, json.JSONDecodeError) as exc:
+            print(f"production worker execution failed: {exc}", flush=True)
+        time.sleep(config.poll_seconds)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

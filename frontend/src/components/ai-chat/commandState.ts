@@ -7,6 +7,10 @@ export interface StarCommandContext {
   goal?: string
 }
 
+export type GoalRuntimeCommand =
+  | { action: 'start'; objective: string }
+  | { action: 'status' | 'pause' | 'resume' | 'cancel' }
+
 export const STAR_MODE_COMMANDS: Record<string, StarAgentMode> = {
   '/chat': 'chat',
   '/plan': 'plan',
@@ -65,6 +69,23 @@ export function extractGoal(content: string): string | undefined {
   const match = content.match(/(?:^|\s)\/goal(?:\s+)([^\n]*)/i)
   const goal = match?.[1]?.trim()
   return goal || undefined
+}
+
+/**
+ * Parse persistent Goal Runtime controls without changing the legacy
+ * `/goal <objective>` chat hint behavior.
+ */
+export function parseGoalRuntimeCommand(content: string): GoalRuntimeCommand | null {
+  const match = content.trim().match(/^\/goal(?:\s+([a-z]+))?(?:\s+([\s\S]*))?$/i)
+  if (!match) return null
+
+  const command = match[1]?.toLowerCase()
+  const remainder = match[2]?.trim() || ''
+  if (command === 'start') return { action: 'start', objective: remainder }
+  if (command === 'status' || command === 'pause' || command === 'resume' || command === 'cancel') {
+    return { action: command }
+  }
+  return null
 }
 
 export function resolveStarCommandContext(

@@ -6,15 +6,16 @@
  * 左栏：工作台会话列表 + 工作区文件树（懒加载目录，点击预览）
  * 中栏：对话执行流（复用 agentHub store + KimiMessageList/KimiChatInput，
  *       Studio 代码工具经 provide 上下文渲染为 StudioCodeCard）
- * 右栏：产物列表 + 待办计划（P1 占位）+ 沙盒状态块
+ * 右栏：研究结果列表 + 沙盒状态块
  */
-import { ref, reactive, computed, watch, onMounted, onUnmounted, provide, nextTick } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted, provide, nextTick, type Component } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { NButton, NCheckbox, NIcon, NInput, NSelect, NSwitch, NTag, NTooltip, NModal, NSpin, useMessage } from 'naive-ui'
 import {
   ArrowBackOutline, RefreshOutline, FileTrayStackedOutline, ShareSocialOutline,
   PrintOutline, CloseCircleOutline, ConstructOutline, ChevronBackOutline, ChevronForwardOutline,
-  ChatbubbleEllipsesOutline, GridOutline, CodeSlashOutline, PowerOutline, TimeOutline,
+  AnalyticsOutline, ChatbubbleEllipsesOutline, CodeSlashOutline, DocumentTextOutline,
+  FlaskOutline, GridOutline, PowerOutline, TimeOutline,
 } from '@vicons/ionicons5'
 import KimiMessageList from '@/components/ai-chat/KimiMessageList.vue'
 import type { CollaborationRouteInfo } from '@/components/ai-chat/types'
@@ -37,6 +38,11 @@ import { useAuthStore } from '@/stores/auth'
 import { displayName } from '@/utils/displayName'
 import type { ChatMessage, FileAttachment, ToolCall } from '@/components/ai-chat/types'
 import type { FilePickerItem } from '@/types'
+import {
+  inferStudioTaskKind,
+  inferStudioTaskStatus,
+  parseTaskUnderstanding,
+} from '@/utils/studioPresentation'
 
 const route = useRoute()
 const router = useRouter()
@@ -54,9 +60,15 @@ const workspaceId = ref<string | null>(null)
 const shareActive = ref(false)
 const shareExpiresAt = ref<string | null>(null)
 const input = ref('')
+
+function taskIconComponent(kind: ReturnType<typeof inferStudioTaskKind>): Component {
+  if (kind === 'single-cell') return FlaskOutline
+  if (kind === 'transcriptomics') return AnalyticsOutline
+  return DocumentTextOutline
+}
 const longRunSeconds = ref(0)
 const longRunPlaceholder = computed(() => {
-  if (!store.isStreaming) return `向 ${agent.value?.name || 'AI 助手'} 描述分析任务（@ 引用文件，/ 调用技能或智能体）`
+  if (!store.isStreaming) return '输入需求，@ 引用文件、技能或智能体，/ 查看快捷命令'
   if (longRunSeconds.value > 90) return '正在跑长任务，去倒杯咖啡？'
   if (longRunSeconds.value > 30) return '沙盒正在计算，代码和产物会实时同步…'
   return 'AI 正在执行，稍等片刻…'
@@ -82,7 +94,7 @@ const artifactsKey = ref(0)
 
 const leftCollapsed = ref(false)
 const rightCollapsed = ref(false)
-const rightSections = reactive({ artifacts: true, plan: true, sandbox: true })
+const rightSections = reactive({ artifacts: true, sandbox: true })
 const leftWidth = ref(260)
 const RIGHT_WIDTH_KEY = 'omichub:studio:right-width-v2'
 function loadRightWidth(): number {
@@ -460,6 +472,12 @@ function handleRetryWithModel() {
 
 const userDisplayName = computed(() => displayName(authStore.user) || '我')
 const userAvatarUrl = computed(() => authStore.user?.avatar_url || '')
+const taskUnderstanding = computed(() => parseTaskUnderstanding(session.value?.messages || [], store.isStreaming))
+
+function sessionAgentName(item: StudioSessionDTO): string {
+  if (!item.agent_id) return ''
+  return store.getAgent(item.agent_id)?.name || '科研智能体'
+}
 
 /** 沙盒状态灯：流式执行中按 启动中/运行中 展示，空闲展示真实状态 */
 const statusInfo = computed(() => {
@@ -594,12 +612,6 @@ async function handleImportFiles(items: FilePickerItem[]) {
   } finally {
     importingFile.value = false
   }
-}
-
-function planStatusIcon(status: 'pending' | 'in_progress' | 'done'): string {
-  if (status === 'done') return '☑'
-  if (status === 'in_progress') return '◐'
-  return '☐'
 }
 
 function openExtractSkill() {
@@ -848,10 +860,10 @@ function formatSessionTime(iso: string): string {
           </template>
           返回 AI 助手
         </n-tooltip>
-        <span class="bar-title">{{ session?.title || 'AI 分析工作台' }}</span>
-        <n-tag v-if="agent" size="small" round :bordered="false" type="info" class="agent-tag">
-          {{ agent.avatar }} {{ agent.name }}
-        </n-tag>
+        <div class="agent-identity">
+          <span class="agent-primary">{{ agent?.avatar }} {{ agent?.name || '科研智能体' }}</span>
+          <span class="model-secondary">Powered by {{ modelName }}</span>
+        </div>
         <n-select
           v-if="modelOptions.length"
           :value="session?.model_id || null"
@@ -977,7 +989,7 @@ function formatSessionTime(iso: string): string {
         <div class="col-block sessions-block">
           <div class="block-header">
             <n-icon size="14"><FileTrayStackedOutline /></n-icon>
-            <span>工作台会话</span>
+            <span>分析任务</span>
             <n-button text size="tiny" class="history-trigger" title="历史会话" @click="historyOpen = true">
               <n-icon><TimeOutline /></n-icon>
             </n-button>
@@ -986,12 +998,25 @@ function formatSessionTime(iso: string): string {
             <div
               v-for="s in studioSessions"
               :key="s.session_id"
-              class="session-item"
+              class="session-item task-card"
               :class="{ active: s.session_id === sessionId }"
               @click="goSession(s.session_id)"
             >
-              <div class="s-title">{{ s.title }}</div>
-              <div class="s-time">{{ formatSessionTime(s.updated_at) }}</div>
+              <span class="task-icon" aria-hidden="true">
+                <NIcon :component="taskIconComponent(inferStudioTaskKind(s.title))" :size="16" />
+              </span>
+              <div class="task-card-body">
+                <div class="s-title">{{ s.title }}</div>
+                <div class="task-meta">
+                  <span v-if="sessionAgentName(s)">{{ sessionAgentName(s) }}</span>
+                  <span>{{ formatSessionTime(s.updated_at) }}</span>
+                </div>
+              </div>
+              <span
+                class="task-status-light"
+                :class="`is-${inferStudioTaskStatus(s, sessionId, store.isStreaming)}`"
+                :title="inferStudioTaskStatus(s, sessionId, store.isStreaming)"
+              />
             </div>
             <div v-if="!studioSessions.length" class="block-empty">暂无工作台会话</div>
           </div>
@@ -1044,6 +1069,8 @@ function formatSessionTime(iso: string): string {
               :agent-color="agent?.color"
               :session-id="sessionId"
               :target-message-id="String(route.query.message || '')"
+              :task-understanding="taskUnderstanding"
+              :plan-steps="store.currentPlan"
               @copy="handleCopy"
               @feedback="(id, type) => store.submitMessageFeedback(id, type)"
               @regenerate="handleRegenerate"
@@ -1063,6 +1090,9 @@ function formatSessionTime(iso: string): string {
                 v-model="input"
                 :is-streaming="store.isStreaming"
                 :placeholder="longRunPlaceholder"
+                show-overdrive-control
+                :overdrive-enabled="overdriveEnabled"
+                @toggle-overdrive="overdriveEnabled = !overdriveEnabled"
                 @send="handleSend"
                 @stop="store.stopStreaming"
               />
@@ -1088,12 +1118,12 @@ function formatSessionTime(iso: string): string {
         </div>
       </main>
 
-      <!-- 右栏：产物 + 待办计划 + 沙盒状态 -->
+      <!-- 右栏：研究结果 + 沙盒状态 -->
       <aside v-show="!rightCollapsed" class="col-right" :style="{ width: rightWidth + 'px' }">
         <div class="resize-handle right" title="拖拽调整宽度" @mousedown="startResizeRight" />
 
         <div class="col-block artifacts-block">
-          <button class="block-header accordion-header" @click="toggleRightSection('artifacts')"><span>结果产物</span><span class="accordion-chevron" :class="{ open: rightSections.artifacts }">⌄</span></button>
+          <button class="block-header accordion-header" @click="toggleRightSection('artifacts')"><span>研究结果</span><span class="accordion-chevron" :class="{ open: rightSections.artifacts }">⌄</span></button>
           <div v-show="rightSections.artifacts" class="block-scroll">
             <StudioArtifactsPanel
               :session-id="sessionId"
@@ -1101,25 +1131,6 @@ function formatSessionTime(iso: string): string {
               @insert="handleInsertArtifact"
               @open="openFileInEditor"
             />
-          </div>
-        </div>
-
-        <div class="col-block plan-block">
-          <button class="block-header accordion-header" @click="toggleRightSection('plan')"><span>待办计划</span><span class="accordion-chevron" :class="{ open: rightSections.plan }">⌄</span></button>
-          <div v-show="rightSections.plan && store.currentPlan.length" class="plan-list">
-            <div
-              v-for="(step, index) in store.currentPlan"
-              :key="`${index}-${step.title}`"
-              class="plan-item"
-              :class="`is-${step.status}`"
-            >
-              <span class="plan-status">{{ planStatusIcon(step.status) }}</span>
-              <span class="plan-title">{{ step.title }}</span>
-            </div>
-          </div>
-          <div v-if="rightSections.plan && !store.currentPlan.length" class="plan-placeholder">
-            <svg viewBox="0 0 120 56" aria-hidden="true"><path d="M18 42c16-13 30-13 42 0 12-13 26-13 42 0" /><circle cx="42" cy="19" r="3" /><circle cx="76" cy="12" r="2" /><path d="M60 38V18l11 12H49l11-12" /></svg>
-            <span>任务启航后，计划将在此列队 ⭐</span>
           </div>
         </div>
 
@@ -1240,14 +1251,9 @@ function formatSessionTime(iso: string): string {
   gap: 10px;
   min-width: 0;
 }
-.bar-title {
-  font-size: 14px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 360px;
-}
+.agent-identity { display: flex; min-width: 0; flex-direction: column; line-height: 1.2; }
+.agent-primary { max-width: 260px; overflow: hidden; color: var(--text-primary, var(--chat-text-primary)); font-size: 14px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.model-secondary { margin-top: 2px; color: var(--text-tertiary, var(--chat-text-muted)); font-size: 10px; }
 .agent-tag,
 .model-tag {
   flex-shrink: 0;
@@ -1402,6 +1408,16 @@ function formatSessionTime(iso: string): string {
   cursor: pointer;
   transition: background 0.15s ease;
 }
+.task-card { display: grid; grid-template-columns: 30px minmax(0, 1fr) 10px; align-items: center; gap: 8px; min-height: 52px; border: 1px solid transparent; border-radius: 12px; }
+.task-icon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; color: var(--studio-primary); background: var(--surface-highlight, var(--chat-surface-hover)); }
+.task-card-body { min-width: 0; }
+.task-meta { display: flex; gap: 6px; margin-top: 3px; color: var(--text-tertiary, var(--chat-text-muted)); font-size: 10px; }
+.task-meta span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-meta span + span::before { margin-right: 6px; content: '·'; }
+.task-status-light { width: 8px; height: 8px; border-radius: 50%; background: var(--text-tertiary, var(--chat-text-muted)); }
+.task-status-light.is-completed { background: var(--success-color, var(--brand-primary)); }
+.task-status-light.is-running { background: var(--brand-primary, var(--stardust-blue)); box-shadow: 0 0 0 4px var(--brand-primary-light, var(--chat-surface-hover)); animation: task-status-pulse 1.6s ease-in-out infinite; }
+.task-status-light.is-waiting { background: var(--warning-color, var(--text-tertiary)); }
 .session-item:hover {
   background: var(--chat-surface-hover, rgba(0, 0, 0, 0.04));
 }
@@ -1453,6 +1469,7 @@ function formatSessionTime(iso: string): string {
   padding: 12px 20px;
   border-top: 1px solid var(--chat-border);
 }
+@keyframes task-status-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 
 /* ---------- 右栏块 ---------- */
 .artifacts-block {
@@ -1462,54 +1479,6 @@ function formatSessionTime(iso: string): string {
   overflow-y: auto;
   padding: 0 10px 10px;
 }
-.plan-block {
-  flex-shrink: 0;
-}
-.plan-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 0 10px 10px;
-}
-.plan-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 7px 8px;
-  border-radius: 8px;
-  font-size: 12px;
-  line-height: 1.45;
-  background: var(--chat-surface-hover, rgba(0, 0, 0, 0.035));
-}
-.plan-item.is-in_progress {
-  color: var(--chat-accent, #4f8ef7);
-  background: rgba(79, 142, 247, 0.1);
-}
-.plan-item.is-done {
-  color: var(--chat-text-muted, #999);
-}
-.plan-title {
-  min-width: 0;
-  word-break: break-word;
-}
-.plan-status {
-  flex-shrink: 0;
-  font-family: monospace;
-}
-.plan-placeholder {
-  margin: 0 10px 10px;
-  padding: 12px;
-  border: 1px dashed var(--chat-border, #ddd);
-  border-radius: 8px;
-  font-size: 12px;
-  color: var(--chat-text-muted, #aaa);
-  text-align: center;
-  display: grid;
-  justify-items: center;
-  gap: 5px;
-}
-.plan-placeholder svg { width: 110px; height: 52px; fill: none; stroke: var(--studio-primary, #6c5ce7); stroke-width: 1.5; opacity: .65; }
-.plan-placeholder span { display: block; }
 .sandbox-block {
   flex-shrink: 0;
   border-bottom: none;
@@ -1650,7 +1619,7 @@ function formatSessionTime(iso: string): string {
 .col-left,.col-right { background:color-mix(in srgb, var(--studio-card) 82%, transparent); border-color:var(--studio-border,#e8e8f2); }.session-item:hover { background:var(--studio-primary-soft,#f0edff); }.session-item.active { position:relative; background:var(--studio-primary-soft,#f0edff); }.session-item.active::before { position:absolute; inset:7px auto 7px 0; width:3px; border-radius:0 2px 2px 0; background:var(--studio-primary); content:''; }.session-item.active .s-title { color:var(--studio-primary,#6c5ce7); }.resize-handle:hover { background:rgba(76,111,255,.26); }
 .plan-item.is-done { color:var(--studio-text-sub,#8a8aa3); background:rgba(108,92,231,.06); opacity:.78; }.plan-item.is-done .plan-title { text-decoration:line-through; text-decoration-thickness:1px; }.plan-item.is-done .plan-status { color:var(--studio-primary,#6c5ce7); font-weight:700; }.plan-item.is-in_progress { color:var(--studio-primary,#6c5ce7); background:var(--studio-primary-soft,#f0edff); }
 .workspace-image-preview { max-width:100%; max-height:70vh; object-fit:contain; border-radius:12px; box-shadow:0 12px 36px rgba(43,43,61,.12); }.workspace-table-wrap { width:100%; max-height:65vh; overflow:auto; }.workspace-table-wrap table { width:100%; border-collapse:collapse; font-size:12px; }.workspace-table-wrap th,.workspace-table-wrap td { padding:7px 9px; border-bottom:1px solid var(--studio-border,#e8e8f2); text-align:left; white-space:nowrap; }.workspace-table-wrap th { position:sticky; top:0; background:var(--studio-primary-soft,#f0edff); }.workspace-table-wrap small { display:block; margin-top:8px; color:var(--studio-text-sub,#8a8aa3); }.unsupported-preview { display:grid; justify-items:center; gap:8px; padding:46px 20px; text-align:center; }.unsupported-preview h3 { margin:0; }.unsupported-preview p { max-width:460px; margin:0 0 10px; color:var(--studio-text-sub,#8a8aa3); font-size:12px; }.unsupported-icon { color:var(--studio-primary,#6c5ce7); font-size:42px; }
-@media (prefers-reduced-motion: reduce) { .studio-modebar button,.node-caret { transition:none !important; } }
+@media (prefers-reduced-motion: reduce) { .studio-modebar button,.node-caret { transition:none !important; }.task-status-light.is-running { animation:none; } }
 
 .accordion-header { width:100%; border:0; background:transparent; text-align:left; cursor:pointer; }.accordion-header:hover { background:var(--studio-primary-soft,#f0edff); }.accordion-chevron { margin-left:auto; color:var(--studio-text-sub,#8a8aa3); transition:transform .18s ease; }.accordion-chevron.open { transform:rotate(180deg); }
 .studio-view :deep(.kimi-message-item.user .message-content.user-bubble) { max-width:78%; padding:10px 14px; color:var(--studio-text,#2b2b3d); background:#eeeaff; border:1px solid #ddd7ff; border-radius:16px 16px 5px 16px; box-shadow:0 3px 12px rgba(108,92,231,.08); }

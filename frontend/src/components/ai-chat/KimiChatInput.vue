@@ -28,6 +28,7 @@ import {
 } from '@vicons/ionicons5'
 import SlashCommandMenu from './SlashCommandMenu.vue'
 import MentionMenu from './MentionMenu.vue'
+import GoalStatusCard from './GoalStatusCard.vue'
 import { readActiveMentionQuery } from './mentionQuery'
 import { pushRecent, recentRank } from './recentItems'
 import {
@@ -37,7 +38,9 @@ import {
   STAR_PERMISSION_LABELS,
   hasStarModeCommand,
   hasStarPermissionCommand,
+  parseGoalRuntimeCommand,
   resolveStarCommandContext,
+  type GoalRuntimeCommand,
   type StarAgentMode,
   type StarPermission,
 } from './commandState'
@@ -47,6 +50,7 @@ import { useSiteConfigStore } from '@/stores/site-config'
 import { useAgentHubStore } from '@/stores/agentHub'
 import { useAuthStore } from '@/stores/auth'
 import { useModulesStore } from '@/stores/modules'
+import { useGoalRuntimeStore } from '@/stores/goalRuntime'
 import apiClient from '@/api/client'
 import type { DataFile } from '@/types'
 import type { AgentTemplate, SkillItem } from '@/types/agent'
@@ -113,6 +117,7 @@ const siteConfigStore = useSiteConfigStore()
 const agentHub = useAgentHubStore()
 const authStore = useAuthStore()
 const modulesStore = useModulesStore()
+const goalRuntime = useGoalRuntimeStore()
 const message = useMessage()
 const router = useRouter()
 
@@ -151,6 +156,11 @@ const starPermissionIcon = computed(() => ({
 const showStarMode = computed(() => starModeExplicit.value || hasStarModeCommand(localValue.value))
 const showStarPermission = computed(() => starPermissionExplicit.value || hasStarPermissionCommand(localValue.value))
 const showStarContext = computed(() => showStarMode.value || showStarPermission.value || Boolean(starContext.value.goal))
+const goalSessionId = computed(() => agentHub.currentSession?.id || '')
+const activeGoal = computed(() => goalRuntime.goalForSession(goalSessionId.value))
+const activeGoalEvents = computed(() => goalRuntime.eventsForGoal(activeGoal.value?.id))
+const goalLoading = computed(() => Boolean(goalRuntime.loadingBySession[goalSessionId.value]))
+const goalError = computed(() => goalRuntime.errorBySession[goalSessionId.value] || '')
 
 function getTextareaElement() {
   return inputWrapperRef.value?.querySelector<HTMLTextAreaElement>('textarea')
@@ -606,7 +616,44 @@ function handleSlashSelectAgent(agent: AgentTemplate) {
   })
 }
 
-function handleSend() {
+async function handleGoalCommand(command: GoalRuntimeCommand): Promise<void> {
+  const session = agentHub.currentSession
+  if (!session || session.id.startsWith('sess-')) {
+    message.warning('请先发送一条普通消息创建会话，再启动持久 Goal')
+    return
+  }
+  try {
+    if (command.action === 'start') {
+      if (!command.objective) {
+        message.warning('请在 /goal start 后填写明确目标')
+        return
+      }
+      await goalRuntime.startGoal(session.id, command.objective, session.agent_id)
+      message.success('持久 Goal 已启动，将在后台安全推进')
+    } else if (command.action === 'status') {
+      const goal = await goalRuntime.loadActiveGoal(session.id)
+      message.info(goal ? `当前 Goal：${goal.status}` : '当前会话没有进行中的 Goal')
+    } else {
+      await goalRuntime.controlGoal(session.id, command.action)
+      message.success(command.action === 'pause' ? 'Goal 已暂停' : command.action === 'resume' ? 'Goal 已恢复' : 'Goal 已取消')
+    }
+    localValue.value = ''
+  } catch (error) {
+    const detail = (error as { response?: { data?: { detail?: string } } }).response?.data?.detail
+    message.error(detail || (error as Error).message || 'Goal 操作失败')
+  }
+}
+
+function refreshGoalStatus(): void {
+  if (!goalSessionId.value || goalSessionId.value.startsWith('sess-')) return
+  void goalRuntime.loadActiveGoal(goalSessionId.value).catch(() => undefined)
+}
+
+function handleGoalControl(action: 'pause' | 'resume' | 'cancel'): void {
+  void handleGoalCommand({ action })
+}
+
+async function handleSend() {
   const content = localValue.value.trim()
   const hasPayload =
     content.length > 0 ||
@@ -614,6 +661,12 @@ function handleSend() {
     pendingAgent.value !== null ||
     pendingSkills.value.length > 0
   if (!hasPayload || props.disabled) return
+
+  const goalCommand = parseGoalRuntimeCommand(content)
+  if (goalCommand) {
+    await handleGoalCommand(goalCommand)
+    return
+  }
 
   emit('send', content, {
     attachments: attachments.value.length ? [...attachments.value] : undefined,
@@ -764,12 +817,14 @@ onMounted(() => {
   siteConfigStore.fetchSiteConfig()
   void modulesStore.ensureLoaded()
   syncMcpSelection()
+  refreshGoalStatus()
   document.addEventListener('pointerdown', handleDocumentPointerDown)
 })
 
 onUnmounted(() => {
   if (blurTimer) clearTimeout(blurTimer)
   document.removeEventListener('pointerdown', handleDocumentPointerDown)
+  if (goalSessionId.value) goalRuntime.disposeSession(goalSessionId.value)
 })
 
 function handleDocumentPointerDown(event: PointerEvent) {
@@ -780,10 +835,23 @@ function handleDocumentPointerDown(event: PointerEvent) {
 }
 
 watch(() => agentHub.currentSessionId, syncMcpSelection)
+watch(() => agentHub.currentSessionId, refreshGoalStatus)
 </script>
 
 <template>
   <div class="ai-composer-shell">
+    <GoalStatusCard
+      v-if="activeGoal"
+      class="goal-status-dock"
+      :goal="activeGoal"
+      :events="activeGoalEvents"
+      :loading="goalLoading"
+      :error="goalError"
+      @pause="handleGoalControl('pause')"
+      @resume="handleGoalControl('resume')"
+      @cancel="handleGoalControl('cancel')"
+      @refresh="refreshGoalStatus"
+    />
     <div
       class="kimi-chat-input"
       :class="{
@@ -1125,6 +1193,10 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
   min-width: 0;
 }
 
+.goal-status-dock {
+  margin-bottom: var(--space-md, 16px);
+}
+
 .kimi-chat-input {
   position: relative;
   min-width: 0;
@@ -1406,6 +1478,7 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
       }
     }
   }
+
 }
 
 .clear-confirm {

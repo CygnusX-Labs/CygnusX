@@ -2,9 +2,9 @@ const FESTIVAL_EFFECTS_KEY = 'omichub-festival-effects'
 
 export function isFestivalEffectsEnabled(): boolean {
   try {
-    return localStorage.getItem(FESTIVAL_EFFECTS_KEY) === 'true'
+    return localStorage.getItem(FESTIVAL_EFFECTS_KEY) !== 'false'
   } catch {
-    return false
+    return true
   }
 }
 

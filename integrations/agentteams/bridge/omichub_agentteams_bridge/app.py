@@ -12,7 +12,7 @@ from fastapi.responses import StreamingResponse
 
 from .audit import AuditStore
 from .case_store import CaseStore
-from .client import OmicHubClient
+from .client import GatewayClient, OmicHubClient
 from .config import BridgeSettings
 from .models import (
     ApprovalRequest,
@@ -26,6 +26,8 @@ from .models import (
     QualityGateRequest,
     SubmitTaskRequest,
     WorkItemCreateRequest,
+    WorkItemHeartbeatRequest,
+    ReadOnlyExecutionRequest,
     WorkItemUpdateRequest,
 )
 from .security import require_identity, require_role
@@ -33,11 +35,11 @@ from .service import BridgeService
 from .size_limits import BodySizeLimitMiddleware
 
 
-def get_service(request: Request) -> BridgeService:
+async def get_service(request: Request) -> BridgeService:
     return request.app.state.bridge_service
 
 
-def authenticate_identity(
+async def authenticate_identity(
     request: Request,
     x_bridge_identity: str | None = Header(default=None),
     x_bridge_token: str | None = Header(default=None),
@@ -46,21 +48,43 @@ def authenticate_identity(
 
 
 def create_app(
-    settings: BridgeSettings | None = None, client: OmicHubClient | None = None
+    settings: BridgeSettings | None = None,
+    client: OmicHubClient | None = None,
+    gateway_client: GatewayClient | None = None,
 ) -> FastAPI:
     runtime_settings = settings or BridgeSettings()
     runtime_client = client or OmicHubClient(runtime_settings)
+    runtime_gateway_client = gateway_client
+    if runtime_gateway_client is None and (
+        runtime_settings.gateway_url and runtime_settings.gateway_manager_token
+    ):
+        runtime_gateway_client = GatewayClient(runtime_settings)
+    audit_store = AuditStore(
+        runtime_settings.audit_log_path,
+        runtime_settings.state_store_url,
+        f"{runtime_settings.state_store_key_prefix}:audit",
+    )
+    case_store = CaseStore(
+        runtime_settings.case_store_path,
+        runtime_settings.state_store_url,
+        f"{runtime_settings.state_store_key_prefix}:cases",
+    )
     service = BridgeService(
         runtime_settings,
         runtime_client,
-        AuditStore(runtime_settings.audit_log_path),
-        CaseStore(runtime_settings.case_store_path),
+        audit_store,
+        case_store,
+        runtime_gateway_client,
     )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         yield
         await runtime_client.aclose()
+        if runtime_gateway_client is not None:
+            await runtime_gateway_client.aclose()
+        await audit_store.aclose()
+        await case_store.aclose()
 
     app = FastAPI(title="OmicHub AgentTeams Bridge", version="0.1.0", lifespan=lifespan)
     app.add_middleware(
@@ -259,6 +283,44 @@ def create_app(
         return (await service.claim_work_item(case_id, work_item_id, identity)).model_dump(
             mode="json"
         )
+
+    @app.post("/v1/cases/{case_id}/work-items/{work_item_id}/heartbeat", tags=["Work Items"])
+    async def heartbeat_work_item(
+        case_id: str,
+        work_item_id: str,
+        payload: WorkItemHeartbeatRequest,
+        identity: Annotated[str, Depends(authenticate_identity)],
+        service: Annotated[BridgeService, Depends(get_service)],
+    ) -> dict:
+        require_role(
+            identity,
+            "data-steward",
+            "workflow-operator",
+            "quality-auditor",
+            "delivery-reporter",
+            "agent-code",
+            "agent-viz",
+            "agent-scrna",
+        )
+        return (
+            await service.heartbeat_work_item(case_id, work_item_id, payload, identity)
+        ).model_dump(mode="json")
+
+    @app.post(
+        "/v1/cases/{case_id}/work-items/{work_item_id}/execute-readonly",
+        tags=["Work Items"],
+    )
+    async def execute_readonly_work_item(
+        case_id: str,
+        work_item_id: str,
+        payload: ReadOnlyExecutionRequest,
+        identity: Annotated[str, Depends(authenticate_identity)],
+        service: Annotated[BridgeService, Depends(get_service)],
+    ) -> dict:
+        require_role(identity, "agent-code", "agent-viz", "agent-scrna")
+        return (
+            await service.execute_readonly_work_item(case_id, work_item_id, payload, identity)
+        ).model_dump(mode="json")
 
     @app.get("/v1/cases/{case_id}/events", tags=["Cases"])
     async def get_case_events(

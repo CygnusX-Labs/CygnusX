@@ -152,7 +152,7 @@ async def sync(
             await session.flush()
 
             document.current_rev = revision.id
-            await indexer.index_document(document, content)
+            await indexer.index_document(document, content, include_unreferenced_assets=True)
 
             editor = DocEditorModel(
                 document_id=document.id,
@@ -191,7 +191,7 @@ async def sync(
 
             document.current_rev = revision.id
             document.status = 1
-            await indexer.index_document(document, content)
+            await indexer.index_document(document, content, include_unreferenced_assets=True)
 
             # 更新编辑者统计
             editor_result = await session.execute(

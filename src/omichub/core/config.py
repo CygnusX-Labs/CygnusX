@@ -88,6 +88,11 @@ class Settings(BaseSettings):
     mas_apptainer_pipeline_root: str = "/opt/omichub/pipelines/RNAFlow"
     mas_scrna_docker_image: str = "omichub-analysis:scrna-2026.07"
     mas_scrna_timeout_seconds: int = 7200
+    # ===== Persistent Goal Runtime (opt-in, isolated from chat SSE) =====
+    goal_runtime_enabled: bool = False
+    goal_fanout_enabled: bool = False
+    goal_lease_seconds: int = 120
+    goal_continuation_delay_seconds: int = 1
     # ===== P4 记忆语义召回（默认关闭；失败时回退关键词召回） =====
     agent_memory_semantic_retrieval_enabled: bool = False
     agent_memory_embedding_model: str = ""

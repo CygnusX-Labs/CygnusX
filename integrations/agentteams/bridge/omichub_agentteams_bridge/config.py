@@ -15,6 +15,8 @@ class BridgeSettings(BaseSettings):
     omichub_base_url: str = "http://omichub-api:8000"
     omichub_service_token: str = ""
     omichub_api_key: str = ""
+    gateway_url: str = ""
+    gateway_manager_token: str = ""
     approval_signing_secret: str = "change-me-before-deployment"
     identities: str = (
         "approval-authority:approval-secret,bioops-manager:manager-secret,data-steward:steward-secret,"
@@ -28,6 +30,8 @@ class BridgeSettings(BaseSettings):
     max_response_bytes: int = Field(default=1_048_576, ge=1_024, le=16_777_216)
     max_evidence_bytes: int = 16_384
     worker_heartbeat_ttl_seconds: int = Field(default=180, ge=30, le=3_600)
+    state_store_url: str = ""
+    state_store_key_prefix: str = "omichub:agentteams"
     audit_log_path: str = "/tmp/omichub-agentteams-bridge-audit.jsonl"
     case_store_path: str = "/tmp/omichub-agentteams-bridge-cases.json"
     manifest_dir: str = "/tmp/omichub-agentteams-bridge-manifests"
@@ -65,6 +69,12 @@ class BridgeSettings(BaseSettings):
             raise ValueError("生产环境必须替换 Bridge 身份凭证")
         if not self.allowed_flows():
             raise ValueError("生产环境必须配置允许的流程白名单")
+        if bool(self.gateway_url) != bool(self.gateway_manager_token):
+            raise ValueError("生产环境 Gateway URL 与 Manager token 必须同时配置")
+        if self.gateway_url and self._is_placeholder(self.gateway_manager_token):
+            raise ValueError("生产环境必须替换 Gateway Manager token")
+        if not self.state_store_url:
+            raise ValueError("生产环境必须配置 Redis 共享状态存储")
         return self
 
     @staticmethod

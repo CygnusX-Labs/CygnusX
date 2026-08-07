@@ -27,7 +27,7 @@ async def reindex(limit: int) -> int:
         indexer = KnowledgeIndexService(session)
         indexed = 0
         for document, content in rows:
-            await indexer.index_document(document, content)
+            await indexer.index_document(document, content, include_unreferenced_assets=True)
             indexed += 1
         await session.commit()
         return indexed

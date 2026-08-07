@@ -51,3 +51,41 @@ class OmicHubClient:
                 "OmicHub response must be an object", request=response.request, response=response
             )
         return data
+
+
+class GatewayClient:
+    """Bridge-only adapter for the Gateway's fixed read-only consultation contract."""
+
+    def __init__(self, settings: BridgeSettings, client: httpx.AsyncClient | None = None) -> None:
+        self._settings = settings
+        self._client = client or httpx.AsyncClient(
+            base_url=settings.gateway_url.rstrip("/"), timeout=settings.request_timeout_seconds
+        )
+        self._owns_client = client is None
+
+    @property
+    def configured(self) -> bool:
+        return bool(self._settings.gateway_url and self._settings.gateway_manager_token)
+
+    async def aclose(self) -> None:
+        if self._owns_client:
+            await self._client.aclose()
+
+    async def consult(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not self.configured:
+            raise RuntimeError("Bridge Gateway integration is not configured")
+        response = await self._client.post(
+            "/v1/scientific-interpretation",
+            json=payload,
+            headers={
+                "X-Gateway-Identity": "bioops-manager",
+                "X-Gateway-Token": self._settings.gateway_manager_token,
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict):
+            raise httpx.HTTPStatusError(
+                "Gateway response must be an object", request=response.request, response=response
+            )
+        return data

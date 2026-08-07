@@ -45,6 +45,9 @@ def validate_bridge_env(values: dict[str, str]) -> list[str]:
     errors: list[str] = []
     for key in (
         "BRIDGE_OMICHUB_BASE_URL",
+        "BRIDGE_GATEWAY_URL",
+        "BRIDGE_GATEWAY_MANAGER_TOKEN",
+        "BRIDGE_STATE_STORE_URL",
         "BRIDGE_APPROVAL_SIGNING_SECRET",
         "BRIDGE_IDENTITIES",
         "BRIDGE_ALLOWED_FLOW_IDS",

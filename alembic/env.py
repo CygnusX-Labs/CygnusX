@@ -19,6 +19,7 @@ from omichub.infrastructure.database.models import (  # noqa: F401
     cookie,
     file,
     festival,
+    goal,
     knowledge_audit_log,
     knowledge_document,
     knowledge_editor,

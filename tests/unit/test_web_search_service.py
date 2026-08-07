@@ -2,6 +2,7 @@
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
 import pytest
 
@@ -107,6 +108,23 @@ def test_freshness_queries_require_web_search_without_manual_toggle():
     assert not ChatService._requires_fresh_web_search("如何做 RNA-seq 差异表达")
 
 
+def test_professional_learning_context_mounts_web_fallback_without_manual_toggle():
+    messages = [
+        {"role": "user", "content": "请介绍单细胞 RNA-seq 的差异表达分析。"},
+        {"role": "assistant", "content": "可以。"},
+        {"role": "user", "content": "只是想学习原理和流程，暂时没有数据。"},
+    ]
+
+    assert ChatService._requires_professional_evidence_search(
+        "只是想学习原理和流程，暂时没有数据。", messages
+    )
+    assert not ChatService._requires_professional_evidence_search(
+        "只是想学习原理和流程，暂时没有数据。",
+        messages,
+        {"web_search": {"mode": "off"}},
+    )
+
+
 @pytest.mark.asyncio
 async def test_empty_query_avoids_network_request():
     service = WebSearchService(provider_id="tavily", api_key="key", base_url="https://api.tavily.com")
@@ -163,7 +181,7 @@ async def test_provider_search_passes_configured_depth(monkeypatch):
     assert captured["search_depth"] == "advanced"
 
 
-def _configure_agent_stream(monkeypatch, *, supports_tools, provider_stream):
+def _configure_agent_stream(monkeypatch, *, supports_tools, provider_stream, features=None):
     class FakeDb:
         async def flush(self):
             return None
@@ -181,7 +199,7 @@ def _configure_agent_stream(monkeypatch, *, supports_tools, provider_stream):
         system_prompt="base system prompt",
         tools=[],
         mcp_servers=[],
-        features={},
+        features=features or {},
         temperature=0.2,
         max_tokens=256,
     )
@@ -213,6 +231,9 @@ def _configure_agent_stream(monkeypatch, *, supports_tools, provider_stream):
     async def no_session_file_context(*_args, **_kwargs):
         return ""
 
+    async def site_settings(_self):
+        return SimpleNamespace(multi_expert_consultation_enabled=False)
+
     monkeypatch.setattr(service, "_ensure_cookie_balance", no_cookie_balance)
     monkeypatch.setattr(AgentService, "assemble_context", assemble_context)
     monkeypatch.setattr(service, "get_session", get_session)
@@ -220,9 +241,239 @@ def _configure_agent_stream(monkeypatch, *, supports_tools, provider_stream):
     monkeypatch.setattr(service, "update_message_content", ignore_update)
     monkeypatch.setattr(service, "_apply_usage_to_session", ignore_update)
     monkeypatch.setattr(service, "_collect_session_file_context", no_session_file_context)
+    monkeypatch.setattr(chat_service.SiteSettingsService, "get_settings", site_settings)
     monkeypatch.setattr(chat_service.provider_manager, "chat_stream", provider_stream)
     monkeypatch.setattr(tool_invocation, "ToolInvocationContext", lambda **kwargs: kwargs)
     return service
+
+
+@pytest.mark.asyncio
+async def test_direct_chat_mounts_research_tools_and_emits_mcp_style_web_events(monkeypatch):
+    model_id = uuid4()
+    model = SimpleNamespace(
+        id=model_id,
+        api_key="model-key",
+        name="Test model",
+        model="test-model",
+        temperature=0.2,
+        max_tokens=256,
+        extra_params={"supports_tools": True},
+    )
+
+    class FakeDb:
+        async def execute(self, _statement):
+            return SimpleNamespace(scalar_one_or_none=lambda: model)
+
+        async def flush(self):
+            return None
+
+    calls: list[dict[str, object]] = []
+
+    async def fake_provider_stream(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            yield ChatChunk(
+                type="tool_calls",
+                metadata={
+                    "tool_calls": [
+                        {
+                            "id": "web-1",
+                            "function": {
+                                "name": "web_search",
+                                "arguments": '{"query":"RNA-seq workflow"}',
+                            },
+                        }
+                    ]
+                },
+            )
+            yield ChatChunk(type="done", metadata={})
+            return
+        assert calls[-1]["messages"][-1]["role"] == "tool"
+        yield ChatChunk(type="text", content="已综合检索资料回答")
+        yield ChatChunk(type="done", metadata={"usage": {"total": 1}})
+
+    service = ChatService(FakeDb())
+    monkeypatch.setattr(service, "_ensure_cookie_balance", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        service,
+        "create_session",
+        AsyncMock(return_value=SimpleNamespace(session_id="session-1")),
+    )
+    monkeypatch.setattr(service, "_record_user_message_anchor", AsyncMock())
+    monkeypatch.setattr(
+        service,
+        "add_message",
+        AsyncMock(return_value=SimpleNamespace(message_id="assistant-1")),
+    )
+    monkeypatch.setattr(service, "update_message_content", AsyncMock())
+    monkeypatch.setattr(service, "_apply_usage_to_session", AsyncMock())
+    monkeypatch.setattr(chat_service.provider_manager, "chat_stream", fake_provider_stream)
+    monkeypatch.setattr(
+        service,
+        "_web_search",
+        AsyncMock(
+            return_value={
+                "success": True,
+                "result": {
+                    "results": [
+                        {
+                            "title": "RNA-seq workflow",
+                            "url": "https://example.com/rnaseq",
+                            "snippet": "workflow",
+                        }
+                    ]
+                },
+            }
+        ),
+    )
+
+    events = [
+        event
+        async for event in service.stream_chat(
+            user_id="user-1",
+            messages=[{"role": "user", "content": "介绍 RNA-seq 流程"}],
+            model_id=model_id,
+        )
+    ]
+
+    tool_names = {tool["function"]["name"] for tool in calls[0]["tools"]}
+    assert {"knowledge_search", "web_search"} <= tool_names
+    assert "先调用 `knowledge_search`" in calls[0]["system_prompt"]
+    assert [event.type for event in events] == [
+        "tool_call", "web_search", "web_search_results", "tool_result", "text", "done",
+    ]
+    assert events[0].metadata["mcp_server"] == "omichub-research"
+    assert events[3].metadata["mcp_server"] == "omichub-research"
+
+
+@pytest.mark.asyncio
+async def test_professional_chat_mounts_kb_first_web_fallback_protocol(monkeypatch):
+    captured: dict[str, object] = {}
+
+    async def fake_provider_stream(**kwargs):
+        captured.update(kwargs)
+        yield ChatChunk(type="text", content="已按证据链回答")
+        yield ChatChunk(type="done", metadata={"usage": {"total": 1}})
+
+    service = _configure_agent_stream(
+        monkeypatch,
+        supports_tools=True,
+        provider_stream=fake_provider_stream,
+    )
+
+    events = [
+        event
+        async for event in service.stream_agent_chat(
+            user_id="user-1",
+            agent_id="agent-1",
+            session_id="session-1",
+            messages=[{"role": "user", "content": "只是想学习 RNA-seq 原理和流程，暂时没有数据"}],
+        )
+    ]
+
+    tool_names = {tool["function"]["name"] for tool in captured["tools"]}
+    assert {"knowledge_search", "web_search"} <= tool_names
+    assert "先调用 `knowledge_search`" in captured["system_prompt"]
+    assert "继续调用 `web_search`" in captured["system_prompt"]
+    assert "模型自身的通用知识" in captured["system_prompt"]
+    assert [event.type for event in events] == ["text", "done"]
+
+
+@pytest.mark.asyncio
+async def test_professional_chat_can_fallback_from_empty_kb_to_web(monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake_provider_stream(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            yield ChatChunk(
+                type="tool_calls",
+                metadata={
+                    "tool_calls": [
+                        {
+                            "id": "kb-1",
+                            "function": {
+                                "name": "knowledge_search",
+                                "arguments": '{"query":"RNA-seq 差异表达原理"}',
+                            },
+                        }
+                    ]
+                },
+            )
+        elif len(calls) == 2:
+            assert '"results": []' in str(kwargs["messages"][-1]["content"])
+            yield ChatChunk(
+                type="tool_calls",
+                metadata={
+                    "tool_calls": [
+                        {
+                            "id": "web-1",
+                            "function": {
+                                "name": "web_search",
+                                "arguments": '{"query":"RNA-seq differential expression principles"}',
+                            },
+                        }
+                    ]
+                },
+            )
+        else:
+            assert "External RNA-seq reference" in str(kwargs["messages"][-1]["content"])
+            yield ChatChunk(type="text", content="综合知识库、网络资料和通用知识后的回答")
+            yield ChatChunk(type="done", metadata={"usage": {"total": 1}})
+
+    service = _configure_agent_stream(
+        monkeypatch,
+        supports_tools=True,
+        provider_stream=fake_provider_stream,
+        features={"enable_web_search": True},
+    )
+    monkeypatch.setattr(
+        service,
+        "_knowledge_search_chat",
+        AsyncMock(return_value={"success": True, "result": {"results": []}}),
+    )
+    monkeypatch.setattr(
+        service,
+        "_web_search",
+        AsyncMock(
+            return_value={
+                "success": True,
+                "result": {
+                    "results": [
+                        {
+                            "title": "External RNA-seq reference",
+                            "url": "https://example.com/rnaseq",
+                            "snippet": "Negative-binomial modeling and workflow overview",
+                        }
+                    ]
+                },
+            }
+        ),
+    )
+
+    events = [
+        event
+        async for event in service.stream_agent_chat(
+            user_id="user-1",
+            agent_id="agent-1",
+            session_id="session-1",
+            messages=[{"role": "user", "content": "只是想学习 RNA-seq 原理和流程"}],
+        )
+    ]
+
+    assert len(calls) == 3
+    service._knowledge_search_chat.assert_awaited_once()
+    service._web_search.assert_awaited_once()
+    assert [event.type for event in events] == [
+        "tool_call",
+        "tool_result",
+        "tool_call",
+        "web_search",
+        "web_search_results",
+        "tool_result",
+        "text",
+        "done",
+    ]
 
 
 @pytest.mark.asyncio
@@ -258,7 +509,11 @@ async def test_agent_without_tools_uses_presearch_context(monkeypatch):
     assert captured["query"] == "今天的新闻"
     assert captured["tools"] is None
     assert "[1] Fresh result" in captured["system_prompt"]
-    assert [event.type for event in events] == ["web_search", "web_search_results", "text", "done"]
+    assert [event.type for event in events] == [
+        "tool_call", "web_search", "tool_result", "web_search_results", "text", "done",
+    ]
+    assert events[0].metadata["mcp_server"] == "omichub-research"
+    assert events[2].metadata["mcp_server"] == "omichub-research"
 
 
 @pytest.mark.asyncio
@@ -270,7 +525,7 @@ async def test_agent_injects_user_memory_into_system_prompt(monkeypatch):
         yield ChatChunk(type="text", content="已结合项目背景")
         yield ChatChunk(type="done", metadata={"usage": {"total": 1}})
 
-    async def fake_memory_context(self, user_id, agent_id, query):
+    async def fake_memory_context(self, user_id, agent_id, query, **_kwargs):
         assert (user_id, agent_id, query) == ("user-1", "agent-1", "继续分析小鼠脑数据")
         return "## 用户记忆（跨会话，可能过时；与当前对话冲突时以当前对话为准）\n- 用户常用小鼠脑 10x V3 数据。"
 
@@ -343,6 +598,8 @@ async def test_agent_with_tools_executes_and_reinjects_web_search(monkeypatch):
     assert [event.type for event in events] == [
         "tool_call", "web_search", "web_search_results", "tool_result", "text", "done",
     ]
+    assert events[0].metadata["mcp_server"] == "omichub-research"
+    assert events[3].metadata["mcp_server"] == "omichub-research"
 
 
 @pytest.mark.asyncio
@@ -367,8 +624,11 @@ async def test_presearch_failure_does_not_interrupt_agent_response(monkeypatch):
         )
     ]
 
-    assert [event.type for event in events] == ["web_search", "web_search", "text", "done"]
-    assert events[1].metadata["status"] == "failed"
+    assert [event.type for event in events] == [
+        "tool_call", "web_search", "web_search", "tool_result", "text", "done",
+    ]
+    assert events[2].metadata["status"] == "failed"
+    assert events[3].metadata["mcp_server"] == "omichub-research"
 
 
 @pytest.mark.asyncio

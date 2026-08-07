@@ -355,6 +355,92 @@ async def test_existing_builtin_agent_merges_declared_skill_ids(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_existing_managed_builtin_agent_syncs_prompt_and_declared_mcps(monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+
+    from omichub.application.services.agent_service import AgentService
+    from omichub.infrastructure.database.models.agent import AgentTemplateModel
+
+    existing = AgentTemplateModel(
+        agent_id="agent-rnaseq",
+        name="RNA-seq 分析师",
+        is_builtin=True,
+        system_prompt="旧提示词",
+        description="旧描述",
+        temperature=0.7,
+        is_active=False,
+        mcp_ids=[str(OMICHUB_TOOLS_SERVER_ID)],
+        features={},
+    )
+    declared_mcp = "7375dd58-4c5f-59f9-ab27-a407bb961ee8"
+    db = AsyncMock()
+    provider_result = MagicMock()
+    provider_result.scalars.return_value.all.return_value = []
+    db.execute.return_value = provider_result
+    service = AgentService(db)
+    service.get_agent = AsyncMock(return_value=existing)
+    service._ensure_configured_marketplace_skills = AsyncMock()
+    monkeypatch.setattr(
+        "omichub.application.services.agent_service.load_agent_configs",
+        lambda: [
+            {
+                "agent_id": "agent-rnaseq",
+                "system_prompt": "RNA-seq 新提示词",
+                "description": "RNA-seq 新描述",
+                "temperature": 0.4,
+                "is_active": True,
+                "mcp_ids": [declared_mcp],
+                "features": {"managed_prompt": True, "managed_profile": True},
+            }
+        ],
+    )
+
+    await service.ensure_builtin_agents()
+
+    assert existing.system_prompt == "RNA-seq 新提示词"
+    assert existing.description == "RNA-seq 新描述"
+    assert existing.temperature == 0.4
+    assert existing.is_active is True
+    assert declared_mcp in existing.mcp_ids
+    assert str(OMICHUB_TOOLS_SERVER_ID) in existing.mcp_ids
+
+
+@pytest.mark.unit
+def test_rnaseq_agent_loads_domain_pack_and_rnaflow_skill() -> None:
+    from omichub.infrastructure.config.agent_loader import load_agent_configs
+
+    config = next(item for item in load_agent_configs() if item["agent_id"] == "agent-rnaseq")
+
+    assert "rnaflow" in config["skill_ids"]
+    assert "7375dd58-4c5f-59f9-ab27-a407bb961ee8" in config["mcp_ids"]
+    assert config["features"]["managed_prompt"] is True
+    assert config["features"]["managed_profile"] is True
+    assert config["features"]["engine"] == "langgraph"
+    assert "先调用 `knowledge_search`" in config["system_prompt"]
+
+
+@pytest.mark.unit
+def test_atacseq_agent_loads_domain_pack_and_atacflow_skill() -> None:
+    from omichub.infrastructure.config.agent_loader import load_agent_configs
+
+    config = next(item for item in load_agent_configs() if item["agent_id"] == "agent-atacseq")
+
+    assert {"atacflow", "atac-tools"}.issubset(config["skill_ids"])
+    assert "7375dd58-4c5f-59f9-ab27-a407bb961ee8" in config["mcp_ids"]
+    assert config["features"]["managed_prompt"] is True
+    assert config["features"]["managed_profile"] is True
+    assert config["features"]["engine"] == "langgraph"
+    assert config["studio"]["runtime_profile"] == "analysis-core"
+    assert "先调用 `knowledge_search`" in config["system_prompt"]
+    atac_pack = next(
+        pack for pack in config["features"]["tool_packs"] if pack["id"] == "atacseq"
+    )
+    assert "atac_seq_prepare" in atac_pack["mcp_tools"][
+        "7375dd58-4c5f-59f9-ab27-a407bb961ee8"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_configured_marketplace_skill_is_installed(monkeypatch, tmp_path: Path):
     from unittest.mock import AsyncMock, MagicMock
 

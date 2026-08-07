@@ -33,6 +33,7 @@ from omichub.application.services.agent_service import AgentService
 from omichub.application.services.studio_tools import (
     ASK_USER_TOOL_SCHEMA,
     STUDIO_TOOL_SCHEMAS,
+    _knowledge_search,
     execute_studio_tool,
 )
 from omichub.core.config import get_settings
@@ -89,6 +90,33 @@ _WEB_SEARCH_TOOL_SCHEMA: dict[str, Any] = {
     },
 }
 
+_KNOWLEDGE_SEARCH_TOOL_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "knowledge_search",
+        "description": (
+            "检索 OmicHub 已发布的知识库文档。专业问题必须先检索知识库；"
+            "结果不足时再使用 web_search 补充公开资料。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 8},
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+_SUBAGENT_RESEARCH_PROMPT_SUFFIX = (
+    "\n\n## 检索证据协议\n"
+    "遇到专业原理、方法或流程问题时，先调用 `knowledge_search` 检索平台知识库。"
+    "若结果为空、弱相关或不足以覆盖问题，再调用 `web_search` 补充公开资料。"
+    "最终结论须区分实际检索证据与通用知识；不要虚构检索、文献或来源。"
+)
+
 
 def _collaboration_packet(*, answer: str | None, error: str | None, status: str) -> dict[str, Any]:
     """Worker 对 Manager 的稳定协作契约，避免把内部过程作为汇总输入。"""
@@ -133,6 +161,7 @@ class ParallelSubAgentService:
         tasks: list[dict[str, Any]],
         db: AsyncSession,
         on_event: Callable[[dict[str, Any]], Awaitable[None] | None] | None = None,
+        safe_only: bool = False,
     ) -> dict[str, Any]:
         """执行 fan-out，返回统一信封 {success, llm_payload, ui_payload}。"""
         settings = get_settings()
@@ -170,7 +199,9 @@ class ParallelSubAgentService:
                     item,
                     ctx,
                     self._prepare_child_tools(
-                        ctx, workspace_access=bool(item.get("workspace_access"))
+                        ctx,
+                        workspace_access=bool(item.get("workspace_access")) and not safe_only,
+                        safe_only=safe_only,
                     ),
                 )
             )
@@ -305,7 +336,9 @@ class ParallelSubAgentService:
     # --- 工具过滤（C2/C3/C4）---
 
     @staticmethod
-    def _prepare_child_tools(ctx: Any, *, workspace_access: bool = False) -> list[dict[str, Any]]:
+    def _prepare_child_tools(
+        ctx: Any, *, workspace_access: bool = False, safe_only: bool = False
+    ) -> list[dict[str, Any]]:
         """透传 Agent 已绑定能力，同时剥离递归与长任务控制工具。"""
         tools = list(getattr(ctx, "tools", []) or [])
         names = {
@@ -316,8 +349,15 @@ class ParallelSubAgentService:
         if "ask_user" not in names:
             tools.append(ASK_USER_TOOL_SCHEMA)
             names.add("ask_user")
+        if "knowledge_search" not in names:
+            tools.append(_KNOWLEDGE_SEARCH_TOOL_SCHEMA)
+            names.add("knowledge_search")
         web_policy = (getattr(ctx, "features", {}) or {}).get("web_search")
-        if web_policy and "web_search" not in names:
+        web_disabled = web_policy is False or (
+            isinstance(web_policy, dict)
+            and str(web_policy.get("mode") or "").lower() in {"off", "disabled"}
+        )
+        if not web_disabled and "web_search" not in names:
             tools.append(_WEB_SEARCH_TOOL_SCHEMA)
 
         mcp_tool_names = {
@@ -337,11 +377,17 @@ class ParallelSubAgentService:
                 schema is None
                 and name not in mcp_tool_names
                 and name not in SKILL_TOOL_NAMES
-                and name not in {"ask_user", "web_search"}
+                and name not in {"ask_user", "knowledge_search", "web_search"}
+            ):
+                continue
+            if (
+                safe_only
+                and name not in {"ask_user", "knowledge_search", "web_search", *SKILL_TOOL_NAMES}
+                and (schema is None or not schema.annotations.read_only_hint or schema.requires_confirm)
             ):
                 continue
             kept.append(tool)
-        if workspace_access:
+        if workspace_access and not safe_only:
             existing_names = {str((tool.get("function") or {}).get("name") or "") for tool in kept}
             kept.extend(
                 tool
@@ -483,7 +529,9 @@ class ParallelSubAgentService:
     ) -> dict[str, Any]:
         """受限 ReAct 循环：chat_service legacy 工具循环的最小克隆。"""
         instruction = f"{context_summary}\n\n{task}".strip() if context_summary else task
-        system_prompt = f"{ctx.system_prompt or ''}{SUBAGENT_SYSTEM_SUFFIX}"
+        system_prompt = (
+            f"{ctx.system_prompt or ''}{_SUBAGENT_RESEARCH_PROMPT_SUFFIX}{SUBAGENT_SYSTEM_SUFFIX}"
+        )
         messages: list[dict[str, Any]] = [{"role": "user", "content": instruction}]
         child_session_id = f"{parent_session_id}:sub:{run_id}:{index}"
         last_text = ""
@@ -684,7 +732,13 @@ class ParallelSubAgentService:
                         "subagent_depth": 1,
                     },
                 )
-                if tool_name == "web_search":
+                if tool_name == "knowledge_search":
+                    result = await _knowledge_search(
+                        args,
+                        session,
+                        project_id=getattr(getattr(ctx, "agent", None), "project_id", None),
+                    )
+                elif tool_name == "web_search":
                     from omichub.application.services.search_provider_service import (
                         SearchProviderService,
                     )

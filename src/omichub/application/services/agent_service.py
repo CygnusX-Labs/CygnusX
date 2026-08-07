@@ -23,8 +23,8 @@ from omichub.application.schemas.agent import (
     CreateAgentRequest,
     UpdateAgentRequest,
 )
-from omichub.application.services.site_settings_service import SiteSettingsService
 from omichub.application.services.agent_handoff_service import HANDOFF_TOOL_NAME
+from omichub.application.services.site_settings_service import SiteSettingsService
 from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError, NotFoundError
 from omichub.domain.mcp.entities import MCPServer, MCPToolRegistry
@@ -158,6 +158,15 @@ class AgentService:
                     configured_mcp_ids = [
                         str(value) for value in (existing.mcp_ids or []) if self._parse_uuid(value)
                     ]
+                    declared_mcp_ids = [
+                        str(value)
+                        for value in (cfg.get("mcp_ids") or [])
+                        if self._parse_uuid(value)
+                    ]
+                    configured_mcp_ids = list(
+                        dict.fromkeys([*configured_mcp_ids, *declared_mcp_ids])
+                    )
+                    existing.mcp_ids = configured_mcp_ids
                     # 旧版本已落库的内置 Agent 可能没有平台 MCP；回填工作区文件工具，
                     # 不覆盖管理员额外绑定的 MCP。
                     if (
@@ -185,6 +194,23 @@ class AgentService:
                         existing.skill_ids = list(
                             dict.fromkeys([*existing_skill_ids, *configured_skills])
                         )
+
+                    if existing_features.get("managed_prompt") and cfg.get("system_prompt"):
+                        existing.system_prompt = str(cfg["system_prompt"])
+                    if existing_features.get("managed_profile"):
+                        for field_name in (
+                            "name",
+                            "description",
+                            "welcome_message",
+                            "avatar",
+                            "color",
+                            "category",
+                            "temperature",
+                            "max_tokens",
+                            "is_active",
+                        ):
+                            if field_name in cfg:
+                                setattr(existing, field_name, cfg[field_name])
 
                     if existing.model_id not in models_by_id:
                         configured_model = models_by_name.get(str(cfg.get("model") or ""))

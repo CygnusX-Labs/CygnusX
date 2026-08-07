@@ -118,6 +118,8 @@ describe('KimiMessageItem 渲染分支', () => {
     expect(el.textContent).toContain('STELLAR ROUTER')
     expect(el.textContent).toContain('通用助手')
     expect(el.textContent).toContain('路由更新')
+    expect(el.querySelector('.route-event__mark')).toBeNull()
+    expect(el.querySelector('.route-event__target-icon svg')).not.toBeNull()
   })
 
   it('Router 目标未变化时不显示路由事件条', () => {

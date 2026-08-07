@@ -14,6 +14,14 @@ def test_gateway_env_requires_matrix_credentials_and_required_identities() -> No
     assert "GATEWAY_MATRIX_IDENTITIES is missing omichub-user" in errors
 
 
+def test_bridge_env_requires_gateway_credentials_for_production_workers() -> None:
+    errors = preflight.validate_bridge_env({})
+
+    assert "BRIDGE_GATEWAY_URL is missing or still a template placeholder" in errors
+    assert "BRIDGE_GATEWAY_MANAGER_TOKEN is missing or still a template placeholder" in errors
+    assert "BRIDGE_STATE_STORE_URL is missing or still a template placeholder" in errors
+
+
 def test_gateway_env_accepts_complete_isolated_gateway_configuration() -> None:
     errors = preflight.validate_gateway_env({
         "GATEWAY_IDENTITIES": "bioops-manager:manager-secret",

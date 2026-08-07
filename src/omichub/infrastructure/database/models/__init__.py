@@ -36,6 +36,11 @@ from omichub.infrastructure.database.models.cookie import (
     LedgerEntryModel,
 )
 from omichub.infrastructure.database.models.festival import FestivalClaimModel
+from omichub.infrastructure.database.models.goal import (
+    AgentGoalEventModel,
+    AgentGoalModel,
+    AgentGoalWorkUnitModel,
+)
 from omichub.infrastructure.database.models.file import (
     DirectoryModel,
     FileRecordModel,
@@ -94,6 +99,9 @@ __all__ = [
     "ConsumptionLogModel",
     "LedgerEntryModel",
     "FestivalClaimModel",
+    "AgentGoalModel",
+    "AgentGoalEventModel",
+    "AgentGoalWorkUnitModel",
     "ConversationModel",
     "MessageModel",
     "ChatSessionModel",

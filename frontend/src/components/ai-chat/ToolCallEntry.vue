@@ -14,6 +14,7 @@ import MasPlanPreviewCard from './MasPlanPreviewCard.vue'
 import HandoffCard from './HandoffCard.vue'
 import McpToolCallCard from './McpToolCallCard.vue'
 import StudioCodeCard from '@/components/studio/StudioCodeCard.vue'
+import ResearchToolEventCard from '@/components/studio/ResearchToolEventCard.vue'
 import { StudioContextKey, isStudioCodeTool } from '@/components/studio/context'
 import { useAgentHubStore } from '@/stores/agentHub'
 import type { MasPlan } from '@/api/mas'
@@ -112,6 +113,7 @@ async function confirmAgentTeamsCase(): Promise<void> {
 </script>
 
 <template>
+  <ResearchToolEventCard v-if="studioCtx" :tool="tool" />
   <!-- Studio HITL 审批卡片（有 approval 数据时出现，决议后保留终态徽标） -->
   <ApprovalCard v-if="tool.approval" :tool="tool" />
   <!-- Studio 代码工具（仅工作台页面）：代码卡片，支持编辑/重跑/产物 -->

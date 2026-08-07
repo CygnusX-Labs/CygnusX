@@ -129,6 +129,73 @@ def complete_work_item(
     )
 
 
+def heartbeat_work_item(
+    bridge_url: str,
+    identity: str,
+    token: str,
+    assignment: dict[str, Any],
+    *,
+    summary: str = "",
+    trace_id: str | None = None,
+    opener: UrlOpen = urlopen,
+) -> dict[str, Any]:
+    case_id, work_item_id = _assignment_identity(assignment)
+    payload: dict[str, Any] = {"summary": summary}
+    if trace_id:
+        payload["trace_id"] = trace_id
+    return request_json(
+        f"{bridge_url.rstrip('/')}/cases/{case_id}/work-items/{work_item_id}/heartbeat",
+        {"X-Bridge-Identity": identity, "X-Bridge-Token": token},
+        method="POST",
+        opener=opener,
+        payload=payload,
+    )
+
+
+def execute_readonly_work_item(
+    bridge_url: str,
+    identity: str,
+    token: str,
+    assignment: dict[str, Any],
+    *,
+    agent_id: str,
+    capability: str,
+    question: str,
+    evidence_refs: list[str] | None = None,
+    requested_tools: list[str] | None = None,
+    trace_id: str | None = None,
+    opener: UrlOpen = urlopen,
+) -> dict[str, Any]:
+    case_id, work_item_id = _assignment_identity(assignment)
+    payload: dict[str, Any] = {
+        "agent_id": agent_id,
+        "capability": capability,
+        "question": question,
+        "evidence_refs": evidence_refs or [],
+        "requested_tools": requested_tools or [],
+    }
+    if trace_id:
+        payload["trace_id"] = trace_id
+    return request_json(
+        f"{bridge_url.rstrip('/')}/cases/{case_id}/work-items/{work_item_id}/execute-readonly",
+        {"X-Bridge-Identity": identity, "X-Bridge-Token": token},
+        method="POST",
+        opener=opener,
+        payload=payload,
+    )
+
+
+def _assignment_identity(assignment: dict[str, Any]) -> tuple[str, str]:
+    case_id = assignment.get("case_id")
+    work_item = assignment.get("work_item")
+    if not isinstance(case_id, str) or not isinstance(work_item, dict):
+        raise RuntimeError("Bridge returned malformed claimed assignment")
+    work_item_id = work_item.get("work_item_id")
+    if not isinstance(work_item_id, str):
+        raise RuntimeError("Bridge returned malformed Work Item identity")
+    return case_id, work_item_id
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Claim one assigned OmicHub AgentTeams Work Item")
     parser.add_argument("--bridge-url", default=os.environ.get("AGENTTEAMS_BRIDGE_BASE_URL", ""))

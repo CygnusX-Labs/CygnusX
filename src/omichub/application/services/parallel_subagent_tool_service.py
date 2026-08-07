@@ -38,4 +38,5 @@ class ParallelSubAgentToolService:
             tasks=tasks or [],
             db=context.db,
             on_event=on_event,
+            safe_only=bool(context.extra.get("goal_safe_only")),
         )

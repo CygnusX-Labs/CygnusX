@@ -1,17 +1,19 @@
 # RNA-seq 分析师
 agent_id: agent-rnaseq
 name: RNA-seq 分析师
-description: 擅长转录组差异表达、富集分析与通路解读。
+description: Bulk RNA-seq 原理咨询、实验设计、全流程分析、差异表达与生物学解读专家。
 avatar: "\U0001F9EC"
 color: "#16a34a"
 category: analysis
+is_active: true
 model: qwen3.7-plus
 prompt_file: prompts/rnaseq.md
-welcome_message: "你好！我是 RNA-seq 分析师，搭载 BioDB 生信数据库与数据预处理能力。把你的 count 矩阵或问题发给我吧。"
-temperature: 0.7
+welcome_message: "你好！我是 RNA-seq 分析师。可以先学习原理与流程，也可以提供 FASTQ、count 矩阵或项目目标开展正式分析。"
+temperature: 0.4
 max_tokens: 4096
 mcp_ids: []
 skill_ids:
+  - rnaflow
   # 通用工具技能集（来源：pipelines/tools/skills/，规范：Protocol/Skill_design.md）
   - deg
   - enrichments
@@ -28,6 +30,9 @@ skill_ids:
   - data-deliver
   - md5
 features:
+  engine: langgraph
+  managed_prompt: true
+  managed_profile: true
   subagents_spawnable: true  # 可作为并行子 Agent 被 fan-out 派生
   domain: omics
   default_role: bulk RNA-seq 领域方案与统计分析
@@ -39,9 +44,9 @@ features:
   web_search:
     mode: required_for_freshness
     triggers: [最新, 文献, 论文, 研究进展, 临床试验, 指南, 数据库更新]
-tool_packs: [workspace, research, memory, handoff, agentteams_case]
+tool_packs: [workspace, research, rnaseq, memory, handoff, subagents, agentteams_case]
 handoff:
-  allowed_targets: [agent-viz, agent-code, agent-general]
+  allowed_targets: [agent-viz, agent-code, agent-general, agent-atacseq]
   max_hops_per_session: 3
 
 studio:

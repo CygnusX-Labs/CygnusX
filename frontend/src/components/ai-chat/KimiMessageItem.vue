@@ -894,12 +894,16 @@ function handleEdit() {
                 v-html="seg.html"
                 @click="handleBodyClick"
               />
-              <ToolCallEntry
+              <div
                 v-else-if="seg.kind === 'tool'"
-                :tool="seg.tool"
-                @confirm-tool="handleConfirmTool"
-                @open-tool-page="handleOpenToolPage"
-              />
+                class="timeline-tool-entry"
+              >
+                <ToolCallEntry
+                  :tool="seg.tool"
+                  @confirm-tool="handleConfirmTool"
+                  @open-tool-page="handleOpenToolPage"
+                />
+              </div>
               <SkillInvocationCardView
                 v-else-if="seg.kind === 'skill'"
                 :card="seg.card"
@@ -1861,6 +1865,9 @@ function handleEdit() {
   flex-direction: column;
   gap: 12px;
   margin-top: 12px;
+}
+.timeline-tool-entry + .timeline-tool-entry {
+  margin-top: 10px;
 }
 .artifact-register-card {
   display: flex;

@@ -4,13 +4,27 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, AsyncIterator
 
 from fastapi import HTTPException, status
 
-from .models import CaseRecord, CaseStatus, PreflightInputSnapshot, WorkItemRecord
+from .models import CaseRecord, CaseStatus, PreflightInputSnapshot, WorkItemRecord, WorkItemStatus
+from .shared_state import RedisStateBackend
+
+_WORK_ITEM_TRANSITIONS: dict[WorkItemStatus, set[WorkItemStatus]] = {
+    "pending": {"claimed", "cancelled"},
+    "claimed": {"running", "completed", "failed", "awaiting_approval", "blocked", "pending", "cancelled"},
+    "running": {"completed", "failed", "awaiting_approval", "blocked", "cancelled", "pending"},
+    "awaiting_approval": {"running", "cancelled"},
+    "in_progress": {"running", "completed", "failed", "blocked", "cancelled", "pending"},
+    "completed": set(),
+    "blocked": {"pending", "cancelled"},
+    "failed": {"pending", "claimed", "cancelled"},
+    "cancelled": set(),
+}
 
 _ALLOWED_TRANSITIONS: dict[CaseStatus, set[CaseStatus]] = {
     "received": {"preflight_running", "cancelled"},
@@ -30,11 +44,75 @@ _ALLOWED_TRANSITIONS: dict[CaseStatus, set[CaseStatus]] = {
 }
 
 
+class _SynchronizedCaseLock:
+    """Drop-in async lock that reloads shared state under a distributed lock."""
+
+    def __init__(self, store: "CaseStore") -> None:
+        self._store = store
+        self._contexts: dict[asyncio.Task[Any], Any] = {}
+
+    async def __aenter__(self) -> None:
+        context = self._store._synchronized()
+        await context.__aenter__()
+        task = asyncio.current_task()
+        if task is None:  # pragma: no cover - asyncio always supplies a task here
+            raise RuntimeError("CaseStore access requires an asyncio task")
+        self._contexts[task] = context
+
+    async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        task = asyncio.current_task()
+        if task is None or (context := self._contexts.pop(task, None)) is None:
+            raise RuntimeError("CaseStore lock context was lost")
+        await context.__aexit__(exc_type, exc, traceback)
+
+
 class CaseStore:
-    def __init__(self, path: str) -> None:
+    def __init__(
+        self,
+        path: str,
+        state_store_url: str = "",
+        state_store_key_prefix: str = "omichub:agentteams:cases",
+    ) -> None:
         self._path = Path(path)
         self._cases = self._load()
-        self._lock = asyncio.Lock()
+        self._shared_state = (
+            RedisStateBackend(state_store_url, state_store_key_prefix) if state_store_url else None
+        )
+        self._local_lock = asyncio.Lock()
+        self._lock = _SynchronizedCaseLock(self)
+
+    @asynccontextmanager
+    async def _synchronized(self) -> AsyncIterator[None]:
+        async with self._local_lock:
+            if self._shared_state is None:
+                yield
+                return
+            async with self._shared_state.lock():
+                await self._reload_shared_locked()
+                yield
+
+    async def _reload_shared_locked(self) -> None:
+        if self._shared_state is None:
+            return
+        raw = await self._shared_state.get_snapshot()
+        if not raw:
+            self._cases = {}
+            return
+        try:
+            decoded = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Bridge shared CaseStore snapshot is invalid") from exc
+        if not isinstance(decoded, dict):
+            raise RuntimeError("Bridge shared CaseStore snapshot must be an object")
+        self._cases = {
+            case_id: CaseRecord.model_validate(value)
+            for case_id, value in decoded.items()
+            if isinstance(case_id, str) and isinstance(value, dict)
+        }
+
+    async def aclose(self) -> None:
+        if self._shared_state is not None:
+            await self._shared_state.aclose()
 
     def _load(self) -> dict[str, CaseRecord]:
         if not self._path.exists():
@@ -83,6 +161,9 @@ class CaseStore:
         self, target: str, statuses: set[str]
     ) -> list[tuple[CaseRecord, WorkItemRecord]]:
         async with self._lock:
+            expired = self._requeue_expired_locked()
+            if expired:
+                await self._persist()
             assigned = [
                 (case, work_item)
                 for case in self._cases.values()
@@ -156,6 +237,14 @@ class CaseStore:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail="Parent work item not found",
+                )
+            missing_dependencies = set(work_item.depends_on) - {
+                item.work_item_id for item in case.work_items
+            }
+            if missing_dependencies:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Work item dependencies not found: {sorted(missing_dependencies)}",
                 )
             updated = case.model_copy(
                 update={
@@ -237,16 +326,40 @@ class CaseStore:
                     status_code=status.HTTP_403_FORBIDDEN, detail="Work item target mismatch"
                 )
             now = datetime.now(UTC)
-            lease_expired = (
-                work_item.status == "in_progress"
-                and (now - work_item.updated_at).total_seconds() >= work_item.deadline_seconds
-            )
-            if work_item.status != "pending" and not lease_expired:
+            dependency_statuses = {
+                item.work_item_id: item.status for item in case.work_items
+            }
+            unmet_dependencies = [
+                dependency
+                for dependency in work_item.depends_on
+                if dependency_statuses.get(dependency) != "completed"
+            ]
+            if unmet_dependencies:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Work item dependencies are not completed: {unmet_dependencies}",
+                )
+            lease_expired = self._lease_expired(work_item, now)
+            retryable_failure = work_item.status == "failed" and work_item.attempt < work_item.max_attempts
+            if work_item.status != "pending" and not lease_expired and not retryable_failure:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Work item is already claimed or completed",
                 )
-            claimed = work_item.model_copy(update={"status": "in_progress", "updated_at": now})
+            if work_item.status == "failed" and work_item.attempt >= work_item.max_attempts:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Work item retry budget is exhausted",
+                )
+            claimed = work_item.model_copy(
+                update={
+                    "status": "claimed",
+                    "attempt": work_item.attempt + 1,
+                    "lease_owner": target,
+                    "lease_expires_at": _lease_expiry(now, work_item.deadline_seconds),
+                    "updated_at": now,
+                }
+            )
             updated_case = case.model_copy(
                 update={
                     "work_items": [
@@ -259,6 +372,140 @@ class CaseStore:
             self._cases[case_id] = updated_case
             await self._persist()
             return claimed
+
+    async def transition_work_item(
+        self,
+        case_id: str,
+        work_item_id: str,
+        target: str,
+        desired_status: WorkItemStatus,
+        *,
+        summary: str = "",
+        findings: list[Any] | None = None,
+        output_refs: list[Any] | None = None,
+        trace_id: str | None = None,
+    ) -> WorkItemRecord:
+        """Transition a claimed item while enforcing owner, lease, and terminal-state rules."""
+        async with self._lock:
+            case = self._cases.get(case_id)
+            if case is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+            work_item = next(
+                (item for item in case.work_items if item.work_item_id == work_item_id), None
+            )
+            if work_item is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work item not found")
+            if work_item.target != target:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Work item target mismatch")
+            if work_item.lease_owner not in {None, target}:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Work item lease owner mismatch")
+            now = datetime.now(UTC)
+            if work_item.status in {"claimed", "running", "in_progress", "awaiting_approval"} and self._lease_expired(work_item, now):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Work item lease has expired")
+            if desired_status not in _WORK_ITEM_TRANSITIONS[work_item.status]:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Invalid Work Item transition: {work_item.status} -> {desired_status}",
+                )
+            terminal = desired_status in {"completed", "failed", "blocked", "cancelled"}
+            updated_item = work_item.model_copy(
+                update={
+                    "status": desired_status,
+                    "summary": summary or work_item.summary,
+                    "findings": findings if findings is not None else work_item.findings,
+                    "output_refs": output_refs if output_refs is not None else work_item.output_refs,
+                    "trace_id": trace_id or work_item.trace_id,
+                    "lease_owner": None if terminal else target,
+                    "lease_expires_at": None
+                    if terminal
+                    else _lease_expiry(now, work_item.deadline_seconds),
+                    "updated_at": now,
+                }
+            )
+            self._cases[case_id] = case.model_copy(
+                update={
+                    "work_items": [
+                        updated_item if item.work_item_id == work_item_id else item
+                        for item in case.work_items
+                    ],
+                    "updated_at": now,
+                }
+            )
+            await self._persist()
+            return updated_item
+
+    async def heartbeat_work_item(
+        self, case_id: str, work_item_id: str, target: str, *, trace_id: str | None = None
+    ) -> WorkItemRecord:
+        async with self._lock:
+            case = self._cases.get(case_id)
+            if case is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+            work_item = next(
+                (item for item in case.work_items if item.work_item_id == work_item_id), None
+            )
+            if work_item is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work item not found")
+            if work_item.target != target or work_item.lease_owner != target:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Work item lease owner mismatch")
+            now = datetime.now(UTC)
+            if self._lease_expired(work_item, now):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Work item lease has expired")
+            if work_item.status not in {"claimed", "running", "in_progress", "awaiting_approval"}:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Work item is not active")
+            updated_item = work_item.model_copy(
+                update={
+                    "lease_expires_at": _lease_expiry(now, work_item.deadline_seconds),
+                    "trace_id": trace_id or work_item.trace_id,
+                    "updated_at": now,
+                }
+            )
+            self._cases[case_id] = case.model_copy(
+                update={
+                    "work_items": [
+                        updated_item if item.work_item_id == work_item_id else item
+                        for item in case.work_items
+                    ],
+                    "updated_at": now,
+                }
+            )
+            await self._persist()
+            return updated_item
+
+    def _requeue_expired_locked(self) -> list[tuple[str, str]]:
+        now = datetime.now(UTC)
+        requeued: list[tuple[str, str]] = []
+        for case_id, case in list(self._cases.items()):
+            changed = False
+            work_items: list[WorkItemRecord] = []
+            for item in case.work_items:
+                if item.status in {"claimed", "running", "in_progress"} and self._lease_expired(item, now):
+                    work_items.append(
+                        item.model_copy(
+                            update={
+                                "status": "pending",
+                                "lease_owner": None,
+                                "lease_expires_at": None,
+                                "updated_at": now,
+                            }
+                        )
+                    )
+                    requeued.append((case_id, item.work_item_id))
+                    changed = True
+                else:
+                    work_items.append(item)
+            if changed:
+                self._cases[case_id] = case.model_copy(
+                    update={"work_items": work_items, "updated_at": now}
+                )
+        return requeued
+
+    @staticmethod
+    def _lease_expired(work_item: WorkItemRecord, now: datetime) -> bool:
+        expiry = work_item.lease_expires_at
+        if expiry is None:
+            return (now - work_item.updated_at).total_seconds() >= work_item.deadline_seconds
+        return expiry <= now
 
     async def get_work_item(self, case_id: str, work_item_id: str) -> WorkItemRecord:
         case = await self.get(case_id)
@@ -314,5 +561,14 @@ class CaseStore:
             ensure_ascii=False,
             separators=(",", ":"),
         )
+        if self._shared_state is not None:
+            await self._shared_state.set_snapshot(encoded)
+            return
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        await asyncio.to_thread(self._path.write_text, encoded, encoding="utf-8")
+        self._path.write_text(encoded, encoding="utf-8")
+
+
+def _lease_expiry(now: datetime, deadline_seconds: int) -> datetime:
+    from datetime import timedelta
+
+    return now + timedelta(seconds=deadline_seconds)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -13,7 +14,7 @@ from fastapi import HTTPException, status
 
 from .audit import AuditStore
 from .case_store import CaseStore
-from .client import OmicHubClient
+from .client import GatewayClient, OmicHubClient
 from .config import BridgeSettings
 from .models import (
     ApprovalRequest,
@@ -30,14 +31,17 @@ from .models import (
     EvidenceResponse,
     PreflightInputSnapshot,
     PreflightRequest,
+    ReadOnlyExecutionResult,
     PreflightResponse,
     QualityGateRequest,
     QualityGateResponse,
+    ReadOnlyExecutionRequest,
     SubmitTaskRequest,
     TaskReceipt,
     WorkerInboxItem,
     WorkerInboxResponse,
     WorkItemCreateRequest,
+    WorkItemHeartbeatRequest,
     WorkItemRecord,
     WorkItemUpdateRequest,
 )
@@ -47,12 +51,18 @@ from .security import ApprovalSigner
 class BridgeService:
     _EXTERNAL_WORKERS = frozenset({"agent-code", "agent-viz", "agent-scrna"})
     def __init__(
-        self, settings: BridgeSettings, client: OmicHubClient, audit: AuditStore, cases: CaseStore
+        self,
+        settings: BridgeSettings,
+        client: OmicHubClient,
+        audit: AuditStore,
+        cases: CaseStore,
+        gateway: GatewayClient | None = None,
     ) -> None:
         self._settings = settings
         self._client = client
         self._audit = audit
         self._cases = cases
+        self._gateway = gateway
         self._approval_signer = ApprovalSigner(settings.approval_signing_secret)
 
     async def assign_work_item(
@@ -75,7 +85,15 @@ class BridgeService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Professional agent work items must be read-only",
             )
-        work_item = WorkItemRecord(**request.model_dump(), updated_at=datetime.now(UTC))
+        payload = request.model_dump()
+        idempotency_key = payload.pop("idempotency_key", None) or self._work_item_idempotency_key(
+            case_id, request
+        )
+        work_item = WorkItemRecord(
+            **payload,
+            idempotency_key=idempotency_key,
+            updated_at=datetime.now(UTC),
+        )
         case = await self._cases.add_work_item(case_id, work_item)
         await self._audit.record(
             case_id=case.case_id,
@@ -154,26 +172,32 @@ class BridgeService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Cannot reset work item to pending",
             )
-        if actor != "bioops-manager" and request.status == "in_progress":
+        if actor != "bioops-manager" and request.status in {"claimed", "in_progress"}:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Use the claim endpoint to start a work item",
             )
-        if actor != "bioops-manager" and work_item.status != "in_progress":
+        if actor != "bioops-manager" and work_item.status not in {
+            "claimed",
+            "running",
+            "awaiting_approval",
+            "in_progress",
+        }:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Work item must be claimed before completion",
             )
-        updated = work_item.model_copy(
-            update={
-                "status": request.status,
-                "summary": request.summary,
-                "findings": request.findings,
-                "updated_at": datetime.now(UTC),
-            }
+        updated = await self._cases.transition_work_item(
+            case_id,
+            work_item_id,
+            actor if actor != "bioops-manager" else work_item.target,
+            request.status,
+            summary=request.summary,
+            findings=request.findings,
+            output_refs=request.output_refs,
+            trace_id=request.trace_id,
         )
-        await self._cases.update_work_item(case_id, work_item_id, updated)
-        event_type = "skill.finished" if request.status == "completed" else "skill.failed"
+        event_type = "skill.finished" if request.status == "completed" else "skill.status_changed"
         await self._audit.record(
             case_id=case_id,
             actor=actor,
@@ -184,6 +208,8 @@ class BridgeService:
                 "status": request.status,
                 "summary": request.summary,
                 "findings": [finding.model_dump() for finding in request.findings],
+                "output_refs": [ref.model_dump() for ref in request.output_refs],
+                "trace_id": updated.trace_id,
             },
         )
         return updated
@@ -198,9 +224,148 @@ class BridgeService:
                 "work_item_id": work_item.work_item_id,
                 "skill_name": work_item.skill_name,
                 "lease_seconds": work_item.deadline_seconds,
+                "attempt": work_item.attempt,
+                "trace_id": work_item.trace_id,
             },
         )
         return work_item
+
+    async def heartbeat_work_item(
+        self,
+        case_id: str,
+        work_item_id: str,
+        request: WorkItemHeartbeatRequest,
+        actor: str,
+    ) -> WorkItemRecord:
+        work_item = await self._cases.heartbeat_work_item(
+            case_id, work_item_id, actor, trace_id=request.trace_id
+        )
+        await self._audit.record(
+            case_id=case_id,
+            actor=actor,
+            event_type="worker.heartbeat",
+            payload={
+                "work_item_id": work_item_id,
+                "attempt": work_item.attempt,
+                "lease_expires_at": work_item.lease_expires_at,
+                "summary": request.summary,
+                "trace_id": work_item.trace_id,
+            },
+        )
+        return work_item
+
+    async def execute_readonly_work_item(
+        self,
+        case_id: str,
+        work_item_id: str,
+        request: ReadOnlyExecutionRequest,
+        actor: str,
+    ) -> WorkItemRecord:
+        expected_agent_id = {
+            "agent-code": "agent-code",
+            "agent-viz": "agent-viz",
+            "agent-scrna": "agent-scrna",
+        }.get(actor)
+        if expected_agent_id is None or request.agent_id != expected_agent_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Worker identity is not permitted for this Gateway agent",
+            )
+        work_item = await self._cases.get_work_item(case_id, work_item_id)
+        if actor != work_item.target:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Work item target mismatch")
+        if not work_item.read_only or work_item.approval_required:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only unapproved read-only work items may use Gateway execution",
+            )
+        if work_item.status == "claimed":
+            work_item = await self._cases.transition_work_item(
+                case_id,
+                work_item_id,
+                actor,
+                "running",
+                trace_id=request.trace_id,
+            )
+            await self._audit.record(
+                case_id=case_id,
+                actor=actor,
+                event_type="work_item.running",
+                payload={"work_item_id": work_item_id, "trace_id": work_item.trace_id},
+            )
+        if work_item.status != "running":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Work item must be claimed before execution",
+            )
+        if self._gateway is None or not self._gateway.configured:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Gateway is unavailable")
+        await self.heartbeat_work_item(
+            case_id,
+            work_item_id,
+            WorkItemHeartbeatRequest(trace_id=request.trace_id, summary="Gateway consultation started"),
+            actor,
+        )
+        try:
+            result = await self._gateway.consult(
+                {
+                    "case_id": case_id,
+                    "agent_id": request.agent_id,
+                    "question": request.question,
+                    "capability": request.capability,
+                    "evidence_refs": request.evidence_refs,
+                    "requested_tools": request.requested_tools,
+                }
+            )
+            gateway_result = ReadOnlyExecutionResult.model_validate(result)
+            if gateway_result.agent_id != request.agent_id:
+                raise ValueError("Gateway response agent does not match the requested agent")
+        except Exception as exc:  # noqa: BLE001
+            failed = await self._cases.transition_work_item(
+                case_id,
+                work_item_id,
+                actor,
+                "failed",
+                summary=f"Gateway consultation failed: {exc}"[:4000],
+                trace_id=request.trace_id,
+            )
+            await self._audit.record(
+                case_id=case_id,
+                actor=actor,
+                event_type="skill.failed",
+                payload={"work_item_id": work_item_id, "error": str(exc)[:500]},
+            )
+            return failed
+
+        status_value = gateway_result.status
+        completed = status_value == "completed"
+        desired_status = "completed" if completed else "blocked"
+        summary = gateway_result.conclusion
+        updated = await self._cases.transition_work_item(
+            case_id,
+            work_item_id,
+            actor,
+            desired_status,
+            summary=summary,
+            trace_id=request.trace_id,
+        )
+        await self._audit.record(
+            case_id=case_id,
+            actor=actor,
+            event_type="skill.finished" if completed else "skill.manual_review",
+            payload={
+                "work_item_id": work_item_id,
+                "agent_id": request.agent_id,
+                "capability": request.capability,
+                "gateway_status": status_value,
+                "summary": summary,
+                "recommendations": gateway_result.recommendations,
+                "evidence_refs": gateway_result.evidence_refs,
+                "risks": gateway_result.risks,
+                "trace_id": updated.trace_id,
+            },
+        )
+        return updated
 
     async def create_case(self, request: CaseCreateRequest, actor: str) -> CaseRecord:
         now = datetime.now(UTC)
@@ -268,7 +433,9 @@ class BridgeService:
                 event_type="worker.inbox_polled",
                 payload={},
             )
-        assignments = await self._cases.list_assigned_work_items(actor, {"pending", "in_progress"})
+        assignments = await self._cases.list_assigned_work_items(
+            actor, {"pending", "claimed", "running", "in_progress"}
+        )
         if actor in self._EXTERNAL_WORKERS:
             for case, work_item in assignments:
                 await self._audit.record(
@@ -821,11 +988,9 @@ class BridgeService:
             "runbook_ref": request.runbook_ref.model_dump() if request.runbook_ref else None,
         }
         manifest_dir = Path(self._settings.manifest_dir)
-        await asyncio.to_thread(manifest_dir.mkdir, parents=True, exist_ok=True)
+        manifest_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = manifest_dir / f"{case.case_id}.delivery_manifest.json"
-        await asyncio.to_thread(
-            manifest_path.write_text, json.dumps(manifest, ensure_ascii=False, indent=2), "utf-8"
-        )
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), "utf-8")
         closed = await self._cases.close(case.case_id, str(manifest_path))
         await self._audit.record(
             case_id=case.case_id,
@@ -845,6 +1010,13 @@ class BridgeService:
         if work_item_id and any(item.work_item_id == work_item_id for item in case.work_items):
             return work_item_id
         return None
+
+    @staticmethod
+    def _work_item_idempotency_key(
+        case_id: str, request: WorkItemCreateRequest
+    ) -> str:
+        payload = f"{case_id}:{request.work_item_id}:{request.target}:{request.skill_name}:{request.objective}"
+        return f"sha256:{hashlib.sha256(payload.encode()).hexdigest()}"
 
     @staticmethod
     def _require_case_access(case: CaseRecord, actor: str) -> None:

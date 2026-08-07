@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 from loguru import logger
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.core.config import get_settings
@@ -16,6 +16,7 @@ from omichub.infrastructure.database.models.knowledge_chunk import (
     KbChunkModel,
 )
 from omichub.infrastructure.database.models.knowledge_document import KbDocumentModel
+from omichub.infrastructure.database.models.knowledge_revision import DocRevisionModel
 
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
 _MAX_CHUNK_CHARS = 1800
@@ -28,8 +29,104 @@ class KnowledgeIndexService:
         self._db = db
         self._embedding_client = embedding_client
 
-    async def index_document(self, document: KbDocumentModel, content: str) -> int:
+    async def index_document(
+        self,
+        document: KbDocumentModel,
+        content: str,
+        *,
+        include_unreferenced_assets: bool = True,
+    ) -> int:
         """Replace a document's chunks atomically in the caller transaction."""
+        indexable_content = self._prepare_indexable_content(
+            document,
+            content,
+            include_unreferenced_assets=include_unreferenced_assets,
+        )
+        return await self._replace_chunks(document, indexable_content)
+
+    async def ensure_document_indexed(
+        self,
+        document: KbDocumentModel,
+        content: str,
+        *,
+        include_unreferenced_assets: bool = True,
+    ) -> tuple[bool, int]:
+        """Rebuild only when chunk content or the active embedding model changed."""
+        indexable_content = self._prepare_indexable_content(
+            document,
+            content,
+            include_unreferenced_assets=include_unreferenced_assets,
+        )
+        chunks = self._split(indexable_content)
+        model = get_settings().agent_memory_embedding_model.strip() or None
+        result = await self._db.execute(
+            select(
+                KbChunkModel.chunk_index,
+                KbChunkModel.content_hash,
+                KbChunkModel.embedding_model,
+            )
+            .where(KbChunkModel.document_id == document.doc_id)
+            .order_by(KbChunkModel.chunk_index)
+        )
+        existing = [(int(row[0]), str(row[1]), row[2]) for row in result.all()]
+        expected = [
+            (index, hashlib.md5(chunk.encode("utf-8")).hexdigest(), model)
+            for index, (_section, chunk) in enumerate(chunks)
+        ]
+        if existing == expected:
+            return False, len(chunks)
+        return True, await self._replace_chunks(document, indexable_content)
+
+    async def ensure_published_indexes(
+        self, *, include_unreferenced_assets: bool = True
+    ) -> tuple[int, int]:
+        """Incrementally align all published documents with their current source assets."""
+        rows = (
+            await self._db.execute(
+                select(KbDocumentModel, DocRevisionModel.content)
+                .join(DocRevisionModel, KbDocumentModel.current_rev == DocRevisionModel.id)
+                .where(KbDocumentModel.status == 1)
+                .order_by(KbDocumentModel.updated_at.asc())
+            )
+        ).all()
+        rebuilt = 0
+        skipped = 0
+        for document, content in rows:
+            changed, _chunk_count = await self.ensure_document_indexed(
+                document,
+                content,
+                include_unreferenced_assets=include_unreferenced_assets,
+            )
+            if changed:
+                rebuilt += 1
+            else:
+                skipped += 1
+        return rebuilt, skipped
+
+    def _prepare_indexable_content(
+        self,
+        document: KbDocumentModel,
+        content: str,
+        *,
+        include_unreferenced_assets: bool,
+    ) -> str:
+        from omichub.application.services.knowledge_asset_service import KnowledgeAssetService
+
+        indexable_content, asset_report = KnowledgeAssetService().enrich_markdown(
+            content,
+            source_path=document.file_path,
+            include_unreferenced_assets=include_unreferenced_assets,
+        )
+        if asset_report.indexed:
+            logger.info(
+                "知识库文档 {} 已加入 {} 个附件资产块（发现 {} 个）",
+                document.doc_id,
+                asset_report.indexed,
+                asset_report.discovered,
+            )
+        return indexable_content
+
+    async def _replace_chunks(self, document: KbDocumentModel, content: str) -> int:
         await self._db.execute(
             delete(KbChunkModel).where(KbChunkModel.document_id == document.doc_id)
         )

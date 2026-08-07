@@ -19,7 +19,9 @@
 
 ## 2. 系统架构
 
-整体采用「**文件即数据源**」的轻量架构：文档直接以 `.md` 文件存储在仓库 `docs/knowledge/` 中，通过 `meta.yaml` 注册，无需写入数据库。
+整体采用「**文件即数据源**」的轻量架构：知识库源文件统一存储在仓库
+`docs/knowledge/` 中，通过 `meta.yaml` 注册。单篇文档可直接放在根目录，包含 Markdown、
+PDF、图片等多项资源的领域知识库应使用独立子目录；详细约定见 `docs/knowledge/README.md`。
 
 ```
 Frontend (Vue 3)                          Backend (FastAPI)                         Data (docs/)
@@ -32,6 +34,15 @@ Frontend (Vue 3)                          Backend (FastAPI)                     
 └─ router/index.ts                        ├─ middleware/rbac.py
                                           ├─ main.py 挂载 /docs-static
                                           └─ mcp/presets.py → search_knowledge
+
+docs/knowledge/
+├─ meta.yaml
+├─ README.md
+├─ *.md
+└─ <knowledge-base-id>/
+   ├─ <entry>.md
+   ├─ file/
+   └─ image/
 ```
 
 ---
@@ -53,7 +64,18 @@ items:
 - `file`：对应 Markdown 文件名
 - `category`：前端按此聚合成树形目录
 
-### 3.2 文档正文 `*.md`
+### 3.2 文档正文与领域子目录
+
+无附件的单篇文档可使用 `docs/knowledge/*.md`。领域知识库应使用
+`docs/knowledge/<knowledge-base-id>/`，并在 `meta.yaml` 的 `file` 字段中填写相对
+`docs/knowledge/` 的入口路径，例如：
+
+```yaml
+- id: rnaseq-overview
+  title: RNA-seq 原理、实验与分析流程
+  file: rna-seq/RNA-seq.md
+  category: RNA-seq 知识库
+```
 
 Markdown 文件中图片使用相对路径引用，例如：
 
@@ -95,7 +117,11 @@ Markdown 文件中图片使用相对路径引用，例如：
 
 ### 4.4 MCP AI 检索
 
-`presets.py` 中注册了 `knowledge` 内置 MCP，AI 助手可通过 `search_knowledge` 工具检索知识库内容。当前实现是异步遍历 `docs/knowledge/*.md` 做字符串匹配，返回前 10 条结果（文件名 + 摘要）。
+AI 助手通过 `knowledge_search` 工具进入 `studio_tools.py`，再由
+`VectorRetrievalService` 对 `kb_documents` / `kb_chunks` 执行权限过滤、pgvector 向量召回、
+关键词回退和重排。Markdown、PDF 文本和图片元数据/OCR 都进入同一套 chunk 索引；
+`docs/knowledge/meta.yaml` 主要负责知识库页面导航，不是 AI 检索路由表。完整流程见
+`docs/knowledge/knowledge-base-implementation.md`。
 
 ---
 
@@ -182,7 +208,8 @@ location ^~ /docs-static/ {
 
 ## 8. 当前限制与可优化点
 
-- **AI 检索较基础**：目前是简单字符串匹配，未做向量化、分词或评分排序
+- **AI 检索边界**：当前已经支持向量 + 关键词混合召回，以及 PDF 文本和图片元数据/OCR；
+  还没有图片视觉 embedding、图片区域定位或独立的 PDF 页级引用表
 - **无版本历史**：编辑直接覆盖原文件，未内置 Git 版本或历史回滚
 - **无全文搜索 UI**：前端目前没有搜索框，仅能通过 AI 检索调用
 - **分类只有一级**：`category` 是单级字符串，未支持多级目录
@@ -198,4 +225,5 @@ location ^~ /docs-static/ {
 
 ---
 
-> 本文档本身也托管在该知识库架构之下，路径为 `docs/knowledge/knowledge-base-architecture-summary.md`。
+> 本文档保留为架构摘要；实现细节与混合检索说明见
+> `docs/knowledge/knowledge-base-implementation.md`。

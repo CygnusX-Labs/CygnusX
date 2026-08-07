@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveStarCommandContext } from '../commandState'
+import { parseGoalRuntimeCommand, resolveStarCommandContext } from '../commandState'
 
 describe('Star AI command context', () => {
   it('解析模式、权限和目标命令', () => {
@@ -21,5 +21,15 @@ describe('Star AI command context', () => {
       mode: 'plan',
       permission: 'analysis',
     })).toEqual({ mode: 'plan', permission: 'analysis', goal: undefined })
+  })
+
+  it('将持久 Goal 控制命令与旧 Goal 提示区分开', () => {
+    expect(parseGoalRuntimeCommand('/goal start 汇总当前平台能力')).toEqual({
+      action: 'start',
+      objective: '汇总当前平台能力',
+    })
+    expect(parseGoalRuntimeCommand('/goal pause')).toEqual({ action: 'pause' })
+    expect(parseGoalRuntimeCommand('/goal status')).toEqual({ action: 'status' })
+    expect(parseGoalRuntimeCommand('/goal 帮我整理能力')).toBeNull()
   })
 })

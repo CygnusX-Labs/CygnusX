@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -13,6 +14,65 @@ from omichub_agentteams_bridge.case_store import CaseStore
 from omichub_agentteams_bridge.client import OmicHubClient
 from omichub_agentteams_bridge.config import BridgeSettings
 from omichub_agentteams_bridge.models import CaseRecord
+
+
+class FixtureOmicHubClient:
+    """Loop-neutral OmicHub fake used by ASGI contract tests."""
+
+    def __init__(self, settings: BridgeSettings, calls: list[httpx.Request]) -> None:
+        self._settings = settings
+        self._calls = calls
+
+    async def aclose(self) -> None:
+        return None
+
+    async def list_flows(self) -> dict:
+        self._record("GET", "/api/v1/flows")
+        return {"items": [{"id": "rna_seq"}, {"id": "blocked_flow"}], "total": 2}
+
+    async def get_flow_schema(self, flow_id: str) -> dict:
+        self._record("GET", f"/api/v1/flows/{flow_id}/schema")
+        return {"id": flow_id}
+
+    async def submit_task(self, payload: dict) -> dict:
+        self._record("POST", "/api/v1/tasks", payload)
+        return {"id": "task-001", "status": "pending"}
+
+    async def get_task(self, task_id: str) -> dict:
+        self._record("GET", f"/api/v1/tasks/{task_id}")
+        return {"id": task_id, "status": "success", "result_path": "/data/secret/result"}
+
+    async def cancel_task(self, task_id: str) -> dict:
+        self._record("POST", f"/api/v1/tasks/{task_id}/cancel")
+        return {"id": task_id, "status": "cancelled"}
+
+    def _record(self, method: str, path: str, payload: dict | None = None) -> None:
+        headers = {"Authorization": f"Bearer {self._settings.omichub_service_token}"}
+        self._calls.append(httpx.Request(method, f"http://omic.test{path}", headers=headers, json=payload))
+
+
+class LoopLocalASGIClient:
+    """Create the Bridge app and HTTPX transport inside each test event loop."""
+
+    def __init__(self, settings: BridgeSettings, calls: list[httpx.Request]) -> None:
+        self._settings = settings
+        self._calls = calls
+        self._clients: dict[asyncio.AbstractEventLoop, httpx.AsyncClient] = {}
+
+    def _client(self) -> httpx.AsyncClient:
+        loop = asyncio.get_running_loop()
+        if loop not in self._clients:
+            bridge = create_app(self._settings, FixtureOmicHubClient(self._settings, self._calls))
+            self._clients[loop] = httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=bridge), base_url="http://bridge.test"
+            )
+        return self._clients[loop]
+
+    async def get(self, *args: Any, **kwargs: Any) -> httpx.Response:
+        return await self._client().get(*args, **kwargs)
+
+    async def post(self, *args: Any, **kwargs: Any) -> httpx.Response:
+        return await self._client().post(*args, **kwargs)
 
 
 @pytest.fixture
@@ -34,36 +94,9 @@ def settings(tmp_path):
 
 
 @pytest.fixture
-async def client(settings):
+def client(settings):
     calls: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        calls.append(request)
-        if request.url.path == "/api/v1/flows":
-            return httpx.Response(
-                200, json={"items": [{"id": "rna_seq"}, {"id": "blocked_flow"}], "total": 2}
-            )
-        if request.url.path == "/api/v1/tasks" and request.method == "POST":
-            return httpx.Response(201, json={"id": "task-001", "status": "pending"})
-        if request.url.path == "/api/v1/tasks/task-001" and request.method == "GET":
-            return httpx.Response(
-                200,
-                json={"id": "task-001", "status": "success", "result_path": "/data/secret/result"},
-            )
-        if request.url.path == "/api/v1/tasks/task-001/cancel":
-            return httpx.Response(200, json={"id": "task-001", "status": "cancelled"})
-        return httpx.Response(404)
-
-    upstream = httpx.AsyncClient(
-        transport=httpx.MockTransport(handler), base_url="http://omic.test"
-    )
-    bridge = create_app(settings, OmicHubClient(settings, upstream))
-    transport = httpx.ASGITransport(app=bridge)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://bridge.test"
-    ) as request_client:
-        yield request_client, calls
-    await upstream.aclose()
+    return LoopLocalASGIClient(settings, calls), calls
 
 
 def headers(identity: str, token: str) -> dict[str, str]:
@@ -170,7 +203,7 @@ async def test_professional_agent_worker_can_claim_and_complete_own_read_only_wo
         headers=headers(worker, token),
     )
     assert claimed.status_code == 200
-    assert claimed.json()["status"] == "in_progress"
+    assert claimed.json()["status"] == "claimed"
 
     completed = await request_client.post(
         f"/v1/cases/{case_id}/work-items/{work_item_id}",
@@ -260,7 +293,7 @@ async def test_submit_is_approval_scoped_idempotent_and_audited(client, settings
         == 1
     )
     assert calls[-1].headers["authorization"] == "Bearer service-token"
-    audit_text = await asyncio.to_thread(Path(settings.audit_log_path).read_text, encoding="utf-8")
+    audit_text = Path(settings.audit_log_path).read_text(encoding="utf-8")
     audit_events = [json.loads(line) for line in audit_text.splitlines()]
     assert any(event["event_type"] == "omic_task.submitted" for event in audit_events)
 
@@ -1371,7 +1404,7 @@ async def test_worker_claim_is_atomic_and_target_scoped(client) -> None:
         headers=headers("quality-auditor", "auditor"),
     )
     assert claimed.status_code == 200
-    assert claimed.json()["status"] == "in_progress"
+    assert claimed.json()["status"] == "claimed"
     assert duplicate.status_code == 409
     assert duplicate.json()["detail"] == "Work item is already claimed or completed"
 
@@ -1379,4 +1412,4 @@ async def test_worker_claim_is_atomic_and_target_scoped(client) -> None:
         "/v1/work-items/assigned", headers=headers("quality-auditor", "auditor")
     )
     assert inbox.status_code == 200
-    assert inbox.json()["items"][0]["work_item"]["status"] == "in_progress"
+    assert inbox.json()["items"][0]["work_item"]["status"] == "claimed"

@@ -1,5 +1,8 @@
 """Knowledge chunking contracts used by pgvector indexing."""
 
+import hashlib
+from types import SimpleNamespace
+
 import pytest
 
 from omichub.application.services.knowledge_index_service import KnowledgeIndexService
@@ -31,3 +34,30 @@ async def test_knowledge_index_ignores_wrong_dimension_embeddings() -> None:
     service = KnowledgeIndexService(db=None, embedding_client=EmbeddingClient())
 
     assert await service._embed("test", "embedding-1024") is None
+
+
+@pytest.mark.asyncio
+async def test_knowledge_index_skips_unchanged_document(monkeypatch) -> None:
+    content = "# Overview\nunchanged knowledge"
+    chunk = "unchanged knowledge"
+    expected_hash = hashlib.md5(chunk.encode("utf-8")).hexdigest()
+
+    class Result:
+        def all(self):
+            return [(0, expected_hash, None)]
+
+    class Database:
+        async def execute(self, _statement):
+            return Result()
+
+    monkeypatch.setattr(
+        "omichub.application.services.knowledge_index_service.get_settings",
+        lambda: SimpleNamespace(agent_memory_embedding_model=""),
+    )
+    document = SimpleNamespace(doc_id="doc-1", file_path="/missing/source.md")
+    changed, chunks = await KnowledgeIndexService(Database()).ensure_document_indexed(
+        document, content
+    )
+
+    assert changed is False
+    assert chunks == 1

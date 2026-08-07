@@ -35,6 +35,7 @@ celery_app = Celery(
         "omichub.infrastructure.celery_app.tasks.memory",
         "omichub.infrastructure.celery_app.tasks.mcp_builder",
         "omichub.infrastructure.celery_app.tasks.agentteams",
+        "omichub.infrastructure.celery_app.tasks.goals",
         "omichub.infrastructure.celery_app.tasks.ai_metrics",
         "omichub.infrastructure.celery_app.tasks.observability",
     ],
@@ -77,6 +78,7 @@ celery_app.conf.task_routes = {
     "omichub.infrastructure.celery_app.tasks.mas.*": {"queue": "analysis"},
     "omichub.infrastructure.celery_app.tasks.memory.*": {"queue": "analysis"},
     "omichub.infrastructure.celery_app.tasks.agentteams.*": {"queue": "analysis"},
+    "omichub.infrastructure.celery_app.tasks.goals.*": {"queue": "analysis"},
     "omichub.infrastructure.celery_app.tasks.ai_metrics.*": {"queue": "analysis"},
     "omichub.infrastructure.celery_app.tasks.observability.*": {"queue": "analysis"},
 }
@@ -124,6 +126,10 @@ celery_app.conf.beat_schedule = {
     "agentteams-case-watch": {
         "task": "omichub.infrastructure.celery_app.tasks.agentteams.watch_cases",
         "schedule": float(settings.agentteams_case_watch_interval_seconds),
+    },
+    "goal-lease-recovery": {
+        "task": "omichub.infrastructure.celery_app.tasks.goals.recover_expired_goal_leases",
+        "schedule": max(15.0, settings.goal_lease_seconds / 2),
     },
     # 每 5 分钟评估 AI 指标告警（错误率/p95 延迟/日成本）
     "ai-metrics-alert-check": {

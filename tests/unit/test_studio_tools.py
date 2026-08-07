@@ -473,6 +473,9 @@ class _KnowledgeDb:
         self.statement = statement
         return _KnowledgeRows(self.rows)
 
+    async def scalar(self, _statement):
+        return None
+
 
 @pytest.mark.unit
 async def test_knowledge_search_returns_bounded_published_excerpts():
@@ -483,8 +486,9 @@ async def test_knowledge_search_returns_bounded_published_excerpts():
                 "RNA-seq 质量控制",
                 "RNA-seq",
                 "开头说明。" + "x" * 240 + "FastQC 指标解释" + "y" * 800,
+                "质量控制",
+                1.0,
             ),
-            ("other", "无关文档", "通用", "不包含目标词"),
         ]
     )
 

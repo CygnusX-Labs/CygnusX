@@ -63,12 +63,12 @@ def test_claims_pending_assignment_and_outputs_only_worker_envelope() -> None:
         requests.append(request)
         if request.get_method() == "GET":
             return Response(inbox)
-        return Response({"work_item_id": "quality-01", "status": "in_progress"})
+        return Response({"work_item_id": "quality-01", "status": "claimed"})
 
     result = claim_next.claim_next("http://bridge/v1", "quality-auditor", "secret", opener=opener)
 
     assert result["claimed"] is True
-    assert result["assignment"]["work_item"]["status"] == "in_progress"
+    assert result["assignment"]["work_item"]["status"] == "claimed"
     assert "preflight_input" not in result["assignment"]
     assert requests[1].full_url.endswith("/cases/bioops_001/work-items/quality-01/claim")
     assert requests[1].get_method() == "POST"

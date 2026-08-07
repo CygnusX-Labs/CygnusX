@@ -55,6 +55,7 @@ omichubtools
 | `download_jbrowse2.sh` | 一键下载 JBrowse 2 Web 静态产物（默认 v2.15.1）到 `pipelines/jbrowse2/`，供 nginx 以 `/jbrowse2/` 路径提供静态资源。 | `./scripts/download_jbrowse2.sh` |
 | `init_admin.py` | 首次部署时初始化管理员账号。支持通过环境变量自定义用户名、邮箱和密码；生产环境必须设置 `OMICHBUB_INIT_ADMIN_PASSWORD`。若启用饼干系统，会自动为管理员创建饼干账户。 | `python scripts/init_admin.py` |
 | `init_cookies.py` | 初始化默认的饼干（资源计费）定价策略，包括 RNA-seq、ATAC-seq、scRNA-seq 任务定价、CPU/内存费率、沙盒费用以及新用户注册赠送。 | `python scripts/init_cookies.py` |
+| `import_atacseq_knowledge.py` | 全量同步 `docs/knowledge/atac-seq/` 中的 Markdown，并保留全部 PDF/图片静态附件，写入独立 `atacseq` AI 检索知识库。 | `python scripts/import_atacseq_knowledge.py --admin-user-id <UUID>` |
 | `migrate_knowledge_base.py` | 一次性迁移：将 `docs/knowledge/meta.yaml` 中声明的 Markdown 文档导入数据库，生成初始版本并关联编辑者。建议在 `alembic upgrade head` 之后执行。 | `python scripts/migrate_knowledge_base.py --admin-user-id <UUID>` |
 | `render_worker_config.py` | 读取 `data/worker_config.yaml`，校验 `paths` 配置，将 `shared_data_dir` / `pipeline_dir` 渲染为 shell 兼容的 env 文件 `data/.worker-config.env`，供 Docker Compose 插值使用。 | `python scripts/render_worker_config.py` |
 | `sync_knowledge_from_files.py` | 增量同步：将 `docs/knowledge/*.md` 的最新内容同步回数据库。已存在的文档会创建新版本，不存在的会新建；支持自动选择最早创建的管理员作为同步者。 | `python scripts/sync_knowledge_from_files.py --auto-admin` |

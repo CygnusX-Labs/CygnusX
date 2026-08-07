@@ -20,6 +20,18 @@ The command prints `{"assignment":null}` when no pending Work Item exists. A `40
 endpoint means another Worker already claimed the item; run the command again to read the current
 inbox. Use `--dry-run` only to inspect the next assignment without claiming it.
 
+## Production read-only runtime
+
+`production_runner.py` is the non-demo Worker entrypoint for the `agent-code`, `agent-viz`, and
+`agent-scrna` identities. It only holds the role-specific Bridge token. For each claimed Work
+Item it sends a heartbeat and calls the Bridge `execute-readonly` route; the Bridge validates the
+lease and calls the Gateway using the Manager credential that remains inside the control plane.
+
+The runtime supports only the fixed read-only Gateway capability for its identity. It cannot
+submit workflows, cancel tasks, write files, access database/Redis/Docker credentials, or receive
+the Gateway Manager token. Work Items that need an approval or a write-capable action must be
+handled by a dedicated, approval-gated Worker runtime rather than this process.
+
 ## Controlled acceptance runner
 
 `worker_runner.py` is the container entrypoint used by the `agentteams-acceptance` Compose

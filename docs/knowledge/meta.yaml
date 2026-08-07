@@ -12,10 +12,22 @@ items:
   title: ATAC-seq 实验指南
   file: atac-seq-guide.md
   category: 流程说明
+- id: atacseq-overview
+  title: ATAC-seq 原理、实验与分析流程
+  file: atac-seq/ATAC-seq.md
+  category: ATAC-seq 知识库
+- id: atacseq-chromatin-accessibility
+  title: Chromatin Accessibility
+  file: atac-seq/Chromatin Accessibility.md
+  category: ATAC-seq 知识库
 - id: rna-seq-tips
   title: RNA-seq 分析小贴士
   file: rna-seq-tips.md
   category: 流程说明
+- id: rnaseq-overview
+  title: RNA-seq 原理、实验与分析流程
+  file: rna-seq/RNA-seq.md
+  category: RNA-seq 知识库
 - id: knowledge-base-architecture-summary
   title: 知识库实现方式与架构汇总
   file: knowledge-base-architecture-summary.md

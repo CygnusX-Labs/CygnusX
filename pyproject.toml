@@ -69,6 +69,8 @@ dependencies = [
     "psycopg[binary,pool]>=3.1",
     "ollama>=0.6.2",
     "fastembed>=0.8.0",
+    "pypdf>=5.0.0",
+    "pillow>=10.0.0",
 ]
 
 [project.optional-dependencies]

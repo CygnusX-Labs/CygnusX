@@ -86,6 +86,7 @@ agents:
     - router
     - general
     - rnaseq
+    - atacseq
     - scrna
     - scrna_upstream
     - scrna_integration

@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, type Component } from 'vue'
+import { NIcon } from 'naive-ui'
+import { AnalyticsOutline, GitNetworkOutline, HardwareChipOutline } from '@vicons/ionicons5'
 import type { RoutedAgentInfo } from './types'
 
 const props = defineProps<{ route: RoutedAgentInfo }>()
@@ -24,6 +26,11 @@ const intentLabel = computed(() => {
   }
   return labels[props.route.intent || ''] || transition.value?.title || '任务匹配'
 })
+const targetIcon = computed<Component>(() => {
+  if (props.route.intent === 'dag') return AnalyticsOutline
+  if (['fanout', 'consult', 'case'].includes(props.route.intent || '')) return GitNetworkOutline
+  return HardwareChipOutline
+})
 </script>
 
 <template>
@@ -36,14 +43,13 @@ const intentLabel = computed(() => {
       aria-live="polite"
       aria-label="Agent 路由已更新"
     >
-      <span class="route-event__mark" aria-hidden="true">✦</span>
       <div class="route-event__body">
         <div class="route-event__path">
           <span class="route-event__eyebrow">STELLAR ROUTER</span>
           <span class="route-event__source">星尘 AI</span>
           <span class="route-event__arrow" aria-hidden="true">→</span>
           <strong class="route-event__target">
-            <span aria-hidden="true">{{ route.avatar || '🤖' }}</span>
+            <NIcon class="route-event__target-icon" :component="targetIcon" :size="14" aria-hidden="true" />
             {{ route.name }}
           </strong>
           <span class="route-event__status">路由更新</span>
@@ -65,39 +71,27 @@ const intentLabel = computed(() => {
 .route-event {
   position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 11px;
+  gap: 14px;
   width: 100%;
   max-width: 1120px;
   margin: 0 0 var(--space-md, 12px);
   padding: 10px 12px;
   overflow: hidden;
   color: var(--neutral-text-1);
-  background: color-mix(in srgb, var(--neutral-card) 96%, var(--route-agent-color) 4%);
-  border: 1px solid color-mix(in srgb, var(--route-agent-color) 20%, var(--neutral-border));
+  background: color-mix(in srgb, var(--neutral-card) 99%, var(--route-agent-color) 1%);
+  border: 1px solid color-mix(in srgb, var(--route-agent-color) 10%, var(--neutral-border));
   border-radius: 10px;
-  box-shadow: var(--shadow-card);
+  box-shadow: none;
 }
 
 .route-event::before {
   position: absolute;
   inset: 0 auto 0 0;
-  width: 3px;
-  background: var(--route-agent-color);
+  width: 2px;
+  background: color-mix(in srgb, var(--route-agent-color) 68%, var(--neutral-border));
   content: '';
-}
-
-.route-event__mark {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  color: var(--route-agent-color);
-  background: color-mix(in srgb, var(--route-agent-color) 9%, var(--neutral-card));
-  border: 1px solid color-mix(in srgb, var(--route-agent-color) 20%, var(--neutral-border));
-  border-radius: 8px;
-  font-size: 12px;
 }
 
 .route-event__body { min-width: 0; }
@@ -132,6 +126,8 @@ const intentLabel = computed(() => {
   white-space: nowrap;
 }
 
+.route-event__target-icon { flex: 0 0 auto; }
+
 .route-event__status {
   flex: 0 0 auto;
   padding: 2px 6px;
@@ -165,7 +161,7 @@ const intentLabel = computed(() => {
 
 .route-event__meta > span {
   padding: 3px 7px;
-  background: var(--neutral-fill-2);
+  background: color-mix(in srgb, var(--neutral-fill-2) 78%, transparent);
   border-radius: 999px;
 }
 
@@ -186,8 +182,8 @@ const intentLabel = computed(() => {
 }
 
 @media (max-width: 680px) {
-  .route-event { grid-template-columns: auto minmax(0, 1fr); }
-  .route-event__meta { grid-column: 2; justify-content: flex-start; }
+  .route-event { grid-template-columns: minmax(0, 1fr); }
+  .route-event__meta { grid-column: 1; justify-content: flex-start; }
   .route-event__eyebrow,
   .route-event__source { display: none; }
 }

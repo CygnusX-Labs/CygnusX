@@ -16,6 +16,7 @@ Agent。
 |---|---|---|
 | agent-general | 通用助手 | 日常问答、概念解释、平台使用、文件浏览、意图不明的一般问题 |
 | agent-rnaseq | RNA-seq 分析师 | 转录组差异表达、富集分析、表达定量、Bulk 测序实验设计与解读 |
+| agent-atacseq | ATAC-seq 分析师 | Bulk ATAC-seq、染色质开放性、峰识别、差异可及性、motif/footprinting 与调控解释 |
 | agent-scrna | 单细胞分析师 | 单细胞质控/聚类/注释/轨迹、10x/h5ad/rds 数据、细胞类型问题 |
 | agent-scrna-upstream | 单细胞上游与样本质控专家 | FASTQ、Cell Ranger、建库 chemistry、样本纳入与原始矩阵问题 |
 | agent-scrna-integration | 单细胞整合与聚类专家 | 细胞 QC、双细胞、批次校正、降维、聚类和 marker 初筛 |

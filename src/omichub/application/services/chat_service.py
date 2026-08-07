@@ -879,7 +879,8 @@ KNOWLEDGE_SEARCH_TOOL = {
         "name": "knowledge_search",
         "description": (
             "检索平台知识库（含用户个人笔记与实验经验文档），返回标题、分类和短摘录。"
-            "涉及单细胞/生信分析流程、参数阈值、实验经验或平台使用方法的问题，先查知识库再回答。"
+            "涉及专业原理、分析流程、参数阈值、实验经验或平台使用方法的问题，先查知识库。"
+            "若结果为空、相关性不足或无法覆盖问题，再调用 web_search 补充外部资料。"
         ),
         "parameters": {
             "type": "object",
@@ -897,6 +898,9 @@ KNOWLEDGE_SEARCH_TOOL = {
         },
     },
 }
+
+RESEARCH_TOOL_NAMES = frozenset({"knowledge_search", "web_search"})
+RESEARCH_TOOL_CHANNEL = "omichub-research"
 
 FRESHNESS_SEARCH_TRIGGERS = (
     "实时",
@@ -927,6 +931,34 @@ FRESHNESS_SEARCH_TRIGGERS = (
     "literature",
     "paper",
     "pubmed",
+)
+
+BIOINFORMATICS_DOMAIN_TRIGGERS = (
+    "生物信息",
+    "组学",
+    "转录组",
+    "单细胞",
+    "rna-seq",
+    "rnaseq",
+    "scrna",
+    "atac",
+    "chip-seq",
+    "差异表达",
+    "富集分析",
+    "基因组",
+    "测序",
+)
+
+PROFESSIONAL_LEARNING_TRIGGERS = (
+    "学习",
+    "原理",
+    "流程",
+    "方法",
+    "教程",
+    "怎么做",
+    "如何做",
+    "没有数据",
+    "暂无数据",
 )
 
 MEMORY_TOOL_NAMES = {
@@ -971,11 +1003,22 @@ ASK_USER_SYSTEM_PROMPT_SUFFIX = """## 用户澄清协议（强制）
 - 只有问题完全无法用预设选项表达时，才允许在正文直接提问。
 """
 
-KNOWLEDGE_SEARCH_SYSTEM_PROMPT_SUFFIX = """## 知识库检索
+KNOWLEDGE_SEARCH_SYSTEM_PROMPT_SUFFIX = """## 专业问题检索与证据融合协议（强制）
 
-平台知识库已收录用户的个人笔记与实验经验文档。涉及单细胞/生信分析流程、参数阈值、
-实验经验或平台使用方法的问题，先调用 `knowledge_search` 检索再作答；
-检索不到相关内容时如实说明，不要假装查过。"""
+平台知识库已收录用户的个人笔记、实验经验和已发布方法文档。面对生物信息学、组学分析、
+统计方法、实验流程、参数阈值或平台使用等专业问题，即使用户只是学习原理、暂时没有数据，
+也必须按以下顺序获取依据后再形成最终回答：
+
+1. 先调用 `knowledge_search` 检索平台知识库，优先复用站内已经审核或沉淀的知识。
+2. 检查知识库结果是否真实相关且足以覆盖问题。调用失败、结果为空、仅有弱相关摘录或信息明显
+   不完整时，如果当前工具列表包含 `web_search`，继续调用 `web_search` 搜索外部资料；不要因为
+   已调用过知识库就直接停止检索。涉及最新进展、论文、指南或时效性事实时，即使知识库有结果，
+   也要使用联网搜索核验时效性。
+3. 最终回答综合知识库证据、网络搜索结果和模型自身的通用知识：优先采用可验证资料，模型知识
+   用于解释概念、串联流程和补足背景，不得把模型记忆伪装成知识库或网络来源。
+4. 只声明实际执行过的检索。知识库无结果或联网失败时如实说明，但仍可基于可靠的通用知识回答，
+   并明确哪些内容属于一般方法学解释、哪些来自检索证据。不要虚构文献、链接、知识库条目或结论。
+"""
 
 
 class ChatService:
@@ -1040,6 +1083,36 @@ class ChatService:
         triggers = [*FRESHNESS_SEARCH_TRIGGERS, *configured_triggers]
         normalized_query = query.casefold()
         return any(str(trigger).casefold() in normalized_query for trigger in triggers if trigger)
+
+    @staticmethod
+    def _web_search_is_disabled(features: dict[str, Any] | None = None) -> bool:
+        """Return whether an Agent explicitly disables external search."""
+        policy = (features or {}).get("web_search", {}) if isinstance(features, dict) else {}
+        if policy is False:
+            return True
+        policy = policy if isinstance(policy, dict) else {}
+        return str(policy.get("mode") or "").lower() in {"off", "disabled"}
+
+    @staticmethod
+    def _requires_professional_evidence_search(
+        query: str,
+        messages: list[dict[str, Any]],
+        features: dict[str, Any] | None = None,
+    ) -> bool:
+        """Expose web fallback for professional learning without searching the web first."""
+        if ChatService._web_search_is_disabled(features):
+            return False
+        recent_context = "\n".join(
+            str(item.get("content") or "")
+            for item in messages[-8:]
+            if item.get("role") == "user"
+        ).casefold()
+        normalized_query = query.casefold()
+        has_domain = any(trigger in recent_context for trigger in BIOINFORMATICS_DOMAIN_TRIGGERS)
+        has_learning_intent = any(
+            trigger in normalized_query for trigger in PROFESSIONAL_LEARNING_TRIGGERS
+        )
+        return has_domain and has_learning_intent
 
     @staticmethod
     def _clean_session_title(value: str) -> str:
@@ -1966,6 +2039,14 @@ class ChatService:
                 final_system_prompt = ast.system_prompt
         if not final_system_prompt:
             final_system_prompt = DEFAULT_SYSTEM_PROMPT
+        supports_function_tools = bool(
+            (model_config.extra_params or {}).get("supports_tools", True)
+        )
+        research_tools = [KNOWLEDGE_SEARCH_TOOL, WEB_SEARCH_TOOL] if supports_function_tools else []
+        if research_tools:
+            final_system_prompt = (
+                f"{final_system_prompt}\n\n{KNOWLEDGE_SEARCH_SYSTEM_PROMPT_SUFFIX}"
+            )
         final_system_prompt = (
             f"{final_system_prompt}\n\n{USER_FACING_CHINESE_PROMPT_SUFFIX}"
         ).strip()
@@ -2005,9 +2086,31 @@ class ChatService:
         web_sources: list[dict[str, Any]] = []
         if enable_web_search and user_content.strip():
             query = user_content.strip()
+            presearch_call_id = f"web-presearch-{uuid.uuid4()}"
+            yield ChatChunk(
+                type="tool_call",
+                metadata={
+                    "tool_call_id": presearch_call_id,
+                    "tool_name": "web_search",
+                    "arguments": {"query": query},
+                    "mcp_server": RESEARCH_TOOL_CHANNEL,
+                },
+            )
             yield ChatChunk(type="web_search", content=query, metadata={"status": "searching"})
             try:
                 web_sources = await SearchProviderService(self._db).search_default(query)
+                presearch_result = {"query": query, "results": web_sources}
+                yield ChatChunk(
+                    type="tool_result",
+                    metadata={
+                        "tool_call_id": presearch_call_id,
+                        "tool_name": "web_search",
+                        "mcp_server": RESEARCH_TOOL_CHANNEL,
+                        "success": True,
+                        "result": presearch_result,
+                        "ui_payload": presearch_result,
+                    },
+                )
                 if web_sources:
                     context = "\n".join(
                         f"[{index}] {item['title']}\n{item['snippet']}\n来源: {item['url']}"
@@ -2031,6 +2134,17 @@ class ChatService:
                     content="联网搜索失败，已基于模型自身知识回答",
                     metadata={"status": "failed"},
                 )
+                yield ChatChunk(
+                    type="tool_result",
+                    metadata={
+                        "tool_call_id": presearch_call_id,
+                        "tool_name": "web_search",
+                        "mcp_server": RESEARCH_TOOL_CHANNEL,
+                        "success": False,
+                        "result": {"error": str(exc)},
+                        "ui_payload": {"error": str(exc)},
+                    },
+                )
         full_content = ""
         update_counter = 0
         last_usage: dict[str, Any] | None = None
@@ -2038,37 +2152,52 @@ class ChatService:
         try:
             final_temp = temperature if temperature is not None else model_config.temperature
             final_max = max_tokens if max_tokens is not None else model_config.max_tokens
-
-            async for chunk in provider_manager.chat_stream(
-                config=model_config,
-                messages=llm_messages,
-                system_prompt=final_system_prompt,
-                temperature=final_temp,
-                max_tokens=final_max,
-            ):
-                if chunk.type == "text":
-                    full_content += chunk.content
-                    update_counter += 1
-                    if update_counter % 5 == 0:
-                        await self.update_message_content(
-                            ai_message.message_id, full_content, "streaming"
+            for _round in range(8):
+                tool_calls: list[dict[str, Any]] = []
+                round_content = ""
+                done_chunk: ChatChunk | None = None
+                async for chunk in provider_manager.chat_stream(
+                    config=model_config,
+                    messages=llm_messages,
+                    system_prompt=final_system_prompt,
+                    temperature=final_temp,
+                    max_tokens=final_max,
+                    tools=research_tools or None,
+                ):
+                    if chunk.type == "text":
+                        full_content += chunk.content
+                        round_content += chunk.content
+                        update_counter += 1
+                        if update_counter % 5 == 0:
+                            await self.update_message_content(
+                                ai_message.message_id, full_content, "streaming"
+                            )
+                        if update_counter == 1:
+                            chunk.metadata["session_id"] = current_session_id
+                            chunk.metadata["message_id"] = ai_message.message_id
+                        yield chunk
+                    elif chunk.type == "tool_calls":
+                        tool_calls.extend(
+                            item
+                            for item in chunk.metadata.get("tool_calls", [])
+                            if isinstance(item, dict)
                         )
-                    if update_counter == 1:
-                        chunk.metadata["session_id"] = current_session_id
-                        chunk.metadata["message_id"] = ai_message.message_id
+                    elif chunk.type == "error":
+                        await self.update_message_content(
+                            ai_message.message_id,
+                            full_content or f"生成失败: {chunk.content}",
+                            "error",
+                            {"error": chunk.content},
+                        )
+                        yield chunk
+                        return
+                    elif chunk.type == "done":
+                        done_chunk = chunk
+                    else:
+                        yield chunk
 
-                elif chunk.type == "error":
-                    await self.update_message_content(
-                        ai_message.message_id,
-                        full_content or f"生成失败: {chunk.content}",
-                        "error",
-                        {"error": chunk.content},
-                    )
-                    yield chunk
-                    return
-
-                elif chunk.type == "done":
-                    last_usage = chunk.metadata.get("usage")
+                if not tool_calls:
+                    last_usage = (done_chunk.metadata.get("usage") if done_chunk else None)
                     await self.update_message_content(
                         ai_message.message_id,
                         full_content,
@@ -2080,12 +2209,95 @@ class ChatService:
                         or None,
                     )
                     await self._apply_usage_to_session(ai_message.message_id, last_usage)
-                    chunk.metadata["session_id"] = current_session_id
-                    chunk.metadata["message_id"] = ai_message.message_id
-                    yield chunk
+                    done_chunk = done_chunk or ChatChunk(type="done")
+                    done_chunk.metadata["session_id"] = current_session_id
+                    done_chunk.metadata["message_id"] = ai_message.message_id
+                    yield done_chunk
                     return
 
-                yield chunk
+                llm_messages.append(
+                    {
+                        "role": "assistant",
+                        "content": round_content or None,
+                        "tool_calls": tool_calls,
+                    }
+                )
+                for tool_call in tool_calls:
+                    function = tool_call.get("function") or {}
+                    tool_name = str(function.get("name") or "")
+                    try:
+                        args = json.loads(function.get("arguments") or "{}")
+                    except json.JSONDecodeError:
+                        args = {}
+                    args = args if isinstance(args, dict) else {}
+                    tool_call_id = str(tool_call.get("id") or uuid.uuid4())
+                    yield ChatChunk(
+                        type="tool_call",
+                        metadata={
+                            "tool_call_id": tool_call_id,
+                            "tool_name": tool_name,
+                            "arguments": args,
+                            "mcp_server": RESEARCH_TOOL_CHANNEL,
+                        },
+                    )
+                    if tool_name == "knowledge_search":
+                        result = await self._knowledge_search_chat(args, project_id=project_id)
+                    elif tool_name == "web_search":
+                        query = str(args.get("query") or "")
+                        yield ChatChunk(
+                            type="web_search", content=query, metadata={"status": "searching"}
+                        )
+                        result = await self._web_search(args)
+                        payload = result.get("result") if isinstance(result, dict) else None
+                        results = payload.get("results", []) if isinstance(payload, dict) else []
+                        if result.get("success") and isinstance(results, list):
+                            web_sources.extend(item for item in results if isinstance(item, dict))
+                            if results:
+                                yield ChatChunk(
+                                    type="web_search_results", metadata={"sources": results}
+                                )
+                            else:
+                                yield ChatChunk(
+                                    type="web_search",
+                                    content="未找到相关结果，已基于模型知识回答",
+                                    metadata={"status": "empty"},
+                                )
+                        else:
+                            yield ChatChunk(
+                                type="web_search",
+                                content="联网搜索失败，已基于模型自身知识回答",
+                                metadata={"status": "failed"},
+                            )
+                    else:
+                        result = {"success": False, "error": f"工具 {tool_name} 未挂载"}
+                    tool_output = result.get("result") if isinstance(result, dict) else result
+                    llm_result = tool_output if isinstance(tool_output, dict) else {"result": tool_output}
+                    yield ChatChunk(
+                        type="tool_result",
+                        metadata={
+                            "tool_call_id": tool_call_id,
+                            "tool_name": tool_name,
+                            "mcp_server": RESEARCH_TOOL_CHANNEL,
+                            "success": bool(result.get("success")) if isinstance(result, dict) else True,
+                            "result": llm_result,
+                            "ui_payload": llm_result,
+                        },
+                    )
+                    llm_messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call_id,
+                            "content": json.dumps(llm_result, ensure_ascii=False, default=str),
+                        }
+                    )
+
+            await self.update_message_content(
+                ai_message.message_id,
+                full_content or "工具调用轮次达到上限",
+                "error",
+                {"error": "工具调用轮次达到上限"},
+            )
+            yield ChatChunk(type="error", content="工具调用轮次达到上限")
 
         except Exception as e:  # noqa: BLE001
             await self.update_message_content(
@@ -3676,6 +3888,7 @@ class ChatService:
         overdrive: bool | None = None,
         extend_max_rounds: bool = False,
         project_id: str | None = None,
+        runtime_context: dict[str, Any] | None = None,
     ) -> AsyncIterator[ChatChunk]:
         """Agent 编排入口（带 Trace/Log/Metrics 埋点）：作为 AI/MCP/技能 span 的父 span。"""
         tracer = get_tracer("omichub.chat")
@@ -3703,6 +3916,7 @@ class ChatService:
                     overdrive=overdrive,
                     extend_max_rounds=extend_max_rounds,
                     project_id=project_id,
+                    runtime_context=runtime_context,
                 ):
                     if chunk.type == "error":
                         status = "error"
@@ -3743,6 +3957,7 @@ class ChatService:
         overdrive: bool | None = None,
         extend_max_rounds: bool = False,
         project_id: str | None = None,
+        runtime_context: dict[str, Any] | None = None,
     ) -> AsyncIterator[ChatChunk]:
         """Agent 编排闭环：查 Agent → 组装模型/系统词/工具 → 打 LLM → 执行 tool_call 回灌 → 流式返回
 
@@ -4303,14 +4518,30 @@ class ChatService:
         # 动态追加联网搜索工具。普通聊天保持 Agent 全量 MCP/Skill 行为；
         # Studio 使用元数据目录 + 会话级按需加载，未加载能力不进入 prompt/tools。
         search_required = self._requires_fresh_web_search(user_content, ctx.features)
-        effective_web_search = (
-            enable_web_search or bool(ctx.features.get("enable_web_search")) or search_required
+        evidence_web_search = self._requires_professional_evidence_search(
+            user_content, llm_messages, ctx.features
+        )
+        # 检索工具对所有支持 function calling 的 Agent 默认同时可用。是否真正联网
+        # 由统一提示词与模型工具调用决定；显式关闭 web_search 的 Agent 仍保持离线。
+        effective_web_search = not self._web_search_is_disabled(ctx.features)
+        presearch_requested = (
+            enable_web_search
+            or bool(ctx.features.get("enable_web_search"))
+            or search_required
+            or evidence_web_search
         )
         supports_function_tools = bool(
             (model_config.extra_params or {}).get("supports_tools", True)
         )
+        existing_tool_names = {
+            str((tool.get("function") or {}).get("name") or "")
+            for tool in (ctx.tools or [])
+            if isinstance(tool, dict)
+        }
         base_tools: list[dict[str, Any]] = []
-        if effective_web_search and supports_function_tools and not search_required:
+        if supports_function_tools and "knowledge_search" not in existing_tool_names:
+            base_tools.append(KNOWLEDGE_SEARCH_TOOL)
+        if effective_web_search and "web_search" not in existing_tool_names:
             base_tools.append(WEB_SEARCH_TOOL)
 
         active_mcp_servers = [] if effective_mcp_mode == "off" else list(bound_mcp_servers)
@@ -4329,6 +4560,36 @@ class ChatService:
                     if server.is_enabled and server.name not in defaults_by_name:
                         active_mcp_servers.append(server)
         tools = list(ctx.tools or []) + base_tools
+        if runtime_context and runtime_context.get("goal_safe_only"):
+            safe_tool_names = {"ask_user", "knowledge_search", "web_search", "use_skill", "skill_resource"}
+            if runtime_context.get("goal_fanout_enabled"):
+                safe_tool_names.add(PARALLEL_SUBAGENTS_TOOL_NAME)
+
+            def _is_goal_safe_tool(tool: dict[str, Any]) -> bool:
+                name = str(tool.get("function", {}).get("name") or "")
+                if name in safe_tool_names:
+                    return True
+                schema = schema_loader.get_tool(name)
+                return bool(
+                    schema
+                    and schema.annotations.read_only_hint
+                    and not schema.requires_confirm
+                )
+
+            tools = [tool for tool in tools if isinstance(tool, dict) and _is_goal_safe_tool(tool)]
+        if runtime_context and runtime_context.get("goal_id") and supports_function_tools:
+            from omichub.application.services.goal_terminal_tools import GOAL_TERMINAL_TOOL_SCHEMAS
+
+            known_tool_names = {
+                str(item.get("function", {}).get("name") or "")
+                for item in tools
+                if isinstance(item, dict)
+            }
+            tools.extend(
+                tool
+                for tool in GOAL_TERMINAL_TOOL_SCHEMAS
+                if tool["function"]["name"] not in known_tool_names
+            )
         if effective_multi_agent and supports_function_tools:
             known_tool_names = {
                 str(item.get("function", {}).get("name") or "")
@@ -4339,6 +4600,10 @@ class ChatService:
                 tool
                 for tool in schema_loader.to_openai_tools()
                 if tool.get("function", {}).get("name") in MULTI_AGENT_TOOL_NAMES
+                and (
+                    not (runtime_context and runtime_context.get("goal_safe_only"))
+                    or tool.get("function", {}).get("name") == PARALLEL_SUBAGENTS_TOOL_NAME
+                )
                 and tool.get("function", {}).get("name") not in known_tool_names
             )
         # ask_user 澄清弹窗在普通聊天同样可用（Studio 由 STUDIO_TOOL_SCHEMAS 携带），
@@ -4400,10 +4665,12 @@ class ChatService:
                 if system_prompt
                 else ASK_USER_SYSTEM_PROMPT_SUFFIX
             )
-        if not studio_mode and any(
-            tool.get("function", {}).get("name") == "knowledge_search"
-            for tool in tools
-            if isinstance(tool, dict)
+        if RESEARCH_TOOL_NAMES.issubset(
+            {
+                str((tool.get("function") or {}).get("name") or "")
+                for tool in tools
+                if isinstance(tool, dict)
+            }
         ):
             system_prompt = (
                 f"{system_prompt}\n\n{KNOWLEDGE_SEARCH_SYSTEM_PROMPT_SUFFIX}"
@@ -4527,6 +4794,16 @@ class ChatService:
                 if runtime_prompt
                 else STUDIO_SYSTEM_PROMPT_SUFFIX
             )
+            if RESEARCH_TOOL_NAMES.issubset(
+                {
+                    str((item.get("function") or {}).get("name") or "")
+                    for item in runtime_tools
+                    if isinstance(item, dict)
+                }
+            ):
+                runtime_prompt = (
+                    f"{runtime_prompt}\n\n{KNOWLEDGE_SEARCH_SYSTEM_PROMPT_SUFFIX}"
+                )
             runtime_profile_id = str(
                 (ctx.features.get("studio") or {}).get("runtime_profile") or ""
             ).strip()
@@ -4622,6 +4899,14 @@ class ChatService:
                 if isinstance(item, dict)
             ):
                 target_prompt = f"{target_prompt}\n\n{HANDOFF_SYSTEM_PROMPT_SUFFIX}".strip()
+            if RESEARCH_TOOL_NAMES.issubset(
+                {
+                    str((item.get("function") or {}).get("name") or "")
+                    for item in target_tools
+                    if isinstance(item, dict)
+                }
+            ):
+                target_prompt = f"{target_prompt}\n\n{KNOWLEDGE_SEARCH_SYSTEM_PROMPT_SUFFIX}".strip()
             try:
                 from omichub.application.services.agent_memory_service import AgentMemoryService
 
@@ -4652,15 +4937,37 @@ class ChatService:
         presearch_sources: list[dict[str, Any]] = []
         if (
             effective_web_search
-            and (not supports_function_tools or search_required)
+            and (search_required or (not supports_function_tools and presearch_requested))
             and user_content.strip()
         ):
+            presearch_call_id = f"web-presearch-{uuid.uuid4()}"
+            yield ChatChunk(
+                type="tool_call",
+                metadata={
+                    "tool_call_id": presearch_call_id,
+                    "tool_name": "web_search",
+                    "arguments": {"query": user_content},
+                    "mcp_server": RESEARCH_TOOL_CHANNEL,
+                },
+            )
             yield ChatChunk(
                 type="web_search", content=user_content, metadata={"status": "searching"}
             )
             try:
                 presearch_sources = await SearchProviderService(self._db).search_default(
                     user_content
+                )
+                presearch_result = {"query": user_content, "results": presearch_sources}
+                yield ChatChunk(
+                    type="tool_result",
+                    metadata={
+                        "tool_call_id": presearch_call_id,
+                        "tool_name": "web_search",
+                        "mcp_server": RESEARCH_TOOL_CHANNEL,
+                        "success": True,
+                        "result": presearch_result,
+                        "ui_payload": presearch_result,
+                    },
                 )
                 if presearch_sources:
                     context = "\n".join(
@@ -4693,6 +5000,17 @@ class ChatService:
                     content="联网搜索失败，已基于模型自身知识回答",
                     metadata={"status": "failed"},
                 )
+                yield ChatChunk(
+                    type="tool_result",
+                    metadata={
+                        "tool_call_id": presearch_call_id,
+                        "tool_name": "web_search",
+                        "mcp_server": RESEARCH_TOOL_CHANNEL,
+                        "success": False,
+                        "result": {"error": str(exc)},
+                        "ui_payload": {"error": str(exc)},
+                    },
+                )
 
         system_prompt = f"{system_prompt}\n\n{USER_FACING_CHINESE_PROMPT_SUFFIX}".strip()
 
@@ -4717,6 +5035,7 @@ class ChatService:
             agent_id=agent_id,
             session_id=current_session_id,
             db=self._db,
+            extra=dict(runtime_context or {}),
         )
 
         if (
@@ -4805,6 +5124,7 @@ class ChatService:
                     agent_id=target_ctx.agent.agent_id,
                     session_id=current_session_id,
                     db=self._db,
+                    extra=dict(runtime_context or {}),
                 ),
                 "skills": target_skills,
                 "directive": directive,
@@ -4996,6 +5316,8 @@ class ChatService:
                         if is_skill_tool
                         else "studio"
                         if is_studio_tool
+                        else RESEARCH_TOOL_CHANNEL
+                        if tool_name in RESEARCH_TOOL_NAMES
                         else (server.name if server else None)
                     )
 
@@ -5063,17 +5385,28 @@ class ChatService:
                                     ],
                                 },
                             )
-                            from omichub.application.services.parallel_subagent_tool_service import (
-                                ParallelSubAgentToolService,
-                            )
+                            if tool_context.extra.get("goal_id"):
+                                from omichub.application.services.goal_adapters.fanout_adapter import (
+                                    GoalFanoutAdapter,
+                                )
 
-                            fanout_envelope = (
-                                await ParallelSubAgentToolService().run_parallel_subagents(
+                                fanout_envelope = await GoalFanoutAdapter().execute(
                                     context_summary=str(args.get("context_summary") or ""),
                                     tasks=fanout_tasks,
                                     context=tool_context,
                                 )
-                            )
+                            else:
+                                from omichub.application.services.parallel_subagent_tool_service import (
+                                    ParallelSubAgentToolService,
+                                )
+
+                                fanout_envelope = (
+                                    await ParallelSubAgentToolService().run_parallel_subagents(
+                                        context_summary=str(args.get("context_summary") or ""),
+                                        tasks=fanout_tasks,
+                                        context=tool_context,
+                                    )
+                                )
                             result = {
                                 "success": bool(fanout_envelope.get("success")),
                                 "result": {
@@ -5458,7 +5791,15 @@ class ChatService:
                                 else:
                                     result = item
                     elif server is None:
-                        if tool_name == "knowledge_search":
+                        if tool_name in {"goal_complete", "goal_blocked"}:
+                            from omichub.application.services.goal_terminal_tools import (
+                                GoalTerminalToolService,
+                            )
+
+                            result = await GoalTerminalToolService().execute(
+                                tool_name, args, tool_context
+                            )
+                        elif tool_name == "knowledge_search":
                             result = await self._knowledge_search_chat(
                                 args, project_id=session_project_id
                             )
@@ -5787,6 +6128,8 @@ class ChatService:
                 return "handoff"
             if tool_name in SKILL_TOOL_NAMES:
                 return "skills"
+            if tool_name in RESEARCH_TOOL_NAMES:
+                return RESEARCH_TOOL_CHANNEL
             server = _find_server(tool_name)
             return server.name if server else None
 

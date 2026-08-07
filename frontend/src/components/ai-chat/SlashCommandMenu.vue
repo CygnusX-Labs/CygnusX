@@ -75,6 +75,11 @@ const AGENT_MODE_COMMANDS: Row[] = [
   { id: '/run', name: 'Execute 模式', description: '执行已确认的分析计划', icon: PlayCircleOutline, shortcut: '/run' },
   { id: '/research', name: 'Research 模式', description: '文献搜索、数据库查询与方法调研', icon: SearchCircleOutline, shortcut: '/research' },
   { id: '/goal', name: '设置任务目标', description: '为当前对话声明一个明确目标', icon: FlagOutline, shortcut: '/goal' },
+  { id: '/goal start', name: '启动持久 Goal', description: '后台安全推进，并保留可恢复的执行状态', icon: FlagOutline, shortcut: '/goal start' },
+  { id: '/goal status', name: '查看 Goal 状态', description: '显示当前会话的持久目标与执行时间线', icon: FlagOutline, shortcut: '/goal status' },
+  { id: '/goal pause', name: '暂停 Goal', description: '暂停当前目标的后台续跑', icon: FlagOutline, shortcut: '/goal pause' },
+  { id: '/goal resume', name: '继续 Goal', description: '恢复已暂停或等待补充的目标', icon: FlagOutline, shortcut: '/goal resume' },
+  { id: '/goal cancel', name: '取消 Goal', description: '停止当前会话的持久目标', icon: FlagOutline, shortcut: '/goal cancel' },
 ]
 
 const PERMISSION_COMMANDS: Row[] = [

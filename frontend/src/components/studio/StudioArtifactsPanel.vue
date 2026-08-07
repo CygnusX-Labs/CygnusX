@@ -5,7 +5,7 @@
  * GET /studio/sessions/{id}/artifacts：图片 lightbox、CSV/TSV 前 50 行表格、
  * Markdown 渲染；同时支持下载、插入对话引用和保存为报告版本。
  */
-import { ref, watch, onBeforeUnmount } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import DOMPurify from 'dompurify'
 import {
   NButton,
@@ -78,17 +78,27 @@ const registerTitle = ref('')
 const registering = ref(false)
 let sparkleTimer: number | null = null
 
+const artifactGroups = computed(() => {
+  const groups = [
+    { key: 'table', label: '数据表', items: [] as StudioArtifact[] },
+    { key: 'chart', label: '图表', items: [] as StudioArtifact[] },
+    { key: 'report', label: '报告', items: [] as StudioArtifact[] },
+  ]
+  for (const artifact of artifacts.value) {
+    const ext = extension(artifact.path)
+    if (TABLE_EXTS.has(ext)) groups[0].items.push(artifact)
+    else if (IMAGE_EXTS.has(ext)) groups[1].items.push(artifact)
+    else groups[2].items.push(artifact)
+  }
+  return groups.filter((group) => group.items.length)
+})
+
 function extension(path: string): string {
   return path.split('.').pop()?.toLowerCase() || ''
 }
 
 function isImage(path: string): boolean {
   return IMAGE_EXTS.has(extension(path))
-}
-
-function isTextPreview(path: string): boolean {
-  const ext = extension(path)
-  return TABLE_EXTS.has(ext) || MARKDOWN_EXTS.has(ext)
 }
 
 function clearThumbs() {
@@ -285,7 +295,9 @@ function formatTime(mtime: number): string {
       暂无产物<br>执行生成的文件会出现在这里
     </div>
 
-    <div v-for="artifact in artifacts" :key="artifact.path" class="artifact-item" :class="{ sparkle: sparklePath === artifact.path }" :title="artifact.path">
+    <section v-for="group in artifactGroups" :key="group.key" class="artifact-group">
+      <div class="artifact-group-heading"><span>{{ group.label }}</span><small>{{ group.items.length }}</small></div>
+      <div v-for="artifact in group.items" :key="artifact.path" class="artifact-item" :class="{ sparkle: sparklePath === artifact.path, 'artifact-enter': sparklePath === artifact.path }" :title="artifact.path">
       <button
         v-if="isImage(artifact.path)"
         class="thumb-btn"
@@ -307,7 +319,7 @@ function formatTime(mtime: number): string {
       </div>
 
       <div class="artifact-actions">
-        <n-tooltip v-if="isTextPreview(artifact.path)" trigger="hover">
+        <n-tooltip trigger="hover">
           <template #trigger>
             <n-button text size="tiny" @click="openPreview(artifact)">
               <n-icon size="14"><EyeOutline /></n-icon>
@@ -315,7 +327,7 @@ function formatTime(mtime: number): string {
           </template>
           在线预览
         </n-tooltip>
-        <n-tooltip v-if="MARKDOWN_EXTS.has(extension(artifact.path))" trigger="hover">
+        <n-tooltip trigger="hover">
           <template #trigger>
             <n-button text size="tiny" @click="emit('open', artifact.path)">
               <n-icon size="14"><OpenOutline /></n-icon>
@@ -348,7 +360,8 @@ function formatTime(mtime: number): string {
           保存为新版本
         </n-tooltip>
       </div>
-    </div>
+      </div>
+    </section>
 
     <n-modal v-model:show="showRegister" preset="card" title="保存到报告中心" style="max-width: 480px">
       <div class="register-form">
@@ -421,6 +434,10 @@ function formatTime(mtime: number): string {
   gap: 6px;
   padding: 4px 0;
 }
+.artifact-group { display: grid; gap: 6px; }
+.artifact-group + .artifact-group { margin-top: 8px; }
+.artifact-group-heading { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; color: var(--chat-text-muted); font-size: 11px; }
+.artifact-group-heading small { display: grid; place-items: center; min-width: 18px; height: 18px; border-radius: 999px; background: var(--chat-surface-hover); }
 .panel-loading {
   display: flex;
   justify-content: center;
@@ -453,6 +470,7 @@ function formatTime(mtime: number): string {
   border-radius: 8px;
   background: var(--chat-surface, #fff);
 }
+.artifact-item.artifact-enter { animation: artifact-enter .4s ease both; }
 .thumb-btn {
   width: 40px;
   height: 40px;
@@ -588,5 +606,6 @@ function formatTime(mtime: number): string {
   border: 1px solid var(--chat-border, #ddd);
 }
 @keyframes artifact-star { 0%{opacity:0;transform:translate(0,10px) scale(.6)} 35%{opacity:1} 100%{opacity:0;transform:translate(12px,-20px) scale(1.15)} }
-@media (prefers-reduced-motion: reduce){.artifact-item{transition:none}.artifact-item.sparkle::after{animation:none;opacity:1}}
+@keyframes artifact-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce){.artifact-item{transition:none}.artifact-item.sparkle::after,.artifact-item.artifact-enter{animation:none;opacity:1;transform:none}}
 </style>

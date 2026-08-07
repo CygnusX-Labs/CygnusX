@@ -130,6 +130,20 @@ def test_solar_term_yu_shui(service: FestivalCalendarService):
     assert service.resolve_festival_date(yu_shui, 2026) == date(2026, 2, 18)
 
 
+def test_solar_term_li_qiu(service: FestivalCalendarService):
+    """2026 年立秋当天应命中节日彩蛋。"""
+    li_qiu = FestivalConfig(
+        id="li_qiu",
+        name="立秋",
+        category=FestivalCategory.SOLAR_TERM,
+        calendarType=CalendarType.SOLAR_TERM,
+        solarTerm={"name": "立秋", "index": 12},
+        priority=50,
+        enabled=True,
+    )
+    assert service.is_active_on(li_qiu, date(2026, 8, 7)) is True
+
+
 def test_solar_term_year_out_of_range(service: FestivalCalendarService):
     yu_shui = FestivalConfig(
         id="yu_shui",

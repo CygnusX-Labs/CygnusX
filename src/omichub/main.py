@@ -2,7 +2,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
@@ -270,11 +270,57 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     welcome_task = asyncio.create_task(_seed_welcome())
 
+    async def _auto_reindex_knowledge() -> None:
+        """Incrementally refresh published knowledge chunks after deployment."""
+        factory = None
+        lock_acquired = False
+        try:
+            from sqlalchemy import text
+
+            from omichub.application.services.knowledge_index_service import (
+                KnowledgeIndexService,
+            )
+            from omichub.infrastructure.database.session import get_session_factory
+
+            factory = get_session_factory()
+            if factory is None:
+                return
+            async with factory() as session:
+                # Prevent every web replica from embedding the same changed document.
+                try:
+                    lock_acquired = bool(
+                        (
+                            await session.execute(
+                                text("SELECT pg_try_advisory_lock(:lock_key)"),
+                                {"lock_key": 738421906},
+                            )
+                        ).scalar()
+                    )
+                except Exception:
+                    # SQLite/dev fallback has no advisory lock; the transaction is still safe.
+                    lock_acquired = True
+                if not lock_acquired:
+                    logger.info("知识库增量索引由其他实例执行，本实例跳过")
+                    return
+                rebuilt, skipped = await KnowledgeIndexService(session).ensure_published_indexes()
+                await session.commit()
+                logger.info("知识库增量索引完成：重建 {} 篇，跳过 {} 篇", rebuilt, skipped)
+                if lock_acquired:
+                    with suppress(Exception):
+                        await session.execute(
+                            text("SELECT pg_advisory_unlock(:lock_key)"),
+                            {"lock_key": 738421906},
+                        )
+        except Exception as exc:  # noqa: BLE001 - indexing must not block web startup
+            logger.warning("知识库自动增量索引失败，仍可手动执行 reindex 脚本: {}", exc)
+
+    knowledge_index_task = asyncio.create_task(_auto_reindex_knowledge())
     yield
 
-    # 关闭时清理：取消未完成的沙盒预热 + 欢迎词补齐 + 关闭数据库
+    # 关闭时清理：取消未完成的沙盒预热 + 欢迎词补齐 + 知识库索引 + 关闭数据库
     sandbox_task.cancel()
     welcome_task.cancel()
+    knowledge_index_task.cancel()
     from omichub.infrastructure.database.session import close_db
 
     await close_db()

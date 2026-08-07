@@ -36,7 +36,17 @@ CaseStatus = Literal[
     "closed",
     "cancelled",
 ]
-WorkItemStatus = Literal["pending", "in_progress", "completed", "blocked", "failed", "cancelled"]
+WorkItemStatus = Literal[
+    "pending",
+    "claimed",
+    "running",
+    "awaiting_approval",
+    "in_progress",  # legacy alias retained for existing clients
+    "completed",
+    "blocked",
+    "failed",
+    "cancelled",
+]
 
 
 class ContextRef(BaseModel):
@@ -209,6 +219,14 @@ class WorkItemRecord(BaseModel):
     approval_required: bool = False
     deadline_seconds: int = Field(default=300, ge=1, le=86_400)
     status: WorkItemStatus = "pending"
+    attempt: int = Field(default=0, ge=0, le=100)
+    max_attempts: int = Field(default=3, ge=1, le=10)
+    lease_owner: str | None = Field(default=None, max_length=128)
+    lease_expires_at: datetime | None = None
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=256)
+    trace_id: str | None = Field(default=None, max_length=128)
+    depends_on: list[str] = Field(default_factory=list, max_length=32)
+    output_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
     summary: str | None = Field(default=None, max_length=4_000)
     findings: list[Finding] = Field(default_factory=list, max_length=100)
     updated_at: datetime
@@ -224,12 +242,48 @@ class WorkItemCreateRequest(BaseModel):
     read_only: bool = True
     approval_required: bool = False
     deadline_seconds: int = Field(default=300, ge=1, le=86_400)
+    max_attempts: int = Field(default=3, ge=1, le=10)
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=256)
+    depends_on: list[str] = Field(default_factory=list, max_length=32)
 
 
 class WorkItemUpdateRequest(BaseModel):
     status: WorkItemStatus
-    summary: str = Field(min_length=1, max_length=4_000)
+    summary: str = Field(default="", max_length=4_000)
     findings: list[Finding] = Field(default_factory=list, max_length=100)
+    output_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
+    trace_id: str | None = Field(default=None, max_length=128)
+
+
+class WorkItemHeartbeatRequest(BaseModel):
+    trace_id: str | None = Field(default=None, max_length=128)
+    summary: str = Field(default="", max_length=1_000)
+
+
+class ReadOnlyExecutionRequest(BaseModel):
+    """Worker request for a Bridge-mediated, Gateway-restricted consultation."""
+
+    agent_id: str = Field(min_length=1, max_length=128)
+    capability: Literal["interpretation", "planning_advice", "result_interpretation", "qc_advice"]
+    question: str = Field(min_length=1, max_length=8_000)
+    evidence_refs: list[str] = Field(default_factory=list, max_length=50)
+    requested_tools: list[str] = Field(default_factory=list, max_length=20)
+    trace_id: str | None = Field(default=None, max_length=128)
+
+
+class ReadOnlyExecutionResult(BaseModel):
+    """Fixed Gateway response accepted by the production read-only Worker path."""
+
+    schema_version: str = Field(min_length=1, max_length=32)
+    status: Literal["completed", "manual_review", "rejected"]
+    conclusion: str = Field(min_length=1, max_length=8_000)
+    recommendations: list[str] = Field(default_factory=list, max_length=100)
+    evidence_refs: list[str] = Field(default_factory=list, max_length=100)
+    risks: list[str] = Field(default_factory=list, max_length=100)
+    agent_id: str = Field(min_length=1, max_length=128)
+    schema_ver: str = Field(min_length=1, max_length=32)
+    duration_ms: int = Field(ge=0)
+    token_usage: int = Field(ge=0)
 
 
 class WorkerInboxItem(BaseModel):

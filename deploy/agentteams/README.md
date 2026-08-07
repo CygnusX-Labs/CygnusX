@@ -26,6 +26,12 @@ The host health port binds to `127.0.0.1:8088` by default. OmicHub reaches the B
 dedicated Docker network; do not change `AGENTTEAMS_BRIDGE_BIND_HOST` to `0.0.0.0` unless an
 approved gateway/firewall policy requires a host-facing endpoint.
 
+The Bridge starts a dedicated `omichub-agentteams-state` Redis service on a separate internal
+network. It owns the shared Case snapshot, atomic lease/claim lock, idempotency receipts, and
+append-only audit stream. Workers are intentionally **not** attached to that network: they can
+only call the Bridge API. Production `bridge.env` must set `BRIDGE_STATE_STORE_URL`; file-backed
+Bridge state remains a development-only fallback.
+
 ### Controlled multi-Worker acceptance check
 
 For a non-production integration check, the `agentteams-acceptance` Compose profile starts three
@@ -42,6 +48,24 @@ enabled only in this profile and accepts only read-only Work Items whose Case ID
 runtime. A successful acceptance Case contains, for each identity, ordered Case audit events
 `worker.inbox_polled`, `work_item.claimed`, and `skill.finished`. Do not enable this profile for
 production scientific work.
+
+### Production read-only Worker profile
+
+The `agentteams-production` profile starts real, role-scoped `agent-code`, `agent-viz`, and
+`agent-scrna` Worker processes. A Worker receives only its own Bridge token: it claims a Work
+Item, sends heartbeats, and asks the Bridge to call the Gateway's fixed read-only consultation
+endpoint. The Gateway Manager token stays inside the Bridge container and is never mounted into
+a Worker.
+
+```bash
+docker compose -f docker-compose.agentteams.yml \
+  --profile agentteams-production up --build -d
+```
+
+Before enabling this profile, configure `BRIDGE_GATEWAY_URL` and
+`BRIDGE_GATEWAY_MANAGER_TOKEN` in the deployment-managed `bridge.env`. The profile is intended
+for read-only consultation only; workflow submission, cancellation, file writes, and Pipeline
+execution remain on the approval-gated Bridge routes.
 
 Use `.env.agentteams.example` as the separately managed environment template for the
 version-specific AgentTeams Controller/Manager/Worker, Matrix, MinIO, and optional Higress

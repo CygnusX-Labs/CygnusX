@@ -311,7 +311,7 @@ async def test_fanout_separates_reasoning_from_worker_answer(env, monkeypatch) -
     assert any(event["type"] == "worker_reasoning_delta" for event in events)
 
 
-def test_child_tools_include_ask_user_web_search_and_bound_mcp() -> None:
+def test_child_tools_include_research_tools_and_bound_mcp() -> None:
     ctx = _ctx("agent-general", tools=[{"function": {"name": "remote_lookup"}}])
     ctx.features["web_search"] = {"mode": "required_for_freshness"}
     ctx.mcp_servers = [SimpleNamespace(tools=[SimpleNamespace(tool_name="remote_lookup")])]
@@ -319,7 +319,20 @@ def test_child_tools_include_ask_user_web_search_and_bound_mcp() -> None:
     tools = pss.ParallelSubAgentService._prepare_child_tools(ctx)
     names = {(tool.get("function") or {}).get("name") for tool in tools}
 
-    assert {"ask_user", "web_search", "remote_lookup"} <= names
+    assert {"ask_user", "knowledge_search", "web_search", "remote_lookup"} <= names
+
+
+def test_child_tools_respect_explicit_web_search_disable() -> None:
+    ctx = _ctx("agent-general")
+    ctx.features["web_search"] = {"mode": "off"}
+
+    names = {
+        (tool.get("function") or {}).get("name")
+        for tool in pss.ParallelSubAgentService._prepare_child_tools(ctx)
+    }
+
+    assert "knowledge_search" in names
+    assert "web_search" not in names
 
 
 def test_child_tools_add_workspace_execution_only_after_explicit_access() -> None:
@@ -336,6 +349,47 @@ def test_child_tools_add_workspace_execution_only_after_explicit_access() -> Non
 
     assert "sandbox_execute" not in default_names
     assert {"workspace_read", "workspace_write", "sandbox_execute"}.issubset(enabled_names)
+
+
+def test_goal_safe_child_tools_only_keep_read_only_capabilities(monkeypatch) -> None:
+    readonly_schema = SimpleNamespace(
+        invocation_mode="backend_sync",
+        requires_confirm=False,
+        annotations=SimpleNamespace(read_only_hint=True),
+    )
+    unsafe_schema = SimpleNamespace(
+        invocation_mode="backend_sync",
+        requires_confirm=False,
+        annotations=SimpleNamespace(read_only_hint=False),
+    )
+    schemas = {"readonly_lookup": readonly_schema, "unsafe_mutation": unsafe_schema}
+    monkeypatch.setattr(
+        pss,
+        "schema_loader",
+        SimpleNamespace(get_tool=lambda name: schemas.get(name)),
+    )
+    ctx = _ctx(
+        "agent-general",
+        tools=[
+            {"function": {"name": "readonly_lookup"}},
+            {"function": {"name": "unsafe_mutation"}},
+            {"function": {"name": "remote_lookup"}},
+        ],
+    )
+    ctx.features["web_search"] = {"mode": "required_for_freshness"}
+    ctx.mcp_servers = [SimpleNamespace(tools=[SimpleNamespace(tool_name="remote_lookup")])]
+
+    tools = pss.ParallelSubAgentService._prepare_child_tools(
+        ctx,
+        workspace_access=True,
+        safe_only=True,
+    )
+    names = {(tool.get("function") or {}).get("name") for tool in tools}
+
+    assert {"ask_user", "knowledge_search", "web_search", "readonly_lookup"} <= names
+    assert {"unsafe_mutation", "remote_lookup", "workspace_write", "sandbox_execute"}.isdisjoint(
+        names
+    )
 
 
 @pytest.mark.asyncio
