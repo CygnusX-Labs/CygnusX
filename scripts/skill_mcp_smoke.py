@@ -407,7 +407,7 @@ MCP_SAFE_CALLS = {
     "omichub-platform": ("platform_list_flows", {}),
     "omichub-pipelines": ("list_available_pipelines", {}),
     "omichub-tools": ("omichub_search_memory", {"query": "smoke-test"}),
-    "ensmbl": ("lookup_gene", {"gene_id": "BRCA1", "species": "homo_sapiens"}),
+    "ensmbl": ("translate_sequence", {"sequence": "ATGGCC", "genetic_code": 1}),
     "go-server": ("get_go_term", {"id": "GO:0008150"}),
 }
 
@@ -440,7 +440,12 @@ async def main():
         if TOOL:
             try:
                 res = await svc._client.call_tool(server, TOOL, ARGS, user_id="smoke-test")
-                out["call_ok"] = True
+                payload = res.get("result") if isinstance(res, dict) else None
+                out["call_ok"] = bool(
+                    isinstance(res, dict)
+                    and res.get("success")
+                    and not (isinstance(payload, dict) and payload.get("isError"))
+                )
                 out["call_result"] = json.dumps(res, ensure_ascii=False)[:1200]
             except Exception as e:
                 out["call_ok"] = False

@@ -34,6 +34,9 @@ const authStore = useAuthStore()
 const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
+const emit = defineEmits<{
+  openAgentPicker: []
+}>()
 
 // 工具调用轮次触顶时，弹窗询问是否以扩展上限（1000 轮）继续执行
 watch(
@@ -350,7 +353,7 @@ function handleOpenToolPage(route: string, _args: Record<string, unknown>) {
 }
 
 function handleBack() {
-  store.newChat()
+  emit('openAgentPicker')
 }
 
 /** 以当前智能体发起 Studio 工作台会话并跳转 /studio/:sessionId */
@@ -381,11 +384,11 @@ onUnmounted(() => {
       <div class="header-left">
         <NTooltip trigger="hover">
           <template #trigger>
-            <NButton text class="back-btn" aria-label="返回智能体中心" @click="handleBack">
+            <NButton text class="back-btn" aria-label="打开智能体中心" @click="handleBack">
               <NIcon size="18"><ArrowBackOutline /></NIcon>
             </NButton>
           </template>
-          返回智能体中心
+          打开智能体中心
         </NTooltip>
         <div class="agent-identity">
           <div class="id-avatar">✦</div>

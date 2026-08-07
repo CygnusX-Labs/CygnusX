@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   NAlert, NButton, NCollapse, NCollapseItem, NDataTable, NDrawer, NDrawerContent,
@@ -33,6 +33,7 @@ import {
   type PrimerTaskType,
 } from '@/utils/primerForgeProcessor'
 import PageHeader from '@/components/PageHeader.vue'
+import { consumeSequenceHandoff } from '@/engine/ecosystemLinks'
 
 const router = useRouter()
 const message = useMessage()
@@ -68,6 +69,14 @@ const saltCorrection = ref('santalucia')
 
 const fluorophoreOptions = ['FAM', 'VIC', 'HEX', 'ROX', 'CY5'].map((value) => ({ label: value, value }))
 const quencherOptions = ['BHQ1', 'BHQ2', 'TAMRA', 'MGB'].map((value) => ({ label: value, value }))
+
+onMounted(() => {
+  const handoff = consumeSequenceHandoff('primer')
+  if (!handoff) return
+  sequenceText.value = `>${handoff.record.header}\n${handoff.record.sequence}`
+  sequenceId.value = handoff.record.id
+  message.success('已从序列魔术师载入模板序列')
+})
 const purificationOptions = ['STD', 'HPLC', 'PAGE'].map((value) => ({ label: value, value }))
 const scaleOptions = ['25 nmol', '50 nmol', '100 nmol', '250 nmol'].map((value) => ({ label: value, value }))
 const deliveryOptions = ['冻干粉', 'TE 溶液', '无核酸酶水溶解'].map((value) => ({ label: value, value }))

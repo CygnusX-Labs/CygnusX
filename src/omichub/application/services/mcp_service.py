@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from functools import cmp_to_key
 from typing import Any
 from uuid import UUID, uuid4
@@ -84,6 +85,12 @@ _CONNECTION_FIELDS = frozenset(
 _AUTODISCOVER_TIMEOUT = 15.0
 
 _PRESET_VERSION_PIN_KEY = "preset_version_pinned"
+
+_MCP_HEALTH_PROBES: dict[str, tuple[str, dict[str, Any]]] = {
+    "omichub-platform": ("platform_get_current_time", {"timezone": "Asia/Shanghai"}),
+    "ensmbl": ("translate_sequence", {"sequence": "ATGGCC", "genetic_code": 1}),
+    "go-server": ("get_go_term", {"id": "GO:0008150"}),
+}
 
 
 def _enum_str(value: Any, fallback: str) -> str:
@@ -600,6 +607,66 @@ class MCPService:
         except Exception as e:  # noqa: BLE001
             await self._add_log(server_id, "error", f"测试连接失败: {e}", "internal")
             return {"success": False, "tool_count": 0, "status": "error", "error": str(e)}
+
+    async def audit_health(self) -> dict[str, Any]:
+        """只读审计所有启用 MCP，不用 fallback 掩盖外部服务故障。"""
+        await self.ensure_presets()
+        rows: list[dict[str, Any]] = []
+        for server in await self._repo.list_all():
+            if not server.is_enabled:
+                continue
+            started = time.perf_counter()
+            row: dict[str, Any] = {
+                "id": str(server.id),
+                "name": server.name,
+                "transport": server.transport.value,
+                "configured_status": server.status.value,
+                "tool_discovery": "pending",
+                "probe": "skipped",
+            }
+            try:
+                tools = await asyncio.wait_for(
+                    self._client.list_tools(server), timeout=min(server.timeout, 15)
+                )
+                row["tool_discovery"] = "ok"
+                row["tool_count"] = len(tools)
+                probe = _MCP_HEALTH_PROBES.get(server.name)
+                if probe is not None:
+                    tool_name, arguments = probe
+                    result = await self._client._call_tool_inner(
+                        server, tool_name, arguments, user_id="mcp-health-audit"
+                    )
+                    row["probe"] = "ok" if result.get("success") else "failed"
+                    if not result.get("success"):
+                        row["failure_kind"] = result.get("failure_kind", "tool_error")
+                        row["error"] = str(result.get("error") or "工具探针失败")[:500]
+                row["healthy"] = row["tool_discovery"] == "ok" and row["probe"] != "failed"
+            except TimeoutError:
+                row.update(
+                    healthy=False,
+                    tool_discovery="failed",
+                    failure_kind="timeout",
+                    error="工具发现超时",
+                )
+            except Exception as exc:  # noqa: BLE001
+                row.update(
+                    healthy=False,
+                    tool_discovery="failed",
+                    failure_kind="connection_error",
+                    error=(str(exc) or type(exc).__name__)[:500],
+                )
+            row["latency_ms"] = round((time.perf_counter() - started) * 1000, 2)
+            rows.append(row)
+        healthy_count = sum(1 for row in rows if row.get("healthy"))
+        return {
+            "healthy": healthy_count == len(rows),
+            "summary": {
+                "total": len(rows),
+                "healthy": healthy_count,
+                "unhealthy": len(rows) - healthy_count,
+            },
+            "servers": rows,
+        }
 
     async def list_tools(self, server_id: UUID) -> list[MCPToolDTO]:
         """获取指定 Server 的工具列表（builtin 即时返回；外部即时发现）"""

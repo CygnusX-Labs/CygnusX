@@ -75,11 +75,10 @@ function getScrollerEl(): HTMLElement | undefined {
   return scrollerRef.value?.$el as HTMLElement | undefined
 }
 
-/** 自动跟随滚动的缓动时长（ms）。每个流式 token 会重启该动画，形成连续"缓跟"。 */
-const SCROLL_EASE_MS = 220
-
-/** 正在进行的平滑跟随动画句柄；新一轮滚动前先取消，避免叠加抖动。 */
+/** 仅用于用户主动点击“回到底部”的平滑滚动。 */
 let scrollAnim: number | null = null
+/** 流式吸底合并到每个绘制帧一次，避免 token、列表测量和滚动动画互相争抢。 */
+let followFrame: number | null = null
 
 function cancelScrollAnim() {
   if (scrollAnim !== null) {
@@ -88,11 +87,17 @@ function cancelScrollAnim() {
   }
 }
 
+function cancelFollowFrame() {
+  if (followFrame !== null) {
+    cancelAnimationFrame(followFrame)
+    followFrame = null
+  }
+}
+
 /**
- * 平滑跟随到底部。
- * 用 easeOutCubic 把 scrollTop 从当前位置缓动到 scrollHeight，而非每帧硬设：
- * 流式期间每个 token 触发一次调用，新动画读取"当前"scrollTop 向新目标缓动，
- * 视觉上是一条连续、丝滑的跟随曲线，而不是逐 token 的"跳动"。
+ * 自动跟随到底部。
+ * 流式 token、Markdown 重排和 DynamicScroller 高度测量会在同一帧连续触发；
+ * 统一合并到下一绘制帧后一次贴底，避免缓动 scrollTop 与列表校正互相拉扯。
  * force=true（点击"回到底部" / 新审批 / 澄清事件）时取消缓动并立即贴底。
  */
 function scrollToBottom(force = false) {
@@ -107,14 +112,17 @@ function scrollToBottom(force = false) {
     showScrollToBottom.value = false
     hasNewWhileAway.value = false
     cancelScrollAnim()
-    el.scrollTop = el.scrollHeight
+    cancelFollowFrame()
+    el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight)
     return
   }
-  // 已有跟随动画在跑时直接返回，不重启缓动：
-  // 动画每帧重读 scrollHeight 会自动追上持续增长的内容；
-  // 若每个 token 都重启动画，缓动曲线反复从 0 开始，速度突变形成肉眼可见的"窗口抖动"。
-  if (scrollAnim !== null) return
-  smoothScrollTo(el, el.scrollHeight, SCROLL_EASE_MS)
+  if (followFrame !== null) return
+  followFrame = requestAnimationFrame(() => {
+    followFrame = null
+    const current = getScrollerEl()
+    if (!current || showScrollToBottom.value) return
+    current.scrollTop = Math.max(0, current.scrollHeight - current.clientHeight)
+  })
 }
 
 /** easeOutCubic 平滑滚动；每帧重读 scrollHeight，自动追上新增内容高度。 */
@@ -196,6 +204,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   cancelScrollAnim()
+  cancelFollowFrame()
   const el = scrollerRef.value?.$el as HTMLElement | undefined
   el?.removeEventListener('scroll', handleScroll)
 })
@@ -222,8 +231,6 @@ onUnmounted(() => {
             JSON.stringify(item.charts),
             JSON.stringify(item.routedAgent),
             JSON.stringify(item.collaborationRoute),
-            streamingMessageId === item.id ? streamingContent : '',
-            streamingMessageId === item.id ? streamingThought : '',
           ]"
           :data-index="index"
           :class="{ 'message-target': targetMessageId === item.id }"
@@ -289,6 +296,8 @@ onUnmounted(() => {
     scrollbar-gutter: stable;
     scrollbar-width: thin;
     scrollbar-color: rgba(46, 91, 255, 0.2) transparent;
+    /* 由组件统一控制吸底，禁止浏览器滚动锚定与虚拟列表高度修正重复补偿。 */
+    overflow-anchor: none;
   }
 
   .message-scroller::-webkit-scrollbar {
@@ -312,6 +321,11 @@ onUnmounted(() => {
     padding: 0 24px;
     max-width: var(--chat-content-max-width, 860px);
     margin: 0 auto;
+  }
+
+  :deep(.vue-recycle-scroller__item-view) {
+    /* 默认库样式会为所有消息长期创建 transform 合成层；流式滚动时容易造成文字栅格反复重采样。 */
+    will-change: auto;
   }
 
   :deep(.message-target) {

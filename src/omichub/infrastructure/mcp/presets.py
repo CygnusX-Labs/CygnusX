@@ -1250,8 +1250,6 @@ def _build_omichub_tools_preset() -> dict[str, Any]:
 
         logging.getLogger(__name__).warning("加载动态 Flow tools 失败", exc_info=True)
 
-    all_tools = static_tools + dynamic_tools
-
     def _tool_view(t: dict[str, Any]) -> dict[str, Any]:
         # 静态工具是 OpenAI function 格式，动态 Flow 工具已是 {name, description, inputSchema}
         f = t.get("function", t)
@@ -1261,11 +1259,16 @@ def _build_omichub_tools_preset() -> dict[str, Any]:
             "inputSchema": f.get("parameters") or f.get("inputSchema") or {},
         }
 
+    tools_by_name: dict[str, dict[str, Any]] = {}
+    for tool in [*static_tools, *dynamic_tools]:
+        view = _tool_view(tool)
+        tools_by_name.setdefault(view["name"], view)
+
     return {
         "name": "omichub-tools",
         "description": "OmicHub 生信工具箱 MCP - KEGG 富集、火山图、系统发育树及分析中心流程",
         "transport": "builtin",
-        "tools": [_tool_view(t) for t in all_tools],
+        "tools": list(tools_by_name.values()),
         "handlers": handlers,
     }
 

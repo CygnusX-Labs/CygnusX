@@ -48,6 +48,14 @@ async def list_servers(
     return await service.list_servers(active_only=active_only)
 
 
+@router.get("/health", summary="审计所有启用 MCP 的实时健康状态（Admin）")
+async def audit_health(
+    _admin: AdminRequired,
+    service: MCPServiceDep,
+) -> dict[str, Any]:
+    return await service.audit_health()
+
+
 @router.post(
     "/servers",
     response_model=MCPServerDTO,

@@ -64,6 +64,16 @@ function loadExpandedKeys(): string[] {
 
 const expandedKeys = ref<string[]>(loadExpandedKeys())
 
+watch(
+  () => route.path,
+  (path) => {
+    if (!path.startsWith('/admin/') || expandedKeys.value.includes('admin-center')) return
+    expandedKeys.value.push('admin-center')
+    localStorage.setItem('omichub:sidebar-expanded', JSON.stringify(expandedKeys.value))
+  },
+  { immediate: true },
+)
+
 // 记录用户最后一次手动折叠状态：进入「关于」页强制折叠前保存，离开后恢复。
 const userCollapsed = ref(false)
 const lastAutoCollapsed = ref(false)
@@ -327,6 +337,14 @@ function handleNavClick(item: NavItem) {
   if (item.to) {
     router.push(item.to)
   }
+}
+
+function handleAdminGroupClick(item: NavItem) {
+  if (item.children?.length) {
+    toggleExpanded(item.key)
+    return
+  }
+  handleNavClick(item)
 }
 
 async function handleLogout() {
@@ -616,19 +634,24 @@ const UserAvatar = () => {
             <!-- 管理员 -->
             <template v-if="isAdmin">
               <div class="nav-divider" />
-              <nav class="nav-group">
+              <nav class="nav-group admin-nav-group" aria-label="系统管理">
                 <div
                   v-for="item in adminNavItems"
                   :key="item.key"
                   class="nav-group-item"
                 >
                   <div
-                    class="nav-item"
+                    class="nav-item admin-nav-parent"
                     :class="{
-                      'nav-item--active': isActive(item),
+                      'admin-nav-parent--contains-active': isActive(item),
                       'nav-item--collapsed': collapsed,
                     }"
-                    @click="handleNavClick(item)"
+                    role="button"
+                    tabindex="0"
+                    :aria-expanded="item.children ? isExpanded(item.key) : undefined"
+                    @click="handleAdminGroupClick(item)"
+                    @keydown.enter.prevent="handleAdminGroupClick(item)"
+                    @keydown.space.prevent="handleAdminGroupClick(item)"
                   >
                     <NTooltip v-if="collapsed && !item.children" placement="right" :delay="300">
                       <template #trigger>
@@ -656,18 +679,16 @@ const UserAvatar = () => {
                           </NIcon>
                         </div>
                       </template>
-                      <div class="collapsed-submenu-content">
+                      <div class="collapsed-submenu-content admin-collapsed-submenu-content">
                         <p class="collapsed-submenu-title">{{ item.label }}</p>
                         <RouterLink
                           v-for="child in item.children"
                           :key="child.key"
                           :to="child.to"
-                          class="collapsed-submenu-item"
+                          class="collapsed-submenu-item admin-collapsed-submenu-item"
                           :class="{ 'collapsed-submenu-item--active': isActive(child) }"
+                          :aria-current="isActive(child) ? 'page' : undefined"
                         >
-                          <NIcon :size="16">
-                            <component :is="child.icon" />
-                          </NIcon>
                           <span>{{ child.label }}</span>
                         </RouterLink>
                       </div>
@@ -691,18 +712,16 @@ const UserAvatar = () => {
                   <Transition name="subnav-expand">
                     <div
                       v-if="item.children && !collapsed && isExpanded(item.key)"
-                      class="sub-nav"
+                      class="sub-nav admin-sub-nav"
                     >
                       <RouterLink
                         v-for="child in item.children"
                         :key="child.key"
                         :to="child.to"
-                        class="sub-nav-item"
+                        class="sub-nav-item admin-sub-nav-item"
                         :class="{ 'sub-nav-item--active': isActive(child) }"
+                        :aria-current="isActive(child) ? 'page' : undefined"
                       >
-                        <NIcon :size="16" class="sub-nav-icon">
-                          <component :is="child.icon" />
-                        </NIcon>
                         <span>{{ child.label }}</span>
                       </RouterLink>
                     </div>
@@ -1292,6 +1311,145 @@ const UserAvatar = () => {
   flex-shrink: 0;
 }
 
+/* ===== 系统管理：轻量 Tree Navigation ===== */
+.admin-nav-group {
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.admin-nav-parent {
+  margin: 0 4px;
+  color: var(--neutral-text-2);
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+  transition: color 180ms ease-out, background-color 180ms ease-out;
+}
+
+.admin-nav-parent.nav-item--collapsed {
+  margin: 0;
+}
+
+.admin-nav-parent:hover {
+  color: var(--neutral-text-1);
+  background: var(--neutral-hover);
+  box-shadow: none;
+  transform: none;
+}
+
+.admin-nav-parent:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.admin-nav-parent--contains-active {
+  color: var(--neutral-text-1);
+  background: transparent;
+  box-shadow: none;
+}
+
+.admin-nav-parent--contains-active .nav-icon,
+.admin-nav-parent--contains-active .nav-chevron {
+  color: var(--arco-primary);
+}
+
+.admin-nav-parent .nav-item-inner {
+  height: 40px;
+  gap: 10px;
+  padding: 0 10px;
+}
+
+.admin-nav-parent .nav-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.admin-nav-parent .nav-chevron {
+  transition: transform 180ms ease-out, color 180ms ease-out;
+}
+
+.admin-sub-nav {
+  gap: 2px;
+  margin: 2px 4px 6px 24px;
+  padding: 2px 0 2px 12px;
+  border-left: 1px solid var(--neutral-border);
+}
+
+.admin-sub-nav.subnav-expand-enter-active,
+.admin-sub-nav.subnav-expand-leave-active {
+  transition: max-height 180ms ease-out, opacity 150ms ease-out;
+}
+
+.admin-sub-nav-item {
+  position: relative;
+  height: 36px;
+  padding: 0 10px;
+  color: var(--neutral-text-3);
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 400;
+  transition: color 150ms ease-out, background-color 150ms ease-out;
+}
+
+.admin-sub-nav-item:hover {
+  color: var(--neutral-text-1);
+  background: var(--neutral-hover);
+}
+
+.admin-sub-nav-item.sub-nav-item--active {
+  color: var(--arco-primary);
+  background: transparent;
+  font-weight: 500;
+}
+
+.admin-sub-nav-item.sub-nav-item--active::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: -14px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--arco-primary);
+}
+
+.admin-sub-nav-item:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+.admin-collapsed-submenu-content {
+  min-width: 196px;
+  padding: 6px;
+}
+
+.admin-collapsed-submenu-item {
+  position: relative;
+  padding-left: 14px;
+  color: var(--neutral-text-2);
+}
+
+.collapsed-submenu-item.admin-collapsed-submenu-item:hover {
+  color: var(--neutral-text-1);
+  background: var(--neutral-hover);
+}
+
+.admin-collapsed-submenu-item.collapsed-submenu-item--active {
+  color: var(--arco-primary);
+  background: transparent;
+}
+
+.admin-collapsed-submenu-item.collapsed-submenu-item--active::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 4px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--arco-primary);
+}
+
 .collapsed-submenu-content {
   min-width: 184px;
   padding: 6px;
@@ -1334,6 +1492,15 @@ const UserAvatar = () => {
   height: 1px;
   background: var(--neutral-border);
   margin: 12px 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-nav-parent,
+  .admin-nav-parent .nav-chevron,
+  .admin-sub-nav-item,
+  .admin-collapsed-submenu-item {
+    transition: none;
+  }
 }
 
 /* ===== 底部用户区 ===== */

@@ -1204,6 +1204,18 @@ function formatSessionTime(iso: string): string {
 
 <style scoped lang="scss">
 .studio-view {
+  --chat-bg: var(--surface-base, var(--neutral-bg));
+  --chat-surface: var(--surface-card, var(--neutral-card));
+  --chat-surface-hover: var(--surface-highlight, var(--neutral-hover));
+  --chat-sidebar-bg: var(--surface-card, var(--neutral-card));
+  --chat-border: var(--border-subtle, var(--neutral-border));
+  --chat-user-bubble: var(--surface-highlight, var(--neutral-hover));
+  --chat-user-text: var(--text-primary, var(--neutral-text-1));
+  --chat-ai-card: var(--surface-elevated, var(--neutral-card));
+  --chat-input-bg: var(--neutral-card);
+  --chat-input-border: var(--neutral-border);
+  --chat-nav-bg: var(--surface-card, var(--neutral-card));
+
   display: flex;
   flex-direction: column;
   height: 100%;

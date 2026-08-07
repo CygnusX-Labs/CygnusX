@@ -268,6 +268,24 @@ body {
   background-color: var(--neutral-hover);
 }
 
+/* 卡片表格分页统一作为独立 footer：避免最后一行分隔线与分页按钮挤在一起，
+   并为最右侧按钮保留安全留白，防止贴边或被卡片圆角裁切。 */
+:is(.n-card, .arco-card, .omichub-card, .table-card, .work-card, .result-card, .bottom-table, .table-wrap, .resource-tab)
+  .n-data-table:has(> .n-data-table__pagination)
+  .n-data-table-td--last-row {
+  border-bottom-color: transparent;
+}
+
+:is(.n-card, .arco-card, .omichub-card, .table-card, .work-card, .result-card, .bottom-table, .table-wrap, .resource-tab)
+  .n-data-table__pagination {
+  box-sizing: border-box;
+  min-height: 52px;
+  margin: 0;
+  padding: 12px 12px 8px;
+  border-top: 1px solid var(--neutral-border);
+  background-color: var(--neutral-card);
+}
+
 :where(.n-card, .arco-card, .omichub-card, .omichub-selectable-card) {
   position: relative;
   transition:

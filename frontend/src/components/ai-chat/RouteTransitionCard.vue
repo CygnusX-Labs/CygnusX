@@ -2,238 +2,204 @@
 import { computed } from 'vue'
 import type { RoutedAgentInfo } from './types'
 
-const props = defineProps<{
-  route: RoutedAgentInfo
-}>()
+const props = defineProps<{ route: RoutedAgentInfo }>()
 
 const transition = computed(() => props.route.transition)
 const accentStyle = computed(() => ({
   '--route-agent-color': props.route.color || 'var(--brand-primary)',
 }))
+const confidencePercent = computed(() => {
+  const value = Number(props.route.confidence)
+  if (!Number.isFinite(value)) return null
+  return Math.round(Math.max(0, Math.min(100, value <= 1 ? value * 100 : value)))
+})
+const intentLabel = computed(() => {
+  const labels: Record<string, string> = {
+    chat: '通用问答',
+    transfer: '专家转交',
+    fanout: '并行分析',
+    consult: '多专家会诊',
+    case: '协作任务',
+    dag: '分析工作流',
+  }
+  return labels[props.route.intent || ''] || transition.value?.title || '任务匹配'
+})
 </script>
 
 <template>
-  <Transition name="route-card" appear>
+  <Transition name="route-event" appear>
     <aside
       v-if="transition?.visible"
-      class="route-transition-card"
+      class="route-event"
       :style="accentStyle"
       role="status"
       aria-live="polite"
+      aria-label="Agent 路由已更新"
     >
-      <div class="route-transition-card__rail" aria-hidden="true" />
-      <div class="route-transition-card__content">
-        <div class="route-transition-card__eyebrow">Router 判定</div>
-        <div class="route-transition-card__path" aria-label="专家路由结果">
-          <span class="route-transition-card__router">🧭 星尘 AI</span>
-          <span class="route-transition-card__arrow" aria-hidden="true">→</span>
-          <span class="route-transition-card__agent">
-            <span aria-hidden="true">{{ route.avatar }}</span>
+      <span class="route-event__mark" aria-hidden="true">✦</span>
+      <div class="route-event__body">
+        <div class="route-event__path">
+          <span class="route-event__eyebrow">STELLAR ROUTER</span>
+          <span class="route-event__source">星尘 AI</span>
+          <span class="route-event__arrow" aria-hidden="true">→</span>
+          <strong class="route-event__target">
+            <span aria-hidden="true">{{ route.avatar || '🤖' }}</span>
             {{ route.name }}
-          </span>
+          </strong>
+          <span class="route-event__status">路由更新</span>
         </div>
-        <p class="route-transition-card__reason">{{ route.reason }}</p>
-        <p class="route-transition-card__message">{{ transition.message }}</p>
-        <div class="route-transition-card__footer">
-          <span class="route-transition-card__next">下一步：{{ transition.nextStep }}</span>
-          <span v-if="transition.requiresExecutionConfirmation" class="route-transition-card__guard">
-            执行前需确认
-          </span>
-        </div>
+        <p class="route-event__reason">{{ route.reason }}</p>
+      </div>
+      <div class="route-event__meta">
+        <span>{{ intentLabel }}</span>
+        <span v-if="confidencePercent !== null">{{ confidencePercent }}%</span>
+        <span v-if="transition.requiresExecutionConfirmation" class="route-event__guard">
+          执行前需确认
+        </span>
       </div>
     </aside>
   </Transition>
 </template>
 
 <style scoped>
-.route-transition-card {
+.route-event {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
   width: 100%;
   max-width: 1120px;
-  margin: 0 0 var(--space-lg, 16px);
+  margin: 0 0 var(--space-md, 12px);
+  padding: 10px 12px;
   overflow: hidden;
-  color: var(--text-primary);
-  background: var(--bg-card);
-  border: 1px solid var(--stardust-border-soft);
-  border-radius: var(--radius-card);
+  color: var(--neutral-text-1);
+  background: color-mix(in srgb, var(--neutral-card) 96%, var(--route-agent-color) 4%);
+  border: 1px solid color-mix(in srgb, var(--route-agent-color) 20%, var(--neutral-border));
+  border-radius: 10px;
   box-shadow: var(--shadow-card);
 }
 
-.route-transition-card::before,
-.route-transition-card::after {
+.route-event::before {
   position: absolute;
-  z-index: 2;
-  pointer-events: none;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--route-agent-color);
   content: '';
 }
 
-.route-transition-card::before {
-  top: 50%;
-  left: 0;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--route-agent-color);
-  box-shadow:
-    18px -22px 0 -1px color-mix(in srgb, var(--route-agent-color) 72%, transparent),
-    34px 15px 0 -1px color-mix(in srgb, var(--route-agent-color) 56%, transparent),
-    62px -8px 0 -2px color-mix(in srgb, var(--route-agent-color) 45%, transparent);
-  opacity: 0;
-  animation: route-card-particles 720ms var(--motion-standard, 220ms) ease-out both;
-}
-
-.route-transition-card::after {
-  inset: 0;
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--route-agent-color) 32%, transparent),
-    color-mix(in srgb, var(--route-agent-color) 12%, transparent) 24%,
-    transparent 58%
-  );
-  transform: translateX(-105%);
-  animation: route-card-reveal 720ms var(--motion-standard, 220ms) cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
-.route-card-enter-active,
-.route-card-leave-active {
-  transition:
-    opacity var(--motion-standard, 220ms) ease-out,
-    transform var(--motion-standard, 220ms) var(--motion-spring, cubic-bezier(0.2, 0.8, 0.2, 1));
-  transform-origin: top left;
-}
-
-.route-card-enter-from,
-.route-card-leave-to {
-  opacity: 0;
-  transform: translateY(-8px) scale(0.985);
-}
-
-@keyframes route-card-reveal {
-  from { transform: translateX(-105%); }
-  to { transform: translateX(105%); }
-}
-
-@keyframes route-card-particles {
-  0% { opacity: 0; transform: translateX(0) scale(0.6); }
-  22% { opacity: 0.9; }
-  100% { opacity: 0; transform: translateX(150px) scale(0.2); }
-}
-
-.route-transition-card__rail {
-  flex: 0 0 4px;
-  background: var(--route-agent-color);
-}
-
-.route-transition-card__content {
-  min-width: 0;
-  flex: 1;
-  padding: var(--space-md, 12px) var(--space-lg, 16px);
-}
-
-.route-transition-card__eyebrow {
-  margin-bottom: var(--space-xs, 4px);
-  color: var(--text-tertiary);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.route-transition-card__path {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm, 8px);
-  min-width: 0;
-  color: var(--text-primary);
-  font-size: 14px;
-  font-weight: 650;
-}
-
-.route-transition-card__router,
-.route-transition-card__agent {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.route-transition-card__agent {
-  min-width: 0;
+.route-event__mark {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
   color: var(--route-agent-color);
-}
-
-.route-transition-card__arrow {
-  color: var(--text-tertiary);
-}
-
-.route-transition-card__reason,
-.route-transition-card__message {
-  margin: var(--space-sm, 8px) 0 0;
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.route-transition-card__message {
-  color: var(--text-tertiary);
-}
-
-.route-transition-card__footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-sm, 8px);
-  margin-top: var(--space-md, 12px);
-  padding-top: var(--space-sm, 8px);
-  border-top: 1px solid var(--stardust-border-soft);
+  background: color-mix(in srgb, var(--route-agent-color) 9%, var(--neutral-card));
+  border: 1px solid color-mix(in srgb, var(--route-agent-color) 20%, var(--neutral-border));
+  border-radius: 8px;
   font-size: 12px;
 }
 
-.route-transition-card__next {
-  color: var(--text-secondary);
+.route-event__body { min-width: 0; }
+
+.route-event__path {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 12px;
 }
 
-.route-transition-card__guard {
+.route-event__eyebrow {
+  color: var(--route-agent-color);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.13em;
+}
+
+.route-event__source,
+.route-event__arrow { color: var(--neutral-text-3); }
+
+.route-event__target {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--route-agent-color);
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.route-event__status {
   flex: 0 0 auto;
-  padding: 2px 8px;
-  color: var(--brand-primary);
-  background: var(--brand-primary-light);
+  padding: 2px 6px;
+  color: var(--arco-success);
+  background: color-mix(in srgb, var(--arco-success) 8%, transparent);
   border-radius: 999px;
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 650;
 }
 
-@media (max-width: 640px) {
-  .route-transition-card__path,
-  .route-transition-card__footer {
-    align-items: flex-start;
-    flex-direction: column;
-  }
+.route-event__reason {
+  overflow: hidden;
+  margin: 3px 0 0;
+  color: var(--neutral-text-3);
+  font-size: 11px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
-  .route-transition-card__arrow {
-    display: none;
-  }
+.route-event__meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  color: var(--neutral-text-3);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.route-event__meta > span {
+  padding: 3px 7px;
+  background: var(--neutral-fill-2);
+  border-radius: 999px;
+}
+
+.route-event__meta .route-event__guard {
+  color: var(--arco-warning);
+  background: color-mix(in srgb, var(--arco-warning) 8%, transparent);
+}
+
+.route-event-enter-active,
+.route-event-leave-active {
+  transition: opacity var(--motion-standard, 220ms) ease-out, transform var(--motion-standard, 220ms) ease-out;
+}
+
+.route-event-enter-from,
+.route-event-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+@media (max-width: 680px) {
+  .route-event { grid-template-columns: auto minmax(0, 1fr); }
+  .route-event__meta { grid-column: 2; justify-content: flex-start; }
+  .route-event__eyebrow,
+  .route-event__source { display: none; }
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .route-transition-card {
-    background: var(--bg-card);
-  }
+  .route-event { background: var(--neutral-card); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .route-card-enter-active,
-  .route-card-leave-active {
-    transition: none;
-  }
-
-  .route-card-enter-from,
-  .route-card-leave-to {
-    transform: none;
-  }
-
-  .route-transition-card::before,
-  .route-transition-card::after {
-    display: none;
-  }
+  .route-event-enter-active,
+  .route-event-leave-active { transition: none; }
+  .route-event-enter-from,
+  .route-event-leave-to { transform: none; }
 }
 </style>

@@ -1146,6 +1146,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
               avatar?: string
               color?: string
               reason?: string
+              intent?: string
+              confidence?: number
               transition?: {
                 visible?: boolean
                 stage?: string
@@ -1164,6 +1166,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             avatar: routedAgent.avatar || '',
             color: routedAgent.color || '',
             reason: routedAgent.reason || '',
+            intent: routedAgent.intent,
+            confidence: routedAgent.confidence,
             transition: routedAgent.transition
               ? {
                   visible: Boolean(routedAgent.transition.visible),
@@ -1950,6 +1954,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             avatar: event.avatar,
             color: event.color,
             reason: event.reason,
+            intent: event.intent,
+            confidence: event.confidence,
             transition: event.transition
               ? {
                   visible: event.transition.visible,

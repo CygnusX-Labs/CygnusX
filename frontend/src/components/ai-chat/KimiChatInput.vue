@@ -17,11 +17,30 @@ import {
   DocumentTextOutline,
   HammerOutline,
   EllipsisHorizontalOutline,
+  ChatbubbleEllipsesOutline,
+  CompassOutline,
+  PlayCircleOutline,
+  SearchCircleOutline,
+  ShieldCheckmarkOutline,
+  LockOpenOutline,
+  KeyOutline,
+  FlagOutline,
 } from '@vicons/ionicons5'
 import SlashCommandMenu from './SlashCommandMenu.vue'
 import MentionMenu from './MentionMenu.vue'
 import { readActiveMentionQuery } from './mentionQuery'
 import { pushRecent, recentRank } from './recentItems'
+import {
+  STAR_MODE_COMMANDS,
+  STAR_MODE_LABELS,
+  STAR_PERMISSION_COMMANDS,
+  STAR_PERMISSION_LABELS,
+  hasStarModeCommand,
+  hasStarPermissionCommand,
+  resolveStarCommandContext,
+  type StarAgentMode,
+  type StarPermission,
+} from './commandState'
 import McpSelectionMenu from './McpSelectionMenu.vue'
 import { useChatStore } from '@/stores/chat'
 import { useSiteConfigStore } from '@/stores/site-config'
@@ -77,6 +96,7 @@ const emit = defineEmits<{
       skillNames?: string[]
       mcpMode?: 'off' | 'auto' | 'manual'
       extraMcpServers?: string[]
+      messageMetadata?: Record<string, unknown>
     },
   ]
   triggerSandbox: []
@@ -106,6 +126,31 @@ const showClearConfirm = ref(false)
 const attachments = ref<FileAttachment[]>([])
 const uploading = ref(false)
 const enableCodeExecution = ref(false)
+const starMode = ref<StarAgentMode>('chat')
+const starPermission = ref<StarPermission>('safe')
+const starModeExplicit = ref(false)
+const starPermissionExplicit = ref(false)
+const starContext = computed(() => resolveStarCommandContext(localValue.value, {
+  mode: starMode.value,
+  permission: starPermission.value,
+}))
+const starModeLabel = computed(() => STAR_MODE_LABELS[starContext.value.mode])
+const starPermissionLabel = computed(() => STAR_PERMISSION_LABELS[starContext.value.permission])
+const starModeIcon = computed(() => ({
+  chat: ChatbubbleEllipsesOutline,
+  plan: CompassOutline,
+  run: PlayCircleOutline,
+  research: SearchCircleOutline,
+})[starContext.value.mode])
+const starPermissionIcon = computed(() => ({
+  safe: ShieldCheckmarkOutline,
+  read: LockOpenOutline,
+  analysis: CompassOutline,
+  full: KeyOutline,
+})[starContext.value.permission])
+const showStarMode = computed(() => starModeExplicit.value || hasStarModeCommand(localValue.value))
+const showStarPermission = computed(() => starPermissionExplicit.value || hasStarPermissionCommand(localValue.value))
+const showStarContext = computed(() => showStarMode.value || showStarPermission.value || Boolean(starContext.value.goal))
 
 function getTextareaElement() {
   return inputWrapperRef.value?.querySelector<HTMLTextAreaElement>('textarea')
@@ -519,6 +564,14 @@ function removePendingSkill(idx: number) {
 
 function handleSlashSelect(command: string) {
   pushRecent('slash', command)
+  if (STAR_MODE_COMMANDS[command]) {
+    starMode.value = STAR_MODE_COMMANDS[command]
+    starModeExplicit.value = true
+  }
+  if (STAR_PERMISSION_COMMANDS[command]) {
+    starPermission.value = STAR_PERMISSION_COMMANDS[command]
+    starPermissionExplicit.value = true
+  }
   const text = localValue.value
   const lines = text.split('\n')
   lines[lines.length - 1] = command + ' '
@@ -570,11 +623,22 @@ function handleSend() {
     skillNames: pendingSkills.value.length ? pendingSkills.value.map((s) => s.name) : undefined,
     mcpMode: mcpMode.value,
     extraMcpServers: mcpMode.value === 'manual' ? [...extraMcpServers.value] : [],
+    messageMetadata: showStarContext.value ? {
+      star_command: {
+        mode: starContext.value.mode,
+        permission: starContext.value.permission,
+        ...(starContext.value.goal ? { goal: starContext.value.goal } : {}),
+      },
+    } : undefined,
   })
   localValue.value = ''
   attachments.value = []
   pendingAgent.value = null
   pendingSkills.value = []
+  starMode.value = 'chat'
+  starPermission.value = 'safe'
+  starModeExplicit.value = false
+  starPermissionExplicit.value = false
   showMentionMenu.value = false
   showMcpMenu.value = false
   nextTick(() => getTextareaElement()?.focus())
@@ -765,7 +829,40 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
         />
       </Transition>
 
-      <div v-if="attachments.length || pendingAgent || pendingSkills.length" class="ref-bar">
+      <div v-if="attachments.length || pendingAgent || pendingSkills.length || showStarContext" class="ref-bar">
+        <NTag
+          v-if="showStarMode"
+          size="small"
+          :bordered="false"
+          class="star-context-tag star-context-tag--mode"
+          :title="`当前模式：${starModeLabel}`"
+        >
+          <template #icon><NIcon><component :is="starModeIcon" /></NIcon></template>
+          {{ starModeLabel }}
+        </NTag>
+
+        <NTag
+          v-if="showStarPermission"
+          size="small"
+          :bordered="false"
+          class="star-context-tag star-context-tag--permission"
+          :title="`当前权限：${starPermissionLabel}`"
+        >
+          <template #icon><NIcon><component :is="starPermissionIcon" /></NIcon></template>
+          {{ starPermissionLabel }}
+        </NTag>
+
+        <NTag
+          v-if="starContext.goal"
+          size="small"
+          :bordered="false"
+          class="star-context-tag star-context-tag--goal"
+          :title="`当前目标：${starContext.goal}`"
+        >
+          <template #icon><NIcon><FlagOutline /></NIcon></template>
+          {{ starContext.goal }}
+        </NTag>
+
         <NTag
           v-if="pendingAgent"
           size="small"
@@ -1109,6 +1206,32 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
       color: var(--neutral-text-1);
       background: var(--neutral-hover);
     }
+
+    .star-context-tag {
+      max-width: 240px;
+      color: var(--neutral-text-2);
+      background: var(--neutral-hover);
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .star-context-tag--mode {
+      color: var(--brand-primary);
+      background: var(--brand-primary-light);
+    }
+
+    .star-context-tag--permission {
+      color: var(--neutral-text-1);
+      background: var(--surface-highlight);
+    }
+
+    .star-context-tag--goal {
+      max-width: min(360px, 100%);
+      color: var(--neutral-text-2);
+      background: transparent;
+      box-shadow: inset 0 0 0 1px var(--neutral-border);
+    }
   }
 
   .chat-textarea {
@@ -1117,16 +1240,16 @@ watch(() => agentHub.currentSessionId, syncMcpSelection)
 
     :deep(.n-input) {
       color: var(--chat-text-primary, var(--neutral-text-1));
-      background: var(--chat-input-bg, var(--neutral-card));
+      background: transparent;
     }
 
     :deep(.n-input__textarea) {
-      background: var(--chat-input-bg, var(--neutral-card));
+      background: transparent;
     }
 
     :deep(.n-input-wrapper) {
       padding: 0;
-      background: var(--chat-input-bg, var(--neutral-card));
+      background: transparent;
       border: 0;
       box-shadow: none;
     }

@@ -5,6 +5,7 @@ import { apiClient } from '@/api'
 import DynamicForm from '@/components/dynamic-form/DynamicForm.vue'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import ToolActionBar from '@/components/ToolActionBar.vue'
 import {
   NAlert,
   NButton,
@@ -13,7 +14,6 @@ import {
   NModal,
   NSelect,
   NSpin,
-  NTag,
   NTooltip,
   useMessage,
 } from 'naive-ui'
@@ -24,6 +24,7 @@ import {
   FolderOpenOutline,
   HelpCircleOutline,
   LogoGithub,
+  SendOutline,
   TrashOutline,
 } from '@vicons/ionicons5'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -104,16 +105,16 @@ const groupValueOptions = computed(() =>
 )
 
 const filledSampleCount = computed(
-  () => sampleSheet.value.filter((r) => (r.sample || '').trim()).length,
+  () => sampleSheet.value.filter((row) => (row.sample || '').trim()).length,
 )
 
 const sampleStats = computed(() => {
-  const rows = sampleSheet.value.filter((r) => (r.sample || '').trim())
-  const col = sampleGroupColumn.value
+  const rows = sampleSheet.value.filter((row) => (row.sample || '').trim())
+  const groupColumn = sampleGroupColumn.value
   const groups = new Map<string, number>()
-  for (const r of rows) {
-    const g = (r[col] || '').trim() || '(未分组)'
-    groups.set(g, (groups.get(g) || 0) + 1)
+  for (const row of rows) {
+    const group = (row[groupColumn] || '').trim() || '(未分组)'
+    groups.set(group, (groups.get(group) || 0) + 1)
   }
   return { total: rows.length, groups }
 })
@@ -153,6 +154,15 @@ const requiredFields = computed(() => {
   }
   return missing
 })
+
+const submitBlocker = computed(() => {
+  if (estimating.value) return '正在估算任务成本'
+  if (requiredFields.value.length > 0) return `待填写${requiredFields.value[0]}`
+  if (costEstimate.value && !costEstimate.value.affordable) return '饼干余额不足'
+  return ''
+})
+
+const submitReady = computed(() => !submitBlocker.value)
 
 function evaluateCondition(rule: any, vals: FormValues): boolean {
   if (!rule) return true
@@ -685,57 +695,17 @@ onUnmounted(() => {
       </div>
     </NSpin>
 
-    <!-- ── Sticky Submit Bar ── -->
-    <div v-if="flow && !loading" class="submit-bar">
-      <div class="submit-bar-inner">
-        <div class="bar-left">
-          <template v-if="cookieStore.isLoggedIn && costEstimate">
-            <div class="cost-block">
-              <span class="bar-label">预估</span>
-              <span class="cost-val">{{ Number(costEstimate.estimated_cost).toFixed(1) }} 🥫</span>
-            </div>
-            <div class="cost-block">
-              <span class="bar-label">余额</span>
-              <span
-                :class="['cost-val', { 'cost-val--bad': !costEstimate.affordable }]"
-              >
-                {{ Number(costEstimate.current_balance).toFixed(1) }} 🥫
-              </span>
-              <NTag
-                :type="costEstimate.affordable ? 'success' : 'error'"
-                size="tiny"
-                :bordered="false"
-              >
-                {{ costEstimate.affordable ? '充足' : '不足' }}
-              </NTag>
-            </div>
-          </template>
-        </div>
-
-        <div class="bar-center">
-          <span v-if="requiredFields.length > 0" class="validation-hint">
-            还有 {{ requiredFields.length }} 项必填未填写
-          </span>
-          <span v-if="sampleSheetConfig && filledSampleCount > 0" class="bar-sample-stats">
-            {{ sampleStats.total }} 样本<template v-if="sampleStats.groups.size > 0">
-              · {{ sampleStats.groups.size }} 分组</template
-            >
-          </span>
-        </div>
-
-        <div class="bar-right">
-          <NButton
-            type="primary"
-            :loading="submitting"
-            :disabled="(!!costEstimate && !costEstimate.affordable) || estimating"
-            class="submit-btn"
-            @click="submitTask"
-          >
-            提交任务
-          </NButton>
-        </div>
-      </div>
-    </div>
+    <ToolActionBar
+      v-if="flow && !loading"
+      :ready="submitReady"
+      :loading="submitting || estimating"
+      ready-text="参数已就绪，可提交任务"
+      :not-ready-text="submitBlocker || '待完善提交参数'"
+      :not-ready-tip="submitBlocker"
+      primary-label="提交任务"
+      :primary-icon="SendOutline"
+      @action="submitTask"
+    />
 
     <FilePickerModal
       v-model:show="pickerVisible"
@@ -765,8 +735,7 @@ onUnmounted(() => {
 
 <style scoped>
 .flow-submit-page {
-  min-height: 100vh;
-  padding-bottom: 80px;
+  min-height: 100%;
   background: var(--bg-page);
 }
 
@@ -1065,94 +1034,6 @@ onUnmounted(() => {
   align-self: flex-start;
 }
 
-/* ── Sticky submit bar ── */
-.submit-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-top: 1px solid var(--stardust-border-soft, rgba(46, 91, 255, 0.08));
-}
-
-:root[data-theme='dark'] .submit-bar {
-  background: rgba(21, 26, 37, 0.88);
-}
-
-.submit-bar-inner {
-  max-width: 1080px;
-  margin: 0 auto;
-  padding: 12px 24px;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.bar-left {
-  display: flex;
-  align-items: baseline;
-  gap: 20px;
-  flex-shrink: 0;
-}
-
-.cost-block {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.bar-label {
-  font-size: 12px;
-  color: var(--text-tertiary);
-}
-
-.cost-val {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-.cost-val--bad {
-  color: #e5484d;
-}
-
-.bar-center {
-  display: flex;
-  align-items: baseline;
-  gap: 16px;
-  flex: 1;
-  justify-content: center;
-}
-
-.validation-hint {
-  font-size: 13px;
-  color: #e5484d;
-  font-weight: 500;
-}
-
-.bar-sample-stats {
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.bar-right {
-  flex-shrink: 0;
-  align-self: center;
-}
-
-.submit-btn {
-  height: 40px;
-  min-width: 140px;
-  font-weight: 600;
-  font-size: 14px;
-  border-radius: 8px;
-}
-
 .paste-hint {
   font-size: 13px;
   color: var(--text-secondary);
@@ -1162,21 +1043,6 @@ onUnmounted(() => {
 @media (max-width: 768px) {
   .content-area {
     padding: 16px;
-  }
-  .submit-bar-inner {
-    padding: 10px 16px;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-  .bar-left {
-    order: 2;
-  }
-  .bar-center {
-    order: 1;
-    flex: unset;
-  }
-  .bar-right {
-    order: 3;
   }
   .comparison-row {
     flex-wrap: wrap;

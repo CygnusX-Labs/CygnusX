@@ -101,6 +101,8 @@ export interface RouteEvent {
   avatar: string
   color: string
   reason: string
+  intent?: string
+  confidence?: number
   transition?: {
     visible: boolean
     stage: 'specialist_intake' | 'execution_ready'
@@ -732,6 +734,8 @@ export function useAgentChatStream() {
           avatar: (data.avatar as string) || '',
           color: (data.color as string) || '',
           reason: (data.reason as string) || '',
+          intent: typeof data.intent === 'string' ? data.intent : undefined,
+          confidence: typeof data.confidence === 'number' ? data.confidence : undefined,
           transition: transition
             ? {
                 visible: Boolean(transition.visible),

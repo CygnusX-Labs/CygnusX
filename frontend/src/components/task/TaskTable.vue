@@ -496,8 +496,9 @@ const stats = computed(() => {
   gap: 7px;
   min-height: 30px;
   padding: 0 11px;
+  border: 1px solid var(--neutral-border);
   border-radius: 999px;
-  background: #f3f4f6;
+  background: var(--neutral-hover);
   color: var(--neutral-text-2);
   font-size: 13px;
   line-height: 1;
@@ -514,11 +515,11 @@ const stats = computed(() => {
   height: 7px;
   flex: 0 0 7px;
   border-radius: 50%;
-  background: #9ca3af;
+  background: var(--neutral-text-3);
 }
 
-.task-stat-chip--success .task-stat-chip__dot { background: #10b981; }
-.task-stat-chip--failed .task-stat-chip__dot { background: #ef4444; }
+.task-stat-chip--success .task-stat-chip__dot { background: var(--arco-success); }
+.task-stat-chip--failed .task-stat-chip__dot { background: var(--arco-danger); }
 
 .task-table-card {
   overflow: hidden;
@@ -896,9 +897,7 @@ const stats = computed(() => {
 }
 
 /* 表格表面/分隔线/行悬停/进度轨道全部消费 --neutral-* 语义令牌（自带明暗成对值），
-   无需再写 :global([data-theme='dark']) 硬编码补丁（§3.1 / §33.2 ⑦）。
-   统计胶囊在深色下回退页面底色，避免与卡片表面混色。 */
-:global(:root[data-theme='dark']) .task-stat-chip { background: var(--neutral-bg); }
+   无需再写 :global([data-theme='dark']) 硬编码补丁（§3.1 / §33.2 ⑦）。 */
 :global(:root[data-theme='dark']) .batch-bar__seg { background: var(--neutral-bg); }
 :global(:root[data-theme='dark']) .batch-btn--warn { color: #fbbf24; }
 :global(:root[data-theme='dark']) .row-check { background: var(--neutral-bg); }

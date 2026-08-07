@@ -13,6 +13,14 @@ import {
   DocumentTextOutline,
   HelpCircleOutline,
   PersonOutline,
+  ChatbubbleEllipsesOutline,
+  CompassOutline,
+  PlayCircleOutline,
+  SearchCircleOutline,
+  ShieldCheckmarkOutline,
+  LockOpenOutline,
+  KeyOutline,
+  FlagOutline,
 } from '@vicons/ionicons5'
 import type { AgentTemplate } from '@/types/agent'
 import { recentRank } from './recentItems'
@@ -51,7 +59,6 @@ interface Row {
 
 /** 技能分组：能力调用命令（现有 /analysis、/rna、/go 等） */
 const SKILL_COMMANDS: Row[] = [
-  { id: '/analysis', name: '分析流程', description: '启动生物信息分析流程', icon: AnalyticsOutline, shortcut: '/analysis' },
   { id: '/rna', name: 'RNA-seq 分析', description: '差异表达基因分析', icon: BarChartOutline, shortcut: '/rna' },
   { id: '/go', name: 'GO 富集分析', description: '基因功能富集分析', icon: BarChartOutline, shortcut: '/go' },
   { id: '/kegg', name: 'KEGG 通路分析', description: '代谢通路富集分析', icon: BarChartOutline, shortcut: '/kegg' },
@@ -60,6 +67,21 @@ const SKILL_COMMANDS: Row[] = [
   { id: '/code', name: '代码执行', description: '在沙盒中执行 Python/R 代码', icon: CodeSlashOutline, shortcut: '/code' },
   { id: '/search', name: '文献搜索', description: '搜索 PubMed 等数据库', icon: SearchOutline, shortcut: '/search' },
   { id: '/plugin', name: '插件市场', description: '浏览可用插件', icon: ExtensionPuzzleOutline, shortcut: '/plugin' },
+]
+
+const AGENT_MODE_COMMANDS: Row[] = [
+  { id: '/chat', name: 'Chat 模式', description: '普通对话与知识解释', icon: ChatbubbleEllipsesOutline, shortcut: '/chat' },
+  { id: '/plan', name: 'Plan 模式', description: '制定计划，不直接执行分析', icon: CompassOutline, shortcut: '/plan' },
+  { id: '/run', name: 'Execute 模式', description: '执行已确认的分析计划', icon: PlayCircleOutline, shortcut: '/run' },
+  { id: '/research', name: 'Research 模式', description: '文献搜索、数据库查询与方法调研', icon: SearchCircleOutline, shortcut: '/research' },
+  { id: '/goal', name: '设置任务目标', description: '为当前对话声明一个明确目标', icon: FlagOutline, shortcut: '/goal' },
+]
+
+const PERMISSION_COMMANDS: Row[] = [
+  { id: '/safe', name: 'Safe 权限', description: '仅对话和知识解释，不访问数据', icon: ShieldCheckmarkOutline, shortcut: '/safe' },
+  { id: '/read', name: 'Read 权限', description: '读取工作区、样本和分析结果', icon: LockOpenOutline, shortcut: '/read' },
+  { id: '/analysis', name: 'Analysis 权限', description: '读取数据、调用 Pipeline 并生成结果', icon: AnalyticsOutline, shortcut: '/analysis' },
+  { id: '/full', name: 'Full 权限', description: '允许修改文件和管理任务', icon: KeyOutline, shortcut: '/full' },
 ]
 
 /** 内置命令分组（平台内置，非技能） */
@@ -110,8 +132,18 @@ const rows = computed<Row[]>(() => {
   const builtins = sortRows(
     BUILTIN_COMMANDS.filter((c) => matches(q, c.name, c.description, c.id)),
   )
+  const modes = sortRows(AGENT_MODE_COMMANDS.filter((c) => matches(q, c.name, c.description, c.id)))
+  const permissions = sortRows(PERMISSION_COMMANDS.filter((c) => matches(q, c.name, c.description, c.id)))
 
   const result: Row[] = []
+  if (modes.length) {
+    result.push(CATEGORY('category-modes', 'Agent 模式'))
+    result.push(...modes)
+  }
+  if (permissions.length) {
+    result.push(CATEGORY('category-permissions', 'Permission'))
+    result.push(...permissions)
+  }
   if (skills.length) {
     result.push(CATEGORY('category-skills', '技能'))
     result.push(...skills)

@@ -142,7 +142,7 @@ tools:
 
   - key: "seq-manipulator"
     title: "序列魔术师"
-    description: "DNA/RNA 反向互补、六框翻译、GC 含量分析，纯本地运算，序列不离开浏览器"
+    description: "多 FASTA 清洗、IUPAC 转换、六框翻译、ORF/Motif 搜索与序列统计，纯本地运算"
     icon: "CalculatorOutline"
     gradient: "linear-gradient(135deg, #0FC6C2 0%, #36CFC9 100%)"
     route: "/tools/seq-manipulator"

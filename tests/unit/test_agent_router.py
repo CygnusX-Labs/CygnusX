@@ -12,7 +12,20 @@ from omichub.application.services.chat_service import (
     ChatService,
     _extract_route_json,
     _is_route_execution_confirmation,
+    _should_show_route_transition,
 )
+
+
+def test_route_transition_only_shows_for_initial_or_changed_target() -> None:
+    assert _should_show_route_transition(None, "agent-general") is True
+    assert _should_show_route_transition("agent-general", "agent-general") is False
+    assert _should_show_route_transition("agent-general", "agent-rnaseq") is True
+    assert (
+        _should_show_route_transition(
+            "agent-rnaseq", "agent-rnaseq", execution_confirmed=True
+        )
+        is True
+    )
 
 
 def _candidate(agent_id: str, category: str, name: str = "") -> AgentTemplateDTO:

@@ -18,6 +18,7 @@ import BlastHitDetailCard from '@/components/blast/BlastHitDetailCard.vue'
 import BlastParamsInfo from '@/components/blast/BlastParamsInfo.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import ToolActionBar from '@/components/ToolActionBar.vue'
+import { consumeSequenceHandoff } from '@/engine/ecosystemLinks'
 import { analyzeSequence, detectSequenceType } from '@/utils/sequenceAnalysis'
 import type { BlastDatabase, BlastHit, BlastResult, BlastTask, BlastTaskListItem, ProgramType } from '@/types/blast'
 
@@ -511,6 +512,13 @@ onMounted(async () => {
   loadingDatabases.value = true
   try {
     databases.value = await fetchBlastDatabases()
+    const handoff = consumeSequenceHandoff('blast')
+    if (handoff) {
+      fastaInput.value = `>${handoff.record.header}\n${handoff.record.sequence}`
+      queryTitle.value = handoff.record.id
+      projectName.value = `${handoff.record.id}_BLAST`
+      message.success('已从序列魔术师载入查询序列')
+    }
     await loadRecentTasks()
     if (typeof route.query.task === 'string') {
       await openTask(route.query.task)

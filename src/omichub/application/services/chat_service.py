@@ -162,24 +162,39 @@ def _extract_user_message_metadata(message: dict[str, Any]) -> dict[str, Any]:
     metadata = message.get("metadata")
     if not isinstance(metadata, dict):
         return {}
+    extracted: dict[str, Any] = {}
     marker = metadata.get("agentteams_case_confirmation")
-    if not isinstance(marker, dict):
-        return {}
-    key = marker.get("key")
-    token = marker.get("token")
-    if (
-        not isinstance(key, str)
-        or not isinstance(token, str)
-        or marker.get("confirmed") is not True
-    ):
-        return {}
-    return {
-        "agentteams_case_confirmation": {
-            "key": key[:128],
-            "token": token[:256],
-            "confirmed": True,
-        }
-    }
+    if isinstance(marker, dict):
+        key = marker.get("key")
+        token = marker.get("token")
+        if (
+            isinstance(key, str)
+            and isinstance(token, str)
+            and marker.get("confirmed") is True
+        ):
+            extracted["agentteams_case_confirmation"] = {
+                "key": key[:128],
+                "token": token[:256],
+                "confirmed": True,
+            }
+
+    star_command = metadata.get("star_command")
+    if isinstance(star_command, dict):
+        mode = star_command.get("mode")
+        permission = star_command.get("permission")
+        goal = star_command.get("goal")
+        if mode in {"chat", "plan", "run", "research"} and permission in {
+            "safe",
+            "read",
+            "analysis",
+            "full",
+        }:
+            extracted["star_command"] = {
+                "mode": mode,
+                "permission": permission,
+                **({"goal": goal[:500]} if isinstance(goal, str) and goal.strip() else {}),
+            }
+    return extracted
 
 
 DEFAULT_SYSTEM_PROMPT = get_prompt("agents.general")
@@ -932,7 +947,19 @@ MEMORY_SYSTEM_PROMPT_SUFFIX = """## 长期记忆工具
 HANDOFF_SYSTEM_PROMPT_SUFFIX = """## Agent 转交协议
 当用户当前任务已进入明确的下一专业阶段、且你已完成自己负责的部分时，可以调用
 `transfer_to_agent` 将会话交给白名单中的下一位 Agent。交接必须包含已完成工作的摘要、
-用户后续诉求、相关 workspace 产物和约束；不要为了回避简单问题或重复工作而转交。"""
+用户后续诉求、相关 workspace 产物和约束；不要为了回避简单问题或重复工作而转交。
+如果经过澄清后确认任务超出你的能力边界、缺少你不具备的专业工具，且白名单中存在合适 Agent，
+应调用 `transfer_to_agent`，不要勉强生成不可靠结论。无法确定目标时先用 `ask_user` 澄清。"""
+
+
+def _should_show_route_transition(
+    previous_agent_id: str | None,
+    target_agent_id: str,
+    *,
+    execution_confirmed: bool = False,
+) -> bool:
+    """首次路由、目标变化或执行确认时展示；同一目标的连续轮次保持安静。"""
+    return execution_confirmed or not previous_agent_id or previous_agent_id != target_agent_id
 
 ASK_USER_SYSTEM_PROMPT_SUFFIX = """## 用户澄清协议（强制）
 
@@ -4003,6 +4030,9 @@ class ChatService:
                 route_execution_confirmed = False
                 if routed_session is not None and isinstance(transition, dict):
                     routed_meta = dict(routed_session.sandbox_meta or {})
+                    previous_routed_agent_id = str(
+                        routed_meta.get("last_routed_agent_id") or ""
+                    )
                     gate = routed_meta.get("route_execution_gate")
                     route_execution_confirmed = (
                         isinstance(gate, dict)
@@ -4027,6 +4057,12 @@ class ChatService:
                             "status": "awaiting_confirmation",
                             "created_at": datetime.now(UTC).isoformat(),
                         }
+                    transition["visible"] = _should_show_route_transition(
+                        previous_routed_agent_id or None,
+                        ctx.agent.agent_id,
+                        execution_confirmed=route_execution_confirmed,
+                    )
+                    routed_meta["last_routed_agent_id"] = ctx.agent.agent_id
                     routed_session.sandbox_meta = routed_meta
                     await self._db.flush()
                 if (
@@ -4211,6 +4247,30 @@ class ChatService:
             ],
             sensitive_keywords,
         )
+        star_command = user_metadata.get("star_command")
+        if isinstance(star_command, dict) and llm_messages:
+            mode = star_command["mode"]
+            permission = star_command["permission"]
+            goal = star_command.get("goal")
+            mode_rules = {
+                "chat": "只进行普通对话、知识解释和方法讨论，不主动执行分析。",
+                "plan": "只制定分析计划和资源评估，不执行 Workflow、创建任务或修改数据。",
+                "run": "执行用户已经确认的计划；如果没有确认计划，先补充计划并请求确认。",
+                "research": "优先进行文献、数据库和方法检索，给出来源与研究结论。",
+            }
+            permission_rules = {
+                "safe": "仅允许对话和知识解释，不读取文件、访问工作区或调用分析工具。",
+                "read": "允许读取工作区、样本 Metadata 和分析结果，但禁止创建任务或修改文件。",
+                "analysis": "允许读取数据、调用分析 Pipeline、创建分析任务和生成结果，但禁止删除核心数据。",
+                "full": "允许在用户目标范围内修改文件、管理任务和批量执行分析；高风险操作仍需明确确认。",
+            }
+            goal_hint = f"\n当前用户目标：{goal}" if isinstance(goal, str) and goal else ""
+            llm_messages[-1]["content"] += (
+                "\n\n[Star AI 命令上下文]\n"
+                f"模式：{mode}\n权限：{permission}\n"
+                f"模式规则：{mode_rules[mode]}\n权限规则：{permission_rules[permission]}"
+                f"{goal_hint}\n请严格遵守以上上下文，不要自行提升权限。"
+            )
         if attachments:
             llm_messages = await self._build_multimodal_messages(llm_messages, attachments)
 
@@ -4498,6 +4558,15 @@ class ChatService:
         if studio_mode:
             tools, system_prompt, active_mcp_servers = _studio_runtime(studio_capability_state)
         tools, system_prompt = _attach_mas_plan_tool(tools, system_prompt)
+        if isinstance(star_command, dict):
+            if star_command["mode"] == "plan" or star_command["permission"] == "safe":
+                tools = []
+                active_mcp_servers = []
+            system_prompt = (
+                f"{system_prompt}\n\nStar AI 已启用结构化命令上下文："
+                f"mode={star_command['mode']}, permission={star_command['permission']}。"
+                "不得忽略权限边界或通过其它工具绕过限制。"
+            ).strip()
 
         async def _prepare_handoff_target(
             directive: dict[str, Any],
@@ -5442,6 +5511,7 @@ class ChatService:
                             args,
                             user_id=user_id,
                             context=tool_context,
+                            fallback_servers=active_mcp_servers,
                         )
 
                     # 双通道：llm_payload 给 LLM，ui_payload 给前端
@@ -5466,6 +5536,7 @@ class ChatService:
                             "success": bool(result.get("success")),
                             "result": llm_result,
                             "ui_payload": ui_payload,
+                            "reliability": result.get("reliability"),
                         },
                     )
                     timeline.append(

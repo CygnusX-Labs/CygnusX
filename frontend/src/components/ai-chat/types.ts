@@ -29,6 +29,8 @@ export interface RoutedAgentInfo {
   avatar: string
   color: string
   reason: string
+  intent?: string
+  confidence?: number
   transition?: {
     visible: boolean
     stage: 'specialist_intake' | 'execution_ready'

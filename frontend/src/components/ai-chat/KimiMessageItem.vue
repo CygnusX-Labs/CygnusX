@@ -1249,7 +1249,7 @@ function handleEdit() {
   color: var(--chat-accent, #1890ff);
 }
 
-/* 用户消息气泡（右对齐渐变） */
+/* 用户消息气泡（右对齐语义表面） */
 .kimi-message-item.user {
   display: flex;
   flex-direction: column;
@@ -1258,12 +1258,13 @@ function handleEdit() {
 .kimi-message-item.user .message-content.user-bubble {
   max-width: 70%;
   padding: 12px 16px;
-  background: linear-gradient(135deg, #4A6CF7, #6B4B96);
-  color: #ffffff;
+  background: var(--chat-user-bubble, var(--chat-surface-hover));
+  color: var(--chat-user-text, var(--chat-text-primary));
+  border: 1px solid var(--chat-border, transparent);
   border-radius: 16px 16px 4px 16px;
   font-size: 14px;
   line-height: 1.7;
-  box-shadow: 0 2px 8px rgba(74, 108, 247, 0.2);
+  box-shadow: none;
   word-break: break-word;
   white-space: pre-wrap;
 }
@@ -1324,6 +1325,8 @@ function handleEdit() {
 .kimi-message-item.assistant .message-content.ai-card.streaming-active {
   border-color: color-mix(in srgb, var(--chat-accent, #6366f1) 42%, transparent);
   box-shadow: none;
+  contain: layout paint;
+  overflow-anchor: none;
 }
 
 .worker-result-card {
@@ -1912,11 +1915,6 @@ function handleEdit() {
   border-radius: var(--radius-card, 12px);
   box-shadow: none;
   line-height: 1.75;
-}
-
-.kimi-message-item.user .message-content.user-bubble {
-  background: var(--stardust-gradient);
-  box-shadow: 0 4px 12px rgba(46, 91, 255, 0.2);
 }
 
 .kimi-message-item.assistant .thought-block,

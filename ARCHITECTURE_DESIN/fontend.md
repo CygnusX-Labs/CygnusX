@@ -1393,6 +1393,8 @@ function pct(value: number | null | undefined): number {
 
 **⑦ 平台通用卡片表格基线。** 除仪表盘任务表的专属进度规则外，所有嵌入 `NCard`、`.arco-card`、`.omichub-card`、`.table-card`、`.work-card`、`.result-card`、`.bottom-table`、`.table-wrap` 或 `.resource-tab` 的 `NDataTable` 都由 `frontend/src/styles/global.css` 的“卡片内数据表格”规则统一提供不透明 `--neutral-card` 表面、`--neutral-bg` 表头、`--neutral-border` 分隔线、`--neutral-hover` 行悬停色以及 `max-width: 100%` 容器约束。因此，任务/结果表、管理表和实验计算器结果表不得在局部样式中重新引入半透明表格底色或硬编码白色；业务页面只需按数据密度配置列宽、`scroll-x`、省略与对齐策略。
 
+带内置分页的卡片表格还必须把 `.n-data-table__pagination` 作为独立 footer：使用实体 `--neutral-card` 背景、顶部 `--neutral-border` 分隔线，以及足够的左右和底部内边距。分页存在时，末行单元格的底边应透明，由 footer 顶边承担唯一分隔，避免暗色模式下末行横线与分页器重叠；最右侧翻页按钮不得贴住卡片边缘或被圆角裁切。该规则统一维护在 `frontend/src/styles/global.css`，页面不得逐个复制分页补丁。
+
 参考结构：
 
 ```ts

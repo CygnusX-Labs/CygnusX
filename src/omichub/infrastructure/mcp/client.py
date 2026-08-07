@@ -16,6 +16,14 @@ from omichub.core.telemetry import get_meter, get_tracer
 from omichub.domain.mcp.entities import MCPServer
 from omichub.domain.mcp.value_objects import ServerStatus, Transport
 from omichub.infrastructure.mcp.presets import get_preset_by_name
+from omichub.infrastructure.mcp.reliability import (
+    MCPExternalCallError,
+    MCPHealthRegistry,
+    ToolRetryPolicy,
+    execute_local_fallback,
+    get_default_health_registry,
+    health_key,
+)
 
 # ===== MCP 调用遥测指标（全局代理 meter，未初始化时为 noop）=====
 _mcp_meter = get_meter("omichub.mcp")
@@ -138,6 +146,10 @@ class MCPClient:
         # 由上层把失败标成 error 并回传真实原因，而不是误报 online + 0 工具。
         return await asyncio.wait_for(self._list_tools_external(server), timeout=server.timeout)
 
+    def __init__(self, health_registry: MCPHealthRegistry | None = None) -> None:
+        self.health_registry = health_registry or get_default_health_registry()
+        self.retry_policy = ToolRetryPolicy()
+
     async def call_tool(
         self,
         server: MCPServer,
@@ -145,6 +157,7 @@ class MCPClient:
         arguments: dict[str, Any],
         user_id: str | None = None,
         context: Any | None = None,
+        fallback_servers: list[MCPServer] | None = None,
     ) -> dict[str, Any]:
         """调用某 MCP Server 的指定工具（带 Trace/Log/Metrics 埋点）"""
         tracer = get_tracer("omichub.mcp")
@@ -159,8 +172,13 @@ class MCPClient:
             start = time.perf_counter()
             status = "success"
             try:
-                result = await self._call_tool_inner(
-                    server, tool_name, arguments, user_id, context
+                result = await self._call_with_reliability(
+                    server,
+                    tool_name,
+                    arguments,
+                    user_id,
+                    context,
+                    fallback_servers or [],
                 )
                 if not result.get("success"):
                     status = "error"
@@ -191,6 +209,82 @@ class MCPClient:
                     status=status,
                     duration_ms=round(duration_ms, 2),
                 ).info("mcp.call_tool completed")
+
+    async def _call_with_reliability(
+        self,
+        server: MCPServer,
+        tool_name: str,
+        arguments: dict[str, Any],
+        user_id: str | None,
+        context: Any | None,
+        fallback_servers: list[MCPServer],
+    ) -> dict[str, Any]:
+        key = health_key(server.name, tool_name)
+        policy = ToolRetryPolicy(max_attempts=1) if server.transport == Transport.BUILTIN else self.retry_policy
+        last_result: dict[str, Any] = {"success": False, "error": "工具调用失败"}
+        for attempt in range(1, policy.max_attempts + 1):
+            started = time.perf_counter()
+            try:
+                result = await self._call_tool_inner(server, tool_name, arguments, user_id, context)
+            except Exception as exc:  # noqa: BLE001
+                result = {"success": False, "error": str(exc)}
+            latency_ms = (time.perf_counter() - started) * 1000
+            if result.get("success"):
+                self.health_registry.record_success(key, latency_ms)
+                if attempt > 1:
+                    result["reliability"] = {"attempts": attempt, "recovered": True}
+                return result
+            self.health_registry.record_failure(key, latency_ms)
+            last_result = result
+            if attempt < policy.max_attempts:
+                await asyncio.sleep(policy.delay_for(attempt))
+
+        fallback = next(
+            (
+                candidate
+                for candidate in fallback_servers
+                if candidate.id != server.id
+                and candidate.transport == Transport.BUILTIN
+                and any(item.tool_name == tool_name for item in candidate.tools)
+            ),
+            None,
+        )
+        if fallback is not None:
+            fallback_result = await self._call_tool_inner(
+                fallback, tool_name, arguments, user_id, context
+            )
+            if fallback_result.get("success"):
+                fallback_result["reliability"] = {
+                    "attempts": policy.max_attempts,
+                    "fallback_used": fallback.name,
+                    "primary_status": self.health_registry.snapshot(key)["status"],
+                }
+                return fallback_result
+
+        local_result = await execute_local_fallback(tool_name, arguments)
+        if local_result is not None and local_result.get("success"):
+            local_result["reliability"] = {
+                "attempts": policy.max_attempts,
+                "fallback_used": "local",
+                "primary_status": self.health_registry.snapshot(key)["status"],
+            }
+            return local_result
+
+        failure_kind = (
+            last_result.get("failure_kind")
+            if isinstance(last_result, dict)
+            else "unknown"
+        )
+
+        return {
+            **last_result,
+            "error": "当前外部服务暂时不可用，备用计算方式也不可用，请稍后重试。",
+            "reliability": {
+                "attempts": policy.max_attempts,
+                "primary_status": self.health_registry.snapshot(key)["status"],
+                "failure_kind": failure_kind or "unknown",
+            },
+        }
 
     async def _call_tool_inner(
         self,
@@ -234,23 +328,42 @@ class MCPClient:
             logger.warning(f"ToolInvocationContext blocked for non-builtin transport: {server.name}")
 
         # stdio / sse
-        result = await self._safe_external(
-            server, lambda s: self._call_tool_external(s, tool_name, arguments)
-        )
-        if result is None:
-            return {"success": False, "error": "MCP Server 连接失败"}
+        try:
+            result = await self._safe_external(
+                server, lambda s: self._call_tool_external(s, tool_name, arguments)
+            )
+        except MCPExternalCallError as exc:
+            return {"success": False, "error": exc.detail, "failure_kind": exc.kind}
+        if isinstance(result, dict) and result.get("isError"):
+            content = result.get("content") or []
+            message = next(
+                (
+                    str(item.get("text"))
+                    for item in content
+                    if isinstance(item, dict) and item.get("text")
+                ),
+                "MCP 工具返回错误",
+            )
+            return {"success": False, "error": message, "failure_kind": "tool_error"}
         return {"success": True, "result": result}
 
     async def _safe_external(self, server: MCPServer, fn: Any) -> Any:
         """外部 MCP 调用的错误隔离包装"""
         try:
             return await asyncio.wait_for(fn(server), timeout=server.timeout)
-        except TimeoutError:
+        except TimeoutError as exc:
             logger.warning(f"MCP Server {server.name} 调用超时")
-            return None
+            raise MCPExternalCallError("timeout", f"MCP Server {server.name} 调用超时") from exc
         except Exception as e:  # noqa: BLE001
             logger.warning(f"MCP Server {server.name} 调用异常: {e}")
-            return None
+            detail = str(e) or type(e).__name__
+            lowered = detail.lower()
+            kind = (
+                "command_not_found"
+                if "不在 path" in detail or "no such file" in lowered
+                else "connection_error"
+            )
+            raise MCPExternalCallError(kind, detail) from e
 
     async def _list_tools_external(self, server: MCPServer) -> list[dict[str, Any]]:
         """通过 MCP SDK 发现外部 stdio/sse 服务的工具"""

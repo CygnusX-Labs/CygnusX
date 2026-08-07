@@ -28,8 +28,11 @@ features:
     default_ttl_hours: 24
     build_output_dir: mcp-builds   # 沙箱内相对 /workspace 的路径
 
-# workspace（文件操作）+ memory（跨会话构建上下文）
-tool_packs: [workspace, memory]
+# workspace（文件操作）+ memory（跨会话构建上下文）+ handoff（超出构建范围时转交）
+tool_packs: [workspace, memory, handoff]
+handoff:
+  allowed_targets: [agent-general, agent-code]
+  max_hops_per_session: 3
 
 # Studio 沙箱：代码生成写入沙箱 → 容器内启动验证 → 注册为实验 MCP
 studio:

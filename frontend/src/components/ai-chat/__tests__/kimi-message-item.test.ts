@@ -66,6 +66,8 @@ describe('KimiMessageItem 渲染分支', () => {
           avatar: '🧬',
           color: '#16a34a',
           reason: '识别为 Bulk RNA-seq 差异表达任务',
+          intent: 'transfer',
+          confidence: 0.96,
           transition: {
             visible: true,
             stage: 'specialist_intake',
@@ -80,10 +82,11 @@ describe('KimiMessageItem 渲染分支', () => {
       isStreaming: false,
     })
 
-    expect(el.textContent).toContain('Router 判定')
+    expect(el.textContent).toContain('STELLAR ROUTER')
     expect(el.textContent).toContain('星尘 AI')
     expect(el.textContent).toContain('RNA-seq 分析师')
-    expect(el.textContent).toContain('专项 Agent 进行任务 intake')
+    expect(el.textContent).toContain('专家转交')
+    expect(el.textContent).toContain('96%')
     expect(el.textContent).toContain('执行前需确认')
   })
 
@@ -112,9 +115,37 @@ describe('KimiMessageItem 渲染分支', () => {
       isStreaming: false,
     })
 
-    expect(el.textContent).toContain('Router 判定')
+    expect(el.textContent).toContain('STELLAR ROUTER')
     expect(el.textContent).toContain('通用助手')
-    expect(el.textContent).toContain('通用助手继续处理')
+    expect(el.textContent).toContain('路由更新')
+  })
+
+  it('Router 目标未变化时不显示路由事件条', () => {
+    const { el } = mountItem({
+      message: {
+        ...baseMsg,
+        content: '继续查看 raw_data 目录。',
+        routedAgent: {
+          agentId: 'agent-general',
+          name: '通用助手',
+          avatar: '🤖',
+          color: '#7691FF',
+          reason: '继续由当前助手处理',
+          transition: {
+            visible: false,
+            stage: 'specialist_intake',
+            title: '已匹配通用助手',
+            message: '',
+            nextStep: '通用助手继续处理',
+            requiresExecutionConfirmation: false,
+            autoStart: false,
+          },
+        },
+      },
+      isStreaming: false,
+    })
+
+    expect(el.textContent).not.toContain('STELLAR ROUTER')
   })
 
   it('工具生成图片后在对话中显示预览并支持下载', async () => {
