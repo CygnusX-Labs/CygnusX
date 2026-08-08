@@ -31,6 +31,7 @@ _AGENT_PROFILES: dict[str, tuple[str, str]] = {
     "agent-code": ("agent-code", "planning_advice"),
     "agent-viz": ("agent-viz", "result_interpretation"),
     "agent-scrna": ("agent-scrna", "interpretation"),
+    "agent-rnaseq": ("agent-rnaseq", "interpretation"),
 }
 
 

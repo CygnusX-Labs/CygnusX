@@ -260,7 +260,11 @@ const isError = computed(() =>
 
 // 错误是否属于用户无法自行处理的平台侧问题（密钥/配置/授权），用于提示联系管理员
 const isAdminConfigError = computed(() =>
-  /API Key|密钥|过期|授权|权限|配置|401|403|permission|unauthor/i.test(props.message.content || ''),
+  /API Key|密钥|过期|授权|权限|配置|403|permission|unauthor/i.test(props.message.content || ''),
+)
+
+const isAuthExpiredError = computed(() =>
+  /401|令牌无效|已过期|请重新登录|登录态失效|refresh/i.test(props.message.content || ''),
 )
 
 const hasOutputTokens = computed(() => (props.message.tokens?.output ?? 0) > 0)
@@ -748,7 +752,9 @@ function handleEdit() {
         <div class="empty-title">星尘信号受到了干扰</div>
         <div class="empty-desc">{{ message.content || '生成失败，请稍后重试或切换模型' }}</div>
         <div class="error-admin-hint">
-          {{ isAdminConfigError
+          {{ isAuthExpiredError
+            ? '当前登录态已失效，请先重新登录后再重试。'
+            : isAdminConfigError
             ? '此问题通常由模型密钥或配置失效引起，用户侧无法自行修复，请联系管理员解决。'
             : '若重试或切换模型后仍失败，请联系管理员解决。' }}
         </div>

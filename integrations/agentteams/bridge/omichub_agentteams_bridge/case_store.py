@@ -308,6 +308,84 @@ class CaseStore:
             await self._persist()
             return updated
 
+    async def begin_approved_submission(
+        self, case_id: str, work_item_id: str, target: str
+    ) -> WorkItemRecord:
+        """Atomically reserve a prepared submission before an outbound task request."""
+        async with self._lock:
+            case = self._cases.get(case_id)
+            if case is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+            work_item = next(
+                (item for item in case.work_items if item.work_item_id == work_item_id), None
+            )
+            if work_item is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work item not found")
+            if work_item.target != target or work_item.lease_owner != target:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Work item lease owner mismatch")
+            if work_item.status != "running" or self._lease_expired(work_item, datetime.now(UTC)):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Work item is not running")
+            approved = work_item.approved_submission
+            if approved is None:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Work item has no approved submission")
+            if approved.consumed_at is not None:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Approved submission was already consumed")
+            if approved.submission_started_at is not None:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Approved submission is already running")
+            now = datetime.now(UTC)
+            updated_item = work_item.model_copy(
+                update={
+                    "approved_submission": approved.model_copy(update={"submission_started_at": now}),
+                    "updated_at": now,
+                }
+            )
+            self._cases[case_id] = case.model_copy(
+                update={
+                    "work_items": [
+                        updated_item if item.work_item_id == work_item_id else item
+                        for item in case.work_items
+                    ],
+                    "updated_at": now,
+                }
+            )
+            await self._persist()
+            return updated_item
+
+    async def reset_approved_submission_start(
+        self, case_id: str, work_item_id: str, target: str
+    ) -> WorkItemRecord:
+        """Allow a failed submission attempt to be retried after its Work Item is requeued."""
+        async with self._lock:
+            case = self._cases.get(case_id)
+            if case is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+            work_item = next(
+                (item for item in case.work_items if item.work_item_id == work_item_id), None
+            )
+            if work_item is None or work_item.target != target:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work item not found")
+            approved = work_item.approved_submission
+            if approved is None:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Work item has no approved submission")
+            now = datetime.now(UTC)
+            updated_item = work_item.model_copy(
+                update={
+                    "approved_submission": approved.model_copy(update={"submission_started_at": None}),
+                    "updated_at": now,
+                }
+            )
+            self._cases[case_id] = case.model_copy(
+                update={
+                    "work_items": [
+                        updated_item if item.work_item_id == work_item_id else item
+                        for item in case.work_items
+                    ],
+                    "updated_at": now,
+                }
+            )
+            await self._persist()
+            return updated_item
+
     async def claim_work_item(self, case_id: str, work_item_id: str, target: str) -> WorkItemRecord:
         """Atomically claim a pending assignment, reclaiming only an expired lease."""
         async with self._lock:

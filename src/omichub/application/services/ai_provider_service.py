@@ -18,6 +18,7 @@ from omichub.application.schemas.ai_provider import (
     AIProviderTemplate,
     DiscoveredModel,
 )
+from omichub.application.services.ai_provider_yaml_writer import AIProviderYamlWriter
 from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError, NotFoundError
 from omichub.domain.ai_provider.entities import AIProviderConfig
@@ -63,6 +64,16 @@ class AIProviderConfigService:
         self._db = db
         self._repo = SqlAlchemyAIProviderConfigRepository(db)
         self._domain = AIProviderConfigDomainService(self._repo)
+        self._yaml_writer = AIProviderYamlWriter()
+
+    async def _persist_to_yaml(self) -> None:
+        """写操作后把 DB 当前全量 Provider 回写 YAML（key 写 ${ENV_KEY} 占位）。
+
+        YAML 为单一事实源：网页端改动经此回写落盘，下次启动 loader 即据此 prune DB，
+        形成「yaml 优先 + 网页可改且自动回写」闭环。
+        """
+        configs = await self._repo.list_all()
+        self._yaml_writer.write_configs(configs)
 
     async def list_configs(self) -> list[AIProviderConfigDTO]:
         configs = await self._repo.list_all()
@@ -122,6 +133,7 @@ class AIProviderConfigService:
         self._domain.validate(config)
         config = await self._domain.prepare_new_default(config)
         config = await self._repo.save(config)
+        await self._persist_to_yaml()
         return _to_dto(config)
 
     async def update_config(
@@ -149,6 +161,7 @@ class AIProviderConfigService:
 
         self._domain.validate(config)
         config = await self._repo.save(config)
+        await self._persist_to_yaml()
         return _to_dto(config)
 
     async def delete_config(self, config_id: UUID) -> dict[str, Any]:
@@ -182,13 +195,17 @@ class AIProviderConfigService:
             config.is_active = False
             config.mark_updated()
             await self._repo.save(config)
+            await self._persist_to_yaml()
             return {"deleted": True, "soft_deleted": True}
 
         ok = await self._repo.delete(config_id)
+        if ok:
+            await self._persist_to_yaml()
         return {"deleted": ok, "soft_deleted": False}
 
     async def set_default(self, config_id: UUID) -> AIProviderConfigDTO:
         config = await self._domain.set_default(config_id)
+        await self._persist_to_yaml()
         return _to_dto(config)
 
     async def test_config(self, config_id: UUID, message: str = "") -> AIProviderConfigTestResponse:

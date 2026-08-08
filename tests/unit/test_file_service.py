@@ -157,6 +157,44 @@ async def test_list_workspace_files_filters_pattern_and_returns_metadata() -> No
 
 
 @pytest.mark.asyncio
+async def test_list_workspace_files_recursive_returns_nested_files() -> None:
+    now = datetime.now(UTC)
+    user_id = uuid4()
+    service = object.__new__(FileService)
+    service._files = SimpleNamespace()
+    service._dirs = SimpleNamespace()
+
+    async def list_by_user(_user_id: UUID, **kwargs):
+        assert _user_id == user_id
+        assert kwargs["status"] == "active"
+        return [
+            DataFile(
+                id=uuid4(),
+                user_id=user_id,
+                path=f"users/{user_id}/raw_data/project/counts.csv",
+                original_name="counts.csv",
+                size=123,
+                file_type=FileType.OTHER,
+                directory="raw_data/project",
+                created_at=now,
+                updated_at=now,
+            )
+        ]
+
+    async def list_directories(_user_id: UUID):
+        return []
+
+    service._files.list_by_user = list_by_user
+    service._dirs.list_by_user = list_directories
+
+    result = await service.list_workspace_files(user_id, recursive=True)
+
+    assert result["recursive"] is True
+    assert result["total"] == 1
+    assert result["items"][0]["relative_path"] == "raw_data/project/counts.csv"
+
+
+@pytest.mark.asyncio
 async def test_search_files_is_user_scoped_and_excludes_ignored_directories(tmp_path: Path) -> None:
     now = datetime.now(UTC)
     user_id = uuid4()
@@ -283,6 +321,7 @@ def test_workspace_file_tools_are_registered_with_expected_contract() -> None:
     assert tools["list_workspace_files"]["inputSchema"]["properties"].keys() == {
         "path",
         "pattern",
+        "recursive",
     }
     assert tools["search_workspace_files"]["inputSchema"]["required"] == ["query"]
     assert "list_workspace_files" in PLATFORM_HANDLERS
@@ -290,7 +329,8 @@ def test_workspace_file_tools_are_registered_with_expected_contract() -> None:
 
 
 def test_workspace_system_prompt_forbids_no_tool_fallback() -> None:
-    assert "必须先调用 `list_workspace_files`" in WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX
+    assert "必须调用 `list_workspace_files`" in WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX
+    assert "recursive=true" in WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX
     assert "必须先调用 `search_workspace_files`" in WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX
     assert "禁止声称没有浏览文件的工具" in WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX
 

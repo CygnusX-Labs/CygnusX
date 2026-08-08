@@ -5,7 +5,7 @@ description: 统一入口：由星尘 AI 理解任务并分派给最合适的专
 avatar: "🧭"
 color: "#8e6cf0"
 category: general
-model: qwen3.7-plus
+model: deepseek-v4-flash
 prompt_file: prompts/router.md
 welcome_message: "你好，我是星尘 AI。直接描述目标或当前问题，我会判断任务并分派给合适的专家。"
 temperature: 0.7

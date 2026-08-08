@@ -229,6 +229,44 @@ async def test_import_chat_upload_rejects_non_hex_identifier(platform_env):
         await import_datahub_file(uid, "sess-new", "upload://../secret", None, _FakeDb())
 
 
+# ===== link_session_file_refs（批量幂等挂载进沙盒工作区） =====
+
+
+@pytest.mark.unit
+async def test_link_session_file_refs_batch_and_idempotent(platform_env, monkeypatch):
+    """批量引入多个上传文件；重复引入幂等；非法引用记入 errors 不中断。"""
+    from omichub.application.services.studio_context_service import link_session_file_refs
+
+    storage, uid, workspace = platform_env
+    up_a = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    up_b = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    upload_dir = storage / "users" / uid / "workspace" / "chat-uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    (upload_dir / f"{up_a}.csv").write_text("x,y\n1,2\n", encoding="utf-8")
+    (upload_dir / f"{up_b}.csv").write_text("x,y\n3,4\n", encoding="utf-8")
+    monkeypatch.setattr(
+        studio_context_service, "get_user_chat_upload_dir", lambda _user_id: upload_dir
+    )
+
+    refs = [f"upload://{up_a}", f"upload://{up_b}", "upload://does-not-exist"]
+    paths, errors = await link_session_file_refs(uid, "sess-new", refs, _FakeDb())
+
+    # name=None 时链接名取文件 basename（{upload_id}.csv）
+    assert paths[f"upload://{up_a}"] == f"/workspace/input/{up_a}.csv"
+    assert paths[f"upload://{up_b}"] == f"/workspace/input/{up_b}.csv"
+    assert "upload://does-not-exist" in errors
+    assert "upload://does-not-exist" not in paths
+
+    input_names_before = sorted(os.listdir(workspace / "input"))
+
+    # 再次引入同样的引用：幂等复用，不新增冗余链接
+    paths2, errors2 = await link_session_file_refs(uid, "sess-new", refs, _FakeDb())
+    assert paths2 == paths
+    assert set(errors2) == set(errors)
+    input_names_after = sorted(os.listdir(workspace / "input"))
+    assert input_names_before == input_names_after
+
+
 # ===== create_session_from_report =====
 
 

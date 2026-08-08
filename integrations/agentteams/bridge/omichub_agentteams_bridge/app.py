@@ -24,6 +24,7 @@ from .models import (
     EvidenceRequest,
     PreflightRequest,
     QualityGateRequest,
+    QueueApprovedSubmissionRequest,
     SubmitTaskRequest,
     WorkItemCreateRequest,
     WorkItemHeartbeatRequest,
@@ -191,6 +192,8 @@ def create_app(
             "agent-code",
             "agent-viz",
             "agent-scrna",
+            "agent-rnaseq",
+            "analysis-worker",
         )
         return await service.get_case_view(case_id, identity)
 
@@ -208,6 +211,8 @@ def create_app(
             "agent-code",
             "agent-viz",
             "agent-scrna",
+            "agent-rnaseq",
+            "analysis-worker",
         )
         return (await service.list_worker_inbox(identity)).model_dump(mode="json")
 
@@ -258,6 +263,8 @@ def create_app(
             "agent-code",
             "agent-viz",
             "agent-scrna",
+            "agent-rnaseq",
+            "analysis-worker",
         )
         return (
             await service.update_work_item(case_id, work_item_id, payload, identity)
@@ -279,6 +286,8 @@ def create_app(
             "agent-code",
             "agent-viz",
             "agent-scrna",
+            "agent-rnaseq",
+            "analysis-worker",
         )
         return (await service.claim_work_item(case_id, work_item_id, identity)).model_dump(
             mode="json"
@@ -301,6 +310,7 @@ def create_app(
             "agent-code",
             "agent-viz",
             "agent-scrna",
+            "agent-rnaseq",
         )
         return (
             await service.heartbeat_work_item(case_id, work_item_id, payload, identity)
@@ -317,7 +327,7 @@ def create_app(
         identity: Annotated[str, Depends(authenticate_identity)],
         service: Annotated[BridgeService, Depends(get_service)],
     ) -> dict:
-        require_role(identity, "agent-code", "agent-viz", "agent-scrna")
+        require_role(identity, "agent-code", "agent-viz", "agent-scrna", "agent-rnaseq")
         return (
             await service.execute_readonly_work_item(case_id, work_item_id, payload, identity)
         ).model_dump(mode="json")
@@ -411,6 +421,31 @@ def create_app(
     ) -> dict:
         require_role(identity, "workflow-operator")
         return (await service.submit_task(payload, identity)).model_dump(mode="json")
+
+    @app.post("/v1/approved-submissions", status_code=status.HTTP_201_CREATED, tags=["Approvals"])
+    async def queue_approved_submission(
+        payload: QueueApprovedSubmissionRequest,
+        identity: Annotated[str, Depends(authenticate_identity)],
+        service: Annotated[BridgeService, Depends(get_service)],
+    ) -> dict:
+        require_role(identity, "approval-authority")
+        return (await service.queue_approved_submission(payload, identity)).model_dump(mode="json")
+
+    @app.post(
+        "/v1/cases/{case_id}/work-items/{work_item_id}/submit-approved",
+        status_code=status.HTTP_201_CREATED,
+        tags=["Tasks"],
+    )
+    async def submit_approved_work_item(
+        case_id: str,
+        work_item_id: str,
+        identity: Annotated[str, Depends(authenticate_identity)],
+        service: Annotated[BridgeService, Depends(get_service)],
+    ) -> dict:
+        require_role(identity, "analysis-worker")
+        return (
+            await service.submit_approved_work_item(case_id, work_item_id, identity)
+        ).model_dump(mode="json")
 
     @app.get("/v1/tasks/{task_id}", tags=["Tasks"])
     async def get_task(

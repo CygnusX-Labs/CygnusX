@@ -37,7 +37,14 @@ from omichub.infrastructure.database.models.skill import SkillModel
 from omichub.infrastructure.database.repositories.mcp_repository import (
     SqlAlchemyMCPServerRepository,
 )
-from omichub.infrastructure.mcp.conda_meta_preset import CONDA_META_MCP_SERVER_ID
+from omichub.infrastructure.mcp.conda_meta_preset import (
+    CONDA_META_MCP_SERVER_ID,
+    CONDA_META_MCP_SERVER_NAME,
+)
+from omichub.infrastructure.mcp.pipeline_preset import (
+    OMICHUB_PIPELINES_SERVER_ID,
+    OMICHUB_PIPELINES_SERVER_NAME,
+)
 from omichub.infrastructure.mcp.presets import (
     OMICHUB_PLATFORM_SERVER_ID,
     OMICHUB_TOOLS_SERVER_ID,
@@ -46,6 +53,16 @@ from omichub.infrastructure.mcp.presets import (
     get_preset_by_name,
 )
 from omichub.tools.schema_loader import schema_loader
+
+# 内置预设 server 的确定性常量 ID，按名称索引。
+# 用于兼容历史 DB 记录 ID 漂移（记录名相同但 id 与确定性常量不一致）：
+# 组装工具白名单时若按 server.id 未命中，可退回按预设名称匹配白名单。
+_PRESET_IDS_BY_NAME: dict[str, uuid.UUID] = {
+    "omichub-platform": OMICHUB_PLATFORM_SERVER_ID,
+    OMICHUB_PIPELINES_SERVER_NAME: OMICHUB_PIPELINES_SERVER_ID,
+    OMICHUB_TOOLS_SERVER_NAME: OMICHUB_TOOLS_SERVER_ID,
+    CONDA_META_MCP_SERVER_NAME: CONDA_META_MCP_SERVER_ID,
+}
 
 AGENTTEAMS_CASE_SYSTEM_PROMPT_SUFFIX = """## AgentTeams 协作 Case
 
@@ -155,45 +172,32 @@ class AgentService:
                     else:
                         existing_features.pop("studio", None)
                     existing.features = existing_features
-                    configured_mcp_ids = [
-                        str(value) for value in (existing.mcp_ids or []) if self._parse_uuid(value)
-                    ]
+                    # 内置 Agent 的 MCP/Skill 绑定由 YAML tool_packs 声明驱动：以声明集合
+                    # 为基础重建（而不是与历史值合并），从而清除历史漂移（如通用/代码/可视化
+                    # 助手误挂 ensmbl/go-server/pipelines）与已失效的旧 server ID。
+                    # 核心 builtin 预设 omichub-tools（富集/绘图/记忆/交接/子Agent/Case 工具）
+                    # 与 omichub-platform（工作区文件）始终保留，其余 server 一律以声明为准。
                     declared_mcp_ids = [
                         str(value)
                         for value in (cfg.get("mcp_ids") or [])
                         if self._parse_uuid(value)
                     ]
                     configured_mcp_ids = list(
-                        dict.fromkeys([*configured_mcp_ids, *declared_mcp_ids])
+                        dict.fromkeys(
+                            [
+                                *declared_mcp_ids,
+                                str(OMICHUB_TOOLS_SERVER_ID),
+                                str(OMICHUB_PLATFORM_SERVER_ID),
+                            ]
+                        )
                     )
                     existing.mcp_ids = configured_mcp_ids
-                    # 旧版本已落库的内置 Agent 可能没有平台 MCP；回填工作区文件工具，
-                    # 不覆盖管理员额外绑定的 MCP。
-                    if (
-                        not configured_mcp_ids
-                        or str(OMICHUB_TOOLS_SERVER_ID) in configured_mcp_ids
-                    ) and str(OMICHUB_PLATFORM_SERVER_ID) not in configured_mcp_ids:
-                        configured_mcp_ids.append(str(OMICHUB_PLATFORM_SERVER_ID))
-                        existing.mcp_ids = configured_mcp_ids
-                    # 同路径回填 conda-meta-mcp（装包前查 conda 元数据）：幂等追加，
-                    # 不动管理员额外绑定的 MCP。
-                    if str(CONDA_META_MCP_SERVER_ID) not in configured_mcp_ids:
-                        configured_mcp_ids.append(str(CONDA_META_MCP_SERVER_ID))
-                        existing.mcp_ids = configured_mcp_ids
-                    configured_skills = [
+                    declared_skills = [
                         str(skill_id).strip()
                         for skill_id in (cfg.get("skill_ids") or [])
                         if str(skill_id).strip()
                     ]
-                    if configured_skills:
-                        existing_skill_ids = [
-                            str(skill_id).strip()
-                            for skill_id in (existing.skill_ids or [])
-                            if str(skill_id).strip()
-                        ]
-                        existing.skill_ids = list(
-                            dict.fromkeys([*existing_skill_ids, *configured_skills])
-                        )
+                    existing.skill_ids = list(dict.fromkeys(declared_skills))
 
                     if existing_features.get("managed_prompt") and cfg.get("system_prompt"):
                         existing.system_prompt = str(cfg["system_prompt"])
@@ -232,14 +236,9 @@ class AgentService:
                 model_id = provider.id
                 model_engine = provider.model  # 真实模型名
 
-            # 构建落库字段
+            # 构建落库字段：mcp_ids/skill_ids 以 YAML tool_packs 声明的集合为准，
+            # 不再隐式注入默认 server（tool_packs 已保证 tools/platform 的绑定）。
             mcp_ids = cfg.get("mcp_ids", [])
-            if not mcp_ids:
-                mcp_ids = [
-                    str(OMICHUB_TOOLS_SERVER_ID),
-                    str(OMICHUB_PLATFORM_SERVER_ID),
-                    str(CONDA_META_MCP_SERVER_ID),
-                ]
             # 统一功能开关：yaml features 原样保留，studio 段归入 features["studio"]，
             # 不新增列（调度中枢经 AgentContext.features 读取）
             features = dict(cfg.get("features") or {})
@@ -568,8 +567,29 @@ class AgentService:
         other_uuids = [u for u in mcp_uuids if u != OMICHUB_TOOLS_SERVER_ID]
         if other_uuids:
             mcp_servers = await self._mcp_repo.get_by_ids(other_uuids)
+            resolved_ids = {server.id for server in mcp_servers}
+            # 兜底：预设 server 若确定性常量 ID 未命中（历史 ID 漂移或冷启动，
+            # ensure_presets 尚未归一化），按名称解析，避免平台/流水线工具丢失。
+            for preset_id, preset_name in (
+                (OMICHUB_PLATFORM_SERVER_ID, "omichub-platform"),
+                (OMICHUB_PIPELINES_SERVER_ID, OMICHUB_PIPELINES_SERVER_NAME),
+                (CONDA_META_MCP_SERVER_ID, CONDA_META_MCP_SERVER_NAME),
+            ):
+                if preset_id in mcp_uuids and preset_id not in resolved_ids:
+                    by_name = await self._mcp_repo.get_by_name(preset_name)
+                    if by_name is not None and by_name.is_enabled:
+                        mcp_servers.append(by_name)
+                        resolved_ids.add(by_name.id)
             for server in mcp_servers:
+                # 离线/被禁用的外部 MCP 不向 LLM 暴露工具，避免模型选到必失败的慢工具。
+                if not server.is_enabled:
+                    continue
                 allowed_names = tool_pack_config["mcp_tools"].get(str(server.id))
+                if allowed_names is None:
+                    # 历史 ID 漂移时白名单按确定性预设名再匹配一次
+                    allowed_names = tool_pack_config["mcp_tools"].get(
+                        str(_PRESET_IDS_BY_NAME.get(server.name, server.id))
+                    )
                 for t in server.tools:
                     if allowed_names and t.tool_name not in allowed_names:
                         continue
@@ -587,8 +607,10 @@ class AgentService:
 
         # 内置 preset 可能在应用启动并发初始化期间尚未落库；使用代码定义的
         # preset 作为运行时兜底，确保已绑定平台 MCP 的 Agent 不会丢失工具。
+        # 已通过常量 ID 或名称回退解析到同名 server 时不再重复注入。
         if OMICHUB_PLATFORM_SERVER_ID in mcp_uuids and not any(
-            server.id == OMICHUB_PLATFORM_SERVER_ID for server in mcp_servers
+            server.id == OMICHUB_PLATFORM_SERVER_ID or server.name == "omichub-platform"
+            for server in mcp_servers
         ):
             platform_preset = get_preset_by_name("omichub-platform")
             if platform_preset is not None:

@@ -63,6 +63,10 @@ def test_idempotency_record_reuses_recent_case_without_objective_storage() -> No
     assert isinstance(idempotency, dict)
     record: dict[str, Any] = idempotency["hash"]
     assert "objective" not in record
+    assert meta["execution_mode"] == "cluster_case"
+    routing: dict[str, Any] = meta["execution_routing"]
+    assert routing["case_id"] == "case-1"
+    assert routing["reason"] == "user_confirmed_agentteams_case"
 
 
 def test_sample_context_references_reject_raw_like_missing_reference() -> None:

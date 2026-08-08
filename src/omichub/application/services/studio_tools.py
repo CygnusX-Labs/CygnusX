@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
@@ -376,6 +377,8 @@ _LLM_STDERR_TAIL = 1000  # llm_payload stderr 尾部保留上限（字符）
 _UI_OUTPUT_CAP = 20000  # ui_payload 单通道输出上限（字符；agent 流内已限 10KB）
 _STREAM_QUEUE_MAX_CHUNKS = 32  # 慢客户端时限制待发送 tool_output 事件
 _LIST_LLM_CAP = 200  # workspace_list 回灌 LLM 的条目上限
+# 长时间无输出（如沙盒静默计算）时按此间隔下发 SSE 心跳，防反向代理读超时掐断流
+_STREAM_HEARTBEAT_INTERVAL_SECONDS = 15
 
 # 输出增量回调：(stream, data) -> None；stream ∈ {"stdout", "stderr"}
 OutputCallback = Callable[[str, str], Awaitable[None]]
@@ -978,13 +981,20 @@ async def stream_studio_tool(
             db=db,
         )
     )
+    # 沙盒长任务可能长时间无输出（静默计算），期间 SSE 无数据会被反向代理按读超时
+    # 掐断，前端即表现为「流式连接意外中断」。这里按间隔下发心跳保活（SSE 注释帧）。
+    last_emit = time.monotonic()
     while True:
         if task.done() and queue.empty():
             break
         try:
             stream, data = await asyncio.wait_for(queue.get(), timeout=0.05)
         except TimeoutError:
+            if time.monotonic() - last_emit >= _STREAM_HEARTBEAT_INTERVAL_SECONDS:
+                last_emit = time.monotonic()
+                yield ChatChunk(type="heartbeat")
             continue
+        last_emit = time.monotonic()
         yield ChatChunk(
             type="tool_output",
             metadata={"tool": name, "tool_call_id": tool_call_id, "stream": stream, "data": data},

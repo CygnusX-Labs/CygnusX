@@ -196,6 +196,7 @@ class AgentTeamsService:
             "project_ref": {"kind": "project", "id": project_id},
             "intent": intent,
             "requester_ref": requester_ref,
+            "execution_mode": "cluster_case",
         }
         if origin_consultation_id:
             case_payload["origin_consultation_id"] = origin_consultation_id
@@ -258,31 +259,36 @@ class AgentTeamsService:
         comparisons = snapshot.get("comparisons")
         if not isinstance(flow_id, str) or not isinstance(sample_sheet, list):
             raise BusinessError("当前协作 Case 的预检输入快照无效")
-        approval = await self._request_as(
-            "approval-authority",
-            self._bridge_config.approval_token,
-            "/v1/approvals",
-            method="POST",
-            json={"case_id": case_id, "action": "submit_task", "flow_id": flow_id},
-        )
         if not any(item.get("work_item_id") == "submit-01" for item in case.get("work_items", [])):
             await self._request(
                 f"/v1/cases/{case_id}/work-items",
                 method="POST",
                 json={
                     "work_item_id": "submit-01",
-                    "target": "workflow-operator",
-                    "objective": "执行已获人工批准的分析流程提交并回写 OmicHub 任务证据。",
+                    "target": "analysis-worker",
+                    "objective": "执行已获人工批准且由 Bridge 固化的分析流程提交，并回写 OmicHub 任务证据。",
                     "skill_name": "workflow-submit",
                     "context_refs": [{"kind": "project", "id": case["project_ref"]["id"]}],
                     "read_only": False,
                     "approval_required": True,
                 },
             )
+        approval = await self._request_as(
+            "approval-authority",
+            self._bridge_config.approval_token,
+            "/v1/approvals",
+            method="POST",
+            json={
+                "case_id": case_id,
+                "work_item_id": "submit-01",
+                "action": "submit_task",
+                "flow_id": flow_id,
+            },
+        )
         return await self._request_as(
-            "workflow-operator",
-            self._bridge_config.workflow_operator_token,
-            "/v1/tasks",
+            "approval-authority",
+            self._bridge_config.approval_token,
+            "/v1/approved-submissions",
             method="POST",
             json={
                 "case_id": case_id,
@@ -294,7 +300,7 @@ class AgentTeamsService:
                     "name": task_name,
                     "sample_sheet": sample_sheet,
                     "comparisons": comparisons,
-                    "execution_mode": "local",
+                    "execution_mode": "cluster",
                 },
             },
         )

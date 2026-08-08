@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from uuid import uuid4
 
 import pytest
 
@@ -21,7 +22,7 @@ class FakeOmicHubClient:
         return None
 
 
-def make_service(tmp_path, suffix: str) -> BridgeService:
+def make_service(tmp_path, suffix: str, key_prefix: str) -> BridgeService:
     settings = BridgeSettings(
         omichub_service_token="service-token",
         approval_signing_secret="test-signing-secret",
@@ -30,7 +31,7 @@ def make_service(tmp_path, suffix: str) -> BridgeService:
         case_store_path=str(tmp_path / f"{suffix}.cases.json"),
         manifest_dir=str(tmp_path / "manifests"),
         state_store_url=REDIS_URL or "",
-        state_store_key_prefix=f"omichub:agentteams:test:{tmp_path.name}",
+        state_store_key_prefix=key_prefix,
     )
     return BridgeService(
         settings,
@@ -42,8 +43,9 @@ def make_service(tmp_path, suffix: str) -> BridgeService:
 
 @pytest.mark.asyncio
 async def test_redis_state_is_visible_and_claim_is_atomic_across_bridge_replicas(tmp_path) -> None:
-    first = make_service(tmp_path, "first")
-    second = make_service(tmp_path, "second")
+    key_prefix = f"omichub:agentteams:test:{uuid4().hex}"
+    first = make_service(tmp_path, "first", key_prefix)
+    second = make_service(tmp_path, "second", key_prefix)
     try:
         await first.create_case(
             CaseCreateRequest(
@@ -79,7 +81,7 @@ async def test_redis_state_is_visible_and_claim_is_atomic_across_bridge_replicas
         events = await second.get_case_events("redis-cluster-case", "bioops-manager")
         assert {event["event_type"] for event in events.events} >= {
             "case.created",
-            "work_item.created",
+            "work_item.assigned",
             "work_item.claimed",
         }
     finally:

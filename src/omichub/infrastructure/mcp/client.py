@@ -7,6 +7,7 @@ import ipaddress
 import re
 import shutil
 import time
+from contextlib import suppress
 from typing import Any
 from urllib.parse import urlparse
 
@@ -24,6 +25,7 @@ from omichub.infrastructure.mcp.reliability import (
     get_default_health_registry,
     health_key,
 )
+from omichub.infrastructure.mcp.workspace_file_refs import resolve_workspace_file_refs
 
 # ===== MCP 调用遥测指标（全局代理 meter，未初始化时为 noop）=====
 _mcp_meter = get_meter("omichub.mcp")
@@ -118,6 +120,69 @@ def validate_working_dir(working_dir: str | None) -> None:
         raise ValueError("working_dir 禁止路径遍历")
     if _DENIED_STDIO_ARG_PATTERN.search(working_dir):
         raise ValueError(f"working_dir 包含非法字符: {working_dir}")
+
+
+# ===== 外部 stdio/sse MCP 会话复用池 =====
+# 历史实现每次工具调用都新建子进程/连接并立即销毁（node/cmm 冷启动 + MCP initialize 握手
+# 单次可达数秒），这是外部 MCP「很堵」的主要来源。这里改为按 server 缓存长活会话：
+#   - 同一 server 的多次调用复用同一 ClientSession（顺序串行，由 per-server 锁保证）；
+#   - 会话损坏/超时后自动重建；空闲超过 _MCP_SESSION_IDLE_TIMEOUT 惰性回收；
+#   - server 连接配置变化时按 fingerprint 重建。
+# 池为模块级单例，跨 MCPClient 实例（agent 流 / 子 Agent / 管理端）共享。
+
+_MCP_SESSION_IDLE_TIMEOUT = 300.0
+
+
+class _ExternalConnection:
+    """一个长活的外部 MCP 连接（stdio 子进程或 SSE/HTTP 流 + ClientSession）。"""
+
+    __slots__ = ("fingerprint", "transport_cm", "session_cm", "last_used", "closed")
+
+    def __init__(self, fingerprint: str, transport_cm: Any, session_cm: Any) -> None:
+        self.fingerprint = fingerprint
+        self.transport_cm = transport_cm
+        self.session_cm = session_cm
+        self.last_used = time.monotonic()
+        self.closed = False
+
+
+_external_connections: dict[str, _ExternalConnection] = {}
+_external_locks: dict[str, asyncio.Lock] = {}
+
+
+def _external_fingerprint(server: MCPServer) -> str:
+    return (
+        f"{server.transport}|{server.command}|{server.args}|{server.url}|"
+        f"{server.env}|{server.working_dir}"
+    )
+
+
+def _external_lock(server: MCPServer) -> asyncio.Lock:
+    key = str(server.id)
+    lock = _external_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _external_locks[key] = lock
+    return lock
+
+
+async def close_external_connections() -> None:
+    """关闭并清空外部 MCP 会话池（应用退出/测试收尾时调用）。"""
+    for conn in list(_external_connections.values()):
+        await _close_external_connection(conn)
+    _external_connections.clear()
+    _external_locks.clear()
+
+
+async def _close_external_connection(conn: _ExternalConnection) -> None:
+    if conn is None or conn.closed:
+        return
+    conn.closed = True
+    for cm in (conn.session_cm, conn.transport_cm):
+        if cm is None:
+            continue
+        with suppress(Exception):
+            await cm.__aexit__(None, None, None)
 
 
 class MCPClient:
@@ -295,6 +360,15 @@ class MCPClient:
         context: Any | None = None,
     ) -> dict[str, Any]:
         """call_tool 的实际分发逻辑（builtin / stdio / sse）"""
+        try:
+            arguments = await resolve_workspace_file_refs(
+                arguments,
+                user_id=user_id,
+                context=context,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {"success": False, "error": str(exc), "failure_kind": "file_reference"}
+
         if server.transport == Transport.BUILTIN:
             preset = get_preset_by_name(server.name)
             if preset is None:
@@ -323,7 +397,7 @@ class MCPClient:
                 logger.warning(f"MCP 工具调用失败 {server.name}.{tool_name}: {e}")
                 return {"success": False, "error": str(e)}
 
-        # stdio / sse：绝不传递 context
+        # stdio / sse：仍不传递数据库上下文；file:// 已在上方按用户权限解析为文本。
         if context is not None:
             logger.warning(f"ToolInvocationContext blocked for non-builtin transport: {server.name}")
 
@@ -365,47 +439,98 @@ class MCPClient:
             )
             raise MCPExternalCallError(kind, detail) from e
 
-    async def _list_tools_external(self, server: MCPServer) -> list[dict[str, Any]]:
-        """通过 MCP SDK 发现外部 stdio/sse 服务的工具"""
-        try:
-            from mcp import ClientSession
-        except ImportError:
-            return []
-
-        async with (
-            self._open_session(server) as (read, write),
-            ClientSession(read, write) as session,
-        ):
-            await session.initialize()
-            result = await session.list_tools()
-            return [
-                {
-                    "name": t.name,
-                    "description": t.description or "",
-                    "inputSchema": t.inputSchema or {},
-                }
-                for t in result.tools
-            ]
-
-    async def _call_tool_external(
-        self, server: MCPServer, tool_name: str, arguments: dict[str, Any]
-    ) -> Any:
-        """通过 MCP SDK 调用外部服务工具"""
+    async def _connect_external(self, server: MCPServer) -> _ExternalConnection:
+        """建立并初始化一个长活的外部 MCP 连接。"""
         try:
             from mcp import ClientSession
         except ImportError:
             raise RuntimeError("mcp SDK 未安装") from None
 
-        async with (
-            self._open_session(server) as (read, write),
-            ClientSession(read, write) as session,
-        ):
+        transport_cm = self._open_session(server)
+        read, write = await transport_cm.__aenter__()
+        session_cm = ClientSession(read, write)
+        try:
+            session = await session_cm.__aenter__()
             await session.initialize()
-            result = await session.call_tool(tool_name, arguments=arguments)
-            return {
-                "content": [c.model_dump() for c in result.content] if result.content else [],
-                "isError": result.isError,
+        except BaseException:
+            await _close_external_connection(
+                _ExternalConnection("", transport_cm, session_cm)
+            )
+            raise
+        return _ExternalConnection(
+            fingerprint=_external_fingerprint(server),
+            transport_cm=transport_cm,
+            session_cm=session_cm,
+        )
+
+    async def _with_external_session(self, server: MCPServer, fn: Any) -> Any:
+        """在复用池中取一个该 server 的可用会话执行 fn(session)。
+
+        会话损坏/超时后自动关闭并重建；空闲超期惰性回收；连接配置变化按 fingerprint
+        重建。同一 server 的调用通过 per-server 锁串行执行。
+        """
+        key = str(server.id)
+        async with _external_lock(server):
+            conn = _external_connections.get(key)
+            fingerprint = _external_fingerprint(server)
+            now = time.monotonic()
+            if conn is not None and (
+                conn.closed
+                or conn.fingerprint != fingerprint
+                or now - conn.last_used > _MCP_SESSION_IDLE_TIMEOUT
+            ):
+                await _close_external_connection(conn)
+                _external_connections.pop(key, None)
+                conn = None
+            if conn is None:
+                conn = await self._connect_external(server)
+                _external_connections[key] = conn
+            try:
+                out = await fn(conn.session_cm)
+            except BaseException:
+                # 连接可能已损坏（含 wait_for 超时取消导致的 CancelledError），
+                # 关闭并移除，保证下次调用重新连接而非复用坏会话。
+                await _close_external_connection(conn)
+                _external_connections.pop(key, None)
+                raise
+            conn.last_used = time.monotonic()
+            return out
+
+    async def _list_tools_external(self, server: MCPServer) -> list[dict[str, Any]]:
+        """通过 MCP SDK 发现外部 stdio/sse 服务的工具（复用长活会话）"""
+        try:
+            from mcp import ClientSession  # noqa: F401
+        except ImportError:
+            return []
+
+        result = await self._with_external_session(
+            server, lambda session: session.list_tools()
+        )
+        return [
+            {
+                "name": t.name,
+                "description": t.description or "",
+                "inputSchema": t.inputSchema or {},
             }
+            for t in result.tools
+        ]
+
+    async def _call_tool_external(
+        self, server: MCPServer, tool_name: str, arguments: dict[str, Any]
+    ) -> Any:
+        """通过 MCP SDK 调用外部服务工具（复用长活会话）"""
+        try:
+            from mcp import ClientSession  # noqa: F401
+        except ImportError:
+            raise RuntimeError("mcp SDK 未安装") from None
+
+        result = await self._with_external_session(
+            server, lambda session: session.call_tool(tool_name, arguments=arguments)
+        )
+        return {
+            "content": [c.model_dump() for c in result.content] if result.content else [],
+            "isError": result.isError,
+        }
 
     def _open_session(self, server: MCPServer) -> Any:
         """根据传输模式打开 MCP 会话上下文（含安全校验）"""

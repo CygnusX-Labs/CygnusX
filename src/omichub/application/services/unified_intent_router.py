@@ -11,8 +11,10 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 CollaborationIntent = Literal["transfer", "fanout", "consult", "case", "dag", "chat"]
+OverdriveIntent = Literal["enable", "disable", "none"]
 
 _VALID_INTENTS = frozenset({"transfer", "fanout", "consult", "case", "dag", "chat"})
+_VALID_OVERDRIVE_INTENTS = frozenset({"enable", "disable", "none"})
 
 
 @dataclass(frozen=True)
@@ -22,6 +24,7 @@ class CollaborationDecision:
     reason: str
     target_agent_id: str | None = None
     fanout_tasks: tuple[dict[str, str], ...] = ()
+    overdrive_intent: OverdriveIntent = "none"
 
     @property
     def needs_clarification(self) -> bool:
@@ -52,12 +55,17 @@ def normalize_decision(
     if not reason:
         reason = _default_reason(intent)
     tasks = _normalize_tasks(payload.get("fanout_tasks"), valid_agent_ids)
+    raw_overdrive_intent = str(payload.get("overdrive_intent") or "none").strip().lower()
+    overdrive_intent: OverdriveIntent = (
+        raw_overdrive_intent if raw_overdrive_intent in _VALID_OVERDRIVE_INTENTS else "none"
+    )  # type: ignore[assignment]
     return CollaborationDecision(
         intent=intent,
         confidence=confidence,
         reason=reason,
         target_agent_id=target_agent_id,
         fanout_tasks=tuple(tasks),
+        overdrive_intent=overdrive_intent,
     )
 
 
@@ -115,6 +123,19 @@ def capability_notice(
             ),
         )
     return notice
+
+
+def execution_routing_record(decision: CollaborationDecision, notice: dict[str, Any]) -> dict[str, Any]:
+    """Return the durable route metadata shared by Chat and AgentTeams Case creation."""
+    cluster_case = decision.intent == "case" and bool(notice.get("available"))
+    return {
+        "mode": "cluster_case" if cluster_case else "local",
+        "intent": decision.intent,
+        "reason": decision.reason,
+        "confidence": decision.confidence,
+        "status": "proposed" if cluster_case else "selected",
+        "degraded": bool(notice.get("degraded")),
+    }
 
 
 def _normalize_tasks(raw_tasks: Any, valid_agent_ids: set[str]) -> list[dict[str, str]]:

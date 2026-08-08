@@ -1,16 +1,11 @@
 id: rnaseq
 description: RNA-seq 专项数据库查询、公共数据下载、流程预检提交和结果读取能力。
 builtin_tools:
-  - omichub_prepare_rna_seq_submission
-  - omichub_get_analysis_task_status
-  - omichub_get_analysis_task_summary
-  - omichub_run_kegg_enrichment
   - omichub_plot_volcano
 platform_tools:
   - platform_list_flows
   - platform_list_tasks
   - platform_get_task
-  - platform_read_file
   - platform_submit_download
   - platform_list_downloads
   - platform_get_download_progress

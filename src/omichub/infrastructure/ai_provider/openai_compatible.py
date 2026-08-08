@@ -19,6 +19,7 @@ from typing import Any
 import httpx
 from loguru import logger
 
+from omichub.core.config import get_settings
 from omichub.core.telemetry import get_meter, get_tracer
 from omichub.infrastructure.database.models.ai_provider import AIProviderConfigModel
 
@@ -206,16 +207,23 @@ class OpenAICompatibleProvider:
         tool_calls 时累积分片，于流结束统一 yield 一个 type="tool_calls" chunk。
         ``deep_thinking`` 为 True 时注入 enable_thinking 参数（Qwen3 / DeepSeek 等）。
 
-        内置空响应重试：若首次流式调用未产生任何 text/tool_calls chunk，
-        自动重试一次；两次均空则 yield error。
+        内置自动重试（仅在「尚未向用户输出任何正文/工具调用」时生效）：
+        - 可重试错误（超时 / 连接中断等，见 _stream_once 的 retryable 标记）：
+          最多自动重试 ``llm_stream_transient_retries`` 次（默认 3）；
+        - 空响应：自动重试一次，第二次尝试会降级为不带 tools 再试；
+        一旦已经输出正文或工具调用，任何错误都会直接上抛给调用方，不再重试，
+        避免把已展示给用户的内容重复一遍。
         """
+        transient_retry_limit = max(0, get_settings().llm_stream_transient_retries)
         has_yielded_text = False
         has_tool_calls = False
         last_usage: dict[str, Any] | None = None
         last_finish_reason: str | None = None
         retry_without_tools = False
+        transient_retries = 0
+        empty_retried = False
 
-        for attempt in range(2):
+        while True:
             attempt_had_text = False
             attempt_had_error = False
             attempt_tools = None if retry_without_tools else tools
@@ -229,6 +237,7 @@ class OpenAICompatibleProvider:
                 attempt_system_prompt = (system_prompt or "") + _NO_TOOL_FALLBACK_NOTE
                 attempt_messages = _strip_tool_artifacts(messages)
 
+            should_retry = False
             async for chunk in self._stream_once(
                 attempt_messages,
                 attempt_system_prompt,
@@ -250,25 +259,38 @@ class OpenAICompatibleProvider:
                 elif chunk.type == "error":
                     attempt_had_error = True
                     if (
-                        attempt == 0
+                        chunk.metadata.get("retryable")
                         and not has_yielded_text
                         and not has_tool_calls
-                        and chunk.metadata.get("retryable")
+                        and transient_retries < transient_retry_limit
                     ):
-                        logger.warning(f"模型 '{self.name}' 瞬时网络失败且尚未输出，自动重试一次")
+                        transient_retries += 1
+                        logger.warning(
+                            f"模型 '{self.name}' 瞬时失败且尚未输出，"
+                            f"自动重试 {transient_retries}/{transient_retry_limit}"
+                        )
+                        should_retry = True
                         break
                     yield chunk
                     return
                 else:
                     yield chunk
 
-            if attempt_had_error and attempt == 0 and not has_yielded_text and not has_tool_calls:
+            if should_retry:
                 continue
-            if attempt_had_text or attempt_had_error or has_tool_calls:
+            if attempt_had_text or has_tool_calls:
                 break
-            if attempt == 0:
+            # 本轮既无正文也无工具调用：
+            # - 若是可重试错误但已用尽重试次数，错误已在上面 yield 并 return；
+            # - 若是空响应，允许一次「去 tools」重试，仍空则走下方空响应兜底。
+            if attempt_had_error:
+                break
+            if not empty_retried:
+                empty_retried = True
                 retry_without_tools = bool(tools)
                 logger.info(f"模型 '{self.name}' 返回空内容，自动重试一次")
+                continue
+            break
 
         if not has_yielded_text and not has_tool_calls:
             logger.error(

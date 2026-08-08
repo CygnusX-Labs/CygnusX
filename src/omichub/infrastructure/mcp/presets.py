@@ -497,6 +497,7 @@ async def _list_workspace_files(
             uid,
             path=arguments.get("path"),
             pattern=arguments.get("pattern"),
+            recursive=bool(arguments.get("recursive", False)),
         )
     else:
         factory = get_session_factory()
@@ -505,6 +506,7 @@ async def _list_workspace_files(
                 uid,
                 path=arguments.get("path"),
                 pattern=arguments.get("pattern"),
+                recursive=bool(arguments.get("recursive", False)),
             )
 
     lines = []
@@ -517,12 +519,24 @@ async def _list_workspace_files(
                 f"修改于 {item['modified_at']} · file_id={item['file_id']}"
             )
     scope = result["path"] or "工作区根目录"
+    summary_limit = 100
+    summary_lines = lines[:summary_limit]
+    summary_suffix = (
+        f"\n…其余 {len(lines) - summary_limit} 项请使用返回的 items 字段。"
+        if len(lines) > summary_limit
+        else ""
+    )
     result["summary"] = (
-        f"{scope} 下共 {result['total']} 项：\n" + "\n".join(lines)
+        f"{scope} 下共 {result['total']} 项：\n"
+        + "\n".join(summary_lines)
+        + summary_suffix
         if lines
         else f"{scope} 为空"
     )
-    result["hint"] = "可将文件项的 file_id 直接交给 workspace_read_file 读取或分析。"
+    result["hint"] = (
+        "请直接依据 summary 汇总并回复用户；不要重复调用本工具。"
+        "如需查看文件内容，再将文件项的 file_id 交给 workspace_read_file。"
+    )
     return result
 
 
@@ -989,6 +1003,11 @@ PLATFORM_PRESET_TOOLS = [
                 "pattern": {
                     "type": "string",
                     "description": "可选 glob 过滤，如 *.csv、sample_*.fastq.gz",
+                },
+                "recursive": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "是否递归列出目录下所有文件；用户询问有哪些数据文件时设为 true",
                 },
             },
         },

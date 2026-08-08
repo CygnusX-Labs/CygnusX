@@ -65,6 +65,25 @@ const hasArgs = computed(() =>
   props.tool.arguments && Object.keys(props.tool.arguments).length > 0,
 )
 
+const workspaceSummary = computed(() => {
+  if (!['list_workspace_files', 'search_workspace_files', 'workspace_list_files'].includes(props.tool.name)) {
+    return ''
+  }
+  if (!props.tool.result || typeof props.tool.result !== 'object') return ''
+
+  const summary = (props.tool.result as Record<string, unknown>).summary
+  return typeof summary === 'string' ? summary : ''
+})
+
+const workspaceSummaryPreview = computed(() => {
+  if (!workspaceSummary.value) return ''
+  const lines = workspaceSummary.value.split('\n')
+  const maxLines = 9
+  return lines.length > maxLines
+    ? `${lines.slice(0, maxLines).join('\n')}\n…展开查看完整结果`
+    : workspaceSummary.value
+})
+
 function isPipelineTask(tool: ToolCall): boolean {
   return ['rna_seq', 'atac_seq'].includes(String(tool.uiPayload?.pipeline_type || ''))
 }
@@ -114,6 +133,10 @@ function handleOpenToolPage() {
         <ChevronForwardOutline />
       </n-icon>
     </div>
+
+    <p v-if="workspaceSummaryPreview" class="workspace-summary">
+      {{ workspaceSummaryPreview }}
+    </p>
 
     <!-- 展开态内容 -->
     <transition name="tool-expand">
@@ -229,6 +252,16 @@ function handleOpenToolPage() {
   flex-shrink: 0;
   color: var(--chat-text-muted, #999);
   transition: transform var(--motion-quick, 140ms) ease-out;
+}
+
+.workspace-summary {
+  margin: 0;
+  padding: 0 12px 10px 35px;
+  color: var(--chat-text-secondary, #555);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-line;
+  word-break: break-word;
 }
 .expand-arrow.rotated {
   transform: rotate(90deg);

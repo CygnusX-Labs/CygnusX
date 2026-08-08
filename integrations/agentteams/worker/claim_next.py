@@ -137,12 +137,16 @@ def heartbeat_work_item(
     *,
     summary: str = "",
     trace_id: str | None = None,
+    worker_id: str | None = None,
     opener: UrlOpen = urlopen,
 ) -> dict[str, Any]:
     case_id, work_item_id = _assignment_identity(assignment)
     payload: dict[str, Any] = {"summary": summary}
     if trace_id:
         payload["trace_id"] = trace_id
+    pod_name = worker_id or os.environ.get("AGENTTEAMS_POD_NAME") or os.environ.get("HOSTNAME")
+    if pod_name:
+        payload["worker_id"] = pod_name
     return request_json(
         f"{bridge_url.rstrip('/')}/cases/{case_id}/work-items/{work_item_id}/heartbeat",
         {"X-Bridge-Identity": identity, "X-Bridge-Token": token},
@@ -182,6 +186,87 @@ def execute_readonly_work_item(
         method="POST",
         opener=opener,
         payload=payload,
+    )
+
+
+def submit_approved_work_item(
+    bridge_url: str,
+    identity: str,
+    token: str,
+    assignment: dict[str, Any],
+    *,
+    opener: UrlOpen = urlopen,
+) -> dict[str, Any]:
+    """Ask Bridge to execute the token-free approved submission bound to this Work Item."""
+    case_id, work_item_id = _assignment_identity(assignment)
+    return request_json(
+        f"{bridge_url.rstrip('/')}/cases/{case_id}/work-items/{work_item_id}/submit-approved",
+        {"X-Bridge-Identity": identity, "X-Bridge-Token": token},
+        method="POST",
+        opener=opener,
+    )
+
+
+def submit_quality_gate(
+    bridge_url: str,
+    identity: str,
+    token: str,
+    assignment: dict[str, Any],
+    *,
+    task_id: str,
+    decision: str,
+    summary: str,
+    evidence_refs: list[dict[str, str]] | None = None,
+    artifact_hashes: dict[str, str] | None = None,
+    opener: UrlOpen = urlopen,
+) -> dict[str, Any]:
+    case_id, work_item_id = _assignment_identity(assignment)
+    return request_json(
+        f"{bridge_url.rstrip('/')}/tasks/{task_id}/quality-gate",
+        {"X-Bridge-Identity": identity, "X-Bridge-Token": token},
+        method="POST",
+        opener=opener,
+        payload={
+            "case_id": case_id,
+            "work_item_id": work_item_id,
+            "rule_version": "agentteams-quality-v1",
+            "decision": decision,
+            "summary": summary,
+            "evidence_refs": evidence_refs or [{"kind": "task", "id": task_id}],
+            "artifact_hashes": artifact_hashes or {},
+        },
+    )
+
+
+def record_evidence(
+    bridge_url: str,
+    identity: str,
+    token: str,
+    assignment: dict[str, Any],
+    *,
+    event_type: str,
+    summary: str,
+    context_refs: list[dict[str, str]] | None = None,
+    omic_task_id: str | None = None,
+    skill_name: str | None = None,
+    payload: dict[str, Any] | None = None,
+    opener: UrlOpen = urlopen,
+) -> dict[str, Any]:
+    case_id, work_item_id = _assignment_identity(assignment)
+    return request_json(
+        f"{bridge_url.rstrip('/')}/cases/{case_id}/evidence",
+        {"X-Bridge-Identity": identity, "X-Bridge-Token": token},
+        method="POST",
+        opener=opener,
+        payload={
+            "work_item_id": work_item_id,
+            "event_type": event_type,
+            "summary": summary,
+            "context_refs": context_refs or [],
+            "omic_task_id": omic_task_id,
+            "skill_name": skill_name,
+            "payload": payload or {},
+        },
     )
 
 

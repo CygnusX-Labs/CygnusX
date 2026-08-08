@@ -195,8 +195,82 @@ class MCPService:
         self._client = MCPClient()
         self._settings = get_settings()
 
+    async def _normalize_preset_identity(self, name: str, deterministic_id: UUID) -> None:
+        """把「同名但 id 与确定性常量不一致」的预设记录归一化到常量 ID。
+
+        历史版本曾用随机 uuid4 种子化 platform / conda-meta 等预设，导致 DB 记录 id
+        与代码常量不一致：Agent 绑定按常量 ID 查不到该 server，工具白名单按常量 ID
+        也匹配失败，出现同一 server 双身份/工具重复暴露。归一化时同步迁移全部子表
+        外键（logs / versions / builds / visibility），幂等。
+        """
+        existing = await self._repo.get_by_name(name)
+        if existing is None or existing.id == deterministic_id:
+            return
+        if await self._repo.get_by_id(deterministic_id) is not None:
+            # 常量 ID 已有记录：删除旧的重复记录（logs/versions/visibility 为 ON DELETE CASCADE）
+            await self._repo.delete(existing.id, force=True)
+            return
+
+        from sqlalchemy import text
+
+        # 唯一约束 mcp_servers_name_key：先把旧行临时改名，再插入同名新行，
+        # 否则 INSERT 与旧行同名会违反唯一约束。
+        legacy_name = f"{name}.legacy-{str(existing.id)[:8]}"
+        await self._db.execute(
+            text("UPDATE mcp_servers SET name = :legacy_name WHERE id = :old_id"),
+            {"legacy_name": legacy_name, "old_id": existing.id},
+        )
+        await self._db.execute(
+            text(
+                "INSERT INTO mcp_servers (id, name, description, transport, command, url, env, status, tools, "
+                "timeout, auto_restart, is_preset, created_at, updated_at, args, registry, working_dir, version, "
+                "is_enabled, pool, expires_at, created_by, current_version, generation_meta, review_status, "
+                "is_template) "
+                "SELECT :new_id, :name, description, transport, command, url, env, status, tools, timeout, "
+                "auto_restart, is_preset, created_at, updated_at, args, registry, working_dir, version, "
+                "is_enabled, pool, expires_at, created_by, current_version, generation_meta, review_status, "
+                "is_template FROM mcp_servers WHERE id = :old_id"
+            ),
+            {"new_id": deterministic_id, "name": name, "old_id": existing.id},
+        )
+        for table, column in (
+            ("mcp_logs", "service_id"),
+            ("mcp_versions", "mcp_server_id"),
+            ("mcp_builds", "mcp_server_id"),
+            ("mcp_visibility", "mcp_server_id"),
+        ):
+            await self._db.execute(
+                text(f"UPDATE {table} SET {column} = :new_id WHERE {column} = :old_id"),
+                {"new_id": deterministic_id, "old_id": existing.id},
+            )
+        await self._db.execute(
+            text("DELETE FROM mcp_servers WHERE id = :old_id"),
+            {"old_id": existing.id},
+        )
+        await self._db.flush()
+        logger.info(
+            "MCP 预设身份归一化: {name} {old} -> {new}",
+            name=name,
+            old=existing.id,
+            new=deterministic_id,
+        )
+
     async def ensure_presets(self, *, force_preset_sync: bool = False) -> None:
         """初始化预设 MCP 服务（含 omichub-tools 动态预设与 conda-meta-mcp stdio 预设，幂等）"""
+        # 预设身份归一化：把历史随机 ID 的预设记录对齐到确定性常量 ID，再走下方按名同步。
+        # 每个归一化在独立 savepoint 内执行，单个失败不中止后续预设的初始化。
+        for preset_name, preset_id in (
+            (OMICHUB_PIPELINES_SERVER_NAME, OMICHUB_PIPELINES_SERVER_ID),
+            ("omichub-platform", OMICHUB_PLATFORM_SERVER_ID),
+            (OMICHUB_TOOLS_SERVER_NAME, OMICHUB_TOOLS_SERVER_ID),
+            (CONDA_META_MCP_SERVER_NAME, CONDA_META_MCP_SERVER_ID),
+        ):
+            try:
+                async with self._db.begin_nested():
+                    await self._normalize_preset_identity(preset_name, preset_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("MCP 预设身份归一化失败 {name}: {exc}", name=preset_name, exc=exc)
+
         valid_names = {p["name"] for p in PRESET_SERVERS} | {
             OMICHUB_TOOLS_SERVER_NAME,
             CONDA_META_MCP_SERVER_NAME,

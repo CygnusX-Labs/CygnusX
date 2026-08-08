@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -29,7 +30,7 @@ from sqlalchemy.orm import selectinload
 from omichub.application.schemas.chat import ChatSessionDTO
 from omichub.application.services.file_service import ensure_directory_chain
 from omichub.core.config import get_settings
-from omichub.core.exceptions import BusinessError, NotFoundError
+from omichub.core.exceptions import BusinessError, NotFoundError, OmicHubError
 from omichub.infrastructure.config.storage_config import get_user_chat_upload_dir
 from omichub.infrastructure.database.models.chat import ChatSessionModel
 from omichub.infrastructure.database.models.file import FileRecordModel
@@ -254,6 +255,8 @@ async def import_datahub_file(
     file_id: str,
     name: str | None,
     db: AsyncSession,
+    *,
+    idempotent: bool = False,
 ) -> dict[str, Any]:
     """把数据管理文件或聊天上传文件引入 Studio 工作区。
 
@@ -261,6 +264,9 @@ async def import_datahub_file(
     软链目标为容器内 /data/platform/<用户相对路径>。返回
     {sandbox_path, name, size, file_type, original_name, input_files}；
     失败抛 NotFoundError / BusinessError（由调用方按通道收敛）。
+
+    ``idempotent=True`` 时同一文件重复引入复用既有软链（聊天附件自动挂载用），
+    默认 False 保持 datahub_import 工具的原始同名去重语义。
     """
     raw_file_id = str(file_id or "").strip()
     if not raw_file_id:
@@ -281,7 +287,9 @@ async def import_datahub_file(
             mount_rel = platform_user_rel(storage_rel, str(user_id))
         except PathEscapeError as exc:
             raise BusinessError(str(exc)) from exc
-        link_name = link_platform_file(workspace, mount_rel, name or upload_path.name)
+        link_name = link_platform_file(
+            workspace, mount_rel, name or upload_path.name, idempotent=idempotent
+        )
         return {
             "sandbox_path": f"/workspace/input/{link_name}",
             "name": link_name,
@@ -322,7 +330,9 @@ async def import_datahub_file(
         mount_rel = platform_user_rel(record.storage_path, str(user_id))
     except PathEscapeError as e:
         raise BusinessError(str(e)) from e
-    link_name = link_platform_file(workspace, mount_rel, name or record.original_name)
+    link_name = link_platform_file(
+        workspace, mount_rel, name or record.original_name, idempotent=idempotent
+    )
 
     sandbox_path = f"/workspace/input/{link_name}"
     return {
@@ -333,6 +343,50 @@ async def import_datahub_file(
         "original_name": record.original_name,
         "input_files": [f"/workspace/input/{n}" for n in list_input_links(workspace)],
     }
+
+
+async def link_session_file_refs(
+    user_id: str,
+    session_id: str,
+    refs: list[str],
+    db: AsyncSession,
+) -> tuple[dict[str, str], dict[str, str]]:
+    """把一批文件引用（upload://hex 或 file://uuid）幂等地引入 Studio 工作区。
+
+    逐个走 :func:`import_datahub_file`（与 datahub_import 工具同一服务路径），
+    成功的引用返回 ``/workspace/input/<name>`` 沙盒可读路径，失败的记录错误原因
+    而不中断整体。返回 (paths, errors)：
+
+    - paths: {原始 ref: sandbox_path}，供聊天提示词直接告诉模型用工作区路径读取；
+    - errors: {原始 ref: 错误描述}，仅供日志/降级，不向模型暴露。
+
+    设计动机：沙盒内无法解析 ``file://``/``upload://`` 引用，只有挂载进
+    ``/workspace/input/`` 的平台软链才能被沙盒代码按文件系统路径直接读取。
+    """
+    paths: dict[str, str] = {}
+    errors: dict[str, str] = {}
+    seen: set[str] = set()
+    for raw_ref in refs:
+        ref = str(raw_ref or "").strip()
+        if not ref or ref in seen:
+            continue
+        seen.add(ref)
+        try:
+            payload = await import_datahub_file(
+                user_id=str(user_id),
+                session_id=session_id,
+                file_id=ref,
+                name=None,
+                db=db,
+                idempotent=True,
+            )
+            paths[ref] = payload["sandbox_path"]
+        except OmicHubError as exc:
+            errors[ref] = exc.detail
+        except Exception as exc:  # noqa: BLE001 - 单个文件失败不阻断其余引入
+            logger.warning("Studio 自动引入文件失败 ref={}: {}", ref, exc)
+            errors[ref] = str(exc)
+    return paths, errors
 
 
 async def register_artifact_report(

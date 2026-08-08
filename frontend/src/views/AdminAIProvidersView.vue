@@ -130,15 +130,27 @@ function openEdit(row?: AIProviderConfig) {
 
 async function saveConfig() {
   const data = { ...editForm.value }
-  if (data.id) {
-    await apiClient.put(`/admin/ai-providers/${data.id}`, data)
-    message.success('更新成功')
-  } else {
-    await apiClient.post('/admin/ai-providers', data)
-    message.success('创建成功')
+  try {
+    if (data.id) {
+      await apiClient.put(`/admin/ai-providers/${data.id}`, data)
+      message.success('更新成功')
+    } else {
+      await apiClient.post('/admin/ai-providers', data)
+      message.success('创建成功')
+    }
+    showEdit.value = false
+    await fetchConfigs()
+  } catch (error: any) {
+    const detail = error?.response?.data?.detail
+    const status = error?.response?.status
+    if (error?.response?.status === 401) {
+      message.error(detail || '当前登录态已失效，请重新登录后再保存')
+    } else if (status === 403) {
+      message.error(detail || '当前账号没有保存该配置的权限')
+    } else {
+      message.error(detail || '保存失败')
+    }
   }
-  showEdit.value = false
-  await fetchConfigs()
 }
 
 async function delConfig(id: string) {

@@ -84,7 +84,7 @@ def settings(tmp_path):
         identities=(
             "approval-authority:approval,bioops-manager:manager,data-steward:steward,"
             "workflow-operator:operator,quality-auditor:auditor,delivery-reporter:reporter,"
-            "agent-code:code,agent-viz:viz,agent-scrna:scrna"
+            "agent-code:code,agent-viz:viz,agent-scrna:scrna,analysis-worker:analysis"
         ),
         allowed_flow_ids="rna_seq",
         audit_log_path=str(tmp_path / "audit.jsonl"),
@@ -368,6 +368,89 @@ async def test_submit_approval_requires_passed_preflight(client) -> None:
 
     assert approval.status_code == 409
     assert approval.json()["detail"] == "Task submission approval requires a passed preflight"
+
+
+@pytest.mark.asyncio
+async def test_approved_submission_is_queued_without_exposing_approval_to_analysis_worker(client) -> None:
+    request_client, calls = client
+    await create_case(request_client)
+    preflight = await request_client.post(
+        "/v1/projects/project-1/preflight",
+        headers=headers("data-steward", "steward"),
+        json={
+            "case_id": "bioops_001",
+            "flow_id": "rna_seq",
+            "sample_sheet": [{"sample": "S01", "group": "control"}],
+        },
+    )
+    assert preflight.status_code == 200
+    assigned = await request_client.post(
+        "/v1/cases/bioops_001/work-items",
+        headers=headers("bioops-manager", "manager"),
+        json={
+            "work_item_id": "submit-01",
+            "target": "analysis-worker",
+            "objective": "Submit approved analysis",
+            "skill_name": "workflow-submit",
+            "read_only": False,
+            "approval_required": True,
+        },
+    )
+    assert assigned.status_code == 201
+    approval = await request_client.post(
+        "/v1/approvals",
+        headers=headers("approval-authority", "approval"),
+        json={
+            "case_id": "bioops_001",
+            "work_item_id": "submit-01",
+            "action": "submit_task",
+            "flow_id": "rna_seq",
+        },
+    )
+    assert approval.status_code == 201
+    queued = await request_client.post(
+        "/v1/approved-submissions",
+        headers=headers("approval-authority", "approval"),
+        json={
+            "case_id": "bioops_001",
+            "work_item_id": "submit-01",
+            "idempotency_key": "bioops-001-analysis-v1",
+            "approval_token": approval.json()["token"],
+            "task": {
+                "flow_id": "rna_seq",
+                "name": "RNA cluster delivery",
+                "sample_sheet": [{"sample": "S01", "group": "control"}],
+                "execution_mode": "cluster",
+            },
+        },
+    )
+    assert queued.status_code == 201
+    assert queued.json()["status"] == "queued"
+
+    inbox = await request_client.get(
+        "/v1/work-items/assigned", headers=headers("analysis-worker", "analysis")
+    )
+    assert inbox.status_code == 200
+    assert "approval_token" not in inbox.text
+    claim = await request_client.post(
+        "/v1/cases/bioops_001/work-items/submit-01/claim",
+        headers=headers("analysis-worker", "analysis"),
+    )
+    assert claim.status_code == 200
+    submitted = await request_client.post(
+        "/v1/cases/bioops_001/work-items/submit-01/submit-approved",
+        headers=headers("analysis-worker", "analysis"),
+    )
+    assert submitted.status_code == 201
+    assert submitted.json()["omic_task_id"] == "task-001"
+    assert [call.url.path for call in calls].count("/api/v1/tasks") == 1
+
+    repeated = await request_client.post(
+        "/v1/cases/bioops_001/work-items/submit-01/submit-approved",
+        headers=headers("analysis-worker", "analysis"),
+    )
+    assert repeated.status_code == 409
+    assert [call.url.path for call in calls].count("/api/v1/tasks") == 1
 
 
 @pytest.mark.asyncio

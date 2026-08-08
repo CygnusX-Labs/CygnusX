@@ -17,6 +17,7 @@ from typing import Any
 
 from omichub.application.schemas.tool_invocation import ToolInvocationContext
 from omichub.core.exceptions import ValidationError
+from omichub.infrastructure.mcp.workspace_file_refs import resolve_workspace_file_refs
 from omichub.tools.schema_loader import ToolSchema, ToolsSchemaLoader, schema_loader
 
 _UPLOAD_REF_RE = re.compile(r"^upload://(.+)$")
@@ -54,7 +55,7 @@ class ToolBridgeService:
 
         try:
             args = self._validate_and_sanitize(schema, arguments)
-            args = await self._resolve_upload_refs(user_id, args)
+            args = await self._resolve_upload_refs(user_id, args, context)
         except ValidationError as e:
             return self._error(str(e))
 
@@ -122,24 +123,32 @@ class ToolBridgeService:
         return sanitized
 
     async def _resolve_upload_refs(
-        self, user_id: str, args: dict[str, Any]
+        self,
+        user_id: str,
+        args: dict[str, Any],
+        context: ToolInvocationContext | None = None,
     ) -> dict[str, Any]:
-        """把 upload://file_id 引用解析为文件内容（仅聊天上传目录）。"""
+        """把聊天上传和工作区文件引用解析为文本内容。"""
         resolved: dict[str, Any] = dict(args)
         for key, value in resolved.items():
             if not isinstance(value, str):
                 continue
             match = _UPLOAD_REF_RE.match(value.strip())
-            if not match:
+            if match:
+                file_id = match.group(1).strip()
+                content = await self._read_chat_upload(user_id, file_id)
+                if content is None:
+                    raise ValidationError(f"无法读取上传文件: {file_id}")
+            else:
                 continue
-            file_id = match.group(1).strip()
-            content = await self._read_chat_upload(user_id, file_id)
-            if content is None:
-                raise ValidationError(f"无法读取上传文件: {file_id}")
             if len(content.encode("utf-8")) > self._MAX_UPLOAD_FILE_BYTES:
-                raise ValidationError(f"上传文件 {file_id} 超过 {self._MAX_UPLOAD_FILE_BYTES} 字节")
+                raise ValidationError(
+                    f"引用文件超过 {self._MAX_UPLOAD_FILE_BYTES} 字节，无法直接作为工具输入"
+                )
             resolved[key] = content
-        return resolved
+        return await resolve_workspace_file_refs(
+            resolved, user_id=user_id, context=context
+        )
 
     async def _read_chat_upload(self, user_id: str, file_id: str) -> str | None:
         """从聊天上传目录读取文件内容。"""

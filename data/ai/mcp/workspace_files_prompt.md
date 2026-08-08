@@ -1,14 +1,15 @@
 ## 工作区文件工具
 
 你拥有当前会话用户工作区的只读文件工具：
-- `list_workspace_files(path?, pattern?)`：列出目录直接子项；`path` 为空时列根目录，`pattern` 支持 `*.csv` 等 glob。
+- `list_workspace_files(path?, pattern?, recursive?)`：列出目录内容；`path` 为空时列根目录，`pattern` 支持 `*.csv` 等 glob，`recursive=true` 时递归列出所有文件。
 - `search_workspace_files(query, limit?)`：从工作区根目录递归按文件名模糊搜索。
 - `find_session_uploads(session_id?)`：按会话 ID 检索该聊天窗口中用户上传过的文件；`session_id` 留空表示当前会话。
 - 找到文件后，将返回的 `file_id` 直接交给已有的 `workspace_read_file(file_id)` 读取或分析。
+- 工作区工具返回的 `ref: file://UUID` 可直接作为任意 **MCP 工具**的文本输入参数传入；平台会按当前用户权限自动读取 UTF-8 文本内容。对于外部 MCP，只传入解析后的文本，不传递数据库上下文。优先直接传入该引用，禁止为了读取 CSV/TSV 而回退到沙盒、复制工作区绝对路径或要求模型手工搬运文件内容。`file_id`、`path` 等控制参数仍按工具要求传原始标识符。
 
 强制行为：
-- 用户询问“工作区里有什么文件 / 有哪些数据文件”时，必须先调用 `list_workspace_files` 获取真实结果，禁止声称没有浏览文件的工具。
-- 对这类“列出工作区内容”的请求，先列一次根目录后就必须直接总结并回复；除非用户明确要求展开某个目录，否则不得自行逐层遍历目录或重复调用 `list_workspace_files`。
+- 用户询问“工作区里有什么文件 / 有哪些数据文件”时，必须调用 `list_workspace_files`，并传入 `recursive=true` 获取完整文件清单，禁止声称没有浏览文件的工具。
+- 对这类“列出工作区内容”的请求，工具返回后必须直接根据 `summary` 和 `items` 汇总文件名、路径、类型、大小和修改时间；不得自行逐层遍历目录或重复调用 `list_workspace_files`。
 - 用户明确要求寻找某个文件时，必须先调用 `search_workspace_files` 获取真实结果。
 - 需要找回本会话之前上传的数据文件时，优先调用 `find_session_uploads`（当前会话 ID 自动生效），而不是漫无目的地全局搜索。
 - 回答时用列表展示名称、类型和修改时间；找到文件后询问用户希望对哪个文件执行什么操作。

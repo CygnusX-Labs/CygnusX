@@ -19,6 +19,7 @@ from .config import BridgeSettings
 from .models import (
     ApprovalRequest,
     ApprovalResponse,
+    ApprovedSubmission,
     CancelTaskRequest,
     CaseCloseRequest,
     CaseCloseResponse,
@@ -36,7 +37,10 @@ from .models import (
     QualityGateRequest,
     QualityGateResponse,
     ReadOnlyExecutionRequest,
+    QueueApprovedSubmissionRequest,
+    QueueApprovedSubmissionResponse,
     SubmitTaskRequest,
+    TaskSpec,
     TaskReceipt,
     WorkerInboxItem,
     WorkerInboxResponse,
@@ -49,7 +53,9 @@ from .security import ApprovalSigner
 
 
 class BridgeService:
-    _EXTERNAL_WORKERS = frozenset({"agent-code", "agent-viz", "agent-scrna"})
+    _EXTERNAL_WORKERS = frozenset(
+        {"agent-code", "agent-viz", "agent-scrna", "agent-rnaseq", "analysis-worker"}
+    )
     def __init__(
         self,
         settings: BridgeSettings,
@@ -76,11 +82,13 @@ class BridgeService:
             "agent-code",
             "agent-viz",
             "agent-scrna",
+            "agent-rnaseq",
+            "analysis-worker",
         }:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid work item target"
             )
-        if request.target in {"agent-code", "agent-viz", "agent-scrna"} and not request.read_only:
+        if request.target in {"agent-code", "agent-viz", "agent-scrna", "agent-rnaseq"} and not request.read_only:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Professional agent work items must be read-only",
@@ -250,6 +258,7 @@ class BridgeService:
                 "lease_expires_at": work_item.lease_expires_at,
                 "summary": request.summary,
                 "trace_id": work_item.trace_id,
+                "worker_id": request.worker_id,
             },
         )
         return work_item
@@ -265,6 +274,7 @@ class BridgeService:
             "agent-code": "agent-code",
             "agent-viz": "agent-viz",
             "agent-scrna": "agent-scrna",
+            "agent-rnaseq": "agent-rnaseq",
         }.get(actor)
         if expected_agent_id is None or request.agent_id != expected_agent_id:
             raise HTTPException(
@@ -379,6 +389,7 @@ class BridgeService:
                 element_room_url=request.element_room_url,
                 origin_consultation_id=request.origin_consultation_id,
                 consultation_summary=request.consultation_summary,
+                execution_mode=request.execution_mode,
                 created_at=now,
                 updated_at=now,
             )
@@ -390,6 +401,7 @@ class BridgeService:
             payload={
                 "project_ref": request.project_ref.model_dump(),
                 "intent": request.intent,
+                "execution_mode": request.execution_mode,
                 "origin_consultation_id": request.origin_consultation_id,
             },
         )
@@ -693,6 +705,7 @@ class BridgeService:
         token, approval_id, expires_at = self._approval_signer.issue(
             case_id=request.case_id,
             action=request.action,
+            work_item_id=request.work_item_id,
             flow_id=request.flow_id,
             task_id=request.task_id,
             ttl_seconds=request.ttl_seconds,
@@ -704,6 +717,7 @@ class BridgeService:
             payload={
                 "approval_id": approval_id,
                 "action": request.action,
+                "work_item_id": request.work_item_id,
                 "expires_at": expires_at.isoformat(),
             },
         )
@@ -719,6 +733,220 @@ class BridgeService:
             flow_id=request.task.flow_id,
         )
         case = await self._cases.get(request.case_id)
+        return await self._submit_verified_task(
+            case=case,
+            work_item_id=request.work_item_id,
+            idempotency_key=request.idempotency_key,
+            task=request.task,
+            actor=actor,
+        )
+
+    async def queue_approved_submission(
+        self, request: QueueApprovedSubmissionRequest, actor: str
+    ) -> QueueApprovedSubmissionResponse:
+        if request.task.execution_mode != "cluster":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Queued analysis submissions must use cluster execution mode",
+            )
+        if request.task.flow_id not in self._settings.allowed_flows():
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Flow is not allowed")
+        claims = self._approval_signer.verify(
+            request.approval_token,
+            case_id=request.case_id,
+            action="submit_task",
+            work_item_id=request.work_item_id,
+            flow_id=request.task.flow_id,
+        )
+        case = await self._cases.get(request.case_id)
+        self._validate_task_snapshot(case, request.task)
+        work_item = await self._cases.get_work_item(request.case_id, request.work_item_id)
+        if work_item.target != "analysis-worker" or work_item.read_only or not work_item.approval_required:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Approved submissions require an analysis-worker approval-gated Work Item",
+            )
+        existing = work_item.approved_submission
+        if existing is not None:
+            if existing.idempotency_key != request.idempotency_key:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Work item already has a different approved submission",
+                )
+            return QueueApprovedSubmissionResponse(
+                case_id=request.case_id,
+                work_item_id=request.work_item_id,
+                approval_id=existing.approval_id,
+                status="idempotent_replay",
+                expires_at=existing.expires_at,
+            )
+        expires_at = datetime.fromtimestamp(int(claims["exp"]), tz=UTC)
+        snapshot = case.preflight_input
+        if snapshot is None:  # guarded by _validate_task_snapshot; retained for type narrowing
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Preflight snapshot is missing")
+        prepared = ApprovedSubmission(
+            approval_id=str(claims["approval_id"]),
+            expires_at=expires_at,
+            idempotency_key=request.idempotency_key,
+            task=request.task,
+            input_snapshot_hash=self._snapshot_hash(snapshot),
+            prepared_at=datetime.now(UTC),
+        )
+        await self._cases.update_work_item(
+            request.case_id,
+            request.work_item_id,
+            work_item.model_copy(update={"approved_submission": prepared, "updated_at": datetime.now(UTC)}),
+        )
+        if case.status == "approval_pending":
+            await self._cases.transition(request.case_id, "approved")
+        await self._audit.record(
+            case_id=request.case_id,
+            actor=actor,
+            event_type="approval.submission_queued",
+            payload={
+                "work_item_id": request.work_item_id,
+                "approval_id": prepared.approval_id,
+                "flow_id": request.task.flow_id,
+                "idempotency_key": request.idempotency_key,
+                "expires_at": prepared.expires_at.isoformat(),
+            },
+        )
+        return QueueApprovedSubmissionResponse(
+            case_id=request.case_id,
+            work_item_id=request.work_item_id,
+            approval_id=prepared.approval_id,
+            status="queued",
+            expires_at=prepared.expires_at,
+        )
+
+    async def submit_approved_work_item(
+        self, case_id: str, work_item_id: str, actor: str
+    ) -> TaskReceipt:
+        work_item = await self._cases.get_work_item(case_id, work_item_id)
+        if actor != "analysis-worker" or work_item.target != actor:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Work item target mismatch")
+        approved = work_item.approved_submission
+        if approved is None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Work item has no approved submission")
+        if approved.expires_at <= datetime.now(UTC):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Approved submission has expired")
+        if work_item.status == "claimed":
+            work_item = await self._cases.transition_work_item(
+                case_id, work_item_id, actor, "running", trace_id=work_item.trace_id
+            )
+            await self._audit.record(
+                case_id=case_id,
+                actor=actor,
+                event_type="work_item.running",
+                payload={"work_item_id": work_item_id, "trace_id": work_item.trace_id},
+            )
+        if work_item.status != "running":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Approved submission Work Item must be claimed before execution",
+            )
+        work_item = await self._cases.begin_approved_submission(case_id, work_item_id, actor)
+        approved = work_item.approved_submission
+        if approved is None:  # pragma: no cover - guarded by begin_approved_submission
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Work item has no approved submission")
+        case = await self._cases.get(case_id)
+        try:
+            receipt = await self._submit_verified_task(
+                case=case,
+                work_item_id=work_item_id,
+                idempotency_key=approved.idempotency_key,
+                task=approved.task,
+                actor=actor,
+            )
+        except Exception as exc:
+            failed = await self._cases.transition_work_item(
+                case_id, work_item_id, actor, "failed", summary=f"Analysis submission failed: {exc}"[:4000]
+            )
+            await self._cases.reset_approved_submission_start(case_id, work_item_id, actor)
+            await self._audit.record(
+                case_id=case_id,
+                actor=actor,
+                event_type="analysis_submission.failed",
+                payload={"work_item_id": work_item_id, "error": str(exc)[:500]},
+            )
+            raise
+        completed = await self._cases.get_work_item(case_id, work_item_id)
+        completed_approval = completed.approved_submission
+        if completed_approval is not None:
+            await self._cases.update_work_item(
+                case_id,
+                work_item_id,
+                completed.model_copy(
+                    update={
+                        "approved_submission": completed_approval.model_copy(
+                            update={"consumed_at": datetime.now(UTC)}
+                        ),
+                        "updated_at": datetime.now(UTC),
+                    }
+                ),
+            )
+        return receipt
+
+    async def _submit_verified_task(
+        self,
+        *,
+        case: CaseRecord,
+        work_item_id: str | None,
+        idempotency_key: str,
+        task: TaskSpec,
+        actor: str,
+    ) -> TaskReceipt:
+        self._validate_task_snapshot(case, task)
+        prior = await self._audit.get_receipt(idempotency_key)
+        if prior is not None:
+            return TaskReceipt(**prior).model_copy(update={"idempotent_replay": True})
+        task_data = await self._client.submit_task(task.model_dump())
+        omic_task_id = str(task_data.get("id", ""))
+        if not omic_task_id:
+            raise HTTPException(status_code=502, detail="OmicHub submit response has no task ID")
+        receipt = TaskReceipt(
+            case_id=case.case_id,
+            omic_task_id=omic_task_id,
+            status=str(task_data.get("status", "submitted")),
+            submitted_at=datetime.now(UTC),
+        )
+        await self._audit.save_receipt(idempotency_key, receipt.model_dump(mode="json"))
+        await self._cases.attach_task(
+            case.case_id, omic_task_id, task.model_dump(mode="json")
+        )
+        if case.status == "approval_pending":
+            await self._cases.transition(case.case_id, "approved")
+            await self._cases.transition(case.case_id, "executing")
+        elif case.status == "approved":
+            await self._cases.transition(case.case_id, "executing")
+        await self._audit.record(
+            case_id=case.case_id,
+            actor=actor,
+            event_type="omic_task.submitted",
+            payload={
+                "omic_task_id": omic_task_id,
+                "flow_id": task.flow_id,
+                "idempotency_key": idempotency_key,
+                "receipt": receipt.model_dump(mode="json"),
+            },
+        )
+        if work_item_id:
+            await self._update_bound_work_item(
+                case.case_id,
+                work_item_id,
+                actor,
+                work_item_status="completed",
+                summary=f"OmicHub task {omic_task_id} submitted",
+            )
+        return receipt
+
+    @staticmethod
+    def _snapshot_hash(snapshot: PreflightInputSnapshot) -> str:
+        payload = json.dumps(snapshot.model_dump(mode="json"), ensure_ascii=False, sort_keys=True)
+        return hashlib.sha256(payload.encode()).hexdigest()
+
+    @staticmethod
+    def _validate_task_snapshot(case: CaseRecord, task: TaskSpec) -> None:
         snapshot = case.preflight_input
         if snapshot is None:
             raise HTTPException(
@@ -726,54 +954,14 @@ class BridgeService:
                 detail="Task submission requires a passed preflight input snapshot",
             )
         if (
-            request.task.flow_id != snapshot.flow_id
-            or request.task.sample_sheet != snapshot.sample_sheet
-            or request.task.comparisons != snapshot.comparisons
+            task.flow_id != snapshot.flow_id
+            or task.sample_sheet != snapshot.sample_sheet
+            or task.comparisons != snapshot.comparisons
         ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Task input differs from the approved preflight snapshot",
             )
-        prior = await self._audit.get_receipt(request.idempotency_key)
-        if prior is not None:
-            return TaskReceipt(**prior).model_copy(update={"idempotent_replay": True})
-        task_data = await self._client.submit_task(request.task.model_dump())
-        omic_task_id = str(task_data.get("id", ""))
-        if not omic_task_id:
-            raise HTTPException(status_code=502, detail="OmicHub submit response has no task ID")
-        receipt = TaskReceipt(
-            case_id=request.case_id,
-            omic_task_id=omic_task_id,
-            status=str(task_data.get("status", "submitted")),
-            submitted_at=datetime.now(UTC),
-        )
-        await self._audit.save_receipt(request.idempotency_key, receipt.model_dump(mode="json"))
-        await self._cases.attach_task(
-            request.case_id, omic_task_id, request.task.model_dump(mode="json")
-        )
-        if case.status == "approval_pending":
-            await self._cases.transition(request.case_id, "approved")
-            await self._cases.transition(request.case_id, "executing")
-        await self._audit.record(
-            case_id=request.case_id,
-            actor=actor,
-            event_type="omic_task.submitted",
-            payload={
-                "omic_task_id": omic_task_id,
-                "flow_id": request.task.flow_id,
-                "idempotency_key": request.idempotency_key,
-                "receipt": receipt.model_dump(mode="json"),
-            },
-        )
-        if request.work_item_id:
-            await self._update_bound_work_item(
-                request.case_id,
-                request.work_item_id,
-                actor,
-                work_item_status="completed",
-                summary=f"OmicHub task {omic_task_id} submitted",
-            )
-        return receipt
 
     async def _ensure_work_item(
         self, case: CaseRecord, work_item: WorkItemRecord, actor: str

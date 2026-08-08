@@ -1,6 +1,7 @@
 import axios from 'axios'
 import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios'
 import { createDiscreteApi } from 'naive-ui'
+import { createTokenRefreshCoordinator } from '@/utils/authRefresh'
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: '/api/v1',
@@ -52,8 +53,21 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error),
 )
 
-// 标记是否正在刷新令牌，避免并发刷新
-let isRefreshing = false
+const tokenRefreshCoordinator = createTokenRefreshCoordinator({
+  refresh: async () => {
+    const refreshToken = localStorage.getItem('refresh_token')
+    if (!refreshToken) throw new Error('缺少刷新令牌')
+    const response = await axios.post('/api/v1/auth/refresh', { refresh_token: refreshToken })
+    return {
+      accessToken: response.data.access_token,
+      refreshToken: response.data.refresh_token,
+    }
+  },
+  persist: ({ accessToken, refreshToken }) => {
+    localStorage.setItem('access_token', accessToken)
+    localStorage.setItem('refresh_token', refreshToken)
+  },
+})
 
 function clearAuthAndRedirectToLogin() {
   localStorage.removeItem('access_token')
@@ -77,33 +91,22 @@ apiClient.interceptors.response.use(
         return Promise.reject(error)
       }
 
-      const refreshToken = localStorage.getItem('refresh_token')
-      if (!refreshToken || isRefreshing) {
-        // 没有刷新令牌或正在刷新 → 清理并跳转登录
-        clearAuthAndRedirectToLogin()
-        return Promise.reject(error)
-      }
-
       originalRequest._retry = true
-      isRefreshing = true
 
-      try {
-        const response = await axios.post('/api/v1/auth/refresh', {
-          refresh_token: refreshToken,
-        })
-        const { access_token, refresh_token: new_refresh } = response.data
-        localStorage.setItem('access_token', access_token)
-        localStorage.setItem('refresh_token', new_refresh)
-
-        // 重放原始请求
-        originalRequest.headers.Authorization = `Bearer ${access_token}`
-        return apiClient(originalRequest)
-      } catch {
+      if (!localStorage.getItem('refresh_token')) {
         clearAuthAndRedirectToLogin()
         return Promise.reject(error)
-      } finally {
-        isRefreshing = false
       }
+
+      const accessToken = await tokenRefreshCoordinator.refreshAccessToken()
+      if (!accessToken) {
+        clearAuthAndRedirectToLogin()
+        return Promise.reject(error)
+      }
+
+      // 重放原始请求
+      originalRequest.headers.Authorization = `Bearer ${accessToken}`
+      return apiClient(originalRequest)
     }
 
     // 模块未开通：统一占位/弹窗逻辑（会话级去重），随后照常 reject 让调用方拿到错误

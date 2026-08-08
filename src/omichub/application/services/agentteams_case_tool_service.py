@@ -312,6 +312,13 @@ class AgentTeamsCaseToolService:
         meta["agentteams_case_notified"] = notified
         meta["agentteams_case_idempotency"] = idempotency
         meta["agentteams_case_confirmation"] = confirmations
+        meta["execution_mode"] = "cluster_case"
+        meta["execution_routing"] = {
+            "mode": "cluster_case",
+            "case_id": case_id,
+            "reason": "user_confirmed_agentteams_case",
+            "recorded_at": datetime.now(UTC).isoformat(),
+        }
 
     @staticmethod
     def _envelope(*, case_id: str, title: str, status: str, reused: bool) -> dict[str, Any]:

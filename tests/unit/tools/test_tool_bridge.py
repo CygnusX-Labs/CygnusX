@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -173,6 +174,38 @@ async def test_upload_ref_resolution(tmp_path, monkeypatch) -> None:
 
     assert result["success"] is True
     assert result["llm_payload"]["stats"]["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_workspace_file_ref_resolution(tmp_path, monkeypatch) -> None:
+    """file://UUID 应交由受控工作区读取器解析后再传入 shim。"""
+    user_id = str(uuid.uuid4())
+    file_id = uuid.uuid4()
+    context = MagicMock()
+    service = ToolBridgeService(_FakeLoader([_volcano_schema()]))
+    resolve_refs = AsyncMock(
+        return_value={
+            "data_text": "ENSEMBL,log2FoldChange,padj\nTP53,2.5,0.001\nBRCA1,-3.0,0.0001"
+        }
+    )
+    monkeypatch.setattr(
+        "omichub.application.services.tool_bridge_service.resolve_workspace_file_refs",
+        resolve_refs,
+    )
+
+    result = await service.execute(
+        user_id,
+        "omichub_plot_volcano",
+        {"data_text": f"file://{file_id}"},
+        context=context,
+    )
+
+    assert result["success"] is True
+    assert result["llm_payload"]["stats"] == {"total": 2, "up": 1, "down": 1, "non": 0}
+    assert result["ui_payload"]["plotly_figure"] is not None
+    resolve_refs.assert_awaited_once_with(
+        {"data_text": f"file://{file_id}"}, user_id=user_id, context=context
+    )
 
 
 @pytest.mark.asyncio

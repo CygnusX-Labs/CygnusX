@@ -279,6 +279,8 @@ export interface AgentStreamCallbacks {
   onOverdriveProgress?: (event: OverdriveProgressEvent) => void
   onOverdriveApproval?: (event: OverdriveApprovalEvent) => void
   onModeChanged?: (enabled: boolean, degraded?: boolean) => void
+  /** 流式连接中断后自动重试时的进度通知（attempt 从 1 开始） */
+  onRetry?: (attempt: number, maxAttempts: number) => void
   onError?: (error: string) => void
   onDone?: (
     sessionId: string,
@@ -376,6 +378,11 @@ export function useAgentChatStream() {
   const isPaused = ref(false)
   const abortController = ref<AbortController | null>(null)
 
+  /** 流式连接中断后的自动重试次数（不含首次请求） */
+  const STREAM_RETRY_LIMIT = 2
+  /** 重试基础间隔（毫秒），按第 N 次 × 该值退避 */
+  const STREAM_RETRY_BASE_DELAY_MS = 800
+
   async function streamChat(
     options: AgentChatStreamOptions,
     callbacks: AgentStreamCallbacks,
@@ -385,51 +392,15 @@ export function useAgentChatStream() {
     isPaused.value = false
     abortController.value = new AbortController()
 
-    try {
-      const token = localStorage.getItem('access_token')
-      const response = await fetch('/api/v1/chat/stream', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          agent_id: options.agentId,
-          session_id: options.sessionId,
-          mode: options.mode,
-          model_id: options.modelId,
-          messages: options.messages,
-          stream: true,
-          temperature: options.temperature,
-          max_tokens: options.maxTokens,
-          deep_thinking: options.deepThinking,
-          attachments: options.attachments || [],
-          enable_web_search: options.enableWebSearch || false,
-          enable_code_execution: options.enableCodeExecution || false,
-          mcp_mode: options.mcpMode || 'auto',
-          extra_mcp_servers: options.extraMcpServers || [],
-          multi_agent: options.multiAgent ?? false,
-          overdrive: options.overdrive,
-          extend_max_rounds: options.extendMaxRounds || false,
-        }),
-        signal: abortController.value.signal,
-      })
+    let retries = 0
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        callbacks.onError?.(`请求失败 (${response.status}): ${errorText}`)
-        return
-      }
-      if (!response.body) {
-        callbacks.onError?.('浏览器不支持流式响应')
-        return
-      }
-
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let doneReceived = false
-      let errorReceived = false
+    // 自动重试策略：仅当「连接被掐断且尚未收到任何正文/工具调用」时重试，
+    // 避免把已展示给用户的内容重复生成一遍；收到 done / error 或已输出正文则
+    // 立即结束（与后端 chat_stream 的「未输出才重试」语义保持一致）。
+    while (true) {
+      let receivedContent = false
+      let terminalEvent = false
+      let transportDropped = false
 
       const processLine = (line: string) => {
         const trimmed = line.trim()
@@ -440,8 +411,11 @@ export function useAgentChatStream() {
           const parsed = JSON.parse(data) as Record<string, unknown>
           const normalized = normalizeAgentStreamEvent(parsed)
           handleStreamEvent(normalized, callbacks)
-          if (normalized.type === 'done') doneReceived = true
-          if (normalized.type === 'error') errorReceived = true
+          if (normalized.type === 'done' || normalized.type === 'error') {
+            terminalEvent = true
+          } else if (normalized.type) {
+            receivedContent = true
+          }
         } catch (error) {
           reportChatDiagnostic({
             phase: 'stream-parse',
@@ -451,31 +425,94 @@ export function useAgentChatStream() {
         }
       }
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split("\n")
-        buffer = lines.pop() || ""
-        for (const line of lines) processLine(line)
+      try {
+        const token = localStorage.getItem('access_token')
+        const response = await fetch('/api/v1/chat/stream', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            agent_id: options.agentId,
+            session_id: options.sessionId,
+            mode: options.mode,
+            model_id: options.modelId,
+            messages: options.messages,
+            stream: true,
+            temperature: options.temperature,
+            max_tokens: options.maxTokens,
+            deep_thinking: options.deepThinking,
+            attachments: options.attachments || [],
+            enable_web_search: options.enableWebSearch || false,
+            enable_code_execution: options.enableCodeExecution || false,
+            mcp_mode: options.mcpMode || 'auto',
+            extra_mcp_servers: options.extraMcpServers || [],
+            multi_agent: options.multiAgent ?? false,
+            overdrive: options.overdrive,
+            extend_max_rounds: options.extendMaxRounds || false,
+          }),
+          signal: abortController.value?.signal,
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          callbacks.onError?.(`请求失败 (${response.status}): ${errorText}`)
+          return
+        }
+        if (!response.body) {
+          callbacks.onError?.('浏览器不支持流式响应')
+          return
+        }
+
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split("\n")
+          buffer = lines.pop() || ""
+          for (const line of lines) processLine(line)
+        }
+
+        buffer += decoder.decode()
+        if (buffer.trim()) processLine(buffer)
+
+        if (terminalEvent) return
+        // 流结束但未收到 done / error：连接被反向代理或网络掐断
+        transportDropped = true
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          // 用户主动取消
+          return
+        }
+        if (receivedContent) {
+          // 已输出正文后再断连：不重试（避免重复内容），直接报错
+          callbacks.onError?.(err instanceof Error ? err.message : '未知错误')
+          return
+        }
+        // 网络异常且尚未收到任何内容 → 可重试
+        transportDropped = true
       }
 
-      buffer += decoder.decode()
-      if (buffer.trim()) processLine(buffer)
+      if (!transportDropped || receivedContent) {
+        if (transportDropped) {
+          callbacks.onError?.("流式连接意外中断，请重新发送；如果频繁出现，请检查模型服务或反向代理超时配置")
+        }
+        return
+      }
 
-      if (!doneReceived && !errorReceived) {
+      if (retries >= STREAM_RETRY_LIMIT) {
         callbacks.onError?.("流式连接意外中断，请重新发送；如果频繁出现，请检查模型服务或反向代理超时配置")
+        return
       }
 
-    } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        // 用户主动取消
-      } else {
-        callbacks.onError?.(err instanceof Error ? err.message : '未知错误')
-      }
-    } finally {
-      isStreaming.value = false
-      abortController.value = null
+      retries += 1
+      callbacks.onRetry?.(retries, STREAM_RETRY_LIMIT)
+      await new Promise((resolve) => setTimeout(resolve, STREAM_RETRY_BASE_DELAY_MS * retries))
     }
   }
 

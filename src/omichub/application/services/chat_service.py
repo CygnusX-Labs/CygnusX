@@ -226,7 +226,7 @@ ROUTER_SYSTEM_PROMPT = """你是星尘 AI，平台唯一的任务分派入口。
 {catalog}
 
 规则：
-1. 直接输出一行 JSON：{{"agent_id": "...", "reason": "...", "expect_handoff": false, "consult_agent_ids": [], "collaboration_intent": "transfer|fanout|consult|case|dag|chat", "fanout_tasks": [{{"agent_id":"...","task":"..."}}], "confidence": 0.0}}。
+1. 直接输出一行 JSON：{{"agent_id": "...", "reason": "...", "expect_handoff": false, "consult_agent_ids": [], "collaboration_intent": "transfer|fanout|consult|case|dag|chat", "overdrive_intent": "enable|disable|none", "fanout_tasks": [{{"agent_id":"...","task":"..."}}], "confidence": 0.0}}。
 2. 禁止输出思考过程、复述用户消息、候选清单、寒暄、emoji 或面向用户的解释；第一个字符必须是 {{。
 3. agent_id 必须来自运行时候选目录；reason 用一句中文简述分派理由。
 4. 当用户请求明显横跨两个以上专业阶段时，选择第一阶段最合适的专家，并将 expect_handoff 设为 true；它仅供审计，不改变本次分派。
@@ -235,6 +235,7 @@ ROUTER_SYSTEM_PROMPT = """你是星尘 AI，平台唯一的任务分派入口。
 7. confidence < 0.6 表示需要向用户澄清协作方式；仍填写最可能的 collaboration_intent，禁止用 chat 掩盖不确定性。
 8. 信息不足且缺失项会改变数据模态、分析路线或专家选择时，必须选择运行时目录中的通用入口 Agent，由通用助手先通过 ask_user 补全上下文；禁止直接猜测具体领域或专家。
 9. 选择专家时只依据候选目录中声明的 routing_notes、capability_scope 与 default_role，不得超出专家能力边界。
+10. overdrive_intent 只表示用户对超频协作会话的意图：仅当用户明确希望由多个专家/团队/并行协作处理，且本轮任务确实需要 fanout、consult、case 或 dag 时填 enable；用户明确要求普通回答、停止团队协作或关闭超频时填 disable；仅询问“超频模式是什么/如何开启”、普通问答、任务虽复杂但用户未要求协作时一律填 none。不得因为文本出现“超频”一词就填 enable。
 
 示例：
 - “这个结果应该怎么解读，注释策略合理吗” → consult
@@ -309,9 +310,26 @@ OVERDRIVE_SUMMARY_SYSTEM_PROMPT = """你是超频协作的 Manager，负责把�
 5. 如果结论无法回答用户的核心问题，诚实说明当前可确认的范围，并给出下一步所需信息或可执行建议。
 """
 
-_OVERDRIVE_ON_HINTS = ("超频模式", "超频", "overdrive")
 _OVERDRIVE_OFF_HINTS = ("退出超频", "关闭超频", "取消超频", "overdrive off")
 _OVERDRIVE_NEGATED_ON_HINTS = ("别进超频", "不要进超频", "不进入超频", "不要开启超频", "别开启超频")
+_OVERDRIVE_ON_COMMAND_RE = re.compile(
+    r"(?:请|帮我|给我|希望|想|我想)?(?:开启|打开|进入|启动|启用|切换到|切换至|使用|用|采用|通过|以)超频(?:模式)?"
+)
+_OVERDRIVE_ON_ENGLISH_COMMAND_RE = re.compile(
+    r"\b(?:please\s+)?(?:enable|turn\s+on|start|enter)\s+(?:the\s+)?overdrive(?:\s+mode)?\b"
+)
+_OVERDRIVE_EXPLANATION_HINTS = (
+    "超频模式是什么",
+    "超频是什么",
+    "什么是超频",
+    "如何开启超频",
+    "怎么开启超频",
+    "如何使用超频",
+    "怎么使用超频",
+    "介绍超频",
+    "解释超频",
+    "超频原理",
+)
 
 
 def _effective_overdrive(request_value: bool | None, session_meta: dict[str, Any]) -> bool:
@@ -324,18 +342,44 @@ def _effective_overdrive(request_value: bool | None, session_meta: dict[str, Any
 
 
 def _resolve_overdrive_keyword_toggle(text: str, enabled: bool) -> bool | None:
-    """返回关键词要求切换的状态；无切换时返回 ``None``。退出语义优先。"""
-    normalized = text.lower()
+    """仅从明确的会话控制命令切换超频状态，普通问答不得改变会话设置。"""
+    normalized = text.lower().replace(" ", "")
     if enabled and any(hint in normalized for hint in _OVERDRIVE_OFF_HINTS):
         return False
+    if enabled or any(hint in normalized for hint in _OVERDRIVE_OFF_HINTS):
+        return None
     if (
-        not enabled
-        and any(hint in normalized for hint in _OVERDRIVE_ON_HINTS)
-        and not any(hint in normalized for hint in _OVERDRIVE_OFF_HINTS)
-        and not any(hint in normalized for hint in _OVERDRIVE_NEGATED_ON_HINTS)
+        "?" in normalized
+        or "？" in normalized
+        or any(hint in normalized for hint in _OVERDRIVE_EXPLANATION_HINTS)
+        or any(hint in normalized for hint in _OVERDRIVE_NEGATED_ON_HINTS)
     ):
+        return None
+    if _OVERDRIVE_ON_COMMAND_RE.search(normalized) or _OVERDRIVE_ON_ENGLISH_COMMAND_RE.search(text.lower()):
         return True
     return None
+
+
+def _resolve_overdrive_router_toggle(route_info: dict[str, Any] | None, enabled: bool) -> bool | None:
+    """Accept an AI Router mode decision only when its intent and confidence are actionable."""
+    if not isinstance(route_info, dict):
+        return None
+    overdrive_intent = str(route_info.get("overdrive_intent") or "none")
+    if overdrive_intent == "disable" and enabled:
+        return False
+    if overdrive_intent != "enable" or enabled:
+        return None
+    try:
+        confidence = float(route_info.get("confidence", 0))
+    except (TypeError, ValueError):
+        return None
+    if confidence < 0.75:
+        return None
+    return (
+        True
+        if str(route_info.get("intent")) in {"fanout", "consult", "case", "dag"}
+        else None
+    )
 
 
 def _overdrive_answer_requires_user_input(content: str) -> bool:
@@ -1742,11 +1786,65 @@ class ChatService:
         messages = self._order_messages(result.scalars().all())
         return [self._to_msg_dto(m) for m in messages]
 
+    async def _link_session_files_to_workspace(
+        self,
+        session_id: str,
+        user_id: str | None,
+        attachment_dicts: list[dict[str, Any]],
+    ) -> dict[str, str]:
+        """Studio：把本轮附件与本会话历史上传幂等引入 ``/workspace/input/``。
+
+        返回 ``{规范化引用(upload://… 或 file://…): 沙盒可读路径(/workspace/input/<name>)}``。
+        沙盒内无法解析 file:// / upload:// 引用，只有挂载进工作区的平台软链才能被沙盒
+        代码按文件系统路径直接读取；任一文件引入失败仅记录并跳过，不阻断对话。
+        """
+        if not user_id:
+            return {}
+
+        def _normalize_ref(file_id: str) -> str:
+            fid = str(file_id or "").strip()
+            if not fid:
+                return ""
+            return fid if "://" in fid else f"upload://{fid}"
+
+        refs: list[str] = [_normalize_ref(att.get("file_id")) for att in attachment_dicts]
+
+        # 历史轮次的上传同样需要挂载才能在沙盒读取（多轮分析场景）
+        try:
+            result = await self._db.execute(
+                select(ChatMessageModel)
+                .where(ChatMessageModel.session_id == session_id)
+                .order_by(ChatMessageModel.created_at)
+            )
+            for msg in self._order_messages(result.scalars().all()):
+                if msg.role != "user":
+                    continue
+                for att in (msg.metadata_json or {}).get("attachments") or []:
+                    refs.append(_normalize_ref(att.get("file_id")))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Studio 收集历史上传文件引用失败: {}", exc)
+
+        refs = [ref for ref in refs if ref]
+        if not refs:
+            return {}
+
+        from omichub.application.services.studio_context_service import link_session_file_refs
+
+        try:
+            paths, errors = await link_session_file_refs(str(user_id), session_id, refs, self._db)
+        except Exception as exc:  # noqa: BLE001 - 挂载失败不能打断对话，模型仍可走 datahub_import
+            logger.warning("Studio 批量引入工作区文件失败: {}", exc)
+            return {}
+        if errors:
+            logger.info(f"Studio 自动引入文件部分失败（{len(errors)} 项）: {errors}")
+        return paths
+
     async def _collect_session_file_context(
         self,
         session_id: str,
         exclude_file_ids: set[str] | None = None,
         user_id: str | None = None,
+        studio_sandbox_paths: dict[str, str] | None = None,
     ) -> str:
         """汇总本会话历史消息中的附件引用，供后续轮次继承文件上下文。
 
@@ -1773,10 +1871,17 @@ class ChatService:
                     continue
                 seen.add(file_id)
                 ref = file_id if "://" in file_id else f"upload://{file_id}"
-                lines.append(
-                    f"- {att.get('name', '')}（file_id: {ref}，"
-                    f'可用 workspace_read_file(file_id="{ref}") 读取）'
-                )
+                sandbox_path = (studio_sandbox_paths or {}).get(ref)
+                if sandbox_path:
+                    lines.append(
+                        f"- {att.get('name', '')}（已引入工作区 {sandbox_path}，"
+                        "沙盒代码请直接按该路径读取，勿用 file:// / upload:// 引用）"
+                    )
+                else:
+                    lines.append(
+                        f"- {att.get('name', '')}（file_id: {ref}，"
+                        f'可用 workspace_read_file(file_id="{ref}") 读取）'
+                    )
 
         sections: list[str] = []
         if lines:
@@ -2496,6 +2601,7 @@ class ChatService:
                 "consult_agent_ids": consult_agent_ids,
                 "intent": normalized.intent,
                 "confidence": normalized.confidence,
+                "overdrive_intent": normalized.overdrive_intent,
                 "fanout_tasks": list(normalized.fanout_tasks),
                 "needs_clarification": bool(clarification_questions),
                 "clarification_questions": clarification_questions,
@@ -4186,6 +4292,8 @@ class ChatService:
                 metadata={"mode": "overdrive", "enabled": explicit_overdrive_changed},
             )
 
+        pre_routed_ctx: AgentContext | None = None
+        pre_route_info: dict[str, Any] | None = None
         keyword_toggle = _resolve_overdrive_keyword_toggle(user_content, effective_overdrive)
         if keyword_toggle is False:
             effective_overdrive = False
@@ -4204,6 +4312,35 @@ class ChatService:
                 session_row.sandbox_meta = dict(session_mcp_meta)
                 await self._db.flush()
             yield ChatChunk(type="mode_changed", metadata={"mode": "overdrive", "enabled": True})
+
+        if keyword_toggle is None and overdrive is None and ctx.features.get("router"):
+            pre_routed_ctx, pre_route_info = await self._route_to_agent(ctx, user_content)
+            router_toggle = _resolve_overdrive_router_toggle(pre_route_info, effective_overdrive)
+            if router_toggle is not None:
+                effective_overdrive = router_toggle
+                session_mcp_meta["overdrive"] = router_toggle
+                if router_toggle:
+                    session_mcp_meta["overdrive_used"] = True
+                session_mcp_meta["overdrive_decision"] = {
+                    "source": "router",
+                    "intent": pre_route_info.get("overdrive_intent") if pre_route_info else "none",
+                    "reason": pre_route_info.get("reason") if pre_route_info else "",
+                    "confidence": pre_route_info.get("confidence") if pre_route_info else 0,
+                    "recorded_at": datetime.now(UTC).isoformat(),
+                }
+                session_row = await self.get_session(current_session_id, user_id)
+                if session_row is not None:
+                    session_row.sandbox_meta = dict(session_mcp_meta)
+                    await self._db.flush()
+                yield ChatChunk(
+                    type="mode_changed",
+                    metadata={
+                        "mode": "overdrive",
+                        "enabled": router_toggle,
+                        "source": "router",
+                        "reason": pre_route_info.get("reason") if pre_route_info else "",
+                    },
+                )
 
         if effective_overdrive:
             async for chunk in self._run_overdrive_turn(
@@ -4225,14 +4362,18 @@ class ChatService:
             metadata={"model": model_config.name, "agent_id": agent_id},
         )
 
-        route_info: dict[str, Any] | None = None
+        route_info: dict[str, Any] | None = pre_route_info
         unified_route_notice: dict[str, Any] | None = None
         route_prompt_suffix = ""
 
         # 3.5 智能路由：路由器 Agent 先做意图分派，再以目标 Agent 的上下文继续后续流程。
         # 会话绑定校验与落库的 agent_id 始终保持路由器不变；同一会话的每条消息都重新路由。
         if ctx.features.get("router"):
-            target_ctx, route_info = await self._route_to_agent(ctx, user_content)
+            target_ctx, route_info = (
+                (pre_routed_ctx, pre_route_info)
+                if pre_route_info is not None
+                else await self._route_to_agent(ctx, user_content)
+            )
             if target_ctx is not None and route_info is not None:
                 ctx = target_ctx
                 if ctx.model_config is not None:
@@ -4319,12 +4460,13 @@ class ChatService:
                         if site_settings.collaboration_degradation_locale == "en"
                         else site_settings.collaboration_degradation_template_zh
                     )
-                    unified_route_notice = capability_notice(
-                        normalize_decision(
+                    unified_decision = normalize_decision(
                             route_info,
                             fallback_agent_id=ctx.agent.agent_id,
                             valid_agent_ids={ctx.agent.agent_id},
-                        ),
+                        )
+                    unified_route_notice = capability_notice(
+                        unified_decision,
                         fanout_enabled=(
                             settings.subagent_fanout_enabled
                             or site_settings.subagent_fanout_enabled
@@ -4338,6 +4480,24 @@ class ChatService:
                         degradation_locale=site_settings.collaboration_degradation_locale,
                     )
                     route_info["collaboration"] = unified_route_notice
+                    from omichub.application.services.unified_intent_router import (
+                        execution_routing_record,
+                    )
+
+                    routing_record = execution_routing_record(
+                        unified_decision, unified_route_notice
+                    )
+                    route_info["execution_routing"] = routing_record
+                    if routed_session is not None:
+                        routed_meta = dict(routed_session.sandbox_meta or {})
+                        routed_meta["execution_mode"] = routing_record["mode"]
+                        routed_meta["execution_routing"] = {
+                            **routing_record,
+                            "recorded_at": datetime.now(UTC).isoformat(),
+                        }
+                        routed_session.sandbox_meta = routed_meta
+                        routed_session.updated_at = datetime.now(UTC)
+                        await self._db.flush()
                     if (
                         unified_route_notice["available"]
                         and route_info["intent"] == "consult"
@@ -4486,8 +4646,19 @@ class ChatService:
                 f"模式规则：{mode_rules[mode]}\n权限规则：{permission_rules[permission]}"
                 f"{goal_hint}\n请严格遵守以上上下文，不要自行提升权限。"
             )
+        # Studio 模式：附件与历史上传文件在沙盒内无法以 file:// / upload:// 引用直接读取，
+        # 只有软链进 /workspace/input/ 后才能按文件系统路径读取。这里在组装提示词前先把
+        # 这些文件幂等引入工作区，并把沙盒可读路径回写给模型（恢复"工作区文件挂载沙盒"设计）。
+        studio_sandbox_paths: dict[str, str] = {}
+        if studio_mode:
+            studio_sandbox_paths = await self._link_session_files_to_workspace(
+                current_session_id, user_id, attachment_dicts
+            )
+
         if attachments:
-            llm_messages = await self._build_multimodal_messages(llm_messages, attachments)
+            llm_messages = await self._build_multimodal_messages(
+                llm_messages, attachments, studio_sandbox_paths
+            )
 
         # 4.1 上下文继承：把本会话历史消息中上传过的文件（file_id 引用）注入本轮，
         # 避免后续轮次丢失附件上下文后模型重新全局搜索文件。
@@ -4495,7 +4666,10 @@ class ChatService:
             str(att.get("file_id") or "") for att in attachment_dicts if att.get("file_id")
         }
         history_file_ctx = await self._collect_session_file_context(
-            current_session_id, exclude_file_ids=current_file_ids, user_id=user_id
+            current_session_id,
+            exclude_file_ids=current_file_ids,
+            user_id=user_id,
+            studio_sandbox_paths=studio_sandbox_paths if studio_mode else None,
         )
         if history_file_ctx:
             llm_messages = self._append_context_to_last_user_message(llm_messages, history_file_ctx)
@@ -6328,13 +6502,18 @@ class ChatService:
 
     @staticmethod
     async def _build_multimodal_messages(
-        messages: list[dict[str, Any]], attachments: list[Any]
+        messages: list[dict[str, Any]],
+        attachments: list[Any],
+        studio_sandbox_paths: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
         """把附件注入到最后一条用户消息中。
 
         兼容策略：
         - 只有文本/文件附件时，保持 content 为字符串（对 Qwen 等国产模型兼容性最好）。
         - 包含图片附件时，使用 OpenAI 多模态 list 格式。
+
+        ``studio_sandbox_paths``：Studio 模式下文件引用 → 沙盒可读路径的映射；
+        命中时提示模型直接用工作区路径读取（沙盒无法解析 file:// / upload:// 引用）。
         """
         if not messages:
             return messages
@@ -6368,11 +6547,20 @@ class ChatService:
             if file_id:
                 # file_id 可能已带 scheme（file://uuid 或 upload://hex）；无 scheme 时按上传文件处理
                 ref = file_id if "://" in file_id else f"upload://{file_id}"
-                snippets.append(
-                    f"[文件: {att.get('name', '')}，file_id: {ref}，"
-                    f'可用 workspace_read_file(file_id="{ref}") 读取内容，'
-                    f"或在其它工具参数中直接引用该 file_id]"
-                )
+                sandbox_path = (studio_sandbox_paths or {}).get(ref)
+                if sandbox_path:
+                    # Studio：文件已挂载进沙盒工作区，指示模型按文件系统路径读取
+                    snippets.append(
+                        f"[文件: {att.get('name', '')}，已引入沙盒工作区 {sandbox_path}。"
+                        f"在 sandbox_execute 代码或工作区工具中请直接使用该路径读取，"
+                        f"不要使用 file:// / upload:// 引用（沙盒内无法解析）]"
+                    )
+                else:
+                    snippets.append(
+                        f"[文件: {att.get('name', '')}，file_id: {ref}，"
+                        f'可用 workspace_read_file(file_id="{ref}") 读取内容，'
+                        f"或在其它工具参数中直接引用该 file_id]"
+                    )
             if text:
                 snippet = text[:max_len] + ("\n...（已截断）" if len(text) > max_len else "")
                 snippets.append(f"[文件内容预览: {att.get('name', '')}]\n{snippet}")

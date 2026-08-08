@@ -46,6 +46,7 @@ class ApprovalSigner:
         *,
         case_id: str,
         action: ApprovalAction,
+        work_item_id: str | None,
         flow_id: str | None,
         task_id: str | None,
         ttl_seconds: int,
@@ -55,6 +56,7 @@ class ApprovalSigner:
             "approval_id": secrets.token_urlsafe(12),
             "case_id": case_id,
             "action": action,
+            "work_item_id": work_item_id,
             "flow_id": flow_id,
             "task_id": task_id,
             "exp": int(expires_at.timestamp()),
@@ -69,6 +71,7 @@ class ApprovalSigner:
         *,
         case_id: str,
         action: ApprovalAction,
+        work_item_id: str | None = None,
         flow_id: str | None = None,
         task_id: str | None = None,
     ) -> dict[str, Any]:
@@ -90,6 +93,8 @@ class ApprovalSigner:
                 status_code=status.HTTP_403_FORBIDDEN, detail="Approval token expired"
             )
         expected_values = {"case_id": case_id, "action": action}
+        if work_item_id is not None:
+            expected_values["work_item_id"] = work_item_id
         if flow_id is not None:
             expected_values["flow_id"] = flow_id
         if task_id is not None:

@@ -2,12 +2,13 @@
 
 支持从外置 YAML 文件同步 Provider 配置到数据库，便于 Docker / GitOps 部署。
 YAML 中可使用 ${ENV_VAR} 或 ${ENV_VAR:-default} 语法引用环境变量。
+
+YAML 为单一事实源：启动同步时未声明的 provider 停用（见 load_and_sync 末尾 prune）。
+网页端改完由 AIProviderYamlWriter 回写本文件，形成 yaml↔DB 双向闭环。
 """
 
 from __future__ import annotations
 
-import os
-import re
 from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
@@ -16,32 +17,15 @@ import yaml
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from omichub.application.services.ai_provider_service import AIProviderConfigService
+from omichub.application.services.ai_provider_yaml_shared import (
+    interpolate_env,
+)
 from omichub.core.config import get_settings
 from omichub.domain.ai_provider.entities import AIProviderConfig
 from omichub.domain.ai_provider.value_objects import ProviderType
 from omichub.infrastructure.database.repositories.ai_provider_repository import (
     SqlAlchemyAIProviderConfigRepository,
 )
-
-_ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
-
-
-def _interpolate_env(value: Any) -> Any:
-    """递归替换字符串中的 ${ENV} / ${ENV:-default}"""
-    if isinstance(value, str):
-
-        def replacer(match: re.Match[str]) -> str:
-            var_name = match.group(1)
-            default = match.group(2)
-            return os.environ.get(var_name, default if default is not None else "")
-
-        return _ENV_PATTERN.sub(replacer, value)
-    if isinstance(value, dict):
-        return {k: _interpolate_env(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_interpolate_env(v) for v in value]
-    return value
 
 
 def _load_yaml(path: str) -> dict[str, Any]:
@@ -53,7 +37,7 @@ def _load_yaml(path: str) -> dict[str, Any]:
     with open(file_path, encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
 
-    return cast(dict[str, Any], _interpolate_env(raw))
+    return cast(dict[str, Any], interpolate_env(raw))
 
 
 class AIProviderYamlLoader:
@@ -62,7 +46,6 @@ class AIProviderYamlLoader:
     def __init__(self, db: AsyncSession):
         self._db = db
         self._repo = SqlAlchemyAIProviderConfigRepository(db)
-        self._service = AIProviderConfigService(db)
 
     async def load_and_sync(self) -> int:
         """加载 YAML 并同步，返回同步的 Provider 数量"""
@@ -136,5 +119,19 @@ class AIProviderYamlLoader:
             if active:
                 await self._repo.set_default(active[0].id)
                 logger.info(f"自动将 {active[0].name} 设为默认 AI Provider")
+
+        # YAML 为单一事实源：YAML 里未声明的 provider 一律停用（不物理删除，避免
+        # 会话/Agent 外键级联问题）。被引用的保留行便于历史回溯，不再出现在可选模型。
+        declared_names = {item.get("name", "") for item in providers if item.get("name")}
+        deactivated = 0
+        for c in await self._repo.list_all():
+            if c.name not in declared_names and c.is_active:
+                c.is_active = False
+                c.mark_updated()
+                await self._repo.save(c)
+                deactivated += 1
+                logger.info(f"YAML 未声明，已停用 AI Provider: {c.name}")
+        if deactivated:
+            logger.info(f"YAML 同步共停用 {deactivated} 个未声明 Provider")
 
         return synced

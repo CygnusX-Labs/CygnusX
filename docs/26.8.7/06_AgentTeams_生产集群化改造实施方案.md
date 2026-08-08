@@ -1,7 +1,7 @@
 # AgentTeams 生产集群化改造实施方案
 
-> **日期**：2026-08-07  
-> **状态**：Phase 0/1 的单节点可部署只读 Worker 闭环已完成；共享持久化与 Kubernetes 高可用待平台落地  
+> **日期**：2026-08-08
+> **状态**：截至 2026-08-08，Phase 0 已完成；只读 Worker、共享状态、质量/交付建议 Worker 和 Kubernetes 基线已交付。审批后 `analysis-worker` 已实现为 Bridge 托管任务快照的执行器；管理端时间线、真实平台绑定与生产故障演练仍未完成。
 > **适用范围**：OmicHub AI 助手、Overdrive、AgentTeams Bridge / Gateway、Kubernetes AgentTeams 控制面  
 > **目标**：让“多 Agent”从当前的应用进程内并行调用，升级为可水平扩缩、可追踪、可恢复、可证明并行的生产集群执行模式。
 
@@ -15,13 +15,13 @@
 |---|---|---:|---:|
 | 对话内 `parallel_subagents` | OmicHub API 进程内 `asyncio.gather` | 是 | 否，受单个 API 请求、模型连接和进程容量约束 |
 | Overdrive | Manager 生成 DAG 波次，底层复用对话内 fan-out | 是 | 部分适合，仍依赖 API 请求生命周期 |
-| AgentTeams Case | Bridge / Gateway / Work Item / Matrix 协作外壳 | 控制面具备 | 否，生产 Worker 尚未接入真实分析运行时 |
+| AgentTeams Case | Bridge / Gateway / Work Item / Matrix 控制面，配套 Redis 共享状态 | 是，Worker Pod 可并发 claim | 只读与质控/交付建议已具备；分析提交闭环尚未开放 |
 
 关键现状：
 
 1. `ParallelSubAgentService` 已经使用 `asyncio.gather` 与并发信号量执行子 Agent，因此“应用内并行”是真实存在的。见 `src/omichub/application/services/parallel_subagent_service.py`。
 2. `integrations/agentteams/worker/worker_runner.py` 是验收用途的轮询器：非验收任务只返回 `awaiting_skill_runtime`，不会执行 LLM、工具或分析任务。
-3. Compose 里的 `agentteams-worker-code`、`agentteams-worker-viz`、`agentteams-worker-scrna` 位于 `agentteams-acceptance` profile，不能作为生产集群证明。
+3. 生产 Worker 已从验收 `worker_runner.py` 中拆出独立 runtime；`agent-code`、`agent-viz`、`agent-scrna`、`agent-rnaseq` 只通过 Bridge 的受限只读接口工作。Compose 与 Kubernetes 配置仍只是部署基线，不能替代真实集群环境的网络、Secret、Redis 和 Gateway 验证。
 
 因此，本方案**不替换**已有的低延迟 fan-out，而是新增一条集群执行路径：当任务需要长时运行、可审计交付、跨节点扩缩、失败恢复或人工审批时，由 Manager 创建 AgentTeams Case 并把真实 Work Item 交给专属 Worker 集群执行。
 
@@ -128,6 +128,8 @@ ParallelSubAgentService                    AgentTeams Bridge（控制面）
 | `delivery-worker` | 汇总可交付证据、报告打包、归档建议 | 直接删除或覆盖原始数据 | 低并发、按完成 Case 扩缩 |
 
 `agent-code`、`agent-viz`、`agent-scrna` 可以作为专业角色配置，不等于直接复用 OmicHub Chat 内的完整 Agent 权限。集群 Worker 需要单独的、最小化的能力 profile 和模型配置。
+
+当前代码中的角色映射为：`agent-rnaseq` 覆盖研究/RNA-seq 解释型只读任务，`agent-code` 覆盖代码与可复现性建议，`agent-viz` 覆盖结果解读，`agent-scrna` 覆盖单细胞解释。`analysis-worker` 是独立的审批后执行角色，只能消费 Bridge 固化的任务快照，不能由上述任一只读 profile 替代。
 
 ### 4.2 Worker 生命周期
 
@@ -249,35 +251,41 @@ lease.expired | work_item.requeued
 
 ### Phase 0：冻结边界与基线（1 个迭代）
 
-- [ ] 明确路由阈值：预计时长、工具副作用、审批要求、交付要求。
-- [ ] 将 `execution_mode` 写入统一路由结果、会话 metadata 与 Case。
+- [x] 明确路由阈值：预计时长、工具副作用、审批要求、交付要求。
+- [x] 将 `execution_mode` 写入统一路由结果、会话 metadata 与 Case。
 - [x] 为 Bridge Work Item 补齐 lease、attempt、trace、依赖和幂等字段。
-- [ ] 将 Bridge CaseStore 从单实例文件存储迁移到共享、可原子更新的持久化存储。
-- [ ] 修复并纳入 CI：Bridge 完整契约测试必须可稳定完成，禁止超时卡住。
+- [x] 将 Bridge CaseStore 从单实例文件存储迁移到 Redis 共享、可原子更新的持久化存储。
+- [x] 修复并纳入 CI：Bridge 完整契约测试必须可稳定完成，禁止超时卡住。
 
 **退出门槛**：现有应用内 fan-out、Overdrive、Bridge/Gateway 回归测试全绿；不引入生产 Worker。
 
-### Phase 1：只读专业 Worker 集群（1–2 个迭代）
+### Phase 1：只读专业 Worker 集群（已完成代码基线，待平台验收）
 
-- [ ] 实现 `research-worker`、`code-worker`、`viz-worker` 的真实执行 runtime。
+- [x] 实现四类只读专业 profile：`agent-code`、`agent-viz`、`agent-scrna`、`agent-rnaseq`。
 - [x] 为 `agent-code`、`agent-viz`、`agent-scrna` 实现受限 Gateway 只读执行 runtime。
 - [x] Runtime 只允许 Gateway 的只读 Agent 能力，并校验固定 schema：`conclusion`、`recommendations`、`evidence_refs`、`risks`。
 - [x] Worker 支持 claim、heartbeat、完成、失败、lease 回收和幂等重试。
-- [ ] 部署为独立 Deployment，至少每角色 2 个副本；接入 HPA/KEDA。
+- [x] 提供 Bridge 双副本、四类只读 Worker 各双副本、HPA、PDB、ServiceAccount 和默认拒绝后的网络策略基线。
 - [ ] 在管理端展示 Work Item 时间线和真实 Pod 标识。
 
-**退出门槛**：三个独立只读任务可在三个 Pod 并发完成；删除任一 Pod 后任务可回收；无敏感系统权限泄露。
+**代码退出门槛**：三个独立只读任务可在不同 Worker 实例并发 claim/执行；Bridge 多副本可共享 Case、Work Item 和审计事件；Worker 凭据不包含 Gateway Manager 或 OmicHub 管理凭据。
 
-**本轮实施记录（2026-08-07）**：已交付 Bridge Work Item 的 `claim → running → terminal` 状态机、租约/心跳/重试/依赖/幂等字段、受限 Gateway 调用、`agent-code`/`agent-viz`/`agent-scrna` 生产 Worker profile 与三角色并行集成测试。当前 `CaseStore` 仍为文件存储，因此不能将 Bridge 扩为多副本；在迁移至具备原子 claim 的共享数据库或队列、并补齐 Deployment/HPA/KEDA 前，不得将该 Docker Compose profile 宣称为高可用 Kubernetes 集群。
+**平台退出门槛**：在目标 Kubernetes 集群完成真实 Redis/Gateway/OmicHub API selector、Secret Manager、NetworkPolicy、HPA 指标和故障注入验证后，才可称为生产可用。
 
-### Phase 2：审批后的分析操作（2 个迭代）
+**本轮实施记录（2026-08-08）**：已交付 Bridge Work Item 的 `claim → running → terminal` 状态机、租约/心跳/重试/依赖/幂等字段、Redis 分布式锁与共享状态、Redis Stream 审计、受限 Gateway 调用、`agent-rnaseq`/`agent-code`/`agent-viz`/`agent-scrna` 生产 Worker profile、保守质量与交付建议 Worker、三角色并行与跨 Bridge 原子 claim 集成测试。Worker heartbeat 会记录 Pod/运行实例名与 trace ID，供 Case 事件时间线消费。新增 Kubernetes Bridge 双副本、四类只读 Worker 各双副本、HPA、PDB、ServiceAccount 和默认拒绝后的最小网络策略清单。生产部署仍须将 Redis、Gateway、OmicHub API 的实际 endpoint selector / Secret Manager 引用填入集群 values；未完成这些平台绑定前不得直接 apply 到生产环境。
 
-- [ ] 实现 `analysis-worker`，仅通过 Bridge 调用 OmicHub 预检、任务提交、任务查询和取消接口。
-- [ ] 接入一次性审批 token、输入快照比对、资源/流程白名单和任务幂等键。
-- [ ] 由 `quality-worker` 自动领取完成任务的质量检查 Work Item。
-- [ ] 由 `delivery-worker` 生成交付证据包和 Case closeout 建议。
+### Phase 2：审批后的分析操作（代码闭环已交付，待预生产演练）
+
+- [x] 实现 `analysis-worker`，仅调用 Bridge 的 `submit-approved` 接口；Worker 不直接调用 OmicHub 内部服务。
+- [x] 将批准任务固化为 Bridge 托管、无 token 的任务快照：应用层以 `approval-authority` 创建审批与排队记录，Worker 不读取 `approval-authority`、Gateway Manager 或 OmicHub 管理凭据；scope 绑定 `case_id + work_item_id + action + flow_id`，并保存输入快照哈希。
+- [x] Bridge 按固定 `idempotency_key` 保存任务回执、把任务绑定到 Work Item，并在成功后记录批准快照已消费；重复执行端点不会创建第二个 Pipeline。
+- [x] 继续使用流程白名单、项目引用和预检输入快照比对；取消操作保留独立审批 scope，不复用提交 scope。
+- [x] 由 `quality-worker` 自动领取完成任务的质量检查 Work Item，并默认进入 `manual_review`。
+- [x] 由 `delivery-worker` 生成交付证据包和 Case closeout 建议；Case close 保持人工控制。
 
 **退出门槛**：真实测试项目可完成“预检 → 审批 → 提交 → 监控 → 质控 → 交付”闭环，且每个动作可审计和回放。
+
+**当前实现说明**：`approve_and_submit_task` 现执行“创建 `analysis-worker` Work Item → 签发 scoped approval → Bridge 固化已批准任务快照”的排队流程，不再同步调用 `/v1/tasks`。只有持有独立 Bridge token 的 `analysis-worker` 可领取 Work Item 并调用 `/submit-approved`；该请求不携带审批 token，Bridge 使用已验证的快照、预检输入和幂等回执提交 OmicHub 任务。
 
 ### Phase 3：与 Chat / Studio / Overdrive 收敛（1 个迭代）
 
@@ -285,6 +293,7 @@ lease.expired | work_item.requeued
 - [ ] Overdrive 不再自行长时间持有 SSE；对于集群任务，仅承担规划、进度镜像和最终汇总。
 - [ ] Chat 通过 Case 事件订阅展示实时进度；Studio 通过逻辑 artifact 引用打开结果，不直接共享 Worker 文件系统。
 - [ ] 为本地 fan-out、Overdrive、AgentTeams Case 统一事件命名、trace 关联和前端展示契约。
+- [x] 服务端保存统一路由决策：`execution_mode`、路由原因、置信度、降级模式和决策时间；Case 创建后固定为 `cluster_case`，避免刷新或重试时漂移。
 
 **退出门槛**：用户从 Chat 发起、在 AgentTeams 页面观察、回到 Chat 获取最终报告的体验一致；任意页面刷新不丢失状态。
 
@@ -309,6 +318,30 @@ lease.expired | work_item.requeued
 | 部署 | 生产 Deployment、HPA/KEDA、Secret、NetworkPolicy、PDB | `deploy/agentteams/kubernetes/`（新增 manifests/Helm values） |
 | API/UI | Case DAG、时间线、审批、失败重试、artifact 与 trace 链接 | `src/omichub/api/v1/agentteams.py`、`frontend/src/` |
 | 可观测性 | 事件表/流、OTel、指标、告警、管理员查询 | Bridge audit、OmicHub observability services |
+
+### 8.2 当前已落地文件与职责
+
+| 组件 | 当前职责 |
+|---|---|
+| `integrations/agentteams/bridge/omichub_agentteams_bridge/case_store.py` | Case/Work Item 共享快照、分布式锁、claim/lease 状态更新 |
+| `integrations/agentteams/bridge/omichub_agentteams_bridge/shared_state.py` | Redis 共享状态、锁和 Bridge 多副本协调 |
+| `integrations/agentteams/bridge/omichub_agentteams_bridge/audit.py` | 文件开发后端或 Redis Stream 审计与幂等回执 |
+| `integrations/agentteams/worker/production_runner.py` | 角色隔离的只读 Worker 运行器 |
+| `integrations/agentteams/worker/quality_runner.py` | 质量检查并提交 `manual_review`，不自动放行科学结果 |
+| `integrations/agentteams/worker/delivery_runner.py` | 生成交付证据与 closeout 建议，不直接关闭 Case |
+| `deploy/agentteams/kubernetes/bridge-cluster.yaml` | Bridge、只读 Worker、HPA、PDB 和安全上下文基线 |
+| `deploy/agentteams/kubernetes/network-policy.runtime.yaml` | Worker 到 Bridge/DNS 的最小通信基线，生产需补实际 selector |
+
+### 8.3 生产部署前置条件
+
+以下项目未完成前，部署只能用于开发、验收或预生产：
+
+1. 配置高可用 Redis，并设置 `BRIDGE_STATE_STORE_URL`；生产模式禁止回退到本地文件 CaseStore。
+2. 为每个角色配置独立 Secret：只读 Agent、质量审计、交付报告分别使用独立 token；Worker 不注入 `bridge.env`、Gateway Manager token 或 OmicHub 管理 token。
+3. 将 NetworkPolicy 中的 Redis、Gateway、OmicHub API 实际 Service selector 或命名空间规则补齐，并验证拒绝 PostgreSQL、Celery、Docker socket 和工作区访问。
+4. 为 HPA/KEDA 提供真实队列深度或运行数指标；仅配置 CPU HPA 不足以证明队列可扩缩。
+5. 配置审计 Stream 保留、备份、告警和 trace 采集；事件丢失、时间线缺 pod/trace 时不得通过生产门禁。
+6. 先执行预生产故障注入：Bridge 滚动重启、Worker Pod 删除、Redis 短暂不可用、Gateway 超时和重复 claim。
 
 ### 8.1 不应删除的既有能力
 
@@ -337,7 +370,7 @@ lease.expired | work_item.requeued
 创建一个包含三个无依赖只读 Work Item 的 Case：
 
 ```text
-research-01  → research-worker
+    rnaseq-01    → rnaseq-worker
 code-01      → code-worker
 viz-01       → viz-worker
 ```
@@ -350,7 +383,20 @@ viz-01       → viz-worker
 4. Manager 只能在三个 Work Item 均进入终态后输出最终汇总。
 5. 输出报告含每个角色的结论、证据引用与失败/跳过说明。
 
-### 9.3 故障演练用例
+### 9.3 当前已执行的自动化验证
+
+以下是本轮代码变更已经覆盖的验证，不等同于生产集群验收：
+
+| 验证 | 结果 |
+|---|---|
+| Bridge 完整契约测试 | `45 passed, 1 skipped, 1 warning`；Redis 专项测试在提供临时 Redis 时通过 |
+| Worker 测试 | `14 passed` |
+| 审批后分析链路 | Bridge 契约测试覆盖“批准排队 → analysis Worker claim → 无 token 提交 → 重复提交不重复创建任务”；Worker runtime 测试覆盖只使用 Bridge token |
+| Router、Case tool 和 AgentTeams 服务单元测试 | 目标测试通过，覆盖路由记录和 `cluster_case` metadata |
+| Kubernetes YAML 解析 | `bridge-cluster.yaml`、NetworkPolicy 文件可解析 |
+| Compose 配置 | 需在部署环境补齐 Secret/endpoint 后执行最终 `docker compose config` 和启动验证 |
+
+### 9.4 故障演练用例
 
 - 执行中删除一个 Worker Pod：任务 lease 到期后应被重新领取，副作用操作不重复。
 - Bridge 滚动重启：已完成事件不丢失、运行任务在恢复后继续 heartbeat 或被回收。
@@ -369,15 +415,15 @@ viz-01       → viz-worker
 
 ---
 
-## 11. 实施前决策清单
+## 11. 后续阶段与生产上线决策清单
 
-以下决策需在开始 Phase 1 前由产品、平台和安全负责人确认：
+以下决策需在开始审批后分析 Worker 和生产灰度前由产品、平台和安全负责人确认：
 
-1. Bridge 的共享持久化后端选型，以及高可用、备份和数据保留周期。
+1. Redis 共享持久化后端的高可用拓扑、备份、恢复演练和审计数据保留周期。
 2. 官方 AgentTeams / HiClaw 目标版本、Worker/Team 资源 schema 和升级策略。
 3. 每类 Worker 的模型供应商、并发配额、成本预算与降级模型。
 4. `cluster_case` 的触发阈值、最大任务数、最大 DAG 深度、默认 lease 和重试次数。
 5. 高风险动作的审批人、审批 TTL、取消权限和紧急熔断流程。
 6. 产物逻辑引用、对象存储签名 URL、脱敏日志和审计数据的保留规则。
 
-确认上述决策后，实施顺序必须是：**共享状态机与测试门禁 → 只读 Worker → 审批后的分析 Worker → Chat/Studio 收敛 → 灰度扩容**。不得跳过只读集群验收直接开放分析任务。
+确认上述决策后，实施顺序必须是：**审批授权托管与分析 Worker → Chat/Studio 时间线 → 预生产故障演练 → 白名单灰度 → 扩容**。不得跳过一次性审批授权与故障演练直接开放分析任务。

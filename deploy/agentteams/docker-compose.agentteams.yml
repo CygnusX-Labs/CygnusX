@@ -64,12 +64,11 @@ services:
     profiles: [agentteams-acceptance]
     build:
       context: ../../integrations/agentteams/worker
-    env_file:
-      - ${BRIDGE_ENV_FILE:-./bridge.env}
     environment:
       AGENTTEAMS_WORKER_MODE: acceptance
       AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
       AGENTTEAMS_WORKER_IDENTITY: agent-code
+      AGENTTEAMS_BRIDGE_TOKEN: ${AGENTTEAMS_AGENT_CODE_TOKEN:-}
       AGENTTEAMS_WORKER_AUTOCOMPLETE_DEMO: "true"
       AGENTTEAMS_WORKER_ACCEPT_CASE_PREFIX: agentteams-acceptance-
       AGENTTEAMS_WORKER_POLL_SECONDS: "2"
@@ -85,12 +84,11 @@ services:
     profiles: [agentteams-acceptance]
     build:
       context: ../../integrations/agentteams/worker
-    env_file:
-      - ${BRIDGE_ENV_FILE:-./bridge.env}
     environment:
       AGENTTEAMS_WORKER_MODE: acceptance
       AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
       AGENTTEAMS_WORKER_IDENTITY: agent-viz
+      AGENTTEAMS_BRIDGE_TOKEN: ${AGENTTEAMS_AGENT_VIZ_TOKEN:-}
       AGENTTEAMS_WORKER_AUTOCOMPLETE_DEMO: "true"
       AGENTTEAMS_WORKER_ACCEPT_CASE_PREFIX: agentteams-acceptance-
       AGENTTEAMS_WORKER_POLL_SECONDS: "2"
@@ -106,12 +104,11 @@ services:
     profiles: [agentteams-acceptance]
     build:
       context: ../../integrations/agentteams/worker
-    env_file:
-      - ${BRIDGE_ENV_FILE:-./bridge.env}
     environment:
       AGENTTEAMS_WORKER_MODE: acceptance
       AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
       AGENTTEAMS_WORKER_IDENTITY: agent-scrna
+      AGENTTEAMS_BRIDGE_TOKEN: ${AGENTTEAMS_AGENT_SCRNA_TOKEN:-}
       AGENTTEAMS_WORKER_AUTOCOMPLETE_DEMO: "true"
       AGENTTEAMS_WORKER_ACCEPT_CASE_PREFIX: agentteams-acceptance-
       AGENTTEAMS_WORKER_POLL_SECONDS: "2"
@@ -127,12 +124,11 @@ services:
     profiles: [agentteams-production]
     build:
       context: ../../integrations/agentteams/worker
-    env_file:
-      - ${BRIDGE_ENV_FILE:-./bridge.env}
     environment:
       AGENTTEAMS_WORKER_MODE: production
       AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
       AGENTTEAMS_WORKER_IDENTITY: agent-code
+      AGENTTEAMS_BRIDGE_TOKEN: ${AGENTTEAMS_AGENT_CODE_TOKEN:-}
       AGENTTEAMS_WORKER_POLL_SECONDS: "2"
     depends_on:
       omichub-agentteams-bridge:
@@ -146,12 +142,11 @@ services:
     profiles: [agentteams-production]
     build:
       context: ../../integrations/agentteams/worker
-    env_file:
-      - ${BRIDGE_ENV_FILE:-./bridge.env}
     environment:
       AGENTTEAMS_WORKER_MODE: production
       AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
       AGENTTEAMS_WORKER_IDENTITY: agent-viz
+      AGENTTEAMS_BRIDGE_TOKEN: ${AGENTTEAMS_AGENT_VIZ_TOKEN:-}
       AGENTTEAMS_WORKER_POLL_SECONDS: "2"
     depends_on:
       omichub-agentteams-bridge:
@@ -165,13 +160,84 @@ services:
     profiles: [agentteams-production]
     build:
       context: ../../integrations/agentteams/worker
-    env_file:
-      - ${BRIDGE_ENV_FILE:-./bridge.env}
     environment:
       AGENTTEAMS_WORKER_MODE: production
       AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
       AGENTTEAMS_WORKER_IDENTITY: agent-scrna
+      AGENTTEAMS_BRIDGE_TOKEN: ${AGENTTEAMS_AGENT_SCRNA_TOKEN:-}
       AGENTTEAMS_WORKER_POLL_SECONDS: "2"
+    depends_on:
+      omichub-agentteams-bridge:
+        condition: service_healthy
+    networks: [agentteams_control]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+
+  agentteams-worker-rnaseq-production:
+    profiles: [agentteams-production]
+    build:
+      context: ../../integrations/agentteams/worker
+    environment:
+      AGENTTEAMS_WORKER_MODE: production
+      AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
+      AGENTTEAMS_WORKER_IDENTITY: agent-rnaseq
+      AGENTTEAMS_BRIDGE_TOKEN: ${AGENTTEAMS_AGENT_RNASEQ_TOKEN:-}
+      AGENTTEAMS_WORKER_POLL_SECONDS: "2"
+    depends_on:
+      omichub-agentteams-bridge:
+        condition: service_healthy
+    networks: [agentteams_control]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+
+  agentteams-worker-analysis-production:
+    profiles: [agentteams-production]
+    build:
+      context: ../../integrations/agentteams/worker
+    environment:
+      AGENTTEAMS_WORKER_MODE: analysis
+      AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
+      AGENTTEAMS_WORKER_IDENTITY: analysis-worker
+      AGENTTEAMS_BRIDGE_TOKEN: ${AGENTTEAMS_ANALYSIS_WORKER_TOKEN:-}
+      AGENTTEAMS_WORKER_POLL_SECONDS: "2"
+    depends_on:
+      omichub-agentteams-bridge:
+        condition: service_healthy
+    networks: [agentteams_control]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+
+  agentteams-worker-quality-production:
+    profiles: [agentteams-production]
+    build:
+      context: ../../integrations/agentteams/worker
+    environment:
+      AGENTTEAMS_WORKER_MODE: quality
+      AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
+      AGENTTEAMS_WORKER_IDENTITY: quality-auditor
+      AGENTTEAMS_BRIDGE_TOKEN: ${AGENTTEAMS_QUALITY_AUDITOR_TOKEN:-}
+      AGENTTEAMS_WORKER_POLL_SECONDS: "5"
+    depends_on:
+      omichub-agentteams-bridge:
+        condition: service_healthy
+    networks: [agentteams_control]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+
+  agentteams-worker-delivery-production:
+    profiles: [agentteams-production]
+    build:
+      context: ../../integrations/agentteams/worker
+    environment:
+      AGENTTEAMS_WORKER_MODE: delivery
+      AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
+      AGENTTEAMS_WORKER_IDENTITY: delivery-reporter
+      AGENTTEAMS_BRIDGE_TOKEN: ${AGENTTEAMS_DELIVERY_REPORTER_TOKEN:-}
+      AGENTTEAMS_WORKER_POLL_SECONDS: "5"
     depends_on:
       omichub-agentteams-bridge:
         condition: service_healthy

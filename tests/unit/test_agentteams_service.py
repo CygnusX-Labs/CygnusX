@@ -168,6 +168,7 @@ async def test_create_case_assigns_and_runs_read_only_preflight(
                     "project_ref": {"kind": "project", "id": "project-1"},
                     "intent": "bulk_rnaseq_delivery",
                     "requester_ref": "current-user",
+                    "execution_mode": "cluster_case",
                 },
             },
         ),
@@ -348,7 +349,7 @@ async def test_case_owner_approval_submits_with_separate_bridge_identities(
         requests.append((path, {"identity": identity, "token": token, **kwargs}))
         if path == "/v1/approvals":
             return {"token": "short-lived-approval-token"}
-        return {"omic_task_id": "task-001", "status": "queued"}
+        return {"work_item_id": "submit-01", "status": "queued"}
 
     monkeypatch.setattr(service, "_request", fake_request)
     monkeypatch.setattr(service, "_request_as", fake_request_as)
@@ -359,22 +360,27 @@ async def test_case_owner_approval_submits_with_separate_bridge_identities(
         task_name="RNA delivery",
     )
 
-    assert result == {"omic_task_id": "task-001", "status": "queued"}
-    assert requests[1] == (
+    assert result == {"work_item_id": "submit-01", "status": "queued"}
+    assert requests[1][0] == "/v1/cases/bioops_001/work-items"
+    assert requests[2] == (
         "/v1/approvals",
         {
             "identity": "approval-authority",
             "token": "approval-token",
             "method": "POST",
-            "json": {"case_id": "bioops_001", "action": "submit_task", "flow_id": "rna_seq"},
+            "json": {
+                "case_id": "bioops_001",
+                "work_item_id": "submit-01",
+                "action": "submit_task",
+                "flow_id": "rna_seq",
+            },
         },
     )
-    assert requests[2][0] == "/v1/cases/bioops_001/work-items"
     assert requests[3] == (
-        "/v1/tasks",
+        "/v1/approved-submissions",
         {
-            "identity": "workflow-operator",
-            "token": "operator-token",
+            "identity": "approval-authority",
+            "token": "approval-token",
             "method": "POST",
             "json": {
                 "case_id": "bioops_001",
@@ -386,7 +392,7 @@ async def test_case_owner_approval_submits_with_separate_bridge_identities(
                     "name": "RNA delivery",
                     "sample_sheet": [{"sample": "S01", "group": "control"}],
                     "comparisons": [{"control": "control", "treatment": "treatment"}],
-                    "execution_mode": "local",
+                    "execution_mode": "cluster",
                 },
             },
         },

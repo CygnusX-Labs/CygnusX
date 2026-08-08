@@ -25,6 +25,7 @@ from omichub.application.services.chat_service import (
     _overdrive_preflight_questions,
     _overdrive_summary_exposes_internal_instructions,
     _resolve_overdrive_keyword_toggle,
+    _resolve_overdrive_router_toggle,
 )
 from omichub.application.services.domain_registry import get_domain_registry
 from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
@@ -93,7 +94,15 @@ def test_extract_overdrive_manager_json_shapes(raw: str, expected_ids: list[str]
     ("text", "enabled", "expected"),
     [
         ("请进入超频模式", False, True),
-        ("OVERDRIVE", False, True),
+        ("开启超频模式", False, True),
+        ("我想让你用超频模式帮我拆分任务", False, True),
+        ("用超频模式帮我做 TP53 RNA-seq 方案", False, True),
+        ("通过超频模式组织多专家协作", False, True),
+        ("turn on overdrive", False, True),
+        ("平台的超频模式是什么", False, None),
+        ("超频模式是什么", False, None),
+        ("如何开启超频模式？", False, None),
+        ("OVERDRIVE", False, None),
         ("退出超频模式", True, False),
         ("关闭超频后继续", True, False),
         ("别进超频模式，正常回答", False, None),
@@ -102,6 +111,24 @@ def test_extract_overdrive_manager_json_shapes(raw: str, expected_ids: list[str]
 )
 def test_overdrive_keyword_toggle_priority(text: str, enabled: bool, expected: bool | None) -> None:
     assert _resolve_overdrive_keyword_toggle(text, enabled) is expected
+
+
+@pytest.mark.parametrize(
+    ("route_info", "enabled", "expected"),
+    [
+        ({"overdrive_intent": "enable", "intent": "fanout", "confidence": 0.92}, False, True),
+        ({"overdrive_intent": "enable", "intent": "consult", "confidence": 0.75}, False, True),
+        ({"overdrive_intent": "enable", "intent": "chat", "confidence": 0.99}, False, None),
+        ({"overdrive_intent": "enable", "intent": "fanout", "confidence": 0.74}, False, None),
+        ({"overdrive_intent": "disable", "intent": "chat", "confidence": 0.99}, True, False),
+        ({"overdrive_intent": "none", "intent": "fanout", "confidence": 0.99}, False, None),
+        (None, False, None),
+    ],
+)
+def test_overdrive_router_toggle_requires_user_requested_actionable_collaboration(
+    route_info: dict[str, object] | None, enabled: bool, expected: bool | None
+) -> None:
+    assert _resolve_overdrive_router_toggle(route_info, enabled) is expected
 
 
 @pytest.mark.parametrize(

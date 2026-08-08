@@ -18,6 +18,8 @@ BridgeRole = Literal[
     "agent-code",
     "agent-viz",
     "agent-scrna",
+    "agent-rnaseq",
+    "analysis-worker",
 ]
 ApprovalAction = Literal["submit_task", "cancel_task"]
 CaseStatus = Literal[
@@ -106,6 +108,37 @@ class SubmitTaskRequest(BaseModel):
     task: TaskSpec
 
 
+class ApprovedSubmission(BaseModel):
+    """Bridge-owned, token-free authorization envelope consumed by ``analysis-worker``."""
+
+    approval_id: str = Field(min_length=1, max_length=128)
+    expires_at: datetime
+    idempotency_key: str = Field(min_length=8, max_length=256)
+    task: TaskSpec
+    input_snapshot_hash: str = Field(min_length=32, max_length=128)
+    prepared_at: datetime
+    submission_started_at: datetime | None = None
+    consumed_at: datetime | None = None
+
+
+class QueueApprovedSubmissionRequest(BaseModel):
+    """Approve a fixed task snapshot for later execution by the analysis Worker."""
+
+    case_id: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    work_item_id: str = Field(min_length=1, max_length=128)
+    idempotency_key: str = Field(min_length=8, max_length=256)
+    approval_token: str = Field(min_length=20, max_length=4096)
+    task: TaskSpec
+
+
+class QueueApprovedSubmissionResponse(BaseModel):
+    case_id: str
+    work_item_id: str
+    approval_id: str
+    status: Literal["queued", "idempotent_replay"]
+    expires_at: datetime
+
+
 class TaskReceipt(BaseModel):
     case_id: str
     omic_task_id: str
@@ -117,6 +150,7 @@ class TaskReceipt(BaseModel):
 class ApprovalRequest(BaseModel):
     case_id: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
     action: ApprovalAction
+    work_item_id: str | None = Field(default=None, max_length=128)
     flow_id: str | None = Field(default=None, max_length=128)
     task_id: str | None = Field(default=None, max_length=128)
     ttl_seconds: int = Field(default=300, ge=30, le=3_600)
@@ -180,6 +214,7 @@ class CaseCreateRequest(BaseModel):
     element_room_url: str | None = Field(default=None, max_length=2_048)
     origin_consultation_id: str | None = Field(default=None, max_length=256)
     consultation_summary: str | None = Field(default=None, max_length=1_800)
+    execution_mode: Literal["local", "cluster_case"] = "cluster_case"
 
     @field_validator("element_room_url")
     @classmethod
@@ -196,6 +231,7 @@ class CaseRecord(BaseModel):
     element_room_url: str | None = None
     origin_consultation_id: str | None = None
     consultation_summary: str | None = None
+    execution_mode: Literal["local", "cluster_case"] = "cluster_case"
     status: CaseStatus = "received"
     omic_task_ids: list[str] = Field(default_factory=list)
     task_specs: list[dict[str, Any]] = Field(default_factory=list)
@@ -225,6 +261,7 @@ class WorkItemRecord(BaseModel):
     lease_expires_at: datetime | None = None
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=256)
     trace_id: str | None = Field(default=None, max_length=128)
+    approved_submission: ApprovedSubmission | None = None
     depends_on: list[str] = Field(default_factory=list, max_length=32)
     output_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
     summary: str | None = Field(default=None, max_length=4_000)
@@ -258,6 +295,7 @@ class WorkItemUpdateRequest(BaseModel):
 class WorkItemHeartbeatRequest(BaseModel):
     trace_id: str | None = Field(default=None, max_length=128)
     summary: str = Field(default="", max_length=1_000)
+    worker_id: str | None = Field(default=None, max_length=256)
 
 
 class ReadOnlyExecutionRequest(BaseModel):

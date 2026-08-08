@@ -49,10 +49,26 @@ runtime. A successful acceptance Case contains, for each identity, ordered Case 
 `worker.inbox_polled`, `work_item.claimed`, and `skill.finished`. Do not enable this profile for
 production scientific work.
 
+Before starting either Worker profile, inject only the three role-scoped tokens into the Compose
+process, ideally from a deployment secret manager:
+
+```bash
+export AGENTTEAMS_AGENT_CODE_TOKEN=...
+export AGENTTEAMS_AGENT_VIZ_TOKEN=...
+export AGENTTEAMS_AGENT_SCRNA_TOKEN=...
+export AGENTTEAMS_AGENT_RNASEQ_TOKEN=...
+export AGENTTEAMS_QUALITY_AUDITOR_TOKEN=...
+export AGENTTEAMS_DELIVERY_REPORTER_TOKEN=...
+export AGENTTEAMS_ANALYSIS_WORKER_TOKEN=...
+```
+
+Workers do not load `bridge.env`. This prevents them from inheriting the Gateway Manager token,
+approval signing secret, OmicHub integration credential, or other Worker identities.
+
 ### Production read-only Worker profile
 
-The `agentteams-production` profile starts real, role-scoped `agent-code`, `agent-viz`, and
-`agent-scrna` Worker processes. A Worker receives only its own Bridge token: it claims a Work
+The `agentteams-production` profile starts real, role-scoped `agent-rnaseq`, `agent-code`,
+`agent-viz`, and `agent-scrna` Worker processes. A Worker receives only its own Bridge token: it claims a Work
 Item, sends heartbeats, and asks the Bridge to call the Gateway's fixed read-only consultation
 endpoint. The Gateway Manager token stays inside the Bridge container and is never mounted into
 a Worker.
@@ -66,6 +82,14 @@ Before enabling this profile, configure `BRIDGE_GATEWAY_URL` and
 `BRIDGE_GATEWAY_MANAGER_TOKEN` in the deployment-managed `bridge.env`. The profile is intended
 for read-only consultation only; workflow submission, cancellation, file writes, and Pipeline
 execution remain on the approval-gated Bridge routes.
+
+The quality Worker is intentionally conservative: it reads only Bridge-provided logical artifact
+references and records `manual_review`; it never auto-approves a scientific result. A human
+quality reviewer must decide whether to close the resulting delivery Case.
+
+The delivery Worker records a `delivery.closeout_recommended` evidence event and completes its
+delivery Work Item, but does not call Case close. Closing remains a human-controlled action using
+the quality decision already persisted by the Bridge.
 
 Use `.env.agentteams.example` as the separately managed environment template for the
 version-specific AgentTeams Controller/Manager/Worker, Matrix, MinIO, and optional Higress
@@ -259,9 +283,17 @@ volumes.
 
 ```bash
 kubectl apply -f deploy/agentteams/kubernetes/network-policy.default-deny.yaml
+kubectl apply -f deploy/agentteams/kubernetes/bridge-cluster.yaml
+kubectl apply -f deploy/agentteams/kubernetes/network-policy.runtime.yaml
 python3 deploy/agentteams/verify_control_plane.py \
   --namespace agentteams-system
 ```
+
+Before applying `bridge-cluster.yaml`, replace the two image references with the built and
+signed Bridge/Worker images, create `omichub-agentteams-bridge-runtime` from the production
+Bridge secret, create `omichub-agentteams-worker-tokens` with one key per Worker role, and point
+`BRIDGE_STATE_STORE_URL` at managed Redis. The Worker secret must not contain Gateway, approval,
+or OmicHub integration credentials.
 
 `verify_control_plane.py` is read-only and controller-schema agnostic. It checks that the target
 namespace exists, that a namespace-wide ingress/egress default-deny policy is active, and that

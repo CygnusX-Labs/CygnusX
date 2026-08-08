@@ -70,6 +70,11 @@ function appendBoundedStudioOutput(current: string, data: string): string {
   return `…\n${combined.slice(-(STUDIO_OUTPUT_CAP - 2))}`
 }
 
+/** 移除会话内的「连接中断，自动重试中」临时提示（流结束/失败后清理，避免污染上下文） */
+function cleanupStreamRetryNotices(session: { messages: ChatMessage[] }): void {
+  session.messages = session.messages.filter((m) => !m.id.startsWith('stream-retry-'))
+}
+
 export const CATEGORY_LABELS: Record<AgentCategory, string> = {
   general: '通用',
   analysis: '分析',
@@ -2006,7 +2011,19 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             : [...tcs].reverse().find((t) => t.status === 'running' && (!tool || t.name === tool))
           if (tc) tc.output = appendBoundedStudioOutput(tc.output || '', data)
         },
+        onRetry: (attempt, maxAttempts) => {
+          // 连接中断后自动重试的进度提示（不打断对话，仅插入一条系统消息）
+          if (!session.overdrive && !effectiveOverdrive) {
+            session.messages.push({
+              id: `stream-retry-${Date.now()}-${attempt}`,
+              role: 'system',
+              content: `连接中断，正在自动重试（第 ${attempt}/${maxAttempts} 次）…`,
+              createdAt: new Date().toISOString(),
+            })
+          }
+        },
         onError: (error) => {
+          cleanupStreamRetryNotices(session)
           if (session.overdrive || effectiveOverdrive) {
             finalizeRoomSpeeches()
             session.messages.push({ id: `room-error-${Date.now()}`, role: 'system', content: `超频模式执行失败: ${error}`, createdAt: new Date().toISOString() })
@@ -2026,6 +2043,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           releaseSessionIdLock()
         },
         onDone: (_, messageId, usage, finishReason, finalContent, finalReasoning) => {
+          cleanupStreamRetryNotices(session)
           if (session.overdrive || effectiveOverdrive) {
             finalizeRoomSpeeches()
             isStreaming.value = false
@@ -2087,6 +2105,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     // 兜底：若流异常中断未触发 onDone/onError（极罕见，onDone 已有内部兜底）
     if (isStreaming.value) {
       finalizeRoomSpeeches()
+      cleanupStreamRetryNotices(session)
       if (!session.overdrive) {
         aiMsg.content = streamingContent.value || aiMsg.content
         aiMsg.thought = streamingThought.value || undefined

@@ -75,6 +75,30 @@ def test_claims_pending_assignment_and_outputs_only_worker_envelope() -> None:
     assert requests[1].headers["X-bridge-identity"] == "quality-auditor"
 
 
+def test_heartbeat_includes_runtime_pod_identity(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def opener(request):
+        captured["payload"] = json.loads(request.data.decode("utf-8"))
+        return Response({"status": "running"})
+
+    monkeypatch.setenv("AGENTTEAMS_POD_NAME", "worker-code-7d8f")
+    claim_next.heartbeat_work_item(
+        "http://bridge/v1",
+        "agent-code",
+        "secret",
+        {"case_id": "case-1", "work_item": {"work_item_id": "code-01"}},
+        trace_id="trace-1",
+        opener=opener,
+    )
+
+    assert captured["payload"] == {
+        "summary": "",
+        "trace_id": "trace-1",
+        "worker_id": "worker-code-7d8f",
+    }
+
+
 def test_dry_run_keeps_the_same_sanitized_assignment_envelope() -> None:
     inbox = {
         "items": [

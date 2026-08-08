@@ -31,6 +31,18 @@ def test_production_worker_requires_supported_identity() -> None:
         raise AssertionError("unsupported production identity was accepted")
 
 
+def test_production_worker_supports_rnaseq_research_identity() -> None:
+    config = production_runner.load_config(
+        {
+            "AGENTTEAMS_BRIDGE_BASE_URL": "http://bridge:8080/v1",
+            "AGENTTEAMS_WORKER_IDENTITY": "agent-rnaseq",
+            "AGENTTEAMS_BRIDGE_TOKEN": "rnaseq-token",
+        }
+    )
+
+    assert config.identity == "agent-rnaseq"
+
+
 def test_production_worker_claims_and_uses_bridge_execution(monkeypatch) -> None:
     calls: list[str] = []
     assignment = {

@@ -63,7 +63,12 @@ async function handleSave() {
     close()
   } catch (error: any) {
     // 失败不关闭弹窗，保留当前勾选状态供调整后重试
-    message.error(error?.response?.data?.detail || '保存失败')
+    const detail = error?.response?.data?.detail
+    if (error?.response?.status === 401) {
+      message.error(detail || '当前登录态已失效，请重新登录后再保存')
+    } else {
+      message.error(detail || '保存失败')
+    }
   } finally {
     saving.value = false
   }

@@ -11,6 +11,7 @@ P1 数据不搬家：input/ 下软链指向容器内平台只读挂载 /data/pla
 
 from __future__ import annotations
 
+import contextlib
 import os
 from pathlib import Path
 from typing import Any
@@ -138,16 +139,34 @@ def platform_user_rel(storage_rel: str, user_id: str) -> str:
     return Path(*parts[len(prefix.parts) :]).as_posix()
 
 
-def link_platform_file(workspace: Path, mount_rel: str, display_name: str | None = None) -> str:
+def link_platform_file(
+    workspace: Path,
+    mount_rel: str,
+    display_name: str | None = None,
+    *,
+    idempotent: bool = False,
+) -> str:
     """在 workspace/input 下创建指向平台只读挂载的软链，返回链接名。
 
     - mount_rel：平台挂载（/data/platform）内相对路径，即 platform_user_rel 的结果；
     - 软链目标为容器内路径 /data/platform/<mount_rel>，宿主侧通常显示为悬空软链，
       属预期（宿主读取经 resolve_workspace_read_path 翻译，容器内经只读挂载直读）；
-    - 重名自动加 " (2)" 后缀；链接名强制取 basename，防路径注入。
+    - 重名自动加 " (2)" 后缀；链接名强制取 basename，防路径注入；
+    - idempotent=True 时，若 input/ 下已有指向同一平台路径的软链则直接复用其名，
+      避免同一文件在多轮对话中被重复引入生成 "name (2)/(3)" 冗余链接。默认 False
+      以保持 datahub_import 等既有工具的原始去重语义，仅聊天附件自动挂载链路启用。
     """
     input_dir = workspace / INPUT_DIR
     input_dir.mkdir(parents=True, exist_ok=True)
+    target = f"{PLATFORM_CONTAINER_MOUNT}/{mount_rel}"
+    if idempotent:
+        # 宿主侧软链悬空，必须用 lexists + readlink 按目标比对，不能靠 exists
+        for entry in sorted(input_dir.iterdir(), key=lambda p: p.name):
+            if not os.path.islink(entry):
+                continue
+            with contextlib.suppress(OSError):
+                if os.readlink(entry) == target:
+                    return entry.name
     name = Path(display_name or Path(mount_rel).name).name
     if not name:
         raise BusinessError("链接名不能为空")
@@ -158,7 +177,7 @@ def link_platform_file(workspace: Path, mount_rel: str, display_name: str | None
     while os.path.lexists(input_dir / candidate):
         n += 1
         candidate = f"{stem} ({n}){suffix}"
-    (input_dir / candidate).symlink_to(f"{PLATFORM_CONTAINER_MOUNT}/{mount_rel}")
+    (input_dir / candidate).symlink_to(target)
     return candidate
 
 

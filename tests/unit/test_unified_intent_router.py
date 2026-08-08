@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from omichub.application.services.unified_intent_router import capability_notice, normalize_decision
+from omichub.application.services.unified_intent_router import (
+    capability_notice,
+    execution_routing_record,
+    normalize_decision,
+)
 
 AGENTS = {"agent-general", "agent-rnaseq", "agent-scrna", "agent-code", "agent-viz"}
 
@@ -35,6 +39,40 @@ AGENTS = {"agent-general", "agent-rnaseq", "agent-scrna", "agent-code", "agent-v
 def test_normalize_decision_covers_collaboration_intents(payload, expected: str) -> None:
     decision = normalize_decision(payload, fallback_agent_id="agent-general", valid_agent_ids=AGENTS)
     assert decision.intent == expected
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ({"overdrive_intent": "enable"}, "enable"),
+        ({"overdrive_intent": "disable"}, "disable"),
+        ({"overdrive_intent": "none"}, "none"),
+        ({"overdrive_intent": "unexpected"}, "none"),
+    ],
+)
+def test_normalize_decision_keeps_only_supported_overdrive_intents(payload, expected: str) -> None:
+    decision = normalize_decision(payload, fallback_agent_id="agent-general", valid_agent_ids=AGENTS)
+
+    assert decision.overdrive_intent == expected
+
+
+def test_execution_routing_records_cluster_case_only_when_available() -> None:
+    decision = normalize_decision(
+        {"collaboration_intent": "case", "confidence": 0.9, "reason": "需要审批交付"},
+        fallback_agent_id="agent-general",
+        valid_agent_ids=AGENTS,
+    )
+    available = capability_notice(
+        decision,
+        fanout_enabled=True,
+        consultation_enabled=True,
+        case_enabled=True,
+        mas_enabled=True,
+    )
+    unavailable = {**available, "available": False, "degraded": True}
+
+    assert execution_routing_record(decision, available)["mode"] == "cluster_case"
+    assert execution_routing_record(decision, unavailable)["mode"] == "local"
     assert decision.target_agent_id in AGENTS
 
 

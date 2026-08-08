@@ -345,8 +345,9 @@ class FileService:
         user_id: UUID,
         path: str | None = None,
         pattern: str | None = None,
+        recursive: bool = False,
     ) -> dict[str, object]:
-        """列出工作区目录的直接子项，文件数据来自统一文件索引。"""
+        """列出工作区目录的子项，支持按需递归返回所有文件。"""
         directory = self.validate_workspace_path(path)
         normalized_pattern = (pattern or "").strip()
         prefix_parts = tuple(Path(directory).parts) if directory else ()
@@ -363,7 +364,7 @@ class FileService:
             remainder = relative_parts[len(prefix_parts) :]
             if not remainder:
                 continue
-            if len(remainder) > 1:
+            if len(remainder) > 1 and not recursive:
                 folder_name = remainder[0]
                 folder_path = "/".join((*prefix_parts, folder_name))
                 existing = folders.get(folder_path)
@@ -392,6 +393,8 @@ class FileService:
             )
 
         for child in indexed_directories:
+            if recursive:
+                continue
             child_parts = tuple(Path(child.path).parts)
             if child_parts[: len(prefix_parts)] != prefix_parts:
                 continue
@@ -422,6 +425,7 @@ class FileService:
         return {
             "path": directory,
             "pattern": normalized_pattern or None,
+            "recursive": recursive,
             "items": items,
             "total": len(items),
         }

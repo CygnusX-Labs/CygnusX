@@ -10,6 +10,8 @@ from omichub.infrastructure.studio.workspace import (
     disk_list_artifacts,
     disk_list_files,
     disk_read_file,
+    link_platform_file,
+    list_input_links,
     resolve_artifact_path,
 )
 
@@ -145,3 +147,47 @@ def test_business_error_importable():
     """磁盘回退使用的是既有异常约定（404/400）"""
     assert issubclass(NotFoundError, Exception)
     assert issubclass(BusinessError, Exception)
+
+
+# ===== 平台数据软链（挂载进沙盒工作区） =====
+
+
+@pytest.mark.unit
+def test_link_platform_file_creates_input_symlink(tmp_path: Path):
+    from omichub.infrastructure.studio.paths import PLATFORM_CONTAINER_MOUNT
+
+    name = link_platform_file(tmp_path, "raw/a.csv")
+    assert name == "a.csv"
+    link = tmp_path / "input" / "a.csv"
+    assert link.is_symlink()
+    # 软链目标为容器内平台只读挂载路径（宿主侧悬空属预期）
+    assert link.readlink() == Path(f"{PLATFORM_CONTAINER_MOUNT}/raw/a.csv")
+    assert list_input_links(tmp_path) == ["a.csv"]
+
+
+@pytest.mark.unit
+def test_link_platform_file_idempotent_same_target(tmp_path: Path):
+    """idempotent=True 时同一平台路径重复引入复用既有软链，不生成 name (2)/(3) 冗余链接。"""
+    first = link_platform_file(tmp_path, "raw/a.csv", idempotent=True)
+    second = link_platform_file(tmp_path, "raw/a.csv", idempotent=True)
+    third = link_platform_file(tmp_path, "raw/a.csv", display_name="renamed.csv", idempotent=True)
+    assert first == second == third == "a.csv"
+    assert list_input_links(tmp_path) == ["a.csv"]
+
+
+@pytest.mark.unit
+def test_link_platform_file_distinct_targets_distinct_links(tmp_path: Path):
+    """不同平台路径（即便同名）应各自建立软链。"""
+    a = link_platform_file(tmp_path, "raw/a.csv")
+    b = link_platform_file(tmp_path, "other/a.csv")
+    assert a == "a.csv"
+    assert b == "a (2).csv"
+    assert set(list_input_links(tmp_path)) == {"a.csv", "a (2).csv"}
+
+
+@pytest.mark.unit
+def test_link_platform_file_non_idempotent_forces_duplicate(tmp_path: Path):
+    a = link_platform_file(tmp_path, "raw/a.csv", idempotent=False)
+    b = link_platform_file(tmp_path, "raw/a.csv", idempotent=False)
+    assert a == "a.csv"
+    assert b == "a (2).csv"

@@ -22,7 +22,7 @@ class BridgeSettings(BaseSettings):
         "approval-authority:approval-secret,bioops-manager:manager-secret,data-steward:steward-secret,"
         "workflow-operator:operator-secret,quality-auditor:auditor-secret,"
         "delivery-reporter:reporter-secret,agent-code:code-secret,agent-viz:viz-secret,"
-        "agent-scrna:scrna-secret"
+        "agent-scrna:scrna-secret,agent-rnaseq:rnaseq-secret,analysis-worker:analysis-secret"
     )
     allowed_flow_ids: str = "rna_seq,scrna_seq"
     request_timeout_seconds: float = 20.0
@@ -45,8 +45,8 @@ class BridgeSettings(BaseSettings):
             "identities": (
                 "approval-authority:approval-secret,bioops-manager:manager-secret,data-steward:steward-secret,"
                 "workflow-operator:operator-secret,quality-auditor:auditor-secret,"
-                "delivery-reporter:reporter-secret,agent-code:code-secret,agent-viz:viz-secret,"
-                "agent-scrna:scrna-secret"
+            "delivery-reporter:reporter-secret,agent-code:code-secret,agent-viz:viz-secret,"
+            "agent-scrna:scrna-secret,agent-rnaseq:rnaseq-secret,analysis-worker:analysis-secret"
             ),
         }
         configured_upstream_credentials = [

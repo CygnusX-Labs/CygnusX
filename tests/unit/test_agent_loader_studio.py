@@ -479,7 +479,7 @@ def test_mcp_builder_agent_loads_successfully():
     assert data is not None, "mcp_builder.yaml 加载失败"
     assert data["agent_id"] == "agent-mcp-builder"
     assert data["name"] == "MCP 构建师"
-    assert data["model"] == "qwen3.7-plus"
+    assert data["model"] == "deepseek-v4-flash"
 
     # Studio 配置验证
     assert "studio" in data

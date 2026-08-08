@@ -248,7 +248,7 @@ tools:
       properties:
         data_text:
           type: string
-          description: CSV/TSV 格式的差异表达表文本，含 log2FC 与 p-value 列；也支持 upload://file_id 引用已上传文件
+          description: CSV/TSV 格式的差异表达表文本，含 log2FC 与 p-value 列；支持 upload://file_id 聊天上传文件或 file://UUID 工作区文件引用
         pval_cutoff:
           type: number
           default: 0.05
