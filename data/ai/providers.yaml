@@ -21,15 +21,3 @@ providers:
   is_default: true
   is_active: true
   extra_params: {}
-- name: qwen3.7-plus
-  provider_type: openai_compatible
-  model: glm-5-2-260617
-  base_url: https://ark.cn-beijing.volces.com/api/v3
-  api_key: ${AL_API_KEY}
-  temperature: 0.7
-  max_tokens: 4096
-  top_p: 1.0
-  timeout: 120
-  is_default: false
-  is_active: false
-  extra_params: {}
