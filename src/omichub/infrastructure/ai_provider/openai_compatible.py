@@ -220,13 +220,16 @@ class OpenAICompatibleProvider:
         last_usage: dict[str, Any] | None = None
         last_finish_reason: str | None = None
         retry_without_tools = False
+        retry_without_thinking = False
         transient_retries = 0
         empty_retried = False
 
         while True:
             attempt_had_text = False
+            attempt_had_reasoning = False
             attempt_had_error = False
             attempt_tools = None if retry_without_tools else tools
+            attempt_deep_thinking = False if retry_without_thinking else deep_thinking
             attempt_messages = messages
             attempt_system_prompt = system_prompt
             if retry_without_tools and tools:
@@ -244,11 +247,14 @@ class OpenAICompatibleProvider:
                 temperature,
                 max_tokens,
                 attempt_tools,
-                deep_thinking,
+                attempt_deep_thinking,
             ):
                 if chunk.type == "text":
-                    has_yielded_text = True
-                    attempt_had_text = True
+                    if chunk.metadata.get("is_reasoning"):
+                        attempt_had_reasoning = True
+                    else:
+                        has_yielded_text = True
+                        attempt_had_text = True
                     yield chunk
                 elif chunk.type == "tool_calls":
                     has_tool_calls = True
@@ -285,6 +291,12 @@ class OpenAICompatibleProvider:
             # - 若是空响应，允许一次「去 tools」重试，仍空则走下方空响应兜底。
             if attempt_had_error:
                 break
+            if attempt_had_reasoning and deep_thinking and not retry_without_thinking:
+                retry_without_thinking = True
+                logger.info(
+                    f"模型 '{self.name}' 仅返回推理内容，关闭深度思考后自动重试一次"
+                )
+                continue
             if not empty_retried:
                 empty_retried = True
                 retry_without_tools = bool(tools)
@@ -295,7 +307,9 @@ class OpenAICompatibleProvider:
         if not has_yielded_text and not has_tool_calls:
             logger.error(
                 f"[LLM空响应] provider={self.name} model={self.model} "
-                f"messages={len(messages)} tools={bool(tools)} deep_thinking={deep_thinking}"
+                f"messages={len(messages)} tools={bool(tools)} "
+                f"deep_thinking={deep_thinking} finish_reason={last_finish_reason} "
+                f"usage={last_usage}"
             )
             yield ChatChunk(
                 type="error",
@@ -335,8 +349,11 @@ class OpenAICompatibleProvider:
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
-        if deep_thinking:
-            payload["enable_thinking"] = True
+        model_name = f"{self.name} {self.model}".lower()
+        if deep_thinking or "deepseek-v4" in model_name:
+            # DeepSeek V4 默认可能开启思考；必须显式发送 False，避免路由阶段
+            # max_tokens=200 被思考内容耗尽后没有最终正文。
+            payload["enable_thinking"] = deep_thinking
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
@@ -345,7 +362,9 @@ class OpenAICompatibleProvider:
         try:
             logger.debug(
                 f"[LLM请求] provider={self.name} model={self.model} "
-                f"messages={len(api_messages)} tools={bool(tools)} deep_thinking={deep_thinking}"
+                f"messages={len(api_messages)} tools={bool(tools)} "
+                f"deep_thinking={deep_thinking} "
+                f"enable_thinking={payload.get('enable_thinking', '<omitted>')}"
             )
             async with (
                 httpx.AsyncClient(
@@ -404,10 +423,12 @@ class OpenAICompatibleProvider:
 
                     for line in lines:
                         line = line.strip()
-                        if not line or not line.startswith("data: "):
+                        # SSE 规范允许 ``data:`` 后没有空格；部分 OpenAI
+                        # 兼容网关（包括部分火山方舟响应）会使用这种形式。
+                        if not line or not line.startswith("data:"):
                             continue
 
-                        data = line[6:]
+                        data = line[5:].strip()
                         if data == "[DONE]":
                             if self._emit_tool_calls(tool_acc):
                                 yield ChatChunk(
@@ -448,10 +469,22 @@ class OpenAICompatibleProvider:
                         if not choices:
                             continue
 
-                        delta = choices[0].get("delta", {})
+                        choice = choices[0] or {}
+                        delta = choice.get("delta") or {}
+                        message = choice.get("message") or {}
+
+                        # 绝大多数服务在流中使用 delta，但一些兼容网关会在
+                        # 最后一块使用完整 message。两者都应计入正文/工具调用，
+                        # 否则流本身成功却会被上层误判成“响应为空”。
+                        if not isinstance(delta, dict):
+                            delta = {}
+                        if not isinstance(message, dict):
+                            message = {}
 
                         # DeepSeek 特有: reasoning_content（思考过程）
-                        reasoning = delta.get("reasoning_content", "")
+                        reasoning = delta.get("reasoning_content", "") or message.get(
+                            "reasoning_content", ""
+                        )
                         if reasoning:
                             yield ChatChunk(
                                 type="text",
@@ -459,7 +492,7 @@ class OpenAICompatibleProvider:
                                 metadata={"is_reasoning": True},
                             )
 
-                        content = delta.get("content", "")
+                        content = delta.get("content", "") or message.get("content", "")
                         if content:
                             yield ChatChunk(
                                 type="text",
@@ -468,7 +501,8 @@ class OpenAICompatibleProvider:
                             )
 
                         # 累积 tool_calls 分片，不逐片 yield
-                        for tc in delta.get("tool_calls", []) or []:
+                        raw_tool_calls = delta.get("tool_calls") or message.get("tool_calls") or []
+                        for tc in raw_tool_calls:
                             idx = tc.get("index", 0)
                             slot = tool_acc.setdefault(
                                 idx,
@@ -588,13 +622,25 @@ class ProviderManager:
         return cls._instance
 
     def get_or_create(self, config: AIProviderConfigModel) -> OpenAICompatibleProvider:
-        """获取或创建 Provider（带缓存）"""
-        cache_key = str(config.id)
-        if cache_key in self._providers:
-            return self._providers[cache_key]
+        """获取或创建 Provider（带缓存）
 
-        provider = OpenAICompatibleProvider(config)
-        self._providers[cache_key] = provider
+        缓存命中时也会用最新 config 刷新可变字段（尤其 API Key / model / base_url）：
+        管理员在「AI 模型配置」更新 Key 后，调用方传入的是最新 DB 行，
+        若这里继续复用旧 Key，模型侧会直接 401（旧 Key 失效）。
+        """
+        cache_key = str(config.id)
+        provider = self._providers.get(cache_key)
+        if provider is None:
+            provider = OpenAICompatibleProvider(config)
+            self._providers[cache_key] = provider
+            return provider
+
+        provider.config = config
+        provider.name = config.name
+        provider.model = config.model
+        provider.base_url = config.base_url.rstrip("/")
+        provider._api_key = config.api_key or ""
+        provider._timeout = config.timeout or 120
         return provider
 
     def clear_cache(self, model_id: str | None = None) -> None:

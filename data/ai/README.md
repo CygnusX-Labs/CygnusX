@@ -407,6 +407,37 @@ YAML；启用 `managed_prompt` 或 `managed_profile` 的内置 Agent 会覆盖�
 只有确实需要跨会话研究上下文的 Agent 才应挂载长期记忆。交接时应传递研究问题、输入文件、
 样本设计、已完成步骤、关键结果、限制和期望产物，不应只发送一句自然语言任务。
 
+### 8.1 Handoff 白名单与路由会话的源 Agent 规范
+
+Agent YAML 顶层的 `handoff:` 段由加载器合并进 `features.handoff`（见
+`agent_loader.py`），运行时白名单校验只读数据库中的 `features.handoff`：
+
+```yaml
+handoff:
+  allowed_targets: ["agent-code", "agent-viz"]  # 或 ["*"] 放行全部活跃 Agent
+  max_hops_per_session: 10                       # 可选，默认 10，上限 10
+```
+
+- `allowed_targets` 为空或未声明 `handoff:` 段时，该 Agent 发起的所有 `transfer_to_agent`
+  都会被拒绝（"目标 Agent 不在当前 Agent 的转交白名单中"）。
+- 使用 `"*"` 时仍不能转交给带 `features.router: true` 的路由 Agent。
+- 每会话转交次数上限为 10（`max_hops_per_session`，默认值与服务端上限均为 10），第 11 次
+  转交会被"本会话最多允许 10 次转交"拒绝。
+- 回转交必须携带新增信息：转回本会话历史中曾经作为源出现过的 Agent 时，`reason` 少于
+  16 个字符会被拒绝（"回转交必须在转交原因中说明新增信息"）。这两条规则已写入所有挂载
+  `handoff` 的 Agent 可见的 `HANDOFF_SYSTEM_PROMPT_SUFFIX`，模型应主动遵守而不是依赖
+  服务端报错。
+- 提示词中的"当前可转交的 Agent"目录按同一白名单生成，配置变更后须重启或手动同步
+  内置 Agent，避免目录与校验结果不一致。
+
+**星尘 AI（agent-router）路由会话的关键约定**：路由入口会话的 `session.agent_id`
+恒为 `agent-router`（每条消息重新路由、会话绑定不变），但路由后执行上下文 `ctx` 已切换为
+目标专家。因此所有按"当前 Agent"校验的运行时逻辑——包括 handoff 白名单——必须以路由后的
+实际执行 Agent（`ctx.agent.agent_id`）为准，严禁使用会话绑定的 `agent_id`。`agent-router`
+自身不声明 `handoff:` 段、不挂载 `handoff` Tool Pack；若以会话绑定 Agent 校验，白名单恒为空，
+会导致所有专家间转交被拒（2026-08 曾因此全平台转交流转失败，`chat_handoff_events` 零记录）。
+参考实现：`chat_service.py` 主流路径的 `ToolInvocationContext(agent_id=str(ctx.agent.agent_id))`。
+
 ## 9. 配置校验清单
 
 提交 Agent 变更前至少检查：

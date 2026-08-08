@@ -461,6 +461,7 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 - [ ] 数据表格/卡片是否符合 §33.2：进度经归一化函数渲染、`NProgress` 百分比不换行（`.n-progress-graph{min-width:0}`）、**所有列固定 `width` 且 `scroll-x`=列宽之和**、短值列 `align:'center'`、卡片垂直间距 24px？
 - [ ] 进度/百分比/计数等派生数值是否在任何数据尺度下都正确（§33.2 进度尺度归一化），而非依赖单一写死约定？
 - [ ] 设计是否规避 §33.1 的「AI 默认」清单（纯白无氛围、三列等宽 hero、统一间距/圆角、通用无衬线、对称留白），在不破坏 §1 克制原则的前提下具备品牌辨识度与层次？
+- [ ] 涉及流式/连接类组合式函数（`useChatStream`、`useAgentChatStream`、WebSocket 等）改动时：`isStreaming`/`status` 等入口守卫标志位是否在 `try/finally` 中对**所有**退出路径复位（§18.2 流式状态机纪律）？是否有"同一实例连续第二次调用"的回归测试？diff 中删除 `finally` 一律打回。
 
 ### 10.1 Dark Mode Checklist
 
@@ -712,6 +713,22 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 - 流中断（网络断开、用户取消）：保留已输出内容 + 显示"生成已中断"标记 + 重新生成按钮。
 - Markdown 渲染使用流式安全的解析器，避免未闭合代码块导致布局跳动。
 
+#### 流式状态机纪律（强制，违反会让"第二条消息"凭空消失）
+
+流式组合式函数（`useChatStream` / `useAgentChatStream` / `useStudioRunStream` 及今后新增者）内部都有 `isStreaming` 这类**入口守卫标志位**（`if (isStreaming.value) return`）。它们是"闸门"，一旦卡在 `true`，后续所有发送都会被**静默吞掉**——请求根本没发到后端，但调用方的兜底逻辑会把空消息渲染成错误卡片，用户看到的是一条"假的后端错误"。必须遵守：
+
+1. **标志位复位只许放在 `try/finally`**：`isStreaming.value = true` 之后的所有退出路径（`done`、流事件 `error`、HTTP 非 2xx、重试耗尽、用户取消 `AbortError`、抛异常）都必须经 `finally { isStreaming.value = false; abortController.value = null }` 复位。重构（如加重试循环、加提前 `return`）时第一件事就是确认 `finally` 还在、且覆盖所有新旧 `return`。**禁止**只在"正常结束"的某一条 `return` 前手动复位——新增任何提前返回路径时必然漏。
+2. **守卫静默 `return` 必须与调用方语义配对**：`streamChat` 因守卫直接返回时不发请求、不触发任何回调；store 层（`agentHub.ts`）的"流结束但内容为空 → 渲染错误卡片"兜底会把它误判为模型空响应。改动守卫条件或兜底逻辑时，必须同时检查另一侧的假设。
+3. **回归测试必须覆盖"连续第二次调用"**：任何流式组合式函数的测试里，至少要有一条"第一次流正常 `done` 结束后，用**同一实例**再发一次，断言 `fetch` 被调用了第二次且 `isStreaming` 已复位"的用例（参考 `frontend/src/composables/__tests__/stream-retry.test.ts` 的「正常结束后复位 isStreaming，同一实例可再次发送」）。只测单次调用永远抓不到标志位残留。
+4. **排查"模型响应为空/假错误"先看后端有没有收到请求**：遇到"星尘信号受到了干扰 / 当前模型响应为空"这类秒出的错误，先查后端访问日志与 `chat_messages` 表。若请求根本没到后端，优先怀疑前端守卫吞请求，而不是模型或网络。
+
+#### 案例：isStreaming 未复位导致同会话第二条消息被静默吞掉（2026-08-09）
+
+- **现象**：AI 助手新会话第一条消息正常（欢迎语流出），第二条消息发送后秒出错误卡片"星尘信号受到了干扰 / 当前模型响应为空，请重新发送"，重试仍失败，只有切换会话或刷新页面能恢复。
+- **根因**：`ece09cc`（26.8.8-2）给 `useAgentChatStream.streamChat` 加自动重试 while 循环时，删掉了原来的 `finally { isStreaming.value = false; abortController.value = null }`，且没有在任何正常结束路径补回复位。第一条流正常 `done` 后 `isStreaming` 永远停在 `true`；第二条消息在入口守卫 `if (isStreaming.value) return` 处直接返回，**fetch 从未发出**（后端日志与 `chat_messages` 表均无该消息记录），store 兜底把空占位消息渲染成错误卡片。
+- **修复**：在重试循环外包 `try/finally` 复位 `isStreaming` 与 `abortController`（刻意不动 `isPaused`，保持暂停功能语义），并补"同一实例第二次调用"回归测试。
+- **教训**：① 带入口守卫的状态标志位，复位逻辑必须钉死在 `finally`，重构前先列全所有退出路径；② "重试/循环/提前 return"类重构是高危动作，diff 里出现删 `finally` 一律打回；③ 秒出的"模型空响应"错误先怀疑前端没发请求，排查顺序：后端访问日志 → 数据库消息表 → 前端守卫/状态机。
+
 ### 18.3 输入区
 
 - 多行文本框（`NInput type="textarea"` + `autosize`）；`Enter` 发送，`Shift+Enter` 换行。
@@ -724,6 +741,41 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 - AI 调用工具时，在消息流中插入"工具卡片"：显示工具名、参数摘要、执行状态和结果折叠区。
 - 长时间工具执行显示进度或旋转指示器；超时（> 60s）提示用户。
 - 错误结果使用 `NAlert type="error"` 内嵌在消息中，不中断对话流。
+
+#### 18.4.1 工具卡片折叠与长结果高度护栏（强制）
+
+工具结果长度不可控（文件列表、表格 dump、检索命中等动辄几十上百行），**任何**工具结果渲染区都必须有高度上限，不能把整条消息流撑开。
+
+- 权威实现：`frontend/src/components/ai-chat/McpToolCallCard.vue`。
+- **默认折叠**：卡片只显示工具图标 + 工具名 + MCP server 标签 + 状态标签 + 旋转箭头，单行点击展开。
+- **折叠态预览**：`list_workspace_files` / `search_workspace_files` 等清单类工具可显示首行结论（如"工作区根目录 下共 66 项"），但必须用 `white-space:nowrap; overflow:hidden; text-overflow:ellipsis` 截成**单行**，完整清单只在展开后可见。
+- **展开态也要限高**：结果/摘要区即使展开也不允许无限撑高——`workspace-summary` 用 `max-height: 220px; overflow-y:auto`，原始 JSON 的 `.tool-pre` 用 `max-height: 200px`。需要看全量内容的用户在区域内滚动，而不是滚整条对话。
+- 给工具加"折叠态摘要"时，用 `computed` 从 `tool.result.summary` 等结构化字段取**结论行**，不要把整段结果塞进预览。
+
+#### 18.4.2 ask_user 澄清卡片必须提供可点选选项（强制）
+
+澄清工具 `ask_user` 以可交互卡片收集回答（`frontend/src/components/ai-chat/AskUserCard.vue`），不是纯文本提问。
+
+- **有选项时**：渲染分页问题向导，每题显示 `options` 可点选项 + "其他"自由输入 + "跳过（Esc）" + "下一步/提交"。含"（推荐）"标注的选项用稳定排序排到首位（`sortedOptions`）。
+- **无选项时**：自动退化为自由输入框（`showOther` 默认 true），并在已回答态把空答案显示为"无偏好，由你决定"。退化形态是**兜底**，不是常态。
+- 前端契约类型：`AskRequest { questions: AskQuestion[] }`，`AskQuestion { question: string; options?: string[] }`；同时兼容后端平铺的 `question` / `options`（见 `useAgentChatStream.ts` 的 ask_request 归一化）。
+- **已回答态**折叠成工具卡样式（"询问工具 | 已收集信息"），展开可回看问答，不重新展示可点选项。
+
+> 跨层约束：模型偶尔把 `questions` 数组序列化成 JSON **字符串**（甚至双重编码、尾部带多余引号/换行）传来。后端 `_normalize_ask_questions` 必须用宽松解析（先 `json.loads`，失败用 `json.JSONDecoder().raw_decode` 取首个完整 JSON 值，双重编码再解一次），解析失败才降级为空问题自由输入。**只认数组会让弹窗变成"请补充需求细节 / 无偏好"的空壳**——卡片本身没坏，是选项没被解析出来。新增结构化数组参数的工具，后端入参归一化同样要容忍字符串形态。
+
+#### 18.4.3 历史重载契约：工具卡片与产物必须能重建（强制）
+
+会话重新打开后，工具调用卡片、工作区摘要、Plotly 图表等必须和实时流式时一致地渲染出来。这是一条**跨前后端的持久化契约**，前端只负责把后端落库的数据 hydrate 回 `ToolCall`。
+
+- 权威 hydrate 实现：`frontend/src/stores/agentHub.ts` 的 `loadSessionMessages()`——从 `metadata_json.tool_invocations` 重建 `msg.toolCalls`，从 `metadata_json.timeline` 重建正文/工具交错顺序。
+- **`tool_invocations`**：每次工具调用一条，字段 `tool_call_id / tool_name / arguments / success / result / ui_payload / mcp_server`。前端凭 `arguments + ui_payload + result` 渲染卡片。**Plotly 火山图等图表数据在 `ui_payload.plotly_figure` 里**（见 `KimiMessageItem.vue` 的 `extractPlotlyFigure`），这个字段不落库，重开后图就永久消失。
+- **`timeline`**：`{ kind: 'text'|'tool', text?, tool_call_id?, tool_name? }` 段数组，保证重载后仍是"正文→工具→正文"的交错布局，而不是正文堆上面、工具全堆下面。
+- 落库载荷经 `_cap_tool_invocation_payload`（200KB 护栏）截断；前端遇到 `{ _omichub_payload_truncated: true }` 按"无载荷"降级渲染，不能崩。
+- 前端 hydrate 时：`mcp_server` 旧数据缺失回退 `'studio'`；`update_plan` 的 steps 要恢复到右侧待办面板；`ui_payload.stdout/stderr` 拼到 `tool.output`。
+
+> **后端双执行路径陷阱**：`ChatService` 有两套并行的 Agent 执行路径——legacy 手写 `for _round` 循环和 LangGraph 引擎（`_stream_agent_chat_langgraph`，普通 `mode=chat` 会话默认走它）。工具调用落库、`timeline`、`ask_request`、handoff 等副作用在两条路径里**各自独立实现**。任何"工具结果要持久化/要随消息返回"的改动，**必须同时改两条路径**；只改 legacy 会让普通 chat 会话重开后卡片与图全部丢失（此问题真实发生过：LangGraph 路径只把 tool_call/tool_result yield 透传，从未写 `tool_invocations`）。
+>
+> 已经丢失的历史消息无法事后恢复（数据当时没落库）；修复只对新产生的消息生效。
 
 ## 19. 终端与代码沙箱
 

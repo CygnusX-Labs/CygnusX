@@ -136,4 +136,23 @@ describe('useAgentChatStream 流式连接自动重试', () => {
     expect(onRetry).not.toHaveBeenCalled()
     expect(onError).toHaveBeenCalledWith('模型内部错误')
   })
+
+  it('正常结束后复位 isStreaming，同一实例可再次发送（回归：第二条消息不被吞）', async () => {
+    const fetchMock = installFetch([
+      { ok: true, chunks: [sseEvent('text', { content: '你好' }), sseEvent('done', { session_id: 's1', message_id: 'm1' })] },
+      { ok: true, chunks: [sseEvent('text', { content: '再问' }), sseEvent('done', { session_id: 's1', message_id: 'm2' })] },
+    ])
+
+    const { streamChat, isStreaming } = useAgentChatStream()
+    await streamChat(options, {})
+    expect(isStreaming.value).toBe(false)
+
+    const onText = vi.fn()
+    const onDone = vi.fn()
+    await streamChat(options, { onText, onDone })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(onText).toHaveBeenCalledTimes(1)
+    expect(onDone).toHaveBeenCalled()
+  })
 })

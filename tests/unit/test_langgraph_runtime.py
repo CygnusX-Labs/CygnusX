@@ -97,6 +97,11 @@ async def test_one_tool_round_then_finish() -> None:
     runtime, calls = _make_runtime(
         [
             [
+                ChatChunk(
+                    type="text",
+                    content="先分析工具参数",
+                    metadata={"is_reasoning": True},
+                ),
                 _tool_calls_chunk("get_gene", {"gene": "TP53"}),
                 ChatChunk(type="done", metadata={"usage": USAGE}),
             ],
@@ -120,6 +125,7 @@ async def test_one_tool_round_then_finish() -> None:
     second_round = calls[1]
     assert second_round[-2]["role"] == "assistant"
     assert second_round[-2]["tool_calls"][0]["function"]["name"] == "get_gene"
+    assert second_round[-2]["reasoning_content"] == "先分析工具参数"
     assert second_round[-1]["role"] == "tool"
     assert second_round[-1]["tool_call_id"] == "call_1"
     assert json.loads(second_round[-1]["content"]) == {"value": 42}

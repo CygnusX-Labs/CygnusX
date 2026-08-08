@@ -77,11 +77,12 @@ const workspaceSummary = computed(() => {
 
 const workspaceSummaryPreview = computed(() => {
   if (!workspaceSummary.value) return ''
-  const lines = workspaceSummary.value.split('\n')
-  const maxLines = 9
-  return lines.length > maxLines
-    ? `${lines.slice(0, maxLines).join('\n')}\n…展开查看完整结果`
-    : workspaceSummary.value
+  // 展开态显示完整摘要；折叠态只保留首行结论（如"工作区根目录 下共 66 项"），
+  // 避免文件清单类长摘要在未展开时刷屏（完整内容仍在展开后的结果区可查）。
+  if (!collapsed.value) return workspaceSummary.value
+  const lines = workspaceSummary.value.split('\n').filter((line) => line.trim())
+  const firstLine = lines[0]?.trim() || ''
+  return lines.length > 1 ? `${firstLine} …（展开查看完整结果）` : firstLine
 })
 
 function isPipelineTask(tool: ToolCall): boolean {
@@ -134,7 +135,7 @@ function handleOpenToolPage() {
       </n-icon>
     </div>
 
-    <p v-if="workspaceSummaryPreview" class="workspace-summary">
+    <p v-if="workspaceSummaryPreview" class="workspace-summary" :class="{ 'is-collapsed': collapsed }">
       {{ workspaceSummaryPreview }}
     </p>
 
@@ -262,6 +263,16 @@ function handleOpenToolPage() {
   line-height: 1.55;
   white-space: pre-line;
   word-break: break-word;
+  /* 展开态：list_workspace_files 等工具可能返回几十上百行文件清单，
+     限制高度并内部滚动，避免整条结果刷屏；折叠态由 is-collapsed 截断为单行 */
+  max-height: 220px;
+  overflow-y: auto;
+}
+.workspace-summary.is-collapsed {
+  max-height: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .expand-arrow.rotated {
   transform: rotate(90deg);

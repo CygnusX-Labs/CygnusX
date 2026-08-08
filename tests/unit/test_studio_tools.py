@@ -617,6 +617,31 @@ def test_normalize_ask_questions_json_string():
 
 
 @pytest.mark.unit
+def test_normalize_ask_questions_json_string_with_trailing_junk():
+    """回归（2026-08-09）：模型在字符串化 JSON 尾部多塞引号/换行时，raw_decode
+    取第一个完整 JSON 值、忽略尾部垃圾；此前 json.loads 直接失败，问题与选项
+    全部丢失，前端降级成没有选项的自由输入卡。"""
+    from omichub.application.services.chat_service import _normalize_ask_questions
+
+    # 生产实录载荷：前导 \n + 合法 JSON 数组 + 尾部多余 " 与 \n\n
+    result = _normalize_ask_questions(
+        {
+            "questions": '\n[{"question": "火山图需要逐基因的差异表达结果文件。你的数据在哪里？", "options": ["工作区里有逐基因结果文件（帮我找一下）", "我来上传逐基因的 edgeR/DESeq2 结果表", "没有逐基因数据，先用示例数据演示火山图"]}]"\n\n'
+        }
+    )
+    assert result == [
+        {
+            "question": "火山图需要逐基因的差异表达结果文件。你的数据在哪里？",
+            "options": [
+                "工作区里有逐基因结果文件（帮我找一下）",
+                "我来上传逐基因的 edgeR/DESeq2 结果表",
+                "没有逐基因数据，先用示例数据演示火山图",
+            ],
+        }
+    ]
+
+
+@pytest.mark.unit
 def test_normalize_ask_questions_legacy_single():
     """兼容旧单问题 question+options"""
     from omichub.application.services.chat_service import _normalize_ask_questions

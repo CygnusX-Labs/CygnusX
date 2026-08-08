@@ -25,7 +25,10 @@ from omichub.domain.ai_provider.entities import AIProviderConfig
 from omichub.domain.ai_provider.services import AIProviderConfigDomainService
 from omichub.domain.ai_provider.value_objects import ProviderType
 from omichub.infrastructure.ai_provider.litellm_provider import LiteLLMProvider
-from omichub.infrastructure.ai_provider.openai_compatible import OpenAICompatibleProvider
+from omichub.infrastructure.ai_provider.openai_compatible import (
+    OpenAICompatibleProvider,
+    provider_manager,
+)
 from omichub.infrastructure.database.repositories.ai_provider_repository import (
     SqlAlchemyAIProviderConfigRepository,
 )
@@ -134,6 +137,7 @@ class AIProviderConfigService:
         config = await self._domain.prepare_new_default(config)
         config = await self._repo.save(config)
         await self._persist_to_yaml()
+        provider_manager.clear_cache(str(config.id))
         return _to_dto(config)
 
     async def update_config(
@@ -162,6 +166,7 @@ class AIProviderConfigService:
         self._domain.validate(config)
         config = await self._repo.save(config)
         await self._persist_to_yaml()
+        provider_manager.clear_cache(str(config.id))
         return _to_dto(config)
 
     async def delete_config(self, config_id: UUID) -> dict[str, Any]:
@@ -196,11 +201,13 @@ class AIProviderConfigService:
             config.mark_updated()
             await self._repo.save(config)
             await self._persist_to_yaml()
+            provider_manager.clear_cache(str(config_id))
             return {"deleted": True, "soft_deleted": True}
 
         ok = await self._repo.delete(config_id)
         if ok:
             await self._persist_to_yaml()
+            provider_manager.clear_cache(str(config_id))
         return {"deleted": ok, "soft_deleted": False}
 
     async def set_default(self, config_id: UUID) -> AIProviderConfigDTO:

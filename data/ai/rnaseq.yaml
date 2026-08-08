@@ -6,7 +6,7 @@ avatar: "\U0001F9EC"
 color: "#16a34a"
 category: analysis
 is_active: true
-model: deepseek-v4-flash
+model: qwen3.7-plus
 prompt_file: prompts/rnaseq.md
 welcome_message: "你好！我是 RNA-seq 分析师。可以先学习原理与流程，也可以提供 FASTQ、count 矩阵或项目目标开展正式分析。"
 temperature: 0.4
@@ -47,7 +47,7 @@ features:
 tool_packs: [workspace, research, rnaseq, memory, handoff, subagents, agentteams_case]
 handoff:
   allowed_targets: [agent-viz, agent-code, agent-general, agent-atacseq]
-  max_hops_per_session: 3
+  max_hops_per_session: 10
 
 studio:
   enabled: true

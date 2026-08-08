@@ -4,7 +4,7 @@ description: 负责 FASTQ、Cell Ranger、建库 chemistry、样本纳入与原�
 avatar: "🧪"
 color: "#c0392b"
 category: analysis
-model: deepseek-v4-flash
+model: qwen3.7-plus
 prompt_file: prompts/scrna_team/upstream.md
 welcome_message: "你好！我可以协助检查 FASTQ、Cell Ranger 配置、样本 QC 和纳入标准。"
 temperature: 0.2
@@ -18,7 +18,7 @@ features:
 tool_packs: [workspace, research, memory, handoff, agentteams_case]
 handoff:
   allowed_targets: [agent-scrna-integration, agent-scrna-advanced, agent-scrna, agent-general]
-  max_hops_per_session: 3
+  max_hops_per_session: 10
 studio:
   enabled: true
   default_mode: studio

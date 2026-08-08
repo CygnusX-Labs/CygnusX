@@ -4,7 +4,7 @@ description: 面向单细胞转录组质控、聚类、注释与下游分析。
 avatar: "🔬"
 color: "#e74c3c"
 category: analysis
-model: deepseek-v4-flash
+model: qwen3.7-plus
 prompt_file: prompts/scrna.md
 welcome_message: "你好！请提供 10x 矩阵、h5ad/rds 文件或单细胞分析目标。"
 temperature: 0.3
@@ -40,7 +40,7 @@ features:
 tool_packs: [workspace, research, memory, handoff, agentteams_case]
 handoff:
   allowed_targets: [agent-rnaseq, agent-viz, agent-code, agent-general]
-  max_hops_per_session: 3
+  max_hops_per_session: 10
 studio:
   enabled: true
   # 选中该 Agent 时默认直接进入 AI 工作台（Studio）会话，而非普通聊天

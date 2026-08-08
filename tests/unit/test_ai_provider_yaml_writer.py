@@ -40,7 +40,7 @@ def _config(name: str, *, api_key: str = "sk-secret-real-value", is_active: bool
 
 
 def test_provider_env_key_naming():
-    assert provider_env_key("deepseek-v4-flash") == "DEEPSEEK_V4_FLASH_API_KEY"
+    assert provider_env_key("qwen3.7-plus") == "DEEPSEEK_V4_FLASH_API_KEY"
     assert provider_env_key("qwen3.7-plus") == "QWEN3_7_PLUS_API_KEY"
     assert provider_env_key("Kimi (Moonshot)") == "KIMI_MOONSHOT_API_KEY"
 
@@ -54,7 +54,7 @@ def test_write_never_persists_real_api_key(tmp_path: Path):
     )
 
     writer = AIProviderYamlWriter(str(yaml_path))
-    writer.write_configs([_config("deepseek-v4-flash", api_key="sk-LEAK-ME-123"), _config("old", api_key="sk-ALSO-LEAK", is_active=False)])
+    writer.write_configs([_config("qwen3.7-plus", api_key="sk-LEAK-ME-123"), _config("old", api_key="sk-ALSO-LEAK", is_active=False)])
 
     content = yaml_path.read_text(encoding="utf-8")
     assert "sk-LEAK-ME-123" not in content, "真实 API Key 不得落盘"

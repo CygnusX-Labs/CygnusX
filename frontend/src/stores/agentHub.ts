@@ -1317,7 +1317,9 @@ export const useAgentHubStore = defineStore('agentHub', () => {
               arguments: (inv.arguments as Record<string, unknown>) || {},
               result: inv.result,
               uiPayload,
-              mcpServer: 'studio',
+              // 后端落库的 mcp_server 与流式事件一致；旧数据无此字段时回退 studio
+              // （旧版本仅 Studio 工具落库 tool_invocations）
+              mcpServer: (inv.mcp_server as string) || 'studio',
               status: inv.success ? 'success' : 'error',
             }
             if (so || se) tc.output = so + se

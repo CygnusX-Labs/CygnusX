@@ -18,6 +18,7 @@ import {
   FlaskOutline, GridOutline, PowerOutline, TimeOutline,
 } from '@vicons/ionicons5'
 import KimiMessageList from '@/components/ai-chat/KimiMessageList.vue'
+import AskUserModal from '@/components/ai-chat/AskUserModal.vue'
 import type { CollaborationRouteInfo } from '@/components/ai-chat/types'
 import KimiChatInput from '@/components/ai-chat/KimiChatInput.vue'
 import PendingApprovalBar, {
@@ -428,6 +429,36 @@ const pendingAsk = computed<PendingAskItem | null>(() => {
   }
   return null
 })
+
+/** 最近一条待回答 ask_user 的完整请求，供统一确认弹窗复用同一套问题向导。 */
+const pendingAskModal = computed(() => {
+  const msgs = session.value?.messages || []
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const ask = msgs[i].askRequest
+    if (ask && !ask.answered && ask.questions.length) {
+      return { messageId: msgs[i].id, ask }
+    }
+  }
+  return null
+})
+
+const askModalOpen = ref(false)
+watch(
+  () => pendingAskModal.value?.messageId,
+  (messageId, previousMessageId) => {
+    if (messageId && messageId !== previousMessageId) askModalOpen.value = true
+  },
+  { immediate: true },
+)
+
+async function handleAskModalSubmit(answers: string[]): Promise<void> {
+  try {
+    await store.answerAskRequest(answers)
+    askModalOpen.value = false
+  } catch {
+    message.error('确认发送失败，请重试')
+  }
+}
 
 /** 新审批/澄清到达时强制滚动到底部，确保用户注意到浮动条与内联卡片 */
 watch(
@@ -1084,6 +1115,11 @@ function formatSessionTime(iso: string): string {
               :approvals="pendingApprovals"
               :ask="pendingAsk"
               @locate="locateMessage"
+            />
+            <AskUserModal
+              v-model:show="askModalOpen"
+              :ask="pendingAskModal?.ask || null"
+              @submit="handleAskModalSubmit"
             />
             <div class="input-area">
               <KimiChatInput

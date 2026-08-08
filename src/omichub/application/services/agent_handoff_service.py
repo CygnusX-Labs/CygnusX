@@ -14,7 +14,8 @@ from omichub.infrastructure.database.session import get_session_factory
 
 HANDOFF_TOOL_NAME = "transfer_to_agent"
 MAX_HANDOFF_PACKET_BYTES = 2400
-DEFAULT_MAX_HOPS = 3
+DEFAULT_MAX_HOPS = 10
+MAX_HOPS_CEILING = 10
 
 
 def extract_handoff_directive(result: Any) -> dict[str, Any] | None:
@@ -178,7 +179,7 @@ class AgentHandoffService:
             parsed = int(value or DEFAULT_MAX_HOPS)
         except (TypeError, ValueError):
             parsed = DEFAULT_MAX_HOPS
-        return min(max(parsed, 1), 5)
+        return min(max(parsed, 1), MAX_HOPS_CEILING)
 
     @staticmethod
     def _normalize_text(value: str, label: str, limit: int) -> str:

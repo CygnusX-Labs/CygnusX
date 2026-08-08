@@ -82,6 +82,7 @@ async def llm_call_node(state: AgentState, deps: NodeDeps) -> dict[str, Any]:
         )
 
     round_text = ""
+    round_reasoning = ""
     tool_calls: list[dict[str, Any]] = []
     try:
         async for chunk in stream(
@@ -96,7 +97,9 @@ async def llm_call_node(state: AgentState, deps: NodeDeps) -> dict[str, Any]:
             if chunk.type == "text":
                 # 推理过程（is_reasoning）透传但不并入最终正文，与 legacy 一致
                 await deps.emit_chunk(chunk)
-                if not chunk.metadata.get("is_reasoning"):
+                if chunk.metadata.get("is_reasoning"):
+                    round_reasoning += chunk.content
+                else:
                     round_text += chunk.content
             elif chunk.type == "tool_calls":
                 tool_calls = chunk.metadata.get("tool_calls", [])
@@ -116,6 +119,9 @@ async def llm_call_node(state: AgentState, deps: NodeDeps) -> dict[str, Any]:
             await deps.emit_chunk(ChatChunk(type="text", content=round_text))
 
     assistant: dict[str, Any] = {"role": "assistant", "content": round_text}
+    if round_reasoning:
+        # DeepSeek tool calling 要求工具结果回灌时保留上一轮推理内容。
+        assistant["reasoning_content"] = round_reasoning
     if tool_calls:
         assistant["tool_calls"] = tool_calls
     return {"messages": [assistant], "rounds": rounds + 1, "usage": usage, "error": None}

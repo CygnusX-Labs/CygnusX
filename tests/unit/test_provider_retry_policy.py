@@ -12,6 +12,40 @@ from omichub.infrastructure.ai_provider.openai_compatible import (
 from omichub.infrastructure.database.models.ai_provider import AIProviderConfigModel
 
 
+class _FakeStreamResponse:
+    status_code = 200
+
+    def __init__(self, chunks: list[str]) -> None:
+        self._chunks = chunks
+
+    async def __aenter__(self) -> "_FakeStreamResponse":
+        return self
+
+    async def __aexit__(self, *_args: object) -> None:
+        return None
+
+    async def aiter_text(self) -> AsyncIterator[str]:
+        for chunk in self._chunks:
+            yield chunk
+
+
+class _FakeAsyncClient:
+    def __init__(self, chunks: list[str], captured_payload: list[dict[str, object]] | None = None) -> None:
+        self._chunks = chunks
+        self._captured_payload = captured_payload
+
+    async def __aenter__(self) -> "_FakeAsyncClient":
+        return self
+
+    async def __aexit__(self, *_args: object) -> None:
+        return None
+
+    def stream(self, *_args: object, **_kwargs: object) -> _FakeStreamResponse:
+        if self._captured_payload is not None:
+            self._captured_payload.append(_kwargs.get("json", {}))
+        return _FakeStreamResponse(self._chunks)
+
+
 def test_litellm_stream_kwargs_request_usage_and_retry() -> None:
     provider = LiteLLMProvider()
     config = AIProviderConfig.create(
@@ -86,6 +120,161 @@ async def test_empty_tool_stream_retries_without_tools(monkeypatch: pytest.Monke
 
     assert calls == [tools, None]
     assert [chunk.type for chunk in chunks] == ["text", "done"]
+
+
+@pytest.mark.asyncio
+async def test_reasoning_only_stream_retries_without_deep_thinking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """深度思考只返回 reasoning 时，应关闭思考重试并等待最终正文。"""
+    provider = OpenAICompatibleProvider(
+        AIProviderConfigModel(name="test", model="qwen-test", base_url="https://example.test")
+    )
+    deep_thinking_values: list[bool] = []
+
+    async def stream_once(*args: object) -> AsyncIterator[ChatChunk]:
+        deep_thinking_values.append(bool(args[5]))
+        if len(deep_thinking_values) == 1:
+            yield ChatChunk(type="text", content="思考中", metadata={"is_reasoning": True})
+            yield ChatChunk(type="done")
+            return
+        yield ChatChunk(type="text", content="最终回答")
+        yield ChatChunk(type="done")
+
+    monkeypatch.setattr(provider, "_stream_once", stream_once)
+
+    chunks = [
+        chunk
+        async for chunk in provider.chat_stream(
+            [{"role": "user", "content": "请绘制火山图"}],
+            deep_thinking=True,
+        )
+    ]
+
+    assert deep_thinking_values == [True, False]
+    assert [(chunk.type, chunk.content) for chunk in chunks] == [
+        ("text", "思考中"),
+        ("text", "最终回答"),
+        ("done", ""),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_openai_sse_accepts_compact_data_and_message_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """兼容网关的 ``data:{...}`` 与 message 末块不能被判定为空响应。"""
+    provider = OpenAICompatibleProvider(
+        AIProviderConfigModel(name="test", model="qwen-test", base_url="https://example.test")
+    )
+    chunks = [
+        'data:{"choices":[{"message":{"content":"火山图已生成"},"finish_reason":"stop"}]}\n',
+        "data:[DONE]\n",
+    ]
+    monkeypatch.setattr(
+        "omichub.infrastructure.ai_provider.openai_compatible.httpx.AsyncClient",
+        lambda **_kwargs: _FakeAsyncClient(chunks),
+    )
+
+    result = [
+        chunk
+        async for chunk in provider.chat_stream(
+            [{"role": "user", "content": "请绘制火山图"}],
+        )
+    ]
+
+    assert [(chunk.type, chunk.content) for chunk in result] == [
+        ("text", "火山图已生成"),
+        ("done", ""),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_deepseek_chat_keeps_enable_thinking(monkeypatch: pytest.MonkeyPatch) -> None:
+    provider = OpenAICompatibleProvider(
+        AIProviderConfigModel(
+            name="deepseek",
+            model="qwen3.7-plus-ga-260731",
+            base_url="https://ark.cn-beijing.volces.com/api/v3",
+        )
+    )
+    payloads: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "omichub.infrastructure.ai_provider.openai_compatible.httpx.AsyncClient",
+        lambda **_kwargs: _FakeAsyncClient(
+            ['data:{"choices":[{"delta":{"content":"ok"}}]}\n', "data:[DONE]\n"],
+            payloads,
+        ),
+    )
+
+    _ = [
+        chunk
+        async for chunk in provider.chat_stream(
+            [{"role": "user", "content": "hello"}], deep_thinking=True
+        )
+    ]
+
+    assert payloads[0]["enable_thinking"] is True
+    assert "thinking" not in payloads[0]
+
+
+@pytest.mark.asyncio
+async def test_deepseek_v4_explicitly_disables_thinking(monkeypatch: pytest.MonkeyPatch) -> None:
+    provider = OpenAICompatibleProvider(
+        AIProviderConfigModel(
+            name="deepseek",
+            model="qwen3.7-plus-ga-260731",
+            base_url="https://ark.cn-beijing.volces.com/api/v3",
+        )
+    )
+    payloads: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "omichub.infrastructure.ai_provider.openai_compatible.httpx.AsyncClient",
+        lambda **_kwargs: _FakeAsyncClient(
+            ['data:{"choices":[{"delta":{"content":"ok"}}]}\n', "data:[DONE]\n"],
+            payloads,
+        ),
+    )
+
+    _ = [
+        chunk
+        async for chunk in provider.chat_stream(
+            [{"role": "user", "content": "hello"}], deep_thinking=False
+        )
+    ]
+
+    assert payloads[0]["enable_thinking"] is False
+    assert "thinking" not in payloads[0]
+
+
+@pytest.mark.asyncio
+async def test_non_volc_qwen_keeps_enable_thinking(monkeypatch: pytest.MonkeyPatch) -> None:
+    """非火山方舟的 Qwen 兼容端点保持原有 enable_thinking 协议。"""
+    provider = OpenAICompatibleProvider(
+        AIProviderConfigModel(
+            name="qwen3.7-plus",
+            model="qwen3.7-plus",
+            base_url="https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+        )
+    )
+    payloads: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "omichub.infrastructure.ai_provider.openai_compatible.httpx.AsyncClient",
+        lambda **_kwargs: _FakeAsyncClient(
+            ['data:{"choices":[{"delta":{"content":"ok"}}]}\n', "data:[DONE]\n"],
+            payloads,
+        ),
+    )
+
+    _ = [
+        chunk
+        async for chunk in provider.chat_stream(
+            [{"role": "user", "content": "hello"}], deep_thinking=True
+        )
+    ]
+
+    assert payloads[0]["enable_thinking"] is True
+    assert "thinking" not in payloads[0]
 
 
 @pytest.mark.asyncio

@@ -397,6 +397,9 @@ export function useAgentChatStream() {
     // 自动重试策略：仅当「连接被掐断且尚未收到任何正文/工具调用」时重试，
     // 避免把已展示给用户的内容重复生成一遍；收到 done / error 或已输出正文则
     // 立即结束（与后端 chat_stream 的「未输出才重试」语义保持一致）。
+    // finally 中必须复位 isStreaming：任何 return 路径（done/error/重试耗尽/
+    // 用户取消）都不能让它停留在 true，否则下一次发送会被入口守卫直接吞掉。
+    try {
     while (true) {
       let receivedContent = false
       let terminalEvent = false
@@ -513,6 +516,10 @@ export function useAgentChatStream() {
       retries += 1
       callbacks.onRetry?.(retries, STREAM_RETRY_LIMIT)
       await new Promise((resolve) => setTimeout(resolve, STREAM_RETRY_BASE_DELAY_MS * retries))
+    }
+    } finally {
+      isStreaming.value = false
+      abortController.value = null
     }
   }
 

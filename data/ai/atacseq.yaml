@@ -6,7 +6,7 @@ avatar: "\U0001F9EC"
 color: "#7c3aed"
 category: analysis
 is_active: true
-model: deepseek-v4-flash
+model: qwen3.7-plus
 prompt_file: prompts/atacseq.md
 welcome_message: "你好！我是 ATAC-seq 分析师。可以讨论染色质开放性原理与实验设计，也可以使用 FASTQ、BAM、peak 或 fragments 文件开展正式分析。"
 temperature: 0.4
@@ -42,7 +42,7 @@ features:
 tool_packs: [workspace, research, atacseq, memory, handoff, subagents, agentteams_case]
 handoff:
   allowed_targets: [agent-viz, agent-code, agent-general, agent-rnaseq]
-  max_hops_per_session: 3
+  max_hops_per_session: 10
 
 studio:
   enabled: true

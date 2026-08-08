@@ -76,15 +76,15 @@ async def test_loader_prunes_providers_not_in_yaml(tmp_path, monkeypatch):
     # DB 现有：deepseek(声明保留)、qwen3.7(YAML 没有→应停用)、openai(YAML 没有→应停用)
     repo = _FakeRepo()
     repo._items = [
-        _cfg("deepseek-v4-flash", is_active=True, is_default=True),
+        _cfg("qwen3.7-plus", is_active=True, is_default=True),
         _cfg("qwen3.7-plus", is_active=True),
         _cfg("openai", is_active=False),  # 已停用的不应被重新激活
     ]
     yaml_text = """
 providers:
-  - name: deepseek-v4-flash
+  - name: qwen3.7-plus
     provider_type: openai_compatible
-    model: deepseek-v4-flash-ga
+    model: qwen3.7-plus-ga
     base_url: https://x/v1
     api_key: ${DEEPSEEK_V4_FLASH_API_KEY}
     is_default: true
@@ -97,7 +97,7 @@ providers:
     by_name = {c.name: c for c in repo._items}
     assert by_name["qwen3.7-plus"].is_active is False, "YAML 未声明应被停用"
     assert by_name["openai"].is_active is False, "已停用的保持停用"
-    assert by_name["deepseek-v4-flash"].is_active is True
+    assert by_name["qwen3.7-plus"].is_active is True
 
 
 @pytest.mark.asyncio

@@ -798,20 +798,53 @@ def _studio_risk_hint(tool_name: str, args: dict[str, Any]) -> str:
     return "该操作需要用户批准"
 
 
+def _cap_tool_invocation_payload(value: Any, limit: int = 200_000) -> Any:
+    """tool_invocations 落库护栏。
+
+    工具的 result/ui_payload 全量落库供历史重载重建卡片与图表；个别工具
+    （如读大文件）载荷可能异常大，序列化超过 limit 时替换为截断标记，
+    避免 metadata_json 无限膨胀；前端遇到标记时按"无载荷"降级渲染即可。
+    """
+    if value is None:
+        return None
+    try:
+        if len(json.dumps(value, ensure_ascii=False, default=str)) <= limit:
+            return value
+    except (TypeError, ValueError):
+        pass
+    return {"_omichub_payload_truncated": True}
+
+
 def _normalize_ask_questions(args: dict[str, Any]) -> list[dict[str, Any]]:
     """ask_user 参数归一化为问题列表（最多 5 个）。
 
     优先取 questions[]（多问题分页收集），兼容单问题 question+options；
     模型偶尔把 questions 数组序列化成 JSON 字符串传来，先尝试解析还原；
+    字符串还可能裹带前导换行、尾部多余引号等垃圾字符（json.loads 会直接
+    失败），此时用 raw_decode 取第一个完整 JSON 值、忽略尾部内容；
+    双重编码（解析出来仍是 JSON 字符串）时再解一次；
     模型未给出有效问题时兜底一个空问题，前端据此渲染自由输入，保证用户总能回复。
     """
     questions: list[dict[str, Any]] = []
+
+    def _loose_json_loads(text: str) -> Any:
+        """解析模型传来的 JSON 字符串，容忍尾部多余引号/换行（raw_decode 取首个完整值）。"""
+        text = (text or "").strip()
+        try:
+            return json.loads(text)
+        except (ValueError, TypeError):
+            try:
+                value, _ = json.JSONDecoder().raw_decode(text)
+                return value
+            except (ValueError, TypeError):
+                return None
+
     raw = args.get("questions")
     if isinstance(raw, str):
-        try:
-            parsed = json.loads(raw)
-        except (ValueError, TypeError):
-            parsed = None
+        parsed: Any = _loose_json_loads(raw)
+        # 双重编码（解出来仍是 JSON 字符串）时再解一次，同样容忍尾部垃圾字符
+        if isinstance(parsed, str):
+            parsed = _loose_json_loads(parsed)
         if isinstance(parsed, list):
             raw = parsed
     if isinstance(raw, list):
@@ -1025,7 +1058,12 @@ HANDOFF_SYSTEM_PROMPT_SUFFIX = """## Agent 转交协议
 `transfer_to_agent` 将会话交给白名单中的下一位 Agent。交接必须包含已完成工作的摘要、
 用户后续诉求、相关 workspace 产物和约束；不要为了回避简单问题或重复工作而转交。
 如果经过澄清后确认任务超出你的能力边界、缺少你不具备的专业工具，且白名单中存在合适 Agent，
-应调用 `transfer_to_agent`，不要勉强生成不可靠结论。无法确定目标时先用 `ask_user` 澄清。"""
+应调用 `transfer_to_agent`，不要勉强生成不可靠结论。无法确定目标时先用 `ask_user` 澄清。
+回转交规则：如果要转回本会话中曾经转交过给你的 Agent，`reason` 必须用至少 16 个字符
+清楚说明本次新增的信息或进展（例如新产物、新结论、用户新指示），否则会被服务端拒绝；
+没有新增信息时不要回转交，直接在当前会话继续处理。
+转交次数：每个会话最多允许 10 次转交，接近上限时应优先在当前 Agent 内完成剩余工作，
+或汇总各 Agent 的结论直接回复用户。"""
 
 
 def _should_show_route_transition(
@@ -1042,6 +1080,9 @@ ASK_USER_SYSTEM_PROMPT_SUFFIX = """## 用户澄清协议（强制）
 当任务缺少关键信息、存在多种可行方案、或需要用户在候选项中做选择时：
 - **必须**调用 `ask_user` 工具，通过弹窗 options 让用户点选作答，而不是等待用户手动输入。
 - **禁止**在回复正文中用纯文本罗列"方案 1 / 方案 2"或"选项 1/2/3"，让用户回复编号或文字作答。
+- 当你已经给出具体的分析执行方案、并在正文中询问“是否按上述方案开始/执行/分析”时，
+  同样**必须**调用 `ask_user`；不要只输出这句文本问题。使用一个确认问题，并提供明确选项：
+  “确认，按上述方案开始分析（推荐）”与“调整方案或参数”。本轮只等待用户选择，不得启动执行工具。
 - `questions` 参数必须按 schema 传结构化数组，不要把 JSON 序列化成字符串。
 - 选项有推荐项时放在第一位，并在选项文本中以（推荐）标注。
 - 只有问题完全无法用预设选项表达时，才允许在正文直接提问。
@@ -4119,6 +4160,12 @@ class ChatService:
 
         model_config = ctx.model_config
         sensitive_keywords = get_settings().sensitive_keywords
+        # DeepSeek 的思考 token 与最终正文共享 max_tokens。Agent 配置通常为
+        # 4096，而方舟 Provider 配置可提供 8192；深度思考开启时使用更高的
+        # Provider 上限，避免推理过程耗尽额度后没有最终正文。
+        effective_max_tokens = ctx.max_tokens
+        if deep_thinking and "deepseek" in str(model_config.model).lower():
+            effective_max_tokens = max(effective_max_tokens, int(model_config.max_tokens or 0))
 
         # 1. 取/建会话
         # Studio 模式判定：已有会话以会话行 mode 为准；新建会话取请求显式 mode。
@@ -5197,16 +5244,19 @@ class ChatService:
         last_usage: dict[str, Any] | None = None
         last_finish_reason: str | None = None
         # Studio 工具调用落库累积（代码卡片 / 产物 / diff，供历史重载渲染）
-        studio_invocations: list[dict[str, Any]] = []
+        persisted_tool_invocations: list[dict[str, Any]] = []
         # 正文/工具调用的时间线：按发生顺序记录 text 段与 tool 段，
         # 供前端按"内容→工具→内容"的实际过程交错渲染，而不是上正文下工具两段式
         timeline: list[dict[str, Any]] = []
 
         mcp_client = MCPClient()
 
+        # 星尘 AI 路由会话：session 绑定 agent_id 恒为 router，但工具上下文必须以
+        # 路由后的实际执行 Agent（ctx.agent）为准，否则 transfer_to_agent 会用
+        # router 的空 handoff 白名单校验，导致所有专家间转交被拒。
         tool_context = ToolInvocationContext(
             user_id=user_id,
-            agent_id=agent_id,
+            agent_id=str(ctx.agent.agent_id),
             session_id=current_session_id,
             db=self._db,
             extra=dict(runtime_context or {}),
@@ -5316,7 +5366,7 @@ class ChatService:
                 system_prompt=system_prompt,
                 tools=tools,
                 temperature=ctx.temperature,
-                max_tokens=ctx.max_tokens,
+                max_tokens=effective_max_tokens,
                 deep_thinking=deep_thinking,
                 active_mcp_servers=active_mcp_servers,
                 mcp_client=mcp_client,
@@ -5336,6 +5386,7 @@ class ChatService:
             )
             for _round in range(max_rounds):
                 round_text = ""
+                round_reasoning = ""
                 round_tool_calls: list[dict[str, Any]] = []
                 # 父单轮工具回合内 fan-out 调用计数（subagent_max_children_per_message 护栏）
                 subagent_calls_this_round = 0
@@ -5345,13 +5396,14 @@ class ChatService:
                     messages=llm_messages,
                     system_prompt=system_prompt,
                     temperature=ctx.temperature,
-                    max_tokens=ctx.max_tokens,
+                    max_tokens=effective_max_tokens,
                     tools=tools or None,
                     deep_thinking=deep_thinking,
                 ):
                     if chunk.type == "text":
                         if chunk.metadata.get("is_reasoning"):
                             # 推理过程不并入最终正文，但仍透传给前端
+                            round_reasoning += chunk.content
                             yield chunk
                             continue
                         round_text += chunk.content
@@ -5415,13 +5467,16 @@ class ChatService:
 
                 # 有工具调用 → 执行并回灌，进入下一轮
                 # 先把 assistant 的 tool_calls 消息加入上下文
-                llm_messages.append(
-                    {
-                        "role": "assistant",
-                        "content": round_text or "",
-                        "tool_calls": round_tool_calls,
-                    }
-                )
+                assistant_tool_message: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": round_text or "",
+                    "tool_calls": round_tool_calls,
+                }
+                if round_reasoning:
+                    # DeepSeek tool calling 要求下一轮回灌上一轮的 reasoning_content；
+                    # 丢失该字段会导致方舟兼容接口在工具结果后返回空响应。
+                    assistant_tool_message["reasoning_content"] = round_reasoning
+                llm_messages.append(assistant_tool_message)
                 if round_text:
                     full_content += "\n\n" if full_content else ""
                     timeline.append({"kind": "text", "text": round_text})
@@ -6061,25 +6116,31 @@ class ChatService:
                             "tool_name": tool_name,
                         }
                     )
-                    # Studio 工具调用随消息落库：历史重载时凭 ui_payload 渲染代码卡片/产物/diff
-                    if is_studio_tool or is_mas_plan_tool:
-                        studio_invocations.append(
-                            {
-                                "tool_call_id": tc.get("id", ""),
-                                "tool_name": tool_name,
-                                "arguments": args,
-                                "success": bool(result.get("success")),
-                                "result": llm_result,
-                                "ui_payload": ui_payload,
-                            }
-                        )
-                        await self.update_message_content(
-                            ai_message.message_id,
-                            full_content,
-                            "streaming",
-                            {"tool_invocations": studio_invocations, "timeline": timeline},
-                        )
-                    elif is_agentteams_case_tool and bool(result.get("success")):
+                    # 全部工具调用随消息落库：历史重载时凭 arguments/result/ui_payload
+                    # 重建工具卡片、工作区摘要与 Plotly 图表（此前仅 Studio 工具落库，
+                    # 普通 MCP 工具——list_workspace_files/omichub_plot_volcano 等——
+                    # 重开会话后卡片与图表全部丢失）。
+                    persisted_tool_invocations.append(
+                        {
+                            "tool_call_id": tc.get("id", ""),
+                            "tool_name": tool_name,
+                            "arguments": args,
+                            "success": bool(result.get("success")),
+                            "result": _cap_tool_invocation_payload(llm_result),
+                            "ui_payload": _cap_tool_invocation_payload(ui_payload),
+                            "mcp_server": tool_channel,
+                        }
+                    )
+                    await self.update_message_content(
+                        ai_message.message_id,
+                        full_content,
+                        "streaming",
+                        {
+                            "tool_invocations": persisted_tool_invocations,
+                            "timeline": timeline,
+                        },
+                    )
+                    if is_agentteams_case_tool and bool(result.get("success")):
                         case_card = (ui_payload or {}).get("case_card")
                         if isinstance(case_card, dict):
                             await self.update_message_content(
@@ -6378,6 +6439,22 @@ class ChatService:
         update_counter = 0
         first_chunk_sent = False
         accumulated_usage: dict[str, Any] | None = None
+        # 历史重载重建工具卡片/图表所需（对齐 legacy 手写循环）：
+        # timeline 记录正文段/工具段的交错顺序，persisted_tool_invocations 保存
+        # 每次工具调用的 arguments/result/ui_payload——Plotly 图表等就在 ui_payload 里，
+        # 不落库则重开会话后卡片与图全部丢失。
+        persisted_tool_invocations: list[dict[str, Any]] = []
+        timeline: list[dict[str, Any]] = []
+        timeline_text_buffer = ""
+        pending_tool_args: dict[str, dict[str, Any]] = {}
+
+        def _flush_timeline_text() -> None:
+            nonlocal timeline_text_buffer
+            text = timeline_text_buffer
+            timeline_text_buffer = ""
+            if text:
+                timeline.append({"kind": "text", "text": text})
+
         try:
             while True:
                 deps = NodeDeps(
@@ -6399,6 +6476,7 @@ class ChatService:
                             yield chunk
                             continue
                         full_content += chunk.content
+                        timeline_text_buffer += chunk.content
                         update_counter += 1
                         if update_counter % 5 == 0:
                             await self.update_message_content(
@@ -6418,8 +6496,51 @@ class ChatService:
                         )
                         yield chunk
                         return
+                    elif chunk.type == "tool_call":
+                        # 正文段在工具调用前收口，保持"正文→工具"交错顺序
+                        _flush_timeline_text()
+                        tc_meta = chunk.metadata or {}
+                        call_id = tc_meta.get("tool_call_id", "")
+                        if call_id:
+                            pending_tool_args[call_id] = tc_meta.get("arguments", {}) or {}
+                        yield chunk
+                    elif chunk.type == "tool_result":
+                        tc_meta = chunk.metadata or {}
+                        call_id = tc_meta.get("tool_call_id", "")
+                        tool_name = tc_meta.get("tool_name", "")
+                        success = bool(tc_meta.get("success"))
+                        llm_result = tc_meta.get("result")
+                        ui_payload = tc_meta.get("ui_payload")
+                        timeline.append(
+                            {
+                                "kind": "tool",
+                                "tool_call_id": call_id,
+                                "tool_name": tool_name,
+                            }
+                        )
+                        persisted_tool_invocations.append(
+                            {
+                                "tool_call_id": call_id,
+                                "tool_name": tool_name,
+                                "arguments": pending_tool_args.pop(call_id, {}),
+                                "success": success,
+                                "result": _cap_tool_invocation_payload(llm_result),
+                                "ui_payload": _cap_tool_invocation_payload(ui_payload),
+                                "mcp_server": tc_meta.get("mcp_server"),
+                            }
+                        )
+                        await self.update_message_content(
+                            ai_message_id,
+                            full_content,
+                            "streaming",
+                            {
+                                "tool_invocations": persisted_tool_invocations,
+                                "timeline": timeline,
+                            },
+                        )
+                        yield chunk
                     else:
-                        # tool_call / tool_result 直接透传（metadata 已对齐 legacy）
+                        # 其余事件直接透传（metadata 已对齐 legacy）
                         yield chunk
 
                 accumulated_usage = merge_token_usage(accumulated_usage, runtime.last_usage)
@@ -6427,8 +6548,21 @@ class ChatService:
                 # 等用户下一条消息回答（对齐 legacy stop_after_tools 语义）。
                 ask_request = runtime.last_ask_request
                 if ask_request is not None:
+                    _flush_timeline_text()
                     questions = _normalize_ask_questions(ask_request.get("args") or {})
                     first = questions[0]
+                    # ask_user 工具调用已在上方 tool_result 分支落库；这里把最终
+                    # timeline 随完成态一并写入，保证历史重载能重建澄清卡片。
+                    await self.update_message_content(
+                        ai_message_id,
+                        full_content,
+                        "complete",
+                        {
+                            **({"usage": accumulated_usage} if accumulated_usage else {}),
+                            **({"timeline": timeline} if timeline else {}),
+                        }
+                        or None,
+                    )
                     yield ChatChunk(
                         type="ask_request",
                         metadata={
@@ -6462,6 +6596,34 @@ class ChatService:
                         "message_id": ai_message_id,
                     },
                 )
+            if (
+                not full_content.strip()
+                and runtime.last_handoff is None
+                and runtime.last_ask_request is None
+            ):
+                diagnostic = (
+                    "模型请求已完成，但没有返回可展示的正文；"
+                    f"model={runtime_state['model_config'].model}, "
+                    f"usage={accumulated_usage or {}}, runtime_error={runtime.error or ''}"
+                )
+                logger.error("[Agent空响应] session={} {}", session_id, diagnostic)
+                await self.update_message_content(
+                    ai_message_id,
+                    diagnostic,
+                    "error",
+                    {"error": diagnostic, "usage": accumulated_usage or {}},
+                )
+                yield ChatChunk(
+                    type="error",
+                    content="模型完成了请求，但没有返回正文。请稍后重试；若持续出现，请检查模型的思考开关和输出上限。",
+                    metadata={
+                        "session_id": session_id,
+                        "message_id": ai_message_id,
+                        "model": runtime_state["model_config"].model,
+                        "usage": accumulated_usage or {},
+                    },
+                )
+                return
         except Exception as e:  # noqa: BLE001
             await self.update_message_content(
                 ai_message_id,
@@ -6477,6 +6639,7 @@ class ChatService:
             return
 
         # 收尾：complete + usage + 会话用量累计 + done（与 legacy 一致）
+        _flush_timeline_text()
         last_usage = accumulated_usage
         await self.update_message_content(
             ai_message_id,
@@ -6485,6 +6648,7 @@ class ChatService:
             {
                 **({"usage": last_usage} if last_usage else {}),
                 **({"web_sources": persisted_web_sources} if persisted_web_sources else {}),
+                **({"timeline": timeline} if timeline else {}),
             }
             or None,
         )
