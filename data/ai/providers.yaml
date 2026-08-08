@@ -13,7 +13,7 @@ providers:
   provider_type: openai_compatible
   model: deepseek-v4-flash-ga-260731
   base_url: https://ark.cn-beijing.volces.com/api/v3
-  api_key: ${DEEPSEEK_V4_FLASH_API_KEY}
+  api_key: ${AL_API_KEY}
   temperature: 0.7
   max_tokens: 8192
   top_p: 1.0
@@ -25,7 +25,7 @@ providers:
   provider_type: openai_compatible
   model: glm-5-2-260617
   base_url: https://ark.cn-beijing.volces.com/api/v3
-  api_key: ${QWEN3_7_PLUS_API_KEY}
+  api_key: ${AL_API_KEY}
   temperature: 0.7
   max_tokens: 4096
   top_p: 1.0
