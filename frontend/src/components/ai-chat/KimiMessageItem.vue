@@ -585,6 +585,7 @@ const hasBodyContent = computed(() =>
   || !!tableData.value
   || (props.message.consultation?.experts.length ?? 0) > 0
   || webSources.value.length > 0
+  || Object.keys(props.message.overdriveArtifacts || {}).length > 0
   || !!props.message.routedAgent?.transition?.visible,
 )
 
@@ -969,7 +970,11 @@ function handleEdit() {
             />
           </div>
 
-          <MessageArtifactGallery :session-id="sessionId" :tools="message.toolCalls" />
+          <MessageArtifactGallery
+            :session-id="sessionId"
+            :tools="message.toolCalls"
+            :artifacts="message.overdriveArtifacts"
+          />
 
           <ExpertConsultationCard
             v-if="message.consultation?.experts.length"

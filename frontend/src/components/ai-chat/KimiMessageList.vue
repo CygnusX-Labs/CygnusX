@@ -242,6 +242,7 @@ onUnmounted(() => {
             JSON.stringify(item.routedAgent),
             JSON.stringify(item.collaborationRoute),
             JSON.stringify(item.askRequest),
+            JSON.stringify(item.overdriveArtifacts),
             index === firstUserMessageIndex ? JSON.stringify(taskUnderstanding) : '',
             index === firstUserMessageIndex ? JSON.stringify(planSteps) : '',
           ]"

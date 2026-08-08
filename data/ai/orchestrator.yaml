@@ -17,5 +17,6 @@ features:
   requires_plan_confirmation: true
   web_search:
     mode: required_for_freshness
-    triggers: [最新, 文献, 论文, 研究进展, 指南]
+    # 通用时效词全部由运行时基线 FRESHNESS_SEARCH_TRIGGERS 覆盖，无需重复声明
+    triggers: []
 tool_packs: [workspace, research]

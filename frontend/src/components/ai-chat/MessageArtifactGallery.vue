@@ -12,12 +12,16 @@ interface ArtifactItem {
 const props = withDefaults(defineProps<{
   sessionId?: string
   tools?: ToolCall[]
+  /** Agent/worker 直接回传的产物映射；键通常是工作区相对路径。 */
+  artifacts?: unknown
 }>(), {
   sessionId: '',
   tools: () => [],
+  artifacts: undefined,
 })
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'])
+const PREVIEW_EXTENSIONS = new Set([...IMAGE_EXTENSIONS, 'pdf'])
 const previewUrls = ref<Record<string, string>>({})
 const unavailablePreviews = ref(new Set<string>())
 
@@ -28,9 +32,15 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 }
 
 function artifactPath(value: unknown): string {
-  if (typeof value === 'string') return value.trim()
+  const normalize = (raw: string) => {
+    const trimmed = raw.trim().replace(/\\/g, '/')
+    const outputIndex = trimmed.indexOf('/output/')
+    if (outputIndex >= 0) return trimmed.slice(outputIndex + 1)
+    return trimmed.startsWith('output/') ? trimmed : trimmed
+  }
+  if (typeof value === 'string') return normalize(value)
   const item = asRecord(value)
-  return typeof item?.path === 'string' ? item.path.trim() : ''
+  return typeof item?.path === 'string' ? normalize(item.path) : ''
 }
 
 function artifactDetails(value: unknown): ArtifactItem | undefined {
@@ -44,6 +54,30 @@ function artifactDetails(value: unknown): ArtifactItem | undefined {
   }
 }
 
+function artifactDetailsFromEntry(pathValue: unknown, metadata: unknown): ArtifactItem | undefined {
+  const path = artifactPath(pathValue)
+  if (!path) return undefined
+  const item = asRecord(metadata)
+  return {
+    path,
+    size: typeof item?.size === 'number' ? item.size : undefined,
+    mtime: typeof item?.mtime === 'number' ? item.mtime : undefined,
+  }
+}
+
+function directArtifacts(value: unknown): ArtifactItem[] {
+  if (Array.isArray(value)) {
+    return value
+      .map(artifactDetails)
+      .filter((item): item is ArtifactItem => Boolean(item))
+  }
+  const record = asRecord(value)
+  if (!record) return []
+  return Object.entries(record)
+    .map(([path, metadata]) => artifactDetailsFromEntry(path, metadata))
+    .filter((item): item is ArtifactItem => Boolean(item))
+}
+
 function collectArtifacts(tool: ToolCall): ArtifactItem[] {
   const result = asRecord(tool.result)
   const nestedPayload = asRecord(result?.ui_payload) || asRecord(result?.uiPayload)
@@ -53,21 +87,26 @@ function collectArtifacts(tool: ToolCall): ArtifactItem[] {
     : [])
 }
 
-const artifacts = computed(() => {
+const artifactItems = computed(() => {
   const unique = new Map<string, ArtifactItem>()
   for (const tool of props.tools) {
     for (const artifact of collectArtifacts(tool)) unique.set(artifact.path, artifact)
   }
+  for (const artifact of directArtifacts(props.artifacts)) unique.set(artifact.path, artifact)
   return [...unique.values()]
 })
 
-const imageArtifacts = computed(() =>
-  artifacts.value.filter((artifact) => IMAGE_EXTENSIONS.has(artifact.path.split('.').pop()?.toLowerCase() || '')),
+const previewArtifacts = computed(() =>
+  artifactItems.value.filter((artifact) => PREVIEW_EXTENSIONS.has(artifact.path.split('.').pop()?.toLowerCase() || '')),
 )
 
 const otherArtifacts = computed(() =>
-  artifacts.value.filter((artifact) => !imageArtifacts.value.some((image) => image.path === artifact.path)),
+  artifactItems.value.filter((artifact) => !previewArtifacts.value.some((preview) => preview.path === artifact.path)),
 )
+
+function isImageArtifact(path: string): boolean {
+  return IMAGE_EXTENSIONS.has(path.split('.').pop()?.toLowerCase() || '')
+}
 
 function fileName(path: string): string {
   return path.split('/').pop() || path
@@ -82,7 +121,7 @@ function clearPreviews() {
 async function loadPreviews() {
   clearPreviews()
   if (!props.sessionId) return
-  await Promise.all(imageArtifacts.value.map(async (artifact) => {
+  await Promise.all(previewArtifacts.value.map(async (artifact) => {
     try {
       previewUrls.value[artifact.path] = await studioApi.fetchArtifactBlob(props.sessionId, artifact.path)
     } catch {
@@ -97,7 +136,7 @@ function downloadArtifact(path: string) {
 }
 
 watch(
-  () => [props.sessionId, imageArtifacts.value.map((artifact) => artifact.path).join('|')],
+  () => [props.sessionId, previewArtifacts.value.map((artifact) => artifact.path).join('|')],
   () => { void loadPreviews() },
   { immediate: true },
 )
@@ -106,25 +145,31 @@ onBeforeUnmount(clearPreviews)
 </script>
 
 <template>
-  <section v-if="artifacts.length" class="message-artifacts" aria-label="分析产物">
+  <section v-if="artifactItems.length" class="message-artifacts" aria-label="分析产物">
     <div class="message-artifacts__header">
       <div>
         <span class="message-artifacts__eyebrow">分析产物</span>
-        <strong>已生成 {{ artifacts.length }} 个文件</strong>
+        <strong>已生成 {{ artifactItems.length }} 个文件</strong>
       </div>
       <span class="message-artifacts__hint">预览与下载</span>
     </div>
 
-    <div v-if="imageArtifacts.length" class="message-artifacts__images">
-      <figure v-for="artifact in imageArtifacts" :key="artifact.path" class="message-artifacts__image-card">
+    <div v-if="previewArtifacts.length" class="message-artifacts__images">
+      <figure v-for="artifact in previewArtifacts" :key="artifact.path" class="message-artifacts__image-card">
         <div class="message-artifacts__preview">
           <img
-            v-if="previewUrls[artifact.path]"
+            v-if="isImageArtifact(artifact.path) && previewUrls[artifact.path]"
             :src="previewUrls[artifact.path]"
             :alt="`${fileName(artifact.path)} 预览`"
           />
+          <iframe
+            v-else-if="previewUrls[artifact.path]"
+            :src="previewUrls[artifact.path]"
+            :title="`${fileName(artifact.path)} PDF 预览`"
+            class="message-artifacts__pdf"
+          />
           <span v-else class="message-artifacts__fallback" aria-live="polite">
-            {{ unavailablePreviews.has(artifact.path) ? '暂时无法预览，可直接下载文件' : '正在加载图像预览…' }}
+            {{ unavailablePreviews.has(artifact.path) ? '暂时无法预览，可直接下载文件' : '正在加载预览…' }}
           </span>
         </div>
         <figcaption>
@@ -213,6 +258,14 @@ onBeforeUnmount(clearPreviews)
   width: 100%;
   max-height: 360px;
   object-fit: contain;
+}
+
+.message-artifacts__pdf {
+  display: block;
+  width: 100%;
+  height: 360px;
+  border: 0;
+  background: #fff;
 }
 
 .message-artifacts__fallback {

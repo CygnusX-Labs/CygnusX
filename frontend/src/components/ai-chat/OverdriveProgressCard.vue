@@ -21,6 +21,26 @@ const pendingOptions = computed(() => (props.progress.tasks || [])
 const failedTasks = computed(() => (props.progress.tasks || [])
   .filter((task) => ['failed', 'skipped'].includes(task.status) && task.errorSummary))
 
+function taskStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    pending: '等待中',
+    ready: '已就绪',
+    running: '执行中',
+    completed: '已完成',
+    success: '已完成',
+    failed: '失败',
+    skipped: '已跳过',
+  }
+  return labels[status] || status
+}
+
+function taskStatusClass(status: string): string {
+  if (['completed', 'success'].includes(status)) return 'is-complete'
+  if (['failed', 'skipped'].includes(status)) return 'is-error'
+  if (['running', 'ready'].includes(status)) return 'is-running'
+  return 'is-pending'
+}
+
 async function control(action: 'pause' | 'resume' | 'skip' | 'terminate') {
   if (!store.currentSessionId || controlling.value) return
   if (action === 'skip' && !selectedTaskId.value) {
@@ -160,6 +180,23 @@ function percentage(progress: OverdriveProgress): number {
       <span v-if="progress.total" class="overdrive-progress-card__count">
         {{ progress.completed }}/{{ progress.total }}
       </span>
+    </div>
+
+    <div v-if="progress.tasks?.length" class="overdrive-progress-card__tasks" aria-label="并行 Agent 任务状态">
+      <div class="overdrive-progress-card__tasks-heading">
+        <span>并行 Agent</span>
+        <span>{{ progress.completed }}/{{ progress.total || progress.tasks.length }} 已完成</span>
+      </div>
+      <div class="overdrive-progress-card__task-grid">
+        <div v-for="task in progress.tasks" :key="task.taskId" class="overdrive-progress-card__task">
+          <span class="overdrive-progress-card__task-dot" :class="taskStatusClass(task.status)" aria-hidden="true" />
+          <span class="overdrive-progress-card__task-copy">
+            <strong>{{ task.agentId || task.taskId }}</strong>
+            <span>{{ taskStatusLabel(task.status) }}</span>
+          </span>
+          <span v-if="task.errorSummary" class="overdrive-progress-card__task-error" :title="task.errorSummary">!</span>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -350,6 +387,67 @@ function percentage(progress: OverdriveProgress): number {
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
+
+.overdrive-progress-card__tasks {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--chat-border) 70%, transparent);
+}
+
+.overdrive-progress-card__tasks-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+  color: var(--chat-text-muted);
+  font-size: 11px;
+}
+
+.overdrive-progress-card__task-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 6px;
+}
+
+.overdrive-progress-card__task {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--chat-border) 75%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--chat-surface) 86%, var(--chat-accent) 14%);
+}
+
+.overdrive-progress-card__task-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--chat-text-muted);
+}
+
+.overdrive-progress-card__task-dot.is-running { background: var(--chat-accent); animation: overdrive-pulse 1.4s ease-in-out infinite; }
+.overdrive-progress-card__task-dot.is-complete { background: var(--success-color, #18a058); }
+.overdrive-progress-card__task-dot.is-error { background: var(--error-color, #d03050); }
+
+.overdrive-progress-card__task-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.overdrive-progress-card__task-copy strong,
+.overdrive-progress-card__task-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overdrive-progress-card__task-copy strong { color: var(--chat-text-primary); font-size: 12px; }
+.overdrive-progress-card__task-copy span { color: var(--chat-text-muted); font-size: 11px; }
+.overdrive-progress-card__task-error { margin-left: auto; color: var(--error-color, #d03050); font-weight: 700; }
 
 @keyframes overdrive-pulse {
   50% { opacity: 0.55; transform: scale(0.86); }

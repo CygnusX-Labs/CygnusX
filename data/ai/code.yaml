@@ -27,7 +27,8 @@ features:
   default_stage: code-design
   web_search:
     mode: required_for_freshness
-    triggers: [最新, 版本, 发布说明, 文献, API, 文档, news]
+    # 仅声明基线（FRESHNESS_SEARCH_TRIGGERS）之外的领域增量词
+    triggers: [版本, 发布说明, API, 文档]
 tool_packs: [workspace, handoff, subagents, agentteams_case]
 handoff:
   allowed_targets: [agent-general, agent-rnaseq, agent-scrna, agent-viz]

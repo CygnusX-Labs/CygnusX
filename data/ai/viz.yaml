@@ -26,7 +26,8 @@ features:
   default_stage: visualization-plan
   web_search:
     mode: required_for_freshness
-    triggers: [最新, 文献, 论文, 指南, 标准, 配色规范]
+    # 仅声明基线（FRESHNESS_SEARCH_TRIGGERS）之外的领域增量词
+    triggers: [标准, 配色规范]
 tool_packs: [workspace, visualization, handoff, agentteams_case]
 handoff:
   allowed_targets: [agent-general, agent-rnaseq, agent-scrna, agent-code]

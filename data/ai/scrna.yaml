@@ -36,7 +36,8 @@ features:
   default_stage: domain-analysis
   web_search:
     mode: required_for_freshness
-    triggers: [最新, 文献, 论文, 研究进展, 细胞图谱, 数据库更新]
+    # 仅声明基线（FRESHNESS_SEARCH_TRIGGERS）之外的领域增量词
+    triggers: [细胞图谱]
 tool_packs: [workspace, research, memory, handoff, agentteams_case]
 handoff:
   allowed_targets: [agent-rnaseq, agent-viz, agent-code, agent-general]

@@ -100,7 +100,7 @@ YAML 为权威来源持续同步，避免后台临时编辑造成配置漂移。
 | 单细胞上游专家 | `workspace`, `research`, `memory`, `handoff`, `agentteams_case` | 当前主要依赖提示词、平台研究工具和专家交接。 |
 | 单细胞整合专家 | `workspace`, `research`, `memory`, `handoff`, `agentteams_case` | 当前主要依赖提示词、平台研究工具和专家交接。 |
 | 单细胞高级专家 | `workspace`, `research`, `memory`, `handoff`, `agentteams_case` | 注释、对象转换、重聚类、参考映射、T 细胞映射、DEG、统计和报告。 |
-| 代码助手 | `workspace`, `development`, `handoff`, `subagents`, `agentteams_case` | 软件管理、日志插件、MD5、数据交付。 |
+| 代码助手 | `workspace`, `handoff`, `subagents`, `agentteams_case` | 软件管理、日志插件、MD5、数据交付。 |
 | 可视化助手 | `workspace`, `visualization`, `handoff`, `agentteams_case` | R 绘图库、DotPlot。 |
 | 傻妞 | `workspace`, `research`, `memory`, `handoff` | 无固定 Skill，按通用研究上下文工作。 |
 | MCP 构建师 | `workspace`, `memory`, `handoff` | 无固定 Skill，能力由 MCP Builder 配置和审核流程提供。 |
@@ -467,3 +467,302 @@ uv run pytest \
 新增或修改 `data/ai/prompts/*.md` 时，单个提示词超过 120 行必须在 PR 中说明为什么不能下沉到
 Skill、知识文件或 Domain Pack。跨 Agent 复用的协议应放入 `data/ai/prompts/shared/`，由加载器
 统一追加；稳定领域知识进入知识库，长操作流程进入 Skill，动态状态交给实时工具。
+
+## 11. 框架现状评估与可优化项
+
+通读加载链路（`agent_loader.py`）、运行时路由（`chat_service.py`）和当前全部 Agent
+YAML 后，记录以下值得关注的设计债务，按影响面排序。
+
+### 11.1 LangGraph / Legacy 双执行路径没有在文档中体现
+
+当前 12 个内置 Agent 里，`general`、`rnaseq`、`atacseq`、`scrna`、`scrna_upstream`、
+`scrna_integration`、`scrna_advanced` 声明了 `features.engine: langgraph`，其余
+（`router`、`code`、`viz`、`shania`、`mcp_builder`、`orchestrator`）没有声明，走
+`chat_service.py` 里手写的 legacy 循环。这两条路径对工具调用副作用（`tool_invocations`、
+timeline 落库、handoff 事件等）是**各自独立实现**的，历史上已经出现过只改一条路径导致
+另一条路径静默丢功能的问题（Plotly 图表卡片刷新后消失）。本文档第 3 节的 Agent 清单
+只写了"引擎"列，却没有说明这一区分会带来的实际后果。建议：
+
+- 在第 3 节表格旁补充一句提醒：改动工具调用副作用逻辑时必须确认两条路径都已同步；
+- 制定收敛计划，逐步把 `code`/`viz`/`shania`/`mcp_builder` 迁移到 LangGraph，缩小需要
+  双写的代码面。
+
+### 11.2 Handoff 白名单一致性校验 ✅ 已解决（2026-08-09）
+
+**曾经的问题**：每个 Agent YAML 手动维护 `handoff.allowed_targets`，随专家增减容易出现
+`router.md` 候选表、各 Agent 的 `allowed_targets`、数据库中生效的 `features.handoff`
+三处漂移，造成"提示词说可以转交，白名单里其实没有"的静默失败（历史事故见
+[[router-session-handoff-source-agent]]）。
+
+**解决方案**：新增 `tests/unit/test_agent_config_consistency.py`，在纯文件层（不触库、
+不加载重依赖，全套 <0.2s）做静态回归，覆盖：
+
+- `test_handoff_targets_are_valid_active_agents`：`allowed_targets` 中每个目标（`"*"`
+  除外）必须是已启用的 `agent_id`；
+- `test_handoff_never_targets_router_or_self`：禁止转交给 `features.router` 的路由
+  Agent，也禁止自转交（与 `agent_service._build_handoff_catalog` 运行时语义对齐）；
+- `test_handoff_max_hops_within_server_ceiling`：`max_hops_per_session` 必须落在
+  服务端上限 `[1, 10]` 内；
+- `test_router_prompt_catalog_ids_exist`：`router.md` 候选表中出现的 `agent_id` 必须
+  存在于运行时目录，防止提示词引用幽灵专家。
+
+后续增删专家时若忘记同步白名单或候选表，CI 会直接红灯。维护规范见 §12。
+
+### 11.3 模型与 Provider 高度单一化
+
+13 个 Agent YAML 的 `model` 字段全部是 `qwen3.7-plus`，没有按任务复杂度分层（例如给
+`router` 这类低延时诉求的入口用更快的模型，给 `mcp_builder` 这类需要强代码生成能力的
+用更强模型）。同时 `data/ai/providers.yaml` 里 `deepseek-v4-flash` 和 `qwen3.7-plus`
+同时标注 `is_default: true`，虽然同步逻辑（`ai_provider_yaml_loader.py`）只会让最后
+生效的一个成为真正默认值，但 YAML 层面两条 `is_default: true` 容易误导后续维护者。
+单一 Provider 也是可用性单点故障：一旦 `qwen3.7-plus` 服务异常，全部 Agent 同时不可用。
+建议明确模型选型准则，并清理 `providers.yaml` 中重复的 `is_default`。
+
+### 11.4 MAS 编排层全专家登记 ✅ 已解决（2026-08-09）
+
+**曾经的问题**：`agent_capabilities.yaml` 只登记了 `agent-code`/`agent-rnaseq`/
+`agent-viz`/`agent-scrna` 四个 Agent，其余 7 个专家（`general`、`atacseq`、三个 scrna
+子专家、`mcp_builder`、`shania`）未登记。`mas_plan_validator` 对未登记 Agent 会直接抛
+"计划引用了未注册的 MAS Agent"，导致 `settings.mas_enabled` 打开后这些专家在编排器眼里
+彻底消失。
+
+**解决方案**：把 `data/OmicHub.yaml` 中 `agents.enabled` 的**全部 11 个专家**补进
+`agent_capabilities.yaml`（router 是纯分派入口、orchestrator 是编排器本身，二者不作为
+可分派节点，按设计豁免）。登记时的关键机制：
+
+- 能力键是自由词汇表（kebab-case 功能令牌），`mas_plan_validator` 只做"已注册 + 节点
+  `required_capabilities` 是能力集合子集"两道校验，不强枚举；
+- `flow_registry.agent_capabilities()` 会为 `data/ai/flows/*.yaml` 中 flow 的 `actor`
+  （目前 `agent-rnaseq`、`agent-scrna`）自动派生 executor 能力（如 `rnaflow`/`deseq2`/
+  `scrna-cellranger` 等）并在加载时并入，因此 actor 型 Agent 只需补充非 executor 的通用
+  能力；scrna 三个子专家在 flow 中是 `assistant_agent_id`（不是 actor），拿不到自动派生，
+  必须手工登记其分诊/审查能力。
+
+覆盖率由 §11.2 引入的测试保护：`test_all_expert_agents_registered_in_mas_capabilities`
+（漏登记即红灯）与 `test_mas_capabilities_have_no_stale_entries`（删专家后遗留孤儿条目
+即红灯）。MAS 编排层三个文件的完整职责说明见 §12.1。
+
+### 11.5 工具包与触发词去重 ✅ 已解决（2026-08-09）
+
+**问题一：死工具包 `development.yaml`**。它的 `platform_tools` 与 `workspace.yaml`
+完全相同，且经全仓检索确认**没有任何 Agent 引用它**——`code.yaml` 实际用的是
+`tool_packs: [workspace, handoff, subagents, agentteams_case]`，README 3.1 表格此前
+误写成了 `development`。**处理**：删除 `data/ai/tools/development.yaml`，并修正 3.1 表格。
+代码 Agent 的只读上下文能力由 `workspace` 工具包提供，语义不变。
+
+**问题二：触发词冗余**。运行时 `chat_service.py` 的 `_requires_fresh_web_search` 已经把
+一份 28 词的公共基线常量 `FRESHNESS_SEARCH_TRIGGERS`（实时/最新/最近/今天/新闻/天气/
+文献/论文/研究进展/临床试验/指南/数据库更新/latest/news/pubmed 等）与 Agent 配置的
+`triggers` **合并**后再做命中判断（`triggers = [*FRESHNESS_SEARCH_TRIGGERS,
+*configured_triggers]`）。因此各 Agent YAML 里凡是落在基线内的词都是纯冗余。**处理**：
+把所有 Agent 的 `web_search.triggers` 收敛为"仅基线之外的领域增量词"：
+
+| Agent | 精简后的 triggers |
+| --- | --- |
+| router / general / rnaseq / shania / orchestrator | `[]`（全部由基线覆盖） |
+| code | `[版本, 发布说明, API, 文档]` |
+| viz | `[标准, 配色规范]` |
+| atacseq | `[方法更新, 软件版本]` |
+| scrna | `[细胞图谱]` |
+
+改一个通用时效词现在只需改 `FRESHNESS_SEARCH_TRIGGERS` 一处。规范见 §12.3。
+
+### 11.6 三个 scrna 子专家目前工具能力空心
+
+`scrna_upstream`、`scrna_integration`、`scrna_advanced` 中前两者没有任何
+`builtin_tools`/`skill_ids`，仅挂载 `workspace`、`research`、`memory`、`handoff`，
+第 3 节表格也如实写了"当前主要依赖提示词、平台研究工具和专家交接"。这意味着这两个
+子专家目前无法真正执行任何专项分析，只能对话和转交，实用性有限。建议在文档里明确
+这是"设计如此的分诊层"还是"待补齐的过渡状态"，避免后续维护者误以为专属能力已经就位。
+
+### 11.7 提示词体积护栏形同虚设
+
+第 10 节要求超过 120 行的提示词在 PR 中说明理由，但这只是文字约定，没有 CI 校验。
+`prompts/mcp_builder.md`（456 行）和 `prompts/visualization.md`（288 行）已经远超
+阈值。建议加一个轻量脚本在 CI 里统计提示词行数并输出提醒（不阻断合并），让这条护栏
+真正可执行。
+
+## 12. MAS 编排层与配置维护规范
+
+本节沉淀 §11.2 / §11.4 / §11.5 解决后必须持续遵守的约定，避免同类问题复发。
+
+### 12.1 MAS 编排层（`data/ai/mas/`）职责
+
+MAS（Multi-Agent System）编排层仅在 `settings.mas_enabled` 打开时进入内置 Agent 同步
+（`agent_loader.py` 会动态把 `orchestrator` 追加进 enabled）。默认关闭，普通聊天入口
+不暴露计划工具。三个文件各司其职：
+
+| 文件 | 消费方 | 作用 |
+| --- | --- | --- |
+| `agent_capabilities.yaml` | `MASPlanValidator` | 声明每个可分派专家的能力集合；校验计划节点的 `agent_id` 已注册且 `required_capabilities` 是其子集。 |
+| `artifact_schemas.yaml` | `MASPlanValidator` | 声明 Artifact 类型及 producer；校验下游消费的产物类型确由上游产出（`user_upload` 型可作为根输入）。 |
+| `tool_policies.yaml` | `schema_loader` | 按 `tool_key` 声明沙盒执行策略（允许镜像、可写根、是否联网/特权/挂 docker socket）。 |
+
+能力来源有两条并轨且自动合并：**手工登记**（本表的 `agents:` 段）+ **自动派生**
+（`flow_registry.agent_capabilities()` 为 `data/ai/flows/*.yaml` 中 flow 的 `actor`
+派生其 stage executor 的 `key`）。同一 `agent_id` 两者取并集。
+
+### 12.2 增删专家时的 MAS / handoff 同步清单
+
+新增或删除一个专家 Agent 时，除第 6 节的 8 步外，必须同步：
+
+1. **MAS 能力登记**：在 `agent_capabilities.yaml` 的 `agents:` 段增/删该 `agent_id`
+   （router/orchestrator 除外）。actor 型专家只补非 executor 通用能力，executor 能力
+   由 flow YAML 自动派生；`assistant_agent_id` 型（如 scrna 子专家）须手工登记全部能力。
+2. **handoff 白名单**：检查其它专家的 `handoff.allowed_targets` 是否需要增删该目标；
+   目标不能指向 `features.router` 的 Agent，也不能自转交，`max_hops_per_session` ∈ [1,10]。
+3. **路由候选表**：同步 `prompts/router.md` 的候选专家表格（`| agent-xxx | 名称 | 适用请求 |`）。
+4. **回归验证**：`uv run pytest tests/unit/test_agent_config_consistency.py -q`
+   会一次性校验上述 1~3 的一致性；漏改即红灯。
+
+`test_agent_config_consistency.py` 是这套契约的守门员，任何一处漂移都会被它拦下。
+
+### 12.3 web_search 触发词规范
+
+- 通用时效词（最新/文献/论文/今天/news/pubmed 等）由运行时常量
+  `FRESHNESS_SEARCH_TRIGGERS`（`chat_service.py`）统一提供，**禁止**在 Agent YAML 里
+  重复声明；要调整通用词只改这一处常量。
+- Agent YAML 的 `web_search.triggers` **只声明该领域特有、且不在基线中的增量词**
+  （如 scrna 的"细胞图谱"、code 的"发布说明/API"）。没有领域增量词时写 `triggers: []`。
+- 运行时命中判定用的是基线与 Agent 增量词的并集，因此增量词留空不会削弱通用时效检索。
+
+### 12.4 工具包（`data/ai/tools/*.yaml`）去重原则
+
+- 新建工具包前先确认没有既有包已覆盖同一权限集合；`workspace`（只读浏览当前用户工作区）
+  是通用基础包，代码/开发类 Agent 直接复用它，不要再造内容雷同的包。
+- 工具包必须至少被一个 enabled Agent 的 `tool_packs` 引用；无人引用的包应删除，避免像
+  历史上的 `development.yaml` 那样成为误导维护者的死文件。
+
+## 13. 多智能体协作可运行性核查（2026-08-09）
+
+本节记录对平台**三条多智能体路径**真实可运行性的核查结论，回答"能不能真的跑起来"以及
+"是否满足'在 AI 助手/工作台页像群里聊天一样多专家协作、遇决策问用户'的诉求"。核查基于对
+后端服务、Celery 任务、前端流解析与组件、独立部署目录的通读，结论均标注了代码位置。
+
+平台目前有**三条形态不同**的多智能体路径，不要混为一谈：
+
+| 路径 | 形态 | 默认开关 | 执行位置 | "群聊"含义 |
+| --- | --- | --- | --- | --- |
+| **对话内 fan-out**（`parallel_subagents`）| 一次工具调用并行派生 ≤4 个子专家跑受限工具循环 | 管理端 `subagent_fanout_enabled` / env | web 进程内（chat 循环）| 同一会话内并行，非轮流发言 |
+| **超频模式**（overdrive room）| Manager + 多 worker 在一个"团队房间"分头像发言 | 前端 `OverdriveToggle` | web 进程内 | ✅ 唯一原生"多专家分头像发言"形态 |
+| **MAS 编排**（orchestrator + DAG）| 生成可确认计划 → Celery worker 执行 DAG 节点 | `mas_enabled`（默认 **关**）| Celery worker | 无群聊，卡片式计划+进度 |
+| **AgentTeams Case** | 跨角色工作流状态机 + 人工审批 + 交付 | bridge/gateway/chat_entry（默认 **全关**）| 独立部署的 Bridge+Worker 集群 | Matrix/Element 外链聊天室（给人用）|
+
+### 13.1 MAS 编排：执行闭环完整，但默认关闭且有一处隐性断点
+
+**结论：不是"仅预览"。** 从"用户确认计划"到"Celery worker 真实执行节点、产物落库、推进
+DAG 直至终态"的代码路径完整存在且相互衔接。
+
+- `mas_plan_preview` 工具（`mas_plan_adapter.py`）确实**只做校验+回传预览卡片**，明写"用户
+  确认前不会创建或执行 Run"；但其后有真实执行链：前端"确认并开始执行"→ `POST /mas/runs`
+  建 run（`awaiting_approval`）→ `POST /mas/runs/{id}/approve`（`mas_service.py`，未确认草稿
+  绝不执行）→ 写 outbox 事件 → Celery Beat 定时 `publish_outbox`(10s)/`consume_events`(5s)
+  → `MASEventConsumerService` → `mas_scheduler_service.dispatch_ready_node` → **`enqueue_task`
+  真正投递 Celery 任务** → worker 跑 RNAFlow/volcano/quality-gate/EBI/scanpy 执行器，写
+  artifact 落库、推进节点状态。
+- 状态全程持久化：迁移 `x2y3z4a5b6c7_add_mas_runs_artifacts_events.py` 建 7 张表，仓储用
+  乐观锁（`version` + CAS rowcount==1）保证 exactly-once。
+- 测试 `tests/unit/domain/mas/test_scheduler.py` 覆盖执行态转移（dispatch once / 成功完成 /
+  失败退避重试），不止预览。
+
+**为什么"默认看不到执行"（门控，非代码缺失）**：
+
+1. `mas_enabled` 默认 `False`（`core/config.py`），`.env.example` 也是 `false`；关闭时 API
+   全部 403、Chat 不挂预览工具、orchestrator 不加载。
+2. 执行是异步的，依赖 **Celery Beat + Worker + Redis Stream 三者常驻**；未起则 `approve`
+   后 run 停在 `queued`、事件停在 `pending`（故意保留待重放）。
+3. RNAFlow 执行器依赖 `mas_apptainer_image`（**默认空串**）+ apptainer 二进制；EBI/scanpy 依赖
+   各自二进制/镜像。纯 Python 执行器（volcano/quality-gate/fake）无外部依赖，可直接跑通。
+
+**⚠️ 隐性断点（真实 bug，建议修）**：`mas_scheduler_service.py:109-132` 的 `dispatch_ready_node`
+只对 6 种已知 executor（`fake`/`apptainer-rnaflow`/`deg-volcano`/`quality-gate`/`ebi-download`/
+`scanpy-qc`）投递 Celery 任务，但**末尾无条件 `return True`**。若计划节点的 `resources.executor`
+不在白名单，节点会被标 `dispatched`（`:100`）却不投递任何任务，且返回 True 假装成功 →
+**该节点永久悬挂、run 永不终结、无任何告警**。
+
+**HITL 决策**：MAS 运行时**不复用 `ask_user`**，而是走独立的 **approval 机制**（计划确认
+`approve_run`；运行中节点失败/质量门未过 → `create_approval` + run→`paused_for_input`，前端
+审批卡恢复或终止）。`ask_user` 只覆盖"进入 MAS 之前"的聊天期澄清。
+
+### 13.2 AgentTeams Case：真引擎在独立部署目录，主栈不含
+
+**结论：这是"跨角色工作流状态机"，不是"多个 LLM 在一个会话里轮流发言"。** 主仓库
+（OmicHub）内**只有 HTTP 代理**，真正的执行引擎在 `integrations/agentteams/`（独立可部署的
+Bridge + Gateway + Worker 集群），默认三个开关全关、不随主栈启动。
+
+- `AgentTeamsService` 全部方法是对外部 Bridge 的 `httpx` 转发；`create_agentteams_case` 工具
+  经确认卡（带 token、10 分钟窗口，模型无法伪造 `_confirmed` 直接建 Case）后，最远只能把 Case
+  推到 `approval_pending`，之后的执行/质量/交付全靠 `integrations/agentteams/worker/` 里的独立
+  轮询进程 + 人工在 `AgentTeamsCaseView.vue` 审批提交。
+- 主仓库 Celery 里的 `watch_cases`(60s) **只做状态回流通知，不推进 Case**。
+- **"多角色轮流"= Work Item 派发 + Worker 轮询认领**（`while True: run_once(); sleep()`），
+  角色间不通过自然语言互相回复；grep `speaker/turn/round/groupchat` 无命中。
+- **"群聊室"= Matrix/Element**：`AgentTeamsChatDrawer.vue` 只内嵌一个 Element iframe /
+  新窗口打开 Element URL，是**给人参与的聊天室**，不是产品内原生的多 LLM 群聊。
+- 前端 UI 完成度高（生产级非 mock）：`AgentTeamsCaseView.vue`（503 行，5 阶段步骤条 / 工作项 /
+  实时时间线 SSE+轮询降级 / 审批弹窗）+ 路由 + 管理台 Bridge 配置页。
+- **持久化边界**：Bridge Case 存 Redis 快照/文件，"生产级数据库存储仍是后续工作"；Case/Work
+  Item/事件**不落主库**，主库只有 `agentteams_bridge_settings` 一张配置表。
+
+**随附 Worker 是验收骨架**：仓库内 Worker 仅在 demo 开关 + `agentteams-acceptance-` 前缀 + 只读
+工作项时自动完成，生产执行需接入真实分析 skill 与 Gateway LM 咨询后端。
+
+### 13.3 ask_user 决策询问链路：三条路径打通，fan-out 缺一环
+
+`ask_user` 从后端到前端弹窗的链路是**打通**的：工具 schema 在 `studio_tools.py`，SSE 统一为
+`type="ask_request"`，前端 `useAgentChatStream.ts` 有 `case 'ask_request'` → store 落位 →
+`AskUserCard.vue`（分页问题向导，支持点选/「其他」自由输入/跳过）弹窗，答案作为下一条 user
+消息回灌续跑（文本回灌而非专用回调端点，但闭环）。
+
+| 执行路径 | ask_user 弹窗 |
+| --- | --- |
+| 普通 chat | ✅ 打通（schema 兜底挂载 + legacy/LangGraph 两条循环都发 ask_request）|
+| Studio 工作台 | ✅ 打通（`AskUserModal` 复用 `AskUserCard`）|
+| 超频模式（overdrive room）| ✅ 打通（intake / worker / followup 三处发 ask_request）|
+| **对话内并行子 Agent（`parallel_subagents`）** | ⚠️ **未打通** |
+
+**fan-out 的 ask_user 缺口**：子 Agent 调 `ask_user` 时被转成 `needs_user_input` packet，聚合进
+汇总文本回灌给上级模型，**前端不会弹窗**（对话内 fan-out 只发 `type="subagents"`，不把子问题
+再发成 `ask_request`）。即"并行分析时子专家无法直接向用户求决策"。
+
+### 13.4 与"页内群聊式多专家协作"诉求的差距
+
+用户诉求：在 AI 助手/工作台页，**像群里聊天一样**多专家协作分析，**遇决策问用户**。逐条对照：
+
+1. **群聊有雏形但入口分裂**：真正的"多专家分头像发言"只在**超频模式**（overdrive room，
+   `room_speech`/`room_speech_delta` SSE + `KimiMessageItem.vue` 发言者头像徽标）下成立；普通
+   对话默认单 Agent + handoff 徽标。且 worker 发言默认被折叠成"阶段产物"，不像自然群聊平铺可读。
+2. **对话内并行子 Agent 无群聊/泳道展示**：后端在 `chat_service.py:5603/5647` 发 `type="subagents"`
+   （started/aggregated），但前端 `useAgentChatStream.ts` **没有 `case 'subagents'`**，事件被直接
+   丢弃。用户看不到"哪几个专家在并行、各自进度"——最明显的可视化空洞（记忆
+   [[parallel-subagent-fanout]] 记的"前端泳道卡片未做"仍属实）。
+3. **fan-out 里的 ask_user 无法冒泡**（见 §13.3），直接违背"遇决策问用户"。
+4. **AgentTeams 群聊是外链 Element iframe**，非产品内原生群聊，默认关闭，体验割裂。
+5. **handoff 缺"切换过场"可视化**：只有"本条由专家X回答"的静态徽标，无"从 A 切到 B"的过场。
+
+**一句话总结**：用户想要的"多个 LLM 专家在页面群里聊天式分析"这个具体形态，**最接近的是
+超频模式的 room_speech**，但它入口隐蔽、可读性弱；对话内 fan-out 有后端能力却缺前端展示与
+ask_user 冒泡；AgentTeams 的群聊则是外部 Element。三者都还不是开箱即用的"页内多专家群聊"。
+
+### 13.5 可优化项（按投入产出比排序）
+
+1. **补 `subagents` 事件的前端渲染（最高性价比）**：在 `useAgentChatStream.ts` 增
+   `case 'subagents'`（started 建泳道、aggregated 落终态），store 加 `onSubagentFanout`，用类似
+   `OverdriveProgressCard.vue` 的多 Agent 泳道卡片展示。后端能力已就绪，纯前端工作即可点亮
+   "并行专家可视化"。
+2. **打通 fan-out 的 ask_user 冒泡**：在对话内 fan-out 聚合处检测子 Agent 的
+   `needs_user_input`/`awaiting_input`，命中则额外 `yield type="ask_request"`（复用现成
+   `AskUserCard`）并暂停 fan-out 等待回答。
+3. **修 MAS 未知 executor 静默悬挂**（§13.1）：`dispatch_ready_node` 对不在白名单的 executor
+   应显式标 `NODE_FAILED`（如 `UNKNOWN_EXECUTOR`）并记事件，避免节点永久卡 `dispatched`。
+4. **统一群聊入口与可读性**：让 AI 助手页在多专家参与时也默认走 `room_speech` 群聊气泡（不限
+   超频模式），并给 worker 发言提供"默认展开正文"选项，贴近真实群聊观感。
+5. **MAS/AgentTeams 常驻看门狗与对账**：MAS 加 beat 巡检回收超时未推进的节点/run；AgentTeams
+   把 `reconcile_case` 从"用户查看时触发一次"升级为 beat 定时对活跃 `executing` Case 主动对账，
+   避免用户不打开页面就卡住。
+6. **handoff 过场卡片（轻量）**：基于已到位的 `handoff` 事件（含 source/target 名与 reason），在
+   消息流插一条"专家 A → 专家 B（原因…）"过场，而非仅静态徽标。
+
+> 说明：本节为只读核查结论，未改动任何后端/前端代码；§13.5 是建议清单，需另行立项实施。
+> MAS 与 AgentTeams 均默认关闭，启用方式与部署前置见 `.env.example` 与
+> `deploy/agentteams/README.md`、`docs/configuration/多Agent协作配置指南.md`。

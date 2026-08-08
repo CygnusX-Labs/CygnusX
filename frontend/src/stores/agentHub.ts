@@ -1325,6 +1325,31 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             if (so || se) tc.output = so + se
             return tc
           })
+
+          // ask_user 的澄清事件不会单独作为消息落库；历史重载时从工具结果
+          // 还原为 AskUserCard，避免重新打开会话后退化成普通 MCP 工具卡片。
+          const askTool = msg.toolCalls.find((tool) => tool.name === 'ask_user')
+          if (askTool) {
+            const result = askTool.result && typeof askTool.result === 'object'
+              ? askTool.result as Record<string, unknown>
+              : undefined
+            const payload = askTool.uiPayload
+              || (result?.ui_payload as Record<string, unknown> | undefined)
+              || (result?.uiPayload as Record<string, unknown> | undefined)
+              || result
+            const rawQuestions = Array.isArray(payload?.questions) ? payload.questions : []
+            const questions = rawQuestions
+              .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+              .map((item) => ({
+                question: typeof item.question === 'string' ? item.question : '',
+                options: Array.isArray(item.options)
+                  ? item.options.filter((option): option is string => typeof option === 'string')
+                  : undefined,
+              }))
+            if (questions.length) {
+              msg.askRequest = { questions, answered: false }
+            }
+          }
         }
         // 交错时间线：后端按发生顺序落库的 text/tool 段，重载后保持交错布局
         const timeline = m.metadata_json?.timeline
@@ -1339,6 +1364,13 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             }))
         }
         return msg
+      })
+      // 历史消息没有单独的 answered 字段：如果澄清卡片后已经出现用户消息，
+      // 说明用户已提交答案，恢复为可展开的已回答摘要而不是再次要求输入。
+      loaded.forEach((message, index) => {
+        if (!message.askRequest || message.askRequest.answered) return
+        const answered = loaded.slice(index + 1).some((candidate) => candidate.role === 'user')
+        if (answered) message.askRequest.answered = true
       })
       // 保留当前正在流式中的占位消息，避免闪烁
       const streamingPlaceholders = session.messages.filter(

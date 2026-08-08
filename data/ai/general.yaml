@@ -29,7 +29,8 @@ features:
   default_stage: research-plan
   web_search:
     mode: required_for_freshness
-    triggers: [实时, 最新, 最近, 今天, 新闻, 天气, 文献, 论文, 研究进展, 临床试验, 指南]
+    # 通用时效词全部由运行时基线 FRESHNESS_SEARCH_TRIGGERS 覆盖，无需重复声明
+    triggers: []
 tool_packs: [workspace, research, memory, handoff, subagents, agentteams_case]
 handoff:
   allowed_targets: ["*"]

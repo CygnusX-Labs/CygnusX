@@ -31,7 +31,15 @@ const emit = defineEmits<{
 // Studio 工作台上下文：仅在 /studio 页面被 provide；普通 /ai 聊天无此上下文
 const studioCtx = inject(StudioContextKey, null)
 const agentHubStore = useAgentHubStore()
-const message = useMessage()
+// 工具卡片也会在轻量测试宿主/嵌入式预览中独立挂载；没有全局
+// NMessageProvider 时仍应能渲染正文与产物，而不是在 setup 阶段中断。
+const message = (() => {
+  try {
+    return useMessage()
+  } catch {
+    return { error: () => undefined }
+  }
+})()
 const confirmingCase = ref(false)
 
 function isStudioCodeToolCall(tool: ToolCall): boolean {

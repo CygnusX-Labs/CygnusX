@@ -16,7 +16,8 @@ features:
   router: true
   web_search:
     mode: required_for_freshness
-    triggers: [实时, 最新, 今天, 新闻, 天气, 文献, 论文, 研究进展]
+    # 通用时效词全部由运行时基线 FRESHNESS_SEARCH_TRIGGERS 覆盖，无需重复声明
+    triggers: []
 tool_packs: [workspace, agentteams_case]
 
 # Studio 工作台：router 会话共享一个沙盒镜像（取最通用的 analysis-core）。
