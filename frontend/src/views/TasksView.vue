@@ -11,7 +11,7 @@ import apiClient from '@/api/client'
 import { useApi } from '@/composables/useApi'
 import { exportTasksToExcel } from '@/utils/taskExport'
 import { NInput, NSelect, NButton, NIcon, NTabs, NTabPane, useMessage } from 'naive-ui'
-import { DownloadOutline, RefreshOutline, SearchOutline } from '@vicons/ionicons5'
+import { BeakerOutline, DownloadOutline, RefreshOutline, SearchOutline } from '@vicons/ionicons5'
 
 const message = useMessage()
 const route = useRoute()
@@ -207,7 +207,7 @@ onMounted(fetchTasks)
         </div>
         <EmptyState
           v-else-if="!filteredTasks.length"
-          icon="🧪"
+          :icon="BeakerOutline"
           :title="searchQuery || statusFilter !== 'all' ? '没有匹配的任务' : '暂时没有分析任务'"
           :description="searchQuery || statusFilter !== 'all' ? '请调整搜索关键词或筛选条件后重试。' : '前往分析中心提交第一个任务后，执行进度会显示在这里。'"
         />

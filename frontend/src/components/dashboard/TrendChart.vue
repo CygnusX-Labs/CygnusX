@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { NButton, NIcon, NSpin } from 'naive-ui'
-import { CalendarOutline } from '@vicons/ionicons5'
+import { CalendarOutline, StatsChartOutline } from '@vicons/ionicons5'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { BarChart, LineChart } from 'echarts/charts'
@@ -210,7 +210,7 @@ onMounted(fetchTrend)
         />
         <EmptyState
           v-else-if="!loading"
-          icon="📈"
+          :icon="StatsChartOutline"
           title="暂无趋势数据"
           description="提交分析任务后，这里会展示近期的任务与样本变化。"
         />

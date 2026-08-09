@@ -7,13 +7,28 @@ import PageHeader from '@/components/PageHeader.vue'
 import { NButton, NIcon } from 'naive-ui'
 import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { FlaskOutline, CodeSlashOutline, DocumentTextOutline, LogoGithub } from '@vicons/ionicons5'
+import type { Component } from 'vue'
+import {
+  AnalyticsOutline,
+  BeakerOutline,
+  ClipboardOutline,
+  CodeSlashOutline,
+  DocumentTextOutline,
+  FlameOutline,
+  FlaskOutline,
+  GlobeOutline,
+  LogoGithub,
+  MagnetOutline,
+  FolderOutline,
+  SettingsOutline,
+  StatsChartOutline,
+} from '@vicons/ionicons5'
 
 interface Pipeline {
   id: string
   name: string
   desc: string
-  icon: string
+  icon: Component | string
   colorVar: string
   tags: string[]
   version: string
@@ -58,17 +73,30 @@ const typeLabels: Record<string, string> = {
 }
 
 /** 流程图标兜底映射（兼容旧 YAML 中 icon 为字符串 key 的情况） */
-const FALLBACK_MAP: Record<string, string> = {
-  rna: '🧬',
-  atac: '🧪',
-  scrna: '🔬',
-  chip: '🧲',
-  wgs: '🗂️',
-  wes: '🗂️',
-  jbrowse: '🌐',
-  proteomics: '🧫',
-  metabolomics: '⚗️',
-  default: '⚙️',
+const FALLBACK_MAP: Record<string, Component> = {
+  rna: BeakerOutline,
+  atac: FlaskOutline,
+  scrna: AnalyticsOutline,
+  chip: MagnetOutline,
+  wgs: FolderOutline,
+  wes: FolderOutline,
+  jbrowse: GlobeOutline,
+  proteomics: FlaskOutline,
+  metabolomics: FlaskOutline,
+  default: StatsChartOutline,
+}
+
+/** 将历史流程元数据中的常见 Emoji 图标迁移到稳定的矢量图标；未知自定义图标仍原样展示。 */
+const LEGACY_ICON_MAP: Record<string, Component> = {
+  '🧬': BeakerOutline,
+  '🧪': FlaskOutline,
+  '🔬': AnalyticsOutline,
+  '🧲': MagnetOutline,
+  '🗂️': FolderOutline,
+  '🌐': GlobeOutline,
+  '🧫': FlaskOutline,
+  '⚗️': FlaskOutline,
+  '⚙️': SettingsOutline,
 }
 
 /** 按 category 动态主题色 key */
@@ -85,9 +113,10 @@ const CATEGORY_COLOR_MAP: Record<string, string> = {
 
 const COLOR_LIST = ['chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5', 'chart-6']
 
-function flowIcon(flow: FlowDefinition): string {
+function flowIcon(flow: FlowDefinition): Component | string {
   const icon = flow.icon
   if (icon && icon.trim().length > 0) {
+    if (LEGACY_ICON_MAP[icon]) return LEGACY_ICON_MAP[icon]
     if (/[^\x00-\x7F]/.test(icon)) return icon
     return FALLBACK_MAP[icon.toLowerCase()] || FALLBACK_MAP[flow.category] || FALLBACK_MAP.default
   }
@@ -190,7 +219,7 @@ onMounted(fetchFlows)
       <!-- 推荐流程 -->
       <section v-if="!activeType && featuredPipeline" class="featured-section animate-fade-in-up delay-100">
         <h2 class="section-label">
-          <span class="section-icon">🔥</span>
+          <NIcon :component="FlameOutline" class="section-icon" aria-hidden="true" />
           推荐流程
         </h2>
         <div
@@ -200,13 +229,17 @@ onMounted(fetchFlows)
         >
           <div class="hero-inner">
             <div class="hero-icon" :style="{ background: `color-mix(in srgb, ${featuredPipeline.colorVar} 10%, transparent)` }">
-              {{ featuredPipeline.icon }}
+              <NIcon v-if="typeof featuredPipeline.icon !== 'string'" :component="featuredPipeline.icon" :size="22" />
+              <span v-else>{{ featuredPipeline.icon }}</span>
             </div>
 
           <div class="hero-body">
             <div class="hero-title-row">
               <h3 class="hero-title">{{ featuredPipeline.name }}</h3>
-              <span class="recommended-badge">🔥 推荐</span>
+              <span class="recommended-badge">
+                <NIcon :component="FlameOutline" aria-hidden="true" />
+                推荐
+              </span>
               <span class="version-badge">v{{ featuredPipeline.version }}</span>
             </div>
               <p class="hero-desc">{{ featuredPipeline.desc }}</p>
@@ -237,7 +270,7 @@ onMounted(fetchFlows)
       <!-- 全部流程 -->
       <section class="all-flows-section animate-fade-in-up delay-200">
         <h2 class="section-label">
-          <span class="section-icon">📋</span>
+          <NIcon :component="ClipboardOutline" class="section-icon" aria-hidden="true" />
           {{ activeType ? '筛选结果' : '全部流程' }}
         </h2>
 
@@ -254,7 +287,8 @@ onMounted(fetchFlows)
                 class="flow-icon"
                 :style="{ background: `color-mix(in srgb, ${p.colorVar} 10%, transparent)` }"
               >
-                {{ p.icon }}
+                <NIcon v-if="typeof p.icon !== 'string'" :component="p.icon" :size="20" />
+                <span v-else>{{ p.icon }}</span>
               </div>
               <div class="flow-body">
                 <div class="flow-title-row">
@@ -340,6 +374,7 @@ onMounted(fetchFlows)
 
 .section-icon {
   font-size: 20px;
+  color: var(--brand-primary);
 }
 
 .featured-section {
@@ -420,6 +455,9 @@ onMounted(fetchFlows)
 }
 
 .recommended-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 2px 8px;
   border-radius: 999px;
   color: var(--brand-primary);
@@ -428,6 +466,10 @@ onMounted(fetchFlows)
   font-weight: 600;
   line-height: 18px;
   white-space: nowrap;
+}
+
+.recommended-badge :deep(.n-icon) {
+  font-size: 14px;
 }
 
 .hero-desc {

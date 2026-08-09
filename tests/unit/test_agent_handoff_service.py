@@ -10,7 +10,7 @@ from omichub.application.services.agent_handoff_service import (
     AgentHandoffService,
     extract_handoff_directive,
 )
-from omichub.application.services.agent_service import AgentService
+from omichub.application.services.agent_service import AgentService, render_persona_system_prompt
 from omichub.core.exceptions import BusinessError
 from omichub.infrastructure.database.models.agent import AgentTemplateModel
 from omichub.infrastructure.database.models.chat import ChatSessionModel
@@ -36,6 +36,80 @@ def test_router_uses_a_strict_routing_communication_contract() -> None:
     assert "路由输出纪律" in prompt
     assert "不要执行分析" in prompt
     assert "前端规则替你" in prompt
+
+
+def test_persona_renderer_includes_stable_style_but_excludes_ui_and_capabilities() -> None:
+    prompt = render_persona_system_prompt(
+        {
+            "persona": {
+                "archetype": "严谨的质量审计员",
+                "traits": ["审慎", "重证据"],
+                "working_style": "先核验输入，再给出结论",
+                "communication_style": "区分通过、警告和阻断",
+                "challenge_style": "主动指出反例和缺口",
+                "status_lines": {"running": ["正在审计"]},
+                "version": "agent-qc@1",
+                "tools": ["workspace_write"],
+                "permissions": {"admin": True},
+                "persona_context": "本轮只审计批次效应",
+            }
+        }
+    )
+
+    assert "严谨的质量审计员" in prompt
+    assert "主动指出反例和缺口" in prompt
+    assert "正在审计" not in prompt
+    assert "workspace_write" not in prompt
+    assert "admin" not in prompt
+    assert "本轮只审计批次效应" not in prompt
+    assert "不得据此新增、移除或扩大工具" in prompt
+
+
+def test_persona_is_inserted_before_shared_sandbox_protocol() -> None:
+    agent = AgentTemplateModel(
+        agent_id="agent-qc",
+        features={"persona": {"archetype": "审计员"}},
+        is_active=True,
+    )
+
+    prompt = AgentService._append_persona_prompt(
+        "原始职责\n\n## 共享沙盒协议\n- 只能写入 output/",
+        agent,
+    )
+
+    assert prompt.index("原始职责") < prompt.index("Agent Persona")
+    assert prompt.index("Agent Persona") < prompt.index("共享沙盒协议")
+
+
+@pytest.mark.asyncio
+async def test_assemble_context_injects_persona_when_model_is_unavailable() -> None:
+    agent = AgentTemplateModel(
+        agent_id="agent-qc",
+        name="质量审计员",
+        system_prompt="原始职责提示",
+        features={
+            "persona": {
+                "archetype": "严谨审计员",
+                "traits": ["审慎"],
+                "working_style": "先核验",
+                "communication_style": "给出证据",
+                "challenge_style": "指出缺口",
+            }
+        },
+        is_active=True,
+    )
+    service = AgentService(AsyncMock())
+    service._reconcile_model_bindings = AsyncMock()  # type: ignore[method-assign]
+    service.get_agent = AsyncMock(return_value=agent)  # type: ignore[method-assign]
+    service._get_user_capability = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    service._resolve_model = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    context = await service.assemble_context("agent-qc", user_id="user-1")
+
+    assert context is not None
+    assert "原始职责提示" in context.system_prompt
+    assert "严谨审计员" in context.system_prompt
+    assert "不得据此新增、移除或扩大工具" in context.system_prompt
 
 
 def test_handoff_packet_stays_within_budget() -> None:

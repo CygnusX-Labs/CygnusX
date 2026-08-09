@@ -99,7 +99,7 @@
             <template #header><CardTitle :icon="FlashOutline" title="常用流程" /></template>
             <div class="quick-flow-list">
               <NButton v-for="flow in favoriteFlows" :key="flow.id" quaternary size="small" class="quick-flow" @click="router.push(`/flows/${flow.id}/submit`)">
-                <span>{{ flow.icon }}</span>{{ flow.name }}
+                <NIcon :component="flow.icon" />{{ flow.name }}
               </NButton>
             </div>
           </NCard>
@@ -158,7 +158,21 @@ import { computed, defineComponent, h, onMounted, onUnmounted, ref, watch } from
 import { useRouter } from 'vue-router'
 import { NAvatar, NButton, NCard, NCheckbox, NDataTable, NEmpty, NGrid, NGridItem, NIcon, NProgress, NRadioButton, NRadioGroup, NSelect, NSpace, NSpin, NTag, NTooltip, useMessage } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
-import { CreateOutline, EyeOutline, FlashOutline, ListOutline, LockClosedOutline, RefreshOutline, SettingsOutline, ShieldCheckmarkOutline, ShieldOutline, SparklesOutline } from '@vicons/ionicons5'
+import {
+  BeakerOutline,
+  CreateOutline,
+  EarthOutline,
+  EyeOutline,
+  FlashOutline,
+  ListOutline,
+  LockClosedOutline,
+  RefreshOutline,
+  SettingsOutline,
+  ShieldCheckmarkOutline,
+  ShieldOutline,
+  SparklesOutline,
+  StatsChartOutline,
+} from '@vicons/ionicons5'
 import { format, formatDistanceToNow, parseISO } from 'date-fns'
 import { zhCN } from 'date-fns/locale'
 import { useAuthStore } from '@/stores/auth'
@@ -188,7 +202,12 @@ const exporting = ref(false)
 const savingPreferences = ref(false)
 const twoFactorEnabled = ref(false)
 const preferences = ref<UserPreferences>({ default_page: 'dashboard', theme: 'system', language: 'zh-CN', notifications: { email: true, in_app: true, webhook: false } })
-const favoriteFlows = [{ id: 'rna-seq', name: 'RNA-seq', icon: '🧬' }, { id: 'atac-seq', name: 'ATAC-seq', icon: '🧪' }, { id: 'scrna-seq', name: '单细胞', icon: '🔬' }, { id: 'literature', name: '文献检索', icon: '🌐' }]
+const favoriteFlows = [
+  { id: 'rna-seq', name: 'RNA-seq', icon: BeakerOutline },
+  { id: 'atac-seq', name: 'ATAC-seq', icon: BeakerOutline },
+  { id: 'scrna-seq', name: '单细胞', icon: StatsChartOutline },
+  { id: 'literature', name: '文献检索', icon: EarthOutline },
+]
 const defaultPageOptions = [{ label: '控制台', value: 'dashboard' }, { label: '分析中心', value: 'analysis' }, { label: '任务中心', value: 'tasks' }, { label: '数据管理', value: 'data' }]
 const languageOptions = [{ label: '简体中文', value: 'zh-CN' }, { label: 'English', value: 'en-US' }]
 const user = computed(() => authStore.user)

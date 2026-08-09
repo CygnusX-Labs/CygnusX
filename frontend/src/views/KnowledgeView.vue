@@ -327,7 +327,7 @@ onMounted(async () => {
               />
               <EmptyState
                 v-else
-                icon="📚"
+                :icon="DocumentTextOutline"
                 title="暂无文档"
                 description="创建第一篇文档，沉淀实验室知识。"
               >
@@ -396,7 +396,7 @@ onMounted(async () => {
           </div>
           <EmptyState
             v-else
-            icon="📄"
+            :icon="DocumentTextOutline"
             title="选择一篇文档开始阅读"
             description="从左侧目录选择文档，或新建一篇文档开始记录。"
           />

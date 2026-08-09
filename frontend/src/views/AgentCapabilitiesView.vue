@@ -432,7 +432,6 @@ onMounted(async () => {
   position: sticky;
   top: 24px;
   height: calc(100dvh - 232px);
-  margin-top: 32px;
   padding: 18px;
   display: flex;
   min-height: 360px;
@@ -569,11 +568,19 @@ onMounted(async () => {
 }
 
 .capability-editor {
+  position: sticky;
+  top: 24px;
   min-width: 0;
-  overflow: hidden;
+  max-height: calc(100dvh - 232px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .editor-identity {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   align-items: center;
   padding: 20px 22px;
   border-bottom: 1px solid var(--neutral-border);
@@ -718,6 +725,9 @@ onMounted(async () => {
 .feature-copy small { color: var(--text-secondary); font-size: 12px; line-height: 18px; }
 
 .editor-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -736,7 +746,8 @@ onMounted(async () => {
 
 @media (max-width: 980px) {
   .capability-workspace { grid-template-columns: 1fr; }
-  .agent-browser { position: static; height: auto; margin-top: 0; }
+  .agent-browser { position: static; height: auto; }
+  .capability-editor { position: static; max-height: none; overflow: visible; }
   .agent-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     max-height: none;

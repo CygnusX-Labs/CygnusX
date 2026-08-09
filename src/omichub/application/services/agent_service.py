@@ -19,13 +19,13 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.agent import (
+    USER_AGENT_FEATURE_KEYS,
     AgentTemplateDTO,
     CreateAgentRequest,
     UpdateAgentRequest,
     UserAgentCapabilityDTO,
     UserAgentCapabilityRequest,
     UserSelectableMCPDTO,
-    USER_AGENT_FEATURE_KEYS,
 )
 from omichub.application.services.agent_handoff_service import HANDOFF_TOOL_NAME
 from omichub.application.services.site_settings_service import SiteSettingsService
@@ -108,6 +108,62 @@ ROUTER_COMMUNICATION_SYSTEM_PROMPT_SUFFIX = """## 路由输出纪律
 - 运行时提供的 Agent 目录是唯一有效候选集；不得引用目录外 Agent，也不得让前端规则替你
   做领域判断。
 """
+
+PERSONA_SYSTEM_PROMPT_HEADER = "## Agent Persona（仅影响表达与协作方式）"
+PERSONA_TEXT_FIELDS = (
+    ("archetype", "角色原型"),
+    ("working_style", "工作方式"),
+    ("communication_style", "表达风格"),
+    ("challenge_style", "质疑与追问方式"),
+)
+PERSONA_MAX_FIELD_CHARS = 600
+PERSONA_MAX_TRAITS = 8
+SHARED_SANDBOX_PROTOCOL_HEADER = "## 共享沙盒协议"
+
+
+def _bounded_persona_text(value: Any) -> str:
+    """Normalize admin-authored Persona prose without changing its meaning."""
+    return re.sub(r"\s+", " ", str(value or "")).strip()[:PERSONA_MAX_FIELD_CHARS]
+
+
+def render_persona_system_prompt(features: dict[str, Any] | None) -> str:
+    """Render only stable Persona prose into a deterministic system-prompt block.
+
+    Persona is presentation guidance, not a capability declaration.  In particular,
+    status_lines are UI-only and the renderer deliberately ignores unknown keys such
+    as tools, permissions, quotas, or a per-run persona_context.
+    """
+    raw = (features or {}).get("persona")
+    if not isinstance(raw, dict):
+        return ""
+
+    lines = [PERSONA_SYSTEM_PROMPT_HEADER]
+    archetype_and_style: list[str] = []
+    for key, label in PERSONA_TEXT_FIELDS:
+        value = _bounded_persona_text(raw.get(key))
+        if value:
+            archetype_and_style.append(f"- {label}：{value}")
+    traits = [
+        _bounded_persona_text(item)
+        for item in raw.get("traits", [])
+        if _bounded_persona_text(item)
+    ][:PERSONA_MAX_TRAITS]
+    if traits:
+        archetype_and_style.append(f"- 稳定特质：{'、'.join(traits)}")
+    if not archetype_and_style:
+        return ""
+
+    lines.extend(archetype_and_style)
+    lines.extend(
+        [
+            "",
+            "表达边界：",
+            "- 以上内容只用于调整表达、解释顺序、追问方式和风险提醒。",
+            "- 不得据此新增、移除或扩大工具、MCP、Skill、审批、配额或数据访问权限。",
+            "- 不得把 Persona 偏好当作事实、证据、质量标准或执行结果；事实仍以工具和真实结果为准。",
+        ]
+    )
+    return "\n".join(lines)
 
 
 def _generate_agent_id(name: str) -> str:
@@ -731,7 +787,9 @@ class AgentService:
             return AgentContext(
                 agent=agent,
                 model_config=None,
-                system_prompt=self._append_communication_contract(agent.system_prompt, agent),
+                system_prompt=self._append_communication_contract(
+                    self._append_persona_prompt(agent.system_prompt, agent), agent
+                ),
                 features=runtime_features,
                 user_capabilities_customized=user_capabilities_customized,
             )
@@ -858,7 +916,10 @@ class AgentService:
         # 技能采用三层渐进式披露：L1 仅注入 name+description 索引（每技能约 100 tokens）；
         # L2 正文由模型命中后调用 use_skill 工具按需加载；L3 references/assets 用
         # skill_resource 按需读取。Studio 会话另用结构化 capability_catalog 机制。
-        system_prompt = agent.system_prompt
+        # Stable Persona is rendered once from the admin-controlled Agent template.
+        # It is intentionally added before skills/tool hints and platform contracts;
+        # those operational rules remain authoritative over presentation preferences.
+        system_prompt = self._append_persona_prompt(agent.system_prompt, agent)
         skills = await self._load_skills(runtime_skill_ids)
         skill_index = self._build_skills_index(skills)
         if skill_index:
@@ -906,6 +967,23 @@ class AgentService:
             temperature=agent.temperature,
             max_tokens=agent.max_tokens,
         )
+
+    @staticmethod
+    def _append_persona_prompt(system_prompt: str, agent: AgentTemplateModel) -> str:
+        persona_prompt = render_persona_system_prompt(agent.features)
+        if not persona_prompt:
+            return system_prompt
+        if not system_prompt:
+            return persona_prompt
+        # agent_loader appends the shared sandbox protocol to the prompt file. Keep
+        # Persona after the Agent's role prompt but before that authoritative protocol.
+        marker = f"\n{SHARED_SANDBOX_PROTOCOL_HEADER}"
+        marker_index = system_prompt.find(marker)
+        if marker_index >= 0:
+            role_prompt = system_prompt[:marker_index].rstrip()
+            safety_prompt = system_prompt[marker_index:].lstrip()
+            return f"{role_prompt}\n\n{persona_prompt}\n\n{safety_prompt}"
+        return f"{system_prompt}\n\n{persona_prompt}"
 
     @staticmethod
     def _append_communication_contract(system_prompt: str, agent: AgentTemplateModel) -> str:

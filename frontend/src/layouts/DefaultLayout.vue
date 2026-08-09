@@ -1319,7 +1319,7 @@ const UserAvatar = () => {
 }
 
 .admin-nav-parent {
-  margin: 0 4px;
+  margin: 0 12px;
   color: var(--neutral-text-2);
   background: transparent;
   box-shadow: none;
@@ -1356,8 +1356,8 @@ const UserAvatar = () => {
 
 .admin-nav-parent .nav-item-inner {
   height: 40px;
-  gap: 10px;
-  padding: 0 10px;
+  gap: 12px;
+  padding: 0 12px;
 }
 
 .admin-nav-parent .nav-label {
@@ -1371,7 +1371,7 @@ const UserAvatar = () => {
 
 .admin-sub-nav {
   gap: 2px;
-  margin: 2px 4px 6px 24px;
+  margin: 2px 4px 6px 32px;
   padding: 2px 0 2px 12px;
   border-left: 1px solid var(--neutral-border);
 }

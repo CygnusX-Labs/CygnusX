@@ -7,7 +7,16 @@ import {
   NAlert, NDivider,
 } from 'naive-ui'
 import type { FormInst, FormRules } from 'naive-ui'
-import { PersonOutline, LockClosedOutline, SettingsOutline, GlobeOutline, ShieldCheckmarkOutline } from '@vicons/ionicons5'
+import {
+  BulbOutline,
+  ExtensionPuzzleOutline,
+  GitNetworkOutline,
+  GlobeOutline,
+  LockClosedOutline,
+  PersonOutline,
+  SettingsOutline,
+  ShieldCheckmarkOutline,
+} from '@vicons/ionicons5'
 import QRCode from 'qrcode'
 import AdminTOTPConfirmModal from '@/components/AdminTOTPConfirmModal.vue'
 import apiClient from '@/api/client'
@@ -592,7 +601,7 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
             <!-- 开放注册 -->
             <article class="platform-setting-card">
               <div class="platform-setting-card__header">
-                <span class="platform-setting-card__icon" aria-hidden="true">🌐</span>
+                <NIcon class="platform-setting-card__icon" aria-hidden="true"><GlobeOutline /></NIcon>
                 <h2>开放用户注册</h2>
               </div>
               <p class="platform-setting-card__description">
@@ -611,7 +620,7 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
             <!-- 并行子 Agent（灰度） -->
             <article class="platform-setting-card">
               <div class="platform-setting-card__header">
-                <span class="platform-setting-card__icon" aria-hidden="true">🤖</span>
+                <NIcon class="platform-setting-card__icon" aria-hidden="true"><GitNetworkOutline /></NIcon>
                 <h2>对话内并行子 Agent</h2>
                 <NTag size="small" type="warning" :bordered="false">灰度</NTag>
               </div>
@@ -633,7 +642,7 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
             <!-- 聊天协作 Case（灰度） -->
             <article class="platform-setting-card">
               <div class="platform-setting-card__header">
-                <span class="platform-setting-card__icon" aria-hidden="true">🧩</span>
+                <NIcon class="platform-setting-card__icon" aria-hidden="true"><ExtensionPuzzleOutline /></NIcon>
                 <h2>聊天协作 Case</h2>
                 <NTag size="small" type="warning" :bordered="false">灰度</NTag>
               </div>
@@ -653,7 +662,7 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
             <!-- Agent 长期记忆 -->
             <article class="platform-setting-card">
               <div class="platform-setting-card__header">
-                <span class="platform-setting-card__icon" aria-hidden="true">🧠</span>
+                <NIcon class="platform-setting-card__icon" aria-hidden="true"><BulbOutline /></NIcon>
                 <h2>Agent 长期记忆</h2>
               </div>
               <p class="platform-setting-card__description">
@@ -674,7 +683,7 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
             <!-- TOTP 策略 -->
             <article class="platform-setting-card">
               <div class="platform-setting-card__header">
-                <span class="platform-setting-card__icon" aria-hidden="true">🔐</span>
+                <NIcon class="platform-setting-card__icon" aria-hidden="true"><LockClosedOutline /></NIcon>
                 <h2>二次验证（TOTP）</h2>
               </div>
               <p class="platform-setting-card__description">

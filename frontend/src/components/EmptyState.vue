@@ -1,17 +1,24 @@
 <script setup lang="ts">
+import type { Component } from 'vue'
+import { NIcon } from 'naive-ui'
+import { FolderOpenOutline } from '@vicons/ionicons5'
+
 withDefaults(defineProps<{
-  icon?: string
+  icon?: string | Component
   title: string
   description?: string
 }>(), {
-  icon: '📂',
+  icon: FolderOpenOutline,
   description: '',
 })
 </script>
 
 <template>
   <section class="empty-state" role="status">
-    <div class="empty-state-icon" aria-hidden="true">{{ icon }}</div>
+    <div class="empty-state-icon" aria-hidden="true">
+      <NIcon v-if="typeof icon !== 'string'" :component="icon" :size="26" />
+      <span v-else>{{ icon }}</span>
+    </div>
     <h3>{{ title }}</h3>
     <p v-if="description">{{ description }}</p>
     <div v-if="$slots.actions" class="empty-state-actions">

@@ -759,7 +759,7 @@ async def _run_assistant_job(run_id: str, assistant_instance_id: str) -> dict[st
             parent_session_id=run.session_id,
             context_summary=(
                 f"已确认计划：{(run.plan or {}).get('version_path')}\n"
-                f"Persona：{json_safe(instance.get('persona'))}\n"
+                f"本轮 Persona 补充：{str(instance.get('persona_context') or '').strip()}\n"
                 f"用户对本分支的补充：{json_safe(task.get('user_responses'))}\n"
                 f"Manager 返工意见：{str(task.get('repair_feedback') or '').strip()}\n"
                 f"只完成当前任务契约；所有产物必须写入独占目录 "

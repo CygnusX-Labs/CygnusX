@@ -1125,3 +1125,53 @@ v2 全链路完成。下表区分“代码已存在”和“端到端 DoD 已验
 ```bash
 uv run pytest tests/unit/test_overdrive_persona_config.py -q
 ```
+
+### 16.3 Persona 运行时注入架构与样式（2026-08-10）
+
+Persona 的权威来源是 Agent 模板 `features.persona`。运行时由
+`AgentService.assemble_context()` 统一调用 `render_persona_system_prompt()` 渲染，直接
+Agent、Studio Agent、Overdrive Manager 与 Worker 使用同一份稳定 Persona 规则；调用方不应
+自行拼接第二份 Persona 文本。
+
+#### 稳定 Persona system prompt 样式
+
+渲染结果采用固定顺序和固定标题，避免同一 Agent 在刷新、重试或不同入口中出现提示词漂移：
+
+```text
+## Agent Persona（仅影响表达与协作方式）
+- 角色原型：...
+- 工作方式：...
+- 表达风格：...
+- 质疑与追问方式：...
+- 稳定特质：...
+
+表达边界：
+- 以上内容只用于调整表达、解释顺序、追问方式和风险提醒。
+- 不得据此新增、移除或扩大工具、MCP、Skill、审批、配额或数据访问权限。
+- 不得把 Persona 偏好当作事实、证据、质量标准或执行结果；事实仍以工具和真实结果为准。
+```
+
+字段约定：
+
+- `archetype`、`traits`、`working_style`、`communication_style`、`challenge_style` 进入
+  system prompt；字段缺失时跳过，渲染顺序不变。
+- `status_lines` 是 UI 状态文案，只进入 Assistant Instance/前端状态卡，不进入模型提示词。
+- `persona_context` 是本轮任务的临时补充，只能由编排器附加到当前任务上下文，不能写回稳定
+  Persona，也不能覆盖工具白名单、MCP、Skill、审批、配额或事实标准。
+- 渲染器只读取 Agent 模板的稳定 `features.persona`，不读取用户能力覆盖中的同名字段；用户
+  能力配置可以调整模型和能力范围，但不能借 Persona 改变平台权限边界。
+- Persona 段落放在 Agent 原始职责提示之后、Skill/MCP 工具提示和平台执行规范之前；后续平台
+  安全与执行规范具有更高约束优先级。
+
+传统 `assistant_id` 聊天仍使用 `ChatAssistantModel.system_prompt`，不会隐式继承 Agent YAML
+Persona。若产品需要其人格化，应为该 Assistant 显式增加独立 style profile，或显式绑定某个
+Agent 后再继承；不得因为同名或默认助手关系自动复制领域 Agent Persona。
+
+定向验证：
+
+```bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest \
+  -p pytest_asyncio.plugin --noconftest \
+  tests/unit/test_agent_handoff_service.py \
+  tests/unit/test_overdrive_persona_config.py -q
+```
