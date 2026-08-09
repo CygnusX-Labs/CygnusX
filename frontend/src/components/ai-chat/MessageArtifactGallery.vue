@@ -24,6 +24,8 @@ const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'b
 const PREVIEW_EXTENSIONS = new Set([...IMAGE_EXTENSIONS, 'pdf'])
 const previewUrls = ref<Record<string, string>>({})
 const unavailablePreviews = ref(new Set<string>())
+const downloadingPaths = ref(new Set<string>())
+const failedDownloadPaths = ref(new Set<string>())
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -130,9 +132,22 @@ async function loadPreviews() {
   }))
 }
 
-function downloadArtifact(path: string) {
-  if (!props.sessionId) return
-  void studioApi.downloadArtifact(props.sessionId, path)
+async function downloadArtifact(path: string) {
+  if (!props.sessionId || downloadingPaths.value.has(path)) return
+
+  downloadingPaths.value = new Set([...downloadingPaths.value, path])
+  const nextFailedPaths = new Set(failedDownloadPaths.value)
+  nextFailedPaths.delete(path)
+  failedDownloadPaths.value = nextFailedPaths
+  try {
+    await studioApi.downloadArtifact(props.sessionId, path)
+  } catch {
+    failedDownloadPaths.value = new Set([...failedDownloadPaths.value, path])
+  } finally {
+    const nextPaths = new Set(downloadingPaths.value)
+    nextPaths.delete(path)
+    downloadingPaths.value = nextPaths
+  }
 }
 
 watch(
@@ -174,9 +189,17 @@ onBeforeUnmount(clearPreviews)
         </div>
         <figcaption>
           <span class="message-artifacts__file-name" :title="artifact.path">{{ fileName(artifact.path) }}</span>
-          <button type="button" class="message-artifacts__download" @click="downloadArtifact(artifact.path)">
-            下载图片
+          <button
+            type="button"
+            class="message-artifacts__download"
+            :disabled="downloadingPaths.has(artifact.path)"
+            @click="downloadArtifact(artifact.path)"
+          >
+            {{ downloadingPaths.has(artifact.path) ? '下载中…' : failedDownloadPaths.has(artifact.path) ? '重试下载' : '下载图片' }}
           </button>
+          <span v-if="failedDownloadPaths.has(artifact.path)" class="message-artifacts__download-error" role="status">
+            下载失败，请重试
+          </span>
         </figcaption>
       </figure>
     </div>
@@ -184,9 +207,17 @@ onBeforeUnmount(clearPreviews)
     <ul v-if="otherArtifacts.length" class="message-artifacts__files">
       <li v-for="artifact in otherArtifacts" :key="artifact.path">
         <span class="message-artifacts__file-name" :title="artifact.path">{{ fileName(artifact.path) }}</span>
-        <button type="button" class="message-artifacts__download" @click="downloadArtifact(artifact.path)">
-          下载
+        <button
+          type="button"
+          class="message-artifacts__download"
+          :disabled="downloadingPaths.has(artifact.path)"
+          @click="downloadArtifact(artifact.path)"
+        >
+          {{ downloadingPaths.has(artifact.path) ? '下载中…' : failedDownloadPaths.has(artifact.path) ? '重试下载' : '下载' }}
         </button>
+        <span v-if="failedDownloadPaths.has(artifact.path)" class="message-artifacts__download-error" role="status">
+          下载失败，请重试
+        </span>
       </li>
     </ul>
   </section>
@@ -319,6 +350,16 @@ onBeforeUnmount(clearPreviews)
   border: 0;
   border-radius: 6px;
   cursor: pointer;
+}
+
+.message-artifacts__download:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.message-artifacts__download-error {
+  color: var(--error-color, #d03050);
+  font-size: 12px;
 }
 
 .message-artifacts__download:hover {

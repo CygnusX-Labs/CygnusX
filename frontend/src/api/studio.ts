@@ -8,6 +8,18 @@
  */
 import apiClient from './client'
 
+function triggerBlobDownload(url: string, filename: string): void {
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.style.display = 'none'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+}
+
 /** Studio 会话（后端 ChatSessionDTO，mode="studio"） */
 export interface StudioSessionDTO {
   session_id: string
@@ -394,11 +406,7 @@ export const studioApi = {
 
   async downloadWorkspaceFile(sessionId: string, path: string): Promise<void> {
     const url = await studioApi.fetchWorkspaceBlob(sessionId, path)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = path.split('/').pop() || 'workspace-file'
-    anchor.click()
-    URL.revokeObjectURL(url)
+    triggerBlobDownload(url, path.split('/').pop() || 'workspace-file')
   },
 
   /** 分页读取工作区文件 */
@@ -468,10 +476,6 @@ export const studioApi = {
   /** 触发浏览器下载产物 */
   async downloadArtifact(sessionId: string, path: string): Promise<void> {
     const url = await studioApi.fetchArtifactBlob(sessionId, path)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = path.split('/').pop() || 'artifact'
-    a.click()
-    URL.revokeObjectURL(url)
+    triggerBlobDownload(url, path.split('/').pop() || 'artifact')
   },
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   activeOverdriveProgress,
   conversationMessagesWithoutProgress,
+  latestOverdriveProgress,
 } from '@/components/ai-chat/overdriveUi'
 import type { ChatMessage } from '@/components/ai-chat/types'
 
@@ -52,5 +53,26 @@ describe('overdrive 固定进度 Dock 状态', () => {
     ]
 
     expect(activeOverdriveProgress(messages)).toBeNull()
+  })
+
+  it('协作完成后仍可取到最近一次进度，用于保留完成态卡片', () => {
+    const messages: ChatMessage[] = [
+      userMessage,
+      {
+        id: 'progress',
+        role: 'system',
+        content: '已完成',
+        createdAt: '2026-08-06T10:00:01Z',
+        overdriveProgress: {
+          phase: 'completed',
+          label: '本轮超频协作已结束',
+          completed: 3,
+          total: 3,
+        },
+      },
+    ]
+
+    expect(latestOverdriveProgress(messages)?.phase).toBe('completed')
+    expect(latestOverdriveProgress([])).toBeNull()
   })
 })

@@ -2878,14 +2878,14 @@ class ChatService:
                 session_row.sandbox_meta = session_meta
                 await self._db.flush()
 
-        async def ask_manager(
+        async def stream_manager(
             prompt: str,
             max_tokens: int = 1200,
             system_prompt: str = "",
-        ) -> str:
-            answer = ""
+        ) -> AsyncIterator[str]:
+            """逐段产出 Manager 正文，供调用方在累加的同时向前端转发流式 delta。"""
             if manager_ctx.model_config is None:
-                return answer
+                return
             async for chunk in provider_manager.chat_stream(
                 config=manager_ctx.model_config,
                 messages=[{"role": "user", "content": prompt}],
@@ -2896,7 +2896,18 @@ class ChatService:
                 deep_thinking=False,
             ):
                 if chunk.type == "text":
-                    answer += chunk.content
+                    yield chunk.content
+
+        async def ask_manager(
+            prompt: str,
+            max_tokens: int = 1200,
+            system_prompt: str = "",
+        ) -> str:
+            answer = ""
+            async for delta in stream_manager(
+                prompt, max_tokens=max_tokens, system_prompt=system_prompt
+            ):
+                answer += delta
             return answer.strip()
 
         preflight_questions = (
@@ -3989,20 +4000,6 @@ class ChatService:
                 f"【{summary['name']}】\n{summary['content']}" for summary in valid_summaries
             )
         )
-        summary = await ask_manager(
-            summary_prompt,
-            system_prompt=OVERDRIVE_SUMMARY_SYSTEM_PROMPT,
-        )
-        if not summary or _overdrive_summary_exposes_internal_instructions(summary):
-            summary = (
-                "## 综合报告\n\n"
-                "以下内容已按执行顺序整合；由于自动摘要未通过输出安全校验，"
-                "这里保留各阶段的最终有效结论，避免丢失专家产物。\n\n"
-                + "\n\n".join(
-                    f"### {item['name']}\n\n{item['content']}" for item in valid_summaries
-                )
-                + "\n\n## 下一步\n\n请确认是否保存本报告，以及分析数据是否已经准备好。"
-            )
         yield ChatChunk(
             type="overdrive_progress",
             metadata={
@@ -4013,11 +4010,41 @@ class ChatService:
                 "tasks": manifest.load().get("tasks") or [],
             },
         )
+        # 综合报告真流式：边生成边推 room_speech_delta，前端即时渲染进度，
+        # 避免长报告在长时间静默后一次性弹出；最终以同 worker_key 的 room_speech 收束。
+        summary_worker_key = "manager-final"
+        summary_parts: list[str] = []
+        async for delta in stream_manager(
+            summary_prompt,
+            system_prompt=OVERDRIVE_SUMMARY_SYSTEM_PROMPT,
+        ):
+            summary_parts.append(delta)
+            yield ChatChunk(
+                type="room_speech_delta",
+                content=delta,
+                metadata={
+                    "sender": manager_sender,
+                    "worker_key": summary_worker_key,
+                    "session_id": session_id,
+                },
+            )
+        summary = "".join(summary_parts).strip()
+        if not summary or _overdrive_summary_exposes_internal_instructions(summary):
+            summary = (
+                "## 综合报告\n\n"
+                "以下内容已按执行顺序整合；由于自动摘要未通过输出安全校验，"
+                "这里保留各阶段的最终有效结论，避免丢失专家产物。\n\n"
+                + "\n\n".join(
+                    f"### {item['name']}\n\n{item['content']}" for item in valid_summaries
+                )
+                + "\n\n## 下一步\n\n请确认是否保存本报告，以及分析数据是否已经准备好。"
+            )
         manifest.set_status("completed")
         yield await emit_speech(
             manager_sender,
             summary,
             manager_round,
+            worker_key=summary_worker_key,
         )
         if not pending_followup and _is_overdrive_planning_request(planning_content):
             followup_questions = [

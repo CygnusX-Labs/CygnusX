@@ -17,6 +17,7 @@ import OverdriveProgressCard from '@/components/ai-chat/OverdriveProgressCard.vu
 import {
   activeOverdriveProgress as selectActiveOverdriveProgress,
   conversationMessagesWithoutProgress,
+  latestOverdriveProgress as selectLatestOverdriveProgress,
 } from '@/components/ai-chat/overdriveUi'
 import type { CollaborationRouteInfo } from '@/components/ai-chat/types'
 import KimiChatInput from '@/components/ai-chat/KimiChatInput.vue'
@@ -152,6 +153,21 @@ const conversationMessages = computed(() =>
 const activeOverdriveProgress = computed(() =>
   selectActiveOverdriveProgress(session.value?.messages || []),
 )
+const latestProgress = computed(() =>
+  selectLatestOverdriveProgress(session.value?.messages || []),
+)
+/** 用户手动收起完成态卡片后不再常驻；新一轮协作开始时自动恢复展示 */
+const progressDockDismissed = ref(false)
+watch(activeOverdriveProgress, (active) => {
+  if (active) progressDockDismissed.value = false
+})
+/** 进行中展示活跃进度；协作结束后保留完成态卡片（控件由卡片自身隐藏），不直接丢弃菜单 */
+const dockedOverdriveProgress = computed(() => {
+  if (activeOverdriveProgress.value) return activeOverdriveProgress.value
+  if (progressDockDismissed.value) return null
+  const latest = latestProgress.value
+  return latest && latest.phase === 'completed' ? latest : null
+})
 const composerRef = ref<InstanceType<typeof KimiChatInput>>()
 const recentSessions = computed(() =>
   store.sessions
@@ -465,8 +481,18 @@ onUnmounted(() => {
         />
 
         <transition name="progress-dock">
-          <div v-if="activeOverdriveProgress" class="overdrive-progress-dock">
-            <OverdriveProgressCard :progress="activeOverdriveProgress" compact />
+          <div v-if="dockedOverdriveProgress" class="overdrive-progress-dock">
+            <OverdriveProgressCard :progress="dockedOverdriveProgress" compact />
+            <button
+              v-if="dockedOverdriveProgress.phase === 'completed'"
+              type="button"
+              class="overdrive-progress-dock__dismiss"
+              aria-label="收起协作面板"
+              title="收起协作面板"
+              @click="progressDockDismissed = true"
+            >
+              ×
+            </button>
           </div>
         </transition>
 
@@ -710,6 +736,30 @@ onUnmounted(() => {
 
 .overdrive-progress-dock :deep(.overdrive-progress-card) {
   pointer-events: auto;
+}
+
+/* 完成态卡片的收起按钮：贴在卡片右上角，不打断卡片自身布局 */
+.overdrive-progress-dock__dismiss {
+  position: absolute;
+  top: 14px;
+  right: 34px;
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--chat-text-primary) 8%, transparent);
+  color: var(--chat-text-muted);
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.overdrive-progress-dock__dismiss:hover {
+  background: color-mix(in srgb, var(--chat-text-primary) 14%, transparent);
+  color: var(--chat-text-primary);
 }
 
 .progress-dock-enter-active,

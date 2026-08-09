@@ -677,9 +677,27 @@ async def test_overdrive_worker_reasoning_stream_is_persisted_separately(monkeyp
     ]
 
     deltas = [chunk for chunk in chunks if chunk.type == "room_speech_delta"]
-    assert [chunk.content for chunk in deltas] == ["REASONING_DELTA", "FINAL_DELTA"]
+    assert [chunk.content for chunk in deltas] == [
+        "REASONING_DELTA",
+        "FINAL_DELTA",
+        "Manager 汇总结论。",
+    ]
     assert deltas[0].metadata["is_reasoning"] is True
     assert "is_reasoning" not in deltas[1].metadata
+    # Manager 综合报告同样以 room_speech_delta 真流式下发，
+    # worker_key 与最终收束的 room_speech 对应，供前端合并为同一条消息。
+    summary_delta = deltas[2]
+    assert summary_delta.metadata["worker_key"] == "manager-final"
+    assert summary_delta.metadata["sender"]["role"] == "manager"
+    assert "is_reasoning" not in summary_delta.metadata
+    manager_speech = next(
+        chunk
+        for chunk in chunks
+        if chunk.type == "room_speech"
+        and chunk.metadata["sender"]["role"] == "manager"
+        and chunk.metadata.get("worker_key") == "manager-final"
+    )
+    assert manager_speech.content == "Manager 汇总结论。"
     worker_speech = next(
         chunk
         for chunk in chunks

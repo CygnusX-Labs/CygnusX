@@ -1892,8 +1892,12 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             return
           }
           roomSpeechFullText.set(proxy.id, fullContent)
-          // 不论长短约 1.5s 播完：长文加速，短发言也不会一闪而过
-          const step = Math.max(1, Math.ceil(fullContent.length / 60))
+          // 播放节奏随长度缩放（约 60 字/秒，1.2s–12s 收敛）：
+          // 旧实现任意长度都 ~1.5s 播完，长报告读起来像一次性弹出；
+          // 短发言保留下限，避免一闪而过。
+          const TICK_MS = 25
+          const duration = Math.min(12000, Math.max(1200, (fullContent.length / 60) * 1000))
+          const step = Math.max(1, Math.ceil(fullContent.length / (duration / TICK_MS)))
           const timer = window.setInterval(() => {
             const shown = proxy.content.length
             if (shown + step >= fullContent.length) {
