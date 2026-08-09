@@ -22,6 +22,10 @@ from omichub.application.schemas.agent import (
     AgentTemplateDTO,
     CreateAgentRequest,
     UpdateAgentRequest,
+    UserAgentCapabilityDTO,
+    UserAgentCapabilityRequest,
+    UserSelectableMCPDTO,
+    USER_AGENT_FEATURE_KEYS,
 )
 from omichub.application.services.agent_handoff_service import HANDOFF_TOOL_NAME
 from omichub.application.services.site_settings_service import SiteSettingsService
@@ -31,8 +35,12 @@ from omichub.domain.mcp.entities import MCPServer, MCPToolRegistry
 from omichub.domain.mcp.value_objects import ServerStatus, Transport
 from omichub.domain.skill.entities import Skill
 from omichub.infrastructure.config.agent_loader import load_agent_configs
-from omichub.infrastructure.database.models.agent import AgentTemplateModel
+from omichub.infrastructure.database.models.agent import (
+    AgentTemplateModel,
+    UserAgentCapabilityModel,
+)
 from omichub.infrastructure.database.models.ai_provider import AIProviderConfigModel
+from omichub.infrastructure.database.models.mcp import MCPServerModel
 from omichub.infrastructure.database.models.skill import SkillModel
 from omichub.infrastructure.database.repositories.mcp_repository import (
     SqlAlchemyMCPServerRepository,
@@ -120,6 +128,7 @@ class AgentContext:
     mcp_servers: list[MCPServer] = field(default_factory=list)
     skills: list[Skill] = field(default_factory=list)
     features: dict[str, Any] = field(default_factory=dict)
+    user_capabilities_customized: bool = False
     temperature: float = 0.7
     max_tokens: int = 4096
 
@@ -309,6 +318,24 @@ class AgentService:
         result = await self._db.execute(query)
         return [self._to_dto(a) for a in result.scalars().all()]
 
+    async def list_user_selectable_mcps(self) -> list[UserSelectableMCPDTO]:
+        """列出普通用户可挂载的启用 MCP，不返回命令、环境变量等管理配置。"""
+        result = await self._db.execute(
+            select(MCPServerModel)
+            .where(MCPServerModel.is_enabled == True)  # noqa: E712
+            .order_by(MCPServerModel.name)
+        )
+        return [
+            UserSelectableMCPDTO(
+                id=server.id,
+                name=server.name,
+                description=server.description or "",
+                status=server.status or "offline",
+                tool_count=len(server.tools or []),
+            )
+            for server in result.scalars().all()
+        ]
+
     async def get_agent(self, agent_id: str) -> AgentTemplateModel | None:
         result = await self._db.execute(
             select(AgentTemplateModel).where(AgentTemplateModel.agent_id == agent_id)
@@ -321,6 +348,141 @@ class AgentService:
         if not agent:
             raise NotFoundError("Agent 不存在")
         return self._to_dto(agent)
+
+    async def get_user_capabilities(
+        self, user_id: str, agent_id: str
+    ) -> UserAgentCapabilityDTO:
+        """返回用户在该 Agent 上的有效能力选择，不暴露或修改系统提示词。"""
+        agent = await self.get_agent(agent_id)
+        if agent is None or not agent.is_active:
+            raise NotFoundError("Agent 不存在或已停用")
+        capability = await self._get_user_capability(user_id, agent_id)
+        if capability is None:
+            return UserAgentCapabilityDTO(
+                agent_id=agent_id,
+                model_id=agent.model_id,
+                mcp_ids=[str(item) for item in (agent.mcp_ids or [])],
+                skill_ids=[str(item) for item in (agent.skill_ids or [])],
+                features=self._effective_user_features(agent.features),
+                is_customized=False,
+            )
+        return UserAgentCapabilityDTO(
+            agent_id=agent_id,
+            model_id=capability.model_id or agent.model_id,
+            mcp_ids=[str(item) for item in (capability.mcp_ids or [])],
+            skill_ids=[str(item) for item in (capability.skill_ids or [])],
+            features=self._effective_user_features(agent.features, capability.features),
+            is_customized=True,
+        )
+
+    async def update_user_capabilities(
+        self, user_id: str, agent_id: str, req: UserAgentCapabilityRequest
+    ) -> UserAgentCapabilityDTO:
+        """保存用户自己的模型、MCP、Skill 选择，全部限制在管理员已启用资产内。"""
+        agent = await self.get_agent(agent_id)
+        if agent is None or not agent.is_active:
+            raise NotFoundError("Agent 不存在或已停用")
+
+        mcp_ids = self._dedupe_ids(req.mcp_ids)
+        skill_ids = self._dedupe_ids(req.skill_ids)
+        await self._validate_user_capability_assets(req.model_id, mcp_ids, skill_ids)
+        features = self._validate_user_feature_selection(agent.features, req.features)
+
+        capability = await self._get_user_capability(user_id, agent_id)
+        if capability is None:
+            capability = UserAgentCapabilityModel(
+                user_id=uuid.UUID(user_id),
+                agent_id=agent_id,
+            )
+            self._db.add(capability)
+        capability.model_id = req.model_id
+        capability.mcp_ids = mcp_ids
+        capability.skill_ids = skill_ids
+        capability.features = features
+        await self._db.flush()
+        return await self.get_user_capabilities(user_id, agent_id)
+
+    async def reset_user_capabilities(self, user_id: str, agent_id: str) -> None:
+        """删除个人覆盖，让 Agent 恢复管理员模板配置。"""
+        capability = await self._get_user_capability(user_id, agent_id)
+        if capability is not None:
+            await self._db.delete(capability)
+            await self._db.flush()
+
+    async def _get_user_capability(
+        self, user_id: str, agent_id: str
+    ) -> UserAgentCapabilityModel | None:
+        result = await self._db.execute(
+            select(UserAgentCapabilityModel).where(
+                UserAgentCapabilityModel.user_id == uuid.UUID(user_id),
+                UserAgentCapabilityModel.agent_id == agent_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def _validate_user_capability_assets(
+        self,
+        model_id: uuid.UUID | None,
+        mcp_ids: list[str],
+        skill_ids: list[str],
+    ) -> None:
+        if model_id is not None:
+            model = await self._resolve_model(model_id)
+            if model is None:
+                raise BusinessError("所选模型不存在或已停用")
+
+        if mcp_ids:
+            try:
+                mcp_uuids = [uuid.UUID(item) for item in mcp_ids]
+            except ValueError as exc:
+                raise BusinessError("MCP 标识无效") from exc
+            result = await self._db.execute(
+                select(MCPServerModel.id).where(
+                    MCPServerModel.id.in_(mcp_uuids), MCPServerModel.is_enabled == True  # noqa: E712
+                )
+            )
+            if len(set(result.scalars().all())) != len(mcp_uuids):
+                raise BusinessError("所选 MCP 不存在或未启用")
+
+        if skill_ids:
+            result = await self._db.execute(
+                select(SkillModel.skill_id).where(
+                    SkillModel.skill_id.in_(skill_ids), SkillModel.is_active == True  # noqa: E712
+                )
+            )
+            if set(result.scalars().all()) != set(skill_ids):
+                raise BusinessError("所选 Skill 不存在或未启用")
+
+    @staticmethod
+    def _dedupe_ids(items: list[str]) -> list[str]:
+        return list(dict.fromkeys(str(item).strip() for item in items if str(item).strip()))
+
+    @staticmethod
+    def _effective_user_features(
+        agent_features: dict[str, Any] | None,
+        user_features: dict[str, bool] | None = None,
+    ) -> dict[str, bool]:
+        """用户只能关闭管理员开放的扩展能力，不能越权启用管理员关闭的能力。"""
+        admin_features = dict(agent_features or {})
+        saved_features = dict(user_features or {})
+        return {
+            key: bool(admin_features.get(key)) and bool(saved_features.get(key, admin_features.get(key)))
+            for key in USER_AGENT_FEATURE_KEYS
+        }
+
+    @staticmethod
+    def _validate_user_feature_selection(
+        agent_features: dict[str, Any] | None,
+        features: dict[str, bool],
+    ) -> dict[str, bool]:
+        invalid_keys = set(features) - USER_AGENT_FEATURE_KEYS
+        if invalid_keys:
+            raise BusinessError("不支持修改该 Agent 功能开关")
+        admin_features = dict(agent_features or {})
+        enabled_features = {key: bool(value) for key, value in features.items()}
+        if any(enabled and not admin_features.get(key) for key, enabled in enabled_features.items()):
+            raise BusinessError("不能启用管理员未开放的 Agent 功能")
+        return enabled_features
 
     # --- CRUD ---
 
@@ -537,7 +699,7 @@ class AgentService:
 
     # --- 调度上下文组装 ---
 
-    async def assemble_context(self, agent_id: str) -> AgentContext | None:
+    async def assemble_context(self, agent_id: str, user_id: str | None = None) -> AgentContext | None:
         """供调度中枢调用：组装一次 LLM 请求所需的全部拼装件。
 
         Agent 自身不存在时返回 None；模型缺失/未启用通过 ChatChunk.error 在调用方处理。
@@ -547,21 +709,39 @@ class AgentService:
         if agent is None or not agent.is_active:
             return None
 
-        # 1. 解析绑定模型：优先 agent.model_id，否则回落到默认/首个启用模型
-        model_config = await self._resolve_model(agent.model_id)
+        runtime_model_id = agent.model_id
+        runtime_mcp_ids = list(agent.mcp_ids or [])
+        runtime_skill_ids = list(agent.skill_ids or [])
+        runtime_features = dict(agent.features or {})
+        user_capabilities_customized = False
+        if user_id is not None:
+            capability = await self._get_user_capability(user_id, agent_id)
+            if capability is not None:
+                user_capabilities_customized = True
+                runtime_model_id = capability.model_id or agent.model_id
+                runtime_mcp_ids = list(capability.mcp_ids or [])
+                runtime_skill_ids = list(capability.skill_ids or [])
+                runtime_features.update(
+                    self._effective_user_features(agent.features, capability.features)
+                )
+
+        # 1. 解析绑定模型：优先用户选择，否则使用 Agent 模板绑定
+        model_config = await self._resolve_model(runtime_model_id)
         if model_config is None:
             return AgentContext(
                 agent=agent,
                 model_config=None,
                 system_prompt=self._append_communication_contract(agent.system_prompt, agent),
+                features=runtime_features,
+                user_capabilities_customized=user_capabilities_customized,
             )
 
         # 2. 收集绑定的 MCP server 及其工具，转成 OpenAI tools
         mcp_servers: list[MCPServer] = []
         tools: list[dict[str, Any]] = []
-        tool_pack_config = self._tool_pack_config(agent.features or {})
+        tool_pack_config = self._tool_pack_config(runtime_features)
         mcp_uuids: list[uuid.UUID] = [
-            u for u in (self._parse_uuid(mid) for mid in (agent.mcp_ids or [])) if u is not None
+            u for u in (self._parse_uuid(mid) for mid in runtime_mcp_ids) if u is not None
         ]
         omichub_selected = OMICHUB_TOOLS_SERVER_ID in mcp_uuids
         other_uuids = [u for u in mcp_uuids if u != OMICHUB_TOOLS_SERVER_ID]
@@ -679,7 +859,7 @@ class AgentService:
         # L2 正文由模型命中后调用 use_skill 工具按需加载；L3 references/assets 用
         # skill_resource 按需读取。Studio 会话另用结构化 capability_catalog 机制。
         system_prompt = agent.system_prompt
-        skills = await self._load_skills(agent.skill_ids or [])
+        skills = await self._load_skills(runtime_skill_ids)
         skill_index = self._build_skills_index(skills)
         if skill_index:
             system_prompt = f"{system_prompt}\n\n{skill_index}" if system_prompt else skill_index
@@ -721,7 +901,8 @@ class AgentService:
             tools=tools,
             mcp_servers=mcp_servers,
             skills=skills,
-            features=dict(agent.features or {}),
+            features=runtime_features,
+            user_capabilities_customized=user_capabilities_customized,
             temperature=agent.temperature,
             max_tokens=agent.max_tokens,
         )

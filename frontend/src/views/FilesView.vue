@@ -9,6 +9,7 @@ import {
   CloudDownloadOutline, GlobeOutline, LinkOutline, GridOutline, ListOutline,
   DocumentTextOutline, RefreshOutline, EllipsisHorizontalOutline, DownloadOutline,
   CreateOutline, TrashOutline, MenuOutline, CloseOutline,
+  EyeOutline,
 } from '@vicons/ionicons5'
 import {
   NButton, NBreadcrumb, NBreadcrumbItem, NDataTable, NDropdown, NDrawer,
@@ -20,6 +21,7 @@ import OverviewStats from '@/components/data-management/OverviewStats.vue'
 import StorageOverviewWidget from '@/components/data-management/StorageOverviewWidget.vue'
 import RecentActivitiesWidget from '@/components/data-management/RecentActivitiesWidget.vue'
 import FileDetailPanel from '@/components/data-management/FileDetailPanel.vue'
+import FilePreviewModal from '@/components/data-management/FilePreviewModal.vue'
 import JBrowseLinkGenerator from '@/components/data-management/JBrowseLinkGenerator.vue'
 import { useUploadStore } from '@/stores/upload'
 import { storeToRefs } from 'pinia'
@@ -79,6 +81,7 @@ const searchQuery = ref('')
 const sortBy = ref<'name' | 'size' | 'time'>('time')
 const selectedFile = ref<DataFile | null>(null)
 const showJbrowseLinkGen = ref(false)
+const showPreview = ref(false)
 
 function formatSize(bytes: number) {
   if (!bytes) return '0 B'
@@ -91,16 +94,6 @@ function formatSize(bytes: number) {
 const projectsCount = computed(
   () => directories.value.filter((d) => !d.parent_path && !d.is_system).length,
 )
-
-/** 每个目录的直接文件计数（供 DirectoryTree 显示） */
-const fileCounts = computed<Record<string, number>>(() => {
-  const m: Record<string, number> = {}
-  for (const f of allFiles.value) {
-    const dir = f.directory || ''
-    m[dir] = (m[dir] || 0) + 1
-  }
-  return m
-})
 
 /** 当前目录下的文件（客户端过滤全量列表） */
 const directoryFiles = computed(() =>
@@ -187,6 +180,7 @@ function fileEmoji(name: string): string {
 
 function rowActionOptions() {
   return [
+    { label: '预览', key: 'preview', icon: () => h(NIcon, null, { default: () => h(EyeOutline) }) },
     { label: '下载', key: 'download', icon: () => h(NIcon, null, { default: () => h(DownloadOutline) }) },
     { label: '重命名', key: 'rename', icon: () => h(NIcon, null, { default: () => h(CreateOutline) }) },
     { label: '删除', key: 'delete', icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) },
@@ -194,7 +188,8 @@ function rowActionOptions() {
 }
 
 function onRowAction(key: string, row: DataFile) {
-  if (key === 'download') downloadFile(row)
+  if (key === 'preview') openPreview(row)
+  else if (key === 'download') downloadFile(row)
   else if (key === 'rename') message.info('重命名功能即将上线')
   else if (key === 'delete') confirmDelete(row)
 }
@@ -303,6 +298,11 @@ function selectFile(row: DataFile) {
   if (selectedFile.value && isMobile.value) {
     showDetailDrawer.value = true
   }
+}
+
+function openPreview(row: DataFile) {
+  selectedFile.value = row
+  showPreview.value = true
 }
 
 function rowProps(row: DataFile) {
@@ -434,7 +434,6 @@ onUnmounted(() => {
         <DirectoryTree
           v-model="currentDirectory"
           ref="treeRef"
-          :file-counts="fileCounts"
           @refresh-files="fetchAll"
         />
         <div class="resize-handle" title="拖拽调整宽度" @mousedown="startResize"></div>
@@ -714,6 +713,7 @@ onUnmounted(() => {
           v-if="selectedFile"
           :file="selectedFile"
           @close="selectedFile = null"
+          @preview="openPreview"
           @download="downloadFile"
           @move="openMoveModal"
           @delete="confirmDelete"
@@ -749,7 +749,6 @@ onUnmounted(() => {
       </div>
       <DirectoryTree
         v-model="currentDirectory"
-        :file-counts="fileCounts"
         @refresh-files="fetchAll"
       />
     </NDrawer>
@@ -778,6 +777,7 @@ onUnmounted(() => {
           v-if="selectedFile"
           :file="selectedFile"
           @close="selectedFile = null; showDetailDrawer = false"
+          @preview="openPreview"
           @download="downloadFile"
           @move="openMoveModal"
           @delete="confirmDelete"
@@ -793,6 +793,12 @@ onUnmounted(() => {
         </template>
       </div>
     </NDrawer>
+
+    <FilePreviewModal
+      v-model:show="showPreview"
+      :file="selectedFile"
+      @download="downloadFile"
+    />
   </main>
 </template>
 

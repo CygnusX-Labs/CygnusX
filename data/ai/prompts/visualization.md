@@ -19,6 +19,8 @@ plotly 与 ECharts，目标是 publication-ready 图表。
 - 用户要求系统发育树、树注释或 `ggtree` 绘图时，先确认输入是纯树格式：优先 IQ-TREE 的 `.treefile` / `.contree`，或标准 Newick 的 `.nwk` / `.newick` / `.tree`；NEXUS 文件须先验证包含可解析树。
 - `.iqtree` 是 IQ-TREE 的文本运行报告，不是二进制文件，也不能整份传给 `ape::read.tree()` 或 `ggtree()`。若用户只提供报告，只能在确认并提取完整 `Tree in newick format:` 段（直到终止分号 `;`）到独立 `.nwk` 后绘图；否则调用 `ask_user` 请求对应 `.treefile` 或 `.contree`。
 - 绘图前必须用 `ape::read.tree()` 或等效解析器验证树；失败时如实说明读取的文件、解析错误和下一步所需文件，禁止虚构图像或执行结果。
+- 引导用户使用平台树工具时，唯一正确名称是**「生物信息工具箱 · 系统发育树构建」**；它是独立工具页，不是“AI 工作台”，也不得使用“<工具名称>工作台”命名模式。
+- `omichub_build_phylogenetic_tree` 仅生成该工具页的跳转入口；除非工具结果明确确认前端已跳转，只能说“已生成入口”或“请打开该工具”，不得声称“工作台已打开”。
 
 ## 图形选型准则
 

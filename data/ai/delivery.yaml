@@ -1,0 +1,38 @@
+# 交付报告员（BioOps 工作组骨架）
+# 仅提供身份、协作边界和最小平台工具；业务提示词与专用 Skill 由后续迭代补齐。
+agent_id: agent-delivery
+name: 交付报告员
+description: 面向已验证分析产物的交付清单、运行说明与证据汇总专家。
+avatar: "📦"
+color: "#2563eb"
+category: analysis
+model: qwen3.7-plus
+prompt_file: prompts/delivery.md
+welcome_message: "你好！我是交付报告员。目前正在配置交付清单与证据汇总能力；请由项目负责人提供已验证的产物引用。"
+temperature: 0.2
+max_tokens: 4096
+mcp_ids: []
+skill_ids: []
+features:
+  engine: langgraph
+  managed_prompt: true
+  managed_profile: true
+  subagents_spawnable: true
+  internal_case_role: delivery-reporter
+  default_role: 汇总已验证产物、质量结论和运行说明，生成可审计的交付清单
+  capability_scope: [交付清单, 证据汇总, 运行说明, 结果风险说明]
+  capability_tags: [delivery-manifest, evidence-pack, runbook-capture, artifact-validation]
+  accepts_inputs: [artifact-reference, quality-decision, evidence-reference, analysis-parameters]
+  produces_outputs: [delivery-manifest, delivery-summary, runbook, risk-summary]
+  default_stage: delivery-pack
+  web_search:
+    mode: required_for_freshness
+    triggers: []
+tool_packs: [workspace, memory, handoff, agentteams_case]
+handoff:
+  allowed_targets: [agent-general]
+  max_hops_per_session: 10
+studio:
+  enabled: true
+  runtime_profile: analysis-core
+  required_capabilities: [tabular]

@@ -873,6 +873,54 @@ def _normalize_ask_questions(args: dict[str, Any]) -> list[dict[str, Any]]:
     return questions[:5]
 
 
+def _fanout_ask_request(envelope: dict[str, Any]) -> dict[str, Any] | None:
+    """从 fan-out 聚合结果提取首个需要用户处理的子任务问题。"""
+    ui_payload = envelope.get("ui_payload") or {}
+    progress = ui_payload.get("progress") if isinstance(ui_payload, dict) else None
+    if not isinstance(progress, list):
+        progress = []
+    waiting_indexes = {
+        int(item.get("index"))
+        for item in progress
+        if isinstance(item, dict)
+        and str(item.get("status") or "") in {"awaiting_input", "approval_pending"}
+        and str(item.get("index") or "").isdigit()
+    }
+    if not waiting_indexes:
+        return None
+
+    llm_payload = envelope.get("llm_payload") or {}
+    results = llm_payload.get("results") if isinstance(llm_payload, dict) else None
+    if not isinstance(results, list):
+        return None
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        try:
+            result_index = int(result.get("index") or 0)
+        except (TypeError, ValueError):
+            continue
+        if result_index not in waiting_indexes:
+            continue
+        packet = result.get("packet") if isinstance(result.get("packet"), dict) else result
+        if not isinstance(packet, dict) or not packet.get("needs_user_input"):
+            continue
+        questions = packet.get("questions")
+        if not isinstance(questions, list):
+            questions = [{"question": str(packet.get("user_request") or "请补充必要信息"), "options": []}]
+        normalized = _normalize_ask_questions({"questions": questions})
+        first = normalized[0]
+        return {
+            "questions": normalized,
+            "question": first["question"],
+            "options": first["options"],
+            "agent_id": str(result.get("agent_id") or ""),
+            "task_id": str(result.get("task_id") or ""),
+            "status": str(result.get("status") or packet.get("status") or "awaiting_input"),
+        }
+    return None
+
+
 BUILTIN_ASSISTANTS: list[dict[str, Any]] = [
     {
         "assistant_id": "general",
@@ -2461,7 +2509,7 @@ class ChatService:
     # --- Agent 调度中枢：SSE 流式聊天（含 MCP 工具调用闭环） ---
 
     async def _route_to_agent(
-        self, router_ctx: AgentContext, user_text: str
+        self, router_ctx: AgentContext, user_text: str, user_id: str | None = None
     ) -> tuple[AgentContext | None, dict[str, Any] | None]:
         """智能路由：用路由器 Agent 的模型做意图分派，返回目标 Agent 上下文与路由信息。
 
@@ -2604,11 +2652,19 @@ class ChatService:
             target_id = normalized.target_agent_id or target_id
             reason = normalized.reason
 
-            target_ctx = await agent_service.assemble_context(target_id)
+            target_ctx = await (
+                agent_service.assemble_context(target_id, user_id=user_id)
+                if user_id is not None
+                else agent_service.assemble_context(target_id)
+            )
             if target_ctx is None or target_ctx.model_config is None:
                 fallback = _general_fallback()
                 target_id = fallback.agent_id
-                target_ctx = await agent_service.assemble_context(target_id)
+                target_ctx = await (
+                    agent_service.assemble_context(target_id, user_id=user_id)
+                    if user_id is not None
+                    else agent_service.assemble_context(target_id)
+                )
                 if target_ctx is None:
                     return None, None
 
@@ -4121,7 +4177,7 @@ class ChatService:
             yield ChatChunk(type="error", content=cookie_error)
             return
 
-        ctx = await AgentService(self._db).assemble_context(agent_id)
+        ctx = await AgentService(self._db).assemble_context(agent_id, user_id=user_id)
         if ctx is None:
             yield ChatChunk(type="error", content="Agent 不存在或已停用")
             return
@@ -4129,7 +4185,7 @@ class ChatService:
         from omichub.application.services.project_scope import resolve_agent_project_scope
 
         # 若请求指定了 model_id，校验并覆盖 Agent 默认模型
-        if model_id is not None:
+        if model_id is not None and not ctx.user_capabilities_customized:
             override = await self._resolve_model(model_id)
             if override is None:
                 yield ChatChunk(
@@ -4361,7 +4417,7 @@ class ChatService:
             yield ChatChunk(type="mode_changed", metadata={"mode": "overdrive", "enabled": True})
 
         if keyword_toggle is None and overdrive is None and ctx.features.get("router"):
-            pre_routed_ctx, pre_route_info = await self._route_to_agent(ctx, user_content)
+            pre_routed_ctx, pre_route_info = await self._route_to_agent(ctx, user_content, user_id)
             router_toggle = _resolve_overdrive_router_toggle(pre_route_info, effective_overdrive)
             if router_toggle is not None:
                 effective_overdrive = router_toggle
@@ -4419,7 +4475,7 @@ class ChatService:
             target_ctx, route_info = (
                 (pre_routed_ctx, pre_route_info)
                 if pre_route_info is not None
-                else await self._route_to_agent(ctx, user_content)
+                else await self._route_to_agent(ctx, user_content, user_id)
             )
             if target_ctx is not None and route_info is not None:
                 ctx = target_ctx
@@ -4931,7 +4987,7 @@ class ChatService:
                 )
 
                 opinions = await MultiExpertConsultationService(AgentService(self._db)).collect(
-                    list(route_info["consult_agent_ids"]), user_content
+                    list(route_info["consult_agent_ids"]), user_content, user_id=user_id
                 )
                 consultation_context = MultiExpertConsultationService.render_prompt_context(
                     opinions
@@ -5071,7 +5127,7 @@ class ChatService:
         ) -> tuple[AgentContext, Any, list[Any], list[Any], list[dict[str, Any]], str]:
             """重新装配目标 Agent，且只向其提供 handoff packet 而非完整历史。"""
             target_ctx = await AgentService(self._db).assemble_context(
-                str(directive["target_agent_id"])
+                str(directive["target_agent_id"]), user_id=user_id
             )
             if target_ctx is None or target_ctx.model_config is None:
                 raise BusinessError("目标 Agent 不存在、已停用或未绑定可用模型")
@@ -5659,6 +5715,16 @@ class ChatService:
                                     or [],
                                 },
                             )
+                            fanout_ask = _fanout_ask_request(fanout_envelope)
+                            if fanout_ask is not None:
+                                stop_after_tools = True
+                                yield ChatChunk(
+                                    type="ask_request",
+                                    metadata={
+                                        "tool_call_id": tc.get("id", ""),
+                                        **fanout_ask,
+                                    },
+                                )
                     elif is_agentteams_case_tool:
                         from omichub.application.services.agentteams_case_tool_service import (
                             AgentTeamsCaseToolService,
@@ -6447,6 +6513,7 @@ class ChatService:
         timeline: list[dict[str, Any]] = []
         timeline_text_buffer = ""
         pending_tool_args: dict[str, dict[str, Any]] = {}
+        pending_fanout_ask: dict[str, Any] | None = None
 
         def _flush_timeline_text() -> None:
             nonlocal timeline_text_buffer
@@ -6529,6 +6596,12 @@ class ChatService:
                                 "mcp_server": tc_meta.get("mcp_server"),
                             }
                         )
+                        if tool_name == PARALLEL_SUBAGENTS_TOOL_NAME and isinstance(llm_result, dict):
+                            envelope = {
+                                "llm_payload": llm_result.get("llm_payload"),
+                                "ui_payload": ui_payload,
+                            }
+                            pending_fanout_ask = _fanout_ask_request(envelope)
                         await self.update_message_content(
                             ai_message_id,
                             full_content,
@@ -6572,6 +6645,26 @@ class ChatService:
                             "question": first["question"],
                             "options": first["options"],
                         },
+                    )
+                    break
+                if pending_fanout_ask is not None:
+                    _flush_timeline_text()
+                    first = pending_fanout_ask["questions"][0]
+                    yield ChatChunk(
+                        type="ask_request",
+                        metadata={
+                            "tool_call_id": "",
+                            **pending_fanout_ask,
+                            "question": first["question"],
+                            "options": first["options"],
+                        },
+                    )
+                    pending_fanout_ask = None
+                    await self.update_message_content(
+                        ai_message_id,
+                        full_content,
+                        "complete",
+                        {"timeline": timeline} if timeline else None,
                     )
                     break
                 directive = runtime.last_handoff

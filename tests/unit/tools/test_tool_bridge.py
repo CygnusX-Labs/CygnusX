@@ -280,6 +280,8 @@ async def test_phylogenetic_tree_schema_uses_unified_page_entry() -> None:
     assert schema is not None
     assert schema.invocation_mode == "open_page"
     assert schema.route == "/tools/phylogenetic-tree"
+    assert "生物信息工具箱 · 系统发育树构建" in schema.description
+    assert "系统发育树工作台" not in schema.description
 
     service = ToolBridgeService(loader)
     result = await service.execute(

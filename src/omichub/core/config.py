@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     # 流式生成在「尚未输出任何内容」时遇到可重试错误（超时/连接中断）的最大自动重试次数。
     # 已经向用户输出正文后不会重试（避免重复内容）；空响应另有 1 次重试，二者独立计数。
     llm_stream_transient_retries: int = 3
+    # LLM 瞬时失败自动重试的基础退避时间；第 N 次重试等待 N × 此值，避免瞬时 5xx 时立刻重压上游。
+    llm_stream_retry_base_delay_seconds: float = 0.8
 
     # ===== 文件存储 =====
     storage_type: str = "local"

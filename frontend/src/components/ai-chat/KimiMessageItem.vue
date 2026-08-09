@@ -218,7 +218,7 @@ const isRoomStreaming = computed(() =>
 const streamingActive = computed(() => props.isStreaming || isRoomStreaming.value)
 const isWorkerSpeech = computed(() => props.message.senderAgent?.role === 'worker')
 const isWorkerCollapsed = computed(() =>
-  isWorkerSpeech.value && !workerExpanded.value,
+  isWorkerSpeech.value && displayContent.value.length >= 200 && !workerExpanded.value,
 )
 const workerPreview = computed(() => {
   const plain = (props.message.overdriveSummary || displayContent.value)

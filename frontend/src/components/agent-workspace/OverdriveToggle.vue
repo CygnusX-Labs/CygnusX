@@ -21,7 +21,7 @@ const emit = defineEmits<{
     <template #trigger>
       <span class="overdrive-toggle" :class="{ 'is-active': props.modelValue, 'is-compact': props.compact }">
         <NIcon size="16"><FlashOutline /></NIcon>
-        <span v-if="!props.compact" class="toggle-label">超频模式</span>
+        <span v-if="!props.compact" class="toggle-label">团队协作模式</span>
         <NSwitch
           :value="props.modelValue"
           size="small"
@@ -32,8 +32,8 @@ const emit = defineEmits<{
       </span>
     </template>
     {{ props.modelValue
-      ? '超频模式已开启：团队房间接管对话，直接布置任务即可'
-      : '开启后，复杂任务由 Manager 发现全部专家并分工协作，各专家在对话中依次发言' }}
+    ? '团队协作模式已开启：复杂任务可由多个专家共同推进，并在对话中汇报进度'
+      : '开启后，复杂任务可由 Manager 分派专家并在同一对话中协作；普通问题仍由当前助手处理' }}
   </NTooltip>
 </template>
 

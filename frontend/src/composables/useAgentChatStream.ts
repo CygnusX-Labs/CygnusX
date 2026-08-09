@@ -211,9 +211,24 @@ export interface OverdriveApprovalEvent {
     result?: Record<string, unknown>
     error?: string
     reason?: string
+    case_id?: string
   }
   workerKey?: string
   agentId?: string
+}
+
+/**
+ * 对话内并行子 Agent(fan-out)事件。后端 `type="subagents"` 发送：
+ * - started:   { phase, tool_call_id, tasks:[{index, agent_id, task}] }
+ * - aggregated:{ phase, tool_call_id, success, summary, progress:[{index, agent_id, status, elapsed_s}] }
+ * 复用超频群聊的多 Agent 泳道展示（OverdriveProgress.tasks）。
+ */
+export interface SubagentFanoutEvent {
+  phase: 'started' | 'aggregated'
+  toolCallId: string
+  tasks: Array<{ index: number; agentId: string; task: string; status: string }>
+  success?: boolean
+  summary?: string
 }
 
 /** Skill 调用生命周期事件（skill.invoked / skill.completed / skill.failed 三时机） */
@@ -278,6 +293,7 @@ export interface AgentStreamCallbacks {
   onRoomSpeechDelta?: (event: RoomSpeechEvent) => void
   onOverdriveProgress?: (event: OverdriveProgressEvent) => void
   onOverdriveApproval?: (event: OverdriveApprovalEvent) => void
+  onSubagentFanout?: (event: SubagentFanoutEvent) => void
   onModeChanged?: (enabled: boolean, degraded?: boolean) => void
   /** 流式连接中断后自动重试时的进度通知（attempt 从 1 开始） */
   onRetry?: (attempt: number, maxAttempts: number) => void
@@ -383,6 +399,10 @@ export function useAgentChatStream() {
   /** 重试基础间隔（毫秒），按第 N 次 × 该值退避 */
   const STREAM_RETRY_BASE_DELAY_MS = 800
 
+  function isRetryableStreamStatus(status: number): boolean {
+    return status === 408 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504
+  }
+
   async function streamChat(
     options: AgentChatStreamOptions,
     callbacks: AgentStreamCallbacks,
@@ -404,6 +424,7 @@ export function useAgentChatStream() {
       let receivedContent = false
       let terminalEvent = false
       let transportDropped = false
+      let retryExhaustedMessage = '流式连接意外中断，请重新发送；如果频繁出现，请检查模型服务或反向代理超时配置'
 
       const processLine = (line: string) => {
         const trimmed = line.trim()
@@ -460,33 +481,42 @@ export function useAgentChatStream() {
 
         if (!response.ok) {
           const errorText = await response.text()
-          callbacks.onError?.(`请求失败 (${response.status}): ${errorText}`)
-          return
+          if (!isRetryableStreamStatus(response.status)) {
+            callbacks.onError?.(`请求失败 (${response.status}): ${errorText}`)
+            return
+          }
+          reportChatDiagnostic({
+            phase: 'stream-http-retry',
+            rawResponseSummary: `HTTP ${response.status}: ${errorText.slice(0, 1000)}`,
+          })
+          retryExhaustedMessage = '服务暂时波动，已自动重试仍未恢复，请稍后再试。'
+          transportDropped = true
+        } else {
+          if (!response.body) {
+            callbacks.onError?.('浏览器不支持流式响应')
+            return
+          }
+
+          const reader = response.body.getReader()
+          const decoder = new TextDecoder()
+          let buffer = ''
+
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split("\n")
+            buffer = lines.pop() || ""
+            for (const line of lines) processLine(line)
+          }
+
+          buffer += decoder.decode()
+          if (buffer.trim()) processLine(buffer)
+
+          if (terminalEvent) return
+          // 流结束但未收到 done / error：连接被反向代理或网络掐断
+          transportDropped = true
         }
-        if (!response.body) {
-          callbacks.onError?.('浏览器不支持流式响应')
-          return
-        }
-
-        const reader = response.body.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ''
-
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split("\n")
-          buffer = lines.pop() || ""
-          for (const line of lines) processLine(line)
-        }
-
-        buffer += decoder.decode()
-        if (buffer.trim()) processLine(buffer)
-
-        if (terminalEvent) return
-        // 流结束但未收到 done / error：连接被反向代理或网络掐断
-        transportDropped = true
       } catch (err: unknown) {
         if (err instanceof DOMException && err.name === 'AbortError') {
           // 用户主动取消
@@ -509,7 +539,7 @@ export function useAgentChatStream() {
       }
 
       if (retries >= STREAM_RETRY_LIMIT) {
-        callbacks.onError?.("流式连接意外中断，请重新发送；如果频繁出现，请检查模型服务或反向代理超时配置")
+        callbacks.onError?.(retryExhaustedMessage)
         return
       }
 
@@ -633,9 +663,46 @@ export function useAgentChatStream() {
             result: asRecord(approval.result),
             error: typeof approval.error === 'string' ? approval.error : undefined,
             reason: typeof approval.reason === 'string' ? approval.reason : undefined,
+            case_id: typeof approval.case_id === 'string' ? approval.case_id : undefined,
           },
           workerKey: typeof data.worker_key === 'string' ? data.worker_key : undefined,
           agentId: typeof data.agent_id === 'string' ? data.agent_id : undefined,
+        })
+        break
+      }
+      case 'subagents': {
+        const phase = data.phase === 'aggregated' ? 'aggregated' : 'started'
+        const rawTasks = Array.isArray(data.tasks) ? data.tasks : []
+        const rawProgress = Array.isArray(data.progress) ? data.progress : []
+        // started 带 tasks[{index,agent_id,task}]；aggregated 带 progress[{index,agent_id,status,elapsed_s}]
+        const tasks =
+          phase === 'aggregated'
+            ? rawProgress.map((raw) => {
+                const item = asRecord(raw) || {}
+                return {
+                  index: Number(item.index || 0),
+                  agentId: String(item.agent_id || ''),
+                  task: '',
+                  status: String(item.status || 'completed') === 'ok'
+                    ? 'succeeded'
+                    : String(item.status || 'completed'),
+                }
+              })
+            : rawTasks.map((raw) => {
+                const item = asRecord(raw) || {}
+                return {
+                  index: Number(item.index || 0),
+                  agentId: String(item.agent_id || ''),
+                  task: String(item.task || ''),
+                  status: 'running',
+                }
+              })
+        cb.onSubagentFanout?.({
+          phase,
+          toolCallId: String(data.tool_call_id || ''),
+          tasks,
+          success: phase === 'aggregated' ? Boolean(data.success) : undefined,
+          summary: phase === 'aggregated' ? String(data.summary || '') : undefined,
         })
         break
       }

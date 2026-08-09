@@ -80,10 +80,13 @@ export interface OverdriveProgress {
   warning?: string
   stalledTaskIds?: string[]
   tasks?: Array<{ taskId: string; agentId: string; status: string; errorSummary?: string }>
+  /** 只读进度卡（如对话内 fan-out）：隐藏超频专属的暂停/终止/指令控制条。 */
+  readonly?: boolean
 }
 
 export interface OverdriveApproval {
   approvalId: string
+  caseId?: string
   toolName: string
   arguments: Record<string, unknown>
   status: 'pending' | 'executing' | 'completed' | 'rejected' | 'failed'

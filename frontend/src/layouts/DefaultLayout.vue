@@ -252,6 +252,7 @@ const mainNavItems = computed<NavItem[]>(() => [
 
 const systemNavItems = computed<NavItem[]>(() => [
   { key: 'cookies', label: '用量统计', to: '/cookies', icon: BarChartOutline },
+  { key: 'agent-capabilities', label: '我的 Agent 能力', to: '/agent-capabilities', icon: SparklesOutline },
   { key: 'settings', label: '系统设置', to: '/settings', icon: SettingsOutline },
   { key: 'about', label: '关于 OmicHub', to: '/about', icon: InformationCircleOutline },
 ])

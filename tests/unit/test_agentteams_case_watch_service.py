@@ -8,8 +8,10 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 import omichub.application.services.agentteams_case_watch_service as watch_module
-from omichub.application.services.agentteams_case_watch_service import AgentTeamsCaseWatchService
-from omichub.application.services.agentteams_case_watch_service import _watchable_sessions_query
+from omichub.application.services.agentteams_case_watch_service import (
+    AgentTeamsCaseWatchService,
+    _watchable_sessions_query,
+)
 
 
 class FakeDb:
@@ -41,6 +43,11 @@ class FakeAgentTeams:
         assert case_id == "case-1"
         assert requester_ref == "user-1"
         return {"case_id": case_id, "intent": "RNA-seq 全流程交付", "status": "approval_pending"}
+
+    async def get_case_events(self, case_id: str, requester_ref: str, **_kwargs):
+        assert case_id == "case-1"
+        assert requester_ref == "user-1"
+        return {"events": [], "next_cursor": None}
 
 
 @pytest.mark.asyncio

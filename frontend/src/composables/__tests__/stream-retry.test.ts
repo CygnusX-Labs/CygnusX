@@ -17,14 +17,15 @@ function sseEvent(type: string, extra: Record<string, unknown> = {}): string {
   return `data: ${JSON.stringify({ type, ...extra })}\n\n`
 }
 
-function installFetch(results: Array<{ ok: boolean; chunks: string[] }>): ReturnType<typeof vi.fn> {
+function installFetch(results: Array<{ ok: boolean; chunks: string[]; status?: number; errorText?: string }>): ReturnType<typeof vi.fn> {
   const mock = vi.fn()
   results.forEach((result) => {
     mock.mockImplementationOnce(() =>
       Promise.resolve({
         ok: result.ok,
+        status: result.status ?? (result.ok ? 200 : 500),
         body: sseBody(result.chunks),
-        text: () => Promise.resolve(''),
+        text: () => Promise.resolve(result.errorText || ''),
       }),
     )
   })
@@ -78,6 +79,24 @@ describe('useAgentChatStream 流式连接自动重试', () => {
     expect(onRetry).toHaveBeenCalledWith(1, 2)
     expect(onText).toHaveBeenCalledTimes(1)
     expect(onDone).toHaveBeenCalled()
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('建流前收到 500 时自动重试并成功，不把内部错误暴露给用户', async () => {
+    const fetchMock = installFetch([
+      { ok: false, status: 500, errorText: '{"detail":"系统内部错误，请联系管理员"}', chunks: [] },
+      { ok: true, chunks: [sseEvent('text', { content: '已恢复' }), sseEvent('done')] },
+    ])
+    const onText = vi.fn()
+    const onRetry = vi.fn()
+    const onError = vi.fn()
+
+    const { streamChat } = useAgentChatStream()
+    await streamChat(options, { onText, onRetry, onError })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(onRetry).toHaveBeenCalledWith(1, 2)
+    expect(onText).toHaveBeenCalledWith('已恢复', false)
     expect(onError).not.toHaveBeenCalled()
   })
 

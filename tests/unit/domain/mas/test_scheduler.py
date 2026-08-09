@@ -74,7 +74,13 @@ def _scheduler(repository: _InMemoryRepository, events: _RecordedEvents) -> MASS
 
 
 @pytest.mark.asyncio
-async def test_scheduler_dispatches_a_ready_node_once() -> None:
+async def test_scheduler_dispatches_a_ready_node_once(monkeypatch) -> None:
+    import omichub.application.services.mas_scheduler_service as scheduler_module
+
+    enqueued: list[tuple] = []
+    monkeypatch.setattr(
+        scheduler_module, "enqueue_task", lambda task, *args, **kwargs: enqueued.append(args)
+    )
     run_id = uuid4()
     node = SimpleNamespace(
         id=uuid4(),
@@ -84,7 +90,7 @@ async def test_scheduler_dispatches_a_ready_node_once() -> None:
         attempt_count=0,
         agent_id="agent-rnaseq",
         intent="download",
-        resources={},
+        resources={"executor": "fake"},
         depends_on=[],
     )
     events = _RecordedEvents()
@@ -96,6 +102,50 @@ async def test_scheduler_dispatches_a_ready_node_once() -> None:
     assert not await scheduler.dispatch_ready_node(run_id, "download", "trace-1")
     assert node.status == "dispatched"
     assert [event.event_type for event in events.items] == [A2AEventType.NODE_DISPATCHED]
+    assert enqueued == [(str(run_id), "download")]
+
+
+@pytest.mark.asyncio
+async def test_scheduler_fails_node_with_unknown_executor(monkeypatch) -> None:
+    """未知/缺失 executor 的节点必须被显式判失败，不能停在 dispatched 静默悬挂。"""
+    import omichub.application.services.mas_scheduler_service as scheduler_module
+
+    enqueued: list[tuple] = []
+    monkeypatch.setattr(
+        scheduler_module, "enqueue_task", lambda task, *args, **kwargs: enqueued.append(args)
+    )
+    run_id = uuid4()
+    node = SimpleNamespace(
+        id=uuid4(),
+        node_key="mystery",
+        status="ready",
+        version=1,
+        attempt_count=0,
+        agent_id="agent-general",
+        intent="mystery",
+        resources={"executor": "not-a-real-executor"},
+        depends_on=[],
+    )
+    events = _RecordedEvents()
+    repository = _InMemoryRepository(
+        SimpleNamespace(id=run_id, status="running", version=1), [node]
+    )
+    scheduler = _scheduler(repository, events)
+
+    assert await scheduler.dispatch_ready_node(run_id, "mystery", "trace-1")
+    # 未投递任何 Celery 任务
+    assert enqueued == []
+    # 节点判失败、run 判失败，而不是永久卡在 dispatched
+    assert node.status == "failed"
+    assert repository.run.status == "failed"
+    assert repository.run_transitions == [("running", "failed")]
+    # 依次记录 NODE_DISPATCHED（认领）与 NODE_FAILED（未知 executor）
+    assert [event.event_type for event in events.items] == [
+        A2AEventType.NODE_DISPATCHED,
+        A2AEventType.NODE_FAILED,
+    ]
+    failed_event = events.items[-1]
+    assert failed_event.summary.metrics["error_code"] == "UNKNOWN_EXECUTOR"
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,38 @@
+# 数据管理员（BioOps 工作组骨架）
+# 仅提供身份、协作边界和最小平台工具；业务提示词与专用 Skill 由后续迭代补齐。
+agent_id: agent-data
+name: 数据管理员
+description: 面向分析项目的数据契约、样本元数据与输入完整性预检专家。
+avatar: "🗂️"
+color: "#0f766e"
+category: analysis
+model: qwen3.7-plus
+prompt_file: prompts/data.md
+welcome_message: "你好！我是数据管理员。目前正在配置项目预检能力；请通过项目负责人说明需要核验的数据范围。"
+temperature: 0.2
+max_tokens: 4096
+mcp_ids: []
+skill_ids: []
+features:
+  engine: langgraph
+  managed_prompt: true
+  managed_profile: true
+  subagents_spawnable: true
+  internal_case_role: data-steward
+  default_role: 分析项目的数据契约、元数据完整性与输入预检
+  capability_scope: [数据契约, 样本元数据预检, 输入完整性审查, Artifact 引用核验]
+  capability_tags: [data-contract, metadata-validation, project-preflight, artifact-validation]
+  accepts_inputs: [sample-metadata, group-definition, modality, workspace-files, artifact-reference]
+  produces_outputs: [data-contract, preflight-report, missing-inputs, artifact-review]
+  default_stage: project-preflight
+  web_search:
+    mode: required_for_freshness
+    triggers: []
+tool_packs: [workspace, memory, handoff, agentteams_case]
+handoff:
+  allowed_targets: [agent-general]
+  max_hops_per_session: 10
+studio:
+  enabled: true
+  runtime_profile: analysis-core
+  required_capabilities: [tabular]

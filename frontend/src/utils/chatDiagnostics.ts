@@ -1,4 +1,4 @@
-export type ChatDiagnosticPhase = 'stream-parse' | 'stream-empty' | 'markdown-render'
+export type ChatDiagnosticPhase = 'stream-parse' | 'stream-empty' | 'stream-http-retry' | 'markdown-render'
 
 export interface ChatDiagnosticPayload {
   phase: ChatDiagnosticPhase

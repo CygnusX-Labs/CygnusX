@@ -145,7 +145,7 @@ function percentage(progress: OverdriveProgress): number {
     <div v-if="progress.warning" class="overdrive-progress-card__warning">{{ progress.warning }}</div>
 
     <div
-      v-if="progress.phase !== 'completed' && progress.phase !== 'awaiting_input'"
+      v-if="!progress.readonly && progress.phase !== 'completed' && progress.phase !== 'awaiting_input'"
       class="overdrive-progress-card__controls"
     >
       <NButton size="tiny" secondary :loading="controlling" @click="control(progress.phase === 'paused' ? 'resume' : 'pause')">

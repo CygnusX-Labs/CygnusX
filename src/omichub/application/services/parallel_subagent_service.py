@@ -184,7 +184,7 @@ class ParallelSubAgentService:
         agent_service = AgentService(db)
         prepared: list[tuple[dict[str, Any], Any, list[dict[str, Any]]]] = []
         for index, item in enumerate(normalized, start=1):
-            ctx = await agent_service.assemble_context(item["agent_id"])
+            ctx = await agent_service.assemble_context(item["agent_id"], user_id=user_id)
             if ctx is None or ctx.model_config is None:
                 return self._error(
                     f"子任务 #{index} 的目标 Agent {item['agent_id']} 不存在或未绑定可用模型"

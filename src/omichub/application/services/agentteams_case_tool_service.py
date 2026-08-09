@@ -319,6 +319,7 @@ class AgentTeamsCaseToolService:
             "reason": "user_confirmed_agentteams_case",
             "recorded_at": datetime.now(UTC).isoformat(),
         }
+        meta["active_case_id"] = case_id
 
     @staticmethod
     def _envelope(*, case_id: str, title: str, status: str, reused: bool) -> dict[str, Any]:

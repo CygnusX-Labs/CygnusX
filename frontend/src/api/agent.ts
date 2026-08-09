@@ -2,7 +2,12 @@
  * Agent 模板 API — 前台读取 + 后台 CRUD
  */
 import apiClient from './client'
-import type { AgentTemplate } from '@/types/agent'
+import type {
+  AgentTemplate,
+  UserAgentCapabilities,
+  UserAgentFeatureSelection,
+  UserSelectableMcp,
+} from '@/types/agent'
 
 /** 后端 AgentTemplateDTO -> 前端 AgentTemplate */
 function toAgent(d: any): AgentTemplate {
@@ -39,6 +44,54 @@ export const agentApi = {
     const res = await apiClient.get(`/agents/${agentId}`)
     return toAgent(res.data)
   },
+
+  async getCapabilities(agentId: string): Promise<UserAgentCapabilities> {
+    const res = await apiClient.get(`/agents/${agentId}/capabilities`)
+    return toCapabilities(res.data)
+  },
+
+  async listSelectableMcps(): Promise<UserSelectableMcp[]> {
+    const res = await apiClient.get('/agents/capability-mcps')
+    return (res.data as any[]).map((item) => ({
+      id: String(item.id),
+      name: item.name,
+      description: item.description ?? '',
+      status: item.status === 'online' ? 'online' : 'offline',
+      tool_count: Number(item.tool_count ?? 0),
+    }))
+  },
+
+  async updateCapabilities(
+    agentId: string,
+    payload: Pick<UserAgentCapabilities, 'model_id' | 'mcp_ids' | 'skill_ids'>,
+  ): Promise<UserAgentCapabilities> {
+    const res = await apiClient.put(`/agents/${agentId}/capabilities`, payload)
+    return toCapabilities(res.data)
+  },
+
+  async resetCapabilities(agentId: string): Promise<void> {
+    await apiClient.delete(`/agents/${agentId}/capabilities`)
+  },
+}
+
+function toCapabilities(data: any): UserAgentCapabilities {
+  return {
+    agent_id: String(data.agent_id),
+    model_id: data.model_id ? String(data.model_id) : undefined,
+    mcp_ids: (data.mcp_ids ?? []).map(String),
+    skill_ids: (data.skill_ids ?? []).map(String),
+    features: toUserFeatures(data.features),
+    is_customized: Boolean(data.is_customized),
+  }
+}
+
+function toUserFeatures(data: any): UserAgentFeatureSelection {
+  return {
+    enable_web_search: Boolean(data?.enable_web_search),
+    enable_file_upload: Boolean(data?.enable_file_upload),
+    enable_code_execution: Boolean(data?.enable_code_execution),
+    enable_deep_thinking: Boolean(data?.enable_deep_thinking),
+  }
 }
 
 export const adminAgentApi = {

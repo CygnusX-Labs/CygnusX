@@ -16,6 +16,7 @@ skill_ids:
   - r-plot-library
   - dotplot
 features:
+  managed_prompt: true
   subagents_spawnable: true  # 可作为超频模式的并行专家被 Manager 派生
   domain: phylo
   default_role: 基于真实分析结果设计和生成可视化交付物

@@ -6,13 +6,14 @@ import { computed } from 'vue'
 import { NButton, NIcon, NTag, NTooltip, useMessage } from 'naive-ui'
 import {
   CloseOutline, DownloadOutline, MoveOutline, TrashOutline,
-  DocumentOutline, CopyOutline,
+  DocumentOutline, CopyOutline, EyeOutline,
 } from '@vicons/ionicons5'
 import type { DataFile } from '@/types'
 
 const props = defineProps<{ file: DataFile }>()
 const emit = defineEmits<{
   (e: 'close'): void
+  (e: 'preview', file: DataFile): void
   (e: 'download', file: DataFile): void
   (e: 'move', file: DataFile): void
   (e: 'delete', file: DataFile): void
@@ -127,6 +128,10 @@ async function copyChecksum() {
     </div>
 
     <div class="detail-actions">
+      <NButton size="small" block type="primary" @click="emit('preview', file)">
+        <template #icon><NIcon><EyeOutline /></NIcon></template>
+        预览
+      </NButton>
       <NButton size="small" block @click="emit('download', file)">
         <template #icon><NIcon><DownloadOutline /></NIcon></template>
         下载

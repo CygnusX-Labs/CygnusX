@@ -18,6 +18,13 @@ def _empty_str_to_none(value: Any) -> Any:
 
 EmptyStrUUID = Annotated[UUID | None, BeforeValidator(_empty_str_to_none)]
 
+USER_AGENT_FEATURE_KEYS = frozenset({
+    "enable_web_search",
+    "enable_file_upload",
+    "enable_code_execution",
+    "enable_deep_thinking",
+})
+
 
 class AgentTemplateDTO(BaseModel):
     """Agent 模板（前台集市 + 后台编排共用）"""
@@ -85,3 +92,29 @@ class UpdateAgentRequest(BaseModel):
     max_tokens: int | None = None
     is_active: bool | None = None
     is_default: bool | None = None
+
+
+class UserAgentCapabilityRequest(BaseModel):
+    """用户为某个 Agent 选择的运行时能力；系统提示词始终由管理员维护。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model_id: EmptyStrUUID = None
+    mcp_ids: list[str] = Field(default_factory=list)
+    skill_ids: list[str] = Field(default_factory=list)
+    features: dict[str, bool] = Field(default_factory=dict)
+
+
+class UserAgentCapabilityDTO(UserAgentCapabilityRequest):
+    agent_id: str
+    is_customized: bool = False
+
+
+class UserSelectableMCPDTO(BaseModel):
+    """普通用户可为 Agent 选择的 MCP 摘要；不暴露服务连接配置。"""
+
+    id: UUID
+    name: str
+    description: str = ""
+    status: str = "offline"
+    tool_count: int = 0

@@ -8,7 +8,6 @@ import type { Directory } from '@/types'
 
 const props = defineProps<{
   modelValue: string
-  fileCounts?: Record<string, number>
 }>()
 const emit = defineEmits<{
   (e: 'update:modelValue', v: string): void
@@ -51,19 +50,9 @@ const treeData = computed<TreeOption[]>(() => {
 
 const selectedKeys = computed(() => [selected.value || ''])
 
-/** 节点 label 渲染：名称 + 该目录的直接文件计数 (N)，不含子目录（避免父级重复汇总）
- *  系统目录（如 raw_data / temp / workspace）不显示计数，保持整洁 */
+/** 节点标签仅展示目录名，避免将文件数量误解为目录名的一部分。 */
 function renderLabel({ option }: { option: TreeOption }) {
-  const path = String(option.key ?? '')
-  const name = option.label as string
-  const counts = props.fileCounts || {}
-  const total = counts[path] || 0
-  const dir = visibleDirectories.value.find((d) => d.path === path)
-  const showCount = total > 0 && !dir?.is_system
-  return h('span', { class: 'tree-label' }, [
-    h('span', null, name),
-    showCount ? h('span', { class: 'dir-count' }, total) : null,
-  ])
+  return h('span', { class: 'tree-label' }, option.label as string)
 }
 
 function handleSelect(keys: string[]) {
@@ -348,20 +337,6 @@ onMounted(fetchDirectories)
   display: inline-flex;
   align-items: center;
   gap: 6px;
-}
-.dir-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 16px;
-  padding: 0 5px;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--neutral-text-3, #86909c);
-  background: var(--neutral-bg, #f2f3f8);
-  border-radius: 8px;
-  font-variant-numeric: tabular-nums;
 }
 /* 悬浮内联操作：默认隐藏，hover 节点时显现 */
 .inline-actions {

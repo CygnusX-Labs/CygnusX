@@ -93,6 +93,9 @@ agents:
     - scrna_advanced
     - code
     - viz
+    - data
+    - qc
+    - delivery
     - shania
     - mcp_builder
 

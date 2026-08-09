@@ -13,10 +13,10 @@ from omichub.infrastructure.database.models.ai_provider import AIProviderConfigM
 
 
 class _FakeStreamResponse:
-    status_code = 200
-
-    def __init__(self, chunks: list[str]) -> None:
+    def __init__(self, chunks: list[str], *, status_code: int = 200, body: bytes = b"") -> None:
         self._chunks = chunks
+        self.status_code = status_code
+        self._body = body
 
     async def __aenter__(self) -> "_FakeStreamResponse":
         return self
@@ -28,11 +28,23 @@ class _FakeStreamResponse:
         for chunk in self._chunks:
             yield chunk
 
+    async def aread(self) -> bytes:
+        return self._body
+
 
 class _FakeAsyncClient:
-    def __init__(self, chunks: list[str], captured_payload: list[dict[str, object]] | None = None) -> None:
+    def __init__(
+        self,
+        chunks: list[str],
+        captured_payload: list[dict[str, object]] | None = None,
+        *,
+        status_code: int = 200,
+        body: bytes = b"",
+    ) -> None:
         self._chunks = chunks
         self._captured_payload = captured_payload
+        self._status_code = status_code
+        self._body = body
 
     async def __aenter__(self) -> "_FakeAsyncClient":
         return self
@@ -43,7 +55,7 @@ class _FakeAsyncClient:
     def stream(self, *_args: object, **_kwargs: object) -> _FakeStreamResponse:
         if self._captured_payload is not None:
             self._captured_payload.append(_kwargs.get("json", {}))
-        return _FakeStreamResponse(self._chunks)
+        return _FakeStreamResponse(self._chunks, status_code=self._status_code, body=self._body)
 
 
 def test_litellm_stream_kwargs_request_usage_and_retry() -> None:
@@ -62,6 +74,28 @@ def test_litellm_stream_kwargs_request_usage_and_retry() -> None:
 
     assert kwargs["stream_options"] == {"include_usage": True}
     assert kwargs["num_retries"] == 2
+
+
+@pytest.mark.asyncio
+async def test_provider_5xx_is_marked_retryable(monkeypatch: pytest.MonkeyPatch) -> None:
+    provider = OpenAICompatibleProvider(
+        AIProviderConfigModel(name="test", model="qwen-test", base_url="https://example.test")
+    )
+    monkeypatch.setattr(
+        "omichub.infrastructure.ai_provider.openai_compatible.httpx.AsyncClient",
+        lambda **_kwargs: _FakeAsyncClient([], status_code=500, body=b'{"detail":"temporary"}'),
+    )
+
+    chunks = [
+        chunk
+        async for chunk in provider._stream_once(
+            [{"role": "user", "content": "hi"}], None, 0.7, 32, None, False
+        )
+    ]
+
+    assert len(chunks) == 1
+    assert chunks[0].type == "error"
+    assert chunks[0].metadata == {"retryable": True, "http_status": 500}
 
 
 @pytest.mark.asyncio

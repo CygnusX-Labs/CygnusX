@@ -140,6 +140,33 @@ export interface AgentTemplate {
   is_default: boolean
 }
 
+/** 当前用户为某个 Agent 保存的个人能力选择；不包含系统提示词。 */
+export interface UserAgentCapabilities {
+  agent_id: string
+  model_id?: string
+  mcp_ids: string[]
+  skill_ids: string[]
+  features: UserAgentFeatureSelection
+  is_customized: boolean
+}
+
+export type UserAgentFeatureKey =
+  | 'enable_web_search'
+  | 'enable_file_upload'
+  | 'enable_code_execution'
+  | 'enable_deep_thinking'
+
+export type UserAgentFeatureSelection = Record<UserAgentFeatureKey, boolean>
+
+/** 普通用户能力配置页可选择的 MCP 摘要，不包含管理员连接配置。 */
+export interface UserSelectableMcp {
+  id: string
+  name: string
+  description: string
+  status: 'online' | 'offline'
+  tool_count: number
+}
+
 /** 大模型引擎选项（Agent 编排表单下拉用） */
 export interface ModelEngineOption {
   label: string

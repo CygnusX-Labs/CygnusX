@@ -4,7 +4,7 @@
 导入即注册到 Base.metadata，供 create_all / alembic 使用。
 """
 
-from omichub.infrastructure.database.models.agent import AgentTemplateModel
+from omichub.infrastructure.database.models.agent import AgentTemplateModel, UserAgentCapabilityModel
 from omichub.infrastructure.database.models.agent_memory import AgentMemoryModel
 from omichub.infrastructure.database.models.agentteams_bridge import AgentTeamsBridgeSettingsModel
 from omichub.infrastructure.database.models.ai import ConversationModel, MessageModel
@@ -87,6 +87,7 @@ from omichub.infrastructure.database.models.user import UserModel, WorkspaceMode
 
 __all__ = [
     "AgentTemplateModel",
+    "UserAgentCapabilityModel",
     "AgentTeamsBridgeSettingsModel",
     "AgentMemoryModel",
     "APIKeyModel",

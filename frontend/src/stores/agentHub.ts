@@ -43,6 +43,7 @@ import type {
   FileAttachment,
   ChartData,
 } from '@/components/ai-chat/types'
+import { agentTeamsApi } from '@/api/agentTeams'
 import { agentApi, adminAgentApi } from '@/api/agent'
 import { chatApi } from '@/api/chat'
 import apiClient from '@/api/client'
@@ -63,6 +64,29 @@ import type {
 } from '@/types/pipeline'
 
 const STUDIO_OUTPUT_CAP = 20_000
+
+function toMcpService(mcp: any): McpService {
+  return {
+    id: String(mcp.id),
+    name: mcp.name,
+    description: mcp.description ?? '',
+    status: mcp.status === 'online' ? 'online' : 'offline',
+    transport: mcp.transport ?? 'builtin',
+    command: mcp.command ?? '',
+    args: mcp.args ?? [],
+    url: mcp.url ?? '',
+    env: mcp.env ?? {},
+    registry: mcp.registry ?? 'default',
+    working_dir: mcp.working_dir ?? '',
+    version: mcp.version ?? '',
+    is_enabled: mcp.is_enabled ?? true,
+    tools: mcp.tools ?? [],
+    timeout: mcp.timeout ?? 30,
+    auto_restart: mcp.auto_restart ?? true,
+    tool_count: mcp.tool_count ?? 0,
+    is_preset: !!mcp.is_preset,
+  }
+}
 
 function appendBoundedStudioOutput(current: string, data: string): string {
   const combined = current + data
@@ -219,6 +243,64 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     message_id?: string
   }
 
+  function applyCaseRoomEvent(event: Record<string, any>) {
+    const session = event.session_id
+      ? sessions.value.find((item) => item.id === event.session_id)
+      : currentSession.value
+    if (!session) return
+    if (event.type === 'room_speech') {
+      applyRoomSpeechEvent(event as RoomSpeechStreamEvent)
+      return
+    }
+    if (event.type === 'overdrive_progress') {
+      const id = `case-progress-${event.case_id || 'active'}`
+      const existing = session.messages.find((message) => message.id === id)
+      const progress: NonNullable<ChatMessage['overdriveProgress']> = {
+        phase: event.phase || 'worker_running',
+        label: event.label || '协作 Case 推进中',
+        completed: Number(event.completed || 0),
+        total: Number(event.total || 1),
+        waveMode: event.waveMode === 'parallel' ? 'parallel' : 'serial',
+        tasks: Array.isArray(event.tasks) ? event.tasks : [],
+      }
+      if (existing) existing.overdriveProgress = progress
+      else session.messages.push({ id, role: 'system', content: progress.label, overdriveProgress: progress, createdAt: new Date().toISOString() })
+      session.updated_at = new Date().toISOString()
+      return
+    }
+    if (event.type === 'overdrive_approval_request' && event.approval) {
+      const approval = event.approval
+      const id = `case-approval-${approval.approval_id}`
+      if (session.messages.some((message) => message.id === id)) return
+      session.messages.push({
+        id,
+        role: 'system',
+        content: '协作 Case 等待你的审批',
+        overdriveApproval: {
+          approvalId: String(approval.approval_id || ''),
+          caseId: String(approval.case_id || event.case_id || ''),
+          toolName: String(approval.tool_name || 'submit_task'),
+          arguments: approval.arguments || {},
+          status: approval.status || 'pending',
+          reason: approval.reason,
+        },
+        createdAt: new Date().toISOString(),
+      })
+      session.updated_at = new Date().toISOString()
+      return
+    }
+    if (event.type === 'mode_changed' && event.mode === 'overdrive') {
+      session.overdrive = Boolean(event.enabled)
+      session.messages.push({
+        id: `case-mode-${Date.now()}`,
+        role: 'system',
+        content: event.enabled ? '协作 Case 已进入团队协作模式。' : '协作 Case 已完成，恢复普通对话。',
+        createdAt: new Date().toISOString(),
+      })
+      session.updated_at = new Date().toISOString()
+    }
+  }
+
   function applyRoomSpeechEvent(event: RoomSpeechStreamEvent) {
     const session = event.session_id
       ? sessions.value.find((item) => item.id === event.session_id)
@@ -315,9 +397,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           if (!line.startsWith('data:')) continue
           try {
             const event = JSON.parse(line.slice(5).trim()) as AgentTeamsCaseStreamEvent
-            if (event.type === 'agentteams_case' && event.phase === 'status_changed') {
-              applyAgentTeamsCaseEvent(event)
-            }
+            if (event.type === 'agentteams_case' && event.phase === 'status_changed') applyAgentTeamsCaseEvent(event)
+            else applyCaseRoomEvent(event as Record<string, any>)
           } catch {
             // 忽略单条不可解析事件，长连接保持可用。
           }
@@ -546,28 +627,18 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   async function fetchMcps(): Promise<void> {
     try {
       const res = await apiClient.get<any[]>('/mcp/servers')
-      mcps.value = (res.data || []).map((m) => ({
-        id: String(m.id),
-        name: m.name,
-        description: m.description ?? '',
-        status: m.status === 'online' ? 'online' : 'offline',
-        transport: m.transport ?? 'builtin',
-        command: m.command ?? '',
-        args: m.args ?? [],
-        url: m.url ?? '',
-        env: m.env ?? {},
-        registry: m.registry ?? 'default',
-        working_dir: m.working_dir ?? '',
-        version: m.version ?? '',
-        is_enabled: m.is_enabled ?? true,
-        tools: m.tools ?? [],
-        timeout: m.timeout ?? 30,
-        auto_restart: m.auto_restart ?? true,
-        tool_count: m.tool_count ?? 0,
-        is_preset: !!m.is_preset,
-      }))
+      mcps.value = (res.data || []).map(toMcpService)
     } catch (e) {
       console.error('加载 MCP 列表失败:', e)
+    }
+  }
+
+  /** 普通用户能力配置使用的 MCP 列表，仅包含管理员启用且可安全展示的字段。 */
+  async function fetchUserSelectableMcps(): Promise<void> {
+    try {
+      mcps.value = (await agentApi.listSelectableMcps()).map(toMcpService)
+    } catch (e) {
+      console.error('加载可选择 MCP 列表失败:', e)
     }
   }
 
@@ -674,7 +745,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   /** 一次性初始化全部资产（前台页面挂载时调用） */
   async function initAssets(): Promise<void> {
     await Promise.all([
-      fetchAgents(true), fetchMcps(), fetchSkills(false), fetchAvailableModels(), fetchSessions(),
+      fetchAgents(true), fetchUserSelectableMcps(), fetchSkills(false), fetchAvailableModels(), fetchSessions(),
       fetchStudioSessionIds(),
     ])
   }
@@ -1699,6 +1770,48 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           progressMessage.content = event.label
           session.updated_at = new Date().toISOString()
         },
+        onSubagentFanout: (event) => {
+          // 对话内并行子 Agent：复用超频泳道结构展示，按 tool_call_id 归属独立卡片。
+          const cardId = `fanout-${event.toolCallId || 'anon'}`
+          let card = session.messages.find((item) => item.id === cardId)
+          const tasks = event.tasks.map((task) => ({
+            taskId: String(task.index),
+            agentId: task.agentId,
+            status: task.status,
+          }))
+          if (event.phase === 'started') {
+            if (!card) {
+              const created: ChatMessage = {
+                id: cardId,
+                role: 'system',
+                content: `并行专家协作中（${tasks.length} 位专家）`,
+                createdAt: new Date().toISOString(),
+                overdriveProgress: {
+                  phase: 'worker_running',
+                  label: `并行专家协作中（${tasks.length} 位专家）`,
+                  completed: 0,
+                  total: tasks.length,
+                  waveMode: 'parallel',
+                  readonly: true,
+                  tasks,
+                },
+              }
+              session.messages.push(created)
+            }
+          } else if (card?.overdriveProgress) {
+            const completed = tasks.filter((task) => task.status === 'succeeded' || task.status === 'success').length
+            card.overdriveProgress = {
+              ...card.overdriveProgress,
+              phase: 'completed',
+              label: event.summary || '并行专家协作完成',
+              completed,
+              total: tasks.length || card.overdriveProgress.total,
+              tasks: tasks.length ? tasks : card.overdriveProgress.tasks,
+            }
+            card.content = event.summary || card.content
+          }
+          session.updated_at = new Date().toISOString()
+        },
         onRoomSpeechDelta: (event) => {
           const workerKey = event.workerKey || `worker-${event.sender.agent_id}`
           let message = roomSpeechLiveMessages.get(workerKey)
@@ -1810,6 +1923,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             result: event.approval.result,
             error: event.approval.error,
             reason: event.approval.reason,
+            caseId: event.approval.case_id,
           }
         },
         onToolCall: (event) => {
@@ -2025,6 +2139,15 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             }
             maybeRedirectToStudio(target.id, target.name)
           }
+          const sourceName = event.source_agent_name || getAgent(event.source_agent_id)?.name || event.source_agent_id
+          const targetName = event.target_agent_name || target?.name || event.target_agent_id
+          session.messages.push({
+            id: `handoff-${session.id}-${event.hop_index}-${Date.now()}`,
+            role: 'system',
+            content: `${sourceName} → ${targetName}（原因：${event.reason || '继续处理当前任务'}）`,
+            createdAt: new Date().toISOString(),
+          })
+          session.updated_at = new Date().toISOString()
         },
         onConsultation: (event) => {
           aiMsg.consultation = {
@@ -2051,7 +2174,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             session.messages.push({
               id: `stream-retry-${Date.now()}-${attempt}`,
               role: 'system',
-              content: `连接中断，正在自动重试（第 ${attempt}/${maxAttempts} 次）…`,
+              content: `服务短暂波动，正在自动恢复（第 ${attempt}/${maxAttempts} 次）…`,
               createdAt: new Date().toISOString(),
             })
           }
@@ -2262,6 +2385,11 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     if (!sessionId || !approval || approval.status !== 'pending') return
     approval.status = 'executing'
     try {
+      if (approval.caseId) {
+        const resolved = await agentTeamsApi.submitCase(approval.caseId, { task_name: approval.toolName || 'OmicHub 分析任务' })
+        Object.assign(approval, { status: resolved.status === 'submitted' ? 'completed' : 'executing' })
+        return
+      }
       const resolved = await chatApi.approveOverdriveApproval(sessionId, approvalId)
       Object.assign(approval, {
         approvalId: resolved.approval_id,
@@ -2284,6 +2412,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     if (!sessionId || !approval || approval.status !== 'pending') return
     approval.status = 'rejected'
     try {
+      if (approval.caseId) return
       const resolved = await chatApi.rejectOverdriveApproval(sessionId, approvalId, reason)
       Object.assign(approval, {
         approvalId: resolved.approval_id,
@@ -2379,7 +2508,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     // lookups
     getAgent, mcpsByIds, skillsByIds,
     // asset actions
-    fetchAgents, fetchMcps, fetchSkills, initAssets, fetchAvailableModels, fetchSessions,
+    fetchAgents, fetchMcps, fetchUserSelectableMcps, fetchSkills, initAssets, fetchAvailableModels, fetchSessions,
     fetchStudioSessionIds, markStudioSession,
     toggleMcpStatus, addMcpServer, updateMcpServer, removeMcpServer, testMcpServer, fetchMcpTools, fetchMcpLogs,
     fetchMcpVersions, rollbackMcpServer, promoteMcpServer, syncMcpPresets,

@@ -14,9 +14,11 @@ class MultiExpertConsultationService:
     def __init__(self, agent_service: Any) -> None:
         self._agent_service = agent_service
 
-    async def collect(self, agent_ids: list[str], user_text: str) -> list[dict[str, str]]:
+    async def collect(
+        self, agent_ids: list[str], user_text: str, user_id: str | None = None
+    ) -> list[dict[str, str]]:
         contexts = await asyncio.gather(
-            *(self._agent_service.assemble_context(agent_id) for agent_id in agent_ids),
+            *(self._agent_service.assemble_context(agent_id, user_id=user_id) for agent_id in agent_ids),
             return_exceptions=True,
         )
         tasks = [

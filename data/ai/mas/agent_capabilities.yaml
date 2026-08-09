@@ -26,6 +26,27 @@ agents:
     - synthesis
     - artifact-validate
 
+  # --- BioOps 数据预检（提示词/专用 Skill 待后续实现）---
+  agent-data:
+    - data-contract
+    - metadata-validation
+    - project-preflight
+    - artifact-validate
+
+  # --- BioOps 独立质量审计（提示词/专用 Skill 待后续实现）---
+  agent-qc:
+    - quality-gate
+    - qc-review
+    - evidence-audit
+    - artifact-validate
+
+  # --- BioOps 交付汇总（提示词/专用 Skill 待后续实现）---
+  agent-delivery:
+    - delivery-manifest
+    - evidence-pack
+    - runbook-capture
+    - artifact-validate
+
   # --- Bulk RNA-seq（executor rnaflow/deseq2 由 flows/rnaseq.yaml 自动派生）---
   agent-rnaseq:
     - ebi-download

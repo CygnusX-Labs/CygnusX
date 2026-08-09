@@ -85,6 +85,9 @@ YAML 为权威来源持续同步，避免后台临时编辑造成配置漂移。
 | `scrna_advanced.yaml` / `agent-scrna-advanced` | 单细胞注释与高级分析专家 | 注释验证、Pseudobulk、通路、可视化、轨迹和细胞通讯。 | Studio | LangGraph / `analysis-scrna` |
 | `code.yaml` / `agent-code` | 代码助手 | Python、R、Bash 脚本设计、调试、沙盒执行和可复现性说明。 | Studio | Legacy / `analysis-core` |
 | `viz.yaml` / `agent-viz` | 可视化助手 | 统计图、出版级绘图、图表说明、结果报告呈现和绘图脚本。 | Studio | Legacy / `analysis-plot` |
+| `data.yaml` / `agent-data` | 数据管理员 | BioOps Case 内部的数据契约、项目元数据、样本表和输入完整性预检。当前为无专用 Skill 的骨架。 | Studio | LangGraph / `analysis-core` |
+| `qc.yaml` / `agent-qc` | 质量审计员 | BioOps Case 内部的版本化质量门、Artifact 核验和人工复核分流。当前为无专用 Skill 的骨架。 | Studio | LangGraph / `analysis-core` |
+| `delivery.yaml` / `agent-delivery` | 交付报告员 | BioOps Case 内部的交付 manifest、运行说明和证据汇总。当前为无专用 Skill 的骨架。 | Studio | LangGraph / `analysis-core` |
 | `shania.yaml` / `shania` | 傻妞 | 通用对话、数据与基因问题、多组学思路和研究陪伴。 | Chat | Legacy / `analysis-core` |
 | `mcp_builder.yaml` / `agent-mcp-builder` | MCP 构建师 | 从自然语言生成、测试、注册和审查 MCP Server，支持临时 TTL 与人工复核。 | Studio | Legacy / `analysis-core` |
 
@@ -102,6 +105,9 @@ YAML 为权威来源持续同步，避免后台临时编辑造成配置漂移。
 | 单细胞高级专家 | `workspace`, `research`, `memory`, `handoff`, `agentteams_case` | 注释、对象转换、重聚类、参考映射、T 细胞映射、DEG、统计和报告。 |
 | 代码助手 | `workspace`, `handoff`, `subagents`, `agentteams_case` | 软件管理、日志插件、MD5、数据交付。 |
 | 可视化助手 | `workspace`, `visualization`, `handoff`, `agentteams_case` | R 绘图库、DotPlot。 |
+| 数据管理员 | `workspace`, `memory`, `handoff`, `agentteams_case` | 暂无专用 Skill；后续挂载项目预检与元数据校验 Skill。 |
+| 质量审计员 | `workspace`, `memory`, `handoff`, `agentteams_case` | 暂无专用 Skill；后续挂载 QC 规则、任务状态与 Artifact 审查 Skill。 |
+| 交付报告员 | `workspace`, `memory`, `handoff`, `agentteams_case` | 暂无专用 Skill；后续挂载交付 manifest、runbook 与证据归档 Skill。 |
 | 傻妞 | `workspace`, `research`, `memory`, `handoff` | 无固定 Skill，按通用研究上下文工作。 |
 | MCP 构建师 | `workspace`, `memory`, `handoff` | 无固定 Skill，能力由 MCP Builder 配置和审核流程提供。 |
 
@@ -766,3 +772,308 @@ ask_user 冒泡；AgentTeams 的群聊则是外部 Element。三者都还不是�
 > 说明：本节为只读核查结论，未改动任何后端/前端代码；§13.5 是建议清单，需另行立项实施。
 > MAS 与 AgentTeams 均默认关闭，启用方式与部署前置见 `.env.example` 与
 > `deploy/agentteams/README.md`、`docs/configuration/多Agent协作配置指南.md`。
+
+## 14. 统一超频协作架构（实现蓝图 · 分支 `feature/unified-overdrive-agent-team`）
+
+本节是把 §13 的核查结论转化为**可施工的实现方案**。目标一句话：**把"对话内
+fan-out"、"AgentTeams Case"两条路径都收敛进"超频模式"这一个心智模型——即"一个
+Manager 管理的专家 Agent 团队，在页内以群聊形式协作，遇决策问用户"**。MAS DAG 执行
+作为超频的"重型执行后端"之一被复用，不再是并列的第三种入口。
+
+### 14.1 统一心智模型
+
+对用户只暴露**一个概念**：超频模式 = Manager 带队的专家团队。用户在 AI 助手/工作台页
+打开超频开关（或说"用团队处理"），后续所有多专家协作都表现为**同一套群聊 UI**：
+
+- **Manager**（人格沿用当前会话绑定的 Agent，通常是星尘 AI）负责澄清、分工、汇总；
+- **专家 worker**（平台现有 `agent-rnaseq`/`agent-code`/`agent-viz` 等）在群里分头像发言；
+- 遇到需要用户拍板的决策点，任何成员都能弹 `ask_user` 卡片问用户；
+- 用户不需要知道底层走的是 fan-out、DAG 还是 AgentTeams Case——这些是**执行档位**，
+  由 Manager 按任务复杂度和 §13 的 `collaboration_preset` 自动选择。
+
+**执行档位与现有 `collaboration_preset` 对齐**（`site_settings_service.py:198-214` 已实现）：
+
+| 档位 | preset | 底层执行后端 | 何时用 |
+| --- | --- | --- | --- |
+| 会诊/轻量 | `light` | 多专家会诊（consult）| 咨询、方案评估 |
+| 并行团队 | `parallel` | **对话内 fan-out**（`ParallelSubAgentService`）| 2–5 个可独立完成的短子任务 |
+| 全流程闭环 | `full` | **AgentTeams Case**（跨角色审批+执行+交付）| 需审批、正式执行、质控交付 |
+| DAG 工作流 | （`mas_enabled`）| **MAS 编排**（Celery worker 执行 DAG）| 分钟–小时级流水线 |
+
+超频房间是**统一前台**；上表右列是它可调度的**执行后端**。Manager 的分工结果决定把每个
+worker 任务投递到哪个后端——但对前端和用户，全部表现为群聊气泡 + 泳道进度 + 决策卡片。
+
+### 14.2 为什么可行：三条路径已共享同一执行内核
+
+§13 与本轮深挖确认了统一的地基（关键事实，均已核对）：
+
+- **worker 执行引擎只有一套**：`ParallelSubAgentService`（`parallel_subagent_service.py`）。
+  fan-out、超频房间、Goal fanout adapter 三个"编排外壳"已经都调它跑受限 ReAct 子循环。
+  统一后 AgentTeams Case 作为第四个消费方接入，执行内核不重写。
+- **群聊 UI = 消息气泡 + `senderAgent` 皮肤**，不是独立房间组件。`ChatMessage.senderAgent`
+  （`types.ts:123`，带 `role: manager|worker`）+ `OverdriveProgressCard.vue`（`tasks[]` 泳道）
+  + `AskUserCard.vue`（决策弹窗）三件套已就位，任何"多角色发言"复用它即可。
+- **分层骨架已存在**：`collaboration_preset`（`custom|light|parallel|full`）+ 四个能力开关
+  （`site_settings_service.py`）已经是现成的档位系统，超频只需按档位选执行后端。
+- **统一事件模型已有雏形**：SSE `ChatChunk = {type, content, metadata}`（自由 dict 透传，
+  `openai_compatible.py:130`），前端已处理 `room_speech`/`overdrive_progress`/`ask_request`/
+  `agentteams_case` 等 case（`useAgentChatStream.ts`）。缺的主要是 `subagents` case。
+
+### 14.3 分阶段实现方案
+
+按"可独立验证、后端能力优先、风险从低到高"排序。每阶段可单独合并、单独回归。
+
+#### 阶段 A：fan-out 接入超频群聊 UI（纯前端，最高性价比）
+
+后端已发 `type="subagents"` chunk（`chat_service.py:5602` started / `:5646` aggregated），
+前端整段丢弃。补齐即可让"并行团队"档位在群里可见。
+
+- `subagents` chunk 字段（已确认）：
+  - started：`{phase:"started", tool_call_id, tasks:[{index, agent_id, task}]}`
+  - aggregated：`{phase:"aggregated", tool_call_id, success, summary, progress:[{index, agent_id, status, elapsed_s}]}`
+- 前端改动：
+  1. `useAgentChatStream.ts` 增 `case 'subagents'`，解析 started/aggregated，回调 `onSubagentFanout`。
+  2. `agentHub.ts` 增 `onSubagentFanout`：started 时按 `tool_call_id` 建一条 `role=system` 的
+     进度消息，映射进 `OverdriveProgress`（字段适配：`index→taskId`、`agent_id→agentId`、
+     `status` 直传）；aggregated 时更新每个 task 终态 + 落 `summary`。
+  3. 复用 `OverdriveProgressCard.vue` 的 `tasks[]` 泳道渲染；给它加一个 `readonly`/`hideControls`
+     prop，隐藏超频专属的暂停/终止/指令条（fan-out 无 `controlOverdrive` 语义）。
+- 验收：开启 `subagent_fanout_enabled`，让通用助手并行派 2 个子专家，页面出现多 Agent 泳道
+  卡片，每个专家的状态从 running→succeeded 实时更新。
+
+#### 阶段 B：打通 fan-out 的 ask_user 冒泡（后端）
+
+fan-out 子专家遇决策时，`parallel_subagent_service.py:496` 已把 packet 标 `awaiting_input`
+并带 `needs_user_input`，但对话内 fan-out 路径只发 `subagents` chunk、不转成 `ask_request`。
+
+- 后端改动：在 `chat_service.py:5646` 附近，检测 `fanout_envelope.ui_payload.progress` 里存在
+  `status in {awaiting_input, approval_pending}` 的子任务，或 `llm_payload` 标 `needs_user_input`，
+  命中则额外 `yield ChatChunk(type="ask_request", metadata={... questions ...})`，并**暂停本轮
+  fan-out**（沿用超频 worker 澄清的既有语义，见 `chat_service.py:3729` 那条路径）。
+- 用户答完 → 现有 `answerAskRequest`（`agentHub.ts:2307`）把答案作为下一条 user 消息回灌 →
+  fan-out 续跑。
+- 验收：并行子专家中有一个调 `ask_user`，前端弹 `AskUserCard`，答完后该子任务继续。
+
+#### 阶段 C：把 AgentTeams Case 包装成超频房间的"全流程闭环"档位（后端为主）
+
+这是本目标的核心。当前 Case 有独立的确认卡（`AgentTeamsCaseCard.vue`）+ 独立页
+（`AgentTeamsCaseView.vue`），与超频群聊是两套 UI。统一做法：**让 Case 生命周期事件映射成
+超频房间的群聊发言 + 泳道进度**，用户在同一个群里看到 Case 推进。
+
+- **事件适配层（新增）**：`AgentTeamsService.stream_case_events`（`agentteams_service.py:344`）
+  已能流式吐 Case 审计事件（`case.created`/`work_item.assigned`/`skill.finished`/
+  `approval.requested`/`quality.decision`/`case.closed` 等，见 `AgentTeamsCaseView.vue:137-152`）。
+  新增一个 `CaseRoomProjector`：把这些事件翻译成超频 SSE：
+  - `work_item.assigned` → `room_speech`（sender = 对应角色 Agent，如 data-steward/workflow-operator，
+    role=worker）+ `overdrive_progress`（该 work_item 一条泳道）；
+  - `approval.requested` → `overdrive_approval_request`（复用现成审批卡
+    `OverdriveApprovalCard.vue`）或 `ask_request`（决策询问）；
+  - `skill.finished`/`quality.decision`/`case.closed` → `room_speech`（Manager 汇报阶段结论）。
+- **角色即 senderAgent**：AgentTeams 的角色（Manager / Data Steward / Workflow Operator /
+  Quality Auditor / Delivery Reporter）映射为 `senderAgent`（复用 §14.2 的气泡渲染），
+  用平台 Agent 头像/名字/颜色。这样 Case 也表现为"群聊里多角色发言"。
+- **人工审批 = 决策询问**：Case 到 `approval_pending` 时，projector 发 `overdrive_approval_request`；
+  用户在群里点批准 → 调既有 `approve_and_submit_task`（`agentteams_service.py:244`）推进。
+  与超频 `approve_overdrive_approval`（`chat.py:66`）语义统一，前端复用同一审批卡。
+- **驱动**：Case 状态推进仍由外部 Bridge/Worker 负责（§13.2，不改执行边界）；OmicHub 侧新增
+  一个"房间投影订阅"——在超频房间内订阅 `stream_case_events`，把事件实时投影成群聊 SSE。
+  Celery `watch_cases`（`tasks/agentteams.py:25`）从"只回流通知"升级为"投影到房间 + 触发对账"。
+- **触发**：Manager 判定任务属"全流程闭环"（`collaboration_preset=full` 且 Bridge 已配）时，
+  在超频房间内调 `create_agentteams_case`（经确认卡），Case 建成后房间自动订阅其事件投影。
+- 验收（需 Bridge 部署，见 §13.2）：超频房间内发起一个正式分析 Case，群里依次出现"Manager
+  分派 → 各角色领取工作项 → 请求审批（用户在群里批准）→ 质控 → 交付"的发言与泳道推进。
+
+#### 阶段 D：统一入口与可读性（前端体验）
+
+- AI 助手页在**任意多专家参与**时（fan-out/Case/超频）都走 `room_speech` 群聊气泡，弱化
+  "只有开超频才有群聊"的割裂感；`OverdriveToggle` 语义升级为"团队协作模式"。
+- worker 发言提供"默认展开正文"选项（当前折叠成"阶段产物"，`KimiMessageItem.vue`），贴近
+  真实群聊观感。
+- handoff 增加轻量过场卡片（专家 A → 专家 B + reason），基于已到位的 `handoff` 事件。
+
+#### 阶段 E：健壮性（后端，可与 A–D 并行）
+
+- 修 §13.1 的 MAS 未知 executor 静默悬挂：`mas_scheduler_service.py:109-132` 末尾对白名单外
+  executor 显式标 `NODE_FAILED`。
+- MAS/AgentTeams 常驻看门狗：beat 巡检回收超时未推进的节点/Case。
+
+### 14.4 统一 SSE 事件契约（施工须遵守）
+
+所有执行后端投影到超频房间时，**只准使用以下既有 chunk 类型**，不新造前端不认识的类型：
+
+| chunk type | 用途 | 前端消费点 |
+| --- | --- | --- |
+| `room_speech` / `room_speech_delta` | 成员发言（Manager/worker/Case 角色）| `useAgentChatStream.ts:549/574` |
+| `overdrive_progress` | 泳道进度（tasks[] 状态网格）| `:593`（fan-out 经阶段 A 适配后复用）|
+| `ask_request` | 决策询问（任何成员）| `:744` → `AskUserCard.vue` |
+| `overdrive_approval_request` | 需批准的高风险操作 | `:624` → `OverdriveApprovalCard.vue` |
+| `mode_changed` | 进入/退出超频 | `:546` |
+
+新增执行后端（如 Case projector）必须把自身事件翻译成上表类型；`senderAgent` 用平台 Agent
+身份填充。这是"一套 UI 承载所有协作形态"的硬约束。
+
+### 14.5 落地顺序与风险
+
+- **阶段 A/B/E 不依赖外部部署**，可直接在本分支实现并单测回归——优先做，立刻点亮"并行团队
+  群聊 + 遇决策问用户"，覆盖用户诉求的主体。
+- **阶段 C（AgentTeams 包装）依赖 Bridge 部署才能端到端验证**（§13.2 三开关默认关），但
+  `CaseRoomProjector` 事件适配层本身可先实现 + 用 mock 事件单测。
+- **阶段 D 是纯体验优化**，可最后做。
+- 所有改动遵守 [[langgraph-vs-legacy-dual-path]]：涉及工具副作用/SSE 的逻辑，legacy 与
+  LangGraph 两条路径都要改。改完 `docker restart omichub-web`（[[omichub-web-no-autoreload]]）。
+
+> 本节为实现蓝图，供分阶段施工与评审。阶段 A/B/E 为纯内部改动可即时验证；阶段 C 的端到端
+> 依赖 AgentTeams Bridge 部署（默认关闭）。
+
+## 15. 实现进度（分支 `feature/unified-overdrive-agent-team`）
+
+> 最后更新：2026-08-09。下列状态均经回归测试和类型检查验证。
+
+### 15.1 ✅ 已完成：阶段 E — MAS 未知 executor 静默悬挂修复
+
+**问题**：`MASSchedulerService.dispatch_ready_node`（`mas_scheduler_service.py:109-132`）对
+白名单外的 `resources.executor` 值无条件 `return True`，节点被标 `dispatched` 却永不投递
+任何 Celery 任务，run 永不终结，无告警。
+
+**实现**（`src/omichub/application/services/mas_scheduler_service.py`）：
+
+- 在 6 个已知 executor 分支之后补 `else` 分支，调用新增的 `_fail_unknown_executor` 方法。
+- `_fail_unknown_executor`：重新拉取最新节点（避免版本号不一致），做 `DISPATCHED → FAILED`
+  转换，记录 `A2AEventType.NODE_FAILED` 事件（带 `error_code=UNKNOWN_EXECUTOR` 的 summary），
+  并将 run 状态推进到 `failed`——与 worker 侧失败语义完全一致，run 可正常终结。
+- 新增 `EventSummary` 到导入列表。
+
+**测试**（`tests/unit/domain/mas/test_scheduler.py`）：
+
+- 更新 `test_scheduler_dispatches_a_ready_node_once`：改用 `resources={"executor":"fake"}` +
+  monkeypatch `enqueue_task`（原测试用 `resources={}` 实际上是在回归悬挂 bug）。
+- 新增 `test_scheduler_fails_node_with_unknown_executor`：验证未知 executor 时节点 → `failed`、
+  run → `failed`、事件序列 = `[NODE_DISPATCHED, NODE_FAILED]`、`error_code=UNKNOWN_EXECUTOR`、
+  无 Celery 任务投递。
+- 同步更新陈旧的 `test_agent_capabilities.py`：旧期望值未反映 `deseq2`（rnaseq flow）和
+  scrna executor 的自动派生，改为断言子集关系。
+
+验收：`uv run pytest tests/unit/domain/mas/ -q` → **40 passed**。
+
+---
+
+### 15.2 ✅ 已完成：阶段 A — fan-out 接入超频群聊泳道 UI（纯前端）
+
+**问题**：后端已在 `chat_service.py:5602/5646` 发 `type="subagents"` SSE chunk（started /
+aggregated），前端 `useAgentChatStream.ts` 没有对应 `case`，事件被丢弃；用户看不到"哪几个
+专家在并行、各自进度"。
+
+**实现**：
+
+1. **`frontend/src/components/ai-chat/types.ts`**  
+   `OverdriveProgress` 接口新增 `readonly?: boolean`（用于区分 fan-out 卡片与真实超频控制台，
+   隐藏暂停/终止/指令条）。
+
+2. **`frontend/src/components/ai-chat/OverdriveProgressCard.vue`**  
+   控制条 `v-if` 增加 `!progress.readonly` 条件——fan-out 泳道卡片不显示超频专属控制 UI。
+
+3. **`frontend/src/composables/useAgentChatStream.ts`**  
+   - 新增 `SubagentFanoutEvent` 接口（导出）：`{ phase, toolCallId, tasks[], success?, summary? }`。
+   - `AgentStreamCallbacks` 新增 `onSubagentFanout?` 回调。
+   - 新增 `case 'subagents'`：
+     - started → 解析 `tasks[{index,agent_id,task}]`，标 `status:'running'`；
+     - aggregated → 解析 `progress[{index,agent_id,status,elapsed_s}]`，映射终态；
+     - 回调 `cb.onSubagentFanout?.(event)`。
+
+4. **`frontend/src/stores/agentHub.ts`**  
+   `streamChat` 回调集新增 `onSubagentFanout`：
+   - started 阶段：若不存在以 `fanout-{toolCallId}` 为 id 的消息，新建一条 `role:'system'` 消息，
+     `overdriveProgress.tasks` 映射自 fan-out tasks，`readonly: true`。
+   - aggregated 阶段：找到同 id 消息，更新 task 终态、`phase:'completed'`、`label`、`completed`。
+   - 字段适配：`index → taskId`、`agent_id → agentId`、`status` 直传、fan-out 无 `errorSummary`。
+
+**复用关系**：完全复用 `OverdriveProgressCard.vue` 的现有 `tasks[]` 泳道渲染，无新增组件。
+前端架构不变，只加了事件解析路径和 store 处理逻辑。
+
+验收：`npx vue-tsc --noEmit` → **exit 0，0 errors**。
+
+---
+
+### 15.3 🔲 待实现：阶段 B — 打通 fan-out 的 ask_user 冒泡（后端）
+
+**当前缺口**：子专家在并行执行中调 `ask_user` 时，`parallel_subagent_service.py:496` 把该
+子任务标 `awaiting_input`，但对话内 fan-out 聚合路径（`chat_service.py` 约 5646 行）只发
+`type="subagents"` chunk，不再发 `ask_request`——子专家的决策询问前端弹不出来。
+
+**需要做的**（后端，改 `chat_service.py`）：
+
+- 在 `chat_service.py:5646` 之后、发 `subagents.aggregated` 之前，检测
+  `fanout_envelope.ui_payload.progress` 中是否存在 `status in {"awaiting_input",
+  "approval_pending"}` 的子任务。
+- 若命中，从 `fanout_envelope.llm_payload.results` 里提取对应子任务的 `user_request`
+  字段（`parallel_subagent_service.py:130`），构造 `ask_request` chunk（复用
+  `chat_service.py:5911/6549` 的既有格式）并额外 `yield`。
+- 注意两条路径（legacy loop `~5900`、LangGraph `~6549`）都要改（见 [[langgraph-vs-legacy-dual-path]]）。
+- 验收：开启 fan-out，让一个子专家需要 `ask_user`，前端弹 `AskUserCard`，答完后该子任务
+  状态从 `awaiting_input` 变为 `succeeded`。
+
+**需要变更的文件**：
+- `src/omichub/application/services/chat_service.py`（两处，legacy + LangGraph）
+- `tests/unit/test_parallel_subagent_service.py`（加负路径测试）
+
+---
+
+### 15.4 🔲 待实现：阶段 C — 把 AgentTeams Case 包装进超频房间（后端为主）
+
+**目标**：让用户在超频群聊里看到 AgentTeams Case 的推进——"Manager 分派 → 角色领取工作项
+→ 请求审批（用户在群里批准）→ 质控 → 交付"——而不是跳转到独立的 `/agent-teams/cases/:id` 页面。
+
+**架构要点**（依赖 AgentTeams Bridge 部署才能端到端验证，见 §13.2）：
+
+- **新增 `CaseRoomProjector`**（`src/omichub/application/services/case_room_projector.py`）：
+  订阅 `AgentTeamsService.stream_case_events`，把 Case 审计事件翻译成超频 SSE chunk：
+  - `case.created` → `room_speech`（Manager：确认分派 Case）
+  - `work_item.assigned` → `room_speech`（对应角色，`senderAgent.role='worker'`）
+    + `overdrive_progress`（泳道更新）
+  - `approval.requested` → `overdrive_approval_request`（复用 `OverdriveApprovalCard.vue`）
+  - `skill.finished` → `room_speech`（角色报告完成）
+  - `quality.decision` → `room_speech`（Manager 汇报质量结论）
+  - `case.closed` → `room_speech`（Manager 宣布关闭）+ `mode_changed` 退出超频
+  - `senderAgent` 映射：`data-steward` → `agent-general`，`workflow-operator` → `agent-rnaseq`
+    等（可配置，按 Case 的 `flow_id` 选对应领域专家）。
+- **触发时机**：Case 建成（确认卡通过）后，超频房间自动 "订阅" 该 Case 的事件投影；
+  `session.sandbox_meta` 里记录 `active_case_id`，`watch_cases` Celery 任务升级为投影驱动。
+- **审批闭环**：`overdrive_approval_request` → 前端用户点批准 → 调现有
+  `approve_and_submit_task`（`agentteams_service.py:244`）→ 继续推进。
+
+**需要变更的文件**：
+- 新建 `src/omichub/application/services/case_room_projector.py`
+- `src/omichub/application/services/agentteams_case_tool_service.py`（建 Case 后注入 projector）
+- `src/omichub/infrastructure/celery_app/tasks/agentteams.py`（`watch_cases` 升级为投影）
+- `tests/unit/test_case_room_projector.py`（用 mock Case 事件流验证翻译映射）
+
+**单测可独立完成**，不依赖 Bridge。端到端验收须 Bridge 部署开启。
+
+---
+
+### 15.5 🔲 待实现：阶段 D — 统一入口与可读性（前端体验）
+
+优先级最低，可独立 PR。
+
+1. **`OverdriveToggle` 语义升级**：文案改为"团队协作模式"，在 fan-out/Case 也有多专家参与
+   时自动激活（不只是超频房间）。改动文件：`AgentSandbox.vue`、`StudioView.vue`。
+
+2. **worker 发言默认展开**：`KimiMessageItem.vue` 里 `isWorkerSpeech` 折叠逻辑加 `defaultOpen`
+   配置，让短回复（< 200 字）默认展开，长回复才折叠。
+
+3. **handoff 过场卡片**：`useAgentChatStream.ts` 的 `case 'handoff'` 已解析 source/target/reason，
+   在 store `onHandoff` 里插一条 `role:'system'` 消息显示"专家 A → 专家 B（原因：…）"，
+   不依赖任何新组件。
+
+---
+
+### 15.6 验收清单（提 PR 前确认）
+
+| 项 | 命令 | 期望 |
+| --- | --- | --- |
+| 后端相关单测 | `uv run pytest tests/unit/domain/mas/ tests/unit/test_agent_config_consistency.py -q` | 全通过 |
+| 前端类型检查 | `cd frontend && npx vue-tsc --noEmit` | exit 0 |
+| 配置一致性 | `uv run pytest tests/unit/test_agent_config_consistency.py -q` | 6 passed |
+| 阶段 B 验收 | fan-out 里 ask_user 弹窗 | 手动 |
+| 阶段 C 验收 | Bridge 部署后群聊看 Case 推进 | 手动（Bridge 开启后）|
+

@@ -14,6 +14,7 @@ from omichub.application.services.agentteams_bridge_settings_service import (
 )
 from omichub.application.services.agentteams_case_tool_service import agentteams_next_actor
 from omichub.application.services.agentteams_service import AgentTeamsService
+from omichub.application.services.case_room_projector import CaseRoomProjector
 from omichub.application.services.site_settings_service import SiteSettingsService
 from omichub.core.config import get_settings
 from omichub.infrastructure.cache.chat_case_pubsub import publish_chat_case_event
@@ -82,6 +83,7 @@ class AgentTeamsCaseWatchService:
         case_ids = [item for item in meta.get("agentteams_case_ids", []) if isinstance(item, str)]
         statuses = dict(meta.get("agentteams_case_status") or {})
         notifications = dict(meta.get("agentteams_case_notified") or {})
+        cursors = dict(meta.get("agentteams_case_event_cursor") or {})
         titles = dict(meta.get("agentteams_case_titles") or {})
         changed = scanned = notified = failed = 0
 
@@ -102,6 +104,33 @@ class AgentTeamsCaseWatchService:
             previous = str(statuses.get(case_id) or "")
             statuses[case_id] = status
             titles[case_id] = title
+            try:
+                events_page = await agentteams.get_case_events(
+                    case_id,
+                    requester_ref=session.user_id,
+                    cursor=str(cursors.get(case_id) or "") or None,
+                    limit=100,
+                )
+                events = events_page.get("events") if isinstance(events_page.get("events"), list) else []
+                projector = CaseRoomProjector()
+                for audit_event in events:
+                    for projected in projector.project(
+                        audit_event,
+                        session_id=session.session_id,
+                        flow_id=str(meta.get("flow_id") or ""),
+                    ):
+                        await publish_chat_case_event(session.session_id, projected)
+                next_cursor = events_page.get("next_cursor")
+                last_event_id = str(events[-1].get("event_id") or "") if events else ""
+                if isinstance(next_cursor, str) and next_cursor:
+                    cursors[case_id] = next_cursor
+                    changed = True
+                elif last_event_id:
+                    cursors[case_id] = last_event_id
+                    changed = True
+            except Exception as exc:  # noqa: BLE001
+                failed += 1
+                logger.warning("AgentTeams Case event projection failed for %s: %s", case_id, exc)
             seen = {value for value in notifications.get(case_id, []) if isinstance(value, str)}
             if status != previous and status in WATCHED_STATUSES and status not in seen:
                 event = await self._add_notification(session.session_id, case_id, title, status)
@@ -117,6 +146,7 @@ class AgentTeamsCaseWatchService:
         if changed:
             meta["agentteams_case_status"] = statuses
             meta["agentteams_case_notified"] = notifications
+            meta["agentteams_case_event_cursor"] = cursors
             meta["agentteams_case_titles"] = titles
             session.sandbox_meta = meta
             session.updated_at = datetime.now(UTC)

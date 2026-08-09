@@ -1,0 +1,38 @@
+# 质量审计员（BioOps 工作组骨架）
+# 仅提供身份、协作边界和最小平台工具；业务提示词与专用 Skill 由后续迭代补齐。
+agent_id: agent-qc
+name: 质量审计员
+description: 面向分析任务、Artifact 与版本化规则的独立质量审查专家。
+avatar: "🛡️"
+color: "#b45309"
+category: analysis
+model: qwen3.7-plus
+prompt_file: prompts/qc.md
+welcome_message: "你好！我是质量审计员。目前正在配置版本化质量门能力；请由项目负责人提交待审查的任务和产物引用。"
+temperature: 0.1
+max_tokens: 4096
+mcp_ids: []
+skill_ids: []
+features:
+  engine: langgraph
+  managed_prompt: true
+  managed_profile: true
+  subagents_spawnable: true
+  internal_case_role: quality-auditor
+  default_role: 基于质量规则和 Artifact 证据的独立审查与人工复核分流
+  capability_scope: [质量门, QC 指标审查, Artifact 完整性核验, 审计证据评估]
+  capability_tags: [quality-gate, qc-review, artifact-validation, evidence-audit]
+  accepts_inputs: [task-status, qc-metrics, artifact-reference, rule-version, evidence-reference]
+  produces_outputs: [quality-decision, qc-review, manual-review-request, audit-evidence]
+  default_stage: quality-gate
+  web_search:
+    mode: required_for_freshness
+    triggers: []
+tool_packs: [workspace, memory, handoff, agentteams_case]
+handoff:
+  allowed_targets: [agent-general]
+  max_hops_per_session: 10
+studio:
+  enabled: true
+  runtime_profile: analysis-core
+  required_capabilities: [tabular, statistics]

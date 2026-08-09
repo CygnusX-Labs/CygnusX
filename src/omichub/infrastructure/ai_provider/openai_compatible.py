@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -215,6 +216,9 @@ class OpenAICompatibleProvider:
         避免把已展示给用户的内容重复一遍。
         """
         transient_retry_limit = max(0, get_settings().llm_stream_transient_retries)
+        retry_base_delay_seconds = max(
+            0.0, float(get_settings().llm_stream_retry_base_delay_seconds)
+        )
         has_yielded_text = False
         has_tool_calls = False
         last_usage: dict[str, Any] | None = None
@@ -283,6 +287,8 @@ class OpenAICompatibleProvider:
                     yield chunk
 
             if should_retry:
+                if retry_base_delay_seconds:
+                    await asyncio.sleep(retry_base_delay_seconds * transient_retries)
                 continue
             if attempt_had_text or has_tool_calls:
                 break
@@ -407,6 +413,10 @@ class OpenAICompatibleProvider:
                     yield ChatChunk(
                         type="error",
                         content=f"请求失败（模型: {self.name}）: {detail}",
+                        metadata={
+                            "retryable": response.status_code in {408, 500, 502, 503, 504},
+                            "http_status": response.status_code,
+                        },
                     )
                     return
 

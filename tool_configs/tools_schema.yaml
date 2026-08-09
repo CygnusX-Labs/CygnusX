@@ -285,7 +285,7 @@ tools:
 
   - key: phylogenetic-tree
     name: omichub_build_phylogenetic_tree
-    description: 打开系统发育树工作台，由用户上传序列、配置参数，并通过专用 Celery worker 完成建树与可视化。
+    description: 生成「生物信息工具箱 · 系统发育树构建」工具页入口，由用户上传序列、配置参数，并通过专用 Celery worker 完成建树与可视化；该页面不是 AI 工作台。
     category: sequence
     invocation_mode: open_page
     route: /tools/phylogenetic-tree
