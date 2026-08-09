@@ -118,6 +118,16 @@ _SUBAGENT_RESEARCH_PROMPT_SUFFIX = (
 )
 
 
+class SubagentControlError(Exception):
+    """Cooperative stop raised by a durable runtime at an explicit safe point."""
+
+    def __init__(self, action: str) -> None:
+        if action not in {"paused", "terminated"}:
+            raise ValueError(f"unsupported subagent control action: {action}")
+        self.action = action
+        super().__init__(action)
+
+
 def _collaboration_packet(*, answer: str | None, error: str | None, status: str) -> dict[str, Any]:
     """Worker 对 Manager 的稳定协作契约，避免把内部过程作为汇总输入。"""
     user_text = (answer or "").strip()
@@ -162,6 +172,9 @@ class ParallelSubAgentService:
         db: AsyncSession,
         on_event: Callable[[dict[str, Any]], Awaitable[None] | None] | None = None,
         safe_only: bool = False,
+        runtime_authorized: bool = False,
+        approved_tool_calls: list[dict[str, Any]] | None = None,
+        control_check: Callable[[], Awaitable[str | None] | str | None] | None = None,
     ) -> dict[str, Any]:
         """执行 fan-out，返回统一信封 {success, llm_payload, ui_payload}。"""
         settings = get_settings()
@@ -169,7 +182,7 @@ class ParallelSubAgentService:
         from omichub.application.services.site_settings_service import SiteSettingsService
 
         db_enabled = await SiteSettingsService(db).is_subagent_fanout_enabled()
-        if not (settings.subagent_fanout_enabled or db_enabled):
+        if not (runtime_authorized or settings.subagent_fanout_enabled or db_enabled):
             return self._error(
                 "子 Agent 并行分派未启用（管理端「设置 → 平台设置」开关"
                 "或环境变量 SUBAGENT_FANOUT_ENABLED=true 任一启用即可）"
@@ -239,6 +252,8 @@ class ParallelSubAgentService:
                     max_rounds=settings.subagent_max_rounds_per_child,
                     semaphore=semaphore,
                     on_event=on_event,
+                    approved_tool_calls=approved_tool_calls or [],
+                    control_check=control_check,
                 )
                 for index, (item, ctx, child_tools) in enumerate(prepared, start=1)
             ),
@@ -428,6 +443,8 @@ class ParallelSubAgentService:
         max_rounds: int,
         semaphore: asyncio.Semaphore,
         on_event: Callable[[dict[str, Any]], Awaitable[None] | None] | None,
+        control_check: Callable[[], Awaitable[str | None] | str | None] | None,
+        approved_tool_calls: list[dict[str, Any]],
     ) -> dict[str, Any]:
         started = time.monotonic()
         base = {
@@ -449,6 +466,7 @@ class ParallelSubAgentService:
                     on_event, {"type": "worker_heartbeat", "attempt": attempt, **base}
                 )
                 try:
+                    await self._check_control(control_check)
                     async with asyncio.timeout(float(max(1, timeout_seconds))):
                         outcome = await self._child_loop(
                             agent_id=agent_id,
@@ -464,7 +482,16 @@ class ParallelSubAgentService:
                             workdir=workdir,
                             max_rounds=max_rounds,
                             on_event=on_event,
+                            control_check=control_check,
+                            approved_tool_calls=approved_tool_calls,
                         )
+                    await self._check_control(control_check)
+                except SubagentControlError as exc:
+                    outcome = {
+                        "status": exc.action,
+                        "answer": None,
+                        "error": None,
+                    }
                 except TimeoutError:
                     outcome = {"status": "timeout", "answer": None, "error": "子任务超时"}
                 except Exception as exc:  # noqa: BLE001 — 失败隔离，不影响兄弟子任务
@@ -526,6 +553,8 @@ class ParallelSubAgentService:
         workdir: Path,
         max_rounds: int,
         on_event: Callable[[dict[str, Any]], Awaitable[None] | None] | None,
+        control_check: Callable[[], Awaitable[str | None] | str | None] | None,
+        approved_tool_calls: list[dict[str, Any]],
     ) -> dict[str, Any]:
         """受限 ReAct 循环：chat_service legacy 工具循环的最小克隆。"""
         instruction = f"{context_summary}\n\n{task}".strip() if context_summary else task
@@ -538,6 +567,7 @@ class ParallelSubAgentService:
         answer_parts: list[str] = []
         reasoning_text = ""
         for _round in range(max(1, max_rounds)):
+            await self._check_control(control_check)
             text = ""
             tool_calls: list[dict[str, Any]] = []
             async for chunk in provider_manager.chat_stream(
@@ -606,6 +636,7 @@ class ParallelSubAgentService:
                 {"role": "assistant", "content": text or None, "tool_calls": tool_calls}
             )
             for tc in tool_calls:
+                await self._check_control(control_check)
                 fn = tc.get("function", {}) or {}
                 tool_name = str(fn.get("name") or "")
                 try:
@@ -638,20 +669,29 @@ class ParallelSubAgentService:
                         },
                     }
                 if schema is not None and schema.requires_confirm:
-                    return {
-                        "status": "approval_pending",
-                        "answer": f"需要你批准后才能执行 {tool_name}。",
-                        "error": None,
-                        "packet": {
+                    approved = any(
+                        isinstance(item, dict)
+                        and item.get("tool_name") == tool_name
+                        and item.get("arguments") == args
+                        for item in approved_tool_calls
+                    )
+                    if approved:
+                        args = {**args, "_confirmed": True}
+                    else:
+                        return {
                             "status": "approval_pending",
-                            "final_answer": "",
-                            "needs_user_input": False,
-                            "user_request": "",
-                            "questions": [],
-                            "approval_requests": [{"tool_name": tool_name, "arguments": args}],
-                            "error": "",
-                        },
-                    }
+                            "answer": f"需要你批准后才能执行 {tool_name}。",
+                            "error": None,
+                            "packet": {
+                                "status": "approval_pending",
+                                "final_answer": "",
+                                "needs_user_input": False,
+                                "user_request": "",
+                                "questions": [],
+                                "approval_requests": [{"tool_name": tool_name, "arguments": args}],
+                                "error": "",
+                            },
+                        }
                 tool_envelope = await self._execute_child_tool(
                     user_id=user_id,
                     agent_id=agent_id,
@@ -680,6 +720,18 @@ class ParallelSubAgentService:
             "thought": reasoning_text.strip() or None,
             "error": f"子循环超过 {max_rounds} 轮工具上限，返回阶段性结论",
         }
+
+    @staticmethod
+    async def _check_control(
+        callback: Callable[[], Awaitable[str | None] | str | None] | None,
+    ) -> None:
+        if callback is None:
+            return
+        value = callback()
+        if hasattr(value, "__await__"):
+            value = await value
+        if value in {"paused", "terminated"}:
+            raise SubagentControlError(str(value))
 
     @staticmethod
     async def _emit_event(

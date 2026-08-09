@@ -69,10 +69,11 @@ export interface AgentTeamsCaseCardPayload {
 }
 
 export interface OverdriveProgress {
+  runId?: string
   label: string
   completed: number
   total: number
-  phase: 'manager_ready' | 'workers_starting' | 'worker_running' | 'tool_running' | 'worker_finished' | 'peer_reviewing' | 'summarizing' | 'awaiting_input' | 'paused' | 'completed'
+  phase: 'manager_ready' | 'researching' | 'replanning' | 'plan_ready' | 'serial_preflight' | 'recruiting' | 'workers_starting' | 'worker_running' | 'tool_running' | 'worker_finished' | 'peer_reviewing' | 'summarizing' | 'awaiting_input' | 'awaiting_approval' | 'paused' | 'failed' | 'terminated' | 'completed'
   wave?: number
   waveTotal?: number
   waveMode?: 'parallel' | 'serial'
@@ -80,12 +81,14 @@ export interface OverdriveProgress {
   warning?: string
   stalledTaskIds?: string[]
   tasks?: Array<{ taskId: string; agentId: string; status: string; errorSummary?: string }>
+  artifacts?: Array<{ path: string; kind?: string; status?: string; source?: string; qualityStatus?: string }>
   /** 只读进度卡（如对话内 fan-out）：隐藏超频专属的暂停/终止/指令控制条。 */
   readonly?: boolean
 }
 
 export interface OverdriveApproval {
   approvalId: string
+  runId?: string
   caseId?: string
   toolName: string
   arguments: Record<string, unknown>
@@ -228,10 +231,41 @@ export interface AskQuestion {
   options?: string[]
 }
 
+export type PlanDecisionAction = 'approve' | 'revise' | 'cancel'
+
+export interface PlanAgentSummary {
+  agentId: string
+  name: string
+  reason?: string
+}
+
+/** 超频计划确认卡使用的冻结计划快照。 */
+export interface PlanConfirmation {
+  runId: string
+  title: string
+  summary: string
+  planPath: string
+  planVersion: number
+  planHash: string
+  waveCount: number
+  agents: PlanAgentSummary[]
+  serialPreflight: string[]
+  risks: string[]
+  approvalPoints: string[]
+  deliverables: string[]
+  actions: PlanDecisionAction[]
+  status: 'pending' | 'submitting' | 'approved' | 'revision_requested' | 'cancelled' | 'error'
+  feedback?: string
+  error?: string
+}
+
 /** Studio ask_user 澄清请求（附着在 AI 消息上，用户下一条消息回答） */
 export interface AskRequest {
+  kind?: 'questions' | 'plan_confirmation'
   /** 一次可包含多个问题，前端逐个分页收集 */
   questions: AskQuestion[]
+  /** kind=plan_confirmation 时存在；必须连同版本与 hash 原样提交。 */
+  planConfirmation?: PlanConfirmation
   /** 用户按问题顺序给出的答案；空串表示该问题被跳过 */
   answers?: string[]
   answered?: boolean

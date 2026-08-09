@@ -18,6 +18,7 @@ import re
 import time
 import uuid
 from collections.abc import AsyncIterator
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -55,6 +56,11 @@ from omichub.application.services.mas_plan_adapter import (
     MAS_PLAN_PREVIEW_TOOL_SCHEMA,
     MASPlanPreviewAdapter,
 )
+from omichub.application.services.overdrive_planning_service import (
+    OverdrivePlanningService,
+    ResearchBundleService,
+)
+from omichub.application.services.overdrive_run_service import OverdriveRunService
 from omichub.application.services.overdrive_runtime import (
     OverdriveManifest,
     build_upstream_context,
@@ -2744,6 +2750,7 @@ class ChatService:
         session_id: str,
         user_content: str,
         manager_ctx: AgentContext,
+        replan_lock_id: str | None = None,
     ) -> AsyncIterator[ChatChunk]:
         """运行一次内置超频编排，不进入普通工具循环。"""
         from omichub.application.schemas.tool_invocation import ToolInvocationContext
@@ -2760,6 +2767,98 @@ class ChatService:
             "color": manager.color,
             "role": "manager",
         }
+
+        # Durable v2 runs are routed before legacy intake/planning work. This keeps a
+        # background run detached from the chat request and lets a single waiting
+        # branch consume the user's supplement without freezing independent branches.
+        early_run_service = OverdriveRunService(self._db)
+        early_active_run = await early_run_service.get_active_for_session(session_id, user_id)
+        replan_root_request = (
+            str(early_active_run.root_request or "").strip()
+            if early_active_run is not None and early_active_run.status == "REPLANNING"
+            else ""
+        )
+        active_replan_lock = str((early_active_run.control or {}).get("replan_lock") or "") if early_active_run else ""
+        if (
+            early_active_run is not None
+            and early_active_run.status == "REPLANNING"
+            and active_replan_lock
+            and active_replan_lock != replan_lock_id
+        ):
+            yield ChatChunk(
+                type="overdrive_progress",
+                metadata={
+                    "phase": "replanning",
+                    "label": "规划 Agent 正在根据已提交的修改意见生成新版本计划",
+                    "run_id": early_active_run.run_id,
+                    "completed": 0,
+                    "total": 3,
+                },
+            )
+            return
+        if early_active_run is not None and early_active_run.status != "REPLANNING":
+            routed = None
+            if early_active_run.status in {
+                "RUNNING",
+                "WAITING_FOR_RESULTS",
+                "AWAITING_USER_INPUT",
+                "AWAITING_APPROVAL",
+            }:
+                routed = await early_run_service.accept_branch_user_input(
+                    run_id=early_active_run.run_id,
+                    user_id=user_id,
+                    response=user_content,
+                )
+            if routed is not None:
+                await self._commit_stream_anchor()
+                from omichub.infrastructure.celery_app.tasks.overdrive import advance_run
+
+                advance_run.delay(early_active_run.run_id)
+                yield ChatChunk(
+                    type="overdrive_progress",
+                    metadata={
+                        "phase": "worker_running",
+                        "label": f"已把补充信息交回分支 {routed['task_id']}，其他分支继续运行",
+                        "run_id": early_active_run.run_id,
+                        "completed": sum(
+                            task.get("status") in {"succeeded", "failed", "skipped"}
+                            for task in early_active_run.tasks
+                        ),
+                        "total": len(early_active_run.tasks),
+                    },
+                )
+                return
+            if early_active_run.status == "AWAITING_PLAN_CONFIRMATION":
+                frozen = early_active_run.plan or {}
+                yield ChatChunk(
+                    type="ask_request",
+                    metadata={
+                        "kind": "plan_confirmation",
+                        "run_id": early_active_run.run_id,
+                        "plan_path": frozen.get("path"),
+                        "plan_version": frozen.get("version"),
+                        "plan_hash": frozen.get("hash"),
+                        "summary": frozen.get("summary") or {},
+                        "actions": ["approve", "revise", "cancel"],
+                    },
+                )
+                return
+            yield ChatChunk(
+                type="overdrive_progress",
+                metadata={
+                    "phase": early_active_run.status.lower(),
+                    "label": f"超频任务正在后台推进（{early_active_run.status}）",
+                    "completed": sum(
+                        task.get("status") in {"succeeded", "failed", "skipped"}
+                        for task in early_active_run.tasks
+                    ),
+                    "total": len(early_active_run.tasks),
+                    "tasks": early_active_run.tasks,
+                    "run_id": early_active_run.run_id,
+                    "event_cursor": early_active_run.event_cursor,
+                },
+            )
+            return
 
         agents = await AgentService(self._db).list_agents(active_only=True)
         candidates = [
@@ -2821,10 +2920,17 @@ class ChatService:
         except Exception as exc:  # noqa: BLE001
             logger.debug("读取超频 intake 状态失败，按新任务处理: {}", exc)
 
-        root_request = user_content
-        intake_slots = _extract_overdrive_intake_slots(user_content)
+        # A revision task keeps the original request as its planning subject.  The
+        # submitted feedback is an instruction to alter that subject, never a
+        # replacement request in its own right.
+        root_request = replan_root_request or user_content
+        intake_slots = _extract_overdrive_intake_slots(root_request)
         intake_supplements: list[str] = []
-        planning_content = user_content
+        planning_content = (
+            f"原始请求：\n{root_request}\n\n计划修改意见：\n{user_content.strip()}"
+            if replan_root_request
+            else user_content
+        )
         limits = load_overdrive_limits(manager.agent_id)
         intake_rounds = 0
         if pending_intake:
@@ -2912,7 +3018,7 @@ class ChatService:
 
         preflight_questions = (
             []
-            if pending_intake or pending_followup
+            if pending_intake or pending_followup or replan_root_request
             else _overdrive_preflight_questions(planning_content)
         )
         if intake_rounds >= int(limits["max_intake_rounds"]):
@@ -3231,6 +3337,288 @@ class ChatService:
                 },
             )
             return
+
+        # v2 hard gate: research and freeze an immutable plan before any execution worker.
+        # This service is the sole authoritative wrapper for both chat- and LangGraph-backed
+        # agents; the legacy file manifest below is reached only after a real user approval.
+        active_run = await OverdriveRunService(self._db).get_active_for_session(
+            session_id, user_id
+        )
+        if active_run is None or active_run.status == "REPLANNING":
+            revision_feedback = ""
+            lead_planner_id = str(assignments[0]["agent_id"])
+            run_service = OverdriveRunService(self._db)
+            if active_run is None:
+                run = await run_service.create_run(
+                    session_id=session_id,
+                    user_id=user_id,
+                    root_request=root_request,
+                    lead_planner_agent_id=lead_planner_id,
+                )
+            else:
+                run = active_run
+                lead_planner_id = str(run.lead_planner_agent_id or lead_planner_id)
+                previous_feedback = str((run.plan or {}).get("revision_feedback") or "").strip()
+                revision_feedback = previous_feedback
+                if user_content.strip() and user_content.strip() != previous_feedback:
+                    revision_feedback = "\n\n".join(
+                        item for item in (previous_feedback, user_content.strip()) if item
+                    )
+            await self._commit_stream_anchor()
+
+            yield ChatChunk(
+                type="overdrive_progress",
+                metadata={
+                    "phase": "researching",
+                    "label": "规划 Agent 正在并发研究知识库与网络资料",
+                    "completed": 0,
+                    "total": 3,
+                    "research": {
+                        source: {"status": "running"}
+                        for source in ("knowledge_base", "web", "model_knowledge")
+                    },
+                },
+            )
+
+            research_limit = int(limits["research"]["max_evidence_items_per_source"])
+            research_project_id = getattr(session_row, "project_id", None)
+
+            async def knowledge_search(query: str, **_: Any) -> dict[str, Any]:
+                # KB 与 Web 必须并发，但 SQLAlchemy AsyncSession 不允许并发使用。
+                # 每个检索分支持有独立会话，主编排会话只负责 run 的权威状态。
+                from omichub.application.services.studio_tools import _knowledge_search
+
+                async with get_session_factory()() as research_db:
+                    return await _knowledge_search(
+                        {"query": query, "limit": research_limit},
+                        research_db,
+                        project_id=research_project_id,
+                    )
+
+            async def web_search(query: str, **_: Any) -> dict[str, Any]:
+                async with get_session_factory()() as research_db:
+                    results = await SearchProviderService(research_db).search_default(
+                        query, research_limit
+                    )
+                    return {"success": True, "result": {"query": query, "results": results}}
+
+            planner_ctx = await AgentService(self._db).assemble_context(
+                lead_planner_id, user_id=user_id
+            )
+
+            async def model_knowledge(
+                query: str,
+                *,
+                retrieved_evidence: list[dict[str, Any]],
+                context: dict[str, Any],
+            ) -> list[dict[str, Any]]:
+                if planner_ctx is None or planner_ctx.model_config is None:
+                    return [
+                        {
+                            "title": "通用知识候选框架",
+                            "claim": "规划模型不可用；仅保留任务分解中的通用知识，执行前需复核。",
+                            "confidence": "low",
+                        }
+                    ]
+                evidence_digest = json.dumps(retrieved_evidence, ensure_ascii=False)[:12000]
+                answer = ""
+                async for item in provider_manager.chat_stream(
+                    config=planner_ctx.model_config,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": (
+                                f"任务：{query}\n\n已检索证据：{evidence_digest}\n\n"
+                                "只给出一段模型通用知识候选框架，指出仍待验证的推断。"
+                                "不要声称做过额外搜索，不要给虚构链接。"
+                            ),
+                        }
+                    ],
+                    system_prompt=planner_ctx.system_prompt,
+                    temperature=0.2,
+                    max_tokens=800,
+                    tools=None,
+                    deep_thinking=False,
+                ):
+                    if item.type == "text" and not item.metadata.get("is_reasoning"):
+                        answer += item.content
+                return [
+                    {
+                        "title": "模型通用知识与待验证推断",
+                        "claim": answer.strip() or "模型未补充通用知识。",
+                        "confidence": "medium" if answer.strip() else "low",
+                    }
+                ]
+
+            enriched_tasks: list[dict[str, Any]] = []
+            for assignment in assignments:
+                outputs = list(assignment.get("produces_outputs") or [])
+                enriched_tasks.append(
+                    {
+                        **assignment,
+                        "accepts_inputs": list(assignment.get("accepts_inputs") or []),
+                        "produces_outputs": outputs or ["task-result"],
+                        "completion_criteria": [
+                            *[f"真实产出并登记 {output}" for output in outputs],
+                            "结论包含证据、限制与真实产物路径",
+                        ],
+                        "tools": [
+                            "workspace_read",
+                            *(["workspace_write"] if assignment.get("workspace_access") else []),
+                        ],
+                        "requires_approval": bool(assignment.get("workspace_access")),
+                    }
+                )
+
+            if "agent-qc" not in catalog_by_id:
+                speech += " 当前可用 Agent 中没有独立 QC 审计员，计划将明确标注该质量门降级。"
+
+            def plan_builder(**_: Any) -> dict[str, Any]:
+                waves = _overdrive_assignment_waves(enriched_tasks)
+                return {
+                    "tasks": enriched_tasks,
+                    "deliverables": sorted(
+                        {
+                            output
+                            for task in enriched_tasks
+                            for output in task.get("produces_outputs") or []
+                        }
+                    ),
+                    "confirmed_inputs": [
+                        f"任务方向：{intake_slots.get('task_type')}"
+                        if intake_slots.get("task_type")
+                        else "用户原始请求",
+                    ],
+                    "assumptions": ["未由检索证据支持的内容均标记为通用知识或待验证推断"],
+                    "manager_preflight": [
+                        "核验工作区文件、数据契约与共享输出目录",
+                        "加载任务所需 Skill 并检查依赖与审批点",
+                    ],
+                    "agent_selection_reasons": [
+                        f"{item['agent_id']}：能力契约匹配任务 {item['task_id']}"
+                        for item in enriched_tasks
+                    ],
+                    "risks": [
+                        "写文件、代码执行和高风险工具仍需逐项审批",
+                        "任一路研究失败会降级生成计划并明确记录限制",
+                    ],
+                    "quality_gates": [
+                        "每个任务完成判据命中且产物路径真实存在",
+                        "独立 QC Agent 对所有上游产物给出质量门结论（不可用时明确降级）",
+                        "失败、跳过与限制进入最终交付报告",
+                    ],
+                    "delivery_paths": [
+                        f"output/overdrive/{session_id}/{run.run_id.replace(':', '-')}/delivery/"
+                    ],
+                    "summary": {
+                        "title": "超频协作执行计划",
+                        "summary": speech,
+                        "wave_count": len(waves),
+                        "agents": [
+                            {
+                                "agent_id": task["agent_id"],
+                                "name": catalog_by_id[task["agent_id"]]["name"],
+                                "reason": f"负责 {task['task_id']}",
+                            }
+                            for task in enriched_tasks
+                        ],
+                        "serial_preflight": ["文件与数据契约核验", "Skill 与依赖检查"],
+                        "risks": ["高风险工具另行审批", "研究源失败时降级"],
+                        "approval_points": ["执行计划确认", "高风险工具审批"],
+                        "deliverables": sorted(
+                            {
+                                output
+                                for task in enriched_tasks
+                                for output in task.get("produces_outputs") or []
+                            }
+                        ),
+                    },
+                }
+
+            research_limits = limits.get("research") or {}
+            planner = OverdrivePlanningService(
+                run_service,
+                ResearchBundleService(
+                    knowledge_search=knowledge_search,
+                    web_search=web_search,
+                    model_knowledge=model_knowledge,
+                    source_timeout_seconds=float(
+                        research_limits.get("source_timeout_seconds") or 20
+                    ),
+                    wall_timeout_seconds=float(
+                        research_limits.get("wall_timeout_seconds") or 45
+                    ),
+                    max_evidence_items_per_source=int(
+                        research_limits.get("max_evidence_items_per_source") or 8
+                    ),
+                ),
+                plan_builder,
+            )
+            frozen = await planner.prepare_plan(
+                run,
+                known_agent_ids=set(catalog_by_id),
+                project_id=getattr(session_row, "project_id", None),
+                revision_feedback=revision_feedback,
+            )
+            await self._commit_stream_anchor()
+            yield ChatChunk(
+                type="overdrive_progress",
+                metadata={
+                    "phase": "plan_ready",
+                    "label": "规划 Agent 已交付 plan.md，等待你确认",
+                    "completed": 3,
+                    "total": 3,
+                    "research": deepcopy(run.research),
+                },
+            )
+            yield ChatChunk(
+                type="ask_request",
+                metadata={
+                    "kind": "plan_confirmation",
+                    "run_id": run.run_id,
+                    "plan_path": frozen["path"],
+                    "plan_version": frozen["version"],
+                    "plan_hash": frozen["hash"],
+                    "summary": frozen.get("summary") or {},
+                    "actions": ["approve", "revise", "cancel"],
+                },
+            )
+            return
+
+        if active_run.status == "AWAITING_PLAN_CONFIRMATION":
+            frozen = active_run.plan or {}
+            yield ChatChunk(
+                type="ask_request",
+                metadata={
+                    "kind": "plan_confirmation",
+                    "run_id": active_run.run_id,
+                    "plan_path": frozen.get("path"),
+                    "plan_version": frozen.get("version"),
+                    "plan_hash": frozen.get("hash"),
+                    "summary": frozen.get("summary") or {},
+                    "actions": ["approve", "revise", "cancel"],
+                },
+            )
+            return
+
+        # The v2 worker lifecycle is owned by Celery after approval. A chat stream never
+        # waits for a wave or submits a second in-process copy of the same assignments.
+        yield ChatChunk(
+            type="overdrive_progress",
+            metadata={
+                "phase": active_run.status.lower(),
+                "label": f"超频任务正在后台推进（{active_run.status}）",
+                "completed": sum(
+                    task.get("status") in {"succeeded", "failed", "skipped"}
+                    for task in active_run.tasks
+                ),
+                "total": len(active_run.tasks),
+                "tasks": active_run.tasks,
+                "run_id": active_run.run_id,
+                "event_cursor": active_run.event_cursor,
+            },
+        )
+        return
 
         overdrive_run_id = f"overdrive:{uuid.uuid4().hex[:12]}"
         manifest = OverdriveManifest(session_id)

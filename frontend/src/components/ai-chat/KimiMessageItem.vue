@@ -25,6 +25,7 @@ import MessageArtifactGallery from './MessageArtifactGallery.vue'
 import AgentTeamsCaseCard from './AgentTeamsCaseCard.vue'
 import ChartPreviewModal from './ChartPreviewModal.vue'
 import AskUserCard from './AskUserCard.vue'
+import PlanConfirmationCard from './PlanConfirmationCard.vue'
 import OverdriveApprovalCard from './OverdriveApprovalCard.vue'
 import OverdriveProgressCard from './OverdriveProgressCard.vue'
 import ToolCallEntry from './ToolCallEntry.vue'
@@ -218,7 +219,7 @@ const isRoomStreaming = computed(() =>
 const streamingActive = computed(() => props.isStreaming || isRoomStreaming.value)
 const isWorkerSpeech = computed(() => props.message.senderAgent?.role === 'worker')
 const isWorkerCollapsed = computed(() =>
-  isWorkerSpeech.value && displayContent.value.length >= 200 && !workerExpanded.value,
+  isWorkerSpeech.value && !workerExpanded.value,
 )
 const workerPreview = computed(() => {
   const plain = (props.message.overdriveSummary || displayContent.value)
@@ -1039,8 +1040,13 @@ function handleEdit() {
         </div>
 
         <!-- Studio ask_user 澄清卡片：分页交互收集（选项/自由输入/跳过），回答后折叠为工具卡片样式 -->
+        <PlanConfirmationCard
+          v-if="message.askRequest?.kind === 'plan_confirmation' && message.askRequest.planConfirmation"
+          :plan="message.askRequest.planConfirmation"
+          :session-id="sessionId"
+        />
         <AskUserCard
-          v-if="message.askRequest"
+          v-else-if="message.askRequest"
           :ask="message.askRequest"
           @submit="handleAskSubmit"
         />
@@ -1103,6 +1109,12 @@ function handleEdit() {
 
     <template v-else-if="message.role === 'system'">
       <OverdriveProgressCard v-if="message.overdriveProgress" :progress="message.overdriveProgress" />
+      <PlanConfirmationCard
+        v-else-if="message.askRequest?.kind === 'plan_confirmation' && message.askRequest.planConfirmation"
+        :plan="message.askRequest.planConfirmation"
+        :session-id="sessionId"
+      />
+      <OverdriveApprovalCard v-else-if="message.overdriveApproval" :approval="message.overdriveApproval" />
       <div v-else class="system-message" role="status" aria-live="polite">
         <span>{{ message.content }}</span>
         <a v-if="systemCase?.case_url" :href="systemCase.case_url">查看协作</a>

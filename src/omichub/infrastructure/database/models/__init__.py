@@ -71,6 +71,12 @@ from omichub.infrastructure.database.models.mcp_builder import (
     MCPVisibilityModel,
 )
 from omichub.infrastructure.database.models.notification import NotificationModel
+from omichub.infrastructure.database.models.overdrive import (
+    OverdriveCommandModel,
+    OverdriveEventModel,
+    OverdriveRunModel,
+    OverdriveTaskResultModel,
+)
 from omichub.infrastructure.database.models.project import ProjectModel
 from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
 from omichub.infrastructure.database.models.sandbox import SandboxSessionModel
@@ -143,6 +149,10 @@ __all__ = [
     "SearchProviderConfigModel",
     "TerminalSessionModel",
     "NotificationModel",
+    "OverdriveRunModel",
+    "OverdriveEventModel",
+    "OverdriveCommandModel",
+    "OverdriveTaskResultModel",
     "SiteSettingModel",
     "SkillInvocationModel",
     "SkillModel",

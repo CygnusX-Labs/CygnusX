@@ -8,6 +8,7 @@
  */
 import { ref } from 'vue'
 import { reportChatDiagnostic } from '@/utils/chatDiagnostics'
+import type { PlanAgentSummary, PlanConfirmation } from '@/components/ai-chat/types'
 
 export interface AgentChatStreamOptions {
   agentId: string
@@ -88,10 +89,12 @@ export interface ApprovalResolvedEvent {
 /** Studio HITL：ask_user 澄清请求（本轮随后结束，用户在下一条消息回答） */
 export interface AskRequestEvent {
   tool_call_id: string
+  kind: 'questions' | 'plan_confirmation'
   /** 多问题列表（优先）；兼容后端平铺的 question/options 单问题字段 */
   questions?: Array<{ question: string; options?: string[] }>
   question?: string
   options?: string[]
+  planConfirmation?: PlanConfirmation
 }
 
 /** 智能路由：route 事件（路由器 Agent 分派目标专家后、正文开始前推送） */
@@ -189,7 +192,8 @@ export interface RoomSpeechEvent {
 }
 
 export interface OverdriveProgressEvent {
-  phase: 'manager_ready' | 'workers_starting' | 'worker_running' | 'tool_running' | 'worker_finished' | 'peer_reviewing' | 'summarizing' | 'awaiting_input' | 'paused' | 'completed'
+  runId?: string
+  phase: 'manager_ready' | 'researching' | 'replanning' | 'plan_ready' | 'serial_preflight' | 'recruiting' | 'workers_starting' | 'worker_running' | 'tool_running' | 'worker_finished' | 'peer_reviewing' | 'summarizing' | 'awaiting_input' | 'awaiting_approval' | 'paused' | 'failed' | 'terminated' | 'completed'
   label: string
   completed: number
   total: number
@@ -205,6 +209,7 @@ export interface OverdriveProgressEvent {
 export interface OverdriveApprovalEvent {
   approval: {
     approval_id: string
+    run_id?: string
     tool_name: string
     arguments: Record<string, unknown>
     status: 'pending' | 'executing' | 'completed' | 'rejected' | 'failed'
@@ -330,6 +335,63 @@ function firstString(...values: unknown[]): string {
     if (typeof value === 'string' && value.length > 0) return value
   }
   return ''
+}
+
+function stringList(...values: unknown[]): string[] {
+  for (const value of values) {
+    if (Array.isArray(value)) {
+      return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    }
+  }
+  return []
+}
+
+function normalizePlanAgents(value: unknown): PlanAgentSummary[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((raw) => {
+    if (typeof raw === 'string' && raw.trim()) {
+      return [{ agentId: raw, name: raw }]
+    }
+    const item = asRecord(raw)
+    if (!item) return []
+    const agentId = firstString(item.agent_id, item.agentId, item.id)
+    const name = firstString(item.display_name, item.name, item.agent_name, agentId)
+    if (!agentId && !name) return []
+    return [{
+      agentId: agentId || name,
+      name: name || agentId,
+      reason: firstString(item.reason, item.task_summary) || undefined,
+    }]
+  })
+}
+
+/** 将 ask_request 的冻结计划契约归一化为 UI 模型。 */
+export function normalizePlanConfirmation(data: Record<string, unknown>): PlanConfirmation | undefined {
+  if (data.kind !== 'plan_confirmation') return undefined
+  const summary = asRecord(data.summary) || asRecord(data.plan_summary) || {}
+  const actions = stringList(data.actions)
+    .filter((action): action is PlanConfirmation['actions'][number] =>
+      action === 'approve' || action === 'revise' || action === 'cancel')
+  const runId = firstString(data.run_id, data.runId)
+  const planPath = firstString(data.plan_path, data.path, summary.plan_path)
+  const planHash = firstString(data.plan_hash, data.hash, summary.plan_hash)
+  const planVersion = Number(data.plan_version ?? data.version ?? summary.plan_version ?? 0)
+  return {
+    runId,
+    title: firstString(data.title, summary.title) || '执行计划待确认',
+    summary: firstString(data.plan_summary_text, summary.summary, summary.description, data.description),
+    planPath,
+    planVersion: Number.isFinite(planVersion) ? planVersion : 0,
+    planHash,
+    waveCount: Number(data.wave_count ?? summary.wave_count ?? summary.estimated_waves ?? 0) || 0,
+    agents: normalizePlanAgents(data.agents ?? summary.agents ?? summary.agent_ids),
+    serialPreflight: stringList(data.serial_preflight, summary.serial_preflight, summary.manager_tasks),
+    risks: stringList(data.risks, summary.risks),
+    approvalPoints: stringList(data.approval_points, summary.approval_points),
+    deliverables: stringList(data.deliverables, summary.deliverables),
+    actions: actions.length ? actions : ['approve', 'revise', 'cancel'],
+    status: 'pending',
+  }
 }
 
 export function normalizeAgentStreamEvent(data: Record<string, unknown>): NormalizedAgentStreamEvent {
@@ -623,6 +685,7 @@ export function useAgentChatStream() {
       case 'overdrive_progress': {
         const rawTasks = Array.isArray(data.tasks) ? data.tasks : []
         cb.onOverdriveProgress?.({
+          runId: typeof data.run_id === 'string' ? data.run_id : undefined,
           phase: String(data.phase || 'worker_running') as OverdriveProgressEvent['phase'],
           label: String(data.label || '超频协作进行中'),
           completed: Number(data.completed || 0),
@@ -657,6 +720,7 @@ export function useAgentChatStream() {
         cb.onOverdriveApproval?.({
           approval: {
             approval_id: approval.approval_id,
+            run_id: typeof approval.run_id === 'string' ? approval.run_id : undefined,
             tool_name: approval.tool_name,
             arguments: (asRecord(approval.arguments) || {}) as Record<string, unknown>,
             status: String(approval.status || 'pending') as OverdriveApprovalEvent['approval']['status'],
@@ -810,6 +874,7 @@ export function useAgentChatStream() {
         break
       case 'ask_request':
         {
+          const planConfirmation = normalizePlanConfirmation(data)
           const rawQuestions = Array.isArray(data.questions) ? data.questions : []
           const questions = rawQuestions
             .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
@@ -833,7 +898,9 @@ export function useAgentChatStream() {
           }
           cb.onAskRequest?.({
             tool_call_id: (data.tool_call_id as string) || '',
+            kind: planConfirmation ? 'plan_confirmation' : 'questions',
             questions,
+            planConfirmation,
           })
         }
         break

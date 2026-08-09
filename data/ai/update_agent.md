@@ -1,276 +1,818 @@
-# 多智能体协作升级方案：对齐「Kimi 式 Agent Swarm」工作流
+# 超频模式升级方案：研究先行、计划确认、人格化异步 Agent 团队
 
-> 创建日期：2026-08-09
-> 参考素材：`docs/26.8.9/multi-agent/` 下 7 张 Kimi OK Computer 式多智能体协作截图
-> 现状依据：`data/ai/README.md` §13（可运行性核查）、§14（统一超频协作架构蓝图）、§15（实现进度），
-> 以及 `parallel_subagent_service.py` / `chat_service.py` 实际代码核对结果。
-> 本文档为评估 + 施工方案，不含代码改动。
-
----
-
-## 1. 背景与目标
-
-`docs/26.8.9/multi-agent/` 中的截图展示了一个成熟的「agent swarm」多智能体产品形态
-（Kimi OK Computer 风格）：主 Agent 接到复杂任务后制定计划、动态招募一批**有名有姓的
-临时助手**并行工作，助手结果逐个回流，主 Agent 边收边评、再发起下一波招募，最终交付
-统一产物。
-
-OmicHub 目前已有四条多智能体路径（见 `data/ai/README.md` §13）：
-
-| 路径 | 形态 | 默认开关 | 与目标形态的关系 |
-| --- | --- | --- | --- |
-| 对话内 fan-out（`parallel_subagents`） | 一次工具调用并行派生子专家跑受限工具循环 | 管理端 `subagent_fanout_enabled` | **与截图形态最接近，是本次升级的主体** |
-| 超频模式（overdrive room） | Manager + 多 worker 分头像发言 | 前端 `OverdriveToggle` | 群聊 UI 三件套（气泡/泳道/决策卡）可复用 |
-| MAS 编排（orchestrator + DAG） | 可确认计划 → Celery 执行 DAG | `mas_enabled`（默认关） | 重型执行后端，与本次体验升级正交 |
-| AgentTeams Case | 跨角色工作流状态机 + 人工审批 | 默认全关 | §14 阶段 C 另行收敛，不在本文范围 |
-
-**目标**：把对话内 fan-out 升级为截图所示的「招募 → 并行 → 逐个回流 → 多波次 → 统一交付」
-完整体验，同时补上「遇决策问用户」的缺口。MAS / AgentTeams 的执行边界不变。
+> 更新日期：2026-08-09
+>
+> 文档性质：目标架构 + 状态机 + 数据契约 + 分阶段施工方案；本文不直接修改业务代码。
+>
+> 现状依据：`data/ai/README.md` §13–§15，以及当前的 `chat_service.py`、
+> `parallel_subagent_service.py`、`overdrive_runtime.py`、Agent YAML 与前端超频组件。
+>
+> 目标基线：在现有超频模式上演进，不另造一套用户入口。
 
 ---
 
-## 2. 目标形态拆解（截图工作流的 6 个关键特征）
+## 1. 最终目标
 
-从 7 张截图还原出的完整工作流：
+将现有超频模式统一为下面这一条可感知、可恢复、可审计的流程：
 
-1. **计划先行**：主 Agent 收到复合任务后，先创建 `plan.md` 作为工作记忆，再开始执行
-   （截图 1：「制定分析计划并读取文件」+ 创建 `plan.md`）。
-2. **主 Agent 先独立完成串行前置工作**：解析上传文件（PDF/PPTX/PNG）、加载 SKILL.md、
-   跑终端命令、联网/图片搜索（截图 1–3 的折叠工具链时间线）。
-3. **动态招募**：`助手招募 | 已招募 8 个助手`——子 Agent 是**临时人格**（柯恩 / 费立群 /
-   卡尔 / 萨特 / 科斯 / 苏郁 / 时毅 / 艾伦），每个有名字、头像、分工任务和一条拟人状态
-   （"正在充电" / "闲着也是闲着" / "泡了杯茶"）（截图 3–5）。
-4. **真异步并行**：招募完成后主 Agent **继续干自己的活**（Phase F 文件分析存档），
-   助手们在后台并行跑（截图 6：「8 个调研 Agent 正在并行工作，我现在等待它们的结果返回」）。
-5. **逐个消息回流 + 主 Agent 点评**：`等待助手消息` → `助手消息 | 来自 费立群`，
-   结果一个个回来，主 Agent 边收边评估（「dim02 完成，质量很高——已定位关键机制证据链」），
-   继续等其余的（截图 7）。
-6. **多波次编排 + 统一交付**：第一波 8 个调研完成后汇总，**第二波再招募 3 个写手**
-   （姜校长 / 纳什 / 唐墨，各写一章），终态显示「已下班」；底部出现 `全部文件`
-   产物面板，可预览/下载（截图 8）。
+```text
+用户发布任务
+  → 主 Agent 判断任务方向并选择最合适的规划 Agent
+  → 规划 Agent 并发研究：平台知识库 + 网络搜索 + 模型通用知识
+  → 规划 Agent 创建 plan.md 并交回主 Agent
+  → 主 Agent 审核计划，并通过弹窗请用户确认 / 修改 / 取消
+  → 用户确认后，主 Agent 独立完成必须串行的前置工作
+  → 主 Agent 按能力招募带定制人格的执行助手
+  → 主 Agent 与助手真异步并行工作
+  → 助手按完成顺序逐个回流，主 Agent 逐条点评、验收和纠偏
+  → 主 Agent 根据结果动态发起后续波次
+  → 质控、整合并统一交付产物与结论
+```
+
+这不是“先展示几张多人卡片，再在后台同步等待”的体验优化，而是超频运行时的目标语义。
+以下五项属于硬约束：
+
+1. **研究先于计划**：复杂任务不能直接生成分工；应先完成三路研究，再形成计划。
+2. **计划先确认再执行**：计划阶段仅允许只读研究和写入 `plan.md`；用户确认前不得启动正式
+   分析、代码执行、外部写操作或执行助手波次。
+3. **主 Agent 先做串行前置**：文件核验、数据契约、Skill 加载、依赖安装审批等不能伪并行。
+4. **真正异步**：助手运行时主 Agent 能继续执行自己的任务；单个助手完成即回流，不等全员。
+5. **动态多波次**：后续波次由已完成结果和计划条件触发，不在首轮把所有角色机械地一次招满。
+
+简单问答、闲聊、单一步骤且低风险的请求无需强制进入本流程；主 Agent 可以直接回答。只要任务
+进入“正式执行 / 多 Agent 协作”路径，上述确认闸门就不可绕过。
 
 ---
 
-## 3. OmicHub 现状盘点（代码已核对）
+## 2. 现状与目标差距
 
-### 3.1 已就位的地基
+### 2.1 可复用的现有能力
 
-- **执行内核同构**：`ParallelSubAgentService.run()`
-  （`src/omichub/application/services/parallel_subagent_service.py:154`）已具备：
-  `asyncio.gather` 并行 + `Semaphore` 限流（`:211/220`）、单子任务失败隔离
-  （`return_exceptions=True`，`:245`）、超时与重试（`:452/491`）、统一信封
-  `{success, llm_payload, ui_payload}` 返回。
-- **per-child 事件钩子已存在**：服务层在子任务开始/结束时回调
-  `on_event({"type": "worker_started" ...})` / `{"type": "worker_finished" ...}`
-  （`:445/510`），具备逐帧推送的底层能力。
-- **子 Agent 输出契约**：`SUBAGENT_SYSTEM_SUFFIX` 强制子任务产出自包含结论 +
-  `## 执行摘要`（`:138-148`），天然适合做「助手消息」折叠卡片的内容源。
-- **SSE 骨架已通**：后端在 fan-out 开始/结束时发 `type="subagents"` chunk
-  （`chat_service.py:5685` started / `:5729` aggregated）。
-- **前端泳道卡已点亮**（§15.2 阶段 A 已完成）：`useAgentChatStream.ts` 有
-  `case 'subagents'`，`agentHub.ts` 有 `onSubagentFanout`，复用
-  `OverdriveProgressCard.vue` 渲染 tasks[] 泳道（readonly 模式）。
-- **群聊三件套可复用**（§14.2）：`senderAgent` 气泡皮肤 + `OverdriveProgressCard.vue`
-  泳道 + `AskUserCard.vue` 决策弹窗。
-- **多波次的工具循环已支持**：fan-out 是普通工具调用，每轮限 1 次
-  （`subagent_max_children_per_message`），但工具循环可多轮 → 顺序多波天然可行。
+- `_run_overdrive_turn()` 已能读取候选 Agent、按能力生成 assignments、计算依赖波次并输出
+  `room_speech`、`overdrive_progress`、`ask_request` 和审批事件。
+- `ParallelSubAgentService` 已具备受限子循环、并发、超时、重试、失败隔离以及
+  `worker_started` / `worker_finished` 回调。
+- `OverdriveManifest` 已能原子写入 manifest、任务状态、结果、摘要和进度日志，可作为持久化
+  状态机的起点。
+- 前端已有 Manager / worker 气泡、超频进度卡、`AskUserCard` 和高风险审批卡，可复用同一套
+  群聊心智模型。
+- 普通聊天运行时已有 `knowledge_search` 与 `web_search`；专业提示词已经定义“知识库优先、
+  网络补充、模型知识只负责解释与串联”的证据纪律。
+- Agent YAML 已有 `default_role`、`capability_scope`、输入/输出契约和颜色头像，适合扩展人格字段。
 
-### 3.2 确认的差距（含代码位置）
+### 2.2 必须补齐的差距
 
-| # | 差距 | 现状代码事实 |
+| 编号 | 当前问题 | 目标状态 |
 | --- | --- | --- |
-| G1 | **阻塞式等待**：父 Agent 在 fan-out 期间干等，无法"趁助手工作时做自己的活" | `chat_service.py:5716` 处 `await` 整个 `run_parallel_subagents`；服务层 `asyncio.gather`（`:220`）等全部子任务结束后才返回 |
-| G2 | **per-child 事件被丢弃**：招募后只有 started/aggregated 两帧，中间过程黑盒 | `chat_service.py:5716` 调用 `run_parallel_subagents` 时**未传 `on_event`**，服务层的 `worker_started`/`worker_finished` 事件无人接收 |
-| G3 | **无人格层**：子 Agent 只能是已注册专家，无名字/头像/拟人状态 | `tasks[]` 每项必须指定 `agent_id`，且要求该 Agent 有 `features.subagents_spawnable: true`（`:192-196`）；schema 无 `display_name` 字段 |
-| G4 | **无逐人结果气泡**：子任务结论只以汇总文本回灌给父模型，前端看不到"助手消息 来自 X" | aggregated chunk 只带 `summary` + `progress[]`（`chat_service.py:5729-5739`） |
-| G5 | **ask_user 不冒泡**：子专家遇决策无法弹窗问用户 | `parallel_subagent_service.py:496` 标 `awaiting_input` + `needs_user_input`，但聚合路径只发 `subagents` chunk（§15.3 阶段 B 待做） |
-| G6 | **无"团队存续"概念**：多波次只能靠提示词驱动顺序调用，无跨波名册 | 每轮限 1 次 fan-out（`subagent_max_children_per_message`），无 wave/team 状态 |
-| G7 | **无聊天侧产物面板**：截图的「全部文件」缺失 | 工作区文件能力（`workspace` 工具包）有，但聊天页无统一产物面板 |
-| G8 | **并行上限偏小** | `subagent_max_parallel` 默认 ≤4（§13），截图用了 8 个 |
-| G9 | **计划先行（plan.md）无提示词约束** | 各 Agent 提示词未要求"复杂任务先写计划文件再执行" |
+| G1 | Manager 生成 assignments 后基本直接进入执行 | 先由规划 Agent 完成三路研究和 `plan.md` |
+| G2 | 缺少对具体计划版本的确认闸门 | 主 Agent 展示计划弹窗；确认版本/hash 后才可执行 |
+| G3 | 计划、运行 manifest 与用户确认没有强绑定 | manifest 记录 `plan_version`、`plan_hash`、确认人和时间 |
+| G4 | 当前单次 SSE 请求承担整个编排生命周期 | 后台运行与 SSE 连接解耦，断线后可续传 |
+| G5 | 波内虽并行，但父流程仍围绕整波 fan-out 等待 | 每个 worker 是独立后台任务，完成一个就投递一个事件 |
+| G6 | 波内已有 worker_started/finished 事件流，但父流程仍逐波等待整波完成，且结果只统一汇总、无逐条验收 | 按实际完成顺序逐条回流（可复用现有事件队列机制），Manager 对每条即时点评 |
+| G7 | Agent 只有平台注册身份，没有稳定人格协议 | 每种 Agent 有稳定的工作人格、表达风格和状态文案 |
+| G8 | 后续交叉复核存在，但多波次仍偏静态 | Manager 可基于验收结果招募下一波或定向返工 |
+| G9 | `plan.md`、结果文件、聊天消息缺少统一产物索引 | 计划、研究证据、任务产物、质控与最终交付均进入 manifest |
 
-### 3.3 与目标形态的总差异结论
+### 2.3 需要纠正的旧路线
 
-**执行内核与截图里的引擎是同构的**——并行调度、失败隔离、事件钩子、汇总信封、输出契约
-都已就位；真正缺的是三层"皮"：
-
-1. **事件层**：per-child 事件接进 SSE（G2）+ ask_user 冒泡（G5）；
-2. **人格层**：临时名字/头像/拟人状态 + 逐人气泡（G3/G4）；
-3. **异步层**（最深）：招募后主 Agent 不阻塞、消息逐个回流（G1）。
-
-第 1、2 层是低成本高性价比改动；第 3 层涉及会话流生命周期，属于重型改造。
+不再把“阻塞式 fan-out + 人格化 UI，复刻 80% 观感”视为目标闭环，也不把真异步长期放在
+“以后另行立项”。阻塞模式可以作为开发期间的兼容回退，但不能通过最终验收，也不能对用户
+宣称已实现异步团队协作。
 
 ---
 
-## 4. 实现方案
+## 3. 角色模型：平台注册 Agent + 本轮人格实例
 
-分两层施工。**第一层**不改执行模型，用现有阻塞式 fan-out 复刻约 80% 的截图观感；
-**第二层**做真异步消息回流，完全对齐 Kimi 内核。第一层全部落地并验证后再评估第二层。
+用户看到的“助手”仍然是平台已经配置的 Agent，不创建脱离权限体系的虚构执行者。人格层采用
+两层结构：
 
-### 第一层：Kimi 体验最小闭环（阻塞式 fan-out + 全事件流 + 人格化）
+1. **稳定角色人格（Agent Persona）**：跟随 `agent_id` 配置，定义工作习惯、判断偏好、表达风格
+   和边界；跨会话保持一致。
+2. **本轮助手实例（Assistant Instance）**：由稳定人格派生，包含本轮昵称、具体分工、波次、
+   状态和临时上下文；同一 Agent 可在不同波次创建多个实例，但权限不变。
 
-#### 改动 1：接通 per-child 事件流（后端，解决 G2）
+### 3.1 人格字段建议
 
-**现状**：`ParallelSubAgentService.run(..., on_event=None)` 支持事件回调，但
-`chat_service.py:5716` 的调用点没传。
+在各 Agent YAML 的 `features.persona` 下增加：
 
-**做法**：
+```yaml
+features:
+  persona:
+    archetype: "严谨的质量审计员"
+    traits: [心细, 审慎, 坚持证据, 不放过边界条件]
+    working_style: "逐项核对输入、阈值、日志和产物；先找反例，再给结论"
+    communication_style: "简洁、明确、区分通过/警告/阻断，并给出证据"
+    challenge_style: "发现证据不足时直接提出质疑，不为了团队和谐而默认通过"
+    status_lines:
+      queued: ["正在整理检查清单", "准备逐项核验"]
+      running: ["正在核对证据链", "正在检查边界条件"]
+      reviewing: ["正在复核结论"]
+      succeeded: ["审计完成"]
+```
 
-1. 在 `chat_service.py` 的 fan-out 特判分支（`:5716` 附近）构造一个 `on_event` 异步回调，
-   把服务层事件转成 SSE chunk：
-   - `worker_started` → `ChatChunk(type="subagents", metadata={"phase": "progress",
-     "tool_call_id": ..., "index": ..., "agent_id": ..., "display_name": ..., "status": "running"})`
-   - `worker_finished` → 同 type，`status` 为 `succeeded`/`failed`/`awaiting_input`，
-     并带上该子任务的 `## 执行摘要` 截取（供前端「助手消息」气泡直接渲染）。
-2. **技术难点**：`run_parallel_subagents` 是 `await` 调用，回调在 `await` 内部触发，
-   而 SSE generator 需要 `yield`。用 `asyncio.Queue` 桥接：回调里 `queue.put_nowait(event)`，
-   外层 generator 用 `asyncio.wait` 同时等 fan-out task 和 queue，有事件就 yield。
-3. **双路径约束**：legacy 循环（`chat_service.py` ~5600）与 LangGraph 路径（~6549）
-   都要改（遵守 [[langgraph-vs-legacy-dual-path]]，见 `data/ai/README.md` §11.1）。
-4. 前端 `useAgentChatStream.ts` 的 `case 'subagents'` 扩展解析 `phase: "progress"`，
-   `agentHub.ts` 的 `onSubagentFanout` 按 `toolCallId + index` 更新对应泳道/助手状态。
+人格字段只影响任务提示词、发言风格与 UI 展示，不得改变工具、权限、配额、审批规则或事实标准。
+人格不等于表演：禁止用人格为错误结论辩护，也禁止给助手虚构学历、单位或真人经历。
 
-**涉及文件**：
-- `src/omichub/application/services/chat_service.py`（两处）
-- `frontend/src/composables/useAgentChatStream.ts`
-- `frontend/src/stores/agentHub.ts`
-- `tests/unit/test_parallel_subagent_service.py`（补事件流测试）
+### 3.2 各类 Agent 的默认人格方向
 
-#### 改动 2：人格层（后端 schema + 提示词，解决 G3）
+| Agent | 人格方向 | 典型行为 |
+| --- | --- | --- |
+| 主 Agent / Manager | 冷静、负责、善于协调 | 控制范围、解释决策、维护计划版本、处理冲突 |
+| `agent-general` | 好奇、结构化、善于追问 | 梳理目标、连接跨领域信息、补全数据契约 |
+| `agent-data` | 谨慎、有条理、重视可追溯性 | 核验文件、元数据、样本对应和输入完整性 |
+| `agent-qc` | 心细严谨、怀疑精神强 | 主动找反例、验证阈值与证据，宁可阻断也不误放行 |
+| `agent-delivery` | 条理清晰、耐心、结果导向 | 对齐清单、路径、版本、复现说明和风险披露 |
+| `agent-code` | 务实、精确、偏好可复现 | 先读环境再编码，小步验证，完整保留日志 |
+| `agent-viz` | 审美敏锐、克制、关注信息表达 | 优先可读性与统计诚实，不用装饰掩盖数据问题 |
+| `agent-rnaseq` | 方法严谨、重视实验设计 | 先确认分组和批次，再讨论统计模型与生物学解释 |
+| `agent-atacseq` | 系统、注重信号质量 | 紧盯 TSS、FRiP、片段周期性和峰集可比性 |
+| `agent-scrna*` | 细致、对异质性敏感 | 区分技术噪声、批次、双细胞与真实生物差异 |
+| `agent-mcp-builder` | 工程化、耐心、接口意识强 | 明确 schema、错误语义、兼容性和测试样例 |
+| `shania` | 亲和、敏锐、鼓励式 | 保持温度，但不弱化事实、风险和执行边界 |
 
-**原则**：人格是纯展示层，不触碰执行安全边界——底层执行者仍是已注册、有
-`subagents_spawnable` 的专家 Agent，权限模型不变。
+这些是默认值，后续允许管理员调整；主 Agent 只能为本轮增加 `persona_context`，不得覆盖稳定
+人格的安全边界。例如，质控 Agent 可以被指定“重点检查批次效应”，但不能被要求“更宽松地通过”。
 
-**做法**：
+### 3.3 本轮助手实例契约
 
-1. `parallel_subagents` 工具的 `tasks[]` schema 增加可选字段：
-   - `display_name: string`（助手昵称，如"柯恩"；由父模型生成）
-   - `persona_hint: string`（一句话人格/角色描述，仅用于展示和注入子任务提示词开头）
-2. `parallel_subagent_service.py` 的 `_validate_tasks` 透传这两个字段；
-   `_run_child` 把它们拼进子任务 prompt 前缀（"你本轮以'柯恩'的身份工作，负责……"），
-   并带进 `worker_started`/`worker_finished` 事件与 `ui_payload.progress`。
-3. 同一 `agent_id` 允许在多个任务中复用（8 个调研维度 = 8 个 `agent-general` 实例
-   各带不同 task + 不同 display_name）——核对 `_validate_tasks` 确认无 agent_id 去重逻辑，
-   有则放开。
-4. 提示词规范：在 `data/ai/prompts/general.md`（及 `router.md`）增加编排段落：
-   - 复杂复合任务**先写 `plan.md`**（工作区写文件工具已有）再执行（解决 G9）；
-   - 招募助手时为每个子任务起一个简洁中文名 + 一句话分工；
-   - 收到单个助手结果后用一句话点评质量，再决定继续等还是行动；
-   - 全部回流后汇总，需要时发起下一波招募（如"调研波 → 写作波"）。
-5. 提示词体积遵守 §10 护栏：编排规范控制在 ~30 行内，超出的下沉到 shared 或 Skill。
+```json
+{
+  "assistant_instance_id": "asst:<run_id>:<wave_id>:<index>",
+  "agent_id": "agent-qc",
+  "display_name": "衡准",
+  "persona_version": "agent-qc@1",
+  "persona_context": "本轮重点审计批次效应与交付文件完整性",
+  "task_id": "qc-final",
+  "wave_id": "wave-2",
+  "status": "recruited|queued|running|reviewing|succeeded|failed|awaiting_input",
+  "task_summary": "独立复核分析证据与产物",
+  "created_at": "...",
+  "finished_at": null
+}
+```
 
-**涉及文件**：
-- `src/omichub/application/services/parallel_subagent_service.py`（schema + validate + child prompt）
-- `data/ai/prompts/general.md`、`data/ai/prompts/router.md`
-- `tests/unit/test_agent_config_consistency.py` 不需改（不动白名单）
-
-#### 改动 3：ask_user 冒泡（后端，解决 G5，= §15.3 阶段 B 原方案）
-
-按 `data/ai/README.md` §15.3 的既定方案实施：
-
-1. 在发 `subagents.aggregated` 之前，检测 `fanout_envelope.ui_payload.progress` 中是否存在
-   `status in {"awaiting_input", "approval_pending"}` 的子任务；
-2. 命中则从 `llm_payload.results` 提取对应子任务的 `user_request` 字段，构造
-   `ask_request` chunk（复用 `chat_service.py:5911/6549` 的既有格式）额外 yield，
-   并暂停本轮 fan-out 等待用户回答；
-3. 用户答案经现有 `answerAskRequest`（`agentHub.ts`）作为下一条 user 消息回灌续跑；
-4. legacy + LangGraph 双路径都改；
-5. `tests/unit/test_parallel_subagent_service.py` 加负路径测试。
-
-#### 改动 4：花名册 + 逐人气泡 UI（前端，解决 G3/G4 展示侧）
-
-1. **「助手招募」花名册卡片**：在阶段 A 的只读泳道卡基础上演进为新组件
-   `SubagentRosterCard.vue`（或给 `OverdriveProgressCard.vue` 加 `roster` 模式）：
-   - 每个助手一行：头像（按 `display_name` hash 生成几何头像，无名字时回退 Agent 头像）、
-     昵称、一句话任务、状态；
-   - running 状态显示轮播的拟人状态梗（"正在充电" / "泡了杯茶" / "正在摸鱼"，前端本地
-     随机，纯装饰）；
-   - 终态显示「已下班」（succeeded）/「请假了」（failed）。
-2. **「助手消息」气泡**：`worker_finished` 事件到达时，在消息流插一条可折叠气泡
-   「助手消息 | 来自 {display_name}」，内容 = 该子任务的 `## 执行摘要`；
-   折叠态只显示标题行，展开看全文。
-3. **主 Agent 点评**：由提示词驱动（改动 2.4），模型在每个助手结果回流后自然输出
-   一句话点评，无需新组件。
-
-**涉及文件**：
-- `frontend/src/components/ai-chat/SubagentRosterCard.vue`（新增或改造）
-- `frontend/src/components/ai-chat/types.ts`（`SubagentFanoutEvent` 扩展 display_name/status）
-- `frontend/src/composables/useAgentChatStream.ts`、`frontend/src/stores/agentHub.ts`
-
-#### 改动 5：并行上限与配置（解决 G8）
-
-- 将 `subagent_max_parallel` 默认值从 ≤4 提升到 8（对齐截图规模），
-  `subagent_max_concurrent`（信号量）保持独立可调，避免资源打满；
-- 确认管理端「设置 → 平台设置」暴露该配置；
-- `.env.example` 同步注释说明。
-
-#### 第一层验收标准
-
-- 开启 `subagent_fanout_enabled`，让通用助手处理一个"文件解析 + 多维调研"复合任务；
-- 页面依次出现：`plan.md` 创建工具调用 → 串行工具链 → 「助手招募」花名册（≥4 个
-  有名有姓的助手，状态梗轮播）→ 每个助手完成时出现「助手消息 | 来自 X」气泡 + 花名册
-  对应行变「已下班」→ 主 Agent 逐个点评 → 汇总后可再发起一波招募；
-- 某子任务触发 `ask_user` 时前端弹 `AskUserCard`，回答后该子任务续跑至终态；
-- 回归：`uv run pytest tests/unit/test_parallel_subagent_service.py
-  tests/unit/test_agent_config_consistency.py -q` 全绿；
-  `cd frontend && npx vue-tsc --noEmit` exit 0；
-- 改完重启 `docker restart omichub-web`（[[omichub-web-no-autoreload]]）。
-
-### 第二层：真异步消息回流（对齐 Kimi 内核，解决 G1）
-
-第一层上线验证后再立项。设计要点：
-
-1. **非阻塞招募**：`parallel_subagents` 增加 `async: true` 模式——立即返回
-   `{run_id, assistants: [...]}`，子任务转入后台（进程内 asyncio task 或 Celery），
-   主 Agent 工具调用当场结束，继续自己的循环（写文件、搜索、总结）。
-2. **消息回流通道**：后台子任务完成事件写入会话事件流，以 `room_speech`（senderAgent =
-   助手人格）或 `subagents` chunk 推给前端——即截图的「助手消息 | 来自 X」逐条到达；
-   遵守 §14.4 统一 SSE 事件契约，不新造 chunk 类型。
-3. **等待工具**：新增 `wait_assistants(run_id, timeout)` 工具，主 Agent 显式
-   「等待助手消息」，返回当前已完成的助手结论列表（= 截图的「等待助手消息」帧）。
-4. **跨波团队存续**：`run_id` 命名的助手团队在会话内存续，第二波招募可引用第一波
-   结论（写入 `plan.md` 或上下文摘要传入）。
-5. **风险点**：会话流生命周期（用户中途发新消息/断开重连时后台任务的归属与回收）、
-   消息落库顺序、并发写同一会话 timeline——需要专门设计评审，建议与 §14 阶段 C/D
-   （超频房间统一）合并立项，避免两套异步机制并存。
-
-### 第二层验收标准
-
-- 招募后主 Agent 在助手运行期间能继续输出文本/调用其他工具；
-- 助手结果逐个以群聊气泡形式到达，无需等全部完成；
-- 刷新页面后花名册与已回流消息可恢复（事件持久化）；
-- 中断/重连场景后台任务可回收或续传。
+昵称可由系统从受控名称池生成，或直接显示 Agent 名称；同一 run 内必须唯一并稳定，刷新页面后
+不能变化。状态文案从 Persona 配置中确定性选择，避免每次刷新随机变化。
 
 ---
 
-## 5. 落地顺序与工作量估算
+## 4. 完整工作流
 
-| 顺序 | 项 | 层 | 侧 | 预估 |
-| --- | --- | --- | --- | --- |
-| 1 | 改动 1：接通 per-child 事件流 | 一 | 后端为主 | 0.5–1 天 |
-| 2 | 改动 2：人格层 schema + 提示词 | 一 | 后端 + 配置 | 0.5 天 |
-| 3 | 改动 3：ask_user 冒泡（§15.3 阶段 B） | 一 | 后端 | 0.5–1 天 |
-| 4 | 改动 4：花名册 + 逐人气泡 UI | 一 | 前端 | 1–2 天 |
-| 5 | 改动 5：并行上限配置 | 一 | 配置 | 0.5 小时 |
-| 6 | 第一层联调验收 | 一 | 全栈 | 0.5 天 |
-| 7 | 第二层：异步消息回流（含设计评审） | 二 | 全栈 | 另行立项 |
+### 阶段 A：任务接收、方向识别与规划 Agent 选择
 
-第 1 项是地基（事件不通则 UI 无数据），必须先做；2/3 可并行；4 依赖 1 的事件格式。
+主 Agent 首先判断：任务是否需要正式执行或多 Agent 协作。如果需要，则只选择完成计划所需的
+最小规划集合：
+
+- 单领域任务：选择最匹配的领域 Agent 作为 `lead_planner`；
+- 跨领域任务：一个领域 Agent 担任 `lead_planner`，必要时增加最多两个只读规划顾问；
+- 目标或数据模态不明确：先由 `agent-general` 完成 intake，使用 `ask_request` 补齐真正影响
+  路线的信息；
+- 不能为了显示“团队感”而固定套用通用、代码、可视化、质控四件套。
+
+选择先看 `capability_scope`、输入/输出契约、工具可用性和任务方向，再附加人格；不得反过来因为
+某个人格“看起来合适”而选择能力不匹配的 Agent。
+
+### 阶段 B：三路研究与证据合并
+
+规划 Agent 必须同时覆盖三类信息源：
+
+1. **平台知识库**：调用 `knowledge_search`，优先查团队已经审核或沉淀的方法、SOP 与经验。
+2. **网络搜索**：调用 `web_search`，补充最新论文、指南、软件版本和知识库未覆盖部分。
+3. **模型通用知识**：不把它伪装成一个搜索工具；它仅用于生成候选框架、解释概念、发现还需
+   检索的问题和综合前两路证据。凡无法由检索证据支持的内容，必须标为“通用知识/待验证推断”。
+
+知识库检索与网络检索应由研究调度器并发发起；模型综合在两路结果返回后进行。若某一路不可用，
+计划仍可生成，但必须在证据账本和“限制”中记录失败，不得伪造已搜索。
+
+研究结果统一为 `EvidenceItem`：
+
+```json
+{
+  "evidence_id": "ev-001",
+  "source_type": "knowledge_base|web|model_knowledge",
+  "title": "...",
+  "locator": "kb://... 或 https://...；模型知识留空",
+  "retrieved_at": "...",
+  "freshness": "current|possibly_stale|not_applicable",
+  "claim": "这条证据支持什么",
+  "confidence": "high|medium|low",
+  "used_in_plan_sections": ["4.2", "6"]
+}
+```
+
+### 阶段 C：创建并交付 `plan.md`
+
+`lead_planner` 根据三路研究创建 `plan.md`，然后发送 `plan_ready` 内部事件给主 Agent。建议路径：
+
+```text
+output/overdrive/<session_id>/<run_id>/plan.md
+```
+
+主 Agent 不直接照单执行，必须先完成一次管理审查：检查目标是否覆盖、依赖是否正确、串并行是否
+合理、Agent 能力是否匹配、风险和验收标准是否清楚、证据是否可追溯。审查失败则退回规划 Agent
+修订；审查通过后冻结版本。
+
+`plan.md` 必须包含以下章节：
+
+```markdown
+# 执行计划
+
+## 1. 用户目标与最终交付物
+## 2. 已确认输入
+## 3. 假设、限制与待确认事项
+## 4. 研究与证据摘要
+### 4.1 平台知识库
+### 4.2 网络资料
+### 4.3 模型通用知识与待验证推断
+## 5. 主 Agent 串行前置工作
+## 6. Agent 选择与理由
+## 7. 执行 DAG 与波次
+## 8. 每个任务的输入、输出、工具、超时与重试
+## 9. 风险、审批点与停止条件
+## 10. 质量门与验收标准
+## 11. 交付目录
+## 12. 计划版本与变更记录
+```
+
+计划不是泛泛的待办列表。每个执行任务至少需要 `task_id`、`agent_id`、`depends_on`、输入、输出、
+完成判据、超时、重试和是否需要审批；波次由依赖关系计算，不由文本顺序猜测。
+
+### 阶段 D：主 Agent 弹窗请求确认
+
+主 Agent 通过现有 `ask_request` 事件发送 `kind: "plan_confirmation"`，前端用
+`PlanConfirmationCard`（可复用 `AskUserCard` 容器）展示：
+
+- 计划标题、摘要、预计波次数、预计参与 Agent；
+- 串行前置工作、主要风险、审批点与最终交付物；
+- `plan.md` 预览/打开入口；
+- 三个动作：**确认并执行**、**提出修改**、**取消任务**。
+
+确认事件必须携带：
+
+```json
+{
+  "kind": "plan_confirmation",
+  "run_id": "...",
+  "plan_path": ".../plan.md",
+  "plan_version": 1,
+  "plan_hash": "sha256:...",
+  "actions": ["approve", "revise", "cancel"]
+}
+```
+
+- `approve`：记录确认人、时间、版本和 hash，进入串行前置阶段；
+- `revise`：将用户意见交回规划 Agent，生成新版本，再次由主 Agent 审核并弹窗确认；
+- `cancel`：终止 run，保留 `plan.md` 和研究记录，不启动任何执行任务。
+
+`revise` 循环必须有上限（默认 3 轮，可在 `_overdrive_limits.yaml` 配置）。达到上限后主 Agent
+明确告知用户当前分歧点，请用户选择确认当前版本或取消，禁止规划 Agent 与用户之间无限往返。
+
+用户确认的是一个不可变快照。确认后若发生会改变目标、输入、成本/耗时等级、Agent 权限、关键参数、
+质量门或交付物的实质变更，必须生成新版本并重新确认。仅重试、文案修正和不改变语义的调度优化可
+记录到变更日志后继续。
+
+### 阶段 E：主 Agent 独立完成串行前置工作
+
+计划确认后，主 Agent 先独立完成无法安全并行的前置项，例如：
+
+- 读取并核验用户上传文件、目录、格式、列名、样本分组和路径；
+- 加载本任务必需的 `SKILL.md`、领域约束与工具说明；
+- 固化数据契约、输出目录和共享上下文；
+- 检查运行环境、配额和依赖；需要写操作或高风险工具时走现有审批卡；
+- 创建共享 artifact 索引和每个下游任务的最小上下文包。
+
+此阶段的输出是可验证的 `preflight_result`。只有所有硬前置通过，才可招募执行助手。失败时主 Agent
+应说明具体阻塞，必要时向用户提问；不得让助手在缺少输入时各自猜测。
+
+### 阶段 F：按能力招募人格化助手
+
+主 Agent 从已确认计划的下一波 ready tasks 中招募助手，为每个实例绑定：Agent、稳定 Persona、
+本轮昵称、任务、输入引用、输出契约、完成标准、超时与重试策略。
+
+前端显示“助手招募”卡片：头像、昵称、平台角色、人格短句、具体任务和当前状态。招聘卡是运行状态
+的投影，不是静态装饰；刷新后必须从 manifest 恢复。
+
+默认并行上限由系统资源和模型配额控制，不以截图中的人数为固定目标。相互依赖或会写同一文件的
+任务不得放在同一波；共享写目录时必须分配独占路径，最终由主 Agent 合并。
+
+### 阶段 G：主 Agent 与助手真异步并行
+
+招募后，每个助手作为独立后台 job 提交。提交接口立即返回 `assistant_instance_id` 和 `job_id`，
+不能在当前聊天生成器中 `await asyncio.gather(...)` 直到整波完成。
+
+与此同时，主 Agent 执行计划中标记为 `manager_tasks` 的工作，例如整理用户材料、维护证据账本、
+准备整合框架或处理不依赖助手结果的部分。主 Agent 没有可做工作时可以进入等待状态，但等待是
+显式状态，不是阻塞整个会话连接。
+
+真异步必须满足：
+
+- worker 生命周期不依赖一次 SSE 连接；
+- 用户刷新或临时断线后任务继续，重连可按事件游标补发；
+- 用户可继续查看进度；是否允许同一会话追加新指令由 run 状态机串行仲裁；
+- pause / resume / terminate 会持久化，并由后台 worker 在安全点读取；
+- 同一任务事件使用单调递增序号，保证消息落库与 UI 顺序可重建。
+
+### 阶段 H：逐个回流与主 Agent 点评
+
+助手完成后立即写入 artifact、更新 manifest，并发出 `assistant_result_ready`。事件按**完成顺序**
+进入房间，而不是等整波结束后按 assignment 下标批量展示。
+
+每个回流包含：
+
+- “助手消息｜来自 {display_name}”；
+- 任务结论和摘要；
+- 产物路径、来源与执行日志；
+- 自检结果、置信度、限制和未完成项；
+- 状态：成功、失败、等待用户输入或等待审批。
+
+主 Agent 对每条结果单独产生一条短点评，至少做以下判断：
+
+1. 是否满足该任务完成判据；
+2. 证据和产物是否真实可用；
+3. 与已回流结果是否冲突；
+4. 接受、要求原助手返工、招募复核助手，或暂停问用户。
+
+点评不能只有“质量很高”之类礼貌性文案，应指出接受依据或具体缺口。点评结果写入 manifest 的
+`manager_reviews[]`，成为后续波次的调度依据。
+
+### 阶段 I：动态多波次编排
+
+当一条结果通过点评后，状态机重新计算 ready tasks；不需要等同波其他任务全部完成，就可以启动
+只依赖该结果且资源不冲突的下游任务。为了 UI 可理解性，仍用 `wave_id` 展示逻辑波次，但调度内核
+采用事件驱动 DAG。
+
+典型波次：
+
+```text
+研究规划波（确认前，只读）
+  → 主 Agent 串行前置
+  → 第一执行波：多个领域分析 / 资料整理并行
+  → 第二波：代码实现、可视化或针对性补证
+  → 第三波：独立质控与交叉复核
+  → 第四波：交付报告与产物清单
+```
+
+后续波次可重用已有 Agent，也可招募新 Agent。任何新任务都必须能追溯到已确认 plan 的任务或
+允许的非实质变更；超出计划范围则先修订计划并重新向用户确认。
+
+### 阶段 J：统一交付
+
+全部必需任务完成并通过质量门后，主 Agent 统一交付：
+
+- 回答用户最初目标的综合结论，而不是简单拼接各助手消息；
+- `plan.md` 最终版本及变更记录；
+- 知识库/网络/模型知识的证据账本；
+- 实际产物、脚本、日志、图表、质控结论和失败项；
+- 每项产物的生成 Agent、版本、路径和复现说明；
+- 假设、限制、未完成事项和建议下一步。
+
+前端“全部文件”面板从 manifest 的 artifact index 渲染，支持预览和下载。只有通过质量门且路径
+真实存在的文件才进入正式交付区；草稿和失败产物进入“过程文件”。
 
 ---
 
-## 6. 注意事项与约束
+## 5. 运行状态机
 
-1. **双路径同步**：凡涉及工具调用副作用 / SSE 的改动，legacy 与 LangGraph 两条路径
-   都要改（`data/ai/README.md` §11.1，[[langgraph-vs-legacy-dual-path]]）。
-2. **SSE 契约**：逐人进度复用 `type="subagents"`（新增 `phase: "progress"`），
-   助手发言复用 `room_speech`，决策询问复用 `ask_request`——不新造前端不认识的
-   chunk 类型（§14.4）。
-3. **安全边界不变**：人格层只是展示与提示词包装，子任务执行者仍受
-   `subagents_spawnable` 白名单 + 受限工具集（C2 防递归 fan-out）约束；不放开
-   agent_id 注册要求。
-4. **权限与配额**：`subagent_max_parallel` 提升到 8 后关注模型侧 RPM/配额压力，
-   必要时配合 `subagent_max_concurrent` 限流。
-5. **改完重启**：`docker restart omichub-web`（omichub-web 无热重载）。
-6. **文档同步**：第一层落地后更新 `data/ai/README.md` §15（实现进度），并将本文档
-   相关结论合并进 §13.5（可优化项）的勾选状态。
+建议将一次超频任务建模为持久化 `OverdriveRun`：
+
+```text
+RECEIVED
+  → INTAKE_REQUIRED → RECEIVED
+  → RESEARCHING
+  → PLAN_DRAFTED
+  → PLAN_REVIEWING
+  → AWAITING_PLAN_CONFIRMATION
+      ├─ revise → RESEARCHING / PLAN_DRAFTED
+      ├─ cancel → CANCELLED
+      └─ approve → SERIAL_PREFLIGHT
+  → RECRUITING
+  → RUNNING
+      ↔ WAITING_FOR_RESULTS
+      ↔ AWAITING_USER_INPUT
+      ↔ AWAITING_APPROVAL
+      ↔ PAUSED
+      → REPLANNING（实质变更后回到 AWAITING_PLAN_CONFIRMATION）
+  → QUALITY_REVIEW
+      ├─ repair → RECRUITING / RUNNING
+      └─ pass → DELIVERING
+  → COMPLETED
+
+任意运行态 → TERMINATING → TERMINATED
+不可恢复错误 → FAILED
+```
+
+关键不变量：
+
+- 没有 `approved_plan_hash`，不能进入 `SERIAL_PREFLIGHT` 之后的状态；
+- `assistant_instance` 只能引用已确认计划中的 task，或已记录的非实质修订；
+- `COMPLETED` 前所有 required tasks 必须成功或有用户明确豁免，质量门必须通过；
+- `CANCELLED`、`TERMINATED`、`FAILED` 不得被最终文案包装为成功；
+- 状态转换、用户确认、Manager 点评和工具审批均写入审计事件。
+
+---
+
+## 6. 核心数据与文件契约
+
+### 6.1 目录建议
+
+```text
+output/overdrive/<session_id>/<run_id>/
+├── plan.md
+├── plan.v1.md
+├── evidence.json
+├── manifest.json
+├── events.jsonl
+├── control.json
+├── preflight/
+├── tasks/<task_id>/
+│   ├── result.md
+│   ├── summary.md
+│   ├── progress.log
+│   └── artifacts.json
+├── reviews/
+└── delivery/
+```
+
+`plan.md` 始终指向当前版本；每次确认过的版本另存 `plan.vN.md`，禁止原地覆盖已确认快照。
+`plan_hash` 对 UTF-8 规范化（换行统一为 LF、去除末尾空白）后的文件字节计算 sha256，避免格式化
+抖动导致确认意外失效。
+
+### 6.2 manifest v2 必要字段
+
+```json
+{
+  "version": 2,
+  "run_id": "...",
+  "session_id": "...",
+  "status": "AWAITING_PLAN_CONFIRMATION",
+  "root_request": "...",
+  "lead_planner_agent_id": "agent-rnaseq",
+  "research": {
+    "knowledge_base": {"status": "succeeded", "evidence_ids": ["ev-001"]},
+    "web": {"status": "succeeded", "evidence_ids": ["ev-002"]},
+    "model_knowledge": {"status": "completed", "evidence_ids": ["ev-003"]}
+  },
+  "plan": {
+    "path": ".../plan.md",
+    "version": 1,
+    "hash": "sha256:...",
+    "status": "awaiting_confirmation",
+    "approved_by": null,
+    "approved_at": null
+  },
+  "manager_tasks": [],
+  "tasks": [],
+  "assistant_instances": [],
+  "manager_reviews": [],
+  "artifact_index": [],
+  "event_cursor": 0
+}
+```
+
+### 6.3 统一事件投影
+
+继续复用现有前端认识的 SSE 类型，领域事件先持久化，再投影：
+
+| 领域事件 | SSE 投影 | UI |
+| --- | --- | --- |
+| `research_started/completed` | `overdrive_progress` | 三路研究进度 |
+| `plan_ready` | `room_speech` + `overdrive_progress` | 规划 Agent 交付计划 |
+| `plan_confirmation_requested` | `ask_request(kind=plan_confirmation)` | 计划确认弹窗 |
+| `assistant_recruited/started` | `overdrive_progress` | 招募花名册与泳道 |
+| `assistant_result_ready` | `room_speech` | 单助手回流气泡 |
+| `manager_review_ready` | `room_speech` | 主 Agent 点评 |
+| `tool_approval_requested` | `overdrive_approval_request` | 高风险操作审批 |
+| `run_completed/failed` | `overdrive_progress` + `room_speech` | 最终状态与交付 |
+
+不要把计划确认和高风险工具审批混为一件事：前者确认“执行什么”，后者批准“某个具体危险动作”。
+
+---
+
+## 7. 后端改造建议
+
+### 7.1 从巨型 turn 函数拆出职责
+
+当前 `_run_overdrive_turn()` 同时承担 intake、规划、波次计算、worker 执行、消息持久化、审批和
+总结。建议拆为：
+
+- `OverdrivePlanningService`：选择规划 Agent、三路研究、生成/修订 `plan.md`；
+- `OverdrivePlanValidator`：校验能力、DAG、输入输出契约、风险、质量门与路径；
+- `OverdriveRunService`：创建 run、计划冻结、用户确认与状态转换；
+- `OverdriveScheduler`：事件驱动计算 ready tasks、资源冲突和波次；
+- `AssistantJobService`：提交/暂停/恢复/终止独立 worker job；
+- `OverdriveEventStore`：持久化递增事件并支持 cursor 重放；
+- `OverdriveRoomProjector`：把领域事件映射成现有 SSE chunk；
+- `ManagerReviewService`：逐条验收回流结果并做返工/复核决策；
+- `DeliveryAssembler`：统一产物索引、质量结果和最终报告。
+
+`OverdriveManifest` 可升级为这些服务的文件投影，但并发写时不能继续依赖无锁的“整文件读改写”。
+数据库或 Redis 中保存权威状态与事件序号，文件 manifest 作为可读快照；至少要使用 run 级锁和
+原子 compare-and-set，避免多个 worker 覆盖状态。
+
+### 7.2 真异步任务模型
+
+推荐优先复用现有 Celery/Redis 基础设施承载长生命周期 worker；短任务也可进入同一 job 协议，
+避免进程内 task 在 web 重启后丢失。每个 job 只负责一个 `task_id + attempt`：
+
+```text
+submit(task snapshot) → job_id
+worker_started → append event
+worker_progress → append event
+worker_result persisted → assistant_result_ready
+or worker_failed / awaiting_input / awaiting_approval
+```
+
+主 Agent 不需要一直占用一个 LLM 流。`assistant_result_ready` 到达后，由编排 worker 触发一次短的
+Manager review turn，持久化点评，再决定下一任务。这样“逐个回流 + 点评”可跨断线、跨进程恢复。
+
+点评必须有成本策略，不能每条结果都无差别消耗一次完整 LLM 调用：
+
+- 规则快速通道：任务成功、完成判据全部命中、产物路径校验通过且无冲突时，可用模板化点评直接
+  接受，并标注 `review_mode: rule`；
+- LLM 点评：仅在失败、判据未命中、与其他结果冲突、产物可疑或计划要求交叉复核时触发；
+- 每条点评的 token 与延迟预算写入 `_overdrive_limits.yaml`，超限降级为规则点评并在审计中记录。
+
+### 7.3 规划阶段的三路并发
+
+增加内部 `ResearchBundleService`，并发执行 `knowledge_search` 与 `web_search`，然后把结果和明确
+标注的模型通用知识交给 `lead_planner`。这里的并发是研究 IO 并发，不允许把模型知识伪造成搜索
+结果。必须保存原始检索结果的最小审计信息和失败状态。
+
+研究阶段的每路超时、最大证据条数、总墙钟预算纳入 `_overdrive_limits.yaml` 统一管理；单路超时
+不阻塞计划生成，按“降级并记录”处理，防止一路搜索挂起拖住整个确认弹窗。
+
+### 7.4 Agent 选择与人格注入
+
+- Agent catalog 在现有能力画像上增加 `persona_version` 与 persona 摘要；
+- Manager 输出 `agent_id` 与选择理由，不直接自由生成权限；
+- 后端根据 `agent_id` 解析稳定 Persona，再创建助手实例和昵称；
+- 子任务提示词由“稳定 Agent 系统提示词 + Persona + 本轮任务契约 + 最小共享上下文”组成；
+- Persona 只在服务端可信配置中读取，用户文本不得直接覆盖。
+
+### 7.5 恢复、幂等与并发控制
+
+- 所有 command 带 `run_id`、`command_id`，重复提交必须幂等；
+- worker result 使用 `(run_id, task_id, attempt)` 唯一键；
+- 事件使用 `(run_id, sequence)` 唯一键；
+- 重连接口支持 `after_sequence`，前端补发遗漏事件；
+- 终止只在安全点生效，已产生的产物保留但标为过程文件；
+- 会话中新用户消息若属于当前 run 的确认/审批/补充则路由到该 run，否则由主 Agent提示先暂停、
+  终止当前 run 或创建新 run，禁止两个 run 并发写同一工作目录。
+
+---
+
+## 8. 前端改造建议
+
+1. **研究进度卡**：分别展示知识库、网络和模型综合状态；某一路失败时明确降级。
+2. **规划 Agent 消息**：显示“计划已交给主 Agent 审核”，附 `plan.md` 路径和证据数量。
+3. **`PlanConfirmationCard`**：计划摘要、风险、Agent、波次、交付物、预览入口，以及确认/修改/取消。
+4. **人格化招募卡**：稳定昵称、头像、平台角色、人格短句、任务和真实状态。
+5. **逐条消息回流**：按事件序列追加，不在 aggregated 时一次性补齐；回流消息下紧跟 Manager 点评。
+6. **波次时间线**：区分规划、前置、执行、复核和交付波；允许后续动态增加。
+7. **全部文件面板**：按正式交付、过程文件、失败产物分类，显示来源 Agent 和质控状态。
+8. **重连恢复**：页面从 run snapshot + event cursor 重建，不能依赖内存中的当前消息对象。
+
+状态文案应自然但克制，例如“衡准正在核对证据链”；不要使用与失败、审批或等待状态不符的随机
+玩笑。人格体验来自稳定工作方式和表达，而不仅是名字与头像。
+
+---
+
+## 9. 分阶段施工顺序
+
+每一阶段都服务于最终真异步闭环；不得把阶段性 UI 模拟标记为最终完成。
+
+### P0：契约与迁移地基
+
+- 定义 `OverdriveRun`、manifest v2、计划版本/hash、事件序号和 Assistant Instance schema；
+- 为 Agent YAML 增加 `features.persona`，先覆盖 Manager、general、data、qc、code、viz、delivery；
+- 为旧 manifest 提供只读兼容或 v1 → v2 迁移；
+- **明确双引擎收敛路径**：当前部分 Agent（如 `agent-qc`）声明 `engine: langgraph`，P0 必须先
+  决策——新的 `OverdriveRunService` 是作为唯一权威编排器包装两种引擎，还是仅替换 chat 循环。
+  未决策前不得进入 P2，避免异步编排在两条路径上各写一份；
+- **明确权威状态存储**：在数据库表（`overdrive_runs` / `overdrive_events`，走 alembic 迁移）与
+  Redis 之间选定事件序号与 run 状态的权威来源，文件 manifest 只作可读快照。
+
+### P1：研究 → `plan.md` → 用户确认闭环
+
+- 实现规划 Agent 选择、三路研究、证据账本和计划校验；
+- 写入版本化 `plan.md`；
+- 实现 `ask_request(kind=plan_confirmation)` 与前端确认卡；
+- 后端状态机硬性阻止未确认执行。
+
+### P2：串行前置与持久化异步运行时
+
+- 抽出 preflight；
+- 将 worker 改为独立、可恢复 job；
+- 实现事件存储、cursor 补发、pause/resume/terminate 与幂等。
+
+### P3：人格化招募、逐条回流与 Manager 点评
+
+- 创建 Assistant Instance 和花名册；
+- worker 单个完成即落库并投影 `room_speech`；
+- 事件触发 Manager review，支持接受、返工、复核和问用户。
+
+### P4：动态多波次、质量门与统一交付
+
+- 事件驱动 DAG 解锁下游任务；
+- 接入独立 QC 和修复波；
+- 构建 artifact index、全部文件面板和最终交付报告；
+- 完成断线、重启、失败、取消与审批的端到端验证。
+
+建议用新 feature flag 小流量启用，但同一个 run 不能在 v1/v2 编排器之间中途切换。兼容回退必须
+在 UI 明示“同步兼容模式”，且不计入真异步验收。
+
+---
+
+## 10. 测试与验收标准
+
+### 10.1 单元与契约测试
+
+- 任务方向能选择最小且能力匹配的规划 Agent；
+- 知识库和网络研究并发执行，失败时证据状态准确；
+- 模型知识不会被标成 KB 或 Web 来源；
+- `plan.md` 缺章节、DAG 循环、未知 Agent、缺输出契约时校验失败；
+- plan hash 与文件内容一致，已确认版本不可覆盖；
+- 未确认计划无法提交 worker；修改实质字段会使原确认失效；
+- revise 达到上限后不再生成新版本，用户只能确认或取消；
+- 规则快速通道点评不触发 LLM 调用，且产物校验失败时自动升级为 LLM 点评；
+- Persona 注入不改变工具白名单和审批策略；
+- task、command、result 和 event 均满足幂等与单调序号。
+
+### 10.2 集成测试
+
+- 用户任务 → 三路研究 → `plan.md` → 确认卡；确认前无执行工具调用；
+- 点击“修改”后生成 v2，再次确认；点击“取消”后无 worker job；
+- 确认后先完成 preflight，再出现招募卡；
+- 两个助手运行时主 Agent 同时完成自己的 manager task；
+- 快助手先回流并获得点评，不等待慢助手；
+- 单条结果解锁下游任务，形成第二波；
+- worker 触发 ask_user / 工具审批时只暂停受影响分支；
+- web 服务重启和 SSE 断线后，任务不丢且消息按序恢复；
+- 终止后不再招募新助手，已产物标为过程文件。
+
+### 10.3 端到端用户验收场景
+
+用一个“读取真实文件 + 多维研究 + 代码分析 + 可视化 + QC + 报告”的复合任务验证，页面顺序必须是：
+
+```text
+主 Agent 接单并说明规划角色
+→ 三路研究进度
+→ 规划 Agent 交付 plan.md
+→ 主 Agent 计划确认弹窗
+→ 用户确认
+→ 主 Agent 串行前置与真实核验结果
+→ 人格化助手招募
+→ 主 Agent 与助手同时工作
+→ 助手 A 回流 → 主 Agent 具体点评
+→ 助手 B 回流 → 主 Agent 具体点评
+→ 根据结果动态出现下一波
+→ 独立质控
+→ 统一交付 + 全部文件
+```
+
+另外必须验证：计划修改、计划取消、一路搜索失败、单 worker 失败重试、等待用户输入、高风险审批、
+断线重连、web 进程重启、用户终止和部分成功。仅“看起来像多人聊天”不能通过验收。
+
+### 10.4 完成定义（Definition of Done）
+
+只有同时满足以下条件，才可宣布本轮超频升级完成：
+
+- 复杂任务的已确认 `plan.md` 可在工作区看到，并可追溯三类信息源；
+- 后端有不可绕过的计划确认状态闸门；
+- 主 Agent 串行前置发生在执行助手招募之前；
+- 助手 job 与 SSE 生命周期解耦，主 Agent 能与助手真实并行；
+- 助手结果逐个回流且每条都有主 Agent 的验收点评；
+- 后续波次由结果动态触发；
+- 不同 Agent 展现稳定、定制但不越权的人格；
+- 刷新、断线和服务重启后可恢复；
+- 最终交付包含真实产物、证据、质控、失败与限制；
+- 自动化测试和上述端到端场景全部通过。
+
+### 10.5 部署服务器验收补充：基础设施、独立 QC 与 Broker 故障
+
+本节是部署服务器上的可执行验收清单。所有停止服务、断网和配置禁用操作必须在
+staging 或维护窗口执行，不得直接对生产 run 做破坏性测试。每个场景都要保存命令输出、
+对应 `run_id`、事件游标和容器日志；没有证据只能标记为“未验收”。
+
+#### A. PostgreSQL、Redis、Celery 与迁移
+
+在仓库根目录执行，并确保当前 shell 已加载部署 `.env` 中的变量（如果使用独立 worker
+栈，先按部署文档加载 `data/worker_config.yaml`）：
+
+```bash
+docker compose -f deploy/docker/docker-compose.yml ps db cache web beat
+docker compose -f deploy/docker/docker-compose.yml exec db \
+  pg_isready -U "${POSTGRES_USER:-omichub}" -d "${POSTGRES_DB:-omichub}"
+docker compose -f deploy/docker/docker-compose.yml exec cache \
+  redis-cli -a "${REDIS_PASSWORD}" ping
+./scripts/worker-compose.sh ps
+docker compose -f deploy/docker/docker-compose.worker.yml exec worker \
+  celery -A omichub.infrastructure.celery_app.celery inspect ping
+docker compose -f deploy/docker/docker-compose.worker.yml exec worker \
+  celery -A omichub.infrastructure.celery_app.celery inspect registered \
+  | grep -E 'overdrive\.(advance_run|replan_run|run_assistant_job|run_manager_review_job)'
+docker compose -f deploy/docker/docker-compose.yml exec web alembic current
+```
+
+通过标准：db/cache 健康，`pg_isready` 返回 accepting connections，Redis 返回 `PONG`，
+至少一个 Celery worker 返回 pong 并注册上述四个 Overdrive 任务，迁移当前版本为
+`q1r2s3t4u5v6`（或包含该 revision 的 head）。随后用真实 API 创建一个最小 run，确认
+`overdrive_runs`、`overdrive_events` 和 `overdrive_commands` 均有持久化记录；重启 web
+容器后用 active-run/events 接口按游标恢复同一个 run。
+
+#### B. 真实 QC Agent 与“不可用”分支
+
+先验证默认部署确实加载 `agent-qc`，并在冻结的 `plan.vN.md`/`manifest.json` 中看到：
+
+```text
+task_id = independent-qc
+agent_id = agent-qc
+depends_on = 所有上游任务
+```
+
+使用真实文件任务跑到 QC，检查 `assistant_result_ready` 和 `manager_review_ready` 事件。
+QC 结果末尾必须严格出现以下三种之一：
+
+```text
+质量结论：通过
+质量结论：返工
+质量结论：人工复核
+```
+
+只有“通过”可以进入 `DELIVERING/COMPLETED`；“返工”或“人工复核”必须阻断正式交付，
+并留下 Manager review、返工或人工介入证据。
+
+再在 staging 中临时禁用 `agent-qc` 或让其不可用，重新生成计划并记录实际产品策略：
+当前实现会在计划摘要中明确“独立 QC 降级”，不会伪造 QC 任务。若产品要求 QC 是硬门，
+该场景必须判定为失败并将策略改为“没有 `agent-qc` 时禁止冻结/执行计划”；不能把降级
+场景误报为独立 QC 已验收。
+
+#### C. Celery Broker 不可用时的自动重规划
+
+在 staging 创建计划，点击“修改”使 run 进入 `REPLANNING`，确认数据库和事件中出现：
+
+```text
+plan_revision_requested
+replanning_started（或等待调度的等价记录）
+```
+
+在重规划任务尚未消费时短暂停止 Redis 或隔离 worker，观察以下 SQL（只读）：
+
+```sql
+SELECT run_id, status, control, event_cursor, updated_at
+FROM overdrive_runs
+WHERE run_id = '<RUN_ID>';
+```
+
+通过标准是 Broker 恢复后，重规划任务能够被重新投递或由补偿任务接管，最终产生新的
+`plan_confirmation_requested`（版本递增、hash 改变），且 `control.replan_lock` 被清理。
+如果 run 在 Broker 恢复后仍永久停留 `REPLANNING`，或没有 `replanning_failed`/补偿记录，
+则该场景未通过；保存以下证据后再修复调度可靠性：
+
+```bash
+docker compose -f deploy/docker/docker-compose.yml logs --since=10m cache
+./scripts/worker-compose.sh logs --since=10m worker
+docker compose -f deploy/docker/docker-compose.yml exec db \
+  psql -U "${POSTGRES_USER:-omichub}" -d "${POSTGRES_DB:-omichub}" \
+  -c "SELECT run_id,status,control,event_cursor,updated_at FROM overdrive_runs WHERE run_id='<RUN_ID>';"
+```
+
+该场景在补偿重试和明确失败收敛实现前，不得标记为“自动重规划已完成”。
+
+---
+
+## 11. 需求追踪表
+
+| 用户期望 | 本文落点 | 验收证据 |
+| --- | --- | --- |
+| 按任务方向选择合适 Agent | §4 阶段 A、§7.4 | Agent 选择契约测试 + run 中的选择理由 |
+| 同时查知识库、网络和模型知识 | §4 阶段 B、§7.3 | `evidence.json` 三类记录与研究进度事件 |
+| 创建 `plan.md` 并交给主 Agent | §4 阶段 C | 版本化文件 + `plan_ready` + Manager 审查记录 |
+| 弹窗确认是否执行计划 | §4 阶段 D、§8 | `PlanConfirmationCard` + plan hash 确认记录 |
+| 主 Agent 先完成串行前置 | §4 阶段 E | preflight artifact 早于任何执行 worker started |
+| 招募助手 | §4 阶段 F | Assistant Instance 与可恢复花名册 |
+| 真异步并行 | §4 阶段 G、§7.2 | 主/助手时间线重叠，断线后 job 继续 |
+| 助手逐个回流 + 主 Agent 点评 | §4 阶段 H | 完成顺序事件 + `manager_reviews[]` |
+| 多波次编排 | §4 阶段 I | 结果驱动的新 wave/task 事件 |
+| 统一交付 | §4 阶段 J | delivery manifest 与全部文件面板 |
+| 不同 Agent 定制人格 | §3 | Persona YAML、实例快照与前端发言 |
+
+---
+
+## 12. 实施约束
+
+1. **权限边界不变**：人格和昵称不产生新权限；所有工具仍受 Agent 配置、sandbox、审批和配额约束。
+2. **证据诚实**：只记录真实调用过的知识库/网络搜索；模型通用知识必须单独标记。
+3. **一套前台**：继续使用超频房间的群聊、进度、询问和审批组件，不为每个后端创建独立入口。
+4. **计划确认不可伪造**：Manager 自己不能替用户写 `approved_by`；确认必须来自真实用户事件。
+5. **计划与审批分离**：确认计划不等于批准后续所有危险工具，高风险动作仍逐项审批。
+6. **最小上下文**：助手只获取完成任务所需的上下文和 artifact 引用，避免整段会话无界复制。
+7. **真实产物**：没有文件、日志或工具结果就不得声称已分析完成；失败和跳过必须进入最终报告。
+8. **双路径收敛**：若 legacy/LangGraph 仍并存，计划确认与事件语义必须一致；最终应由统一运行服务
+   承担状态，而不是在两条聊天循环中复制一套异步编排。
+9. **配置化人格**：人格由 Agent YAML 管理并带版本，不能把所有角色的性格硬编码在前端。
+10. **文档同步**：代码落地后更新 `data/ai/README.md` 的架构与进度，避免蓝图和实现状态混淆。
+
+本文档之后的代码优化应以 §10.4 的完成定义为终点；任何仅实现同步 fan-out、批量汇总或随机昵称
+的方案都只是过渡态，不等同于本目标完成。

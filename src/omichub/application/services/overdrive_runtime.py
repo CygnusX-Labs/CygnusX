@@ -25,6 +25,17 @@ _DEFAULT_LIMITS: dict[str, Any] = {
     "stall_threshold_seconds": 120,
     "max_intake_rounds": 3,
     "max_repair_rounds": 1,
+    "planning": {"max_revision_rounds": 3},
+    "research": {
+        "source_timeout_seconds": 20,
+        "max_evidence_items_per_source": 8,
+        "wall_timeout_seconds": 45,
+    },
+    "manager_review": {
+        "rule_fast_path": True,
+        "max_tokens": 1200,
+        "timeout_seconds": 30,
+    },
     "default_retry": {"max_attempts": 2, "backoff_seconds": 30},
     "default_timeout_seconds": 1800,
     "agents": {},

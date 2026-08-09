@@ -166,6 +166,27 @@ class OverdriveControlRequest(BaseModel):
     directive: str | None = Field(None, max_length=4_000)
 
 
+class OverdrivePlanDecisionRequest(BaseModel):
+    """Bind a user's decision to one immutable overdrive plan snapshot."""
+
+    command_id: str = Field(..., min_length=1, max_length=128)
+    action: Literal["approve", "revise", "cancel"]
+    plan_version: int = Field(..., ge=1)
+    plan_hash: str = Field(..., pattern=r"^sha256:[a-f0-9]{64}$")
+    feedback: str = Field("", max_length=4_000)
+
+
+class OverdriveRunCommandRequest(BaseModel):
+    command_id: str = Field(..., min_length=1, max_length=128)
+    action: Literal["pause", "resume", "terminate"]
+
+
+class OverdriveBranchApprovalRequest(BaseModel):
+    command_id: str = Field(..., min_length=1, max_length=128)
+    action: Literal["approve", "reject"]
+    reason: str = Field("", max_length=2_000)
+
+
 class ChatSearchContentMatchDTO(BaseModel):
     session_id: str
     title: str

@@ -10,7 +10,7 @@ import json
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -25,7 +25,10 @@ from omichub.application.schemas.chat import (
     CreateAssistantRequest,
     CreateSessionRequest,
     MessageFeedbackRequest,
+    OverdriveBranchApprovalRequest,
     OverdriveControlRequest,
+    OverdrivePlanDecisionRequest,
+    OverdriveRunCommandRequest,
     RejectOverdriveApprovalRequest,
     UpdateSessionRequest,
 )
@@ -34,6 +37,289 @@ from omichub.application.services.chat_service import ChatService
 from omichub.infrastructure.database.models.chat import ChatMessageModel
 
 router = APIRouter()
+
+
+@router.get(
+    "/sessions/{session_id}/overdrive-runs/active",
+    summary="读取当前会话可恢复的超频 run 快照",
+)
+async def active_overdrive_run(
+    session_id: str,
+    current_user_id: CurrentUserId,
+    db: DbSession,
+) -> dict:
+    from omichub.application.services.overdrive_run_service import OverdriveRunService
+
+    service = OverdriveRunService(db)
+    run = await service.get_active_for_session(session_id, current_user_id)
+    return {"run": service.snapshot(run) if run is not None else None}
+
+
+@router.get(
+    "/sessions/{session_id}/overdrive-runs/{run_id}/plan",
+    summary="预览当前冻结的超频计划",
+    response_class=PlainTextResponse,
+)
+async def preview_overdrive_plan(
+    session_id: str,
+    run_id: str,
+    current_user_id: CurrentUserId,
+    db: DbSession,
+) -> PlainTextResponse:
+    from omichub.application.services.overdrive_run_service import (
+        OverdriveRunService,
+        overdrive_run_root,
+    )
+    from omichub.core.exceptions import ValidationError
+
+    service = OverdriveRunService(db)
+    run = await service.get_for_user(run_id, current_user_id)
+    if run is None or run.session_id != session_id:
+        raise ValidationError("超频 run 不存在或不属于当前会话")
+    version = int((run.plan or {}).get("version") or 0)
+    path = overdrive_run_root(session_id, run_id) / f"plan.v{version}.md"
+    if version < 1 or not path.exists():
+        raise ValidationError("计划快照尚未生成")
+    return PlainTextResponse(
+        path.read_text(encoding="utf-8"),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'inline; filename="plan.v{version}.md"'},
+    )
+
+
+@router.get(
+    "/sessions/{session_id}/overdrive-runs/{run_id}/artifacts",
+    summary="下载已登记的超频产物",
+)
+async def download_overdrive_artifact(
+    session_id: str,
+    run_id: str,
+    current_user_id: CurrentUserId,
+    db: DbSession,
+    path: str = Query(..., min_length=1, max_length=1_000),
+) -> FileResponse:
+    from omichub.application.services.overdrive_run_service import (
+        OverdriveRunService,
+        overdrive_run_root,
+        relative_overdrive_run_root,
+    )
+    from omichub.core.exceptions import ValidationError
+
+    service = OverdriveRunService(db)
+    run = await service.get_for_user(run_id, current_user_id)
+    if run is None or run.session_id != session_id:
+        raise ValidationError("超频 run 不存在或不属于当前会话")
+    root = overdrive_run_root(session_id, run_id).resolve()
+    prefix = relative_overdrive_run_root(session_id, run_id)
+    relative_path = path.removeprefix(prefix).lstrip("/")
+    candidate = (root / relative_path).resolve()
+    registered_paths = {
+        str(item.get("path") or "")
+        for item in run.artifact_index
+        if isinstance(item, dict)
+    }
+    if path not in registered_paths or root not in candidate.parents or not candidate.is_file():
+        raise ValidationError("产物路径无效或尚未生成")
+    return FileResponse(candidate, filename=candidate.name)
+
+
+@router.get(
+    "/sessions/{session_id}/overdrive-runs/{run_id}/events",
+    summary="按单调游标补发超频 run 事件",
+)
+async def replay_overdrive_events(
+    session_id: str,
+    run_id: str,
+    current_user_id: CurrentUserId,
+    db: DbSession,
+    after_sequence: int = Query(0, ge=0),
+) -> dict:
+    from omichub.application.services.overdrive_run_service import OverdriveRunService
+
+    service = OverdriveRunService(db)
+    run = await service.get_for_user(run_id, current_user_id)
+    if run is None or run.session_id != session_id:
+        from omichub.core.exceptions import ValidationError
+
+        raise ValidationError("超频 run 不存在或不属于当前会话")
+    events = await service.events_after(run_id, current_user_id, after_sequence)
+    return {
+        "run": service.snapshot(run),
+        "events": events,
+        "projected_events": [
+            projected
+            for event in events
+            if (projected := service.project_event(event)) is not None
+        ],
+        "event_cursor": run.event_cursor,
+    }
+
+
+@router.get(
+    "/sessions/{session_id}/overdrive-runs/{run_id}/stream",
+    summary="订阅可恢复的超频 run 领域事件",
+)
+async def stream_overdrive_run(
+    session_id: str,
+    run_id: str,
+    current_user_id: CurrentUserId,
+    db: DbSession,
+    after_sequence: int = Query(0, ge=0),
+) -> StreamingResponse:
+    """Poll the DB authority and emit cursor-replayable SSE across web restarts."""
+    import asyncio
+
+    from omichub.application.services.overdrive_run_service import OverdriveRunService
+    from omichub.core.exceptions import ValidationError
+    from omichub.infrastructure.database.session import get_session_factory
+
+    initial = OverdriveRunService(db)
+    run = await initial.get_for_user(run_id, current_user_id)
+    if run is None or run.session_id != session_id:
+        raise ValidationError("超频 run 不存在或不属于当前会话")
+
+    async def generate_sse():
+        cursor = after_sequence
+        terminal = {"COMPLETED", "CANCELLED", "TERMINATED", "FAILED"}
+        while True:
+            async with get_session_factory()() as event_db:
+                service = OverdriveRunService(event_db)
+                current = await service.get_for_user(run_id, current_user_id)
+                if current is None:
+                    break
+                events = await service.events_after(run_id, current_user_id, cursor)
+                for event in events:
+                    cursor = max(cursor, int(event["sequence"]))
+                    projected = service.project_event(event)
+                    if projected is not None:
+                        yield f"data: {json.dumps(projected, ensure_ascii=False, default=str)}\n\n"
+                is_terminal = current.status in terminal and cursor >= current.event_cursor
+            if is_terminal:
+                break
+            yield ": heartbeat\n\n"
+            await asyncio.sleep(1)
+
+    return StreamingResponse(
+        generate_sse(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post(
+    "/sessions/{session_id}/overdrive-runs/{run_id}/plan-decision",
+    summary="确认、修改或取消一个不可变计划快照",
+)
+async def decide_overdrive_plan(
+    session_id: str,
+    run_id: str,
+    request: OverdrivePlanDecisionRequest,
+    current_user_id: CurrentUserId,
+    db: DbSession,
+) -> dict:
+    from omichub.application.services.overdrive_run_service import OverdriveRunService
+    from omichub.application.services.overdrive_runtime import load_overdrive_limits
+
+    service = OverdriveRunService(db)
+    run = await service.get_for_user(run_id, current_user_id)
+    if run is None or run.session_id != session_id:
+        from omichub.core.exceptions import ValidationError
+
+        raise ValidationError("超频 run 不存在或不属于当前会话")
+    limits = load_overdrive_limits(str(run.lead_planner_agent_id or ""))
+    planning_limits = limits.get("planning") or {}
+    result = await service.decide_plan(
+        run_id=run_id,
+        user_id=current_user_id,
+        command_id=request.command_id,
+        action=request.action,
+        plan_version=request.plan_version,
+        plan_digest=request.plan_hash,
+        feedback=request.feedback,
+        max_revisions=int(planning_limits.get("max_revision_rounds") or 3),
+    )
+    await db.commit()
+    if request.action == "approve":
+        from omichub.infrastructure.celery_app.tasks.overdrive import advance_run
+
+        advance_run.delay(run_id)
+    elif request.action == "revise":
+        from omichub.infrastructure.celery_app.tasks.overdrive import replan_run
+
+        replan_run.delay(run_id)
+    return result
+
+
+@router.post(
+    "/sessions/{session_id}/overdrive-runs/{run_id}/control",
+    summary="持久化暂停、恢复或终止超频 run",
+)
+async def control_overdrive_run(
+    session_id: str,
+    run_id: str,
+    request: OverdriveRunCommandRequest,
+    current_user_id: CurrentUserId,
+    db: DbSession,
+) -> dict:
+    from omichub.application.services.overdrive_run_service import OverdriveRunService
+
+    service = OverdriveRunService(db)
+    run = await service.get_for_user(run_id, current_user_id)
+    if run is None or run.session_id != session_id:
+        from omichub.core.exceptions import ValidationError
+
+        raise ValidationError("超频 run 不存在或不属于当前会话")
+    result = await service.apply_control(
+        run_id=run_id,
+        user_id=current_user_id,
+        command_id=request.command_id,
+        action=request.action,
+    )
+    await db.commit()
+    if request.action in {"resume", "terminate"}:
+        from omichub.infrastructure.celery_app.tasks.overdrive import advance_run
+
+        advance_run.delay(run_id)
+    return result
+
+
+@router.post(
+    "/sessions/{session_id}/overdrive-runs/{run_id}/approvals/{approval_id}/decision",
+    summary="决定一个 v2 超频分支的高风险工具调用",
+)
+async def decide_overdrive_branch_approval(
+    session_id: str,
+    run_id: str,
+    approval_id: str,
+    request: OverdriveBranchApprovalRequest,
+    current_user_id: CurrentUserId,
+    db: DbSession,
+) -> dict:
+    from omichub.application.services.overdrive_run_service import OverdriveRunService
+
+    service = OverdriveRunService(db)
+    run = await service.get_for_user(run_id, current_user_id)
+    if run is None or run.session_id != session_id:
+        from omichub.core.exceptions import ValidationError
+
+        raise ValidationError("超频 run 不存在或不属于当前会话")
+    result = await service.decide_branch_approval(
+        run_id=run_id,
+        user_id=current_user_id,
+        command_id=request.command_id,
+        approval_id=approval_id,
+        action=request.action,
+        reason=request.reason,
+    )
+    await db.commit()
+    from omichub.infrastructure.celery_app.tasks.overdrive import advance_run
+
+    advance_run.delay(run_id)
+    return result
 
 
 def get_chat_service(db: DbSession) -> ChatService:

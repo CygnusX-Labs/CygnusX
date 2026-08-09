@@ -49,9 +49,13 @@ async function control(action: 'pause' | 'resume' | 'skip' | 'terminate') {
   }
   controlling.value = true
   try {
-    await chatApi.controlOverdrive(store.currentSessionId, action, {
-      taskId: action === 'skip' ? selectedTaskId.value || undefined : undefined,
-    })
+    if (props.progress.runId && action !== 'skip') {
+      await chatApi.controlOverdriveRun(store.currentSessionId, props.progress.runId, action)
+    } else {
+      await chatApi.controlOverdrive(store.currentSessionId, action, {
+        taskId: action === 'skip' ? selectedTaskId.value || undefined : undefined,
+      })
+    }
     message.success(action === 'terminate' ? '终止指令已发送' : '调度指令已发送')
   } catch (error) {
     message.error(error instanceof Error ? error.message : '调度指令发送失败')
@@ -79,6 +83,11 @@ async function submitDirective() {
 function phaseLabel(phase: OverdriveProgress['phase']): string {
   const labels: Record<OverdriveProgress['phase'], string> = {
     manager_ready: '规划中',
+    researching: '研究中',
+    replanning: '计划修订中',
+    plan_ready: '待确认',
+    serial_preflight: '前置核验',
+    recruiting: '招募中',
     workers_starting: '准备中',
     worker_running: '协作中',
     tool_running: '执行中',
@@ -86,18 +95,21 @@ function phaseLabel(phase: OverdriveProgress['phase']): string {
     peer_reviewing: '复核中',
     summarizing: '整合中',
     awaiting_input: '等待你',
+    awaiting_approval: '待审批',
     paused: '已暂停',
+    failed: '未通过',
+    terminated: '已终止',
     completed: '已完成',
   }
   return labels[phase]
 }
 
 function stepClass(phase: OverdriveProgress['phase'], step: number): string {
-  const activeStep = phase === 'completed'
+  const activeStep = ['completed', 'failed', 'terminated'].includes(phase)
     ? 4
     : ['peer_reviewing', 'summarizing'].includes(phase)
       ? 3
-      : phase === 'manager_ready'
+    : ['manager_ready', 'researching', 'replanning', 'plan_ready'].includes(phase)
         ? 1
         : 2
   if (step < activeStep) return 'is-complete'
@@ -113,6 +125,38 @@ function percentage(progress: OverdriveProgress): number {
   if (!progress.total) return progress.phase === 'manager_ready' ? 12 : 24
   const workerPercentage = (progress.completed / progress.total) * 68
   return Math.min(88, Math.max(24, 24 + workerPercentage))
+}
+
+const officialArtifacts = computed(() => (props.progress.artifacts || [])
+  .filter((artifact) => ['validated', 'passed', 'succeeded'].includes(artifact.status || '')
+    && !['process', 'failed'].includes(artifact.kind || '')))
+const processArtifacts = computed(() => (props.progress.artifacts || [])
+  .filter((artifact) => !officialArtifacts.value.includes(artifact)
+    && !['failed', 'cancelled'].includes(artifact.status || '')
+    && artifact.kind !== 'failed'))
+const failedArtifacts = computed(() => (props.progress.artifacts || [])
+  .filter((artifact) => ['failed', 'cancelled'].includes(artifact.status || '')
+    || artifact.kind === 'failed'))
+
+function artifactMeta(artifact: NonNullable<OverdriveProgress['artifacts']>[number]): string {
+  return [artifact.source ? `来源：${artifact.source}` : '', artifact.qualityStatus ? `质控：${artifact.qualityStatus}` : '']
+    .filter(Boolean)
+    .join(' · ')
+}
+
+async function downloadArtifact(path: string) {
+  if (!props.progress.runId || !store.currentSessionId) return
+  try {
+    const blob = await chatApi.downloadOverdriveArtifact(store.currentSessionId, props.progress.runId, path)
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = path.split('/').pop() || 'artifact'
+    anchor.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '产物下载失败')
+  }
 }
 </script>
 
@@ -145,23 +189,65 @@ function percentage(progress: OverdriveProgress): number {
     <div v-if="progress.warning" class="overdrive-progress-card__warning">{{ progress.warning }}</div>
 
     <div
-      v-if="!progress.readonly && progress.phase !== 'completed' && progress.phase !== 'awaiting_input'"
+      v-if="!progress.readonly && !['completed', 'failed', 'terminated', 'awaiting_input', 'replanning', 'plan_ready'].includes(progress.phase)"
       class="overdrive-progress-card__controls"
     >
       <NButton size="tiny" secondary :loading="controlling" @click="control(progress.phase === 'paused' ? 'resume' : 'pause')">
         {{ progress.phase === 'paused' ? '继续' : '暂停' }}
       </NButton>
-      <NSelect v-model:value="selectedTaskId" size="tiny" clearable placeholder="选择待跳过任务" :options="pendingOptions" />
-      <NButton size="tiny" secondary :disabled="!pendingOptions.length" :loading="controlling" @click="control('skip')">跳过</NButton>
+      <NSelect v-if="!progress.runId" v-model:value="selectedTaskId" size="tiny" clearable placeholder="选择待跳过任务" :options="pendingOptions" />
+      <NButton v-if="!progress.runId" size="tiny" secondary :disabled="!pendingOptions.length" :loading="controlling" @click="control('skip')">跳过</NButton>
       <NButton size="tiny" secondary type="error" :loading="controlling" @click="control('terminate')">终止</NButton>
-      <NInput v-model:value="directive" size="small" placeholder="补充给下一 Wave 的指令" @keyup.enter="submitDirective" />
-      <NButton size="small" secondary :disabled="!directive.trim()" :loading="controlling" @click="submitDirective">发送</NButton>
+      <NInput v-if="!progress.runId" v-model:value="directive" size="small" placeholder="补充给下一 Wave 的指令" @keyup.enter="submitDirective" />
+      <NButton v-if="!progress.runId" size="small" secondary :disabled="!directive.trim()" :loading="controlling" @click="submitDirective">发送</NButton>
     </div>
 
     <details v-for="task in failedTasks" :key="task.taskId" class="overdrive-progress-card__error">
       <summary>{{ task.taskId }} · {{ task.status === 'failed' ? '失败' : '已跳过' }}</summary>
       <pre>{{ task.errorSummary }}</pre>
     </details>
+
+    <section v-if="progress.artifacts?.length" class="overdrive-progress-card__artifacts" aria-label="本次协作文件">
+      <div v-if="officialArtifacts.length" class="overdrive-progress-card__artifact-group is-official">
+        <div class="overdrive-progress-card__artifacts-title">正式交付 · {{ officialArtifacts.length }} 个文件</div>
+        <button
+          v-for="artifact in officialArtifacts"
+          :key="artifact.path"
+          type="button"
+          class="overdrive-progress-card__artifact"
+          @click="downloadArtifact(artifact.path)"
+        >
+          <span>{{ artifact.path.split('/').pop() || artifact.path }}</span>
+          <small v-if="artifactMeta(artifact)">{{ artifactMeta(artifact) }}</small>
+        </button>
+      </div>
+      <details v-if="processArtifacts.length" class="overdrive-progress-card__artifact-group">
+        <summary>过程文件 · {{ processArtifacts.length }} 个</summary>
+        <button
+          v-for="artifact in processArtifacts"
+          :key="artifact.path"
+          type="button"
+          class="overdrive-progress-card__artifact is-process"
+          @click="downloadArtifact(artifact.path)"
+        >
+          <span>{{ artifact.path.split('/').pop() || artifact.path }}</span>
+          <small v-if="artifactMeta(artifact)">{{ artifactMeta(artifact) }}</small>
+        </button>
+      </details>
+      <details v-if="failedArtifacts.length" class="overdrive-progress-card__artifact-group is-failed">
+        <summary>失败/已取消产物 · {{ failedArtifacts.length }} 个</summary>
+        <button
+          v-for="artifact in failedArtifacts"
+          :key="artifact.path"
+          type="button"
+          class="overdrive-progress-card__artifact is-failed"
+          @click="downloadArtifact(artifact.path)"
+        >
+          <span>{{ artifact.path.split('/').pop() || artifact.path }}</span>
+          <small v-if="artifactMeta(artifact)">{{ artifactMeta(artifact) }}</small>
+        </button>
+      </details>
+    </section>
 
     <div class="overdrive-progress-card__steps" aria-hidden="true">
       <span :class="stepClass(progress.phase, 1)">Manager 规划</span>
@@ -323,6 +409,60 @@ function percentage(progress: OverdriveProgress): number {
   overflow: auto;
   white-space: pre-wrap;
 }
+
+.overdrive-progress-card__artifacts {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--chat-border);
+}
+
+.overdrive-progress-card__artifact-group {
+  margin-top: 8px;
+}
+
+.overdrive-progress-card__artifact-group > summary {
+  cursor: pointer;
+  color: var(--chat-text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.overdrive-progress-card__artifact-group.is-failed > summary { color: var(--error-color, #d03050); }
+
+.overdrive-progress-card__artifacts-title {
+  width: 100%;
+  color: var(--chat-text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.overdrive-progress-card__artifact {
+  display: inline-flex;
+  max-width: 100%;
+  flex-direction: column;
+  margin: 5px 5px 0 0;
+  overflow: hidden;
+  padding: 4px 8px;
+  border: 1px solid var(--chat-border);
+  border-radius: 999px;
+  color: var(--chat-accent);
+  background: transparent;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.overdrive-progress-card__artifact small {
+  overflow: hidden;
+  max-width: 240px;
+  color: var(--chat-text-secondary);
+  font-size: 10px;
+  text-overflow: ellipsis;
+}
+
+.overdrive-progress-card__artifact.is-process { color: var(--chat-text-secondary); }
+.overdrive-progress-card__artifact.is-failed { color: var(--error-color, #d03050); }
 
 .overdrive-progress-card__phase {
   flex: 0 0 auto;

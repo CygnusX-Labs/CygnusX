@@ -9,6 +9,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createApp, h, nextTick, reactive } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
+import { NMessageProvider } from 'naive-ui'
 
 // lottie-web / vue-echarts import 时依赖完整浏览器 API，打桩
 vi.mock('vue3-lottie', () => ({ Vue3Lottie: { template: '<div />' } }))
@@ -40,7 +41,9 @@ function mountItem(props: Record<string, unknown>) {
   document.body.appendChild(el)
   const app = createApp({
     render() {
-      return h(KimiMessageItem, props as never)
+      return h(NMessageProvider, null, {
+        default: () => h(KimiMessageItem, props as never),
+      })
     },
   })
   app.mount(el)
@@ -55,6 +58,42 @@ const baseMsg: ChatMessage = {
 }
 
 describe('KimiMessageItem 渲染分支', () => {
+  it('system ask_request 的计划确认呈现专用卡而非空系统消息', () => {
+    const { el } = mountItem({
+      sessionId: 'session-plan',
+      message: {
+        ...baseMsg,
+        role: 'system',
+        askRequest: {
+          kind: 'plan_confirmation',
+          questions: [],
+          answered: false,
+          planConfirmation: {
+            runId: 'run-plan',
+            title: '执行计划待确认',
+            summary: '先研究，再执行。',
+            planPath: 'output/overdrive/session-plan/run-plan/plan.md',
+            planVersion: 1,
+            planHash: 'sha256:test',
+            waveCount: 2,
+            agents: [{ agentId: 'agent-qc', name: '质控助手' }],
+            serialPreflight: ['核验输入'],
+            risks: ['输入可能缺失'],
+            approvalPoints: [],
+            deliverables: ['质控报告'],
+            actions: ['approve', 'revise', 'cancel'],
+            status: 'pending',
+          },
+        },
+      },
+      isStreaming: false,
+    })
+
+    expect(el.querySelector('.plan-confirmation')).not.toBeNull()
+    expect(el.textContent).toContain('执行计划待确认')
+    expect(el.querySelector('.system-message')).toBeNull()
+  })
+
   it('路由到专项 Agent 时显示完整过渡卡和执行确认提示', () => {
     const { el } = mountItem({
       message: {

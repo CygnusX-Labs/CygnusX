@@ -39,6 +39,8 @@ import type {
   AgentTeamsCaseCardPayload,
   ChatMessage,
   CollaborationRouteInfo,
+  PlanConfirmation,
+  PlanDecisionAction,
   ToolCall,
   FileAttachment,
   ChartData,
@@ -49,6 +51,7 @@ import { chatApi } from '@/api/chat'
 import apiClient from '@/api/client'
 import { reportChatDiagnostic } from '@/utils/chatDiagnostics'
 import {
+  normalizePlanConfirmation,
   useAgentChatStream,
   type StudioPlanStep,
   type TokenUsage,
@@ -190,6 +193,11 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   let pendingSessionIdPromise: Promise<void> | null = null
   let agentTeamsEventAbort: AbortController | null = null
   let roomEventAbort: AbortController | null = null
+  let overdriveEventAbort: AbortController | null = null
+  let overdriveEventSessionId = ''
+  let overdriveEventRunId = ''
+  /** 每个 run 已投影到 UI 的最后事件序号；重放与重连都经过同一闸门。 */
+  const overdriveEventCursors = new Map<string, number>()
 
   type AgentTeamsCaseStreamEvent = AgentTeamsCaseCardPayload & {
     type: 'agentteams_case'
@@ -243,25 +251,109 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     message_id?: string
   }
 
-  function applyCaseRoomEvent(event: Record<string, any>) {
+  function applyCaseRoomEvent(event: Record<string, any>, expectedSessionId?: string) {
+    const eventSessionId = typeof event.session_id === 'string' ? event.session_id : ''
+    if (expectedSessionId && eventSessionId && eventSessionId !== expectedSessionId) return
     const session = event.session_id
       ? sessions.value.find((item) => item.id === event.session_id)
-      : currentSession.value
+      : expectedSessionId
+        ? sessions.value.find((item) => item.id === expectedSessionId)
+        : currentSession.value
     if (!session) return
+    const runId = typeof event.run_id === 'string' ? event.run_id : ''
+    const sequence = Number(event.sequence)
+    if (runId && Number.isFinite(sequence) && sequence > 0) {
+      const cursor = overdriveEventCursors.get(runId) || 0
+      if (sequence <= cursor) return
+      overdriveEventCursors.set(runId, sequence)
+    }
+    if (event.type === 'ask_request' && event.kind === 'plan_confirmation') {
+      const planConfirmation = normalizePlanConfirmation(event)
+      if (!planConfirmation) return
+      const id = `plan-confirmation-${planConfirmation.runId}`
+      const existing = session.messages.find((message) =>
+        message.askRequest?.planConfirmation?.runId === planConfirmation.runId)
+      if (existing) {
+        const previous = existing.askRequest?.planConfirmation
+        // Event replay starts from a durable cursor and can include the already
+        // decided snapshot.  Never resurrect an approved/revision-requested
+        // version as a pending card; only a strictly newer frozen plan may
+        // replace it.
+        if (previous
+          && (planConfirmation.planVersion < previous.planVersion
+            || (planConfirmation.planVersion === previous.planVersion
+              && previous.status !== 'pending'))) return
+        existing.askRequest = { kind: 'plan_confirmation', questions: [], planConfirmation, answered: false }
+      } else {
+        session.messages.push({
+          id,
+          role: 'system',
+          content: '',
+          askRequest: { kind: 'plan_confirmation', questions: [], planConfirmation, answered: false },
+          createdAt: new Date().toISOString(),
+        })
+      }
+      session.updated_at = new Date().toISOString()
+      return
+    }
+    if (event.type === 'ask_request') {
+      const questions = Array.isArray(event.questions) ? event.questions : []
+      if (!questions.length) return
+      const id = event.message_id || `overdrive-ask-${event.run_id || 'active'}`
+      const askRequest: NonNullable<ChatMessage['askRequest']> = {
+        kind: 'questions',
+        questions: questions.map((question: any) => ({
+          question: String(question?.question || question || '请补充必要信息'),
+          options: Array.isArray(question?.options) ? question.options.map(String) : [],
+        })),
+        answered: false,
+      }
+      const existing = session.messages.find((message) => message.id === id)
+      if (existing) existing.askRequest = askRequest
+      else session.messages.push({
+        id,
+        role: 'system',
+        content: '',
+        askRequest,
+        createdAt: new Date().toISOString(),
+      })
+      session.updated_at = new Date().toISOString()
+      return
+    }
     if (event.type === 'room_speech') {
       applyRoomSpeechEvent(event as RoomSpeechStreamEvent)
       return
     }
     if (event.type === 'overdrive_progress') {
-      const id = `case-progress-${event.case_id || 'active'}`
-      const existing = session.messages.find((message) => message.id === id)
+      const id = runId ? `overdrive-progress-${runId}` : `case-progress-${event.case_id || 'active'}`
+      let existing = session.messages.find((message) =>
+        message.id === id || (runId && message.overdriveProgress?.runId === runId))
+      if (!existing && runId) {
+        // 首轮 SSE 可能先创建了没有 run_id 的兼容进度卡；一旦收到持久化事件，
+        // 将它升级为 run 级确定性 id，避免同一 run 出现两张进度卡。
+        existing = [...session.messages].reverse().find((message) =>
+          message.role === 'system' && message.overdriveProgress && !message.overdriveProgress.runId)
+        if (existing) existing.id = id
+      }
       const progress: NonNullable<ChatMessage['overdriveProgress']> = {
+        runId: typeof event.run_id === 'string' ? event.run_id : undefined,
         phase: event.phase || 'worker_running',
         label: event.label || '协作 Case 推进中',
         completed: Number(event.completed || 0),
         total: Number(event.total || 1),
         waveMode: event.waveMode === 'parallel' ? 'parallel' : 'serial',
         tasks: Array.isArray(event.tasks) ? event.tasks : [],
+        artifacts: Array.isArray(event.artifacts)
+          ? event.artifacts.map((artifact: any) => ({
+            path: String(artifact?.path || ''),
+            kind: typeof artifact?.kind === 'string' ? artifact.kind : undefined,
+            status: typeof artifact?.status === 'string' ? artifact.status : undefined,
+            source: typeof artifact?.source === 'string' ? artifact.source : undefined,
+            qualityStatus: typeof artifact?.quality_status === 'string'
+              ? artifact.quality_status
+              : undefined,
+          })).filter((artifact: { path: string }) => artifact.path)
+          : [],
       }
       if (existing) existing.overdriveProgress = progress
       else session.messages.push({ id, role: 'system', content: progress.label, overdriveProgress: progress, createdAt: new Date().toISOString() })
@@ -271,19 +363,28 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     if (event.type === 'overdrive_approval_request' && event.approval) {
       const approval = event.approval
       const id = `case-approval-${approval.approval_id}`
-      if (session.messages.some((message) => message.id === id)) return
+      const existing = session.messages.find((message) => message.id === id)
+      const nextApproval: NonNullable<ChatMessage['overdriveApproval']> = {
+        approvalId: String(approval.approval_id || ''),
+        runId: typeof approval.run_id === 'string' ? approval.run_id : undefined,
+        caseId: String(approval.case_id || event.case_id || ''),
+        toolName: String(approval.tool_name || 'submit_task'),
+        arguments: approval.arguments || {},
+        status: approval.status || 'pending',
+        result: approval.result,
+        error: approval.error,
+        reason: approval.reason,
+      }
+      if (existing) {
+        existing.overdriveApproval = nextApproval
+        session.updated_at = new Date().toISOString()
+        return
+      }
       session.messages.push({
         id,
         role: 'system',
         content: '协作 Case 等待你的审批',
-        overdriveApproval: {
-          approvalId: String(approval.approval_id || ''),
-          caseId: String(approval.case_id || event.case_id || ''),
-          toolName: String(approval.tool_name || 'submit_task'),
-          arguments: approval.arguments || {},
-          status: approval.status || 'pending',
-          reason: approval.reason,
-        },
+        overdriveApproval: nextApproval,
         createdAt: new Date().toISOString(),
       })
       session.updated_at = new Date().toISOString()
@@ -332,6 +433,13 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     roomEventAbort = null
   }
 
+  function stopOverdriveEvents() {
+    overdriveEventAbort?.abort()
+    overdriveEventAbort = null
+    overdriveEventSessionId = ''
+    overdriveEventRunId = ''
+  }
+
   async function startRoomEvents(sessionId: string) {
     if (!sessionId || sessionId.startsWith('sess-')) return
     stopRoomEvents()
@@ -356,8 +464,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         for (const line of lines) {
           if (!line.startsWith('data:')) continue
           try {
-            const event = JSON.parse(line.slice(5).trim()) as RoomSpeechStreamEvent
-            if (event.type === 'room_speech') applyRoomSpeechEvent(event)
+            const event = JSON.parse(line.slice(5).trim()) as Record<string, any>
+            applyCaseRoomEvent(event, sessionId)
           } catch {
             // 忽略单条不可解析事件，长连接保持可用。
           }
@@ -369,6 +477,166 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       }
     } finally {
       if (roomEventAbort === controller) roomEventAbort = null
+    }
+  }
+
+  async function replayActiveOverdriveEvents(
+    sessionId: string,
+    runId: string,
+    afterSequence = 0,
+  ): Promise<{ cursor: number; status?: string; ok: boolean }> {
+    try {
+      const response = await apiClient.get(
+        `/chat/sessions/${sessionId}/overdrive-runs/${runId}/events`,
+        { params: { after_sequence: afterSequence } },
+      )
+      const projected = Array.isArray(response.data?.projected_events)
+        ? response.data.projected_events
+        : []
+      for (const event of projected) applyCaseRoomEvent(event, sessionId)
+      return {
+        cursor: Number(response.data?.event_cursor) || afterSequence,
+        status: typeof response.data?.run?.status === 'string' ? response.data.run.status : undefined,
+        ok: true,
+      }
+    } catch {
+      // 主历史加载不应被增量事件恢复失败阻塞；长连接/下一次刷新仍可重试。
+      return { cursor: afterSequence, ok: false }
+    }
+  }
+
+  async function startOverdriveEvents(sessionId: string, runId: string, afterSequence = 0) {
+    stopOverdriveEvents()
+    let cursor = Math.max(0, afterSequence)
+    let reconnects = 0
+    const terminalStatuses = new Set(['COMPLETED', 'CANCELLED', 'TERMINATED', 'FAILED'])
+    while (currentSessionId.value === sessionId) {
+      const controller = new AbortController()
+      overdriveEventAbort = controller
+      overdriveEventSessionId = sessionId
+      overdriveEventRunId = runId
+      const connectionStartCursor = cursor
+      try {
+        const token = localStorage.getItem('access_token')
+        const response = await fetch(
+          `/api/v1/chat/sessions/${sessionId}/overdrive-runs/${runId}/stream?after_sequence=${cursor}`,
+          { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal: controller.signal },
+        )
+        if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        const consumeLine = (line: string) => {
+          if (!line.startsWith('data:')) return
+          const raw = line.slice(5).trim()
+          if (!raw || raw === '[DONE]') return
+          try {
+            const event = JSON.parse(raw) as Record<string, any>
+            if (typeof event.run_id === 'string' && event.run_id !== runId) return
+            applyCaseRoomEvent(event, sessionId)
+            const sequence = Number(event.sequence)
+            if (Number.isFinite(sequence) && sequence > cursor) cursor = sequence
+          } catch {
+            // 单条损坏事件不终止可恢复流。
+          }
+        }
+        while (!controller.signal.aborted) {
+          const { done, value } = await reader.read()
+          if (done) {
+            break
+          }
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+          for (const line of lines) consumeLine(line)
+        }
+        if (buffer.trim()) consumeLine(buffer)
+      } catch (error) {
+        if (controller.signal.aborted || currentSessionId.value !== sessionId) return
+        if (reconnects >= 5) {
+          console.warn('超频后台事件连接多次中断，等待用户重新进入会话恢复', error)
+          return
+        }
+      } finally {
+        if (overdriveEventAbort === controller) overdriveEventAbort = null
+      }
+
+      if (controller.signal.aborted || currentSessionId.value !== sessionId) return
+      // 无论是服务端正常结束还是代理断开，都以 DB 游标做一次边界重放：
+      // 它既补上最后一个没有换行符的事件，也给出最新 run 状态，避免在终态重连。
+      const boundary = await replayActiveOverdriveEvents(sessionId, runId, cursor)
+      cursor = Math.max(cursor, boundary.cursor)
+      if (terminalStatuses.has(boundary.status || '')) return
+      if (cursor > connectionStartCursor) reconnects = 0
+      else reconnects += 1
+      if (reconnects >= 5) {
+        console.warn('超频后台事件连接多次无新事件，等待用户重新进入会话恢复')
+        return
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.min(5000, 500 * 2 ** reconnects)))
+    }
+  }
+
+  async function recoverOverdriveRun(sessionId: string): Promise<void> {
+    if (!sessionId || sessionId.startsWith('sess-') || currentSessionId.value !== sessionId) return
+    try {
+      const activeRun = await chatApi.getActiveOverdriveRun(sessionId)
+      if (!activeRun || currentSessionId.value !== sessionId) return
+      if (activeRun.status === 'AWAITING_PLAN_CONFIRMATION' && activeRun.plan) {
+        applyCaseRoomEvent({
+          type: 'ask_request',
+          kind: 'plan_confirmation',
+          run_id: activeRun.run_id,
+          session_id: sessionId,
+          plan_path: activeRun.plan.path,
+          plan_version: activeRun.plan.version,
+          plan_hash: activeRun.plan.hash,
+          summary: activeRun.plan.summary,
+          actions: activeRun.plan.actions,
+        }, sessionId)
+      }
+      const snapshotPhase: Record<string, string> = {
+        SERIAL_PREFLIGHT: 'serial_preflight',
+        RECRUITING: 'recruiting',
+        RUNNING: 'worker_running',
+        WAITING_FOR_RESULTS: 'worker_running',
+        AWAITING_USER_INPUT: 'awaiting_input',
+        AWAITING_APPROVAL: 'awaiting_approval',
+        PAUSED: 'paused',
+      }
+      if (snapshotPhase[activeRun.status]) {
+        const snapshotTasks = Array.isArray(activeRun.tasks) ? activeRun.tasks : []
+        applyCaseRoomEvent({
+          type: 'overdrive_progress',
+          run_id: activeRun.run_id,
+          session_id: sessionId,
+          phase: snapshotPhase[activeRun.status],
+          label: `超频任务正在后台推进（${activeRun.status}）`,
+          completed: snapshotTasks.filter((task) =>
+            ['succeeded', 'failed', 'skipped', 'cancelled'].includes(String(task.status || ''))).length,
+          total: snapshotTasks.length,
+          tasks: snapshotTasks.map((task) => ({
+            taskId: String(task.task_id || ''),
+            agentId: String(task.agent_id || ''),
+            status: String(task.status || 'pending'),
+            errorSummary: typeof task.error_summary === 'string' ? task.error_summary : undefined,
+          })),
+          artifacts: Array.isArray(activeRun.artifact_index) ? activeRun.artifact_index : [],
+        }, sessionId)
+      }
+      if (overdriveEventSessionId === sessionId
+        && overdriveEventRunId === activeRun.run_id
+        && overdriveEventAbort) return
+      const snapshotCursor = Number(activeRun.event_cursor || 0)
+      const boundary = await replayActiveOverdriveEvents(sessionId, activeRun.run_id, 0)
+      if (currentSessionId.value !== sessionId) return
+      const cursor = boundary.ok ? Math.max(snapshotCursor, boundary.cursor) : 0
+      const status = boundary.status || activeRun.status
+      if (!['COMPLETED', 'CANCELLED', 'TERMINATED', 'FAILED'].includes(status)) {
+        void startOverdriveEvents(sessionId, activeRun.run_id, cursor)
+      }
+    } catch {
+      // 恢复失败不阻塞聊天；下次选择该会话时会重新从 DB 游标重放。
     }
   }
 
@@ -398,7 +666,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           try {
             const event = JSON.parse(line.slice(5).trim()) as AgentTeamsCaseStreamEvent
             if (event.type === 'agentteams_case' && event.phase === 'status_changed') applyAgentTeamsCaseEvent(event)
-            else applyCaseRoomEvent(event as Record<string, any>)
+            else applyCaseRoomEvent(event as Record<string, any>, sessionId)
           } catch {
             // 忽略单条不可解析事件，长连接保持可用。
           }
@@ -1053,9 +1321,13 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   }
 
   function syncAgentTeamsEventSubscriptions(session: AgentSession | undefined): void {
+    if (session?.id && overdriveEventSessionId && overdriveEventSessionId !== session.id) {
+      stopOverdriveEvents()
+    }
     if (!session || !shouldSubscribeToAgentTeamsEvents(session)) {
       stopAgentTeamsCaseEvents()
       stopRoomEvents()
+      stopOverdriveEvents()
       return
     }
     void startAgentTeamsCaseEvents(session.id)
@@ -1073,6 +1345,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       await loadSessionMessages(id)
     }
     syncAgentTeamsEventSubscriptions(session)
+    if (session && !session.id.startsWith('sess-')) void recoverOverdriveRun(session.id)
     // Studio 会话：同步权限模式（非 studio 会话保持默认 supervised，不在此展示开关）
     if (studioSessionIds.value.has(id)) {
       studioApi.getSession(id)
@@ -1085,6 +1358,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     stopStreaming()
     stopAgentTeamsCaseEvents()
     stopRoomEvents()
+    stopOverdriveEvents()
     currentSessionId.value = ''
   }
 
@@ -1093,6 +1367,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     if (currentSessionId.value === id) {
       stopAgentTeamsCaseEvents()
       stopRoomEvents()
+      stopOverdriveEvents()
     }
     if (!id.startsWith('sess-')) {
       try {
@@ -1485,6 +1760,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           console.error('恢复待审批状态失败:', e)
         }
       }
+      if (currentSessionId.value === sessionId) await recoverOverdriveRun(sessionId)
     } catch (e) {
       console.error('加载会话历史消息失败:', e)
     }
@@ -1753,6 +2029,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           if (!progressMessage || !currentProgress) return
           progressMessage.overdriveProgress = {
             ...currentProgress,
+            runId: event.runId ?? currentProgress.runId,
             phase: event.phase,
             label: event.label,
             completed: event.total ? event.completed : currentProgress.completed,
@@ -1921,6 +2198,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           if (!target) return
           target.overdriveApproval = {
             approvalId: event.approval.approval_id,
+            runId: event.approval.run_id,
             toolName: event.approval.tool_name,
             arguments: event.approval.arguments,
             status: event.approval.status,
@@ -2099,7 +2377,9 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             : aiMsg
           if (!target) return
           target.askRequest = {
+            kind: event.kind,
             questions: event.questions || [],
+            planConfirmation: event.planConfirmation,
             answered: false,
           }
         },
@@ -2389,6 +2669,13 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     if (!sessionId || !approval || approval.status !== 'pending') return
     approval.status = 'executing'
     try {
+      if (approval.runId) {
+        const resolved = await chatApi.decideOverdriveBranchApproval(
+          sessionId, approval.runId, approvalId, 'approve',
+        )
+        approval.status = String(resolved.status) === 'queued' ? 'completed' : 'failed'
+        return
+      }
       if (approval.caseId) {
         const resolved = await agentTeamsApi.submitCase(approval.caseId, { task_name: approval.toolName || 'OmicHub 分析任务' })
         Object.assign(approval, { status: resolved.status === 'submitted' ? 'completed' : 'executing' })
@@ -2416,6 +2703,12 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     if (!sessionId || !approval || approval.status !== 'pending') return
     approval.status = 'rejected'
     try {
+      if (approval.runId) {
+        await chatApi.decideOverdriveBranchApproval(
+          sessionId, approval.runId, approvalId, 'reject', reason || '',
+        )
+        return
+      }
       if (approval.caseId) return
       const resolved = await chatApi.rejectOverdriveApproval(sessionId, approvalId, reason)
       Object.assign(approval, {
@@ -2477,6 +2770,60 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     await sendMessage(followUp)
   }
 
+  function findPlanConfirmation(runId: string): PlanConfirmation | null {
+    const session = currentSession.value
+    if (!session) return null
+    for (let index = session.messages.length - 1; index >= 0; index -= 1) {
+      const plan = session.messages[index].askRequest?.planConfirmation
+      if (plan?.runId === runId) return plan
+    }
+    return null
+  }
+
+  async function decideOverdrivePlan(
+    runId: string,
+    action: PlanDecisionAction,
+    feedback = '',
+  ): Promise<void> {
+    const sessionId = currentSessionId.value
+    const plan = findPlanConfirmation(runId)
+    if (!sessionId || !plan || !plan.actions.includes(action) || plan.status !== 'pending') return
+    const request = sessionId.startsWith('sess-')
+      ? null
+      : chatApi.decideOverdrivePlan(sessionId, runId, {
+          action,
+          planVersion: plan.planVersion,
+          planHash: plan.planHash,
+          feedback: feedback.trim(),
+          commandId: globalThis.crypto?.randomUUID?.()
+            || `plan-${runId}-${plan.planVersion}-${Date.now()}`,
+        })
+    if (!request) throw new Error('会话尚未完成初始化，请稍后重试')
+    plan.status = 'submitting'
+    plan.error = undefined
+    try {
+      await request
+      plan.feedback = feedback.trim() || undefined
+      plan.status = action === 'approve'
+        ? 'approved'
+        : action === 'revise'
+          ? 'revision_requested'
+          : 'cancelled'
+      const ask = currentSession.value?.messages.find(
+        (message) => message.askRequest?.planConfirmation === plan,
+      )?.askRequest
+      if (ask) ask.answered = true
+      // Plan approval/revision transitions immediately leave the synchronous chat
+      // stream. Start the durable event subscription here so a newly frozen
+      // revision and its confirmation card appear without requiring a refresh.
+      if (action !== 'cancel') void recoverOverdriveRun(sessionId)
+    } catch (error) {
+      plan.status = 'pending'
+      plan.error = error instanceof Error ? error.message : '计划决策提交失败'
+      throw error
+    }
+  }
+
   /** 进入会话时按后端 detail.permissions 初始化（默认 supervised） */
   function initStudioPermissions(mode?: StudioPermissionMode): void {
     studioPermissions.value = { mode: mode || 'supervised' }
@@ -2528,6 +2875,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     searchSessions, switchSessionModel, loadSessionMessages, sendMessage, stopStreaming, pauseStreaming,
     submitMessageFeedback,
     approveToolCall, rejectToolCall, approveOverdriveApproval, rejectOverdriveApproval, answerAskRequest,
+    decideOverdrivePlan,
     initStudioPermissions, setStudioPermissions,
     invokePipelineTool, submitPipelineTask, trackPipelineTask, pollPipelineTask,
     retryPipelineTask, stopPipelinePolling,

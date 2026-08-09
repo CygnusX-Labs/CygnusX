@@ -505,6 +505,9 @@ def test_site_yaml_enabled_agents_have_config_files():
         "scrna_advanced",
         "code",
         "viz",
+        "data",
+        "qc",
+        "delivery",
         "shania",
         "mcp_builder",
     ]

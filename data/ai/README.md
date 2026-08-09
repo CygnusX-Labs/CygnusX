@@ -1077,3 +1077,51 @@ aggregated），前端 `useAgentChatStream.ts` 没有对应 `case`，事件被�
 | 阶段 B 验收 | fan-out 里 ask_user 弹窗 | 手动 |
 | 阶段 C 验收 | Bridge 部署后群聊看 Case 推进 | 手动（Bridge 开启后）|
 
+## 16. Overdrive v2 架构决策与落地状态（2026-08-09）
+
+`update_agent.md` 定义的 v2 目标是“研究先行、计划确认、人格化异步 Agent 团队”。当本节与
+§14 的旧统一入口蓝图发生冲突时，以 v2 的确认闸门、持久化事件和真正异步语义为准；§14–§15
+保留为历史演进记录，不代表 v2 已全部实现。
+
+### 16.1 已冻结的 P0 架构决策
+
+- **唯一权威编排器**：`OverdriveRunService` 包装 Legacy 与 LangGraph 两种 Agent 引擎，负责
+  run 状态、计划版本和确认闸门；两种引擎不得各自维护一套 Overdrive 状态机。
+- **数据库是权威状态源**：run、plan、assistant instance 与递增事件以数据库为准；Redis/Celery
+  承担调度和投递，`plan.md` 与 manifest 是可读产物投影，不能反向覆盖权威状态。
+- **确认绑定不可变快照**：正式执行只能引用用户确认过的 `plan_version + plan_hash`。改变目标、
+  输入、关键参数、权限、质量门或交付物时必须产生新版本并重新确认。
+- **Persona 与权限隔离**：每个启用的内置 Agent 均在自身 YAML 的 `features.persona` 中声明稳定
+  Persona，只影响提示词、表达和 UI。它不得覆盖
+  `tool_packs`、`mcp_ids`、`skill_ids`、审批规则、配额或事实标准；本轮只能附加受限的
+  `persona_context`。
+- **状态文案确定性**：P0 每个状态仅配置一条稳定文案；后续若扩展候选池，选择必须由
+  `run_id + assistant_instance_id + status` 等稳定输入决定，刷新和事件重放不能改变文案。
+
+### 16.2 当前实际落地阶段
+
+当前是 **P0 契约已落地，P1/P2 核心代码已落地但验收未完成，P3/P4 部分施工**，不能描述为
+v2 全链路完成。下表区分“代码已存在”和“端到端 DoD 已验收”：没有端到端证据的项目不标记
+为完成。
+
+| 范围 | 当前状态 |
+| --- | --- |
+| 所有 15 个启用内置 Agent 的完整 `features.persona` | ✅ 已落地 YAML 契约；包括 RNA-seq、ATAC-seq 与单细胞主/子专家 |
+| 规划修订、三路研究和 Manager 点评预算 | 🚧 研究预算、独立 revision 计数、Celery 自动重规划和 Manager LLM 复核预算已接线；仍缺完整端到端验收 |
+| Persona 完整性、确定性状态文案与权限不变回归 | ✅ 已有纯 YAML 单元测试；执行实例已读取 Persona 展示字段 |
+| Overdrive v2 数据模型、迁移与权威 Run Service | 🚧 模型、迁移、状态机、命令幂等和事件游标代码已落地；数据库迁移/重启恢复 DoD 尚未验收 |
+| 三路研究 → `plan.md` → 用户确认（P1） | 🚧 核心闭环已接入聊天、计划版本/hash 和确认卡；仍缺完整 API/数据库端到端验收 |
+| 独立可恢复 worker、事件 cursor（P2） | 🚧 Celery 单任务 worker、事件回放与 SSE stream 已落地；断线重连、重复投递和跨进程恢复尚未端到端验收 |
+| 暂停/恢复/终止控制（P2） | 🚧 命令已持久化并有调度分支；运行中 worker 的安全停止、终止投递和恢复语义仍未完成验收 |
+| Assistant Instance、逐条回流与 Manager 点评（P3） | 🚧 实例花名册、稳定昵称、规则与 LLM 复核 job、基础返工/用户输入/精确工具审批分支已落地；完整端到端验收仍未完成 |
+| 动态多波次、独立 QC 与统一交付（P4） | 🚧 依赖就绪任务可解锁、确认计划内的独立 QC 节点、真实输入/产物路径核验、Manager 整合账本、artifact index、交付报告和下载入口已落地；复杂返工策略和完整交付验收仍未完成 |
+
+特别说明：`manager_review.rule_fast_path`、`max_tokens`、`timeout_seconds` 与
+`planning.max_revision_rounds` 是 v2 的配置契约；研究、计划修订和升级复核 job 已读取对应预算，
+但仍需真实模型与数据库环境完成端到端验收。
+
+配置契约定向验证命令：
+
+```bash
+uv run pytest tests/unit/test_overdrive_persona_config.py -q
+```
