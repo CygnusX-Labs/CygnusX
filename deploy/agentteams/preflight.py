@@ -92,6 +92,7 @@ def validate_omichub_env(values: dict[str, str]) -> list[str]:
         "AGENTTEAMS_BRIDGE_DATA_STEWARD_TOKEN",
         "AGENTTEAMS_BRIDGE_APPROVAL_TOKEN",
         "AGENTTEAMS_BRIDGE_WORKFLOW_OPERATOR_TOKEN",
+        "AGENTTEAMS_INTEGRATION_TOKEN",
     ):
         if is_placeholder(values.get(key)):
             errors.append(f"{key} is missing or still a template placeholder")
@@ -106,6 +107,7 @@ def validate_gateway_env(values: dict[str, str]) -> list[str]:
         "GATEWAY_MATRIX_SERVICE_TOKEN",
         "GATEWAY_MATRIX_IDENTITIES",
         "GATEWAY_ELEMENT_BASE_URL",
+        "GATEWAY_OMICHUB_INTEGRATION_TOKEN",
     ):
         if is_placeholder(values.get(key)):
             errors.append(f"{key} is missing or still a template placeholder")

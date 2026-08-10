@@ -138,6 +138,7 @@ class Settings(BaseSettings):
     agentteams_element_url: str = ""
     agentteams_chat_flow_whitelist: str = "rna_seq,atac_seq,scrna_seq"
     agentteams_case_watch_interval_seconds: int = 60
+    agentteams_integration_token: str = ""
     subagent_max_parallel: int = 4  # 单次 fan-out 最大子任务数
     subagent_max_concurrent: int = 3  # 实际并发信号量（给主链路 LLM 调用留余量）
     subagent_child_timeout_seconds: int = 180  # 单个子任务墙钟上限

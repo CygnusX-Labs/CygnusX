@@ -28,7 +28,10 @@ PUBLIC_PATHS = frozenset(
 
 PUBLIC_PREFIXES = ("/api/v1/studio/shared/",)
 
-SELF_AUTHENTICATED_PREFIXES = ("/api/v1/studio/internal/",)
+SELF_AUTHENTICATED_PREFIXES = (
+    "/api/v1/studio/internal/",
+    "/api/v1/agent-teams/consultations/",
+)
 
 
 def required_api_key_scope(method: str, path: str) -> str | None:

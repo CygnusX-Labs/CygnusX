@@ -20,6 +20,7 @@ def headers() -> dict[str, str]:
 def settings(tmp_path: Path) -> GatewaySettings:
     return GatewaySettings(
         omichub_base_url="http://omic.test",
+        omichub_integration_token="integration-token",
         audit_log_path=str(tmp_path / "gateway-audit.jsonl"),
         request_timeout_seconds=0.05,
     )
@@ -36,6 +37,28 @@ def make_client(
 
 def read_audit_log(path: str) -> str:
     return Path(path).read_text(encoding="utf-8")
+
+
+def test_production_gateway_requires_dedicated_integration_token() -> None:
+    with pytest.raises(ValueError, match="集成令牌"):
+        GatewaySettings(
+            environment="production",
+            omichub_integration_token="",
+            identities="bioops-manager:manager-secret",
+        )
+
+
+def test_production_gateway_accepts_dedicated_integration_token() -> None:
+    settings = GatewaySettings(
+        environment="production",
+        omichub_integration_token="integration-secret",
+        identities="bioops-manager:manager-secret",
+    )
+
+    assert settings.omichub_integration_token == "integration-secret"
+    assert settings.agent_policy_map()["agent-data"] == ({"project-preflight"}, set())
+    assert settings.agent_policy_map()["agent-qc"] == ({"quality-gate"}, set())
+    assert settings.agent_policy_map()["agent-delivery"] == ({"delivery-pack"}, set())
 
 
 def test_allowlisted_agent_returns_fixed_schema_and_strips_raw_response(
@@ -69,6 +92,7 @@ async def _test_allowlisted_agent_returns_fixed_schema_and_strips_raw_response(
             headers=headers(),
             json={
                 "case_id": "case-1",
+                "requester_ref": "user-1",
                 "agent_id": "agent-rnaseq",
                 "question": "Interpret RNA-seq QC results.",
                 "capability": "qc_advice",
@@ -92,9 +116,10 @@ async def _test_allowlisted_agent_returns_fixed_schema_and_strips_raw_response(
         "agent_id",
         "schema_ver",
         "duration_ms",
-        "token_usage",
-        "error",
-    }
+            "token_usage",
+            "error",
+            "proposed_submission",
+        }
     assert body["status"] == "completed"
     assert body["schema_version"] == "1.0"
     assert calls[0].url.path == "/api/v1/agent-teams/consultations/scientific-interpretation"
@@ -104,6 +129,8 @@ async def _test_allowlisted_agent_returns_fixed_schema_and_strips_raw_response(
     assert upstream_payload["allow_file_write"] is False
     assert upstream_payload["allow_database_access"] is False
     assert upstream_payload["allow_shell"] is False
+    assert upstream_payload["requester_ref"] == "user-1"
+    assert calls[0].headers["X-Integration-Token"] == "integration-token"
 
 
 def test_disallowed_tool_is_rejected_and_audited(settings: GatewaySettings) -> None:
@@ -124,6 +151,7 @@ async def _test_disallowed_tool_is_rejected_and_audited(settings: GatewaySetting
             headers=headers(),
             json={
                 "case_id": "case-2",
+                "requester_ref": "user-2",
                 "agent_id": "agent-rnaseq",
                 "question": "Please submit a task after interpreting this result.",
                 "capability": "result_interpretation",
@@ -163,6 +191,7 @@ async def _test_call_and_token_limits_return_structured_rejections(tmp_path: Pat
     api, upstream = make_client(settings, httpx.MockTransport(handler))
     payload = {
         "case_id": "case-3",
+        "requester_ref": "user-3",
         "agent_id": "agent-rnaseq",
         "question": "Interpret results.",
         "capability": "interpretation",
@@ -207,6 +236,7 @@ async def _test_timeout_returns_manual_review_and_audit_event(settings: GatewayS
             headers=headers(),
             json={
                 "case_id": "case-4",
+                "requester_ref": "user-4",
                 "agent_id": "agent-rnaseq",
                 "question": "Interpret results.",
                 "capability": "interpretation",

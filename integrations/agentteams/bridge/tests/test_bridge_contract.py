@@ -1230,18 +1230,26 @@ async def test_reconcile_creates_quality_work_item_only_after_observed_success(c
     )
     assert reconciled.status_code == 200
     assert reconciled.json()["status"] == "quality_running"
+    interpretation_items = [
+        item for item in reconciled.json()["work_items"] if item["work_item_id"] == "interpret-01"
+    ]
+    assert len(interpretation_items) == 1
+    assert interpretation_items[0]["target"] == "agent-rnaseq"
+    assert interpretation_items[0]["depends_on"] == ["submit-01"]
     quality_items = [
         item for item in reconciled.json()["work_items"] if item["work_item_id"] == "quality-01"
     ]
     assert len(quality_items) == 1
     assert quality_items[0]["target"] == "quality-auditor"
-    assert quality_items[0]["parent_work_item_id"] == "submit-01"
+    assert quality_items[0]["parent_work_item_id"] == "interpret-01"
+    assert quality_items[0]["depends_on"] == ["interpret-01"]
 
     replay = await request_client.post(
         "/v1/cases/bioops_reconcile/reconcile", headers=headers("bioops-manager", "manager")
     )
     assert replay.status_code == 200
     assert [item["work_item_id"] for item in replay.json()["work_items"]].count("quality-01") == 1
+    assert [item["work_item_id"] for item in replay.json()["work_items"]].count("interpret-01") == 1
 
 
 @pytest.mark.asyncio

@@ -16,9 +16,20 @@ class ConsultationRequest(BaseModel):
     case_id: str = Field(min_length=1, max_length=128)
     agent_id: str = Field(min_length=1, max_length=128)
     question: str = Field(min_length=1, max_length=8_000)
-    capability: Literal["interpretation", "planning_advice", "result_interpretation", "qc_advice"]
+    capability: Literal[
+        "interpretation",
+        "planning_advice",
+        "result_interpretation",
+        "qc_advice",
+        "project-preflight",
+        "quality-gate",
+        "delivery-pack",
+    ]
     evidence_refs: list[str] = Field(default_factory=list, max_length=50)
     requested_tools: list[str] = Field(default_factory=list, max_length=20)
+    requester_ref: str = Field(min_length=1, max_length=256)
+    work_item_id: str | None = Field(default=None, min_length=1, max_length=128)
+    execution_mode: Literal["readonly_consultation", "workspace_execution"] = "readonly_consultation"
 
 
 class ConsultationError(BaseModel):
@@ -41,6 +52,7 @@ class ScientificInterpretationResponse(BaseModel):
     duration_ms: int = 0
     token_usage: int = 0
     error: ConsultationError | None = None
+    proposed_submission: dict[str, Any] | None = None
 
 
 class UpstreamConsultationResponse(BaseModel):
@@ -49,6 +61,7 @@ class UpstreamConsultationResponse(BaseModel):
     evidence_refs: list[str] = Field(default_factory=list)
     risks: list[str] = Field(default_factory=list)
     token_usage: int = 0
+    proposed_submission: dict[str, Any] | None = None
 
 
 class RoomCreateRequest(BaseModel):

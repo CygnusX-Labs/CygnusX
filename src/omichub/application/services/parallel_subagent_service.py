@@ -173,6 +173,7 @@ class ParallelSubAgentService:
         on_event: Callable[[dict[str, Any]], Awaitable[None] | None] | None = None,
         safe_only: bool = False,
         runtime_authorized: bool = False,
+        workdir_root: Path | None = None,
         approved_tool_calls: list[dict[str, Any]] | None = None,
         control_check: Callable[[], Awaitable[str | None] | str | None] | None = None,
     ) -> dict[str, Any]:
@@ -220,7 +221,7 @@ class ParallelSubAgentService:
             )
 
         run_id = uuid4().hex[:12]
-        workdir_root = Path(get_settings().storage_path) / "subagents" / run_id
+        workdir_root = workdir_root or Path(get_settings().storage_path) / "subagents" / run_id
         semaphore = asyncio.Semaphore(max(1, settings.subagent_max_concurrent))
         started = time.monotonic()
         logger.info(
@@ -244,7 +245,7 @@ class ParallelSubAgentService:
                     user_id=user_id,
                     parent_session_id=parent_session_id,
                     run_id=run_id,
-                    workdir=workdir_root / str(index),
+                    workdir=workdir_root if len(prepared) == 1 else workdir_root / str(index),
                     timeout_seconds=int(
                         item.get("timeout_seconds") or settings.subagent_child_timeout_seconds
                     ),

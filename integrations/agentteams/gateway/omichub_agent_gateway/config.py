@@ -16,6 +16,7 @@ class GatewaySettings(BaseSettings):
     omichub_consultation_path: str = "/api/v1/agent-teams/consultations/scientific-interpretation"
     omichub_service_token: str = ""
     omichub_api_key: str = ""
+    omichub_integration_token: str = ""
     identities: str = "bioops-manager:manager-secret"
     matrix_homeserver_url: str = ""
     matrix_service_token: str = ""
@@ -35,20 +36,18 @@ class GatewaySettings(BaseSettings):
         "agent-viz|interpretation,result_interpretation,qc_advice|"
         "ensembl.lookup_gene,ensembl.search_genes;"
         "agent-code|interpretation,planning_advice,result_interpretation,qc_advice|"
-        "ensembl.lookup_gene,ensembl.search_genes"
+        "ensembl.lookup_gene,ensembl.search_genes;"
+        "agent-data|project-preflight|;"
+        "agent-qc|quality-gate|;"
+        "agent-delivery|delivery-pack|"
     )
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> GatewaySettings:
         if self.environment != "production":
             return self
-        credentials = [
-            value
-            for value in (self.omichub_service_token, self.omichub_api_key)
-            if not self._is_placeholder(value)
-        ]
-        if len(credentials) != 1:
-            raise ValueError("生产环境必须且只能配置一种 OmicHub 受限认证方式")
+        if self._is_placeholder(self.omichub_integration_token):
+            raise ValueError("生产环境必须配置 OmicHub 集成令牌")
         identities = self.identity_secrets()
         if not identities or any(self._is_placeholder(secret) for secret in identities.values()):
             raise ValueError("生产环境必须替换 Gateway 身份凭证")

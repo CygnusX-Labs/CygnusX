@@ -24,6 +24,7 @@ BridgeRole = Literal[
 ApprovalAction = Literal["submit_task", "cancel_task"]
 CaseStatus = Literal[
     "received",
+    "planning_running",
     "preflight_running",
     "preflight_blocked",
     "waiting_for_correction",
@@ -215,6 +216,8 @@ class CaseCreateRequest(BaseModel):
     origin_consultation_id: str | None = Field(default=None, max_length=256)
     consultation_summary: str | None = Field(default=None, max_length=1_800)
     execution_mode: Literal["local", "cluster_case"] = "cluster_case"
+    flow_id: str | None = Field(default=None, min_length=1, max_length=128)
+    lead_planner: BridgeRole | None = None
 
     @field_validator("element_room_url")
     @classmethod
@@ -232,7 +235,11 @@ class CaseRecord(BaseModel):
     origin_consultation_id: str | None = None
     consultation_summary: str | None = None
     execution_mode: Literal["local", "cluster_case"] = "cluster_case"
+    flow_id: str | None = None
+    lead_planner: BridgeRole | None = None
     status: CaseStatus = "received"
+    proposed_submission: dict[str, Any] | None = None
+    plan_hash: str | None = None
     omic_task_ids: list[str] = Field(default_factory=list)
     task_specs: list[dict[str, Any]] = Field(default_factory=list)
     preflight_input: PreflightInputSnapshot | None = None
@@ -252,6 +259,7 @@ class WorkItemRecord(BaseModel):
     skill_name: str = Field(min_length=1, max_length=128)
     context_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
     read_only: bool = True
+    execution_mode: Literal["readonly_consultation", "workspace_execution"] = "readonly_consultation"
     approval_required: bool = False
     deadline_seconds: int = Field(default=300, ge=1, le=86_400)
     status: WorkItemStatus = "pending"
@@ -277,6 +285,7 @@ class WorkItemCreateRequest(BaseModel):
     skill_name: str = Field(min_length=1, max_length=128)
     context_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
     read_only: bool = True
+    execution_mode: Literal["readonly_consultation", "workspace_execution"] = "readonly_consultation"
     approval_required: bool = False
     deadline_seconds: int = Field(default=300, ge=1, le=86_400)
     max_attempts: int = Field(default=3, ge=1, le=10)
@@ -302,11 +311,20 @@ class ReadOnlyExecutionRequest(BaseModel):
     """Worker request for a Bridge-mediated, Gateway-restricted consultation."""
 
     agent_id: str = Field(min_length=1, max_length=128)
-    capability: Literal["interpretation", "planning_advice", "result_interpretation", "qc_advice"]
+    capability: Literal[
+        "interpretation",
+        "planning_advice",
+        "result_interpretation",
+        "qc_advice",
+        "project-preflight",
+        "quality-gate",
+        "delivery-pack",
+    ]
     question: str = Field(min_length=1, max_length=8_000)
     evidence_refs: list[str] = Field(default_factory=list, max_length=50)
     requested_tools: list[str] = Field(default_factory=list, max_length=20)
     trace_id: str | None = Field(default=None, max_length=128)
+    execution_mode: Literal["readonly_consultation", "workspace_execution"] = "readonly_consultation"
 
 
 class ReadOnlyExecutionResult(BaseModel):
@@ -322,6 +340,7 @@ class ReadOnlyExecutionResult(BaseModel):
     schema_ver: str = Field(min_length=1, max_length=32)
     duration_ms: int = Field(ge=0)
     token_usage: int = Field(ge=0)
+    proposed_submission: dict[str, Any] | None = None
 
 
 class WorkerInboxItem(BaseModel):

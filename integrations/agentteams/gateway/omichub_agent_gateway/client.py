@@ -30,9 +30,12 @@ class OmicHubConsultationClient:
             "capability": request.capability,
             "evidence_refs": request.evidence_refs,
             "requested_tools": request.requested_tools,
-            "read_only": True,
+            "requester_ref": request.requester_ref,
+            "work_item_id": request.work_item_id,
+            "execution_mode": request.execution_mode,
+            "read_only": request.execution_mode == "readonly_consultation",
             "allow_task_actions": False,
-            "allow_file_write": False,
+            "allow_file_write": request.execution_mode == "workspace_execution",
             "allow_database_access": False,
             "allow_shell": False,
         }
@@ -45,8 +48,6 @@ class OmicHubConsultationClient:
         return UpstreamConsultationResponse.model_validate(response.json())
 
     def _auth_headers(self) -> dict[str, str]:
-        if self._settings.omichub_service_token:
-            return {"Authorization": f"Bearer {self._settings.omichub_service_token}"}
-        if self._settings.omichub_api_key:
-            return {"X-API-Key": self._settings.omichub_api_key}
+        if self._settings.omichub_integration_token:
+            return {"X-Integration-Token": self._settings.omichub_integration_token}
         return {}

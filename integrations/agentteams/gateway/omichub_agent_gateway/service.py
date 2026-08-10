@@ -74,6 +74,7 @@ class GatewayService:
             agent_id=request.agent_id,
             duration_ms=self._duration_ms(started_at),
             token_usage=upstream.token_usage,
+            proposed_submission=upstream.proposed_submission,
         )
         await self._audit_response(request, actor, response)
         return response

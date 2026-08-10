@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import hmac
 import json
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from omichub.api.deps import CurrentUserId, DbSession
+from omichub.application.services.agent_consultation_service import (
+    AgentConsultationService,
+    ConsultationEnvelope,
+)
 from omichub.application.services.agentteams_bridge_settings_service import (
     AgentTeamsBridgeSettingsService,
 )
@@ -56,6 +61,56 @@ async def get_agentteams_service(db: DbSession) -> AgentTeamsService:
 
 
 AgentTeamsServiceDep = Annotated[AgentTeamsService, Depends(get_agentteams_service)]
+
+
+def require_integration_token(
+    token: Annotated[str | None, Header(alias="X-Integration-Token")] = None,
+) -> None:
+    expected = get_settings().agentteams_integration_token
+    if not token or not expected or not hmac.compare_digest(token, expected):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid integration token"
+        )
+
+
+IntegrationTokenRequired = Annotated[None, Depends(require_integration_token)]
+
+
+class ScientificInterpretationRequest(BaseModel):
+    case_id: str = Field(min_length=1, max_length=128)
+    agent_id: str = Field(min_length=1, max_length=128)
+    question: str = Field(min_length=1, max_length=8_000)
+    capability: Literal[
+        "interpretation",
+        "planning_advice",
+        "result_interpretation",
+        "qc_advice",
+        "project-preflight",
+        "quality-gate",
+        "delivery-pack",
+    ]
+    evidence_refs: list[Annotated[str, Field(min_length=1, max_length=512)]] = Field(
+        default_factory=list, max_length=50
+    )
+    requested_tools: list[Annotated[str, Field(min_length=1, max_length=128)]] = Field(
+        default_factory=list, max_length=20
+    )
+    requester_ref: str = Field(min_length=1, max_length=256)
+    work_item_id: str | None = Field(default=None, min_length=1, max_length=128)
+    execution_mode: Literal["readonly_consultation", "workspace_execution"] = "readonly_consultation"
+
+
+@router.post(
+    "/consultations/scientific-interpretation",
+    response_model=ConsultationEnvelope,
+    summary="执行 AgentTeams 受控科学会诊",
+)
+async def scientific_interpretation(
+    request: ScientificInterpretationRequest,
+    _integration_token: IntegrationTokenRequired,
+    db: DbSession,
+) -> ConsultationEnvelope:
+    return await AgentConsultationService(db).run_consultation(**request.model_dump())
 
 
 class AgentTeamsCaseCreateRequest(BaseModel):

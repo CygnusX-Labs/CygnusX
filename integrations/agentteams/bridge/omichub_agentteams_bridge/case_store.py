@@ -27,10 +27,11 @@ _WORK_ITEM_TRANSITIONS: dict[WorkItemStatus, set[WorkItemStatus]] = {
 }
 
 _ALLOWED_TRANSITIONS: dict[CaseStatus, set[CaseStatus]] = {
-    "received": {"preflight_running", "cancelled"},
+    "received": {"planning_running", "preflight_running", "cancelled"},
+    "planning_running": {"preflight_running", "waiting_for_correction", "cancelled"},
     "preflight_running": {"preflight_blocked", "approval_pending", "cancelled"},
     "preflight_blocked": {"waiting_for_correction", "cancelled"},
-    "waiting_for_correction": {"preflight_running", "cancelled"},
+    "waiting_for_correction": {"planning_running", "preflight_running", "cancelled"},
     "approval_pending": {"approved", "cancelled"},
     "approved": {"executing", "cancelled"},
     "executing": {"quality_running", "execution_failed", "cancelled"},
@@ -217,6 +218,29 @@ class CaseStore:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
             updated = case.model_copy(
                 update={"preflight_input": snapshot, "updated_at": datetime.now(UTC)}
+            )
+            self._cases[case_id] = updated
+            await self._persist()
+            return updated
+
+    async def save_plan(
+        self,
+        case_id: str,
+        proposed_submission: dict[str, Any],
+        plan_hash: str,
+        snapshot: PreflightInputSnapshot,
+    ) -> CaseRecord:
+        async with self._lock:
+            case = self._cases.get(case_id)
+            if case is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+            updated = case.model_copy(
+                update={
+                    "proposed_submission": proposed_submission,
+                    "plan_hash": plan_hash,
+                    "preflight_input": snapshot,
+                    "updated_at": datetime.now(UTC),
+                }
             )
             self._cases[case_id] = updated
             await self._persist()

@@ -197,6 +197,7 @@ class AgentTeamsService:
             "intent": intent,
             "requester_ref": requester_ref,
             "execution_mode": "cluster_case",
+            "flow_id": flow_id,
         }
         if origin_consultation_id:
             case_payload["origin_consultation_id"] = origin_consultation_id
@@ -209,35 +210,6 @@ class AgentTeamsService:
             "/v1/cases",
             method="POST",
             json=case_payload,
-        )
-        await self._request(
-            f"/v1/cases/{case_id}/work-items",
-            method="POST",
-            json={
-                "work_item_id": "preflight-01",
-                "target": "data-steward",
-                "objective": "核验项目输入、样本表和分组对比，决定是否进入人工审批。",
-                "skill_name": "project-preflight",
-                "context_refs": [{"kind": "project", "id": project_id}],
-                "read_only": True,
-            },
-        )
-        preflight_payload: dict[str, Any] = {
-            "case_id": case_id,
-            "work_item_id": "preflight-01",
-            "flow_id": flow_id,
-            "sample_sheet": sample_sheet,
-            "comparisons": comparisons,
-            "context_refs": [{"kind": "project", "id": project_id}],
-        }
-        if consultation_summary:
-            preflight_payload["consultation_summary"] = consultation_summary
-        await self._request_as(
-            "data-steward",
-            self._bridge_config.data_steward_token,
-            f"/v1/projects/{project_id}/preflight",
-            method="POST",
-            json=preflight_payload,
         )
         return case
 

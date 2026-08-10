@@ -5,6 +5,16 @@ from __future__ import annotations
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+ROLE_AGENT_MAP = {
+    "data-steward": "agent-data",
+    "agent-rnaseq": "agent-rnaseq",
+    "agent-scrna": "agent-scrna",
+    "agent-code": "agent-code",
+    "agent-viz": "agent-viz",
+    "quality-auditor": "agent-qc",
+    "delivery-reporter": "agent-delivery",
+}
+
 
 class BridgeSettings(BaseSettings):
     """Only Bridge-owned configuration is accepted here; no database credentials."""
@@ -17,6 +27,7 @@ class BridgeSettings(BaseSettings):
     omichub_api_key: str = ""
     gateway_url: str = ""
     gateway_manager_token: str = ""
+    role_agent_map: str = ""
     approval_signing_secret: str = "change-me-before-deployment"
     identities: str = (
         "approval-authority:approval-secret,bioops-manager:manager-secret,data-steward:steward-secret,"
@@ -98,3 +109,15 @@ class BridgeSettings(BaseSettings):
 
     def allowed_flows(self) -> set[str]:
         return {flow_id.strip() for flow_id in self.allowed_flow_ids.split(",") if flow_id.strip()}
+
+    def role_agent_mapping(self) -> dict[str, str]:
+        if not self.role_agent_map.strip():
+            return dict(ROLE_AGENT_MAP)
+        configured = {
+            role.strip(): agent_id.strip()
+            for entry in self.role_agent_map.split(",")
+            if ":" in entry
+            for role, agent_id in [entry.split(":", maxsplit=1)]
+            if role.strip() and agent_id.strip()
+        }
+        return {**ROLE_AGENT_MAP, **configured}
