@@ -2,6 +2,7 @@ import type { AgentTeamsCaseStatus } from '@/api/agentTeams'
 
 export const agentTeamsStatusLabel: Record<AgentTeamsCaseStatus, string> = {
   received: '已接收',
+  planning_running: '规划中',
   preflight_running: '预检中',
   preflight_blocked: '预检阻断',
   waiting_for_correction: '等待修正',

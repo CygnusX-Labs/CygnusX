@@ -15,6 +15,16 @@ export interface WebSearchSource {
   publishedAt?: string | null
 }
 
+export interface KnowledgeCitationSource {
+  citationId: string
+  docId: string
+  title: string
+  category: string
+  excerpt: string
+  sectionPath: string
+  url: string
+}
+
 export interface WebSearchStatus {
   query?: string
   status: 'searching' | 'empty' | 'failed' | 'complete'
@@ -66,6 +76,8 @@ export interface AgentTeamsCaseCardPayload {
   next_actor: string
   case_url: string
   updated_at?: string
+  plan_hash?: string | null
+  proposed_submission?: Record<string, unknown> | null
 }
 
 export interface OverdriveProgress {
@@ -119,6 +131,8 @@ export interface ChatMessage {
   skillInvocations?: SkillInvocationCard[]
   /** 联网搜索的标准化来源；用于预搜索和历史重载。 */
   webSources?: WebSearchSource[]
+  /** 知识库检索的可核验来源；从 knowledge_search 工具结果恢复。 */
+  knowledgeSources?: KnowledgeCitationSource[]
   /** 联网搜索进行中的反馈。 */
   webSearchStatus?: WebSearchStatus
   charts?: ChartData[]

@@ -88,6 +88,7 @@ class ScientificInterpretationRequest(BaseModel):
         "project-preflight",
         "quality-gate",
         "delivery-pack",
+        "workspace_execution",
     ]
     evidence_refs: list[Annotated[str, Field(min_length=1, max_length=512)]] = Field(
         default_factory=list, max_length=50
@@ -116,8 +117,8 @@ async def scientific_interpretation(
 class AgentTeamsCaseCreateRequest(BaseModel):
     project_id: str = Field(min_length=1, max_length=256)
     intent: str = Field(min_length=1, max_length=256)
-    flow_id: str = Field(default="rna_seq", min_length=1, max_length=128)
-    sample_sheet: list[dict[str, Any]] = Field(min_length=1, max_length=10_000)
+    flow_id: str | None = Field(default=None, min_length=1, max_length=128)
+    sample_sheet: list[dict[str, Any]] = Field(default_factory=list, max_length=10_000)
     comparisons: list[dict[str, Any]] | None = Field(default=None, max_length=1_000)
 
 
@@ -185,7 +186,7 @@ async def create_case(
     service: AgentTeamsServiceDep,
     db: DbSession,
 ) -> dict[str, Any]:
-    if not _is_chat_case_flow_allowed(request.flow_id):
+    if request.flow_id and not _is_chat_case_flow_allowed(request.flow_id):
         raise BusinessError("该流程不在 AgentTeams Case 白名单中")
     await _require_owned_project(db, current_user_id, request.project_id)
     return await service.create_case(
@@ -194,7 +195,7 @@ async def create_case(
         intent=request.intent,
         requester_ref=current_user_id,
         flow_id=request.flow_id,
-        sample_sheet=request.sample_sheet,
+        sample_sheet=request.sample_sheet or None,
         comparisons=request.comparisons,
     )
 
@@ -211,6 +212,13 @@ async def refresh_case(
     case_id: str, current_user_id: CurrentUserId, service: AgentTeamsServiceDep
 ) -> dict[str, Any]:
     return await service.refresh_case(case_id, current_user_id)
+
+
+@router.get("/cases/{case_id}/manifest", summary="获取当前用户的交付 Manifest")
+async def get_manifest(
+    case_id: str, current_user_id: CurrentUserId, service: AgentTeamsServiceDep
+) -> dict[str, Any]:
+    return await service.get_manifest(case_id, current_user_id)
 
 
 @router.post(

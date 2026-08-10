@@ -27,15 +27,17 @@ class GatewaySettings(BaseSettings):
     request_timeout_seconds: float = Field(default=120.0, gt=0, le=600)
     max_calls_per_case: int = Field(default=5, ge=1, le=100)
     max_tokens_per_case: int = Field(default=200_000, ge=1, le=2_000_000)
+    state_store_url: str = ""
+    state_store_key_prefix: str = "omichub:agentteams:gateway"
     audit_log_path: str = "/tmp/omichub-agent-gateway-audit.jsonl"
     agent_policies: str = (
         "agent-rnaseq|interpretation,planning_advice,result_interpretation,qc_advice|"
         "ensembl.lookup_gene,ensembl.search_genes;"
         "agent-scrna|interpretation,planning_advice,result_interpretation,qc_advice|"
         "ensembl.lookup_gene,ensembl.search_genes;"
-        "agent-viz|interpretation,result_interpretation,qc_advice|"
+        "agent-viz|interpretation,result_interpretation,qc_advice,workspace_execution|"
         "ensembl.lookup_gene,ensembl.search_genes;"
-        "agent-code|interpretation,planning_advice,result_interpretation,qc_advice|"
+        "agent-code|interpretation,planning_advice,result_interpretation,qc_advice,workspace_execution|"
         "ensembl.lookup_gene,ensembl.search_genes;"
         "agent-data|project-preflight|;"
         "agent-qc|quality-gate|;"
@@ -53,6 +55,8 @@ class GatewaySettings(BaseSettings):
             raise ValueError("生产环境必须替换 Gateway 身份凭证")
         if not self.agent_policy_map():
             raise ValueError("生产环境必须配置专业 Agent 白名单")
+        if not self.state_store_url:
+            raise ValueError("生产环境必须配置 Redis 共享状态存储")
         if bool(self.matrix_homeserver_url) != bool(self.matrix_service_token):
             raise ValueError("Matrix homeserver URL 与服务账号令牌必须同时配置")
         if self.matrix_homeserver_url and self._is_placeholder(self.matrix_service_token):

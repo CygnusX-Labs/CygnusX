@@ -71,10 +71,14 @@ def _question(assignment: dict[str, Any]) -> str:
         raise RuntimeError("Bridge returned malformed Work Item")
     objective = str(work_item.get("objective") or "")
     refs = work_item.get("context_refs") or []
+    execution_mode = str(work_item.get("execution_mode") or "readonly_consultation")
+    prefix = (
+        "请在 Bridge 指定的受控工作目录中执行任务并登记所有产物；不得修改数据库或提交工作流。\n"
+        if execution_mode == "workspace_execution"
+        else "请仅基于以下受控任务给出简洁、可核验的只读专业建议；不要执行任务、修改文件、提交工作流或承诺后续操作。\n"
+    )
     return (
-        "请仅基于以下受控任务给出简洁、可核验的只读专业建议；"
-        "不要执行任务、修改文件、提交工作流或承诺后续操作。\n"
-        f"任务：{objective}\n逻辑上下文引用：{json.dumps(refs, ensure_ascii=False)}"
+        prefix + f"任务：{objective}\n逻辑上下文引用：{json.dumps(refs, ensure_ascii=False)}"
     )
 
 
@@ -89,6 +93,11 @@ def run_once(config: ProductionWorkerConfig) -> dict[str, Any]:
         return {"action": "claim_raced", "identity": config.identity}
 
     agent_id, capability = _AGENT_PROFILES[config.identity]
+    execution_mode = str(assignment["work_item"].get("execution_mode") or "readonly_consultation")
+    if execution_mode == "workspace_execution":
+        if config.identity not in {"agent-code", "agent-viz"}:
+            raise RuntimeError("Workspace execution is only supported by code or visualization workers")
+        capability = "workspace_execution"
     trace_id = uuid.uuid4().hex
     heartbeat_work_item(
         config.bridge_url,
@@ -106,6 +115,7 @@ def run_once(config: ProductionWorkerConfig) -> dict[str, Any]:
         agent_id=agent_id,
         capability=capability,
         question=_question(assignment),
+        execution_mode=execution_mode,
         trace_id=trace_id,
     )
     work_item = result.get("work_item_id") or assignment["work_item"]["work_item_id"]

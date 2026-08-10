@@ -53,6 +53,7 @@ def test_production_gateway_accepts_dedicated_integration_token() -> None:
         environment="production",
         omichub_integration_token="integration-secret",
         identities="bioops-manager:manager-secret",
+        state_store_url="redis://localhost:6379/0",
     )
 
     assert settings.omichub_integration_token == "integration-secret"
@@ -119,6 +120,7 @@ async def _test_allowlisted_agent_returns_fixed_schema_and_strips_raw_response(
             "token_usage",
             "error",
             "proposed_submission",
+            "artifacts",
         }
     assert body["status"] == "completed"
     assert body["schema_version"] == "1.0"

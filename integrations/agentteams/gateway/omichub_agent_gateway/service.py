@@ -31,6 +31,14 @@ class GatewayService:
         self._case_calls: dict[str, int] = defaultdict(int)
         self._case_tokens: dict[str, int] = defaultdict(int)
         self._lock = asyncio.Lock()
+        self._counter_redis = None
+        if settings.state_store_url:
+            try:
+                from redis.asyncio import from_url
+
+                self._counter_redis = from_url(settings.state_store_url, decode_responses=True)
+            except ImportError as exc:  # pragma: no cover - Docker includes redis dependency
+                raise RuntimeError("Gateway Redis counter store requires redis package") from exc
 
     async def consult(
         self, request: ConsultationRequest, actor: str
@@ -75,6 +83,7 @@ class GatewayService:
             duration_ms=self._duration_ms(started_at),
             token_usage=upstream.token_usage,
             proposed_submission=upstream.proposed_submission,
+            artifacts=upstream.artifacts,
         )
         await self._audit_response(request, actor, response)
         return response
@@ -99,6 +108,16 @@ class GatewayService:
         return None
 
     async def _reserve_call(self, case_id: str) -> ConsultationError | None:
+        if self._counter_redis is not None:
+            key = f"{self._settings.state_store_key_prefix}:calls:{case_id}"
+            count = await self._counter_redis.incr(key)
+            if count == 1:
+                await self._counter_redis.expire(key, 86_400)
+            if count > self._settings.max_calls_per_case:
+                return ConsultationError(
+                    code="CASE_CALL_LIMIT_EXCEEDED", message="Per-case consultation limit exceeded."
+                )
+            return None
         async with self._lock:
             if self._case_calls[case_id] >= self._settings.max_calls_per_case:
                 return ConsultationError(
@@ -109,6 +128,16 @@ class GatewayService:
         return None
 
     async def _consume_tokens(self, case_id: str, token_usage: int) -> ConsultationError | None:
+        if self._counter_redis is not None:
+            key = f"{self._settings.state_store_key_prefix}:tokens:{case_id}"
+            total = await self._counter_redis.incrby(key, max(0, token_usage))
+            if total == max(0, token_usage):
+                await self._counter_redis.expire(key, 86_400)
+            if total > self._settings.max_tokens_per_case:
+                return ConsultationError(
+                    code="CASE_TOKEN_LIMIT_EXCEEDED", message="Per-case token limit exceeded."
+                )
+            return None
         async with self._lock:
             if self._case_tokens[case_id] + token_usage > self._settings.max_tokens_per_case:
                 return ConsultationError(
@@ -117,6 +146,10 @@ class GatewayService:
                 )
             self._case_tokens[case_id] += token_usage
         return None
+
+    async def aclose(self) -> None:
+        if self._counter_redis is not None:
+            await self._counter_redis.aclose()
 
     async def _reject(
         self,

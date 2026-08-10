@@ -18,7 +18,11 @@ from omichub.application.services.case_room_projector import CaseRoomProjector
 from omichub.application.services.site_settings_service import SiteSettingsService
 from omichub.core.config import get_settings
 from omichub.infrastructure.cache.chat_case_pubsub import publish_chat_case_event
-from omichub.infrastructure.database.models.chat import ChatMessageModel, ChatSessionModel
+from omichub.infrastructure.database.models.chat import (
+    AgentTeamsCaseCursorModel,
+    ChatMessageModel,
+    ChatSessionModel,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,10 +86,11 @@ class AgentTeamsCaseWatchService:
         meta = dict(session.sandbox_meta or {})
         case_ids = [item for item in meta.get("agentteams_case_ids", []) if isinstance(item, str)]
         statuses = dict(meta.get("agentteams_case_status") or {})
-        notifications = dict(meta.get("agentteams_case_notified") or {})
-        cursors = dict(meta.get("agentteams_case_event_cursor") or {})
+        legacy_notifications = dict(meta.pop("agentteams_case_notified", {}) or {})
+        legacy_cursors = dict(meta.pop("agentteams_case_event_cursor", {}) or {})
         titles = dict(meta.get("agentteams_case_titles") or {})
-        changed = scanned = notified = failed = 0
+        changed = bool(legacy_notifications or legacy_cursors)
+        scanned = notified = failed = 0
 
         for case_id in case_ids:
             if statuses.get(case_id) in TERMINAL_STATUSES:
@@ -100,6 +105,12 @@ class AgentTeamsCaseWatchService:
             status = str(case.get("status") or "")
             if not status:
                 continue
+            cursor_state = await self._get_or_create_cursor_state(
+                session.session_id,
+                case_id,
+                legacy_cursor=str(legacy_cursors.get(case_id) or "") or None,
+                legacy_notified_statuses=legacy_notifications.get(case_id),
+            )
             title = str(case.get("intent") or titles.get(case_id) or "协作 Case")[:80]
             previous = str(statuses.get(case_id) or "")
             statuses[case_id] = status
@@ -108,7 +119,7 @@ class AgentTeamsCaseWatchService:
                 events_page = await agentteams.get_case_events(
                     case_id,
                     requester_ref=session.user_id,
-                    cursor=str(cursors.get(case_id) or "") or None,
+                    cursor=cursor_state.event_cursor or None,
                     limit=100,
                 )
                 events = events_page.get("events") if isinstance(events_page.get("events"), list) else []
@@ -123,19 +134,19 @@ class AgentTeamsCaseWatchService:
                 next_cursor = events_page.get("next_cursor")
                 last_event_id = str(events[-1].get("event_id") or "") if events else ""
                 if isinstance(next_cursor, str) and next_cursor:
-                    cursors[case_id] = next_cursor
-                    changed = True
+                    cursor_state.event_cursor = next_cursor
                 elif last_event_id:
-                    cursors[case_id] = last_event_id
-                    changed = True
+                    cursor_state.event_cursor = last_event_id
             except Exception as exc:  # noqa: BLE001
                 failed += 1
                 logger.warning("AgentTeams Case event projection failed for %s: %s", case_id, exc)
-            seen = {value for value in notifications.get(case_id, []) if isinstance(value, str)}
+            seen = {
+                value for value in cursor_state.notified_statuses if isinstance(value, str)
+            }
             if status != previous and status in WATCHED_STATUSES and status not in seen:
                 event = await self._add_notification(session.session_id, case_id, title, status)
                 seen.add(status)
-                notifications[case_id] = sorted(seen)
+                cursor_state.notified_statuses = sorted(seen)
                 try:
                     await publish_chat_case_event(session.session_id, event)
                 except Exception as exc:  # noqa: BLE001
@@ -145,12 +156,40 @@ class AgentTeamsCaseWatchService:
 
         if changed:
             meta["agentteams_case_status"] = statuses
-            meta["agentteams_case_notified"] = notifications
-            meta["agentteams_case_event_cursor"] = cursors
             meta["agentteams_case_titles"] = titles
             session.sandbox_meta = meta
             session.updated_at = datetime.now(UTC)
         return {"scanned": scanned, "notified": notified, "failed": failed}
+
+    async def _get_or_create_cursor_state(
+        self,
+        session_id: str,
+        case_id: str,
+        *,
+        legacy_cursor: str | None,
+        legacy_notified_statuses: object,
+    ) -> AgentTeamsCaseCursorModel:
+        state = await self._db.scalar(
+            select(AgentTeamsCaseCursorModel).where(
+                AgentTeamsCaseCursorModel.session_id == session_id,
+                AgentTeamsCaseCursorModel.case_id == case_id,
+            )
+        )
+        if state is not None:
+            return state
+        notified_statuses = (
+            sorted({item for item in legacy_notified_statuses if isinstance(item, str)})
+            if isinstance(legacy_notified_statuses, list)
+            else []
+        )
+        state = AgentTeamsCaseCursorModel(
+            session_id=session_id,
+            case_id=case_id,
+            event_cursor=legacy_cursor,
+            notified_statuses=notified_statuses,
+        )
+        self._db.add(state)
+        return state
 
     async def _add_notification(
         self, session_id: str, case_id: str, title: str, status: str

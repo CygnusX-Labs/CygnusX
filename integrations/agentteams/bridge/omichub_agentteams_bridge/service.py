@@ -95,10 +95,10 @@ class BridgeService:
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail="Workspace execution is limited to agent-code and agent-viz",
                 )
-            if not case.plan_hash or case.status not in {"approved", "executing"}:
+            if not request.approval_required and not case.plan_hash:
                 raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Workspace execution requires a frozen approved plan",
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Workspace execution requires approval_required or a frozen plan",
                 )
         elif request.target in {"agent-code", "agent-viz", "agent-scrna", "agent-rnaseq"} and not request.read_only:
             raise HTTPException(
@@ -339,12 +339,20 @@ class BridgeService:
         work_item = await self._cases.get_work_item(case_id, work_item_id)
         if actor != work_item.target:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Work item target mismatch")
-        if request.execution_mode != "readonly_consultation" or work_item.execution_mode != "readonly_consultation":
+        if request.execution_mode != work_item.execution_mode:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Workspace work items must use the controlled workspace execution channel",
+                detail="Work item execution mode mismatch",
             )
-        if not work_item.read_only or work_item.approval_required:
+        case = await self._cases.get(case_id)
+        if work_item.execution_mode == "workspace_execution":
+            if work_item.target not in {"agent-code", "agent-viz"}:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Workspace target is not allowed")
+            if not case.plan_hash and not (
+                work_item.approval_required and work_item.approved_submission is not None
+            ):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Workspace execution is not approved")
+        elif not work_item.read_only or work_item.approval_required:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Only unapproved read-only work items may use Gateway execution",
@@ -377,7 +385,6 @@ class BridgeService:
             actor,
         )
         try:
-            case = await self._cases.get(case_id)
             result = await self._gateway.consult(
                 {
                     "case_id": case_id,
@@ -447,6 +454,7 @@ class BridgeService:
                 "recommendations": gateway_result.recommendations,
                 "evidence_refs": gateway_result.evidence_refs,
                 "risks": gateway_result.risks,
+                "artifacts": gateway_result.artifacts,
                 "trace_id": updated.trace_id,
             },
         )
@@ -498,8 +506,8 @@ class BridgeService:
                 "origin_consultation_id": request.origin_consultation_id,
             },
         )
-        if request.flow_id:
-            planner = request.lead_planner or self._planner_for_flow(request.flow_id)
+        if request.flow_id or request.lead_planner:
+            planner = request.lead_planner or self._planner_for_flow(request.flow_id or "")
             case = await self._cases.transition(case.case_id, "planning_running")
             await self._ensure_work_item(
                 case,
@@ -508,7 +516,8 @@ class BridgeService:
                     target=planner,
                     objective="形成可执行计划、参数快照、任务依赖与风险说明。",
                     skill_name="planning_advice",
-                    context_refs=[case.project_ref, {"kind": "flow", "id": request.flow_id}],
+                    context_refs=[case.project_ref]
+                    + ([{"kind": "flow", "id": request.flow_id}] if request.flow_id else []),
                     read_only=True,
                     updated_at=now,
                 ),
@@ -524,6 +533,22 @@ class BridgeService:
         try:
             if proposed_submission is None:
                 raise ValueError("planning consultation omitted proposed_submission")
+            if not case.flow_id:
+                plan_payload = self._validate_general_plan(proposed_submission)
+                plan_hash = self._plan_hash(plan_payload)
+                snapshot = PreflightInputSnapshot(
+                    flow_id="general",
+                    sample_sheet=[],
+                    context_refs=[case.project_ref],
+                    consultation_summary=case.consultation_summary,
+                )
+                await self._cases.save_plan(case_id, plan_payload, plan_hash, snapshot)
+                await self._cases.transition(case_id, "approval_pending")
+                await self._audit.record(
+                    case_id=case_id, actor=actor, event_type="planning.frozen",
+                    payload={"plan_hash": plan_hash, "kind": "general", "task_count": len(plan_payload["parameters"]["work_items"])},
+                )
+                return
             task = TaskSpec.model_validate(proposed_submission)
             if task.flow_id not in self._settings.allowed_flows():
                 raise ValueError("planned flow is not allowed")
@@ -581,6 +606,27 @@ class BridgeService:
         )
 
     @staticmethod
+    def _validate_general_plan(proposed_submission: dict[str, Any]) -> dict[str, Any]:
+        parameters = proposed_submission.get("parameters")
+        work_items = parameters.get("work_items") if isinstance(parameters, dict) else None
+        if not isinstance(work_items, list) or not work_items:
+            raise ValueError("general plan requires parameters.work_items")
+        seen_ids: set[str] = set()
+        for item in work_items:
+            if not isinstance(item, dict):
+                raise ValueError("general plan work item must be an object")
+            work_item_id = str(item.get("work_item_id") or "")
+            target = item.get("target")
+            if not work_item_id or work_item_id in seen_ids:
+                raise ValueError("general plan work item ids must be unique")
+            if target not in {"agent-code", "agent-viz"}:
+                raise ValueError("general plan work item target is not allowed")
+            if not str(item.get("objective") or "") or not str(item.get("skill_name") or ""):
+                raise ValueError("general plan work item lacks objective or skill_name")
+            seen_ids.add(work_item_id)
+        return {"name": str(proposed_submission.get("name") or "general-analysis"), "parameters": {"work_items": work_items}}
+
+    @staticmethod
     def _planner_for_flow(flow_id: str) -> str:
         normalized = flow_id.lower()
         if "scrna" in normalized:
@@ -598,6 +644,26 @@ class BridgeService:
         case = await self._cases.get(case_id)
         self._require_case_access(case, actor)
         return case
+
+    async def get_manifest(self, case_id: str, actor: str) -> dict[str, Any]:
+        case = await self.get_case(case_id, actor)
+        if not case.manifest_uri:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Manifest not found")
+        manifest_path = Path(case.manifest_uri).resolve()
+        manifest_root = Path(self._settings.manifest_dir).resolve()
+        try:
+            manifest_path.relative_to(manifest_root)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manifest path is invalid") from exc
+        if not manifest_path.is_file():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Manifest not found")
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Manifest is unreadable") from exc
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Manifest payload is invalid")
+        return payload
 
     async def get_case_view(self, case_id: str, actor: str) -> dict[str, Any]:
         case = await self.get_case(case_id, actor)
@@ -910,6 +976,13 @@ class BridgeService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Task submission approval requires a matching preflight input snapshot",
             )
+        if request.action == "execute_plan" and (
+            case.status != "approval_pending" or case.flow_id or not case.plan_hash
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="General plan execution approval requires a frozen general plan",
+            )
         if request.action == "cancel_task" and request.task_id not in case.omic_task_ids:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -935,6 +1008,39 @@ class BridgeService:
             },
         )
         return ApprovalResponse(approval_id=approval_id, token=token, expires_at=expires_at)
+
+    async def execute_general_plan(self, case_id: str, approval_token: str, actor: str) -> CaseRecord:
+        self._approval_signer.verify(approval_token, case_id=case_id, action="execute_plan")
+        case = await self._cases.get(case_id)
+        if case.status != "approval_pending" or case.flow_id or not case.plan_hash:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="General plan is not ready")
+        parameters = (case.proposed_submission or {}).get("parameters")
+        work_items = parameters.get("work_items") if isinstance(parameters, dict) else None
+        if not isinstance(work_items, list):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Frozen general plan has no task DAG")
+        case = await self._cases.transition(case_id, "approved")
+        for item in work_items:
+            await self._ensure_work_item(
+                case,
+                WorkItemRecord(
+                    work_item_id=str(item["work_item_id"]),
+                    target=item["target"],
+                    objective=str(item["objective"]),
+                    skill_name=str(item["skill_name"]),
+                    context_refs=[case.project_ref],
+                    read_only=False,
+                    execution_mode="workspace_execution",
+                    depends_on=[str(value) for value in item.get("depends_on") or []],
+                    updated_at=datetime.now(UTC),
+                ),
+                actor,
+            )
+        case = await self._cases.get(case_id)
+        await self._audit.record(
+            case_id=case_id, actor=actor, event_type="general_plan.approved",
+            payload={"plan_hash": case.plan_hash, "work_item_count": len(work_items)},
+        )
+        return case
 
     async def submit_task(self, request: SubmitTaskRequest, actor: str) -> TaskReceipt:
         if request.task.flow_id not in self._settings.allowed_flows():

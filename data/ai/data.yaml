@@ -8,11 +8,12 @@ color: "#0f766e"
 category: analysis
 model: qwen3.7-plus
 prompt_file: prompts/data.md
-welcome_message: "你好！我是数据管理员。目前正在配置项目预检能力；请通过项目负责人说明需要核验的数据范围。"
+welcome_message: "你好！我是数据管理员。请提供项目、样本表和已有 Artifact 引用；我会核验输入完整性、分组与可追溯证据。"
 temperature: 0.2
 max_tokens: 4096
 mcp_ids: []
-skill_ids: []
+skill_ids:
+  - md5
 features:
   persona:
     archetype: "谨慎有条理的数据管家"
@@ -42,7 +43,7 @@ features:
   web_search:
     mode: required_for_freshness
     triggers: []
-tool_packs: [workspace, memory, handoff, agentteams_case]
+tool_packs: [workspace, research, memory, handoff, agentteams_case]
 handoff:
   allowed_targets: [agent-general]
   max_hops_per_session: 10

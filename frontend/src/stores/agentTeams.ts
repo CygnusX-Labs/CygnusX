@@ -11,5 +11,9 @@ export const useAgentTeamsStore = defineStore('agentTeams', () => {
     return value
   }
 
-  return { cases, refreshCase }
+  async function submitCase(caseId: string, payload: { task_name: string }) {
+    return agentTeamsApi.submitCase(caseId, payload)
+  }
+
+  return { cases, refreshCase, submitCase }
 })

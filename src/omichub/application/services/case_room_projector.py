@@ -97,6 +97,10 @@ class CaseRoomProjector:
             )
         elif event_type == "case.closed":
             result.append({"type": "mode_changed", "mode": "overdrive", "session_id": session_id, "enabled": False})
+        if event_id:
+            for index, projected in enumerate(result):
+                projected["event_id"] = event_id
+                projected["idempotency_key"] = f"{case_id}:{event_id}:{projected['type']}:{index}"
         return result
 
     def _sender(self, actor: str, *, flow_id: str) -> dict[str, str]:

@@ -95,4 +95,23 @@ def test_projects_approval_and_case_close() -> None:
 
     assert approval[-1]["type"] == "overdrive_approval_request"
     assert approval[-1]["approval"]["case_id"] == "case-1"
-    assert closed[-1] == {"type": "mode_changed", "mode": "overdrive", "session_id": "session-1", "enabled": False}
+    assert closed[-1]["type"] == "mode_changed"
+    assert closed[-1]["idempotency_key"] == "case-1:event-3:mode_changed:1"
+
+
+def test_projected_events_carry_stable_publish_dedup_keys() -> None:
+    events = CaseRoomProjector().project(
+        {
+            "event_id": "event-4",
+            "case_id": "case-1",
+            "actor": "workflow-operator",
+            "event_type": "work_item.assigned",
+            "payload": {"work_item_id": "run-1"},
+        },
+        session_id="session-1",
+    )
+
+    assert [event["idempotency_key"] for event in events] == [
+        "case-1:event-4:room_speech:0",
+        "case-1:event-4:overdrive_progress:1",
+    ]

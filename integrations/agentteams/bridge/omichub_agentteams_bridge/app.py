@@ -22,6 +22,7 @@ from .models import (
     CaseStateUpdate,
     CaseStatus,
     EvidenceRequest,
+    ExecuteGeneralPlanRequest,
     PreflightRequest,
     QualityGateRequest,
     QueueApprovedSubmissionRequest,
@@ -361,6 +362,15 @@ def create_app(
             await service.get_case_events(case_id, identity, cursor=cursor, limit=page_limit)
         ).model_dump(mode="json")
 
+    @app.get("/v1/cases/{case_id}/manifest", tags=["Cases"])
+    async def get_manifest(
+        case_id: str,
+        identity: Annotated[str, Depends(authenticate_identity)],
+        service: Annotated[BridgeService, Depends(get_service)],
+    ) -> dict:
+        require_role(identity, "bioops-manager", "delivery-reporter")
+        return await service.get_manifest(case_id, identity)
+
     @app.get("/v1/cases/{case_id}/events/stream", tags=["Cases"])
     async def stream_case_events(
         case_id: str,
@@ -412,6 +422,15 @@ def create_app(
     ) -> dict:
         require_role(identity, "approval-authority")
         return (await service.issue_approval(payload, identity)).model_dump(mode="json")
+
+    @app.post("/v1/general-plans/execute", tags=["Approvals"])
+    async def execute_general_plan(
+        payload: ExecuteGeneralPlanRequest,
+        identity: Annotated[str, Depends(authenticate_identity)],
+        service: Annotated[BridgeService, Depends(get_service)],
+    ) -> dict:
+        require_role(identity, "approval-authority")
+        return (await service.execute_general_plan(payload.case_id, payload.approval_token, identity)).model_dump(mode="json")
 
     @app.post("/v1/tasks", status_code=status.HTTP_201_CREATED, tags=["Tasks"])
     async def submit_task(

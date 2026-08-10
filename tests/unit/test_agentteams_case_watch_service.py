@@ -12,17 +12,28 @@ from omichub.application.services.agentteams_case_watch_service import (
     AgentTeamsCaseWatchService,
     _watchable_sessions_query,
 )
+from omichub.infrastructure.database.models.chat import AgentTeamsCaseCursorModel, ChatSessionModel
 
 
 class FakeDb:
     def __init__(self) -> None:
         self.added: list[object] = []
         self.flushes = 0
+        self.cursor_states: dict[tuple[str, str], AgentTeamsCaseCursorModel] = {}
 
     def add(self, value: object) -> None:
         self.added.append(value)
+        if isinstance(value, AgentTeamsCaseCursorModel):
+            self.cursor_states[(value.session_id, value.case_id)] = value
 
-    async def scalar(self, _query):
+    async def scalar(self, query):
+        entity = query.column_descriptions[0].get("entity")
+        if entity is AgentTeamsCaseCursorModel:
+            params = query.compile().params
+            session_id = next(value for key, value in params.items() if key.startswith("session_id"))
+            case_id = next(value for key, value in params.items() if key.startswith("case_id"))
+            return self.cursor_states.get((session_id, case_id))
+        assert entity is ChatSessionModel
         return None
 
     async def flush(self) -> None:
@@ -67,6 +78,7 @@ async def test_watch_notifies_each_case_status_once(monkeypatch) -> None:
             "agentteams_case_ids": ["case-1"],
             "agentteams_case_status": {"case-1": "received"},
             "agentteams_case_notified": {"case-1": []},
+            "agentteams_case_event_cursor": {"case-1": "event-0"},
         },
         updated_at=None,
         message_count=0,
@@ -78,9 +90,13 @@ async def test_watch_notifies_each_case_status_once(monkeypatch) -> None:
 
     assert first == {"scanned": 1, "notified": 1, "failed": 0}
     assert second == {"scanned": 1, "notified": 0, "failed": 0}
-    assert len(db.added) == 1
+    assert len(db.added) == 2
     assert len(published) == 1
-    assert session.sandbox_meta["agentteams_case_notified"]["case-1"] == ["approval_pending"]
+    state = db.cursor_states[("session-1", "case-1")]
+    assert state.event_cursor == "event-0"
+    assert state.notified_statuses == ["approval_pending"]
+    assert "agentteams_case_notified" not in session.sandbox_meta
+    assert "agentteams_case_event_cursor" not in session.sandbox_meta
 
 
 @pytest.mark.asyncio

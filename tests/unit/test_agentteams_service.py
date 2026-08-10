@@ -119,6 +119,23 @@ async def test_direct_case_api_creates_case_for_owned_project(monkeypatch) -> No
 
 
 @pytest.mark.asyncio
+async def test_direct_case_api_allows_general_workspace_case(monkeypatch) -> None:
+    user_id = uuid4()
+    project_id = uuid4()
+    request = AgentTeamsCaseCreateRequest(
+        project_id=str(project_id), intent="build a treeplot from fasta files"
+    )
+    service = SimpleNamespace(create_case=AsyncMock(return_value={"case_id": "general_001"}))
+    monkeypatch.setattr(ProjectService, "get_project", AsyncMock(return_value={"id": str(project_id)}))
+
+    response = await create_case(request, str(user_id), service, SimpleNamespace())
+
+    assert response == {"case_id": "general_001"}
+    assert service.create_case.await_args.kwargs["flow_id"] is None
+    assert service.create_case.await_args.kwargs["sample_sheet"] is None
+
+
+@pytest.mark.asyncio
 async def test_get_case_rejects_other_requester(service: AgentTeamsService, monkeypatch) -> None:
     async def fake_request(path: str, **kwargs):
         assert path == "/v1/cases/case-other"
@@ -131,7 +148,7 @@ async def test_get_case_rejects_other_requester(service: AgentTeamsService, monk
 
 
 @pytest.mark.asyncio
-async def test_create_case_assigns_and_runs_read_only_preflight(
+async def test_create_case_starts_planning_with_the_selected_flow(
     service: AgentTeamsService, monkeypatch
 ) -> None:
     captured: list[tuple[str, dict]] = []
@@ -140,12 +157,7 @@ async def test_create_case_assigns_and_runs_read_only_preflight(
         captured.append((path, kwargs))
         return {"case_id": "bioops_001", "requester_ref": "current-user"}
 
-    async def fake_request_as(identity: str, token: str, path: str, **kwargs):
-        captured.append((path, {"identity": identity, "token": token, **kwargs}))
-        return {"case_id": "bioops_001", "status": "passed"}
-
     monkeypatch.setattr(service, "_request", fake_request)
-    monkeypatch.setattr(service, "_request_as", fake_request_as)
 
     response = await service.create_case(
         case_id="bioops_001",
@@ -169,36 +181,7 @@ async def test_create_case_assigns_and_runs_read_only_preflight(
                     "intent": "bulk_rnaseq_delivery",
                     "requester_ref": "current-user",
                     "execution_mode": "cluster_case",
-                },
-            },
-        ),
-        (
-            "/v1/cases/bioops_001/work-items",
-            {
-                "method": "POST",
-                "json": {
-                    "work_item_id": "preflight-01",
-                    "target": "data-steward",
-                    "objective": "核验项目输入、样本表和分组对比，决定是否进入人工审批。",
-                    "skill_name": "project-preflight",
-                    "context_refs": [{"kind": "project", "id": "project-1"}],
-                    "read_only": True,
-                },
-            },
-        ),
-        (
-            "/v1/projects/project-1/preflight",
-            {
-                "identity": "data-steward",
-                "token": "steward-token",
-                "method": "POST",
-                "json": {
-                    "case_id": "bioops_001",
-                    "work_item_id": "preflight-01",
                     "flow_id": "rna_seq",
-                    "sample_sheet": [{"sample": "S01", "group": "control"}],
-                    "comparisons": [{"control": "control", "treatment": "treatment"}],
-                    "context_refs": [{"kind": "project", "id": "project-1"}],
                 },
             },
         ),
@@ -336,6 +319,7 @@ async def test_case_owner_approval_submits_with_separate_bridge_identities(
                 "case_id": "bioops_001",
                 "requester_ref": "current-user",
                 "status": "approval_pending",
+                "flow_id": "rna_seq",
                 "project_ref": {"kind": "project", "id": "project-1"},
                 "preflight_input": {
                     "flow_id": "rna_seq",
@@ -397,6 +381,31 @@ async def test_case_owner_approval_submits_with_separate_bridge_identities(
             },
         },
     )
+
+
+@pytest.mark.asyncio
+async def test_case_owner_approval_executes_frozen_general_plan(
+    service: AgentTeamsService, monkeypatch
+) -> None:
+    requests: list[tuple[str, dict]] = []
+
+    async def fake_request(path: str, **kwargs):
+        requests.append((path, kwargs))
+        return {"case_id": "general_001", "requester_ref": "current-user", "status": "approval_pending", "plan_hash": "abc"}
+
+    async def fake_request_as(identity: str, token: str, path: str, **kwargs):
+        requests.append((path, {"identity": identity, "token": token, **kwargs}))
+        return {"token": "general-approval"} if path == "/v1/approvals" else {"status": "approved"}
+
+    monkeypatch.setattr(service, "_request", fake_request)
+    monkeypatch.setattr(service, "_request_as", fake_request_as)
+
+    result = await service.approve_and_submit_task(case_id="general_001", requester_ref="current-user", task_name="ignored")
+
+    assert result == {"status": "approved"}
+    assert requests[1][0] == "/v1/approvals"
+    assert requests[1][1]["json"] == {"case_id": "general_001", "action": "execute_plan"}
+    assert requests[2][0] == "/v1/general-plans/execute"
 
 
 @pytest.mark.asyncio

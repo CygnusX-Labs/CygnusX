@@ -167,6 +167,7 @@ def execute_readonly_work_item(
     question: str,
     evidence_refs: list[str] | None = None,
     requested_tools: list[str] | None = None,
+    execution_mode: str = "readonly_consultation",
     trace_id: str | None = None,
     opener: UrlOpen = urlopen,
 ) -> dict[str, Any]:
@@ -177,6 +178,7 @@ def execute_readonly_work_item(
         "question": question,
         "evidence_refs": evidence_refs or [],
         "requested_tools": requested_tools or [],
+        "execution_mode": execution_mode,
     }
     if trace_id:
         payload["trace_id"] = trace_id

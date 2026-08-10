@@ -59,6 +59,7 @@ def create_app(
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         yield
         await runtime_client.close()
+        await service.aclose()
         if runtime_matrix_client is not None:
             await runtime_matrix_client.close()
 

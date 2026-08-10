@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -28,7 +29,7 @@ _WORK_ITEM_TRANSITIONS: dict[WorkItemStatus, set[WorkItemStatus]] = {
 
 _ALLOWED_TRANSITIONS: dict[CaseStatus, set[CaseStatus]] = {
     "received": {"planning_running", "preflight_running", "cancelled"},
-    "planning_running": {"preflight_running", "waiting_for_correction", "cancelled"},
+    "planning_running": {"preflight_running", "approval_pending", "waiting_for_correction", "cancelled"},
     "preflight_running": {"preflight_blocked", "approval_pending", "cancelled"},
     "preflight_blocked": {"waiting_for_correction", "cancelled"},
     "waiting_for_correction": {"planning_running", "preflight_running", "cancelled"},
@@ -79,6 +80,12 @@ class CaseStore:
         self._shared_state = (
             RedisStateBackend(state_store_url, state_store_key_prefix) if state_store_url else None
         )
+        if self._shared_state is None:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Bridge CaseStore is using local-file fallback; configure BRIDGE_STATE_STORE_URL for production replicas"
+            )
         self._local_lock = asyncio.Lock()
         self._lock = _SynchronizedCaseLock(self)
 
@@ -667,7 +674,12 @@ class CaseStore:
             await self._shared_state.set_snapshot(encoded)
             return
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(encoded, encoding="utf-8")
+        temporary = self._path.with_suffix(f"{self._path.suffix}.{os.getpid()}.tmp")
+        try:
+            temporary.write_text(encoded, encoding="utf-8")
+            os.replace(temporary, self._path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def _lease_expiry(now: datetime, deadline_seconds: int) -> datetime:

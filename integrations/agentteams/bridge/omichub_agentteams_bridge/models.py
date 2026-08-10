@@ -21,7 +21,7 @@ BridgeRole = Literal[
     "agent-rnaseq",
     "analysis-worker",
 ]
-ApprovalAction = Literal["submit_task", "cancel_task"]
+ApprovalAction = Literal["submit_task", "execute_plan", "cancel_task"]
 CaseStatus = Literal[
     "received",
     "planning_running",
@@ -161,6 +161,11 @@ class ApprovalResponse(BaseModel):
     approval_id: str
     token: str
     expires_at: datetime
+
+
+class ExecuteGeneralPlanRequest(BaseModel):
+    case_id: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    approval_token: str = Field(min_length=20, max_length=4096)
 
 
 class CancelTaskRequest(BaseModel):
@@ -319,6 +324,7 @@ class ReadOnlyExecutionRequest(BaseModel):
         "project-preflight",
         "quality-gate",
         "delivery-pack",
+        "workspace_execution",
     ]
     question: str = Field(min_length=1, max_length=8_000)
     evidence_refs: list[str] = Field(default_factory=list, max_length=50)
@@ -341,6 +347,7 @@ class ReadOnlyExecutionResult(BaseModel):
     duration_ms: int = Field(ge=0)
     token_usage: int = Field(ge=0)
     proposed_submission: dict[str, Any] | None = None
+    artifacts: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
 
 
 class WorkerInboxItem(BaseModel):

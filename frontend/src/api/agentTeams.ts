@@ -1,7 +1,7 @@
 import apiClient from '@/api/client'
 
 export type AgentTeamsCaseStatus =
-  | 'received' | 'preflight_running' | 'preflight_blocked' | 'waiting_for_correction'
+  | 'received' | 'planning_running' | 'preflight_running' | 'preflight_blocked' | 'waiting_for_correction'
   | 'approval_pending' | 'approved' | 'executing' | 'execution_failed' | 'quality_running'
   | 'quality_blocked' | 'remediation_pending' | 'delivery_ready' | 'closed' | 'cancelled'
 
@@ -21,6 +21,8 @@ export interface AgentTeamsCase {
   work_items: AgentTeamsWorkItem[]
   quality_decision?: string | null
   manifest_uri?: string | null
+  plan_hash?: string | null
+  proposed_submission?: Record<string, unknown> | null
   created_at: string
   updated_at: string
 }
@@ -48,8 +50,8 @@ export interface AgentTeamsEvent {
 export interface AgentTeamsCaseCreateRequest {
   project_id: string
   intent: string
-  flow_id: string
-  sample_sheet: Array<Record<string, unknown>>
+  flow_id?: string
+  sample_sheet?: Array<Record<string, unknown>>
   comparisons?: Array<Record<string, unknown>>
 }
 
@@ -113,8 +115,11 @@ export const agentTeamsApi = {
   async refreshCase(caseId: string): Promise<AgentTeamsCase> {
     return (await apiClient.post<AgentTeamsCase>(`/agent-teams/cases/${caseId}/refresh`)).data
   },
-  async submitCase(caseId: string, payload: AgentTeamsCaseSubmitRequest): Promise<{ omic_task_id: string; status: string }> {
+  async submitCase(caseId: string, payload: AgentTeamsCaseSubmitRequest): Promise<{ omic_task_id?: string; status: string }> {
     return (await apiClient.post(`/agent-teams/cases/${caseId}/submit`, payload)).data
+  },
+  async getManifest(caseId: string): Promise<Record<string, unknown>> {
+    return (await apiClient.get<Record<string, unknown>>(`/agent-teams/cases/${caseId}/manifest`)).data
   },
   async getEvents(
     caseId: string,

@@ -58,6 +58,9 @@ const eventStreamHealthy = ref(false)
 const lastSyncedAt = ref<Date | null>(null)
 const submitVisible = ref(false)
 const submitting = ref(false)
+const manifestVisible = ref(false)
+const manifestLoading = ref(false)
+const manifest = ref<Record<string, unknown> | null>(null)
 const approvalConfirmed = ref(false)
 const submitForm = ref({
   task_name: '',
@@ -134,6 +137,7 @@ const nextStep = computed(() => {
   }
 })
 const canSubmit = computed(() => detail.value?.status === 'approval_pending')
+const planShortHash = computed(() => detail.value?.plan_hash ? detail.value.plan_hash.slice(0, 12) : '')
 const eventLabel = (type: string) => ({
   'case.created': 'Case 已创建',
   'case.state_changed': '阶段已更新',
@@ -162,6 +166,19 @@ function openSubmit() {
   }
   approvalConfirmed.value = false
   submitVisible.value = true
+}
+
+async function openManifest() {
+  if (!detail.value?.case_id) return
+  manifestLoading.value = true
+  try {
+    manifest.value = await agentTeamsApi.getManifest(detail.value.case_id)
+    manifestVisible.value = true
+  } catch (cause: any) {
+    message.error(cause?.response?.data?.detail || 'Manifest 暂不可用。')
+  } finally {
+    manifestLoading.value = false
+  }
 }
 
 function openChatRoom() {
@@ -446,7 +463,14 @@ onBeforeUnmount(() => {
               </NDescriptionsItem>
               <NDescriptionsItem label="关联任务">{{ detail.omic_task_ids.length ? detail.omic_task_ids.join(', ') : '尚未提交' }}</NDescriptionsItem>
               <NDescriptionsItem label="质量结论">{{ detail.quality_decision || '尚未形成' }}</NDescriptionsItem>
-              <NDescriptionsItem label="交付 Manifest">{{ detail.manifest_uri || '尚未生成' }}</NDescriptionsItem>
+              <NDescriptionsItem label="计划短码">{{ planShortHash || '尚未冻结' }}</NDescriptionsItem>
+              <NDescriptionsItem label="交付 Manifest">
+                <div v-if="detail.manifest_uri" class="manifest-actions">
+                  <span class="manifest-uri">{{ detail.manifest_uri }}</span>
+                  <NButton size="tiny" secondary :loading="manifestLoading" @click="openManifest">在线预览</NButton>
+                </div>
+                <span v-else>尚未生成</span>
+              </NDescriptionsItem>
             </NDescriptions>
           </NCard>
           <NCard title="安全边界" size="small">
@@ -466,6 +490,9 @@ onBeforeUnmount(() => {
         </NCheckbox>
         <div class="submit-actions"><NButton :disabled="submitting" @click="submitVisible = false">取消</NButton><NButton type="primary" attr-type="submit" :disabled="!approvalConfirmed" :loading="submitting">确认并提交</NButton></div>
       </NForm>
+    </NModal>
+    <NModal v-model:show="manifestVisible" preset="card" title="交付 Manifest" :style="{ width: 'min(94vw, 760px)' }">
+      <pre class="manifest-preview">{{ JSON.stringify(manifest, null, 2) }}</pre>
     </NModal>
     <AgentTeamsChatDrawer ref="chatDrawer" />
   </main>
@@ -498,6 +525,9 @@ onBeforeUnmount(() => {
 .timeline-column :deep(.n-timeline-item-content p) { margin: 0 0 5px; color: var(--text-secondary); font-size: 12px; }
 .timeline-column code { display: block; white-space: pre-wrap; color: var(--text-secondary); font-size: 12px; }
 .alert-retry { margin-left: 10px; }
+.manifest-actions { display: grid; gap: 8px; }
+.manifest-uri { overflow-wrap: anywhere; color: var(--text-secondary); font-size: 12px; }
+.manifest-preview { max-height: 60vh; overflow: auto; margin: 0; padding: 12px; border-radius: 8px; background: var(--surface-color-soft); color: var(--text-secondary); font: 12px/1.6 ui-monospace, monospace; white-space: pre-wrap; }
 @media (max-width: 1024px) { .case-workbench { grid-template-columns: minmax(190px, 240px) minmax(0, 1fr); } .evidence-column { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 768px) { .case-workbench, .evidence-column { grid-template-columns: 1fr; } .overview-column, .timeline-column, .evidence-column { grid-column: auto; } }
 </style>

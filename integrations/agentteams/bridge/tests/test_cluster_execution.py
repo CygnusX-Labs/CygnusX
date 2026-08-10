@@ -8,6 +8,7 @@ from omichub_agentteams_bridge.audit import AuditStore
 from omichub_agentteams_bridge.case_store import CaseStore
 from omichub_agentteams_bridge.config import BridgeSettings
 from omichub_agentteams_bridge.models import (
+    ApprovalRequest,
     CaseCreateRequest,
     ContextRef,
     ReadOnlyExecutionRequest,
@@ -72,6 +73,31 @@ class PlanningGateway:
                 "sample_sheet": [{"sample": "sample-a", "group": "control"}],
                 "comparisons": [{"control": "control", "treatment": "treated"}],
             },
+        }
+
+
+class TreeplotPlanningGateway:
+    configured = True
+
+    async def consult(self, payload: dict[str, object]) -> dict[str, object]:
+        if payload["agent_id"] == "agent-code" and payload.get("capability") == "planning_advice":
+            proposed_submission = {
+                "name": "treeplot-analysis",
+                "parameters": {
+                    "work_items": [
+                        {"work_item_id": "exec-01", "target": "agent-code", "objective": "Align two FASTA inputs and build a tree.", "skill_name": "phylo-build"},
+                        {"work_item_id": "exec-02", "target": "agent-viz", "objective": "Render the validated treeplot.", "skill_name": "treeplot-render", "depends_on": ["exec-01"]},
+                    ]
+                },
+            }
+        else:
+            proposed_submission = None
+        return {
+            "schema_version": "1.0", "status": "completed", "conclusion": "Treeplot step completed.",
+            "recommendations": [], "evidence_refs": [], "risks": [], "agent_id": payload["agent_id"],
+            "schema_ver": "1.0", "duration_ms": 1, "token_usage": 1,
+            "proposed_submission": proposed_submission,
+            "artifacts": [{"path": "users/test/workspace/agentteams/treeplot-case/exec-01/tree.nwk", "kind": "file", "bytes": 8}],
         }
 
 
@@ -153,7 +179,7 @@ async def test_workspace_execution_is_rejected_without_frozen_approved_plan(tmp_
     service = make_service(tmp_path, ConcurrentGateway())
     await create_case(service, "workspace-case")
 
-    with pytest.raises(Exception, match="frozen approved plan"):
+    with pytest.raises(Exception, match="approval_required or a frozen plan"):
         await service.assign_work_item(
             "workspace-case",
             WorkItemCreateRequest(
@@ -165,6 +191,41 @@ async def test_workspace_execution_is_rejected_without_frozen_approved_plan(tmp_
             ),
             "bioops-manager",
         )
+
+
+@pytest.mark.asyncio
+async def test_treeplot_general_case_freezes_plan_and_dispatches_workspace_dag(tmp_path) -> None:
+    service = make_service(tmp_path, TreeplotPlanningGateway())
+    case = await service.create_case(
+        CaseCreateRequest(
+            case_id="treeplot-case", project_ref=ContextRef(kind="project", id="project-1"),
+            intent="build a treeplot from two fasta files", requester_ref="user-1", lead_planner="agent-code",
+        ),
+        "bioops-manager",
+    )
+    assert case.status == "planning_running"
+    await service.claim_work_item("treeplot-case", "plan-01", "agent-code")
+    await service.execute_readonly_work_item(
+        "treeplot-case", "plan-01",
+        ReadOnlyExecutionRequest(agent_id="agent-code", capability="planning_advice", question="Plan treeplot.", trace_id="plan"),
+        "agent-code",
+    )
+    frozen = await service._cases.get("treeplot-case")
+    assert frozen.status == "approval_pending"
+    assert frozen.plan_hash
+    approval = await service.issue_approval(
+        ApprovalRequest(case_id="treeplot-case", action="execute_plan"), "approval-authority"
+    )
+    approved = await service.execute_general_plan("treeplot-case", approval.token, "approval-authority")
+    assert approved.status == "approved"
+    assert {item.work_item_id for item in approved.work_items} >= {"exec-01", "exec-02"}
+    await service.claim_work_item("treeplot-case", "exec-01", "agent-code")
+    completed = await service.execute_readonly_work_item(
+        "treeplot-case", "exec-01",
+        ReadOnlyExecutionRequest(agent_id="agent-code", capability="workspace_execution", question="Build tree.", trace_id="exec", execution_mode="workspace_execution"),
+        "agent-code",
+    )
+    assert completed.status == "completed"
 
 
 @pytest.mark.asyncio
@@ -260,3 +321,32 @@ async def test_expired_lease_is_requeued_and_can_be_claimed_again(tmp_path) -> N
     reclaimed = await service.claim_work_item("cluster-case", "code-01", "agent-code")
     assert reclaimed.status == "claimed"
     assert reclaimed.attempt == 2
+
+
+@pytest.mark.asyncio
+async def test_concurrent_claims_allow_exactly_one_winner(tmp_path) -> None:
+    service = make_service(tmp_path, ConcurrentGateway())
+    await create_case(service)
+    await service.assign_work_item(
+        "cluster-case",
+        WorkItemCreateRequest(
+            work_item_id="claim-race-01",
+            target="agent-code",
+            objective="Claim exactly once.",
+            skill_name="code-review",
+        ),
+        "bioops-manager",
+    )
+
+    results = await asyncio.gather(
+        service.claim_work_item("cluster-case", "claim-race-01", "agent-code"),
+        service.claim_work_item("cluster-case", "claim-race-01", "agent-code"),
+        return_exceptions=True,
+    )
+
+    winners = [result for result in results if not isinstance(result, Exception)]
+    failures = [result for result in results if isinstance(result, Exception)]
+    assert len(winners) == 1
+    assert winners[0].status == "claimed"
+    assert len(failures) == 1
+    assert "already claimed" in str(failures[0]).lower()

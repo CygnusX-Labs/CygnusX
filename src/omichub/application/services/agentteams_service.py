@@ -184,8 +184,8 @@ class AgentTeamsService:
         project_id: str,
         intent: str,
         requester_ref: str,
-        flow_id: str,
-        sample_sheet: list[dict[str, Any]],
+        flow_id: str | None,
+        sample_sheet: list[dict[str, Any]] | None = None,
         comparisons: list[dict[str, Any]] | None = None,
         origin_consultation_id: str | None = None,
         consultation_summary: str | None = None,
@@ -197,8 +197,11 @@ class AgentTeamsService:
             "intent": intent,
             "requester_ref": requester_ref,
             "execution_mode": "cluster_case",
-            "flow_id": flow_id,
         }
+        if flow_id:
+            case_payload["flow_id"] = flow_id
+        else:
+            case_payload["lead_planner"] = "agent-code"
         if origin_consultation_id:
             case_payload["origin_consultation_id"] = origin_consultation_id
         if consultation_summary:
@@ -223,6 +226,21 @@ class AgentTeamsService:
         case = await self._get_case_for_requester(case_id, requester_ref)
         if case.get("status") != "approval_pending":
             raise BusinessError("当前协作 Case 尚未满足人工审批和提交条件")
+        if not case.get("flow_id"):
+            approval = await self._request_as(
+                "approval-authority",
+                self._bridge_config.approval_token,
+                "/v1/approvals",
+                method="POST",
+                json={"case_id": case_id, "action": "execute_plan"},
+            )
+            return await self._request_as(
+                "approval-authority",
+                self._bridge_config.approval_token,
+                "/v1/general-plans/execute",
+                method="POST",
+                json={"case_id": case_id, "approval_token": approval["token"]},
+            )
         snapshot = case.get("preflight_input")
         if not isinstance(snapshot, dict):
             raise BusinessError("当前协作 Case 缺少已通过预检的输入快照")
@@ -279,6 +297,10 @@ class AgentTeamsService:
 
     async def get_case(self, case_id: str, requester_ref: str) -> dict[str, Any]:
         return self._public_case(await self._get_case_for_requester(case_id, requester_ref))
+
+    async def get_manifest(self, case_id: str, requester_ref: str) -> dict[str, Any]:
+        await self._get_case_for_requester(case_id, requester_ref)
+        return await self._request(f"/v1/cases/{case_id}/manifest")
 
     async def refresh_case(self, case_id: str, requester_ref: str) -> dict[str, Any]:
         await self._get_case_for_requester(case_id, requester_ref)

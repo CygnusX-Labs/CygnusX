@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
@@ -106,8 +107,54 @@ async def _test_workspace_consultation_uses_scoped_workdir() -> None:
     call = parallel_service.run.await_args.kwargs
     assert call["safe_only"] is False
     assert call["tasks"][0]["workspace_access"] is True
-    assert str(call["workdir_root"]) == "/workspace/agentteams/case-1/code-write-01"
+    assert str(call["workdir_root"]) == "/data/omichub/output/agentteams/case-1/code-write-01"
     assert "信封解析降级" in result.risks[0]
+
+
+def test_workspace_artifacts_are_copied_and_registered(tmp_path, monkeypatch) -> None:
+    asyncio.run(_test_workspace_artifacts_are_copied_and_registered(tmp_path, monkeypatch))
+
+
+async def _test_workspace_artifacts_are_copied_and_registered(tmp_path, monkeypatch) -> None:
+    source_root = tmp_path / "output" / "agentteams" / "case-1" / "exec-01"
+    source_root.mkdir(parents=True)
+    source = source_root / "treeplot.svg"
+    source.write_text("<svg/>", encoding="utf-8")
+    storage_root = tmp_path / "storage"
+
+    class Factory:
+        def user_root(self, user_id: str):
+            return storage_root / "users" / user_id
+
+        def relative_to_root(self, path):
+            return path.relative_to(storage_root).as_posix()
+
+    saved = []
+
+    class Repository:
+        def __init__(self, _db) -> None:
+            pass
+
+        async def save(self, file):
+            saved.append(file)
+            return file
+
+    monkeypatch.setattr(
+        "omichub.application.services.agent_consultation_service.get_path_factory", lambda: Factory()
+    )
+    monkeypatch.setattr(
+        "omichub.application.services.agent_consultation_service.FileRepositoryImpl", Repository
+    )
+    service = AgentConsultationService(SimpleNamespace())
+
+    artifacts, errors = await service._register_workspace_artifacts(
+        str(uuid4()), "case-1", "exec-01", source_root
+    )
+
+    assert errors == []
+    assert len(artifacts) == len(saved) == 1
+    assert artifacts[0]["path"].endswith("workspace/agentteams/case-1/exec-01/treeplot.svg")
+    assert (storage_root / artifacts[0]["path"]).read_text(encoding="utf-8") == "<svg/>"
 
 
 def test_run_consultation_rejects_missing_agent() -> None:

@@ -24,6 +24,7 @@ class ConsultationRequest(BaseModel):
         "project-preflight",
         "quality-gate",
         "delivery-pack",
+        "workspace_execution",
     ]
     evidence_refs: list[str] = Field(default_factory=list, max_length=50)
     requested_tools: list[str] = Field(default_factory=list, max_length=20)
@@ -53,6 +54,7 @@ class ScientificInterpretationResponse(BaseModel):
     token_usage: int = 0
     error: ConsultationError | None = None
     proposed_submission: dict[str, Any] | None = None
+    artifacts: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
 
 
 class UpstreamConsultationResponse(BaseModel):
@@ -62,6 +64,7 @@ class UpstreamConsultationResponse(BaseModel):
     risks: list[str] = Field(default_factory=list)
     token_usage: int = 0
     proposed_submission: dict[str, Any] | None = None
+    artifacts: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
 
 
 class RoomCreateRequest(BaseModel):

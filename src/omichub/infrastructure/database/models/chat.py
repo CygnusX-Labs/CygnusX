@@ -8,7 +8,18 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -66,6 +77,27 @@ class ChatSessionModel(Base, TimestampMixin):
     )
 
     __table_args__ = (Index("idx_chat_sessions_user_updated", "user_id", "updated_at"),)
+
+
+class AgentTeamsCaseCursorModel(Base, TimestampMixin):
+    """聊天会话中 AgentTeams Case 的事件游标与通知去重状态。"""
+
+    __tablename__ = "agentteams_case_cursors"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    session_id: Mapped[str] = mapped_column(
+        String(50), ForeignKey("chat_sessions.session_id", ondelete="CASCADE"), nullable=False
+    )
+    case_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    event_cursor: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    notified_statuses: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+
+    __table_args__ = (
+        UniqueConstraint("session_id", "case_id", name="uq_agentteams_case_cursors_session_case"),
+        Index("ix_agentteams_case_cursors_session_id", "session_id"),
+    )
 
 
 class ChatMessageModel(Base):

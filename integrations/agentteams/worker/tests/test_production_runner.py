@@ -90,3 +90,16 @@ def test_production_worker_claims_and_uses_bridge_execution(monkeypatch) -> None
     assert calls == ["preview", "claim", "heartbeat", "execute"]
     assert result["action"] == "completed"
     assert result["work_item_id"] == "code-01"
+
+
+def test_production_worker_forwards_workspace_execution_mode(monkeypatch) -> None:
+    assignment = {"case_id": "case-1", "work_item": {"work_item_id": "exec-01", "objective": "Build tree.", "execution_mode": "workspace_execution"}}
+    monkeypatch.setattr(production_runner, "claim_next", lambda *_args, **_kwargs: {"assignment": assignment})
+    monkeypatch.setattr(production_runner, "heartbeat_work_item", lambda *_args, **_kwargs: {})
+    observed = {}
+    monkeypatch.setattr(production_runner, "execute_readonly_work_item", lambda *_args, **kwargs: observed.update(kwargs) or {"status": "completed"})
+
+    production_runner.run_once(production_runner.ProductionWorkerConfig("http://bridge", "agent-code", "token", 1))
+
+    assert observed["capability"] == "workspace_execution"
+    assert observed["execution_mode"] == "workspace_execution"

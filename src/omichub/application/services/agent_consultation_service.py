@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+import shutil
 import time
 from pathlib import Path
 from typing import Any
+from uuid import UUID, uuid4
 
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -15,6 +18,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from omichub.application.services.agent_service import AgentService
 from omichub.application.services.parallel_subagent_service import ParallelSubAgentService
 from omichub.core.exceptions import NotFoundError
+from omichub.domain.file.entities import DataFile
+from omichub.domain.file.value_objects import FileType
+from omichub.infrastructure.database.repositories.file_repository import FileRepositoryImpl
+from omichub.infrastructure.storage.path_factory import get_path_factory
 
 ALLOWED_CONSULTATION_AGENTS = {
     "agent-data",
@@ -35,6 +42,7 @@ class ConsultationEnvelope(BaseModel):
     risks: list[str] = Field(default_factory=list, max_length=100)
     token_usage: int = Field(default=0, ge=0)
     proposed_submission: dict[str, Any] | None = None
+    artifacts: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
 
 
 class AgentConsultationService:
@@ -80,6 +88,11 @@ class AgentConsultationService:
             requested_tools=requested_tools,
             execution_mode=execution_mode,
         )
+        workdir_root = (
+            Path("/data/omichub") / "output" / "agentteams" / case_id / work_item_id
+            if execution_mode == "workspace_execution" and work_item_id
+            else None
+        )
         result = await self._parallel_service.run(
             user_id=requester_ref,
             parent_agent_id="agent-general",
@@ -96,12 +109,16 @@ class AgentConsultationService:
             db=self._db,
             safe_only=execution_mode == "readonly_consultation",
             runtime_authorized=True,
-            workdir_root=(Path("/workspace/agentteams") / case_id / work_item_id)
-            if execution_mode == "workspace_execution" and work_item_id
-            else None,
+            workdir_root=workdir_root,
         )
         raw_answer = self._extract_answer(result)
         envelope = self.parse_envelope(raw_answer)
+        if execution_mode == "workspace_execution" and workdir_root is not None:
+            artifacts, errors = await self._register_workspace_artifacts(
+                requester_ref, case_id, work_item_id or "", workdir_root
+            )
+            envelope.artifacts = artifacts
+            envelope.risks.extend(errors)
         logger.bind(
             case_id=case_id,
             agent_id=agent_id,
@@ -132,9 +149,44 @@ class AgentConsultationService:
             f"获准请求的只读工具：{json.dumps(requested_tools, ensure_ascii=False)}\n"
             "最终答复必须只包含一个 ```json 代码块，结构为："
             '{"conclusion":"非空结论","recommendations":[],"evidence_refs":[],"risks":[],'
-            '"token_usage":0,"proposed_submission":null}。规划能力调用时 '
+            '"token_usage":0,"proposed_submission":null,"artifacts":[]}。规划能力调用时 '
             "proposed_submission 必须是可校验的 TaskSpec 参数对象。"
         )
+
+    async def _register_workspace_artifacts(
+        self, requester_ref: str, case_id: str, work_item_id: str, workdir: Path
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        try:
+            user_id = UUID(str(requester_ref))
+        except ValueError:
+            return [], ["产物登记失败：requester_ref 不是有效用户 UUID。"]
+        if not workdir.exists():
+            return [], []
+        factory = get_path_factory()
+        destination = factory.user_root(str(user_id)) / "workspace" / "agentteams" / case_id / work_item_id
+        repository = FileRepositoryImpl(self._db)
+        artifacts: list[dict[str, Any]] = []
+        errors: list[str] = []
+        sources = sorted(path for path in workdir.rglob("*") if path.is_file() and not path.is_symlink())[:100]
+        for source in sources:
+            try:
+                relative = source.relative_to(workdir)
+                target = destination / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+                record = await repository.save(
+                    DataFile(
+                        id=uuid4(), user_id=user_id, path=factory.relative_to_root(target),
+                        original_name=source.name, size=source.stat().st_size,
+                        checksum=hashlib.sha256(source.read_bytes()).hexdigest(),
+                        file_type=FileType.OTHER,
+                        directory=f"workspace/agentteams/{case_id}/{work_item_id}", source="agentteams",
+                    )
+                )
+                artifacts.append({"path": record.path, "kind": "file", "bytes": record.size})
+            except (OSError, ValueError) as exc:
+                errors.append(f"产物登记失败（{source.name}）：{exc}")
+        return artifacts, errors
 
     @staticmethod
     def _extract_answer(result: dict[str, Any]) -> str:

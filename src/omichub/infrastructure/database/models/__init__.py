@@ -21,6 +21,7 @@ from omichub.infrastructure.database.models.blast import (
     BlastTaskModel,
 )
 from omichub.infrastructure.database.models.chat import (
+    AgentTeamsCaseCursorModel,
     ChatAssistantModel,
     ChatMessageFeedbackModel,
     CollaborationDegradationEventModel,
@@ -112,6 +113,7 @@ __all__ = [
     "ConversationModel",
     "MessageModel",
     "ChatSessionModel",
+    "AgentTeamsCaseCursorModel",
     "ChatMessageModel",
     "ChatMessageFeedbackModel",
     "ChatAssistantModel",

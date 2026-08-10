@@ -14,6 +14,8 @@ const router = useRouter()
 const agentTeamsStore = useAgentTeamsStore()
 const detail = ref<AgentTeamsCaseCardPayload>({ ...props.caseInfo })
 const loading = ref(false)
+const decisionLoading = ref(false)
+const decisionError = ref('')
 let timer: ReturnType<typeof setInterval> | null = null
 
 const isApprovalPending = computed(() => detail.value.status === 'approval_pending')
@@ -23,6 +25,7 @@ const updatedAt = computed(() => {
   const value = new Date(detail.value.updated_at)
   return Number.isNaN(value.getTime()) ? '' : value.toLocaleString()
 })
+const planShortHash = computed(() => detail.value.plan_hash ? detail.value.plan_hash.slice(0, 12) : '')
 
 async function refresh() {
   if (!shouldPollAgentTeamsCase(document.visibilityState) || loading.value) return
@@ -35,10 +38,26 @@ async function refresh() {
       status: value.status,
       next_actor: agentTeamsNextActor[value.status] || detail.value.next_actor,
       updated_at: value.updated_at,
+      plan_hash: value.plan_hash,
+      proposed_submission: value.proposed_submission,
     }
   } catch {
   } finally {
     loading.value = false
+  }
+}
+
+async function approveCase() {
+  if (decisionLoading.value) return
+  decisionLoading.value = true
+  decisionError.value = ''
+  try {
+    await agentTeamsStore.submitCase(detail.value.case_id, { task_name: detail.value.title.slice(0, 128) })
+    await refresh()
+  } catch (cause: any) {
+    decisionError.value = cause?.response?.data?.detail || '审批失败，请刷新后重试。'
+  } finally {
+    decisionLoading.value = false
   }
 }
 
@@ -67,7 +86,12 @@ onUnmounted(() => {
     </div>
     <p class="case-meta">下一责任方：{{ detail.next_actor }}</p>
     <p v-if="updatedAt" class="case-updated">最近更新：{{ updatedAt }}</p>
-    <p v-if="isApprovalPending" class="approval-rail">审批待处理：需在 Case 详情中完成确认后才能继续执行。</p>
+    <div v-if="isApprovalPending" class="approval-rail">
+      <p>审批待处理：确认冻结计划后继续执行。</p>
+      <p v-if="planShortHash" class="plan-hash">计划短码：{{ planShortHash }}</p>
+      <NButton size="small" type="primary" :loading="decisionLoading" @click="approveCase">批准并继续</NButton>
+      <span v-if="decisionError" class="decision-error" role="alert">{{ decisionError }}</span>
+    </div>
     <div class="case-actions">
       <NButton size="small" :loading="loading" @click="refresh">刷新状态</NButton>
       <NButton size="small" type="primary" @click="openCase">打开 Case</NButton>
@@ -80,6 +104,9 @@ onUnmounted(() => {
 .case-header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .eyebrow { margin: 0 0 4px; color: var(--chat-text-muted); font-size: 12px; }
 .case-meta, .case-updated, .approval-rail { margin: 10px 0 0; font-size: 13px; color: var(--chat-text-secondary); }
-.approval-rail { padding: 8px; border-left: 3px solid #f59e0b; background: color-mix(in srgb, #f59e0b 12%, transparent); }
+.approval-rail { display: grid; gap: 8px; padding: 8px; border-left: 3px solid var(--warning-color, #f59e0b); background: color-mix(in srgb, var(--warning-color, #f59e0b) 12%, transparent); }
+.approval-rail p { margin: 0; }
+.plan-hash { color: var(--chat-text-muted); font-family: ui-monospace, monospace; font-size: 12px; }
+.decision-error { color: var(--error-color, #d03050); font-size: 12px; }
 .case-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 </style>
