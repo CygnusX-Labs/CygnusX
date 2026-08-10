@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Bridge-only Delivery Worker that prepares a human-reviewable closeout recommendation."""
+"""Delivery Worker backed by the real OmicHub agent-delivery consultation."""
 
 from __future__ import annotations
 
 import json
 import os
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
 
-from claim_next import claim_next, complete_work_item, heartbeat_work_item, record_evidence, request_json
+from claim_next import claim_next, close_case, execute_readonly_work_item, heartbeat_work_item
 
 
 @dataclass(frozen=True)
@@ -29,7 +29,11 @@ def load_config(environ: dict[str, str] | None = None) -> DeliveryWorkerConfig:
         raise ValueError("Delivery runtime requires the delivery-reporter identity")
     if not bridge_url or not token:
         raise ValueError("Bridge URL and delivery-reporter token are required")
-    return DeliveryWorkerConfig(bridge_url, token, max(float(values.get("AGENTTEAMS_WORKER_POLL_SECONDS", "5")), 1.0))
+    return DeliveryWorkerConfig(
+        bridge_url,
+        token,
+        max(float(values.get("AGENTTEAMS_WORKER_POLL_SECONDS", "5")), 1.0),
+    )
 
 
 def _task_id(assignment: dict[str, Any]) -> str | None:
@@ -37,7 +41,11 @@ def _task_id(assignment: dict[str, Any]) -> str | None:
     if not isinstance(work_item, dict):
         raise RuntimeError("Bridge returned malformed delivery Work Item")
     for reference in work_item.get("context_refs") or []:
-        if isinstance(reference, dict) and reference.get("kind") == "task" and isinstance(reference.get("id"), str):
+        if (
+            isinstance(reference, dict)
+            and reference.get("kind") == "task"
+            and isinstance(reference.get("id"), str)
+        ):
             return reference["id"]
     return None
 
@@ -52,18 +60,61 @@ def run_once(config: DeliveryWorkerConfig) -> dict[str, Any]:
     if assignment is None:
         return {"action": "claim_raced", "identity": identity}
     task_id = _task_id(assignment)
-    heartbeat_work_item(config.bridge_url, identity, config.token, assignment, summary="Delivery evidence package started.")
-    case_id = str(assignment["case_id"])
-    events = request_json(f"{config.bridge_url.rstrip('/')}/cases/{case_id}/events", {"X-Bridge-Identity": identity, "X-Bridge-Token": config.token}, method="GET", opener=urlopen)
-    artifacts: dict[str, Any] = {}
-    if task_id:
-        artifacts = request_json(f"{config.bridge_url.rstrip('/')}/tasks/{task_id}/artifacts", {"X-Bridge-Identity": identity, "X-Bridge-Token": config.token}, method="GET", opener=urlopen)
-    event_count = len(events.get("events", [])) if isinstance(events.get("events"), list) else 0
-    artifact_count = len(artifacts.get("items", [])) if isinstance(artifacts.get("items"), list) else 0
-    summary = f"已汇总 {event_count} 条审计事件和 {artifact_count} 条逻辑产物引用；建议人工复核后关闭 Case。"
-    record_evidence(config.bridge_url, identity, config.token, assignment, event_type="delivery.closeout_recommended", summary=summary, context_refs=[{"kind": "task", "id": task_id}] if task_id else [], omic_task_id=task_id, skill_name="delivery-pack", payload={"event_count": event_count, "artifact_count": artifact_count, "auto_close": False})
-    completed = complete_work_item(config.bridge_url, identity, config.token, assignment, summary)
-    return {"action": "closeout_recommended", "identity": identity, "case_id": case_id, "task_id": task_id, "status": completed.get("status")}
+    trace_id = uuid.uuid4().hex
+    heartbeat_work_item(
+        config.bridge_url,
+        identity,
+        config.token,
+        assignment,
+        summary="agent-delivery consultation started.",
+        trace_id=trace_id,
+    )
+    evidence_refs = [f"task:{task_id}"] if task_id else []
+    result = execute_readonly_work_item(
+        config.bridge_url,
+        identity,
+        config.token,
+        assignment,
+        agent_id="agent-delivery",
+        capability="delivery-pack",
+        question="汇总交付清单、产物引用、运行说明、已知风险和复现步骤。不得遗漏风险披露。",
+        evidence_refs=evidence_refs,
+        trace_id=trace_id,
+    )
+    summary = str(result.get("summary") or "").strip()
+    if result.get("status") != "completed" or not summary:
+        return {
+            "action": "manual_review",
+            "identity": identity,
+            "case_id": assignment["case_id"],
+            "task_id": task_id,
+            "status": result.get("status"),
+        }
+    quality_decision = str(assignment.get("quality_decision") or "").strip().lower()
+    if quality_decision not in {"passed", "warning", "manual_review"}:
+        return {
+            "action": "manual_review",
+            "identity": identity,
+            "case_id": assignment["case_id"],
+            "task_id": task_id,
+            "reason": "missing_or_invalid_quality_decision",
+        }
+    closed = close_case(
+        config.bridge_url,
+        identity,
+        config.token,
+        assignment,
+        quality_decision=quality_decision,
+        remediation_summary=summary,
+    )
+    return {
+        "action": "closed",
+        "identity": identity,
+        "case_id": assignment["case_id"],
+        "task_id": task_id,
+        "status": closed.get("status"),
+        "manifest_uri": closed.get("manifest_uri"),
+    }
 
 
 def main() -> int:

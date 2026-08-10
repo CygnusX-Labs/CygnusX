@@ -17,6 +17,7 @@ workers:
     bridge_identity_env: AGENTTEAMS_DATA_STEWARD_TOKEN
     work_inbox: "GET /v1/work-items/assigned"
     forbidden_capabilities: [workflow_submit, workflow_cancel, shell]
+    # Bridge performs format checks; agent-data supplies the semantic preflight conclusion.
   - identity: workflow-operator
     skills: [workflow-submit, workflow-monitor, workflow-cancel]
     bridge_identity_env: AGENTTEAMS_WORKFLOW_OPERATOR_TOKEN
@@ -45,5 +46,10 @@ workers:
   - identity: agent-scrna
     skills: [scrna-interpretation, cell-annotation-advice]
     bridge_identity_env: AGENTTEAMS_AGENT_SCRNA_TOKEN
+    work_inbox: "GET /v1/work-items/assigned"
+    forbidden_capabilities: [workflow_submit, workflow_cancel, database_access, shell, file_write]
+  - identity: agent-rnaseq
+    skills: [result_interpretation, rnaseq-planning-advice]
+    bridge_identity_env: AGENTTEAMS_AGENT_RNASEQ_TOKEN
     work_inbox: "GET /v1/work-items/assigned"
     forbidden_capabilities: [workflow_submit, workflow_cancel, database_access, shell, file_write]

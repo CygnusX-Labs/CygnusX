@@ -50,6 +50,28 @@ def test_projects_worker_assignment_to_speech_and_progress() -> None:
     assert events[1]["tasks"] == [{"taskId": "run-1", "agentId": "agent-rnaseq", "status": "running"}]
 
 
+def test_projects_specialist_roles_to_real_platform_agents() -> None:
+    projector = CaseRoomProjector()
+    expected = {
+        "data-steward": "agent-data",
+        "quality-auditor": "agent-qc",
+        "delivery-reporter": "agent-delivery",
+    }
+
+    for actor, agent_id in expected.items():
+        events = projector.project(
+            {
+                "event_id": f"event-{actor}",
+                "case_id": "case-1",
+                "actor": actor,
+                "event_type": "work_item.assigned",
+                "payload": {"work_item_id": f"{actor}-01"},
+            },
+            session_id="session-1",
+        )
+        assert events[0]["sender"]["agent_id"] == agent_id
+
+
 def test_projects_approval_and_case_close() -> None:
     projector = CaseRoomProjector()
     approval = projector.project(

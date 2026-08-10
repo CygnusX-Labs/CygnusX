@@ -21,7 +21,7 @@ def test_production_worker_requires_supported_identity() -> None:
         production_runner.load_config(
             {
                 "AGENTTEAMS_BRIDGE_BASE_URL": "http://bridge:8080/v1",
-                "AGENTTEAMS_WORKER_IDENTITY": "quality-auditor",
+                "AGENTTEAMS_WORKER_IDENTITY": "unknown-worker",
                 "AGENTTEAMS_BRIDGE_TOKEN": "token",
             }
         )
@@ -41,6 +41,15 @@ def test_production_worker_supports_rnaseq_research_identity() -> None:
     )
 
     assert config.identity == "agent-rnaseq"
+
+
+def test_production_worker_supports_specialist_consultation_identities() -> None:
+    for identity, agent_id, capability in (
+        ("data-steward", "agent-data", "project-preflight"),
+        ("quality-auditor", "agent-qc", "quality-gate"),
+        ("delivery-reporter", "agent-delivery", "delivery-pack"),
+    ):
+        assert production_runner._AGENT_PROFILES[identity] == (agent_id, capability)
 
 
 def test_production_worker_claims_and_uses_bridge_execution(monkeypatch) -> None:

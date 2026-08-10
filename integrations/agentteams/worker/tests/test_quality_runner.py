@@ -25,15 +25,20 @@ def test_quality_runner_requires_quality_identity() -> None:
         raise AssertionError("quality runtime accepted another identity")
 
 
-def test_quality_runner_submits_manual_review(monkeypatch) -> None:
+def test_quality_runner_maps_passed_consultation(monkeypatch) -> None:
     assignment = {"case_id": "case-1", "work_item": {"work_item_id": "quality-01", "context_refs": [{"kind": "task", "id": "task-1"}]}}
     calls: list[str] = []
     monkeypatch.setattr(quality_runner, "claim_next", lambda *_args, dry_run=False, **_kwargs: calls.append("preview" if dry_run else "claim") or {"assignment": assignment})
     monkeypatch.setattr(quality_runner, "heartbeat_work_item", lambda *_args, **_kwargs: calls.append("heartbeat") or {})
-    monkeypatch.setattr(quality_runner, "request_json", lambda *_args, **_kwargs: calls.append("artifacts") or {"items": [{"uri": "omic://artifact/1"}]})
+    monkeypatch.setattr(quality_runner, "execute_readonly_work_item", lambda *_args, **_kwargs: calls.append("consult") or {"status": "completed", "summary": "PASSED\n证据完整"})
     monkeypatch.setattr(quality_runner, "submit_quality_gate", lambda *_args, **kwargs: calls.append("quality") or {"decision": kwargs["decision"]})
 
     result = quality_runner.run_once(quality_runner.QualityWorkerConfig("http://bridge/v1", "token", 1))
 
-    assert calls == ["preview", "claim", "heartbeat", "artifacts", "quality"]
-    assert result["action"] == "manual_review"
+    assert calls == ["preview", "claim", "heartbeat", "consult", "quality"]
+    assert result["action"] == "passed"
+
+
+def test_quality_runner_never_silently_passes_invalid_conclusion() -> None:
+    assert quality_runner._decision({"status": "completed", "summary": "看起来没问题"})[0] == "manual_review"
+    assert quality_runner._decision({"status": "failed", "summary": "upstream down"})[0] == "manual_review"

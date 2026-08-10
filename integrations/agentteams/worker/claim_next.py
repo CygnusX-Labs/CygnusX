@@ -238,6 +238,30 @@ def submit_quality_gate(
     )
 
 
+def close_case(
+    bridge_url: str,
+    identity: str,
+    token: str,
+    assignment: dict[str, Any],
+    *,
+    quality_decision: str,
+    remediation_summary: str,
+    opener: UrlOpen = urlopen,
+) -> dict[str, Any]:
+    case_id, _ = _assignment_identity(assignment)
+    return request_json(
+        f"{bridge_url.rstrip('/')}/cases/{case_id}/close",
+        {"X-Bridge-Identity": identity, "X-Bridge-Token": token},
+        method="POST",
+        opener=opener,
+        payload={
+            "case_id": case_id,
+            "quality_decision": quality_decision,
+            "remediation_summary": remediation_summary,
+        },
+    )
+
+
 def record_evidence(
     bridge_url: str,
     identity: str,

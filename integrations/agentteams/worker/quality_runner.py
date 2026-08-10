@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Conservative Bridge-only Quality Worker for completed AgentTeams tasks."""
+"""Quality Worker backed by the real OmicHub agent-qc consultation."""
 
 from __future__ import annotations
 
 import json
 import os
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
 
-from claim_next import claim_next, heartbeat_work_item, request_json, submit_quality_gate
+from claim_next import claim_next, execute_readonly_work_item, heartbeat_work_item, submit_quality_gate
 
 
 @dataclass(frozen=True)
@@ -29,7 +29,11 @@ def load_config(environ: dict[str, str] | None = None) -> QualityWorkerConfig:
         raise ValueError("Quality runtime requires the quality-auditor identity")
     if not bridge_url or not token:
         raise ValueError("Bridge URL and quality-auditor token are required")
-    return QualityWorkerConfig(bridge_url, token, max(float(values.get("AGENTTEAMS_WORKER_POLL_SECONDS", "5")), 1.0))
+    return QualityWorkerConfig(
+        bridge_url,
+        token,
+        max(float(values.get("AGENTTEAMS_WORKER_POLL_SECONDS", "5")), 1.0),
+    )
 
 
 def _task_id(assignment: dict[str, Any]) -> str:
@@ -37,9 +41,22 @@ def _task_id(assignment: dict[str, Any]) -> str:
     if not isinstance(work_item, dict):
         raise RuntimeError("Bridge returned malformed quality Work Item")
     for reference in work_item.get("context_refs") or []:
-        if isinstance(reference, dict) and reference.get("kind") == "task" and isinstance(reference.get("id"), str):
+        if (
+            isinstance(reference, dict)
+            and reference.get("kind") == "task"
+            and isinstance(reference.get("id"), str)
+        ):
             return reference["id"]
     raise RuntimeError("Quality Work Item does not contain a task reference")
+
+
+def _decision(result: dict[str, Any]) -> tuple[str, str]:
+    summary = str(result.get("summary") or "").strip()
+    if result.get("status") != "completed":
+        return "manual_review", summary or "质控会诊失败，必须人工复核。"
+    marker = summary.splitlines()[0].strip().upper() if summary else ""
+    mapping = {"PASSED": "passed", "WARNING": "warning", "BLOCKED": "blocked"}
+    return mapping.get(marker, "manual_review"), summary or "质控会诊未返回结论，必须人工复核。"
 
 
 def run_once(config: QualityWorkerConfig) -> dict[str, Any]:
@@ -52,29 +69,42 @@ def run_once(config: QualityWorkerConfig) -> dict[str, Any]:
     if assignment is None:
         return {"action": "claim_raced", "identity": identity}
     task_id = _task_id(assignment)
-    heartbeat_work_item(config.bridge_url, identity, config.token, assignment, summary="Quality evidence inspection started.")
-    artifacts = request_json(
-        f"{config.bridge_url.rstrip('/')}/tasks/{task_id}/artifacts",
-        {"X-Bridge-Identity": identity, "X-Bridge-Token": config.token},
-        method="GET",
-        opener=urlopen,
+    trace_id = uuid.uuid4().hex
+    heartbeat_work_item(
+        config.bridge_url,
+        identity,
+        config.token,
+        assignment,
+        summary="agent-qc consultation started.",
+        trace_id=trace_id,
     )
-    count = len(artifacts.get("items", [])) if isinstance(artifacts.get("items"), list) else 0
-    result = submit_quality_gate(
+    result = execute_readonly_work_item(
+        config.bridge_url,
+        identity,
+        config.token,
+        assignment,
+        agent_id="agent-qc",
+        capability="quality-gate",
+        question="独立检查任务证据、质量指标、产物完整性与风险。结论首行必须仅为 PASSED、WARNING 或 BLOCKED。",
+        evidence_refs=[f"task:{task_id}"],
+        trace_id=trace_id,
+    )
+    decision, summary = _decision(result)
+    gate = submit_quality_gate(
         config.bridge_url,
         identity,
         config.token,
         assignment,
         task_id=task_id,
-        decision="manual_review",
-        summary=f"已检查 {count} 条逻辑产物证据；自动 Worker 不放行，需人工质量复核。",
+        decision=decision,
+        summary=summary,
     )
     return {
-        "action": "manual_review",
+        "action": decision,
         "identity": identity,
         "case_id": assignment["case_id"],
         "task_id": task_id,
-        "status": result.get("decision"),
+        "status": gate.get("decision"),
     }
 
 

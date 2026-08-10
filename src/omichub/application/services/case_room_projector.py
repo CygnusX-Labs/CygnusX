@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from loguru import logger
+
 ROLE_AGENT_MAP = {
-    "data-steward": "agent-general",
+    # Keep in sync with integrations/agentteams/bridge/.../config.py ROLE_AGENT_MAP.
+    "data-steward": "agent-data",
     "workflow-operator": "agent-rnaseq",
-    "quality-auditor": "agent-general",
-    "delivery-reporter": "agent-general",
+    "quality-auditor": "agent-qc",
+    "delivery-reporter": "agent-delivery",
     "agent-code": "agent-code",
     "agent-viz": "agent-viz",
     "agent-scrna": "agent-scrna",
@@ -98,6 +101,8 @@ class CaseRoomProjector:
 
     def _sender(self, actor: str, *, flow_id: str) -> dict[str, str]:
         name, avatar, color, role = ROLE_LABELS.get(actor, (actor or "协作成员", "💬", "#64748b", "worker"))
+        if actor not in ROLE_AGENT_MAP:
+            logger.warning("AgentTeams 未命中角色映射，降级为 agent-general: actor={}", actor)
         return {
             "agent_id": ROLE_AGENT_MAP.get(actor, actor or "agent-general"),
             "name": name,

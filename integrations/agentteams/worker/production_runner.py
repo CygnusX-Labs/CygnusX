@@ -32,6 +32,9 @@ _AGENT_PROFILES: dict[str, tuple[str, str]] = {
     "agent-viz": ("agent-viz", "result_interpretation"),
     "agent-scrna": ("agent-scrna", "interpretation"),
     "agent-rnaseq": ("agent-rnaseq", "interpretation"),
+    "data-steward": ("agent-data", "project-preflight"),
+    "quality-auditor": ("agent-qc", "quality-gate"),
+    "delivery-reporter": ("agent-delivery", "delivery-pack"),
 }
 
 
