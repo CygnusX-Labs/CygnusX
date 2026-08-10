@@ -126,6 +126,10 @@ class AgentTeamsCaseSubmitRequest(BaseModel):
     task_name: str = Field(min_length=1, max_length=128)
 
 
+class AgentTeamsCaseRejectRequest(BaseModel):
+    reason: str = Field(min_length=3, max_length=512)
+
+
 def _is_chat_case_flow_allowed(flow_id: str) -> bool:
     settings = get_settings()
     configured = {
@@ -237,6 +241,16 @@ async def approve_and_submit_case_task(
         requester_ref=current_user_id,
         task_name=request.task_name,
     )
+
+
+@router.post("/cases/{case_id}/reject", summary="拒绝当前协作案例的待确认计划")
+async def reject_case(
+    case_id: str,
+    request: AgentTeamsCaseRejectRequest,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+) -> dict[str, Any]:
+    return await service.reject_case(case_id, current_user_id, request.reason)
 
 
 @router.get("/cases/{case_id}/events", summary="获取协作案例审计事件")

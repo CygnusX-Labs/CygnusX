@@ -59,6 +59,10 @@ export interface AgentTeamsCaseSubmitRequest {
   task_name: string
 }
 
+export interface AgentTeamsCaseRejectRequest {
+  reason: string
+}
+
 export interface AgentTeamsCaseListParams {
   status?: AgentTeamsCaseStatus
   project_id?: string
@@ -117,6 +121,9 @@ export const agentTeamsApi = {
   },
   async submitCase(caseId: string, payload: AgentTeamsCaseSubmitRequest): Promise<{ omic_task_id?: string; status: string }> {
     return (await apiClient.post(`/agent-teams/cases/${caseId}/submit`, payload)).data
+  },
+  async rejectCase(caseId: string, payload: AgentTeamsCaseRejectRequest): Promise<AgentTeamsCase> {
+    return (await apiClient.post<AgentTeamsCase>(`/agent-teams/cases/${caseId}/reject`, payload)).data
   },
   async getManifest(caseId: string): Promise<Record<string, unknown>> {
     return (await apiClient.get<Record<string, unknown>>(`/agent-teams/cases/${caseId}/manifest`)).data

@@ -20,6 +20,7 @@ from .models import (
     ApprovalRequest,
     ApprovalResponse,
     ApprovedSubmission,
+    CaseCancelRequest,
     CancelTaskRequest,
     CaseCloseRequest,
     CaseCloseResponse,
@@ -1522,6 +1523,24 @@ class BridgeService:
             manifest_uri=str(manifest_path),
             manifest=manifest,
         )
+
+    async def cancel_case(
+        self, case_id: str, request: CaseCancelRequest, actor: str
+    ) -> CaseRecord:
+        case = await self._cases.get(case_id)
+        self._require_case_access(case, actor)
+        if case.status in {"closed", "cancelled"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Case is already terminal"
+            )
+        cancelled = await self._cases.transition(case_id, "cancelled")
+        await self._audit.record(
+            case_id=case_id,
+            actor=actor,
+            event_type="case.cancelled",
+            payload={"reason": request.reason, "previous_status": case.status},
+        )
+        return cancelled
 
     @staticmethod
     def _existing_work_item_id(case: CaseRecord, work_item_id: str | None) -> str | None:

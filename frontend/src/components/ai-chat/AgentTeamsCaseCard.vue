@@ -61,6 +61,22 @@ async function approveCase() {
   }
 }
 
+async function rejectCase() {
+  if (decisionLoading.value) return
+  decisionLoading.value = true
+  decisionError.value = ''
+  try {
+    const value = await agentTeamsStore.rejectCase(detail.value.case_id, {
+      reason: '用户拒绝当前冻结计划。',
+    })
+    detail.value = { ...detail.value, status: value.status, updated_at: value.updated_at }
+  } catch (cause: any) {
+    decisionError.value = cause?.response?.data?.detail || '拒绝失败，请刷新后重试。'
+  } finally {
+    decisionLoading.value = false
+  }
+}
+
 function openCase() {
   void router.push(detail.value.case_url || `/agent-teams/cases/${detail.value.case_id}`)
 }
@@ -89,7 +105,10 @@ onUnmounted(() => {
     <div v-if="isApprovalPending" class="approval-rail">
       <p>审批待处理：确认冻结计划后继续执行。</p>
       <p v-if="planShortHash" class="plan-hash">计划短码：{{ planShortHash }}</p>
-      <NButton size="small" type="primary" :loading="decisionLoading" @click="approveCase">批准并继续</NButton>
+      <div class="approval-actions">
+        <NButton size="small" type="primary" :loading="decisionLoading" @click="approveCase">批准并继续</NButton>
+        <NButton size="small" type="error" secondary :disabled="decisionLoading" @click="rejectCase">拒绝计划</NButton>
+      </div>
       <span v-if="decisionError" class="decision-error" role="alert">{{ decisionError }}</span>
     </div>
     <div class="case-actions">
@@ -106,6 +125,7 @@ onUnmounted(() => {
 .case-meta, .case-updated, .approval-rail { margin: 10px 0 0; font-size: 13px; color: var(--chat-text-secondary); }
 .approval-rail { display: grid; gap: 8px; padding: 8px; border-left: 3px solid var(--warning-color, #f59e0b); background: color-mix(in srgb, var(--warning-color, #f59e0b) 12%, transparent); }
 .approval-rail p { margin: 0; }
+.approval-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .plan-hash { color: var(--chat-text-muted); font-family: ui-monospace, monospace; font-size: 12px; }
 .decision-error { color: var(--error-color, #d03050); font-size: 12px; }
 .case-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }

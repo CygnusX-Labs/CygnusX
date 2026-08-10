@@ -173,7 +173,7 @@ function focus() {
 defineExpose({ focus })
 
 // 「更多」菜单：低频长文字操作收纳于此（fontend.md §36.3）
-const moreMenuOptions = [{ label: '创建协作 Case', key: 'agentteams-case' }]
+const moreMenuOptions = [{ label: '发送给 AI 以创建协作 Case', key: 'agentteams-case' }]
 function handleMoreSelect(key: string) {
   if (key === 'agentteams-case') insertAgentTeamsCaseTemplate()
 }
@@ -797,7 +797,7 @@ function handleWorkspaceReference() {
 }
 
 function insertAgentTeamsCaseTemplate() {
-  const template = '请将以下工作转为协作 Case：\n- 交付目标：\n- 项目 ID：\n- 流程 ID：\n- 需要的审批/验收：\n'
+  const template = '请根据以下信息创建协作 Case；如信息不足请先向我澄清，不会立即创建：\n- 交付目标：\n- 项目 ID：\n- 流程 ID（通用分析可留空）：\n- 需要的审批/验收：\n'
   localValue.value = localValue.value.trim() ? `${localValue.value}\n\n${template}` : template
   nextTick(() => {
     getTextareaElement()?.focus()

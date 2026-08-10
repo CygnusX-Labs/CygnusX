@@ -16,6 +16,7 @@ from .client import GatewayClient, OmicHubClient
 from .config import BridgeSettings
 from .models import (
     ApprovalRequest,
+    CaseCancelRequest,
     CancelTaskRequest,
     CaseCloseRequest,
     CaseCreateRequest,
@@ -547,6 +548,16 @@ def create_app(
         if payload.case_id != case_id:
             raise HTTPException(status_code=400, detail="Case path and payload mismatch")
         return (await service.close_case(payload, identity)).model_dump(mode="json")
+
+    @app.post("/v1/cases/{case_id}/cancel", tags=["Cases"])
+    async def cancel_case(
+        case_id: str,
+        payload: CaseCancelRequest,
+        identity: Annotated[str, Depends(authenticate_identity)],
+        service: Annotated[BridgeService, Depends(get_service)],
+    ) -> dict:
+        require_role(identity, "bioops-manager")
+        return (await service.cancel_case(case_id, payload, identity)).model_dump(mode="json")
 
     return app
 

@@ -809,6 +809,33 @@ async def test_cancel_requires_scoped_approval_and_updates_case(client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_manager_can_cancel_pending_plan_without_task_approval(client) -> None:
+    request_client, _ = client
+    await create_case(request_client, "bioops_reject")
+    await request_client.post(
+        "/v1/projects/project-1/preflight",
+        headers=headers("data-steward", "steward"),
+        json={
+            "case_id": "bioops_reject",
+            "flow_id": "rna_seq",
+            "sample_sheet": [{"sample": "S01", "group": "control"}],
+        },
+    )
+    response = await request_client.post(
+        "/v1/cases/bioops_reject/cancel",
+        headers=headers("bioops-manager", "manager"),
+        json={"reason": "User rejected the frozen plan."},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
+    events = await request_client.get(
+        "/v1/cases/bioops_reject/events", headers=headers("bioops-manager", "manager")
+    )
+    assert any(event["event_type"] == "case.cancelled" for event in events.json()["events"])
+
+
+@pytest.mark.asyncio
 async def test_case_and_audit_indexes_restore_from_disk(settings) -> None:
     first_case_store = CaseStore(settings.case_store_path)
     now = datetime.now(UTC)

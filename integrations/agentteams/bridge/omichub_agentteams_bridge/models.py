@@ -168,6 +168,10 @@ class ExecuteGeneralPlanRequest(BaseModel):
     approval_token: str = Field(min_length=20, max_length=4096)
 
 
+class CaseCancelRequest(BaseModel):
+    reason: str = Field(min_length=3, max_length=512)
+
+
 class CancelTaskRequest(BaseModel):
     case_id: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
     approval_token: str = Field(min_length=20, max_length=4096)

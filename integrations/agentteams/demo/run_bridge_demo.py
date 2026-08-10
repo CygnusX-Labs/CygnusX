@@ -187,6 +187,36 @@ def run_staging_success(
     task = wait_for_task(demo, task_id, timeout)
     if task.get("status") != "success":
         raise RuntimeError(f"Submitted task ended as {task.get('status')!r}; inspect Case evidence")
+    reconciled = demo.request("POST", f"/v1/cases/{case_id}/reconcile", "bioops-manager")
+    interpretation = next(
+        (
+            item
+            for item in reconciled.get("work_items", [])
+            if isinstance(item, dict) and item.get("work_item_id") == "interpret-01"
+        ),
+        None,
+    )
+    if interpretation is None:
+        raise RuntimeError("Task success did not create the required interpretation Work Item")
+    demo.request(
+        "POST",
+        f"/v1/cases/{case_id}/work-items/interpret-01/claim",
+        "agent-rnaseq",
+    )
+    interpretation_result = demo.request(
+        "POST",
+        f"/v1/cases/{case_id}/work-items/interpret-01/execute-readonly",
+        "agent-rnaseq",
+        {
+            "agent_id": "agent-rnaseq",
+            "capability": "result_interpretation",
+            "question": "解读该 RNA-seq 任务的关键结果、证据、限制与后续建议。",
+            "evidence_refs": [f"task:{task_id}"],
+            "requested_tools": [],
+        },
+    )
+    if interpretation_result.get("status") != "completed":
+        raise RuntimeError("Interpretation Work Item did not complete")
     demo.request(
         "POST",
         f"/v1/cases/{case_id}/work-items",
@@ -259,7 +289,13 @@ def main() -> int:
     roles = ["bioops-manager", "data-steward"]
     if args.mode == "staging-success":
         roles.extend(
-            ["approval-authority", "workflow-operator", "quality-auditor", "delivery-reporter"]
+            [
+                "approval-authority",
+                "workflow-operator",
+                "quality-auditor",
+                "delivery-reporter",
+                "agent-rnaseq",
+            ]
         )
     try:
         demo = BridgeDemo(base_url, {role: required_identity(role) for role in roles})

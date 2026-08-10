@@ -298,6 +298,17 @@ class AgentTeamsService:
     async def get_case(self, case_id: str, requester_ref: str) -> dict[str, Any]:
         return self._public_case(await self._get_case_for_requester(case_id, requester_ref))
 
+    async def reject_case(self, case_id: str, requester_ref: str, reason: str) -> dict[str, Any]:
+        case = await self._get_case_for_requester(case_id, requester_ref)
+        if case.get("status") != "approval_pending":
+            raise BusinessError("当前 Case 不处于可拒绝的计划确认阶段")
+        cancelled = await self._request(
+            f"/v1/cases/{case_id}/cancel",
+            method="POST",
+            json={"reason": reason},
+        )
+        return self._public_case(cancelled)
+
     async def get_manifest(self, case_id: str, requester_ref: str) -> dict[str, Any]:
         await self._get_case_for_requester(case_id, requester_ref)
         return await self._request(f"/v1/cases/{case_id}/manifest")
