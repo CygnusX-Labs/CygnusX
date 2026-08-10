@@ -58,10 +58,13 @@ COMPOSE_PGVECTOR_AGENTTEAMS := $(COMPOSE_PGVECTOR) -f deploy/agentteams/docker-c
 COMPOSE_AGENTTEAMS := docker compose --project-name agentteams -f deploy/agentteams/docker-compose.agentteams.yml
 COMPOSE_WORKER := ./scripts/worker-compose.sh
 COMPOSE_ALL    := docker compose -f deploy/docker/docker-compose.yml
+AGENTTEAMS_BRIDGE_ENV_FILE ?= deploy/agentteams/bridge.env
+AGENTTEAMS_WORKER_ENV_FILE ?= deploy/agentteams/worker.env
 ENV_OMICHUB_NETWORK_NAME := $(shell test -f .env && sed -n 's/^OMICHUB_NETWORK_NAME=//p' .env | head -n 1)
 ENV_OMICHUB_SANDBOX_NETWORK_NAME := $(shell test -f .env && sed -n 's/^OMICHUB_SANDBOX_NETWORK_NAME=//p' .env | head -n 1)
 ENV_OMICHUB_BRIDGE_GATEWAY_NETWORK := $(shell test -f .env && sed -n 's/^OMICHUB_BRIDGE_GATEWAY_NETWORK=//p' .env | head -n 1)
 ENV_OMICHUB_DATA_ROOT := $(shell test -f .env && sed -n 's/^OMICHUB_DATA_ROOT=//p' .env | head -n 1)
+ENV_REDIS_PASSWORD := $(shell test -f .env && sed -n 's/^REDIS_PASSWORD=//p' .env | head -n 1)
 DOCKER_NETWORK ?= $(if $(ENV_OMICHUB_NETWORK_NAME),$(ENV_OMICHUB_NETWORK_NAME),omichub_net)
 SANDBOX_NETWORK ?= $(if $(ENV_OMICHUB_SANDBOX_NETWORK_NAME),$(ENV_OMICHUB_SANDBOX_NETWORK_NAME),omichub-sandbox-net)
 BRIDGE_GATEWAY_NETWORK ?= $(if $(ENV_OMICHUB_BRIDGE_GATEWAY_NETWORK),$(ENV_OMICHUB_BRIDGE_GATEWAY_NETWORK),omichub_bridge_gateway)
@@ -71,13 +74,32 @@ ROCKETMQ_IMAGE ?= apache/rocketmq:5.3.2
 DATA_ROOT ?= $(if $(ENV_OMICHUB_DATA_ROOT),$(ENV_OMICHUB_DATA_ROOT),/data/omichub)
 PUID ?= $(shell id -u)
 PGID ?= $(shell id -g)
-REDIS_PASSWORD ?= omichub
+REDIS_PASSWORD ?= $(if $(ENV_REDIS_PASSWORD),$(ENV_REDIS_PASSWORD),omichub)
 export REDIS_PASSWORD
 
 docker-network: ## 创建跨栈外部网络 + 终端网络（Studio 会话网络由 Manager 动态创建）
 	@docker network create $(DOCKER_NETWORK) 2>/dev/null || true
 	@docker network create $(SANDBOX_NETWORK) 2>/dev/null || true
 	@docker network create $(BRIDGE_GATEWAY_NETWORK) 2>/dev/null || true
+
+agentteams-worker-env: ## 从受控 Bridge 配置生成最小权限的 AgentTeams Worker 令牌环境文件
+	@set -eu; \
+		source_file="$(AGENTTEAMS_BRIDGE_ENV_FILE)"; target_file="$(AGENTTEAMS_WORKER_ENV_FILE)"; \
+		if [ ! -f "$$source_file" ]; then echo "=> 缺少 $$source_file，无法生成 Worker 令牌环境"; exit 1; fi; \
+		mkdir -p "$$(dirname "$$target_file")"; \
+		umask 077; temporary_file="$$(mktemp "$${target_file}.XXXXXX")"; \
+		trap 'rm -f "$$temporary_file"' EXIT; \
+		sed -n -E '/^AGENTTEAMS_(AGENT_CODE|AGENT_VIZ|AGENT_SCRNA|AGENT_RNASEQ|DATA_STEWARD|ANALYSIS_WORKER|QUALITY_AUDITOR|DELIVERY_REPORTER)_TOKEN=.+$$/p' "$$source_file" > "$$temporary_file"; \
+		if [ "$$(wc -l < "$$temporary_file")" -ne 8 ]; then \
+			sed -n 's/^BRIDGE_IDENTITIES=//p' "$$source_file" | tr ',' '\n' | \
+			awk -F: 'BEGIN { map["agent-code"]="AGENTTEAMS_AGENT_CODE_TOKEN"; map["agent-viz"]="AGENTTEAMS_AGENT_VIZ_TOKEN"; map["agent-scrna"]="AGENTTEAMS_AGENT_SCRNA_TOKEN"; map["agent-rnaseq"]="AGENTTEAMS_AGENT_RNASEQ_TOKEN"; map["data-steward"]="AGENTTEAMS_DATA_STEWARD_TOKEN"; map["analysis-worker"]="AGENTTEAMS_ANALYSIS_WORKER_TOKEN"; map["quality-auditor"]="AGENTTEAMS_QUALITY_AUDITOR_TOKEN"; map["delivery-reporter"]="AGENTTEAMS_DELIVERY_REPORTER_TOKEN" } $$1 in map { print map[$$1] "=" substr($$0, length($$1) + 2) }' > "$$temporary_file"; \
+		fi; \
+		if [ "$$(wc -l < "$$temporary_file")" -ne 8 ]; then echo "=> $$source_file 必须配置全部 8 个 Worker 令牌"; exit 1; fi; \
+		mv "$$temporary_file" "$$target_file"; chmod 600 "$$target_file"; \
+		echo "=> 已生成最小权限 Worker 令牌环境：$$target_file"
+
+docker-up-agentteams: docker-network agentteams-worker-env ## 构建并启动 AgentTeams Bridge、Gateway 与全部生产 Worker
+	$(COMPOSE_AGENTTEAMS) --env-file $(AGENTTEAMS_WORKER_ENV_FILE) --profile agentteams-production up -d --build --force-recreate
 
 docker-runtime-dirs: ## 准备关键运行目录与非 root 容器写入权限（docker-up/reload 自动执行）
 	@echo "=> 准备运行目录权限..."
@@ -337,8 +359,8 @@ docker-reload: docker-network ## 重新构建前端并刷新 pgvector 主栈 + R
 	@echo "⚡ 步骤 6/10：重新构建前端生产包（vite build）..."
 	cd frontend && npm run build
 	@echo ""
-	@echo "🔗 步骤 7/10：构建并启动独立 AgentTeams Bridge..."
-	$(COMPOSE_AGENTTEAMS) up -d --build
+	@echo "🔗 步骤 7/10：构建并启动独立 AgentTeams Bridge、Gateway 与生产 Worker..."
+	@$(MAKE) --no-print-directory docker-up-agentteams
 	@echo ""
 	@echo "🌐 步骤 8/10：重新构建并启动 pgvector 主栈服务与 RocketMQ（含 Bridge 网络代理）..."
 	$(COMPOSE_PGVECTOR_AGENTTEAMS) --profile rocketmq up -d --build
@@ -371,13 +393,21 @@ docker-dev-refresh: ## 轻量热刷新：前端 build + 重启 web/beat/nginx + 
 	@echo "        data/ai/*.yaml 与提示词按 mtime/调用热重载，改完刷新页面即可，无需执行本命令。"
 	@echo ""
 
-sync-knowledge: wait-web ## 将 docs/knowledge/*.md 同步到数据库（开发/本地文件编辑后使用）
+sync-knowledge: wait-web ## 同步通用、QC、Cloud 知识库及已登记 Wiki 正文到数据库
 	@echo ""
-	@echo "📚 同步知识库：将 docs/knowledge/*.md 文件内容同步到数据库..."
-	@echo "   （说明：知识库以数据库为权威源，直接改 .md 文件后需要此步骤网页才生效）"
+	@echo "📚 同步通用知识库与已登记 Wiki 正文..."
+	@echo "   （说明：知识库以数据库为权威源，直接改 Markdown 源文件后需要此步骤网页才生效）"
 	@docker exec omichub-web python scripts/sync_knowledge_from_files.py \
 		--meta-yaml docs/knowledge/meta.yaml \
 		--auto-admin
+	@echo ""
+	@echo "🧪 同步 QC 知识库（递归 Markdown + PDF/图片附件索引）..."
+	@docker exec omichub-web python scripts/import_qc_knowledge.py --auto-admin
+	@echo ""
+	@echo "☁️  同步 Cloud 知识库（递归 Markdown + PDF/DOCX/PPTX/图片附件索引）..."
+	@docker exec omichub-web python scripts/import_cloud_knowledge.py --auto-admin
+	@echo ""
+	@echo "✅ 通用、QC 与 Cloud 知识库同步完成。"
 
 init-admin: ## 初始化管理员账号 (首次部署使用)
 	uv run python scripts/init_admin.py

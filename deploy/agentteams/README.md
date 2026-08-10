@@ -65,6 +65,17 @@ export AGENTTEAMS_ANALYSIS_WORKER_TOKEN=...
 Workers do not load `bridge.env`. This prevents them from inheriting the Gateway Manager token,
 approval signing secret, OmicHub integration credential, or other Worker identities.
 
+For the repository's integrated development reload, use:
+
+```bash
+make docker-reload
+```
+
+It runs `make agentteams-worker-env` first. That target extracts only the eight
+`AGENTTEAMS_*_TOKEN` entries from deployment-managed `bridge.env` into ignored
+`worker.env` with mode `0600`, then starts the `agentteams-production` profile.
+To start only this sidecar stack, run `make docker-up-agentteams`.
+
 ### Production read-only Worker profile
 
 The `agentteams-production` profile starts real, role-scoped `agent-rnaseq`, `agent-code`,

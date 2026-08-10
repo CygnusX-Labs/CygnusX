@@ -61,6 +61,7 @@ coverage.xml
 !.env.example
 deploy/agentteams/bridge.env
 deploy/agentteams/gateway.env
+deploy/agentteams/worker.env
 data/.worker-config.env
 
 # ===== 数据库 =====
