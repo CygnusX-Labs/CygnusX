@@ -412,6 +412,66 @@ class OverdriveRunService:
         )
         await self._write_snapshot(run)
 
+    async def recover_missing_input(
+        self,
+        *,
+        run_id: str,
+        user_id: str,
+        missing_inputs: list[str],
+        reason: str,
+    ) -> dict[str, Any]:
+        """Stop an invalid execution and wait for a verifiable input contract."""
+        run = await self.get_for_user(run_id, user_id, lock=True)
+        if run is None:
+            raise ValidationError("超频 run 不存在或无权访问")
+        if run.status in {"COMPLETED", "CANCELLED", "TERMINATED", "FAILED"}:
+            return {"status": "terminal", "run_id": run_id, "run_status": run.status}
+
+        now = datetime.now(UTC).isoformat()
+        tasks = deepcopy(run.tasks or [])
+        for task in tasks:
+            if str(task.get("status") or "") not in {"cancelled", "terminated"}:
+                task["status"] = "awaiting_input"
+                task["updated_at"] = now
+        run.tasks = tasks
+        plan = deepcopy(run.plan or {})
+        plan.update(
+            {
+                "status": "needs_input",
+                "approved_by": None,
+                "approved_at": None,
+                "input_contract": {
+                    "status": "missing",
+                    "missing_inputs": list(dict.fromkeys(missing_inputs)),
+                },
+            }
+        )
+        run.plan = plan
+        run.control = {
+            **deepcopy(run.control or {}),
+            "action": "awaiting_input",
+            "reason": reason,
+            "missing_inputs": list(dict.fromkeys(missing_inputs)),
+        }
+        await self.transition(run, "AWAITING_USER_INPUT")
+        await self.append_event(
+            run_id,
+            "input_contract_missing",
+            {
+                "reason": reason,
+                "missing_inputs": list(dict.fromkeys(missing_inputs)),
+                "message": "请上传或引用本轮任务所需的真实输入后再继续。",
+            },
+            dedupe_key="input_contract_missing:recovery",
+        )
+        await self.persist_snapshot(run)
+        return {
+            "status": "awaiting_input",
+            "run_id": run_id,
+            "run_status": run.status,
+            "missing_inputs": list(dict.fromkeys(missing_inputs)),
+        }
+
     async def save_research(
         self,
         run: OverdriveRunModel,

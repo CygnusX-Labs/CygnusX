@@ -830,6 +830,18 @@ def test_overdrive_preflight_skips_plan_when_critical_context_is_supplied() -> N
     assert questions == []
 
 
+def test_overdrive_preflight_blocks_any_operational_task_without_input() -> None:
+    questions = _overdrive_preflight_questions("帮我做一下 RNA-seq 分析")
+
+    assert questions
+    assert "真实输入" in questions[0]["question"]
+    assert "我会上传/引用输入后执行（推荐）" in questions[0]["options"]
+
+
+def test_overdrive_preflight_does_not_block_conceptual_discussion() -> None:
+    assert _overdrive_preflight_questions("介绍一下 RNA-seq 的基本流程") == []
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("assignment_count", [0, 2, 5])
 async def test_overdrive_room_speech_sequence_and_persistence(

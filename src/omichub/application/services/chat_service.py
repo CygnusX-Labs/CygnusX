@@ -239,7 +239,7 @@ ROUTER_SYSTEM_PROMPT = """你是星尘 AI，平台唯一的任务分派入口。
 5. 出现 2–5 个相互独立的任务（同时、分别、并行、一起检查）→ fanout，并给出可执行的 fanout_tasks；需要多角度评估“合理吗/怎么解读/设计行不行”→ consult；正式执行、审批、交付、归档、给客户→ case；运行分钟到小时级管道→ dag；点名其他专家或当前领域不匹配→ transfer。
 6. case 必须只在真实流程执行与可审计交付场景使用；普通问答、流程解释和轻量并行不能标为 case。
 7. confidence < 0.6 表示需要向用户澄清协作方式；仍填写最可能的 collaboration_intent，禁止用 chat 掩盖不确定性。
-8. 信息不足且缺失项会改变数据模态、分析路线或专家选择时，必须选择运行时目录中的通用入口 Agent，由通用助手先通过 ask_user 补全上下文；禁止直接猜测具体领域或专家。
+8. 信息不足且缺失项会改变数据模态、分析路线或专家选择时，必须选择运行时目录中的通用入口 Agent，由通用助手先通过 ask_user 补全上下文；禁止直接猜测具体领域或专家。若用户消息明确包含图片附件，应优先让通用助手先理解图片并直接回答用户当前问题；只有图片本身无法回答、且确实缺少会改变结论的关键信息时才追问。
 9. 选择专家时只依据候选目录中声明的 routing_notes、capability_scope 与 default_role，不得超出专家能力边界。
 10. overdrive_intent 只表示用户对超频协作会话的意图：仅当用户明确希望由多个专家/团队/并行协作处理，且本轮任务确实需要 fanout、consult、case 或 dag 时填 enable；用户明确要求普通回答、停止团队协作或关闭超频时填 disable；仅询问“超频模式是什么/如何开启”、普通问答、任务虽复杂但用户未要求协作时一律填 none。不得因为文本出现“超频”一词就填 enable。
 
@@ -291,6 +291,7 @@ OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_
    - 若用户只是要求开启超频模式而没有具体任务：一句话简短确认并邀请用户下达具体任务。
 3. 当缺少会实质改变分析路线、专家选择或交付计划的关键信息时，优先提问而非猜测或分派：questions 填 1–3 个简洁问题（可附 2–5 个选项），assignments 必须为空数组。重点确认会改变路线、专家选择或交付计划的输入；已确认信息不得重复询问，用户最后一次明确回答优先。
 4. questions 非空时，speech 只简短说明为什么先确认这些信息；不要给出假定前提下的长计划。
+4.1. 任何“分析/执行/运行/处理/生成/构建/绘制”类任务都必须先建立通用输入契约：明确任务类型、输入来源（上传文件、工作区、已有结果或用户明确说明的纯方法讨论）和预期交付。没有可核验输入时，必须把 questions 填成澄清问题并将 assignments 置为空；禁止因为关键词命中某个领域就臆造 FASTQ、矩阵、图片、树文件或其他产物。此规则适用于 RNA-seq、单细胞、可视化、富集、系统发育、代码/报告处理等所有领域。
 5. assignments 0–12 个；每项必须有唯一 task_id，depends_on 只能引用同一列表中的 task_id，并可声明 accepts_inputs、produces_outputs、retry、timeout_seconds、priority。没有依赖且数据契约无交集的任务必须并行；存在真实上下游关系时才串行。
 6. 采用满足任务所需的最小专家集合：单领域任务只分配一个最匹配专家；只有用户明确要求多个独立交付物，或存在不可省略的真实上下游依赖时，才增加其他专家。不得固定套用“通用助手 → 代码助手 → 可视化助手”。
 7. 同一专家可承担多个任务；只有真正互不依赖的任务才允许同波并行。简单问答、闲聊、单领域问题 → questions 和 assignments 都为空数组。
@@ -427,9 +428,49 @@ def _analysis_intake_questions(user_content: str) -> list[dict[str, Any]]:
     return get_domain_registry().intake_questions(user_content)
 
 
+_OVERDRIVE_OPERATION_MARKERS = (
+    "分析", "执行", "运行", "处理", "生成", "构建", "绘制", "画", "计算",
+    "比对", "定量", "差异", "富集", "质控", "注释", "批量",
+)
+_OVERDRIVE_CONCEPT_MARKERS = (
+    "介绍", "原理", "教程", "学习", "是什么", "怎么做", "如何做", "方法讨论", "先讲",
+)
+_OVERDRIVE_INPUT_MARKERS = (
+    "已上传", "上传了", "附件", "工作区", "文件", "目录", "路径", "样本表", "元数据",
+    "fastq", "fastq.gz", "fq.gz", "fasta", "矩阵", "count", "表达量", "vcf", "bam",
+    "h5ad", "treefile", "newick", "结果",
+)
+
+
+def _overdrive_requires_input_clarification(user_content: str) -> bool:
+    """Require a domain-agnostic input contract before planning execution work."""
+    normalized = user_content.lower().replace(" ", "")
+    if any(marker in normalized for marker in _OVERDRIVE_CONCEPT_MARKERS):
+        return False
+    return any(marker in normalized for marker in _OVERDRIVE_OPERATION_MARKERS) and not any(
+        marker in normalized for marker in _OVERDRIVE_INPUT_MARKERS
+    )
+
+
 def _overdrive_preflight_questions(user_content: str) -> list[dict[str, Any]]:
     """兼容旧调用名；普通路由与超频模式共用同一 intake 判断。"""
-    return _analysis_intake_questions(user_content)
+    questions = _analysis_intake_questions(user_content)
+    if _overdrive_requires_input_clarification(user_content):
+        questions.insert(
+            0,
+            {
+                "question": (
+                    "这是要基于真实输入执行任务，还是先讨论方法？当前消息没有可核验的文件、"
+                    "工作区、样本表或已有结果；若要执行，请先上传或引用本轮所需输入。"
+                ),
+                "options": [
+                    "我会上传/引用输入后执行（推荐）",
+                    "先讨论方法与分析路线",
+                    "只解读已有结果",
+                ],
+            },
+        )
+    return questions[:3]
 
 
 def _extract_overdrive_intake_slots(
@@ -2518,7 +2559,11 @@ class ChatService:
     # --- Agent 调度中枢：SSE 流式聊天（含 MCP 工具调用闭环） ---
 
     async def _route_to_agent(
-        self, router_ctx: AgentContext, user_text: str, user_id: str | None = None
+        self,
+        router_ctx: AgentContext,
+        user_text: str,
+        user_id: str | None = None,
+        attachments: list[dict[str, Any]] | None = None,
     ) -> tuple[AgentContext | None, dict[str, Any] | None]:
         """智能路由：用路由器 Agent 的模型做意图分派，返回目标 Agent 上下文与路由信息。
 
@@ -2544,7 +2589,13 @@ class ChatService:
             reason = ""
             expect_handoff = False
             consult_agent_ids: list[str] = []
-            clarification_questions = _analysis_intake_questions(user_text)
+            has_image_attachment = any(
+                str(attachment.get("type") or "") == "image"
+                or str(attachment.get("mime_type") or "").startswith("image/")
+                for attachment in (attachments or [])
+                if isinstance(attachment, dict)
+            )
+            clarification_questions = [] if has_image_attachment else _analysis_intake_questions(user_text)
             from omichub.application.services.flow_registry import get_flow_registry
 
             flow_target = (
@@ -2587,10 +2638,17 @@ class ChatService:
                     ensure_ascii=False,
                 )
                 system_prompt = ROUTER_SYSTEM_PROMPT.replace("{catalog}", catalog)
+                router_input = user_text
+                if has_image_attachment:
+                    router_input = (
+                        f"{user_text}\n\n"
+                        "[本轮消息包含图片附件。请先分派可理解图片并直接回答当前问题的 Agent；"
+                        "不要仅因缺少领域上下文而要求用户补充。]"
+                    )
                 route_text = ""
                 async for chunk in provider_manager.chat_stream(
                     config=router_ctx.model_config,
-                    messages=[{"role": "user", "content": user_text}],
+                    messages=[{"role": "user", "content": router_input}],
                     system_prompt=system_prompt,
                     temperature=0,
                     max_tokens=200,
@@ -2603,6 +2661,8 @@ class ChatService:
             if decision:
                 target_id = str(decision.get("agent_id") or "")
                 reason = str(decision.get("reason") or "")
+                if has_image_attachment and target_id == _general_fallback().agent_id:
+                    reason = "已附图片，通用助手将先识别图片内容并直接回答当前问题"
                 expect_handoff = bool(decision.get("expect_handoff"))
                 raw_consults = decision.get("consult_agent_ids")
                 if get_settings().multi_expert_consultation_enabled and isinstance(
@@ -2660,6 +2720,8 @@ class ChatService:
             )
             target_id = normalized.target_agent_id or target_id
             reason = normalized.reason
+            if has_image_attachment and target_id == fallback.agent_id:
+                reason = "已附图片，通用助手将先识别图片内容并直接回答当前问题"
 
             target_ctx = await (
                 agent_service.assemble_context(target_id, user_id=user_id)
@@ -2775,7 +2837,19 @@ class ChatService:
         # background run detached from the chat request and lets a single waiting
         # branch consume the user's supplement without freezing independent branches.
         early_run_service = OverdriveRunService(self._db)
-        early_active_run = await early_run_service.get_active_for_session(session_id, user_id)
+        early_active_run: Any | None = early_run_service.get_active_for_session(session_id, user_id)
+        for _ in range(4):
+            if not inspect.isawaitable(early_active_run):
+                break
+            early_active_run = await early_active_run
+        if inspect.isawaitable(early_active_run):
+            if inspect.iscoroutine(early_active_run):
+                early_active_run.close()
+            early_active_run = None
+        if early_active_run is not None and not isinstance(
+            getattr(early_active_run, "status", None), str
+        ):
+            early_active_run = None
         replan_root_request = (
             str(early_active_run.root_request or "").strip()
             if early_active_run is not None and early_active_run.status == "REPLANNING"
@@ -3344,9 +3418,19 @@ class ChatService:
         # v2 hard gate: research and freeze an immutable plan before any execution worker.
         # This service is the sole authoritative wrapper for both chat- and LangGraph-backed
         # agents; the legacy file manifest below is reached only after a real user approval.
-        active_run = await OverdriveRunService(self._db).get_active_for_session(
+        active_run: Any | None = OverdriveRunService(self._db).get_active_for_session(
             session_id, user_id
         )
+        for _ in range(4):
+            if not inspect.isawaitable(active_run):
+                break
+            active_run = await active_run
+        if inspect.isawaitable(active_run):
+            if inspect.iscoroutine(active_run):
+                active_run.close()
+            active_run = None
+        if active_run is not None and not isinstance(getattr(active_run, "status", None), str):
+            active_run = None
         if active_run is None or active_run.status == "REPLANNING":
             revision_feedback = ""
             lead_planner_id = str(assignments[0]["agent_id"])
@@ -4835,7 +4919,9 @@ class ChatService:
             yield ChatChunk(type="mode_changed", metadata={"mode": "overdrive", "enabled": True})
 
         if keyword_toggle is None and overdrive is None and ctx.features.get("router"):
-            pre_routed_ctx, pre_route_info = await self._route_to_agent(ctx, user_content, user_id)
+            pre_routed_ctx, pre_route_info = await self._route_to_agent(
+                ctx, user_content, user_id, attachment_dicts
+            )
             router_toggle = _resolve_overdrive_router_toggle(pre_route_info, effective_overdrive)
             if router_toggle is not None:
                 effective_overdrive = router_toggle
@@ -4893,7 +4979,7 @@ class ChatService:
             target_ctx, route_info = (
                 (pre_routed_ctx, pre_route_info)
                 if pre_route_info is not None
-                else await self._route_to_agent(ctx, user_content, user_id)
+                else await self._route_to_agent(ctx, user_content, user_id, attachment_dicts)
             )
             if target_ctx is not None and route_info is not None:
                 ctx = target_ctx
