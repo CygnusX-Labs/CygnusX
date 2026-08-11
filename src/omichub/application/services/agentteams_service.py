@@ -253,18 +253,31 @@ class AgentTeamsService:
         comparisons = snapshot.get("comparisons")
         if not isinstance(flow_id, str) or not isinstance(sample_sheet, list):
             raise BusinessError("当前协作 Case 的预检输入快照无效")
-        if not any(item.get("work_item_id") == "submit-01" for item in case.get("work_items", [])):
+        prior_submissions = [
+            item
+            for item in case.get("work_items", [])
+            if item.get("target") == "analysis-worker"
+            and str(item.get("work_item_id") or "").startswith("submit-")
+        ]
+        version = len(prior_submissions) + 1
+        work_item_id = f"submit-{version:02d}"
+        previous_work_item_id = (
+            str(prior_submissions[-1].get("work_item_id")) if prior_submissions else None
+        )
+        if not any(item.get("work_item_id") == work_item_id for item in case.get("work_items", [])):
             await self._request(
                 f"/v1/cases/{case_id}/work-items",
                 method="POST",
                 json={
-                    "work_item_id": "submit-01",
+                    "work_item_id": work_item_id,
+                    "parent_work_item_id": previous_work_item_id,
                     "target": "analysis-worker",
                     "objective": "执行已获人工批准且由 Bridge 固化的分析流程提交，并回写 OmicHub 任务证据。",
                     "skill_name": "workflow-submit",
                     "context_refs": [{"kind": "project", "id": case["project_ref"]["id"]}],
                     "read_only": False,
                     "approval_required": True,
+                    "depends_on": [previous_work_item_id] if previous_work_item_id else [],
                 },
             )
         approval = await self._request_as(
@@ -274,11 +287,20 @@ class AgentTeamsService:
             method="POST",
             json={
                 "case_id": case_id,
-                "work_item_id": "submit-01",
+                "work_item_id": work_item_id,
                 "action": "submit_task",
                 "flow_id": flow_id,
             },
         )
+        frozen_task = case.get("proposed_submission")
+        if not isinstance(frozen_task, dict):
+            frozen_task = {
+                "flow_id": flow_id,
+                "name": task_name,
+                "sample_sheet": sample_sheet,
+                "comparisons": comparisons,
+                "execution_mode": "cluster",
+            }
         return await self._request_as(
             "approval-authority",
             self._bridge_config.approval_token,
@@ -286,16 +308,10 @@ class AgentTeamsService:
             method="POST",
             json={
                 "case_id": case_id,
-                "work_item_id": "submit-01",
-                "idempotency_key": f"{case_id}-submit-v1",
+                "work_item_id": work_item_id,
+                "idempotency_key": f"{case_id}-submit-v{version}",
                 "approval_token": approval["token"],
-                "task": {
-                    "flow_id": flow_id,
-                    "name": task_name,
-                    "sample_sheet": sample_sheet,
-                    "comparisons": comparisons,
-                    "execution_mode": "cluster",
-                },
+                "task": frozen_task,
             },
         )
 
@@ -313,6 +329,26 @@ class AgentTeamsService:
         )
         return self._public_case(cancelled)
 
+    async def revise_case_plan(
+        self,
+        case_id: str,
+        requester_ref: str,
+        *,
+        expected_plan_hash: str,
+        parameters: dict[str, Any],
+        reason: str,
+    ) -> dict[str, Any]:
+        await self._get_case_for_requester(case_id, requester_ref)
+        return await self._request(
+            f"/v1/cases/{case_id}/plan/revise",
+            method="POST",
+            json={
+                "expected_plan_hash": expected_plan_hash,
+                "parameters": parameters,
+                "reason": reason,
+            },
+        )
+
     async def get_manifest(self, case_id: str, requester_ref: str) -> dict[str, Any]:
         await self._get_case_for_requester(case_id, requester_ref)
         return await self._request(f"/v1/cases/{case_id}/manifest")
@@ -321,6 +357,27 @@ class AgentTeamsService:
         await self._get_case_for_requester(case_id, requester_ref)
         return self._public_case(
             await self._request(f"/v1/cases/{case_id}/reconcile", method="POST")
+        )
+
+    async def retry_case(self, case_id: str, requester_ref: str) -> dict[str, Any]:
+        case = await self._get_case_for_requester(case_id, requester_ref)
+        if case.get("status") != "execution_failed":
+            raise BusinessError("当前 Case 不处于可重试的执行失败状态")
+        snapshot = case.get("preflight_input")
+        flow_id = snapshot.get("flow_id") if isinstance(snapshot, dict) else None
+        if not isinstance(flow_id, str) or not flow_id:
+            raise BusinessError("当前 Case 缺少可重试的冻结流程输入")
+        approval = await self._request_as(
+            "approval-authority",
+            self._bridge_config.approval_token,
+            "/v1/approvals",
+            method="POST",
+            json={"case_id": case_id, "action": "submit_task", "flow_id": flow_id},
+        )
+        return await self._request(
+            f"/v1/cases/{case_id}/retry",
+            method="POST",
+            json={"approval_token": approval["token"]},
         )
 
     async def _get_case_for_requester(self, case_id: str, requester_ref: str) -> dict[str, Any]:
@@ -349,6 +406,9 @@ class AgentTeamsService:
         if cursor:
             params["cursor"] = cursor
         return await self._request(f"/v1/cases/{case_id}/events", params=params)
+
+    async def reconcile_approval_timeouts(self) -> dict[str, int]:
+        return await self._request("/v1/maintenance/approval-timeouts", method="POST")
 
     async def stream_case_events(
         self,

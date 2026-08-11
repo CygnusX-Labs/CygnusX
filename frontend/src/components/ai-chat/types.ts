@@ -253,6 +253,7 @@ export interface PlanConfirmation {
   planPath: string
   planVersion: number
   planHash: string
+  planningMode?: 'llm' | 'llm_repaired' | 'rule_merge' | 'rule_override' | 'rule_preflight'
   waveCount: number
   agents: PlanAgentSummary[]
   serialPreflight: string[]

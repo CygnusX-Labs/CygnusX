@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -27,6 +28,7 @@ class WorkerConfig:
     poll_seconds: float
     auto_complete_demo: bool
     acceptance_case_prefix: str
+    max_concurrent: int = 2
 
 
 def _as_bool(value: str) -> bool:
@@ -59,6 +61,7 @@ def load_config(environ: dict[str, str] | None = None) -> WorkerConfig:
         acceptance_case_prefix=values.get(
             "AGENTTEAMS_WORKER_ACCEPT_CASE_PREFIX", "agentteams-acceptance-"
         ),
+        max_concurrent=max(1, min(int(values.get("AGENTTEAMS_WORKER_MAX_CONCURRENT", "2")), 16)),
     )
 
 
@@ -98,6 +101,12 @@ def run_once(config: WorkerConfig) -> dict[str, Any]:
     }
 
 
+def run_batch_once(config: WorkerConfig) -> list[dict[str, Any]]:
+    with ThreadPoolExecutor(max_workers=config.max_concurrent) as pool:
+        results = list(pool.map(lambda _index: run_once(config), range(config.max_concurrent)))
+    return [result for result in results if result.get("action") != "idle"] or [results[0]]
+
+
 def main() -> int:
     try:
         config = load_config()
@@ -106,7 +115,7 @@ def main() -> int:
         return 2
     while True:
         try:
-            print(json.dumps(run_once(config), ensure_ascii=False, separators=(",", ":")), flush=True)
+            print(json.dumps(run_batch_once(config), ensure_ascii=False, separators=(",", ":")), flush=True)
         except (HTTPError, URLError, RuntimeError, json.JSONDecodeError) as exc:
             print(f"worker poll failed: {exc}", flush=True)
         time.sleep(config.poll_seconds)

@@ -14,8 +14,10 @@ from omichub.application.schemas.tool_invocation import ToolInvocationContext
 from omichub.application.services.agentteams_bridge_settings_service import (
     AgentTeamsBridgeSettingsService,
 )
+from omichub.application.services.agentteams_capability_registry import (
+    get_agentteams_capability_registry,
+)
 from omichub.application.services.agentteams_service import AgentTeamsService
-from omichub.application.services.flow_registry import get_flow_registry
 from omichub.application.services.site_settings_service import SiteSettingsService
 from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError
@@ -69,10 +71,13 @@ class AgentTeamsCaseToolService:
         if not enabled:
             raise BusinessError("聊天协作 Case 入口尚未启用")
 
+        capability_registry = get_agentteams_capability_registry()
         allowed_flows = self._allowed_flows(settings.agentteams_chat_flow_whitelist)
-        allowed_flows.update(get_flow_registry().bridge_flow_ids())
+        allowed_flows.update(capability_registry.allowed_flow_ids())
         if flow_id not in allowed_flows:
             raise BusinessError("该流程不在聊天协作 Case 白名单中")
+        if capability_registry.agent_for_flow(flow_id) is None:
+            raise BusinessError("该流程没有可用的 active Agent，无法创建协作 Case")
 
         session = await context.db.scalar(
             select(ChatSessionModel).where(

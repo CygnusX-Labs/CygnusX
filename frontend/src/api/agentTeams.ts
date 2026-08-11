@@ -49,20 +49,58 @@ export interface AgentTeamsEvent {
 }
 
 export interface AgentTeamsCaseCreateRequest {
+  session_id?: string
   project_id?: string
   context_refs?: Array<{ kind: 'workspace' | 'file'; id: string; location?: string }>
   intent: string
   flow_id?: string
   sample_sheet?: Array<Record<string, unknown>>
   comparisons?: Array<Record<string, unknown>>
+  origin_consultation_id?: string
+  consultation_summary?: string
 }
 
 export interface AgentTeamsCaseSubmitRequest {
   task_name: string
 }
 
+export interface AgentTeamsCaseRetryResponse {
+  case_id: string
+  work_item_id: string
+  approval_id: string
+  status: 'queued' | 'idempotent_replay'
+  expires_at: string
+}
+
+export interface AgentTeamsCaseConfirmRequest {
+  session_id: string
+  objective: string
+  project_id: string
+  flow_id: string
+  sample_context_refs?: Array<{ kind: 'workspace' | 'file'; id: string; location?: string }>
+  origin_consultation_id?: string
+  consultation_summary?: string
+  confirmation_key: string
+  confirmation_token: string
+}
+
 export interface AgentTeamsCaseRejectRequest {
   reason: string
+}
+
+export interface AgentTeamsPlanRevisionRequest {
+  expected_plan_hash: string
+  parameters: Record<string, unknown>
+  reason: string
+}
+
+export interface AgentTeamsPlanRevisionResponse {
+  case_id: string
+  previous_plan_hash: string
+  plan_hash: string
+  changed_parameter_keys: string[]
+  replay_work_item_ids: string[]
+  status: AgentTeamsCaseStatus
 }
 
 export interface AgentTeamsCaseListParams {
@@ -115,17 +153,26 @@ export const agentTeamsApi = {
   async createCase(payload: AgentTeamsCaseCreateRequest): Promise<AgentTeamsCase> {
     return (await apiClient.post<AgentTeamsCase>('/agent-teams/cases', payload)).data
   },
+  async confirmCase(payload: AgentTeamsCaseConfirmRequest): Promise<{ case_card: Record<string, unknown> }> {
+    return (await apiClient.post('/agent-teams/cases/confirm', payload)).data
+  },
   async getCase(caseId: string): Promise<AgentTeamsCase> {
     return (await apiClient.get<AgentTeamsCase>(`/agent-teams/cases/${caseId}`)).data
   },
   async refreshCase(caseId: string): Promise<AgentTeamsCase> {
     return (await apiClient.post<AgentTeamsCase>(`/agent-teams/cases/${caseId}/refresh`)).data
   },
+  async retryCase(caseId: string): Promise<AgentTeamsCaseRetryResponse> {
+    return (await apiClient.post<AgentTeamsCaseRetryResponse>(`/agent-teams/cases/${caseId}/retry`)).data
+  },
   async submitCase(caseId: string, payload: AgentTeamsCaseSubmitRequest): Promise<{ omic_task_id?: string; status: string }> {
     return (await apiClient.post(`/agent-teams/cases/${caseId}/submit`, payload)).data
   },
   async rejectCase(caseId: string, payload: AgentTeamsCaseRejectRequest): Promise<AgentTeamsCase> {
     return (await apiClient.post<AgentTeamsCase>(`/agent-teams/cases/${caseId}/reject`, payload)).data
+  },
+  async revisePlan(caseId: string, payload: AgentTeamsPlanRevisionRequest): Promise<AgentTeamsPlanRevisionResponse> {
+    return (await apiClient.post<AgentTeamsPlanRevisionResponse>(`/agent-teams/cases/${caseId}/plan/revise`, payload)).data
   },
   async getManifest(caseId: string): Promise<Record<string, unknown>> {
     return (await apiClient.get<Record<string, unknown>>(`/agent-teams/cases/${caseId}/manifest`)).data

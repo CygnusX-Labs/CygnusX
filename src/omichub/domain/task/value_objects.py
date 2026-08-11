@@ -34,7 +34,7 @@ class LogLevel(str, Enum):
 # 合法的状态转换
 VALID_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
     TaskStatus.PENDING: {TaskStatus.QUEUED, TaskStatus.CANCELLED},
-    TaskStatus.QUEUED: {TaskStatus.RUNNING, TaskStatus.CANCELLED},
+    TaskStatus.QUEUED: {TaskStatus.RUNNING, TaskStatus.FAILED, TaskStatus.CANCELLED},
     TaskStatus.RUNNING: {TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.CANCELLED},
     TaskStatus.SUCCESS: set(),
     TaskStatus.FAILED: {TaskStatus.PENDING, TaskStatus.QUEUED},  # 可重试

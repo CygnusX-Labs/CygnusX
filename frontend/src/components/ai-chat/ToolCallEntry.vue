@@ -17,6 +17,7 @@ import StudioCodeCard from '@/components/studio/StudioCodeCard.vue'
 import ResearchToolEventCard from '@/components/studio/ResearchToolEventCard.vue'
 import { StudioContextKey, isStudioCodeTool } from '@/components/studio/context'
 import { useAgentHubStore } from '@/stores/agentHub'
+import { agentTeamsApi } from '@/api/agentTeams'
 import type { MasPlan } from '@/api/mas'
 import type { PipelineType } from '@/types/pipeline'
 import type { ToolCall } from './types'
@@ -41,6 +42,7 @@ const message = (() => {
   }
 })()
 const confirmingCase = ref(false)
+const createdCase = ref<Record<string, unknown> | null>(null)
 
 function isStudioCodeToolCall(tool: ToolCall): boolean {
   return !!studioCtx && isStudioCodeTool(tool.name)
@@ -104,16 +106,23 @@ async function confirmAgentTeamsCase(): Promise<void> {
   if (!caseConfirmation.value || confirmingCase.value) return
   confirmingCase.value = true
   try {
-    await agentHubStore.sendMessage('确认创建协作 Case', {
-      messageMetadata: {
-        agentteams_case_confirmation: {
-          ...caseConfirmation.value,
-          confirmed: true,
-        },
-      },
+    const args = props.tool.arguments
+    const result = await agentTeamsApi.confirmCase({
+      session_id: agentHubStore.currentSessionId,
+      objective: String(args.objective || ''),
+      project_id: String(args.project_id || ''),
+      flow_id: String(args.flow_id || ''),
+      sample_context_refs: Array.isArray(args.sample_context_refs)
+        ? args.sample_context_refs as Array<{ kind: 'workspace' | 'file'; id: string }>
+        : [],
+      origin_consultation_id: args.origin_consultation_id ? String(args.origin_consultation_id) : undefined,
+      consultation_summary: args.consultation_summary ? String(args.consultation_summary) : undefined,
+      confirmation_key: caseConfirmation.value.key,
+      confirmation_token: caseConfirmation.value.token,
     })
+    createdCase.value = result.case_card
   } catch {
-    message.error('确认发送失败，请重试')
+    message.error('创建协作 Case 失败，请重试')
   } finally {
     confirmingCase.value = false
   }
@@ -140,8 +149,8 @@ async function confirmAgentTeamsCase(): Promise<void> {
       <p>确认后将创建可审计的协作流程，并进入后续预检与审批。</p>
     </div>
     <div class="case-confirmation-actions">
-      <NTag size="small" type="warning" :bordered="false">等待确认</NTag>
-      <NButton size="small" type="primary" :loading="confirmingCase" @click="confirmAgentTeamsCase">
+      <NTag size="small" :type="createdCase ? 'success' : 'warning'" :bordered="false">{{ createdCase ? '已创建' : '等待确认' }}</NTag>
+      <NButton v-if="!createdCase" size="small" type="primary" :loading="confirmingCase" @click="confirmAgentTeamsCase">
         确认创建
       </NButton>
     </div>

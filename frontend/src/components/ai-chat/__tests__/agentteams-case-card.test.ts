@@ -7,7 +7,7 @@ import { agentTeamsStatusLabel } from '@/utils/agentTeamsStatus'
 import AgentTeamsCaseCard from '../AgentTeamsCaseCard.vue'
 
 vi.mock('@/api/agentTeams', () => ({
-  agentTeamsApi: { getCase: vi.fn() },
+  agentTeamsApi: { getCase: vi.fn(), getEvents: vi.fn().mockResolvedValue({ events: [] }) },
 }))
 
 describe('AgentTeamsCaseCard', () => {
@@ -37,6 +37,35 @@ describe('AgentTeamsCaseCard', () => {
     expect(host.textContent).toContain(agentTeamsStatusLabel.approval_pending)
     expect(host.textContent).toContain('审批待处理')
     expect(host.textContent).toContain('打开 Case')
+
+    app.unmount()
+  })
+
+  it('renders a real retry action for execution failures', () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/agent-teams/cases/:id', component: { template: '<div />' } }],
+    })
+    const host = document.createElement('div')
+    const app = createApp({
+      render: () => h(AgentTeamsCaseCard, {
+        caseInfo: {
+          case_id: 'case-failed',
+          title: 'RNA-seq 全流程交付',
+          status: 'execution_failed',
+          next_actor: '流程执行者',
+          case_url: '/agent-teams/cases/case-failed',
+        },
+      }),
+    })
+    app.use(pinia)
+    app.use(router)
+    app.mount(host)
+
+    expect(host.textContent).toContain('按冻结计划重试')
+    expect(host.textContent).toContain('新的提交版本')
 
     app.unmount()
   })

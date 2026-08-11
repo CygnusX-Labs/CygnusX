@@ -47,11 +47,22 @@ class DomainRegistry:
 
     def match_domains(self, normalized_content: str) -> list[DomainPack]:
         content = normalize_marker(normalized_content)
-        return [
+        matched = [
             pack
             for pack in self._packs()
             if pack.enabled and any(marker in content for marker in pack.match.domain_markers)
         ]
+        return sorted(
+            matched,
+            key=lambda pack: (
+                -sum(marker in content for marker in pack.match.domain_markers),
+                -max(
+                    (len(marker) for marker in pack.match.domain_markers if marker in content),
+                    default=0,
+                ),
+                pack.domain,
+            ),
+        )
 
     def matches_any(self, normalized_content: str) -> bool:
         return bool(self.match_domains(normalized_content))

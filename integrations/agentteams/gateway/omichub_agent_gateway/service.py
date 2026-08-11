@@ -84,6 +84,7 @@ class GatewayService:
             token_usage=upstream.token_usage,
             proposed_submission=upstream.proposed_submission,
             artifacts=upstream.artifacts,
+            hard_gate=upstream.hard_gate,
         )
         await self._audit_response(request, actor, response)
         return response
@@ -281,7 +282,9 @@ class GatewayService:
 
     def _validated_room_identities(self, identities: list[str]) -> list[str]:
         configured = self._settings.matrix_identity_map()
-        normalized = list(dict.fromkeys(identity.strip() for identity in identities if identity.strip()))
+        normalized = list(
+            dict.fromkeys(identity.strip() for identity in identities if identity.strip())
+        )
         invalid = [identity for identity in normalized if identity not in configured]
         if invalid:
             raise ValueError(f"Matrix identity is not configured: {', '.join(invalid)}")

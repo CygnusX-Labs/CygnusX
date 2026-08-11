@@ -10,6 +10,7 @@ from omichub.application.services.chat_service import (
     _filter_overdrive_questions,
     _is_overdrive_planning_request,
     _overdrive_capability_profile,
+    _overdrive_preflight_questions,
 )
 from omichub.application.services.domain_registry import DomainRegistry
 
@@ -62,6 +63,25 @@ def test_phylo_slots_identify_existing_tree_visualization() -> None:
     slots = _extract_overdrive_intake_slots("请处理/美化已有树")
 
     assert slots["task_type"] == "tree_visualization"
+
+
+def test_tnpd_genome_comparison_is_recognized_as_phylogeny_construction() -> None:
+    request = "我要将tnpd序列对比到20个基因组进行进化分析与建树"
+
+    assert _is_overdrive_planning_request(request) is True
+    assert _extract_overdrive_intake_slots(request)["task_type"] == "phylogeny_construction"
+
+
+def test_tnpd_preflight_asks_phylogeny_inputs_not_omics_modality() -> None:
+    questions = _overdrive_preflight_questions(
+        "我要将tnpd序列对比到20个基因组进行进化分析与建树"
+    )
+    question_texts = [item["question"] for item in questions]
+
+    assert any("真实输入" in question for question in question_texts)
+    assert any("序列类型" in question for question in question_texts)
+    assert any("20 个基因组" in question for question in question_texts)
+    assert not any("数据属于哪种模态" in question for question in question_texts)
 
 
 def test_phylo_slots_identify_treefile() -> None:
@@ -135,6 +155,41 @@ def test_default_assignment_uses_viz_for_existing_tree() -> None:
             "depends_on": [],
         }
     ]
+
+
+def test_default_assignment_builds_tnpd_phylogeny_dag() -> None:
+    request = "我要将tnpd序列对比到20个基因组进行进化分析与建树"
+    assignments = _default_overdrive_assignments(
+        request, CATALOG, _extract_overdrive_intake_slots(request)
+    )
+
+    assert [item["task_id"] for item in assignments] == [
+        "tnpd-homolog-search",
+        "tnpd-phylogeny",
+    ]
+    assert [item["agent_id"] for item in assignments] == ["agent-code", "agent-viz"]
+    assert assignments[1]["depends_on"] == ["tnpd-homolog-search"]
+    assert any("候选同源序列 FASTA" in item for item in assignments[0]["produces_outputs"])
+    assert any("Newick/treefile" in item for item in assignments[1]["produces_outputs"])
+
+
+def test_authoritative_assignment_mode_only_returns_declared_phylogeny_dag() -> None:
+    request = "我要将tnpd蛋白序列对比到20个基因组进行进化分析与建树"
+
+    assignments = _default_overdrive_assignments(
+        request,
+        CATALOG,
+        _extract_overdrive_intake_slots(request),
+        authoritative_only=True,
+    )
+
+    assert [item["task_id"] for item in assignments] == [
+        "tnpd-homolog-search",
+        "tnpd-phylogeny",
+    ]
+    assert _default_overdrive_assignments(
+        "做个单细胞分析计划", CATALOG, authoritative_only=True
+    ) == []
 
 
 def test_default_assignment_uses_scrna_for_single_cell_plan() -> None:

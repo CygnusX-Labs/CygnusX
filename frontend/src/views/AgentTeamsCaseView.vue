@@ -58,6 +58,7 @@ const eventStreamHealthy = ref(false)
 const lastSyncedAt = ref<Date | null>(null)
 const submitVisible = ref(false)
 const submitting = ref(false)
+const retrying = ref(false)
 const manifestVisible = ref(false)
 const manifestLoading = ref(false)
 const manifest = ref<Record<string, unknown> | null>(null)
@@ -117,6 +118,12 @@ const nextStep = computed(() => {
     return {
       title: 'Workflow Operator 正在跟踪执行',
       description: 'OmicHub 是任务状态、日志和产物的唯一事实来源；完成后将进入质量门禁。',
+    }
+  }
+  if (status === 'execution_failed') {
+    return {
+      title: '执行失败，可按冻结计划重试',
+      description: '先查看时间线中的错误摘要；确认后重试会创建新的提交版本，不会覆盖原任务证据。',
     }
   }
   if (status === 'quality_running' || status === 'quality_blocked' || status === 'remediation_pending') {
@@ -181,6 +188,26 @@ async function openManifest() {
   }
 }
 
+async function downloadManifest() {
+  if (!detail.value?.case_id) return
+  manifestLoading.value = true
+  try {
+    const payload = manifest.value || await agentTeamsApi.getManifest(detail.value.case_id)
+    manifest.value = payload
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${detail.value.case_id}-manifest.json`
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch (cause: any) {
+    message.error(cause?.response?.data?.detail || 'Manifest 下载失败。')
+  } finally {
+    manifestLoading.value = false
+  }
+}
+
 function openChatRoom() {
   void chatDrawer.value?.open(caseId.value || undefined)
 }
@@ -208,6 +235,20 @@ async function confirmSubmit() {
     message.error(cause?.response?.data?.detail || '任务提交失败，未确认前请勿重复操作。')
   } finally {
     submitting.value = false
+  }
+}
+
+async function retryFailedCase() {
+  if (!detail.value || retrying.value) return
+  retrying.value = true
+  try {
+    const queued = await agentTeamsApi.retryCase(detail.value.case_id)
+    message.success(`重试已排队：${queued.work_item_id}`)
+    await refresh({ resetEvents: true })
+  } catch (cause: any) {
+    message.error(cause?.response?.data?.detail || '重试排队失败，请核对错误摘要后再试。')
+  } finally {
+    retrying.value = false
   }
 }
 
@@ -445,6 +486,11 @@ onBeforeUnmount(() => {
             </dl>
             <NButton type="primary" size="small" @click="openSubmit">审阅并批准执行</NButton>
           </NCard>
+          <NCard v-if="detail.status === 'execution_failed'" class="failure-card" title="执行恢复" size="small">
+            <template #header-extra><NTag type="error" :bordered="false">需要处理</NTag></template>
+            <p class="approval-card__summary">本次任务证据会保留。重试将复用冻结计划，并生成新的提交版本与幂等键。</p>
+            <NButton type="primary" size="small" :loading="retrying" @click="retryFailedCase">按冻结计划重试</NButton>
+          </NCard>
           <NCard title="下一步" size="small">
             <div class="next-step">
               <strong>{{ nextStep.title }}</strong>
@@ -463,13 +509,21 @@ onBeforeUnmount(() => {
               <NDescriptionsItem v-if="detail.consultation_summary" label="会诊纪要">
                 {{ detail.consultation_summary }}
               </NDescriptionsItem>
-              <NDescriptionsItem label="关联任务">{{ detail.omic_task_ids.length ? detail.omic_task_ids.join(', ') : '尚未提交' }}</NDescriptionsItem>
+              <NDescriptionsItem label="关联任务">
+                <div v-if="detail.omic_task_ids.length" class="task-links">
+                  <NButton v-for="taskId in detail.omic_task_ids" :key="taskId" text type="primary" size="tiny" @click="router.push({ name: 'task-detail', params: { taskId } })">{{ taskId }}</NButton>
+                </div>
+                <span v-else>尚未提交</span>
+              </NDescriptionsItem>
               <NDescriptionsItem label="质量结论">{{ detail.quality_decision || '尚未形成' }}</NDescriptionsItem>
               <NDescriptionsItem label="计划短码">{{ planShortHash || '尚未冻结' }}</NDescriptionsItem>
               <NDescriptionsItem label="交付 Manifest">
                 <div v-if="detail.manifest_uri" class="manifest-actions">
                   <span class="manifest-uri">{{ detail.manifest_uri }}</span>
-                  <NButton size="tiny" secondary :loading="manifestLoading" @click="openManifest">在线预览</NButton>
+                  <div class="manifest-buttons">
+                    <NButton size="tiny" secondary :loading="manifestLoading" @click="openManifest">在线预览</NButton>
+                    <NButton size="tiny" type="primary" :loading="manifestLoading" @click="downloadManifest">下载 JSON</NButton>
+                  </div>
                 </div>
                 <span v-else>尚未生成</span>
               </NDescriptionsItem>
@@ -517,6 +571,7 @@ onBeforeUnmount(() => {
 .next-step strong { color: var(--text-primary); font-size: 13px; }
 .next-step span { color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
 .approval-card { border-left: 3px solid var(--warning-color, #f0a020); }
+.failure-card { border-left: 3px solid var(--error-color); }
 .approval-card__summary { margin: 0 0 12px; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
 .approval-card__scope { display: grid; gap: 10px; margin: 0 0 16px; }
 .approval-card__scope div { display: grid; gap: 2px; }
@@ -528,6 +583,7 @@ onBeforeUnmount(() => {
 .timeline-column code { display: block; white-space: pre-wrap; color: var(--text-secondary); font-size: 12px; }
 .alert-retry { margin-left: 10px; }
 .manifest-actions { display: grid; gap: 8px; }
+.manifest-buttons, .task-links { display: flex; flex-wrap: wrap; gap: 8px; }
 .manifest-uri { overflow-wrap: anywhere; color: var(--text-secondary); font-size: 12px; }
 .manifest-preview { max-height: 60vh; overflow: auto; margin: 0; padding: 12px; border-radius: 8px; background: var(--surface-color-soft); color: var(--text-secondary); font: 12px/1.6 ui-monospace, monospace; white-space: pre-wrap; }
 @media (max-width: 1024px) { .case-workbench { grid-template-columns: minmax(190px, 240px) minmax(0, 1fr); } .evidence-column { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); } }

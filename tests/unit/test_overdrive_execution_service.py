@@ -338,6 +338,23 @@ def test_projected_manager_review_suppresses_wait_state_speech() -> None:
     assert projected["content"] == "worker 未成功完成"
 
 
+def test_projected_plan_cancellation_updates_progress_card() -> None:
+    event = {
+        "run_id": "overdrive:test",
+        "session_id": "session-1",
+        "sequence": 10,
+        "event_type": "run_cancelled",
+        "payload": {},
+    }
+
+    projected = OverdriveRunService.project_event(event)
+
+    assert projected is not None
+    assert projected["type"] == "overdrive_progress"
+    assert projected["phase"] == "terminated"
+    assert projected["label"] == "用户已取消本轮超频协作，计划不会执行"
+
+
 def test_projected_worker_approval_keeps_run_and_exact_call_context() -> None:
     event = {
         "run_id": "overdrive:test",
@@ -387,3 +404,20 @@ def test_artifact_index_keeps_official_process_and_failed_entries_separate() -> 
     assert {item["path"] for item in run.artifact_index if item["status"] == "failed"} == {
         "output/failed.log"
     }
+
+
+def test_latest_run_lookup_includes_terminal_runs_for_history_recovery() -> None:
+    terminal_run = SimpleNamespace(run_id="overdrive:completed", status="COMPLETED")
+    result = SimpleNamespace(scalar_one_or_none=lambda: terminal_run)
+    db = SimpleNamespace(execute=AsyncMock(return_value=result))
+
+    restored = asyncio.run(
+        OverdriveRunService(db).get_latest_for_session("session-1", "user-1")
+    )
+
+    assert restored is terminal_run
+    statement = db.execute.await_args.args[0]
+    rendered = str(statement)
+    assert "overdrive_runs.session_id" in rendered
+    assert "overdrive_runs.user_id" in rendered
+    assert "overdrive_runs.status NOT IN" not in rendered

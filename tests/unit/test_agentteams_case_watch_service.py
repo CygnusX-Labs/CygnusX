@@ -120,3 +120,40 @@ async def test_watch_continues_when_one_case_read_fails() -> None:
 
     assert result == {"scanned": 1, "notified": 0, "failed": 1}
     assert db.added == []
+    assert session.sandbox_meta["agentteams_case_watch_failures"] == {"case-1": 1}
+
+
+@pytest.mark.asyncio
+async def test_watch_projects_sync_warning_after_three_consecutive_failures(monkeypatch) -> None:
+    db = FakeDb()
+    service = AgentTeamsCaseWatchService(db)
+    published: list[dict[str, object]] = []
+
+    async def publish(_session_id: str, event: dict[str, object]) -> None:
+        published.append(event)
+
+    monkeypatch.setattr(watch_module, "publish_chat_case_event", publish)
+    session = SimpleNamespace(
+        session_id="session-1",
+        user_id="user-1",
+        sandbox_meta={
+            "agentteams_case_ids": ["case-1"],
+            "agentteams_case_status": {},
+            "agentteams_case_titles": {"case-1": "RNA-seq 失败恢复"},
+        },
+        updated_at=None,
+        message_count=0,
+        last_message_at=None,
+    )
+
+    class BrokenAgentTeams:
+        async def get_case(self, *_args, **_kwargs):
+            raise RuntimeError("bridge unavailable")
+
+    results = [await service._scan_session(session, BrokenAgentTeams()) for _ in range(4)]
+
+    assert [item["notified"] for item in results] == [0, 0, 1, 0]
+    assert session.sandbox_meta["agentteams_case_watch_failures"] == {"case-1": 4}
+    assert len(published) == 1
+    assert published[0]["type"] == "room_speech"
+    assert "连续 3 次同步失败" in str(published[0]["content"])

@@ -59,6 +59,7 @@ import {
 import { studioApi, type StudioPermissionMode } from '@/api/studio'
 import { useChatStore } from '@/stores/chat'
 import { sortPersistedChatMessages } from '@/utils/chatMessageOrder'
+import { resolveRoleIdentity } from '@/utils/roleIdentity'
 import type {
   PipelineSubmitResult,
   PipelineTask,
@@ -192,6 +193,9 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   let pendingSessionIdResolver: (() => void) | null = null
   let pendingSessionIdPromise: Promise<void> | null = null
   let agentTeamsEventAbort: AbortController | null = null
+  let agentTeamsEventGeneration = 0
+  const agentTeamsEventCursors = new Map<string, string>()
+  const agentTeamsSeenEventKeys = new Map<string, Set<string>>()
   let roomEventAbort: AbortController | null = null
   let overdriveEventAbort: AbortController | null = null
   let overdriveEventSessionId = ''
@@ -232,6 +236,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   }
 
   function stopAgentTeamsCaseEvents() {
+    agentTeamsEventGeneration += 1
     agentTeamsEventAbort?.abort()
     agentTeamsEventAbort = null
   }
@@ -339,9 +344,12 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         runId: typeof event.run_id === 'string' ? event.run_id : undefined,
         phase: event.phase || 'worker_running',
         label: event.label || '协作 Case 推进中',
-        completed: Number(event.completed || 0),
-        total: Number(event.total || 1),
+        completed: Number(event.completed ?? 0),
+        total: Number(event.total ?? 0),
         waveMode: event.waveMode === 'parallel' ? 'parallel' : 'serial',
+        readonly: Boolean(event.readonly) || ['completed', 'failed', 'terminated'].includes(event.phase),
+        warning: typeof event.warning === 'string' ? event.warning : undefined,
+        stalledTaskIds: Array.isArray(event.stalledTaskIds) ? event.stalledTaskIds.map(String) : undefined,
         tasks: Array.isArray(event.tasks) ? event.tasks : [],
         artifacts: Array.isArray(event.artifacts)
           ? event.artifacts.map((artifact: any) => ({
@@ -357,6 +365,16 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       }
       if (existing) existing.overdriveProgress = progress
       else session.messages.push({ id, role: 'system', content: progress.label, overdriveProgress: progress, createdAt: new Date().toISOString() })
+      if (progress.phase === 'terminated' && runId) {
+        const planMessage = [...session.messages].reverse().find(
+          (message) => message.askRequest?.planConfirmation?.runId === runId,
+        )
+        const plan = planMessage?.askRequest?.planConfirmation
+        if (plan && ['pending', 'submitting'].includes(plan.status)) {
+          plan.status = 'cancelled'
+          if (planMessage?.askRequest) planMessage.askRequest.answered = true
+        }
+      }
       session.updated_at = new Date().toISOString()
       return
     }
@@ -409,6 +427,13 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     if (!session || !event.content) return
     const id = event.message_id || `matrix-room-${Date.now()}`
     if (session.messages.some((message) => message.id === id || message.backendMessageId === id)) return
+    const agentId = event.sender.agent_id || 'external'
+    const identity = resolveRoleIdentity(agentId, {
+      name: event.sender.name,
+      avatar: event.sender.avatar,
+      color: event.sender.color,
+      role: event.sender.role,
+    })
     session.messages.push({
       id,
       backendMessageId: event.message_id,
@@ -416,11 +441,11 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       content: event.content,
       status: 'complete',
       senderAgent: {
-        id: event.sender.agent_id || 'external',
-        name: event.sender.name || 'Matrix 成员',
-        avatar: event.sender.avatar,
-        color: event.sender.color,
-        role: event.sender.role,
+        id: agentId,
+        name: identity.name,
+        avatar: identity.avatar,
+        color: identity.color,
+        role: identity.role,
         round: event.round,
       },
       createdAt: new Date().toISOString(),
@@ -581,18 +606,28 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     if (!sessionId || sessionId.startsWith('sess-') || currentSessionId.value !== sessionId) return
     try {
       const activeRun = await chatApi.getActiveOverdriveRun(sessionId)
-      if (!activeRun || currentSessionId.value !== sessionId) return
-      if (activeRun.status === 'AWAITING_PLAN_CONFIRMATION' && activeRun.plan) {
+      const recoverableRun = activeRun || await chatApi.getLatestOverdriveRun(sessionId)
+      if (!recoverableRun || currentSessionId.value !== sessionId) {
+        const knownRunId = [...(currentSession.value?.messages || [])].reverse()
+          .map((message) => message.askRequest?.planConfirmation?.runId || message.overdriveProgress?.runId)
+          .find((runId): runId is string => Boolean(runId))
+        if (knownRunId && currentSessionId.value === sessionId) {
+          await replayActiveOverdriveEvents(sessionId, knownRunId, 0)
+        }
+        return
+      }
+      const activeRunId = recoverableRun.run_id
+      if (recoverableRun.status === 'AWAITING_PLAN_CONFIRMATION' && recoverableRun.plan) {
         applyCaseRoomEvent({
           type: 'ask_request',
           kind: 'plan_confirmation',
-          run_id: activeRun.run_id,
+          run_id: activeRunId,
           session_id: sessionId,
-          plan_path: activeRun.plan.path,
-          plan_version: activeRun.plan.version,
-          plan_hash: activeRun.plan.hash,
-          summary: activeRun.plan.summary,
-          actions: activeRun.plan.actions,
+          plan_path: recoverableRun.plan.path,
+          plan_version: recoverableRun.plan.version,
+          plan_hash: recoverableRun.plan.hash,
+          summary: recoverableRun.plan.summary,
+          actions: recoverableRun.plan.actions,
         }, sessionId)
       }
       const snapshotPhase: Record<string, string> = {
@@ -604,14 +639,14 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         AWAITING_APPROVAL: 'awaiting_approval',
         PAUSED: 'paused',
       }
-      if (snapshotPhase[activeRun.status]) {
-        const snapshotTasks = Array.isArray(activeRun.tasks) ? activeRun.tasks : []
+      if (snapshotPhase[recoverableRun.status]) {
+        const snapshotTasks = Array.isArray(recoverableRun.tasks) ? recoverableRun.tasks : []
         applyCaseRoomEvent({
           type: 'overdrive_progress',
-          run_id: activeRun.run_id,
+          run_id: activeRunId,
           session_id: sessionId,
-          phase: snapshotPhase[activeRun.status],
-          label: `超频任务正在后台推进（${activeRun.status}）`,
+          phase: snapshotPhase[recoverableRun.status],
+          label: `超频任务正在后台推进（${recoverableRun.status}）`,
           completed: snapshotTasks.filter((task) =>
             ['succeeded', 'failed', 'skipped', 'cancelled'].includes(String(task.status || ''))).length,
           total: snapshotTasks.length,
@@ -621,21 +656,22 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             status: String(task.status || 'pending'),
             errorSummary: typeof task.error_summary === 'string' ? task.error_summary : undefined,
           })),
-          artifacts: Array.isArray(activeRun.artifact_index) ? activeRun.artifact_index : [],
+          artifacts: Array.isArray(recoverableRun.artifact_index) ? recoverableRun.artifact_index : [],
         }, sessionId)
       }
       if (overdriveEventSessionId === sessionId
-        && overdriveEventRunId === activeRun.run_id
+        && overdriveEventRunId === activeRunId
         && overdriveEventAbort) return
-      const snapshotCursor = Number(activeRun.event_cursor || 0)
-      const boundary = await replayActiveOverdriveEvents(sessionId, activeRun.run_id, 0)
+      const snapshotCursor = Number(recoverableRun.event_cursor || 0)
+      const boundary = await replayActiveOverdriveEvents(sessionId, activeRunId, 0)
       if (currentSessionId.value !== sessionId) return
       const cursor = boundary.ok ? Math.max(snapshotCursor, boundary.cursor) : 0
-      const status = boundary.status || activeRun.status
-      if (!['COMPLETED', 'CANCELLED', 'TERMINATED', 'FAILED'].includes(status)) {
-        void startOverdriveEvents(sessionId, activeRun.run_id, cursor)
+      const status = boundary.status || recoverableRun.status
+      if (activeRun && !['COMPLETED', 'CANCELLED', 'TERMINATED', 'FAILED'].includes(status)) {
+        void startOverdriveEvents(sessionId, activeRunId, cursor)
       }
-    } catch {
+    } catch (error) {
+      console.warn('恢复超频历史卡片失败，将在下次进入会话时重试', error)
       // 恢复失败不阻塞聊天；下次选择该会话时会重新从 DB 游标重放。
     }
   }
@@ -643,41 +679,62 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   async function startAgentTeamsCaseEvents(sessionId: string) {
     if (!sessionId || sessionId.startsWith('sess-')) return
     stopAgentTeamsCaseEvents()
-    const controller = new AbortController()
-    agentTeamsEventAbort = controller
-    try {
-      const token = localStorage.getItem('access_token')
-      const response = await fetch(`/api/v1/chat/sessions/${sessionId}/agentteams-events`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        signal: controller.signal,
-      })
-      if (!response.ok || !response.body) return
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      while (!controller.signal.aborted) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-        for (const line of lines) {
-          if (!line.startsWith('data:')) continue
+    const generation = agentTeamsEventGeneration
+    let reconnects = 0
+    while (currentSessionId.value === sessionId && generation === agentTeamsEventGeneration) {
+      const controller = new AbortController()
+      agentTeamsEventAbort = controller
+      try {
+        const token = localStorage.getItem('access_token')
+        const cursor = agentTeamsEventCursors.get(sessionId)
+        const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
+        const response = await fetch(`/api/v1/chat/sessions/${sessionId}/agentteams-events${query}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal,
+        })
+        if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
+        reconnects = 0
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        const consumeLine = (line: string) => {
+          if (!line.startsWith('data:')) return
           try {
-            const event = JSON.parse(line.slice(5).trim()) as AgentTeamsCaseStreamEvent
+            const event = JSON.parse(line.slice(5).trim()) as AgentTeamsCaseStreamEvent & { event_cursor?: string; idempotency_key?: string }
+            const eventKey = event.idempotency_key || event.event_cursor
+            const seen = agentTeamsSeenEventKeys.get(sessionId) || new Set<string>()
+            if (eventKey && seen.has(eventKey)) return
+            if (eventKey) {
+              seen.add(eventKey)
+              if (seen.size > 500) seen.delete(seen.values().next().value as string)
+              agentTeamsSeenEventKeys.set(sessionId, seen)
+            }
+            if (event.event_cursor) agentTeamsEventCursors.set(sessionId, event.event_cursor)
             if (event.type === 'agentteams_case' && event.phase === 'status_changed') applyAgentTeamsCaseEvent(event)
             else applyCaseRoomEvent(event as Record<string, any>, sessionId)
           } catch {
             // 忽略单条不可解析事件，长连接保持可用。
           }
         }
-      }
-    } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        while (!controller.signal.aborted) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+          for (const line of lines) consumeLine(line)
+        }
+        if (buffer.trim()) consumeLine(buffer)
+      } catch (error) {
+        if (controller.signal.aborted || generation !== agentTeamsEventGeneration) return
         console.warn('AgentTeams Case 状态事件连接异常', error)
+      } finally {
+        if (agentTeamsEventAbort === controller) agentTeamsEventAbort = null
       }
-    } finally {
-      if (agentTeamsEventAbort === controller) agentTeamsEventAbort = null
+      if (generation !== agentTeamsEventGeneration || currentSessionId.value !== sessionId) return
+      const delay = Math.min(30_000, 1_000 * 2 ** Math.min(reconnects, 5))
+      reconnects += 1
+      await new Promise((resolve) => setTimeout(resolve, delay))
     }
   }
 
@@ -2789,6 +2846,16 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     return null
   }
 
+  function findOverdriveProgress(runId: string): NonNullable<ChatMessage['overdriveProgress']> | null {
+    const session = currentSession.value
+    if (!session) return null
+    for (let index = session.messages.length - 1; index >= 0; index -= 1) {
+      const progress = session.messages[index].overdriveProgress
+      if (progress?.runId === runId) return progress
+    }
+    return null
+  }
+
   async function decideOverdrivePlan(
     runId: string,
     action: PlanDecisionAction,
@@ -2822,6 +2889,18 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         (message) => message.askRequest?.planConfirmation === plan,
       )?.askRequest
       if (ask) ask.answered = true
+      if (action === 'cancel') {
+        const progress = findOverdriveProgress(runId)
+        if (progress) {
+          progress.phase = 'terminated'
+          progress.label = '用户已取消本轮超频协作，计划不会执行'
+          progress.completed = 0
+          progress.total = 0
+          progress.tasks = []
+          progress.readonly = true
+          progress.warning = '计划快照已保留，但专家协作与结论交付均未开始。'
+        }
+      }
       // Plan approval/revision transitions immediately leave the synchronous chat
       // stream. Start the durable event subscription here so a newly frozen
       // revision and its confirmation card appear without requiring a refresh.

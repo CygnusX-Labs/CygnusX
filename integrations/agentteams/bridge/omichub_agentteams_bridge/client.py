@@ -25,6 +25,13 @@ class OmicHubClient:
     async def list_flows(self) -> dict[str, Any]:
         return await self._request("GET", "/api/v1/flows")
 
+    async def get_agentteams_capabilities(self) -> dict[str, Any]:
+        return await self._request(
+            "GET",
+            "/api/v1/agent-teams/capabilities",
+            headers={"X-Integration-Token": self._settings.omichub_integration_token},
+        )
+
     async def get_flow_schema(self, flow_id: str) -> dict[str, Any]:
         return await self._request("GET", f"/api/v1/flows/{flow_id}/schema")
 

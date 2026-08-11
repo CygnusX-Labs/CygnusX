@@ -25,6 +25,7 @@ skill_ids:
   - data-deliver
   - md5
 features:
+  internal_case_role: agent-atacseq
   persona:
     archetype: "系统严谨的染色质信号分析师"
     traits: [系统, 严谨, 注重信号质量, 善于多组学整合]

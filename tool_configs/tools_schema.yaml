@@ -124,6 +124,121 @@ tools:
     llm_result_fields: [case_id, title, status, summary, success, error]
     ui_result_fields: [case_card]
 
+  - key: agentteams-task-result-summary
+    name: task_result_summary
+    description: 读取当前用户任务的状态、flow、参数快照、产物清单、QC metrics 与失败摘录。
+    category: agentteams-evidence
+    invocation_mode: backend_sync
+    service: omichub.application.services.agentteams_data_tool_service.AgentTeamsDataToolService
+    method: task_result_summary
+    requires_confirm: false
+    annotations: {readOnlyHint: true, destructiveHint: false, openWorld: false, idempotent: true}
+    extra: {user_scoped: true}
+    input_schema:
+      type: object
+      properties:
+        task_id: {type: string, description: 当前用户拥有的任务 UUID}
+      required: [task_id]
+    llm_result_fields: [task_id, status, flow_id, parameters, metrics, artifacts, file_records, error_excerpt, success, error]
+    ui_result_fields: []
+
+  - key: agentteams-task-file-preview
+    name: task_file_preview
+    description: 预览当前用户任务目录内的文本产物头部；拒绝绝对路径、路径穿越和符号链接。
+    category: agentteams-evidence
+    invocation_mode: backend_sync
+    service: omichub.application.services.agentteams_data_tool_service.AgentTeamsDataToolService
+    method: task_file_preview
+    requires_confirm: false
+    annotations: {readOnlyHint: true, destructiveHint: false, openWorld: false, idempotent: true}
+    extra: {user_scoped: true}
+    input_schema:
+      type: object
+      properties:
+        task_id: {type: string, description: 当前用户拥有的任务 UUID}
+        path: {type: string, description: 相对于任务根目录的文件路径}
+        max_bytes: {type: integer, minimum: 1, maximum: 20000, default: 20000}
+      required: [task_id, path]
+    llm_result_fields: [task_id, path, size, truncated, content, success, error]
+    ui_result_fields: []
+
+  - key: agentteams-workspace-file-preview
+    name: workspace_file_preview
+    description: 按 requester_ref 隔离，预览当前用户 workspace 内的文本文件头部。
+    category: agentteams-evidence
+    invocation_mode: backend_sync
+    service: omichub.application.services.agentteams_data_tool_service.AgentTeamsDataToolService
+    method: workspace_file_preview
+    requires_confirm: false
+    annotations: {readOnlyHint: true, destructiveHint: false, openWorld: false, idempotent: true}
+    extra: {user_scoped: true}
+    input_schema:
+      type: object
+      properties:
+        path: {type: string, description: 相对于当前用户 workspace 的文件路径}
+        max_bytes: {type: integer, minimum: 1, maximum: 20000, default: 20000}
+      required: [path]
+    llm_result_fields: [path, size, truncated, content, success, error]
+    ui_result_fields: []
+
+  - key: agentteams-artifact-fetch
+    name: artifact_fetch
+    description: 拉取 Case 内上游产物到当前工作目录；大文件走私有 MinIO，不向 Agent 暴露预签名 URL。
+    category: agentteams-evidence
+    invocation_mode: backend_sync
+    service: omichub.application.services.agentteams_data_tool_service.AgentTeamsDataToolService
+    method: artifact_fetch
+    requires_confirm: false
+    annotations: {readOnlyHint: true, destructiveHint: false, openWorld: false, idempotent: true}
+    extra: {user_scoped: true, workspace_access: true}
+    input_schema:
+      type: object
+      properties:
+        case_id: {type: string}
+        artifact_ref: {type: string, description: s3 URI 或当前用户 workspace 相对路径}
+        dest_name: {type: string}
+      required: [case_id, artifact_ref]
+    llm_result_fields: [local_path, size_bytes, sha256, success, error]
+    ui_result_fields: []
+
+  - key: agentteams-task-compare-metrics
+    name: task_compare_metrics
+    description: 对比当前用户多个任务的指定 QC metrics 字段。
+    category: agentteams-evidence
+    invocation_mode: backend_sync
+    service: omichub.application.services.agentteams_data_tool_service.AgentTeamsDataToolService
+    method: task_compare_metrics
+    requires_confirm: false
+    annotations: {readOnlyHint: true, destructiveHint: false, openWorld: false, idempotent: true}
+    extra: {user_scoped: true}
+    input_schema:
+      type: object
+      properties:
+        task_ids: {type: array, minItems: 1, maxItems: 20, items: {type: string}}
+        fields: {type: array, minItems: 1, maxItems: 20, items: {type: string}}
+      required: [task_ids, fields]
+    llm_result_fields: [fields, tasks, success, error]
+    ui_result_fields: []
+
+  - key: agentteams-rule-threshold-lookup
+    name: rule_threshold_lookup
+    description: 查询 FlowRegistry 中指定 QC metric 的确定性硬规则阈值与规则版本。
+    category: agentteams-evidence
+    invocation_mode: backend_sync
+    service: omichub.application.services.agentteams_data_tool_service.AgentTeamsDataToolService
+    method: rule_threshold_lookup
+    requires_confirm: false
+    annotations: {readOnlyHint: true, destructiveHint: false, openWorld: false, idempotent: true}
+    extra: {user_scoped: true}
+    input_schema:
+      type: object
+      properties:
+        flow_id: {type: string, description: FlowRegistry flow.id 或 bridge_workflow}
+        metric_name: {type: string, enum: [mapping_rate, q30, duplicate_rate]}
+      required: [flow_id, metric_name]
+    llm_result_fields: [flow_id, metric_name, threshold, rule_version, success, error]
+    ui_result_fields: []
+
   - key: agent-memory-save
     name: omichub_save_memory
     description: 保存用户明确透露、跨会话仍有价值的研究偏好或项目事实。禁止保存密钥、密码、Token、原始数据内容或临时细节。

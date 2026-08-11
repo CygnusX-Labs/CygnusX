@@ -369,6 +369,16 @@ export function normalizePlanConfirmation(data: Record<string, unknown>): PlanCo
   const planPath = firstString(data.plan_path, data.path, summary.plan_path)
   const planHash = firstString(data.plan_hash, data.hash, summary.plan_hash)
   const planVersion = Number(data.plan_version ?? data.version ?? summary.plan_version ?? 0)
+  const rawPlanningMode = firstString(data.planning_mode, summary.planning_mode)
+  const planningMode = [
+    'llm',
+    'llm_repaired',
+    'rule_merge',
+    'rule_override',
+    'rule_preflight',
+  ].includes(rawPlanningMode)
+    ? rawPlanningMode as PlanConfirmation['planningMode']
+    : undefined
   return {
     runId,
     title: firstString(data.title, summary.title) || '执行计划待确认',
@@ -376,6 +386,7 @@ export function normalizePlanConfirmation(data: Record<string, unknown>): PlanCo
     planPath,
     planVersion: Number.isFinite(planVersion) ? planVersion : 0,
     planHash,
+    planningMode,
     waveCount: Number(data.wave_count ?? summary.wave_count ?? summary.estimated_waves ?? 0) || 0,
     agents: normalizePlanAgents(data.agents ?? summary.agents ?? summary.agent_ids),
     serialPreflight: stringList(data.serial_preflight, summary.serial_preflight, summary.manager_tasks),

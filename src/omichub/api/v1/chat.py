@@ -56,6 +56,22 @@ async def active_overdrive_run(
 
 
 @router.get(
+    "/sessions/{session_id}/overdrive-runs/latest",
+    summary="读取当前会话最近一次超频 run 快照（含终态）",
+)
+async def latest_overdrive_run(
+    session_id: str,
+    current_user_id: CurrentUserId,
+    db: DbSession,
+) -> dict:
+    from omichub.application.services.overdrive_run_service import OverdriveRunService
+
+    service = OverdriveRunService(db)
+    run = await service.get_latest_for_session(session_id, current_user_id)
+    return {"run": service.snapshot(run) if run is not None else None}
+
+
+@router.get(
     "/sessions/{session_id}/overdrive-runs/{run_id}/plan",
     summary="预览当前冻结的超频计划",
     response_class=PlainTextResponse,
@@ -482,6 +498,7 @@ async def agentteams_case_events(
     session_id: str,
     current_user_id: CurrentUserId,
     db: DbSession,
+    cursor: str | None = None,
 ) -> StreamingResponse:
     """为当前用户已打开的聊天会话提供后台 Case 状态 SSE。"""
     session = await ChatService(db).get_session(session_id, current_user_id)
@@ -493,10 +510,15 @@ async def agentteams_case_events(
         return StreamingResponse(missing_session(), media_type="text/event-stream", status_code=404)
 
     async def generate_sse():
-        from omichub.infrastructure.cache.chat_case_pubsub import subscribe_chat_case_events
+        from omichub.infrastructure.cache.chat_case_pubsub import (
+            replay_chat_case_events,
+            subscribe_chat_case_events,
+        )
 
         pubsub = await subscribe_chat_case_events(session_id)
         try:
+            for payload in await replay_chat_case_events(session_id, cursor):
+                yield f"data: {payload}\n\n"
             async for message in pubsub.listen():
                 if message["type"] == "message":
                     yield f"data: {message['data']}\n\n"

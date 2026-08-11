@@ -56,9 +56,24 @@ from omichub.application.services.mas_plan_adapter import (
     MAS_PLAN_PREVIEW_TOOL_SCHEMA,
     MASPlanPreviewAdapter,
 )
+from omichub.application.services.overdrive_plan_constraint_service import (
+    anchor_ids as overdrive_anchor_ids,
+)
+from omichub.application.services.overdrive_plan_constraint_service import (
+    apply_authoritative_plan,
+)
+from omichub.application.services.overdrive_plan_constraint_service import (
+    authoritative_rules as overdrive_authoritative_rules,
+)
+from omichub.application.services.overdrive_plan_constraint_service import (
+    format_anchors as format_overdrive_anchors,
+)
 from omichub.application.services.overdrive_planning_service import (
     OverdrivePlanningService,
     ResearchBundleService,
+)
+from omichub.application.services.overdrive_planning_telemetry_service import (
+    OverdrivePlanningTelemetryService,
 )
 from omichub.application.services.overdrive_run_service import OverdriveRunService
 from omichub.application.services.overdrive_runtime import (
@@ -283,6 +298,10 @@ OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_
 候选专家（JSON 数组）：
 {catalog}
 
+以下阶段为本领域必需环节。你必须将它们纳入计划；可按允许项拆分、并行化或补充中间环节，
+但必须保持依赖顺序、输入输出契约和专家能力边界：
+{authoritative_anchors}
+
 规则：
 1. 直接输出一行 JSON：{{"speech": "...", "questions": [{{"question": "...", "options": ["..."]}}], "assignments": [{{"task_id": "research-plan", "agent_id": "...", "task": "...", "depends_on": []}}]}}。
 2. speech 用简体中文，直接回应用户消息本身：
@@ -297,7 +316,9 @@ OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_
 7. 同一专家可承担多个任务；只有真正互不依赖的任务才允许同波并行。简单问答、闲聊、单领域问题 → questions 和 assignments 都为空数组。
 8. speech 应说明执行顺序和依赖关系，不得声称所有专家会同时处理；禁止提及“超频模式已开启/切换”“高性能响应状态”等系统状态。
 9. 用户不需要手动配置调度。优先依据候选专家的 capability_scope 与 default_role 自动选择；不得把超出专家能力边界的任务硬派给该专家。
-10. 禁止输出思考过程，第一个字符必须是 {{。
+10. 大规模输入可以设计分片并行，同一专家可承担多个 shard 任务；分片不得破坏必需锚点的依赖方向。
+11. speech 必须准确反映本次实际生成的 assignments，包括分片、并行与先后依赖；禁止泛泛而谈。
+12. 禁止输出思考过程，第一个字符必须是 {{。
 
 已确认的任务信息（JSON，字段存在即视为已确认）：
 {intake_context}
@@ -593,6 +614,8 @@ def _default_overdrive_assignments(
     user_content: str,
     catalog_items: list[dict[str, Any]],
     intake_slots: dict[str, Any] | None = None,
+    *,
+    authoritative_only: bool = False,
 ) -> list[dict[str, Any]]:
     """Manager 未给出有效分工时，按任务所需的最小专家集合调度。"""
     normalized = user_content.lower()
@@ -625,7 +648,11 @@ def _default_overdrive_assignments(
     general = find("agent-general", "通用助手")
     code = find("agent-code", "代码助手")
     visualization = find("agent-viz", "可视化助手", "visualization")
-    for rule in registry.assignment_rules(user_content, slots):
+    domain_assignments: list[dict[str, Any]] = []
+    rules = registry.assignment_rules(user_content, slots)
+    if authoritative_only:
+        rules = [rule for rule in rules if rule.authoritative]
+    for rule in rules:
         candidate = find(*rule.agent_match)
         if candidate is None:
             continue
@@ -633,11 +660,21 @@ def _default_overdrive_assignments(
             "task_id": rule.task_id,
             "agent_id": candidate["agent_id"],
             "task": rule.task,
-            "depends_on": [],
+            "depends_on": rule.depends_on,
         }
+        if rule.workspace_access:
+            assignment["workspace_access"] = True
+        if rule.accepts_inputs:
+            assignment["accepts_inputs"] = rule.accepts_inputs
+        if rule.produces_outputs:
+            assignment["produces_outputs"] = rule.produces_outputs
         if rule.minimize_to_single:
             return [assignment]
-        return [assignment]
+        domain_assignments.append(assignment)
+    if domain_assignments:
+        return domain_assignments
+    if authoritative_only:
+        return []
 
     planning_or_analysis = _is_overdrive_planning_request(user_content) or any(
         marker in normalized for marker in ("分析", "研究", "差异表达", "通路", "富集", "工作流")
@@ -3109,6 +3146,14 @@ class ChatService:
         speech = "为了把计划做得可执行、并准确分配专家，我先补全会影响分析路线的关键信息。"
         questions: list[dict[str, Any]] = []
         raw_assignments: Any = []
+        registry = get_domain_registry()
+        matched_assignment_rules = registry.assignment_rules(planning_content, intake_slots)
+        authoritative_rules = overdrive_authoritative_rules(matched_assignment_rules)
+        authoritative_anchor_ids = overdrive_anchor_ids(authoritative_rules)
+        planning_mode = "rule_preflight" if pending_followup or preflight_questions else "llm"
+        plan_violations: list[str] = []
+        repair_attempted = False
+        initial_manager_failed = False
         if pending_followup:
             speech, raw_assignments = _build_overdrive_followup_assignments(
                 catalog_items=catalog_items,
@@ -3116,55 +3161,27 @@ class ChatService:
                 data_ready=followup_data_ready,
             )
         elif preflight_questions:
-            general_candidate = next(
-                (
-                    item
-                    for item in catalog_items
-                    if item["category"] == "general" or "general" in item["agent_id"]
-                ),
-                None,
-            )
-            if general_candidate is None:
-                questions = preflight_questions
-            else:
-                speech = "这个问题目前不足以判断应走 bulk、单细胞还是其他路线；我先让通用助手补全任务信息，再由我重新分派专家。"
-                raw_assignments = [
-                    {
-                        "task_id": "general-intake",
-                        "agent_id": general_candidate["agent_id"],
-                        "depends_on": [],
-                        "task": (
-                            "你负责本轮任务 intake。不要制定领域分析计划，也不要猜测数据模态。"
-                            "请调用 ask_user，一次性向用户提出以下问题；若问题涉及最新研究背景，"
-                            "可先用 web_search 补充公开信息，但用户私有数据条件必须由用户确认。\n"
-                            + json.dumps(preflight_questions, ensure_ascii=False)
-                        ),
-                    }
-                ]
-                if session_row is not None:
-                    session_meta = dict(session_row.sandbox_meta or {})
-                    session_meta["overdrive_intake"] = {
-                        "status": "awaiting_input",
-                        "root_request": root_request,
-                        "slots": intake_slots,
-                        "supplements": intake_supplements,
-                        "questions": preflight_questions,
-                        "intake_agent_id": general_candidate["agent_id"],
-                        "created_at": datetime.now(UTC).isoformat(),
-                    }
-                    session_row.sandbox_meta = session_meta
-                    await self._db.flush()
+            questions = preflight_questions
         else:
-            manager_raw = await ask_manager(
-                OVERDRIVE_MANAGER_PROMPT.format(
-                    manager_name=manager.name,
-                    catalog=catalog,
-                    intake_context=json.dumps(intake_slots, ensure_ascii=False),
-                    domain_notes=get_domain_registry().manager_notes(planning_content),
-                    user_content=planning_content,
-                ),
-                max_tokens=900,
-            )
+            try:
+                manager_raw = await ask_manager(
+                    OVERDRIVE_MANAGER_PROMPT.format(
+                        manager_name=manager.name,
+                        catalog=catalog,
+                        authoritative_anchors=format_overdrive_anchors(authoritative_rules),
+                        intake_context=json.dumps(intake_slots, ensure_ascii=False),
+                        domain_notes=registry.manager_notes(planning_content),
+                        user_content=planning_content,
+                    ),
+                    max_tokens=900,
+                )
+            except Exception as exc:  # noqa: BLE001
+                initial_manager_failed = True
+                logger.exception(
+                    "Overdrive Manager planning call failed; neutral fallback required: session={} error={}",
+                    session_id,
+                    exc,
+                )
             decision = _extract_route_json(manager_raw) or {}
             speech = str(decision.get("speech") or manager_raw or "我来直接处理这个问题。")
             raw_questions = decision.get("questions")
@@ -3187,13 +3204,75 @@ class ChatService:
             questions = _filter_overdrive_questions(questions, intake_slots)
             raw_assignments = decision.get("assignments")
         assignments = _normalize_overdrive_assignments(raw_assignments, set(catalog_by_id))
-        minimized_assignments = get_domain_registry().minimize_assignments(
+        authoritative_assignments = _normalize_overdrive_assignments(
+            _default_overdrive_assignments(
+                planning_content,
+                catalog_items,
+                intake_slots,
+                authoritative_only=True,
+            ),
+            set(catalog_by_id),
+        )
+        settings = get_settings()
+        authoritative_mode = settings.overdrive_authoritative_mode
+        if not questions and not pending_followup:
+            async def repair_plan(violations: list[str]) -> tuple[str, list[dict[str, Any]]]:
+                logger.warning(
+                    "Overdrive Manager plan repair requested: session={} violations={}",
+                    session_id,
+                    violations,
+                )
+                try:
+                    repair_raw = await ask_manager(
+                        "你刚才的执行计划缺少本领域的必需环节或违反了依赖约束：\n"
+                        + "\n".join(f"- {item}" for item in violations)
+                        + "\n\n必需环节契约（必须全部覆盖，保持依赖方向）：\n"
+                        + format_overdrive_anchors(authoritative_rules)
+                        + "\n\n请输出修正后的完整计划（与上一轮相同的 JSON 格式），保留原计划中的合理分片、并行和额外环节，只修复违规点。",
+                        max_tokens=900,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception(
+                        "Overdrive Manager repair call failed; rule merge required: session={} error={}",
+                        session_id,
+                        exc,
+                    )
+                    return "", []
+                repair_decision = _extract_route_json(repair_raw) or {}
+                repaired_assignments = _normalize_overdrive_assignments(
+                    repair_decision.get("assignments"), set(catalog_by_id)
+                )
+                repaired_speech = str(
+                    repair_decision.get("speech") or repair_raw or ""
+                ).strip()
+                return repaired_speech, repaired_assignments
+
+            constrained = await apply_authoritative_plan(
+                assignments=assignments,
+                speech=speech,
+                authoritative_assignments=authoritative_assignments,
+                rules=authoritative_rules,
+                catalog_by_id=catalog_by_id,
+                mode=authoritative_mode,
+                repair_enabled=settings.overdrive_plan_repair_enabled,
+                repair_plan=repair_plan,
+            )
+            assignments = constrained.assignments
+            speech = constrained.speech
+            planning_mode = constrained.planning_mode
+            plan_violations = constrained.violations
+            repair_attempted = constrained.repair_attempted
+            if planning_mode == "rule_merge":
+                logger.warning(
+                    "Overdrive Manager rule merge applied: session={} violations={}",
+                    session_id,
+                    plan_violations,
+                )
+        minimized_assignments = registry.minimize_assignments(
             assignments, catalog_by_id, intake_slots
         )
         if len(minimized_assignments) != len(assignments):
             assignments = minimized_assignments
-            if intake_slots.get("task_type") == "tree_visualization":
-                speech = "已确认这是已有系统发育树的处理与美化任务，将由可视化助手直接完成。"
         schedule_fallback = False
         if not assignments and not questions and not pending_followup:
             assignments = _normalize_overdrive_assignments(
@@ -3202,10 +3281,19 @@ class ChatService:
             )
             if assignments:
                 schedule_fallback = True
-                speech = "我会按任务所需的最小专家集合直接处理；你不需要手动配置调度。"
+                planning_mode = "rule_merge"
+                if not manager_raw:
+                    speech = "已为你生成执行计划，请确认任务分工与顺序。"
 
         if questions:
             assignments = []
+        elif initial_manager_failed:
+            planning_mode = "rule_merge"
+            speech = (
+                "已为你生成执行计划，请确认任务分工与顺序。"
+                if assignments
+                else "Manager 暂时不可用，暂未生成执行计划，请稍后重试。"
+            )
 
         # 第二期提前实现，默认关闭：仅在 Gateway 可用时镜像到 Matrix，失败即回退内置编排。
         matrix_room_id: str | None = None
@@ -3287,6 +3375,7 @@ class ChatService:
             artifacts: dict[str, Any] | None = None,
             task_status: str = "",
             error_summary: str = "",
+            planning_metadata: dict[str, Any] | None = None,
         ) -> ChatChunk:
             nonlocal matrix_degraded
             message = await self.add_message(
@@ -3301,6 +3390,7 @@ class ChatService:
                     **({"artifacts": artifacts} if artifacts else {}),
                     **({"taskStatus": task_status} if task_status else {}),
                     **({"errorSummary": error_summary} if error_summary else {}),
+                    **(planning_metadata or {}),
                     **({"matrix_room_id": matrix_room_id} if matrix_room_id else {}),
                 },
             )
@@ -3331,6 +3421,7 @@ class ChatService:
                     **({"artifacts": artifacts} if artifacts else {}),
                     **({"task_status": task_status} if task_status else {}),
                     **({"error_summary": error_summary} if error_summary else {}),
+                    **(planning_metadata or {}),
                     **({"worker_key": worker_key} if worker_key else {}),
                     **({"matrix_room_id": matrix_room_id} if matrix_room_id else {}),
                     **({"degraded": True} if matrix_degraded else {}),
@@ -3369,7 +3460,21 @@ class ChatService:
             speech += (
                 f" 报告已保存到 `{report_path}`。" if saved else f" 报告保存失败：{save_error}。"
             )
-        yield await emit_speech(manager_sender, speech, 1)
+        planning_metadata = {
+            "planning_mode": planning_mode,
+            "authoritative_anchors": authoritative_anchor_ids,
+            "plan_violations": plan_violations,
+            "repair_attempted": repair_attempted,
+        }
+        repair_outcome = None
+        if repair_attempted:
+            repair_outcome = "success" if planning_mode == "llm_repaired" else "failed"
+        await OverdrivePlanningTelemetryService().record_runtime(
+            planning_mode=planning_mode,
+            repair_outcome=repair_outcome,
+            llm_speech_overridden=False,
+        )
+        yield await emit_speech(manager_sender, speech, 1, planning_metadata=planning_metadata)
         if schedule_fallback:
             yield ChatChunk(
                 type="schedule_fallback",
@@ -3600,6 +3705,7 @@ class ChatService:
                     "summary": {
                         "title": "超频协作执行计划",
                         "summary": speech,
+                        "planning_mode": planning_mode,
                         "wave_count": len(waves),
                         "agents": [
                             {
@@ -3666,6 +3772,7 @@ class ChatService:
                     "plan_path": frozen["path"],
                     "plan_version": frozen["version"],
                     "plan_hash": frozen["hash"],
+                    "planning_mode": planning_mode,
                     "summary": frozen.get("summary") or {},
                     "actions": ["approve", "revise", "cancel"],
                 },
@@ -3682,6 +3789,7 @@ class ChatService:
                     "plan_path": frozen.get("path"),
                     "plan_version": frozen.get("version"),
                     "plan_hash": frozen.get("hash"),
+                    "planning_mode": (frozen.get("summary") or {}).get("planning_mode"),
                     "summary": frozen.get("summary") or {},
                     "actions": ["approve", "revise", "cancel"],
                 },

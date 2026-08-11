@@ -352,8 +352,9 @@ function handleConfirmTool(toolName: string, args: Record<string, unknown>) {
 }
 
 function handleCreateCaseFromConsultation(summary: string, consultationId?: string) {
-  const source = consultationId ? `\n会诊来源 ID：${consultationId}` : ''
-  input.value = `请基于以下会诊纪要创建协作 Case。请先向我确认项目和流程信息，并将纪要作为预检参考；创建时请携带会诊来源字段。${source}\n会诊纪要：${summary}`
+  window.dispatchEvent(new CustomEvent('omichub:agentteams-create', {
+    detail: { summary, consultationId },
+  }))
 }
 
 function handleCorrectCollaborationRoute(route: CollaborationRouteInfo) {

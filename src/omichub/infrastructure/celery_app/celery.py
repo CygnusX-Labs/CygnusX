@@ -87,6 +87,10 @@ celery_app.conf.task_routes = {
 
 # 定时任务
 celery_app.conf.beat_schedule = {
+    "agentteams-evidence-retention": {
+        "task": "omichub.infrastructure.celery_app.tasks.agentteams.cleanup_evidence",
+        "schedule": crontab(hour=2, minute=45),
+    },
     # 每天凌晨 2 点清理过期/僵尸上传会话 + 临时文件 + 冷数据归档
     "cleanup-expired-archives": {
         "task": "omichub.infrastructure.celery_app.tasks.storage.cleanup_expired",
@@ -128,6 +132,18 @@ celery_app.conf.beat_schedule = {
     "agentteams-case-watch": {
         "task": "omichub.infrastructure.celery_app.tasks.agentteams.watch_cases",
         "schedule": float(settings.agentteams_case_watch_interval_seconds),
+    },
+    "agentteams-case-event-consume": {
+        "task": "omichub.infrastructure.celery_app.tasks.agentteams.consume_case_events",
+        "schedule": float(settings.agentteams_case_event_stream_interval_seconds),
+    },
+    "agentteams-stale-task-requeue": {
+        "task": "omichub.infrastructure.celery_app.tasks.agentteams.requeue_stale_tasks",
+        "schedule": 300.0,
+    },
+    "agentteams-approval-timeout-reconcile": {
+        "task": "omichub.infrastructure.celery_app.tasks.agentteams.reconcile_approval_timeouts",
+        "schedule": 3600.0,
     },
     "goal-lease-recovery": {
         "task": "omichub.infrastructure.celery_app.tasks.goals.recover_expired_goal_leases",

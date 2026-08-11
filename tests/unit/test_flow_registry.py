@@ -9,7 +9,7 @@ import yaml
 
 from omichub.application.services.flow_registry import FlowRegistry
 from omichub.application.services.mas_plan_validator import MASPlanValidator
-from omichub.core.exceptions import ValidationError
+from omichub.core.exceptions import BusinessError, ValidationError
 from omichub.domain.mas.models import ExecutionPlan
 
 ROOT = Path(__file__).parents[2]
@@ -39,10 +39,28 @@ def _write_flow(tmp_path: Path, payload: dict) -> FlowRegistry:
 def test_registry_loads_builtin_flows_and_derives_contracts() -> None:
     registry = FlowRegistry.from_directory(FLOWS_DIR)
 
-    assert set(registry.flows) == {"rnaseq", "scrna"}
+    assert set(registry.flows) == {
+        "atacseq",
+        "rnaseq",
+        "sales_report",
+        "scrna",
+        "test_general",
+        "treeplot",
+    }
     assert registry.errors == {}
     assert registry.get("scrna").digest
-    assert registry.bridge_flow_ids() == {"rna_seq", "scrna_seq"}
+    assert registry.bridge_flow_ids() == {
+        "atac_seq",
+        "rna_seq",
+        "sales_report",
+        "scrna_seq",
+        "test_general",
+        "treeplot",
+    }
+    treeplot = registry.get("treeplot").definition
+    assert treeplot.stages[0].executors[0].execution_mode == "workspace_execution"
+    assert registry.get("sales_report").definition.stages[0].executors[0].execution_mode == "workspace_execution"
+    assert registry.get("atacseq").definition.flow.actor == "agent-atacseq"
     assert "scrna-cellranger" in registry.agent_capabilities()["agent-scrna"]
     assert registry.artifact_schemas()["scrna.input_h5ad"]["alias_for"] == "scrna.raw_h5ad"
     assert {item["skill"] for item in registry.review_contracts()} >= {
@@ -50,6 +68,15 @@ def test_registry_loads_builtin_flows_and_derives_contracts() -> None:
         "integration-review",
         "annotation-review",
     }
+
+
+def test_registry_rejects_flow_without_stages_as_business_error(tmp_path: Path) -> None:
+    path = tmp_path / "incomplete.yaml"
+    path.write_text("flow: {id: incomplete}\n", encoding="utf-8")
+    registry = FlowRegistry(tmp_path)
+
+    with pytest.raises(BusinessError, match="流程定义不完整"):
+        registry.load_file(path)
 
 
 @pytest.mark.parametrize(

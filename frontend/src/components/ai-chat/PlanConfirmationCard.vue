@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { NButton, NIcon, NInput, NModal, NPopconfirm, NTag, useMessage } from 'naive-ui'
 import {
   CheckmarkCircleOutline,
@@ -11,6 +11,7 @@ import {
   ShieldCheckmarkOutline,
 } from '@vicons/ionicons5'
 import { chatApi } from '@/api/chat'
+import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 import { useAgentHubStore } from '@/stores/agentHub'
 import type { PlanConfirmation, PlanDecisionAction } from './types'
 
@@ -31,6 +32,7 @@ const previewTitle = ref<HTMLElement | null>(null)
 
 const pending = computed(() => props.plan.status === 'pending')
 const showingActions = computed(() => props.plan.status === 'pending' || props.plan.status === 'submitting')
+const planReadable = computed(() => Boolean(previewContent.value) && !previewLoading.value && !previewError.value)
 const titleId = computed(() => `plan-confirmation-${props.plan.runId.replace(/[^a-zA-Z0-9_-]/g, '-')}`)
 const statusMeta = computed(() => ({
   pending: { label: '等待你的确认', type: 'warning' as const },
@@ -40,6 +42,13 @@ const statusMeta = computed(() => ({
   cancelled: { label: '已取消任务', type: 'default' as const },
   error: { label: '提交失败', type: 'error' as const },
 }[props.plan.status]))
+const planningSourceMeta = computed(() => props.plan.planningMode ? ({
+  llm: { label: 'AI 规划', type: 'success' as const },
+  llm_repaired: { label: 'AI 规划（已自动校正）', type: 'info' as const },
+  rule_merge: { label: '领域标准流程辅助', type: 'warning' as const },
+  rule_override: { label: '领域标准流程辅助', type: 'warning' as const },
+  rule_preflight: { label: '领域标准流程辅助', type: 'warning' as const },
+}[props.plan.planningMode]) : null)
 
 function hasAction(action: PlanDecisionAction): boolean {
   return props.plan.actions.includes(action)
@@ -65,11 +74,8 @@ async function decide(action: PlanDecisionAction) {
   }
 }
 
-async function openPreview() {
-  showPreview.value = true
+async function loadPlanContent() {
   previewError.value = ''
-  await nextTick()
-  previewTitle.value?.focus()
   if (previewContent.value || previewLoading.value) return
   if (!props.sessionId || !props.plan.runId) {
     previewError.value = '会话尚未完成初始化，暂时无法预览计划。'
@@ -85,6 +91,17 @@ async function openPreview() {
     previewLoading.value = false
   }
 }
+
+async function openPreview() {
+  showPreview.value = true
+  await loadPlanContent()
+  await nextTick()
+  previewTitle.value?.focus()
+}
+
+onMounted(() => {
+  void loadPlanContent()
+})
 </script>
 
 <template>
@@ -97,7 +114,10 @@ async function openPreview() {
         </span>
         <h3 :id="titleId">{{ plan.title }}</h3>
       </div>
-      <n-tag size="small" round :bordered="false" :type="statusMeta.type">{{ statusMeta.label }}</n-tag>
+      <div class="plan-confirmation__tags" aria-label="计划状态与来源">
+        <n-tag v-if="planningSourceMeta" size="small" round :bordered="false" :type="planningSourceMeta.type">{{ planningSourceMeta.label }}</n-tag>
+        <n-tag size="small" round :bordered="false" :type="statusMeta.type">{{ statusMeta.label }}</n-tag>
+      </div>
     </header>
 
     <p v-if="plan.summary" class="plan-confirmation__summary">{{ plan.summary }}</p>
@@ -139,9 +159,27 @@ async function openPreview() {
       </section>
     </div>
 
+    <section class="plan-confirmation__full-plan" aria-labelledby="full-plan-title">
+      <div class="plan-confirmation__full-plan-header">
+        <div>
+          <h4 id="full-plan-title">完整执行计划（请审阅后确认）</h4>
+          <small>{{ plan.planPath || '冻结计划快照' }}</small>
+        </div>
+        <n-button text type="primary" :disabled="previewLoading" @click="openPreview">在大窗口阅读</n-button>
+      </div>
+      <div v-if="previewLoading" class="plan-confirmation__plan-state" role="status">正在加载计划全文…</div>
+      <div v-else-if="previewError" class="plan-confirmation__plan-state is-error" role="alert">
+        <span>{{ previewError }}</span>
+        <n-button size="small" secondary @click="loadPlanContent">重试</n-button>
+      </div>
+      <div v-else class="plan-confirmation__plan-content">
+        <MarkdownRenderer :content="previewContent" />
+      </div>
+    </section>
+
     <button type="button" class="plan-confirmation__preview" :disabled="previewLoading" @click="openPreview">
       <n-icon aria-hidden="true"><DocumentTextOutline /></n-icon>
-      <span><strong>预览 plan.md</strong><small>{{ plan.planPath || '冻结计划快照' }}</small></span>
+      <span><strong>在大窗口阅读完整 plan.md</strong><small>计划全文已在上方默认展开</small></span>
       <span aria-hidden="true">→</span>
     </button>
 
@@ -159,7 +197,7 @@ async function openPreview() {
     <p v-if="plan.feedback && !pending" class="plan-confirmation__feedback-summary">修改意见：{{ plan.feedback }}</p>
 
     <footer v-if="showingActions" class="plan-confirmation__actions">
-      <n-button v-if="hasAction('approve')" type="primary" :loading="plan.status === 'submitting'" @click="decide('approve')">
+      <n-button v-if="hasAction('approve')" type="primary" :loading="plan.status === 'submitting'" :disabled="!planReadable" @click="decide('approve')">
         <template #icon><n-icon><CheckmarkCircleOutline /></n-icon></template>
         确认并执行
       </n-button>
@@ -184,15 +222,16 @@ async function openPreview() {
       </template>
       <div v-if="previewLoading" class="plan-preview-modal__state" role="status">正在加载计划全文…</div>
       <div v-else-if="previewError" class="plan-preview-modal__state is-error" role="alert">{{ previewError }}</div>
-      <pre v-else class="plan-preview-modal__content">{{ previewContent }}</pre>
+      <div v-else class="plan-preview-modal__content"><MarkdownRenderer :content="previewContent" /></div>
     </n-modal>
   </section>
 </template>
 
 <style scoped>
 .plan-confirmation { width:100%; margin-top:var(--space-md); padding:var(--space-xl); border:1px solid var(--border-focus, var(--neutral-border)); border-radius:12px; background:var(--surface-elevated, var(--neutral-card)); box-shadow:var(--shadow-card); }
-.plan-confirmation__header,.plan-confirmation__actions,.plan-confirmation__eyebrow,.plan-confirmation__preview,.plan-confirmation__metrics dt { display:flex; align-items:center; }
+.plan-confirmation__header,.plan-confirmation__actions,.plan-confirmation__eyebrow,.plan-confirmation__preview,.plan-confirmation__metrics dt,.plan-confirmation__tags { display:flex; align-items:center; }
 .plan-confirmation__header { justify-content:space-between; gap:var(--space-lg); }
+.plan-confirmation__tags { flex-wrap:wrap; justify-content:flex-end; gap:var(--space-xs); }
 .plan-confirmation__eyebrow { gap:var(--space-sm); color:var(--arco-primary); font-size:12px; font-weight:700; letter-spacing:.05em; }
 .plan-confirmation h3 { margin:var(--space-xs) 0 0; color:var(--neutral-text-1); font-size:16px; line-height:24px; }
 .plan-confirmation__summary { margin:var(--space-md) 0; color:var(--neutral-text-2); font-size:14px; line-height:22px; white-space:pre-wrap; }
@@ -207,6 +246,13 @@ async function openPreview() {
 .plan-confirmation__details section.is-risk { border-left-color:var(--arco-warning); }
 .plan-confirmation__details h4 { margin:0 0 var(--space-xs); color:var(--neutral-text-1); font-size:13px; }
 .plan-confirmation__details ul { margin:0; padding-left:20px; color:var(--neutral-text-2); font-size:13px; line-height:20px; }
+.plan-confirmation__full-plan { margin-top:var(--space-md); overflow:hidden; border:1px solid var(--neutral-border); border-radius:8px; background:var(--surface-card, var(--neutral-card)); }
+.plan-confirmation__full-plan-header { display:flex; align-items:flex-start; justify-content:space-between; gap:var(--space-md); padding:var(--space-md); border-bottom:1px solid var(--neutral-border); }
+.plan-confirmation__full-plan-header h4 { margin:0; color:var(--neutral-text-1); font-size:14px; }
+.plan-confirmation__full-plan-header small { display:block; margin-top:var(--space-xs); color:var(--neutral-text-3); word-break:break-all; }
+.plan-confirmation__plan-state { display:flex; min-height:120px; align-items:center; justify-content:center; gap:var(--space-md); padding:var(--space-lg); color:var(--neutral-text-2); text-align:center; }
+.plan-confirmation__plan-state.is-error { color:var(--arco-danger); }
+.plan-confirmation__plan-content { max-height:520px; overflow:auto; padding:var(--space-lg); color:var(--neutral-text-1); }
 .plan-confirmation__preview { width:100%; justify-content:flex-start; gap:var(--space-md); padding:var(--space-md); border:1px solid var(--neutral-border); border-radius:8px; background:var(--surface-card, var(--neutral-card)); color:var(--neutral-text-1); text-align:left; cursor:pointer; transition:border-color var(--motion-quick) ease-out,background var(--motion-quick) ease-out; }
 .plan-confirmation__preview:hover { border-color:var(--arco-primary); background:var(--surface-highlight, var(--neutral-hover)); }
 .plan-confirmation__preview:focus-visible { outline:2px solid var(--arco-primary); outline-offset:3px; }
@@ -219,7 +265,7 @@ async function openPreview() {
 .plan-preview-modal__state { padding:var(--space-3xl); color:var(--neutral-text-2); text-align:center; }
 .plan-preview-modal__state.is-error { color:var(--arco-danger); }
 .plan-preview-modal__content { max-height:65vh; margin:0; overflow:auto; padding:var(--space-lg); border-radius:8px; background:var(--surface-card, var(--neutral-bg)); color:var(--neutral-text-1); font:13px/1.7 var(--font-family-mono,monospace); white-space:pre-wrap; word-break:break-word; }
-@media (max-width:640px) { .plan-confirmation { padding:var(--space-lg); } .plan-confirmation__header { align-items:flex-start; } .plan-confirmation__metrics { grid-template-columns:1fr; } .plan-confirmation__actions :deep(.n-button) { width:100%; } }
+@media (max-width:640px) { .plan-confirmation { padding:var(--space-lg); } .plan-confirmation__header { align-items:flex-start; } .plan-confirmation__metrics { grid-template-columns:1fr; } .plan-confirmation__full-plan-header { align-items:stretch; flex-direction:column; } .plan-confirmation__actions :deep(.n-button) { width:100%; } }
 @media (prefers-reduced-motion:reduce) { .plan-confirmation__preview { transition:none; } }
 @media (prefers-contrast:more) { .plan-confirmation,.plan-confirmation__metrics>div,.plan-confirmation__preview { border-width:2px; } }
 </style>

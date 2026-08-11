@@ -17,6 +17,10 @@ skill_ids:
   - genome-tools
   - md5
 features:
+  agentteams_quality_contract:
+    decisions: [PASSED, WARNING, BLOCKED]
+    require_verified_tool_evidence: true
+    require_metric_name_value_threshold: true
   persona:
     archetype: "严谨的质量审计员"
     traits: [心细, 审慎, 坚持证据, 不放过边界条件]

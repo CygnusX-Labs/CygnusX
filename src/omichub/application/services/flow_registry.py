@@ -16,6 +16,8 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from omichub.core.exceptions import BusinessError
+
 _FORBIDDEN_REVIEW_CAPABILITIES = frozenset(
     {"shell", "docker", "file_write", "workflow_submit", "database_write", "db_write"}
 )
@@ -26,13 +28,13 @@ class _StrictModel(BaseModel):
 
 
 class FlowMeta(_StrictModel):
-    id: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
     version: str = Field(min_length=1, max_length=64)
     display_name: str = Field(min_length=1, max_length=128)
     domain: str = Field(min_length=1, max_length=64)
     actor: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,127}$")
     runtime_image: str = Field(min_length=1, max_length=128)
-    bridge_workflow: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,127}$")
+    bridge_workflow: str = Field(pattern=r"^[a-z][a-z0-9_]{1,127}$")
     trigger_hints: list[str] = Field(default_factory=list, max_length=40)
     previous_artifacts: list[str] = Field(default_factory=list, max_length=200)
 
@@ -47,6 +49,7 @@ class ExecutorDefinition(_StrictModel):
     key: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,127}$")
     queue: str = Field(min_length=1, max_length=128)
     resource_profile: str = Field(min_length=1, max_length=128)
+    execution_mode: Literal["cluster", "workspace_execution"] = "cluster"
     fan_out: Literal["none", "per_sample", "per_group"] = "none"
     inputs: list[str] = Field(default_factory=list)
     outputs: list[str] = Field(default_factory=list)
@@ -80,6 +83,7 @@ class StageDefinition(_StrictModel):
 class DeliveryDefinition(_StrictModel):
     quality_gate: bool = True
     outputs: list[str] = Field(default_factory=list)
+    thresholds: dict[str, float] = Field(default_factory=dict)
 
 
 class FlowDefinition(_StrictModel):
@@ -178,14 +182,19 @@ class FlowRegistry:
                 continue
             try:
                 registered = self.load_file(path)
-            except ValueError as exc:
+            except (BusinessError, ValueError) as exc:
                 self.errors[path.stem] = str(exc)
                 continue
             if registered.id in self.flows:
                 self.errors[path.stem] = f"重复的 flow.id: {registered.id}"
                 continue
-            if any(item.definition.flow.bridge_workflow == registered.definition.flow.bridge_workflow for item in self.flows.values()):
-                self.errors[path.stem] = f"重复的 bridge_workflow: {registered.definition.flow.bridge_workflow}"
+            if any(
+                item.definition.flow.bridge_workflow == registered.definition.flow.bridge_workflow
+                for item in self.flows.values()
+            ):
+                self.errors[path.stem] = (
+                    f"重复的 bridge_workflow: {registered.definition.flow.bridge_workflow}"
+                )
                 continue
             self.flows[registered.id] = registered
 
@@ -195,13 +204,20 @@ class FlowRegistry:
             raw = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
         except (OSError, yaml.YAMLError) as exc:
             raise ValueError(f"无法加载流程 YAML {source}: {exc}") from exc
+        stages = raw.get("stages") if isinstance(raw, dict) else None
+        if not isinstance(stages, list) or not stages or any(
+            not isinstance(stage, dict) or not stage.get("executors") for stage in stages
+        ):
+            raise BusinessError("流程定义不完整")
         try:
             definition = FlowDefinition.model_validate(raw)
         except Exception as exc:
             raise ValueError(f"流程 YAML schema 无效 {source}: {exc}") from exc
         self._validate_definition(definition)
         normalized = yaml.safe_dump(raw, allow_unicode=True, sort_keys=True)
-        return RegisteredFlow(definition=definition, digest=sha256(normalized.encode()).hexdigest(), source=source)
+        return RegisteredFlow(
+            definition=definition, digest=sha256(normalized.encode()).hexdigest(), source=source
+        )
 
     def _load_shared(self) -> None:
         shared = self.flows_dir / "_shared"
@@ -247,17 +263,25 @@ class FlowRegistry:
                 raise ValueError(f"阶段 {stage.key} 引用了不存在的审批模板: {stage.gate.template}")
             for executor in stage.executors:
                 if executor.resource_profile not in self.resources:
-                    raise ValueError(f"executor {executor.key} 引用了不存在的资源档位: {executor.resource_profile}")
+                    raise ValueError(
+                        f"executor {executor.key} 引用了不存在的资源档位: {executor.resource_profile}"
+                    )
                 if executor.retry_policy not in self.policies.retry_policies:
-                    raise ValueError(f"executor {executor.key} 引用了不存在的重试策略: {executor.retry_policy}")
+                    raise ValueError(
+                        f"executor {executor.key} 引用了不存在的重试策略: {executor.retry_policy}"
+                    )
                 unknown = (set(executor.inputs) | set(executor.outputs)) - artifacts
                 if unknown:
-                    raise ValueError(f"executor {executor.key} 引用了未声明 artifact: {sorted(unknown)}")
+                    raise ValueError(
+                        f"executor {executor.key} 引用了未声明 artifact: {sorted(unknown)}"
+                    )
                 produced.update(executor.outputs)
             if stage.review:
                 unknown = (set(stage.review.inputs) | {stage.review.output}) - artifacts
                 if unknown:
-                    raise ValueError(f"阶段 {stage.key} review 引用了未声明 artifact: {sorted(unknown)}")
+                    raise ValueError(
+                        f"阶段 {stage.key} review 引用了未声明 artifact: {sorted(unknown)}"
+                    )
                 produced.add(stage.review.output)
         unknown_delivery = set(definition.delivery.outputs) - artifacts
         if unknown_delivery:
@@ -277,7 +301,9 @@ class FlowRegistry:
         # Unproduced consumed artifacts are legal flow inputs, but must have an artifact declaration.
         if undeclared_source - artifacts:
             raise ValueError(f"流程入口 artifact 未声明: {sorted(undeclared_source - artifacts)}")
-        unsupported_types = {artifact.type for artifact in definition.artifacts} - set(self.artifact_types)
+        unsupported_types = {artifact.type for artifact in definition.artifacts} - set(
+            self.artifact_types
+        )
         if unsupported_types:
             raise ValueError(f"引用了不存在的 artifact 类型: {sorted(unsupported_types)}")
 
@@ -383,7 +409,10 @@ class FlowRegistry:
         matches: list[tuple[int, str]] = []
         for registered in self.flows.values():
             for stage in registered.definition.stages:
-                if not stage.assistant_agent_id or stage.assistant_agent_id not in available_agent_ids:
+                if (
+                    not stage.assistant_agent_id
+                    or stage.assistant_agent_id not in available_agent_ids
+                ):
                     continue
                 hints = [hint.lower() for hint in stage.trigger_hints if hint.strip()]
                 score = sum(1 for hint in hints if hint in normalized)

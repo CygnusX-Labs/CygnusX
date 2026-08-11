@@ -13,3 +13,5 @@ def test_settings_loads_defaults():
     assert settings.app_debug is True
     assert settings.task_queue_backend == "celery"
     assert settings.rocketmq_task_routes == []
+    assert settings.overdrive_authoritative_mode == "constraint"
+    assert settings.overdrive_plan_repair_enabled is True

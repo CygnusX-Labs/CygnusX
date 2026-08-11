@@ -1086,7 +1086,210 @@ async def test_overdrive_preflight_emits_manager_question_before_dispatch(monkey
 
 
 @pytest.mark.asyncio
-async def test_overdrive_uses_general_intake_and_persists_original_request(monkeypatch) -> None:
+async def test_tnpd_request_asks_for_real_phylogeny_inputs_before_freezing_plan(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        chat_module.OverdrivePlanningTelemetryService,
+        "record",
+        AsyncMock(),
+    )
+    _FakeAgentService.agents = [
+        _agent("agent-general", "通用助手", category="general"),
+        _agent("agent-code", "代码助手", category="code"),
+        _agent("agent-viz", "可视化助手", category="visualization"),
+    ]
+    monkeypatch.setattr(
+        "omichub.application.services.agent_service.AgentService", _FakeAgentService
+    )
+
+    async def should_not_call_model(**_kwargs):
+        raise AssertionError("TnpD 输入尚未提供时不应生成或冻结执行计划")
+        yield ChatChunk(type="text", content="")
+
+    monkeypatch.setattr(chat_module.provider_manager, "chat_stream", should_not_call_model)
+    session = SimpleNamespace(sandbox_meta={})
+    service = ChatService(MagicMock(spec=AsyncSession))
+    service.get_session = AsyncMock(return_value=session)  # type: ignore[method-assign]
+    service.add_message = AsyncMock(return_value=SimpleNamespace(message_id="message"))  # type: ignore[method-assign]
+
+    chunks = [
+        chunk
+        async for chunk in service._run_overdrive_turn(
+            user_id="user",
+            session_id="session",
+            user_content="我要将tnpd序列对比到20个基因组进行进化分析与建树",
+            manager_ctx=_manager_ctx(),
+        )
+    ]
+
+    question_event = next(chunk for chunk in chunks if chunk.type == "ask_request")
+    manager_speech = next(chunk for chunk in chunks if chunk.type == "room_speech")
+    questions = [item["question"] for item in question_event.metadata["questions"]]
+    assert manager_speech.metadata["planning_mode"] == "rule_preflight"
+    assert any("序列类型" in question for question in questions)
+    assert any("20 个基因组" in question for question in questions)
+    assert not any("数据属于哪种模态" in question for question in questions)
+    assert not any(
+        chunk.type == "ask_request" and chunk.metadata.get("kind") == "plan_confirmation"
+        for chunk in chunks
+    )
+    assert session.sandbox_meta["overdrive_intake"]["root_request"].startswith("我要将tnpd")
+
+
+@pytest.mark.asyncio
+async def test_tnpd_invalid_manager_plan_repairs_then_rule_merges_authoritative_dag(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        chat_module.OverdrivePlanningTelemetryService,
+        "record",
+        AsyncMock(),
+    )
+    _FakeAgentService.agents = [
+        _agent("agent-general", "通用助手", category="general"),
+        _agent("agent-code", "代码助手", category="code"),
+        _agent("agent-viz", "可视化助手", category="visualization"),
+    ]
+    monkeypatch.setattr(
+        "omichub.application.services.agent_service.AgentService", _FakeAgentService
+    )
+    monkeypatch.setattr(
+        _FakeAgentService,
+        "assemble_context",
+        AsyncMock(return_value=None),
+        raising=False,
+    )
+
+    manager_calls = 0
+
+    async def fake_stream(**_kwargs):
+        nonlocal manager_calls
+        manager_calls += 1
+        yield ChatChunk(
+            type="text",
+            content=(
+                '{"speech":"交给通用助手处理","assignments":['
+                '{"task_id":"general-intake","agent_id":"agent-general",'
+                '"task":"只询问用户，不制定领域计划"}]}'
+            ),
+        )
+
+    run = SimpleNamespace(
+        run_id="overdrive:tnpd",
+        status="RECEIVED",
+        research={},
+        plan={},
+        control={},
+        lead_planner_agent_id="agent-code",
+    )
+    monkeypatch.setattr(chat_module.provider_manager, "chat_stream", fake_stream)
+    monkeypatch.setattr(
+        "omichub.application.services.overdrive_run_service.OverdriveRunService.get_active_for_session",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "omichub.application.services.overdrive_run_service.OverdriveRunService.create_run",
+        AsyncMock(return_value=run),
+    )
+    captured: dict[str, object] = {}
+
+    class FakePlanningService:
+        def __init__(self, _run_service, _research_service, plan_builder):
+            self.plan_builder = plan_builder
+
+        async def prepare_plan(self, *_args, **_kwargs):
+            plan = self.plan_builder()
+            captured["tasks"] = plan["tasks"]
+            run.research = {
+                source: {"status": "completed", "evidence_ids": []}
+                for source in ("knowledge_base", "web", "model_knowledge")
+            }
+            return {
+                "path": "output/overdrive/session/overdrive-tnpd/plan.v1.md",
+                "version": 1,
+                "hash": f"sha256:{'b' * 64}",
+                "summary": plan["summary"],
+            }
+
+    monkeypatch.setattr(chat_module, "OverdrivePlanningService", FakePlanningService)
+    session = SimpleNamespace(sandbox_meta={}, project_id=None)
+    service = ChatService(MagicMock(spec=AsyncSession))
+    service.get_session = AsyncMock(return_value=session)  # type: ignore[method-assign]
+    service.add_message = AsyncMock(return_value=SimpleNamespace(message_id="message"))  # type: ignore[method-assign]
+    service._commit_stream_anchor = AsyncMock()  # type: ignore[method-assign]
+
+    chunks = [
+        chunk
+        async for chunk in service._run_overdrive_turn(
+            user_id="user",
+            session_id="session",
+            user_content=(
+                "我要将 TnpD 蛋白质序列对比到20个基因组进行进化分析与建树；"
+                "已上传 query.faa、20个基因组 FASTA/GFF，将用 DIAMOND 检索同源序列。"
+            ),
+            manager_ctx=_manager_ctx(),
+        )
+    ]
+
+    tasks = captured["tasks"]
+    assert isinstance(tasks, list)
+    assert [task["task_id"] for task in tasks] == [
+        "tnpd-homolog-search",
+        "tnpd-phylogeny",
+        "general-intake",
+    ]
+    assert tasks[1]["depends_on"] == ["tnpd-homolog-search"]
+    assert manager_calls == 2
+    manager_speech = next(chunk for chunk in chunks if chunk.type == "room_speech")
+    assert manager_speech.metadata["planning_mode"] == "rule_merge"
+    assert manager_speech.metadata["repair_attempted"] is True
+    assert "固定执行链" not in manager_speech.content
+    assert any(
+        chunk.type == "ask_request" and chunk.metadata.get("kind") == "plan_confirmation"
+        for chunk in chunks
+    )
+
+
+@pytest.mark.asyncio
+async def test_overdrive_manager_failure_uses_honest_neutral_fallback(monkeypatch) -> None:
+    _FakeAgentService.agents = [_agent("agent-general", "通用助手", category="general")]
+    monkeypatch.setattr(
+        "omichub.application.services.agent_service.AgentService", _FakeAgentService
+    )
+    monkeypatch.setattr(
+        chat_module.OverdrivePlanningTelemetryService,
+        "record",
+        AsyncMock(),
+    )
+
+    async def failed_stream(**_kwargs):
+        raise RuntimeError("provider unavailable")
+        yield ChatChunk(type="text", content="")
+
+    monkeypatch.setattr(chat_module.provider_manager, "chat_stream", failed_stream)
+    service = ChatService(MagicMock(spec=AsyncSession))
+    service.get_session = AsyncMock(return_value=SimpleNamespace(sandbox_meta={}))  # type: ignore[method-assign]
+    service.add_message = AsyncMock(return_value=SimpleNamespace(message_id="message"))  # type: ignore[method-assign]
+
+    chunks = [
+        chunk
+        async for chunk in service._run_overdrive_turn(
+            user_id="user",
+            session_id="session",
+            user_content="你好",
+            manager_ctx=_manager_ctx(),
+        )
+    ]
+
+    manager_speech = next(chunk for chunk in chunks if chunk.type == "room_speech")
+    assert manager_speech.content == "Manager 暂时不可用，暂未生成执行计划，请稍后重试。"
+    assert manager_speech.metadata["planning_mode"] == "rule_merge"
+    assert manager_speech.metadata["repair_attempted"] is False
+
+
+@pytest.mark.asyncio
+async def test_overdrive_preflight_persists_original_request_without_freezing_intake_task(monkeypatch) -> None:
     _FakeAgentService.agents = [
         _agent("agent-general", "通用助手"),
         _agent("agent-scrna", "单细胞专家"),
@@ -1099,31 +1302,8 @@ async def test_overdrive_uses_general_intake_and_persists_original_request(monke
         raise AssertionError("缺少关键上下文时不应先让 Manager 猜专家")
         yield ChatChunk(type="text", content="")
 
-    captured: dict[str, object] = {}
-
     async def fake_fanout(self, **kwargs):
-        captured.update(kwargs)
-        return {
-            "success": False,
-            "llm_payload": {
-                "results": [
-                    {
-                        "index": 1,
-                        "agent_id": "agent-general",
-                        "status": "awaiting_input",
-                        "answer": "请补充数据模态与分组定义。",
-                        "packet": {
-                            "needs_user_input": True,
-                            "final_answer": "",
-                            "questions": _overdrive_preflight_questions(
-                                "我有两个 TP53 分组，想挖掘新颖发现，请写详细计划"
-                            ),
-                            "approval_requests": [],
-                        },
-                    }
-                ]
-            },
-        }
+        raise AssertionError("预检问题不应被包装成 general-intake 执行任务")
 
     session = SimpleNamespace(sandbox_meta={})
     monkeypatch.setattr(chat_module.provider_manager, "chat_stream", should_not_call_manager)
@@ -1145,10 +1325,9 @@ async def test_overdrive_uses_general_intake_and_persists_original_request(monke
         )
     ]
 
-    assert captured["tasks"][0]["agent_id"] == "agent-general"
-    assert "ask_user" in captured["tasks"][0]["task"]
     assert session.sandbox_meta["overdrive_intake"]["status"] == "awaiting_input"
     assert any(chunk.type == "ask_request" for chunk in chunks)
+    assert not any(chunk.type == "plan_confirmation" for chunk in chunks)
 
 
 @pytest.mark.asyncio
@@ -1350,8 +1529,8 @@ async def test_overdrive_tree_intake_keeps_root_slots_and_dispatches_visualizati
 
 
 @pytest.mark.asyncio
-async def test_tp53_ambiguous_request_completes_two_turn_collaboration(monkeypatch) -> None:
-    """完整旅程：通用 intake → 用户补充 → 专家分派 → 互审 → Manager 最终结果。"""
+async def test_tp53_ambiguous_request_reaches_frozen_plan_after_intake(monkeypatch) -> None:
+    """完整旅程：Manager intake → 用户补充 → 冻结计划确认。"""
     _FakeAgentService.agents = [
         _agent("agent-general", "通用助手"),
         _agent("agent-rnaseq", "RNA-seq 专家"),
@@ -1362,71 +1541,37 @@ async def test_tp53_ambiguous_request_completes_two_turn_collaboration(monkeypat
     )
     session = SimpleNamespace(sandbox_meta={})
     manager_prompts: list[str] = []
-    manager_outputs = iter(
-        [
-            '{"speech":"信息已补全，开始分派。","assignments":[{"agent_id":"agent-rnaseq","task":"设计 bulk RNA-seq TP53 比较与新颖性分析"},{"agent_id":"agent-viz","task":"设计结果展示与证据图谱"}]}',
-            "最终计划：先完成队列与混杂因素审计，再做差异、通路、网络和外部队列验证。",
-        ]
-    )
 
     async def fake_stream(**kwargs):
         manager_prompts.append(kwargs["messages"][0]["content"])
-        yield ChatChunk(type="text", content=next(manager_outputs))
-
-    fanout_calls: list[list[dict[str, str]]] = []
-
-    async def fake_fanout(self, *, tasks, **_kwargs):
-        fanout_calls.append(tasks)
-        if len(fanout_calls) == 1:
-            assert [task["agent_id"] for task in tasks] == ["agent-general"]
-            return {
-                "success": False,
-                "llm_payload": {
-                    "results": [
-                        {
-                            "index": 1,
-                            "agent_id": "agent-general",
-                            "status": "awaiting_input",
-                            "answer": "请补充数据模态、分组定义、样本量和输入形态。",
-                            "packet": {
-                                "needs_user_input": True,
-                                "final_answer": "",
-                                "questions": _overdrive_preflight_questions(
-                                    "我有两个 TP53 分组，想挖掘新颖发现，请写详细计划"
-                                ),
-                                "approval_requests": [],
-                            },
-                        }
-                    ]
-                },
-            }
-        answers = (
-            ["RNA 初稿：差异、通路和外部队列验证。", "可视化初稿：火山图、通路图和证据矩阵。"]
-            if len(fanout_calls) == 2
-            else [
-                "RNA 复核稿：加入批次、临床混杂和独立队列复现。",
-                "可视化复核稿：图表与统计证据逐项绑定。",
-            ]
+        yield ChatChunk(
+            type="text",
+            content='{"speech":"信息已补全，开始分派。","assignments":[{"agent_id":"agent-rnaseq","task":"设计 bulk RNA-seq TP53 比较与新颖性分析"},{"agent_id":"agent-viz","task":"设计结果展示与证据图谱"}]}',
         )
-        return {
-            "success": True,
-            "llm_payload": {
-                "results": [
-                    {
-                        "index": index,
-                        "agent_id": task["agent_id"],
-                        "status": "ok",
-                        "answer": answers[index - 1],
-                    }
-                    for index, task in enumerate(tasks, start=1)
-                ]
+
+    active_run_calls = 0
+
+    def fake_active_run(*_args, **_kwargs):
+        nonlocal active_run_calls
+        active_run_calls += 1
+        if active_run_calls < 3:
+            return None
+        return SimpleNamespace(
+            status="AWAITING_PLAN_CONFIRMATION",
+            run_id="overdrive:tp53",
+            control={},
+            plan={
+                "path": "output/overdrive/session/overdrive-tp53/plan.v1.md",
+                "version": 1,
+                "hash": f"sha256:{'a' * 64}",
+                "summary": {"title": "TP53 执行计划"},
             },
-        }
+        )
 
     monkeypatch.setattr(chat_module.provider_manager, "chat_stream", fake_stream)
     monkeypatch.setattr(
-        "omichub.application.services.parallel_subagent_tool_service.ParallelSubAgentToolService.run_parallel_subagents",
-        fake_fanout,
+        "omichub.application.services.overdrive_run_service.OverdriveRunService.get_active_for_session",
+        fake_active_run,
     )
     service = ChatService(MagicMock(spec=AsyncSession))
     service.get_session = AsyncMock(return_value=session)  # type: ignore[method-assign]
@@ -1459,20 +1604,15 @@ async def test_tp53_ambiguous_request_completes_two_turn_collaboration(monkeypat
     ]
 
     assert "overdrive_intake" not in session.sandbox_meta
-    assert len(fanout_calls) == 3
-    assert [task["agent_id"] for task in fanout_calls[1]] == ["agent-rnaseq", "agent-viz"]
-    assert all("RNA 初稿" in task["task"] for task in fanout_calls[2])
-    assert all("可视化初稿" in task["task"] for task in fanout_calls[2])
     assert "原始请求" in manager_prompts[0]
     assert "bulk RNA-seq" in manager_prompts[0]
-    assert "RNA 复核稿" in manager_prompts[-1]
-    final_manager = [
+    confirmation = next(
         chunk
         for chunk in second_turn
-        if chunk.type == "room_speech" and chunk.metadata["sender"]["role"] == "manager"
-    ][-1]
-    assert final_manager.metadata["round"] == 3
-    assert final_manager.content.startswith("最终计划：")
+        if chunk.type == "ask_request" and chunk.metadata.get("kind") == "plan_confirmation"
+    )
+    assert confirmation.metadata["run_id"] == "overdrive:tp53"
+    assert confirmation.metadata["summary"]["title"] == "TP53 执行计划"
 
 
 @pytest.mark.asyncio

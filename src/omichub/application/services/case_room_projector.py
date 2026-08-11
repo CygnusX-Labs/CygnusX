@@ -6,29 +6,17 @@ from typing import Any
 
 from loguru import logger
 
-ROLE_AGENT_MAP = {
-    # Keep in sync with integrations/agentteams/bridge/.../config.py ROLE_AGENT_MAP.
-    "data-steward": "agent-data",
-    "workflow-operator": "agent-rnaseq",
-    "quality-auditor": "agent-qc",
-    "delivery-reporter": "agent-delivery",
-    "agent-code": "agent-code",
-    "agent-viz": "agent-viz",
-    "agent-scrna": "agent-scrna",
-    "agent-rnaseq": "agent-rnaseq",
-}
-
-ROLE_LABELS = {
-    "bioops-manager": ("星尘 AI", "✨", "#4f8ef7", "manager"),
-    "data-steward": ("数据管家", "🧾", "#0ea5a4", "worker"),
-    "workflow-operator": ("流程执行员", "⚙️", "#7c3aed", "worker"),
-    "quality-auditor": ("质控审计员", "🔎", "#d97706", "worker"),
-    "delivery-reporter": ("交付报告员", "📦", "#2563eb", "worker"),
-}
+from omichub.application.services.agentteams_capability_registry import (
+    AgentTeamsCapabilityRegistry,
+    get_agentteams_capability_registry,
+)
 
 
 class CaseRoomProjector:
     """纯函数式事件适配器；不持有 DB/Bridge 状态，便于单测与重放。"""
+
+    def __init__(self, registry: AgentTeamsCapabilityRegistry | None = None) -> None:
+        self._registry = registry or get_agentteams_capability_registry()
 
     def project(self, event: dict[str, Any], *, session_id: str, flow_id: str = "") -> list[dict[str, Any]]:
         event_type = str(event.get("event_type") or event.get("type") or "")
@@ -40,29 +28,44 @@ class CaseRoomProjector:
         message_id = f"case-room-{case_id}-{event_id}" if event_id else f"case-room-{case_id}-{event_type}"
         result: list[dict[str, Any]] = []
 
-        speech = self._speech(event_type, payload, sender, session_id, message_id, case_id)
+        speech_type = event_type
+        if event_type == "case.state_changed" and payload.get("status") in {
+            "remediation_pending",
+            "delivery_ready",
+        }:
+            speech_type = str(payload["status"])
+        speech = self._speech(speech_type, payload, sender, session_id, message_id, case_id)
         if speech:
             result.append(speech)
-        if event_type == "work_item.assigned":
+        if event_type.startswith("work_item."):
+            task_status = {
+                "work_item.assigned": "pending",
+                "work_item.claimed": "running",
+                "work_item.running": "running",
+                "work_item.finished": "succeeded",
+                "work_item.failed": "failed",
+                "work_item.blocked": "failed",
+            }.get(event_type, "running")
             result.append(
                 {
                     "type": "overdrive_progress",
                     "session_id": session_id,
                     "case_id": case_id,
                     "phase": "worker_running",
-                    "label": f"{sender['name']} 已领取工作项",
-                    "completed": 0,
+                    "label": self._work_item_label(event_type, sender),
+                    "completed": 1 if task_status == "succeeded" else 0,
                     "total": 1,
                     "waveMode": "serial",
                     "tasks": [{
                         "taskId": str(payload.get("work_item_id") or event_id),
                         "agentId": sender["agent_id"],
-                        "status": "running",
+                        "status": task_status,
                     }],
                 }
             )
         elif event_type in {"skill.finished", "quality.decision"}:
             task_id = str(payload.get("work_item_id") or event_id)
+            artifacts = payload.get("artifacts") if isinstance(payload.get("artifacts"), list) else []
             result.append(
                 {
                     "type": "overdrive_progress",
@@ -74,6 +77,16 @@ class CaseRoomProjector:
                     "total": 1,
                     "waveMode": "serial",
                     "tasks": [{"taskId": task_id, "agentId": sender["agent_id"], "status": "succeeded"}],
+                    "artifacts": [
+                        {
+                            "path": str(item.get("path") or ""),
+                            "kind": str(item.get("kind") or "file"),
+                            "status": "ready",
+                            "source": "agentteams",
+                        }
+                        for item in artifacts
+                        if isinstance(item, dict) and item.get("path")
+                    ],
                 }
             )
         elif event_type in {"approval.requested", "approval_pending"} or (
@@ -104,15 +117,26 @@ class CaseRoomProjector:
         return result
 
     def _sender(self, actor: str, *, flow_id: str) -> dict[str, str]:
-        name, avatar, color, role = ROLE_LABELS.get(actor, (actor or "协作成员", "💬", "#64748b", "worker"))
-        if actor not in ROLE_AGENT_MAP:
+        if actor == "bioops-manager":
+            return {"agent_id": "agent-general", "name": "星尘 AI", "avatar": "✨", "color": "#4f8ef7", "role": "manager"}
+        labels = self._registry.role_labels()
+        sender = labels.get(actor)
+        if sender is not None:
+            return dict(sender)
+        if actor == "workflow-operator":
+            flow_agent = self._registry.agent_for_flow(flow_id)
+            sender = next((item for item in labels.values() if item["agent_id"] == flow_agent), None)
+            if sender is not None:
+                return dict(sender)
+        mapping = self._registry.role_agent_map()
+        if actor not in mapping:
             logger.warning("AgentTeams 未命中角色映射，降级为 agent-general: actor={}", actor)
         return {
-            "agent_id": ROLE_AGENT_MAP.get(actor, actor or "agent-general"),
-            "name": name,
-            "avatar": avatar,
-            "color": color,
-            "role": role,
+            "agent_id": mapping.get(actor, "agent-general"),
+            "name": actor or "协作成员",
+            "avatar": "💬",
+            "color": "#64748b",
+            "role": "worker",
         }
 
     @staticmethod
@@ -127,8 +151,25 @@ class CaseRoomProjector:
         labels = {
             "case.created": f"已确认协作 Case「{str(payload.get('intent') or '正式分析任务')[:80]}」，开始分派团队工作。",
             "work_item.assigned": f"我已领取工作项：{str(payload.get('objective') or payload.get('skill_name') or '开始处理')[:180]}。",
+            "work_item.claimed": f"已认领工作项 {str(payload.get('work_item_id') or '')}，开始执行。",
+            "work_item.running": f"工作项 {str(payload.get('work_item_id') or '')} 正在执行。",
+            "omic_task.submitted": f"OmicHub 任务 {str(payload.get('omic_task_id') or '')} 已提交，正在等待执行资源。",
+            "omic_task.progress": f"任务进度已更新：{str(payload.get('progress') or payload.get('summary') or '处理中')}。",
+            "remediation_pending": "失败诊断已完成，修复工作项正在等待执行。",
+            "delivery_ready": "质量门已通过，交付文件已经可以核验和下载。",
+            "quality.hard_gate": f"硬规则门结论：{str(payload.get('decision') or 'MANUAL_REVIEW')}。{str(payload.get('reason') or '')}",
             "skill.finished": str(payload.get("summary") or "本阶段工作已完成，已提交结果供团队继续处理。"),
             "quality.decision": f"质控结论：{str(payload.get('decision') or '已完成审核')}。{str(payload.get('summary') or '')}",
+            "approval.reminder": "Case 已等待审批超过 24 小时，请确认冻结计划；超过 7 天将自动取消。",
+            "remediation.requested": f"质控已发起修复请求，由 {str(payload.get('target') or '协作角色')} 处理：{str(payload.get('objective') or '')}",
+            "remediation.completed": "修复工作已完成，Case 已重新进入人工审批；批准后将生成新执行版本并再次质控。",
+            "omic_task.failed": CaseRoomProjector._failure_message(payload),
+            "case.execution_failed": CaseRoomProjector._failure_message(payload),
+            "case.cancelled": (
+                "Case 因等待审批超过 7 天已自动取消。"
+                if payload.get("reason") == "approval_timeout_7d"
+                else f"Case 已取消：{str(payload.get('reason') or '未提供原因')}"
+            ),
             "case.closed": f"Case 已关闭，交付清单已生成：{str(payload.get('manifest_uri') or '')}".rstrip("："),
         }
         content = labels.get(event_type)
@@ -144,5 +185,25 @@ class CaseRoomProjector:
             "case_id": case_id,
         }
 
+    @staticmethod
+    def _failure_message(payload: dict[str, Any]) -> str:
+        excerpt = str(payload.get("error_excerpt") or "任务未返回可用错误摘要")[:500]
+        recommendation = str(
+            payload.get("recommendation")
+            or "请检查失败日志与输入；确认后可点击重试，系统会复用冻结计划并生成新提交版本。"
+        )[:300]
+        return f"执行失败：{excerpt}\n建议：{recommendation}"
 
-__all__ = ["CaseRoomProjector", "ROLE_AGENT_MAP"]
+    @staticmethod
+    def _work_item_label(event_type: str, sender: dict[str, str]) -> str:
+        return {
+            "work_item.assigned": f"{sender['name']} 已收到工作项",
+            "work_item.claimed": f"{sender['name']} 已认领工作项",
+            "work_item.running": f"{sender['name']} 正在执行工作项",
+            "work_item.finished": f"{sender['name']} 已完成工作项",
+            "work_item.failed": f"{sender['name']} 的工作项执行失败",
+            "work_item.blocked": f"{sender['name']} 的工作项被阻断",
+        }.get(event_type, f"{sender['name']} 更新了工作项")
+
+
+__all__ = ["CaseRoomProjector"]

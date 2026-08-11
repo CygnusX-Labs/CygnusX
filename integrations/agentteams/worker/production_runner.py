@@ -12,11 +12,21 @@ import json
 import os
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from claim_next import claim_next, execute_readonly_work_item, heartbeat_work_item
+
+_EVIDENCE_TOOLS = [
+    "task_result_summary",
+    "task_file_preview",
+    "workspace_file_preview",
+    "task_compare_metrics",
+    "rule_threshold_lookup",
+]
 
 
 @dataclass(frozen=True)
@@ -25,17 +35,7 @@ class ProductionWorkerConfig:
     identity: str
     token: str
     poll_seconds: float
-
-
-_AGENT_PROFILES: dict[str, tuple[str, str]] = {
-    "agent-code": ("agent-code", "planning_advice"),
-    "agent-viz": ("agent-viz", "result_interpretation"),
-    "agent-scrna": ("agent-scrna", "interpretation"),
-    "agent-rnaseq": ("agent-rnaseq", "interpretation"),
-    "data-steward": ("agent-data", "project-preflight"),
-    "quality-auditor": ("agent-qc", "quality-gate"),
-    "delivery-reporter": ("agent-delivery", "delivery-pack"),
-}
+    max_concurrent: int = 2
 
 
 def _identity_token(identity: str, identities: str) -> str:
@@ -55,14 +55,31 @@ def load_config(environ: dict[str, str] | None = None) -> ProductionWorkerConfig
     bridge_url = values.get("AGENTTEAMS_BRIDGE_BASE_URL", "").strip()
     if not bridge_url or not identity or not token:
         raise ValueError("Bridge URL, Worker identity, and Bridge token are required")
-    if identity not in _AGENT_PROFILES:
-        raise ValueError(f"Production read-only runtime does not support identity: {identity}")
     return ProductionWorkerConfig(
         bridge_url=bridge_url,
         identity=identity,
         token=token,
         poll_seconds=max(float(values.get("AGENTTEAMS_WORKER_POLL_SECONDS", "5")), 1.0),
+        max_concurrent=max(1, min(int(values.get("AGENTTEAMS_WORKER_MAX_CONCURRENT", "2")), 16)),
     )
+
+
+def load_worker_profile(config: ProductionWorkerConfig) -> tuple[str, str]:
+    request = Request(
+        f"{config.bridge_url.rstrip('/')}/capabilities",
+        headers={"X-Bridge-Identity": config.identity, "X-Bridge-Token": config.token},
+    )
+    with urlopen(request, timeout=20) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    profiles = payload.get("worker_profiles") if isinstance(payload, dict) else None
+    profile = profiles.get(config.identity) if isinstance(profiles, dict) else None
+    if not isinstance(profile, dict):
+        raise ValueError(f"Production runtime does not support identity: {config.identity}")
+    agent_id = str(profile.get("agent_id") or "").strip()
+    capability = str(profile.get("capability") or "").strip()
+    if not agent_id or not capability:
+        raise ValueError(f"Bridge returned malformed worker profile: {config.identity}")
+    return agent_id, capability
 
 
 def _question(assignment: dict[str, Any]) -> str:
@@ -77,9 +94,26 @@ def _question(assignment: dict[str, Any]) -> str:
         if execution_mode == "workspace_execution"
         else "请仅基于以下受控任务给出简洁、可核验的只读专业建议；不要执行任务、修改文件、提交工作流或承诺后续操作。\n"
     )
-    return (
-        prefix + f"任务：{objective}\n逻辑上下文引用：{json.dumps(refs, ensure_ascii=False)}"
-    )
+    return prefix + f"任务：{objective}\n逻辑上下文引用：{json.dumps(refs, ensure_ascii=False)}"
+
+
+def _evidence_refs(assignment: dict[str, Any]) -> list[str]:
+    work_item = assignment.get("work_item")
+    refs = work_item.get("context_refs") if isinstance(work_item, dict) else []
+    result: list[str] = []
+    for ref in refs if isinstance(refs, list) else []:
+        if not isinstance(ref, dict):
+            continue
+        kind = str(ref.get("kind") or "").strip()
+        ref_id = str(ref.get("id") or "").strip()
+        location = str(ref.get("location") or "").strip()
+        if kind == "task" and ref_id:
+            result.append(f"task:{ref_id}")
+        elif kind in {"file", "workspace"} and (location or ref_id):
+            result.append(f"file:{location or ref_id}")
+        elif kind == "s3" and (location or ref_id):
+            result.append(location or ref_id)
+    return list(dict.fromkeys(result))
 
 
 def run_once(config: ProductionWorkerConfig) -> dict[str, Any]:
@@ -92,11 +126,13 @@ def run_once(config: ProductionWorkerConfig) -> dict[str, Any]:
     if assignment is None:
         return {"action": "claim_raced", "identity": config.identity}
 
-    agent_id, capability = _AGENT_PROFILES[config.identity]
+    agent_id, capability = load_worker_profile(config)
     execution_mode = str(assignment["work_item"].get("execution_mode") or "readonly_consultation")
     if execution_mode == "workspace_execution":
         if config.identity not in {"agent-code", "agent-viz"}:
-            raise RuntimeError("Workspace execution is only supported by code or visualization workers")
+            raise RuntimeError(
+                "Workspace execution is only supported by code or visualization workers"
+            )
         capability = "workspace_execution"
     trace_id = uuid.uuid4().hex
     heartbeat_work_item(
@@ -115,6 +151,8 @@ def run_once(config: ProductionWorkerConfig) -> dict[str, Any]:
         agent_id=agent_id,
         capability=capability,
         question=_question(assignment),
+        evidence_refs=_evidence_refs(assignment),
+        requested_tools=_EVIDENCE_TOOLS,
         execution_mode=execution_mode,
         trace_id=trace_id,
     )
@@ -129,6 +167,12 @@ def run_once(config: ProductionWorkerConfig) -> dict[str, Any]:
     }
 
 
+def run_batch_once(config: ProductionWorkerConfig) -> list[dict[str, Any]]:
+    with ThreadPoolExecutor(max_workers=config.max_concurrent) as pool:
+        results = list(pool.map(lambda _index: run_once(config), range(config.max_concurrent)))
+    return [result for result in results if result.get("action") != "idle"] or [results[0]]
+
+
 def main() -> int:
     try:
         config = load_config()
@@ -137,7 +181,9 @@ def main() -> int:
         return 2
     while True:
         try:
-            print(json.dumps(run_once(config), ensure_ascii=False, separators=(",", ":")), flush=True)
+            print(
+                json.dumps(run_batch_once(config), ensure_ascii=False, separators=(",", ":")), flush=True
+            )
         except (HTTPError, URLError, RuntimeError, json.JSONDecodeError) as exc:
             print(f"production worker execution failed: {exc}", flush=True)
         time.sleep(config.poll_seconds)

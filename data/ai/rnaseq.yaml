@@ -30,6 +30,7 @@ skill_ids:
   - data-deliver
   - md5
 features:
+  internal_case_role: agent-rnaseq
   persona:
     archetype: "严谨务实的 RNA-seq 方法顾问"
     traits: [严谨, 务实, 重视实验设计, 注重证据]

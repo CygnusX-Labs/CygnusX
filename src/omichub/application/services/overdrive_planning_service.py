@@ -17,6 +17,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlparse
 
 from omichub.application.services.overdrive_run_service import (
     OverdriveRunService,
@@ -37,6 +38,202 @@ DOMAIN_HINTS: dict[str, tuple[str, ...]] = {
     "agent-code": ("代码", "python", "bash", "脚本", "调试"),
     "agent-data": ("数据契约", "元数据", "样本对应", "输入核验"),
 }
+
+_BLOCKED_WEB_HOSTS = (
+    "siliu.net", "jigao616.com", "mp.weixin.qq.com", "haomeiwen.com",
+    "csdn.net", "iikx.com", "shuziyingxiao.net", "8684.com",
+    "baijiahao.baidu.com", "sohu.com", "163.com", "zhihu.com",
+)
+_TRUSTED_WEB_HOSTS = (
+    "ncbi.nlm.nih.gov", "pubmed.ncbi.nlm.nih.gov", "pmc.ncbi.nlm.nih.gov",
+    "europepmc.org", "doi.org", "nature.com", "science.org", "cell.com",
+    "academic.oup.com", "oup.com", "springer.com", "biomedcentral.com",
+    "wiley.com", "frontiersin.org", "plos.org", "sciencedirect.com",
+    "mdpi.com", "biorxiv.org", "github.com", "readthedocs.io",
+    "iqtree.github.io", "mafft.cbrc.jp", "diamondsearch.org",
+    "bioconductor.org", "broadinstitute.org", "satijalab.org", "scanpy.readthedocs.io",
+    "docs.python.org", "developer.mozilla.org", "vuejs.org", "pandas.pydata.org",
+    "scikit-learn.org", "r-project.org",
+    "who.int", "oecd.org", "un.org", "w3.org", "ietf.org",
+)
+_TRUSTED_WEB_SUFFIXES = (
+    ".gov", ".gov.cn", ".edu", ".edu.cn", ".ac.uk", ".ac.cn",
+)
+_LOW_QUALITY_TEXT_MARKERS = (
+    "全部详细技术资料下载", "本发明专利技术", "培训班", "讲习班", "共享仓库下载",
+    "-- chatgpt", "产品特点", "本公司", "营销", "专门用的流程",
+)
+_GENERIC_QUERY_TERMS = (
+    "methodology", "best practices", "validation", "benchmark", "reproducible workflow",
+    "official documentation", "peer reviewed",
+)
+_REQUEST_TOKEN_STOPWORDS = {
+    "analysis", "analyze", "compare", "comparison", "data", "dataset", "genome",
+    "genomes", "help", "method", "plan", "please", "result", "results", "study",
+    "using", "want", "with", "workflow",
+}
+
+
+@dataclass(frozen=True)
+class ResearchProfileSpec:
+    name: str
+    markers: tuple[str, ...]
+    query_terms: tuple[str, ...]
+    relevance_terms: tuple[str, ...]
+
+
+_RESEARCH_PROFILES = (
+    ResearchProfileSpec(
+        name="phylogeny",
+        markers=("系统发育", "进化树", "进化分析", "建树", "phylogen", "newick"),
+        query_terms=(
+            "homolog identification", "comparative genomics", "BLASTP", "DIAMOND",
+            "MAFFT", "IQ-TREE", "protein phylogeny", "bootstrap",
+        ),
+        relevance_terms=(
+            "homolog", "ortholog", "transposase", "blastp", "diamond", "mafft",
+            "muscle", "alignment", "iq-tree", "iqtree", "maximum likelihood",
+            "bootstrap", "model selection", "protein family", "同源", "多序列比对",
+            "系统发育", "进化树",
+        ),
+    ),
+    ResearchProfileSpec(
+        name="bulk_rnaseq",
+        markers=("rna-seq", "rnaseq", "bulk rna", "转录组", "差异表达", "count矩阵"),
+        query_terms=(
+            "RNA-seq", "DESeq2", "edgeR", "differential expression", "batch effect",
+            "experimental design", "pathway enrichment",
+        ),
+        relevance_terms=(
+            "rna-seq", "rnaseq", "deseq2", "edger", "limma", "count matrix",
+            "differential expression", "batch effect", "normalization", "转录组",
+            "差异表达", "批次效应",
+        ),
+    ),
+    ResearchProfileSpec(
+        name="single_cell",
+        markers=("单细胞", "scrna", "single-cell", "seurat", "scanpy", "细胞通讯"),
+        query_terms=(
+            "single-cell RNA-seq", "Scanpy", "Seurat", "quality control",
+            "cell type annotation", "batch integration", "trajectory analysis",
+        ),
+        relevance_terms=(
+            "single-cell", "scrna", "scanpy", "seurat", "cell annotation",
+            "doublet", "batch integration", "trajectory", "单细胞", "细胞注释",
+            "细胞通讯",
+        ),
+    ),
+    ResearchProfileSpec(
+        name="atacseq",
+        markers=("atac-seq", "atacseq", "染色质开放", "peak calling", "可及性"),
+        query_terms=(
+            "ATAC-seq", "quality control", "peak calling", "TSS enrichment",
+            "chromatin accessibility", "differential accessibility",
+        ),
+        relevance_terms=(
+            "atac-seq", "atacseq", "peak calling", "macs2", "tss enrichment",
+            "fragment size", "chromatin accessibility", "染色质开放", "可及性",
+        ),
+    ),
+    ResearchProfileSpec(
+        name="variant_genomics",
+        markers=("变异", "variant", "snp", "vcf", "全基因组", "wgs", "gwas"),
+        query_terms=(
+            "variant calling", "GATK", "VCF", "quality filtering", "annotation",
+            "benchmark", "population genomics",
+        ),
+        relevance_terms=(
+            "variant", "snp", "indel", "vcf", "gatk", "variant calling",
+            "genotype", "annotation", "benchmark", "变异", "全基因组",
+        ),
+    ),
+    ResearchProfileSpec(
+        name="proteomics",
+        markers=("蛋白组", "proteomic", "质谱", "mass spectrometry", "磷酸化"),
+        query_terms=(
+            "proteomics", "mass spectrometry", "MaxQuant", "quality control",
+            "differential abundance", "multiple testing",
+        ),
+        relevance_terms=(
+            "proteomics", "mass spectrometry", "maxquant", "peptide", "fdr",
+            "differential abundance", "蛋白组", "质谱", "磷酸化",
+        ),
+    ),
+    ResearchProfileSpec(
+        name="software_engineering",
+        markers=("python", "javascript", "typescript", "vue", "api", "代码", "脚本", "报错"),
+        query_terms=(
+            "official documentation", "API reference", "version compatibility",
+            "security", "reproducible example", "testing",
+        ),
+        relevance_terms=(
+            "documentation", "api reference", "version", "compatibility", "security",
+            "testing", "example", "python", "javascript", "typescript", "vue",
+        ),
+    ),
+    ResearchProfileSpec(
+        name="statistics",
+        markers=("统计", "回归", "生存分析", "机器学习", "预测模型", "相关性"),
+        query_terms=(
+            "statistical methodology", "assumptions", "validation", "cross-validation",
+            "effect size", "confidence interval", "multiple testing",
+        ),
+        relevance_terms=(
+            "regression", "survival analysis", "cross-validation", "effect size",
+            "confidence interval", "multiple testing", "assumption", "统计", "回归",
+            "生存分析", "机器学习",
+        ),
+    ),
+)
+_GENERIC_RESEARCH_PROFILE = ResearchProfileSpec(
+    name="general",
+    markers=(),
+    query_terms=("methodology", "best practices", "validation", "benchmark"),
+    relevance_terms=("methodology", "validation", "benchmark", "best practice", "reproducible"),
+)
+
+
+def select_research_profile(request: str) -> ResearchProfileSpec:
+    normalized = request.casefold()
+    scored = [
+        (sum(marker in normalized for marker in profile.markers), profile)
+        for profile in _RESEARCH_PROFILES
+    ]
+    score, profile = max(scored, key=lambda item: item[0])
+    return profile if score else _GENERIC_RESEARCH_PROFILE
+
+
+def _request_technical_terms(request: str) -> list[str]:
+    terms: list[str] = []
+    seen: set[str] = set()
+    for raw in re.findall(r"[A-Za-z][A-Za-z0-9_.+:-]{2,}", request):
+        normalized = raw.casefold().strip(".:-")
+        if normalized in _REQUEST_TOKEN_STOPWORDS or normalized in seen:
+            continue
+        seen.add(normalized)
+        terms.append(raw.strip(".:-"))
+    return terms[:8]
+
+
+def build_research_queries(request: str) -> dict[str, str]:
+    """按领域画像改写方法学检索词，避免自然语言目标直接命中 SEO 内容。"""
+    compact = " ".join(request.split())
+    profile = select_research_profile(compact)
+    technical_terms = _request_technical_terms(compact)
+    normalized = compact.casefold()
+    matched_markers = [marker for marker in profile.markers if marker in normalized]
+    subject_terms = [
+        compact,
+        *technical_terms,
+        *matched_markers,
+    ]
+    web_terms = [*subject_terms, *profile.query_terms, *_GENERIC_QUERY_TERMS]
+    web_query = " ".join(dict.fromkeys(term for term in web_terms if term)).strip()
+    return {
+        "profile": profile.name,
+        "knowledge_base": f"{compact} {' '.join(profile.query_terms)}"[:600],
+        "web": web_query[:600] or compact[:600],
+    }
 
 
 @dataclass(frozen=True)
@@ -81,22 +278,35 @@ class ResearchBundleService:
         if not query.strip():
             raise ValidationError("研究问题不能为空")
         started = time.monotonic()
+        research_queries = build_research_queries(query)
         kb_task = asyncio.create_task(
             self._call_retrieval(
                 "knowledge_base",
                 self._knowledge_search,
-                query,
+                research_queries["knowledge_base"],
                 project_id=project_id,
             )
         )
-        web_task = asyncio.create_task(self._call_retrieval("web", self._web_search, query))
+        web_task = asyncio.create_task(
+            self._call_retrieval("web", self._web_search, research_queries["web"])
+        )
         kb_record, web_record = await asyncio.gather(kb_task, web_task)
+        web_items, rejected_web = self._filter_web_items(web_record["items"], query)
+        web_record["items"] = web_items
+        web_record["research_profile"] = research_queries["profile"]
+        web_record["accepted_count"] = len(web_items)
+        web_record["rejected_count"] = len(rejected_web)
+        web_record["quality_gate"] = "authority_and_domain_relevance"
+        if rejected_web:
+            web_record["rejected_reasons"] = rejected_web
+        if not web_items and rejected_web:
+            web_record["quality_status"] = "no_relevant_evidence"
 
         remaining = max(0.01, self._wall_timeout - (time.monotonic() - started))
         model_record = await self._call_model(
             query,
             [*kb_record["items"], *web_record["items"]],
-            context=context,
+            context={**dict(context or {}), "research_queries": research_queries},
             timeout_seconds=min(self._source_timeout, remaining),
         )
         sources = {
@@ -130,13 +340,15 @@ class ResearchBundleService:
                 self._invoke(function, query, **kwargs), timeout=self._source_timeout
             )
             items = self._unwrap_items(raw)
-            return self._source_record("succeeded", started, items=items)
+            return self._source_record("succeeded", started, items=items, query=query)
         except TimeoutError:
             return self._source_record(
-                "timed_out", started, error=f"{source} research timed out"
+                "timed_out", started, error=f"{source} research timed out", query=query
             )
         except Exception as exc:  # noqa: BLE001 - one unavailable source must not block planning
-            return self._source_record("failed", started, error=self._safe_error(exc))
+            return self._source_record(
+                "failed", started, error=self._safe_error(exc), query=query
+            )
 
     async def _call_model(
         self,
@@ -201,6 +413,7 @@ class ResearchBundleService:
         *,
         items: list[dict[str, Any]] | None = None,
         error: str | None = None,
+        query: str | None = None,
     ) -> dict[str, Any]:
         record: dict[str, Any] = {
             "status": status,
@@ -210,7 +423,82 @@ class ResearchBundleService:
         }
         if error:
             record["error"] = error
+        if query:
+            record["query"] = query
         return record
+
+    @classmethod
+    def _filter_web_items(
+        cls,
+        items: Sequence[Mapping[str, Any]],
+        request: str,
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        accepted: list[dict[str, Any]] = []
+        rejected: list[str] = []
+        seen: set[tuple[str, str]] = set()
+        for raw in items:
+            item = deepcopy(dict(raw))
+            reason, quality = cls._assess_web_item(item, request)
+            if reason:
+                rejected.append(reason)
+                continue
+            item["evidence_quality"] = quality
+            locator = str(item.get("url") or item.get("link") or "").strip().casefold()
+            title = str(item.get("title") or item.get("name") or "").strip().casefold()
+            dedupe_key = (locator.rstrip("/"), re.sub(r"\W+", "", title)[:120])
+            if dedupe_key in seen:
+                rejected.append("duplicate_result")
+                continue
+            seen.add(dedupe_key)
+            accepted.append(item)
+        return accepted, rejected
+
+    @staticmethod
+    def _assess_web_item(
+        raw: Mapping[str, Any], request: str
+    ) -> tuple[str | None, dict[str, Any]]:
+        locator = str(raw.get("url") or raw.get("link") or "").strip()
+        host = urlparse(locator).netloc.casefold().removeprefix("www.")
+        text = " ".join(
+            str(raw.get(key) or "")
+            for key in ("title", "name", "claim", "excerpt", "snippet", "content", "text")
+        ).casefold()
+        if not locator or not host:
+            return "missing_locator", {}
+        if any(blocked in host for blocked in _BLOCKED_WEB_HOSTS):
+            return f"blocked_host:{host}", {}
+        if any(marker in text for marker in _LOW_QUALITY_TEXT_MARKERS):
+            return "low_quality_content", {}
+        profile = select_research_profile(request)
+        technical_terms = {term.casefold() for term in _request_technical_terms(request)}
+        target_hits = {term for term in technical_terms if term in text}
+        profile_hits = {term for term in profile.relevance_terms if term in text}
+        trusted = ResearchBundleService._is_trusted_web_host(host)
+        relevance_score = len(target_hits) * 3 + min(len(profile_hits), 5)
+        authority_tier = "trusted" if trusted else "unverified"
+        quality = {
+            "research_profile": profile.name,
+            "authority_tier": authority_tier,
+            "relevance_score": relevance_score,
+            "matched_terms": sorted({*target_hits, *profile_hits}),
+        }
+        if profile.name == "general":
+            if trusted and (target_hits or profile_hits or not technical_terms):
+                return None, quality
+            if len(target_hits) >= 2 or (target_hits and profile_hits):
+                return None, quality
+            return "insufficient_relevance:general", quality
+        if trusted and relevance_score >= 2:
+            return None, quality
+        if relevance_score >= 4:
+            return None, quality
+        return f"insufficient_relevance:{profile.name}", quality
+
+    @staticmethod
+    def _is_trusted_web_host(host: str) -> bool:
+        return any(trusted_host in host for trusted_host in _TRUSTED_WEB_HOSTS) or host.endswith(
+            _TRUSTED_WEB_SUFFIXES
+        )
 
     @staticmethod
     def _safe_error(exc: Exception) -> str:
@@ -254,6 +542,7 @@ class ResearchBundleService:
             "freshness": freshness,
             "claim": claim,
             "confidence": str(raw.get("confidence") or "medium"),
+            "evidence_quality": deepcopy(dict(raw.get("evidence_quality") or {})),
             "used_in_plan_sections": list(raw.get("used_in_plan_sections") or []),
         }
 
@@ -361,6 +650,7 @@ class OverdrivePlanningService:
                 request=run.root_request,
                 lead_planner_agent_id=str(run.lead_planner_agent_id or ""),
                 evidence=bundle.evidence,
+                research_sources=bundle.sources,
                 tasks=tasks,
                 plan=deepcopy(dict(plan_payload)),
                 next_version=int((run.plan or {}).get("version") or 0) + 1,
@@ -511,6 +801,7 @@ def build_plan_markdown(
     request: str,
     lead_planner_agent_id: str,
     evidence: Sequence[Mapping[str, Any]],
+    research_sources: Mapping[str, Mapping[str, Any]] | None = None,
     tasks: Sequence[Mapping[str, Any]],
     plan: Mapping[str, Any],
     next_version: int,
@@ -532,8 +823,36 @@ def build_plan_markdown(
         for item in evidence_groups.get(source, []):
             locator = str(item.get("locator") or "")
             suffix = f"（{locator}）" if locator else "（模型通用知识；无检索定位）"
-            rows.append(f"- [{item.get('evidence_id')}] {item.get('claim') or item.get('title')} {suffix}")
-        return "\n".join(rows) or "- 本路没有可用证据；详见 evidence.json 的状态与失败原因。"
+            quality = dict(item.get("evidence_quality") or {})
+            quality_suffix = ""
+            if quality:
+                quality_suffix = (
+                    f" [来源：{quality.get('authority_tier', 'unknown')}；"
+                    f"相关性：{quality.get('relevance_score', 0)}]"
+                )
+            rows.append(
+                f"- [{item.get('evidence_id')}] {item.get('claim') or item.get('title')} "
+                f"{suffix}{quality_suffix}"
+            )
+        source_record = dict((research_sources or {}).get(source) or {})
+        prefix: list[str] = []
+        research_profile = str(source_record.get("research_profile") or "").strip()
+        if research_profile:
+            prefix.append(f"- 研究画像：`{research_profile}`")
+        search_query = str(source_record.get("query") or "").strip()
+        if search_query:
+            prefix.append(f"- 实际检索式：`{search_query}`")
+        rejected_count = int(source_record.get("rejected_count") or 0)
+        if rejected_count:
+            prefix.append(f"- 质量门已剔除 {rejected_count} 条低可信、重复或主题不相关结果。")
+        if rows:
+            return "\n".join([*prefix, *rows])
+        empty = (
+            "- 本路没有通过相关性与来源质量门的可用证据；详见 evidence.json。"
+            if research_sources is not None
+            else "- 本路没有可用证据；详见 evidence.json 的状态与失败原因。"
+        )
+        return "\n".join([*prefix, empty])
 
     waves = task_waves(tasks)
     wave_lines = "\n".join(

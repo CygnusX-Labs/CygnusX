@@ -9,10 +9,19 @@ from omichub_agentteams_bridge.case_store import CaseStore
 from omichub_agentteams_bridge.config import BridgeSettings
 from omichub_agentteams_bridge.models import (
     ApprovalRequest,
+    ApprovedSubmission,
     CaseCreateRequest,
+    CaseRecord,
     ContextRef,
+    PlanRevisionRequest,
+    PreflightInputSnapshot,
+    QualityGateRequest,
     ReadOnlyExecutionRequest,
+    RetryCaseSubmissionRequest,
+    TaskSpec,
     WorkItemCreateRequest,
+    WorkItemRecord,
+    WorkItemUpdateRequest,
 )
 from omichub_agentteams_bridge.service import BridgeService
 
@@ -76,6 +85,37 @@ class PlanningGateway:
         }
 
 
+class HardGateGateway:
+    configured = True
+
+    async def consult(self, payload: dict[str, object]) -> dict[str, object]:
+        return {
+            "schema_version": "1.0",
+            "status": "completed",
+            "conclusion": "BLOCKED\nmapping_rate=0.30 < threshold=0.70",
+            "recommendations": ["检查比对参数并重跑。"],
+            "evidence_refs": ["task:task-1", "rule:rna_seq:mapping_rate"],
+            "risks": [],
+            "agent_id": payload["agent_id"],
+            "schema_ver": "1.0",
+            "duration_ms": 1,
+            "token_usage": 1,
+            "hard_gate": {
+                "decision": "BLOCKED",
+                "audit_event": {
+                    "event_type": "quality.hard_gate",
+                    "decision": "BLOCKED",
+                    "reason": "mapping_rate 30.0% 低于阈值 70.0%",
+                    "metric": "mapping_rate",
+                    "value": 0.3,
+                    "threshold": 0.7,
+                    "flow_id": "rna_seq",
+                    "rule_version": "1.0.0",
+                },
+            },
+        }
+
+
 class TreeplotPlanningGateway:
     configured = True
 
@@ -85,19 +125,43 @@ class TreeplotPlanningGateway:
                 "name": "treeplot-analysis",
                 "parameters": {
                     "work_items": [
-                        {"work_item_id": "exec-01", "target": "agent-code", "objective": "Align two FASTA inputs and build a tree.", "skill_name": "phylo-build"},
-                        {"work_item_id": "exec-02", "target": "agent-viz", "objective": "Render the validated treeplot.", "skill_name": "treeplot-render", "depends_on": ["exec-01"]},
+                        {
+                            "work_item_id": "exec-01",
+                            "target": "agent-code",
+                            "objective": "Align two FASTA inputs and build a tree.",
+                            "skill_name": "phylo-build",
+                        },
+                        {
+                            "work_item_id": "exec-02",
+                            "target": "agent-viz",
+                            "objective": "Render the validated treeplot.",
+                            "skill_name": "treeplot-render",
+                            "depends_on": ["exec-01"],
+                        },
                     ]
                 },
             }
         else:
             proposed_submission = None
         return {
-            "schema_version": "1.0", "status": "completed", "conclusion": "Treeplot step completed.",
-            "recommendations": [], "evidence_refs": [], "risks": [], "agent_id": payload["agent_id"],
-            "schema_ver": "1.0", "duration_ms": 1, "token_usage": 1,
+            "schema_version": "1.0",
+            "status": "completed",
+            "conclusion": "Treeplot step completed.",
+            "recommendations": [],
+            "evidence_refs": [],
+            "risks": [],
+            "agent_id": payload["agent_id"],
+            "schema_ver": "1.0",
+            "duration_ms": 1,
+            "token_usage": 1,
             "proposed_submission": proposed_submission,
-            "artifacts": [{"path": "users/test/workspace/agentteams/treeplot-case/exec-01/tree.nwk", "kind": "file", "bytes": 8}],
+            "artifacts": [
+                {
+                    "path": "users/test/workspace/agentteams/treeplot-case/exec-01/tree.nwk",
+                    "kind": "file",
+                    "bytes": 8,
+                }
+            ],
         }
 
 
@@ -109,6 +173,11 @@ def make_service(tmp_path, gateway: ConcurrentGateway) -> BridgeService:
             "approval-authority:approval,bioops-manager:manager,data-steward:steward,"
             "workflow-operator:operator,quality-auditor:auditor,delivery-reporter:reporter,"
             "agent-code:code,agent-viz:viz,agent-scrna:scrna,agent-rnaseq:rnaseq"
+        ),
+        role_agent_map=(
+            "data-steward:agent-data,quality-auditor:agent-qc,"
+            "delivery-reporter:agent-delivery,agent-code:agent-code,"
+            "agent-viz:agent-viz,agent-scrna:agent-scrna,agent-rnaseq:agent-rnaseq"
         ),
         audit_log_path=str(tmp_path / "audit.jsonl"),
         case_store_path=str(tmp_path / "cases.json"),
@@ -169,7 +238,9 @@ async def test_planning_consultation_freezes_plan_before_preflight(tmp_path) -> 
     assert result.status == "completed"
     assert frozen_case.status == "preflight_running"
     assert frozen_case.plan_hash
-    assert frozen_case.proposed_submission and frozen_case.proposed_submission["flow_id"] == "rna_seq"
+    assert (
+        frozen_case.proposed_submission and frozen_case.proposed_submission["flow_id"] == "rna_seq"
+    )
     preflight = next(item for item in frozen_case.work_items if item.work_item_id == "preflight-01")
     assert preflight.depends_on == ["plan-01"]
 
@@ -199,16 +270,27 @@ async def test_treeplot_general_case_freezes_plan_and_dispatches_workspace_dag(t
     case = await service.create_case(
         CaseCreateRequest(
             case_id="treeplot-case",
-            context_refs=[ContextRef(kind="file", id="tree-a.fa"), ContextRef(kind="file", id="tree-b.fa")],
-            intent="build a treeplot from two fasta files", requester_ref="user-1", lead_planner="agent-code",
+            context_refs=[
+                ContextRef(kind="file", id="tree-a.fa"),
+                ContextRef(kind="file", id="tree-b.fa"),
+            ],
+            intent="build a treeplot from two fasta files",
+            requester_ref="user-1",
+            lead_planner="agent-code",
         ),
         "bioops-manager",
     )
     assert case.status == "planning_running"
     await service.claim_work_item("treeplot-case", "plan-01", "agent-code")
     await service.execute_readonly_work_item(
-        "treeplot-case", "plan-01",
-        ReadOnlyExecutionRequest(agent_id="agent-code", capability="planning_advice", question="Plan treeplot.", trace_id="plan"),
+        "treeplot-case",
+        "plan-01",
+        ReadOnlyExecutionRequest(
+            agent_id="agent-code",
+            capability="planning_advice",
+            question="Plan treeplot.",
+            trace_id="plan",
+        ),
         "agent-code",
     )
     frozen = await service._cases.get("treeplot-case")
@@ -217,16 +299,135 @@ async def test_treeplot_general_case_freezes_plan_and_dispatches_workspace_dag(t
     approval = await service.issue_approval(
         ApprovalRequest(case_id="treeplot-case", action="execute_plan"), "approval-authority"
     )
-    approved = await service.execute_general_plan("treeplot-case", approval.token, "approval-authority")
+    approved = await service.execute_general_plan(
+        "treeplot-case", approval.token, "approval-authority"
+    )
     assert approved.status == "approved"
     assert {item.work_item_id for item in approved.work_items} >= {"exec-01", "exec-02"}
+    executable = next(item for item in approved.work_items if item.work_item_id == "exec-01")
+    assert executable.plan_hash == approved.plan_hash
     await service.claim_work_item("treeplot-case", "exec-01", "agent-code")
     completed = await service.execute_readonly_work_item(
-        "treeplot-case", "exec-01",
-        ReadOnlyExecutionRequest(agent_id="agent-code", capability="workspace_execution", question="Build tree.", trace_id="exec", execution_mode="workspace_execution"),
+        "treeplot-case",
+        "exec-01",
+        ReadOnlyExecutionRequest(
+            agent_id="agent-code",
+            capability="workspace_execution",
+            question="Build tree.",
+            trace_id="exec",
+            execution_mode="workspace_execution",
+        ),
         "agent-code",
     )
     assert completed.status == "completed"
+    assert completed.output_refs == [
+        ContextRef(
+            kind="file",
+            id="users/test/workspace/agentteams/treeplot-case/exec-01/tree.nwk",
+            location="users/test/workspace/agentteams/treeplot-case/exec-01/tree.nwk",
+            meta={
+                "local_path": "users/test/workspace/agentteams/treeplot-case/exec-01/tree.nwk",
+                "size_bytes": 8,
+                "sha256": None,
+            },
+        )
+    ]
+
+
+def test_general_plan_expands_fan_out_and_freezes_execution_mode(tmp_path) -> None:
+    service = make_service(tmp_path, TreeplotPlanningGateway())
+    payload = service._validate_general_plan(
+        {
+            "name": "clean-and-merge",
+            "parameters": {
+                "work_items": [
+                    {
+                        "work_item_id": "clean",
+                        "target": "agent-code",
+                        "objective": "清洗 CSV",
+                        "skill_name": "csv-clean",
+                        "fan_out": {"count": 4, "merge_strategy": "collect"},
+                    }
+                ]
+            },
+        }
+    )
+    work_items = payload["parameters"]["work_items"]
+
+    assert [item["work_item_id"] for item in work_items] == [
+        "clean-shard-01",
+        "clean-shard-02",
+        "clean-shard-03",
+        "clean-shard-04",
+        "clean-merge",
+    ]
+    assert work_items[-1]["depends_on"] == [item["work_item_id"] for item in work_items[:-1]]
+    assert all(item["execution_mode"] == "workspace_execution" for item in work_items)
+
+
+@pytest.mark.asyncio
+async def test_workspace_claim_rejects_stale_plan_hash(tmp_path) -> None:
+    service = make_service(tmp_path, TreeplotPlanningGateway())
+    await service.create_case(
+        CaseCreateRequest(
+            case_id="stale-plan-case",
+            context_refs=[ContextRef(kind="file", id="tree.fa")],
+            intent="build a treeplot",
+            requester_ref="user-1",
+            lead_planner="agent-code",
+        ),
+        "bioops-manager",
+    )
+    await service.claim_work_item("stale-plan-case", "plan-01", "agent-code")
+    await service.execute_readonly_work_item(
+        "stale-plan-case",
+        "plan-01",
+        ReadOnlyExecutionRequest(
+            agent_id="agent-code",
+            capability="planning_advice",
+            question="Plan treeplot.",
+        ),
+        "agent-code",
+    )
+    approval = await service.issue_approval(
+        ApprovalRequest(case_id="stale-plan-case", action="execute_plan"),
+        "approval-authority",
+    )
+    approved = await service.execute_general_plan(
+        "stale-plan-case", approval.token, "approval-authority"
+    )
+    executable = next(item for item in approved.work_items if item.work_item_id == "exec-01")
+    await service._cases.update_work_item(
+        "stale-plan-case",
+        "exec-01",
+        executable.model_copy(update={"plan_hash": "0" * 64}),
+    )
+
+    with pytest.raises(Exception, match="not bound to the frozen plan"):
+        await service.claim_work_item("stale-plan-case", "exec-01", "agent-code")
+
+
+def test_workspace_artifact_refs_reject_paths_outside_work_item_directory() -> None:
+    refs = BridgeService._workspace_artifact_refs(
+        "treeplot-case",
+        "exec-01",
+        [
+            {
+                "path": "users/test/workspace/agentteams/treeplot-case/exec-01/tree.png",
+                "kind": "file",
+            },
+            {
+                "path": "users/test/workspace/agentteams/other-case/exec-01/leak.png",
+                "kind": "file",
+            },
+            {"path": "../treeplot-case/exec-01/leak.png", "kind": "file"},
+            {"path": "/tmp/treeplot-case/exec-01/leak.png", "kind": "file"},
+        ],
+    )
+
+    assert [ref.id for ref in refs] == [
+        "users/test/workspace/agentteams/treeplot-case/exec-01/tree.png"
+    ]
 
 
 def test_general_case_requires_a_file_or_workspace_context() -> None:
@@ -323,7 +524,9 @@ async def test_expired_lease_is_requeued_and_can_be_claimed_again(tmp_path) -> N
         "bioops-manager",
     )
     claimed = await service.claim_work_item("cluster-case", "code-01", "agent-code")
-    expired = claimed.model_copy(update={"lease_expires_at": datetime.now(UTC) - timedelta(seconds=1)})
+    expired = claimed.model_copy(
+        update={"lease_expires_at": datetime.now(UTC) - timedelta(seconds=1)}
+    )
     await service._cases.update_work_item("cluster-case", "code-01", expired)
 
     inbox = await service.list_worker_inbox("agent-code")
@@ -332,6 +535,41 @@ async def test_expired_lease_is_requeued_and_can_be_claimed_again(tmp_path) -> N
     reclaimed = await service.claim_work_item("cluster-case", "code-01", "agent-code")
     assert reclaimed.status == "claimed"
     assert reclaimed.attempt == 2
+
+
+@pytest.mark.asyncio
+async def test_bridge_records_omichub_hard_gate_audit_event(tmp_path) -> None:
+    service = make_service(tmp_path, HardGateGateway())
+    await create_case(service)
+    await service.assign_work_item(
+        "cluster-case",
+        WorkItemCreateRequest(
+            work_item_id="quality-01",
+            target="quality-auditor",
+            objective="Review deterministic QC evidence.",
+            skill_name="quality-gate",
+            context_refs=[ContextRef(kind="task", id="task-1")],
+        ),
+        "bioops-manager",
+    )
+    await service.claim_work_item("cluster-case", "quality-01", "quality-auditor")
+
+    await service.execute_readonly_work_item(
+        "cluster-case",
+        "quality-01",
+        ReadOnlyExecutionRequest(
+            agent_id="agent-qc",
+            capability="quality-gate",
+            question="Review QC.",
+        ),
+        "quality-auditor",
+    )
+    events = await service.get_case_events("cluster-case", "bioops-manager")
+    hard_gate = next(event for event in events.events if event["event_type"] == "quality.hard_gate")
+
+    assert hard_gate["payload"]["decision"] == "BLOCKED"
+    assert hard_gate["payload"]["metric"] == "mapping_rate"
+    assert hard_gate["payload"]["value"] == 0.3
 
 
 @pytest.mark.asyncio
@@ -361,3 +599,422 @@ async def test_concurrent_claims_allow_exactly_one_winner(tmp_path) -> None:
     assert winners[0].status == "claimed"
     assert len(failures) == 1
     assert "already claimed" in str(failures[0]).lower()
+
+
+class TaskStateClient:
+    def __init__(self, responses: list[dict[str, object]]) -> None:
+        self.responses = responses
+
+    async def get_task(self, _task_id: str) -> dict[str, object]:
+        return self.responses.pop(0)
+
+
+async def _make_executing_case_service(tmp_path, responses) -> BridgeService:
+    settings = BridgeSettings(
+        omichub_service_token="service-token",
+        approval_signing_secret="test-signing-secret",
+        omic_task_stall_timeout_seconds=30,
+        audit_log_path=str(tmp_path / "audit.jsonl"),
+        case_store_path=str(tmp_path / "cases.json"),
+        manifest_dir=str(tmp_path / "manifests"),
+    )
+    cases = CaseStore(settings.case_store_path)
+    audit = AuditStore(settings.audit_log_path)
+    service = BridgeService(settings, TaskStateClient(responses), audit, cases)
+    now = datetime.now(UTC)
+    await cases.create(
+        CaseRecord(
+            case_id="watchdog-case",
+            intent="watch queued task",
+            requester_ref="user-1",
+            team_id="bioops-delivery",
+            status="executing",
+            omic_task_ids=["task-1"],
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    return service
+
+
+@pytest.mark.asyncio
+async def test_reconcile_marks_stalled_queued_task_execution_failed(tmp_path) -> None:
+    old = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
+    service = await _make_executing_case_service(
+        tmp_path,
+        [
+            {"id": "task-1", "status": "queued", "created_at": old},
+            {"id": "task-1", "status": "queued", "created_at": old},
+        ],
+    )
+
+    case = await service.reconcile_case("watchdog-case", "bioops-manager")
+    events = await service.get_case_events("watchdog-case", "bioops-manager")
+
+    assert case.status == "execution_failed"
+    assert events.events[-1]["event_type"] == "omic_task.stalled"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_does_not_stall_recently_requeued_task(tmp_path) -> None:
+    old = (datetime.now(UTC) - timedelta(minutes=20)).isoformat()
+    recent = datetime.now(UTC).isoformat()
+    service = await _make_executing_case_service(
+        tmp_path,
+        [{"id": "task-1", "status": "queued", "created_at": old, "updated_at": recent}],
+    )
+
+    case = await service.reconcile_case("watchdog-case", "bioops-manager")
+    events = await service.get_case_events("watchdog-case", "bioops-manager")
+
+    assert case.status == "executing"
+    assert all(event["event_type"] != "omic_task.stalled" for event in events.events)
+
+
+@pytest.mark.asyncio
+async def test_reconcile_failed_task_records_error_excerpt(tmp_path) -> None:
+    error_message = "prefix-" + "x" * 700
+    service = await _make_executing_case_service(
+        tmp_path,
+        [{"id": "task-1", "status": "failed", "error_message": error_message}],
+    )
+
+    case = await service.reconcile_case("watchdog-case", "bioops-manager")
+    events = await service.get_case_events("watchdog-case", "bioops-manager")
+    task_failed = next(event for event in events.events if event["event_type"] == "omic_task.failed")
+    case_failed = events.events[-1]
+
+    assert case.status == "execution_failed"
+    assert task_failed["payload"]["error_excerpt"] == error_message[-500:]
+    assert case_failed["event_type"] == "case.execution_failed"
+    assert case_failed["payload"]["retry_allowed"] is True
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_case_queues_new_submission_version(tmp_path) -> None:
+    service = make_service(tmp_path, ConcurrentGateway())
+    task = TaskSpec(
+        flow_id="rna_seq",
+        name="rna-seq-analysis",
+        sample_sheet=[{"sample": "sample-a", "group": "control"}],
+        comparisons=[{"control": "control", "treatment": "treated"}],
+        execution_mode="cluster",
+    )
+    snapshot = PreflightInputSnapshot(
+        flow_id=task.flow_id,
+        sample_sheet=task.sample_sheet,
+        comparisons=task.comparisons,
+        context_refs=[ContextRef(kind="project", id="project-1")],
+    )
+    now = datetime.now(UTC)
+    await service._cases.create(
+        CaseRecord(
+            case_id="retry-case",
+            project_ref=ContextRef(kind="project", id="project-1"),
+            intent="retry failed RNA-seq",
+            requester_ref="user-1",
+            team_id="bioops-delivery",
+            flow_id="rna_seq",
+            status="execution_failed",
+            proposed_submission=task.model_dump(mode="json"),
+            plan_hash="a" * 64,
+            task_specs=[task.model_dump(mode="json")],
+            preflight_input=snapshot,
+            work_items=[
+                WorkItemRecord(
+                    work_item_id="submit-01",
+                    target="analysis-worker",
+                    objective="Submit analysis",
+                    skill_name="workflow-submit",
+                    context_refs=[ContextRef(kind="project", id="project-1")],
+                    read_only=False,
+                    approval_required=True,
+                    status="completed",
+                    approved_submission=ApprovedSubmission(
+                        approval_id="approval-v1",
+                        expires_at=now + timedelta(hours=1),
+                        idempotency_key="retry-case-submit-v1",
+                        task=task,
+                        input_snapshot_hash=service._snapshot_hash(snapshot),
+                        prepared_at=now,
+                        consumed_at=now,
+                    ),
+                    updated_at=now,
+                )
+            ],
+            omic_task_ids=["task-v1"],
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    approval = await service.issue_approval(
+        ApprovalRequest(case_id="retry-case", action="submit_task", flow_id="rna_seq"),
+        "approval-authority",
+    )
+
+    queued = await service.retry_case_submission(
+        "retry-case",
+        RetryCaseSubmissionRequest(approval_token=approval.token),
+        "bioops-manager",
+    )
+    case = await service._cases.get("retry-case")
+    retry_item = next(item for item in case.work_items if item.work_item_id == "submit-02")
+
+    assert queued.status == "queued"
+    assert case.status == "remediation_pending"
+    assert retry_item.depends_on == ["submit-01"]
+    assert retry_item.approved_submission is not None
+    assert retry_item.approved_submission.idempotency_key == "retry-case-submit-v2"
+
+    async def submit_task(payload):
+        assert payload == task.model_dump()
+        return {"id": "task-v2", "status": "queued"}
+
+    service._client.submit_task = submit_task
+    await service.claim_work_item("retry-case", "submit-02", "analysis-worker")
+    receipt = await service.submit_approved_work_item(
+        "retry-case", "submit-02", "analysis-worker"
+    )
+    executing = await service._cases.get("retry-case")
+
+    assert receipt.omic_task_id == "task-v2"
+    assert executing.status == "executing"
+    assert executing.omic_task_ids == ["task-v1", "task-v2"]
+
+@pytest.mark.asyncio
+async def test_approval_timeout_reconcile_reminds_once_after_24_hours(tmp_path) -> None:
+    service = make_service(tmp_path, ConcurrentGateway())
+    now = datetime.now(UTC)
+    await service._cases.create(
+        CaseRecord(
+            case_id="approval-reminder-case",
+            project_ref=ContextRef(kind="project", id="project-1"),
+            intent="await approval",
+            requester_ref="user-1",
+            team_id="team-reminder",
+            status="approval_pending",
+            created_at=now - timedelta(days=2),
+            updated_at=now - timedelta(hours=25),
+        )
+    )
+
+    first = await service.reconcile_approval_timeouts("bioops-manager", now=now)
+    second = await service.reconcile_approval_timeouts("bioops-manager", now=now)
+    events = await service.get_case_events("approval-reminder-case", "bioops-manager")
+
+    assert first == {"scanned": 1, "reminded": 1, "cancelled": 0}
+    assert second == {"scanned": 1, "reminded": 0, "cancelled": 0}
+    assert [event["event_type"] for event in events.events] == ["approval.reminder"]
+
+
+@pytest.mark.asyncio
+async def test_approval_timeout_reconcile_auto_cancels_after_seven_days(tmp_path) -> None:
+    service = make_service(tmp_path, ConcurrentGateway())
+    now = datetime.now(UTC)
+    await service._cases.create(
+        CaseRecord(
+            case_id="approval-expired-case",
+            project_ref=ContextRef(kind="project", id="project-1"),
+            intent="expired approval",
+            requester_ref="user-1",
+            team_id="team-expired",
+            status="approval_pending",
+            created_at=now - timedelta(days=9),
+            updated_at=now - timedelta(days=8),
+        )
+    )
+
+    result = await service.reconcile_approval_timeouts("bioops-manager", now=now)
+    case = await service.get_case("approval-expired-case", "bioops-manager")
+    events = await service.get_case_events("approval-expired-case", "bioops-manager")
+
+    assert result == {"scanned": 1, "reminded": 0, "cancelled": 1}
+    assert case.status == "cancelled"
+    assert events.events[-1]["event_type"] == "case.cancelled"
+    assert events.events[-1]["payload"]["reason"] == "approval_timeout_7d"
+    assert events.events[-1]["payload"]["automatic"] is True
+
+
+@pytest.mark.asyncio
+async def test_reconcile_advances_received_case_and_assigns_planner_once(tmp_path) -> None:
+    service = make_service(tmp_path, ConcurrentGateway())
+    await create_case(service, "received-residue-case")
+
+    first = await service.reconcile_case("received-residue-case", "bioops-manager")
+    second = await service.reconcile_case("received-residue-case", "bioops-manager")
+    events = await service.get_case_events("received-residue-case", "bioops-manager")
+
+    assert first.status == "planning_running"
+    assert second.status == "planning_running"
+    planning_items = [
+        item for item in second.work_items if item.work_item_id == "plan-01"
+    ]
+    assert len(planning_items) == 1
+    assert planning_items[0].target == "agent-code"
+    assert sum(event["event_type"] == "case.reconciled" for event in events.events) == 1
+
+
+@pytest.mark.asyncio
+async def test_plan_revision_replays_changed_general_item_and_dependents(tmp_path) -> None:
+    service = make_service(tmp_path, ConcurrentGateway())
+    now = datetime.now(UTC)
+    original = {
+        "name": "general-analysis",
+        "parameters": {
+            "work_items": [
+                {
+                    "work_item_id": "clean-01",
+                    "target": "agent-code",
+                    "objective": "Clean the table",
+                    "skill_name": "data-clean",
+                    "depends_on": [],
+                },
+                {
+                    "work_item_id": "plot-01",
+                    "target": "agent-viz",
+                    "objective": "Plot the cleaned table",
+                    "skill_name": "plot",
+                    "depends_on": ["clean-01"],
+                },
+            ]
+        },
+    }
+    original_hash = service._plan_hash(original)
+    await service._cases.create(
+        CaseRecord(
+            case_id="general-revision-case",
+            context_refs=[ContextRef(kind="workspace", id="workspace-1")],
+            intent="revise general plan",
+            requester_ref="user-1",
+            team_id="team-revision",
+            status="execution_failed",
+            proposed_submission=original,
+            plan_hash=original_hash,
+            preflight_input=PreflightInputSnapshot(
+                flow_id="general",
+                sample_sheet=[],
+                context_refs=[ContextRef(kind="workspace", id="workspace-1")],
+            ),
+            work_items=[
+                WorkItemRecord(
+                    work_item_id="clean-01",
+                    target="agent-code",
+                    objective="Clean the table",
+                    skill_name="data-clean",
+                    read_only=False,
+                    execution_mode="workspace_execution",
+                    plan_hash=original_hash,
+                    status="completed",
+                    updated_at=now,
+                ),
+                WorkItemRecord(
+                    work_item_id="plot-01",
+                    target="agent-viz",
+                    objective="Plot the cleaned table",
+                    skill_name="plot",
+                    read_only=False,
+                    execution_mode="workspace_execution",
+                    plan_hash=original_hash,
+                    depends_on=["clean-01"],
+                    status="completed",
+                    updated_at=now,
+                ),
+            ],
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    revised_parameters = {
+        "work_items": [
+            {**original["parameters"]["work_items"][0], "objective": "Clean and normalize the table"},
+            original["parameters"]["work_items"][1],
+        ]
+    }
+
+    response = await service.revise_plan(
+        "general-revision-case",
+        PlanRevisionRequest(
+            expected_plan_hash=original_hash,
+            parameters=revised_parameters,
+            reason="Normalize values before plotting",
+        ),
+        "bioops-manager",
+    )
+    case = await service.get_case("general-revision-case", "bioops-manager")
+
+    assert response.status == "approval_pending"
+    assert response.replay_work_item_ids == ["clean-01", "plot-01"]
+    assert response.plan_hash != original_hash
+    assert [item.status for item in case.work_items] == ["pending", "pending"]
+    assert case.work_items[0].objective == "Clean and normalize the table"
+    assert all(item.plan_hash == response.plan_hash for item in case.work_items)
+
+@pytest.mark.asyncio
+async def test_blocked_quality_gate_assigns_remediation_and_returns_to_approval(tmp_path) -> None:
+    service = make_service(tmp_path, ConcurrentGateway())
+    now = datetime.now(UTC)
+    await service._cases.create(
+        CaseRecord(
+            case_id="quality-remediation-case",
+            project_ref=ContextRef(kind="project", id="project-1"),
+            context_refs=[ContextRef(kind="project", id="project-1")],
+            intent="quality remediation",
+            requester_ref="user-1",
+            team_id="team-quality",
+            flow_id="rna_seq",
+            status="quality_running",
+            omic_task_ids=["task-quality"],
+            work_items=[
+                WorkItemRecord(
+                    work_item_id="quality-01",
+                    target="quality-auditor",
+                    objective="Review quality",
+                    skill_name="quality-gate",
+                    context_refs=[ContextRef(kind="task", id="task-quality")],
+                    status="running",
+                    updated_at=now,
+                )
+            ],
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+    await service.quality_gate(
+        "task-quality",
+        QualityGateRequest(
+            case_id="quality-remediation-case",
+            work_item_id="quality-01",
+            rule_version="quality-v2",
+            decision="blocked",
+            summary="Sample metadata groups do not match the submitted design.",
+            evidence_refs=[ContextRef(kind="task", id="task-quality")],
+            remediation_request={
+                "target": "data-steward",
+                "objective": "Correct sample metadata groups and attach verification evidence.",
+                "recommended_changes": ["Align group labels with the frozen design."],
+            },
+        ),
+        "quality-auditor",
+    )
+    case = await service.get_case("quality-remediation-case", "bioops-manager")
+    remediation = next(item for item in case.work_items if item.skill_name == "remediation-fix")
+
+    assert case.status == "remediation_pending"
+    assert remediation.target == "data-steward"
+    await service.claim_work_item(case.case_id, remediation.work_item_id, "data-steward")
+    await service.update_work_item(
+        case.case_id,
+        remediation.work_item_id,
+        WorkItemUpdateRequest(
+            status="completed",
+            summary="Sample metadata groups corrected and verified.",
+        ),
+        "data-steward",
+    )
+    ready = await service.get_case(case.case_id, "bioops-manager")
+    events = await service.get_case_events(case.case_id, "bioops-manager")
+
+    assert ready.status == "approval_pending"
+    assert any(event["event_type"] == "remediation.requested" for event in events.events)
+    assert any(event["event_type"] == "remediation.completed" for event in events.events)

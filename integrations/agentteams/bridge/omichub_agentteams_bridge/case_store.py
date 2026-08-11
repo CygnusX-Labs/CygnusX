@@ -36,10 +36,10 @@ _ALLOWED_TRANSITIONS: dict[CaseStatus, set[CaseStatus]] = {
     "approval_pending": {"approved", "cancelled"},
     "approved": {"executing", "cancelled"},
     "executing": {"quality_running", "execution_failed", "cancelled"},
-    "execution_failed": {"remediation_pending", "cancelled"},
+    "execution_failed": {"approval_pending", "remediation_pending", "cancelled"},
     "quality_running": {"delivery_ready", "quality_blocked", "remediation_pending", "cancelled"},
-    "quality_blocked": {"remediation_pending", "cancelled"},
-    "remediation_pending": {"preflight_running", "executing", "quality_running", "cancelled"},
+    "quality_blocked": {"approval_pending", "remediation_pending", "cancelled"},
+    "remediation_pending": {"approval_pending", "preflight_running", "executing", "quality_running", "cancelled"},
     "delivery_ready": {"closed", "remediation_pending", "cancelled"},
     "closed": set(),
     "cancelled": set(),
@@ -246,6 +246,56 @@ class CaseStore:
                     "proposed_submission": proposed_submission,
                     "plan_hash": plan_hash,
                     "preflight_input": snapshot,
+                    "updated_at": datetime.now(UTC),
+                }
+            )
+            self._cases[case_id] = updated
+            await self._persist()
+            return updated
+
+    async def revise_plan(
+        self,
+        case_id: str,
+        proposed_submission: dict[str, Any],
+        plan_hash: str,
+        replay_work_item_ids: set[str],
+    ) -> CaseRecord:
+        async with self._lock:
+            case = self._cases.get(case_id)
+            if case is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+            planned_items = {
+                str(item.get("work_item_id")): item
+                for item in (proposed_submission.get("parameters") or {}).get("work_items", [])
+                if isinstance(item, dict) and item.get("work_item_id")
+            }
+            revised_items = []
+            for item in case.work_items:
+                if item.execution_mode != "workspace_execution":
+                    revised_items.append(item)
+                    continue
+                updates: dict[str, Any] = {"plan_hash": plan_hash, "updated_at": datetime.now(UTC)}
+                planned = planned_items.get(item.work_item_id)
+                if planned is not None:
+                    updates.update(
+                        target=planned["target"],
+                        objective=str(planned["objective"]),
+                        skill_name=str(planned["skill_name"]),
+                        depends_on=[str(value) for value in planned.get("depends_on") or []],
+                    )
+                if item.work_item_id in replay_work_item_ids:
+                    updates.update(
+                        status="pending",
+                        output_refs=[],
+                        summary=None,
+                        trace_id=None,
+                    )
+                revised_items.append(item.model_copy(update=updates))
+            updated = case.model_copy(
+                update={
+                    "proposed_submission": proposed_submission,
+                    "plan_hash": plan_hash,
+                    "work_items": revised_items,
                     "updated_at": datetime.now(UTC),
                 }
             )

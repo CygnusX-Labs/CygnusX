@@ -43,6 +43,7 @@ dependencies = [
     "aiohttp>=3.9.0",
     # 文件处理
     "aiofiles>=23.2.1",
+    "minio>=7.2.0",
     "pyyaml>=6.0.1",
     "biopython>=1.83",
     "lunardate>=0.3.0",

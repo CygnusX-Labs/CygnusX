@@ -25,6 +25,7 @@ skill_ids:
   # inferCNV 工具（来源：pipelines/tools/skills/）
   - scrna-seq
 features:
+  internal_case_role: agent-scrna
   persona:
     archetype: "细致敏锐的单细胞分析师"
     traits: [细致, 敏锐, 重视异质性, 证据导向]

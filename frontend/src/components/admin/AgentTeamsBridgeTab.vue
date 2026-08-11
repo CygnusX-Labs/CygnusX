@@ -14,6 +14,7 @@ import {
   NModal,
   NRadioButton,
   NRadioGroup,
+  NProgress,
   NSelect,
   NSpin,
   NTag,
@@ -68,6 +69,13 @@ const presetSaving = ref(false)
 const presetConfirmVisible = ref(false)
 const health = ref<AgentTeamsBridgeHealth | null>(null)
 const degradationCounts = ref<Record<string, number>>({ fanout: 0, consult: 0, case: 0, dag: 0 })
+const consultationQuality = ref({
+  total: 0,
+  parse_success_rate: 0,
+  evidence_hit_rate: 0,
+  qc_consistency_rate: 0,
+  average_tool_calls: 0,
+})
 const degradationLocale = ref<'zh-CN' | 'en'>('zh-CN')
 const degradationTemplateZh = ref('')
 const degradationTemplateEn = ref('')
@@ -107,7 +115,10 @@ async function load() {
         collaboration_degradation_template_en?: string
       }>('/platform/config'),
       agentTeamsBridgeAdminApi.health(),
-      apiClient.get<{ degradation_counts?: Record<string, number> }>('/admin/platform-config/collaboration-observability'),
+      apiClient.get<{
+        degradation_counts?: Record<string, number>
+        consultation_quality?: typeof consultationQuality.value
+      }>('/admin/platform-config/collaboration-observability'),
       agentTeamsBridgeAdminApi.resources(),
     ])
     preset.value = platform.data.collaboration_preset || 'custom'
@@ -117,6 +128,10 @@ async function load() {
     health.value = healthResponse
     resources.value = resourceSnapshot
     degradationCounts.value = { ...degradationCounts.value, ...(observability.data.degradation_counts || {}) }
+    consultationQuality.value = {
+      ...consultationQuality.value,
+      ...(observability.data.consultation_quality || {}),
+    }
   } catch (cause: any) {
     message.error(cause?.response?.data?.detail || '无法读取 AgentTeams Bridge 配置。')
   } finally {
@@ -422,6 +437,15 @@ onMounted(() => { void load() })
 
           <aside class="bridge-side">
             <NCard size="small" class="bridge-card" :segmented="{ content: true }">
+              <template #header><span class="card-title">近 7 天会诊质量</span></template>
+              <div class="quality-metrics">
+                <div><span>信封解析成功率</span><NProgress type="line" :percentage="Math.round(consultationQuality.parse_success_rate * 100)" :height="8" /></div>
+                <div><span>证据引用命中率</span><NProgress type="line" :percentage="Math.round(consultationQuality.evidence_hit_rate * 100)" :height="8" /></div>
+                <div><span>QC 与硬规则一致性</span><NProgress type="line" :percentage="Math.round(consultationQuality.qc_consistency_rate * 100)" :height="8" /></div>
+              </div>
+              <p class="resource-note">{{ consultationQuality.total }} 次会诊 · 平均 {{ consultationQuality.average_tool_calls.toFixed(1) }} 次工具调用</p>
+            </NCard>
+            <NCard size="small" class="bridge-card" :segmented="{ content: true }">
               <template #header><span class="card-title">协作能力档位</span></template>
               <p class="preset-hint">{{ presetDescription }}</p>
               <NRadioGroup v-model:value="preset" name="collaboration-preset" class="preset-options">
@@ -615,6 +639,9 @@ onMounted(() => { void load() })
 .preset-options { display: flex; flex-wrap: wrap; }
 .preset-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
 .degradation-counts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--neutral-border); }
+.quality-metrics { display: grid; gap: 12px; }
+.quality-metrics > div { display: grid; gap: 6px; }
+.quality-metrics span { color: var(--neutral-text-2); font-size: 12px; }
 .deg-label { font-size: 12px; color: var(--neutral-text-3); }
 .deg-chip { font-size: 12px; line-height: 18px; color: var(--neutral-text-2); background: var(--neutral-hover); border-radius: 9999px; padding: 1px 10px; }
 .deg-chip b { font-weight: 600; color: var(--neutral-text-1); }

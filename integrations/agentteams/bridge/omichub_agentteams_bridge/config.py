@@ -5,16 +5,6 @@ from __future__ import annotations
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ROLE_AGENT_MAP = {
-    "data-steward": "agent-data",
-    "agent-rnaseq": "agent-rnaseq",
-    "agent-scrna": "agent-scrna",
-    "agent-code": "agent-code",
-    "agent-viz": "agent-viz",
-    "quality-auditor": "agent-qc",
-    "delivery-reporter": "agent-delivery",
-}
-
 
 class BridgeSettings(BaseSettings):
     """Only Bridge-owned configuration is accepted here; no database credentials."""
@@ -25,9 +15,15 @@ class BridgeSettings(BaseSettings):
     omichub_base_url: str = "http://omichub-api:8000"
     omichub_service_token: str = ""
     omichub_api_key: str = ""
+    omichub_integration_token: str = ""
     gateway_url: str = ""
     gateway_manager_token: str = ""
     role_agent_map: str = ""
+    discovered_flow_agent_map: dict[str, str] = Field(default_factory=dict, exclude=True)
+    discovered_role_agent_map: dict[str, str] = Field(default_factory=dict, exclude=True)
+    discovered_worker_profiles: dict[str, dict[str, str]] = Field(
+        default_factory=dict, exclude=True
+    )
     approval_signing_secret: str = "change-me-before-deployment"
     identities: str = (
         "approval-authority:approval-secret,bioops-manager:manager-secret,data-steward:steward-secret,"
@@ -41,6 +37,7 @@ class BridgeSettings(BaseSettings):
     max_response_bytes: int = Field(default=1_048_576, ge=1_024, le=16_777_216)
     max_evidence_bytes: int = 16_384
     worker_heartbeat_ttl_seconds: int = Field(default=180, ge=30, le=3_600)
+    omic_task_stall_timeout_seconds: int = Field(default=900, ge=30, le=86_400)
     state_store_url: str = ""
     state_store_key_prefix: str = "omichub:agentteams"
     audit_log_path: str = "/tmp/omichub-agentteams-bridge-audit.jsonl"
@@ -56,8 +53,8 @@ class BridgeSettings(BaseSettings):
             "identities": (
                 "approval-authority:approval-secret,bioops-manager:manager-secret,data-steward:steward-secret,"
                 "workflow-operator:operator-secret,quality-auditor:auditor-secret,"
-            "delivery-reporter:reporter-secret,agent-code:code-secret,agent-viz:viz-secret,"
-            "agent-scrna:scrna-secret,agent-rnaseq:rnaseq-secret,analysis-worker:analysis-secret"
+                "delivery-reporter:reporter-secret,agent-code:code-secret,agent-viz:viz-secret,"
+                "agent-scrna:scrna-secret,agent-rnaseq:rnaseq-secret,analysis-worker:analysis-secret"
             ),
         }
         configured_upstream_credentials = [
@@ -78,8 +75,6 @@ class BridgeSettings(BaseSettings):
             or any(self._is_placeholder(secret) for secret in identity_secrets.values())
         ):
             raise ValueError("生产环境必须替换 Bridge 身份凭证")
-        if not self.allowed_flows():
-            raise ValueError("生产环境必须配置允许的流程白名单")
         if bool(self.gateway_url) != bool(self.gateway_manager_token):
             raise ValueError("生产环境 Gateway URL 与 Manager token 必须同时配置")
         if self.gateway_url and self._is_placeholder(self.gateway_manager_token):
@@ -111,8 +106,6 @@ class BridgeSettings(BaseSettings):
         return {flow_id.strip() for flow_id in self.allowed_flow_ids.split(",") if flow_id.strip()}
 
     def role_agent_mapping(self) -> dict[str, str]:
-        if not self.role_agent_map.strip():
-            return dict(ROLE_AGENT_MAP)
         configured = {
             role.strip(): agent_id.strip()
             for entry in self.role_agent_map.split(",")
@@ -120,4 +113,36 @@ class BridgeSettings(BaseSettings):
             for role, agent_id in [entry.split(":", maxsplit=1)]
             if role.strip() and agent_id.strip()
         }
-        return {**ROLE_AGENT_MAP, **configured}
+        return {**self.discovered_role_agent_map, **configured}
+
+    def apply_capability_snapshot(self, payload: dict) -> None:
+        flows = payload.get("allowed_flow_ids")
+        flow_agent_map = payload.get("flow_agent_map")
+        role_map = payload.get("role_agent_map")
+        worker_profiles = payload.get("worker_profiles")
+        if isinstance(flows, list):
+            self.allowed_flow_ids = ",".join(str(item) for item in flows if str(item).strip())
+        if isinstance(flow_agent_map, dict):
+            self.discovered_flow_agent_map = {
+                str(flow_id): str(agent_id)
+                for flow_id, agent_id in flow_agent_map.items()
+                if str(flow_id).strip() and str(agent_id).strip()
+            }
+        if isinstance(role_map, dict):
+            self.discovered_role_agent_map = {
+                str(role): str(agent_id)
+                for role, agent_id in role_map.items()
+                if str(role).strip() and str(agent_id).strip()
+            }
+        if isinstance(worker_profiles, dict):
+            self.discovered_worker_profiles = {
+                str(identity): {
+                    "identity": str(profile.get("identity") or identity),
+                    "agent_id": str(profile.get("agent_id") or ""),
+                    "capability": str(profile.get("capability") or ""),
+                }
+                for identity, profile in worker_profiles.items()
+                if isinstance(profile, dict)
+                and str(profile.get("agent_id") or "").strip()
+                and str(profile.get("capability") or "").strip()
+            }

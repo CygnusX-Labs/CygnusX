@@ -251,6 +251,54 @@ services:
       timeout: 5s
       retries: 5
 
+  # ===== MinIO 对象存储（AgentTeams agent 间共享产物 / case 级数据区） =====
+  # web 经 data_net 访问；omichub_net 供跨栈（agentteams bridge/worker）经服务名 minio 直连
+  minio:
+    image: minio/minio:latest
+    container_name: omichub-minio
+    restart: unless-stopped
+    logging: *default-logging
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?missing MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?missing MINIO_ROOT_PASSWORD in .env}
+    ports:
+      - "${OMICHUB_MINIO_BIND_HOST:-127.0.0.1}:${OMICHUB_MINIO_PORT:-9000}:9000"
+      - "${OMICHUB_MINIO_BIND_HOST:-127.0.0.1}:${OMICHUB_MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      # bind mount：数据固化到 /data/omichub/omichub_data/_minio，便于跨平台迁移（与 _redis 同款）
+      - ${OMICHUB_DATA_ROOT:-/data/omichub}/omichub_data/_minio:/data
+    networks:
+      - data_net
+      - omichub_net          # 跨栈：agentteams 栈加入 omichub_net 后经 http://minio:9000 访问
+    healthcheck:
+      test: ["CMD-SHELL", "mc alias set local http://127.0.0.1:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD >/dev/null 2>&1 && mc ready local"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  # 一次性初始化：建 AgentTeams 共享 bucket（幂等，mb --ignore-existing）
+  minio-init:
+    image: minio/mc:latest
+    container_name: omichub-minio-init
+    logging: *default-logging
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        mc alias set omichub http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        && mc mb --ignore-existing "omichub/$${MINIO_AGENTTEAMS_BUCKET}"
+        && mc anonymous set none "omichub/$${MINIO_AGENTTEAMS_BUCKET}"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_AGENTTEAMS_BUCKET: ${MINIO_AGENTTEAMS_BUCKET:-agentteams-evidence}
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - data_net
+    restart: "no"
+
   # ===== RocketMQ（可选；docker compose --profile rocketmq up -d） =====
   # Celery 仍可同时运行。通过 TASK_QUEUE_BACKEND=hybrid 与
   # ROCKETMQ_TASK_ROUTES 逐项迁移任务，不要把同一任务路由到两边。

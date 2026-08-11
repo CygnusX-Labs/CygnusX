@@ -42,3 +42,7 @@ edges: [[quantify, differential]]
 delivery:
   quality_gate: true
   outputs: [delivery_manifest, runbook]
+  thresholds:
+    mapping_rate: 0.70
+    q30: 0.80
+    duplicate_rate: 0.50

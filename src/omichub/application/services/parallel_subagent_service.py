@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import time
@@ -198,7 +199,11 @@ class ParallelSubAgentService:
         agent_service = AgentService(db)
         prepared: list[tuple[dict[str, Any], Any, list[dict[str, Any]]]] = []
         for index, item in enumerate(normalized, start=1):
-            ctx = await agent_service.assemble_context(item["agent_id"], user_id=user_id)
+            assemble = agent_service.assemble_context
+            if "user_id" in inspect.signature(assemble).parameters:
+                ctx = await assemble(item["agent_id"], user_id=user_id)
+            else:
+                ctx = await assemble(item["agent_id"])
             if ctx is None or ctx.model_config is None:
                 return self._error(
                     f"子任务 #{index} 的目标 Agent {item['agent_id']} 不存在或未绑定可用模型"
@@ -399,7 +404,11 @@ class ParallelSubAgentService:
             if (
                 safe_only
                 and name not in {"ask_user", "knowledge_search", "web_search", *SKILL_TOOL_NAMES}
-                and (schema is None or not schema.annotations.read_only_hint or schema.requires_confirm)
+                and (
+                    schema is None
+                    or not schema.annotations.read_only_hint
+                    or schema.requires_confirm
+                )
             ):
                 continue
             kept.append(tool)
@@ -532,6 +541,7 @@ class ParallelSubAgentService:
             "thought": outcome.get("thought"),
             "error": None if effective_status == "awaiting_input" else outcome.get("error"),
             "packet": packet,
+            "verified_evidence_refs": outcome.get("verified_evidence_refs") or [],
             "workdir": str(workdir),
             "elapsed_s": round(time.monotonic() - started, 1),
         }
@@ -567,6 +577,8 @@ class ParallelSubAgentService:
         last_text = ""
         answer_parts: list[str] = []
         reasoning_text = ""
+        verified_evidence_refs: list[str] = []
+        successful_tool_calls = 0
         for _round in range(max(1, max_rounds)):
             await self._check_control(control_check)
             text = ""
@@ -631,6 +643,8 @@ class ParallelSubAgentService:
                     "answer": final_answer[:_ANSWER_CAP_CHARS],
                     "thought": reasoning_text.strip() or None,
                     "error": None,
+                    "verified_evidence_refs": verified_evidence_refs,
+                    "tool_call_count": successful_tool_calls,
                 }
 
             messages.append(
@@ -705,6 +719,10 @@ class ParallelSubAgentService:
                     ctx=ctx,
                     workspace_access=workspace_access,
                 )
+                if tool_envelope.get("success") is True:
+                    successful_tool_calls += 1
+                    verified_evidence_refs.extend(self._tool_evidence_refs(tool_name, args))
+                    verified_evidence_refs = list(dict.fromkeys(verified_evidence_refs))
                 messages.append(
                     {
                         "role": "tool",
@@ -720,7 +738,37 @@ class ParallelSubAgentService:
             "answer": "\n\n".join(answer_parts).strip()[:_ANSWER_CAP_CHARS] or None,
             "thought": reasoning_text.strip() or None,
             "error": f"子循环超过 {max_rounds} 轮工具上限，返回阶段性结论",
+            "verified_evidence_refs": verified_evidence_refs,
+            "tool_call_count": successful_tool_calls,
         }
+
+    @staticmethod
+    def _tool_evidence_refs(tool_name: str, args: dict[str, Any]) -> list[str]:
+        if tool_name == "task_result_summary":
+            task_id = str(args.get("task_id") or "").strip()
+            return [f"task:{task_id}"] if task_id else []
+        if tool_name == "task_file_preview":
+            task_id = str(args.get("task_id") or "").strip()
+            path = str(args.get("path") or "").strip()
+            return [
+                ref
+                for ref in (f"task:{task_id}" if task_id else "", f"file:{path}" if path else "")
+                if ref
+            ]
+        if tool_name == "workspace_file_preview":
+            path = str(args.get("path") or "").strip()
+            return [f"file:{path}"] if path else []
+        if tool_name == "task_compare_metrics":
+            return [
+                f"task:{task_id}"
+                for value in (args.get("task_ids") or [])
+                if (task_id := str(value).strip())
+            ]
+        if tool_name == "rule_threshold_lookup":
+            flow_id = str(args.get("flow_id") or "").strip()
+            metric = str(args.get("metric_name") or "").strip()
+            return [f"rule:{flow_id}:{metric}"] if flow_id and metric else []
+        return []
 
     @staticmethod
     async def _check_control(
@@ -880,6 +928,7 @@ class ParallelSubAgentService:
             "thought": item.get("thought"),
             "elapsed_s": item["elapsed_s"],
             "packet": item.get("packet") or {},
+            "verified_evidence_refs": item.get("verified_evidence_refs") or [],
         }
         if item.get("error"):
             view["error"] = item["error"]

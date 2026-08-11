@@ -46,6 +46,52 @@ def test_unknown_version_is_rejected(tmp_path: Path) -> None:
     assert any("bad-version.yaml" in error for error in loader.errors)
 
 
+def test_authoritative_assignment_anchor_defaults_are_backward_compatible() -> None:
+    payload = _pack()
+    payload["assignments"] = {
+        "rules": [
+            {
+                "id": "required-stage",
+                "when": "planning_or_analysis",
+                "agent_match": ["agent-code"],
+                "authoritative": True,
+                "task_id": "required-stage",
+                "task": "完成必需阶段",
+            }
+        ]
+    }
+
+    rule = DomainPack.model_validate(payload).assignments.rules[0]
+
+    assert rule.required is True
+    assert rule.allow_split is False
+    assert rule.allow_reorder is False
+
+
+@pytest.mark.parametrize("field", ["required", "allow_split", "allow_reorder"])
+def test_invalid_authoritative_anchor_flag_is_reported(tmp_path: Path, field: str) -> None:
+    payload = _pack()
+    payload["assignments"] = {
+        "rules": [
+            {
+                "id": "required-stage",
+                "when": "planning_or_analysis",
+                "agent_match": ["agent-code"],
+                "authoritative": True,
+                field: "not-a-boolean",
+                "task_id": "required-stage",
+                "task": "完成必需阶段",
+            }
+        ]
+    }
+    _write(tmp_path / "bad-anchor.yaml", payload)
+
+    loader = DomainPackLoader(tmp_path)
+
+    assert loader.packs == {}
+    assert any(field in error for error in loader.errors)
+
+
 def test_bad_yaml_does_not_block_other_domain_packs(tmp_path: Path) -> None:
     (tmp_path / "01-bad.yaml").write_text("domain: [broken", encoding="utf-8")
     _write(tmp_path / "02-good.yaml", _pack("omics"))

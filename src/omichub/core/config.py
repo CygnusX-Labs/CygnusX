@@ -82,6 +82,13 @@ class Settings(BaseSettings):
     # ===== 文件存储 =====
     storage_type: str = "local"
     storage_path: str = "/data/omichub"
+    minio_endpoint: str = "http://minio:9000"
+    minio_access_key: str = ""
+    minio_secret_key: str = ""
+    minio_agentteams_bucket: str = "agentteams-evidence"
+    minio_presign_expire_seconds: int = 3600
+    agentteams_artifact_fetch_max_mb: int = 512
+    agentteams_evidence_retention_days: int = 30
     # ===== 多智能体编排（MAS，默认关闭，待灰度启用）=====
     mas_enabled: bool = False
     mas_workspace_root: str = "/data/omichub"
@@ -129,6 +136,8 @@ class Settings(BaseSettings):
     mem0_settle_every_n_messages: int = 6  # 每累计 N 条消息异步入库一次长期记忆
     multi_expert_consultation_enabled: bool = False
     multi_expert_consultation_max_experts: int = 3
+    overdrive_authoritative_mode: Literal["constraint", "override", "off"] = "constraint"
+    overdrive_plan_repair_enabled: bool = True
     # 统一协作意图路由：关闭时保持既有 Router 行为，用于灰度与一键回退。
     unified_intent_router_enabled: bool = False
     # ===== 对话内子 Agent 并行 fan-out（默认关闭，按 Agent 白名单灰度）=====
@@ -137,7 +146,9 @@ class Settings(BaseSettings):
     agentteams_chat_entry_enabled: bool = False
     agentteams_element_url: str = ""
     agentteams_chat_flow_whitelist: str = "rna_seq,atac_seq,scrna_seq"
-    agentteams_case_watch_interval_seconds: int = 15
+    agentteams_case_watch_interval_seconds: int = 60
+    agentteams_case_event_stream_interval_seconds: int = 5
+    agentteams_case_event_stream_seconds: int = 55
     agentteams_integration_token: str = ""
     subagent_max_parallel: int = 4  # 单次 fan-out 最大子任务数
     subagent_max_concurrent: int = 3  # 实际并发信号量（给主链路 LLM 调用留余量）
@@ -287,6 +298,7 @@ class Settings(BaseSettings):
     agentteams_bridge_approval_token: str = ""
     agentteams_bridge_workflow_operator_token: str = ""
     agentteams_bridge_timeout_seconds: float = 10.0
+    agentteams_stale_task_seconds: int = 600
 
     # ===== Matrix Gateway（OmicHub 仅持有 Gateway 服务凭证，绝不保存 Matrix 凭证） =====
     agentteams_gateway_enabled: bool = False

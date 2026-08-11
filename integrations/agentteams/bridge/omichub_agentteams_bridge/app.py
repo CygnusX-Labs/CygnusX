@@ -16,21 +16,23 @@ from .client import GatewayClient, OmicHubClient
 from .config import BridgeSettings
 from .models import (
     ApprovalRequest,
-    CaseCancelRequest,
     CancelTaskRequest,
+    CaseCancelRequest,
     CaseCloseRequest,
     CaseCreateRequest,
     CaseStateUpdate,
     CaseStatus,
     EvidenceRequest,
     ExecuteGeneralPlanRequest,
+    PlanRevisionRequest,
     PreflightRequest,
     QualityGateRequest,
     QueueApprovedSubmissionRequest,
+    ReadOnlyExecutionRequest,
+    RetryCaseSubmissionRequest,
     SubmitTaskRequest,
     WorkItemCreateRequest,
     WorkItemHeartbeatRequest,
-    ReadOnlyExecutionRequest,
     WorkItemUpdateRequest,
 )
 from .security import require_identity, require_role
@@ -82,6 +84,8 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        if runtime_settings.omichub_integration_token:
+            await service.refresh_capabilities()
         yield
         await runtime_client.aclose()
         if runtime_gateway_client is not None:
@@ -132,6 +136,15 @@ def create_app(
             identity, "bioops-manager", "data-steward", "workflow-operator", "quality-auditor"
         )
         return await service.list_flows()
+
+    @app.get("/v1/capabilities", tags=["Flows"])
+    async def capabilities(
+        identity: Annotated[str, Depends(authenticate_identity)],
+        service: Annotated[BridgeService, Depends(get_service)],
+        reload: bool = False,
+    ) -> dict:
+        require_role(identity, "bioops-manager", *service.worker_identities())
+        return await service.capabilities(reload=reload)
 
     @app.post("/v1/cases", status_code=status.HTTP_201_CREATED, tags=["Cases"])
     async def create_case(
@@ -236,6 +249,36 @@ def create_app(
     ) -> dict:
         require_role(identity, "bioops-manager")
         return (await service.reconcile_case(case_id, identity)).model_dump(mode="json")
+
+    @app.post("/v1/cases/{case_id}/plan/revise", tags=["Cases"])
+    async def revise_case_plan(
+        case_id: str,
+        payload: PlanRevisionRequest,
+        identity: Annotated[str, Depends(authenticate_identity)],
+        service: Annotated[BridgeService, Depends(get_service)],
+    ) -> dict:
+        require_role(identity, "bioops-manager")
+        return (await service.revise_plan(case_id, payload, identity)).model_dump(mode="json")
+
+    @app.post("/v1/maintenance/approval-timeouts", tags=["Maintenance"])
+    async def reconcile_approval_timeouts(
+        identity: Annotated[str, Depends(authenticate_identity)],
+        service: Annotated[BridgeService, Depends(get_service)],
+    ) -> dict[str, int]:
+        require_role(identity, "bioops-manager")
+        return await service.reconcile_approval_timeouts(identity)
+
+    @app.post("/v1/cases/{case_id}/retry", tags=["Cases"])
+    async def retry_case_submission(
+        case_id: str,
+        payload: RetryCaseSubmissionRequest,
+        identity: Annotated[str, Depends(authenticate_identity)],
+        service: Annotated[BridgeService, Depends(get_service)],
+    ) -> dict:
+        require_role(identity, "bioops-manager")
+        return (
+            await service.retry_case_submission(case_id, payload, identity)
+        ).model_dump(mode="json")
 
     @app.post("/v1/cases/{case_id}/work-items", status_code=status.HTTP_201_CREATED, tags=["Cases"])
     async def assign_work_item(

@@ -29,6 +29,11 @@ services:
     command: ["uvicorn", "omichub_agentteams_bridge.app:app", "--host", "0.0.0.0", "--port", "8080"]
     env_file:
       - ${BRIDGE_ENV_FILE:-./bridge.env}
+    environment:
+      AGENTTEAMS_MINIO_ENDPOINT: http://minio:9000
+      AGENTTEAMS_MINIO_BUCKET: ${MINIO_AGENTTEAMS_BUCKET:-agentteams-evidence}
+      AGENTTEAMS_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?missing MINIO_ROOT_USER}
+      AGENTTEAMS_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?missing MINIO_ROOT_PASSWORD}
     ports:
       - "${AGENTTEAMS_BRIDGE_BIND_HOST:-127.0.0.1}:${AGENTTEAMS_BRIDGE_PORT:-8088}:8080"
     volumes:
@@ -36,7 +41,7 @@ services:
     depends_on:
       omichub-agentteams-state:
         condition: service_healthy
-    networks: [agentteams_control, agentteams_bridge_state, omichub_bridge_gateway]
+    networks: [agentteams_control, agentteams_bridge_state, omichub_bridge_gateway, omichub_net]
     read_only: true
     tmpfs: [/tmp]
     security_opt: [no-new-privileges:true]
@@ -276,6 +281,9 @@ networks:
     internal: true
   omichub_bridge_gateway:
     name: ${OMICHUB_BRIDGE_GATEWAY_NETWORK:-omichub_bridge_gateway}
+    external: true
+  omichub_net:
+    name: omichub_net
     external: true
 
 volumes:

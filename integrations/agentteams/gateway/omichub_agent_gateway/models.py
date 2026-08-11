@@ -30,7 +30,9 @@ class ConsultationRequest(BaseModel):
     requested_tools: list[str] = Field(default_factory=list, max_length=20)
     requester_ref: str = Field(min_length=1, max_length=256)
     work_item_id: str | None = Field(default=None, min_length=1, max_length=128)
-    execution_mode: Literal["readonly_consultation", "workspace_execution"] = "readonly_consultation"
+    execution_mode: Literal["readonly_consultation", "workspace_execution"] = (
+        "readonly_consultation"
+    )
 
 
 class ConsultationError(BaseModel):
@@ -55,6 +57,7 @@ class ScientificInterpretationResponse(BaseModel):
     error: ConsultationError | None = None
     proposed_submission: dict[str, Any] | None = None
     artifacts: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
+    hard_gate: dict[str, Any] | None = None
 
 
 class UpstreamConsultationResponse(BaseModel):
@@ -65,6 +68,7 @@ class UpstreamConsultationResponse(BaseModel):
     token_usage: int = 0
     proposed_submission: dict[str, Any] | None = None
     artifacts: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
+    hard_gate: dict[str, Any] | None = None
 
 
 class RoomCreateRequest(BaseModel):

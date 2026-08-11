@@ -110,7 +110,7 @@
 
 **验证**：构造必败任务 → 聊天内可见失败原因 + 重试按钮；重试后幂等键升版。
 
-### P0-G 通用化基础：动态流程/角色/Agent 发现（R6）
+### P0-G ✅ 通用化基础：动态流程/角色/Agent 发现（R6，2026-08-11 已完成）
 
 **设计**：FlowRegistry 描述"有什么流程"，Agent 能力目录描述"谁有能力"，AgentTeams 运行时只负责"按定义路由"。
 
@@ -304,8 +304,8 @@ stages:
 
 ### 6.6 运行时通用化
 
-⬜ 新增/停用 Agent 或 flow 无需重启运行时可识别。  
-⬜ `ROLE_AGENT_MAP` / `ALLOWED_CONSULTATION_AGENTS` / `_AGENT_PROFILES` 三处硬编码消除。
+✅ 新增/停用 Agent 或 flow 无需重启运行时可识别。（2026-08-11）
+✅ `ROLE_AGENT_MAP` / `ALLOWED_CONSULTATION_AGENTS` / `_AGENT_PROFILES` 三处硬编码消除。（2026-08-11）
 
 ---
 

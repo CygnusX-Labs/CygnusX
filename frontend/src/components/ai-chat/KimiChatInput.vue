@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NIcon, NTooltip, NPopover, NDropdown, NInput, useDialog, useMessage, NTag } from 'naive-ui'
+import { NButton, NForm, NFormItem, NIcon, NTooltip, NPopover, NDropdown, NInput, NModal, useDialog, useMessage, NTag } from 'naive-ui'
 import {
   ArrowUpOutline,
   AttachOutline,
@@ -54,6 +54,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useModulesStore } from '@/stores/modules'
 import { useGoalRuntimeStore } from '@/stores/goalRuntime'
 import apiClient from '@/api/client'
+import { agentTeamsApi } from '@/api/agentTeams'
 import type { DataFile } from '@/types'
 import type { AgentTemplate, SkillItem } from '@/types/agent'
 import type { FileAttachment, MentionDirectory, MentionItem } from './types'
@@ -177,9 +178,59 @@ function focus() {
 defineExpose({ focus })
 
 // 「更多」菜单：低频长文字操作收纳于此（fontend.md §36.3）
-const moreMenuOptions = [{ label: '发送给 AI 以创建协作 Case', key: 'agentteams-case' }]
+const moreMenuOptions = [{ label: '创建协作 Case', key: 'agentteams-case' }]
 function handleMoreSelect(key: string) {
-  if (key === 'agentteams-case') insertAgentTeamsCaseTemplate()
+  if (key === 'agentteams-case') openAgentTeamsCaseModal()
+}
+const agentTeamsCaseVisible = ref(false)
+const agentTeamsCaseSubmitting = ref(false)
+const agentTeamsCaseForm = ref({ objective: '', project_id: '', flow_id: '' })
+
+function openAgentTeamsCaseModal(detail?: { summary?: string; consultationId?: string }) {
+  agentTeamsCaseForm.value = {
+    objective: detail?.summary || localValue.value.trim(),
+    project_id: '',
+    flow_id: '',
+  }
+  pendingConsultation.value = detail || null
+  agentTeamsCaseVisible.value = true
+}
+
+const pendingConsultation = ref<{ summary?: string; consultationId?: string } | null>(null)
+
+async function submitAgentTeamsCase() {
+  const sessionId = agentHub.currentSessionId
+  const form = agentTeamsCaseForm.value
+  if (!sessionId || sessionId.startsWith('sess-')) {
+    message.warning('请等待会话初始化完成后再创建协作 Case')
+    return
+  }
+  if (!form.objective.trim() || !form.project_id.trim() || !form.flow_id.trim()) {
+    message.warning('请完整填写交付目标、项目 ID 和流程 ID')
+    return
+  }
+  agentTeamsCaseSubmitting.value = true
+  try {
+    const created = await agentTeamsApi.createCase({
+      session_id: sessionId,
+      intent: form.objective.trim(),
+      project_id: form.project_id.trim(),
+      flow_id: form.flow_id.trim(),
+      origin_consultation_id: pendingConsultation.value?.consultationId,
+      consultation_summary: pendingConsultation.value?.summary,
+    })
+    agentTeamsCaseVisible.value = false
+    message.success(`协作 Case 已创建：${created.case_id}`)
+  } catch (cause: any) {
+    message.error(cause?.response?.data?.detail || '协作 Case 创建失败')
+  } finally {
+    agentTeamsCaseSubmitting.value = false
+  }
+}
+
+function handleAgentTeamsCreateEvent(event: Event) {
+  const detail = (event as CustomEvent<{ summary?: string; consultationId?: string }>).detail
+  openAgentTeamsCaseModal(detail)
 }
 
 // ===== @ 引用状态 =====
@@ -868,14 +919,6 @@ function handleWorkspaceReference() {
   })
 }
 
-function insertAgentTeamsCaseTemplate() {
-  const template = '请根据以下信息创建协作 Case；如信息不足请先向我澄清，不会立即创建：\n- 交付目标：\n- 项目 ID：\n- 流程 ID（通用分析可留空）：\n- 需要的审批/验收：\n'
-  localValue.value = localValue.value.trim() ? `${localValue.value}\n\n${template}` : template
-  nextTick(() => {
-    getTextareaElement()?.focus()
-  })
-}
-
 function handleClearConfirm() {
   localValue.value = ''
   attachments.value = []
@@ -890,11 +933,13 @@ onMounted(() => {
   syncMcpSelection()
   refreshGoalStatus()
   document.addEventListener('pointerdown', handleDocumentPointerDown)
+  window.addEventListener('omichub:agentteams-create', handleAgentTeamsCreateEvent)
 })
 
 onUnmounted(() => {
   if (blurTimer) clearTimeout(blurTimer)
   document.removeEventListener('pointerdown', handleDocumentPointerDown)
+  window.removeEventListener('omichub:agentteams-create', handleAgentTeamsCreateEvent)
   if (goalSessionId.value) goalRuntime.disposeSession(goalSessionId.value)
 })
 
@@ -1282,6 +1327,19 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
       <span class="paused-hint" role="status">生成已暂停。</span>
     </p>
   </div>
+  <NModal v-model:show="agentTeamsCaseVisible" preset="card" title="创建协作 Case" :style="{ width: 'min(92vw, 560px)' }" :mask-closable="!agentTeamsCaseSubmitting">
+    <NForm label-placement="top" @submit.prevent="submitAgentTeamsCase">
+      <NFormItem label="交付目标" required>
+        <NInput v-model:value="agentTeamsCaseForm.objective" type="textarea" :autosize="{ minRows: 3, maxRows: 6 }" maxlength="500" show-count />
+      </NFormItem>
+      <NFormItem label="项目 ID" required><NInput v-model:value="agentTeamsCaseForm.project_id" /></NFormItem>
+      <NFormItem label="流程 ID" required><NInput v-model:value="agentTeamsCaseForm.flow_id" placeholder="例如 rna_seq 或 treeplot" /></NFormItem>
+      <div class="agentteams-case-actions">
+        <NButton :disabled="agentTeamsCaseSubmitting" @click="agentTeamsCaseVisible = false">取消</NButton>
+        <NButton type="primary" attr-type="submit" :loading="agentTeamsCaseSubmitting">确认并创建</NButton>
+      </div>
+    </NForm>
+  </NModal>
 </template>
 
 <style scoped lang="scss">
@@ -1289,6 +1347,7 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
   width: 100%;
   min-width: 0;
 }
+.agentteams-case-actions { display: flex; justify-content: flex-end; gap: var(--space-sm); }
 
 .goal-status-dock {
   margin-bottom: var(--space-md, 16px);

@@ -8,19 +8,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-BridgeRole = Literal[
-    "approval-authority",
-    "bioops-manager",
-    "data-steward",
-    "workflow-operator",
-    "quality-auditor",
-    "delivery-reporter",
-    "agent-code",
-    "agent-viz",
-    "agent-scrna",
-    "agent-rnaseq",
-    "analysis-worker",
-]
+BridgeRole = str
 ApprovalAction = Literal["submit_task", "execute_plan", "cancel_task"]
 CaseStatus = Literal[
     "received",
@@ -53,9 +41,10 @@ WorkItemStatus = Literal[
 
 
 class ContextRef(BaseModel):
-    kind: Literal["project", "workspace", "file", "flow", "task", "report"]
+    kind: Literal["project", "workspace", "file", "flow", "task", "report", "s3"]
     id: str = Field(min_length=1, max_length=256)
     location: str | None = Field(default=None, max_length=512)
+    meta: dict[str, Any] = Field(default_factory=dict)
 
 
 class PreflightRequest(BaseModel):
@@ -168,6 +157,25 @@ class ExecuteGeneralPlanRequest(BaseModel):
     approval_token: str = Field(min_length=20, max_length=4096)
 
 
+class RetryCaseSubmissionRequest(BaseModel):
+    approval_token: str = Field(min_length=20, max_length=4096)
+
+
+class PlanRevisionRequest(BaseModel):
+    expected_plan_hash: str = Field(min_length=64, max_length=64)
+    parameters: dict[str, Any]
+    reason: str = Field(min_length=3, max_length=512)
+
+
+class PlanRevisionResponse(BaseModel):
+    case_id: str
+    previous_plan_hash: str
+    plan_hash: str
+    changed_parameter_keys: list[str]
+    replay_work_item_ids: list[str]
+    status: CaseStatus
+
+
 class CaseCancelRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=512)
 
@@ -230,7 +238,7 @@ class CaseCreateRequest(BaseModel):
     lead_planner: BridgeRole | None = None
 
     @model_validator(mode="after")
-    def _validate_execution_context(self) -> "CaseCreateRequest":
+    def _validate_execution_context(self) -> CaseCreateRequest:
         if self.project_ref is not None and self.project_ref.kind != "project":
             raise ValueError("project_ref must be a project context")
         if self.flow_id and self.project_ref is None:
@@ -280,7 +288,10 @@ class WorkItemRecord(BaseModel):
     skill_name: str = Field(min_length=1, max_length=128)
     context_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
     read_only: bool = True
-    execution_mode: Literal["readonly_consultation", "workspace_execution"] = "readonly_consultation"
+    execution_mode: Literal["readonly_consultation", "workspace_execution"] = (
+        "readonly_consultation"
+    )
+    plan_hash: str | None = Field(default=None, min_length=64, max_length=64)
     approval_required: bool = False
     deadline_seconds: int = Field(default=300, ge=1, le=86_400)
     status: WorkItemStatus = "pending"
@@ -306,7 +317,9 @@ class WorkItemCreateRequest(BaseModel):
     skill_name: str = Field(min_length=1, max_length=128)
     context_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
     read_only: bool = True
-    execution_mode: Literal["readonly_consultation", "workspace_execution"] = "readonly_consultation"
+    execution_mode: Literal["readonly_consultation", "workspace_execution"] = (
+        "readonly_consultation"
+    )
     approval_required: bool = False
     deadline_seconds: int = Field(default=300, ge=1, le=86_400)
     max_attempts: int = Field(default=3, ge=1, le=10)
@@ -346,7 +359,9 @@ class ReadOnlyExecutionRequest(BaseModel):
     evidence_refs: list[str] = Field(default_factory=list, max_length=50)
     requested_tools: list[str] = Field(default_factory=list, max_length=20)
     trace_id: str | None = Field(default=None, max_length=128)
-    execution_mode: Literal["readonly_consultation", "workspace_execution"] = "readonly_consultation"
+    execution_mode: Literal["readonly_consultation", "workspace_execution"] = (
+        "readonly_consultation"
+    )
 
 
 class ReadOnlyExecutionResult(BaseModel):
@@ -364,6 +379,7 @@ class ReadOnlyExecutionResult(BaseModel):
     token_usage: int = Field(ge=0)
     proposed_submission: dict[str, Any] | None = None
     artifacts: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
+    hard_gate: dict[str, Any] | None = None
 
 
 class WorkerInboxItem(BaseModel):
@@ -404,6 +420,13 @@ class QualityGateRequest(BaseModel):
     summary: str = Field(min_length=1, max_length=4_000)
     evidence_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
     artifact_hashes: dict[str, str] = Field(default_factory=dict, max_length=100)
+    remediation_request: RemediationRequest | None = None
+
+
+class RemediationRequest(BaseModel):
+    target: Literal["data-steward", "workflow-operator"]
+    objective: str = Field(min_length=3, max_length=1_000)
+    recommended_changes: list[str] = Field(default_factory=list, max_length=50)
 
 
 class QualityGateResponse(BaseModel):

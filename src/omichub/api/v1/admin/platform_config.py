@@ -7,10 +7,13 @@ TOTP 二次校验仅对高敏感字段（注册开关 / TOTP 策略 / 首页快�
 
 from typing import Annotated
 
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Header, Query
 
 from omichub.api.deps import AdminRequired, DbSession, require_admin_totp
 from omichub.application.schemas.site_settings import SiteSettingsDTO, UpdateSiteSettingsDTO
+from omichub.application.services.agentteams_consultation_telemetry_service import (
+    AgentTeamsConsultationTelemetryService,
+)
 from omichub.application.services.collaboration_observability_service import (
     CollaborationObservabilityService,
 )
@@ -42,7 +45,16 @@ async def collaboration_observability(
     return {
         "days": 7,
         "degradation_counts": await CollaborationObservabilityService(db).degradation_counts(days=7),
+        "consultation_quality": await AgentTeamsConsultationTelemetryService().summary(days=7),
     }
+
+
+@router.get("/agentteams/consultation-telemetry", summary="AgentTeams 会诊质量遥测")
+async def agentteams_consultation_telemetry(
+    _admin: AdminRequired,
+    days: int = Query(default=7, ge=1, le=30),
+) -> dict[str, object]:
+    return await AgentTeamsConsultationTelemetryService().summary(days=days)
 
 
 @router.patch(

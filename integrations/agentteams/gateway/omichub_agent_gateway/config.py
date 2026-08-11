@@ -20,7 +20,9 @@ class GatewaySettings(BaseSettings):
     identities: str = "bioops-manager:manager-secret"
     matrix_homeserver_url: str = ""
     matrix_service_token: str = ""
-    matrix_identities: str = "bioops-manager=@bioops-manager:localhost,omichub-user=@omichub-user:localhost"
+    matrix_identities: str = (
+        "bioops-manager=@bioops-manager:localhost,omichub-user=@omichub-user:localhost"
+    )
     matrix_request_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
     matrix_sync_timeout_ms: int = Field(default=25_000, ge=1_000, le=60_000)
     element_base_url: str = ""
@@ -32,16 +34,16 @@ class GatewaySettings(BaseSettings):
     audit_log_path: str = "/tmp/omichub-agent-gateway-audit.jsonl"
     agent_policies: str = (
         "agent-rnaseq|interpretation,planning_advice,result_interpretation,qc_advice|"
-        "ensembl.lookup_gene,ensembl.search_genes;"
+        "ensembl.lookup_gene,ensembl.search_genes,task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
         "agent-scrna|interpretation,planning_advice,result_interpretation,qc_advice|"
-        "ensembl.lookup_gene,ensembl.search_genes;"
+        "ensembl.lookup_gene,ensembl.search_genes,task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
         "agent-viz|interpretation,result_interpretation,qc_advice,workspace_execution|"
-        "ensembl.lookup_gene,ensembl.search_genes;"
+        "ensembl.lookup_gene,ensembl.search_genes,task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
         "agent-code|interpretation,planning_advice,result_interpretation,qc_advice,workspace_execution|"
-        "ensembl.lookup_gene,ensembl.search_genes;"
-        "agent-data|project-preflight|;"
-        "agent-qc|quality-gate|;"
-        "agent-delivery|delivery-pack|"
+        "ensembl.lookup_gene,ensembl.search_genes,task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
+        "agent-data|project-preflight|task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
+        "agent-qc|quality-gate|task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
+        "agent-delivery|delivery-pack|task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup"
     )
 
     @model_validator(mode="after")
@@ -110,4 +112,6 @@ class GatewaySettings(BaseSettings):
         }
 
     def matrix_identity_by_user(self) -> dict[str, str]:
-        return {matrix_user: identity for identity, matrix_user in self.matrix_identity_map().items()}
+        return {
+            matrix_user: identity for identity, matrix_user in self.matrix_identity_map().items()
+        }

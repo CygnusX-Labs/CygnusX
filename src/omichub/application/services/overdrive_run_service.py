@@ -232,6 +232,19 @@ class OverdriveRunService:
         )
         return result.scalar_one_or_none()
 
+    async def get_latest_for_session(self, session_id: str, user_id: str) -> OverdriveRunModel | None:
+        """Return the latest run even when terminal, for cold history-card recovery."""
+        result = await self._db.execute(
+            select(OverdriveRunModel)
+            .where(
+                OverdriveRunModel.session_id == session_id,
+                OverdriveRunModel.user_id == user_id,
+            )
+            .order_by(OverdriveRunModel.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
     async def accept_branch_user_input(
         self,
         *,
@@ -879,6 +892,7 @@ class OverdriveRunService:
             "assistant_started": ("worker_running", "执行助手正在工作"),
             "run_completed": ("completed", "超频协作已完成"),
             "run_failed": ("failed", "超频协作未通过质量门"),
+            "run_cancelled": ("terminated", "用户已取消本轮超频协作，计划不会执行"),
             "run_terminated": ("terminated", "超频协作已终止"),
         }
         if event_type in progress_events:

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -28,7 +28,25 @@ class FixtureOmicHubClient:
 
     async def list_flows(self) -> dict:
         self._record("GET", "/api/v1/flows")
-        return {"items": [{"id": "rna_seq"}, {"id": "blocked_flow"}], "total": 2}
+        return {
+            "items": [{"id": "rna_seq"}, {"id": "test_general"}, {"id": "blocked_flow"}],
+            "total": 3,
+        }
+
+    async def get_agentteams_capabilities(self) -> dict:
+        self._record("GET", "/api/v1/agent-teams/capabilities")
+        return {
+            "allowed_flow_ids": ["rna_seq", "test_general"],
+            "flow_agent_map": {"rna_seq": "agent-rnaseq", "test_general": "agent-code"},
+            "role_agent_map": {"test-specialist": "agent-code"},
+            "worker_profiles": {
+                "test-specialist": {
+                    "identity": "test-specialist",
+                    "agent_id": "agent-code",
+                    "capability": "planning_advice",
+                }
+            },
+        }
 
     async def get_flow_schema(self, flow_id: str) -> dict:
         self._record("GET", f"/api/v1/flows/{flow_id}/schema")
@@ -48,7 +66,9 @@ class FixtureOmicHubClient:
 
     def _record(self, method: str, path: str, payload: dict | None = None) -> None:
         headers = {"Authorization": f"Bearer {self._settings.omichub_service_token}"}
-        self._calls.append(httpx.Request(method, f"http://omic.test{path}", headers=headers, json=payload))
+        self._calls.append(
+            httpx.Request(method, f"http://omic.test{path}", headers=headers, json=payload)
+        )
 
 
 class LoopLocalASGIClient:
@@ -87,6 +107,7 @@ def settings(tmp_path):
             "agent-code:code,agent-viz:viz,agent-scrna:scrna,analysis-worker:analysis"
         ),
         allowed_flow_ids="rna_seq",
+        role_agent_map="data-steward:agent-data,quality-auditor:agent-qc,delivery-reporter:agent-delivery,agent-code:agent-code,agent-viz:agent-viz,agent-scrna:agent-scrna,agent-rnaseq:agent-rnaseq",
         audit_log_path=str(tmp_path / "audit.jsonl"),
         case_store_path=str(tmp_path / "cases.json"),
         manifest_dir=str(tmp_path / "manifests"),
@@ -162,6 +183,22 @@ async def test_flow_allowlist_and_identity_boundary(client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_capability_reload_discovers_new_flow_without_restart(client) -> None:
+    request_client, calls = client
+    snapshot = await request_client.get(
+        "/v1/capabilities?reload=true", headers=headers("bioops-manager", "manager")
+    )
+    flows = await request_client.get("/v1/flows", headers=headers("bioops-manager", "manager"))
+
+    assert snapshot.status_code == 200
+    assert snapshot.json()["allowed_flow_ids"] == ["rna_seq", "test_general"]
+    assert snapshot.json()["flow_agent_map"]["test_general"] == "agent-code"
+    assert snapshot.json()["worker_profiles"]["test-specialist"]["agent_id"] == "agent-code"
+    assert flows.json()["items"] == [{"id": "rna_seq"}, {"id": "test_general"}]
+    assert any(request.url.path == "/api/v1/agent-teams/capabilities" for request in calls)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("worker", "token", "skill_name"),
     [
@@ -194,9 +231,7 @@ async def test_professional_agent_worker_can_claim_and_complete_own_read_only_wo
 
     inbox = await request_client.get("/v1/work-items/assigned", headers=headers(worker, token))
     assert inbox.status_code == 200
-    assert [item["work_item"]["work_item_id"] for item in inbox.json()["items"]] == [
-        work_item_id
-    ]
+    assert [item["work_item"]["work_item_id"] for item in inbox.json()["items"]] == [work_item_id]
 
     claimed = await request_client.post(
         f"/v1/cases/{case_id}/work-items/{work_item_id}/claim",
@@ -371,7 +406,9 @@ async def test_submit_approval_requires_passed_preflight(client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_approved_submission_is_queued_without_exposing_approval_to_analysis_worker(client) -> None:
+async def test_approved_submission_is_queued_without_exposing_approval_to_analysis_worker(
+    client,
+) -> None:
     request_client, calls = client
     await create_case(request_client)
     preflight = await request_client.post(
@@ -958,7 +995,9 @@ async def test_external_worker_inbox_poll_is_recorded_on_the_assigned_case(clien
     )
     assert assigned.status_code == 201
 
-    inbox = await request_client.get("/v1/work-items/assigned", headers=headers("agent-code", "code"))
+    inbox = await request_client.get(
+        "/v1/work-items/assigned", headers=headers("agent-code", "code")
+    )
     assert inbox.status_code == 200
 
     events = await request_client.get(
@@ -1434,7 +1473,9 @@ async def test_health_probes_validate_identity_and_worker_inbox_heartbeat(client
         "/v1/health/workers", headers=headers("bioops-manager", "manager")
     )
     assert before.status_code == 200
-    assert not next(item for item in before.json()["workers"] if item["identity"] == "agent-code")["active"]
+    assert not next(item for item in before.json()["workers"] if item["identity"] == "agent-code")[
+        "active"
+    ]
 
     inbox = await request_client.get(
         "/v1/work-items/assigned", headers=headers("agent-code", "code")
@@ -1475,7 +1516,10 @@ async def test_preflight_preserves_consultation_summary_as_non_blocking_evidence
         "/v1/cases/bioops_consultation", headers=headers("bioops-manager", "manager")
     )
     assert case.json()["status"] == "approval_pending"
-    assert case.json()["preflight_input"]["consultation_summary"] == "优先核验样本质量，再进行差异设计。"
+    assert (
+        case.json()["preflight_input"]["consultation_summary"]
+        == "优先核验样本质量，再进行差异设计。"
+    )
 
     events = await request_client.get(
         "/v1/cases/bioops_consultation/events", headers=headers("bioops-manager", "manager")

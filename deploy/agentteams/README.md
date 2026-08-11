@@ -162,6 +162,8 @@ Bridge 调用 OmicHub 现有 HTTP API 时必须以一个专用、最小权限的
 受控 secret store。不要复用个人用户 JWT，也不要把 Key 写入仓库、前端环境变量或
 AgentTeams Worker 配置。建议该 Key 仅声明 `flows:read`、`tasks:read`、
 `tasks:submit` 与 `tasks:cancel` 四个 scopes；OmicHub 会在对应 API 路径上执行此限制。
+此外必须设置 `BRIDGE_OMICHUB_INTEGRATION_TOKEN`，其值与 OmicHub 的
+`AGENTTEAMS_INTEGRATION_TOKEN` 一致，用于启动时和热重载时读取只读能力 Registry 快照。
 
 ## OmicHub 协作中心代理
 

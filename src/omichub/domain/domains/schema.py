@@ -144,8 +144,16 @@ class AssignmentRule(_StrictModel):
     when_message_markers: list[str] = Field(default_factory=list)
     agent_match: list[str] = Field(min_length=1)
     minimize_to_single: bool = False
+    authoritative: bool = False
+    required: bool = True
+    allow_split: bool = False
+    allow_reorder: bool = False
     task_id: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,63}$")
     task: str = Field(min_length=1, max_length=2000)
+    depends_on: list[str] = Field(default_factory=list)
+    workspace_access: bool = False
+    accepts_inputs: list[str] = Field(default_factory=list)
+    produces_outputs: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_condition(self) -> AssignmentRule:

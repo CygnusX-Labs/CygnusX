@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 import json
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -20,8 +20,8 @@ from .models import (
     ApprovalRequest,
     ApprovalResponse,
     ApprovedSubmission,
-    CaseCancelRequest,
     CancelTaskRequest,
+    CaseCancelRequest,
     CaseCloseRequest,
     CaseCloseResponse,
     CaseCreateRequest,
@@ -29,20 +29,24 @@ from .models import (
     CaseListResponse,
     CaseRecord,
     CaseStateUpdate,
+    ContextRef,
     EvidenceRequest,
     EvidenceResponse,
+    PlanRevisionRequest,
+    PlanRevisionResponse,
     PreflightInputSnapshot,
     PreflightRequest,
-    ReadOnlyExecutionResult,
     PreflightResponse,
     QualityGateRequest,
     QualityGateResponse,
-    ReadOnlyExecutionRequest,
     QueueApprovedSubmissionRequest,
     QueueApprovedSubmissionResponse,
+    ReadOnlyExecutionRequest,
+    ReadOnlyExecutionResult,
+    RetryCaseSubmissionRequest,
     SubmitTaskRequest,
-    TaskSpec,
     TaskReceipt,
+    TaskSpec,
     WorkerInboxItem,
     WorkerInboxResponse,
     WorkItemCreateRequest,
@@ -54,9 +58,6 @@ from .security import ApprovalSigner
 
 
 class BridgeService:
-    _EXTERNAL_WORKERS = frozenset(
-        {"agent-code", "agent-viz", "agent-scrna", "agent-rnaseq", "analysis-worker"}
-    )
     def __init__(
         self,
         settings: BridgeSettings,
@@ -72,20 +73,31 @@ class BridgeService:
         self._gateway = gateway
         self._approval_signer = ApprovalSigner(settings.approval_signing_secret)
 
+    async def refresh_capabilities(self) -> dict[str, Any]:
+        snapshot = await self._client.get_agentteams_capabilities()
+        self._settings.apply_capability_snapshot(snapshot)
+        return snapshot
+
+    async def capabilities(self, *, reload: bool = False) -> dict[str, Any]:
+        if reload or not self._settings.role_agent_mapping():
+            return await self.refresh_capabilities()
+        return {
+            "allowed_flow_ids": sorted(self._settings.allowed_flows()),
+            "flow_agent_map": self._settings.discovered_flow_agent_map,
+            "role_agent_map": self._settings.role_agent_mapping(),
+            "worker_profiles": self._settings.discovered_worker_profiles,
+        }
+
+    def _external_workers(self) -> set[str]:
+        return {*self._settings.role_agent_mapping(), "analysis-worker"}
+
+    def worker_identities(self) -> set[str]:
+        return set(self._settings.role_agent_mapping())
+
     async def assign_work_item(
         self, case_id: str, request: WorkItemCreateRequest, actor: str
     ) -> WorkItemRecord:
-        if request.target not in {
-            "data-steward",
-            "workflow-operator",
-            "quality-auditor",
-            "delivery-reporter",
-            "agent-code",
-            "agent-viz",
-            "agent-scrna",
-            "agent-rnaseq",
-            "analysis-worker",
-        }:
+        if request.target not in {*self._external_workers(), "workflow-operator"}:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid work item target"
             )
@@ -101,7 +113,10 @@ class BridgeService:
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail="Workspace execution requires approval_required or a frozen plan",
                 )
-        elif request.target in {"agent-code", "agent-viz", "agent-scrna", "agent-rnaseq"} and not request.read_only:
+        elif (
+            request.target in {"agent-code", "agent-viz", "agent-scrna", "agent-rnaseq"}
+            and not request.read_only
+        ):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Professional agent work items must be read-only",
@@ -112,6 +127,7 @@ class BridgeService:
         )
         work_item = WorkItemRecord(
             **payload,
+            plan_hash=case.plan_hash if request.execution_mode == "workspace_execution" else None,
             idempotency_key=idempotency_key,
             updated_at=datetime.now(UTC),
         )
@@ -130,6 +146,74 @@ class BridgeService:
         )
         return work_item
 
+    async def reconcile_approval_timeouts(
+        self, actor: str, *, now: datetime | None = None
+    ) -> dict[str, int]:
+        """Remind stale approvals once and automatically cancel them after seven days."""
+        current = now or datetime.now(UTC)
+        summary = {"scanned": 0, "reminded": 0, "cancelled": 0}
+        for case in await self._cases.list():
+            if case.status != "approval_pending":
+                continue
+            summary["scanned"] += 1
+            events = await self._audit.list_events(case.case_id)
+            approval_started_at = self._approval_started_at(case, events)
+            age = current - approval_started_at
+            if age >= timedelta(days=7):
+                await self._cases.transition(case.case_id, "cancelled")
+                await self._audit.record(
+                    case_id=case.case_id,
+                    actor=actor,
+                    event_type="case.cancelled",
+                    payload={
+                        "reason": "approval_timeout_7d",
+                        "previous_status": "approval_pending",
+                        "approval_started_at": approval_started_at.isoformat(),
+                        "automatic": True,
+                    },
+                )
+                summary["cancelled"] += 1
+                continue
+            already_reminded = any(
+                event.get("event_type") == "approval.reminder" for event in events
+            )
+            if age >= timedelta(hours=24) and not already_reminded:
+                await self._audit.record(
+                    case_id=case.case_id,
+                    actor=actor,
+                    event_type="approval.reminder",
+                    payload={
+                        "approval_started_at": approval_started_at.isoformat(),
+                        "age_hours": int(age.total_seconds() // 3600),
+                        "auto_cancel_after_days": 7,
+                    },
+                )
+                summary["reminded"] += 1
+        return summary
+
+    @staticmethod
+    def _approval_started_at(case: CaseRecord, events: list[dict[str, Any]]) -> datetime:
+        candidates = [
+            event
+            for event in events
+            if event.get("event_type") == "approval.requested"
+            or (
+                event.get("event_type") == "case.state_changed"
+                and isinstance(event.get("payload"), dict)
+                and event["payload"].get("status") == "approval_pending"
+            )
+        ]
+        if not candidates:
+            return case.updated_at
+        raw = candidates[-1].get("recorded_at")
+        if not isinstance(raw, str):
+            return case.updated_at
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return case.updated_at
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
     async def reconcile_case(self, case_id: str, actor: str) -> CaseRecord:
         """Advance a submitted Case only from observed OmicHub task state.
 
@@ -137,12 +221,55 @@ class BridgeService:
         or delivery manifest. It is safe to call repeatedly from a Manager/Controller poller.
         """
         case = await self._cases.get(case_id)
+        if case.status in {"received", "planning_running"} and not self._existing_work_item_id(
+            case, "plan-01"
+        ):
+            if case.status == "received":
+                case = await self._cases.transition(case_id, "planning_running")
+            planner = case.lead_planner or self._planner_for_flow(case.flow_id or "")
+            await self._ensure_work_item(
+                case,
+                WorkItemRecord(
+                    work_item_id="plan-01",
+                    target=planner,
+                    objective="形成可执行计划、参数快照、任务依赖与风险说明。",
+                    skill_name="planning_advice",
+                    context_refs=self._case_context_refs(case)
+                    + ([{"kind": "flow", "id": case.flow_id}] if case.flow_id else []),
+                    read_only=True,
+                    updated_at=datetime.now(UTC),
+                ),
+                actor,
+            )
+            await self._audit.record(
+                case_id=case_id,
+                actor=actor,
+                event_type="case.reconciled",
+                payload={"from_status": "received", "to_status": "planning_running"},
+            )
+            return await self._cases.get(case_id)
         if case.status != "executing" or not case.omic_task_ids:
             return case
 
         task_id = case.omic_task_ids[-1]
         task = await self._client.get_task(task_id)
         task_status = str(task.get("status", "")).lower()
+        if task_status == "queued" and self._task_is_stalled(task):
+            await self._audit.record(
+                case_id=case_id,
+                actor=actor,
+                event_type="omic_task.stalled",
+                payload={
+                    "omic_task_id": task_id,
+                    "status": task_status,
+                    "timeout_seconds": self._settings.omic_task_stall_timeout_seconds,
+                    "created_at": task.get("created_at"),
+                },
+            )
+            task = await self._client.get_task(task_id)
+            task_status = str(task.get("status", "")).lower()
+            if task_status == "queued":
+                return await self._cases.transition(case_id, "execution_failed")
         if task_status == "success":
             case = await self._cases.transition(case_id, "quality_running")
             await self._audit.record(
@@ -152,7 +279,7 @@ class BridgeService:
                 payload={"omic_task_id": task_id, "status": task_status},
             )
             flow_id = case.preflight_input.flow_id if case.preflight_input else ""
-            interpretation_target = self._interpretation_target(flow_id)
+            interpretation_target = await self._interpretation_target(flow_id)
             quality_dependency = self._existing_work_item_id(case, "submit-01")
             if interpretation_target:
                 interpretation = await self._ensure_work_item(
@@ -163,7 +290,10 @@ class BridgeService:
                         target=interpretation_target,
                         objective="解读成功任务的关键结果、证据、限制与后续建议，供独立质控复核。",
                         skill_name="result_interpretation",
-                        context_refs=[*self._case_context_refs(case), {"kind": "task", "id": task_id}],
+                        context_refs=[
+                            *self._case_context_refs(case),
+                            {"kind": "task", "id": task_id},
+                        ],
                         read_only=True,
                         depends_on=[quality_dependency] if quality_dependency else [],
                         updated_at=datetime.now(UTC),
@@ -197,22 +327,56 @@ class BridgeService:
             return await self._cases.get(case_id)
         if task_status in {"failed", "error"}:
             case = await self._cases.transition(case_id, "execution_failed")
+            error_excerpt = str(task.get("error_message") or "")[-500:]
             await self._audit.record(
                 case_id=case_id,
                 actor=actor,
                 event_type="omic_task.failed",
-                payload={"omic_task_id": task_id, "status": task_status},
+                payload={
+                    "omic_task_id": task_id,
+                    "status": task_status,
+                    "error_excerpt": error_excerpt,
+                },
             )
+            await self._audit.record(
+                case_id=case_id,
+                actor=actor,
+                event_type="case.execution_failed",
+                payload={
+                    "omic_task_id": task_id,
+                    "error_excerpt": error_excerpt,
+                    "recommendation": "检查失败日志与输入后，确认重试以复用冻结计划。",
+                    "retry_allowed": True,
+                },
+            )
+            return case
         return case
 
+    def _task_is_stalled(self, task: dict[str, Any]) -> bool:
+        queued_since = self._parse_datetime(task.get("updated_at") or task.get("created_at"))
+        if queued_since is None:
+            return False
+        return (datetime.now(UTC) - queued_since).total_seconds() >= (
+            self._settings.omic_task_stall_timeout_seconds
+        )
+
     @staticmethod
-    def _interpretation_target(flow_id: str) -> str | None:
-        normalized = flow_id.lower()
-        if "scrna" in normalized:
-            return "agent-scrna"
-        if "rna" in normalized or "atac" in normalized:
-            return "agent-rnaseq"
-        return None
+    def _parse_datetime(value: Any) -> datetime | None:
+        if isinstance(value, datetime):
+            parsed = value
+        elif isinstance(value, str) and value.strip():
+            try:
+                parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+            except ValueError:
+                return None
+        else:
+            return None
+        return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
+
+    async def _interpretation_target(self, flow_id: str) -> str | None:
+        if flow_id not in self._settings.discovered_flow_agent_map:
+            await self.refresh_capabilities()
+        return self._settings.discovered_flow_agent_map.get(flow_id)
 
     async def update_work_item(
         self, case_id: str, work_item_id: str, request: WorkItemUpdateRequest, actor: str
@@ -268,12 +432,30 @@ class BridgeService:
                 "trace_id": updated.trace_id,
             },
         )
+        if request.status == "completed" and work_item.skill_name == "remediation-fix":
+            case = await self._cases.get(case_id)
+            if case.status == "remediation_pending":
+                await self._cases.transition(case_id, "approval_pending")
+                await self._audit.record(
+                    case_id=case_id,
+                    actor="bioops-manager",
+                    event_type="remediation.completed",
+                    payload={
+                        "work_item_id": work_item_id,
+                        "completed_by": actor,
+                        "summary": request.summary,
+                        "next_status": "approval_pending",
+                    },
+                )
         return updated
 
     async def claim_work_item(self, case_id: str, work_item_id: str, actor: str) -> WorkItemRecord:
         case = await self._cases.get(case_id)
         requested = await self._cases.get_work_item(case_id, work_item_id)
-        if requested.execution_mode == "workspace_execution" and not self._workspace_work_item_is_plan_bound(case, requested):
+        if (
+            requested.execution_mode == "workspace_execution"
+            and not self._workspace_work_item_is_plan_bound(case, requested)
+        ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Workspace work item is not bound to the frozen plan",
@@ -333,7 +515,9 @@ class BridgeService:
             )
         work_item = await self._cases.get_work_item(case_id, work_item_id)
         if actor != work_item.target:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Work item target mismatch")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Work item target mismatch"
+            )
         if request.execution_mode != work_item.execution_mode:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -342,11 +526,16 @@ class BridgeService:
         case = await self._cases.get(case_id)
         if work_item.execution_mode == "workspace_execution":
             if work_item.target not in {"agent-code", "agent-viz"}:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Workspace target is not allowed")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="Workspace target is not allowed"
+                )
             if not case.plan_hash and not (
                 work_item.approval_required and work_item.approved_submission is not None
             ):
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Workspace execution is not approved")
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Workspace execution is not approved",
+                )
         elif not work_item.read_only or work_item.approval_required:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -372,11 +561,15 @@ class BridgeService:
                 detail="Work item must be claimed before execution",
             )
         if self._gateway is None or not self._gateway.configured:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Gateway is unavailable")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Gateway is unavailable"
+            )
         await self.heartbeat_work_item(
             case_id,
             work_item_id,
-            WorkItemHeartbeatRequest(trace_id=request.trace_id, summary="Gateway consultation started"),
+            WorkItemHeartbeatRequest(
+                trace_id=request.trace_id, summary="Gateway consultation started"
+            ),
             actor,
         )
         try:
@@ -425,6 +618,17 @@ class BridgeService:
             summary=summary,
             trace_id=request.trace_id,
         )
+        artifact_refs = self._workspace_artifact_refs(
+            case_id,
+            work_item_id,
+            gateway_result.artifacts,
+        )
+        if artifact_refs:
+            updated = updated.model_copy(update={"output_refs": artifact_refs})
+            case = await self._cases.update_work_item(case_id, work_item_id, updated)
+            updated = next(
+                item for item in case.work_items if item.work_item_id == work_item_id
+            )
         if completed and work_item_id == "plan-01":
             await self._accept_plan_result(case_id, gateway_result.proposed_submission, actor)
         elif completed and work_item_id == "preflight-01":
@@ -436,6 +640,17 @@ class BridgeService:
                 )
             if case.status == "preflight_running":
                 await self._cases.transition(case_id, "approval_pending")
+        if gateway_result.hard_gate:
+            hard_gate_event = dict(gateway_result.hard_gate.get("audit_event") or {})
+            if hard_gate_event.get("event_type") == "quality.hard_gate":
+                await self._audit.record(
+                    case_id=case_id,
+                    actor=actor,
+                    event_type="quality.hard_gate",
+                    payload={
+                        key: value for key, value in hard_gate_event.items() if key != "event_type"
+                    },
+                )
         await self._audit.record(
             case_id=case_id,
             actor=actor,
@@ -450,6 +665,7 @@ class BridgeService:
                 "evidence_refs": gateway_result.evidence_refs,
                 "risks": gateway_result.risks,
                 "artifacts": gateway_result.artifacts,
+                "hard_gate": gateway_result.hard_gate,
                 "trace_id": updated.trace_id,
             },
         )
@@ -457,7 +673,11 @@ class BridgeService:
 
     @staticmethod
     def _workspace_work_item_is_plan_bound(case: CaseRecord, work_item: WorkItemRecord) -> bool:
-        if not case.plan_hash or not isinstance(case.proposed_submission, dict):
+        if (
+            not case.plan_hash
+            or work_item.plan_hash != case.plan_hash
+            or not isinstance(case.proposed_submission, dict)
+        ):
             return False
         parameters = case.proposed_submission.get("parameters")
         planned_items = parameters.get("work_items") if isinstance(parameters, dict) else None
@@ -467,9 +687,52 @@ class BridgeService:
             isinstance(item, dict)
             and item.get("work_item_id") == work_item.work_item_id
             and item.get("target") == work_item.target
+            and item.get("objective") == work_item.objective
             and item.get("skill_name") == work_item.skill_name
+            and [str(value) for value in item.get("depends_on") or []] == work_item.depends_on
             for item in planned_items
         )
+
+    @staticmethod
+    def _workspace_artifact_refs(
+        case_id: str,
+        work_item_id: str,
+        artifacts: list[dict[str, Any]],
+    ) -> list[ContextRef]:
+        expected_parts = ("workspace", "agentteams", case_id, work_item_id)
+        refs: list[ContextRef] = []
+        seen: set[str] = set()
+        for artifact in artifacts:
+            if not isinstance(artifact, dict) or artifact.get("kind") != "file":
+                continue
+            raw_path = str(artifact.get("path") or "").strip().replace("\\", "/")
+            path = Path(raw_path)
+            if not raw_path or path.is_absolute() or ".." in path.parts:
+                continue
+            parts = path.parts
+            if not any(
+                tuple(parts[index : index + len(expected_parts)]) == expected_parts
+                for index in range(len(parts) - len(expected_parts) + 1)
+            ):
+                continue
+            s3_uri = str(artifact.get("s3_uri") or "").strip()
+            ref_location = s3_uri or raw_path
+            if ref_location in seen:
+                continue
+            seen.add(ref_location)
+            refs.append(
+                ContextRef(
+                    kind="s3" if s3_uri else "file",
+                    id=ref_location,
+                    location=ref_location,
+                    meta={
+                        "local_path": raw_path,
+                        "size_bytes": artifact.get("size_bytes", artifact.get("bytes")),
+                        "sha256": artifact.get("sha256"),
+                    },
+                )
+            )
+        return refs[:100]
 
     @staticmethod
     def _case_context_refs(case: CaseRecord) -> list[ContextRef]:
@@ -483,7 +746,8 @@ class BridgeService:
             CaseRecord(
                 case_id=request.case_id,
                 project_ref=request.project_ref,
-                context_refs=request.context_refs or ([request.project_ref] if request.project_ref else []),
+                context_refs=request.context_refs
+                or ([request.project_ref] if request.project_ref else []),
                 intent=request.intent,
                 requester_ref=request.requester_ref,
                 team_id=request.team_id,
@@ -548,8 +812,14 @@ class BridgeService:
                 await self._cases.save_plan(case_id, plan_payload, plan_hash, snapshot)
                 await self._cases.transition(case_id, "approval_pending")
                 await self._audit.record(
-                    case_id=case_id, actor=actor, event_type="planning.frozen",
-                    payload={"plan_hash": plan_hash, "kind": "general", "task_count": len(plan_payload["parameters"]["work_items"])},
+                    case_id=case_id,
+                    actor=actor,
+                    event_type="planning.frozen",
+                    payload={
+                        "plan_hash": plan_hash,
+                        "kind": "general",
+                        "task_count": len(plan_payload["parameters"]["work_items"]),
+                    },
                 )
                 return
             task = TaskSpec.model_validate(proposed_submission)
@@ -560,8 +830,7 @@ class BridgeService:
             if not task.sample_sheet or any(not row.get("sample") for row in task.sample_sheet):
                 raise ValueError("planned sample_sheet is missing required sample values")
             if task.comparisons is not None and any(
-                not item.get("control") or not item.get("treatment")
-                for item in task.comparisons
+                not item.get("control") or not item.get("treatment") for item in task.comparisons
             ):
                 raise ValueError("planned comparisons are invalid")
         except (ValueError, TypeError) as exc:
@@ -608,26 +877,65 @@ class BridgeService:
             payload={"plan_hash": plan_hash, "flow_id": task.flow_id},
         )
 
-    @staticmethod
-    def _validate_general_plan(proposed_submission: dict[str, Any]) -> dict[str, Any]:
+    def _validate_general_plan(self, proposed_submission: dict[str, Any]) -> dict[str, Any]:
         parameters = proposed_submission.get("parameters")
         work_items = parameters.get("work_items") if isinstance(parameters, dict) else None
         if not isinstance(work_items, list) or not work_items:
             raise ValueError("general plan requires parameters.work_items")
-        seen_ids: set[str] = set()
-        for item in work_items:
+        expanded: list[dict[str, Any]] = []
+        for raw_item in work_items:
+            item = dict(raw_item) if isinstance(raw_item, dict) else raw_item
             if not isinstance(item, dict):
                 raise ValueError("general plan work item must be an object")
+            item["execution_mode"] = str(item.get("execution_mode") or "workspace_execution")
+            if item["execution_mode"] != "workspace_execution":
+                raise ValueError("general plan work items require workspace_execution")
+            fan_out = item.pop("fan_out", None)
+            if fan_out is None:
+                expanded.append(item)
+                continue
+            if not isinstance(fan_out, dict) or fan_out.get("merge_strategy", "collect") != "collect":
+                raise ValueError("fan_out only supports merge_strategy=collect")
+            count = int(fan_out.get("count") or 0)
+            if count < 2 or count > 32:
+                raise ValueError("fan_out count must be between 2 and 32")
+            base_id = str(item.get("work_item_id") or "")
+            shard_ids = [f"{base_id}-shard-{index:02d}" for index in range(1, count + 1)]
+            for index, shard_id in enumerate(shard_ids, start=1):
+                shard = dict(item)
+                shard["work_item_id"] = shard_id
+                shard["objective"] = f"{item.get('objective', '')}（分片 {index}/{count}）"
+                expanded.append(shard)
+            expanded.append(
+                {
+                    **item,
+                    "work_item_id": f"{base_id}-merge",
+                    "objective": (
+                        f"汇总 {count} 个分片产物；使用 artifact_fetch 拉取全部输出后按 collect 策略合并。"
+                    ),
+                    "depends_on": shard_ids,
+                }
+            )
+        seen_ids: set[str] = set()
+        workspace_targets = {"agent-code", "agent-viz"} | {
+            identity
+            for identity, profile in self._settings.discovered_worker_profiles.items()
+            if profile.get("capability") == "workspace_execution"
+        }
+        for item in expanded:
             work_item_id = str(item.get("work_item_id") or "")
             target = item.get("target")
             if not work_item_id or work_item_id in seen_ids:
                 raise ValueError("general plan work item ids must be unique")
-            if target not in {"agent-code", "agent-viz"}:
+            if target not in workspace_targets:
                 raise ValueError("general plan work item target is not allowed")
             if not str(item.get("objective") or "") or not str(item.get("skill_name") or ""):
                 raise ValueError("general plan work item lacks objective or skill_name")
             seen_ids.add(work_item_id)
-        return {"name": str(proposed_submission.get("name") or "general-analysis"), "parameters": {"work_items": work_items}}
+        return {
+            "name": str(proposed_submission.get("name") or "general-analysis"),
+            "parameters": {"work_items": expanded},
+        }
 
     @staticmethod
     def _planner_for_flow(flow_id: str) -> str:
@@ -657,15 +965,22 @@ class BridgeService:
         try:
             manifest_path.relative_to(manifest_root)
         except ValueError as exc:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manifest path is invalid") from exc
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Manifest path is invalid"
+            ) from exc
         if not manifest_path.is_file():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Manifest not found")
         try:
             payload = json.loads(manifest_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Manifest is unreadable") from exc
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Manifest is unreadable"
+            ) from exc
         if not isinstance(payload, dict):
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Manifest payload is invalid")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Manifest payload is invalid",
+            )
         return payload
 
     async def get_case_view(self, case_id: str, actor: str) -> dict[str, Any]:
@@ -695,7 +1010,7 @@ class BridgeService:
         }
 
     async def list_worker_inbox(self, actor: str) -> WorkerInboxResponse:
-        if actor in self._EXTERNAL_WORKERS:
+        if actor in self._external_workers():
             await self._audit.record(
                 case_id="__bridge_health__",
                 actor=actor,
@@ -705,7 +1020,7 @@ class BridgeService:
         assignments = await self._cases.list_assigned_work_items(
             actor, {"pending", "claimed", "running", "in_progress"}
         )
-        if actor in self._EXTERNAL_WORKERS:
+        if actor in self._external_workers():
             for case, work_item in assignments:
                 await self._audit.record(
                     case_id=case.case_id,
@@ -741,7 +1056,9 @@ class BridgeService:
         if case_status is not None:
             cases = [case for case in cases if case.status == case_status]
         if project_id is not None:
-            cases = [case for case in cases if case.project_ref and case.project_ref.id == project_id]
+            cases = [
+                case for case in cases if case.project_ref and case.project_ref.id == project_id
+            ]
         total = len(cases)
         if cursor is not None:
             try:
@@ -815,13 +1132,18 @@ class BridgeService:
     async def worker_health(self) -> dict[str, Any]:
         now = datetime.now(UTC)
         configured_identities = self._settings.identity_secrets()
-        heartbeats = await self._audit.worker_heartbeats(set(self._EXTERNAL_WORKERS))
+        external_workers = self._external_workers()
+        heartbeats = await self._audit.worker_heartbeats(external_workers)
         workers = []
-        for worker in sorted(self._EXTERNAL_WORKERS):
+        for worker in sorted(external_workers):
             last_seen = heartbeats[worker]
             age_seconds = int((now - last_seen).total_seconds()) if last_seen else None
             configured = worker in configured_identities
-            active = bool(configured and age_seconds is not None and age_seconds <= self._settings.worker_heartbeat_ttl_seconds)
+            active = bool(
+                configured
+                and age_seconds is not None
+                and age_seconds <= self._settings.worker_heartbeat_ttl_seconds
+            )
             workers.append(
                 {
                     "identity": worker,
@@ -886,7 +1208,9 @@ class BridgeService:
                 }
                 for code, severity, message in findings
             ],
-            next_actions=["request_user_correction"] if has_errors else ["request_submission_approval"],
+            next_actions=["request_user_correction"]
+            if has_errors
+            else ["request_submission_approval"],
         )
         case = await self._cases.get(request.case_id)
         if case.status == "preflight_blocked":
@@ -964,7 +1288,10 @@ class BridgeService:
 
     async def issue_approval(self, request: ApprovalRequest, actor: str) -> ApprovalResponse:
         case = await self._cases.get(request.case_id)
-        if request.action == "submit_task" and case.status != "approval_pending":
+        if request.action == "submit_task" and case.status not in {
+            "approval_pending",
+            "execution_failed",
+        }:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Task submission approval requires a passed preflight",
@@ -1014,15 +1341,21 @@ class BridgeService:
         )
         return ApprovalResponse(approval_id=approval_id, token=token, expires_at=expires_at)
 
-    async def execute_general_plan(self, case_id: str, approval_token: str, actor: str) -> CaseRecord:
+    async def execute_general_plan(
+        self, case_id: str, approval_token: str, actor: str
+    ) -> CaseRecord:
         self._approval_signer.verify(approval_token, case_id=case_id, action="execute_plan")
         case = await self._cases.get(case_id)
         if case.status != "approval_pending" or case.flow_id or not case.plan_hash:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="General plan is not ready")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="General plan is not ready"
+            )
         parameters = (case.proposed_submission or {}).get("parameters")
         work_items = parameters.get("work_items") if isinstance(parameters, dict) else None
         if not isinstance(work_items, list):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Frozen general plan has no task DAG")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Frozen general plan has no task DAG"
+            )
         case = await self._cases.transition(case_id, "approved")
         for item in work_items:
             await self._ensure_work_item(
@@ -1034,7 +1367,8 @@ class BridgeService:
                     skill_name=str(item["skill_name"]),
                     context_refs=self._case_context_refs(case),
                     read_only=False,
-                    execution_mode="workspace_execution",
+                    execution_mode=str(item.get("execution_mode") or "workspace_execution"),
+                    plan_hash=case.plan_hash,
                     depends_on=[str(value) for value in item.get("depends_on") or []],
                     updated_at=datetime.now(UTC),
                 ),
@@ -1042,10 +1376,111 @@ class BridgeService:
             )
         case = await self._cases.get(case_id)
         await self._audit.record(
-            case_id=case_id, actor=actor, event_type="general_plan.approved",
+            case_id=case_id,
+            actor=actor,
+            event_type="general_plan.approved",
             payload={"plan_hash": case.plan_hash, "work_item_count": len(work_items)},
         )
         return case
+
+    async def revise_plan(
+        self, case_id: str, request: PlanRevisionRequest, actor: str
+    ) -> PlanRevisionResponse:
+        case = await self._cases.get(case_id)
+        self._require_case_access(case, actor)
+        if case.status not in {
+            "approval_pending",
+            "execution_failed",
+            "quality_blocked",
+            "remediation_pending",
+        }:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Case plan cannot be revised in its current status",
+            )
+        if not case.plan_hash or not isinstance(case.proposed_submission, dict):
+            raise HTTPException(status_code=409, detail="Case has no frozen plan")
+        if request.expected_plan_hash != case.plan_hash:
+            raise HTTPException(status_code=409, detail="Plan hash changed; refresh before editing")
+        current_parameters = case.proposed_submission.get("parameters")
+        if not isinstance(current_parameters, dict):
+            current_parameters = {}
+        revised = dict(case.proposed_submission)
+        revised["parameters"] = request.parameters
+        if case.flow_id:
+            validated = TaskSpec.model_validate(revised).model_dump(mode="json")
+        else:
+            validated = self._validate_general_plan(revised)
+        new_hash = self._plan_hash(validated)
+        changed_keys = sorted(
+            key
+            for key in set(current_parameters) | set(request.parameters)
+            if current_parameters.get(key) != request.parameters.get(key)
+        )
+        if new_hash == case.plan_hash:
+            return PlanRevisionResponse(
+                case_id=case_id,
+                previous_plan_hash=case.plan_hash,
+                plan_hash=case.plan_hash,
+                changed_parameter_keys=[],
+                replay_work_item_ids=[],
+                status=case.status,
+            )
+        replay_ids = self._plan_replay_work_items(case, validated)
+        previous_hash = case.plan_hash
+        revised_case = await self._cases.revise_plan(case_id, validated, new_hash, replay_ids)
+        if revised_case.status != "approval_pending":
+            revised_case = await self._cases.transition(case_id, "approval_pending")
+        await self._audit.record(
+            case_id=case_id,
+            actor=actor,
+            event_type="planning.revised",
+            payload={
+                "previous_plan_hash": previous_hash,
+                "plan_hash": new_hash,
+                "changed_parameter_keys": changed_keys,
+                "replay_work_item_ids": sorted(replay_ids),
+                "reason": request.reason,
+            },
+        )
+        return PlanRevisionResponse(
+            case_id=case_id,
+            previous_plan_hash=previous_hash,
+            plan_hash=new_hash,
+            changed_parameter_keys=changed_keys,
+            replay_work_item_ids=sorted(replay_ids),
+            status=revised_case.status,
+        )
+
+    @staticmethod
+    def _plan_replay_work_items(case: CaseRecord, revised: dict[str, Any]) -> set[str]:
+        if case.flow_id:
+            return {"submit-next"}
+        old_items = {
+            str(item.get("work_item_id")): item
+            for item in ((case.proposed_submission or {}).get("parameters") or {}).get("work_items", [])
+            if isinstance(item, dict) and item.get("work_item_id")
+        }
+        new_items = {
+            str(item.get("work_item_id")): item
+            for item in (revised.get("parameters") or {}).get("work_items", [])
+            if isinstance(item, dict) and item.get("work_item_id")
+        }
+        changed = {
+            work_item_id
+            for work_item_id in set(old_items) | set(new_items)
+            if old_items.get(work_item_id) != new_items.get(work_item_id)
+        }
+        expanded = set(changed)
+        while True:
+            dependents = {
+                work_item_id
+                for work_item_id, item in new_items.items()
+                if set(item.get("depends_on") or []) & expanded
+            }
+            if dependents <= expanded:
+                return expanded
+            expanded.update(dependents)
 
     async def submit_task(self, request: SubmitTaskRequest, actor: str) -> TaskReceipt:
         if request.task.flow_id not in self._settings.allowed_flows():
@@ -1095,7 +1530,11 @@ class BridgeService:
         case = await self._cases.get(request.case_id)
         self._validate_task_snapshot(case, request.task)
         work_item = await self._cases.get_work_item(request.case_id, request.work_item_id)
-        if work_item.target != "analysis-worker" or work_item.read_only or not work_item.approval_required:
+        if (
+            work_item.target != "analysis-worker"
+            or work_item.read_only
+            or not work_item.approval_required
+        ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Approved submissions require an analysis-worker approval-gated Work Item",
@@ -1117,7 +1556,9 @@ class BridgeService:
         expires_at = datetime.fromtimestamp(int(claims["exp"]), tz=UTC)
         snapshot = case.preflight_input
         if snapshot is None:  # guarded by _validate_task_snapshot; retained for type narrowing
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Preflight snapshot is missing")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Preflight snapshot is missing"
+            )
         prepared = ApprovedSubmission(
             approval_id=str(claims["approval_id"]),
             expires_at=expires_at,
@@ -1129,7 +1570,9 @@ class BridgeService:
         await self._cases.update_work_item(
             request.case_id,
             request.work_item_id,
-            work_item.model_copy(update={"approved_submission": prepared, "updated_at": datetime.now(UTC)}),
+            work_item.model_copy(
+                update={"approved_submission": prepared, "updated_at": datetime.now(UTC)}
+            ),
         )
         if case.status == "approval_pending":
             await self._cases.transition(request.case_id, "approved")
@@ -1154,17 +1597,124 @@ class BridgeService:
             expires_at=prepared.expires_at,
         )
 
+    async def retry_case_submission(
+        self,
+        case_id: str,
+        request: RetryCaseSubmissionRequest,
+        actor: str,
+    ) -> QueueApprovedSubmissionResponse:
+        case = await self._cases.get(case_id)
+        if case.status != "execution_failed":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only failed Case submissions may be retried",
+            )
+        previous = next(
+            (
+                item
+                for item in reversed(case.work_items)
+                if item.target == "analysis-worker" and item.approved_submission is not None
+            ),
+            None,
+        )
+        if previous is None or previous.approved_submission is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Failed Case has no approved submission to retry",
+            )
+        task = previous.approved_submission.task
+        claims = self._approval_signer.verify(
+            request.approval_token,
+            case_id=case_id,
+            action="submit_task",
+            flow_id=task.flow_id,
+        )
+        self._validate_task_snapshot(case, task)
+        version = len(case.task_specs) + 1
+        work_item_id = f"submit-{version:02d}"
+        idempotency_key = f"{case_id}-submit-v{version}"
+        existing = next(
+            (item for item in case.work_items if item.work_item_id == work_item_id),
+            None,
+        )
+        if existing is not None and existing.approved_submission is not None:
+            approved = existing.approved_submission
+            return QueueApprovedSubmissionResponse(
+                case_id=case_id,
+                work_item_id=work_item_id,
+                approval_id=approved.approval_id,
+                status="idempotent_replay",
+                expires_at=approved.expires_at,
+            )
+        snapshot = case.preflight_input
+        if snapshot is None:  # guarded by _validate_task_snapshot
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Preflight snapshot is missing",
+            )
+        expires_at = datetime.fromtimestamp(int(claims["exp"]), tz=UTC)
+        approved = ApprovedSubmission(
+            approval_id=str(claims["approval_id"]),
+            expires_at=expires_at,
+            idempotency_key=idempotency_key,
+            task=task,
+            input_snapshot_hash=self._snapshot_hash(snapshot),
+            prepared_at=datetime.now(UTC),
+        )
+        retry_item = WorkItemRecord(
+            work_item_id=work_item_id,
+            parent_work_item_id=previous.work_item_id,
+            target="analysis-worker",
+            objective="重试已获人工批准且保持冻结输入不变的 OmicHub 分析任务。",
+            skill_name="workflow-submit",
+            context_refs=self._case_context_refs(case),
+            read_only=False,
+            approval_required=True,
+            idempotency_key=idempotency_key,
+            approved_submission=approved,
+            depends_on=[previous.work_item_id],
+            updated_at=datetime.now(UTC),
+        )
+        await self._cases.add_work_item(case_id, retry_item)
+        await self._cases.transition(case_id, "remediation_pending")
+        await self._audit.record(
+            case_id=case_id,
+            actor=actor,
+            event_type="case.retry_queued",
+            payload={
+                "work_item_id": work_item_id,
+                "previous_work_item_id": previous.work_item_id,
+                "approval_id": approved.approval_id,
+                "flow_id": task.flow_id,
+                "idempotency_key": idempotency_key,
+                "plan_hash": case.plan_hash,
+            },
+        )
+        return QueueApprovedSubmissionResponse(
+            case_id=case_id,
+            work_item_id=work_item_id,
+            approval_id=approved.approval_id,
+            status="queued",
+            expires_at=approved.expires_at,
+        )
+
     async def submit_approved_work_item(
         self, case_id: str, work_item_id: str, actor: str
     ) -> TaskReceipt:
         work_item = await self._cases.get_work_item(case_id, work_item_id)
         if actor != "analysis-worker" or work_item.target != actor:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Work item target mismatch")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Work item target mismatch"
+            )
         approved = work_item.approved_submission
         if approved is None:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Work item has no approved submission")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Work item has no approved submission"
+            )
         if approved.expires_at <= datetime.now(UTC):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Approved submission has expired")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Approved submission has expired"
+            )
         if work_item.status == "claimed":
             work_item = await self._cases.transition_work_item(
                 case_id, work_item_id, actor, "running", trace_id=work_item.trace_id
@@ -1183,7 +1733,9 @@ class BridgeService:
         work_item = await self._cases.begin_approved_submission(case_id, work_item_id, actor)
         approved = work_item.approved_submission
         if approved is None:  # pragma: no cover - guarded by begin_approved_submission
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Work item has no approved submission")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Work item has no approved submission"
+            )
         case = await self._cases.get(case_id)
         try:
             receipt = await self._submit_verified_task(
@@ -1194,8 +1746,12 @@ class BridgeService:
                 actor=actor,
             )
         except Exception as exc:
-            failed = await self._cases.transition_work_item(
-                case_id, work_item_id, actor, "failed", summary=f"Analysis submission failed: {exc}"[:4000]
+            await self._cases.transition_work_item(
+                case_id,
+                work_item_id,
+                actor,
+                "failed",
+                summary=f"Analysis submission failed: {exc}"[:4000],
             )
             await self._cases.reset_approved_submission_start(case_id, work_item_id, actor)
             await self._audit.record(
@@ -1246,13 +1802,11 @@ class BridgeService:
             submitted_at=datetime.now(UTC),
         )
         await self._audit.save_receipt(idempotency_key, receipt.model_dump(mode="json"))
-        await self._cases.attach_task(
-            case.case_id, omic_task_id, task.model_dump(mode="json")
-        )
+        await self._cases.attach_task(case.case_id, omic_task_id, task.model_dump(mode="json"))
         if case.status == "approval_pending":
             await self._cases.transition(case.case_id, "approved")
             await self._cases.transition(case.case_id, "executing")
-        elif case.status == "approved":
+        elif case.status in {"approved", "remediation_pending"}:
             await self._cases.transition(case.case_id, "executing")
         await self._audit.record(
             case_id=case.case_id,
@@ -1423,7 +1977,50 @@ class BridgeService:
                 ),
                 actor,
             )
+        else:
+            remediation = request.remediation_request
+            target = remediation.target if remediation else self._remediation_target(request.summary)
+            objective = (
+                remediation.objective
+                if remediation
+                else f"修复质控阻断项并提供可复核证据：{request.summary[:700]}"
+            )
+            remediation_id = f"remediate-{1 + sum(item.skill_name == 'remediation-fix' for item in case.work_items):02d}"
+            await self._cases.transition(case.case_id, "remediation_pending")
+            await self._audit.record(
+                case_id=case.case_id,
+                actor=actor,
+                event_type="remediation.requested",
+                payload={
+                    "work_item_id": remediation_id,
+                    "target": target,
+                    "objective": objective,
+                    "recommended_changes": remediation.recommended_changes if remediation else [],
+                    "quality_work_item_id": request.work_item_id,
+                    "task_id": task_id,
+                },
+            )
+            await self._ensure_work_item(
+                await self._cases.get(case.case_id),
+                WorkItemRecord(
+                    work_item_id=remediation_id,
+                    parent_work_item_id=self._existing_work_item_id(case, request.work_item_id),
+                    target=target,
+                    objective=objective,
+                    skill_name="remediation-fix",
+                    context_refs=[*self._case_context_refs(case), {"kind": "task", "id": task_id}],
+                    read_only=True,
+                    updated_at=datetime.now(UTC),
+                ),
+                "bioops-manager",
+            )
         return decision
+
+    @staticmethod
+    def _remediation_target(summary: str) -> str:
+        normalized = summary.lower()
+        data_markers = ("sample", "metadata", "group", "input", "样本", "分组", "输入", "元数据")
+        return "data-steward" if any(marker in normalized for marker in data_markers) else "workflow-operator"
 
     async def _update_bound_work_item(
         self,
@@ -1525,9 +2122,7 @@ class BridgeService:
             manifest=manifest,
         )
 
-    async def cancel_case(
-        self, case_id: str, request: CaseCancelRequest, actor: str
-    ) -> CaseRecord:
+    async def cancel_case(self, case_id: str, request: CaseCancelRequest, actor: str) -> CaseRecord:
         case = await self._cases.get(case_id)
         self._require_case_access(case, actor)
         if case.status in {"closed", "cancelled"}:
@@ -1550,9 +2145,7 @@ class BridgeService:
         return None
 
     @staticmethod
-    def _work_item_idempotency_key(
-        case_id: str, request: WorkItemCreateRequest
-    ) -> str:
+    def _work_item_idempotency_key(case_id: str, request: WorkItemCreateRequest) -> str:
         payload = f"{case_id}:{request.work_item_id}:{request.target}:{request.skill_name}:{request.objective}"
         return f"sha256:{hashlib.sha256(payload.encode()).hexdigest()}"
 

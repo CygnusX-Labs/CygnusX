@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.api.v1.agentteams import require_integration_token
 from omichub.application.services.agent_consultation_service import (
@@ -16,6 +17,11 @@ from omichub.application.services.agent_consultation_service import (
 from omichub.application.services.parallel_subagent_service import ParallelSubAgentService
 from omichub.core.exceptions import NotFoundError
 from omichub.middleware.auth import SELF_AUTHENTICATED_PREFIXES
+
+
+class _Session(AsyncSession):
+    def __init__(self):
+        pass
 
 
 def test_run_consultation_uses_safe_single_task_and_parses_envelope() -> None:
@@ -50,7 +56,7 @@ async def _test_run_consultation_uses_safe_single_task_and_parses_envelope() -> 
         agent_id="agent-rnaseq",
         question="解释结果",
         capability="result_interpretation",
-        evidence_refs=["report://qc"],
+        evidence_refs=[],
         requested_tools=["knowledge_search"],
         requester_ref="user-1",
     )
@@ -58,7 +64,7 @@ async def _test_run_consultation_uses_safe_single_task_and_parses_envelope() -> 
     assert result == ConsultationEnvelope(
         conclusion="可信",
         recommendations=["复核样本"],
-        evidence_refs=["report://qc"],
+        evidence_refs=[],
         risks=[],
         token_usage=42,
     )
@@ -73,6 +79,63 @@ async def _test_run_consultation_uses_safe_single_task_and_parses_envelope() -> 
 def test_parse_envelope_falls_back_to_raw_answer() -> None:
     result = AgentConsultationService.parse_envelope("普通文本结论")
     assert result.conclusion == "普通文本结论"
+
+
+@pytest.mark.asyncio
+async def test_quality_gate_blocks_low_mapping_rate_and_keeps_verified_refs(monkeypatch) -> None:
+    task_id = "00000000-0000-0000-0000-000000000002"
+    agent_service = SimpleNamespace(
+        assemble_context=AsyncMock(return_value=SimpleNamespace(model_config=object()))
+    )
+    parallel_service = SimpleNamespace(
+        run=AsyncMock(
+            return_value={
+                "llm_payload": {
+                    "results": [
+                        {
+                            "answer": """```json
+{"conclusion":"PASSED\n模型认为可放行","recommendations":[],"evidence_refs":["task:伪造"],"risks":[],"token_usage":1}
+```""",
+                            "verified_evidence_refs": [
+                                f"task:{task_id}",
+                                "rule:rna_seq:mapping_rate",
+                            ],
+                        }
+                    ]
+                }
+            }
+        )
+    )
+    monkeypatch.setattr(
+        "omichub.application.services.agent_consultation_service.PipelineResultService.get_task_summary",
+        AsyncMock(
+            return_value={
+                "flow_id": "rna_seq",
+                "metrics": {"mapping_rate": 0.30, "q30": 0.91, "duplicate_rate": 0.2},
+            }
+        ),
+    )
+    service = AgentConsultationService(
+        _Session(), agent_service=agent_service, parallel_service=parallel_service
+    )
+
+    result = await service.run_consultation(
+        case_id="case-1",
+        agent_id="agent-qc",
+        question="执行独立质量门",
+        capability="quality-gate",
+        evidence_refs=[f"task:{task_id}"],
+        requested_tools=["task_result_summary", "rule_threshold_lookup"],
+        requester_ref="00000000-0000-0000-0000-000000000001",
+    )
+
+    assert result.conclusion.startswith("BLOCKED\n")
+    assert result.evidence_refs == [f"task:{task_id}", "rule:rna_seq:mapping_rate"]
+    assert result.hard_gate is not None
+    assert result.hard_gate["decision"] == "BLOCKED"
+    instruction = parallel_service.run.await_args.kwargs["tasks"][0]["task"]
+    assert "mapping_rate" in instruction
+    assert "不得把硬规则 BLOCKED 降级" in instruction
     assert result.token_usage == 0
     assert result.risks == ["信封解析降级：专家答复未满足结构化 JSON 契约。"]
 
@@ -144,7 +207,8 @@ async def _test_workspace_artifacts_are_copied_and_registered(tmp_path, monkeypa
             return file
 
     monkeypatch.setattr(
-        "omichub.application.services.agent_consultation_service.get_path_factory", lambda: Factory()
+        "omichub.application.services.agent_consultation_service.get_path_factory",
+        lambda: Factory(),
     )
     monkeypatch.setattr(
         "omichub.application.services.agent_consultation_service.FileRepositoryImpl", Repository

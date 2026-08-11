@@ -18,6 +18,7 @@ skill_ids:
   - md5
   - data-deliver
 features:
+  internal_case_role: agent-code
   persona:
     archetype: "务实精确的实现工程师"
     traits: [务实, 精确, 重视复现, 小步验证]

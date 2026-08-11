@@ -61,6 +61,10 @@ async def test_direct_case_api_rejects_project_not_owned_by_requester(monkeypatc
     service = SimpleNamespace(create_case=AsyncMock())
 
     monkeypatch.setattr("omichub.api.v1.agentteams._is_chat_case_flow_allowed", lambda _flow: True)
+    monkeypatch.setattr(
+        "omichub.api.v1.agentteams.get_agentteams_capability_registry",
+        lambda: SimpleNamespace(agent_for_flow=lambda _flow: "agent-rnaseq"),
+    )
 
     async def reject_project(*_args, **_kwargs):
         raise NotFoundError("项目不存在")
@@ -108,6 +112,10 @@ async def test_direct_case_api_creates_case_for_owned_project(monkeypatch) -> No
     get_project = AsyncMock(return_value={"id": str(project_id)})
     monkeypatch.setattr(ProjectService, "get_project", get_project)
     monkeypatch.setattr("omichub.api.v1.agentteams._is_chat_case_flow_allowed", lambda _flow: True)
+    monkeypatch.setattr(
+        "omichub.api.v1.agentteams.get_agentteams_capability_registry",
+        lambda: SimpleNamespace(agent_for_flow=lambda _flow: "agent-rnaseq"),
+    )
 
     response = await create_case(request, str(user_id), service, SimpleNamespace())
 
@@ -116,6 +124,53 @@ async def test_direct_case_api_creates_case_for_owned_project(monkeypatch) -> No
     service.create_case.assert_awaited_once()
     assert service.create_case.await_args.kwargs["project_id"] == str(project_id)
     assert service.create_case.await_args.kwargs["requester_ref"] == str(user_id)
+
+
+@pytest.mark.asyncio
+async def test_direct_case_api_binds_created_case_to_chat_session(monkeypatch) -> None:
+    user_id = uuid4()
+    project_id = uuid4()
+    session = SimpleNamespace(
+        session_id="session-1",
+        user_id=str(user_id),
+        sandbox_meta={"project_id": str(project_id)},
+        updated_at=None,
+    )
+
+    class Db:
+        flushed = 0
+
+        async def scalar(self, _query):
+            return session
+
+        async def flush(self):
+            self.flushed += 1
+
+    db = Db()
+    request = AgentTeamsCaseCreateRequest(
+        session_id="session-1",
+        project_id=str(project_id),
+        intent="bulk_rnaseq_delivery",
+        flow_id="approved-flow",
+    )
+    service = SimpleNamespace(
+        create_case=AsyncMock(
+            return_value={"case_id": "bioops_001", "status": "planning_running"}
+        )
+    )
+    monkeypatch.setattr(ProjectService, "get_project", AsyncMock())
+    monkeypatch.setattr("omichub.api.v1.agentteams._is_chat_case_flow_allowed", lambda _flow: True)
+    monkeypatch.setattr(
+        "omichub.api.v1.agentteams.get_agentteams_capability_registry",
+        lambda: SimpleNamespace(agent_for_flow=lambda _flow: "agent-rnaseq"),
+    )
+
+    response = await create_case(request, str(user_id), service, db)
+
+    assert response["case_id"] == "bioops_001"
+    assert session.sandbox_meta["active_case_id"] == "bioops_001"
+    assert session.sandbox_meta["agentteams_case_ids"] == ["bioops_001"]
+    assert db.flushed == 1
 
 
 @pytest.mark.asyncio
@@ -339,6 +394,24 @@ async def test_admin_resource_snapshot_groups_cases_by_team(
     ]
     assert "preflight_input" not in snapshot["cases"][0]
     assert "task_specs" not in snapshot["cases"][1]
+
+
+@pytest.mark.asyncio
+async def test_reconcile_approval_timeouts_uses_bridge_maintenance_endpoint(
+    service: AgentTeamsService, monkeypatch
+) -> None:
+    async def fake_request(path: str, **kwargs):
+        assert path == "/v1/maintenance/approval-timeouts"
+        assert kwargs == {"method": "POST"}
+        return {"scanned": 2, "reminded": 1, "cancelled": 1}
+
+    monkeypatch.setattr(service, "_request", fake_request)
+
+    assert await service.reconcile_approval_timeouts() == {
+        "scanned": 2,
+        "reminded": 1,
+        "cancelled": 1,
+    }
 
 
 @pytest.mark.asyncio
@@ -709,6 +782,54 @@ async def test_refresh_case_reconciles_only_after_owner_check(
     assert [path for path, _ in requests] == [
         "/v1/cases/bioops_001",
         "/v1/cases/bioops_001/reconcile",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_retry_case_issues_fresh_approval_then_calls_bridge_retry(
+    service: AgentTeamsService, monkeypatch
+) -> None:
+    manager_requests: list[tuple[str, dict]] = []
+    approval_requests: list[tuple[str, str, str, dict]] = []
+
+    async def fake_request(path: str, **kwargs):
+        manager_requests.append((path, kwargs))
+        if path == "/v1/cases/bioops_001":
+            return {
+                "case_id": "bioops_001",
+                "requester_ref": "current-user",
+                "status": "execution_failed",
+                "preflight_input": {"flow_id": "rna_seq"},
+            }
+        if path == "/v1/cases/bioops_001/retry":
+            assert kwargs == {"method": "POST", "json": {"approval_token": "approval-v2"}}
+            return {"case_id": "bioops_001", "status": "queued", "work_item_id": "submit-02"}
+        raise AssertionError(f"Unexpected request: {path}")
+
+    async def fake_request_as(identity: str, token: str, path: str, **kwargs):
+        approval_requests.append((identity, token, path, kwargs))
+        return {"token": "approval-v2"}
+
+    monkeypatch.setattr(service, "_request", fake_request)
+    monkeypatch.setattr(service, "_request_as", fake_request_as)
+
+    result = await service.retry_case("bioops_001", "current-user")
+
+    assert result["work_item_id"] == "submit-02"
+    assert approval_requests == [
+        (
+            "approval-authority",
+            "approval-token",
+            "/v1/approvals",
+            {
+                "method": "POST",
+                "json": {
+                    "case_id": "bioops_001",
+                    "action": "submit_task",
+                    "flow_id": "rna_seq",
+                },
+            },
+        )
     ]
 
 

@@ -169,6 +169,26 @@ def test_all_enabled_agent_prompts_follow_standard_section_order() -> None:
         assert positions == sorted(positions), f"{prompt_file} 的统一章节顺序不正确"
 
 
+def test_rnaseq_prompt_keeps_analysis_center_priority_contract() -> None:
+    """RNA-seq 正式全流程必须显式优先分析中心 RNAFlow，不能退化为可选能力。"""
+    prompt = (AI_DIR / "prompts" / "rnaseq.md").read_text(encoding="utf-8")
+    skill = (AI_DIR / "skill_marketplace" / "rnaflow" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+
+    required_prompt_phrases = (
+        "最高优先级：正式分析优先使用平台分析中心",
+        "默认且优先使用 OmicHub「分析中心」的 RNAFlow 标准流程",
+        "不得在聊天沙盒中手工拼接并运行 FASTQ 到报告的完整主流程",
+        "避免只说“可以调用 RNAFlow”",
+    )
+    for phrase in required_prompt_phrases:
+        assert phrase in prompt, f"RNA-seq 提示词缺少分析中心优先约束：{phrase}"
+
+    assert "OmicHub 正式 bulk RNA-seq 分析的默认首选能力" in skill
+    assert "优先通过平台「分析中心」运行 RNAFlow" in skill
+
+
 # --------------------------------------------------------------------------- #
 # 3. 路由提示词候选表一致性
 # --------------------------------------------------------------------------- #

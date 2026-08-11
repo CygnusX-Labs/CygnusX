@@ -220,6 +220,7 @@ def submit_quality_gate(
     summary: str,
     evidence_refs: list[dict[str, str]] | None = None,
     artifact_hashes: dict[str, str] | None = None,
+    remediation_request: dict[str, Any] | None = None,
     opener: UrlOpen = urlopen,
 ) -> dict[str, Any]:
     case_id, work_item_id = _assignment_identity(assignment)
@@ -236,6 +237,7 @@ def submit_quality_gate(
             "summary": summary,
             "evidence_refs": evidence_refs or [{"kind": "task", "id": task_id}],
             "artifact_hashes": artifact_hashes or {},
+            "remediation_request": remediation_request,
         },
     )
 

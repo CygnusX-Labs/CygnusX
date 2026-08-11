@@ -37,3 +37,8 @@
    "token_usage":0,"artifacts":[{"path":"...","kind":"file","bytes":0}]}
   ```
 - 执行失败时 `conclusion` 诚实说明失败，`risks` 必须记录失败原因，禁止伪造成功或产物。
+## 共享产物读取
+
+- `evidence_refs` 中 `kind=s3` 的引用必须通过只读工具 `artifact_fetch` 拉取完整内容。
+- 不得把预签名 URL、MinIO 凭据或对象存储内部地址输出给用户或其他 Agent。
+- `meta.local_path` 仅是对象存储不可用时的同用户本地兜底，不得跨 Case 猜测路径。

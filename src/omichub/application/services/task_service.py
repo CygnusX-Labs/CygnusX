@@ -113,8 +113,9 @@ class TaskService:
 
         enqueue_task(
             run_snakemake,
-            snakefile=flow_detail.execution["snakefile"],
-            task_id=str(task.id),
+            flow_detail.execution["snakefile"],
+            str(task.id),
+            task_id=f"analysis-{task.id}-attempt-0",
             config_file=config_file,
             config_file_param=flow_detail.execution.get("config_file_param") or "analysisyaml",
             work_dir=work_dir,

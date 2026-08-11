@@ -11,6 +11,7 @@ from omichub.application.services.overdrive_planning_service import (
     OverdrivePlanningService,
     ResearchBundleService,
     build_plan_markdown,
+    build_research_queries,
 )
 from omichub.application.services.overdrive_run_service import PLAN_SECTIONS, validate_plan
 from omichub.core.exceptions import ValidationError
@@ -93,6 +94,222 @@ async def test_retrieval_sources_are_concurrent_and_model_runs_after_both() -> N
     model_item = next(item for item in bundle.evidence if item["source_type"] == "model_knowledge")
     assert model_item["locator"] == ""
     assert model_item["freshness"] == "not_applicable"
+
+
+@pytest.mark.asyncio
+async def test_tnpd_research_uses_method_query_and_rejects_irrelevant_web_results() -> None:
+    seen_queries: list[str] = []
+    model_seen_titles: list[str] = []
+
+    async def empty(_query: str, **_: object) -> list[object]:
+        return []
+
+    async def web(query: str) -> list[dict[str, str]]:
+        seen_queries.append(query)
+        return [
+            {
+                "title": "MEGA 构建进化树教程 -- chatGPT",
+                "url": "https://www.haomeiwen.com/subject/example.html",
+                "snippet": "准备一个蛋白序列文件并下载教程安装包",
+            },
+            {
+                "title": "病毒基因组系统进化分析专利",
+                "url": "https://www.jigao616.com/example.html",
+                "snippet": "本发明专利技术提供病毒分类决定性位点方法",
+            },
+            {
+                "title": "DIAMOND: fast and sensitive protein alignment",
+                "url": "https://pubmed.ncbi.nlm.nih.gov/25402007/",
+                "snippet": "DIAMOND supports sensitive protein homolog search for comparative genomics.",
+            },
+            {
+                "title": "IQ-TREE documentation: model selection and ultrafast bootstrap",
+                "url": "https://iqtree.github.io/doc/Command-Reference",
+                "snippet": "Maximum likelihood protein phylogeny with model selection and bootstrap support.",
+            },
+        ]
+
+    request = "我要将tnpd序列对比到20个基因组进行进化分析与建树"
+    async def model(
+        _query: str,
+        *,
+        retrieved_evidence: list[dict[str, str]],
+        **_: object,
+    ) -> list[object]:
+        model_seen_titles.extend(item.get("title", "") for item in retrieved_evidence)
+        return []
+
+    bundle = await ResearchBundleService(
+        knowledge_search=empty,
+        web_search=web,
+        model_knowledge=model,
+    ).collect(request)
+
+    assert seen_queries == [build_research_queries(request)["web"]]
+    normalized_query = seen_queries[0].casefold()
+    assert all(term in normalized_query for term in ("tnpd", "diamond", "mafft", "iq-tree"))
+    web_evidence = [item for item in bundle.evidence if item["source_type"] == "web"]
+    assert [item["title"] for item in web_evidence] == [
+        "DIAMOND: fast and sensitive protein alignment",
+        "IQ-TREE documentation: model selection and ultrafast bootstrap",
+    ]
+    assert bundle.sources["web"]["rejected_count"] == 2
+    assert bundle.sources["web"]["quality_gate"] == "authority_and_domain_relevance"
+    assert model_seen_titles == [
+        "DIAMOND: fast and sensitive protein alignment",
+        "IQ-TREE documentation: model selection and ultrafast bootstrap",
+    ]
+
+
+def test_plan_discloses_search_query_and_filtered_result_count() -> None:
+    content = build_plan_markdown(
+        request="TnpD 建树",
+        lead_planner_agent_id="agent-code",
+        evidence=[],
+        research_sources={
+            "web": {
+                "research_profile": "phylogeny",
+                "query": '\"TnpD\" DIAMOND MAFFT IQ-TREE',
+                "rejected_count": 8,
+                "quality_status": "no_relevant_evidence",
+            }
+        },
+        tasks=[_task()],
+        plan={"deliverables": ["树文件"]},
+        next_version=1,
+    )
+
+    assert "研究画像：`phylogeny`" in content
+    assert '实际检索式：`"TnpD" DIAMOND MAFFT IQ-TREE`' in content
+    assert "质量门已剔除 8 条" in content
+    assert "没有通过相关性与来源质量门" in content
+
+
+@pytest.mark.parametrize(
+    ("case_text", "expected_profile", "good_result", "bad_result"),
+    [
+        (
+            "请为 TP53 bulk RNA-seq 差异表达设计可靠分析方案",
+            "bulk_rnaseq",
+            {
+                "title": "DESeq2 differential expression workflow",
+                "url": "https://bioconductor.org/packages/DESeq2",
+                "snippet": "RNA-seq count matrix normalization, differential expression and batch effect design.",
+            },
+            {
+                "title": "转录组分析公司产品介绍",
+                "url": "https://qiye.shuziyingxiao.net/rnaseq",
+                "snippet": "本公司提供转录组产品特点和营销服务",
+            },
+        ),
+        (
+            "Vue 3 API 请求报错，请设计排查与修复方案",
+            "software_engineering",
+            {
+                "title": "Vue official API reference",
+                "url": "https://vuejs.org/api/",
+                "snippet": "Vue API reference, version compatibility, examples and testing guidance.",
+            },
+            {
+                "title": "Vue 报错解决大全",
+                "url": "https://blog.csdn.net/example",
+                "snippet": "复制代码即可解决，关注后下载附件",
+            },
+        ),
+        (
+            "构建生存分析预测模型并进行交叉验证",
+            "statistics",
+            {
+                "title": "Cross-validation and model evaluation",
+                "url": "https://scikit-learn.org/stable/modules/cross_validation.html",
+                "snippet": "Cross-validation, model validation, confidence intervals and statistical assumptions.",
+            },
+            {
+                "title": "机器学习培训班开课",
+                "url": "https://mp.weixin.qq.com/s/example",
+                "snippet": "培训班讲习班课程报名",
+            },
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_research_quality_gate_generalizes_across_domains(
+    case_text: str,
+    expected_profile: str,
+    good_result: dict[str, str],
+    bad_result: dict[str, str],
+) -> None:
+    queries: list[str] = []
+
+    async def empty(_query: str, **_: object) -> list[object]:
+        return []
+
+    async def web(query: str) -> list[dict[str, str]]:
+        queries.append(query)
+        return [bad_result, good_result]
+
+    bundle = await ResearchBundleService(
+        knowledge_search=empty,
+        web_search=web,
+        model_knowledge=empty,
+    ).collect(case_text)
+
+    assert build_research_queries(case_text)["profile"] == expected_profile
+    assert queries == [build_research_queries(case_text)["web"]]
+    assert "official documentation" in queries[0]
+    web_evidence = [item for item in bundle.evidence if item["source_type"] == "web"]
+    assert [item["title"] for item in web_evidence] == [good_result["title"]]
+    assert web_evidence[0]["evidence_quality"]["research_profile"] == expected_profile
+    assert web_evidence[0]["evidence_quality"]["authority_tier"] == "trusted"
+    assert bundle.sources["web"]["rejected_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_generic_chinese_research_keeps_original_subject_in_query() -> None:
+    case_text = "评估团队知识共享机制并设计改进方案"
+    queries: list[str] = []
+
+    async def empty(_query: str, **_: object) -> list[object]:
+        return []
+
+    async def web(query: str) -> list[dict[str, str]]:
+        queries.append(query)
+        return [
+            {
+                "title": "Knowledge sharing intervention methodology",
+                "url": "https://www.nature.com/articles/example",
+                "snippet": "A reproducible methodology with validation and benchmark measures.",
+            },
+            {
+                "title": "知识管理培训班",
+                "url": "https://mp.weixin.qq.com/s/example",
+                "snippet": "培训班课程报名与营销介绍",
+            },
+        ]
+
+    bundle = await ResearchBundleService(
+        knowledge_search=empty,
+        web_search=web,
+        model_knowledge=empty,
+    ).collect(case_text)
+
+    assert build_research_queries(case_text)["profile"] == "general"
+    assert case_text in queries[0]
+    assert "official documentation" in queries[0]
+    assert [
+        item["title"] for item in bundle.evidence if item["source_type"] == "web"
+    ] == ["Knowledge sharing intervention methodology"]
+
+
+def test_profile_query_preserves_unregistered_chinese_subject_and_trusts_public_sources() -> None:
+    case_text = "设计肝癌转录组差异表达与通路分析方案"
+    query = build_research_queries(case_text)
+
+    assert query["profile"] == "bulk_rnaseq"
+    assert case_text in query["web"]
+    assert ResearchBundleService._is_trusted_web_host("cancer.gov") is True
+    assert ResearchBundleService._is_trusted_web_host("example.edu.cn") is True
+    assert ResearchBundleService._is_trusted_web_host("who.int") is True
 
 
 @pytest.mark.asyncio

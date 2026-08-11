@@ -50,14 +50,14 @@ migrate-merge: ## 自动合并 Alembic 多分支 (Multiple Heads 修复)
 	@echo "=> ✅ 多分支合并完成，数据库已更新至最新版本。"
 
 # ===== Docker Compose 编排（主栈 + 独立 Worker 栈，单机逻辑解耦）=====
-COMPOSE_MAIN   := docker compose -f deploy/docker/docker-compose.yml
+COMPOSE_MAIN   := docker compose --env-file .env -f deploy/docker/docker-compose.yml
 COMPOSE_PGVECTOR := $(COMPOSE_MAIN) -f deploy/docker/docker-compose.pgvector.yml
 COMPOSE_CROSS_WEB := $(COMPOSE_MAIN) -f deploy/docker/docker-compose.cross-web.yml
 COMPOSE_MAIN_AGENTTEAMS := $(COMPOSE_MAIN) -f deploy/agentteams/docker-compose.omichub-proxy.yml
 COMPOSE_PGVECTOR_AGENTTEAMS := $(COMPOSE_PGVECTOR) -f deploy/agentteams/docker-compose.omichub-proxy.yml
 COMPOSE_AGENTTEAMS := docker compose --project-name agentteams -f deploy/agentteams/docker-compose.agentteams.yml
 COMPOSE_WORKER := ./scripts/worker-compose.sh
-COMPOSE_ALL    := docker compose -f deploy/docker/docker-compose.yml
+COMPOSE_ALL    := docker compose --env-file .env -f deploy/docker/docker-compose.yml
 AGENTTEAMS_BRIDGE_ENV_FILE ?= deploy/agentteams/bridge.env
 AGENTTEAMS_WORKER_ENV_FILE ?= deploy/agentteams/worker.env
 ENV_OMICHUB_NETWORK_NAME := $(shell test -f .env && sed -n 's/^OMICHUB_NETWORK_NAME=//p' .env | head -n 1)
@@ -99,11 +99,11 @@ agentteams-worker-env: ## 从受控 Bridge 配置生成最小权限的 AgentTeam
 		echo "=> 已生成最小权限 Worker 令牌环境：$$target_file"
 
 docker-up-agentteams: docker-network agentteams-worker-env ## 构建并启动 AgentTeams Bridge、Gateway 与全部生产 Worker
-	$(COMPOSE_AGENTTEAMS) --env-file $(AGENTTEAMS_WORKER_ENV_FILE) --profile agentteams-production up -d --build --force-recreate
+	$(COMPOSE_AGENTTEAMS) --env-file .env --env-file $(AGENTTEAMS_WORKER_ENV_FILE) --profile agentteams-production up -d --build --force-recreate
 
 docker-runtime-dirs: ## 准备关键运行目录与非 root 容器写入权限（docker-up/reload 自动执行）
 	@echo "=> 准备运行目录权限..."
-	@docker run --rm -v $(DATA_ROOT):/data-root python:3.11-slim sh -c 'mkdir -p /data-root/logs/app /data-root/logs/celery/tasks /data-root/logs/nginx /data-root/logs/snakemake /data-root/users /data-root/uploads /data-root/.tmp /data-root/.conda_envs /data-root/omichub_data/_pgdata /data-root/omichub_data/_redis && chown -R $(PUID):$(PGID) /data-root/logs/app /data-root/logs/celery /data-root/logs/snakemake /data-root/uploads /data-root/.tmp /data-root/.conda_envs && chown $(PUID):$(PGID) /data-root/users'
+	@docker run --rm -v $(DATA_ROOT):/data-root python:3.11-slim sh -c 'mkdir -p /data-root/logs/app /data-root/logs/celery/tasks /data-root/logs/nginx /data-root/logs/snakemake /data-root/users /data-root/uploads /data-root/.tmp /data-root/.conda_envs /data-root/omichub_data/_pgdata /data-root/omichub_data/_redis /data-root/omichub_data/_minio && chown -R $(PUID):$(PGID) /data-root/logs/app /data-root/logs/celery /data-root/logs/snakemake /data-root/uploads /data-root/.tmp /data-root/.conda_envs && chown $(PUID):$(PGID) /data-root/users'
 
 docker-fix-permissions: ## 手动修复 /data/omichub 权限事故（登录 500 / PermissionError 时使用）
 	@echo "=> 修复 /data/omichub 非 root 服务写入权限..."

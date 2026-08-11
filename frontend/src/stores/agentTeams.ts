@@ -15,11 +15,19 @@ export const useAgentTeamsStore = defineStore('agentTeams', () => {
     return agentTeamsApi.submitCase(caseId, payload)
   }
 
+  async function retryCase(caseId: string) {
+    return agentTeamsApi.retryCase(caseId)
+  }
+
   async function rejectCase(caseId: string, payload: { reason: string }): Promise<AgentTeamsCase> {
     const value = await agentTeamsApi.rejectCase(caseId, payload)
     cases.value = { ...cases.value, [caseId]: value }
     return value
   }
 
-  return { cases, refreshCase, submitCase, rejectCase }
+  async function revisePlan(caseId: string, payload: { expected_plan_hash: string; parameters: Record<string, unknown>; reason: string }) {
+    return agentTeamsApi.revisePlan(caseId, payload)
+  }
+
+  return { cases, refreshCase, submitCase, retryCase, rejectCase, revisePlan }
 })

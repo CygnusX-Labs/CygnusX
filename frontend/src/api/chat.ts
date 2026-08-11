@@ -41,6 +41,12 @@ export const chatApi = {
     )
     return response.data.run || null
   },
+  async getLatestOverdriveRun(sessionId: string): Promise<ActiveOverdriveRunSnapshot | null> {
+    const response = await apiClient.get<{ run?: ActiveOverdriveRunSnapshot | null }>(
+      `/chat/sessions/${sessionId}/overdrive-runs/latest`,
+    )
+    return response.data.run || null
+  },
   async getOverdrivePlan(sessionId: string, runId: string): Promise<string> {
     const response = await apiClient.get(
       `/chat/sessions/${sessionId}/overdrive-runs/${runId}/plan`,

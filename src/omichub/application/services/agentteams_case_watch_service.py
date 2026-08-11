@@ -89,6 +89,7 @@ class AgentTeamsCaseWatchService:
         legacy_notifications = dict(meta.pop("agentteams_case_notified", {}) or {})
         legacy_cursors = dict(meta.pop("agentteams_case_event_cursor", {}) or {})
         titles = dict(meta.get("agentteams_case_titles") or {})
+        failure_counts = dict(meta.get("agentteams_case_watch_failures") or {})
         changed = bool(legacy_notifications or legacy_cursors)
         scanned = notified = failed = 0
 
@@ -100,8 +101,29 @@ class AgentTeamsCaseWatchService:
                 case = await agentteams.get_case(case_id, requester_ref=session.user_id)
             except Exception as exc:  # noqa: BLE001
                 failed += 1
+                failure_count = int(failure_counts.get(case_id) or 0) + 1
+                failure_counts[case_id] = failure_count
+                changed = True
                 logger.warning("AgentTeams Case watch read failed for %s: %s", case_id, exc)
+                if failure_count == 3:
+                    event = await self._add_sync_failure_notification(
+                        session.session_id,
+                        case_id,
+                        str(titles.get(case_id) or "协作 Case")[:80],
+                    )
+                    try:
+                        await publish_chat_case_event(session.session_id, event)
+                    except Exception as publish_exc:  # noqa: BLE001
+                        logger.warning(
+                            "AgentTeams Case sync warning publish failed for %s: %s",
+                            case_id,
+                            publish_exc,
+                        )
+                    notified += 1
                 continue
+            if int(failure_counts.get(case_id) or 0):
+                failure_counts[case_id] = 0
+                changed = True
             status = str(case.get("status") or "")
             if not status:
                 continue
@@ -157,6 +179,7 @@ class AgentTeamsCaseWatchService:
         if changed:
             meta["agentteams_case_status"] = statuses
             meta["agentteams_case_titles"] = titles
+            meta["agentteams_case_watch_failures"] = failure_counts
             session.sandbox_meta = meta
             session.updated_at = datetime.now(UTC)
         return {"scanned": scanned, "notified": notified, "failed": failed}
@@ -239,4 +262,56 @@ class AgentTeamsCaseWatchService:
             "case_url": case_url,
             "session_id": session_id,
             "message_id": message_id,
+        }
+
+    async def _add_sync_failure_notification(
+        self,
+        session_id: str,
+        case_id: str,
+        title: str,
+    ) -> dict[str, Any]:
+        message_id = str(uuid.uuid4())
+        content = (
+            f"协作 Case「{title}」已连续 3 次同步失败。"
+            "Bridge 可能暂时不可用，系统会继续自动重试；当前任务状态以 OmicHub 为准。"
+        )
+        self._db.add(
+            ChatMessageModel(
+                id=uuid.uuid4(),
+                message_id=message_id,
+                session_id=session_id,
+                role="system",
+                content=content,
+                content_type="text",
+                status="complete",
+                metadata_json={
+                    "type": "room_speech",
+                    "phase": "agentteams_sync_warning",
+                    "case_id": case_id,
+                    "session_id": session_id,
+                    "message_id": message_id,
+                },
+            )
+        )
+        session = await self._db.scalar(
+            select(ChatSessionModel).where(ChatSessionModel.session_id == session_id)
+        )
+        if session is not None:
+            session.message_count += 1
+            session.last_message_at = datetime.now(UTC)
+            session.updated_at = datetime.now(UTC)
+        return {
+            "type": "room_speech",
+            "content": content,
+            "sender": {
+                "agent_id": "agent-general",
+                "name": "星尘 AI",
+                "avatar": "✨",
+                "color": "#4f8ef7",
+                "role": "manager",
+            },
+            "round": 0,
+            "session_id": session_id,
+            "message_id": message_id,
+            "case_id": case_id,
         }

@@ -59,8 +59,8 @@ const displayReason = computed(() => {
 .collaboration-route-notice.is-blocked { border-left-color: var(--error-color, #dc2626); }
 .notice-summary { display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none; }
 .notice-summary::-webkit-details-marker { display: none; }
-.notice-heading { display: flex; align-items: center; gap: 8px; }
-.notice-heading strong { color: var(--chat-text-primary); font-size: 13px; }
+.notice-heading { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; white-space: nowrap; }
+.notice-heading strong { color: var(--chat-text-primary); font-size: 13px; white-space: nowrap; }
 .notice-reason { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--chat-text-secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .notice-detail { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-top: 8px; }
 p { margin: 0; color: var(--chat-text-secondary); font-size: 12px; line-height: 1.5; }

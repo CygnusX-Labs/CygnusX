@@ -7,17 +7,30 @@ match:
     - 系统发育
     - 进化树
     - phylogenetic
+    - 建树
+    - 进化分析
+    - 序列比对
+    - 序列对比
+    - 同源序列
     - newick
     - 处理已有树
     - 美化已有树
     - treefile
-  planning_markers: []
+  planning_markers: [建树, 进化分析, 序列比对, 序列对比]
 intake:
   questions:
-    - id: modality
-      when_markers_absent: [bulk, 单细胞, 空间]
-      question: "你的数据属于哪种模态?这会决定后续分析路线和可分配的专家。"
-      options: ["bulk RNA-seq", "单细胞 RNA-seq", "空间转录组", "多组学/其他"]
+    - id: sequence-type
+      when_markers_absent: [蛋白质序列, 氨基酸, 核酸序列, dna序列, cds]
+      question: "TnpD 查询序列和后续建树应使用哪种序列类型？"
+      options: ["TnpD 蛋白/氨基酸序列（推荐）", "TnpD 核酸/CDS 序列", "两者都有，请先比较适用性"]
+    - id: genome-inputs
+      when_markers_absent: [已上传, 上传了, 附件, 工作区, 文件, 目录, 路径, fasta, fna, gbk, gbff, accession]
+      question: "20 个基因组将以什么方式提供？"
+      options: ["上传或引用本地基因组 FASTA/GFF（推荐）", "提供 NCBI accession 列表", "尚未准备，请先给数据准备清单"]
+    - id: homolog-source
+      when_markers_absent: [已注释tnpd, tnpd蛋白, 同源序列, blast, diamond, hmm]
+      question: "每个基因组中的 TnpD 同源序列是否已经提取和注释？"
+      options: ["尚未提取，请从 20 个基因组检索（推荐）", "已有每个基因组的 TnpD 序列", "部分已有，需要检索并处理缺失/多拷贝"]
   slots:
     - key: task_type
       values:
@@ -25,7 +38,7 @@ intake:
           markers: [处理/美化已有树, 处理已有树, 美化已有树, 已经建好的系统发育树,
                     已有newick, 已有树文件, 对已有, 树注释]
         - value: phylogeny_construction
-          markers: [从头建树, 从头构建系统发育树, 使用蛋白质序列从头]
+          markers: [从头建树, 从头构建系统发育树, 使用蛋白质序列从头, 建树, 进化分析, 序列比对, 序列对比]
       priority: first_match
     - key: input_format
       values:
@@ -77,11 +90,31 @@ assignments:
       minimize_to_single: true
       task_id: tree-visualization
       task: "处理用户已有的系统发育树文件，先验证 Newick/treefile 可解析性，再完成树注释、美化和 publication-ready 图表交付；不要重新执行序列比对或建树。"
-    - id: domain-plan
-      when: planning_or_analysis
-      agent_match: [agent-phylo, 系统发育]
-      task_id: domain-analysis
-      task: "直接完成本领域的分析计划、统计方法、关键参数、风险和解释边界。"
+    - id: homolog-search
+      when_slot_is: {task_type: phylogeny_construction}
+      authoritative: true
+      required: true
+      allow_split: true
+      allow_reorder: false
+      agent_match: [agent-code, 代码助手, 系统发育]
+      task_id: tnpd-homolog-search
+      workspace_access: true
+      accepts_inputs: [TnpD 查询序列, 20 个基因组及其注释, accession 列表]
+      produces_outputs: [TnpD 候选同源序列 FASTA, 命中与筛选审计表]
+      task: "验证 TnpD 查询序列与 20 个基因组输入，逐基因组检索并提取同源/直系同源候选；记录阈值、覆盖度、缺失、多命中和旁系同源风险，交付候选 FASTA 与可追溯命中表。"
+    - id: phylogeny-build
+      when_slot_is: {task_type: phylogeny_construction}
+      authoritative: true
+      required: true
+      allow_split: false
+      allow_reorder: false
+      agent_match: [agent-viz, 可视化助手, 系统发育]
+      task_id: tnpd-phylogeny
+      depends_on: [tnpd-homolog-search]
+      workspace_access: true
+      accepts_inputs: [TnpD 候选同源序列 FASTA, 命中与筛选审计表]
+      produces_outputs: [多序列比对与修剪结果, Newick/treefile, 节点支持度表, publication-ready 进化树, 方法与限制报告]
+      task: "对筛选后的 TnpD 序列做质量控制、多序列比对与必要修剪，选择合适替换模型并构建带支持度评估的系统发育树；交付可复现参数、Newick/treefile、节点支持度、publication-ready 图和方法限制。"
 prompt_injections:
   manager_notes: |
     系统发育树任务必须先区分“从序列建树”和“处理已有树”。已确认 task_type 后,

@@ -11,7 +11,12 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
 
-from claim_next import claim_next, execute_readonly_work_item, heartbeat_work_item, submit_quality_gate
+from claim_next import (
+    claim_next,
+    execute_readonly_work_item,
+    heartbeat_work_item,
+    submit_quality_gate,
+)
 
 
 @dataclass(frozen=True)
@@ -90,6 +95,22 @@ def run_once(config: QualityWorkerConfig) -> dict[str, Any]:
         trace_id=trace_id,
     )
     decision, summary = _decision(result)
+    recommendations = [
+        str(item) for item in result.get("recommendations", []) if isinstance(item, str)
+    ]
+    normalized = f"{summary} {' '.join(recommendations)}".lower()
+    remediation_request = None
+    if decision == "blocked":
+        target = (
+            "data-steward"
+            if any(marker in normalized for marker in ("sample", "metadata", "group", "input", "样本", "分组", "输入", "元数据"))
+            else "workflow-operator"
+        )
+        remediation_request = {
+            "target": target,
+            "objective": f"修复质控阻断项并补充复核证据：{summary[:700]}",
+            "recommended_changes": recommendations[:50],
+        }
     gate = submit_quality_gate(
         config.bridge_url,
         identity,
@@ -98,6 +119,7 @@ def run_once(config: QualityWorkerConfig) -> dict[str, Any]:
         task_id=task_id,
         decision=decision,
         summary=summary,
+        remediation_request=remediation_request,
     )
     return {
         "action": decision,

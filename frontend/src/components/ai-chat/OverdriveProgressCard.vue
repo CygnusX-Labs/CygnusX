@@ -104,7 +104,11 @@ function phaseLabel(phase: OverdriveProgress['phase']): string {
   return labels[phase]
 }
 
-function stepClass(phase: OverdriveProgress['phase'], step: number): string {
+function stepClass(progress: OverdriveProgress, step: number): string {
+  if (progress.phase === 'terminated' && !progress.tasks?.length) {
+    return step === 1 ? 'is-complete' : ''
+  }
+  const phase = progress.phase
   const activeStep = ['completed', 'failed', 'terminated'].includes(phase)
     ? 4
     : ['peer_reviewing', 'summarizing'].includes(phase)
@@ -118,6 +122,7 @@ function stepClass(phase: OverdriveProgress['phase'], step: number): string {
 
 function percentage(progress: OverdriveProgress): number {
   if (progress.phase === 'completed') return 100
+  if (progress.phase === 'terminated' && !progress.tasks?.length) return 24
   if (progress.phase === 'awaiting_input') return progress.total ? 88 : 32
   if (progress.phase === 'paused') return progress.total ? Math.max(24, (progress.completed / progress.total) * 68) : 24
   if (progress.phase === 'peer_reviewing') return 86
@@ -250,9 +255,9 @@ async function downloadArtifact(path: string) {
     </section>
 
     <div class="overdrive-progress-card__steps" aria-hidden="true">
-      <span :class="stepClass(progress.phase, 1)">Manager 规划</span>
-      <span :class="stepClass(progress.phase, 2)">专家协作</span>
-      <span :class="stepClass(progress.phase, 3)">结论交付</span>
+      <span :class="stepClass(progress, 1)">Manager 规划</span>
+      <span :class="stepClass(progress, 2)">专家协作</span>
+      <span :class="stepClass(progress, 3)">结论交付</span>
     </div>
 
     <div class="overdrive-progress-card__bar-row">
@@ -260,8 +265,8 @@ async function downloadArtifact(path: string) {
         type="line"
         :percentage="percentage(progress)"
         :show-indicator="false"
-        :processing="progress.phase !== 'completed' && progress.phase !== 'awaiting_input'"
-        :status="progress.phase === 'completed' ? 'success' : 'default'"
+        :processing="!['completed', 'failed', 'terminated', 'awaiting_input'].includes(progress.phase)"
+        :status="progress.phase === 'completed' ? 'success' : progress.phase === 'failed' ? 'error' : 'default'"
       />
       <span v-if="progress.total" class="overdrive-progress-card__count">
         {{ progress.completed }}/{{ progress.total }}
