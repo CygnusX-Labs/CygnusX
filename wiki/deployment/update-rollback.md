@@ -6,11 +6,11 @@
 
 | 改动类型 | 推荐命令 | 说明 |
 |---|---|---|
-| 只改前端代码（`frontend/src/`） | `make docker-reload` | 重新构建 `frontend/dist`，并重启 nginx / web |
-| 只改后端 Python 源码（`src/`） | `docker restart omichub-web omichub-beat omichub-worker` | 容器挂载 `src:ro`，重启即可加载新代码 |
+| 前端或后端日常改动 | `make docker-dev-refresh` | 构建前端、重启主服务并运行迁移，不重建镜像 |
+| 需要完整开发栈重载 | `make docker-reload` | 重建前端并刷新主栈、Worker 与可选组件 |
 | 改了流程 YAML（`flows/*.yaml`） | `curl -X POST http://localhost:8000/api/v1/flows/reload` | 流程支持热重载，无需重启服务 |
 | 改了数据库模型或新增迁移文件 | 先 `make check-migrations`，再 `make docker-reload` | web 入口会自动执行 `alembic upgrade head` |
-| 改了依赖（`pyproject.toml` / `uv.lock`）或 Dockerfile | `make docker-start` | 必须重建镜像；这会清空数据卷，开发环境可用，生产需谨慎 |
+| 改了依赖（`pyproject.toml` / `uv.lock`）或 Dockerfile | `make docker-build-all-images` 后按需启动 | 重建镜像；生产环境不要用清空数据的命令替代发布流程 |
 | 想彻底从零重建 | `make docker-start` | 执行 `docker-purge + build --no-cache + 构建前端 + up` |
 
 ## 日常迭代推荐
@@ -18,20 +18,11 @@
 前端 + 后端源码的日常改动，统一用：
 
 ```bash
-make docker-reload
+make docker-dev-refresh
 ```
 
-它等价于：
-
-```bash
-cd frontend && npm run build
-docker compose -f deploy/docker/docker-compose.yml restart nginx
-docker compose -f deploy/docker/docker-compose.yml restart web
-docker compose -f deploy/docker/docker-compose.yml up -d
-docker compose -f deploy/docker/docker-compose.worker.yml up -d
-```
-
-> `make docker-reload` **不会重建镜像，也不会删除数据卷**。如果改了 `pyproject.toml`、Dockerfile 或需要彻底清空环境，请用 `make docker-start`。
+该命令不会重建镜像，也不会删除数据卷。若改了 `pyproject.toml`、Dockerfile 或运行时镜像，先构建
+受影响镜像，再使用 `make docker-up-all` 或对应的主栈 / Worker 启动命令。
 
 ## 彻底重建环境
 
@@ -44,8 +35,7 @@ make docker-start
 ```bash
 make docker-purge          # 清空容器、数据卷、网络、本地镜像、前端 dist
 cd frontend && npm run build
-docker compose -f deploy/docker/docker-compose.yml build --no-cache
-docker compose -f deploy/docker/docker-compose.worker.yml build --no-cache
+make docker-build-all-images
 make docker-up-all
 ```
 
@@ -63,10 +53,10 @@ make docker-up-all
 
 ```bash
 # 推荐
-make docker-reload
+make docker-dev-refresh
 
 # 或手动
-cd frontend && npm run build && cd ..
+make frontend-build
 docker restart omichub-nginx
 
 # 浏览器强制刷新

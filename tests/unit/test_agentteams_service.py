@@ -121,16 +121,20 @@ async def test_direct_case_api_creates_case_for_owned_project(monkeypatch) -> No
 @pytest.mark.asyncio
 async def test_direct_case_api_allows_general_workspace_case(monkeypatch) -> None:
     user_id = uuid4()
-    project_id = uuid4()
     request = AgentTeamsCaseCreateRequest(
-        project_id=str(project_id), intent="build a treeplot from fasta files"
+        intent="build a treeplot from fasta files",
+        context_refs=[{"kind": "file", "id": "tree-a.fa"}, {"kind": "file", "id": "tree-b.fa"}],
     )
     service = SimpleNamespace(create_case=AsyncMock(return_value={"case_id": "general_001"}))
-    monkeypatch.setattr(ProjectService, "get_project", AsyncMock(return_value={"id": str(project_id)}))
 
     response = await create_case(request, str(user_id), service, SimpleNamespace())
 
     assert response == {"case_id": "general_001"}
+    assert service.create_case.await_args.kwargs["project_id"] is None
+    assert service.create_case.await_args.kwargs["context_refs"] == [
+        {"kind": "file", "id": "tree-a.fa"},
+        {"kind": "file", "id": "tree-b.fa"},
+    ]
     assert service.create_case.await_args.kwargs["flow_id"] is None
     assert service.create_case.await_args.kwargs["sample_sheet"] is None
 
@@ -186,6 +190,37 @@ async def test_create_case_starts_planning_with_the_selected_flow(
             },
         ),
     ]
+
+
+@pytest.mark.asyncio
+async def test_create_general_case_uses_file_context_without_project(
+    service: AgentTeamsService, monkeypatch
+) -> None:
+    captured: list[tuple[str, dict]] = []
+
+    async def fake_request(path: str, **kwargs):
+        captured.append((path, kwargs))
+        return {"case_id": "general_001", "requester_ref": "current-user"}
+
+    monkeypatch.setattr(service, "_request", fake_request)
+
+    await service.create_case(
+        case_id="general_001",
+        project_id=None,
+        context_refs=[{"kind": "file", "id": "fasta-a"}, {"kind": "file", "id": "fasta-b"}],
+        intent="build a treeplot from two fasta files",
+        requester_ref="current-user",
+        flow_id=None,
+    )
+
+    assert captured[0][1]["json"] == {
+        "case_id": "general_001",
+        "context_refs": [{"kind": "file", "id": "fasta-a"}, {"kind": "file", "id": "fasta-b"}],
+        "intent": "build a treeplot from two fasta files",
+        "requester_ref": "current-user",
+        "execution_mode": "cluster_case",
+        "lead_planner": "agent-code",
+    }
 
 
 @pytest.mark.asyncio

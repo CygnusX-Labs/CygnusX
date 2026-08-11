@@ -126,6 +126,15 @@ _CHAT_UPLOAD_ALLOWED_SUFFIXES = frozenset(
         ".sto",
     }
 )
+_CHAT_UPLOAD_DATA_MANAGEMENT_SUFFIXES = frozenset(
+    {
+        ".bam",
+        ".cram",
+        ".h5ad",
+        ".rds",
+        ".zip",
+    }
+)
 
 
 def _validate_chat_upload_filename(filename: str | None) -> None:
@@ -138,6 +147,11 @@ def _validate_chat_upload_filename(filename: str | None) -> None:
     for suffix in suffixes:
         if suffix in _CHAT_UPLOAD_BLOCKED_SUFFIXES:
             raise ValidationError(f"禁止上传可执行文件: {suffix}")
+    if suffixes[-1] in _CHAT_UPLOAD_DATA_MANAGEMENT_SUFFIXES:
+        raise ValidationError(
+            "该文件请前往文件管理上传，再在聊天输入框中使用 @ 引用，"
+            "避免聊天模型直接解析大体积或二进制数据"
+        )
     if suffixes[-1] not in _CHAT_UPLOAD_ALLOWED_SUFFIXES:
         raise ValidationError(f"不支持的文件类型: {suffixes[-1]}")
 

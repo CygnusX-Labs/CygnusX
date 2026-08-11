@@ -36,13 +36,14 @@ def test_studio_section_parsed(tmp_path: Path):
 
 @pytest.mark.unit
 def test_agent_prompt_appends_shared_sandbox_protocol_once() -> None:
-    """运行时 Agent 提示词统一追加共享协议，源文件不再复制协议正文。"""
+    """运行时 Agent 提示词只追加共享沙盒协议。"""
     data_dir = Path(__file__).parents[2] / "data" / "ai"
     config = _load_single_agent(data_dir / "rnaseq.yaml")
 
     assert config is not None
     prompt = config["system_prompt"]
     assert prompt.count("## 共享沙盒协议") == 1
+    assert "## 转介、交接与协作" in prompt
     assert "output/results/" in prompt
     assert "## 依赖现场安装规范" not in (data_dir / "prompts" / "rnaseq.md").read_text(
         encoding="utf-8"
@@ -53,10 +54,15 @@ def test_agent_prompt_appends_shared_sandbox_protocol_once() -> None:
 @pytest.mark.parametrize(
     "agent_name",
     [
+        "atacseq",
         "code",
+        "cloud_ops",
+        "data",
+        "delivery",
         "general",
         "mcp_builder",
         "orchestrator",
+        "qc",
         "rnaseq",
         "router",
         "scrna",

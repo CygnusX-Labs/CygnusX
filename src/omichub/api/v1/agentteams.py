@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from omichub.api.deps import CurrentUserId, DbSession
 from omichub.application.services.agent_consultation_service import (
@@ -101,6 +101,12 @@ class ScientificInterpretationRequest(BaseModel):
     execution_mode: Literal["readonly_consultation", "workspace_execution"] = "readonly_consultation"
 
 
+class AgentTeamsContextRef(BaseModel):
+    kind: Literal["workspace", "file"]
+    id: str = Field(min_length=1, max_length=256)
+    location: str | None = Field(default=None, max_length=512)
+
+
 @router.post(
     "/consultations/scientific-interpretation",
     response_model=ConsultationEnvelope,
@@ -115,11 +121,20 @@ async def scientific_interpretation(
 
 
 class AgentTeamsCaseCreateRequest(BaseModel):
-    project_id: str = Field(min_length=1, max_length=256)
+    project_id: str | None = Field(default=None, min_length=1, max_length=256)
+    context_refs: list[AgentTeamsContextRef] = Field(default_factory=list, max_length=100)
     intent: str = Field(min_length=1, max_length=256)
     flow_id: str | None = Field(default=None, min_length=1, max_length=128)
     sample_sheet: list[dict[str, Any]] = Field(default_factory=list, max_length=10_000)
     comparisons: list[dict[str, Any]] | None = Field(default=None, max_length=1_000)
+
+    @model_validator(mode="after")
+    def _validate_execution_context(self) -> "AgentTeamsCaseCreateRequest":
+        if self.flow_id and not self.project_id:
+            raise ValueError("流程型 Case 必须关联项目")
+        if not self.flow_id and not (self.project_id or self.context_refs):
+            raise ValueError("通用 Case 必须关联至少一个文件或工作区上下文")
+        return self
 
 
 class AgentTeamsCaseSubmitRequest(BaseModel):
@@ -192,10 +207,12 @@ async def create_case(
 ) -> dict[str, Any]:
     if request.flow_id and not _is_chat_case_flow_allowed(request.flow_id):
         raise BusinessError("该流程不在 AgentTeams Case 白名单中")
-    await _require_owned_project(db, current_user_id, request.project_id)
+    if request.project_id:
+        await _require_owned_project(db, current_user_id, request.project_id)
     return await service.create_case(
         case_id=f"bioops_{uuid4().hex}",
         project_id=request.project_id,
+        context_refs=[ref.model_dump(exclude_none=True) for ref in request.context_refs],
         intent=request.intent,
         requester_ref=current_user_id,
         flow_id=request.flow_id,

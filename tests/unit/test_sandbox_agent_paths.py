@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 _AGENT_PATH = Path(__file__).resolve().parents[2] / "deploy" / "studio" / "sandbox_agent.py"
 _spec = importlib.util.spec_from_file_location("sandbox_agent", _AGENT_PATH)
@@ -68,6 +69,62 @@ def test_symlink_escape_rejected(tmp_path: Path):
 def test_root_itself_allowed(tmp_path: Path):
     """工作区根目录本身合法"""
     assert resolve_workspace_path(".", root=tmp_path) == tmp_path
+
+
+@pytest.mark.unit
+def test_protected_write_prefixes_rejected(tmp_path: Path, monkeypatch):
+    """input/ 与 ref/ 前缀的写、编辑、删除、重命名、创建目录统一返回 403。"""
+    monkeypatch.setattr(sandbox_agent, "WORKSPACE_ROOT", tmp_path)
+    monkeypatch.setattr(sandbox_agent, "PLATFORM_MOUNT_ROOT", tmp_path / "platform")
+    (tmp_path / "input").mkdir()
+    (tmp_path / "ref").mkdir()
+    (tmp_path / "output").mkdir()
+
+    client = TestClient(sandbox_agent.app)
+
+    # write
+    assert client.post("/files/write", json={"path": "input/foo.txt", "content": "x"}).status_code == 403
+    assert client.post("/files/write", json={"path": "ref/foo.txt", "content": "x"}).status_code == 403
+    assert client.post("/files/write", json={"path": "output/foo.txt", "content": "x"}).status_code == 200
+
+    # mkdir
+    assert client.post("/files/mkdir", json={"path": "input/sub"}).status_code == 403
+    assert client.post("/files/mkdir", json={"path": "ref/sub"}).status_code == 403
+    assert client.post("/files/mkdir", json={"path": "output/sub"}).status_code == 200
+
+    # edit
+    (tmp_path / "output" / "editable.txt").write_text("hello", encoding="utf-8")
+    edit_payload = {"path": "input/foo.txt", "old_string": "a", "new_string": "b"}
+    assert client.post("/files/edit", json=edit_payload).status_code == 403
+    edit_payload["path"] = "ref/foo.txt"
+    assert client.post("/files/edit", json=edit_payload).status_code == 403
+    assert (
+        client.post(
+            "/files/edit",
+            json={"path": "output/editable.txt", "old_string": "hello", "new_string": "world"},
+        ).status_code
+        == 200
+    )
+
+    # rename
+    (tmp_path / "output" / "src.txt").write_text("x", encoding="utf-8")
+    assert (
+        client.post("/files/rename", json={"path": "input/foo.txt", "new_path": "output/x.txt"}).status_code
+        == 403
+    )
+    assert (
+        client.post("/files/rename", json={"path": "output/src.txt", "new_path": "input/x.txt"}).status_code
+        == 403
+    )
+    assert (
+        client.post("/files/rename", json={"path": "output/src.txt", "new_path": "output/dst.txt"}).status_code
+        == 200
+    )
+
+    # delete
+    assert client.delete("/files/delete", params={"path": "input/foo.txt"}).status_code == 403
+    assert client.delete("/files/delete", params={"path": "ref/foo.txt"}).status_code == 403
+    assert client.delete("/files/delete", params={"path": "output/dst.txt"}).status_code == 200
 
 
 # ===== 读路径放行（P1 数据不搬家：input/ 软链 → /data/platform 只读挂载） =====

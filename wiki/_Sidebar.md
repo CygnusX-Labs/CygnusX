@@ -1,5 +1,7 @@
 # 导航
 
+- [Wiki 维护](documentation-maintenance)
+
 ## 快速开始
 - [快速开始](getting-started/quickstart)
 - [首次部署](getting-started/first-time-setup)
@@ -31,7 +33,8 @@
 - [运维索引](operations)
 
 ## 功能
-- [AI 聊天助手](features/ai-chat)
+- [AI 助手与工作台](features/ai-chat)
+- [AI 多 Agent 协作与超频模式](features/ai-collaboration)
 - [分析流程](features/workflows)
 - [数据下载](features/downloads)
 - [实验室知识库](features/knowledge-base)

@@ -93,3 +93,7 @@ docker restart omichub-web omichub-worker omichub-beat
 - 确认已配置 AI Provider（`data/ai/providers.yaml` 或 `.env`）
 - 检查网络能否访问模型 API
 - 查看后端日志中的 API 调用失败记录
+- 若问题是“知识库没有答案”，确认目标文档已登记或位于 `wiki/`，然后执行 `make sync-knowledge`；
+  需要时再执行 `make knowledge-reindex`
+- 检查当前 Agent、Skill、MCP 和协作能力是否已被部署配置及用户权限启用；不要把未启用功能当成
+  Provider 故障

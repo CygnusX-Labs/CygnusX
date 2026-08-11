@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 BridgeRole = Literal[
     "approval-authority",
@@ -217,7 +217,8 @@ def _validate_element_room_url(value: str | None) -> str | None:
 
 class CaseCreateRequest(BaseModel):
     case_id: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
-    project_ref: ContextRef
+    project_ref: ContextRef | None = None
+    context_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
     intent: str = Field(min_length=1, max_length=256)
     requester_ref: str = Field(min_length=1, max_length=256)
     team_id: str = Field(default="bioops-delivery", min_length=1, max_length=128)
@@ -228,6 +229,16 @@ class CaseCreateRequest(BaseModel):
     flow_id: str | None = Field(default=None, min_length=1, max_length=128)
     lead_planner: BridgeRole | None = None
 
+    @model_validator(mode="after")
+    def _validate_execution_context(self) -> "CaseCreateRequest":
+        if self.project_ref is not None and self.project_ref.kind != "project":
+            raise ValueError("project_ref must be a project context")
+        if self.flow_id and self.project_ref is None:
+            raise ValueError("flow Cases require project_ref")
+        if not self.flow_id and not (self.context_refs or self.project_ref):
+            raise ValueError("general Cases require at least one context_ref")
+        return self
+
     @field_validator("element_room_url")
     @classmethod
     def _check_element_room_url(cls, value: str | None) -> str | None:
@@ -236,7 +247,8 @@ class CaseCreateRequest(BaseModel):
 
 class CaseRecord(BaseModel):
     case_id: str
-    project_ref: ContextRef
+    project_ref: ContextRef | None = None
+    context_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
     intent: str
     requester_ref: str
     team_id: str
@@ -358,7 +370,8 @@ class WorkerInboxItem(BaseModel):
     """Minimal assignment envelope returned to a single Worker identity."""
 
     case_id: str
-    project_ref: ContextRef
+    project_ref: ContextRef | None = None
+    context_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
     intent: str
     status: CaseStatus
     omic_task_ids: list[str] = Field(default_factory=list)

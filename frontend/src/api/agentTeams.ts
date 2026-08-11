@@ -7,7 +7,8 @@ export type AgentTeamsCaseStatus =
 
 export interface AgentTeamsCase {
   case_id: string
-  project_ref: { kind: string; id: string; location?: string | null }
+  project_ref?: { kind: string; id: string; location?: string | null } | null
+  context_refs: Array<{ kind: string; id: string; location?: string | null }>
   intent: string
   requester_ref: string
   /** 后端按 requester_ref 回填的用户名；昵称存在时由前端优先显示。 */
@@ -48,7 +49,8 @@ export interface AgentTeamsEvent {
 }
 
 export interface AgentTeamsCaseCreateRequest {
-  project_id: string
+  project_id?: string
+  context_refs?: Array<{ kind: 'workspace' | 'file'; id: string; location?: string }>
   intent: string
   flow_id?: string
   sample_sheet?: Array<Record<string, unknown>>

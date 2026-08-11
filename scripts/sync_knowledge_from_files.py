@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""将 docs/knowledge/ 下的 Markdown 文件同步到数据库。
+"""将知识库 Markdown 源内容同步到数据库。
 
 场景：
     知识库服务以数据库为权威源。一旦某篇文档被网页端编辑过，它就会被导入到数据库中。
-    此后直接修改本地 docs/knowledge/*.md 文件，网页端不会自动热重载，因为读取的是数据库内容。
-    本脚本用于把文件系统的最新内容同步回数据库，实现"文件修改 → 网页生效"。
+    此后直接修改 `docs/knowledge/` 或已登记 Markdown 集合（如 `wiki/`）中的文件，网页端不会自动
+    热重载，因为读取的是数据库内容。本脚本用于把文件系统的最新内容同步回数据库，实现
+    "文件修改 → 网页生效"。
 
 用法示例：
     source .venv/bin/activate
@@ -22,9 +23,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import logging
+import re
 import uuid
 from pathlib import Path
+from typing import Any
 
 import yaml
 from omichub.application.services.knowledge_index_service import KnowledgeIndexService
@@ -55,6 +59,64 @@ custom_theme = Theme(
     }
 )
 console = Console(theme=custom_theme)
+
+
+def _document_title(content: str, fallback: str) -> str:
+    for line in content.splitlines():
+        match = re.match(r"^#\s+(.+?)\s*$", line)
+        if match:
+            return match.group(1)
+    return fallback
+
+
+def _collection_document_id(prefix: str, relative_path: Path) -> str:
+    source = relative_path.with_suffix("").as_posix().lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", source).strip("-") or "document"
+    digest = hashlib.sha1(relative_path.as_posix().encode("utf-8")).hexdigest()[:10]
+    return f"{prefix}-{slug[:48].rstrip('-')}-{digest}"
+
+
+def expand_knowledge_items(meta: dict[str, Any], section_dir: Path) -> list[dict[str, Any]]:
+    """展开显式文档和受控 Markdown 集合。"""
+    items = [dict(item) for item in meta.get("items", []) if isinstance(item, dict)]
+    for collection in meta.get("collections", []):
+        if not isinstance(collection, dict):
+            logging.getLogger(__name__).warning("忽略非对象知识库集合配置: %r", collection)
+            continue
+
+        source_dir_value = str(collection.get("source_dir") or "").strip()
+        prefix = str(collection.get("id_prefix") or "").strip()
+        if not source_dir_value or not prefix:
+            logging.getLogger(__name__).warning("知识库集合缺少 source_dir 或 id_prefix: %r", collection)
+            continue
+
+        source_dir = (section_dir / source_dir_value).resolve()
+        if not source_dir.is_dir():
+            logging.getLogger(__name__).warning("知识库集合目录不存在: %s", source_dir)
+            continue
+
+        include = str(collection.get("include") or "**/*.md")
+        exclude = [str(pattern) for pattern in collection.get("exclude", [])]
+        category = str(collection.get("category") or "未分类")
+        title_prefix = str(collection.get("title_prefix") or "")
+        for source_path in sorted(source_dir.glob(include)):
+            if not source_path.is_file():
+                continue
+            relative_path = source_path.relative_to(source_dir)
+            if any(relative_path.match(pattern) for pattern in exclude):
+                continue
+
+            content = source_path.read_text(encoding="utf-8")
+            title = _document_title(content, source_path.stem)
+            items.append(
+                {
+                    "id": _collection_document_id(prefix, relative_path),
+                    "title": f"{title_prefix}{title}",
+                    "category": category,
+                    "source_file": str(source_path),
+                }
+            )
+    return items
 
 
 async def resolve_admin_user_id(
@@ -104,11 +166,11 @@ async def sync(
     results: list[tuple[str, str, str]] = []
     indexer = KnowledgeIndexService(session)
 
-    for item in meta.get("items", []):
+    for item in expand_knowledge_items(meta, section_dir):
         doc_id = item.get("id")
         title = item.get("title")
         category = item.get("category") or "未分类"
-        md_file = item.get("file")
+        md_file = item.get("source_file") or item.get("file")
         if not doc_id or not title or not md_file:
             results.append(("[warning]跳过[/warning]", doc_id or "?", "条目缺少 id/title/file"))
             skipped += 1

@@ -1,54 +1,40 @@
 # 安全加固清单
 
-本清单汇总 `SECURITY_AUDIT.md` 识别的 24 项安全修复及生产检查项。
+本页是当前生产部署的操作清单，不把历史漏洞编号或已迁移的文件路径当作长期规范。详细变量说明见
+[环境变量与密钥](env-variables)，当前安全实现以代码、`.env.example` 和生产部署配置为准。
 
-## 24 项安全修复概览
+## 部署前
 
-| 编号 | 风险 | 修复位置 |
-|---|---|---|
-| #1 | 路径穿越 → 任意文件读取 | `file_service.py` / `report_service.py` |
-| #2 | `/tracks/` 无鉴权暴露用户数据 | `nginx.conf` / `nginx.prod.conf` |
-| #3 | 生产环境默认 JWT 密钥 | `config.py` |
-| #4 | Redis 无密码 + 端口暴露 | `docker-compose.yml` / `config.py` |
-| #5 | AI Provider key / TOTP secret 明文落盘 | `config.py` |
-| #6 | MCP stdio/SSE 的 RCE/SSRF | `mcp/client.py` / `mcp_service.py` |
-| #7 | nginx 缺失安全头 + 聊天上传无校验 | `nginx.conf` / `files.py` |
-| #8 | Flower 监控无鉴权 | `docker-compose.yml` |
-| #9 | 云存储 URI 只校验 scheme | `schemas/download.py` |
-| #10 | cookie balance Redis 频道无命名空间 | `cookie_pubsub.py` |
-| #11 | 登录端点仅全局限流 | `auth.py` / `login_rate_limit.py` |
-| #12 | 终端会话 ID 熵低 | `terminal_service.py` |
-| #13 | WebSocket 异常 detail 回传客户端 | `sandbox.py` |
-| #14 | AI key 可能进异常日志 | `openai_compatible.py` |
-| #15 | WebSocket 未校验用户禁用状态 | 多个 WebSocket 端点 |
-| #16 | Chat 附件读取 SSRF | `chat_service.py` |
-| #17 | MCP stdio command 路径遍历 / args 未校验 | `mcp/client.py` |
-| #18 | AI Tool Call 参数无 schema 校验 | `ai_tools.py` |
-| #19 | 登录限流 XFF 首个 IP 可伪造 | `login_rate_limit.py` |
-| #20 | JWT 无吊销机制 | `security.py` / `deps.py` / user model |
-| #21 | 沙盒容器未做网络隔离 | `sandbox/pool.py` / `config.py` |
-| #22 | 聊天文件上传全局可访问 | `files.py` / `chat_service.py` |
-| #23 | TOTP `required` 策略未生效 | `auth_service.py` |
-| #24 | 依赖存在已知 CVE（ecdsa） | `pyproject.toml` / `security.py` |
+- [ ] `APP_ENV=production`、`APP_DEBUG=false`，所有默认密钥均已替换。
+- [ ] 已设置 `JWT_SECRET_KEY`、`APP_SECRET_KEY`、`POSTGRES_PASSWORD`、`REDIS_PASSWORD`、
+  `AI_PROVIDER_KEY_ENCRYPTION_KEY` 和强管理员密码。
+- [ ] `.env` 不在 Git 中，权限仅授予部署账户；密钥不写入日志、工单和聊天记录。
+- [ ] 数据库、Redis、Flower、AgentTeams Bridge、RocketMQ 和调试端口只对可信网络开放。
+- [ ] HTTPS、证书续期、反向代理安全头和请求大小限制已配置。
 
-## 首次部署必填环境变量
+## 身份、权限与数据
+
+- [ ] 所有 API、文件、项目、任务和管理操作经过认证、授权与所属关系校验。
+- [ ] 用户工作区、聊天上传、沙盒挂载和下载链接按用户/项目隔离。
+- [ ] 管理员账号遵循最小人数、强密码和可审计原则；关闭不需要的自助注册入口。
+- [ ] 已对对象存储、下载 URI、MCP 配置和外部网络访问设置允许列表与输入校验。
+- [ ] 写操作、权限变更、任务执行和异常访问可通过审计与结构化日志追溯。
+
+## 运行时与供应链
+
+- [ ] 沙盒与 Worker 使用非 root 用户、资源限制、专用网络和最小挂载。
+- [ ] 生产镜像固定版本或 digest，并完成漏洞扫描；不要只使用可变的 `latest` 标签。
+- [ ] Python、Node、容器基础镜像和运行时工具定期更新，并在预发布环境运行迁移和业务冒烟测试。
+- [ ] 已完成数据库、用户数据、知识库和配置的备份及恢复演练。
+- [ ] 监控错误率、认证异常、资源耗尽和队列积压，并建立事故响应联系人和回滚路径。
+
+## 发布后验证
 
 ```bash
-JWT_SECRET_KEY=your-random-secret
-APP_SECRET_KEY=your-random-secret
-REDIS_PASSWORD=your-redis-password
-AI_PROVIDER_KEY_ENCRYPTION_KEY=your-fernet-key
-FLOWER_BASIC_AUTH=admin:your-strong-password
+make check-migrations
+make check-alembic-heads
+make wait-web
+make sync-knowledge
 ```
 
-## 生产检查项
-
-- [ ] `APP_ENV=production`、`APP_DEBUG=false`
-- [ ] 所有密钥已设置且非默认值
-- [ ] DB/Redis 端口不暴露
-- [ ] Flower 关闭
-- [ ] SSL 证书挂载
-- [ ] `/tracks/` 仅限内网
-- [ ] 沙盒网络隔离
-- [ ] 聊天附件按用户隔离
-- [ ] `pip-audit` 无高危漏洞
+这些命令不能替代渗透测试或组织安全审计；高风险变更应经过独立评审。

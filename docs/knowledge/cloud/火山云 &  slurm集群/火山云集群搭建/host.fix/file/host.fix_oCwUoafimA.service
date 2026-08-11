@@ -1,0 +1,6 @@
+[Unit]
+Description=Host Fix Script
+
+[Service]
+Type=oneshot
+ExecStart=/root/hosts_fix/host.fix.sh

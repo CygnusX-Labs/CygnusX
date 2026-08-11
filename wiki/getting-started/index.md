@@ -10,7 +10,7 @@
 ## 环境要求
 
 - Python >= 3.11
-- Node.js >= 18
+- Node.js >= 20
 - Docker >= 24.0
 - uv（Python 包管理器）
 
@@ -19,7 +19,7 @@
 | 场景 | 推荐方式 | 关键命令 |
 |---|---|---|
 | 本地开发 | 源码 + Docker（DB/Redis） | `make dev`、`make frontend-dev` |
-| 单服务器生产 | Docker Compose 主栈 + Worker 栈 | `make docker-up`、`make docker-up-worker` |
-| 多 Worker 扩展 | Worker 栈 `--scale worker=N` | `docker compose -f deploy/docker/docker-compose.worker.yml --scale worker=2 up -d` |
+| 单服务器生产 | Docker Compose 主栈 + Worker 栈 | `make docker-up-all` |
+| 多 Worker 扩展 | Worker 栈通过项目包装器扩展 | `./scripts/worker-compose.sh --scale worker=2 up -d` |
 
 完成部署后，访问 `http://localhost:5173`（开发）或 `http://<服务器IP>:8888`（Docker）。

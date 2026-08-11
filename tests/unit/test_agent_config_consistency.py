@@ -19,7 +19,20 @@ import yaml
 AI_DIR = Path("data/ai")
 SITE_YAML = Path("data/OmicHub.yaml")
 CAPABILITIES_YAML = AI_DIR / "mas" / "agent_capabilities.yaml"
+ABILITY_YAML = AI_DIR / "agent_ability.yaml"
 ROUTER_PROMPT = AI_DIR / "prompts" / "router.md"
+STANDARD_PROMPT_SECTIONS = (
+    "角色与职责边界",
+    "对话与执行模式",
+    "输入确认",
+    "知识检索与证据规则",
+    "方法论与专业决策",
+    "工具、Skill 与工作区协议",
+    "执行确认与安全边界",
+    "输出与交付规范",
+    "失败、降级与诚实约束",
+    "转介、交接与协作",
+)
 
 
 def _load(path: Path) -> dict:
@@ -124,6 +137,36 @@ def test_mas_capabilities_have_no_stale_entries() -> None:
         assert agent_id in valid_ids, (
             f"agent_capabilities.yaml 登记了不存在的 agent_id: {agent_id}"
         )
+
+
+def test_all_enabled_agents_have_runtime_ability_records() -> None:
+    """动态 handoff 目录必须覆盖每个启用 Agent。"""
+    registered = set(_load(ABILITY_YAML)["agents"])
+    for agent_id in _agent_id_index():
+        assert agent_id in registered, f"{agent_id} 未登记到 agent_ability.yaml"
+
+
+def test_runtime_ability_records_have_required_fields() -> None:
+    required = {"summary", "capabilities", "not_suitable_for", "handoff_when", "preferred_inputs"}
+    for agent_id, ability in _load(ABILITY_YAML)["agents"].items():
+        assert required <= set(ability), f"{agent_id} 的能力目录缺少字段"
+        assert ability["summary"]
+        for key in required - {"summary"}:
+            assert isinstance(ability[key], list) and ability[key], f"{agent_id}.{key} 不能为空"
+
+
+def test_all_enabled_agent_prompts_follow_standard_section_order() -> None:
+    """统一章节必须直接写入每个启用 Agent 的源提示词。"""
+    for name, config in _agent_configs().items():
+        prompt_file = str(config.get("prompt_file") or "").strip()
+        assert prompt_file, f"{name}.yaml 缺少 prompt_file，无法验证源提示词结构"
+        text = (AI_DIR / prompt_file).read_text(encoding="utf-8")
+        positions = []
+        for section in STANDARD_PROMPT_SECTIONS:
+            heading = f"## {section}"
+            assert heading in text, f"{prompt_file} 缺少统一章节：{section}"
+            positions.append(text.index(heading))
+        assert positions == sorted(positions), f"{prompt_file} 的统一章节顺序不正确"
 
 
 # --------------------------------------------------------------------------- #

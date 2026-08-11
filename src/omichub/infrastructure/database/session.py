@@ -68,6 +68,24 @@ def get_engine() -> AsyncEngine:
     return _engine
 
 
+def create_unpooled_engine() -> AsyncEngine:
+    """创建供独立事件循环使用的短生命周期数据库引擎。
+
+    后台线程会通过 ``asyncio.run()`` 创建自己的事件循环，不能复用 Web
+    请求循环中连接池保存的 asyncpg 连接，否则连接回收后会触发跨事件循环错误。
+    调用方负责在使用后 dispose 引擎。
+    """
+    settings = get_settings()
+    engine = create_async_engine(
+        settings.database_url,
+        echo=settings.app_debug,
+        pool_pre_ping=True,
+        poolclass=NullPool,
+    )
+    _instrument_pool(engine, service_name=settings.service_name, pool_name="NullPool")
+    return engine
+
+
 def _instrument_pool(engine: AsyncEngine, *, service_name: str, pool_name: str) -> None:
     """Expose SQLAlchemy connection-pool lifecycle metrics through OTel/Prometheus."""
     attributes = {"service": service_name, "pool": pool_name}

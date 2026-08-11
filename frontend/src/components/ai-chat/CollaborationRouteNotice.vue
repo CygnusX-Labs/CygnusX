@@ -17,6 +17,14 @@ const stateText = computed(() => {
   if (!props.route.available) return '需要澄清'
   return '已选择'
 })
+
+const displayReason = computed(() => {
+  if (!props.route.available) return props.route.message
+  if (props.route.intent === 'chat' && /缺乏上下文|补全上下文|需要.*追问/.test(props.route.reason)) {
+    return '当前助手将直接处理你的问题。'
+  }
+  return props.route.reason
+})
 </script>
 
 <template>
@@ -26,24 +34,34 @@ const stateText = computed(() => {
         <strong>{{ route.label }}</strong>
         <NTag size="small" :type="tagType" :bordered="false">{{ stateText }}</NTag>
       </div>
-      <span class="notice-reason">{{ route.available ? route.reason : route.message }}</span>
+      <span class="notice-reason">{{ displayReason }}</span>
     </summary>
     <div class="notice-detail">
-      <p>{{ route.available ? route.reason : route.message }}</p>
+      <p>{{ displayReason }}</p>
       <NButton quaternary size="tiny" @click="emit('correct', route)">走错了？</NButton>
     </div>
   </details>
 </template>
 
 <style scoped>
-.collaboration-route-notice { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--chat-border); border-left: 3px solid var(--primary-color, #6366f1); border-radius: 10px; background: var(--chat-bg); }
+.collaboration-route-notice {
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 0 var(--space-md, 12px);
+  padding: 10px 12px;
+  border: 1px solid var(--chat-border);
+  border-left: 3px solid var(--primary-color, #6366f1);
+  border-radius: 10px;
+  background: var(--chat-bg);
+  box-sizing: border-box;
+}
 .collaboration-route-notice.is-degraded { border-left-color: var(--warning-color, #d97706); }
 .collaboration-route-notice.is-blocked { border-left-color: var(--error-color, #dc2626); }
-.notice-summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; list-style: none; }
+.notice-summary { display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none; }
 .notice-summary::-webkit-details-marker { display: none; }
 .notice-heading { display: flex; align-items: center; gap: 8px; }
 .notice-heading strong { color: var(--chat-text-primary); font-size: 13px; }
-.notice-reason { overflow: hidden; color: var(--chat-text-secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.notice-reason { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--chat-text-secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .notice-detail { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-top: 8px; }
 p { margin: 0; color: var(--chat-text-secondary); font-size: 12px; line-height: 1.5; }
 @media (max-width: 640px) { .notice-summary, .notice-detail { align-items: flex-start; flex-direction: column; gap: 6px; } .notice-reason { white-space: normal; } }

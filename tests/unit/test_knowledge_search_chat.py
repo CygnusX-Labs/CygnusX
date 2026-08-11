@@ -12,6 +12,8 @@ from omichub.application.services.chat_service import (
     KNOWLEDGE_SEARCH_TOOL,
     ChatService,
 )
+from omichub.application.services.studio_tools import _knowledge_search
+from omichub.application.services.vector_retrieval_service import KnowledgeCitation, VectorRetrievalService
 
 
 @pytest.mark.unit
@@ -33,6 +35,35 @@ def test_knowledge_search_prompt_requires_kb_then_web_then_model_synthesis():
     assert "结果为空" in prompt
     assert "模型自身的通用知识" in prompt
     assert "只声明实际执行过的检索" in prompt
+    assert "citation_id" in prompt
+    assert "[[citation:<citation_id>]]" in prompt
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_knowledge_search_returns_stable_citation_ids(monkeypatch):
+    async def fake_search(self, **_kwargs):
+        return [
+            KnowledgeCitation(
+                doc_id="rna-seq-guide",
+                title="RNA-seq 指南",
+                category="RNA-seq",
+                excerpt="差异表达分析前需要完成质控。",
+                section_path="质控",
+                url="/knowledge/rna-seq-guide",
+                score=0.92,
+            )
+        ]
+
+    monkeypatch.setattr(VectorRetrievalService, "search_knowledge", fake_search)
+
+    first = await _knowledge_search({"query": "RNA-seq 质控"}, AsyncMock())
+    second = await _knowledge_search({"query": "RNA-seq 质控"}, AsyncMock())
+
+    first_item = first["result"]["llm_payload"]["results"][0]
+    second_item = second["result"]["llm_payload"]["results"][0]
+    assert first_item["citation_id"].startswith("kb-")
+    assert first_item["citation_id"] == second_item["citation_id"]
 
 
 @pytest.mark.unit

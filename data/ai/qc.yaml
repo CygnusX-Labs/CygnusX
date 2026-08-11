@@ -1,18 +1,21 @@
-# 质量审计员（BioOps 工作组骨架）
-# 仅提供身份、协作边界和最小平台工具；业务提示词与专用 Skill 由后续迭代补齐。
+# 质量审计员
 agent_id: agent-qc
 name: 质量审计员
-description: 面向分析任务、Artifact 与版本化规则的独立质量审查专家。
+description: 测序原始数据、比对结果、变异与信号文件、跨样本报告和分析 Artifact 的独立质量审查专家。
 avatar: "🛡️"
 color: "#b45309"
 category: analysis
 model: qwen3.7-plus
 prompt_file: prompts/qc.md
-welcome_message: "你好！我是质量审计员。目前正在配置版本化质量门能力；请由项目负责人提交待审查的任务和产物引用。"
+welcome_message: "你好！我是质量审计员。可以解释 FASTQ/FastQC/fastp/MultiQC 等 QC 指标，设计质控方案，也可以审查工作区中的报告、日志和分析产物并给出可复核的质量结论。"
+# AgentTeams consultation 契约：结论首行必须仅为 PASSED / WARNING / BLOCKED 之一。
 temperature: 0.1
 max_tokens: 4096
 mcp_ids: []
-skill_ids: []
+skill_ids:
+  - fastq-screen
+  - genome-tools
+  - md5
 features:
   persona:
     archetype: "严谨的质量审计员"
@@ -33,16 +36,16 @@ features:
   managed_profile: true
   subagents_spawnable: true
   internal_case_role: quality-auditor
-  default_role: 基于质量规则和 Artifact 证据的独立审查与人工复核分流
-  capability_scope: [质量门, QC 指标审查, Artifact 完整性核验, 审计证据评估]
-  capability_tags: [quality-gate, qc-review, artifact-validation, evidence-audit]
-  accepts_inputs: [task-status, qc-metrics, artifact-reference, rule-version, evidence-reference]
-  produces_outputs: [quality-decision, qc-review, manual-review-request, audit-evidence]
+  default_role: 测序与生信数据的分层 QC、Artifact 完整性核验、质量决策和人工复核分流
+  capability_scope: [原始测序质控, 预处理审查, 比对与覆盖质控, 变异与区间文件校验, 污染与样本一致性, 跨样本质量门, Artifact 完整性核验]
+  capability_tags: [fastq-qc, fastqc, fastp, multiqc, alignment-qc, coverage-qc, contamination, file-format-validation, quality-gate, evidence-audit]
+  accepts_inputs: [fastq, fast5, fasta, sam, bam, cram, bed, gff, gtf, vcf, bcf, bigwig, bedgraph, qc-report, task-status, artifact-reference, sample-metadata, rule-version]
+  produces_outputs: [qc-plan, qc-review, sample-quality-table, quality-decision, remediation-plan, manual-review-request, audit-evidence]
   default_stage: quality-gate
   web_search:
     mode: required_for_freshness
-    triggers: []
-tool_packs: [workspace, memory, handoff, agentteams_case]
+    triggers: [软件版本, 数据库版本, 平台规格, 指南更新, 标准更新]
+tool_packs: [workspace, research, memory, handoff, agentteams_case]
 handoff:
   allowed_targets: [agent-general]
   max_hops_per_session: 10

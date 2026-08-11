@@ -163,10 +163,7 @@ class BridgeService:
                         target=interpretation_target,
                         objective="解读成功任务的关键结果、证据、限制与后续建议，供独立质控复核。",
                         skill_name="result_interpretation",
-                        context_refs=[
-                            case.project_ref,
-                            {"kind": "task", "id": task_id},
-                        ],
+                        context_refs=[*self._case_context_refs(case), {"kind": "task", "id": task_id}],
                         read_only=True,
                         depends_on=[quality_dependency] if quality_dependency else [],
                         updated_at=datetime.now(UTC),
@@ -190,10 +187,7 @@ class BridgeService:
                     target="quality-auditor",
                     objective="核对成功任务的 QC、产物完整性和可交付性，提交可追溯质量结论。",
                     skill_name="quality-gate",
-                    context_refs=[
-                        case.project_ref,
-                        {"kind": "task", "id": task_id},
-                    ],
+                    context_refs=[*self._case_context_refs(case), {"kind": "task", "id": task_id}],
                     read_only=True,
                     depends_on=[quality_dependency] if quality_dependency else [],
                     updated_at=datetime.now(UTC),
@@ -477,12 +471,19 @@ class BridgeService:
             for item in planned_items
         )
 
+    @staticmethod
+    def _case_context_refs(case: CaseRecord) -> list[ContextRef]:
+        if case.context_refs:
+            return list(case.context_refs)
+        return [case.project_ref] if case.project_ref is not None else []
+
     async def create_case(self, request: CaseCreateRequest, actor: str) -> CaseRecord:
         now = datetime.now(UTC)
         case = await self._cases.create(
             CaseRecord(
                 case_id=request.case_id,
                 project_ref=request.project_ref,
+                context_refs=request.context_refs or ([request.project_ref] if request.project_ref else []),
                 intent=request.intent,
                 requester_ref=request.requester_ref,
                 team_id=request.team_id,
@@ -501,7 +502,8 @@ class BridgeService:
             actor=actor,
             event_type="case.created",
             payload={
-                "project_ref": request.project_ref.model_dump(),
+                "project_ref": request.project_ref.model_dump() if request.project_ref else None,
+                "context_refs": [ref.model_dump() for ref in request.context_refs],
                 "intent": request.intent,
                 "execution_mode": request.execution_mode,
                 "origin_consultation_id": request.origin_consultation_id,
@@ -517,7 +519,7 @@ class BridgeService:
                     target=planner,
                     objective="形成可执行计划、参数快照、任务依赖与风险说明。",
                     skill_name="planning_advice",
-                    context_refs=[case.project_ref]
+                    context_refs=self._case_context_refs(case)
                     + ([{"kind": "flow", "id": request.flow_id}] if request.flow_id else []),
                     read_only=True,
                     updated_at=now,
@@ -540,7 +542,7 @@ class BridgeService:
                 snapshot = PreflightInputSnapshot(
                     flow_id="general",
                     sample_sheet=[],
-                    context_refs=[case.project_ref],
+                    context_refs=self._case_context_refs(case),
                     consultation_summary=case.consultation_summary,
                 )
                 await self._cases.save_plan(case_id, plan_payload, plan_hash, snapshot)
@@ -578,7 +580,7 @@ class BridgeService:
             flow_id=task.flow_id,
             sample_sheet=task.sample_sheet,
             comparisons=task.comparisons,
-            context_refs=[case.project_ref],
+            context_refs=self._case_context_refs(case),
             consultation_summary=case.consultation_summary,
         )
         await self._cases.save_plan(case_id, plan_payload, plan_hash, snapshot)
@@ -592,7 +594,7 @@ class BridgeService:
                 target="data-steward",
                 objective="核验冻结计划与真实项目数据、样本和分组是否匹配。",
                 skill_name="project-preflight",
-                context_refs=[case.project_ref, {"kind": "flow", "id": task.flow_id}],
+                context_refs=[*self._case_context_refs(case), {"kind": "flow", "id": task.flow_id}],
                 read_only=True,
                 depends_on=["plan-01"],
                 updated_at=datetime.now(UTC),
@@ -672,7 +674,8 @@ class BridgeService:
             return case.model_dump(mode="json")
         return {
             "case_id": case.case_id,
-            "project_ref": case.project_ref.model_dump(mode="json"),
+            "project_ref": case.project_ref.model_dump(mode="json") if case.project_ref else None,
+            "context_refs": [ref.model_dump(mode="json") for ref in self._case_context_refs(case)],
             "intent": case.intent,
             "team_id": case.team_id,
             "element_room_url": case.element_room_url,
@@ -714,6 +717,7 @@ class BridgeService:
             WorkerInboxItem(
                 case_id=case.case_id,
                 project_ref=case.project_ref,
+                context_refs=self._case_context_refs(case),
                 intent=case.intent,
                 status=case.status,
                 omic_task_ids=case.omic_task_ids,
@@ -737,7 +741,7 @@ class BridgeService:
         if case_status is not None:
             cases = [case for case in cases if case.status == case_status]
         if project_id is not None:
-            cases = [case for case in cases if case.project_ref.id == project_id]
+            cases = [case for case in cases if case.project_ref and case.project_ref.id == project_id]
         total = len(cases)
         if cursor is not None:
             try:
@@ -1028,7 +1032,7 @@ class BridgeService:
                     target=item["target"],
                     objective=str(item["objective"]),
                     skill_name=str(item["skill_name"]),
-                    context_refs=[case.project_ref],
+                    context_refs=self._case_context_refs(case),
                     read_only=False,
                     execution_mode="workspace_execution",
                     depends_on=[str(value) for value in item.get("depends_on") or []],
@@ -1413,10 +1417,7 @@ class BridgeService:
                     target="delivery-reporter",
                     objective="汇总审批、任务、质量与产物证据，生成交付 manifest 并关闭 Case。",
                     skill_name="delivery-pack",
-                    context_refs=[
-                        case.project_ref,
-                        {"kind": "task", "id": task_id},
-                    ],
+                    context_refs=[*self._case_context_refs(case), {"kind": "task", "id": task_id}],
                     read_only=True,
                     updated_at=datetime.now(UTC),
                 ),
@@ -1494,7 +1495,7 @@ class BridgeService:
                 "quality-gate": "1.0",
                 "delivery-pack": "1.0",
             },
-            "input_refs": [case.project_ref.model_dump()],
+            "input_refs": [ref.model_dump() for ref in self._case_context_refs(case)],
             "task_ids": case.omic_task_ids,
             "task_specs": case.task_specs,
             "omic_task_snapshots": task_snapshots,

@@ -13,8 +13,9 @@ Agent 的组成，并给出创建、挂载、同步和验证 Agent 的标准流�
 | --- | --- |
 | `data/OmicHub.yaml` | 平台启用的内置 Agent 清单；只有加入 `agents.enabled` 的 YAML 才会加载。 |
 | `data/ai/*.yaml` | 单个内置 Agent 的身份、能力、模型参数、工具包、Skill、MCP 和运行时声明。 |
+| `data/ai/agent_ability.yaml` | 所有启用 Agent 的可路由能力、边界、转交条件和推荐输入；运行时按 mtime 热重载。 |
 | `data/ai/prompts/*.md` | Agent 的权威系统提示词。 |
-| `data/ai/prompts/shared/` | 多 Agent 共用协议，由加载器统一追加。 |
+| `data/ai/prompts/shared/` | 多 Agent 共用的运行时协议；当前由加载器追加沙盒协议。 |
 | `data/ai/prompts/legacy_agents/` | 迁移前提示词，仅供比对，不参与运行时加载。 |
 | `data/ai/tools/*.yaml` | 可复用的最小权限工具包；详细格式见 `data/ai/tools/README.md`。 |
 | `data/ai/skill_marketplace/<skill-id>/` | 内置 Skill 的可安装来源和版本元数据。 |
@@ -86,8 +87,9 @@ YAML 为权威来源持续同步，避免后台临时编辑造成配置漂移。
 | `code.yaml` / `agent-code` | 代码助手 | Python、R、Bash 脚本设计、调试、沙盒执行和可复现性说明。 | Studio | Legacy / `analysis-core` |
 | `viz.yaml` / `agent-viz` | 可视化助手 | 统计图、出版级绘图、图表说明、结果报告呈现和绘图脚本。 | Studio | Legacy / `analysis-plot` |
 | `data.yaml` / `agent-data` | 数据管理员 | BioOps Case 内部的数据契约、项目元数据、样本表和输入完整性预检。当前为无专用 Skill 的骨架。 | Studio | LangGraph / `analysis-core` |
-| `qc.yaml` / `agent-qc` | 质量审计员 | BioOps Case 内部的版本化质量门、Artifact 核验和人工复核分流。当前为无专用 Skill 的骨架。 | Studio | LangGraph / `analysis-core` |
+| `qc.yaml` / `agent-qc` | 质量审计员 | 测序原始数据、预处理、比对覆盖、变异/区间文件、跨样本报告与 Artifact 的独立质量审查。 | Studio | LangGraph / `analysis-core` |
 | `delivery.yaml` / `agent-delivery` | 交付报告员 | BioOps Case 内部的交付 manifest、运行说明和证据汇总。当前为无专用 Skill 的骨架。 | Studio | LangGraph / `analysis-core` |
+| `cloud_ops.yaml` / `agent-cloud-ops` | 云运维工程师 | 管理员平台健康巡检、云资源与存储检查、故障分诊、容量风险和变更/回滚方案审查。 | Studio | LangGraph / `analysis-core` |
 | `shania.yaml` / `shania` | 傻妞 | 通用对话、数据与基因问题、多组学思路和研究陪伴。 | Chat | Legacy / `analysis-core` |
 | `mcp_builder.yaml` / `agent-mcp-builder` | MCP 构建师 | 从自然语言生成、测试、注册和审查 MCP Server，支持临时 TTL 与人工复核。 | Studio | Legacy / `analysis-core` |
 
@@ -108,11 +110,50 @@ YAML 为权威来源持续同步，避免后台临时编辑造成配置漂移。
 | 数据管理员 | `workspace`, `memory`, `handoff`, `agentteams_case` | 暂无专用 Skill；后续挂载项目预检与元数据校验 Skill。 |
 | 质量审计员 | `workspace`, `memory`, `handoff`, `agentteams_case` | 暂无专用 Skill；后续挂载 QC 规则、任务状态与 Artifact 审查 Skill。 |
 | 交付报告员 | `workspace`, `memory`, `handoff`, `agentteams_case` | 暂无专用 Skill；后续挂载交付 manifest、runbook 与证据归档 Skill。 |
+| 云运维工程师 | `cloud_ops`, `research`, `memory`, `handoff`, `subagents`, `agentteams_case` | 管理员专用只读平台健康检查，以及任务、流程、账户和工作区证据读取。 |
 | 傻妞 | `workspace`, `research`, `memory`, `handoff` | 无固定 Skill，按通用研究上下文工作。 |
 | MCP 构建师 | `workspace`, `memory`, `handoff` | 无固定 Skill，能力由 MCP Builder 配置和审核流程提供。 |
 
 Agent 的能力边界由提示词与实际挂载权限共同决定。只在提示词中写“可以调用某工具”不会产生
 权限；必须通过 Tool Pack、`mcp_ids`、`mcp_tools` 或 `skill_ids` 完成真实挂载。
+
+### 3.2 Agent 提示词统一章节规范
+
+所有运行中的 Agent 源提示词都必须直接以以下 H2 章节、且按此顺序组织。领域 Agent 可以在
+`## 领域补充规范` 中增加专业内容，但不能删除或依赖加载器补齐这些基础语义。
+
+```text
+角色与职责边界
+对话与执行模式
+输入确认
+知识检索与证据规则
+方法论与专业决策
+工具、Skill 与工作区协议
+执行确认与安全边界
+输出与交付规范
+失败、降级与诚实约束
+转介、交接与协作
+```
+
+每个 Agent 的 Markdown 应保留自己的领域内容；上述章节负责回答“能做什么、不能做什么、需要
+什么输入、何时检索、何时调用工具、何时等待确认、如何交付、失败如何降级、何时转交”。不要把
+工具权限只写在提示词中，真实权限仍以 `data/ai/tools/*.yaml`、`mcp_ids`、`mcp_tools` 和
+`skill_ids` 为准。
+
+### 3.3 动态 Agent 能力目录
+
+`data/ai/agent_ability.yaml` 是运行时转交目录的能力增强信息。每个启用 Agent 必须登记：
+
+- `summary`：给其他 Agent 展示的一句话定位；
+- `capabilities`：可处理的任务和专业能力；
+- `not_suitable_for`：明确不应继续处理的任务；
+- `handoff_when`：应触发转交的条件；
+- `preferred_inputs`：转交或开始工作时优先收集的输入。
+
+`AgentService` 会把当前数据库中 active 且通过 `handoff.allowed_targets` 白名单的 Agent，与
+这份 YAML 合并成运行时目录并注入当前 Agent。修改该文件后不需要重启服务；下一次组装 Agent
+上下文时会按文件 mtime 重新加载。能力目录只影响“如何判断与描述候选 Agent”，不会绕过现有
+的 handoff 白名单、active 状态、路由 Agent 排除和最大跳转次数校验。
 
 ## 4. RNA-seq Agent
 
@@ -235,6 +276,9 @@ PDF 信息应整理进 Markdown 正文。
 - 何时检索知识库、加载 Skill、调用 MCP 或交接其他 Agent；
 - 证据、可复现性、隐私和高风险操作规则。
 
+提示词正文按“3.2 Agent 提示词统一章节规范”组织。推荐先参考
+`data/ai/prompts/rnaseq.md` 的领域写法，并在统一章节后维护领域补充规范。
+
 ### 第二步：创建 Agent YAML
 
 在 `data/ai/<agent-key>.yaml` 创建声明。以下模板展示常用字段；字段名和已有 Agent 保持一致：
@@ -245,6 +289,8 @@ name: 示例分析师
 description: 示例领域的咨询、规划、执行和解释专家。
 category: analysis
 prompt_file: prompts/example.md
+
+# 与 prompt_file 同步登记到 data/ai/agent_ability.yaml
 
 tool_packs:
   - workspace
@@ -1174,4 +1220,163 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest \
   -p pytest_asyncio.plugin --noconftest \
   tests/unit/test_agent_handoff_service.py \
   tests/unit/test_overdrive_persona_config.py -q
+```
+
+##  . AgentTeams 协作架构与生信结果准确性设计（2026-08-11）
+
+本节回答一个架构问题：**为什么 AgentTeams 形态的多智能体协作适合生物信息这类准确性
+敏感场景**。核心结论：这套架构保证的不是"结果本身正确"，而是"结果的产生过程可控、
+可追溯、可复核"——这正好命中生信分析准确性的真正痛点（说的和跑的不一致、过程不可
+追溯、质控走过场）。详细施工规格见 `data/ai/AgentTeams_update.md`，本节只做设计决策
+记录。
+
+### 17.1 身份层与大脑层分离（两层模型）
+
+实现复用了 AgentTeams 的编排思想（Manager/Worker 分层、受控工单、人工介入、审计），
+但不照搬其运行时（Matrix 房间、OpenClaw/QwenPaw/Hermes、K8s CRD）。落地形态为两层：
+
+- **身份层**（`integrations/agentteams/`，安全与编排边界）：
+  - Bridge：Case 15 态状态机、WorkItem 租约认领、HMAC 审批签名、append-only 审计、
+    派单 reconcile；
+  - Gateway：策略白名单、每 Case 成本护栏、响应消毒；Worker 只持 Bridge 令牌，
+    Gateway 才持有调 OmicHub 的集成令牌；
+  - Worker：8 个常驻薄容器（无 LLM、无领域逻辑），只做"轮询 → 认领 → 转发 → 回写"
+    （`worker/production_runner.py` 的 `_AGENT_PROFILES` 把身份映射为平台 Agent）。
+- **大脑层**（OmicHub `omichub-web` 进程内，真正干活的）：会诊端点
+  `POST /api/v1/agent-teams/consultations/scientific-interpretation`（集成令牌认证）
+  → `AgentConsultationService.run_consultation()` 以 `requester_ref`（真实用户身份）
+  调 `assemble_context` 装载平台 Agent 的提示词/Persona/模型/MCP/Skill →
+  `ParallelSubAgentService` 跑只读有界回合 → 解析固定 JSON 信封
+  （`conclusion / recommendations / evidence_refs / risks`）回流。
+
+角色映射双处同源：Bridge `config.py:ROLE_AGENT_MAP` 与投影器
+`case_room_projector.py:ROLE_AGENT_MAP` 必须一致（`data-steward→agent-data`、
+`quality-auditor→agent-qc`、`delivery-reporter→agent-delivery` 等）。
+
+### 17.2 为什么适合生信：准确性来自"过程可控"
+
+1. **参数快照冻结，堵住口径漂移**。生信最常见的错误不是"算错"，而是"说的和跑的不一样"
+   （参考基因组版本、比对器、阈值、分组）。plan-01 产出的 `proposed_submission` 必须先过
+   确定性 schema 校验链（flow 白名单 + 参数校验），通过后才计算 `plan_hash` 冻结进审批卡；
+   用户批准的是机器校验过的快照，`analysis-worker` 无脑机械提交这份快照。LLM 自由文本
+   永远进不了执行层，幻觉污染分析参数的通道被彻底堵死。
+2. **身份层/大脑层分离，权限即安全**。只读三层强制（Bridge 422 → Gateway 剥离写权限 →
+   会诊端点 `safe_only=True`）意味着解读、质控这些"动嘴"的环节物理上不可能碰数据、改
+   任务、动工作流；唯一能动手的 `analysis-worker` 没有大脑。这比"提示词里要求 Agent 别
+   乱改"可靠得多——生信数据动辄几十 GB，一次误写就是事故。
+3. **独立质控 + 阻断回路，对应 wet-lab 的 QA/QC 分离**。`agent-qc` 与执行 Agent 不同
+   身份、不同提示词，三态决策（PASSED / WARNING / BLOCKED）中 BLOCKED 会把 Case 打进
+   `quality_blocked → remediation_pending` 再回到执行，而不是"质控说一句然后照交"；
+   `quality_runner` 的兜底是 `manual_review`，禁止静默放行。
+4. **append-only 审计 + 交付 manifest，即可重复性（reproducibility）的骨架**。生信结果
+   要站得住，必须回答：哪个样本、哪个 flow 版本、什么参数、谁批的、质控结论是什么。
+   manifest 把这些全量打包，审计流只追加——这就是论文 Methods section 的机器版。
+5. **上下文走结构化引用，不靠自然语言传话**。工单间通过 `context_refs / evidence_refs /
+   固定 JSON 信封` 传递；`requester_ref` 全程透传，专家以真实用户身份运行，知识库、
+   工作区、权限按用户隔离，多用户场景不串数据。
+
+### 17.3 架构边界（准确性缺口，必须清醒认识）
+
+1. **agent-qc 也是 LLM——LLM 质控 LLM，对"数值正确性"的核验力有限**。它能审"证据齐不
+   齐、结论合不合理、流程合不合规"，但不能指望它发现表达矩阵里某列数值错了。真正硬的
+   准确性来自确定性校验：流水线自身算出的 QC 指标（Q30、比对率、重复率、样本相关性）。
+   **改进方向**：把流水线的 QC 报告以结构化 metrics 喂给 agent-qc（而非让它自由阅读
+   文本），让三态结论锚定在确定性数据上。
+2. **解读环节的准确性依赖证据绑定强度**。架构已要求结论挂 `evidence_refs`；下一步可收紧
+   为：关键数值结论（差异基因数、p 值等）必须引用具体文件行 / metrics 字段，否则质控
+   直接 WARNING。
+3. **人工审批仍是最后一道闸**。架构把人放在 `approval_pending` 决策点上，符合"AI 辅助、
+   人负责"的定位——生信场景下不应追求无人值守的全自动。
+
+### 17.4 结论与强化方向
+
+对生信来说，"**编排确定性 + 执行确定性 + LLM 只做解读层**"的方向是对的：LLM 的
+不确定性被约束在"说"的层面，"做"的层面全是快照、校验、闸门和审计。它比一个"全能
+Agent 自由发挥"的系统更适合准确性敏感场景。
+
+后续强化"结果准确性"这条线，性价比最高的两件事：
+
+1. **QC 决策锚定流水线结构化 metrics**（流水线 QC 报告 JSON → `quality-01` 证据链）；
+2. **解读结论强制数值级证据绑定**（关键数值必须可溯源到具体产物字段）。
+
+### 17.5 Agent 执行通道与数据隔离现状（2026-08-11 核实）
+
+AgentTeams Case 不是"所有 agent 只能只读"，而是把"干活"按风险拆成三条通道：
+
+| 通道 | 谁能"干活" | 实际拿到的能力 | 是否需用户确认 |
+|---|---|---|---|
+| **A. 标准流水线提交** | `analysis-worker` | 持审批快照，机械提交 RNAFlow/ATACFlow（Snakemake） | 是（人工审批 + HMAC 签名） |
+| **B. 工作区执行** `workspace_execution` | 当前仅 `agent-code`、`agent-viz` | `sandbox_execute` + `workspace_write/edit/read/list`，工作目录锁死 | 是（`approval_required` 或 `plan_hash` 绑定） |
+| **C. 只读会诊**（默认） | 全部专家 agent | 只能提问/搜索/读 Skill/调只读工具 | 否（纯顾问） |
+
+关键事实（均已核对）：
+
+- **Manager 按任务选路已落地**：`CaseCreateRequest.flow_id` 可选（`models.py:229`）。带 `flow_id` = 流水线交付型；不带 `flow_id`（需带 `context_refs`）= 通用分析型。`create_case`（`service.py:512-528`）有 flow/lead_planner 时派 `plan-01`；`_accept_plan_result`（`service.py:532-603`）根据是否有 flow 分流：无 flow → 通用计划 DAG + plan_hash → `approval_pending`；有 flow → TaskSpec 校验 → `preflight_running`。
+- **用户确认是代码级强制**：`workspace_execution` 工单若没有 `approval_required=True` 或所属 Case 没有确认的 `plan_hash`，直接 422（`service.py:92`）；认领前还做 plan 绑定追溯（`service.py:276`）。
+- **标准流水线不交给 agent 直接跑是正确的**：RNA-seq/ATAC-seq 已是确定性的 Snakemake 流程，"跑"由 `analysis-worker` 机械执行冻结快照；agent 的"活"是出对 plan。
+
+### 17.6 沙箱文件写接口只读保护（已实现）
+
+Studio 沙箱已实现 **"P1 数据不搬家"**（`manager.py:382-391`）：用户真实数据目录 `users/{user_id}` 以 `mode: "ro"` 只读挂载到容器内 `/data/platform`，沙箱 `input/` 下只放指向它的软链。这保证了**原始输入数据物理上不可改**。
+
+**已修复**：`deploy/studio/sandbox_agent.py` 在五处写入口对 `input/`、`ref/` 前缀统一返回 403：
+
+- `/files/write`、`/files/edit`、`/files/delete`、`/files/rename`、`/files/mkdir`
+- 校验基于词法路径（不解析软链），`input/foo.txt`、`ref/sub`、`../input/foo` 等均在请求层面拦截；
+- 平台软链本身仍由既有的 `is_symlink()` 检查兜底，防止重命名/删除只读文件。
+
+这带来三点效果：
+
+- `input/`、`ref/` 目录级写保护成为代码强制，不再依赖提示词自律；
+- agent 需要修正输入时，必须把修正版另存到 `output/` 或 `scripts/` 并作为新产物登记，原始数据始终保持不变——这本身就是生信可重复性的最佳实践；
+- Studio 模式与 AgentTeams 工作区执行模式共用同一沙箱，规则天然一致。
+
+> 注意：`sandbox_agent.py` 随 Studio 运行时镜像烘焙，修改后需重建 Studio 镜像或挂载最新文件进容器方可生效。
+
+### 17.7 工作区执行"干活"提示词契约
+
+以下契约用于 `workspace_execution` 模式的 agent 系统提示词追加段。它已落地为共享协议文件
+`data/ai/prompts/shared/agentteams_workspace_execution.md`，并由
+`AgentConsultationService._build_instruction()` 在工作区执行模式下自动追加到任务指令。
+也可直接嵌入对应 Agent 提示词的 `## 工具、Skill 与工作区协议` 之后。核心目标：**让 agent
+明白自己在"被批准的沙箱里执行确认过的任务"，而不是自由分析**。
+
+```text
+## AgentTeams 工作区执行协议
+
+你正在执行一个已被用户确认过的 AgentTeams Case 工作项。本模式下你被授权在分配的沙箱
+工作目录内真实执行命令和写入产物，但必须遵守以下纪律：
+
+### 1. 执行边界
+- 你只能做 plan_hash 已确认的工作项范围内的事。plan 外新增操作必须重新走确认闸门。
+- 不得修改数据库、任务、工作流状态或其他 Case 数据。只有分配工作目录内的文件可写。
+- 工作目录固定为 `output/agentteams/<case_id>/<work_item_id>/`；所有产物必须写在该目录下。
+
+### 2. 输入只读
+- `input/` 和 `ref/` 下的文件是原始输入与参考数据，只读。它们通过平台只读挂载进入沙箱。
+- 如需清洗、修正或转换输入，把结果另存为 `output/` 或 `scripts/` 下的新文件，不得覆盖
+  或删除 `input/`、`ref/` 中的任何内容。
+- 不要在 `input/`、`ref/` 下新建文件或软链；临时文件写入 `output/tmp/` 或 `/tmp`。
+
+### 3. 工具使用
+- 可调用 `sandbox_execute`、`workspace_read`、`workspace_write`、`workspace_edit`、
+  `workspace_list` 以及你 YAML 白名单内的工具。
+- 禁止执行会修改工作目录外路径、访问网络下载未验证包、或删除他人产物的命令。
+- 安装新软件包前必须先说明理由；优先使用镜像内已预装工具；装包后记录名称和版本。
+
+### 4. 产物登记
+- 每个产物在最终答复中列出：相对路径、文件大小、一句话用途说明。
+- 交付时在工作目录根下写 `README.md` 汇总本次执行做了什么、用了什么输入、产出了什么。
+- 中间文件和日志放进 `output/tmp/` 与 `output/logs/`，不要把结果散落根目录。
+
+### 5. 高风险操作确认
+- 以下操作在执行前必须先用 `ask_user` 取得用户明确确认：删除任何文件、修改 `output/` 
+  以外目录、运行耗时超过 10 分钟的命令、向外部网络发起请求、修改系统配置。
+- 如果用户未确认，你必须停止并说明原因，不能绕过。
+
+### 6. 输出信封
+- 最终答复只包含一个 `json` 代码块，结构为：
+  {"conclusion":"执行摘要","recommendations":[],"evidence_refs":[],"risks":[],
+   "token_usage":0,"artifacts":[{"path":"...","kind":"file","bytes":0}]}
+- 执行失败时 `conclusion` 诚实说明失败，`risks` 必须记录失败原因，禁止伪造成功或产物。
 ```

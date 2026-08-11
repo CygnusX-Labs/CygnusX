@@ -65,7 +65,7 @@ class LocalSnakemakeExecutor(BaseExecutor):
     def _ensure_monitor_logger_plugin(self) -> None:
         if not self.settings.workflow_monitor_enabled:
             return
-        if self.settings.snakemake_monitor_logger != "rich_loguru":
+        if self.settings.snakemake_monitor_logger not in {"rich_loguru", "rich-loguru"}:
             return
 
         package_name = "snakemake-logger-plugin-rich-loguru"

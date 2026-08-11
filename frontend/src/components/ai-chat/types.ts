@@ -25,12 +25,6 @@ export interface KnowledgeCitationSource {
   url: string
 }
 
-export interface WebSearchStatus {
-  query?: string
-  status: 'searching' | 'empty' | 'failed' | 'complete'
-  message?: string
-}
-
 // ===== 聊天消息 =====
 /** 智能路由：目标专家信息（route 事件） */
 export interface RoutedAgentInfo {
@@ -133,8 +127,6 @@ export interface ChatMessage {
   webSources?: WebSearchSource[]
   /** 知识库检索的可核验来源；从 knowledge_search 工具结果恢复。 */
   knowledgeSources?: KnowledgeCitationSource[]
-  /** 联网搜索进行中的反馈。 */
-  webSearchStatus?: WebSearchStatus
   charts?: ChartData[]
   /** Studio ask_user 澄清卡片（AI 消息专属，回答后标记 answered） */
   askRequest?: AskRequest

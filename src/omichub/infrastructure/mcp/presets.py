@@ -6,6 +6,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import os
+import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -291,6 +294,118 @@ async def _platform_get_user_info(
         lines.append(f"存储: {used_gb:.1f}GB / {total_gb:.1f}GB")
     data["summary"] = "\n".join(lines) if lines else "已获取用户信息"
     return data
+
+
+async def _platform_admin_health_check(
+    arguments: dict[str, Any],
+    user_id: str | None = None,
+    context: ToolInvocationContext | None = None,
+    **_kw: Any,
+) -> dict[str, Any]:
+    """Return a read-only platform health snapshot after enforcing the admin role."""
+    from sqlalchemy import func, select
+
+    from omichub.core.config import get_settings
+    from omichub.infrastructure.cache.redis_client import get_redis
+    from omichub.infrastructure.database.models.knowledge_base import KnowledgeBaseModel
+    from omichub.infrastructure.database.models.knowledge_chunk import KbChunkModel
+    from omichub.infrastructure.database.models.knowledge_document import KbDocumentModel
+    from omichub.infrastructure.database.models.task import TaskModel
+    from omichub.infrastructure.database.models.user import UserModel
+    from omichub.infrastructure.database.session import get_session_factory
+
+    try:
+        uid = uuid.UUID(str(user_id))
+    except (ValueError, TypeError):
+        return {"success": False, "error": "无法确定当前管理员身份"}
+
+    async def inspect(db: Any) -> dict[str, Any]:
+        user = await db.get(UserModel, uid)
+        if user is None or str(user.role) != "admin":
+            return {"success": False, "error": "仅平台管理员可以执行运维健康检查"}
+
+        user_rows = (
+            await db.execute(select(UserModel.status, func.count()).group_by(UserModel.status))
+        ).all()
+        task_rows = (
+            await db.execute(select(TaskModel.status, func.count()).group_by(TaskModel.status))
+        ).all()
+        knowledge_base_count = (
+            await db.execute(
+                select(func.count())
+                .select_from(KnowledgeBaseModel)
+                .where(
+                    KnowledgeBaseModel.is_enabled.is_(True),
+                    KnowledgeBaseModel.ai_searchable.is_(True),
+                )
+            )
+        ).scalar_one()
+        document_count = (
+            await db.execute(select(func.count()).select_from(KbDocumentModel))
+        ).scalar_one()
+        chunk_count = (
+            await db.execute(select(func.count()).select_from(KbChunkModel))
+        ).scalar_one()
+        return {
+            "success": True,
+            "database": {"status": "ok"},
+            "users_by_status": {str(status): int(count) for status, count in user_rows},
+            "tasks_by_status": {str(status): int(count) for status, count in task_rows},
+            "knowledge": {
+                "searchable_bases": int(knowledge_base_count),
+                "documents": int(document_count),
+                "chunks": int(chunk_count),
+            },
+        }
+
+    if context is not None:
+        snapshot = await inspect(context.db)
+    else:
+        factory = get_session_factory()
+        async with factory() as db:
+            snapshot = await inspect(db)
+    if not snapshot.get("success"):
+        return snapshot
+
+    try:
+        redis_ok = bool(await asyncio.wait_for(get_redis().ping(), timeout=2.0))
+        redis_error = None
+    except Exception as exc:  # noqa: BLE001 - health checks must return partial evidence
+        redis_ok = False
+        redis_error = type(exc).__name__
+    snapshot["redis"] = {"status": "ok" if redis_ok else "error", "error": redis_error}
+
+    settings = get_settings()
+    storage_path = Path(settings.storage_path)
+    storage: dict[str, Any] = {
+        "path": str(storage_path),
+        "exists": storage_path.is_dir(),  # noqa: ASYNC240 - bounded local health probe
+        "readable": os.access(storage_path, os.R_OK),
+        "writable": os.access(storage_path, os.W_OK),
+    }
+    try:
+        usage = shutil.disk_usage(storage_path)
+        storage.update(
+            {
+                "total_bytes": int(usage.total),
+                "used_bytes": int(usage.used),
+                "free_bytes": int(usage.free),
+                "used_percent": round(usage.used / usage.total * 100, 2) if usage.total else None,
+            }
+        )
+    except OSError as exc:
+        storage["error"] = type(exc).__name__
+    snapshot["storage"] = storage
+
+    unhealthy = []
+    if not redis_ok:
+        unhealthy.append("redis")
+    if not storage["exists"] or not storage["readable"] or not storage["writable"]:
+        unhealthy.append("storage")
+    snapshot["status"] = "healthy" if not unhealthy else "degraded"
+    snapshot["attention_required"] = unhealthy
+    snapshot["checked_at"] = datetime.now().astimezone().isoformat()
+    return snapshot
 
 
 async def _platform_read_file(
@@ -752,7 +867,7 @@ async def _workspace_read_file(
     size = target.stat().st_size
     truncated = size > max_bytes
     try:
-        with open(target, "r", encoding="utf-8", errors="replace") as fh:
+        with open(target, encoding="utf-8", errors="replace") as fh:
             content = fh.read(max_bytes)
     except OSError as e:
         return {"error": f"读取失败: {e}", **meta}
@@ -957,6 +1072,14 @@ PLATFORM_PRESET_TOOLS = [
                 }
             },
         },
+    },
+    {
+        "name": "platform_admin_health_check",
+        "description": (
+            "管理员专用的只读平台巡检：检查数据库可查询性、Redis、共享存储容量与权限、"
+            "用户/任务状态分布及知识库文档和分块数量。不会修改配置、重启服务或执行修复。"
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "platform_sandbox_execute",
@@ -1193,6 +1316,7 @@ PLATFORM_HANDLERS = {
     "platform_list_flows": _platform_list_flows,
     "platform_get_user_info": _platform_get_user_info,
     "platform_get_current_time": _platform_get_current_time,
+    "platform_admin_health_check": _platform_admin_health_check,
     "platform_sandbox_execute": _platform_sandbox_execute,
     "platform_read_file": _platform_read_file,
     "list_workspace_files": _list_workspace_files,

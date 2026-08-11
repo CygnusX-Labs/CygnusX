@@ -15,6 +15,17 @@ from omichub.core.exceptions import BusinessError, NotFoundError
 from omichub.infrastructure.database.models.knowledge_base import KnowledgeBaseModel
 from omichub.infrastructure.database.models.knowledge_document import KbDocumentModel
 
+BUILTIN_KNOWLEDGE_BASES = {
+    "qc": {
+        "name": "测序与生信质量控制知识库",
+        "description": "测序平台、FASTQ/FAST5、质量控制、预处理、比对覆盖、变异与生物信息文件格式资料。",
+    },
+    "cloud": {
+        "name": "云计算与平台运维知识库",
+        "description": "云计算、OmicHub 平台运维、存储、网络、容器仓库、Terraform 与 Slurm 资料。",
+    },
+}
+
 
 class KnowledgeBaseService:
     def __init__(self, db: AsyncSession) -> None:
@@ -34,12 +45,33 @@ class KnowledgeBaseService:
             updated_at=model.updated_at,
         )
 
+    async def ensure_builtin_bases(self) -> int:
+        """Create missing repository-managed knowledge-base resources without overwriting admin edits."""
+        created = 0
+        for kb_id, config in BUILTIN_KNOWLEDGE_BASES.items():
+            if await self._db.get(KnowledgeBaseModel, kb_id) is not None:
+                continue
+            self._db.add(
+                KnowledgeBaseModel(
+                    id=kb_id,
+                    name=config["name"],
+                    description=config["description"],
+                    show_in_lab=True,
+                    ai_searchable=True,
+                    is_enabled=True,
+                )
+            )
+            created += 1
+        if created:
+            await self._db.flush()
+        return created
+
     async def list_bases(self) -> list[KnowledgeBaseDTO]:
+        await self.ensure_builtin_bases()
         counts = dict(
             (
                 await self._db.execute(
-                    select(KbDocumentModel.kb_id, func.count())
-                    .group_by(KbDocumentModel.kb_id)
+                    select(KbDocumentModel.kb_id, func.count()).group_by(KbDocumentModel.kb_id)
                 )
             ).all()
         )
@@ -47,8 +79,7 @@ class KnowledgeBaseService:
             select(KnowledgeBaseModel).order_by(KnowledgeBaseModel.created_at)
         )
         return [
-            self._dto(model, int(counts.get(model.id) or 0))
-            for model in result.scalars().all()
+            self._dto(model, int(counts.get(model.id) or 0)) for model in result.scalars().all()
         ]
 
     async def create_base(self, dto: KnowledgeBaseCreateDTO) -> KnowledgeBaseDTO:
@@ -82,22 +113,24 @@ class KnowledgeBaseService:
         await self._db.refresh(model)
         count = (
             await self._db.execute(
-                select(func.count()).select_from(KbDocumentModel).where(
-                    KbDocumentModel.kb_id == kb_id
-                )
+                select(func.count())
+                .select_from(KbDocumentModel)
+                .where(KbDocumentModel.kb_id == kb_id)
             )
         ).scalar_one()
         return self._dto(model, int(count))
 
     async def delete_base(self, kb_id: str) -> None:
+        if kb_id in BUILTIN_KNOWLEDGE_BASES:
+            raise BusinessError("内置知识库不可删除；如需隐藏或停止检索，请关闭对应开关")
         model = await self._db.get(KnowledgeBaseModel, kb_id)
         if model is None:
             raise NotFoundError("知识库不存在")
         count = (
             await self._db.execute(
-                select(func.count()).select_from(KbDocumentModel).where(
-                    KbDocumentModel.kb_id == kb_id
-                )
+                select(func.count())
+                .select_from(KbDocumentModel)
+                .where(KbDocumentModel.kb_id == kb_id)
             )
         ).scalar_one()
         if count:

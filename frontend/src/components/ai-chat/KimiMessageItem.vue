@@ -31,14 +31,17 @@ import OverdriveProgressCard from './OverdriveProgressCard.vue'
 import ToolCallEntry from './ToolCallEntry.vue'
 import SkillInvocationCardView from './SkillInvocationCard.vue'
 import { useAgentHubStore } from '@/stores/agentHub'
+import apiClient from '@/api/client'
 import { reportChatDiagnostic } from '@/utils/chatDiagnostics'
 import type {
   ChatMessage,
   CollaborationRouteInfo,
   CopyMode,
   ChartData,
+  KnowledgeCitationSource,
   ToolCall,
   SkillInvocationCard,
+  FileAttachment,
 } from './types'
 
 interface Props {
@@ -87,6 +90,44 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
+const attachmentPreviewUrls = ref<Record<string, string>>({})
+
+function attachmentKey(attachment: FileAttachment, index: number): string {
+  return attachment.file_id || attachment.url || `${attachment.name}-${index}`
+}
+
+function isImageAttachment(attachment: FileAttachment): boolean {
+  return attachment.type.startsWith('image/')
+}
+
+function attachmentPreviewUrl(attachment: FileAttachment, index: number): string {
+  return attachmentPreviewUrls.value[attachmentKey(attachment, index)] || ''
+}
+
+async function loadAttachmentPreview(attachment: FileAttachment, index: number): Promise<void> {
+  if (!isImageAttachment(attachment) || !attachment.url) return
+  const key = attachmentKey(attachment, index)
+  if (attachmentPreviewUrls.value[key]) return
+  try {
+    const response = await apiClient.get<Blob>(attachment.url, { responseType: 'blob' })
+    attachmentPreviewUrls.value[key] = URL.createObjectURL(response.data)
+  } catch (error) {
+    reportChatDiagnostic({
+      phase: 'attachment-preview',
+      messageId: props.message.id,
+      contentPreview: attachment.name,
+      error,
+    })
+  }
+}
+
+watch(
+  () => props.message.attachments,
+  (attachments) => {
+    void Promise.all((attachments || []).map(loadAttachmentPreview))
+  },
+  { immediate: true, deep: true },
+)
 
 const hovered = ref(false)
 const lottieRef = ref<InstanceType<typeof Vue3Lottie> | null>(null)
@@ -290,6 +331,42 @@ const webSources = computed(() => {
   return sources.filter((source, index) => sources.findIndex((item) => item.url === source.url) === index)
 })
 
+function asKnowledgeCitationSource(value: unknown): KnowledgeCitationSource | null {
+  if (!value || typeof value !== 'object') return null
+  const item = value as Record<string, unknown>
+  const citationId = typeof item.citation_id === 'string' ? item.citation_id : ''
+  const docId = typeof item.doc_id === 'string' ? item.doc_id : ''
+  const title = typeof item.title === 'string' ? item.title : ''
+  const url = typeof item.url === 'string' ? item.url : ''
+  if (!citationId || !docId || !title || !url) return null
+  return {
+    citationId,
+    docId,
+    title,
+    category: typeof item.category === 'string' ? item.category : '',
+    excerpt: typeof item.excerpt === 'string' ? item.excerpt : '',
+    sectionPath: typeof item.section_path === 'string' ? item.section_path : '',
+    url,
+  }
+}
+
+const knowledgeSources = computed<KnowledgeCitationSource[]>(() => {
+  const sources: KnowledgeCitationSource[] = [...(props.message.knowledgeSources || [])]
+  for (const tool of props.message.toolCalls || []) {
+    if (tool.name !== 'knowledge_search' || !tool.result || typeof tool.result !== 'object') continue
+    const result = tool.result as { results?: unknown; result?: { results?: unknown } }
+    const rows = Array.isArray(result.results) ? result.results : result.result?.results
+    if (!Array.isArray(rows)) continue
+    for (const row of rows) {
+      const source = asKnowledgeCitationSource(row)
+      if (source) sources.push(source)
+    }
+  }
+  return sources.filter(
+    (source, index) => sources.findIndex((item) => item.citationId === source.citationId) === index,
+  )
+})
+
 function sourceDomain(url: string): string {
   try { return new URL(url).hostname } catch { return url }
 }
@@ -301,6 +378,19 @@ function sourceHref(url: string): string {
   } catch {
     return ''
   }
+}
+
+function knowledgeHref(url: string): string {
+  return /^\/knowledge\/[a-z0-9][a-z0-9-]*$/i.test(url) ? url : ''
+}
+
+function knowledgeAssetUrl(excerpt: string): string {
+  const match = excerpt.match(/(\/docs-static\/[^\s)]+)/)
+  return match?.[1] || ''
+}
+
+function isImageAsset(url: string): boolean {
+  return /\.(?:png|jpe?g|webp|gif|bmp|tiff?|svg)(?:[?#].*)?$/i.test(url)
 }
 
 function sourceFavicon(url: string): string {
@@ -429,6 +519,74 @@ function markdownToHtml(source: string): string {
         textNode.replaceWith(fragment)
       }
     }
+    const citations = new Map(knowledgeSources.value.map((item) => [item.citationId, item]))
+    if (citations.size) {
+      const nodes: Text[] = []
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+      let node = walker.nextNode()
+      while (node) {
+        const parent = node.parentElement
+        if (!parent?.closest('a, button, code, pre') && /\[\[citation:kb-[a-f0-9]{16}\]\]/i.test(node.textContent || '')) {
+          nodes.push(node as Text)
+        }
+        node = walker.nextNode()
+      }
+      for (const textNode of nodes) {
+        const value = textNode.textContent || ''
+        const fragment = document.createDocumentFragment()
+        let cursor = 0
+        for (const match of value.matchAll(/\[\[citation:(kb-[a-f0-9]{16})\]\]/ig)) {
+          const citation = citations.get(match[1])
+          if (!citation || match.index === undefined) continue
+          const citationIndex = knowledgeSources.value.findIndex(
+            (item) => item.citationId === citation.citationId,
+          ) + 1
+          fragment.append(value.slice(cursor, match.index))
+          const wrapper = document.createElement('span')
+          wrapper.className = 'knowledge-citation-wrap'
+          const button = document.createElement('button')
+          button.type = 'button'
+          button.className = 'knowledge-citation'
+          button.dataset.knowledgeUrl = knowledgeHref(citation.url)
+          button.setAttribute('aria-label', `知识库来源 ${citationIndex}：${citation.title}`)
+          button.textContent = `[${citationIndex}]`
+          const preview = document.createElement('span')
+          preview.className = 'knowledge-citation-preview'
+          const assetUrl = knowledgeAssetUrl(citation.excerpt)
+          if (assetUrl && isImageAsset(assetUrl)) {
+            const image = document.createElement('img')
+            image.className = 'knowledge-citation-preview__image'
+            image.src = assetUrl
+            image.alt = `${citation.title} 图片预览`
+            preview.append(image)
+          }
+          const title = document.createElement('strong')
+          title.className = 'knowledge-citation-preview__title'
+          title.textContent = citation.title
+          preview.append(title)
+          const context = [citation.category, citation.sectionPath].filter(Boolean).join(' · ')
+          if (context) {
+            const meta = document.createElement('span')
+            meta.className = 'knowledge-citation-preview__meta'
+            meta.textContent = context
+            preview.append(meta)
+          }
+          const excerpt = document.createElement('span')
+          excerpt.className = 'knowledge-citation-preview__excerpt'
+          excerpt.textContent = citation.excerpt.slice(0, 280)
+          preview.append(excerpt)
+          const action = document.createElement('span')
+          action.className = 'knowledge-citation-preview__action'
+          action.textContent = assetUrl && !isImageAsset(assetUrl) ? '点击打开原文与附件' : '点击打开知识库原文'
+          preview.append(action)
+          wrapper.append(button, preview)
+          fragment.append(wrapper)
+          cursor = match.index + match[0].length
+        }
+        fragment.append(value.slice(cursor))
+        textNode.replaceWith(fragment)
+      }
+    }
     return DOMPurify.sanitize(container.innerHTML)
   } catch (e) {
     reportChatDiagnostic({
@@ -487,7 +645,7 @@ const timelineView = computed<TimelineViewSegment[]>(() => {
 })
 
 watch(
-  () => [displayContent.value, webSources.value, props.message.timeline] as const,
+  () => [displayContent.value, webSources.value, knowledgeSources.value, props.message.timeline] as const,
   () => {
     if (streamingActive.value) {
       if (renderRafId) return
@@ -510,6 +668,7 @@ onUnmounted(() => {
     renderRafId = null
   }
   if (copyBtnTimer) clearTimeout(copyBtnTimer)
+  Object.values(attachmentPreviewUrls.value).forEach((url) => URL.revokeObjectURL(url))
 })
 
 const { execute } = usePyodide()
@@ -593,6 +752,12 @@ const hasBodyContent = computed(() =>
 let copyBtnTimer: ReturnType<typeof setTimeout> | null = null
 
 function handleBodyClick(e: MouseEvent) {
+  const citation = (e.target as HTMLElement).closest('.knowledge-citation') as HTMLElement | null
+  if (citation) {
+    const href = citation.dataset.knowledgeUrl || ''
+    if (href) void router.push(href)
+    return
+  }
   const t = (e.target as HTMLElement).closest('.copy-btn') as HTMLElement | null
   if (t) {
     navigator.clipboard.writeText(decodeURIComponent(t.dataset.code || ''))
@@ -688,8 +853,17 @@ function handleEdit() {
         {{ message.content }}
         <div v-if="message.attachments?.length" class="attachments">
           <div v-for="(file, idx) in message.attachments" :key="idx" class="attachment-tag">
-            <n-icon size="14"><DocumentOutline /></n-icon>
-            <span>{{ file.name }}</span>
+            <template v-if="isImageAttachment(file)">
+              <img
+                v-if="attachmentPreviewUrl(file, idx)"
+                class="attachment-image-preview"
+                :src="attachmentPreviewUrl(file, idx)"
+                :alt="file.name"
+              />
+              <span v-else class="attachment-image-loading" role="status">图片加载中</span>
+            </template>
+            <n-icon v-else size="14"><DocumentOutline /></n-icon>
+            <span class="attachment-name">{{ file.name }}</span>
           </div>
         </div>
       </div>
@@ -836,16 +1010,6 @@ function handleEdit() {
               {{ displayThought }}
             </div>
           </transition>
-        </div>
-
-        <div
-          v-if="isStreaming && message.webSearchStatus && message.webSearchStatus.status !== 'complete'"
-          class="web-search-status"
-          role="status"
-          aria-live="polite"
-        >
-          <span aria-hidden="true">🔍</span>
-          <span>{{ message.webSearchStatus?.message || (message.webSearchStatus?.status === 'searching' ? `正在联网搜索：${message.webSearchStatus?.query || ''}` : message.webSearchStatus?.status === 'empty' ? '未找到相关网页，继续基于模型知识回答' : '联网搜索失败，继续基于模型知识回答') }}</span>
         </div>
 
         <!-- 首 Token 前加载态；按等待时长轮换动画与文案。
@@ -1239,7 +1403,6 @@ function handleEdit() {
   font-size: 12px;
   color: var(--chat-text-muted, #999);
 }
-.web-search-status { display:flex; align-items:center; gap:6px; margin:0 0 12px; color:var(--neutral-text-2); font-size:13px; }
 .web-sources { margin-top:16px; padding-top:12px; border-top:1px solid var(--neutral-border); }
 .web-sources-title { cursor:pointer; font-size:12px; font-weight:600; color:var(--neutral-text-2); }
 .web-source-list { display:flex; flex-direction:column; gap:7px; margin-top:9px; }
@@ -1250,6 +1413,18 @@ function handleEdit() {
 .source-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .source-domain { margin-left:auto; flex:0 0 auto; color:var(--neutral-text-3); font-size:11px; }
 :deep(.web-citation) { color:var(--arco-primary); font-weight:600; text-decoration:none; }
+:deep(.knowledge-citation-wrap) { position:relative; display:inline-flex; vertical-align:baseline; }
+:deep(.knowledge-citation) { margin:0 2px; padding:0; border:0; border-radius:var(--radius-sm); color:var(--arco-primary); background:transparent; font:inherit; font-weight:650; line-height:inherit; cursor:pointer; text-decoration:none; }
+:deep(.knowledge-citation:hover), :deep(.knowledge-citation:focus-visible) { color:var(--color-primary-hover, var(--arco-primary)); text-decoration:underline; outline:none; }
+:deep(.knowledge-citation:focus-visible) { box-shadow:0 0 0 2px var(--focus-ring, color-mix(in srgb, var(--arco-primary) 28%, transparent)); }
+:deep(.knowledge-citation-preview) { position:absolute; z-index:30; bottom:calc(100% + 8px); left:50%; display:none; width:min(320px, 72vw); padding:12px; border:1px solid var(--neutral-border); border-radius:var(--radius-md); color:var(--neutral-text-1); background:var(--neutral-card); box-shadow:var(--shadow-3); transform:translateX(-50%); text-align:left; white-space:normal; }
+:deep(.knowledge-citation-wrap:hover .knowledge-citation-preview), :deep(.knowledge-citation-wrap:focus-within .knowledge-citation-preview) { display:grid; gap:5px; }
+:deep(.knowledge-citation-preview__image) { width:100%; max-height:160px; border-radius:var(--radius-sm); object-fit:contain; background:var(--neutral-fill-1); }
+:deep(.knowledge-citation-preview__title) { overflow:hidden; color:var(--neutral-text-1); font-size:13px; line-height:1.4; text-overflow:ellipsis; white-space:nowrap; }
+:deep(.knowledge-citation-preview__meta), :deep(.knowledge-citation-preview__action) { color:var(--neutral-text-3); font-size:11px; line-height:1.4; }
+:deep(.knowledge-citation-preview__excerpt) { display:-webkit-box; overflow:hidden; color:var(--neutral-text-2); font-size:12px; line-height:1.55; -webkit-box-orient:vertical; -webkit-line-clamp:4; }
+@media (max-width: 767px) { :deep(.knowledge-citation-preview) { display:none !important; } }
+@media (prefers-reduced-transparency: reduce) { :deep(.knowledge-citation-preview) { background:var(--neutral-card); } }
 .message-header.user-header .message-meta {
   justify-content: flex-end;
 }
@@ -1385,6 +1560,31 @@ function handleEdit() {
   outline: 2px solid var(--chat-accent, #6366f1);
   outline-offset: 4px;
   border-radius: 6px;
+}
+
+.kimi-message-item.user .attachment-image-preview {
+  display: block;
+  width: min(220px, 100%);
+  max-height: 180px;
+  border: 1px solid var(--chat-border, var(--neutral-border));
+  border-radius: 8px;
+  background: var(--neutral-fill-1);
+  object-fit: contain;
+}
+
+.kimi-message-item.user .attachment-image-loading {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  color: var(--neutral-text-3);
+  font-size: 12px;
+}
+
+.kimi-message-item.user .attachment-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .worker-result-toggle__meta,

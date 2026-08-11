@@ -454,10 +454,13 @@ class ManagerReviewService:
         # audit conclusion into a successful run.
         if is_independent_qc:
             accepted = accepted and qc_decision == "通过"
+        # Awaiting user input / approval is a healthy wait state, not a worker
+        # failure: keep the failure wording out of the user-visible basis.
+        waiting = awaiting_input or awaiting_approval
         reasons: list[str] = []
-        if not success:
+        if not success and not waiting:
             reasons.append("worker 未成功完成")
-        if not criteria_met:
+        if not criteria_met and not waiting:
             reasons.append("完成判据未全部命中")
         if not paths_valid:
             reasons.append("产物路径无效")
@@ -486,7 +489,15 @@ class ManagerReviewService:
                 else "repair_or_review"
             ),
             "accepted": accepted,
-            "basis": "完成判据与产物路径均已验证" if accepted else "；".join(reasons),
+            "basis": (
+                "完成判据与产物路径均已验证"
+                if accepted
+                else "助手正在等待你补充输入，回答后将继续执行"
+                if awaiting_input
+                else "助手正在等待审批，通过后将继续执行"
+                if awaiting_approval
+                else "；".join(reasons)
+            ),
             "reviewed_at": datetime.now(UTC).isoformat(),
         }
 

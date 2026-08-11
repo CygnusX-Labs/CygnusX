@@ -34,6 +34,15 @@ ALLOWED_CONSULTATION_AGENTS = {
 }
 _JSON_FENCE_RE = re.compile(r"```json\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
 
+_WORKSPACE_EXEC_PROTOCOL_PATH = (
+    Path(__file__).resolve().parents[4]
+    / "data"
+    / "ai"
+    / "prompts"
+    / "shared"
+    / "agentteams_workspace_execution.md"
+)
+
 
 class ConsultationEnvelope(BaseModel):
     conclusion: str = Field(min_length=1, max_length=8_000)
@@ -129,6 +138,14 @@ class AgentConsultationService:
         return envelope
 
     @staticmethod
+    def _workspace_execution_protocol() -> str:
+        """加载工作区执行模式追加契约；文件缺失时返回兜底摘要。"""
+        try:
+            return _WORKSPACE_EXEC_PROTOCOL_PATH.read_text(encoding="utf-8")
+        except OSError:
+            return "仅可在分配工作目录内写入；不得修改数据库、任务或工作流。\n"
+
+    @staticmethod
     def _build_instruction(
         *,
         question: str,
@@ -137,20 +154,24 @@ class AgentConsultationService:
         requested_tools: list[str],
         execution_mode: str,
     ) -> str:
-        return (
-            "你正在执行 AgentTeams 受控专业会诊。"
-            + (
-                "仅可在分配工作目录内写入；不得修改数据库、任务或工作流。\n"
-                if execution_mode == "workspace_execution"
-                else "不得修改文件、数据库、任务或工作流。\n"
+        if execution_mode == "workspace_execution":
+            mode_clause = f"\n{AgentConsultationService._workspace_execution_protocol()}\n"
+            envelope_clause = ""
+        else:
+            mode_clause = "不得修改文件、数据库、任务或工作流。\n"
+            envelope_clause = (
+                "最终答复必须只包含一个 ```json 代码块，结构为："
+                '{"conclusion":"非空结论","recommendations":[],"evidence_refs":[],"risks":[],'
+                '"token_usage":0,"proposed_submission":null,"artifacts":[]}。规划能力调用时 '
+                "proposed_submission 必须是可校验的 TaskSpec 参数对象。"
             )
-            + f"能力：{capability}\n问题：{question}\n"
+        return (
+            "你正在执行 AgentTeams 受控专业会诊。\n"
+            + mode_clause
+            + f"\n能力：{capability}\n问题：{question}\n"
             f"证据引用：{json.dumps(evidence_refs, ensure_ascii=False)}\n"
             f"获准请求的只读工具：{json.dumps(requested_tools, ensure_ascii=False)}\n"
-            "最终答复必须只包含一个 ```json 代码块，结构为："
-            '{"conclusion":"非空结论","recommendations":[],"evidence_refs":[],"risks":[],'
-            '"token_usage":0,"proposed_submission":null,"artifacts":[]}。规划能力调用时 '
-            "proposed_submission 必须是可校验的 TaskSpec 参数对象。"
+            + envelope_clause
         )
 
     async def _register_workspace_artifacts(

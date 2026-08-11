@@ -117,6 +117,11 @@ def test_rule_review_preserves_branch_local_user_and_approval_waits() -> None:
 
     assert ask["decision"] == "ask_user"
     assert approval["decision"] == "await_approval"
+    # 等待态不是失败：basis 不得出现失败措辞
+    assert "未成功完成" not in ask["basis"]
+    assert "未全部命中" not in ask["basis"]
+    assert "未成功完成" not in approval["basis"]
+    assert "未全部命中" not in approval["basis"]
 
 
 def test_independent_qc_adverse_or_missing_conclusion_blocks_delivery() -> None:
@@ -310,6 +315,27 @@ def test_control_persists_action_payload_for_execution_run() -> None:
     assert len(command_rows) == 1
     assert command_rows[0].command_type == "control_pause"
     assert command_rows[0].payload == {"action": "pause"}
+
+
+def test_projected_manager_review_suppresses_wait_state_speech() -> None:
+    base = {
+        "run_id": "overdrive:test",
+        "session_id": "session-1",
+        "sequence": 9,
+        "event_type": "manager_review_ready",
+    }
+    for decision in ("ask_user", "await_approval"):
+        event = {**base, "payload": {"decision": decision, "basis": "ignored"}}
+        assert OverdriveRunService.project_event(event) is None
+
+    failure = {
+        **base,
+        "payload": {"decision": "repair_or_review", "basis": "worker 未成功完成"},
+    }
+    projected = OverdriveRunService.project_event(failure)
+    assert projected is not None
+    assert projected["type"] == "room_speech"
+    assert projected["content"] == "worker 未成功完成"
 
 
 def test_projected_worker_approval_keeps_run_and_exact_call_context() -> None:

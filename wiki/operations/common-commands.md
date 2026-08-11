@@ -1,59 +1,47 @@
 # 常用命令
 
-## 本地开发
+以 `make help` 的实际输出为准；下表列出当前最常用的安全入口。
 
-| 命令 | 说明 |
-|---|---|
-| `make dev` | 启动后端开发服务器 |
-| `make frontend-dev` | 启动前端开发服务器 |
-| `make dev-worker` | 启动 Celery Worker |
-| `make dev-beat` | 启动 Celery Beat |
-| `make dev-flower` | 启动 Flower 监控 |
+## 开发与质量
 
-## 代码质量
+| 目的 | 命令 |
+| --- | --- |
+| 启动后端开发服务器 | `make dev` |
+| 启动前端开发服务器 | `make frontend-dev` |
+| 启动 Celery / RocketMQ Worker | `make dev-worker` / `make dev-rocketmq-worker` |
+| 运行测试 | `make test` |
+| 代码检查 / 格式化 / 类型检查 | `make lint` / `make format` / `make type-check` |
+| 安装或构建前端 | `make frontend-install` / `make frontend-build` |
 
-| 命令 | 说明 |
-|---|---|
-| `make test` | 运行测试 |
-| `make test-cov` | 运行测试并生成覆盖率 |
-| `make lint` | Ruff 静态检查 |
-| `make format` | Ruff 格式化与自动修复 |
-| `make type-check` | Mypy 类型检查 |
+## 数据库与知识库
+
+| 目的 | 命令 |
+| --- | --- |
+| 执行迁移 | `make migrate` |
+| 创建 / 回滚 / 合并迁移 | `make migrate-new m="描述"` / `make migrate-rollback` / `make migrate-merge` |
+| 检查迁移链 | `make check-migrations`、`make check-alembic-heads` |
+| 初始化管理员 / 饼干策略 | `make init-admin` / `make init-cookies` |
+| 同步 Markdown 知识库 | `make sync-knowledge` |
+| 重建知识库分块与向量 | `make knowledge-reindex` |
 
 ## Docker 生命周期
 
-| 命令 | 容器 | 数据卷 | 镜像 | 用途 |
-|---|---|---|---|---|
-| `make docker-up` | up | 保留 | 保留 | 启动主栈 |
-| `make docker-up-worker` | up | 保留 | 保留 | 启动 Worker 栈 |
-| `make docker-up-all` | up | 保留 | 保留 | 一键全启 |
-| `make docker-down-all` | down | 保留 | 保留 | 停止全栈 |
-| `make docker-reload` | restart | 保留 | 保留 | 前端/后端代码刷新 |
-| `make docker-clean` | down | 保留 | 保留 | 清理容器与网络 |
-| `make docker-purge` | down+删除 | 清空 | 删除 | 彻底清理 |
-| `make docker-start` | purge+build+up | 清空 | 重建 | 彻底重建 |
+| 目的 | 命令 |
+| --- | --- |
+| 启动主栈 / Worker 栈 / 全部 | `make docker-up` / `make docker-up-worker` / `make docker-up-all` |
+| 停止主栈 / Worker 栈 / 全部 | `make docker-down` / `make docker-down-worker` / `make docker-down-all` |
+| 查看主栈 / Worker 日志 | `make docker-logs` / `make docker-logs-worker` |
+| 日常代码刷新 / 完整开发重载 | `make docker-dev-refresh` / `make docker-reload` |
+| 修复运行目录权限 | `make docker-fix-permissions` |
+| 清理容器网络 / 危险清理全部 Docker 资源 | `make docker-clean` / `make docker-purge` |
 
-## 数据库与初始化
+`docker-purge` 和 `docker-start` 会删除或重建 Docker 资源；执行前确认数据卷、镜像和构建缓存的影响。
 
-| 命令 | 说明 |
-|---|---|
-| `make migrate` | 执行 Alembic 迁移 |
-| `make migrate-new m="..."` | 创建新迁移 |
-| `make migrate-merge` | 合并多分支 |
-| `make init-admin` | 初始化管理员 |
-| `make init-cookies` | 初始化饼干定价 |
+## 可选运行组件
 
-## 前端更新
-
-前端改动后必须让 nginx 加载新的 `frontend/dist`：
-
-```bash
-make docker-reload
-```
-
-或手动：
-
-```bash
-cd frontend && npm run build
-docker restart omichub-nginx
-```
+| 目的 | 命令 |
+| --- | --- |
+| 启动 RocketMQ 与对应 Worker | `make docker-up-rocketmq`、`make docker-up-rocketmq-worker` |
+| 启动 pgvector 验收叠加并检查 | `make docker-up-pgvector`、`make pgvector-acceptance` |
+| 启动跨机器控制面 / Worker | `make docker-up-cross-web`、`make docker-up-cross-worker` |
+| 构建运行时和 Worker 镜像 | `make runtime-images-build`、`make docker-build-worker` |

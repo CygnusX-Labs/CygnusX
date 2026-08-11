@@ -191,6 +191,7 @@ class Settings(BaseSettings):
 
     # ===== AI Copilot =====
     ai_system_prompt: str = ""  # 已迁移到 data/ai/prompts/copilot/system.md；仅保留环境变量兼容覆盖
+    agent_ability_yaml: str = "data/ai/agent_ability.yaml"
     ai_max_context_messages: int = 20
     ai_temperature: float = 0.7
     ai_default_provider_id: str = ""  # 默认 AI provider 配置 UUID，空则使用环境变量兜底
@@ -268,8 +269,10 @@ class Settings(BaseSettings):
     workflow_monitor_internal_url: str = "http://web:8000/api/v1/workflow-monitor"
     workflow_monitor_plugin_token_env: str = "OMICHUB_WORKFLOW_MONITOR_TOKEN"
     workflow_monitor_signature_max_skew_seconds: int = 300
-    # Entry point from snakemake-logger-plugin-rich-loguru >= 0.2.1.
-    snakemake_monitor_logger: str = "rich_loguru"
+    # Plugin snakemake-logger-plugin-rich-loguru registers entry point "rich_loguru",
+    # but snakemake >= 9 normalizes logger choices to the hyphenated form; passing
+    # "rich_loguru" is rejected with "invalid choice" (choose from 'rich-loguru').
+    snakemake_monitor_logger: str = "rich-loguru"
     snakemake_monitor_plugin_min_version: str = "0.2.1"
     workflow_monitor_event_ttl_seconds: int = 86400
     workflow_monitor_recent_event_limit: int = 1000

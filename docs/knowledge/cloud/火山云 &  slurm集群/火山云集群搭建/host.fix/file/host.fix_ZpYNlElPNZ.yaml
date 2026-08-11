@@ -1,0 +1,10 @@
+# Slurm info
+REGION : cn-shanghai
+AKS:
+  AK : xxxxxxxxxxxxx
+  AKS : xxxxxxxxxxxxx
+CLUSTER_ID : 10190
+MASTER_INFOR : "10.160.25.13 scheduler\n10.160.25.15 login-0\n10.160.25.16 login-1\n10.160.25.14 scheduler-ha\n"
+PATTERN : vector-\d+-cpu\d+-[a-f0-9-]+-\d+
+# Scripts folder
+PATH_FIX_HOSTS : /root/hosts_fix

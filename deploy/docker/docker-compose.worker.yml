@@ -42,7 +42,7 @@ services:
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@cache:6379/1
       - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@cache:6379/2
       - OMICHUB_LOG_DIR=/app/logs
-      - SNAKEMAKE_MONITOR_LOGGER=rich_loguru
+      - SNAKEMAKE_MONITOR_LOGGER=rich-loguru
       - SNAKEMAKE_USE_CONDA=true
       - SNAKEMAKE_CONDA_PREFIX=/data/omichub/.conda_envs
       - MAMBA_ROOT_PREFIX=/data/omichub/.mamba
@@ -102,7 +102,7 @@ services:
       - OMICHUB_CELERY_LOG_DIR=/data/omichub/logs/celery/tasks
       # Snakemake 与 Micromamba 均由轻量 Worker 镜像提供；流程环境运行时写入共享盘。
       - PATH=/app/.venv/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
-      - SNAKEMAKE_MONITOR_LOGGER=rich_loguru
+      - SNAKEMAKE_MONITOR_LOGGER=rich-loguru
       - SNAKEMAKE_USE_CONDA=true
       - SNAKEMAKE_CONDA_PREFIX=/data/omichub/.conda_envs
       - MAMBA_ROOT_PREFIX=/data/omichub/.mamba

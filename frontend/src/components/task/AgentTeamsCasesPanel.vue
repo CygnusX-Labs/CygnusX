@@ -43,12 +43,20 @@ const createVisible = ref(false)
 const creating = ref(false)
 const createError = ref('')
 const createForm = ref({
+  case_kind: 'flow',
   project_id: '',
   intent: '',
   flow_id: 'scrna_seq',
   sample_sheet: '[\n  {\n    "sample_id": "sample-001",\n    "group": "control"\n  }\n]',
   comparisons: '',
+  context_refs: '[\n  {\n    "kind": "file",\n    "id": "file-001"\n  }\n]',
 })
+
+const caseKindOptions = [
+  { label: '平台流程分析', value: 'flow' },
+  { label: '通用工作区任务', value: 'general' },
+]
+const isFlowCase = computed(() => createForm.value.case_kind === 'flow')
 
 const statusOptions = Object.entries(agentTeamsStatusLabel).map(([value, label]) => ({ value, label }))
 
@@ -224,15 +232,28 @@ async function createCase() {
   const projectIdValue = createForm.value.project_id.trim()
   const intent = createForm.value.intent.trim()
   const flowId = createForm.value.flow_id.trim()
-  if (!projectIdValue || !intent || !flowId) {
-    createError.value = '请填写项目引用、分析目标和流程 ID。'
+  if (!intent) {
+    createError.value = '请填写分析目标。'
     return
   }
-  let sampleSheet: Array<Record<string, unknown>>
+  if (isFlowCase.value && (!projectIdValue || !flowId)) {
+    createError.value = '平台流程分析必须填写项目引用和流程 ID。'
+    return
+  }
+  let sampleSheet: Array<Record<string, unknown>> | undefined
   let comparisons: Array<Record<string, unknown>> | undefined
+  let contextRefs: Array<{ kind: 'workspace' | 'file'; id: string; location?: string }> | undefined
   try {
-    sampleSheet = parseJsonArray(createForm.value.sample_sheet, '样本表', true)!
-    comparisons = parseJsonArray(createForm.value.comparisons, '分组对比', false)
+    if (isFlowCase.value) {
+      sampleSheet = parseJsonArray(createForm.value.sample_sheet, '样本表', true)
+      comparisons = parseJsonArray(createForm.value.comparisons, '分组对比', false)
+    } else {
+      const parsed = parseJsonArray(createForm.value.context_refs, '上下文引用', true)!
+      if (parsed.some((item) => (item.kind !== 'file' && item.kind !== 'workspace') || typeof item.id !== 'string' || !item.id.trim())) {
+        throw new Error('上下文引用只允许 kind=file 或 workspace，且必须包含 id。')
+      }
+      contextRefs = parsed as Array<{ kind: 'workspace' | 'file'; id: string; location?: string }>
+    }
   } catch (cause: any) {
     createError.value = cause instanceof SyntaxError ? '样本表或分组对比不是有效 JSON。' : cause.message
     return
@@ -241,14 +262,15 @@ async function createCase() {
   creating.value = true
   try {
     const created = await agentTeamsApi.createCase({
-      project_id: projectIdValue,
+      project_id: isFlowCase.value ? projectIdValue : undefined,
+      context_refs: contextRefs,
       intent,
-      flow_id: flowId,
+      flow_id: isFlowCase.value ? flowId : undefined,
       sample_sheet: sampleSheet,
       comparisons,
     })
     createVisible.value = false
-    message.success('协作 Case 已创建，正在进入预检。')
+    message.success(isFlowCase.value ? '协作 Case 已创建，正在进入预检。' : '通用协作 Case 已创建，正在生成执行计划。')
     await router.push(`/agent-teams/cases/${created.case_id}`)
   } catch (cause: any) {
     createError.value = cause?.response?.data?.detail || '创建协作 Case 失败。'
@@ -353,16 +375,20 @@ onMounted(() => { void loadCases() })
     </template>
     <NModal v-model:show="createVisible" preset="card" title="新建协作 Case" :style="{ width: 'min(94vw, 720px)' }" :mask-closable="!creating">
       <NAlert type="info" :show-icon="true" class="create-case-note">
-        提交后由 Data Steward 对项目、样本表和分组对比执行预检；真实计算仍需在审批阶段人工确认。
+        平台流程会对项目、样本表和分组对比执行预检；通用工作区任务以文件或工作区引用启动。所有执行仍需在审批阶段人工确认。
       </NAlert>
       <NAlert v-if="createError" type="error" :show-icon="true" class="create-case-note">{{ createError }}</NAlert>
       <NForm label-placement="top" @submit.prevent="createCase">
-        <NFormItem label="项目引用" required><NInput v-model:value="createForm.project_id" placeholder="例如 project-001" /></NFormItem>
+        <NFormItem label="Case 类型"><NSelect v-model:value="createForm.case_kind" :options="caseKindOptions" /></NFormItem>
         <NFormItem label="分析目标" required><NInput v-model:value="createForm.intent" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" placeholder="描述本次分析问题与预期产出" /></NFormItem>
-        <NFormItem label="流程 ID" required><NInput v-model:value="createForm.flow_id" placeholder="例如 scrna_seq" /></NFormItem>
-        <NFormItem label="样本表 JSON" required><NInput v-model:value="createForm.sample_sheet" type="textarea" :autosize="{ minRows: 7, maxRows: 12 }" /></NFormItem>
-        <NFormItem label="分组对比 JSON（可选）"><NInput v-model:value="createForm.comparisons" type="textarea" :autosize="{ minRows: 3, maxRows: 8 }" placeholder='例如 [{"name":"treated-vs-control","numerator":"treated","denominator":"control"}]' /></NFormItem>
-        <div class="create-case-actions"><NButton :disabled="creating" @click="createVisible = false">取消</NButton><NButton type="primary" attr-type="submit" :loading="creating">创建并预检</NButton></div>
+        <template v-if="isFlowCase">
+          <NFormItem label="项目引用" required><NInput v-model:value="createForm.project_id" placeholder="例如 project-001" /></NFormItem>
+          <NFormItem label="流程 ID" required><NInput v-model:value="createForm.flow_id" placeholder="例如 scrna_seq" /></NFormItem>
+          <NFormItem label="样本表 JSON" required><NInput v-model:value="createForm.sample_sheet" type="textarea" :autosize="{ minRows: 7, maxRows: 12 }" /></NFormItem>
+          <NFormItem label="分组对比 JSON（可选）"><NInput v-model:value="createForm.comparisons" type="textarea" :autosize="{ minRows: 3, maxRows: 8 }" placeholder='例如 [{"name":"treated-vs-control","numerator":"treated","denominator":"control"}]' /></NFormItem>
+        </template>
+        <NFormItem v-else label="文件或工作区引用 JSON" required><NInput v-model:value="createForm.context_refs" type="textarea" :autosize="{ minRows: 5, maxRows: 10 }" /></NFormItem>
+        <div class="create-case-actions"><NButton :disabled="creating" @click="createVisible = false">取消</NButton><NButton type="primary" attr-type="submit" :loading="creating">{{ isFlowCase ? '创建并预检' : '创建并规划' }}</NButton></div>
       </NForm>
     </NModal>
   </div>

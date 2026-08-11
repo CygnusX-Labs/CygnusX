@@ -1489,6 +1489,23 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           // backend row contains a stale tokens payload.
           tokens: m.role === 'assistant' ? (m.tokens || { input: 0, output: 0, total: 0 }) : undefined,
         }
+        const attachments = m.metadata_json?.attachments
+        if (Array.isArray(attachments)) {
+          msg.attachments = attachments
+            .filter((attachment): attachment is Record<string, unknown> => !!attachment && typeof attachment === 'object')
+            .map((attachment) => ({
+              name: typeof attachment.name === 'string' ? attachment.name : '附件',
+              size: Number(attachment.size) || 0,
+              type: typeof attachment.mime_type === 'string'
+                ? attachment.mime_type
+                : typeof attachment.type === 'string'
+                  ? attachment.type
+                  : 'application/octet-stream',
+              url: typeof attachment.url === 'string' ? attachment.url : undefined,
+              file_id: typeof attachment.file_id === 'string' ? attachment.file_id : undefined,
+              source: attachment.source === 'workspace' ? 'workspace' : 'upload',
+            }))
+        }
         // 智能路由：恢复本条消息的专家徽标
         const routedAgent = m.metadata_json?.routed_agent as
           | {
@@ -2323,16 +2340,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           session.multi_agent = true
           syncAgentTeamsEventSubscriptions(session)
         },
-        onWebSearch: (event) => {
-          aiMsg.webSearchStatus = {
-            query: event.query,
-            status: event.status,
-            message: event.message,
-          }
-        },
         onWebSearchResults: (sources) => {
           aiMsg.webSources = sources
-          aiMsg.webSearchStatus = { status: 'complete' }
         },
         onPlan: (steps) => {
           currentPlan.value = steps

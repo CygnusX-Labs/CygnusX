@@ -5,6 +5,7 @@ import {
   NButton,
   NCard,
   NDataTable,
+  NEmpty,
   NForm,
   NFormItem,
   NIcon,
@@ -19,7 +20,13 @@ import {
   NSwitch,
   useMessage,
 } from 'naive-ui'
-import { CopyOutline, RefreshOutline, SaveOutline } from '@vicons/ionicons5'
+import {
+  CheckmarkOutline,
+  CopyOutline,
+  GitNetworkOutline,
+  RefreshOutline,
+  SaveOutline,
+} from '@vicons/ionicons5'
 import AdminTOTPConfirmModal from '@/components/AdminTOTPConfirmModal.vue'
 import {
   agentTeamsBridgeAdminApi,
@@ -78,6 +85,8 @@ const presetDiff = computed(() => ({
   custom: ['不改动现有功能开关，仅将档位标记为“自定义”。'],
 })[preset.value])
 const inactiveWorkers = computed(() => health.value?.workers.filter((worker) => !worker.active) || [])
+const validIdentityCount = computed(() => health.value?.identities.filter((item) => item.valid).length || 0)
+const activeWorkerCount = computed(() => health.value?.workers.filter((item) => item.active).length || 0)
 const onboardingSteps = computed(() => [
   { title: '填写 Bridge 地址', complete: Boolean(config.value.bridge_url.trim()) },
   { title: '配置四个 Worker 令牌', complete: config.value.configured },
@@ -235,12 +244,48 @@ async function reconcileCase(totpCode: string) {
   }
 }
 
+const CASE_STATUS_MAP: Record<string, { label: string; type: 'default' | 'info' | 'success' | 'warning' | 'error' }> = {
+  received: { label: '已接收', type: 'default' },
+  waiting_for_correction: { label: '待修正', type: 'warning' },
+  preflight_blocked: { label: '预检拦截', type: 'error' },
+  approval_pending: { label: '待审批', type: 'warning' },
+  executing: { label: '执行中', type: 'info' },
+  execution_failed: { label: '执行失败', type: 'error' },
+  completed: { label: '已完成', type: 'success' },
+  blocked: { label: '已阻塞', type: 'error' },
+}
+
+function caseStatusTag(status: string) {
+  return CASE_STATUS_MAP[status] || { label: status || '未知', type: 'default' as const }
+}
+
 const resourceColumns = [
-  { title: 'Case', key: 'case_id', width: 220 },
-  { title: 'Team', key: 'team_id', width: 170 },
-  { title: '状态', key: 'status', width: 130 },
-  { title: '项目', key: 'project', width: 150, render: (row: { project_ref: { id: string } }) => row.project_ref?.id || '-' },
-  { title: '操作', key: 'actions', width: 130, render: (row: { case_id: string }) => h(NButton, { size: 'tiny', secondary: true, onClick: () => requestReconcile(row.case_id) }, { default: () => '重协调' }) },
+  { title: 'Case', key: 'case_id', width: 240, ellipsis: { tooltip: true } },
+  { title: 'Team', key: 'team_id', width: 150, ellipsis: { tooltip: true } },
+  {
+    title: '状态',
+    key: 'status',
+    width: 110,
+    align: 'center' as const,
+    render: (row: { status: string }) => {
+      const tag = caseStatusTag(row.status)
+      return h(NTag, { size: 'small', type: tag.type, bordered: false }, { default: () => tag.label })
+    },
+  },
+  {
+    title: '项目',
+    key: 'project',
+    width: 180,
+    ellipsis: { tooltip: true },
+    render: (row: { project_ref: { id: string } }) => row.project_ref?.id || '-',
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 100,
+    align: 'center' as const,
+    render: (row: { case_id: string }) => h(NButton, { size: 'tiny', secondary: true, onClick: () => requestReconcile(row.case_id) }, { default: () => '重协调' }),
+  },
 ]
 
 function resourceCaseRowKey(row: { case_id: string }) {
@@ -255,229 +300,354 @@ onMounted(() => { void load() })
     <div class="tab-header">
       <span class="tab-hint">配置协作中心的多 Agent 编排接入地址与加密身份令牌，保存需 TOTP 二次验证。</span>
     </div>
+
     <NSpin :show="loading">
-      <NCard class="bridge-card" :segmented="{ content: true }">
-        <template #header>
-          <div class="bridge-heading">
-            <strong>AgentTeams Bridge</strong>
-            <span>为协作 Case 提供隔离的多 Agent 编排、审批与审计通道。</span>
+      <div class="bridge-body">
+        <section class="bridge-overview" aria-label="AgentTeams Bridge 概览">
+          <div class="bridge-avatar" aria-hidden="true">
+            <NIcon :component="GitNetworkOutline" />
           </div>
-        </template>
-        <template #header-extra>
-          <NTag :type="config.connected ? 'success' : config.enabled ? 'warning' : 'default'" :bordered="false">
-            {{ config.connected ? '已接通' : config.enabled ? '等待接通' : '未启用' }}
-          </NTag>
-        </template>
+          <div class="bridge-overview-text">
+            <div class="bridge-overview-title">
+              <h3>AgentTeams Bridge</h3>
+              <NTag :type="config.connected ? 'success' : config.enabled ? 'warning' : 'default'" size="small" :bordered="false">
+                {{ config.connected ? '已接通' : config.enabled ? '等待接通' : '未启用' }}
+              </NTag>
+            </div>
+            <p>为协作 Case 提供隔离的多 Agent 编排、审批与审计通道。</p>
+          </div>
+          <NButton secondary :loading="loading" @click="load">
+            <template #icon><NIcon><RefreshOutline /></NIcon></template>
+            一键检测
+          </NButton>
+        </section>
 
-      <NAlert type="info" :show-icon="true" class="bridge-note">
-        此配置仅限管理员。四个身份令牌以加密形式保存，读取时始终脱敏；保存、启用和切换地址均需 TOTP 二次验证。
-      </NAlert>
-      <NAlert v-if="config.source === 'environment'" type="warning" :show-icon="true" class="bridge-note">
-        当前配置来自服务端环境变量。保存后会迁移为数据库加密配置，并覆盖该运行实例的环境变量回退值。
-      </NAlert>
-
-      <NCard size="small" class="preset-card" :bordered="true">
-        <template #header>协作能力档位</template>
-        <p class="preset-hint">{{ presetDescription }}</p>
-        <NRadioGroup v-model:value="preset" name="collaboration-preset" class="preset-options">
-          <NRadioButton value="light">轻量协作</NRadioButton>
-          <NRadioButton value="parallel">并行增强</NRadioButton>
-          <NRadioButton value="full">全流程闭环</NRadioButton>
-          <NRadioButton value="custom">自定义</NRadioButton>
-        </NRadioGroup>
-        <div class="preset-actions">
-          <NButton size="small" type="primary" :loading="presetSaving" @click="requestApplyPreset">查看变更并应用</NButton>
-        </div>
-        <div class="degradation-counts" aria-label="近七天协作降级次数">
-          <span>近 7 天降级：</span>
-          <span>并行 {{ degradationCounts.fanout || 0 }}</span>
-          <span>会诊 {{ degradationCounts.consult || 0 }}</span>
-          <span>Case {{ degradationCounts.case || 0 }}</span>
-          <span>MAS {{ degradationCounts.dag || 0 }}</span>
-        </div>
-      </NCard>
-
-      <NCard size="small" class="health-card" :bordered="true">
-        <template #header>协作部署健康检查</template>
-        <NAlert v-if="!health?.connection.connected" type="error" :show-icon="true" class="bridge-note">
-          Bridge 尚未接通，无法验证身份令牌和外部 Worker。仅修改平台配置不会启动外部 Worker。
+        <NAlert type="info" :show-icon="true" class="bridge-note">
+          此配置仅限管理员。四个身份令牌以加密形式保存，读取时始终脱敏；保存、启用和切换地址均需 TOTP 二次验证。
         </NAlert>
-        <template v-else>
-          <div class="health-row"><strong>Bridge 与身份令牌</strong><span>{{ health.identities.filter((item) => item.valid).length }}/{{ health.identities.length }} 有效</span></div>
-          <div class="health-row"><strong>外部 Worker</strong><span>{{ health.workers.filter((item) => item.active).length }}/{{ health.workers.length }} 活跃</span></div>
-          <NAlert v-if="inactiveWorkers.length" type="error" :show-icon="true" class="bridge-note">
-            {{ inactiveWorkers.map((worker) => worker.identity).join('、') }} 未在心跳窗口内轮询任务。请按 `deploy/agentteams/README.md` 部署对应 Worker。
-          </NAlert>
-          <NAlert :type="health.scrna_submit_available ? 'success' : 'warning'" :show-icon="true" class="bridge-note">
-            {{ health.scrna_submit_available ? 'Bridge 白名单已包含 scrna_seq。' : `当前白名单：${health.allowed_flows.join(', ') || '未读取'}；scrna 流程暂不可提交。` }}
-          </NAlert>
-        </template>
-      </NCard>
-
-      <NCard size="small" class="onboarding-card" :bordered="true">
-        <template #header>Bridge 接入向导</template>
-        <p class="preset-hint">按顺序完成配置。检测只读取 Bridge 健康状态，不会改动运行中的 Worker。</p>
-        <ol class="onboarding-list">
-          <li v-for="(step, index) in onboardingSteps" :key="step.title" :class="{ complete: step.complete }">
-            <NTag :type="step.complete ? 'success' : 'default'" size="small" :bordered="false">{{ step.complete ? '已完成' : `第 ${index + 1} 步` }}</NTag>
-            <span>{{ step.title }}</span>
-          </li>
-        </ol>
-        <NAlert v-if="generatedTokens" type="warning" :show-icon="true" class="bridge-note">
-          新令牌仅在本次页面会话中显示。复制到 Worker 环境变量后立即保存，离开页面前请妥善保管。
+        <NAlert v-if="config.source === 'environment'" type="warning" :show-icon="true" class="bridge-note">
+          当前配置来自服务端环境变量。保存后会迁移为数据库加密配置，并覆盖该运行实例的环境变量回退值。
         </NAlert>
-        <div class="onboarding-actions">
-          <NButton secondary :loading="loading" @click="load"><template #icon><NIcon><RefreshOutline /></NIcon></template>一键检测</NButton>
-          <NButton secondary @click="tokenConfirmVisible = true">生成四个 Worker 令牌</NButton>
-          <NButton v-if="generatedTokens" size="small" secondary @click="copyGeneratedTokens"><template #icon><NIcon><CopyOutline /></NIcon></template>复制身份令牌</NButton>
-        </div>
-      </NCard>
 
-      <NCard size="small" class="resource-card" :bordered="true">
-        <template #header>AgentTeams 资源管理</template>
-        <template #header-extra><NButton size="small" secondary :loading="resourceLoading" @click="loadResources"><template #icon><NIcon><RefreshOutline /></NIcon></template>刷新资源</NButton></template>
-        <NAlert v-if="!resources?.health.connection.connected" type="warning" :show-icon="true" class="bridge-note">
-          Bridge 未接通时无法读取真实资源。请先完成接入向导并检查 Worker 部署。
-        </NAlert>
-        <template v-else>
-          <div class="resource-summary">
-            <span>Worker：{{ resources.health.workers.filter((worker) => worker.active).length }}/{{ resources.health.workers.length }} 活跃</span>
-            <span>Team：{{ resources.teams.length }}</span>
-            <span>Case：{{ resources.total_cases }}</span>
-          </div>
-          <div v-if="resources.teams.length" class="team-chips">
-            <NTag v-for="team in resources.teams" :key="team.team_id" size="small" :bordered="false">{{ team.team_id }} · {{ team.case_count }} Case</NTag>
-          </div>
-          <NDataTable
-            v-if="resources.cases.length"
-            class="resource-case-table"
-            :columns="resourceColumns"
-            :data="resources.cases"
-            :row-key="resourceCaseRowKey"
-            :bordered="false"
-            :scroll-x="800"
-          />
-          <p v-else class="resource-empty">当前没有可管理的协作 Case。</p>
-          <p class="resource-note">Worker 生命周期由独立 Worker 部署管理；此处仅显示心跳。Case 重协调会由 Bridge 重新同步其受控任务状态，需 TOTP 二次验证。</p>
-        </template>
-      </NCard>
+        <div class="bridge-grid">
+          <main class="bridge-main">
+            <NCard class="bridge-card" :segmented="{ content: true, footer: true }">
+              <template #header><span class="card-title">接入配置</span></template>
+              <NForm label-placement="top" class="bridge-form">
+                <div class="bridge-status-row">
+                  <div class="bridge-status-text">
+                    <span class="bridge-status-label">启用协作中心</span>
+                    <p>关闭后所有用户都会看到“尚未接通”，并且无法创建或提交 Case。</p>
+                  </div>
+                  <NSwitch v-model:value="config.enabled" />
+                </div>
+                <div class="bridge-field-grid">
+                  <NFormItem label="Bridge 地址" class="field-span-main">
+                    <NInput v-model:value="config.bridge_url" placeholder="例如 http://agentteams-bridge:8080" />
+                  </NFormItem>
+                  <NFormItem label="请求超时（秒）" class="field-span-side timeout-item">
+                    <NInputNumber v-model:value="config.timeout_seconds" :min="1" :max="120" :precision="0" />
+                  </NFormItem>
+                </div>
+                <NFormItem label="Element 协作房间地址">
+                  <NInput v-model:value="config.element_url" placeholder="例如 https://element.example/#/room/!bioops:example.org" />
+                  <template #feedback>仅填写用户可访问的 Element 房间链接；不得包含 access token、登录令牌或密码。</template>
+                </NFormItem>
+                <div class="bridge-secret-grid">
+                  <NFormItem label="Manager 令牌"><NInput v-model:value="config.manager_token" type="password" show-password-on="click" placeholder="未填写则保留已配置令牌" /></NFormItem>
+                  <NFormItem label="Data Steward 令牌"><NInput v-model:value="config.data_steward_token" type="password" show-password-on="click" placeholder="未填写则保留已配置令牌" /></NFormItem>
+                  <NFormItem label="审批身份令牌"><NInput v-model:value="config.approval_token" type="password" show-password-on="click" placeholder="未填写则保留已配置令牌" /></NFormItem>
+                  <NFormItem label="Workflow Operator 令牌"><NInput v-model:value="config.workflow_operator_token" type="password" show-password-on="click" placeholder="未填写则保留已配置令牌" /></NFormItem>
+                </div>
+              </NForm>
+              <template #footer>
+                <div class="bridge-actions">
+                  <NButton secondary :loading="loading" @click="load">
+                    <template #icon><NIcon><RefreshOutline /></NIcon></template>
+                    重新检查
+                  </NButton>
+                  <NButton type="primary" @click="requestSave">
+                    <template #icon><NIcon><SaveOutline /></NIcon></template>
+                    保存并检查连接
+                  </NButton>
+                </div>
+              </template>
+            </NCard>
 
-      <NCard size="small" class="template-card" :bordered="true">
-        <template #header>协作降级文案</template>
-        <p class="preset-hint">可使用占位符：<code>{intent}</code>、<code>{setting}</code>、<code>{alternative}</code>。</p>
-        <NForm label-placement="top">
-          <NFormItem label="默认展示语言">
-            <NSelect
-              v-model:value="degradationLocale"
-              :options="[{ label: '中文', value: 'zh-CN' }, { label: 'English', value: 'en' }]"
-            />
-          </NFormItem>
-          <NFormItem label="中文模板">
-            <NInput v-model:value="degradationTemplateZh" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" />
-          </NFormItem>
-          <NFormItem label="English template">
-            <NInput v-model:value="degradationTemplateEn" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" />
-          </NFormItem>
-          <div class="preset-actions"><NButton size="small" :loading="templateSaving" @click="saveDegradationTemplates">保存文案</NButton></div>
-        </NForm>
-      </NCard>
+            <NCard class="bridge-card" :segmented="{ content: true }">
+              <template #header><span class="card-title">AgentTeams 资源管理</span></template>
+              <template #header-extra>
+                <NButton size="small" secondary :loading="resourceLoading" @click="loadResources">
+                  <template #icon><NIcon><RefreshOutline /></NIcon></template>
+                  刷新资源
+                </NButton>
+              </template>
+              <NAlert v-if="!resources?.health.connection.connected" type="warning" :show-icon="true" class="bridge-note bridge-note--flush">
+                Bridge 未接通时无法读取真实资源。请先完成接入向导并检查 Worker 部署。
+              </NAlert>
+              <template v-else>
+                <div class="resource-summary" aria-label="AgentTeams 资源概览">
+                  <div class="rs-item">
+                    <span class="rs-value" :class="{ 'rs-value--danger': activeWorkerCount < resources.health.workers.length }">
+                      {{ activeWorkerCount }}/{{ resources.health.workers.length }}
+                    </span>
+                    <span class="rs-label">活跃 Worker</span>
+                  </div>
+                  <div class="rs-item">
+                    <span class="rs-value">{{ resources.teams.length }}</span>
+                    <span class="rs-label">Team</span>
+                  </div>
+                  <div class="rs-item">
+                    <span class="rs-value">{{ resources.total_cases }}</span>
+                    <span class="rs-label">Case</span>
+                  </div>
+                  <div v-if="resources.teams.length" class="team-chips">
+                    <NTag v-for="team in resources.teams" :key="team.team_id" size="small" :bordered="false">{{ team.team_id }} · {{ team.case_count }} Case</NTag>
+                  </div>
+                </div>
+                <NDataTable
+                  v-if="resources.cases.length"
+                  class="resource-case-table"
+                  :columns="resourceColumns"
+                  :data="resources.cases"
+                  :row-key="resourceCaseRowKey"
+                  :bordered="false"
+                  :scroll-x="780"
+                />
+                <NEmpty v-else class="resource-empty" description="当前没有可管理的协作 Case。" />
+                <p class="resource-note">Worker 生命周期由独立 Worker 部署管理；此处仅显示心跳。Case 重协调会由 Bridge 重新同步其受控任务状态，需 TOTP 二次验证。</p>
+              </template>
+            </NCard>
+          </main>
 
-      <NForm label-placement="top" class="bridge-form">
-        <div class="bridge-status-row">
-          <div>
-            <strong>启用协作中心</strong>
-            <p>关闭后所有用户都会看到“尚未接通”，并且无法创建或提交 Case。</p>
-          </div>
-          <NSwitch v-model:value="config.enabled" />
-        </div>
-        <NFormItem label="Bridge 地址">
-          <NInput v-model:value="config.bridge_url" placeholder="例如 http://agentteams-bridge:8080" />
-        </NFormItem>
-        <NFormItem label="请求超时（秒）">
-          <NInputNumber v-model:value="config.timeout_seconds" :min="1" :max="120" :precision="0" />
-        </NFormItem>
-        <NFormItem label="Element 协作房间地址">
-          <NInput v-model:value="config.element_url" placeholder="例如 https://element.example/#/room/!bioops:example.org" />
-          <template #feedback>仅填写用户可访问的 Element 房间链接；不得包含 access token、登录令牌或密码。</template>
-        </NFormItem>
-        <div class="bridge-secret-grid">
-          <NFormItem label="Manager 令牌"><NInput v-model:value="config.manager_token" type="password" show-password-on="click" placeholder="未填写则保留已配置令牌" /></NFormItem>
-          <NFormItem label="Data Steward 令牌"><NInput v-model:value="config.data_steward_token" type="password" show-password-on="click" placeholder="未填写则保留已配置令牌" /></NFormItem>
-          <NFormItem label="审批身份令牌"><NInput v-model:value="config.approval_token" type="password" show-password-on="click" placeholder="未填写则保留已配置令牌" /></NFormItem>
-          <NFormItem label="Workflow Operator 令牌"><NInput v-model:value="config.workflow_operator_token" type="password" show-password-on="click" placeholder="未填写则保留已配置令牌" /></NFormItem>
-        </div>
-        <div class="bridge-actions">
-          <NButton secondary :loading="loading" @click="load"><template #icon><NIcon><RefreshOutline /></NIcon></template>重新检查</NButton>
-          <NButton type="primary" @click="requestSave"><template #icon><NIcon><SaveOutline /></NIcon></template>保存并检查连接</NButton>
-        </div>
-      </NForm>
-    </NCard>
-  </NSpin>
+          <aside class="bridge-side">
+            <NCard size="small" class="bridge-card" :segmented="{ content: true }">
+              <template #header><span class="card-title">协作能力档位</span></template>
+              <p class="preset-hint">{{ presetDescription }}</p>
+              <NRadioGroup v-model:value="preset" name="collaboration-preset" class="preset-options">
+                <NRadioButton value="light">轻量协作</NRadioButton>
+                <NRadioButton value="parallel">并行增强</NRadioButton>
+                <NRadioButton value="full">全流程闭环</NRadioButton>
+                <NRadioButton value="custom">自定义</NRadioButton>
+              </NRadioGroup>
+              <div class="degradation-counts" aria-label="近七天协作降级次数">
+                <span class="deg-label">近 7 天降级</span>
+                <span class="deg-chip">并行 <b>{{ degradationCounts.fanout || 0 }}</b></span>
+                <span class="deg-chip">会诊 <b>{{ degradationCounts.consult || 0 }}</b></span>
+                <span class="deg-chip">Case <b>{{ degradationCounts.case || 0 }}</b></span>
+                <span class="deg-chip">MAS <b>{{ degradationCounts.dag || 0 }}</b></span>
+              </div>
+              <div class="preset-actions">
+                <NButton size="small" type="primary" :loading="presetSaving" @click="requestApplyPreset">查看变更并应用</NButton>
+              </div>
+            </NCard>
 
-  <AdminTOTPConfirmModal
-    v-model:show="confirmVisible"
-    title="保存 AgentTeams Bridge 配置"
-    description="该操作会更新全局多 Agent 编排接入和加密凭证。请输入当前 6 位 TOTP 验证码后继续。"
-    confirm-text="保存配置"
-    :loading="saving"
-    @confirm="save"
-  />
-  <AdminTOTPConfirmModal
-    v-model:show="tokenConfirmVisible"
-    title="生成 AgentTeams Worker 令牌"
-    description="将生成四个新的高熵 Worker 令牌，仅回显一次且不会自动保存。确认后请部署 Worker，再保存 Bridge 配置。"
-    confirm-text="生成令牌"
-    :loading="tokenGenerating"
-    @confirm="generateTokens"
-  />
-  <AdminTOTPConfirmModal
-    v-model:show="reconcileConfirmVisible"
-    title="重协调协作 Case"
-    :description="'将请求 Bridge 重新同步 Case ' + reconcileCaseId + ' 的受控任务状态；不会绕过审批或创建新计算任务。'"
-    confirm-text="确认重协调"
-    :loading="reconciling"
-    @confirm="reconcileCase"
-  />
-  <NModal v-model:show="presetConfirmVisible" preset="dialog" title="确认应用协作档位" positive-text="确认应用" negative-text="取消" @positive-click="applyPreset">
-    <p>将应用“{{ presetDescription.split('：')[0] }}”，并原子性写入以下开关：</p>
-    <ul class="preset-diff">
-      <li v-for="item in presetDiff" :key="item">{{ item }}</li>
-    </ul>
-  </NModal>
+            <NCard size="small" class="bridge-card" :segmented="{ content: true }">
+              <template #header><span class="card-title">协作部署健康检查</span></template>
+              <NAlert v-if="!health?.connection.connected" type="error" :show-icon="true" class="bridge-note bridge-note--flush">
+                Bridge 尚未接通，无法验证身份令牌和外部 Worker。仅修改平台配置不会启动外部 Worker。
+              </NAlert>
+              <template v-else>
+                <div class="health-rows">
+                  <div class="health-row">
+                    <span class="health-label">
+                      <span
+                        class="health-dot" aria-hidden="true"
+                        :class="validIdentityCount === health.identities.length ? 'health-dot--success' : 'health-dot--error'"
+                      />
+                      Bridge 与身份令牌
+                    </span>
+                    <NTag
+                      size="small" :bordered="false"
+                      :type="validIdentityCount === health.identities.length ? 'success' : 'error'"
+                    >
+                      {{ validIdentityCount }}/{{ health.identities.length }} 有效
+                    </NTag>
+                  </div>
+                  <div class="health-row">
+                    <span class="health-label">
+                      <span
+                        class="health-dot" aria-hidden="true"
+                        :class="inactiveWorkers.length ? 'health-dot--error' : 'health-dot--success'"
+                      />
+                      外部 Worker
+                    </span>
+                    <NTag size="small" :bordered="false" :type="inactiveWorkers.length ? 'error' : 'success'">
+                      {{ activeWorkerCount }}/{{ health.workers.length }} 活跃
+                    </NTag>
+                  </div>
+                </div>
+                <NAlert v-if="inactiveWorkers.length" type="error" :show-icon="true" class="bridge-note">
+                  {{ inactiveWorkers.map((worker) => worker.identity).join('、') }} 未在心跳窗口内轮询任务。请按 `deploy/agentteams/README.md` 部署对应 Worker。
+                </NAlert>
+                <NAlert :type="health.scrna_submit_available ? 'success' : 'warning'" :show-icon="true" class="bridge-note bridge-note--flush">
+                  {{ health.scrna_submit_available ? 'Bridge 白名单已包含 scrna_seq。' : `当前白名单：${health.allowed_flows.join(', ') || '未读取'}；scrna 流程暂不可提交。` }}
+                </NAlert>
+              </template>
+            </NCard>
+
+            <NCard size="small" class="bridge-card" :segmented="{ content: true }">
+              <template #header><span class="card-title">Bridge 接入向导</span></template>
+              <p class="preset-hint">按顺序完成配置。检测只读取 Bridge 健康状态，不会改动运行中的 Worker。</p>
+              <ol class="onboarding-list">
+                <li v-for="(step, index) in onboardingSteps" :key="step.title" :class="{ complete: step.complete }">
+                  <span class="step-marker" aria-hidden="true">
+                    <NIcon v-if="step.complete" :component="CheckmarkOutline" />
+                    <template v-else>{{ index + 1 }}</template>
+                  </span>
+                  <span class="step-title">{{ step.title }}</span>
+                  <NTag :type="step.complete ? 'success' : 'default'" size="tiny" :bordered="false">
+                    {{ step.complete ? '已完成' : '待完成' }}
+                  </NTag>
+                </li>
+              </ol>
+              <NAlert v-if="generatedTokens" type="warning" :show-icon="true" class="bridge-note">
+                新令牌仅在本次页面会话中显示。复制到 Worker 环境变量后立即保存，离开页面前请妥善保管。
+              </NAlert>
+              <div class="onboarding-actions">
+                <NButton size="small" secondary @click="tokenConfirmVisible = true">生成四个 Worker 令牌</NButton>
+                <NButton v-if="generatedTokens" size="small" secondary @click="copyGeneratedTokens">
+                  <template #icon><NIcon><CopyOutline /></NIcon></template>
+                  复制身份令牌
+                </NButton>
+              </div>
+            </NCard>
+
+            <NCard size="small" class="bridge-card" :segmented="{ content: true }">
+              <template #header><span class="card-title">协作降级文案</span></template>
+              <p class="preset-hint">可使用占位符：<code>{intent}</code>、<code>{setting}</code>、<code>{alternative}</code>。</p>
+              <NForm label-placement="top">
+                <NFormItem label="默认展示语言" class="locale-item">
+                  <NSelect
+                    v-model:value="degradationLocale"
+                    :options="[{ label: '中文', value: 'zh-CN' }, { label: 'English', value: 'en' }]"
+                  />
+                </NFormItem>
+                <NFormItem label="中文模板">
+                  <NInput v-model:value="degradationTemplateZh" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" />
+                </NFormItem>
+                <NFormItem label="English template">
+                  <NInput v-model:value="degradationTemplateEn" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" />
+                </NFormItem>
+                <div class="preset-actions"><NButton size="small" :loading="templateSaving" @click="saveDegradationTemplates">保存文案</NButton></div>
+              </NForm>
+            </NCard>
+          </aside>
+        </div>
+      </div>
+    </NSpin>
+
+    <AdminTOTPConfirmModal
+      v-model:show="confirmVisible"
+      title="保存 AgentTeams Bridge 配置"
+      description="该操作会更新全局多 Agent 编排接入和加密凭证。请输入当前 6 位 TOTP 验证码后继续。"
+      confirm-text="保存配置"
+      :loading="saving"
+      @confirm="save"
+    />
+    <AdminTOTPConfirmModal
+      v-model:show="tokenConfirmVisible"
+      title="生成 AgentTeams Worker 令牌"
+      description="将生成四个新的高熵 Worker 令牌，仅回显一次且不会自动保存。确认后请部署 Worker，再保存 Bridge 配置。"
+      confirm-text="生成令牌"
+      :loading="tokenGenerating"
+      @confirm="generateTokens"
+    />
+    <AdminTOTPConfirmModal
+      v-model:show="reconcileConfirmVisible"
+      title="重协调协作 Case"
+      :description="'将请求 Bridge 重新同步 Case ' + reconcileCaseId + ' 的受控任务状态；不会绕过审批或创建新计算任务。'"
+      confirm-text="确认重协调"
+      :loading="reconciling"
+      @confirm="reconcileCase"
+    />
+    <NModal v-model:show="presetConfirmVisible" preset="dialog" title="确认应用协作档位" positive-text="确认应用" negative-text="取消" @positive-click="applyPreset">
+      <p>将应用“{{ presetDescription.split('：')[0] }}”，并原子性写入以下开关：</p>
+      <ul class="preset-diff">
+        <li v-for="item in presetDiff" :key="item">{{ item }}</li>
+      </ul>
+    </NModal>
   </div>
 </template>
 
 <style scoped>
 .tab-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 14px; }
 .tab-hint { font-size: 12px; color: var(--neutral-text-3); }
-.bridge-heading { display: grid; gap: 4px; }
-.bridge-heading strong { color: var(--neutral-text-1); }
-.bridge-heading span, .bridge-status-row p { color: var(--neutral-text-2); font-size: 13px; font-weight: 400; line-height: 1.5; }
+.bridge-body { min-height: 240px; }
+
+/* 概览卡：页面状态锚点 */
+.bridge-overview { display: flex; align-items: center; gap: 14px; padding: 20px 24px; margin-bottom: 16px; background: var(--neutral-card); border: 1px solid var(--neutral-border); border-radius: 12px; }
+.bridge-avatar { flex-shrink: 0; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: var(--arco-primary-light); color: var(--arco-primary); font-size: 20px; }
+.bridge-overview-text { flex: 1; min-width: 0; }
+.bridge-overview-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bridge-overview-title h3 { margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; color: var(--neutral-text-1); }
+.bridge-overview-text p { margin: 4px 0 0; font-size: 12px; line-height: 18px; color: var(--neutral-text-3); }
+
 .bridge-note { margin-bottom: 16px; }
-.preset-card { margin-bottom: 16px; }
-.preset-hint { margin: 0 0 10px; color: var(--neutral-text-2); font-size: 13px; line-height: 1.5; }
+.bridge-note--flush { margin-bottom: 12px; }
+
+/* 主侧双栏：填满配置中心内容边界 */
+.bridge-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+.bridge-main, .bridge-side { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.bridge-card { border-radius: 12px; }
+.card-title { font-size: 14px; font-weight: 600; color: var(--neutral-text-1); }
+/* 接入配置表单 */
+.bridge-status-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-bottom: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--neutral-border); }
+.bridge-status-text { min-width: 0; }
+.bridge-status-label { font-size: 13px; line-height: 20px; font-weight: 500; color: var(--neutral-text-1); }
+.bridge-status-text p { max-width: 700px; margin: 4px 0 0; font-size: 12px; line-height: 18px; color: var(--neutral-text-3); }
+.bridge-field-grid { display: grid; grid-template-columns: minmax(0, 1fr) 160px; gap: 0 16px; }
+.timeout-item :deep(.n-input-number) { width: 100%; }
+.bridge-secret-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.bridge-actions { display: flex; justify-content: flex-end; gap: 8px; }
+/* 资源管理 */
+.resource-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px; margin-bottom: 14px; }
+.rs-item { display: flex; flex-direction: column; gap: 2px; }
+.rs-value { font-size: 18px; line-height: 26px; font-weight: 600; color: var(--neutral-text-1); }
+.rs-value--danger { color: var(--arco-danger); }
+.rs-label { font-size: 12px; line-height: 18px; color: var(--neutral-text-3); }
+.team-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.resource-case-table { margin-top: 4px; }
+.resource-empty { padding: 24px 0; }
+.resource-note { margin: 12px 0 0; font-size: 12px; line-height: 18px; color: var(--neutral-text-3); }
+/* 档位与降级计数 */
+.preset-hint { margin: 0 0 12px; font-size: 12px; line-height: 18px; color: var(--neutral-text-3); }
 .preset-options { display: flex; flex-wrap: wrap; }
 .preset-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
-.degradation-counts { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 12px; color: var(--neutral-text-2); font-size: 12px; }
-.health-card { margin-bottom: 16px; }
-.onboarding-card { margin-bottom: 16px; }
-.onboarding-list { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
-.onboarding-list li { display: flex; align-items: center; gap: 8px; color: var(--neutral-text-2); font-size: 13px; }
-.onboarding-list li.complete { color: var(--neutral-text-1); }
-.onboarding-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
-.resource-card { margin-bottom: 16px; }
-.resource-summary, .team-chips { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 12px; color: var(--neutral-text-2); font-size: 13px; }
-.resource-case-table { margin-top: 10px; }
-.resource-empty, .resource-note { margin: 10px 0 0; color: var(--neutral-text-2); font-size: 12px; line-height: 1.55; }
-.template-card { margin-bottom: 16px; }
-.health-row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; color: var(--neutral-text-2); font-size: 13px; }
-.health-row strong { color: var(--neutral-text-1); }
+.degradation-counts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--neutral-border); }
+.deg-label { font-size: 12px; color: var(--neutral-text-3); }
+.deg-chip { font-size: 12px; line-height: 18px; color: var(--neutral-text-2); background: var(--neutral-hover); border-radius: 9999px; padding: 1px 10px; }
+.deg-chip b { font-weight: 600; color: var(--neutral-text-1); }
+/* 健康检查 */
+.health-rows { display: flex; flex-direction: column; margin-bottom: 12px; }
+.health-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; }
+.health-row + .health-row { border-top: 1px solid var(--neutral-border); }
+.health-label { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; color: var(--neutral-text-1); }
+.health-dot { width: 8px; height: 8px; border-radius: 9999px; flex-shrink: 0; }
+.health-dot--success { background: var(--arco-success); }
+.health-dot--error { background: var(--arco-danger); }
+/* 接入向导步骤条 */
+.onboarding-list { display: flex; flex-direction: column; margin: 0 0 12px; padding: 0; list-style: none; }
+.onboarding-list li { position: relative; display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.onboarding-list li:not(:last-child)::before { content: ''; position: absolute; left: 10px; top: 32px; bottom: -6px; width: 2px; background: var(--neutral-border); }
+.step-marker { position: relative; z-index: 1; flex-shrink: 0; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 9999px; border: 1px solid var(--neutral-border); background: var(--neutral-card); font-size: 12px; color: var(--neutral-text-3); }
+.onboarding-list li.complete .step-marker { border-color: var(--arco-success); background: var(--arco-success); color: var(--text-on-primary); }
+.step-title { flex: 1; min-width: 0; font-size: 13px; color: var(--neutral-text-2); }
+.onboarding-list li.complete .step-title { color: var(--neutral-text-1); }
+.onboarding-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+/* 降级文案与其他 */
+.locale-item :deep(.n-select) { max-width: 240px; }
+.preset-hint code { font-size: 12px; color: var(--neutral-text-2); background: var(--neutral-hover); border-radius: 4px; padding: 1px 5px; }
 .preset-diff { margin: 8px 0 0; padding-left: 20px; line-height: 1.8; color: var(--neutral-text-2); }
-.bridge-form { max-width: 980px; }
-.bridge-status-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 0 20px; }
-.bridge-status-row strong { color: var(--neutral-text-1); font-size: 14px; }
-.bridge-status-row p { max-width: 700px; margin: 4px 0 0; }
-.bridge-secret-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
-.bridge-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
-@media (max-width: 768px) { .bridge-status-row { align-items: flex-start; } .bridge-secret-grid { grid-template-columns: 1fr; } .bridge-actions { flex-direction: column-reverse; } .bridge-actions :deep(.n-button) { width: 100%; } }
+
+@media (max-width: 1024px) {
+  .bridge-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 768px) {
+  .bridge-overview { flex-wrap: wrap; }
+  .bridge-status-row { align-items: flex-start; }
+  .bridge-field-grid, .bridge-secret-grid { grid-template-columns: minmax(0, 1fr); }
+  .bridge-actions { flex-direction: column-reverse; }
+  .bridge-actions :deep(.n-button) { width: 100%; }
+}
 </style>

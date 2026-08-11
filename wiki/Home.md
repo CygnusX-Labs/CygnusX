@@ -2,6 +2,8 @@
 
 欢迎访问 OmicHub 私有化多组学分析平台 Wiki。本文档面向开发者、管理员和终端用户，汇总了平台的设计理念、部署方式、核心功能与运维排障知识。
 
+Wiki 正文会自动同步到平台知识库；维护规则和权威来源见 [Wiki 维护与知识库同步](documentation-maintenance)。
+
 ## 快速开始
 - [快速开始指南](getting-started/quickstart)
 - [首次部署与管理员注册](getting-started/first-time-setup)
@@ -33,7 +35,8 @@
 - [运维索引](operations)
 
 ## 功能特性
-- [AI 聊天助手](features/ai-chat)
+- [AI 助手与工作台](features/ai-chat)
+- [AI 多 Agent 协作与超频模式](features/ai-collaboration)
 - [分析流程与工作流](features/workflows)
 - [数据下载](features/downloads)
 - [实验室知识库](features/knowledge-base)

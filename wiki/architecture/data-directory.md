@@ -26,13 +26,15 @@
 | `_pgdata/` | PostgreSQL 全部关系型数据 | bind mount，属主 postgres uid 70，`rsync` 需 `-a` |
 | `_redis/` | Redis 持久化、Celery 队列、限流缓存 | 缓存类，丢失可重建 |
 | `jbrowse/` | 参考基因组 FASTA + 注释轨道 | 经 nginx `/tracks/` 流式读取 |
-| `knowledge/` | 知识库镜像副本 | 在线编辑仍以仓库 `docs/knowledge/` 为准 |
+| `knowledge/` | 知识库运行时附件与迁移数据 | 已发布正文、版本和检索索引以数据库为准 |
 | `welcome/` | 预生成欢迎词与轮询游标 | 启动时不足 20 条自动调 AI 补齐 |
 
 ## 迁移/备份
 
 ```bash
-docker compose -f deploy/docker/docker-compose.yml down
-docker compose -f deploy/docker/docker-compose.worker.yml down
+make docker-down-all
 sudo rsync -aP --info=progress2 /data/omichub/ <目标机>:/data/omichub/
 ```
+
+迁移前同时备份数据库、`.env`、`data/worker_config.yaml` 和外部对象存储配置。恢复后运行迁移、健康
+检查和知识库索引验证；不要只复制 `docs/knowledge/` 就假设在线知识库内容已恢复。

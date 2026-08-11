@@ -72,13 +72,14 @@ class PathEscapeError(ValueError):
     """路径逃逸 /workspace"""
 
 
-def resolve_workspace_path(user_path: str, root: Path = WORKSPACE_ROOT) -> Path:
+def resolve_workspace_path(user_path: str, root: Path | None = None) -> Path:
     """将用户路径归一化为 /workspace 内的绝对路径。
 
     - 相对路径基于 root 拼接；绝对路径必须本身位于 root 内；
     - realpath 解析软链后再校验，防止经符号链接逃逸；
     - 越界抛出 PathEscapeError。
     """
+    root = WORKSPACE_ROOT if root is None else root
     root_real = Path(os.path.realpath(root))
     candidate = Path(user_path)
     if not candidate.is_absolute():
@@ -89,7 +90,7 @@ def resolve_workspace_path(user_path: str, root: Path = WORKSPACE_ROOT) -> Path:
     return resolved
 
 
-def resolve_workspace_read_path(user_path: str, root: Path = WORKSPACE_ROOT) -> tuple[Path, bool]:
+def resolve_workspace_read_path(user_path: str, root: Path | None = None) -> tuple[Path, bool]:
     """读路径归一化（与宿主 paths.resolve_workspace_read_path 同源，务必保持一致）。
 
     返回 (实际路径, via_platform)：
@@ -98,6 +99,7 @@ def resolve_workspace_read_path(user_path: str, root: Path = WORKSPACE_ROOT) -> 
       （逃逸完全由工作区内软链跳转造成）才放行，via_platform=True（只读）；
     - 其余一律抛 PathEscapeError。
     """
+    root = WORKSPACE_ROOT if root is None else root
     root_real = Path(os.path.realpath(root))
     candidate = Path(user_path)
     if not candidate.is_absolute():
@@ -115,9 +117,10 @@ def resolve_workspace_read_path(user_path: str, root: Path = WORKSPACE_ROOT) -> 
     return resolved, True
 
 
-def _relative(path: Path) -> str:
+def _relative(path: Path, root: Path | None = None) -> str:
     """转为相对 /workspace 的 POSIX 路径"""
-    return path.relative_to(Path(os.path.realpath(WORKSPACE_ROOT))).as_posix()
+    root = WORKSPACE_ROOT if root is None else root
+    return path.relative_to(Path(os.path.realpath(root))).as_posix()
 
 
 def _resolve_or_400(user_path: str) -> Path:
@@ -125,6 +128,45 @@ def _resolve_or_400(user_path: str) -> Path:
         return resolve_workspace_path(user_path)
     except PathEscapeError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+# 平台只读目录前缀（input/、ref/ 经软链指向 /data/platform 只读挂载）
+_PROTECTED_WRITE_PREFIXES = frozenset({"input", "ref"})
+
+
+def _lexical_workspace_path(user_path: str, root: Path | None = None) -> Path:
+    """词法路径（不解析软链），用于在用户请求层面判定 input/ / ref/ 前缀。"""
+    root = WORKSPACE_ROOT if root is None else root
+    root_real = Path(os.path.realpath(root))
+    candidate = Path(user_path)
+    if not candidate.is_absolute():
+        candidate = root_real / candidate
+    return Path(os.path.normpath(candidate))
+
+
+def _is_protected_write_path(lexical_path: Path, root: Path | None = None) -> bool:
+    """词法路径是否落在平台只读前缀 input/ 或 ref/ 下。"""
+    root = WORKSPACE_ROOT if root is None else root
+    root_real = Path(os.path.realpath(root))
+    if lexical_path != root_real and root_real not in lexical_path.parents:
+        return False
+    rel_parts = lexical_path.relative_to(root_real).parts
+    return rel_parts and rel_parts[0] in _PROTECTED_WRITE_PREFIXES
+
+
+def _raise_if_protected_write_prefix(user_path: str) -> None:
+    """对 input/ / ref/ 前缀的写请求统一返回 403。"""
+    if _is_protected_write_path(_lexical_workspace_path(user_path)):
+        raise HTTPException(
+            status_code=403,
+            detail="input/ 与 ref/ 为平台只读目录，禁止写入、编辑、删除或重命名",
+        )
+
+
+def _resolve_writable_or_403(user_path: str) -> Path:
+    """写路径解析：先显式拒绝 input/ / ref/ 前缀，再执行真实路径解析防逃逸。"""
+    _raise_if_protected_write_prefix(user_path)
+    return _resolve_or_400(user_path)
 
 
 def _resolve_read_or_400(user_path: str) -> tuple[Path, bool]:
@@ -549,7 +591,7 @@ async def read_file(
 @app.post("/files/write")
 async def write_file(req: WriteRequest) -> dict[str, Any]:
     """创建 / 覆盖文件（自动创建父目录）。"""
-    target = _resolve_or_400(req.path)
+    target = _resolve_writable_or_403(req.path)
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(req.content, encoding="utf-8")
@@ -591,7 +633,7 @@ def _reverse_edit_payload(
 
 @app.post("/files/mkdir")
 async def make_directory(req: PathRequest) -> dict[str, Any]:
-    target = _resolve_or_400(req.path)
+    target = _resolve_writable_or_403(req.path)
     if target == WORKSPACE_ROOT or target.exists():
         raise HTTPException(status_code=400, detail="目录已存在或路径非法")
     try:
@@ -603,11 +645,13 @@ async def make_directory(req: PathRequest) -> dict[str, Any]:
 
 @app.post("/files/rename")
 async def rename_file(req: RenameRequest) -> dict[str, Any]:
+    _raise_if_protected_write_prefix(req.path)
+    _raise_if_protected_write_prefix(req.new_path)
     source = _resolve_or_400(req.path)
     target = _resolve_or_400(req.new_path)
     if source == WORKSPACE_ROOT or not source.exists() or target.exists():
         raise HTTPException(status_code=400, detail="源路径不存在、目标已存在或路径非法")
-    if source.is_symlink() or source.parts[len(WORKSPACE_ROOT.parts):len(WORKSPACE_ROOT.parts)+1] == ('input',):
+    if source.is_symlink():
         raise HTTPException(status_code=403, detail="平台只读文件不可重命名")
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -619,10 +663,11 @@ async def rename_file(req: RenameRequest) -> dict[str, Any]:
 
 @app.delete("/files/delete")
 async def delete_file(path: str = Query(...)) -> dict[str, Any]:
+    _raise_if_protected_write_prefix(path)
     target = _resolve_or_400(path)
     if target == WORKSPACE_ROOT or not target.exists():
         raise HTTPException(status_code=404, detail="文件或目录不存在")
-    if target.is_symlink() or target.parts[len(WORKSPACE_ROOT.parts):len(WORKSPACE_ROOT.parts)+1] == ('input',):
+    if target.is_symlink():
         raise HTTPException(status_code=403, detail="平台只读文件不可删除")
     try:
         if target.is_dir():
@@ -638,7 +683,7 @@ async def delete_file(path: str = Query(...)) -> dict[str, Any]:
 @app.post("/files/edit")
 async def edit_file(req: EditRequest) -> dict[str, Any]:
     """精确字符串替换（old_string 必须唯一出现），返回 unified diff。"""
-    target = _resolve_or_400(req.path)
+    target = _resolve_writable_or_403(req.path)
     if not target.is_file():
         raise HTTPException(status_code=404, detail=f"文件不存在: {req.path}")
     old_content = target.read_text(encoding="utf-8", errors="replace")

@@ -5,17 +5,22 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import zipfile
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import quote, unquote, urlparse
+from xml.etree import ElementTree
 
 from loguru import logger
 
 _ASSET_LINK = re.compile(
     r"(?P<image>!?)\[(?P<label>[^\]]*)\]\((?:<(?P<angle>[^>]+)>|(?P<bare>[^\s)]+))(?:\s+\"[^\"]*\")?\)"
 )
-_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".svg"})
+_IMAGE_SUFFIXES = frozenset(
+    {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".svg"}
+)
+_DOCUMENT_SUFFIXES = frozenset({".pdf", ".docx", ".pptx"})
 _MAX_ASSETS = 64
 _MAX_ASSET_CHARS = 40_000
 _MAX_TOTAL_CHARS = 1_500_000
@@ -54,9 +59,16 @@ class KnowledgeAssetService:
         remaining = _MAX_TOTAL_CHARS
         for path, label in assets:
             try:
-                if path.suffix.lower() == ".pdf":
+                suffix = path.suffix.lower()
+                if suffix == ".pdf":
                     asset_text = self._extract_pdf(path)
                     kind = "PDF"
+                elif suffix == ".docx":
+                    asset_text = self._extract_office_xml(path, "word/document.xml")
+                    kind = "DOCX"
+                elif suffix == ".pptx":
+                    asset_text = self._extract_pptx(path)
+                    kind = "PPTX"
                 else:
                     asset_text = self._extract_image(path, label)
                     kind = "图片"
@@ -94,7 +106,7 @@ class KnowledgeAssetService:
             if path is None or path in seen:
                 continue
             suffix = path.suffix.lower()
-            if suffix != ".pdf" and suffix not in _IMAGE_SUFFIXES:
+            if suffix not in _DOCUMENT_SUFFIXES and suffix not in _IMAGE_SUFFIXES:
                 continue
             seen.add(path)
             yield path, (match.group("label") or "").strip()
@@ -102,7 +114,10 @@ class KnowledgeAssetService:
             for path in sorted(source.parent.iterdir(), key=lambda item: item.name.casefold()):
                 if not path.is_file() or path in seen:
                     continue
-                if path.suffix.lower() == ".pdf" or path.suffix.lower() in _IMAGE_SUFFIXES:
+                if (
+                    path.suffix.lower() in _DOCUMENT_SUFFIXES
+                    or path.suffix.lower() in _IMAGE_SUFFIXES
+                ):
                     yield path, ""
 
     @staticmethod
@@ -147,6 +162,36 @@ class KnowledgeAssetService:
             if text:
                 pages.append(f"[第 {page_number} 页]\n{text}")
         return "\n\n".join(pages)
+
+    @staticmethod
+    def _extract_office_xml(path: Path, member: str) -> str:
+        with zipfile.ZipFile(path) as archive:
+            root = ElementTree.fromstring(archive.read(member))
+        values = [
+            node.text.strip() for node in root.iter() if node.tag.endswith("}t") and node.text
+        ]
+        return "\n".join(value for value in values if value)
+
+    @staticmethod
+    def _extract_pptx(path: Path) -> str:
+        sections: list[str] = []
+        with zipfile.ZipFile(path) as archive:
+            slide_names = sorted(
+                name
+                for name in archive.namelist()
+                if name.startswith("ppt/slides/slide") and name.endswith(".xml")
+            )
+            for index, slide_name in enumerate(slide_names, start=1):
+                root = ElementTree.fromstring(archive.read(slide_name))
+                values = [
+                    node.text.strip()
+                    for node in root.iter()
+                    if node.tag.endswith("}t") and node.text
+                ]
+                text = "\n".join(value for value in values if value)
+                if text:
+                    sections.append(f"[第 {index} 页]\n{text}")
+        return "\n\n".join(sections)
 
     @staticmethod
     def _static_url(path: Path) -> str:

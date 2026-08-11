@@ -96,9 +96,14 @@ def flush() -> int:
 
 async def _insert(batch: list[dict[str, Any]]) -> None:
     from omichub.infrastructure.database.models.ai_metric import AiCallMetricModel
-    from omichub.infrastructure.database.session import get_session_factory
+    from omichub.infrastructure.database.session import create_unpooled_engine
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-    factory = get_session_factory()
-    async with factory() as session:
-        session.add_all([AiCallMetricModel(**row) for row in batch])
-        await session.commit()
+    engine = create_unpooled_engine()
+    try:
+        factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        async with factory() as session:
+            session.add_all([AiCallMetricModel(**row) for row in batch])
+            await session.commit()
+    finally:
+        await engine.dispose()

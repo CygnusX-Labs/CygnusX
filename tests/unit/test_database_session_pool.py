@@ -37,3 +37,14 @@ def test_worker_uses_null_pool_for_asyncio_run_lifecycle(monkeypatch) -> None:
     engine = database_session.get_engine()
 
     assert isinstance(engine.sync_engine.pool, NullPool)
+
+
+def test_background_loop_engine_is_always_unpooled(monkeypatch) -> None:
+    monkeypatch.setattr(database_session, "get_settings", lambda: _settings("web"))
+
+    engine = database_session.create_unpooled_engine()
+
+    try:
+        assert isinstance(engine.sync_engine.pool, NullPool)
+    finally:
+        engine.sync_engine.dispose()

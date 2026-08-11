@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import {
-  NButton, NDrawer, NDrawerContent, NEmpty, NIcon, NInput, NModal, NSwitch, NTag, useMessage,
+  NButton, NDrawer, NDrawerContent, NEmpty, NForm, NFormItem, NIcon, NInput, NModal,
+  NPopconfirm, NSpin, NSwitch, NTag, useMessage,
 } from 'naive-ui'
 import { AddOutline, BookOutline, DocumentTextOutline, TrashOutline } from '@vicons/ionicons5'
 import { knowledgeBaseApi, type KnowledgeBase, type KnowledgeBaseDoc } from '@/api/admin/knowledgeBase'
@@ -128,63 +129,124 @@ onMounted(load)
     <div class="tab-header">
       <span class="tab-hint">管理知识库的可见性与 AI 检索范围，新建或删除知识库前先选择左侧条目。</span>
     </div>
-    <div class="kb-tab">
-    <aside class="kb-list" aria-label="知识库列表">
-      <button
-        v-for="kb in bases" :key="kb.id" class="kb-item"
-        :class="{ active: kb.id === selectedId }" @click="select(kb)"
-      >
-        <NIcon :component="BookOutline" />
-        <span class="kb-name">{{ kb.name }}</span>
-        <NTag size="tiny" :bordered="false">{{ kb.doc_count }} 篇</NTag>
-        <NTag v-if="!kb.is_enabled" size="tiny" type="error" :bordered="false">停用</NTag>
-      </button>
-      <NButton dashed block size="small" class="kb-add" @click="showCreate = true">
-        <template #icon><NIcon :component="AddOutline" /></template>
-        新建知识库
-      </NButton>
-    </aside>
 
-    <section v-if="selected()" class="kb-panel">
-      <div class="panel-heading">
-        <div>
-          <h3>{{ selected()!.name }}<code class="kb-code">{{ selected()!.id }}</code></h3>
-          <p>控制该知识库在「实验室知识库」页的可见性与 AI 检索范围。</p>
+    <div class="kb-layout">
+      <aside class="kb-list-card" aria-label="知识库列表">
+        <div class="kb-list-head">
+          <span class="kb-list-title">知识库</span>
+          <span class="kb-list-count">{{ bases.length }}</span>
         </div>
-        <NButton secondary @click="openDocs">
-          <template #icon><NIcon :component="DocumentTextOutline" /></template>
-          查看文档（{{ selected()!.doc_count }}）
-        </NButton>
-      </div>
+        <div class="kb-list-body" role="listbox" aria-label="知识库列表">
+          <div v-if="loading && bases.length === 0" class="kb-list-loading">
+            <NSpin size="small" />
+          </div>
+          <button
+            v-for="kb in bases" :key="kb.id" type="button" class="kb-item"
+            :class="{ active: kb.id === selectedId }" role="option"
+            :aria-selected="kb.id === selectedId" @click="select(kb)"
+          >
+            <NIcon class="kb-item-icon" :component="BookOutline" />
+            <span class="kb-name">{{ kb.name }}</span>
+            <NTag size="tiny" :bordered="false">{{ kb.doc_count }} 篇</NTag>
+            <NTag v-if="!kb.is_enabled" size="tiny" type="error" :bordered="false">停用</NTag>
+          </button>
+          <NEmpty v-if="!loading && bases.length === 0" class="kb-list-empty" description="暂无知识库" />
+        </div>
+        <div class="kb-list-foot">
+          <NButton dashed block size="small" @click="showCreate = true">
+            <template #icon><NIcon :component="AddOutline" /></template>
+            新建知识库
+          </NButton>
+        </div>
+      </aside>
 
-      <div class="field"><label>名称</label><NInput v-model:value="form.name" /></div>
-      <div class="field"><label>描述</label><NInput v-model:value="form.description" type="textarea" :rows="2" /></div>
-      <div class="field-row">
-        <label>在「实验室知识库」页面展示</label>
-        <NSwitch v-model:value="form.show_in_lab" />
-      </div>
-      <div class="field-row">
-        <label>允许 AI 助手检索（knowledge_search）</label>
-        <NSwitch v-model:value="form.ai_searchable" />
-      </div>
-      <div class="field-row">
-        <label>启用该知识库</label>
-        <NSwitch v-model:value="form.is_enabled" />
-      </div>
+      <section v-if="selected()" class="kb-detail-card" aria-label="知识库配置">
+        <header class="kb-detail-head">
+          <div class="kb-avatar" aria-hidden="true">
+            <NIcon :component="BookOutline" />
+          </div>
+          <div class="kb-head-text">
+            <div class="kb-head-title">
+              <h3>{{ selected()!.name }}</h3>
+              <code class="kb-code">{{ selected()!.id }}</code>
+              <NTag v-if="!selected()!.is_enabled" size="tiny" type="error" :bordered="false">已停用</NTag>
+            </div>
+            <p>控制该知识库在「实验室知识库」页的可见性与 AI 检索范围。</p>
+          </div>
+          <NButton secondary @click="openDocs">
+            <template #icon><NIcon :component="DocumentTextOutline" /></template>
+            查看文档（{{ selected()!.doc_count }}）
+          </NButton>
+        </header>
 
-      <div class="panel-actions">
-        <NButton
-          tertiary type="error" :disabled="selected()!.doc_count > 0"
-          @click="remove"
-        >
-          <template #icon><NIcon :component="TrashOutline" /></template>
-          删除
-        </NButton>
-        <NButton type="primary" :loading="saving" @click="save">保存配置</NButton>
-      </div>
-      <p v-if="selected()!.doc_count > 0" class="hint">知识库内仍有文档时不可删除。</p>
-    </section>
-    <NEmpty v-else description="选择左侧知识库进行配置" />
+        <div class="kb-detail-body">
+          <div class="kb-col-main">
+            <h4 class="kb-section-title">基本信息</h4>
+            <NForm label-placement="top" size="medium">
+              <NFormItem label="名称">
+                <NInput v-model:value="form.name" placeholder="知识库名称" />
+              </NFormItem>
+              <NFormItem label="描述">
+                <NInput
+                  v-model:value="form.description" type="textarea" :rows="3"
+                  placeholder="简要说明该知识库的用途与收录范围"
+                />
+              </NFormItem>
+            </NForm>
+          </div>
+
+          <div class="kb-col-side">
+            <h4 class="kb-section-title">可见性与检索</h4>
+            <div class="kb-settings">
+              <div class="kb-setting">
+                <div class="kb-setting-text">
+                  <span class="kb-setting-label">在「实验室知识库」页面展示</span>
+                  <span class="kb-setting-desc">关闭后仅用于 AI 检索，不对用户展示</span>
+                </div>
+                <NSwitch v-model:value="form.show_in_lab" />
+              </div>
+              <div class="kb-setting">
+                <div class="kb-setting-text">
+                  <span class="kb-setting-label">允许 AI 助手检索</span>
+                  <span class="kb-setting-desc">开启后可被 knowledge_search 工具检索</span>
+                </div>
+                <NSwitch v-model:value="form.ai_searchable" />
+              </div>
+              <div class="kb-setting">
+                <div class="kb-setting-text">
+                  <span class="kb-setting-label">启用该知识库</span>
+                  <span class="kb-setting-desc">停用后该库不可展示也不可检索</span>
+                </div>
+                <NSwitch v-model:value="form.is_enabled" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <footer class="kb-detail-foot">
+          <NPopconfirm
+            :disabled="selected()!.doc_count > 0"
+            @positive-click="remove"
+          >
+            <template #trigger>
+              <NButton
+                tertiary type="error" :disabled="selected()!.doc_count > 0"
+              >
+                <template #icon><NIcon :component="TrashOutline" /></template>
+                删除
+              </NButton>
+            </template>
+            确认删除知识库「{{ selected()!.name }}」？该操作不可恢复。
+          </NPopconfirm>
+          <div class="kb-foot-right">
+            <span v-if="selected()!.doc_count > 0" class="kb-foot-hint">知识库内仍有文档时不可删除</span>
+            <NButton type="primary" :loading="saving" @click="save">保存配置</NButton>
+          </div>
+        </footer>
+      </section>
+      <section v-else class="kb-detail-card kb-detail-empty">
+        <NEmpty description="选择左侧知识库进行配置" />
+      </section>
     </div>
 
     <NModal v-model:show="showCreate" preset="card" title="新建知识库" style="width: 480px">
@@ -215,26 +277,74 @@ onMounted(load)
 <style scoped>
 .tab-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:14px; }
 .tab-hint { font-size:12px; color:var(--neutral-text-3); }
-.kb-tab { display:grid; grid-template-columns:minmax(190px, .32fr) minmax(0, 1fr); min-height:440px; border:1px solid var(--neutral-border); border-radius:12px; overflow:hidden; background:var(--neutral-card); }
-.kb-list { padding:12px; border-right:1px solid var(--neutral-border); background:var(--neutral-bg); }
-.kb-item { width:100%; min-height:36px; display:flex; align-items:center; gap:8px; padding:0 8px; border:0; border-radius:7px; background:transparent; color:var(--neutral-text-2); text-align:left; cursor:pointer; }
-.kb-item:hover,.kb-item.active { background:var(--arco-primary-light); color:var(--arco-primary); }
+
+/* 双卡片布局：列表 + 详情，共享同一内容边界 */
+.kb-layout { display:grid; grid-template-columns:264px minmax(0, 1fr); gap:20px; align-items:start; }
+
+/* 左侧知识库列表卡片 */
+.kb-list-card { display:flex; flex-direction:column; min-height:460px; background:var(--neutral-card); border:1px solid var(--neutral-border); border-radius:12px; overflow:hidden; }
+.kb-list-head { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--neutral-border); }
+.kb-list-title { font-size:13px; font-weight:600; color:var(--neutral-text-1); }
+.kb-list-count { font-size:12px; line-height:18px; color:var(--neutral-text-3); background:var(--neutral-hover); border-radius:9999px; padding:0 8px; }
+.kb-list-body { flex:1; display:flex; flex-direction:column; gap:2px; padding:8px; overflow-y:auto; }
+.kb-list-loading { display:flex; align-items:center; justify-content:center; min-height:120px; }
+.kb-list-empty { margin:auto 0; padding:32px 0; }
+.kb-item { position:relative; width:100%; display:flex; align-items:center; gap:8px; padding:8px 10px 8px 12px; border:0; border-radius:8px; background:transparent; color:var(--neutral-text-2); font-size:13px; text-align:left; cursor:pointer; transition:background-color 140ms ease-out, color 140ms ease-out; }
+.kb-item:hover { background:var(--neutral-hover); color:var(--neutral-text-1); }
+.kb-item:focus-visible { outline:2px solid var(--arco-primary); outline-offset:2px; }
+.kb-item.active { background:var(--arco-primary-light); color:var(--arco-primary); font-weight:500; }
+.kb-item.active::before { content:''; position:absolute; left:2px; top:50%; transform:translateY(-50%); width:3px; height:18px; border-radius:9999px; background:var(--arco-primary); }
+.kb-item-icon { flex-shrink:0; font-size:16px; }
 .kb-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.kb-add { margin-top:10px; }
-.kb-panel { padding:24px; max-width:760px; }
-.panel-heading { display:flex; justify-content:space-between; gap:16px; margin-bottom:20px; }
-.panel-heading h3 { margin:0; color:var(--neutral-text-1); display:flex; align-items:center; gap:8px; }
-.kb-code { font-size:12px; color:var(--neutral-text-3); font-weight:400; }
-.panel-heading p { margin:6px 0 0; font-size:13px; color:var(--neutral-text-2); }
+.kb-list-foot { padding:12px; border-top:1px solid var(--neutral-border); }
+
+/* 右侧详情卡片 */
+.kb-detail-card { display:flex; flex-direction:column; min-height:460px; background:var(--neutral-card); border:1px solid var(--neutral-border); border-radius:12px; }
+.kb-detail-head { display:flex; align-items:center; gap:14px; padding:20px 24px; border-bottom:1px solid var(--neutral-border); }
+.kb-avatar { flex-shrink:0; width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:10px; background:var(--arco-primary-light); color:var(--arco-primary); font-size:20px; }
+.kb-head-text { flex:1; min-width:0; }
+.kb-head-title { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.kb-head-title h3 { margin:0; font-size:16px; line-height:24px; font-weight:600; color:var(--neutral-text-1); }
+.kb-code { font-size:12px; font-weight:400; color:var(--neutral-text-3); background:var(--neutral-hover); border-radius:4px; padding:1px 6px; }
+.kb-head-text p { margin:4px 0 0; font-size:12px; line-height:18px; color:var(--neutral-text-3); }
+
+.kb-detail-body { flex:1; display:grid; grid-template-columns:minmax(0, 1fr) 320px; gap:24px; padding:24px; align-items:start; }
+.kb-section-title { margin:0 0 16px; font-size:14px; line-height:22px; font-weight:600; color:var(--neutral-text-1); }
+
+/* 设置分组：低强调填充面板，与主表单区分层级 */
+.kb-settings { background:var(--neutral-bg); border:1px solid var(--neutral-border); border-radius:12px; padding:4px 16px; }
+.kb-setting { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0; }
+.kb-setting + .kb-setting { border-top:1px solid var(--neutral-border); }
+.kb-setting-text { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.kb-setting-label { font-size:13px; line-height:20px; font-weight:500; color:var(--neutral-text-1); }
+.kb-setting-desc { font-size:12px; line-height:18px; color:var(--neutral-text-3); }
+
+.kb-detail-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 24px; border-top:1px solid var(--neutral-border); }
+.kb-foot-right { display:flex; align-items:center; gap:12px; }
+.kb-foot-hint { font-size:12px; color:var(--neutral-text-3); }
+.kb-detail-empty { align-items:center; justify-content:center; }
+
+/* 新建弹窗字段 */
 .field,.field-row { margin:16px 0; }
 .field label,.field-row label { display:block; margin-bottom:7px; font-size:13px; font-weight:500; color:var(--neutral-text-1); }
 .field-row { display:flex; align-items:center; justify-content:space-between; }
 .field-row label { margin:0; }
 .panel-actions { display:flex; justify-content:flex-end; gap:12px; margin-top:24px; }
-.panel-actions :first-child { margin-right:auto; }
-.hint { margin-top:8px; font-size:12px; color:var(--neutral-text-3); text-align:right; }
+
+/* 文档抽屉 */
 .doc-item { padding:10px 4px; border-bottom:1px solid var(--neutral-border); }
 .doc-title { font-size:13px; color:var(--neutral-text-1); }
 .doc-meta { display:flex; gap:8px; align-items:center; margin-top:4px; font-size:12px; color:var(--neutral-text-3); }
-@media (max-width: 760px){.kb-tab{grid-template-columns:1fr}.kb-list{border-right:0;border-bottom:1px solid var(--neutral-border)}.kb-item{display:inline-flex;width:auto;margin-right:4px}.kb-panel{padding:18px}.panel-heading{align-items:flex-start;flex-direction:column}}
+
+@media (max-width: 1024px) {
+  .kb-detail-body { grid-template-columns:minmax(0, 1fr); }
+}
+@media (max-width: 860px) {
+  .kb-layout { grid-template-columns:minmax(0, 1fr); }
+  .kb-list-card { min-height:0; }
+  .kb-list-body { flex-direction:row; flex-wrap:wrap; }
+  .kb-item { width:auto; }
+  .kb-detail-head { flex-wrap:wrap; }
+  .kb-detail-foot { flex-wrap:wrap; }
+}
 </style>

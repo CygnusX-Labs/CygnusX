@@ -7439,8 +7439,15 @@ class ChatService:
         """读取文本类附件内容。"""
         att_url = att.get("url", "")
         local_path = ChatService._resolve_attachment_path(att_url)
+        mime_type = str(att.get("mime_type", "")).lower()
+        filename = str(att.get("name", ""))
+        is_pdf = mime_type == "application/pdf" or Path(filename).suffix.lower() == ".pdf"
         try:
             if local_path:
+                if is_pdf:
+                    return await anyio.to_thread.run_sync(
+                        ChatService._extract_pdf_text, local_path
+                    )
                 async with await anyio.open_file(
                     local_path, "r", encoding="utf-8", errors="ignore"
                 ) as f:
@@ -7451,10 +7458,37 @@ class ChatService:
             async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
                 resp = await client.get(att_url)
                 resp.raise_for_status()
+                if is_pdf:
+                    return await anyio.to_thread.run_sync(
+                        ChatService._extract_pdf_text, resp.content
+                    )
                 return resp.text
         except Exception as e:  # noqa: BLE001
             logger.warning(f"读取文本附件失败 {att.get('name')}: {e}")
             return ""
+
+    @staticmethod
+    def _extract_pdf_text(source: str | bytes) -> str:
+        """提取聊天 PDF 的分页文本，避免把二进制内容按 UTF-8 注入模型。"""
+        from io import BytesIO
+
+        from pypdf import PdfReader
+
+        reader = PdfReader(BytesIO(source) if isinstance(source, bytes) else source)
+        pages: list[str] = []
+        total_chars = 0
+        max_chars = 24_000
+        for page_number, page in enumerate(reader.pages, start=1):
+            text = (page.extract_text() or "").strip()
+            if not text:
+                continue
+            remaining = max_chars - total_chars
+            if remaining <= 0:
+                break
+            page_text = text[:remaining]
+            pages.append(f"[第 {page_number} 页]\n{page_text}")
+            total_chars += len(page_text)
+        return "\n\n".join(pages)
 
     async def _resolve_model(self, model_id: uuid.UUID) -> AIProviderConfigModel | None:
         """按 ID 解析已启用的模型配置。"""

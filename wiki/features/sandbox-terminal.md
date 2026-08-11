@@ -1,43 +1,41 @@
 # 云端沙盒终端
 
-生信工具箱中的即用即毁隔离容器终端，用户在浏览器中获得交互式 bash shell。
+OmicHub 提供按会话创建、会话结束后回收的隔离终端。用户在浏览器中使用 xterm.js，平台通过
+WebSocket 代理连接到容器内 ttyd；终端容器不直接暴露宿主机端口。
 
-## 架构
+## 当前架构
 
 ```text
-浏览器 xterm.js
-  ↓ WebSocket
-FastAPI 双向代理
-  ↓ aiohttp WS
-容器内 ttyd:7681 (bash)
-  ↑
-DockerManager 创建/销毁
+浏览器终端 → FastAPI WebSocket 代理 → 终端容器 ttyd
+                     ↓
+                 Docker Manager
+                     ↓
+用户私有 workspace / raw_data / temp 挂载目录
 ```
 
-挂载：`/data/omichub/users/{user_id}/workspace` → `/home/omichub/workspace`
+Web 容器和终端容器通过专用沙盒网络通信。平台会为每个会话建立隔离容器，并只挂载当前用户可访问的
+目录；其他用户工作区不会挂载到该终端。
 
-## 配置
+## 配置与镜像
 
-所有参数集中在 `tool_configs/terminal/terminal_config.yaml`，修改后自动热重载。
+| 配置 | 作用 |
+| --- | --- |
+| `tool_configs/terminal/terminal_config.yaml` | 会话生命周期、资源、网络和存储策略；支持热重载 |
+| `tool_configs/terminal/terminal_images.yaml` | 前端可选择的终端镜像清单；支持热重载 |
+| `tool_configs/terminal/docker/` | 默认终端镜像、Zsh 和终端环境配置 |
 
-| 参数 | 默认值 | 说明 |
-|---|---|---|
-| `enabled` | `true` | 功能开关 |
-| `image.name:tag` | `omichub/sandbox-terminal:latest` | 容器镜像 |
-| `default_resources.memory_mb` | `512` | 默认内存 |
-| `lifecycle.idle_timeout` | `1800` | 空闲超时（秒） |
-| `lifecycle.max_sessions_per_user` | `2` | 单用户最大并发 |
-| `storage.workspace_base` | `/data/omichub/users` | 用户目录基路径 |
+默认镜像提供 Zsh、Oh My Zsh、Oh My Posh 以及常用生信命令行工具。镜像和资源配额应由管理员维护；
+用户无法在浏览器中任意指定宿主机路径或 Docker 参数。
 
-## 安全策略
+## 安全边界
 
-- 根文件系统只读（`read_only=True`）
-- `cap_drop ALL` + `no-new-privileges`
-- 容器内非 root（`user 1000:1000`）
-- 内存/CPU/PID 硬限制
-- 仅挂载用户个人 workspace，目录隔离
-- `auto_remove=True`，退出即销毁
+- 非 root 运行、只读根文件系统、能力收缩与资源上限。
+- 仅绑定当前用户的 `workspace`、`raw_data` 和 `temp` 目录。
+- 会话数、空闲超时、最大生命周期和容器回收由配置控制。
+- 终端容器位于专用网络；网络可访问范围按部署策略收紧。
+- 管理员应通过日志和审计记录排查异常，不应把交互终端暴露给未认证用户。
 
-## 预装工具
+## 常见问题
 
-`samtools`、`bcftools`、`bedtools`、`fastqc`、`seqkit`、`python3`（numpy/pandas/biopython/pysam）、`vim`、`htop`、`jq`
+创建失败时，先检查沙盒镜像、Docker Socket 权限、专用网络和用户目录权限；运行中断时，再检查空闲
+超时、资源限制和会话生命周期。部署侧排查见 [问题排查](../operations/troubleshooting)。

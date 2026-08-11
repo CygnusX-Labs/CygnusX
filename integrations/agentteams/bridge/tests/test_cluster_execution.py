@@ -198,7 +198,8 @@ async def test_treeplot_general_case_freezes_plan_and_dispatches_workspace_dag(t
     service = make_service(tmp_path, TreeplotPlanningGateway())
     case = await service.create_case(
         CaseCreateRequest(
-            case_id="treeplot-case", project_ref=ContextRef(kind="project", id="project-1"),
+            case_id="treeplot-case",
+            context_refs=[ContextRef(kind="file", id="tree-a.fa"), ContextRef(kind="file", id="tree-b.fa")],
             intent="build a treeplot from two fasta files", requester_ref="user-1", lead_planner="agent-code",
         ),
         "bioops-manager",
@@ -226,6 +227,16 @@ async def test_treeplot_general_case_freezes_plan_and_dispatches_workspace_dag(t
         "agent-code",
     )
     assert completed.status == "completed"
+
+
+def test_general_case_requires_a_file_or_workspace_context() -> None:
+    with pytest.raises(ValueError, match="context_ref"):
+        CaseCreateRequest(
+            case_id="missing-context",
+            intent="build a treeplot",
+            requester_ref="user-1",
+            lead_planner="agent-code",
+        )
 
 
 @pytest.mark.asyncio

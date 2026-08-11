@@ -243,6 +243,33 @@ async def test_ambiguous_tp53_plan_routes_to_general_intake_before_experts(
     assert "先由通用助手" in info["reason"]
 
 
+@pytest.mark.unit
+async def test_image_attachment_bypasses_ambiguous_intake_and_explains_general_route(
+    service: ChatService, router_ctx: Any, monkeypatch
+):
+    captured: dict[str, Any] = {}
+
+    async def route_image_question(**kwargs: Any):
+        captured.update(kwargs)
+        yield SimpleNamespace(
+            type="text",
+            content=json.dumps({"agent_id": "agent-general", "reason": "图片问题"}),
+            metadata={},
+        )
+
+    monkeypatch.setattr(chat_service_module.provider_manager, "chat_stream", route_image_question)
+    ctx, info = await service._route_to_agent(
+        router_ctx,
+        "我有两个 TP53 分组，想挖掘新颖发现，请写详细计划",
+        attachments=[{"type": "image", "mime_type": "image/png"}],
+    )
+
+    assert ctx is not None and ctx.agent_id == "agent-general"
+    assert info is not None and info["needs_clarification"] is False
+    assert info["reason"] == "已附图片，通用助手将先识别图片内容并直接回答当前问题"
+    assert "包含图片附件" in captured["messages"][0]["content"]
+
+
 # ---------------------------------------------------------------------------
 # c. 边界与容错
 # ---------------------------------------------------------------------------

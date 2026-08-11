@@ -170,12 +170,6 @@ export interface TokenUsage {
   total_tokens?: number
 }
 
-export interface WebSearchEvent {
-  query: string
-  status: 'searching' | 'empty' | 'failed' | 'complete'
-  message?: string
-}
-
 export interface RoomSpeechEvent {
   sender: { agent_id: string; name: string; avatar?: string; color?: string; role: 'manager' | 'worker' }
   content: string
@@ -274,7 +268,6 @@ export interface AgentStreamCallbacks {
   onToolResult?: (event: ToolResultEvent) => void
   /** Skill 调用生命周期（invoked/completed/failed），驱动会话流内技能调用卡片 */
   onSkill?: (event: SkillStreamEvent) => void
-  onWebSearch?: (event: WebSearchEvent) => void
   onWebSearchResults?: (sources: WebSearchSource[]) => void
   /**
    * Studio 工具执行过程中的 stdout/stderr 增量输出
@@ -777,13 +770,6 @@ export function useAgentChatStream() {
           success: Boolean(data.success),
           result: data.result,
           ui_payload: (data.ui_payload as Record<string, unknown>) || undefined,
-        })
-        break
-      case 'web_search':
-        cb.onWebSearch?.({
-          query: content,
-          status: (data.status as WebSearchEvent['status']) || 'searching',
-          message: typeof data.message === 'string' ? data.message : undefined,
         })
         break
       case 'web_search_results':

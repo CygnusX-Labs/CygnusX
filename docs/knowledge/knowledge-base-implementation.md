@@ -24,6 +24,10 @@ PostgreSQL: kb_documents + kb_chunks
 
 因此，文件“放在 `docs/knowledge/rna-seq` 或 `docs/knowledge/sc-seq`”本身并不会自动让 AI 搜到；必须先通过导入/同步脚本写入数据库并建立 `kb_chunks`。
 
+管理员知识库管理页同样读取数据库资源，而不是扫描文件夹。仓库内置的 `qc` 和 `cloud` 资源由
+`KnowledgeBaseService.ensure_builtin_bases()` 在列表请求时幂等创建；这保证管理页始终能配置它们的
+可见性和 AI 检索开关。资源出现不代表正文已经导入，文档数量仍以对应导入脚本的实际结果为准。
+
 ## 2. 当前目录与文件类型
 
 知识库源文件统一放在 `docs/knowledge/` 下：
@@ -33,7 +37,8 @@ docs/knowledge/
 ├── meta.yaml                    # 文档中心导航配置，不是 AI 检索路由表
 ├── rna-seq/                     # RNA-seq 入口 Markdown 与论文 PDF
 ├── sc-seq/                      # 单细胞 Markdown 笔记、图片、PDF 等附件
-└── atac-seq/                    # ATAC-seq 领域资料
+├── atac-seq/                    # ATAC-seq 领域资料
+└── qc/                          # 测序 QC、文件格式、工具笔记与附件
 ```
 
 领域目录遵循“Markdown 作为入口、附件留在同目录”的约定。附件可以是 PDF、PNG、JPG、WEBP、GIF、BMP、TIFF 或 SVG。
@@ -66,13 +71,41 @@ RNA-seq 目录中与入口文档同级的 PDF/图片也会加入附件文本块�
 
 该领域通常不需要显示在实验室知识库导航中，但只要知识库 `scseq` 的 `ai_searchable=true` 且 `is_enabled=true`，AI 就可以检索它。
 
-### 3.3 文件同步与向量重建
+### 3.3 QC
+
+`scripts/import_qc_knowledge.py` 会递归扫描 `docs/knowledge/qc/**/*.md`：
+
+- 每篇 Markdown 使用稳定文档 ID 并归入 `kb_id=qc`；
+- 相对附件链接改写为 `/docs-static/knowledge/qc/...`；
+- Markdown 引用的 PDF 提取正文，图片写入说明、尺寸和可用时的 OCR 文本；
+- `docs/knowledge/qc/README.md` 作为目录，并登记未在旧笔记中显式引用的图片/PDF；
+- 知识库设置为 `ai_searchable=true`、`is_enabled=true`，供 `knowledge_search` 统一召回。
+
+导入命令：
+
+```bash
+python scripts/import_qc_knowledge.py --validate-sources
+python scripts/import_qc_knowledge.py --auto-admin
+```
+
+### 3.4 Cloud
+
+`scripts/import_cloud_knowledge.py` 会递归扫描 `docs/knowledge/cloud/**/*.md`，将文档归入
+`kb_id=cloud`。除 Markdown 外，索引器还会提取 PDF 正文、DOCX/PPTX 文本以及图片说明、尺寸和
+可用时的 OCR 文本。`docs/knowledge/cloud/README.md` 登记主题入口和旧笔记中未显式引用的图片。
+
+```bash
+python scripts/import_cloud_knowledge.py --validate-sources
+python scripts/import_cloud_knowledge.py --auto-admin
+```
+
+### 3.5 文件同步与向量重建
 
 - `scripts/sync_knowledge_from_files.py`：根据 `meta.yaml` 同步已登记的 Markdown 文档，并建立附件索引。
 - `scripts/reindex_knowledge_vectors.py`：读取数据库中已发布文档的当前修订，重新生成所有 Markdown、PDF 和图片附件分块/向量。
 - `DocsService`：管理员发布或更新文档时调用同一套 `KnowledgeIndexService`，不会产生第二套索引逻辑。
 
-### 3.4 部署启动自动校验
+### 3.6 部署启动自动校验
 
 Web 应用启动后会在后台运行一次 `KnowledgeIndexService.ensure_published_indexes()`：
 

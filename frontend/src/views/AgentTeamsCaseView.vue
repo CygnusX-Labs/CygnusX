@@ -454,7 +454,9 @@ onBeforeUnmount(() => {
           <NCard title="执行证据" size="small">
             <NDescriptions :column="1" label-placement="top" size="small">
               <NDescriptionsItem label="当前阶段"><NTag type="info" :bordered="false">{{ statusLabel[detail.status] || detail.status }}</NTag></NDescriptionsItem>
-              <NDescriptionsItem label="项目引用">{{ detail.project_ref.id }}</NDescriptionsItem>
+              <NDescriptionsItem label="执行上下文">
+                {{ detail.project_ref?.id || detail.context_refs.map((ref) => `${ref.kind}:${ref.id}`).join(', ') || '未关联' }}
+              </NDescriptionsItem>
               <NDescriptionsItem label="来源会诊">
                 {{ detail.origin_consultation_id || '非会诊创建' }}
               </NDescriptionsItem>

@@ -821,6 +821,12 @@ class OverdriveRunService:
             }
         if event_type in {"assistant_result_ready", "manager_review_ready"}:
             is_review = event_type == "manager_review_ready"
+            if is_review and str(payload.get("decision") or "") in {"ask_user", "await_approval"}:
+                # The wait was already surfaced as an interactive ask/approval card
+                # by the preceding assistant_result_ready projection; a manager
+                # speech bubble here would only duplicate (and historically
+                # mislabel) that state.
+                return None
             result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
             packet = result.get("packet") if isinstance(result.get("packet"), dict) else {}
             if not is_review and str(result.get("status") or "") == "awaiting_input":

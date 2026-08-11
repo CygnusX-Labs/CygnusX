@@ -58,7 +58,7 @@ omichubtools
 | `import_atacseq_knowledge.py` | 全量同步 `docs/knowledge/atac-seq/` 中的 Markdown，并保留全部 PDF/图片静态附件，写入独立 `atacseq` AI 检索知识库。 | `python scripts/import_atacseq_knowledge.py --admin-user-id <UUID>` |
 | `migrate_knowledge_base.py` | 一次性迁移：将 `docs/knowledge/meta.yaml` 中声明的 Markdown 文档导入数据库，生成初始版本并关联编辑者。建议在 `alembic upgrade head` 之后执行。 | `python scripts/migrate_knowledge_base.py --admin-user-id <UUID>` |
 | `render_worker_config.py` | 读取 `data/worker_config.yaml`，校验 `paths` 配置，将 `shared_data_dir` / `pipeline_dir` 渲染为 shell 兼容的 env 文件 `data/.worker-config.env`，供 Docker Compose 插值使用。 | `python scripts/render_worker_config.py` |
-| `sync_knowledge_from_files.py` | 增量同步：将 `docs/knowledge/*.md` 的最新内容同步回数据库。已存在的文档会创建新版本，不存在的会新建；支持自动选择最早创建的管理员作为同步者。 | `python scripts/sync_knowledge_from_files.py --auto-admin` |
+| `sync_knowledge_from_files.py` | 增量同步 `meta.yaml` 登记的 Markdown 与 Wiki 集合。QC、Cloud 等递归领域目录由各自专用导入脚本处理；本地 Docker 环境可统一执行 `make sync-knowledge`。 | `python scripts/sync_knowledge_from_files.py --auto-admin` |
 | `worker-compose.sh` | 启动 Worker 的包装脚本：先调用 `render_worker_config.py` 生成 env 文件，再 source 后执行 `docker compose -f deploy/docker/docker-compose.worker.yml`。 | `./scripts/worker-compose.sh up -d` |
 
 ### omichubtools 包内文件

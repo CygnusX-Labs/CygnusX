@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NIcon, NTooltip, NPopover, NDropdown, NInput, useMessage, NTag } from 'naive-ui'
+import { NButton, NIcon, NTooltip, NPopover, NDropdown, NInput, useDialog, useMessage, NTag } from 'naive-ui'
 import {
   ArrowUpOutline,
   AttachOutline,
@@ -25,12 +25,15 @@ import {
   LockOpenOutline,
   KeyOutline,
   FlagOutline,
+  CloseOutline,
 } from '@vicons/ionicons5'
 import SlashCommandMenu from './SlashCommandMenu.vue'
 import MentionMenu from './MentionMenu.vue'
 import GoalStatusCard from './GoalStatusCard.vue'
 import { readActiveMentionQuery } from './mentionQuery'
 import { pushRecent, recentRank } from './recentItems'
+import { DATA_MANAGEMENT_UPLOAD_HINT, requiresDataManagementUpload } from './attachmentPolicy'
+import { clipboardAttachmentFiles } from './clipboardAttachments'
 import {
   STAR_MODE_COMMANDS,
   STAR_MODE_LABELS,
@@ -46,7 +49,6 @@ import {
 } from './commandState'
 import McpSelectionMenu from './McpSelectionMenu.vue'
 import { useChatStore } from '@/stores/chat'
-import { useSiteConfigStore } from '@/stores/site-config'
 import { useAgentHubStore } from '@/stores/agentHub'
 import { useAuthStore } from '@/stores/auth'
 import { useModulesStore } from '@/stores/modules'
@@ -113,12 +115,12 @@ const emit = defineEmits<{
 }>()
 
 const chatStore = useChatStore()
-const siteConfigStore = useSiteConfigStore()
 const agentHub = useAgentHubStore()
 const authStore = useAuthStore()
 const modulesStore = useModulesStore()
 const goalRuntime = useGoalRuntimeStore()
 const message = useMessage()
+const dialog = useDialog()
 const router = useRouter()
 
 const inputWrapperRef = ref<HTMLElement>()
@@ -130,6 +132,8 @@ const slashMenuRef = ref<InstanceType<typeof SlashCommandMenu>>()
 const showClearConfirm = ref(false)
 const attachments = ref<FileAttachment[]>([])
 const uploading = ref(false)
+const isDraggingOver = ref(false)
+let dragCounter = 0
 const enableCodeExecution = ref(false)
 const starMode = ref<StarAgentMode>('chat')
 const starPermission = ref<StarPermission>('safe')
@@ -727,12 +731,28 @@ function handleAttach() {
   fileInputRef.value?.click()
 }
 
-async function handleFileChange(e: Event) {
-  const input = e.target as HTMLInputElement
-  const files = input.files
-  if (!files || !files.length) return
+function promptDataManagementUpload(files: File[]): void {
+  const names = files.slice(0, 3).map((file) => file.name).join('、')
+  const remaining = files.length > 3 ? ` 等 ${files.length} 个文件` : ''
+  dialog.warning({
+    title: '请在文件管理中上传',
+    content: `${names}${remaining} 需要通过文件管理上传。${DATA_MANAGEMENT_UPLOAD_HINT}`,
+    positiveText: '前往文件管理',
+    negativeText: '留在当前页',
+    onPositiveClick: () => router.push({ name: 'files' }),
+  })
+}
+
+async function uploadFiles(selectedFiles: File[]) {
+  if (!selectedFiles.length) return
+  const dataManagementFiles = selectedFiles.filter((file) => requiresDataManagementUpload(file.name))
+  const chatFiles = selectedFiles.filter((file) => !requiresDataManagementUpload(file.name))
+
+  if (dataManagementFiles.length) promptDataManagementUpload(dataManagementFiles)
+  if (!chatFiles.length) return
+
   uploading.value = true
-  for (const file of Array.from(files)) {
+  for (const file of chatFiles) {
     const formData = new FormData()
     formData.append('file', file)
     // 带上当前会话 ID，后端会把会话短标记写入上传文件名，便于按会话检索；
@@ -755,7 +775,59 @@ async function handleFileChange(e: Event) {
     }
   }
   uploading.value = false
+}
+
+function handleFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  void uploadFiles(Array.from(input.files ?? []))
   input.value = ''
+}
+
+function handlePaste(e: ClipboardEvent) {
+  if (props.disabled) return
+  const pastedFiles = clipboardAttachmentFiles(e.clipboardData)
+  if (!pastedFiles.length) return
+
+  e.preventDefault()
+  message.info(`正在上传剪贴板中的 ${pastedFiles.length} 个文件`)
+  void uploadFiles(pastedFiles)
+}
+
+function isFileDragEvent(e: DragEvent): boolean {
+  if (!e.dataTransfer) return false
+  // 只要包含文件类型即视为文件拖拽；文本/链接拖拽不触发上传
+  return Array.from(e.dataTransfer.types).includes('Files')
+}
+
+function handleDragEnter(e: DragEvent) {
+  if (props.disabled || !isFileDragEvent(e)) return
+  e.preventDefault()
+  dragCounter += 1
+  isDraggingOver.value = true
+}
+
+function handleDragOver(e: DragEvent) {
+  if (props.disabled || !isFileDragEvent(e)) return
+  e.preventDefault()
+  e.dataTransfer!.dropEffect = 'copy'
+}
+
+function handleDragLeave(e: DragEvent) {
+  if (props.disabled || !isFileDragEvent(e)) return
+  e.preventDefault()
+  dragCounter -= 1
+  if (dragCounter <= 0) {
+    dragCounter = 0
+    isDraggingOver.value = false
+  }
+}
+
+async function handleDrop(e: DragEvent) {
+  if (props.disabled || !isFileDragEvent(e)) return
+  e.preventDefault()
+  dragCounter = 0
+  isDraggingOver.value = false
+  await uploadFiles(Array.from(e.dataTransfer?.files ?? []))
 }
 
 function removeAttachment(idx: number) {
@@ -814,7 +886,6 @@ function handleClearConfirm() {
 }
 
 onMounted(() => {
-  siteConfigStore.fetchSiteConfig()
   void modulesStore.ensureLoaded()
   syncMcpSelection()
   refreshGoalStatus()
@@ -857,7 +928,12 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
       :class="{
         disabled,
         'popup-open': showSlashMenu || showMentionMenu || showMcpMenu,
+        'drag-over': isDraggingOver,
       }"
+      @dragenter="handleDragEnter"
+      @dragover="handleDragOver"
+      @dragleave="handleDragLeave"
+      @drop="handleDrop"
     >
       <Transition name="composer-menu" appear>
         <SlashCommandMenu
@@ -895,6 +971,20 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
           @retry="searchWorkspaceFiles"
           @close="showMentionMenu = false"
         />
+      </Transition>
+
+      <Transition name="drag-overlay" appear>
+        <div
+          v-if="isDraggingOver"
+          class="drag-drop-overlay"
+          aria-hidden="true"
+        >
+          <div class="drag-drop-hint">
+            <n-icon size="28"><AttachOutline /></n-icon>
+            <span>释放以上传文件</span>
+            <small>图片可直接识别，PDF、文本和树文件可读取内容</small>
+          </div>
+        </div>
       </Transition>
 
       <div v-if="attachments.length || pendingAgent || pendingSkills.length || showStarContext" class="ref-bar">
@@ -958,22 +1048,29 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
           {{ sk.name }}
         </NTag>
 
-        <n-tooltip v-for="(att, idx) in attachments" :key="`att-${idx}`" trigger="hover">
+        <n-tooltip
+          v-for="(att, idx) in attachments"
+          :key="att.file_id || att.url || `att-${att.name}-${idx}`"
+          trigger="hover"
+        >
           <template #trigger>
-            <NTag
-              size="small"
-              round
-              closable
-              class="ref-chip"
+            <div
+              class="attachment-chip"
               :class="{ 'ref-file': att.source === 'workspace' }"
-              :disabled="uploading"
-              @close="removeAttachment(idx)"
             >
-              <template v-if="att.source === 'workspace'" #icon><n-icon><DocumentTextOutline /></n-icon></template>
-              {{ att.name }}
-            </NTag>
+              <n-icon size="14" aria-hidden="true"><DocumentTextOutline /></n-icon>
+              <span class="attachment-name">{{ att.name }}</span>
+              <button
+                type="button"
+                class="attachment-remove"
+                :aria-label="`移除附件 ${att.name}`"
+                @click.stop="removeAttachment(idx)"
+              >
+                <n-icon size="14"><CloseOutline /></n-icon>
+              </button>
+            </div>
           </template>
-          {{ att.name }}
+          {{ att.name }}；点击右侧 × 可单独移除
         </n-tooltip>
       </div>
 
@@ -988,6 +1085,7 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
           :autosize="{ minRows: 1, maxRows: 8 }"
           @blur="handleBlur"
           @keydown="handleKeydown"
+          @paste.capture="handlePaste"
           @compositionstart="isComposing = true"
           @compositionend="isComposing = false"
         />
@@ -1010,7 +1108,7 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
                 <n-icon size="18"><AttachOutline /></n-icon>
               </n-button>
             </template>
-            添加附件
+            添加附件；也可直接粘贴或拖入文件。图片可直接识别，PDF、文本和树文件可读取内容
           </n-tooltip>
           <n-tooltip trigger="hover">
             <template #trigger>
@@ -1180,9 +1278,8 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
         </div>
       </div>
     </div>
-    <p class="ai-composer__disclaimer">
-      <span v-if="isPaused" class="paused-hint" role="status">生成已暂停。</span>
-      {{ siteConfigStore.aiInputHint }}
+    <p v-if="isPaused" class="ai-composer__disclaimer">
+      <span class="paused-hint" role="status">生成已暂停。</span>
     </p>
   </div>
 </template>
@@ -1195,6 +1292,16 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
 
 .goal-status-dock {
   margin-bottom: var(--space-md, 16px);
+}
+
+.drag-overlay-enter-active,
+.drag-overlay-leave-active {
+  transition: opacity 160ms ease-out;
+}
+
+.drag-overlay-enter-from,
+.drag-overlay-leave-to {
+  opacity: 0;
 }
 
 .kimi-chat-input {
@@ -1251,6 +1358,43 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
     transform: translateY(8px);
   }
 
+  &.drag-over {
+    border-color: var(--arco-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--arco-primary) 18%, transparent);
+  }
+
+  .drag-drop-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-lg);
+    background: color-mix(in srgb, var(--neutral-card) 86%, transparent);
+    backdrop-filter: blur(2px);
+  }
+
+  .drag-drop-hint {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: var(--space-md) var(--space-xl);
+    color: var(--arco-primary);
+    font-size: 14px;
+    font-weight: 500;
+    border: 2px dashed var(--arco-primary);
+    border-radius: var(--radius-lg);
+    background: color-mix(in srgb, var(--arco-primary) 8%, transparent);
+
+    small {
+      color: var(--neutral-text-2);
+      font-size: 12px;
+      font-weight: 400;
+    }
+  }
+
   .ref-bar {
     display: flex;
     flex-wrap: wrap;
@@ -1262,6 +1406,55 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .attachment-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+      max-width: 280px;
+      height: 28px;
+      padding: 0 4px 0 9px;
+      color: var(--neutral-text-2);
+      font-size: 12px;
+      line-height: 1;
+      border: 1px solid var(--neutral-border);
+      border-radius: 999px;
+      background: var(--neutral-fill-2);
+    }
+
+    .attachment-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .attachment-remove {
+      display: inline-flex;
+      flex: 0 0 auto;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      color: var(--neutral-text-3);
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      cursor: pointer;
+      transition: color var(--motion-quick, 140ms) ease-out, background-color var(--motion-quick, 140ms) ease-out;
+
+      &:hover {
+        color: var(--arco-danger);
+        background: color-mix(in srgb, var(--arco-danger) 10%, transparent);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--arco-primary);
+        outline-offset: 1px;
+      }
     }
 
     .ref-file {

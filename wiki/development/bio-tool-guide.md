@@ -4,7 +4,7 @@
 
 ## 工具注册
 
-在 `tool_configs/tools_setting.yaml` 登记工具元信息：
+在 `tool_configs/tools_setting.yaml` 登记前端工具卡片元信息：
 
 ```yaml
 tools:
@@ -30,7 +30,7 @@ tools:
 ## 数据透传链路
 
 ```text
-YAML(tool_configs/tools_setting.yaml)
+YAML(`tool_configs/tools_setting.yaml`，前端卡片)
   → 后端 Pydantic 配置模型
   → ToolItemDTO
   → GET /api/v1/tools
@@ -92,7 +92,8 @@ YAML(tool_configs/tools_setting.yaml)
 
 ## 接入 checklist
 
-- [ ] 在 `tools_setting.yaml` 注册，指定正确的 `group` 和 `config_dir`
+- [ ] 在 `tools_setting.yaml` 注册前端卡片，指定正确的 `group` 和 `config_dir`
+- [ ] 若工具需要被 AI 调用，同时在 `tools_schema.yaml` 注册 function schema、调用模式与结果字段
 - [ ] 后端 Pydantic 模型包含 `group` 字段并透传到 DTO
 - [ ] 前端 `ToolItem` 类型包含 `group`
 - [ ] 工具箱按分组和顺序正确展示

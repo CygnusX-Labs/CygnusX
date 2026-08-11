@@ -1,0 +1,574 @@
+
+################################
+## Cluster Configuration File ##
+################################
+[cluster Slurm-MQ-500]
+Category = Schedulers
+Enabled = true
+IconUrl = static/cloud/cluster/ui/ClusterIcon/slurm.png
+
+
+    [[node defaults]]
+    KeyPairName = $KeyPairName
+    Zone = $Zone
+    VPCId = $VPCId
+    SubnetId = $SubnetId
+    KeyPairLocation = ~/.ssh/vector.pem
+
+        [[[configuration]]]
+        slurm.version = $SlurmVersion  # slurm版本
+        slurm.accounting.enabled = $SlurmAccountingEnabled    # 是否开启slurm accounting
+        slurm.accounting.host = $SlurmAccountingHost            # MySQL/Mariadb host
+        slurm.accounting.port = $SlurmAccountingPort            # MySQL/Mariadb port (默认3306)
+        slurm.accounting.db = $SlurmAccountingDB              # MySQL/Mariadb database
+        slurm.accounting.user = $SlurmAccountingUser          # MySQL/Mariadb user
+        slurm.accounting.password = $SlurmAccountingPassword  # MySQL/Mariadb password
+
+        #User Management
+        user.domain_service = $UserDomainService
+        user.ldap_service_URI = $LdapServiceURI
+        user.ldap_service_DN = $LdapServiceDN
+        user.ldap_service_binddn = $LdapServicebinddn
+        user.ldap_service_bindpw = $LdapServicebindpw
+        user.access_deny = $AccessDeny # 禁止集群普通用户登录计算节点
+
+        [[[cluster-init slurm:default]]] # 所有节点都会使用slurm这个project的default spec作为cluster-init的一部分
+
+        [[[configuration]]] #所有节点默认的共享目录挂载参数
+        vector.mounts.nfs_shared.type = nfs
+        vector.mounts.nfs_shared.mountpoint = /shared
+        vector.mounts.nfs_shared.export_path = $NFSSharedExportPath
+        vector.mounts.nfs_shared.address = $NFSAddress
+        vector.mounts.nfs_shared.options = $NFSSharedMountOptions
+
+        [[[configuration]]] #所有节点默认的调度目录挂载参数
+        vector.mounts.nfs_sched.type = nfs
+        vector.mounts.nfs_sched.mountpoint = /sched
+
+    [[node scheduler]]
+    MachineType = $SchedulerMachineType # 管理节点的实例类型
+    ImageId = $SchedulerImageId     # 管理节点的镜像名
+    CloudInit = $SchedulerCloudInit
+    DataVolumes = $SchedulerDataVolumes
+
+        [[[configuration]]]
+        vector.mounts.nfs_sched.disabled = true # 是否禁用nfs_sched；是，即管理节点不尝试挂载/sched；该选项只在混合调度时有用。
+        vector.mounts.nfs_shared.disabled = ${NFSType != "External"} # 是否禁用nfs_shared；如果NFSType是Builtin则禁用，代表管理节点不会尝试挂载外部的共享目录。否则则会集成上方定义的默认配置进行挂载
+        # vector.volume.system.size = 40  #实例系统盘大小，如使用该参数，则按照参数值进行系统盘创建，如不使用，则按照镜像大小进行系统盘创建
+
+        [[[cluster-init slurm:scheduler]]]
+
+        [[[network-interface eth0]]]
+        AssociatePublicIpAddress = $UsePublicNetwork # 是否给scheduler创建并关联公网IP
+
+        [[[volume sched]]] # 挂载的作为调度目录的数据盘参数
+        Size = 30
+        SSD = True
+        Mount = builtinsched
+        Persistent = False # 实例停机后是否保留数据盘
+
+        [[[volume shared]]] # 挂载的作为共享目录（包含家目录）的数据盘参数
+        Size = ${ifThenElse(NFSType == "Builtin", FilesystemSize, 0)} # 如果NFSType是Builtin，则取用户提供的Size，否则取0，0 代表不创建
+        SSD = True
+        Mount = builtinshared
+        Persistent = False # 实例停机后是否保留数据盘
+
+        [[[configuration]]] # 默认调度数据盘的格式化参数
+        vector.mounts.builtinsched.mountpoint = /sched
+        vector.mounts.builtinsched.fs_type = xfs
+
+        [[[configuration]]] # 默认共享数据盘的格式化参数
+        vector.mounts.builtinshared.disabled = ${NFSType != "Builtin"}
+        vector.mounts.builtinshared.mountpoint = /shared
+        vector.mounts.builtinshared.fs_type = xfs
+
+        [[[configuration]]] # 默认调度目录的export参数
+        vector.exports.builtinsched.export_path = /sched               # 调度目录强制挂载到/sched路径下
+        vector.exports.builtinsched.options = no_root_squash
+        vector.exports.builtinsched.type = nfs
+
+        [[[configuration]]] # 默认共享目录的export参数
+        vector.exports.builtinshared.disabled = ${NFSType != "Builtin"} # 如果NFSType不是builtin的，代表要挂载外部nas，此时无需从管理节点export共享目录
+        vector.exports.builtinshared.export_path = /shared              # 共享目录强制挂载到/shared路径下
+        vector.exports.builtinshared.type = nfs
+
+    [[node login]]
+    InitialCount = $NumberLoginNodes
+    MachineType = $LoginMachineType
+    ImageId = $LoginImageId
+    CloudInit = $LoginCloudInit
+    DataVolumes = $LoginDataVolumes
+
+        [[[network-interface eth0]]]
+        AssociatePublicIpAddress = $LoginNodesPublic # 是否为节点申请公网IP
+
+        [[[configuration]]]
+        # vector.volume.system.size = 40  #实例系统盘大小，如使用该参数，则按照参数值进行系统盘创建，如不使用，则按照镜像大小进行系统盘创建
+
+
+    [[nodearray cpu1]]
+    MachineType = $CPU1MachineType # CPU队列的实例类型
+    ImageId = $CPU1ImageId     # CPU队列的镜像名
+    MaxNodeCount = $MaxCPU1ExecuteNodeCount #最大节点数
+    CloudInit = $CPU1CloudInit
+    SubnetIds = $CPU1SubNetIds
+    DataVolumes = $CPU1DataVolumes
+
+        [[[configuration]]]
+        slurm.autoscale = $Autoscale            # 是否弹性伸缩
+        slurm.default_partition = true    # 是否是默认队列
+        # vector.volume.system.size = 40  #实例系统盘大小，如使用该参数，则按照参数值进行系统盘创建，如不使用，则按照镜像大小进行系统盘创建
+
+        [[[cluster-init slurm:execute]]]
+
+        [[[network-interface eth0]]]
+        AssociatePublicIpAddress = $ExecuteNodesPublic # 是否为节点申请公网IP
+
+    [[nodearray cpu2]]
+    MachineType = $CPU2MachineType # CPU队列的实例类型
+    ImageId = $CPU2ImageId     # CPU队列的镜像名
+    MaxNodeCount = $MaxCPU2ExecuteNodeCount #最大节点数
+    CloudInit = $CPU2CloudInit
+    SubnetIds = $CPU2SubNetIds
+    DataVolumes = $CPU2DataVolumes
+
+        [[[configuration]]]
+        slurm.autoscale = $Autoscale            # 是否弹性伸缩
+        slurm.default_partition = true    # 是否是默认队列
+        # vector.volume.system.size = 40  #实例系统盘大小，如使用该参数，则按照参数值进行系统盘创建，如不使用，则按照镜像大小进行系统盘创建
+
+        [[[cluster-init slurm:execute]]]
+
+        [[[network-interface eth0]]]
+        AssociatePublicIpAddress = $ExecuteNodesPublic # 是否为节点申请公网IP
+
+
+    [[nodearray gpu]]
+    MachineType = $GPUMachineType
+    ImageId = $GPUImageId
+    MaxNodeCount = $MaxGPUExecuteNodeCount
+    CloudInit = $GPUCloudInit
+    SubnetIds = $GPUSubNetIds
+    DataVolumes = $GPUDataVolumes
+
+        [[[configuration]]]
+        slurm.autoscale = $Autoscale
+        # vector.volume.system.size = 40  #实例系统盘大小，如使用该参数，则按照参数值进行系统盘创建，如不使用，则按照镜像大小进行系统盘创建
+
+        [[[cluster-init slurm:execute]]]
+
+        [[[network-interface eth0]]]
+        AssociatePublicIpAddress = $ExecuteNodesPublic # 是否为节点申请公网IP
+
+
+[parameters Basic settings]
+Label = 基础配置
+
+    [[parameters Basic Information]]
+    Label = 基本配置
+        [[[parameter ClusterName]]]
+        Label = 集群名称
+        Required = true
+        Config.Regex = /^[a-zA-Z0-9_-]+$/^[^-_]*$|^[^-_].*[^-_]$/^[\s\S]{1,20}$/
+        Config.Message = 由字母、数字、连接符（-、_）组成/不能以连接符（-、_）开头或结尾/长度1~20个字符
+
+        [[[parameter Description]]]
+        Label = 描述
+        ParameterType = TextCanEdit
+        Config.Regex = /^[\s\S]{0,200}$/
+        Config.Message = 长度0~200个字符
+
+    [[parameters Networking settings]]
+    Label = 网络配置
+        [[[parameter Zone]]]
+        Label = 默认可用区
+        Required = true
+        ParameterType = Zone
+
+        [[[parameter VPCId]]]
+        Label = 私有网络
+        Required = true
+        ParameterType = VPC
+        Description = 请确保VPC已经配置了绑定公网IP的NAT网关
+        Config.Regex = /^[\s\S]{1,100}$/
+        Config.Message = 长度1~100个字符
+
+        [[[parameter SubnetId]]]
+        Label = 默认子网
+        Required = true
+        ParameterType = Subnet
+        Config.Regex = /^[\s\S]{1,100}$/
+        Config.Message = 长度1~100个字符
+
+    [[parameters Virtual Machines]]
+    Label = 实例类型配置
+        [[[parameter SchedulerMachineType]]]
+        Label = 管理节点类型
+        Required = true
+        ParameterType = MachineType
+            [[[[parameter SchedulerDataVolumes]]]]
+                Label = 添加数据盘
+                ParameterType = DataVolumeList
+
+        [[[parameter LoginMachineType]]]
+        Label = 登录节点类型
+        Required = true
+        ParameterType = MachineType
+            [[[[parameter LoginDataVolumes]]]]
+                Label = 添加数据盘
+                ParameterType = DataVolumeList
+
+        [[[parameter CPU1MachineType]]]
+        Label = CPU1 节点类型
+        Required = true
+        ParameterType = MachineType
+        Config.ShowSpotOption = true
+            [[[[parameter CPU1SubNetIds]]]]
+                Label = 子网
+                ParameterType = SubNetList
+            [[[[parameter CPU1DataVolumes]]]]
+            Label = 添加数据盘
+            ParameterType = DataVolumeList
+
+        [[[parameter CPU2MachineType]]]
+        Label = CPU2 节点类型
+        Required = true
+        ParameterType = MachineType
+        Config.ShowSpotOption = true
+            [[[[parameter CPU2SubNetIds]]]]
+                Label = 子网
+                ParameterType = SubNetList
+            [[[[parameter CPU2DataVolumes]]]]
+            Label = 添加数据盘
+            ParameterType = DataVolumeList
+
+        [[[parameter GPUMachineType]]]
+        Label = GPU 节点类型
+        Required = true
+        ParameterType = MachineType
+        Config.ShowSpotOption = true
+            [[[[parameter GPUSubNetIds]]]]
+            Label = 子网
+            ParameterType = SubNetList
+            [[[[parameter GPUDataVolumes]]]]
+            Label = 添加数据盘
+            ParameterType = DataVolumeList
+
+
+    [[parameters Auto-Scaling]]
+    Label = 自动伸缩配置
+
+        [[[parameter About Auto-Scaling]]]
+        ParameterType = Html
+        Config.Template = "<div style="color:rgb(78, 89, 105)">单队列最大节点数默认配额为100，如需提额，请<a href="https://console.volcengine.com/workorder/create" target="_blank">提交工单</a>。</div>"
+
+        [[[parameter Autoscale]]]
+        Label = 自动伸缩
+        Required = true
+        DefaultValue = true
+        ParameterType = Boolean
+        Config.Label = 根据作业自动伸缩计算集群
+
+        [[[parameter MaxCPU1ExecuteNodeCount]]]
+        Label = 最大 CPU1 节点数
+        Required = true
+        DefaultValue = 500
+        ParameterType = NumberIntCanEdit
+        Config.Min = 1
+        Config.Max = 500
+        Config.Message = 支持1~500整数
+
+        [[[parameter MaxCPU2ExecuteNodeCount]]]
+        Label = 最大 CPU2 节点数
+        Required = true
+        DefaultValue = 500
+        ParameterType = NumberIntCanEdit
+        Config.Min = 1
+        Config.Max = 500
+        Config.Message = 支持1~500整数
+
+        [[[parameter MaxGPUExecuteNodeCount]]]
+        Label = 最大 GPU 节点数
+        Required = true
+        DefaultValue = 500
+        ParameterType = NumberIntCanEdit
+        Config.Min = 1
+        Config.Max = 500
+        Config.Message = 支持1~500整数
+
+        [[[parameter NumberLoginNodes]]]
+        Label = 登录节点个数
+        DefaultValue = 0
+        ParameterType = NumberInt
+        Config.Min = 0
+        Config.Max = 3
+        Config.Message = 支持0~3整数
+
+
+[parameters Network Attached Storage]
+Label = 存储配置
+
+    [[parameters Default NFS Share]]
+    Label = 数据挂载配置
+        [[[parameter About shared]]]
+        ParameterType = Html
+        Config.Template = "<div>目录<code>/shared</code> 是一个NFS挂载点，存在于集群的所有节点中，用户的家目录保存在此挂载点内，家目录为<code>/shared/home</code>。<br>提供此挂载有两个选项：<br> [内置]：使用集群头节点作为NFS服务器，它为集群的其他节点提供挂载点。<br> [外部 NFS]：使用 NAS、vePFS 或其他 NFS 服务器，为集群提供挂载点。</div>"
+
+        [[[parameter NFSType]]]
+        Label = NFS 类型
+        Required = true
+        ParameterType = ButtonType
+        Config.Entries = [{"Label":"内置", "Value":"Builtin"}, {"Label":"外部NFS", "Value":"External"}]
+        DefaultValue = Builtin
+
+        [[[parameter NFSAddress]]]
+        Label = NFS 地址
+        Required = true
+        ParameterType = Copy
+        Conditions = ${NFSType != "Builtin"}
+        Config.Regex = /^[\s\S]{1,100}$/
+        Config.Message = 长度1~100个字符
+
+        [[[parameter NFSSharedExportPath]]]
+        Label = NFS Export 路径
+        Required = true
+        ParameterType = Copy
+        Conditions = ${NFSType != "Builtin"}
+        Config.Regex = /^[\s\S]{1,100}$/
+        Config.Message = 长度1~100个字符
+
+        [[[parameter NFSSharedMountOptions]]]
+        Label = NFS 挂载选项
+        Required = true
+        ParameterType = Copy
+        Conditions = ${NFSType != "Builtin"}
+        Config.Regex = /^[\s\S]{1,100}$/
+        Config.Message = 长度1~100个字符
+
+        [[[parameter FilesystemSize]]]
+        Label = 容量 (GiB)
+        Required = true
+        DefaultValue = 100
+        Conditions = ${NFSType != "External"}
+        ParameterType = NumberInt
+        Config.Min = 10
+        Config.Max = 10240
+        Config.Message = 支持10~10240整数
+
+
+[parameters Advanced settings]
+Label = 高级配置
+
+    [[parameters Slurm settings ]]
+    Label = Slurm 配置
+
+        [[[parameter SlurmVersion]]]
+        Label = Slurm 版本
+        Required = True
+        ParameterType = StringList
+        Config.Entries = [{"Value":"20.11.9-1"}, {"Value":"22.05.10-1"}]
+        DefaultValue = 20.11.9-1
+
+        [[[parameter SlurmAccountingEnabled]]]
+        Label = Job Accounting
+        DefaultValue = false
+        ParameterType = Boolean
+        Config.Label = 启用
+
+        [[[parameter SlurmAccountingHost]]]
+        Label = Slurm DBD host
+        Description = 用于slurm job accounting的数据库host名称
+        Required = True
+        ParameterType = SlurmDBD
+        Conditions = ${SlurmAccountingEnabled}
+        Config.Regex = /^[\s\S]{1,100}$/
+        Config.Message = 长度1~100个字符
+
+        [[[parameter SlurmAccountingPort]]]
+        Label = Slurm DBD 端口
+        Description = 用于slurm job accounting的数据库端口号
+        Required = True
+        DefaultValue = 3306
+        Conditions = ${SlurmAccountingEnabled}
+        ParameterType = NumberInt
+        Config.Min = 1024
+        Config.Max = 65535
+        Config.Message = 支持1024-65535整数
+
+        [[[parameter SlurmAccountingDB]]]
+        Label = Slurm DBD 名称
+        Description = 用于slurm job accounting的数据库名称
+        Required = True
+        Conditions = ${SlurmAccountingEnabled}
+        Config.Regex = /^[\s\S]{1,100}$/
+        Config.Message = 长度1~100个字符
+
+        [[[parameter SlurmAccountingUser]]]
+        Label = Slurm DBD 用户名
+        Description = 用于slurm job accounting的数据库用户名
+        Required = True
+        Conditions = ${SlurmAccountingEnabled}
+        Config.Regex = /^[\s\S]{1,100}$/
+        Config.Message = 长度1~100个字符
+
+        [[[parameter SlurmAccountingPassword]]]
+        Label = Slurm DBD 密码
+        Description = 用于slurm job accounting的数据库密码
+        ParameterType = Password
+        Required = True
+        Conditions = ${SlurmAccountingEnabled}
+        Config.Regex = /^[\s\S]{1,100}$/
+        Config.Message = 长度1~100个字符
+
+    [[parameters Credentials]]
+    Label = 登录凭证配置
+
+        [[[parameter KeyPairName]]]
+        Label = 密钥对
+        ParameterType = Keypair
+        Required = True
+
+    [[parameters OS]]
+    Label = 操作系统配置
+
+        [[[parameter SchedulerImageId]]]
+        Label = 管理节点 OS 镜像
+        Required = True
+        ParameterType = Image
+
+        [[[parameter LoginImageId]]]
+        Label = 登录节点 OS 镜像
+        Required = True
+        ParameterType = Image
+
+        [[[parameter CPU1ImageId]]]
+        Label = CPU1 节点 OS 镜像
+        Required = True
+        ParameterType = Image
+
+        [[[parameter CPU2ImageId]]]
+        Label = CPU2 节点 OS 镜像
+        Required = True
+        ParameterType = Image
+
+        [[[parameter GPUImageId]]]
+        Label = GPU 节点 OS 镜像
+        Required = True
+        ParameterType = Image
+
+    [[parameters Advanced Networking]]
+    Label = 高级网络配置
+
+        [[[parameter UsePublicNetwork]]]
+        Label = 公网访问管理节点
+        DefaultValue = true
+        ParameterType = Boolean
+        Config.Label = 允许通过互联网访问管理节点
+
+        [[[parameter LoginNodesPublic]]]
+        Label = 公网访问登录节点
+        DefaultValue = true
+        ParameterType = Boolean
+        Config.Label = 允许通过互联网访问登录节点
+
+        [[[parameter ExecuteNodesPublic]]]
+        Label = 公网访问计算节点
+        DefaultValue = false
+        ParameterType = Boolean
+        Config.Label = 允许通过互联网访问计算节点
+        Conditions = ${UsePublicNetwork}
+
+    [[parameters User Management]]
+        Label = 用户管理
+
+        [[[parameter UserDomainServiceEnabled]]]
+        Label = 域账号服务
+        DefaultValue = false
+        ParameterType = Boolean
+        Config.Label = 启用
+
+        [[[parameter UserDomainService]]]
+        Label = 服务类型
+        Required = true
+        Conditions = ${UserDomainServiceEnabled}
+        ParameterType = ButtonType
+        Config.Entries = [{"Label":"NIS", "Value":"NIS"}, {"Label":"LDAP", "Value":"LDAP"}]
+        DefaultValue = NIS
+
+        [[[parameter LdapServiceURI]]]
+        Label = 服务器URI
+        Description = 遵循安全的轻型目录访问协议LDAPS，地址格式：LDAPS://<host>:<port>
+        Required = true
+        Conditions = ${UserDomainService == "LDAP" }
+        Config.Regex = /^[\s\S]{1,100}$/
+        Config.Message = 长度1~100个字符
+
+        [[[parameter LdapServiceDN]]]
+        Label = 服务器DN
+        Description = 用户搜索的起点，通常由CN、OU、DC组成，例如CN=users,OU=abccloud,DC=cloud,DC=com，表示该DN中的目录结构含义为：名称为 users 的用户信息处于 cloud.com 区域中的 abccloud 组织中
+        Required = true
+        Conditions = ${UserDomainService == "LDAP" }
+        Config.Regex = /^[\s\S]{1,100}$/
+        Config.Message = 长度1~100个字符
+
+        [[[parameter LdapServicebinddn]]]
+        Label = binddn账号
+        Description = 用来连接LDAP服务器且拥有管理权限的用户，例如：CN=admin,DC=vector,DC=com
+        Required = true
+        Conditions = ${UserDomainService == "LDAP" }
+        Config.Regex = /^[\s\S]{1,100}$/
+        Config.Message = 长度1~100个字符
+
+        [[[parameter LdapServicebindpw]]]
+        Label = bindpw
+        Description = binddn对应的密码
+        Required = true
+        Conditions = ${UserDomainService == "LDAP" }
+        ParameterType = Password
+        Config.Regex = /^[\s\S]{1,100}$/
+        Config.Message = 长度1~100个字符
+
+        [[[parameter AccessDeny]]]
+        Label = 禁止用户登录计算节点
+        Description = 启用后，该集群的所有非root用户只允许登录到login节点或者scheduler节点，无法登录到计算节点
+        Required = true
+        DefaultValue = false
+        Conditions = ${UserDomainServiceEnabled}
+        ParameterType = Boolean
+        Config.Label = 启用
+
+
+[parameters Cloud Init]
+Label = 启动脚本
+
+    [[parameters Cloud Init]]
+    Label = 启动脚本
+        [[[parameter SchedulerCloudInit]]]
+        Label = 管理节点
+        ParameterType = Script
+        Config.Regex = /^(?:[\s\S]{0,16384})$/
+        Config.Message = 文本最大不超过 16KB
+
+        [[[parameter LoginCloudInit]]]
+        Label = 登录节点
+        ParameterType = Script
+        Config.Regex = /^(?:[\s\S]{0,16384})$/
+        Config.Message = 文本最大不超过 16KB
+
+        [[[parameter CPU1CloudInit]]]
+        Label = CPU1 节点
+        ParameterType = Script
+        Config.Regex = /^(?:[\s\S]{0,16384})$/
+        Config.Message = 文本最大不超过 16KB
+
+        [[[parameter CPU2CloudInit]]]
+        Label = CPU2 节点
+        ParameterType = Script
+        Config.Regex = /^(?:[\s\S]{0,16384})$/
+        Config.Message = 文本最大不超过 16KB
+
+        [[[parameter GPUCloudInit]]]
+        Label = GPU 节点
+        ParameterType = Script
+        Config.Regex = /^(?:[\s\S]{0,16384})$/
+        Config.Message = 文本最大不超过 16KB

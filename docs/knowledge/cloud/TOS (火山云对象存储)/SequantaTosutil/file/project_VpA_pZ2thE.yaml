@@ -1,0 +1,10 @@
+## input
+contractID: FIMM-20250110
+project_id: s2810r22t001
+## infor about project analysis
+customer: FimmCyte AG
+analyzer: su_jing    # default by $USER in envs
+reviewer: li_miaomiao
+company:  sequanta    # mingmatechs
+project_manager: zhao_wenjing   # wang_chunshi
+technicalSupport: yu_dan

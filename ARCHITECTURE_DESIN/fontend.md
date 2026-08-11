@@ -705,6 +705,15 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 - 新消息自动滚动到底部；用户向上滚动时暂停自动滚动并显示"回到底部"按钮。
 - 对话区若叠加装饰背景/光晕（如 `ShaniaChatBackground` 全息层），必须遵守 §31：装饰层保持出流、`pointer-events:none`，内容层按**类名**显式抬升；**禁止**用 `.容器 > *` 通配设置 `position`/`z-index`（该反模式曾把仅 `shania` 渲染的装饰层拉进文档流，导致顶栏塌陷、顶部整块空白）。
 
+#### 18.1.1 内联状态卡与路由卡宽度规范（强制）
+
+AI 消息区内嵌的状态提示、路由转交、协作决策等卡片（如 `RouteTransitionCard`、`CollaborationRouteNotice` 及后续同类组件）必须**与消息内容区等宽**，不能因为文案短就收缩成内容宽度，导致上下卡片左右边缘不齐。
+
+- **统一尺寸**：`width: 100%`、`max-width: 1120px`、`margin: 0 0 var(--space-md, 12px)`、`box-sizing: border-box`。
+- **内部排列**：标题/标签与说明文字在同一行自然左对齐排列（用 `gap` 连接），**禁止**使用 `justify-content: space-between` 把说明文字推到最右侧；说明文字过长时以省略号截断。
+- **权威实现**：`frontend/src/components/ai-chat/RouteTransitionCard.vue`、`frontend/src/components/ai-chat/CollaborationRouteNotice.vue`。
+- **新增组件**：凡是在 AI 消息流中水平排列、非浮动/非模态的内联信息卡，默认复用上述尺寸与排列规则；需要特殊宽度时必须在前端设计文档中说明理由。
+
 ### 18.2 流式输出
 
 - 使用 `useChatStream` / `useAgentChatStream` 处理 SSE 或 WebSocket 流。
@@ -734,6 +743,7 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 - 多行文本框（`NInput type="textarea"` + `autosize`）；`Enter` 发送，`Shift+Enter` 换行。
 - 发送按钮在空内容或生成中时 `disabled`；生成中变为"停止"按钮。
 - 支持附件（图片、文件）时，输入区上方显示附件预览条。
+- **拖拽上传**：输入区整体响应 `dragenter/dragover/dragleave/drop`，仅当拖拽内容包含文件（`dataTransfer.types` 含 `Files`）时显示高亮覆盖层与释放提示；释放后调用与点击上传同一套 `chat-upload` 接口，并追加到附件列表。生成中/禁用时拒绝拖拽。
 - 输入历史：`↑`/`↓` 切换最近发送的消息（可选）。
 
 ### 18.4 工具调用与多步结果

@@ -21,6 +21,10 @@ const studioApiMocks = vi.hoisted(() => ({
 vi.mock('@/api/studio', () => ({
   studioApi: studioApiMocks,
 }))
+const apiClientMocks = vi.hoisted(() => ({
+  get: vi.fn().mockResolvedValue({ data: new Blob(['image']) }),
+}))
+vi.mock('@/api/client', () => ({ default: apiClientMocks }))
 
 import KimiMessageItem from '@/components/ai-chat/KimiMessageItem.vue'
 import { stripFakeToolCallMarkup } from '@/components/ai-chat/messageSanitize'
@@ -33,6 +37,9 @@ beforeEach(() => {
     return 0
   }) as typeof requestAnimationFrame
   global.cancelAnimationFrame = (() => {}) as typeof cancelAnimationFrame
+  URL.createObjectURL = vi.fn(() => 'blob:chat-attachment-preview')
+  URL.revokeObjectURL = vi.fn()
+  apiClientMocks.get.mockClear()
 })
 
 function mountItem(props: Record<string, unknown>) {
@@ -58,6 +65,69 @@ const baseMsg: ChatMessage = {
 }
 
 describe('KimiMessageItem 渲染分支', () => {
+  it('将用户上传的图片渲染为带鉴权获取的缩略图', async () => {
+    const { el } = mountItem({
+      message: {
+        ...baseMsg,
+        role: 'user',
+        content: '这个是什么呀',
+        attachments: [{
+          name: 'clipboard-image.png',
+          size: 1024,
+          type: 'image/png',
+          url: '/api/v1/files/chat-upload/user/image.png',
+          file_id: 'upload-image',
+          source: 'upload',
+        }],
+      },
+      isStreaming: false,
+    })
+
+    await Promise.resolve()
+    await nextTick()
+
+    expect(apiClientMocks.get).toHaveBeenCalledWith(
+      '/api/v1/files/chat-upload/user/image.png',
+      { responseType: 'blob' },
+    )
+    expect(el.querySelector<HTMLImageElement>('.attachment-image-preview')?.src)
+      .toContain('blob:chat-attachment-preview')
+    expect(el.textContent).toContain('clipboard-image.png')
+  })
+
+  it('将知识库引用标记渲染为可悬停的编号预览', () => {
+    const { el } = mountItem({
+      message: {
+        ...baseMsg,
+        content: '建议先检查测序质量。[[citation:kb-0123456789abcdef]]',
+        toolCalls: [{
+          id: 'knowledge-search-1',
+          name: 'knowledge_search',
+          arguments: { query: 'RNA-seq 质控' },
+          status: 'success',
+          result: {
+            results: [{
+              citation_id: 'kb-0123456789abcdef',
+              doc_id: 'rna-seq-guide',
+              title: 'RNA-seq 质控指南',
+              category: 'RNA-seq',
+              excerpt: '附件图片：qc-summary.png 来源：/docs-static/knowledge/figure/qc-summary.png',
+              section_path: '质控',
+              url: '/knowledge/rna-seq-guide',
+            }],
+          },
+        }],
+      },
+      isStreaming: false,
+    })
+
+    expect(el.querySelector<HTMLButtonElement>('.knowledge-citation')?.textContent).toBe('[1]')
+    expect(el.querySelector('.knowledge-citation-preview')?.textContent).toContain('RNA-seq 质控指南')
+    expect(el.querySelector<HTMLImageElement>('.knowledge-citation-preview__image')?.src)
+      .toContain('/docs-static/knowledge/figure/qc-summary.png')
+    expect(el.textContent).not.toContain('[[citation:')
+  })
+
   it('system ask_request 的计划确认呈现专用卡而非空系统消息', () => {
     const { el } = mountItem({
       sessionId: 'session-plan',
@@ -268,26 +338,6 @@ describe('KimiMessageItem 渲染分支', () => {
       streamingThought: '思考内容',
     })
     expect(el.textContent).toContain('正在输出的正文')
-  })
-
-  it('流式首帧尚未收到搜索状态时，不应误报联网搜索失败', () => {
-    const { el } = mountItem({
-      message: { ...baseMsg, status: 'streaming' },
-      isStreaming: true,
-    })
-    expect(el.textContent).not.toContain('联网搜索失败')
-  })
-
-  it('收到搜索中状态后，显示联网搜索进度', () => {
-    const { el } = mountItem({
-      message: {
-        ...baseMsg,
-        status: 'streaming',
-        webSearchStatus: { status: 'searching', query: 'OmicHub' },
-      },
-      isStreaming: true,
-    })
-    expect(el.textContent).toContain('正在联网搜索：OmicHub')
   })
 
   it('流式结束瞬间（content 已写入 message）：正文不丢失', () => {

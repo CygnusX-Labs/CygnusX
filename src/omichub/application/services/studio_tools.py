@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import time
 import uuid
@@ -816,6 +817,11 @@ async def _knowledge_search(
 
     matches = [
         {
+            "citation_id": _knowledge_citation_id(
+                doc_id=item.doc_id,
+                section_path=item.section_path,
+                excerpt=item.excerpt,
+            ),
             "doc_id": item.doc_id,
             "title": item.title,
             "category": item.category,
@@ -830,6 +836,12 @@ async def _knowledge_search(
     ]
     payload = {"query": query, "results": matches, "total": len(matches)}
     return _ok_result(payload, payload)
+
+
+def _knowledge_citation_id(*, doc_id: str, section_path: str, excerpt: str) -> str:
+    """Build a stable opaque identifier for one retrieved knowledge passage."""
+    fingerprint = "\x1f".join((doc_id, section_path, excerpt)).encode("utf-8")
+    return f"kb-{hashlib.sha256(fingerprint).hexdigest()[:16]}"
 
 
 async def _pipeline_query(args: dict[str, Any]) -> dict[str, Any]:

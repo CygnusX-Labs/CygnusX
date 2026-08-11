@@ -1,13 +1,17 @@
 # 超频模式升级方案：研究先行、计划确认、人格化异步 Agent 团队
 
-> 更新日期：2026-08-09
+> 更新日期：2026-08-10
 >
 > 文档性质：目标架构 + 状态机 + 数据契约 + 分阶段施工方案；本文不直接修改业务代码。
 >
-> 现状依据：`data/ai/README.md` §13–§15，以及当前的 `chat_service.py`、
-> `parallel_subagent_service.py`、`overdrive_runtime.py`、Agent YAML 与前端超频组件。
+> 现状依据：`data/ai/README.md` §13–§16，以及当前的 `chat_service.py`、
+> `parallel_subagent_service.py`、`overdrive_*` 服务、Agent YAML 与前端超频组件。
 >
 > 目标基线：在现有超频模式上演进，不另造一套用户入口。
+>
+> 比赛阶段说明：比赛要求以 AgentTeams 为协同基点，该阶段的实现框架见
+> `data/ai/AgentTeams_update.md`。本文是**赛后收敛的长期目标**（Kimi 式单窗口人格化异步团队）；
+> 两份文档共享同一条原则——执行者始终是平台 `data/ai/*.yaml` 定义的真实 Agent。
 
 ---
 
@@ -41,6 +45,31 @@
 
 简单问答、闲聊、单一步骤且低风险的请求无需强制进入本流程；主 Agent 可以直接回答。只要任务
 进入“正式执行 / 多 Agent 协作”路径，上述确认闸门就不可绕过。
+
+### 1.1 单窗口心智模型（Kimi 式集群）
+
+用户对多 Agent 协作的体感预期是：**在同一个聊天窗口里，像一群专家在群里协作把活干完**，
+而不是跳到独立工单页或后台任务列表。因此本方案的前台形态固定为：
+
+- **一个入口**：用户只在当前 AI 助手/工作台对话里发任务、看进展、做决策，不切页面。
+- **一个 Manager**：当前会话绑定的主 Agent（通常是星尘 AI/`agent-general`）是唯一对用户负责的
+  协调者，负责接单、选规划专家、出计划、确认、派活、点评、汇总。
+- **一群真实专家在同一房间发言**：每个被招募的平台专家（`agent-rnaseq`/`agent-code`/
+  `agent-qc` 等）以**自己的头像、名字、Persona 风格**在对话流里分条发言；发言不是批量汇总，
+  而是谁先完成谁先出现（逐个回流），下面紧跟 Manager 的具体点评。
+- **决策就地发生**：计划确认、高风险工具审批、向用户提问都以卡片形式插在同一条对话流里，
+  用户就地操作，不另开审批页。
+- **进度可感、断线可续**：招募花名册、泳道进度、阶段产物都投影在窗口里；刷新/断线后凭
+  run 快照 + 事件游标重建同一房间的全部发言与状态。
+
+实现上，单窗口不等于"阻塞式等整波完成再一起渲染"。真正的语义是：**每个专家是独立的后台 job，
+完成一个就向房间投递一条带 `senderAgent` 的 `room_speech` 事件**，Manager 据该结果即时点评并
+决定是否解锁下游任务（见 §4 阶段 G–I、§7.2）。同步 fan-out/批量汇总只是开发期兼容回退，
+不构成"Kimi 式集群"的验收。
+
+> 前台投影契约：所有发言/进度/决策复用既有 SSE 类型 `room_speech` / `overdrive_progress` /
+> `ask_request(kind=plan_confirmation)` / `overdrive_approval_request` / `mode_changed`，
+> 不新造前端不认识的事件类型（与 README §14.4 一致）。
 
 ---
 
@@ -780,6 +809,32 @@ docker compose -f deploy/docker/docker-compose.yml exec db \
 
 该场景在补偿重试和明确失败收敛实现前，不得标记为“自动重规划已完成”。
 
+为避免服务器验收退化成无法追溯的手工口头检查，仓库提供统一的证据采集器。它默认只读地检查
+基础设施、任务注册、迁移、指定 run 的持久化事件和独立 QC；运行成功后会写入包含命令输出、退出码
+和 run 元数据的 `acceptance.json`。示例：
+
+```bash
+python3 scripts/verify_overdrive_deployment.py --run-id '<RUN_ID>'
+```
+
+Broker 故障演练必须由已经处于 `REPLANNING` 的 staging run 发起。该模式会短暂停止共享 `cache`
+服务，因而需要双重显式确认；无论演练结果如何，脚本都会在 `finally` 中尝试启动 Redis 并保存证据：
+
+```bash
+python3 scripts/verify_overdrive_deployment.py \
+  --run-id '<QC_RUN_ID>' \
+  --broker-run-id '<REPLANNING_RUN_ID>' \
+  --environment staging \
+  --exercise-broker-recovery \
+  --confirm-broker-outage
+```
+
+若已另外执行 `agent-qc` 不可用演练，可将该 run 通过 `--qc-unavailable-run-id '<RUN_ID>'` 一并传入，
+脚本会要求其计划摘要明确记录 `independent_qc.mode = degraded`，且不得存在伪造的 QC 任务。
+
+如果重规划没有生成新的计划确认事件、没有清理 `replan_lock`，或收敛为 `replanning_failed`，脚本返回
+非零状态并将该 run 标记为未通过；不得将“Redis 已重新启动”误判为自动重规划验收通过。
+
 ---
 
 ## 11. 需求追踪表
@@ -813,6 +868,23 @@ docker compose -f deploy/docker/docker-compose.yml exec db \
    承担状态，而不是在两条聊天循环中复制一套异步编排。
 9. **配置化人格**：人格由 Agent YAML 管理并带版本，不能把所有角色的性格硬编码在前端。
 10. **文档同步**：代码落地后更新 `data/ai/README.md` 的架构与进度，避免蓝图和实现状态混淆。
+11. **执行者始终是平台真实 Agent**：无论是比赛期的 AgentTeams 编排还是本文的超频 v2，被调度的
+    专家都必须是 `data/ai/*.yaml` 定义、经 `AgentService.assemble_context()` 装载的真实 Agent，
+    携带其自身的提示词/Persona/工具/MCP/Skill/权限；不得在编排层另造一套只有名字没有能力的虚构角色。
+
+### 12.1 与 AgentTeams（比赛阶段）的关系与迁移
+
+- **比赛阶段**：按 `data/ai/AgentTeams_update.md`，以 AgentTeams Bridge/Case 状态机作为协同基点，
+  通过补建 OmicHub consultation 端点让平台真实 Agent 作为 Worker 执行者，在单窗口内完成闭环。
+  此阶段编排状态在外部 Bridge，执行能力在 OmicHub。
+- **赛后收敛到本文**：编排/状态权威从外部 Bridge 迁回平台内置的超频 v2
+  （`overdrive_run_service` DB 事件溯源 + Celery `run_assistant_job` 真异步 +
+  `ParallelSubAgentService` 执行内核）。届时不再需要为每个专家常驻外部 Worker 容器，
+  也不受 Gateway 只读策略限制——专家可在确认闸门内使用完整工具/沙箱能力。
+- **迁移时保持不变的资产**：①"平台真实 Agent 即执行者"原则；②单窗口 `room_speech` 投影心智；
+  ③研究先行→计划确认→串行前置→异步执行→逐条点评→质控交付的阶段语义；④只读研究 vs 审批后执行
+  的边界。AgentTeams 阶段沉淀的角色映射表、`context_refs/evidence_refs` 传递约定可直接复用到
+  v2 的任务契约。
 
 本文档之后的代码优化应以 §10.4 的完成定义为终点；任何仅实现同步 fan-out、批量汇总或随机昵称
 的方案都只是过渡态，不等同于本目标完成。

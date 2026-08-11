@@ -108,6 +108,10 @@ async def _test_workspace_consultation_uses_scoped_workdir() -> None:
     assert call["safe_only"] is False
     assert call["tasks"][0]["workspace_access"] is True
     assert str(call["workdir_root"]) == "/data/omichub/output/agentteams/case-1/code-write-01"
+    task = call["tasks"][0]
+    assert "## AgentTeams 工作区执行协议" in task["task"]
+    assert "plan_hash 已确认" in task["task"]
+    assert "最终答复只包含一个 `json` 代码块" in task["task"]
     assert "信封解析降级" in result.risks[0]
 
 

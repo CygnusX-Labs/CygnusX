@@ -181,7 +181,8 @@ class AgentTeamsService:
         self,
         *,
         case_id: str,
-        project_id: str,
+        project_id: str | None,
+        context_refs: list[dict[str, str]] | None = None,
         intent: str,
         requester_ref: str,
         flow_id: str | None,
@@ -193,11 +194,14 @@ class AgentTeamsService:
     ) -> dict[str, Any]:
         case_payload: dict[str, Any] = {
             "case_id": case_id,
-            "project_ref": {"kind": "project", "id": project_id},
             "intent": intent,
             "requester_ref": requester_ref,
             "execution_mode": "cluster_case",
         }
+        if project_id:
+            case_payload["project_ref"] = {"kind": "project", "id": project_id}
+        if context_refs:
+            case_payload["context_refs"] = context_refs
         if flow_id:
             case_payload["flow_id"] = flow_id
         else:

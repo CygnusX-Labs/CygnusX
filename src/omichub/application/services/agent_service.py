@@ -35,6 +35,7 @@ from omichub.domain.mcp.entities import MCPServer, MCPToolRegistry
 from omichub.domain.mcp.value_objects import ServerStatus, Transport
 from omichub.domain.skill.entities import Skill
 from omichub.infrastructure.config.agent_loader import load_agent_configs
+from omichub.infrastructure.config.agent_ability_catalog import agent_ability_catalog
 from omichub.infrastructure.database.models.agent import (
     AgentTemplateModel,
     UserAgentCapabilityModel,
@@ -1030,18 +1031,27 @@ class AgentService:
             .where(AgentTemplateModel.is_active == True)  # noqa: E712
             .order_by(AgentTemplateModel.category, AgentTemplateModel.name)
         )
-        catalog = [
-            {
-                "agent_id": candidate.agent_id,
-                "name": candidate.name,
-                "description": candidate.description,
-                "category": candidate.category,
-            }
-            for candidate in result.scalars().all()
-            if candidate.agent_id != source.agent_id
-            and not (candidate.features or {}).get("router")
-            and (allow_all_active_targets or candidate.agent_id in allowed_targets)
-        ]
+        catalog = []
+        for candidate in result.scalars().all():
+            if (
+                candidate.agent_id == source.agent_id
+                or (candidate.features or {}).get("router")
+                or not (allow_all_active_targets or candidate.agent_id in allowed_targets)
+            ):
+                continue
+            ability = agent_ability_catalog.get(candidate.agent_id)
+            catalog.append(
+                {
+                    "agent_id": candidate.agent_id,
+                    "name": candidate.name,
+                    "description": ability.get("summary") or candidate.description,
+                    "category": candidate.category,
+                    "capabilities": ability.get("capabilities", []),
+                    "not_suitable_for": ability.get("not_suitable_for", []),
+                    "handoff_when": ability.get("handoff_when", []),
+                    "preferred_inputs": ability.get("preferred_inputs", []),
+                }
+            )
         if not catalog:
             return ""
         return (

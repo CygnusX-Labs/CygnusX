@@ -70,6 +70,7 @@ services:
       - ../../flows:/app/flows:ro  # 流程 YAML 配置（热重载）
       - ../../tool_configs:/app/tool_configs  # 工具箱配置（热重载；BLAST 数据库 YAML 需要可写）
       - ../../docs:/app/docs  # 知识库文档（meta.yaml + *.md，在线编辑与图片上传需要可写）
+      - ../../wiki:/app/wiki:ro  # 平台 Wiki 正文（知识库自动集合，只读挂载）
       - ../../data:/app/data:ro  # AI Provider YAML 配置（热重载）
       - ../../alembic:/app/alembic:ro  # 迁移脚本热同步（容器内可见，免重建镜像）
       - ../../scripts:/app/scripts:ro  # 运维/初始化/同步脚本（热重载）

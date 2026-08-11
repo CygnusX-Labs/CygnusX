@@ -1,0 +1,876 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="1127.054"
+   height="638"
+   viewBox="0 0 1127.054 638"
+   version="1.1"
+   id="svg190"
+   sodipodi:docname="comprehensive.499ab1d3v2.svg"
+   inkscape:version="1.1.2 (b8e25be833, 2022-02-05)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview192"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     showgrid="false"
+     inkscape:zoom="1.1269592"
+     inkscape:cx="563.90684"
+     inkscape:cy="338.0779"
+     inkscape:window-width="1920"
+     inkscape:window-height="1147"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="Group_373" />
+  <defs
+     id="defs6">
+    <clipPath
+       id="clip-path">
+      <path
+         id="Path_47"
+         data-name="Path 47"
+         d="M242.268,1103.779a14.519,14.519,0,0,0-4.472-.919c-8.47-.363-15.176,6.894-14.8,16.207a18.418,18.418,0,0,0,.591,3.939,6.705,6.705,0,0,0-2.33-.457,6.8,6.8,0,0,0-6.724,7.371,7.717,7.717,0,0,0,6.046,7.324l53.843-.052c.3,0,.6-.019.889-.046,5.53-.54,9.635-5.857,9.4-12.328-.251-6.812-5.233-12.488-11.223-12.678a9.4,9.4,0,0,0-4.187.83,17.011,17.011,0,0,0,.072-2.359c-.318-8.447-6.646-15.64-14.279-16.065q-.357-.02-.708-.02c-5.611,0-10.277,3.746-12.11,9.252"
+         transform="translate(-214.523 -1094.527)"
+         fill="#1f2649" />
+    </clipPath>
+    <clipPath
+       id="clip-path-2">
+      <path
+         id="Path_68"
+         data-name="Path 68"
+         d="M1869.545,818.351a13.2,13.2,0,0,0-3.9-.815c-7.252-.38-12.877,5.5-12.566,13.122a15.072,15.072,0,0,0,.492,3.241,5.782,5.782,0,0,0-1.938-.446,5.3,5.3,0,0,0-5.516,5.758,6.727,6.727,0,0,0,4.954,6.206l47.984,2.677c.288.015.573.016.856.009,5.37-.178,9.412-4.7,9.176-10.485-.248-6.088-5.142-11.269-10.931-11.572a9.512,9.512,0,0,0-3.988.631,13.993,13.993,0,0,0,.067-2.058c-.3-7.377-6.232-13.656-13.247-14.024q-.324-.017-.643-.017a11.334,11.334,0,0,0-10.8,7.772"
+         transform="translate(-1846.114 -810.579)"
+         fill="#1f2649" />
+    </clipPath>
+  </defs>
+  <g
+     id="Group_373"
+     data-name="Group 373"
+     transform="translate(-547.423 -1446)">
+    <g
+       id="Ellipse_67"
+       data-name="Ellipse 67"
+       transform="translate(547.423 1668)"
+       fill="#fff"
+       stroke="#d1d4e2"
+       stroke-width="2">
+      <circle
+         cx="62.5"
+         cy="62.5"
+         r="62.5"
+         stroke="none"
+         id="circle8" />
+      <circle
+         cx="62.5"
+         cy="62.5"
+         r="61.5"
+         fill="none"
+         id="circle10" />
+    </g>
+    <g
+       id="Ellipse_172"
+       data-name="Ellipse 172"
+       transform="translate(1305.954 1581.677)"
+       fill="#fff"
+       stroke="#d1d4e2"
+       stroke-width="2">
+      <circle
+         cx="62.5"
+         cy="62.5"
+         r="62.5"
+         stroke="none"
+         id="circle13" />
+      <circle
+         cx="62.5"
+         cy="62.5"
+         r="61.5"
+         fill="none"
+         id="circle15" />
+    </g>
+    <g
+       id="Ellipse_173"
+       data-name="Ellipse 173"
+       transform="translate(1305.954 1756.146)"
+       fill="#fff"
+       stroke="#d1d4e2"
+       stroke-width="2">
+      <circle
+         cx="62.5"
+         cy="62.5"
+         r="62.5"
+         stroke="none"
+         id="circle18" />
+      <circle
+         cx="62.5"
+         cy="62.5"
+         r="61.5"
+         fill="none"
+         id="circle20" />
+    </g>
+    <g
+       id="Group_367"
+       data-name="Group 367"
+       transform="translate(-68.577 -22)">
+      <line
+         id="Line_25"
+         data-name="Line 25"
+         x1="126"
+         transform="translate(741.5 1753.27)"
+         fill="none"
+         stroke="#d1d4e2"
+         stroke-width="2" />
+      <path
+         id="Path_577"
+         data-name="Path 577"
+         d="M10169,1750.029l-3.987,3.987,3.987,4.177"
+         transform="translate(-9424.017 -0.841)"
+         fill="none"
+         stroke="#d1d4e2"
+         stroke-width="2" />
+      <path
+         id="Path_578"
+         data-name="Path 578"
+         d="M10165.016,1750.029l3.987,3.987-3.987,4.177"
+         transform="translate(-9301.503 -0.841)"
+         fill="none"
+         stroke="#d1d4e2"
+         stroke-width="2" />
+    </g>
+    <g
+       id="Group_370"
+       data-name="Group 370"
+       transform="translate(380.077 -22)">
+      <line
+         id="Line_25-2"
+         data-name="Line 25"
+         x1="126"
+         transform="translate(741.5 1753.27)"
+         fill="none"
+         stroke="#d1d4e2"
+         stroke-width="2" />
+      <path
+         id="Path_579"
+         data-name="Path 579"
+         d="M55.454,6.609H0V181.146H55.454"
+         transform="translate(867.423 1659.5)"
+         fill="none"
+         stroke="#d1d4e2"
+         stroke-width="2" />
+      <path
+         id="Path_577-2"
+         data-name="Path 577"
+         d="M10169,1750.029l-3.987,3.987,3.987,4.177"
+         transform="translate(-9424.017 -0.841)"
+         fill="none"
+         stroke="#d1d4e2"
+         stroke-width="2" />
+    </g>
+    <g
+       id="Group_368"
+       data-name="Group 368"
+       transform="translate(137.415 -22)">
+      <line
+         id="Line_25-3"
+         data-name="Line 25"
+         x1="41.386"
+         transform="translate(741.5 1753.27)"
+         fill="none"
+         stroke="#d1d4e2"
+         stroke-width="2" />
+      <path
+         id="Path_577-3"
+         data-name="Path 577"
+         d="M10169,1750.029l-3.987,3.987,3.987,4.177"
+         transform="translate(-9424.017 -0.841)"
+         fill="none"
+         stroke="#d1d4e2"
+         stroke-width="2" />
+      <path
+         id="Path_578-2"
+         data-name="Path 578"
+         d="M10165.016,1750.029l3.987,3.987-3.987,4.177"
+         transform="translate(-9386.117 -0.841)"
+         fill="none"
+         stroke="#d1d4e2"
+         stroke-width="2" />
+    </g>
+    <g
+       id="Group_369"
+       data-name="Group 369"
+       transform="translate(258.745 -22)">
+      <line
+         id="Line_25-4"
+         data-name="Line 25"
+         x1="41.386"
+         transform="translate(741.5 1753.27)"
+         fill="none"
+         stroke="#d1d4e2"
+         stroke-width="2" />
+      <path
+         id="Path_577-4"
+         data-name="Path 577"
+         d="M10169,1750.029l-3.987,3.987,3.987,4.177"
+         transform="translate(-9424.017 -0.841)"
+         fill="none"
+         stroke="#d1d4e2"
+         stroke-width="2" />
+      <path
+         id="Path_578-3"
+         data-name="Path 578"
+         d="M10165.016,1750.029l3.987,3.987-3.987,4.177"
+         transform="translate(-9386.117 -0.841)"
+         fill="none"
+         stroke="#d1d4e2"
+         stroke-width="2" />
+    </g>
+    <g
+       id="Ellipse_56"
+       data-name="Ellipse 56"
+       transform="translate(753 1532)"
+       fill="none"
+       stroke="#d1d4e2"
+       stroke-width="2">
+      <ellipse
+         cx="207"
+         cy="206.5"
+         rx="207"
+         ry="206.5"
+         stroke="none"
+         id="ellipse39" />
+      <ellipse
+         cx="207"
+         cy="206.5"
+         rx="206"
+         ry="205.5"
+         fill="none"
+         id="ellipse41" />
+    </g>
+    <g
+       id="Ellipse_171"
+       data-name="Ellipse 171"
+       transform="translate(740 1518)"
+       fill="none"
+       stroke="#b82e2f"
+       stroke-width="2"
+       stroke-dasharray="10">
+      <ellipse
+         cx="220"
+         cy="220.5"
+         rx="220"
+         ry="220.5"
+         stroke="none"
+         id="ellipse44" />
+      <ellipse
+         cx="220"
+         cy="220.5"
+         rx="219"
+         ry="219.5"
+         fill="none"
+         id="ellipse46" />
+    </g>
+    <g
+       id="Ellipse_64"
+       data-name="Ellipse 64"
+       transform="translate(863 1446)"
+       fill="#fff"
+       stroke="#d1d4e2"
+       stroke-width="2">
+      <circle
+         cx="97"
+         cy="97"
+         r="97"
+         stroke="none"
+         id="circle49" />
+      <circle
+         cx="97"
+         cy="97"
+         r="96"
+         fill="none"
+         id="circle51" />
+    </g>
+    <g
+       id="Amazon_Web_Services_Logo"
+       transform="translate(911.563 1485.125)">
+      <path
+         id="Path_76"
+         data-name="Path 76"
+         d="M37.465,22.2a9.778,9.778,0,0,0,.355,2.876,17.3,17.3,0,0,0,1.034,2.327,1.406,1.406,0,0,1,.226.743,1.279,1.279,0,0,1-.614.97l-2.036,1.357a1.549,1.549,0,0,1-.84.291,1.487,1.487,0,0,1-.97-.452A10,10,0,0,1,33.458,28.8c-.323-.549-.646-1.163-1-1.907a11.938,11.938,0,0,1-9.5,4.46,8.855,8.855,0,0,1-6.463-2.327,8.3,8.3,0,0,1-2.391-6.2,8.319,8.319,0,0,1,2.941-6.657,11.756,11.756,0,0,1,7.918-2.521,25.587,25.587,0,0,1,3.426.259c1.2.162,2.424.42,3.716.711V12.249c0-2.456-.517-4.169-1.519-5.171-1.034-1-2.779-1.487-5.268-1.487a14.7,14.7,0,0,0-3.49.42,25.75,25.75,0,0,0-3.49,1.1,9.272,9.272,0,0,1-1.131.42,1.982,1.982,0,0,1-.517.1c-.452,0-.679-.323-.679-1V5.043a2.045,2.045,0,0,1,.226-1.131,2.42,2.42,0,0,1,.9-.679A18.605,18.605,0,0,1,21.21,1.779a19.593,19.593,0,0,1,5.041-.614c3.846,0,6.657.873,8.467,2.618,1.777,1.745,2.682,4.4,2.682,7.95V22.2ZM24.344,27.115a10.473,10.473,0,0,0,3.329-.582,7.2,7.2,0,0,0,3.07-2.068,5.13,5.13,0,0,0,1.1-2.068,11.6,11.6,0,0,0,.323-2.812V18.228a26.988,26.988,0,0,0-2.973-.549,24.351,24.351,0,0,0-3.038-.194,7.45,7.45,0,0,0-4.815,1.293,4.5,4.5,0,0,0-1.584,3.716,4.17,4.17,0,0,0,4.589,4.621Zm25.95,3.49a1.8,1.8,0,0,1-1.228-.323,2.634,2.634,0,0,1-.679-1.26L40.794,4.041A5.661,5.661,0,0,1,40.5,2.748a.709.709,0,0,1,.776-.808h3.167a1.791,1.791,0,0,1,1.26.323,2.644,2.644,0,0,1,.646,1.26l5.429,21.394L56.823,3.524a2.267,2.267,0,0,1,.614-1.26,2.223,2.223,0,0,1,1.293-.323h2.585a1.945,1.945,0,0,1,1.293.323,2.177,2.177,0,0,1,.614,1.26l5.106,21.652L73.918,3.524a2.771,2.771,0,0,1,.646-1.26,2.108,2.108,0,0,1,1.26-.323H78.83a.718.718,0,0,1,.808.808,3.222,3.222,0,0,1-.065.517,4.6,4.6,0,0,1-.226.808L71.559,29.054a2.478,2.478,0,0,1-.679,1.26,2.067,2.067,0,0,1-1.228.323H66.873a1.945,1.945,0,0,1-1.293-.323,2.291,2.291,0,0,1-.614-1.293L59.957,8.177,54.981,28.989a2.522,2.522,0,0,1-.614,1.293,2,2,0,0,1-1.293.323Zm41.527.873a21.385,21.385,0,0,1-4.977-.582A14.7,14.7,0,0,1,83.128,29.6a2.328,2.328,0,0,1-1-.9,2.281,2.281,0,0,1-.194-.9V26.145c0-.679.259-1,.743-1a1.83,1.83,0,0,1,.582.1c.194.065.485.194.808.323a17.578,17.578,0,0,0,3.555,1.131,19.408,19.408,0,0,0,3.846.388,8.719,8.719,0,0,0,4.718-1.066,3.48,3.48,0,0,0,1.68-3.07,3.147,3.147,0,0,0-.873-2.262A8.109,8.109,0,0,0,93.728,19l-4.686-1.454a9.857,9.857,0,0,1-5.171-3.3,7.7,7.7,0,0,1-1.616-4.686,7.192,7.192,0,0,1,.873-3.587,8.309,8.309,0,0,1,2.327-2.65,10.257,10.257,0,0,1,3.361-1.68A14.085,14.085,0,0,1,92.888,1.1a16.223,16.223,0,0,1,2.165.129c.743.1,1.422.226,2.1.355.646.162,1.26.323,1.842.517a7.054,7.054,0,0,1,1.357.582,2.8,2.8,0,0,1,.97.808,1.742,1.742,0,0,1,.291,1.066V6.077c0,.679-.259,1.034-.743,1.034a3.362,3.362,0,0,1-1.228-.388,14.784,14.784,0,0,0-6.2-1.26,8.341,8.341,0,0,0-4.3.9A3.121,3.121,0,0,0,87.62,9.244a3.052,3.052,0,0,0,.97,2.294,9.653,9.653,0,0,0,3.555,1.777l4.589,1.454a9.829,9.829,0,0,1,5.009,3.1,7.313,7.313,0,0,1,1.487,4.524,8.308,8.308,0,0,1-.84,3.749,8.691,8.691,0,0,1-2.359,2.844,10.417,10.417,0,0,1-3.587,1.81A15.367,15.367,0,0,1,91.822,31.478Z"
+         transform="translate(-10.083 -1.1)" />
+      <g
+         id="Group_80"
+         data-name="Group 80"
+         transform="translate(0 36.224)">
+        <path
+           id="Path_77"
+           data-name="Path 77"
+           d="M89.515,127.079C78.883,134.932,63.436,139.1,50.153,139.1A71.21,71.21,0,0,1,2.1,120.777c-1-.9-.1-2.133,1.1-1.422A96.913,96.913,0,0,0,51.284,132.12a95.96,95.96,0,0,0,36.679-7.5C89.741,123.815,91.26,125.786,89.515,127.079Z"
+           transform="translate(-1.668 -117.22)"
+           fill="#ff8f00"
+           fill-rule="evenodd" />
+        <path
+           id="Path_78"
+           data-name="Path 78"
+           d="M259.305,118.01c-1.357-1.745-8.984-.84-12.442-.42-1.034.129-1.2-.776-.259-1.454,6.076-4.266,16.061-3.038,17.225-1.616,1.163,1.454-.323,11.44-6.011,16.223-.873.743-1.713.355-1.325-.614C257.787,126.929,260.663,119.723,259.305,118.01Z"
+           transform="translate(-167.031 -113.192)"
+           fill="#ff8f00"
+           fill-rule="evenodd" />
+      </g>
+    </g>
+    <g
+       id="Amazon_Web_Services_Logo-2"
+       data-name="Amazon_Web_Services_Logo"
+       transform="translate(1445.477 1623.355)">
+      <path
+         id="Path_76-2"
+         data-name="Path 76"
+         d="M30.846,16.225a7.008,7.008,0,0,0,.255,2.061,12.4,12.4,0,0,0,.741,1.668,1.007,1.007,0,0,1,.162.533.917.917,0,0,1-.44.695l-1.459.973a1.111,1.111,0,0,1-.6.208,1.066,1.066,0,0,1-.695-.324,7.165,7.165,0,0,1-.834-1.089c-.232-.394-.463-.834-.718-1.367a8.556,8.556,0,0,1-6.81,3.2,6.346,6.346,0,0,1-4.632-1.668A5.95,5.95,0,0,1,14.1,16.665a5.963,5.963,0,0,1,2.108-4.771,8.426,8.426,0,0,1,5.675-1.807,18.339,18.339,0,0,1,2.455.185c.857.116,1.737.3,2.664.51V9.091a5.132,5.132,0,0,0-1.089-3.706A5.332,5.332,0,0,0,22.137,4.32a10.538,10.538,0,0,0-2.5.3,18.455,18.455,0,0,0-2.5.788,6.646,6.646,0,0,1-.811.3,1.421,1.421,0,0,1-.371.069c-.324,0-.486-.232-.486-.718V3.926a1.466,1.466,0,0,1,.162-.811,1.734,1.734,0,0,1,.649-.486A13.335,13.335,0,0,1,19.2,1.586a14.043,14.043,0,0,1,3.613-.44c2.756,0,4.771.625,6.068,1.876,1.274,1.251,1.922,3.15,1.922,5.7v7.5Zm-9.4,3.521a7.507,7.507,0,0,0,2.386-.417,5.161,5.161,0,0,0,2.2-1.482,3.676,3.676,0,0,0,.788-1.482,8.315,8.315,0,0,0,.232-2.015v-.973a19.343,19.343,0,0,0-2.131-.394,17.453,17.453,0,0,0-2.177-.139,5.34,5.34,0,0,0-3.451.926,3.228,3.228,0,0,0-1.135,2.664,2.989,2.989,0,0,0,3.289,3.312Zm18.6,2.5a1.293,1.293,0,0,1-.88-.232,1.888,1.888,0,0,1-.486-.9l-5.443-17.9a4.057,4.057,0,0,1-.208-.926.508.508,0,0,1,.556-.579h2.27a1.284,1.284,0,0,1,.9.232,1.9,1.9,0,0,1,.463.9L41.107,18.17,44.72,2.837a1.625,1.625,0,0,1,.44-.9,1.593,1.593,0,0,1,.926-.232H47.94a1.394,1.394,0,0,1,.926.232,1.561,1.561,0,0,1,.44.9l3.66,15.519L56.973,2.837a1.986,1.986,0,0,1,.463-.9,1.511,1.511,0,0,1,.9-.232h2.154a.515.515,0,0,1,.579.579,2.309,2.309,0,0,1-.046.371,3.3,3.3,0,0,1-.162.579l-5.582,17.9a1.776,1.776,0,0,1-.486.9,1.482,1.482,0,0,1-.88.232H51.924A1.394,1.394,0,0,1,51,22.038a1.642,1.642,0,0,1-.44-.926l-3.59-14.94L43.4,21.089a1.808,1.808,0,0,1-.44.926,1.436,1.436,0,0,1-.926.232Zm29.763.625a15.327,15.327,0,0,1-3.567-.417,10.537,10.537,0,0,1-2.664-.926,1.669,1.669,0,0,1-.718-.649,1.635,1.635,0,0,1-.139-.649V19.051c0-.486.185-.718.533-.718a1.311,1.311,0,0,1,.417.069c.139.046.347.139.579.232a12.6,12.6,0,0,0,2.548.811,13.91,13.91,0,0,0,2.756.278,6.249,6.249,0,0,0,3.382-.764,2.494,2.494,0,0,0,1.2-2.2,2.256,2.256,0,0,0-.625-1.621,5.812,5.812,0,0,0-2.339-1.2l-3.359-1.042a7.065,7.065,0,0,1-3.706-2.363,5.518,5.518,0,0,1-1.158-3.358A5.155,5.155,0,0,1,63.574,4.6a5.956,5.956,0,0,1,1.668-1.9,7.351,7.351,0,0,1,2.409-1.2A10.1,10.1,0,0,1,70.569,1.1a11.627,11.627,0,0,1,1.552.093c.533.069,1.019.162,1.506.255.463.116.9.232,1.32.371a5.056,5.056,0,0,1,.973.417,2,2,0,0,1,.695.579,1.248,1.248,0,0,1,.208.764V4.667c0,.486-.185.741-.533.741a2.409,2.409,0,0,1-.88-.278,10.6,10.6,0,0,0-4.447-.9,5.978,5.978,0,0,0-3.081.649,2.237,2.237,0,0,0-1.089,2.061,2.187,2.187,0,0,0,.695,1.645,6.918,6.918,0,0,0,2.548,1.274L73.325,10.9a7.045,7.045,0,0,1,3.59,2.224,5.241,5.241,0,0,1,1.065,3.243,5.954,5.954,0,0,1-.6,2.687,6.229,6.229,0,0,1-1.691,2.038,7.466,7.466,0,0,1-2.571,1.3A11.014,11.014,0,0,1,69.8,22.872Z"
+         transform="translate(-11.221 -1.1)" />
+      <g
+         id="Group_80-2"
+         data-name="Group 80"
+         transform="translate(0 25.963)">
+        <path
+           id="Path_77-2"
+           data-name="Path 77"
+           d="M64.63,124.831c-7.62,5.628-18.692,8.616-28.211,8.616A51.037,51.037,0,0,1,1.977,120.314c-.718-.649-.069-1.529.788-1.019a69.46,69.46,0,0,0,34.465,9.149,68.776,68.776,0,0,0,26.289-5.374C64.792,122.491,65.881,123.9,64.63,124.831Z"
+           transform="translate(-1.668 -117.765)"
+           fill="#ff8f00"
+           fill-rule="evenodd" />
+        <path
+           id="Path_78-2"
+           data-name="Path 78"
+           d="M255.533,116.645c-.973-1.251-6.439-.6-8.917-.3-.741.093-.857-.556-.185-1.042,4.354-3.057,11.512-2.177,12.345-1.158.834,1.042-.232,8.2-4.308,11.627-.625.533-1.228.255-.95-.44C254.444,123.038,256.505,117.873,255.533,116.645Z"
+           transform="translate(-189.397 -113.192)"
+           fill="#ff8f00"
+           fill-rule="evenodd" />
+      </g>
+    </g>
+    <text
+       id="AWS_Edge_Services_"
+       data-name="AWS Edge  Services "
+       fill="#1f2649"
+       font-size="20px"
+       font-family="SegoeUI, Segoe UI"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'"
+       x="958"
+       y="1572"><tspan
+         x="910.03601"
+         y="1572"
+         id="tspan64"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'">AWS Edge</tspan><tspan
+         x="922.67798"
+         y="1599"
+         id="tspan66"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'">Services</tspan><tspan
+         font-family="Readex Pro"
+         id="tspan70"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'"><tspan
+           x="958"
+           y="1626"
+           id="tspan68"
+           style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'" /></tspan></text>
+    <text
+       id="AWS_Cloud_Infrastructure"
+       data-name="AWS Cloud Infrastructure"
+       transform="translate(1527.15,1635)"
+       fill="#1f2649"
+       font-size="20px"
+       font-family="SegoeUI, 'Segoe UI'"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro';white-space:pre;inline-size:163.438"
+       xml:space="preserve"><tspan
+         x="0"
+         y="0"
+         id="tspan6962">AWS Cloud </tspan><tspan
+         x="0"
+         y="25"
+         id="tspan6964">infrastructure</tspan></text>
+    <text
+       id="Inrastrucutre_outside_of_AWS_Cloud_third-party_providers_or_on-remises_"
+       data-name="Inrastrucutre  outside of AWS Cloud (third-party providers or on-remises)"
+       transform="translate(1445.477,1804.146)"
+       fill="#1f2649"
+       font-size="20px"
+       font-family="SegoeUI, 'Segoe UI'"
+       style="-inkscape-font-specification:'Readex Pro';font-family:'Readex Pro';font-weight:normal;font-style:normal;font-stretch:normal;font-variant:normal"><tspan
+         x="0"
+         y="0"
+         id="tspan78"
+         style="-inkscape-font-specification:'Readex Pro';font-family:'Readex Pro';font-weight:normal;font-style:normal;font-stretch:normal;font-variant:normal">Infrastructure</tspan><tspan
+         x="0"
+         y="27"
+         id="tspan80"
+         style="-inkscape-font-specification:'Readex Pro';font-family:'Readex Pro';font-weight:normal;font-style:normal;font-stretch:normal;font-variant:normal">outside of AWS Cloud</tspan><tspan
+         fill="#717795"
+         font-size="15px"
+         font-family="SegoeUI-Light, 'Segoe UI'"
+         font-weight="300"
+         id="tspan84"
+         style="-inkscape-font-specification:'Readex Pro';font-family:'Readex Pro';font-weight:normal;font-style:normal;font-stretch:normal;font-variant:normal"><tspan
+           x="0"
+           y="48"
+           id="tspan82"
+           style="-inkscape-font-specification:'Readex Pro';font-family:'Readex Pro';font-weight:normal;font-style:normal;font-stretch:normal;font-variant:normal">(third-party providers or on-premises)</tspan></tspan></text>
+    <text
+       id="Protected_with_AWS_Shield_Standard_"
+       data-name="Protected with AWS Shield Standard "
+       fill="#1f2649"
+       font-size="20px"
+       font-family="SegoeUI, Segoe UI"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'"
+       x="950"
+       y="2015"><tspan
+         x="885.88403"
+         y="2015"
+         id="tspan87"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'">Protected with</tspan><tspan
+         x="857.70001"
+         y="2042"
+         id="tspan89"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'">AWS Shield Standard</tspan><tspan
+         font-family="Readex Pro"
+         id="tspan93"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'"><tspan
+           x="950"
+           y="2069"
+           id="tspan91"
+           style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'" /></tspan></text>
+    <text
+       id="Users"
+       fill="#1f2649"
+       font-size="20px"
+       font-family="SegoeUI, Segoe UI"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'"
+       x="604"
+       y="1820"><tspan
+         x="579.93701"
+         y="1820"
+         id="tspan96"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'">Users</tspan></text>
+    <text
+       id="Amazon_Route_53_"
+       data-name="Amazon Route 53 "
+       fill="#1f2649"
+       font-size="17px"
+       font-family="SegoeUI, Segoe UI"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'"
+       x="835"
+       y="1787"><tspan
+         x="804.237"
+         y="1787"
+         id="tspan99"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'">Amazon</tspan><tspan
+         x="801.55603"
+         y="1809"
+         id="tspan101"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'">Route 53</tspan><tspan
+         font-family="Readex Pro"
+         id="tspan105"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'"><tspan
+           x="835"
+           y="1831"
+           id="tspan103"
+           style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'" /></tspan></text>
+    <text
+       id="AWS_WAF_"
+       data-name="AWS WAF "
+       fill="#1f2649"
+       font-size="17px"
+       font-family="SegoeUI, Segoe UI"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'"
+       x="956"
+       y="1789"><tspan
+         x="919.07397"
+         y="1789"
+         id="tspan108"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'">AWS WAF</tspan><tspan
+         font-family="Readex Pro"
+         id="tspan112"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'"><tspan
+           x="956"
+           y="1811"
+           id="tspan110"
+           style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'" /></tspan></text>
+    <text
+       id="Amazon_CloudFront_"
+       data-name="Amazon CloudFront "
+       fill="#1f2649"
+       font-size="17px"
+       font-family="SegoeUI, Segoe UI"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'"
+       x="1079"
+       y="1787"><tspan
+         x="1048.2371"
+         y="1787"
+         id="tspan115"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'">Amazon</tspan><tspan
+         x="1037.106"
+         y="1809"
+         id="tspan117"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'">CloudFront</tspan><tspan
+         font-family="Readex Pro"
+         id="tspan121"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'"><tspan
+           x="1079"
+           y="1831"
+           id="tspan119"
+           style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Readex Pro';-inkscape-font-specification:'Readex Pro'" /></tspan></text>
+    <g
+       id="Icon-Architecture-BG_64_Security-Identity-Compliance"
+       data-name="Icon-Architecture-BG/64/Security-Identity-Compliance"
+       transform="translate(923.947 1915.984)">
+      <rect
+         id="Rectangle"
+         width="73"
+         height="73"
+         rx="36.5"
+         transform="translate(0.053 0.016)"
+         fill="#b82e2f" />
+    </g>
+    <path
+       id="AWS-Shield_Icon_64_Squid"
+       d="M51.085,47.151H49.239v3.692H45.547v1.846h3.692v3.692h1.846V52.689h3.692V50.843H51.085Zm6.461,4.615a7.384,7.384,0,1,0-7.384,7.384,7.393,7.393,0,0,0,7.384-7.384Zm1.846,0a9.23,9.23,0,1,1-9.23-9.23,9.241,9.241,0,0,1,9.23,9.23ZM34.47,54.509V21.728L24.317,25.633V44.382c.011.382.366,9.581,10.153,10.126Zm12-13.172v-15.7L36.316,21.728V54.5a12.6,12.6,0,0,0,2.987-.553,11.007,11.007,0,0,0,.531,1.789,14.793,14.793,0,0,1-4.441.644c-12.515,0-12.92-11.859-12.922-11.979V25a.924.924,0,0,1,.592-.862l12-4.615a.932.932,0,0,1,.663,0l12,4.615a.924.924,0,0,1,.592.862V40.857a11.016,11.016,0,0,0-1.846.479ZM42.542,59.786A11.169,11.169,0,0,0,44.219,61.1a21.243,21.243,0,0,1-8.826,1.734c-5.84,0-10.5-1.777-13.837-5.281-5.936-6.224-5.565-15.586-5.546-15.981V21.307a.925.925,0,0,1,.581-.857l18.46-7.384a.934.934,0,0,1,.685,0L54.2,20.449a.925.925,0,0,1,.581.857V41.613s0,.041,0,.1a11.018,11.018,0,0,0-1.849-.657V21.932L35.393,14.917,17.856,21.932V41.613c-.006.132-.346,9.031,5.045,14.673,2.979,3.118,7.182,4.7,12.492,4.7a20.132,20.132,0,0,0,7.149-1.2Z"
+       transform="translate(923.2 1914.545)"
+       fill="#fff"
+       fill-rule="evenodd" />
+    <g
+       id="Icon-Architecture_64_Arch_AWS-WAF_64"
+       data-name="Icon-Architecture/64/Arch_AWS-WAF_64"
+       transform="translate(923.253 1691.442)">
+      <g
+         id="Rectangle-2"
+         data-name="Rectangle"
+         transform="translate(0)">
+        <rect
+           id="Rectangle_171"
+           data-name="Rectangle 171"
+           width="73.492"
+           height="73.492"
+           rx="36.746"
+           fill="#b82e2f" />
+      </g>
+      <g
+         id="Icon-Service_64_AWS-WAF_64"
+         data-name="Icon-Service/64/AWS-WAF_64"
+         transform="translate(10.949 11.076)">
+        <path
+           id="AWS-WAF_Icon_64_Squid"
+           d="M6.211,30.768H4V28.922H6.214a23.448,23.448,0,0,1,4.439-12.9l1.5,1.083A21.613,21.613,0,0,0,8.06,28.922h2.4v1.846h-2.4a21.61,21.61,0,0,0,4.092,11.885l-1.5,1.083A23.452,23.452,0,0,1,6.211,30.768ZM43.7,49.069A23.442,23.442,0,0,1,30.767,53.51v2.179H28.921V53.51a23.448,23.448,0,0,1-12.933-4.441l1.082-1.5a21.609,21.609,0,0,0,11.852,4.09V49.228h1.846v2.436a21.615,21.615,0,0,0,11.85-4.09ZM15.988,10.688a23.44,23.44,0,0,1,12.933-4.44V4h1.846V6.248A23.441,23.441,0,0,1,43.7,10.688l-1.082,1.5a21.607,21.607,0,0,0-11.85-4.089v2.367H28.921V8.095a21.608,21.608,0,0,0-11.852,4.089Zm39.7,18.233v1.846H53.475a23.451,23.451,0,0,1-4.441,12.968l-1.5-1.083a21.6,21.6,0,0,0,4.092-11.885h-2.4V28.922h2.4a21.613,21.613,0,0,0-4.089-11.817l1.5-1.083a23.455,23.455,0,0,1,4.438,12.9ZM43.664,14.753,50.9,7.517l1.305,1.305-7.236,7.236ZM16.023,45,8.786,52.241,7.481,50.936,14.718,43.7Zm2.055-25.62L4.38,5.686,5.685,4.381l13.7,13.7Zm23.5,20.884L55.307,54,54,55.308,40.267,41.574ZM22.15,30.523c.069-.123.144-.246.222-.37,1.552-2.438,1.107-5.764.614-7.774a10.883,10.883,0,0,1,2.938,3.439.911.911,0,0,0,.885.483.924.924,0,0,0,.8-.613,10.773,10.773,0,0,0-.294-8.742A6.66,6.66,0,0,1,30,19.869c1.307,2.716,1.016,6.433-.761,9.7a17.028,17.028,0,0,0-1.388,11.661,20.9,20.9,0,0,1-3.683-2.014,6.675,6.675,0,0,1-2.021-8.692Zm12.4-.311a.923.923,0,0,0,1.491.866,8.1,8.1,0,0,0,2.321-4.333c.883,1.285,1.807,3.878.578,8.64-1.217,4.712-6.987,6.037-9.047,6.363-.5-1.784-1.506-6.736.976-11.3a13.376,13.376,0,0,0,1.346-9.926c1.671,1.962,3.08,5.051,2.335,9.689Zm-14-.6A8.536,8.536,0,0,0,23.115,40.73a24.747,24.747,0,0,0,5.815,2.906.913.913,0,0,0,.311.054c.019,0,.036-.01.054-.011v.008c.392-.03,9.617-.832,11.426-7.84,2.328-9.014-2.334-11.688-2.534-11.8a.922.922,0,0,0-1.361.714,11.9,11.9,0,0,1-.292,1.668,12.834,12.834,0,0,0-7.384-10.47,9.6,9.6,0,0,0-4.216-1.793.924.924,0,0,0-.752,1.617,7.892,7.892,0,0,1,2.194,7.357c-1.072-1.406-2.777-3.1-4.784-3.1a.925.925,0,0,0-.861,1.256c.02.05,1.9,5.007.082,7.864-.1.151-.187.3-.272.451Z"
+           transform="translate(-4 -4)"
+           fill="#fff"
+           fill-rule="evenodd" />
+      </g>
+    </g>
+    <g
+       id="Icon-Architecture_64_Arch_Amazon-CloudFront_64"
+       data-name="Icon-Architecture/64/Arch_Amazon-CloudFront_64"
+       transform="translate(1044.585 1691.442)">
+      <g
+         id="Icon-Architecture-BG_64_Networking-Content-Delivery"
+         data-name="Icon-Architecture-BG/64/Networking-Content-Delivery"
+         transform="translate(0)">
+        <rect
+           id="Rectangle-3"
+           data-name="Rectangle"
+           width="73.492"
+           height="73.492"
+           rx="36.746"
+           fill="#b82e2f" />
+      </g>
+      <path
+         id="Amazon-CloudFront_Icon_64_Squid"
+         d="M51.8,49.034A2.769,2.769,0,1,0,49.033,51.8,2.772,2.772,0,0,0,51.8,49.034Zm1.846,0a4.615,4.615,0,1,1-4.615-4.615,4.62,4.62,0,0,1,4.615,4.615ZM28.976,35.714a2.769,2.769,0,1,0-2.769,2.769,2.772,2.772,0,0,0,2.769-2.769Zm1.846,0A4.615,4.615,0,1,1,26.207,31.1a4.621,4.621,0,0,1,4.615,4.615ZM37.6,21.237a2.769,2.769,0,1,0,2.769-2.769A2.772,2.772,0,0,0,37.6,21.237Zm-1.846,0a4.615,4.615,0,1,1,4.615,4.615,4.621,4.621,0,0,1-4.615-4.615ZM61.843,37.845a24.017,24.017,0,0,0-11.988-20.76,28.628,28.628,0,0,0-4.21,1.213l-.628-1.736c.835-.3,1.583-.545,2.3-.753A23.725,23.725,0,0,0,33.253,14.3a29.531,29.531,0,0,1,2.983,1.977l-1.116,1.47a30.739,30.739,0,0,0-4.478-2.785A24.023,24.023,0,0,0,14.015,35.194a32.24,32.24,0,0,1,5.751-.644l.045,1.845a30.018,30.018,0,0,0-5.941.716c-.008.245-.025.492-.025.734A23.942,23.942,0,0,0,24.3,57.641a30.827,30.827,0,0,1-1.733-9.877,22.6,22.6,0,0,1,.641-4.877c.077-.365.154-.736.23-1.121l1.812.357c-.078.391-.157.771-.234,1.143a20.825,20.825,0,0,0-.6,4.5,30.6,30.6,0,0,0,2.4,11.387A23.808,23.808,0,0,0,45.24,60.656,30.924,30.924,0,0,0,47.435,55.1l1.773.514A32.936,32.936,0,0,1,47.729,59.7a23.44,23.44,0,0,0,4.222-2.466c-.318-.781-.66-1.557-1.037-2.313l1.651-.826c.321.642.616,1.3.9,1.96a23.825,23.825,0,0,0,8.381-18.209Zm1.846,0A25.683,25.683,0,0,1,53.648,58.289a25.922,25.922,0,0,1-15.8,5.4A25.847,25.847,0,0,1,12,37.845c0-.633.017-1.115.054-1.561A25.873,25.873,0,0,1,30.461,13.076,25.821,25.821,0,0,1,50.475,15.3,25.868,25.868,0,0,1,63.689,37.845ZM35.365,24.427l-1.213-1.391a29.481,29.481,0,0,0-5.559,6.618l1.549,1.005a27.763,27.763,0,0,1,5.223-6.232ZM32.56,36.393l-.6,1.745A31.148,31.148,0,0,1,43.6,45.447l1.275-1.336A32.937,32.937,0,0,0,32.56,36.393ZM44.9,25.539a35.049,35.049,0,0,1,5.8,17.233l-1.842.114a33.237,33.237,0,0,0-5.5-16.335Z"
+         transform="translate(-1.178 -0.924)"
+         fill="#fff"
+         fill-rule="evenodd" />
+    </g>
+    <g
+       id="Icon-Architecture_64_Arch_Amazon-Route-53_64"
+       data-name="Icon-Architecture/64/Arch_Amazon-Route-53_64"
+       transform="translate(801.923 1691.442)">
+      <g
+         id="Icon-Architecture-BG_64_Networking-Content-Delivery-2"
+         data-name="Icon-Architecture-BG/64/Networking-Content-Delivery"
+         transform="translate(0)">
+        <rect
+           id="Rectangle-4"
+           data-name="Rectangle"
+           width="73.492"
+           height="73.492"
+           rx="36.746"
+           fill="#b82e2f" />
+      </g>
+      <path
+         id="Amazon-Route-53-Icon_64_Squid"
+         d="M45.867,38.472a3.287,3.287,0,0,1,1.024,2.537,3.41,3.41,0,0,1-1.245,2.765A5.075,5.075,0,0,1,42.3,44.807a8.181,8.181,0,0,1-3.286-.707V42.686a10.768,10.768,0,0,0,3.286.636,3.159,3.159,0,0,0,2.067-.6,2.1,2.1,0,0,0,.724-1.714q0-2.139-2.7-2.139a16.059,16.059,0,0,0-1.678.088V37.792l3.711-4.047H39.19V32.3H46.38v1.4L42.74,37.545a.888.888,0,0,1,.177-.018h.176a3.931,3.931,0,0,1,2.774.945m-10.262-.308a3.613,3.613,0,0,1,1.076,2.773,3.5,3.5,0,0,1-1.254,2.8,4.915,4.915,0,0,1-3.3,1.069,8.143,8.143,0,0,1-3.374-.707V42.686a11.162,11.162,0,0,0,3.356.636,3.08,3.08,0,0,0,2.057-.609,2.181,2.181,0,0,0,.716-1.758,2.252,2.252,0,0,0-.672-1.82,3.394,3.394,0,0,0-2.19-.566,26.614,26.614,0,0,0-2.738.177V37.58l.336-5.284h6.447v1.449H31.1l-.23,3.587a9.919,9.919,0,0,1,1.748-.176,4.2,4.2,0,0,1,2.987,1.007M48.881,51.116a35.932,35.932,0,0,0-11.037,4.116,35.951,35.951,0,0,0-11.037-4.116c-1.261-.226-7.545-1.538-7.545-5.171,0-1.683.6-2.8,1.76-4.793,1.383-2.384,3.1-5.352,3.1-9.624a17.2,17.2,0,0,0-2.38-8.714l.565-.694a16.109,16.109,0,0,0,7.255,1.763,15.178,15.178,0,0,0,8.279-2.364,15.173,15.173,0,0,0,8.278,2.364,16.113,16.113,0,0,0,7.256-1.763l.564.694a17.2,17.2,0,0,0-2.38,8.714c0,4.272,1.721,7.24,3.106,9.628,1.155,1.99,1.757,3.106,1.757,4.79,0,3.633-6.284,4.945-7.544,5.171m4.526-19.589a15.5,15.5,0,0,1,2.442-8.3.92.92,0,0,0-.067-1.073c-.469-.574-.961-1.179-1.446-1.78a.923.923,0,0,0-1.164-.228,14.463,14.463,0,0,1-7.05,1.894,13.175,13.175,0,0,1-7.752-2.384.924.924,0,0,0-1.051,0,13.175,13.175,0,0,1-7.752,2.384,14.463,14.463,0,0,1-7.05-1.894.923.923,0,0,0-1.164.228c-.486.6-.977,1.206-1.446,1.78a.921.921,0,0,0-.067,1.073,15.489,15.489,0,0,1,2.442,8.3c0,3.776-1.583,6.5-2.855,8.7-1.246,2.144-2.008,3.568-2.008,5.718,0,4.974,6.937,6.608,9.064,6.989a34.412,34.412,0,0,1,10.9,4.16.921.921,0,0,0,.929,0,34.406,34.406,0,0,1,10.9-4.16c2.127-.381,9.064-2.015,9.064-6.989,0-2.15-.762-3.573-2.008-5.72-1.272-2.193-2.855-4.922-2.855-8.7M49.838,56.45a32.28,32.28,0,0,0-11.994,5.175A32.294,32.294,0,0,0,25.85,56.45c-11.139-2-12-8.547-12-10.505,0-3.222,1.265-5.4,2.489-7.512,1.167-2.01,2.373-4.09,2.373-6.906a12.893,12.893,0,0,0-3.836-8.87c1.333-1.621,4.7-5.727,6.361-7.866a12.3,12.3,0,0,0,8.333,3.67,10.488,10.488,0,0,0,8.279-4.094,10.485,10.485,0,0,0,8.278,4.094,12.3,12.3,0,0,0,8.334-3.67c1.661,2.139,5.027,6.245,6.36,7.866a12.893,12.893,0,0,0-3.836,8.87c0,2.816,1.207,4.9,2.373,6.906,1.225,2.11,2.49,4.29,2.49,7.512,0,1.958-.866,8.5-12,10.505M60.95,37.507c-1.14-1.965-2.124-3.661-2.124-5.98a11.394,11.394,0,0,1,3.836-8.067.924.924,0,0,0,.132-1.307c-.062-.074-6.112-7.409-7.5-9.309a.922.922,0,0,0-.689-.378.909.909,0,0,0-.73.291,10.894,10.894,0,0,1-7.753,3.858c-2.957,0-5.283-1.318-7.545-4.272a.956.956,0,0,0-1.466,0c-2.262,2.955-4.588,4.272-7.546,4.272a10.894,10.894,0,0,1-7.753-3.858.9.9,0,0,0-.73-.291.923.923,0,0,0-.689.378c-1.386,1.9-7.437,9.236-7.5,9.309a.928.928,0,0,0,.13,1.3,11.4,11.4,0,0,1,3.838,8.069c0,2.319-.984,4.015-2.124,5.98C13.455,39.719,12,42.226,12,45.945c0,6.195,5.055,10.8,13.524,12.323A31.093,31.093,0,0,1,37.282,63.5a.924.924,0,0,0,1.124,0,31.01,31.01,0,0,1,11.757-5.23c8.469-1.522,13.525-6.128,13.525-12.323,0-3.718-1.456-6.225-2.74-8.438"
+         transform="translate(-1.304 -0.924)"
+         fill="#fff"
+         fill-rule="evenodd" />
+    </g>
+    <path
+       id="Path_580"
+       data-name="Path 580"
+       d="M10165.016,1750.029l3.987,3.987-3.987,4.177"
+       transform="translate(-8866.049 -110.001)"
+       fill="none"
+       stroke="#d1d4e2"
+       stroke-width="2" />
+    <path
+       id="Path_581"
+       data-name="Path 581"
+       d="M10165.016,1750.029l3.987,3.987-3.987,4.177"
+       transform="translate(-8866.049 64.535)"
+       fill="none"
+       stroke="#d1d4e2"
+       stroke-width="2" />
+    <g
+       id="servers"
+       transform="translate(1339.404 1790.611)">
+      <g
+         id="Group_164"
+         data-name="Group 164"
+         transform="translate(0 0)">
+        <g
+           id="Group_163"
+           data-name="Group 163"
+           transform="translate(0 0)">
+          <path
+             id="Path_215"
+             data-name="Path 215"
+             d="M57.91,59.36a3.867,3.867,0,0,0-7.488,0H32.747A3.867,3.867,0,0,0,29.984,56.6V50.66h23.2a4.839,4.839,0,0,0,4.834-4.834v-5.8a4.816,4.816,0,0,0-1.963-3.867,4.816,4.816,0,0,0,1.963-3.867v-5.8a4.816,4.816,0,0,0-1.963-3.867,4.816,4.816,0,0,0,1.963-3.867v-5.8a4.839,4.839,0,0,0-4.834-4.834H4.849A4.839,4.839,0,0,0,.016,12.958v5.8a4.816,4.816,0,0,0,1.963,3.867A4.816,4.816,0,0,0,.016,26.492v5.8a4.816,4.816,0,0,0,1.963,3.867A4.816,4.816,0,0,0,.016,40.026v5.8A4.839,4.839,0,0,0,4.849,50.66h23.2V56.6a3.867,3.867,0,0,0-2.763,2.763H7.612a3.867,3.867,0,1,0,0,1.933H25.288a3.848,3.848,0,0,0,7.459,0H50.422A3.867,3.867,0,1,0,57.91,59.36ZM3.883,62.26a1.933,1.933,0,1,1,1.933-1.933A1.933,1.933,0,0,1,3.883,62.26Zm-1.933-43.5v-5.8a2.9,2.9,0,0,1,2.9-2.9H53.185a2.9,2.9,0,0,1,2.9,2.9v5.8a2.9,2.9,0,0,1-2.9,2.9H4.849A2.9,2.9,0,0,1,1.949,18.758Zm0,13.534v-5.8a2.9,2.9,0,0,1,2.9-2.9H53.185a2.9,2.9,0,0,1,2.9,2.9v5.8a2.9,2.9,0,0,1-2.9,2.9H4.849A2.9,2.9,0,0,1,1.949,32.292Zm2.9,16.434a2.9,2.9,0,0,1-2.9-2.9v-5.8a2.9,2.9,0,0,1,2.9-2.9H53.185a2.9,2.9,0,0,1,2.9,2.9v5.8a2.9,2.9,0,0,1-2.9,2.9ZM29.017,62.26a1.933,1.933,0,1,1,1.933-1.933A1.933,1.933,0,0,1,29.017,62.26Zm25.135,0a1.933,1.933,0,1,1,1.933-1.933A1.933,1.933,0,0,1,54.152,62.26Z"
+             transform="translate(0 -8.124)"
+             fill="#d1d4e2" />
+        </g>
+      </g>
+      <g
+         id="Group_166"
+         data-name="Group 166"
+         transform="translate(5.816 4.834)">
+        <g
+           id="Group_165"
+           data-name="Group 165">
+          <path
+             id="Path_216"
+             data-name="Path 216"
+             d="M53.928,48.124H49.095a.967.967,0,0,0-.967.967v3.867a.967.967,0,0,0,.967.967h4.834a.967.967,0,0,0,.967-.967V49.091A.967.967,0,0,0,53.928,48.124Zm-.967,3.867h-2.9V50.057h2.9Z"
+             transform="translate(-48.128 -48.124)"
+             fill="#d1d4e2" />
+        </g>
+      </g>
+      <g
+         id="Group_168"
+         data-name="Group 168"
+         transform="translate(5.816 18.368)">
+        <g
+           id="Group_167"
+           data-name="Group 167"
+           transform="translate(0 0)">
+          <path
+             id="Path_217"
+             data-name="Path 217"
+             d="M53.928,160.124H49.095a.967.967,0,0,0-.967.967v3.867a.967.967,0,0,0,.967.967h4.834a.967.967,0,0,0,.967-.967v-3.867A.967.967,0,0,0,53.928,160.124Zm-.967,3.867h-2.9v-1.933h2.9Z"
+             transform="translate(-48.128 -160.124)"
+             fill="#d1d4e2" />
+        </g>
+      </g>
+      <g
+         id="Group_170"
+         data-name="Group 170"
+         transform="translate(5.816 31.902)">
+        <g
+           id="Group_169"
+           data-name="Group 169">
+          <path
+             id="Path_218"
+             data-name="Path 218"
+             d="M53.928,272.124H49.095a.967.967,0,0,0-.967.967v3.867a.967.967,0,0,0,.967.967h4.834a.967.967,0,0,0,.967-.967v-3.867A.967.967,0,0,0,53.928,272.124Zm-.967,3.867h-2.9v-1.933h2.9Z"
+             transform="translate(-48.128 -272.124)"
+             fill="#d1d4e2" />
+        </g>
+      </g>
+      <g
+         id="Group_172"
+         data-name="Group 172"
+         transform="translate(40.618 4.834)">
+        <g
+           id="Group_171"
+           data-name="Group 171"
+           transform="translate(0 0)">
+          <path
+             id="Path_219"
+             data-name="Path 219"
+             d="M346.762,40.124h-9.667a.967.967,0,0,0,0,1.933h9.667a.967.967,0,1,0,0-1.933Z"
+             transform="translate(-336.128 -40.124)"
+             fill="#717795" />
+        </g>
+      </g>
+      <g
+         id="Group_174"
+         data-name="Group 174"
+         transform="translate(40.618 8.7)">
+        <g
+           id="Group_173"
+           data-name="Group 173">
+          <path
+             id="Path_220"
+             data-name="Path 220"
+             d="M346.762,72.124h-9.667a.967.967,0,0,0,0,1.933h9.667a.967.967,0,1,0,0-1.933Z"
+             transform="translate(-336.128 -72.124)"
+             fill="#717795" />
+        </g>
+      </g>
+      <g
+         id="Group_176"
+         data-name="Group 176"
+         transform="translate(40.618 18.368)">
+        <g
+           id="Group_175"
+           data-name="Group 175">
+          <path
+             id="Path_221"
+             data-name="Path 221"
+             d="M346.762,152.124h-9.667a.967.967,0,0,0,0,1.933h9.667a.967.967,0,1,0,0-1.933Z"
+             transform="translate(-336.128 -152.124)"
+             fill="#717795" />
+        </g>
+      </g>
+      <g
+         id="Group_178"
+         data-name="Group 178"
+         transform="translate(40.618 22.234)">
+        <g
+           id="Group_177"
+           data-name="Group 177"
+           transform="translate(0 0)">
+          <path
+             id="Path_222"
+             data-name="Path 222"
+             d="M346.762,184.124h-9.667a.967.967,0,0,0,0,1.933h9.667a.967.967,0,1,0,0-1.933Z"
+             transform="translate(-336.128 -184.124)"
+             fill="#717795" />
+        </g>
+      </g>
+      <g
+         id="Group_180"
+         data-name="Group 180"
+         transform="translate(40.618 31.902)">
+        <g
+           id="Group_179"
+           data-name="Group 179">
+          <path
+             id="Path_223"
+             data-name="Path 223"
+             d="M346.762,264.124h-9.667a.967.967,0,0,0,0,1.933h9.667a.967.967,0,1,0,0-1.933Z"
+             transform="translate(-336.128 -264.124)"
+             fill="#717795" />
+        </g>
+      </g>
+      <g
+         id="Group_182"
+         data-name="Group 182"
+         transform="translate(40.618 35.769)">
+        <g
+           id="Group_181"
+           data-name="Group 181">
+          <path
+             id="Path_224"
+             data-name="Path 224"
+             d="M346.762,296.124h-9.667a.967.967,0,1,0,0,1.933h9.667a.967.967,0,1,0,0-1.933Z"
+             transform="translate(-336.128 -296.124)"
+             fill="#717795" />
+        </g>
+      </g>
+    </g>
+    <g
+       id="Group_106"
+       data-name="Group 106"
+       transform="translate(1327.474 1615.854)">
+      <g
+         id="Group_77"
+         data-name="Group 77"
+         transform="translate(7.188)">
+        <g
+           id="Group_54"
+           data-name="Group 54"
+           clip-path="url(#clip-path)">
+          <rect
+             id="Rectangle_28"
+             data-name="Rectangle 28"
+             width="70.58"
+             height="42.717"
+             transform="translate(-0.161 0)"
+             fill="#1f2649" />
+        </g>
+      </g>
+    </g>
+    <rect
+       id="Rectangle_99"
+       data-name="Rectangle 99"
+       width="58.1"
+       height="15.122"
+       rx="5"
+       transform="translate(1339.404 1817.918)"
+       fill="#1f2649" />
+    <g
+       id="Group_183"
+       data-name="Group 183"
+       transform="translate(1345.221 1822.512)">
+      <g
+         id="Group_169-2"
+         data-name="Group 169">
+        <path
+           id="Path_218-2"
+           data-name="Path 218"
+           d="M53.928,272.124H49.095a.967.967,0,0,0-.967.967v3.867a.967.967,0,0,0,.967.967h4.834a.967.967,0,0,0,.967-.967v-3.867A.967.967,0,0,0,53.928,272.124Zm-.967,3.867h-2.9v-1.933h2.9Z"
+           transform="translate(-48.128 -272.124)"
+           fill="#d1d4e2" />
+      </g>
+    </g>
+    <g
+       id="Group_184"
+       data-name="Group 184"
+       transform="translate(1380.021 1822.512)">
+      <g
+         id="Group_179-2"
+         data-name="Group 179">
+        <path
+           id="Path_223-2"
+           data-name="Path 223"
+           d="M346.762,264.124h-9.667a.967.967,0,0,0,0,1.933h9.667a.967.967,0,1,0,0-1.933Z"
+           transform="translate(-336.128 -264.124)"
+           fill="#717795" />
+      </g>
+    </g>
+    <g
+       id="Group_185"
+       data-name="Group 185"
+       transform="translate(1380.021 1826.379)">
+      <g
+         id="Group_181-2"
+         data-name="Group 181">
+        <path
+           id="Path_224-2"
+           data-name="Path 224"
+           d="M346.762,296.124h-9.667a.967.967,0,1,0,0,1.933h9.667a.967.967,0,1,0,0-1.933Z"
+           transform="translate(-336.128 -296.124)"
+           fill="#717795" />
+      </g>
+    </g>
+    <g
+       id="Icon-Resource_General-Resource_Res_Users_48"
+       data-name="Icon-Resource/General-Resource/Res_Users_48"
+       transform="translate(580.424 1703)">
+      <path
+         id="Fill-1"
+         d="M34.693,10.942a6.6,6.6,0,0,1,13.2,0,6.6,6.6,0,0,1-13.2,0Zm14.143,8.65a14.372,14.372,0,0,0-2.5-1.229,8.91,8.91,0,0,0,4.012-7.421,9.057,9.057,0,0,0-18.112,0,8.911,8.911,0,0,0,4,7.411,14.6,14.6,0,0,0-4.352,2.577l1.6,1.863a11.874,11.874,0,0,1,14.061-1.117,12.943,12.943,0,0,1,5.945,9.778H41.273v2.455h13.5A1.226,1.226,0,0,0,56,32.682a15.461,15.461,0,0,0-7.164-13.09Zm-38.689-8.65a6.6,6.6,0,0,1,13.2,0,6.6,6.6,0,0,1-13.2,0Zm6.579,20.513H4.511A12.5,12.5,0,0,1,16.727,19.884,11.882,11.882,0,0,1,23,21.677a12.511,12.511,0,0,1,1.522,1.117l1.6-1.862a14.7,14.7,0,0,0-1.827-1.34,14.372,14.372,0,0,0-2.5-1.229,8.91,8.91,0,0,0,4.012-7.421,9.057,9.057,0,0,0-18.112,0,8.907,8.907,0,0,0,4.011,7.42A15.245,15.245,0,0,0,2,32.682a1.227,1.227,0,0,0,1.227,1.227h13.5Zm.056,22.091A12.5,12.5,0,0,1,29,41.975a11.882,11.882,0,0,1,6.27,1.793,12.943,12.943,0,0,1,5.945,9.778Zm5.637-20.513a6.6,6.6,0,1,1,6.6,6.487,6.553,6.553,0,0,1-6.6-6.487Zm14.143,8.65a14.372,14.372,0,0,0-2.5-1.228,8.91,8.91,0,0,0,4.012-7.421,9.057,9.057,0,0,0-18.112,0,8.907,8.907,0,0,0,4.011,7.42,15.245,15.245,0,0,0-9.7,14.32A1.227,1.227,0,0,0,15.5,56h27a1.226,1.226,0,0,0,1.227-1.227,15.461,15.461,0,0,0-7.164-13.09Z"
+         fill="#b82e2f"
+         fill-rule="evenodd" />
+    </g>
+  </g>
+</svg>

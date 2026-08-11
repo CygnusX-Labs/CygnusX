@@ -4,7 +4,7 @@ import { NButton, NEmpty, NProgress, NSpin } from 'naive-ui'
 import apiClient from '@/api/client'
 import type { StudioUsage } from '@/types/stats'
 
-const selectedDays = ref(30)
+const selectedDays = ref(7)
 const loading = ref(false)
 const usage = ref<StudioUsage | null>(null)
 const tokenUnit = ref<'K' | 'M'>('K')
@@ -14,7 +14,9 @@ const maxDailyValue = computed(() => {
   return Math.max(1, ...values)
 })
 
-const trendDaily = computed(() => usage.value?.daily ?? [])
+const trendDaily = computed(() =>
+  [...(usage.value?.daily ?? [])].sort((left, right) => right.date.localeCompare(left.date)),
+)
 
 function formatTokens(value: number): string {
   if (tokenUnit.value === 'M') return `${(value / 1_000_000).toFixed(2)} M`
@@ -114,7 +116,7 @@ onMounted(fetchUsage)
             <span>最近 {{ trendDaily.length }} 天活跃度</span>
             <small>Token / 执行次数</small>
           </div>
-          <div class="daily-bars">
+          <div class="daily-bars" :class="{ 'daily-bars--month': selectedDays === 30 }">
             <div v-for="item in trendDaily" :key="item.date" class="daily-row">
               <span>{{ item.date.slice(5) }}</span>
               <div class="bar-track">
@@ -248,26 +250,25 @@ onMounted(fetchUsage)
 
 .trend-panel {
   grid-row: span 2;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
 }
 
 .daily-bars {
   display: grid;
-  gap: 7px;
+  flex: 1;
+  grid-template-rows: repeat(7, minmax(0, 1fr));
+  min-height: 0;
+  gap: 8px;
   margin-top: 12px;
-  max-height: 92px;
-  overflow-y: auto;
-  padding-right: 4px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--neutral-border) transparent;
 }
 
-.daily-bars::-webkit-scrollbar {
-  width: 4px;
-}
-
-.daily-bars::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: var(--neutral-border);
+.daily-bars--month {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(15, minmax(0, 1fr));
+  column-gap: 14px;
+  row-gap: 6px;
 }
 
 .daily-row {
@@ -280,7 +281,10 @@ onMounted(fetchUsage)
 }
 
 .daily-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-align: right;
+  white-space: nowrap;
 }
 
 .bar-track {
@@ -326,6 +330,13 @@ onMounted(fetchUsage)
 
   .quota-panel {
     grid-column: auto;
+  }
+}
+
+@media (max-width: 1180px) and (min-width: 901px) {
+  .daily-bars--month {
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(30, minmax(0, 1fr));
   }
 }
 

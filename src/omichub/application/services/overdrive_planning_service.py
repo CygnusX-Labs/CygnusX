@@ -392,6 +392,23 @@ class OverdrivePlanningService:
         summary = deepcopy(dict(plan_payload.get("summary") or {}))
         summary.setdefault("evidence_count", len(bundle.evidence))
         summary["agent_ids"] = sorted({str(task.get("agent_id")) for task in tasks})
+        qc_task = next(
+            (task for task in tasks if str(task.get("task_id") or "") == "independent-qc"),
+            None,
+        )
+        if qc_task is not None:
+            summary["independent_qc"] = {
+                "mode": "required",
+                "agent_id": "agent-qc",
+                "task_id": "independent-qc",
+                "depends_on": list(qc_task.get("depends_on") or []),
+            }
+        else:
+            summary["independent_qc"] = {
+                "mode": "degraded",
+                "agent_id": "agent-qc",
+                "reason": "agent-qc 当前不可用，计划未伪造独立 QC 任务。",
+            }
         summary["wave_count"] = len(task_waves(tasks))
         summary["deliverables"] = sorted(
             {

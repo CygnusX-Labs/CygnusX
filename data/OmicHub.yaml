@@ -96,6 +96,7 @@ agents:
     - data
     - qc
     - delivery
+    - cloud_ops
     - shania
     - mcp_builder
 
