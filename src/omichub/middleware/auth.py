@@ -33,6 +33,12 @@ SELF_AUTHENTICATED_PREFIXES = (
     "/api/v1/agent-teams/consultations/",
 )
 
+SELF_AUTHENTICATED_PATHS = frozenset(
+    {
+        "/api/v1/agent-teams/capabilities",
+    }
+)
+
 
 def required_api_key_scope(method: str, path: str) -> str | None:
     """Return the least privilege required for Bridge-accessed OmicHub endpoints."""
@@ -63,7 +69,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
 
         # 公开路径或端点自行鉴权的内部路径直接放行
-        if path in PUBLIC_PATHS or path.startswith(PUBLIC_PREFIXES + SELF_AUTHENTICATED_PREFIXES):
+        if (
+            path in PUBLIC_PATHS
+            or path in SELF_AUTHENTICATED_PATHS
+            or path.startswith(PUBLIC_PREFIXES + SELF_AUTHENTICATED_PREFIXES)
+        ):
             return await call_next(request)
 
         # WebSocket 连接由端点内自行处理

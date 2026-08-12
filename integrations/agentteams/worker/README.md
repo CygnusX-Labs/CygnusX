@@ -22,15 +22,22 @@ inbox. Use `--dry-run` only to inspect the next assignment without claiming it.
 
 ## Production read-only runtime
 
-`production_runner.py` is the non-demo Worker entrypoint for the `agent-code`, `agent-viz`, and
-`agent-scrna` identities. It only holds the role-specific Bridge token. For each claimed Work
-Item it sends a heartbeat and calls the Bridge `execute-readonly` route; the Bridge validates the
-lease and calls the Gateway using the Manager credential that remains inside the control plane.
+`production_runner.py` is the non-demo resource-pool entrypoint for all 14 recruitable expert
+identities. A pool replica receives the configured expert token set, checks every identity inbox
+with bounded concurrency, and always uses the matching role credential for claim, heartbeat, and
+Bridge `execute-readonly` calls. Scale `agentteams-worker-professional-pool` by capacity instead of
+creating one permanently dedicated service per role.
 
 The runtime supports only the fixed read-only Gateway capability for its identity. It cannot
 submit workflows, cancel tasks, write files, access database/Redis/Docker credentials, or receive
 the Gateway Manager token. Work Items that need an approval or a write-capable action must be
 handled by a dedicated, approval-gated Worker runtime rather than this process.
+
+Configure the pool with `AGENTTEAMS_WORKER_IDENTITIES`, the matching
+`AGENTTEAMS_<IDENTITY>_TOKEN` variables from `deploy/agentteams/worker.env`, and
+`AGENTTEAMS_WORKER_MAX_CONCURRENT`. The production Compose profile defaults to two replicas;
+override `AGENTTEAMS_PROFESSIONAL_POOL_REPLICAS` and
+`AGENTTEAMS_PROFESSIONAL_POOL_CONCURRENCY` for measured capacity needs.
 
 ## Controlled acceptance runner
 

@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 @shared_task(name="omichub.infrastructure.celery_app.tasks.sandbox.recycle_expired")
 def recycle_expired() -> dict[str, Any]:
-    """每 5 分钟回收无活动超时的沙盒会话（默认 30min）"""
+    """每分钟扫描并回收无活动超过 5 分钟的轻量沙盒会话。"""
     return asyncio.run(_run_recycle())
 
 

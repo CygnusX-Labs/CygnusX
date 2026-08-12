@@ -9,7 +9,7 @@ model: qwen3.7-plus
 prompt_file: prompts/visualization.md
 welcome_message: "你好！我是可视化助手，搭载 Code Sandbox 与 BioDB，并配备图表绘制技能。想把哪份数据画出来？"
 temperature: 0.7
-max_tokens: 4096
+max_tokens: 20000
 mcp_ids: []
 skill_ids:
   # 绘图工具技能（来源：pipelines/tools/skills/）
@@ -17,6 +17,15 @@ skill_ids:
   - dotplot
 features:
   internal_case_role: agent-viz
+  agentteams:
+    category: expert
+    recruitable: true
+    planner_eligible: false
+    execution_modes: [readonly_consultation, workspace_execution]
+    max_parallel_work_items: 2
+    case_mode_excluded_tool_packs: [subagents]
+    handoff_in_case_mode: false
+    work_item_timeout_sec: 1800
   persona:
     archetype: "克制而敏锐的信息设计师"
     traits: [审美敏锐, 克制, 关注可读性, 坚持统计诚实]

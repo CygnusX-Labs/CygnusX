@@ -71,11 +71,13 @@ export interface AgentTeamsCaseCardPayload {
   case_url: string
   updated_at?: string
   plan_hash?: string | null
+  plan_version?: number
   proposed_submission?: Record<string, unknown> | null
 }
 
 export interface OverdriveProgress {
   runId?: string
+  caseId?: string
   label: string
   completed: number
   total: number
@@ -86,8 +88,27 @@ export interface OverdriveProgress {
   fallback?: boolean
   warning?: string
   stalledTaskIds?: string[]
+  activities?: Array<{
+    id: string
+    label: string
+    kind: 'search' | 'model' | 'sandbox' | 'mcp'
+    status: string
+    queries?: string[]
+    accepted?: number
+    rejected?: number
+    durationMs?: number
+    error?: string
+  }>
   tasks?: Array<{ taskId: string; agentId: string; status: string; errorSummary?: string }>
-  artifacts?: Array<{ path: string; kind?: string; status?: string; source?: string; qualityStatus?: string }>
+  artifacts?: Array<{
+    path: string
+    kind?: string
+    status?: string
+    source?: string
+    qualityStatus?: string
+    downloadUrl?: string
+    previewUrl?: string
+  }>
   /** 只读进度卡（如对话内 fan-out）：隐藏超频专属的暂停/终止/指令控制条。 */
   readonly?: boolean
 }
@@ -279,20 +300,26 @@ export interface AskRequest {
 }
 
 // ===== 文件附件 =====
+export type AttachmentKind = 'image' | 'file' | 'directory'
+
 export interface FileAttachment {
   name: string
   size: number
+  /** Uploads retain their MIME type; controlled directory references use `directory`. */
   type: string
   url?: string
   file_id?: string
   /** 来源：upload=输入框上传；workspace=@ 引用的工作区文件 */
   source?: 'upload' | 'workspace'
+  /** 目录引用始终由服务端只读、递归解析；普通文件忽略该字段。 */
+  recursive?: boolean
 }
 
 // ===== @ 提及项（文件 / 智能体 / 技能）=====
 export type MentionKind = 'directory' | 'file' | 'agent' | 'skill'
 
 export interface MentionDirectory {
+  id: string
   path: string
   name: string
   parent_path?: string | null

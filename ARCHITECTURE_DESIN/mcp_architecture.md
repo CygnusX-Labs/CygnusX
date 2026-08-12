@@ -205,7 +205,7 @@ sandbox_network_isolated: true
 - 仅两个容器接入：沙箱 + `omichub-studio-egress-proxy`
 - Egress Proxy（`deploy/studio/egress_proxy.py`）强制域名白名单：
   - 仅允许 HTTP 80 / HTTPS CONNECT 443
-  - 当前白名单：`conda.anaconda.org, pypi.org, files.pythonhosted.org, mirrors.aliyun.com, mirrors.tuna.tsinghua.edu.cn`
+  - 当前白名单：`conda.anaconda.org, pypi.org, files.pythonhosted.org, mirrors.aliyun.com, mirrors.ustc.edu.cn`
   - 拒绝 IP 字面量、通配符、私有/保留地址
   - DNS 解析固定公网 IP（防 DNS rebinding）
 - Proxy 容器加固：`read_only: true, cap_drop: [ALL], no-new-privileges, pids_limit: 128, mem_limit: 256m`

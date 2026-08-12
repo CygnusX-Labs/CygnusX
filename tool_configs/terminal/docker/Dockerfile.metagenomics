@@ -6,11 +6,11 @@ USER root
 
 # kraken2/centrifuge/fastp 走 apt（jammy 仓库有）；
 # bracken 不在 Ubuntu 22.04 官方仓库（2026-07-28 实测 Unable to locate package），
-# 与 assembly 镜像同路线：micromamba + bioconda（tuna 镜像）安装。
+# 与 assembly 镜像同路线：micromamba + bioconda（USTC 镜像）安装。
 RUN apt-get update && apt-get install -y --no-install-recommends \
       kraken2 centrifuge fastp \
     && rm -rf /var/lib/apt/lists/* \
-    && pip3 install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple multiqc
+    && pip3 install --no-cache-dir -i https://pypi.mirrors.ustc.edu.cn/simple multiqc
 
 # micromamba 二进制从官方镜像复制（避免境外下载）
 COPY --from=mambaorg/micromamba:2.0.5 /usr/bin/micromamba /usr/local/bin/micromamba
@@ -18,21 +18,24 @@ COPY --from=mambaorg/micromamba:2.0.5 /usr/bin/micromamba /usr/local/bin/microma
 ENV MAMBA_ROOT_PREFIX=/opt/conda \
     MAMBA_NO_BANNER=1
 
-# 预置清华镜像源；基础镜像 ENV HOME=/home/omichub，condarc 必须写到该 HOME 下
+# 预置中科大镜像源；基础镜像 ENV HOME=/home/omichub，condarc 必须写到该 HOME 下
 # （见 Protocol/镜像构建国内加速规范_v1.md §4）
 RUN printf '%s\n' \
       'show_channel_urls: true' \
       'default_channels:' \
-      '  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main' \
-      '  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/r' \
-      '  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/msys2' \
+      '  - https://mirrors.ustc.edu.cn/anaconda/pkgs/main' \
+      '  - https://mirrors.ustc.edu.cn/anaconda/pkgs/free' \
+      '  - https://mirrors.ustc.edu.cn/anaconda/pkgs/r' \
+      '  - https://mirrors.ustc.edu.cn/anaconda/pkgs/msys2' \
       'custom_channels:' \
-      '  conda-forge: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud' \
-      '  bioconda: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud' \
+      '  conda-forge: https://mirrors.ustc.edu.cn/anaconda/cloud' \
+      '  bioconda: https://mirrors.ustc.edu.cn/anaconda/cloud' \
+      '  menpo: https://mirrors.ustc.edu.cn/anaconda/cloud' \
       'channel_priority: flexible' \
       'channels:' \
       '  - conda-forge' \
       '  - bioconda' \
+      '  - menpo' \
       '  - defaults' \
       > /home/omichub/.condarc \
     && cp /home/omichub/.condarc /root/.condarc \

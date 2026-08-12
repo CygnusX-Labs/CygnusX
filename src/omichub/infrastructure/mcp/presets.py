@@ -1022,7 +1022,88 @@ async def _platform_get_download_progress(
     }
 
 
+async def _platform_europe_pmc_search(
+    arguments: dict[str, Any],
+    **_kw: Any,
+) -> dict[str, Any]:
+    """Search Europe PMC and return a relevance-ranked biomedical evidence set."""
+    from omichub.application.services.biomedical_literature_service import (
+        BiomedicalLiteratureService,
+    )
+    from omichub.application.services.research_search_optimizer import (
+        ResearchSearchOptimizer,
+    )
+
+    query = " ".join(str(arguments.get("query") or "").split())
+    if not query:
+        return {"success": False, "error": "缺少 query 参数"}
+    max_results = max(1, min(int(arguments.get("max_results") or 8), 20))
+    try:
+        candidates = await BiomedicalLiteratureService(timeout_seconds=10).search(
+            query,
+            max(max_results * 2, 8),
+            year_from=arguments.get("year_from"),
+            year_to=arguments.get("year_to"),
+            open_access_only=bool(arguments.get("open_access_only", False)),
+        )
+        results = await ResearchSearchOptimizer().rerank(
+            query,
+            candidates,
+            limit=max_results,
+        )
+        return {
+            "success": True,
+            "result": {
+                "query": query,
+                "provider": "Europe PMC",
+                "result_count": len(results),
+                "results": results,
+            },
+        }
+    except Exception as exc:  # noqa: BLE001 - return a bounded MCP error
+        return {"success": False, "error": f"Europe PMC 检索失败: {type(exc).__name__}"}
+
+
 PLATFORM_PRESET_TOOLS = [
+    {
+        "name": "europe_pmc_search",
+        "description": (
+            "检索 Europe PMC 权威生物医学论文，并按用户问题对标题与摘要进行语义/词项混合重排。"
+            "适合基因、疾病机制、单细胞、肿瘤免疫、组学方法和临床研究证据检索。"
+            "返回题名、摘要、作者、期刊、年份、PMID/PMCID/DOI、开放获取状态和可追溯链接。"
+            "只读且不下载全文；研究问答通常保留最相关的 5-8 篇。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "英文联合检索式；建议使用 2-4 个核心概念并以 AND/OR 连接",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20,
+                    "default": 8,
+                    "description": "返回数量；研究问答推荐 5-8",
+                },
+                "year_from": {"type": "integer", "description": "可选起始发表年份"},
+                "year_to": {"type": "integer", "description": "可选结束发表年份"},
+                "open_access_only": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "是否仅返回开放获取论文",
+                },
+            },
+            "required": ["query"],
+        },
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    },
     {
         "name": "platform_list_tasks",
         "description": "列出用户的分析任务（状态、进度）",
@@ -1311,6 +1392,7 @@ PLATFORM_PRESET_TOOLS = [
 ]
 
 PLATFORM_HANDLERS = {
+    "europe_pmc_search": _platform_europe_pmc_search,
     "platform_list_tasks": _platform_list_tasks,
     "platform_get_task": _platform_get_task,
     "platform_list_flows": _platform_list_flows,
@@ -1335,7 +1417,7 @@ PLATFORM_HANDLERS = {
 PRESET_SERVERS: list[dict[str, Any]] = [
     {
         "name": "omichub-platform",
-        "description": "平台操作 MCP - 任务管理、流程查询、当前用户与饼干（积分）余额查询、沙箱执行、结果读取、数据下载（SRA/GEO 公共数据库与多云存储）",
+        "description": "平台操作 MCP - Europe PMC 文献检索、任务管理、流程查询、当前用户与饼干（积分）余额查询、沙箱执行、结果读取、数据下载（SRA/GEO 公共数据库与多云存储）",
         "transport": "builtin",
         "tools": PLATFORM_PRESET_TOOLS,
         "handlers": PLATFORM_HANDLERS,

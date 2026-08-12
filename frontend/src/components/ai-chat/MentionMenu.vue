@@ -25,6 +25,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   select: [item: MentionItem]
+  referenceDirectory: [item: MentionItem]
   hover: [index: number]
   retry: []
   close: []
@@ -108,7 +109,20 @@ function itemTitle(item: MentionItem): string {
             <div class="item-name" :class="{ 'file-name': item.kind === 'file' }">{{ item.name }}</div>
             <div class="item-desc">{{ middleTrunc(item.description) }}</div>
           </div>
-          <span class="item-tag">{{ item.kind === 'directory' ? 'Folder' : 'File' }}</span>
+          <template v-if="item.kind === 'directory'">
+            <n-button
+              size="tiny"
+              secondary
+              type="primary"
+              class="reference-directory"
+              :aria-label="`引用整个目录 ${item.name}`"
+              @click.stop="emit('referenceDirectory', item)"
+            >
+              引用目录
+            </n-button>
+            <span class="item-tag">进入</span>
+          </template>
+          <span v-else class="item-tag">File</span>
         </div>
       </template>
     </div>
@@ -235,6 +249,8 @@ function itemTitle(item: MentionItem): string {
       color: var(--chat-text-secondary);
       font-size: 12px;
     }
+
+    .reference-directory { flex-shrink: 0; }
   }
 
   .menu-footer {

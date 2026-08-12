@@ -86,11 +86,13 @@ class AgentTeamsCaseWatchService:
         meta = dict(session.sandbox_meta or {})
         case_ids = [item for item in meta.get("agentteams_case_ids", []) if isinstance(item, str)]
         statuses = dict(meta.get("agentteams_case_status") or {})
-        legacy_notifications = dict(meta.pop("agentteams_case_notified", {}) or {})
-        legacy_cursors = dict(meta.pop("agentteams_case_event_cursor", {}) or {})
+        migration_mode = get_settings().agentteams_case_cursor_migration_mode
+        legacy_notifications = dict(meta.get("agentteams_case_notified", {}) or {})
+        legacy_cursors = dict(meta.get("agentteams_case_event_cursor", {}) or {})
         titles = dict(meta.get("agentteams_case_titles") or {})
         failure_counts = dict(meta.get("agentteams_case_watch_failures") or {})
-        changed = bool(legacy_notifications or legacy_cursors)
+        changed = False
+        cursor_mismatches = 0
         scanned = notified = failed = 0
 
         for case_id in case_ids:
@@ -130,9 +132,28 @@ class AgentTeamsCaseWatchService:
             cursor_state = await self._get_or_create_cursor_state(
                 session.session_id,
                 case_id,
-                legacy_cursor=str(legacy_cursors.get(case_id) or "") or None,
-                legacy_notified_statuses=legacy_notifications.get(case_id),
+                legacy_cursor=(
+                    str(legacy_cursors.get(case_id) or "") or None
+                    if migration_mode != "new_only"
+                    else None
+                ),
+                legacy_notified_statuses=(
+                    legacy_notifications.get(case_id) if migration_mode != "new_only" else None
+                ),
             )
+            legacy_cursor = str(legacy_cursors.get(case_id) or "") or None
+            legacy_statuses = {
+                value
+                for value in legacy_notifications.get(case_id, [])
+                if isinstance(value, str)
+            }
+            if migration_mode == "dual_write" and (
+                (legacy_cursor and legacy_cursor != cursor_state.event_cursor)
+                or legacy_statuses != {
+                    value for value in cursor_state.notified_statuses if isinstance(value, str)
+                }
+            ):
+                cursor_mismatches += 1
             title = str(case.get("intent") or titles.get(case_id) or "协作 Case")[:80]
             previous = str(statuses.get(case_id) or "")
             statuses[case_id] = status
@@ -141,7 +162,11 @@ class AgentTeamsCaseWatchService:
                 events_page = await agentteams.get_case_events(
                     case_id,
                     requester_ref=session.user_id,
-                    cursor=cursor_state.event_cursor or None,
+                    cursor=(
+                        legacy_cursor
+                        if migration_mode == "legacy_only"
+                        else cursor_state.event_cursor or legacy_cursor
+                    ),
                     limit=100,
                 )
                 events = events_page.get("events") if isinstance(events_page.get("events"), list) else []
@@ -155,10 +180,17 @@ class AgentTeamsCaseWatchService:
                         await publish_chat_case_event(session.session_id, projected)
                 next_cursor = events_page.get("next_cursor")
                 last_event_id = str(events[-1].get("event_id") or "") if events else ""
+                next_value = ""
                 if isinstance(next_cursor, str) and next_cursor:
-                    cursor_state.event_cursor = next_cursor
+                    next_value = next_cursor
                 elif last_event_id:
-                    cursor_state.event_cursor = last_event_id
+                    next_value = last_event_id
+                if next_value:
+                    if migration_mode != "legacy_only":
+                        cursor_state.event_cursor = next_value
+                    if migration_mode != "new_only":
+                        legacy_cursors[case_id] = next_value
+                        changed = True
             except Exception as exc:  # noqa: BLE001
                 failed += 1
                 logger.warning("AgentTeams Case event projection failed for %s: %s", case_id, exc)
@@ -168,13 +200,37 @@ class AgentTeamsCaseWatchService:
             if status != previous and status in WATCHED_STATUSES and status not in seen:
                 event = await self._add_notification(session.session_id, case_id, title, status)
                 seen.add(status)
-                cursor_state.notified_statuses = sorted(seen)
+                if migration_mode != "legacy_only":
+                    cursor_state.notified_statuses = sorted(seen)
+                if migration_mode != "new_only":
+                    legacy_notifications[case_id] = sorted(seen)
+                    changed = True
                 try:
                     await publish_chat_case_event(session.session_id, event)
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("AgentTeams Case watch SSE publish failed for %s: %s", case_id, exc)
                 notified += 1
             changed = changed or status != previous
+
+        if migration_mode == "new_only":
+            removed_notifications = meta.pop("agentteams_case_notified", None)
+            removed_cursor = meta.pop("agentteams_case_event_cursor", None)
+            changed = bool(removed_notifications is not None or removed_cursor is not None) or changed
+        else:
+            meta["agentteams_case_notified"] = legacy_notifications
+            meta["agentteams_case_event_cursor"] = legacy_cursors
+        meta["agentteams_case_cursor_migration"] = {
+            "mode": migration_mode,
+            "checked_at": datetime.now(UTC).isoformat(),
+            "mismatch_count": cursor_mismatches,
+        }
+        if cursor_mismatches:
+            logger.warning(
+                "AgentTeams cursor dual-write mismatch: session=%s count=%s",
+                session.session_id,
+                cursor_mismatches,
+            )
+        changed = True
 
         if changed:
             meta["agentteams_case_status"] = statuses

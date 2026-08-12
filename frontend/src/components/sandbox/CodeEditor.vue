@@ -110,7 +110,6 @@ defineExpose({
 .cm-host {
   width: 100%;
   height: 100%;
-  min-height: 200px;
   overflow: hidden;
   border-radius: 8px;
   background: #282c34;

@@ -50,6 +50,46 @@ def test_production_worker_supports_rnaseq_research_identity() -> None:
     assert config.identity == "agent-rnaseq"
 
 
+def test_production_worker_pool_loads_multiple_role_credentials() -> None:
+    config = production_runner.load_pool_config(
+        {
+            "AGENTTEAMS_BRIDGE_BASE_URL": "http://bridge:8080/v1",
+            "AGENTTEAMS_WORKER_IDENTITIES": "agent-code,agent-viz,agent-rnaseq",
+            "AGENTTEAMS_AGENT_CODE_TOKEN": "code-token",
+            "AGENTTEAMS_AGENT_VIZ_TOKEN": "viz-token",
+            "AGENTTEAMS_AGENT_RNASEQ_TOKEN": "rnaseq-token",
+            "AGENTTEAMS_WORKER_MAX_CONCURRENT": "2",
+        }
+    )
+
+    assert [worker.identity for worker in config.workers] == [
+        "agent-code",
+        "agent-viz",
+        "agent-rnaseq",
+    ]
+    assert [worker.token for worker in config.workers] == [
+        "code-token",
+        "viz-token",
+        "rnaseq-token",
+    ]
+    assert config.max_concurrent == 2
+
+
+def test_production_worker_pool_rejects_partial_credentials() -> None:
+    try:
+        production_runner.load_pool_config(
+            {
+                "AGENTTEAMS_BRIDGE_BASE_URL": "http://bridge:8080/v1",
+                "AGENTTEAMS_WORKER_IDENTITIES": "agent-code,agent-viz",
+                "AGENTTEAMS_AGENT_CODE_TOKEN": "code-token",
+            }
+        )
+    except ValueError as exc:
+        assert "agent-viz" in str(exc)
+    else:
+        raise AssertionError("partially credentialed Worker pool was accepted")
+
+
 def test_production_worker_loads_profile_from_bridge(monkeypatch) -> None:
     config = production_runner.ProductionWorkerConfig(
         "http://bridge:8080/v1", "agent-atacseq", "token", 1
@@ -166,6 +206,41 @@ def test_production_worker_runs_up_to_configured_concurrency(monkeypatch) -> Non
 
     assert len(production_runner.run_batch_once(config)) == 2
     assert peak == 2
+
+
+def test_production_worker_pool_checks_all_identities_with_bounded_concurrency(monkeypatch) -> None:
+    active = 0
+    peak = 0
+    checked: list[str] = []
+    lock = threading.Lock()
+
+    def fake_run_once(config):
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+            checked.append(config.identity)
+        time.sleep(0.02)
+        with lock:
+            active -= 1
+        return {"action": "idle", "identity": config.identity}
+
+    monkeypatch.setattr(production_runner, "run_once", fake_run_once)
+    workers = tuple(
+        production_runner.ProductionWorkerConfig(
+            "http://bridge", identity, f"{identity}-token", 1, max_concurrent=1
+        )
+        for identity in ("agent-code", "agent-viz", "agent-rnaseq")
+    )
+    config = production_runner.ProductionWorkerPoolConfig(
+        workers=workers, poll_seconds=1, max_concurrent=2
+    )
+
+    result = production_runner.run_pool_once(config)
+
+    assert set(checked) == {"agent-code", "agent-viz", "agent-rnaseq"}
+    assert peak == 2
+    assert result[0]["action"] == "idle"
 
 
 def test_production_worker_forwards_evidence_refs_and_readonly_tools(monkeypatch) -> None:

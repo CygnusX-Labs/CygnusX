@@ -4,6 +4,7 @@ import DOMPurify from 'dompurify'
 import { NButton, NIcon, NTag, NDataTable } from 'naive-ui'
 import {
   DocumentOutline,
+  FolderOpenOutline,
   ThumbsUpOutline,
   ThumbsDownOutline,
   CopyOutline,
@@ -87,6 +88,8 @@ const emit = defineEmits<{
   openToolPage: [route: string, args: Record<string, unknown>]
   createCaseFromConsultation: [summary: string, consultationId?: string]
   correctCollaborationRoute: [route: CollaborationRouteInfo]
+  confirmExecution: [preset: string]
+  adjustExecution: [preset: string]
 }>()
 
 const router = useRouter()
@@ -862,8 +865,11 @@ function handleEdit() {
               />
               <span v-else class="attachment-image-loading" role="status">图片加载中</span>
             </template>
-            <n-icon v-else size="14"><DocumentOutline /></n-icon>
+            <n-icon v-else size="14">
+              <component :is="file.type === 'directory' ? FolderOpenOutline : DocumentOutline" />
+            </n-icon>
             <span class="attachment-name">{{ file.name }}</span>
+            <span v-if="file.type === 'directory'" class="attachment-directory-state">只读 · 递归</span>
           </div>
         </div>
       </div>
@@ -991,9 +997,11 @@ function handleEdit() {
         <RouteTransitionCard
           v-if="message.routedAgent?.transition?.visible"
           :route="message.routedAgent"
+          @confirm-execution="(preset) => emit('confirmExecution', preset)"
+          @adjust-execution="(preset) => emit('adjustExecution', preset)"
         />
         <CollaborationRouteNotice
-          v-if="message.collaborationRoute"
+          v-if="message.collaborationRoute && !(message.routedAgent?.transition?.visible && message.collaborationRoute.intent === 'chat')"
           :route="message.collaborationRoute"
           @correct="(route) => emit('correctCollaborationRoute', route)"
         />
@@ -1485,6 +1493,10 @@ function handleEdit() {
   border-radius: 6px;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.9);
+}
+.kimi-message-item.user .attachment-directory-state {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
 }
 
 /* AI 消息卡片 */

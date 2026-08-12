@@ -23,11 +23,13 @@ from omichub.application.services.overdrive_run_service import (
     OverdriveRunService,
     validate_plan,
 )
+from omichub.application.services.research_search_optimizer import ResearchSearchOptimizer
 from omichub.core.exceptions import ValidationError
 from omichub.infrastructure.database.models.overdrive import OverdriveRunModel
 
 ResearchCallable = Callable[..., Awaitable[Any]]
 PlanBuilder = Callable[..., Awaitable[Mapping[str, Any]] | Mapping[str, Any]]
+ResearchActivityCallback = Callable[[dict[str, Any]], Awaitable[None]]
 
 SOURCE_TYPES = ("knowledge_base", "web", "model_knowledge")
 DOMAIN_HINTS: dict[str, tuple[str, ...]] = {
@@ -215,25 +217,75 @@ def _request_technical_terms(request: str) -> list[str]:
     return terms[:8]
 
 
-def build_research_queries(request: str) -> dict[str, str]:
+def _research_subject_terms(request: str) -> list[str]:
+    normalized = request.casefold()
+    terms = _request_technical_terms(request)
+    concept_terms = (
+        (("肺癌", "lung cancer", "lung adenocarcinoma"),),
+        (("免疫耐受", "immune tolerance", "immune evasion"),),
+        (("髓系", "myeloid cells"),),
+        (("tam", "tumor-associated macrophage"),),
+        (("巨噬细胞", "macrophage"),),
+        (("小鼠", "mouse model"),),
+        (("细胞通讯", "cell-cell communication"),),
+    )
+    for group in concept_terms:
+        markers = group[0]
+        if any(marker.casefold() in normalized for marker in markers[:1]):
+            terms.extend(markers[1:])
+    return list(dict.fromkeys(term for term in terms if term))[:12]
+
+
+def build_research_queries(request: str) -> dict[str, Any]:
     """按领域画像改写方法学检索词，避免自然语言目标直接命中 SEO 内容。"""
     compact = " ".join(request.split())
     profile = select_research_profile(compact)
-    technical_terms = _request_technical_terms(compact)
-    normalized = compact.casefold()
-    matched_markers = [marker for marker in profile.markers if marker in normalized]
-    subject_terms = [
-        compact,
-        *technical_terms,
-        *matched_markers,
-    ]
-    web_terms = [*subject_terms, *profile.query_terms, *_GENERIC_QUERY_TERMS]
-    web_query = " ".join(dict.fromkeys(term for term in web_terms if term)).strip()
+    subject_terms = _research_subject_terms(compact)
+    subject = " ".join(subject_terms) or compact[:120]
+    if profile.name == "single_cell":
+        web_queries = [
+            f"{subject} single-cell RNA-seq tumor microenvironment".strip(),
+            f"{subject} tumor-associated macrophage T cell immune evasion".strip(),
+            "single-cell RNA-seq best practices quality control batch integration pseudobulk trajectory",
+        ]
+    else:
+        subject = " ".join(dict.fromkeys([compact[:120], subject])).strip()
+        focused_methods = " ".join(profile.query_terms[:8])
+        web_queries = [
+            f"{subject} {focused_methods} official documentation".strip(),
+            f"{subject} {profile.name.replace('_', ' ')} methodology best practices official documentation".strip(),
+        ]
+    web_queries = list(dict.fromkeys(query[:240] for query in web_queries if query.strip()))
     return {
         "profile": profile.name,
         "knowledge_base": f"{compact} {' '.join(profile.query_terms)}"[:600],
-        "web": web_query[:600] or compact[:600],
+        "web": web_queries[0] if web_queries else compact[:240],
+        "web_queries": web_queries or [compact[:240]],
     }
+
+
+def is_planning_only_request(
+    request: str, tasks: Sequence[Mapping[str, Any]]
+) -> bool:
+    normalized = " ".join(request.casefold().split())
+    planning_markers = (
+        "方案", "研究计划", "分析计划", "方法学", "研究设计", "分析思路",
+        "plan", "protocol", "study design",
+    )
+    execution_markers = (
+        "开始分析", "立即分析", "执行分析", "运行流程", "跑流程", "处理这些数据",
+        "生成代码", "写代码", "执行代码", "提交任务", "run the analysis", "execute",
+    )
+    if not any(marker in normalized for marker in planning_markers):
+        return False
+    if any(marker in normalized for marker in execution_markers):
+        return False
+    execution_tools = {"workspace_write", "sandbox_execute", "code_execute", "pipeline_submit"}
+    return all(
+        not bool(task.get("workspace_access"))
+        and not execution_tools.intersection(str(tool) for tool in task.get("tools") or [])
+        for task in tasks
+    )
 
 
 @dataclass(frozen=True)
@@ -257,16 +309,24 @@ class ResearchBundleService:
         knowledge_search: ResearchCallable,
         web_search: ResearchCallable,
         model_knowledge: ResearchCallable,
+        query_refiner: ResearchCallable | None = None,
+        literature_search: ResearchCallable | None = None,
+        activity_callback: ResearchActivityCallback | None = None,
         source_timeout_seconds: float = 20,
         wall_timeout_seconds: float = 45,
         max_evidence_items_per_source: int = 8,
+        search_optimizer: ResearchSearchOptimizer | None = None,
     ) -> None:
         self._knowledge_search = knowledge_search
         self._web_search = web_search
         self._model_knowledge = model_knowledge
+        self._query_refiner = query_refiner
+        self._literature_search = literature_search
+        self._activity_callback = activity_callback
         self._source_timeout = max(0.01, float(source_timeout_seconds))
         self._wall_timeout = max(self._source_timeout, float(wall_timeout_seconds))
         self._max_items = max(1, int(max_evidence_items_per_source))
+        self._search_optimizer = search_optimizer or ResearchSearchOptimizer()
 
     async def collect(
         self,
@@ -279,6 +339,41 @@ class ResearchBundleService:
             raise ValidationError("研究问题不能为空")
         started = time.monotonic()
         research_queries = build_research_queries(query)
+        await self._notify_activity(
+            "source_started",
+            source="query_refiner",
+            queries=research_queries["web_queries"],
+        )
+        refinement_record = await self._refine_queries(
+            query,
+            fallback_queries=research_queries["web_queries"],
+            context=context,
+        )
+        research_queries["web_queries"] = refinement_record["queries"]
+        research_queries["web"] = refinement_record["queries"][0]
+        await self._notify_activity(
+            "query_refinement_completed",
+            source="query_refiner",
+            status=refinement_record["status"],
+            queries=refinement_record["queries"],
+            error=refinement_record.get("error"),
+        )
+        await self._notify_activity(
+            "source_started",
+            source="knowledge_base",
+            queries=[research_queries["knowledge_base"]],
+        )
+        await self._notify_activity(
+            "source_started",
+            source="web",
+            queries=research_queries["web_queries"],
+        )
+        if self._literature_search is not None and research_queries["profile"] in {"single_cell", "bulk_rnaseq"}:
+            await self._notify_activity(
+                "source_started",
+                source="literature",
+                queries=research_queries["web_queries"],
+            )
         kb_task = asyncio.create_task(
             self._call_retrieval(
                 "knowledge_base",
@@ -287,27 +382,51 @@ class ResearchBundleService:
                 project_id=project_id,
             )
         )
-        web_task = asyncio.create_task(
-            self._call_retrieval("web", self._web_search, research_queries["web"])
+        web_task = asyncio.create_task(self._call_web_queries(research_queries["web_queries"]))
+        literature_task = (
+            asyncio.create_task(self._call_literature_queries(research_queries["web_queries"]))
+            if self._literature_search is not None and research_queries["profile"] in {"single_cell", "bulk_rnaseq"}
+            else None
         )
-        kb_record, web_record = await asyncio.gather(kb_task, web_task)
+        if literature_task is None:
+            kb_record, web_record = await asyncio.gather(kb_task, web_task)
+            await self._notify_activity("source_completed", source="knowledge_base", **self._activity_record(kb_record))
+            await self._notify_activity("source_completed", source="web", **self._activity_record(web_record))
+        else:
+            kb_record, general_web_record, literature_record = await asyncio.gather(
+                kb_task, web_task, literature_task
+            )
+            await self._notify_activity("source_completed", source="knowledge_base", **self._activity_record(kb_record))
+            await self._notify_activity("source_completed", source="web", **self._activity_record(general_web_record))
+            await self._notify_activity("source_completed", source="literature", **self._activity_record(literature_record))
+            web_record = self._merge_web_channels(general_web_record, literature_record)
         web_items, rejected_web = self._filter_web_items(web_record["items"], query)
+        web_items = await self._search_optimizer.rerank(
+            query,
+            web_items,
+            limit=self._max_items,
+        )
         web_record["items"] = web_items
         web_record["research_profile"] = research_queries["profile"]
         web_record["accepted_count"] = len(web_items)
         web_record["rejected_count"] = len(rejected_web)
         web_record["quality_gate"] = "authority_and_domain_relevance"
+        web_record["query_refinement"] = refinement_record
         if rejected_web:
             web_record["rejected_reasons"] = rejected_web
         if not web_items and rejected_web:
             web_record["quality_status"] = "no_relevant_evidence"
 
         remaining = max(0.01, self._wall_timeout - (time.monotonic() - started))
+        await self._notify_activity("source_started", source="model_knowledge", queries=[])
         model_record = await self._call_model(
             query,
             [*kb_record["items"], *web_record["items"]],
             context={**dict(context or {}), "research_queries": research_queries},
             timeout_seconds=min(self._source_timeout, remaining),
+        )
+        await self._notify_activity(
+            "source_completed", source="model_knowledge", **self._activity_record(model_record)
         )
         sources = {
             "knowledge_base": kb_record,
@@ -326,6 +445,119 @@ class ResearchBundleService:
                 record["evidence_ids"].append(item["evidence_id"])
                 next_id += 1
         return ResearchBundle(evidence=evidence, sources=sources)
+
+    async def _notify_activity(self, event: str, **payload: Any) -> None:
+        if self._activity_callback is not None:
+            await self._activity_callback({"event": event, **payload})
+
+    @staticmethod
+    def _activity_record(record: Mapping[str, Any]) -> dict[str, Any]:
+        return {
+            "status": record.get("status"),
+            "queries": list(record.get("queries") or ([record.get("query")] if record.get("query") else [])),
+            "duration_ms": int(record.get("duration_ms") or 0),
+            "result_count": len(record.get("items") or []),
+            "error": record.get("error") or "; ".join(record.get("errors") or []),
+        }
+
+    async def _refine_queries(
+        self,
+        query: str,
+        *,
+        fallback_queries: Sequence[str],
+        context: Mapping[str, Any] | None,
+    ) -> dict[str, Any]:
+        async def refine(value: str) -> Any:
+            if self._query_refiner is None:
+                return []
+            return await asyncio.wait_for(
+                self._invoke(
+                    self._query_refiner,
+                    value,
+                    context=deepcopy(dict(context or {})),
+                ),
+                timeout=min(self._source_timeout, 10.0),
+            )
+
+        return await self._search_optimizer.refine_queries(
+            query,
+            fallback_queries=fallback_queries,
+            refiner=refine if self._query_refiner is not None else None,
+        )
+
+    async def _call_literature_queries(self, queries: Sequence[str]) -> dict[str, Any]:
+        if self._literature_search is None:
+            return self._source_record("skipped", time.monotonic(), items=[])
+        records = await asyncio.gather(*(
+            self._call_retrieval("literature", self._literature_search, query)
+            for query in queries
+        ))
+        return self._merge_query_records(records, queries, channel="literature")
+
+    async def _call_web_queries(self, queries: Sequence[str]) -> dict[str, Any]:
+        records = await asyncio.gather(*(
+            self._call_retrieval("web", self._web_search, query) for query in queries
+        ))
+        return self._merge_query_records(records, queries, channel="general_web")
+
+    def _merge_query_records(
+        self,
+        records: Sequence[Mapping[str, Any]],
+        queries: Sequence[str],
+        *,
+        channel: str,
+    ) -> dict[str, Any]:
+        items: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for source_record in records:
+            for item in source_record.get("items") or []:
+                key = (
+                    str(item.get("url") or item.get("link") or "").strip().casefold().rstrip("/"),
+                    str(item.get("title") or item.get("name") or "").strip().casefold(),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                items.append(item)
+        succeeded = [record for record in records if record.get("status") == "succeeded"]
+        errors = [str(record.get("error")) for record in records if record.get("error")]
+        record = {
+            "status": "succeeded" if succeeded else str(records[0].get("status") or "failed"),
+            "evidence_ids": [],
+            "duration_ms": max((int(record.get("duration_ms") or 0) for record in records), default=0),
+            "items": items[: self._max_items * 2],
+            "query": str(queries[0]) if queries else "",
+            "queries": list(queries),
+            "channel": channel,
+        }
+        if errors:
+            record["errors"] = errors
+        return record
+
+    def _merge_web_channels(
+        self,
+        general_web: Mapping[str, Any],
+        literature: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        literature_items = [deepcopy(dict(item)) for item in literature.get("items") or []]
+        general_items = [deepcopy(dict(item)) for item in general_web.get("items") or []]
+        statuses = {str(general_web.get("status")), str(literature.get("status"))}
+        status = "succeeded" if "succeeded" in statuses else next(iter(statuses - {""}), "failed")
+        return {
+            "status": status,
+            "evidence_ids": [],
+            "duration_ms": max(
+                int(general_web.get("duration_ms") or 0),
+                int(literature.get("duration_ms") or 0),
+            ),
+            "items": [*literature_items, *general_items][: self._max_items * 3],
+            "query": str((literature.get("queries") or general_web.get("queries") or [""])[0]),
+            "queries": list(literature.get("queries") or general_web.get("queries") or []),
+            "channels": {
+                "literature": {key: deepcopy(value) for key, value in literature.items() if key != "items"},
+                "general_web": {key: deepcopy(value) for key, value in general_web.items() if key != "items"},
+            },
+        }
 
     async def _call_retrieval(
         self,
@@ -470,7 +702,7 @@ class ResearchBundleService:
         if any(marker in text for marker in _LOW_QUALITY_TEXT_MARKERS):
             return "low_quality_content", {}
         profile = select_research_profile(request)
-        technical_terms = {term.casefold() for term in _request_technical_terms(request)}
+        technical_terms = {term.casefold() for term in _research_subject_terms(request)}
         target_hits = {term for term in technical_terms if term in text}
         profile_hits = {term for term in profile.relevance_terms if term in text}
         trusted = ResearchBundleService._is_trusted_web_host(host)
@@ -616,6 +848,17 @@ class OverdrivePlanningService:
         revision_feedback: str = "",
     ) -> dict[str, Any]:
         await self._runs.transition(run, "RESEARCHING")
+        research_queries = build_research_queries(run.root_request)
+        await self._runs.append_event(
+            run.run_id,
+            "research_started",
+            {
+                "research_profile": research_queries["profile"],
+                "queries": research_queries["web_queries"],
+                "sources": ["knowledge_base", "web", "model_knowledge"],
+            },
+            dedupe_key=f"research_started:{int((run.plan or {}).get('version') or 0) + 1}",
+        )
         bundle = await self._research.collect(
             run.root_request,
             project_id=project_id,
@@ -643,19 +886,35 @@ class OverdrivePlanningService:
         if not isinstance(plan_payload, Mapping):
             raise ValidationError("规划 Agent 未返回结构化计划")
         tasks = [deepcopy(dict(item)) for item in plan_payload.get("tasks") or []]
-        tasks = self.ensure_independent_qc_task(tasks, known_agent_ids)
+        planning_only = self.is_planning_only_request(run.root_request, tasks)
+        tasks = [] if planning_only else self.ensure_independent_qc_task(
+            tasks, known_agent_ids, request=run.root_request
+        )
         content = str(plan_payload.get("content") or "").strip()
-        if not content:
+        if not content or planning_only:
+            markdown_plan = deepcopy(dict(plan_payload))
+            markdown_plan["_planning_only"] = planning_only
+            if planning_only:
+                markdown_plan["deliverables"] = markdown_plan.get("deliverables") or ["研究方案（plan.md）"]
+                markdown_plan["manager_preflight"] = ["完成证据检索、方法学核验与方案结构化整理"]
+                markdown_plan["agent_selection_reasons"] = [
+                    f"{run.lead_planner_agent_id}：负责领域研究与方案撰写"
+                ]
+                markdown_plan["risks"] = ["证据不足处明确标记为待验证推断，不伪造结论"]
+                markdown_plan["quality_gates"] = [
+                    "方案覆盖研究设计、关键分析节点、验证路径、限制与交付物",
+                    "引用证据可追溯；无证据支持的内容明确标记为待验证推断",
+                ]
             content = build_plan_markdown(
                 request=run.root_request,
                 lead_planner_agent_id=str(run.lead_planner_agent_id or ""),
                 evidence=bundle.evidence,
                 research_sources=bundle.sources,
                 tasks=tasks,
-                plan=deepcopy(dict(plan_payload)),
+                plan=markdown_plan,
                 next_version=int((run.plan or {}).get("version") or 0) + 1,
             )
-        validate_plan(content, tasks, known_agent_ids)
+        validate_plan(content, tasks, known_agent_ids, allow_empty_tasks=planning_only)
         await self._runs.transition(run, "PLAN_REVIEWING")
         draft_file = await self._runs.write_plan_draft(run, content)
         next_version = int(draft_file["version"])
@@ -681,6 +940,7 @@ class OverdrivePlanningService:
         )
         summary = deepcopy(dict(plan_payload.get("summary") or {}))
         summary.setdefault("evidence_count", len(bundle.evidence))
+        summary["planning_only"] = planning_only
         summary["agent_ids"] = sorted({str(task.get("agent_id")) for task in tasks})
         qc_task = next(
             (task for task in tasks if str(task.get("task_id") or "") == "independent-qc"),
@@ -693,6 +953,11 @@ class OverdrivePlanningService:
                 "task_id": "independent-qc",
                 "depends_on": list(qc_task.get("depends_on") or []),
             }
+        elif planning_only:
+            summary["independent_qc"] = {
+                "mode": "not_required",
+                "reason": "本轮仅交付研究方案，不启动执行分支或独立 QC。",
+            }
         else:
             summary["independent_qc"] = {
                 "mode": "degraded",
@@ -700,7 +965,7 @@ class OverdrivePlanningService:
                 "reason": "agent-qc 当前不可用，计划未伪造独立 QC 任务。",
             }
         summary["wave_count"] = len(task_waves(tasks))
-        summary["deliverables"] = sorted(
+        summary["deliverables"] = ["plan.md"] if planning_only else sorted(
             {
                 str(output)
                 for task in tasks
@@ -723,11 +988,16 @@ class OverdrivePlanningService:
             tasks=tasks,
             known_agent_ids=known_agent_ids,
             summary=summary,
+            allow_empty_tasks=planning_only,
         )
 
     @staticmethod
+    def is_planning_only_request(request: str, tasks: Sequence[Mapping[str, Any]]) -> bool:
+        return is_planning_only_request(request, tasks)
+
+    @staticmethod
     def ensure_independent_qc_task(
-        tasks: list[dict[str, Any]], known_agent_ids: set[str]
+        tasks: list[dict[str, Any]], known_agent_ids: set[str], *, request: str = ""
     ) -> list[dict[str, Any]]:
         """Append one plan-bound QC gate after all non-QC outputs are available.
 
@@ -735,6 +1005,8 @@ class OverdrivePlanningService:
         cannot be added after approval, and its absence is an explicit, visible
         downgrade only when the configured quality auditor is unavailable.
         """
+        if request and OverdrivePlanningService.is_planning_only_request(request, tasks):
+            return tasks
         if not tasks or "agent-qc" not in known_agent_ids:
             return tasks
         if any(str(task.get("agent_id") or "") == "agent-qc" for task in tasks):
@@ -762,6 +1034,7 @@ class OverdrivePlanningService:
                     "输出可机读的“质量结论：通过|返工|人工复核”质量门结论",
                 ],
                 "tools": ["workspace_read"],
+                "workspace_access": True,
                 "timeout_seconds": 900,
                 "retry": {"max_attempts": 1, "backoff_seconds": 0},
                 "requires_approval": False,
@@ -839,9 +1112,31 @@ def build_plan_markdown(
         research_profile = str(source_record.get("research_profile") or "").strip()
         if research_profile:
             prefix.append(f"- 研究画像：`{research_profile}`")
-        search_query = str(source_record.get("query") or "").strip()
-        if search_query:
-            prefix.append(f"- 实际检索式：`{search_query}`")
+        refinement = source_record.get("query_refinement")
+        if isinstance(refinement, Mapping):
+            mode = str(refinement.get("status") or "fallback")
+            query_count = len(refinement.get("queries") or [])
+            prefix.append(
+                f"- 检索词策略：规划 Agent 已{('精炼' if mode == 'refined' else '回退生成')} "
+                f"{query_count} 条联合检索式。"
+            )
+        channels = source_record.get("channels")
+        if isinstance(channels, Mapping):
+            channel_labels = {
+                "literature": "Europe PMC 专用文献检索",
+                "general_web": "默认联网搜索",
+            }
+            rendered_channels = [
+                f"{channel_labels.get(str(name), str(name))}={dict(detail).get('status', 'unknown')}"
+                for name, detail in channels.items()
+                if isinstance(detail, Mapping)
+            ]
+            if rendered_channels:
+                prefix.append(f"- 检索通道：{'；'.join(rendered_channels)}。")
+        search_queries = source_record.get("queries") or [source_record.get("query")]
+        for search_query in search_queries:
+            if str(search_query or "").strip():
+                prefix.append(f"- 实际检索式：`{str(search_query).strip()}`")
         rejected_count = int(source_record.get("rejected_count") or 0)
         if rejected_count:
             prefix.append(f"- 质量门已剔除 {rejected_count} 条低可信、重复或主题不相关结果。")
@@ -855,17 +1150,21 @@ def build_plan_markdown(
         return "\n".join([*prefix, empty])
 
     waves = task_waves(tasks)
+    planning_only = bool(plan.get("_planning_only"))
     wave_lines = "\n".join(
         f"- 波次 {index}: {', '.join(task_ids)}"
         for index, task_ids in enumerate(waves, start=1)
-    ) or "- 尚无可执行波次"
+    ) or ("- 本轮仅交付研究方案，不启动执行 DAG" if planning_only else "- 尚无可执行波次")
     task_blocks = []
     for task in tasks:
         task_blocks.append(
             f"### 任务 `{task.get('task_id', '')}`\n\n"
             f"```json\n{json.dumps(dict(task), ensure_ascii=False, indent=2)}\n```"
         )
-    task_markdown = "\n\n".join(task_blocks) or "- 尚无任务"
+    task_markdown = "\n\n".join(task_blocks) or (
+        "- 本轮无执行任务；确认后直接完成方案交付，不进入 Worker 或独立 QC。"
+        if planning_only else "- 尚无任务"
+    )
     return (
         "# 执行计划\n\n"
         f"## 1. 用户目标与最终交付物\n\n{request.strip()}\n\n"

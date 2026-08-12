@@ -40,11 +40,13 @@ export interface AgentChatStreamOptions {
 }
 
 export interface ChatAttachment {
-  type: 'image' | 'file'
+  type: 'image' | 'file' | 'directory'
   url: string
   name: string
   mime_type: string
   file_id?: string
+  source?: 'upload' | 'workspace'
+  recursive?: boolean
 }
 
 export interface ToolCallEvent {
@@ -197,6 +199,17 @@ export interface OverdriveProgressEvent {
   fallback?: boolean
   warning?: string
   stalledTaskId?: string
+  activities?: Array<{
+    id: string
+    label: string
+    kind: 'search' | 'model' | 'sandbox' | 'mcp'
+    status: string
+    queries?: string[]
+    accepted?: number
+    rejected?: number
+    durationMs?: number
+    error?: string
+  }>
   tasks?: Array<{ taskId: string; agentId: string; status: string; errorSummary?: string }>
 }
 
@@ -290,6 +303,7 @@ export interface AgentStreamCallbacks {
   onRoomSpeech?: (event: RoomSpeechEvent) => void
   onRoomSpeechDelta?: (event: RoomSpeechEvent) => void
   onOverdriveProgress?: (event: OverdriveProgressEvent) => void
+  onStudioPromoted?: (event: { sessionId?: string; agentId: string; agentName: string; reason?: string }) => void
   onOverdriveApproval?: (event: OverdriveApprovalEvent) => void
   onSubagentFanout?: (event: SubagentFanoutEvent) => void
   onModeChanged?: (enabled: boolean, degraded?: boolean) => void
@@ -637,10 +651,19 @@ export function useAgentChatStream() {
           tool_call_id: (data.tool_call_id as string) || '',
           tool_name: (data.tool_name as string) || '',
           arguments: (data.arguments as Record<string, unknown>) || {},
+          mcp_server: typeof data.mcp_server === 'string' ? data.mcp_server : undefined,
         })
         break
       case 'mode_changed':
         if (data.mode === 'overdrive') cb.onModeChanged?.(Boolean(data.enabled), Boolean(data.degraded))
+        break
+      case 'studio_promoted':
+        cb.onStudioPromoted?.({
+          sessionId,
+          agentId: String(data.agent_id || ''),
+          agentName: String(data.agent_name || 'AI 工作台'),
+          reason: typeof data.reason === 'string' ? data.reason : undefined,
+        })
         break
       case 'room_speech': {
         const sender = asRecord(data.sender)
@@ -688,6 +711,7 @@ export function useAgentChatStream() {
       }
       case 'overdrive_progress': {
         const rawTasks = Array.isArray(data.tasks) ? data.tasks : []
+        const rawActivities = Array.isArray(data.activities) ? data.activities : []
         cb.onOverdriveProgress?.({
           runId: typeof data.run_id === 'string' ? data.run_id : undefined,
           phase: String(data.phase || 'worker_running') as OverdriveProgressEvent['phase'],
@@ -697,6 +721,23 @@ export function useAgentChatStream() {
           wave: Number(data.wave) || undefined,
           waveTotal: Number(data.wave_total) || undefined,
           waveMode: data.wave_mode === 'parallel' ? 'parallel' : data.wave_mode === 'serial' ? 'serial' : undefined,
+          warning: typeof data.warning === 'string' ? data.warning : undefined,
+          activities: rawActivities.map((raw) => {
+            const activity = asRecord(raw) || {}
+            return {
+              id: String(activity.id || ''),
+              label: String(activity.label || activity.id || '规划活动'),
+              kind: ['model', 'sandbox', 'mcp'].includes(String(activity.kind))
+                ? String(activity.kind) as 'model' | 'sandbox' | 'mcp'
+                : 'search',
+              status: String(activity.status || 'pending'),
+              queries: Array.isArray(activity.queries) ? activity.queries.map(String) : undefined,
+              accepted: Number(activity.accepted || 0),
+              rejected: Number(activity.rejected || 0),
+              durationMs: Number(activity.duration_ms || activity.durationMs || 0),
+              error: typeof activity.error === 'string' ? activity.error : undefined,
+            }
+          }),
           tasks: rawTasks.map((raw) => {
             const task = asRecord(raw) || {}
             return {
@@ -781,6 +822,7 @@ export function useAgentChatStream() {
           success: Boolean(data.success),
           result: data.result,
           ui_payload: (data.ui_payload as Record<string, unknown>) || undefined,
+          mcp_server: typeof data.mcp_server === 'string' ? data.mcp_server : undefined,
         })
         break
       case 'web_search_results':

@@ -79,9 +79,11 @@ AGENTTEAMS_CASE_SYSTEM_PROMPT_SUFFIX = """## AgentTeams 协作 Case
 人工审批、长耗时流程执行、质量闸门或正式交付验收的任务。
 
 - 普通问答、参数解释、一次性小任务和轻量并行任务不要创建 Case。
-- 目标、项目、流程或交付物不明确时先澄清；不得默认创建 Case。
-- 仅当用户已明确同意创建后才调用该工具；工具会展示确认卡，用户确认后再以原参数
-  携带 `_confirmed: true` 调用。
+- 目标、项目、流程或交付物不明确时先澄清；不得在信息不足时发起建单。
+- 当任务已明确且确实需要正式协作时，先用一句话说明触发理由，并在同一轮主动调用该工具
+  展示确认卡；不要只给出“是否创建”的文字建议，也不要要求用户另行寻找手动入口。
+- 首次工具调用只发起受控确认，不得伪造 `_confirmed`。用户点击确认卡后，平台才会创建 Case；
+  创建后用户可在聊天卡片中随时取消。
 - 若请求来自多专家会诊，须把会诊事件提供的 `consultation_id` 和 `consultation_summary`
   分别填入 `origin_consultation_id`、`consultation_summary`，以保留 Case 来源追溯。
 - 创建成功后告知用户打开协作 Case，继续完成预检、审批和交付验收。
@@ -1046,6 +1048,7 @@ class AgentService:
                     "name": candidate.name,
                     "description": ability.get("summary") or candidate.description,
                     "category": candidate.category,
+                    "chat_entry": ability.get("chat_entry", True),
                     "capabilities": ability.get("capabilities", []),
                     "not_suitable_for": ability.get("not_suitable_for", []),
                     "handoff_when": ability.get("handoff_when", []),

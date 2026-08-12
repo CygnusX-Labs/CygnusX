@@ -92,10 +92,10 @@ dev = [
     "types-pyyaml>=6.0.12",
 ]
 
-# === uv 镜像源（清华主 + 阿里云备） ===
+# === uv 镜像源（中科大主 + 阿里云备） ===
 [[tool.uv.index]]
-name = "tuna"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+name = "ustc"
+url = "https://pypi.mirrors.ustc.edu.cn/simple/"
 default = true
 
 [[tool.uv.index]]

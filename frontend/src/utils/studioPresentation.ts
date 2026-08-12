@@ -39,10 +39,11 @@ export function inferStudioTaskStatus(
 export function parseTaskUnderstanding(
   messages: ChatMessage[],
   isStreaming: boolean,
+  fallbackDomain = '',
 ): StudioTaskUnderstanding | null {
   const content = messages.find((message) => message.role === 'user')?.content.trim()
   if (!content) return null
-  const domain = DOMAIN_PATTERNS.find(({ pattern }) => pattern.test(content))?.label
+  const domain = DOMAIN_PATTERNS.find(({ pattern }) => pattern.test(content))?.label || fallbackDomain
   if (!domain) return null
 
   const normalized = content.replace(/\s+/g, ' ').trim()

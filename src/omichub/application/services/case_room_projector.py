@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote, urlparse
 
 from loguru import logger
 
@@ -78,12 +79,7 @@ class CaseRoomProjector:
                     "waveMode": "serial",
                     "tasks": [{"taskId": task_id, "agentId": sender["agent_id"], "status": "succeeded"}],
                     "artifacts": [
-                        {
-                            "path": str(item.get("path") or ""),
-                            "kind": str(item.get("kind") or "file"),
-                            "status": "ready",
-                            "source": "agentteams",
-                        }
+                        self._artifact_payload(case_id, item)
                         for item in artifacts
                         if isinstance(item, dict) and item.get("path")
                     ],
@@ -116,6 +112,31 @@ class CaseRoomProjector:
                 projected["idempotency_key"] = f"{case_id}:{event_id}:{projected['type']}:{index}"
         return result
 
+    @staticmethod
+    def _artifact_payload(case_id: str, artifact: dict[str, Any]) -> dict[str, Any]:
+        path = str(artifact.get("path") or "")
+        download_url = str(artifact.get("download_url") or "") or None
+        preview_url = str(artifact.get("preview_url") or "") or None
+        s3_uri = str(artifact.get("s3_uri") or "")
+        if not download_url and s3_uri.startswith("s3://"):
+            parsed = urlparse(s3_uri)
+            object_path = parsed.path.lstrip("/")
+            prefix = f"{case_id}/"
+            if object_path.startswith(prefix):
+                key = object_path[len(prefix) :]
+                base = f"/api/v1/agent-teams/cases/{quote(case_id)}/artifacts/{quote(key, safe='/')}"
+                download_url = f"{base}?download=true"
+                if key.lower().endswith((".html", ".htm")):
+                    preview_url = preview_url or base
+        return {
+            "path": path,
+            "kind": str(artifact.get("kind") or "file"),
+            "status": "ready",
+            "source": "agentteams",
+            "download_url": download_url,
+            "preview_url": preview_url,
+        }
+
     def _sender(self, actor: str, *, flow_id: str) -> dict[str, str]:
         if actor == "bioops-manager":
             return {"agent_id": "agent-general", "name": "星尘 AI", "avatar": "✨", "color": "#4f8ef7", "role": "manager"}
@@ -128,11 +149,11 @@ class CaseRoomProjector:
             sender = next((item for item in labels.values() if item["agent_id"] == flow_agent), None)
             if sender is not None:
                 return dict(sender)
-        mapping = self._registry.role_agent_map()
-        if actor not in mapping:
+        agent_id = self._registry.resolve_agent(actor)
+        if agent_id is None:
             logger.warning("AgentTeams 未命中角色映射，降级为 agent-general: actor={}", actor)
         return {
-            "agent_id": mapping.get(actor, "agent-general"),
+            "agent_id": agent_id or "agent-general",
             "name": actor or "协作成员",
             "avatar": "💬",
             "color": "#64748b",
@@ -148,8 +169,23 @@ class CaseRoomProjector:
         message_id: str,
         case_id: str,
     ) -> dict[str, Any] | None:
+        queue_reason = str(payload.get("queue_reason") or payload.get("reason") or "")
+        queued_scope = "当前用户" if queue_reason == "requester_active_case_quota" else "当前项目"
         labels = {
-            "case.created": f"已确认协作 Case「{str(payload.get('intent') or '正式分析任务')[:80]}」，开始分派团队工作。",
+            "case.created": (
+                f"已创建协作 Case「{str(payload.get('intent') or '正式分析任务')[:80]}」，"
+                + (
+                    f"但{queued_scope}活跃 Case 已达上限，已自动进入队列。"
+                    if queue_reason
+                    else "开始分派团队工作。"
+                )
+            ),
+            "case.queued": f"{queued_scope}活跃 Case 已达上限，本 Case 正在排队；释放容量后会自动继续。",
+            "case.dequeued": "协作容量已经释放，本 Case 已离开队列并开始规划。",
+            "planning.revised": (
+                f"计划已更新为 v{str(payload.get('plan_version') or '?')}，"
+                f"新短码 {str(payload.get('plan_hash') or '')[:8]}；旧版本立即失效，等待重新确认。"
+            ),
             "work_item.assigned": f"我已领取工作项：{str(payload.get('objective') or payload.get('skill_name') or '开始处理')[:180]}。",
             "work_item.claimed": f"已认领工作项 {str(payload.get('work_item_id') or '')}，开始执行。",
             "work_item.running": f"工作项 {str(payload.get('work_item_id') or '')} 正在执行。",
@@ -163,6 +199,19 @@ class CaseRoomProjector:
             "approval.reminder": "Case 已等待审批超过 24 小时，请确认冻结计划；超过 7 天将自动取消。",
             "remediation.requested": f"质控已发起修复请求，由 {str(payload.get('target') or '协作角色')} 处理：{str(payload.get('objective') or '')}",
             "remediation.completed": "修复工作已完成，Case 已重新进入人工审批；批准后将生成新执行版本并再次质控。",
+            "manager.review_ready": (
+                f"Manager 已验收工作项 {str(payload.get('work_item_id') or '')}："
+                f"{str(payload.get('decision') or 'accepted')}。"
+                f"{str(payload.get('summary') or '结果可继续流转到下游。')[:300]}"
+            ),
+            "work_item.retry_scheduled": (
+                f"工作项 {str(payload.get('work_item_id') or '')} 执行失败，"
+                f"将在 {str(payload.get('delay_seconds') or 0)} 秒后自动重试。"
+            ),
+            "work_item.retry_exhausted": (
+                f"工作项 {str(payload.get('work_item_id') or '')} 已耗尽自动重试次数；"
+                "请选择重试、跳过或终止 Case。"
+            ),
             "omic_task.failed": CaseRoomProjector._failure_message(payload),
             "case.execution_failed": CaseRoomProjector._failure_message(payload),
             "case.cancelled": (

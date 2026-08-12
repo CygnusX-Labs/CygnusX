@@ -185,7 +185,7 @@ def test_local_prompt_path_cannot_escape_agent_directory(tmp_path: Path):
 
 
 @pytest.mark.unit
-def test_mas_enabled_loads_orchestrator_without_site_yaml_edit(tmp_path: Path, monkeypatch):
+def test_mas_enabled_does_not_implicitly_register_orchestrator(tmp_path: Path, monkeypatch):
     site_yaml = tmp_path / "OmicHub.yaml"
     site_yaml.write_text("agents:\n  enabled: [general]\n", encoding="utf-8")
     agents_dir = tmp_path / "ai"
@@ -204,7 +204,7 @@ def test_mas_enabled_loads_orchestrator_without_site_yaml_edit(tmp_path: Path, m
 
     configs = agent_loader.load_agent_configs()
 
-    assert [item["agent_id"] for item in configs] == ["agent-general", "agent-orchestrator"]
+    assert [item["agent_id"] for item in configs] == ["agent-general"]
 
 
 class _Result:

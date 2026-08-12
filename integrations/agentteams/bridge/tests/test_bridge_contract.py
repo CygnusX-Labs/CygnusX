@@ -38,6 +38,7 @@ class FixtureOmicHubClient:
         return {
             "allowed_flow_ids": ["rna_seq", "test_general"],
             "flow_agent_map": {"rna_seq": "agent-rnaseq", "test_general": "agent-code"},
+            "flow_quality_gate_map": {"rna_seq": True, "test_general": False},
             "role_agent_map": {"test-specialist": "agent-code"},
             "worker_profiles": {
                 "test-specialist": {
@@ -104,10 +105,11 @@ def settings(tmp_path):
         identities=(
             "approval-authority:approval,bioops-manager:manager,data-steward:steward,"
             "workflow-operator:operator,quality-auditor:auditor,delivery-reporter:reporter,"
-            "agent-code:code,agent-viz:viz,agent-scrna:scrna,analysis-worker:analysis"
+            "agent-code:code,agent-viz:viz,agent-scrna:scrna,agent-atacseq:atacseq,"
+            "analysis-worker:analysis"
         ),
         allowed_flow_ids="rna_seq",
-        role_agent_map="data-steward:agent-data,quality-auditor:agent-qc,delivery-reporter:agent-delivery,agent-code:agent-code,agent-viz:agent-viz,agent-scrna:agent-scrna,agent-rnaseq:agent-rnaseq",
+        role_agent_map="data-steward:agent-data,quality-auditor:agent-qc,delivery-reporter:agent-delivery,agent-code:agent-code,agent-viz:agent-viz,agent-scrna:agent-scrna,agent-rnaseq:agent-rnaseq,agent-atacseq:agent-atacseq",
         audit_log_path=str(tmp_path / "audit.jsonl"),
         case_store_path=str(tmp_path / "cases.json"),
         manifest_dir=str(tmp_path / "manifests"),
@@ -205,6 +207,7 @@ async def test_capability_reload_discovers_new_flow_without_restart(client) -> N
         ("agent-code", "code", "code-review"),
         ("agent-viz", "viz", "visualization-review"),
         ("agent-scrna", "scrna", "scrna-interpretation"),
+        ("agent-atacseq", "atacseq", "atacseq-interpretation"),
     ],
 )
 async def test_professional_agent_worker_can_claim_and_complete_own_read_only_work_item(
@@ -352,6 +355,42 @@ async def test_upstream_uses_api_key_when_configured(settings) -> None:
     await upstream.aclose()
 
     assert calls[0].headers["x-api-key"] == "omh_restricted_key"
+    assert "authorization" not in calls[0].headers
+
+
+@pytest.mark.asyncio
+async def test_capability_snapshot_uses_only_integration_token(settings) -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "allowed_flow_ids": [],
+                "flow_agent_map": {},
+                "flow_quality_gate_map": {},
+                "role_agent_map": {},
+                "worker_profiles": {},
+            },
+        )
+
+    api_key_settings = settings.model_copy(
+        update={
+            "omichub_service_token": "",
+            "omichub_api_key": "omh_restricted_key",
+            "omichub_integration_token": "integration-secret",
+        }
+    )
+    upstream = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="http://omic.test"
+    )
+    client = OmicHubClient(api_key_settings, upstream)
+    await client.get_agentteams_capabilities()
+    await upstream.aclose()
+
+    assert calls[0].headers["x-integration-token"] == "integration-secret"
+    assert "x-api-key" not in calls[0].headers
     assert "authorization" not in calls[0].headers
 
 
@@ -620,9 +659,8 @@ async def test_case_list_is_manager_only_and_filters_requester(client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_case_element_room_url_is_stored_and_returned(client) -> None:
+async def test_case_create_ignores_legacy_element_room_url(client) -> None:
     request_client, _ = client
-    room_url = "https://element.example.com/#/room/!case-006:matrix.example.com"
     created = await request_client.post(
         "/v1/cases",
         headers=headers("bioops-manager", "manager"),
@@ -631,116 +669,11 @@ async def test_case_element_room_url_is_stored_and_returned(client) -> None:
             "project_ref": {"kind": "project", "id": "project-1"},
             "intent": "bulk_rnaseq_delivery",
             "requester_ref": "user-1",
-            "element_room_url": room_url,
+            "element_room_url": "https://element.example.com/#/room/!legacy:matrix.example.com",
         },
     )
     assert created.status_code == 201
-    assert created.json()["element_room_url"] == room_url
-
-    fetched = await request_client.get(
-        "/v1/cases/bioops_006", headers=headers("bioops-manager", "manager")
-    )
-    assert fetched.status_code == 200
-    assert fetched.json()["element_room_url"] == room_url
-
-    listed = await request_client.get("/v1/cases", headers=headers("bioops-manager", "manager"))
-    assert listed.status_code == 200
-    assert listed.json()["items"][0]["element_room_url"] == room_url
-
-    transitioned = await request_client.post(
-        "/v1/cases/bioops_006/state",
-        headers=headers("bioops-manager", "manager"),
-        json={"status": "cancelled", "reason": "no longer needed"},
-    )
-    assert transitioned.status_code == 200
-    assert transitioned.json()["element_room_url"] == room_url
-
-
-@pytest.mark.asyncio
-async def test_case_element_room_url_appears_in_worker_case_view(client) -> None:
-    request_client, _ = client
-    room_url = "https://element.example.com/#/room/!case-007:matrix.example.com"
-    created = await request_client.post(
-        "/v1/cases",
-        headers=headers("bioops-manager", "manager"),
-        json={
-            "case_id": "bioops_007",
-            "project_ref": {"kind": "project", "id": "project-1"},
-            "intent": "bulk_rnaseq_delivery",
-            "requester_ref": "user-1",
-            "element_room_url": room_url,
-        },
-    )
-    assert created.status_code == 201
-    assigned = await request_client.post(
-        "/v1/cases/bioops_007/work-items",
-        headers=headers("bioops-manager", "manager"),
-        json={
-            "work_item_id": "preflight-01",
-            "target": "data-steward",
-            "objective": "Run project-preflight",
-            "skill_name": "project-preflight",
-        },
-    )
-    assert assigned.status_code == 201
-    worker_case = await request_client.get(
-        "/v1/cases/bioops_007", headers=headers("data-steward", "steward")
-    )
-    assert worker_case.status_code == 200
-    assert worker_case.json()["element_room_url"] == room_url
-
-
-@pytest.mark.asyncio
-async def test_case_without_element_room_url_defaults_to_none(client) -> None:
-    request_client, _ = client
-    await create_case(request_client, "bioops_008")
-    fetched = await request_client.get(
-        "/v1/cases/bioops_008", headers=headers("bioops-manager", "manager")
-    )
-    assert fetched.status_code == 200
-    assert fetched.json()["element_room_url"] is None
-
-    created_empty = await request_client.post(
-        "/v1/cases",
-        headers=headers("bioops-manager", "manager"),
-        json={
-            "case_id": "bioops_009",
-            "project_ref": {"kind": "project", "id": "project-1"},
-            "intent": "bulk_rnaseq_delivery",
-            "requester_ref": "user-1",
-            "element_room_url": "",
-        },
-    )
-    assert created_empty.status_code == 201
-    assert created_empty.json()["element_room_url"] is None
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "room_url",
-    [
-        "https://element.example.com/?access_token=secret-token",
-        "https://element.example.com/?login_token=secret-token",
-        "https://element.example.com/login?PASSWORD=hunter2",
-        "ftp://element.example.com/room",
-        "element.example.com/#/room/!case:matrix.example.com",
-        "https:///no-host",
-    ],
-)
-async def test_case_create_rejects_invalid_element_room_url(client, room_url: str) -> None:
-    request_client, _ = client
-    response = await request_client.post(
-        "/v1/cases",
-        headers=headers("bioops-manager", "manager"),
-        json={
-            "case_id": "bioops_bad_url",
-            "project_ref": {"kind": "project", "id": "project-1"},
-            "intent": "bulk_rnaseq_delivery",
-            "requester_ref": "user-1",
-            "element_room_url": room_url,
-        },
-    )
-    assert response.status_code == 422
+    assert "element_room_url" not in created.json()
 
 
 @pytest.mark.asyncio

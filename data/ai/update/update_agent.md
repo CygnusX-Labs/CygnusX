@@ -9,9 +9,10 @@
 >
 > 目标基线：在现有超频模式上演进，不另造一套用户入口。
 >
-> 比赛阶段说明：比赛要求以 AgentTeams 为协同基点，该阶段的实现框架见
-> `data/ai/AgentTeams_update.md`。本文是**赛后收敛的长期目标**（Kimi 式单窗口人格化异步团队）；
-> 两份文档共享同一条原则——执行者始终是平台 `data/ai/*.yaml` 定义的真实 Agent。
+> AgentTeams 的长期目标与施工依据统一见
+> `data/ai/update/AgentTeams_VISION_FINAL.md` 与
+> `data/ai/update/AgentTeams_CONVERGENCE_PLAN.md`（v1.1）。本文仅保留超频模式的历史设计背景，
+> 不再作为 AgentTeams 的执行依据；执行者始终是平台 `data/ai/*.yaml` 定义的真实 Agent。
 
 ---
 

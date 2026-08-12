@@ -22,10 +22,10 @@ RUN useradd --create-home --uid 10001 sandbox \
     && mkdir -p /workspace/.logs \
     && chown -R 10001:10001 /workspace
 
-# 预置清华 PyPI 镜像，加速构建期与运行期 pip 安装
+# 预置中科大 PyPI 镜像，加速构建期与运行期 pip 安装
 RUN printf '%s\n' \
       '[global]' \
-      'index-url = https://pypi.tuna.tsinghua.edu.cn/simple' \
+      'index-url = https://pypi.mirrors.ustc.edu.cn/simple' \
       'extra-index-url = https://mirrors.aliyun.com/pypi/simple/' \
       'timeout = 60' \
       'retries = 10' \
@@ -33,8 +33,8 @@ RUN printf '%s\n' \
 
 # sandbox-agent 依赖（最小集）+ 数据分析栈
 COPY requirements-agent.txt /tmp/requirements-agent.txt
-RUN pip install -r /tmp/requirements-agent.txt \
-    && pip install \
+RUN pip install -i https://pypi.mirrors.ustc.edu.cn/simple -r /tmp/requirements-agent.txt \
+    && pip install -i https://pypi.mirrors.ustc.edu.cn/simple \
         pandas \
         numpy \
         matplotlib \

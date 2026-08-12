@@ -63,6 +63,7 @@ class AgentAbilityCatalog:
 
         return {
             "summary": str(entry.get("summary") or "").strip(),
+            "chat_entry": entry.get("chat_entry") is not False,
             "capabilities": strings("capabilities"),
             "not_suitable_for": strings("not_suitable_for"),
             "handoff_when": strings("handoff_when"),

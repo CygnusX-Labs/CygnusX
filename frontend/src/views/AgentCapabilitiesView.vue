@@ -431,7 +431,7 @@ onMounted(async () => {
 .agent-browser {
   position: sticky;
   top: 24px;
-  height: calc(100dvh - 232px);
+  height: calc(100dvh - 160px);
   padding: 18px;
   display: flex;
   min-height: 360px;
@@ -571,7 +571,7 @@ onMounted(async () => {
   position: sticky;
   top: 24px;
   min-width: 0;
-  max-height: calc(100dvh - 232px);
+  max-height: calc(100dvh - 160px);
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-gutter: stable;

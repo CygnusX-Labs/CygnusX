@@ -12,12 +12,13 @@ from pydantic import BaseModel, ConfigDict, Field
 class ChatAttachment(BaseModel):
     """聊天附件（多模态消息用）"""
 
-    type: str = Field("file", description="image 或 file")
-    url: str
+    type: str = Field("file", description="附件类型或 MIME；目录使用 directory")
+    url: str = ""
     name: str = ""
     mime_type: str = ""
     file_id: str = ""
     source: str = ""
+    recursive: bool = False
 
 
 class ChatStreamRequest(BaseModel):

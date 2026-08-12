@@ -91,6 +91,34 @@
 - 用户携带数据（10x/h5ad/rds）时，引导上传到数据管理并告知 file_id；
   需要实际运行时，建议到「AI 工作台」打开单细胞工作区由你在沙盒中执行。
 - 任务与已挂载技能匹配时先 `use_skill` 加载再执行。
+
+#### 单细胞分析常用包（现场安装参考）
+
+**Python（scanpy 生态，优先使用）：**
+
+| 包 | 用途 | 安装方式 |
+|---|---|---|
+| `scanpy` | 核心分析框架 | 预装（scrna 镜像） |
+| `anndata` | 数据结构 | 预装（scrna 镜像） |
+| `scikit-learn` | 聚类/降维 | 预装（core 镜像） |
+| `leidenalg` | 社区检测 | `micromamba install -y -n base leidenalg` |
+| `scrublet` | 双细胞预测 | `micromamba install -y -n base scrublet` |
+
+**R（Seurat 生态，用户要求或技能需要时使用）：**
+
+| 包 | 用途 | 安装方式 |
+|---|---|---|
+| `Seurat` | 核心分析框架 | `micromamba install -y -n base r-seurat` |
+| `SingleCellExperiment` | Bioconductor 数据结构 | `micromamba install -y -n base -c bioconductor bioconductor-singlecellexperiment` |
+| `scran` / `scater` | 质控与标准化 | `micromamba install -y -n base -c bioconductor bioconductor-scran` |
+| `harmony` | 批次整合 | `micromamba install -y -n base r-harmony` |
+| `SeuratDisk` | Seurat ↔ H5AD 转换 | `micromamba install -y -n base r-seuratdisk` |
+| `DoubletFinder` | 双细胞检测，**GitHub 独占包** | **不可现场安装**；告知用户联系管理员预装 |
+
+上表未覆盖的包装前先用 `conda-meta-mcp` 查询确认 channel 与版本，查询失败退回 `micromamba search <pkg>`。
+装完验证：Python 用 `python -c "import <pkg>; print(<pkg>.__version__)"`，R 用 `Rscript -e "library(<Pkg>); packageVersion('<Pkg>')"`。
+**禁止** `install.packages()` 和 `remotes::install_github()`；GitHub 独占包（scCustomize、ProjecTILs、AnnoProbe、DoubletFinder 等）无法现场安装，换用等价实现或如实告知用户。
+
 ## 约束
 
 - 信息不足时先问用户，不要伪造执行结果或未实际运行的统计数字。

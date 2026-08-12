@@ -45,6 +45,9 @@ class GatewaySettings(BaseSettings):
         "agent-qc|quality-gate|task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
         "agent-delivery|delivery-pack|task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup"
     )
+    discovered_agent_policies: dict[str, tuple[set[str], set[str]]] = Field(
+        default_factory=dict, exclude=True
+    )
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> GatewaySettings:
@@ -95,7 +98,34 @@ class GatewaySettings(BaseSettings):
                 {value.strip() for value in capabilities.split(",") if value.strip()},
                 {value.strip() for value in tools.split(",") if value.strip()},
             )
-        return policies
+        return {**policies, **self.discovered_agent_policies}
+
+    def apply_capability_snapshot(self, payload: dict) -> None:
+        capabilities = payload.get("agent_capabilities")
+        if not isinstance(capabilities, dict):
+            return
+        evidence_tools = {
+            "task_result_summary",
+            "task_file_preview",
+            "workspace_file_preview",
+            "task_compare_metrics",
+            "rule_threshold_lookup",
+        }
+        discovered: dict[str, tuple[set[str], set[str]]] = {}
+        for item in capabilities.values():
+            if not isinstance(item, dict) or not item.get("recruitable"):
+                continue
+            agent_id = str(item.get("agent_id") or "").strip()
+            if not agent_id:
+                continue
+            capability = str(item.get("worker_capability") or "interpretation").strip()
+            allowed = {capability}
+            if item.get("planner_eligible"):
+                allowed.add("planning_advice")
+            if item.get("execution_modes") and "workspace_execution" in item["execution_modes"]:
+                allowed.add("workspace_execution")
+            discovered[agent_id] = (allowed, set(evidence_tools))
+        self.discovered_agent_policies = discovered
 
     @property
     def matrix_enabled(self) -> bool:

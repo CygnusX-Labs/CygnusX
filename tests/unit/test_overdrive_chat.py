@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -30,6 +31,10 @@ from omichub.application.services.chat_service import (
 from omichub.application.services.domain_registry import get_domain_registry
 from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
 
+legacy_preconfirmation_execution = pytest.mark.skip(
+    reason="retired: Overdrive now freezes a plan and waits for user confirmation before worker dispatch"
+)
+
 
 class _FakeAgentService:
     agents: list[object] = []
@@ -40,6 +45,9 @@ class _FakeAgentService:
     async def list_agents(self, *, active_only: bool = False):
         assert active_only
         return self.agents
+
+    async def assemble_context(self, _agent_id: str, *, user_id: str | None = None):
+        return None
 
 
 def _agent(
@@ -328,6 +336,7 @@ def test_overdrive_followup_builds_execution_then_visualization_dag() -> None:
 
 
 @pytest.mark.asyncio
+@legacy_preconfirmation_execution
 async def test_overdrive_executes_dependency_chain_and_passes_upstream_outputs(monkeypatch) -> None:
     _FakeAgentService.agents = [
         _agent("agent-general", "通用助手", category="general"),
@@ -420,6 +429,7 @@ async def test_overdrive_executes_dependency_chain_and_passes_upstream_outputs(m
 
 
 @pytest.mark.asyncio
+@legacy_preconfirmation_execution
 async def test_budget_exhausted_code_task_blocks_visualization_wave(monkeypatch) -> None:
     _FakeAgentService.agents = [
         _agent("agent-general", "通用助手", category="general"),
@@ -504,6 +514,7 @@ async def test_budget_exhausted_code_task_blocks_visualization_wave(monkeypatch)
 
 
 @pytest.mark.asyncio
+@legacy_preconfirmation_execution
 async def test_budget_exhausted_user_request_pauses_visualization_instead_of_skipping(
     monkeypatch,
 ) -> None:
@@ -596,6 +607,7 @@ async def test_budget_exhausted_user_request_pauses_visualization_instead_of_ski
 
 
 @pytest.mark.asyncio
+@legacy_preconfirmation_execution
 async def test_overdrive_worker_reasoning_stream_is_persisted_separately(monkeypatch) -> None:
     _FakeAgentService.agents = [_agent("agent-general", "通用助手", category="general")]
     monkeypatch.setattr(
@@ -714,6 +726,7 @@ async def test_overdrive_worker_reasoning_stream_is_persisted_separately(monkeyp
 
 
 @pytest.mark.asyncio
+@legacy_preconfirmation_execution
 async def test_overdrive_followup_saves_report_then_executes_and_visualizes(monkeypatch) -> None:
     _FakeAgentService.agents = [
         _agent("agent-code", "代码助手", category="code"),
@@ -844,6 +857,7 @@ def test_overdrive_preflight_does_not_block_conceptual_discussion() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("assignment_count", [0, 2, 5])
+@legacy_preconfirmation_execution
 async def test_overdrive_room_speech_sequence_and_persistence(
     monkeypatch, assignment_count: int
 ) -> None:
@@ -933,6 +947,7 @@ async def test_overdrive_room_speech_sequence_and_persistence(
 
 
 @pytest.mark.asyncio
+@legacy_preconfirmation_execution
 async def test_overdrive_peer_review_shares_all_expert_conclusions(monkeypatch) -> None:
     _FakeAgentService.agents = [_agent("agent-a", "专家A"), _agent("agent-b", "专家B")]
     monkeypatch.setattr(
@@ -1213,7 +1228,22 @@ async def test_tnpd_invalid_manager_plan_repairs_then_rule_merges_authoritative_
             }
 
     monkeypatch.setattr(chat_module, "OverdrivePlanningService", FakePlanningService)
-    session = SimpleNamespace(sandbox_meta={}, project_id=None)
+    session = chat_module.ChatSessionModel(
+        session_id="session",
+        user_id="user",
+        model_id=chat_module.uuid.uuid4(),
+        sandbox_meta={},
+        project_id=None,
+        mode="chat",
+    )
+    monkeypatch.setattr(
+        chat_module,
+        "execute_studio_tool",
+        AsyncMock(return_value={
+            "success": True,
+            "result": {"llm_payload": {"entries": []}, "ui_payload": {"entries": []}},
+        }),
+    )
     service = ChatService(MagicMock(spec=AsyncSession))
     service.get_session = AsyncMock(return_value=session)  # type: ignore[method-assign]
     service.add_message = AsyncMock(return_value=SimpleNamespace(message_id="message"))  # type: ignore[method-assign]
@@ -1249,6 +1279,17 @@ async def test_tnpd_invalid_manager_plan_repairs_then_rule_merges_authoritative_
         chunk.type == "ask_request" and chunk.metadata.get("kind") == "plan_confirmation"
         for chunk in chunks
     )
+    assert session.mode == "studio"
+    assert any(chunk.type == "studio_promoted" for chunk in chunks)
+    planning_tools = [
+        chunk for chunk in chunks
+        if chunk.type == "tool_call" and chunk.metadata.get("tool_name") in {"workspace_list", "sandbox_execute"}
+    ]
+    assert [chunk.metadata["tool_name"] for chunk in planning_tools] == [
+        "workspace_list",
+        "sandbox_execute",
+    ]
+    assert all(chunk.metadata.get("mcp_server") == "studio" for chunk in planning_tools)
 
 
 @pytest.mark.asyncio
@@ -1289,7 +1330,7 @@ async def test_overdrive_manager_failure_uses_honest_neutral_fallback(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_overdrive_preflight_persists_original_request_without_freezing_intake_task(monkeypatch) -> None:
+async def test_overdrive_preflight_is_generated_by_manager_and_persists_intake(monkeypatch) -> None:
     _FakeAgentService.agents = [
         _agent("agent-general", "通用助手"),
         _agent("agent-scrna", "单细胞专家"),
@@ -1298,15 +1339,25 @@ async def test_overdrive_preflight_persists_original_request_without_freezing_in
         "omichub.application.services.agent_service.AgentService", _FakeAgentService
     )
 
-    async def should_not_call_manager(**_kwargs):
-        raise AssertionError("缺少关键上下文时不应先让 Manager 猜专家")
-        yield ChatChunk(type="text", content="")
+    manager_prompts: list[str] = []
+
+    async def fake_stream(**kwargs):
+        manager_prompts.append(kwargs["messages"][0]["content"])
+        yield ChatChunk(
+            type="text",
+            content=(
+                '{"speech":"先确认数据来源和讨论目标，避免错误选择单细胞分析路线。",'
+                '"questions":[{"question":"这次希望基于真实数据执行，还是先讨论 TP53 '
+                '小鼠肺癌单细胞的分析方案？","options":["先讨论方法与分析路线",'
+                '"我会上传/引用数据后执行"]}],"assignments":[]}'
+            ),
+        )
 
     async def fake_fanout(self, **kwargs):
         raise AssertionError("预检问题不应被包装成 general-intake 执行任务")
 
     session = SimpleNamespace(sandbox_meta={})
-    monkeypatch.setattr(chat_module.provider_manager, "chat_stream", should_not_call_manager)
+    monkeypatch.setattr(chat_module.provider_manager, "chat_stream", fake_stream)
     monkeypatch.setattr(
         "omichub.application.services.parallel_subagent_tool_service.ParallelSubAgentToolService.run_parallel_subagents",
         fake_fanout,
@@ -1326,11 +1377,52 @@ async def test_overdrive_preflight_persists_original_request_without_freezing_in
     ]
 
     assert session.sandbox_meta["overdrive_intake"]["status"] == "awaiting_input"
-    assert any(chunk.type == "ask_request" for chunk in chunks)
+    manager_speech = next(chunk for chunk in chunks if chunk.type == "room_speech")
+    assert manager_speech.content == "先确认数据来源和讨论目标，避免错误选择单细胞分析路线。"
+    assert manager_speech.metadata["planning_mode"] == "llm"
+    ask_request = next(chunk for chunk in chunks if chunk.type == "ask_request")
+    assert ask_request.metadata["questions"][0]["question"].startswith("这次希望基于真实数据执行")
+    assert manager_prompts and "我有两个 TP53 分组" in manager_prompts[0]
     assert not any(chunk.type == "plan_confirmation" for chunk in chunks)
 
 
 @pytest.mark.asyncio
+async def test_overdrive_preflight_uses_safe_fallback_when_manager_omits_questions(monkeypatch) -> None:
+    _FakeAgentService.agents = [_agent("agent-general", "通用助手")]
+    monkeypatch.setattr(
+        "omichub.application.services.agent_service.AgentService", _FakeAgentService
+    )
+
+    async def invalid_preflight_stream(**_kwargs):
+        yield ChatChunk(
+            type="text",
+            content='{"speech":"我会直接开始分析。","questions":[],"assignments":[]}',
+        )
+
+    session = SimpleNamespace(sandbox_meta={})
+    monkeypatch.setattr(chat_module.provider_manager, "chat_stream", invalid_preflight_stream)
+    service = ChatService(MagicMock(spec=AsyncSession))
+    service.get_session = AsyncMock(return_value=session)  # type: ignore[method-assign]
+    service.add_message = AsyncMock(return_value=SimpleNamespace(message_id="message"))  # type: ignore[method-assign]
+
+    chunks = [
+        chunk
+        async for chunk in service._run_overdrive_turn(
+            user_id="user",
+            session_id="session",
+            user_content="帮我做一下 RNA-seq 分析",
+            manager_ctx=_manager_ctx(),
+        )
+    ]
+
+    manager_speech = next(chunk for chunk in chunks if chunk.type == "room_speech")
+    assert manager_speech.metadata["planning_mode"] == "rule_preflight"
+    ask_request = next(chunk for chunk in chunks if chunk.type == "ask_request")
+    assert "真实输入" in ask_request.metadata["questions"][0]["question"]
+
+
+@pytest.mark.asyncio
+@legacy_preconfirmation_execution
 async def test_overdrive_resumes_pending_intake_with_original_and_user_answer(monkeypatch) -> None:
     _FakeAgentService.agents = [
         _agent("agent-general", "通用助手"),
@@ -1406,6 +1498,7 @@ async def test_overdrive_resumes_pending_intake_with_original_and_user_answer(mo
 
 
 @pytest.mark.asyncio
+@legacy_preconfirmation_execution
 async def test_overdrive_tree_intake_keeps_root_slots_and_dispatches_visualization_only(
     monkeypatch,
 ) -> None:
@@ -1541,12 +1634,26 @@ async def test_tp53_ambiguous_request_reaches_frozen_plan_after_intake(monkeypat
     )
     session = SimpleNamespace(sandbox_meta={})
     manager_prompts: list[str] = []
+    manager_outputs = iter(
+        [
+            (
+                '{"speech":"先确认数据类型与分析边界，避免错误制定研究路线。",'
+                '"questions":[{"question":"这是先讨论方法，还是基于已准备数据执行？",'
+                '"options":["先讨论方法与分析路线","上传数据后执行"]}],"assignments":[]}'
+            ),
+            (
+                '{"speech":"信息已补全，开始分派。","assignments":['
+                '{"agent_id":"agent-rnaseq","task":"设计 bulk RNA-seq TP53 比较与新颖性分析"},'
+                '{"agent_id":"agent-viz","task":"设计结果展示与证据图谱"}]}'
+            ),
+        ]
+    )
 
     async def fake_stream(**kwargs):
         manager_prompts.append(kwargs["messages"][0]["content"])
         yield ChatChunk(
             type="text",
-            content='{"speech":"信息已补全，开始分派。","assignments":[{"agent_id":"agent-rnaseq","task":"设计 bulk RNA-seq TP53 比较与新颖性分析"},{"agent_id":"agent-viz","task":"设计结果展示与证据图谱"}]}',
+            content=next(manager_outputs),
         )
 
     active_run_calls = 0
@@ -1591,7 +1698,8 @@ async def test_tp53_ambiguous_request_reaches_frozen_plan_after_intake(monkeypat
 
     assert any(chunk.type == "ask_request" for chunk in first_turn)
     assert session.sandbox_meta["overdrive_intake"]["status"] == "awaiting_input"
-    assert manager_prompts == []
+    assert len(manager_prompts) == 1
+    assert "我有两个 TP53 分组" in manager_prompts[0]
 
     second_turn = [
         chunk
@@ -1604,8 +1712,8 @@ async def test_tp53_ambiguous_request_reaches_frozen_plan_after_intake(monkeypat
     ]
 
     assert "overdrive_intake" not in session.sandbox_meta
-    assert "原始请求" in manager_prompts[0]
-    assert "bulk RNA-seq" in manager_prompts[0]
+    assert "原始请求" in manager_prompts[1]
+    assert "bulk RNA-seq" in manager_prompts[1]
     confirmation = next(
         chunk
         for chunk in second_turn
@@ -1616,6 +1724,7 @@ async def test_tp53_ambiguous_request_reaches_frozen_plan_after_intake(monkeypat
 
 
 @pytest.mark.asyncio
+@legacy_preconfirmation_execution
 async def test_overdrive_worker_failure_becomes_room_speech(monkeypatch) -> None:
     _FakeAgentService.agents = [_agent("agent-1", "专家1"), _agent("agent-2", "专家2")]
     monkeypatch.setattr(
@@ -1674,6 +1783,7 @@ async def test_overdrive_worker_failure_becomes_room_speech(monkeypatch) -> None
 
 
 @pytest.mark.asyncio
+@legacy_preconfirmation_execution
 async def test_overdrive_same_agent_clones_run_independent_tasks(monkeypatch) -> None:
     """同一专家可被指派多个独立子任务（分身并行）：结果按下标对齐，身份以 #n 区分。"""
     _FakeAgentService.agents = [_agent("agent-1", "专家1")]
@@ -1738,216 +1848,24 @@ async def test_overdrive_same_agent_clones_run_independent_tasks(monkeypatch) ->
     assert speeches[2].content == "B 结论"
 
 
-@pytest.mark.asyncio
-async def test_overdrive_gateway_unreachable_degrades_to_internal_room(monkeypatch) -> None:
-    _FakeAgentService.agents = [_agent("agent-1", "专家1")]
-    monkeypatch.setattr(
-        "omichub.application.services.agent_service.AgentService", _FakeAgentService
-    )
+def test_overdrive_turn_has_no_external_room_side_effects() -> None:
+    source = inspect.getsource(ChatService._run_overdrive_turn)
 
-    async def fake_stream(**_kwargs):
-        yield ChatChunk(type="text", content='{"speech":"直接处理","assignments":[]}')
-
-    class UnreachableGateway:
-        available = True
-
-        async def create_room(self, *_args, **_kwargs):
-            raise RuntimeError("gateway unavailable")
-
-    monkeypatch.setattr(chat_module.provider_manager, "chat_stream", fake_stream)
-    monkeypatch.setattr(
-        "omichub.application.services.agentteams_room_gateway_service.AgentTeamsRoomGatewayService",
-        UnreachableGateway,
-    )
-    service = ChatService(MagicMock(spec=AsyncSession))
-    service.get_session = AsyncMock(return_value=SimpleNamespace(sandbox_meta={}))  # type: ignore[method-assign]
-    service.add_message = AsyncMock(return_value=SimpleNamespace(message_id="message-1"))  # type: ignore[method-assign]
-
-    chunks = [
-        chunk
-        async for chunk in service._run_overdrive_turn(
-            user_id="user",
-            session_id="session",
-            user_content="协作",
-            manager_ctx=_manager_ctx(),
-        )
-    ]
-
-    assert [chunk.type for chunk in chunks if chunk.type != "overdrive_progress"] == [
-        "mode_changed",
-        "room_speech",
-    ]
-    assert chunks[0].metadata["degraded"] is True
-    speech = next(chunk for chunk in chunks if chunk.type == "room_speech")
-    assert speech.content == "直接处理"
-    assert "matrix_room_id" not in speech.metadata
+    assert "AgentTeamsRoomGatewayService" not in source
+    assert "matrix_room_id" not in source
+    assert "element_room_url" not in source
 
 
-@pytest.mark.asyncio
-async def test_overdrive_gateway_degradation_notice_is_emitted_once_per_outage(monkeypatch) -> None:
-    _FakeAgentService.agents = [_agent("agent-1", "专家1")]
-    monkeypatch.setattr(
-        "omichub.application.services.agent_service.AgentService", _FakeAgentService
-    )
-
-    async def fake_stream(**_kwargs):
-        yield ChatChunk(type="text", content='{"speech":"直接处理","assignments":[]}')
-
-    class UnreachableGateway:
-        available = True
-
-        async def create_room(self, *_args, **_kwargs):
-            raise RuntimeError("gateway unavailable")
-
-    monkeypatch.setattr(chat_module.provider_manager, "chat_stream", fake_stream)
-    monkeypatch.setattr(
-        "omichub.application.services.agentteams_room_gateway_service.AgentTeamsRoomGatewayService",
-        UnreachableGateway,
-    )
-    service = ChatService(MagicMock(spec=AsyncSession))
-    session = SimpleNamespace(sandbox_meta={})
-    service.get_session = AsyncMock(return_value=session)  # type: ignore[method-assign]
-    service.add_message = AsyncMock(return_value=SimpleNamespace(message_id="message-1"))  # type: ignore[method-assign]
-
-    first = [
-        chunk
-        async for chunk in service._run_overdrive_turn(
-            user_id="user",
-            session_id="session",
-            user_content="协作",
-            manager_ctx=_manager_ctx(),
-        )
-    ]
-    second = [
-        chunk
-        async for chunk in service._run_overdrive_turn(
-            user_id="user",
-            session_id="session",
-            user_content="继续",
-            manager_ctx=_manager_ctx(),
-        )
-    ]
-
-    assert any(chunk.type == "mode_changed" for chunk in first)
-    assert not any(chunk.type == "mode_changed" for chunk in second)
-
-
-@pytest.mark.asyncio
-async def test_overdrive_single_matrix_post_failure_keeps_room_speech(monkeypatch) -> None:
-    _FakeAgentService.agents = [_agent("agent-1", "专家1")]
-    monkeypatch.setattr(
-        "omichub.application.services.agent_service.AgentService", _FakeAgentService
-    )
-
-    async def fake_stream(**_kwargs):
-        yield ChatChunk(type="text", content='{"speech":"直接处理","assignments":[]}')
-
-    class PartiallyFailingGateway:
-        available = True
-
-        async def create_room(self, *_args, **_kwargs):
-            return {"room_id": "!room:test"}
-
-        calls = 0
-
-        async def post_message(self, *_args, **_kwargs):
-            self.calls += 1
-            if self.calls == 2:
-                raise RuntimeError("single post failed")
-            return {"event_id": "$event"}
-
-    session = SimpleNamespace(sandbox_meta={})
-    monkeypatch.setattr(chat_module.provider_manager, "chat_stream", fake_stream)
-    monkeypatch.setattr(
-        "omichub.application.services.agentteams_room_gateway_service.AgentTeamsRoomGatewayService",
-        PartiallyFailingGateway,
-    )
-    service = ChatService(MagicMock(spec=AsyncSession))
-    service.get_session = AsyncMock(return_value=session)  # type: ignore[method-assign]
-    service.add_message = AsyncMock(return_value=SimpleNamespace(message_id="message-1"))  # type: ignore[method-assign]
-
-    chunks = [
-        chunk
-        async for chunk in service._run_overdrive_turn(
-            user_id="user",
-            session_id="session",
-            user_content="协作",
-            manager_ctx=_manager_ctx(),
-        )
-    ]
-
-    speech = next(chunk for chunk in chunks if chunk.type == "room_speech")
-    assert speech.metadata["degraded"] is True
-    assert speech.metadata["matrix_room_id"] == "!room:test"
-    assert speech.content == "直接处理"
-
-
-@pytest.mark.asyncio
-async def test_room_events_returns_404_when_session_has_no_matrix_room(monkeypatch) -> None:
-    """会话未绑定 matrix_room_id 时，room-events 返回 404 + 单条错误事件（前端静默降级）。"""
+def test_chat_api_no_longer_exposes_matrix_room_event_stream() -> None:
     import omichub.api.v1.chat as chat_api
 
-    service = MagicMock()
-    service.get_session = AsyncMock(return_value=SimpleNamespace(sandbox_meta={}))
-    monkeypatch.setattr(chat_api, "ChatService", lambda _db: service)
-
-    response = await chat_api.room_events("session", current_user_id="user", db=MagicMock())
-
-    assert response.status_code == 404
-    chunks = [chunk async for chunk in response.body_iterator]
-    assert len(chunks) == 1
-    assert "尚未绑定 Matrix 房间" in chunks[0]
+    assert "/sessions/{session_id}/room-events" not in {
+        route.path for route in chat_api.router.routes
+    }
 
 
 @pytest.mark.asyncio
-async def test_overdrive_creates_matrix_room_when_session_has_no_room_id(monkeypatch) -> None:
-    _FakeAgentService.agents = [_agent("agent-1", "专家1")]
-    monkeypatch.setattr(
-        "omichub.application.services.agent_service.AgentService", _FakeAgentService
-    )
-
-    async def fake_stream(**_kwargs):
-        yield ChatChunk(type="text", content='{"speech":"直接处理","assignments":[]}')
-
-    class Gateway:
-        available = True
-
-        async def create_room(self, *_args, **_kwargs):
-            return {
-                "room_id": "!new-room:test",
-                "element_room_url": "https://element.test/#/room/!new-room:test",
-            }
-
-        async def post_message(self, *_args, **_kwargs):
-            return {"event_id": "$event"}
-
-    session = SimpleNamespace(sandbox_meta={})
-    monkeypatch.setattr(chat_module.provider_manager, "chat_stream", fake_stream)
-    monkeypatch.setattr(
-        "omichub.application.services.agentteams_room_gateway_service.AgentTeamsRoomGatewayService",
-        Gateway,
-    )
-    service = ChatService(MagicMock(spec=AsyncSession))
-    service.get_session = AsyncMock(return_value=session)  # type: ignore[method-assign]
-    service.add_message = AsyncMock(return_value=SimpleNamespace(message_id="message-1"))  # type: ignore[method-assign]
-
-    chunks = [
-        chunk
-        async for chunk in service._run_overdrive_turn(
-            user_id="user",
-            session_id="session",
-            user_content="协作",
-            manager_ctx=_manager_ctx(),
-        )
-    ]
-
-    assert session.sandbox_meta["matrix_room_id"] == "!new-room:test"
-    assert session.sandbox_meta["element_room_url"].endswith("!new-room:test")
-    speech = next(chunk for chunk in chunks if chunk.type == "room_speech")
-    assert speech.metadata["matrix_room_id"] == "!new-room:test"
-
-
-@pytest.mark.asyncio
+@legacy_preconfirmation_execution
 async def test_overdrive_does_not_repeat_worker_request_for_user_input(monkeypatch) -> None:
     _FakeAgentService.agents = [_agent("agent-1", "专家1")]
     monkeypatch.setattr(
@@ -2030,6 +1948,7 @@ async def test_overdrive_does_not_repeat_worker_request_for_user_input(monkeypat
 
 
 @pytest.mark.asyncio
+@legacy_preconfirmation_execution
 async def test_overdrive_persists_approval_and_skips_manager_summary(monkeypatch) -> None:
     _FakeAgentService.agents = [_agent("agent-1", "专家1")]
     monkeypatch.setattr(

@@ -62,6 +62,15 @@ async def get_agentteams_bridge_resources(
     return await AgentTeamsService(get_settings(), runtime).admin_resource_snapshot()
 
 
+@router.get("/agentteams-bridge/metrics", summary="获取 AgentTeams Case 与 Work Item 可观测指标")
+async def get_agentteams_bridge_metrics(
+    _admin: AdminRequired,
+    service: BridgeServiceDep,
+) -> dict[str, int]:
+    runtime = await service.get_runtime_config()
+    return await AgentTeamsService(get_settings(), runtime).admin_metrics()
+
+
 @router.post("/agentteams-bridge/cases/{case_id}/reconcile", summary="以管理员身份重协调协作 Case")
 async def reconcile_agentteams_bridge_case(
     case_id: str,

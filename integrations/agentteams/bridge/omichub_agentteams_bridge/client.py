@@ -30,6 +30,7 @@ class OmicHubClient:
             "GET",
             "/api/v1/agent-teams/capabilities",
             headers={"X-Integration-Token": self._settings.omichub_integration_token},
+            authenticate=False,
         )
 
     async def get_flow_schema(self, flow_id: str) -> dict[str, Any]:
@@ -46,9 +47,10 @@ class OmicHubClient:
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         headers = kwargs.pop("headers", {})
-        if self._settings.omichub_api_key:
+        authenticate = kwargs.pop("authenticate", True)
+        if authenticate and self._settings.omichub_api_key:
             headers["X-API-Key"] = self._settings.omichub_api_key
-        elif self._settings.omichub_service_token:
+        elif authenticate and self._settings.omichub_service_token:
             headers["Authorization"] = f"Bearer {self._settings.omichub_service_token}"
         response = await self._client.request(method, path, headers=headers, **kwargs)
         response.raise_for_status()

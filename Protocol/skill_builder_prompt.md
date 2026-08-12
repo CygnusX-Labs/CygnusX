@@ -37,7 +37,7 @@
    - `references/environment.md` 里每个依赖一行：包名（conda 形态 `r-xxx`/`bioconductor-xxx`/pypi 名）、版本、用途、级别、安装方式；
    - 级别 A=目标镜像已预装；B=白名单可现场装；C=GitHub 独占等装不了、需镜像预装；D=运行期要访问业务外网；
    - B 级安装命令只允许：`micromamba install -y -n base -c conda-forge -c bioconda <pkg>` / `uv pip install <pkg>` / `pip install -i https://pypi.org/simple <pkg>`；
-   - **禁止写** `install.packages()`、`remotes::install_github()`、`BiocManager::install()`、`pip -i pypi.tuna.tsinghua.edu.cn`——Studio 沙盒出站白名单（pypi.org / files.pythonhosted.org / conda.anaconda.org / mirrors.aliyun.com / mirrors.tuna.tsinghua.edu.cn）之外的域名一律 403，写了等于教 AI 走死路。
+   - **禁止写** `install.packages()`、`remotes::install_github()`、`BiocManager::install()`、`pip -i pypi.mirrors.ustc.edu.cn`——Studio 沙盒出站白名单（pypi.org / files.pythonhosted.org / conda.anaconda.org / mirrors.aliyun.com / mirrors.ustc.edu.cn）之外的域名一律 403，写了等于教 AI 走死路。
 10. **GitHub 独占包（C 级）不许假装能装**：ProjecTILs、scCustomize、AnnoProbe、DoubletFinder、sceasy、loomR 这类只在 GitHub 分发的包，沙盒现场装不到。处理方式：environment.md 标"需管理员预装进镜像"；`check_env.sh` 检测到缺失时报"本技能无法运行，请联系管理员预装 X"；若技能核心功能依赖它，SKILL.md 质控段必须写"X 未预装时本技能不可运行"。有 conda 等价包的一律改用 conda 版。
 11. **业务外网依赖（D 级）必须声明 + 降级**：脚本运行期要访问 KEGG/UniProt/NCBI/Ensembl 等非包源域名时，environment.md 单列"网络依赖"段（域名、用途、Studio 白名单不可达、降级策略）；降级二选一：参考数据预下载进 `ref/`（走 provisioning.md 供给流程）离线运行，或明示"仅聊天沙箱（有外网）可运行"。
 12. **check_env.sh 三重检查**：可执行技能必须带 `scripts/check_env.sh`，且同时覆盖 ①系统命令 `command -v` ②R 包 `requireNamespace` ③Python 包 `import`——存量技能大量失败发生在包层而非命令层，只查命令不够。SKILL.md 执行步骤第一步运行它。
@@ -104,7 +104,7 @@
 # environment.md 反面教材（存量技能真实踩坑，全部被白名单拦截）
 install.packages(c("Seurat", "optparse", "log4r"))     ← 失败：CRAN 不可达
 remotes::install_github("carmonalab/ProjecTILs")        ← 失败：GitHub 不可达，应标"需镜像预装"
-pip install <pkg> -i https://pypi.tuna.tsinghua.edu.cn/simple  ← 失败：该域名不在白名单（403）
+pip install <pkg> -i https://pypi.mirrors.ustc.edu.cn/simple  ← 失败：该域名不在白名单（403）
 | ProjecTILs | ≥1.0 | 核心注释 | CRAN 无，install_github 安装 |  ← 失败：C 级包假装能现场装
 依赖：需要网络（KEGG）                                    ← 失败：D 级一句带过，无降级策略
 ```
@@ -120,7 +120,7 @@ pip install <pkg> -i https://pypi.tuna.tsinghua.edu.cn/simple  ← 失败：该�
 - [ ] frontmatter 四个关键字段（name/description/skill_id/version）齐全
 - [ ] `SKILLS_REGISTRY.md` 台账已创建/更新（技能清单 + 未 skill 化模块 + 版本历史三段齐全）
 - [ ] 大小红线自查通过
-- [ ] environment.md 每个依赖标 A/B/C/D 级别，安装命令全为白名单形态（无 install.packages / install_github / BiocManager::install / pypi.tuna）
+- [ ] environment.md 每个依赖标 A/B/C/D 级别，安装命令全为白名单形态（无 install.packages / install_github / BiocManager::install / pypi.douban.com）
 - [ ] C 级（GitHub 独占）依赖标"需镜像预装"，check_env.sh 缺失时报"无法运行"；核心功能依赖 C 级包时质控段已声明
 - [ ] D 级（业务外网）依赖有网络依赖段 + 降级策略或沙盒限制声明
 - [ ] check_env.sh 覆盖命令 + R 包 + Python 包三层

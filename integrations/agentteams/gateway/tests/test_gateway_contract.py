@@ -70,6 +70,52 @@ def test_production_gateway_accepts_dedicated_integration_token() -> None:
     assert settings.agent_policy_map()["agent-delivery"] == ({"delivery-pack"}, tools)
 
 
+def test_gateway_builds_policies_for_all_recruitable_agents_from_registry() -> None:
+    settings = GatewaySettings()
+    agent_ids = [
+        "agent-data",
+        "agent-rnaseq",
+        "agent-atacseq",
+        "agent-scrna",
+        "agent-scrna-upstream",
+        "agent-scrna-integration",
+        "agent-scrna-advanced",
+        "agent-code",
+        "agent-viz",
+        "agent-qc",
+        "agent-delivery",
+        "agent-cloud-ops",
+        "agent-general",
+        "agent-mcp-builder",
+    ]
+    settings.apply_capability_snapshot(
+        {
+            "agent_capabilities": {
+                agent_id: {
+                    "agent_id": agent_id,
+                    "recruitable": True,
+                    "planner_eligible": agent_id not in {"agent-qc", "agent-delivery"},
+                    "worker_capability": f"{agent_id}-capability",
+                    "execution_modes": ["workspace_execution"]
+                    if agent_id in {"agent-code", "agent-viz"}
+                    else ["readonly_consultation"],
+                }
+                for agent_id in agent_ids
+            }
+        }
+    )
+
+    policies = settings.agent_policy_map()
+
+    assert set(agent_ids).issubset(policies)
+    assert policies["agent-atacseq"][0] == {
+        "agent-atacseq-capability",
+        "planning_advice",
+    }
+    assert "workspace_execution" in policies["agent-code"][0]
+    assert "planning_advice" not in policies["agent-qc"][0]
+
+
 def test_allowlisted_agent_returns_fixed_schema_and_strips_raw_response(
     settings: GatewaySettings,
 ) -> None:

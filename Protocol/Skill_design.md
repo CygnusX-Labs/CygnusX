@@ -51,7 +51,7 @@ OmicHub 的 AI Agent（如 `agent-scrna` 单细胞分析师）通过 Skill 获�
 7. **运行时不可达（v1.2 新增）**：即使脚本实体进了包，平台当前也没有把技能 `scripts/` 物化进沙盒的机制——沙盒只挂载会话工作区，`skill_resource` 又只放行 references/assets；外部参考数据（如 `Celldex/`）靠"git checkout 恢复"之类的仓库视角指引，安装后同样是死指针。**技能包装好了，运行时用不到**。（2026-08-04 复核：全代码检索确认物化机制仍未实现，§10 第 6 步核查不得跳过。）
 8. **依赖与网络可达性缺口（v1.3 新增）**：2026-08-04 平台全量沙箱冒烟（35 技能、39 个执行单元，工具 `scripts/skill_mcp_smoke.py`）发现 **21/32 脚本型技能开箱不可运行**，根因有二：
    - **镜像最小化**：Studio 运行时镜像刻意精简（core 仅 pandas/numpy/scipy/sklearn/statsmodels/DESeq2/edgeR/limma），技能普遍依赖的 R CLI 层包（`optparse`、`log4r`、`tidyverse`、`data.table`、`pheatmap`、`ggpubr` 等）与 Python 包（`loguru`、`rich`、`plotly`、`polars`、`requests`）均未预装；函数库脚本能加载、CLI wrapper 全挂；
-   - **安装指引不可达**：相当数量技能的 `environment.md` 教的是**沙盒里根本走不通的安装方式**——CRAN `install.packages()`、GitHub `remotes::install_github()`、`pip -i pypi.tuna.tsinghua.edu.cn` 全部被 Studio 出站白名单拦截（实测 403），业务外网（KEGG/UniProt REST）同样不可达。**技能声明"可安装"，运行时既装不上、也跑不了**。
+   - **安装指引不可达**：相当数量技能的 `environment.md` 教的是**沙盒里根本走不通的安装方式**——CRAN `install.packages()`、GitHub `remotes::install_github()`、`pip -i pypi.mirrors.ustc.edu.cn` 全部被 Studio 出站白名单拦截（实测 403），业务外网（KEGG/UniProt REST）同样不可达。**技能声明"可安装"，运行时既装不上、也跑不了**。
 
 ### 1.2 目标
 
@@ -134,7 +134,7 @@ OmicHub 的 AI Agent（如 `agent-scrna` 单细胞分析师）通过 Skill 获�
 Studio 出站白名单（`data/ai/studio.yaml` → `studio.sandbox.network.allow`，由 egress proxy 强制）：
 
 ```
-pypi.org / files.pythonhosted.org / conda.anaconda.org / mirrors.aliyun.com / mirrors.tuna.tsinghua.edu.cn
+pypi.org / files.pythonhosted.org / conda.anaconda.org / mirrors.aliyun.com / mirrors.ustc.edu.cn
 ```
 
 由此推出技能依赖的**四种可达性级别**（写 `environment.md` 时必须逐包归类，见 §6.8）：
@@ -146,7 +146,7 @@ pypi.org / files.pythonhosted.org / conda.anaconda.org / mirrors.aliyun.com / mi
 | C 需镜像预装 | GitHub 独占包等白名单装不到 | ProjecTILs、scCustomize、AnnoProbe、DoubletFinder、sceasy、loomR | 明示"需管理员预装进镜像"，check 脚本缺失时报"无法运行"；技能核心功能依赖 C 级包时必须在 SKILL.md 质控段声明 |
 | D 业务外网 | 运行期需访问非包源域名 | rest.kegg.jp（kegg-pull）、UniProt REST（go-annotation） | 声明网络依赖 + 离线降级（数据预下载进 `ref/`），或明示"仅聊天沙箱可运行" |
 
-红线速记：**CRAN（`install.packages`）、GitHub（`install_github`）、`pypi.tuna.tsinghua.edu.cn` 在 Studio 沙盒一律不可达**，禁止作为安装方式写进技能文档（详见 §6.8）。
+红线速记：**CRAN（`install.packages`）、GitHub（`install_github`）、`pypi.mirrors.ustc.edu.cn` 在 Studio 沙盒一律不可达**，禁止作为安装方式写进技能文档（详见 §6.8）。
 
 ---
 
@@ -340,7 +340,7 @@ python /workspace/.skills/<skill_id>/scripts/<tool>.py --input ... --output ...
 
 ### 6.8 environment.md 与依赖可达性规范（v1.3 新增）
 
-`references/environment.md` 是运行时模型装包的唯一依据，必须做到"**照着抄就能装上**"。2026-08-04 审计发现多个技能在此教了不可达的安装方式（CRAN/GitHub/pypi.tuna），全部返工。硬性要求：
+`references/environment.md` 是运行时模型装包的唯一依据，必须做到"**照着抄就能装上**"。2026-08-04 审计发现多个技能在此教了不可达的安装方式（CRAN/GitHub/pypi.douban.com），全部返工。硬性要求：
 
 **1. 依赖表按 §2.3 四级标注，包名用 conda 通道命名**
 
@@ -356,9 +356,9 @@ python /workspace/.skills/<skill_id>/scripts/<tool>.py --input ... --output ...
 
 **2. 安装命令白名单（只允许以下形态）**
 
-- R 包/Bioconductor/生信 CLI：`micromamba install -y -n base -c conda-forge -c bioconda <r-xxx|bioconductor-xxx|tool>`（镜像已预置清华 .condarc，走白名单内镜像站）；
+- R 包/Bioconductor/生信 CLI：`micromamba install -y -n base -c conda-forge -c bioconda <r-xxx|bioconductor-xxx|tool>`（镜像已预置 USTC .condarc，走白名单内镜像站）；
 - Python 包：`uv pip install <pkg>` 或 `pip install -i https://pypi.org/simple <pkg>`（或 `-i https://mirrors.aliyun.com/pypi/simple/`）；
-- **禁止出现**：`install.packages()`（CRAN 不可达）、`remotes::install_github()`（GitHub 不可达）、`BiocManager::install()`（bioconductor.org 直连不可达，改走 bioconda 通道）、`pip -i pypi.tuna.tsinghua.edu.cn`（该域名不在白名单，实测 403）。
+- **禁止出现**：`install.packages()`（CRAN 不可达）、`remotes::install_github()`（GitHub 不可达）、`BiocManager::install()`（bioconductor.org 直连不可达，改走 bioconda 通道）、`pip -i pypi.mirrors.ustc.edu.cn`（该域名不在白名单，实测 403）。
   C 级包确需 GitHub 安装时，只能写"由管理员在构建镜像时安装"，不得写成运行时指令。
 
 **3. `scripts/check_env.sh` 三重就绪检查（可执行技能强制）**
@@ -475,7 +475,7 @@ filter_pe --input sample_nameSorted.bam --output sample_filtered.bam \
 - 脚本命令未用 §2.2 L2 物化路径（裸写 `scripts/xxx`）→ 不通过；
 - references 出现"详见某文件/查看脚本内容/git checkout 恢复"式指针 → 不通过；
 - 依赖外部数据但无 `references/provisioning.md` → 不通过；
-- environment.md 教不可达的安装方式（`install.packages` / `install_github` / `BiocManager::install` / `pip -i pypi.tuna.tsinghua.edu.cn`）→ 不通过（§6.8-2）；
+- environment.md 教不可达的安装方式（`install.packages` / `install_github` / `BiocManager::install` / `pip -i pypi.mirrors.ustc.edu.cn`）→ 不通过（§6.8-2）；
 - 依赖 GitHub 独占包（C 级）却未标注"需镜像预装"、或未在 check 脚本与质控段声明"未预装即不可运行" → 不通过（§2.3/§6.8-1）;
 - 运行期需业务外网（D 级）但无网络依赖段与降级策略 → 不通过（§6.8-4）；
 - 可执行技能无 `check_env.sh` 或其未覆盖 R/Python 包层检查 → 不通过（§6.8-3）。
@@ -573,7 +573,7 @@ SKILL.md 正文应写明何时调用哪个 MCP/沙盒工具，禁止在 skill �
 
 **依赖与可达性（v1.3 新增）**
 - [ ] environment.md 每个依赖按 §2.3 A/B/C/D 四级标注，包名为 conda 通道形态
-- [ ] 安装命令全部白名单可达；无 `install.packages` / `install_github` / `BiocManager::install` / `pypi.tuna` 写法
+- [ ] 安装命令全部白名单可达；无 `install.packages` / `install_github` / `BiocManager::install` / `pypi.douban.com` 写法
 - [ ] C 级（GitHub 独占）依赖已标"需镜像预装"，且目标镜像确已预装（否则不得标已验证）；SKILL.md 质控段声明"未预装即不可运行"
 - [ ] D 级（业务外网）依赖有网络依赖段 + 离线降级或沙盒限制声明
 - [ ] `check_env.sh` 覆盖命令 + R 包 + Python 包三层，缺失时报处置建议
@@ -613,7 +613,7 @@ SKILL.md 正文应写明何时调用哪个 MCP/沙盒工具，禁止在 skill �
 | v1.0 | 2026-08-03 | 初始版本。 |
 | v1.1 | 2026-08-03 | 新增 §2.1 运行时自包含原则；§6.1 增加 vendored 实体进包要求；新增 §6.5、§6.6；§7 重写并新增反模式对照；§13 清单新增"自包含"一票否决组。背景：ATACTools 技能 references 写成源码入口清单，导致技能运行时找不到代码与示例。 |
 | v1.2 | 2026-08-03 | 新增 §2.2 运行时路径三级约定（包内文档/包内脚本物化路径 `/workspace/.skills/<skill_id>/`、外部数据 `ref/`）；新增 §6.7 外部数据供给清单（provisioning.md）；§4.3 明确禁止 frontmatter 静态 root 字段；§10 接入流程插入供给步骤、端到端验证含物化核查；§13 清单新增"供给"组；§12 增加物化目录只读要求。背景：scRNA 技能安装后发现 scripts 不进沙盒、Celldex 数据指引是"git checkout 恢复"死指针。同日补充：新增配套文件 `Protocol/skill_builder_prompt.md`（技能生成任务提示词模板），背景：GO_Annotation 技能生成再次被 AI 做成"源码清单"——规范是验收标准，还需任务指令配套。 |
-| v1.3 | 2026-08-04 | 新增 §2.3 运行时环境与网络可达性约束（两类沙盒对照、Studio 出站白名单、依赖 A/B/C/D 四级）；新增 §6.8 environment.md 与依赖可达性规范（四级标注、白名单安装命令清单、check_env.sh 三重检查、网络依赖声明、冒烟验收工具）；§6.1 环境自查升级为四级归类；§8 红线新增 4 条（不可达安装方式、GitHub 独占包未声明、业务外网无降级、check_env 缺包层）；§13 清单新增"依赖与可达性"组；§1.1 补问题 8 与物化机制未落地复核。背景：2026-08-04 全量沙箱冒烟（`scripts/skill_mcp_smoke.py`，35 技能/39 执行单元）发现 21/32 脚本型技能开箱不可运行——镜像缺 R CLI 层包，且 environment.md 普遍教 CRAN/GitHub/pypi.tuna 等白名单不可达装法；安装路径复刻实测（`scripts/studio_install_path_smoke.py`）确认 conda/uv/pypi.org 通道可闭环（deg 装齐后 7/7 脚本通过），CRAN/GitHub/业务外网被拦。同期平台侧已将 5 个 agent 提示词与 studio.system 装包指引对齐白名单。 |
+| v1.3 | 2026-08-04 | 新增 §2.3 运行时环境与网络可达性约束（两类沙盒对照、Studio 出站白名单、依赖 A/B/C/D 四级）；新增 §6.8 environment.md 与依赖可达性规范（四级标注、白名单安装命令清单、check_env.sh 三重检查、网络依赖声明、冒烟验收工具）；§6.1 环境自查升级为四级归类；§8 红线新增 4 条（不可达安装方式、GitHub 独占包未声明、业务外网无降级、check_env 缺包层）；§13 清单新增"依赖与可达性"组；§1.1 补问题 8 与物化机制未落地复核。背景：2026-08-04 全量沙箱冒烟（`scripts/skill_mcp_smoke.py`，35 技能/39 执行单元）发现 21/32 脚本型技能开箱不可运行——镜像缺 R CLI 层包，且 environment.md 普遍教 CRAN/GitHub/pypi.douban.com 等白名单不可达装法；安装路径复刻实测（`scripts/studio_install_path_smoke.py`）确认 conda/uv/pypi.org 通道可闭环（deg 装齐后 7/7 脚本通过），CRAN/GitHub/业务外网被拦。同期平台侧已将 5 个 agent 提示词与 studio.system 装包指引对齐白名单。 |
 
 ---
 

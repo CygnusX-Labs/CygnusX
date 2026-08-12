@@ -85,7 +85,26 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         if runtime_settings.omichub_integration_token:
-            await service.refresh_capabilities()
+            try:
+                await service.refresh_capabilities()
+            except Exception:
+                import asyncio
+                import logging
+
+                logger = logging.getLogger(__name__)
+
+                async def _retry_capabilities() -> None:
+                    for attempt in range(1, 11):
+                        await asyncio.sleep(min(attempt * 5, 30))
+                        try:
+                            await service.refresh_capabilities()
+                            logger.info("capabilities refreshed after %d retries", attempt)
+                            return
+                        except Exception:
+                            logger.debug("capabilities retry %d/10 failed", attempt)
+                    logger.warning("giving up capabilities refresh after 10 retries")
+
+                asyncio.create_task(_retry_capabilities())
         yield
         await runtime_client.aclose()
         if runtime_gateway_client is not None:
@@ -200,15 +219,8 @@ def create_app(
         require_role(
             identity,
             "bioops-manager",
-            "data-steward",
-            "workflow-operator",
-            "quality-auditor",
-            "delivery-reporter",
-            "agent-code",
-            "agent-viz",
-            "agent-scrna",
-            "agent-rnaseq",
             "analysis-worker",
+            *service.worker_identities(),
         )
         return await service.get_case_view(case_id, identity)
 
@@ -219,15 +231,8 @@ def create_app(
     ) -> dict:
         require_role(
             identity,
-            "data-steward",
-            "workflow-operator",
-            "quality-auditor",
-            "delivery-reporter",
-            "agent-code",
-            "agent-viz",
-            "agent-scrna",
-            "agent-rnaseq",
             "analysis-worker",
+            *service.worker_identities(),
         )
         return (await service.list_worker_inbox(identity)).model_dump(mode="json")
 
@@ -301,15 +306,8 @@ def create_app(
         require_role(
             identity,
             "bioops-manager",
-            "data-steward",
-            "workflow-operator",
-            "quality-auditor",
-            "delivery-reporter",
-            "agent-code",
-            "agent-viz",
-            "agent-scrna",
-            "agent-rnaseq",
             "analysis-worker",
+            *service.worker_identities(),
         )
         return (
             await service.update_work_item(case_id, work_item_id, payload, identity)
@@ -324,15 +322,8 @@ def create_app(
     ) -> dict:
         require_role(
             identity,
-            "data-steward",
-            "workflow-operator",
-            "quality-auditor",
-            "delivery-reporter",
-            "agent-code",
-            "agent-viz",
-            "agent-scrna",
-            "agent-rnaseq",
             "analysis-worker",
+            *service.worker_identities(),
         )
         return (await service.claim_work_item(case_id, work_item_id, identity)).model_dump(
             mode="json"
@@ -348,14 +339,8 @@ def create_app(
     ) -> dict:
         require_role(
             identity,
-            "data-steward",
-            "workflow-operator",
-            "quality-auditor",
-            "delivery-reporter",
-            "agent-code",
-            "agent-viz",
-            "agent-scrna",
-            "agent-rnaseq",
+            "analysis-worker",
+            *service.worker_identities(),
         )
         return (
             await service.heartbeat_work_item(case_id, work_item_id, payload, identity)
@@ -372,7 +357,7 @@ def create_app(
         identity: Annotated[str, Depends(authenticate_identity)],
         service: Annotated[BridgeService, Depends(get_service)],
     ) -> dict:
-        require_role(identity, "agent-code", "agent-viz", "agent-scrna", "agent-rnaseq")
+        require_role(identity, *service.worker_identities())
         return (
             await service.execute_readonly_work_item(case_id, work_item_id, payload, identity)
         ).model_dump(mode="json")

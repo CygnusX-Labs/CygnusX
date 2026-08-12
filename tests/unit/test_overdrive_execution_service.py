@@ -19,6 +19,7 @@ from omichub.application.services.overdrive_execution_service import (
 )
 from omichub.application.services.overdrive_run_service import OverdriveRunService
 from omichub.core.exceptions import ValidationError
+from omichub.infrastructure.celery_app.tasks.overdrive import _overdrive_workspace_context
 
 
 def make_run(tasks):
@@ -42,6 +43,37 @@ def test_ready_tasks_unlock_per_dependency_without_wave_barrier() -> None:
     )
 
     assert [task["task_id"] for task in ready_tasks(run)] == ["downstream"]
+
+
+def test_independent_qc_context_uses_current_overdrive_paths_not_pipeline_task_ids() -> None:
+    run = SimpleNamespace(
+        run_id="overdrive-e3c666973e9a48b3",
+        session_id="77a734c5-7aee-4c03-9864-d4184d590ca0",
+        plan={
+            "version_path": (
+                "output/overdrive/77a734c5-7aee-4c03-9864-d4184d590ca0/"
+                "overdrive-e3c666973e9a48b3/plan.v1.md"
+            )
+        },
+        artifact_index=[
+            {
+                "path": (
+                    "output/overdrive/77a734c5-7aee-4c03-9864-d4184d590ca0/"
+                    "overdrive-e3c666973e9a48b3/tasks/scrna-plan/result.md"
+                )
+            }
+        ],
+    )
+
+    context = _overdrive_workspace_context(
+        run,
+        {"task_id": "independent-qc", "depends_on": ["scrna-plan"]},
+    )
+
+    assert "plan.v1.md" in context
+    assert "tasks/scrna-plan/result.md" in context
+    assert "task_result_summary" in context
+    assert "Pipeline 任务系统" in context
 
 
 def test_persona_snapshot_never_copies_permissions_or_tools() -> None:
@@ -283,6 +315,32 @@ def test_projected_events_are_session_scoped_and_replay_deduplicable() -> None:
     assert OverdriveRunService.project_event(event) == projected
 
 
+def test_research_projection_exposes_tool_style_activities() -> None:
+    projected = OverdriveRunService.project_event({
+        "run_id": "overdrive:test",
+        "session_id": "session-1",
+        "sequence": 3,
+        "event_type": "research_completed",
+        "payload": {
+            "knowledge_base": {"status": "succeeded", "evidence_ids": ["ev-1"], "duration_ms": 20},
+            "web": {
+                "status": "succeeded",
+                "queries": ["TP53 lung cancer single-cell RNA-seq"],
+                "accepted_count": 2,
+                "rejected_count": 1,
+                "duration_ms": 45,
+            },
+            "model_knowledge": {"status": "timed_out", "error": "timeout", "duration_ms": 20000},
+        },
+    })
+
+    assert projected is not None
+    assert projected["type"] == "overdrive_progress"
+    assert [item["kind"] for item in projected["activities"]] == ["mcp", "search", "model"]
+    assert projected["activities"][1]["accepted"] == 2
+    assert projected["activities"][2]["error"] == "timeout"
+
+
 def test_control_rejects_unconfirmed_plan_before_any_execution_transition() -> None:
     db = SimpleNamespace(get=AsyncMock(return_value=None), add=lambda _item: None)
     service = OverdriveRunService(db)  # type: ignore[arg-type]
@@ -315,6 +373,70 @@ def test_control_persists_action_payload_for_execution_run() -> None:
     assert len(command_rows) == 1
     assert command_rows[0].command_type == "control_pause"
     assert command_rows[0].payload == {"action": "pause"}
+
+
+def test_preflight_termination_finishes_synchronously_before_workers_start() -> None:
+    command_rows = []
+    db = SimpleNamespace(get=AsyncMock(return_value=None), add=command_rows.append)
+    service = OverdriveRunService(db)  # type: ignore[arg-type]
+    run = SimpleNamespace(
+        status="SERIAL_PREFLIGHT",
+        run_id="overdrive:stale-plan",
+        control={},
+        version=0,
+        finished_at=None,
+        tasks=[{"task_id": "plan", "status": "pending"}],
+    )
+    service.get_for_user = AsyncMock(return_value=run)  # type: ignore[method-assign]
+    service.append_event = AsyncMock()  # type: ignore[method-assign]
+    service._write_snapshot = AsyncMock()  # type: ignore[method-assign]
+
+    result = asyncio.run(service.apply_control(
+        run_id=run.run_id,
+        user_id="user-1",
+        command_id="terminate-stale-plan",
+        action="terminate",
+    ))
+
+    assert result["status"] == "TERMINATED"
+    assert run.finished_at is not None
+    assert service.append_event.await_args.args[1] == "run_terminated"
+
+
+def test_approving_plan_only_run_completes_without_worker_preflight() -> None:
+    command_rows = []
+    db = SimpleNamespace(get=AsyncMock(return_value=None), add=command_rows.append)
+    service = OverdriveRunService(db)  # type: ignore[arg-type]
+    run = SimpleNamespace(
+        status="AWAITING_PLAN_CONFIRMATION",
+        run_id="overdrive:plan-only",
+        plan={
+            "version": 1,
+            "hash": "sha256:plan",
+            "status": "awaiting_confirmation",
+            "summary": {"planning_only": True},
+        },
+        version=0,
+        finished_at=None,
+    )
+    service.get_for_user = AsyncMock(return_value=run)  # type: ignore[method-assign]
+    service._assert_plan_file_matches = lambda _run: None  # type: ignore[method-assign]
+    service.append_event = AsyncMock()  # type: ignore[method-assign]
+    service._write_snapshot = AsyncMock()  # type: ignore[method-assign]
+
+    result = asyncio.run(service.decide_plan(
+        run_id=run.run_id,
+        user_id="user-1",
+        command_id="command-plan-only",
+        action="approve",
+        plan_version=1,
+        plan_digest="sha256:plan",
+    ))
+
+    assert result["status"] == "COMPLETED"
+    assert run.status == "COMPLETED"
+    assert run.finished_at is not None
+    assert service.append_event.await_args.args[1] == "run_completed"
 
 
 def test_projected_manager_review_suppresses_wait_state_speech() -> None:

@@ -6,6 +6,12 @@ import type { CollaborationRouteInfo } from './types'
 const props = defineProps<{ route: CollaborationRouteInfo }>()
 const emit = defineEmits<{ correct: [route: CollaborationRouteInfo] }>()
 
+const isDirectAnswer = computed(() => (
+  props.route.intent === 'chat'
+  && props.route.available
+  && !props.route.degraded
+))
+
 const tagType = computed(() => {
   if (props.route.degraded) return 'warning'
   if (!props.route.available) return 'error'
@@ -28,7 +34,15 @@ const displayReason = computed(() => {
 </script>
 
 <template>
-  <details class="collaboration-route-notice" :class="{ 'is-degraded': route.degraded, 'is-blocked': !route.available }" aria-live="polite">
+  <div v-if="isDirectAnswer" class="direct-response-notice" role="status" aria-live="polite">
+    <span class="direct-response-notice__label">由通用助手直接回复</span>
+  </div>
+  <details
+    v-else
+    class="collaboration-route-notice"
+    :class="{ 'is-degraded': route.degraded, 'is-blocked': !route.available }"
+    aria-live="polite"
+  >
     <summary class="notice-summary">
       <div class="notice-heading">
         <strong>{{ route.label }}</strong>
@@ -44,6 +58,28 @@ const displayReason = computed(() => {
 </template>
 
 <style scoped>
+.direct-response-notice {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  margin: 0 0 var(--space-md, 12px);
+  padding: 0 4px;
+  color: var(--chat-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.direct-response-notice::before {
+  width: 5px;
+  height: 5px;
+  margin-right: 7px;
+  background: var(--brand-primary);
+  border-radius: 50%;
+  content: '';
+}
+
+.direct-response-notice__label { white-space: nowrap; }
+
 .collaboration-route-notice {
   width: 100%;
   max-width: 1120px;

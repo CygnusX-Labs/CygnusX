@@ -135,17 +135,12 @@ plotly 与 ECharts，目标是 publication-ready 图表。
 |---|---|---|
 | `ggpubr` | `theme_pubclean()` 来源 | `micromamba install -y -n base r-ggpubr` |
 | `scCustomize` | `DimPlot_scCustom()` 来源，**GitHub 独占包** | 沙盒白名单无法访问 GitHub，**不可现场安装**；需要时告知用户联系管理员预装进镜像 |
-| `ggrastr` | 大规模散点栅格化 | `micromamba install -y -n base -c conda-forge r-ggrastr` |
+| `ggrastr` | 大规模散点栅格化 | `micromamba install -y -n base r-ggrastr` |
 | `patchwork` | 多图拼版 | `micromamba install -y -n base r-patchwork` |
 
-Studio 沙盒出站仅放行包源白名单：**CRAN（`install.packages()`）与 GitHub
-（`remotes::install_github()`）均不可达**。R 包一律走 conda 通道安装
-（`micromamba install -y -n base r-<pkg>`，Bioconductor 用 `bioconductor-<pkg>`）；
-上表未覆盖的包**装前先用 conda-meta-mcp 查询**（`package_search` 确认 channel 与
-linux-64 版本，必要时 `repoquery` 查依赖），禁止凭记忆猜包名盲装；MCP 查询失败退回
-`micromamba search <pkg>`。装完用 `library()` / import 测试验证。
-GitHub 独占包（scCustomize、ProjecTILs、AnnoProbe、DoubletFinder 等）无法现场安装，
-依赖它们的代码要么换用已装包的等价实现，要么如实告知用户需管理员预装/加白名单。
+上表未覆盖的 R 包装前先用 `conda-meta-mcp` 查询确认 channel 与版本，查询失败退回 `micromamba search <pkg>`。
+装完验证：`Rscript -e "library(<Pkg>); packageVersion('<Pkg>')"`。
+**禁止** `install.packages()` 和 `remotes::install_github()`；GitHub 独占包（scCustomize、ProjecTILs、AnnoProbe、DoubletFinder 等）无法现场安装，换用等价实现或如实告知用户。
 
 ### 主题与骨架（所有图默认执行）
 

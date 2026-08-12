@@ -4,14 +4,13 @@
 
 1. handoff 白名单：目标必须是活跃专家、不能指向 router、不能自转交；
 2. MAS 能力登记：agents.enabled 中每个专家都必须在 agent_capabilities.yaml 登记；
-3. 路由提示词候选表：router.md 中出现的 agent_id 必须存在于运行时目录。
+3. 路由提示词：router.md 必须只依赖运行时 Agent 目录，不维护静态候选名单。
 
 历史事故见 README §11.2 与记忆 router-session-handoff-source-agent。
 """
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import yaml
@@ -190,17 +189,14 @@ def test_rnaseq_prompt_keeps_analysis_center_priority_contract() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 3. 路由提示词候选表一致性
+# 3. 路由提示词动态目录契约
 # --------------------------------------------------------------------------- #
 
 
-def test_router_prompt_catalog_ids_exist() -> None:
-    """router.md 候选表中出现的 agent_id 必须是已启用的 Agent。"""
+def test_router_prompt_uses_runtime_catalog_only() -> None:
+    """router.md 不得维护静态 Agent 表，必须要求使用运行时目录。"""
     text = ROUTER_PROMPT.read_text(encoding="utf-8")
-    catalog_ids = re.findall(r"^\|\s*(agent-[a-z-]+|shania)\s*\|", text, re.MULTILINE)
-    assert catalog_ids, "未能从 router.md 解析出候选表 agent_id，检查表格格式是否变化"
-    valid_ids = set(_agent_id_index())
-    for agent_id in catalog_ids:
-        assert agent_id in valid_ids, (
-            f"router.md 候选表引用了不存在的 agent_id: {agent_id}"
-        )
+    assert "运行时候选目录（唯一依据）" in text
+    assert "不得维护、记忆或引用任何静态 Agent 名单" in text
+    assert "chat_entry=false" in text
+    assert "| agent_id | 名称 | 适用请求 |" not in text

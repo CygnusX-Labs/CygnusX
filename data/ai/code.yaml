@@ -9,7 +9,7 @@ model: qwen3.7-plus
 prompt_file: prompts/code.md
 welcome_message: "你好！我是代码助手，挂载了 Code Sandbox 与数据预处理、图表绘制技能。需要写或跑哪段代码？"
 temperature: 0.7
-max_tokens: 4096
+max_tokens: 20000
 mcp_ids: []
 skill_ids:
   # 工程类工具技能（来源：pipelines/tools/skills/）
@@ -19,6 +19,15 @@ skill_ids:
   - data-deliver
 features:
   internal_case_role: agent-code
+  agentteams:
+    category: expert
+    recruitable: true
+    planner_eligible: true
+    execution_modes: [readonly_consultation, workspace_execution]
+    max_parallel_work_items: 2
+    case_mode_excluded_tool_packs: [subagents]
+    handoff_in_case_mode: false
+    work_item_timeout_sec: 1800
   persona:
     archetype: "务实精确的实现工程师"
     traits: [务实, 精确, 重视复现, 小步验证]

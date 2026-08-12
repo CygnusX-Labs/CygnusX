@@ -25,13 +25,11 @@ import {
 } from 'naive-ui'
 import {
   ArrowBackOutline,
-  ChatbubbleEllipsesOutline,
   RefreshOutline,
   ShieldCheckmarkOutline,
   SyncOutline,
 } from '@vicons/ionicons5'
 import PageHeader from '@/components/PageHeader.vue'
-import AgentTeamsChatDrawer from '@/components/agent-workspace/AgentTeamsChatDrawer.vue'
 import {
   agentTeamsApi,
   type AgentTeamsCase,
@@ -66,7 +64,6 @@ const approvalConfirmed = ref(false)
 const submitForm = ref({
   task_name: '',
 })
-const chatDrawer = ref<InstanceType<typeof AgentTeamsChatDrawer> | null>(null)
 let pollingTimer: ReturnType<typeof setInterval> | null = null
 let eventStreamAbort: AbortController | null = null
 let eventStreamRetryTimer: number | null = null
@@ -206,10 +203,6 @@ async function downloadManifest() {
   } finally {
     manifestLoading.value = false
   }
-}
-
-function openChatRoom() {
-  void chatDrawer.value?.open(caseId.value || undefined)
 }
 
 async function confirmSubmit() {
@@ -408,9 +401,6 @@ onBeforeUnmount(() => {
         </NTooltip>
       </template>
       <template #actions>
-        <NButton secondary :disabled="!caseId" @click="openChatRoom">
-          <template #icon><NIcon><ChatbubbleEllipsesOutline /></NIcon></template>协作聊天室
-        </NButton>
         <NButton secondary :loading="loading" @click="refresh({ resetEvents: true })">
           <template #icon><NIcon><RefreshOutline /></NIcon></template>刷新
         </NButton>
@@ -550,7 +540,6 @@ onBeforeUnmount(() => {
     <NModal v-model:show="manifestVisible" preset="card" title="交付 Manifest" :style="{ width: 'min(94vw, 760px)' }">
       <pre class="manifest-preview">{{ JSON.stringify(manifest, null, 2) }}</pre>
     </NModal>
-    <AgentTeamsChatDrawer ref="chatDrawer" />
   </main>
 </template>
 

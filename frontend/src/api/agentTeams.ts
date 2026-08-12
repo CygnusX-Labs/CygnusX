@@ -1,7 +1,7 @@
 import apiClient from '@/api/client'
 
 export type AgentTeamsCaseStatus =
-  | 'received' | 'planning_running' | 'preflight_running' | 'preflight_blocked' | 'waiting_for_correction'
+  | 'queued' | 'received' | 'planning_running' | 'preflight_running' | 'preflight_blocked' | 'waiting_for_correction'
   | 'approval_pending' | 'approved' | 'executing' | 'execution_failed' | 'quality_running'
   | 'quality_blocked' | 'remediation_pending' | 'delivery_ready' | 'closed' | 'cancelled'
 
@@ -23,6 +23,7 @@ export interface AgentTeamsCase {
   quality_decision?: string | null
   manifest_uri?: string | null
   plan_hash?: string | null
+  plan_version?: number
   proposed_submission?: Record<string, unknown> | null
   created_at: string
   updated_at: string
@@ -92,12 +93,16 @@ export interface AgentTeamsPlanRevisionRequest {
   expected_plan_hash: string
   parameters: Record<string, unknown>
   reason: string
+  override_revision_limit?: boolean
 }
 
 export interface AgentTeamsPlanRevisionResponse {
   case_id: string
   previous_plan_hash: string
   plan_hash: string
+  previous_plan_version: number
+  plan_version: number
+  revision_count: number
   changed_parameter_keys: string[]
   replay_work_item_ids: string[]
   status: AgentTeamsCaseStatus
@@ -130,22 +135,9 @@ export interface AgentTeamsBridgeStatus {
   reason: 'disabled' | 'incomplete_configuration' | 'bridge_unreachable' | null
 }
 
-export interface AgentTeamsChatRoom {
-  available: boolean
-  element_url: string
-  reason: 'not_configured' | null
-  case_id?: string
-  source?: 'case' | 'global'
-}
-
 export const agentTeamsApi = {
   async status(): Promise<AgentTeamsBridgeStatus> {
     return (await apiClient.get('/agent-teams/status')).data
-  },
-  async getChatRoom(caseId?: string): Promise<AgentTeamsChatRoom> {
-    return (await apiClient.get<AgentTeamsChatRoom>('/agent-teams/chat-room', {
-      params: caseId ? { case_id: caseId } : undefined,
-    })).data
   },
   async listCases(params: AgentTeamsCaseListParams = {}): Promise<AgentTeamsCaseListResponse> {
     return (await apiClient.get<AgentTeamsCaseListResponse>('/agent-teams/cases', { params })).data
@@ -170,6 +162,9 @@ export const agentTeamsApi = {
   },
   async rejectCase(caseId: string, payload: AgentTeamsCaseRejectRequest): Promise<AgentTeamsCase> {
     return (await apiClient.post<AgentTeamsCase>(`/agent-teams/cases/${caseId}/reject`, payload)).data
+  },
+  async cancelCase(caseId: string, payload: AgentTeamsCaseRejectRequest): Promise<AgentTeamsCase> {
+    return (await apiClient.post<AgentTeamsCase>(`/agent-teams/cases/${caseId}/cancel`, payload)).data
   },
   async revisePlan(caseId: string, payload: AgentTeamsPlanRevisionRequest): Promise<AgentTeamsPlanRevisionResponse> {
     return (await apiClient.post<AgentTeamsPlanRevisionResponse>(`/agent-teams/cases/${caseId}/plan/revise`, payload)).data

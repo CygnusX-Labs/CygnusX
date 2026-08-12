@@ -45,6 +45,7 @@ class AgentTeamsCaseEventConsumerService:
         if session is None:
             return {"events": 0, "projected": 0, "skipped": 1}
         meta = dict(session.sandbox_meta or {})
+        migration_mode = get_settings().agentteams_case_cursor_migration_mode
         case_ids = {item for item in meta.get("agentteams_case_ids", []) if isinstance(item, str)}
         statuses = dict(meta.get("agentteams_case_status") or {})
         if case_id not in case_ids or statuses.get(case_id) in TERMINAL_STATUSES:
@@ -53,14 +54,27 @@ class AgentTeamsCaseEventConsumerService:
         client = agentteams or await self._build_agentteams()
         if not client.available:
             return {"events": 0, "projected": 0, "skipped": 1}
-        cursor_state = await self._get_or_create_cursor(session_id, case_id)
+        legacy_cursors = dict(meta.get("agentteams_case_event_cursor", {}) or {})
+        cursor_state = await self._get_or_create_cursor(
+            session_id,
+            case_id,
+            legacy_cursor=(
+                str(legacy_cursors.get(case_id) or "") or None
+                if migration_mode != "new_only"
+                else None
+            ),
+        )
         projector = CaseRoomProjector()
         event_count = projected_count = 0
 
         async for audit_event in client.stream_case_events(
             case_id,
             requester_ref=session.user_id,
-            cursor=cursor_state.event_cursor or None,
+            cursor=(
+                str(legacy_cursors.get(case_id) or "") or None
+                if migration_mode == "legacy_only"
+                else cursor_state.event_cursor or str(legacy_cursors.get(case_id) or "") or None
+            ),
             watch_seconds=watch_seconds,
         ):
             event_count += 1
@@ -73,10 +87,23 @@ class AgentTeamsCaseEventConsumerService:
                 projected_count += 1
             event_id = str(audit_event.get("event_id") or "")
             if event_id:
-                cursor_state.event_cursor = event_id
+                if migration_mode != "legacy_only":
+                    cursor_state.event_cursor = event_id
+                if migration_mode != "new_only":
+                    legacy_cursors[case_id] = event_id
             if self._apply_case_state(meta, case_id, audit_event):
                 session.sandbox_meta = meta
                 session.updated_at = datetime.now(UTC)
+            if migration_mode == "new_only":
+                meta.pop("agentteams_case_event_cursor", None)
+            else:
+                meta["agentteams_case_event_cursor"] = legacy_cursors
+            meta["agentteams_case_cursor_migration"] = {
+                "mode": migration_mode,
+                "checked_at": datetime.now(UTC).isoformat(),
+                "mismatch_count": 0,
+            }
+            session.sandbox_meta = meta
             await self._db.commit()
 
         return {"events": event_count, "projected": projected_count, "skipped": 0}
@@ -87,7 +114,7 @@ class AgentTeamsCaseEventConsumerService:
         return AgentTeamsService(settings, runtime)
 
     async def _get_or_create_cursor(
-        self, session_id: str, case_id: str
+        self, session_id: str, case_id: str, *, legacy_cursor: str | None = None
     ) -> AgentTeamsCaseCursorModel:
         state = await self._db.scalar(
             select(AgentTeamsCaseCursorModel).where(
@@ -100,7 +127,7 @@ class AgentTeamsCaseEventConsumerService:
         state = AgentTeamsCaseCursorModel(
             session_id=session_id,
             case_id=case_id,
-            event_cursor=None,
+            event_cursor=legacy_cursor,
             notified_statuses=[],
         )
         self._db.add(state)

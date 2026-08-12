@@ -26,6 +26,7 @@ class DataFileDTO(BaseModel):
 class DirectorySearchDTO(BaseModel):
     """工作区目录搜索结果。"""
 
+    id: UUID
     path: str
     name: str
     parent_path: str | None = None

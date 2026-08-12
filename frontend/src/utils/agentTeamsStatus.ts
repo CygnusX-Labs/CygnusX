@@ -1,6 +1,7 @@
 import type { AgentTeamsCaseStatus } from '@/api/agentTeams'
 
 export const agentTeamsStatusLabel: Record<AgentTeamsCaseStatus, string> = {
+  queued: '排队中',
   received: '已接收',
   planning_running: '规划中',
   preflight_running: '预检中',
@@ -19,6 +20,7 @@ export const agentTeamsStatusLabel: Record<AgentTeamsCaseStatus, string> = {
 }
 
 export const agentTeamsNextActor: Partial<Record<AgentTeamsCaseStatus, string>> = {
+  queued: '协作资源队列',
   received: '数据管理员',
   preflight_running: '数据管理员',
   preflight_blocked: '请求人',

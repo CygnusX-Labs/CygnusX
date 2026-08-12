@@ -57,6 +57,8 @@ const emit = defineEmits<{
   openToolPage: [route: string, args: Record<string, unknown>]
   createCaseFromConsultation: [summary: string, consultationId?: string]
   correctCollaborationRoute: [route: CollaborationRouteInfo]
+  confirmExecution: [preset: string]
+  adjustExecution: [preset: string]
 }>()
 
 interface ScrollerExpose {
@@ -272,6 +274,8 @@ onUnmounted(() => {
             @open-tool-page="(route, args) => emit('openToolPage', route, args)"
             @create-case-from-consultation="(summary, consultationId) => emit('createCaseFromConsultation', summary, consultationId)"
             @correct-collaboration-route="(route) => emit('correctCollaborationRoute', route)"
+            @confirm-execution="(preset) => emit('confirmExecution', preset)"
+            @adjust-execution="(preset) => emit('adjustExecution', preset)"
           />
           <StudioTaskUnderstanding
             v-if="index === firstUserMessageIndex && taskUnderstanding"

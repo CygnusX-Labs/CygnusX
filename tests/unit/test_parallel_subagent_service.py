@@ -281,6 +281,39 @@ async def test_fanout_accumulates_text_across_tool_rounds(env, monkeypatch) -> N
 
 
 @pytest.mark.asyncio
+async def test_fanout_continues_after_model_output_length_limit(env, monkeypatch) -> None:
+    contexts = {"agent-scrna": _ctx("agent-scrna")}
+    monkeypatch.setattr(pss, "AgentService", lambda db: AgentServiceStub(contexts))
+    calls = 0
+
+    async def handler(messages, _kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield ChatChunk(type="text", content="第一部分单细胞方案。")
+            yield ChatChunk(type="done", metadata={"finish_reason": "length"})
+            return
+        assert "从中断处继续" in messages[-1]["content"]
+        yield ChatChunk(type="text", content="第二部分免疫耐受机制与交付项。")
+        yield ChatChunk(type="done", metadata={"finish_reason": "stop"})
+
+    _patch_provider(monkeypatch, handler)
+    result = await pss.ParallelSubAgentService().run(
+        user_id="user-1",
+        parent_agent_id="manager",
+        parent_session_id="sess-1",
+        context_summary="",
+        tasks=[{"agent_id": "agent-scrna", "task": "写完整方案"}],
+        db=SimpleNamespace(),
+    )
+
+    answer = result["llm_payload"]["results"][0]["answer"]
+    assert calls == 2
+    assert "第一部分单细胞方案" in answer
+    assert "第二部分免疫耐受机制与交付项" in answer
+
+
+@pytest.mark.asyncio
 async def test_fanout_separates_reasoning_from_worker_answer(env, monkeypatch) -> None:
     contexts = {"agent-general": _ctx("agent-general")}
     monkeypatch.setattr(pss, "AgentService", lambda db: AgentServiceStub(contexts))

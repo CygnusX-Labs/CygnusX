@@ -4,12 +4,11 @@
 - 分派正确性：router 模型输出 JSON → _route_to_agent 正确分派到每个已注册专家
 - 典型用户问句 → 期望专家 的参数化映射（mock router 决策输出）
 - 边界与容错：空输出、纯思考、空 agent_id、幻觉 consult_agent_ids、expect_handoff 异常值
-- 配置一致性：data/ai/*.yaml 可加载、router.md 候选清单与注册表一致、
+- 配置一致性：data/ai/*.yaml 可加载、router.md 只依赖运行时目录、
   OmicHub.yaml agents.enabled 配置文件齐全
 """
 
 import json
-import re
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -21,6 +20,7 @@ import omichub.application.services.chat_service as chat_service_module
 from omichub.application.schemas.agent import AgentTemplateDTO
 from omichub.application.services.chat_service import ROUTER_SYSTEM_PROMPT, ChatService
 from omichub.infrastructure.config import agent_loader
+from omichub.infrastructure.config.agent_ability_catalog import agent_ability_catalog
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AI_DIR = REPO_ROOT / "data" / "ai"
@@ -155,6 +155,51 @@ async def test_router_agent_itself_never_dispatched(
     assert info is not None and info["agent_id"] == "agent-general"
     assert info["transition"]["visible"] is True
     assert info["transition"]["title"] == "已匹配通用助手"
+
+
+@pytest.mark.unit
+async def test_router_excludes_runtime_internal_chat_role(
+    router_ctx: Any, monkeypatch: pytest.MonkeyPatch
+):
+    """能力目录标记为 Case 内部角色的 Agent 不得成为普通 Chat 路由目标。"""
+    internal_role = _candidate("agent-internal-review", "analysis", "内部审计角色")
+    candidates = [*CANDIDATES, internal_role]
+
+    class FakeAgentService:
+        def __init__(self, _db: Any) -> None:
+            pass
+
+        async def list_agents(self, active_only: bool = False) -> list[AgentTemplateDTO]:
+            return candidates
+
+        async def assemble_context(self, agent_id: str) -> Any:
+            if agent_id not in {candidate.agent_id for candidate in candidates}:
+                return None
+            return SimpleNamespace(
+                agent_id=agent_id,
+                model_config=SimpleNamespace(name="qwen3.7-max", api_key="k"),
+            )
+
+    original_get = agent_ability_catalog.get
+    monkeypatch.setattr(
+        agent_ability_catalog,
+        "get",
+        lambda agent_id: {"chat_entry": False}
+        if agent_id == internal_role.agent_id
+        else original_get(agent_id),
+    )
+    monkeypatch.setattr(
+        "omichub.application.services.agent_service.AgentService", FakeAgentService
+    )
+    _mock_router_output(
+        monkeypatch,
+        json.dumps({"agent_id": internal_role.agent_id, "reason": "错误选择内部角色"}),
+    )
+
+    ctx, info = await ChatService(db=SimpleNamespace())._route_to_agent(router_ctx, "随便聊聊")
+
+    assert ctx is not None and ctx.agent_id == "agent-general"
+    assert info is not None and info["agent_id"] == "agent-general"
 
 
 # ---------------------------------------------------------------------------
@@ -481,40 +526,12 @@ def test_single_agent_yaml_loadable(yaml_name: str):
 
 
 @pytest.mark.unit
-def test_router_prompt_candidates_match_registry():
-    """router.md 候选专家表中的 agent_id 与注册表（data/ai/*.yaml）一致，防止漂移"""
+def test_router_prompt_uses_runtime_catalog_instead_of_static_candidates():
+    """Router 只能依据运行时目录，避免静态候选表随 Agent 增删而漂移。"""
     prompt_text = ROUTER_PROMPT_MD.read_text(encoding="utf-8")
-
-    # 从 markdown 表格中提取候选 agent_id（"| agent-xxx |" / "| shania |" 形式）
-    prompt_ids: set[str] = set()
-    for line in prompt_text.splitlines():
-        m = re.match(r"\s*\|\s*([a-zA-Z][\w-]*)\s*\|", line)
-        if m and not m.group(1).startswith("-") and m.group(1) != "agent_id":
-            prompt_ids.add(m.group(1))
-    assert prompt_ids, "未能从 router.md 解析出候选 agent 表格"
-
-    # 注册表：OmicHub.yaml agents.enabled 中非 router 的 agent_id
-    # （orchestrator 仅在 MAS 开启时动态注册，不属于默认路由候选）
-    registry_ids: set[str] = set()
-    router_ids: set[str] = set()
-    for name in agent_loader._load_enabled_agents(SITE_YAML):
-        yaml_path = AI_DIR / f"{name}.yaml"
-        data = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
-        agent_id = data.get("agent_id")
-        if not agent_id:
-            continue
-        if (data.get("features") or {}).get("router"):
-            router_ids.add(agent_id)
-        else:
-            registry_ids.add(agent_id)
-
-    missing_in_registry = prompt_ids - registry_ids
-    missing_in_prompt = registry_ids - prompt_ids
-    assert not missing_in_registry, f"router.md 中存在未注册的 agent_id: {missing_in_registry}"
-    assert not missing_in_prompt, f"已注册专家未出现在 router.md 候选表中: {missing_in_prompt}"
-    assert not (prompt_ids & router_ids), (
-        f"router agent 不应出现在 router.md 候选表: {prompt_ids & router_ids}"
-    )
+    assert "运行时候选目录（唯一依据）" in prompt_text
+    assert "不得维护、记忆或引用任何静态 Agent 名单" in prompt_text
+    assert "| agent_id | 名称 | 适用请求 |" not in prompt_text
 
 
 @pytest.mark.unit

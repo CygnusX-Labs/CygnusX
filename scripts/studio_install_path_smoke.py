@@ -113,14 +113,14 @@ PRE = ["micromamba", "run", "-n", "base"]
 # 探针
 # ---------------------------------------------------------------------------
 def probe_conda_r_core() -> None:
-    """提示词路径①：micromamba install（.condarc→清华镜像）装 R 包"""
+    """提示词路径①：micromamba install（.condarc→USTC 镜像）装 R 包"""
     with _conda_lock:
         rc, out = dexec(CORE_NAME, PRE + ["micromamba", "install", "-y", "-n", "base",
                                           "r-optparse", "r-pheatmap", "r-dplyr", "r-tidyr"],
                         timeout=600)
     verdict = "PASS" if rc == 0 else "FAIL"
     record("conda装R包(optparse/pheatmap/dplyr/tidyr)@core", CORE_NAME,
-           "白名单内(清华镜像)", rc, out, verdict)
+           "白名单内(USTC 镜像)", rc, out, verdict)
 
 
 def probe_uv_pip_core() -> None:
@@ -132,21 +132,21 @@ def probe_uv_pip_core() -> None:
 
 
 def probe_pip_conf_then_pypi_core() -> None:
-    """提示词路径③：裸 pip install（/etc/pip.conf→pypi.tuna），随后对照 -i pypi.org。
+    """提示词路径③：裸 pip install（/etc/pip.conf→pypi.mirrors.ustc.edu.cn），随后对照 -i pypi.org。
     串行执行避免同容器 pip 并发锁争用。"""
     dexec(CORE_NAME, PRE + ["pip", "uninstall", "-y", "humanize"], timeout=60)
     rc, out = dexec(CORE_NAME, PRE + ["pip", "install", "humanize"], timeout=300)
-    tuna_403 = "403 Forbidden" in out or "Tunnel connection failed: 403" in out
-    if tuna_403 and rc == 0:
-        verdict, note = "PASS", "主源 pypi.tuna 被 403 拦截，靠 pip.conf 备用源 mirrors.aliyun.com(白名单内) 兜底成功"
-    elif tuna_403:
-        verdict, note = "BLOCKED-AS-EXPECTED", "pip.conf 主源 pypi.tuna 不在白名单"
+    ustc_403 = "403 Forbidden" in out or "Tunnel connection failed: 403" in out
+    if ustc_403 and rc == 0:
+        verdict, note = "PASS", "主源 pypi.mirrors.ustc.edu.cn 被 403 拦截，靠 pip.conf 备用源 mirrors.aliyun.com(白名单内) 兜底成功"
+    elif ustc_403:
+        verdict, note = "BLOCKED-AS-EXPECTED", "pip.conf 主源 pypi.mirrors.ustc.edu.cn 不在白名单"
     elif rc == 0:
         verdict, note = "PASS", ""
     else:
         verdict, note = "FAIL", ""
-    record("裸pip install(/etc/pip.conf→pypi.tuna)@core", CORE_NAME,
-           "主源预期被拦", rc, out, verdict, note)
+    record("裸pip install(/etc/pip.conf→pypi.mirrors.ustc.edu.cn)@core", CORE_NAME,
+           "主源预期可达", rc, out, verdict, note)
     # 对照：显式指定白名单内的 pypi.org
     rc2, out2 = dexec(CORE_NAME, PRE + ["pip", "install", "-i", "https://pypi.org/simple",
                                         "humanize"], timeout=300)
@@ -186,13 +186,13 @@ def probe_github_r_scrna() -> None:
 
 
 def probe_conda_bioc_scrna() -> None:
-    """Bioconductor 依赖走 conda 通道（bioconda 经清华镜像）"""
+    """Bioconductor 依赖走 conda 通道（bioconda 经USTC 镜像）"""
     with _conda_lock:
         rc, out = dexec(SCRNA_NAME, PRE + ["micromamba", "install", "-y", "-n", "base",
                                            "r-optparse", "r-log4r", "r-tidyverse",
                                            "bioconductor-celldex"], timeout=900)
     record("conda装bioc(celldex)+R CLI包@scrna", SCRNA_NAME,
-           "白名单内(清华镜像)", rc, out, "PASS" if rc == 0 else "FAIL")
+           "白名单内(USTC 镜像)", rc, out, "PASS" if rc == 0 else "FAIL")
 
 
 def probe_kegg_network_core() -> None:

@@ -32,10 +32,6 @@ def load_agent_configs() -> list[dict[str, Any]]:
 
     # 读取 OmicHub.yaml 获取 agents.enabled 列表
     enabled_names = _load_enabled_agents(site_yaml_path)
-    # 编排器只在 MAS 明确开启时进入内置 Agent 同步。这样默认聊天入口不会暴露
-    # 计划工具，同时无需在每个部署环境手动改写 OmicHub.yaml 的 enabled 列表。
-    if settings.mas_enabled and "orchestrator" not in enabled_names:
-        enabled_names.append("orchestrator")
     if not enabled_names:
         return []
 

@@ -8,7 +8,7 @@ model: qwen3.7-plus
 prompt_file: prompts/scrna.md
 welcome_message: "你好！请提供 10x 矩阵、h5ad/rds 文件或单细胞分析目标。"
 temperature: 0.3
-max_tokens: 4096
+max_tokens: 20000
 mcp_ids: []
 skill_ids:
   - human-mouse-cell-annotation
@@ -26,6 +26,15 @@ skill_ids:
   - scrna-seq
 features:
   internal_case_role: agent-scrna
+  agentteams:
+    category: expert
+    recruitable: true
+    planner_eligible: true
+    execution_modes: [readonly_consultation, workspace_execution]
+    max_parallel_work_items: 2
+    case_mode_excluded_tool_packs: [subagents]
+    handoff_in_case_mode: false
+    work_item_timeout_sec: 3600
   persona:
     archetype: "细致敏锐的单细胞分析师"
     traits: [细致, 敏锐, 重视异质性, 证据导向]

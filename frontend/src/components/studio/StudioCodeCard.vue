@@ -472,7 +472,8 @@ onUnmounted(() => {
 }
 
 .editor-wrap {
-  height: 220px;
+  min-height: 22px;
+  max-height: 110px;
   margin: 8px 10px;
   border: 1px solid var(--code-block-border, rgba(0, 0, 0, 0.08));
   border-radius: 8px;
@@ -514,6 +515,41 @@ onUnmounted(() => {
 .diff-html :deep(.d2h-code-line-ctn) {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+:root[data-theme="dark"] .diff-html :deep(.d2h-file-wrapper) {
+  background: var(--chat-surface, #1a1a1a);
+  border-color: var(--chat-border, #333);
+}
+:root[data-theme="dark"] .diff-html :deep(.d2h-info) {
+  background: #2d2d2d;
+  color: #8b949e;
+  border-color: #444;
+}
+:root[data-theme="dark"] .diff-html :deep(.d2h-code-linenumber),
+:root[data-theme="dark"] .diff-html :deep(.d2h-code-side-linenumber) {
+  background: #1e1e1e;
+  color: #6e7681;
+  border-color: #333;
+}
+:root[data-theme="dark"] .diff-html :deep(.d2h-ins) {
+  background: rgba(46, 160, 67, 0.15);
+}
+:root[data-theme="dark"] .diff-html :deep(.d2h-ins .d2h-code-linenumber),
+:root[data-theme="dark"] .diff-html :deep(.d2h-ins .d2h-code-side-linenumber) {
+  background: rgba(46, 160, 67, 0.1);
+  color: #7ee787;
+}
+:root[data-theme="dark"] .diff-html :deep(.d2h-del) {
+  background: rgba(248, 81, 73, 0.15);
+}
+:root[data-theme="dark"] .diff-html :deep(.d2h-del .d2h-code-linenumber),
+:root[data-theme="dark"] .diff-html :deep(.d2h-del .d2h-code-side-linenumber) {
+  background: rgba(248, 81, 73, 0.1);
+  color: #ff7b72;
+}
+:root[data-theme="dark"] .diff-html :deep(.d2h-code-line) {
+  color: #c9d1d9;
 }
 .diff-view {
   margin: 0 10px 10px;

@@ -9,7 +9,7 @@ model: qwen3.7-plus
 prompt_file: prompts/general.md
 welcome_message: "你好！我是通用助手，可以帮你解答生信分析的一般问题。今天想做点什么？"
 temperature: 0.7
-max_tokens: 4096
+max_tokens: 20000
 mcp_ids: []
 skill_ids:
   # 通用生信工具技能（来源：pipelines/tools/skills/）
@@ -19,6 +19,16 @@ skill_ids:
   - maftools-gistic2
   - mutational-patterns
 features:
+  internal_case_role: agent-general
+  agentteams:
+    category: expert
+    recruitable: true
+    planner_eligible: true
+    execution_modes: [readonly_consultation, workspace_execution]
+    max_parallel_work_items: 2
+    case_mode_excluded_tool_packs: [subagents]
+    handoff_in_case_mode: false
+    work_item_timeout_sec: 1800
   persona:
     archetype: "好奇而结构化的研究顾问"
     traits: [好奇, 结构化, 善于追问, 擅长综合]
@@ -46,12 +56,14 @@ features:
     mode: required_for_freshness
     # 通用时效词全部由运行时基线 FRESHNESS_SEARCH_TRIGGERS 覆盖，无需重复声明
     triggers: []
-tool_packs: [workspace, research, memory, handoff, subagents, agentteams_case]
+tool_packs: [workspace, research, memory, handoff, subagents, agentteams_case, cloud_ops]
 handoff:
   allowed_targets: ["*"]
   max_hops_per_session: 10
 
 studio:
   enabled: true
+  # 通用助手在 Studio 中直接执行文件处理与全部数值计算；避免为简单任务转交代码助手。
+  default_mode: studio
   runtime_profile: analysis-core
   required_capabilities: [python, r, bash]

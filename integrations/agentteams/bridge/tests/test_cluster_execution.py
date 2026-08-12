@@ -4,12 +4,14 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from fastapi import HTTPException
 from omichub_agentteams_bridge.audit import AuditStore
 from omichub_agentteams_bridge.case_store import CaseStore
 from omichub_agentteams_bridge.config import BridgeSettings
 from omichub_agentteams_bridge.models import (
     ApprovalRequest,
     ApprovedSubmission,
+    CaseCancelRequest,
     CaseCreateRequest,
     CaseRecord,
     ContextRef,
@@ -59,6 +61,13 @@ class ConcurrentGateway:
             }
         finally:
             self.active -= 1
+
+
+class FailingGateway:
+    configured = True
+
+    async def consult(self, _payload: dict[str, object]) -> dict[str, object]:
+        raise RuntimeError("temporary gateway failure")
 
 
 class PlanningGateway:
@@ -505,6 +514,7 @@ async def test_all_readonly_worker_roles_execute_in_parallel(tmp_path) -> None:
         "work_item.running",
         "worker.heartbeat",
         "skill.finished",
+        "manager.review_ready",
     }
 
 
@@ -535,6 +545,108 @@ async def test_expired_lease_is_requeued_and_can_be_claimed_again(tmp_path) -> N
     reclaimed = await service.claim_work_item("cluster-case", "code-01", "agent-code")
     assert reclaimed.status == "claimed"
     assert reclaimed.attempt == 2
+
+
+@pytest.mark.asyncio
+async def test_failed_work_item_uses_persisted_backoff_then_exposes_choices(tmp_path) -> None:
+    service = make_service(tmp_path, FailingGateway())
+    await create_case(service)
+    await service.assign_work_item(
+        "cluster-case",
+        WorkItemCreateRequest(
+            work_item_id="retry-01",
+            target="agent-code",
+            objective="Retry bounded consultation.",
+            skill_name="code-review",
+            max_attempts=4,
+        ),
+        "bioops-manager",
+    )
+
+    observed_delays: list[int] = []
+    for attempt in range(1, 5):
+        claimed = await service.claim_work_item("cluster-case", "retry-01", "agent-code")
+        assert claimed.attempt == attempt
+        failed = await service.execute_readonly_work_item(
+            "cluster-case",
+            "retry-01",
+            ReadOnlyExecutionRequest(
+                agent_id="agent-code",
+                capability="planning_advice",
+                question="Try the bounded operation.",
+            ),
+            "agent-code",
+        )
+        assert failed.status == "failed"
+        if attempt < 4:
+            assert failed.retry_not_before is not None
+            with pytest.raises(HTTPException, match="retry is not ready"):
+                await service.claim_work_item("cluster-case", "retry-01", "agent-code")
+            await service._cases.update_work_item(
+                "cluster-case",
+                "retry-01",
+                failed.model_copy(
+                    update={"retry_not_before": datetime.now(UTC) - timedelta(seconds=1)}
+                ),
+            )
+            inbox = await service.list_worker_inbox("agent-code")
+            assert inbox.items[0].work_item.status == "pending"
+        else:
+            assert failed.retry_not_before is None
+
+    events = await service.get_case_events("cluster-case", "bioops-manager")
+    observed_delays = [
+        event["payload"]["delay_seconds"]
+        for event in events.events
+        if event["event_type"] == "work_item.retry_scheduled"
+    ]
+    exhausted = next(
+        event for event in events.events if event["event_type"] == "work_item.retry_exhausted"
+    )
+    assert observed_delays == [30, 120, 480]
+    assert exhausted["payload"]["options"] == ["retry", "skip", "terminate"]
+
+
+@pytest.mark.asyncio
+async def test_cancel_case_reclaims_running_work_and_retains_artifacts(tmp_path) -> None:
+    service = make_service(tmp_path, ConcurrentGateway())
+    await create_case(service)
+    await service.assign_work_item(
+        "cluster-case",
+        WorkItemCreateRequest(
+            work_item_id="running-01",
+            target="agent-code",
+            objective="Produce an intermediate artifact.",
+            skill_name="code-review",
+        ),
+        "bioops-manager",
+    )
+    claimed = await service.claim_work_item("cluster-case", "running-01", "agent-code")
+    running = await service._cases.transition_work_item(
+        "cluster-case", "running-01", "agent-code", "running"
+    )
+    artifact = ContextRef(kind="file", id="workspace/intermediate.tsv")
+    await service._cases.update_work_item(
+        "cluster-case",
+        "running-01",
+        running.model_copy(update={"output_refs": [artifact]}),
+    )
+
+    cancelled = await service.cancel_case(
+        "cluster-case", CaseCancelRequest(reason="User stopped the analysis"), "bioops-manager"
+    )
+    events = await service.get_case_events("cluster-case", "bioops-manager")
+    item = next(item for item in cancelled.work_items if item.work_item_id == "running-01")
+
+    assert claimed.lease_owner == "agent-code"
+    assert cancelled.status == "cancelled"
+    assert item.status == "cancelled"
+    assert item.lease_owner is None
+    assert item.lease_expires_at is None
+    assert item.cancelled_at is not None
+    assert item.output_refs == [artifact]
+    assert events.events[-1]["payload"]["reclaimed_work_items"] == ["running-01"]
+    assert events.events[-1]["payload"]["artifacts_retained"] is True
 
 
 @pytest.mark.asyncio
@@ -608,8 +720,19 @@ class TaskStateClient:
     async def get_task(self, _task_id: str) -> dict[str, object]:
         return self.responses.pop(0)
 
+    async def get_agentteams_capabilities(self) -> dict[str, object]:
+        return {
+            "allowed_flow_ids": [],
+            "flow_agent_map": {},
+            "flow_quality_gate_map": {},
+            "role_agent_map": {},
+            "worker_profiles": {},
+        }
 
-async def _make_executing_case_service(tmp_path, responses) -> BridgeService:
+
+async def _make_executing_case_service(
+    tmp_path, responses, *, quality_gate_required: bool | None = None
+) -> BridgeService:
     settings = BridgeSettings(
         omichub_service_token="service-token",
         approval_signing_secret="test-signing-secret",
@@ -630,11 +753,50 @@ async def _make_executing_case_service(tmp_path, responses) -> BridgeService:
             team_id="bioops-delivery",
             status="executing",
             omic_task_ids=["task-1"],
+            proposed_submission=(
+                {"quality_gate_required": quality_gate_required}
+                if quality_gate_required is not None
+                else None
+            ),
             created_at=now,
             updated_at=now,
         )
     )
     return service
+
+
+@pytest.mark.asyncio
+async def test_reconcile_success_skips_unplanned_quality_gate(tmp_path) -> None:
+    service = await _make_executing_case_service(
+        tmp_path,
+        [{"id": "task-1", "status": "success"}],
+        quality_gate_required=False,
+    )
+
+    case = await service.reconcile_case("watchdog-case", "bioops-manager")
+    events = await service.get_case_events("watchdog-case", "bioops-manager")
+
+    assert case.status == "delivery_ready"
+    assert "delivery-01" in {item.work_item_id for item in case.work_items}
+    assert "quality-01" not in {item.work_item_id for item in case.work_items}
+    assert any(event["event_type"] == "quality.skipped" for event in events.events)
+
+
+@pytest.mark.asyncio
+async def test_reconcile_success_runs_frozen_quality_gate(tmp_path) -> None:
+    service = await _make_executing_case_service(
+        tmp_path,
+        [{"id": "task-1", "status": "success"}],
+        quality_gate_required=True,
+    )
+
+    case = await service.reconcile_case("watchdog-case", "bioops-manager")
+    events = await service.get_case_events("watchdog-case", "bioops-manager")
+
+    assert case.status == "quality_running"
+    assert "quality-01" in {item.work_item_id for item in case.work_items}
+    assert "delivery-01" not in {item.work_item_id for item in case.work_items}
+    assert all(event["event_type"] != "quality.skipped" for event in events.events)
 
 
 @pytest.mark.asyncio
@@ -948,6 +1110,95 @@ async def test_plan_revision_replays_changed_general_item_and_dependents(tmp_pat
     assert [item.status for item in case.work_items] == ["pending", "pending"]
     assert case.work_items[0].objective == "Clean and normalize the table"
     assert all(item.plan_hash == response.plan_hash for item in case.work_items)
+    events = await service.get_case_events("general-revision-case", "bioops-manager")
+    revision_event = next(
+        event for event in events.events if event["event_type"] == "planning.revised"
+    )
+    assert revision_event["payload"]["plan_version"] == response.plan_version
+
+
+@pytest.mark.asyncio
+async def test_plan_revision_limit_requires_explicit_user_override(tmp_path) -> None:
+    service = make_service(tmp_path, ConcurrentGateway())
+    now = datetime.now(UTC)
+    original = {
+        "name": "general-analysis",
+        "parameters": {
+            "work_items": [
+                {
+                    "work_item_id": "review-01",
+                    "target": "agent-code",
+                    "objective": "Review the input table",
+                    "skill_name": "code-review",
+                    "depends_on": [],
+                }
+            ]
+        },
+    }
+    original_hash = service._plan_hash(original)
+    await service._cases.create(
+        CaseRecord(
+            case_id="revision-limit-case",
+            context_refs=[ContextRef(kind="workspace", id="workspace-1")],
+            intent="exercise revision escalation",
+            requester_ref="user-1",
+            team_id="team-revision",
+            status="approval_pending",
+            proposed_submission=original,
+            plan_hash=original_hash,
+            plan_version=6,
+            plan_revision_count=5,
+            preflight_input=PreflightInputSnapshot(
+                flow_id="general",
+                sample_sheet=[],
+                context_refs=[ContextRef(kind="workspace", id="workspace-1")],
+            ),
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    revised_parameters = {
+        "work_items": [
+            {
+                **original["parameters"]["work_items"][0],
+                "objective": "Review and summarize the input table",
+            }
+        ]
+    }
+
+    with pytest.raises(HTTPException) as blocked:
+        await service.revise_plan(
+            "revision-limit-case",
+            PlanRevisionRequest(
+                expected_plan_hash=original_hash,
+                parameters=revised_parameters,
+                reason="Need a concise summary",
+            ),
+            "bioops-manager",
+        )
+
+    detail = blocked.value.detail
+    assert blocked.value.status_code == 409
+    assert detail["code"] == "PLAN_REVISION_LIMIT_REACHED"
+    assert detail["options"] == [
+        "continue_revision",
+        "replace_lead_planner",
+        "cancel_case",
+    ]
+
+    continued = await service.revise_plan(
+        "revision-limit-case",
+        PlanRevisionRequest(
+            expected_plan_hash=original_hash,
+            parameters=revised_parameters,
+            reason="User explicitly chose to continue",
+            override_revision_limit=True,
+        ),
+        "bioops-manager",
+    )
+
+    assert continued.plan_version == 7
+    assert continued.revision_count == 6
 
 @pytest.mark.asyncio
 async def test_blocked_quality_gate_assigns_remediation_and_returns_to_approval(tmp_path) -> None:

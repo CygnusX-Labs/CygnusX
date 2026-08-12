@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import hmac
 import json
+import mimetypes
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
-from fastapi.responses import StreamingResponse
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 
@@ -35,6 +37,7 @@ from omichub.infrastructure.database.models.chat import ChatMessageModel, ChatSe
 from omichub.infrastructure.database.repositories.user_repository import (
     SqlAlchemyUserRepository,
 )
+from omichub.infrastructure.storage.minio_store import MinioStore
 
 router = APIRouter()
 
@@ -204,15 +207,6 @@ async def get_status(service: AgentTeamsServiceDep) -> dict[str, bool | str | No
     return await service.connection_status()
 
 
-@router.get("/chat-room", summary="获取当前用户可打开的 AgentTeams Element 聊天室")
-async def get_chat_room(
-    current_user_id: CurrentUserId,
-    service: AgentTeamsServiceDep,
-    case_id: str | None = None,
-) -> dict[str, bool | str | None]:
-    return await service.chat_room(case_id, current_user_id)
-
-
 @router.get("/cases", summary="获取当前用户的 Agent 协作案例")
 async def list_cases(
     current_user_id: CurrentUserId,
@@ -380,6 +374,48 @@ async def get_manifest(
     return await service.get_manifest(case_id, current_user_id)
 
 
+@router.get("/cases/{case_id}/artifacts/{artifact_path:path}", summary="读取当前 Case 的受控产物")
+async def get_case_artifact(
+    case_id: str,
+    artifact_path: str,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+    download: bool = False,
+) -> Response:
+    await service.get_case(case_id, current_user_id)
+    normalized = artifact_path.replace("\\", "/").strip("/")
+    if not normalized or ".." in normalized.split("/"):
+        raise HTTPException(status_code=400, detail="Invalid artifact path")
+    settings = get_settings()
+    max_bytes = settings.agentteams_artifact_fetch_max_mb * 1024 * 1024
+    if normalized.lower().endswith((".html", ".htm")) and not download:
+        max_bytes = settings.agentteams_report_preview_max_mb * 1024 * 1024
+    try:
+        payload = await run_in_threadpool(
+            MinioStore(settings).read_case_object,
+            case_id,
+            normalized,
+            max_bytes=max_bytes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid artifact path") from exc
+    media_type = mimetypes.guess_type(normalized)[0] or "application/octet-stream"
+    headers = {
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    }
+    if download:
+        filename = normalized.rsplit("/", maxsplit=1)[-1].replace('"', "")
+        headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    elif media_type == "text/html":
+        headers["Content-Security-Policy"] = (
+            "sandbox; default-src 'none'; img-src data: blob:; font-src data:; "
+            "style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; "
+            "frame-src 'none'; form-action 'none'; base-uri 'none'"
+        )
+    return Response(content=payload, media_type=media_type, headers=headers)
+
+
 @router.post(
     "/cases/{case_id}/submit",
     status_code=status.HTTP_201_CREATED,
@@ -406,6 +442,16 @@ async def reject_case(
     service: AgentTeamsServiceDep,
 ) -> dict[str, Any]:
     return await service.reject_case(case_id, current_user_id, request.reason)
+
+
+@router.post("/cases/{case_id}/cancel", summary="取消当前用户的协作案例")
+async def cancel_case(
+    case_id: str,
+    request: AgentTeamsCaseRejectRequest,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+) -> dict[str, Any]:
+    return await service.cancel_case(case_id, current_user_id, request.reason)
 
 
 @router.get("/cases/{case_id}/events", summary="获取协作案例审计事件")

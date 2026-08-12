@@ -16,7 +16,17 @@ match:
     - 处理已有树
     - 美化已有树
     - treefile
-  planning_markers: [建树, 进化分析, 序列比对, 序列对比]
+    - treeplot
+    - ggtree
+    - 绘制系统发育树
+    - 绘制进化树
+    - 画进化树
+    - 画系统发育树
+    - 画树
+    - 绘制树
+    - 树图
+    - iqtree绘制
+  planning_markers: [建树, 进化分析, 序列比对, 序列对比, 绘制系统发育树, 画进化树, treeplot, ggtree]
 intake:
   questions:
     - id: sequence-type
@@ -36,7 +46,9 @@ intake:
       values:
         - value: tree_visualization
           markers: [处理/美化已有树, 处理已有树, 美化已有树, 已经建好的系统发育树,
-                    已有newick, 已有树文件, 对已有, 树注释]
+                    已有newick, 已有树文件, 对已有, 树注释,
+                    绘制系统发育树, 绘制进化树, 画进化树, 画系统发育树,
+                    画树, 绘制树, 树图, treeplot, ggtree, iqtree绘制]
         - value: phylogeny_construction
           markers: [从头建树, 从头构建系统发育树, 使用蛋白质序列从头, 建树, 进化分析, 序列比对, 序列对比]
       priority: first_match

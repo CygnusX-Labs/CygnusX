@@ -33,6 +33,7 @@ import {
   agentTeamsBridgeAdminApi,
   type AgentTeamsBridgeConfig,
   type AgentTeamsBridgeHealth,
+  type AgentTeamsBridgeMetrics,
   type AgentTeamsBridgeResourceSnapshot,
   type AgentTeamsBridgeTokenBundle,
 } from '@/api/admin/agentTeamsBridge'
@@ -46,6 +47,7 @@ const tokenConfirmVisible = ref(false)
 const tokenGenerating = ref(false)
 const generatedTokens = ref<AgentTeamsBridgeTokenBundle | null>(null)
 const resources = ref<AgentTeamsBridgeResourceSnapshot | null>(null)
+const bridgeMetrics = ref<Partial<AgentTeamsBridgeMetrics>>({})
 const resourceLoading = ref(false)
 const reconcileCaseId = ref('')
 const reconcileConfirmVisible = ref(false)
@@ -58,7 +60,6 @@ const config = ref<AgentTeamsBridgeConfig>({
   data_steward_token: '',
   approval_token: '',
   workflow_operator_token: '',
-  element_url: '',
   source: 'database',
   configured: false,
   connected: false,
@@ -107,7 +108,7 @@ async function load() {
   loading.value = true
   try {
     config.value = await agentTeamsBridgeAdminApi.get()
-    const [platform, healthResponse, observability, resourceSnapshot] = await Promise.all([
+    const [platform, healthResponse, observability, resourceSnapshot, metricsSnapshot] = await Promise.all([
       apiClient.get<{
         collaboration_preset?: CollaborationPreset
         collaboration_degradation_locale?: 'zh-CN' | 'en'
@@ -120,6 +121,7 @@ async function load() {
         consultation_quality?: typeof consultationQuality.value
       }>('/admin/platform-config/collaboration-observability'),
       agentTeamsBridgeAdminApi.resources(),
+      agentTeamsBridgeAdminApi.metrics(),
     ])
     preset.value = platform.data.collaboration_preset || 'custom'
     degradationLocale.value = platform.data.collaboration_degradation_locale || 'zh-CN'
@@ -127,6 +129,7 @@ async function load() {
     degradationTemplateEn.value = platform.data.collaboration_degradation_template_en || ''
     health.value = healthResponse
     resources.value = resourceSnapshot
+    bridgeMetrics.value = metricsSnapshot
     degradationCounts.value = { ...degradationCounts.value, ...(observability.data.degradation_counts || {}) }
     consultationQuality.value = {
       ...consultationQuality.value,
@@ -364,10 +367,6 @@ onMounted(() => { void load() })
                     <NInputNumber v-model:value="config.timeout_seconds" :min="1" :max="120" :precision="0" />
                   </NFormItem>
                 </div>
-                <NFormItem label="Element 协作房间地址">
-                  <NInput v-model:value="config.element_url" placeholder="例如 https://element.example/#/room/!bioops:example.org" />
-                  <template #feedback>仅填写用户可访问的 Element 房间链接；不得包含 access token、登录令牌或密码。</template>
-                </NFormItem>
                 <div class="bridge-secret-grid">
                   <NFormItem label="Manager 令牌"><NInput v-model:value="config.manager_token" type="password" show-password-on="click" placeholder="未填写则保留已配置令牌" /></NFormItem>
                   <NFormItem label="Data Steward 令牌"><NInput v-model:value="config.data_steward_token" type="password" show-password-on="click" placeholder="未填写则保留已配置令牌" /></NFormItem>
@@ -436,6 +435,21 @@ onMounted(() => { void load() })
           </main>
 
           <aside class="bridge-side">
+            <NCard size="small" class="bridge-card" :segmented="{ content: true }">
+              <template #header><span class="card-title">AgentTeams 运行指标</span></template>
+              <NAlert v-if="(bridgeMetrics.stale_nonterminal_case_count || 0) > 0" type="warning" :show-icon="true" class="bridge-note bridge-note--flush">
+                {{ bridgeMetrics.stale_nonterminal_case_count }} 个 Case 已在非终态停留超过 2 小时。
+              </NAlert>
+              <div class="agentteams-metric-grid">
+                <div><span>Case 总数</span><strong>{{ bridgeMetrics.case_count || 0 }}</strong></div>
+                <div><span>已关闭</span><strong>{{ bridgeMetrics.closed_case_count || 0 }}</strong></div>
+                <div><span>取消率</span><strong>{{ ((bridgeMetrics.case_cancel_rate_bps || 0) / 100).toFixed(1) }}%</strong></div>
+                <div><span>工单失败 / 重试</span><strong>{{ bridgeMetrics.work_item_failure_count || 0 }} / {{ bridgeMetrics.work_item_retry_count || 0 }}</strong></div>
+                <div><span>Case P95</span><strong>{{ Math.round((bridgeMetrics.case_end_to_end_p95_ms || 0) / 1000) }}s</strong></div>
+                <div><span>审批等待 P95</span><strong>{{ Math.round((bridgeMetrics.approval_wait_p95_ms || 0) / 1000) }}s</strong></div>
+              </div>
+              <p class="resource-note">指标来自 Bridge 审计事件；非终态超过 2 小时会在此告警。</p>
+            </NCard>
             <NCard size="small" class="bridge-card" :segmented="{ content: true }">
               <template #header><span class="card-title">近 7 天会诊质量</span></template>
               <div class="quality-metrics">
@@ -615,6 +629,10 @@ onMounted(() => { void load() })
 .bridge-main, .bridge-side { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 .bridge-card { border-radius: 12px; }
 .card-title { font-size: 14px; font-weight: 600; color: var(--neutral-text-1); }
+.agentteams-metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.agentteams-metric-grid div { padding: 10px; border: 1px solid var(--neutral-border); border-radius: 8px; background: var(--neutral-fill-1); }
+.agentteams-metric-grid span { display: block; font-size: 11px; color: var(--neutral-text-3); }
+.agentteams-metric-grid strong { display: block; margin-top: 4px; font-size: 16px; color: var(--neutral-text-1); }
 /* 接入配置表单 */
 .bridge-status-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-bottom: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--neutral-border); }
 .bridge-status-text { min-width: 0; }

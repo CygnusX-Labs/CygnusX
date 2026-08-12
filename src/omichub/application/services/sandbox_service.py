@@ -135,7 +135,7 @@ class SandboxService:
         await self._domain.mark_idle(session_id)
 
     async def recycle_expired(self) -> int:
-        """回收超时会话（30min 无活动）"""
+        """回收超过配置空闲时间的会话（默认 5 分钟）。"""
         timeout = self._settings.sandbox_session_timeout
         threshold = datetime.now() - timedelta(seconds=timeout)
         # 取所有非销毁会话（按用户列表需遍历，这里简单扫描）

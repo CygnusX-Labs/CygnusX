@@ -4,6 +4,7 @@ import { NButton, NInput, NProgress, NSelect, useMessage } from 'naive-ui'
 import type { OverdriveProgress } from './types'
 import { chatApi } from '@/api/chat'
 import { useAgentHubStore } from '@/stores/agentHub'
+import AgentTeamsReportPreview from './AgentTeamsReportPreview.vue'
 
 const props = defineProps<{
   progress: OverdriveProgress
@@ -104,6 +105,21 @@ function phaseLabel(phase: OverdriveProgress['phase']): string {
   return labels[phase]
 }
 
+function activityState(status: string): string {
+  if (['succeeded', 'completed'].includes(status)) return '已完成'
+  if (['failed', 'timed_out'].includes(status)) return status === 'timed_out' ? '超时' : '失败'
+  if (status === 'running') return '进行中'
+  return '等待中'
+}
+
+function activityMeta(activity: NonNullable<OverdriveProgress['activities']>[number]): string {
+  const parts = []
+  if (activity.accepted !== undefined) parts.push(`采用 ${activity.accepted}`)
+  if (activity.rejected) parts.push(`剔除 ${activity.rejected}`)
+  if (activity.durationMs) parts.push(`${(activity.durationMs / 1000).toFixed(1)}s`)
+  return parts.join(' · ')
+}
+
 function stepClass(progress: OverdriveProgress, step: number): string {
   if (progress.phase === 'terminated' && !progress.tasks?.length) {
     return step === 1 ? 'is-complete' : ''
@@ -132,14 +148,17 @@ function percentage(progress: OverdriveProgress): number {
   return Math.min(88, Math.max(24, 24 + workerPercentage))
 }
 
-const officialArtifacts = computed(() => (props.progress.artifacts || [])
+const visibleArtifacts = computed(() => props.progress.caseId
+  ? (props.progress.artifacts || []).slice(-3)
+  : (props.progress.artifacts || []))
+const officialArtifacts = computed(() => visibleArtifacts.value
   .filter((artifact) => ['validated', 'passed', 'succeeded'].includes(artifact.status || '')
     && !['process', 'failed'].includes(artifact.kind || '')))
-const processArtifacts = computed(() => (props.progress.artifacts || [])
+const processArtifacts = computed(() => visibleArtifacts.value
   .filter((artifact) => !officialArtifacts.value.includes(artifact)
     && !['failed', 'cancelled'].includes(artifact.status || '')
     && artifact.kind !== 'failed'))
-const failedArtifacts = computed(() => (props.progress.artifacts || [])
+const failedArtifacts = computed(() => visibleArtifacts.value
   .filter((artifact) => ['failed', 'cancelled'].includes(artifact.status || '')
     || artifact.kind === 'failed'))
 
@@ -149,14 +168,42 @@ function artifactMeta(artifact: NonNullable<OverdriveProgress['artifacts']>[numb
     .join(' · ')
 }
 
-async function downloadArtifact(path: string) {
-  if (!props.progress.runId || !store.currentSessionId) return
+function isHtmlReport(artifact: NonNullable<OverdriveProgress['artifacts']>[number]): boolean {
+  return Boolean(artifact.previewUrl)
+    && (artifact.kind === 'html' || artifact.kind === 'report' || artifact.path.toLowerCase().endsWith('.html'))
+}
+
+async function downloadArtifact(artifact: NonNullable<OverdriveProgress['artifacts']>[number]) {
+  if (artifact.downloadUrl) {
+    try {
+      const url = new URL(artifact.downloadUrl, window.location.origin)
+      const response = await fetch(url, {
+        credentials: url.origin === window.location.origin ? 'same-origin' : 'omit',
+        referrerPolicy: 'no-referrer',
+      })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const objectUrl = URL.createObjectURL(await response.blob())
+      const anchor = document.createElement('a')
+      anchor.href = objectUrl
+      anchor.download = artifact.path.split('/').pop() || 'artifact'
+      anchor.click()
+      URL.revokeObjectURL(objectUrl)
+      return
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '产物下载失败')
+      return
+    }
+  }
+  if (!props.progress.runId || !store.currentSessionId) {
+    message.warning('该 Case 产物尚未提供受控下载地址')
+    return
+  }
   try {
-    const blob = await chatApi.downloadOverdriveArtifact(store.currentSessionId, props.progress.runId, path)
+    const blob = await chatApi.downloadOverdriveArtifact(store.currentSessionId, props.progress.runId, artifact.path)
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = path.split('/').pop() || 'artifact'
+    anchor.download = artifact.path.split('/').pop() || 'artifact'
     anchor.click()
     URL.revokeObjectURL(url)
   } catch (error) {
@@ -193,6 +240,21 @@ async function downloadArtifact(path: string) {
 
     <div v-if="progress.warning" class="overdrive-progress-card__warning">{{ progress.warning }}</div>
 
+    <section v-if="progress.activities?.length" class="overdrive-progress-card__activities" aria-label="规划活动">
+      <div class="overdrive-progress-card__activities-title">规划活动</div>
+      <details v-for="activity in progress.activities" :key="activity.id" class="overdrive-progress-card__activity">
+        <summary>
+          <span class="overdrive-progress-card__activity-dot" :class="`is-${activity.status}`" aria-hidden="true" />
+          <span>{{ activity.label }}</span>
+          <small>{{ activityState(activity.status) }}<template v-if="activityMeta(activity)"> · {{ activityMeta(activity) }}</template></small>
+        </summary>
+        <div v-if="activity.queries?.length" class="overdrive-progress-card__queries">
+          <code v-for="query in activity.queries" :key="query">{{ query }}</code>
+        </div>
+        <div v-if="activity.error" class="overdrive-progress-card__activity-error">{{ activity.error }}</div>
+      </details>
+    </section>
+
     <div
       v-if="!progress.readonly && !['completed', 'failed', 'terminated', 'awaiting_input', 'replanning', 'plan_ready'].includes(progress.phase)"
       class="overdrive-progress-card__controls"
@@ -215,16 +277,22 @@ async function downloadArtifact(path: string) {
     <section v-if="progress.artifacts?.length" class="overdrive-progress-card__artifacts" aria-label="本次协作文件">
       <div v-if="officialArtifacts.length" class="overdrive-progress-card__artifact-group is-official">
         <div class="overdrive-progress-card__artifacts-title">正式交付 · {{ officialArtifacts.length }} 个文件</div>
-        <button
-          v-for="artifact in officialArtifacts"
-          :key="artifact.path"
-          type="button"
-          class="overdrive-progress-card__artifact"
-          @click="downloadArtifact(artifact.path)"
-        >
-          <span>{{ artifact.path.split('/').pop() || artifact.path }}</span>
-          <small v-if="artifactMeta(artifact)">{{ artifactMeta(artifact) }}</small>
-        </button>
+        <div v-for="artifact in officialArtifacts" :key="artifact.path" class="overdrive-progress-card__artifact-row">
+          <button
+            type="button"
+            class="overdrive-progress-card__artifact"
+            @click="downloadArtifact(artifact)"
+          >
+            <span>{{ artifact.path.split('/').pop() || artifact.path }}</span>
+            <small v-if="artifactMeta(artifact)">{{ artifactMeta(artifact) }}</small>
+          </button>
+          <AgentTeamsReportPreview
+            v-if="progress.caseId && isHtmlReport(artifact) && artifact.previewUrl"
+            :source-url="artifact.previewUrl"
+            :case-id="progress.caseId"
+            :title="artifact.path.split('/').pop()"
+          />
+        </div>
       </div>
       <details v-if="processArtifacts.length" class="overdrive-progress-card__artifact-group">
         <summary>过程文件 · {{ processArtifacts.length }} 个</summary>
@@ -233,7 +301,7 @@ async function downloadArtifact(path: string) {
           :key="artifact.path"
           type="button"
           class="overdrive-progress-card__artifact is-process"
-          @click="downloadArtifact(artifact.path)"
+          @click="downloadArtifact(artifact)"
         >
           <span>{{ artifact.path.split('/').pop() || artifact.path }}</span>
           <small v-if="artifactMeta(artifact)">{{ artifactMeta(artifact) }}</small>
@@ -246,7 +314,7 @@ async function downloadArtifact(path: string) {
           :key="artifact.path"
           type="button"
           class="overdrive-progress-card__artifact is-failed"
-          @click="downloadArtifact(artifact.path)"
+          @click="downloadArtifact(artifact)"
         >
           <span>{{ artifact.path.split('/').pop() || artifact.path }}</span>
           <small v-if="artifactMeta(artifact)">{{ artifactMeta(artifact) }}</small>
@@ -298,17 +366,11 @@ async function downloadArtifact(path: string) {
   padding: 12px 14px;
   border: 1px solid var(--chat-border);
   border-radius: var(--radius-lg, 14px);
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--chat-surface) 94%, var(--chat-accent) 6%),
-    var(--chat-surface)
-  );
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--chat-accent) 8%, transparent);
+  background: var(--chat-bg);
 }
 
 .overdrive-progress-card.is-compact {
   padding: 12px 14px;
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--chat-accent) 9%, transparent);
 }
 
 .overdrive-progress-card__header,
@@ -383,6 +445,69 @@ async function downloadArtifact(path: string) {
   color: var(--warning-color, #d97706);
 }
 
+.overdrive-progress-card__activities {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--chat-border) 75%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--chat-surface) 94%, var(--chat-accent) 6%);
+}
+
+.overdrive-progress-card__activities-title {
+  margin-bottom: 4px;
+  color: var(--chat-text-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.overdrive-progress-card__activity > summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 0;
+  color: var(--chat-text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.overdrive-progress-card__activity > summary small {
+  color: var(--chat-text-muted);
+  font-size: 10px;
+}
+
+.overdrive-progress-card__activity-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--chat-text-muted);
+}
+
+.overdrive-progress-card__activity-dot.is-running { background: var(--chat-accent); animation: overdrive-pulse 1.4s ease-in-out infinite; }
+.overdrive-progress-card__activity-dot.is-succeeded,
+.overdrive-progress-card__activity-dot.is-completed { background: var(--success-color, #18a058); }
+.overdrive-progress-card__activity-dot.is-failed,
+.overdrive-progress-card__activity-dot.is-timed_out { background: var(--error-color, #d03050); }
+
+.overdrive-progress-card__queries {
+  display: grid;
+  gap: 4px;
+  padding: 2px 0 6px 14px;
+}
+
+.overdrive-progress-card__queries code {
+  overflow-wrap: anywhere;
+  color: var(--chat-text-secondary);
+  font-size: 10px;
+  white-space: normal;
+}
+
+.overdrive-progress-card__activity-error {
+  padding: 0 0 6px 14px;
+  color: var(--error-color, #d03050);
+  font-size: 10px;
+}
+
 .overdrive-progress-card__badge.is-stalled {
   color: var(--warning-color, #d97706);
   animation: overdrive-stalled 1.6s ease-in-out infinite;
@@ -439,6 +564,13 @@ async function downloadArtifact(path: string) {
   color: var(--chat-text-secondary);
   font-size: 12px;
   font-weight: 650;
+}
+
+.overdrive-progress-card__artifact-row {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 4px;
 }
 
 .overdrive-progress-card__artifact {

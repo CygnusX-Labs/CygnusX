@@ -337,6 +337,17 @@ class StudioSandboxManager:
             logger.debug("[Studio] Redis 活跃态读取失败，使用进程内降级: {}", exc)
         return candidates
 
+    async def last_activity_at(self, session_id: str) -> float | None:
+        """返回跨进程可见的最近活动时间；无活动记录时返回 None。"""
+        local = self._last_activity.get(session_id)
+        try:
+            remote = await get_redis().zscore(_ACTIVITY_KEY, session_id)
+        except Exception as exc:  # noqa: BLE001 - Redis unavailable uses local fallback
+            logger.debug("[Studio] Redis 最近活动读取失败，使用进程内降级: {}", exc)
+            remote = None
+        values = [float(value) for value in (local, remote) if value is not None]
+        return max(values) if values else None
+
     # ------------------------------------------------------------------
     # 容器生命周期
     # ------------------------------------------------------------------
@@ -602,6 +613,23 @@ class StudioSandboxManager:
             return status
         await self.stop(session_id)
         return "hibernated"
+
+    def remove_workspace(self, session_id: str) -> bool:
+        """删除已过保留期的 Studio 工作区，不影响独立结果中心产物。"""
+        workspace = self.workspace_dir(session_id)
+        if not workspace.exists():
+            return False
+        import shutil
+
+        shutil.rmtree(workspace, ignore_errors=True)
+        return not workspace.exists()
+
+    async def purge_workspace(self, session_id: str) -> str:
+        """复核 busy 状态后释放容器并删除工作区。"""
+        if await self._is_busy(session_id):
+            return "busy"
+        await self.stop(session_id)
+        return "removed" if self.remove_workspace(session_id) else "missing"
 
     async def recycle_idle(self) -> int:
         """回收跨进程可见且空闲超 TTL 的会话容器。"""

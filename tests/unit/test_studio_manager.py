@@ -2,7 +2,7 @@
 
 import time
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -39,6 +39,9 @@ class _FakeRedis:
             for member, score in self.sorted_sets.get(key, {}).items()
             if min <= score <= max
         ]
+
+    async def zscore(self, key: str, member: str) -> float | None:
+        return self.sorted_sets.get(key, {}).get(member)
 
     async def zremrangebyscore(self, key: str, min: float, max: float) -> int:
         target = self.sorted_sets.setdefault(key, {})
@@ -363,3 +366,40 @@ async def test_hibernate_removes_container_but_preserves_workspace(tmp_path: Pat
 
     assert await manager.hibernate("sess-idle") == "hibernated"
     assert marker.read_text(encoding="utf-8") == "print(1)\n"
+
+
+@pytest.mark.unit
+async def test_purge_workspace_refuses_busy_session(tmp_path: Path, monkeypatch):
+    manager = _make_manager(tmp_path)
+    workspace = manager.workspace_dir("sess-busy")
+    workspace.mkdir(parents=True)
+
+    async def busy(_session_id: str) -> bool:
+        return True
+
+    stop = MagicMock()
+    monkeypatch.setattr(manager, "_is_busy", busy)
+    monkeypatch.setattr(manager, "stop", stop)
+
+    assert await manager.purge_workspace("sess-busy") == "busy"
+    assert workspace.exists()
+    stop.assert_not_called()
+
+
+@pytest.mark.unit
+async def test_purge_workspace_stops_container_then_removes_files(tmp_path: Path, monkeypatch):
+    manager = _make_manager(tmp_path)
+    workspace = manager.workspace_dir("sess-expired")
+    workspace.mkdir(parents=True)
+    (workspace / "output.txt").write_text("temporary", encoding="utf-8")
+
+    async def idle(_session_id: str) -> bool:
+        return False
+
+    stop = AsyncMock(return_value=True)
+    monkeypatch.setattr(manager, "_is_busy", idle)
+    monkeypatch.setattr(manager, "stop", stop)
+
+    assert await manager.purge_workspace("sess-expired") == "removed"
+    assert not workspace.exists()
+    stop.assert_awaited_once_with("sess-expired")

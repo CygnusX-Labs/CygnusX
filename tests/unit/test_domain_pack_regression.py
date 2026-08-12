@@ -65,6 +65,22 @@ def test_phylo_slots_identify_existing_tree_visualization() -> None:
     assert slots["task_type"] == "tree_visualization"
 
 
+@pytest.mark.parametrize(
+    "content",
+    [
+        "用ggtree绘制一下 treeplot",
+        "帮我绘制系统发育树",
+        "帮我画一个树图",
+        "用 iqtree 绘制树图",
+        "treeplot 帮我画树",
+    ],
+)
+def test_phylo_slots_identify_tree_drawing_phrasings_as_visualization(content: str) -> None:
+    slots = _extract_overdrive_intake_slots(content)
+
+    assert slots["task_type"] == "tree_visualization"
+
+
 def test_tnpd_genome_comparison_is_recognized_as_phylogeny_construction() -> None:
     request = "我要将tnpd序列对比到20个基因组进行进化分析与建树"
 

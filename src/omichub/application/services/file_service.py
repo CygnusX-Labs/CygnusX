@@ -470,6 +470,7 @@ class FileService:
                 break
         directory_matches = [
             DirectorySearchDTO(
+                id=directory.id,
                 path=directory.path,
                 name=directory.name,
                 parent_path=directory.parent_path,

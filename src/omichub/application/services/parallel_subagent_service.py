@@ -68,7 +68,9 @@ _OVERDRIVE_WORKSPACE_TOOL_NAMES = frozenset(
 )
 
 # 子任务正式产物会落盘，不能再用 8,000 字截断代码、研究计划等长交付物。
-_ANSWER_CAP_CHARS = 40000
+# 20K tokens 的英文/代码输出可能超过 40K 字符，保留足够空间让 Agent 配置生效。
+_ANSWER_CAP_CHARS = 100_000
+_MAX_LENGTH_CONTINUATIONS = 2
 # 单条工具结果回灌子上下文的字符上限（C5）
 _TOOL_RESULT_CAP_CHARS = 8000
 # 可视化任务可能同时携带研究计划和代码阶段两个上游产物。
@@ -579,16 +581,18 @@ class ParallelSubAgentService:
         reasoning_text = ""
         verified_evidence_refs: list[str] = []
         successful_tool_calls = 0
+        length_continuations = 0
         for _round in range(max(1, max_rounds)):
             await self._check_control(control_check)
             text = ""
             tool_calls: list[dict[str, Any]] = []
+            finish_reason = ""
             async for chunk in provider_manager.chat_stream(
                 config=ctx.model_config,
                 messages=messages,
                 system_prompt=system_prompt,
                 temperature=0.3,
-                max_tokens=min(int(getattr(ctx, "max_tokens", 4096) or 4096), 8192),
+                max_tokens=min(int(getattr(ctx, "max_tokens", 20_000) or 20_000), 20_000),
                 tools=child_tools or None,
             ):
                 if chunk.type == "text":
@@ -627,6 +631,8 @@ class ParallelSubAgentService:
                                 "tool_name": str(function.get("name") or "工具"),
                             },
                         )
+                elif chunk.type == "done":
+                    finish_reason = str(chunk.metadata.get("finish_reason") or "").lower()
                 elif chunk.type == "error":
                     return {
                         "status": "failed",
@@ -637,6 +643,24 @@ class ParallelSubAgentService:
             if last_text and (not answer_parts or answer_parts[-1] != last_text):
                 answer_parts.append(last_text)
             if not tool_calls:
+                if (
+                    finish_reason in {"length", "max_tokens"}
+                    and length_continuations < _MAX_LENGTH_CONTINUATIONS
+                ):
+                    length_continuations += 1
+                    messages.extend(
+                        [
+                            {"role": "assistant", "content": text},
+                            {
+                                "role": "user",
+                                "content": (
+                                    "上一段因输出长度达到上限而中断。请从中断处继续，"
+                                    "不要重复已输出内容；保持相同的结构，直到完成当前任务。"
+                                ),
+                            },
+                        ]
+                    )
+                    continue
                 final_answer = "\n\n".join(answer_parts).strip()
                 return {
                     "status": "ok",

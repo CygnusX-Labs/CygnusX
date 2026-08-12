@@ -49,6 +49,19 @@ runtime. A successful acceptance Case contains, for each identity, ordered Case 
 `worker.inbox_polled`, `work_item.claimed`, and `skill.finished`. Do not enable this profile for
 production scientific work.
 
+Run the corresponding opt-in live test only against this no-model profile, with deployment-
+managed Manager credentials supplied through the shell rather than files committed to Git:
+
+```bash
+export AGENTTEAMS_ACCEPTANCE_E2E=1
+export AGENTTEAMS_E2E_BRIDGE_URL=http://127.0.0.1:8088/v1
+export AGENTTEAMS_E2E_MANAGER_TOKEN=replace-with-manager-token
+uv run pytest -q tests/e2e/agentteams/test_acceptance_profile.py
+```
+
+The test creates a prefixed Case, assigns one read-only item to each of `agent-code`,
+`agent-viz`, and `agent-scrna`, verifies their ordered audit evidence, then cancels the Case.
+
 Before starting either Worker profile, inject only the three role-scoped tokens into the Compose
 process, ideally from a deployment secret manager:
 
@@ -57,8 +70,16 @@ export AGENTTEAMS_AGENT_CODE_TOKEN=...
 export AGENTTEAMS_AGENT_VIZ_TOKEN=...
 export AGENTTEAMS_AGENT_SCRNA_TOKEN=...
 export AGENTTEAMS_AGENT_RNASEQ_TOKEN=...
-export AGENTTEAMS_QUALITY_AUDITOR_TOKEN=...
-export AGENTTEAMS_DELIVERY_REPORTER_TOKEN=...
+export AGENTTEAMS_AGENT_DATA_TOKEN=...
+export AGENTTEAMS_AGENT_ATACSEQ_TOKEN=...
+export AGENTTEAMS_AGENT_SCRNA_UPSTREAM_TOKEN=...
+export AGENTTEAMS_AGENT_SCRNA_INTEGRATION_TOKEN=...
+export AGENTTEAMS_AGENT_SCRNA_ADVANCED_TOKEN=...
+export AGENTTEAMS_AGENT_QC_TOKEN=...
+export AGENTTEAMS_AGENT_DELIVERY_TOKEN=...
+export AGENTTEAMS_AGENT_CLOUD_OPS_TOKEN=...
+export AGENTTEAMS_AGENT_GENERAL_TOKEN=...
+export AGENTTEAMS_AGENT_MCP_BUILDER_TOKEN=...
 export AGENTTEAMS_ANALYSIS_WORKER_TOKEN=...
 ```
 
@@ -71,8 +92,8 @@ For the repository's integrated development reload, use:
 make docker-reload
 ```
 
-It runs `make agentteams-worker-env` first. That target extracts only the eight
-`AGENTTEAMS_*_TOKEN` entries from deployment-managed `bridge.env` into ignored
+It runs `make agentteams-worker-env` first. That target extracts the 14 expert identity tokens
+plus the specialized `analysis-worker` token from deployment-managed `bridge.env` into ignored
 `worker.env` with mode `0600`, then starts the `agentteams-production` profile.
 To start only this sidecar stack, run `make docker-up-agentteams`.
 
@@ -102,9 +123,9 @@ The delivery Worker records a `delivery.closeout_recommended` evidence event and
 delivery Work Item, but does not call Case close. Closing remains a human-controlled action using
 the quality decision already persisted by the Bridge.
 
-Use `.env.agentteams.example` as the separately managed environment template for the
-version-specific AgentTeams Controller/Manager/Worker, Matrix, MinIO, and optional Higress
-deployment. Those services must not be added to the OmicHub main Compose project.
+Use the tracked Bridge and Worker environment examples as separately managed templates for the
+AgentTeams control plane, private object storage, and optional gateway deployment. Those services
+must not receive OmicHub database, Redis, Docker socket, or user-volume credentials.
 
 The Bridge must be given a restricted OmicHub service identity. It may call only public
 OmicHub HTTP endpoints and must not receive PostgreSQL, Redis, Docker socket, user-data
@@ -112,25 +133,53 @@ volume, or workflow-directory access. The external `omichub_bridge_gateway` is a
 gateway network: expose only the OmicHub API gateway on it, never the database, Redis, or
 Worker services. The `agentteams_control` network remains internal to AgentTeams services.
 
-## Element collaboration room in OmicHub AI
-
-After Matrix and Element Web are deployed and a user-accessible collaboration room exists,
-configure its **public room URL** in `AGENTTEAMS_ELEMENT_URL` or in the administrator UI at
-**Settings → AgentTeams Bridge → Element collaboration room URL**. Users can then select
-**协作聊天室** from the existing OmicHub AI assistant page to open the Element room in a drawer;
-the drawer also provides a new-window fallback for deployments that deny iframe embedding.
-
-Do not place a Matrix password, access token, login token, or invite-secret URL in this field.
-Element remains responsible for authentication, room membership, and message authorization;
-OmicHub only exposes the configured public room URL to authenticated OmicHub users.
-
 ## AgentTeams wiring
 
 - Team identities: `integrations/agentteams/teams/bioops-delivery.yaml`
 - Skill contracts: `integrations/agentteams/skills/contracts.yaml`
 - Bridge API: `http://omichub-agentteams-bridge:8080/v1`
 
-Use a separate secret per Worker through `X-Bridge-Identity` and `X-Bridge-Token`.
+### Latency acceptance gate
+
+Phase 4 must use real browser/control-plane timings rather than unit-test timings. Export at least
+20 samples for each metric as JSONL, measuring `event_to_frontend_ms` from the Bridge audit
+event's `recorded_at` timestamp until the matching `event_id` is rendered, and
+`approval_accept_ms` from the confirmation click until the API response is accepted:
+
+```json
+{"metric":"event_to_frontend_ms","duration_ms":842}
+{"metric":"approval_accept_ms","duration_ms":317}
+```
+
+Run the hard gate against the v1.1 budgets (event visibility P95 ≤ 3000 ms; approval acceptance
+P95 ≤ 1000 ms):
+
+```bash
+python3 deploy/agentteams/verify_latency_budget.py /path/to/agentteams-latency.jsonl
+```
+
+The command exits non-zero when either sample set is too small or its P95 exceeds the budget;
+retain its JSON report with the deployment acceptance evidence.
+
+### Case cursor migration gate
+
+The Case event cursor migration is deliberately staged. New deployments default to
+`AGENTTEAMS_CASE_CURSOR_MIGRATION_MODE=dual_write`: both the new
+`agentteams_case_cursors` table and the legacy session `sandbox_meta` cursor fields are written,
+and the background watcher records the latest comparison result in
+`sandbox_meta.agentteams_case_cursor_migration`. Any mismatch emits a structured warning with the
+session identifier.
+
+Keep `dual_write` enabled until the scheduled watcher reports zero mismatches for three
+consecutive days. Then set `AGENTTEAMS_CASE_CURSOR_MIGRATION_MODE=new_only` and restart the
+OmicHub web/worker processes; the next watcher/consumer pass removes the legacy fields. If an
+incident occurs during or after cutover, set the mode to `legacy_only` to read and write only the
+legacy cursor values while the issue is investigated. Do not remove the cursor migration table
+until the rollback window has expired.
+
+Use a separate secret per identity through `X-Bridge-Identity` and `X-Bridge-Token`. Production
+professional Workers run as the scalable `agentteams-worker-professional-pool`; each claim still
+uses the exact target identity token even though one replica can service multiple capabilities.
 Task submission and cancellation also require a short-lived, action-scoped approval token
 issued only by the separate `approval-authority` gateway after a human approval card is
 resolved. The Bridge writes its own append-only JSONL audit index; OmicHub remains
@@ -237,13 +286,11 @@ python3 deploy/agentteams/preflight.py \
 健康探针默认会在 Bridge 刚启动时重试 5 次；如需只检查一次可传
 `--health-retries 1`。
 
-## Matrix / Element round-trip smoke test
+## Deprecated Matrix transport smoke test
 
-After the Bridge and Matrix Gateway health probes succeed, an operator can verify the real
-room path without placing Matrix credentials in OmicHub. The command creates one disposable
-Matrix room and posts one marker message, so it requires an explicit confirmation flag. The
-Gateway Manager token can be supplied from the deployment secret store through the process
-environment; it is never written by the script.
+This optional legacy transport check is retained only for deployments that still operate Matrix.
+It is not an OmicHub product entry, and AgentTeams chat no longer depends on Element. The command
+creates one disposable room and therefore still requires explicit confirmation.
 
 ```bash
 export AGENTTEAMS_GATEWAY_MANAGER_TOKEN="<deployment-managed-manager-token>"
@@ -252,8 +299,7 @@ python3 deploy/agentteams/matrix_gateway_smoke.py \
   --confirm-write
 ```
 
-To verify Element-to-OmicHub return traffic, open the printed Element room URL in an authorized
-Element session, send any message, then run the same command with a bounded wait window:
+Legacy deployments can also verify external Matrix return traffic with a bounded wait window:
 
 ```bash
 python3 deploy/agentteams/matrix_gateway_smoke.py \
@@ -265,10 +311,9 @@ python3 deploy/agentteams/matrix_gateway_smoke.py \
 ## AgentTeams / HiClaw Controller deployment
 
 For a shared or production deployment, install the official AgentTeams Helm chart into a
-separate Kubernetes namespace. Its default profile owns the AgentTeams Controller, Higress AI
-Gateway, Tuwunel Matrix, MinIO, and Element Web. Keep the Controller API, Matrix homeserver,
-MinIO, and Higress console private; expose only the authenticated Matrix/Element gateway and
-Bridge endpoint required by the approved network policy.
+separate Kubernetes namespace. Keep the Controller API, optional Matrix transport, MinIO, and
+Higress console private; expose only the authenticated Bridge/Gateway endpoints required by the
+approved network policy. OmicHub does not require an Element Web deployment.
 
 ```bash
 helm repo add higress.io https://higress.io/helm-charts

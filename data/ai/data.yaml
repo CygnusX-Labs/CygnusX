@@ -10,11 +10,20 @@ model: qwen3.7-plus
 prompt_file: prompts/data.md
 welcome_message: "你好！我是数据管理员。请提供项目、样本表和已有 Artifact 引用；我会核验输入完整性、分组与可追溯证据。"
 temperature: 0.2
-max_tokens: 4096
+max_tokens: 20000
 mcp_ids: []
 skill_ids:
   - md5
 features:
+  agentteams:
+    category: expert
+    recruitable: true
+    planner_eligible: false
+    execution_modes: [readonly_consultation, workspace_execution]
+    max_parallel_work_items: 2
+    case_mode_excluded_tool_packs: [subagents]
+    handoff_in_case_mode: false
+    work_item_timeout_sec: 1800
   persona:
     archetype: "谨慎有条理的数据管家"
     traits: [谨慎, 有条理, 重视可追溯性, 关注完整性]
@@ -33,7 +42,7 @@ features:
   managed_prompt: true
   managed_profile: true
   subagents_spawnable: true
-  internal_case_role: data-steward
+  internal_case_role: agent-data
   default_role: 分析项目的数据契约、元数据完整性与输入预检
   capability_scope: [数据契约, 样本元数据预检, 输入完整性审查, Artifact 引用核验]
   capability_tags: [data-contract, metadata-validation, project-preflight, artifact-validation]

@@ -13,6 +13,7 @@ import ApprovalCard from './ApprovalCard.vue'
 import MasPlanPreviewCard from './MasPlanPreviewCard.vue'
 import HandoffCard from './HandoffCard.vue'
 import McpToolCallCard from './McpToolCallCard.vue'
+import ChatCodeCard from './ChatCodeCard.vue'
 import StudioCodeCard from '@/components/studio/StudioCodeCard.vue'
 import ResearchToolEventCard from '@/components/studio/ResearchToolEventCard.vue'
 import { StudioContextKey, isStudioCodeTool } from '@/components/studio/context'
@@ -46,6 +47,10 @@ const createdCase = ref<Record<string, unknown> | null>(null)
 
 function isStudioCodeToolCall(tool: ToolCall): boolean {
   return !!studioCtx && isStudioCodeTool(tool.name)
+}
+
+function isChatSandboxTool(tool: ToolCall): boolean {
+  return tool.name === 'chat_sandbox_execute'
 }
 
 function isArtifactRegisterTool(tool: ToolCall): boolean {
@@ -134,7 +139,8 @@ async function confirmAgentTeamsCase(): Promise<void> {
   <!-- Studio HITL 审批卡片（有 approval 数据时出现，决议后保留终态徽标） -->
   <ApprovalCard v-if="tool.approval" :tool="tool" />
   <!-- Studio 代码工具（仅工作台页面）：代码卡片，支持编辑/重跑/产物 -->
-  <StudioCodeCard v-if="isStudioCodeToolCall(tool)" :tool="tool" />
+  <ChatCodeCard v-if="isChatSandboxTool(tool)" :tool="tool" />
+  <StudioCodeCard v-else-if="isStudioCodeToolCall(tool)" :tool="tool" />
   <MasPlanPreviewCard
     v-else-if="hasMasPlan(tool)"
     :plan="masPlanFromTool(tool)"

@@ -209,7 +209,7 @@ STUDIO_TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "workspace_list",
-            "description": "列出工作区目录内容，含名称/类型/大小/修改时间。",
+            "description": "分页列出工作区目录内容，含名称/类型/大小/修改时间。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -217,6 +217,12 @@ STUDIO_TOOL_SCHEMAS: list[dict[str, Any]] = [
                         "type": "string",
                         "default": "",
                         "description": "相对 /workspace 的目录路径，缺省为根目录",
+                    },
+                    "offset": {"type": "integer", "default": 0, "description": "起始条目（0 基）"},
+                    "limit": {
+                        "type": "integer",
+                        "default": 200,
+                        "description": "返回条目数（默认 200，最大 1000）",
                     },
                 },
                 "required": [],
@@ -596,15 +602,31 @@ async def _workspace_list(
     path = str(args.get("path") or "")
     data = await studio_sandbox_manager.list_files(session_id, path, image=image, user_id=user_id)
     entries = data.get("entries") or []
-    llm_entries = entries[:_LIST_LLM_CAP]
+    offset_raw = args.get("offset")
+    offset = max(0, int(offset_raw)) if isinstance(offset_raw, int | float) else 0
+    limit_raw = args.get("limit")
+    limit = min(1000, max(1, int(limit_raw))) if isinstance(limit_raw, int | float) else 200
+    page = entries[offset : offset + limit]
+    llm_entries = page[:_LIST_LLM_CAP]
     llm_payload: dict[str, Any] = {
         "path": data.get("path", path),
         "entries": llm_entries,
         "total": len(entries),
+        "offset": offset,
+        "truncated": offset + len(page) < len(entries),
     }
-    if len(entries) > len(llm_entries):
-        llm_payload["note"] = f"共 {len(entries)} 项，仅列出前 {len(llm_entries)} 项"
-    ui_payload = {"path": data.get("path", path), "entries": entries}
+    if llm_payload["truncated"]:
+        llm_payload["next_offset"] = offset + len(page)
+    if len(page) > len(llm_entries):
+        llm_payload["note"] = f"本页共 {len(page)} 项，仅回灌前 {len(llm_entries)} 项"
+    ui_payload = {
+        "path": data.get("path", path),
+        "entries": page,
+        "total": len(entries),
+        "offset": offset,
+        "truncated": llm_payload["truncated"],
+        **({"next_offset": llm_payload["next_offset"]} if llm_payload["truncated"] else {}),
+    }
     return _ok_result(llm_payload, ui_payload)
 
 

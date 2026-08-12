@@ -92,6 +92,22 @@ async def test_control_client_recycle_idle():
 
 
 @pytest.mark.unit
+async def test_control_client_purges_workspace():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "DELETE"
+        assert request.url.path == "/api/v1/studio/internal/sessions/sess-1/workspace"
+        assert request.headers["X-OmicHub-Studio-Control-Token"] == "secret"
+        return httpx.Response(200, json={"status": "removed"})
+
+    client = StudioControlClient(
+        base_url="http://web/api/v1/studio/internal",
+        token="secret",
+        transport=httpx.MockTransport(handler),
+    )
+    assert await client.purge_workspace("sess-1") == "removed"
+
+
+@pytest.mark.unit
 async def test_internal_exec_delegates_to_web_manager(monkeypatch):
     async def events(*args, **kwargs):
         yield {"type": "result", "exit_code": 0, "artifacts": []}
@@ -129,3 +145,17 @@ async def test_internal_recycle_delegates_to_web_manager(monkeypatch):
         "recycled": 3
     }
     recycle.assert_awaited_once()
+
+
+@pytest.mark.unit
+async def test_internal_workspace_cleanup_delegates_to_web_manager(monkeypatch):
+    monkeypatch.setattr(
+        studio_api, "get_settings", lambda: SimpleNamespace(studio_control_token="secret")
+    )
+    purge = AsyncMock(return_value="removed")
+    monkeypatch.setattr(studio_api.studio_sandbox_manager, "purge_workspace", purge)
+
+    assert await studio_api.internal_cleanup_studio_workspace("sess-1", "secret") == {
+        "status": "removed"
+    }
+    purge.assert_awaited_once_with("sess-1")

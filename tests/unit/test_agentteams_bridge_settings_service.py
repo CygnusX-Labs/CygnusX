@@ -41,7 +41,6 @@ def bridge_settings(**overrides: object) -> Settings:
         "agentteams_bridge_data_steward_token": "steward-env-token",
         "agentteams_bridge_approval_token": "approval-env-token",
         "agentteams_bridge_workflow_operator_token": "operator-env-token",
-        "agentteams_element_url": "",
     }
     values.update(overrides)
     return Settings(**values)
@@ -57,7 +56,6 @@ async def test_public_config_uses_environment_fallback_and_masks_tokens() -> Non
     assert config.configured is True
     assert config.manager_token == MASKED_SECRET
     assert config.workflow_operator_token == MASKED_SECRET
-    assert config.element_url == ""
 
 
 @pytest.mark.asyncio
@@ -135,35 +133,15 @@ async def test_enabled_config_requires_all_worker_tokens() -> None:
 
 
 @pytest.mark.asyncio
-async def test_element_room_url_is_persisted_without_exposing_credentials() -> None:
+async def test_update_clears_a_legacy_element_room_url() -> None:
     session = FakeSession()
+    session.model = AgentTeamsBridgeSettingsModel(
+        id=1,
+        element_url="https://element.example/#/room/!legacy:example.org",
+    )
     service = AgentTeamsBridgeSettingsService(session, bridge_settings())  # type: ignore[arg-type]
 
-    result = await service.update_config(
-        AgentTeamsBridgeConfigUpdateDTO(
-            enabled=True,
-            bridge_url="http://bridge.database",
-            manager_token=MASKED_SECRET,
-            data_steward_token=MASKED_SECRET,
-            approval_token=MASKED_SECRET,
-            workflow_operator_token=MASKED_SECRET,
-            element_url="https://element.example/#/room/!bioops:example.org",
-        )
-    )
+    await service.update_config(AgentTeamsBridgeConfigUpdateDTO(enabled=False))
 
-    assert result.element_url == "https://element.example/#/room/!bioops:example.org"
     assert session.model is not None
-    assert session.model.element_url == result.element_url
-
-
-@pytest.mark.asyncio
-async def test_element_room_url_rejects_embedded_access_token() -> None:
-    service = AgentTeamsBridgeSettingsService(FakeSession(), bridge_settings())  # type: ignore[arg-type]
-
-    with pytest.raises(BusinessError, match="不能包含访问令牌"):
-        await service.update_config(
-            AgentTeamsBridgeConfigUpdateDTO(
-                enabled=False,
-                element_url="https://element.example/#/room/!bioops:example.org?access_token=secret",
-            )
-        )
+    assert session.model.element_url == ""

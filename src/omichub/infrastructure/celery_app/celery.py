@@ -106,15 +106,20 @@ celery_app.conf.beat_schedule = {
         "task": "omichub.infrastructure.celery_app.tasks.cookie.daily_reconcile",
         "schedule": crontab(hour=2, minute=30),
     },
-    # 每 5 分钟回收超时沙盒会话
+    # 每分钟扫描，回收空闲超过 5 分钟的普通聊天轻量沙盒会话
     "sandbox-recycle-expired": {
         "task": "omichub.infrastructure.celery_app.tasks.sandbox.recycle_expired",
-        "schedule": crontab(minute="*/5"),
+        "schedule": crontab(minute="*"),
     },
     # 每 5 分钟回收空闲 Studio 沙盒容器
     "studio-sandbox-recycle": {
         "task": "omichub.infrastructure.celery_app.tasks.studio.recycle_idle_sandboxes",
         "schedule": crontab(minute="*/5"),
+    },
+    # 每天凌晨 3:30 清理超过保留期且未在分享/执行中的 Studio 工作区
+    "studio-workspace-retention": {
+        "task": "omichub.infrastructure.celery_app.tasks.studio.cleanup_expired_workspaces",
+        "schedule": crontab(hour=3, minute=30),
     },
     # 每 5 分钟下线过期实验 MCP（MCP Builder TTL 机制）
     "mcp-builder-expire-experimental": {

@@ -12,7 +12,6 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 
 from omichub.api.deps import CurrentUserId, DbSession
 from omichub.application.schemas.chat import (
@@ -34,7 +33,6 @@ from omichub.application.schemas.chat import (
 )
 from omichub.application.schemas.skill import SkillDTO
 from omichub.application.services.chat_service import ChatService
-from omichub.infrastructure.database.models.chat import ChatMessageModel
 
 router = APIRouter()
 
@@ -259,7 +257,7 @@ async def decide_overdrive_plan(
         max_revisions=int(planning_limits.get("max_revision_rounds") or 3),
     )
     await db.commit()
-    if request.action == "approve":
+    if request.action == "approve" and result.get("status") != "COMPLETED":
         from omichub.infrastructure.celery_app.tasks.overdrive import advance_run
 
         advance_run.delay(run_id)
@@ -296,7 +294,7 @@ async def control_overdrive_run(
         action=request.action,
     )
     await db.commit()
-    if request.action in {"resume", "terminate"}:
+    if request.action in {"resume", "terminate"} and result.get("status") != "TERMINATED":
         from omichub.infrastructure.celery_app.tasks.overdrive import advance_run
 
         advance_run.delay(run_id)
@@ -525,107 +523,6 @@ async def agentteams_case_events(
         finally:
             await pubsub.unsubscribe()
             await pubsub.close()
-
-    return StreamingResponse(
-        generate_sse(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@router.get(
-    "/sessions/{session_id}/room-events",
-    summary="订阅聊天会话的 Matrix 房间外部消息",
-)
-async def room_events(
-    session_id: str,
-    current_user_id: CurrentUserId,
-    db: DbSession,
-) -> StreamingResponse:
-    """将 Gateway 的非 OmicHub Matrix 消息持久化并推送给当前会话。"""
-    service = ChatService(db)
-    session = await service.get_session(session_id, current_user_id)
-    room_id = str((session.sandbox_meta or {}).get("matrix_room_id") or "") if session else ""
-    if session is None or not room_id:
-
-        async def missing_room():
-            yield f"data: {json.dumps({'type': 'error', 'content': '当前会话尚未绑定 Matrix 房间'}, ensure_ascii=False)}\n\n"
-
-        return StreamingResponse(missing_room(), media_type="text/event-stream", status_code=404)
-
-    async def generate_sse():
-        from omichub.application.services.agentteams_room_gateway_service import (
-            AgentTeamsRoomGatewayService,
-        )
-
-        gateway = AgentTeamsRoomGatewayService()
-        if not gateway.available:
-            yield f"data: {json.dumps({'type': 'error', 'content': 'Matrix Gateway 未配置'}, ensure_ascii=False)}\n\n"
-            return
-        meta = dict(session.sandbox_meta or {})
-        since = str(meta.get("matrix_sync_cursor") or "") or None
-        try:
-            async for event in gateway.stream_room_events(room_id, since=since):
-                if "next_batch" in event:
-                    next_batch = event.get("next_batch")
-                    if isinstance(next_batch, str) and next_batch:
-                        meta = {**meta, "matrix_sync_cursor": next_batch}
-                        session.sandbox_meta = meta
-                        await db.commit()
-                    continue
-                if event.get("origin") == "omichub" or not event.get("content"):
-                    continue
-                sender_data = event.get("sender") if isinstance(event.get("sender"), dict) else {}
-                sender_identity = str(event.get("sender_identity") or "external")
-                sender = {
-                    "agent_id": str(sender_data.get("agent_id") or sender_identity),
-                    "name": str(sender_data.get("name") or sender_identity),
-                    "avatar": str(sender_data.get("avatar") or "💬"),
-                    "color": str(sender_data.get("color") or "#64748b"),
-                    "role": "worker",
-                }
-                event_id = str(event.get("event_id") or "")
-                if event_id:
-                    existing = await db.scalar(
-                        select(ChatMessageModel.message_id).where(
-                            ChatMessageModel.session_id == session_id,
-                            ChatMessageModel.metadata_json["matrix_event_id"].astext == event_id,
-                        )
-                    )
-                    if existing is not None:
-                        continue
-                try:
-                    message = await service.add_message(
-                        session_id,
-                        "assistant",
-                        str(event["content"]),
-                        metadata={
-                            "senderAgent": sender,
-                            "matrix_event_id": event_id or None,
-                            "matrix_room_id": room_id,
-                        },
-                    )
-                    await db.commit()
-                except IntegrityError:
-                    # 唯一索引覆盖并发 SSE 重连的检查-插入竞态；重复事件不再推送。
-                    await db.rollback()
-                    continue
-                payload = {
-                    "type": "room_speech",
-                    "content": str(event["content"]),
-                    "sender": sender,
-                    "round": 0,
-                    "session_id": session_id,
-                    "message_id": message.message_id,
-                    "matrix_room_id": room_id,
-                }
-                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-        except RuntimeError as exc:
-            yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         generate_sse(),

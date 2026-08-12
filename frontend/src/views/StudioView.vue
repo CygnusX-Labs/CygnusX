@@ -1189,6 +1189,9 @@ function formatSessionTime(iso: string): string {
               <span class="info-label">会话 ID</span>
               <span class="info-mono">{{ (workspaceId || sessionId).slice(0, 8) }}</span>
             </div>
+            <div class="retention-note">
+              离开工作台后释放计算容器；工作区保留 7 天。已登记到结果报告中心的产物独立保存，不随工作区清理。
+            </div>
           </div>
         </div>
       </aside>
@@ -1539,6 +1542,15 @@ function formatSessionTime(iso: string): string {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 11px;
 }
+.retention-note {
+  padding: 9px 10px;
+  border: 1px solid var(--border-subtle, var(--chat-border));
+  border-radius: 8px;
+  color: var(--text-tertiary, var(--chat-text-muted));
+  background: var(--surface-highlight, var(--chat-surface-hover));
+  font-size: 11px;
+  line-height: 1.55;
+}
 
 /* ---------- 文件预览 ---------- */
 .extract-skill-form {
@@ -1659,7 +1671,8 @@ function formatSessionTime(iso: string): string {
 @media (prefers-reduced-motion: reduce) { .studio-modebar button,.node-caret { transition:none !important; }.task-status-light.is-running { animation:none; } }
 
 .accordion-header { width:100%; border:0; background:transparent; text-align:left; cursor:pointer; }.accordion-header:hover { background:var(--studio-primary-soft,#f0edff); }.accordion-chevron { margin-left:auto; color:var(--studio-text-sub,#8a8aa3); transition:transform .18s ease; }.accordion-chevron.open { transform:rotate(180deg); }
-.studio-view :deep(.kimi-message-item.user .message-content.user-bubble) { max-width:78%; padding:10px 14px; color:var(--studio-text,#2b2b3d); background:#eeeaff; border:1px solid #ddd7ff; border-radius:16px 16px 5px 16px; box-shadow:0 3px 12px rgba(108,92,231,.08); }
+.studio-view :deep(.kimi-message-item.user .message-content.user-bubble) { max-width:78%; padding:10px 14px; color:var(--user-bubble-text,#2b2b3d); background:var(--user-bubble-bg,#eeeaff); border:1px solid var(--user-bubble-border,#ddd7ff); border-radius:16px 16px 5px 16px; box-shadow:0 3px 12px rgba(108,92,231,.08); }
+:root[data-theme="dark"] .studio-view :deep(.kimi-message-item.user .message-content.user-bubble) { --user-bubble-bg:#2a2545; --user-bubble-border:#4a4278; --user-bubble-text:#e0ddf0; box-shadow:0 3px 12px rgba(108,92,231,.18); }
 .studio-view :deep(.kimi-message-item.assistant .message-content.ai-card) { border-color:var(--studio-border,#e8e8f2); box-shadow:0 4px 16px rgba(43,43,61,.04); }.studio-view :deep(.ai-name),.studio-view :deep(.meta-item.tokens) { color:var(--studio-primary,#6c5ce7); }
 .studio-view :deep(.kimi-chat-input) { border-color:var(--chat-input-border,var(--neutral-border)); border-radius:var(--radius-lg,16px); background:var(--chat-input-bg,var(--neutral-card)); box-shadow:none; }.studio-view :deep(.kimi-chat-input.deep-thinking) { border-color:var(--arco-primary); }.studio-view :deep(.deep-thinking-btn.active) { color:var(--arco-primary)!important; background:var(--arco-primary-light)!important; border-color:color-mix(in srgb, var(--arco-primary) 30%, transparent); border-radius:8px; }.studio-view :deep(.send-btn:hover),.studio-view :deep(.send-btn.active) { background:var(--arco-primary); }
 

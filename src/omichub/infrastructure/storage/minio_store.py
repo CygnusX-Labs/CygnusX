@@ -116,6 +116,26 @@ class MinioStore:
             raise BusinessError("对象存储不可用") from exc
         return destination
 
+    def read_case_object(self, case_id: str, key: str, *, max_bytes: int) -> bytes:
+        object_name = self._object_name(case_id, key)
+        if max_bytes < 1:
+            raise ValueError("max_bytes must be positive")
+        response = None
+        try:
+            response = self._require_client().get_object(self.bucket, object_name)
+            payload = response.read(max_bytes + 1)
+        except BusinessError:
+            raise
+        except Exception as exc:
+            raise BusinessError("对象存储不可用") from exc
+        finally:
+            if response is not None:
+                response.close()
+                response.release_conn()
+        if len(payload) > max_bytes:
+            raise BusinessError("产物超过预览大小上限")
+        return payload
+
     def list_case_objects(self, case_id: str, prefix: str = "") -> list[ObjectMeta]:
         self._validate_id(case_id, "case_id")
         normalized = PurePosixPath(prefix.replace("\\", "/")) if prefix else None

@@ -110,6 +110,8 @@ async def test_consumer_replays_from_persisted_cursor_and_projects(monkeypatch) 
     assert second["events"] == 1
     assert db.cursor is not None
     assert db.cursor.event_cursor == "event-2"
+    assert db.session.sandbox_meta["agentteams_case_event_cursor"] == {"case-1": "event-2"}
+    assert db.session.sandbox_meta["agentteams_case_cursor_migration"]["mode"] == "dual_write"
     assert db.session.sandbox_meta["agentteams_case_status"]["case-1"] == "delivery_ready"
     assert db.commits == 2
     assert published
@@ -129,3 +131,36 @@ async def test_consumer_skips_terminal_case_without_opening_stream() -> None:
 
     assert result == {"events": 0, "projected": 0, "skipped": 1}
     assert db.cursor is None
+
+
+@pytest.mark.asyncio
+async def test_consumer_legacy_only_reuses_sandbox_cursor(monkeypatch) -> None:
+    db = FakeDb()
+    db.session.sandbox_meta["agentteams_case_event_cursor"] = {"case-1": "legacy-event"}
+    monkeypatch.setattr(
+        consumer_module,
+        "get_settings",
+        lambda: SimpleNamespace(agentteams_case_cursor_migration_mode="legacy_only"),
+    )
+
+    await AgentTeamsCaseEventConsumerService(db).consume(
+        "session-1",
+        "case-1",
+        watch_seconds=55,
+        agentteams=FakeAgentTeams(
+            "legacy-event",
+            [
+                {
+                    "event_id": "event-2",
+                    "event_type": "delivery.published",
+                    "case_id": "case-1",
+                    "actor": "delivery-reporter",
+                    "payload": {},
+                }
+            ],
+        ),
+    )
+
+    assert db.cursor is not None
+    assert db.cursor.event_cursor == "legacy-event"
+    assert db.session.sandbox_meta["agentteams_case_event_cursor"] == {"case-1": "event-2"}

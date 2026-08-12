@@ -29,6 +29,7 @@ import { useAuthStore } from '@/stores/auth'
 import { studioApi } from '@/api/studio'
 import type { ChatMessage, FileAttachment } from '@/components/ai-chat/types'
 import { displayName } from '@/utils/displayName'
+import { parseTaskUnderstanding } from '@/utils/studioPresentation'
 
 const store = useAgentHubStore()
 const authStore = useAuthStore()
@@ -150,6 +151,11 @@ const isEmpty = computed(() => (session.value?.messages.length ?? 0) === 0)
 const conversationMessages = computed(() =>
   conversationMessagesWithoutProgress(session.value?.messages || []),
 )
+/** 超频规划开始前先明确解析到的任务，保持与 AI 工作台一致的首屏认知反馈。 */
+const overdriveTaskUnderstanding = computed(() => {
+  if (!session.value?.overdrive) return null
+  return parseTaskUnderstanding(session.value.messages || [], store.isStreaming, '超频协作任务')
+})
 const activeOverdriveProgress = computed(() =>
   selectActiveOverdriveProgress(session.value?.messages || []),
 )
@@ -351,6 +357,23 @@ function handleConfirmTool(toolName: string, args: Record<string, unknown>) {
   store.sendMessage(content, {})
 }
 
+function handleConfirmExecution(preset: string) {
+  if (store.isStreaming) {
+    message.warning('请等待当前回复完成')
+    return
+  }
+  void store.sendMessage(preset, {})
+}
+
+function handleAdjustExecution(preset: string) {
+  if (store.isStreaming) {
+    message.warning('请等待当前回复完成')
+    return
+  }
+  input.value = preset
+  nextTick(() => composerRef.value?.focus())
+}
+
 function handleCreateCaseFromConsultation(summary: string, consultationId?: string) {
   window.dispatchEvent(new CustomEvent('omichub:agentteams-create', {
     detail: { summary, consultationId },
@@ -378,9 +401,26 @@ async function handleEnterStudio() {
   if (!agent.value || creatingStudio.value) return
   creatingStudio.value = true
   try {
-    const created = await studioApi.createSession({ agent_id: agent.value.id })
-    store.markStudioSession(created.session_id)
-    router.push({ name: 'studio', params: { sessionId: created.session_id } })
+    const sid = store.currentSessionId
+    let sessionId = ''
+    if (sid && !sid.startsWith('sess-')) {
+      try {
+        const promoted = await studioApi.promoteSession(sid, agent.value.id)
+        sessionId = promoted.session_id
+        if (store.currentSession && store.currentSession.id === sessionId) {
+          store.currentSession.agent_id = promoted.agent_id || agent.value.id
+        }
+      } catch {
+        sessionId = ''
+      }
+    }
+    if (!sessionId) {
+      const created = await studioApi.createSession({ agent_id: agent.value.id })
+      sessionId = created.session_id
+    }
+    store.markStudioSession(sessionId)
+    message.info('已进入 AI 工作台，对话历史已带过去，可继续')
+    router.push({ name: 'studio', params: { sessionId } })
   } catch (e: any) {
     message.error(e?.response?.data?.detail || '创建工作台会话失败')
   } finally {
@@ -469,6 +509,7 @@ onUnmounted(() => {
           :user-avatar="userAvatarUrl"
           :session-id="session.id"
           :target-message-id="targetMessageId"
+          :task-understanding="overdriveTaskUnderstanding"
           @copy="handleCopy"
           @feedback="(id, type) => store.submitMessageFeedback(id, type)"
           @regenerate="handleRegenerate"
@@ -479,6 +520,8 @@ onUnmounted(() => {
           @open-tool-page="handleOpenToolPage"
           @create-case-from-consultation="handleCreateCaseFromConsultation"
           @correct-collaboration-route="handleCorrectCollaborationRoute"
+          @confirm-execution="handleConfirmExecution"
+          @adjust-execution="handleAdjustExecution"
         />
 
         <transition name="progress-dock">

@@ -5,11 +5,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 from celery import shared_task
+from sqlalchemy import select
 
+from omichub.core.config import get_settings
 from omichub.domain.task.value_objects import LogLevel, TaskStatus
 from omichub.infrastructure.cache.pubsub import publish_arq_progress, publish_task_log
 
@@ -17,6 +20,70 @@ logger = logging.getLogger(__name__)
 
 _MAX_CAPTURE_CHARS = 20_000
 _MAX_PERSISTED_LINES = 200
+
+
+@shared_task(name="omichub.infrastructure.celery_app.tasks.studio.cleanup_expired_workspaces")
+def cleanup_expired_workspaces() -> dict[str, Any]:
+    """删除超过 Studio 工作区保留期的闲置工作区，报告中心产物不受影响。"""
+    return asyncio.run(_cleanup_expired_workspaces())
+
+
+async def _cleanup_expired_workspaces() -> dict[str, Any]:
+    from omichub.application.services.studio_sharing import share_is_active
+    from omichub.infrastructure.database.models.chat import ChatSessionModel
+    from omichub.infrastructure.database.session import get_session_factory
+    from omichub.infrastructure.studio.control_client import StudioControlClient
+    from omichub.infrastructure.studio.manager import studio_sandbox_manager
+
+    config = studio_sandbox_manager._config()
+    retention_days = max(1, int(config.session.workspace_retention_days))
+    cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+    removed = 0
+    skipped_shared = 0
+    skipped_busy = 0
+    missing = 0
+    control_client = StudioControlClient()
+    workspace_cleaner = (
+        control_client
+        if get_settings().service_name == "worker" and control_client.enabled
+        else studio_sandbox_manager
+    )
+
+    async with get_session_factory()() as db:
+        result = await db.execute(
+            select(ChatSessionModel).where(
+                ChatSessionModel.mode == "studio",
+                ChatSessionModel.updated_at < cutoff,
+            )
+        )
+        sessions = list(result.scalars().all())
+        for session in sessions:
+            if share_is_active(session):
+                skipped_shared += 1
+                continue
+            recent_activity = await studio_sandbox_manager.last_activity_at(
+                session.session_id
+            )
+            if recent_activity is not None and recent_activity > cutoff.timestamp():
+                skipped_busy += 1
+                continue
+            status = await workspace_cleaner.purge_workspace(session.session_id)
+            if status == "busy":
+                skipped_busy += 1
+            elif status == "removed":
+                removed += 1
+            else:
+                missing += 1
+        await db.commit()
+
+    return {
+        "status": "ok",
+        "retention_days": retention_days,
+        "removed_workspaces": removed,
+        "skipped_shared": skipped_shared,
+        "skipped_busy": skipped_busy,
+        "missing_workspaces": missing,
+    }
 
 
 @shared_task(name="omichub.infrastructure.celery_app.tasks.studio.run_studio_sandbox")

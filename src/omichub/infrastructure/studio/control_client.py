@@ -86,3 +86,12 @@ class StudioControlClient:
             )
             response.raise_for_status()
             return int(response.json().get("recycled", 0))
+
+    async def purge_workspace(self, session_id: str) -> str:
+        async with httpx.AsyncClient(timeout=30.0, transport=self._transport) as client:
+            response = await client.delete(
+                f"{self.base_url}/sessions/{session_id}/workspace",
+                headers=self._headers(),
+            )
+            response.raise_for_status()
+            return str(response.json().get("status") or "missing")

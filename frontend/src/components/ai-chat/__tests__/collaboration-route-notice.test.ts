@@ -17,7 +17,7 @@ function mountNotice(route: CollaborationRouteInfo) {
 }
 
 describe('CollaborationRouteNotice', () => {
-  it('hides internal clarification phrasing for direct-answer routes', () => {
+  it('uses a quiet, user-facing summary for direct-answer routes', () => {
     const el = mountNotice({
       intent: 'chat',
       label: '直接回答',
@@ -28,7 +28,9 @@ describe('CollaborationRouteNotice', () => {
       message: '',
     })
 
-    expect(el.textContent).toContain('当前助手将直接处理你的问题。')
+    expect(el.textContent).toContain('由通用助手直接回复')
+    expect(el.textContent).not.toContain('直接回答')
+    expect(el.textContent).not.toContain('已选择')
     expect(el.textContent).not.toContain('缺乏上下文')
   })
 })

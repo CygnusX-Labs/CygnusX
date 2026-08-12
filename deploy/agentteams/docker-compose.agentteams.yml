@@ -1,5 +1,6 @@
 services:
   omichub-agentteams-gateway:
+    container_name: omichub-agentteams-gateway
     build:
       context: ../../integrations/agentteams/gateway
     env_file:
@@ -24,6 +25,7 @@ services:
       start_period: 10s
 
   omichub-agentteams-bridge:
+    container_name: omichub-agentteams-bridge
     build:
       context: ../../integrations/agentteams/bridge
     command: ["uvicorn", "omichub_agentteams_bridge.app:app", "--host", "0.0.0.0", "--port", "8080"]
@@ -54,6 +56,7 @@ services:
       start_period: 10s
 
   omichub-agentteams-state:
+    container_name: omichub-agentteams-state
     image: redis:7.4-alpine
     command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
     volumes:
@@ -69,6 +72,7 @@ services:
       retries: 5
 
   agentteams-worker-code:
+    container_name: agentteams-worker-code
     profiles: [agentteams-acceptance]
     build:
       context: ../../integrations/agentteams/worker
@@ -89,6 +93,7 @@ services:
     security_opt: [no-new-privileges:true]
 
   agentteams-worker-viz:
+    container_name: agentteams-worker-viz
     profiles: [agentteams-acceptance]
     build:
       context: ../../integrations/agentteams/worker
@@ -109,6 +114,7 @@ services:
     security_opt: [no-new-privileges:true]
 
   agentteams-worker-scrna:
+    container_name: agentteams-worker-scrna
     profiles: [agentteams-acceptance]
     build:
       context: ../../integrations/agentteams/worker
@@ -128,88 +134,20 @@ services:
     tmpfs: [/tmp]
     security_opt: [no-new-privileges:true]
 
-  agentteams-worker-code-production:
+  agentteams-worker-professional-pool:
     profiles: [agentteams-production]
     build:
       context: ../../integrations/agentteams/worker
+    env_file:
+      - ${WORKER_ENV_FILE:-./worker.env}
     environment:
       AGENTTEAMS_WORKER_MODE: production
       AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
-      AGENTTEAMS_WORKER_IDENTITY: agent-code
-      AGENTTEAMS_BRIDGE_TOKEN: ${AGENTTEAMS_AGENT_CODE_TOKEN:-}
+      AGENTTEAMS_WORKER_IDENTITIES: agent-data,agent-rnaseq,agent-atacseq,agent-scrna,agent-scrna-upstream,agent-scrna-integration,agent-scrna-advanced,agent-code,agent-viz,agent-qc,agent-delivery,agent-cloud-ops,agent-general,agent-mcp-builder
+      AGENTTEAMS_WORKER_MAX_CONCURRENT: ${AGENTTEAMS_PROFESSIONAL_POOL_CONCURRENCY:-4}
       AGENTTEAMS_WORKER_POLL_SECONDS: "2"
-    depends_on:
-      omichub-agentteams-bridge:
-        condition: service_healthy
-    networks: [agentteams_control]
-    read_only: true
-    tmpfs: [/tmp]
-    security_opt: [no-new-privileges:true]
-
-  agentteams-worker-viz-production:
-    profiles: [agentteams-production]
-    build:
-      context: ../../integrations/agentteams/worker
-    environment:
-      AGENTTEAMS_WORKER_MODE: production
-      AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
-      AGENTTEAMS_WORKER_IDENTITY: agent-viz
-      AGENTTEAMS_BRIDGE_TOKEN: ${AGENTTEAMS_AGENT_VIZ_TOKEN:-}
-      AGENTTEAMS_WORKER_POLL_SECONDS: "2"
-    depends_on:
-      omichub-agentteams-bridge:
-        condition: service_healthy
-    networks: [agentteams_control]
-    read_only: true
-    tmpfs: [/tmp]
-    security_opt: [no-new-privileges:true]
-
-  agentteams-worker-scrna-production:
-    profiles: [agentteams-production]
-    build:
-      context: ../../integrations/agentteams/worker
-    environment:
-      AGENTTEAMS_WORKER_MODE: production
-      AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
-      AGENTTEAMS_WORKER_IDENTITY: agent-scrna
-      AGENTTEAMS_BRIDGE_TOKEN: ${AGENTTEAMS_AGENT_SCRNA_TOKEN:-}
-      AGENTTEAMS_WORKER_POLL_SECONDS: "2"
-    depends_on:
-      omichub-agentteams-bridge:
-        condition: service_healthy
-    networks: [agentteams_control]
-    read_only: true
-    tmpfs: [/tmp]
-    security_opt: [no-new-privileges:true]
-
-  agentteams-worker-rnaseq-production:
-    profiles: [agentteams-production]
-    build:
-      context: ../../integrations/agentteams/worker
-    environment:
-      AGENTTEAMS_WORKER_MODE: production
-      AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
-      AGENTTEAMS_WORKER_IDENTITY: agent-rnaseq
-      AGENTTEAMS_BRIDGE_TOKEN: ${AGENTTEAMS_AGENT_RNASEQ_TOKEN:-}
-      AGENTTEAMS_WORKER_POLL_SECONDS: "2"
-    depends_on:
-      omichub-agentteams-bridge:
-        condition: service_healthy
-    networks: [agentteams_control]
-    read_only: true
-    tmpfs: [/tmp]
-    security_opt: [no-new-privileges:true]
-
-  agentteams-worker-data-production:
-    profiles: [agentteams-production]
-    build:
-      context: ../../integrations/agentteams/worker
-    environment:
-      AGENTTEAMS_WORKER_MODE: production
-      AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
-      AGENTTEAMS_WORKER_IDENTITY: data-steward
-      AGENTTEAMS_BRIDGE_TOKEN: ${AGENTTEAMS_DATA_STEWARD_TOKEN:-}
-      AGENTTEAMS_WORKER_POLL_SECONDS: "2"
+    deploy:
+      replicas: ${AGENTTEAMS_PROFESSIONAL_POOL_REPLICAS:-2}
     depends_on:
       omichub-agentteams-bridge:
         condition: service_healthy
@@ -219,9 +157,12 @@ services:
     security_opt: [no-new-privileges:true]
 
   agentteams-worker-analysis-production:
+    container_name: agentteams-worker-analysis
     profiles: [agentteams-production]
     build:
       context: ../../integrations/agentteams/worker
+    env_file:
+      - ${WORKER_ENV_FILE:-./worker.env}
     environment:
       AGENTTEAMS_WORKER_MODE: analysis
       AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
@@ -237,14 +178,17 @@ services:
     security_opt: [no-new-privileges:true]
 
   agentteams-worker-quality-production:
+    container_name: agentteams-worker-quality
     profiles: [agentteams-production]
     build:
       context: ../../integrations/agentteams/worker
+    env_file:
+      - ${WORKER_ENV_FILE:-./worker.env}
     environment:
       AGENTTEAMS_WORKER_MODE: quality
       AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
       AGENTTEAMS_WORKER_IDENTITY: quality-auditor
-      AGENTTEAMS_BRIDGE_TOKEN: ${AGENTTEAMS_QUALITY_AUDITOR_TOKEN:-}
+      AGENTTEAMS_BRIDGE_TOKEN: ${AGENTTEAMS_AGENT_QC_TOKEN:-}
       AGENTTEAMS_WORKER_POLL_SECONDS: "5"
     depends_on:
       omichub-agentteams-bridge:
@@ -255,14 +199,17 @@ services:
     security_opt: [no-new-privileges:true]
 
   agentteams-worker-delivery-production:
+    container_name: agentteams-worker-delivery
     profiles: [agentteams-production]
     build:
       context: ../../integrations/agentteams/worker
+    env_file:
+      - ${WORKER_ENV_FILE:-./worker.env}
     environment:
       AGENTTEAMS_WORKER_MODE: delivery
       AGENTTEAMS_BRIDGE_BASE_URL: http://omichub-agentteams-bridge:8080/v1
       AGENTTEAMS_WORKER_IDENTITY: delivery-reporter
-      AGENTTEAMS_BRIDGE_TOKEN: ${AGENTTEAMS_DELIVERY_REPORTER_TOKEN:-}
+      AGENTTEAMS_BRIDGE_TOKEN: ${AGENTTEAMS_AGENT_DELIVERY_TOKEN:-}
       AGENTTEAMS_WORKER_POLL_SECONDS: "5"
     depends_on:
       omichub-agentteams-bridge:

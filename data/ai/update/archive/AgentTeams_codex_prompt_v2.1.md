@@ -1,4 +1,4 @@
-# Codex 施工提示词：AgentTeams v2.1（真干活 + 通用化）
+# Codex 施工提示词：AgentTeams v2.1（真干活 + 通用化，已归档）
 
 > 用法：把本文件全文作为提示词发给 Codex（或等价编码 agent），在仓库根目录执行。  
 > 权威施工规格：`data/ai/update/AgentTeams_update_v2.md`（下称"v2.1 规格"）与 `data/ai/AgentTeams_update.md`（下称"v1 基线"）。本提示词不替代它们，只定义执行纪律、顺序与交付格式。规格/基线与本提示词冲突时，以 v2.1 规格为准。  

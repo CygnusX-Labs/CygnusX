@@ -97,6 +97,62 @@ async def test_retrieval_sources_are_concurrent_and_model_runs_after_both() -> N
 
 
 @pytest.mark.asyncio
+async def test_planner_refines_queries_and_prefers_biomedical_literature() -> None:
+    refined_queries = [
+        "TP53 AND lung adenocarcinoma AND single-cell RNA-seq",
+        "mouse lung cancer AND tumor-associated macrophage AND immune evasion",
+    ]
+    literature_queries: list[str] = []
+    activities: list[dict[str, object]] = []
+
+    async def empty(_query: str, **_: object) -> list[object]:
+        return []
+
+    async def refiner(_query: str, **_: object) -> dict[str, object]:
+        return {"queries": refined_queries}
+
+    async def literature(query: str, **_: object) -> list[dict[str, str]]:
+        literature_queries.append(query)
+        return [{
+            "title": "Single-cell transcriptomics of mouse lung cancer reveals myeloid populations",
+            "url": "https://pubmed.ncbi.nlm.nih.gov/30979687/",
+            "snippet": "Mouse lung cancer single-cell RNA-seq identifies tumor-associated macrophage populations.",
+            "provider": "europe_pmc",
+        }]
+
+    async def activity(event: dict[str, object]) -> None:
+        activities.append(event)
+
+    bundle = await ResearchBundleService(
+        knowledge_search=empty,
+        web_search=empty,
+        model_knowledge=empty,
+        query_refiner=refiner,
+        literature_search=literature,
+        activity_callback=activity,
+    ).collect("TP53 小鼠肺癌单细胞研究方案与免疫耐受机制")
+
+    assert literature_queries == refined_queries
+    assert bundle.sources["web"]["query_refinement"]["status"] == "refined"
+    assert bundle.sources["web"]["queries"] == refined_queries
+    assert bundle.sources["web"]["channels"]["literature"]["status"] == "succeeded"
+    assert any(item["locator"].startswith("https://pubmed.ncbi.nlm.nih.gov/") for item in bundle.evidence)
+    assert any(item["event"] == "source_started" and item["source"] == "literature" for item in activities)
+    assert any(item["event"] == "source_completed" and item["source"] == "literature" for item in activities)
+    content = build_plan_markdown(
+        request="TP53 小鼠肺癌单细胞研究方案与免疫耐受机制",
+        lead_planner_agent_id="agent-scrna",
+        evidence=bundle.evidence,
+        research_sources=bundle.sources,
+        tasks=[_task(agent_id="agent-scrna")],
+        plan={},
+        next_version=1,
+    )
+    assert "规划 Agent 已精炼 2 条联合检索式" in content
+    assert "Europe PMC 专用文献检索=succeeded" in content
+
+
+@pytest.mark.asyncio
 async def test_tnpd_research_uses_method_query_and_rejects_irrelevant_web_results() -> None:
     seen_queries: list[str] = []
     model_seen_titles: list[str] = []
@@ -145,7 +201,7 @@ async def test_tnpd_research_uses_method_query_and_rejects_irrelevant_web_result
         model_knowledge=model,
     ).collect(request)
 
-    assert seen_queries == [build_research_queries(request)["web"]]
+    assert seen_queries == build_research_queries(request)["web_queries"]
     normalized_query = seen_queries[0].casefold()
     assert all(term in normalized_query for term in ("tnpd", "diamond", "mafft", "iq-tree"))
     web_evidence = [item for item in bundle.evidence if item["source_type"] == "web"]
@@ -255,8 +311,8 @@ async def test_research_quality_gate_generalizes_across_domains(
     ).collect(case_text)
 
     assert build_research_queries(case_text)["profile"] == expected_profile
-    assert queries == [build_research_queries(case_text)["web"]]
-    assert "official documentation" in queries[0]
+    assert queries == build_research_queries(case_text)["web_queries"]
+    assert "methodology best practices" in queries[-1]
     web_evidence = [item for item in bundle.evidence if item["source_type"] == "web"]
     assert [item["title"] for item in web_evidence] == [good_result["title"]]
     assert web_evidence[0]["evidence_quality"]["research_profile"] == expected_profile
@@ -404,6 +460,7 @@ def test_independent_qc_is_added_before_plan_freeze_when_available() -> None:
     assert qc_task["task_id"] == "independent-qc"
     assert qc_task["agent_id"] == "agent-qc"
     assert qc_task["depends_on"] == ["analysis", "visual"]
+    assert qc_task["workspace_access"] is True
     validate_plan(_plan_content(tasks), tasks, {"agent-rnaseq", "agent-viz", "agent-qc"})
 
 
@@ -413,6 +470,21 @@ def test_independent_qc_is_not_fabricated_when_auditor_is_unavailable() -> None:
     )
 
     assert [task["task_id"] for task in tasks] == ["analysis"]
+
+
+def test_plan_only_request_skips_independent_qc_and_execution_tasks() -> None:
+    request = "帮我创建基于 TP53 小鼠样本的单细胞研究分析方案"
+    tasks = [_task(workspace_access=False)]
+
+    assert OverdrivePlanningService.is_planning_only_request(request, tasks) is True
+    unchanged = OverdrivePlanningService.ensure_independent_qc_task(
+        tasks,
+        {"agent-rnaseq", "agent-qc"},
+        request=request,
+    )
+
+    assert [task["task_id"] for task in unchanged] == ["analysis"]
+    validate_plan(_plan_content([]), [], {"agent-rnaseq"}, allow_empty_tasks=True)
 
 
 @pytest.mark.parametrize(
@@ -487,6 +559,7 @@ async def test_planning_service_persists_research_then_freezes_plan() -> None:
                 str(kwargs["content"]),
                 kwargs["tasks"],  # type: ignore[arg-type]
                 kwargs["known_agent_ids"],  # type: ignore[arg-type]
+                allow_empty_tasks=bool(kwargs.get("allow_empty_tasks")),
             )
             calls.append(("freeze", kwargs))
             return {"version": 1, "status": "awaiting_confirmation"}
@@ -516,12 +589,77 @@ async def test_planning_service_persists_research_then_freezes_plan() -> None:
     ]
     assert next(call for call in calls if call[0] == "write_plan_draft")
     events = [call[1] for call in calls if call[0] == "event"]
-    assert events == ["plan_ready", "plan_review_passed"]
+    assert events == ["research_started", "plan_ready", "plan_review_passed"]
     plan_ready = next(call[2] for call in calls if call[:2] == ("event", "plan_ready"))
     assert plan_ready["plan_path"] == "output/overdrive/session-1/run-1/plan.md"
     frozen = next(call[1] for call in calls if call[0] == "freeze")
     assert frozen["tasks"] == [task]
     assert frozen["summary"]["wave_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_plan_only_prepare_flow_freezes_empty_dag_without_qc() -> None:
+    captured: dict[str, object] = {}
+    run = SimpleNamespace(
+        run_id="run-plan-only",
+        session_id="session-1",
+        root_request="帮我创建基于 TP53 小鼠10个样本的单细胞研究分析方案",
+        lead_planner_agent_id="agent-scrna",
+        plan={"version": 0},
+    )
+
+    class FakeRunService:
+        async def transition(self, _run: object, _status: str) -> None:
+            return None
+
+        async def save_research(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+        async def append_event(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+        async def write_plan_draft(self, _run: object, content: str) -> dict[str, object]:
+            captured["content"] = content
+            return {"version": 1, "path": "output/overdrive/session-1/run-plan-only/plan.md"}
+
+        async def freeze_plan(self, _run: object, **kwargs: object) -> dict[str, object]:
+            captured["freeze"] = kwargs
+            validate_plan(
+                str(kwargs["content"]),
+                kwargs["tasks"],  # type: ignore[arg-type]
+                kwargs["known_agent_ids"],  # type: ignore[arg-type]
+                allow_empty_tasks=bool(kwargs.get("allow_empty_tasks")),
+            )
+            return {"version": 1, "status": "awaiting_confirmation"}
+
+    async def empty(_query: str, **_: object) -> list[object]:
+        return []
+
+    planner = OverdrivePlanningService(
+        FakeRunService(),  # type: ignore[arg-type]
+        ResearchBundleService(
+            knowledge_search=empty,
+            web_search=empty,
+            model_knowledge=empty,
+        ),
+        AsyncMock(return_value={
+            "tasks": [_task(agent_id="agent-scrna", workspace_access=False)],
+            "deliverables": ["研究方案"],
+        }),
+    )
+
+    await planner.prepare_plan(
+        run,  # type: ignore[arg-type]
+        known_agent_ids={"agent-scrna", "agent-qc"},
+    )
+
+    frozen = captured["freeze"]
+    assert isinstance(frozen, dict)
+    assert frozen["tasks"] == []
+    assert frozen["allow_empty_tasks"] is True
+    assert frozen["summary"]["planning_only"] is True
+    assert frozen["summary"]["independent_qc"]["mode"] == "not_required"
+    assert "不进入 Worker 或独立 QC" in str(captured["content"])
 
 
 @pytest.mark.asyncio

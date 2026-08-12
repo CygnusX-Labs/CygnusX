@@ -20,6 +20,7 @@ class BridgeSettings(BaseSettings):
     gateway_manager_token: str = ""
     role_agent_map: str = ""
     discovered_flow_agent_map: dict[str, str] = Field(default_factory=dict, exclude=True)
+    discovered_flow_quality_gate_map: dict[str, bool] = Field(default_factory=dict, exclude=True)
     discovered_role_agent_map: dict[str, str] = Field(default_factory=dict, exclude=True)
     discovered_worker_profiles: dict[str, dict[str, str]] = Field(
         default_factory=dict, exclude=True
@@ -38,6 +39,9 @@ class BridgeSettings(BaseSettings):
     max_evidence_bytes: int = 16_384
     worker_heartbeat_ttl_seconds: int = Field(default=180, ge=30, le=3_600)
     omic_task_stall_timeout_seconds: int = Field(default=900, ge=30, le=86_400)
+    max_active_cases_per_requester: int = Field(default=3, ge=1, le=100)
+    max_active_cases_per_project: int = Field(default=5, ge=1, le=100)
+    max_active_work_items_per_case: int = Field(default=8, ge=1, le=500)
     state_store_url: str = ""
     state_store_key_prefix: str = "omichub:agentteams"
     audit_log_path: str = "/tmp/omichub-agentteams-bridge-audit.jsonl"
@@ -118,6 +122,7 @@ class BridgeSettings(BaseSettings):
     def apply_capability_snapshot(self, payload: dict) -> None:
         flows = payload.get("allowed_flow_ids")
         flow_agent_map = payload.get("flow_agent_map")
+        flow_quality_gate_map = payload.get("flow_quality_gate_map")
         role_map = payload.get("role_agent_map")
         worker_profiles = payload.get("worker_profiles")
         if isinstance(flows, list):
@@ -127,6 +132,12 @@ class BridgeSettings(BaseSettings):
                 str(flow_id): str(agent_id)
                 for flow_id, agent_id in flow_agent_map.items()
                 if str(flow_id).strip() and str(agent_id).strip()
+            }
+        if isinstance(flow_quality_gate_map, dict):
+            self.discovered_flow_quality_gate_map = {
+                str(flow_id): bool(required)
+                for flow_id, required in flow_quality_gate_map.items()
+                if str(flow_id).strip()
             }
         if isinstance(role_map, dict):
             self.discovered_role_agent_map = {
@@ -146,3 +157,6 @@ class BridgeSettings(BaseSettings):
                 and str(profile.get("agent_id") or "").strip()
                 and str(profile.get("capability") or "").strip()
             }
+
+    def quality_gate_for_flow(self, flow_id: str) -> bool:
+        return bool(self.discovered_flow_quality_gate_map.get(flow_id, False))

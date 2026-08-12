@@ -177,6 +177,7 @@ class LiteLLMProvider:
             start = time.perf_counter()
             status = "success"
             usage: dict[str, Any] | None = None
+            finish_reason: str | None = None
             try:
                 response = await litellm.acompletion(**kwargs)
                 data = response.model_dump() if hasattr(response, "model_dump") else dict(response)
@@ -322,6 +323,8 @@ class LiteLLMProvider:
                             continue
                         delta = chunk.choices[0].delta
                         finish = chunk.choices[0].finish_reason
+                        if finish and finish != "null":
+                            finish_reason = str(finish)
 
                         # 1. 内容 token
                         content = getattr(delta, "content", None) or ""
@@ -391,7 +394,10 @@ class LiteLLMProvider:
                         )
                     yield StreamEvent(type="tool_calls", tool_calls=assembled)
 
-                yield StreamEvent(type="done")
+                done_metadata = {"usage": usage} if usage else {}
+                if finish_reason:
+                    done_metadata["finish_reason"] = finish_reason
+                yield StreamEvent(type="done", metadata=done_metadata)
             finally:
                 duration_ms = (time.perf_counter() - start) * 1000
                 span.set_attribute("ai.status", status)

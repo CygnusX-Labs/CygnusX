@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -161,14 +161,7 @@ class AuditStore:
             all_events = [
                 event for event in await self._shared_events() if event.get("case_id") != "__bridge_health__"
             ]
-            case_ids = {str(event["case_id"]) for event in all_events if isinstance(event.get("case_id"), str)}
-            return {
-                "case_count": len(case_ids),
-                "event_count": len(all_events),
-                "submitted_task_count": sum(event.get("event_type") == "omic_task.submitted" for event in all_events),
-                "quality_decision_count": sum(event.get("event_type") == "quality.decision" for event in all_events),
-                "closed_case_count": sum(event.get("event_type") == "case.closed" for event in all_events),
-            }
+            return _event_metrics(all_events)
         async with self._lock:
             all_events = [
                 event
@@ -176,19 +169,7 @@ class AuditStore:
                 if case_id != "__bridge_health__"
                 for event in events
             ]
-            return {
-                "case_count": sum(case_id != "__bridge_health__" for case_id in self._events),
-                "event_count": len(all_events),
-                "submitted_task_count": sum(
-                    event["event_type"] == "omic_task.submitted" for event in all_events
-                ),
-                "quality_decision_count": sum(
-                    event["event_type"] == "quality.decision" for event in all_events
-                ),
-                "closed_case_count": sum(
-                    event["event_type"] == "case.closed" for event in all_events
-                ),
-            }
+            return _event_metrics(all_events)
 
     async def worker_heartbeats(self, workers: set[str]) -> dict[str, datetime | None]:
         """Return the latest inbox-poll event for each Worker identity."""
@@ -201,6 +182,90 @@ class AuditStore:
 def _append(path: Path, value: str) -> None:
     with path.open("a", encoding="utf-8") as file:
         file.write(value)
+
+
+def _event_metrics(events: list[dict[str, Any]]) -> dict[str, int]:
+    by_case: dict[str, list[dict[str, Any]]] = {}
+    for event in events:
+        case_id = event.get("case_id")
+        if isinstance(case_id, str):
+            by_case.setdefault(case_id, []).append(event)
+    terminal_types = {"case.closed", "case.cancelled"}
+    end_to_end_ms: list[int] = []
+    approval_wait_ms: list[int] = []
+    stale_cutoff = datetime.now(UTC) - timedelta(hours=2)
+    stale_nonterminal_case_count = 0
+    for case_events in by_case.values():
+        ordered = sorted(case_events, key=lambda item: str(item.get("recorded_at") or ""))
+        created_at = _event_time(next((item for item in ordered if item.get("event_type") == "case.created"), None))
+        terminal_at = _event_time(
+            next((item for item in reversed(ordered) if item.get("event_type") in terminal_types), None)
+        )
+        if created_at and terminal_at:
+            end_to_end_ms.append(max(0, int((terminal_at - created_at).total_seconds() * 1000)))
+        frozen_at = _event_time(
+            next((item for item in ordered if item.get("event_type") == "planning.frozen"), None)
+        )
+        approved_at = _event_time(
+            next(
+                (
+                    item
+                    for item in ordered
+                    if item.get("event_type") in {"general_plan.approved", "approval.resolved"}
+                ),
+                None,
+            )
+        )
+        if frozen_at and approved_at and approved_at >= frozen_at:
+            approval_wait_ms.append(int((approved_at - frozen_at).total_seconds() * 1000))
+        last_at = _event_time(ordered[-1] if ordered else None)
+        if terminal_at is None and last_at and last_at < stale_cutoff:
+            stale_nonterminal_case_count += 1
+    cancelled_case_count = sum(
+        event.get("event_type") == "case.cancelled" for event in events
+    )
+    case_count = len(by_case)
+    return {
+        "case_count": case_count,
+        "event_count": len(events),
+        "submitted_task_count": sum(
+            event.get("event_type") == "omic_task.submitted" for event in events
+        ),
+        "quality_decision_count": sum(
+            event.get("event_type") == "quality.decision" for event in events
+        ),
+        "closed_case_count": sum(event.get("event_type") == "case.closed" for event in events),
+        "cancelled_case_count": cancelled_case_count,
+        "case_cancel_rate_bps": int(cancelled_case_count * 10_000 / case_count) if case_count else 0,
+        "work_item_failure_count": sum(
+            event.get("event_type") in {"skill.failed", "analysis_submission.failed"}
+            for event in events
+        ),
+        "work_item_retry_count": sum(
+            event.get("event_type") in {"case.retry_queued", "work_item.retry_scheduled"}
+            for event in events
+        ),
+        "stale_nonterminal_case_count": stale_nonterminal_case_count,
+        "case_end_to_end_p95_ms": _p95(end_to_end_ms),
+        "approval_wait_p95_ms": _p95(approval_wait_ms),
+    }
+
+
+def _event_time(event: dict[str, Any] | None) -> datetime | None:
+    if not event:
+        return None
+    try:
+        value = datetime.fromisoformat(str(event.get("recorded_at") or ""))
+    except ValueError:
+        return None
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def _p95(values: list[int]) -> int:
+    if not values:
+        return 0
+    ordered = sorted(values)
+    return ordered[max(0, (95 * len(ordered) + 99) // 100 - 1)]
 
 
 def _worker_heartbeats(

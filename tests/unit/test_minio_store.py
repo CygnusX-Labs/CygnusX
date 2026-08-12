@@ -23,6 +23,21 @@ class FakeClient:
     def fget_object(self, bucket: str, key: str, path: str) -> None:
         Path(path).write_bytes(self.objects[f"{bucket}/{key}"])
 
+    def get_object(self, bucket: str, key: str):
+        payload = self.objects[f"{bucket}/{key}"]
+
+        class Response:
+            def read(self, size: int) -> bytes:
+                return payload[:size]
+
+            def close(self) -> None:
+                return None
+
+            def release_conn(self) -> None:
+                return None
+
+        return Response()
+
     def presigned_get_object(self, bucket: str, key: str, *, expires: object) -> str:
         return f"https://minio.local/{bucket}/{key}"
 
@@ -50,6 +65,7 @@ def test_minio_store_round_trip(tmp_path: Path) -> None:
     assert store.presigned_get("case-1", "work-1/report.txt").endswith(uri[5:])
     assert store.fetch_case_object("case-1", "work-1/report.txt", destination) == destination
     assert destination.read_text(encoding="utf-8") == "complete evidence"
+    assert store.read_case_object("case-1", "work-1/report.txt", max_bytes=100) == b"complete evidence"
     assert store.list_case_objects("case-1")[0].key == "work-1/report.txt"
     store.delete_case_prefix("case-1")
     assert store.list_case_objects("case-1") == []

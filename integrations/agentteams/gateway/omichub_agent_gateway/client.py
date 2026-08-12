@@ -47,6 +47,15 @@ class OmicHubConsultationClient:
         response.raise_for_status()
         return UpstreamConsultationResponse.model_validate(response.json())
 
+    async def capabilities(self) -> dict:
+        response = await self._client.get(
+            "/api/v1/agent-teams/capabilities",
+            headers=self._auth_headers() | {"X-Integration-Token": self._settings.omichub_integration_token},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
+
     def _auth_headers(self) -> dict[str, str]:
         if self._settings.omichub_integration_token:
             return {"X-Integration-Token": self._settings.omichub_integration_token}

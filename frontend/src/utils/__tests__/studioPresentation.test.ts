@@ -35,6 +35,13 @@ describe('studio presentation helpers', () => {
     })
   })
 
+  it('uses the caller fallback domain for a valid general task', () => {
+    expect(parseTaskUnderstanding([userMessage('帮我制定一个细胞实验验证方案')], true, '超频协作任务')).toMatchObject({
+      domain: '超频协作任务',
+      status: '执行中',
+    })
+  })
+
   it('maps research tools and provides a non-empty duration fallback', () => {
     const tool: ToolCall = { id: 't-1', name: 'read_file', arguments: {}, status: 'success' }
     expect(researchToolMeta(tool)).toMatchObject({ label: '读取数据文件', duration: '耗时未记录' })

@@ -196,7 +196,6 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   let agentTeamsEventGeneration = 0
   const agentTeamsEventCursors = new Map<string, string>()
   const agentTeamsSeenEventKeys = new Map<string, Set<string>>()
-  let roomEventAbort: AbortController | null = null
   let overdriveEventAbort: AbortController | null = null
   let overdriveEventSessionId = ''
   let overdriveEventRunId = ''
@@ -342,6 +341,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       }
       const progress: NonNullable<ChatMessage['overdriveProgress']> = {
         runId: typeof event.run_id === 'string' ? event.run_id : undefined,
+        caseId: typeof event.case_id === 'string' ? event.case_id : undefined,
         phase: event.phase || 'worker_running',
         label: event.label || '协作 Case 推进中',
         completed: Number(event.completed ?? 0),
@@ -350,6 +350,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         readonly: Boolean(event.readonly) || ['completed', 'failed', 'terminated'].includes(event.phase),
         warning: typeof event.warning === 'string' ? event.warning : undefined,
         stalledTaskIds: Array.isArray(event.stalledTaskIds) ? event.stalledTaskIds.map(String) : undefined,
+        activities: Array.isArray(event.activities) ? event.activities : undefined,
         tasks: Array.isArray(event.tasks) ? event.tasks : [],
         artifacts: Array.isArray(event.artifacts)
           ? event.artifacts.map((artifact: any) => ({
@@ -360,6 +361,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             qualityStatus: typeof artifact?.quality_status === 'string'
               ? artifact.quality_status
               : undefined,
+            downloadUrl: typeof artifact?.download_url === 'string' ? artifact.download_url : undefined,
+            previewUrl: typeof artifact?.preview_url === 'string' ? artifact.preview_url : undefined,
           })).filter((artifact: { path: string }) => artifact.path)
           : [],
       }
@@ -425,7 +428,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       ? sessions.value.find((item) => item.id === event.session_id)
       : currentSession.value
     if (!session || !event.content) return
-    const id = event.message_id || `matrix-room-${Date.now()}`
+    const id = event.message_id || `case-room-${Date.now()}`
     if (session.messages.some((message) => message.id === id || message.backendMessageId === id)) return
     const agentId = event.sender.agent_id || 'external'
     const identity = resolveRoleIdentity(agentId, {
@@ -453,56 +456,11 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     session.updated_at = new Date().toISOString()
   }
 
-  function stopRoomEvents() {
-    roomEventAbort?.abort()
-    roomEventAbort = null
-  }
-
   function stopOverdriveEvents() {
     overdriveEventAbort?.abort()
     overdriveEventAbort = null
     overdriveEventSessionId = ''
     overdriveEventRunId = ''
-  }
-
-  async function startRoomEvents(sessionId: string) {
-    if (!sessionId || sessionId.startsWith('sess-')) return
-    stopRoomEvents()
-    const controller = new AbortController()
-    roomEventAbort = controller
-    try {
-      const token = localStorage.getItem('access_token')
-      const response = await fetch(`/api/v1/chat/sessions/${sessionId}/room-events`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        signal: controller.signal,
-      })
-      if (!response.ok || !response.body) return
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      while (!controller.signal.aborted) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-        for (const line of lines) {
-          if (!line.startsWith('data:')) continue
-          try {
-            const event = JSON.parse(line.slice(5).trim()) as Record<string, any>
-            applyCaseRoomEvent(event, sessionId)
-          } catch {
-            // 忽略单条不可解析事件，长连接保持可用。
-          }
-        }
-      }
-    } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'AbortError')) {
-        console.warn('Matrix 房间事件连接异常', error)
-      }
-    } finally {
-      if (roomEventAbort === controller) roomEventAbort = null
-    }
   }
 
   async function replayActiveOverdriveEvents(
@@ -641,12 +599,15 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       }
       if (snapshotPhase[recoverableRun.status]) {
         const snapshotTasks = Array.isArray(recoverableRun.tasks) ? recoverableRun.tasks : []
+        const snapshotLabel = recoverableRun.status === 'SERIAL_PREFLIGHT'
+          ? '计划已确认，等待 analysis Worker 接管'
+          : `超频任务正在后台推进（${recoverableRun.status}）`
         applyCaseRoomEvent({
           type: 'overdrive_progress',
           run_id: activeRunId,
           session_id: sessionId,
           phase: snapshotPhase[recoverableRun.status],
-          label: `超频任务正在后台推进（${recoverableRun.status}）`,
+          label: snapshotLabel,
           completed: snapshotTasks.filter((task) =>
             ['succeeded', 'failed', 'skipped', 'cancelled'].includes(String(task.status || ''))).length,
           total: snapshotTasks.length,
@@ -1383,12 +1344,10 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     }
     if (!session || !shouldSubscribeToAgentTeamsEvents(session)) {
       stopAgentTeamsCaseEvents()
-      stopRoomEvents()
       stopOverdriveEvents()
       return
     }
     void startAgentTeamsCaseEvents(session.id)
-    void startRoomEvents(session.id)
   }
 
   async function selectSession(id: string) {
@@ -1414,7 +1373,6 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   function newChat() {
     stopStreaming()
     stopAgentTeamsCaseEvents()
-    stopRoomEvents()
     stopOverdriveEvents()
     currentSessionId.value = ''
   }
@@ -1423,7 +1381,6 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     if (currentSessionId.value === id) stopStreaming()
     if (currentSessionId.value === id) {
       stopAgentTeamsCaseEvents()
-      stopRoomEvents()
       stopOverdriveEvents()
     }
     if (!id.startsWith('sess-')) {
@@ -1553,14 +1510,17 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             .map((attachment) => ({
               name: typeof attachment.name === 'string' ? attachment.name : '附件',
               size: Number(attachment.size) || 0,
-              type: typeof attachment.mime_type === 'string'
-                ? attachment.mime_type
-                : typeof attachment.type === 'string'
-                  ? attachment.type
-                  : 'application/octet-stream',
+              type: attachment.type === 'directory'
+                ? 'directory'
+                : typeof attachment.mime_type === 'string' && attachment.mime_type
+                  ? attachment.mime_type
+                  : typeof attachment.type === 'string'
+                    ? attachment.type
+                    : 'application/octet-stream',
               url: typeof attachment.url === 'string' ? attachment.url : undefined,
               file_id: typeof attachment.file_id === 'string' ? attachment.file_id : undefined,
               source: attachment.source === 'workspace' ? 'workspace' : 'upload',
+              recursive: attachment.recursive === true,
             }))
         }
         // 智能路由：恢复本条消息的专家徽标
@@ -1950,6 +1910,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         url: a.url,
         file_id: a.file_id,
         source: a.source,
+        recursive: a.recursive,
       }))
     }
     session.messages.push(userMsg)
@@ -2000,11 +1961,13 @@ export const useAgentHubStore = defineStore('agentHub', () => {
 
     // 当前消息的附件（仅最后一条用户消息需要）
     const apiAttachments = options.attachments?.map((a) => ({
-      type: (a.type.startsWith('image/') ? 'image' : 'file') as 'image' | 'file',
+      type: (a.type === 'directory' ? 'directory' : a.type.startsWith('image/') ? 'image' : 'file') as 'image' | 'file' | 'directory',
       url: a.url || '',
       name: a.name,
       mime_type: a.type,
       file_id: a.file_id,
+      source: a.source,
+      recursive: a.recursive === true,
     })) || []
 
     isStreaming.value = true
@@ -2079,7 +2042,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             id: `mode-overdrive-${Date.now()}`,
             role: 'system',
             content: degraded
-              ? 'Matrix Gateway 不可用：超频模式已降级为 OmicHub 内置协作。'
+              ? '协作服务出现可恢复降级，已继续使用 OmicHub 内置协作。'
               : enabled
                 ? '已进入超频模式：Manager 将组织专家协作。'
                 : '已退出超频模式：恢复普通对话。',
@@ -2094,6 +2057,14 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             }
           }
           session.messages.push(progressMessage)
+        },
+        onStudioPromoted: (event) => {
+          session.mode = 'studio'
+          if (event.sessionId) markStudioSession(event.sessionId)
+          studioRedirect.value = {
+            agentId: event.agentId || agent.id,
+            agentName: event.agentName || agent.name,
+          }
         },
         onOverdriveProgress: (event) => {
           const progressMessage = [...session.messages].reverse().find(
@@ -2113,6 +2084,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             waveMode: event.waveMode ?? currentProgress.waveMode,
             fallback: event.fallback ?? currentProgress.fallback,
             warning: event.warning ?? currentProgress.warning,
+            activities: event.activities?.length ? event.activities : currentProgress.activities,
             tasks: event.tasks?.length ? event.tasks : currentProgress.tasks,
             stalledTaskIds: event.stalledTaskId
               ? [...new Set([...(currentProgress.stalledTaskIds || []), event.stalledTaskId])]
@@ -2283,9 +2255,13 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           }
         },
         onToolCall: (event) => {
-          if (!aiMsg.toolCalls) aiMsg.toolCalls = []
+          const toolMessage = effectiveOverdrive
+            ? [...session.messages].reverse().find((item) => item.role === 'assistant' && item.senderAgent)
+              || aiMsg
+            : aiMsg
+          if (!toolMessage.toolCalls) toolMessage.toolCalls = []
           const toolCallId = event.tool_call_id || `tc-${Date.now()}`
-          aiMsg.toolCalls.push({
+          toolMessage.toolCalls.push({
             id: toolCallId,
             name: event.tool_name,
             arguments: event.arguments,
@@ -2293,10 +2269,15 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             mcpServer: event.mcp_server,
           })
           // 交错时间线：记录这次工具调用的位置，正文段在其后另起
-          aiMsg.timeline?.push({ kind: 'tool', toolCallId })
+          toolMessage.timeline ||= []
+          toolMessage.timeline.push({ kind: 'tool', toolCallId })
         },
         onToolResult: (event) => {
-          const tc = (aiMsg.toolCalls || []).find((t) => t.id === event.tool_call_id)
+          const toolMessage = effectiveOverdrive
+            ? [...session.messages].reverse().find((item) => item.role === 'assistant' && item.senderAgent)
+              || aiMsg
+            : aiMsg
+          const tc = (toolMessage.toolCalls || []).find((t) => t.id === event.tool_call_id)
           if (tc) {
             tc.result = event.result
             // 兼容：event.ui_payload 缺失但 event.result 里包着 ui_payload 的情况
@@ -2512,7 +2493,11 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         },
         onToolOutput: (tool, _stream, data, toolCallId) => {
           // 优先按 tool_call_id 精确匹配；无 id（旧事件）时回退为最后一个同名 running 工具
-          const tcs = aiMsg.toolCalls || []
+          const toolMessage = effectiveOverdrive
+            ? [...session.messages].reverse().find((item) => item.role === 'assistant' && item.senderAgent)
+              || aiMsg
+            : aiMsg
+          const tcs = toolMessage.toolCalls || []
           const tc = toolCallId
             ? tcs.find((t) => t.id === toolCallId)
             : [...tcs].reverse().find((t) => t.status === 'running' && (!tool || t.name === tool))

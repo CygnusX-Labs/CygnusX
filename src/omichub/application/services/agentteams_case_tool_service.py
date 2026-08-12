@@ -29,6 +29,7 @@ _CONFIRMATION_WINDOW = timedelta(minutes=10)
 
 def agentteams_next_actor(status: str) -> str:
     return {
+        "queued": "协作资源队列",
         "received": "data-steward",
         "preflight_running": "data-steward",
         "preflight_blocked": "requester",
@@ -128,7 +129,6 @@ class AgentTeamsCaseToolService:
             or [{"context_ref": {"kind": "project", "id": project_id}}],
             origin_consultation_id=source["origin_consultation_id"],
             consultation_summary=source["consultation_summary"],
-            element_room_url=str(meta.get("element_room_url") or "") or None,
         )
         status = str(case.get("status") or "received")
         title = normalized_objective[:80]

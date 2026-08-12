@@ -1,4 +1,4 @@
-# Codex 施工提示词 — AgentTeams v2.2
+# Codex 施工提示词 — AgentTeams v2.2（已归档）
 
 > 用法：把下面「提示词正文」整段粘贴给 Codex。
 

@@ -88,7 +88,7 @@ Kraken2的特点是快速和准确。它使用了一种高效的k-mer比对算�
 name: kraken2
 channels:
   - bioconda
-  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main
+  - https://mirrors.ustc.edu.cn/anaconda/pkgs/main
 dependencies:
   - _libgcc_mutex=0.1=main
   - _openmp_mutex=5.1=1_gnu

@@ -15,6 +15,7 @@ import {
   PersonOutline,
   ExtensionPuzzleOutline,
   DocumentTextOutline,
+  FolderOpenOutline,
   HammerOutline,
   EllipsisHorizontalOutline,
   ChatbubbleEllipsesOutline,
@@ -26,6 +27,7 @@ import {
   KeyOutline,
   FlagOutline,
   CloseOutline,
+  DesktopOutline,
 } from '@vicons/ionicons5'
 import SlashCommandMenu from './SlashCommandMenu.vue'
 import MentionMenu from './MentionMenu.vue'
@@ -522,7 +524,7 @@ const mentionItems = computed<MentionItem[]>(() => {
       const [name, uuid] = friendlyName(directory.name || '', directory.path, '未命名目录')
       return {
         kind: 'directory' as const,
-        key: `directory-${directory.path}`,
+        key: `directory-${directory.id}`,
         name,
         description: `${normalizePath(directory.path)}/`,
         uuid: uuid ?? undefined,
@@ -616,6 +618,25 @@ function selectMention(item: MentionItem) {
     }
     replaceMentionToken(item.skill.name)
   }
+  showMentionMenu.value = false
+}
+
+function referenceDirectory(item: MentionItem) {
+  if (item.kind !== 'directory' || !item.directory?.id) return
+  pushRecent('mention', item.key)
+  const directory = item.directory
+  const fileId = `directory://${directory.id}`
+  if (!attachments.value.some((attachment) => attachment.file_id === fileId)) {
+    attachments.value.push({
+      name: `${normalizePath(directory.path)}/`,
+      size: 0,
+      type: 'directory',
+      file_id: fileId,
+      source: 'workspace',
+      recursive: true,
+    })
+  }
+  replaceMentionToken(`${normalizePath(directory.path)}/`, true)
   showMentionMenu.value = false
 }
 
@@ -1012,6 +1033,7 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
           :state="mentionState"
           :query="mentionQuery"
           @select="selectMention"
+          @reference-directory="referenceDirectory"
           @hover="mentionActiveIndex = $event"
           @retry="searchWorkspaceFiles"
           @close="showMentionMenu = false"
@@ -1101,10 +1123,16 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
           <template #trigger>
             <div
               class="attachment-chip"
-              :class="{ 'ref-file': att.source === 'workspace' }"
+              :class="{
+                'ref-file': att.source === 'workspace' && att.type !== 'directory',
+                'ref-directory': att.type === 'directory',
+              }"
             >
-              <n-icon size="14" aria-hidden="true"><DocumentTextOutline /></n-icon>
+              <n-icon size="14" aria-hidden="true">
+                <component :is="att.type === 'directory' ? FolderOpenOutline : DocumentTextOutline" />
+              </n-icon>
               <span class="attachment-name">{{ att.name }}</span>
+              <span v-if="att.type === 'directory'" class="attachment-status">只读 · 递归</span>
               <button
                 type="button"
                 class="attachment-remove"
@@ -1229,6 +1257,21 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
               </n-button>
             </template>
             {{ chatStore.deepThinking ? '关闭深度思考' : '开启深度思考' }}
+          </n-tooltip>
+          <n-tooltip v-if="props.showWorkbenchControl" trigger="hover">
+            <template #trigger>
+              <n-button
+                text
+                class="toolbar-btn workbench-btn"
+                :loading="props.workbenchLoading"
+                aria-label="进入 AI 工作台"
+                @click="emit('enterWorkbench')"
+              >
+                <n-icon size="18"><DesktopOutline /></n-icon>
+                <span class="btn-label">进入工作台</span>
+              </n-button>
+            </template>
+            切换到 AI 工作台以执行代码、运行脚本并保存产物；当前对话历史会一并带过去
           </n-tooltip>
           <n-tooltip v-if="props.showOverdriveControl" trigger="hover">
             <template #trigger>
@@ -1521,6 +1564,16 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
       background: var(--arco-primary-light);
     }
 
+    .ref-directory {
+      color: var(--chat-text-primary);
+      background: var(--icon-cyan-bg);
+    }
+
+    .attachment-status {
+      color: var(--chat-text-secondary);
+      font-size: 11px;
+    }
+
     .ref-agent {
       color: var(--neutral-text-1);
       background: var(--neutral-hover);
@@ -1638,6 +1691,18 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
         color: var(--arco-primary);
         background: var(--arco-primary-light);
         border-color: color-mix(in srgb, var(--arco-primary) 30%, transparent);
+      }
+
+      &.workbench-btn {
+        color: var(--arco-primary);
+        border-color: color-mix(in srgb, var(--arco-primary) 24%, transparent);
+        background: color-mix(in srgb, var(--arco-primary) 6%, transparent);
+
+        &:hover {
+          color: #fff;
+          background: var(--arco-primary);
+          border-color: var(--arco-primary);
+        }
       }
 
       .btn-label {

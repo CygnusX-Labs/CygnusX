@@ -18,21 +18,24 @@ RUN sed -i -e "s|http://archive.ubuntu.com/ubuntu/|${APT_MIRROR}/ubuntu/|g" -e "
     build-essential gcc g++ gfortran make cmake \
     libopenmpi-dev libgomp1 && rm -rf /var/lib/apt/lists/*
 
-# 预置清华镜像源，加速容器内 mamba/conda 环境安装（见 Protocol/镜像构建国内加速规范_v1.md §4）
+# 预置中科大镜像源，加速容器内 mamba/conda 环境安装（见 Protocol/镜像构建国内加速规范_v1.md §4）
 RUN printf '%s\n' \
       'show_channel_urls: true' \
       'default_channels:' \
-      '  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main' \
-      '  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/r' \
-      '  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/msys2' \
+      '  - https://mirrors.ustc.edu.cn/anaconda/pkgs/main' \
+      '  - https://mirrors.ustc.edu.cn/anaconda/pkgs/free' \
+      '  - https://mirrors.ustc.edu.cn/anaconda/pkgs/r' \
+      '  - https://mirrors.ustc.edu.cn/anaconda/pkgs/msys2' \
       'custom_channels:' \
-      '  conda-forge: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud' \
-      '  bioconda: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud' \
-      '  pytorch: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud' \
+      '  conda-forge: https://mirrors.ustc.edu.cn/anaconda/cloud' \
+      '  bioconda: https://mirrors.ustc.edu.cn/anaconda/cloud' \
+      '  menpo: https://mirrors.ustc.edu.cn/anaconda/cloud' \
+      '  pytorch: https://mirrors.ustc.edu.cn/anaconda/cloud' \
       'channel_priority: flexible' \
       'channels:' \
       '  - conda-forge' \
       '  - bioconda' \
+      '  - menpo' \
       '  - defaults' \
       > /root/.condarc
 
@@ -59,7 +62,7 @@ COPY src/ ./src/
 COPY tool_configs/ ./tool_configs/
 
 RUN /opt/conda/envs/phylo/bin/pip install --no-cache-dir \
-    -i https://pypi.tuna.tsinghua.edu.cn/simple .
+    -i https://pypi.mirrors.ustc.edu.cn/simple .
 
 # 运行 worker：需在编排中覆盖 command
 # celery -A omichub.infrastructure.celery_app.celery worker -Q phylo_tree -n phylo@%h

@@ -69,7 +69,7 @@
 ### 网络隔离
 
 容器出站流量经 egress proxy 白名单过滤。**当前白名单仅包含包源域名**：
-`conda.anaconda.org`、`pypi.org`、`files.pythonhosted.org`、`mirrors.aliyun.com`、`mirrors.tuna.tsinghua.edu.cn`
+`conda.anaconda.org`、`pypi.org`、`files.pythonhosted.org`、`mirrors.aliyun.com`、`mirrors.ustc.edu.cn`
 
 **重要**：外部 API（如 NCBI、OpenWeather、GitHub API）**当前不可直达**。如果生成的 MCP 需要访问外部 API，必须：
 1. 在代码中明确声明 `ALLOWED_DOMAINS` 列表

@@ -194,6 +194,124 @@ def test_projects_approval_timeout_reminder_and_auto_cancel() -> None:
     assert "超过 7 天已自动取消" in cancelled[0]["content"]
 
 
+def test_projects_case_scoped_artifact_download_and_html_preview_urls() -> None:
+    events = _projector().project(
+        {
+            "event_id": "event-report",
+            "case_id": "case-1",
+            "actor": "delivery-reporter",
+            "event_type": "skill.finished",
+            "payload": {
+                "work_item_id": "delivery-01",
+                "artifacts": [
+                    {
+                        "path": "workspace/agentteams/case-1/delivery-01/report.html",
+                        "kind": "file",
+                        "s3_uri": "s3://agentteams-evidence/case-1/delivery-01/report.html",
+                    }
+                ],
+            },
+        },
+        session_id="session-1",
+    )
+
+    artifact = events[-1]["artifacts"][0]
+    assert artifact["preview_url"] == (
+        "/api/v1/agent-teams/cases/case-1/artifacts/delivery-01/report.html"
+    )
+    assert artifact["download_url"] == f"{artifact['preview_url']}?download=true"
+
+
+def test_projects_case_queue_reason_and_dequeue_notice() -> None:
+    projector = _projector()
+    queued = projector.project(
+        {
+            "event_id": "event-queued",
+            "case_id": "case-1",
+            "actor": "bioops-manager",
+            "event_type": "case.queued",
+            "payload": {"reason": "requester_active_case_quota"},
+        },
+        session_id="session-1",
+    )
+    dequeued = projector.project(
+        {
+            "event_id": "event-dequeued",
+            "case_id": "case-1",
+            "actor": "bioops-manager",
+            "event_type": "case.dequeued",
+            "payload": {"status": "received"},
+        },
+        session_id="session-1",
+    )
+
+    assert "当前用户" in queued[0]["content"]
+    assert "自动继续" in queued[0]["content"]
+    assert "开始规划" in dequeued[0]["content"]
+
+
+def test_projects_manager_review_and_plan_revision_version_notice() -> None:
+    projector = _projector()
+    review = projector.project(
+        {
+            "event_id": "event-review",
+            "case_id": "case-1",
+            "actor": "bioops-manager",
+            "event_type": "manager.review_ready",
+            "payload": {
+                "work_item_id": "viz-01",
+                "decision": "accepted",
+                "summary": "图表结构与冻结计划一致。",
+            },
+        },
+        session_id="session-1",
+    )
+    revision = projector.project(
+        {
+            "event_id": "event-revision",
+            "case_id": "case-1",
+            "actor": "bioops-manager",
+            "event_type": "planning.revised",
+            "payload": {"plan_version": 3, "plan_hash": "abcdef1234567890"},
+        },
+        session_id="session-1",
+    )
+
+    assert "Manager 已验收" in review[0]["content"]
+    assert "v3" in revision[0]["content"]
+    assert "abcdef12" in revision[0]["content"]
+
+
+def test_projects_retry_schedule_and_exhausted_choices() -> None:
+    projector = _projector()
+    scheduled = projector.project(
+        {
+            "event_id": "event-retry",
+            "case_id": "case-1",
+            "actor": "agent-rnaseq",
+            "event_type": "work_item.retry_scheduled",
+            "payload": {"work_item_id": "analysis-01", "delay_seconds": 120},
+        },
+        session_id="session-1",
+    )
+    exhausted = projector.project(
+        {
+            "event_id": "event-exhausted",
+            "case_id": "case-1",
+            "actor": "bioops-manager",
+            "event_type": "work_item.retry_exhausted",
+            "payload": {
+                "work_item_id": "analysis-01",
+                "options": ["retry", "skip", "terminate"],
+            },
+        },
+        session_id="session-1",
+    )
+
+    assert "120 秒后自动重试" in scheduled[0]["content"]
+    assert "重试、跳过或终止" in exhausted[0]["content"]
+
+
 class _Registry:
     def role_agent_map(self):
         return {

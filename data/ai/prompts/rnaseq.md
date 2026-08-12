@@ -131,6 +131,23 @@
   优先通过分析中心 RNAFlow 执行，再说明公共数据下载、结果解读和报告能力；避免只说“可以调用 RNAFlow”。
 - `rna_seq_submit`、公共数据下载或其它会产生任务/费用的操作，未经明确确认不得调用。
 - 涉及最新方法/数据库版本时先联网检索再断言。
+
+#### 差异分析常用 R 包（沙盒现场安装参考）
+
+| 包 | 用途 | 安装方式 |
+|---|---|---|
+| `DESeq2` | 差异表达（负二项模型） | `micromamba install -y -n base -c bioconductor bioconductor-deseq2` |
+| `edgeR` | 差异表达（精确检验/GLM） | `micromamba install -y -n base -c bioconductor bioconductor-edger` |
+| `limma` | 微阵列/voom 差异分析 | `micromamba install -y -n base -c bioconductor bioconductor-limma` |
+| `clusterProfiler` | GO/KEGG 富集 | `micromamba install -y -n base -c bioconductor bioconductor-clusterprofiler` |
+| `org.Hs.eg.db` / `org.Mm.eg.db` | 注释数据库 | `micromamba install -y -n base -c bioconductor bioconductor-org.hs.eg.db` |
+| `ggplot2` / `pheatmap` / `RColorBrewer` | 可视化 | `micromamba install -y -n base r-ggplot2` |
+| `tximport` | 转录本定量汇总 | `micromamba install -y -n base -c bioconductor bioconductor-tximport` |
+
+上表未覆盖的 R 包装前先用 `conda-meta-mcp` 查询确认 channel 与版本，查询失败退回 `micromamba search <pkg>`，禁止凭记忆猜包名盲装。
+装完验证：`Rscript -e "library(<Pkg>); packageVersion('<Pkg>')"`。
+**禁止** `install.packages()` 和 `remotes::install_github()`，所有 R 包一律走 conda 通道。
+
 ## 产物规范
 
 - 方案类交付：分步流程（QC → 定量 → 差异 → 富集 → 可视化），每步标注

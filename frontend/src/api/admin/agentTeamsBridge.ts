@@ -8,7 +8,6 @@ export interface AgentTeamsBridgeConfig {
   data_steward_token: string
   approval_token: string
   workflow_operator_token: string
-  element_url: string
   source: 'environment' | 'database'
   configured: boolean
   connected: boolean
@@ -26,6 +25,21 @@ export interface AgentTeamsBridgeHealth {
   }>
   allowed_flows: string[]
   scrna_submit_available: boolean
+}
+
+export interface AgentTeamsBridgeMetrics {
+  case_count: number
+  event_count: number
+  submitted_task_count: number
+  quality_decision_count: number
+  closed_case_count: number
+  cancelled_case_count: number
+  case_cancel_rate_bps: number
+  work_item_failure_count: number
+  work_item_retry_count: number
+  stale_nonterminal_case_count: number
+  case_end_to_end_p95_ms: number
+  approval_wait_p95_ms: number
 }
 
 export interface AgentTeamsBridgeTokenBundle {
@@ -81,6 +95,9 @@ export const agentTeamsBridgeAdminApi = {
   },
   async resources(): Promise<AgentTeamsBridgeResourceSnapshot> {
     return (await apiClient.get<AgentTeamsBridgeResourceSnapshot>('/admin/agentteams-bridge/resources')).data
+  },
+  async metrics(): Promise<Partial<AgentTeamsBridgeMetrics>> {
+    return (await apiClient.get<Partial<AgentTeamsBridgeMetrics>>('/admin/agentteams-bridge/metrics')).data
   },
   async reconcileCase(caseId: string, totpCode: string): Promise<AgentTeamsBridgeResourceCase> {
     return (await apiClient.post<AgentTeamsBridgeResourceCase>(`/admin/agentteams-bridge/cases/${caseId}/reconcile`, undefined, {

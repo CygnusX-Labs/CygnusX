@@ -75,6 +75,7 @@ agents:
 
   agent-data:
     summary: 负责数据契约、元数据预检、输入完整性与产物引用核验。
+    chat_entry: false
     capabilities: [数据契约, 样本表审查, 元数据验证, 输入预检, Artifact引用核验]
     not_suitable_for: [实际组学分析执行, 统计结论, 图形生成]
     handoff_when: [输入契约通过且需要专项分析, 发现数据质量风险需独立审计]
@@ -82,6 +83,7 @@ agents:
 
   agent-qc:
     summary: 负责跨数据类型的独立质量审计、风险分级和质量闸门建议。
+    chat_entry: false
     capabilities: [测序QC, 比对质量, 变异与区间文件审计, 批次风险, 质量决策, 证据链]
     not_suitable_for: [完整下游统计分析, 生物学机制定论, 未经证据的自动放行]
     handoff_when: [质量证据足够且需要专项分析, 发现输入契约问题, 需要结果解释]
@@ -89,6 +91,7 @@ agents:
 
   agent-delivery:
     summary: 负责汇总已验证产物、质量结论、参数与风险，形成可审计交付物。
+    chat_entry: false
     capabilities: [交付清单, 证据汇总, 运行说明, 风险说明, Artifact整理]
     not_suitable_for: [生成未经验证的结果, 重新执行分析, 替代质量闸门]
     handoff_when: [缺少质量结论, 缺少关键产物, 需要补充专项分析或审计]

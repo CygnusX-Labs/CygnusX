@@ -95,8 +95,39 @@ async def test_watch_notifies_each_case_status_once(monkeypatch) -> None:
     state = db.cursor_states[("session-1", "case-1")]
     assert state.event_cursor == "event-0"
     assert state.notified_statuses == ["approval_pending"]
+    assert session.sandbox_meta["agentteams_case_notified"] == {"case-1": ["approval_pending"]}
+    assert session.sandbox_meta["agentteams_case_event_cursor"] == {"case-1": "event-0"}
+    assert session.sandbox_meta["agentteams_case_cursor_migration"]["mode"] == "dual_write"
+
+
+@pytest.mark.asyncio
+async def test_watch_new_only_clears_legacy_cursor_fields(monkeypatch) -> None:
+    db = FakeDb()
+    service = AgentTeamsCaseWatchService(db)
+    monkeypatch.setattr(
+        watch_module,
+        "get_settings",
+        lambda: SimpleNamespace(agentteams_case_cursor_migration_mode="new_only"),
+    )
+    session = SimpleNamespace(
+        session_id="session-1",
+        user_id="user-1",
+        sandbox_meta={
+            "agentteams_case_ids": ["case-1"],
+            "agentteams_case_status": {"case-1": "received"},
+            "agentteams_case_notified": {"case-1": ["approval_pending"]},
+            "agentteams_case_event_cursor": {"case-1": "event-0"},
+        },
+        updated_at=None,
+        message_count=0,
+        last_message_at=None,
+    )
+
+    await service._scan_session(session, FakeAgentTeams())
+
     assert "agentteams_case_notified" not in session.sandbox_meta
     assert "agentteams_case_event_cursor" not in session.sandbox_meta
+    assert session.sandbox_meta["agentteams_case_cursor_migration"]["mode"] == "new_only"
 
 
 @pytest.mark.asyncio

@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.core.exceptions import ValidationError
+from omichub.infrastructure.database.models.chat import ChatSessionModel
 from omichub.infrastructure.database.models.overdrive import (
     OverdriveCommandModel,
     OverdriveEventModel,
@@ -87,14 +88,22 @@ def plan_hash(content: str) -> str:
     return "sha256:" + hashlib.sha256(canonical_plan_bytes(content)).hexdigest()
 
 
-def validate_plan(content: str, tasks: list[dict[str, Any]], known_agent_ids: set[str]) -> None:
+def validate_plan(
+    content: str,
+    tasks: list[dict[str, Any]],
+    known_agent_ids: set[str],
+    *,
+    allow_empty_tasks: bool = False,
+) -> None:
     missing = [section for section in PLAN_SECTIONS if not re.search(
         rf"^##\s+\d+\.\s+{re.escape(section)}\s*$", content, re.MULTILINE
     )]
     if missing:
         raise ValidationError(f"plan.md 缺少章节: {', '.join(missing)}")
-    if not tasks:
+    if not tasks and not allow_empty_tasks:
         raise ValidationError("plan.md 至少需要一个执行任务")
+    if not tasks:
+        return
     task_ids = {str(task.get("task_id") or "") for task in tasks}
     if "" in task_ids or len(task_ids) != len(tasks):
         raise ValidationError("执行任务 task_id 不能为空且必须唯一")
@@ -184,6 +193,13 @@ class OverdriveRunService:
         lead_planner_agent_id: str,
         run_id: str | None = None,
     ) -> OverdriveRunModel:
+        session = await self._db.scalar(
+            select(ChatSessionModel).where(
+                ChatSessionModel.session_id == session_id,
+                ChatSessionModel.user_id == user_id,
+            )
+        )
+        workspace_resources = list((session.sandbox_meta or {}).get("workspace_resources") or []) if session else []
         run = OverdriveRunModel(
             run_id=run_id or f"overdrive:{uuid.uuid4().hex[:16]}",
             session_id=session_id,
@@ -195,8 +211,17 @@ class OverdriveRunService:
                 source: {"status": "pending", "evidence_ids": []}
                 for source in ("knowledge_base", "web", "model_knowledge")
             },
-            plan={"version": 0, "status": "not_started"},
+            plan={
+                "version": 0,
+                "status": "not_started",
+                # Freeze the parent Session authorization summary at Run creation.
+                # No host paths are stored here: workers receive controlled sandbox paths
+                # and manifest summaries only.
+                "workspace_resources": workspace_resources,
+            },
             control={"action": "run"},
+            event_cursor=0,
+            version=0,
         )
         self._db.add(run)
         await self._db.flush()
@@ -541,8 +566,9 @@ class OverdriveRunService:
         tasks: list[dict[str, Any]],
         known_agent_ids: set[str],
         summary: dict[str, Any],
+        allow_empty_tasks: bool = False,
     ) -> dict[str, Any]:
-        validate_plan(content, tasks, known_agent_ids)
+        validate_plan(content, tasks, known_agent_ids, allow_empty_tasks=allow_empty_tasks)
         version = int((run.plan or {}).get("version") or 0) + 1
         revision_count = int((run.plan or {}).get("revision_count") or 0)
         digest = plan_hash(content)
@@ -614,9 +640,12 @@ class OverdriveRunService:
                 }
             )
             run.plan = current_plan
-            run.status = "SERIAL_PREFLIGHT"
+            planning_only = bool((current_plan.get("summary") or {}).get("planning_only"))
+            run.status = "COMPLETED" if planning_only else "SERIAL_PREFLIGHT"
+            if planning_only:
+                run.finished_at = datetime.now(UTC)
             result = {"status": run.status, "plan": deepcopy(current_plan)}
-            event_type = "plan_approved"
+            event_type = "run_completed" if planning_only else "plan_approved"
         elif action == "revise":
             revision_count = int(current_plan.get("revision_count") or 0)
             if revision_count >= max_revisions:
@@ -703,8 +732,17 @@ class OverdriveRunService:
             run.status = "RUNNING"
             control_action = "run"
         else:
-            run.status = "TERMINATING"
-            control_action = "terminate"
+            has_started_tasks = any(
+                str(task.get("status") or "pending") not in {"pending", "queued"}
+                for task in run.tasks or []
+            )
+            if run.status == "SERIAL_PREFLIGHT" and not has_started_tasks:
+                run.status = "TERMINATED"
+                run.finished_at = datetime.now(UTC)
+                control_action = "terminated"
+            else:
+                run.status = "TERMINATING"
+                control_action = "terminate"
         run.control = {
             "action": control_action,
             "command_id": command_id,
@@ -721,9 +759,14 @@ class OverdriveRunService:
                 result=result,
             )
         )
+        event_type = (
+            "run_terminated"
+            if action == "terminate" and run.status == "TERMINATED"
+            else f"run_{action}_requested"
+        )
         await self.append_event(
             run_id,
-            f"run_{action}_requested",
+            event_type,
             result,
             dedupe_key=f"command:{command_id}",
         )
@@ -811,6 +854,62 @@ class OverdriveRunService:
             "session_id": event.get("session_id"),
             "sequence": event.get("sequence"),
         }
+        if event_type == "research_started":
+            source_labels = {
+                "knowledge_base": "平台知识库",
+                "web": "网络检索",
+                "model_knowledge": "模型知识归纳",
+            }
+            queries = [str(item) for item in payload.get("queries") or []]
+            return {
+                "type": "overdrive_progress",
+                **common,
+                "phase": "researching",
+                "label": "规划 Agent 正在检索证据",
+                "completed": 0,
+                "total": len(payload.get("sources") or []),
+                "activities": [
+                    {
+                        "id": source,
+                        "label": source_labels.get(source, source),
+                        "kind": "mcp" if source == "knowledge_base" else ("model" if source == "model_knowledge" else "search"),
+                        "status": "running",
+                        "queries": queries if source == "web" else [],
+                    }
+                    for source in payload.get("sources") or []
+                ],
+            }
+        if event_type == "research_completed":
+            source_labels = {
+                "knowledge_base": "平台知识库",
+                "web": "网络检索",
+                "model_knowledge": "模型知识归纳",
+            }
+            activities = []
+            for source, label in source_labels.items():
+                detail = payload.get(source) if isinstance(payload.get(source), dict) else {}
+                activities.append(
+                    {
+                        "id": source,
+                        "label": label,
+                        "kind": "mcp" if source == "knowledge_base" else ("model" if source == "model_knowledge" else "search"),
+                        "status": detail.get("status") or "failed",
+                        "queries": detail.get("queries") or ([detail.get("query")] if detail.get("query") else []),
+                        "accepted": detail.get("accepted_count", len(detail.get("evidence_ids") or [])),
+                        "rejected": detail.get("rejected_count", 0),
+                        "duration_ms": detail.get("duration_ms", 0),
+                        "error": detail.get("error") or "; ".join(detail.get("errors") or []),
+                    }
+                )
+            return {
+                "type": "overdrive_progress",
+                **common,
+                "phase": "researching",
+                "label": "证据检索完成，正在生成研究计划",
+                "completed": sum(item["status"] in {"succeeded", "completed"} for item in activities),
+                "total": len(activities),
+                "activities": activities,
+            }
         if event_type == "plan_confirmation_requested":
             return {
                 "type": "ask_request",
@@ -882,6 +981,8 @@ class OverdriveRunService:
             }
         progress_events = {
             "research_completed": ("researching", "三路研究已完成"),
+            "plan_ready": ("plan_ready", "研究计划已生成，等待确认"),
+            "plan_approved": ("serial_preflight", "计划已确认，等待分析 Worker 接管"),
             "replanning_started": ("replanning", "规划 Agent 正在生成修改后的计划"),
             "replanning_failed": ("failed", "修改后的计划未能生成"),
             "preflight_completed": ("serial_preflight", "主 Agent 串行前置已完成"),

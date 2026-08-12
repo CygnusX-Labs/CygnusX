@@ -19,10 +19,12 @@ def test_ability_catalog_normalizes_and_reloads(tmp_path: Path) -> None:
     catalog = AgentAbilityCatalog(path)
 
     assert catalog.get("agent-a")["capabilities"] == ["质控"]
+    assert catalog.get("agent-a")["chat_entry"] is True
 
     path.write_text(
         "version: 1\nagents:\n  agent-a:\n"
         "    summary: 新摘要\n"
+        "    chat_entry: false\n"
         "    capabilities: [执行]\n"
         "    not_suitable_for: [无输入]\n"
         "    handoff_when: [缺文件]\n"
@@ -30,3 +32,4 @@ def test_ability_catalog_normalizes_and_reloads(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert catalog.get("agent-a")["summary"] == "新摘要"
+    assert catalog.get("agent-a")["chat_entry"] is False

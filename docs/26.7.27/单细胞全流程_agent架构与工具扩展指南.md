@@ -213,7 +213,7 @@ Leiden 聚类默认分辨率 {{leiden_resolution}}。
 | 改动 | 文件 | 内容 |
 |---|---|---|
 | 镜像加 uv | `deploy/runtime-images/core.Dockerfile:23` | micromamba 安装列表新增 `uv=0.5`（conda-forge 渠道）；plot/scrna 镜像基于 core 构建，自动继承 |
-| 放行包源 | `data/ai/studio.yaml:24-25` | egress `allow` 白名单放行 `conda.anaconda.org / pypi.org / files.pythonhosted.org / mirrors.aliyun.com / mirrors.tuna.tsinghua.edu.cn`，其余仍断网 |
+| 放行包源 | `data/ai/studio.yaml:24-25` | egress `allow` 白名单放行 `conda.anaconda.org / pypi.org / files.pythonhosted.org / mirrors.aliyun.com / mirrors.ustc.edu.cn`，其余仍断网 |
 | 提示词引导 | `data/ai/prompts/general.md`（"沙盒执行与现场装包"小节） | 引导 agent 用 `sandbox_execute` 执行，缺包时优先 `uv pip install`、系统包用 `micromamba install`；装包失败如实告知；多步/正式交付任务仍转介专家 |
 
 生效与验证：
@@ -324,16 +324,16 @@ Leiden 聚类默认分辨率 {{leiden_resolution}}。
 | 改动 | 文件 | 内容 |
 |---|---|---|
 | 网络模式放开 | `data/ai/studio.yaml:19` | sandbox 网络 `mode: none → whitelist`（合法取值仅 none/whitelist，见 `studio_loader.py:50-56`），配合既有 egress `allow` 包源白名单生效 |
-| core 镜像预置 .condarc | `deploy/runtime-images/core.Dockerfile`（`USER "$MAMBA_USER"` 之后） | 写入清华源 `.condarc`（default/custom channels 指向 tuna，channels: conda-forge/bioconda/defaults）；plot、scrna 镜像 `FROM` core/plot 链自动继承 |
+| core 镜像预置 .condarc | `deploy/runtime-images/core.Dockerfile`（`USER "$MAMBA_USER"` 之后） | 写入中科大源 `.condarc`（default/custom channels 指向 USTC，channels: conda-forge/bioconda/defaults）；plot、scrna 镜像 `FROM` core/plot 链自动继承 |
 | 旧沙盒镜像预置 .condarc | `deploy/sandbox/Dockerfile`（ENV 之后） | 同样内容写入 `/root/.condarc`（mambaforge 基础镜像） |
-| 提示词镜像源约定 | `data/ai/prompts/general.md`、`code.md`、`scrna.md` | 约定：pip 装包必须加 `-i https://pypi.tuna.tsinghua.edu.cn/simple`（Python 包优先 `uv pip install`）；conda/mamba 装包直接 `micromamba install`，镜像已预置 .condarc 无需指定源 |
+| 提示词镜像源约定 | `data/ai/prompts/general.md`、`code.md`、`scrna.md` | 约定：pip 装包必须加 `-i https://pypi.mirrors.ustc.edu.cn/simple`（Python 包优先 `uv pip install`）；conda/mamba 装包直接 `micromamba install`，镜像已预置 .condarc 无需指定源 |
 
 验证：生成的 .condarc 经 YAML 解析通过；`studio.yaml` 解析通过且 mode=whitelist（loader 校验值合法）。
 
 生效注意：
 
 - **镜像改动需重建**：core → plot → scrna 链依次重建（`deploy/runtime-images/build.sh`）；旧沙盒镜像单独重建（`docker build -t omichub/sandbox-base:latest -f deploy/sandbox/Dockerfile deploy/sandbox`）。只对新建容器生效。
-- **egress 代理白名单需包含** `mirrors.tuna.tsinghua.edu.cn`（已在 7.3 放行）；若代理只按域名精确匹配，注意 tuna 的 anaconda 路径与 pypi simple 路径都走同一域名，无需额外放行。
+- **egress 代理白名单需包含** `mirrors.ustc.edu.cn`（已在 7.3 放行）；若代理只按域名精确匹配，注意 USTC 的 anaconda 路径与 pypi simple 路径都走同一域名，无需额外放行。
 - 提示词改动随 agent 列表刷新生效，无需重启。
 
 遗留说明：HCTP 工具镜像（`deploy/docker/Dockerfile.enrichment` 等）是任务型容器、默认不出网（HCTP §6.4），本次未加 .condarc；如后续需要可在各自 Dockerfile 参照同样方式添加。
@@ -341,7 +341,7 @@ Leiden 聚类默认分辨率 {{leiden_resolution}}。
 **7.5 增补（2026-07-27，全量覆盖）**：按"所有可能装软件的 agent 和镜像"要求扩展——
 
 - 提示词镜像源约定追加到 `rnaseq.md`、`visualization.md`（连同已改的 general/code/scrna，共 5 个实际执行沙盒计算的 agent）。shania/router/orchestrator 不直接执行装包（人格/路由/编排角色），未加。
-- pip 类镜像统一预置 `/etc/pip.conf`（`index-url = https://pypi.tuna.tsinghua.edu.cn/simple`，构建期与运行期全局生效）：
+- pip 类镜像统一预置 `/etc/pip.conf`（`index-url = https://pypi.mirrors.ustc.edu.cn/simple`，构建期与运行期全局生效）：
   - `deploy/runtime-images/core.Dockerfile`（root 段，plot/scrna 链继承）
   - `deploy/studio/base.Dockerfile`（`bio.Dockerfile` FROM 该基础镜像继承）
   - `deploy/sandbox/Dockerfile`（mambaforge 旧沙盒，同时有 .condarc + pip.conf）

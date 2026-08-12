@@ -57,6 +57,12 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        if runtime_settings.omichub_integration_token:
+            try:
+                runtime_settings.apply_capability_snapshot(await runtime_client.capabilities())
+            except Exception:
+                if runtime_settings.environment == "production":
+                    raise
         yield
         await runtime_client.close()
         await service.aclose()

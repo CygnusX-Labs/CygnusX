@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     llm_stream_transient_retries: int = 3
     # LLM 瞬时失败自动重试的基础退避时间；第 N 次重试等待 N × 此值，避免瞬时 5xx 时立刻重压上游。
     llm_stream_retry_base_delay_seconds: float = 0.8
+    # ===== 联网检索优化 =====
+    web_search_refinement_cache_ttl_seconds: int = 86400
+    web_search_semantic_rerank_enabled: bool = True
+    web_search_embedding_model: str = ""
 
     # ===== 文件存储 =====
     storage_type: str = "local"
@@ -88,8 +92,15 @@ class Settings(BaseSettings):
     minio_agentteams_bucket: str = "agentteams-evidence"
     minio_presign_expire_seconds: int = 3600
     agentteams_artifact_fetch_max_mb: int = 512
+    agentteams_report_preview_max_mb: int = 20
     agentteams_evidence_retention_days: int = 30
-    # ===== 多智能体编排（MAS，默认关闭，待灰度启用）=====
+    # ===== Session 目录引用 =====
+    # 目录仅生成轻量清单，避免一次递归扫描或将大型输入直接注入模型上下文。
+    workspace_directory_max_files: int = 10000
+    workspace_directory_max_total_bytes: int = 50 * 1024 * 1024 * 1024
+    workspace_directory_manifest_page_size: int = 200
+    workspace_directory_scan_timeout_seconds: float = 5.0
+    # ===== 历史 MAS 编排（deprecated；不再作为用户入口）=====
     mas_enabled: bool = False
     mas_workspace_root: str = "/data/omichub"
     mas_tool_policies_yaml: str = "data/ai/mas/tool_policies.yaml"
@@ -144,11 +155,13 @@ class Settings(BaseSettings):
     # 设计见 ARCHITECTURE_DESIN/multi-agent.md §4
     subagent_fanout_enabled: bool = False
     agentteams_chat_entry_enabled: bool = False
-    agentteams_element_url: str = ""
     agentteams_chat_flow_whitelist: str = "rna_seq,atac_seq,scrna_seq"
-    agentteams_case_watch_interval_seconds: int = 60
+    # SSE/event consumer is the primary path; polling only reconciles non-event sources.
+    agentteams_case_watch_interval_seconds: int = 15
     agentteams_case_event_stream_interval_seconds: int = 5
     agentteams_case_event_stream_seconds: int = 55
+    # Cursor migration follows dual-write -> verified new-store reads -> legacy rollback.
+    agentteams_case_cursor_migration_mode: Literal["dual_write", "new_only", "legacy_only"] = "dual_write"
     agentteams_integration_token: str = ""
     subagent_max_parallel: int = 4  # 单次 fan-out 最大子任务数
     subagent_max_concurrent: int = 3  # 实际并发信号量（给主链路 LLM 调用留余量）
@@ -356,7 +369,7 @@ class Settings(BaseSettings):
     sandbox_network_isolated: bool = True
     sandbox_warm_pool_size: int = 2
     sandbox_max_pool_size: int = 10
-    sandbox_session_timeout: int = 1800  # 30 分钟无活动回收
+    sandbox_session_timeout: int = 300  # 5 分钟无活动回收
     sandbox_exec_timeout: int = 300  # 单次代码执行超时（秒）
     sandbox_data_dir: str = "/data/omichub"
     sandbox_default_cpu: float = 2.0

@@ -18,7 +18,6 @@ import re
 import time
 import uuid
 from collections.abc import AsyncIterator
-from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -46,6 +45,14 @@ from omichub.application.services.agent_handoff_service import (
 from omichub.application.services.agentteams_bridge_settings_service import (
     AgentTeamsBridgeSettingsService,
 )
+from omichub.application.services.biomedical_literature_service import (
+    BiomedicalLiteratureService,
+)
+from omichub.application.services.chat_sandbox_tools import (
+    CHAT_SANDBOX_EXECUTE_TOOL_SCHEMA,
+    CHAT_SANDBOX_TOOL_NAME,
+    stream_chat_sandbox_tool,
+)
 from omichub.application.services.collaboration_observability_service import (
     CollaborationObservabilityService,
 )
@@ -71,6 +78,8 @@ from omichub.application.services.overdrive_plan_constraint_service import (
 from omichub.application.services.overdrive_planning_service import (
     OverdrivePlanningService,
     ResearchBundleService,
+    build_research_queries,
+    is_planning_only_request,
 )
 from omichub.application.services.overdrive_planning_telemetry_service import (
     OverdrivePlanningTelemetryService,
@@ -91,6 +100,7 @@ from omichub.application.services.overdrive_runtime import (
 from omichub.application.services.parallel_subagent_service import (
     PARALLEL_SUBAGENTS_TOOL_NAME,
 )
+from omichub.application.services.research_search_optimizer import ResearchSearchOptimizer
 from omichub.application.services.search_provider_service import SearchProviderService
 from omichub.application.services.site_settings_service import SiteSettingsService
 from omichub.application.services.studio_approval_service import (
@@ -218,6 +228,16 @@ def _extract_user_message_metadata(message: dict[str, Any]) -> dict[str, Any]:
     return extracted
 
 
+def _active_agentteams_case_id(metadata: dict[str, Any]) -> str | None:
+    statuses = dict(metadata.get("agentteams_case_status") or {})
+    active = [
+        case_id
+        for case_id in metadata.get("agentteams_case_ids", [])
+        if isinstance(case_id, str) and statuses.get(case_id) not in {"closed", "cancelled"}
+    ]
+    return active[-1] if active else None
+
+
 DEFAULT_SYSTEM_PROMPT = get_prompt("agents.general")
 
 USER_FACING_CHINESE_PROMPT_SUFFIX = """## 面向用户的语言
@@ -231,8 +251,9 @@ MULTI_AGENT_SYSTEM_PROMPT_SUFFIX = """## Multi-agent 协作模式
 当前会话已开启 multi-agent 协作。对于可拆成 2–5 个彼此独立的专业子任务，应优先调用
 `parallel_subagents` 并行分派、等待汇总后给出统一结论；不要为了简单问答而无意义拆分。
 
-当用户明确要求跨角色协作、人工审批、长耗时流程执行或可审计交付时，可以提出创建
-AgentTeams Case，并在用户确认后调用 `create_agentteams_case`。"""
+当用户明确要求跨角色协作、人工审批、长耗时流程执行或可审计交付，且项目、流程与交付物
+已明确时，应先说明触发理由并在同一轮调用 `create_agentteams_case` 发起确认卡；不要只给出
+文字建议。首次调用不得伪造确认，实际创建仍由用户点击确认卡授权。"""
 
 MULTI_AGENT_TOOL_NAMES = frozenset({PARALLEL_SUBAGENTS_TOOL_NAME, "create_agentteams_case"})
 
@@ -285,11 +306,15 @@ ROUTED_SPECIALIST_EXECUTION_CONFIRMED_PROMPT = """[Router 执行确认]
 
 def _is_route_execution_confirmation(user_text: str) -> bool:
     normalized = user_text.replace(" ", "").lower()
-    if any(marker in normalized for marker in ("暂不", "不要开始", "先不执行", "调整参数")):
+    if any(marker in normalized for marker in ("暂不", "不要开始", "先不执行", "调整参数", "先调整")):
         return False
     return any(
         marker in normalized
-        for marker in ("开始分析", "确认开始", "开始执行", "确认执行", "按上述方案执行", "现在开始")
+        for marker in (
+            "开始分析", "确认开始", "开始执行", "确认执行", "按上述方案执行", "现在开始",
+            "确认", "可以开始", "好的开始", "好的执行", "继续", "开始吧", "ok", "好开始",
+            "进入工作台", "切换到工作台", "用工作台",
+        )
     )
 
 
@@ -474,7 +499,7 @@ def _overdrive_requires_input_clarification(user_content: str) -> bool:
 
 
 def _overdrive_preflight_questions(user_content: str) -> list[dict[str, Any]]:
-    """兼容旧调用名；普通路由与超频模式共用同一 intake 判断。"""
+    """生成预检失败时使用的最小安全澄清集。"""
     questions = _analysis_intake_questions(user_content)
     if _overdrive_requires_input_clarification(user_content):
         questions.insert(
@@ -1819,6 +1844,13 @@ class ChatService:
         session = await self.get_session(session_id, user_id)
         if not session:
             raise NotFoundError("会话不存在或无权访问")
+        if session.mode == "studio":
+            from omichub.infrastructure.studio.manager import studio_sandbox_manager
+
+            try:
+                await studio_sandbox_manager.stop(session.session_id)
+            except Exception as exc:  # noqa: BLE001 - DB deletion must remain available
+                logger.warning("删除 Studio 会话时释放沙盒失败，会由后台回收兜底: {}", exc)
         session.status = "deleted"
         session.updated_at = datetime.now(UTC)
         await self._db.flush()
@@ -1968,9 +2000,9 @@ class ChatService:
         user_id: str | None,
         attachment_dicts: list[dict[str, Any]],
     ) -> dict[str, str]:
-        """Studio：把本轮附件与本会话历史上传幂等引入 ``/workspace/input/``。
+        """把本轮和历史受控附件幂等引入当前 Session ``/workspace/input/``。
 
-        返回 ``{规范化引用(upload://… 或 file://…): 沙盒可读路径(/workspace/input/<name>)}``。
+        返回 ``{规范化引用(upload://…、file://… 或 directory://…): 沙盒可读路径}``。
         沙盒内无法解析 file:// / upload:// 引用，只有挂载进工作区的平台软链才能被沙盒
         代码按文件系统路径直接读取；任一文件引入失败仅记录并跳过，不阻断对话。
         """
@@ -2004,15 +2036,17 @@ class ChatService:
         if not refs:
             return {}
 
-        from omichub.application.services.studio_context_service import link_session_file_refs
+        from omichub.application.services.studio_context_service import link_session_workspace_refs
 
         try:
-            paths, errors = await link_session_file_refs(str(user_id), session_id, refs, self._db)
+            paths, _manifests, errors = await link_session_workspace_refs(
+                str(user_id), session_id, refs, self._db
+            )
         except Exception as exc:  # noqa: BLE001 - 挂载失败不能打断对话，模型仍可走 datahub_import
             logger.warning("Studio 批量引入工作区文件失败: {}", exc)
             return {}
         if errors:
-            logger.info(f"Studio 自动引入文件部分失败（{len(errors)} 项）: {errors}")
+            logger.info(f"Session 工作区资源部分引入失败（{len(errors)} 项）: {errors}")
         return paths
 
     async def _collect_session_file_context(
@@ -2048,6 +2082,13 @@ class ChatService:
                 seen.add(file_id)
                 ref = file_id if "://" in file_id else f"upload://{file_id}"
                 sandbox_path = (studio_sandbox_paths or {}).get(ref)
+                if att.get("type") == "directory":
+                    if sandbox_path:
+                        lines.append(
+                            f"- {att.get('name', '')}/（已只读引入工作区 {sandbox_path}；"
+                            "请先用 workspace_list 分页列举，再按需读取文件）"
+                        )
+                    continue
                 if sandbox_path:
                     lines.append(
                         f"- {att.get('name', '')}（已引入工作区 {sandbox_path}，"
@@ -2379,8 +2420,11 @@ class ChatService:
             )
             yield ChatChunk(type="web_search", content=query, metadata={"status": "searching"})
             try:
-                web_sources = await SearchProviderService(self._db).search_default(query)
-                presearch_result = {"query": query, "results": web_sources}
+                presearch_result = await self._optimized_web_search(
+                    query,
+                    model_config=model_config,
+                )
+                web_sources = presearch_result["results"]
                 yield ChatChunk(
                     type="tool_result",
                     metadata={
@@ -2607,11 +2651,20 @@ class ChatService:
         任何失败（模型报错、解析失败、目标不存在）都静默回落 general 候选，绝不抛出。
         """
         from omichub.application.services.agent_service import AgentService
+        from omichub.infrastructure.config.agent_ability_catalog import agent_ability_catalog
 
         try:
             agent_service = AgentService(self._db)
             agents = await agent_service.list_agents(active_only=True)
-            candidates = [a for a in agents if not (a.features or {}).get("router")]
+            candidate_abilities = {
+                agent.agent_id: agent_ability_catalog.get(agent.agent_id) for agent in agents
+            }
+            candidates = [
+                agent
+                for agent in agents
+                if not (agent.features or {}).get("router")
+                and candidate_abilities[agent.agent_id].get("chat_entry", True)
+            ]
             if not candidates or router_ctx.model_config is None:
                 return None, None
 
@@ -2662,8 +2715,22 @@ class ChatService:
                         {
                             "agent_id": c.agent_id,
                             "name": c.name,
-                            "description": c.description,
+                            "description": candidate_abilities[c.agent_id].get("summary")
+                            or c.description,
                             "category": c.category,
+                            "chat_entry": candidate_abilities[c.agent_id].get("chat_entry", True),
+                            "capabilities": candidate_abilities[c.agent_id].get("capabilities")
+                            or (c.features or {}).get("capability_tags")
+                            or [],
+                            "not_suitable_for": candidate_abilities[c.agent_id].get(
+                                "not_suitable_for", []
+                            ),
+                            "handoff_when": candidate_abilities[c.agent_id].get(
+                                "handoff_when", []
+                            ),
+                            "preferred_inputs": candidate_abilities[c.agent_id].get(
+                                "preferred_inputs", []
+                            ),
                             "routing_hints": (c.features or {}).get("routing_hints") or [],
                             "capability_tags": (c.features or {}).get("capability_tags") or [],
                             "routing_notes": get_domain_registry().router_notes_for(
@@ -2909,6 +2976,7 @@ class ChatService:
                     "total": 3,
                 },
             )
+
             return
         if early_active_run is not None and early_active_run.status != "REPLANNING":
             routed = None
@@ -3130,27 +3198,27 @@ class ChatService:
                 answer += delta
             return answer.strip()
 
-        preflight_questions = (
+        preflight_fallback_questions = (
             []
             if pending_intake or pending_followup or replan_root_request
             else _overdrive_preflight_questions(planning_content)
         )
         if intake_rounds >= int(limits["max_intake_rounds"]):
-            preflight_questions = []
+            preflight_fallback_questions = []
             planning_content += (
                 "\n\n已达到信息预检追问上限。请基于现有信息给出保守方案，"
                 "并在最终报告中用“假设与限制”明确列出所有未经确认的前提。"
             )
         manager_raw = ""
         decision: dict[str, Any] = {}
-        speech = "为了把计划做得可执行、并准确分配专家，我先补全会影响分析路线的关键信息。"
+        speech = ""
         questions: list[dict[str, Any]] = []
         raw_assignments: Any = []
         registry = get_domain_registry()
         matched_assignment_rules = registry.assignment_rules(planning_content, intake_slots)
         authoritative_rules = overdrive_authoritative_rules(matched_assignment_rules)
         authoritative_anchor_ids = overdrive_anchor_ids(authoritative_rules)
-        planning_mode = "rule_preflight" if pending_followup or preflight_questions else "llm"
+        planning_mode = "rule_preflight" if pending_followup else "llm"
         plan_violations: list[str] = []
         repair_attempted = False
         initial_manager_failed = False
@@ -3160,8 +3228,6 @@ class ChatService:
                 save_requested=followup_save_requested,
                 data_ready=followup_data_ready,
             )
-        elif preflight_questions:
-            questions = preflight_questions
         else:
             try:
                 manager_raw = await ask_manager(
@@ -3203,6 +3269,18 @@ class ChatService:
             )
             questions = _filter_overdrive_questions(questions, intake_slots)
             raw_assignments = decision.get("assignments")
+            if preflight_fallback_questions and not questions:
+                logger.warning(
+                    "Overdrive Manager preflight output lacked valid questions; using safe fallback: session={}",
+                    session_id,
+                )
+                speech = (
+                    "当前无法生成可用的澄清问题。请先补充以下关键信息，"
+                    "我再为你制定可执行的方案。"
+                )
+                questions = preflight_fallback_questions
+                raw_assignments = []
+                planning_mode = "rule_preflight"
         assignments = _normalize_overdrive_assignments(raw_assignments, set(catalog_by_id))
         authoritative_assignments = _normalize_overdrive_assignments(
             _default_overdrive_assignments(
@@ -3295,75 +3373,20 @@ class ChatService:
                 else "Manager 暂时不可用，暂未生成执行计划，请稍后重试。"
             )
 
-        # 第二期提前实现，默认关闭：仅在 Gateway 可用时镜像到 Matrix，失败即回退内置编排。
-        matrix_room_id: str | None = None
-        matrix_degraded = False
-        room_gateway: Any | None = None
-        try:
-            from omichub.application.services.agentteams_room_gateway_service import (
-                AgentTeamsRoomGatewayService,
-            )
-
-            room_gateway = AgentTeamsRoomGatewayService()
-            if room_gateway.available:
-                session = await self.get_session(session_id, user_id)
-                session_meta = dict(session.sandbox_meta or {}) if session else {}
-                matrix_room_id = str(session_meta.get("matrix_room_id") or "") or None
-                if matrix_room_id is None:
-                    room = await room_gateway.create_room(
-                        session_id,
-                        [
-                            "omichub-user",
-                            "bioops-manager",
-                            *[assignment["agent_id"] for assignment in assignments],
-                        ],
-                    )
-                    matrix_room_id = str(room["room_id"])
-                    if session is not None:
-                        session.sandbox_meta = {
-                            **session_meta,
-                            "matrix_room_id": matrix_room_id,
-                            **(
-                                {"element_room_url": room["element_room_url"]}
-                                if room.get("element_room_url")
-                                else {}
-                            ),
-                        }
-                        await self._db.flush()
-        except Exception as exc:  # noqa: BLE001
-            matrix_degraded = True
-            logger.warning("超频 Matrix 房间不可用，回退内置编排: {}", exc)
-
-        if room_gateway is not None and room_gateway.available and matrix_room_id:
-            try:
-                await room_gateway.post_message(
-                    matrix_room_id,
-                    sender_identity="omichub-user",
-                    content=user_content,
-                    sender={"agent_id": "user", "name": "用户", "role": "user"},
-                )
-            except Exception as exc:  # noqa: BLE001
-                matrix_degraded = True
-                logger.warning("用户消息同步至 Matrix 失败，继续内置会话: {}", exc)
-
-        degradation_notice_key = "matrix_degraded_notice_emitted"
-        session_for_degradation = session_row
-        if matrix_degraded:
-            degradation_meta = dict(getattr(session_for_degradation, "sandbox_meta", None) or {})
-            if not degradation_meta.get(degradation_notice_key):
-                degradation_meta[degradation_notice_key] = True
-                if session_for_degradation is not None:
-                    session_for_degradation.sandbox_meta = degradation_meta
-                    await self._db.flush()
-                yield ChatChunk(
-                    type="mode_changed",
-                    metadata={"mode": "overdrive", "enabled": True, "degraded": True},
-                )
-        elif session_for_degradation is not None:
-            degradation_meta = dict(session_for_degradation.sandbox_meta or {})
-            if degradation_meta.pop(degradation_notice_key, None):
-                session_for_degradation.sandbox_meta = degradation_meta
-                await self._db.flush()
+        planning_only = is_planning_only_request(planning_content, assignments)
+        execution_markers = (
+            "开始分析", "进行分析", "执行分析", "运行流程", "跑流程", "生成代码",
+            "写代码", "处理数据", "run the analysis", "execute", "implement",
+        )
+        auto_promote_studio = bool(assignments) and not planning_only and (
+            any(bool(item.get("workspace_access")) for item in assignments)
+            or any(marker in planning_content.casefold() for marker in execution_markers)
+        )
+        if auto_promote_studio and session_row is not None and getattr(session_row, "mode", "chat") != "studio":
+            session_row.mode = "studio"
+            session_row.workspace_id = getattr(session_row, "workspace_id", None) or session_id
+            session_row.updated_at = datetime.now(UTC)
+            await self._db.flush()
 
         async def emit_speech(
             sender: dict[str, Any],
@@ -3377,7 +3400,6 @@ class ChatService:
             error_summary: str = "",
             planning_metadata: dict[str, Any] | None = None,
         ) -> ChatChunk:
-            nonlocal matrix_degraded
             message = await self.add_message(
                 session_id,
                 "assistant",
@@ -3391,23 +3413,8 @@ class ChatService:
                     **({"taskStatus": task_status} if task_status else {}),
                     **({"errorSummary": error_summary} if error_summary else {}),
                     **(planning_metadata or {}),
-                    **({"matrix_room_id": matrix_room_id} if matrix_room_id else {}),
                 },
             )
-            if room_gateway is not None and room_gateway.available and matrix_room_id:
-                try:
-                    identity = (
-                        "bioops-manager" if sender["role"] == "manager" else sender["agent_id"]
-                    )
-                    await room_gateway.post_message(
-                        matrix_room_id,
-                        sender_identity=identity,
-                        content=content,
-                        sender=sender,
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    matrix_degraded = True
-                    logger.warning("超频发言同步至 Matrix 失败，继续内置会话: {}", exc)
             return ChatChunk(
                 type="room_speech",
                 content=content,
@@ -3423,8 +3430,6 @@ class ChatService:
                     **({"error_summary": error_summary} if error_summary else {}),
                     **(planning_metadata or {}),
                     **({"worker_key": worker_key} if worker_key else {}),
-                    **({"matrix_room_id": matrix_room_id} if matrix_room_id else {}),
-                    **({"degraded": True} if matrix_degraded else {}),
                 },
             )
 
@@ -3437,6 +3442,16 @@ class ChatService:
                 "completed": 0,
             },
         )
+        if auto_promote_studio:
+            yield ChatChunk(
+                type="studio_promoted",
+                metadata={
+                    "session_id": session_id,
+                    "agent_id": manager.agent_id,
+                    "agent_name": manager.name,
+                    "reason": "执行型超频任务默认使用 AI 工作台",
+                },
+            )
         if pending_followup and followup_save_requested:
             yield ChatChunk(
                 type="overdrive_progress",
@@ -3572,6 +3587,104 @@ class ChatService:
                 },
             )
 
+            if isinstance(session_row, ChatSessionModel):
+                planning_image = str(
+                    (session_row.sandbox_meta or {}).get("image") or ""
+                ).strip() or None
+                workspace_call_id = f"planning-workspace-{uuid.uuid4()}"
+                yield ChatChunk(
+                    type="tool_call",
+                    metadata={
+                        "tool_call_id": workspace_call_id,
+                        "tool_name": "workspace_list",
+                        "arguments": {"path": ""},
+                        "mcp_server": "studio",
+                    },
+                )
+                try:
+                    workspace_result = await asyncio.wait_for(
+                        execute_studio_tool(
+                            "workspace_list",
+                            {"path": ""},
+                            session_id,
+                            planning_image,
+                            user_id=user_id,
+                            db=self._db,
+                        ),
+                        timeout=15,
+                    )
+                except TimeoutError:
+                    workspace_result = {
+                        "success": False,
+                        "result": {
+                            "llm_payload": {"error": "规划工作区检查超时"},
+                            "ui_payload": {"error": "规划工作区检查超时"},
+                        },
+                    }
+                workspace_envelope = workspace_result.get("result") or {}
+                yield ChatChunk(
+                    type="tool_result",
+                    metadata={
+                        "tool_call_id": workspace_call_id,
+                        "tool_name": "workspace_list",
+                        "mcp_server": "studio",
+                        "success": bool(workspace_result.get("success")),
+                        "result": workspace_envelope,
+                        "ui_payload": workspace_envelope.get("ui_payload") or {},
+                    },
+                )
+                sandbox_call_id = f"planning-sandbox-{uuid.uuid4()}"
+                sandbox_args = {
+                    "language": "bash",
+                    "code": (
+                        "printf 'workspace=%s\\n' \"$PWD\"; "
+                        "find input ref scripts -maxdepth 2 -type f -printf '%p\\t%s bytes\\n' "
+                        "2>/dev/null | head -n 100"
+                    ),
+                    "timeout": 20,
+                }
+                yield ChatChunk(
+                    type="tool_call",
+                    metadata={
+                        "tool_call_id": sandbox_call_id,
+                        "tool_name": "sandbox_execute",
+                        "arguments": sandbox_args,
+                        "mcp_server": "studio",
+                    },
+                )
+                try:
+                    sandbox_result = await asyncio.wait_for(
+                        execute_studio_tool(
+                            "sandbox_execute",
+                            sandbox_args,
+                            session_id,
+                            planning_image,
+                            user_id=user_id,
+                            db=self._db,
+                        ),
+                        timeout=25,
+                    )
+                except TimeoutError:
+                    sandbox_result = {
+                        "success": False,
+                        "result": {
+                            "llm_payload": {"error": "规划沙箱只读检查超时"},
+                            "ui_payload": {"error": "规划沙箱只读检查超时"},
+                        },
+                    }
+                sandbox_envelope = sandbox_result.get("result") or {}
+                yield ChatChunk(
+                    type="tool_result",
+                    metadata={
+                        "tool_call_id": sandbox_call_id,
+                        "tool_name": "sandbox_execute",
+                        "mcp_server": "studio",
+                        "success": bool(sandbox_result.get("success")),
+                        "result": sandbox_envelope,
+                        "ui_payload": sandbox_envelope.get("ui_payload") or {},
+                    },
+                )
+
             research_limit = int(limits["research"]["max_evidence_items_per_source"])
             research_project_id = getattr(session_row, "project_id", None)
 
@@ -3597,6 +3710,48 @@ class ChatService:
             planner_ctx = await AgentService(self._db).assemble_context(
                 lead_planner_id, user_id=user_id
             )
+
+            async def query_refiner(
+                query: str,
+                *,
+                context: dict[str, Any],
+            ) -> dict[str, Any]:
+                if planner_ctx is None or planner_ctx.model_config is None:
+                    return {"queries": []}
+                answer = ""
+                async for item in provider_manager.chat_stream(
+                    config=planner_ctx.model_config,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": (
+                                f"用户研究问题：{query}\n\n"
+                                "请为联网文献检索精炼 2-4 条英文联合检索式。"
+                                "每条只包含 2-4 个最关键的专业概念或短语，使用 AND/OR 连接；"
+                                "必须保留关键基因、疾病/模型、技术类型和目标机制中最相关的部分；"
+                                "不要复述用户原句，不要写解释，不要添加网站域名。"
+                                "严格返回 JSON：{\"queries\":[\"...\",\"...\"]}。"
+                            ),
+                        }
+                    ],
+                    system_prompt=(
+                        f"{planner_ctx.system_prompt}\n\n"
+                        "你当前处于研究计划的只读检索阶段，只负责检索词精炼，不生成结论。"
+                    ),
+                    temperature=0.1,
+                    max_tokens=300,
+                    tools=None,
+                    deep_thinking=False,
+                ):
+                    if item.type == "text" and not item.metadata.get("is_reasoning"):
+                        answer += item.content
+                parsed = _extract_route_json(answer) or {}
+                return {"queries": parsed.get("queries") or []}
+
+            literature_service = BiomedicalLiteratureService(timeout_seconds=10)
+
+            async def literature_search(query: str, **_: Any) -> list[dict[str, Any]]:
+                return await literature_service.search(query, research_limit)
 
             async def model_knowledge(
                 query: str,
@@ -3729,12 +3884,20 @@ class ChatService:
                 }
 
             research_limits = limits.get("research") or {}
+            activity_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+            async def planning_activity(event: dict[str, Any]) -> None:
+                await activity_queue.put(event)
+
             planner = OverdrivePlanningService(
                 run_service,
                 ResearchBundleService(
                     knowledge_search=knowledge_search,
                     web_search=web_search,
                     model_knowledge=model_knowledge,
+                    query_refiner=query_refiner,
+                    literature_search=literature_search,
+                    activity_callback=planning_activity,
                     source_timeout_seconds=float(
                         research_limits.get("source_timeout_seconds") or 20
                     ),
@@ -3747,21 +3910,96 @@ class ChatService:
                 ),
                 plan_builder,
             )
-            frozen = await planner.prepare_plan(
-                run,
-                known_agent_ids=set(catalog_by_id),
-                project_id=getattr(session_row, "project_id", None),
-                revision_feedback=revision_feedback,
+            planning_task = asyncio.create_task(
+                planner.prepare_plan(
+                    run,
+                    known_agent_ids=set(catalog_by_id),
+                    project_id=getattr(session_row, "project_id", None),
+                    revision_feedback=revision_feedback,
+                )
             )
+            planning_calls: dict[str, tuple[str, str | None]] = {}
+            source_tools = {
+                "query_refiner": ("refine_search_queries", "planner"),
+                "knowledge_base": ("knowledge_search", "studio"),
+                "literature": ("literature_search", "research"),
+                "web": ("web_search", "research"),
+                "model_knowledge": ("planning_synthesis", None),
+            }
+            while not planning_task.done() or not activity_queue.empty():
+                try:
+                    activity = await asyncio.wait_for(activity_queue.get(), timeout=0.1)
+                except TimeoutError:
+                    continue
+                source = str(activity.get("source") or "")
+                tool_name, mcp_server = source_tools.get(source, (source or "planning_activity", None))
+                if activity.get("event") == "source_started":
+                    call_id = f"planning-{source}-{uuid.uuid4()}"
+                    planning_calls[source] = (call_id, mcp_server)
+                    yield ChatChunk(
+                        type="tool_call",
+                        metadata={
+                            "tool_call_id": call_id,
+                            "tool_name": tool_name,
+                            "arguments": {"queries": activity.get("queries") or []},
+                            **({"mcp_server": mcp_server} if mcp_server else {}),
+                        },
+                    )
+                else:
+                    call_id, recorded_server = planning_calls.get(
+                        source, (f"planning-{source}-{uuid.uuid4()}", mcp_server)
+                    )
+                    success = str(activity.get("status") or "") not in {"failed", "timed_out"}
+                    payload = {
+                        "queries": activity.get("queries") or [],
+                        "status": activity.get("status"),
+                        "result_count": activity.get("result_count", 0),
+                        "duration_ms": activity.get("duration_ms", 0),
+                        **({"error": activity.get("error")} if activity.get("error") else {}),
+                    }
+                    yield ChatChunk(
+                        type="tool_result",
+                        metadata={
+                            "tool_call_id": call_id,
+                            "tool_name": tool_name,
+                            "success": success,
+                            "result": payload,
+                            "ui_payload": payload,
+                            **({"mcp_server": recorded_server} if recorded_server else {}),
+                        },
+                    )
+            frozen = await planning_task
             await self._commit_stream_anchor()
+            research_labels = {
+                "knowledge_base": ("平台知识库", "mcp"),
+                "web": ("网络检索", "search"),
+                "model_knowledge": ("模型知识归纳", "model"),
+            }
             yield ChatChunk(
                 type="overdrive_progress",
                 metadata={
                     "phase": "plan_ready",
                     "label": "规划 Agent 已交付 plan.md，等待你确认",
+                    "run_id": run.run_id,
                     "completed": 3,
                     "total": 3,
-                    "research": deepcopy(run.research),
+                    "activities": [
+                        {
+                            "id": source,
+                            "label": label,
+                            "kind": kind,
+                            "status": (run.research.get(source) or {}).get("status", "failed"),
+                            "queries": (run.research.get(source) or {}).get("queries") or [],
+                            "accepted": (run.research.get(source) or {}).get(
+                                "accepted_count",
+                                len((run.research.get(source) or {}).get("evidence_ids") or []),
+                            ),
+                            "rejected": (run.research.get(source) or {}).get("rejected_count", 0),
+                            "duration_ms": (run.research.get(source) or {}).get("duration_ms", 0),
+                            "error": (run.research.get(source) or {}).get("error"),
+                        }
+                        for source, (label, kind) in research_labels.items()
+                    ],
                 },
             )
             yield ChatChunk(
@@ -4874,6 +5112,11 @@ class ChatService:
                 session.updated_at = datetime.now(UTC)
             studio_mode = session.mode == "studio"
             session_mcp_meta = dict(session.sandbox_meta or {})
+            active_case_id = _active_agentteams_case_id(session_mcp_meta)
+            if active_case_id:
+                session_mcp_meta["agentteams_case_id"] = active_case_id
+            else:
+                session_mcp_meta.pop("agentteams_case_id", None)
             effective_mcp_mode = mcp_mode or session_mcp_meta.get("mcp_mode") or "auto"
             if extra_mcp_servers is None:
                 effective_extra_mcp_servers = list(session_mcp_meta.get("extra_mcp_servers") or [])
@@ -4890,7 +5133,9 @@ class ChatService:
                 if multi_agent is not None
                 else bool(session_mcp_meta.get("multi_agent", False))
             )
-            effective_multi_agent = user_multi_agent or await self._admin_subagent_fanout_enabled()
+            effective_multi_agent = (
+                user_multi_agent or await self._admin_subagent_fanout_enabled()
+            ) and active_case_id is None
             session_mcp_meta["multi_agent"] = user_multi_agent
             stored_overdrive = bool(session_mcp_meta.get("overdrive", False))
             effective_overdrive = _effective_overdrive(overdrive, session_mcp_meta)
@@ -5232,8 +5477,8 @@ class ChatService:
                     if unified_route_notice["available"] and route_info["intent"] == "case":
                         route_prompt_suffix = (
                             "[统一协作路由] 当前请求已判定为正式协作 Case。"
-                            "请先澄清项目、流程和交付物；在用户明确同意后，调用"
-                            " `create_agentteams_case` 展示确认卡。"
+                            "请先澄清项目、流程和交付物；信息明确后说明触发理由，并立即调用"
+                            " `create_agentteams_case` 展示确认卡，不要停留在文字询问。"
                         )
                     elif unified_route_notice["available"] and route_info["intent"] == "dag":
                         route_prompt_suffix = (
@@ -5365,7 +5610,7 @@ class ChatService:
         # 只有软链进 /workspace/input/ 后才能按文件系统路径读取。这里在组装提示词前先把
         # 这些文件幂等引入工作区，并把沙盒可读路径回写给模型（恢复"工作区文件挂载沙盒"设计）。
         studio_sandbox_paths: dict[str, str] = {}
-        if studio_mode:
+        if any(str(att.get("file_id") or "").startswith(("file://", "upload://", "directory://")) for att in attachment_dicts):
             studio_sandbox_paths = await self._link_session_files_to_workspace(
                 current_session_id, user_id, attachment_dicts
             )
@@ -5384,7 +5629,7 @@ class ChatService:
             current_session_id,
             exclude_file_ids=current_file_ids,
             user_id=user_id,
-            studio_sandbox_paths=studio_sandbox_paths if studio_mode else None,
+            studio_sandbox_paths=studio_sandbox_paths or None,
         )
         if history_file_ctx:
             llm_messages = self._append_context_to_last_user_message(llm_messages, history_file_ctx)
@@ -5511,6 +5756,14 @@ class ChatService:
             and not any(t.get("function", {}).get("name") == "knowledge_search" for t in tools)
         ):
             tools.append(KNOWLEDGE_SEARCH_TOOL)
+        # 轻量沙盒在普通聊天同样可用（独立于 Studio 工作台），
+        # 让 Agent 能执行简单代码（计算、时间查询、快速绘图）而无需跳转工作台。
+        if (
+            not studio_mode
+            and supports_function_tools
+            and not any(t.get("function", {}).get("name") == CHAT_SANDBOX_TOOL_NAME for t in tools)
+        ):
+            tools.append(CHAT_SANDBOX_EXECUTE_TOOL_SCHEMA)
         system_prompt = ctx.system_prompt or None
         if route_prompt_suffix:
             system_prompt = (
@@ -5843,10 +6096,11 @@ class ChatService:
                 type="web_search", content=user_content, metadata={"status": "searching"}
             )
             try:
-                presearch_sources = await SearchProviderService(self._db).search_default(
-                    user_content
+                presearch_result = await self._optimized_web_search(
+                    user_content,
+                    model_config=model_config,
                 )
-                presearch_result = {"query": user_content, "results": presearch_sources}
+                presearch_sources = presearch_result["results"]
                 yield ChatChunk(
                     type="tool_result",
                     metadata={
@@ -6179,6 +6433,9 @@ class ChatService:
                     is_agentteams_case_tool = tool_name == "create_agentteams_case"
                     # Skills 三层渐进式披露内部工具（非 Studio；Studio 走 capability_load 机制）
                     is_skill_tool = (not studio_mode) and tool_name in SKILL_TOOL_NAMES
+                    is_chat_sandbox_tool = (
+                        (not studio_mode) and tool_name == CHAT_SANDBOX_TOOL_NAME
+                    )
 
                     # 在绑定的 MCP server 中找到拥有该工具的 server
                     server = None
@@ -6189,6 +6446,7 @@ class ChatService:
                         and not is_handoff_tool
                         and not is_subagent_tool
                         and not is_agentteams_case_tool
+                        and not is_chat_sandbox_tool
                     ):
                         server = next(
                             (
@@ -6211,6 +6469,8 @@ class ChatService:
                         if is_agentteams_case_tool
                         else "skills"
                         if is_skill_tool
+                        else "chat-sandbox"
+                        if is_chat_sandbox_tool
                         else "studio"
                         if is_studio_tool
                         else RESEARCH_TOOL_CHANNEL
@@ -6248,7 +6508,19 @@ class ChatService:
                     elif is_subagent_tool:
                         # 并行子 Agent fan-out：mas_plan_preview 同款特判直调，不经
                         # ToolBridge._package（其 llm_payload 3KB 上限会截断汇总结果）
-                        if (
+                        if tool_context.extra.get("agentteams_case_id"):
+                            limit_error = (
+                                "当前会话已绑定 AgentTeams Case；复杂协作由 Case Work Item 编排，"
+                                "不会再通过 parallel_subagents 派生子 Agent。"
+                            )
+                            result = {
+                                "success": False,
+                                "result": {
+                                    "llm_payload": {"success": False, "error": limit_error},
+                                    "ui_payload": {"error": limit_error},
+                                },
+                            }
+                        elif (
                             subagent_calls_this_round
                             >= get_settings().subagent_max_children_per_message
                         ):
@@ -6697,6 +6969,17 @@ class ChatService:
                                     yield item
                                 else:
                                     result = item
+                    elif is_chat_sandbox_tool:
+                        result = {}
+                        async for item in stream_chat_sandbox_tool(
+                            args,
+                            user_id=str(user_id),
+                            tool_call_id=tc.get("id", ""),
+                        ):
+                            if isinstance(item, ChatChunk):
+                                yield item
+                            else:
+                                result = item
                     elif server is None:
                         if tool_name in {"goal_complete", "goal_blocked"}:
                             from omichub.application.services.goal_terminal_tools import (
@@ -7409,8 +7692,18 @@ class ChatService:
 
         async def _build_snippets(att: dict[str, Any]) -> list[str]:
             """为单个附件生成文本提示片段。"""
-            text = await ChatService._read_attachment_text(att)
             file_id = att.get("file_id", "")
+            if att.get("type") == "directory":
+                ref = file_id if "://" in file_id else ""
+                sandbox_path = (studio_sandbox_paths or {}).get(ref)
+                if sandbox_path:
+                    return [
+                        f"[目录: {att.get('name', '')}/，已只读引入当前 Session：{sandbox_path}。"
+                        "请先用 workspace_list 分页列举，再按需用 workspace_read 读取具体文件；"
+                        "不要修改 input/ 或访问目录之外的路径。]"
+                    ]
+                return [f"[目录 {att.get('name', '')}/ 未获得可读取工作区权限，不能按名称推测或访问路径。]"]
+            text = await ChatService._read_attachment_text(att)
             max_len = 8000
             snippets: list[str] = []
             if file_id:
@@ -7864,13 +8157,82 @@ class ChatService:
         if not query.strip():
             return {"success": False, "error": "缺少搜索关键词"}
         try:
-            from omichub.application.services.search_provider_service import SearchProviderService
-
-            results = await SearchProviderService(self._db).search_default(query, top_n)
-            return {"success": True, "result": {"query": query, "results": results}}
+            result = await self._optimized_web_search(query, top_n=top_n)
+            return {"success": True, "result": result}
         except Exception as exc:  # noqa: BLE001
             logger.warning("联网搜索工具调用失败: %s", exc)
             return {"success": False, "error": "联网搜索失败，已跳过搜索结果"}
+
+    async def _optimized_web_search(
+        self,
+        query: str,
+        *,
+        top_n: int = 8,
+        model_config: Any | None = None,
+    ) -> dict[str, Any]:
+        """Run cached query refinement, multi-query retrieval, dedupe and reranking."""
+        optimizer = ResearchSearchOptimizer()
+        fallback_queries = build_research_queries(query)["web_queries"]
+
+        async def refine(value: str) -> dict[str, Any]:
+            if model_config is None:
+                return {"queries": []}
+            answer = ""
+            async for item in provider_manager.chat_stream(
+                config=model_config,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            f"用户问题：{value}\n\n"
+                            "请生成 2-4 条英文联网检索式。每条保留 2-4 个最关键概念或短语，"
+                            "用 AND/OR 连接；优先保留实体、主题、任务目标和时效条件。"
+                            "不要解释，不添加网站域名。严格返回 JSON："
+                            '{"queries":["...","..."]}。'
+                        ),
+                    }
+                ],
+                system_prompt="你只负责精炼联网检索式，不回答用户问题。",
+                temperature=0.1,
+                max_tokens=240,
+                tools=None,
+                deep_thinking=False,
+            ):
+                if item.type == "text" and not item.metadata.get("is_reasoning"):
+                    answer += item.content
+            parsed = _extract_route_json(answer) or {}
+            return {"queries": parsed.get("queries") or []}
+
+        refinement = await optimizer.refine_queries(
+            query,
+            fallback_queries=fallback_queries,
+            refiner=refine if model_config is not None else None,
+        )
+        candidates: list[dict[str, Any]] = []
+        errors: list[str] = []
+        for refined_query in refinement["queries"][:4]:
+            try:
+                candidates.extend(
+                    await SearchProviderService(self._db).search_default(
+                        refined_query,
+                        max(5, min(int(top_n), 12)),
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001 - partial query success is useful
+                errors.append(str(exc)[:300])
+        if not candidates and errors:
+            raise RuntimeError(errors[0])
+        results = await optimizer.rerank(query, candidates, limit=max(5, min(int(top_n), 8)))
+        payload: dict[str, Any] = {
+            "query": query,
+            "queries": refinement["queries"],
+            "query_refinement": refinement,
+            "results": results,
+            "reranked": True,
+        }
+        if errors:
+            payload["partial_errors"] = errors
+        return payload
 
     async def _knowledge_search_chat(
         self, arguments: dict[str, Any], *, project_id: str | None = None

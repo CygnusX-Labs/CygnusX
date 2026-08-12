@@ -89,12 +89,12 @@ agentteams-worker-env: ## 从受控 Bridge 配置生成最小权限的 AgentTeam
 		mkdir -p "$$(dirname "$$target_file")"; \
 		umask 077; temporary_file="$$(mktemp "$${target_file}.XXXXXX")"; \
 		trap 'rm -f "$$temporary_file"' EXIT; \
-		sed -n -E '/^AGENTTEAMS_(AGENT_CODE|AGENT_VIZ|AGENT_SCRNA|AGENT_RNASEQ|DATA_STEWARD|ANALYSIS_WORKER|QUALITY_AUDITOR|DELIVERY_REPORTER)_TOKEN=.+$$/p' "$$source_file" > "$$temporary_file"; \
-		if [ "$$(wc -l < "$$temporary_file")" -ne 8 ]; then \
+		sed -n -E '/^AGENTTEAMS_(AGENT_CODE|AGENT_VIZ|AGENT_SCRNA|AGENT_RNASEQ|AGENT_DATA|AGENT_ATACSEQ|AGENT_SCRNA_UPSTREAM|AGENT_SCRNA_INTEGRATION|AGENT_SCRNA_ADVANCED|AGENT_QC|AGENT_DELIVERY|AGENT_CLOUD_OPS|AGENT_GENERAL|AGENT_MCP_BUILDER|ANALYSIS_WORKER)_TOKEN=.+$$/p' "$$source_file" > "$$temporary_file"; \
+		if [ "$$(wc -l < "$$temporary_file")" -ne 15 ]; then \
 			sed -n 's/^BRIDGE_IDENTITIES=//p' "$$source_file" | tr ',' '\n' | \
-			awk -F: 'BEGIN { map["agent-code"]="AGENTTEAMS_AGENT_CODE_TOKEN"; map["agent-viz"]="AGENTTEAMS_AGENT_VIZ_TOKEN"; map["agent-scrna"]="AGENTTEAMS_AGENT_SCRNA_TOKEN"; map["agent-rnaseq"]="AGENTTEAMS_AGENT_RNASEQ_TOKEN"; map["data-steward"]="AGENTTEAMS_DATA_STEWARD_TOKEN"; map["analysis-worker"]="AGENTTEAMS_ANALYSIS_WORKER_TOKEN"; map["quality-auditor"]="AGENTTEAMS_QUALITY_AUDITOR_TOKEN"; map["delivery-reporter"]="AGENTTEAMS_DELIVERY_REPORTER_TOKEN" } $$1 in map { print map[$$1] "=" substr($$0, length($$1) + 2) }' > "$$temporary_file"; \
+			awk -F: 'BEGIN { map["agent-code"]="AGENTTEAMS_AGENT_CODE_TOKEN"; map["agent-viz"]="AGENTTEAMS_AGENT_VIZ_TOKEN"; map["agent-scrna"]="AGENTTEAMS_AGENT_SCRNA_TOKEN"; map["agent-rnaseq"]="AGENTTEAMS_AGENT_RNASEQ_TOKEN"; map["agent-data"]="AGENTTEAMS_AGENT_DATA_TOKEN"; map["agent-atacseq"]="AGENTTEAMS_AGENT_ATACSEQ_TOKEN"; map["agent-scrna-upstream"]="AGENTTEAMS_AGENT_SCRNA_UPSTREAM_TOKEN"; map["agent-scrna-integration"]="AGENTTEAMS_AGENT_SCRNA_INTEGRATION_TOKEN"; map["agent-scrna-advanced"]="AGENTTEAMS_AGENT_SCRNA_ADVANCED_TOKEN"; map["agent-qc"]="AGENTTEAMS_AGENT_QC_TOKEN"; map["agent-delivery"]="AGENTTEAMS_AGENT_DELIVERY_TOKEN"; map["agent-cloud-ops"]="AGENTTEAMS_AGENT_CLOUD_OPS_TOKEN"; map["agent-general"]="AGENTTEAMS_AGENT_GENERAL_TOKEN"; map["agent-mcp-builder"]="AGENTTEAMS_AGENT_MCP_BUILDER_TOKEN"; map["analysis-worker"]="AGENTTEAMS_ANALYSIS_WORKER_TOKEN" } $$1 in map { print map[$$1] "=" substr($$0, length($$1) + 2) }' > "$$temporary_file"; \
 		fi; \
-		if [ "$$(wc -l < "$$temporary_file")" -ne 8 ]; then echo "=> $$source_file 必须配置全部 8 个 Worker 令牌"; exit 1; fi; \
+		if [ "$$(wc -l < "$$temporary_file")" -ne 15 ]; then echo "=> $$source_file 必须配置 14 个专家令牌和 analysis-worker 令牌"; exit 1; fi; \
 		mv "$$temporary_file" "$$target_file"; chmod 600 "$$target_file"; \
 		echo "=> 已生成最小权限 Worker 令牌环境：$$target_file"
 
@@ -259,6 +259,18 @@ docker-down-cross-worker: ## 停止跨机器 Worker
 docker-down-all: ## 停止主栈 + Worker
 	$(COMPOSE_ALL) down
 
+docker-stop-all: ## 停止全平台（主栈 + Worker + AgentTeams），可用 docker-reload 重新拉起
+	@echo "=> 停止 AgentTeams Bridge / Gateway / Worker..."
+	-@$(COMPOSE_AGENTTEAMS) down --remove-orphans 2>/dev/null || true
+	-@docker ps -a --filter "name=agentteams-" -q | xargs -r docker rm -f 2>/dev/null
+	@echo "=> 停止 Worker 计算栈..."
+	-@$(COMPOSE_WORKER) down --remove-orphans 2>/dev/null || true
+	@echo "=> 停止主栈（web / beat / nginx / db / cache / studio）..."
+	-@$(COMPOSE_MAIN) down --remove-orphans 2>/dev/null || true
+	-@docker ps -a --filter "name=omichub-" -q | xargs -r docker rm -f 2>/dev/null
+	-@docker ps -a --filter "name=studio-" -q | xargs -r docker rm -f 2>/dev/null
+	@echo "✅ 全平台已停止，执行 make docker-reload 可重新拉起"
+
 docker-logs: ## 查看主栈日志
 	$(COMPOSE_MAIN) logs -f
 
@@ -323,18 +335,18 @@ docker-reload: docker-network ## 重新构建前端并刷新 pgvector 主栈 + R
 	@echo "╚══════════════════════════════════════════════════════════════╝"
 	@$(MAKE) --no-print-directory docker-runtime-dirs
 	@echo ""
-	@echo "📦 步骤 1/10：清理残留容器，避免旧容器占用端口或挂载..."
+	@echo "📦 步骤 1/11：清理残留容器，避免旧容器占用端口或挂载..."
 	-@docker ps -a --filter "name=omichub-" -q | xargs -r docker rm -f 2>/dev/null
 	-@docker ps -a --filter "name=studio-" -q | xargs -r docker rm -f 2>/dev/null
 	-@$(COMPOSE_AGENTTEAMS) down --remove-orphans 2>/dev/null || true
 	-@docker ps -a --filter "name=agentteams-" -q | xargs -r docker rm -f 2>/dev/null
 	@echo ""
-	@echo "🐳 步骤 2/10：构建终端沙盒镜像（已存在则跳过，删除镜像后自动重建）..."
+	@echo "🐳 步骤 2/11：构建终端沙盒镜像（已存在则跳过，删除镜像后自动重建）..."
 	@docker image inspect omichub/sandbox-terminal:latest >/dev/null 2>&1 && \
 		echo "   ⏭️  omichub/sandbox-terminal:latest 已存在，跳过构建" || \
 		docker build -t omichub/sandbox-terminal:latest tool_configs/terminal/docker/
 	@echo ""
-	@echo "🧪 步骤 3/10：构建 Studio 运行时镜像（core/plot/scrna 均已存在则跳过）..."
+	@echo "🧪 步骤 3/11：构建 Studio 运行时镜像（core/plot/scrna 均已存在则跳过）..."
 	@if docker image inspect omichub-analysis:core-2026.07 >/dev/null 2>&1 && \
 	    docker image inspect omichub-analysis:plot-2026.07 >/dev/null 2>&1 && \
 	    docker image inspect omichub-analysis:scrna-2026.07 >/dev/null 2>&1; then \
@@ -343,35 +355,38 @@ docker-reload: docker-network ## 重新构建前端并刷新 pgvector 主栈 + R
 		deploy/runtime-images/build.sh; \
 	fi
 	@echo ""
-	@echo "🧬 步骤 4/10：构建 GO / KEGG 富集 R 运行时镜像（已存在则跳过）..."
+	@echo "🧬 步骤 4/11：构建 GO / KEGG 富集 R 运行时镜像（已存在则跳过）..."
 	@docker image inspect $(ENRICHMENT_DOCKER_IMAGE) >/dev/null 2>&1 && \
 		echo "   ⏭️  $(ENRICHMENT_DOCKER_IMAGE) 已存在，跳过构建" || \
 		$(MAKE) --no-print-directory docker-build-enrichment
 	@echo ""
-	@echo "📊 构建 DEG 差异表达分析 R 运行时镜像（已存在则跳过）..."
+	@echo "📊 步骤 5/11：构建 DEG 差异表达分析 R 运行时镜像（已存在则跳过）..."
 	@docker image inspect $(DEG_DOCKER_IMAGE) >/dev/null 2>&1 && \
 		echo "   ⏭️  $(DEG_DOCKER_IMAGE) 已存在，跳过构建" || \
 		$(MAKE) --no-print-directory docker-build-deg
 	@echo ""
-	@echo "🚀 步骤 5/10：拉取 RocketMQ NameServer/Broker 官方镜像..."
+	@echo "🚀 步骤 6/11：拉取 RocketMQ NameServer/Broker 官方镜像..."
 	@docker pull $(ROCKETMQ_IMAGE)
 	@echo ""
-	@echo "⚡ 步骤 6/10：重新构建前端生产包（vite build）..."
+	@echo "⚡ 步骤 7/11：重新构建前端生产包（vite build）..."
 	cd frontend && npm run build
 	@echo ""
-	@echo "🔗 步骤 7/10：构建并启动独立 AgentTeams Bridge、Gateway 与生产 Worker..."
-	@$(MAKE) --no-print-directory docker-up-agentteams
-	@echo ""
-	@echo "🌐 步骤 8/10：重新构建并启动 pgvector 主栈服务与 RocketMQ（含 Bridge 网络代理）..."
+	@echo "🌐 步骤 8/11：重新构建并启动 pgvector 主栈服务与 RocketMQ..."
 	$(COMPOSE_PGVECTOR_AGENTTEAMS) --profile rocketmq up -d --build
 	@$(MAKE) --no-print-directory wait-web
 	@echo ""
-	@echo "🔧 步骤 9/10：构建并启动 Celery 与 RocketMQ Worker 计算栈..."
+	@echo "🔗 步骤 9/11：构建并启动 AgentTeams Bridge、Gateway 与生产 Worker..."
+	@$(MAKE) --no-print-directory docker-up-agentteams
+	@echo ""
+	@echo "🔧 步骤 10/11：构建并启动 Celery 与 RocketMQ Worker 计算栈..."
 	$(COMPOSE_WORKER) --profile rocketmq up -d --build worker phylo-worker rocketmq-worker
 	@echo ""
-	@echo "🗄️  步骤 10/10：检查数据库迁移状态并同步知识库..."
+	@echo "🗄️  步骤 11/11：检查数据库迁移状态、同步知识库并清理悬空镜像..."
 	@$(MAKE) --no-print-directory check-alembic-heads
 	@$(MAKE) --no-print-directory sync-knowledge
+	@echo ""
+	@echo "🧹 清理悬空镜像（--build 重建后遗留的 <none> 中间层）..."
+	-@docker image prune -f 2>/dev/null
 	@echo ""
 	@echo "✅ 热重载完成！访问地址：http://localhost:8888"
 	@echo ""

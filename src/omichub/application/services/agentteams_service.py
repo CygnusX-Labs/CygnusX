@@ -10,7 +10,6 @@ import httpx
 
 from omichub.application.services.agentteams_bridge_settings_service import (
     AgentTeamsBridgeRuntimeConfig,
-    AgentTeamsBridgeSettingsService,
 )
 from omichub.core.config import Settings
 from omichub.core.exceptions import BusinessError
@@ -120,42 +119,20 @@ class AgentTeamsService:
             "total_cases": int(response.get("total") or len(cases)),
         }
 
+    async def admin_metrics(self) -> dict[str, int]:
+        """Return the Bridge's event-derived AgentTeams operations metrics."""
+        if not self.available:
+            return {}
+        return {
+            str(key): int(value)
+            for key, value in (await self._request("/v1/metrics")).items()
+            if isinstance(value, int | float)
+        }
+
     async def reconcile_case_as_admin(self, case_id: str) -> dict[str, Any]:
         return self._public_case(
             await self._request(f"/v1/cases/{case_id}/reconcile", method="POST")
         )
-
-    async def chat_room(self, case_id: str | None, requester_ref: str) -> dict[str, bool | str | None]:
-        """Resolve the Element chat room, preferring the room bound to the given Case."""
-        if case_id:
-            case = await self.get_case(case_id, requester_ref)
-            room_url = str(case.get("element_room_url") or "").strip()
-            if room_url:
-                try:
-                    AgentTeamsBridgeSettingsService._validate_element_url(room_url)
-                except BusinessError:
-                    room_url = ""
-            if room_url:
-                return {
-                    "available": True,
-                    "element_url": room_url,
-                    "reason": None,
-                    "case_id": case_id,
-                    "source": "case",
-                }
-        config = self._bridge_config
-        try:
-            AgentTeamsBridgeSettingsService._validate_element_url(config.element_url)
-            available = bool(config.enabled and config.element_url)
-        except BusinessError:
-            available = False
-        return {
-            "available": available,
-            "element_url": config.element_url if available else "",
-            "reason": None if available else "not_configured",
-            "case_id": case_id,
-            "source": "global",
-        }
 
     async def list_cases(
         self,
@@ -190,7 +167,6 @@ class AgentTeamsService:
         comparisons: list[dict[str, Any]] | None = None,
         origin_consultation_id: str | None = None,
         consultation_summary: str | None = None,
-        element_room_url: str | None = None,
     ) -> dict[str, Any]:
         case_payload: dict[str, Any] = {
             "case_id": case_id,
@@ -210,9 +186,6 @@ class AgentTeamsService:
             case_payload["origin_consultation_id"] = origin_consultation_id
         if consultation_summary:
             case_payload["consultation_summary"] = consultation_summary
-        if element_room_url:
-            AgentTeamsBridgeSettingsService._validate_element_url(element_room_url)
-            case_payload["element_room_url"] = element_room_url
         case = await self._request(
             "/v1/cases",
             method="POST",
@@ -329,6 +302,17 @@ class AgentTeamsService:
         )
         return self._public_case(cancelled)
 
+    async def cancel_case(self, case_id: str, requester_ref: str, reason: str) -> dict[str, Any]:
+        case = await self._get_case_for_requester(case_id, requester_ref)
+        if case.get("status") in {"closed", "cancelled"}:
+            raise BusinessError("当前 Case 已结束，无法再次取消")
+        cancelled = await self._request(
+            f"/v1/cases/{case_id}/cancel",
+            method="POST",
+            json={"reason": reason},
+        )
+        return self._public_case(cancelled)
+
     async def revise_case_plan(
         self,
         case_id: str,
@@ -391,6 +375,7 @@ class AgentTeamsService:
         public_case = dict(case)
         public_case.pop("preflight_input", None)
         public_case.pop("task_specs", None)
+        public_case.pop("element_room_url", None)
         return public_case
 
     async def get_case_events(

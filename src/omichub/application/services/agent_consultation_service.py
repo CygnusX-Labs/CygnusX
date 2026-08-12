@@ -197,7 +197,8 @@ class AgentConsultationService:
                 '{"conclusion":"非空结论","recommendations":[],"evidence_refs":[],"risks":[],'
                 '"token_usage":0,"proposed_submission":null,"artifacts":[],"hard_gate":null}。'
                 "evidence_refs 只允许填写本回合工具成功读取后产生的已核验引用。规划能力调用时 "
-                "proposed_submission 必须是可校验的 TaskSpec 参数对象。"
+                "proposed_submission 必须是可校验的 TaskSpec 参数对象，并显式填写 "
+                "quality_gate_required=true/false；只有 true 才会创建独立质控阶段。"
             )
         hard_gate_clause = (
             f"\n硬规则预判：{json.dumps(hard_gate, ensure_ascii=False)}\n"

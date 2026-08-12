@@ -16,28 +16,31 @@ RUN usermod --uid 10001 "$MAMBA_USER" \
     && chown -R 10001:10001 /workspace \
     && printf '%s\n' \
       '[global]' \
-      'index-url = https://pypi.tuna.tsinghua.edu.cn/simple' \
+      'index-url = https://pypi.mirrors.ustc.edu.cn/simple' \
       'extra-index-url = https://mirrors.aliyun.com/pypi/simple/' \
       'timeout = 60' \
       'retries = 10' \
       > /etc/pip.conf
 
 USER "$MAMBA_USER"
-# 预置清华镜像源，加速容器内 micromamba/conda 环境安装
+# 预置中科大镜像源，加速容器内 micromamba/conda 环境安装
 RUN printf '%s\n' \
       'show_channel_urls: true' \
       'default_channels:' \
-      '  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main' \
-      '  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/r' \
-      '  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/msys2' \
+      '  - https://mirrors.ustc.edu.cn/anaconda/pkgs/main' \
+      '  - https://mirrors.ustc.edu.cn/anaconda/pkgs/free' \
+      '  - https://mirrors.ustc.edu.cn/anaconda/pkgs/r' \
+      '  - https://mirrors.ustc.edu.cn/anaconda/pkgs/msys2' \
       'custom_channels:' \
-      '  conda-forge: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud' \
-      '  bioconda: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud' \
-      '  pytorch: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud' \
+      '  conda-forge: https://mirrors.ustc.edu.cn/anaconda/cloud' \
+      '  bioconda: https://mirrors.ustc.edu.cn/anaconda/cloud' \
+      '  menpo: https://mirrors.ustc.edu.cn/anaconda/cloud' \
+      '  pytorch: https://mirrors.ustc.edu.cn/anaconda/cloud' \
       'channel_priority: flexible' \
       'channels:' \
       '  - conda-forge' \
       '  - bioconda' \
+      '  - menpo' \
       '  - defaults' \
       > ~/.condarc
 RUN micromamba install -y -n base -c conda-forge -c bioconda \

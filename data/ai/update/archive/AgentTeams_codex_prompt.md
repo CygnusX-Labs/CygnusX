@@ -1,4 +1,4 @@
-# Codex 施工提示词：AgentTeams 多 Agent 协同闭环实现
+# Codex 施工提示词：AgentTeams 多 Agent 协同闭环实现（已归档）
 
 > 用法：把本文件全文作为提示词发给 Codex（或等价编码 agent），在仓库根目录执行。
 > 唯一权威施工规格是 `data/ai/AgentTeams_update.md`（下称"规格文档"），本提示词不替代它，

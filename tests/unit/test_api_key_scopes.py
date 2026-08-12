@@ -1,4 +1,8 @@
-from omichub.middleware.auth import api_key_allows_scope, required_api_key_scope
+from omichub.middleware.auth import (
+    SELF_AUTHENTICATED_PATHS,
+    api_key_allows_scope,
+    required_api_key_scope,
+)
 
 
 def test_bridge_task_routes_require_explicit_api_key_scopes() -> None:
@@ -17,3 +21,7 @@ def test_restricted_api_key_only_allows_declared_scope() -> None:
     assert not api_key_allows_scope(scopes, None)
     assert api_key_allows_scope(frozenset({"*"}), "tasks:submit")
     assert api_key_allows_scope(frozenset({"*"}), None)
+
+
+def test_agentteams_capabilities_uses_its_integration_token_guard() -> None:
+    assert "/api/v1/agent-teams/capabilities" in SELF_AUTHENTICATED_PATHS

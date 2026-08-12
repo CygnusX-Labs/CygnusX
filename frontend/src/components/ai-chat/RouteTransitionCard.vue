@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
-import { NIcon } from 'naive-ui'
+import { NButton, NIcon } from 'naive-ui'
 import { AnalyticsOutline, GitNetworkOutline, HardwareChipOutline } from '@vicons/ionicons5'
 import type { RoutedAgentInfo } from './types'
 
 const props = defineProps<{ route: RoutedAgentInfo }>()
+
+const emit = defineEmits<{
+  confirmExecution: [preset: string]
+  adjustExecution: [preset: string]
+}>()
 
 const transition = computed(() => props.route.transition)
 const accentStyle = computed(() => ({
@@ -31,6 +36,13 @@ const targetIcon = computed<Component>(() => {
   if (['fanout', 'consult', 'case'].includes(props.route.intent || '')) return GitNetworkOutline
   return HardwareChipOutline
 })
+const needsConfirmation = computed(() => Boolean(transition.value?.requiresExecutionConfirmation))
+function handleConfirm() {
+  emit('confirmExecution', '确认开始执行，请按上述方案启动专项分析。')
+}
+function handleAdjust() {
+  emit('adjustExecution', '我想先调整参数或方案，暂不开始执行。')
+}
 </script>
 
 <template>
@@ -62,6 +74,15 @@ const targetIcon = computed<Component>(() => {
         <span v-if="transition.requiresExecutionConfirmation" class="route-event__guard">
           执行前需确认
         </span>
+      </div>
+      <div v-if="needsConfirmation" class="route-event__actions">
+        <NButton size="small" type="primary" @click="handleConfirm">
+          <template #icon><NIcon><HardwareChipOutline /></NIcon></template>
+          确认开始
+        </NButton>
+        <NButton size="small" tertiary @click="handleAdjust">
+          调整参数
+        </NButton>
       </div>
     </aside>
   </Transition>
@@ -168,6 +189,14 @@ const targetIcon = computed<Component>(() => {
 .route-event__meta .route-event__guard {
   color: var(--arco-warning);
   background: color-mix(in srgb, var(--arco-warning) 8%, transparent);
+}
+
+.route-event__actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .route-event-enter-active,

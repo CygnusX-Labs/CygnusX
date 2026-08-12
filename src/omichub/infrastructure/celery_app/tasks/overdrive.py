@@ -8,6 +8,7 @@ import uuid
 from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from celery import shared_task
 from sqlalchemy import select
@@ -18,6 +19,61 @@ from sqlalchemy.exc import IntegrityError
 def advance_run(run_id: str) -> dict[str, object]:
     """Advance preflight/DAG scheduling without holding a chat SSE request open."""
     return asyncio.run(_advance_run(run_id))
+
+
+def _overdrive_workspace_context(run: Any, task: dict[str, Any]) -> str:
+    """Provide workers with the authoritative paths for this durable Overdrive run."""
+    from omichub.application.services.overdrive_run_service import relative_overdrive_run_root
+
+    root = relative_overdrive_run_root(str(run.session_id), str(run.run_id))
+    plan = dict(run.plan or {})
+    dependencies = [str(item) for item in task.get("depends_on") or [] if str(item).strip()]
+    registered_paths = [
+        str(item.get("path") or "").strip()
+        for item in run.artifact_index or []
+        if isinstance(item, dict) and str(item.get("path") or "").strip()
+    ]
+    workspace_resources = [
+        item for item in plan.get("workspace_resources") or [] if isinstance(item, dict)
+    ]
+    upstream_results = [f"{root}/tasks/{task_id}/result.md" for task_id in dependencies]
+    lines = [
+        "## 当前 Overdrive Run 的权威工作区上下文",
+        f"- Run ID：`{run.run_id}`",
+        f"- 共享根目录：`{root}/`",
+        f"- 冻结计划：`{plan.get('version_path') or plan.get('path') or f'{root}/plan.md'}`",
+    ]
+    if upstream_results:
+        lines.extend(["- 直接上游任务结果：", *[f"  - `{path}`" for path in upstream_results]])
+    if registered_paths:
+        lines.extend([
+            "- 已登记产物：",
+            *[f"  - `{path}`" for path in registered_paths[:40]],
+        ])
+    if workspace_resources:
+        lines.append("- 父 Session 只读输入引用：")
+        for resource in workspace_resources:
+            ref = str(resource.get("resource_ref") or "")
+            sandbox_path = str(resource.get("sandbox_path") or "")
+            if not ref or not sandbox_path:
+                continue
+            manifest = resource.get("manifest_summary") or {}
+            suffix = ""
+            if resource.get("resource_type") == "directory":
+                suffix = (
+                    f"（目录，约 {manifest.get('file_count', 0)} 个文件，"
+                    f"{manifest.get('total_size_bytes', 0)} bytes；先分页列举）"
+                )
+            lines.append(f"  - `{ref}` → `{sandbox_path}` {suffix}")
+    if str(task.get("task_id") or "") == "independent-qc":
+        lines.extend(
+            [
+                "- 本任务是独立 QC：使用 `workspace_read` / `workspace_list` 在上述共享工作区核验计划和产物。",
+                "- 不要调用 `task_result_summary` 或 `task_file_preview`：它们查询的是独立 Pipeline 任务系统，"
+                "不能代表当前 Overdrive Run，也不能据其“任务不存在”判定本任务失败。",
+            ]
+        )
+    return "\n".join(lines)
 
 
 @shared_task(name="omichub.infrastructure.celery_app.tasks.overdrive.replan_run")
@@ -759,6 +815,7 @@ async def _run_assistant_job(run_id: str, assistant_instance_id: str) -> dict[st
             parent_session_id=run.session_id,
             context_summary=(
                 f"已确认计划：{(run.plan or {}).get('version_path')}\n"
+                f"{_overdrive_workspace_context(run, task)}\n"
                 f"本轮 Persona 补充：{str(instance.get('persona_context') or '').strip()}\n"
                 f"用户对本分支的补充：{json_safe(task.get('user_responses'))}\n"
                 f"Manager 返工意见：{str(task.get('repair_feedback') or '').strip()}\n"
@@ -771,7 +828,9 @@ async def _run_assistant_job(run_id: str, assistant_instance_id: str) -> dict[st
                     "task_id": task_id,
                     "agent_id": task["agent_id"],
                     "task": task["task"],
-                    "workspace_access": bool(task.get("workspace_access")),
+                    "workspace_access": bool(task.get("workspace_access"))
+                    or bool((run.plan or {}).get("workspace_resources"))
+                    and bool(task.get("accepts_inputs")),
                     "timeout_seconds": task.get("timeout_seconds"),
                     "retry": task.get("retry"),
                 }

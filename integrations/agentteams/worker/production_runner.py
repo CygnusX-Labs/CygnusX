@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Run a production read-only AgentTeams Worker without exposing Gateway credentials.
+"""Run a production read-only AgentTeams Worker pool without exposing Gateway credentials.
 
-The Worker only holds its role-scoped Bridge token.  It claims an assigned Work Item and asks the
-Bridge to invoke the Gateway's fixed consultation contract on its behalf.  The Bridge owns the
-Gateway Manager token, validates state/lease/role, and persists the result before returning.
+Each pool replica holds the Bridge tokens for its configured expert identities. Every claim and
+execution still uses the matching role credential. The Bridge owns the Gateway Manager token,
+validates state/lease/role, and persists the result before returning.
 """
 
 from __future__ import annotations
@@ -38,12 +38,23 @@ class ProductionWorkerConfig:
     max_concurrent: int = 2
 
 
+@dataclass(frozen=True)
+class ProductionWorkerPoolConfig:
+    workers: tuple[ProductionWorkerConfig, ...]
+    poll_seconds: float
+    max_concurrent: int = 4
+
+
 def _identity_token(identity: str, identities: str) -> str:
     for entry in identities.split(","):
         configured_identity, separator, token = entry.partition(":")
         if separator and configured_identity.strip() == identity:
             return token.strip()
     return ""
+
+
+def _identity_token_env(identity: str) -> str:
+    return f"AGENTTEAMS_{identity.upper().replace('-', '_')}_TOKEN"
 
 
 def load_config(environ: dict[str, str] | None = None) -> ProductionWorkerConfig:
@@ -61,6 +72,58 @@ def load_config(environ: dict[str, str] | None = None) -> ProductionWorkerConfig
         token=token,
         poll_seconds=max(float(values.get("AGENTTEAMS_WORKER_POLL_SECONDS", "5")), 1.0),
         max_concurrent=max(1, min(int(values.get("AGENTTEAMS_WORKER_MAX_CONCURRENT", "2")), 16)),
+    )
+
+
+def load_pool_config(environ: dict[str, str] | None = None) -> ProductionWorkerPoolConfig:
+    values = os.environ if environ is None else environ
+    bridge_url = values.get("AGENTTEAMS_BRIDGE_BASE_URL", "").strip()
+    identities = tuple(
+        dict.fromkeys(
+            identity.strip()
+            for identity in values.get(
+                "AGENTTEAMS_WORKER_IDENTITIES",
+                values.get("AGENTTEAMS_WORKER_IDENTITY", ""),
+            ).split(",")
+            if identity.strip()
+        )
+    )
+    if not bridge_url or not identities:
+        raise ValueError("Bridge URL and at least one Worker identity are required")
+    shared_identity_tokens = values.get("BRIDGE_IDENTITIES", "")
+    workers: list[ProductionWorkerConfig] = []
+    missing_tokens: list[str] = []
+    poll_seconds = max(float(values.get("AGENTTEAMS_WORKER_POLL_SECONDS", "5")), 1.0)
+    for identity in identities:
+        token = (
+            values.get(_identity_token_env(identity), "").strip()
+            or _identity_token(identity, shared_identity_tokens)
+            or (
+                values.get("AGENTTEAMS_BRIDGE_TOKEN", "").strip()
+                if len(identities) == 1
+                else ""
+            )
+        )
+        if not token:
+            missing_tokens.append(identity)
+            continue
+        workers.append(
+            ProductionWorkerConfig(
+                bridge_url=bridge_url,
+                identity=identity,
+                token=token,
+                poll_seconds=poll_seconds,
+                max_concurrent=1,
+            )
+        )
+    if missing_tokens:
+        raise ValueError(f"Bridge tokens are required for: {', '.join(missing_tokens)}")
+    return ProductionWorkerPoolConfig(
+        workers=tuple(workers),
+        poll_seconds=poll_seconds,
+        max_concurrent=max(
+            1, min(int(values.get("AGENTTEAMS_WORKER_MAX_CONCURRENT", "4")), 32)
+        ),
     )
 
 
@@ -173,16 +236,22 @@ def run_batch_once(config: ProductionWorkerConfig) -> list[dict[str, Any]]:
     return [result for result in results if result.get("action") != "idle"] or [results[0]]
 
 
+def run_pool_once(config: ProductionWorkerPoolConfig) -> list[dict[str, Any]]:
+    with ThreadPoolExecutor(max_workers=min(config.max_concurrent, len(config.workers))) as pool:
+        results = list(pool.map(run_once, config.workers))
+    return [result for result in results if result.get("action") != "idle"] or [results[0]]
+
+
 def main() -> int:
     try:
-        config = load_config()
+        config = load_pool_config()
     except (TypeError, ValueError) as exc:
         print(f"production worker configuration failed: {exc}", flush=True)
         return 2
     while True:
         try:
             print(
-                json.dumps(run_batch_once(config), ensure_ascii=False, separators=(",", ":")), flush=True
+                json.dumps(run_pool_once(config), ensure_ascii=False, separators=(",", ":")), flush=True
             )
         except (HTTPError, URLError, RuntimeError, json.JSONDecodeError) as exc:
             print(f"production worker execution failed: {exc}", flush=True)

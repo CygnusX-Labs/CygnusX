@@ -389,6 +389,25 @@ async def link_session_file_refs(
     return paths, errors
 
 
+async def link_session_workspace_refs(
+    user_id: str,
+    session_id: str,
+    refs: list[str],
+    db: AsyncSession,
+) -> tuple[dict[str, str], dict[str, dict[str, Any]], dict[str, str]]:
+    """Compatibility entry point for all controlled Session workspace resources.
+
+    New callers must use this function rather than duplicating file/directory parsing
+    in Studio, chat, or Overdrive.  ``link_session_file_refs`` remains for existing
+    API callers that only need legacy file behaviour.
+    """
+    from omichub.application.services.workspace_references import (
+        link_session_workspace_refs as _link_session_workspace_refs,
+    )
+
+    return await _link_session_workspace_refs(user_id, session_id, refs, db)
+
+
 async def register_artifact_report(
     user_id: str,
     session: ChatSessionModel,

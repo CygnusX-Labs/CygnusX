@@ -6,11 +6,11 @@
 # ----- 阶段 1: 构建依赖 -----
 FROM python:3.11-slim AS builder
 
-# 构建期切换清华 apt 源，加速 apt-get（兼容 debian.sources 与旧版 sources.list）
+# 构建期切换中科大 apt 源，加速 apt-get（兼容 debian.sources 与旧版 sources.list）
 RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
-        sed -i 's@//deb.debian.org@//mirrors.tuna.tsinghua.edu.cn@g; s@//security.debian.org@//mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list.d/debian.sources; \
+        sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list.d/debian.sources; \
     else \
-        sed -i 's@//deb.debian.org@//mirrors.tuna.tsinghua.edu.cn@g; s@//security.debian.org@//mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list; \
+        sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list; \
     fi
 
 # Git is required to install the Snakemake logger plugin from the JZ_Tools
@@ -19,11 +19,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 
 # 安装 uv（从 PyPI 而非 GHCR——GHCR 在国内常被墙，与 Dockerfile.worker 同路线）
 RUN python -m pip install --no-cache-dir --disable-pip-version-check \
-    -i https://pypi.tuna.tsinghua.edu.cn/simple "uv==0.6.14"
+    -i https://pypi.mirrors.ustc.edu.cn/simple "uv==0.6.14"
 
-# uv 不读 /etc/pip.conf，必须显式指定 index（tuna 主源 + 阿里云兜底）
+# uv 不读 /etc/pip.conf，必须显式指定 index（中科大主源 + 阿里云兜底）
 # HTTP 超时拉长到 120s + 5 次重试：国内拉 scipy/matplotlib 等大包容易 30s 默认超时
-ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+ENV UV_INDEX_URL=https://pypi.mirrors.ustc.edu.cn/simple \
     UV_EXTRA_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
     UV_HTTP_TIMEOUT=120 \
     UV_HTTP_RETRIES=5 \
@@ -37,7 +37,7 @@ COPY pyproject.toml uv.lock* README.md ./
 # 安装依赖到虚拟环境（BuildKit cache mount：跨重建复用 uv 下载缓存，避免每次 --build 都重新下载）
 RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
     uv sync --frozen --no-dev --extra workflow --no-install-project \
-    --index-url https://pypi.tuna.tsinghua.edu.cn/simple/
+    --index-url https://pypi.mirrors.ustc.edu.cn/simple/
 
 # 复制源代码
 COPY src/ ./src/
@@ -50,41 +50,41 @@ COPY tool_configs/ ./tool_configs/
 # 安装项目本身
 RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
     uv sync --frozen --no-dev --extra workflow \
-    --index-url https://pypi.tuna.tsinghua.edu.cn/simple/
+    --index-url https://pypi.mirrors.ustc.edu.cn/simple/
 
 # Snakemake logger plugin used by the workflow monitor.
 RUN uv pip install --python /app/.venv/bin/python --no-cache \
-    --index-url https://pypi.tuna.tsinghua.edu.cn/simple/ \
+    --index-url https://pypi.mirrors.ustc.edu.cn/simple/ \
     "snakemake-logger-plugin-rich-loguru>=0.3.0"
 
 # AgentExplorer SDK powers the optional Alibaba Cloud official Skills marketplace.
 # Keep it separate from uv.lock because this integration is lazy-loaded and only the web service
 # needs it when an Alibaba Cloud AccessKey is configured.
 RUN uv pip install --python /app/.venv/bin/python --no-cache \
-    --index-url https://pypi.tuna.tsinghua.edu.cn/simple/ \
+    --index-url https://pypi.mirrors.ustc.edu.cn/simple/ \
     "alibabacloud_agentexplorer20260317==1.0.1"
 
 # RocketMQ is optional at runtime. Keep it outside uv.lock so the default
 # Celery-only environment remains reproducible while RocketMQ-enabled images
 # have the native client available.
 RUN uv pip install --python /app/.venv/bin/python --no-cache \
-    --index-url https://pypi.tuna.tsinghua.edu.cn/simple/ \
+    --index-url https://pypi.mirrors.ustc.edu.cn/simple/ \
     "rocketmq-client-python==2.0.0"
 
 # ----- 阶段 2: 运行 -----
 FROM python:3.11-slim AS runtime
 
-# 构建期切换清华 apt 源，加速 apt-get（兼容 debian.sources 与旧版 sources.list）
+# 构建期切换中科大 apt 源，加速 apt-get（兼容 debian.sources 与旧版 sources.list）
 RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
-        sed -i 's@//deb.debian.org@//mirrors.tuna.tsinghua.edu.cn@g; s@//security.debian.org@//mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list.d/debian.sources; \
+        sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list.d/debian.sources; \
     else \
-        sed -i 's@//deb.debian.org@//mirrors.tuna.tsinghua.edu.cn@g; s@//security.debian.org@//mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list; \
+        sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list; \
     fi
 
 # 安装运行时系统依赖
 # nodejs/npm：stdio 传输的 node/npx 型 MCP server 由 web 进程内 spawn，
 # validate_stdio_command 走 shutil.which，容器内必须有 node 运行时（python:3.11-slim 默认不带）。
-# bookworm apt 源（已切清华镜像）提供 nodejs 18 / npm 9，满足绝大多数 MCP server。
+# bookworm apt 源（已切中科大镜像）提供 nodejs 18 / npm 9，满足绝大多数 MCP server。
 # tesseract：知识库图片索引使用中英文 OCR；缺失时只能索引文件名、说明和尺寸。
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bzip2 \
@@ -105,7 +105,7 @@ RUN set -eux; \
     curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest \
         | tar -xj -C /usr/local/bin --strip-components=1 bin/micromamba; \
     micromamba create -y -r /opt/micromamba -p /opt/cmm-env \
-        -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge \
+        -c https://mirrors.ustc.edu.cn/anaconda/cloud/conda-forge \
         conda-meta-mcp=0.1.4; \
     ln -s /opt/cmm-env/bin/cmm /usr/local/bin/cmm; \
     micromamba clean -y -a; \

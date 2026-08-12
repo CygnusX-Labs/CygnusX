@@ -238,7 +238,7 @@ make docker-up-cross-worker
 | Worker 连接 | `OMICHUB_CONTROL_HOST`、`OMICHUB_CONTROL_*_PORT` | Worker 指向控制面私网 DNS/IP 时 |
 | Worker 挂载 | `WORKER_SHARED_DATA_DIR`、`WORKER_PIPELINE_DIR` | 每台计算节点的 NAS/流程目录不同的时候 |
 | Docker 网络 | `OMICHUB_NETWORK_NAME`、`OMICHUB_*_NETWORK_NAME` | 同机多套 OmicHub、已有网络命名冲突时 |
-| AgentTeams | `AGENTTEAMS_*` | Bridge、Element 房间或角色令牌启用时 |
+| AgentTeams | `AGENTTEAMS_*` | Bridge、聊天建单或角色令牌启用时 |
 
 `.env.example` 保持安全默认值：单机时数据库、Redis、Flower 和 Web 内部 API 只监听 `127.0.0.1`；跨机器时才将它们绑定到控制面的私网 IP。不要将 PostgreSQL、Redis、Flower 或 Bridge 直接暴露到公网。
 
@@ -436,8 +436,8 @@ chmod 600 .env
 ```
 
 1. **平台内 Multi-Agent**：在 `.env` 设置 `UNIFIED_INTENT_ROUTER_ENABLED=true` 和 `MULTI_EXPERT_CONSULTATION_ENABLED=true`，重启 Web/Worker 后启用路由与只读专家会诊。确认模型调用配额、降级记录和延迟可接受后，再设置 `SUBAGENT_FANOUT_ENABLED=true` 开启并行子 Agent。
-2. **AgentTeams Bridge**：先复制 `deploy/agentteams/bridge.env.example` 为私有的 `deploy/agentteams/bridge.env`，为 Manager、Data Steward、Approval、Workflow Operator 以及独立 Worker 身份设置不同的随机令牌；按 `deploy/agentteams/README.md` 部署 Bridge 与 AgentTeams Worker。
-3. **连接 OmicHub**：仅在 Bridge 的健康检查、令牌校验和最小权限网络策略都通过后，将 `.env` 中 `AGENTTEAMS_BRIDGE_ENABLED=true`、`AGENTTEAMS_CHAT_ENTRY_ENABLED=true`，并填入 Bridge URL、四个角色令牌与已授权的 Element 房间地址。
+2. **AgentTeams Bridge**：先复制 `deploy/agentteams/bridge.env.example` 和 `deploy/agentteams/worker.env.example` 为私有配置，为 Manager、Approval、Workflow Operator 与 14 个专家身份设置不同的随机令牌；生产专家 Worker 使用可横向扩展的 capability 资源池，而不是每个角色独占一个服务。
+3. **连接 OmicHub**：仅在 Bridge 的健康检查、令牌校验和最小权限网络策略都通过后，将 `.env` 中 `AGENTTEAMS_BRIDGE_ENABLED=true`、`AGENTTEAMS_CHAT_ENTRY_ENABLED=true`，并填入 Bridge URL 与服务端角色令牌。协作、计划确认、审批和产物预览均在 OmicHub 聊天窗口内完成，不再依赖 Element 外链入口。
 4. **部署前检查**：执行 `deploy/agentteams/check_setup.sh deploy/agentteams/bridge.env`；生产环境还应运行文档规定的 Bridge 预检与健康检查。仅修改 OmicHub `.env` 不会启动 AgentTeams 的独立 Worker。
 
 不要在 `.env`、`bridge.env`、README、Issue 或日志中保存真实云密钥、Bridge 身份令牌、数据库密码或管理员密码；生产部署应通过 Secret 管理服务注入，并在泄露后立即撤销和轮换。
@@ -867,6 +867,92 @@ data/                 AI Provider YAML 配置
 docs/                 架构设计文档
   knowledge/         实验室知识库 (meta.yaml 导航 + *.md 正文)
 ```
+
+## 镜像与容器
+
+平台所有服务均以 Docker 容器运行，镜像分为**自研应用镜像**、**分析运行时镜像**、**AgentTeams AI 编排镜像**和**第三方基础设施镜像**四类。
+
+### 自研应用镜像
+
+| 镜像 | 构建文件 | 用途 | 典型大小 |
+|------|---------|------|---------|
+| `omichub-web` | `deploy/docker/Dockerfile` | FastAPI 后端控制面（Web / Beat / Flower 共用同一镜像） | ~3.9 GB |
+| `omichub-worker` | `deploy/docker/Dockerfile.worker` | Celery 通用 Worker（内置 Docker CLI + Micromamba + Snakemake） | ~2.0 GB |
+| `omichub-phylo-worker` | `deploy/docker/Dockerfile.phylo` | 系统发育分析 Worker（MAFFT / IQ-TREE / MrBayes / RAxML） | ~4.8 GB |
+| `omichub-studio-egress-proxy` | `deploy/studio/proxy.Dockerfile` | OmicStudio 沙盒出站白名单代理 | ~130 MB |
+| `omichub/sandbox-terminal` | `tool_configs/terminal/docker/Dockerfile` | 云端沙盒终端（samtools / bcftools / bedtools / fastqc 等） | ~950 MB |
+
+### 分析运行时镜像
+
+分层构建，上层继承下层，避免重复安装 R / Python 科学计算栈：
+
+```
+core (Python 3.12 + R 4.4 + DESeq2/edgeR/limma)           ~3.0 GB
+  └── plot (+ matplotlib/seaborn/plotly + ggplot2/ggtree)  ~4.8 GB
+        └── scrna (+ scanpy/Seurat/SingleCellExperiment)    ~6.2 GB
+```
+
+| 镜像 | 标签 | 构建文件 | 用途 |
+|------|------|---------|------|
+| `omichub-analysis` | `core-2026.07` | `deploy/runtime-images/core.Dockerfile` | 差异分析核心（DESeq2 / edgeR / limma） |
+| `omichub-analysis` | `plot-2026.07` | `deploy/runtime-images/plot.Dockerfile` | 可视化层（ggplot2 / plotly / ggtree） |
+| `omichub-analysis` | `scrna-2026.07` | `deploy/runtime-images/scrna.Dockerfile` | 单细胞层（scanpy / Seurat / SCE） |
+| `omichub-r-deg` | `v1` | `deploy/docker/Dockerfile.deg` | DESeq2/edgeR 差异表达独立运行时 |
+| `omichub-r-enrichment` | `v1` | `deploy/docker/Dockerfile.enrichment` | clusterProfiler GO/KEGG 富集分析运行时 |
+
+### AgentTeams AI 编排镜像
+
+| 镜像 | 构建文件 | 用途 | 典型大小 |
+|------|---------|------|---------|
+| `omichub-agentteams-bridge` | `integrations/agentteams/bridge/Dockerfile` | Bridge 侧车（任务分发 / 状态管理 / Gateway 代理） | ~181 MB |
+| `omichub-agentteams-gateway` | `integrations/agentteams/gateway/Dockerfile` | Gateway（Agent 注册 / 令牌校验 / 审计） | ~180 MB |
+| `omichub-agentteams-worker-*` | `integrations/agentteams/worker/Dockerfile` | Worker 池（professional-pool / analysis / quality / delivery） | ~125 MB |
+
+### 第三方基础设施镜像
+
+| 镜像 | 版本 | 用途 |
+|------|------|------|
+| `pgvector/pgvector` | `pg14` | PostgreSQL 14 + pgvector 向量扩展 |
+| `redis` | `7-alpine` / `7.4-alpine` | 缓存 + Celery 消息队列 + AgentTeams 状态存储 |
+| `nginx` | `alpine` | 反向代理 + 静态资源服务 |
+| `edoburu/pgbouncer` | `v1.25.2-p0` | PostgreSQL 连接池 |
+| `prometheuscommunity/postgres-exporter` | `v0.17.1` | PostgreSQL Prometheus 指标导出 |
+| `minio/minio` | `latest` | S3 兼容对象存储（AgentTeams 证据归档） |
+| `minio/mc` | `latest` | MinIO 初始化（一次性创建 Bucket） |
+| `apache/rocketmq` | `5.3.2` | RocketMQ 消息队列（可选，profile 控制） |
+| `ollama/ollama` | `latest` | 本地 Embedding 模型服务（可选，profile 控制） |
+
+### 当前运行容器清单
+
+以下为平台完整部署后的容器组成（单机模式，2026-08 实测）：
+
+| 分类 | 容器名 | 镜像 | 说明 |
+|------|--------|------|------|
+| **控制面** | `omichub-web` | `omichub-web` | FastAPI 后端 |
+| | `omichub-nginx` | `nginx:alpine` | 反向代理 |
+| | `omichub-db` | `pgvector/pgvector:pg14` | PostgreSQL 数据库 |
+| | `omichub-cache` | `redis:7-alpine` | Redis 缓存 |
+| | `omichub-pgbouncer` | `edoburu/pgbouncer` | 数据库连接池 |
+| | `omichub-beat` | `omichub-web` | Celery Beat 调度器 |
+| | `omichub-flower` | `omichub-web` | Celery 监控面板 |
+| | `omichub-postgres-exporter` | `postgres-exporter` | 数据库指标导出 |
+| | `omichub-minio` | `minio/minio` | 对象存储 |
+| | `omichub-studio-egress-proxy` | `omichub-studio-egress-proxy` | Studio 出站代理 |
+| **Worker** | `omichub-worker` | `omichub-worker:dev` | Celery 通用 Worker |
+| | `omichub-phylo-worker` | `omichub-phylo-worker:dev` | 系统发育 Worker |
+| **AgentTeams** | `omichub-agentteams-bridge` | `omichub-agentteams-bridge` | AI Agent Bridge |
+| | `omichub-agentteams-gateway` | `omichub-agentteams-gateway` | AI Agent Gateway |
+| | `omichub-agentteams-state` | `redis:7.4-alpine` | AgentTeams 状态存储 |
+| | `agentteams-worker-professional-pool-{1,2}` | `omichub-agentteams-worker-*` | 通用 Agent 池（2 副本） |
+| | `agentteams-worker-analysis` | `omichub-agentteams-worker-*` | 分析 Worker |
+| | `agentteams-worker-quality` | `omichub-agentteams-worker-*` | 质量审计 Worker |
+| | `agentteams-worker-delivery` | `omichub-agentteams-worker-*` | 交付报告 Worker |
+| **监控** | `prometheus` | `prom/prometheus` | 指标采集 |
+| | `grafana` | `grafana/grafana` | 可视化看板 |
+| | `loki` | `grafana/loki` | 日志聚合 |
+| | `seq` | `datalust/seq` | 结构化日志 |
+
+> 💡 单机完整部署约 **25 个容器**。`professional-pool` 默认 2 副本（可通过 `AGENTTEAMS_PROFESSIONAL_POOL_REPLICAS` 调整）；其余服务均为单实例。跨机器部署时 Worker 可按需水平扩展，控制面容器不变。
 
 ## 数据目录结构
 

@@ -91,6 +91,21 @@
 - 执行前先小样本冒烟（head/子集），通过后再跑全量；长任务说明预期耗时，
   避免无输出的长时间空转。
 
+#### Python 常用工具包（现场安装参考）
+
+| 包 | 用途 | 安装方式 |
+|---|---|---|
+| `pandas` / `polars` | 数据框处理 | 预装（core 镜像） |
+| `scipy` / `scikit-learn` | 统计与机器学习 | 预装（core 镜像） |
+| `matplotlib` / `seaborn` / `plotly` | 可视化 | 预装（plot 镜像） |
+| `scanpy` | 单细胞 Python 分析 | 预装（scrna 镜像） |
+| `biopython` | 序列处理 | `micromamba install -y -n base biopython` |
+| `pysam` | BAM/VCF 读取 | `micromamba install -y -n base -c bioconda pysam` |
+| `httpx` | HTTP 请求 | `micromamba install -y -n base httpx` |
+| `openpyxl` | Excel 读写 | `micromamba install -y -n base openpyxl` |
+
+上表未覆盖的 Python 包先用 `conda-meta-mcp` 查询 conda 通道，确认无可用包时退回 `micromamba search <pkg>`。装完用 `python -c "import <pkg>; print(<pkg>.__version__)"` 验证。
+
 ## 代码规范
 
 - 默认交付完整可运行脚本，不是片段：含依赖导入、输入校验、主逻辑、

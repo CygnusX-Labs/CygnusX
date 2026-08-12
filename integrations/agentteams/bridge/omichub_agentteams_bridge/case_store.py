@@ -28,6 +28,7 @@ _WORK_ITEM_TRANSITIONS: dict[WorkItemStatus, set[WorkItemStatus]] = {
 }
 
 _ALLOWED_TRANSITIONS: dict[CaseStatus, set[CaseStatus]] = {
+    "queued": {"received", "cancelled"},
     "received": {"planning_running", "preflight_running", "cancelled"},
     "planning_running": {"preflight_running", "approval_pending", "waiting_for_correction", "cancelled"},
     "preflight_running": {"preflight_blocked", "approval_pending", "cancelled"},
@@ -35,7 +36,7 @@ _ALLOWED_TRANSITIONS: dict[CaseStatus, set[CaseStatus]] = {
     "waiting_for_correction": {"planning_running", "preflight_running", "cancelled"},
     "approval_pending": {"approved", "cancelled"},
     "approved": {"executing", "cancelled"},
-    "executing": {"quality_running", "execution_failed", "cancelled"},
+    "executing": {"quality_running", "delivery_ready", "execution_failed", "cancelled"},
     "execution_failed": {"approval_pending", "remediation_pending", "cancelled"},
     "quality_running": {"delivery_ready", "quality_blocked", "remediation_pending", "cancelled"},
     "quality_blocked": {"approval_pending", "remediation_pending", "cancelled"},
@@ -170,7 +171,8 @@ class CaseStore:
     ) -> list[tuple[CaseRecord, WorkItemRecord]]:
         async with self._lock:
             expired = self._requeue_expired_locked()
-            if expired:
+            retryable = self._requeue_retryable_failures_locked()
+            if expired or retryable:
                 await self._persist()
             assigned = [
                 (case, work_item)
@@ -179,6 +181,40 @@ class CaseStore:
                 if work_item.target == target and work_item.status in statuses
             ]
             return sorted(assigned, key=lambda item: item[1].updated_at, reverse=True)
+
+    async def cancel(self, case_id: str) -> CaseRecord:
+        """Atomically cancel a Case and reclaim all nonterminal work items."""
+        async with self._lock:
+            case = self._cases.get(case_id)
+            if case is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+            if "cancelled" not in _ALLOWED_TRANSITIONS[case.status]:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Invalid Case transition: {case.status} -> cancelled",
+                )
+            now = datetime.now(UTC)
+            work_items = [
+                item
+                if item.status in {"completed", "cancelled"}
+                else item.model_copy(
+                    update={
+                        "status": "cancelled",
+                        "lease_owner": None,
+                        "lease_expires_at": None,
+                        "retry_not_before": None,
+                        "cancelled_at": now,
+                        "updated_at": now,
+                    }
+                )
+                for item in case.work_items
+            ]
+            cancelled = case.model_copy(
+                update={"status": "cancelled", "work_items": work_items, "updated_at": now}
+            )
+            self._cases[case_id] = cancelled
+            await self._persist()
+            return cancelled
 
     async def transition(self, case_id: str, target: CaseStatus) -> CaseRecord:
         async with self._lock:
@@ -245,6 +281,7 @@ class CaseStore:
                 update={
                     "proposed_submission": proposed_submission,
                     "plan_hash": plan_hash,
+                    "plan_version": max(1, case.plan_version + 1),
                     "preflight_input": snapshot,
                     "updated_at": datetime.now(UTC),
                 }
@@ -274,7 +311,11 @@ class CaseStore:
                 if item.execution_mode != "workspace_execution":
                     revised_items.append(item)
                     continue
-                updates: dict[str, Any] = {"plan_hash": plan_hash, "updated_at": datetime.now(UTC)}
+                updates: dict[str, Any] = {
+                    "plan_hash": plan_hash,
+                    "plan_version": case.plan_version + 1,
+                    "updated_at": datetime.now(UTC),
+                }
                 planned = planned_items.get(item.work_item_id)
                 if planned is not None:
                     updates.update(
@@ -295,6 +336,8 @@ class CaseStore:
                 update={
                     "proposed_submission": proposed_submission,
                     "plan_hash": plan_hash,
+                    "plan_version": case.plan_version + 1,
+                    "plan_revision_count": case.plan_revision_count + 1,
                     "work_items": revised_items,
                     "updated_at": datetime.now(UTC),
                 }
@@ -500,6 +543,15 @@ class CaseStore:
                 )
             lease_expired = self._lease_expired(work_item, now)
             retryable_failure = work_item.status == "failed" and work_item.attempt < work_item.max_attempts
+            if (
+                retryable_failure
+                and work_item.retry_not_before is not None
+                and work_item.retry_not_before > now
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Work item retry is not ready before {work_item.retry_not_before.isoformat()}",
+                )
             if work_item.status != "pending" and not lease_expired and not retryable_failure:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
@@ -516,6 +568,7 @@ class CaseStore:
                     "attempt": work_item.attempt + 1,
                     "lease_owner": target,
                     "lease_expires_at": _lease_expiry(now, work_item.deadline_seconds),
+                    "retry_not_before": None,
                     "updated_at": now,
                 }
             )
@@ -645,6 +698,40 @@ class CaseStore:
                                 "status": "pending",
                                 "lease_owner": None,
                                 "lease_expires_at": None,
+                                "updated_at": now,
+                            }
+                        )
+                    )
+                    requeued.append((case_id, item.work_item_id))
+                    changed = True
+                else:
+                    work_items.append(item)
+            if changed:
+                self._cases[case_id] = case.model_copy(
+                    update={"work_items": work_items, "updated_at": now}
+                )
+        return requeued
+
+    def _requeue_retryable_failures_locked(self) -> list[tuple[str, str]]:
+        now = datetime.now(UTC)
+        requeued: list[tuple[str, str]] = []
+        for case_id, case in list(self._cases.items()):
+            changed = False
+            work_items: list[WorkItemRecord] = []
+            for item in case.work_items:
+                retry_ready = (
+                    item.status == "failed"
+                    and item.attempt < item.max_attempts
+                    and (item.retry_not_before is None or item.retry_not_before <= now)
+                )
+                if retry_ready:
+                    work_items.append(
+                        item.model_copy(
+                            update={
+                                "status": "pending",
+                                "lease_owner": None,
+                                "lease_expires_at": None,
+                                "retry_not_before": None,
                                 "updated_at": now,
                             }
                         )

@@ -3,6 +3,8 @@ studio:
   default_image: omichub-analysis:core-2026.07
   session:
     idle_ttl_minutes: 10
+    # 工作区自会话最后更新起保留 7 天；有效分享、近期活动或执行中的会话不会清理。
+    # 已登记到报告中心的产物已复制到独立结果存储，不受此清理影响。
     workspace_retention_days: 7
     prewarm_on_create: true
   ui:
@@ -22,7 +24,7 @@ studio:
       proxy_host: studio-egress-proxy
       proxy_port: 3128
       # 包源白名单：允许沙盒内 uv/micromamba 现场安装依赖；仅放行包源域名，保持其余断网
-      allow: [conda.anaconda.org, pypi.org, files.pythonhosted.org, mirrors.aliyun.com, mirrors.tuna.tsinghua.edu.cn]
+      allow: [conda.anaconda.org, pypi.org, files.pythonhosted.org, mirrors.aliyun.com, mirrors.ustc.edu.cn, pypi.mirrors.ustc.edu.cn]
   mounts:
     workspace: '{storage_path}/studio'
   tools:

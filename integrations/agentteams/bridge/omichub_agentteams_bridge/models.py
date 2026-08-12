@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal
-from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 BridgeRole = str
 ApprovalAction = Literal["submit_task", "execute_plan", "cancel_task"]
 CaseStatus = Literal[
+    "queued",
     "received",
     "planning_running",
     "preflight_running",
@@ -88,6 +88,7 @@ class TaskSpec(BaseModel):
     sample_sheet: list[dict[str, Any]] = Field(default_factory=list, max_length=10_000)
     comparisons: list[dict[str, Any]] | None = Field(default=None, max_length=1_000)
     execution_mode: Literal["local", "cluster"] = "local"
+    quality_gate_required: bool = False
 
 
 class SubmitTaskRequest(BaseModel):
@@ -165,12 +166,16 @@ class PlanRevisionRequest(BaseModel):
     expected_plan_hash: str = Field(min_length=64, max_length=64)
     parameters: dict[str, Any]
     reason: str = Field(min_length=3, max_length=512)
+    override_revision_limit: bool = False
 
 
 class PlanRevisionResponse(BaseModel):
     case_id: str
     previous_plan_hash: str
     plan_hash: str
+    previous_plan_version: int
+    plan_version: int
+    revision_count: int
     changed_parameter_keys: list[str]
     replay_work_item_ids: list[str]
     status: CaseStatus
@@ -207,22 +212,6 @@ class CaseEventResponse(BaseModel):
     next_cursor: str | None = None
 
 
-def _validate_element_room_url(value: str | None) -> str | None:
-    """Element room URLs must be plain http(s) links without embedded credentials."""
-    if value is None:
-        return None
-    value = value.strip()
-    if not value:
-        return None
-    parsed = urlparse(value)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ValueError("element_room_url must be a full http or https URL")
-    lowered_url = value.lower()
-    if any(key in lowered_url for key in ("access_token", "login_token", "password")):
-        raise ValueError("element_room_url must not contain access tokens or passwords")
-    return value
-
-
 class CaseCreateRequest(BaseModel):
     case_id: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
     project_ref: ContextRef | None = None
@@ -230,7 +219,6 @@ class CaseCreateRequest(BaseModel):
     intent: str = Field(min_length=1, max_length=256)
     requester_ref: str = Field(min_length=1, max_length=256)
     team_id: str = Field(default="bioops-delivery", min_length=1, max_length=128)
-    element_room_url: str | None = Field(default=None, max_length=2_048)
     origin_consultation_id: str | None = Field(default=None, max_length=256)
     consultation_summary: str | None = Field(default=None, max_length=1_800)
     execution_mode: Literal["local", "cluster_case"] = "cluster_case"
@@ -247,12 +235,6 @@ class CaseCreateRequest(BaseModel):
             raise ValueError("general Cases require at least one context_ref")
         return self
 
-    @field_validator("element_room_url")
-    @classmethod
-    def _check_element_room_url(cls, value: str | None) -> str | None:
-        return _validate_element_room_url(value)
-
-
 class CaseRecord(BaseModel):
     case_id: str
     project_ref: ContextRef | None = None
@@ -260,7 +242,6 @@ class CaseRecord(BaseModel):
     intent: str
     requester_ref: str
     team_id: str
-    element_room_url: str | None = None
     origin_consultation_id: str | None = None
     consultation_summary: str | None = None
     execution_mode: Literal["local", "cluster_case"] = "cluster_case"
@@ -269,6 +250,8 @@ class CaseRecord(BaseModel):
     status: CaseStatus = "received"
     proposed_submission: dict[str, Any] | None = None
     plan_hash: str | None = None
+    plan_version: int = Field(default=0, ge=0)
+    plan_revision_count: int = Field(default=0, ge=0)
     omic_task_ids: list[str] = Field(default_factory=list)
     task_specs: list[dict[str, Any]] = Field(default_factory=list)
     preflight_input: PreflightInputSnapshot | None = None
@@ -292,6 +275,7 @@ class WorkItemRecord(BaseModel):
         "readonly_consultation"
     )
     plan_hash: str | None = Field(default=None, min_length=64, max_length=64)
+    plan_version: int = Field(default=0, ge=0)
     approval_required: bool = False
     deadline_seconds: int = Field(default=300, ge=1, le=86_400)
     status: WorkItemStatus = "pending"
@@ -299,6 +283,8 @@ class WorkItemRecord(BaseModel):
     max_attempts: int = Field(default=3, ge=1, le=10)
     lease_owner: str | None = Field(default=None, max_length=128)
     lease_expires_at: datetime | None = None
+    retry_not_before: datetime | None = None
+    cancelled_at: datetime | None = None
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=256)
     trace_id: str | None = Field(default=None, max_length=128)
     approved_submission: ApprovedSubmission | None = None

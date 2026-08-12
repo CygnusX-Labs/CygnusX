@@ -20,7 +20,7 @@ defineProps<{ understanding: StudioTaskUnderstanding }>()
 </template>
 
 <style scoped>
-.task-understanding { margin: 4px 42px 18px; padding: 14px 16px; border: 1px solid var(--border-subtle, var(--chat-border)); border-radius: 14px; background: var(--surface-card, var(--chat-surface)); box-shadow: var(--shadow-sm, 0 6px 20px rgba(30, 50, 100, .06)); }
+.task-understanding { box-sizing: border-box; margin: 4px 24px 18px; padding: 14px 16px; border: 1px solid var(--border-subtle, var(--chat-border)); border-radius: 14px; background: var(--surface-card, var(--chat-surface)); box-shadow: var(--shadow-sm, 0 6px 20px rgba(30, 50, 100, .06)); }
 .understanding-heading { display: flex; align-items: center; gap: 10px; }
 .understanding-heading div { display: flex; flex-direction: column; min-width: 0; }
 .understanding-heading strong { font-size: 13px; color: var(--text-primary, var(--chat-text-primary)); }
@@ -31,5 +31,4 @@ dl { display: grid; gap: 7px; margin: 12px 0 0; }
 dl div { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 8px; }
 dt { color: var(--text-tertiary, var(--chat-text-muted)); font-size: 11px; }
 dd { margin: 0; color: var(--text-secondary, var(--chat-text-secondary)); font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
-@media (max-width: 640px) { .task-understanding { margin-inline: 0; } }
 </style>

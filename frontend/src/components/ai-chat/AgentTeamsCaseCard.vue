@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { NButton, NCollapse, NCollapseItem, NInput, NModal, NTag } from 'naive-ui'
+import { NButton, NCollapse, NCollapseItem, NInput, NModal, NPopconfirm, NTag } from 'naive-ui'
 import { useRouter } from 'vue-router'
 import { agentTeamsApi, type AgentTeamsCaseStatus, type AgentTeamsEvent } from '@/api/agentTeams'
 import { useAgentTeamsStore } from '@/stores/agentTeams'
@@ -26,6 +26,7 @@ let timer: ReturnType<typeof setInterval> | null = null
 
 const isApprovalPending = computed(() => detail.value.status === 'approval_pending')
 const isExecutionFailed = computed(() => detail.value.status === 'execution_failed')
+const canCancel = computed(() => !['closed', 'cancelled'].includes(detail.value.status))
 const displayStatus = computed(() => agentTeamsStatusLabel[detail.value.status as AgentTeamsCaseStatus] || detail.value.status)
 const updatedAt = computed(() => {
   if (!detail.value.updated_at) return ''
@@ -54,6 +55,7 @@ async function refresh() {
       next_actor: agentTeamsNextActor[value.status] || detail.value.next_actor,
       updated_at: value.updated_at,
       plan_hash: value.plan_hash,
+      plan_version: value.plan_version,
       proposed_submission: value.proposed_submission,
     }
     recentEvents.value = eventPage.events.slice(-3).reverse()
@@ -108,6 +110,22 @@ async function retryCase() {
     await refresh()
   } catch (cause: any) {
     decisionError.value = cause?.response?.data?.detail || '重试失败，请打开 Case 查看错误摘要。'
+  } finally {
+    decisionLoading.value = false
+  }
+}
+
+async function cancelCase() {
+  if (decisionLoading.value || !canCancel.value) return
+  decisionLoading.value = true
+  decisionError.value = ''
+  try {
+    const value = await agentTeamsStore.cancelCase(detail.value.case_id, {
+      reason: '用户从聊天窗口主动取消协作 Case',
+    })
+    detail.value = { ...detail.value, status: value.status, updated_at: value.updated_at }
+  } catch (cause: any) {
+    decisionError.value = cause?.response?.data?.detail || '取消失败，请刷新后重试。'
   } finally {
     decisionLoading.value = false
   }
@@ -181,7 +199,9 @@ onUnmounted(() => {
     <p v-if="updatedAt" class="case-updated">最近更新：{{ updatedAt }}</p>
     <div v-if="isApprovalPending" class="approval-rail">
       <p>审批待处理：确认冻结计划后继续执行。</p>
-      <p v-if="planShortHash" class="plan-hash">计划短码：{{ planShortHash }}</p>
+      <p v-if="planShortHash" class="plan-hash">
+        计划 v{{ detail.plan_version || 1 }} · 短码 {{ planShortHash }}
+      </p>
       <NCollapse v-if="detail.proposed_submission" class="plan-details">
         <NCollapseItem title="查看冻结参数" name="parameters">
           <pre>{{ JSON.stringify(detail.proposed_submission, null, 2) }}</pre>
@@ -208,7 +228,14 @@ onUnmounted(() => {
     <div class="case-actions">
       <NButton size="small" :loading="loading" @click="refresh">刷新状态</NButton>
       <NButton size="small" type="primary" @click="openCase">打开 Case</NButton>
+      <NPopconfirm v-if="canCancel" @positive-click="cancelCase">
+        <template #trigger>
+          <NButton size="small" type="error" secondary :disabled="decisionLoading">取消协作</NButton>
+        </template>
+        取消后将停止未完成工单，但保留已产生的审计记录与产物。
+      </NPopconfirm>
     </div>
+    <span v-if="decisionError && !isApprovalPending && !isExecutionFailed" class="decision-error" role="alert">{{ decisionError }}</span>
     <NModal v-model:show="rejectVisible" preset="card" title="拒绝冻结计划" :style="{ width: 'min(92vw, 480px)' }" :mask-closable="!decisionLoading">
       <NInput v-model:value="rejectReason" type="textarea" :autosize="{ minRows: 3, maxRows: 6 }" maxlength="512" show-count placeholder="说明需要修正的输入、参数或交付范围" />
       <div class="reject-actions">

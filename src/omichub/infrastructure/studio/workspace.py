@@ -181,6 +181,26 @@ def link_platform_file(
     return candidate
 
 
+def link_platform_directory(
+    workspace: Path,
+    mount_rel: str,
+    display_name: str | None = None,
+    *,
+    idempotent: bool = False,
+) -> str:
+    """Create a controlled read-only directory reference under ``workspace/input``.
+
+    The link points at the same per-user ``/data/platform`` mount as file references;
+    it never copies source data and session cleanup therefore only removes the link.
+    """
+    return link_platform_file(
+        workspace,
+        mount_rel,
+        display_name,
+        idempotent=idempotent,
+    )
+
+
 def list_input_links(workspace: Path) -> list[str]:
     """列出 input/ 下已引入的平台数据链接名（含宿主侧悬空的软链）。"""
     input_dir = workspace / INPUT_DIR

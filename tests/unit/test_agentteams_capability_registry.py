@@ -1,14 +1,46 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import yaml
+
 from omichub.application.services.agentteams_capability_registry import (
     AgentTeamsCapabilityRegistry,
 )
 from omichub.application.services.flow_registry import FlowRegistry
+from omichub.infrastructure.config.agent_loader import load_agent_configs
 
 
 class _Abilities:
     def all(self):
         return {"agent-code": {}, "agent-qc": {}}
+
+
+def _features(role: str, *, recruitable: bool = True) -> dict:
+    return {
+        "internal_case_role": role,
+        "agentteams": {
+            "category": "expert" if recruitable else "router",
+            "recruitable": recruitable,
+            "planner_eligible": False,
+            "execution_modes": ["readonly_consultation"] if recruitable else [],
+            "max_parallel_work_items": 1 if recruitable else 0,
+            "case_mode_excluded_tool_packs": ["subagents"],
+            "handoff_in_case_mode": False,
+            "work_item_timeout_sec": 300 if recruitable else 0,
+        },
+        "persona": {
+            "status_lines": {
+                "recruited": ["ready"],
+                "queued": ["queued"],
+                "running": ["running"],
+                "reviewing": ["reviewing"],
+                "succeeded": ["done"],
+                "failed": ["failed"],
+                "awaiting_input": ["waiting"],
+            }
+        },
+    }
 
 
 def test_registry_discovers_flow_roles_and_worker_profiles(tmp_path) -> None:
@@ -54,25 +86,27 @@ delivery: {quality_gate: true, outputs: [result]}
             {
                 "agent_id": "agent-code",
                 "name": "Code",
-                "features": {"internal_case_role": "agent-code"},
+                "features": _features("agent-code"),
             },
             {
                 "agent_id": "agent-qc",
                 "name": "QC",
-                "features": {"internal_case_role": "quality-auditor"},
+                "features": _features("agent-qc"),
             },
             {
                 "agent_id": "agent-disabled",
                 "is_active": False,
-                "features": {"internal_case_role": "disabled"},
+                "features": _features("disabled"),
             },
         ],
     )
 
     assert registry.allowed_flow_ids() == {"test_general"}
-    assert registry.role_agent_map() == {"agent-code": "agent-code", "quality-auditor": "agent-qc"}
+    assert registry.role_agent_map() == {"agent-code": "agent-code", "agent-qc": "agent-qc"}
+    assert registry.role_alias_map() == {"quality-auditor": "agent-qc"}
     assert registry.consultation_agents() == {"agent-code", "agent-qc"}
     assert registry.flow_agent_map() == {"test_general": "agent-code"}
+    assert registry.flow_quality_gate_map() == {"test_general": True}
     assert registry.agent_for_flow("test_general") == "agent-code"
     assert registry.worker_profile("agent-code").capability == "planning_advice"
 
@@ -119,7 +153,60 @@ delivery: {quality_gate: true, outputs: [result]}
     registry = AgentTeamsCapabilityRegistry(
         FlowRegistry.from_directory(flows_dir),
         _Abilities(),
-        [{"agent_id": "agent-general", "features": {"internal_case_role": "bioops-manager"}}],
+        [{"agent_id": "agent-general", "features": _features("agent-general")}],
     )
 
     assert registry.agent_for_flow("fallback") == "agent-general"
+
+
+def test_registry_covers_fourteen_experts_and_two_special_agents() -> None:
+    registry = AgentTeamsCapabilityRegistry(agent_configs=load_agent_configs())
+
+    role_map = registry.role_agent_map()
+    capabilities = registry.agent_capabilities()
+    categories = {role: item["category"] for role, item in capabilities.items()}
+
+    assert len(role_map) == 16
+    assert sum(item["recruitable"] for item in capabilities.values()) == 14
+    assert categories["shania"] == "companion"
+    assert categories["agent-router"] == "router"
+    assert capabilities["shania"]["execution_modes"] == []
+    assert capabilities["agent-router"]["execution_modes"] == []
+    assert registry.role_alias_map() == {
+        "data-steward": "agent-data",
+        "quality-auditor": "agent-qc",
+        "delivery-reporter": "agent-delivery",
+    }
+    assert registry.resolve_agent("data-steward") == "agent-data"
+    assert registry.resolve_agent("agent-scrna-integration") == "agent-scrna-integration"
+
+
+def test_registry_rejects_incomplete_agentteams_declaration(tmp_path) -> None:
+    registry = AgentTeamsCapabilityRegistry(
+        FlowRegistry.from_directory(tmp_path),
+        _Abilities(),
+        [{"agent_id": "agent-broken", "features": {"internal_case_role": "agent-broken"}}],
+    )
+
+    try:
+        registry.role_agent_map()
+    except ValueError as exc:
+        assert "features.agentteams" in str(exc)
+    else:
+        raise AssertionError("incomplete AgentTeams declarations must fail fast")
+
+
+def test_agentteams_team_manifest_contains_all_recruitable_experts() -> None:
+    registry = AgentTeamsCapabilityRegistry(agent_configs=load_agent_configs())
+    manifest = yaml.safe_load(
+        Path("integrations/agentteams/teams/bioops-delivery.yaml").read_text(encoding="utf-8")
+    )
+    worker_ids = {worker["identity"] for worker in manifest["workers"]}
+    recruitable_ids = {
+        agent_id
+        for agent_id, capability in registry.agent_capabilities().items()
+        if capability["recruitable"]
+    }
+
+    assert len(recruitable_ids) == 14
+    assert worker_ids == recruitable_ids | {"workflow-operator"}

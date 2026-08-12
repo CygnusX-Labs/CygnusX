@@ -258,6 +258,20 @@ async def internal_recycle_idle_studio_sandboxes(
     return {"recycled": await studio_sandbox_manager.recycle_idle()}
 
 
+@router.delete(
+    "/internal/sessions/{session_id}/workspace",
+    include_in_schema=False,
+)
+async def internal_cleanup_studio_workspace(
+    session_id: str,
+    control_token: Annotated[
+        str | None, Header(alias="X-OmicHub-Studio-Control-Token")
+    ] = None,
+) -> dict[str, str]:
+    _validate_studio_control_token(control_token)
+    return {"status": await studio_sandbox_manager.purge_workspace(session_id)}
+
+
 # ============================================================
 # 公开只读分享（令牌自行鉴权，AuthMiddleware 对该前缀放行）
 # ============================================================
