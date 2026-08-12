@@ -384,6 +384,30 @@ def test_child_tools_add_workspace_execution_only_after_explicit_access() -> Non
     assert {"workspace_read", "workspace_write", "sandbox_execute"}.issubset(enabled_names)
 
 
+def test_child_tools_workspace_access_grants_full_workbench_except_update_plan() -> None:
+    ctx = _ctx("agent-code")
+
+    names = {
+        (tool.get("function") or {}).get("name")
+        for tool in pss.ParallelSubAgentService._prepare_child_tools(ctx, workspace_access=True)
+    }
+
+    # 对齐 AI 工作台全集（execute_studio_tool 可直接分发的平台联动工具）
+    assert {
+        "sandbox_execute",
+        "workspace_write",
+        "workspace_edit",
+        "workspace_read",
+        "workspace_list",
+        "datahub_import",
+        "platform_result_import",
+        "artifact_register",
+        "pipeline_query",
+    }.issubset(names)
+    # update_plan 是 Studio 计划 UI 工具，不授予子 Agent
+    assert "update_plan" not in names
+
+
 def test_goal_safe_child_tools_only_keep_read_only_capabilities(monkeypatch) -> None:
     readonly_schema = SimpleNamespace(
         invocation_mode="backend_sync",

@@ -346,7 +346,10 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         label: event.label || '协作 Case 推进中',
         completed: Number(event.completed ?? 0),
         total: Number(event.total ?? 0),
-        waveMode: event.waveMode === 'parallel' ? 'parallel' : 'serial',
+        wave: typeof event.wave === 'number' ? event.wave : undefined,
+        waveTotal: typeof event.waveTotal === 'number' ? event.waveTotal : undefined,
+        waveMode: event.waveMode === 'parallel' ? 'parallel' : event.waveMode === 'serial' ? 'serial' : undefined,
+        planningOnly: Boolean((event as any).planning_only) || undefined,
         readonly: Boolean(event.readonly) || ['completed', 'failed', 'terminated'].includes(event.phase),
         warning: typeof event.warning === 'string' ? event.warning : undefined,
         stalledTaskIds: Array.isArray(event.stalledTaskIds) ? event.stalledTaskIds.map(String) : undefined,
@@ -2267,6 +2270,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             arguments: event.arguments,
             status: 'running',
             mcpServer: event.mcp_server,
+            purpose: event.purpose,
           })
           // 交错时间线：记录这次工具调用的位置，正文段在其后另起
           toolMessage.timeline ||= []
@@ -2288,7 +2292,13 @@ export const useAgentHubStore = defineStore('agentHub', () => {
                 || (r.uiPayload as Record<string, unknown> | undefined)
             }
             tc.uiPayload = uiPayload
-            tc.status = event.success ? 'success' : 'error'
+            // 研究源超时是降级而非失败(规划会继续),单独标记避免误导。
+            const resultStatus = String(
+              (event.result as Record<string, unknown> | undefined)?.status
+              ?? uiPayload?.status
+              ?? '',
+            )
+            tc.status = event.success ? 'success' : resultStatus === 'timed_out' ? 'timed_out' : 'error'
             tc.mcpServer = event.mcp_server
             // Studio 工具：未走 tool_output 流时，用 ui_payload 的 stdout/stderr 回填输出区
             if (!tc.output && uiPayload) {

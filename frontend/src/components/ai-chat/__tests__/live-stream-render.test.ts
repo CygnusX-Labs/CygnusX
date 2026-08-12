@@ -12,6 +12,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createApp, h, nextTick, reactive } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
+import { NMessageProvider } from 'naive-ui'
 
 vi.mock('vue3-lottie', () => ({
   Vue3Lottie: { template: '<div />', methods: { setSpeed() {} } },
@@ -50,7 +51,13 @@ describe('KimiMessageItem 活体 streaming→done 切换', () => {
 
     const el = document.createElement('div')
     document.body.appendChild(el)
-    const app = createApp({ render() { return h(KimiMessageItem, props as never) } })
+    const app = createApp({
+      render() {
+        return h(NMessageProvider, null, {
+          default: () => h(KimiMessageItem, props as never),
+        })
+      },
+    })
     app.mount(el)
     await nextTick()
 
@@ -112,11 +119,13 @@ describe('KimiMessageItem 活体 streaming→done 切换', () => {
     document.body.appendChild(el)
     const app = createApp({
       render() {
-        return h(KimiMessageList, {
-          messages: session.messages,
-          isTyping: store.isStreaming,
-          streamingContent: store.streamingContent,
-          streamingThought: store.streamingThought,
+        return h(NMessageProvider, null, {
+          default: () => h(KimiMessageList, {
+            messages: session.messages,
+            isTyping: store.isStreaming,
+            streamingContent: store.streamingContent,
+            streamingThought: store.streamingThought,
+          }),
         })
       },
     })

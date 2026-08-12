@@ -11,6 +11,7 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import quote
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -176,6 +177,38 @@ def overdrive_run_root(session_id: str, run_id: str) -> Path:
 def relative_overdrive_run_root(session_id: str, run_id: str) -> str:
     safe_run_id = re.sub(r"[^a-zA-Z0-9._-]", "-", run_id)
     return f"output/overdrive/{session_id}/{safe_run_id}"
+
+
+def _worker_display_name(payload: dict[str, Any]) -> str:
+    """专家显示名：真实 agent 名优先，拼接昵称区分同 agent 多实例；缺失回退“执行助手”。"""
+    agent_name = str(payload.get("agent_name") or "").strip()
+    display_name = str(payload.get("display_name") or "").strip()
+    if agent_name and display_name and display_name != agent_name:
+        return f"{agent_name}·{display_name}"
+    return agent_name or display_name or "执行助手"
+
+
+def _linkify_run_artifact_paths(content: str, session_id: str, run_id: str) -> str:
+    """把发言正文中引用的本 run 相对产物路径重写为可点击的下载链接。
+
+    下载 API 已改为 run 根目录禁锢 + 归属校验，不要求 artifact_index 登记；
+    已在 ``](...)`` 里的路径不重复包裹，结尾标点（含句号）截断。
+    """
+    root = relative_overdrive_run_root(session_id, run_id)
+    if not session_id or not run_id or not content or f"{root}/" not in content:
+        return content
+    pattern = re.compile(rf"(?<!\]\(){re.escape(root)}/[\w./\-一-鿿]+")
+
+    def _replace(match: re.Match[str]) -> str:
+        path = match.group(0).rstrip("./")
+        filename = path.rsplit("/", 1)[-1] or path
+        url = (
+            f"/api/v1/chat/sessions/{session_id}/overdrive-runs/{run_id}"
+            f"/artifacts?path={quote(path, safe='')}"
+        )
+        return f"[{filename}]({url})"
+
+    return pattern.sub(_replace, content)
 
 
 class OverdriveRunService:
@@ -631,6 +664,7 @@ class OverdriveRunService:
             raise ValidationError("计划 hash 不匹配，请勿确认已变化的快照")
         self._assert_plan_file_matches(run)
         result: dict[str, Any]
+        delivery: dict[str, Any] | None = None
         if action == "approve":
             current_plan.update(
                 {
@@ -644,7 +678,19 @@ class OverdriveRunService:
             run.status = "COMPLETED" if planning_only else "SERIAL_PREFLIGHT"
             if planning_only:
                 run.finished_at = datetime.now(UTC)
+                delivery = self._write_planning_only_delivery(run, current_plan)
+                run.artifact_index = [
+                    *(run.artifact_index or []),
+                    {
+                        "path": delivery["path"],
+                        "kind": "delivery",
+                        "source": "manager",
+                        "status": "succeeded",
+                    },
+                ]
             result = {"status": run.status, "plan": deepcopy(current_plan)}
+            if delivery is not None:
+                result["delivery"] = {"path": delivery["path"]}
             event_type = "run_completed" if planning_only else "plan_approved"
         elif action == "revise":
             revision_count = int(current_plan.get("revision_count") or 0)
@@ -684,12 +730,38 @@ class OverdriveRunService:
                 result=result,
             )
         )
+        event_payload: dict[str, Any] = {
+            "plan_version": plan_version,
+            "plan_hash": plan_digest,
+            "feedback": feedback,
+        }
+        if delivery is not None:
+            event_payload["planning_only"] = True
+            event_payload["delivery_path"] = delivery["path"]
+            event_payload["artifacts"] = [
+                {
+                    "path": delivery["path"],
+                    "kind": "delivery",
+                    "status": "succeeded",
+                    "source": "manager",
+                }
+            ]
         await self.append_event(
             run_id,
             event_type,
-            {"plan_version": plan_version, "plan_hash": plan_digest, "feedback": feedback},
+            event_payload,
             dedupe_key=f"command:{command_id}",
         )
+        if delivery is not None:
+            await self.append_event(
+                run_id,
+                "manager_delivery_ready",
+                {
+                    "content": self._planning_only_delivery_speech(run, current_plan, delivery),
+                    "delivery_path": delivery["path"],
+                },
+                dedupe_key=f"command:{command_id}:delivery",
+            )
         await self._write_snapshot(run)
         return result
 
@@ -963,6 +1035,23 @@ class OverdriveRunService:
                 if is_review
                 else str(result.get("answer") or result.get("error") or "助手任务已回流。")
             )
+            # 专家引用的产物相对路径重写为可点击下载链接（下载 API 负责根目录禁锢与归属校验）
+            content = _linkify_run_artifact_paths(
+                content,
+                str(event.get("session_id") or ""),
+                str(event.get("run_id") or ""),
+            )
+            sender = (
+                {"agent_id": "agent-orchestrator", "name": "超频 Manager", "role": "manager"}
+                if is_review
+                else {
+                    "agent_id": payload.get("agent_id") or payload.get("assistant_instance_id"),
+                    "name": _worker_display_name(payload),
+                    "role": "worker",
+                    # instance id 放入额外字段，避免真实 agent_id 顶替后丢失
+                    "instance_id": payload.get("assistant_instance_id"),
+                }
+            )
             return {
                 "type": "room_speech",
                 "content": content,
@@ -970,14 +1059,35 @@ class OverdriveRunService:
                 "message_id": (
                     f"overdrive-event-{event.get('run_id')}-{event.get('sequence')}"
                 ),
-                "sender": {
-                    "agent_id": "agent-orchestrator" if is_review else payload.get("assistant_instance_id"),
-                    "name": "主 Agent" if is_review else "执行助手",
-                    "role": "manager" if is_review else "worker",
-                },
+                "sender": sender,
                 "task_id": payload.get("task_id"),
                 "review": payload if is_review else None,
                 "result": result if not is_review else None,
+            }
+        if event_type == "manager_delivery_ready":
+            return {
+                "type": "room_speech",
+                "content": str(payload.get("content") or "本轮协作交付已就绪。"),
+                **common,
+                "message_id": (
+                    f"overdrive-event-{event.get('run_id')}-{event.get('sequence')}"
+                ),
+                "sender": {
+                    "agent_id": "agent-orchestrator",
+                    "name": "超频 Manager",
+                    "role": "manager",
+                },
+                "delivery_path": payload.get("delivery_path"),
+            }
+        if event_type == "assistant_tool_call":
+            # 专家工具调用投影为进度标签，让执行过程对用户可见；
+            # assistant_heartbeat / assistant_retrying 噪音高，保持不投影。
+            tool_name = str(payload.get("tool_name") or "工具")
+            return {
+                "type": "overdrive_progress",
+                **common,
+                "phase": "worker_running",
+                "label": f"{_worker_display_name(payload)} 正在调用 {tool_name}",
             }
         progress_events = {
             "research_completed": ("researching", "三路研究已完成"),
@@ -985,10 +1095,10 @@ class OverdriveRunService:
             "plan_approved": ("serial_preflight", "计划已确认，等待分析 Worker 接管"),
             "replanning_started": ("replanning", "规划 Agent 正在生成修改后的计划"),
             "replanning_failed": ("failed", "修改后的计划未能生成"),
-            "preflight_completed": ("serial_preflight", "主 Agent 串行前置已完成"),
-            "manager_task_started": ("manager_ready", "主 Agent 正在维护证据账本"),
-            "manager_task_completed": ("manager_ready", "主 Agent 已完成整合框架"),
-            "manager_review_requested": ("peer_reviewing", "主 Agent 正在复核助手结果"),
+            "preflight_completed": ("serial_preflight", "Manager 串行前置已完成"),
+            "manager_task_started": ("manager_ready", "Manager 正在维护证据账本"),
+            "manager_task_completed": ("manager_ready", "Manager 已完成整合框架"),
+            "manager_review_requested": ("peer_reviewing", "Manager 正在复核助手结果"),
             "assistant_recruited": ("recruiting", "已招募执行助手"),
             "assistant_started": ("worker_running", "执行助手正在工作"),
             "run_completed": ("completed", "超频协作已完成"),
@@ -998,6 +1108,8 @@ class OverdriveRunService:
         }
         if event_type in progress_events:
             phase, label = progress_events[event_type]
+            if event_type == "run_completed" and payload.get("planning_only"):
+                label = "方案已生成并完成交付"
             return {
                 "type": "overdrive_progress",
                 **common,
@@ -1036,6 +1148,102 @@ class OverdriveRunService:
         actual = plan_hash(version_path.read_text(encoding="utf-8"))
         if actual != plan.get("hash"):
             raise ValidationError("已冻结计划内容与确认 hash 不一致")
+
+    def _write_planning_only_delivery(
+        self, run: OverdriveRunModel, plan: dict[str, Any]
+    ) -> dict[str, Any]:
+        """为 planning_only run 生成项目 README,作为可下载交付物。
+
+        planning_only run 不经过执行期和 DeliveryAssembler,确认计划即完成;
+        这里补齐“最终交付在哪、从哪里下载”的说明,沿用工作台 output/README
+        索引的约定。
+        """
+        summary = plan.get("summary") if isinstance(plan.get("summary"), dict) else {}
+        title = str(summary.get("title") or "超频协作执行方案")
+        version = int(plan.get("version") or 0)
+        digest = str(plan.get("hash") or "")
+        plan_path = str(plan.get("path") or "")
+        version_path = str(plan.get("version_path") or "")
+        finished_at = datetime.now(UTC).isoformat()
+        relative_root = relative_overdrive_run_root(run.session_id, run.run_id)
+        readme_relative = f"{relative_root}/delivery/README.md"
+        lines = [
+            "# 项目交付 README",
+            "",
+            f"- 项目: {title}",
+            f"- Run: `{run.run_id}`",
+            f"- 计划版本: v{version}(hash `{digest[:8]}`)",
+            f"- 完成时间: {finished_at}",
+            "",
+            "## 本次交付",
+            "",
+            "本轮为方案规划型协作(不执行分析任务),最终交付为执行方案文档:",
+            "",
+            f"- 方案全文: `{plan_path}`",
+            f"- 版本快照: `{version_path}`",
+            f"- 本 README: `{readme_relative}`",
+            "",
+            "## 下载方式",
+            "",
+            "- 聊天窗口内超频卡片的产物入口直接下载;",
+            f"- 或调用产物接口 `GET /sessions/{run.session_id}/overdrive-runs/{run.run_id}/artifacts?path=<上列路径>`。",
+            "",
+            "## 后续步骤",
+            "",
+            "- 如需按本方案正式执行分析,回复“按方案开始执行”,将为你创建执行任务。",
+        ]
+        content = "\n".join(lines) + "\n"
+        _atomic_write(
+            overdrive_run_root(run.session_id, run.run_id) / "delivery" / "README.md",
+            content,
+        )
+        return {"path": readme_relative, "content": content}
+
+    @staticmethod
+    def _planning_only_delivery_speech(
+        run: OverdriveRunModel, plan: dict[str, Any], delivery: dict[str, Any]
+    ) -> str:
+        """Manager 对规划型结果的完整交付说明:方案要点 + 交付位置 + 下一步引导。
+
+        不只是告知文件路径,要让用户不看 plan.md 也知道方案安排了什么、
+        结果在哪里下载,以及接下来是否上传数据进入正式分析。
+        """
+        summary = plan.get("summary") if isinstance(plan.get("summary"), dict) else {}
+        title = str(summary.get("title") or "超频协作执行方案")
+        version = int(plan.get("version") or 0)
+        agents = [item for item in summary.get("agents") or [] if isinstance(item, dict)]
+        agent_names = "、".join(
+            str(item.get("name") or item.get("agent_id") or "") for item in agents if item
+        )
+        wave_count = int(summary.get("wave_count") or 0)
+        overview = str(summary.get("summary") or "").strip()
+        lines = [
+            f"本轮为方案规划型协作,我已完成《{title}》(计划 v{version}),未启动分析执行任务。",
+            "",
+        ]
+        if overview:
+            lines += ["**方案概览**", "", overview, ""]
+        lines += ["**协作安排**", ""]
+        if agent_names:
+            lines.append(f"- 参与专家:{agent_names}")
+        if wave_count:
+            lines.append(
+                f"- 执行波次:{wave_count} 波(无依赖的任务同波并行,有上下游关系的按依赖串行)"
+            )
+        lines += [
+            "",
+            "**交付物与下载**",
+            "",
+            "- 完整方案: plan.md(超频协作卡片的产物入口可直接下载)",
+            f"- 项目 README: `{delivery['path']}`,包含交付清单与下载方式",
+            "",
+            "**下一步**",
+            "",
+            "- 数据已准备好:把 FASTQ / BAM / VCF 等输入文件上传到本会话工作区,"
+            "告诉我“按方案开始执行”,我会按方案启动正式分析;",
+            "- 暂时没有数据:可以先让我基于示例或公开数据集把流程走通,或继续调整方案细节。",
+        ]
+        return "\n".join(lines)
 
     async def _write_snapshot(self, run: OverdriveRunModel) -> None:
         await self._db.flush()

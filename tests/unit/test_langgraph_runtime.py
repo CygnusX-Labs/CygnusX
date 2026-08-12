@@ -43,6 +43,7 @@ def _tool_calls_chunk(name: str, args: dict[str, Any], call_id: str = "call_1") 
 def _make_runtime(
     rounds: list[list[ChatChunk]],
     tool_executor: Any = None,
+    max_rounds: int = 8,
 ) -> tuple[LangGraphRuntimeService, list[list[dict[str, Any]]]]:
     stream, calls = _make_stream(rounds)
     deps = NodeDeps(
@@ -51,7 +52,7 @@ def _make_runtime(
         chat_stream=stream,
         tool_executor=tool_executor,
     )
-    return LangGraphRuntimeService(deps), calls
+    return LangGraphRuntimeService(deps, max_rounds=max_rounds), calls
 
 
 async def _collect(runtime: LangGraphRuntimeService) -> list[ChatChunk]:
@@ -115,10 +116,13 @@ async def test_one_tool_round_then_finish() -> None:
 
     chunks = await _collect(runtime)
 
-    assert [c.type for c in chunks] == ["tool_call", "tool_result", "text"]
-    assert chunks[0].metadata["tool_name"] == "get_gene"
-    assert chunks[1].metadata["success"] is True
-    assert chunks[1].metadata["result"] == {"value": 42}
+    # 首轮的推理文本（is_reasoning）会实时透传给前端，但不并入最终正文
+    assert [c.type for c in chunks] == ["text", "tool_call", "tool_result", "text"]
+    assert chunks[0].metadata["is_reasoning"] is True
+    assert chunks[0].content == "先分析工具参数"
+    assert chunks[1].metadata["tool_name"] == "get_gene"
+    assert chunks[2].metadata["success"] is True
+    assert chunks[2].metadata["result"] == {"value": 42}
     assert executed == [("get_gene", {"gene": "TP53"}, "call_1")]
 
     # 第二轮 LLM 收到的 messages 末尾：assistant(tool_calls) → role:tool
@@ -232,6 +236,59 @@ async def test_ask_user_tool_ends_current_graph_without_another_llm_round() -> N
     assert runtime.last_ask_request == {"tool_call_id": "call_1", "args": ask_args}
     # 图立即结束，不再触发第二轮 LLM
     assert len(calls) == 1
+
+
+async def test_rounds_exhausted_forces_final_answer_and_sets_flag() -> None:
+    """轮次触顶：强制收尾轮不再携带 tool_calls，rounds_exhausted=True。
+
+    ChatService 依据该标志产出 round_limit 事件，由前端弹窗选择是否续轮。
+    """
+
+    async def _executor(
+        tool_name: str, args: dict[str, Any], tool_call_id: str
+    ) -> dict[str, Any]:
+        return {"success": True, "result": {"value": 1}}
+
+    runtime, calls = _make_runtime(
+        [
+            [_tool_calls_chunk("get_gene", {"gene": "TP53"}), ChatChunk(type="done")],
+            [_tool_calls_chunk("get_gene", {"gene": "TP53"}), ChatChunk(type="done")],
+            [ChatChunk(type="text", content="总结回答"), ChatChunk(type="done")],
+        ],
+        tool_executor=_executor,
+        max_rounds=2,
+    )
+
+    chunks = await _collect(runtime)
+
+    assert runtime.rounds_exhausted is True
+    # 第 3 轮为强制收尾轮：tool_calls 被清空，正文作为最终答复
+    assert len(calls) == 3
+    assert runtime.last_messages[-1]["role"] == "assistant"
+    assert runtime.last_messages[-1]["content"] == "总结回答"
+    assert "tool_calls" not in runtime.last_messages[-1]
+
+
+async def test_normal_finish_does_not_set_rounds_exhausted() -> None:
+    """模型主动停止（无 tool_calls）时不判定为触顶。"""
+
+    async def _executor(
+        tool_name: str, args: dict[str, Any], tool_call_id: str
+    ) -> dict[str, Any]:
+        return {"success": True, "result": {"value": 1}}
+
+    runtime, _ = _make_runtime(
+        [
+            [_tool_calls_chunk("get_gene", {"gene": "TP53"}), ChatChunk(type="done")],
+            [ChatChunk(type="text", content="完成"), ChatChunk(type="done")],
+        ],
+        tool_executor=_executor,
+        max_rounds=2,
+    )
+
+    await _collect(runtime)
+
+    assert runtime.rounds_exhausted is False
 
 
 async def test_ask_user_failure_does_not_interrupt_graph() -> None:

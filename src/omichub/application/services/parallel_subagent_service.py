@@ -63,8 +63,22 @@ _CONTROL_TOOL_NAMES = frozenset(
     }
 )
 
+# 超频专家的工作台工具集合（对齐 AI 工作台）：沙盒/工作区读写 + 平台联动工具。
+# datahub_import / platform_result_import / artifact_register / pipeline_query 均可由
+# execute_studio_tool(name, args, session_id, user_id, db) 直接执行；
+# update_plan 是 Studio 计划 UI 工具，不授予子 Agent。
 _OVERDRIVE_WORKSPACE_TOOL_NAMES = frozenset(
-    {"sandbox_execute", "workspace_write", "workspace_edit", "workspace_read", "workspace_list"}
+    {
+        "sandbox_execute",
+        "workspace_write",
+        "workspace_edit",
+        "workspace_read",
+        "workspace_list",
+        "datahub_import",
+        "platform_result_import",
+        "artifact_register",
+        "pipeline_query",
+    }
 )
 
 # 子任务正式产物会落盘，不能再用 8,000 字截断代码、研究计划等长交付物。
@@ -179,6 +193,7 @@ class ParallelSubAgentService:
         workdir_root: Path | None = None,
         approved_tool_calls: list[dict[str, Any]] | None = None,
         control_check: Callable[[], Awaitable[str | None] | str | None] | None = None,
+        max_rounds: int | None = None,
     ) -> dict[str, Any]:
         """执行 fan-out，返回统一信封 {success, llm_payload, ui_payload}。"""
         settings = get_settings()
@@ -257,7 +272,8 @@ class ParallelSubAgentService:
                         item.get("timeout_seconds") or settings.subagent_child_timeout_seconds
                     ),
                     retry=item.get("retry") or {},
-                    max_rounds=settings.subagent_max_rounds_per_child,
+                    # 缺省保持普通聊天 fan-out 的轮数上限；超频专家经 max_rounds 显式放宽
+                    max_rounds=max_rounds or settings.subagent_max_rounds_per_child,
                     semaphore=semaphore,
                     on_event=on_event,
                     approved_tool_calls=approved_tool_calls or [],

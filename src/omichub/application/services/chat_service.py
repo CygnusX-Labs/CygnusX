@@ -342,6 +342,8 @@ OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_
 8. speech 应说明执行顺序和依赖关系，不得声称所有专家会同时处理；禁止提及“超频模式已开启/切换”“高性能响应状态”等系统状态。
 9. 用户不需要手动配置调度。优先依据候选专家的 capability_scope 与 default_role 自动选择；不得把超出专家能力边界的任务硬派给该专家。
 10. 大规模输入可以设计分片并行，同一专家可承担多个 shard 任务；分片不得破坏必需锚点的依赖方向。
+10.1. 大型单一交付物（完整指南、多章节报告、综述、端到端方案等）默认按章节/模块拆成 2–4 个内容互不重叠的分片任务并行执行，再加一个"汇总定稿"任务（depends_on 引用全部分片 task_id）负责合并、去重、统一口径并产出最终交付物；分片可以分给同一专家，不违反最小专家集合规则。
+10.2. 每个分片任务在 task 描述中写清各自覆盖范围并声明各自的 produces_outputs（如 guide-part-upstream.md）；汇总任务的 accepts_inputs 引用这些产物。交付物较小时保持单任务，不为并行而拆分。
 11. speech 必须准确反映本次实际生成的 assignments，包括分片、并行与先后依赖；禁止泛泛而谈。
 12. 禁止输出思考过程，第一个字符必须是 {{。
 
@@ -361,6 +363,7 @@ OVERDRIVE_SUMMARY_SYSTEM_PROMPT = """你是超频协作的 Manager，负责把�
 3. 必须吸收每一位有效专家的关键结论，消除重复、指出依赖关系与一致结论，形成一份完整可执行的最终报告；不得只说“专家结论已分别展示”。
 4. 报告至少包含：研究目标与假设、数据与设计前提、分阶段分析路线、代码/工具实现建议、可视化与交付物、风险与质量控制、下一步执行条件。
 5. 如果结论无法回答用户的核心问题，诚实说明当前可确认的范围，并给出下一步所需信息或可执行建议。
+6. 结尾给出明确的下一步行动建议：如果结论对应一个可执行的分析方案，主动询问用户是否要上传数据（如 FASTQ / BAM / VCF）开始正式分析，或是否需要调整方案；不要只罗列文件路径就结束。
 """
 
 _OVERDRIVE_OFF_HINTS = ("退出超频", "关闭超频", "取消超频", "overdrive off")
@@ -2920,6 +2923,7 @@ class ChatService:
         user_content: str,
         manager_ctx: AgentContext,
         replan_lock_id: str | None = None,
+        deep_thinking: bool = False,
     ) -> AsyncIterator[ChatChunk]:
         """运行一次内置超频编排，不进入普通工具循环。"""
         from omichub.application.schemas.tool_invocation import ToolInvocationContext
@@ -2931,7 +2935,9 @@ class ChatService:
         manager = manager_ctx.agent
         manager_sender = {
             "agent_id": manager.agent_id,
-            "name": manager.name,
+            # 超频模式内统一以 Manager 角色示人,避免与会话常驻人格(如“智能助手”)
+            # 和 run 投影里的“主 Agent”混用造成混乱。
+            "name": "超频 Manager",
             "avatar": manager.avatar,
             "color": manager.color,
             "role": "manager",
@@ -3170,8 +3176,14 @@ class ChatService:
             prompt: str,
             max_tokens: int = 1200,
             system_prompt: str = "",
-        ) -> AsyncIterator[str]:
-            """逐段产出 Manager 正文，供调用方在累加的同时向前端转发流式 delta。"""
+            include_reasoning: bool = False,
+        ) -> AsyncIterator[Any]:
+            """逐段产出 Manager 正文。
+
+            思考过程(is_reasoning)绝不混入正文:规划输出是 JSON,混入会导致
+            解析失败并污染计划摘要。include_reasoning=True 时产出
+            (content, is_reasoning) 元组,供调用方把思考过程流式转发给前端。
+            """
             if manager_ctx.model_config is None:
                 return
             async for chunk in provider_manager.chat_stream(
@@ -3181,9 +3193,14 @@ class ChatService:
                 temperature=0.2,
                 max_tokens=max_tokens,
                 tools=None,
-                deep_thinking=False,
+                deep_thinking=deep_thinking,
             ):
-                if chunk.type == "text":
+                if chunk.type != "text":
+                    continue
+                is_reasoning = bool(chunk.metadata.get("is_reasoning"))
+                if include_reasoning:
+                    yield chunk.content, is_reasoning
+                elif not is_reasoning:
                     yield chunk.content
 
         async def ask_manager(
@@ -3210,6 +3227,7 @@ class ChatService:
                 "并在最终报告中用“假设与限制”明确列出所有未经确认的前提。"
             )
         manager_raw = ""
+        manager_thought = ""
         decision: dict[str, Any] = {}
         speech = ""
         questions: list[dict[str, Any]] = []
@@ -3229,8 +3247,25 @@ class ChatService:
                 data_ready=followup_data_ready,
             )
         else:
+            # 先给前端即时反馈:Manager LLM 调用可能长达数十秒,期间没有任何
+            # 事件,卡片会一直停在上一轮的“等待你补充分析关键信息”状态。
+            yield ChatChunk(
+                type="overdrive_progress",
+                metadata={
+                    "phase": "manager_ready",
+                    "label": "Manager 正在分析你的回复并制定协作方案",
+                    "total": 0,
+                    "completed": 0,
+                },
+            )
             try:
-                manager_raw = await ask_manager(
+                # 规划调用真流式:思考过程以 room_speech_delta(is_reasoning)即时
+                # 转发,前端 Manager 气泡出现“思考中”动画;正文(JSON)只做累加,
+                # 不流式展示。思考 token 与正文共享 max_tokens,深度思考模式下
+                # 上调预算避免 JSON 被截断。
+                manager_raw_parts: list[str] = []
+                thought_parts: list[str] = []
+                async for delta, is_reasoning in stream_manager(
                     OVERDRIVE_MANAGER_PROMPT.format(
                         manager_name=manager.name,
                         catalog=catalog,
@@ -3239,8 +3274,25 @@ class ChatService:
                         domain_notes=registry.manager_notes(planning_content),
                         user_content=planning_content,
                     ),
-                    max_tokens=900,
-                )
+                    max_tokens=2400 if deep_thinking else 900,
+                    include_reasoning=True,
+                ):
+                    if is_reasoning:
+                        thought_parts.append(delta)
+                        yield ChatChunk(
+                            type="room_speech_delta",
+                            content=delta,
+                            metadata={
+                                "sender": manager_sender,
+                                "worker_key": "manager-plan",
+                                "session_id": session_id,
+                                "is_reasoning": True,
+                            },
+                        )
+                    else:
+                        manager_raw_parts.append(delta)
+                manager_raw = "".join(manager_raw_parts)
+                manager_thought = "".join(thought_parts).strip()
             except Exception as exc:  # noqa: BLE001
                 initial_manager_failed = True
                 logger.exception(
@@ -3249,7 +3301,9 @@ class ChatService:
                     exc,
                 )
             decision = _extract_route_json(manager_raw) or {}
-            speech = str(decision.get("speech") or manager_raw or "我来直接处理这个问题。")
+            # 解析失败时不得把原始输出当 speech：原始输出可能包含思考过程或
+            # 非约定 schema 的 JSON dump，会直接污染计划确认卡摘要。
+            speech = str(decision.get("speech") or "我来直接处理这个问题。")
             raw_questions = decision.get("questions")
             questions = (
                 [
@@ -3307,7 +3361,7 @@ class ChatService:
                         + "\n\n必需环节契约（必须全部覆盖，保持依赖方向）：\n"
                         + format_overdrive_anchors(authoritative_rules)
                         + "\n\n请输出修正后的完整计划（与上一轮相同的 JSON 格式），保留原计划中的合理分片、并行和额外环节，只修复违规点。",
-                        max_tokens=900,
+                        max_tokens=2400 if deep_thinking else 900,
                     )
                 except Exception as exc:  # noqa: BLE001
                     logger.exception(
@@ -3320,9 +3374,9 @@ class ChatService:
                 repaired_assignments = _normalize_overdrive_assignments(
                     repair_decision.get("assignments"), set(catalog_by_id)
                 )
-                repaired_speech = str(
-                    repair_decision.get("speech") or repair_raw or ""
-                ).strip()
+                # 修复输出解析不出 speech 时返回空串，让 apply_authoritative_plan
+                # 回退到首轮 speech；不能把 repair_raw 原文（可能含思考过程）当摘要。
+                repaired_speech = str(repair_decision.get("speech") or "").strip()
                 return repaired_speech, repaired_assignments
 
             constrained = await apply_authoritative_plan(
@@ -3489,7 +3543,14 @@ class ChatService:
             repair_outcome=repair_outcome,
             llm_speech_overridden=False,
         )
-        yield await emit_speech(manager_sender, speech, 1, planning_metadata=planning_metadata)
+        yield await emit_speech(
+            manager_sender,
+            speech,
+            1,
+            worker_key="manager-plan",
+            thought=manager_thought,
+            planning_metadata=planning_metadata,
+        )
         if schedule_fallback:
             yield ChatChunk(
                 type="schedule_fallback",
@@ -3553,7 +3614,26 @@ class ChatService:
             active_run = None
         if active_run is None or active_run.status == "REPLANNING":
             revision_feedback = ""
-            lead_planner_id = str(assignments[0]["agent_id"])
+            # lead planner 按任务领域选择:命中领域提示词/能力标签时交给领域专家
+            # (如单细胞任务交给 agent-scrna),未命中时回退通用助手;不再固定取
+            # 分工列表第一项。
+            try:
+                lead_planner_id = str(
+                    OverdrivePlanningService.select_lead_planner(
+                        root_request,
+                        [
+                            {
+                                **item,
+                                "features": {
+                                    "capability_scope": item.get("capability_scope") or [],
+                                },
+                            }
+                            for item in catalog_items
+                        ],
+                    )["lead_planner_agent_id"]
+                )
+            except Exception:  # noqa: BLE001
+                lead_planner_id = str(assignments[0]["agent_id"])
             run_service = OverdriveRunService(self._db)
             if active_run is None:
                 run = await run_service.create_run(
@@ -3599,6 +3679,7 @@ class ChatService:
                         "tool_name": "workspace_list",
                         "arguments": {"path": ""},
                         "mcp_server": "studio",
+                        "purpose": "检查工作区中已上传的输入文件,确认数据是否就绪",
                     },
                 )
                 try:
@@ -3650,6 +3731,7 @@ class ChatService:
                         "tool_name": "sandbox_execute",
                         "arguments": sandbox_args,
                         "mcp_server": "studio",
+                        "purpose": "盘点输入、参考与脚本目录,核验分析输入契约",
                     },
                 )
                 try:
@@ -3817,9 +3899,6 @@ class ChatService:
                     }
                 )
 
-            if "agent-qc" not in catalog_by_id:
-                speech += " 当前可用 Agent 中没有独立 QC 审计员，计划将明确标注该质量门降级。"
-
             def plan_builder(**_: Any) -> dict[str, Any]:
                 waves = _overdrive_assignment_waves(enriched_tasks)
                 return {
@@ -3851,7 +3930,7 @@ class ChatService:
                     ],
                     "quality_gates": [
                         "每个任务完成判据命中且产物路径真实存在",
-                        "独立 QC Agent 对所有上游产物给出质量门结论（不可用时明确降级）",
+                        "Manager 对每个任务结果逐条复核完成判据与证据",
                         "失败、跳过与限制进入最终交付报告",
                     ],
                     "delivery_paths": [
@@ -3901,8 +3980,11 @@ class ChatService:
                     source_timeout_seconds=float(
                         research_limits.get("source_timeout_seconds") or 20
                     ),
+                    model_timeout_seconds=float(
+                        research_limits.get("model_timeout_seconds") or 45
+                    ),
                     wall_timeout_seconds=float(
-                        research_limits.get("wall_timeout_seconds") or 45
+                        research_limits.get("wall_timeout_seconds") or 75
                     ),
                     max_evidence_items_per_source=int(
                         research_limits.get("max_evidence_items_per_source") or 8
@@ -3926,6 +4008,13 @@ class ChatService:
                 "web": ("web_search", "research"),
                 "model_knowledge": ("planning_synthesis", None),
             }
+            source_purposes = {
+                "query_refiner": "把需求改写为可检索的查询词",
+                "knowledge_base": "检索平台知识库中的领域流程与证据",
+                "literature": "检索相关文献作为方案依据",
+                "web": "联网检索最新资料与工具版本",
+                "model_knowledge": "汇总模型内置知识,形成方案骨架",
+            }
             while not planning_task.done() or not activity_queue.empty():
                 try:
                     activity = await asyncio.wait_for(activity_queue.get(), timeout=0.1)
@@ -3942,6 +4031,7 @@ class ChatService:
                             "tool_call_id": call_id,
                             "tool_name": tool_name,
                             "arguments": {"queries": activity.get("queries") or []},
+                            "purpose": source_purposes.get(source) or "规划期信息收集",
                             **({"mcp_server": mcp_server} if mcp_server else {}),
                         },
                     )
@@ -5308,6 +5398,7 @@ class ChatService:
                 session_id=current_session_id,
                 user_content=user_content,
                 manager_ctx=ctx,
+                deep_thinking=deep_thinking,
             ):
                 yield chunk
             yield ChatChunk(type="done", metadata={"session_id": current_session_id})
@@ -6297,6 +6388,7 @@ class ChatService:
                 skill_pins=session_mcp_meta.get("skill_pins"),
                 web_sources=presearch_sources,
                 handoff_handler=_activate_langgraph_handoff,
+                extend_max_rounds=extend_max_rounds,
             ):
                 yield chunk
             return
@@ -7282,6 +7374,7 @@ class ChatService:
         skill_pins: dict[str, int] | None = None,
         web_sources: list[dict[str, Any]] | None = None,
         handoff_handler: Any | None = None,
+        extend_max_rounds: bool = False,
     ) -> AsyncIterator[ChatChunk]:
         """LangGraph 引擎路径：状态图驱动 ReAct 循环，事件协议与手写循环一致
 
@@ -7400,6 +7493,9 @@ class ChatService:
         update_counter = 0
         first_chunk_sent = False
         accumulated_usage: dict[str, Any] | None = None
+        # 轮次上限与手写循环对齐：默认 100 轮；前端弹窗确认继续后传
+        # extend_max_rounds=True 扩展到 1000 轮。
+        max_rounds = 1000 if extend_max_rounds else 100
         # 历史重载重建工具卡片/图表所需（对齐 legacy 手写循环）：
         # timeline 记录正文段/工具段的交错顺序，persisted_tool_invocations 保存
         # 每次工具调用的 arguments/result/ui_payload——Plotly 图表等就在 ui_payload 里，
@@ -7430,7 +7526,7 @@ class ChatService:
                     channel_resolver=_resolve_channel,
                     chat_stream=provider_manager.chat_stream,
                 )
-                runtime = LangGraphRuntimeService(deps)
+                runtime = LangGraphRuntimeService(deps, max_rounds=max_rounds)
                 async for chunk in runtime.stream(runtime_state["llm_messages"]):
                     if chunk.type == "text":
                         if chunk.metadata.get("is_reasoning"):
@@ -7640,6 +7736,22 @@ class ChatService:
             }
             or None,
         )
+        if (
+            runtime.rounds_exhausted
+            and runtime.last_handoff is None
+            and runtime.last_ask_request is None
+        ):
+            # 轮次触顶：与手写循环一致，通知前端弹窗选择是否以扩展上限继续
+            yield ChatChunk(
+                type="round_limit",
+                content=f"工具调用轮次达到上限（{max_rounds}），任务提前结束",
+                metadata={
+                    "session_id": session_id,
+                    "message_id": ai_message_id,
+                    "max_rounds": max_rounds,
+                    "can_extend": max_rounds < 1000,
+                },
+            )
         await self._apply_usage_to_session(ai_message_id, last_usage)
         yield ChatChunk(
             type="done",

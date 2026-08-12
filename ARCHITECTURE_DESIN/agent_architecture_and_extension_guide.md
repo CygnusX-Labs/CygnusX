@@ -149,8 +149,8 @@ ChatService.stream_agent_chat()
 
 两种执行器的工具语义一致：模型请求 function call，服务端检查工具来源并执行，结果作为 `role: tool` 消息回灌。
 
-- **LangGraph**：`src/omichub/infrastructure/execution/langgraph_runtime.py` 中的状态图固定为 `llm_call → tool_exec → llm_call`，最大 8 轮；适用于标记 `features.engine: langgraph` 的非 Studio Agent。
-- **手写 ReAct**：`ChatService.stream_agent_chat()` 中保留的 8 轮循环；Studio 会话和未设置 LangGraph 的 Agent 使用它。
+- **LangGraph**：`src/omichub/infrastructure/execution/langgraph_runtime.py` 中的状态图固定为 `llm_call → tool_exec → llm_call`，最大轮数由调用方传入（与手写循环对齐：默认 100 轮，前端确认续轮后 1000 轮），触顶时产出 `round_limit` 事件；适用于标记 `features.engine: langgraph` 的非 Studio Agent。
+- **手写 ReAct**：`ChatService.stream_agent_chat()` 中保留的循环（默认 100 轮，确认续轮后 1000 轮）；Studio 会话和未设置 LangGraph 的 Agent 使用它。
 
 这意味着当前 LangGraph 是对 ReAct 控制流的图化，不是一个“自动规划—多节点任务编排图”。
 

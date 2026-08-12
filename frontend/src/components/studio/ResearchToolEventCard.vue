@@ -11,6 +11,7 @@ const statusLabel = computed(() => ({
   awaiting_approval: '待确认',
   success: '已完成',
   error: '失败',
+  timed_out: '超时·已降级',
 }[props.tool.status]))
 </script>
 

@@ -19,6 +19,8 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
+from loguru import logger
+
 from omichub.application.services.overdrive_run_service import (
     OverdriveRunService,
     validate_plan,
@@ -32,6 +34,7 @@ PlanBuilder = Callable[..., Awaitable[Mapping[str, Any]] | Mapping[str, Any]]
 ResearchActivityCallback = Callable[[dict[str, Any]], Awaitable[None]]
 
 SOURCE_TYPES = ("knowledge_base", "web", "model_knowledge")
+
 DOMAIN_HINTS: dict[str, tuple[str, ...]] = {
     "agent-rnaseq": ("rna-seq", "rnaseq", "bulk rna", "转录组", "差异表达", "deseq"),
     "agent-atacseq": ("atac-seq", "atacseq", "染色质开放", "peak calling", "可及性"),
@@ -278,14 +281,9 @@ def is_planning_only_request(
     )
     if not any(marker in normalized for marker in planning_markers):
         return False
-    if any(marker in normalized for marker in execution_markers):
-        return False
-    execution_tools = {"workspace_write", "sandbox_execute", "code_execute", "pipeline_submit"}
-    return all(
-        not bool(task.get("workspace_access"))
-        and not execution_tools.intersection(str(tool) for tool in task.get("tools") or [])
-        for task in tasks
-    )
+    # 用户明确只要方案时，以用户意图为权威；不能让 Manager 偶发生成的
+    # workspace_access/执行工具把方案请求升级为真实执行。
+    return not any(marker in normalized for marker in execution_markers)
 
 
 @dataclass(frozen=True)
@@ -313,6 +311,7 @@ class ResearchBundleService:
         literature_search: ResearchCallable | None = None,
         activity_callback: ResearchActivityCallback | None = None,
         source_timeout_seconds: float = 20,
+        model_timeout_seconds: float | None = None,
         wall_timeout_seconds: float = 45,
         max_evidence_items_per_source: int = 8,
         search_optimizer: ResearchSearchOptimizer | None = None,
@@ -324,7 +323,14 @@ class ResearchBundleService:
         self._literature_search = literature_search
         self._activity_callback = activity_callback
         self._source_timeout = max(0.01, float(source_timeout_seconds))
-        self._wall_timeout = max(self._source_timeout, float(wall_timeout_seconds))
+        # model_knowledge 是一次 LLM 流式归纳,与检索类源共用 20s 预算
+        # 在端点稍慢时必超时;未显式配置时回退到检索源预算。
+        self._model_timeout = (
+            max(0.01, float(model_timeout_seconds))
+            if model_timeout_seconds is not None
+            else self._source_timeout
+        )
+        self._wall_timeout = max(self._source_timeout, self._model_timeout, float(wall_timeout_seconds))
         self._max_items = max(1, int(max_evidence_items_per_source))
         self._search_optimizer = search_optimizer or ResearchSearchOptimizer()
 
@@ -423,7 +429,7 @@ class ResearchBundleService:
             query,
             [*kb_record["items"], *web_record["items"]],
             context={**dict(context or {}), "research_queries": research_queries},
-            timeout_seconds=min(self._source_timeout, remaining),
+            timeout_seconds=min(self._model_timeout, remaining),
         )
         await self._notify_activity(
             "source_completed", source="model_knowledge", **self._activity_record(model_record)
@@ -574,10 +580,19 @@ class ResearchBundleService:
             items = self._unwrap_items(raw)
             return self._source_record("succeeded", started, items=items, query=query)
         except TimeoutError:
+            logger.warning(
+                "Research source timed out: source={} timeout={}s query={}",
+                source,
+                self._source_timeout,
+                query[:200],
+            )
             return self._source_record(
                 "timed_out", started, error=f"{source} research timed out", query=query
             )
         except Exception as exc:  # noqa: BLE001 - one unavailable source must not block planning
+            logger.warning(
+                "Research source failed: source={} error={}", source, self._safe_error(exc)
+            )
             return self._source_record(
                 "failed", started, error=self._safe_error(exc), query=query
             )
@@ -603,10 +618,16 @@ class ResearchBundleService:
             )
             return self._source_record("completed", started, items=self._unwrap_items(raw))
         except TimeoutError:
+            logger.warning(
+                "Model knowledge synthesis timed out: timeout={}s query={}",
+                timeout_seconds,
+                query[:200],
+            )
             return self._source_record(
                 "timed_out", started, error="model knowledge synthesis timed out"
             )
         except Exception as exc:  # noqa: BLE001
+            logger.warning("Model knowledge synthesis failed: error={}", self._safe_error(exc))
             return self._source_record("failed", started, error=self._safe_error(exc))
 
     async def _invoke(self, function: ResearchCallable, query: str, **kwargs: Any) -> Any:
@@ -887,9 +908,8 @@ class OverdrivePlanningService:
             raise ValidationError("规划 Agent 未返回结构化计划")
         tasks = [deepcopy(dict(item)) for item in plan_payload.get("tasks") or []]
         planning_only = self.is_planning_only_request(run.root_request, tasks)
-        tasks = [] if planning_only else self.ensure_independent_qc_task(
-            tasks, known_agent_ids, request=run.root_request
-        )
+        if planning_only:
+            tasks = self.prepare_planning_only_tasks(tasks)
         content = str(plan_payload.get("content") or "").strip()
         if not content or planning_only:
             markdown_plan = deepcopy(dict(plan_payload))
@@ -942,28 +962,6 @@ class OverdrivePlanningService:
         summary.setdefault("evidence_count", len(bundle.evidence))
         summary["planning_only"] = planning_only
         summary["agent_ids"] = sorted({str(task.get("agent_id")) for task in tasks})
-        qc_task = next(
-            (task for task in tasks if str(task.get("task_id") or "") == "independent-qc"),
-            None,
-        )
-        if qc_task is not None:
-            summary["independent_qc"] = {
-                "mode": "required",
-                "agent_id": "agent-qc",
-                "task_id": "independent-qc",
-                "depends_on": list(qc_task.get("depends_on") or []),
-            }
-        elif planning_only:
-            summary["independent_qc"] = {
-                "mode": "not_required",
-                "reason": "本轮仅交付研究方案，不启动执行分支或独立 QC。",
-            }
-        else:
-            summary["independent_qc"] = {
-                "mode": "degraded",
-                "agent_id": "agent-qc",
-                "reason": "agent-qc 当前不可用，计划未伪造独立 QC 任务。",
-            }
         summary["wave_count"] = len(task_waves(tasks))
         summary["deliverables"] = ["plan.md"] if planning_only else sorted(
             {
@@ -973,15 +971,6 @@ class OverdrivePlanningService:
                 if str(output).strip()
             }
         )
-        agents = summary.get("agents") if isinstance(summary.get("agents"), list) else []
-        if "agent-qc" in summary["agent_ids"] and not any(
-            isinstance(agent, Mapping) and agent.get("agent_id") == "agent-qc"
-            for agent in agents
-        ):
-            summary["agents"] = [
-                *agents,
-                {"agent_id": "agent-qc", "name": "质量审计员", "reason": "独立质量门"},
-            ]
         return await self._runs.freeze_plan(
             run,
             content=content,
@@ -996,52 +985,21 @@ class OverdrivePlanningService:
         return is_planning_only_request(request, tasks)
 
     @staticmethod
-    def ensure_independent_qc_task(
-        tasks: list[dict[str, Any]], known_agent_ids: set[str], *, request: str = ""
-    ) -> list[dict[str, Any]]:
-        """Append one plan-bound QC gate after all non-QC outputs are available.
-
-        The task is deliberately materialized before the Markdown/hash are frozen: it
-        cannot be added after approval, and its absence is an explicit, visible
-        downgrade only when the configured quality auditor is unavailable.
-        """
-        if request and OverdrivePlanningService.is_planning_only_request(request, tasks):
-            return tasks
-        if not tasks or "agent-qc" not in known_agent_ids:
-            return tasks
-        if any(str(task.get("agent_id") or "") == "agent-qc" for task in tasks):
-            return tasks
-        task_ids = [str(task.get("task_id") or "") for task in tasks if task.get("task_id")]
-        outputs = [
-            str(output)
-            for task in tasks
-            for output in task.get("produces_outputs") or []
-            if str(output).strip()
-        ]
-        tasks.append(
-            {
-                "task_id": "independent-qc",
-                "agent_id": "agent-qc",
-                "task": (
-                    "独立核验所有已回流产物、证据链、完成判据与限制；逐项说明核验依据，"
-                    "并在答复末尾严格输出“质量结论：通过”或“质量结论：返工”或“质量结论：人工复核”。"
-                ),
-                "depends_on": task_ids,
-                "accepts_inputs": outputs or ["task-result"],
-                "produces_outputs": ["quality-decision", "qc-review", "audit-evidence"],
-                "completion_criteria": [
-                    "逐项核验已登记产物路径与任务完成判据",
-                    "输出可机读的“质量结论：通过|返工|人工复核”质量门结论",
-                ],
-                "tools": ["workspace_read"],
-                "workspace_access": True,
-                "timeout_seconds": 900,
-                "retry": {"max_attempts": 1, "backoff_seconds": 0},
-                "requires_approval": False,
-                "persona_context": "保持独立审计立场，不复述上游 Agent 的未经证实结论。",
-            }
-        )
-        return tasks
+    def prepare_planning_only_tasks(tasks: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+        """保留方案分解 DAG，但移除计划阶段不应执行的写入和计算能力。"""
+        execution_tools = {"workspace_write", "sandbox_execute", "code_execute", "pipeline_submit"}
+        prepared: list[dict[str, Any]] = []
+        for task in tasks:
+            item = deepcopy(dict(task))
+            item["workspace_access"] = False
+            item["requires_approval"] = False
+            item["tools"] = [
+                str(tool)
+                for tool in item.get("tools") or []
+                if str(tool) not in execution_tools
+            ] or ["workspace_read"]
+            prepared.append(item)
+        return prepared
 
     @staticmethod
     async def _maybe_await(value: Awaitable[Any] | Any) -> Any:
@@ -1154,7 +1112,7 @@ def build_plan_markdown(
     wave_lines = "\n".join(
         f"- 波次 {index}: {', '.join(task_ids)}"
         for index, task_ids in enumerate(waves, start=1)
-    ) or ("- 本轮仅交付研究方案，不启动执行 DAG" if planning_only else "- 尚无可执行波次")
+    ) or ("- 本轮仅交付研究方案，无需启动执行任务" if planning_only else "- 尚无可执行波次")
     task_blocks = []
     for task in tasks:
         task_blocks.append(
@@ -1162,7 +1120,7 @@ def build_plan_markdown(
             f"```json\n{json.dumps(dict(task), ensure_ascii=False, indent=2)}\n```"
         )
     task_markdown = "\n\n".join(task_blocks) or (
-        "- 本轮无执行任务；确认后直接完成方案交付，不进入 Worker 或独立 QC。"
+        "- 本轮无方案分解任务；确认后直接完成方案交付，不进入 Worker 执行。"
         if planning_only else "- 尚无任务"
     )
     return (

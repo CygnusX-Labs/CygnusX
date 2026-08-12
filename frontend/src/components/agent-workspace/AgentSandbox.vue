@@ -357,23 +357,6 @@ function handleConfirmTool(toolName: string, args: Record<string, unknown>) {
   store.sendMessage(content, {})
 }
 
-function handleConfirmExecution(preset: string) {
-  if (store.isStreaming) {
-    message.warning('请等待当前回复完成')
-    return
-  }
-  void store.sendMessage(preset, {})
-}
-
-function handleAdjustExecution(preset: string) {
-  if (store.isStreaming) {
-    message.warning('请等待当前回复完成')
-    return
-  }
-  input.value = preset
-  nextTick(() => composerRef.value?.focus())
-}
-
 function handleCreateCaseFromConsultation(summary: string, consultationId?: string) {
   window.dispatchEvent(new CustomEvent('omichub:agentteams-create', {
     detail: { summary, consultationId },
@@ -520,8 +503,6 @@ onUnmounted(() => {
           @open-tool-page="handleOpenToolPage"
           @create-case-from-consultation="handleCreateCaseFromConsultation"
           @correct-collaboration-route="handleCorrectCollaborationRoute"
-          @confirm-execution="handleConfirmExecution"
-          @adjust-execution="handleAdjustExecution"
         />
 
         <transition name="progress-dock">
@@ -887,7 +868,7 @@ onUnmounted(() => {
   border-top-color: transparent;
   backdrop-filter: none;
 }
-:root[data-theme="dark"] .overdrive-progress-dock { background: linear-gradient(180deg, transparent, rgba(15, 20, 32, 0.88) 38%); }
+:root[data-theme="dark"] .overdrive-progress-dock { background: transparent; }
 :root[data-theme="dark"] .is-empty .composer-slot { background: transparent; }
 :root[data-theme="dark"] .quick-chip { background: var(--chat-surface, var(--neutral-card)); border-color: var(--neutral-border, #2a3040); }
 :root[data-theme="dark"] .model-selector :deep(.n-base-selection) { background: rgba(255, 255, 255, 0.08); }

@@ -19,6 +19,9 @@ CATALOG = [
     {"agent_id": "agent-code", "name": "代码助手", "category": "code"},
     {"agent_id": "agent-viz", "name": "可视化助手", "category": "visualization"},
     {"agent_id": "agent-scrna", "name": "单细胞分析师", "category": "omics"},
+    {"agent_id": "agent-scrna-upstream", "name": "单细胞上游与样本质控专家", "category": "omics"},
+    {"agent_id": "agent-scrna-integration", "name": "单细胞整合与聚类专家", "category": "omics"},
+    {"agent_id": "agent-scrna-advanced", "name": "单细胞注释与高级分析专家", "category": "omics"},
     {"agent_id": "agent-rnaseq", "name": "RNA-seq 分析师", "category": "omics"},
 ]
 
@@ -209,10 +212,23 @@ def test_authoritative_assignment_mode_only_returns_declared_phylogeny_dag() -> 
 
 
 def test_default_assignment_uses_scrna_for_single_cell_plan() -> None:
-    assignments = _default_overdrive_assignments("做个单细胞分析计划", CATALOG)
+    assignments = _default_overdrive_assignments(
+        "帮我创建一下基于tp53的小鼠10个样本的单细胞分析方案，期望发现在肺癌免疫耐受相关的基因和机制",
+        CATALOG,
+    )
 
-    assert assignments[0]["agent_id"] == "agent-scrna"
-    assert assignments[0]["task_id"] == "domain-analysis"
+    assert [item["task_id"] for item in assignments] == [
+        "scrna-sample-contract",
+        "scrna-integration-clustering",
+        "scrna-immune-tolerance",
+    ]
+    assert [item["agent_id"] for item in assignments] == [
+        "agent-scrna-upstream",
+        "agent-scrna-integration",
+        "agent-scrna-advanced",
+    ]
+    assert assignments[1]["depends_on"] == ["scrna-sample-contract"]
+    assert assignments[2]["depends_on"] == ["scrna-integration-clustering"]
 
 
 def test_default_assignment_uses_code_fallback_for_non_planning_request() -> None:

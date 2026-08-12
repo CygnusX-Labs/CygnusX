@@ -362,6 +362,7 @@ class OverdriveScheduler:
             instance = {
                 "assistant_instance_id": f"asst:{run.run_id}:wave-{wave}:{len(instances) + 1}",
                 "agent_id": agent_id,
+                "agent_name": str(agent.get("name") or "") or None,
                 "display_name": display_name,
                 "persona_version": str(
                     (agent.get("features") or {}).get("persona", {}).get("version")
@@ -542,6 +543,60 @@ class DeliveryAssembler:
         path.write_text(content, encoding="utf-8")
         relative = f"{relative_overdrive_run_root(run.session_id, run.run_id)}/delivery/final-report.md"
         return {"path": relative, "official_artifacts": official, "content": content}
+
+    def write_readme(
+        self,
+        run: OverdriveRunModel,
+        delivery: dict[str, Any],
+        *,
+        manager_summary: str = "",
+    ) -> dict[str, Any]:
+        """生成项目 README:交付清单、下载方式与 Manager 总结。
+
+        沿用工作台 output/README 索引的约定,让每轮超频协作都有
+        “最终结果在哪、从哪里下载”的权威说明。Manager 总结后补时
+        可用同一方法重写(幂等覆盖)。
+        """
+        plan = run.plan or {}
+        summary = plan.get("summary") if isinstance(plan.get("summary"), dict) else {}
+        title = str(summary.get("title") or "超频协作")
+        official = [
+            item
+            for item in delivery.get("official_artifacts") or []
+            if isinstance(item, dict) and item.get("path")
+        ]
+        failures = [task for task in run.tasks if task.get("status") in {"failed", "skipped"}]
+        finished = run.finished_at.isoformat() if run.finished_at else datetime.now(UTC).isoformat()
+        lines = [
+            "# 项目交付 README",
+            "",
+            f"- 项目: {title}",
+            f"- Run: `{run.run_id}`",
+            f"- 计划版本: v{int(plan.get('version') or 0)}(hash `{str(plan.get('hash') or '')[:8]}`)",
+            f"- 完成时间: {finished}",
+            "",
+            "## 最终结果与下载",
+            "",
+            "以下正式产物均可在聊天窗口的超频卡片产物入口下载,或调用产物接口 "
+            f"`GET /sessions/{run.session_id}/overdrive-runs/{run.run_id}/artifacts?path=<路径>`:",
+            "",
+            f"- 最终报告: `{delivery.get('path')}`",
+        ]
+        lines.extend(f"- `{item.get('path')}`(来源:{item.get('source') or 'unknown'})" for item in official)
+        if manager_summary.strip():
+            lines.extend(["", "## Manager 总结", "", manager_summary.strip()])
+        if failures:
+            lines.extend(["", "## 限制与未完成项", ""])
+            lines.extend(
+                f"- {task.get('task_id')}: {task.get('error_summary') or task.get('status')}"
+                for task in failures
+            )
+        content = "\n".join(lines).rstrip() + "\n"
+        root = overdrive_run_root(run.session_id, run.run_id) / "delivery"
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "README.md").write_text(content, encoding="utf-8")
+        relative = f"{relative_overdrive_run_root(run.session_id, run.run_id)}/delivery/README.md"
+        return {"path": relative, "content": content}
 
 
 def safe_task_id(value: str) -> str:

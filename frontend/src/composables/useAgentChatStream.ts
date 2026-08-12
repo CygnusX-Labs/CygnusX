@@ -54,6 +54,8 @@ export interface ToolCallEvent {
   tool_name: string
   arguments: Record<string, unknown>
   mcp_server?: string
+  /** 调用理由（为什么调这个工具，后端 metadata 透传） */
+  purpose?: string
 }
 export interface ToolResultEvent {
   tool_call_id: string
@@ -197,6 +199,8 @@ export interface OverdriveProgressEvent {
   waveTotal?: number
   waveMode?: 'parallel' | 'serial'
   fallback?: boolean
+  /** 方案规划型 run:不经过专家执行,确认计划即完成交付。 */
+  planningOnly?: boolean
   warning?: string
   stalledTaskId?: string
   activities?: Array<{
@@ -652,6 +656,7 @@ export function useAgentChatStream() {
           tool_name: (data.tool_name as string) || '',
           arguments: (data.arguments as Record<string, unknown>) || {},
           mcp_server: typeof data.mcp_server === 'string' ? data.mcp_server : undefined,
+          purpose: typeof data.purpose === 'string' ? data.purpose : undefined,
         })
         break
       case 'mode_changed':
@@ -721,6 +726,7 @@ export function useAgentChatStream() {
           wave: Number(data.wave) || undefined,
           waveTotal: Number(data.wave_total) || undefined,
           waveMode: data.wave_mode === 'parallel' ? 'parallel' : data.wave_mode === 'serial' ? 'serial' : undefined,
+          planningOnly: Boolean(data.planning_only) || undefined,
           warning: typeof data.warning === 'string' ? data.warning : undefined,
           activities: rawActivities.map((raw) => {
             const activity = asRecord(raw) || {}

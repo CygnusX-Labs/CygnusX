@@ -1,6 +1,6 @@
 """LangGraphRuntimeService：驱动 ReAct 状态图并产出 ChatChunk 流
 
-图结构（对应 legacy 手写 8 轮工具循环）：
+图结构（对应 legacy 手写 ReAct 工具循环，轮数上限由 max_rounds 参数控制）：
 
     __start__ → llm_call ──[有 tool_calls]──→ tool_exec ──→ llm_call（回灌）
                      └──[无 tool_calls / 出错]──→ __end__
@@ -43,6 +43,8 @@ class LangGraphRuntimeService:
         self.error: str | None = None
         self.last_handoff: dict[str, Any] | None = None
         self.last_ask_request: dict[str, Any] | None = None
+        # 图因轮次触顶进入强制收尾轮时为 True，供调用方产出 round_limit 事件
+        self.rounds_exhausted: bool = False
         self._graph = self._build_graph()
 
     def _build_graph(self) -> Any:
@@ -107,6 +109,9 @@ class LangGraphRuntimeService:
                 self.error = final.get("error")
                 self.last_handoff = final.get("handoff")
                 self.last_ask_request = final.get("ask_request")
+                # 正常收尾时 rounds ≤ max_rounds；进入强制收尾轮（rounds >=
+                # max_tool_rounds 的 llm_call）后 rounds 会超过上限，据此判定触顶。
+                self.rounds_exhausted = (final.get("rounds") or 0) > self._max_rounds
             except Exception as e:  # noqa: BLE001
                 self.error = str(e)
                 await queue.put(ChatChunk(type="error", content=f"运行时异常: {e}"))

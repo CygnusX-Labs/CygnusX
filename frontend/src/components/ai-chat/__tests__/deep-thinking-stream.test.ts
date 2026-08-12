@@ -9,6 +9,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createApp, h, nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
+import { NMessageProvider } from 'naive-ui'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -129,11 +130,13 @@ describe('深度思考流式聊天全链路', () => {
     document.body.appendChild(el)
     const app = createApp({
       render() {
-        return h(KimiMessageList, {
-          messages: session.messages,
-          isTyping: store.isStreaming,
-          streamingContent: store.streamingContent,
-          streamingThought: store.streamingThought,
+        return h(NMessageProvider, null, {
+          default: () => h(KimiMessageList, {
+            messages: session.messages,
+            isTyping: store.isStreaming,
+            streamingContent: store.streamingContent,
+            streamingThought: store.streamingThought,
+          }),
         })
       },
     })

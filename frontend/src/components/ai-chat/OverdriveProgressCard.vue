@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { NButton, NInput, NProgress, NSelect, useMessage } from 'naive-ui'
+import { NButton, NIcon, NInput, NProgress, NSelect, useMessage } from 'naive-ui'
+import { ChevronDownOutline } from '@vicons/ionicons5'
 import type { OverdriveProgress } from './types'
 import { chatApi } from '@/api/chat'
 import { useAgentHubStore } from '@/stores/agentHub'
@@ -16,6 +17,7 @@ const message = useMessage()
 const selectedTaskId = ref<string | null>(null)
 const directive = ref('')
 const controlling = ref(false)
+const collapsed = ref(false)
 const pendingOptions = computed(() => (props.progress.tasks || [])
   .filter((task) => ['pending', 'ready'].includes(task.status))
   .map((task) => ({ label: `${task.taskId} · ${task.agentId}`, value: task.taskId })))
@@ -81,6 +83,10 @@ async function submitDirective() {
   }
 }
 
+function toggleCollapsed() {
+  collapsed.value = !collapsed.value
+}
+
 function phaseLabel(phase: OverdriveProgress['phase']): string {
   const labels: Record<OverdriveProgress['phase'], string> = {
     manager_ready: '规划中',
@@ -123,6 +129,10 @@ function activityMeta(activity: NonNullable<OverdriveProgress['activities']>[num
 function stepClass(progress: OverdriveProgress, step: number): string {
   if (progress.phase === 'terminated' && !progress.tasks?.length) {
     return step === 1 ? 'is-complete' : ''
+  }
+  if (progress.planningOnly && progress.phase === 'completed') {
+    // 方案规划型 run 不经过专家执行:Manager 规划与结论交付标绿,“专家协作”不标绿。
+    return step === 2 ? '' : 'is-complete'
   }
   const phase = progress.phase
   const activeStep = ['completed', 'failed', 'terminated'].includes(phase)
@@ -214,7 +224,7 @@ async function downloadArtifact(artifact: NonNullable<OverdriveProgress['artifac
 
 <template>
   <div class="overdrive-progress-card" :class="{ 'is-compact': compact }" role="status" aria-live="polite">
-    <div class="overdrive-progress-card__header">
+    <div v-if="!collapsed" class="overdrive-progress-card__header">
       <div class="overdrive-progress-card__copy">
         <div class="overdrive-progress-card__eyebrow">
           <span
@@ -235,10 +245,25 @@ async function downloadArtifact(artifact: NonNullable<OverdriveProgress['artifac
           </span>
         </div>
       </div>
-      <span class="overdrive-progress-card__phase">{{ phaseLabel(progress.phase) }}</span>
+      <div class="overdrive-progress-card__header-actions">
+        <span class="overdrive-progress-card__phase">{{ phaseLabel(progress.phase) }}</span>
+        <NButton
+          size="tiny"
+          quaternary
+          circle
+          :aria-label="collapsed ? '展开超频协作详情' : '收起超频协作详情'"
+          :title="collapsed ? '展开详情' : '收起详情'"
+          @click="toggleCollapsed"
+        >
+          <template #icon>
+            <NIcon><ChevronDownOutline /></NIcon>
+          </template>
+        </NButton>
+      </div>
     </div>
 
-    <div v-if="progress.warning" class="overdrive-progress-card__warning">{{ progress.warning }}</div>
+    <template v-if="!collapsed">
+      <div v-if="progress.warning" class="overdrive-progress-card__warning">{{ progress.warning }}</div>
 
     <section v-if="progress.activities?.length" class="overdrive-progress-card__activities" aria-label="规划活动">
       <div class="overdrive-progress-card__activities-title">规划活动</div>
@@ -357,6 +382,27 @@ async function downloadArtifact(artifact: NonNullable<OverdriveProgress['artifac
         </div>
       </div>
     </div>
+    </template>
+
+    <div v-else class="overdrive-progress-card__collapsed-progress" aria-label="超频协作进度">
+      <NProgress
+        type="line"
+        :percentage="percentage(progress)"
+        :show-indicator="false"
+        :processing="!['completed', 'failed', 'terminated', 'awaiting_input'].includes(progress.phase)"
+        :status="progress.phase === 'completed' ? 'success' : progress.phase === 'failed' ? 'error' : 'default'"
+      />
+      <NButton
+        size="tiny"
+        quaternary
+        circle
+        aria-label="展开超频协作详情"
+        title="展开详情"
+        @click="toggleCollapsed"
+      >
+        <template #icon><NIcon class="is-point-up"><ChevronDownOutline /></NIcon></template>
+      </NButton>
+    </div>
   </div>
 </template>
 
@@ -383,6 +429,35 @@ async function downloadArtifact(artifact: NonNullable<OverdriveProgress['artifac
 .overdrive-progress-card__header {
   align-items: flex-start;
   justify-content: space-between;
+}
+
+.overdrive-progress-card__header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.overdrive-progress-card__header-actions :deep(.n-icon),
+.overdrive-progress-card__collapsed-progress :deep(.n-icon) {
+  transition: transform 160ms ease;
+}
+
+/* 展开态显示 ▼(内容已在下方展开),折叠态显示 ▲(点击向上收起) */
+.overdrive-progress-card__collapsed-progress :deep(.n-icon.is-point-up) {
+  transform: rotate(180deg);
+}
+
+.overdrive-progress-card__collapsed-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.overdrive-progress-card__collapsed-progress :deep(.n-progress) {
+  min-width: 0;
+  flex: 1;
 }
 
 .overdrive-progress-card__copy {
@@ -756,5 +831,6 @@ async function downloadArtifact(artifact: NonNullable<OverdriveProgress['artifac
 @media (prefers-reduced-motion: reduce) {
   .overdrive-progress-card__pulse { animation: none; }
   .overdrive-progress-card__badge.is-stalled { animation: none; }
+  .overdrive-progress-card__header-actions :deep(.n-icon) { transition: none; }
 }
 </style>

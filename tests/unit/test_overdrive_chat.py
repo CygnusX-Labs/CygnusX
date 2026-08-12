@@ -940,7 +940,7 @@ async def test_overdrive_room_speech_sequence_and_persistence(
         assert [chunk.metadata["sender"]["role"] for chunk in speeches] == ["manager"] + [
             "worker"
         ] * (assignment_count * 2) + ["manager"]
-        assert speeches[0].metadata["sender"]["name"] == "Manager"
+        assert speeches[0].metadata["sender"]["name"] == "超频 Manager"
         assert all("交叉复核" in task["task"] for task in fanout_calls[-1])
     else:
         assert fanout_calls == []
@@ -1063,7 +1063,7 @@ async def test_overdrive_excludes_non_spawnable_agents_from_manager_catalog(monk
     assert [chunk.type for chunk in chunks if chunk.type == "room_speech"] == ["room_speech"]
     assert (
         next(chunk for chunk in chunks if chunk.type == "room_speech").metadata["sender"]["name"]
-        == "Manager"
+        == "超频 Manager"
     )
 
 
@@ -1095,7 +1095,7 @@ async def test_overdrive_preflight_emits_manager_question_before_dispatch(monkey
     speeches = [chunk for chunk in chunks if chunk.type == "room_speech"]
     question_event = next(chunk for chunk in chunks if chunk.type == "ask_request")
     assert len(speeches) == 1
-    assert speeches[0].metadata["sender"]["name"] == "Manager"
+    assert speeches[0].metadata["sender"]["name"] == "超频 Manager"
     assert len(question_event.metadata["questions"]) == 3
     assert not any(chunk.type == "room_speech_delta" for chunk in chunks)
 
@@ -2044,3 +2044,112 @@ async def test_approve_overdrive_approval_executes_original_call_once(monkeypatc
     assert resolved["status"] == "completed"
     assert bridge.execute.await_count == 1
     assert bridge.execute.await_args.kwargs["arguments"] == {"sample": "S1", "_confirmed": True}
+
+
+@pytest.mark.asyncio
+async def test_manager_planning_streams_reasoning_as_thought_delta(monkeypatch) -> None:
+    """规划阶段 Manager 的思考过程必须以 is_reasoning delta 流式下发,且不混入计划 JSON。"""
+    _FakeAgentService.agents = [
+        _agent("agent-general", "通用助手", category="general"),
+        _agent("agent-code", "代码助手", category="code"),
+    ]
+    monkeypatch.setattr(
+        "omichub.application.services.agent_service.AgentService", _FakeAgentService
+    )
+    plan_json = (
+        '{"speech":"按依赖顺序执行。","assignments":['
+        '{"task_id":"code","agent_id":"agent-code","task":"形成代码设计","depends_on":[]}'
+        "]}"
+    )
+
+    async def fake_stream(**_kwargs):
+        yield ChatChunk(
+            type="text", content="思考中:需要先明确分组。", metadata={"is_reasoning": True}
+        )
+        yield ChatChunk(type="text", content=plan_json)
+
+    run = SimpleNamespace(
+        run_id="overdrive:thought",
+        status="RECEIVED",
+        research={},
+        plan={},
+        control={},
+        lead_planner_agent_id="agent-code",
+    )
+    monkeypatch.setattr(chat_module.provider_manager, "chat_stream", fake_stream)
+    monkeypatch.setattr(
+        "omichub.application.services.overdrive_run_service.OverdriveRunService.get_active_for_session",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "omichub.application.services.overdrive_run_service.OverdriveRunService.create_run",
+        AsyncMock(return_value=run),
+    )
+
+    class FakePlanningService:
+        def __init__(self, _run_service, _research_service, plan_builder):
+            self.plan_builder = plan_builder
+
+        async def prepare_plan(self, *_args, **_kwargs):
+            plan = self.plan_builder()
+            return {
+                "path": "output/overdrive/session/overdrive-thought/plan.v1.md",
+                "version": 1,
+                "hash": f"sha256:{'c' * 64}",
+                "summary": plan["summary"],
+            }
+
+    monkeypatch.setattr(chat_module, "OverdrivePlanningService", FakePlanningService)
+    session = chat_module.ChatSessionModel(
+        session_id="session",
+        user_id="user",
+        model_id=chat_module.uuid.uuid4(),
+        sandbox_meta={},
+        project_id=None,
+        mode="chat",
+    )
+    monkeypatch.setattr(
+        chat_module,
+        "execute_studio_tool",
+        AsyncMock(return_value={
+            "success": True,
+            "result": {"llm_payload": {"entries": []}, "ui_payload": {"entries": []}},
+        }),
+    )
+    service = ChatService(MagicMock(spec=AsyncSession))
+    service.get_session = AsyncMock(return_value=session)  # type: ignore[method-assign]
+    service.add_message = AsyncMock(return_value=SimpleNamespace(message_id="message"))  # type: ignore[method-assign]
+    service._commit_stream_anchor = AsyncMock()  # type: ignore[method-assign]
+
+    chunks = [
+        chunk
+        async for chunk in service._run_overdrive_turn(
+            user_id="user",
+            session_id="session",
+            user_content=(
+                "我要对 TP53 敲除的 10 个小鼠样本做单细胞差异表达分析；"
+                "已有 count 表达矩阵，请用代码实现。"
+            ),
+            manager_ctx=_manager_ctx(),
+            deep_thinking=True,
+        )
+    ]
+
+    thought_deltas = [
+        chunk
+        for chunk in chunks
+        if chunk.type == "room_speech_delta"
+        and chunk.metadata.get("worker_key") == "manager-plan"
+    ]
+    assert [chunk.content for chunk in thought_deltas] == ["思考中:需要先明确分组。"]
+    assert thought_deltas[0].metadata["is_reasoning"] is True
+    assert thought_deltas[0].metadata["sender"]["role"] == "manager"
+
+    plan_speech = next(
+        chunk
+        for chunk in chunks
+        if chunk.type == "room_speech" and chunk.metadata.get("worker_key") == "manager-plan"
+    )
+    assert plan_speech.content == "按依赖顺序执行。"
+    assert plan_speech.metadata["thought"] == "思考中:需要先明确分组。"
+    assert "思考中" not in plan_speech.content

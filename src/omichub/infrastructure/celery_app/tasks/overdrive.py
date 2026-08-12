@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from celery import shared_task
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -214,6 +215,7 @@ async def _advance_run(run_id: str) -> dict[str, object]:
     from omichub.infrastructure.database.models.overdrive import OverdriveRunModel
     from omichub.infrastructure.database.session import get_session_factory
 
+    delivery_summary_pending = False
     async with get_session_factory()() as db:
         run = (
             await db.execute(
@@ -359,7 +361,9 @@ async def _advance_run(run_id: str) -> dict[str, object]:
             )
         ):
             run.status = "QUALITY_REVIEW"
+            run.finished_at = datetime.now(UTC)
             delivery = DeliveryAssembler().write(run)
+            readme = DeliveryAssembler().write_readme(run, delivery)
             run.artifact_index = [
                 *run.artifact_index,
                 {
@@ -369,14 +373,22 @@ async def _advance_run(run_id: str) -> dict[str, object]:
                     "status": "validated",
                     "source": "manager",
                 },
+                {
+                    "artifact_id": "project_readme",
+                    "path": readme["path"],
+                    "kind": "delivery",
+                    "status": "validated",
+                    "source": "manager",
+                },
             ]
             run.status = "COMPLETED"
-            run.finished_at = datetime.now(UTC)
+            delivery_summary_pending = True
             await runs.append_event(
                 run_id,
                 "run_completed",
                 {
                     "delivery_path": delivery["path"],
+                    "readme_path": readme["path"],
                     "artifact_count": len(delivery["official_artifacts"]),
                     "artifacts": deepcopy(run.artifact_index),
                 },
@@ -399,6 +411,8 @@ async def _advance_run(run_id: str) -> dict[str, object]:
         run_assistant_job.delay(run_id, str(instance["assistant_instance_id"]))
     for manager_task in manager_jobs:
         run_manager_job.delay(run_id, str(manager_task["task_id"]))
+    if delivery_summary_pending:
+        run_delivery_summary_job.delay(run_id)
     return {
         "status": "scheduled",
         "run_id": run_id,
@@ -671,6 +685,156 @@ async def _run_manager_review_job(run_id: str, task_id: str, attempt: int) -> di
     return {"status": task_status, "run_id": run_id, "task_id": task_id}
 
 
+@shared_task(name="omichub.infrastructure.celery_app.tasks.overdrive.run_delivery_summary_job")
+def run_delivery_summary_job(run_id: str) -> dict[str, object]:
+    """Generate the Manager delivery summary for a completed run."""
+    return asyncio.run(_run_delivery_summary_job(run_id))
+
+
+async def _run_delivery_summary_job(run_id: str) -> dict[str, object]:
+    from omichub.application.services.agent_service import AgentService
+    from omichub.application.services.overdrive_execution_service import DeliveryAssembler
+    from omichub.application.services.overdrive_run_service import (
+        OverdriveRunService,
+        relative_overdrive_run_root,
+    )
+    from omichub.application.services.overdrive_runtime import load_overdrive_limits
+    from omichub.infrastructure.ai_provider.openai_compatible import provider_manager
+    from omichub.infrastructure.database.models.overdrive import (
+        OverdriveRunModel,
+        OverdriveTaskResultModel,
+    )
+    from omichub.infrastructure.database.session import get_session_factory
+
+    async with get_session_factory()() as db:
+        run = (
+            await db.execute(
+                select(OverdriveRunModel)
+                .where(OverdriveRunModel.run_id == run_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if run is None or run.status != "COMPLETED":
+            return {"status": "skipped", "run_id": run_id}
+        if (run.control or {}).get("delivery_summary_ready"):
+            return {"status": "duplicate", "run_id": run_id}
+        result_rows = (
+            (
+                await db.execute(
+                    select(OverdriveTaskResultModel).where(
+                        OverdriveTaskResultModel.run_id == run_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        manager_agent_id = str(run.lead_planner_agent_id or "agent-general")
+        manager_ctx = await AgentService(db).assemble_context(manager_agent_id, user_id=run.user_id)
+        plan_snapshot = deepcopy(run.plan or {})
+        tasks_snapshot = deepcopy(run.tasks)
+        artifact_snapshot = deepcopy(run.artifact_index)
+
+    digest_items = []
+    for row in result_rows:
+        result = row.result if isinstance(row.result, dict) else {}
+        answer = str(result.get("answer") or result.get("error") or "").strip()[:800]
+        if answer:
+            digest_items.append(f"- {row.task_id}: {answer}")
+    results_digest = "\n".join(digest_items)[:12000] or "(无任务结果文本)"
+    plan_summary = plan_snapshot.get("summary") if isinstance(plan_snapshot.get("summary"), dict) else {}
+    title = str(plan_summary.get("title") or "超频协作")
+    official_count = len(
+        [
+            item
+            for item in artifact_snapshot
+            if item.get("status") in {"passed", "validated", "succeeded"}
+            and item.get("kind") not in {"process", "failed"}
+        ]
+    )
+    fallback_summary = (
+        f"本轮《{title}》协作已完成,共产出 {official_count} 项正式交付物,"
+        "明细与下载方式见项目 README。"
+    )
+    manager_summary = fallback_summary
+    summary_limits = load_overdrive_limits(manager_agent_id).get("delivery_summary") or {}
+    summary_timeout = float(summary_limits.get("timeout_seconds") or 60)
+    summary_tokens = int(summary_limits.get("max_tokens") or 1_500)
+    if manager_ctx is not None and manager_ctx.model_config is not None:
+        prompt = (
+            "你是本轮多专家协作的 Manager。协作已全部完成,请用简体中文写一段面向用户的交付总结"
+            "(150-300字):概括完成了什么、关键结论或产物是什么、有哪些限制。"
+            "不要输出 JSON、不要输出思考过程、不要复述任务清单原文。\n\n"
+            f"项目:{title}\n"
+            "任务状态:"
+            + json.dumps(
+                [
+                    {"task_id": task.get("task_id"), "status": task.get("status")}
+                    for task in tasks_snapshot
+                ],
+                ensure_ascii=False,
+            )
+            + f"\n任务结果摘要:\n{results_digest}"
+        )
+        answer = ""
+        try:
+            async with asyncio.timeout(summary_timeout):
+                async for chunk in provider_manager.chat_stream(
+                    config=manager_ctx.model_config,
+                    messages=[{"role": "user", "content": prompt}],
+                    system_prompt=manager_ctx.system_prompt,
+                    temperature=0.2,
+                    max_tokens=summary_tokens,
+                    tools=None,
+                    deep_thinking=False,
+                ):
+                    if chunk.type == "text" and not chunk.metadata.get("is_reasoning"):
+                        answer += chunk.content
+            candidate = answer.strip()
+            if candidate:
+                manager_summary = candidate[:2_000]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Overdrive delivery summary fell back to rule-based text: run={} error={}",
+                run_id,
+                exc,
+            )
+
+    async with get_session_factory()() as db:
+        run = (
+            await db.execute(
+                select(OverdriveRunModel)
+                .where(OverdriveRunModel.run_id == run_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if run is None or run.status != "COMPLETED":
+            return {"status": "skipped", "run_id": run_id}
+        _, official = DeliveryAssembler().assemble(run)
+        relative_root = relative_overdrive_run_root(run.session_id, run.run_id)
+        readme = DeliveryAssembler().write_readme(
+            run,
+            {
+                "path": f"{relative_root}/delivery/final-report.md",
+                "official_artifacts": official,
+            },
+            manager_summary=manager_summary,
+        )
+        control = deepcopy(run.control or {})
+        control["delivery_summary_ready"] = True
+        run.control = control
+        runs = OverdriveRunService(db)
+        await runs.append_event(
+            run_id,
+            "manager_delivery_ready",
+            {"content": manager_summary, "delivery_path": readme["path"]},
+            dedupe_key=f"delivery_summary:{run_id}",
+        )
+        await runs.persist_snapshot(run)
+        await db.commit()
+    return {"status": "summarized", "run_id": run_id, "delivery_path": readme["path"]}
+
+
 @shared_task(name="omichub.infrastructure.celery_app.tasks.overdrive.run_assistant_job")
 def run_assistant_job(run_id: str, assistant_instance_id: str) -> dict[str, object]:
     """Execute exactly one assistant instance; completion immediately re-enters the scheduler."""
@@ -788,7 +952,15 @@ async def _run_assistant_job(run_id: str, assistant_instance_id: str) -> dict[st
                 await service.append_event(
                     run_id,
                     f"assistant_{str(event.get('type')).removeprefix('worker_')}",
-                    {**event, "assistant_instance_id": assistant_instance_id, "task_id": task_id},
+                    {
+                        **event,
+                        "assistant_instance_id": assistant_instance_id,
+                        "task_id": task_id,
+                        # 透传真实执行者身份，供房间发言/进度投影显示
+                        "agent_id": str(task.get("agent_id") or event.get("agent_id") or ""),
+                        "display_name": str(instance.get("display_name") or ""),
+                        "agent_name": instance.get("agent_name"),
+                    },
                 )
                 await event_db.commit()
 
@@ -808,6 +980,30 @@ async def _run_assistant_job(run_id: str, assistant_instance_id: str) -> dict[st
                 return "paused"
             return None
 
+    # 沙盒可用性预检：预启动本会话沙盒；失败时明确降级 —— 回落写工具授权，
+    # 并要求专家把产物直接写在回复正文（平台会代写落盘 result.md），
+    # 避免专家反复调用必失败的写工具或幻觉“沙盒写入不可用”。
+    from omichub.core.config import get_settings
+    from omichub.infrastructure.studio import studio_sandbox_manager
+
+    sandbox_unavailable_reason = ""
+    try:
+        await studio_sandbox_manager.ensure_running(
+            str(run.session_id), user_id=str(run.user_id)
+        )
+    except Exception as exc:  # noqa: BLE001 - 预检失败绝不阻断任务，仅降级工具授权
+        sandbox_unavailable_reason = str(exc)
+        logger.warning(
+            f"[Overdrive] 会话 {str(run.session_id)[:8]} 沙盒预检失败，本轮降级为纯文本产出: {exc}"
+        )
+    sandbox_degrade_note = ""
+    if sandbox_unavailable_reason:
+        sandbox_degrade_note = (
+            f"\n沙盒暂不可用：{sandbox_unavailable_reason}。"
+            "本轮不要调用 sandbox_execute/workspace_write 等写工具；"
+            "将完整产物直接输出在回复正文中，平台会代写落盘 result.md。"
+        )
+
     async with get_session_factory()() as worker_db:
         result_envelope = await ParallelSubAgentService().run(
             user_id=run.user_id,
@@ -822,19 +1018,21 @@ async def _run_assistant_job(run_id: str, assistant_instance_id: str) -> dict[st
                 f"只完成当前任务契约；所有产物必须写入独占目录 "
                 f"{relative_overdrive_run_root(run.session_id, run.run_id)}/tasks/{task_id}/，"
                 "并在结论中列出真实路径。"
+                f"{sandbox_degrade_note}"
             ),
             tasks=[
                 {
                     "task_id": task_id,
                     "agent_id": task["agent_id"],
                     "task": task["task"],
-                    "workspace_access": bool(task.get("workspace_access"))
-                    or bool((run.plan or {}).get("workspace_resources"))
-                    and bool(task.get("accepts_inputs")),
+                    # 超频专家一律授予工作台工具（对齐 AI 工作台）；
+                    # 仅沙盒预检失败时回落，避免反复调用必失败的写工具。
+                    "workspace_access": not sandbox_unavailable_reason,
                     "timeout_seconds": task.get("timeout_seconds"),
                     "retry": task.get("retry"),
                 }
             ],
+            max_rounds=get_settings().overdrive_subagent_max_rounds,
             db=worker_db,
             on_event=on_event,
             runtime_authorized=True,
@@ -968,6 +1166,9 @@ async def _run_assistant_job(run_id: str, assistant_instance_id: str) -> dict[st
                     "assistant_instance_id": assistant_instance_id,
                     "task_id": task_id,
                     "result": normalized_result,
+                    "agent_id": str(task.get("agent_id") or ""),
+                    "display_name": str(instance.get("display_name") or ""),
+                    "agent_name": instance.get("agent_name"),
                 },
                 dedupe_key=f"assistant_result:{task_id}:{attempt}",
             )
@@ -1073,6 +1274,9 @@ async def _run_assistant_job(run_id: str, assistant_instance_id: str) -> dict[st
                 "assistant_instance_id": assistant_instance_id,
                 "task_id": task_id,
                 "result": normalized_result,
+                "agent_id": str(task.get("agent_id") or ""),
+                "display_name": str(instance.get("display_name") or ""),
+                "agent_name": instance.get("agent_name"),
                 "waits": branch_waits(run.tasks),
                 "approval": pending_approval,
             },

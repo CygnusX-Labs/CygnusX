@@ -86,6 +86,8 @@ export interface OverdriveProgress {
   waveTotal?: number
   waveMode?: 'parallel' | 'serial'
   fallback?: boolean
+  /** 方案规划型 run:不经过专家执行,确认计划即完成交付。 */
+  planningOnly?: boolean
   warning?: string
   stalledTaskIds?: string[]
   activities?: Array<{
@@ -234,7 +236,9 @@ export interface ToolCall {
   result?: unknown
   uiPayload?: Record<string, unknown>
   mcpServer?: string
-  status: 'pending' | 'running' | 'awaiting_approval' | 'success' | 'error'
+  /** 调用理由（后端 tool_call 事件 metadata.purpose 透传） */
+  purpose?: string
+  status: 'pending' | 'running' | 'awaiting_approval' | 'success' | 'error' | 'timed_out'
   /** Studio 工具执行过程中累计的 stdout/stderr 输出（流式填充） */
   output?: string
   /** Studio 代码卡片的语言（python / r / bash） */

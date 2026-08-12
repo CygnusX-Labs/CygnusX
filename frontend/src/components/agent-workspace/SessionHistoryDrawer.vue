@@ -2,7 +2,6 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { NButton, NDrawer, NDrawerContent, NIcon, NInput, useMessage } from 'naive-ui'
 import { CloseOutline, CreateOutline, SearchOutline, TimeOutline } from '@vicons/ionicons5'
-import { RecycleScroller } from 'vue-virtual-scroller'
 import { formatDistanceToNow, parseISO } from 'date-fns'
 import { zhCN } from 'date-fns/locale'
 import { useAgentHubStore, type AgentSession } from '@/stores/agentHub'
@@ -163,32 +162,30 @@ watch(() => props.show, (show) => {
         <template v-else-if="hasResults">
           <section v-if="displaySessions.length" class="history-section">
             <h3>{{ keyword ? '标题匹配' : '最近会话' }}</h3>
-            <RecycleScroller :items="displaySessions" :item-size="64" key-field="id" class="history-scroller">
-              <template #default="{ item }">
-                <div class="history-item" :class="{ active: item.id === store.currentSessionId }">
-                  <button class="history-item-main" @click="selectSession(item)">
-                    <span v-if="editingId !== item.id" class="history-title"><template v-for="(part, partIndex) in highlightSegments(item.title)" :key="partIndex"><mark v-if="part.match">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template></span>
-                    <NInput
-                      v-else
-                      v-model:value="editingTitle"
-                      size="small"
-                      class="session-title-editor"
-                      @keyup.enter="saveRename(item)"
-                      @keyup.esc="editingId = ''"
-                      @blur="saveRename(item)"
-                      @click.stop
-                    />
-                    <span class="history-time">{{ relativeTime(item.updated_at) }}</span>
-                  </button>
-                  <span v-if="item.mode === 'studio' || store.studioSessionIds.has(item.id)" class="mode-dot">工作台</span>
-                  <span v-if="item.overdrive" class="mode-dot mode-dot--overdrive">超频模式</span>
-                  <div class="history-actions">
-                    <NButton text size="tiny" title="重命名" @click.stop="startRename(item)"><NIcon><CreateOutline /></NIcon></NButton>
-                    <NButton text size="tiny" title="删除" @click.stop="removeSession(item)"><NIcon><CloseOutline /></NIcon></NButton>
-                  </div>
+            <div class="history-scroller">
+              <div v-for="item in displaySessions" :key="item.id" class="history-item" :class="{ active: item.id === store.currentSessionId }">
+                <button class="history-item-main" @click="selectSession(item)">
+                  <span v-if="editingId !== item.id" class="history-title"><template v-for="(part, partIndex) in highlightSegments(item.title)" :key="partIndex"><mark v-if="part.match">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template></span>
+                  <NInput
+                    v-else
+                    v-model:value="editingTitle"
+                    size="small"
+                    class="session-title-editor"
+                    @keyup.enter="saveRename(item)"
+                    @keyup.esc="editingId = ''"
+                    @blur="saveRename(item)"
+                    @click.stop
+                  />
+                  <span class="history-time">{{ relativeTime(item.updated_at) }}</span>
+                </button>
+                <span v-if="item.mode === 'studio' || store.studioSessionIds.has(item.id)" class="mode-dot">工作台</span>
+                <span v-if="item.overdrive" class="mode-dot mode-dot--overdrive">超频模式</span>
+                <div class="history-actions">
+                  <NButton text size="tiny" title="重命名" @click.stop="startRename(item)"><NIcon><CreateOutline /></NIcon></NButton>
+                  <NButton text size="tiny" title="删除" @click.stop="removeSession(item)"><NIcon><CloseOutline /></NIcon></NButton>
                 </div>
-              </template>
-            </RecycleScroller>
+              </div>
+            </div>
           </section>
           <section v-if="displayContentMatches.length" class="history-section">
             <h3>内容匹配</h3>
@@ -218,7 +215,7 @@ watch(() => props.show, (show) => {
 .history-search { flex-shrink: 0; }
 .history-section { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
 .history-section h3 { margin: 0 4px; color: var(--text-tertiary); font-size: 11px; font-weight: 600; }
-.history-scroller { height: min(55vh, 520px); }
+.history-scroller { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 8px; overflow-y: auto; }
 .history-item { position: relative; display: flex; align-items: center; gap: 4px; min-height: 56px; padding: 6px 4px 6px 10px; border-radius: 8px; transition: background .16s ease; }
 .history-item:hover, .history-item.active { background: var(--brand-primary-light); }
 .history-item-main { display: flex; flex: 1; min-width: 0; flex-direction: column; align-items: flex-start; gap: 4px; border: 0; background: transparent; text-align: left; cursor: pointer; }

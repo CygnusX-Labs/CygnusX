@@ -45,6 +45,7 @@ EXPECTED_TOOL_DECLARATIONS = {
             "handoff",
             "subagents",
             "agentteams_case",
+            "cloud_ops",
         ],
         "mcp_ids": [],
         "skill_ids": [
@@ -56,14 +57,14 @@ EXPECTED_TOOL_DECLARATIONS = {
         ],
     },
     "data": {
-        "tool_packs": ["workspace", "memory", "handoff", "agentteams_case"],
+        "tool_packs": ["workspace", "research", "memory", "handoff", "agentteams_case"],
         "mcp_ids": [],
-        "skill_ids": [],
+        "skill_ids": ["md5"],
     },
     "qc": {
-        "tool_packs": ["workspace", "memory", "handoff", "agentteams_case"],
+        "tool_packs": ["workspace", "research", "memory", "handoff", "agentteams_case"],
         "mcp_ids": [],
-        "skill_ids": [],
+        "skill_ids": ["fastq-screen", "genome-tools", "md5"],
     },
     "code": {
         "tool_packs": ["workspace", "handoff", "subagents", "agentteams_case"],
@@ -76,9 +77,9 @@ EXPECTED_TOOL_DECLARATIONS = {
         "skill_ids": ["r-plot-library", "dotplot"],
     },
     "delivery": {
-        "tool_packs": ["workspace", "memory", "handoff", "agentteams_case"],
+        "tool_packs": ["workspace", "research", "memory", "handoff", "agentteams_case"],
         "mcp_ids": [],
-        "skill_ids": [],
+        "skill_ids": ["md5"],
     },
     "rnaseq": {
         "tool_packs": ["workspace", "research", "rnaseq", "memory", "handoff", "subagents", "agentteams_case"],
@@ -112,6 +113,11 @@ EXPECTED_TOOL_DECLARATIONS = {
     },
     "shania": {
         "tool_packs": ["workspace", "research", "memory", "handoff"],
+        "mcp_ids": [],
+        "skill_ids": [],
+    },
+    "cloud_ops": {
+        "tool_packs": ["cloud_ops", "research", "memory", "handoff", "subagents", "agentteams_case"],
         "mcp_ids": [],
         "skill_ids": [],
     },
@@ -167,8 +173,10 @@ def test_overdrive_v2_planning_research_and_review_budgets_are_explicit() -> Non
     assert limits["planning"]["max_revision_rounds"] == 3
     assert limits["research"] == {
         "source_timeout_seconds": 20,
+        # model_knowledge 是 LLM 流式调用,与检索类源共用 20s 必超时,单独预算。
+        "model_timeout_seconds": 45,
         "max_evidence_items_per_source": 8,
-        "wall_timeout_seconds": 45,
+        "wall_timeout_seconds": 75,
     }
     assert limits["manager_review"] == {
         "rule_fast_path": True,

@@ -28,8 +28,9 @@ _DEFAULT_LIMITS: dict[str, Any] = {
     "planning": {"max_revision_rounds": 3},
     "research": {
         "source_timeout_seconds": 20,
+        "model_timeout_seconds": 45,
         "max_evidence_items_per_source": 8,
-        "wall_timeout_seconds": 45,
+        "wall_timeout_seconds": 75,
     },
     "manager_review": {
         "rule_fast_path": True,

@@ -473,7 +473,7 @@ const UserAvatar = () => {
         v-if="!isMobile"
         bordered
         :width="220"
-        :collapsed-width="64"
+        :collapsed-width="80"
         :collapsed="collapsed"
         collapse-mode="width"
         class="app-sider"
@@ -1084,9 +1084,8 @@ const UserAvatar = () => {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar-thumb) transparent;
+  scrollbar-color: transparent transparent;
   transition: scrollbar-color 180ms ease-out;
 }
 
@@ -1100,7 +1099,7 @@ const UserAvatar = () => {
 }
 
 .sider-nav-groups::-webkit-scrollbar-thumb {
-  background-color: var(--scrollbar-thumb);
+  background-color: transparent;
   border: 1px solid transparent;
   border-radius: 999px;
   background-clip: padding-box;

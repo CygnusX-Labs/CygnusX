@@ -196,7 +196,8 @@ describe('KimiMessageItem 渲染分支', () => {
     expect(el.textContent).toContain('RNA-seq 分析师')
     expect(el.textContent).toContain('专家转交')
     expect(el.textContent).toContain('96%')
-    expect(el.textContent).toContain('执行前需确认')
+    expect(el.textContent).not.toContain('执行前需确认')
+    expect(el.textContent).not.toContain('确认开始')
   })
 
   it('路由到通用助手时，即使正文为空也显示 Router 分发卡片', () => {

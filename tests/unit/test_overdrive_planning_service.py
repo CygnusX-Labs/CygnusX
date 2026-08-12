@@ -450,41 +450,18 @@ def test_select_lead_planner_uses_smallest_domain_match_and_general_fallback() -
     assert fallback["lead_planner_agent_id"] == "agent-general"
 
 
-def test_independent_qc_is_added_before_plan_freeze_when_available() -> None:
-    tasks = OverdrivePlanningService.ensure_independent_qc_task(
-        [_task("analysis"), _task("visual", agent_id="agent-viz")],
-        {"agent-rnaseq", "agent-viz", "agent-qc"},
-    )
-
-    qc_task = tasks[-1]
-    assert qc_task["task_id"] == "independent-qc"
-    assert qc_task["agent_id"] == "agent-qc"
-    assert qc_task["depends_on"] == ["analysis", "visual"]
-    assert qc_task["workspace_access"] is True
-    validate_plan(_plan_content(tasks), tasks, {"agent-rnaseq", "agent-viz", "agent-qc"})
-
-
-def test_independent_qc_is_not_fabricated_when_auditor_is_unavailable() -> None:
-    tasks = OverdrivePlanningService.ensure_independent_qc_task(
-        [_task()], {"agent-rnaseq"}
-    )
-
-    assert [task["task_id"] for task in tasks] == ["analysis"]
-
-
-def test_plan_only_request_skips_independent_qc_and_execution_tasks() -> None:
+def test_plan_only_request_keeps_research_dag_without_execution_tools() -> None:
     request = "帮我创建基于 TP53 小鼠样本的单细胞研究分析方案"
     tasks = [_task(workspace_access=False)]
 
     assert OverdrivePlanningService.is_planning_only_request(request, tasks) is True
-    unchanged = OverdrivePlanningService.ensure_independent_qc_task(
-        tasks,
-        {"agent-rnaseq", "agent-qc"},
-        request=request,
+    prepared = OverdrivePlanningService.prepare_planning_only_tasks(
+        [_task(workspace_access=True, tools=["workspace_read", "workspace_write"])]
     )
-
-    assert [task["task_id"] for task in unchanged] == ["analysis"]
-    validate_plan(_plan_content([]), [], {"agent-rnaseq"}, allow_empty_tasks=True)
+    assert prepared[0]["workspace_access"] is False
+    assert prepared[0]["requires_approval"] is False
+    assert prepared[0]["tools"] == ["workspace_read"]
+    validate_plan(_plan_content(tasks), tasks, {"agent-rnaseq"})
 
 
 @pytest.mark.parametrize(
@@ -598,7 +575,7 @@ async def test_planning_service_persists_research_then_freezes_plan() -> None:
 
 
 @pytest.mark.asyncio
-async def test_plan_only_prepare_flow_freezes_empty_dag_without_qc() -> None:
+async def test_plan_only_prepare_flow_freezes_readonly_dag_without_qc() -> None:
     captured: dict[str, object] = {}
     run = SimpleNamespace(
         run_id="run-plan-only",
@@ -635,15 +612,38 @@ async def test_plan_only_prepare_flow_freezes_empty_dag_without_qc() -> None:
     async def empty(_query: str, **_: object) -> list[object]:
         return []
 
+    class MemorySearchOptimizer:
+        async def refine_queries(
+            self, _query: str, *, fallback_queries: object, refiner: object = None
+        ) -> dict[str, object]:
+            return {
+                "status": "fallback",
+                "queries": list(fallback_queries),  # type: ignore[arg-type]
+                "cache_hit": False,
+            }
+
+        async def rerank(
+            self, _query: str, items: object, *, limit: int = 8
+        ) -> list[object]:
+            return list(items)[:limit]  # type: ignore[arg-type]
+
     planner = OverdrivePlanningService(
         FakeRunService(),  # type: ignore[arg-type]
         ResearchBundleService(
             knowledge_search=empty,
             web_search=empty,
             model_knowledge=empty,
+            search_optimizer=MemorySearchOptimizer(),  # type: ignore[arg-type]
         ),
         AsyncMock(return_value={
-            "tasks": [_task(agent_id="agent-scrna", workspace_access=False)],
+            "tasks": [
+                _task(
+                    "scrna-sample-contract",
+                    agent_id="agent-scrna",
+                    workspace_access=True,
+                    tools=["workspace_read", "workspace_write"],
+                ),
+            ],
             "deliverables": ["研究方案"],
         }),
     )
@@ -655,11 +655,14 @@ async def test_plan_only_prepare_flow_freezes_empty_dag_without_qc() -> None:
 
     frozen = captured["freeze"]
     assert isinstance(frozen, dict)
-    assert frozen["tasks"] == []
+    assert [item["task_id"] for item in frozen["tasks"]] == ["scrna-sample-contract"]
+    assert frozen["tasks"][0]["workspace_access"] is False
+    assert frozen["tasks"][0]["tools"] == ["workspace_read"]
     assert frozen["allow_empty_tasks"] is True
     assert frozen["summary"]["planning_only"] is True
-    assert frozen["summary"]["independent_qc"]["mode"] == "not_required"
-    assert "不进入 Worker 或独立 QC" in str(captured["content"])
+    assert "independent_qc" not in frozen["summary"]
+    assert "波次 1: scrna-sample-contract" in str(captured["content"])
+    assert "independent-qc" not in str(captured["content"])
 
 
 @pytest.mark.asyncio

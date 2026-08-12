@@ -127,12 +127,10 @@ async def download_overdrive_artifact(
     prefix = relative_overdrive_run_root(session_id, run_id)
     relative_path = path.removeprefix(prefix).lstrip("/")
     candidate = (root / relative_path).resolve()
-    registered_paths = {
-        str(item.get("path") or "")
-        for item in run.artifact_index
-        if isinstance(item, dict)
-    }
-    if path not in registered_paths or root not in candidate.parents or not candidate.is_file():
+    # 安全边界来自归属校验（get_for_user）+ 目录禁锢（run 根内）+ 真实文件，
+    # 不再硬性要求预先登记进 artifact_index：专家在回复中引用的任何 run 内
+    # 文件（上游 plan、产物、审计报告）都应可下载。
+    if root not in candidate.parents or not candidate.is_file():
         raise ValidationError("产物路径无效或尚未生成")
     return FileResponse(candidate, filename=candidate.name)
 

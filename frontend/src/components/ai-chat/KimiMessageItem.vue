@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
 import DOMPurify from 'dompurify'
-import { NButton, NIcon, NTag, NDataTable } from 'naive-ui'
+import { NButton, NIcon, NTag, NDataTable, useMessage } from 'naive-ui'
 import {
   DocumentOutline,
   FolderOpenOutline,
@@ -33,6 +33,7 @@ import ToolCallEntry from './ToolCallEntry.vue'
 import SkillInvocationCardView from './SkillInvocationCard.vue'
 import { useAgentHubStore } from '@/stores/agentHub'
 import apiClient from '@/api/client'
+import { chatApi } from '@/api/chat'
 import { reportChatDiagnostic } from '@/utils/chatDiagnostics'
 import type {
   ChatMessage,
@@ -88,11 +89,10 @@ const emit = defineEmits<{
   openToolPage: [route: string, args: Record<string, unknown>]
   createCaseFromConsultation: [summary: string, consultationId?: string]
   correctCollaborationRoute: [route: CollaborationRouteInfo]
-  confirmExecution: [preset: string]
-  adjustExecution: [preset: string]
 }>()
 
 const router = useRouter()
+const messageApi = useMessage()
 const attachmentPreviewUrls = ref<Record<string, string>>({})
 
 function attachmentKey(attachment: FileAttachment, index: number): string {
@@ -754,7 +754,42 @@ const hasBodyContent = computed(() =>
 
 let copyBtnTimer: ReturnType<typeof setTimeout> | null = null
 
+const OVERDRIVE_ARTIFACT_PATH_RE = /^\/api\/v1\/chat\/sessions\/([^/]+)\/overdrive-runs\/([^/]+)\/artifacts$/
+
+/** 超频发言正文里的产物链接需要登录态，拦截默认跳转改走认证 blob 下载 */
+async function downloadOverdriveArtifactLink(sessionId: string, runId: string, path: string) {
+  try {
+    const blob = await chatApi.downloadOverdriveArtifact(sessionId, runId, path)
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = path.split('/').pop() || 'artifact'
+    anchor.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    messageApi.error('产物下载失败')
+  }
+}
+
 function handleBodyClick(e: MouseEvent) {
+  const anchor = (e.target as HTMLElement).closest('a') as HTMLAnchorElement | null
+  const anchorHref = anchor?.getAttribute('href') || ''
+  if (anchorHref) {
+    let url: URL | null = null
+    try {
+      // href 可能是后端写的绝对地址，也可能是相对路径，统一归一化后按路径匹配
+      url = new URL(anchorHref, window.location.origin)
+    } catch {
+      url = null
+    }
+    const match = url?.pathname.match(OVERDRIVE_ARTIFACT_PATH_RE)
+    const artifactPath = url?.searchParams.get('path')
+    if (match && artifactPath) {
+      e.preventDefault()
+      void downloadOverdriveArtifactLink(match[1], match[2], artifactPath)
+      return
+    }
+  }
   const citation = (e.target as HTMLElement).closest('.knowledge-citation') as HTMLElement | null
   if (citation) {
     const href = citation.dataset.knowledgeUrl || ''
@@ -997,8 +1032,6 @@ function handleEdit() {
         <RouteTransitionCard
           v-if="message.routedAgent?.transition?.visible"
           :route="message.routedAgent"
-          @confirm-execution="(preset) => emit('confirmExecution', preset)"
-          @adjust-execution="(preset) => emit('adjustExecution', preset)"
         />
         <CollaborationRouteNotice
           v-if="message.collaborationRoute && !(message.routedAgent?.transition?.visible && message.collaborationRoute.intent === 'chat')"

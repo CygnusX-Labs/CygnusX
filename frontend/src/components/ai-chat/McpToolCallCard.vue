@@ -44,6 +44,7 @@ const statusType = computed(() => {
   switch (props.tool.status) {
     case 'success': return 'success' as const
     case 'error': return 'error' as const
+    case 'timed_out': return 'warning' as const
     case 'awaiting_approval': return 'warning' as const
     case 'running': return 'info' as const
     default: return 'default' as const
@@ -54,6 +55,7 @@ const statusLabel = computed(() => {
   switch (props.tool.status) {
     case 'success': return '成功'
     case 'error': return '失败'
+    case 'timed_out': return '超时·已降级'
     case 'awaiting_approval': return '等待批准'
     case 'running': return '执行中'
     case 'pending': return '等待中'
@@ -116,6 +118,7 @@ function handleOpenToolPage() {
     >
       <n-icon size="15" class="tool-icon"><BuildOutline /></n-icon>
       <span class="tool-name">{{ tool.name }}</span>
+      <span v-if="tool.purpose" class="tool-purpose">{{ tool.purpose }}</span>
       <n-tag v-if="tool.mcpServer" size="tiny" type="info" class="server-tag">
         MCP: {{ tool.mcpServer }}
       </n-tag>
@@ -142,6 +145,10 @@ function handleOpenToolPage() {
     <!-- 展开态内容 -->
     <transition name="tool-expand">
       <div v-show="!collapsed" class="tool-card-body">
+        <div v-if="tool.purpose" class="tool-section">
+          <div class="tool-section-title">调用理由</div>
+          <p class="tool-purpose-detail">{{ tool.purpose }}</p>
+        </div>
         <div v-if="hasArgs" class="tool-section">
           <div class="tool-section-title">参数</div>
           <pre class="tool-pre">{{ JSON.stringify(tool.arguments, null, 2) }}</pre>
@@ -242,6 +249,24 @@ function handleOpenToolPage() {
 }
 .tool-name {
   flex-shrink: 0;
+}
+.tool-purpose {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--chat-text-muted, #999);
+  font-size: 11px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-purpose-detail {
+  margin: 0;
+  color: var(--chat-text-secondary, #666);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-line;
+  word-break: break-word;
 }
 .server-tag {
   flex-shrink: 0;

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
+from urllib.parse import quote
 
 import pytest
 
@@ -315,6 +317,122 @@ def test_projected_events_are_session_scoped_and_replay_deduplicable() -> None:
     assert OverdriveRunService.project_event(event) == projected
 
 
+def test_worker_speech_shows_real_agent_name_and_keeps_instance_id() -> None:
+    event = {
+        "run_id": "overdrive:test",
+        "session_id": "session-1",
+        "sequence": 12,
+        "event_type": "assistant_result_ready",
+        "payload": {
+            "assistant_instance_id": "asst:overdrive:test:wave-1:1",
+            "task_id": "task-a",
+            "agent_id": "agent-rna-seq",
+            "agent_name": "RNA-seq 分析师",
+            "display_name": "衡准",
+            "result": {"status": "ok", "answer": "差异表达分析已完成。"},
+        },
+    }
+
+    projected = OverdriveRunService.project_event(event)
+
+    assert projected is not None
+    assert projected["sender"] == {
+        "agent_id": "agent-rna-seq",
+        "name": "RNA-seq 分析师·衡准",
+        "role": "worker",
+        "instance_id": "asst:overdrive:test:wave-1:1",
+    }
+
+    # 旧事件没有身份字段时保持原行为：回退“执行助手”，agent_id 用 instance id。
+    legacy = {
+        **event,
+        "payload": {
+            "assistant_instance_id": "asst:1",
+            "task_id": "task-a",
+            "result": {"status": "ok", "answer": "已完成"},
+        },
+    }
+    legacy_sender = OverdriveRunService.project_event(legacy)["sender"]  # type: ignore[index]
+    assert legacy_sender["name"] == "执行助手"
+    assert legacy_sender["agent_id"] == "asst:1"
+    assert legacy_sender["instance_id"] == "asst:1"
+
+
+def test_worker_speech_linkifies_run_artifact_paths() -> None:
+    # run_id 中的冒号在相对根目录里被净化为 -，与工作区权威路径一致
+    root = "output/overdrive/session-1/overdrive-test"
+    event = {
+        "run_id": "overdrive:test",
+        "session_id": "session-1",
+        "sequence": 13,
+        "event_type": "assistant_result_ready",
+        "payload": {
+            "assistant_instance_id": "asst:1",
+            "task_id": "task-a",
+            "agent_id": "agent-rna-seq",
+            "agent_name": "RNA-seq 分析师",
+            "result": {
+                "status": "ok",
+                "answer": (
+                    f"结果见 {root}/tasks/task-a/result.md，图表见 {root}/tasks/task-a/volcano.png。"
+                    f"已链接的 [报告]({root}/tasks/task-a/qc.html) 不重复包裹。"
+                ),
+            },
+        },
+    }
+
+    projected = OverdriveRunService.project_event(event)
+
+    assert projected is not None
+    content = projected["content"]
+    url_prefix = "/api/v1/chat/sessions/session-1/overdrive-runs/overdrive:test/artifacts?path="
+    result_url = url_prefix + quote(f"{root}/tasks/task-a/result.md", safe="")
+    volcano_url = url_prefix + quote(f"{root}/tasks/task-a/volcano.png", safe="")
+    assert f"[result.md]({result_url})" in content
+    # 结尾中文句号截断在链接之外
+    assert f"[volcano.png]({volcano_url})。" in content
+    # 已在 ](...) 中的路径不重复包裹
+    assert content.count("qc.html") == 1
+    assert "[qc.html](" not in content
+
+
+def test_assistant_tool_call_projects_worker_progress() -> None:
+    event = {
+        "run_id": "overdrive:test",
+        "session_id": "session-1",
+        "sequence": 5,
+        "event_type": "assistant_tool_call",
+        "payload": {
+            "assistant_instance_id": "asst:1",
+            "task_id": "task-a",
+            "agent_id": "agent-rna-seq",
+            "agent_name": "RNA-seq 分析师",
+            "display_name": "衡准",
+            "tool_name": "sandbox_execute",
+        },
+    }
+
+    assert OverdriveRunService.project_event(event) == {
+        "type": "overdrive_progress",
+        "run_id": "overdrive:test",
+        "session_id": "session-1",
+        "sequence": 5,
+        "phase": "worker_running",
+        "label": "RNA-seq 分析师·衡准 正在调用 sandbox_execute",
+    }
+
+
+def test_assistant_heartbeat_and_retrying_stay_unprojected() -> None:
+    for event_type in ("assistant_heartbeat", "assistant_retrying"):
+        assert OverdriveRunService.project_event({
+            "run_id": "overdrive:test",
+            "session_id": "session-1",
+            "sequence": 5,
+            "event_type": event_type,
+            "payload": {"assistant_instance_id": "asst:1", "task_id": "task-a"},
+        }) is None
+
+
 def test_research_projection_exposes_tool_style_activities() -> None:
     projected = OverdriveRunService.project_event({
         "run_id": "overdrive:test",
@@ -403,19 +521,23 @@ def test_preflight_termination_finishes_synchronously_before_workers_start() -> 
     assert service.append_event.await_args.args[1] == "run_terminated"
 
 
-def test_approving_plan_only_run_completes_without_worker_preflight() -> None:
+def test_approving_plan_only_run_completes_without_worker_preflight(tmp_path) -> None:
     command_rows = []
     db = SimpleNamespace(get=AsyncMock(return_value=None), add=command_rows.append)
     service = OverdriveRunService(db)  # type: ignore[arg-type]
     run = SimpleNamespace(
         status="AWAITING_PLAN_CONFIRMATION",
         run_id="overdrive:plan-only",
+        session_id="session-1",
         plan={
             "version": 1,
             "hash": "sha256:plan",
             "status": "awaiting_confirmation",
-            "summary": {"planning_only": True},
+            "path": "output/overdrive/session-1/overdrive:plan-only/plan.md",
+            "version_path": "output/overdrive/session-1/overdrive:plan-only/plan.v1.md",
+            "summary": {"planning_only": True, "title": "单细胞分析方案"},
         },
+        artifact_index=[],
         version=0,
         finished_at=None,
     )
@@ -424,19 +546,78 @@ def test_approving_plan_only_run_completes_without_worker_preflight() -> None:
     service.append_event = AsyncMock()  # type: ignore[method-assign]
     service._write_snapshot = AsyncMock()  # type: ignore[method-assign]
 
-    result = asyncio.run(service.decide_plan(
-        run_id=run.run_id,
-        user_id="user-1",
-        command_id="command-plan-only",
-        action="approve",
-        plan_version=1,
-        plan_digest="sha256:plan",
-    ))
+    def fake_root(session_id: str, run_id: str) -> Path:
+        return tmp_path / session_id / run_id
+
+    with patch.multiple(
+        "omichub.application.services.overdrive_run_service",
+        overdrive_run_root=fake_root,
+        relative_overdrive_run_root=lambda session_id, run_id: f"output/overdrive/{session_id}/{run_id}",
+    ):
+        result = asyncio.run(service.decide_plan(
+            run_id=run.run_id,
+            user_id="user-1",
+            command_id="command-plan-only",
+            action="approve",
+            plan_version=1,
+            plan_digest="sha256:plan",
+        ))
 
     assert result["status"] == "COMPLETED"
     assert run.status == "COMPLETED"
     assert run.finished_at is not None
-    assert service.append_event.await_args.args[1] == "run_completed"
+    event_types = [call.args[1] for call in service.append_event.await_args_list]
+    assert event_types == ["run_completed", "manager_delivery_ready"]
+
+    # 方案规划型 run 必须落一份项目 README,并登记为可下载交付物。
+    delivery_path = result["delivery"]["path"]
+    assert delivery_path.endswith("/delivery/README.md")
+    readme = fake_root(run.session_id, run.run_id) / "delivery" / "README.md"
+    content = readme.read_text(encoding="utf-8")
+    assert "单细胞分析方案" in content
+    assert "下载方式" in content
+    assert run.artifact_index == [
+        {"path": delivery_path, "kind": "delivery", "source": "manager", "status": "succeeded"}
+    ]
+
+    completed_payload = service.append_event.await_args_list[0].args[2]
+    assert completed_payload["planning_only"] is True
+    assert completed_payload["delivery_path"] == delivery_path
+    assert completed_payload["artifacts"][0]["path"] == delivery_path
+
+    # 交付事件投影为 Manager 的 room_speech,完成事件带 planning_only 标志。
+    delivery_event = {
+        "run_id": run.run_id,
+        "session_id": run.session_id,
+        "sequence": 11,
+        "event_type": "manager_delivery_ready",
+        "payload": service.append_event.await_args_list[1].args[2],
+    }
+    projected = OverdriveRunService.project_event(delivery_event)
+    assert projected is not None
+    assert projected["type"] == "room_speech"
+    assert projected["sender"]["role"] == "manager"
+    assert projected["delivery_path"] == delivery_path
+    assert "README" in projected["content"]
+    # Manager 交付发言必须是详细描述:协作安排、交付位置与下一步引导,
+    # 而不是只说文件在哪里;发言人统一显示为超频 Manager。
+    assert projected["sender"]["name"] == "超频 Manager"
+    assert "协作安排" in projected["content"]
+    assert "下一步" in projected["content"]
+    assert "按方案开始执行" in projected["content"]
+    assert "上传" in projected["content"]
+
+    completed_event = {
+        "run_id": run.run_id,
+        "session_id": run.session_id,
+        "sequence": 10,
+        "event_type": "run_completed",
+        "payload": completed_payload,
+    }
+    projected_completed = OverdriveRunService.project_event(completed_event)
+    assert projected_completed is not None
+    assert projected_completed["type"] == "overdrive_progress"
+    assert projected_completed["planning_only"] is True
 
 
 def test_projected_manager_review_suppresses_wait_state_speech() -> None:
@@ -543,3 +724,48 @@ def test_latest_run_lookup_includes_terminal_runs_for_history_recovery() -> None
     assert "overdrive_runs.session_id" in rendered
     assert "overdrive_runs.user_id" in rendered
     assert "overdrive_runs.status NOT IN" not in rendered
+
+
+def test_write_readme_covers_delivery_downloads_and_manager_summary(tmp_path) -> None:
+    run = make_run(
+        [
+            {"task_id": "task-a", "status": "succeeded"},
+            {"task_id": "task-b", "status": "failed", "error_summary": "超时"},
+        ]
+    )
+    run.finished_at = None
+    run.plan = {
+        "version": 2,
+        "hash": "sha256:abcdef123456",
+        "summary": {"title": "TP53 单细胞分析"},
+    }
+    run.artifact_index = [
+        {"path": "output/overdrive/session-1/overdrive:test/tasks/task-a/result.md",
+         "kind": "result", "status": "validated", "source": "agent-scrna"},
+    ]
+
+    def fake_root(session_id: str, run_id: str) -> Path:
+        return tmp_path / session_id / run_id
+
+    with patch.multiple(
+        "omichub.application.services.overdrive_execution_service",
+        overdrive_run_root=fake_root,
+        relative_overdrive_run_root=lambda session_id, run_id: f"output/overdrive/{session_id}/{run_id}",
+    ):
+        delivery = {
+            "path": "output/overdrive/session-1/overdrive:test/delivery/final-report.md",
+            "official_artifacts": run.artifact_index,
+        }
+        readme = DeliveryAssembler().write_readme(run, delivery, manager_summary="Manager 总结:全部完成。")
+
+    assert readme["path"].endswith("/delivery/README.md")
+    content = (fake_root(run.session_id, run.run_id) / "delivery" / "README.md").read_text(
+        encoding="utf-8"
+    )
+    assert "TP53 单细胞分析" in content
+    assert "v2" in content and "sha256:a"[:8] in content
+    assert "final-report.md" in content
+    assert "task-a/result.md" in content
+    assert "artifacts?path=" in content
+    assert "Manager 总结:全部完成。" in content
+    assert "task-b: 超时" in content

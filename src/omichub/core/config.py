@@ -167,6 +167,8 @@ class Settings(BaseSettings):
     subagent_max_concurrent: int = 3  # 实际并发信号量（给主链路 LLM 调用留余量）
     subagent_child_timeout_seconds: int = 180  # 单个子任务墙钟上限
     subagent_max_rounds_per_child: int = 6  # 子循环工具轮数上限
+    # 超频专家做多步工具任务的子循环轮数上限（普通聊天 fan-out 仍用上面的默认值）
+    overdrive_subagent_max_rounds: int = 25
     subagent_max_children_per_message: int = 1  # 父单轮工具回合内允许的 fan-out 调用次数
     upload_dir: str = "uploads"
     results_dir: str = "results"

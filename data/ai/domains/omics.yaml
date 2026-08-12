@@ -28,12 +28,35 @@ intake:
                 "只有原始测序数据", "暂未确定"]
 assignments:
   rules:
-    - id: scrna-domain
+    - id: scrna-sample-contract
       when: planning_or_analysis
       when_message_markers: [单细胞, scrna]
-      agent_match: [agent-scrna, 单细胞分析师]
-      task_id: domain-analysis
-      task: "直接完成本领域的分析计划、统计方法、关键参数、风险和解释边界。"
+      agent_match: [agent-scrna-upstream, 单细胞上游]
+      authoritative: true
+      task_id: scrna-sample-contract
+      task: "制定单细胞样本与数据契约：核对每个样本、分组、建库与输入对象，定义细胞/基因 QC、双细胞控制、样本纳入排除和批次记录；针对小鼠 TP53 肺癌研究明确 10 个样本的生物学重复、混杂因素与缺失数据处置。"
+      accepts_inputs: [sample-metadata, fastq, count-matrix, h5ad, rds]
+      produces_outputs: [sample-data-contract, scrna-qc-plan]
+    - id: scrna-integration-clustering
+      when: planning_or_analysis
+      when_message_markers: [单细胞, scrna]
+      agent_match: [agent-scrna-integration, 单细胞整合]
+      authoritative: true
+      task_id: scrna-integration-clustering
+      task: "制定整合、降维与聚类方案：比较批次校正策略，定义 HVG、邻居图、聚类分辨率和稳定性评估；输出可用于肿瘤、髓系与淋巴系细胞细分注释的对象与 marker 鉴定规范。"
+      depends_on: [scrna-sample-contract]
+      accepts_inputs: [sample-data-contract, scrna-qc-plan]
+      produces_outputs: [integrated-scrna-plan, clustering-annotation-plan]
+    - id: scrna-immune-tolerance
+      when: planning_or_analysis
+      when_message_markers: [单细胞, scrna]
+      agent_match: [agent-scrna-advanced, 单细胞注释与高级]
+      authoritative: true
+      task_id: scrna-immune-tolerance
+      task: "围绕肺癌免疫耐受制定机制发现方案：精细注释 TAM 与 T 细胞状态，以样本为统计单位开展 pseudobulk 差异与通路富集，设计 TAM 极化/拟时序及 TAM–T 细胞通讯分析；将 TP53 相关候选基因、免疫抑制轴与需实验验证的机制分层交付。"
+      depends_on: [scrna-integration-clustering]
+      accepts_inputs: [integrated-scrna-plan, clustering-annotation-plan]
+      produces_outputs: [immune-tolerance-analysis-plan, candidate-gene-mechanism-list]
     - id: rnaseq-domain
       when: planning_or_analysis
       when_message_markers: [bulk, rna-seq, 转录组, 表达矩阵]
