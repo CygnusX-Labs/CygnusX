@@ -17,6 +17,7 @@ _WATCH_LOCK_KEY = "agentteams:case-watch:lock"
 _EVENT_CONSUMER_LOCK_KEY = "agentteams:case-event-consumer:lock"
 _APPROVAL_TIMEOUT_LOCK_KEY = "agentteams:approval-timeout:lock"
 _STALE_TASK_LOCK_KEY = "agentteams:stale-task-watch:lock"
+_AUTO_CONFIRM_LOCK_KEY = "agentteams:auto-confirm:lock"
 _RELEASE_LOCK_LUA = """
 if redis.call('GET', KEYS[1]) == ARGV[1] then
   return redis.call('DEL', KEYS[1])
@@ -45,9 +46,99 @@ def reconcile_approval_timeouts() -> dict[str, int | str]:
     return asyncio.run(_reconcile_approval_timeouts())
 
 
+@shared_task(name="omichub.infrastructure.celery_app.tasks.agentteams.auto_confirm_cases")
+def auto_confirm_cases() -> dict[str, int | str]:
+    return asyncio.run(_auto_confirm_cases())
+
+
 @shared_task(name="omichub.infrastructure.celery_app.tasks.agentteams.cleanup_evidence")
 def cleanup_evidence() -> dict[str, object]:
     return asyncio.run(_cleanup_evidence())
+
+
+@shared_task(
+    bind=True,
+    name="omichub.infrastructure.celery_app.tasks.agentteams.respond_to_room_message",
+    max_retries=120,
+)
+def respond_to_room_message(self, case_id: str, requester_ref: str, content: str) -> dict[str, str]:
+    result = asyncio.run(_respond_to_room_message(case_id, requester_ref, content))
+    if result.get("status") == "skipped_locked":
+        raise self.retry(countdown=2)
+    return result
+
+
+@shared_task(name="omichub.infrastructure.celery_app.tasks.agentteams.sync_case_rooms")
+def sync_case_rooms() -> dict[str, object]:
+    return asyncio.run(_sync_case_rooms())
+
+
+async def _sync_case_rooms() -> dict[str, object]:
+    from omichub.infrastructure.database.session import get_session_factory
+
+    return await _sync_case_rooms_with_factory(get_session_factory)
+
+
+async def _sync_case_rooms_with_factory(
+    session_factory,
+    *,
+    redis_getter=get_redis,
+    stream_seconds: int | None = None,
+) -> dict[str, object]:
+    from omichub.application.services.agentteams_bridge_settings_service import (
+        AgentTeamsBridgeSettingsService,
+    )
+    from omichub.application.services.agentteams_room_gateway_service import (
+        AgentTeamsRoomGatewayService,
+    )
+    from omichub.application.services.agentteams_room_sync_service import (
+        AgentTeamsRoomSyncService,
+    )
+    from omichub.application.services.agentteams_service import AgentTeamsService
+
+    try:
+        gateway = AgentTeamsRoomGatewayService()
+        if not gateway.available:
+            return {"status": "skipped_unavailable"}
+        settings = get_settings()
+        async with session_factory()() as db:
+            runtime = await AgentTeamsBridgeSettingsService(db, settings).get_runtime_config()
+            agentteams = AgentTeamsService(settings, runtime)
+            if not agentteams.available:
+                return {"status": "skipped_unavailable"}
+            return await AgentTeamsRoomSyncService(
+                agentteams, gateway=gateway, redis_getter=redis_getter
+            ).run(watch_seconds=stream_seconds or settings.agentteams_case_event_stream_seconds)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("AgentTeams room sync orchestration failed: %s", exc)
+        return {"status": "failed"}
+
+
+async def _respond_to_room_message(
+    case_id: str, requester_ref: str, content: str
+) -> dict[str, str]:
+    from omichub.application.services.agentteams_bridge_settings_service import (
+        AgentTeamsBridgeSettingsService,
+    )
+    from omichub.application.services.agentteams_room_response_service import (
+        AgentTeamsRoomResponseService,
+    )
+    from omichub.application.services.agentteams_service import AgentTeamsService
+    from omichub.infrastructure.database.session import get_session_factory
+
+    try:
+        settings = get_settings()
+        async with get_session_factory()() as db:
+            runtime = await AgentTeamsBridgeSettingsService(db, settings).get_runtime_config()
+            agentteams = AgentTeamsService(settings, runtime)
+            if not agentteams.available:
+                return {"status": "skipped_unavailable"}
+            return await AgentTeamsRoomResponseService(db, agentteams=agentteams).respond(
+                case_id, requester_ref, content
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("AgentTeams room response task failed: %s", exc)
+        return {"status": "failed"}
 
 
 async def _cleanup_evidence() -> dict[str, object]:
@@ -97,6 +188,125 @@ async def _reconcile_approval_timeouts() -> dict[str, int | str]:
     from omichub.infrastructure.database.session import get_session_factory
 
     return await _reconcile_approval_timeouts_with_factory(get_session_factory)
+
+
+async def _auto_confirm_cases() -> dict[str, int | str]:
+    from omichub.infrastructure.database.session import get_session_factory
+
+    return await _auto_confirm_cases_with_factory(get_session_factory)
+
+
+# 仍可能推进到 approval_pending 的前置状态；其余状态（含终态/已批准）视为自动确认终点。
+_AUTO_CONFIRM_PENDING_STATUSES = frozenset(
+    {
+        "queued",
+        "received",
+        "planning_running",
+        "preflight_running",
+        "preflight_blocked",
+        "waiting_for_correction",
+    }
+)
+
+
+async def _auto_confirm_cases_with_factory(
+    session_factory,
+    *,
+    redis_getter=get_redis,
+) -> dict[str, int | str]:
+    """聊天式通用 Case 的自动确认：仅消费 Redis 集合与 Bridge 待审批列表的交集。
+
+    流程型 Case 一律跳过（真实计算必须人工审批）；标记丢失或 Bridge 不可达时
+    静默降级，Case 留在人工审批队列。
+    """
+    from omichub.application.services.agentteams_bridge_settings_service import (
+        AgentTeamsBridgeSettingsService,
+    )
+    from omichub.application.services.agentteams_service import (
+        AUTO_CONFIRM_CASES_KEY,
+        AgentTeamsService,
+    )
+
+    lock_token = uuid.uuid4().hex
+    redis = redis_getter()
+    acquired = False
+    try:
+        acquired = bool(await redis.set(_AUTO_CONFIRM_LOCK_KEY, lock_token, nx=True, ex=60))
+        if not acquired:
+            return {"status": "skipped_locked"}
+        marked = {str(item) for item in await redis.smembers(AUTO_CONFIRM_CASES_KEY)}
+        summary: dict[str, int | str] = {
+            "status": "ok",
+            "marked": len(marked),
+            "confirmed": 0,
+            "skipped": 0,
+            "failed": 0,
+        }
+        if not marked:
+            return summary
+        settings = get_settings()
+        async with session_factory()() as db:
+            runtime = await AgentTeamsBridgeSettingsService(db, settings).get_runtime_config()
+            service = AgentTeamsService(settings, runtime)
+            if not service.available:
+                return {"status": "skipped_unavailable"}
+            pending_cases = await service.admin_list_cases_by_status("approval_pending")
+            pending_by_id = {
+                str(case.get("case_id")): case
+                for case in pending_cases
+                if case.get("case_id")
+            }
+            for case_id in sorted(marked):
+                case = pending_by_id.get(case_id)
+                if case is None:
+                    # 未进入待审批：仍在前置状态则保留标记，否则清理（含已批准/终态）。
+                    try:
+                        current = await service.admin_get_case(case_id)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "AgentTeams auto-confirm status probe failed for %s: %s",
+                            case_id,
+                            exc,
+                        )
+                        summary["failed"] = int(summary["failed"]) + 1
+                        continue
+                    if str(current.get("status") or "") not in _AUTO_CONFIRM_PENDING_STATUSES:
+                        await redis.srem(AUTO_CONFIRM_CASES_KEY, case_id)
+                        summary["skipped"] = int(summary["skipped"]) + 1
+                    continue
+                if case.get("flow_id"):
+                    # 防御：流程型 Case 绝不自动确认。
+                    await redis.srem(AUTO_CONFIRM_CASES_KEY, case_id)
+                    summary["skipped"] = int(summary["skipped"]) + 1
+                    continue
+                requester_ref = case.get("requester_ref")
+                if not isinstance(requester_ref, str) or not requester_ref:
+                    summary["failed"] = int(summary["failed"]) + 1
+                    continue
+                try:
+                    await service.approve_and_submit_task(
+                        case_id=case_id,
+                        requester_ref=requester_ref,
+                        task_name=f"auto-{case_id[-8:]}",
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "AgentTeams auto-confirm failed for %s: %s", case_id, exc
+                    )
+                    summary["failed"] = int(summary["failed"]) + 1
+                    continue
+                await redis.srem(AUTO_CONFIRM_CASES_KEY, case_id)
+                summary["confirmed"] = int(summary["confirmed"]) + 1
+            return summary
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("AgentTeams auto-confirm orchestration failed: %s", exc)
+        return {"status": "failed"}
+    finally:
+        if acquired:
+            try:
+                await redis.eval(_RELEASE_LOCK_LUA, 1, _AUTO_CONFIRM_LOCK_KEY, lock_token)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("AgentTeams auto-confirm lock release failed: %s", exc)
 
 
 async def _watch_cases_with_factory(

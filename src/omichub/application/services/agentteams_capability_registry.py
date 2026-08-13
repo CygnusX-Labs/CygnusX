@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from time import monotonic
 from typing import Any
 
 from loguru import logger
@@ -46,10 +47,15 @@ class AgentTeamsCapabilityRegistry:
         flow_registry: FlowRegistry | None = None,
         ability_catalog: AgentAbilityCatalog | None = None,
         agent_configs: list[dict[str, Any]] | None = None,
+        cache_ttl_seconds: float = 60.0,
     ) -> None:
         self._flow_registry = flow_registry
         self._ability_catalog = ability_catalog or agent_ability_catalog
         self._agent_configs = agent_configs
+        self._cache_ttl = cache_ttl_seconds
+        self._snapshot_cache: tuple[float, dict[str, Any]] | None = None
+        self._active_agents_cache: tuple[float, dict[str, dict[str, Any]]] | None = None
+        self._flows_cache: tuple[float, FlowRegistry] | None = None
 
     def allowed_flow_ids(self) -> set[str]:
         return self._flows().bridge_flow_ids()
@@ -59,9 +65,6 @@ class AgentTeamsCapabilityRegistry:
         for agent_id, config in self._active_agents().items():
             role = str((config.get("features") or {}).get("internal_case_role") or "").strip()
             if not role:
-                logger.warning(
-                    "Active Agent 缺少 internal_case_role，不参与 AgentTeams: {}", agent_id
-                )
                 continue
             mapping[role] = agent_id
         return mapping
@@ -112,6 +115,14 @@ class AgentTeamsCapabilityRegistry:
             for item in self.agent_capabilities().values()
             if item["recruitable"] and item["agent_id"] in abilities
         }
+
+    def agent_execution_modes(self, agent_id: str) -> list[str]:
+        """按 agent_id 读取 YAML 声明的 execution_modes（未声明返回空列表）。"""
+        config = self._active_agents().get(agent_id)
+        if not config:
+            return []
+        agentteams = (config.get("features") or {}).get("agentteams") or {}
+        return [str(value) for value in agentteams.get("execution_modes", [])]
 
     def worker_profile(self, identity: str) -> WorkerProfile | None:
         agent_id = self.resolve_agent(identity)
@@ -176,10 +187,15 @@ class AgentTeamsCapabilityRegistry:
         return labels
 
     def snapshot(self) -> dict[str, Any]:
+        now = monotonic()
+        if self._snapshot_cache is not None:
+            ts, cached = self._snapshot_cache
+            if now - ts < self._cache_ttl:
+                return cached
         role_map = self.role_agent_map()
         aliases = self.role_alias_map()
         routable_role_map = {**role_map, **aliases}
-        return {
+        result = {
             "allowed_flow_ids": sorted(self.allowed_flow_ids()),
             "flow_agent_map": self.flow_agent_map(),
             "flow_quality_gate_map": self.flow_quality_gate_map(),
@@ -195,21 +211,44 @@ class AgentTeamsCapabilityRegistry:
             },
             "role_labels": self.role_labels(),
         }
+        self._snapshot_cache = (now, result)
+        return result
 
     def _flows(self) -> FlowRegistry:
-        registry = self._flow_registry or get_flow_registry()
+        registry = self._flow_registry if self._flow_registry is not None else get_flow_registry()
+        now = monotonic()
+        if self._flows_cache is not None:
+            ts, cached = self._flows_cache
+            if now - ts < self._cache_ttl and cached is registry:
+                return cached
         registry.reload()
+        self._flows_cache = (now, registry)
         return registry
 
     def _active_agents(self) -> dict[str, dict[str, Any]]:
+        now = monotonic()
+        if self._active_agents_cache is not None:
+            ts, cached = self._active_agents_cache
+            if now - ts < self._cache_ttl:
+                return cached
         configs = self._agent_configs if self._agent_configs is not None else load_agent_configs()
         active = {
             str(config["agent_id"]): config
             for config in configs
             if config.get("agent_id") and config.get("is_active", True) is not False
         }
+        missing_role: list[str] = []
         for agent_id, config in active.items():
             self._validate_agentteams_declaration(agent_id, config)
+            role = str((config.get("features") or {}).get("internal_case_role") or "").strip()
+            if not role:
+                missing_role.append(agent_id)
+        if missing_role:
+            logger.warning(
+                "以下 Active Agent 缺少 internal_case_role，不参与 AgentTeams: {}",
+                ", ".join(sorted(missing_role)),
+            )
+        self._active_agents_cache = (now, active)
         return active
 
     @staticmethod
@@ -247,8 +286,14 @@ class AgentTeamsCapabilityRegistry:
         )
 
 
+_capability_registry: AgentTeamsCapabilityRegistry | None = None
+
+
 def get_agentteams_capability_registry() -> AgentTeamsCapabilityRegistry:
-    return AgentTeamsCapabilityRegistry()
+    global _capability_registry
+    if _capability_registry is None:
+        _capability_registry = AgentTeamsCapabilityRegistry()
+    return _capability_registry
 
 
 __all__ = [

@@ -142,6 +142,10 @@ const hasOutput = computed(() => stdoutText.value || stderrText.value || props.t
 }
 
 .editor-wrap {
+  /* 与 AI 工作台代码卡片统一：几行代码就几行高，超过约 5 行截断、内部滚动 */
+  min-height: 22px;
+  max-height: 110px;
+  overflow: hidden;
   border-bottom: 1px solid var(--chat-border, #e8ecf1);
 }
 

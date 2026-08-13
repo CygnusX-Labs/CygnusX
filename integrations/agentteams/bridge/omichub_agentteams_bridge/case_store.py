@@ -5,15 +5,27 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 from fastapi import HTTPException, status
 
-from .models import CaseRecord, CaseStatus, PreflightInputSnapshot, WorkItemRecord, WorkItemStatus
+from .models import (
+    CaseRecord,
+    CaseStatus,
+    PreflightInputSnapshot,
+    WorkItemRecord,
+    WorkItemStatus,
+)
 from .shared_state import RedisStateBackend
+
+# Module-level aliases: class-scope annotations below would resolve ``list`` to the
+# ``CaseStore.list`` method, so the container types must be named here at module scope.
+LeaseExpiredRequeues = list[tuple[str, WorkItemRecord]]  # (case_id, pre-reset snapshot)
+AssignedWorkItemsResult = tuple[list[tuple[CaseRecord, WorkItemRecord]], LeaseExpiredRequeues]
 
 _WORK_ITEM_TRANSITIONS: dict[WorkItemStatus, set[WorkItemStatus]] = {
     "pending": {"claimed", "cancelled"},
@@ -50,7 +62,7 @@ _ALLOWED_TRANSITIONS: dict[CaseStatus, set[CaseStatus]] = {
 class _SynchronizedCaseLock:
     """Drop-in async lock that reloads shared state under a distributed lock."""
 
-    def __init__(self, store: "CaseStore") -> None:
+    def __init__(self, store: CaseStore) -> None:
         self._store = store
         self._contexts: dict[asyncio.Task[Any], Any] = {}
 
@@ -168,7 +180,13 @@ class CaseStore:
 
     async def list_assigned_work_items(
         self, target: str, statuses: set[str]
-    ) -> list[tuple[CaseRecord, WorkItemRecord]]:
+    ) -> AssignedWorkItemsResult:
+        """Return assigned items plus the pre-reset snapshots of lease-expired requeues.
+
+        The second element lets the service layer write audit events for work items
+        that were silently reclaimed, so the timeline shows the requeue instead of
+        an unexplained duplicate claim.
+        """
         async with self._lock:
             expired = self._requeue_expired_locked()
             retryable = self._requeue_retryable_failures_locked()
@@ -180,7 +198,16 @@ class CaseStore:
                 for work_item in case.work_items
                 if work_item.target == target and work_item.status in statuses
             ]
-            return sorted(assigned, key=lambda item: item[1].updated_at, reverse=True)
+            return sorted(assigned, key=lambda item: item[1].updated_at, reverse=True), expired
+
+    async def delete(self, case_id: str) -> bool:
+        """Remove a Case from the store; used by Case GC after audit cleanup."""
+        async with self._lock:
+            if case_id not in self._cases:
+                return False
+            del self._cases[case_id]
+            await self._persist()
+            return True
 
     async def cancel(self, case_id: str) -> CaseRecord:
         """Atomically cancel a Case and reclaim all nonterminal work items."""
@@ -684,14 +711,15 @@ class CaseStore:
             await self._persist()
             return updated_item
 
-    def _requeue_expired_locked(self) -> list[tuple[str, str]]:
+    def _requeue_expired_locked(self) -> LeaseExpiredRequeues:
         now = datetime.now(UTC)
-        requeued: list[tuple[str, str]] = []
+        requeued: LeaseExpiredRequeues = []
         for case_id, case in list(self._cases.items()):
             changed = False
             work_items: list[WorkItemRecord] = []
             for item in case.work_items:
                 if item.status in {"claimed", "running", "in_progress"} and self._lease_expired(item, now):
+                    requeued.append((case_id, item))
                     work_items.append(
                         item.model_copy(
                             update={
@@ -702,7 +730,6 @@ class CaseStore:
                             }
                         )
                     )
-                    requeued.append((case_id, item.work_item_id))
                     changed = True
                 else:
                     work_items.append(item)

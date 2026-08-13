@@ -159,19 +159,17 @@ delivery: {quality_gate: true, outputs: [result]}
     assert registry.agent_for_flow("fallback") == "agent-general"
 
 
-def test_registry_covers_fourteen_experts_and_two_special_agents() -> None:
+def test_registry_covers_fourteen_recruitable_experts() -> None:
     registry = AgentTeamsCapabilityRegistry(agent_configs=load_agent_configs())
 
     role_map = registry.role_agent_map()
     capabilities = registry.agent_capabilities()
-    categories = {role: item["category"] for role, item in capabilities.items()}
 
-    assert len(role_map) == 16
+    assert len(role_map) == 14
     assert sum(item["recruitable"] for item in capabilities.values()) == 14
-    assert categories["shania"] == "companion"
-    assert categories["agent-router"] == "router"
-    assert capabilities["shania"]["execution_modes"] == []
-    assert capabilities["agent-router"]["execution_modes"] == []
+    # agent-router 与 shania 是路由/人设型 agent，不参与 Case 执行。
+    assert "agent-router" not in role_map
+    assert "shania" not in role_map
     assert registry.role_alias_map() == {
         "data-steward": "agent-data",
         "quality-auditor": "agent-qc",

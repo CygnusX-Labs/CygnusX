@@ -1,3 +1,7 @@
+# 注意：本文件为描述性文档，无任何代码加载（全仓检索仅 README 提及）。
+# 角色事实源是 data/ai/*.yaml 的 features.internal_case_role + features.agentteams，
+# 经 capability registry（agentteams_capability_registry.py）派生并被 gateway/worker 消费。
+# 修改本文件不会改变任何运行时行为；要调整角色/能力请改 data/ai/*.yaml。
 schema_version: "1.0"
 team_id: bioops-delivery
 description: >-

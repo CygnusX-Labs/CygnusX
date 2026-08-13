@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
@@ -26,6 +27,8 @@ from omichub.application.services.agentteams_consultation_telemetry_service impo
 from omichub.application.services.agentteams_quality_gate_service import (
     AgentTeamsQualityGateService,
 )
+from omichub.application.services.agentteams_service import AgentTeamsService
+from omichub.application.services.agentteams_usage_service import record_consultation_usage
 from omichub.application.services.parallel_subagent_service import ParallelSubAgentService
 from omichub.application.services.pipeline_result_service import PipelineResultService
 from omichub.core.exceptions import BusinessError, NotFoundError
@@ -36,6 +39,9 @@ from omichub.infrastructure.storage.minio_store import MinioStore
 from omichub.infrastructure.storage.path_factory import get_path_factory
 
 _JSON_FENCE_RE = re.compile(r"```json\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
+
+_TOOL_CALL_EVIDENCE_LIMIT = 200
+_ARGS_SUMMARY_MAX_CHARS = 200
 
 _WORKSPACE_EXEC_PROTOCOL_PATH = (
     Path(__file__).resolve().parents[4]
@@ -58,6 +64,114 @@ class ConsultationEnvelope(BaseModel):
     hard_gate: dict[str, Any] | None = None
 
 
+class _BridgeEvidenceProjector:
+    """把子 Agent 运行时事件 fire-and-forget 投影为 Bridge 证据事件（agent.*）。"""
+
+    def __init__(
+        self,
+        service: AgentTeamsService,
+        *,
+        case_id: str,
+        work_item_id: str,
+    ) -> None:
+        self._service = service
+        self._case_id = case_id
+        self._work_item_id = work_item_id
+        self._tool_call_counts: dict[int, int] = {}
+        self._truncated: set[int] = set()
+        self._pending: set[asyncio.Task[None]] = set()
+
+    def __call__(self, event: dict[str, Any]) -> None:
+        event_type = str(event.get("type") or "")
+        index = int(event.get("index") or 0)
+        agent_id = str(event.get("agent_id") or "")
+        if event_type == "worker_started":
+            self._schedule(
+                "agent.started",
+                f"Agent {agent_id} 开始执行",
+                {"work_item_id": self._work_item_id, "agent_id": agent_id},
+            )
+        elif event_type == "worker_tool_call":
+            count = self._tool_call_counts.get(index, 0) + 1
+            self._tool_call_counts[index] = count
+            tool = str(event.get("tool_name") or "")
+            if count <= _TOOL_CALL_EVIDENCE_LIMIT:
+                self._schedule(
+                    "agent.tool_call",
+                    f"Agent {agent_id} 调用工具 {tool}",
+                    {
+                        "tool": tool,
+                        "args_summary": str(event.get("args_summary") or "")[
+                            :_ARGS_SUMMARY_MAX_CHARS
+                        ],
+                        "work_item_id": self._work_item_id,
+                        "agent_id": agent_id,
+                    },
+                )
+            elif index not in self._truncated:
+                self._truncated.add(index)
+                self._schedule(
+                    "agent.tool_call_truncated",
+                    f"Agent {agent_id} 工具调用超过 {_TOOL_CALL_EVIDENCE_LIMIT} 条，后续合并省略",
+                    {
+                        "work_item_id": self._work_item_id,
+                        "agent_id": agent_id,
+                        "limit": _TOOL_CALL_EVIDENCE_LIMIT,
+                    },
+                )
+        elif event_type == "worker_tool_result":
+            tool = str(event.get("tool_name") or "")
+            success = bool(event.get("success"))
+            self._schedule(
+                "agent.tool_result",
+                f"工具 {tool} 执行{'成功' if success else '失败'}",
+                {
+                    "tool": tool,
+                    "success": success,
+                    "duration_ms": int(event.get("duration_ms") or 0),
+                    "work_item_id": self._work_item_id,
+                    "agent_id": agent_id,
+                },
+            )
+        elif event_type == "worker_finished":
+            self._schedule(
+                "agent.finished",
+                f"Agent {agent_id} 执行结束（{event.get('status') or 'unknown'}）",
+                {
+                    "status": str(event.get("status") or ""),
+                    "tool_call_count": self._tool_call_counts.get(index, 0),
+                    "duration_ms": round(float(event.get("elapsed_s") or 0) * 1000),
+                    "work_item_id": self._work_item_id,
+                    "agent_id": agent_id,
+                },
+            )
+
+    def _schedule(self, event_type: str, summary: str, payload: dict[str, Any]) -> None:
+        task = asyncio.create_task(self._send(event_type, summary, payload))
+        self._pending.add(task)
+        task.add_done_callback(self._pending.discard)
+
+    async def _send(self, event_type: str, summary: str, payload: dict[str, Any]) -> None:
+        try:
+            await self._service.post_case_evidence(
+                self._case_id,
+                work_item_id=self._work_item_id,
+                event_type=event_type,
+                summary=summary,
+                payload=payload,
+            )
+        except Exception as exc:  # noqa: BLE001 — 证据投影失败不得影响会诊主流程
+            logger.bind(
+                case_id=self._case_id,
+                work_item_id=self._work_item_id,
+                event_type=event_type,
+            ).warning("AgentTeams evidence projection failed: {}", exc)
+
+    async def drain(self) -> None:
+        if self._pending:
+            await asyncio.gather(*self._pending, return_exceptions=True)
+
+
 class AgentConsultationService:
     def __init__(
         self,
@@ -67,11 +181,13 @@ class AgentConsultationService:
         parallel_service: ParallelSubAgentService | None = None,
         telemetry_service: AgentTeamsConsultationTelemetryService | None = None,
         minio_store: MinioStore | None = None,
+        agentteams_service: AgentTeamsService | None = None,
     ) -> None:
         self._db = db
         self._agent_service = agent_service or AgentService(db)
         self._parallel_service = parallel_service or ParallelSubAgentService()
         self._minio_store = minio_store or MinioStore()
+        self._agentteams_service = agentteams_service
         self._telemetry_service = telemetry_service or (
             AgentTeamsConsultationTelemetryService()
             if isinstance(db, AsyncSession) and hasattr(db, "sync_session")
@@ -92,14 +208,18 @@ class AgentConsultationService:
         execution_mode: str = "readonly_consultation",
     ) -> ConsultationEnvelope:
         started = time.monotonic()
-        if agent_id not in get_agentteams_capability_registry().consultation_agents():
+        registry = get_agentteams_capability_registry()
+        if agent_id not in registry.consultation_agents():
             raise NotFoundError(f"Agent {agent_id} 不存在或未启用")
         if execution_mode not in {"readonly_consultation", "workspace_execution"}:
             raise ValueError("Unsupported AgentTeams execution mode")
         if execution_mode == "workspace_execution" and (
-            agent_id not in {"agent-code", "agent-viz"} or not work_item_id
+            "workspace_execution" not in registry.agent_execution_modes(agent_id)
+            or not work_item_id
         ):
-            raise ValueError("Workspace execution requires agent-code or agent-viz and a work item")
+            raise ValueError(
+                f"Workspace execution requires a work item and a workspace_execution declaration for {agent_id}"
+            )
         context = await self._agent_service.assemble_context(agent_id, user_id=requester_ref)
         if context is None or context.model_config is None:
             raise NotFoundError(f"Agent {agent_id} 不存在或未启用")
@@ -123,6 +243,15 @@ class AgentConsultationService:
             if execution_mode == "workspace_execution" and work_item_id
             else None
         )
+        projector = (
+            _BridgeEvidenceProjector(
+                self._agentteams_service, case_id=case_id, work_item_id=work_item_id
+            )
+            if self._agentteams_service is not None
+            and self._agentteams_service.available
+            and work_item_id
+            else None
+        )
         result = await self._parallel_service.run(
             user_id=requester_ref,
             parent_agent_id="agent-general",
@@ -140,7 +269,10 @@ class AgentConsultationService:
             safe_only=execution_mode == "readonly_consultation",
             runtime_authorized=True,
             workdir_root=workdir_root,
+            on_event=projector,
         )
+        if projector is not None:
+            await projector.drain()
         raw_answer = self._extract_answer(result)
         envelope, parse_success = self._parse_envelope_with_status(raw_answer)
         envelope.evidence_refs = self._verified_evidence_refs(result)
@@ -153,6 +285,14 @@ class AgentConsultationService:
             verified_refs=envelope.evidence_refs,
             hard_gate=hard_gate,
             conclusion=envelope.conclusion,
+        )
+        await self._record_usage(
+            result=result,
+            envelope=envelope,
+            case_id=case_id,
+            agent_id=agent_id,
+            requester_ref=requester_ref,
+            context=context,
         )
         if execution_mode == "workspace_execution" and workdir_root is not None:
             artifacts, errors = await self._register_workspace_artifacts(
@@ -311,11 +451,13 @@ class AgentConsultationService:
                     )
                 )
                 artifact = {
+                    "id": str(record.id),
                     "path": record.path,
                     "kind": "file",
                     "bytes": record.size,
                     "size_bytes": record.size,
                     "sha256": sha256,
+                    "download_url": f"/api/v1/files/{record.id}/download",
                 }
                 try:
                     artifact["s3_uri"] = self._minio_store.put_case_object(
@@ -364,6 +506,33 @@ class AgentConsultationService:
                 conclusion=raw_answer[:8_000],
                 risks=["信封解析降级：专家答复未满足结构化 JSON 契约。"],
             ), False
+
+    async def _record_usage(
+        self,
+        *,
+        result: dict[str, Any],
+        envelope: ConsultationEnvelope,
+        case_id: str,
+        agent_id: str,
+        requester_ref: str,
+        context: Any,
+    ) -> None:
+        """协作室 LLM 用量落库与饼干扣费（best-effort，绝不阻断会诊主流程）。"""
+        try:
+            await record_consultation_usage(
+                self._db,
+                case_id=case_id,
+                agent_id=agent_id,
+                requester_ref=requester_ref,
+                usage=result.get("usage"),
+                conclusion=envelope.conclusion,
+                model_config=context.model_config,
+                agentteams_service=self._agentteams_service,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.bind(case_id=case_id, agent_id=agent_id).warning(
+                "AgentTeams consultation usage record failed: {}", exc
+            )
 
     async def _record_telemetry(
         self,

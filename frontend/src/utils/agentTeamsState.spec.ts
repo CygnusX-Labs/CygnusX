@@ -17,6 +17,13 @@ describe('agentTeamsState', () => {
       .toEqual([event('one'), event('two'), event('three')])
   })
 
+  it('replaces an optimistic event when the server returns the same event id', () => {
+    const optimistic = { ...event('evt-user-1'), payload: { optimistic: true } }
+    const persisted = { ...event('evt-user-1'), actor: 'user-a', event_type: 'room.user_message' }
+
+    expect(mergeAgentTeamsEvents([optimistic], [persisted])).toEqual([persisted])
+  })
+
   it('polls only while the browser page is visible', () => {
     expect(shouldPollAgentTeamsCase('visible')).toBe(true)
     expect(shouldPollAgentTeamsCase('hidden')).toBe(false)

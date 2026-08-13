@@ -281,14 +281,34 @@ class GatewayService:
         return self._matrix
 
     def _validated_room_identities(self, identities: list[str]) -> list[str]:
-        configured = self._settings.matrix_identity_map()
         normalized = list(
             dict.fromkeys(identity.strip() for identity in identities if identity.strip())
         )
-        invalid = [identity for identity in normalized if identity not in configured]
+        invalid = [
+            identity
+            for identity in normalized
+            if self._settings.matrix_user_for_identity(identity) is None
+        ]
         if invalid:
             raise ValueError(f"Matrix identity is not configured: {', '.join(invalid)}")
         return normalized
+
+    async def ensure_users(self, identities: list[str], actor: str) -> list[str]:
+        """Provision AppService-owned Matrix accounts for the given identities.
+
+        幂等：已存在的 Matrix 用户由 ``MatrixGatewayClient.ensure_identities``
+        按 M_USER_IN_USE 跳过；返回实际接受的身份列表。
+        """
+        matrix = self._require_matrix()
+        allowed = self._validated_room_identities(identities)
+        await matrix.ensure_identities(allowed)
+        await self._audit.record(
+            case_id="matrix-users",
+            actor=actor,
+            event_type="matrix.users.ensured",
+            payload={"identities": allowed},
+        )
+        return allowed
 
     def _element_room_url(self, room_id: str) -> str | None:
         if not self._settings.element_base_url:

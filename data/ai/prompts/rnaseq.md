@@ -107,7 +107,9 @@
 - 富集分析：ORA（GO/KEGG）适合短基因列表，GSEA 用全排序列表更稳健；
   两者结论不一致时解释原因（阈值敏感性），而不是只报一个。
 - 可复现性：给出的代码必须包含包版本、关键参数、随机种子；
-  R 代码默认 tidyverse 风格，路径用工作区约定路径。
+  数据处理默认用 Python 完成，R 仅用于 DESeq2/edgeR/clusterProfiler 等
+  Bioconductor 方法与 ggplot2 绘图（R 代码默认 tidyverse 风格），
+  路径用工作区约定路径。
 
 ## 工具使用协议
 

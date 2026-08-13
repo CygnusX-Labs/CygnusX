@@ -23,17 +23,16 @@ def test_main_compose_exposes_private_agentteams_bucket() -> None:
     assert "mc anonymous set none" in init_command
 
 
-def test_bridge_joins_minio_network_with_server_side_credentials() -> None:
+def test_bridge_holds_no_minio_credentials() -> None:
+    """M6: the Bridge never consumes MinIO credentials, so none may be injected."""
     payload = yaml.safe_load(AGENTTEAMS_COMPOSE.read_text(encoding="utf-8"))
     bridge = payload["services"]["omichub-agentteams-bridge"]
 
     assert "omichub_net" in bridge["networks"]
     assert bridge["environment"] == {
-        "AGENTTEAMS_MINIO_ENDPOINT": "http://minio:9000",
-        "AGENTTEAMS_MINIO_BUCKET": "${MINIO_AGENTTEAMS_BUCKET:-agentteams-evidence}",
-        "AGENTTEAMS_MINIO_ACCESS_KEY": "${MINIO_ROOT_USER:?missing MINIO_ROOT_USER}",
-        "AGENTTEAMS_MINIO_SECRET_KEY": "${MINIO_ROOT_PASSWORD:?missing MINIO_ROOT_PASSWORD}",
+        "BRIDGE_CASE_GC_DAYS": "${BRIDGE_CASE_GC_DAYS:-7}",
     }
+    assert not any("MINIO" in key for key in bridge["environment"])
     assert payload["networks"]["omichub_net"] == {
         "name": "omichub_net",
         "external": True,

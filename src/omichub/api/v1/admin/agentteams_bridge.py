@@ -10,6 +10,7 @@ from omichub.application.schemas.agentteams_bridge import (
     AgentTeamsBridgeConfigDTO,
     AgentTeamsBridgeConfigUpdateDTO,
     AgentTeamsBridgeTokenBundleDTO,
+    AgentTeamsWorkerTokenIssueDTO,
 )
 from omichub.application.services.agentteams_bridge_settings_service import (
     AgentTeamsBridgeSettingsService,
@@ -115,3 +116,42 @@ async def update_agentteams_bridge_config(
     service = AgentTeamsBridgeSettingsService(db, get_settings())
     await service.update_config(request)
     return await _with_connection_state(service)
+
+
+@router.get("/agentteams-bridge/worker-tokens", summary="列出 Bridge 可吊销 Worker 令牌（脱敏）")
+async def list_agentteams_worker_tokens(
+    _admin: AdminRequired,
+    service: BridgeServiceDep,
+) -> dict:
+    runtime = await service.get_runtime_config()
+    items = await AgentTeamsService(get_settings(), runtime).admin_list_worker_tokens()
+    return {"items": items}
+
+
+@router.post("/agentteams-bridge/worker-tokens", summary="签发可吊销的 per-worker Bridge 令牌")
+async def issue_agentteams_worker_token(
+    request: AgentTeamsWorkerTokenIssueDTO,
+    db: DbSession,
+    _admin_id: AdminRequired,
+    x_totp_code: Annotated[str | None, Header(alias="X-TOTP-Code")] = None,
+) -> dict:
+    """Proxy token issuance to the Bridge; the raw token is returned exactly once."""
+    await require_admin_totp(_admin_id, db, x_totp_code)
+    runtime = await AgentTeamsBridgeSettingsService(db, get_settings()).get_runtime_config()
+    return await AgentTeamsService(get_settings(), runtime).admin_issue_worker_token(
+        identity=request.identity, ttl_seconds=request.ttl_seconds, note=request.note
+    )
+
+
+@router.delete(
+    "/agentteams-bridge/worker-tokens/{token_id}", summary="吊销指定 Bridge Worker 令牌"
+)
+async def revoke_agentteams_worker_token(
+    token_id: str,
+    db: DbSession,
+    _admin_id: AdminRequired,
+    x_totp_code: Annotated[str | None, Header(alias="X-TOTP-Code")] = None,
+) -> dict:
+    await require_admin_totp(_admin_id, db, x_totp_code)
+    runtime = await AgentTeamsBridgeSettingsService(db, get_settings()).get_runtime_config()
+    return await AgentTeamsService(get_settings(), runtime).admin_revoke_worker_token(token_id)

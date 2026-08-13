@@ -8,7 +8,6 @@ import {
   GlobeOutline,
   TerminalOutline,
   SparklesOutline,
-  FlashOutline,
   TrashOutline,
   PlayOutline,
   RefreshOutline,
@@ -61,6 +60,20 @@ import type { DataFile } from '@/types'
 import type { AgentTemplate, SkillItem } from '@/types/agent'
 import type { FileAttachment, MentionDirectory, MentionItem } from './types'
 
+/** 工具行项目显隐配置；未指定时由 roomMode 推导默认值 */
+export interface ToolbarConfig {
+  attach?: boolean
+  workspaceReference?: boolean
+  webSearch?: boolean
+  terminal?: boolean
+  mcp?: boolean
+  deepThinking?: boolean
+  workbench?: boolean
+  more?: boolean
+  clear?: boolean
+  send?: boolean
+}
+
 interface Props {
   modelValue: string
   placeholder?: string
@@ -77,6 +90,16 @@ interface Props {
   showWorkbenchControl?: boolean
   /** 工作台会话正在创建中 */
   workbenchLoading?: boolean
+  /** 协作室等纯消息场景：关闭 slash/Goal 命令与 Agent 会话专属工具，@ 面板仅保留文件条目 */
+  roomMode?: boolean
+  /** 工具行提示文案（如 "Enter 发送 · Shift+Enter 换行"），不传则不显示；P7 后渲染在输入卡片下方右侧 */
+  hint?: string
+  /** 提交中：发送按钮 loading 并禁用 */
+  sendLoading?: boolean
+  /** 输入长度上限，透传给内部 textarea；不传则不限制 */
+  maxlength?: number
+  /** 工具行显隐配置；未传时按 roomMode 推导：协作室默认只保留附件、@引用、清空、发送，避免死按钮 */
+  toolbarConfig?: ToolbarConfig
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -89,6 +112,10 @@ const props = withDefaults(defineProps<Props>(), {
   overdriveEnabled: false,
   showWorkbenchControl: false,
   workbenchLoading: false,
+  roomMode: false,
+  hint: '',
+  sendLoading: false,
+  toolbarConfig: undefined,
 })
 
 const emit = defineEmits<{
@@ -125,6 +152,52 @@ const goalRuntime = useGoalRuntimeStore()
 const message = useMessage()
 const dialog = useDialog()
 const router = useRouter()
+
+/** 工具行显隐：外部传了 toolbarConfig 则完全以外部为准；否则按 roomMode 推导默认值 */
+const defaultToolbarConfig = computed<ToolbarConfig>(() => {
+  if (props.roomMode) {
+    return {
+      attach: true,
+      workspaceReference: true,
+      webSearch: false,
+      terminal: false,
+      mcp: false,
+      deepThinking: false,
+      workbench: false,
+      more: false,
+      clear: true,
+      send: true,
+    }
+  }
+  return {
+    attach: true,
+    workspaceReference: true,
+    webSearch: true,
+    terminal: true,
+    mcp: true,
+    deepThinking: true,
+    workbench: props.showWorkbenchControl,
+    more: true,
+    clear: true,
+    send: true,
+  }
+})
+
+const toolbar = computed<ToolbarConfig>(() => ({
+  ...defaultToolbarConfig.value,
+  ...props.toolbarConfig,
+}))
+
+/** 中部能力胶囊区域是否还需要渲染 */
+const showToolbarCenter = computed(
+  () =>
+    toolbar.value.webSearch ||
+    toolbar.value.terminal ||
+    toolbar.value.mcp ||
+    toolbar.value.deepThinking ||
+    toolbar.value.workbench ||
+    toolbar.value.more,
+)
 
 const inputWrapperRef = ref<HTMLElement>()
 const fileInputRef = ref<HTMLInputElement>()
@@ -329,7 +402,7 @@ function handleKeydown(e: KeyboardEvent) {
     mcpMenuRef.value?.selectCurrent()
     return
   }
-  if (showSlashMenu.value) {
+  if (showSlashMenu.value && !props.roomMode) {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
       slashMenuRef.value?.moveSelection(e.key === 'ArrowDown' ? 1 : -1)
@@ -382,7 +455,7 @@ function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
     showSlashMenu.value = false
   }
-  if (e.key === '/' && localValue.value === '') {
+  if (!props.roomMode && e.key === '/' && localValue.value === '') {
     nextTick(() => {
       showSlashMenu.value = true
       slashQuery.value = ''
@@ -391,6 +464,10 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 function detectSlashCommand() {
+  if (props.roomMode) {
+    showSlashMenu.value = false
+    return
+  }
   const text = localValue.value
   const lastLine = text.split('\n').pop() || ''
 
@@ -436,8 +513,9 @@ function detectMention() {
   ensureMentionData()
 }
 
-/** 首次打开 @ 面板时加载工作区文件与智能体 / 技能资产 */
+/** 首次打开 @ 面板时加载工作区文件与智能体 / 技能资产；roomMode 下 @ 仅文件，无需拉取资产 */
 async function ensureMentionData() {
+  if (props.roomMode) return
   if (!agentHub.agents.length) agentHub.fetchAgents()
   if (!agentHub.skills.length) agentHub.fetchSkills()
 }
@@ -517,7 +595,8 @@ function friendlyName(raw: string, fallbackPath: string, typeHint: string): [str
  */
 const mentionItems = computed<MentionItem[]>(() => {
   const q = mentionQuery.value
-  const directories: MentionItem[] = workspaceDirectories.value
+  // roomMode（协作室）只保留文件条目：目录引用无法映射为 Case context_refs
+  const directories: MentionItem[] = props.roomMode ? [] : workspaceDirectories.value
     .filter((directory) => fuzzyMatch(directory.path, q))
     .slice(0, 20)
     .map((directory) => {
@@ -738,7 +817,7 @@ async function handleSend() {
     pendingSkills.value.length > 0
   if (!hasPayload || props.disabled) return
 
-  const goalCommand = parseGoalRuntimeCommand(content)
+  const goalCommand = props.roomMode ? null : parseGoalRuntimeCommand(content)
   if (goalCommand) {
     await handleGoalCommand(goalCommand)
     return
@@ -1155,6 +1234,7 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
           :placeholder="placeholder"
           :disabled="disabled"
           :bordered="false"
+          :maxlength="maxlength"
           :autosize="{ minRows: 1, maxRows: 8 }"
           @blur="handleBlur"
           @keydown="handleKeydown"
@@ -1175,7 +1255,7 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
 
       <div class="input-toolbar" role="group" aria-label="消息操作">
         <div class="toolbar-left" aria-label="上下文操作">
-          <n-tooltip trigger="hover">
+          <n-tooltip v-if="toolbar.attach" trigger="hover">
             <template #trigger>
               <n-button text class="toolbar-btn" :loading="uploading" aria-label="添加附件" @click="handleAttach">
                 <n-icon size="18"><AttachOutline /></n-icon>
@@ -1183,7 +1263,7 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
             </template>
             添加附件；也可直接粘贴或拖入文件。图片可直接识别，PDF、文本和树文件可读取内容
           </n-tooltip>
-          <n-tooltip trigger="hover">
+          <n-tooltip v-if="toolbar.workspaceReference" trigger="hover">
             <template #trigger>
               <n-button text class="toolbar-btn" aria-label="引用工作区文件" @click="handleWorkspaceReference">
                 <n-icon size="18"><DocumentTextOutline /></n-icon>
@@ -1193,8 +1273,8 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
           </n-tooltip>
         </div>
 
-        <div class="toolbar-center" aria-label="工具和消息模式">
-          <n-tooltip trigger="hover">
+        <div v-if="showToolbarCenter" class="toolbar-center" aria-label="工具和消息模式">
+          <n-tooltip v-if="toolbar.webSearch" trigger="hover">
             <template #trigger>
               <n-button
                 text
@@ -1209,7 +1289,7 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
             </template>
             {{ chatStore.enableWebSearch ? '关闭联网搜索' : '开启联网搜索' }}
           </n-tooltip>
-          <n-tooltip trigger="hover">
+          <n-tooltip v-if="toolbar.terminal" trigger="hover">
             <template #trigger>
               <n-button
                 text
@@ -1224,7 +1304,7 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
             </template>
             {{ enableCodeExecution ? '关闭终端执行' : '开启终端执行' }}
           </n-tooltip>
-          <n-tooltip trigger="hover">
+          <n-tooltip v-if="toolbar.mcp" trigger="hover">
             <template #trigger>
               <n-button
                 text
@@ -1242,7 +1322,7 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
             </template>
             MCP 工具：{{ mcpMode === 'off' ? '关闭' : mcpMode === 'manual' ? '手动选择' : '自动' }}
           </n-tooltip>
-          <n-tooltip trigger="hover">
+          <n-tooltip v-if="toolbar.deepThinking" trigger="hover">
             <template #trigger>
               <n-button
                 text
@@ -1258,7 +1338,7 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
             </template>
             {{ chatStore.deepThinking ? '关闭深度思考' : '开启深度思考' }}
           </n-tooltip>
-          <n-tooltip v-if="props.showWorkbenchControl" trigger="hover">
+          <n-tooltip v-if="toolbar.workbench" trigger="hover">
             <template #trigger>
               <n-button
                 text
@@ -1273,25 +1353,8 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
             </template>
             切换到 AI 工作台以执行代码、运行脚本并保存产物；当前对话历史会一并带过去
           </n-tooltip>
-          <n-tooltip v-if="props.showOverdriveControl" trigger="hover">
-            <template #trigger>
-              <n-button
-                text
-                class="toolbar-btn"
-                :class="{ active: props.overdriveEnabled }"
-                :aria-label="props.overdriveEnabled ? '关闭超频模式' : '开启超频模式'"
-                :aria-pressed="props.overdriveEnabled"
-                :disabled="props.isStreaming || props.disabled"
-                @click="emit('toggleOverdrive')"
-              >
-                <n-icon size="18"><FlashOutline /></n-icon>
-                <span class="btn-label">超频模式</span>
-              </n-button>
-            </template>
-            {{ props.overdriveEnabled ? '关闭超频模式' : '开启超频模式：本轮临时组织专家协作，不创建协作 Case' }}
-          </n-tooltip>
           <n-dropdown
-            v-if="!agentTeamsLocked"
+            v-if="toolbar.more && !agentTeamsLocked"
             trigger="click"
             :options="moreMenuOptions"
             @select="handleMoreSelect"
@@ -1303,7 +1366,7 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
         </div>
 
         <div class="toolbar-right">
-          <n-popover v-if="canClear" v-model:show="showClearConfirm" trigger="click" placement="top-end" :width="200">
+          <n-popover v-if="toolbar.clear && canClear" v-model:show="showClearConfirm" trigger="click" placement="top-end" :width="200">
             <template #trigger>
               <n-tooltip trigger="hover">
                 <template #trigger>
@@ -1323,49 +1386,53 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
             </div>
           </n-popover>
 
-          <n-tooltip v-if="isStreaming" trigger="hover">
-            <template #trigger>
-              <n-button circle class="send-btn stop-btn" aria-label="停止生成" @click="handleStop">
-                <span class="stop-square" aria-hidden="true" />
-              </n-button>
+          <template v-if="toolbar.send">
+            <n-tooltip v-if="isStreaming" trigger="hover">
+              <template #trigger>
+                <n-button circle class="send-btn stop-btn" aria-label="停止生成" @click="handleStop">
+                  <span class="stop-square" aria-hidden="true" />
+                </n-button>
+              </template>
+              停止生成
+            </n-tooltip>
+
+            <template v-else-if="isPaused">
+              <n-tooltip trigger="hover">
+                <template #trigger>
+                  <n-button circle class="send-btn resume-btn" aria-label="继续生成" @click="handleResume">
+                    <template #icon><n-icon size="18"><PlayOutline /></n-icon></template>
+                  </n-button>
+                </template>
+                继续生成
+              </n-tooltip>
+              <n-tooltip trigger="hover">
+                <template #trigger>
+                  <n-button circle class="send-btn regenerate-btn" aria-label="重新生成" @click="handleRegenerate">
+                    <template #icon><n-icon size="18"><RefreshOutline /></n-icon></template>
+                  </n-button>
+                </template>
+                重新生成
+              </n-tooltip>
             </template>
-            停止生成
-          </n-tooltip>
 
-          <template v-else-if="isPaused">
-            <n-tooltip trigger="hover">
-              <template #trigger>
-                <n-button circle class="send-btn resume-btn" aria-label="继续生成" @click="handleResume">
-                  <template #icon><n-icon size="18"><PlayOutline /></n-icon></template>
-                </n-button>
-              </template>
-              继续生成
-            </n-tooltip>
-            <n-tooltip trigger="hover">
-              <template #trigger>
-                <n-button circle class="send-btn regenerate-btn" aria-label="重新生成" @click="handleRegenerate">
-                  <template #icon><n-icon size="18"><RefreshOutline /></n-icon></template>
-                </n-button>
-              </template>
-              重新生成
-            </n-tooltip>
+            <n-button
+              v-else
+              circle
+              class="send-btn"
+              :class="{ active: canSend }"
+              :type="canSend ? 'primary' : 'default'"
+              :disabled="!canSend || disabled || sendLoading"
+              :loading="sendLoading"
+              aria-label="发送消息"
+              @click="handleSend"
+            >
+              <template #icon><n-icon size="18"><ArrowUpOutline /></n-icon></template>
+            </n-button>
           </template>
-
-          <n-button
-            v-else
-            circle
-            class="send-btn"
-            :class="{ active: canSend }"
-            :type="canSend ? 'primary' : 'default'"
-            :disabled="!canSend || disabled"
-            aria-label="发送消息"
-            @click="handleSend"
-          >
-            <template #icon><n-icon size="18"><ArrowUpOutline /></n-icon></template>
-          </n-button>
         </div>
       </div>
     </div>
+    <p v-if="props.hint" class="input-hint-below">{{ props.hint }}</p>
     <p v-if="isPaused" class="ai-composer__disclaimer">
       <span class="paused-hint" role="status">生成已暂停。</span>
     </p>
@@ -1391,6 +1458,15 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
   min-width: 0;
 }
 .agentteams-case-actions { display: flex; justify-content: flex-end; gap: var(--space-sm); }
+
+.input-hint-below {
+  margin: var(--space-xs) 0 0;
+  color: var(--neutral-text-3);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: right;
+  user-select: none;
+}
 
 .goal-status-dock {
   margin-bottom: var(--space-md, 16px);

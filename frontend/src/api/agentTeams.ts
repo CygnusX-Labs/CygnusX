@@ -7,6 +7,8 @@ export type AgentTeamsCaseStatus =
 
 export interface AgentTeamsCase {
   case_id: string
+  /** 从完整 intent 派生的稳定短标题；intent 仍是完整 Case 目标。 */
+  display_title?: string
   project_ref?: { kind: string; id: string; location?: string | null } | null
   context_refs: Array<{ kind: string; id: string; location?: string | null }>
   intent: string
@@ -35,7 +37,8 @@ export interface AgentTeamsWorkItem {
   target: string
   objective: string
   skill_name: string
-  status: 'pending' | 'in_progress' | 'completed' | 'blocked' | 'failed' | 'cancelled'
+  /** 对齐 Bridge models.py 的 9 态；in_progress 为旧别名保留。 */
+  status: 'pending' | 'claimed' | 'running' | 'awaiting_approval' | 'in_progress' | 'completed' | 'blocked' | 'failed' | 'cancelled'
   summary?: string | null
   updated_at: string
 }
@@ -89,6 +92,9 @@ export interface AgentTeamsCaseRejectRequest {
   reason: string
 }
 
+/** 房间 @ 引用的上下文（kind 与后端 AgentTeamsContextRef 对齐）。 */
+export type AgentTeamsContextRef = { kind: 'workspace' | 'file'; id: string; location?: string }
+
 export interface AgentTeamsPlanRevisionRequest {
   expected_plan_hash: string
   parameters: Record<string, unknown>
@@ -126,6 +132,19 @@ export interface AgentTeamsEventListResponse {
   next_cursor?: string | null
 }
 
+export interface AgentTeamsRoleLabel {
+  agent_id: string
+  name: string
+  avatar: string
+  color: string
+  role: string
+}
+
+export interface AgentTeamsRoleLabelsResponse {
+  role_labels: Record<string, AgentTeamsRoleLabel>
+  role_agent_map: Record<string, string>
+}
+
 export interface AgentTeamsBridgeStatus {
   available: boolean
   enabled: boolean
@@ -138,6 +157,9 @@ export interface AgentTeamsBridgeStatus {
 export const agentTeamsApi = {
   async status(): Promise<AgentTeamsBridgeStatus> {
     return (await apiClient.get('/agent-teams/status')).data
+  },
+  async getRoleLabels(): Promise<AgentTeamsRoleLabelsResponse> {
+    return (await apiClient.get<AgentTeamsRoleLabelsResponse>('/agent-teams/role-labels')).data
   },
   async listCases(params: AgentTeamsCaseListParams = {}): Promise<AgentTeamsCaseListResponse> {
     return (await apiClient.get<AgentTeamsCaseListResponse>('/agent-teams/cases', { params })).data
@@ -165,6 +187,19 @@ export const agentTeamsApi = {
   },
   async cancelCase(caseId: string, payload: AgentTeamsCaseRejectRequest): Promise<AgentTeamsCase> {
     return (await apiClient.post<AgentTeamsCase>(`/agent-teams/cases/${caseId}/cancel`, payload)).data
+  },
+  async deleteCase(caseId: string): Promise<Record<string, unknown>> {
+    return (await apiClient.delete(`/agent-teams/cases/${caseId}`)).data
+  },
+  async postCaseMessage(
+    caseId: string,
+    content: string,
+    contextRefs: AgentTeamsContextRef[] = [],
+  ): Promise<Record<string, unknown>> {
+    return (await apiClient.post(`/agent-teams/cases/${caseId}/messages`, {
+      content,
+      context_refs: contextRefs,
+    })).data
   },
   async revisePlan(caseId: string, payload: AgentTeamsPlanRevisionRequest): Promise<AgentTeamsPlanRevisionResponse> {
     return (await apiClient.post<AgentTeamsPlanRevisionResponse>(`/agent-teams/cases/${caseId}/plan/revise`, payload)).data

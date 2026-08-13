@@ -13,6 +13,7 @@ from omichub.api.v1.agentteams import (
     _is_chat_case_flow_allowed,
     create_case,
 )
+from omichub.application.services.agentteams_intent_router import IntentRoute
 from omichub.application.services.agentteams_service import AgentTeamsService
 from omichub.application.services.project_service import ProjectService
 from omichub.core.config import Settings
@@ -106,7 +107,10 @@ async def test_direct_case_api_creates_case_for_owned_project(monkeypatch) -> No
         sample_sheet=[{"sample": "S01"}],
         comparisons=[{"control": "control", "treatment": "treatment"}],
     )
-    service = SimpleNamespace(create_case=AsyncMock(return_value={"case_id": "bioops_001"}))
+    service = SimpleNamespace(
+        create_case=AsyncMock(return_value={"case_id": "bioops_001"}),
+        provision_case_room=AsyncMock(return_value=None),
+    )
     get_project = AsyncMock(return_value={"id": str(project_id)})
     monkeypatch.setattr(ProjectService, "get_project", get_project)
     monkeypatch.setattr("omichub.api.v1.agentteams._is_chat_case_flow_allowed", lambda _flow: True)
@@ -154,7 +158,8 @@ async def test_direct_case_api_binds_created_case_to_chat_session(monkeypatch) -
     service = SimpleNamespace(
         create_case=AsyncMock(
             return_value={"case_id": "bioops_001", "status": "planning_running"}
-        )
+        ),
+        provision_case_room=AsyncMock(return_value=None),
     )
     monkeypatch.setattr(ProjectService, "get_project", AsyncMock())
     monkeypatch.setattr("omichub.api.v1.agentteams._is_chat_case_flow_allowed", lambda _flow: True)
@@ -178,7 +183,10 @@ async def test_direct_case_api_allows_general_workspace_case(monkeypatch) -> Non
         intent="build a treeplot from fasta files",
         context_refs=[{"kind": "file", "id": "tree-a.fa"}, {"kind": "file", "id": "tree-b.fa"}],
     )
-    service = SimpleNamespace(create_case=AsyncMock(return_value={"case_id": "general_001"}))
+    service = SimpleNamespace(
+        create_case=AsyncMock(return_value={"case_id": "general_001"}),
+        provision_case_room=AsyncMock(return_value=None),
+    )
 
     response = await create_case(request, str(user_id), service, SimpleNamespace())
 
@@ -256,6 +264,10 @@ async def test_create_general_case_uses_file_context_without_project(
         return {"case_id": "general_001", "requester_ref": "current-user"}
 
     monkeypatch.setattr(service, "_request", fake_request)
+    monkeypatch.setattr(
+        "omichub.application.services.agentteams_service.infer_intent_route",
+        lambda _intent: None,
+    )
 
     await service.create_case(
         case_id="general_001",
@@ -272,8 +284,67 @@ async def test_create_general_case_uses_file_context_without_project(
         "intent": "build a treeplot from two fasta files",
         "requester_ref": "current-user",
         "execution_mode": "cluster_case",
-        "lead_planner": "agent-code",
+        "lead_planner": None,
     }
+
+
+@pytest.mark.asyncio
+async def test_create_chat_case_routes_rnaseq_intent_to_flow_analyst(
+    service: AgentTeamsService, monkeypatch
+) -> None:
+    captured: list[tuple[str, dict]] = []
+
+    async def fake_request(path: str, **kwargs):
+        captured.append((path, kwargs))
+        return {"case_id": "bioops_002", "requester_ref": "current-user"}
+
+    monkeypatch.setattr(service, "_request", fake_request)
+    monkeypatch.setattr(
+        "omichub.application.services.agentteams_service.infer_intent_route",
+        lambda _intent: IntentRoute(flow_id="rna_seq", lead_planner="agent-rnaseq"),
+    )
+
+    await service.create_case(
+        case_id="bioops_002",
+        project_id=None,
+        intent="帮我分析一批rna-seq数据",
+        requester_ref="current-user",
+        flow_id=None,
+    )
+
+    payload = captured[0][1]["json"]
+    assert payload["lead_planner"] is None
+    assert "flow_id" not in payload
+
+
+@pytest.mark.asyncio
+async def test_create_chat_case_falls_back_to_agent_code_when_router_fails(
+    service: AgentTeamsService, monkeypatch
+) -> None:
+    captured: list[tuple[str, dict]] = []
+
+    async def fake_request(path: str, **kwargs):
+        captured.append((path, kwargs))
+        return {"case_id": "bioops_003", "requester_ref": "current-user"}
+
+    def _broken_router(_intent: str):
+        raise RuntimeError("registry broken")
+
+    monkeypatch.setattr(service, "_request", fake_request)
+    monkeypatch.setattr(
+        "omichub.application.services.agentteams_service.infer_intent_route",
+        _broken_router,
+    )
+
+    await service.create_case(
+        case_id="bioops_003",
+        project_id=None,
+        intent="帮我分析一批rna-seq数据",
+        requester_ref="current-user",
+        flow_id=None,
+    )
+
+    assert captured[0][1]["json"]["lead_planner"] is None
 
 
 @pytest.mark.asyncio
@@ -392,6 +463,87 @@ async def test_admin_resource_snapshot_groups_cases_by_team(
     ]
     assert "preflight_input" not in snapshot["cases"][0]
     assert "task_specs" not in snapshot["cases"][1]
+
+
+@pytest.mark.asyncio
+async def test_health_check_merges_alias_worker_heartbeats_into_canonical_role(
+    service: AgentTeamsService, monkeypatch
+) -> None:
+    """别名 identity 有心跳时，canonical role 不再被误报为缺心跳。"""
+
+    async def fake_request(path: str, **kwargs):
+        if path == "/healthz":
+            return {"status": "ok"}
+        if path == "/v1/health/workers":
+            return {
+                "workers": [
+                    {
+                        "identity": "agent-data",
+                        "configured": True,
+                        "active": False,
+                        "last_seen_at": None,
+                        "age_seconds": None,
+                    },
+                    {
+                        "identity": "data-steward",
+                        "configured": True,
+                        "active": True,
+                        "last_seen_at": "2026-08-12T16:00:00+00:00",
+                        "age_seconds": 45,
+                    },
+                    {
+                        "identity": "agent-qc",
+                        "configured": True,
+                        "active": True,
+                        "last_seen_at": "2026-08-12T17:00:00+00:00",
+                        "age_seconds": 10,
+                    },
+                    {
+                        "identity": "quality-auditor",
+                        "configured": False,
+                        "active": False,
+                        "last_seen_at": "2026-08-12T15:00:00+00:00",
+                        "age_seconds": 300,
+                    },
+                ],
+                "allowed_flows": [],
+            }
+        raise AssertionError(f"Unexpected request: {path}")
+
+    async def fake_request_as(identity: str, token: str, path: str, **kwargs):
+        return {"status": "ok", "identity": identity}
+
+    monkeypatch.setattr(service, "_request", fake_request)
+    monkeypatch.setattr(service, "_request_as", fake_request_as)
+    monkeypatch.setattr(
+        "omichub.application.services.agentteams_service.get_agentteams_capability_registry",
+        lambda: SimpleNamespace(
+            role_agent_map=lambda: {"agent-data": "agent-data", "agent-qc": "agent-qc"},
+            role_alias_map=lambda: {
+                "data-steward": "agent-data",
+                "quality-auditor": "agent-qc",
+            },
+        ),
+    )
+
+    health = await service.health_check()
+
+    assert health["workers"] == [
+        {
+            "identity": "agent-data",
+            "configured": True,
+            "active": True,
+            "last_seen_at": "2026-08-12T16:00:00+00:00",
+            "age_seconds": 45,
+        },
+        {
+            "identity": "agent-qc",
+            "configured": True,
+            "active": True,
+            "last_seen_at": "2026-08-12T17:00:00+00:00",
+            "age_seconds": 10,
+        },
+    ]
 
 
 @pytest.mark.asyncio
@@ -545,6 +697,7 @@ async def test_public_case_view_strips_internal_preflight_input(
         return {
             "case_id": "bioops_001",
             "requester_ref": "current-user",
+            "intent": "创建一个数据质控团队：",
             "preflight_input": {"sample_sheet": [{"sample": "S01"}]},
             "task_specs": [{"sample_sheet": [{"sample": "S01"}]}],
         }
@@ -555,6 +708,7 @@ async def test_public_case_view_strips_internal_preflight_input(
 
     assert "preflight_input" not in case
     assert "task_specs" not in case
+    assert case["display_title"] == "数据质控团队"
 
 
 def test_bridge_proxy_is_unavailable_without_all_server_settings() -> None:
@@ -787,3 +941,129 @@ async def test_connection_status_reports_enabled_but_incomplete_configuration() 
         "configuration_source": "environment",
         "reason": "incomplete_configuration",
     }
+
+
+def test_matrix_identity_for_requester_mapping() -> None:
+    from omichub.application.services.agentteams_service import (
+        matrix_identity_for_requester,
+    )
+
+    assert matrix_identity_for_requester("user-1") == "omichub-user-user-1"
+    assert matrix_identity_for_requester("User@Example.com") == "omichub-user-user-example.com"
+    assert matrix_identity_for_requester(" 张三 ") == "omichub-user"
+    assert matrix_identity_for_requester("") == "omichub-user"
+    assert matrix_identity_for_requester("u" * 200) == "omichub-user-" + "u" * 48
+
+
+@pytest.mark.asyncio
+async def test_provision_case_room_ensures_and_invites_requester_identity(monkeypatch) -> None:
+    service = AgentTeamsService(
+        Settings(
+            agentteams_bridge_enabled=True,
+            agentteams_bridge_url="http://bridge.test",
+            agentteams_bridge_manager_token="manager-token",
+        )
+    )
+    calls: dict[str, object] = {}
+
+    class FakeGateway:
+        available = True
+
+        async def ensure_users(self, identities):
+            calls["ensured"] = identities
+            return {"ensured": identities}
+
+        async def create_room(self, session_id, identities):
+            calls["created"] = (session_id, identities)
+            return {"room_id": "!room:test", "element_room_url": "http://element/#/room/!room:test"}
+
+    monkeypatch.setattr(
+        "omichub.application.services.agentteams_service.AgentTeamsRoomGatewayService",
+        lambda *args, **kwargs: FakeGateway(),
+    )
+    service.post_case_evidence = AsyncMock(return_value={})
+    monkeypatch.setattr(
+        "omichub.application.services.agentteams_room_sync_service.record_room_binding",
+        AsyncMock(),
+    )
+
+    room = await service.provision_case_room("case-1", requester_ref="User@Example.com")
+
+    assert room is not None and room["room_id"] == "!room:test"
+    assert calls["ensured"] == ["bioops-manager", "omichub-user", "omichub-user-user-example.com"]
+    assert calls["created"] == (
+        "case-1",
+        ["bioops-manager", "omichub-user", "omichub-user-user-example.com"],
+    )
+
+
+@pytest.mark.asyncio
+async def test_provision_case_room_survives_ensure_users_failure(monkeypatch) -> None:
+    service = AgentTeamsService(
+        Settings(
+            agentteams_bridge_enabled=True,
+            agentteams_bridge_url="http://bridge.test",
+            agentteams_bridge_manager_token="manager-token",
+        )
+    )
+
+    class FakeGateway:
+        available = True
+
+        async def ensure_users(self, identities):
+            raise RuntimeError("ensure endpoint unavailable")
+
+        async def create_room(self, session_id, identities):
+            return {"room_id": "!room:test", "element_room_url": None}
+
+    monkeypatch.setattr(
+        "omichub.application.services.agentteams_service.AgentTeamsRoomGatewayService",
+        lambda *args, **kwargs: FakeGateway(),
+    )
+    service.post_case_evidence = AsyncMock(return_value={})
+    monkeypatch.setattr(
+        "omichub.application.services.agentteams_room_sync_service.record_room_binding",
+        AsyncMock(),
+    )
+
+    room = await service.provision_case_room("case-1", requester_ref="user-1")
+    assert room is not None and room["room_id"] == "!room:test"
+
+
+@pytest.mark.asyncio
+async def test_delete_case_checks_owner_before_bridge_delete(
+    service: AgentTeamsService, monkeypatch
+) -> None:
+    requests: list[tuple[str, dict]] = []
+
+    async def fake_request(path: str, **kwargs):
+        requests.append((path, kwargs))
+        if path == "/v1/cases/bioops_001" and kwargs.get("method", "GET") == "GET":
+            return {"case_id": "bioops_001", "requester_ref": "current-user"}
+        if path == "/v1/cases/bioops_001" and kwargs.get("method") == "DELETE":
+            return {"case_id": "bioops_001", "deleted": True}
+        raise AssertionError(f"Unexpected request: {path}")
+
+    monkeypatch.setattr(service, "_request", fake_request)
+
+    result = await service.delete_case("bioops_001", "current-user")
+
+    assert result == {"case_id": "bioops_001", "deleted": True}
+    assert [(path, kwargs.get("method", "GET")) for path, kwargs in requests] == [
+        ("/v1/cases/bioops_001", "GET"),
+        ("/v1/cases/bioops_001", "DELETE"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_delete_case_rejects_other_requester(
+    service: AgentTeamsService, monkeypatch
+) -> None:
+    async def fake_request(path: str, **kwargs):
+        assert path == "/v1/cases/case-other"
+        return {"case_id": "case-other", "requester_ref": "other-user"}
+
+    monkeypatch.setattr(service, "_request", fake_request)
+
+    with pytest.raises(BusinessError, match="无权查看"):
+        await service.delete_case("case-other", "current-user")

@@ -36,8 +36,11 @@ import {
   type AgentTeamsBridgeMetrics,
   type AgentTeamsBridgeResourceSnapshot,
   type AgentTeamsBridgeTokenBundle,
+  type AgentTeamsWorkerToken,
+  type AgentTeamsWorkerTokenIssueResult,
 } from '@/api/admin/agentTeamsBridge'
 import apiClient from '@/api/client'
+import { resolveWorkerTokenStatus, WORKER_TOKEN_STATUS_MAP } from '@/utils/agentTeamsWorkerToken'
 
 const message = useMessage()
 const loading = ref(false)
@@ -130,6 +133,7 @@ async function load() {
     health.value = healthResponse
     resources.value = resourceSnapshot
     bridgeMetrics.value = metricsSnapshot
+    void loadWorkerTokens()
     degradationCounts.value = { ...degradationCounts.value, ...(observability.data.degradation_counts || {}) }
     consultationQuality.value = {
       ...consultationQuality.value,
@@ -147,6 +151,7 @@ async function loadResources() {
   try {
     resources.value = await agentTeamsBridgeAdminApi.resources()
     health.value = resources.value.health
+    void loadWorkerTokens()
   } catch (cause: any) {
     message.error(cause?.response?.data?.detail || '读取 AgentTeams 资源失败。')
   } finally {
@@ -310,6 +315,142 @@ function resourceCaseRowKey(row: { case_id: string }) {
   return row.case_id
 }
 
+// --- Worker token 管理（M6：可吊销 per-worker 凭证） ---
+const workerTokens = ref<AgentTeamsWorkerToken[]>([])
+const workerTokenLoading = ref(false)
+const issueDialogVisible = ref(false)
+const issueForm = ref<{ identity: string | null; ttlDays: number; note: string }>({
+  identity: null,
+  ttlDays: 0,
+  note: '',
+})
+const issueTotpVisible = ref(false)
+const issuing = ref(false)
+const issuedToken = ref<AgentTeamsWorkerTokenIssueResult | null>(null)
+const revokeTarget = ref<AgentTeamsWorkerToken | null>(null)
+const revokeTotpVisible = ref(false)
+const revoking = ref(false)
+const workerIdentityOptions = computed(() =>
+  (health.value?.identities || []).map((item) => ({ label: item.identity, value: item.identity })),
+)
+
+async function loadWorkerTokens() {
+  workerTokenLoading.value = true
+  try {
+    workerTokens.value = await agentTeamsBridgeAdminApi.listWorkerTokens()
+  } catch {
+    workerTokens.value = []
+  } finally {
+    workerTokenLoading.value = false
+  }
+}
+
+function requestIssueWorkerToken() {
+  issueForm.value = { identity: null, ttlDays: 0, note: '' }
+  issueDialogVisible.value = true
+}
+
+function confirmIssueForm() {
+  if (!issueForm.value.identity) {
+    message.warning('请选择要签发的 Worker 身份。')
+    return
+  }
+  issueDialogVisible.value = false
+  issueTotpVisible.value = true
+}
+
+async function issueWorkerToken(totpCode: string) {
+  if (!issueForm.value.identity) return
+  issuing.value = true
+  try {
+    issuedToken.value = await agentTeamsBridgeAdminApi.issueWorkerToken(
+      {
+        identity: issueForm.value.identity,
+        ttl_seconds: issueForm.value.ttlDays > 0 ? issueForm.value.ttlDays * 86400 : null,
+        note: issueForm.value.note.trim(),
+      },
+      totpCode,
+    )
+    issueTotpVisible.value = false
+    message.success('令牌已签发，仅本次展示，请立即复制。')
+    await loadWorkerTokens()
+  } catch (cause: any) {
+    message.error(cause?.response?.data?.detail || '签发 Worker 令牌失败。')
+  } finally {
+    issuing.value = false
+  }
+}
+
+async function copyIssuedToken() {
+  if (!issuedToken.value) return
+  try {
+    await navigator.clipboard.writeText(issuedToken.value.token)
+    message.success('已复制令牌。')
+  } catch {
+    message.error('复制失败，请手动复制。')
+  }
+}
+
+function requestRevokeWorkerToken(record: AgentTeamsWorkerToken) {
+  revokeTarget.value = record
+  revokeTotpVisible.value = true
+}
+
+async function revokeWorkerToken(totpCode: string) {
+  if (!revokeTarget.value) return
+  revoking.value = true
+  try {
+    await agentTeamsBridgeAdminApi.revokeWorkerToken(revokeTarget.value.token_id, totpCode)
+    revokeTotpVisible.value = false
+    message.success(`已吊销 ${revokeTarget.value.identity} 的令牌。`)
+    await loadWorkerTokens()
+  } catch (cause: any) {
+    message.error(cause?.response?.data?.detail || '吊销 Worker 令牌失败。')
+  } finally {
+    revoking.value = false
+  }
+}
+
+function workerTokenStatusTag(record: AgentTeamsWorkerToken) {
+  return WORKER_TOKEN_STATUS_MAP[resolveWorkerTokenStatus(record)]
+}
+
+const workerTokenColumns = [
+  { title: '身份', key: 'identity', width: 160, ellipsis: { tooltip: true } },
+  { title: '备注', key: 'note', ellipsis: { tooltip: true }, render: (row: AgentTeamsWorkerToken) => row.note || '-' },
+  {
+    title: '状态',
+    key: 'status',
+    width: 90,
+    align: 'center' as const,
+    render: (row: AgentTeamsWorkerToken) => {
+      const tag = workerTokenStatusTag(row)
+      return h(NTag, { size: 'small', type: tag.type, bordered: false }, { default: () => tag.label })
+    },
+  },
+  {
+    title: '过期时间',
+    key: 'expires_at',
+    width: 170,
+    render: (row: AgentTeamsWorkerToken) =>
+      row.expires_at ? new Date(row.expires_at).toLocaleString() : '永不过期',
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 90,
+    align: 'center' as const,
+    render: (row: AgentTeamsWorkerToken) =>
+      resolveWorkerTokenStatus(row) === 'active'
+        ? h(NButton, { size: 'tiny', secondary: true, type: 'error', onClick: () => requestRevokeWorkerToken(row) }, { default: () => '吊销' })
+        : null,
+  },
+]
+
+function workerTokenRowKey(row: AgentTeamsWorkerToken) {
+  return row.token_id
+}
+
 onMounted(() => { void load() })
 </script>
 
@@ -431,6 +572,31 @@ onMounted(() => { void load() })
                 <NEmpty v-else class="resource-empty" description="当前没有可管理的协作 Case。" />
                 <p class="resource-note">Worker 生命周期由独立 Worker 部署管理；此处仅显示心跳。Case 重协调会由 Bridge 重新同步其受控任务状态，需 TOTP 二次验证。</p>
               </template>
+            </NCard>
+
+            <NCard class="bridge-card" :segmented="{ content: true }">
+              <template #header><span class="card-title">Worker 令牌管理</span></template>
+              <template #header-extra>
+                <div class="bridge-actions">
+                  <NButton size="small" secondary :loading="workerTokenLoading" @click="loadWorkerTokens">
+                    <template #icon><NIcon><RefreshOutline /></NIcon></template>
+                    刷新
+                  </NButton>
+                  <NButton size="small" type="primary" @click="requestIssueWorkerToken">签发令牌</NButton>
+                </div>
+              </template>
+              <NAlert type="info" :show-icon="true" class="bridge-note bridge-note--flush">
+                可吊销的 per-worker 令牌逐步替代静态共享密钥；静态 BRIDGE_IDENTITIES 令牌在迁移期内继续有效。令牌仅在签发时展示一次，Bridge 只保存哈希。
+              </NAlert>
+              <NDataTable
+                v-if="workerTokens.length"
+                :columns="workerTokenColumns"
+                :data="workerTokens"
+                :row-key="workerTokenRowKey"
+                :bordered="false"
+                :scroll-x="640"
+              />
+              <NEmpty v-else class="resource-empty" description="尚未签发任何 Worker 令牌。" />
             </NCard>
           </main>
 
@@ -599,6 +765,52 @@ onMounted(() => { void load() })
       :loading="reconciling"
       @confirm="reconcileCase"
     />
+    <AdminTOTPConfirmModal
+      v-model:show="issueTotpVisible"
+      title="签发 Worker 令牌"
+      :description="'将为 ' + (issueForm.identity || '') + ' 签发一个可吊销的 Bridge 访问令牌；原始令牌仅回显一次。'"
+      confirm-text="确认签发"
+      :loading="issuing"
+      @confirm="issueWorkerToken"
+    />
+    <AdminTOTPConfirmModal
+      v-model:show="revokeTotpVisible"
+      title="吊销 Worker 令牌"
+      :description="'将立即吊销 ' + (revokeTarget?.identity || '') + ' 的令牌，使用该令牌的 Worker 会立刻失去访问能力。'"
+      confirm-text="确认吊销"
+      :loading="revoking"
+      @confirm="revokeWorkerToken"
+    />
+    <NModal v-model:show="issueDialogVisible" preset="dialog" title="签发 Worker 令牌" positive-text="下一步" negative-text="取消" @positive-click="confirmIssueForm">
+      <NForm label-placement="top" style="margin-top: 8px">
+        <NFormItem label="Worker 身份" required>
+          <NSelect
+            v-model:value="issueForm.identity"
+            :options="workerIdentityOptions"
+            placeholder="选择要签发的身份"
+            filterable
+          />
+        </NFormItem>
+        <NFormItem label="有效期（天，0 表示永不过期）">
+          <NInputNumber v-model:value="issueForm.ttlDays" :min="0" :max="365" :precision="0" style="width: 100%" />
+        </NFormItem>
+        <NFormItem label="备注">
+          <NInput v-model:value="issueForm.note" placeholder="例如：worker-pool-01" maxlength="256" />
+        </NFormItem>
+      </NForm>
+    </NModal>
+    <NModal :show="Boolean(issuedToken)" preset="dialog" title="令牌已签发（仅展示一次）" positive-text="我已保存" @positive-click="issuedToken = null" :show-close="false" :closable="false" :mask-closable="false">
+      <NAlert type="warning" :show-icon="true" style="margin-bottom: 12px">
+        关闭后无法再次查看该令牌。请立即复制到 Worker 部署的环境变量（如 AGENTTEAMS_BRIDGE_TOKEN）。
+      </NAlert>
+        <NInput :value="issuedToken?.token || ''" readonly>
+          <template #suffix>
+            <NButton text size="small" @click="copyIssuedToken">
+              <template #icon><NIcon><CopyOutline /></NIcon></template>
+            </NButton>
+          </template>
+        </NInput>
+    </NModal>
     <NModal v-model:show="presetConfirmVisible" preset="dialog" title="确认应用协作档位" positive-text="确认应用" negative-text="取消" @positive-click="applyPreset">
       <p>将应用“{{ presetDescription.split('：')[0] }}”，并原子性写入以下开关：</p>
       <ul class="preset-diff">

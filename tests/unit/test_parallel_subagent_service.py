@@ -314,6 +314,55 @@ async def test_fanout_continues_after_model_output_length_limit(env, monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_fanout_merges_token_usage_across_rounds_and_children(env, monkeypatch) -> None:
+    """done chunk 的 usage 跨轮累加，并经 run() 合并各子任务用量后透出。"""
+    contexts = {"agent-a": _ctx("agent-a"), "agent-b": _ctx("agent-b")}
+    monkeypatch.setattr(pss, "AgentService", lambda db: AgentServiceStub(contexts))
+
+    async def handler(messages, _kwargs):
+        first = messages[0]["content"]
+        # task-a 首轮以 length 中断触发续写；续写轮 messages 已扩展，按长度区分轮次
+        if "task-a" in first and len(messages) == 1:
+            yield ChatChunk(type="text", content="上半段。")
+            yield ChatChunk(
+                type="done",
+                metadata={
+                    "finish_reason": "length",
+                    "usage": {"prompt_tokens": 100, "completion_tokens": 40, "total_tokens": 140},
+                },
+            )
+            return
+        yield ChatChunk(type="text", content=f"结论：{'A' if 'task-a' in first else 'B'}")
+        yield ChatChunk(
+            type="done",
+            metadata={
+                "finish_reason": "stop",
+                "usage": {"prompt_tokens": 160, "completion_tokens": 50, "total_tokens": 210},
+            },
+        )
+
+    _patch_provider(monkeypatch, handler)
+    result = await pss.ParallelSubAgentService().run(
+        user_id="user-1",
+        parent_agent_id="manager",
+        parent_session_id="sess-1",
+        context_summary="",
+        tasks=[
+            {"agent_id": "agent-a", "task": "task-a 内容"},
+            {"agent_id": "agent-b", "task": "task-b 内容"},
+        ],
+        db=SimpleNamespace(),
+    )
+
+    # agent-a 两轮 140+210，agent-b 一轮 210，合计 350/260/90
+    assert result["usage"] == {
+        "prompt_tokens": 260 + 160,
+        "completion_tokens": 90 + 50,
+        "total_tokens": 350 + 210,
+    }
+
+
+@pytest.mark.asyncio
 async def test_fanout_separates_reasoning_from_worker_answer(env, monkeypatch) -> None:
     contexts = {"agent-general": _ctx("agent-general")}
     monkeypatch.setattr(pss, "AgentService", lambda db: AgentServiceStub(contexts))

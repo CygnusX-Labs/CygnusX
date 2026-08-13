@@ -138,8 +138,18 @@ celery_app.conf.beat_schedule = {
         "task": "omichub.infrastructure.celery_app.tasks.agentteams.watch_cases",
         "schedule": float(settings.agentteams_case_watch_interval_seconds),
     },
+    # 聊天式创建的通用 Case 自动确认（流程型仍走人工审批，任务内部防御）
+    "agentteams-auto-confirm-cases": {
+        "task": "omichub.infrastructure.celery_app.tasks.agentteams.auto_confirm_cases",
+        "schedule": float(settings.agentteams_case_watch_interval_seconds),
+    },
     "agentteams-case-event-consume": {
         "task": "omichub.infrastructure.celery_app.tasks.agentteams.consume_case_events",
+        "schedule": float(settings.agentteams_case_event_stream_interval_seconds),
+    },
+    # Matrix → 平台反向同步：仅 agentteams_gateway_enabled 时任务内部才真正启动
+    "agentteams-room-sync": {
+        "task": "omichub.infrastructure.celery_app.tasks.agentteams.sync_case_rooms",
         "schedule": float(settings.agentteams_case_event_stream_interval_seconds),
     },
     "agentteams-stale-task-requeue": {

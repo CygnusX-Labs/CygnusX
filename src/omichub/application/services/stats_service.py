@@ -118,7 +118,8 @@ class StatsService:
         """近 N 天 AI 对话 token、沙盒执行与存储配额汇总。
 
         覆盖该用户全部会话（普通对话 mode="chat" 与工作台 mode="studio"），
-        确保 AI 对话中产生的 token/消息量都能汇总显示。
+        确保 AI 对话中产生的 token/消息量都能汇总显示；协作室合成会话
+        （mode="agentteams"）在此排除，其用量由 token 用量页单独展示。
         """
 
         async def _compute() -> dict[str, Any]:
@@ -130,6 +131,8 @@ class StatsService:
                 ).where(
                     ChatSessionModel.user_id == user_id,
                     ChatSessionModel.created_at >= cutoff,
+                    # 协作室合成会话（mode="agentteams"）只进 token 用量页，不计入工作室用量
+                    ChatSessionModel.mode != "agentteams",
                 )
             )
             message_result = await self._db.execute(
@@ -145,6 +148,7 @@ class StatsService:
                 .where(
                     ChatSessionModel.user_id == user_id,
                     ChatMessageModel.created_at >= cutoff,
+                    ChatSessionModel.mode != "agentteams",
                 )
             )
             task_result = await self._db.execute(

@@ -5,13 +5,15 @@ from __future__ import annotations
 import hmac
 import json
 import mimetypes
+from collections.abc import Awaitable
 from datetime import UTC, datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response, StreamingResponse
+from loguru import logger
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 
@@ -28,11 +30,15 @@ from omichub.application.services.agentteams_capability_registry import (
     get_agentteams_capability_registry,
 )
 from omichub.application.services.agentteams_case_tool_service import AgentTeamsCaseToolService
-from omichub.application.services.agentteams_service import AgentTeamsService
+from omichub.application.services.agentteams_service import (
+    AUTO_CONFIRM_CASES_KEY,
+    AgentTeamsService,
+)
 from omichub.application.services.flow_registry import get_flow_registry
 from omichub.application.services.project_service import ProjectService
 from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError
+from omichub.infrastructure.cache.redis_client import get_redis
 from omichub.infrastructure.database.models.chat import ChatMessageModel, ChatSessionModel
 from omichub.infrastructure.database.repositories.user_repository import (
     SqlAlchemyUserRepository,
@@ -134,8 +140,11 @@ async def scientific_interpretation(
     request: ScientificInterpretationRequest,
     _integration_token: IntegrationTokenRequired,
     db: DbSession,
+    agentteams: AgentTeamsServiceDep,
 ) -> ConsultationEnvelope:
-    return await AgentConsultationService(db).run_consultation(**request.model_dump())
+    return await AgentConsultationService(db, agentteams_service=agentteams).run_consultation(
+        **request.model_dump()
+    )
 
 
 class AgentTeamsCaseCreateRequest(BaseModel):
@@ -153,8 +162,7 @@ class AgentTeamsCaseCreateRequest(BaseModel):
     def _validate_execution_context(self) -> AgentTeamsCaseCreateRequest:
         if self.flow_id and not self.project_id:
             raise ValueError("流程型 Case 必须关联项目")
-        if not self.flow_id and not (self.project_id or self.context_refs):
-            raise ValueError("通用 Case 必须关联至少一个文件或工作区上下文")
+        # 通用 Case 允许空上下文：端点会为聊天式直发注入发起人工作区只读引用。
         return self
 
 
@@ -164,6 +172,12 @@ class AgentTeamsCaseSubmitRequest(BaseModel):
 
 class AgentTeamsCaseRejectRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=512)
+
+
+class AgentTeamsRoomMessageRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=4_000)
+    # 房间 @ 引用的工作区文件，作为发言补充上下文写入审计 payload（只读引用）。
+    context_refs: list[AgentTeamsContextRef] = Field(default_factory=list, max_length=20)
 
 
 class AgentTeamsPlanRevisionRequest(BaseModel):
@@ -205,6 +219,16 @@ async def _require_owned_project(db: DbSession, user_id: str, project_id: str) -
 @router.get("/status", summary="获取 AgentTeams Bridge 接入状态")
 async def get_status(service: AgentTeamsServiceDep) -> dict[str, bool | str | None]:
     return await service.connection_status()
+
+
+@router.get("/role-labels", summary="获取 AgentTeams 角色展示元数据")
+async def agentteams_role_labels(_current_user_id: CurrentUserId) -> dict[str, Any]:
+    """用户态只读端点：供团队协作室渲染发言人名称/头像/颜色。"""
+    snapshot = get_agentteams_capability_registry().snapshot()
+    return {
+        "role_labels": snapshot["role_labels"],
+        "role_agent_map": snapshot["role_agent_map"],
+    }
 
 
 @router.get("/cases", summary="获取当前用户的 Agent 协作案例")
@@ -256,10 +280,16 @@ async def create_case(
             request.project_id,
         ):
             raise BusinessError("项目未绑定到当前受控会话，无法创建协作 Case")
+    chat_created = not request.flow_id and not request.project_id
+    context_refs = [ref.model_dump(exclude_none=True) for ref in request.context_refs]
+    if chat_created and not context_refs:
+        # 聊天式直发（无流程、无项目）缺省绑定发起人工作区只读引用，
+        # 保持"通用 Case 必须携带上下文"的语义而不让前端伪造引用。
+        context_refs = [{"kind": "workspace", "id": current_user_id}]
     case = await service.create_case(
         case_id=f"bioops_{uuid4().hex}",
         project_id=request.project_id,
-        context_refs=[ref.model_dump(exclude_none=True) for ref in request.context_refs],
+        context_refs=context_refs,
         intent=request.intent,
         requester_ref=current_user_id,
         flow_id=request.flow_id,
@@ -284,7 +314,20 @@ async def create_case(
         session.sandbox_meta = meta
         session.updated_at = datetime.now(UTC)
         await db.flush()
+    await service.provision_case_room(str(case["case_id"]), requester_ref=current_user_id)
+    if chat_created:
+        await _mark_case_auto_confirm(str(case["case_id"]))
     return case
+
+
+async def _mark_case_auto_confirm(case_id: str) -> None:
+    """把聊天式创建的通用 Case 写入自动确认集合；Redis 异常时降级为人工审批。"""
+    try:
+        redis = get_redis()
+        # redis-py asyncio stub 将 sadd 标为 Awaitable[int] | int，此处必为协程。
+        await cast(Awaitable[int], redis.sadd(AUTO_CONFIRM_CASES_KEY, case_id))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("AgentTeams auto-confirm mark failed for %s: %s", case_id, exc)
 
 
 @router.post(
@@ -452,6 +495,43 @@ async def cancel_case(
     service: AgentTeamsServiceDep,
 ) -> dict[str, Any]:
     return await service.cancel_case(case_id, current_user_id, request.reason)
+
+
+@router.delete("/cases/{case_id}", summary="删除当前用户的协作案例（聊天房间）")
+async def delete_case(
+    case_id: str,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+) -> dict[str, Any]:
+    return await service.delete_case(case_id, current_user_id)
+
+
+@router.post(
+    "/cases/{case_id}/messages",
+    status_code=status.HTTP_201_CREATED,
+    summary="向当前协作案例的房间发送用户发言",
+)
+async def post_case_message(
+    case_id: str,
+    request: AgentTeamsRoomMessageRequest,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+) -> dict[str, Any]:
+    result = await service.post_room_message(
+        case_id,
+        current_user_id,
+        request.content,
+        context_refs=[ref.model_dump(exclude_none=True) for ref in request.context_refs],
+    )
+    try:
+        from omichub.infrastructure.celery_app.tasks.agentteams import respond_to_room_message
+
+        respond_to_room_message.delay(case_id, current_user_id, request.content.strip())
+    except Exception as exc:  # noqa: BLE001 - Manager 响应调度失败不影响发言落盘
+        logger.bind(case_id=case_id).warning(
+            "AgentTeams room response dispatch failed: {}", exc
+        )
+    return result
 
 
 @router.get("/cases/{case_id}/events", summary="获取协作案例审计事件")

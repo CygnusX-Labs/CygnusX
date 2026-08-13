@@ -3,7 +3,8 @@
 与 Studio sandbox_execute 的区别：
  - 后端：走 SandboxService（容器池），不走 studio_sandbox_manager
  - 前端：ChatCodeCard（轻量卡片），不走 StudioCodeCard
- - 无审批、无工作区文件操作、无产物持久化
+ - 无审批、无工作区文件操作；交付文件约定写入 /tmp/chat_output/，
+   执行后复制到宿主机 storage_path/chat_sandbox/<user>/<session>/output 持久化并提供下载
 """
 
 from __future__ import annotations
@@ -11,7 +12,9 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 from uuid import UUID
 
 from loguru import logger
@@ -26,7 +29,9 @@ CHAT_SANDBOX_EXECUTE_TOOL_SCHEMA: dict[str, Any] = {
         "name": "chat_sandbox_execute",
         "description": (
             "在轻量级沙盒中执行代码（python/r/bash），适合快速验证、简单计算和可视化。"
-            "流式返回 stdout/stderr/图表。复杂分析（多文件协作、工作区管理）请使用工作台。"
+            "流式返回 stdout/stderr/图表。需要交付给用户的文件（Excel、表格、图片等）"
+            "必须先创建目录并写入 /tmp/chat_output/，执行后平台自动收集并在消息中提供下载。"
+            "复杂分析（多文件协作、工作区管理）请使用工作台。"
         ),
         "parameters": {
             "type": "object",
@@ -48,6 +53,10 @@ CHAT_SANDBOX_EXECUTE_TOOL_SCHEMA: dict[str, Any] = {
 }
 
 CHAT_SANDBOX_TOOL_NAME = "chat_sandbox_execute"
+
+# 聊天轻量沙盒的交付文件目录：模型把需要用户下载的文件写入这里，
+# 执行结束后由后端复制到宿主机持久化并生成下载链接。
+CHAT_ARTIFACT_CONTAINER_DIR = "/tmp/chat_output"
 
 # ===== 内部工具 =====
 
@@ -76,6 +85,43 @@ def _tail(text: str, limit: int) -> tuple[str, bool]:
 def _append_bounded_text(current: str, data: str, limit: int) -> tuple[str, bool]:
     combined = f"{current}\n{data}" if current else data
     return _tail(combined, limit)
+
+
+async def _collect_artifacts(
+    container_id: str | None,
+    user_id: str,
+    session_id: Any,
+) -> list[dict[str, Any]]:
+    """执行后把 /tmp/chat_output 下的交付文件复制到宿主机，生成可下载产物清单。
+
+    产物按 用户/沙盒会话 隔离存放，归属校验由下载端点路径中的用户 id 保证；
+    沙盒会话回收后文件仍保留在宿主机，历史消息中的下载链接继续有效。
+    """
+    if not container_id:
+        return []
+    from omichub.core.config import get_settings
+    from omichub.infrastructure.sandbox import get_sandbox_pool
+
+    host_dest = (
+        Path(get_settings().storage_path)
+        / "chat_sandbox"
+        / str(user_id)
+        / str(session_id)
+        / "output"
+    )
+    try:
+        items = await get_sandbox_pool().copy_dir_out(
+            container_id, CHAT_ARTIFACT_CONTAINER_DIR, host_dest
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[ChatSandbox] 产物收集失败: {e}")
+        return []
+    for item in items:
+        item["url"] = (
+            f"/api/v1/chat/sandbox-sessions/{session_id}/artifacts/download"
+            f"?path={quote(str(item['path']))}"
+        )
+    return items
 
 
 # ===== 执行器 =====
@@ -140,6 +186,8 @@ async def execute_chat_sandbox(
             # 必须显式提交，才能让 5 分钟回收任务看到最新 last_activity/status。
             await db.commit()
 
+            artifacts = await _collect_artifacts(session.container_id, user_id, session.id)
+
             stdout_full = "".join(stdout_parts)
             stderr_full = "".join(stderr_parts)
 
@@ -153,6 +201,11 @@ async def execute_chat_sandbox(
                 "images_count": len(images),
                 "echarts_count": len(echarts),
             }
+            if artifacts:
+                llm_payload["artifacts"] = [str(item["path"]) for item in artifacts]
+                llm_payload["artifacts_note"] = (
+                    "交付文件已保存，消息中已附下载按钮；回复用户时报文件名即可"
+                )
             if error:
                 llm_payload["error"] = error
 
@@ -163,6 +216,8 @@ async def execute_chat_sandbox(
                 "images": images,
                 "echarts": echarts,
             }
+            if artifacts:
+                ui_payload["artifacts"] = artifacts
             if error:
                 ui_payload["error"] = error
 

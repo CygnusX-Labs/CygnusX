@@ -272,14 +272,16 @@ async def import_qc_knowledge(
         knowledge_base = await session.get(KnowledgeBaseModel, KNOWLEDGE_BASE_ID)
         if not dry_run:
             if knowledge_base is None:
-                knowledge_base = KnowledgeBaseModel(id=KNOWLEDGE_BASE_ID)
+                knowledge_base = KnowledgeBaseModel(
+                    id=KNOWLEDGE_BASE_ID,
+                    show_in_lab=False,
+                )
                 session.add(knowledge_base)
             knowledge_base.name = KNOWLEDGE_BASE_NAME
             knowledge_base.description = (
                 "测序平台、FASTQ/FAST5、FastQC、fastp、MultiQC、污染、比对覆盖、"
                 "变异与常用生物信息文件格式的质量控制资料"
             )
-            knowledge_base.show_in_lab = True
             knowledge_base.ai_searchable = True
             knowledge_base.is_enabled = True
 

@@ -13,16 +13,6 @@ max_tokens: 20000
 mcp_ids: []
 skill_ids: []
 features:
-  internal_case_role: agent-router
-  agentteams:
-    category: router
-    recruitable: false
-    planner_eligible: false
-    execution_modes: []
-    max_parallel_work_items: 0
-    case_mode_excluded_tool_packs: [subagents, agentteams_case]
-    handoff_in_case_mode: false
-    work_item_timeout_sec: 0
   persona:
     archetype: "敏锐稳健的任务路由者"
     traits: [敏锐, 简洁, 善于判断, 重视匹配]

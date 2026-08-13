@@ -16,6 +16,7 @@ from .config import GatewaySettings
 from .matrix_client import MatrixGatewayClient
 from .models import (
     ConsultationRequest,
+    EnsureUsersRequest,
     RoomCreateRequest,
     RoomCreateResponse,
     RoomMessageRequest,
@@ -103,6 +104,18 @@ def create_app(
             return await gateway_service.create_room(payload.session_id, payload.identities, actor)
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.post("/users/ensure", tags=["Matrix"])
+    async def ensure_users(
+        payload: EnsureUsersRequest,
+        actor: Annotated[str, Depends(authenticate_manager)],
+        gateway_service: Annotated[GatewayService, Depends(get_service)],
+    ) -> dict[str, list[str]]:
+        try:
+            ensured = await gateway_service.ensure_users(payload.identities, actor)
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return {"ensured": ensured}
 
     @app.post("/rooms/{room_id}/messages", tags=["Matrix"])
     async def post_room_message(

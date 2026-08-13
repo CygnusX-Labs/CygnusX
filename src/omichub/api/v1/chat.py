@@ -38,6 +38,37 @@ router = APIRouter()
 
 
 @router.get(
+    "/sandbox-sessions/{sandbox_session_id}/artifacts/download",
+    summary="下载聊天轻量沙盒产物",
+)
+async def download_chat_sandbox_artifact(
+    sandbox_session_id: str,
+    current_user_id: CurrentUserId,
+    path: str = Query(..., min_length=1, max_length=1_000),
+) -> FileResponse:
+    import re
+    from pathlib import Path
+
+    from omichub.core.config import get_settings
+    from omichub.core.exceptions import ValidationError
+
+    safe_session_id = re.sub(r"[^a-zA-Z0-9-]", "-", sandbox_session_id)
+    root = (
+        Path(get_settings().storage_path)
+        / "chat_sandbox"
+        / str(current_user_id)
+        / safe_session_id
+        / "output"
+    ).resolve()
+    candidate = (root / path.lstrip("/")).resolve()
+    # 归属校验由路径中的 current_user_id 保证（沙盒会话回收后 DB 记录删除，
+    # 产物仍需可下载），目录禁锢防路径穿越。
+    if not candidate.is_file() or (candidate != root and root not in candidate.parents):
+        raise ValidationError("产物路径无效或尚未生成")
+    return FileResponse(candidate, filename=candidate.name)
+
+
+@router.get(
     "/sessions/{session_id}/overdrive-runs/active",
     summary="读取当前会话可恢复的超频 run 快照",
 )

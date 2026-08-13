@@ -56,7 +56,7 @@ class KnowledgeBaseService:
                     id=kb_id,
                     name=config["name"],
                     description=config["description"],
-                    show_in_lab=True,
+                    show_in_lab=False,
                     ai_searchable=True,
                     is_enabled=True,
                 )

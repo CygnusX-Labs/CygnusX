@@ -63,7 +63,11 @@ const displayReason = computed(() => {
   align-items: center;
   min-height: 24px;
   margin: 0 0 var(--space-md, 12px);
-  padding: 0 4px;
+  padding: 6px 12px;
+  border: 1px solid var(--chat-border);
+  border-left: 3px solid var(--primary-color, #6366f1);
+  border-radius: 10px;
+  background: var(--chat-bg);
   color: var(--chat-text-secondary);
   font-size: 12px;
   line-height: 1.5;

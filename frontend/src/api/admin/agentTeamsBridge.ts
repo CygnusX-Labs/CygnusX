@@ -65,6 +65,20 @@ export interface AgentTeamsBridgeResourceSnapshot {
   total_cases: number
 }
 
+export interface AgentTeamsWorkerToken {
+  token_id: string
+  identity: string
+  note: string
+  created_at: string
+  expires_at?: string | null
+  revoked_at?: string | null
+}
+
+export interface AgentTeamsWorkerTokenIssueResult {
+  token: string
+  record: AgentTeamsWorkerToken
+}
+
 export type AgentTeamsBridgeConfigUpdate = Pick<
   AgentTeamsBridgeConfig,
   | 'enabled'
@@ -101,6 +115,22 @@ export const agentTeamsBridgeAdminApi = {
   },
   async reconcileCase(caseId: string, totpCode: string): Promise<AgentTeamsBridgeResourceCase> {
     return (await apiClient.post<AgentTeamsBridgeResourceCase>(`/admin/agentteams-bridge/cases/${caseId}/reconcile`, undefined, {
+      headers: { 'X-TOTP-Code': totpCode },
+    })).data
+  },
+  async listWorkerTokens(): Promise<AgentTeamsWorkerToken[]> {
+    return (await apiClient.get<{ items: AgentTeamsWorkerToken[] }>('/admin/agentteams-bridge/worker-tokens')).data.items
+  },
+  async issueWorkerToken(
+    payload: { identity: string; ttl_seconds?: number | null; note?: string },
+    totpCode: string,
+  ): Promise<AgentTeamsWorkerTokenIssueResult> {
+    return (await apiClient.post<AgentTeamsWorkerTokenIssueResult>('/admin/agentteams-bridge/worker-tokens', payload, {
+      headers: { 'X-TOTP-Code': totpCode },
+    })).data
+  },
+  async revokeWorkerToken(tokenId: string, totpCode: string): Promise<AgentTeamsWorkerToken> {
+    return (await apiClient.delete<AgentTeamsWorkerToken>(`/admin/agentteams-bridge/worker-tokens/${tokenId}`, {
       headers: { 'X-TOTP-Code': totpCode },
     })).data
   },

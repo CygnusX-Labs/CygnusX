@@ -201,6 +201,12 @@ class EvidenceRequest(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+# 预留的 Case 级证据 work_item_id：bioops-manager 可用它记录不挂在任何
+# 工作项上的 Case 级事件（如房间绑定 room.created、用户发言 room.user_message），
+# record_evidence 不再要求存在同名 work item。
+CASE_LEVEL_WORK_ITEM_ID = "case"
+
+
 class EvidenceResponse(BaseModel):
     event_id: str
     recorded_at: datetime
@@ -438,3 +444,23 @@ class CaseCloseResponse(BaseModel):
     status: Literal["closed"]
     manifest_uri: str
     manifest: dict[str, Any]
+
+
+class WorkerTokenIssueRequest(BaseModel):
+    """Manager-issued, revocable per-Worker token request (M6 credential convergence)."""
+
+    identity: str = Field(min_length=1, max_length=128)
+    ttl_seconds: int | None = Field(default=None, ge=60, le=31_536_000)
+    note: str = Field(default="", max_length=256)
+
+
+class WorkerTokenRecord(BaseModel):
+    """Stored Worker token metadata; only the SHA-256 hash of the raw token persists."""
+
+    token_id: str
+    token_hash: str
+    identity: str
+    note: str = ""
+    created_at: datetime
+    expires_at: datetime | None = None
+    revoked_at: datetime | None = None

@@ -5,6 +5,15 @@ from __future__ import annotations
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# 平台用户动态 Matrix 账号前缀：主后端与 bridge 按同一规则生成
+# ``omichub-user-<sanitized user_id>``，此处与两侧保持同一字符串。
+MATRIX_USER_IDENTITY_PREFIX = "omichub-user-"
+_MATRIX_LOCALPART_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789._=-")
+
+
+def _is_matrix_localpart(value: str) -> bool:
+    return bool(value) and len(value) <= 255 and all(ch in _MATRIX_LOCALPART_CHARS for ch in value)
+
 
 class GatewaySettings(BaseSettings):
     """Gateway-only configuration; no database, shell, or filesystem credentials are accepted."""
@@ -20,6 +29,7 @@ class GatewaySettings(BaseSettings):
     identities: str = "bioops-manager:manager-secret"
     matrix_homeserver_url: str = ""
     matrix_service_token: str = ""
+    matrix_server_name: str = "localhost"
     matrix_identities: str = (
         "bioops-manager=@bioops-manager:localhost,omichub-user=@omichub-user:localhost"
     )
@@ -33,17 +43,17 @@ class GatewaySettings(BaseSettings):
     state_store_key_prefix: str = "omichub:agentteams:gateway"
     audit_log_path: str = "/tmp/omichub-agent-gateway-audit.jsonl"
     agent_policies: str = (
-        "agent-rnaseq|interpretation,planning_advice,result_interpretation,qc_advice|"
+        "agent-rnaseq|interpretation,planning_advice,result_interpretation,qc_advice,workspace_execution|"
         "ensembl.lookup_gene,ensembl.search_genes,task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
-        "agent-scrna|interpretation,planning_advice,result_interpretation,qc_advice|"
+        "agent-scrna|interpretation,planning_advice,result_interpretation,qc_advice,workspace_execution|"
         "ensembl.lookup_gene,ensembl.search_genes,task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
         "agent-viz|interpretation,result_interpretation,qc_advice,workspace_execution|"
         "ensembl.lookup_gene,ensembl.search_genes,task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
         "agent-code|interpretation,planning_advice,result_interpretation,qc_advice,workspace_execution|"
         "ensembl.lookup_gene,ensembl.search_genes,task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
-        "agent-data|project-preflight|task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
-        "agent-qc|quality-gate|task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
-        "agent-delivery|delivery-pack|task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup"
+        "agent-data|project-preflight,workspace_execution|task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
+        "agent-qc|quality-gate,workspace_execution|task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
+        "agent-delivery|delivery-pack,workspace_execution|task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup"
     )
     discovered_agent_policies: dict[str, tuple[set[str], set[str]]] = Field(
         default_factory=dict, exclude=True
@@ -145,3 +155,42 @@ class GatewaySettings(BaseSettings):
         return {
             matrix_user: identity for identity, matrix_user in self.matrix_identity_map().items()
         }
+
+    def matrix_user_for_identity(self, identity: str) -> str | None:
+        """Resolve an OmicHub identity to a Matrix user ID.
+
+        Static ``matrix_identities`` mappings win; otherwise per-platform-user
+        identities (``omichub-user-<slug>``，主后端/bridge 侧同一映射规则生成）
+        按 ``@{identity}:{matrix_server_name}`` 动态推导，使平台用户无需逐一
+        写入静态配置即可供给 Matrix 账号。
+        """
+        identity = identity.strip()
+        if not identity:
+            return None
+        static = self.matrix_identity_map().get(identity)
+        if static:
+            return static
+        if (
+            identity.startswith(MATRIX_USER_IDENTITY_PREFIX)
+            and len(identity) > len(MATRIX_USER_IDENTITY_PREFIX)
+            and _is_matrix_localpart(identity)
+        ):
+            server_name = self.matrix_server_name.strip()
+            if server_name:
+                return f"@{identity}:{server_name}"
+        return None
+
+    def matrix_identity_by_user_dynamic(self, matrix_user: str) -> str | None:
+        """Reverse of :meth:`matrix_user_for_identity` for inbound sync events."""
+        static = self.matrix_identity_by_user().get(matrix_user)
+        if static:
+            return static
+        localpart, separator, server = matrix_user.removeprefix("@").partition(":")
+        if (
+            separator
+            and server == self.matrix_server_name.strip()
+            and localpart.startswith(MATRIX_USER_IDENTITY_PREFIX)
+            and _is_matrix_localpart(localpart)
+        ):
+            return localpart
+        return None

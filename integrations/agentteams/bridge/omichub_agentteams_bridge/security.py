@@ -10,26 +10,50 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import Header, HTTPException, status
+from fastapi import HTTPException, status
 
 from .config import BridgeSettings
 from .models import ApprovalAction
+from .worker_tokens import WorkerTokenStore
 
 
-def require_identity(
+async def require_identity(
     settings: BridgeSettings,
-    x_bridge_identity: str | None = Header(default=None),
-    x_bridge_token: str | None = Header(default=None),
+    token_store: WorkerTokenStore | None,
+    x_bridge_identity: str | None,
+    x_bridge_token: str | None,
 ) -> str:
-    """Authenticate a Worker service identity without accepting an OmicHub JWT."""
+    """Authenticate a Worker service identity without accepting an OmicHub JWT.
+
+    Either the static ``BRIDGE_IDENTITIES`` shared secret (legacy deployments) or a
+    valid, unrevoked per-worker token issued via ``/v1/worker-tokens`` passes. A
+    worker token binds its identity: the header identity must match the token's.
+    """
     if not x_bridge_identity or not x_bridge_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Bridge identity required"
         )
     expected = settings.identity_secrets().get(x_bridge_identity)
-    if expected is None or not secrets.compare_digest(expected, x_bridge_token):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bridge identity denied")
-    return x_bridge_identity
+    if expected is not None and secrets.compare_digest(expected, x_bridge_token):
+        return x_bridge_identity
+    if token_store is not None:
+        record = await token_store.lookup(x_bridge_token)
+        if record is not None:
+            if record.revoked_at is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED, detail="Worker token revoked"
+                )
+            if record.expires_at is not None and record.expires_at <= datetime.now(UTC):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED, detail="Worker token expired"
+                )
+            if record.identity != x_bridge_identity:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Worker token identity mismatch",
+                )
+            return record.identity
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bridge identity denied")
 
 
 def require_role(identity: str, *allowed: str) -> None:

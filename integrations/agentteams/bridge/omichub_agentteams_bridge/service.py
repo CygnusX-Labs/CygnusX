@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
+import logging
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -12,11 +14,14 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
+logger = logging.getLogger(__name__)
+
 from .audit import AuditStore
 from .case_store import CaseStore
 from .client import GatewayClient, OmicHubClient
 from .config import BridgeSettings
 from .models import (
+    CASE_LEVEL_WORK_ITEM_ID,
     ApprovalRequest,
     ApprovalResponse,
     ApprovedSubmission,
@@ -52,6 +57,7 @@ from .models import (
     WorkItemCreateRequest,
     WorkItemHeartbeatRequest,
     WorkItemRecord,
+    WorkItemStatus,
     WorkItemUpdateRequest,
 )
 from .security import ApprovalSigner
@@ -81,6 +87,9 @@ class BridgeService:
         "awaiting_approval",
         "in_progress",
     }
+    _SETTLED_WORK_ITEM_STATUSES = {"completed", "blocked", "cancelled"}
+    _TERMINAL_OMIC_TASK_STATUSES = {"success", "failed", "error", "cancelled", "canceled"}
+    _GC_CASE_STATUSES = {"cancelled", "execution_failed", "closed"}
 
     def __init__(
         self,
@@ -125,6 +134,16 @@ class BridgeService:
             "delivery-reporter",
         }
 
+    def _workspace_execution_targets(self) -> set[str]:
+        """Identities allowed to run workspace_execution, per the capability snapshot.
+
+        Falls back to the original code/viz pair when no snapshot has been applied yet.
+        """
+        discovered = self._settings.discovered_workspace_execution_identities
+        if discovered:
+            return set(discovered)
+        return {"agent-code", "agent-viz"}
+
     async def assign_work_item(
         self, case_id: str, request: WorkItemCreateRequest, actor: str
     ) -> WorkItemRecord:
@@ -144,10 +163,10 @@ class BridgeService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid work item target"
             )
         if request.execution_mode == "workspace_execution":
-            if request.target not in {"agent-code", "agent-viz"}:
+            if request.target not in self._workspace_execution_targets():
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Workspace execution is limited to agent-code and agent-viz",
+                    detail="Workspace execution is not declared for this target",
                 )
             if not request.approval_required and not case.plan_hash:
                 raise HTTPException(
@@ -256,6 +275,41 @@ class BridgeService:
             return case.updated_at
         return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
+    async def gc_cases(self, actor: str) -> dict[str, Any]:
+        """Delete terminal Cases older than BRIDGE_CASE_GC_DAYS together with their audit events."""
+        days = self._settings.case_gc_days
+        if days <= 0:
+            return {
+                "gc_enabled": False,
+                "days": days,
+                "scanned": 0,
+                "deleted_cases": 0,
+                "deleted_events": 0,
+            }
+        cutoff = datetime.now(UTC) - timedelta(days=days)
+        summary: dict[str, Any] = {
+            "gc_enabled": True,
+            "days": days,
+            "scanned": 0,
+            "deleted_cases": 0,
+            "deleted_events": 0,
+        }
+        for case in await self._cases.list():
+            if case.status not in self._GC_CASE_STATUSES:
+                continue
+            updated_at = case.updated_at
+            if updated_at.tzinfo is None:
+                updated_at = updated_at.replace(tzinfo=UTC)
+            if updated_at >= cutoff:
+                continue
+            summary["scanned"] += 1
+            deleted_events = await self._audit.delete_events(case.case_id)
+            if not await self._cases.delete(case.case_id):
+                continue
+            summary["deleted_cases"] += 1
+            summary["deleted_events"] += deleted_events
+        return summary
+
     async def reconcile_case(self, case_id: str, actor: str) -> CaseRecord:
         """Advance a submitted Case only from observed OmicHub task state.
 
@@ -277,6 +331,22 @@ class BridgeService:
         if case.status in {"received", "planning_running"} and not self._existing_work_item_id(
             case, "plan-01"
         ):
+            # 聊天式通用 Case（无 flow_id）不进入自动 planning，由房间内 Manager 响应链路处理。
+            if not case.flow_id:
+                previous_status = case.status
+                if previous_status == "planning_running":
+                    case = await self._cases.transition(case_id, "received")
+                await self._audit.record(
+                    case_id=case_id,
+                    actor=actor,
+                    event_type="case.reconciled",
+                    payload={
+                        "from_status": previous_status,
+                        "to_status": "received",
+                        "reason": "chat_case_skips_auto_planning",
+                    },
+                )
+                return await self._cases.get(case_id)
             if case.status == "received":
                 case = await self._cases.transition(case_id, "planning_running")
             planner = case.lead_planner or self._planner_for_flow(case.flow_id or "")
@@ -547,7 +617,43 @@ class BridgeService:
                         "next_status": "approval_pending",
                     },
                 )
+        if request.status in {"completed", "failed"}:
+            await self._auto_reconcile(case_id)
         return updated
+
+    async def _auto_reconcile(self, case_id: str) -> None:
+        """Best-effort Case advancement after a work item reaches a terminal state.
+
+        Reuses reconcile_case so no new states are invented; never raises into the
+        work-item update path and is idempotent for already terminal Cases.
+        """
+        try:
+            case = await self._cases.get(case_id)
+            if case.status in {"closed", "cancelled"}:
+                return
+            if any(not self._work_item_is_settled(item) for item in case.work_items):
+                return
+            for task_id in case.omic_task_ids:
+                try:
+                    task = await self._client.get_task(task_id)
+                except Exception:  # noqa: BLE001
+                    logger.warning(
+                        "auto-reconcile skipped for case %s: task %s state unavailable",
+                        case_id,
+                        task_id,
+                    )
+                    return
+                if str(task.get("status", "")).lower() not in self._TERMINAL_OMIC_TASK_STATUSES:
+                    return
+            await self.reconcile_case(case_id, "bioops-manager")
+        except Exception:
+            logger.warning("auto-reconcile failed for case %s", case_id, exc_info=True)
+
+    def _work_item_is_settled(self, work_item: WorkItemRecord) -> bool:
+        if work_item.status in self._SETTLED_WORK_ITEM_STATUSES:
+            return True
+        # A failed work item with retry budget left will be requeued, so it is not settled.
+        return work_item.status == "failed" and work_item.attempt >= work_item.max_attempts
 
     async def claim_work_item(self, case_id: str, work_item_id: str, actor: str) -> WorkItemRecord:
         case = await self._cases.get(case_id)
@@ -672,52 +778,131 @@ class BridgeService:
             ),
             actor,
         )
+        renew_task = asyncio.create_task(
+            self._renew_work_item_lease(case_id, work_item_id, actor, work_item.deadline_seconds)
+        )
         try:
-            result = await self._gateway.consult(
-                {
-                    "case_id": case_id,
-                    "agent_id": expected_agent_id,
-                    "question": request.question,
-                    "capability": request.capability,
-                    "evidence_refs": request.evidence_refs,
-                    "requested_tools": request.requested_tools,
-                    "requester_ref": case.requester_ref,
-                    "work_item_id": work_item_id,
-                    "execution_mode": request.execution_mode,
-                }
-            )
-            gateway_result = ReadOnlyExecutionResult.model_validate(result)
-            if gateway_result.agent_id != request.agent_id:
-                raise ValueError("Gateway response agent does not match the requested agent")
-        except Exception as exc:  # noqa: BLE001
-            failed = await self._cases.transition_work_item(
-                case_id,
+            try:
+                result = await self._gateway.consult(
+                    {
+                        "case_id": case_id,
+                        "agent_id": expected_agent_id,
+                        "question": request.question,
+                        "capability": request.capability,
+                        "evidence_refs": request.evidence_refs,
+                        "requested_tools": request.requested_tools,
+                        "requester_ref": case.requester_ref,
+                        "work_item_id": work_item_id,
+                        "execution_mode": request.execution_mode,
+                    }
+                )
+                gateway_result = ReadOnlyExecutionResult.model_validate(result)
+                if gateway_result.agent_id != request.agent_id:
+                    raise ValueError("Gateway response agent does not match the requested agent")
+            except Exception as exc:  # noqa: BLE001
+                current = await self._cases.get_work_item(case_id, work_item_id)
+                if current.attempt != work_item.attempt:
+                    # The lease expired mid-consultation and a newer attempt already
+                    # reclaimed the item; never overwrite that attempt's state.
+                    failed = None
+                    conflict = f"Work item reclaimed by attempt {current.attempt}"
+                else:
+                    conflict = None
+                    try:
+                        failed = await self._cases.transition_work_item(
+                            case_id,
+                            work_item_id,
+                            actor,
+                            "failed",
+                            summary=f"Gateway consultation failed: {exc}"[:4000],
+                            trace_id=request.trace_id,
+                        )
+                    except HTTPException as transition_exc:
+                        if transition_exc.status_code != status.HTTP_409_CONFLICT:
+                            raise
+                        failed = None
+                        conflict = str(transition_exc.detail)
+                if conflict is not None:
+                    logger.warning(
+                        "work item %s of case %s lost its lease during a failed consultation: %s",
+                        work_item_id,
+                        case_id,
+                        conflict,
+                    )
+                    await self._audit.record(
+                        case_id=case_id,
+                        actor=actor,
+                        event_type="skill.failed",
+                        payload={
+                            "work_item_id": work_item_id,
+                            "error": str(exc)[:500],
+                            "reason": "lease_conflict",
+                            "detail": conflict,
+                            "trace_id": request.trace_id,
+                        },
+                    )
+                    return current
+                await self._audit.record(
+                    case_id=case_id,
+                    actor=actor,
+                    event_type="skill.failed",
+                    payload={"work_item_id": work_item_id, "error": str(exc)[:500]},
+                )
+                assert failed is not None  # conflict is None here, so the transition succeeded
+                return await self._schedule_work_item_retry(case_id, failed, actor)
+        finally:
+            renew_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await renew_task
+
+        status_value = gateway_result.status
+        completed = status_value == "completed"
+        desired_status: WorkItemStatus = "completed" if completed else "blocked"
+        summary = gateway_result.conclusion
+        current = await self._cases.get_work_item(case_id, work_item_id)
+        updated: WorkItemRecord | None = None
+        if current.attempt != work_item.attempt:
+            # The lease expired mid-consultation and a newer attempt already
+            # reclaimed the item; never overwrite that attempt's state.
+            conflict = f"Work item reclaimed by attempt {current.attempt}"
+        else:
+            conflict = None
+            try:
+                updated = await self._cases.transition_work_item(
+                    case_id,
+                    work_item_id,
+                    actor,
+                    desired_status,
+                    summary=summary,
+                    trace_id=request.trace_id,
+                )
+            except HTTPException as exc:
+                if exc.status_code != status.HTTP_409_CONFLICT:
+                    raise
+                conflict = str(exc.detail)
+        if conflict is not None:
+            logger.warning(
+                "work item %s of case %s lost its lease before consultation completion: %s",
                 work_item_id,
-                actor,
-                "failed",
-                summary=f"Gateway consultation failed: {exc}"[:4000],
-                trace_id=request.trace_id,
+                case_id,
+                conflict,
             )
             await self._audit.record(
                 case_id=case_id,
                 actor=actor,
                 event_type="skill.failed",
-                payload={"work_item_id": work_item_id, "error": str(exc)[:500]},
+                payload={
+                    "work_item_id": work_item_id,
+                    "agent_id": request.agent_id,
+                    "capability": request.capability,
+                    "gateway_status": status_value,
+                    "reason": "lease_conflict",
+                    "error": conflict,
+                    "trace_id": request.trace_id,
+                },
             )
-            return await self._schedule_work_item_retry(case_id, failed, actor)
-
-        status_value = gateway_result.status
-        completed = status_value == "completed"
-        desired_status = "completed" if completed else "blocked"
-        summary = gateway_result.conclusion
-        updated = await self._cases.transition_work_item(
-            case_id,
-            work_item_id,
-            actor,
-            desired_status,
-            summary=summary,
-            trace_id=request.trace_id,
-        )
+            return current
+        assert updated is not None  # conflict is None here, so the transition succeeded
         artifact_refs = self._workspace_artifact_refs(
             case_id,
             work_item_id,
@@ -784,6 +969,31 @@ class BridgeService:
                 },
             )
         return updated
+
+    async def _renew_work_item_lease(
+        self, case_id: str, work_item_id: str, actor: str, deadline_seconds: int
+    ) -> None:
+        """Renew the lease while a blocking Gateway consultation is in flight.
+
+        Beats at one third of the lease duration so a healthy long consultation
+        never times out and gets silently requeued. Renewal uses the store-level
+        heartbeat (no audit spam); if the lease is already lost, renewal stops and
+        the completion path degrades to a lease_conflict audit event instead of
+        a bare 500.
+        """
+        interval = max(1.0, deadline_seconds / 3)
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                await self._cases.heartbeat_work_item(case_id, work_item_id, actor)
+            except Exception:
+                logger.warning(
+                    "lease renewal stopped for work item %s of case %s",
+                    work_item_id,
+                    case_id,
+                    exc_info=True,
+                )
+                return
 
     async def _schedule_work_item_retry(
         self, case_id: str, work_item: WorkItemRecord, actor: str
@@ -1115,11 +1325,7 @@ class BridgeService:
                 }
             )
         seen_ids: set[str] = set()
-        workspace_targets = {"agent-code", "agent-viz"} | {
-            identity
-            for identity, profile in self._settings.discovered_worker_profiles.items()
-            if profile.get("capability") == "workspace_execution"
-        }
+        workspace_targets = self._workspace_execution_targets()
         for item in expanded:
             work_item_id = str(item.get("work_item_id") or "")
             target = item.get("target")
@@ -1217,9 +1423,29 @@ class BridgeService:
                 event_type="worker.inbox_polled",
                 payload={},
             )
-        assignments = await self._cases.list_assigned_work_items(
+        assignments, lease_expired = await self._cases.list_assigned_work_items(
             actor, {"pending", "claimed", "running", "in_progress"}
         )
+        for case_id, expired_item in lease_expired:
+            await self._audit.record(
+                case_id=case_id,
+                actor="bioops-manager",
+                event_type="work_item.lease_expired",
+                payload={
+                    "work_item_id": expired_item.work_item_id,
+                    "skill_name": expired_item.skill_name,
+                    "previous_status": expired_item.status,
+                    "lease_owner": expired_item.lease_owner,
+                    "attempt": expired_item.attempt,
+                    "lease_expires_at": (
+                        expired_item.lease_expires_at.isoformat()
+                        if expired_item.lease_expires_at
+                        else None
+                    ),
+                    "action": "requeued",
+                    "trace_id": expired_item.trace_id,
+                },
+            )
         if actor in self._external_workers():
             for case, work_item in assignments:
                 await self._audit.record(
@@ -1560,17 +1786,37 @@ class BridgeService:
                 status_code=status.HTTP_409_CONFLICT, detail="Frozen general plan has no task DAG"
             )
         case = await self._cases.transition(case_id, "approved")
+        workspace_targets = self._workspace_execution_targets()
         for item in work_items:
+            execution_mode = str(item.get("execution_mode") or "workspace_execution")
+            target = str(item["target"])
+            if execution_mode == "workspace_execution" and target not in workspace_targets:
+                # Registry declaration changed after the plan was frozen: degrade the
+                # work item to read-only instead of permitting undeclared execution.
+                execution_mode = "readonly_consultation"
+                await self._audit.record(
+                    case_id=case_id,
+                    actor=actor,
+                    event_type="planning.validation_failed",
+                    payload={
+                        "error": (
+                            f"execution_mode downgraded: {target} does not declare "
+                            "workspace_execution"
+                        ),
+                        "work_item_id": str(item["work_item_id"]),
+                        "target": target,
+                    },
+                )
             await self._ensure_work_item(
                 case,
                 WorkItemRecord(
                     work_item_id=str(item["work_item_id"]),
-                    target=item["target"],
+                    target=target,
                     objective=str(item["objective"]),
                     skill_name=str(item["skill_name"]),
                     context_refs=self._case_context_refs(case),
-                    read_only=False,
-                    execution_mode=str(item.get("execution_mode") or "workspace_execution"),
+                    read_only=execution_mode != "workspace_execution",
+                    execution_mode=execution_mode,
                     plan_hash=case.plan_hash,
                     plan_version=case.plan_version,
                     depends_on=[str(value) for value in item.get("depends_on") or []],
@@ -2371,6 +2617,49 @@ class BridgeService:
         )
         return cancelled
 
+    async def delete_case(
+        self, case_id: str, actor: str, reason: str | None = None
+    ) -> dict[str, Any]:
+        """Delete a Case together with its audit events.
+
+        Non-terminal cases are cancelled first so assigned work items are
+        reclaimed before the record disappears; terminal cases are removed
+        directly. Artifacts and delivery manifests on disk are retained.
+        """
+        case = await self._cases.get(case_id)
+        self._require_case_access(case, actor)
+        cancelled_before_delete = False
+        if case.status not in {"closed", "cancelled"}:
+            reclaimed_work_items = [
+                item.work_item_id
+                for item in case.work_items
+                if item.status not in {"completed", "cancelled"}
+            ]
+            await self._cases.cancel(case_id)
+            await self._audit.record(
+                case_id=case_id,
+                actor=actor,
+                event_type="case.cancelled",
+                payload={
+                    "reason": reason or "Case deleted",
+                    "previous_status": case.status,
+                    "reclaimed_work_items": reclaimed_work_items,
+                    "artifacts_retained": True,
+                },
+            )
+            cancelled_before_delete = True
+        deleted_events = await self._audit.delete_events(case_id)
+        if not await self._cases.delete(case_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Case not found"
+            )
+        return {
+            "case_id": case_id,
+            "deleted": True,
+            "cancelled_before_delete": cancelled_before_delete,
+            "deleted_events": deleted_events,
+        }
+
     @staticmethod
     def _existing_work_item_id(case: CaseRecord, work_item_id: str | None) -> str | None:
         if work_item_id and any(item.work_item_id == work_item_id for item in case.work_items):
@@ -2428,12 +2717,16 @@ class BridgeService:
     ) -> EvidenceResponse:
         case = await self._cases.get(case_id)
         self._require_case_access(case, actor)
-        work_item = await self._cases.get_work_item(case_id, request.work_item_id)
-        if actor != "bioops-manager" and work_item.target != actor:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Identity cannot record evidence for this work item",
-            )
+        if actor == "bioops-manager" and request.work_item_id == CASE_LEVEL_WORK_ITEM_ID:
+            # Case 级事件（房间绑定、用户发言等）不挂在任何工作项上。
+            pass
+        else:
+            work_item = await self._cases.get_work_item(case_id, request.work_item_id)
+            if actor != "bioops-manager" and work_item.target != actor:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Identity cannot record evidence for this work item",
+                )
         sanitized_payload = _sanitize_payload(request.payload, self._settings.max_evidence_bytes)
         event_id, recorded_at = await self._audit.record(
             case_id=case_id,

@@ -136,6 +136,7 @@ class AgentTeamsCaseToolService:
         session.sandbox_meta = meta
         session.updated_at = datetime.now(UTC)
         await context.db.flush()
+        await agentteams.provision_case_room(case_id, requester_ref=context.user_id)
         return self._envelope(case_id=case_id, title=title, status=status, reused=False)
 
     async def record_confirmation_request(

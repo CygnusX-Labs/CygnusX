@@ -76,6 +76,10 @@ class RoomCreateRequest(BaseModel):
     identities: list[str] = Field(default_factory=list, max_length=32)
 
 
+class EnsureUsersRequest(BaseModel):
+    identities: list[str] = Field(min_length=1, max_length=64)
+
+
 class RoomCreateResponse(BaseModel):
     room_id: str
     room_name: str

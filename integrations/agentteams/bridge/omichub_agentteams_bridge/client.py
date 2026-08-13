@@ -98,3 +98,36 @@ class GatewayClient:
                 "Gateway response must be an object", request=response.request, response=response
             )
         return data
+
+    async def post_room_message(
+        self,
+        room_id: str,
+        *,
+        sender_identity: str,
+        content: str,
+        sender: dict[str, Any],
+        source: str = "omichub",
+    ) -> dict[str, Any]:
+        """Mirror one message into a Matrix room via the Gateway's room contract."""
+        if not self.configured:
+            raise RuntimeError("Bridge Gateway integration is not configured")
+        response = await self._client.post(
+            f"/rooms/{room_id}/messages",
+            json={
+                "sender_identity": sender_identity,
+                "content": content,
+                "sender": sender,
+                "source": source,
+            },
+            headers={
+                "X-Gateway-Identity": "bioops-manager",
+                "X-Gateway-Token": self._settings.gateway_manager_token,
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict):
+            raise httpx.HTTPStatusError(
+                "Gateway response must be an object", request=response.request, response=response
+            )
+        return data

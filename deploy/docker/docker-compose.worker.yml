@@ -110,6 +110,7 @@ services:
     volumes:
       # 开发环境源码热重载（生产部署应使用构建进镜像的 immutable 标签）
       - ../../src:/app/src:ro
+      - ../../data:/app/data:ro  # Agent YAML/提示词等站点内容（agentteams 会诊/房间响应等 celery 任务依赖 capability registry）
       - ../../tool_configs:/app/tool_configs  # BLAST 数据库 YAML 需要可写
       # —— 核心共享存储（模拟分布式共享盘，与主栈 web 共用）——
       - ${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}:/data/omichub # 任务数据读写

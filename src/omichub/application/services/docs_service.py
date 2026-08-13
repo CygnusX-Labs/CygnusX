@@ -10,7 +10,7 @@ from typing import Any, Literal, overload
 
 import anyio
 import yaml
-from sqlalchemy import and_, or_, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,9 +47,7 @@ class DocsService:
     async def list_knowledge(self, db: AsyncSession) -> dict[str, Any]:
         """获取实验室知识库导航列表（按 category 聚合）。
 
-        合并数据库与 docs/knowledge/meta.yaml：数据库中存在的优先使用数据库状态，
-        仅存在 meta.yaml 中但尚未导入数据库的文档也会显示出来。
-        仅展示所属知识库标记为 show_in_lab 的文档（如单细胞知识库不在此展示）。
+        数据库是目录权威源，仅展示所属知识库标记为 show_in_lab 的文档。
         """
         from omichub.infrastructure.database.models.knowledge_base import (
             KnowledgeBaseModel,
@@ -57,51 +55,25 @@ class DocsService:
 
         result = await db.execute(
             select(KbDocumentModel)
-            .outerjoin(
+            .join(
                 KnowledgeBaseModel, KbDocumentModel.kb_id == KnowledgeBaseModel.id
             )
             .where(
-                or_(
-                    KbDocumentModel.kb_id.is_(None),
-                    and_(
-                        KnowledgeBaseModel.show_in_lab.is_(True),
-                        KnowledgeBaseModel.is_enabled.is_(True),
-                    ),
-                )
+                KnowledgeBaseModel.show_in_lab.is_(True),
+                KnowledgeBaseModel.is_enabled.is_(True),
             )
             .order_by(KbDocumentModel.category, KbDocumentModel.title)
         )
-        db_docs = {doc.doc_id: doc for doc in result.scalars().all()}
-
-        # 同时读取 meta.yaml，补全未导入数据库的文档
         file_config = self._load_nav_config("knowledge", "meta.yaml")
-        items: list[dict[str, Any]] = []
-        seen_ids = set()
-
-        # 1. 先放数据库里的文档
-        for doc in db_docs.values():
-            items.append(
-                {
-                    "id": doc.doc_id,
-                    "title": doc.title,
-                    "category": doc.category,
-                    "status": self._status_name(doc.status),
-                }
-            )
-            seen_ids.add(doc.doc_id)
-
-        # 2. 补充 meta.yaml 里有但数据库里没有的文档
-        for item in file_config.get("items", []):
-            doc_id = item.get("id")
-            if doc_id and doc_id not in seen_ids:
-                items.append(
-                    {
-                        "id": doc_id,
-                        "title": item.get("title", doc_id),
-                        "category": item.get("category") or "未分类",
-                        "status": "published",
-                    }
-                )
+        items = [
+            {
+                "id": doc.doc_id,
+                "title": doc.title,
+                "category": doc.category,
+                "status": self._status_name(doc.status),
+            }
+            for doc in result.scalars().all()
+        ]
 
         return {
             "title": file_config.get("title", "实验室知识库"),
@@ -119,6 +91,22 @@ class DocsService:
         document = await self._get_document_by_doc_id(db, doc_id, raise_not_found=False)
 
         if document is not None:
+            from omichub.infrastructure.database.models.knowledge_base import (
+                KnowledgeBaseModel,
+            )
+
+            visible_base_id = (
+                await db.execute(
+                    select(KnowledgeBaseModel.id).where(
+                        KnowledgeBaseModel.id == document.kb_id,
+                        KnowledgeBaseModel.show_in_lab.is_(True),
+                        KnowledgeBaseModel.is_enabled.is_(True),
+                    )
+                )
+            ).scalar_one_or_none()
+            if visible_base_id is None:
+                raise NotFoundError(f"文档 '{doc_id}' 不存在")
+
             if document.status != 1:
                 # 非已发布文档：仅管理员和创建者可见
                 if current_user_id is None:
@@ -260,6 +248,7 @@ class DocsService:
 
         document = KbDocumentModel(
             doc_id=doc_id,
+            kb_id="lab",
             project_id=project_id,
             title=title,
             category=category,

@@ -412,7 +412,7 @@ class OpenAICompatibleProvider:
                     )
                     yield ChatChunk(
                         type="error",
-                        content=f"请求失败（模型: {self.name}）: {detail}",
+                        content=f"请求失败（模型: {self.model}）: {detail}",
                         metadata={
                             "retryable": response.status_code in {408, 500, 502, 503, 504},
                             "http_status": response.status_code,

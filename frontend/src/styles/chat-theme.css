@@ -87,6 +87,9 @@
   --code-block-bg: #1f2329;
   --code-block-header-bg: #161b22;
   --code-block-border: rgba(255, 255, 255, 0.06);
+  /* 代码执行卡片：头部与输出区背景（随主题切换，勿用 --code-block-bg 硬编码浅色文字场景） */
+  --chat-bg-subtle: #161b22;
+  --chat-bg-code: #1f2329;
   --bubble-border: #333333;
   --card-radius: 12px;
   --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.24), 0 4px 12px rgba(0, 0, 0, 0.16);
@@ -172,6 +175,9 @@
   --code-block-bg: #1f2329;
   --code-block-header-bg: #161b22;
   --code-block-border: rgba(0, 0, 0, 0.08);
+  /* 代码执行卡片：头部与输出区背景（随主题切换） */
+  --chat-bg-subtle: #f8f9fb;
+  --chat-bg-code: #f5f6f8;
   --bubble-border: #e5e7eb;
   --card-radius: 12px;
   --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.04);

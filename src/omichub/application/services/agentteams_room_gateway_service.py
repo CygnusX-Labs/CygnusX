@@ -8,7 +8,7 @@ separately deployed Gateway process.
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Any
 
@@ -48,6 +48,10 @@ class AgentTeamsRoomGatewayService:
     async def create_room(self, session_id: str, identities: list[str]) -> dict[str, Any]:
         return await self._request("POST", "/rooms", json={"session_id": session_id, "identities": identities})
 
+    async def ensure_users(self, identities: list[str]) -> dict[str, Any]:
+        """批量供给 AppService 持有的 Matrix 账号（幂等）。"""
+        return await self._request("POST", "/users/ensure", json={"identities": identities})
+
     async def post_message(
         self,
         room_id: str,
@@ -70,7 +74,7 @@ class AgentTeamsRoomGatewayService:
 
     async def stream_room_events(
         self, room_id: str, *, since: str | None = None
-    ) -> AsyncIterator[dict[str, Any]]:
+    ) -> AsyncGenerator[dict[str, Any]]:
         if not self.available:
             return
         params = {"since": since} if since else None

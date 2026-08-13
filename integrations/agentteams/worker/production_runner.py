@@ -24,6 +24,7 @@ _EVIDENCE_TOOLS = [
     "task_result_summary",
     "task_file_preview",
     "workspace_file_preview",
+    "workspace_read_file",
     "task_compare_metrics",
     "rule_threshold_lookup",
 ]
@@ -127,7 +128,7 @@ def load_pool_config(environ: dict[str, str] | None = None) -> ProductionWorkerP
     )
 
 
-def load_worker_profile(config: ProductionWorkerConfig) -> tuple[str, str]:
+def load_worker_profile(config: ProductionWorkerConfig) -> tuple[str, str, tuple[str, ...]]:
     request = Request(
         f"{config.bridge_url.rstrip('/')}/capabilities",
         headers={"X-Bridge-Identity": config.identity, "X-Bridge-Token": config.token},
@@ -142,7 +143,29 @@ def load_worker_profile(config: ProductionWorkerConfig) -> tuple[str, str]:
     capability = str(profile.get("capability") or "").strip()
     if not agent_id or not capability:
         raise ValueError(f"Bridge returned malformed worker profile: {config.identity}")
-    return agent_id, capability
+    return agent_id, capability, _execution_modes_for(payload, config.identity)
+
+
+def _execution_modes_for(payload: dict[str, Any], identity: str) -> tuple[str, ...]:
+    """Resolve the registry-declared execution modes for an identity.
+
+    ``agent_capabilities`` is keyed by canonical role; alias identities (e.g. data-steward)
+    resolve through the snapshot's ``role_aliases`` mapping first.
+    """
+    capabilities = payload.get("agent_capabilities") if isinstance(payload, dict) else None
+    if not isinstance(capabilities, dict):
+        return ()
+    entry = capabilities.get(identity)
+    if not isinstance(entry, dict):
+        aliases = payload.get("role_aliases")
+        canonical = aliases.get(identity) if isinstance(aliases, dict) else None
+        entry = capabilities.get(str(canonical)) if canonical else None
+    if not isinstance(entry, dict):
+        return ()
+    modes = entry.get("execution_modes")
+    if not isinstance(modes, list):
+        return ()
+    return tuple(str(mode) for mode in modes)
 
 
 def _question(assignment: dict[str, Any]) -> str:
@@ -173,7 +196,14 @@ def _evidence_refs(assignment: dict[str, Any]) -> list[str]:
         if kind == "task" and ref_id:
             result.append(f"task:{ref_id}")
         elif kind in {"file", "workspace"} and (location or ref_id):
-            result.append(f"file:{location or ref_id}")
+            value = location or ref_id
+            try:
+                # UUID 形式的文件引用使用 file:// 协议，便于 workspace_read_file 解析。
+                uuid.UUID(value)
+                result.append(f"file://{value}")
+            except ValueError:
+                # 路径形式的引用保持 file: 前缀，匹配 workspace_file_preview 的 path 参数。
+                result.append(f"file:{value}")
         elif kind == "s3" and (location or ref_id):
             result.append(location or ref_id)
     return list(dict.fromkeys(result))
@@ -189,12 +219,12 @@ def run_once(config: ProductionWorkerConfig) -> dict[str, Any]:
     if assignment is None:
         return {"action": "claim_raced", "identity": config.identity}
 
-    agent_id, capability = load_worker_profile(config)
+    agent_id, capability, execution_modes = load_worker_profile(config)
     execution_mode = str(assignment["work_item"].get("execution_mode") or "readonly_consultation")
     if execution_mode == "workspace_execution":
-        if config.identity not in {"agent-code", "agent-viz"}:
+        if "workspace_execution" not in execution_modes:
             raise RuntimeError(
-                "Workspace execution is only supported by code or visualization workers"
+                f"Workspace execution is not declared for identity: {config.identity}"
             )
         capability = "workspace_execution"
     trace_id = uuid.uuid4().hex

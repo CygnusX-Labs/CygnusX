@@ -173,6 +173,35 @@ async def create_case(request_client: httpx.AsyncClient, case_id: str = "bioops_
     assert response.status_code == 201
 
 
+async def create_chat_case(request_client: httpx.AsyncClient, case_id: str = "bioops_chat_001") -> None:
+    response = await request_client.post(
+        "/v1/cases",
+        headers=headers("bioops-manager", "manager"),
+        json={
+            "case_id": case_id,
+            "intent": "介绍一下 Manager 能做什么",
+            "requester_ref": "user-1",
+            "context_refs": [{"kind": "workspace", "id": "user-1"}],
+        },
+    )
+    assert response.status_code == 201
+
+
+async def create_flow_case(request_client: httpx.AsyncClient, case_id: str = "bioops_flow_001") -> None:
+    response = await request_client.post(
+        "/v1/cases",
+        headers=headers("bioops-manager", "manager"),
+        json={
+            "case_id": case_id,
+            "project_ref": {"kind": "project", "id": "project-1"},
+            "intent": "bulk_rnaseq_delivery",
+            "requester_ref": "user-1",
+            "flow_id": "rna_seq",
+        },
+    )
+    assert response.status_code == 201
+
+
 @pytest.mark.asyncio
 async def test_flow_allowlist_and_identity_boundary(client) -> None:
     request_client, _ = client
@@ -841,7 +870,7 @@ async def test_case_and_audit_indexes_restore_from_disk(settings) -> None:
 @pytest.mark.asyncio
 async def test_manager_assigns_three_workers_and_only_targets_can_report(client) -> None:
     request_client, _ = client
-    await create_case(request_client, "bioops_collab")
+    await create_flow_case(request_client, "bioops_collab")
     work_items = [
         ("preflight-01", "data-steward", "project-preflight"),
         ("submit-01", "workflow-operator", "workflow-submit"),
@@ -902,12 +931,14 @@ async def test_manager_assigns_three_workers_and_only_targets_can_report(client)
     case = await request_client.get(
         "/v1/cases/bioops_collab", headers=headers("bioops-manager", "manager")
     )
-    assert [item["status"] for item in case.json()["work_items"]] == ["completed"] * 3
+    statuses = {item["work_item_id"]: item["status"] for item in case.json()["work_items"]}
+    assert [statuses[work_item_id] for work_item_id, _, _ in work_items] == ["completed"] * 3
     events = await request_client.get(
         "/v1/cases/bioops_collab/events", headers=headers("bioops-manager", "manager")
     )
     event_types = [event["event_type"] for event in events.json()["events"]]
-    assert event_types.count("work_item.assigned") == 3
+    # 3 manual assignments + plan-01 created by auto-reconcile once all items are terminal
+    assert event_types.count("work_item.assigned") == 4
     assert event_types.count("skill.finished") == 3
 
 
@@ -1170,6 +1201,33 @@ async def test_evidence_requires_the_assigned_worker(client) -> None:
         },
     )
     assert allowed.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_reconcile_skips_planning_for_chat_case_without_flow_id(client, settings) -> None:
+    request_client, _ = client
+    await create_chat_case(request_client, "bioops_chat_skip_plan")
+
+    reconciled = await request_client.post(
+        "/v1/cases/bioops_chat_skip_plan/reconcile", headers=headers("bioops-manager", "manager")
+    )
+    assert reconciled.status_code == 200
+    body = reconciled.json()
+    assert body["status"] == "received"
+    assert body["flow_id"] is None
+    assert not any(item["work_item_id"] == "plan-01" for item in body["work_items"])
+
+    audit_text = Path(settings.audit_log_path).read_text(encoding="utf-8")
+    audit_events = [json.loads(line) for line in audit_text.splitlines()]
+    skip_events = [
+        event
+        for event in audit_events
+        if event["event_type"] == "case.reconciled"
+        and event.get("payload", {}).get("reason") == "chat_case_skips_auto_planning"
+    ]
+    assert len(skip_events) == 1
+    assert skip_events[0]["payload"]["from_status"] == "received"
+    assert skip_events[0]["payload"]["to_status"] == "received"
 
 
 @pytest.mark.asyncio

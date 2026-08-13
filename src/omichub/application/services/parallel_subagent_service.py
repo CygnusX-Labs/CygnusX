@@ -42,7 +42,10 @@ from omichub.domain.skill.services import (
     SKILL_TOOL_NAMES,
     USE_SKILL_TOOL_NAME,
 )
-from omichub.infrastructure.ai_provider.openai_compatible import provider_manager
+from omichub.infrastructure.ai_provider.openai_compatible import (
+    merge_token_usage,
+    provider_manager,
+)
 from omichub.infrastructure.database.session import get_session_factory
 from omichub.tools.schema_loader import schema_loader
 
@@ -309,6 +312,9 @@ class ParallelSubAgentService:
         interrupted_count = sum(
             1 for item in results if item["status"] in {"awaiting_input", "approval_pending"}
         )
+        merged_usage: dict[str, Any] | None = None
+        for item in results:
+            merged_usage = merge_token_usage(merged_usage, item.get("usage"))
         total = len(results)
         summary = (
             f"{ok_count}/{total} 个子任务成功，总墙钟 {elapsed}s"
@@ -319,6 +325,7 @@ class ParallelSubAgentService:
         )
         return {
             "success": ok_count + interrupted_count > 0,
+            "usage": merged_usage,
             "llm_payload": {
                 "summary": summary,
                 "results": [self._llm_view(item) for item in results],
@@ -562,6 +569,7 @@ class ParallelSubAgentService:
             "verified_evidence_refs": outcome.get("verified_evidence_refs") or [],
             "workdir": str(workdir),
             "elapsed_s": round(time.monotonic() - started, 1),
+            "usage": outcome.get("usage"),
         }
         await self._emit_event(on_event, {"type": "worker_finished", **result})
         return result
@@ -598,6 +606,7 @@ class ParallelSubAgentService:
         verified_evidence_refs: list[str] = []
         successful_tool_calls = 0
         length_continuations = 0
+        usage: dict[str, Any] | None = None
         for _round in range(max(1, max_rounds)):
             await self._check_control(control_check)
             text = ""
@@ -645,15 +654,18 @@ class ParallelSubAgentService:
                                 "index": index,
                                 "agent_id": agent_id,
                                 "tool_name": str(function.get("name") or "工具"),
+                                "args_summary": str(function.get("arguments") or "")[:2_000],
                             },
                         )
                 elif chunk.type == "done":
                     finish_reason = str(chunk.metadata.get("finish_reason") or "").lower()
+                    usage = merge_token_usage(usage, chunk.metadata.get("usage"))
                 elif chunk.type == "error":
                     return {
                         "status": "failed",
                         "answer": None,
                         "error": str(chunk.content or "模型调用失败")[:500],
+                        "usage": usage,
                     }
             last_text = text.strip()
             if last_text and (not answer_parts or answer_parts[-1] != last_text):
@@ -685,6 +697,7 @@ class ParallelSubAgentService:
                     "error": None,
                     "verified_evidence_refs": verified_evidence_refs,
                     "tool_call_count": successful_tool_calls,
+                    "usage": usage,
                 }
 
             messages.append(
@@ -713,6 +726,7 @@ class ParallelSubAgentService:
                         "status": "awaiting_input",
                         "answer": str(questions[0].get("question") or "请补充必要信息"),
                         "error": None,
+                        "usage": usage,
                         "packet": {
                             "status": "awaiting_input",
                             "final_answer": "",
@@ -737,6 +751,7 @@ class ParallelSubAgentService:
                             "status": "approval_pending",
                             "answer": f"需要你批准后才能执行 {tool_name}。",
                             "error": None,
+                            "usage": usage,
                             "packet": {
                                 "status": "approval_pending",
                                 "final_answer": "",
@@ -747,6 +762,7 @@ class ParallelSubAgentService:
                                 "error": "",
                             },
                         }
+                tool_started = time.monotonic()
                 tool_envelope = await self._execute_child_tool(
                     user_id=user_id,
                     agent_id=agent_id,
@@ -758,6 +774,17 @@ class ParallelSubAgentService:
                     run_id=run_id,
                     ctx=ctx,
                     workspace_access=workspace_access,
+                )
+                await self._emit_event(
+                    on_event,
+                    {
+                        "type": "worker_tool_result",
+                        "index": index,
+                        "agent_id": agent_id,
+                        "tool_name": tool_name,
+                        "success": tool_envelope.get("success") is True,
+                        "duration_ms": round((time.monotonic() - tool_started) * 1000),
+                    },
                 )
                 if tool_envelope.get("success") is True:
                     successful_tool_calls += 1
@@ -780,6 +807,7 @@ class ParallelSubAgentService:
             "error": f"子循环超过 {max_rounds} 轮工具上限，返回阶段性结论",
             "verified_evidence_refs": verified_evidence_refs,
             "tool_call_count": successful_tool_calls,
+            "usage": usage,
         }
 
     @staticmethod

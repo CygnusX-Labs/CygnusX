@@ -241,13 +241,15 @@ async def import_cloud_knowledge(
         knowledge_base = await session.get(KnowledgeBaseModel, KNOWLEDGE_BASE_ID)
         if not dry_run:
             if knowledge_base is None:
-                knowledge_base = KnowledgeBaseModel(id=KNOWLEDGE_BASE_ID)
+                knowledge_base = KnowledgeBaseModel(
+                    id=KNOWLEDGE_BASE_ID,
+                    show_in_lab=False,
+                )
                 session.add(knowledge_base)
             knowledge_base.name = KNOWLEDGE_BASE_NAME
             knowledge_base.description = (
                 "云计算、OmicHub 平台运维、存储、网络、容器仓库、Terraform 与 Slurm 资料"
             )
-            knowledge_base.show_in_lab = True
             knowledge_base.ai_searchable = True
             knowledge_base.is_enabled = True
 

@@ -40,6 +40,8 @@
   --neutral-text-3: var(--text-tertiary);
   --neutral-text-4: #C9CDD4;
   --neutral-hover: #F2F3F8;
+  /* 分段切换器轨道底（.omichub-segmented-toggle），Arco fill-2 对齐 */
+  --neutral-fill-2: #F2F3F5;
 
   /* 侧边栏专用 */
   --sidebar-bg: #FFFFFF;
@@ -123,6 +125,8 @@
   --neutral-text-3: var(--text-tertiary);
   --neutral-text-4: #4B5163;
   --neutral-hover: var(--surface-highlight);
+  /* 分段切换器轨道底（.omichub-segmented-toggle），与浅色明暗成对 */
+  --neutral-fill-2: var(--surface-elevated);
 
   --sidebar-bg: var(--surface-card);
   --sidebar-border: var(--border-subtle);

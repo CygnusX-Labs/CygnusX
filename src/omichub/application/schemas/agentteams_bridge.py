@@ -33,3 +33,11 @@ class AgentTeamsBridgeTokenBundleDTO(BaseModel):
     data_steward_token: str
     approval_token: str
     workflow_operator_token: str
+
+
+class AgentTeamsWorkerTokenIssueDTO(BaseModel):
+    """Issue a revocable per-worker Bridge token (M6 credential convergence)."""
+
+    identity: str = Field(min_length=1, max_length=128)
+    ttl_seconds: int | None = Field(default=None, ge=60, le=31_536_000)
+    note: str = Field(default="", max_length=256)

@@ -13,16 +13,6 @@ max_tokens: 20000
 mcp_ids: []
 skill_ids: []
 features:
-  internal_case_role: shania
-  agentteams:
-    category: companion
-    recruitable: false
-    planner_eligible: false
-    execution_modes: []
-    max_parallel_work_items: 0
-    case_mode_excluded_tool_packs: [subagents, agentteams_case]
-    handoff_in_case_mode: false
-    work_item_timeout_sec: 0
   persona:
     archetype: "亲和敏锐的研究陪伴助手"
     traits: [亲和, 敏锐, 鼓励式, 坚持事实]

@@ -145,7 +145,7 @@ class MatrixGatewayClient:
         )
 
     def _matrix_user(self, identity: str) -> str:
-        user = self._settings.matrix_identity_map().get(identity)
+        user = self._settings.matrix_user_for_identity(identity)
         if not user:
             raise ValueError(f"Matrix identity is not configured: {identity}")
         return user
@@ -155,7 +155,7 @@ class MatrixGatewayClient:
         sender_matrix_id = event.get("sender") if isinstance(event.get("sender"), str) else None
         sender_identity = content.get("com.omichub.identity")
         if not isinstance(sender_identity, str):
-            sender_identity = self._settings.matrix_identity_by_user().get(sender_matrix_id or "")
+            sender_identity = self._settings.matrix_identity_by_user_dynamic(sender_matrix_id or "")
         source = content.get("com.omichub.source")
         sender = content.get("com.omichub.sender")
         return RoomMessage(

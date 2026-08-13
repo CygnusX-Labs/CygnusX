@@ -6081,7 +6081,7 @@ class ChatService:
         async def _prepare_handoff_target(
             directive: dict[str, Any],
         ) -> tuple[AgentContext, Any, list[Any], list[Any], list[dict[str, Any]], str]:
-            """重新装配目标 Agent，且只向其提供 handoff packet 而非完整历史。"""
+            """重新装配目标 Agent：packet 注入 prompt，消息历史由调用方保留并追加 packet。"""
             target_ctx = await AgentService(self._db).assemble_context(
                 str(directive["target_agent_id"]), user_id=user_id
             )
@@ -6095,6 +6095,21 @@ class ChatService:
                 [] if effective_mcp_mode == "off" else list(target_ctx.mcp_servers or [])
             )
             target_tools = list(target_ctx.tools or []) + list(base_tools)
+            # 与主路径一致：知识库检索与轻量沙盒在普通聊天兜底挂载，
+            # 避免转交后的目标 Agent 反而失去检索/执行能力。
+            if not studio_mode and supports_function_tools:
+                if not any(
+                    t.get("function", {}).get("name") == "knowledge_search"
+                    for t in target_tools
+                    if isinstance(t, dict)
+                ):
+                    target_tools.append(KNOWLEDGE_SEARCH_TOOL)
+                if not any(
+                    t.get("function", {}).get("name") == CHAT_SANDBOX_TOOL_NAME
+                    for t in target_tools
+                    if isinstance(t, dict)
+                ):
+                    target_tools.append(CHAT_SANDBOX_EXECUTE_TOOL_SCHEMA)
             target_prompt = target_ctx.system_prompt or ""
             if effective_multi_agent and supports_function_tools:
                 target_tool_names = {
@@ -6153,6 +6168,12 @@ class ChatService:
                     target_prompt = f"{target_prompt}\n\n{memory_context}".strip()
             except Exception as exc:  # noqa: BLE001
                 logger.error("Handoff 目标 Agent 长期记忆召回失败，已跳过: %s", exc)
+            # 会话历史文件清单注入目标 Agent，避免转交后丢失上传文件的 file_id 引用。
+            handoff_file_ctx = await self._collect_session_file_context(
+                current_session_id, user_id=user_id
+            )
+            if handoff_file_ctx:
+                target_prompt = f"{target_prompt}\n\n{handoff_file_ctx}".strip()
             target_prompt = (
                 f"{target_prompt}\n\n{directive['packet']}\n\n{USER_FACING_CHINESE_PROMPT_SUFFIX}"
             ).strip()
@@ -6350,7 +6371,12 @@ class ChatService:
                 handoff_session.updated_at = datetime.now(UTC)
             return {
                 "model_config": target_model,
-                "llm_messages": [{"role": "user", "content": str(directive["packet"])}],
+                # 保留完整消息历史，packet 作为最新一条 user 消息追加，
+                # 避免转交后目标 Agent 丢失对话上下文。
+                "llm_messages": [
+                    *llm_messages,
+                    {"role": "user", "content": str(directive["packet"])},
+                ],
                 "system_prompt": target_prompt,
                 "tools": target_tools,
                 "temperature": target_ctx.temperature,
@@ -7280,7 +7306,11 @@ class ChatService:
                             session_id=current_session_id,
                             db=self._db,
                         )
-                        llm_messages = [{"role": "user", "content": str(directive["packet"])}]
+                        # 保留完整消息历史，packet 作为最新一条 user 消息追加。
+                        llm_messages = [
+                            *llm_messages,
+                            {"role": "user", "content": str(directive["packet"])},
+                        ]
                         handoff_requested = True
                         break
 

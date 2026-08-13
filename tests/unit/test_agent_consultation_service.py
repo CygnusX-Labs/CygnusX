@@ -178,6 +178,39 @@ async def _test_workspace_consultation_uses_scoped_workdir() -> None:
     assert "信封解析降级" in result.risks[0]
 
 
+def test_workspace_consultation_allowed_for_declared_expert() -> None:
+    """P0 回归：workspace_execution 不再硬编码 agent-code/agent-viz，按 YAML 声明放行。"""
+    asyncio.run(_test_workspace_consultation_allowed_for_declared_expert())
+
+
+async def _test_workspace_consultation_allowed_for_declared_expert() -> None:
+    agent_service = SimpleNamespace(
+        assemble_context=AsyncMock(return_value=SimpleNamespace(model_config=object()))
+    )
+    parallel_service = SimpleNamespace(
+        run=AsyncMock(return_value={"llm_payload": {"results": [{"answer": "workspace complete"}]}})
+    )
+    service = AgentConsultationService(
+        SimpleNamespace(), agent_service=agent_service, parallel_service=parallel_service
+    )
+
+    await service.run_consultation(
+        case_id="case-1",
+        work_item_id="rna-exec-01",
+        agent_id="agent-rnaseq",
+        question="执行 RNA-seq 表达定量",
+        capability="interpretation",
+        evidence_refs=[],
+        requested_tools=[],
+        requester_ref="user-1",
+        execution_mode="workspace_execution",
+    )
+
+    call = parallel_service.run.await_args.kwargs
+    assert call["safe_only"] is False
+    assert str(call["workdir_root"]) == "/data/omichub/output/agentteams/case-1/rna-exec-01"
+
+
 def test_workspace_artifacts_are_copied_and_registered(tmp_path, monkeypatch) -> None:
     asyncio.run(_test_workspace_artifacts_are_copied_and_registered(tmp_path, monkeypatch))
 
@@ -221,6 +254,8 @@ async def _test_workspace_artifacts_are_copied_and_registered(tmp_path, monkeypa
 
     assert errors == []
     assert len(artifacts) == len(saved) == 1
+    assert artifacts[0]["id"] == str(saved[0].id)
+    assert artifacts[0]["download_url"] == f"/api/v1/files/{saved[0].id}/download"
     assert artifacts[0]["path"].endswith("workspace/agentteams/case-1/exec-01/treeplot.svg")
     assert (storage_root / artifacts[0]["path"]).read_text(encoding="utf-8") == "<svg/>"
 
@@ -303,3 +338,211 @@ def test_safe_only_filters_writable_and_confirmation_tools(monkeypatch) -> None:
     assert "safe_lookup" in names
     assert "write_file" not in names
     assert "dangerous_read" not in names
+
+
+def _ok_envelope_result() -> dict:
+    return {
+        "llm_payload": {
+            "results": [
+                {
+                    "answer": """```json
+{"conclusion":"可信","recommendations":[],"evidence_refs":[],"risks":[],"token_usage":1}
+```"""
+                }
+            ]
+        }
+    }
+
+
+def _consultation_service_with_events(
+    events: list[dict], post_evidence: AsyncMock
+) -> tuple[AgentConsultationService, AsyncMock]:
+    agent_service = SimpleNamespace(
+        assemble_context=AsyncMock(return_value=SimpleNamespace(model_config=object()))
+    )
+
+    async def _run(**kwargs):
+        on_event = kwargs.get("on_event")
+        if on_event is not None:
+            for event in events:
+                on_event(event)
+        return _ok_envelope_result()
+
+    parallel_service = SimpleNamespace(run=AsyncMock(side_effect=_run))
+    agentteams_service = SimpleNamespace(available=True, post_case_evidence=post_evidence)
+    service = AgentConsultationService(
+        SimpleNamespace(),
+        agent_service=agent_service,
+        parallel_service=parallel_service,
+        agentteams_service=agentteams_service,
+    )
+    return service, parallel_service.run
+
+
+@pytest.mark.asyncio
+async def test_evidence_projection_emits_agent_events_with_truncated_args() -> None:
+    post_evidence = AsyncMock(return_value={"event_id": "e1"})
+    events = [
+        {"type": "worker_started", "index": 1, "agent_id": "agent-rnaseq"},
+        {
+            "type": "worker_tool_call",
+            "index": 1,
+            "agent_id": "agent-rnaseq",
+            "tool_name": "task_result_summary",
+            "args_summary": "x" * 500,
+        },
+        {
+            "type": "worker_tool_result",
+            "index": 1,
+            "agent_id": "agent-rnaseq",
+            "tool_name": "task_result_summary",
+            "success": True,
+            "duration_ms": 12,
+        },
+        {
+            "type": "worker_finished",
+            "index": 1,
+            "agent_id": "agent-rnaseq",
+            "status": "ok",
+            "elapsed_s": 2.5,
+        },
+    ]
+    service, _ = _consultation_service_with_events(events, post_evidence)
+
+    result = await service.run_consultation(
+        case_id="case-1",
+        work_item_id="wi-1",
+        agent_id="agent-rnaseq",
+        question="解释结果",
+        capability="result_interpretation",
+        evidence_refs=[],
+        requested_tools=[],
+        requester_ref="user-1",
+    )
+
+    assert result.conclusion == "可信"
+    calls = {call.kwargs["event_type"]: call for call in post_evidence.await_args_list}
+    assert set(calls) == {"agent.started", "agent.tool_call", "agent.tool_result", "agent.finished"}
+    for call in calls.values():
+        assert call.args[0] == "case-1"
+        assert call.kwargs["work_item_id"] == "wi-1"
+        assert call.kwargs["payload"]["work_item_id"] == "wi-1"
+        assert call.kwargs["payload"]["agent_id"] == "agent-rnaseq"
+    tool_call_payload = calls["agent.tool_call"].kwargs["payload"]
+    assert tool_call_payload["tool"] == "task_result_summary"
+    assert len(tool_call_payload["args_summary"]) == 200
+    tool_result_payload = calls["agent.tool_result"].kwargs["payload"]
+    assert tool_result_payload == {
+        "tool": "task_result_summary",
+        "success": True,
+        "duration_ms": 12,
+        "work_item_id": "wi-1",
+        "agent_id": "agent-rnaseq",
+    }
+    finished_payload = calls["agent.finished"].kwargs["payload"]
+    assert finished_payload["status"] == "ok"
+    assert finished_payload["tool_call_count"] == 1
+    assert finished_payload["duration_ms"] == 2500
+
+
+@pytest.mark.asyncio
+async def test_evidence_projection_failure_does_not_break_consultation() -> None:
+    post_evidence = AsyncMock(side_effect=RuntimeError("bridge down"))
+    events = [
+        {"type": "worker_started", "index": 1, "agent_id": "agent-rnaseq"},
+        {
+            "type": "worker_tool_call",
+            "index": 1,
+            "agent_id": "agent-rnaseq",
+            "tool_name": "knowledge_search",
+            "args_summary": "{}",
+        },
+        {
+            "type": "worker_finished",
+            "index": 1,
+            "agent_id": "agent-rnaseq",
+            "status": "ok",
+            "elapsed_s": 1.0,
+        },
+    ]
+    service, _ = _consultation_service_with_events(events, post_evidence)
+
+    result = await service.run_consultation(
+        case_id="case-1",
+        work_item_id="wi-1",
+        agent_id="agent-rnaseq",
+        question="解释结果",
+        capability="result_interpretation",
+        evidence_refs=[],
+        requested_tools=[],
+        requester_ref="user-1",
+    )
+
+    assert result.conclusion == "可信"
+    assert post_evidence.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_tool_call_evidence_is_capped_at_200_with_truncation_marker() -> None:
+    post_evidence = AsyncMock(return_value={"event_id": "e1"})
+    events = [
+        {
+            "type": "worker_tool_call",
+            "index": 1,
+            "agent_id": "agent-rnaseq",
+            "tool_name": f"tool_{number}",
+            "args_summary": "{}",
+        }
+        for number in range(205)
+    ]
+    service, _ = _consultation_service_with_events(events, post_evidence)
+
+    await service.run_consultation(
+        case_id="case-1",
+        work_item_id="wi-1",
+        agent_id="agent-rnaseq",
+        question="解释结果",
+        capability="result_interpretation",
+        evidence_refs=[],
+        requested_tools=[],
+        requester_ref="user-1",
+    )
+
+    event_types = [call.kwargs["event_type"] for call in post_evidence.await_args_list]
+    assert event_types.count("agent.tool_call") == 200
+    assert event_types.count("agent.tool_call_truncated") == 1
+    truncated_call = next(
+        call
+        for call in post_evidence.await_args_list
+        if call.kwargs["event_type"] == "agent.tool_call_truncated"
+    )
+    assert truncated_call.kwargs["payload"]["limit"] == 200
+
+
+@pytest.mark.asyncio
+async def test_evidence_projection_skipped_without_work_item_or_service() -> None:
+    post_evidence = AsyncMock()
+    agent_service = SimpleNamespace(
+        assemble_context=AsyncMock(return_value=SimpleNamespace(model_config=object()))
+    )
+    parallel_service = SimpleNamespace(run=AsyncMock(return_value=_ok_envelope_result()))
+    agentteams_service = SimpleNamespace(available=True, post_case_evidence=post_evidence)
+    service = AgentConsultationService(
+        SimpleNamespace(),
+        agent_service=agent_service,
+        parallel_service=parallel_service,
+        agentteams_service=agentteams_service,
+    )
+
+    await service.run_consultation(
+        case_id="case-1",
+        agent_id="agent-rnaseq",
+        question="解释结果",
+        capability="result_interpretation",
+        evidence_refs=[],
+        requested_tools=[],
+        requester_ref="user-1",
+    )
+
+    assert parallel_service.run.await_args.kwargs["on_event"] is None
+    post_evidence.assert_not_awaited()

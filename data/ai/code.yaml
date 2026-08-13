@@ -19,6 +19,7 @@ skill_ids:
   - data-deliver
 features:
   internal_case_role: agent-code
+  managed_prompt: true
   agentteams:
     category: expert
     recruitable: true

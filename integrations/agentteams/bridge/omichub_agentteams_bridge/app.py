@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Annotated, get_args
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
-from .audit import AuditStore
+from .audit import AuditStore, json_default
 from .case_store import CaseStore
 from .client import GatewayClient, OmicHubClient
 from .config import BridgeSettings
@@ -31,17 +33,41 @@ from .models import (
     ReadOnlyExecutionRequest,
     RetryCaseSubmissionRequest,
     SubmitTaskRequest,
+    WorkerTokenIssueRequest,
     WorkItemCreateRequest,
     WorkItemHeartbeatRequest,
     WorkItemUpdateRequest,
 )
+from .room_mirror import AuditRoomMirror
 from .security import require_identity, require_role
 from .service import BridgeService
 from .size_limits import BodySizeLimitMiddleware
+from .worker_tokens import WorkerTokenStore
 
 
 async def get_service(request: Request) -> BridgeService:
     return request.app.state.bridge_service
+
+
+def case_gc_autorun_enabled(settings: BridgeSettings) -> bool:
+    """Scheduled Case GC (startup + daily) is only enabled outside production."""
+    return settings.environment != "production" and settings.case_gc_days > 0
+
+
+async def _case_gc_loop(service: BridgeService) -> None:
+    logger = logging.getLogger(__name__)
+    while True:
+        try:
+            summary = await service.gc_cases("bioops-manager")
+            if summary["deleted_cases"]:
+                logger.info(
+                    "Bridge case GC removed %d case(s) and %d audit event(s)",
+                    summary["deleted_cases"],
+                    summary["deleted_events"],
+                )
+        except Exception:
+            logger.exception("Bridge case GC run failed")
+        await asyncio.sleep(24 * 60 * 60)
 
 
 async def authenticate_identity(
@@ -49,7 +75,12 @@ async def authenticate_identity(
     x_bridge_identity: str | None = Header(default=None),
     x_bridge_token: str | None = Header(default=None),
 ) -> str:
-    return require_identity(request.app.state.bridge_settings, x_bridge_identity, x_bridge_token)
+    return await require_identity(
+        request.app.state.bridge_settings,
+        request.app.state.worker_token_store,
+        x_bridge_identity,
+        x_bridge_token,
+    )
 
 
 def create_app(
@@ -64,15 +95,22 @@ def create_app(
         runtime_settings.gateway_url and runtime_settings.gateway_manager_token
     ):
         runtime_gateway_client = GatewayClient(runtime_settings)
+    room_mirror = AuditRoomMirror(runtime_gateway_client)
     audit_store = AuditStore(
         runtime_settings.audit_log_path,
         runtime_settings.state_store_url,
         f"{runtime_settings.state_store_key_prefix}:audit",
+        on_event=room_mirror.observe if room_mirror.enabled else None,
     )
     case_store = CaseStore(
         runtime_settings.case_store_path,
         runtime_settings.state_store_url,
         f"{runtime_settings.state_store_key_prefix}:cases",
+    )
+    worker_token_store = WorkerTokenStore(
+        runtime_settings.worker_token_store_path,
+        runtime_settings.state_store_url,
+        f"{runtime_settings.state_store_key_prefix}:worker-tokens",
     )
     service = BridgeService(
         runtime_settings,
@@ -84,13 +122,20 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        if room_mirror.enabled:
+            try:
+                room_mirror.rebind(await audit_store.all_events())
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "room mirror binding rebuild failed", exc_info=True
+                )
+        gc_task: asyncio.Task[None] | None = None
+        if case_gc_autorun_enabled(runtime_settings):
+            gc_task = asyncio.create_task(_case_gc_loop(service))
         if runtime_settings.omichub_integration_token:
             try:
                 await service.refresh_capabilities()
             except Exception:
-                import asyncio
-                import logging
-
                 logger = logging.getLogger(__name__)
 
                 async def _retry_capabilities() -> None:
@@ -106,11 +151,16 @@ def create_app(
 
                 asyncio.create_task(_retry_capabilities())
         yield
+        if gc_task is not None:
+            gc_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await gc_task
         await runtime_client.aclose()
         if runtime_gateway_client is not None:
             await runtime_gateway_client.aclose()
         await audit_store.aclose()
         await case_store.aclose()
+        await worker_token_store.aclose()
 
     app = FastAPI(title="OmicHub AgentTeams Bridge", version="0.1.0", lifespan=lifespan)
     app.add_middleware(
@@ -120,6 +170,7 @@ def create_app(
     )
     app.state.bridge_service = service
     app.state.bridge_settings = runtime_settings
+    app.state.worker_token_store = worker_token_store
 
     @app.get("/healthz", tags=["Health"])
     async def healthz() -> dict[str, str]:
@@ -273,6 +324,53 @@ def create_app(
         require_role(identity, "bioops-manager")
         return await service.reconcile_approval_timeouts(identity)
 
+    @app.post("/v1/maintenance/case-gc", tags=["Maintenance"])
+    async def case_gc(
+        identity: Annotated[str, Depends(authenticate_identity)],
+        service: Annotated[BridgeService, Depends(get_service)],
+    ) -> dict:
+        require_role(identity, "bioops-manager")
+        return await service.gc_cases(identity)
+
+    @app.post("/v1/worker-tokens", status_code=status.HTTP_201_CREATED, tags=["Worker Tokens"])
+    async def issue_worker_token(
+        payload: WorkerTokenIssueRequest,
+        identity: Annotated[str, Depends(authenticate_identity)],
+        service: Annotated[BridgeService, Depends(get_service)],
+    ) -> dict:
+        """Issue a revocable per-worker token; the raw value is returned exactly once."""
+        require_role(identity, "bioops-manager")
+        known_identities = set(runtime_settings.identity_secrets()) | service.worker_identities()
+        if payload.identity not in known_identities:
+            raise HTTPException(status_code=422, detail="Unknown Worker identity")
+        token, record = await worker_token_store.issue(
+            identity=payload.identity,
+            ttl_seconds=payload.ttl_seconds,
+            note=payload.note,
+        )
+        return {"token": token, "record": record.model_dump(mode="json", exclude={"token_hash"})}
+
+    @app.get("/v1/worker-tokens", tags=["Worker Tokens"])
+    async def list_worker_tokens(
+        identity: Annotated[str, Depends(authenticate_identity)],
+    ) -> dict:
+        require_role(identity, "bioops-manager")
+        records = await worker_token_store.list()
+        return {
+            "items": [
+                record.model_dump(mode="json", exclude={"token_hash"}) for record in records
+            ]
+        }
+
+    @app.delete("/v1/worker-tokens/{token_id}", tags=["Worker Tokens"])
+    async def revoke_worker_token(
+        token_id: str,
+        identity: Annotated[str, Depends(authenticate_identity)],
+    ) -> dict:
+        require_role(identity, "bioops-manager")
+        record = await worker_token_store.revoke(token_id)
+        return record.model_dump(mode="json", exclude={"token_hash"})
+
     @app.post("/v1/cases/{case_id}/retry", tags=["Cases"])
     async def retry_case_submission(
         case_id: str,
@@ -423,7 +521,7 @@ def create_app(
             async for event in service.stream_case_events(
                 case_id, identity, cursor=cursor, watch_seconds=duration
             ):
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps(event, ensure_ascii=False, default=json_default)}\n\n"
 
         return StreamingResponse(
             event_generator(),
@@ -586,6 +684,16 @@ def create_app(
     ) -> dict:
         require_role(identity, "bioops-manager")
         return (await service.cancel_case(case_id, payload, identity)).model_dump(mode="json")
+
+    @app.delete("/v1/cases/{case_id}", tags=["Cases"])
+    async def delete_case(
+        case_id: str,
+        identity: Annotated[str, Depends(authenticate_identity)],
+        service: Annotated[BridgeService, Depends(get_service)],
+        reason: str | None = None,
+    ) -> dict:
+        require_role(identity, "bioops-manager")
+        return await service.delete_case(case_id, identity, reason)
 
     return app
 

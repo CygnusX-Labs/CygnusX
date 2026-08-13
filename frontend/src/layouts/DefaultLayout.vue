@@ -12,7 +12,7 @@ import {
   MenuOutline, ChevronForwardOutline, ChevronDownOutline,
   NotificationsOutline, HelpCircleOutline, ChatbubblesOutline, Planet,
   WalletOutline, SparklesOutline, ConstructOutline, LayersOutline,
-  TerminalOutline, SearchOutline, DesktopOutline, LockClosedOutline,
+  TerminalOutline, SearchOutline, DesktopOutline, LockClosedOutline, PeopleOutline,
 } from '@vicons/ionicons5'
 import CookieBalanceBadge from '@/components/CookieBalanceBadge.vue'
 import NotAuthorized from '@/components/NotAuthorized.vue'
@@ -247,6 +247,7 @@ const mainNavItems = computed<NavItem[]>(() => [
   { key: 'reports', label: '结果报告中心', to: '/reports', icon: DocumentTextOutline },
   { key: 'ai', label: 'AI 助手', to: '/ai', icon: ChatbubblesOutline },
   { key: 'studio', label: 'AI 工作台', to: '/studio', icon: DesktopOutline },
+  { key: 'agent-teams-room', label: '团队协作室', to: '/agent-teams/room', icon: PeopleOutline },
   { key: 'tools', label: '生信工具箱', to: '/tools', icon: ConstructOutline },
 ])
 
@@ -283,6 +284,8 @@ function isActive(item: NavItem): boolean {
     if (item.key === 'tools') return route.path === '/tools' || route.path.startsWith('/tools/')
     // AI 工作台：会话页面也保持高亮
     if (item.key === 'studio') return route.path === '/studio' || route.path.startsWith('/studio/')
+    // 团队协作室：Case 详情页也保持高亮
+    if (item.key === 'agent-teams-room') return route.path.startsWith('/agent-teams')
     // 数据库：新旧入口和详情页都保持高亮
     if (item.key === 'database') {
       return route.path === '/database'

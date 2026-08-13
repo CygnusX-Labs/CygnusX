@@ -1000,7 +1000,19 @@ async def test_approval_timeout_reconcile_auto_cancels_after_seven_days(tmp_path
 @pytest.mark.asyncio
 async def test_reconcile_advances_received_case_and_assigns_planner_once(tmp_path) -> None:
     service = make_service(tmp_path, ConcurrentGateway())
-    await create_case(service, "received-residue-case")
+    await service._cases.create(
+        CaseRecord(
+            case_id="received-residue-case",
+            project_ref=ContextRef(kind="project", id="project-1"),
+            intent="bulk_rnaseq_delivery",
+            requester_ref="user-1",
+            team_id="bioops-delivery",
+            flow_id="rna_seq",
+            status="received",
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+    )
 
     first = await service.reconcile_case("received-residue-case", "bioops-manager")
     second = await service.reconcile_case("received-residue-case", "bioops-manager")
@@ -1012,7 +1024,7 @@ async def test_reconcile_advances_received_case_and_assigns_planner_once(tmp_pat
         item for item in second.work_items if item.work_item_id == "plan-01"
     ]
     assert len(planning_items) == 1
-    assert planning_items[0].target == "agent-code"
+    assert planning_items[0].target == "agent-rnaseq"
     assert sum(event["event_type"] == "case.reconciled" for event in events.events) == 1
 
 
@@ -1269,3 +1281,342 @@ async def test_blocked_quality_gate_assigns_remediation_and_returns_to_approval(
     assert ready.status == "approval_pending"
     assert any(event["event_type"] == "remediation.requested" for event in events.events)
     assert any(event["event_type"] == "remediation.completed" for event in events.events)
+
+
+def _workspace_snapshot(*, viz_declares: bool = True) -> dict[str, object]:
+    def modes(declares: bool) -> list[str]:
+        base = ["readonly_consultation"]
+        return base + ["workspace_execution"] if declares else base
+
+    return {
+        "role_agent_map": {
+            "agent-code": "agent-code",
+            "agent-viz": "agent-viz",
+            "agent-rnaseq": "agent-rnaseq",
+            "data-steward": "agent-data",
+        },
+        "agent_capabilities": {
+            "agent-code": {"agent_id": "agent-code", "execution_modes": modes(True)},
+            "agent-viz": {"agent_id": "agent-viz", "execution_modes": modes(viz_declares)},
+            "agent-rnaseq": {"agent_id": "agent-rnaseq", "execution_modes": modes(True)},
+            "agent-data": {"agent_id": "agent-data", "execution_modes": modes(True)},
+        },
+    }
+
+
+def test_capability_snapshot_derives_workspace_execution_targets(tmp_path) -> None:
+    service = make_service(tmp_path, TreeplotPlanningGateway())
+
+    service._settings.apply_capability_snapshot(_workspace_snapshot())
+    targets = service._workspace_execution_targets()
+
+    assert {"agent-code", "agent-viz", "agent-rnaseq"} <= targets
+    # alias identities inherit the canonical agent's declaration
+    assert "data-steward" in targets
+
+
+def test_general_plan_accepts_snapshot_declared_workspace_target(tmp_path) -> None:
+    service = make_service(tmp_path, TreeplotPlanningGateway())
+    service._settings.apply_capability_snapshot(_workspace_snapshot())
+
+    payload = service._validate_general_plan(
+        {
+            "name": "rnaseq-qc",
+            "parameters": {
+                "work_items": [
+                    {
+                        "work_item_id": "exec-01",
+                        "target": "agent-rnaseq",
+                        "objective": "Run the RNA-seq QC notebook.",
+                        "skill_name": "rnaseq-qc",
+                    }
+                ]
+            },
+        }
+    )
+
+    assert payload["parameters"]["work_items"][0]["target"] == "agent-rnaseq"
+
+
+def test_general_plan_rejects_undeclared_workspace_target(tmp_path) -> None:
+    service = make_service(tmp_path, TreeplotPlanningGateway())
+    service._settings.apply_capability_snapshot(_workspace_snapshot())
+
+    with pytest.raises(ValueError, match="target is not allowed"):
+        service._validate_general_plan(
+            {
+                "name": "qc-exec",
+                "parameters": {
+                    "work_items": [
+                        {
+                            "work_item_id": "exec-01",
+                            "target": "agent-qc",
+                            "objective": "Execute inside the workspace.",
+                            "skill_name": "qc-exec",
+                        }
+                    ]
+                },
+            }
+        )
+
+
+@pytest.mark.asyncio
+async def test_execute_general_plan_downgrades_undeclared_target_and_records_event(
+    tmp_path,
+) -> None:
+    service = make_service(tmp_path, TreeplotPlanningGateway())
+    await service.create_case(
+        CaseCreateRequest(
+            case_id="downgrade-case",
+            context_refs=[ContextRef(kind="file", id="tree.fa")],
+            intent="build a treeplot",
+            requester_ref="user-1",
+            lead_planner="agent-code",
+        ),
+        "bioops-manager",
+    )
+    await service.claim_work_item("downgrade-case", "plan-01", "agent-code")
+    await service.execute_readonly_work_item(
+        "downgrade-case",
+        "plan-01",
+        ReadOnlyExecutionRequest(
+            agent_id="agent-code",
+            capability="planning_advice",
+            question="Plan treeplot.",
+        ),
+        "agent-code",
+    )
+    approval = await service.issue_approval(
+        ApprovalRequest(case_id="downgrade-case", action="execute_plan"),
+        "approval-authority",
+    )
+    # registry declaration changed after the plan was frozen: agent-viz no longer declares it
+    service._settings.apply_capability_snapshot(_workspace_snapshot(viz_declares=False))
+
+    approved = await service.execute_general_plan(
+        "downgrade-case", approval.token, "approval-authority"
+    )
+
+    exec_01 = next(item for item in approved.work_items if item.work_item_id == "exec-01")
+    exec_02 = next(item for item in approved.work_items if item.work_item_id == "exec-02")
+    assert exec_01.execution_mode == "workspace_execution"
+    assert exec_02.execution_mode == "readonly_consultation"
+    assert exec_02.read_only is True
+    events = await service._audit.list_events("downgrade-case")
+    downgrades = [
+        event
+        for event in events
+        if event["event_type"] == "planning.validation_failed"
+        and event["payload"].get("work_item_id") == "exec-02"
+    ]
+    assert len(downgrades) == 1
+
+
+@pytest.mark.asyncio
+async def test_assign_workspace_execution_follows_snapshot_declaration(tmp_path) -> None:
+    service = make_service(tmp_path, TreeplotPlanningGateway())
+    await create_case(service, "assign-workspace-case")
+
+    with pytest.raises(HTTPException) as denied:
+        await service.assign_work_item(
+            "assign-workspace-case",
+            WorkItemCreateRequest(
+                work_item_id="exec-01",
+                target="agent-rnaseq",
+                objective="Run the RNA-seq QC notebook.",
+                skill_name="rnaseq-qc",
+                execution_mode="workspace_execution",
+                approval_required=True,
+            ),
+            "bioops-manager",
+        )
+    assert denied.value.status_code == 422
+
+    service._settings.apply_capability_snapshot(_workspace_snapshot())
+    work_item = await service.assign_work_item(
+        "assign-workspace-case",
+        WorkItemCreateRequest(
+            work_item_id="exec-01",
+            target="agent-rnaseq",
+            objective="Run the RNA-seq QC notebook.",
+            skill_name="rnaseq-qc",
+            execution_mode="workspace_execution",
+            approval_required=True,
+        ),
+        "bioops-manager",
+    )
+
+    assert work_item.execution_mode == "workspace_execution"
+
+
+class SlowGateway:
+    """Gateway whose consultation outlives the default work item lease."""
+
+    configured = True
+
+    def __init__(self, delay: float = 0.0) -> None:
+        self.delay = delay
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def consult(self, payload: dict[str, object]) -> dict[str, object]:
+        self.started.set()
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        else:
+            await self.release.wait()
+        return {
+            "schema_version": "1.0",
+            "status": "completed",
+            "conclusion": f"Completed {payload['agent_id']}",
+            "recommendations": [],
+            "evidence_refs": [],
+            "risks": [],
+            "agent_id": payload["agent_id"],
+            "schema_ver": "1.0",
+            "duration_ms": 1,
+            "token_usage": 1,
+        }
+
+
+@pytest.mark.asyncio
+async def test_long_consultation_renews_lease_and_completes(tmp_path) -> None:
+    service = make_service(tmp_path, SlowGateway(delay=3.6))
+    await create_case(service)
+    await service.assign_work_item(
+        "cluster-case",
+        WorkItemCreateRequest(
+            work_item_id="code-01",
+            target="agent-code",
+            objective="Review code.",
+            skill_name="code-review",
+            deadline_seconds=3,
+        ),
+        "bioops-manager",
+    )
+    await service.claim_work_item("cluster-case", "code-01", "agent-code")
+
+    result = await service.execute_readonly_work_item(
+        "cluster-case",
+        "code-01",
+        ReadOnlyExecutionRequest(
+            agent_id="agent-code",
+            capability="planning_advice",
+            question="Review code.",
+        ),
+        "agent-code",
+    )
+
+    assert result.status == "completed"
+    events = await service._audit.list_events("cluster-case")
+    event_types = [event["event_type"] for event in events]
+    assert "skill.finished" in event_types
+    assert "work_item.lease_expired" not in event_types
+    assert event_types.count("work_item.claimed") == 1
+
+
+@pytest.mark.asyncio
+async def test_lease_expired_requeue_writes_audit_event(tmp_path) -> None:
+    service = make_service(tmp_path, ConcurrentGateway())
+    await create_case(service)
+    await service.assign_work_item(
+        "cluster-case",
+        WorkItemCreateRequest(
+            work_item_id="code-01",
+            target="agent-code",
+            objective="Review code.",
+            skill_name="code-review",
+            deadline_seconds=30,
+        ),
+        "bioops-manager",
+    )
+    claimed = await service.claim_work_item("cluster-case", "code-01", "agent-code")
+    expired = claimed.model_copy(
+        update={"lease_expires_at": datetime.now(UTC) - timedelta(seconds=1)}
+    )
+    await service._cases.update_work_item("cluster-case", "code-01", expired)
+
+    inbox = await service.list_worker_inbox("agent-code")
+
+    assert inbox.items[0].work_item.status == "pending"
+    events = await service._audit.list_events("cluster-case")
+    lease_expired = [event for event in events if event["event_type"] == "work_item.lease_expired"]
+    assert len(lease_expired) == 1
+    payload = lease_expired[0]["payload"]
+    assert payload["work_item_id"] == "code-01"
+    assert payload["previous_status"] == "claimed"
+    assert payload["lease_owner"] == "agent-code"
+    assert payload["attempt"] == 1
+    assert payload["action"] == "requeued"
+    assert payload["lease_expires_at"] is not None
+
+    reclaimed = await service.claim_work_item("cluster-case", "code-01", "agent-code")
+    assert reclaimed.attempt == 2
+    event_types = [
+        event["event_type"] for event in await service._audit.list_events("cluster-case")
+    ]
+    # the duplicate claim on the timeline is now explained by the requeue event
+    assert event_types.index("work_item.lease_expired") < len(event_types) - 1
+    assert event_types.count("work_item.claimed") == 2
+
+
+@pytest.mark.asyncio
+async def test_reclaimed_work_item_is_not_overwritten_by_stale_consultation(tmp_path) -> None:
+    gateway = SlowGateway()
+    service = make_service(tmp_path, gateway)
+    await create_case(service)
+    await service.assign_work_item(
+        "cluster-case",
+        WorkItemCreateRequest(
+            work_item_id="code-01",
+            target="agent-code",
+            objective="Review code.",
+            skill_name="code-review",
+            deadline_seconds=30,
+        ),
+        "bioops-manager",
+    )
+    await service.claim_work_item("cluster-case", "code-01", "agent-code")
+    execution = asyncio.create_task(
+        service.execute_readonly_work_item(
+            "cluster-case",
+            "code-01",
+            ReadOnlyExecutionRequest(
+                agent_id="agent-code",
+                capability="planning_advice",
+                question="Review code.",
+            ),
+            "agent-code",
+        )
+    )
+    await gateway.started.wait()
+
+    # the lease expires mid-consultation; the next poll requeues the item
+    running = await service._cases.get_work_item("cluster-case", "code-01")
+    await service._cases.update_work_item(
+        "cluster-case",
+        "code-01",
+        running.model_copy(update={"lease_expires_at": datetime.now(UTC) - timedelta(seconds=1)}),
+    )
+    inbox = await service.list_worker_inbox("agent-code")
+    assert inbox.items[0].work_item.status == "pending"
+    # a newer attempt reclaims it before the stale consultation finishes
+    reclaimed = await service.claim_work_item("cluster-case", "code-01", "agent-code")
+    assert reclaimed.attempt == 2
+
+    gateway.release.set()
+    result = await execution
+
+    # no 409 escapes; the newer attempt's state is untouched
+    assert result.attempt == 2
+    assert result.status == "claimed"
+    events = await service._audit.list_events("cluster-case")
+    failures = [
+        event
+        for event in events
+        if event["event_type"] == "skill.failed"
+        and event["payload"].get("reason") == "lease_conflict"
+    ]
+    assert len(failures) == 1
+    assert failures[0]["payload"]["work_item_id"] == "code-01"
+    assert not any(event["event_type"] == "skill.finished" for event in events)

@@ -2,21 +2,79 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
+from loguru import logger
 
 from omichub.application.services.agentteams_bridge_settings_service import (
     AgentTeamsBridgeRuntimeConfig,
 )
+from omichub.application.services.agentteams_capability_registry import (
+    get_agentteams_capability_registry,
+)
+from omichub.application.services.agentteams_intent_router import infer_intent_route
+from omichub.application.services.agentteams_room_gateway_service import (
+    AgentTeamsRoomGatewayService,
+)
+from omichub.application.services.agentteams_title import derive_agentteams_case_title
 from omichub.core.config import Settings
-from omichub.core.exceptions import BusinessError
+from omichub.core.exceptions import AuthorizationError, BusinessError
+from omichub.infrastructure.cache.redis_client import get_redis
+
+# Bridge 侧预留的 Case 级证据 work_item_id（bridge record_evidence 对 manager 放行，
+# 不要求存在同名 work item）；房间事件不属于任何具体工作项。
+CASE_LEVEL_WORK_ITEM_ID = "case"
+
+# 建房时邀请进 Matrix 房间的 Gateway 身份（均为 Gateway 默认 matrix_identities 成员）。
+ROOM_MEMBER_IDENTITIES = ["bioops-manager", "omichub-user"]
+
+# 平台用户动态 Matrix 身份前缀：Gateway 按同一前缀把 ``omichub-user-<slug>``
+# 映射为 ``@omichub-user-<slug>:{matrix_server_name}``（bridge 侧同规则），
+# 三个进程共用这一字符串，改动需同步。
+MATRIX_USER_IDENTITY_PREFIX = "omichub-user-"
+
+# 无 flow_id 的聊天式 Case 缺省规划者；意图路由命中时按流程分析师覆盖。
+DEFAULT_LEAD_PLANNER = "agent-code"
+
+# 聊天式创建的通用 Case 自动确认集合（Redis set）：API 创建时写入，
+# beat 任务消费后移除；Bridge 无 meta 字段且不改 schema，故事实源放在平台侧。
+AUTO_CONFIRM_CASES_KEY = "agentteams:auto_confirm_cases"
+
+# Bridge 连接状态缓存：避免每次打开协作室页面都同步探测 Bridge /healthz。
+# TTL 10 秒，既减少页面加载延迟，又能在 Bridge 故障时较快感知。
+_CONNECTION_STATUS_CACHE_TTL_SECONDS = 10
+_CONNECTION_STATUS_CACHE_KEY_PREFIX = "agentteams:connection_status"
+
+_MATRIX_LOCALPART_ALLOWED = frozenset("abcdefghijklmnopqrstuvwxyz0123456789._=-")
+_MATRIX_USER_SLUG_MAX = 48
+
+
+def matrix_identity_for_requester(requester_ref: str) -> str:
+    """平台用户 → Matrix 身份映射：``omichub-user-<sanitized user_id>``。
+
+    清洗为 Matrix localpart 安全字符（小写字母数字与 ``._=-``），其余字符折为
+    ``-``；清洗结果为空时回退共享 ``omichub-user`` 静态身份。
+    """
+    slug = "".join(
+        ch if ch in _MATRIX_LOCALPART_ALLOWED else "-" for ch in requester_ref.strip().lower()
+    )
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    slug = slug.strip("-.")[:_MATRIX_USER_SLUG_MAX].rstrip("-.")
+    if not slug:
+        return "omichub-user"
+    return f"{MATRIX_USER_IDENTITY_PREFIX}{slug}"
 
 
 class AgentTeamsService:
     """Uses the Bridge's manager identity internally; browser clients never receive it."""
+
+    # 复用 httpx.AsyncClient 避免每次请求都重新建立 TCP/DNS 连接，显著降低首次 Bridge 调用延迟。
+    _bridge_client_cache: dict[str, httpx.AsyncClient] = {}
 
     def __init__(
         self,
@@ -30,6 +88,17 @@ class AgentTeamsService:
     def available(self) -> bool:
         return bool(self._bridge_config.enabled and self._bridge_config.configured)
 
+    def _bridge_client(self) -> httpx.AsyncClient:
+        cache_key = f"{self._bridge_config.bridge_url}:{self._bridge_config.timeout_seconds}"
+        client = self._bridge_client_cache.get(cache_key)
+        if client is None or client.is_closed:
+            client = httpx.AsyncClient(
+                base_url=self._bridge_config.bridge_url.rstrip("/"),
+                timeout=self._bridge_config.timeout_seconds,
+            )
+            self._bridge_client_cache[cache_key] = client
+        return client
+
     async def is_connected(self) -> bool:
         """Return whether the configured Bridge is reachable right now."""
         if not self.available:
@@ -40,19 +109,41 @@ class AgentTeamsService:
             return False
         return health.get("status") == "ok"
 
+    def _connection_status_cache_key(self) -> str:
+        url_hash = hashlib.sha256(self._bridge_config.bridge_url.encode()).hexdigest()[:16]
+        return f"{_CONNECTION_STATUS_CACHE_KEY_PREFIX}:{url_hash}"
+
     async def connection_status(self) -> dict[str, bool | str | None]:
-        """Expose configuration and liveness separately for the browser-facing status endpoint."""
+        """Expose configuration and liveness separately for the browser-facing status endpoint.
+
+        对 Bridge 的实时健康探测结果做短期 Redis 缓存，避免协作室页面每次刷新都等待
+        /healthz 往返；配置状态（enabled / configured）不做缓存，仍实时返回。
+        """
         enabled = self._bridge_config.enabled
         configured = self._bridge_config.configured
-        connected = await self.is_connected() if enabled and configured else False
-        reason: str | None = None
-        if not enabled:
-            reason = "disabled"
-        elif not configured:
-            reason = "incomplete_configuration"
-        elif not connected:
-            reason = "bridge_unreachable"
-        return {
+        if not enabled or not configured:
+            reason = "disabled" if not enabled else "incomplete_configuration"
+            return {
+                "available": False,
+                "enabled": enabled,
+                "configured": configured,
+                "connected": False,
+                "configuration_source": self._bridge_config.source,
+                "reason": reason,
+            }
+
+        cache_key = self._connection_status_cache_key()
+        try:
+            redis = get_redis()
+            cached = await redis.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("AgentTeams connection status cache read failed: {}", exc)
+
+        connected = await self.is_connected()
+        reason = None if connected else "bridge_unreachable"
+        result: dict[str, bool | str | None] = {
             "available": connected,
             "enabled": enabled,
             "configured": configured,
@@ -60,6 +151,12 @@ class AgentTeamsService:
             "configuration_source": self._bridge_config.source,
             "reason": reason,
         }
+        try:
+            redis = get_redis()
+            await redis.setex(cache_key, _CONNECTION_STATUS_CACHE_TTL_SECONDS, json.dumps(result))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("AgentTeams connection status cache write failed: {}", exc)
+        return result
 
     async def health_check(self) -> dict[str, Any]:
         """Validate Bridge reachability, the four OmicHub credentials, and Worker polls."""
@@ -88,6 +185,7 @@ class AgentTeamsService:
             except BusinessError:
                 bridge_health = {}
         workers = bridge_health.get("workers") if isinstance(bridge_health.get("workers"), list) else []
+        workers = self._merge_worker_heartbeats(workers, self._worker_identity_aliases())
         allowed_flows = bridge_health.get("allowed_flows") if isinstance(bridge_health.get("allowed_flows"), list) else []
         return {
             "connection": status,
@@ -96,6 +194,41 @@ class AgentTeamsService:
             "allowed_flows": allowed_flows,
             "scrna_submit_available": "scrna_seq" in allowed_flows,
         }
+
+    @staticmethod
+    def _worker_identity_aliases() -> dict[str, str]:
+        """Map alias worker identities (data-steward 等) to their canonical role identity."""
+        registry = get_agentteams_capability_registry()
+        role_by_agent = {agent_id: role for role, agent_id in registry.role_agent_map().items()}
+        return {
+            alias: role_by_agent.get(agent_id, agent_id)
+            for alias, agent_id in registry.role_alias_map().items()
+        }
+
+    @staticmethod
+    def _merge_worker_heartbeats(
+        workers: list[Any], aliases: dict[str, str]
+    ) -> list[dict[str, Any]]:
+        """Fold alias identities into the canonical role entry to avoid false missing-heartbeat reports."""
+        merged: dict[str, dict[str, Any]] = {}
+        order: list[str] = []
+        for worker in workers:
+            if not isinstance(worker, dict):
+                continue
+            identity = str(worker.get("identity") or "")
+            canonical = aliases.get(identity, identity)
+            entry = merged.get(canonical)
+            if entry is None:
+                merged[canonical] = {**worker, "identity": canonical}
+                order.append(canonical)
+                continue
+            entry["configured"] = bool(entry.get("configured") or worker.get("configured"))
+            entry["active"] = bool(entry.get("active") or worker.get("active"))
+            age = worker.get("age_seconds")
+            if age is not None and (entry.get("age_seconds") is None or age < entry["age_seconds"]):
+                entry["age_seconds"] = age
+                entry["last_seen_at"] = worker.get("last_seen_at")
+        return [merged[identity] for identity in order]
 
     async def admin_resource_snapshot(self) -> dict[str, Any]:
         """Return the Bridge resources that an OmicHub administrator may operate."""
@@ -133,6 +266,37 @@ class AgentTeamsService:
         return self._public_case(
             await self._request(f"/v1/cases/{case_id}/reconcile", method="POST")
         )
+
+    async def admin_issue_worker_token(
+        self, *, identity: str, ttl_seconds: int | None = None, note: str = ""
+    ) -> dict[str, Any]:
+        """Issue a revocable per-worker token on the Bridge; the raw value is returned once."""
+        payload: dict[str, Any] = {"identity": identity, "note": note}
+        if ttl_seconds is not None:
+            payload["ttl_seconds"] = ttl_seconds
+        return await self._request("/v1/worker-tokens", method="POST", json=payload)
+
+    async def admin_list_worker_tokens(self) -> list[dict[str, Any]]:
+        response = await self._request("/v1/worker-tokens")
+        items = response.get("items")
+        return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+
+    async def admin_revoke_worker_token(self, token_id: str) -> dict[str, Any]:
+        return await self._request(f"/v1/worker-tokens/{token_id}", method="DELETE")
+
+    async def admin_list_cases_by_status(
+        self, case_status: str, *, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        """以 Bridge manager 身份按状态列 Case；仅供平台内部自动化（如自动确认）使用。"""
+        response = await self._request(
+            "/v1/cases", params={"status": case_status, "limit": limit}
+        )
+        items = response.get("items")
+        return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+
+    async def admin_get_case(self, case_id: str) -> dict[str, Any]:
+        """以 Bridge manager 身份读取单个 Case；仅供平台内部自动化使用。"""
+        return await self._request(f"/v1/cases/{case_id}")
 
     async def list_cases(
         self,
@@ -181,7 +345,7 @@ class AgentTeamsService:
         if flow_id:
             case_payload["flow_id"] = flow_id
         else:
-            case_payload["lead_planner"] = "agent-code"
+            case_payload["lead_planner"] = self._resolve_chat_lead_planner(intent)
         if origin_consultation_id:
             case_payload["origin_consultation_id"] = origin_consultation_id
         if consultation_summary:
@@ -192,6 +356,21 @@ class AgentTeamsService:
             json=case_payload,
         )
         return case
+
+    @staticmethod
+    def _resolve_chat_lead_planner(intent: str) -> str | None:
+        """无 flow_id 的聊天式 Case 不再自动设置 lead_planner。
+
+        早期实现会按意图关键词路由到对应分析流程的规划者，导致用户在协作房间
+        里问一个纯咨询问题（如“介绍一下 Manager 能做什么”）时，代码助手立即跑
+        planning_advice。现在聊天式 Case 默认只由房间内 Manager 响应链路处理；
+        真实执行意图应通过确认执行/绑定 flow_id 等显式路径进入 planning。
+        """
+        logger.info(
+            "AgentTeams 聊天 Case 不自动设置 lead_planner: intent={}",
+            intent,
+        )
+        return None
 
     async def approve_and_submit_task(
         self,
@@ -313,6 +492,11 @@ class AgentTeamsService:
         )
         return self._public_case(cancelled)
 
+    async def delete_case(self, case_id: str, requester_ref: str) -> dict[str, Any]:
+        """删除协作 Case：先校验归属，Bridge 侧取消未结束的 Case 并移除记录与审计事件。"""
+        await self._get_case_for_requester(case_id, requester_ref)
+        return await self._request(f"/v1/cases/{case_id}", method="DELETE")
+
     async def revise_case_plan(
         self,
         case_id: str,
@@ -376,6 +560,9 @@ class AgentTeamsService:
         public_case.pop("preflight_input", None)
         public_case.pop("task_specs", None)
         public_case.pop("element_room_url", None)
+        public_case["display_title"] = derive_agentteams_case_title(
+            str(public_case.get("intent") or "")
+        )
         return public_case
 
     async def get_case_events(
@@ -391,6 +578,107 @@ class AgentTeamsService:
         if cursor:
             params["cursor"] = cursor
         return await self._request(f"/v1/cases/{case_id}/events", params=params)
+
+    async def provision_case_room(
+        self, case_id: str, *, requester_ref: str = ""
+    ) -> dict[str, Any] | None:
+        """Best-effort Matrix 房间供给；失败仅记录日志，Case 创建不受影响。
+
+        房间标识通过 ``room.created`` Case 证据事件持久化（bridge 审计流即映射存储，
+        bridge 侧房间镜像钩子凭它绑定 case_id → room_id）；同时在 Redis 登记
+        case→room 绑定供 Matrix 反向同步消费。未启用 Gateway 或建房失败时返回
+        None，前端降级为纯事件流模式。
+        """
+        gateway = AgentTeamsRoomGatewayService()
+        if not gateway.available:
+            return None
+        # 平台用户按映射规则供给独立 Matrix 账号并邀请进房（共享 omichub-user 兜底）。
+        identities = list(ROOM_MEMBER_IDENTITIES)
+        requester_identity = matrix_identity_for_requester(requester_ref)
+        if requester_identity not in identities:
+            identities.append(requester_identity)
+        try:
+            await gateway.ensure_users(identities)
+        except Exception:  # noqa: BLE001 - create_room 内部仍会 ensure，账号预热失败不阻断
+            logger.warning("agentteams case {} matrix user pre-provision failed", case_id)
+        try:
+            room = await gateway.create_room(case_id, identities)
+        except Exception as exc:  # noqa: BLE001 - 建房失败不得阻断 Case 创建
+            logger.warning("agentteams case {} room provisioning failed: {}", case_id, exc)
+            return None
+        room_id = str(room.get("room_id") or "")
+        if not room_id:
+            logger.warning("agentteams case {} room provisioning returned no room_id", case_id)
+            return None
+        try:
+            await self.post_case_evidence(
+                case_id,
+                work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                event_type="room.created",
+                summary="协作房间已创建",
+                payload={
+                    "provider": "matrix",
+                    "room_id": room_id,
+                    "room_url": room.get("element_room_url"),
+                },
+            )
+        except BusinessError as exc:
+            logger.warning("agentteams case {} room binding evidence failed: {}", case_id, exc)
+        from omichub.application.services.agentteams_room_sync_service import (
+            record_room_binding,
+        )
+
+        await record_room_binding(case_id, room_id, requester_ref)
+        return room
+
+    async def post_room_message(
+        self,
+        case_id: str,
+        requester_ref: str,
+        content: str,
+        *,
+        context_refs: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
+        """记录一条用户房间发言（``room.user_message`` 审计事件）。
+
+        无论 Matrix 房间是否存在都记录审计事件（无 Matrix 时房间页经事件流投影显示）；
+        已建房时由 bridge 侧镜像钩子发进 Matrix 房间，发送失败不影响事件记录。
+        ``context_refs`` 是房间 @ 引用的工作区文件（只读引用），随 payload 落审计。
+        """
+        case = await self._request(f"/v1/cases/{case_id}")
+        if case.get("requester_ref") != requester_ref:
+            raise AuthorizationError("无权操作该协作案例")
+        payload: dict[str, Any] = {"actor": requester_ref, "content": content.strip()}
+        if context_refs:
+            payload["context_refs"] = context_refs
+        return await self.post_case_evidence(
+            case_id,
+            work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+            event_type="room.user_message",
+            summary=content.strip()[:80],
+            payload=payload,
+        )
+
+    async def post_case_evidence(
+        self,
+        case_id: str,
+        *,
+        work_item_id: str,
+        event_type: str,
+        summary: str,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Record an evidence event on a Case with the internal manager identity."""
+        return await self._request(
+            f"/v1/cases/{case_id}/evidence",
+            method="POST",
+            json={
+                "work_item_id": work_item_id,
+                "event_type": event_type,
+                "summary": summary[:4_000] or event_type,
+                "payload": payload or {},
+            },
+        )
 
     async def reconcile_approval_timeouts(self) -> dict[str, int]:
         return await self._request("/v1/maintenance/approval-timeouts", method="POST")
@@ -463,12 +751,8 @@ class AgentTeamsService:
             "X-Bridge-Token": token,
         }
         try:
-            async with httpx.AsyncClient(
-                base_url=self._bridge_config.bridge_url.rstrip("/"),
-                timeout=self._bridge_config.timeout_seconds,
-            ) as client:
-                response = await client.request(method, path, headers=headers, **kwargs)
-                response.raise_for_status()
+            response = await self._bridge_client().request(method, path, headers=headers, **kwargs)
+            response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
                 raise BusinessError("协作案例不存在") from exc

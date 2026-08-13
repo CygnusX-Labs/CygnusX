@@ -13,9 +13,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import json
+import shutil
+import tarfile
 from collections.abc import AsyncIterator
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
@@ -235,6 +239,68 @@ class SandboxPool:
             await self._warm_pool.put(container_id)
         else:
             await self.destroy(container_id)
+
+    # ------------------------------------------------------------------
+    # 产物收集
+    # ------------------------------------------------------------------
+    async def copy_dir_out(
+        self,
+        container_id: str,
+        container_path: str,
+        host_dest: Path,
+    ) -> list[dict[str, Any]]:
+        """把容器内目录整体复制到宿主机目录，返回文件清单（相对路径/大小/mtime）。
+
+        容器内目录不存在或复制失败时返回空列表；用于聊天沙盒产物的持久化收集。
+        复制后 host_dest 下直接是目录内容（剥掉 basename 这一层）。
+        """
+        client = self._get_client()
+        base = container_path.rstrip("/").rsplit("/", 1)[-1]
+
+        def _copy() -> list[dict[str, Any]]:
+            try:
+                stream, _stat = client.api.get_archive(container_id, container_path)
+            except Exception:
+                return []
+            data = b"".join(stream)
+            host_dest.mkdir(parents=True, exist_ok=True)
+            dest_root = host_dest.resolve()
+            with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+                for member in tar.getmembers():
+                    # 防目录穿越：仅提取常规文件/目录，且目标必须落在 host_dest 内
+                    target = (host_dest / member.name).resolve()
+                    if target != dest_root and dest_root not in target.parents:
+                        continue
+                    if member.isfile() or member.isdir():
+                        tar.extract(member, host_dest)
+            nested = host_dest / base
+            if not nested.is_dir():
+                return []
+            # get_archive 的 tar 以目录 basename 为顶层，上提一层方便调用方直接使用
+            for child in nested.iterdir():
+                target = host_dest / child.name
+                if target.exists():
+                    if target.is_dir():
+                        shutil.rmtree(target)
+                    else:
+                        target.unlink()
+                child.replace(target)
+            nested.rmdir()
+            items: list[dict[str, Any]] = []
+            for file in sorted(host_dest.rglob("*")):
+                if not file.is_file():
+                    continue
+                stat = file.stat()
+                items.append(
+                    {
+                        "path": file.relative_to(host_dest).as_posix(),
+                        "size": stat.st_size,
+                        "mtime": stat.st_mtime,
+                    }
+                )
+            return items
+
+        return await asyncio.to_thread(_copy)
 
     # ------------------------------------------------------------------
     # 代码执行（流式）

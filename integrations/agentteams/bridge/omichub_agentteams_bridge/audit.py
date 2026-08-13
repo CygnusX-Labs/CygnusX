@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,7 @@ from pydantic import BaseModel
 from .shared_state import RedisStateBackend
 
 
-def _json_default(value: Any) -> Any:
+def json_default(value: Any) -> Any:
     if isinstance(value, BaseModel):
         return value.model_dump(mode="json")
     if isinstance(value, datetime):
@@ -29,10 +30,12 @@ class AuditStore:
         path: str,
         state_store_url: str = "",
         state_store_key_prefix: str = "omichub:agentteams:audit",
+        on_event: Any = None,
     ) -> None:
         self._path = Path(path)
         self._idempotency: dict[str, dict[str, Any]] = {}
         self._events: dict[str, list[dict[str, Any]]] = {}
+        self._on_event = on_event
         self._shared_state = (
             RedisStateBackend(state_store_url, state_store_key_prefix) if state_store_url else None
         )
@@ -116,7 +119,7 @@ class AuditStore:
         if self._shared_state is not None:
             await self._shared_state.client.set(
                 f"{self._receipt_key_prefix}{idempotency_key}",
-                json.dumps(receipt, ensure_ascii=False, separators=(",", ":"), default=_json_default),
+                json.dumps(receipt, ensure_ascii=False, separators=(",", ":"), default=json_default),
             )
             return
         async with self._lock:
@@ -139,22 +142,78 @@ class AuditStore:
             event,
             ensure_ascii=False,
             separators=(",", ":"),
-            default=_json_default,
+            default=json_default,
         ) + "\n"
         if self._shared_state is not None:
             await self._shared_state.client.xadd(self._event_stream_key, {"event": encoded.rstrip("\n")})
+            self._notify(event)
             return event_id, recorded_at
         async with self._lock:
             self._events.setdefault(case_id, []).append(event)
             self._path.parent.mkdir(parents=True, exist_ok=True)
             _append(self._path, encoded)
+        self._notify(event)
         return event_id, recorded_at
+
+    def _notify(self, event: dict[str, Any]) -> None:
+        """Invoke the append hook (room mirror); hook failures never break auditing."""
+        if self._on_event is None:
+            return
+        try:
+            self._on_event(event)
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "audit append hook failed for case %s", event.get("case_id"), exc_info=True
+            )
+
+    async def all_events(self) -> list[dict[str, Any]]:
+        """Return every recorded event (one-shot rebuild source for the room mirror)."""
+        if self._shared_state is not None:
+            return await self._shared_events()
+        async with self._lock:
+            return [event for events in self._events.values() for event in events]
 
     async def list_events(self, case_id: str) -> list[dict[str, Any]]:
         if self._shared_state is not None:
             return await self._shared_events(case_id)
         async with self._lock:
             return [*self._events.get(case_id, [])]
+
+    async def delete_events(self, case_id: str) -> int:
+        """Remove all audit events of a Case; used by Case GC (trims the Redis stream too)."""
+        if self._shared_state is not None:
+            records = await self._shared_state.client.xrange(self._event_stream_key, min="-", max="+")
+            removed = 0
+            for record_id, fields in records:
+                encoded = fields.get("event")
+                if not isinstance(encoded, str):
+                    continue
+                try:
+                    event = json.loads(encoded)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(event, dict) and event.get("case_id") == case_id:
+                    await self._shared_state.client.xdel(self._event_stream_key, record_id)
+                    removed += 1
+            return removed
+        async with self._lock:
+            events = self._events.pop(case_id, [])
+            if not events:
+                return 0
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            with self._path.open("w", encoding="utf-8") as file:
+                for case_events in self._events.values():
+                    for event in case_events:
+                        file.write(
+                            json.dumps(
+                                event,
+                                ensure_ascii=False,
+                                separators=(",", ":"),
+                                default=json_default,
+                            )
+                            + "\n"
+                        )
+            return len(events)
 
     async def metrics(self) -> dict[str, int]:
         if self._shared_state is not None:

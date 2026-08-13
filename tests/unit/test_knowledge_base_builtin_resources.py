@@ -19,7 +19,7 @@ async def test_ensure_builtin_bases_creates_qc_and_cloud() -> None:
 
     assert created == 2
     assert {call.args[0].id for call in db.add.call_args_list} == {"qc", "cloud"}
-    assert all(call.args[0].show_in_lab for call in db.add.call_args_list)
+    assert all(not call.args[0].show_in_lab for call in db.add.call_args_list)
     assert all(call.args[0].ai_searchable for call in db.add.call_args_list)
     db.flush.assert_awaited_once()
 

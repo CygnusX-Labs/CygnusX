@@ -58,7 +58,7 @@ def test_production_gateway_accepts_dedicated_integration_token() -> None:
 
     assert settings.omichub_integration_token == "integration-secret"
     capabilities, tools = settings.agent_policy_map()["agent-data"]
-    assert capabilities == {"project-preflight"}
+    assert capabilities == {"project-preflight", "workspace_execution"}
     assert tools == {
         "task_result_summary",
         "task_file_preview",
@@ -66,8 +66,30 @@ def test_production_gateway_accepts_dedicated_integration_token() -> None:
         "task_compare_metrics",
         "rule_threshold_lookup",
     }
-    assert settings.agent_policy_map()["agent-qc"] == ({"quality-gate"}, tools)
-    assert settings.agent_policy_map()["agent-delivery"] == ({"delivery-pack"}, tools)
+    assert settings.agent_policy_map()["agent-qc"] == (
+        {"quality-gate", "workspace_execution"},
+        tools,
+    )
+    assert settings.agent_policy_map()["agent-delivery"] == (
+        {"delivery-pack", "workspace_execution"},
+        tools,
+    )
+
+
+def test_gateway_static_policies_match_yaml_workspace_execution_declarations() -> None:
+    """Static fallback policies must mirror data/ai/*.yaml execution_modes declarations."""
+    policies = GatewaySettings().agent_policy_map()
+    declared = {
+        "agent-rnaseq",
+        "agent-scrna",
+        "agent-viz",
+        "agent-code",
+        "agent-data",
+        "agent-qc",
+        "agent-delivery",
+    }
+    for agent_id in declared:
+        assert "workspace_execution" in policies[agent_id][0], agent_id
 
 
 def test_gateway_builds_policies_for_all_recruitable_agents_from_registry() -> None:
@@ -314,12 +336,13 @@ class FakeMatrixClient:
     def __init__(self) -> None:
         self.created: list[tuple[str, str, list[str]]] = []
         self.sent: list[dict[str, object]] = []
+        self.ensured: list[list[str]] = []
 
     async def close(self) -> None:
         pass
 
-    async def ensure_identities(self, _identities: list[str]) -> None:
-        pass
+    async def ensure_identities(self, identities: list[str]) -> None:
+        self.ensured.append(list(identities))
 
     async def create_room(self, room_name: str, creator_identity: str, invitees: list[str]) -> str:
         self.created.append((room_name, creator_identity, invitees))
@@ -421,3 +444,81 @@ async def _test_matrix_room_endpoints_create_send_read_and_sync(tmp_path: Path) 
     assert matrix.sent[0]["identity"] == "agent-rnaseq"
     assert history.json()["next_batch"] == "cursor-1"
     assert '"event_id":"$external"' in sync.text
+
+
+def test_matrix_dynamic_user_mapping() -> None:
+    settings = GatewaySettings(
+        matrix_homeserver_url="http://matrix.test",
+        matrix_service_token="matrix-secret",
+        matrix_server_name="matrix.example.internal",
+        matrix_identities="bioops-manager=@manager:test,omichub-user=@user:test",
+    )
+    assert settings.matrix_user_for_identity("bioops-manager") == "@manager:test"
+    assert (
+        settings.matrix_user_for_identity("omichub-user-u42")
+        == "@omichub-user-u42:matrix.example.internal"
+    )
+    # 未知静态身份、非法 localpart、空前缀后缀均不映射
+    assert settings.matrix_user_for_identity("agent-rnaseq") is None
+    assert settings.matrix_user_for_identity("omichub-user-") is None
+    assert settings.matrix_user_for_identity("omichub-user-Bad/Char") is None
+    # 反向解析：动态账号 ↔ identity，供 sync 事件归源
+    assert (
+        settings.matrix_identity_by_user_dynamic("@omichub-user-u42:matrix.example.internal")
+        == "omichub-user-u42"
+    )
+    assert settings.matrix_identity_by_user_dynamic("@manager:test") == "bioops-manager"
+    assert settings.matrix_identity_by_user_dynamic("@omichub-user-u42:other.server") is None
+
+
+def test_ensure_users_endpoint_provisions_dynamic_accounts(tmp_path: Path) -> None:
+    asyncio.run(_test_ensure_users_endpoint(tmp_path))
+
+
+async def _test_ensure_users_endpoint(tmp_path: Path) -> None:
+    settings = GatewaySettings(
+        omichub_base_url="http://omic.test",
+        audit_log_path=str(tmp_path / "gateway-audit.jsonl"),
+        matrix_homeserver_url="http://matrix.test",
+        matrix_service_token="matrix-secret",
+        matrix_server_name="test",
+        matrix_identities="bioops-manager=@manager:test,omichub-user=@user:test",
+    )
+    upstream = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={})),
+        base_url="http://omic.test",
+    )
+    matrix = FakeMatrixClient()
+    app = create_app(settings, OmicHubConsultationClient(settings, upstream), matrix)  # type: ignore[arg-type]
+    api = httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://gateway.test")
+    try:
+        ensured = await api.post(
+            "/users/ensure",
+            headers=headers(),
+            json={"identities": ["omichub-user-u42", "bioops-manager", "omichub-user-u42"]},
+        )
+        rejected = await api.post(
+            "/users/ensure",
+            headers=headers(),
+            json={"identities": ["omichub-user-Bad/Char"]},
+        )
+        # 建房同样接受动态平台用户身份并供给其账号
+        created = await api.post(
+            "/rooms",
+            headers=headers(),
+            json={"session_id": "session-2", "identities": ["bioops-manager", "omichub-user-u42"]},
+        )
+    finally:
+        await api.aclose()
+        await upstream.aclose()
+
+    assert ensured.status_code == 200
+    assert ensured.json() == {"ensured": ["omichub-user-u42", "bioops-manager"]}
+    assert matrix.ensured[0] == ["omichub-user-u42", "bioops-manager"]
+    assert rejected.status_code == 503
+    assert created.status_code == 200
+    assert matrix.created[-1] == (
+        "omichub-session-session-2",
+        "bioops-manager",
+        ["bioops-manager", "omichub-user-u42"],
+    )

@@ -25,6 +25,7 @@ class BridgeSettings(BaseSettings):
     discovered_worker_profiles: dict[str, dict[str, str]] = Field(
         default_factory=dict, exclude=True
     )
+    discovered_workspace_execution_identities: set[str] = Field(default_factory=set, exclude=True)
     approval_signing_secret: str = "change-me-before-deployment"
     identities: str = (
         "approval-authority:approval-secret,bioops-manager:manager-secret,data-steward:steward-secret,"
@@ -42,10 +43,12 @@ class BridgeSettings(BaseSettings):
     max_active_cases_per_requester: int = Field(default=3, ge=1, le=100)
     max_active_cases_per_project: int = Field(default=5, ge=1, le=100)
     max_active_work_items_per_case: int = Field(default=8, ge=1, le=500)
+    case_gc_days: int = Field(default=7, ge=0, le=3650)
     state_store_url: str = ""
     state_store_key_prefix: str = "omichub:agentteams"
     audit_log_path: str = "/tmp/omichub-agentteams-bridge-audit.jsonl"
     case_store_path: str = "/tmp/omichub-agentteams-bridge-cases.json"
+    worker_token_store_path: str = "/tmp/omichub-agentteams-bridge-worker-tokens.json"
     manifest_dir: str = "/tmp/omichub-agentteams-bridge-manifests"
 
     @model_validator(mode="after")
@@ -156,6 +159,23 @@ class BridgeSettings(BaseSettings):
                 if isinstance(profile, dict)
                 and str(profile.get("agent_id") or "").strip()
                 and str(profile.get("capability") or "").strip()
+            }
+        agent_capabilities = payload.get("agent_capabilities")
+        if isinstance(agent_capabilities, dict):
+            allowed_agent_ids = {
+                str(item.get("agent_id") or "").strip()
+                for item in agent_capabilities.values()
+                if isinstance(item, dict)
+                and "workspace_execution"
+                in [str(mode) for mode in (item.get("execution_modes") or [])]
+            }
+            allowed_agent_ids.discard("")
+            # role_agent_map covers canonical roles plus aliases (e.g. data-steward),
+            # so alias identities inherit the canonical agent's declaration.
+            self.discovered_workspace_execution_identities = {
+                identity
+                for identity, agent_id in self.discovered_role_agent_map.items()
+                if agent_id in allowed_agent_ids
             }
 
     def quality_gate_for_flow(self, flow_id: str) -> bool:

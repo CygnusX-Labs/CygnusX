@@ -119,6 +119,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '我的 Agent 能力', requiresAuth: true }
       },
       {
+        path: 'agent-teams/room',
+        name: 'agent-teams-room',
+        component: () => import('@/views/AgentTeamsRoomView.vue'),
+        meta: { title: '团队协作室', requiresAuth: true, fullscreen: true, autoCollapseSidebar: true }
+      },
+      {
         path: 'agent-teams/cases/:caseId',
         name: 'agent-teams-case',
         component: () => import('@/views/AgentTeamsCaseView.vue'),

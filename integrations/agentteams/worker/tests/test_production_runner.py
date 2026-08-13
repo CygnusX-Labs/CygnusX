@@ -107,7 +107,7 @@ def test_production_worker_loads_profile_from_bridge(monkeypatch) -> None:
 
     monkeypatch.setattr(production_runner, "urlopen", lambda *_args, **_kwargs: Response())
 
-    assert production_runner.load_worker_profile(config) == ("agent-atacseq", "interpretation")
+    assert production_runner.load_worker_profile(config) == ("agent-atacseq", "interpretation", ())
 
 
 def test_production_worker_claims_and_uses_bridge_execution(monkeypatch) -> None:
@@ -138,7 +138,7 @@ def test_production_worker_claims_and_uses_bridge_execution(monkeypatch) -> None
 
     monkeypatch.setattr(production_runner, "claim_next", fake_claim)
     monkeypatch.setattr(
-        production_runner, "load_worker_profile", lambda _config: ("agent-code", "planning_advice")
+        production_runner, "load_worker_profile", lambda _config: ("agent-code", "planning_advice", ())
     )
     monkeypatch.setattr(production_runner, "heartbeat_work_item", fake_heartbeat)
     monkeypatch.setattr(production_runner, "execute_readonly_work_item", fake_execute)
@@ -166,7 +166,9 @@ def test_production_worker_forwards_workspace_execution_mode(monkeypatch) -> Non
         production_runner, "claim_next", lambda *_args, **_kwargs: {"assignment": assignment}
     )
     monkeypatch.setattr(
-        production_runner, "load_worker_profile", lambda _config: ("agent-code", "planning_advice")
+        production_runner,
+        "load_worker_profile",
+        lambda _config: ("agent-code", "planning_advice", ("workspace_execution",)),
     )
     monkeypatch.setattr(production_runner, "heartbeat_work_item", lambda *_args, **_kwargs: {})
     observed = {}
@@ -259,7 +261,7 @@ def test_production_worker_forwards_evidence_refs_and_readonly_tools(monkeypatch
         production_runner, "claim_next", lambda *_args, **_kwargs: {"assignment": assignment}
     )
     monkeypatch.setattr(
-        production_runner, "load_worker_profile", lambda _config: ("agent-qc", "quality-gate")
+        production_runner, "load_worker_profile", lambda _config: ("agent-qc", "quality-gate", ())
     )
     monkeypatch.setattr(production_runner, "heartbeat_work_item", lambda *_args, **_kwargs: {})
     observed = {}
@@ -275,3 +277,159 @@ def test_production_worker_forwards_evidence_refs_and_readonly_tools(monkeypatch
 
     assert observed["evidence_refs"] == ["task:task-1", "file:reports/qc.tsv"]
     assert set(observed["requested_tools"]) == set(production_runner._EVIDENCE_TOOLS)
+
+
+def test_production_worker_uses_file_scheme_for_uuid_file_refs(monkeypatch) -> None:
+    assignment = {
+        "case_id": "case-1",
+        "work_item": {
+            "work_item_id": "plan-01",
+            "objective": "Plan analysis.",
+            "context_refs": [
+                {"kind": "file", "id": "cb79a200-b2ca-441f-9a42-d3417fbfa89d"},
+            ],
+        },
+    }
+    monkeypatch.setattr(
+        production_runner, "claim_next", lambda *_args, **_kwargs: {"assignment": assignment}
+    )
+    monkeypatch.setattr(
+        production_runner, "load_worker_profile", lambda _config: ("agent-code", "planning_advice", ())
+    )
+    monkeypatch.setattr(production_runner, "heartbeat_work_item", lambda *_args, **_kwargs: {})
+    observed = {}
+    monkeypatch.setattr(
+        production_runner,
+        "execute_readonly_work_item",
+        lambda *_args, **kwargs: observed.update(kwargs) or {"status": "completed"},
+    )
+
+    production_runner.run_once(
+        production_runner.ProductionWorkerConfig("http://bridge", "agent-code", "token", 1)
+    )
+
+    assert observed["evidence_refs"] == ["file://cb79a200-b2ca-441f-9a42-d3417fbfa89d"]
+
+
+def test_production_worker_profile_exposes_declared_execution_modes(monkeypatch) -> None:
+    config = production_runner.ProductionWorkerConfig(
+        "http://bridge:8080/v1", "agent-rnaseq", "token", 1
+    )
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return (
+                b'{"worker_profiles":{"agent-rnaseq":{"agent_id":"agent-rnaseq","capability":"interpretation"}},'
+                b'"role_aliases":{"data-steward":"agent-data"},'
+                b'"agent_capabilities":{"agent-rnaseq":{"agent_id":"agent-rnaseq",'
+                b'"execution_modes":["readonly_consultation","workspace_execution"]}}}'
+            )
+
+    monkeypatch.setattr(production_runner, "urlopen", lambda *_args, **_kwargs: Response())
+
+    assert production_runner.load_worker_profile(config) == (
+        "agent-rnaseq",
+        "interpretation",
+        ("readonly_consultation", "workspace_execution"),
+    )
+
+
+def test_production_worker_profile_resolves_alias_execution_modes(monkeypatch) -> None:
+    config = production_runner.ProductionWorkerConfig(
+        "http://bridge:8080/v1", "data-steward", "token", 1
+    )
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return (
+                b'{"worker_profiles":{"data-steward":{"agent_id":"agent-data","capability":"project-preflight"}},'
+                b'"role_aliases":{"data-steward":"agent-data"},'
+                b'"agent_capabilities":{"agent-data":{"agent_id":"agent-data",'
+                b'"execution_modes":["readonly_consultation","workspace_execution"]}}}'
+            )
+
+    monkeypatch.setattr(production_runner, "urlopen", lambda *_args, **_kwargs: Response())
+
+    assert production_runner.load_worker_profile(config) == (
+        "agent-data",
+        "project-preflight",
+        ("readonly_consultation", "workspace_execution"),
+    )
+
+
+def test_production_worker_allows_workspace_execution_for_declared_identity(monkeypatch) -> None:
+    assignment = {
+        "case_id": "case-1",
+        "work_item": {
+            "work_item_id": "exec-02",
+            "objective": "Run the RNA-seq QC notebook.",
+            "execution_mode": "workspace_execution",
+        },
+    }
+    monkeypatch.setattr(
+        production_runner, "claim_next", lambda *_args, **_kwargs: {"assignment": assignment}
+    )
+    monkeypatch.setattr(
+        production_runner,
+        "load_worker_profile",
+        lambda _config: (
+            "agent-rnaseq",
+            "interpretation",
+            ("readonly_consultation", "workspace_execution"),
+        ),
+    )
+    monkeypatch.setattr(production_runner, "heartbeat_work_item", lambda *_args, **_kwargs: {})
+    observed = {}
+    monkeypatch.setattr(
+        production_runner,
+        "execute_readonly_work_item",
+        lambda *_args, **kwargs: observed.update(kwargs) or {"status": "completed"},
+    )
+
+    production_runner.run_once(
+        production_runner.ProductionWorkerConfig("http://bridge", "agent-rnaseq", "token", 1)
+    )
+
+    assert observed["capability"] == "workspace_execution"
+    assert observed["execution_mode"] == "workspace_execution"
+
+
+def test_production_worker_rejects_workspace_execution_without_declaration(monkeypatch) -> None:
+    assignment = {
+        "case_id": "case-1",
+        "work_item": {
+            "work_item_id": "exec-03",
+            "objective": "Run the QC notebook.",
+            "execution_mode": "workspace_execution",
+        },
+    }
+    monkeypatch.setattr(
+        production_runner, "claim_next", lambda *_args, **_kwargs: {"assignment": assignment}
+    )
+    monkeypatch.setattr(
+        production_runner,
+        "load_worker_profile",
+        lambda _config: ("agent-qc", "quality-gate", ("readonly_consultation",)),
+    )
+    monkeypatch.setattr(production_runner, "heartbeat_work_item", lambda *_args, **_kwargs: {})
+
+    try:
+        production_runner.run_once(
+            production_runner.ProductionWorkerConfig("http://bridge", "agent-qc", "token", 1)
+        )
+    except RuntimeError as exc:
+        assert "agent-qc" in str(exc)
+    else:
+        raise AssertionError("workspace_execution was accepted without a registry declaration")

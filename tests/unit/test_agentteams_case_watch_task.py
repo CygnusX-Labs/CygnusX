@@ -148,3 +148,136 @@ async def test_stale_task_watch_runs_service_and_releases_lock(monkeypatch) -> N
 
     assert result["requeued"] == 1
     assert len(redis.release_calls) == 1
+
+
+class FakeAutoConfirmRedis(FakeRedis):
+    def __init__(self, marked=(), acquired: bool = True) -> None:
+        super().__init__(acquired=acquired)
+        self.marked = set(marked)
+        self.srem_calls: list[str] = []
+
+    async def smembers(self, _key):
+        return set(self.marked)
+
+    async def srem(self, _key, member):
+        self.srem_calls.append(member)
+        self.marked.discard(member)
+        return 1
+
+
+class _FakeAutoConfirmService:
+    def __init__(self, pending=(), details=None, fail_on=(), available: bool = True) -> None:
+        self.available = available
+        self._pending = list(pending)
+        self._details = dict(details or {})
+        self._fail_on = set(fail_on)
+        self.approve_calls: list[tuple[str, str, str]] = []
+
+    async def admin_list_cases_by_status(self, case_status, *, limit=100):
+        assert case_status == "approval_pending"
+        return self._pending
+
+    async def admin_get_case(self, case_id):
+        return self._details[case_id]
+
+    async def approve_and_submit_task(self, *, case_id, requester_ref, task_name):
+        self.approve_calls.append((case_id, requester_ref, task_name))
+        if case_id in self._fail_on:
+            raise RuntimeError("bridge approval error")
+        return {"ok": True}
+
+
+class _NoopSession:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return False
+
+
+def _install_fake_service(monkeypatch, service) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(
+        "omichub.application.services.agentteams_bridge_settings_service.AgentTeamsBridgeSettingsService",
+        lambda *_a, **_k: SimpleNamespace(get_runtime_config=AsyncMock(return_value=None)),
+    )
+    monkeypatch.setattr(
+        "omichub.application.services.agentteams_service.AgentTeamsService",
+        lambda *_a, **_k: service,
+    )
+
+
+@pytest.mark.asyncio
+async def test_auto_confirm_skips_when_another_worker_holds_lock() -> None:
+    redis = FakeAutoConfirmRedis(marked={"case-1"}, acquired=False)
+
+    result = await task_module._auto_confirm_cases_with_factory(
+        lambda: lambda: _NoopSession(), redis_getter=lambda: redis
+    )
+
+    assert result == {"status": "skipped_locked"}
+    assert redis.release_calls == []
+
+
+@pytest.mark.asyncio
+async def test_auto_confirm_noop_when_marked_set_is_empty(monkeypatch) -> None:
+    redis = FakeAutoConfirmRedis()
+
+    result = await task_module._auto_confirm_cases_with_factory(
+        lambda: lambda: _NoopSession(), redis_getter=lambda: redis
+    )
+
+    assert result == {"status": "ok", "marked": 0, "confirmed": 0, "skipped": 0, "failed": 0}
+    assert len(redis.release_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_auto_confirm_confirms_only_general_pending_cases(monkeypatch) -> None:
+    service = _FakeAutoConfirmService(
+        pending=[
+            {"case_id": "case-general", "requester_ref": "user-a", "flow_id": None},
+            {"case_id": "case-flow", "requester_ref": "user-b", "flow_id": "rna_seq"},
+            {"case_id": "case-fail", "requester_ref": "user-c", "flow_id": None},
+        ],
+        details={
+            "case-planning": {"status": "planning_running"},
+            "case-closed": {"status": "closed"},
+        },
+        fail_on={"case-fail"},
+    )
+    _install_fake_service(monkeypatch, service)
+    redis = FakeAutoConfirmRedis(
+        marked={"case-general", "case-flow", "case-fail", "case-planning", "case-closed"}
+    )
+
+    result = await task_module._auto_confirm_cases_with_factory(
+        lambda: lambda: _NoopSession(), redis_getter=lambda: redis
+    )
+
+    assert result == {"status": "ok", "marked": 5, "confirmed": 1, "skipped": 2, "failed": 1}
+    # 仅通用 Case 进入自动确认（失败隔离不影响其他 Case），以 Case 自身 requester_ref 走既有审批链路
+    assert service.approve_calls == [
+        ("case-fail", "user-c", "auto-ase-fail"),
+        ("case-general", "user-a", "auto--general"),
+    ]
+    # 已确认 / 流程型防御 / 终态 → 清理标记；前置状态保留标记等待下一轮
+    assert sorted(redis.srem_calls) == ["case-closed", "case-flow", "case-general"]
+    assert redis.marked == {"case-fail", "case-planning"}
+    assert len(redis.release_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_auto_confirm_skips_when_bridge_unavailable(monkeypatch) -> None:
+    service = _FakeAutoConfirmService(available=False)
+    _install_fake_service(monkeypatch, service)
+    redis = FakeAutoConfirmRedis(marked={"case-1"})
+
+    result = await task_module._auto_confirm_cases_with_factory(
+        lambda: lambda: _NoopSession(), redis_getter=lambda: redis
+    )
+
+    assert result == {"status": "skipped_unavailable"}
+    assert redis.marked == {"case-1"}
+    assert len(redis.release_calls) == 1

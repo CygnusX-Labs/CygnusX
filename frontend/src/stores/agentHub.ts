@@ -2699,6 +2699,9 @@ export const useAgentHubStore = defineStore('agentHub', () => {
 
   /** 退回待审批工具（理由回灌 LLM 让其修改后重试） */
   async function rejectToolCall(approvalId: string, reason?: string): Promise<void> {
+    if (!isStreaming.value) {
+      throw new Error('APPROVAL_STREAM_INACTIVE')
+    }
     const tc = findApprovalTool(approvalId)
     if (tc?.approval && tc.approval.status === 'pending') {
       tc.approval.status = 'rejected'
