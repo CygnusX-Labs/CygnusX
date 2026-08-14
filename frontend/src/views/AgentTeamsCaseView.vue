@@ -14,10 +14,12 @@ import {
   NIcon,
   NInput,
   NModal,
+  NSelect,
   NSpin,
   NSteps,
   NStep,
   NTag,
+  NText,
   NTimeline,
   NTimelineItem,
   NTooltip,
@@ -63,6 +65,15 @@ const manifest = ref<Record<string, unknown> | null>(null)
 const approvalConfirmed = ref(false)
 const submitForm = ref({
   task_name: '',
+})
+const qualityGateVisible = ref(false)
+const qualityGateSubmitting = ref(false)
+const qualityGateForm = ref({
+  task_id: '',
+  decision: 'manual_review' as 'passed' | 'blocked' | 'manual_review',
+  rule_version: 'demo-rna-qc-1.0',
+  summary: '',
+  evidence_refs: '',
 })
 let pollingTimer: ReturnType<typeof setInterval> | null = null
 let eventStreamAbort: AbortController | null = null
@@ -141,6 +152,13 @@ const nextStep = computed(() => {
   }
 })
 const canSubmit = computed(() => detail.value?.status === 'approval_pending')
+const canSubmitQualityGate = computed(() => {
+  const status = detail.value?.status
+  return (
+    ['quality_running', 'quality_blocked', 'remediation_pending'].includes(status || '') &&
+    (detail.value?.omic_task_ids.length || 0) > 0
+  )
+})
 const planShortHash = computed(() => detail.value?.plan_hash ? detail.value.plan_hash.slice(0, 12) : '')
 const eventLabel = (type: string) => ({
   'case.created': 'Case 已创建',
@@ -242,6 +260,52 @@ async function retryFailedCase() {
     message.error(cause?.response?.data?.detail || '重试排队失败，请核对错误摘要后再试。')
   } finally {
     retrying.value = false
+  }
+}
+
+function openQualityGate() {
+  if (!detail.value) return
+  qualityGateForm.value = {
+    task_id: detail.value.omic_task_ids.at(-1) || '',
+    decision: 'manual_review',
+    rule_version: 'demo-rna-qc-1.0',
+    summary: '',
+    evidence_refs: '',
+  }
+  qualityGateVisible.value = true
+}
+
+async function confirmQualityGate() {
+  if (!detail.value) return
+  const { decision, rule_version, summary, evidence_refs } = qualityGateForm.value
+  if (!rule_version.trim()) {
+    message.warning('请填写规则版本。')
+    return
+  }
+  if (!summary.trim()) {
+    message.warning('请填写质量结论摘要。')
+    return
+  }
+  qualityGateSubmitting.value = true
+  try {
+    const refs = evidence_refs
+      .split('\n')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+    await agentTeamsApi.submitQualityGate(detail.value.case_id, {
+      task_id: qualityGateForm.value.task_id || undefined,
+      decision,
+      rule_version: rule_version.trim(),
+      summary: summary.trim(),
+      evidence_refs: refs,
+    })
+    qualityGateVisible.value = false
+    message.success('质量结论已提交。')
+    await refresh({ resetEvents: true })
+  } catch (cause: any) {
+    message.error(cause?.response?.data?.detail || '质量结论提交失败。')
+  } finally {
+    qualityGateSubmitting.value = false
   }
 }
 
@@ -505,7 +569,12 @@ onBeforeUnmount(() => {
                 </div>
                 <span v-else>尚未提交</span>
               </NDescriptionsItem>
-              <NDescriptionsItem label="质量结论">{{ detail.quality_decision || '尚未形成' }}</NDescriptionsItem>
+              <NDescriptionsItem label="质量结论">
+                <div class="quality-decision-line">
+                  <span>{{ detail.quality_decision || '尚未形成' }}</span>
+                  <NButton v-if="canSubmitQualityGate" size="tiny" type="primary" @click="openQualityGate">提交质量结论</NButton>
+                </div>
+              </NDescriptionsItem>
               <NDescriptionsItem label="计划短码">{{ planShortHash || '尚未冻结' }}</NDescriptionsItem>
               <NDescriptionsItem label="交付 Manifest">
                 <div v-if="detail.manifest_uri" class="manifest-actions">
@@ -539,6 +608,32 @@ onBeforeUnmount(() => {
     </NModal>
     <NModal v-model:show="manifestVisible" preset="card" title="交付 Manifest" :style="{ width: 'min(94vw, 760px)' }">
       <pre class="manifest-preview">{{ JSON.stringify(manifest, null, 2) }}</pre>
+    </NModal>
+    <NModal v-model:show="qualityGateVisible" preset="card" title="提交质量门禁结论" :style="{ width: 'min(92vw, 520px)' }" :mask-closable="!qualityGateSubmitting">
+      <NForm label-placement="top" @submit.prevent="confirmQualityGate">
+        <NFormItem label="关联任务" required>
+          <NSelect v-model:value="qualityGateForm.task_id" :options="detail?.omic_task_ids.map((id) => ({ label: id, value: id })) || []" placeholder="选择 OmicHub 任务" />
+        </NFormItem>
+        <NFormItem label="决策" required>
+          <NSelect v-model:value="qualityGateForm.decision" :options="[
+            { label: '通过', value: 'passed' },
+            { label: '阻断', value: 'blocked' },
+            { label: '转人工复核', value: 'manual_review' },
+          ]" />
+        </NFormItem>
+        <NFormItem label="规则版本" required><NInput v-model:value="qualityGateForm.rule_version" placeholder="如 demo-rna-qc-1.0" /></NFormItem>
+        <NFormItem label="结论摘要" required>
+          <NInput v-model:value="qualityGateForm.summary" type="textarea" :rows="3" placeholder="说明质量审查依据与结论" />
+        </NFormItem>
+        <NFormItem label="证据引用（每行一个，格式 kind:id）">
+          <NInput v-model:value="qualityGateForm.evidence_refs" type="textarea" :rows="3" placeholder="例如：task:abc-123" />
+          <template #feedback><NText depth="3">每行一个引用，格式为 kind:id；留空则仅提交决策。</NText></template>
+        </NFormItem>
+        <div class="submit-actions">
+          <NButton :disabled="qualityGateSubmitting" @click="qualityGateVisible = false">取消</NButton>
+          <NButton type="primary" attr-type="submit" :loading="qualityGateSubmitting">提交结论</NButton>
+        </div>
+      </NForm>
     </NModal>
   </main>
 </template>
@@ -575,6 +670,7 @@ onBeforeUnmount(() => {
 .manifest-buttons, .task-links { display: flex; flex-wrap: wrap; gap: 8px; }
 .manifest-uri { overflow-wrap: anywhere; color: var(--text-secondary); font-size: 12px; }
 .manifest-preview { max-height: 60vh; overflow: auto; margin: 0; padding: 12px; border-radius: 8px; background: var(--surface-color-soft); color: var(--text-secondary); font: 12px/1.6 ui-monospace, monospace; white-space: pre-wrap; }
+.quality-decision-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 @media (max-width: 1024px) { .case-workbench { grid-template-columns: minmax(190px, 240px) minmax(0, 1fr); } .evidence-column { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 768px) { .case-workbench, .evidence-column { grid-template-columns: 1fr; } .overview-column, .timeline-column, .evidence-column { grid-column: auto; } }
 </style>

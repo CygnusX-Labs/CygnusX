@@ -64,6 +64,8 @@ features:
     mode: required_for_freshness
     # 仅声明基线（FRESHNESS_SEARCH_TRIGGERS）之外的领域增量词
     triggers: [方法更新, 软件版本]
+# 注意：tool_packs 中的 atacseq 工具包包含任务提交能力；在 AgentTeams Case 模式下，
+# workflow_submit 动作由 Bridge allowlist 与短期审批令牌收敛，禁止 Agent 直接绕过审批。
 tool_packs: [workspace, research, atacseq, memory, handoff, subagents, agentteams_case]
 handoff:
   allowed_targets: [agent-viz, agent-code, agent-general, agent-rnaseq]

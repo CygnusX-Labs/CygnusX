@@ -63,6 +63,7 @@ def test_production_gateway_accepts_dedicated_integration_token() -> None:
         "task_result_summary",
         "task_file_preview",
         "workspace_file_preview",
+        "workspace_read_file",
         "task_compare_metrics",
         "rule_threshold_lookup",
     }
@@ -136,6 +137,30 @@ def test_gateway_builds_policies_for_all_recruitable_agents_from_registry() -> N
     }
     assert "workspace_execution" in policies["agent-code"][0]
     assert "planning_advice" not in policies["agent-qc"][0]
+
+
+def test_discovered_and_static_policies_allow_workspace_read_file() -> None:
+    """动态发现策略会覆盖静态策略，两处都必须放行 workspace_read_file（工作区只读工具）。"""
+    static_policies = GatewaySettings().agent_policy_map()
+    for agent_id in ("agent-code", "agent-viz", "agent-data", "agent-qc", "agent-delivery"):
+        assert "workspace_read_file" in static_policies[agent_id][1], agent_id
+
+    settings = GatewaySettings()
+    settings.apply_capability_snapshot(
+        {
+            "agent_capabilities": {
+                "agent-code": {
+                    "agent_id": "agent-code",
+                    "recruitable": True,
+                    "planner_eligible": True,
+                    "worker_capability": "agent-code-capability",
+                    "execution_modes": ["workspace_execution"],
+                }
+            }
+        }
+    )
+    discovered = settings.agent_policy_map()
+    assert "workspace_read_file" in discovered["agent-code"][1]
 
 
 def test_allowlisted_agent_returns_fixed_schema_and_strips_raw_response(

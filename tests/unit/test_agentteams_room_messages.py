@@ -16,7 +16,6 @@ from omichub.api.v1.agentteams import (
     post_case_message,
 )
 from omichub.application.services.agentteams_service import (
-    AUTO_CONFIRM_CASES_KEY,
     CASE_LEVEL_WORK_ITEM_ID,
     ROOM_MEMBER_IDENTITIES,
     AgentTeamsService,
@@ -314,7 +313,7 @@ class FakeRedis:
 
 
 @pytest.mark.asyncio
-async def test_create_case_chat_style_injects_workspace_and_marks_auto_confirm(
+async def test_create_case_chat_style_injects_workspace_without_auto_confirm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user_id = uuid4()
@@ -331,7 +330,8 @@ async def test_create_case_chat_style_injects_workspace_and_marks_auto_confirm(
     assert response == {"case_id": "bioops_chat"}
     kwargs = service.create_case.await_args.kwargs
     assert kwargs["context_refs"] == [{"kind": "workspace", "id": str(user_id)}]
-    assert redis.sadd_calls == [(AUTO_CONFIRM_CASES_KEY, "bioops_chat")]
+    # 聊天式 Case 改为房间内人工确认，不再写入自动确认集合
+    assert redis.sadd_calls == []
 
 
 @pytest.mark.asyncio
@@ -367,7 +367,7 @@ async def test_create_case_flow_case_skips_injection_and_auto_confirm(
 
 
 @pytest.mark.asyncio
-async def test_create_case_general_case_keeps_explicit_context_and_marks_auto_confirm(
+async def test_create_case_general_case_keeps_explicit_context_without_auto_confirm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user_id = uuid4()
@@ -386,7 +386,8 @@ async def test_create_case_general_case_keeps_explicit_context_and_marks_auto_co
 
     kwargs = service.create_case.await_args.kwargs
     assert kwargs["context_refs"] == [{"kind": "file", "id": "file-1"}]
-    assert redis.sadd_calls == [(AUTO_CONFIRM_CASES_KEY, "bioops_gen")]
+    # 通用 Case 同样走人工确认，不写入自动确认集合
+    assert redis.sadd_calls == []
 
 
 @pytest.mark.asyncio

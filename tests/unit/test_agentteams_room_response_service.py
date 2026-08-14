@@ -102,13 +102,15 @@ def _agentteams(
     *,
     status: str = "executing",
     events: list[dict] | None = None,
+    case_overrides: dict | None = None,
 ) -> SimpleNamespace:
+    case = {"case_id": "bioops_1", "intent": "RNA-seq 差异分析", "status": status}
+    case.update(case_overrides or {})
     return SimpleNamespace(
-        get_case=AsyncMock(
-            return_value={"case_id": "bioops_1", "intent": "RNA-seq 差异分析", "status": status}
-        ),
+        get_case=AsyncMock(return_value=case),
         get_case_events=AsyncMock(return_value={"events": events or [], "next_cursor": None}),
         post_case_evidence=AsyncMock(return_value={"event_id": "evt-reply"}),
+        start_chat_planning=AsyncMock(return_value=None),
     )
 
 
@@ -302,6 +304,107 @@ async def test_manager_agent_falls_back_to_planner_eligible(monkeypatch) -> None
 
 def test_lock_key_namespaced_per_case() -> None:
     assert ROOM_RESPONSE_LOCK_KEY_PREFIX == "agentteams:room-response:lock:"
+
+
+_EXECUTION_EVENTS = [
+    {
+        "event_type": "room.user_message",
+        "payload": {
+            "summary": "对这个 treefile 进行可视化并解释",
+            "payload": {
+                "actor": "user-a",
+                "content": "对这个 treefile 进行可视化并解释",
+                "context_refs": [
+                    {
+                        "kind": "file",
+                        "id": "tree-1",
+                        "location": "workspace/chat-uploads/example.treefile",
+                    }
+                ],
+            },
+        },
+    }
+]
+
+
+@pytest.mark.asyncio
+async def test_execution_intent_starts_chat_planning_and_still_responds(monkeypatch) -> None:
+    """执行意图 + received + 无 flow + 无 plan-01 → 触发规划，Manager 回复照常。"""
+    agentteams = _agentteams(status="received", events=_EXECUTION_EVENTS)
+    run = AsyncMock(return_value=ConsultationEnvelope(conclusion="已为你启动可视化流水线。"))
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+
+    result = await _service(
+        agentteams=agentteams, registry=_registry("agent-general"), redis=FakeRedis()
+    ).respond("bioops_1", "user-a", "对这个 treefile 进行可视化并解释")
+
+    assert result == {"status": "responded"}
+    agentteams.start_chat_planning.assert_awaited_once()
+    trigger = agentteams.start_chat_planning.await_args.kwargs
+    assert trigger["case_id"] == "bioops_1"
+    assert trigger["requester_ref"] == "user-a"
+    assert "对这个 treefile 进行可视化并解释" in trigger["objective"]
+    assert "work_items" in trigger["objective"]
+    assert trigger["context_refs"] == [
+        {"kind": "file", "id": "tree-1", "location": "workspace/chat-uploads/example.treefile"}
+    ]
+    question = run.await_args.kwargs["question"]
+    assert "计划冻结后会在房间内请求你确认" in question
+    # 触发后 prompt 中的 Case 状态应反映已推进的 planning_running
+    assert "Case 当前状态：planning_running" in question
+    event_types = [call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list]
+    assert event_types == ["room.typing", "room.agent_message", "room.typing"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("content", "status", "case_overrides"),
+    [
+        # 非执行意图
+        ("你好", "received", {}),
+        # 有 flow_id 的 Case 走人工审批链路，绝不自动触发
+        ("对这个 treefile 进行可视化并解释", "received", {"flow_id": "rna_seq"}),
+        # 状态非 received
+        ("对这个 treefile 进行可视化并解释", "planning_running", {}),
+        # 已有 plan-01 工作项
+        (
+            "对这个 treefile 进行可视化并解释",
+            "received",
+            {"work_items": [{"work_item_id": "plan-01"}]},
+        ),
+    ],
+)
+async def test_execution_intent_not_triggered_when_gates_fail(
+    monkeypatch, content: str, status: str, case_overrides: dict
+) -> None:
+    agentteams = _agentteams(status=status, events=_EXECUTION_EVENTS, case_overrides=case_overrides)
+    monkeypatch.setattr(
+        AgentConsultationService,
+        "run_consultation",
+        AsyncMock(return_value=ConsultationEnvelope(conclusion="好的。")),
+    )
+
+    result = await _service(
+        agentteams=agentteams, registry=_registry("agent-general"), redis=FakeRedis()
+    ).respond("bioops_1", "user-a", content)
+
+    assert result == {"status": "responded"}
+    agentteams.start_chat_planning.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execution_trigger_failure_does_not_break_manager_reply(monkeypatch) -> None:
+    agentteams = _agentteams(status="received", events=_EXECUTION_EVENTS)
+    agentteams.start_chat_planning = AsyncMock(side_effect=RuntimeError("bridge down"))
+    run = AsyncMock(return_value=ConsultationEnvelope(conclusion="稍后为你处理。"))
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+
+    result = await _service(
+        agentteams=agentteams, registry=_registry("agent-general"), redis=FakeRedis()
+    ).respond("bioops_1", "user-a", "对这个 treefile 进行可视化并解释")
+
+    assert result == {"status": "responded"}
+    assert "计划冻结后会在房间内请求你确认" not in run.await_args.kwargs["question"]
 
 
 def test_celery_task_delegates_to_async_impl(monkeypatch) -> None:

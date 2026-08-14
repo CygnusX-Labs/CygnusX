@@ -25,6 +25,10 @@ from omichub.application.services.agentteams_capability_registry import (
     AgentTeamsCapabilityRegistry,
     get_agentteams_capability_registry,
 )
+from omichub.application.services.agentteams_execution_intent import (
+    GENERAL_PLAN_CONTRACT,
+    detect_execution_intent,
+)
 from omichub.application.services.agentteams_service import (
     CASE_LEVEL_WORK_ITEM_ID,
     AgentTeamsService,
@@ -96,8 +100,26 @@ class AgentTeamsRoomResponseService:
             event_items = [
                 item for item in events.get("events", []) if isinstance(item, dict)
             ]
+            execution_started = await self._maybe_start_chat_execution(
+                case_id=case_id,
+                requester_ref=requester_ref,
+                case=case,
+                events=event_items,
+                content=content,
+            )
             preferences = await self._manager_preferences(requester_ref)
-            question = self._build_question(case, event_items, content, preferences)
+            # 触发成功后 Bridge 侧已推进到 planning_running；用拷贝覆盖快照状态，
+            # 避免 Manager 按触发前的 received 快照作答。
+            question_case = (
+                {**case, "status": "planning_running"} if execution_started else case
+            )
+            question = self._build_question(
+                question_case,
+                event_items,
+                content,
+                preferences,
+                execution_started=execution_started,
+            )
             agent_id = self._manager_agent_id()
             if agent_id is None:
                 logger.bind(case_id=case_id).warning(
@@ -137,6 +159,50 @@ class AgentTeamsRoomResponseService:
         except Exception as exc:  # noqa: BLE001 - 响应失败不得影响用户发言主流程
             logger.bind(case_id=case_id).warning("AgentTeams room response failed: {}", exc)
             return {"status": "failed"}
+
+    async def _maybe_start_chat_execution(
+        self,
+        *,
+        case_id: str,
+        requester_ref: str,
+        case: dict[str, Any],
+        events: list[dict[str, Any]],
+        content: str,
+    ) -> bool:
+        """聊天式 Case 命中执行意图时自动启动 planning；返回是否已触发。
+
+        仅对无 flow_id、仍处于 received、且尚无 plan-01 的 Case 生效——flow 型
+        Case 的人工审批链路绝不旁路。触发失败只记日志，不影响 Manager 回复。
+        """
+        if case.get("flow_id") or case.get("status") != "received":
+            return False
+        work_items = case.get("work_items")
+        if isinstance(work_items, list) and any(
+            isinstance(item, dict) and item.get("work_item_id") == "plan-01"
+            for item in work_items
+        ):
+            return False
+        refs = self._latest_message_context_refs(events, content)
+        if not detect_execution_intent(content, refs):
+            return False
+        # Bridge objective 上限 1000 字符：用户原话截断后附通用计划契约尾段。
+        objective = f"{content.strip()[:600]}\n\n{GENERAL_PLAN_CONTRACT}"
+        try:
+            await self._agentteams.start_chat_planning(
+                case_id=case_id,
+                requester_ref=requester_ref,
+                objective=objective,
+                context_refs=refs,
+            )
+        except Exception as exc:  # noqa: BLE001 - 触发失败不得影响回复主流程
+            logger.bind(case_id=case_id).warning(
+                "AgentTeams chat execution trigger failed: {}", exc
+            )
+            return False
+        logger.bind(case_id=case_id).info(
+            "AgentTeams chat execution intent detected, planning started"
+        )
+        return True
 
     async def _set_typing(self, case_id: str, *, typing: bool) -> None:
         """落 ``room.typing`` 瞬时事件驱动房间页"正在输入"指示；失败仅记日志。
@@ -194,16 +260,10 @@ class AgentTeamsRoomResponseService:
         return dict(payload) if isinstance(payload, dict) else {}
 
     @classmethod
-    def _build_question(
-        cls,
-        case: dict[str, Any],
-        events: list[dict[str, Any]],
-        fallback_content: str,
-        preferences: dict[str, Any] | None = None,
-    ) -> str:
-        preferences = preferences or {}
-        latest_user_message = fallback_content.strip()
-        matching_context_refs: list[str] = []
+    def _latest_message_context_refs(
+        cls, events: list[dict[str, Any]], latest_content: str
+    ) -> list[dict[str, Any]]:
+        """取本条 room.user_message 事件携带的 context_refs（供意图判定与 prompt 复用）。"""
         for event in reversed(events):
             if event.get("event_type") != "room.user_message":
                 continue
@@ -211,17 +271,31 @@ class AgentTeamsRoomResponseService:
             inner_raw = payload.get("payload")
             inner = dict(inner_raw) if isinstance(inner_raw, dict) else {}
             event_content = str(inner.get("content") or payload.get("summary") or "").strip()
-            if event_content != latest_user_message:
+            if event_content != latest_content:
                 continue
             refs = inner.get("context_refs")
-            if isinstance(refs, list):
-                for ref in refs:
-                    if not isinstance(ref, dict):
-                        continue
-                    location = str(ref.get("location") or ref.get("id") or "").strip()
-                    if location:
-                        matching_context_refs.append(location[:300])
-            break
+            if not isinstance(refs, list):
+                return []
+            return [dict(ref) for ref in refs if isinstance(ref, dict)]
+        return []
+
+    @classmethod
+    def _build_question(
+        cls,
+        case: dict[str, Any],
+        events: list[dict[str, Any]],
+        fallback_content: str,
+        preferences: dict[str, Any] | None = None,
+        *,
+        execution_started: bool = False,
+    ) -> str:
+        preferences = preferences or {}
+        latest_user_message = fallback_content.strip()
+        matching_context_refs: list[str] = []
+        for ref in cls._latest_message_context_refs(events, latest_user_message):
+            location = str(ref.get("location") or ref.get("id") or "").strip()
+            if location:
+                matching_context_refs.append(location[:300])
         recent_lines: list[str] = []
         for event in events[-_CONTEXT_EVENT_SUMMARY_LINES:]:
             payload = cls._payload_dict(event)
@@ -258,4 +332,11 @@ class AgentTeamsRoomResponseService:
             f"最近房间动态：\n{context_block}\n"
             f"本条发言引用文件：{refs_block}\n"
             f"请求人最新发言：{latest_user_message}"
+            + (
+                "\n系统已为该请求启动规划流水线；计划冻结后会在房间内请求你确认，"
+                "确认后才会真实执行，产物将回传本房间。请据此作答，"
+                "不要再说需要用户自行去工作台执行。"
+                if execution_started
+                else ""
+            )
         )

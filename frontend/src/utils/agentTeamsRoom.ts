@@ -58,7 +58,7 @@ export interface RoomRoleMetadata {
 }
 
 const SYSTEM_SENDER: RoomSender = { name: '系统', avatar: '⚙️', color: '#64748b', role: 'worker' }
-const MANAGER_FALLBACK: RoomSender = { name: '协作经理', avatar: '🧭', color: '#4f8ef7', role: 'manager' }
+const MANAGER_FALLBACK: RoomSender = { name: 'Manager', avatar: '🧭', color: '#4f8ef7', role: 'manager' }
 const QC_FALLBACK: RoomSender = { name: '质量审计员', avatar: '🛡️', color: '#d97706', role: 'worker' }
 const USER_SENDER: RoomSender = { name: '我', avatar: '🧑‍💻', color: '#4f8ef7', role: 'manager' }
 
@@ -68,6 +68,18 @@ function pickString(payload: Record<string, unknown>, keys: string[]): string {
     if (typeof value === 'string' && value.trim()) return value.trim()
   }
   return ''
+}
+
+/**
+ * 聊天 Case 执行意图触发时，后端会在 objective 尾部拼接通用计划契约
+ * （以"请输出 proposed_submission"开头，见 agentteams_execution_intent.py）。
+ * 房间内只展示用户原话部分，契约 JSON 不外泄。
+ */
+const PLAN_CONTRACT_MARKER = '请输出 proposed_submission'
+
+function stripPlanContract(objective: string): string {
+  const index = objective.indexOf(PLAN_CONTRACT_MARKER)
+  return (index >= 0 ? objective.slice(0, index) : objective).trim()
 }
 
 function normalizeRole(role: string | undefined): 'manager' | 'worker' {
@@ -268,7 +280,7 @@ export function projectCaseEvent(
   if (event_type === 'work_item.assigned') {
     const target = pickString(body, ['target', 'assignee', 'role'])
     const targetName = target ? resolveRoomSender(target, metadata).name : '协作成员'
-    const objective = pickString(body, ['objective', 'skill_name'])
+    const objective = stripPlanContract(pickString(body, ['objective'])) || pickString(body, ['skill_name'])
     return {
       id: event_id,
       sender: SYSTEM_SENDER,
@@ -278,7 +290,8 @@ export function projectCaseEvent(
   }
 
   if (event_type === 'work_item.claimed' || event_type === 'work_item.running' || event_type === 'agent.started') {
-    const objective = pickString(body, ['objective', 'summary', 'skill_name'])
+    const objective =
+      stripPlanContract(pickString(body, ['objective', 'summary'])) || pickString(body, ['skill_name'])
     const workItemId = pickString(body, ['work_item_id'])
     return {
       id: event_id,
@@ -560,7 +573,9 @@ export function shouldStartNewRoomCase(
   contextRefs: Array<{ kind: string; id: string; location?: string }> = [],
 ): boolean {
   const normalizedIntent = currentIntent.toLowerCase()
-  const normalizedContent = content.toLowerCase()
+  // @ 引用会把文件路径（含 .treefile 后缀）替换进正文；先剥离 mention 路径再匹配关键词，
+  // 否则"引用任意 treefile + 可视化"这类普通发言几乎必中 treefile 标记而被误拆分。
+  const normalizedContent = content.toLowerCase().replace(/@\S+/g, ' ')
   if (PHYLOGENY_MARKERS.some((marker) => normalizedIntent.includes(marker))) return false
   const asksForPhylogeny = PHYLOGENY_MARKERS.some((marker) => normalizedContent.includes(marker))
   const asksForExecution = PHYLOGENY_ACTION_MARKERS.some((marker) => normalizedContent.includes(marker))

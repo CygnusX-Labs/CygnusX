@@ -69,6 +69,8 @@ features:
     mode: required_for_freshness
     # 通用时效词全部由运行时基线 FRESHNESS_SEARCH_TRIGGERS 覆盖，无需重复声明
     triggers: []
+# 注意：tool_packs 中的 rnaseq 工具包包含任务提交能力；在 AgentTeams Case 模式下，
+# workflow_submit 动作由 Bridge allowlist 与短期审批令牌收敛，禁止 Agent 直接绕过审批。
 tool_packs: [workspace, research, rnaseq, memory, handoff, subagents, agentteams_case]
 handoff:
   allowed_targets: [agent-viz, agent-code, agent-general, agent-atacseq]

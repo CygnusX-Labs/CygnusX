@@ -92,6 +92,14 @@ export interface AgentTeamsCaseRejectRequest {
   reason: string
 }
 
+export interface AgentTeamsQualityGateRequest {
+  task_id?: string
+  decision: 'passed' | 'blocked' | 'manual_review'
+  rule_version: string
+  summary: string
+  evidence_refs?: string[]
+}
+
 /** 房间 @ 引用的上下文（kind 与后端 AgentTeamsContextRef 对齐）。 */
 export type AgentTeamsContextRef = { kind: 'workspace' | 'file'; id: string; location?: string }
 
@@ -181,6 +189,9 @@ export const agentTeamsApi = {
   },
   async submitCase(caseId: string, payload: AgentTeamsCaseSubmitRequest): Promise<{ omic_task_id?: string; status: string }> {
     return (await apiClient.post(`/agent-teams/cases/${caseId}/submit`, payload)).data
+  },
+  async submitQualityGate(caseId: string, payload: AgentTeamsQualityGateRequest): Promise<{ case_id: string; task_id: string; decision: string; summary: string }> {
+    return (await apiClient.post(`/agent-teams/cases/${caseId}/quality-gate`, payload)).data
   },
   async rejectCase(caseId: string, payload: AgentTeamsCaseRejectRequest): Promise<AgentTeamsCase> {
     return (await apiClient.post<AgentTeamsCase>(`/agent-teams/cases/${caseId}/reject`, payload)).data

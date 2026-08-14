@@ -35,9 +35,10 @@ skills:
     request: "GET /tasks/{task_id}; GET /tasks/{task_id}/artifacts"
     failure_handling: "Use manual_review if no rule version is available."
     boundary: "Read-only; artifacts are logical omic:// references, never filesystem paths."
+  # delivery-pack: Bridge 契约层 Skill 名称；可执行实现见 data/ai/skill_marketplace/data-deliver；MAS 能力令牌见 data/ai/mas/agent_capabilities.yaml 的 delivery-manifest。
   delivery-pack:
     actor: delivery-reporter
-    request: "POST /cases/{case_id}/evidence"
+    request: "POST /cases/{case_id}/evidence"  # 可执行实现：data-deliver；MAS 能力令牌：delivery-manifest
     failure_handling: "Block delivery if required artifacts are absent."
     boundary: evidence_only
   scientific-interpretation:

@@ -690,6 +690,64 @@ async def test_submit_rejects_case_without_passed_preflight(
 
 
 @pytest.mark.asyncio
+async def test_submit_quality_gate_issues_worker_token_and_calls_bridge(
+    service: AgentTeamsService, monkeypatch
+) -> None:
+    requests: list[tuple[str, dict]] = []
+
+    async def fake_request(path: str, **kwargs):
+        requests.append((path, kwargs))
+        if path == "/v1/cases/bioops_001":
+            return {
+                "case_id": "bioops_001",
+                "requester_ref": "current-user",
+                "status": "quality_running",
+                "omic_task_ids": ["task-123"],
+            }
+        if path == "/v1/worker-tokens":
+            return {"token": "qa-token", "record": {"id": "token-id-1"}}
+        return {}
+
+    async def fake_request_as(identity: str, token: str, path: str, **kwargs):
+        requests.append((path, {"identity": identity, "token": token, **kwargs}))
+        return {"case_id": "bioops_001", "task_id": "task-123", "decision": "manual_review"}
+
+    monkeypatch.setattr(service, "_request", fake_request)
+    monkeypatch.setattr(service, "_request_as", fake_request_as)
+
+    result = await service.submit_quality_gate(
+        case_id="bioops_001",
+        requester_ref="current-user",
+        task_id=None,
+        decision="manual_review",
+        rule_version="demo-rna-qc-1.0",
+        summary="需要人工复核",
+        evidence_refs=[{"kind": "task", "id": "task-123"}],
+    )
+
+    assert result["decision"] == "manual_review"
+    assert requests[1] == (
+        "/v1/worker-tokens",
+        {"method": "POST", "json": {"identity": "quality-auditor", "ttl_seconds": 120, "note": "frontend quality gate submission"}},
+    )
+    assert requests[2] == (
+        "/v1/tasks/task-123/quality-gate",
+        {
+            "identity": "quality-auditor",
+            "token": "qa-token",
+            "method": "POST",
+            "json": {
+                "case_id": "bioops_001",
+                "rule_version": "demo-rna-qc-1.0",
+                "decision": "manual_review",
+                "summary": "需要人工复核",
+                "evidence_refs": [{"kind": "task", "id": "task-123"}],
+            },
+        },
+    )
+
+
+@pytest.mark.asyncio
 async def test_public_case_view_strips_internal_preflight_input(
     service: AgentTeamsService, monkeypatch
 ) -> None:
@@ -1067,3 +1125,78 @@ async def test_delete_case_rejects_other_requester(
 
     with pytest.raises(BusinessError, match="无权查看"):
         await service.delete_case("case-other", "current-user")
+
+
+@pytest.mark.asyncio
+async def test_start_chat_planning_creates_plan01_then_transitions_state(
+    service: AgentTeamsService, monkeypatch
+) -> None:
+    requests: list[tuple[str, dict]] = []
+
+    async def fake_request(path: str, **kwargs):
+        requests.append((path, kwargs))
+        return {}
+
+    monkeypatch.setattr(service, "_request", fake_request)
+
+    await service.start_chat_planning(
+        case_id="bioops_001",
+        requester_ref="user-1",
+        objective="对这个 treefile 进行可视化并解释\n\n请输出 proposed_submission，结构含 work_items",
+        context_refs=[{"kind": "file", "id": "tree-1"}],
+    )
+
+    assert [path for path, _ in requests] == [
+        "/v1/cases/bioops_001/work-items",
+        "/v1/cases/bioops_001/state",
+    ]
+    work_item = requests[0][1]["json"]
+    assert work_item["work_item_id"] == "plan-01"
+    assert work_item["target"] == "agent-code"
+    assert work_item["skill_name"] == "planning_advice"
+    assert work_item["read_only"] is True
+    assert work_item["context_refs"] == [{"kind": "file", "id": "tree-1"}]
+    assert "work_items" in work_item["objective"]
+    assert requests[1][1] == {
+        "method": "POST",
+        "json": {"status": "planning_running", "reason": "chat_execution_intent"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_start_chat_planning_falls_back_to_workspace_ref_when_no_refs(
+    service: AgentTeamsService, monkeypatch
+) -> None:
+    requests: list[tuple[str, dict]] = []
+
+    async def fake_request(path: str, **kwargs):
+        requests.append((path, kwargs))
+        return {}
+
+    monkeypatch.setattr(service, "_request", fake_request)
+
+    await service.start_chat_planning(
+        case_id="bioops_001",
+        requester_ref="user-1",
+        objective="把 result.csv 画成热图",
+        context_refs=[],
+    )
+
+    assert requests[0][1]["json"]["context_refs"] == [{"kind": "workspace", "id": "user-1"}]
+
+
+@pytest.mark.asyncio
+async def test_start_chat_planning_swallows_bridge_failure(
+    service: AgentTeamsService, monkeypatch
+) -> None:
+    async def failing_request(path: str, **kwargs):
+        raise BusinessError("Agent 协作中心暂时不可用")
+
+    monkeypatch.setattr(service, "_request", failing_request)
+
+    await service.start_chat_planning(
+        case_id="bioops_001",
+        requester_ref="user-1",
+        objective="把 result.csv 画成热图",
+        context_refs=[],
+    )

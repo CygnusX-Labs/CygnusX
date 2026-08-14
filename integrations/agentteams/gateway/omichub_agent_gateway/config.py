@@ -44,16 +44,16 @@ class GatewaySettings(BaseSettings):
     audit_log_path: str = "/tmp/omichub-agent-gateway-audit.jsonl"
     agent_policies: str = (
         "agent-rnaseq|interpretation,planning_advice,result_interpretation,qc_advice,workspace_execution|"
-        "ensembl.lookup_gene,ensembl.search_genes,task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
+        "ensembl.lookup_gene,ensembl.search_genes,task_result_summary,task_file_preview,workspace_file_preview,workspace_read_file,task_compare_metrics,rule_threshold_lookup;"
         "agent-scrna|interpretation,planning_advice,result_interpretation,qc_advice,workspace_execution|"
-        "ensembl.lookup_gene,ensembl.search_genes,task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
+        "ensembl.lookup_gene,ensembl.search_genes,task_result_summary,task_file_preview,workspace_file_preview,workspace_read_file,task_compare_metrics,rule_threshold_lookup;"
         "agent-viz|interpretation,result_interpretation,qc_advice,workspace_execution|"
-        "ensembl.lookup_gene,ensembl.search_genes,task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
+        "ensembl.lookup_gene,ensembl.search_genes,task_result_summary,task_file_preview,workspace_file_preview,workspace_read_file,task_compare_metrics,rule_threshold_lookup;"
         "agent-code|interpretation,planning_advice,result_interpretation,qc_advice,workspace_execution|"
-        "ensembl.lookup_gene,ensembl.search_genes,task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
-        "agent-data|project-preflight,workspace_execution|task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
-        "agent-qc|quality-gate,workspace_execution|task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup;"
-        "agent-delivery|delivery-pack,workspace_execution|task_result_summary,task_file_preview,workspace_file_preview,task_compare_metrics,rule_threshold_lookup"
+        "ensembl.lookup_gene,ensembl.search_genes,task_result_summary,task_file_preview,workspace_file_preview,workspace_read_file,task_compare_metrics,rule_threshold_lookup;"
+        "agent-data|project-preflight,workspace_execution|task_result_summary,task_file_preview,workspace_file_preview,workspace_read_file,task_compare_metrics,rule_threshold_lookup;"
+        "agent-qc|quality-gate,workspace_execution|task_result_summary,task_file_preview,workspace_file_preview,workspace_read_file,task_compare_metrics,rule_threshold_lookup;"
+        "agent-delivery|delivery-pack,workspace_execution|task_result_summary,task_file_preview,workspace_file_preview,workspace_read_file,task_compare_metrics,rule_threshold_lookup"
     )
     discovered_agent_policies: dict[str, tuple[set[str], set[str]]] = Field(
         default_factory=dict, exclude=True
@@ -118,6 +118,7 @@ class GatewaySettings(BaseSettings):
             "task_result_summary",
             "task_file_preview",
             "workspace_file_preview",
+            "workspace_read_file",
             "task_compare_metrics",
             "rule_threshold_lookup",
         }

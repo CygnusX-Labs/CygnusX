@@ -174,6 +174,14 @@ class AgentTeamsCaseRejectRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=512)
 
 
+class AgentTeamsQualityGateRequest(BaseModel):
+    task_id: str | None = Field(default=None, min_length=1, max_length=128)
+    decision: Literal["passed", "blocked", "manual_review"]
+    rule_version: str = Field(min_length=1, max_length=128)
+    summary: str = Field(min_length=1, max_length=4_000)
+    evidence_refs: list[str] = Field(default_factory=list, max_length=100)
+
+
 class AgentTeamsRoomMessageRequest(BaseModel):
     content: str = Field(min_length=1, max_length=4_000)
     # 房间 @ 引用的工作区文件，作为发言补充上下文写入审计 payload（只读引用）。
@@ -315,13 +323,17 @@ async def create_case(
         session.updated_at = datetime.now(UTC)
         await db.flush()
     await service.provision_case_room(str(case["case_id"]), requester_ref=current_user_id)
-    if chat_created:
-        await _mark_case_auto_confirm(str(case["case_id"]))
+    # 聊天式 Case 不再自动确认：计划冻结后由房间内审批卡人工确认（产品决策，
+    # 不依赖用户偏好 autonomy 默认值）。beat 的自动确认仅消费存量已标记 Case。
     return case
 
 
 async def _mark_case_auto_confirm(case_id: str) -> None:
-    """把聊天式创建的通用 Case 写入自动确认集合；Redis 异常时降级为人工审批。"""
+    """把聊天式创建的通用 Case 写入自动确认集合；Redis 异常时降级为人工审批。
+
+    当前已无调用点：新建聊天 Case 一律走房间内人工确认。函数与 beat 消费逻辑
+    保留以兼容存量已标记 Case，确认存量消化完毕后可随 beat 分支一并移除。
+    """
     try:
         redis = get_redis()
         # redis-py asyncio stub 将 sadd 标为 Awaitable[int] | int，此处必为协程。
@@ -485,6 +497,30 @@ async def reject_case(
     service: AgentTeamsServiceDep,
 ) -> dict[str, Any]:
     return await service.reject_case(case_id, current_user_id, request.reason)
+
+
+@router.post("/cases/{case_id}/quality-gate", summary="提交质量门禁结论")
+async def submit_quality_gate(
+    case_id: str,
+    request: AgentTeamsQualityGateRequest,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+) -> dict[str, Any]:
+    evidence_refs: list[dict[str, Any]] = []
+    for ref in request.evidence_refs:
+        kind, _, id_ = ref.partition(":")
+        if not kind or not id_:
+            raise HTTPException(status_code=400, detail=f"证据引用格式错误: {ref}")
+        evidence_refs.append({"kind": kind, "id": id_})
+    return await service.submit_quality_gate(
+        case_id=case_id,
+        requester_ref=current_user_id,
+        task_id=request.task_id,
+        decision=request.decision,
+        rule_version=request.rule_version,
+        summary=request.summary,
+        evidence_refs=evidence_refs,
+    )
 
 
 @router.post("/cases/{case_id}/cancel", summary="取消当前用户的协作案例")

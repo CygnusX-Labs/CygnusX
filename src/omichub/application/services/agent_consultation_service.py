@@ -337,8 +337,13 @@ class AgentConsultationService:
                 '{"conclusion":"非空结论","recommendations":[],"evidence_refs":[],"risks":[],'
                 '"token_usage":0,"proposed_submission":null,"artifacts":[],"hard_gate":null}。'
                 "evidence_refs 只允许填写本回合工具成功读取后产生的已核验引用。规划能力调用时 "
-                "proposed_submission 必须是可校验的 TaskSpec 参数对象，并显式填写 "
-                "quality_gate_required=true/false；只有 true 才会创建独立质控阶段。"
+                "proposed_submission 按 Case 类型输出：流程型 Case 输出可校验的 TaskSpec "
+                "参数对象；无 flow_id 的通用 Case 输出 "
+                '{"name": ..., "parameters": {"work_items": [{"work_item_id", "target", '
+                '"objective", "skill_name", "execution_mode": "workspace_execution", '
+                '"depends_on": []}]}, "quality_gate_required": bool}，target 限声明了 '
+                "workspace_execution 的 worker（如 agent-viz、agent-code）。"
+                "quality_gate_required 必须显式填写 true/false；只有 true 才会创建独立质控阶段。"
             )
         hard_gate_clause = (
             f"\n硬规则预判：{json.dumps(hard_gate, ensure_ascii=False)}\n"

@@ -12,12 +12,31 @@ temperature: 0.7
 max_tokens: 20000
 mcp_ids: []
 skill_ids:
-  # 通用生信工具技能（来源：pipelines/tools/skills/）
-  - blast
-  - genome-tools
+  # 通用生信工具技能（来源：pipelines/tools/skills/SKILLS_REGISTRY.md，全部 24 个已挂载）
   - atac-tools
+  - blast
+  - data-deliver
+  - deg
+  - dotplot
+  - enrichments
+  - fastq-screen
+  - gaf2go
+  - gene-matrix
+  - genome-tools
+  - gffconvert
+  - go-annotation
+  - kegg-pull
+  - library-type
+  - logger-plugin
   - maftools-gistic2
+  - md5
   - mutational-patterns
+  - r-plot-library
+  - rmats
+  - scrna-seq
+  - software-manager
+  - tissue-specific-genes
+  - wgcna
 features:
   internal_case_role: agent-general
   agentteams:

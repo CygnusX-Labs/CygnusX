@@ -42,6 +42,7 @@ agents:
 
   # --- BioOps 交付汇总（提示词/专用 Skill 待后续实现）---
   agent-delivery:
+    # delivery-manifest: MAS 能力令牌；对外 Bridge 契约层名称为 delivery-pack；可执行实现为 data-deliver
     - delivery-manifest
     - evidence-pack
     - runbook-capture
@@ -90,6 +91,22 @@ agents:
     - trajectory
     - cell-communication
     - annotation-review
+    - artifact-validate
+
+  # --- 云运维工程师 ---
+  agent-cloud-ops:
+    - platform-health
+    - cloud-server
+    - object-storage
+    - nas
+    - block-storage
+    - container-registry
+    - networking
+    - terraform
+    - slurm
+    - incident-response
+    - capacity-review
+    - change-plan
     - artifact-validate
 
   # --- 代码实现 ---

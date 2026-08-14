@@ -467,6 +467,92 @@ class AgentTeamsService:
             },
         )
 
+    async def submit_quality_gate(
+        self,
+        *,
+        case_id: str,
+        requester_ref: str,
+        task_id: str | None,
+        decision: str,
+        rule_version: str,
+        summary: str,
+        evidence_refs: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        case = await self._get_case_for_requester(case_id, requester_ref)
+        if not task_id:
+            omic_task_ids = case.get("omic_task_ids") or []
+            task_id = omic_task_ids[-1] if omic_task_ids else None
+        if not task_id:
+            raise BusinessError("当前协作 Case 没有可提交质量结论的任务")
+        token_response = await self.admin_issue_worker_token(
+            identity="quality-auditor",
+            ttl_seconds=120,
+            note="frontend quality gate submission",
+        )
+        token = str(token_response["token"])
+        token_id = str((token_response.get("record") or {}).get("id", ""))
+        try:
+            return await self._request_as(
+                "quality-auditor",
+                token,
+                f"/v1/tasks/{task_id}/quality-gate",
+                method="POST",
+                json={
+                    "case_id": case_id,
+                    "rule_version": rule_version,
+                    "decision": decision,
+                    "summary": summary,
+                    "evidence_refs": evidence_refs,
+                },
+            )
+        finally:
+            if token_id:
+                try:
+                    await self.admin_revoke_worker_token(token_id)
+                except BusinessError:
+                    pass
+
+    async def start_chat_planning(
+        self,
+        *,
+        case_id: str,
+        requester_ref: str,
+        objective: str,
+        context_refs: list[dict[str, str]],
+    ) -> None:
+        """聊天式 Case（无 flow_id）命中执行意图时启动 planning。
+
+        先创建 read_only 的 plan-01 规划工作项，再把 Case 推进到 planning_running。
+        顺序不可颠倒：Bridge 的 reconcile 会把没有 plan-01 的聊天 Case 从
+        planning_running 退回 received（chat_case_skips_auto_planning）。
+        失败仅记 warning，绝不影响房间回复主流程。
+        """
+        refs: list[dict[str, str]] = (
+            list(context_refs) if context_refs else [{"kind": "workspace", "id": requester_ref}]
+        )
+        try:
+            await self._request(
+                f"/v1/cases/{case_id}/work-items",
+                method="POST",
+                json={
+                    "work_item_id": "plan-01",
+                    "target": "agent-code",
+                    "objective": objective,
+                    "skill_name": "planning_advice",
+                    "context_refs": refs,
+                    "read_only": True,
+                },
+            )
+            await self._request(
+                f"/v1/cases/{case_id}/state",
+                method="POST",
+                json={"status": "planning_running", "reason": "chat_execution_intent"},
+            )
+        except Exception as exc:  # noqa: BLE001 - 触发失败不得影响房间回复主流程
+            logger.bind(case_id=case_id).warning(
+                "AgentTeams chat planning start failed: {}", exc
+            )
+
     async def get_case(self, case_id: str, requester_ref: str) -> dict[str, Any]:
         return self._public_case(await self._get_case_for_requester(case_id, requester_ref))
 

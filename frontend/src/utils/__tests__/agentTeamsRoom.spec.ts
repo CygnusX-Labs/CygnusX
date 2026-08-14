@@ -132,6 +132,26 @@ describe('projectCaseEvent', () => {
     expect(message).toMatchObject({ kind: 'system', content: 'Manager 将任务分派给 数据管理员：预检样本表' })
   })
 
+  it('strips the plan contract tail from work_item.assigned objectives', () => {
+    const objective =
+      '对这个 treefile 进行可视化并解释\n\n' +
+      '请输出 proposed_submission，结构为 {"name": "...", "parameters": {"work_items": []}}'
+    const message = projectCaseEvent(
+      makeEvent('work_item.assigned', { target: 'agent-code', objective }),
+      METADATA,
+    )
+    expect(message?.kind).toBe('system')
+    expect(message?.content).toContain('对这个 treefile 进行可视化并解释')
+    expect(message?.content).not.toContain('proposed_submission')
+  })
+
+  it('strips the plan contract tail from work_item.claimed objectives', () => {
+    const objective = '把 result.csv 画成热图\n\n请输出 proposed_submission，结构为 {...}'
+    const message = projectCaseEvent(makeEvent('work_item.claimed', { objective }, 'agent-viz'), METADATA)
+    expect(message?.kind).toBe('speech')
+    expect(message?.content).toBe('开始处理：把 result.csv 画成热图')
+  })
+
   it('projects work_item.claimed as worker card start', () => {
     const message = projectCaseEvent(makeEvent('work_item.claimed', { objective: '跑 QC' }, 'data-steward'), METADATA)
     expect(message).toMatchObject({ kind: 'speech', content: '开始处理：跑 QC' })
@@ -539,6 +559,14 @@ describe('shouldStartNewRoomCase', () => {
 
   it('does not fork a general question without a referenced tree file', () => {
     expect(shouldStartNewRoomCase('介绍一下 Manager 能做什么', '系统发育树一般怎么构建？', [])).toBe(false)
+  })
+
+  it('does not treat the @-mentioned file path itself as a phylogeny keyword', () => {
+    expect(shouldStartNewRoomCase(
+      'TnpD 系统发育树可视化',
+      '@workspace/chat-uploads/example.treefile 帮我对这个文件进行可视化并解释',
+      treeRef,
+    )).toBe(false)
   })
 })
 
