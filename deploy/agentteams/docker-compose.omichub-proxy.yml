@@ -11,16 +11,6 @@ services:
       - omichub_bridge_gateway
 
 networks:
-  app_net:
-    name: docker_app_net
-    external: true
-  data_net:
-    name: docker_data_net
-    external: true
-  omichub_net:
-    external: true
-  omichub-sandbox-net:
-    external: true
   omichub_bridge_gateway:
     external: true
     name: ${OMICHUB_BRIDGE_GATEWAY_NETWORK:-omichub_bridge_gateway}

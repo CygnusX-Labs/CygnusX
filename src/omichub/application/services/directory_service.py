@@ -31,7 +31,8 @@ from omichub.infrastructure.database.repositories import (
     DirectoryRepositoryImpl,
     FileRepositoryImpl,
 )
-from omichub.infrastructure.storage.path_factory import get_path_factory
+from omichub.infrastructure.storage import get_path_factory, get_storage_backend
+from omichub.infrastructure.storage.backend import StorageBackend
 
 # 系统默认目录：用户首次访问时懒初始化，锁定不可删除/重命名。
 # 与 file_service.SYSTEM_DIRECTORIES 保持同一来源，避免循环导入故在此重复声明。
@@ -48,11 +49,12 @@ SYSTEM_DIRECTORIES: tuple[str, ...] = (
 class DirectoryService:
     """用户目录 CRUD。"""
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, backend: StorageBackend | None = None):
         self._session = session
         self._dirs = DirectoryRepositoryImpl(session)
         self._files = FileRepositoryImpl(session)
         self._factory = get_path_factory()
+        self._backend = backend or get_storage_backend()
 
     # ------------------------------------------------------------------
     # 路径工具
@@ -65,7 +67,7 @@ class DirectoryService:
         parts = [p for p in d.split("/") if p not in ("", ".", "..")]
         return "/".join(parts)
 
-    def _ensure_user_system_subdir(self, user_id: UUID, name: str) -> Path:
+    async def _ensure_user_system_subdir(self, user_id: UUID, name: str) -> Path:
         """确保用户顶层系统子目录存在。"""
         uid = str(user_id)
         mapping = {
@@ -77,10 +79,10 @@ class DirectoryService:
             "temp": self._factory.user_root(uid) / "temp",
         }
         d = mapping.get(name) or (self._factory.user_root(uid) / name)
-        d.mkdir(parents=True, exist_ok=True)
+        await self._backend.ensure_dir(self._factory.relative_to_root(d))
         return d
 
-    def _inbox_subdir(self, user_id: UUID, directory: str) -> Path:
+    async def _inbox_subdir(self, user_id: UUID, directory: str) -> Path:
         """用户 inbox/ 下的指定子目录（自动创建）。"""
         normalized = self._normalize_directory(directory)
         if normalized == "inbox":
@@ -89,7 +91,7 @@ class DirectoryService:
             normalized = normalized.removeprefix("inbox/")
         base = self._factory.inbox_dir(str(user_id))
         target = base / normalized if normalized else base
-        target.mkdir(parents=True, exist_ok=True)
+        await self._backend.ensure_dir(self._factory.relative_to_root(target))
         return target
 
     # ------------------------------------------------------------------
@@ -112,7 +114,7 @@ class DirectoryService:
                 )
                 await self._dirs.save(directory)
                 created_any = True
-            self._ensure_user_system_subdir(user_id, name)
+            await self._ensure_user_system_subdir(user_id, name)
         if created_any:
             await self._session.commit()
 
@@ -165,7 +167,7 @@ class DirectoryService:
             parent_path=parent_path,
         )
         saved = await self._dirs.save(directory)
-        self._inbox_subdir(user_id, path)
+        await self._inbox_subdir(user_id, path)
         await self._session.commit()
         return DirectoryDTO(
             id=saved.id,

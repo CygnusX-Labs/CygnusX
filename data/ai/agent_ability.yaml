@@ -117,3 +117,10 @@ agents:
     not_suitable_for: [未经批准的外网访问, 直接部署未审查代码, 领域分析替代]
     handoff_when: [需求是领域分析而非工具构建, 需要云运维变更, 需要专项代码审查]
     preferred_inputs: [工具目标, API文档, 认证方式, 输入输出Schema, 允许域名, 安全约束]
+
+  agent-skill-builder:
+    summary: 把可复用任务样例沉淀成符合 OSDP 的 Skill 候选包，不直接提交或挂载。
+    capabilities: [Skill设计, OSDP合规, 触发条件提炼, 输入输出契约, 依赖分级, 候选包生成]
+    not_suitable_for: [直接修改 Agent 配置, 自动挂载技能, 未经评审的发布, 源码级复杂改造]
+    handoff_when: [需要写 wrapper 或环境排错, 需求仍模糊需要通用澄清, 任务超出 Skill 能力范围]
+    preferred_inputs: [任务样例, 对话或执行记录, 代码片段, 触发条件, 输入输出示例, 失败模式]

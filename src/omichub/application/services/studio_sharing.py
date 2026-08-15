@@ -7,6 +7,7 @@ import html
 import secrets
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,8 +18,10 @@ from omichub.application.schemas.studio import (
 )
 from omichub.core.exceptions import NotFoundError
 from omichub.infrastructure.database.models.chat import ChatMessageModel, ChatSessionModel
+from omichub.infrastructure.storage import get_path_factory, get_storage_backend
 from omichub.infrastructure.studio.manager import studio_sandbox_manager
-from omichub.infrastructure.studio.workspace import disk_list_artifacts
+from omichub.infrastructure.studio.paths import relative_workspace_path
+from omichub.infrastructure.studio.workspace import OUTPUT_DIR
 
 
 def share_token_hash(token: str) -> str:
@@ -85,7 +88,23 @@ async def build_shared_snapshot(
         if message.role in {"user", "assistant"} and message.content
     ]
     workspace = studio_sandbox_manager.workspace_dir(session.session_id)
-    artifacts = disk_list_artifacts(workspace) if workspace.exists() else []
+    factory = get_path_factory()
+    backend = get_storage_backend()
+    workspace_info = await backend.stat(factory.relative_to_root(workspace))
+    if workspace_info is None or not workspace_info.get("is_dir"):
+        artifacts: list[dict[str, Any]] = []
+    else:
+        out_rel = factory.relative_to_root(workspace / OUTPUT_DIR)
+        entries = await backend.list(out_rel, recursive=True)
+        artifacts = [
+            {
+                "path": relative_workspace_path(factory.data_root / entry["path"], workspace),
+                "size": entry["size"],
+                "mtime": entry["mtime"],
+            }
+            for entry in entries
+            if entry["type"] == "file"
+        ]
     return SharedStudioSessionDTO(
         title=session.title,
         agent_id=session.agent_id,

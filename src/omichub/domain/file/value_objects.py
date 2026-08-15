@@ -31,6 +31,16 @@ class FileSource(str, Enum):
     AI_CHAT = "ai_chat"
     SANDBOX = "sandbox"
     REPORT = "report"
+    STUDIO = "studio"
+    CHAT_SANDBOX = "chat_sandbox"
+    AGENTTEAMS = "agentteams"
+
+
+class OwnerScope(str, Enum):
+    """文件权属范围"""
+
+    PERSONAL = "personal"
+    TEAM = "team"
 
 
 class LifecycleStatus(str, Enum):

@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.core.exceptions import ValidationError
 from omichub.infrastructure.database.models.chat import ChatSessionModel
+from omichub.infrastructure.storage import get_path_factory, get_storage_backend
 from omichub.infrastructure.database.models.overdrive import (
     OverdriveCommandModel,
     OverdriveEventModel,
@@ -551,9 +552,13 @@ class OverdriveRunService:
         *,
         source_details: dict[str, dict[str, Any]] | None = None,
     ) -> None:
+        factory = get_path_factory()
+        backend = get_storage_backend()
         root = overdrive_run_root(run.session_id, run.run_id)
-        atomic_write_json(
-            root / "evidence.json",
+        await _async_atomic_write_json(
+            backend,
+            factory,
+            f"{factory.relative_to_root(root)}/evidence.json",
             {"sources": deepcopy(source_details or {}), "evidence": evidence},
         )
         grouped: dict[str, list[str]] = {key: [] for key in run.research}
@@ -662,7 +667,7 @@ class OverdriveRunService:
             raise ValidationError("计划版本已变化，请刷新后重新确认")
         if str(current_plan.get("hash") or "") != plan_digest:
             raise ValidationError("计划 hash 不匹配，请勿确认已变化的快照")
-        self._assert_plan_file_matches(run)
+        await self._assert_plan_file_matches(run)
         result: dict[str, Any]
         delivery: dict[str, Any] | None = None
         if action == "approve":
@@ -678,7 +683,7 @@ class OverdriveRunService:
             run.status = "COMPLETED" if planning_only else "SERIAL_PREFLIGHT"
             if planning_only:
                 run.finished_at = datetime.now(UTC)
-                delivery = self._write_planning_only_delivery(run, current_plan)
+                delivery = await self._write_planning_only_delivery(run, current_plan)
                 run.artifact_index = [
                     *(run.artifact_index or []),
                     {
@@ -765,13 +770,13 @@ class OverdriveRunService:
         await self._write_snapshot(run)
         return result
 
-    def assert_execution_allowed(self, run: OverdriveRunModel) -> None:
+    async def assert_execution_allowed(self, run: OverdriveRunModel) -> None:
         if run.status not in EXECUTION_STATUSES:
             raise ValidationError("计划尚未确认，禁止提交执行助手")
         plan = run.plan or {}
         if plan.get("status") != "approved" or not plan.get("approved_by"):
             raise ValidationError("缺少真实用户的计划确认记录，禁止执行")
-        self._assert_plan_file_matches(run)
+        await self._assert_plan_file_matches(run)
 
     async def apply_control(
         self,
@@ -885,7 +890,7 @@ class OverdriveRunService:
         )
         self._db.add(event)
         await self._db.flush()
-        self._append_event_projection(run, event)
+        await self._append_event_projection(run, event)
         return event
 
     async def events_after(
@@ -1139,17 +1144,21 @@ class OverdriveRunService:
             "state_version": run.version,
         }
 
-    def _assert_plan_file_matches(self, run: OverdriveRunModel) -> None:
+    async def _assert_plan_file_matches(self, run: OverdriveRunModel) -> None:
         plan = run.plan or {}
         version = int(plan.get("version") or 0)
         version_path = overdrive_run_root(run.session_id, run.run_id) / f"plan.v{version}.md"
-        if not version_path.exists():
+        factory = get_path_factory()
+        backend = get_storage_backend()
+        rel_path = factory.relative_to_root(version_path)
+        if not await backend.exists(rel_path):
             raise ValidationError("已冻结的计划快照不存在")
-        actual = plan_hash(version_path.read_text(encoding="utf-8"))
+        content = (await backend.read(rel_path)).decode("utf-8")
+        actual = plan_hash(content)
         if actual != plan.get("hash"):
             raise ValidationError("已冻结计划内容与确认 hash 不一致")
 
-    def _write_planning_only_delivery(
+    async def _write_planning_only_delivery(
         self, run: OverdriveRunModel, plan: dict[str, Any]
     ) -> dict[str, Any]:
         """为 planning_only run 生成项目 README,作为可下载交付物。
@@ -1193,9 +1202,11 @@ class OverdriveRunService:
             "- 如需按本方案正式执行分析,回复“按方案开始执行”,将为你创建执行任务。",
         ]
         content = "\n".join(lines) + "\n"
-        _atomic_write(
-            overdrive_run_root(run.session_id, run.run_id) / "delivery" / "README.md",
-            content,
+        factory = get_path_factory()
+        backend = get_storage_backend()
+        readme_path = overdrive_run_root(run.session_id, run.run_id) / "delivery" / "README.md"
+        await _async_atomic_write_text(
+            backend, factory, factory.relative_to_root(readme_path), content
         )
         return {"path": readme_relative, "content": content}
 
@@ -1247,13 +1258,24 @@ class OverdriveRunService:
 
     async def _write_snapshot(self, run: OverdriveRunModel) -> None:
         await self._db.flush()
+        factory = get_path_factory()
+        backend = get_storage_backend()
         root = overdrive_run_root(run.session_id, run.run_id)
-        atomic_write_json(root / "manifest.json", self.snapshot(run))
-        atomic_write_json(root / "control.json", deepcopy(run.control))
+        root_rel = factory.relative_to_root(root)
+        await _async_atomic_write_json(
+            backend, factory, f"{root_rel}/manifest.json", self.snapshot(run)
+        )
+        await _async_atomic_write_json(
+            backend, factory, f"{root_rel}/control.json", deepcopy(run.control)
+        )
 
-    def _append_event_projection(self, run: OverdriveRunModel, event: OverdriveEventModel) -> None:
+    async def _append_event_projection(
+        self, run: OverdriveRunModel, event: OverdriveEventModel
+    ) -> None:
+        factory = get_path_factory()
+        backend = get_storage_backend()
         path = overdrive_run_root(run.session_id, run.run_id) / "events.jsonl"
-        path.parent.mkdir(parents=True, exist_ok=True)
+        rel_path = factory.relative_to_root(path)
         record = {
             "event_id": str(event.event_id),
             "run_id": event.run_id,
@@ -1262,8 +1284,11 @@ class OverdriveRunService:
             "payload": event.payload,
             "occurred_at": datetime.now(UTC).isoformat(),
         }
-        with path.open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+        line = (json.dumps(record, ensure_ascii=False, default=str) + "\n").encode("utf-8")
+        existing = b""
+        if await backend.exists(rel_path):
+            existing = await backend.read(rel_path)
+        await backend.write(rel_path, existing + line)
 
 
 def _atomic_write(path: Path, content: str) -> None:
@@ -1275,3 +1300,22 @@ def _atomic_write(path: Path, content: str) -> None:
 
 def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
     _atomic_write(path, json.dumps(payload, ensure_ascii=False, indent=2, default=str) + "\n")
+
+
+async def _async_atomic_write_text(
+    backend, factory, rel_path: str, content: str
+) -> None:
+    """异步原子写入文本（先写临时对象再重命名/覆盖）。"""
+    await backend.ensure_dir(rel_path.rsplit("/", 1)[0] if "/" in rel_path else "")
+    temp_rel = f"{rel_path}.tmp.{os.getpid()}"
+    await backend.write(temp_rel, content.encode("utf-8"))
+    await backend.move(temp_rel, rel_path)
+
+
+async def _async_atomic_write_json(
+    backend, factory, rel_path: str, payload: dict[str, Any]
+) -> None:
+    await _async_atomic_write_text(
+        backend, factory, rel_path,
+        json.dumps(payload, ensure_ascii=False, indent=2, default=str) + "\n",
+    )

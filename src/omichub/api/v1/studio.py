@@ -89,6 +89,7 @@ from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
 from omichub.infrastructure.config.studio_loader import get_studio_config
 from omichub.infrastructure.database.models.chat import ChatSessionModel
 from omichub.infrastructure.database.session import get_session_factory
+from omichub.infrastructure.storage import get_path_factory, get_storage_backend
 from omichub.infrastructure.studio.control_client import resolve_studio_control_token
 from omichub.infrastructure.studio.manager import (
     StudioSandboxUnavailableError,
@@ -98,9 +99,9 @@ from omichub.infrastructure.studio.paths import PathEscapeError, resolve_workspa
 from omichub.infrastructure.studio.workspace import (
     DEFAULT_READ_LIMIT,
     MAX_READ_LIMIT,
-    disk_list_artifacts,
     disk_list_files,
     disk_read_file,
+    relative_workspace_path,
     resolve_artifact_path,
 )
 
@@ -186,7 +187,10 @@ async def _workspace_listing(session: ChatSessionModel, path: str = "") -> dict[
         except Exception as e:  # noqa: BLE001 - agent 异常时磁盘回退，语义一致
             logger.warning(f"[Studio] agent 目录列表失败，回退磁盘（会话 {session_id[:8]}）: {e}")
     workspace = studio_sandbox_manager.workspace_dir(session_id)
-    if not workspace.exists():
+    factory = get_path_factory()
+    backend = get_storage_backend()
+    workspace_info = await backend.stat(factory.relative_to_root(workspace))
+    if workspace_info is None or not workspace_info.get("is_dir"):
         if path:
             raise NotFoundError(f"路径不存在: {path}")
         return {"path": "", "entries": []}
@@ -830,9 +834,13 @@ async def download_workspace_file(
         ).path
     except PathEscapeError as exc:
         raise BusinessError(str(exc)) from exc
-    if not target.is_file():
-        raise NotFoundError(f"工作区文件不存在: {path}")
-    return FileResponse(target, filename=target.name)
+    factory = get_path_factory()
+    backend = get_storage_backend()
+    try:
+        local_path = await backend.get_local_path(factory.relative_to_root(target))
+    except NotFoundError:
+        raise NotFoundError(f"工作区文件不存在: {path}") from None
+    return FileResponse(local_path, filename=local_path.name)
 
 
 @router.get("/sessions/{session_id}/files/read", summary="读取工作区文件")
@@ -1046,7 +1054,23 @@ async def list_artifacts(
     """
     await _get_studio_session(service, session_id, current_user_id)
     workspace = studio_sandbox_manager.workspace_dir(session_id)
-    artifacts = disk_list_artifacts(workspace) if workspace.exists() else []
+    factory = get_path_factory()
+    backend = get_storage_backend()
+    workspace_info = await backend.stat(factory.relative_to_root(workspace))
+    if workspace_info is None or not workspace_info.get("is_dir"):
+        artifacts: list[dict[str, Any]] = []
+    else:
+        out_rel = factory.relative_to_root(workspace / "output")
+        entries = await backend.list(out_rel, recursive=True)
+        artifacts = [
+            {
+                "path": relative_workspace_path(factory.data_root / entry["path"], workspace),
+                "size": entry["size"],
+                "mtime": entry["mtime"],
+            }
+            for entry in entries
+            if entry["type"] == "file"
+        ]
     for item in artifacts:
         item["download_url"] = (
             f"/api/v1/studio/sessions/{session_id}/artifacts/download"
@@ -1104,6 +1128,10 @@ async def download_artifact(
         target = resolve_artifact_path(workspace, path)
     except PathEscapeError as e:
         raise BusinessError(str(e)) from e
-    if not target.is_file():
-        raise NotFoundError(f"产物不存在: {path}")
-    return FileResponse(target, filename=target.name)
+    factory = get_path_factory()
+    backend = get_storage_backend()
+    try:
+        local_path = await backend.get_local_path(factory.relative_to_root(target))
+    except NotFoundError:
+        raise NotFoundError(f"产物不存在: {path}") from None
+    return FileResponse(local_path, filename=local_path.name)

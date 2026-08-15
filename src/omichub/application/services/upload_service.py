@@ -10,8 +10,8 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
-import shutil
 import uuid
 from pathlib import Path
 from uuid import UUID
@@ -41,7 +41,7 @@ from omichub.infrastructure.database.repositories import (
 from omichub.infrastructure.database.repositories.user_repository import (
     SqlAlchemyUserRepository,
 )
-from omichub.infrastructure.storage.path_factory import get_path_factory
+from omichub.infrastructure.storage import get_path_factory, get_storage_backend
 
 # 默认分片大小（客户端未传时兜底）
 DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024  # 5 MiB
@@ -58,15 +58,16 @@ def _normalize_directory(directory: str | None) -> str:
 class UploadService:
     """分块上传：init / chunk / merge / cancel。"""
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, backend=None):
         self._session = session
         self._sessions = UploadSessionRepositoryImpl(session)
         self._files = FileRepositoryImpl(session)
         self._users = SqlAlchemyUserRepository(session)
         self._factory = get_path_factory()
+        self._backend = backend or get_storage_backend()
 
     # ------------------------------------------------------------------
-    def _inbox_subdir(self, user_id: UUID, directory: str) -> Path:
+    async def _inbox_subdir(self, user_id: UUID, directory: str) -> Path:
         """用户 inbox/ 下的指定子目录（自动创建）。"""
         normalized = _normalize_directory(directory)
         if normalized == "inbox":
@@ -75,7 +76,7 @@ class UploadService:
             normalized = normalized.removeprefix("inbox/")
         base = self._factory.inbox_dir(str(user_id))
         target = base / normalized if normalized else base
-        target.mkdir(parents=True, exist_ok=True)
+        await self._backend.ensure_dir(self._factory.relative_to_root(target))
         return target
 
     # ------------------------------------------------------------------
@@ -109,7 +110,7 @@ class UploadService:
                 chunk_size=completed.chunk_size,
             )
 
-        self._inbox_subdir(user_id, directory)
+        await self._inbox_subdir(user_id, directory)
 
         session = UploadSession(
             id=uuid.uuid4(),
@@ -153,9 +154,10 @@ class UploadService:
             raise ValidationError(f"分片 {index} 校验失败：MD5 不匹配")
 
         tmp_base = self._factory.tmp_dir(str(upload_id))
-        tmp_base.mkdir(parents=True, exist_ok=True)
         chunk_path = tmp_base / str(index)
-        chunk_path.write_bytes(chunk_bytes)
+        await self._backend.write(
+            self._factory.relative_to_root(chunk_path), chunk_bytes
+        )
 
         session = await self._sessions.add_chunk(user_id, upload_id, {"index": index, "md5": md5})
         if session is None:
@@ -186,29 +188,34 @@ class UploadService:
 
         tmp_dir = self._factory.tmp_dir(str(upload_id))
         directory = _normalize_directory(session.directory)
-        inbox_subdir = self._inbox_subdir(user_id, directory)
+        inbox_subdir = await self._inbox_subdir(user_id, directory)
         final_path = inbox_subdir / session.file_name
-        if final_path.exists():
+        final_rel = self._factory.relative_to_root(final_path)
+        if await self._backend.exists(final_rel):
             final_path = _append_dedupe_suffix(final_path, uuid.uuid4().hex[:8])
+            final_rel = self._factory.relative_to_root(final_path)
 
         hasher = hashlib.md5()
-        with final_path.open("wb") as out:
-            for chunk_meta in sorted(session.uploaded_chunks, key=lambda c: c["index"]):
-                cp = tmp_dir / str(chunk_meta["index"])
-                if not cp.exists():
-                    raise ValidationError(f"分片文件丢失：{chunk_meta['index']}")
-                data = cp.read_bytes()
-                out.write(data)
-                hasher.update(data)
+        merged_bytes = bytearray()
+        for chunk_meta in sorted(session.uploaded_chunks, key=lambda c: c["index"]):
+            chunk_rel = self._factory.relative_to_root(
+                tmp_dir / str(chunk_meta["index"])
+            )
+            if not await self._backend.exists(chunk_rel):
+                raise ValidationError(f"分片文件丢失：{chunk_meta['index']}")
+            data = await self._backend.read(chunk_rel)
+            merged_bytes.extend(data)
+            hasher.update(data)
+
+        await self._backend.write(final_rel, bytes(merged_bytes))
 
         checksum = hasher.hexdigest()
-        size = final_path.stat().st_size
-        rel_path = self._factory.relative_to_root(final_path)
+        size = len(merged_bytes)
 
         file_record = DataFile(
             id=uuid.uuid4(),
             user_id=user_id,
-            path=rel_path,
+            path=final_rel,
             original_name=session.file_name,
             size=size,
             checksum=checksum,
@@ -222,11 +229,18 @@ class UploadService:
 
         await self._sessions.update_status(user_id, upload_id, "completed")
         await self._session.commit()
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        # 清理分片与本地临时目录
+        for chunk_meta in sorted(session.uploaded_chunks, key=lambda c: c["index"]):
+            chunk_rel = self._factory.relative_to_root(
+                tmp_dir / str(chunk_meta["index"])
+            )
+            with contextlib.suppress(NotFoundError):
+                await self._backend.delete(chunk_rel)
+        await self._backend.delete_tree(self._factory.relative_to_root(tmp_dir))
         # 兼容旧版 .tmp 位置
         legacy_tmp = self._factory.data_root / ".tmp" / str(upload_id)
-        if legacy_tmp.exists():
-            shutil.rmtree(legacy_tmp, ignore_errors=True)
+        await self._backend.delete_tree(self._factory.relative_to_root(legacy_tmp))
 
         return UploadMergeResponse(
             file_id=file_record.id,
@@ -242,8 +256,18 @@ class UploadService:
             raise NotFoundError("上传会话不存在")
         await self._sessions.delete(user_id, upload_id)
         await self._session.commit()
-        shutil.rmtree(self._factory.tmp_dir(str(upload_id)), ignore_errors=True)
+
+        tmp_dir = self._factory.tmp_dir(str(upload_id))
+        tmp_dir_rel = self._factory.relative_to_root(tmp_dir)
+        try:
+            entries = await self._backend.list(tmp_dir_rel, recursive=True)
+            for entry in entries:
+                if entry["type"] == "file":
+                    with contextlib.suppress(NotFoundError):
+                        await self._backend.delete(entry["path"])
+        except NotFoundError:
+            pass
+        await self._backend.delete_tree(tmp_dir_rel)
         legacy_tmp = self._factory.data_root / ".tmp" / str(upload_id)
-        if legacy_tmp.exists():
-            shutil.rmtree(legacy_tmp, ignore_errors=True)
+        await self._backend.delete_tree(self._factory.relative_to_root(legacy_tmp))
         return True

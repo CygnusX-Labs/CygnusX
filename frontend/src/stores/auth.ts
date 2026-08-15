@@ -61,11 +61,11 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function login(username: string, password: string): Promise<LoginResponse> {
-    const formData = new FormData()
-    formData.append('username', username)
-    formData.append('password', password)
+    const params = new URLSearchParams()
+    params.append('username', username)
+    params.append('password', password)
 
-    const response = await apiClient.post<LoginResponse>('/auth/login', formData, {
+    const response = await apiClient.post<LoginResponse>('/auth/login', params, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     })
 

@@ -2,10 +2,10 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { NButton, NCollapse, NCollapseItem, NInput, NModal, NPopconfirm, NTag } from 'naive-ui'
 import { useRouter } from 'vue-router'
-import { agentTeamsApi, type AgentTeamsCaseStatus, type AgentTeamsEvent } from '@/api/agentTeams'
+import { agentTeamsApi, type AgentTeamsEvent } from '@/api/agentTeams'
 import { useAgentTeamsStore } from '@/stores/agentTeams'
 import { shouldPollAgentTeamsCase } from '@/utils/agentTeamsState'
-import { agentTeamsNextActor, agentTeamsStatusLabel } from '@/utils/agentTeamsStatus'
+import { agentTeamsNextActor, formatAgentTeamsStatus } from '@/utils/agentTeamsStatus'
 import type { AgentTeamsCaseCardPayload } from './types'
 
 const props = defineProps<{ caseInfo: AgentTeamsCaseCardPayload }>()
@@ -27,7 +27,7 @@ let timer: ReturnType<typeof setInterval> | null = null
 const isApprovalPending = computed(() => detail.value.status === 'approval_pending')
 const isExecutionFailed = computed(() => detail.value.status === 'execution_failed')
 const canCancel = computed(() => !['closed', 'cancelled'].includes(detail.value.status))
-const displayStatus = computed(() => agentTeamsStatusLabel[detail.value.status as AgentTeamsCaseStatus] || detail.value.status)
+const displayStatus = computed(() => formatAgentTeamsStatus(detail.value.status))
 const updatedAt = computed(() => {
   if (!detail.value.updated_at) return ''
   const value = new Date(detail.value.updated_at)

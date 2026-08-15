@@ -16,9 +16,11 @@ from omichub.application.services.studio_tools import (
     normalize_plan_steps,
 )
 from omichub.core.config import get_settings
+from omichub.infrastructure.config.storage_config import StorageConfig
 from omichub.infrastructure.database.models.chat import ChatSessionModel
 from omichub.infrastructure.database.models.file import FileRecordModel
 from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
+from omichub.infrastructure.storage.path_factory import StoragePathFactory
 
 
 def _lexists(path: Path) -> bool:
@@ -64,6 +66,16 @@ class _FakeDb:
     async def flush(self) -> None:
         pass
 
+    async def refresh(self, obj: Any) -> None:
+        from datetime import datetime
+
+        for attr in ("created_at", "updated_at"):
+            if hasattr(obj, attr) and getattr(obj, attr) is None:
+                setattr(obj, attr, datetime.now())
+
+    async def commit(self) -> None:
+        pass
+
     async def execute(self, stmt: Any) -> _FakeResult:
         entity = None
         with contextlib.suppress(Exception):
@@ -105,6 +117,13 @@ def platform_env(tmp_path: Path, monkeypatch):
     (storage / "users" / uid / "raw").mkdir(parents=True)
     workspace = tmp_path / "ws" / "sess-1"
     monkeypatch.setattr(get_settings(), "storage_path", str(storage))
+    monkeypatch.setattr(
+        studio_context_service,
+        "get_path_factory",
+        lambda: StoragePathFactory(
+            StorageConfig(data_root=str(storage), users_subdir="users")
+        ),
+    )
     fake = _FakeManager(workspace)
     monkeypatch.setattr(studio_tools, "studio_sandbox_manager", fake)
     monkeypatch.setattr(studio_context_service, "studio_sandbox_manager", fake)
@@ -392,7 +411,12 @@ async def test_artifact_register_versions_from_context_pack(platform_env):
     assert llm["version"] == 3
     assert llm["parent_id"] == str(parent_id)
     # 产物已复制进报告中心存储区（工作区清理后仍存续）
-    copied = storage / "users" / uid / "results" / "studio" / "sess-1" / "volcano_v2.png"
+    # 新路径归置到 projects/{title}/runs/studio-{timestamp}/output/ 下
+    copied_candidates = list(
+        (storage / "users" / uid / "projects").rglob("volcano_v2.png")
+    )
+    assert len(copied_candidates) == 1
+    copied = copied_candidates[0]
     assert copied.read_bytes() == b"png-bytes"
     # 报告与文件行均已入库（add 到会话）
     report_row = next(o for o in db.added if isinstance(o, ReportModel))

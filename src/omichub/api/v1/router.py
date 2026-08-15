@@ -34,6 +34,7 @@ from omichub.api.v1 import (
     stats,
     studio,
     tasks,
+    teams,
     terminal,
     users,
     workflow_monitor,
@@ -76,6 +77,7 @@ api_router.include_router(
 )
 api_router.include_router(downloads.router, prefix="/downloads", tags=["Downloads"])
 api_router.include_router(files.router, prefix="/files", tags=["Files"])
+api_router.include_router(teams.router, prefix="/teams", tags=["Teams"])
 api_router.include_router(projects.router, prefix="/projects", tags=["Projects"])
 api_router.include_router(users.router, prefix="/users", tags=["Users"])
 api_router.include_router(cookies.router, prefix="/cookies", tags=["Cookies"])

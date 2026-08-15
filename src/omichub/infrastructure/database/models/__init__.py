@@ -89,6 +89,7 @@ from omichub.infrastructure.database.models.skill import (
     SkillVersionModel,
 )
 from omichub.infrastructure.database.models.task import TaskModel
+from omichub.infrastructure.database.models.team import TeamMemberModel, TeamModel
 from omichub.infrastructure.database.models.terminal import TerminalSessionModel
 from omichub.infrastructure.database.models.user import UserModel, WorkspaceModel
 
@@ -101,6 +102,8 @@ __all__ = [
     "UserModel",
     "WorkspaceModel",
     "TaskModel",
+    "TeamModel",
+    "TeamMemberModel",
     "CookieAccountModel",
     "CookieTransactionModel",
     "CookiePricingModel",

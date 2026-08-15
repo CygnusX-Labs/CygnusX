@@ -214,9 +214,10 @@ async def _auto_confirm_cases_with_factory(
     *,
     redis_getter=get_redis,
 ) -> dict[str, int | str]:
-    """聊天式通用 Case 的自动确认：仅消费 Redis 集合与 Bridge 待审批列表的交集。
+    """自动确认处于 approval_pending 且被标记为 autonomous 的 Case。
 
-    流程型 Case 一律跳过（真实计算必须人工审批）；标记丢失或 Bridge 不可达时
+    消费 Redis 集合与 Bridge 待审批列表的交集；通用 Case 与流程 Case 均支持，
+    最终是否自动批准由用户当前 autonomy 偏好决定。标记丢失或 Bridge 不可达时
     静默降级，Case 留在人工审批队列。
     """
     from omichub.application.services.agentteams_bridge_settings_service import (
@@ -274,19 +275,15 @@ async def _auto_confirm_cases_with_factory(
                         await redis.srem(AUTO_CONFIRM_CASES_KEY, case_id)
                         summary["skipped"] = int(summary["skipped"]) + 1
                     continue
-                if case.get("flow_id"):
-                    # 防御：流程型 Case 绝不自动确认。
-                    await redis.srem(AUTO_CONFIRM_CASES_KEY, case_id)
-                    summary["skipped"] = int(summary["skipped"]) + 1
-                    continue
                 requester_ref = case.get("requester_ref")
                 if not isinstance(requester_ref, str) or not requester_ref:
                     summary["failed"] = int(summary["failed"]) + 1
                     continue
                 try:
-                    await service.approve_and_submit_task(
+                    result = await service.auto_approve_case_if_autonomous(
                         case_id=case_id,
                         requester_ref=requester_ref,
+                        db=db,
                         task_name=f"auto-{case_id[-8:]}",
                     )
                 except Exception as exc:  # noqa: BLE001
@@ -295,8 +292,12 @@ async def _auto_confirm_cases_with_factory(
                     )
                     summary["failed"] = int(summary["failed"]) + 1
                     continue
-                await redis.srem(AUTO_CONFIRM_CASES_KEY, case_id)
-                summary["confirmed"] = int(summary["confirmed"]) + 1
+                status_value = str(result.get("status") or "")
+                if status_value.startswith("idempotent_") or status_value == "auto_approved":
+                    await redis.srem(AUTO_CONFIRM_CASES_KEY, case_id)
+                    summary["confirmed"] = int(summary["confirmed"]) + 1
+                else:
+                    summary["skipped"] = int(summary["skipped"]) + 1
             return summary
     except Exception as exc:  # noqa: BLE001
         logger.exception("AgentTeams auto-confirm orchestration failed: %s", exc)

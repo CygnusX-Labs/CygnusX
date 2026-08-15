@@ -17,6 +17,16 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'chat_sessions' AND column_name = 'title_locked'"
+        )
+    ).scalar()
+    if result:
+        return
+
     op.add_column(
         "chat_sessions",
         sa.Column("title_locked", sa.Boolean(), nullable=False, server_default=sa.false()),

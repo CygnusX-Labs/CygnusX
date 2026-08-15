@@ -186,6 +186,15 @@ class _FakeAutoConfirmService:
             raise RuntimeError("bridge approval error")
         return {"ok": True}
 
+    async def auto_approve_case_if_autonomous(
+        self, case_id, requester_ref, *, db=None, task_name="auto-approved"
+    ):
+        # 模拟 autonomous 偏好：所有传入的 Case 均视为已授权自动批准。
+        result = await self.approve_and_submit_task(
+            case_id=case_id, requester_ref=requester_ref, task_name=task_name
+        )
+        return {"status": "auto_approved", "case_id": case_id, "result": result}
+
 
 class _NoopSession:
     async def __aenter__(self):
@@ -256,13 +265,14 @@ async def test_auto_confirm_confirms_only_general_pending_cases(monkeypatch) -> 
         lambda: lambda: _NoopSession(), redis_getter=lambda: redis
     )
 
-    assert result == {"status": "ok", "marked": 5, "confirmed": 1, "skipped": 2, "failed": 1}
-    # 仅通用 Case 进入自动确认（失败隔离不影响其他 Case），以 Case 自身 requester_ref 走既有审批链路
+    assert result == {"status": "ok", "marked": 5, "confirmed": 2, "skipped": 1, "failed": 1}
+    # 通用与流程 Case 均进入自动确认（失败隔离不影响其他 Case），以 Case 自身 requester_ref 走既有审批链路
     assert service.approve_calls == [
         ("case-fail", "user-c", "auto-ase-fail"),
+        ("case-flow", "user-b", "auto-ase-flow"),
         ("case-general", "user-a", "auto--general"),
     ]
-    # 已确认 / 流程型防御 / 终态 → 清理标记；前置状态保留标记等待下一轮
+    # 已确认 / 终态 → 清理标记；前置状态保留标记等待下一轮
     assert sorted(redis.srem_calls) == ["case-closed", "case-flow", "case-general"]
     assert redis.marked == {"case-fail", "case-planning"}
     assert len(redis.release_calls) == 1

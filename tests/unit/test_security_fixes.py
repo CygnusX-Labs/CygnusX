@@ -9,10 +9,12 @@ from omichub.application.schemas.download import DownloadRequest
 from omichub.application.services.file_service import FileService
 from omichub.application.services.terminal_service import _generate_session_id
 from omichub.core.exceptions import AuthorizationError
+from omichub.infrastructure.config.storage_config import StorageConfig
 from omichub.infrastructure.mcp.client import (
     validate_sse_url,
     validate_stdio_command,
 )
+from omichub.infrastructure.storage.path_factory import StoragePathFactory
 
 
 class TestFileServiceResolveAbs:
@@ -24,6 +26,9 @@ class TestFileServiceResolveAbs:
         # FileService 需要 AsyncSession，但 _resolve_abs 不依赖 DB
         svc = object.__new__(FileService)
         svc._storage_root = tmp_path
+        svc._factory = StoragePathFactory(
+            StorageConfig(data_root=str(tmp_path), users_subdir="users")
+        )
         return svc
 
     def test_resolve_abs_normal_relative_path(self, service: FileService, tmp_path: Path):

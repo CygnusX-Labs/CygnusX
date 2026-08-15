@@ -14,6 +14,9 @@ from typing import Any
 
 from loguru import logger
 
+from omichub.infrastructure.config.deployment_config import get_deployment_config
+from omichub.infrastructure.database.session import get_session_factory
+from omichub.infrastructure.storage.scratch_volume import ScratchVolumeManager
 from omichub.tools.terminal.config import TerminalImage, get_terminal_config
 
 
@@ -28,6 +31,7 @@ class TerminalDockerManager:
         self._client: Any = None
         self._available: bool | None = None
         self._allocated_ports: set[int] = set()
+        self._scratch_volumes: dict[str, ScratchVolumeManager] = {}
 
     @property
     def _cfg(self):
@@ -108,22 +112,39 @@ class TerminalDockerManager:
         )
         tmpfs_mb = int(_clamp(defaults.tmpfs_size_mb, 1, limits.tmpfs_size_mb))
 
-        # 预创建并挂载用户顶层系统目录（与 FileService.ensure_default_directories 约定一致）
-        user_root = f"{cfg.storage.workspace_base}/{user_id}"
+        deployment_cfg = get_deployment_config()
         system_mounts = {
             "workspace": "/home/omichub/workspace",
             "raw_data": "/home/omichub/raw_data",
             "temp": "/home/omichub/temp",
         }
         volumes: dict[str, dict[str, str]] = {}
-        for name, container_path in system_mounts.items():
-            host_path = f"{user_root}/{name}"
-            await asyncio.to_thread(Path(host_path).mkdir, parents=True, exist_ok=True)
-            try:
-                await asyncio.to_thread(shutil.chown, host_path, user=1000, group=1000)
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"沙盒目录权限调整失败 {host_path}: {e}，将尝试继续启动容器")
-            volumes[host_path] = {"bind": container_path, "mode": "rw"}
+        scratch_mgr: ScratchVolumeManager | None = None
+
+        if deployment_cfg.scratch_volume_enabled:
+            # cloud 模式：使用临时 POSIX scratch 卷，不直接 bind-mount 用户持久目录
+            async with get_session_factory()() as db_session:
+                scratch_mgr = ScratchVolumeManager(
+                    session_id, user_id, db_session
+                )
+                await scratch_mgr.allocate()
+                for name, container_path in system_mounts.items():
+                    host_path = scratch_mgr.volume.workspace / name
+                    if name != "workspace":
+                        host_path = scratch_mgr.volume.root / name
+                    await asyncio.to_thread(host_path.mkdir, parents=True, exist_ok=True)
+                    volumes[str(host_path)] = {"bind": container_path, "mode": "rw"}
+        else:
+            # local 模式：保留原有 bind-mount 行为
+            user_root = f"{cfg.storage.workspace_base}/{user_id}"
+            for name, container_path in system_mounts.items():
+                host_path = f"{user_root}/{name}"
+                await asyncio.to_thread(Path(host_path).mkdir, parents=True, exist_ok=True)
+                try:
+                    await asyncio.to_thread(shutil.chown, host_path, user=1000, group=1000)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"沙盒目录权限调整失败 {host_path}: {e}，将尝试继续启动容器")
+                volumes[host_path] = {"bind": container_path, "mode": "rw"}
 
         container_name = f"omichub-term-{user_id[:8]}-{session_id}"
         image_name = image.full_image_name(registry_prefix)
@@ -195,9 +216,13 @@ class TerminalDockerManager:
 
         try:
             container_id = await asyncio.to_thread(_run)
+            if scratch_mgr is not None:
+                self._scratch_volumes[container_id] = scratch_mgr
             logger.info(f"终端容器已创建: {container_name} image={image_name} port={port}")
             return container_id, port
         except Exception as e:
+            if scratch_mgr is not None:
+                await scratch_mgr.cleanup()
             self._release_port(port)
             raise TerminalDockerError(f"容器启动失败: {e}") from e
 
@@ -214,6 +239,9 @@ class TerminalDockerManager:
                 pass
 
         await asyncio.to_thread(_destroy)
+        scratch_mgr = self._scratch_volumes.pop(container_id, None)
+        if scratch_mgr is not None:
+            await scratch_mgr.cleanup()
         self._release_port(port)
 
     async def get_container_stats(self, container_id: str | None) -> dict[str, Any] | None:

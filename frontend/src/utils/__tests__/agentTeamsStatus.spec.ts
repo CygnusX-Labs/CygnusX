@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   agentTeamsCaseCategory,
   agentTeamsCaseStageMap,
   agentTeamsFailedStatuses,
   canSendRoomMessage,
+  formatAgentTeamsStatus,
 } from '@/utils/agentTeamsStatus'
 import type { AgentTeamsCaseStatus } from '@/api/agentTeams'
 
@@ -59,5 +60,28 @@ describe('canSendRoomMessage', () => {
     expect(canSendRoomMessage('')).toBe(false)
     expect(canSendRoomMessage(null)).toBe(false)
     expect(canSendRoomMessage(undefined)).toBe(false)
+  })
+})
+
+describe('formatAgentTeamsStatus', () => {
+  it('returns plain Chinese label for simple statuses', () => {
+    expect(formatAgentTeamsStatus('planning_running')).toBe('规划中')
+    expect(formatAgentTeamsStatus('executing')).toBe('执行中')
+  })
+
+  it('parameterizes waiting_for_correction with attempt/max_attempts', () => {
+    expect(formatAgentTeamsStatus('waiting_for_correction', { attempt: 1, max_attempts: 3 }))
+      .toBe('自动修正中（第 1/3 次）')
+  })
+
+  it('falls back to waiting_for_correction base text without payload', () => {
+    expect(formatAgentTeamsStatus('waiting_for_correction')).toBe('等待修正')
+  })
+
+  it('warns in dev and returns a fallback for unknown statuses', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    expect(formatAgentTeamsStatus('unknown_status_xyz')).toBe('未知状态（unknown_status_xyz）')
+    expect(errorSpy).toHaveBeenCalledWith('[AgentTeams] 缺失状态文案映射：unknown_status_xyz')
+    errorSpy.mockRestore()
   })
 })

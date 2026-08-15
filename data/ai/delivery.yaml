@@ -6,11 +6,12 @@ description: 面向已验证分析产物的交付清单、运行说明与证据�
 avatar: "📦"
 color: "#2563eb"
 category: analysis
-model: qwen3.7-plus
+# 交付清单整理是结构化汇总任务，用低成本模型。
+model: deepseek-v4-flash
 prompt_file: prompts/delivery.md
 welcome_message: "你好！我是交付报告员。请提供已验证的产物、质量结论和运行信息；我会整理可复核的交付清单与风险说明。"
 temperature: 0.2
-max_tokens: 20000
+max_tokens: 32768
 mcp_ids: []
 skill_ids:
   - md5
@@ -54,7 +55,8 @@ features:
     triggers: []
 tool_packs: [workspace, research, memory, handoff, agentteams_case]
 handoff:
-  allowed_targets: [agent-general]
+  # 交付中发现产物未验证可回退质量审计；缺图表/复现脚本时转可视化或代码助手补齐。
+  allowed_targets: [agent-general, agent-qc, agent-viz, agent-code]
   max_hops_per_session: 10
 studio:
   enabled: true

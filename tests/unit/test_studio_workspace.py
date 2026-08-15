@@ -5,6 +5,9 @@ from pathlib import Path
 import pytest
 
 from omichub.core.exceptions import BusinessError, NotFoundError
+from omichub.infrastructure.config.storage_config import StorageConfig
+from omichub.infrastructure.storage.backend import LocalStorageBackend
+from omichub.infrastructure.storage.path_factory import StoragePathFactory
 from omichub.infrastructure.studio.paths import PathEscapeError, resolve_workspace_path
 from omichub.infrastructure.studio.workspace import (
     disk_list_artifacts,
@@ -14,6 +17,15 @@ from omichub.infrastructure.studio.workspace import (
     list_input_links,
     resolve_artifact_path,
 )
+
+
+def _tmp_backend_factory(tmp_path: Path):
+    """返回以 tmp_path 为 data_root 的 (backend, factory)，供测试隔离使用。"""
+    factory = StoragePathFactory(
+        StorageConfig(data_root=str(tmp_path), users_subdir="users")
+    )
+    return LocalStorageBackend(factory), factory
+
 
 # ===== 路径防护 =====
 
@@ -56,10 +68,11 @@ def test_symlink_escape_rejected(tmp_path: Path):
 
 
 @pytest.mark.unit
-def test_disk_list_files_shape(tmp_path: Path):
+async def test_disk_list_files_shape(tmp_path: Path):
     (tmp_path / "output").mkdir()
     (tmp_path / "output" / "a.csv").write_text("x,y\n1,2\n", encoding="utf-8")
-    listing = disk_list_files(tmp_path, "output")
+    backend, factory = _tmp_backend_factory(tmp_path)
+    listing = await disk_list_files(tmp_path, "output", backend=backend, factory=factory)
     assert listing["path"] == "output"
     assert listing["entries"][0]["name"] == "a.csv"
     assert listing["entries"][0]["type"] == "file"
@@ -67,41 +80,50 @@ def test_disk_list_files_shape(tmp_path: Path):
 
 
 @pytest.mark.unit
-def test_disk_list_files_missing_path(tmp_path: Path):
+async def test_disk_list_files_missing_path(tmp_path: Path):
+    backend, factory = _tmp_backend_factory(tmp_path)
     with pytest.raises(NotFoundError):
-        disk_list_files(tmp_path, "nope")
+        await disk_list_files(tmp_path, "nope", backend=backend, factory=factory)
 
 
 @pytest.mark.unit
-def test_disk_list_files_escape_rejected(tmp_path: Path):
+async def test_disk_list_files_escape_rejected(tmp_path: Path):
+    backend, factory = _tmp_backend_factory(tmp_path)
     with pytest.raises(PathEscapeError):
-        disk_list_files(tmp_path, "../other")
+        await disk_list_files(tmp_path, "../other", backend=backend, factory=factory)
 
 
 @pytest.mark.unit
-def test_disk_read_file_default_200_lines(tmp_path: Path):
+async def test_disk_read_file_default_200_lines(tmp_path: Path):
     lines = [f"line-{i}" for i in range(250)]
     (tmp_path / "big.txt").write_text("\n".join(lines), encoding="utf-8")
-    data = disk_read_file(tmp_path, "big.txt")
+    backend, factory = _tmp_backend_factory(tmp_path)
+    data = await disk_read_file(tmp_path, "big.txt", backend=backend, factory=factory)
     assert data["total_lines"] == 250
     assert data["truncated"] is True
     assert len(data["content"].splitlines()) == 200
 
-    page2 = disk_read_file(tmp_path, "big.txt", offset=200)
+    page2 = await disk_read_file(
+        tmp_path, "big.txt", offset=200, backend=backend, factory=factory
+    )
     assert page2["truncated"] is False
     assert len(page2["content"].splitlines()) == 50
 
 
 @pytest.mark.unit
-def test_disk_read_file_missing(tmp_path: Path):
+async def test_disk_read_file_missing(tmp_path: Path):
+    backend, factory = _tmp_backend_factory(tmp_path)
     with pytest.raises(NotFoundError):
-        disk_read_file(tmp_path, "ghost.txt")
+        await disk_read_file(tmp_path, "ghost.txt", backend=backend, factory=factory)
 
 
 @pytest.mark.unit
-def test_disk_read_file_limit_capped(tmp_path: Path):
+async def test_disk_read_file_limit_capped(tmp_path: Path):
     (tmp_path / "a.txt").write_text("1\n2\n3", encoding="utf-8")
-    data = disk_read_file(tmp_path, "a.txt", limit=99999)
+    backend, factory = _tmp_backend_factory(tmp_path)
+    data = await disk_read_file(
+        tmp_path, "a.txt", limit=99999, backend=backend, factory=factory
+    )
     assert data["total_lines"] == 3
     assert data["truncated"] is False
 
@@ -110,7 +132,7 @@ def test_disk_read_file_limit_capped(tmp_path: Path):
 
 
 @pytest.mark.unit
-def test_disk_list_artifacts_recursive(tmp_path: Path):
+async def test_disk_list_artifacts_recursive(tmp_path: Path):
     out = tmp_path / "output"
     (out / "sub").mkdir(parents=True)
     (out / "a.png").write_bytes(b"png")
@@ -118,15 +140,17 @@ def test_disk_list_artifacts_recursive(tmp_path: Path):
     (tmp_path / "input").mkdir()
     (tmp_path / "input" / "raw.csv").write_text("y", encoding="utf-8")  # 非产物目录
 
-    artifacts = disk_list_artifacts(tmp_path)
+    backend, factory = _tmp_backend_factory(tmp_path)
+    artifacts = await disk_list_artifacts(tmp_path, backend=backend, factory=factory)
     paths = {a["path"] for a in artifacts}
     assert paths == {"output/a.png", "output/sub/b.csv"}
     assert all(a["size"] > 0 and a["mtime"] > 0 for a in artifacts)
 
 
 @pytest.mark.unit
-def test_disk_list_artifacts_empty_when_no_output(tmp_path: Path):
-    assert disk_list_artifacts(tmp_path) == []
+async def test_disk_list_artifacts_empty_when_no_output(tmp_path: Path):
+    backend, factory = _tmp_backend_factory(tmp_path)
+    assert await disk_list_artifacts(tmp_path, backend=backend, factory=factory) == []
 
 
 @pytest.mark.unit

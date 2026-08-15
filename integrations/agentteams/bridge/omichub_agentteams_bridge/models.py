@@ -258,6 +258,8 @@ class CaseRecord(BaseModel):
     plan_hash: str | None = None
     plan_version: int = Field(default=0, ge=0)
     plan_revision_count: int = Field(default=0, ge=0)
+    planning_retry_count: int = Field(default=0, ge=0)
+    node_started_at: datetime | None = None
     omic_task_ids: list[str] = Field(default_factory=list)
     task_specs: list[dict[str, Any]] = Field(default_factory=list)
     preflight_input: PreflightInputSnapshot | None = None

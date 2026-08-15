@@ -6,11 +6,12 @@ description: 面向分析项目的数据契约、样本元数据与输入完整�
 avatar: "🗂️"
 color: "#0f766e"
 category: analysis
-model: qwen3.7-plus
+# 清单式核验任务（低温度、结构化输出），用低成本模型；重推理解析仍由领域专家承担。
+model: deepseek-v4-flash
 prompt_file: prompts/data.md
 welcome_message: "你好！我是数据管理员。请提供项目、样本表和已有 Artifact 引用；我会核验输入完整性、分组与可追溯证据。"
 temperature: 0.2
-max_tokens: 20000
+max_tokens: 32768
 mcp_ids: []
 skill_ids:
   - md5
@@ -54,7 +55,8 @@ features:
     triggers: []
 tool_packs: [workspace, research, memory, handoff, agentteams_case]
 handoff:
-  allowed_targets: [agent-general]
+  # 数据预检通过后可直接交接给领域专家；发现质量问题转质量审计员；兜底回通用助手。
+  allowed_targets: [agent-general, agent-qc, agent-scrna, agent-rnaseq, agent-atacseq]
   max_hops_per_session: 10
 studio:
   enabled: true

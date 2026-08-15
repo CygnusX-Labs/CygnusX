@@ -9,7 +9,7 @@ model: qwen3.7-plus
 prompt_file: prompts/general.md
 welcome_message: "你好！我是通用助手，可以帮你解答生信分析的一般问题。今天想做点什么？"
 temperature: 0.7
-max_tokens: 20000
+max_tokens: 32768
 mcp_ids: []
 skill_ids:
   # 通用生信工具技能（来源：pipelines/tools/skills/SKILLS_REGISTRY.md，全部 24 个已挂载）

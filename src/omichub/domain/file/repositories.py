@@ -8,12 +8,15 @@ from typing import Protocol
 from uuid import UUID
 
 from omichub.domain.file.entities import DataFile, Directory, ResultArchive, Sample, UploadSession
+from omichub.domain.team.value_objects import TeamRole
 
 
 class IFileRepository(Protocol):
     """文件记录仓储接口"""
 
     async def get_by_id(self, user_id: UUID, file_id: UUID) -> DataFile | None: ...
+
+    async def get_visible(self, actor_user_id: UUID, file_id: UUID) -> DataFile | None: ...
 
     async def list_by_user(
         self,
@@ -25,10 +28,23 @@ class IFileRepository(Protocol):
         directory: str | None = None,
     ) -> list[DataFile]: ...
 
+    async def list_visible(
+        self,
+        actor_user_id: UUID,
+        *,
+        status: str | None = "active",
+        order_by: str = "created_at",
+        desc: bool = True,
+        directory: str | None = None,
+    ) -> list[DataFile]: ...
+
     async def save(self, file: DataFile) -> DataFile: ...
     async def update_status(self, user_id: UUID, file_id: UUID, status: str) -> bool: ...
 
     async def delete(self, user_id: UUID, file_id: UUID) -> bool: ...
+    async def delete_visible(self, actor_user_id: UUID, file_id: UUID) -> bool: ...
+
+    async def get_team_role(self, team_id: UUID, user_id: UUID) -> TeamRole | None: ...
 
     async def sum_size(self, user_id: UUID) -> int: ...
 

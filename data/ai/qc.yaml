@@ -10,7 +10,7 @@ prompt_file: prompts/qc.md
 welcome_message: "你好！我是质量审计员。可以解释 FASTQ/FastQC/fastp/MultiQC 等 QC 指标，设计质控方案，也可以审查工作区中的报告、日志和分析产物并给出可复核的质量结论。"
 # AgentTeams consultation 契约：结论首行必须仅为 PASSED / WARNING / BLOCKED 之一。
 temperature: 0.1
-max_tokens: 20000
+max_tokens: 32768
 mcp_ids: []
 skill_ids:
   - fastq-screen
@@ -60,7 +60,8 @@ features:
     triggers: [软件版本, 数据库版本, 平台规格, 指南更新, 标准更新]
 tool_packs: [workspace, research, memory, handoff, agentteams_case]
 handoff:
-  allowed_targets: [agent-general]
+  # 审计不通过时回转被审计的领域专家修复；通过后转交付报告员汇总；兜底回通用助手。
+  allowed_targets: [agent-general, agent-rnaseq, agent-atacseq, agent-scrna, agent-delivery]
   max_hops_per_session: 10
 studio:
   enabled: true

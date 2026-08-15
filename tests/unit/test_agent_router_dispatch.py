@@ -552,8 +552,10 @@ def test_site_yaml_enabled_agents_have_config_files():
         "data",
         "qc",
         "delivery",
+        "cloud_ops",
         "shania",
         "mcp_builder",
+        "skill_builder",
     ]
     for name in enabled:
         assert (AI_DIR / f"{name}.yaml").exists(), f"{name}.yaml 不存在"

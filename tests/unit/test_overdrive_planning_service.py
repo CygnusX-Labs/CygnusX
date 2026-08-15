@@ -668,11 +668,23 @@ async def test_plan_only_prepare_flow_freezes_readonly_dag_without_qc() -> None:
 @pytest.mark.asyncio
 async def test_save_research_keeps_failure_details_in_evidence_ledger(monkeypatch, tmp_path) -> None:
     from omichub.application.services.overdrive_run_service import OverdriveRunService
+    from omichub.infrastructure.config.storage_config import StorageConfig
+    from omichub.infrastructure.storage import LocalStorageBackend, reset_storage_backend
+    from omichub.infrastructure.storage.path_factory import StoragePathFactory
 
     monkeypatch.setattr(
         "omichub.application.services.overdrive_run_service.overdrive_run_root",
         lambda _session_id, _run_id: tmp_path,
     )
+    factory = StoragePathFactory(StorageConfig(data_root=str(tmp_path), users_subdir="users"))
+    monkeypatch.setattr(
+        "omichub.application.services.overdrive_run_service.get_path_factory", lambda: factory
+    )
+    monkeypatch.setattr(
+        "omichub.application.services.overdrive_run_service.get_storage_backend",
+        lambda: LocalStorageBackend(path_factory=factory),
+    )
+    reset_storage_backend()
     service = OverdriveRunService(AsyncMock())
     service.append_event = AsyncMock()  # type: ignore[method-assign]
     service._write_snapshot = AsyncMock()  # type: ignore[method-assign]

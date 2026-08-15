@@ -15,7 +15,10 @@ from omichub.application.services.agentteams_quality_gate_service import (
 )
 from omichub.application.services.pipeline_result_service import PipelineResultService
 from omichub.core.exceptions import ValidationError
+from omichub.infrastructure.config.storage_config import StorageConfig
+from omichub.infrastructure.storage import LocalStorageBackend
 from omichub.infrastructure.storage.minio_store import ObjectMeta
+from omichub.infrastructure.storage.path_factory import StoragePathFactory
 from omichub.tools.schema_loader import ToolsSchemaLoader
 
 USER_ID = "00000000-0000-0000-0000-000000000001"
@@ -52,15 +55,25 @@ async def test_task_summary_reads_qc_metrics_and_artifacts(tmp_path, monkeypatch
     (output_dir / "result.tsv").write_text("gene\tvalue\nA\t1\n", encoding="utf-8")
 
     class Factory:
+        def __init__(self):
+            self.data_root = tmp_path
+
         def projects_dir(self, user_id):
             return tmp_path / "users" / user_id / "projects"
 
         def task_dir(self, user_id, task_id):
             return tmp_path / "users" / user_id / "tasks" / task_id
 
+        def relative_to_root(self, path):
+            return str(path.resolve().relative_to(self.data_root.resolve()))
+
     monkeypatch.setattr(
         "omichub.application.services.pipeline_result_service.get_path_factory", lambda: Factory()
     )
+    path_factory = StoragePathFactory(
+        StorageConfig(data_root=str(tmp_path), users_subdir="users")
+    )
+    backend = LocalStorageBackend(path_factory=path_factory)
     task = SimpleNamespace(
         flow_id="rna_seq",
         status="success",
@@ -75,7 +88,7 @@ async def test_task_summary_reads_qc_metrics_and_artifacts(tmp_path, monkeypatch
         new_callable=AsyncMock,
         return_value=task,
     ):
-        summary = await PipelineResultService(_context()).get_task_summary(TASK_ID)
+        summary = await PipelineResultService(_context(), backend=backend).get_task_summary(TASK_ID)
 
     assert summary["metrics"] == {"mapping_rate": 0.3, "q30": 0.91, "duplicate_rate": 0.2}
     assert {item["path"] for item in summary["artifacts"]} == {
@@ -84,17 +97,28 @@ async def test_task_summary_reads_qc_metrics_and_artifacts(tmp_path, monkeypatch
     }
 
 
-def test_task_file_preview_rejects_traversal_and_symlink(tmp_path) -> None:
+@pytest.mark.asyncio
+async def test_task_file_preview_rejects_traversal_and_symlink(tmp_path, monkeypatch) -> None:
     root = tmp_path / "task"
     root.mkdir()
     outside = tmp_path / "secret.txt"
     outside.write_text("secret", encoding="utf-8")
     (root / "link.txt").symlink_to(outside)
 
+    path_factory = StoragePathFactory(
+        StorageConfig(data_root=str(tmp_path), users_subdir="users")
+    )
+    monkeypatch.setattr(
+        "omichub.application.services.pipeline_result_service.get_path_factory",
+        lambda: path_factory,
+    )
+    backend = LocalStorageBackend(path_factory=path_factory)
+    service = PipelineResultService(_context(), backend=backend)
+
     with pytest.raises(ValidationError):
-        PipelineResultService._resolve_preview_path(root, "../secret.txt")
+        await service._resolve_preview_path(root, "../secret.txt")
     with pytest.raises(ValidationError):
-        PipelineResultService._resolve_preview_path(root, "link.txt")
+        await service._resolve_preview_path(root, "link.txt")
 
 
 @pytest.mark.asyncio
@@ -104,12 +128,34 @@ async def test_workspace_preview_is_requester_scoped(monkeypatch, tmp_path) -> N
     (workspace / "notes.txt").write_text("verified evidence", encoding="utf-8")
 
     class Factory:
+        data_root = tmp_path
+
         def workspace_dir(self, user_id):
             return tmp_path / user_id / "workspace"
 
+        def relative_to_root(self, path):
+            return str(path.resolve().relative_to(self.data_root.resolve()))
+
+    factory = Factory()
+    monkeypatch.setattr(
+        "omichub.infrastructure.storage.path_factory.get_path_factory",
+        lambda: factory,
+    )
+    monkeypatch.setattr(
+        "omichub.application.services.pipeline_result_service.get_path_factory",
+        lambda: factory,
+    )
     monkeypatch.setattr(
         "omichub.application.services.agentteams_data_tool_service.get_path_factory",
-        lambda: Factory(),
+        lambda: factory,
+    )
+    from omichub.infrastructure.storage import reset_storage_backend
+
+    reset_storage_backend()
+    backend = LocalStorageBackend(path_factory=factory)
+    monkeypatch.setattr(
+        "omichub.application.services.pipeline_result_service.get_storage_backend",
+        lambda: backend,
     )
     service = AgentTeamsDataToolService()
     result = await service.workspace_file_preview(

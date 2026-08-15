@@ -135,3 +135,11 @@ agents:
   agent-mcp-builder:
     - mcp-build
     - artifact-validate
+
+  # --- Skill 构建师：把可复用工作流沉淀为候选 Skill ---
+  agent-skill-builder:
+    - skill-design
+    - osdp-review
+    - candidate-generation
+    - dependency-classification
+    - artifact-validate

@@ -8,16 +8,17 @@
 
 from __future__ import annotations
 
-import asyncio
 import importlib
 import inspect
 import json
 import re
+from pathlib import Path
 from typing import Any
 
 from omichub.application.schemas.tool_invocation import ToolInvocationContext
 from omichub.core.exceptions import ValidationError
 from omichub.infrastructure.mcp.workspace_file_refs import resolve_workspace_file_refs
+from omichub.infrastructure.storage import get_path_factory, get_storage_backend
 from omichub.tools.schema_loader import ToolSchema, ToolsSchemaLoader, schema_loader
 
 _UPLOAD_REF_RE = re.compile(r"^upload://(.+)$")
@@ -32,8 +33,14 @@ class ToolBridgeService:
     _MAX_LLM_PAYLOAD_BYTES = 3_000
     _MAX_UPLOAD_FILE_BYTES = 5 * 1024 * 1024  # 5MB
 
-    def __init__(self, loader: ToolsSchemaLoader | None = None) -> None:
+    def __init__(
+        self,
+        loader: ToolsSchemaLoader | None = None,
+        backend=None,
+    ) -> None:
         self._loader = loader or schema_loader
+        self._factory = get_path_factory()
+        self._backend = backend or get_storage_backend()
 
     async def execute(
         self,
@@ -152,23 +159,26 @@ class ToolBridgeService:
 
     async def _read_chat_upload(self, user_id: str, file_id: str) -> str | None:
         """从聊天上传目录读取文件内容。"""
-        from omichub.infrastructure.config.storage_config import get_user_chat_upload_dir
-
-        upload_dir = get_user_chat_upload_dir(user_id)
-        # file_id 后可能带扩展名，用 glob 匹配前缀
-        candidates = list(upload_dir.glob(f"{file_id}*"))
+        upload_dir = self._factory.chat_uploads_dir(user_id)
+        upload_rel = self._factory.relative_to_root(upload_dir)
+        entries = await self._backend.list(upload_rel, recursive=False)
+        candidates = [
+            e for e in entries if e["type"] == "file" and e["name"].startswith(file_id)
+        ]
         if not candidates:
             return None
         # 优先匹配完全相等或带常见文本扩展名
-        candidates.sort(key=lambda p: (len(p.suffix), p.name))
-        target = candidates[0]
+        candidates.sort(key=lambda e: (len(Path(e["name"]).suffix), e["name"]))
+        target_name = candidates[0]["name"]
+        target_abs = upload_dir / target_name
         try:
             # 安全校验：确保文件在 upload_dir 内
-            target.resolve().relative_to(upload_dir.resolve())
+            target_abs.resolve().relative_to(upload_dir.resolve())
         except ValueError:
             return None
         try:
-            return await asyncio.to_thread(target.read_text, encoding="utf-8")
+            content = await self._backend.read(self._factory.relative_to_root(target_abs))
+            return content.decode("utf-8")
         except (OSError, UnicodeDecodeError):
             return None
 

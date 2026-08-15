@@ -108,8 +108,21 @@ export interface DataFile {
   file_type: 'fastq' | 'bam' | 'vcf' | 'count_matrix' | 'h5ad' | 'rds' | 'meta' | 'report' | 'image' | 'other'
   status?: string
   directory?: string
-  metadata: Record<string, unknown>
+  metadata?: Record<string, unknown>
+  source?: string
+  owner_scope?: 'personal' | 'team'
+  team_id?: string | null
   created_at: string
+}
+
+export interface TeamInfo {
+  id: string
+  name: string
+  owner_id: string
+  description?: string | null
+  role: 'owner' | 'writer' | 'reader'
+  created_at: string
+  updated_at: string
 }
 
 /** 存储配额信息 */

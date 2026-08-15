@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import type { AgentTeamsEvent } from '@/api/agentTeams'
 import {
   buildRoomCreateIntent,
+  formatDuration,
   formatHardGate,
   groupRoomMessages,
+  isContentTruncated,
   MANAGER_TYPING_TTL_MS,
   parseManagerReport,
   projectCaseEvent,
@@ -121,7 +123,13 @@ describe('projectCaseEvent', () => {
 
   it('projects planning.frozen as manager speech with fallback content', () => {
     const message = projectCaseEvent(makeEvent('planning.frozen'), METADATA)
-    expect(message).toMatchObject({ kind: 'speech', content: '执行计划已冻结，等待审批与分派。' })
+    expect(message).toMatchObject({ kind: 'speech', content: '规划完成，正在执行分析与解读。' })
+  })
+
+  it('appends quality gate hint to planning.frozen fallback when required', () => {
+    const message = projectCaseEvent(makeEvent('planning.frozen', { quality_gate_required: true }), METADATA)
+    expect(message?.content).toContain('规划完成，正在执行分析与解读')
+    expect(message?.content).toContain('并将进行质量检查')
   })
 
   it('projects work_item.assigned as a system line naming the target role', () => {
@@ -152,6 +160,14 @@ describe('projectCaseEvent', () => {
     expect(message?.content).toBe('开始处理：把 result.csv 画成热图')
   })
 
+  it('maps known skill_name to display name in work_item.claimed fallback', () => {
+    const message = projectCaseEvent(
+      makeEvent('work_item.claimed', { work_item_id: 'wi-1', skill_name: 'planning_advice' }, 'data-steward'),
+      METADATA,
+    )
+    expect(message?.content).toBe('开始处理：生成执行计划')
+  })
+
   it('projects work_item.claimed as worker card start', () => {
     const message = projectCaseEvent(makeEvent('work_item.claimed', { objective: '跑 QC' }, 'data-steward'), METADATA)
     expect(message).toMatchObject({ kind: 'speech', content: '开始处理：跑 QC' })
@@ -163,9 +179,10 @@ describe('projectCaseEvent', () => {
     expect(message).toMatchObject({ kind: 'speech', content: '已领取任务，开始处理。' })
   })
 
-  it('projects agent.tool_call as a progress line', () => {
-    const message = projectCaseEvent(makeEvent('agent.tool_call', { tool: 'sandbox_execute' }, 'data-steward'), METADATA)
-    expect(message).toMatchObject({ kind: 'progress', content: '正在调用 sandbox_execute' })
+  it('projects agent.tool_call as a progress line with display name mapping', () => {
+    const message = projectCaseEvent(makeEvent('agent.tool_call', { tool: 'workspace_file_preview' }, 'data-steward'), METADATA)
+    expect(message).toMatchObject({ kind: 'progress', content: '正在调用 读取文件' })
+    expect(message?.tool).toMatchObject({ name: '读取文件', status: 'running' })
   })
 
   it('projects agent.tool_result as a completed progress line with duration', () => {
@@ -173,7 +190,15 @@ describe('projectCaseEvent', () => {
       makeEvent('agent.tool_result', { tool: 'sandbox_execute', duration_ms: 1234, status: 'ok' }, 'data-steward'),
       METADATA,
     )
-    expect(message).toMatchObject({ kind: 'progress', content: 'sandbox_execute 调用完成（1234ms）' })
+    expect(message).toMatchObject({ kind: 'progress', content: '沙箱执行 调用完成（1234ms）' })
+  })
+
+  it('formats tool duration in seconds when >= 5s', () => {
+    const message = projectCaseEvent(
+      makeEvent('agent.tool_result', { tool: 'sandbox_execute', duration_ms: 5200, status: 'ok' }, 'data-steward'),
+      METADATA,
+    )
+    expect(message?.content).toContain('（5.2s）')
   })
 
   it('projects agent.tool_result failure state', () => {
@@ -181,7 +206,7 @@ describe('projectCaseEvent', () => {
       makeEvent('agent.tool_result', { tool: 'pipeline_query', status: 'failed' }, 'data-steward'),
       METADATA,
     )
-    expect(message?.content).toBe('pipeline_query 调用失败')
+    expect(message?.content).toBe('查询流程 调用失败')
   })
 
   it('projects agent.tool_call from Bridge-wrapped nested payload', () => {
@@ -194,7 +219,7 @@ describe('projectCaseEvent', () => {
       }, 'data-steward'),
       METADATA,
     )
-    expect(message).toMatchObject({ kind: 'progress', content: '正在调用 sandbox_execute' })
+    expect(message).toMatchObject({ kind: 'progress', content: '正在调用 沙箱执行' })
   })
 
   it('projects agent.tool_result from Bridge-wrapped nested payload with duration and failure', () => {
@@ -206,8 +231,8 @@ describe('projectCaseEvent', () => {
       }, 'data-steward'),
       METADATA,
     )
-    expect(message?.content).toBe('sandbox_execute 调用失败（432ms）')
-    expect(message?.tool).toMatchObject({ name: 'sandbox_execute', status: 'failed', durationMs: 432 })
+    expect(message?.content).toBe('沙箱执行 调用失败（432ms）')
+    expect(message?.tool).toMatchObject({ name: '沙箱执行', status: 'failed', durationMs: 432 })
   })
 
   it('projects skill.finished as worker final speech using conclusion', () => {
@@ -288,13 +313,88 @@ describe('projectCaseEvent', () => {
     expect(message?.content).toContain('重试已达上限')
   })
 
-  it('projects planning.validation_failed as an action line with the reason', () => {
+  it('projects planning.validation_failed retry as Chinese summary with technical detail', () => {
     const message = projectCaseEvent(
-      makeEvent('planning.validation_failed', { error: 'planned sample_sheet is missing required sample values' }),
+      makeEvent('planning.validation_failed', {
+        error: 'planned sample_sheet is missing required sample values',
+        attempt: 1,
+        max_attempts: 3,
+      }),
       METADATA,
     )
     expect(message?.kind).toBe('action')
-    expect(message?.content).toBe('计划校验未通过：planned sample_sheet is missing required sample values')
+    expect(message?.content).toBe('计划生成不完整，正在自动重试（第 1/3 次）')
+    expect(message?.technicalDetail).toBe('planned sample_sheet is missing required sample values')
+  })
+
+  it('projects planning.validation_failed retry_exhausted with actions', () => {
+    const message = projectCaseEvent(
+      makeEvent('planning.validation_failed', {
+        error: 'general plan work item lacks objective or skill_name',
+        attempt: 3,
+        max_attempts: 3,
+        retry_exhausted: true,
+      }),
+      METADATA,
+    )
+    expect(message?.kind).toBe('action')
+    expect(message?.content).toContain('计划自动修正已达上限')
+    expect(message?.technicalDetail).toBe('general plan work item lacks objective or skill_name')
+    expect(message?.actions).toEqual([
+      { label: '重试', action: 'retry' },
+      { label: '修改需求', action: 'revise' },
+      { label: '终止 Case', action: 'cancel' },
+    ])
+  })
+
+  it('projects correction events', () => {
+    const started = projectCaseEvent(
+      makeEvent('correction_started', {
+        correction_target: 'wi-1',
+        missing_fields: ['objective', 'skill_name'],
+        attempt: 1,
+        max_attempts: 3,
+      }),
+      METADATA,
+    )
+    expect(started?.kind).toBe('action')
+    expect(started?.content).toBe('自动修正计划：缺少 objective/skill_name（第 1/3 次）')
+
+    const applied = projectCaseEvent(
+      makeEvent('correction_applied', { reason: '补全缺失字段', attempt: 1, max_attempts: 3 }),
+      METADATA,
+    )
+    expect(applied?.kind).toBe('system')
+    expect(applied?.content).toBe('已根据校验反馈重新生成计划（第 1/3 次）：补全缺失字段')
+
+    const failed = projectCaseEvent(
+      makeEvent('correction_failed', {
+        reason: '字段仍缺失',
+        attempt: 3,
+        max_attempts: 3,
+        next_actions: ['retry', 'revise', 'cancel'],
+      }),
+      METADATA,
+    )
+    expect(failed?.kind).toBe('action')
+    expect(failed?.content).toContain('计划自动修正已达上限')
+    expect(failed?.actions).toHaveLength(3)
+  })
+
+  it('projects case.auto_approved as a system line', () => {
+    const message = projectCaseEvent(makeEvent('case.auto_approved'), METADATA)
+    expect(message).toMatchObject({ kind: 'system', content: '已根据你的授权自动批准' })
+  })
+
+  it('projects node_timeout as an action with retry action', () => {
+    const message = projectCaseEvent(
+      makeEvent('node_timeout', { node: 'planning', elapsed_seconds: 125 }),
+      METADATA,
+    )
+    expect(message?.kind).toBe('action')
+    expect(message?.content).toContain('规划节点超时')
+    expect(message?.content).toContain('125.0s')
+    expect(message?.actions).toEqual([{ label: '重试', action: 'retry' }])
   })
 
   it('projects planning.revised / case.execution_failed / case.retry_queued / case.closed', () => {
@@ -358,9 +458,9 @@ describe('projectCaseEvent', () => {
     expect(message).toMatchObject({ kind: 'system', content: 'Case 已取消：用户撤销' })
   })
 
-  it('projects case.state_changed as a system line with transition', () => {
+  it('projects case.state_changed as a system line with translated transition', () => {
     const message = projectCaseEvent(makeEvent('case.state_changed', { from: 'received', to: 'executing' }), METADATA)
-    expect(message).toMatchObject({ kind: 'system', content: 'Case 状态更新：received → executing' })
+    expect(message).toMatchObject({ kind: 'system', content: 'Case 状态更新：已接收 → 执行中' })
   })
 
   it('projects omic_task.* as collapsed system lines', () => {
@@ -422,8 +522,8 @@ describe('projectCaseEvents', () => {
       makeEvent('agent.tool_call', { tool: 'sandbox_execute' }, 'data-steward'),
       makeEvent('agent.tool_result', { tool: 'sandbox_execute', duration_ms: 1234.6, status: 'ok' }, 'data-steward'),
     ], METADATA)
-    expect(call.tool).toEqual({ name: 'sandbox_execute', status: 'running', durationMs: undefined })
-    expect(result.tool).toEqual({ name: 'sandbox_execute', status: 'ok', durationMs: 1235 })
+    expect(call.tool).toEqual({ name: '沙箱执行', status: 'running', durationMs: undefined })
+    expect(result.tool).toEqual({ name: '沙箱执行', status: 'ok', durationMs: 1235 })
   })
 
   it('sorts events by recorded_at so evidence precedes later conclusions', () => {
@@ -458,7 +558,10 @@ describe('groupRoomMessages', () => {
     expect(card.type).toBe('worker')
     if (card.type !== 'worker') return
     expect(card.intro?.content).toBe('开始处理：跑 QC')
-    expect(card.steps.map((step) => step.tool.status)).toEqual(['running', 'ok'])
+    expect(card.steps).toHaveLength(1)
+    expect(card.steps[0].tool.status).toBe('ok')
+    expect(card.steps[0].count).toBe(2)
+    expect(card.steps[0].details).toHaveLength(2)
     expect(card.body?.content).toBe('QC 全部通过')
     expect(card.active).toBe(false)
     expect(card.failed).toBe(false)
@@ -472,6 +575,8 @@ describe('groupRoomMessages', () => {
     const card = blocks[0]
     expect(card.type).toBe('worker')
     if (card.type !== 'worker') return
+    expect(card.steps).toHaveLength(1)
+    expect(card.steps[0].tool.status).toBe('running')
     expect(card.active).toBe(true)
     expect(card.body).toBeUndefined()
   })
@@ -484,6 +589,26 @@ describe('groupRoomMessages', () => {
     expect(card.type).toBe('worker')
     if (card.type !== 'worker') return
     expect(card.failed).toBe(true)
+  })
+
+  it('folds consecutive same-name tool calls into one step with count and details', () => {
+    const blocks = groupRoomMessages(projectCaseEvents([
+      makeEvent('work_item.claimed', { objective: '跑 QC' }, 'data-steward'),
+      makeEvent('agent.tool_call', { tool: 'workspace_file_preview' }, 'data-steward'),
+      makeEvent('agent.tool_result', { tool: 'workspace_file_preview', duration_ms: 75, status: 'ok' }, 'data-steward'),
+      makeEvent('agent.tool_call', { tool: 'workspace_file_preview' }, 'data-steward'),
+      makeEvent('agent.tool_result', { tool: 'workspace_file_preview', duration_ms: 70, status: 'ok' }, 'data-steward'),
+      makeEvent('agent.tool_call', { tool: 'workspace_file_preview' }, 'data-steward'),
+      makeEvent('skill.finished', { conclusion: '完成' }, 'data-steward'),
+    ], METADATA))
+    const card = blocks[0]
+    expect(card.type).toBe('worker')
+    if (card.type !== 'worker') return
+    expect(card.steps).toHaveLength(1)
+    expect(card.steps[0].tool.name).toBe('读取文件')
+    expect(card.steps[0].count).toBe(5)
+    expect(card.steps[0].details).toHaveLength(5)
+    expect(card.steps[0].tool.durationMs).toBe(145)
   })
 
   it('keeps manager speech, system lines and lone worker speech as standalone blocks', () => {
@@ -535,6 +660,34 @@ describe('buildRoomCreateIntent', () => {
 
   it('caps the intent at 256 characters to match the backend contract', () => {
     expect(buildRoomCreateIntent('x'.repeat(400))).toHaveLength(256)
+  })
+})
+
+describe('formatDuration', () => {
+  it('shows milliseconds for short durations', () => {
+    expect(formatDuration(1234)).toBe('1234ms')
+    expect(formatDuration(4999)).toBe('4999ms')
+  })
+
+  it('shows seconds with one decimal for durations >= 5s', () => {
+    expect(formatDuration(5200)).toBe('5.2s')
+    expect(formatDuration(30000)).toBe('30.0s')
+  })
+
+  it('returns empty string for undefined duration', () => {
+    expect(formatDuration(undefined)).toBe('')
+  })
+})
+
+describe('isContentTruncated', () => {
+  it('detects content not ending with sentence punctuation', () => {
+    expect(isContentTruncated('以')).toBe(true)
+    expect(isContentTruncated('This is incomplete')).toBe(true)
+  })
+
+  it('treats sentence-ending punctuation as complete', () => {
+    expect(isContentTruncated('已完成。')).toBe(false)
+    expect(isContentTruncated('Done!')).toBe(false)
   })
 })
 
@@ -621,7 +774,7 @@ describe('projectCaseEvents work-item start dedup', () => {
       makeEvent('work_item.claimed', { work_item_id: 'wi-1', skill_name: 'planning_advice', attempt: 1 }, 'data-steward'),
     ], METADATA)
     expect(messages).toHaveLength(1)
-    expect(messages[0].content).toBe('开始处理：planning_advice')
+    expect(messages[0].content).toBe('开始处理：生成执行计划')
   })
 
   it('keeps a re-claim with a higher attempt (legitimate retry)', () => {

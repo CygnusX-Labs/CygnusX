@@ -9,17 +9,20 @@
 
 from __future__ import annotations
 
+import fnmatch
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from omichub.domain.file.value_objects import FileSource, FileType, LifecycleStatus
+from omichub.domain.file.value_objects import FileSource, FileType, LifecycleStatus, OwnerScope
 from omichub.infrastructure.database.models.file import FileRecordModel
+from omichub.infrastructure.storage import get_storage_backend
+from omichub.infrastructure.storage.backend import StorageBackend
 from omichub.infrastructure.storage.path_factory import StoragePathFactory, get_path_factory
 
 logger = logging.getLogger(__name__)
@@ -58,9 +61,15 @@ def _detect_file_type(filename: str) -> FileType:
 class FileRegistry:
     """统一文件注册入口。"""
 
-    def __init__(self, session: AsyncSession, path_factory: StoragePathFactory | None = None):
+    def __init__(
+        self,
+        session: AsyncSession,
+        path_factory: StoragePathFactory | None = None,
+        backend: StorageBackend | None = None,
+    ):
         self._session = session
         self._pf = path_factory or get_path_factory()
+        self._backend = backend or get_storage_backend()
 
     async def register(
         self,
@@ -73,25 +82,28 @@ class FileRegistry:
         display_name: str | None = None,
         directory: str = "",
         cleanup_days: int | None = None,
+        owner_scope: OwnerScope = OwnerScope.PERSONAL,
+        team_id: uuid.UUID | None = None,
     ) -> FileRecordModel:
         """注册单个文件，返回 FileRecordModel。
 
-        幂等：同 user_id + storage_path 已存在时直接返回已有记录。
+        幂等：同 user_id + storage_path 已存在时直接返回已有记录；团队文件额外按 team_id 区分。
         """
         abs_path = Path(path)
         rel_path = self._pf.relative_to_root(abs_path)
 
-        existing = await self._find_by_path(user_id, rel_path)
+        existing = await self._find_by_path(user_id, rel_path, team_id=team_id)
         if existing:
             return existing
 
         name = display_name or abs_path.name
         detected_type = file_type or _detect_file_type(abs_path.name)
-        size = abs_path.stat().st_size if abs_path.exists() else 0
+        info = await self._backend.stat(rel_path)
+        size = info.get("size", 0) if info else 0
 
         cleanup_after = None
         if cleanup_days is not None:
-            cleanup_after = datetime.now(timezone.utc) + timedelta(days=cleanup_days)
+            cleanup_after = datetime.now(UTC) + timedelta(days=cleanup_days)
 
         record = FileRecordModel(
             id=uuid.uuid4(),
@@ -107,6 +119,8 @@ class FileRegistry:
             task_id=task_id,
             lifecycle_status=LifecycleStatus.ACTIVE.value,
             cleanup_after=cleanup_after,
+            owner_scope=owner_scope.value,
+            team_id=team_id,
         )
         self._session.add(record)
         await self._session.flush()
@@ -124,35 +138,40 @@ class FileRegistry:
         patterns: list[str] | None = None,
         recursive: bool = True,
         cleanup_days: int | None = None,
+        owner_scope: OwnerScope = OwnerScope.PERSONAL,
+        team_id: uuid.UUID | None = None,
     ) -> list[FileRecordModel]:
         """批量注册目录下匹配的文件。
 
         patterns: glob 模式列表（如 ["*.csv", "**/*.html"]），None 表示注册所有文件。
         """
         dir_path = Path(directory)
-        if not dir_path.is_dir():
+        dir_rel = self._pf.relative_to_root(dir_path)
+        info = await self._backend.stat(dir_rel)
+        if info is None or not info.get("is_dir"):
             logger.warning("register_directory: path is not a directory: %s", dir_path)
             return []
 
+        entries = await self._backend.list(dir_rel, recursive=recursive)
+        files = [e for e in entries if e["type"] == "file"]
         if patterns:
-            files: list[Path] = []
-            for pattern in patterns:
-                if recursive and "**" not in pattern:
-                    pattern = f"**/{pattern}"
-                files.extend(dir_path.glob(pattern))
-            files = [f for f in files if f.is_file()]
-        else:
-            glob_fn = dir_path.rglob if recursive else dir_path.glob
-            files = [f for f in glob_fn("*") if f.is_file()]
+            files = [
+                e
+                for e in files
+                if any(fnmatch.fnmatch(e["path"], pat) for pat in patterns)
+            ]
 
         records = []
-        for f in sorted(set(files)):
+        for entry in sorted(files, key=lambda e: e["path"]):
+            abs_path = self._pf.data_root / entry["path"]
             record = await self.register(
                 user_id,
-                f,
+                abs_path,
                 source=source,
                 task_id=task_id,
                 cleanup_days=cleanup_days,
+                owner_scope=owner_scope,
+                team_id=team_id,
             )
             records.append(record)
 
@@ -171,11 +190,17 @@ class FileRegistry:
         """获取已注册记录或注册新文件（register 的别名，强调幂等语义）。"""
         return await self.register(user_id, path, **kwargs)
 
-    async def _find_by_path(self, user_id: uuid.UUID, rel_path: str) -> FileRecordModel | None:
+    async def _find_by_path(
+        self, user_id: uuid.UUID, rel_path: str, *, team_id: uuid.UUID | None = None
+    ) -> FileRecordModel | None:
         stmt = select(FileRecordModel).where(
             FileRecordModel.user_id == user_id,
             FileRecordModel.storage_path == rel_path,
             FileRecordModel.status != "deleted",
-        ).limit(1)
-        result = await self._session.execute(stmt)
+        )
+        if team_id is not None:
+            stmt = stmt.where(FileRecordModel.team_id == team_id)
+        else:
+            stmt = stmt.where(FileRecordModel.team_id.is_(None))
+        result = await self._session.execute(stmt.limit(1))
         return result.scalars().first()

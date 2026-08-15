@@ -4,15 +4,44 @@ from __future__ import annotations
 
 import asyncio
 from decimal import Decimal
+from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from celery import shared_task
 from loguru import logger
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.core.telemetry import get_tracer
+from omichub.domain.file.value_objects import FileSource
 from omichub.domain.task.value_objects import LogLevel, TaskStatus
 from omichub.infrastructure.cache.pubsub import publish_task_log
 from omichub.infrastructure.execution.local import LocalSnakemakeExecutor
+from omichub.infrastructure.storage.file_registry import FileRegistry
+
+
+async def _register_pipeline_outputs(session: AsyncSession, task: Any) -> int:
+    """任务成功后扫描 output 目录并批量注册到 file_records。
+
+    返回注册的文件数量；未找到 output 目录时返回 0。异常由调用方捕获并记录日志。
+    """
+    work_path = Path(task.work_dir)
+    output_dir = (
+        work_path.parent / "output"
+        if work_path.name == "work"
+        else work_path / "output"
+    )
+    if not output_dir.is_dir():
+        return 0
+    registry = FileRegistry(session)
+    registered = await registry.register_directory(
+        task.user_id,
+        output_dir,
+        source=FileSource.PIPELINE,
+        task_id=task.id,
+        recursive=True,
+    )
+    return len(registered)
 
 
 @shared_task(name="omichub.infrastructure.celery_app.tasks.analysis.run_snakemake")
@@ -150,6 +179,22 @@ async def _execute_snakemake(
                         LogLevel.WARNING,
                         f"生成报告记录失败（非阻塞）: {report_exc}",
                         source="report",
+                    )
+
+                # 任务成功后批量注册 output 产物到统一文件索引
+                try:
+                    registered_count = await _register_pipeline_outputs(session, task)
+                    if registered_count:
+                        await _add_and_publish_log(
+                            LogLevel.INFO,
+                            f"已注册 {registered_count} 个流程产物到文件索引",
+                            source="file_registry",
+                        )
+                except Exception as registry_exc:  # noqa: BLE001
+                    await _add_and_publish_log(
+                        LogLevel.WARNING,
+                        f"注册流程产物到文件索引失败（非阻塞）: {registry_exc}",
+                        source="file_registry",
                     )
 
                 return_status = "success"

@@ -22,29 +22,40 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column('skills', sa.Column('version', sa.String(length=50), nullable=True))
-    op.add_column('skills', sa.Column('author', sa.String(length=100), nullable=True))
-    op.add_column(
-        'skills',
-        sa.Column(
-            'source_type',
-            sa.String(length=20),
-            nullable=False,
-            server_default='json',
-        ),
-    )
-    op.add_column('skills', sa.Column('source_ref', sa.String(length=500), nullable=True))
-    op.add_column('skills', sa.Column('source_commit', sa.String(length=64), nullable=True))
-    op.add_column(
-        'skills',
-        sa.Column(
-            'has_scripts',
-            sa.Boolean(),
-            nullable=False,
-            server_default=sa.text('false'),
-        ),
-    )
-    op.add_column('skills', sa.Column('frontmatter', sa.JSON(), nullable=True))
+    # 幂等：历史环境可能已通过旧镜像/手工方式建过这些列但未记录本 revision，
+    # 重跑时跳过已存在的列，避免 DuplicateColumnError 阻塞启动。
+    existing = {c['name'] for c in sa.inspect(op.get_bind()).get_columns('skills')}
+
+    if 'version' not in existing:
+        op.add_column('skills', sa.Column('version', sa.String(length=50), nullable=True))
+    if 'author' not in existing:
+        op.add_column('skills', sa.Column('author', sa.String(length=100), nullable=True))
+    if 'source_type' not in existing:
+        op.add_column(
+            'skills',
+            sa.Column(
+                'source_type',
+                sa.String(length=20),
+                nullable=False,
+                server_default='json',
+            ),
+        )
+    if 'source_ref' not in existing:
+        op.add_column('skills', sa.Column('source_ref', sa.String(length=500), nullable=True))
+    if 'source_commit' not in existing:
+        op.add_column('skills', sa.Column('source_commit', sa.String(length=64), nullable=True))
+    if 'has_scripts' not in existing:
+        op.add_column(
+            'skills',
+            sa.Column(
+                'has_scripts',
+                sa.Boolean(),
+                nullable=False,
+                server_default=sa.text('false'),
+            ),
+        )
+    if 'frontmatter' not in existing:
+        op.add_column('skills', sa.Column('frontmatter', sa.JSON(), nullable=True))
 
 
 def downgrade() -> None:

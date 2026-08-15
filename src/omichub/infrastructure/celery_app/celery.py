@@ -138,7 +138,7 @@ celery_app.conf.beat_schedule = {
         "task": "omichub.infrastructure.celery_app.tasks.agentteams.watch_cases",
         "schedule": float(settings.agentteams_case_watch_interval_seconds),
     },
-    # 聊天式创建的通用 Case 自动确认（流程型仍走人工审批，任务内部防御）
+    # 处于 approval_pending 且用户偏好为 autonomous 的 Case 自动确认（通用与流程均支持）
     "agentteams-auto-confirm-cases": {
         "task": "omichub.infrastructure.celery_app.tasks.agentteams.auto_confirm_cases",
         "schedule": float(settings.agentteams_case_watch_interval_seconds),

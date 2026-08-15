@@ -92,6 +92,7 @@ YAML 为权威来源持续同步，避免后台临时编辑造成配置漂移。
 | `cloud_ops.yaml` / `agent-cloud-ops` | 云运维工程师 | 管理员平台健康巡检、云资源与存储检查、故障分诊、容量风险和变更/回滚方案审查。 | Studio | LangGraph / `analysis-core` |
 | `shania.yaml` / `shania` | 傻妞 | 通用对话、数据与基因问题、多组学思路和研究陪伴。 | Chat | Legacy / `analysis-core` |
 | `mcp_builder.yaml` / `agent-mcp-builder` | MCP 构建师 | 从自然语言生成、测试、注册和审查 MCP Server，支持临时 TTL 与人工复核。 | Studio | Legacy / `analysis-core` |
+| `skill_builder.yaml` / `agent-skill-builder` | 技能构建师 | 把可复用任务样例沉淀为符合 OSDP 的 Skill 候选包，写入候选区等待人工晋升。 | Studio | Legacy / `analysis-core` |
 
 ### 3.1 Agent 工具与 Skill 范围
 
@@ -101,10 +102,10 @@ YAML 为权威来源持续同步，避免后台临时编辑造成配置漂移。
 | 通用助手 | `workspace`, `research`, `memory`, `handoff`, `subagents`, `agentteams_case` | BLAST、基因组工具、ATAC、MAF/GISTIC2、突变模式。 |
 | RNA-seq 分析师 | `workspace`, `research`, `rnaseq`, `memory`, `handoff`, `subagents`, `agentteams_case` | RNAFlow、DEG、富集、表达矩阵、文库链特异性、WGCNA、rMATS、组织特异基因、GFF/GO/KEGG、FASTQ Screen、交付与 MD5。 |
 | ATAC-seq 分析师 | `workspace`, `research`, `atacseq`, `memory`, `handoff`, `subagents`, `agentteams_case` | ATACFlow、ATAC 工具集、基因组工具、差异分析、富集、FASTQ Screen、GFF/GO/KEGG、交付与 MD5。 |
-| 单细胞分析师 | `workspace`, `research`, `memory`, `handoff`, `agentteams_case` | 人/鼠与植物注释、流程总览、对象转换、重聚类、参考注释、T 细胞映射、DEG、注释统计、Quarto 报告、scRNA-seq。 |
-| 单细胞上游专家 | `workspace`, `research`, `memory`, `handoff`, `agentteams_case` | 当前主要依赖提示词、平台研究工具和专家交接。 |
-| 单细胞整合专家 | `workspace`, `research`, `memory`, `handoff`, `agentteams_case` | 当前主要依赖提示词、平台研究工具和专家交接。 |
-| 单细胞高级专家 | `workspace`, `research`, `memory`, `handoff`, `agentteams_case` | 注释、对象转换、重聚类、参考映射、T 细胞映射、DEG、统计和报告。 |
+| 单细胞分析师 | `workspace`, `research`, `memory`, `handoff`, `agentteams_case`, `scrna` | 人/鼠与植物注释、流程总览、对象转换、重聚类、参考注释、T 细胞映射、DEG、注释统计、Quarto 报告、scRNA-seq。 |
+| 单细胞上游专家 | `workspace`, `research`, `memory`, `handoff`, `agentteams_case`, `scrna` | FASTQ Screen、scRNA 流程总览。 |
+| 单细胞整合专家 | `workspace`, `research`, `memory`, `handoff`, `agentteams_case`, `scrna` | 对象转换、重聚类。 |
+| 单细胞高级专家 | `workspace`, `research`, `memory`, `handoff`, `agentteams_case`, `scrna` | 注释、对象转换、重聚类、参考映射、T 细胞映射、DEG、统计和报告。 |
 | 代码助手 | `workspace`, `handoff`, `subagents`, `agentteams_case` | 软件管理、日志插件、MD5、数据交付。 |
 | 可视化助手 | `workspace`, `visualization`, `handoff`, `agentteams_case` | R 绘图库、DotPlot。 |
 | 数据管理员 | `workspace`, `memory`, `handoff`, `agentteams_case` | 暂无专用 Skill；后续挂载项目预检与元数据校验 Skill。 |
@@ -112,7 +113,8 @@ YAML 为权威来源持续同步，避免后台临时编辑造成配置漂移。
 | 交付报告员 | `workspace`, `memory`, `handoff`, `agentteams_case` | 暂无专用 Skill；后续挂载交付 manifest、runbook 与证据归档 Skill。 |
 | 云运维工程师 | `cloud_ops`, `research`, `memory`, `handoff`, `subagents`, `agentteams_case` | 管理员专用只读平台健康检查，以及任务、流程、账户和工作区证据读取。 |
 | 傻妞 | `workspace`, `research`, `memory`, `handoff` | 无固定 Skill，按通用研究上下文工作。 |
-| MCP 构建师 | `workspace`, `memory`, `handoff` | 无固定 Skill，能力由 MCP Builder 配置和审核流程提供。 |
+| MCP 构建师 | `workspace`, `memory`, `handoff` | MCP Server 构建工作台（六阶段工作流与代码模板，见 §11.7）。 |
+| 技能构建师 | `workspace`, `research`, `memory`, `handoff`, `agentteams_case` | 无固定 Skill；能力由提示词和沙箱生成逻辑提供。 |
 
 Agent 的能力边界由提示词与实际挂载权限共同决定。只在提示词中写“可以调用某工具”不会产生
 权限；必须通过 Tool Pack、`mcp_ids`、`mcp_tools` 或 `skill_ids` 完成真实挂载。
@@ -560,15 +562,30 @@ timeline 落库、handoff 事件等）是**各自独立实现**的，历史上�
 
 后续增删专家时若忘记同步白名单或候选表，CI 会直接红灯。维护规范见 §12。
 
-### 11.3 模型与 Provider 高度单一化
+### 11.3 模型与 Provider 高度单一化 ✅ 已解决（2026-08-14）
 
-13 个 Agent YAML 的 `model` 字段全部是 `qwen3.7-plus`，没有按任务复杂度分层（例如给
+**曾经的问题**：13 个 Agent YAML 的 `model` 字段全部是 `qwen3.7-plus`，没有按任务复杂度分层（例如给
 `router` 这类低延时诉求的入口用更快的模型，给 `mcp_builder` 这类需要强代码生成能力的
 用更强模型）。同时 `data/ai/providers.yaml` 里 `deepseek-v4-flash` 和 `qwen3.7-plus`
 同时标注 `is_default: true`，虽然同步逻辑（`ai_provider_yaml_loader.py`）只会让最后
 生效的一个成为真正默认值，但 YAML 层面两条 `is_default: true` 容易误导后续维护者。
 单一 Provider 也是可用性单点故障：一旦 `qwen3.7-plus` 服务异常，全部 Agent 同时不可用。
-建议明确模型选型准则，并清理 `providers.yaml` 中重复的 `is_default`。
+
+**解决方案**：按"任务认知负荷"分两档（当前 providers.yaml 只有两个可用 Provider，分档到
+现有模型上）：
+
+| 档位 | 模型 | Agent | 依据 |
+| --- | --- | --- | --- |
+| 轻量档 | `deepseek-v4-flash` | `router`、`data`、`delivery`、`shania` | 路由分类（运行时 temp=0、max_tokens=200 输出 JSON）、清单式核验、结构化汇总、陪伴式对话，均为低温度结构化任务 |
+| 推理档 | `qwen3.7-plus` | 其余全部领域专家、`qc`、`orchestrator`、`mcp_builder` | 实验设计、证据链推理、审计结论、计划生成、代码生成，容错率低 |
+
+`qc` 虽以结构化三态结论输出，但其审计结论会阻断交付，错误代价高，明确保留在推理档。
+同时把 `providers.yaml` 中 `deepseek-v4-flash` 的 `is_default` 改为 `false`，全局默认
+Provider 只保留 `qwen3.7-plus` 一个（与此前"最后生效"的实际行为一致，无语义变化）。
+模型选型准则沉淀为 §12.5。
+
+**尚未解决**：单一 Provider 的可用性单点故障仍在（flash 与 plus 分属火山与阿里两家，
+已缓解一半）；后续接入第三家 Provider 时可把轻量档迁到独立厂商。
 
 ### 11.4 MAS 编排层全专家登记 ✅ 已解决（2026-08-09）
 
@@ -619,20 +636,136 @@ timeline 落库、handoff 事件等）是**各自独立实现**的，历史上�
 
 改一个通用时效词现在只需改 `FRESHNESS_SEARCH_TRIGGERS` 一处。规范见 §12.3。
 
-### 11.6 三个 scrna 子专家目前工具能力空心
+### 11.6 三个 scrna 子专家工具能力空心 ✅ 已解决（2026-08-14）
 
-`scrna_upstream`、`scrna_integration`、`scrna_advanced` 中前两者没有任何
+**曾经的问题**：`scrna_upstream`、`scrna_integration`、`scrna_advanced` 中前两者没有任何
 `builtin_tools`/`skill_ids`，仅挂载 `workspace`、`research`、`memory`、`handoff`，
 第 3 节表格也如实写了"当前主要依赖提示词、平台研究工具和专家交接"。这意味着这两个
-子专家目前无法真正执行任何专项分析，只能对话和转交，实用性有限。建议在文档里明确
-这是"设计如此的分诊层"还是"待补齐的过渡状态"，避免后续维护者误以为专属能力已经就位。
+子专家无法真正执行任何专项分析，只能对话和转交，实用性有限——分诊链上半段是"嘴"
+下半段是"手"。
 
-### 11.7 提示词体积护栏形同虚设
+**解决方案**（两条并行）：
+
+1. **新建 `data/ai/tools/scrna.yaml` 工具包**，绑定与 rnaseq/atacseq 包同一组已注册
+   MCP Server（Ensembl `9f3a3546-…`、GO `15bb9689-…`），但按单细胞场景收敛
+   `mcp_tools` 白名单：Ensembl 只暴露 `list_species`/`search_genes`/`lookup_gene`/
+   `get_xrefs`（不暴露序列/CDS 拉取），GO 只暴露 `search_go_terms`/`get_go_term`/
+   `validate_go_id`。四个 scrna Agent 的 `tool_packs` 统一追加 `scrna`，marker
+   验证和注释审查从此有实时基因/功能证据可查。
+2. **按分工补齐可执行 Skill**：`scrna_upstream` 挂载 `fastq-screen` +
+   `scrna-pipeline-overview`（FASTQ 污染筛查与流程认知）；`scrna_integration` 挂载
+   `scrna-object-convert` + `scrna-recluster`（对象格式转换与重聚类）。
+   `scrna_advanced` 此前已有全套下游技能，本次只补工具包。
+
+注意：scrna 流程执行（Cell Ranger 等）能力不在本次范围——`flows/scrna.yaml` 的 executor
+能力由 flow 注册表自动派生给 actor `agent-scrna`，子专家定位仍是分诊/审查/咨询，
+但现在审查有实时证据（MCP）和可执行手段（Skill）支撑，不再是纯对话。
+
+**顺带澄清一个此前的误评**：曾认为"所有 Agent 的 `mcp_ids` 都是空的，没有 Agent 挂载
+MCP"。实际上 MCP 挂载发生在 Tool Pack 层（`agent_loader.py` 合并 `pack.mcp_ids` +
+自动附加 `omichub-tools`/`omichub-platform` 预设），rnaseq/atacseq 一直通过工具包
+绑定 3 个外部 MCP；真正的缺口是 scrna 团队没有领域 MCP，本次已补齐。
+
+### 11.7 提示词体积护栏（部分缓解，2026-08-14）
 
 第 10 节要求超过 120 行的提示词在 PR 中说明理由，但这只是文字约定，没有 CI 校验。
-`prompts/mcp_builder.md`（456 行）和 `prompts/visualization.md`（288 行）已经远超
-阈值。建议加一个轻量脚本在 CI 里统计提示词行数并输出提醒（不阻断合并），让这条护栏
-真正可执行。
+
+**已处理**：`prompts/mcp_builder.md` 从 498 行瘦身到 89 行；`prompts/skill_builder.md`
+新建即控制在 98 行。工作流/模板下沉为 Skill/references，提示词只保留统一章节、每次
+编码必须成立的常量摘要、进度块输出格式和约束红线。
+
+**仍未解决**：`prompts/visualization.md`（288 行）仍超阈值；CI 行数提醒脚本仍未添加。
+建议照 mcp_builder 的模式把 visualization.md 的绘图规范下沉为 Skill 的 references，
+并补 CI 统计脚本让护栏真正可执行。
+
+### 11.8 `viz` 的 `domain: phylo` 语义错位 ✅ 已解决（2026-08-14）
+
+**曾经的问题**：`viz.yaml` 声明了 `features.domain: phylo`，把跨领域的可视化助手绑进
+系统发育域。该字段的唯一消费方是 `chat_service.py` 路由目录构建时的
+`DomainRegistry.router_notes_for(agent_id, domain)`：显式 `domain` 优先于
+`agent_match` 反查，直接返回对应 Domain Pack 的 `router_notes`。
+
+**解决方案**：删除 `viz.yaml` 的 `domain: phylo`。删除后行为不变，因为：
+
+- `router_notes_for` 回退到 `agent_match` 反查时，`domains/phylo.yaml` 的
+  `tree-viz-only`/`phylogeny-build` 规则本就含 `agent_match: [agent-viz, …]`，
+  phylo 提示照常命中；
+- phylo Pack 的 `router_notes` 目前为空字符串，显式 domain 本就没有注入任何内容；
+- omics Pack 的 `agent_match` 不含 `agent-viz`，回退查找不会错配到 omics。
+
+可视化是跨领域能力，归属判断应完全交给各 Domain Pack 的 `agent_match` 规则，而不是
+在 Agent 上钉死单一领域。
+
+### 11.9 BioOps 三角色的 handoff 图不对称 ✅ 已解决（2026-08-14）
+
+**曾经的问题**：`data`/`qc`/`delivery` 的 `allowed_targets` 只有 `[agent-general]`，
+而 `general` 可转所有人（`"*"`）。这三个角色实际是 general 的附庸：数据预检通过后
+不能直接交给领域专家，审计不通过也不能直接回退给被审计方，全部要经 general 中转，
+白白消耗跳数（每会话上限 10）。
+
+**解决方案**：按各自在分析流水线中的邻居关系扩展白名单：
+
+| Agent | 扩展后 allowed_targets | 依据 |
+| --- | --- | --- |
+| `agent-data` | `agent-general`, `agent-qc`, `agent-scrna`, `agent-rnaseq`, `agent-atacseq` | 预检通过直接交接领域专家；发现质量问题转审计 |
+| `agent-qc` | `agent-general`, `agent-rnaseq`, `agent-atacseq`, `agent-scrna`, `agent-delivery` | 审计不通过回退被审计专家修复；通过后转交付汇总 |
+| `agent-delivery` | `agent-general`, `agent-qc`, `agent-viz`, `agent-code` | 产物未验证回退审计；缺图表/复现脚本转可视化或代码补齐 |
+
+一致性由 `tests/unit/test_agent_config_consistency.py` 守护（目标必须是已启用 Agent、
+禁止指向 router/自转交、跳数上限），本次改动后该套件全绿。另外顺带修复了
+`test_agent_router_dispatch.py::test_site_yaml_enabled_agents_have_config_files`
+的一处存量漂移：`cloud_ops` 早已加入 `agents.enabled` 但测试期望列表未同步。
+
+### 11.10 Skill Builder Agent 与候选区治理 ✅ 已解决（2026-08-14）
+
+**曾经的问题**：用户反复让 AI 做同类任务（"帮我转成 rds 再重聚类"、"画火山图"）时，
+成功执行上下文无法沉淀为可复用 Skill；每次都靠提示词里的临时指令重复造轮子，既浪费
+上下文又无法保证一致性。同时，如果允许 AI 自动把生成物塞进 marketplace，会迅速导致
+L1 路由冲突和技能质量失控。
+
+**解决方案**：新增内置 `agent-skill-builder`（技能构建师），走"候选 → 评审 → 晋升"的
+受控闭环：
+
+1. **Agent 与提示词**
+   - `data/ai/skill_builder.yaml` + `data/ai/prompts/skill_builder.md`（98 行，符合 §10 护栏）；
+   - `model: deepseek-v4-flash`（轻量结构化生成），`tool_packs` 含 workspace/research/memory/handoff/agentteams_case；
+   - 提示词保留 §3.2 统一十章节，明确"只生成候选包，不代为提交/自动挂载"；
+   - 产物目录约定：`/workspace/skill-candidates/<skill_id>/`。
+
+2. **候选区约定**
+   - `data/ai/skill_candidates/README.md` 定义候选区职责、状态流转、评审 checklist；
+   - 候选包必须含 `SKILL.md`（OSDP frontmatter + 五段式）、`references/guide.md`、
+     可执行技能还须 `references/environment.md`（A/B/C/D 依赖分级）和
+     `scripts/check_env.sh`；
+   - 候选包带 `CANDIDATE_MANIFEST.json`（含 `pending_review_items`），状态为
+     `candidate`，不进 marketplace，不会被自动安装。
+
+3. **晋升脚本**
+   - `scripts/promote_skill_candidate.py`：把候选包复制到
+     `data/ai/skill_marketplace/<skill_id>/`，做文件级校验（OSDP 解析、包大小 ≤1MiB、
+     skill_id 冲突检查），支持 `--dry-run` 和 `--replace`。
+
+4. **高频发现脚本（第二阶段）**
+   - `scripts/analyze_skill_invocations.py`：读取 `skill_invocations` 表，输出最近 N 天
+     Top-N 高频 Skill 榜单，并对"同一会话中没有 use_skill 调用的用户消息"做简单关键词
+     分组，给出候选 Skill ID 建议（如 `h5ad-rds-workflow`、`火山-workflow`）。
+   - 这回答了"哪些内容被高强度重复使用"的问题，但**不自动执行生成**，最终是否沉淀
+     仍由管理员触发 `agent-skill-builder` 决定。
+
+5. **与现有治理体系对齐**
+   - 加入 `data/OmicHub.yaml: agents.enabled`；
+   - 加入 `data/ai/mas/agent_capabilities.yaml`（能力键：skill-design/osdp-review/
+     candidate-generation/dependency-classification/artifact-validate）；
+   - 加入 `data/ai/agent_ability.yaml`；
+   - 新增 `tests/unit/test_skill_builder_prompt.py`、
+     `tests/unit/test_skill_candidate_promote.py`、
+     `tests/unit/test_analyze_skill_invocations.py`，与一致性测试共同守护。
+
+**明确不做**：
+- 不实现全自动"检测高频 → 生成 → 安装"；`analyze_skill_invocations.py` 只输出建议，
+  生成和晋升仍需人工触发；
+- 不修改 marketplace 自动安装机制；
+- 候选包默认不进入任何 Agent 的 `skill_ids`。
 
 ## 12. MAS 编排层与配置维护规范
 
@@ -684,6 +817,38 @@ MAS（Multi-Agent System）编排层仅在 `settings.mas_enabled` 打开时进�
   是通用基础包，代码/开发类 Agent 直接复用它，不要再造内容雷同的包。
 - 工具包必须至少被一个 enabled Agent 的 `tool_packs` 引用；无人引用的包应删除，避免像
   历史上的 `development.yaml` 那样成为误导维护者的死文件。
+- 多个 Agent 需要绑定同一组 MCP Server 但白名单不同时，按领域建包并收敛 `mcp_tools`
+  （先例：`scrna.yaml` 复用 rnaseq/atacseq 的 Ensembl/GO Server UUID，但只暴露
+  基因检索与 GO 校验子集）。不要在 Agent YAML 里直接堆 `mcp_ids`。
+
+### 12.5 模型分级准则
+
+Agent YAML 的 `model` 按**任务认知负荷**选档，不按"这个 Agent 重不重要"选：
+
+- **轻量档（当前 `deepseek-v4-flash`）**：输出结构化、温度 ≤0.4、错误可被下游校验或
+  重试覆盖的任务——路由分类、清单核验、交付汇总、陪伴式对话、Skill 候选包生成。
+- **推理档（当前 `qwen3.7-plus`）**：结论会直接驱动实验设计、阻断交付或生成代码的
+  任务——领域专家分析、`qc` 审计、`orchestrator` 计划、`mcp_builder` 代码生成。
+- 新 Agent 默认进推理档；要进轻量档需在 YAML 注释里说明"错误代价为什么低"。
+- `providers.yaml` 中 `is_default: true` 全局只能有一个（当前 `qwen3.7-plus`）；
+  其余 Provider 一律 `is_default: false`，靠 Agent 按名显式选用。
+
+### 12.6 Skill 候选区治理规范
+
+新增或演进 Skill 时，优先区分"临时指令"和"可复用能力"：
+
+- 一次性、边界模糊、未经实测的任务样例，让 Agent 用系统提示词 + 知识库直接回答；
+- 重复 ≥3 次、触发条件清晰、输入输出可契约化的工作流，才交给 `agent-skill-builder`
+  沉淀为候选 Skill；
+- 候选包必须进 `/workspace/skill-candidates/<skill_id>/`，带
+  `CANDIDATE_MANIFEST.json` 和 `pending_review_items`；
+- 晋升到 `data/ai/skill_marketplace/` 前必须通过 §11.10 的评审 checklist；
+- 晋升脚本 `scripts/promote_skill_candidate.py` 只做文件级校验，不自动改 Agent YAML；
+- 评审未通过或边界与现有 skill 冲突的候选，应退回修改或废弃，禁止为了"凑数量"硬晋升。
+
+候选区与 MCP Builder 的实验态（`mcp-builds/` + TTL）对称：两者都是 AI 生成能力的
+受控沙盒，只是产物形态不同（MCP Server vs Skill 包），治理核心都是"先生成、再校验、
+后人工确认"。
 
 ## 13. AgentTeams 权威文档与维护边界
 

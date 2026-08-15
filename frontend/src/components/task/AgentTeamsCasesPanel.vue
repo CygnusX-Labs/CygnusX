@@ -23,7 +23,7 @@ import {
   type AgentTeamsCase,
   type AgentTeamsCaseStatus,
 } from '@/api/agentTeams'
-import { agentTeamsStatusLabel } from '@/utils/agentTeamsStatus'
+import { formatAgentTeamsStatus } from '@/utils/agentTeamsStatus'
 import { displayName } from '@/utils/displayName'
 
 const PAGE_SIZE = 20
@@ -58,7 +58,12 @@ const caseKindOptions = [
 ]
 const isFlowCase = computed(() => createForm.value.case_kind === 'flow')
 
-const statusOptions = Object.entries(agentTeamsStatusLabel).map(([value, label]) => ({ value, label }))
+const STATUS_OPTIONS: AgentTeamsCaseStatus[] = [
+  'queued', 'received', 'planning_running', 'preflight_running', 'preflight_blocked', 'waiting_for_correction',
+  'approval_pending', 'approved', 'executing', 'execution_failed', 'quality_running', 'quality_blocked',
+  'remediation_pending', 'delivery_ready', 'closed', 'cancelled',
+]
+const statusOptions = STATUS_OPTIONS.map((value) => ({ value, label: formatAgentTeamsStatus(value) }))
 
 const tagType = (status: AgentTeamsCaseStatus) => {
   if (['closed', 'delivery_ready'].includes(status)) return 'success'
@@ -143,7 +148,7 @@ const columns = [
     render: (row: AgentTeamsCase) => h(
       NTag,
       { type: tagType(row.status), bordered: false, round: true, size: 'small' },
-      { default: () => agentTeamsStatusLabel[row.status] },
+      { default: () => formatAgentTeamsStatus(row.status) },
     ),
   },
   {

@@ -9,7 +9,7 @@ services:
       - "${AGENTTEAMS_GATEWAY_BIND_HOST:-127.0.0.1}:${AGENTTEAMS_GATEWAY_PORT:-8089}:8081"
     volumes:
       - agentteams_gateway_audit:/var/lib/omichub-agent-gateway
-    networks: [agentteams_control, agentteams_bridge_state, omichub_bridge_gateway]
+    networks: [agentteams_control, agentteams_bridge_state, omichub_bridge_gateway, agentteams_matrix_dev, omichub_net]
     depends_on:
       omichub-agentteams-state:
         condition: service_healthy
@@ -228,6 +228,9 @@ networks:
     external: true
   omichub_net:
     name: omichub_net
+    external: true
+  agentteams_matrix_dev:
+    name: matrix-dev_default
     external: true
 
 volumes:

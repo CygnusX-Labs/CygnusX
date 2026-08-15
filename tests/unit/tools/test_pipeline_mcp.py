@@ -124,7 +124,8 @@ def test_result_summary_counts_up_and_down_regulated_rows(tmp_path) -> None:
         "gene,log2FoldChange\nA,2.1\nB,-1.2\nC,0\n",
         encoding="utf-8",
     )
-    assert PipelineResultService._summarize_differential_table(table) == {
+    text = table.read_text(encoding="utf-8")
+    assert PipelineResultService._summarize_differential_text(text, "csv") == {
         "differential_gene_count": 3,
         "upregulated_count": 1,
         "downregulated_count": 1,

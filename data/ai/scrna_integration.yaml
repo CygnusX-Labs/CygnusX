@@ -8,9 +8,12 @@ model: qwen3.7-plus
 prompt_file: prompts/scrna_team/integration.md
 welcome_message: "你好！我可以协助细胞 QC、批次整合、UMAP/Leiden 聚类和 marker 检查。"
 temperature: 0.2
-max_tokens: 20000
+max_tokens: 32768
 mcp_ids: []
-skill_ids: []
+# 整合聚类可执行技能：对象格式转换 + 重聚类（规范：Protocol/Skill_design.md）
+skill_ids:
+  - scrna-object-convert
+  - scrna-recluster
 features:
   internal_case_role: agent-scrna-integration
   agentteams:
@@ -39,7 +42,7 @@ features:
   subagents_spawnable: true
   engine: langgraph
   routing_hints: [doublet, 批次效应, harmony, scanvi, 降维, umap, leiden, 聚类, hvg]
-tool_packs: [workspace, research, memory, handoff, agentteams_case]
+tool_packs: [workspace, research, memory, handoff, agentteams_case, scrna]
 handoff:
   allowed_targets: [agent-scrna-upstream, agent-scrna-advanced, agent-scrna, agent-general]
   max_hops_per_session: 10

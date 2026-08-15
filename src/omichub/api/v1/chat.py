@@ -47,25 +47,30 @@ async def download_chat_sandbox_artifact(
     path: str = Query(..., min_length=1, max_length=1_000),
 ) -> FileResponse:
     import re
-    from pathlib import Path
 
-    from omichub.core.config import get_settings
-    from omichub.core.exceptions import ValidationError
+    from omichub.core.exceptions import NotFoundError, ValidationError
+    from omichub.infrastructure.storage import get_path_factory, get_storage_backend
 
     safe_session_id = re.sub(r"[^a-zA-Z0-9-]", "-", sandbox_session_id)
+    factory = get_path_factory()
     root = (
-        Path(get_settings().storage_path)
-        / "chat_sandbox"
-        / str(current_user_id)
+        factory.workspace_dir(str(current_user_id))
+        / "chat-output"
         / safe_session_id
         / "output"
     ).resolve()
     candidate = (root / path.lstrip("/")).resolve()
     # 归属校验由路径中的 current_user_id 保证（沙盒会话回收后 DB 记录删除，
     # 产物仍需可下载），目录禁锢防路径穿越。
-    if not candidate.is_file() or (candidate != root and root not in candidate.parents):
+    if candidate != root and root not in candidate.parents:
         raise ValidationError("产物路径无效或尚未生成")
-    return FileResponse(candidate, filename=candidate.name)
+
+    backend = get_storage_backend()
+    try:
+        local_path = await backend.get_local_path(factory.relative_to_root(candidate))
+    except NotFoundError:
+        raise ValidationError("产物路径无效或尚未生成") from None
+    return FileResponse(local_path, filename=local_path.name)
 
 
 @router.get(
@@ -116,6 +121,7 @@ async def preview_overdrive_plan(
         overdrive_run_root,
     )
     from omichub.core.exceptions import ValidationError
+    from omichub.infrastructure.storage import get_path_factory, get_storage_backend
 
     service = OverdriveRunService(db)
     run = await service.get_for_user(run_id, current_user_id)
@@ -123,10 +129,14 @@ async def preview_overdrive_plan(
         raise ValidationError("超频 run 不存在或不属于当前会话")
     version = int((run.plan or {}).get("version") or 0)
     path = overdrive_run_root(session_id, run_id) / f"plan.v{version}.md"
-    if version < 1 or not path.exists():
+    factory = get_path_factory()
+    backend = get_storage_backend()
+    rel = factory.relative_to_root(path)
+    if version < 1 or not await backend.exists(rel):
         raise ValidationError("计划快照尚未生成")
+    content = await backend.read(rel)
     return PlainTextResponse(
-        path.read_text(encoding="utf-8"),
+        content.decode("utf-8"),
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f'inline; filename="plan.v{version}.md"'},
     )
@@ -148,7 +158,8 @@ async def download_overdrive_artifact(
         overdrive_run_root,
         relative_overdrive_run_root,
     )
-    from omichub.core.exceptions import ValidationError
+    from omichub.core.exceptions import NotFoundError, ValidationError
+    from omichub.infrastructure.storage import get_path_factory, get_storage_backend
 
     service = OverdriveRunService(db)
     run = await service.get_for_user(run_id, current_user_id)
@@ -161,9 +172,16 @@ async def download_overdrive_artifact(
     # 安全边界来自归属校验（get_for_user）+ 目录禁锢（run 根内）+ 真实文件，
     # 不再硬性要求预先登记进 artifact_index：专家在回复中引用的任何 run 内
     # 文件（上游 plan、产物、审计报告）都应可下载。
-    if root not in candidate.parents or not candidate.is_file():
+    if root not in candidate.parents:
         raise ValidationError("产物路径无效或尚未生成")
-    return FileResponse(candidate, filename=candidate.name)
+
+    factory = get_path_factory()
+    backend = get_storage_backend()
+    try:
+        local_path = await backend.get_local_path(factory.relative_to_root(candidate))
+    except NotFoundError:
+        raise ValidationError("产物路径无效或尚未生成") from None
+    return FileResponse(local_path, filename=local_path.name)
 
 
 @router.get(

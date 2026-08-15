@@ -19,6 +19,9 @@ class DataFileDTO(BaseModel):
     checksum: str = ""
     directory: str = ""
     path: str = ""
+    source: str = "upload"
+    owner_scope: str = "personal"
+    team_id: UUID | None = None
     created_at: datetime
     modified_at: datetime
 
@@ -110,6 +113,36 @@ class UploadMergeResponse(BaseModel):
     size: int
     checksum: str
     used_storage: int
+
+
+# ===== 预签名 URL（cloud 模式大文件传输）=====
+class PresignedDownloadResponse(BaseModel):
+    """预签名下载响应"""
+
+    download_url: str
+
+
+class PresignedUploadRequest(BaseModel):
+    """预签名上传请求"""
+
+    original_name: str = Field(..., max_length=500)
+    directory: str = Field("", max_length=500)
+    size: int = Field(0, ge=0)
+    file_type: str = Field("other", max_length=32)
+
+
+class PresignedUploadResponse(BaseModel):
+    """预签名上传响应"""
+
+    upload_url: str
+    file_id: UUID
+    storage_path: str
+
+
+class PresignedUploadCompleteRequest(BaseModel):
+    """预签名上传完成请求"""
+
+    checksum: str = Field("", max_length=64)
 
 
 # ===== 用户目录 =====

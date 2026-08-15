@@ -8,7 +8,7 @@ model: qwen3.7-plus
 prompt_file: prompts/scrna_team/advanced.md
 welcome_message: "你好！我可以协助细胞注释、差异分析、轨迹、细胞通讯和结果可视化。"
 temperature: 0.2
-max_tokens: 20000
+max_tokens: 32768
 mcp_ids: []
 skill_ids:
   - human-mouse-cell-annotation
@@ -49,7 +49,7 @@ features:
   subagents_spawnable: true
   engine: langgraph
   routing_hints: [细胞注释, marker, 差异表达, pseudobulk, 轨迹, 拟时序, velocity, 细胞通讯, 可视化]
-tool_packs: [workspace, research, memory, handoff, agentteams_case]
+tool_packs: [workspace, research, memory, handoff, agentteams_case, scrna]
 handoff:
   allowed_targets: [agent-scrna-upstream, agent-scrna-integration, agent-scrna, agent-general]
   max_hops_per_session: 10

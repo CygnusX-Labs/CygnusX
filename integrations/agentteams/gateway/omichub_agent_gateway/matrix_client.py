@@ -59,6 +59,8 @@ class MatrixGatewayClient:
     ) -> str:
         await self.ensure_identities([sender_identity])
         matrix_user = self._matrix_user(sender_identity)
+        # 本地开发应用服务没有实时事件回调，被邀请用户不会自动入房；发消息前主动加入。
+        await self._join_room(room_id, matrix_user)
         txn_id = quote(f"omichub-{asyncio.get_running_loop().time():.6f}".replace(".", "-"), safe="")
         response = await self._request(
             "PUT",
@@ -77,6 +79,16 @@ class MatrixGatewayClient:
         if not isinstance(event_id, str) or not event_id:
             raise RuntimeError("Matrix room send returned no event_id")
         return event_id
+
+    async def _join_room(self, room_id: str, user_id: str) -> None:
+        response = await self._request(
+            "POST",
+            f"/_matrix/client/v3/rooms/{quote(room_id, safe='')}/join",
+            user_id=user_id,
+            json={},
+        )
+        # 已在房内时也会返回 200；其余错误直接抛出。
+        response.raise_for_status()
 
     async def messages(self, room_id: str, since: str | None, limit: int) -> tuple[list[RoomMessage], str | None]:
         params: dict[str, Any] = {"dir": "b", "limit": limit}

@@ -305,6 +305,7 @@ async def create_case(
         comparisons=request.comparisons,
         origin_consultation_id=request.origin_consultation_id,
         consultation_summary=request.consultation_summary,
+        db=db,
     )
     if session is not None:
         meta = dict(session.sandbox_meta or {})

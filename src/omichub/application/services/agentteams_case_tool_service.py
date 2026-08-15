@@ -129,6 +129,7 @@ class AgentTeamsCaseToolService:
             or [{"context_ref": {"kind": "project", "id": project_id}}],
             origin_consultation_id=source["origin_consultation_id"],
             consultation_summary=source["consultation_summary"],
+            db=context.db,
         )
         status = str(case.get("status") or "received")
         title = normalized_objective[:80]

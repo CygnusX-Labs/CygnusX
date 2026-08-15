@@ -25,6 +25,7 @@ import FilePreviewModal from '@/components/data-management/FilePreviewModal.vue'
 import JBrowseLinkGenerator from '@/components/data-management/JBrowseLinkGenerator.vue'
 import { useUploadStore } from '@/stores/upload'
 import { storeToRefs } from 'pinia'
+import type { TeamInfo } from '@/types'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -36,7 +37,10 @@ const allFiles = ref<DataFile[]>([])
 const directories = ref<Directory[]>([])
 const samplesCount = ref(0)
 const quota = ref<QuotaInfo>({ used: 0, total: 0, percent: 0 })
+const teams = ref<TeamInfo[]>([])
 const currentDirectory = ref('')
+const activeSpace = ref<'personal' | 'team'>('personal')
+const selectedTeamId = ref<string | null>(null)
 const siderWidth = ref(280)
 
 // 移动端抽屉状态
@@ -61,16 +65,21 @@ const {
   execute: fetchAll,
 } = useApi(
   async () => {
-    const [filesRes, dirsRes, samplesRes, quotaRes] = await Promise.all([
+    const [filesRes, dirsRes, samplesRes, quotaRes, teamsRes] = await Promise.all([
       apiClient.get<{ items: DataFile[]; total: number }>('/files'),
       apiClient.get<Directory[]>('/files/directories'),
       apiClient.get<{ items: unknown[]; total: number }>('/files/samples'),
       apiClient.get<QuotaInfo>('/files/quota'),
+      apiClient.get<{ items: TeamInfo[]; total: number }>('/teams'),
     ])
     allFiles.value = filesRes.data.items
     directories.value = dirsRes.data
     samplesCount.value = samplesRes.data.total ?? samplesRes.data.items.length
     quota.value = quotaRes.data
+    teams.value = teamsRes.data.items || []
+    if (activeSpace.value === 'team' && !selectedTeamId.value && teams.value.length) {
+      selectedTeamId.value = teams.value[0].id
+    }
   },
   { initialData: undefined },
 )
@@ -95,13 +104,31 @@ const projectsCount = computed(
   () => directories.value.filter((d) => !d.parent_path && !d.is_system).length,
 )
 
-/** 当前目录下的文件（客户端过滤全量列表） */
-const directoryFiles = computed(() =>
-  allFiles.value.filter((f) => (f.directory || '') === currentDirectory.value),
-)
+/** 当前团队角色 */
+const currentTeamRole = computed(() => {
+  if (activeSpace.value !== 'team' || !selectedTeamId.value) return null
+  return teams.value.find((t) => t.id === selectedTeamId.value)?.role || null
+})
 
-/** 面包屑：根目录 > seg1 > seg2 ...，可点击跳转 */
+/** 当前空间下的文件（个人按目录过滤，团队按 team_id 过滤） */
+const spaceFiles = computed(() => {
+  if (activeSpace.value === 'team') {
+    if (!selectedTeamId.value) return []
+    return allFiles.value.filter(
+      (f) => f.owner_scope === 'team' && f.team_id === selectedTeamId.value,
+    )
+  }
+  return allFiles.value.filter(
+    (f) => (f.owner_scope || 'personal') === 'personal' && (f.directory || '') === currentDirectory.value,
+  )
+})
+
+/** 面包屑：根目录 > seg1 > seg2 ...，可点击跳转（仅个人空间） */
 const breadcrumbItems = computed(() => {
+  if (activeSpace.value === 'team') {
+    const team = teams.value.find((t) => t.id === selectedTeamId.value)
+    return [{ label: team?.name || '团队空间', path: '' }]
+  }
   const segs = currentDirectory.value.split('/').filter(Boolean)
   const items: { label: string; path: string }[] = [{ label: '根目录', path: '' }]
   let acc = ''
@@ -115,9 +142,17 @@ function navigateTo(path: string) {
   currentDirectory.value = path
 }
 
+function switchSpace(space: 'personal' | 'team') {
+  activeSpace.value = space
+  currentDirectory.value = ''
+  if (space === 'team' && !selectedTeamId.value && teams.value.length) {
+    selectedTeamId.value = teams.value[0].id
+  }
+}
+
 /** 搜索 + 排序后的展示列表 */
 const displayFiles = computed(() => {
-  let list = directoryFiles.value
+  let list = spaceFiles.value
   if (searchQuery.value.trim()) {
     const q = searchQuery.value.trim().toLowerCase()
     list = list.filter((f) => f.original_name.toLowerCase().includes(q))
@@ -178,13 +213,21 @@ function fileEmoji(name: string): string {
   return '📄'
 }
 
-function rowActionOptions() {
-  return [
+function rowActionOptions(row: DataFile) {
+  const isReader = activeSpace.value === 'team' && currentTeamRole.value === 'reader'
+  const canWrite = activeSpace.value !== 'team' || ['owner', 'writer'].includes(currentTeamRole.value || '')
+  const canDelete = activeSpace.value !== 'team' || currentTeamRole.value === 'owner'
+  const options = [
     { label: '预览', key: 'preview', icon: () => h(NIcon, null, { default: () => h(EyeOutline) }) },
     { label: '下载', key: 'download', icon: () => h(NIcon, null, { default: () => h(DownloadOutline) }) },
-    { label: '重命名', key: 'rename', icon: () => h(NIcon, null, { default: () => h(CreateOutline) }) },
-    { label: '删除', key: 'delete', icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) },
   ]
+  if (!isReader && canWrite) {
+    options.push({ label: '重命名', key: 'rename', icon: () => h(NIcon, null, { default: () => h(CreateOutline) }) })
+  }
+  if (canDelete) {
+    options.push({ label: '删除', key: 'delete', icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) })
+  }
+  return options
 }
 
 function onRowAction(key: string, row: DataFile) {
@@ -222,7 +265,7 @@ const columns = computed<DataTableColumns<DataFile>>(() => [
         {
           trigger: 'click',
           placement: 'bottom-end',
-          options: rowActionOptions(),
+          options: rowActionOptions(row),
           onSelect: (k: string) => onRowAction(k, row),
         },
         {
@@ -429,13 +472,42 @@ onUnmounted(() => {
 
     <!-- Finder 三栏 -->
     <div class="finder-grid" :class="{ 'finder-grid--mobile': isMobile || isTablet }">
-      <!-- 左：目录树（桌面端可拖拽调宽） -->
+      <!-- 左：目录树 / 团队空间选择器（桌面端可拖拽调宽） -->
       <aside v-if="!isMobile && !isTablet" class="col-tree" :style="{ width: siderWidth + 'px' }">
+        <div class="space-tabs">
+          <NButton
+            size="small"
+            :type="activeSpace === 'personal' ? 'primary' : 'default'"
+            quaternary
+            @click="switchSpace('personal')"
+          >
+            个人空间
+          </NButton>
+          <NButton
+            size="small"
+            :type="activeSpace === 'team' ? 'primary' : 'default'"
+            quaternary
+            @click="switchSpace('team')"
+          >
+            团队空间
+          </NButton>
+        </div>
         <DirectoryTree
+          v-if="activeSpace === 'personal'"
           v-model="currentDirectory"
           ref="treeRef"
           @refresh-files="fetchAll"
         />
+        <div v-else class="team-selector">
+          <NSelect
+            v-model:value="selectedTeamId"
+            :options="teams.map((t) => ({ label: t.name + ' (' + t.role + ')', value: t.id }))"
+            placeholder="选择团队"
+            size="small"
+            clearable
+          />
+          <p v-if="!teams.length" class="team-empty">暂无团队空间</p>
+        </div>
         <div class="resize-handle" title="拖拽调整宽度" @mousedown="startResize"></div>
       </aside>
 
@@ -465,19 +537,33 @@ onUnmounted(() => {
         <!-- 工具栏 -->
         <div class="toolbar">
           <div class="toolbar-left">
-            <NButton type="primary" size="small" @click="uploadStore.open(currentDirectory)">
+            <NButton
+              type="primary"
+              size="small"
+              :disabled="activeSpace === 'team'"
+              @click="uploadStore.open(currentDirectory)"
+            >
               <template #icon>
                 <NIcon><CloudUploadOutline /></NIcon>
               </template>
               上传
             </NButton>
-            <NButton size="small" @click="treeRef?.openCreateModal?.(currentDirectory)">
+            <NButton
+              size="small"
+              :disabled="activeSpace === 'team'"
+              @click="treeRef?.openCreateModal?.(currentDirectory)"
+            >
               <template #icon>
                 <NIcon><FolderOpenOutline /></NIcon>
               </template>
               新建文件夹
             </NButton>
-            <NButton size="small" :loading="syncing" @click="syncFiles(false)">
+            <NButton
+              size="small"
+              :loading="syncing"
+              :disabled="activeSpace === 'team'"
+              @click="syncFiles(false)"
+            >
               <template #icon>
                 <NIcon><RefreshOutline /></NIcon>
               </template>
@@ -747,10 +833,39 @@ onUnmounted(() => {
           </template>
         </NButton>
       </div>
+      <div class="space-tabs">
+        <NButton
+          size="small"
+          :type="activeSpace === 'personal' ? 'primary' : 'default'"
+          quaternary
+          @click="switchSpace('personal')"
+        >
+          个人空间
+        </NButton>
+        <NButton
+          size="small"
+          :type="activeSpace === 'team' ? 'primary' : 'default'"
+          quaternary
+          @click="switchSpace('team')"
+        >
+          团队空间
+        </NButton>
+      </div>
       <DirectoryTree
+        v-if="activeSpace === 'personal'"
         v-model="currentDirectory"
         @refresh-files="fetchAll"
       />
+      <div v-else class="team-selector">
+        <NSelect
+          v-model:value="selectedTeamId"
+          :options="teams.map((t) => ({ label: t.name + ' (' + t.role + ')', value: t.id }))"
+          placeholder="选择团队"
+          size="small"
+          clearable
+        />
+        <p v-if="!teams.length" class="team-empty">暂无团队空间</p>
+      </div>
     </NDrawer>
 
     <!-- 移动端详情抽屉 -->
@@ -841,6 +956,24 @@ onUnmounted(() => {
   position: relative;
   flex-shrink: 0;
   overflow: visible;
+}
+
+.space-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 12px 12px 8px;
+  border-bottom: 1px solid var(--neutral-border);
+}
+
+.team-selector {
+  padding: 12px;
+}
+
+.team-empty {
+  padding: 16px 12px;
+  color: var(--neutral-text-tertiary, #86909c);
+  font-size: 13px;
+  text-align: center;
 }
 
 .resize-handle {

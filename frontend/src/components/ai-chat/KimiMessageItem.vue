@@ -1097,6 +1097,26 @@ function handleEdit() {
           </button>
           <p v-if="isWorkerCollapsed" class="worker-result-preview">{{ workerPreview }}</p>
           <template v-else>
+          <!-- 生成中指示置于气泡内容之前：流式生成图片等大块内容时，
+               动画不会被已生成内容压到可视区之外。 -->
+          <!-- 正文尚未生成时的优雅行内指示：替代孤立的闪烁光标，
+               正文首个 token 到达后平滑淡出（不套 out-in：避免卸载竞态）。 -->
+          <transition name="gen-tail">
+            <div v-if="showGeneratingTail" class="generating-tail" role="status" aria-live="polite">
+              <span class="gen-spark" aria-hidden="true">✨</span>
+              <span class="gen-text">正在生成回复</span>
+              <span class="gen-dots" aria-hidden="true"><i /><i /><i /></span>
+            </div>
+          </transition>
+
+          <!-- 流式光标 + typing 指示：正文流式输出时显示在内容之前，结束后 200ms 淡出 -->
+          <transition name="cursor-fade">
+            <span v-if="streamingActive && streamingHasContent" class="stream-tail">
+              <span class="stream-cursor" />
+              <span class="stream-dots" aria-hidden="true"><i /><i /><i /></span>
+            </span>
+          </transition>
+
           <!-- 交错时间线：正文与工具调用按实际发生顺序渲染（内容→工具→内容），
                最终结论永远在最底部，不用翻回顶部看结果 -->
           <template v-if="timelineView.length">
@@ -1223,24 +1243,6 @@ function handleEdit() {
               </a>
             </div>
           </details>
-
-          <!-- 正文尚未生成时的优雅行内指示：替代孤立的闪烁光标，
-               正文首个 token 到达后平滑淡出（不套 out-in：避免卸载竞态）。 -->
-          <transition name="gen-tail">
-            <div v-if="showGeneratingTail" class="generating-tail" role="status" aria-live="polite">
-              <span class="gen-spark" aria-hidden="true">✨</span>
-              <span class="gen-text">正在生成回复</span>
-              <span class="gen-dots" aria-hidden="true"><i /><i /><i /></span>
-            </div>
-          </transition>
-
-          <!-- 流式光标 + typing 指示：正文流式输出时跟随在文本末尾，结束后 200ms 淡出 -->
-          <transition name="cursor-fade">
-            <span v-if="streamingActive && streamingHasContent" class="stream-tail">
-              <span class="stream-cursor" />
-              <span class="stream-dots" aria-hidden="true"><i /><i /><i /></span>
-            </span>
-          </transition>
           </template>
         </div>
 
@@ -1750,12 +1752,13 @@ function handleEdit() {
   50% { opacity: 0.2; }
 }
 
-/* 正文生成前的优雅行内指示：呼吸微光 + 跳动点，明确「仍在生成」而非「卡住/没完成」 */
+/* 生成中的优雅行内指示：呼吸微光 + 跳动点，明确「仍在生成」而非「卡住/没完成」；
+   置于气泡内容之前，与下方正文保持 14px 间距 */
 .generating-tail {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 14px;
+  margin-bottom: 14px;
   padding: 8px 14px;
   width: fit-content;
   max-width: 100%;

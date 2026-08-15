@@ -17,6 +17,16 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_name = 'cookie_discounts'"
+        )
+    ).scalar()
+    if result:
+        return
+
     op.create_table(
         "cookie_discounts",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),

@@ -16,6 +16,7 @@ from omichub.application.services.overdrive_run_service import (
 )
 from omichub.core.exceptions import ValidationError
 from omichub.infrastructure.database.models.overdrive import OverdriveRunModel
+from omichub.infrastructure.storage import get_path_factory, get_storage_backend
 
 TERMINAL_TASK_STATUSES = frozenset({"succeeded", "failed", "cancelled", "skipped"})
 ACCEPTED_TASK_STATUSES = frozenset({"succeeded", "skipped"})
@@ -245,10 +246,13 @@ class OverdrivePreflightService:
         self._runs = run_service
 
     async def run(self, run: OverdriveRunModel) -> dict[str, Any]:
-        self._runs.assert_execution_allowed(run)
+        await self._runs.assert_execution_allowed(run)
+        factory = get_path_factory()
+        backend = get_storage_backend()
         root = overdrive_run_root(run.session_id, run.run_id)
+        root_rel = factory.relative_to_root(root)
         checks: list[dict[str, Any]] = []
-        root.mkdir(parents=True, exist_ok=True)
+        await backend.ensure_dir(root_rel)
         checks.append({"name": "run_directory", "status": "passed", "path": str(root)})
         task_ids = {str(task.get("task_id") or "") for task in run.tasks}
         checks.append(
@@ -269,6 +273,7 @@ class OverdrivePreflightService:
             if str(output).strip()
         }
         workspace = root.parents[3]
+        workspace_rel = factory.relative_to_root(workspace)
         required_paths = sorted(
             {
                 str(item).strip()
@@ -282,7 +287,8 @@ class OverdrivePreflightService:
             candidate = (workspace / relative_path).resolve()
             try:
                 candidate.relative_to(workspace.resolve())
-                exists = candidate.exists()
+                candidate_rel = factory.relative_to_root(candidate)
+                exists = await backend.exists(candidate_rel)
             except ValueError:
                 exists = False
             checks.append(
@@ -294,14 +300,18 @@ class OverdrivePreflightService:
                 }
             )
         shared = root / "preflight" / "preflight_result.json"
+        shared_rel = factory.relative_to_root(shared)
         result = {
             "status": "passed" if all(item["status"] == "passed" for item in checks) else "failed",
             "checked_at": datetime.now(UTC).isoformat(),
             "checks": checks,
             "output_root": relative_overdrive_run_root(run.session_id, run.run_id),
         }
-        shared.parent.mkdir(parents=True, exist_ok=True)
-        shared.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        await backend.ensure_dir(factory.relative_to_root(shared.parent))
+        await backend.write(
+            shared_rel,
+            (json.dumps(result, ensure_ascii=False, indent=2) + "\n").encode("utf-8"),
+        )
         run.artifact_index = [
             *run.artifact_index,
             {
@@ -335,7 +345,7 @@ class OverdriveScheduler:
         run: OverdriveRunModel,
         agent_catalog: dict[str, dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        self._runs.assert_execution_allowed(run)
+        await self._runs.assert_execution_allowed(run)
         recruited: list[dict[str, Any]] = []
         used_names = {str(item.get("display_name")) for item in run.assistant_instances}
         instances = deepcopy(run.assistant_instances)
@@ -535,16 +545,19 @@ class DeliveryAssembler:
         )
         return "\n".join(lines).rstrip() + "\n", official
 
-    def write(self, run: OverdriveRunModel) -> dict[str, Any]:
+    async def write(self, run: OverdriveRunModel) -> dict[str, Any]:
         content, official = self.assemble(run)
+        factory = get_path_factory()
+        backend = get_storage_backend()
         root = overdrive_run_root(run.session_id, run.run_id) / "delivery"
-        root.mkdir(parents=True, exist_ok=True)
-        path = root / "final-report.md"
-        path.write_text(content, encoding="utf-8")
+        root_rel = factory.relative_to_root(root)
+        await backend.ensure_dir(root_rel)
+        path_rel = f"{root_rel}/final-report.md"
+        await backend.write(path_rel, content.encode("utf-8"))
         relative = f"{relative_overdrive_run_root(run.session_id, run.run_id)}/delivery/final-report.md"
         return {"path": relative, "official_artifacts": official, "content": content}
 
-    def write_readme(
+    async def write_readme(
         self,
         run: OverdriveRunModel,
         delivery: dict[str, Any],
@@ -592,9 +605,12 @@ class DeliveryAssembler:
                 for task in failures
             )
         content = "\n".join(lines).rstrip() + "\n"
+        factory = get_path_factory()
+        backend = get_storage_backend()
         root = overdrive_run_root(run.session_id, run.run_id) / "delivery"
-        root.mkdir(parents=True, exist_ok=True)
-        (root / "README.md").write_text(content, encoding="utf-8")
+        root_rel = factory.relative_to_root(root)
+        await backend.ensure_dir(root_rel)
+        await backend.write(f"{root_rel}/README.md", content.encode("utf-8"))
         relative = f"{relative_overdrive_run_root(run.session_id, run.run_id)}/delivery/README.md"
         return {"path": relative, "content": content}
 

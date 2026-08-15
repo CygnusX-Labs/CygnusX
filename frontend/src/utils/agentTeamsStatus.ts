@@ -1,12 +1,19 @@
 import type { AgentTeamsCaseStatus } from '@/api/agentTeams'
 
-export const agentTeamsStatusLabel: Record<AgentTeamsCaseStatus, string> = {
+export type AgentTeamsStatusFormatter = (payload?: { attempt?: number; max_attempts?: number }) => string
+
+export const agentTeamsStatusLabel: Record<AgentTeamsCaseStatus, string | AgentTeamsStatusFormatter> = {
   queued: '排队中',
   received: '已接收',
   planning_running: '规划中',
   preflight_running: '预检中',
   preflight_blocked: '预检阻断',
-  waiting_for_correction: '等待修正',
+  waiting_for_correction: (payload) => {
+    if (payload?.attempt !== undefined && payload?.max_attempts !== undefined) {
+      return `自动修正中（第 ${payload.attempt}/${payload.max_attempts} 次）`
+    }
+    return '等待修正'
+  },
   approval_pending: '待审批',
   approved: '已批准',
   executing: '执行中',
@@ -17,6 +24,27 @@ export const agentTeamsStatusLabel: Record<AgentTeamsCaseStatus, string> = {
   delivery_ready: '可交付',
   closed: '已关闭',
   cancelled: '已取消',
+}
+
+/**
+ * 格式化 Case 状态枚举为用户可见中文文案。
+ * 支持参数化映射（如自动修正中的第 n/3 次）。
+ * 开发阶段若发现字典中不存在的状态，console.error 提示并返回兜底文案。
+ */
+export function formatAgentTeamsStatus(
+  status: string,
+  payload?: { attempt?: number; max_attempts?: number },
+): string {
+  if (!status) return ''
+  const mapping = (agentTeamsStatusLabel as Record<string, string | AgentTeamsStatusFormatter>)[status]
+  if (mapping === undefined) {
+    if (import.meta.env.DEV) {
+      console.error(`[AgentTeams] 缺失状态文案映射：${status}`)
+    }
+    return `未知状态（${status}）`
+  }
+  if (typeof mapping === 'function') return mapping(payload)
+  return mapping
 }
 
 export const agentTeamsNextActor: Partial<Record<AgentTeamsCaseStatus, string>> = {

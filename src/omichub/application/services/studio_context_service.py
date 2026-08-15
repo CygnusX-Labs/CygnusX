@@ -11,11 +11,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import json
 import re
-import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -31,13 +29,16 @@ from omichub.application.schemas.chat import ChatSessionDTO
 from omichub.application.services.file_service import ensure_directory_chain
 from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError, NotFoundError, OmicHubError
+from omichub.domain.file.value_objects import FileSource
+from omichub.infrastructure.config.deployment_config import get_deployment_config
 from omichub.infrastructure.config.storage_config import get_user_chat_upload_dir
 from omichub.infrastructure.database.models.chat import ChatSessionModel
 from omichub.infrastructure.database.models.file import FileRecordModel
 from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
 from omichub.infrastructure.database.models.task import TaskModel
 from omichub.infrastructure.database.session import get_session_factory
-from omichub.infrastructure.storage import get_path_factory
+from omichub.infrastructure.storage import get_path_factory, get_storage_backend
+from omichub.infrastructure.storage.file_registry import FileRegistry
 from omichub.infrastructure.studio.manager import studio_sandbox_manager
 from omichub.infrastructure.studio.paths import PathEscapeError
 from omichub.infrastructure.studio.workspace import (
@@ -61,26 +62,31 @@ CONTEXT_PACK_HINT = (
 _CHAT_UPLOAD_ID_RE = re.compile(r"^[a-fA-F0-9]{16,128}$")
 
 
-def _resolve_chat_upload_file(user_id: str, upload_id: str) -> tuple[Path, str, int]:
+async def _resolve_chat_upload_file(
+    user_id: str, upload_id: str, backend=None
+) -> tuple[Path, str, int]:
     """解析当前用户聊天上传文件，返回路径、平台相对路径与大小。"""
+    backend = backend or get_storage_backend()
+    factory = get_path_factory()
     upload_dir = get_user_chat_upload_dir(user_id)
-    candidates = sorted(
-        upload_dir.glob(f"{upload_id}*"), key=lambda path: (len(path.suffix), path.name)
-    )
+    upload_rel_dir = factory.relative_to_root(upload_dir)
+    entries = await backend.list(upload_rel_dir, recursive=False)
+    candidates = [
+        e for e in entries if e["type"] == "file" and e["name"].startswith(upload_id)
+    ]
     if not candidates:
         raise NotFoundError("聊天上传文件不存在或无权访问")
-    upload_path = candidates[0]
+    chosen = sorted(candidates, key=lambda e: (len(Path(e["name"]).suffix), e["name"]))[0]
+    rel_path = f"{upload_rel_dir}/{chosen['name']}".strip("/")
+    abs_path = factory.data_root / rel_path
     try:
-        resolved_upload = upload_path.resolve()
-        resolved_upload.relative_to(upload_dir.resolve())
-        storage_rel = resolved_upload.relative_to(
-            Path(get_settings().storage_path).resolve()
-        ).as_posix()
+        abs_path.relative_to(upload_dir.resolve())
+        storage_rel = factory.relative_to_root(abs_path)
     except ValueError as exc:
         raise BusinessError("聊天上传文件路径异常") from exc
-    if not resolved_upload.is_file():
-        raise NotFoundError("聊天上传文件已丢失，请重新上传")
-    return resolved_upload, storage_rel, resolved_upload.stat().st_size
+    local_path = await backend.get_local_path(storage_rel)
+    size = chosen["size"] or 0
+    return local_path, storage_rel, size
 
 
 def user_platform_root(user_id: str) -> Path:
@@ -103,15 +109,25 @@ def report_file_mount_rel(file_path: str, user_id: str) -> str | None:
         return None
 
 
-def link_report_files(report: ReportModel, workspace: Path, user_id: str) -> list[dict[str, Any]]:
+async def link_report_files(
+    report: ReportModel, workspace: Path, user_id: str
+) -> list[dict[str, Any]]:
     """把报告全部产物文件软链进 workspace/input/。
 
     返回 [{name, sandbox_path, role, size}]；磁盘上已丢失或路径越权的文件跳过。
     """
+    backend = get_storage_backend()
+    factory = get_path_factory()
     linked: list[dict[str, Any]] = []
     for f in report.files:
         mount_rel = report_file_mount_rel(f.path, user_id)
-        if mount_rel is None or not Path(f.path).is_file():
+        if mount_rel is None:
+            continue
+        try:
+            rel_path = factory.relative_to_root(Path(f.path))
+        except ValueError:
+            continue
+        if await backend.stat(rel_path) is None:
             continue
         link_name = link_platform_file(workspace, mount_rel, f.name)
         linked.append(
@@ -173,7 +189,7 @@ async def create_session_from_report(
     # 报告产物软链进工作区（数据不搬家），再回填 context_pack
     workspace = studio_sandbox_manager.workspace_dir(dto.session_id)
     studio_sandbox_manager.ensure_workspace_dirs(workspace)
-    linked = link_report_files(report, workspace, str(user_id))
+    linked = await link_report_files(report, workspace, str(user_id))
 
     context_pack: dict[str, Any] = {
         "source": {
@@ -277,8 +293,8 @@ async def import_datahub_file(
         if not _CHAT_UPLOAD_ID_RE.fullmatch(upload_id):
             raise BusinessError("聊天上传 file_id 格式非法")
 
-        upload_path, storage_rel, upload_size = await asyncio.to_thread(
-            _resolve_chat_upload_file, str(user_id), upload_id
+        upload_path, storage_rel, upload_size = await _resolve_chat_upload_file(
+            str(user_id), upload_id
         )
 
         workspace = studio_sandbox_manager.workspace_dir(session_id)
@@ -306,6 +322,9 @@ async def import_datahub_file(
     except ValueError as exc:
         raise BusinessError("file_id 格式非法") from exc
 
+    backend = get_storage_backend()
+    factory = get_path_factory()
+
     result = await db.execute(
         select(FileRecordModel).where(
             FileRecordModel.id == file_uuid,
@@ -318,10 +337,10 @@ async def import_datahub_file(
     if record.status != "active":
         raise BusinessError(f"文件当前状态（{record.status}）不可用，仅支持 active 文件")
 
-    abs_path = _resolve_storage_file(get_settings().storage_path, record.storage_path)
-    if abs_path is None:
+    abs_path = factory.data_root / record.storage_path
+    if not factory.is_within_root(abs_path):
         raise BusinessError("文件存储路径异常（越出存储根）")
-    if not abs_path.is_file():
+    if await backend.stat(record.storage_path) is None:
         raise BusinessError("文件在磁盘上已丢失，请在数据管理中重新上传")
 
     workspace = studio_sandbox_manager.workspace_dir(session_id)
@@ -427,21 +446,34 @@ async def register_artifact_report(
     """
     if not title.strip():
         raise BusinessError("报告标题不能为空")
-    workspace = studio_sandbox_manager.workspace_dir(session.session_id)
+    backend = get_storage_backend()
+    path_factory = get_path_factory()
+
+    deployment_cfg = get_deployment_config()
+    if deployment_cfg.scratch_volume_enabled:
+        scratch = studio_sandbox_manager.scratch_volume(session.session_id)
+        workspace = scratch.volume.workspace if scratch else studio_sandbox_manager.workspace_dir(session.session_id)
+    else:
+        workspace = studio_sandbox_manager.workspace_dir(session.session_id)
     try:
         target = resolve_artifact_path(workspace, path)
     except PathEscapeError as e:
         raise BusinessError(str(e)) from e
-    if not target.is_file():
+    target_rel = path_factory.relative_to_root(target)
+    if deployment_cfg.scratch_volume_enabled:
+        if not target.is_file():
+            raise NotFoundError(f"产物不存在: {path}")
+    elif await backend.stat(target_rel) is None:
         raise NotFoundError(f"产物不存在: {path}")
 
     project_name = session.title.strip()
     if not project_name or project_name == "新对话":
         raise BusinessError("请先将 Studio 会话标题设置为项目名称，再登记分析产物")
-    path_factory = get_path_factory()
     run_dir = path_factory.create_project_run_dir(user_id, project_name, "studio")
     dest_dir = run_dir / "output"
     relative_run_dir = run_dir.relative_to(path_factory.user_root(user_id)).as_posix()
+    dest_dir_rel = path_factory.relative_to_root(dest_dir)
+    await backend.ensure_dir(dest_dir_rel)
 
     async def persist(anchor_db: AsyncSession) -> tuple[ReportModel, ReportFileModel]:
         # 版本树：父报告来自会话 context_pack；父报告已删除/不属于本人时退化为 v1
@@ -459,11 +491,17 @@ async def register_artifact_report(
 
         await ensure_directory_chain(anchor_db, UUID(str(user_id)), relative_run_dir)
         dest = dest_dir / target.name
+        dest_rel = path_factory.relative_to_root(dest)
         n = 1
-        while dest.exists():
+        while await backend.stat(dest_rel) is not None:
             n += 1
             dest = dest_dir / f"{target.stem} ({n}){target.suffix}"
-        await asyncio.to_thread(shutil.copy2, target, dest)
+            dest_rel = path_factory.relative_to_root(dest)
+        if deployment_cfg.scratch_volume_enabled:
+            content = target.read_bytes()
+            await backend.write(dest_rel, content)
+        else:
+            await backend.copy(target_rel, dest_rel)
 
         now = datetime.now()
         report = ReportModel(
@@ -489,21 +527,40 @@ async def register_artifact_report(
             anchor_db.add(report)
             await anchor_db.flush()
 
+            dest_info = await backend.stat(dest_rel)
             file_model = ReportFileModel(
                 id=uuid.uuid4(),
                 report_id=report.id,
                 name=dest.name,
                 type=(artifact_type or _infer_artifact_type(dest.name))[:20],
-                size=dest.stat().st_size,
+                size=dest_info["size"] if dest_info else 0,
                 path=str(dest),
                 is_primary=True,
             )
             anchor_db.add(file_model)
             await anchor_db.flush()
+
+            # 产物同时注册到统一文件索引，使 AI 助手 / 文件中心可见
+            try:
+                registry = FileRegistry(anchor_db)
+                dest_directory = dest_dir.relative_to(
+                    path_factory.user_root(user_id)
+                ).as_posix()
+                await registry.register(
+                    UUID(str(user_id)),
+                    dest,
+                    source=FileSource.STUDIO,
+                    directory=dest_directory,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Studio 产物注册到 file_records 失败（非阻塞）: {}", exc
+                )
+
             await anchor_db.commit()
         except Exception:
-            with contextlib.suppress(OSError):
-                dest.unlink()
+            with contextlib.suppress(NotFoundError):
+                await backend.delete(dest_rel)
             raise
         return report, file_model
 

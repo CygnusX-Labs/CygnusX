@@ -22,6 +22,7 @@ from omichub.infrastructure.celery_app.tasks.download import run_download
 from omichub.infrastructure.database.repositories.task_repository import (
     TaskRepositoryImpl,
 )
+from omichub.infrastructure.storage import get_path_factory, get_storage_backend
 from omichub.infrastructure.task_queue.dispatcher import enqueue_task
 
 DOWNLOAD_FLOW_ID = "ebi_download"  # 兼容既有任务筛选；语义已扩展为数据下载聚合
@@ -38,10 +39,11 @@ _CLOUD_PROVIDER_LABELS = {
 class DownloadService:
     """数据下载服务"""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, backend=None):
         self._db = db
         self._repo = TaskRepositoryImpl(db)
         self._domain = TaskDomainService(self._repo)
+        self._backend = backend or get_storage_backend()
 
     async def submit(self, user_id: str, req: DownloadRequest) -> TaskResponse:
         """提交一个数据下载任务。
@@ -57,7 +59,7 @@ class DownloadService:
             provider = self._normalize_cloud_provider(req.cloud_provider or "")
             object_uri = req.object_uri.strip()
             safe_label = self._safe_path_label(f"{provider}_{object_uri}", fallback="cloud_storage")
-            work_dir = self._make_work_dir(user_id, safe_label, directory)
+            work_dir = await self._make_work_dir(user_id, safe_label, directory)
             source_label = _CLOUD_PROVIDER_LABELS.get(provider, provider)
             task_name = f"云存储下载 {source_label} {object_uri}"
             parameters = {
@@ -70,7 +72,7 @@ class DownloadService:
         elif req.source == "direct_link":
             links = req.links
             safe_label = self._safe_path_label(links[0].split("/")[-1], fallback="direct_link")
-            work_dir = self._make_work_dir(user_id, safe_label, directory)
+            work_dir = await self._make_work_dir(user_id, safe_label, directory)
             task_name = f"直链下载 {len(links)} 个文件"
             parameters = {
                 "source": "direct_link",
@@ -83,7 +85,7 @@ class DownloadService:
         else:
             accession = req.accession.strip()
             safe_accession = self._safe_path_label(accession, fallback="sra")
-            work_dir = self._make_work_dir(user_id, safe_accession, directory)
+            work_dir = await self._make_work_dir(user_id, safe_accession, directory)
             task_name = f"EBI 下载 {accession}"
             parameters = {
                 "source": "sra",
@@ -96,7 +98,6 @@ class DownloadService:
             }
 
         from omichub.application.services.file_service import ensure_directory_chain
-        from omichub.infrastructure.storage import get_path_factory
 
         relative_work_dir = Path(work_dir).relative_to(
             get_path_factory().user_root(user_id)
@@ -161,14 +162,14 @@ class DownloadService:
         label = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip()).strip("._-")
         return (label or fallback)[:120]
 
-    def _make_work_dir(self, user_id: str, label: str, directory: str = "") -> str:
+    async def _make_work_dir(self, user_id: str, label: str, directory: str = "") -> str:
         """下载产物落在 ``{user_root}/{directory}/{label}/``。
 
         默认 directory="downloads"，即顶层 downloads/；用户显式指定其它目录时按原样使用。
         """
-        from omichub.infrastructure.storage import get_path_factory
-
         base = get_path_factory().user_root(user_id) / directory
         work_dir = base / label
-        work_dir.mkdir(parents=True, exist_ok=True)
+        await self._backend.ensure_dir(
+            get_path_factory().relative_to_root(work_dir)
+        )
         return str(work_dir)

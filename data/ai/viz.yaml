@@ -9,7 +9,7 @@ model: qwen3.7-plus
 prompt_file: prompts/visualization.md
 welcome_message: "你好！我是可视化助手，搭载 Code Sandbox 与 BioDB，并配备图表绘制技能。想把哪份数据画出来？"
 temperature: 0.7
-max_tokens: 20000
+max_tokens: 32768
 mcp_ids: []
 skill_ids:
   # 绘图工具技能（来源：pipelines/tools/skills/）
@@ -42,7 +42,8 @@ features:
       awaiting_input: ["正在等待关键的图表选择"]
   managed_prompt: true
   subagents_spawnable: true  # 可作为超频模式的并行专家被 Manager 派生
-  domain: phylo
+  # 不声明 domain：可视化是跨领域能力。phylo 域的分工仍经
+  # domains/phylo.yaml 的 agent_match（含 agent-viz）命中，无需把 Agent 绑进单一领域。
   default_role: 基于真实分析结果设计和生成可视化交付物
   capability_scope: [统计图表, publication-ready 绘图, 图表说明, 结果报告呈现]
   capability_tags: [statistical-visualization, publication-ready, figure-design, report-presentation]

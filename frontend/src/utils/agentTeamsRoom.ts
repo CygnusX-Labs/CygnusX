@@ -1,4 +1,5 @@
 import type { AgentTeamsEvent, AgentTeamsRoleLabel } from '@/api/agentTeams'
+import { formatAgentTeamsStatus } from '@/utils/agentTeamsStatus'
 import { resolveRoleIdentity } from '@/utils/roleIdentity'
 
 export interface RoomSender {
@@ -9,6 +10,11 @@ export interface RoomSender {
 }
 
 export type RoomMessageKind = 'speech' | 'progress' | 'action' | 'system'
+
+export interface RoomMessageAction {
+  label: string
+  action: string
+}
 
 export interface RoomToolInfo {
   name: string
@@ -23,6 +29,8 @@ export interface ManagerReport {
   risks: string[]
   evidenceRefs: string[]
   hardGate?: Record<string, unknown>
+  /** Manager 派单时携带的 proposed_submission 结构化信封（如代码/可视化任务工单）。 */
+  proposedSubmission?: Record<string, unknown>
 }
 
 /** worker 卡片终态：由真实终态事件投影而来，决定卡片状态徽标。 */
@@ -49,6 +57,10 @@ export interface RoomMessage {
   isUser?: boolean
   /** worker 执行产生的图片、PDF、表格等工作区产物。 */
   artifacts?: unknown
+  /** 技术详情：原始错误、英文 schema 校验信息等，折叠展示。 */
+  technicalDetail?: string
+  /** 动作按钮：重试 / 修改需求 / 终止 Case 等。 */
+  actions?: RoomMessageAction[]
 }
 
 /** role_labels / role_agent_map 均可选：端点未接通时用本地兜底身份渲染。 */
@@ -61,6 +73,21 @@ const SYSTEM_SENDER: RoomSender = { name: '系统', avatar: '⚙️', color: '#6
 const MANAGER_FALLBACK: RoomSender = { name: 'Manager', avatar: '🧭', color: '#4f8ef7', role: 'manager' }
 const QC_FALLBACK: RoomSender = { name: '质量审计员', avatar: '🛡️', color: '#d97706', role: 'worker' }
 const USER_SENDER: RoomSender = { name: '我', avatar: '🧑‍💻', color: '#4f8ef7', role: 'manager' }
+
+/** 工具 display name 映射：命中时展示中文，未命中时保留原始工具名。 */
+const TOOL_DISPLAY_NAMES: Record<string, string> = {
+  workspace_file_preview: '读取文件',
+  workspace_read_file: '读取文件',
+  sandbox_execute: '沙箱执行',
+  pipeline_query: '查询流程',
+}
+
+/** 技能 display name 映射：避免 planning_advice 等内部 snake_case 名直出。 */
+const SKILL_DISPLAY_NAMES: Record<string, string> = {
+  planning_advice: '生成执行计划',
+  project_preflight: '项目预检',
+  artifact_inspect: '产物检查',
+}
 
 function pickString(payload: Record<string, unknown>, keys: string[]): string {
   for (const key of keys) {
@@ -178,7 +205,7 @@ function extractJsonEnvelope(content: string): Record<string, unknown> | null {
 }
 
 /** 解析 Manager 回复里的结构化信封（conclusion / recommendations / risks /
- *  evidence_refs / hard_gate）；解析不出任何有效字段时返回 null，调用方回退纯文本。 */
+ *  evidence_refs / hard_gate / proposed_submission）；解析不出任何有效字段时返回 null，调用方回退纯文本。 */
 export function parseManagerReport(content: string): ManagerReport | null {
   const envelope = extractJsonEnvelope(content)
   if (!envelope) return null
@@ -190,10 +217,23 @@ export function parseManagerReport(content: string): ManagerReport | null {
     envelope.hard_gate && typeof envelope.hard_gate === 'object' && !Array.isArray(envelope.hard_gate)
       ? (envelope.hard_gate as Record<string, unknown>)
       : undefined
-  if (!conclusion && !recommendations.length && !risks.length && !evidenceRefs.length && !hardGate) {
+  const proposedSubmission =
+    envelope.proposed_submission &&
+    typeof envelope.proposed_submission === 'object' &&
+    !Array.isArray(envelope.proposed_submission)
+      ? (envelope.proposed_submission as Record<string, unknown>)
+      : undefined
+  if (
+    !conclusion &&
+    !recommendations.length &&
+    !risks.length &&
+    !evidenceRefs.length &&
+    !hardGate &&
+    !proposedSubmission
+  ) {
     return null
   }
-  return { conclusion, recommendations, risks, evidenceRefs, hardGate }
+  return { conclusion, recommendations, risks, evidenceRefs, hardGate, proposedSubmission }
 }
 
 /** hard_gate 信封的醒目提示文案：优先 decision + reason（含 audit_event.reason）。 */
@@ -219,6 +259,41 @@ function summarizeFindings(value: unknown): string {
   if (!messages.length) return ''
   const head = messages.slice(0, 3).join('；')
   return messages.length > 3 ? `${head}；等 ${messages.length} 项发现` : head
+}
+
+/** 将工具名映射为用户可见文案；未命中时返回原始工具名。 */
+export function formatToolName(tool: string): string {
+  return TOOL_DISPLAY_NAMES[tool] || tool
+}
+
+/** 将技能名映射为用户可见文案；未命中时返回通用描述，避免 snake_case 直出。 */
+export function formatSkillName(skillName: string): string {
+  return SKILL_DISPLAY_NAMES[skillName] || '处理子任务'
+}
+
+/** 把 @workspace/path/file.treefile 这类引用渲染为高亮 pill（HTML）。 */
+export function formatMentions(content: string): string {
+  const escaped = content
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  return escaped.replace(/@(\S+)/g, '<span class="mention-chip">@$1</span>')
+}
+
+/** 格式化耗时：≥5s 显示为秒，否则显示毫秒。 */
+export function formatDuration(durationMs?: number): string {
+  if (durationMs === undefined || Number.isNaN(durationMs)) return ''
+  if (durationMs >= 5000) {
+    return `${(durationMs / 1000).toFixed(1)}s`
+  }
+  return `${Math.round(durationMs)}ms`
+}
+
+const SENTENCE_END_RE = /[。！？.!?]$/
+
+/** 判断发言内容是否可能已被截断（非句末标点结尾）。 */
+export function isContentTruncated(content: string): boolean {
+  return !!content && !SENTENCE_END_RE.test(content.trim())
 }
 
 /** 把 Bridge case event 投影成房间消息；不在投影表内的事件返回 null（丢弃）。 */
@@ -269,18 +344,21 @@ export function projectCaseEvent(
 
   if (event_type === 'planning.frozen') {
     const plan = pickString(body, ['plan_description', 'summary', 'description', 'objective'])
+    const qualityGate = body.quality_gate_required === true
     return {
       id: event_id,
       sender: resolveRoomSender(actor || 'manager', metadata),
       kind: 'speech',
-      content: plan || '执行计划已冻结，等待审批与分派。',
+      content: plan || `规划完成，正在执行分析与解读。${qualityGate ? '并将进行质量检查。' : ''}`,
     }
   }
 
   if (event_type === 'work_item.assigned') {
     const target = pickString(body, ['target', 'assignee', 'role'])
     const targetName = target ? resolveRoomSender(target, metadata).name : '协作成员'
-    const objective = stripPlanContract(pickString(body, ['objective'])) || pickString(body, ['skill_name'])
+    const rawObjective = stripPlanContract(pickString(body, ['objective']))
+    const rawSkillName = pickString(body, ['skill_name'])
+    const objective = rawObjective || (rawSkillName ? formatSkillName(rawSkillName) : '')
     return {
       id: event_id,
       sender: SYSTEM_SENDER,
@@ -290,8 +368,9 @@ export function projectCaseEvent(
   }
 
   if (event_type === 'work_item.claimed' || event_type === 'work_item.running' || event_type === 'agent.started') {
-    const objective =
-      stripPlanContract(pickString(body, ['objective', 'summary'])) || pickString(body, ['skill_name'])
+    const rawObjective = stripPlanContract(pickString(body, ['objective', 'summary']))
+    const rawSkillName = pickString(body, ['skill_name'])
+    const objective = rawObjective || (rawSkillName ? formatSkillName(rawSkillName) : '')
     const workItemId = pickString(body, ['work_item_id'])
     return {
       id: event_id,
@@ -305,7 +384,9 @@ export function projectCaseEvent(
   if (event_type === 'agent.tool_call') {
     // 证据事件经 Bridge 审计包装，工具字段在内层 payload.payload（同 room 消息事件）
     const inner = (body.payload && typeof body.payload === 'object' ? body.payload : {}) as Record<string, unknown>
-    const tool = pickString(inner, ['tool', 'tool_name', 'name']) || pickString(body, ['tool', 'tool_name', 'name']) || '未知工具'
+    const rawTool = pickString(inner, ['tool', 'tool_name', 'name']) || pickString(body, ['tool', 'tool_name', 'name'])
+    const tool = rawTool ? formatToolName(rawTool) : ''
+    if (!tool) return null
     return {
       id: event_id,
       sender: resolveRoomSender(actor, metadata),
@@ -318,19 +399,20 @@ export function projectCaseEvent(
   if (event_type === 'agent.tool_result' || event_type === 'agent.finished') {
     // 同上：tool/status/success/duration_ms 均在内层 payload.payload
     const inner = (body.payload && typeof body.payload === 'object' ? body.payload : {}) as Record<string, unknown>
-    const tool = pickString(inner, ['tool', 'tool_name', 'name']) || pickString(body, ['tool', 'tool_name', 'name'])
+    const rawTool = pickString(inner, ['tool', 'tool_name', 'name']) || pickString(body, ['tool', 'tool_name', 'name'])
+    const tool = rawTool ? formatToolName(rawTool) : ''
+    if (!tool) return null
     const status = pickString(inner, ['status']) || pickString(body, ['status'])
     const failed = status === 'failed' || status === 'error' || inner.success === false || body.success === false
     const rawDuration = typeof inner.duration_ms === 'number' ? inner.duration_ms : body.duration_ms
     const durationMs = typeof rawDuration === 'number' ? Math.round(rawDuration) : undefined
-    const duration = durationMs !== undefined ? `（${durationMs}ms）` : ''
-    const head = tool ? `${tool} ` : ''
+    const duration = durationMs !== undefined ? `（${formatDuration(durationMs)}）` : ''
     return {
       id: event_id,
       sender: resolveRoomSender(actor, metadata),
       kind: 'progress',
-      content: `${head}${failed ? '调用失败' : '调用完成'}${duration}`,
-      tool: { name: tool || '工具调用', status: failed ? 'failed' : 'ok', durationMs },
+      content: `${tool} ${failed ? '调用失败' : '调用完成'}${duration}`,
+      tool: { name: tool, status: failed ? 'failed' : 'ok', durationMs },
     }
   }
 
@@ -413,14 +495,85 @@ export function projectCaseEvent(
     }
   }
 
-  if (event_type === 'planning.validation_failed') {
-    // Case 会停在 waiting_for_correction；时间线必须解释原因。
-    const reason = pickString(body, ['error', 'reason', 'summary'])
+  if (event_type === 'correction_started') {
+    const missingFields = toStringList(body.missing_fields)
+    const attempt = typeof body.attempt === 'number' ? body.attempt : undefined
+    const maxAttempts = typeof body.max_attempts === 'number' ? body.max_attempts : undefined
+    const progress = attempt !== undefined && maxAttempts !== undefined ? `（第 ${attempt}/${maxAttempts} 次）` : ''
+    const fieldsText = missingFields.length ? `：缺少 ${missingFields.join('/')}${progress}` : progress
     return {
       id: event_id,
       sender: resolveRoomSender(actor || 'bioops-manager', metadata),
       kind: 'action',
-      content: truncate(reason ? `计划校验未通过：${reason}` : '计划校验未通过，等待修正后重新提交。'),
+      content: `自动修正计划${fieldsText}`,
+    }
+  }
+
+  if (event_type === 'correction_applied') {
+    const reason = pickString(body, ['reason'])
+    const attempt = typeof body.attempt === 'number' ? body.attempt : undefined
+    const maxAttempts = typeof body.max_attempts === 'number' ? body.max_attempts : undefined
+    const progress = attempt !== undefined && maxAttempts !== undefined ? `（第 ${attempt}/${maxAttempts} 次）` : ''
+    return {
+      id: event_id,
+      sender: SYSTEM_SENDER,
+      kind: 'system',
+      content: reason ? `已根据校验反馈重新生成计划${progress}：${reason}` : `已根据校验反馈重新生成计划${progress}`,
+    }
+  }
+
+  if (event_type === 'correction_failed') {
+    const reason = pickString(body, ['reason'])
+    const attempt = typeof body.attempt === 'number' ? body.attempt : undefined
+    const maxAttempts = typeof body.max_attempts === 'number' ? body.max_attempts : undefined
+    const progress = attempt !== undefined && maxAttempts !== undefined ? `（${attempt}/${maxAttempts}）` : ''
+    const nextActions = toStringList(body.next_actions)
+    const availableActions: RoomMessageAction[] = []
+    if (nextActions.includes('retry')) availableActions.push({ label: '重试', action: 'retry' })
+    if (nextActions.includes('revise')) availableActions.push({ label: '修改需求', action: 'revise' })
+    if (nextActions.includes('cancel')) availableActions.push({ label: '终止 Case', action: 'cancel' })
+    return {
+      id: event_id,
+      sender: resolveRoomSender(actor || 'bioops-manager', metadata),
+      kind: 'action',
+      content: `计划自动修正已达上限${progress}：${reason || '未知原因'}。请重试、修改需求或终止 Case。`,
+      technicalDetail: reason || undefined,
+      actions: availableActions.length ? availableActions : [
+        { label: '重试', action: 'retry' },
+        { label: '修改需求', action: 'revise' },
+        { label: '终止 Case', action: 'cancel' },
+      ],
+    }
+  }
+
+  if (event_type === 'planning.validation_failed') {
+    // Case 会停在 waiting_for_correction；时间线必须解释原因。
+    const reason = pickString(body, ['error', 'reason', 'summary'])
+    const attempt = typeof body.attempt === 'number' ? body.attempt : undefined
+    const maxAttempts = typeof body.max_attempts === 'number' ? body.max_attempts : undefined
+    const retryExhausted = body.retry_exhausted === true
+    if (retryExhausted) {
+      const progress = attempt !== undefined && maxAttempts !== undefined ? `（${attempt}/${maxAttempts}）` : ''
+      return {
+        id: event_id,
+        sender: resolveRoomSender(actor || 'bioops-manager', metadata),
+        kind: 'action',
+        content: `计划自动修正已达上限${progress}：${reason || '未知原因'}。请重试、修改需求或终止 Case。`,
+        technicalDetail: reason || undefined,
+        actions: [
+          { label: '重试', action: 'retry' },
+          { label: '修改需求', action: 'revise' },
+          { label: '终止 Case', action: 'cancel' },
+        ],
+      }
+    }
+    const progress = attempt !== undefined && maxAttempts !== undefined ? `（第 ${attempt}/${maxAttempts} 次）` : ''
+    return {
+      id: event_id,
+      sender: resolveRoomSender(actor || 'bioops-manager', metadata),
+      kind: 'action',
+      content: `计划生成不完整，正在自动重试${progress}`,
+      technicalDetail: reason || undefined,
     }
   }
 
@@ -457,6 +610,29 @@ export function projectCaseEvent(
     }
   }
 
+  if (event_type === 'case.auto_approved') {
+    return {
+      id: event_id,
+      sender: SYSTEM_SENDER,
+      kind: 'system',
+      content: '已根据你的授权自动批准',
+    }
+  }
+
+  if (event_type === 'node_timeout') {
+    const node = pickString(body, ['node'])
+    const elapsed = typeof body.elapsed_seconds === 'number' ? body.elapsed_seconds : undefined
+    const nodeLabel = node === 'planning' ? '规划' : node === 'execution' ? '执行' : node || '当前'
+    const elapsedText = elapsed !== undefined ? `，已耗时 ${formatDuration(Math.round(elapsed * 1000))}` : ''
+    return {
+      id: event_id,
+      sender: SYSTEM_SENDER,
+      kind: 'action',
+      content: `${nodeLabel}节点超时${elapsedText}，请检查网络或重试。`,
+      actions: [{ label: '重试', action: 'retry' }],
+    }
+  }
+
   if (event_type === 'case.closed') {
     return {
       id: event_id,
@@ -485,7 +661,9 @@ export function projectCaseEvent(
     } else {
       const from = pickString(body, ['from', 'previous_status'])
       const to = pickString(body, ['to', 'status', 'new_status'])
-      content = to ? `Case 状态更新：${from ? `${from} → ` : ''}${to}` : 'Case 状态已更新'
+      content = to
+        ? `Case 状态更新：${from ? `${formatAgentTeamsStatus(from)} → ` : ''}${formatAgentTeamsStatus(to)}`
+        : 'Case 状态已更新'
     }
     return { id: event_id, sender: SYSTEM_SENDER, kind: 'system', content }
   }
@@ -606,6 +784,9 @@ export function resolveManagerTyping(events: AgentTeamsEvent[], now: number = Da
 export interface RoomWorkerStep {
   id: string
   tool: RoomToolInfo
+  count: number
+  collapsed: boolean
+  details: Array<{ id: string; tool: RoomToolInfo }>
 }
 
 /** worker 卡片块：同一成员的连续 progress / 终态发言聚合为一张卡片。 */
@@ -633,6 +814,39 @@ export type RoomBlock =
   | { type: 'speech'; message: RoomMessage }
   | { type: 'action'; message: RoomMessage }
   | RoomWorkerBlock
+
+/** 合并同一 worker 卡片内相邻的同名工具调用，点击可展开明细。 */
+function foldWorkerSteps(steps: RoomWorkerStep[]): RoomWorkerStep[] {
+  const folded: RoomWorkerStep[] = []
+  for (const step of steps) {
+    const last = folded[folded.length - 1]
+    if (last && last.tool.name === step.tool.name) {
+      last.count += 1
+      last.details.push({ id: step.id, tool: step.tool })
+      const statuses = last.details.map((d) => d.tool.status)
+      if (statuses.includes('failed')) {
+        last.tool.status = 'failed'
+      } else if (statuses.includes('ok')) {
+        last.tool.status = 'ok'
+      } else {
+        last.tool.status = 'running'
+      }
+      const totalDuration = last.details.reduce((sum, d) => (d.tool.durationMs !== undefined ? sum + d.tool.durationMs : sum), 0)
+      if (last.details.some((d) => d.tool.durationMs !== undefined)) {
+        last.tool.durationMs = totalDuration
+      }
+    } else {
+      folded.push({
+        id: step.id,
+        tool: { ...step.tool },
+        count: 1,
+        collapsed: true,
+        details: [{ id: step.id, tool: step.tool }],
+      })
+    }
+  }
+  return folded
+}
 
 /** 把扁平房间消息流聚合为渲染块：system → 时间轴节点，manager 发言 → 气泡，
  *  同一 worker 的连续 progress / 发言 → 工具进度卡片。 */
@@ -666,9 +880,16 @@ export function groupRoomMessages(messages: RoomMessage[]): RoomBlock[] {
         run.push(current)
         i += 1
       }
-      const steps = run
+      const rawSteps = run
         .filter((item) => item.kind === 'progress' && item.tool)
-        .map((item) => ({ id: item.id, tool: item.tool as RoomToolInfo }))
+        .map((item) => ({
+          id: item.id,
+          tool: item.tool as RoomToolInfo,
+          count: 1,
+          collapsed: false,
+          details: [{ id: item.id, tool: item.tool as RoomToolInfo }],
+        }))
+      const steps = foldWorkerSteps(rawSteps)
       const extraProgress = run.filter((item) => item.kind === 'progress' && !item.tool)
       const speeches = run.filter((item) => item.kind === 'speech')
       if (!steps.length && !extraProgress.length && speeches.length === 1) {

@@ -36,12 +36,16 @@ from loguru import logger
 
 from omichub.core.config import get_settings
 from omichub.core.telemetry import get_meter, get_tracer
+from omichub.domain.file.value_objects import FileSource
 from omichub.infrastructure.cache.redis_client import get_redis
+from omichub.infrastructure.config.deployment_config import get_deployment_config
 from omichub.infrastructure.config.studio_loader import (
     StudioConfig,
     StudioConfigManager,
     studio_config_manager,
 )
+from omichub.infrastructure.database.session import get_session_factory
+from omichub.infrastructure.storage.scratch_volume import ScratchVolumeManager
 from omichub.infrastructure.studio.paths import PLATFORM_CONTAINER_MOUNT
 
 _AGENT_TIMEOUT = httpx.Timeout(connect=5.0, read=None, write=30.0, pool=5.0)
@@ -87,6 +91,7 @@ class StudioSandboxManager:
     # Redis 是跨 web/celery 进程的权威状态；内存字典作为 Redis 不可用时的降级。
     _last_activity: dict[str, float] = field(default_factory=dict)
     _busy_leases: dict[str, dict[str, float]] = field(default_factory=dict)
+    _scratch_volumes: dict[str, ScratchVolumeManager] = field(default_factory=dict)
 
     # ------------------------------------------------------------------
     # 配置 & Docker 客户端
@@ -367,74 +372,105 @@ class StudioSandboxManager:
 
         image = image or config.default_image
         name = self.container_name(session_id)
-        workspace = self.workspace_dir(session_id)
-        self.ensure_workspace_dirs(workspace)
+        persistent_workspace = self.workspace_dir(session_id)
+        self.ensure_workspace_dirs(persistent_workspace)
 
-        def _ensure() -> Any:
-            client = self._get_client()
-            self._validate_isolated_network(client, config)
-            network_name = self._ensure_whitelist_network(client, session_id, config)
-            try:
-                container = client.containers.get(name)
-            except Exception:  # noqa: BLE001 - NotFound 时走创建分支
-                container = None
-            if container is not None:
-                if container.status != "running":
-                    container.start()
-                container.reload()
-                self._validate_container_network(container, config, session_id)
-                return container
-
-            # agent 通过共享工作区 UDS 访问；none 模式的沙盒完全不加入 Docker 网络。
-            socket_path = workspace / _AGENT_SOCKET_NAME
-            with contextlib.suppress(OSError):
-                socket_path.unlink()
-            cpu_shares = int(config.sandbox.cpu * 1024)
-            volumes = {str(workspace): {"bind": "/workspace", "mode": "rw"}}
+        deployment_cfg = get_deployment_config()
+        scratch_mgr: ScratchVolumeManager | None = None
+        if deployment_cfg.scratch_volume_enabled:
+            if not user_id:
+                raise StudioSandboxUnavailableError(
+                    "cloud 模式下启动 Studio 沙盒必须提供 user_id"
+                )
+            async with get_session_factory()() as db_session:
+                scratch_mgr = ScratchVolumeManager(
+                    session_id, user_id, db_session
+                )
+                await scratch_mgr.allocate()
+                await scratch_mgr.materialize_workspace_inputs(persistent_workspace)
+                self._scratch_volumes[session_id] = scratch_mgr
+            workspace = scratch_mgr.volume.workspace
+            volumes = scratch_mgr.volumes_for_container()
+        else:
+            workspace = persistent_workspace
+            volumes: dict[str, dict[str, str]] = {
+                str(workspace): {"bind": "/workspace", "mode": "rw"}
+            }
             # P1 数据不搬家：当前用户数据目录只读挂入容器，input/ 软链经它解析。
             # 多租户红线：只挂 users/{user_id}，绝不整根挂 storage_path。
             if user_id:
                 user_root = Path(get_settings().storage_path) / "users" / str(user_id)
                 if user_root.is_dir():
-                    volumes[str(user_root)] = {"bind": PLATFORM_CONTAINER_MOUNT, "mode": "ro"}
+                    volumes[str(user_root)] = {
+                        "bind": PLATFORM_CONTAINER_MOUNT,
+                        "mode": "ro",
+                    }
                 else:
                     logger.warning(
                         f"[Studio] 用户数据目录不存在，跳过平台只读挂载: {user_root}"
                     )
-            run_kwargs: dict[str, Any] = {
-                "image": image,
-                "name": name,
-                "detach": True,
-                "auto_remove": False,
-                "mem_limit": config.sandbox.memory,
-                "cpu_shares": cpu_shares,
-                "volumes": volumes,
-                "labels": {"omichub.studio": "1", "omichub.studio.session": session_id},
-            }
-            if config.sandbox.network.mode.strip().lower() == "none":
-                run_kwargs["network_mode"] = "none"
-            else:
-                assert network_name is not None
-                proxy_url = (
-                    f"http://{config.sandbox.network.proxy_host}:"
-                    f"{config.sandbox.network.proxy_port}"
-                )
-                run_kwargs["network"] = network_name
-                run_kwargs["environment"] = {
-                    "HTTP_PROXY": proxy_url,
-                    "HTTPS_PROXY": proxy_url,
-                    "http_proxy": proxy_url,
-                    "https_proxy": proxy_url,
-                    "NO_PROXY": "localhost,127.0.0.1",
-                    "no_proxy": "localhost,127.0.0.1",
-                }
-            return client.containers.run(**run_kwargs)
 
         try:
+
+            def _ensure() -> Any:
+                client = self._get_client()
+                self._validate_isolated_network(client, config)
+                network_name = self._ensure_whitelist_network(client, session_id, config)
+                try:
+                    container = client.containers.get(name)
+                except Exception:  # noqa: BLE001 - NotFound 时走创建分支
+                    container = None
+                if container is not None:
+                    if container.status != "running":
+                        container.start()
+                    container.reload()
+                    self._validate_container_network(container, config, session_id)
+                    return container
+
+                # agent 通过共享工作区 UDS 访问；none 模式的沙盒完全不加入 Docker 网络。
+                socket_path = workspace / _AGENT_SOCKET_NAME
+                with contextlib.suppress(OSError):
+                    socket_path.unlink()
+                cpu_shares = int(config.sandbox.cpu * 1024)
+                run_kwargs: dict[str, Any] = {
+                    "image": image,
+                    "name": name,
+                    "detach": True,
+                    "auto_remove": False,
+                    "mem_limit": config.sandbox.memory,
+                    "cpu_shares": cpu_shares,
+                    "volumes": volumes,
+                    "labels": {"omichub.studio": "1", "omichub.studio.session": session_id},
+                }
+                if config.sandbox.network.mode.strip().lower() == "none":
+                    run_kwargs["network_mode"] = "none"
+                else:
+                    assert network_name is not None
+                    proxy_url = (
+                        f"http://{config.sandbox.network.proxy_host}:"
+                        f"{config.sandbox.network.proxy_port}"
+                    )
+                    run_kwargs["network"] = network_name
+                    run_kwargs["environment"] = {
+                        "HTTP_PROXY": proxy_url,
+                        "HTTPS_PROXY": proxy_url,
+                        "http_proxy": proxy_url,
+                        "https_proxy": proxy_url,
+                        "NO_PROXY": "localhost,127.0.0.1",
+                        "no_proxy": "localhost,127.0.0.1",
+                    }
+                return client.containers.run(**run_kwargs)
+
             container = await asyncio.to_thread(_ensure)
         except StudioSandboxUnavailableError:
+            if scratch_mgr is not None:
+                await scratch_mgr.cleanup()
+                self._scratch_volumes.pop(session_id, None)
             raise
         except Exception as e:  # noqa: BLE001
+            if scratch_mgr is not None:
+                await scratch_mgr.cleanup()
+                self._scratch_volumes.pop(session_id, None)
             raise StudioSandboxUnavailableError(f"沙盒容器启动失败: {e}") from e
 
         await asyncio.to_thread(container.reload)
@@ -576,10 +612,29 @@ class StudioSandboxManager:
             logger.debug("[Studio] 容器指标读取失败: {}", exc)
             return {"cpu_percent": 0.0, "memory_percent": 0.0, "memory_used": 0, "memory_limit": 0}
 
+    def scratch_volume(self, session_id: str) -> ScratchVolumeManager | None:
+        """返回 cloud 模式下当前会话的 scratch 卷管理器（local 模式返回 None）。"""
+        return self._scratch_volumes.get(session_id)
+
+    async def finalize_outputs(self, session_id: str) -> list[Any] | None:
+        """cloud 模式下把 scratch output 产物回传对象存储并注册到 file_records。"""
+        existing = self._scratch_volumes.get(session_id)
+        if existing is None:
+            return None
+        async with get_session_factory()() as db_session:
+            scratch = ScratchVolumeManager(
+                session_id, existing.user_id, db_session
+            )
+            # 复用已分配的卷路径，不再重新分配
+            scratch.volume = existing.volume
+            scratch._root = existing._root
+            return await scratch.register_outputs(source=FileSource.STUDIO)
+
     async def stop(self, session_id: str) -> bool:
         """停止并移除会话容器，返回是否实际回收了容器。"""
         name = self.container_name(session_id)
         await self._remove_activity(session_id)
+        scratch = self._scratch_volumes.get(session_id)
 
         def _stop() -> bool:
             client = self._get_client()
@@ -593,12 +648,19 @@ class StudioSandboxManager:
                     container.stop(timeout=5)
                 container.remove(force=True)
                 removed = True
+            workspace_root = (
+                scratch.volume.workspace if scratch else self.workspace_dir(session_id)
+            )
             with contextlib.suppress(OSError):
-                (self.workspace_dir(session_id) / _AGENT_SOCKET_NAME).unlink()
+                (workspace_root / _AGENT_SOCKET_NAME).unlink()
             self._cleanup_whitelist_network(client, session_id, self._config())
             return removed
 
         removed = await asyncio.to_thread(_stop)
+        if scratch is not None:
+            await self.finalize_outputs(session_id)
+            await scratch.cleanup()
+            self._scratch_volumes.pop(session_id, None)
         if removed:
             logger.info(f"[Studio] 会话 {session_id[:8]} 沙盒已回收")
         return removed

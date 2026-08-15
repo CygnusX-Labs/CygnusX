@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from uuid import UUID
 
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.report import (
@@ -20,20 +21,30 @@ from omichub.application.schemas.report import (
 from omichub.application.services.flow_service import FlowService
 from omichub.core.config import get_settings
 from omichub.core.exceptions import AuthorizationError, NotFoundError
+from omichub.domain.file.value_objects import FileSource
 from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
 from omichub.infrastructure.database.repositories.report_repository import (
     ReportRepositoryImpl,
 )
+from omichub.infrastructure.storage import get_path_factory, get_storage_backend
+from omichub.infrastructure.storage.backend import StorageBackend
+from omichub.infrastructure.storage.file_registry import FileRegistry
 
 
 class ReportService:
     """报告应用服务"""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(
+        self,
+        db: AsyncSession,
+        backend: StorageBackend | None = None,
+    ):
         self._db = db
         self._repo = ReportRepositoryImpl(db)
         self._flow_service = FlowService()
         self._settings = get_settings()
+        self._factory = get_path_factory()
+        self._backend = backend or get_storage_backend()
 
     def _resolve_report_path(self, path: str) -> Path:
         """校验报告文件路径必须位于 storage_root 内，防止路径穿越。
@@ -48,6 +59,10 @@ class ReportService:
         except ValueError as exc:
             raise AuthorizationError("非法报告路径：路径越权") from exc
         return target
+
+    def _rel_path(self, abs_path: Path) -> str:
+        """将已校验的绝对路径转为相对 data_root 的路径（供 StorageBackend 使用）。"""
+        return self._factory.relative_to_root(abs_path)
 
     async def list_reports(
         self,
@@ -131,12 +146,13 @@ class ReportService:
         if primary is None:
             return "<p>未找到可预览的 HTML 报告</p>"
 
-        path = self._resolve_report_path(primary.path)
-        if not path.exists():
+        rel_path = self._rel_path(self._resolve_report_path(primary.path))
+        if not await self._backend.exists(rel_path):
             return "<p>报告文件已丢失，请尝试下载</p>"
 
         try:
-            return path.read_text(encoding="utf-8")
+            content = await self._backend.read(rel_path)
+            return content.decode("utf-8", errors="replace")
         except Exception as exc:  # noqa: BLE001
             return f"<p>报告读取失败: {exc}</p>"
 
@@ -150,10 +166,10 @@ class ReportService:
         if file_model is None or file_model.report_id != report_id:
             raise NotFoundError("文件不存在")
 
-        path = self._resolve_report_path(file_model.path)
-        if not path.exists():
+        rel_path = self._rel_path(self._resolve_report_path(file_model.path))
+        if not await self._backend.exists(rel_path):
             raise NotFoundError("文件已丢失")
-        return path
+        return await self._backend.get_local_path(rel_path)
 
     async def delete_report(self, report_id: UUID, user_id: str) -> None:
         """删除报告（仅删除记录）"""
@@ -209,9 +225,11 @@ class ReportService:
 
         # 尝试从 project_summary.json 读取更丰富的元信息
         summary_path = work_path / "report_data" / "project_summary.json"
-        if summary_path.exists():
+        summary_rel = self._rel_path(summary_path)
+        if await self._backend.exists(summary_rel):
             try:
-                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                summary_bytes = await self._backend.read(summary_rel)
+                summary = json.loads(summary_bytes.decode("utf-8"))
                 project_meta = summary.get("project_meta", {})
                 stats = summary.get("stats", {})
                 if project_meta.get("client"):
@@ -225,7 +243,8 @@ class ReportService:
             except Exception:  # noqa: BLE001
                 pass
 
-        status = "completed" if html_path.exists() else "failed"
+        html_rel = self._rel_path(html_path)
+        status = "completed" if await self._backend.exists(html_rel) else "failed"
 
         report = ReportModel(
             id=uuid.uuid4(),
@@ -245,18 +264,38 @@ class ReportService:
         )
         await self._repo.create(report)
 
-        if html_path.exists():
+        if await self._backend.exists(html_rel):
+            stat_info = await self._backend.stat(html_rel)
             file_model = ReportFileModel(
                 id=uuid.uuid4(),
                 report_id=report.id,
                 name=html_path.name,
                 type="html",
-                size=html_path.stat().st_size,
+                size=stat_info["size"] if stat_info else 0,
                 path=str(html_path),
                 is_primary=True,
             )
             self._db.add(file_model)
             await self._db.flush()
+
+            # 报告文件同时注册到统一文件索引（source=REPORT），使 AI 助手可见
+            try:
+                path_factory = get_path_factory()
+                report_directory = report_dir.relative_to(
+                    path_factory.user_root(user_id)
+                ).as_posix()
+                await FileRegistry(self._db).register(
+                    UUID(user_id),
+                    html_path,
+                    source=FileSource.REPORT,
+                    task_id=UUID(task_id),
+                    directory=report_directory,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "报告文件注册到 file_records 失败（非阻塞）: {}", exc
+                )
+
             await self._db.refresh(report)
 
         return report

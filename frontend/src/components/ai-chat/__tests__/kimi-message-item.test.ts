@@ -261,6 +261,10 @@ describe('KimiMessageItem 渲染分支', () => {
   })
 
   it('工具生成图片后在对话中显示预览并支持下载', async () => {
+    // 组件链路：fetchArtifactBlob 返回 objectUrl → fetch(objectUrl).blob() → createObjectURL 作为 img src
+    URL.createObjectURL = vi.fn(() => 'blob:heatmap-preview')
+    global.fetch = vi.fn().mockResolvedValue({ blob: () => Promise.resolve(new Blob(['image'])) })
+    const anchorClickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     const { el } = mountItem({
       sessionId: 'session-artifact',
       message: {
@@ -282,7 +286,7 @@ describe('KimiMessageItem 渲染分支', () => {
     })
 
     await nextTick()
-    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 20))
     await nextTick()
 
     expect(studioApiMocks.fetchArtifactBlob).toHaveBeenCalledWith(
@@ -293,10 +297,10 @@ describe('KimiMessageItem 渲染分支', () => {
     expect(el.textContent).toContain('sample_correlation_heatmap.png')
 
     el.querySelector<HTMLButtonElement>('.message-artifacts__download')?.click()
-    expect(studioApiMocks.downloadArtifact).toHaveBeenCalledWith(
-      'session-artifact',
-      'output/sample_correlation_heatmap.png',
-    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await nextTick()
+    expect(anchorClickSpy).toHaveBeenCalled()
+    anchorClickSpy.mockRestore()
   })
 
   it('有 thought + 有 content：思考面板与正文都应渲染', () => {

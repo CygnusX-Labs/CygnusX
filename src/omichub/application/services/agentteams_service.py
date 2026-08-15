@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from collections.abc import AsyncIterator
 from typing import Any
+from uuid import UUID
 
 import httpx
 from loguru import logger
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.services.agentteams_bridge_settings_service import (
     AgentTeamsBridgeRuntimeConfig,
@@ -24,6 +28,7 @@ from omichub.application.services.agentteams_title import derive_agentteams_case
 from omichub.core.config import Settings
 from omichub.core.exceptions import AuthorizationError, BusinessError
 from omichub.infrastructure.cache.redis_client import get_redis
+from omichub.infrastructure.database.models.user import UserModel
 
 # Bridge 侧预留的 Case 级证据 work_item_id（bridge record_evidence 对 manager 放行，
 # 不要求存在同名 work item）；房间事件不属于任何具体工作项。
@@ -74,7 +79,10 @@ class AgentTeamsService:
     """Uses the Bridge's manager identity internally; browser clients never receive it."""
 
     # 复用 httpx.AsyncClient 避免每次请求都重新建立 TCP/DNS 连接，显著降低首次 Bridge 调用延迟。
-    _bridge_client_cache: dict[str, httpx.AsyncClient] = {}
+    # 缓存按事件循环隔离：Celery 任务用 asyncio.run() 每次新建 loop，跨 loop 复用客户端
+    # 会抛 "Event loop is closed"（httpx 底层流绑定创建时的 loop），loop 变化时重建，
+    # 与 infrastructure/cache/redis_client.get_redis 同一模式。
+    _bridge_client_cache: dict[str, tuple[httpx.AsyncClient, asyncio.AbstractEventLoop]] = {}
 
     def __init__(
         self,
@@ -90,13 +98,17 @@ class AgentTeamsService:
 
     def _bridge_client(self) -> httpx.AsyncClient:
         cache_key = f"{self._bridge_config.bridge_url}:{self._bridge_config.timeout_seconds}"
-        client = self._bridge_client_cache.get(cache_key)
-        if client is None or client.is_closed:
-            client = httpx.AsyncClient(
-                base_url=self._bridge_config.bridge_url.rstrip("/"),
-                timeout=self._bridge_config.timeout_seconds,
-            )
-            self._bridge_client_cache[cache_key] = client
+        loop = asyncio.get_running_loop()
+        cached = self._bridge_client_cache.get(cache_key)
+        if cached is not None:
+            client, client_loop = cached
+            if client_loop is loop and not client.is_closed:
+                return client
+        client = httpx.AsyncClient(
+            base_url=self._bridge_config.bridge_url.rstrip("/"),
+            timeout=self._bridge_config.timeout_seconds,
+        )
+        self._bridge_client_cache[cache_key] = (client, loop)
         return client
 
     async def is_connected(self) -> bool:
@@ -331,6 +343,7 @@ class AgentTeamsService:
         comparisons: list[dict[str, Any]] | None = None,
         origin_consultation_id: str | None = None,
         consultation_summary: str | None = None,
+        db: AsyncSession | None = None,
     ) -> dict[str, Any]:
         case_payload: dict[str, Any] = {
             "case_id": case_id,
@@ -355,6 +368,14 @@ class AgentTeamsService:
             method="POST",
             json=case_payload,
         )
+        if db is not None and await self._is_autonomous(db, requester_ref):
+            try:
+                redis = get_redis()
+                await redis.sadd(AUTO_CONFIRM_CASES_KEY, case_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.bind(case_id=case_id).warning(
+                    "AgentTeams auto-confirm marking failed: {}", exc
+                )
         return case
 
     @staticmethod
@@ -372,6 +393,76 @@ class AgentTeamsService:
         )
         return None
 
+    @staticmethod
+    async def _user_agentteams_preferences(
+        db: AsyncSession, requester_ref: str
+    ) -> dict[str, Any]:
+        """读取用户偏好中的 agentteams 配置段；读取失败返回空字典，避免阻断主流程。"""
+        try:
+            user_id = UUID(str(requester_ref))
+        except (ValueError, TypeError, AttributeError):
+            return {}
+        try:
+            result = await db.execute(
+                select(UserModel.preferences).where(UserModel.id == user_id)
+            )
+            preferences = result.scalar_one_or_none()
+        except Exception as exc:  # noqa: BLE001
+            logger.bind(requester_ref=requester_ref).warning(
+                "AgentTeams user preferences lookup failed: {}", exc
+            )
+            return {}
+        if not isinstance(preferences, dict):
+            return {}
+        agentteams = preferences.get("agentteams")
+        return dict(agentteams) if isinstance(agentteams, dict) else {}
+
+    @classmethod
+    async def _is_autonomous(cls, db: AsyncSession, requester_ref: str) -> bool:
+        """用户是否授予 AgentTeams 自主执行权限。"""
+        preferences = await cls._user_agentteams_preferences(db, requester_ref)
+        return preferences.get("autonomy") == "autonomous"
+
+    async def auto_approve_case_if_autonomous(
+        self,
+        case_id: str,
+        requester_ref: str,
+        *,
+        db: AsyncSession | None = None,
+        task_name: str = "auto-approved",
+    ) -> dict[str, Any]:
+        """若用户为 autonomous 模式，自动批准并提交处于 approval_pending 的 Case。
+
+        通用 Case（无 flow_id）直接调用 general-plans/execute；
+        流程 Case 创建 submit work item 后调用 approved-submissions。
+        成功后在 Case 上记录「已根据你的授权自动批准」审计事件。
+        """
+        if db is None:
+            return {"status": "skipped_no_db", "case_id": case_id}
+        if not await self._is_autonomous(db, requester_ref):
+            return {"status": "skipped_not_autonomous", "case_id": case_id}
+        case = await self._get_case_for_requester(case_id, requester_ref)
+        status_value = str(case.get("status") or "")
+        if status_value == "approved":
+            return {"status": "idempotent_already_approved", "case_id": case_id}
+        if status_value == "executing":
+            return {"status": "idempotent_already_executing", "case_id": case_id}
+        if status_value != "approval_pending":
+            return {"status": "skipped_not_pending", "case_id": case_id, "case_status": status_value}
+        result = await self.approve_and_submit_task(
+            case_id=case_id,
+            requester_ref=requester_ref,
+            task_name=task_name,
+        )
+        await self.post_case_evidence(
+            case_id,
+            work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+            event_type="case.auto_approved",
+            summary="已根据你的授权自动批准",
+            payload={"reason": "user_autonomy_autonomous"},
+        )
+        return {"status": "auto_approved", "case_id": case_id, "result": result}
+
     async def approve_and_submit_task(
         self,
         *,
@@ -380,7 +471,12 @@ class AgentTeamsService:
         task_name: str,
     ) -> dict[str, Any]:
         case = await self._get_case_for_requester(case_id, requester_ref)
-        if case.get("status") != "approval_pending":
+        status_value = str(case.get("status") or "")
+        if status_value == "approved":
+            return {"status": "idempotent_already_approved", "case_id": case_id}
+        if status_value == "executing":
+            return {"status": "idempotent_already_executing", "case_id": case_id}
+        if status_value != "approval_pending":
             raise BusinessError("当前协作 Case 尚未满足人工审批和提交条件")
         if not case.get("flow_id"):
             approval = await self._request_as(

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import re
 import uuid
 from typing import Any
@@ -78,20 +77,14 @@ async def _read_workspace_text(
 
     from omichub.application.services.file_service import FileService
 
+    service = FileService(context.db)
     try:
-        path = await FileService(context.db).get_file_path(user_uuid, file_uuid)
+        return await service.read_file_text(user_uuid, file_uuid, _MAX_WORKSPACE_TEXT_BYTES)
     except NotFoundError as exc:
         raise ValidationError("工作区文件不存在、已移除或无权访问") from exc
-
-    try:
-        if path.stat().st_size > _MAX_WORKSPACE_TEXT_BYTES:
-            raise ValidationError(
-                f"工作区文件超过 {_MAX_WORKSPACE_TEXT_BYTES} 字节，无法直接作为 MCP 文本输入"
-            )
-        return await asyncio.to_thread(path.read_text, encoding="utf-8")
-    except UnicodeDecodeError as exc:
-        raise ValidationError("工作区文件不是 UTF-8 文本，无法直接作为 MCP 文本输入") from exc
-    except OSError as exc:
+    except ValidationError:
+        raise
+    except Exception as exc:
         raise ValidationError(f"读取工作区文件失败: {exc}") from exc
 
 

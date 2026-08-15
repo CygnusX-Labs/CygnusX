@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createApp, h } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
-import { agentTeamsStatusLabel } from '@/utils/agentTeamsStatus'
+import { formatAgentTeamsStatus } from '@/utils/agentTeamsStatus'
 import AgentTeamsCaseCard from '../AgentTeamsCaseCard.vue'
 
 vi.mock('@/api/agentTeams', () => ({
@@ -34,7 +34,7 @@ describe('AgentTeamsCaseCard', () => {
     app.use(router)
     app.mount(host)
 
-    expect(host.textContent).toContain(agentTeamsStatusLabel.approval_pending)
+    expect(host.textContent).toContain(formatAgentTeamsStatus('approval_pending'))
     expect(host.textContent).toContain('审批待处理')
     expect(host.textContent).toContain('打开 Case')
 

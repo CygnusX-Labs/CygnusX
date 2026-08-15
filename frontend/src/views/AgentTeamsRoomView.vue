@@ -21,6 +21,8 @@ import { formatDistanceToNow, parseISO } from 'date-fns'
 import { zhCN } from 'date-fns/locale'
 import {
   AddOutline,
+  CaretDownOutline,
+  CaretUpOutline,
   CloseOutline,
   FileTrayOutline,
   MenuOutline,
@@ -49,21 +51,25 @@ import {
   agentTeamsCaseCategory,
   agentTeamsCaseStageMap,
   agentTeamsFailedStatuses,
-  agentTeamsStatusLabel,
   canSendRoomMessage,
+  formatAgentTeamsStatus,
   type AgentTeamsCaseCategory,
   type AgentTeamsCaseStage,
 } from '@/utils/agentTeamsStatus'
 import {
   buildRoomCreateIntent,
+  formatDuration,
   formatHardGate,
+  formatMentions,
   groupRoomMessages,
+  isContentTruncated,
   projectCaseEvents,
   resolveElementRoomUrl,
   resolveManagerTyping,
   shouldStartNewRoomCase,
   type RoomRoleMetadata,
   type RoomWorkerBlock,
+  type RoomWorkerStep,
 } from '@/utils/agentTeamsRoom'
 
 const POLLING_INTERVAL_MS = 20_000
@@ -101,6 +107,8 @@ const sendingMessage = ref(false)
 const roomViewMode = ref<'stream' | 'element'>('stream')
 const settingsVisible = ref(false)
 const localTypingUntil = ref<number>(0)
+const seenEventIds = ref<Set<string>>(new Set())
+const expandedStepIds = ref<Set<string>>(new Set())
 let pollingTimer: ReturnType<typeof setInterval> | null = null
 let eventStreamAbort: AbortController | null = null
 let eventStreamRetryTimer: number | null = null
@@ -394,9 +402,41 @@ function workerStepProgress(block: RoomWorkerBlock): number {
   return Math.round((settled / block.steps.length) * 100)
 }
 
+function toggleStepDetail(stepId: string) {
+  const next = new Set(expandedStepIds.value)
+  if (next.has(stepId)) next.delete(stepId)
+  else next.add(stepId)
+  expandedStepIds.value = next
+}
+
+function isStepExpanded(stepId: string): boolean {
+  return expandedStepIds.value.has(stepId)
+}
+
+/** action 消息中的按钮统一路由到现有操作。 */
+function handleRoomAction(action: string) {
+  if (action === 'retry') void retryFailedCase()
+  else if (action === 'revise') reviseVisible.value = true
+  else if (action === 'cancel') {
+    rejectReason.value = '用户终止 Case'
+    void confirmReject()
+  }
+}
+
+/** 「继续生成」入口：项目当前无显式续写接口，按钮仅作提示，由 SSE/轮询自动补全。 */
+function handleContinueGeneration() {
+  message.info('请稍候，系统会自动续写。')
+}
+
 function mergeEvents(incoming: AgentTeamsEvent[]) {
-  events.value = mergeAgentTeamsEvents(events.value, incoming)
-  if (incoming.some((event) => event.event_type === 'room.agent_message')) {
+  const uniqueIncoming = incoming.filter((event) => {
+    if (seenEventIds.value.has(event.event_id)) return false
+    seenEventIds.value.add(event.event_id)
+    return true
+  })
+  if (!uniqueIncoming.length) return
+  events.value = mergeAgentTeamsEvents(events.value, uniqueIncoming)
+  if (uniqueIncoming.some((event) => event.event_type === 'room.agent_message')) {
     localTypingUntil.value = 0
   }
 }
@@ -441,8 +481,12 @@ async function refreshDetail(options: { resetEvents?: boolean; background?: bool
       agentTeamsApi.getEvents(selectedCaseId.value, { cursor, limit: 100 }),
     ])
     detail.value = caseData
-    if (options.resetEvents) events.value = eventData.events
-    else mergeEvents(eventData.events)
+    if (options.resetEvents) {
+      events.value = eventData.events
+      seenEventIds.value = new Set(eventData.events.map((event) => event.event_id))
+    } else {
+      mergeEvents(eventData.events)
+    }
     eventCursor.value = eventData.next_cursor ?? (events.value.at(-1)?.event_id ?? null)
   } catch (cause) {
     if (!options.background) message.error('无法获取协作 Case 详情。')
@@ -459,6 +503,8 @@ async function selectCase(caseId: string) {
   events.value = []
   eventCursor.value = null
   localTypingUntil.value = 0
+  seenEventIds.value = new Set()
+  expandedStepIds.value = new Set()
   roomViewMode.value = 'stream'
   await refreshDetail({ resetEvents: true })
   void startEventStream()
@@ -702,6 +748,8 @@ async function startNewRoom() {
   events.value = []
   eventCursor.value = null
   localTypingUntil.value = 0
+  seenEventIds.value = new Set()
+  expandedStepIds.value = new Set()
   roomViewMode.value = 'stream'
   await nextTick()
   composerRef.value?.focus()
@@ -942,7 +990,7 @@ onBeforeUnmount(() => {
                       :aria-label="`状态：${ROOM_CATEGORY_LABELS[agentTeamsCaseCategory(item.status)]}`"
                     ></span>
                   </template>
-                  {{ ROOM_CATEGORY_LABELS[agentTeamsCaseCategory(item.status)] }} · {{ agentTeamsStatusLabel[item.status] || item.status }}
+                  {{ ROOM_CATEGORY_LABELS[agentTeamsCaseCategory(item.status)] }} · {{ formatAgentTeamsStatus(item.status) }}
                 </NTooltip>
                 <span class="case-entry__time">{{ formatRelativeTime(item.updated_at) }}</span>
                 <NPopconfirm
@@ -1009,7 +1057,7 @@ onBeforeUnmount(() => {
                 </span>
               </template>
               <NTag v-if="detail" :type="tagType(detail.status)" :bordered="false" size="small" round class="case-stage__tag">
-                {{ agentTeamsStatusLabel[detail.status] || detail.status }}
+                {{ formatAgentTeamsStatus(detail.status) }}
               </NTag>
             </div>
             <div v-if="elementRoomUrl" class="room-view-switch" role="group" aria-label="房间视图切换">
@@ -1117,10 +1165,17 @@ onBeforeUnmount(() => {
                           <li v-for="(item, index) in block.message.managerReport.evidenceRefs" :key="`ev-${index}`">{{ item }}</li>
                         </ul>
                       </div>
+                      <details v-if="block.message.managerReport.proposedSubmission" class="manager-report__submission">
+                        <summary class="manager-report__label manager-report__label--submission">执行工单</summary>
+                        <pre class="manager-report__json">{{ JSON.stringify(block.message.managerReport.proposedSubmission, null, 2) }}</pre>
+                      </details>
                     </div>
                     <div v-else class="speech__bubble">
                       <MarkdownRenderer v-if="!block.message.isUser" :content="block.message.content" />
-                      <template v-else>{{ block.message.content }}</template>
+                      <span v-else class="speech__mentions" v-html="formatMentions(block.message.content)" />
+                    </div>
+                    <div v-if="!block.message.isUser && isContentTruncated(block.message.content)" class="speech__continue">
+                      <NButton text size="tiny" @click="handleContinueGeneration">继续生成</NButton>
                     </div>
                     <MessageArtifactGallery :artifacts="block.message.artifacts" />
                   </div>
@@ -1129,6 +1184,19 @@ onBeforeUnmount(() => {
                 <div v-else-if="block.type === 'action'" class="room-action">
                   <span class="room-action__sender">{{ block.message.sender.avatar }} {{ block.message.sender.name }}</span>
                   <span class="room-action__text">{{ block.message.content }}</span>
+                  <details v-if="block.message.technicalDetail" class="room-action__detail">
+                    <summary>技术详情</summary>
+                    <code class="room-action__detail-code">{{ block.message.technicalDetail }}</code>
+                  </details>
+                  <div v-if="block.message.actions?.length" class="room-action__actions">
+                    <NButton
+                      v-for="item in block.message.actions"
+                      :key="item.action"
+                      size="small"
+                      :type="item.action === 'cancel' ? 'error' : item.action === 'retry' ? 'primary' : 'default'"
+                      @click="handleRoomAction(item.action)"
+                    >{{ item.label }}</NButton>
+                  </div>
                 </div>
 
                 <section
@@ -1146,8 +1214,11 @@ onBeforeUnmount(() => {
                     <span class="worker-card__state">{{ block.interrupted ? '已中断/重新排队' : block.failed ? '执行失败' : block.active ? '进行中' : '已完成' }}</span>
                     <time class="worker-card__time">{{ formatMessageTime(block.body?.id || block.intro?.id || block.key) }}</time>
                   </header>
+                  <div v-if="block.steps.length && block.active" class="worker-card__progress worker-card__progress--indeterminate" aria-hidden="true">
+                    <div class="worker-card__progress-bar"></div>
+                  </div>
                   <NProgress
-                    v-if="block.steps.length"
+                    v-else-if="block.steps.length"
                     type="line"
                     :percentage="workerStepProgress(block)"
                     :show-indicator="false"
@@ -1159,14 +1230,36 @@ onBeforeUnmount(() => {
                   <ul v-if="block.steps.length || block.extraProgress.length" class="worker-card__steps">
                     <li v-for="step in block.steps" :key="step.id" class="worker-step" :class="`is-${step.tool.status}`">
                       <span class="worker-step__dot" aria-hidden="true"></span>
-                      <span class="worker-step__name">{{ step.tool.name }}</span>
+                      <button
+                        v-if="step.count > 1"
+                        type="button"
+                        class="worker-step__expand"
+                        :aria-label="isStepExpanded(step.id) ? '收起明细' : '展开明细'"
+                        @click="toggleStepDetail(step.id)"
+                      >
+                        <NIcon v-if="isStepExpanded(step.id)" :size="12"><CaretUpOutline /></NIcon>
+                        <NIcon v-else :size="12"><CaretDownOutline /></NIcon>
+                      </button>
+                      <span class="worker-step__name">{{ step.count > 1 ? `${step.tool.name} ×${step.count}` : step.tool.name }}</span>
                       <NTag
                         size="tiny"
                         :bordered="false"
                         round
                         :type="step.tool.status === 'running' ? 'primary' : step.tool.status === 'failed' ? 'error' : 'success'"
                       >{{ step.tool.status === 'running' ? '正在调用' : step.tool.status === 'failed' ? '调用失败' : '调用完成' }}</NTag>
-                      <span v-if="step.tool.durationMs !== undefined" class="worker-step__duration">{{ step.tool.durationMs }}ms</span>
+                      <span v-if="step.tool.durationMs !== undefined" class="worker-step__duration">{{ formatDuration(step.tool.durationMs) }}</span>
+                      <ul v-if="step.count > 1 && isStepExpanded(step.id)" class="worker-step__details">
+                        <li v-for="detail in step.details" :key="detail.id" class="worker-step__detail">
+                          <span class="worker-step__detail-name">{{ detail.tool.name }}</span>
+                          <NTag
+                            size="tiny"
+                            :bordered="false"
+                            round
+                            :type="detail.tool.status === 'running' ? 'primary' : detail.tool.status === 'failed' ? 'error' : 'success'"
+                          >{{ detail.tool.status === 'running' ? '正在调用' : detail.tool.status === 'failed' ? '调用失败' : '调用完成' }}</NTag>
+                          <span v-if="detail.tool.durationMs !== undefined" class="worker-step__duration">{{ formatDuration(detail.tool.durationMs) }}</span>
+                        </li>
+                      </ul>
                     </li>
                     <li v-for="item in block.extraProgress" :key="item.id" class="worker-step is-plain">{{ item.content }}</li>
                   </ul>
@@ -1420,8 +1513,11 @@ onBeforeUnmount(() => {
 .speech__name { font-size: var(--font-small-size); font-weight: 600; }
 .speech__role { color: var(--neutral-text-3); font-size: var(--font-caption-size); font-weight: 400; }
 .speech__time { color: var(--neutral-text-3); font-size: var(--font-caption-size); }
-.speech__bubble { padding: var(--space-md) var(--space-lg); border: 1px solid var(--neutral-border); border-radius: 4px var(--radius-card) var(--radius-card) var(--radius-card); background: var(--neutral-fill-2); color: var(--neutral-text-1); font-size: var(--font-body-size); line-height: 1.7; overflow-wrap: anywhere; white-space: pre-wrap; }
-.speech--user .speech__bubble { border-color: transparent; border-radius: var(--radius-card) 4px var(--radius-card) var(--radius-card); background: var(--arco-primary); color: var(--text-on-primary); }
+.speech__bubble { padding: var(--space-md) var(--space-lg); border: 1px solid var(--neutral-border); border-radius: 4px var(--radius-card) var(--radius-card) var(--radius-card); background: var(--neutral-fill-2); color: var(--neutral-text-1); font-size: var(--font-body-size); line-height: 1.7; word-break: break-all; overflow-wrap: anywhere; white-space: pre-wrap; }
+.speech--user .speech__bubble { max-width: 75%; border-color: transparent; border-radius: var(--radius-card) 4px var(--radius-card) var(--radius-card); background: var(--arco-primary); color: var(--text-on-primary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.speech__bubble .mention-chip { display: inline-block; padding: 0 4px; border-radius: 4px; background: var(--arco-primary-light); color: var(--arco-primary); font-weight: 600; }
+.speech--user .speech__bubble .mention-chip { background: rgba(255,255,255,0.2); color: #fff; }
+.speech__continue { display: flex; justify-content: flex-end; margin-top: var(--space-xs); }
 /* AI 输出经 MarkdownRenderer 渲染：white-space 重置为 normal，避免容器 pre-wrap 继承后
    把 markdown-it 输出的标签换行显示成多余空行 */
 .speech__bubble :deep(.md-body),
@@ -1452,6 +1548,9 @@ onBeforeUnmount(() => {
 .manager-report__label--evidence { background: var(--neutral-border); color: var(--neutral-text-3); }
 .manager-report__list { margin: 0; padding-left: var(--space-xl); display: grid; gap: 3px; }
 .manager-report__list--evidence { color: var(--neutral-text-3); font-family: ui-monospace, 'JetBrains Mono', Menlo, Consolas, monospace; font-size: var(--font-caption-size); }
+.manager-report__submission { margin: 0; }
+.manager-report__label--submission { cursor: pointer; background: var(--arco-success-light); color: var(--arco-success); }
+.manager-report__json { margin: var(--space-xs) 0 0; padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: var(--neutral-fill-2); color: var(--neutral-text-2); font-family: ui-monospace, 'JetBrains Mono', Menlo, Consolas, monospace; font-size: var(--font-caption-size); white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; }
 
 /* worker 工具进度卡片：与发言气泡共享 Elevated 表面与圆角语言，
    仅保留 3px 左侧成员色条作身份标识（动态成员色经 inline style 覆盖 border-left-color） */
@@ -1466,19 +1565,33 @@ onBeforeUnmount(() => {
 .worker-card__time { color: var(--neutral-text-3); font-size: var(--font-caption-size); }
 /* 目标说明收进头部同行，单行省略，全文经 title 悬浮查看 */
 .worker-card__objective { margin: 0; min-width: 0; overflow: hidden; color: var(--neutral-text-2); font-size: var(--font-caption-size); text-overflow: ellipsis; white-space: nowrap; }
+.worker-card__progress { width: 100%; height: 4px; border-radius: 999px; background: var(--neutral-border); overflow: hidden; }
+.worker-card__progress--indeterminate .worker-card__progress-bar { width: 40%; height: 100%; border-radius: 999px; background: var(--arco-primary); animation: worker-progress-indeterminate 1.2s ease-in-out infinite; }
+@keyframes worker-progress-indeterminate { 0% { transform: translateX(-100%); opacity: 0.6; } 50% { opacity: 1; } 100% { transform: translateX(250%); opacity: 0.6; } }
+@media (prefers-reduced-motion: reduce) { .worker-card__progress--indeterminate .worker-card__progress-bar { animation: none; transform: translateX(0); width: 100%; opacity: 0.5; } }
 .worker-card__steps { display: grid; gap: var(--space-xs); margin: 0; padding: var(--space-sm) 0 0; border-top: 1px dashed var(--neutral-border); list-style: none; }
-.worker-step { display: flex; align-items: center; gap: var(--space-sm); color: var(--neutral-text-2); font-size: var(--font-caption-size); }
+.worker-step { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); color: var(--neutral-text-2); font-size: var(--font-caption-size); }
 .worker-step__dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--neutral-text-3); }
 .worker-step.is-running .worker-step__dot { background: var(--arco-primary); animation: room-pulse 1.6s ease-in-out infinite; }
 .worker-step.is-ok .worker-step__dot { background: var(--arco-success); }
 .worker-step.is-failed .worker-step__dot { background: var(--arco-danger); }
+.worker-step__expand { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; border: none; border-radius: 4px; background: transparent; color: var(--neutral-text-3); cursor: pointer; transition: background-color var(--motion-quick) ease-out, color var(--motion-quick) ease-out; }
+.worker-step__expand:hover { background: var(--neutral-hover); color: var(--neutral-text-1); }
 .worker-step__name { color: var(--neutral-text-1); font-family: ui-monospace, 'JetBrains Mono', Menlo, Consolas, monospace; font-size: var(--font-caption-size); }
 .worker-step__duration { margin-left: auto; color: var(--neutral-text-3); font-size: 11px; }
+.worker-step__details { width: 100%; margin: var(--space-xs) 0 0; padding: var(--space-xs) 0 var(--space-xs) var(--space-xl); border-left: 2px solid var(--neutral-border); list-style: none; }
+.worker-step__detail { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-xs) 0; }
+.worker-step__detail-name { color: var(--neutral-text-2); font-family: ui-monospace, 'JetBrains Mono', Menlo, Consolas, monospace; font-size: var(--font-caption-size); }
 .worker-card__body { margin: 0; padding-top: var(--space-sm); border-top: 1px solid var(--neutral-border); color: var(--neutral-text-1); font-size: var(--font-body-size); line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
 
 /* 失败 / 人工复核动作 */
-.room-action { display: flex; align-items: baseline; gap: var(--space-sm); padding: var(--space-sm) var(--space-lg); border-left: 3px solid var(--arco-danger); border-radius: var(--radius-sm); background: var(--arco-danger-light); color: var(--neutral-text-1); font-size: var(--font-small-size); line-height: 1.55; }
+.room-action { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-sm); padding: var(--space-sm) var(--space-lg); border-left: 3px solid var(--arco-danger); border-radius: var(--radius-sm); background: var(--arco-danger-light); color: var(--neutral-text-1); font-size: var(--font-small-size); line-height: 1.55; }
 .room-action__sender { flex: 0 0 auto; font-size: var(--font-caption-size); font-weight: 600; }
+.room-action__text { flex: 1 1 auto; min-width: 0; }
+.room-action__detail { width: 100%; margin-top: var(--space-xs); }
+.room-action__detail summary { cursor: pointer; user-select: none; color: var(--neutral-text-3); font-size: var(--font-caption-size); }
+.room-action__detail-code { display: block; margin-top: var(--space-xs); padding: var(--space-sm); border-radius: var(--radius-sm); background: var(--neutral-card); color: var(--neutral-text-2); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--font-caption-size); line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+.room-action__actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); width: 100%; margin-top: var(--space-sm); }
 
 /* 收起的底层事件 */
 .room-collapsed { padding: var(--space-sm) var(--space-md); border: 1px dashed var(--neutral-border); border-radius: 10px; color: var(--neutral-text-3); font-size: var(--font-caption-size); }

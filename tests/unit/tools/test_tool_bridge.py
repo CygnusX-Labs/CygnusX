@@ -8,6 +8,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from omichub.application.services.tool_bridge_service import ToolBridgeService
+from omichub.infrastructure.config.storage_config import StorageConfig
+from omichub.infrastructure.storage import LocalStorageBackend
+from omichub.infrastructure.storage.path_factory import StoragePathFactory
 from omichub.tools.schema_loader import ToolSchema, ToolsSchemaLoader
 
 
@@ -154,22 +157,23 @@ def test_schema_loader_reads_yaml() -> None:
 @pytest.mark.asyncio
 async def test_upload_ref_resolution(tmp_path, monkeypatch) -> None:
     """upload://file_id 应解析为聊天上传目录中的文件内容。"""
-    from omichub.infrastructure.config.storage_config import StorageConfig
-
     user_id = "u1"
     upload_dir = tmp_path / "users" / user_id / "workspace" / "chat-uploads"
     upload_dir.mkdir(parents=True)
     (upload_dir / "abc123.txt").write_text("gene\tlog2FoldChange\tpadj\nTP53\t2.5\t0.001")
 
-    def _fake_config():
-        return StorageConfig(data_root=str(tmp_path), users_subdir="users")
+    path_factory = StoragePathFactory(
+        StorageConfig(data_root=str(tmp_path), users_subdir="users")
+    )
+    backend = LocalStorageBackend(path_factory=path_factory)
 
     monkeypatch.setattr(
-        "omichub.infrastructure.config.storage_config.get_storage_config", _fake_config
+        "omichub.application.services.tool_bridge_service.get_path_factory",
+        lambda: path_factory,
     )
 
     loader = _FakeLoader([_volcano_schema()])
-    service = ToolBridgeService(loader)
+    service = ToolBridgeService(loader, backend=backend)
     result = await service.execute(user_id, "omichub_plot_volcano", {"data_text": "upload://abc123"})
 
     assert result["success"] is True

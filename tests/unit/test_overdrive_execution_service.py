@@ -262,14 +262,24 @@ def test_termination_preserves_prior_files_as_process_artifacts() -> None:
 
 def test_preflight_verifies_explicit_workspace_inputs_before_recruitment(monkeypatch, tmp_path) -> None:
     from omichub.application.services import overdrive_execution_service as module
+    from omichub.infrastructure.config.storage_config import StorageConfig
+    from omichub.infrastructure.storage import LocalStorageBackend, reset_storage_backend
+    from omichub.infrastructure.storage.path_factory import StoragePathFactory
 
     run_root = tmp_path / "workspace" / "output" / "overdrive" / "session-1" / "run-1"
     (tmp_path / "workspace" / "input").mkdir(parents=True)
     (tmp_path / "workspace" / "input" / "samples.csv").write_text("sample\nS1\n")
     monkeypatch.setattr(module, "overdrive_run_root", lambda *_: run_root)
 
+    factory = StoragePathFactory(StorageConfig(data_root=str(tmp_path), users_subdir="users"))
+    monkeypatch.setattr(module, "get_path_factory", lambda: factory)
+    monkeypatch.setattr(
+        module, "get_storage_backend", lambda: LocalStorageBackend(path_factory=factory)
+    )
+    reset_storage_backend()
+
     class Runs:
-        def assert_execution_allowed(self, _run):
+        async def assert_execution_allowed(self, _run):
             return None
 
         async def append_event(self, *_args, **_kwargs):
@@ -521,7 +531,12 @@ def test_preflight_termination_finishes_synchronously_before_workers_start() -> 
     assert service.append_event.await_args.args[1] == "run_terminated"
 
 
-def test_approving_plan_only_run_completes_without_worker_preflight(tmp_path) -> None:
+def test_approving_plan_only_run_completes_without_worker_preflight(monkeypatch, tmp_path) -> None:
+    from omichub.application.services import overdrive_run_service as module
+    from omichub.infrastructure.config.storage_config import StorageConfig
+    from omichub.infrastructure.storage import LocalStorageBackend, reset_storage_backend
+    from omichub.infrastructure.storage.path_factory import StoragePathFactory
+
     command_rows = []
     db = SimpleNamespace(get=AsyncMock(return_value=None), add=command_rows.append)
     service = OverdriveRunService(db)  # type: ignore[arg-type]
@@ -542,12 +557,22 @@ def test_approving_plan_only_run_completes_without_worker_preflight(tmp_path) ->
         finished_at=None,
     )
     service.get_for_user = AsyncMock(return_value=run)  # type: ignore[method-assign]
-    service._assert_plan_file_matches = lambda _run: None  # type: ignore[method-assign]
+    async def _noop_assert_plan(_run):
+        return None
+
+    service._assert_plan_file_matches = _noop_assert_plan  # type: ignore[method-assign]
     service.append_event = AsyncMock()  # type: ignore[method-assign]
     service._write_snapshot = AsyncMock()  # type: ignore[method-assign]
 
     def fake_root(session_id: str, run_id: str) -> Path:
         return tmp_path / session_id / run_id
+
+    factory = StoragePathFactory(StorageConfig(data_root=str(tmp_path), users_subdir="users"))
+    monkeypatch.setattr(module, "get_path_factory", lambda: factory)
+    monkeypatch.setattr(
+        module, "get_storage_backend", lambda: LocalStorageBackend(path_factory=factory)
+    )
+    reset_storage_backend()
 
     with patch.multiple(
         "omichub.application.services.overdrive_run_service",
@@ -726,7 +751,12 @@ def test_latest_run_lookup_includes_terminal_runs_for_history_recovery() -> None
     assert "overdrive_runs.status NOT IN" not in rendered
 
 
-def test_write_readme_covers_delivery_downloads_and_manager_summary(tmp_path) -> None:
+def test_write_readme_covers_delivery_downloads_and_manager_summary(monkeypatch, tmp_path) -> None:
+    from omichub.application.services import overdrive_execution_service as module
+    from omichub.infrastructure.config.storage_config import StorageConfig
+    from omichub.infrastructure.storage import LocalStorageBackend, reset_storage_backend
+    from omichub.infrastructure.storage.path_factory import StoragePathFactory
+
     run = make_run(
         [
             {"task_id": "task-a", "status": "succeeded"},
@@ -747,6 +777,13 @@ def test_write_readme_covers_delivery_downloads_and_manager_summary(tmp_path) ->
     def fake_root(session_id: str, run_id: str) -> Path:
         return tmp_path / session_id / run_id
 
+    factory = StoragePathFactory(StorageConfig(data_root=str(tmp_path), users_subdir="users"))
+    monkeypatch.setattr(module, "get_path_factory", lambda: factory)
+    monkeypatch.setattr(
+        module, "get_storage_backend", lambda: LocalStorageBackend(path_factory=factory)
+    )
+    reset_storage_backend()
+
     with patch.multiple(
         "omichub.application.services.overdrive_execution_service",
         overdrive_run_root=fake_root,
@@ -756,7 +793,9 @@ def test_write_readme_covers_delivery_downloads_and_manager_summary(tmp_path) ->
             "path": "output/overdrive/session-1/overdrive:test/delivery/final-report.md",
             "official_artifacts": run.artifact_index,
         }
-        readme = DeliveryAssembler().write_readme(run, delivery, manager_summary="Manager 总结:全部完成。")
+        readme = asyncio.run(
+            DeliveryAssembler().write_readme(run, delivery, manager_summary="Manager 总结:全部完成。")
+        )
 
     assert readme["path"].endswith("/delivery/README.md")
     content = (fake_root(run.session_id, run.run_id) / "delivery" / "README.md").read_text(

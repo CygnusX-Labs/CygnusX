@@ -19,11 +19,15 @@ from omichub.application.services.studio_context_service import (
 )
 from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError, NotFoundError
+from omichub.domain.file.value_objects import FileSource
 from omichub.infrastructure.config.storage_config import StorageConfig
 from omichub.infrastructure.database.models.chat import ChatSessionModel
 from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
 from omichub.infrastructure.database.models.task import TaskModel
 from omichub.infrastructure.storage.path_factory import StoragePathFactory
+from omichub.infrastructure.storage import reset_storage_backend
+from omichub.infrastructure.storage import backend as _storage_backend_module
+from omichub.infrastructure.storage import path_factory as _path_factory_module
 
 
 def _lexists(path: Path) -> bool:
@@ -68,6 +72,8 @@ class _FakeDb:
                     obj.message_count = 0
                 if obj.total_tokens is None:
                     obj.total_tokens = 0
+                if obj.title_locked is None:
+                    obj.title_locked = False
                 if obj.created_at is None:
                     obj.created_at = now
                 if obj.updated_at is None:
@@ -112,13 +118,19 @@ class _FakeManager:
 def platform_env(tmp_path: Path, monkeypatch):
     uid = str(uuid.uuid4())
     storage = tmp_path / "storage"
-    workspace = tmp_path / "ws" / "sess-new"
+    workspace = storage / "studio" / "sess-new"
     monkeypatch.setattr(get_settings(), "storage_path", str(storage))
     monkeypatch.setattr(
         studio_context_service,
         "get_path_factory",
         lambda: StoragePathFactory(StorageConfig(data_root=str(storage), users_subdir="users")),
     )
+    test_factory = StoragePathFactory(
+        StorageConfig(data_root=str(storage), users_subdir="users")
+    )
+    monkeypatch.setattr(_path_factory_module, "get_path_factory", lambda: test_factory)
+    monkeypatch.setattr(_storage_backend_module, "get_path_factory", lambda: test_factory)
+    reset_storage_backend()
 
     async def ensure_directory_chain_noop(*_args, **_kwargs) -> None:
         return None
@@ -369,3 +381,45 @@ async def test_register_artifact_empty_title_rejected(platform_env):
     )
     with pytest.raises(BusinessError):
         await register_artifact_report(uid, session, "output/a.png", "  ", _FakeDb())
+
+
+@pytest.mark.unit
+async def test_register_artifact_report_registers_in_file_records(
+    platform_env, monkeypatch: pytest.MonkeyPatch
+):
+    """artifact_register 登记报告时，产物应同步注册到 file_records（source=STUDIO）。"""
+    storage, uid, workspace = platform_env
+    artifact = workspace / "output" / "a.png"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_bytes(b"img")
+    session = ChatSessionModel(
+        id=uuid.uuid4(),
+        session_id="sess-new",
+        user_id=uid,
+        model_id=uuid.uuid4(),
+        title="工作台",
+        status="active",
+        mode="studio",
+        sandbox_meta={},
+    )
+    db = _FakeDb(parent=None)
+
+    fake_file_id = uuid.uuid4()
+    calls: list[tuple[object, ...], dict[str, object]] = []
+
+    async def fake_register(*args: object, **kwargs: object) -> SimpleNamespace:
+        calls.append((args, kwargs))
+        return SimpleNamespace(id=fake_file_id)
+
+    monkeypatch.setattr(studio_context_service.FileRegistry, "register", fake_register)
+
+    report, file_model = await register_artifact_report(
+        uid, session, "output/a.png", "图 v1", db
+    )
+
+    assert report.version == 1
+    assert file_model.path.endswith("a.png")
+    assert len(calls) == 1
+    _args, kwargs = calls[0]
+    assert kwargs.get("source") == FileSource.STUDIO
+    assert kwargs.get("directory", "").endswith("/output")

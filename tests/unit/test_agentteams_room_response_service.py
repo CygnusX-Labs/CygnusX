@@ -349,9 +349,10 @@ async def test_execution_intent_starts_chat_planning_and_still_responds(monkeypa
         {"kind": "file", "id": "tree-1", "location": "workspace/chat-uploads/example.treefile"}
     ]
     question = run.await_args.kwargs["question"]
-    assert "计划冻结后会在房间内请求你确认" in question
     # 触发后 prompt 中的 Case 状态应反映已推进的 planning_running
     assert "Case 当前状态：planning_running" in question
+    # autonomous 模式下无需人工确认，旧版教育话术已移除
+    assert "计划冻结后会在房间内请求你确认" not in question
     event_types = [call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list]
     assert event_types == ["room.typing", "room.agent_message", "room.typing"]
 

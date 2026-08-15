@@ -1,13 +1,16 @@
 """AI 助手聊天文件上传接口集成测试"""
 
 import io
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 
 from omichub.core.security import create_access_token
 from omichub.infrastructure.config.storage_config import StorageConfig
+from omichub.infrastructure.storage import reset_storage_backend
+from omichub.infrastructure.storage.path_factory import get_path_factory
 
 
 @pytest.fixture
@@ -18,10 +21,28 @@ def storage_path(tmp_path: Path, monkeypatch) -> Path:
     def _fake_config():
         return StorageConfig(data_root=str(root), users_subdir="users")
 
-    monkeypatch.setattr(
-        "omichub.infrastructure.config.storage_config.get_storage_config", _fake_config
-    )
+    # get_storage_config 被多个模块 import 到局部命名空间，需同步 patch 才能生效
+    targets = [
+        "omichub.infrastructure.config.storage_config.get_storage_config",
+        "omichub.infrastructure.storage.path_factory.get_storage_config",
+        "omichub.infrastructure.storage.backend.get_storage_config",
+    ]
+    for target in targets:
+        monkeypatch.setattr(target, _fake_config)
+    # 清除路径工厂与存储后端单例缓存，确保新配置生效
+    get_path_factory.cache_clear()
+    reset_storage_backend()
     return root
+
+
+@pytest.fixture
+async def client(storage_path: Path) -> AsyncIterator[AsyncClient]:
+    """在临时存储目录配置就绪后再创建 ASGI 客户端。"""
+    from omichub.main import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
 
 
 @pytest.fixture

@@ -13,6 +13,7 @@ import fnmatch
 import re
 import uuid
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,17 +40,19 @@ from omichub.core.exceptions import (
     NotFoundError,
     ValidationError,
 )
-from omichub.domain.file.entities import DataFile, Sample
-from omichub.domain.file.value_objects import FileType
+from omichub.domain.file.entities import DataFile, Directory, Sample
+from omichub.domain.file.value_objects import FileSource, FileType, OwnerScope
+from omichub.domain.team.value_objects import TeamRole
 from omichub.infrastructure.database.repositories import (
     DirectoryRepositoryImpl,
     FileRepositoryImpl,
     SampleRepositoryImpl,
-    UploadSessionRepositoryImpl,
 )
 from omichub.infrastructure.database.repositories.user_repository import (
     SqlAlchemyUserRepository,
 )
+from omichub.infrastructure.storage import get_storage_backend
+from omichub.infrastructure.storage.backend import StorageBackend
 from omichub.infrastructure.storage.path_factory import get_path_factory
 
 # 默认分片大小（客户端未传时兜底）
@@ -204,7 +207,11 @@ async def ensure_directory_chain(session: AsyncSession, user_id: UUID, path: str
 class FileService:
     """文件应用服务 — 配额校验、分块上传、断点续传、生命周期路径"""
 
-    def __init__(self, session: AsyncSession):
+    def __init__(
+        self,
+        session: AsyncSession,
+        backend: StorageBackend | None = None,
+    ):
         self._session = session
         self._files = FileRepositoryImpl(session)
         self._samples = SampleRepositoryImpl(session)
@@ -212,15 +219,58 @@ class FileService:
         self._users = SqlAlchemyUserRepository(session)
         # 统一路径工厂：所有磁盘路径由此生成，禁止在本类中再硬编码拼接
         self._factory = get_path_factory()
+        # 向后兼容：等价于 path_factory.data_root；允许外部/monkeypatch 覆盖
+        self._storage_root = self._factory.data_root
+        # 可插拔存储后端；local 模式行为与改造前一致
+        self._backend = backend or get_storage_backend()
+
+    # ------------------------------------------------------------------
+    # 权限判定（阶段 3.2：个人/团队空间统一收口）
+    # ------------------------------------------------------------------
+    async def _team_role(self, team_id: UUID | None, user_id: UUID) -> TeamRole | None:
+        """查询用户在指定团队中的角色；非团队文件返回 None。"""
+        if team_id is None:
+            return None
+        return await self._files.get_team_role(team_id, user_id)
+
+    def _is_personal_owner(self, file: DataFile, user_id: UUID) -> bool:
+        return file.owner_scope == OwnerScope.PERSONAL.value and file.user_id == user_id
+
+    async def _require_read_access(self, file: DataFile, actor_user_id: UUID) -> None:
+        """读权限：个人 owner，或团队成员（任意角色）均可读。"""
+        if self._is_personal_owner(file, actor_user_id):
+            return
+        if file.owner_scope == OwnerScope.TEAM.value:
+            role = await self._team_role(file.team_id, actor_user_id)
+            if role is not None:
+                return
+        raise AuthorizationError("无权访问该文件")
+
+    async def _require_write_access(self, file: DataFile, actor_user_id: UUID) -> None:
+        """写权限：个人 owner，或团队 writer/owner。"""
+        if self._is_personal_owner(file, actor_user_id):
+            return
+        if file.owner_scope == OwnerScope.TEAM.value:
+            role = await self._team_role(file.team_id, actor_user_id)
+            if role in (TeamRole.WRITER, TeamRole.OWNER):
+                return
+        raise AuthorizationError("无权修改该文件")
+
+    async def _require_delete_access(self, file: DataFile, actor_user_id: UUID) -> None:
+        """删除权限：个人 owner；团队 owner 可删除任意文件，writer 仅可删除自己上传的文件。"""
+        if self._is_personal_owner(file, actor_user_id):
+            return
+        if file.owner_scope == OwnerScope.TEAM.value:
+            role = await self._team_role(file.team_id, actor_user_id)
+            if role == TeamRole.OWNER:
+                return
+            if role == TeamRole.WRITER and file.user_id == actor_user_id:
+                return
+        raise AuthorizationError("无权删除该文件")
 
     # ------------------------------------------------------------------
     # 路径工具（统一委托给 StoragePathFactory）
     # ------------------------------------------------------------------
-    @property
-    def _storage_root(self) -> Path:
-        """向后兼容：等价于 path_factory.data_root。"""
-        return self._factory.data_root
-
     def user_root(self, user_id: UUID) -> Path:
         """用户存储根目录：``{data_root}/users/{user_id}/``。"""
         return self._factory.user_root(str(user_id))
@@ -262,15 +312,16 @@ class FileService:
         return abs_path
 
     def _normalize_directory(self, directory: str | None) -> str:
-        """规整目录路径：去首尾斜杠、禁绝对路径越权"""
+        """规整目录路径：去首尾斜杠；显式拒绝 .. 路径穿越。"""
         if not directory:
             return ""
         d = directory.strip().strip("/")
-        # 防止 .. 越权逃逸用户目录
-        parts = [p for p in d.split("/") if p not in ("", ".", "..")]
+        if ".." in d.split("/"):
+            raise ValidationError("目录路径禁止包含 ..")
+        parts = [p for p in d.split("/") if p and p != "."]
         return "/".join(parts)
 
-    def _inbox_subdir(self, user_id: UUID, directory: str) -> Path:
+    async def _inbox_subdir(self, user_id: UUID, directory: str) -> Path:
         """用户 inbox/ 下的指定子目录（自动创建）。
 
         ``directory`` 是相对 inbox 的路径；空串表示 inbox 根。兼容历史调用方
@@ -283,17 +334,17 @@ class FileService:
             normalized_directory = normalized_directory.removeprefix("inbox/")
         base = self._factory.inbox_dir(str(user_id))
         target = base / normalized_directory if normalized_directory else base
-        target.mkdir(parents=True, exist_ok=True)
+        await self._backend.ensure_dir(self._factory.relative_to_root(target))
         return target
 
     # 向后兼容：外部若还有 ``_raw_subdir`` / ``user_raw_dir`` 调用，转发到新方法
-    def _raw_subdir(self, user_id: UUID, directory: str) -> Path:
-        return self._inbox_subdir(user_id, directory)
+    async def _raw_subdir(self, user_id: UUID, directory: str) -> Path:
+        return await self._inbox_subdir(user_id, directory)
 
-    def user_raw_dir(self, user_id: UUID) -> Path:
+    async def user_raw_dir(self, user_id: UUID) -> Path:
         """用户上传入口 inbox/（历史方法名保留，仅做转发）。"""
         d = self._factory.inbox_dir(str(user_id))
-        d.mkdir(parents=True, exist_ok=True)
+        await self._backend.ensure_dir(self._factory.relative_to_root(d))
         return d
 
     # ------------------------------------------------------------------
@@ -302,7 +353,7 @@ class FileService:
     async def list_files(
         self, user_id: UUID, directory: str | None = None, source: str | None = None
     ) -> FileListResponse:
-        items = await self._files.list_by_user(user_id, status="active", directory=directory)
+        items = await self._files.list_visible(user_id, status="active", directory=directory)
         if source:
             items = [f for f in items if getattr(f, "source", None) == source]
         dtos = [
@@ -315,6 +366,9 @@ class FileService:
                 checksum=f.checksum,
                 directory=f.directory,
                 path=self._workspace_relative_path(f.path, user_id),
+                source=f.source or "upload",
+                owner_scope=f.owner_scope or "personal",
+                team_id=f.team_id,
                 created_at=f.created_at,
                 modified_at=f.updated_at,
             )
@@ -323,8 +377,8 @@ class FileService:
         return FileListResponse(items=dtos, total=len(dtos))
 
     async def get_file_tree(self, user_id: UUID) -> dict:
-        """聚合视图：按来源分组返回用户所有活跃文件。"""
-        items = await self._files.list_by_user(user_id, status="active")
+        """聚合视图：按来源分组返回用户个人 + 团队空间所有活跃文件。"""
+        items = await self._files.list_visible(user_id, status="active")
         tree: dict[str, list] = {}
         for f in items:
             src = getattr(f, "source", None) or "upload"
@@ -435,10 +489,9 @@ class FileService:
     ) -> FileListResponse:
         """在当前用户根目录的已索引文件中递归搜索。"""
         root = self.user_root(user_id)
-        if root.exists() and not root.is_dir():
+        root_info = await self._backend.stat(self._factory.relative_to_root(root))
+        if root_info is not None and not root_info.get("is_dir"):
             raise PermissionError("用户工作区根目录不可访问")
-        if root.exists() and not root.stat().st_mode & 0o444:
-            raise PermissionError("用户工作区根目录不可读")
 
         normalized_query = query.replace("\\", "/").strip("/").casefold()
         items = await self._files.list_by_user(user_id, status="active")
@@ -462,6 +515,9 @@ class FileService:
                     checksum=file.checksum,
                     directory=file.directory,
                     path=relative_path,
+                    source=file.source or "upload",
+                    owner_scope=file.owner_scope or "personal",
+                    team_id=file.team_id,
                     created_at=file.created_at,
                     modified_at=file.updated_at,
                 )
@@ -485,6 +541,69 @@ class FileService:
             total=len(matches) + len(directory_matches),
         )
 
+    async def preview_by_path(
+        self,
+        user_id: UUID,
+        path: str,
+        max_lines: int = 50,
+        max_bytes: int = 200 * 1024,
+    ) -> dict[str, Any]:
+        """预览用户工作区内的文本文件内容（按行截断）。
+
+        文件大小超过 ``max_bytes * 2`` 时仅返回元数据与提示，不读取内容；
+        二进制或不可解码文件按 ``errors='replace'`` 兜底返回，避免直接抛错。
+        """
+        normalized = self.validate_workspace_path(path)
+        if not normalized:
+            raise ValidationError("文件路径不能为空")
+        rel = f"users/{user_id}/{normalized}"
+        info = await self._backend.stat(rel)
+        if info is None:
+            raise NotFoundError("文件不存在")
+        if info.get("is_dir"):
+            raise ValidationError("路径是目录，无法预览")
+        total_size = info.get("size", 0) or 0
+        if total_size > max_bytes * 2:
+            return {
+                "path": path,
+                "truncated": True,
+                "total_size": total_size,
+                "lines": [],
+                "message": f"文件过大 ({total_size} bytes)，仅返回前 {max_lines} 行",
+            }
+        content = await self._backend.read(rel, limit=max_bytes * 2)
+        text = content.decode("utf-8", errors="replace")
+        lines = text.splitlines()
+        truncated = len(lines) > max_lines
+        return {
+            "path": path,
+            "truncated": truncated,
+            "total_size": total_size,
+            "lines": lines[:max_lines],
+        }
+
+    async def read_file_text(
+        self, user_id: UUID, file_id: UUID, max_bytes: int
+    ) -> str:
+        """按 file_id 读取用户/团队文件文本内容，超出上限或解码失败时抛 ValidationError。"""
+        file = await self._files.get_visible(user_id, file_id)
+        if file is None:
+            raise NotFoundError("文件不存在")
+        await self._require_read_access(file, user_id)
+        info = await self._backend.stat(file.path)
+        if info is None:
+            raise NotFoundError("文件已被移除")
+        size = info.get("size", 0) or 0
+        if size > max_bytes:
+            raise ValidationError(
+                f"文件超过 {max_bytes} 字节，无法直接作为文本输入"
+            )
+        content = await self._backend.read(file.path, limit=max_bytes)
+        try:
+            return content.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValidationError("文件不是 UTF-8 文本，无法直接作为文本输入") from exc
+
     async def get_quota(self, user_id: UUID) -> QuotaResponse:
         user = await self._users.get_by_id(user_id)
         if user is None:
@@ -493,6 +612,103 @@ class FileService:
         used = user.used_storage
         percent = round(used / total * 100, 2) if total > 0 else 100.0
         return QuotaResponse(used=used, total=total, percent=percent)
+
+    # ------------------------------------------------------------------
+    # 预签名 URL（cloud / S3 模式大文件直传）
+    # ------------------------------------------------------------------
+    async def create_presigned_download(
+        self, user_id: UUID, file_id: UUID, expires: int = 3600
+    ) -> str:
+        """为已有文件生成临时下载 URL；本地模式抛出 BusinessError。"""
+        file = await self._files.get_visible(user_id, file_id)
+        if file is None:
+            raise NotFoundError("文件不存在")
+        await self._require_read_access(file, user_id)
+        return self._backend.presigned_get_url(file.path, expires=expires)
+
+    async def create_presigned_upload(
+        self,
+        user_id: UUID,
+        original_name: str,
+        directory: str,
+        size: int,
+        file_type: str = "other",
+        expires: int = 3600,
+    ) -> tuple[str, uuid.UUID, str]:
+        """预创建文件记录并生成直传 URL；本地模式抛出 BusinessError。"""
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise NotFoundError("用户不存在")
+        if size > 0 and user.used_storage + size > user.storage_quota:
+            raise ValidationError("存储配额不足")
+
+        directory = self._normalize_directory(directory)
+        target_dir = await self._inbox_subdir(user_id, directory)
+        file_id = uuid.uuid4()
+        safe_name = Path(original_name).name
+        dest = target_dir / f"{file_id.hex[:8]}_{safe_name}"
+        rel_path = self._factory.relative_to_root(dest)
+
+        detected = _detect_file_type(safe_name)
+        record = DataFile(
+            id=file_id,
+            user_id=user_id,
+            path=rel_path,
+            original_name=safe_name,
+            size=size,
+            checksum="",
+            file_type=detected,
+            status="uploading",
+            directory=directory,
+            source=FileSource.UPLOAD.value,
+            owner_scope=OwnerScope.PERSONAL.value,
+        )
+        await self._files.save(record)
+        upload_url = self._backend.presigned_put_url(rel_path, expires=expires)
+        return upload_url, file_id, rel_path
+
+    async def complete_presigned_upload(
+        self, user_id: UUID, file_id: UUID, checksum: str = ""
+    ) -> DataFileDTO:
+        """客户端直传完成后确认文件元数据并激活记录。"""
+        file = await self._files.get_by_id(user_id, file_id)
+        if file is None:
+            raise NotFoundError("文件不存在")
+        if file.status != "uploading":
+            raise ValidationError("文件不处于待上传状态")
+
+        info = await self._backend.stat(file.path)
+        if info is None:
+            raise ValidationError("未检测到已上传文件")
+        actual_size = info.get("size", file.size)
+
+        file.size = actual_size
+        file.status = "active"
+        file.checksum = checksum
+        saved = await self._files.save(file)
+
+        user = await self._users.get_by_id(user_id)
+        if user is not None:
+            delta = min(saved.size, user.storage_quota - user.used_storage)
+            if delta > 0:
+                await self._users.add_used_storage(user_id, delta)
+        await self._session.commit()
+
+        return DataFileDTO(
+            id=saved.id,
+            original_name=saved.original_name,
+            size=saved.size,
+            file_type=saved.file_type,
+            status=saved.status,
+            checksum=saved.checksum,
+            directory=saved.directory,
+            path=self._workspace_relative_path(saved.path, user_id),
+            source=saved.source or "upload",
+            owner_scope=saved.owner_scope or "personal",
+            team_id=saved.team_id,
+            created_at=saved.created_at,
+            modified_at=saved.updated_at,
+        )
 
     # ------------------------------------------------------------------
     # 分块上传（委托给 UploadService）
@@ -524,47 +740,82 @@ class FileService:
     # 下载 / 删除
     # ------------------------------------------------------------------
     async def get_file_path(self, user_id: UUID, file_id: UUID) -> Path:
-        """获取文件绝对路径（下载用，强制归属校验）"""
-        file = await self._files.get_by_id(user_id, file_id)
+        """获取文件绝对路径（下载用，强制归属/团队权限校验）"""
+        file = await self._files.get_visible(user_id, file_id)
         if file is None:
             raise NotFoundError("文件不存在")
-        abs_path = self._resolve_abs(file.path)
-        if not abs_path.exists():
+        await self._require_read_access(file, user_id)
+        if not await self._backend.exists(file.path):
             raise NotFoundError("文件已被移除")
-        return abs_path
+        return await self._backend.get_local_path(file.path)
 
     async def delete_file(self, user_id: UUID, file_id: UUID) -> bool:
-        file = await self._files.get_by_id(user_id, file_id)
+        file = await self._files.get_visible(user_id, file_id)
         if file is None:
             raise NotFoundError("文件不存在")
+        await self._require_delete_access(file, user_id)
         # 删盘 + 删记录
-        abs_path = self._resolve_abs(file.path)
-        if abs_path.exists():
-            abs_path.unlink()
-        await self._files.delete(user_id, file_id)
-        # 扣减配额（防负）
-        user = await self._users.get_by_id(user_id)
+        if await self._backend.exists(file.path):
+            await self._backend.delete(file.path)
+        await self._files.delete_visible(user_id, file_id)
+        # 扣减配额：按文件实际归属用户扣减（团队文件也先归属上传者）
+        user = await self._users.get_by_id(file.user_id)
         if user is not None:
             delta = -min(file.size, user.used_storage)
             if delta != 0:
-                await self._users.add_used_storage(user_id, delta)
+                await self._users.add_used_storage(file.user_id, delta)
         await self._session.commit()
         return True
 
     async def move_file(self, user_id: UUID, file_id: UUID, directory: str) -> DataFileDTO:
-        """移动文件到指定目录（改 storage_path + directory 字段 + 物理移动）"""
-        file = await self._files.get_by_id(user_id, file_id)
+        """移动文件到指定目录（改 storage_path + directory 字段 + 物理移动）。
+
+        团队空间文件仅做逻辑目录移动，保持物理路径在团队存储空间内。
+        """
+        file = await self._files.get_visible(user_id, file_id)
         if file is None:
             raise NotFoundError("文件不存在")
+        await self._require_write_access(file, user_id)
         directory = self._normalize_directory(directory)
-        old_abs = self._resolve_abs(file.path)
-        new_subdir = self._inbox_subdir(user_id, directory)
+
+        if file.owner_scope == OwnerScope.TEAM.value:
+            # 团队文件：仅更新 directory 字段，不跨用户空间移动物理文件
+            file.directory = directory
+            saved = await self._files.save(file)
+            await self._session.commit()
+            return DataFileDTO(
+                id=saved.id,
+                original_name=saved.original_name,
+                size=saved.size,
+                file_type=saved.file_type,
+                status=saved.status,
+                checksum=saved.checksum,
+                directory=saved.directory,
+                path=self._workspace_relative_path(saved.path, user_id),
+                source=saved.source or "upload",
+                owner_scope=saved.owner_scope or "personal",
+                team_id=saved.team_id,
+                created_at=saved.created_at,
+                modified_at=saved.updated_at,
+            )
+
+        old_exists = await self._backend.exists(file.path)
+        if old_exists:
+            old_abs = await self._backend.get_local_path(file.path)
+        else:
+            # 保持历史行为：即使源文件已不存在，也允许更新记录指向新目录
+            old_abs = self._resolve_abs(file.path)
+        new_subdir = await self._inbox_subdir(user_id, directory)
         new_abs = new_subdir / old_abs.name
-        if new_abs.exists() and new_abs != old_abs:
+        new_rel = self._factory.relative_to_root(new_abs)
+        if await self._backend.exists(new_rel) and new_abs != old_abs:
             # 目标已存在同名：追加短 uuid
             new_abs = _append_dedupe_suffix(new_abs, uuid.uuid4().hex[:8])
-        if old_abs.exists() and new_abs != old_abs:
-            shutil.move(str(old_abs), str(new_abs))
+        if old_exists and new_abs != old_abs:
+            await self._backend.move(
+                self._factory.relative_to_root(old_abs),
+                self._factory.relative_to_root(new_abs),
+            )
         file.directory = directory
         file.path = self._factory.relative_to_root(new_abs)
         saved = await self._files.save(file)
@@ -578,11 +829,14 @@ class FileService:
             checksum=saved.checksum,
             directory=saved.directory,
             path=self._workspace_relative_path(saved.path, user_id),
+            source=saved.source or "upload",
+            owner_scope=saved.owner_scope or "personal",
+            team_id=saved.team_id,
             created_at=saved.created_at,
             modified_at=saved.updated_at,
         )
 
-    def _ensure_user_system_subdir(self, user_id: UUID, name: str) -> Path:
+    async def _ensure_user_system_subdir(self, user_id: UUID, name: str) -> Path:
         """确保用户顶层系统子目录（inbox/projects/raw_data/workspace/downloads/temp）存在。"""
         mapping = {
             "inbox": self._factory.inbox_dir(str(user_id)),
@@ -595,7 +849,7 @@ class FileService:
         d = mapping.get(name)
         if d is None:
             d = self._factory.user_root(str(user_id)) / name
-        d.mkdir(parents=True, exist_ok=True)
+        await self._backend.ensure_dir(self._factory.relative_to_root(d))
         return d
 
     # ------------------------------------------------------------------
@@ -625,20 +879,23 @@ class FileService:
     async def list_files_for_picker(
         self, user_id: UUID, directory: str | None = None, file_type: str | None = None
     ) -> list[FilePickerItemDTO]:
-        """供分析文件选择器：返回文件 + 绝对路径"""
-        items = await self._files.list_by_user(user_id, status="active", directory=directory)
-        result = [
-            FilePickerItemDTO(
-                id=f.id,
-                original_name=f.original_name,
-                size=f.size,
-                file_type=f.file_type,
-                directory=f.directory,
-                abs_path=str(self._resolve_abs(f.path)),
+        """供分析文件选择器：返回用户可见文件 + 绝对路径（含团队空间）"""
+        items = await self._files.list_visible(user_id, status="active", directory=directory)
+        result: list[FilePickerItemDTO] = []
+        for f in items:
+            if file_type is not None and f.file_type.value != file_type:
+                continue
+            abs_path = await self._backend.get_local_path(f.path)
+            result.append(
+                FilePickerItemDTO(
+                    id=f.id,
+                    original_name=f.original_name,
+                    size=f.size,
+                    file_type=f.file_type,
+                    directory=f.directory,
+                    abs_path=str(abs_path),
+                )
             )
-            for f in items
-            if file_type is None or f.file_type.value == file_type
-        ]
         return result
 
     # ------------------------------------------------------------------
@@ -656,6 +913,7 @@ class FileService:
         from omichub.infrastructure.database.models.file import FileRecordModel
 
         user_root = self.user_root(user_id)
+        user_root_rel = self._factory.relative_to_root(user_root)
 
         res = await self._session.execute(
             select(FileRecordModel).where(
@@ -669,15 +927,14 @@ class FileService:
         renamed = 0
 
         for model in res.scalars().all():
-            abs_path = self._resolve_abs(model.storage_path)
-            if not abs_path.is_file():
+            if not await self._backend.exists(model.storage_path):
                 await self._files.delete(user_id, model.id)
                 removed += 1
                 removed_size += model.size or 0
                 continue
 
             existing_paths.add(model.storage_path)
-            physical_name = abs_path.name
+            physical_name = Path(model.storage_path).name
             if model.original_name == physical_name:
                 clean_name = canonical_original_name(physical_name)
                 if clean_name != model.original_name:
@@ -687,56 +944,53 @@ class FileService:
 
         added = 0
         added_size = 0
-        if user_root.exists():
-            for directory_path in user_root.rglob("*"):
-                if not directory_path.is_dir():
-                    continue
-                relative_parts = directory_path.relative_to(user_root).parts
-                if self._should_skip_sync_path(relative_parts):
-                    continue
-                relative_directory = "/".join(relative_parts)
-                if relative_directory:
-                    await ensure_directory_chain(self._session, user_id, relative_directory)
-            for f in user_root.rglob("*"):
-                if not f.is_file():
-                    continue
-                rel_user_parts = f.relative_to(user_root).parts
-                # 跳过隐藏目录/文件（.tmp 上传分片、.qoder 等 IDE 元数据）
-                if any(part.startswith(".") for part in rel_user_parts):
-                    continue
-                # 跳过系统内部目录下的文件（tasks/projects/... 由各自服务登记）
-                if self._should_skip_sync_path(rel_user_parts):
-                    continue
-                try:
-                    rel = self._factory.relative_to_root(f)
-                except ValueError:
-                    continue
-                if rel in existing_paths:
-                    continue
-                rel_user = Path(*rel_user_parts) if rel_user_parts else None
-                directory = self._derive_directory(rel_user)
-                if directory:
-                    await ensure_directory_chain(self._session, user_id, directory)
-                try:
-                    size = f.stat().st_size
-                except OSError:
-                    continue
-                original_name = canonical_original_name(f.name)
-                record = DataFile(
-                    id=uuid.uuid4(),
-                    user_id=user_id,
-                    path=rel,
-                    original_name=original_name,
-                    size=size,
-                    checksum="",
-                    file_type=_detect_file_type(original_name),
-                    status="active",
-                    directory=directory,
-                )
-                await self._files.save(record)
-                existing_paths.add(rel)
-                added += 1
-                added_size += size
+        entries = await self._backend.list(user_root_rel, recursive=True)
+
+        # 先登记目录，再登记文件
+        for entry in entries:
+            if entry["type"] != "dir":
+                continue
+            rel_user_parts = Path(entry["path"]).relative_to(Path(user_root_rel)).parts
+            if self._should_skip_sync_path(rel_user_parts):
+                continue
+            relative_directory = "/".join(rel_user_parts)
+            if relative_directory:
+                await ensure_directory_chain(self._session, user_id, relative_directory)
+
+        for entry in entries:
+            if entry["type"] != "file":
+                continue
+            rel_user_parts = Path(entry["path"]).relative_to(Path(user_root_rel)).parts
+            # 跳过隐藏目录/文件（.tmp 上传分片、.qoder 等 IDE 元数据）
+            if any(part.startswith(".") for part in rel_user_parts):
+                continue
+            # 跳过系统内部目录下的文件（tasks/projects/... 由各自服务登记）
+            if self._should_skip_sync_path(rel_user_parts):
+                continue
+            rel = entry["path"]
+            if rel in existing_paths:
+                continue
+            rel_user = Path(*rel_user_parts) if rel_user_parts else None
+            directory = self._derive_directory(rel_user)
+            if directory:
+                await ensure_directory_chain(self._session, user_id, directory)
+            size = entry["size"] or 0
+            original_name = canonical_original_name(entry["name"])
+            record = DataFile(
+                id=uuid.uuid4(),
+                user_id=user_id,
+                path=rel,
+                original_name=original_name,
+                size=size,
+                checksum="",
+                file_type=_detect_file_type(original_name),
+                status="active",
+                directory=directory,
+            )
+            await self._files.save(record)
+            existing_paths.add(rel)
+            added += 1
+            added_size += size
 
         # 重算配额，修正历史漂移（下载/手动放入/手工删除未计入的部分）
         await self._users.recompute_used_storage(user_id)
@@ -782,13 +1036,11 @@ class FileService:
         if not parts:
             return False
         top = parts[0]
-        if top.startswith("."):
-            return True
-        if top in _SYNC_SKIP_USER_TOP_DIRS:
-            return True
-        if top == "workspace" and len(parts) >= 2 and parts[1] in _SYNC_SKIP_WORKSPACE_SUBDIRS:
-            return True
-        return False
+        return (
+            top.startswith(".")
+            or top in _SYNC_SKIP_USER_TOP_DIRS
+            or (top == "workspace" and len(parts) >= 2 and parts[1] in _SYNC_SKIP_WORKSPACE_SUBDIRS)
+        )
 
     # ------------------------------------------------------------------
     # 样本（供流程引擎读取文件路径）
@@ -847,5 +1099,6 @@ class FileService:
         for fid in sample.file_ids:
             file = await self._files.get_by_id(user_id, fid)
             if file is not None:
-                paths.append(str(self._resolve_abs(file.path)))
+                abs_path = await self._backend.get_local_path(file.path)
+                paths.append(str(abs_path))
         return paths

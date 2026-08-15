@@ -32,6 +32,7 @@ from omichub.application.schemas.storage import (
 from omichub.infrastructure.cache.stats_cache import cached_json
 from omichub.infrastructure.config.storage_config import get_storage_config
 from omichub.infrastructure.database.models.user import UserModel
+from omichub.infrastructure.storage import get_path_factory, get_storage_backend
 
 # 与管理员全平台指标一致的缓存 TTL
 _TTL = 300  # 5 分钟
@@ -42,11 +43,13 @@ _DU_TIMEOUT = 120
 class StorageService:
     """存储空间监控服务"""
 
-    def __init__(self, db: AsyncSession | None = None) -> None:
+    def __init__(self, db: AsyncSession | None = None, backend=None) -> None:
         self._db = db
         cfg = get_storage_config()
         self._data_root = Path(cfg.data_root)
         self._users_dir = self._data_root / cfg.users_subdir
+        self._factory = get_path_factory()
+        self._backend = backend or get_storage_backend()
 
     # ------------------------------------------------------------------
     # 对外入口
@@ -105,14 +108,12 @@ class StorageService:
 
         仅统计数据库中存在的用户目录，过滤孤儿/已删除用户残留目录。
         """
-        if not self._users_dir.exists():
-            return []
-
-        # 收集子目录（user_id 命名）；无权限访问 users/ 时返回空
+        users_rel = self._factory.relative_to_root(self._users_dir)
         try:
-            child_dirs = [p for p in self._users_dir.iterdir() if p.is_dir()]
+            entries = await self._backend.list(users_rel, recursive=False)
         except (PermissionError, OSError):
             return []
+        child_dirs = [self._data_root / e["path"] for e in entries if e["type"] == "dir"]
         if not child_dirs:
             return []
 

@@ -35,6 +35,7 @@ class FileRecordModel(Base, TimestampMixin):
     __tablename__ = "file_records"
     __table_args__ = (
         Index("ix_file_records_lifecycle_cleanup", "lifecycle_status", "cleanup_after"),
+        Index("ix_file_records_owner_scope_team_id", "owner_scope", "team_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -51,16 +52,27 @@ class FileRecordModel(Base, TimestampMixin):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # 用户自定义目录（相对 raw/ 的子路径，如 "projectA" 或 "projectA/sub1"，"" = raw 根）
     directory: Mapped[str] = mapped_column(String(500), default="", index=True)
-    # 文件来源模块：upload / pipeline / blast / enrichment / fastq_qc / phylogenetic / download / ai_chat / sandbox / report
+    # 文件来源模块：upload / pipeline / blast / enrichment / fastq_qc / phylogenetic / download /
+    # ai_chat / sandbox / report / studio / chat_sandbox / agentteams
     source: Mapped[str] = mapped_column(String(32), default="upload", server_default="upload", index=True)
     # 产生此文件的任务 ID（可为空，如手动上传）
     task_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    # 存储后端：local / s3；阶段 1 为双后端共存做准备
+    storage_backend: Mapped[str] = mapped_column(String(16), default="local", server_default="local", index=True)
     # 生命周期状态：active / archived / pending_delete
     lifecycle_status: Mapped[str] = mapped_column(
         String(20), default="active", server_default="active", index=True
     )
     # 自动清理时间（由 cleanup_policy 计算）
     cleanup_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 权属范围：personal（个人空间） / team（团队空间）
+    owner_scope: Mapped[str] = mapped_column(
+        String(20), default="personal", server_default="personal", nullable=False, index=True
+    )
+    # 团队空间文件归属的团队；个人文件为 NULL
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
 
 class UploadSessionModel(Base, TimestampMixin):

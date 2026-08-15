@@ -139,7 +139,7 @@ class CaseRoomProjector:
 
     def _sender(self, actor: str, *, flow_id: str) -> dict[str, str]:
         if actor == "bioops-manager":
-            return {"agent_id": "agent-general", "name": "星尘 AI", "avatar": "✨", "color": "#4f8ef7", "role": "manager"}
+            return {"agent_id": "agent-general", "name": "Manager", "avatar": "✨", "color": "#4f8ef7", "role": "manager"}
         labels = self._registry.role_labels()
         sender = labels.get(actor)
         if sender is not None:

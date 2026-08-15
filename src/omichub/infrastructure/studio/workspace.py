@@ -17,6 +17,9 @@ from pathlib import Path
 from typing import Any
 
 from omichub.core.exceptions import BusinessError, NotFoundError
+from omichub.infrastructure.storage import get_path_factory, get_storage_backend
+from omichub.infrastructure.storage.backend import StorageBackend
+from omichub.infrastructure.storage.path_factory import StoragePathFactory
 from omichub.infrastructure.studio.paths import (
     PLATFORM_CONTAINER_MOUNT,
     PathEscapeError,
@@ -31,51 +34,59 @@ OUTPUT_DIR = "output"  # 产物约定目录（相对工作区根）
 INPUT_DIR = "input"  # 平台数据软链目录（相对工作区根）
 
 
-def _file_meta(p: Path) -> dict[str, Any]:
-    st = p.stat()
-    return {
-        "name": p.name,
-        "type": "dir" if p.is_dir() else "file",
-        "size": st.st_size,
-        "mtime": st.st_mtime,
-    }
-
-
-def disk_list_files(
-    workspace: Path, path: str = "", platform_host_root: Path | None = None
+async def disk_list_files(
+    workspace: Path,
+    path: str = "",
+    platform_host_root: Path | None = None,
+    backend: StorageBackend | None = None,
+    factory: StoragePathFactory | None = None,
 ) -> dict[str, Any]:
     """目录列表（相对工作区根），返回 {path, entries:[{name,type,size,mtime}]}。
 
     platform_host_root 传入 {storage_path}/users/{user_id} 时，input/ 软链指向的
     平台数据目录也可列出（只读语义）。
     """
-    resolved = resolve_workspace_read_path(path or ".", root=workspace, platform_host_root=platform_host_root)
+    backend = backend or get_storage_backend()
+    factory = factory or get_path_factory()
+    resolved = resolve_workspace_read_path(
+        path or ".", root=workspace, platform_host_root=platform_host_root
+    )
     target = resolved.path
-    if not target.exists():
+    rel = factory.relative_to_root(target)
+    info = await backend.stat(rel)
+    if info is None:
         raise NotFoundError(f"路径不存在: {path}")
-    if not target.is_dir():
+    if not info.get("is_dir"):
         raise BusinessError(f"不是目录: {path}")
-    entries = [_file_meta(p) for p in sorted(target.iterdir(), key=lambda x: x.name)]
+    entries = await backend.list(rel, recursive=False)
+    entries.sort(key=lambda x: x["name"])
     # 平台挂载内路径无法相对工作区表达，回显用户输入路径
     display = path if resolved.via_platform else relative_workspace_path(target, workspace)
     return {"path": display, "entries": entries}
 
 
-def disk_read_file(
+async def disk_read_file(
     workspace: Path,
     path: str,
     offset: int = 0,
     limit: int = DEFAULT_READ_LIMIT,
     platform_host_root: Path | None = None,
+    backend: StorageBackend | None = None,
+    factory: StoragePathFactory | None = None,
 ) -> dict[str, Any]:
     """分页读取文本文件，返回 {content, total_lines, truncated}（默认前 200 行）。"""
+    backend = backend or get_storage_backend()
+    factory = factory or get_path_factory()
     target = resolve_workspace_read_path(
         path, root=workspace, platform_host_root=platform_host_root
     ).path
-    if not target.is_file():
+    rel = factory.relative_to_root(target)
+    info = await backend.stat(rel)
+    if info is None or info.get("is_dir"):
         raise NotFoundError(f"文件不存在: {path}")
     try:
-        lines = target.read_text(encoding="utf-8", errors="replace").splitlines()
+        content = await backend.read(rel)
+        lines = content.decode("utf-8", errors="replace").splitlines()
     except OSError as e:
         raise BusinessError(f"读取失败: {e}") from e
     limit = min(limit, MAX_READ_LIMIT)
@@ -88,21 +99,31 @@ def disk_read_file(
     }
 
 
-def disk_list_artifacts(workspace: Path) -> list[dict[str, Any]]:
+async def disk_list_artifacts(
+    workspace: Path,
+    backend: StorageBackend | None = None,
+    factory: StoragePathFactory | None = None,
+) -> list[dict[str, Any]]:
     """递归扫描 output/ 产物目录，返回 [{path, size, mtime}]（path 相对工作区根）。"""
+    backend = backend or get_storage_backend()
+    factory = factory or get_path_factory()
     out_dir = resolve_workspace_path(OUTPUT_DIR, root=workspace)
+    out_rel = factory.relative_to_root(out_dir)
+    info = await backend.stat(out_rel)
+    if info is None or not info.get("is_dir"):
+        return []
+    entries = await backend.list(out_rel, recursive=True)
     artifacts: list[dict[str, Any]] = []
-    if not out_dir.is_dir():
-        return artifacts
-    for p in sorted(out_dir.rglob("*")):
-        if not p.is_file():
+    for entry in entries:
+        if entry["type"] != "file":
             continue
-        try:
-            st = p.stat()
-        except OSError:
-            continue
+        abs_path = factory.data_root / entry["path"]
         artifacts.append(
-            {"path": relative_workspace_path(p, workspace), "size": st.st_size, "mtime": st.st_mtime}
+            {
+                "path": relative_workspace_path(abs_path, workspace),
+                "size": entry["size"],
+                "mtime": entry["mtime"],
+            }
         )
     return artifacts
 

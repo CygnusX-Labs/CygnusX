@@ -13,7 +13,7 @@
  *  - 无重跑/编辑功能（聊天模式一次性执行）
  *  - 无产物下载（standalone sandbox 无持久化工作区）
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { NTag } from 'naive-ui'
 import CodeEditor from '@/components/sandbox/CodeEditor.vue'
 import type { ToolCall } from './types'
@@ -30,6 +30,12 @@ const LANG_BADGES: Record<string, string> = { python: 'Python', r: 'R', bash: 'B
 const languageBadge = computed(() => LANG_BADGES[language.value] || language.value)
 
 const code = computed(() => String(props.tool.arguments?.code ?? ''))
+
+// 代码超过折叠高度（约 5 行）时提供展开/收起，避免长代码被静默截断
+const COLLAPSED_LINES = 5
+const codeLineCount = computed(() => (code.value ? code.value.split('\n').length : 0))
+const codeOverflows = computed(() => codeLineCount.value > COLLAPSED_LINES)
+const codeExpanded = ref(false)
 
 const stdoutText = computed(() => {
   const s = props.tool.uiPayload?.stdout
@@ -80,9 +86,17 @@ const hasOutput = computed(() => stdoutText.value || stderrText.value || props.t
       >
         {{ statusText }}
       </NTag>
+      <button
+        v-if="codeOverflows"
+        type="button"
+        class="code-expand-toggle"
+        @click="codeExpanded = !codeExpanded"
+      >
+        {{ codeExpanded ? '收起' : `展开全部 ${codeLineCount} 行` }}
+      </button>
     </div>
 
-    <div class="editor-wrap">
+    <div class="editor-wrap" :class="{ expanded: codeExpanded }">
       <CodeEditor :model-value="code" readonly />
     </div>
 
@@ -142,11 +156,30 @@ const hasOutput = computed(() => stdoutText.value || stderrText.value || props.t
 }
 
 .editor-wrap {
-  /* 与 AI 工作台代码卡片统一：几行代码就几行高，超过约 5 行截断、内部滚动 */
+  /* 与 AI 工作台代码卡片统一：默认折叠为约 5 行高，超出时可通过头部按钮展开 */
   min-height: 22px;
   max-height: 110px;
   overflow: hidden;
   border-bottom: 1px solid var(--chat-border, #e8ecf1);
+}
+
+.editor-wrap.expanded {
+  max-height: none;
+}
+
+.code-expand-toggle {
+  margin-left: auto;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--brand-primary, #6366f1);
+  background: transparent;
+  border: 1px solid var(--chat-border, #e8ecf1);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.code-expand-toggle:hover {
+  background: var(--brand-primary-light, rgba(99, 102, 241, 0.08));
 }
 
 .output-block {

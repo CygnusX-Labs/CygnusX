@@ -31,9 +31,10 @@ from omichub.application.services.agentteams_service import AgentTeamsService
 from omichub.application.services.agentteams_usage_service import record_consultation_usage
 from omichub.application.services.parallel_subagent_service import ParallelSubAgentService
 from omichub.application.services.pipeline_result_service import PipelineResultService
+from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError, NotFoundError
 from omichub.domain.file.entities import DataFile
-from omichub.domain.file.value_objects import FileType
+from omichub.domain.file.value_objects import FileType, OwnerScope
 from omichub.infrastructure.database.repositories.file_repository import FileRepositoryImpl
 from omichub.infrastructure.storage.minio_store import MinioStore
 from omichub.infrastructure.storage.path_factory import get_path_factory
@@ -421,6 +422,24 @@ class AgentConsultationService:
             return [], ["产物登记失败：requester_ref 不是有效用户 UUID。"]
         if not workdir.exists():
             return [], []
+
+        # 解析 Case 所属团队；失败则回退为个人空间（不影响登记流程）
+        owner_scope = OwnerScope.PERSONAL.value
+        team_id: UUID | None = None
+        case_service = self._agentteams_service
+        if case_service is None:
+            case_service = AgentTeamsService(get_settings())
+        try:
+            case = await case_service.get_case(case_id, requester_ref)
+            raw_team = case.get("team_id")
+            if raw_team and str(raw_team) not in ("", "unassigned"):
+                team_id = UUID(str(raw_team))
+                owner_scope = OwnerScope.TEAM.value
+        except Exception as exc:  # noqa: BLE001
+            logger.bind(case_id=case_id, requester_ref=requester_ref).warning(
+                "获取 Case 团队信息失败，产物按个人空间登记: {}", exc
+            )
+
         factory = get_path_factory()
         destination = (
             factory.user_root(str(user_id)) / "workspace" / "agentteams" / case_id / work_item_id
@@ -453,6 +472,8 @@ class AgentConsultationService:
                         file_type=FileType.OTHER,
                         directory=f"workspace/agentteams/{case_id}/{work_item_id}",
                         source="agentteams",
+                        owner_scope=owner_scope,
+                        team_id=team_id,
                     )
                 )
                 artifact = {

@@ -40,6 +40,8 @@ class BridgeSettings(BaseSettings):
     max_evidence_bytes: int = 16_384
     worker_heartbeat_ttl_seconds: int = Field(default=180, ge=30, le=3_600)
     omic_task_stall_timeout_seconds: int = Field(default=900, ge=30, le=86_400)
+    planning_timeout_seconds: int = Field(default=120, ge=10, le=86_400)
+    execution_timeout_seconds: int = Field(default=600, ge=60, le=86_400)
     max_active_cases_per_requester: int = Field(default=3, ge=1, le=100)
     max_active_cases_per_project: int = Field(default=5, ge=1, le=100)
     max_active_work_items_per_case: int = Field(default=8, ge=1, le=500)

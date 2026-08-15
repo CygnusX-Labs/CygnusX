@@ -39,6 +39,7 @@ import {
   type AgentTeamsEvent,
 } from '@/api/agentTeams'
 import { mergeAgentTeamsEvents, shouldPollAgentTeamsCase } from '@/utils/agentTeamsState'
+import { formatAgentTeamsStatus } from '@/utils/agentTeamsStatus'
 
 const POLLING_INTERVAL_MS = 20_000
 const SSE_RETRY_INITIAL_MS = 1_000
@@ -95,12 +96,6 @@ const activePhase = computed(() => {
 const stepsStatus = computed<'error' | 'process'>(() => (
   detail.value?.status.includes('blocked') || detail.value?.status === 'execution_failed' ? 'error' : 'process'
 ))
-const statusLabel: Partial<Record<AgentTeamsCaseStatus, string>> = {
-  received: '已接收', preflight_running: '预检中', preflight_blocked: '预检阻断', waiting_for_correction: '等待修正',
-  approval_pending: '待审批', approved: '已批准', executing: '执行中', execution_failed: '执行失败',
-  quality_running: '质量检查中', quality_blocked: '质量阻断', remediation_pending: '等待修复',
-  delivery_ready: '可交付', closed: '已关闭', cancelled: '已取消',
-}
 const nextStep = computed(() => {
   const status = detail.value?.status
   const workItem = detail.value?.work_items.find((item) => item.status === 'pending' || item.status === 'in_progress')
@@ -553,7 +548,7 @@ onBeforeUnmount(() => {
           </NCard>
           <NCard title="执行证据" size="small">
             <NDescriptions :column="1" label-placement="top" size="small">
-              <NDescriptionsItem label="当前阶段"><NTag type="info" :bordered="false">{{ statusLabel[detail.status] || detail.status }}</NTag></NDescriptionsItem>
+              <NDescriptionsItem label="当前阶段"><NTag type="info" :bordered="false">{{ formatAgentTeamsStatus(detail.status) }}</NTag></NDescriptionsItem>
               <NDescriptionsItem label="执行上下文">
                 {{ detail.project_ref?.id || detail.context_refs.map((ref) => `${ref.kind}:${ref.id}`).join(', ') || '未关联' }}
               </NDescriptionsItem>

@@ -86,6 +86,14 @@ class Settings(BaseSettings):
     # ===== 文件存储 =====
     storage_type: str = "local"
     storage_path: str = "/data/omichub"
+    # deployment_mode: local（本地私有化，bind-mount + 本地文件系统）| cloud（云端 SaaS，对象存储）
+    deployment_mode: Literal["local", "cloud"] = "local"
+    # S3 兼容对象存储（cloud 模式使用；local 模式忽略）
+    storage_s3_endpoint: str = ""
+    storage_s3_bucket: str = "omichub-data"
+    storage_s3_region: str = ""
+    storage_s3_access_key: str = ""
+    storage_s3_secret_key: str = ""
     minio_endpoint: str = "http://minio:9000"
     minio_access_key: str = ""
     minio_secret_key: str = ""

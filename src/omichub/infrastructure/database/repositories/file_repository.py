@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, delete, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.domain.file.entities import DataFile, Directory, Sample, UploadSession
@@ -18,12 +18,15 @@ from omichub.domain.file.repositories import (
     ISampleRepository,
     IUploadSessionRepository,
 )
+from omichub.domain.file.value_objects import OwnerScope
+from omichub.domain.team.value_objects import TeamRole
 from omichub.infrastructure.database.models.file import (
     DirectoryModel,
     FileRecordModel,
     SampleModel,
     UploadSessionModel,
 )
+from omichub.infrastructure.database.models.team import TeamMemberModel, TeamModel
 
 # 合法排序字段白名单，防注入
 _FILE_ORDER_COLUMNS = {
@@ -51,6 +54,27 @@ class FileRepositoryImpl(IFileRepository):
         model = (await self._session.execute(stmt)).scalar_one_or_none()
         return self._to_entity(model) if model else None
 
+    async def get_visible(self, actor_user_id: UUID, file_id: UUID) -> DataFile | None:
+        """对 actor_user_id 可见的文件：个人文件且为 owner，或团队空间文件的团队成员。"""
+        stmt = select(FileRecordModel).where(
+            FileRecordModel.id == file_id,
+            or_(
+                and_(
+                    FileRecordModel.user_id == actor_user_id,
+                    FileRecordModel.owner_scope == OwnerScope.PERSONAL.value,
+                ),
+                and_(
+                    FileRecordModel.owner_scope == OwnerScope.TEAM.value,
+                    exists().where(
+                        TeamMemberModel.team_id == FileRecordModel.team_id,
+                        TeamMemberModel.user_id == actor_user_id,
+                    ),
+                ),
+            ),
+        )
+        model = (await self._session.execute(stmt)).scalar_one_or_none()
+        return self._to_entity(model) if model else None
+
     async def list_by_user(
         self,
         user_id: UUID,
@@ -70,17 +94,66 @@ class FileRepositoryImpl(IFileRepository):
         result = await self._session.execute(stmt)
         return [self._to_entity(m) for m in result.scalars().all()]
 
+    async def list_visible(
+        self,
+        actor_user_id: UUID,
+        *,
+        status: str | None = "active",
+        order_by: str = "created_at",
+        desc: bool = True,
+        directory: str | None = None,
+    ) -> list[DataFile]:
+        """聚合 actor_user_id 的个人文件 + 其所属团队的团队文件。"""
+        personal = and_(
+            FileRecordModel.user_id == actor_user_id,
+            FileRecordModel.owner_scope == OwnerScope.PERSONAL.value,
+        )
+        team = and_(
+            FileRecordModel.owner_scope == OwnerScope.TEAM.value,
+            exists().where(
+                TeamMemberModel.team_id == FileRecordModel.team_id,
+                TeamMemberModel.user_id == actor_user_id,
+            ),
+        )
+        stmt = select(FileRecordModel).where(or_(personal, team))
+        if status:
+            stmt = stmt.where(FileRecordModel.status == status)
+        if directory is not None:
+            stmt = stmt.where(FileRecordModel.directory == directory)
+        col = _FILE_ORDER_COLUMNS.get(order_by, FileRecordModel.created_at)
+        stmt = stmt.order_by(col.desc() if desc else col.asc())
+        result = await self._session.execute(stmt)
+        return [self._to_entity(m) for m in result.scalars().all()]
+
+    async def get_team_role(self, team_id: UUID, user_id: UUID) -> TeamRole | None:
+        # 团队 owner 未必在 team_members 中登记，先查 teams.owner_id
+        team = await self._session.get(TeamModel, team_id)
+        if team is None:
+            return None
+        if team.owner_id == user_id:
+            return TeamRole.OWNER
+        stmt = select(TeamMemberModel.role).where(
+            TeamMemberModel.team_id == team_id,
+            TeamMemberModel.user_id == user_id,
+        )
+        role = (await self._session.execute(stmt)).scalar_one_or_none()
+        return TeamRole(role) if role else None
+
     async def save(self, file: DataFile) -> DataFile:
         existing = await self._session.get(FileRecordModel, file.id)
+        file_type_value = (
+            file.file_type.value if hasattr(file.file_type, "value") else file.file_type
+        )
         if existing:
             existing.original_name = file.original_name
             existing.storage_path = file.path
             existing.size = file.size
             existing.checksum = file.checksum
-            existing.file_type = (
-                file.file_type.value if hasattr(file.file_type, "value") else file.file_type
-            )
+            existing.file_type = file_type_value
             existing.directory = file.directory
+            existing.source = file.source or "upload"
+            existing.owner_scope = file.owner_scope or OwnerScope.PERSONAL.value
+            existing.team_id = file.team_id
             model = existing
         else:
             model = FileRecordModel(
@@ -90,11 +163,12 @@ class FileRepositoryImpl(IFileRepository):
                 storage_path=file.path,
                 size=file.size,
                 checksum=file.checksum,
-                file_type=file.file_type.value
-                if hasattr(file.file_type, "value")
-                else file.file_type,
+                file_type=file_type_value,
                 status="active",
                 directory=file.directory,
+                source=file.source or "upload",
+                owner_scope=file.owner_scope or OwnerScope.PERSONAL.value,
+                team_id=file.team_id,
             )
             self._session.add(model)
         await self._session.flush()
@@ -123,6 +197,16 @@ class FileRepositoryImpl(IFileRepository):
         await self._session.flush()
         return result.rowcount > 0  # type: ignore[union-attr]
 
+    async def delete_visible(self, actor_user_id: UUID, file_id: UUID) -> bool:
+        """仅当文件对该用户可见时才删除。"""
+        file = await self.get_visible(actor_user_id, file_id)
+        if file is None:
+            return False
+        stmt = delete(FileRecordModel).where(FileRecordModel.id == file_id)
+        result = await self._session.execute(stmt)
+        await self._session.flush()
+        return result.rowcount > 0  # type: ignore[union-attr]
+
     async def sum_size(self, user_id: UUID) -> int:
         """统计用户 active 文件总大小（对账/配额校验用）"""
         stmt = select(func.coalesce(func.sum(FileRecordModel.size), 0)).where(
@@ -146,6 +230,8 @@ class FileRepositoryImpl(IFileRepository):
             status=model.status,
             directory=model.directory or "",
             source=model.source or "upload",
+            owner_scope=model.owner_scope or OwnerScope.PERSONAL.value,
+            team_id=model.team_id,
             created_at=model.created_at,
             updated_at=model.updated_at,
         )

@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from omichub.domain.file.value_objects import FileType
+from omichub.domain.file.value_objects import FileType, OwnerScope
 
 
 class DataFile(BaseModel):
@@ -22,6 +22,8 @@ class DataFile(BaseModel):
     status: str = "active"
     directory: str = ""  # 相对 raw/ 子路径，"" = 根
     source: str = "upload"  # 文件来源模块
+    owner_scope: str = OwnerScope.PERSONAL.value  # personal / team
+    team_id: UUID | None = None  # owner_scope=team 时指向 teams.id
     metadata: dict[str, Any] = {}
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)

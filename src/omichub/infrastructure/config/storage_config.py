@@ -47,6 +47,8 @@ class StorageConfig:
     users_subdir: str
     shared_subdir: str = _DEFAULT_SHARED_SUBDIR
     system_subdir: str = _DEFAULT_SYSTEM_SUBDIR
+    # 存储后端类型：local | s3；默认与 Settings.storage_type 一致
+    storage_type: str = "local"
     lifecycle: LifecycleConfig = LifecycleConfig()
 
 
@@ -83,6 +85,11 @@ def get_storage_config(yaml_path: str | Path | None = None) -> StorageConfig:
     users_subdir = str(storage.get("users_subdir") or "").strip() or _DEFAULT_USERS_SUBDIR
     shared_subdir = str(storage.get("shared_subdir") or "").strip() or _DEFAULT_SHARED_SUBDIR
     system_subdir = str(storage.get("system_subdir") or "").strip() or _DEFAULT_SYSTEM_SUBDIR
+    storage_type = (
+        str(storage.get("type") or "").strip()
+        or str(settings.storage_type or "").strip()
+        or "local"
+    )
 
     raw_lifecycle = storage.get("lifecycle")
     lc: dict[str, Any] = raw_lifecycle if isinstance(raw_lifecycle, dict) else {}
@@ -98,6 +105,7 @@ def get_storage_config(yaml_path: str | Path | None = None) -> StorageConfig:
         users_subdir=users_subdir,
         shared_subdir=shared_subdir,
         system_subdir=system_subdir,
+        storage_type=storage_type,
         lifecycle=lifecycle,
     )
 
@@ -106,8 +114,7 @@ def get_user_chat_upload_dir(user_id: str) -> Path:
     """AI 助手聊天附件的落盘目录：{data_root}/{users_subdir}/{user_id}/workspace/chat-uploads。
 
     放在用户 workspace 下，便于后续工具/流程直接引用，也方便文件管理器统一浏览。
+    本函数仅返回路径，不创建目录；目录由调用方经 StorageBackend 按需创建。
     """
     cfg = get_storage_config()
-    path = Path(cfg.data_root) / cfg.users_subdir / str(user_id) / "workspace" / "chat-uploads"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    return Path(cfg.data_root) / cfg.users_subdir / str(user_id) / "workspace" / "chat-uploads"

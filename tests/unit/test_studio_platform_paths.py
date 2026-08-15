@@ -5,6 +5,9 @@ from pathlib import Path
 
 import pytest
 
+from omichub.infrastructure.config.storage_config import StorageConfig
+from omichub.infrastructure.storage.backend import LocalStorageBackend
+from omichub.infrastructure.storage.path_factory import StoragePathFactory
 from omichub.infrastructure.studio.paths import (
     PLATFORM_CONTAINER_MOUNT,
     PathEscapeError,
@@ -97,16 +100,27 @@ def test_write_guard_still_rejects_platform_symlink(tmp_path: Path):
 
 
 @pytest.mark.unit
-def test_disk_read_file_through_platform_symlink(tmp_path: Path):
+async def test_disk_read_file_through_platform_symlink(tmp_path: Path):
     """宿主磁盘回退：经平台软链翻译读取用户数据文件"""
     workspace = tmp_path / "ws"
-    storage_user = tmp_path / "storage" / "users" / "u1"
+    storage_root = tmp_path / "storage"
+    storage_user = storage_root / "users" / "u1"
     (storage_user / "raw").mkdir(parents=True)
     (storage_user / "raw" / "x.csv").write_text("l1\nl2\nl3\n", encoding="utf-8")
     (workspace / "input").mkdir(parents=True)
     (workspace / "input" / "x.csv").symlink_to(f"{PLATFORM_CONTAINER_MOUNT}/raw/x.csv")
 
-    data = disk_read_file(workspace, "input/x.csv", platform_host_root=storage_user)
+    factory = StoragePathFactory(
+        StorageConfig(data_root=str(storage_root), users_subdir="users")
+    )
+    backend = LocalStorageBackend(factory)
+    data = await disk_read_file(
+        workspace,
+        "input/x.csv",
+        platform_host_root=storage_user,
+        backend=backend,
+        factory=factory,
+    )
     assert data["total_lines"] == 3
     assert data["content"] == "l1\nl2\nl3"
 

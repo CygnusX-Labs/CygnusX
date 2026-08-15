@@ -371,8 +371,38 @@ class BridgeService:
                 payload={"from_status": "received", "to_status": "planning_running"},
             )
             return await self._cases.get(case_id)
+        if case.status == "planning_running":
+            elapsed = self._node_elapsed_seconds(case)
+            if elapsed is not None and elapsed > self._settings.planning_timeout_seconds:
+                await self._audit.record(
+                    case_id=case_id,
+                    actor=actor,
+                    event_type="node_timeout",
+                    payload={
+                        "node": "planning",
+                        "elapsed_seconds": elapsed,
+                        "timeout_seconds": self._settings.planning_timeout_seconds,
+                        "recommended_actions": ["retry", "revise", "cancel"],
+                    },
+                )
+                return await self._cases.transition(case_id, "waiting_for_correction")
         if case.status != "executing" or not case.omic_task_ids:
             return case
+
+        elapsed = self._node_elapsed_seconds(case)
+        if elapsed is not None and elapsed > self._settings.execution_timeout_seconds:
+            await self._audit.record(
+                case_id=case_id,
+                actor=actor,
+                event_type="node_timeout",
+                payload={
+                    "node": "execution",
+                    "elapsed_seconds": elapsed,
+                    "timeout_seconds": self._settings.execution_timeout_seconds,
+                    "recommended_actions": ["retry", "view_logs", "cancel"],
+                },
+            )
+            return await self._cases.transition(case_id, "execution_failed")
 
         task_id = case.omic_task_ids[-1]
         task = await self._client.get_task(task_id)
@@ -1238,14 +1268,7 @@ class BridgeService:
             ):
                 raise ValueError("planned comparisons are invalid")
         except (ValueError, TypeError) as exc:
-            if case.status == "planning_running":
-                await self._cases.transition(case_id, "waiting_for_correction")
-            await self._audit.record(
-                case_id=case_id,
-                actor=actor,
-                event_type="planning.validation_failed",
-                payload={"error": str(exc)[:500]},
-            )
+            await self._handle_plan_validation_failure(case_id, case, exc, actor)
             return
         plan_payload = task.model_dump(mode="json")
         plan_hash = self._plan_hash(plan_payload)
@@ -1283,6 +1306,92 @@ class BridgeService:
                 "flow_id": task.flow_id,
                 "quality_gate_required": task.quality_gate_required,
             },
+        )
+
+    @staticmethod
+    def _parse_missing_fields_from_validation_error(exc: Exception) -> list[str]:
+        """从校验错误信息中解析缺失字段，用于修正事件 payload。"""
+        message = str(exc)
+        if "lacks objective or skill_name" in message:
+            return ["objective", "skill_name"]
+        if "requires parameters.work_items" in message:
+            return ["parameters.work_items"]
+        if "must be an object" in message:
+            return ["work_item"]
+        if "target is not allowed" in message:
+            return ["target"]
+        if "ids must be unique" in message:
+            return ["work_item_id"]
+        if "missing required sample values" in message:
+            return ["sample_sheet.sample"]
+        if "planned comparisons are invalid" in message:
+            return ["comparisons.control", "comparisons.treatment"]
+        return []
+
+    async def _handle_plan_validation_failure(
+        self,
+        case_id: str,
+        case: CaseRecord,
+        exc: Exception,
+        actor: str,
+        max_attempts: int = 3,
+    ) -> None:
+        """计划校验失败后的自愈回路：3 次内反馈给 Planner 重试，超限后升级人工介入。"""
+        correction_target = "plan-01"
+        missing_fields = self._parse_missing_fields_from_validation_error(exc)
+        error_message = str(exc)[:500]
+        if case.planning_retry_count < max_attempts:
+            attempt = case.planning_retry_count + 1
+            await self._audit.record(
+                case_id=case_id,
+                actor=actor,
+                event_type="correction_started",
+                payload={
+                    "correction_target": correction_target,
+                    "missing_fields": missing_fields,
+                    "attempt": attempt,
+                    "max_attempts": max_attempts,
+                },
+            )
+            feedback = (
+                f"【计划校验反馈，第 {attempt}/{max_attempts} 次重试】"
+                f"生成的计划未通过 schema 校验：{error_message}。"
+                f"请修正以下字段后重新生成完整计划：{missing_fields or '（见错误描述）'}。"
+            )
+            # objective 上限 1000 字符，保留原始意图摘要。
+            if len(feedback) > 950:
+                feedback = feedback[:947] + "..."
+            await self._cases.reset_planning_work_item(case_id, correction_target, feedback)
+            if case.status != "planning_running":
+                await self._cases.transition(case_id, "planning_running")
+            await self._audit.record(
+                case_id=case_id,
+                actor=actor,
+                event_type="correction_applied",
+                payload={
+                    "reason": "根据校验错误反馈重新生成计划",
+                    "attempt": attempt,
+                },
+            )
+            return
+        if case.status == "planning_running":
+            await self._cases.transition(case_id, "waiting_for_correction")
+        await self._audit.record(
+            case_id=case_id,
+            actor=actor,
+            event_type="correction_failed",
+            payload={
+                "reason": error_message,
+                "attempt": case.planning_retry_count,
+                "max_attempts": max_attempts,
+                "next_actions": ["retry", "revise", "cancel"],
+            },
+        )
+        await self._audit.record(
+            case_id=case_id,
+            actor=actor,
+            event_type="planning.validation_failed",
+            payload={"error": error_message, "retry_exhausted": True},
         )
 
     def _validate_general_plan(self, proposed_submission: dict[str, Any]) -> dict[str, Any]:
@@ -2665,6 +2774,13 @@ class BridgeService:
         if work_item_id and any(item.work_item_id == work_item_id for item in case.work_items):
             return work_item_id
         return None
+
+    @staticmethod
+    def _node_elapsed_seconds(case: CaseRecord) -> float | None:
+        """Return seconds since the current node started; None if not recorded (legacy Case)."""
+        if case.node_started_at is None:
+            return None
+        return (datetime.now(UTC) - case.node_started_at).total_seconds()
 
     @staticmethod
     def _work_item_idempotency_key(case_id: str, request: WorkItemCreateRequest) -> str:

@@ -31,6 +31,14 @@ storage:
   users_subdir: "users"
   shared_subdir: "shared"
   system_subdir: "system"
+  # 存储后端类型：local（本地文件系统）| s3（S3 兼容对象存储）
+  type: "local"
+  s3:
+    endpoint: ""
+    bucket: "omichub-data"
+    region: ""
+    access_key: ""
+    secret_key: ""
 
   # 文件生命周期管理
   lifecycle:
@@ -99,6 +107,7 @@ agents:
     - cloud_ops
     - shania
     - mcp_builder
+    - skill_builder
 
 # --------------------------------------------
 # EBI 下载进度 key

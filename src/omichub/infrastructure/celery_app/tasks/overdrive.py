@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from celery import shared_task
+from omichub.infrastructure.storage import get_path_factory, get_storage_backend
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -362,8 +363,8 @@ async def _advance_run(run_id: str) -> dict[str, object]:
         ):
             run.status = "QUALITY_REVIEW"
             run.finished_at = datetime.now(UTC)
-            delivery = DeliveryAssembler().write(run)
-            readme = DeliveryAssembler().write_readme(run, delivery)
+            delivery = await DeliveryAssembler().write(run)
+            readme = await DeliveryAssembler().write_readme(run, delivery)
             run.artifact_index = [
                 *run.artifact_index,
                 {
@@ -468,15 +469,18 @@ async def _run_manager_job(run_id: str, manager_task_id: str) -> dict[str, objec
         research = deepcopy(run.research)
         tasks = deepcopy(run.tasks)
 
+    factory = get_path_factory()
+    backend = get_storage_backend()
     root = overdrive_run_root(session_id, run_id) / "manager"
-    root.mkdir(parents=True, exist_ok=True)
-    ledger_path = root / "evidence-ledger.md"
+    root_rel = factory.relative_to_root(root)
+    await backend.ensure_dir(root_rel)
+    ledger_rel = f"{root_rel}/evidence-ledger.md"
     lines = ["# Manager 证据账本", "", "## 研究来源", ""]
     for source, details in research.items():
         lines.append(f"- {source}: {details.get('status', 'unknown')} ({len(details.get('evidence_ids') or [])} 条证据)")
     lines.extend(["", "## 任务整合状态", ""])
     lines.extend(f"- {task.get('task_id')}: {task.get('status')}" for task in tasks)
-    ledger_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    await backend.write(ledger_rel, ("\n".join(lines).rstrip() + "\n").encode("utf-8"))
     relative_path = f"{relative_overdrive_run_root(session_id, run_id)}/manager/evidence-ledger.md"
 
     async with get_session_factory()() as db:
@@ -613,13 +617,22 @@ async def _run_manager_review_job(run_id: str, task_id: str, attempt: int) -> di
 
     result_status = str(result_snapshot.get("status") or "")
     artifacts = result_snapshot.get("artifacts") if isinstance(result_snapshot.get("artifacts"), list) else []
+    factory = get_path_factory()
+    backend = get_storage_backend()
     root = overdrive_run_root(run.session_id, run.run_id)
-    paths_valid = all(
-        isinstance(item, dict)
-        and bool(str(item.get("path") or "").strip())
-        and (root / str(item.get("path")).removeprefix(f"output/overdrive/{run.session_id}/{run.run_id.replace(':', '-')}/")).resolve().is_file()
-        for item in artifacts
-    )
+    workspace = root.parents[3]
+    workspace_rel = factory.relative_to_root(workspace)
+    artifact_prefix = f"output/overdrive/{run.session_id}/{run.run_id.replace(':', '-')}/"
+    paths_valid = True
+    for item in artifacts:
+        if not isinstance(item, dict) or not str(item.get("path") or "").strip():
+            paths_valid = False
+            break
+        rel = str(item.get("path")).removeprefix(artifact_prefix)
+        candidate_rel = f"{workspace_rel}/{rel}".strip("/")
+        if not await backend.exists(candidate_rel):
+            paths_valid = False
+            break
     if decision == "accept" and (result_status not in {"ok", "succeeded"} or not paths_valid):
         decision = "repair"
         basis = "复核结果要求接受，但结果状态或产物路径未通过服务端核验"
@@ -812,7 +825,7 @@ async def _run_delivery_summary_job(run_id: str) -> dict[str, object]:
             return {"status": "skipped", "run_id": run_id}
         _, official = DeliveryAssembler().assemble(run)
         relative_root = relative_overdrive_run_root(run.session_id, run.run_id)
-        readme = DeliveryAssembler().write_readme(
+        readme = await DeliveryAssembler().write_readme(
             run,
             {
                 "path": f"{relative_root}/delivery/final-report.md",
@@ -912,7 +925,7 @@ async def _run_assistant_job(run_id: str, assistant_instance_id: str) -> dict[st
             await db.commit()
             advance_run.delay(run_id)
             return {"status": task_status, "run_id": run_id, "task_id": task_id}
-        runs.assert_execution_allowed(run)
+        await runs.assert_execution_allowed(run)
         task = next(item for item in run.tasks if str(item.get("task_id")) == task_id)
         attempt = int(task.get("attempt") or 0) + 1
         existing = (
@@ -1047,11 +1060,14 @@ async def _run_assistant_job(run_id: str, assistant_instance_id: str) -> dict[st
     }
     controlled_result = str(result.get("status") or "") in {"paused", "terminated"}
     result_text = str(result.get("answer") or "").strip()
+    factory = get_path_factory()
+    backend = get_storage_backend()
     task_root = overdrive_run_root(run.session_id, run.run_id) / "tasks" / task_id
-    task_root.mkdir(parents=True, exist_ok=True)
-    result_path = task_root / "result.md"
+    task_root_rel = factory.relative_to_root(task_root)
+    await backend.ensure_dir(task_root_rel)
+    result_rel = f"{task_root_rel}/result.md"
     if not controlled_result:
-        result_path.write_text(result_text.rstrip() + "\n", encoding="utf-8")
+        await backend.write(result_rel, (result_text.rstrip() + "\n").encode("utf-8"))
     relative_result_path = (
         f"{relative_overdrive_run_root(run.session_id, run.run_id)}/tasks/{task_id}/result.md"
     )
@@ -1073,20 +1089,23 @@ async def _run_assistant_job(run_id: str, assistant_instance_id: str) -> dict[st
         elif live_action == "pause" or run.status == "PAUSED":
             result["status"] = "paused"
         result_artifacts = list(result.get("artifacts") or [])
-        if result_path.exists():
+        result_info = await backend.stat(result_rel)
+        if result_info is not None:
             result_artifacts.insert(
                 0,
                 {
                     "path": relative_result_path,
                     "kind": "task_result",
-                    "size_bytes": result_path.stat().st_size,
+                    "size_bytes": result_info["size"],
                 },
             )
-        artifact_paths_valid = all(
-            _is_registered_artifact_file(run.session_id, run.run_id, item)
-            for item in result_artifacts
-            if isinstance(item, dict)
-        )
+        artifact_paths_valid = True
+        for item in result_artifacts:
+            if not isinstance(item, dict):
+                continue
+            if not await _is_registered_artifact_file(run.session_id, run.run_id, item):
+                artifact_paths_valid = False
+                break
         normalized_result = {
             "status": result.get("status"),
             "answer": result.get("answer"),
@@ -1148,7 +1167,7 @@ async def _run_assistant_job(run_id: str, assistant_instance_id: str) -> dict[st
                     item.update({"status": "reviewing", "finished_at": None})
             run.tasks = tasks
             run.assistant_instances = instances
-            if result_path.exists():
+            if await backend.exists(result_rel):
                 run.artifact_index = [
                     *run.artifact_index,
                     {
@@ -1243,7 +1262,7 @@ async def _run_assistant_job(run_id: str, assistant_instance_id: str) -> dict[st
         run.manager_reviews = [*run.manager_reviews, review]
         # Waiting is branch-local. Sibling DAG nodes must remain schedulable; the
         # task status and its durable review event carry the user/approval wait.
-        if result_path.exists():
+        if await backend.exists(result_rel):
             run.artifact_index = [
                 *run.artifact_index,
                 {
@@ -1300,10 +1319,12 @@ def json_safe(value: object) -> str:
     return json.dumps(value or {}, ensure_ascii=False, default=str)
 
 
-def _is_registered_artifact_file(session_id: str, run_id: str, artifact: dict[str, object]) -> bool:
+async def _is_registered_artifact_file(session_id: str, run_id: str, artifact: dict[str, object]) -> bool:
     """Accept only existing files below this run's immutable artifact directory."""
     from omichub.application.services.overdrive_run_service import overdrive_run_root
 
+    factory = get_path_factory()
+    backend = get_storage_backend()
     relative_path = str(artifact.get("path") or "").strip()
     if not relative_path or Path(relative_path).is_absolute():
         return False
@@ -1314,4 +1335,5 @@ def _is_registered_artifact_file(session_id: str, run_id: str, artifact: dict[st
         candidate.relative_to(root)
     except ValueError:
         return False
-    return candidate.is_file()
+    candidate_rel = factory.relative_to_root(candidate)
+    return await backend.exists(candidate_rel)

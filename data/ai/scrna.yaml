@@ -8,7 +8,7 @@ model: qwen3.7-plus
 prompt_file: prompts/scrna.md
 welcome_message: "你好！请提供 10x 矩阵、h5ad/rds 文件或单细胞分析目标。"
 temperature: 0.3
-max_tokens: 20000
+max_tokens: 32768
 mcp_ids: []
 skill_ids:
   - human-mouse-cell-annotation
@@ -62,7 +62,7 @@ features:
     mode: required_for_freshness
     # 仅声明基线（FRESHNESS_SEARCH_TRIGGERS）之外的领域增量词
     triggers: [细胞图谱]
-tool_packs: [workspace, research, memory, handoff, agentteams_case]
+tool_packs: [workspace, research, memory, handoff, agentteams_case, scrna]
 handoff:
   allowed_targets: [agent-rnaseq, agent-viz, agent-code, agent-general]
   max_hops_per_session: 10

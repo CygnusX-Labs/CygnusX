@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -1200,3 +1201,20 @@ async def test_start_chat_planning_swallows_bridge_failure(
         objective="把 result.csv 画成热图",
         context_refs=[],
     )
+
+
+def test_bridge_client_cache_is_scoped_to_event_loop(service: AgentTeamsService) -> None:
+    """Celery 任务用 asyncio.run() 每次新建事件循环；跨 loop 复用同一 httpx.AsyncClient
+    会抛 "Event loop is closed"，因此缓存必须按 loop 隔离、loop 变化时重建。"""
+
+    async def grab() -> object:
+        return service._bridge_client()
+
+    async def grab_twice() -> tuple[object, object]:
+        return service._bridge_client(), service._bridge_client()
+
+    first, same_loop = asyncio.run(grab_twice())
+    assert first is same_loop
+
+    second = asyncio.run(grab())
+    assert second is not first

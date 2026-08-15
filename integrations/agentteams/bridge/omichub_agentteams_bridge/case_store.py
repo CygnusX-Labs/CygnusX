@@ -253,7 +253,10 @@ class CaseStore:
                     status_code=status.HTTP_409_CONFLICT,
                     detail=f"Invalid Case transition: {case.status} -> {target}",
                 )
-            updated = case.model_copy(update={"status": target, "updated_at": datetime.now(UTC)})
+            now = datetime.now(UTC)
+            updated = case.model_copy(
+                update={"status": target, "node_started_at": now, "updated_at": now}
+            )
             self._cases[case_id] = updated
             await self._persist()
             return updated
@@ -367,6 +370,55 @@ class CaseStore:
                     "plan_revision_count": case.plan_revision_count + 1,
                     "work_items": revised_items,
                     "updated_at": datetime.now(UTC),
+                }
+            )
+            self._cases[case_id] = updated
+            await self._persist()
+            return updated
+
+    async def reset_planning_work_item(
+        self,
+        case_id: str,
+        work_item_id: str,
+        objective: str,
+    ) -> CaseRecord:
+        """Reset a planning work item to pending and bump the planning retry counter.
+
+        Used when schema validation fails so the Planner can reclaim the item with
+        corrective feedback in its objective.
+        """
+        async with self._lock:
+            case = self._cases.get(case_id)
+            if case is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+            now = datetime.now(UTC)
+            revised_items = []
+            for item in case.work_items:
+                if item.work_item_id != work_item_id:
+                    revised_items.append(item)
+                    continue
+                revised_items.append(
+                    item.model_copy(
+                        update={
+                            "objective": objective,
+                            "status": "pending",
+                            "attempt": 0,
+                            "lease_owner": None,
+                            "lease_expires_at": None,
+                            "retry_not_before": None,
+                            "summary": None,
+                            "trace_id": None,
+                            "output_refs": [],
+                            "findings": [],
+                            "updated_at": now,
+                        }
+                    )
+                )
+            updated = case.model_copy(
+                update={
+                    "planning_retry_count": case.planning_retry_count + 1,
+                    "work_items": revised_items,
+                    "updated_at": now,
                 }
             )
             self._cases[case_id] = updated

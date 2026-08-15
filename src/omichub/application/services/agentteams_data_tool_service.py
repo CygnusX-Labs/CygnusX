@@ -64,15 +64,9 @@ class AgentTeamsDataToolService:
     ) -> dict[str, Any]:
         self._require_context_user(user_id, context)
         workspace = get_path_factory().workspace_dir(user_id).resolve()
-        candidate = PipelineResultService._resolve_preview_path(workspace, path)
-        content = candidate.read_bytes()[: self._bounded_bytes(max_bytes)]
-        size = candidate.stat().st_size
-        return {
-            "path": candidate.relative_to(workspace).as_posix(),
-            "size": size,
-            "truncated": size > len(content),
-            "content": content.decode("utf-8", errors="replace"),
-        }
+        return await PipelineResultService(context).preview_workspace_file(
+            workspace, path, max_bytes=self._bounded_bytes(max_bytes)
+        )
 
     async def artifact_fetch(
         self,
@@ -118,12 +112,17 @@ class AgentTeamsDataToolService:
             self._minio_store.fetch_case_object(case_id, key, destination)
         else:
             workspace = get_path_factory().workspace_dir(user_id).resolve()
-            source = PipelineResultService._resolve_preview_path(workspace, artifact_ref)
-            if source.stat().st_size > max_bytes:
+            reader = PipelineResultService(context)
+            source = await reader._resolve_preview_path(workspace, artifact_ref)
+            rel_path = reader._factory.relative_to_root(source)
+            info = await reader._backend.stat(rel_path)
+            if info is None:
+                raise ValidationError("产物不存在")
+            if info["size"] > max_bytes:
                 raise ValidationError(
                     f"产物超过 {self._settings.agentteams_artifact_fetch_max_mb}MB 上限"
                 )
-            destination.write_bytes(source.read_bytes())
+            destination.write_bytes(await reader._backend.read(rel_path))
 
         size = destination.stat().st_size
         if size > max_bytes:

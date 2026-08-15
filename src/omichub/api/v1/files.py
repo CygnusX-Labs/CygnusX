@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID
 
-import anyio
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 
@@ -17,6 +16,10 @@ from omichub.application.schemas.file import (
     FileListResponse,
     FilePickerItemDTO,
     MoveFileRequest,
+    PresignedDownloadResponse,
+    PresignedUploadCompleteRequest,
+    PresignedUploadRequest,
+    PresignedUploadResponse,
     QuotaResponse,
     SampleCreateRequest,
     SampleDTO,
@@ -30,7 +33,10 @@ from omichub.application.schemas.file import (
 )
 from omichub.application.services.file_service import FileService
 from omichub.core.exceptions import ValidationError
-from omichub.infrastructure.config.storage_config import get_user_chat_upload_dir
+from omichub.core.config import get_settings
+from omichub.infrastructure.config.deployment_config import get_deployment_config
+from omichub.infrastructure.config.storage_config import get_storage_config
+from omichub.infrastructure.storage import get_path_factory, get_storage_backend
 
 router = APIRouter()
 
@@ -255,6 +261,22 @@ async def get_quota(
     return await service.get_quota(UUID(current_user_id))
 
 
+@router.get("/storage-info", summary="获取存储与部署模式信息")
+async def storage_info() -> dict[str, object]:
+    """返回当前部署的存储后端类型与部署模式，供前端决定上传策略。"""
+    cfg = get_deployment_config()
+    return {
+        "deployment_mode": cfg.mode,
+        "storage_type": cfg.storage_type,
+        "sandbox_mount_strategy": cfg.sandbox_mount_strategy,
+        "scratch_volume_enabled": cfg.scratch_volume_enabled,
+        "presigned_url_enabled": cfg.presigned_url_enabled,
+        "product_recycle_policy": cfg.product_recycle_policy,
+        "data_materialization_enabled": cfg.data_materialization_enabled,
+        "presigned_upload_threshold_bytes": cfg.presigned_upload_threshold_bytes,
+    }
+
+
 @router.get("/preview", summary="预览文件内容")
 async def preview_file(
     current_user_id: CurrentUserId,
@@ -263,40 +285,9 @@ async def preview_file(
     max_lines: Annotated[int, Query(ge=1, le=500, description="最多返回行数")] = 50,
 ) -> dict[str, Any]:
     """读取用户目录下文本文件的前 N 行（供 MCP Server / AI 助手查看分析结果）。"""
-    from omichub.core.config import get_settings
-
-    settings = get_settings()
-    user_root = Path(settings.storage_path) / "users" / current_user_id
-    target = (user_root / path).resolve()
-
-    if not str(target).startswith(str(user_root.resolve())):
-        raise ValidationError("路径越权")
-    if not target.is_file():
-        raise ValidationError("文件不存在")
-
-    max_bytes = 200 * 1024
-    if target.stat().st_size > max_bytes * 2:
-        return {
-            "path": path,
-            "truncated": True,
-            "total_size": target.stat().st_size,
-            "lines": [],
-            "message": f"文件过大 ({target.stat().st_size} bytes)，仅返回前 {max_lines} 行",
-        }
-
-    lines: list[str] = []
-    async with await anyio.open_file(target, mode="r", errors="replace") as f:
-        for i, line in enumerate(f):
-            if i >= max_lines:
-                break
-            lines.append(line.rstrip("\n"))
-
-    return {
-        "path": path,
-        "truncated": len(lines) >= max_lines,
-        "total_size": target.stat().st_size,
-        "lines": lines,
-    }
+    return await service.preview_by_path(
+        UUID(current_user_id), path=path, max_lines=max_lines
+    )
 
 
 @router.post("/sync", response_model=SyncResponse, summary="同步磁盘文件到文件列表")
@@ -310,6 +301,75 @@ async def sync_files(
     返回新增、清理和显示名修正统计。
     """
     return await service.sync_user_files(UUID(current_user_id))
+
+
+@router.get(
+    "/{file_id}/presigned-download",
+    response_model=PresignedDownloadResponse,
+    summary="获取预签名下载 URL（cloud 模式）",
+)
+async def presigned_download(
+    file_id: UUID,
+    current_user_id: CurrentUserId,
+    service: FileServiceDep,
+    expires: Annotated[int, Query(ge=60, le=86400)] = 3600,
+) -> PresignedDownloadResponse:
+    """为已有文件生成临时直链；本地模式返回 400。"""
+    try:
+        url = await service.create_presigned_download(
+            UUID(current_user_id), file_id, expires=expires
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.detail) from exc
+    return PresignedDownloadResponse(download_url=url)
+
+
+@router.post(
+    "/presigned-upload",
+    response_model=PresignedUploadResponse,
+    summary="获取预签名上传 URL（cloud 模式）",
+)
+async def presigned_upload(
+    current_user_id: CurrentUserId,
+    req: PresignedUploadRequest,
+    service: FileServiceDep,
+    expires: Annotated[int, Query(ge=60, le=86400)] = 3600,
+) -> PresignedUploadResponse:
+    """预创建文件记录并返回直传 URL；本地模式返回 400。"""
+    try:
+        upload_url, file_id, storage_path = await service.create_presigned_upload(
+            UUID(current_user_id),
+            req.original_name,
+            req.directory,
+            req.size,
+            file_type=req.file_type,
+            expires=expires,
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.detail) from exc
+    return PresignedUploadResponse(
+        upload_url=upload_url, file_id=file_id, storage_path=storage_path
+    )
+
+
+@router.post(
+    "/{file_id}/presigned-complete",
+    response_model=DataFileDTO,
+    summary="完成预签名上传（cloud 模式）",
+)
+async def presigned_upload_complete(
+    file_id: UUID,
+    current_user_id: CurrentUserId,
+    req: PresignedUploadCompleteRequest,
+    service: FileServiceDep,
+) -> DataFileDTO:
+    """客户端直传完成后确认元数据并激活文件记录。"""
+    try:
+        return await service.complete_presigned_upload(
+            UUID(current_user_id), file_id, checksum=req.checksum
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.detail) from exc
 
 
 # ===== 用户目录 =====
@@ -436,7 +496,8 @@ async def upload_chat_file(
         raise AuthenticationError("无法识别当前用户")
 
     _validate_chat_upload_filename(file.filename)
-    upload_dir = get_user_chat_upload_dir(current_user_id)
+    factory = get_path_factory()
+    upload_dir = factory.chat_uploads_dir(current_user_id)
 
     suffix = Path(file.filename or "").suffix
     file_id = uuid.uuid4().hex
@@ -447,9 +508,13 @@ async def upload_chat_file(
             session_tag = f".s{safe_sid[:8]}"
     filename = f"{file_id}{session_tag}{suffix}"
     dest = upload_dir / filename
+
+    backend = get_storage_backend()
+    upload_rel = factory.relative_to_root(upload_dir)
+    dest_rel = factory.relative_to_root(dest)
+    await backend.ensure_dir(upload_rel)
     body = await file.read()
-    async with await anyio.open_file(dest, "wb") as buffer:
-        await buffer.write(body)
+    await backend.write(dest_rel, body)
 
     return {
         "id": file_id,
@@ -471,15 +536,20 @@ async def download_chat_file(
         from omichub.core.exceptions import AuthorizationError
 
         raise AuthorizationError("无权访问该附件")
-    upload_dir = get_user_chat_upload_dir(current_user_id)
+    factory = get_path_factory()
+    upload_dir = factory.chat_uploads_dir(current_user_id)
     # 防止目录遍历：仅取 basename
     safe_name = Path(filename).name
     path = upload_dir / safe_name
-    if not path.is_file():
+
+    backend = get_storage_backend()
+    rel_path = factory.relative_to_root(path)
+    if not await backend.exists(rel_path):
         from omichub.core.exceptions import NotFoundError
 
         raise NotFoundError("文件不存在")
-    return FileResponse(str(path), filename=safe_name)
+    local_path = await backend.get_local_path(rel_path)
+    return FileResponse(str(local_path), filename=safe_name)
 
 
 @router.get("/{file_id}/download", summary="下载文件")

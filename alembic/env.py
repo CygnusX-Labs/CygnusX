@@ -33,6 +33,7 @@ from omichub.infrastructure.database.models import (  # noqa: F401
     sandbox,
     skill,
     task,
+    team,
     user,
 )
 

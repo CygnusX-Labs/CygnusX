@@ -30,6 +30,7 @@ from omichub.application.services.agentteams_execution_intent import (
     detect_execution_intent,
 )
 from omichub.application.services.agentteams_service import (
+    AUTO_CONFIRM_CASES_KEY,
     CASE_LEVEL_WORK_ITEM_ID,
     AgentTeamsService,
 )
@@ -100,14 +101,15 @@ class AgentTeamsRoomResponseService:
             event_items = [
                 item for item in events.get("events", []) if isinstance(item, dict)
             ]
+            preferences = await self._manager_preferences(requester_ref)
             execution_started = await self._maybe_start_chat_execution(
                 case_id=case_id,
                 requester_ref=requester_ref,
                 case=case,
                 events=event_items,
                 content=content,
+                preferences=preferences,
             )
-            preferences = await self._manager_preferences(requester_ref)
             # 触发成功后 Bridge 侧已推进到 planning_running；用拷贝覆盖快照状态，
             # 避免 Manager 按触发前的 received 快照作答。
             question_case = (
@@ -118,7 +120,6 @@ class AgentTeamsRoomResponseService:
                 event_items,
                 content,
                 preferences,
-                execution_started=execution_started,
             )
             agent_id = self._manager_agent_id()
             if agent_id is None:
@@ -168,11 +169,14 @@ class AgentTeamsRoomResponseService:
         case: dict[str, Any],
         events: list[dict[str, Any]],
         content: str,
+        preferences: dict[str, Any] | None = None,
     ) -> bool:
         """聊天式 Case 命中执行意图时自动启动 planning；返回是否已触发。
 
         仅对无 flow_id、仍处于 received、且尚无 plan-01 的 Case 生效——flow 型
         Case 的人工审批链路绝不旁路。触发失败只记日志，不影响 Manager 回复。
+        若用户偏好为 autonomous，将该 Case 加入自动确认集合，以便进入
+        approval_pending 后无需人工审批。
         """
         if case.get("flow_id") or case.get("status") != "received":
             return False
@@ -199,6 +203,14 @@ class AgentTeamsRoomResponseService:
                 "AgentTeams chat execution trigger failed: {}", exc
             )
             return False
+        if preferences.get("autonomy") == "autonomous":
+            try:
+                redis = self._redis_getter()
+                await redis.sadd(AUTO_CONFIRM_CASES_KEY, case_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.bind(case_id=case_id).warning(
+                    "AgentTeams auto-confirm marking failed: {}", exc
+                )
         logger.bind(case_id=case_id).info(
             "AgentTeams chat execution intent detected, planning started"
         )
@@ -215,7 +227,7 @@ class AgentTeamsRoomResponseService:
                 case_id,
                 work_item_id=CASE_LEVEL_WORK_ITEM_ID,
                 event_type="room.typing",
-                summary="协作经理正在输入" if typing else "协作经理输入结束",
+                summary="Manager 正在输入" if typing else "Manager 输入结束",
                 payload={"typing": typing},
             )
         except Exception as exc:  # noqa: BLE001 - typing 指示失败不得影响响应主流程
@@ -286,8 +298,6 @@ class AgentTeamsRoomResponseService:
         events: list[dict[str, Any]],
         fallback_content: str,
         preferences: dict[str, Any] | None = None,
-        *,
-        execution_started: bool = False,
     ) -> str:
         preferences = preferences or {}
         latest_user_message = fallback_content.strip()
@@ -319,7 +329,7 @@ class AgentTeamsRoomResponseService:
             else "谨慎模式：涉及执行选择或信息不足时优先说明影响并请求用户确认"
         )
         return (
-            "你在 AgentTeams 协作房间中扮演协作经理，直接回答请求人的最新发言。"
+            "你在 AgentTeams 协作房间中扮演 Manager，直接回答请求人的最新发言。"
             "必须以‘请求人最新发言’为唯一当前问题，不得重复回答更早的问题。"
             "用中文简洁回答；若问题涉及执行中的任务，结合 Case 状态说明进展。"
             "若用户要求基于文件绘图、运行分析或生成产物，必须明确这是计算执行请求，"
@@ -332,11 +342,4 @@ class AgentTeamsRoomResponseService:
             f"最近房间动态：\n{context_block}\n"
             f"本条发言引用文件：{refs_block}\n"
             f"请求人最新发言：{latest_user_message}"
-            + (
-                "\n系统已为该请求启动规划流水线；计划冻结后会在房间内请求你确认，"
-                "确认后才会真实执行，产物将回传本房间。请据此作答，"
-                "不要再说需要用户自行去工作台执行。"
-                if execution_started
-                else ""
-            )
         )

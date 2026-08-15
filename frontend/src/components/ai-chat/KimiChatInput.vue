@@ -33,6 +33,7 @@ import MentionMenu from './MentionMenu.vue'
 import GoalStatusCard from './GoalStatusCard.vue'
 import { readActiveMentionQuery } from './mentionQuery'
 import { pushRecent, recentRank } from './recentItems'
+import { formatMentions } from '@/utils/agentTeamsRoom'
 import { DATA_MANAGEMENT_UPLOAD_HINT, requiresDataManagementUpload } from './attachmentPolicy'
 import { clipboardAttachmentFiles } from './clipboardAttachments'
 import {
@@ -350,9 +351,20 @@ function handleMcpSelection(selection: { mode: McpMode; extraServers: string[] }
 }
 
 const localValue = ref(props.modelValue)
+const highlightRef = ref<HTMLDivElement | null>(null)
+const inputHighlightHtml = computed(() => formatMentions(localValue.value))
+
+function syncHighlightScroll() {
+  const textarea = getTextareaElement()
+  const highlight = highlightRef.value
+  if (!textarea || !highlight) return
+  highlight.scrollTop = textarea.scrollTop
+  highlight.scrollLeft = textarea.scrollLeft
+}
 
 watch(localValue, (val) => {
   emit('update:modelValue', val)
+  nextTick(syncHighlightScroll)
 })
 
 watch(
@@ -1034,12 +1046,14 @@ onMounted(() => {
   refreshGoalStatus()
   document.addEventListener('pointerdown', handleDocumentPointerDown)
   window.addEventListener('omichub:agentteams-create', handleAgentTeamsCreateEvent)
+  getTextareaElement()?.addEventListener('scroll', syncHighlightScroll, { passive: true })
 })
 
 onUnmounted(() => {
   if (blurTimer) clearTimeout(blurTimer)
   document.removeEventListener('pointerdown', handleDocumentPointerDown)
   window.removeEventListener('omichub:agentteams-create', handleAgentTeamsCreateEvent)
+  getTextareaElement()?.removeEventListener('scroll', syncHighlightScroll)
   if (goalSessionId.value) goalRuntime.disposeSession(goalSessionId.value)
 })
 
@@ -1226,7 +1240,14 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
         </n-tooltip>
       </div>
 
-      <div ref="inputWrapperRef" class="input-wrapper">
+      <div ref="inputWrapperRef" class="input-wrapper" :class="{ 'is-composing': isComposing }">
+        <div
+          v-if="localValue"
+          ref="highlightRef"
+          class="input-highlight"
+          aria-hidden="true"
+          v-html="inputHighlightHtml"
+        />
         <n-input
           v-model:value="localValue"
           type="textarea"
@@ -1502,7 +1523,49 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
   }
 
   .input-wrapper {
+    position: relative;
     min-height: 0;
+  }
+
+  .input-highlight {
+    position: absolute;
+    inset: 0;
+    /* 必须与下方 textarea(.n-input__textarea-el) 排版完全一致，否则透明文字的光标
+       会与可见高亮文字错位。naive-ui textarea-el 实际内边距为
+       padding: var(--n-padding-vertical) 0，默认主题 = (34 - 1.5*14)/2 = 6.5px 0；
+       此前 overlay 用 8px 12px，导致光标水平偏移约一个汉字宽度（落在"你好"中间）。 */
+    padding: 6.5px 0;
+    pointer-events: none;
+    color: var(--chat-text-primary, var(--neutral-text-1));
+    font-family: inherit;
+    font-size: 15px;
+    line-height: 24px;
+    letter-spacing: normal;
+    white-space: pre-wrap;
+    word-break: normal;
+    overflow-wrap: break-word;
+    overflow: hidden;
+    z-index: 0;
+  }
+
+  .input-highlight :deep(.mention-chip) {
+    display: inline-block;
+    padding: 0 4px;
+    border-radius: 4px;
+    background: var(--arco-primary-light);
+    color: var(--arco-primary);
+    font-weight: 600;
+  }
+
+  /* IME 组合期间：naive-ui 在 composition 中不更新 v-model，overlay 拿不到正在输入的
+     拼音/候选文本；而 textarea 文字是透明的，导致组合文本不可见、光标看似漂移。
+     组合期间临时隐藏 overlay 并让 textarea 文字可见，结束后恢复高亮层。 */
+  .input-wrapper.is-composing .input-highlight {
+    visibility: hidden;
+  }
+
+  .input-wrapper.is-composing .chat-textarea :deep(.n-input__textarea-el) {
+    color: var(--chat-text-primary, var(--neutral-text-1));
   }
 
   &.popup-open {
@@ -1688,8 +1751,10 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
   }
 
   .chat-textarea {
+    position: relative;
     width: 100%;
     background: transparent;
+    z-index: 1;
 
     :deep(.n-input) {
       color: var(--chat-text-primary, var(--neutral-text-1));
@@ -1714,7 +1779,8 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
 
     :deep(.n-input__textarea-el) {
       max-height: 200px;
-      color: var(--chat-text-primary, var(--neutral-text-1));
+      color: transparent;
+      caret-color: var(--chat-text-primary, var(--neutral-text-1));
       background: transparent;
       font-family: inherit;
       font-size: 15px;

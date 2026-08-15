@@ -10,14 +10,26 @@ from omichub.application.services.file_service import (
     _append_dedupe_suffix,
     canonical_original_name,
 )
+from omichub.core.exceptions import ValidationError
 from omichub.domain.file.entities import DataFile, Directory
 from omichub.domain.file.value_objects import FileType
+from omichub.infrastructure.config.storage_config import StorageConfig
 from omichub.infrastructure.mcp.presets import (
     PLATFORM_HANDLERS,
     PLATFORM_PRESET_TOOLS,
     WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX,
     _list_workspace_files,
 )
+from omichub.infrastructure.storage.backend import LocalStorageBackend
+from omichub.infrastructure.storage.path_factory import StoragePathFactory
+
+
+def _attach_test_factory(service: FileService, tmp_path: Path) -> None:
+    """给 object.__new__ 构造的 FileService 注入以 tmp_path 为根的 PathFactory 与后端。"""
+    service._factory = StoragePathFactory(
+        StorageConfig(data_root=str(tmp_path), users_subdir="users")
+    )
+    service._backend = LocalStorageBackend(service._factory)
 
 
 def test_platform_sandbox_tool_declares_native_r_execution() -> None:
@@ -59,6 +71,19 @@ def test_validate_workspace_path_normalizes_relative_path() -> None:
     assert FileService.validate_workspace_path("./raw_data/project-a/") == "raw_data/project-a"
 
 
+@pytest.mark.parametrize("directory", ["../escape", "raw/../../escape", "a/../b"])
+def test_normalize_directory_rejects_dotdot(directory: str) -> None:
+    service = object.__new__(FileService)
+    with pytest.raises(ValidationError, match="禁止包含"):
+        service._normalize_directory(directory)
+
+
+def test_normalize_directory_normalizes_valid_path() -> None:
+    service = object.__new__(FileService)
+    assert service._normalize_directory("./raw_data/./project-a/") == "raw_data/project-a"
+    assert service._normalize_directory("inbox/") == "inbox"
+
+
 @pytest.mark.asyncio
 async def test_ensure_default_directories_repairs_records_and_disk(tmp_path: Path) -> None:
     user_id = uuid4()
@@ -73,6 +98,37 @@ async def test_ensure_default_directories_repairs_records_and_disk(tmp_path: Pat
     service._dirs = SimpleNamespace()
     service._session = SimpleNamespace(commit_calls=0)
     service._storage_root = tmp_path
+    service._factory = StoragePathFactory(
+        StorageConfig(data_root=str(tmp_path), users_subdir="users")
+    )
+    service._backend = LocalStorageBackend(service._factory)
+
+    class FakeDirectoryService:
+        def __init__(self, svc: FileService) -> None:
+            self._svc = svc
+
+        async def ensure_default_directories(self, user_id: UUID) -> None:
+            existing = await self._svc._dirs.list_by_user(user_id)
+            existing_paths = {d.path for d in existing}
+            created_any = False
+            for name in ("inbox", "projects", "raw_data", "workspace", "downloads", "temp"):
+                if name not in existing_paths:
+                    await self._svc._dirs.save(
+                        Directory(
+                            id=uuid4(),
+                            user_id=user_id,
+                            path=name,
+                            name=name,
+                            parent_path=None,
+                            is_system=True,
+                        )
+                    )
+                    created_any = True
+                await self._svc._ensure_user_system_subdir(user_id, name)
+            if created_any:
+                await self._svc._session.commit()
+
+    service._FileService__dir_svc = FakeDirectoryService(service)
 
     records = [existing]
 
@@ -96,10 +152,10 @@ async def test_ensure_default_directories_repairs_records_and_disk(tmp_path: Pat
 
     await service.ensure_default_directories(user_id)
 
-    assert {item.path for item in saved} == {"workspace", "temp"}
+    assert {item.path for item in saved} == {"inbox", "projects", "workspace", "downloads", "temp"}
     assert {
         path.name for path in (tmp_path / "users" / str(user_id)).iterdir()
-    } == {"raw_data", "workspace", "temp"}
+    } == {"inbox", "projects", "raw_data", "workspace", "downloads", "temp"}
     assert service._session.commit_calls == 1
 
     await service.ensure_default_directories(user_id)
@@ -199,7 +255,7 @@ async def test_search_files_is_user_scoped_and_excludes_ignored_directories(tmp_
     now = datetime.now(UTC)
     user_id = uuid4()
     service = object.__new__(FileService)
-    service._storage_root = tmp_path
+    _attach_test_factory(service, tmp_path)
     service._files = SimpleNamespace()
     service._dirs = SimpleNamespace()
 
@@ -247,7 +303,7 @@ async def test_search_files_supports_nested_paths_with_spaces(tmp_path: Path) ->
     now = datetime.now(UTC)
     user_id = uuid4()
     service = object.__new__(FileService)
-    service._storage_root = tmp_path
+    _attach_test_factory(service, tmp_path)
     service._files = SimpleNamespace()
     service._dirs = SimpleNamespace()
 
@@ -286,7 +342,7 @@ async def test_search_files_returns_matching_directories(tmp_path: Path) -> None
     now = datetime.now(UTC)
     user_id = uuid4()
     service = object.__new__(FileService)
-    service._storage_root = tmp_path
+    _attach_test_factory(service, tmp_path)
     service._files = SimpleNamespace()
     service._dirs = SimpleNamespace()
 
@@ -296,6 +352,7 @@ async def test_search_files_returns_matching_directories(tmp_path: Path) -> None
     async def list_directories(_user_id: UUID):
         return [
             SimpleNamespace(
+                id=uuid4(),
                 path="enrichmrnet",
                 name="enrichmrnet",
                 parent_path=None,
@@ -349,3 +406,23 @@ async def test_workspace_list_tool_rejects_traversal_before_accessing_storage() 
             user_id=str(uuid4()),
             context=SimpleNamespace(db=object()),
         )
+
+
+@pytest.mark.asyncio
+async def test_preview_by_path_returns_lines_and_rejects_traversal(tmp_path: Path) -> None:
+    user_id = uuid4()
+    service = object.__new__(FileService)
+    _attach_test_factory(service, tmp_path)
+
+    user_dir = tmp_path / "users" / str(user_id)
+    (user_dir / "raw_data").mkdir(parents=True)
+    (user_dir / "raw_data" / "counts.csv").write_text("a,b,c\n1,2,3\n4,5,6\n", encoding="utf-8")
+
+    result = await service.preview_by_path(user_id, "raw_data/counts.csv", max_lines=2)
+    assert result["path"] == "raw_data/counts.csv"
+    assert result["lines"] == ["a,b,c", "1,2,3"]
+    assert result["truncated"] is True
+    assert result["total_size"] == 18
+
+    with pytest.raises(PermissionError, match="路径越权"):
+        await service.preview_by_path(user_id, "../other-user/secret.txt")

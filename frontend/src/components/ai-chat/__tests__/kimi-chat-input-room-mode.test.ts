@@ -77,4 +77,14 @@ describe('KimiChatInput roomMode 发送链路', () => {
     await nextTick()
     expect(sends.length).toBe(1)
   })
+
+  it('roomMode 下输入框中的 @ 文件引用会渲染为高亮 pill', async () => {
+    const { el } = mountComposer({ roomMode: true }, () => undefined)
+    await nextTick()
+    await typeText(el, '@workspace/chat-uploads/a.treefile 帮我可视化')
+    const highlight = el.querySelector<HTMLElement>('.input-highlight')
+    expect(highlight).not.toBeNull()
+    expect(highlight!.innerHTML).toContain('mention-chip')
+    expect(highlight!.textContent).toContain('@workspace/chat-uploads/a.treefile')
+  })
 })

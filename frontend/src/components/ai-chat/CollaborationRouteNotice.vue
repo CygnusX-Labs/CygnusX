@@ -59,8 +59,10 @@ const displayReason = computed(() => {
 
 <style scoped>
 .direct-response-notice {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  width: 100%;
+  max-width: 1120px;
   min-height: 24px;
   margin: 0 0 var(--space-md, 12px);
   padding: 6px 12px;
@@ -71,6 +73,7 @@ const displayReason = computed(() => {
   color: var(--chat-text-secondary);
   font-size: 12px;
   line-height: 1.5;
+  box-sizing: border-box;
 }
 
 .direct-response-notice::before {

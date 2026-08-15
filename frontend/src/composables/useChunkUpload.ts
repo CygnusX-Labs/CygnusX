@@ -7,6 +7,7 @@
  */
 import SparkMD5 from 'spark-md5'
 import apiClient from '@/api/client'
+import { getStorageInfo, presignedUpload } from '@/composables/usePresignedUpload'
 import type {
   UploadInitResponse,
   UploadMergeResponse,
@@ -15,6 +16,8 @@ import type {
 
 export const CHUNK_SIZE = 5 * 1024 * 1024 // 5 MiB
 const CONCURRENCY = 3
+/** 超过此大小的文件优先尝试预签名直传（S3/cloud 模式） */
+const PRESIGNED_THRESHOLD = 100 * 1024 * 1024 // 100 MiB
 
 export interface UseChunkUploadOptions {
   onProgress?: (item: UploadQueueItem) => void
@@ -85,6 +88,36 @@ export function useChunkUpload(options: UseChunkUploadOptions = {}) {
 
         const fileMd5 = await computeFileMd5(file)
         const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE))
+
+        // cloud/S3 模式下大文件优先走预签名 URL 直传，不经过应用服务器
+        if (file.size >= PRESIGNED_THRESHOLD) {
+          try {
+            const storageInfo = await getStorageInfo()
+            if (storageInfo.presigned_url_enabled) {
+              item.totalChunks = 1
+              const mergeResp = await presignedUpload(file, {
+                directory,
+                onProgress: (percent) => {
+                  item.progress = percent
+                  item.speed = 0
+                  options.onProgress?.(item)
+                },
+              })
+              item.progress = 100
+              item.uploadedChunks = 1
+              item.status = 'completed'
+              options.onProgress?.(item)
+              options.onCompleted?.(item, mergeResp)
+              return
+            }
+          } catch (err: any) {
+            // 预签名失败（如本地模式不支持）时回退到常规分块上传，不阻断用户
+            const detail = err?.response?.data?.detail || ''
+            if (!detail.includes('不支持预签名') && !detail.includes('本地模式')) {
+              throw err
+            }
+          }
+        }
 
         // 1) init
         const initResp = (

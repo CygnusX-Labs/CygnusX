@@ -132,6 +132,17 @@ RUN mamba install -n omichub -c conda-forge -c bioconda -y \
 # 注册 IRkernel（R 代码可在同一环境执行）
 RUN conda run -n omichub R -e "IRkernel::installspec(user = FALSE)"
 
+# 可视化提示词约定 ggpubr::theme_pubclean() 为 R 出图默认主题，预装避免现场安装失败。
+# 独立层，避免变更上层 R/Seurat 依赖的构建缓存。
+RUN mamba install -n omichub -c conda-forge -y \
+        r-ggpubr \
+    && mamba clean --all -y
+
+# micromamba 兼容 shim：提示词历史版本指示 `micromamba install -y -n base <pkg>`，
+# 本镜像为 mambaforge（mamba + omichub 环境），shim 负责转发并把 base 映射为 omichub。
+COPY micromamba-shim.sh /usr/local/bin/micromamba
+RUN chmod +x /usr/local/bin/micromamba
+
 # sitecustomize.py：Python 启动时自动注入 sc/np/pd + 图表回传 helper
 # 后端池通过 `docker exec -i <c> python -` 投递用户代码，sitecustomize 对所有启动方式生效
 # 放入 site-packages 目录，Python 启动时自动加载（无需手动 PYTHONPATH）
