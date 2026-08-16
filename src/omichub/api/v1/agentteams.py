@@ -590,8 +590,17 @@ async def stream_case_events(
     cursor: str | None = None,
 ) -> StreamingResponse:
     async def event_generator():
-        async for event in service.stream_case_events(case_id, current_user_id, cursor=cursor):
-            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        # StreamingResponse 在开始迭代前就已发送响应头，生成器内抛出的异常
+        # 会被 starlette 包装成 "response already started" 并刷错误日志；
+        # 这里转为一条 error 事件，前端按既有重连逻辑处理即可。
+        try:
+            async for event in service.stream_case_events(case_id, current_user_id, cursor=cursor):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                f"[AgentTeams] 案例事件流中断（case {case_id[:16]}）: {exc}"
+            )
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_generator(),

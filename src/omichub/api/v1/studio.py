@@ -195,7 +195,7 @@ async def _workspace_listing(session: ChatSessionModel, path: str = "") -> dict[
             raise NotFoundError(f"路径不存在: {path}")
         return {"path": "", "entries": []}
     try:
-        return disk_list_files(workspace, path, platform_host_root=user_platform_root(session.user_id))
+        return await disk_list_files(workspace, path, platform_host_root=user_platform_root(session.user_id))
     except PathEscapeError as e:
         raise BusinessError(str(e)) from e
 
@@ -215,7 +215,7 @@ async def _workspace_read(
             logger.warning(f"[Studio] agent 读文件失败，回退磁盘（会话 {session_id[:8]}）: {e}")
     workspace = studio_sandbox_manager.workspace_dir(session_id)
     try:
-        return disk_read_file(
+        return await disk_read_file(
             workspace, path, offset=offset, limit=limit,
             platform_host_root=user_platform_root(session.user_id),
         )

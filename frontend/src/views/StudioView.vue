@@ -293,12 +293,18 @@ async function enterSession(id: string) {
       }
     }
     await store.selectSession(id)
-  } catch {
-    message.error('Studio 会话不存在或无权访问')
-    if (studioSessions.value.length) {
-      router.replace({ name: 'studio', params: { sessionId: studioSessions.value[0].session_id } })
+  } catch (err) {
+    const status = (err as { response?: { status?: number } })?.response?.status
+    if (status === 404) {
+      message.error('Studio 会话不存在或无权访问')
+      if (studioSessions.value.length) {
+        router.replace({ name: 'studio', params: { sessionId: studioSessions.value[0].session_id } })
+      } else {
+        router.replace({ name: 'studio' })
+      }
     } else {
-      router.replace({ name: 'studio' })
+      // 5xx/网络错误多为瞬态故障（如后端重启中）：保留当前路由，提示重试，不误报"会话不存在"
+      message.error('工作台加载失败，请稍后重试')
     }
   }
 }
