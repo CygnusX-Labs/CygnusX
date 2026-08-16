@@ -96,4 +96,8 @@ volumes/
 tool_configs/terminal/docker/vendor/
 pipelines/*/report/docker/RNA/docker_build/vendor/
 
-update_info
+update_info/
+atac-seq/
+cloud/
+qc/
+rna-seq/
