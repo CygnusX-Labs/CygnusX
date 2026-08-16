@@ -95,3 +95,5 @@ volumes/
 # 镜像构建用的大件外部制品（GATK/PLINK 等），不入库，缺失时按 Dockerfile 注释重新下载
 tool_configs/terminal/docker/vendor/
 pipelines/*/report/docker/RNA/docker_build/vendor/
+
+update_info
