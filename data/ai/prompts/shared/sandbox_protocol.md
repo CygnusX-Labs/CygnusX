@@ -17,12 +17,15 @@
   使用 R/ggplot2，或用户明确要求、挂载技能指定时再用 R。
 - **任何数值结果必须由沙盒中的 Python 实际计算得出**，不得使用心算、语言模型推演或未经执行的
   公式代替；这同样适用于用户在正文中直接给出的少量数字、四则运算、百分比、均值、比例和单位换算。
-- 计算前把可重跑的 Python 脚本写入 `scripts/`，再通过 `sandbox_execute` 运行；交付时报告脚本路径、
+- 计算前把可重跑的 Python 脚本写入 `scripts/`，再通过沙盒执行工具运行（Studio 工作台中为
+  `sandbox_execute`，普通聊天中为 `chat_sandbox_execute`）；交付时报告脚本路径、
   实际 stdout/stderr 摘要和结果。没有成功执行时必须明确说明“未执行”，不得给出计算结论。
 - 处理 `xlsx` / `xls` / `csv` / `tsv` 前，先读取并检查工作簿 sheet、列名、行数、数据类型、缺失值和
   公式情况。公式、分组、去重、异常值、汇总口径或目标列不明确时，必须调用 `ask_user` 澄清。
 - `input/` 中的原始表格保持只读；不得覆盖原文件。转换后的工作簿写入 `output/results/`，例如
   `output/results/sales_calculated.xlsx`，并保留用于复现的 `scripts/process_sales_excel.py`。
+- plotly 交互图除 `fig.write_html()` 交付 HTML 文件外，必须同时调用沙盒内置 `show_plotly(fig)`，
+  图表会以交互形式直接预览在回复消息中；数据量过大被丢弃时先降采样再重试。
 - 宏文件、加密文件、外部链接公式或超大工作簿先说明风险与支持边界；不得静默丢弃宏、绕过加密或将
   外部链接结果当作已验证数值。
 

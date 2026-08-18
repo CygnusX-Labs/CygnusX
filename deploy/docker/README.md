@@ -20,6 +20,12 @@
 - 面向开发者和部署脚本的稳定入口必须是 Make target，不在文档中依赖容易失效的裸 `docker build` 路径。
 - 高计算量工具镜像必须在对应 Worker 启动前完成构建；`make docker-up-worker` 和 `make docker-start` 应自动满足该依赖。
 
+## 基因组共线性运行时
+
+`Dockerfile.synteny` 用于基因组共线性 Worker，构建上下文为 `tool_configs/synteny/`，不向 Web
+容器提供 Docker Socket。使用 `make docker-build-synteny` 构建 `omichub-synteny:v1`；Worker 负责运行
+MCScanX 思路的区块识别并输出结构化 TSV/JSON，浏览器使用 Plotly `scattergl` 渲染 dot plot。
+
 ## PolarDB PostgreSQL / pgvector
 
 `docker-compose.pgvector.yml` is an acceptance overlay that replaces the local PostgreSQL image with `pgvector/pgvector:pg14` and adds PgBouncer plus PostgreSQL Prometheus exporter. Production PolarDB uses managed writer/read-only endpoints rather than this local database container. Run `make docker-up-pgvector` to start it, or `make pgvector-acceptance` to run pgvector, backup/restore, and metrics checks. See `deploy/docker/POLARDB_POSTGRES.md` for cutover, read-replica, connection-pool, and monitoring validation.

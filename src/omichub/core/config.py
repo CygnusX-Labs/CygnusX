@@ -157,6 +157,10 @@ class Settings(BaseSettings):
     multi_expert_consultation_max_experts: int = 3
     overdrive_authoritative_mode: Literal["constraint", "override", "off"] = "constraint"
     overdrive_plan_repair_enabled: bool = True
+    # MAS Orchestrator 引擎灰度：legacy 维持现状路径（默认，行为完全不变）；
+    # langgraph 走新编排图（plan_generate/plan_confirm/dispatch/aggregate +
+    # checkpoint 恢复）。langgraph 启用时 legacy 路径进入 deprecation 倒计时。
+    orchestrator_engine: Literal["legacy", "langgraph"] = "legacy"
     # 统一协作意图路由：关闭时保持既有 Router 行为，用于灰度与一键回退。
     unified_intent_router_enabled: bool = False
     # ===== 对话内子 Agent 并行 fan-out（默认关闭，按 Agent 白名单灰度）=====

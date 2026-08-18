@@ -1704,6 +1704,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
               // （旧版本仅 Studio 工具落库 tool_invocations）
               mcpServer: (inv.mcp_server as string) || 'studio',
               status: inv.success ? 'success' : 'error',
+              checkpointId: typeof inv.checkpoint_id === 'string' ? inv.checkpoint_id : undefined,
             }
             if (so || se) tc.output = so + se
             return tc
@@ -1789,6 +1790,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
               status: 'pending',
               risk_hint: approval.risk_hint,
               timeout_seconds: approval.expires_in,
+              approval_kind: approval.approval_kind,
             }
             // 审批记录里的 arguments 可能比落库的 tool_invocations 更全，以其为准补齐
             tc.arguments = { ...tc.arguments, ...approval.arguments }
@@ -1959,6 +1961,10 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       const lastUser = [...apiMessages].reverse().find((m) => m.role === 'user')
       if (lastUser) {
         lastUser.content += `\n\n[用户为本次对话挂载技能：${options.skillNames.join('、')}，请优先运用相关能力作答。]`
+        lastUser.metadata = {
+          ...(lastUser.metadata || {}),
+          studio_skill_refs: options.skillNames,
+        }
       }
     }
 
@@ -2060,6 +2066,21 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             }
           }
           session.messages.push(progressMessage)
+        },
+        onLoopGuardTriggered: (event) => {
+          if (event.downgraded_to_supervised) {
+            studioPermissions.value = { mode: 'supervised' }
+          }
+          const reason = event.reason === 'max_consecutive_failures'
+            ? `同类失败已连续 ${event.consecutive_failures} 次`
+            : `本轮工具调用已达 ${event.tool_calls} 次`
+          session.messages.push({
+            id: `studio-loop-guard-${Date.now()}`,
+            role: 'system',
+            content: `安全护栏已中止本轮执行：${reason}${event.downgraded_to_supervised ? '，已切回监督模式。' : '。'}`,
+            createdAt: new Date().toISOString(),
+          })
+          session.updated_at = new Date().toISOString()
         },
         onStudioPromoted: (event) => {
           session.mode = 'studio'
@@ -2300,6 +2321,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             )
             tc.status = event.success ? 'success' : resultStatus === 'timed_out' ? 'timed_out' : 'error'
             tc.mcpServer = event.mcp_server
+            tc.checkpointId = event.checkpoint_id
             // Studio 工具：未走 tool_output 流时，用 ui_payload 的 stdout/stderr 回填输出区
             if (!tc.output && uiPayload) {
               const so = typeof uiPayload.stdout === 'string' ? uiPayload.stdout : ''
@@ -2412,6 +2434,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             status: 'pending',
             risk_hint: event.risk_hint,
             timeout_seconds: event.timeout_seconds,
+            approval_kind: event.approval_kind,
           }
           // 审批事件的 arguments 可能比 tool_call 事件更全，以其为准补齐
           tc.arguments = { ...tc.arguments, ...event.arguments }

@@ -168,6 +168,9 @@ docker-build-enrichment: ## 构建 GO / KEGG 富集分析 R 运行时镜像
 docker-build-deg: ## 构建 DEG 差异表达分析 R 运行时镜像（DESeq2 + edgeR，支持 1v1 无重复）
 	docker build -t $(DEG_DOCKER_IMAGE) -f deploy/docker/Dockerfile.deg tool_configs/deg
 
+docker-build-synteny: ## 构建 MCScanX 思路的基因组共线性分析运行时镜像
+	docker build -t omichub-synteny:v1 -f deploy/docker/Dockerfile.synteny tool_configs/synteny
+
 docker-build-sandboxes: ## 重建全部沙盒/分析运行时镜像（runtime 三件套 + 旧沙盒池 + studio base/bio + 终端全家桶，任一失败即中止）
 	@echo ""
 	@echo "╔══════════════════════════════════════════════════════════════╗"

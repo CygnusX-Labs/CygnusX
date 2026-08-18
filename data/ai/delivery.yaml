@@ -15,6 +15,7 @@ max_tokens: 32768
 mcp_ids: []
 skill_ids:
   - md5
+  - delivery-report
 features:
   agentteams:
     category: expert

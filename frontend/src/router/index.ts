@@ -231,6 +231,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'GO / KEGG 富集分析', requiresAuth: true }
       },
       {
+        path: 'tools/gsea-enrichment',
+        name: 'tools-gsea-enrichment',
+        component: () => import('@/views/BioTools/GseaEnrichmentView.vue'),
+        meta: { title: 'GSEA 富集分析', requiresAuth: true }
+      },
+      {
+        path: 'tools/synteny',
+        name: 'tools-synteny',
+        component: () => import('@/views/BioTools/SyntenyView.vue'),
+        meta: { title: '基因组共线性分析', requiresAuth: true }
+      },
+      {
         path: 'tools/deg-analysis',
         name: 'tools-deg-analysis',
         component: () => import('@/views/BioTools/DegAnalysisView.vue'),

@@ -462,6 +462,7 @@ async def _sandbox_execute(
     stderr_full = ""
     stdout_buffer_cut = False
     stderr_buffer_cut = False
+    plotly_figures: list[Any] = []
     result_event: dict[str, Any] = {}
     async for event in studio_sandbox_manager.exec(
         session_id, language, code, timeout_sec=timeout_sec, image=image, user_id=user_id
@@ -477,6 +478,11 @@ async def _sandbox_execute(
                 stderr_buffer_cut = stderr_buffer_cut or was_cut
             if on_output is not None:
                 await on_output(etype, data)
+        elif etype == "plotly":
+            # 沙盒内 show_plotly(fig) 发射的 figure JSON，交给前端交互式渲染
+            figure = event.get("data")
+            if isinstance(figure, dict):
+                plotly_figures.append(figure)
         elif etype == "result":
             result_event = event
 
@@ -497,6 +503,11 @@ async def _sandbox_execute(
     if result_event.get("timed_out"):
         llm_payload["timed_out"] = True
         llm_payload["error"] = result_event.get("error", "执行超时")
+    if plotly_figures:
+        llm_payload["plotly_count"] = len(plotly_figures)
+        llm_payload["plotly_note"] = (
+            "plotly 图表已在消息中内联交互预览，无需再引导用户下载 HTML 查看"
+        )
     if stdout_cut or stderr_cut or stdout_buffer_cut or stderr_buffer_cut or overflow_logs:
         llm_payload["output_truncated"] = True
         llm_payload["note"] = (
@@ -513,6 +524,8 @@ async def _sandbox_execute(
         "stderr": _tail(stderr_full, _UI_OUTPUT_CAP)[0],
         "artifacts": artifacts,
     }
+    if plotly_figures:
+        ui_payload["plotly_figures"] = plotly_figures
     if result_event.get("timed_out"):
         ui_payload["timed_out"] = True
         ui_payload["error"] = result_event.get("error", "执行超时")

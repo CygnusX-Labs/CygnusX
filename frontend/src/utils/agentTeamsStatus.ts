@@ -94,6 +94,13 @@ export const agentTeamsFailedStatuses: ReadonlySet<AgentTeamsCaseStatus> = new S
   'remediation_pending',
 ])
 
+/** 尚未进入流程的状态（§1.7 真实状态优先）：房间头部步骤条对这些状态不激活任何
+ *  步骤（全部未开始弱态），避免 received 被误表达为「计划进行中」。 */
+export const agentTeamsPreStartStatuses: ReadonlySet<AgentTeamsCaseStatus> = new Set([
+  'queued',
+  'received',
+])
+
 /** 终态 Case（房间同步与部分自动化的边界；发言不受限，见 canSendRoomMessage）。 */
 export const agentTeamsTerminalStatuses: ReadonlySet<AgentTeamsCaseStatus> = new Set([
   'closed',

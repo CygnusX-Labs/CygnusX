@@ -40,6 +40,8 @@ features:
     case_mode_excluded_tool_packs: [subagents]
     handoff_in_case_mode: false
     work_item_timeout_sec: 3600
+    # O7 fallback 链:本 Agent 不可用时按序取第一个可用实例。
+    fallback_agents: [agent-general]
   persona:
     archetype: "严谨务实的 RNA-seq 方法顾问"
     traits: [严谨, 务实, 重视实验设计, 注重证据]

@@ -21,6 +21,9 @@ class BridgeSettings(BaseSettings):
     role_agent_map: str = ""
     discovered_flow_agent_map: dict[str, str] = Field(default_factory=dict, exclude=True)
     discovered_flow_quality_gate_map: dict[str, bool] = Field(default_factory=dict, exclude=True)
+    discovered_flow_standard_work_items: dict[str, dict[str, str]] = Field(
+        default_factory=dict, exclude=True
+    )
     discovered_role_agent_map: dict[str, str] = Field(default_factory=dict, exclude=True)
     discovered_worker_profiles: dict[str, dict[str, str]] = Field(
         default_factory=dict, exclude=True
@@ -39,6 +42,7 @@ class BridgeSettings(BaseSettings):
     max_response_bytes: int = Field(default=1_048_576, ge=1_024, le=16_777_216)
     max_evidence_bytes: int = 16_384
     worker_heartbeat_ttl_seconds: int = Field(default=180, ge=30, le=3_600)
+    work_item_sweep_interval_seconds: int = Field(default=30, ge=0, le=3_600)
     omic_task_stall_timeout_seconds: int = Field(default=900, ge=30, le=86_400)
     planning_timeout_seconds: int = Field(default=120, ge=10, le=86_400)
     execution_timeout_seconds: int = Field(default=600, ge=60, le=86_400)
@@ -144,6 +148,17 @@ class BridgeSettings(BaseSettings):
                 for flow_id, required in flow_quality_gate_map.items()
                 if str(flow_id).strip()
             }
+        standard_work_items = payload.get("flow_standard_work_items")
+        if isinstance(standard_work_items, dict):
+            self.discovered_flow_standard_work_items = {
+                str(flow_id): {
+                    str(kind): str(target)
+                    for kind, target in targets.items()
+                    if str(kind).strip() and str(target).strip()
+                }
+                for flow_id, targets in standard_work_items.items()
+                if str(flow_id).strip() and isinstance(targets, dict)
+            }
         if isinstance(role_map, dict):
             self.discovered_role_agent_map = {
                 str(role): str(agent_id)
@@ -182,3 +197,9 @@ class BridgeSettings(BaseSettings):
 
     def quality_gate_for_flow(self, flow_id: str) -> bool:
         return bool(self.discovered_flow_quality_gate_map.get(flow_id, False))
+
+    def standard_work_item_target(self, flow_id: str, kind: str) -> str | None:
+        """O5:流程 YAML 显式声明的标准工作项 target;未声明返回 None(走缺省)。"""
+        targets = self.discovered_flow_standard_work_items.get(flow_id) or {}
+        target = str(targets.get(kind) or "").strip()
+        return target or None

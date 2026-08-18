@@ -54,6 +54,13 @@ _WORKSPACE_EXEC_PROTOCOL_PATH = (
 )
 
 
+class AskUserQuestion(BaseModel):
+    """Manager 向请求人澄清的结构化问题；房间响应链路投影为可交互 ask_user 卡片。"""
+
+    question: str = Field(min_length=1, max_length=500)
+    options: list[str] = Field(default_factory=list, max_length=10)
+
+
 class ConsultationEnvelope(BaseModel):
     conclusion: str = Field(min_length=1, max_length=8_000)
     recommendations: list[str] = Field(default_factory=list, max_length=100)
@@ -63,6 +70,7 @@ class ConsultationEnvelope(BaseModel):
     proposed_submission: dict[str, Any] | None = None
     artifacts: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
     hard_gate: dict[str, Any] | None = None
+    ask_user: list[AskUserQuestion] = Field(default_factory=list, max_length=5)
 
 
 class _BridgeEvidenceProjector:
@@ -336,7 +344,8 @@ class AgentConsultationService:
             envelope_clause = (
                 "最终答复必须只包含一个 ```json 代码块，结构为："
                 '{"conclusion":"非空结论","recommendations":[],"evidence_refs":[],"risks":[],'
-                '"token_usage":0,"proposed_submission":null,"artifacts":[],"hard_gate":null}。'
+                '"token_usage":0,"proposed_submission":null,"artifacts":[],"hard_gate":null,'
+                '"ask_user":[]}。'
                 "evidence_refs 只允许填写本回合工具成功读取后产生的已核验引用。规划能力调用时 "
                 "proposed_submission 按 Case 类型输出：流程型 Case 输出可校验的 TaskSpec "
                 "参数对象；无 flow_id 的通用 Case 输出 "

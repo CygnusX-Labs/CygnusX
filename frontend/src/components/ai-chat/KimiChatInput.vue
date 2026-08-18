@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NForm, NFormItem, NIcon, NTooltip, NPopover, NDropdown, NInput, NModal, useDialog, useMessage, NTag } from 'naive-ui'
+import { NButton, NForm, NFormItem, NIcon, NTooltip, NPopover, NInput, NModal, useDialog, useMessage, NTag } from 'naive-ui'
 import {
   ArrowUpOutline,
   AttachOutline,
@@ -16,7 +16,6 @@ import {
   DocumentTextOutline,
   FolderOpenOutline,
   HammerOutline,
-  EllipsisHorizontalOutline,
   ChatbubbleEllipsesOutline,
   CompassOutline,
   PlayCircleOutline,
@@ -70,7 +69,6 @@ export interface ToolbarConfig {
   mcp?: boolean
   deepThinking?: boolean
   workbench?: boolean
-  more?: boolean
   clear?: boolean
   send?: boolean
 }
@@ -165,7 +163,6 @@ const defaultToolbarConfig = computed<ToolbarConfig>(() => {
       mcp: false,
       deepThinking: false,
       workbench: false,
-      more: false,
       clear: true,
       send: true,
     }
@@ -178,7 +175,6 @@ const defaultToolbarConfig = computed<ToolbarConfig>(() => {
     mcp: true,
     deepThinking: true,
     workbench: props.showWorkbenchControl,
-    more: true,
     clear: true,
     send: true,
   }
@@ -196,11 +192,11 @@ const showToolbarCenter = computed(
     toolbar.value.terminal ||
     toolbar.value.mcp ||
     toolbar.value.deepThinking ||
-    toolbar.value.workbench ||
-    toolbar.value.more,
+    toolbar.value.workbench,
 )
 
 const inputWrapperRef = ref<HTMLElement>()
+const composerShellRef = ref<HTMLElement>()
 const fileInputRef = ref<HTMLInputElement>()
 const isComposing = ref(false)
 const showSlashMenu = ref(false)
@@ -237,6 +233,89 @@ const starPermissionIcon = computed(() => ({
 const showStarMode = computed(() => starModeExplicit.value || hasStarModeCommand(localValue.value))
 const showStarPermission = computed(() => starPermissionExplicit.value || hasStarPermissionCommand(localValue.value))
 const showStarContext = computed(() => showStarMode.value || showStarPermission.value || Boolean(starContext.value.goal))
+
+// ===== ask_user 待回答联动：输入框提示条 + 待回答 pill =====
+// 状态源为消息的 askRequest（agentHub store），此处仅派生展示，不回写。
+/** 未回答的 ask_user 问题总数（排除计划确认卡片，仅统计 AskUserCard 呈现的问题类澄清） */
+const pendingAskQuestions = computed(() => {
+  let count = 0
+  for (const msg of agentHub.currentSession?.messages || []) {
+    const ask = msg.askRequest
+    if (ask && !ask.answered && (ask.questions?.length ?? 0) > 0) {
+      count += ask.questions.length
+    }
+  }
+  return count
+})
+const hasPendingAsk = computed(() => pendingAskQuestions.value > 0)
+
+/** 待回答 pill：仅当存在未回答澄清且卡片不在消息列表视口内时显示 */
+const askPillVisible = ref(false)
+let askScrollEl: HTMLElement | null = null
+
+/** 从组件根部向上查找同视图内的消息滚动容器（.message-scroller） */
+function findAskScroller(): HTMLElement | null {
+  let node = composerShellRef.value?.parentElement ?? null
+  while (node) {
+    const el = node.querySelector<HTMLElement>('.message-scroller')
+    if (el) return el
+    node = node.parentElement
+  }
+  return null
+}
+
+/** 最近一张未回答的 AskUserCard（虚拟列表未挂载时返回 null） */
+function findPendingAskCard(scroller: HTMLElement): HTMLElement | null {
+  const cards = scroller.querySelectorAll<HTMLElement>('.ask-user-card:not(.answered)')
+  return cards.length ? cards[cards.length - 1] : null
+}
+
+function updateAskPill() {
+  const scroller = findAskScroller()
+  if (!scroller || !hasPendingAsk.value) {
+    askPillVisible.value = false
+    return
+  }
+  const card = findPendingAskCard(scroller)
+  if (card) {
+    const cardRect = card.getBoundingClientRect()
+    const viewRect = scroller.getBoundingClientRect()
+    // 卡片任一像素进入视口即视为可见，不再提示
+    askPillVisible.value = cardRect.bottom <= viewRect.top || cardRect.top >= viewRect.bottom
+  } else {
+    // 卡片被虚拟列表回收（距底较远）：按距底 100px 阈值兜底
+    askPillVisible.value =
+      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 100
+  }
+}
+
+function bindAskScroller() {
+  const scroller = findAskScroller()
+  if (scroller === askScrollEl) return
+  askScrollEl?.removeEventListener('scroll', updateAskPill)
+  askScrollEl = scroller
+  askScrollEl?.addEventListener('scroll', updateAskPill, { passive: true })
+}
+
+/** 点击 pill：平滑滚动到最近一张待回答卡片 */
+function scrollToPendingAsk() {
+  const scroller = findAskScroller()
+  if (!scroller) return
+  const card = findPendingAskCard(scroller)
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  else scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' })
+  askPillVisible.value = false
+}
+
+watch(hasPendingAsk, async (pending) => {
+  if (pending) {
+    await nextTick()
+    bindAskScroller()
+    updateAskPill()
+  } else {
+    askPillVisible.value = false
+  }
+})
 const goalSessionId = computed(() => agentHub.currentSession?.id || '')
 const activeGoal = computed(() => goalRuntime.goalForSession(goalSessionId.value))
 const activeGoalEvents = computed(() => goalRuntime.eventsForGoal(activeGoal.value?.id))
@@ -253,11 +332,6 @@ function focus() {
 }
 defineExpose({ focus })
 
-// 「更多」菜单：低频长文字操作收纳于此（fontend.md §36.3）
-const moreMenuOptions = [{ label: '创建协作 Case', key: 'agentteams-case' }]
-function handleMoreSelect(key: string) {
-  if (key === 'agentteams-case') openAgentTeamsCaseModal()
-}
 const agentTeamsCaseVisible = ref(false)
 const agentTeamsCaseSubmitting = ref(false)
 const agentTeamsCaseForm = ref({ objective: '', project_id: '', flow_id: '' })
@@ -741,6 +815,15 @@ function removePendingSkill(idx: number) {
 
 function handleSlashSelect(command: string) {
   pushRecent('slash', command)
+  const skillName = command.startsWith('/skill:') ? command.slice('/skill:'.length).trim() : ''
+  if (skillName) {
+    const skill = agentHub.skills.find(
+      (item) => item.id === skillName || item.name === skillName,
+    )
+    if (skill && !pendingSkills.value.some((item) => item.id === skill.id)) {
+      pendingSkills.value.push(skill)
+    }
+  }
   if (STAR_MODE_COMMANDS[command]) {
     starMode.value = STAR_MODE_COMMANDS[command]
     starModeExplicit.value = true
@@ -1047,6 +1130,10 @@ onMounted(() => {
   document.addEventListener('pointerdown', handleDocumentPointerDown)
   window.addEventListener('omichub:agentteams-create', handleAgentTeamsCreateEvent)
   getTextareaElement()?.addEventListener('scroll', syncHighlightScroll, { passive: true })
+  nextTick(() => {
+    bindAskScroller()
+    updateAskPill()
+  })
 })
 
 onUnmounted(() => {
@@ -1054,6 +1141,8 @@ onUnmounted(() => {
   document.removeEventListener('pointerdown', handleDocumentPointerDown)
   window.removeEventListener('omichub:agentteams-create', handleAgentTeamsCreateEvent)
   getTextareaElement()?.removeEventListener('scroll', syncHighlightScroll)
+  askScrollEl?.removeEventListener('scroll', updateAskPill)
+  askScrollEl = null
   if (goalSessionId.value) goalRuntime.disposeSession(goalSessionId.value)
 })
 
@@ -1069,7 +1158,17 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
 </script>
 
 <template>
-  <div class="ai-composer-shell">
+  <div ref="composerShellRef" class="ai-composer-shell">
+    <Transition name="ask-pill">
+      <button
+        v-if="askPillVisible"
+        type="button"
+        class="ask-pending-pill"
+        @click="scrollToPendingAsk"
+      >
+        有 {{ pendingAskQuestions }} 个待回答的问题 ↓
+      </button>
+    </Transition>
     <GoalStatusCard
       v-if="activeGoal"
       class="goal-status-dock"
@@ -1086,6 +1185,7 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
       class="kimi-chat-input"
       :class="{
         disabled,
+        'room-mode': roomMode,
         'popup-open': showSlashMenu || showMentionMenu || showMcpMenu,
         'drag-over': isDraggingOver,
       }"
@@ -1094,12 +1194,16 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
       @dragleave="handleDragLeave"
       @drop="handleDrop"
     >
+      <!-- ask_user 待回答常驻提示条：不改 placeholder，回答/跳过后自动消失 -->
+      <div v-if="hasPendingAsk" class="ask-waiting-bar" role="status">AI 正在等待你的回答</div>
+
       <Transition name="composer-menu" appear>
         <SlashCommandMenu
           v-if="showSlashMenu"
           ref="slashMenuRef"
           :query="slashQuery"
           :agents="agentHub.activeAgents"
+          :skills="agentHub.skills"
           @select="handleSlashSelect"
           @select-agent="handleSlashSelectAgent"
           @close="showSlashMenu = false"
@@ -1374,16 +1478,6 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
             </template>
             切换到 AI 工作台以执行代码、运行脚本并保存产物；当前对话历史会一并带过去
           </n-tooltip>
-          <n-dropdown
-            v-if="toolbar.more && !agentTeamsLocked"
-            trigger="click"
-            :options="moreMenuOptions"
-            @select="handleMoreSelect"
-          >
-            <n-button text class="toolbar-btn" aria-label="更多操作">
-              <n-icon size="18"><EllipsisHorizontalOutline /></n-icon>
-            </n-button>
-          </n-dropdown>
         </div>
 
         <div class="toolbar-right">
@@ -1436,19 +1530,23 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
               </n-tooltip>
             </template>
 
-            <n-button
-              v-else
-              circle
-              class="send-btn"
-              :class="{ active: canSend }"
-              :type="canSend ? 'primary' : 'default'"
-              :disabled="!canSend || disabled || sendLoading"
-              :loading="sendLoading"
-              aria-label="发送消息"
-              @click="handleSend"
-            >
-              <template #icon><n-icon size="18"><ArrowUpOutline /></n-icon></template>
-            </n-button>
+            <n-tooltip v-else trigger="hover">
+              <template #trigger>
+                <n-button
+                  circle
+                  class="send-btn"
+                  :class="{ active: canSend }"
+                  :type="canSend ? 'primary' : 'default'"
+                  :disabled="!canSend || disabled || sendLoading"
+                  :loading="sendLoading"
+                  aria-label="发送消息"
+                  @click="handleSend"
+                >
+                  <template #icon><n-icon size="18"><ArrowUpOutline /></n-icon></template>
+                </n-button>
+              </template>
+              发送消息（Enter）
+            </n-tooltip>
           </template>
         </div>
       </div>
@@ -1477,6 +1575,54 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
 .ai-composer-shell {
   width: 100%;
   min-width: 0;
+}
+
+/* 待回答 pill：毛玻璃轻量提示，点击平滑滚动到待回答卡片 */
+.ask-pending-pill {
+  display: block;
+  margin: 0 auto var(--space-sm);
+  padding: 6px 14px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--chat-accent, var(--arco-primary));
+  background: color-mix(in srgb, var(--chat-ai-card, var(--neutral-card)) 82%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in srgb, var(--chat-accent, var(--arco-primary)) 45%, transparent);
+  border-radius: 999px;
+  box-shadow: var(--chat-shadow-sm, var(--shadow-card));
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+
+  &:hover {
+    border-color: var(--chat-accent, var(--arco-primary));
+    background: color-mix(in srgb, var(--chat-ai-card, var(--neutral-card)) 92%, transparent);
+  }
+}
+
+.ask-pill-enter-active,
+.ask-pill-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.ask-pill-enter-from,
+.ask-pill-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+/* 输入框容器顶部的常驻细条提示（与 pill 同视觉体系） */
+.ask-waiting-bar {
+  margin-bottom: var(--space-sm);
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--chat-text-secondary, var(--neutral-text-2));
+  background: color-mix(in srgb, var(--chat-accent, var(--arco-primary)) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--chat-accent, var(--arco-primary)) 20%, transparent);
+  border-radius: 6px;
+  user-select: none;
 }
 .agentteams-case-actions { display: flex; justify-content: flex-end; gap: var(--space-sm); }
 
@@ -1513,9 +1659,19 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
   padding: var(--space-md) var(--space-lg);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 
+  &.room-mode {
+    border-color: color-mix(in srgb, var(--arco-primary) 32%, var(--neutral-border));
+    border-radius: 20px;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--arco-primary) 10%, transparent);
+  }
+
   &:focus-within {
     border-color: var(--arco-primary);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--arco-primary) 18%, transparent);
+  }
+
+  &.room-mode:focus-within {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--arco-primary) 18%, transparent);
   }
 
   &.disabled {
@@ -1974,6 +2130,9 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
   .kimi-chat-input,
   .input-toolbar .toolbar-btn,
   .input-toolbar .send-btn,
+  .ask-pending-pill,
+  .ask-pill-enter-active,
+  .ask-pill-leave-active,
   :deep(.composer-menu-enter-active),
   :deep(.composer-menu-leave-active) {
     transition: none;

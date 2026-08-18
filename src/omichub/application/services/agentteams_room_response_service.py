@@ -27,13 +27,21 @@ from omichub.application.services.agentteams_capability_registry import (
 )
 from omichub.application.services.agentteams_execution_intent import (
     GENERAL_PLAN_CONTRACT,
-    detect_execution_intent,
+    ExecutionIntent,
+    classify_execution_intent,
+    has_explicit_object,
+)
+from omichub.application.services.agentteams_route_decision import (
+    ROUTE_DECISION_EVENT_TYPE,
+    build_route_decision,
+    summarize_route_decision,
 )
 from omichub.application.services.agentteams_service import (
     AUTO_CONFIRM_CASES_KEY,
     CASE_LEVEL_WORK_ITEM_ID,
     AgentTeamsService,
 )
+from omichub.application.services.flow_registry import FlowRegistry
 from omichub.infrastructure.cache.redis_client import get_redis
 from omichub.infrastructure.database.models.user import UserModel
 
@@ -42,6 +50,19 @@ ROOM_RESPONSE_LOCK_TTL_SECONDS = 180
 _CONTEXT_EVENT_LIMIT = 30
 _CONTEXT_EVENT_SUMMARY_LINES = 8
 _PREFERRED_MANAGER_AGENT_ID = "agent-general"
+
+# 执行对象澄清（O6 阶段 2）：clarify 态下 Manager 直发选项式追问卡片，
+# 复用 room.ask_user / AskUserCard 的渲染与【澄清回复】回填链路。
+CLARIFY_KIND_EXECUTION_OBJECT = "execution_object"
+MAX_EXECUTION_CLARIFY_ROUNDS = 2
+ROOM_ASK_REPLY_MARKER = "【澄清回复】"
+_CLARIFY_OPT_OUT_MARKERS = ("先不执行", "暂不执行", "先讨论", "继续讨论", "不用了", "取消")
+_CLARIFY_EXHAUSTED_NOTE = (
+    "系统提示：就该执行请求已进行 "
+    f"{MAX_EXECUTION_CLARIFY_ROUNDS} 轮选项式追问，仍未获得可执行的作用对象（输入文件/数据）。"
+    "本轮按纯对话处理：请向用户说明暂时无法直接执行的原因，"
+    "并建议其上传文件、引用工作区已有数据或给出公共数据库 accession 后重试。"
+)
 
 _RELEASE_LOCK_LUA = """
 if redis.call('GET', KEYS[1]) == ARGV[1] then
@@ -62,12 +83,14 @@ class AgentTeamsRoomResponseService:
         registry: AgentTeamsCapabilityRegistry | None = None,
         redis_getter: Callable[[], Any] = get_redis,
         lock_ttl_seconds: int = ROOM_RESPONSE_LOCK_TTL_SECONDS,
+        flow_registry: FlowRegistry | None = None,
     ) -> None:
         self._db = db
         self._agentteams = agentteams
         self._registry = registry or get_agentteams_capability_registry()
         self._redis_getter = redis_getter
         self._lock_ttl = lock_ttl_seconds
+        self._flow_registry = flow_registry
 
     async def respond(self, case_id: str, requester_ref: str, content: str) -> dict[str, str]:
         lock_key = f"{ROOM_RESPONSE_LOCK_KEY_PREFIX}{case_id}"
@@ -102,7 +125,7 @@ class AgentTeamsRoomResponseService:
                 item for item in events.get("events", []) if isinstance(item, dict)
             ]
             preferences = await self._manager_preferences(requester_ref)
-            execution_started = await self._maybe_start_chat_execution(
+            execution_outcome = await self._maybe_start_chat_execution(
                 case_id=case_id,
                 requester_ref=requester_ref,
                 case=case,
@@ -110,16 +133,26 @@ class AgentTeamsRoomResponseService:
                 content=content,
                 preferences=preferences,
             )
+            if execution_outcome == "clarified":
+                # clarify 态：选项式追问卡片已落 room.ask_user，本轮不再跑
+                # LLM 会诊，避免与澄清卡片重复回复；答案将作为下一条
+                # room.user_message 回到本回路。
+                return {"status": "asked"}
             # 触发成功后 Bridge 侧已推进到 planning_running；用拷贝覆盖快照状态，
             # 避免 Manager 按触发前的 received 快照作答。
             question_case = (
-                {**case, "status": "planning_running"} if execution_started else case
+                {**case, "status": "planning_running"}
+                if execution_outcome == "started"
+                else case
             )
             question = self._build_question(
                 question_case,
                 event_items,
                 content,
                 preferences,
+                system_note=(
+                    _CLARIFY_EXHAUSTED_NOTE if execution_outcome == "degraded" else None
+                ),
             )
             agent_id = self._manager_agent_id()
             if agent_id is None:
@@ -141,8 +174,29 @@ class AgentTeamsRoomResponseService:
                     requester_ref=requester_ref,
                 )
                 reply = envelope.conclusion.strip()
-                if not reply:
+                questions = [
+                    {"question": item.question.strip(), "options": item.options}
+                    for item in (getattr(envelope, "ask_user", None) or [])
+                    if item.question.strip()
+                ]
+                if not reply and not questions:
                     return {"status": "failed"}
+                if questions:
+                    # 澄清问题走可交互卡片：前端渲染 ask_user 弹窗，答案作为下一条
+                    # room.user_message 回到本响应回路。
+                    await self._agentteams.post_case_evidence(
+                        case_id,
+                        work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                        event_type="room.ask_user",
+                        summary=(reply or questions[0]["question"])[:200],
+                        payload={
+                            "content": reply[:4_000],
+                            "agent_id": agent_id,
+                            "role": "bioops-manager",
+                            "questions": questions,
+                        },
+                    )
+                    return {"status": "asked"}
                 await self._agentteams.post_case_evidence(
                     case_id,
                     work_item_id=CASE_LEVEL_WORK_ITEM_ID,
@@ -170,27 +224,70 @@ class AgentTeamsRoomResponseService:
         events: list[dict[str, Any]],
         content: str,
         preferences: dict[str, Any] | None = None,
-    ) -> bool:
-        """聊天式 Case 命中执行意图时自动启动 planning；返回是否已触发。
+    ) -> str:
+        """聊天式 Case 的执行意图三态处理；返回处理结果。
+
+        返回值：``started``（execute 态，已触发 planning）/ ``clarified``
+        （clarify 态，已落选项式追问卡片）/ ``degraded``（追问轮次耗尽，
+        降级为纯对话）/ ``none``（chat 态或触发失败，走正常 Manager 回复）。
 
         仅对无 flow_id、仍处于 received、且尚无 plan-01 的 Case 生效——flow 型
         Case 的人工审批链路绝不旁路。触发失败只记日志，不影响 Manager 回复。
         若用户偏好为 autonomous，将该 Case 加入自动确认集合，以便进入
-        approval_pending 后无需人工审批。
+        approval_pending 后无需人工审批。clarify 态不推送 route_decision
+        执行卡片（O1 兼容约束）。
         """
         if case.get("flow_id") or case.get("status") != "received":
-            return False
+            return "none"
         work_items = case.get("work_items")
         if isinstance(work_items, list) and any(
             isinstance(item, dict) and item.get("work_item_id") == "plan-01"
             for item in work_items
         ):
-            return False
+            return "none"
         refs = self._latest_message_context_refs(events, content)
-        if not detect_execution_intent(content, refs):
-            return False
-        # Bridge objective 上限 1000 字符：用户原话截断后附通用计划契约尾段。
-        objective = f"{content.strip()[:600]}\n\n{GENERAL_PLAN_CONTRACT}"
+        pending_clarify = self._pending_execution_clarify(events, content)
+        if pending_clarify and any(marker in content for marker in _CLARIFY_OPT_OUT_MARKERS):
+            # 用户在澄清中明确放弃执行：按纯对话处理，不再追问。
+            return "none"
+        intent = classify_execution_intent(content, refs)
+        origin_content: str | None = None
+        if pending_clarify and intent is not ExecutionIntent.EXECUTE:
+            if has_explicit_object(content, refs):
+                # 澄清回复补全了作用对象：沿用原始执行请求，自动转入 execute。
+                intent = ExecutionIntent.EXECUTE
+                origin_content = self._pending_clarify_origin(events, content)
+            elif intent is ExecutionIntent.CHAT and content.strip().startswith(
+                ROOM_ASK_REPLY_MARKER
+            ):
+                # 结构化澄清答复仍未给出对象：推进追问轮次（受轮次上限约束）。
+                intent = ExecutionIntent.CLARIFY
+        if intent is ExecutionIntent.CHAT:
+            return "none"
+        if intent is ExecutionIntent.CLARIFY:
+            rounds = self._execution_clarify_rounds(events)
+            if rounds >= MAX_EXECUTION_CLARIFY_ROUNDS:
+                logger.bind(case_id=case_id).info(
+                    "AgentTeams execution clarify exhausted after {} rounds, degraded to chat",
+                    rounds,
+                )
+                return "degraded"
+            emitted = await self._emit_execution_clarify(
+                case_id, content, round_no=rounds + 1
+            )
+            return "clarified" if emitted else "none"
+        # execute 态：路由决策卡（O1）：执行意图成立即外显路由决策，不改变路由逻辑本身。
+        await self._emit_route_decision(case_id, content)
+        # Bridge objective 上限 1000 字符：用户原话截断后附通用计划契约尾段；
+        # 经澄清补全的执行沿用原始请求，并附用户补充的作用对象说明。
+        if origin_content is not None:
+            objective = (
+                f"{origin_content[:600]}\n\n"
+                f"用户补充的作用对象：{content.strip()[:200]}\n\n"
+                f"{GENERAL_PLAN_CONTRACT}"
+            )
+        else:
+            objective = f"{content.strip()[:600]}\n\n{GENERAL_PLAN_CONTRACT}"
         try:
             await self._agentteams.start_chat_planning(
                 case_id=case_id,
@@ -202,7 +299,7 @@ class AgentTeamsRoomResponseService:
             logger.bind(case_id=case_id).warning(
                 "AgentTeams chat execution trigger failed: {}", exc
             )
-            return False
+            return "none"
         if preferences.get("autonomy") == "autonomous":
             try:
                 redis = self._redis_getter()
@@ -214,7 +311,164 @@ class AgentTeamsRoomResponseService:
         logger.bind(case_id=case_id).info(
             "AgentTeams chat execution intent detected, planning started"
         )
+        return "started"
+
+    async def _emit_execution_clarify(
+        self, case_id: str, content: str, *, round_no: int
+    ) -> bool:
+        """clarify 态：落 ``room.ask_user`` 选项式追问卡片（AskUserCard 渲染）。
+
+        复用 phylo 域 intake questions 的同一条渲染与回答回收链路：前端把答案
+        格式化为带【澄清回复】前缀的下一条 room.user_message 回到响应回路。
+        卡片发送失败时返回 False，调用方回退到正常 Manager 回复。
+        """
+        brief = content.strip().replace("\n", " ")[:80]
+        if round_no <= 1:
+            question = (
+                f"收到你的执行请求「{brief}」，但还缺少明确的作用对象（输入文件/数据）。"
+                "请确认数据来源："
+            )
+            options = [
+                "上传文件后执行（推荐）",
+                "使用工作区已有数据（请回复文件名或路径）",
+                "从公共数据库检索（请回复 accession 或关键词）",
+                "先不执行，继续讨论方案",
+            ]
+        else:
+            question = (
+                "仍未拿到可执行的作用对象：请直接上传文件，或回复工作区文件名/路径"
+                "（如 genes.xlsx），或公共数据库 accession/检索关键词。"
+            )
+            options = ["我去上传文件", "回复文件名或路径", "先不执行了"]
+        try:
+            await self._agentteams.post_case_evidence(
+                case_id,
+                work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                event_type="room.ask_user",
+                summary=question[:200],
+                payload={
+                    "content": "需要你先确认数据来源，再启动执行。",
+                    "agent_id": self._manager_agent_id() or "bioops-manager",
+                    "role": "bioops-manager",
+                    "questions": [{"question": question, "options": options}],
+                    "clarify_kind": CLARIFY_KIND_EXECUTION_OBJECT,
+                    "round": round_no,
+                    "origin_content": content.strip()[:600],
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - 澄清卡片失败回退到正常回复
+            logger.bind(case_id=case_id).warning(
+                "AgentTeams execution clarify event failed: {}", exc
+            )
+            return False
+        logger.bind(case_id=case_id).info(
+            "AgentTeams execution intent unclear (no object), clarify round {} asked",
+            round_no,
+        )
         return True
+
+    @classmethod
+    def _is_execution_clarify_event(cls, event: dict[str, Any]) -> bool:
+        if event.get("event_type") != "room.ask_user":
+            return False
+        payload = cls._payload_dict(event)
+        inner_raw = payload.get("payload")
+        inner = dict(inner_raw) if isinstance(inner_raw, dict) else {}
+        return inner.get("clarify_kind") == CLARIFY_KIND_EXECUTION_OBJECT
+
+    @classmethod
+    def _execution_clarify_rounds(cls, events: list[dict[str, Any]]) -> int:
+        """已发出的执行对象澄清轮次（按澄清卡片计数）。"""
+        return sum(1 for event in events if cls._is_execution_clarify_event(event))
+
+    @classmethod
+    def _current_message_index(
+        cls, events: list[dict[str, Any]], content: str
+    ) -> int | None:
+        target = content.strip()
+        for index in range(len(events) - 1, -1, -1):
+            event = events[index]
+            if event.get("event_type") != "room.user_message":
+                continue
+            payload = cls._payload_dict(event)
+            inner_raw = payload.get("payload")
+            inner = dict(inner_raw) if isinstance(inner_raw, dict) else {}
+            event_content = str(inner.get("content") or payload.get("summary") or "").strip()
+            if event_content == target:
+                return index
+        return None
+
+    @classmethod
+    def _pending_execution_clarify(
+        cls, events: list[dict[str, Any]], content: str
+    ) -> bool:
+        """当前发言是否处于“执行对象澄清待补全”状态。
+
+        即：当前发言之前最近的一张执行对象澄清卡之后没有其他用户发言——
+        当前发言就是对那张卡片的回答。
+        """
+        current_index = cls._current_message_index(events, content)
+        scan = events[:current_index] if current_index is not None else events
+        pending = False
+        for event in scan:
+            if event.get("event_type") == "room.user_message":
+                pending = False
+            elif cls._is_execution_clarify_event(event):
+                pending = True
+        return pending
+
+    @classmethod
+    def _pending_clarify_origin(
+        cls, events: list[dict[str, Any]], content: str
+    ) -> str | None:
+        """取待补全澄清卡记录的原始执行请求（供补全后拼接执行目标）。"""
+        current_index = cls._current_message_index(events, content)
+        scan = events[:current_index] if current_index is not None else events
+        for event in reversed(scan):
+            if not cls._is_execution_clarify_event(event):
+                continue
+            payload = cls._payload_dict(event)
+            inner_raw = payload.get("payload")
+            inner = dict(inner_raw) if isinstance(inner_raw, dict) else {}
+            origin = str(inner.get("origin_content") or "").strip()
+            return origin or None
+        return None
+
+    async def _emit_route_decision(self, case_id: str, content: str) -> None:
+        """落 ``room.route_decision`` 事件并写结构化日志；任何失败仅记 warning。
+
+        只外显决策结果（路径 / 命中关键词 / Planner 评分 / 预计阶段 / 置信度），
+        不改变意图路由与规划逻辑；卡片发送失败绝不影响执行触发主流程。
+        """
+        try:
+            decision = build_route_decision(
+                content,
+                flow_registry=self._flow_registry,
+                capability_registry=self._registry,
+            )
+        except Exception as exc:  # noqa: BLE001 - 决策构建失败不得影响执行触发
+            logger.bind(case_id=case_id).warning("AgentTeams route decision build failed: {}", exc)
+            return
+        if decision is None:
+            return
+        try:
+            await self._agentteams.post_case_evidence(
+                case_id,
+                work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                event_type=ROUTE_DECISION_EVENT_TYPE,
+                summary=summarize_route_decision(decision)[:200],
+                payload=decision,
+            )
+        except Exception as exc:  # noqa: BLE001 - 卡片发送失败不得影响执行触发
+            logger.bind(case_id=case_id).warning("AgentTeams route decision event failed: {}", exc)
+            return
+        logger.bind(case_id=case_id, route_decision=decision).info(
+            "AgentTeams route decision: path={} flow={} lead_planner={} confidence={}",
+            decision["path"],
+            decision["flow_id"],
+            decision["lead_planner"],
+            decision["confidence"],
+        )
 
     async def _set_typing(self, case_id: str, *, typing: bool) -> None:
         """落 ``room.typing`` 瞬时事件驱动房间页"正在输入"指示；失败仅记日志。
@@ -298,6 +552,7 @@ class AgentTeamsRoomResponseService:
         events: list[dict[str, Any]],
         fallback_content: str,
         preferences: dict[str, Any] | None = None,
+        system_note: str | None = None,
     ) -> str:
         preferences = preferences or {}
         latest_user_message = fallback_content.strip()
@@ -335,7 +590,16 @@ class AgentTeamsRoomResponseService:
             "若用户要求基于文件绘图、运行分析或生成产物，必须明确这是计算执行请求，"
             "不得假装已经产出结果；应说明当前 Case 是否与该目标一致，以及下一步会进入"
             "规划、确认、执行和产物交付中的哪个阶段。\n"
-            f"全局回复偏好：称呼自己为「{manager_name}」；沟通语言为{language}；"
+            "澄清协议（强制）：若最新发言缺少继续推进所需的关键信息（如输入数据形式、"
+            "物种与参考基因组、样本分组与生物学重复、分析目标、交付物），禁止只在 "
+            "conclusion 正文里罗列编号问题；必须在 JSON 信封的 ask_user 字段输出结构化"
+            "问题数组（最多 5 个），每项形如 "
+            '{"question":"...","options":["候选 A","候选 B"]}，options 给 2-4 个可点选'
+            "候选（有推荐项时放第一位并以（推荐）标注），无法预设选项的问题 options 留空数组。"
+            "使用 ask_user 时 conclusion 只写一句简短引导语，不得重复问题正文；"
+            "信息充分、无需澄清时 ask_user 必须留空数组。\n"
+            + (f"{system_note}\n" if system_note else "")
+            + f"全局回复偏好：称呼自己为「{manager_name}」；沟通语言为{language}；"
             f"沟通风格为{style}；执行偏好为{autonomy}。\n"
             f"Case 目标：{str(case.get('intent') or '')[:200]}\n"
             f"Case 当前状态：{str(case.get('status') or '')}\n"

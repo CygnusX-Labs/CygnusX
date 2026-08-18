@@ -25,17 +25,25 @@ from .shared_state import RedisStateBackend
 # Module-level aliases: class-scope annotations below would resolve ``list`` to the
 # ``CaseStore.list`` method, so the container types must be named here at module scope.
 LeaseExpiredRequeues = list[tuple[str, WorkItemRecord]]  # (case_id, pre-reset snapshot)
-AssignedWorkItemsResult = tuple[list[tuple[CaseRecord, WorkItemRecord]], LeaseExpiredRequeues]
+SweepResult = tuple[
+    LeaseExpiredRequeues,  # lease-expired items requeued to pending for reassignment
+    LeaseExpiredRequeues,  # lease-expired items whose retry budget is exhausted -> timeout
+    list[tuple[str, str]],  # (case_id, work_item_id) retryable failures promoted to pending
+]
+AssignedWorkItemsResult = tuple[list[tuple[CaseRecord, WorkItemRecord]], SweepResult]
 
 _WORK_ITEM_TRANSITIONS: dict[WorkItemStatus, set[WorkItemStatus]] = {
-    "pending": {"claimed", "cancelled"},
-    "claimed": {"running", "completed", "failed", "awaiting_approval", "blocked", "pending", "cancelled"},
-    "running": {"completed", "failed", "awaiting_approval", "blocked", "cancelled", "pending"},
+    "pending": {"claimed", "skipped", "cancelled"},
+    "claimed": {"running", "completed", "failed", "awaiting_approval", "blocked", "pending", "timeout", "cancelled"},
+    "running": {"completed", "failed", "awaiting_approval", "blocked", "timeout", "cancelled", "pending"},
     "awaiting_approval": {"running", "cancelled"},
-    "in_progress": {"running", "completed", "failed", "blocked", "cancelled", "pending"},
+    "in_progress": {"running", "completed", "failed", "blocked", "timeout", "cancelled", "pending"},
     "completed": set(),
     "blocked": {"pending", "cancelled"},
     "failed": {"pending", "claimed", "cancelled"},
+    # skipped/timeout are terminal for automation; only a Manager may requeue them.
+    "skipped": {"pending", "cancelled"},
+    "timeout": {"pending", "cancelled"},
     "cancelled": set(),
 }
 
@@ -181,16 +189,15 @@ class CaseStore:
     async def list_assigned_work_items(
         self, target: str, statuses: set[str]
     ) -> AssignedWorkItemsResult:
-        """Return assigned items plus the pre-reset snapshots of lease-expired requeues.
+        """Return assigned items plus the sweep outcome for audit/visibility.
 
-        The second element lets the service layer write audit events for work items
-        that were silently reclaimed, so the timeline shows the requeue instead of
-        an unexplained duplicate claim.
+        The sweep result lets the service layer write audit events for work items
+        that were reclaimed, timed out, or requeued, so the timeline shows the
+        recovery instead of an unexplained duplicate claim.
         """
         async with self._lock:
-            expired = self._requeue_expired_locked()
-            retryable = self._requeue_retryable_failures_locked()
-            if expired or retryable:
+            sweep = self._sweep_locked()
+            if sweep[0] or sweep[1] or sweep[2]:
                 await self._persist()
             assigned = [
                 (case, work_item)
@@ -198,7 +205,19 @@ class CaseStore:
                 for work_item in case.work_items
                 if work_item.target == target and work_item.status in statuses
             ]
-            return sorted(assigned, key=lambda item: item[1].updated_at, reverse=True), expired
+            return sorted(assigned, key=lambda item: item[1].updated_at, reverse=True), sweep
+
+    async def sweep_expired_work_items(self) -> SweepResult:
+        """Reclaim expired leases and promote retry-ready failures; no inbox poll needed.
+
+        Used by the background watchdog so a killed Worker's assignments are
+        recovered even when no other Worker is polling its inbox.
+        """
+        async with self._lock:
+            sweep = self._sweep_locked()
+            if sweep[0] or sweep[1] or sweep[2]:
+                await self._persist()
+            return sweep
 
     async def delete(self, case_id: str) -> bool:
         """Remove a Case from the store; used by Case GC after audit cleanup."""
@@ -223,7 +242,7 @@ class CaseStore:
             now = datetime.now(UTC)
             work_items = [
                 item
-                if item.status in {"completed", "cancelled"}
+                if item.status in {"completed", "cancelled", "skipped", "timeout"}
                 else item.model_copy(
                     update={
                         "status": "cancelled",
@@ -620,6 +639,11 @@ class CaseStore:
                     status_code=status.HTTP_409_CONFLICT,
                     detail=f"Work item dependencies are not completed: {unmet_dependencies}",
                 )
+            if work_item.status in {"completed", "cancelled", "skipped", "timeout"}:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Work item is terminal ({work_item.status})",
+                )
             lease_expired = self._lease_expired(work_item, now)
             retryable_failure = work_item.status == "failed" and work_item.attempt < work_item.max_attempts
             if (
@@ -763,41 +787,55 @@ class CaseStore:
             await self._persist()
             return updated_item
 
-    def _requeue_expired_locked(self) -> LeaseExpiredRequeues:
+    def _sweep_locked(self) -> SweepResult:
+        """Single atomic sweep: reclaim expired leases and promote retryable failures.
+
+        An expired lease with retry budget left goes back to ``pending`` for
+        same-role reassignment; once the budget is exhausted the item becomes
+        ``timeout`` (terminal) so the service layer can cascade-skip dependents
+        instead of silently requeueing forever.
+        """
         now = datetime.now(UTC)
         requeued: LeaseExpiredRequeues = []
+        timed_out: LeaseExpiredRequeues = []
+        retryable: list[tuple[str, str]] = []
         for case_id, case in list(self._cases.items()):
             changed = False
             work_items: list[WorkItemRecord] = []
             for item in case.work_items:
-                if item.status in {"claimed", "running", "in_progress"} and self._lease_expired(item, now):
-                    requeued.append((case_id, item))
-                    work_items.append(
-                        item.model_copy(
-                            update={
-                                "status": "pending",
-                                "lease_owner": None,
-                                "lease_expires_at": None,
-                                "updated_at": now,
-                            }
-                        )
-                    )
-                    changed = True
-                else:
-                    work_items.append(item)
-            if changed:
-                self._cases[case_id] = case.model_copy(
-                    update={"work_items": work_items, "updated_at": now}
+                lease_lost = (
+                    item.status in {"claimed", "running", "in_progress"}
+                    and self._lease_expired(item, now)
                 )
-        return requeued
-
-    def _requeue_retryable_failures_locked(self) -> list[tuple[str, str]]:
-        now = datetime.now(UTC)
-        requeued: list[tuple[str, str]] = []
-        for case_id, case in list(self._cases.items()):
-            changed = False
-            work_items: list[WorkItemRecord] = []
-            for item in case.work_items:
+                if lease_lost:
+                    if item.attempt < item.max_attempts:
+                        requeued.append((case_id, item))
+                        work_items.append(
+                            item.model_copy(
+                                update={
+                                    "status": "pending",
+                                    "lease_owner": None,
+                                    "lease_expires_at": None,
+                                    "updated_at": now,
+                                }
+                            )
+                        )
+                    else:
+                        timed_out.append((case_id, item))
+                        work_items.append(
+                            item.model_copy(
+                                update={
+                                    "status": "timeout",
+                                    "summary": item.summary
+                                    or "Worker 失联：租约超时且重试预算已耗尽。",
+                                    "lease_owner": None,
+                                    "lease_expires_at": None,
+                                    "updated_at": now,
+                                }
+                            )
+                        )
+                    changed = True
+                    continue
                 retry_ready = (
                     item.status == "failed"
                     and item.attempt < item.max_attempts
@@ -815,7 +853,7 @@ class CaseStore:
                             }
                         )
                     )
-                    requeued.append((case_id, item.work_item_id))
+                    retryable.append((case_id, item.work_item_id))
                     changed = True
                 else:
                     work_items.append(item)
@@ -823,7 +861,128 @@ class CaseStore:
                 self._cases[case_id] = case.model_copy(
                     update={"work_items": work_items, "updated_at": now}
                 )
-        return requeued
+        return requeued, timed_out, retryable
+
+    async def skip_dependents(self, case_id: str, work_item_id: str, reason: str) -> list[WorkItemRecord]:
+        """Cascade-skip every not-yet-started transitive dependent of a dead work item."""
+        async with self._lock:
+            case = self._cases.get(case_id)
+            if case is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+            dead: set[str] = {work_item_id}
+            skipped: list[WorkItemRecord] = []
+            work_items = list(case.work_items)
+            now = datetime.now(UTC)
+            while True:
+                newly_dead: set[str] = set()
+                for index, item in enumerate(work_items):
+                    if item.work_item_id in dead:
+                        continue
+                    if item.status not in {"pending", "blocked"}:
+                        continue
+                    if not dead.intersection(item.depends_on):
+                        continue
+                    skipped_item = item.model_copy(
+                        update={
+                            "status": "skipped",
+                            "summary": f"上游工作项不可恢复，本工作项被级联跳过：{reason}"[:1000],
+                            "lease_owner": None,
+                            "lease_expires_at": None,
+                            "retry_not_before": None,
+                            "updated_at": now,
+                        }
+                    )
+                    work_items[index] = skipped_item
+                    skipped.append(skipped_item)
+                    newly_dead.add(item.work_item_id)
+                if not newly_dead:
+                    break
+                dead |= newly_dead
+            if skipped:
+                self._cases[case_id] = case.model_copy(
+                    update={"work_items": work_items, "updated_at": now}
+                )
+                await self._persist()
+            return skipped
+
+    async def manager_requeue_work_item(self, case_id: str, work_item_id: str) -> WorkItemRecord:
+        """Manual retry: reset a settled-failure work item to pending with a fresh budget."""
+        async with self._lock:
+            case = self._cases.get(case_id)
+            if case is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+            work_item = next(
+                (item for item in case.work_items if item.work_item_id == work_item_id), None
+            )
+            if work_item is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work item not found")
+            if work_item.status not in {"failed", "skipped", "timeout", "blocked"}:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Work item in status {work_item.status} cannot be manually requeued",
+                )
+            now = datetime.now(UTC)
+            requeued = work_item.model_copy(
+                update={
+                    "status": "pending",
+                    "attempt": 0,
+                    "lease_owner": None,
+                    "lease_expires_at": None,
+                    "retry_not_before": None,
+                    "trace_id": None,
+                    "updated_at": now,
+                }
+            )
+            self._cases[case_id] = case.model_copy(
+                update={
+                    "work_items": [
+                        requeued if item.work_item_id == work_item_id else item
+                        for item in case.work_items
+                    ],
+                    "updated_at": now,
+                }
+            )
+            await self._persist()
+            return requeued
+
+    async def manager_cancel_work_item(self, case_id: str, work_item_id: str) -> WorkItemRecord:
+        """Manager force-cancel of a non-terminal work item, clearing any held lease."""
+        async with self._lock:
+            case = self._cases.get(case_id)
+            if case is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+            work_item = next(
+                (item for item in case.work_items if item.work_item_id == work_item_id), None
+            )
+            if work_item is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work item not found")
+            if work_item.status in {"completed", "cancelled"}:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Work item in status {work_item.status} cannot be cancelled",
+                )
+            now = datetime.now(UTC)
+            cancelled = work_item.model_copy(
+                update={
+                    "status": "cancelled",
+                    "lease_owner": None,
+                    "lease_expires_at": None,
+                    "retry_not_before": None,
+                    "cancelled_at": now,
+                    "updated_at": now,
+                }
+            )
+            self._cases[case_id] = case.model_copy(
+                update={
+                    "work_items": [
+                        cancelled if item.work_item_id == work_item_id else item
+                        for item in case.work_items
+                    ],
+                    "updated_at": now,
+                }
+            )
+            await self._persist()
+            return cancelled
 
     @staticmethod
     def _lease_expired(work_item: WorkItemRecord, now: datetime) -> bool:

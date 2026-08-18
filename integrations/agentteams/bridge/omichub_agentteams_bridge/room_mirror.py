@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 ROOM_BINDING_EVENT_TYPE = "room.created"
 USER_MESSAGE_EVENT_TYPE = "room.user_message"
 AGENT_MESSAGE_EVENT_TYPE = "room.agent_message"
+ASK_USER_EVENT_TYPE = "room.ask_user"
 # 瞬时/回源事件不进 Matrix：room.typing 只是前端指示；via=matrix 的事件本就
 # 来自 Matrix（反向同步回投），再镜像会造成回声循环。
 TRANSIENT_EVENT_TYPES = frozenset({"room.typing"})
@@ -132,6 +133,21 @@ class AuditRoomMirror:
             # Manager 回复：统一以 bioops-manager 身份发送（agent 身份未必在 Matrix
             # identity map 中），展示名取 payload 里的 role/agent_id。
             content = str(inner.get("content") or payload.get("summary") or "").strip()
+            name = str(inner.get("role") or inner.get("agent_id") or actor or "协作经理")
+            return _FALLBACK_SENDER_IDENTITY, content, {"kind": "agent", "name": name}
+        if event_type == ASK_USER_EVENT_TYPE:
+            # Manager 澄清卡片：Matrix 侧降级为纯文本（引导语 + 编号问题），
+            # 交互作答仍在平台房间页进行。
+            intro = str(inner.get("content") or "").strip()
+            questions = inner.get("questions")
+            lines = [
+                f"{index}. {str(item.get('question') or '').strip()}"
+                for index, item in enumerate(questions or [], start=1)
+                if isinstance(item, dict) and str(item.get("question") or "").strip()
+            ]
+            content = "\n".join(part for part in [intro, *lines] if part)
+            if not content:
+                content = str(payload.get("summary") or "").strip()
             name = str(inner.get("role") or inner.get("agent_id") or actor or "协作经理")
             return _FALLBACK_SENDER_IDENTITY, content, {"kind": "agent", "name": name}
         summary = str(payload.get("summary") or payload.get("status") or "").strip()

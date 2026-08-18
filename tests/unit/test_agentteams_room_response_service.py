@@ -306,6 +306,53 @@ def test_lock_key_namespaced_per_case() -> None:
     assert ROOM_RESPONSE_LOCK_KEY_PREFIX == "agentteams:room-response:lock:"
 
 
+@pytest.mark.asyncio
+async def test_respond_posts_ask_user_card_when_manager_requests_clarification(monkeypatch) -> None:
+    """Manager 信封携带 ask_user 问题时落 room.ask_user 事件，而非纯文本回复。"""
+    agentteams = _agentteams(status="received")
+    run = AsyncMock(
+        return_value=ConsultationEnvelope(
+            conclusion="启动规划前需要你确认几个关键信息。",
+            ask_user=[
+                {
+                    "question": "输入数据是计数矩阵还是 FASTQ？",
+                    "options": ["已有计数矩阵", "从 FASTQ 开始"],
+                },
+                {"question": "物种与参考基因组版本？", "options": []},
+            ],
+        )
+    )
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+
+    # 注意：消息文本不得含执行动词，否则会先命中 clarify 中间态而不走 LLM 会诊。
+    result = await _service(
+        agentteams=agentteams, registry=_registry("agent-general"), redis=FakeRedis()
+    ).respond("bioops_1", "user-a", "想确认一下这个 Case 的分组设置")
+
+    assert result == {"status": "asked"}
+    event_types = [call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list]
+    assert event_types == ["room.typing", "room.ask_user", "room.typing"]
+    ask_call = agentteams.post_case_evidence.await_args_list[1]
+    assert ask_call.kwargs["work_item_id"] == "case"
+    assert ask_call.kwargs["payload"]["content"] == "启动规划前需要你确认几个关键信息。"
+    assert ask_call.kwargs["payload"]["role"] == "bioops-manager"
+    assert ask_call.kwargs["payload"]["questions"] == [
+        {"question": "输入数据是计数矩阵还是 FASTQ？", "options": ["已有计数矩阵", "从 FASTQ 开始"]},
+        {"question": "物种与参考基因组版本？", "options": []},
+    ]
+
+
+def test_build_question_instructs_structured_ask_user() -> None:
+    question = AgentTeamsRoomResponseService._build_question(
+        {"intent": "RNA-seq 数据分析", "status": "received"},
+        [],
+        "rna-seq 数据分析",
+    )
+
+    assert "ask_user" in question
+    assert "禁止只在 conclusion 正文里罗列编号问题" in question
+
+
 _EXECUTION_EVENTS = [
     {
         "event_type": "room.user_message",
@@ -354,7 +401,15 @@ async def test_execution_intent_starts_chat_planning_and_still_responds(monkeypa
     # autonomous 模式下无需人工确认，旧版教育话术已移除
     assert "计划冻结后会在房间内请求你确认" not in question
     event_types = [call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list]
-    assert event_types == ["room.typing", "room.agent_message", "room.typing"]
+    assert event_types == ["room.route_decision", "room.typing", "room.agent_message", "room.typing"]
+    route_call = agentteams.post_case_evidence.await_args_list[0]
+    assert route_call.kwargs["work_item_id"] == "case"
+    decision = route_call.kwargs["payload"]
+    # “treefile 可视化”不命中任何流程：走通用 Overdrive 路径，置信度为待确认。
+    assert decision["path"] == "overdrive"
+    assert decision["flow_id"] is None
+    assert decision["confidence"] == "ambiguous"
+    assert decision["options"]
 
 
 @pytest.mark.asyncio
@@ -391,6 +446,8 @@ async def test_execution_intent_not_triggered_when_gates_fail(
 
     assert result == {"status": "responded"}
     agentteams.start_chat_planning.assert_not_awaited()
+    event_types = [call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list]
+    assert "room.route_decision" not in event_types
 
 
 @pytest.mark.asyncio
@@ -406,6 +463,200 @@ async def test_execution_trigger_failure_does_not_break_manager_reply(monkeypatc
 
     assert result == {"status": "responded"}
     assert "计划冻结后会在房间内请求你确认" not in run.await_args.kwargs["question"]
+
+
+# ---- O6 阶段 2：clarify 中间态（执行动词成立但无作用对象）----
+
+
+def _user_message_event(content: str, context_refs: list[dict] | None = None) -> dict:
+    inner: dict = {"actor": "user-a", "content": content}
+    if context_refs:
+        inner["context_refs"] = context_refs
+    return {
+        "event_type": "room.user_message",
+        "payload": {"summary": content[:80], "payload": inner},
+    }
+
+
+def _clarify_card_event(origin_content: str, round_no: int) -> dict:
+    return {
+        "event_type": "room.ask_user",
+        "payload": {
+            "summary": "请确认数据来源",
+            "payload": {
+                "content": "需要你先确认数据来源，再启动执行。",
+                "role": "bioops-manager",
+                "questions": [{"question": "请确认数据来源：", "options": ["上传文件"]}],
+                "clarify_kind": "execution_object",
+                "round": round_no,
+                "origin_content": origin_content,
+            },
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_clarify_intent_emits_option_card_without_route_decision(monkeypatch) -> None:
+    """“帮我做差异分析”（无附件）→ 选项式澄清卡；不触发规划、不推 route_decision、不跑 LLM。"""
+    events = [_user_message_event("帮我做差异分析")]
+    agentteams = _agentteams(status="received", events=events)
+    run = AsyncMock(return_value=ConsultationEnvelope(conclusion="好的。"))
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+
+    result = await _service(
+        agentteams=agentteams, registry=_registry("agent-general"), redis=FakeRedis()
+    ).respond("bioops_1", "user-a", "帮我做差异分析")
+
+    assert result == {"status": "asked"}
+    run.assert_not_awaited()
+    agentteams.start_chat_planning.assert_not_awaited()
+    event_types = [call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list]
+    assert event_types == ["room.ask_user"]
+    payload = agentteams.post_case_evidence.await_args_list[0].kwargs["payload"]
+    assert payload["clarify_kind"] == "execution_object"
+    assert payload["round"] == 1
+    assert payload["origin_content"] == "帮我做差异分析"
+    assert "差异分析" in payload["questions"][0]["question"]
+    assert len(payload["questions"][0]["options"]) >= 3
+
+
+@pytest.mark.asyncio
+async def test_clarify_reply_with_object_auto_starts_execution(monkeypatch) -> None:
+    """澄清回复补全作用对象（文件名）→ 自动转 execute，沿用原始请求拼接执行目标。"""
+    reply = "【澄清回复】\n1. 请确认数据来源：使用工作区已有数据 genes.xlsx"
+    events = [
+        _user_message_event("帮我做差异分析"),
+        _clarify_card_event("帮我做差异分析", 1),
+        _user_message_event(reply),
+    ]
+    agentteams = _agentteams(status="received", events=events)
+    run = AsyncMock(return_value=ConsultationEnvelope(conclusion="已为你启动差异分析流水线。"))
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+
+    result = await _service(
+        agentteams=agentteams, registry=_registry("agent-general"), redis=FakeRedis()
+    ).respond("bioops_1", "user-a", reply)
+
+    assert result == {"status": "responded"}
+    agentteams.start_chat_planning.assert_awaited_once()
+    trigger = agentteams.start_chat_planning.await_args.kwargs
+    assert "帮我做差异分析" in trigger["objective"]
+    assert "genes.xlsx" in trigger["objective"]
+    event_types = [call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list]
+    # 自动转 execute 后按既有链路外显路由决策卡
+    assert "room.route_decision" in event_types
+    assert "room.ask_user" not in event_types
+
+
+@pytest.mark.asyncio
+async def test_clarify_reply_without_object_advances_to_round_two(monkeypatch) -> None:
+    """结构化答复仍未给出对象 → 发出第 2 轮澄清卡。"""
+    reply = "【澄清回复】\n1. 请确认数据来源：使用工作区已有数据（请回复文件名或路径）"
+    events = [
+        _user_message_event("帮我做差异分析"),
+        _clarify_card_event("帮我做差异分析", 1),
+        _user_message_event(reply),
+    ]
+    agentteams = _agentteams(status="received", events=events)
+    run = AsyncMock(return_value=ConsultationEnvelope(conclusion="好的。"))
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+
+    result = await _service(
+        agentteams=agentteams, registry=_registry("agent-general"), redis=FakeRedis()
+    ).respond("bioops_1", "user-a", reply)
+
+    assert result == {"status": "asked"}
+    run.assert_not_awaited()
+    agentteams.start_chat_planning.assert_not_awaited()
+    payload = agentteams.post_case_evidence.await_args_list[0].kwargs["payload"]
+    assert payload["round"] == 2
+
+
+@pytest.mark.asyncio
+async def test_clarify_exhausted_after_two_rounds_degrades_to_chat(monkeypatch) -> None:
+    """2 轮追问后仍无对象 → 降级纯对话，Manager 说明原因，不触发规划。"""
+    content = "再帮我汇总一下吧"
+    events = [
+        _user_message_event("帮我做差异分析"),
+        _clarify_card_event("帮我做差异分析", 1),
+        _user_message_event("【澄清回复】\n1. 请确认数据来源：使用工作区已有数据"),
+        _clarify_card_event("帮我做差异分析", 2),
+        _user_message_event(content),
+    ]
+    agentteams = _agentteams(status="received", events=events)
+    run = AsyncMock(
+        return_value=ConsultationEnvelope(conclusion="缺少输入数据，暂时无法直接执行。")
+    )
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+
+    result = await _service(
+        agentteams=agentteams, registry=_registry("agent-general"), redis=FakeRedis()
+    ).respond("bioops_1", "user-a", content)
+
+    assert result == {"status": "responded"}
+    agentteams.start_chat_planning.assert_not_awaited()
+    question = run.await_args.kwargs["question"]
+    assert "暂时无法直接执行" in question
+    event_types = [call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list]
+    assert "room.route_decision" not in event_types
+    assert "room.ask_user" not in event_types
+
+
+@pytest.mark.asyncio
+async def test_clarify_opt_out_reply_falls_back_to_chat(monkeypatch) -> None:
+    """用户在澄清中选择“先不执行”→ 纯对话，不再追问。"""
+    reply = "【澄清回复】\n1. 请确认数据来源：先不执行，继续讨论方案"
+    events = [
+        _user_message_event("帮我做差异分析"),
+        _clarify_card_event("帮我做差异分析", 1),
+        _user_message_event(reply),
+    ]
+    agentteams = _agentteams(status="received", events=events)
+    run = AsyncMock(return_value=ConsultationEnvelope(conclusion="好的，先讨论方案。"))
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+
+    result = await _service(
+        agentteams=agentteams, registry=_registry("agent-general"), redis=FakeRedis()
+    ).respond("bioops_1", "user-a", reply)
+
+    assert result == {"status": "responded"}
+    run.assert_awaited_once()
+    agentteams.start_chat_planning.assert_not_awaited()
+    event_types = [call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list]
+    assert "room.ask_user" not in event_types
+    assert "room.route_decision" not in event_types
+
+
+@pytest.mark.asyncio
+async def test_non_execution_ask_user_card_does_not_arm_pending_clarify(monkeypatch) -> None:
+    """Manager LLM 产出的普通澄清卡（无 clarify_kind 标记）不计入执行对象追问：
+    其后的纯文件名回复不应被误判为补全对象而触发执行。"""
+    reply = "result.csv"
+    events = [
+        _user_message_event("想确认一下分组"),
+        {
+            "event_type": "room.ask_user",
+            "payload": {
+                "summary": "输入数据是计数矩阵还是 FASTQ？",
+                "payload": {
+                    "content": "需要确认。",
+                    "role": "bioops-manager",
+                    "questions": [{"question": "输入数据是计数矩阵还是 FASTQ？", "options": []}],
+                },
+            },
+        },
+        _user_message_event(reply),
+    ]
+    agentteams = _agentteams(status="received", events=events)
+    run = AsyncMock(return_value=ConsultationEnvelope(conclusion="收到。"))
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+
+    result = await _service(
+        agentteams=agentteams, registry=_registry("agent-general"), redis=FakeRedis()
+    ).respond("bioops_1", "user-a", reply)
+
+    assert result == {"status": "responded"}
+    agentteams.start_chat_planning.assert_not_awaited()
 
 
 def test_celery_task_delegates_to_async_impl(monkeypatch) -> None:

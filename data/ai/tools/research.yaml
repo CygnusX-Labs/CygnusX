@@ -4,5 +4,6 @@ id: research
 description: 联网证据检索配合 KEGG 富集分析。
 platform_tools:
   - europe_pmc_search
+  - arxiv_search
 builtin_tools:
   - omichub_run_kegg_enrichment

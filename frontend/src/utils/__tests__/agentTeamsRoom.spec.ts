@@ -4,6 +4,7 @@ import {
   buildRoomCreateIntent,
   formatDuration,
   formatHardGate,
+  formatRoomAskReply,
   groupRoomMessages,
   isContentTruncated,
   MANAGER_TYPING_TTL_MS,
@@ -13,6 +14,7 @@ import {
   resolveElementRoomUrl,
   resolveManagerTyping,
   resolveRoomSender,
+  ROOM_ASK_REPLY_MARKER,
   shouldStartNewRoomCase,
   type RoomRoleMetadata,
 } from '@/utils/agentTeamsRoom'
@@ -852,5 +854,260 @@ describe('groupRoomMessages terminal-state cards', () => {
     ], METADATA))
     expect(blocks).toHaveLength(1)
     expect(blocks[0].type).toBe('action')
+  })
+})
+
+describe('room.ask_user clarification card', () => {
+  const askEvent = () =>
+    makeEvent('room.ask_user', {
+      summary: '启动规划前需要你确认几个关键信息。',
+      payload: {
+        content: '启动规划前需要你确认几个关键信息。',
+        role: 'bioops-manager',
+        questions: [
+          { question: '输入数据是计数矩阵还是 FASTQ？', options: ['已有计数矩阵', '从 FASTQ 开始'] },
+          { question: '物种与参考基因组版本？', options: [] },
+        ],
+      },
+    })
+
+  it('projects a room.ask_user event into a speech message with an interactive ask card', () => {
+    const message = projectCaseEvent(askEvent(), METADATA)
+    expect(message).not.toBeNull()
+    expect(message?.kind).toBe('speech')
+    expect(message?.sender.role).toBe('manager')
+    expect(message?.content).toBe('启动规划前需要你确认几个关键信息。')
+    expect(message?.askRequest?.questions).toEqual([
+      { question: '输入数据是计数矩阵还是 FASTQ？', options: ['已有计数矩阵', '从 FASTQ 开始'] },
+      { question: '物种与参考基因组版本？', options: [] },
+    ])
+    expect(message?.askRequest?.answered).toBeFalsy()
+  })
+
+  it('drops room.ask_user events without any valid question', () => {
+    const message = projectCaseEvent(
+      makeEvent('room.ask_user', { payload: { content: '无问题', questions: [] } }),
+      METADATA,
+    )
+    expect(message).toBeNull()
+  })
+
+  it('ends the manager typing indicator when the ask card arrives', () => {
+    const now = Date.parse('2026-08-12T08:01:00Z')
+    expect(
+      resolveManagerTyping(
+        [
+          makeEvent('room.typing', { payload: { typing: true } }),
+          askEvent(),
+        ],
+        now,
+      ),
+    ).toBe(false)
+  })
+
+  it('marks the card unanswered while no later user message exists', () => {
+    const messages = projectCaseEvents([askEvent()], METADATA)
+    expect(messages[0].askRequest?.answered).toBeFalsy()
+  })
+
+  it('marks the card answered and backfills answers from the formatted reply message', () => {
+    const questions = [
+      { question: '输入数据是计数矩阵还是 FASTQ？', options: ['已有计数矩阵', '从 FASTQ 开始'] },
+      { question: '物种与参考基因组版本？', options: [] },
+    ]
+    const reply = formatRoomAskReply(questions, ['从 FASTQ 开始', ''])
+    expect(reply).toContain(ROOM_ASK_REPLY_MARKER)
+    const messages = projectCaseEvents(
+      [
+        askEvent(),
+        makeEvent(
+          'room.user_message',
+          { summary: reply.slice(0, 80), payload: { actor: 'current-user', content: reply } },
+          'current-user',
+          '2026-08-12T08:02:00Z',
+        ),
+      ],
+      METADATA,
+    )
+    expect(messages[0].askRequest?.answered).toBe(true)
+    expect(messages[0].askRequest?.answers).toEqual(['从 FASTQ 开始', '无偏好，由你决定'])
+  })
+
+  it('folds the consumed clarification reply into the card instead of a separate user bubble', () => {
+    const questions = [
+      { question: '输入数据是计数矩阵还是 FASTQ？', options: ['已有计数矩阵', '从 FASTQ 开始'] },
+      { question: '物种与参考基因组版本？', options: [] },
+    ]
+    const reply = formatRoomAskReply(questions, ['从 FASTQ 开始', ''])
+    const messages = projectCaseEvents(
+      [
+        askEvent(),
+        makeEvent(
+          'room.user_message',
+          { summary: reply.slice(0, 80), payload: { actor: 'current-user', content: reply } },
+          'current-user',
+          '2026-08-12T08:02:00Z',
+        ),
+      ],
+      METADATA,
+    )
+    // 回复被卡片消费：时间线上只剩 ask 卡片，不再出现蓝色用户气泡
+    expect(messages).toHaveLength(1)
+    expect(messages[0].askRequest?.answered).toBe(true)
+    expect(messages.some((item) => item.isUser)).toBe(false)
+  })
+
+  it('degrades an unconsumed clarification reply to plain text without the internal marker', () => {
+    // 历史落库缺卡片（room.ask_user 无有效问题被丢弃）：回复剥离标记后纯文本展示，不崩
+    const questions = [{ question: '物种？', options: [] }]
+    const reply = formatRoomAskReply(questions, ['人'])
+    const messages = projectCaseEvents(
+      [
+        makeEvent('room.ask_user', { payload: { content: '无问题', questions: [] } }),
+        makeEvent(
+          'room.user_message',
+          { summary: reply.slice(0, 80), payload: { actor: 'current-user', content: reply } },
+          'current-user',
+          '2026-08-12T08:02:00Z',
+        ),
+      ],
+      METADATA,
+    )
+    expect(messages).toHaveLength(1)
+    expect(messages[0].isUser).toBe(true)
+    expect(messages[0].content).not.toContain(ROOM_ASK_REPLY_MARKER)
+    expect(messages[0].content).toContain('人')
+  })
+
+  it('keeps a normal later user message visible while marking the card answered', () => {
+    const messages = projectCaseEvents(
+      [
+        askEvent(),
+        makeEvent(
+          'room.user_message',
+          { summary: '继续', payload: { actor: 'current-user', content: '继续' } },
+          'current-user',
+          '2026-08-12T08:02:00Z',
+        ),
+      ],
+      METADATA,
+    )
+    expect(messages[0].askRequest?.answered).toBe(true)
+    expect(messages).toHaveLength(2)
+    expect(messages[1].content).toBe('继续')
+  })
+})
+
+describe('room.route_decision routing card', () => {
+  const decisionPayload = (overrides: Record<string, unknown> = {}) => ({
+    path: 'bridge_workflow',
+    flow_id: 'rnaseq',
+    flow_label: 'bulk RNA-seq 差异分析',
+    matched_hints: ['RNA-seq'],
+    lead_planner: 'agent-rnaseq',
+    planner_scores: { 'agent-rnaseq': 1 },
+    estimated_stages: [
+      { key: 'quantify', title: '定量' },
+      { key: 'differential', title: '差异分析' },
+    ],
+    participants: ['agent-rnaseq'],
+    confidence: 'high',
+    ...overrides,
+  })
+  const routeEvent = (payload: Record<string, unknown>) =>
+    makeEvent('room.route_decision', { summary: '路由决策', payload })
+
+  it('projects a high-confidence decision into a collapsible route card message', () => {
+    const message = projectCaseEvent(routeEvent(decisionPayload()), METADATA)
+    expect(message).not.toBeNull()
+    expect(message?.kind).toBe('speech')
+    expect(message?.sender.role).toBe('manager')
+    expect(message?.content).toBe('已选择「bulk RNA-seq 差异分析」 · 规划者 agent-rnaseq · 预计 2 个阶段')
+    expect(message?.askRequest).toBeUndefined()
+    expect(message?.routeDecision).toMatchObject({
+      path: 'bridge_workflow',
+      flowId: 'rnaseq',
+      flowLabel: 'bulk RNA-seq 差异分析',
+      matchedHints: ['RNA-seq'],
+      leadPlanner: 'agent-rnaseq',
+      plannerScores: { 'agent-rnaseq': 1 },
+      confidence: 'high',
+    })
+    expect(message?.routeDecision?.estimatedStages).toEqual([
+      { key: 'quantify', title: '定量' },
+      { key: 'differential', title: '差异分析' },
+    ])
+  })
+
+  it('upgrades an ambiguous decision into an option-style confirmation card', () => {
+    const message = projectCaseEvent(
+      routeEvent(
+        decisionPayload({
+          path: 'overdrive',
+          flow_id: null,
+          flow_label: '通用分析',
+          matched_hints: [],
+          lead_planner: 'agent-general',
+          confidence: 'ambiguous',
+          options: [
+            { flow_id: 'rnaseq', label: 'bulk RNA-seq 差异分析', lead_planner: 'agent-rnaseq', stages: 2 },
+            { flow_id: null, label: '通用分析(由 Manager 自由规划)', lead_planner: 'agent-general', stages: 3 },
+          ],
+        }),
+      ),
+      METADATA,
+    )
+    expect(message).not.toBeNull()
+    expect(message?.routeDecision?.confidence).toBe('ambiguous')
+    expect(message?.content).toContain('请点选裁决')
+    expect(message?.askRequest?.questions).toEqual([
+      {
+        question: '检测到多种可能的执行路径，请点选裁决：',
+        options: [
+          'bulk RNA-seq 差异分析（规划者 agent-rnaseq · 2 个阶段）',
+          '通用分析(由 Manager 自由规划)（规划者 agent-general · 3 个阶段）',
+        ],
+      },
+    ])
+  })
+
+  it('consumes the option reply into the ambiguous card via the ask-answer backfill chain', () => {
+    const event = routeEvent(
+      decisionPayload({
+        confidence: 'ambiguous',
+        options: [
+          { flow_id: 'rnaseq', label: 'bulk RNA-seq 差异分析', lead_planner: 'agent-rnaseq', stages: 2 },
+          { flow_id: null, label: '通用分析(由 Manager 自由规划)', lead_planner: 'agent-general', stages: 3 },
+        ],
+      }),
+    )
+    const questions = [
+      {
+        question: '检测到多种可能的执行路径，请点选裁决：',
+        options: ['bulk RNA-seq 差异分析（规划者 agent-rnaseq · 2 个阶段）'],
+      },
+    ]
+    const reply = formatRoomAskReply(questions, ['bulk RNA-seq 差异分析（规划者 agent-rnaseq · 2 个阶段）'])
+    const messages = projectCaseEvents(
+      [
+        event,
+        makeEvent(
+          'room.user_message',
+          { summary: reply.slice(0, 80), payload: { actor: 'current-user', content: reply } },
+          'current-user',
+          '2026-08-12T08:02:00Z',
+        ),
+      ],
+      METADATA,
+    )
+    // 回复被卡片消费：卡片标记已答，时间线上不再出现单独的用户气泡
+    expect(messages).toHaveLength(1)
+    expect(messages[0].askRequest?.answered).toBe(true)
+    expect(messages[0].askRequest?.answers).toEqual(['bulk RNA-seq 差异分析（规划者 agent-rnaseq · 2 个阶段）'])
+    expect(messages.some((item) => item.isUser)).toBe(false)
+  })
+
+  it('drops route_decision events without a valid path', () => {
+    expect(projectCaseEvent(routeEvent({ flow_id: 'rnaseq' }), METADATA)).toBeNull()
   })
 })

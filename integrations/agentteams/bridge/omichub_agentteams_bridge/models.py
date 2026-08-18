@@ -36,6 +36,8 @@ WorkItemStatus = Literal[
     "completed",
     "blocked",
     "failed",
+    "skipped",  # cascade-skipped after an unrecoverable upstream failure
+    "timeout",  # terminal: lease expired with the retry budget exhausted
     "cancelled",
 ]
 
@@ -289,6 +291,7 @@ class WorkItemRecord(BaseModel):
     status: WorkItemStatus = "pending"
     attempt: int = Field(default=0, ge=0, le=100)
     max_attempts: int = Field(default=3, ge=1, le=10)
+    retry_backoff_seconds: int | None = Field(default=None, ge=1, le=86_400)
     lease_owner: str | None = Field(default=None, max_length=128)
     lease_expires_at: datetime | None = None
     retry_not_before: datetime | None = None
@@ -317,6 +320,7 @@ class WorkItemCreateRequest(BaseModel):
     approval_required: bool = False
     deadline_seconds: int = Field(default=300, ge=1, le=86_400)
     max_attempts: int = Field(default=3, ge=1, le=10)
+    retry_backoff_seconds: int | None = Field(default=None, ge=1, le=86_400)
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=256)
     depends_on: list[str] = Field(default_factory=list, max_length=32)
 

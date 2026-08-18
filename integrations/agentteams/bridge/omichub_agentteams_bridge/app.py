@@ -70,6 +70,28 @@ async def _case_gc_loop(service: BridgeService) -> None:
         await asyncio.sleep(24 * 60 * 60)
 
 
+async def _work_item_watchdog_loop(service: BridgeService, interval_seconds: float) -> None:
+    """Periodically reclaim lost Workers' leases so killed Workers never stall a Case.
+
+    The sweep goes through the shared CaseStore lock, so it is safe with multiple
+    Bridge replicas; whichever replica sweeps first records the timeline events.
+    """
+    logger = logging.getLogger(__name__)
+    while True:
+        try:
+            summary = await service.sweep_work_items()
+            if summary["requeued"] or summary["timed_out"] or summary["retry_promoted"]:
+                logger.info(
+                    "Bridge work item sweep: %d requeued, %d timed out, %d retry-promoted",
+                    summary["requeued"],
+                    summary["timed_out"],
+                    summary["retry_promoted"],
+                )
+        except Exception:
+            logger.exception("Bridge work item sweep failed")
+        await asyncio.sleep(interval_seconds)
+
+
 async def authenticate_identity(
     request: Request,
     x_bridge_identity: str | None = Header(default=None),
@@ -132,6 +154,13 @@ def create_app(
         gc_task: asyncio.Task[None] | None = None
         if case_gc_autorun_enabled(runtime_settings):
             gc_task = asyncio.create_task(_case_gc_loop(service))
+        watchdog_task: asyncio.Task[None] | None = None
+        if runtime_settings.work_item_sweep_interval_seconds > 0:
+            watchdog_task = asyncio.create_task(
+                _work_item_watchdog_loop(
+                    service, runtime_settings.work_item_sweep_interval_seconds
+                )
+            )
         if runtime_settings.omichub_integration_token:
             try:
                 await service.refresh_capabilities()
@@ -151,6 +180,10 @@ def create_app(
 
                 asyncio.create_task(_retry_capabilities())
         yield
+        if watchdog_task is not None:
+            watchdog_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await watchdog_task
         if gc_task is not None:
             gc_task.cancel()
             with suppress(asyncio.CancelledError):

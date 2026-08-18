@@ -346,3 +346,56 @@ class _Registry:
 
 def _projector():
     return CaseRoomProjector(_Registry())
+
+
+def test_projects_recovery_events_to_room_speech_and_progress() -> None:
+    projector = _projector()
+    lease_expired = projector.project(
+        {
+            "event_id": "event-lease",
+            "case_id": "case-1",
+            "actor": "bioops-manager",
+            "event_type": "work_item.lease_expired",
+            "payload": {"work_item_id": "analysis-01", "lease_owner": "agent-rnaseq"},
+        },
+        session_id="session-1",
+    )
+    timed_out = projector.project(
+        {
+            "event_id": "event-timeout",
+            "case_id": "case-1",
+            "actor": "bioops-manager",
+            "event_type": "work_item.timeout",
+            "payload": {"work_item_id": "analysis-01"},
+        },
+        session_id="session-1",
+    )
+    skipped = projector.project(
+        {
+            "event_id": "event-skipped",
+            "case_id": "case-1",
+            "actor": "bioops-manager",
+            "event_type": "work_item.skipped",
+            "payload": {"work_item_id": "viz-01", "cause_work_item_id": "analysis-01"},
+        },
+        session_id="session-1",
+    )
+    manual_retry = projector.project(
+        {
+            "event_id": "event-manual",
+            "case_id": "case-1",
+            "actor": "bioops-manager",
+            "event_type": "work_item.manual_retry",
+            "payload": {"work_item_id": "analysis-01"},
+        },
+        session_id="session-1",
+    )
+
+    assert "心跳超时" in lease_expired[0]["content"]
+    assert lease_expired[1]["tasks"][0]["status"] == "pending"
+    assert "超时终止" in timed_out[0]["content"]
+    assert timed_out[1]["tasks"][0]["status"] == "failed"
+    assert "被跳过" in skipped[0]["content"]
+    assert skipped[1]["tasks"][0]["status"] == "skipped"
+    assert "手动重试" in manual_retry[0]["content"]
+    assert manual_retry[1]["tasks"][0]["status"] == "pending"

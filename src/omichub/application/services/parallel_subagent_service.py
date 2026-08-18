@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.tool_invocation import ToolInvocationContext
 from omichub.application.services.agent_service import AgentService
+from omichub.application.services.execution_events import execution_metadata
 from omichub.application.services.studio_tools import (
     ASK_USER_TOOL_SCHEMA,
     STUDIO_TOOL_SCHEMAS,
@@ -608,7 +609,21 @@ class ParallelSubAgentService:
         length_continuations = 0
         usage: dict[str, Any] | None = None
         for _round in range(max(1, max_rounds)):
+            round_number = _round + 1
             await self._check_control(control_check)
+            await self._emit_event(
+                on_event,
+                execution_metadata(
+                    "agent_turn_started",
+                    session_id=child_session_id,
+                    run_id=run_id,
+                    agent_id=agent_id,
+                    round_number=round_number,
+                    execution_path="agentteams_worker_react",
+                    index=index,
+                )
+                | {"type": "agent_turn_started", "index": index},
+            )
             text = ""
             tool_calls: list[dict[str, Any]] = []
             finish_reason = ""
@@ -630,6 +645,9 @@ class ParallelSubAgentService:
                                 "index": index,
                                 "agent_id": agent_id,
                                 "content": chunk.content,
+                                "execution_path": "agentteams_worker_react",
+                                "run_id": run_id,
+                                "round": round_number,
                             },
                         )
                         continue
@@ -655,12 +673,29 @@ class ParallelSubAgentService:
                                 "agent_id": agent_id,
                                 "tool_name": str(function.get("name") or "工具"),
                                 "args_summary": str(function.get("arguments") or "")[:2_000],
+                                "execution_path": "agentteams_worker_react",
+                                "run_id": run_id,
+                                "round": round_number,
                             },
                         )
                 elif chunk.type == "done":
                     finish_reason = str(chunk.metadata.get("finish_reason") or "").lower()
                     usage = merge_token_usage(usage, chunk.metadata.get("usage"))
                 elif chunk.type == "error":
+                    await self._emit_event(
+                        on_event,
+                        execution_metadata(
+                            "agent_turn_failed",
+                            session_id=child_session_id,
+                            run_id=run_id,
+                            agent_id=agent_id,
+                            round_number=round_number,
+                            execution_path="agentteams_worker_react",
+                            index=index,
+                            error=str(chunk.content or "模型调用失败")[:500],
+                        )
+                        | {"type": "agent_turn_failed", "index": index},
+                    )
                     return {
                         "status": "failed",
                         "answer": None,
@@ -690,6 +725,21 @@ class ParallelSubAgentService:
                     )
                     continue
                 final_answer = "\n\n".join(answer_parts).strip()
+                await self._emit_event(
+                    on_event,
+                    execution_metadata(
+                        "agent_final_result",
+                        session_id=child_session_id,
+                        run_id=run_id,
+                        agent_id=agent_id,
+                        round_number=round_number,
+                        execution_path="agentteams_worker_react",
+                        index=index,
+                        status="completed",
+                        tool_call_count=successful_tool_calls,
+                    )
+                    | {"type": "agent_final_result", "index": index},
+                )
                 return {
                     "status": "ok",
                     "answer": final_answer[:_ANSWER_CAP_CHARS],
@@ -784,6 +834,9 @@ class ParallelSubAgentService:
                         "tool_name": tool_name,
                         "success": tool_envelope.get("success") is True,
                         "duration_ms": round((time.monotonic() - tool_started) * 1000),
+                        "execution_path": "agentteams_worker_react",
+                        "run_id": run_id,
+                        "round": round_number,
                     },
                 )
                 if tool_envelope.get("success") is True:
@@ -799,7 +852,36 @@ class ParallelSubAgentService:
                         ],
                     }
                 )
+                await self._emit_event(
+                    on_event,
+                    execution_metadata(
+                        "agent_context_reinjected",
+                        session_id=child_session_id,
+                        run_id=run_id,
+                        agent_id=agent_id,
+                        round_number=round_number,
+                        execution_path="agentteams_worker_react",
+                        index=index,
+                        tool_call_id=str(tc.get("id") or ""),
+                    )
+                    | {"type": "agent_context_reinjected", "index": index},
+                )
         # 预算耗尽：把最后一段文本作为部分结论返回
+        await self._emit_event(
+            on_event,
+            execution_metadata(
+                "agent_loop_guard_triggered",
+                session_id=child_session_id,
+                run_id=run_id,
+                agent_id=agent_id,
+                round_number=max(1, max_rounds),
+                execution_path="agentteams_worker_react",
+                index=index,
+                reason="max_rounds",
+                max_rounds=max_rounds,
+            )
+            | {"type": "agent_loop_guard_triggered", "index": index},
+        )
         return {
             "status": "budget_exhausted",
             "answer": "\n\n".join(answer_parts).strip()[:_ANSWER_CAP_CHARS] or None,

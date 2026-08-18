@@ -245,6 +245,7 @@ export interface ToolCall {
   language?: string
   /** Studio HITL 审批状态（内存态；刷新/断流后由 loadSessionMessages 从 Redis 重建） */
   approval?: ToolApproval
+  checkpointId?: string
 }
 
 /** Studio 工具审批（supervised 模式下受控工具挂起等待用户决议） */
@@ -253,6 +254,7 @@ export interface ToolApproval {
   status: 'pending' | 'approved' | 'edited' | 'rejected' | 'timeout'
   risk_hint?: string
   timeout_seconds?: number
+  approval_kind?: 'tool' | 'plan'
 }
 
 /** Studio ask_user 澄清请求中的单个问题 */

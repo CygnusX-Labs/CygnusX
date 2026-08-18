@@ -62,6 +62,9 @@ from .models import (
 )
 from .security import ApprovalSigner
 
+# O5 迁移期:标准工作项 target 未在 flow YAML/_shared 声明时走硬编码缺省,每类只警告一次。
+_standard_target_fallback_warned: set[str] = set()
+
 
 class BridgeService:
     _RETRY_BACKOFF_SECONDS = (30, 120, 480)
@@ -87,7 +90,7 @@ class BridgeService:
         "awaiting_approval",
         "in_progress",
     }
-    _SETTLED_WORK_ITEM_STATUSES = {"completed", "blocked", "cancelled"}
+    _SETTLED_WORK_ITEM_STATUSES = {"completed", "blocked", "cancelled", "skipped", "timeout"}
     _TERMINAL_OMIC_TASK_STATUSES = {"success", "failed", "error", "cancelled", "canceled"}
     _GC_CASE_STATUSES = {"cancelled", "execution_failed", "closed"}
 
@@ -478,7 +481,7 @@ class BridgeService:
                     WorkItemRecord(
                         work_item_id="delivery-01",
                         parent_work_item_id=quality_dependency,
-                        target="delivery-reporter",
+                        target=self._standard_work_item_target(flow_id, "delivery", "delivery-reporter"),
                         objective="汇总任务产物、解读结论与限制，形成可追溯交付包。",
                         skill_name="delivery-pack",
                         context_refs=[
@@ -498,7 +501,7 @@ class BridgeService:
                 WorkItemRecord(
                     work_item_id="quality-01",
                     parent_work_item_id=quality_dependency,
-                    target="quality-auditor",
+                    target=self._standard_work_item_target(flow_id, "quality", "quality-auditor"),
                     objective="核对成功任务的 QC、产物完整性和可交付性，提交可追溯质量结论。",
                     skill_name="quality-gate",
                     context_refs=[*self._case_context_refs(case), {"kind": "task", "id": task_id}],
@@ -565,9 +568,30 @@ class BridgeService:
             return None
         return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
 
+    def _standard_work_item_target(self, flow_id: str, kind: str, legacy_default: str) -> str:
+        """O5:标准工作项 target 配置优先;未声明时回落硬编码缺省并打 deprecation 日志。"""
+        configured = self._settings.standard_work_item_target(flow_id, kind)
+        if configured:
+            return configured
+        warn_key = f"{flow_id}:{kind}"
+        if warn_key not in _standard_target_fallback_warned:
+            _standard_target_fallback_warned.add(warn_key)
+            logger.warning(
+                "standard_work_items 缺省 fallback:flow=%s kind=%s 未在 flow YAML 或 "
+                "_shared/policies.yaml 声明 target,沿用硬编码缺省 %s(deprecated,一个版本后移除)",
+                flow_id,
+                kind,
+                legacy_default,
+            )
+        return legacy_default
+
     async def _interpretation_target(self, flow_id: str) -> str | None:
         if flow_id not in self._settings.discovered_flow_agent_map:
             await self.refresh_capabilities()
+        # O5:flow YAML standard_work_items.interpret 声明优先,否则沿用 flow actor。
+        configured = self._settings.standard_work_item_target(flow_id, "interpret")
+        if configured:
+            return configured
         return self._settings.discovered_flow_agent_map.get(flow_id)
 
     async def update_work_item(
@@ -579,11 +603,55 @@ class BridgeService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Identity cannot update this work item",
             )
-        if request.status == "pending":
+        if request.status in {"skipped", "timeout"} and actor != "bioops-manager":
+            # skipped/timeout 是系统判定态：级联跳过与失联超时只能由 Bridge 状态机产生。
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Cannot reset work item to pending",
+                detail="skipped/timeout are system-owned terminal statuses",
             )
+        if request.status == "pending":
+            if actor != "bioops-manager":
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Cannot reset work item to pending",
+                )
+            # 手动重试：Manager 把失败/超时/被跳过的工作项重置回 pending（重置重试预算）。
+            requeued = await self._cases.manager_requeue_work_item(case_id, work_item_id)
+            await self._audit.record(
+                case_id=case_id,
+                actor=actor,
+                event_type="work_item.manual_retry",
+                payload={
+                    "work_item_id": work_item_id,
+                    "skill_name": work_item.skill_name,
+                    "previous_status": work_item.status,
+                    "summary": (
+                        f"工作项 {work_item_id} 已由 Manager 手动重试，"
+                        f"从 {work_item.status} 重置为待派发（重试预算已刷新）。"
+                    ),
+                },
+            )
+            await self._auto_reconcile(case_id)
+            return requeued
+        if actor == "bioops-manager" and request.status == "cancelled":
+            # 用户终止：Manager 可强制取消任意非终态工作项（含 Worker 持有租约的运行中项），
+            # 依赖它的未启动下游级联跳过，避免静默卡死。
+            cancelled = await self._cases.manager_cancel_work_item(case_id, work_item_id)
+            await self._audit.record(
+                case_id=case_id,
+                actor=actor,
+                event_type="work_item.cancelled",
+                payload={
+                    "work_item_id": work_item_id,
+                    "skill_name": work_item.skill_name,
+                    "previous_status": work_item.status,
+                    "reason": request.summary or "manual_cancel",
+                    "summary": f"工作项 {work_item_id} 已被手动终止。",
+                },
+            )
+            await self._cascade_skip(case_id, cancelled, actor)
+            await self._auto_reconcile(case_id)
+            return cancelled
         if actor != "bioops-manager" and request.status in {"claimed", "in_progress"}:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -1038,13 +1106,16 @@ class BridgeService:
                     "attempt": work_item.attempt,
                     "max_attempts": work_item.max_attempts,
                     "options": ["retry", "skip", "terminate"],
+                    "summary": (
+                        f"工作项 {work_item.work_item_id} 失败且自动重试次数"
+                        f"（{work_item.max_attempts} 次）已耗尽；依赖它的下游工作项将被跳过，"
+                        "你可以手动重试或终止 Case。"
+                    ),
                 },
             )
+            await self._cascade_skip(case_id, work_item, actor)
             return work_item
-        backoff_index = min(
-            max(work_item.attempt - 1, 0), len(self._RETRY_BACKOFF_SECONDS) - 1
-        )
-        delay_seconds = self._RETRY_BACKOFF_SECONDS[backoff_index]
+        delay_seconds = self._retry_delay_seconds(work_item)
         retry_not_before = datetime.now(UTC) + timedelta(seconds=delay_seconds)
         scheduled = work_item.model_copy(update={"retry_not_before": retry_not_before})
         case = await self._cases.update_work_item(
@@ -1063,9 +1134,25 @@ class BridgeService:
                 "max_attempts": work_item.max_attempts,
                 "delay_seconds": delay_seconds,
                 "retry_not_before": retry_not_before.isoformat(),
+                "summary": (
+                    f"工作项 {work_item.work_item_id} 执行失败，"
+                    f"将在 {delay_seconds} 秒后自动重试"
+                    f"（第 {work_item.attempt}/{work_item.max_attempts} 次尝试）。"
+                ),
             },
         )
         return scheduled
+
+    def _retry_delay_seconds(self, work_item: WorkItemRecord) -> int:
+        """Per-item DAG backoff (``retry.backoff_seconds``, exponential) or the default table."""
+        base = work_item.retry_backoff_seconds
+        if base is not None:
+            exponent = max(work_item.attempt - 1, 0)
+            return min(base * (2**exponent), 3_600)
+        backoff_index = min(
+            max(work_item.attempt - 1, 0), len(self._RETRY_BACKOFF_SECONDS) - 1
+        )
+        return self._RETRY_BACKOFF_SECONDS[backoff_index]
 
     @staticmethod
     def _workspace_work_item_is_plan_bound(case: CaseRecord, work_item: WorkItemRecord) -> bool:
@@ -1532,29 +1619,10 @@ class BridgeService:
                 event_type="worker.inbox_polled",
                 payload={},
             )
-        assignments, lease_expired = await self._cases.list_assigned_work_items(
+        assignments, sweep = await self._cases.list_assigned_work_items(
             actor, {"pending", "claimed", "running", "in_progress"}
         )
-        for case_id, expired_item in lease_expired:
-            await self._audit.record(
-                case_id=case_id,
-                actor="bioops-manager",
-                event_type="work_item.lease_expired",
-                payload={
-                    "work_item_id": expired_item.work_item_id,
-                    "skill_name": expired_item.skill_name,
-                    "previous_status": expired_item.status,
-                    "lease_owner": expired_item.lease_owner,
-                    "attempt": expired_item.attempt,
-                    "lease_expires_at": (
-                        expired_item.lease_expires_at.isoformat()
-                        if expired_item.lease_expires_at
-                        else None
-                    ),
-                    "action": "requeued",
-                    "trace_id": expired_item.trace_id,
-                },
-            )
+        await self._record_sweep(sweep, actor="bioops-manager")
         if actor in self._external_workers():
             for case, work_item in assignments:
                 await self._audit.record(
@@ -1577,6 +1645,103 @@ class BridgeService:
             for case, work_item in assignments
         ]
         return WorkerInboxResponse(items=items, total=len(items))
+
+    async def sweep_work_items(self, actor: str = "bioops-manager") -> dict[str, int]:
+        """Watchdog sweep: reclaim lost Workers' leases without waiting for inbox polls."""
+        sweep = await self._cases.sweep_expired_work_items()
+        await self._record_sweep(sweep, actor=actor)
+        return {
+            "requeued": len(sweep[0]),
+            "timed_out": len(sweep[1]),
+            "retry_promoted": len(sweep[2]),
+        }
+
+    async def _record_sweep(self, sweep: Any, *, actor: str) -> None:
+        """Write timeline/room-visible audit events for one store-level sweep."""
+        expired, timed_out, retryable = sweep
+        for case_id, expired_item in expired:
+            await self._audit.record(
+                case_id=case_id,
+                actor=actor,
+                event_type="work_item.lease_expired",
+                payload={
+                    "work_item_id": expired_item.work_item_id,
+                    "skill_name": expired_item.skill_name,
+                    "previous_status": expired_item.status,
+                    "lease_owner": expired_item.lease_owner,
+                    "attempt": expired_item.attempt,
+                    "max_attempts": expired_item.max_attempts,
+                    "lease_expires_at": (
+                        expired_item.lease_expires_at.isoformat()
+                        if expired_item.lease_expires_at
+                        else None
+                    ),
+                    "action": "requeued",
+                    "trace_id": expired_item.trace_id,
+                    "summary": (
+                        f"工作项 {expired_item.work_item_id} 的 Worker "
+                        f"（{expired_item.lease_owner or expired_item.target}）心跳超时，"
+                        f"任务已回收并将重新派发（第 {expired_item.attempt}/"
+                        f"{expired_item.max_attempts} 次尝试）。"
+                    ),
+                },
+            )
+        for case_id, work_item_id in retryable:
+            await self._audit.record(
+                case_id=case_id,
+                actor=actor,
+                event_type="work_item.retry_requeued",
+                payload={
+                    "work_item_id": work_item_id,
+                    "action": "requeued",
+                    "summary": f"工作项 {work_item_id} 已到重试时间，已重新进入待派发队列。",
+                },
+            )
+        for case_id, timed_out_item in timed_out:
+            await self._audit.record(
+                case_id=case_id,
+                actor=actor,
+                event_type="work_item.timeout",
+                payload={
+                    "work_item_id": timed_out_item.work_item_id,
+                    "skill_name": timed_out_item.skill_name,
+                    "lease_owner": timed_out_item.lease_owner,
+                    "attempt": timed_out_item.attempt,
+                    "max_attempts": timed_out_item.max_attempts,
+                    "trace_id": timed_out_item.trace_id,
+                    "summary": (
+                        f"工作项 {timed_out_item.work_item_id} 多次失联，"
+                        f"重试预算（{timed_out_item.max_attempts} 次）已耗尽，判定超时终止。"
+                    ),
+                },
+            )
+            await self._cascade_skip(case_id, timed_out_item, actor)
+            await self._auto_reconcile(case_id)
+
+    async def _cascade_skip(self, case_id: str, dead_item: WorkItemRecord, actor: str) -> None:
+        """Mark every not-yet-started dependent of a dead work item as skipped, loudly."""
+        skipped = await self._cases.skip_dependents(
+            case_id,
+            dead_item.work_item_id,
+            f"上游 {dead_item.work_item_id} 已终止（{dead_item.status}）",
+        )
+        for skipped_item in skipped:
+            await self._audit.record(
+                case_id=case_id,
+                actor=actor,
+                event_type="work_item.skipped",
+                payload={
+                    "work_item_id": skipped_item.work_item_id,
+                    "skill_name": skipped_item.skill_name,
+                    "target": skipped_item.target,
+                    "cause_work_item_id": dead_item.work_item_id,
+                    "summary": (
+                        f"工作项 {skipped_item.work_item_id} 因上游 "
+                        f"{dead_item.work_item_id} 不可恢复而被跳过；"
+                        "如需继续，请人工重试上游或终止 Case。"
+                    ),
+                },
+            )
 
     async def list_cases(
         self,
@@ -1916,6 +2081,22 @@ class BridgeService:
                         "target": target,
                     },
                 )
+            retry_decl = item.get("retry") if isinstance(item.get("retry"), dict) else {}
+            try:
+                max_attempts = min(max(int(retry_decl.get("max_attempts") or 3), 1), 10)
+            except (TypeError, ValueError):
+                max_attempts = 3
+            backoff_seconds: int | None
+            try:
+                raw_backoff = retry_decl.get("backoff_seconds")
+                backoff_seconds = min(max(int(raw_backoff), 1), 86_400) if raw_backoff else None
+            except (TypeError, ValueError):
+                backoff_seconds = None
+            try:
+                raw_timeout = item.get("timeout_seconds")
+                deadline_seconds = min(max(int(raw_timeout), 1), 86_400) if raw_timeout else 300
+            except (TypeError, ValueError):
+                deadline_seconds = 300
             await self._ensure_work_item(
                 case,
                 WorkItemRecord(
@@ -1929,6 +2110,9 @@ class BridgeService:
                     plan_hash=case.plan_hash,
                     plan_version=case.plan_version,
                     depends_on=[str(value) for value in item.get("depends_on") or []],
+                    max_attempts=max_attempts,
+                    retry_backoff_seconds=backoff_seconds,
+                    deadline_seconds=deadline_seconds,
                     updated_at=datetime.now(UTC),
                 ),
                 actor,
@@ -2539,6 +2723,9 @@ class BridgeService:
                 summary=request.summary,
             )
         if next_status == "delivery_ready":
+            flow_id = case.flow_id or (
+                case.preflight_input.flow_id if case.preflight_input else ""
+            )
             await self._ensure_work_item(
                 await self._cases.get(case.case_id),
                 WorkItemRecord(
@@ -2546,7 +2733,7 @@ class BridgeService:
                     parent_work_item_id=self._existing_work_item_id(
                         await self._cases.get(case.case_id), request.work_item_id
                     ),
-                    target="delivery-reporter",
+                    target=self._standard_work_item_target(flow_id, "delivery", "delivery-reporter"),
                     objective="汇总审批、任务、质量与产物证据，生成交付 manifest 并关闭 Case。",
                     skill_name="delivery-pack",
                     context_refs=[*self._case_context_refs(case), {"kind": "task", "id": task_id}],
@@ -2648,6 +2835,20 @@ class BridgeService:
                 status_code=status.HTTP_409_CONFLICT, detail="Quality decision mismatch"
             )
         events = await self._audit.list_events(case.case_id)
+        # 汇总各质量门事件提交的产物 MD5（md5 能力在质量门侧计算并随
+        # quality.decision 事件落审计），内嵌进交付 manifest 供接收方核验。
+        artifact_checksums: dict[str, str] = {}
+        for event in events:
+            if event.get("event_type") != "quality.decision":
+                continue
+            payload = event.get("payload")
+            if not isinstance(payload, dict):
+                continue
+            hashes = payload.get("artifact_hashes")
+            if not isinstance(hashes, dict):
+                continue
+            for path, digest in hashes.items():
+                artifact_checksums[str(path)] = str(digest)
         task_snapshots: list[dict[str, Any]] = []
         for task_id in case.omic_task_ids:
             try:
@@ -2675,6 +2876,7 @@ class BridgeService:
             "task_specs": case.task_specs,
             "omic_task_snapshots": task_snapshots,
             "quality": {"decision": request.quality_decision},
+            "artifact_checksums": artifact_checksums,
             "approval_events": [
                 event for event in events if event["event_type"].startswith("approval.")
             ],

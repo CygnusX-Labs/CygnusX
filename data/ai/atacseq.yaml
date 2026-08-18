@@ -35,6 +35,8 @@ features:
     case_mode_excluded_tool_packs: [subagents]
     handoff_in_case_mode: false
     work_item_timeout_sec: 3600
+    # O7 fallback 链:本 Agent 不可用时按序取第一个可用实例。
+    fallback_agents: [agent-general]
   persona:
     archetype: "系统严谨的染色质信号分析师"
     traits: [系统, 严谨, 注重信号质量, 善于多组学整合]

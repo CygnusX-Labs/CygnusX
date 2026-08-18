@@ -11,6 +11,7 @@
 | `plan_ai.md` | 多智能体编排、共享工作区与 A2A 架构实施方案，说明目标架构、状态管理、数据模型、事件协议和落地路径。 |
 | `agent_architecture_and_extension_guide.md` | 当前 Agent 运行架构、P1–P3 实施状态、灰度条件，以及修改提示词和新增内置/MCP 工具的操作指南。 |
 | `agent_framework_final_baseline.md` | 2026-07-26 最终 AI 助手基线：Agent 装配、提示词与工具契约、路由、Studio、Handoff、MAS 边界及发布验收清单。 |
+| `agent_current_execution_framework_2026-08.md` | 2026-08-18 当前 Agent 执行框架：Legacy/LangGraph/Studio/Worker 闭环、AgentTeams 房间路由、统一生命周期事件、loop guard、前端投影和扩展约束。 |
 | `worker_images_plan.md` | Worker 轻量镜像与 Workspace 动态安装计划，定义 Worker 镜像边界、运行时挂载、Conda 环境缓存及实施步骤。 |
 | `mcp_architecture.md` | MCP 子系统完整架构（三层体系、注册/发现/调用、安全验证、沙箱隔离、AI 模型接入），以及 Agent 自生成 MCP 的可行性分析与分阶段实施方案。 |
 | `mcp_builder_agent.md` | MCP 构建师（agent-mcp-builder）实现架构：六阶段生成流水线、AST 安全检查器规则表、沙箱 STDIO 执行层、mcp_builds/versions/reviews 数据模型、12 条 Builder API、TTL/配额/审核生命周期与运维要点。 |

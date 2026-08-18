@@ -17,8 +17,8 @@ import {
   NTooltip,
   useMessage,
 } from 'naive-ui'
-import { formatDistanceToNow, parseISO } from 'date-fns'
-import { zhCN } from 'date-fns/locale'
+import { formatRoomFullTime, formatRoomRelativeTime, formatRoomTime } from '@/utils/roomTimeFormat'
+import { displayName } from '@/utils/displayName'
 import {
   AddOutline,
   CaretDownOutline,
@@ -42,6 +42,8 @@ import {
 import KimiChatInput from '@/components/ai-chat/KimiChatInput.vue'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 import MessageArtifactGallery from '@/components/ai-chat/MessageArtifactGallery.vue'
+import AskUserCard from '@/components/ai-chat/AskUserCard.vue'
+import RouteDecisionCard from '@/components/agent-teams/RouteDecisionCard.vue'
 import AgentTeamsSettingsDrawer from '@/components/agent-teams/AgentTeamsSettingsDrawer.vue'
 import type { FileAttachment } from '@/components/ai-chat/types'
 import { useAgentTeamsOnboardingStore } from '@/stores/agentTeamsOnboarding'
@@ -51,6 +53,7 @@ import {
   agentTeamsCaseCategory,
   agentTeamsCaseStageMap,
   agentTeamsFailedStatuses,
+  agentTeamsPreStartStatuses,
   canSendRoomMessage,
   formatAgentTeamsStatus,
   type AgentTeamsCaseCategory,
@@ -61,12 +64,14 @@ import {
   formatDuration,
   formatHardGate,
   formatMentions,
+  formatRoomAskReply,
   groupRoomMessages,
   isContentTruncated,
   projectCaseEvents,
   resolveElementRoomUrl,
   resolveManagerTyping,
   shouldStartNewRoomCase,
+  type RoomAskRequest,
   type RoomRoleMetadata,
   type RoomWorkerBlock,
   type RoomWorkerStep,
@@ -158,6 +163,8 @@ interface RoomApprovalCard {
   /** 终态文案（文本 + 状态色双表达，§5.5）；pending / retry 为空 */
   terminalText: string
   time: string
+  /** hover 完整时间（YYYY年M月D日 HH:mm:ss） */
+  fullTime: string
 }
 
 const approvalCard = computed<RoomApprovalCard | null>(() => {
@@ -165,6 +172,7 @@ const approvalCard = computed<RoomApprovalCard | null>(() => {
   if (!current) return null
   const status = current.status
   const frozenAt = formatMessageTime(approvalFrozenEvent.value?.event_id ?? '')
+  const frozenAtFull = formatMessageFullTime(approvalFrozenEvent.value?.event_id ?? '')
   if (status === 'approval_pending') {
     return {
       state: 'pending',
@@ -173,6 +181,7 @@ const approvalCard = computed<RoomApprovalCard | null>(() => {
       impact: '计划已冻结，确认后才会启动真实计算；执行与结果将记录在当前 Case。',
       terminalText: '',
       time: frozenAt,
+      fullTime: frozenAtFull,
     }
   }
   if (status === 'execution_failed') {
@@ -183,21 +192,23 @@ const approvalCard = computed<RoomApprovalCard | null>(() => {
       impact: '',
       terminalText: '',
       time: '',
+      fullTime: '',
     }
   }
   if (!approvalFrozenEvent.value) return null
   if (status === 'cancelled') {
     // Bridge 侧驳回与用户取消均收敛为 cancelled（case.cancelled 事件），文案如实并列表述
-    return { state: 'rejected', title: '人工审批', summary: '', impact: '', terminalText: '已驳回或已取消', time: frozenAt }
+    return { state: 'rejected', title: '人工审批', summary: '', impact: '', terminalText: '已驳回或已取消', time: frozenAt, fullTime: frozenAtFull }
   }
   if (status === 'waiting_for_correction') {
-    return { state: 'returned', title: '人工审批', summary: '', impact: '', terminalText: '已退回修正', time: frozenAt }
+    return { state: 'returned', title: '人工审批', summary: '', impact: '', terminalText: '已退回修正', time: frozenAt, fullTime: frozenAtFull }
   }
-  return { state: 'approved', title: '人工审批', summary: '', impact: '', terminalText: '已通过人工审批', time: frozenAt }
+  return { state: 'approved', title: '人工审批', summary: '', impact: '', terminalText: '已通过人工审批', time: frozenAt, fullTime: frozenAtFull }
 })
 
 // 消息流滚动：新消息到达且用户停留在底部时自动滚底；用户上翻时暂停并显示「回到底部」
 const listAtBottom = ref(true)
+let listScrollFrame = 0
 
 function handleListScroll() {
   const el = listRef.value
@@ -330,11 +341,14 @@ const stageView = computed(() => {
   const status = detail.value?.status
   if (!status) return null
   const cancelled = status === 'cancelled'
+  // 单一事实源：激活步骤由 Case 状态映射派生；queued/received 尚未进入流程，
+  // 步骤条保持「未开始」弱态（全部未激活），不与「已接收」状态标签互相矛盾（§1.7）
+  const preStart = agentTeamsPreStartStatuses.has(status)
   const currentIndex = STAGE_SEQUENCE.findIndex((stage) => stage.key === agentTeamsCaseStageMap[status])
   const failed = agentTeamsFailedStatuses.has(status)
   return STAGE_SEQUENCE.map((stage, index) => {
     let state: 'done' | 'current' | 'failed' | 'todo'
-    if (cancelled || index > currentIndex) state = 'todo'
+    if (cancelled || preStart || index > currentIndex) state = 'todo'
     else if (index < currentIndex || status === 'closed') state = 'done'
     else state = failed ? 'failed' : 'current'
     return { ...stage, index, state }
@@ -347,11 +361,26 @@ const caseTitle = computed(() => {
   return selected?.display_title || selected?.intent || ''
 })
 
-const requesterName = computed(() => {
+// 发起人展示名：优先昵称/用户名（§5.4 长标识符不直出）；requester_ref（UUID）只进 Tooltip。
+// TODO: Case 数据模型暂无「是否本人」标记，昵称/用户名均缺失时暂以「我」降级。
+const requesterDisplayName = computed(() => {
   const value = detail.value
   if (!value) return ''
-  return value.requester_nickname || value.requester_username || value.requester_ref || ''
+  return displayName({ nickname: value.requester_nickname, username: value.requester_username }) || '我'
 })
+const requesterRef = computed(() => detail.value?.requester_ref || '')
+const requesterInitial = computed(() => requesterDisplayName.value.trim().charAt(0) || '协')
+
+// 头部元信息收敛为一行：发起人 X · 创建于 T；「更新于」仅在确实晚于创建时间时显示。
+const createdAtText = computed(() => formatRoomTime(detail.value?.created_at))
+const createdAtFull = computed(() => formatRoomFullTime(detail.value?.created_at))
+const updatedAtText = computed(() => {
+  const created = Date.parse(detail.value?.created_at || '')
+  const updated = Date.parse(detail.value?.updated_at || '')
+  if (Number.isNaN(created) || Number.isNaN(updated) || updated <= created) return ''
+  return formatRoomTime(detail.value?.updated_at)
+})
+const updatedAtFull = computed(() => (updatedAtText.value ? formatRoomFullTime(detail.value?.updated_at) : ''))
 
 const tagType = (status: AgentTeamsCaseStatus) => {
   if (['closed', 'delivery_ready'].includes(status)) return 'success'
@@ -360,27 +389,14 @@ const tagType = (status: AgentTeamsCaseStatus) => {
   return 'info'
 }
 
+// 消息时间戳：全页统一三档规则（utils/roomTimeFormat），此处只做 eventId → recorded_at 查表
 function formatMessageTime(eventId: string): string {
-  const raw = eventTimes.value.get(eventId)
-  if (!raw) return ''
-  const date = new Date(raw)
-  if (Number.isNaN(date.getTime())) return ''
-  return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  return formatRoomTime(eventTimes.value.get(eventId))
 }
 
-function formatDateTime(raw?: string): string {
-  if (!raw) return ''
-  const date = new Date(raw)
-  if (Number.isNaN(date.getTime())) return ''
-  return date.toLocaleString('zh-CN', { hour12: false })
-}
-
-// 房间列表相对时间：复用项目既有 date-fns + zhCN 方案（与 ProfileView / MemoryView 同约定）
-function formatRelativeTime(raw?: string): string {
-  if (!raw) return ''
-  const date = parseISO(raw)
-  if (Number.isNaN(date.getTime()) || date.getTime() > Date.now()) return ''
-  return formatDistanceToNow(date, { locale: zhCN, addSuffix: true })
+/** 消息时间 hover 完整时间（YYYY年M月D日 HH:mm:ss） */
+function formatMessageFullTime(eventId: string): string {
+  return formatRoomFullTime(eventTimes.value.get(eventId))
 }
 
 const ROOM_CATEGORY_LABELS: Record<AgentTeamsCaseCategory, string> = {
@@ -577,6 +593,15 @@ async function sendRoomMessage(content: string, contextRefs: AgentTeamsContextRe
   } finally {
     sendingMessage.value = false
   }
+}
+
+// ===== Manager 澄清卡片（room.ask_user）：答案格式化为带标记的房间发言，
+// 复用既有发言链路触发 Manager 响应；投影层据标记把答案回填到卡片。 =====
+async function submitRoomAskAnswers(ask: RoomAskRequest | undefined, answers: string[]) {
+  if (!ask || ask.answered) return
+  ask.answered = true
+  ask.answers = answers
+  await sendRoomMessage(formatRoomAskReply(ask.questions, answers))
 }
 
 // 聊天式创建：未选中 Case 时首条消息即意图——创建通用 Case 后原文发到房间，
@@ -854,7 +879,14 @@ async function deleteRoomCase(item: AgentTeamsCase) {
 
 watch(visibleMessages, async () => {
   await nextTick()
-  if (listAtBottom.value) listRef.value?.scrollTo({ top: listRef.value.scrollHeight })
+  if (!listAtBottom.value) return
+  // 等头部与消息内容完成一帧布局后再滚底：进入房间时头部/卡片异步渲染会改变
+  // 滚动高度，按旧高度滚底会导致视口停在半截位置（首条气泡看似被头部裁掉）。
+  // 仅调整滚动时机，不改变「停留底部才自动滚底」的既有策略。
+  cancelAnimationFrame(listScrollFrame)
+  listScrollFrame = requestAnimationFrame(() => {
+    listRef.value?.scrollTo({ top: listRef.value.scrollHeight })
+  })
 })
 
 onMounted(() => {
@@ -874,6 +906,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopPolling()
   stopEventStream()
+  cancelAnimationFrame(listScrollFrame)
   narrowMedia?.removeEventListener('change', syncViewportMode)
   document.removeEventListener('keydown', handleGlobalKeydown)
 })
@@ -992,7 +1025,7 @@ onBeforeUnmount(() => {
                   </template>
                   {{ ROOM_CATEGORY_LABELS[agentTeamsCaseCategory(item.status)] }} · {{ formatAgentTeamsStatus(item.status) }}
                 </NTooltip>
-                <span class="case-entry__time">{{ formatRelativeTime(item.updated_at) }}</span>
+                <span class="case-entry__time" :title="formatRoomFullTime(item.updated_at)">{{ formatRoomRelativeTime(item.updated_at) }}</span>
                 <NPopconfirm
                   positive-text="删除"
                   negative-text="取消"
@@ -1043,9 +1076,21 @@ onBeforeUnmount(() => {
             <div class="case-header__info">
               <h2 class="case-header__title">{{ caseTitle }}</h2>
               <p class="case-header__meta">
-                <span v-if="requesterName">发起人 {{ requesterName }}</span>
-                <span>创建于 {{ formatDateTime(detail?.created_at) }}</span>
-                <span>更新于 {{ formatDateTime(detail?.updated_at) }}</span>
+                <NTooltip v-if="requesterRef" trigger="hover">
+                  <template #trigger>
+                    <span class="case-header__requester">
+                      <span class="case-header__requester-avatar" aria-hidden="true">{{ requesterInitial }}</span>
+                      发起人 {{ requesterDisplayName }}
+                    </span>
+                  </template>
+                  发起人 ID：{{ requesterRef }}
+                </NTooltip>
+                <span v-else-if="requesterDisplayName" class="case-header__requester">
+                  <span class="case-header__requester-avatar" aria-hidden="true">{{ requesterInitial }}</span>
+                  发起人 {{ requesterDisplayName }}
+                </span>
+                <span v-if="createdAtText">创建于 <time :title="createdAtFull">{{ createdAtText }}</time></span>
+                <span v-if="updatedAtText">更新于 <time :title="updatedAtFull">{{ updatedAtText }}</time></span>
               </p>
             </div>
             <div v-if="stageView" class="case-stage" aria-label="Case 状态进度">
@@ -1128,19 +1173,23 @@ onBeforeUnmount(() => {
                   <span class="tl-node__rail" aria-hidden="true"><span class="tl-node__dot"></span></span>
                   <div class="tl-node__body">
                     <span class="tl-node__text">{{ block.message.content }}</span>
-                    <time class="tl-node__time">{{ formatMessageTime(block.message.id) }}</time>
+                    <time class="tl-node__time" :title="formatMessageFullTime(block.message.id)">{{ formatMessageTime(block.message.id) }}</time>
                   </div>
                 </div>
 
-                <div v-else-if="block.type === 'speech'" class="speech" :class="{ 'speech--user': block.message.isUser }">
+                <div v-else-if="block.type === 'speech'" class="speech" :class="{ 'speech--user': block.message.isUser, 'speech--report': !!block.message.managerReport }">
                   <span class="room-avatar" :style="{ background: block.message.sender.color }">{{ block.message.sender.avatar }}</span>
                   <div class="speech__main">
                     <div class="speech__head">
                       <span class="speech__name" :style="{ color: block.message.sender.color }">{{ block.message.sender.name }}</span>
                       <span v-if="block.message.sender.role === 'manager' && !block.message.isUser" class="speech__role"> · 管家</span>
-                      <time class="speech__time">{{ formatMessageTime(block.message.id) }}</time>
+                      <time class="speech__time" :title="formatMessageFullTime(block.message.id)">{{ formatMessageTime(block.message.id) }}</time>
                     </div>
-                    <div v-if="block.message.managerReport" class="speech__bubble manager-report">
+                    <RouteDecisionCard
+                      v-if="block.message.routeDecision && !block.message.askRequest"
+                      :decision="block.message.routeDecision"
+                    />
+                    <div v-else-if="block.message.managerReport" class="speech__bubble manager-report">
                       <div v-if="block.message.managerReport.hardGate" class="manager-report__hardgate">
                         ⚠ {{ formatHardGate(block.message.managerReport.hardGate) }}
                       </div>
@@ -1177,6 +1226,11 @@ onBeforeUnmount(() => {
                     <div v-if="!block.message.isUser && isContentTruncated(block.message.content)" class="speech__continue">
                       <NButton text size="tiny" @click="handleContinueGeneration">继续生成</NButton>
                     </div>
+                    <AskUserCard
+                      v-if="block.message.askRequest"
+                      :ask="block.message.askRequest"
+                      @submit="(answers: string[]) => submitRoomAskAnswers(block.message.askRequest, answers)"
+                    />
                     <MessageArtifactGallery :artifacts="block.message.artifacts" />
                   </div>
                 </div>
@@ -1212,7 +1266,7 @@ onBeforeUnmount(() => {
                       <span v-if="block.intro" class="worker-card__objective" :title="block.intro.content">{{ block.intro.content }}</span>
                     </span>
                     <span class="worker-card__state">{{ block.interrupted ? '已中断/重新排队' : block.failed ? '执行失败' : block.active ? '进行中' : '已完成' }}</span>
-                    <time class="worker-card__time">{{ formatMessageTime(block.body?.id || block.intro?.id || block.key) }}</time>
+                    <time class="worker-card__time" :title="formatMessageFullTime(block.body?.id || block.intro?.id || block.key)">{{ formatMessageTime(block.body?.id || block.intro?.id || block.key) }}</time>
                   </header>
                   <div v-if="block.steps.length && block.active" class="worker-card__progress worker-card__progress--indeterminate" aria-hidden="true">
                     <div class="worker-card__progress-bar"></div>
@@ -1272,7 +1326,7 @@ onBeforeUnmount(() => {
                 <header class="room-approval-card__head">
                   <span class="room-approval-card__title">人工审批</span>
                   <span v-if="approvalCard.terminalText" class="room-approval-card__terminal">{{ approvalCard.terminalText }}</span>
-                  <time v-if="approvalCard.time" class="room-approval-card__time">{{ approvalCard.time }}</time>
+                  <time v-if="approvalCard.time" class="room-approval-card__time" :title="approvalCard.fullTime">{{ approvalCard.time }}</time>
                 </header>
                 <p v-if="approvalCard.summary" class="room-approval-card__summary">{{ approvalCard.summary }}</p>
                 <p v-if="approvalCard.impact" class="room-approval-card__impact">{{ approvalCard.impact }}</p>
@@ -1299,7 +1353,7 @@ onBeforeUnmount(() => {
                 <summary>底层任务事件（{{ collapsedMessages.length }} 条，默认收起）</summary>
                 <div v-for="item in collapsedMessages" :key="item.id" class="room-collapsed__line">
                   <span>{{ item.content }}</span>
-                  <time class="tl-node__time">{{ formatMessageTime(item.id) }}</time>
+                  <time class="tl-node__time" :title="formatMessageFullTime(item.id)">{{ formatMessageTime(item.id) }}</time>
                 </div>
               </details>
 
@@ -1315,19 +1369,22 @@ onBeforeUnmount(() => {
           </template>
         </template>
 
-        <KimiChatInput
+        <div
           v-if="!selectedCaseId || roomViewMode === 'stream' || !elementRoomUrl"
-          ref="composerRef"
-          v-model="draftMessage"
-          room-mode
           class="room-composer"
-          :placeholder="roomInputPlaceholder"
-          :disabled="!roomInputEnabled || sendingMessage"
-          :send-loading="sendingMessage"
-
-          :maxlength="4000"
-          @send="handleComposerSend"
-        />
+        >
+          <KimiChatInput
+            ref="composerRef"
+            v-model="draftMessage"
+            room-mode
+            class="room-composer__input"
+            :placeholder="roomInputPlaceholder"
+            :disabled="!roomInputEnabled || sendingMessage"
+            :send-loading="sendingMessage"
+            :maxlength="4000"
+            @send="handleComposerSend"
+          />
+        </div>
       </section>
     </div>
 
@@ -1380,10 +1437,11 @@ onBeforeUnmount(() => {
 .room-sidebar__heading { color: var(--neutral-text-1); font-size: var(--font-section-size); font-weight: var(--font-section-weight); line-height: var(--font-section-height); letter-spacing: var(--font-section-spacing); }
 .room-sidebar__actions { display: flex; align-items: center; gap: var(--space-xs); }
 .room-sidebar__tools { display: grid; gap: var(--space-sm); }
-/* 复用全局 .omichub-segmented-toggle 胶囊分段切换器；本处仅做容器级布局覆盖：禁止折行，溢出时容器自身横向滚动 */
-.room-filter-chips { display: flex; max-width: 100%; flex-wrap: nowrap; align-self: stretch; overflow: hidden auto; scrollbar-width: none; }
+/* 复用全局 .omichub-segmented-toggle 胶囊分段切换器；本处仅做容器级布局覆盖：禁止折行，
+   溢出时容器自身横向滚动（隐藏滚动条但保持可滚），每枚胶囊不收缩、计数永不被截断（§5.4/§7.1） */
+.room-filter-chips { display: flex; max-width: 100%; min-width: 0; flex-wrap: nowrap; align-self: stretch; overflow: hidden auto; scrollbar-width: none; }
 .room-filter-chips::-webkit-scrollbar { display: none; }
-.room-filter-chips button { display: inline-flex; align-items: center; gap: var(--space-xs); white-space: nowrap; }
+.room-filter-chips button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: var(--space-xs); white-space: nowrap; }
 .room-filter-chips__count { color: var(--neutral-text-3); }
 .room-filter-chips button:hover .room-filter-chips__count { color: var(--neutral-text-1); }
 .room-filter-chips button.active .room-filter-chips__count { color: var(--text-on-primary); }
@@ -1412,16 +1470,17 @@ onBeforeUnmount(() => {
 .case-entry.active .case-entry__avatar { background: var(--arco-primary); color: var(--text-on-primary); }
 .case-entry__body { display: grid; flex: 1; min-width: 0; gap: var(--space-xs); }
 .case-entry__intent { overflow: hidden; color: var(--neutral-text-1); font-size: var(--font-body-size); font-weight: 500; line-height: var(--font-body-height); text-overflow: ellipsis; white-space: nowrap; }
-.case-entry__side { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; gap: var(--space-xs); }
-.case-entry__time { overflow: hidden; color: var(--neutral-text-3); font-size: var(--font-caption-size); text-overflow: ellipsis; white-space: nowrap; }
+.case-entry__side { position: relative; display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; gap: var(--space-xs); }
+.case-entry__time { overflow: hidden; color: var(--neutral-text-3); font-size: var(--font-caption-size); text-overflow: ellipsis; white-space: nowrap; transition: opacity var(--motion-quick) ease-out; }
 .case-entry__status-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; }
 .case-entry__status-dot.is-active { background: var(--arco-primary); animation: room-status-pulse 2.4s ease-in-out infinite; }
 .case-entry__status-dot.is-approval { background: var(--arco-warning); }
 .case-entry__status-dot.is-done { background: var(--arco-success); }
 .case-entry__status-dot.is-failed { background: var(--arco-danger); }
-/* 删除入口：悬停/聚焦列表项时显现，避免常态视觉噪音 */
-.case-entry__delete { display: none; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 6px; color: var(--neutral-text-3); cursor: pointer; transition: color var(--motion-quick) ease-out, background-color var(--motion-quick) ease-out; }
-.case-entry:hover .case-entry__delete, .case-entry:focus-within .case-entry__delete { display: inline-flex; }
+/* 删除入口：悬停/聚焦列表项时原位替换时间戳显现（绝对定位，不占布局空间），避免常态视觉噪音与选中时的布局跳动 */
+.case-entry__delete { position: absolute; right: 0; bottom: 0; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 6px; color: var(--neutral-text-3); cursor: pointer; opacity: 0; visibility: hidden; transition: opacity var(--motion-quick) ease-out, color var(--motion-quick) ease-out, background-color var(--motion-quick) ease-out, visibility var(--motion-quick) ease-out; }
+.case-entry:hover .case-entry__delete, .case-entry:focus-within .case-entry__delete { opacity: 1; visibility: visible; }
+.case-entry:hover .case-entry__time, .case-entry:focus-within .case-entry__time { opacity: 0; }
 .case-entry__delete:hover { background: var(--neutral-hover); color: var(--arco-danger); }
 @keyframes room-status-pulse { 0% { box-shadow: 0 0 0 0 var(--arco-primary-light); } 70% { box-shadow: 0 0 0 4px var(--arco-primary-light); } 100% { box-shadow: 0 0 0 0 var(--arco-primary-light); } }
 /* 列表首载骨架屏：布局先行，数据到达后原位填充 */
@@ -1450,7 +1509,12 @@ onBeforeUnmount(() => {
 .case-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md) var(--space-xl); flex-wrap: wrap; padding: var(--space-lg) var(--space-2xl); border-bottom: 1px solid var(--neutral-border); }
 .case-header__info { min-width: 0; }
 .case-header__title { margin: 0; overflow: hidden; color: var(--neutral-text-1); font-size: var(--font-card-title-size); font-weight: 600; line-height: var(--font-card-title-height); text-overflow: ellipsis; white-space: nowrap; }
-.case-header__meta { display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-lg); margin: var(--space-xs) 0 0; color: var(--neutral-text-3); font-size: var(--font-caption-size); line-height: var(--font-caption-height); }
+.case-header__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) var(--space-sm); margin: var(--space-xs) 0 0; color: var(--neutral-text-3); font-size: var(--font-caption-size); line-height: var(--font-caption-height); }
+/* 元信息单行分隔：发起人 X · 创建于 T（· 更新于 T） */
+.case-header__meta > span + span::before { margin-right: var(--space-sm); content: '·'; }
+/* 发起人：沿用左栏房间头像体系（首字符徽标 + 品牌浅底），UUID 不直出（§5.4） */
+.case-header__requester { display: inline-flex; align-items: center; gap: var(--space-xs); }
+.case-header__requester-avatar { display: inline-flex; width: 20px; height: 20px; flex: 0 0 20px; align-items: center; justify-content: center; border-radius: var(--radius-sm); background: var(--arco-primary-light); color: var(--arco-primary); font-size: var(--font-caption-size); font-weight: 600; }
 /* 步骤条：胶囊容器承载 计划→审批→执行→质控→交付，当前/已完成/失败/未到达四态语义色 */
 .case-stage { display: flex; align-items: center; gap: var(--space-xs); padding: var(--space-xs) var(--space-md); border: 1px solid var(--neutral-border); border-radius: 999px; background: var(--neutral-fill-2); }
 .case-stage__node { display: inline-flex; align-items: center; gap: var(--space-xs); }
@@ -1485,7 +1549,7 @@ onBeforeUnmount(() => {
 
 /* ===== 消息流：贴左对齐、放宽上限；scrollbar-gutter 预留滚动条位置消除水平抖动（迁移自 KimiMessageList） ===== */
 .room-messages-wrap { position: relative; display: flex; flex: 1; min-height: 240px; flex-direction: column; }
-.room-messages { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-xl) var(--space-2xl) var(--space-2xl); scrollbar-gutter: stable; }
+.room-messages { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-xl) var(--space-2xl) var(--space-2xl); scrollbar-gutter: stable; scroll-padding-top: var(--space-xl); }
 .room-scroll-bottom { position: absolute; right: var(--space-lg); bottom: var(--space-lg); z-index: 5; border: 1px solid var(--neutral-border); box-shadow: var(--shadow-card); }
 .room-stream { display: grid; width: min(100%, 1200px); gap: var(--space-xl); align-content: start; }
 
@@ -1518,6 +1582,9 @@ onBeforeUnmount(() => {
 .speech__bubble .mention-chip { display: inline-block; padding: 0 4px; border-radius: 4px; background: var(--arco-primary-light); color: var(--arco-primary); font-weight: 600; }
 .speech--user .speech__bubble .mention-chip { background: rgba(255,255,255,0.2); color: #fff; }
 .speech__continue { display: flex; justify-content: flex-end; margin-top: var(--space-xs); }
+/* Manager 结构化长文（分析方案）：对齐 §18.1.1 内联卡片形态——与消息内容区等宽、
+   上限 1120px、box-sizing: border-box（普通对话气泡仍遵守 720px 上限，见 .speech__main） */
+.speech--report .speech__main { width: 100%; max-width: min(1120px, 100%); box-sizing: border-box; }
 /* AI 输出经 MarkdownRenderer 渲染：white-space 重置为 normal，避免容器 pre-wrap 继承后
    把 markdown-it 输出的标签换行显示成多余空行 */
 .speech__bubble :deep(.md-body),
@@ -1598,11 +1665,10 @@ onBeforeUnmount(() => {
 .room-collapsed summary { cursor: pointer; user-select: none; }
 .room-collapsed__line { display: flex; align-items: baseline; gap: var(--space-md); padding: var(--space-xs) 0 var(--space-xs) var(--space-sm); }
 
-/* 底部发言输入区：复用 KimiChatInput 默认样式（§3.3.5），页面级只保留布局尺寸——
-   与右侧引导内容列等宽（720px 居中列，两侧各留 16px gutter），底部外边距与左栏卡片内边距同为 24px，
-   保证输入框底缘与左侧协作室侧边栏底缘对齐；
-   卡片背景/边框/圆角/工具行/发送按钮全部由组件默认样式与语义令牌提供，禁止页面级另写表面色与阴影 */
-.room-composer { flex-shrink: 0; width: min(calc(100% - var(--space-3xl)), 720px); margin: var(--space-lg) auto var(--space-2xl); }
+/* 底部发言输入区：不跟随聊天室整列铺满，参考独立聊天输入卡的留白比例；
+   表面、蓝色高亮边框、工具行与发送按钮由 KimiChatInput 的 roomMode 样式提供。 */
+.room-composer { flex-shrink: 0; width: min(calc(100% - var(--space-3xl)), 1500px); margin: var(--space-lg) auto var(--space-2xl); }
+.room-composer__input { width: 100%; }
 
 /* Manager 正在输入指示 */
 .room-typing { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); color: var(--neutral-text-3); font-size: var(--font-caption-size); }
@@ -1628,6 +1694,7 @@ onBeforeUnmount(() => {
 @media (prefers-reduced-motion: reduce) { .worker-step.is-running .worker-step__dot { animation: none; } }
 /* 减少动态：状态点用静态弱晕染替代脉冲动画（§6.3） */
 @media (prefers-reduced-motion: reduce) { .case-entry__status-dot.is-active { animation: none; box-shadow: 0 0 0 3px var(--arco-primary-light); } }
+@media (prefers-reduced-motion: reduce) { .case-entry__delete, .case-entry__time { transition: none; } }
 @media (prefers-reduced-motion: reduce) { .room-typing__dots i { animation: none; } }
 
 /* ≤1024px：左栏收纳为可折叠抽屉（默认收起，进入 Case 后自动收起；Esc / 遮罩点击关闭） */

@@ -74,10 +74,10 @@ plotly 与 ECharts，目标是 publication-ready 图表。
 - **路径 A：R 静态出版级图**（投稿/报告/PPT 默认推荐）：ggplot2 体系，
   交付矢量 PDF + PNG（600 DPI），可复现、符合期刊规范；本提示词的
   主题骨架、配色方案、导出规格均针对该路径。
-- **路径 B：Python plotly 交互图**（数据探索/演示默认推荐）：交付自包含
-  HTML（`fig.write_html(path, include_plotlyjs='cdn')`），支持缩放、
-  悬停读数、图例开关。须向用户说明：HTML 在聊天中以文件卡片交付，
-  下载后用浏览器打开获得交互体验；plotly 静态 PNG 导出当前沙箱不可用
+- **路径 B：Python plotly 交互图**（数据探索/演示默认推荐）：每个 Figure 创建后
+  调用沙盒内置 `show_plotly(fig)`，图表会以交互形式直接预览在回复消息中
+  （缩放、悬停读数、图例开关）；同时 `fig.write_html(path, include_plotlyjs='cdn')`
+  交付自包含 HTML 文件供下载留存。plotly 静态 PNG 导出当前沙箱不可用
   （kaleido 版本不兼容），用户同时要静态投稿稿时走路径 A。
 
 弹窗中说明两条路径的差异：A = 静态、出版级、可直接投稿；B = 交互、

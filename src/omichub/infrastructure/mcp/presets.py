@@ -461,12 +461,14 @@ _BINARY_ONLY_SUFFIXES = frozenset(
         ".h5ad", ".h5", ".rds", ".rdata", ".loom", ".bw", ".bigwig", ".2bit",
         ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z",
         ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".tiff",
-        ".pdf", ".db", ".sqlite",
+        ".db", ".sqlite",
     }
 )
 
 # read_file 默认内容上限（100KB，超出截断并标注）
 _DEFAULT_READ_MAX_BYTES = 100 * 1024
+_PDF_SUFFIX = ".pdf"
+_PDF_READ_MAX_CHARS = 50_000
 
 
 def _is_text_file(name: str) -> bool:
@@ -480,6 +482,50 @@ def _human_size(size: int) -> str:
     if size >= 1024:
         return f"{size / 1024:.1f}KB"
     return f"{size}B"
+
+
+def _extract_workspace_pdf_text(path: Path, max_chars: int = _PDF_READ_MAX_CHARS) -> dict[str, Any]:
+    """提取可搜索 PDF 的分页文本；扫描版和加密文件返回可操作的错误。"""
+    try:
+        from pypdf import PdfReader
+
+        reader = PdfReader(path)
+        pages: list[str] = []
+        total_chars = 0
+        last_page_number = 0
+        truncated = False
+        for page_number, page in enumerate(reader.pages, start=1):
+            text = (page.extract_text() or "").strip()
+            if not text:
+                continue
+            remaining = max_chars - total_chars
+            if remaining <= 0:
+                truncated = True
+                break
+            page_text = text[:remaining]
+            pages.append(f"[Page {page_number}]\n{page_text}")
+            total_chars += len(page_text)
+            last_page_number = page_number
+            if len(page_text) < len(text):
+                truncated = True
+                break
+        if not pages:
+            return {
+                "error": "无法提取文本：该 PDF 可能是扫描版、加密文件或不含可搜索文字。"
+                "请提供可搜索文字版 PDF，或使用 OCR 后的文件。"
+            }
+        if truncated:
+            pages.append(f"[已截断，仅覆盖前 {last_page_number} 页]")
+        return {
+            "content": "\n\n".join(pages),
+            "truncated": truncated,
+            "pages_read": last_page_number,
+        }
+    except Exception as exc:  # noqa: BLE001 - convert library failures to a tool result
+        return {
+            "error": f"无法提取文本：{type(exc).__name__}。"
+            "该 PDF 可能是扫描版或加密文件；请提供可搜索文字版 PDF 或 OCR 版本。"
+        }
 
 
 async def _resolve_workspace_file(
@@ -818,7 +864,7 @@ async def _workspace_get_file_info(
     if target is None:
         return meta
     meta["exists"] = target.is_file()
-    meta["is_text"] = _is_text_file(meta["name"])
+    meta["is_text"] = _is_text_file(meta["name"]) or meta["name"].lower().endswith(_PDF_SUFFIX)
     meta["summary"] = (
         f"{meta['name']}（{meta['size_human']}，{meta['file_type']}，"
         f"{'文本' if meta['is_text'] else '二进制'}）"
@@ -854,6 +900,22 @@ async def _workspace_read_file(
         return {"error": "文件已被移除", **meta}
 
     name = meta["name"]
+    if name.lower().endswith(_PDF_SUFFIX):
+        extracted = _extract_workspace_pdf_text(target)
+        if error := extracted.get("error"):
+            return {"error": error, **meta}
+        meta["content"] = extracted["content"]
+        meta["truncated"] = bool(extracted["truncated"])
+        meta["summary"] = (
+            f"PDF {name}（{meta['size_human']}）分页文本"
+            + (
+                f"，已截断至前 {extracted['pages_read']} 页"
+                if extracted["truncated"]
+                else ""
+            )
+        )
+        return meta
+
     # 二进制 / 测序原始数据：只回元数据
     if not _is_text_file(name) or name.lower().endswith(tuple(_BINARY_ONLY_SUFFIXES)):
         meta["content"] = None
@@ -1064,6 +1126,32 @@ async def _platform_europe_pmc_search(
         return {"success": False, "error": f"Europe PMC 检索失败: {type(exc).__name__}"}
 
 
+async def _platform_arxiv_search(
+    arguments: dict[str, Any],
+    **_kw: Any,
+) -> dict[str, Any]:
+    """Search arXiv as a non-biomedical literature fallback."""
+    from omichub.application.services.arxiv_literature_service import ArxivLiteratureService
+
+    query = " ".join(str(arguments.get("query") or "").split())
+    if not query:
+        return {"success": False, "error": "缺少 query 参数"}
+    max_results = max(1, min(int(arguments.get("max_results") or 8), 20))
+    try:
+        results = await ArxivLiteratureService(timeout_seconds=10).search(query, max_results)
+        return {
+            "success": True,
+            "result": {
+                "query": query,
+                "provider": "arXiv",
+                "result_count": len(results),
+                "results": results,
+            },
+        }
+    except Exception as exc:  # noqa: BLE001 - return a bounded MCP error
+        return {"success": False, "error": f"arXiv 检索失败: {type(exc).__name__}"}
+
+
 PLATFORM_PRESET_TOOLS = [
     {
         "name": "europe_pmc_search",
@@ -1093,6 +1181,33 @@ PLATFORM_PRESET_TOOLS = [
                     "type": "boolean",
                     "default": False,
                     "description": "是否仅返回开放获取论文",
+                },
+            },
+            "required": ["query"],
+        },
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    },
+    {
+        "name": "arxiv_search",
+        "description": (
+            "检索 arXiv 的开放获取预印本，适合作为材料、计算机、物理、数学等非生物医学领域"
+            "的文献检索源。返回题名、作者、年份、来源、链接和摘要；不下载全文。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "英文或英文关键词检索式"},
+                "max_results": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20,
+                    "default": 8,
+                    "description": "返回数量；研究问答推荐 5-8",
                 },
             },
             "required": ["query"],
@@ -1257,7 +1372,7 @@ PLATFORM_PRESET_TOOLS = [
         "name": "workspace_read_file",
         "description": (
             "按 file_id 读取工作区文本文件内容预览（默认前 100KB，超出截断）；"
-            "二进制/测序文件（BAM/CRAM/FASTQ 等）只返回元数据。"
+            "PDF 返回最多 50,000 字符的分页文本；二进制/测序文件（BAM/CRAM/FASTQ 等）只返回元数据。"
         ),
         "inputSchema": {
             "type": "object",
@@ -1393,6 +1508,7 @@ PLATFORM_PRESET_TOOLS = [
 
 PLATFORM_HANDLERS = {
     "europe_pmc_search": _platform_europe_pmc_search,
+    "arxiv_search": _platform_arxiv_search,
     "platform_list_tasks": _platform_list_tasks,
     "platform_get_task": _platform_get_task,
     "platform_list_flows": _platform_list_flows,

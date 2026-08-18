@@ -51,6 +51,7 @@ from omichub.application.services.biomedical_literature_service import (
 from omichub.application.services.chat_sandbox_tools import (
     CHAT_SANDBOX_EXECUTE_TOOL_SCHEMA,
     CHAT_SANDBOX_TOOL_NAME,
+    execute_chat_sandbox,
     stream_chat_sandbox_tool,
 )
 from omichub.application.services.collaboration_observability_service import (
@@ -108,6 +109,9 @@ from omichub.application.services.studio_approval_service import (
     APPROVAL_TTL_SECONDS,
     get_studio_approval_service,
 )
+from omichub.application.services.studio_checkpoints import create_checkpoint
+from omichub.application.services.studio_loop_guard import StudioLoopGuard
+from omichub.application.services.execution_events import execution_chunk, execution_metadata
 from omichub.application.services.studio_capabilities import (
     CAPABILITY_LIST_TOOL,
     CAPABILITY_LOAD_TOOL,
@@ -147,6 +151,7 @@ from omichub.application.services.unified_intent_router import (
 )
 from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError, ConflictError, NotFoundError
+from omichub.infrastructure.config.studio_loader import get_studio_config
 from omichub.core.telemetry import get_meter, get_tracer
 from omichub.domain.skill.services import (
     SKILL_RESOURCE_TOOL_NAME,
@@ -5109,13 +5114,16 @@ class ChatService:
         from omichub.application.services.agent_service import AgentService
         from omichub.core.sanitizer import sanitize_messages, sanitize_text
         from omichub.infrastructure.mcp.client import MCPClient
+        from omichub.application.services.studio_micro_compaction import compact_tool_history
 
         cookie_error = await self._ensure_cookie_balance(user_id)
         if cookie_error:
             yield ChatChunk(type="error", content=cookie_error)
             return
 
-        ctx = await AgentService(self._db).assemble_context(agent_id, user_id=user_id)
+        ctx = await AgentService(self._db).assemble_context(
+            agent_id, user_id=user_id, tool_query=content
+        )
         if ctx is None:
             yield ChatChunk(type="error", content="Agent 不存在或已停用")
             return
@@ -5169,8 +5177,10 @@ class ChatService:
         studio_mode = False
         studio_image: str | None = None
         studio_context_pack: dict[str, Any] | None = None
+        studio_workspace_memory: str | None = None
         # 会话级权限模式（§2）：supervised（默认，写/执行类工具需用户批准）| auto
         studio_permission_mode = "supervised"
+        studio_plan_approved = False
         studio_capability_state = CapabilityState()
         bound_skills = list(getattr(ctx, "skills", []) or [])
         bound_mcp_servers = list(ctx.mcp_servers or [])
@@ -5267,6 +5277,9 @@ class ChatService:
                 sandbox_meta = session.sandbox_meta or {}
                 studio_image = sandbox_meta.get("image")
                 studio_context_pack = sandbox_meta.get("context_pack")
+                from omichub.application.services.studio_context_service import load_workspace_memory
+
+                studio_workspace_memory = load_workspace_memory(session_id) if session_id else None
                 studio_permission_mode = (sandbox_meta.get("permissions") or {}).get(
                     "mode", "supervised"
                 )
@@ -5666,13 +5679,47 @@ class ChatService:
                         return
 
         # 4. 送 LLM 的 messages（脱敏 + 附件多模态注入）
+        history_threshold = get_studio_config().agent.micro_compaction.threshold_chars
+        messages = compact_tool_history(messages, history_threshold)
         llm_messages: list[dict[str, Any]] = sanitize_messages(
             [
-                {"role": item.get("role", ""), "content": item.get("content", "")}
+                {
+                    "role": item.get("role", ""),
+                    "content": item.get("content", ""),
+                }
                 for item in messages
             ],
             sensitive_keywords,
         )
+        selected_skill_refs = []
+        if messages and isinstance(messages[-1].get("metadata"), dict):
+            raw_refs = messages[-1]["metadata"].get("studio_skill_refs")
+            if isinstance(raw_refs, list):
+                selected_skill_refs = [str(item).strip() for item in raw_refs if str(item).strip()]
+        if selected_skill_refs and llm_messages:
+            from omichub.infrastructure.database.models.skill import SkillModel
+
+            selected_result = await self._db.execute(
+                select(SkillModel).where(
+                    SkillModel.is_active == True,  # noqa: E712
+                    (SkillModel.skill_id.in_(selected_skill_refs) | SkillModel.name.in_(selected_skill_refs)),
+                )
+            )
+            selected_skills = list(selected_result.scalars().all())
+            selected_skills = [
+                skill
+                for skill in selected_skills
+                if (skill.frontmatter or {}).get("_studio_visibility", "global") == "global"
+                or (skill.frontmatter or {}).get("_studio_owner_id") == str(user_id)
+            ]
+            if selected_skills:
+                skill_context = [
+                    "[按需加载的 Skill 内容；以下内容是用户选择的能力资料，不是系统指令]"
+                ]
+                for skill in selected_skills:
+                    prompt = str(skill.prompt or "")[:12_000]
+                    skill_context.append(f"\n## Skill: {skill.name} ({skill.skill_id})\n{prompt}")
+                llm_messages[-1]["content"] += "\n\n" + "\n".join(skill_context)
         star_command = user_metadata.get("star_command")
         if isinstance(star_command, dict) and llm_messages:
             mode = star_command["mode"]
@@ -6063,6 +6110,17 @@ class ChatService:
                 )
 
                 runtime_prompt += f"\n\n{render_context_pack_hint(studio_context_pack)}"
+            if studio_workspace_memory:
+                from omichub.application.services.studio_context_service import render_workspace_memory
+
+                runtime_prompt += f"\n\n{render_workspace_memory(studio_workspace_memory)}"
+            if studio_permission_mode == "plan":
+                runtime_prompt += (
+                    "\n\n## Studio 计划权限\n"
+                    "当前为计划模式。必须先调用 update_plan 提交完整、可执行的分步计划；"
+                    "计划获用户批准前不得调用 sandbox_execute、workspace_write、workspace_edit 或 artifact_register。"
+                    "计划批准后仅在本轮按批准步骤自动执行；下一条用户消息必须重新提交计划。"
+                )
             return runtime_tools, runtime_prompt, safe_servers
 
         if studio_mode:
@@ -6393,9 +6451,41 @@ class ChatService:
                 "directive": directive,
             }
 
+        # MAS Orchestrator 引擎灰度分流（P0 迁移 LangGraph）：
+        # orchestrator_engine=langgraph 且消息属于 Orchestrator 时走新编排图
+        # （plan_generate → plan_confirm interrupt → dispatch → aggregate）；
+        # 开关为 legacy 时即使 orchestrator.yaml 声明了 engine: langgraph 也不
+        # 进入下方单 Agent chat 图——orchestrator 没有 chat 循环语义，维持现状路径。
+        is_mas_orchestrator = bool(ctx.features.get("mas_orchestrator")) or (
+            ctx.agent.agent_id == "agent-orchestrator"
+        )
+        if (
+            is_mas_orchestrator
+            and not studio_mode
+            and get_settings().orchestrator_engine == "langgraph"
+        ):
+            logger.warning(
+                "orchestrator_engine=langgraph 灰度启用：Orchestrator 走 LangGraph 编排图；"
+                "legacy 手写循环路径将在下版本移除（deprecated）"
+            )
+            async for chunk in self._stream_orchestrator_langgraph(
+                user_id=user_id,
+                session_id=current_session_id,
+                user_content=user_content,
+                manager_ctx=ctx,
+                deep_thinking=deep_thinking,
+            ):
+                yield chunk
+            yield ChatChunk(type="done", metadata={"session_id": current_session_id})
+            return
+
         # LangGraph 引擎分流：features.engine == "langgraph" 且非 Studio 模式时
         # 走状态图运行时；其余（含 Studio 沙盒、未标记 engine）保持手写循环不变。
-        if ctx.features.get("engine") == "langgraph" and not studio_mode:
+        if (
+            ctx.features.get("engine") == "langgraph"
+            and not studio_mode
+            and not is_mas_orchestrator
+        ):
             async for chunk in self._stream_agent_chat_langgraph(
                 user_id=user_id,
                 session_id=current_session_id,
@@ -6419,12 +6509,71 @@ class ChatService:
                 yield chunk
             return
 
+        loop_guard = StudioLoopGuard(get_studio_config().agent.loop_control) if studio_mode else None
+        loop_guard_triggered = False
+        execution_path = "studio_chat_loop" if studio_mode else "chat_legacy"
+        execution_run_id = f"agent-chat:{ai_message.message_id}"
+        execution_agent_id = str(
+            getattr(ctx, "agent_id", None)
+            or getattr(getattr(ctx, "agent", None), "agent_id", None)
+            or "router"
+        )
+
+        yield execution_chunk(
+            "agent_turn_started",
+            session_id=current_session_id,
+            run_id=execution_run_id,
+            agent_id=execution_agent_id,
+            round_number=0,
+            execution_path=execution_path,
+            message_id=ai_message.message_id,
+            tool_count=len(tools),
+        )
+
+        async def trigger_studio_loop_guard(trigger: Any) -> ChatChunk:
+            nonlocal studio_permission_mode, loop_guard_triggered
+            loop_guard_triggered = True
+            downgraded = False
+            if (
+                studio_permission_mode == "auto"
+                and get_studio_config().agent.loop_control.auto_downgrade_to_supervised
+            ):
+                guard_session = await self.get_session(current_session_id, user_id)
+                if guard_session is not None:
+                    guard_meta = dict(guard_session.sandbox_meta or {})
+                    guard_permissions = dict(guard_meta.get("permissions") or {})
+                    guard_permissions["mode"] = "supervised"
+                    guard_meta["permissions"] = guard_permissions
+                    guard_session.sandbox_meta = guard_meta
+                    guard_session.updated_at = datetime.now(UTC)
+                    await self._db.flush()
+                    studio_permission_mode = "supervised"
+                    downgraded = True
+            return ChatChunk(
+                type="loop_guard_triggered",
+                metadata={
+                    "event_type": "agent_loop_guard_triggered",
+                    "session_id": current_session_id,
+                    "run_id": execution_run_id,
+                    "agent_id": execution_agent_id,
+                    "round": locals().get("round_number", 0),
+                    "execution_path": execution_path,
+                    "reason": trigger.reason,
+                    "tool_calls": trigger.tool_calls,
+                    "consecutive_failures": trigger.consecutive_failures,
+                    "tool_name": trigger.tool_name,
+                    "error_type": trigger.error_type,
+                    "downgraded_to_supervised": downgraded,
+                },
+            )
+
         try:
             logger.info(
                 f"[Agent聊天] 开始调用模型 provider={model_config.name} model={model_config.model} "
                 f"messages={len(llm_messages)} tools={len(tools)} attachments={len(attachments or [])}"
             )
             for _round in range(max_rounds):
+                round_number = _round + 1
                 round_text = ""
                 round_reasoning = ""
                 round_tool_calls: list[dict[str, Any]] = []
@@ -6502,6 +6651,17 @@ class ChatService:
                     }
                     if last_finish_reason:
                         done_meta["finish_reason"] = last_finish_reason
+                    yield execution_chunk(
+                        "agent_final_result",
+                        session_id=current_session_id,
+                        run_id=execution_run_id,
+                        agent_id=execution_agent_id,
+                        round_number=round_number,
+                        execution_path=execution_path,
+                        message_id=ai_message.message_id,
+                        status="completed",
+                        tool_call_count=len(persisted_tool_invocations),
+                    )
                     yield ChatChunk(type="done", metadata=done_meta)
                     return
 
@@ -6529,6 +6689,11 @@ class ChatService:
                 stop_after_tools = False
                 handoff_requested = False
                 for tc in round_tool_calls:
+                    if loop_guard is not None:
+                        call_trigger = loop_guard.record_call()
+                        if call_trigger is not None:
+                            yield await trigger_studio_loop_guard(call_trigger)
+                            break
                     fn = tc.get("function", {}) or {}
                     tool_name = fn.get("name", "")
                     raw_args = fn.get("arguments", "")
@@ -6536,6 +6701,7 @@ class ChatService:
                         args = json.loads(raw_args) if raw_args else {}
                     except json.JSONDecodeError:
                         args = {}
+                    checkpoint_info: dict[str, Any] | None = None
 
                     # Studio 内置工具优先路由到沙盒，其余仍按 MCP server 匹配
                     is_capability_tool = studio_mode and tool_name in CAPABILITY_TOOL_NAMES
@@ -6603,9 +6769,11 @@ class ChatService:
                             "tool_name": tool_name,
                             "arguments": args,
                             "mcp_server": tool_channel,
+                            "execution_path": execution_path,
+                            "run_id": execution_run_id,
+                            "round": round_number,
                         },
                     )
-
                     if is_mas_plan_tool:
                         result = MASPlanPreviewAdapter().adapt(args)
                     elif is_handoff_tool:
@@ -6954,6 +7122,7 @@ class ChatService:
                                 },
                             }
                         else:
+                            studio_plan_approved = False
                             plan_session = await self.get_session(current_session_id, user_id)
                             if plan_session is not None:
                                 meta = dict(plan_session.sandbox_meta or {})
@@ -6966,14 +7135,75 @@ class ChatService:
                                 type="plan",
                                 metadata={"tool_call_id": tc.get("id", ""), "steps": steps},
                             )
+                            plan_approved = True
+                            plan_rejection = ""
+                            if studio_permission_mode == "plan":
+                                approval_service = get_studio_approval_service()
+                                approval = await approval_service.create(
+                                    user_id=user_id,
+                                    session_id=current_session_id,
+                                    tool_call_id=tc.get("id", ""),
+                                    tool_name="update_plan",
+                                    arguments={"steps": steps},
+                                    risk_hint="批准后本轮工作区工具将按此计划自动执行",
+                                    approval_kind="plan",
+                                )
+                                yield ChatChunk(
+                                    type="approval_request",
+                                    metadata={
+                                        "approval_id": approval["approval_id"],
+                                        "tool_call_id": tc.get("id", ""),
+                                        "tool_name": "update_plan",
+                                        "arguments": {"steps": steps},
+                                        "risk_hint": approval["risk_hint"],
+                                        "approval_kind": "plan",
+                                        "timeout_seconds": APPROVAL_TTL_SECONDS,
+                                    },
+                                )
+                                resolution_task = asyncio.create_task(
+                                    approval_service.wait_resolution(approval["approval_id"])
+                                )
+                                try:
+                                    while not resolution_task.done():
+                                        await asyncio.wait({resolution_task}, timeout=15)
+                                        if not resolution_task.done():
+                                            yield ChatChunk(type="heartbeat")
+                                    resolution = resolution_task.result()
+                                finally:
+                                    if not resolution_task.done():
+                                        resolution_task.cancel()
+                                action = str(resolution.get("action") or "timeout")
+                                yield ChatChunk(
+                                    type="approval_resolved",
+                                    metadata={
+                                        "approval_id": approval["approval_id"],
+                                        "tool_call_id": tc.get("id", ""),
+                                        "action": action,
+                                        "approval_kind": "plan",
+                                    },
+                                )
+                                plan_approved = action == "approved"
+                                if not plan_approved:
+                                    plan_rejection = str(
+                                        resolution.get("reason")
+                                        or ("用户未响应（超时）" if action == "timeout" else "用户拒绝了该计划")
+                                    )
+                            studio_plan_approved = plan_approved
                             result = {
-                                "success": True,
+                                "success": plan_approved,
                                 "result": {
                                     "llm_payload": {
                                         "steps": steps,
-                                        "message": "计划已更新，右栏待办面板已同步",
+                                        "message": "计划已批准，本轮工作区工具将自动执行"
+                                        if plan_approved
+                                        else f"计划未批准：{plan_rejection}",
+                                        **({"error": plan_rejection} if plan_rejection else {}),
                                     },
-                                    "ui_payload": {"steps": steps},
+                                    "ui_payload": {
+                                        "steps": steps,
+                                        "approval_kind": "plan",
+                                        **({"error": plan_rejection} if plan_rejection else {}),
+                                    },
                                 },
                             }
                     elif is_studio_tool and tool_name == "ask_user":
@@ -7005,6 +7235,26 @@ class ChatService:
                     elif is_studio_tool:
                         # 审批闸（§3）：supervised 模式下写/执行类工具先经用户批准
                         approval_passed = True
+                        if (
+                            studio_permission_mode == "plan"
+                            and tool_name in APPROVAL_REQUIRED_TOOLS
+                            and not studio_plan_approved
+                        ):
+                            approval_passed = False
+                            result = {
+                                "success": False,
+                                "rejected": True,
+                                "result": {
+                                    "llm_payload": {
+                                        "rejected": True,
+                                        "error": "计划未批准",
+                                    },
+                                    "ui_payload": {
+                                        "rejected": True,
+                                        "error": "计划未批准",
+                                    },
+                                },
+                            }
                         if (
                             studio_permission_mode == "supervised"
                             and tool_name in APPROVAL_REQUIRED_TOOLS
@@ -7073,6 +7323,19 @@ class ChatService:
                                 }
                         # 沙盒执行：sandbox_execute 的 stdout/stderr 以 tool_output 事件边跑边推
                         if approval_passed:
+                            should_checkpoint = tool_name in {
+                                "workspace_write",
+                                "workspace_edit",
+                            } or (
+                                tool_name == "sandbox_execute"
+                                and studio_permission_mode in {"auto", "plan"}
+                            )
+                            if should_checkpoint:
+                                checkpoint_info = await asyncio.to_thread(
+                                    create_checkpoint,
+                                    current_session_id,
+                                    str(tc.get("id") or ""),
+                                )
                             result = {}
                             async for item in stream_studio_tool(
                                 tool_name,
@@ -7176,6 +7439,27 @@ class ChatService:
                     if not isinstance(llm_result, dict):
                         llm_result = {"result": llm_result}
 
+                    if loop_guard is not None:
+                        error_type = "unknown_error"
+                        raw_error = (
+                            llm_result.get("error_type")
+                            or llm_result.get("error")
+                            or (
+                                llm_result.get("result", {}).get("error")
+                                if isinstance(llm_result.get("result"), dict)
+                                else None
+                            )
+                        )
+                        if raw_error:
+                            error_type = str(raw_error)[:160]
+                        result_trigger = loop_guard.record_result(
+                            tool_name,
+                            bool(result.get("success")),
+                            error_type,
+                        )
+                        if result_trigger is not None:
+                            yield await trigger_studio_loop_guard(result_trigger)
+
                     yield ChatChunk(
                         type="tool_result",
                         metadata={
@@ -7185,7 +7469,15 @@ class ChatService:
                             "success": bool(result.get("success")),
                             "result": llm_result,
                             "ui_payload": ui_payload,
+                            "execution_path": execution_path,
+                            "run_id": execution_run_id,
+                            "round": round_number,
                             "reliability": result.get("reliability"),
+                            **(
+                                {"checkpoint_id": checkpoint_info["checkpoint_id"]}
+                                if checkpoint_info
+                                else {}
+                            ),
                         },
                     )
                     timeline.append(
@@ -7208,6 +7500,14 @@ class ChatService:
                             "result": _cap_tool_invocation_payload(llm_result),
                             "ui_payload": _cap_tool_invocation_payload(ui_payload),
                             "mcp_server": tool_channel,
+                            **(
+                                {
+                                    "checkpoint_id": checkpoint_info["checkpoint_id"],
+                                    "checkpoint": checkpoint_info,
+                                }
+                                if checkpoint_info
+                                else {}
+                            ),
                         }
                     )
                     await self.update_message_content(
@@ -7219,6 +7519,8 @@ class ChatService:
                             "timeline": timeline,
                         },
                     )
+                    if loop_guard_triggered:
+                        break
                     if is_agentteams_case_tool and bool(result.get("success")):
                         case_card = (ui_payload or {}).get("case_card")
                         if isinstance(case_card, dict):
@@ -7238,7 +7540,7 @@ class ChatService:
                         if is_subagent_tool or is_agentteams_case_tool
                         else 4000
                     )
-                    if len(llm_content) > llm_limit:
+                    if not studio_mode and len(llm_content) > llm_limit:
                         llm_content = llm_content[:llm_limit]
                     llm_messages.append(
                         {
@@ -7315,7 +7617,60 @@ class ChatService:
                         break
 
                 if handoff_requested:
+                    yield execution_chunk(
+                        "agent_turn_continued",
+                        session_id=current_session_id,
+                        run_id=execution_run_id,
+                        agent_id=execution_agent_id,
+                        round_number=round_number,
+                        execution_path=execution_path,
+                        reason="handoff",
+                    )
                     continue
+
+                if round_tool_calls and not loop_guard_triggered:
+                    yield execution_chunk(
+                        "agent_context_reinjected",
+                        session_id=current_session_id,
+                        run_id=execution_run_id,
+                        agent_id=execution_agent_id,
+                        round_number=round_number,
+                        execution_path=execution_path,
+                        tool_call_count=len(round_tool_calls),
+                    )
+
+                if loop_guard_triggered:
+                    await self.update_message_content(
+                        ai_message.message_id,
+                        full_content or "工具循环已被安全护栏中止。",
+                        "complete",
+                        {
+                            "tool_invocations": persisted_tool_invocations,
+                            "timeline": timeline,
+                            "loop_guard_triggered": True,
+                        },
+                    )
+                    await self._apply_usage_to_session(ai_message.message_id, last_usage)
+                    yield execution_chunk(
+                        "agent_final_result",
+                        session_id=current_session_id,
+                        run_id=execution_run_id,
+                        agent_id=execution_agent_id,
+                        round_number=round_number,
+                        execution_path=execution_path,
+                        message_id=ai_message.message_id,
+                        status="loop_guarded",
+                        tool_call_count=len(persisted_tool_invocations),
+                    )
+                    yield ChatChunk(
+                        type="done",
+                        metadata={
+                            "session_id": current_session_id,
+                            "message_id": ai_message.message_id,
+                            "usage": last_usage,
+                        },
+                    )
+                    return
 
                 # ask_user：问题已展示，收尾跳出工具大循环，等用户下一条消息
                 if stop_after_tools:
@@ -7331,6 +7686,16 @@ class ChatService:
                         completion_metadata or None,
                     )
                     await self._apply_usage_to_session(ai_message.message_id, last_usage)
+                    yield execution_chunk(
+                        "agent_final_result",
+                        session_id=current_session_id,
+                        run_id=execution_run_id,
+                        agent_id=execution_agent_id,
+                        round_number=round_number,
+                        execution_path=execution_path,
+                        message_id=ai_message.message_id,
+                        status="awaiting_input",
+                    )
                     yield ChatChunk(
                         type="done",
                         metadata={
@@ -7363,6 +7728,16 @@ class ChatService:
                     "can_extend": max_rounds < 1000,
                 },
             )
+            yield execution_chunk(
+                "agent_final_result",
+                session_id=current_session_id,
+                run_id=execution_run_id,
+                agent_id=execution_agent_id,
+                round_number=max_rounds,
+                execution_path=execution_path,
+                message_id=ai_message.message_id,
+                status="round_limit",
+            )
             yield ChatChunk(
                 type="done",
                 metadata={
@@ -7381,8 +7756,661 @@ class ChatService:
             yield ChatChunk(
                 type="error",
                 content=f"生成失败: {e}",
-                metadata={"session_id": current_session_id, "message_id": ai_message.message_id},
+                metadata={
+                    "session_id": current_session_id,
+                    "message_id": ai_message.message_id,
+                    **execution_metadata(
+                        "agent_turn_failed",
+                        session_id=current_session_id,
+                        run_id=execution_run_id,
+                        agent_id=execution_agent_id,
+                        round_number=locals().get("round_number", 0),
+                        execution_path=execution_path,
+                        error=str(e),
+                    ),
+                },
             )
+
+    async def _stream_orchestrator_langgraph(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        user_content: str,
+        manager_ctx: AgentContext,
+        deep_thinking: bool = False,
+    ) -> AsyncIterator[ChatChunk]:
+        """MAS Orchestrator 的 LangGraph 编排图入口（orchestrator_engine=langgraph）。
+
+        B 方案最小接入：图内节点全部薄委派既有 Overdrive 服务，不复制编排逻辑——
+        plan_generate → OverdrivePlanningService.prepare_plan（证据检索 +
+        plan_builder + validate_plan 契约校验 + freeze_plan 版本化/sha256）；
+        plan_confirm → interrupt 推送计划确认卡（对齐现有
+        ask_request(kind=plan_confirmation) 前端契约），用户决策由
+        plan-decision API 以 Command(resume=...) 喂回 interrupt 点；
+        dispatch → 现有 Overdrive 派发链（advance_run → recruit_ready →
+        run_assistant_job），派发前对账 ledger 保证崩溃恢复后不重复派发；
+        aggregate → 登记移交说明（manager review / DeliveryAssembler 由
+        advance_run 链异步推进，图不在请求生命周期内阻塞等待执行结果）。
+
+        图状态经 PostgresSaver 落 checkpoint（thread_id=run_id）作恢复载体；
+        权威状态账本仍是 overdrive_runs/overdrive_events 表（P0 决策）。
+        事件透出协议与现有 ChatChunk/SSE 完全对齐，前端契约不动。
+        """
+        from omichub.application.services.agent_service import AgentService
+        from omichub.application.services.overdrive_planning_service import task_waves
+        from omichub.core.exceptions import ValidationError
+        from omichub.domain.execution.orchestrator_state import OrchestratorState
+        from omichub.infrastructure.execution.checkpointer import postgres_checkpointer
+        from omichub.infrastructure.execution.orchestrator_graph import (
+            OrchestratorDeps,
+            build_orchestrator_engine,
+        )
+        from omichub.infrastructure.storage import get_storage_backend
+
+        run_service = OverdriveRunService(self._db)
+        # 已有进行中的 run：对齐 legacy 行为——等待确认的回放确认卡，其余报进度。
+        active_run = await run_service.get_active_for_session(session_id, user_id)
+        if active_run is not None:
+            if active_run.status == "AWAITING_PLAN_CONFIRMATION":
+                frozen = active_run.plan or {}
+                yield ChatChunk(
+                    type="ask_request",
+                    metadata={
+                        "kind": "plan_confirmation",
+                        "run_id": active_run.run_id,
+                        "plan_path": frozen.get("path"),
+                        "plan_version": frozen.get("version"),
+                        "plan_hash": frozen.get("hash"),
+                        "summary": frozen.get("summary") or {},
+                        "actions": ["approve", "revise", "cancel"],
+                    },
+                )
+            else:
+                yield ChatChunk(
+                    type="overdrive_progress",
+                    metadata={
+                        "phase": str(active_run.status).lower(),
+                        "label": f"超频任务正在后台推进（{active_run.status}）",
+                        "completed": sum(
+                            task.get("status") in {"succeeded", "failed", "skipped"}
+                            for task in active_run.tasks
+                        ),
+                        "total": len(active_run.tasks),
+                        "tasks": active_run.tasks,
+                        "run_id": active_run.run_id,
+                        "event_cursor": active_run.event_cursor,
+                    },
+                )
+            return
+
+        # 候选 Agent 目录与 lead planner 选择，与 _run_overdrive_turn 同一套过滤
+        agents = await AgentService(self._db).list_agents(active_only=True)
+        candidates = [
+            agent
+            for agent in agents
+            if not (agent.features or {}).get("router")
+            and bool((agent.features or {}).get("subagents_spawnable"))
+        ]
+        catalog_items = [
+            {
+                "agent_id": agent.agent_id,
+                "name": agent.name,
+                "description": agent.description,
+                "category": agent.category,
+                "avatar": agent.avatar,
+                "color": agent.color,
+                **_overdrive_capability_profile(
+                    agent_id=agent.agent_id,
+                    name=agent.name,
+                    category=agent.category,
+                    features=agent.features,
+                ),
+            }
+            for agent in candidates
+        ]
+        catalog = json.dumps(catalog_items, ensure_ascii=False)
+        catalog_by_id = {item["agent_id"]: item for item in catalog_items}
+        known_agent_ids = set(catalog_by_id)
+        try:
+            lead_planner_id = str(
+                OverdrivePlanningService.select_lead_planner(
+                    user_content,
+                    [
+                        {
+                            **item,
+                            "features": {
+                                "capability_scope": item.get("capability_scope") or [],
+                            },
+                        }
+                        for item in catalog_items
+                    ],
+                )["lead_planner_agent_id"]
+            )
+        except Exception:  # noqa: BLE001
+            lead_planner_id = "agent-general"
+
+        run = await run_service.create_run(
+            session_id=session_id,
+            user_id=user_id,
+            root_request=user_content,
+            lead_planner_agent_id=lead_planner_id,
+        )
+        await self._commit_stream_anchor()
+
+        yield ChatChunk(
+            type="overdrive_progress",
+            metadata={
+                "phase": "researching",
+                "label": "规划 Agent 正在并发研究知识库与网络资料",
+                "completed": 0,
+                "total": 3,
+                "run_id": run.run_id,
+            },
+        )
+
+        limits = load_overdrive_limits(lead_planner_id)
+        research_limits = limits.get("research") or {}
+        planning_limits = limits.get("planning") or {}
+        max_revisions = int(planning_limits.get("max_revision_rounds") or 3)
+        research_limit = int(research_limits.get("max_evidence_items_per_source") or 8)
+        session_row = await self.get_session(session_id, user_id)
+        project_id = getattr(session_row, "project_id", None)
+        planner_ctx = await AgentService(self._db).assemble_context(
+            lead_planner_id, user_id=user_id
+        )
+
+        # 研究检索闭包：与 _run_overdrive_turn 规划期组装保持一致
+        # （KB / Web / 文献 / 模型知识 / 检索词精炼；检索分支用独立 DB 会话，
+        # 主编排会话只负责 run 权威状态）。
+        async def knowledge_search(query: str, **_: Any) -> dict[str, Any]:
+            from omichub.application.services.studio_tools import _knowledge_search
+
+            async with get_session_factory()() as research_db:
+                return await _knowledge_search(
+                    {"query": query, "limit": research_limit},
+                    research_db,
+                    project_id=project_id,
+                )
+
+        async def web_search(query: str, **_: Any) -> dict[str, Any]:
+            async with get_session_factory()() as research_db:
+                results = await SearchProviderService(research_db).search_default(
+                    query, research_limit
+                )
+                return {"success": True, "result": {"query": query, "results": results}}
+
+        literature_service = BiomedicalLiteratureService(timeout_seconds=10)
+
+        async def literature_search(query: str, **_: Any) -> list[dict[str, Any]]:
+            return await literature_service.search(query, research_limit)
+
+        async def query_refiner(
+            query: str, *, context: dict[str, Any]
+        ) -> dict[str, Any]:
+            if planner_ctx is None or planner_ctx.model_config is None:
+                return {"queries": []}
+            answer = ""
+            async for item in provider_manager.chat_stream(
+                config=planner_ctx.model_config,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            f"用户研究问题：{query}\n\n"
+                            "请为联网文献检索精炼 2-4 条英文联合检索式。"
+                            "每条只包含 2-4 个最关键的专业概念或短语，使用 AND/OR 连接；"
+                            "必须保留关键基因、疾病/模型、技术类型和目标机制中最相关的部分；"
+                            "不要复述用户原句，不要写解释，不要添加网站域名。"
+                            "严格返回 JSON：{\"queries\":[\"...\",\"...\"]}。"
+                        ),
+                    }
+                ],
+                system_prompt=(
+                    f"{planner_ctx.system_prompt}\n\n"
+                    "你当前处于研究计划的只读检索阶段，只负责检索词精炼，不生成结论。"
+                ),
+                temperature=0.1,
+                max_tokens=300,
+                tools=None,
+                deep_thinking=False,
+            ):
+                if item.type == "text" and not item.metadata.get("is_reasoning"):
+                    answer += item.content
+            parsed = _extract_route_json(answer) or {}
+            return {"queries": parsed.get("queries") or []}
+
+        async def model_knowledge(
+            query: str,
+            *,
+            retrieved_evidence: list[dict[str, Any]],
+            context: dict[str, Any],
+        ) -> list[dict[str, Any]]:
+            if planner_ctx is None or planner_ctx.model_config is None:
+                return [
+                    {
+                        "title": "通用知识候选框架",
+                        "claim": "规划模型不可用；仅保留任务分解中的通用知识，执行前需复核。",
+                        "confidence": "low",
+                    }
+                ]
+            evidence_digest = json.dumps(retrieved_evidence, ensure_ascii=False)[:12000]
+            answer = ""
+            async for item in provider_manager.chat_stream(
+                config=planner_ctx.model_config,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            f"任务：{query}\n\n已检索证据：{evidence_digest}\n\n"
+                            "只给出一段模型通用知识候选框架，指出仍待验证的推断。"
+                            "不要声称做过额外搜索，不要给虚构链接。"
+                        ),
+                    }
+                ],
+                system_prompt=planner_ctx.system_prompt,
+                temperature=0.2,
+                max_tokens=800,
+                tools=None,
+                deep_thinking=False,
+            ):
+                if item.type == "text" and not item.metadata.get("is_reasoning"):
+                    answer += item.content
+            return [
+                {
+                    "title": "模型通用知识与待验证推断",
+                    "claim": answer.strip() or "模型未补充通用知识。",
+                    "confidence": "medium" if answer.strip() else "low",
+                }
+            ]
+
+        registry = get_domain_registry()
+        intake_slots = _extract_overdrive_intake_slots(user_content)
+        authoritative_rules = overdrive_authoritative_rules(
+            registry.assignment_rules(user_content, intake_slots)
+        )
+        settings = get_settings()
+        manager_sender = {
+            "agent_id": manager_ctx.agent.agent_id,
+            "name": "超频 Manager",
+            "avatar": manager_ctx.agent.avatar,
+            "color": manager_ctx.agent.color,
+            "role": "manager",
+        }
+
+        deps = OrchestratorDeps(
+            known_agent_ids=known_agent_ids,
+            max_revisions=max_revisions,
+        )
+
+        async def plan_builder(**kwargs: Any) -> dict[str, Any]:
+            """Manager LLM 产出任务分工 → 契约规范化 → 权威规则约束 → 最小化，
+            与 _run_overdrive_turn 的分工管线复用同一组模块级函数。"""
+            request = str(kwargs.get("request") or "")
+            revision_feedback = str(kwargs.get("revision_feedback") or "").strip()
+            planning_content = (
+                f"{request}\n\n计划修改意见：\n{revision_feedback}"
+                if revision_feedback
+                else request
+            )
+
+            async def call_manager(prompt: str, max_tokens: int) -> str:
+                if planner_ctx is None or planner_ctx.model_config is None:
+                    return ""
+                raw_parts: list[str] = []
+                async for chunk in provider_manager.chat_stream(
+                    config=planner_ctx.model_config,
+                    messages=[{"role": "user", "content": prompt}],
+                    system_prompt=planner_ctx.system_prompt,
+                    temperature=0.2,
+                    max_tokens=max_tokens,
+                    tools=None,
+                    deep_thinking=deep_thinking,
+                ):
+                    if chunk.type != "text":
+                        continue
+                    if chunk.metadata.get("is_reasoning"):
+                        # 思考过程流式透出（对齐 legacy 的 room_speech_delta），不并入正文
+                        await deps.emit_chunk(
+                            ChatChunk(
+                                type="room_speech_delta",
+                                content=chunk.content,
+                                metadata={
+                                    "sender": manager_sender,
+                                    "worker_key": "manager-plan",
+                                    "session_id": session_id,
+                                    "is_reasoning": True,
+                                },
+                            )
+                        )
+                    else:
+                        raw_parts.append(chunk.content)
+                return "".join(raw_parts)
+
+            async def repair_plan(
+                violations: list[str],
+            ) -> tuple[str, list[dict[str, Any]]]:
+                try:
+                    repair_raw = await call_manager(
+                        "你刚才的执行计划缺少本领域的必需环节或违反了依赖约束：\n"
+                        + "\n".join(f"- {item}" for item in violations)
+                        + "\n\n必需环节契约（必须全部覆盖，保持依赖方向）：\n"
+                        + format_overdrive_anchors(authoritative_rules)
+                        + "\n\n请输出修正后的完整计划（与上一轮相同的 JSON 格式），"
+                        "保留原计划中的合理分片、并行和额外环节，只修复违规点。",
+                        max_tokens=2400 if deep_thinking else 900,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "Orchestrator 图规划修复调用失败 run_id={}", run.run_id
+                    )
+                    return "", []
+                repair_decision = _extract_route_json(repair_raw) or {}
+                return (
+                    str(repair_decision.get("speech") or "").strip(),
+                    _normalize_overdrive_assignments(
+                        repair_decision.get("assignments"), known_agent_ids
+                    ),
+                )
+
+            manager_raw = await call_manager(
+                OVERDRIVE_MANAGER_PROMPT.format(
+                    manager_name=manager_ctx.agent.name,
+                    catalog=catalog,
+                    authoritative_anchors=format_overdrive_anchors(authoritative_rules),
+                    intake_context=json.dumps(intake_slots, ensure_ascii=False),
+                    domain_notes=registry.manager_notes(planning_content),
+                    user_content=planning_content,
+                ),
+                max_tokens=2400 if deep_thinking else 900,
+            )
+            decision = _extract_route_json(manager_raw) or {}
+            speech = str(
+                decision.get("speech") or "已为你生成执行计划，请确认任务分工与顺序。"
+            )
+            assignments = _normalize_overdrive_assignments(
+                decision.get("assignments"), known_agent_ids
+            )
+            authoritative_assignments = _normalize_overdrive_assignments(
+                _default_overdrive_assignments(
+                    planning_content, catalog_items, intake_slots,
+                    authoritative_only=True,
+                ),
+                known_agent_ids,
+            )
+            constrained = await apply_authoritative_plan(
+                assignments=assignments,
+                speech=speech,
+                authoritative_assignments=authoritative_assignments,
+                rules=authoritative_rules,
+                catalog_by_id=catalog_by_id,
+                mode=settings.overdrive_authoritative_mode,
+                repair_enabled=settings.overdrive_plan_repair_enabled,
+                repair_plan=repair_plan,
+            )
+            assignments = registry.minimize_assignments(
+                constrained.assignments, catalog_by_id, intake_slots
+            )
+            if not assignments:
+                assignments = _normalize_overdrive_assignments(
+                    _default_overdrive_assignments(
+                        planning_content, catalog_items, intake_slots
+                    ),
+                    known_agent_ids,
+                )
+                speech = speech or "已为你生成执行计划，请确认任务分工与顺序。"
+
+            # 契约字段补齐：与 legacy enriched_tasks 同一套规则
+            enriched_tasks: list[dict[str, Any]] = []
+            for assignment in assignments:
+                outputs = list(assignment.get("produces_outputs") or [])
+                enriched_tasks.append(
+                    {
+                        **assignment,
+                        "accepts_inputs": list(assignment.get("accepts_inputs") or []),
+                        "produces_outputs": outputs or ["task-result"],
+                        "completion_criteria": [
+                            *[f"真实产出并登记 {output}" for output in outputs],
+                            "结论包含证据、限制与真实产物路径",
+                        ],
+                        "tools": [
+                            "workspace_read",
+                            *(["workspace_write"] if assignment.get("workspace_access") else []),
+                        ],
+                        "requires_approval": bool(assignment.get("workspace_access")),
+                    }
+                )
+            waves = _overdrive_assignment_waves(enriched_tasks)
+            return {
+                "tasks": enriched_tasks,
+                "deliverables": sorted(
+                    {
+                        output
+                        for task in enriched_tasks
+                        for output in task.get("produces_outputs") or []
+                    }
+                ),
+                "confirmed_inputs": [
+                    f"任务方向：{intake_slots.get('task_type')}"
+                    if intake_slots.get("task_type")
+                    else "用户原始请求",
+                ],
+                "assumptions": ["未由检索证据支持的内容均标记为通用知识或待验证推断"],
+                "manager_preflight": [
+                    "核验工作区文件、数据契约与共享输出目录",
+                    "加载任务所需 Skill 并检查依赖与审批点",
+                ],
+                "agent_selection_reasons": [
+                    f"{item['agent_id']}：能力契约匹配任务 {item['task_id']}"
+                    for item in enriched_tasks
+                ],
+                "risks": [
+                    "写文件、代码执行和高风险工具仍需逐项审批",
+                    "任一路研究失败会降级生成计划并明确记录限制",
+                ],
+                "quality_gates": [
+                    "每个任务完成判据命中且产物路径真实存在",
+                    "Manager 对每个任务结果逐条复核完成判据与证据",
+                    "失败、跳过与限制进入最终交付报告",
+                ],
+                "delivery_paths": [
+                    f"output/overdrive/{session_id}/{run.run_id.replace(':', '-')}/delivery/"
+                ],
+                "summary": {
+                    "title": "超频协作执行计划",
+                    "summary": speech,
+                    "planning_mode": constrained.planning_mode,
+                    "wave_count": len(waves),
+                    "agents": [
+                        {
+                            "agent_id": task["agent_id"],
+                            "name": catalog_by_id[task["agent_id"]]["name"],
+                            "reason": f"负责 {task['task_id']}",
+                        }
+                        for task in enriched_tasks
+                        if task["agent_id"] in catalog_by_id
+                    ],
+                    "serial_preflight": ["文件与数据契约核验", "Skill 与依赖检查"],
+                    "risks": ["高风险工具另行审批", "研究源失败时降级"],
+                    "approval_points": ["执行计划确认", "高风险工具审批"],
+                    "deliverables": sorted(
+                        {
+                            output
+                            for task in enriched_tasks
+                            for output in task.get("produces_outputs") or []
+                        }
+                    ),
+                },
+            }
+
+        async def prepare_plan(state: OrchestratorState) -> dict[str, Any]:
+            """薄委派 OverdrivePlanningService.prepare_plan（含 validate/freeze）。"""
+            run_row = await run_service.get_for_user(state["run_id"], user_id)
+            if run_row is None:
+                raise ValidationError("超频 run 不存在或无权访问")
+            planner = OverdrivePlanningService(
+                run_service,
+                ResearchBundleService(
+                    knowledge_search=knowledge_search,
+                    web_search=web_search,
+                    model_knowledge=model_knowledge,
+                    query_refiner=query_refiner,
+                    literature_search=literature_search,
+                    source_timeout_seconds=float(
+                        research_limits.get("source_timeout_seconds") or 20
+                    ),
+                    model_timeout_seconds=float(
+                        research_limits.get("model_timeout_seconds") or 45
+                    ),
+                    wall_timeout_seconds=float(
+                        research_limits.get("wall_timeout_seconds") or 75
+                    ),
+                    max_evidence_items_per_source=research_limit,
+                ),
+                plan_builder,
+            )
+            frozen = await planner.prepare_plan(
+                run_row,
+                known_agent_ids=known_agent_ids,
+                project_id=project_id,
+                revision_feedback=str(state.get("revision_feedback") or ""),
+            )
+            await self._commit_stream_anchor()
+            # 回读冻结 plan.md 内容：revise(tasks) 路径要用它做契约重校验
+            content = ""
+            plan_path = str(frozen.get("path") or "")
+            if plan_path:
+                try:
+                    content = (await get_storage_backend().read(plan_path)).decode("utf-8")
+                except Exception:  # noqa: BLE001
+                    logger.warning(
+                        "orchestrator 图回读冻结计划失败 run_id={} path={}",
+                        state.get("run_id"),
+                        plan_path,
+                    )
+            return {
+                "content": content,
+                "tasks": [dict(task) for task in run_row.tasks or []],
+                "summary": dict(frozen.get("summary") or {}),
+                "version": frozen.get("version"),
+                "hash": frozen.get("hash"),
+            }
+
+        async def decide_plan(
+            state: OrchestratorState, action: str, feedback: str, command_id: str
+        ) -> dict[str, Any]:
+            """薄委派 OverdriveRunService.decide_plan（command_id 幂等 +
+            版本/hash 校验；重复调用命中 OverdriveCommandModel 直接返回）。"""
+            result = await run_service.decide_plan(
+                run_id=state["run_id"],
+                user_id=user_id,
+                command_id=command_id,
+                action=action,
+                plan_version=int(state.get("plan_version") or 0),
+                plan_digest=str(state.get("plan_hash") or ""),
+                feedback=feedback,
+                max_revisions=max_revisions,
+            )
+            await self._commit_stream_anchor()
+            return result
+
+        async def freeze_revision(
+            state: OrchestratorState, edited_tasks: list[dict[str, Any]]
+        ) -> dict[str, Any]:
+            """用户直接编辑 DAG 后的重冻结：freeze_plan 版本 +1 并重新 sha256。"""
+            run_row = await run_service.get_for_user(state["run_id"], user_id, lock=True)
+            if run_row is None:
+                raise ValidationError("超频 run 不存在或无权访问")
+            summary = dict((run_row.plan or {}).get("summary") or {})
+            summary["agent_ids"] = sorted(
+                {str(task.get("agent_id")) for task in edited_tasks}
+            )
+            summary["wave_count"] = len(task_waves(edited_tasks))
+            summary["deliverables"] = sorted(
+                {
+                    str(output)
+                    for task in edited_tasks
+                    for output in task.get("produces_outputs") or []
+                    if str(output).strip()
+                }
+            )
+            frozen = await run_service.freeze_plan(
+                run_row,
+                content=str(state.get("plan_content") or ""),
+                tasks=edited_tasks,
+                known_agent_ids=known_agent_ids,
+                summary=summary,
+            )
+            await self._commit_stream_anchor()
+            return frozen
+
+        async def refresh_plan(state: OrchestratorState) -> dict[str, Any]:
+            """ledger 对账：decide 遇到版本/hash 漂移时重读权威账本最新快照。"""
+            run_row = await run_service.get_for_user(state["run_id"], user_id)
+            plan = dict((run_row.plan if run_row is not None else None) or {})
+            return {
+                "plan_version": int(plan.get("version") or 0),
+                "plan_hash": str(plan.get("hash") or ""),
+                "plan_summary": dict(plan.get("summary") or {}),
+                "plan_tasks": [
+                    dict(task) for task in ((run_row.tasks if run_row else None) or [])
+                ],
+            }
+
+        async def dispatch_run(
+            run_id: str, tasks: list[dict[str, Any]], waves: list[list[str]]
+        ) -> None:
+            """薄委派现有 Overdrive 派发链（advance_run → recruit_ready →
+            run_assistant_job）；派发前对账 ledger，恢复重放不重复派发。"""
+            run_row = await run_service.get_for_user(run_id, user_id, lock=True)
+            if run_row is None:
+                raise ValidationError("超频 run 不存在或无权访问")
+            await run_service.assert_execution_allowed(run_row)
+            if str(run_row.status) != "SERIAL_PREFLIGHT":
+                logger.warning(
+                    "orchestrator.dispatch 跳过重复派发 run_id={} status={}",
+                    run_id,
+                    run_row.status,
+                )
+                return
+            from omichub.infrastructure.celery_app.tasks.overdrive import advance_run
+
+            advance_run.delay(run_id)
+
+        async def aggregate_run(run_id: str) -> str:
+            """登记聚合移交：manager review / DeliveryAssembler 由 advance_run 链
+            异步推进，图不在请求生命周期内阻塞等待执行结果。"""
+            note = "各执行任务已移交 Overdrive 派发链，Manager 复核与交付汇总异步推进"
+            await run_service.append_event(
+                run_id,
+                "orchestrator_graph_dispatched",
+                {"engine": "langgraph", "note": note},
+                dedupe_key=f"orchestrator_graph_dispatched:{run_id}",
+            )
+            await self._commit_stream_anchor()
+            return note
+
+        deps.prepare_plan = prepare_plan
+        deps.decide_plan = decide_plan
+        deps.freeze_revision = freeze_revision
+        deps.refresh_plan = refresh_plan
+        deps.dispatch_run = dispatch_run
+        deps.aggregate_run = aggregate_run
+
+        initial: OrchestratorState = {
+            "run_id": run.run_id,
+            "session_id": session_id,
+            "user_id": user_id,
+            "root_request": user_content,
+            "revision_feedback": "",
+            "plan_status": "not_started",
+            "revision_count": 0,
+            "dispatched": False,
+        }
+        async with postgres_checkpointer() as saver:
+            engine = build_orchestrator_engine(deps, checkpointer=saver)
+            async for chunk in engine.stream(initial):
+                yield chunk
 
     async def _stream_agent_chat_langgraph(
         self,
@@ -7445,6 +8473,8 @@ class ChatService:
         def _resolve_channel(tool_name: str) -> str | None:
             if tool_name == HANDOFF_TOOL_NAME:
                 return "handoff"
+            if tool_name == CHAT_SANDBOX_TOOL_NAME:
+                return "chat-sandbox"
             if tool_name in SKILL_TOOL_NAMES:
                 return "skills"
             if tool_name in RESEARCH_TOOL_NAMES:
@@ -7508,6 +8538,11 @@ class ChatService:
                         item for item in search_results if isinstance(item, dict)
                     )
                 return result
+            if tool_name == CHAT_SANDBOX_TOOL_NAME:
+                # 与 legacy 手写循环同一执行本体；LangGraph 执行器只回单个信封，
+                # 不走 stream_chat_sandbox_tool 的增量 tool_output 事件，
+                # stdout/stderr/产物随最终 ui_payload 一次性透出。
+                return await execute_chat_sandbox(args, user_id)
             server = _find_server(tool_name)
             if server is None:
                 return {"success": False, "error": f"工具 {tool_name} 未挂载到该 Agent"}
@@ -7535,6 +8570,25 @@ class ChatService:
         timeline_text_buffer = ""
         pending_tool_args: dict[str, dict[str, Any]] = {}
         pending_fanout_ask: dict[str, Any] | None = None
+        execution_path = "chat_langgraph"
+        execution_run_id = f"agent-langgraph:{ai_message_id}"
+        execution_agent_id = str(
+            getattr(tool_context, "agent_id", None)
+            or getattr(getattr(tool_context, "agent", None), "agent_id", None)
+            or "router"
+        )
+        execution_round = 0
+
+        yield execution_chunk(
+            "agent_turn_started",
+            session_id=session_id,
+            run_id=execution_run_id,
+            agent_id=execution_agent_id,
+            round_number=0,
+            execution_path=execution_path,
+            message_id=ai_message_id,
+            tool_count=len(tools),
+        )
 
         def _flush_timeline_text() -> None:
             nonlocal timeline_text_buffer
@@ -7585,6 +8639,14 @@ class ChatService:
                         yield chunk
                         return
                     elif chunk.type == "tool_call":
+                        execution_round = max(execution_round, int(chunk.metadata.get("round") or 1))
+                        chunk.metadata.update(
+                            {
+                                "execution_path": execution_path,
+                                "run_id": execution_run_id,
+                                "round": execution_round,
+                            }
+                        )
                         # 正文段在工具调用前收口，保持"正文→工具"交错顺序
                         _flush_timeline_text()
                         tc_meta = chunk.metadata or {}
@@ -7594,6 +8656,13 @@ class ChatService:
                         yield chunk
                     elif chunk.type == "tool_result":
                         tc_meta = chunk.metadata or {}
+                        chunk.metadata.update(
+                            {
+                                "execution_path": execution_path,
+                                "run_id": execution_run_id,
+                                "round": execution_round,
+                            }
+                        )
                         call_id = tc_meta.get("tool_call_id", "")
                         tool_name = tc_meta.get("tool_name", "")
                         success = bool(tc_meta.get("success"))
@@ -7633,6 +8702,16 @@ class ChatService:
                             },
                         )
                         yield chunk
+                        yield execution_chunk(
+                            "agent_context_reinjected",
+                            session_id=session_id,
+                            run_id=execution_run_id,
+                            agent_id=execution_agent_id,
+                            round_number=execution_round,
+                            execution_path=execution_path,
+                            tool_call_id=call_id,
+                            tool_name=tool_name,
+                        )
                     else:
                         # 其余事件直接透传（metadata 已对齐 legacy）
                         yield chunk
@@ -7702,6 +8781,16 @@ class ChatService:
                     return
                 next_state = await handoff_handler(directive)
                 runtime_state.update(next_state)
+                execution_round += 1
+                yield execution_chunk(
+                    "agent_turn_continued",
+                    session_id=session_id,
+                    run_id=execution_run_id,
+                    agent_id=execution_agent_id,
+                    round_number=execution_round,
+                    execution_path=execution_path,
+                    reason="handoff",
+                )
                 yield ChatChunk(
                     type="handoff",
                     metadata={
@@ -7737,6 +8826,15 @@ class ChatService:
                         "usage": accumulated_usage or {},
                     },
                 )
+                yield execution_chunk(
+                    "agent_turn_failed",
+                    session_id=session_id,
+                    run_id=execution_run_id,
+                    agent_id=execution_agent_id,
+                    round_number=execution_round,
+                    execution_path=execution_path,
+                    error=diagnostic,
+                )
                 return
         except Exception as e:  # noqa: BLE001
             await self.update_message_content(
@@ -7748,7 +8846,28 @@ class ChatService:
             yield ChatChunk(
                 type="error",
                 content=f"生成失败: {e}",
-                metadata={"session_id": session_id, "message_id": ai_message_id},
+                metadata={
+                    "session_id": session_id,
+                    "message_id": ai_message_id,
+                    **execution_metadata(
+                        "agent_turn_failed",
+                        session_id=session_id,
+                        run_id=execution_run_id,
+                        agent_id=execution_agent_id,
+                        round_number=execution_round,
+                        execution_path=execution_path,
+                        error=str(e),
+                    ),
+                },
+            )
+            yield execution_chunk(
+                "agent_turn_failed",
+                session_id=session_id,
+                run_id=execution_run_id,
+                agent_id=execution_agent_id,
+                round_number=execution_round,
+                execution_path=execution_path,
+                error=str(e),
             )
             return
 
@@ -7783,6 +8902,16 @@ class ChatService:
                 },
             )
         await self._apply_usage_to_session(ai_message_id, last_usage)
+        yield execution_chunk(
+            "agent_final_result",
+            session_id=session_id,
+            run_id=execution_run_id,
+            agent_id=execution_agent_id,
+            round_number=execution_round,
+            execution_path=execution_path,
+            message_id=ai_message_id,
+            status="round_limit" if runtime.rounds_exhausted else "completed",
+        )
         yield ChatChunk(
             type="done",
             metadata={
@@ -8020,17 +9149,26 @@ class ChatService:
         reader = PdfReader(BytesIO(source) if isinstance(source, bytes) else source)
         pages: list[str] = []
         total_chars = 0
-        max_chars = 24_000
+        max_chars = 50_000
+        truncated = False
+        last_page_number = 0
         for page_number, page in enumerate(reader.pages, start=1):
             text = (page.extract_text() or "").strip()
             if not text:
                 continue
             remaining = max_chars - total_chars
             if remaining <= 0:
+                truncated = True
                 break
             page_text = text[:remaining]
             pages.append(f"[第 {page_number} 页]\n{page_text}")
             total_chars += len(page_text)
+            last_page_number = page_number
+            if len(page_text) < len(text):
+                truncated = True
+                break
+        if truncated:
+            pages.append(f"[已截断，仅覆盖前 {last_page_number} 页]")
         return "\n\n".join(pages)
 
     async def _resolve_model(self, model_id: uuid.UUID) -> AIProviderConfigModel | None:
