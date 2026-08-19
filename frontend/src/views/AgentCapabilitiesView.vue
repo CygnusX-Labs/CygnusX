@@ -14,6 +14,8 @@ import {
   NSpin,
   NSpace,
   NSwitch,
+  NTabPane,
+  NTabs,
   NTag,
   useMessage,
 } from 'naive-ui'
@@ -32,6 +34,7 @@ import {
   ServerOutline,
 } from '@vicons/ionicons5'
 import PageHeader from '@/components/PageHeader.vue'
+import MemoryManagementPanel from '@/components/agent-workspace/MemoryManagementPanel.vue'
 import { agentApi } from '@/api/agent'
 import { useAgentHubStore, CATEGORY_LABELS } from '@/stores/agentHub'
 import type { UserAgentCapabilities, UserAgentFeatureKey } from '@/types/agent'
@@ -293,8 +296,10 @@ onMounted(async () => {
             仅可选择管理员已启用的模型、MCP 与 Skill。System Prompt 与 Agent 基础设置由管理员维护。
           </NAlert>
 
-          <NSpin :show="loadingCapabilities">
-            <NForm label-placement="top" class="capability-form">
+          <NTabs type="line" animated class="capability-tabs">
+            <NTabPane name="capabilities" tab="能力配置">
+              <NSpin :show="loadingCapabilities">
+                <NForm label-placement="top" class="capability-form">
               <div class="editor-grid">
                 <NCard size="small" class="capability-card">
                   <template #header>
@@ -387,22 +392,27 @@ onMounted(async () => {
                   </div>
                 </div>
               </NCard>
-            </NForm>
+                </NForm>
 
-            <div class="editor-actions">
-              <span v-if="hasUnsavedChanges" class="unsaved-state" aria-live="polite">有未保存的更改</span>
-              <NPopconfirm v-if="hasCustomSelection" @positive-click="resetCapabilities">
-                <template #trigger>
-                  <NButton :loading="saving">恢复管理员默认</NButton>
-                </template>
-                恢复后将移除你为「{{ activeAgent.name }}」保存的个人能力选择，确定继续吗？
-              </NPopconfirm>
-              <NButton type="primary" :loading="saving" :disabled="!hasUnsavedChanges" @click="saveCapabilities">
-                <template #icon><NIcon :component="SaveOutline" /></template>
-                保存个人配置
-              </NButton>
-            </div>
-          </NSpin>
+                <div class="editor-actions">
+                  <span v-if="hasUnsavedChanges" class="unsaved-state" aria-live="polite">有未保存的更改</span>
+                  <NPopconfirm v-if="hasCustomSelection" @positive-click="resetCapabilities">
+                    <template #trigger>
+                      <NButton :loading="saving">恢复管理员默认</NButton>
+                    </template>
+                    恢复后将移除你为「{{ activeAgent.name }}」保存的个人能力选择，确定继续吗？
+                  </NPopconfirm>
+                  <NButton type="primary" :loading="saving" :disabled="!hasUnsavedChanges" @click="saveCapabilities">
+                    <template #icon><NIcon :component="SaveOutline" /></template>
+                    保存个人配置
+                  </NButton>
+                </div>
+              </NSpin>
+            </NTabPane>
+            <NTabPane name="memory" tab="记忆管理">
+              <MemoryManagementPanel :agent-id="selectedAgentId" />
+            </NTabPane>
+          </NTabs>
         </section>
       </div>
     </NSpin>
@@ -614,6 +624,19 @@ onMounted(async () => {
 .capability-guidance {
   margin: var(--space-xl) var(--card-padding) 0;
   line-height: 1.65;
+}
+
+.capability-tabs {
+  margin-top: var(--space-lg);
+}
+
+.capability-tabs :deep(.n-tabs-nav) {
+  padding: 0 var(--card-padding);
+  border-bottom: 1px solid var(--neutral-border);
+}
+
+.capability-tabs :deep(.n-tabs-pane-wrapper) {
+  min-height: 0;
 }
 
 .editor-grid {

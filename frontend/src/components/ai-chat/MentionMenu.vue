@@ -5,6 +5,7 @@ import {
   DocumentTextOutline,
   FolderOutline,
   FolderOpenOutline,
+  PeopleOutline,
 } from '@vicons/ionicons5'
 import type { MentionItem } from './types'
 
@@ -64,7 +65,7 @@ function itemTitle(item: MentionItem): string {
   <div class="mention-menu" @mousedown.prevent>
     <div class="menu-header">
       <span class="header-title">@ 引用</span>
-      <span class="header-sub">输入文件名筛选上下文 · 找智能体请用 /</span>
+      <span class="header-sub">协作室可点名 Agent；也可引用工作区文件</span>
     </div>
 
     <div ref="listRef" v-animate-list.200 class="mention-list" role="listbox" aria-label="@ 引用列表">
@@ -102,7 +103,7 @@ function itemTitle(item: MentionItem): string {
         >
           <div class="item-icon" :class="`kind-${item.kind}`">
             <n-icon size="16">
-              <component :is="item.kind === 'directory' ? FolderOutline : DocumentTextOutline" />
+              <component :is="item.kind === 'directory' ? FolderOutline : item.kind === 'agent' ? PeopleOutline : DocumentTextOutline" />
             </n-icon>
           </div>
           <div class="item-info">
@@ -131,7 +132,7 @@ function itemTitle(item: MentionItem): string {
       <span class="footer-agent-hint">想找智能体？输入 <kbd>/</kbd> 试试</span>
       <span><kbd>↑↓</kbd> 导航</span>
       <span><kbd>Enter</kbd> 选择</span>
-      <span><kbd>Esc</kbd> 关闭</span>
+            <span><kbd>Esc</kbd> 关闭</span>
     </div>
   </div>
 </template>

@@ -11,7 +11,7 @@ OmicHub 当前是一个**多入口、共享工具契约、部分统一事件、�
 2. 普通聊天有两条主执行引擎：Legacy 手写 ReAct 循环和 LangGraph 状态图。
 3. OmicStudio 使用独立的 Studio 工具循环，并在工具执行期间提供审批、计划、沙盒和 loop guard。
 4. `parallel_subagents` 会派生受限 Worker；Worker 自己拥有多轮 ReAct，但不能递归 fan-out 或越权切换父会话。
-5. AgentTeams 协助室当前同时存在 Case 执行链和 Manager 咨询链；普通房间消息已经具备 `chat / clarify / execute` 三态意图判断，但 `tool_execute` 不是默认房间路径。
+5. AgentTeams 协助室同时存在 Case 执行链、Manager 咨询链和单步只读工具链；普通房间消息按 `chat / clarify / tool_execute / execute / degraded` 处理，只有明确的只读请求才进入 `tool_execute`。
 6. 后端通过 SSE 发送正文、思考增量、工具调用、工具结果、审批和统一执行生命周期事件；前端按事件类型投影为消息、工具卡片、Worker 时间线和调试事件。
 
 当前最重要的架构事实是：**“工具闭环已经存在”不等于“所有入口都使用同一个 Runtime”**。因此新增能力必须先声明执行路径，再选择对应的循环、上下文和治理边界。
@@ -33,6 +33,7 @@ OmicHub 当前是一个**多入口、共享工具契约、部分统一事件、�
    ├─ AgentTeams 协助室
    │    ├─ chat              → Manager 会诊/普通回复
    │    ├─ clarify           → 结构化追问补全对象
+   │    ├─ tool_execute      → 受控只读工具执行 + 结果回灌
    │    └─ case_execute      → 创建/推进 Case 规划与 Work Item
    │
    └─ parallel_subagents
@@ -48,7 +49,7 @@ OmicHub 当前是一个**多入口、共享工具契约、部分统一事件、�
 | `studio_chat_loop` | 工作台工具、代码、文件和沙盒闭环 | `ChatService` Studio 分支 | 进入 Studio 会话时启用 |
 | `agentteams_manager_consultation` | Manager 对 Case/房间上下文进行只读会诊 | `AgentConsultationService` | AgentTeams 场景启用 |
 | `agentteams_worker_react` | Worker 执行受限任务和工具调用 | `ParallelSubAgentService._child_loop` | 被 Manager/工具显式派生时启用 |
-| `agentteams_tool_execution` | 协助室普通消息直接调用受控工具 | 目标路径，当前未作为默认链路 | 否 |
+| `agentteams_tool_execution` | 协助室明确的单步只读请求 | `AgentTeamsRoomResponseService._run_room_tool_execution` | 按意图受控启用，非默认会诊链 |
 
 `execution_path` 是观测和排障字段，不负责替代权限判断。权限、工具白名单、执行模式和 Case 状态仍由各自服务强制校验。
 
@@ -147,7 +148,7 @@ LangGraph 不是另一套工具契约；它复用 Provider、工具执行器、M
 
 ## 5. AgentTeams 协助室框架
 
-### 5.1 房间消息三态意图
+### 5.1 房间消息意图
 
 `agentteams_execution_intent.py` 当前使用保守策略：
 
@@ -155,6 +156,7 @@ LangGraph 不是另一套工具契约；它复用 Provider、工具执行器、M
 | --- | --- | --- |
 | `chat` | 无执行动词，或命中咨询/寒暄否决词 | 走 Manager 普通会诊/回复 |
 | `clarify` | 有执行动词，但没有明确文件或上下文对象 | 发送结构化追问，最多追问有限轮次 |
+| `tool_execute` | 明确读取、查看、检索、查询或只读复核对象 | 仅使用受控只读工具，结果回灌后由 Manager 回复 |
 | `execute` | 有执行动词且有明确对象，且未命中否决词 | 启动 Case planning |
 
 执行对象可来自附件/上下文引用，或文本中的常见数据文件名。该判定宁可漏触发，不因“分析”“运行”等词单独启动真实工作流。
@@ -182,7 +184,7 @@ LangGraph 不是另一套工具契约；它复用 Provider、工具执行器、M
 
 - **会诊**：目标是解释、建议和证据整理，不自动创建可写执行计划。
 - **Case 执行**：目标是生成并推进 Work Item，必须经过 Case 状态、权限和审批边界。
-- **普通房间 tool_execute**：虽然在目标框架中有明确位置，但当前不应因普通自然语言自动开放为默认路径。
+- **普通房间 tool_execute**：仅在明确的读取、查看、检索、查询或只读复核请求中启用；它不是纯会诊的默认路径，也不授予写入或真实计算权限。
 
 ## 6. 统一事件框架
 
@@ -206,7 +208,7 @@ LangGraph 不是另一套工具契约；它复用 Provider、工具执行器、M
 | --- | --- |
 | `agent_turn_started` | 一次 Agent turn 开始，已完成上下文和工具装配 |
 | `agent_context_reinjected` | 工具结果已写回模型上下文，下一轮具备继续条件 |
-| `agent_turn_continued` | handoff 或其他合法原因导致同一执行链继续 |
+| `agent_turn_continued` | 工具结果回灌后（或其他合法原因）同一执行链进入下一轮 |
 | `agent_final_result` | 本次执行形成最终结果、等待输入或达到轮次边界 |
 | `agent_turn_failed` | 模型、工具、运行时或上下文处理失败 |
 | `agent_loop_guard_triggered` | 运行保护触发，循环被安全中止或降级 |
@@ -226,7 +228,7 @@ LangGraph 不是另一套工具契约；它复用 Provider、工具执行器、M
 - `onLoopGuardTriggered`：Studio/普通循环护栏提示。
 - `onExecutionEvent`：统一生命周期事件，供调试时间线、Worker 进度和房间投影消费。
 
-正常用户界面应优先显示“正在检索 / 正在执行 / 已获得结果 / 正在整理”，而不是默认展示完整内部 reasoning。调试模式可以按权限展示更细粒度的 round、tool 和 path 信息。
+正常用户界面应优先显示“正在检索 / 正在执行 / 已获得结果 / 正在整理”，而不是默认展示完整内部 reasoning。协助室开启“默认展开底层事件”后，Worker 卡片可查看 `tool_call_id`、`round`、`execution_path` 以及截断后的参数/结果摘要。
 
 ## 7. 运行保护与停止语义
 
@@ -343,6 +345,7 @@ LangGraph 不是另一套工具契约；它复用 Provider、工具执行器、M
 | `frontend/src/composables/useAgentChatStream.ts` | SSE 解析和前端事件回调 |
 | `frontend/src/stores/agentHub.ts` | 普通助手、Studio、工具和护栏状态投影 |
 | `frontend/src/utils/agentTeamsRoom.ts` | AgentTeams 事件到房间块/消息的纯函数投影 |
+| `frontend/src/views/AgentTeamsRoomView.vue` | Worker 卡片、Guard 警示与技术事件详情展示 |
 
 ## 12. 与其他架构文档的关系
 
@@ -352,5 +355,6 @@ LangGraph 不是另一套工具契约；它复用 Provider、工具执行器、M
 - `agentteams_room_plan.md` 侧重团队协作室的产品实施路线和里程碑。
 - `omichub_studio.md` 侧重 OmicStudio 工作台的产品实现与交接。
 - `docs/info/26.8.18/OmicHub-Agent思考工具闭环优化实施计划与编码提示词.md` 是本次闭环优化的实施计划、验收标准和编码提示词。
+- `agent_execution_loop_observability_2026-08.md` 记录本轮事件关联、房间只读工具路由、Worker 时间线和验证基线。
 
 当文档之间描述冲突时，以当前代码、测试和运行配置为事实来源；目标方案必须明确标记为“计划”或“待实现”。

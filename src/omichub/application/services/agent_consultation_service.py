@@ -8,6 +8,8 @@ import json
 import re
 import shutil
 import time
+from collections.abc import Awaitable, Callable
+from inspect import isawaitable
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -39,7 +41,7 @@ from omichub.infrastructure.database.repositories.file_repository import FileRep
 from omichub.infrastructure.storage.minio_store import MinioStore
 from omichub.infrastructure.storage.path_factory import get_path_factory
 
-_JSON_FENCE_RE = re.compile(r"```json\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
 
 _TOOL_CALL_EVIDENCE_LIMIT = 200
 _ARGS_SUMMARY_MAX_CHARS = 200
@@ -110,6 +112,11 @@ class _BridgeEvidenceProjector:
                     f"Agent {agent_id} 调用工具 {tool}",
                     {
                         "tool": tool,
+                        "tool_call_id": str(event.get("tool_call_id") or ""),
+                        "round": int(event.get("round") or 0),
+                        "execution_path": str(
+                            event.get("execution_path") or "agentteams_worker_react"
+                        ),
                         "args_summary": str(event.get("args_summary") or "")[
                             :_ARGS_SUMMARY_MAX_CHARS
                         ],
@@ -136,8 +143,69 @@ class _BridgeEvidenceProjector:
                 f"工具 {tool} 执行{'成功' if success else '失败'}",
                 {
                     "tool": tool,
+                    "tool_call_id": str(event.get("tool_call_id") or ""),
+                    "round": int(event.get("round") or 0),
+                    "execution_path": str(
+                        event.get("execution_path") or "agentteams_worker_react"
+                    ),
+                    "result_summary": str(event.get("result_summary") or "")[:500],
                     "success": success,
                     "duration_ms": int(event.get("duration_ms") or 0),
+                    "work_item_id": self._work_item_id,
+                    "agent_id": agent_id,
+                },
+            )
+        elif event_type == "worker_tool_started":
+            tool = str(event.get("tool_name") or "")
+            self._schedule(
+                "agent.tool_started",
+                f"Agent {agent_id} 开始执行工具 {tool}",
+                {
+                    "tool": tool,
+                    "tool_call_id": str(event.get("tool_call_id") or ""),
+                    "round": int(event.get("round") or 0),
+                    "execution_path": str(
+                        event.get("execution_path") or "agentteams_worker_react"
+                    ),
+                    "work_item_id": self._work_item_id,
+                    "agent_id": agent_id,
+                },
+            )
+        elif event_type == "agent_context_reinjected":
+            self._schedule(
+                "agent.context_reinjected",
+                f"Agent {agent_id} 已将工具结果纳入下一轮分析",
+                {
+                    "tool": str(event.get("tool_name") or ""),
+                    "tool_call_id": str(event.get("tool_call_id") or ""),
+                    "round": int(event.get("round") or 0),
+                    "execution_path": str(event.get("execution_path") or "agentteams_worker_react"),
+                    "work_item_id": self._work_item_id,
+                    "agent_id": agent_id,
+                },
+            )
+        elif event_type == "agent_turn_continued":
+            self._schedule(
+                "agent.turn_continued",
+                f"Agent {agent_id} 进入下一轮分析",
+                {
+                    "round": int(event.get("round") or 0),
+                    "previous_round": int(event.get("previous_round") or 0),
+                    "execution_path": str(event.get("execution_path") or "agentteams_worker_react"),
+                    "work_item_id": self._work_item_id,
+                    "agent_id": agent_id,
+                },
+            )
+        elif event_type == "agent_loop_guard_triggered":
+            reason = str(event.get("reason") or "unknown")
+            self._schedule(
+                "agent.loop_guard_triggered",
+                f"Agent {agent_id} 运行保护已触发：{reason}",
+                {
+                    "reason": reason,
+                    "tool": str(event.get("tool_name") or ""),
+                    "round": int(event.get("round") or 0),
+                    "execution_path": str(event.get("execution_path") or "agentteams_worker_react"),
                     "work_item_id": self._work_item_id,
                     "agent_id": agent_id,
                 },
@@ -215,6 +283,7 @@ class AgentConsultationService:
         requester_ref: str,
         work_item_id: str | None = None,
         execution_mode: str = "readonly_consultation",
+        on_event: Callable[[dict[str, Any]], Awaitable[None] | None] | None = None,
     ) -> ConsultationEnvelope:
         started = time.monotonic()
         registry = get_agentteams_capability_registry()
@@ -261,6 +330,14 @@ class AgentConsultationService:
             and work_item_id
             else None
         )
+        event_handlers = [handler for handler in (projector, on_event) if handler is not None]
+
+        async def project_event(event: dict[str, Any]) -> None:
+            for handler in event_handlers:
+                result = handler(event)
+                if isawaitable(result):
+                    await result
+
         result = await self._parallel_service.run(
             user_id=requester_ref,
             parent_agent_id="agent-general",
@@ -278,7 +355,7 @@ class AgentConsultationService:
             safe_only=execution_mode == "readonly_consultation",
             runtime_authorized=True,
             workdir_root=workdir_root,
-            on_event=projector,
+            on_event=project_event if event_handlers else None,
         )
         if projector is not None:
             await projector.drain()
@@ -352,7 +429,7 @@ class AgentConsultationService:
                 '{"name": ..., "parameters": {"work_items": [{"work_item_id", "target", '
                 '"objective", "skill_name", "execution_mode": "workspace_execution", '
                 '"depends_on": []}]}, "quality_gate_required": bool}，target 限声明了 '
-                "workspace_execution 的 worker（如 agent-viz、agent-code）。"
+                "workspace_execution 的 worker（如 agent-scrna、agent-rnaseq、agent-viz、agent-code）。"
                 "quality_gate_required 必须显式填写 true/false；只有 true 才会创建独立质控阶段。"
             )
         hard_gate_clause = (
@@ -532,7 +609,7 @@ class AgentConsultationService:
         match = _JSON_FENCE_RE.search(raw_answer)
         candidate = match.group(1) if match else raw_answer
         try:
-            payload = json.loads(candidate)
+            payload = json.loads(AgentConsultationService._strip_json_trailing_commas(candidate))
             if not isinstance(payload, dict):
                 raise ValueError("consultation envelope must be an object")
             return ConsultationEnvelope.model_validate(payload), True
@@ -541,6 +618,27 @@ class AgentConsultationService:
                 conclusion=raw_answer[:8_000],
                 risks=["信封解析降级：专家答复未满足结构化 JSON 契约。"],
             ), False
+
+    @staticmethod
+    def _strip_json_trailing_commas(value: str) -> str:
+        result: list[str] = []
+        in_string = False
+        escaped = False
+        for index, char in enumerate(value):
+            if char == '"' and not escaped:
+                in_string = not in_string
+            if char == "," and not in_string:
+                next_index = index + 1
+                while next_index < len(value) and value[next_index].isspace():
+                    next_index += 1
+                if next_index < len(value) and value[next_index] in "}]":
+                    escaped = False
+                    continue
+            result.append(char)
+            escaped = char == "\\" and not escaped
+            if char != "\\":
+                escaped = False
+        return "".join(result)
 
     async def _record_usage(
         self,

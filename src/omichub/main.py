@@ -368,6 +368,11 @@ def create_app() -> FastAPI:
         RateLimitMiddleware,
         max_requests=settings.rate_limit_max,
         window_seconds=settings.rate_limit_window,
+        ban_enabled=settings.rate_limit_ban_enabled,
+        ban_threshold=settings.rate_limit_ban_threshold,
+        ban_window_seconds=settings.rate_limit_ban_window,
+        ban_seconds=settings.rate_limit_ban_seconds,
+        trusted_networks=settings.rate_limit_trusted_networks,
         enabled=settings.rate_limit_enabled,
     )
 

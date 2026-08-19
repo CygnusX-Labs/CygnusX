@@ -188,6 +188,23 @@ class CaseRoomProjector:
             ),
             "case.queued": f"{queued_scope}活跃 Case 已达上限，本 Case 正在排队；释放容量后会自动继续。",
             "case.dequeued": "协作容量已经释放，本 Case 已离开队列并开始规划。",
+            "case.handoff_proposed": (
+                f"已识别领域 Flow「{str(payload.get('flow_id') or '')}」，"
+                "正在由专项规划链路生成可确认的执行计划。"
+            ),
+            "case.handoff_started": (
+                f"领域 Flow「{str(payload.get('flow_id') or '')}」已完成确认并真实启动，"
+                "后续进度将按工作项持续回传。"
+            ),
+            "case.handoff_failed": (
+                "专项 Flow 暂未交接："
+                f"{str(payload.get('reason') or payload.get('summary') or '缺少可用 Worker 或凭证')[:240]}"
+                "。可补齐凭证后重试，或改为方案咨询。"
+            ),
+            "flow.stage_unavailable": (
+                f"Flow 阶段「{str(payload.get('stage') or '')}」当前不可用："
+                f"{str(payload.get('reason') or '缺少可用 Worker')[:240]}"
+            ),
             "planning.revised": (
                 f"计划已更新为 v{str(payload.get('plan_version') or '?')}，"
                 f"新短码 {str(payload.get('plan_hash') or '')[:8]}；旧版本立即失效，等待重新确认。"

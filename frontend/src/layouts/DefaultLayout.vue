@@ -12,7 +12,7 @@ import {
   MenuOutline, ChevronForwardOutline, ChevronDownOutline,
   NotificationsOutline, HelpCircleOutline, ChatbubblesOutline, Planet,
   WalletOutline, SparklesOutline, ConstructOutline, LayersOutline,
-  TerminalOutline, SearchOutline, DesktopOutline, LockClosedOutline, PeopleOutline,
+  TerminalOutline, SearchOutline, DesktopOutline, LockClosedOutline, PeopleOutline, BulbOutline,
 } from '@vicons/ionicons5'
 import CookieBalanceBadge from '@/components/CookieBalanceBadge.vue'
 import NotAuthorized from '@/components/NotAuthorized.vue'
@@ -266,6 +266,7 @@ const adminNavItems = computed<NavItem[]>(() => [
     icon: SettingsOutline,
     children: [
       { key: 'admin-users', label: '用户管理', to: '/admin/users', icon: PersonOutline },
+      { key: 'admin-memory', label: '记忆审计', to: '/admin/memory', icon: BulbOutline },
       { key: 'admin-session-logs', label: '会话日志排查', to: '/admin/session-logs', icon: DocumentTextOutline },
       { key: 'admin-ai-metrics', label: 'AI 指标仪表盘', to: '/admin/ai-metrics', icon: BarChartOutline },
       { key: 'admin-ai-config', label: 'AI 配置中心', to: '/admin/ai-config/providers', icon: SparklesOutline },

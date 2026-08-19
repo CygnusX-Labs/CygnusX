@@ -73,6 +73,9 @@ export interface AgentTeamsCaseCardPayload {
   plan_hash?: string | null
   plan_version?: number
   proposed_submission?: Record<string, unknown> | null
+  work_items?: Array<{ work_item_id: string; target: string; status: string }>
+  quality_decision?: string | null
+  manifest_uri?: string | null
 }
 
 export interface OverdriveProgress {

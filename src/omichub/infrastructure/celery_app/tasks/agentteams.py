@@ -61,8 +61,17 @@ def cleanup_evidence() -> dict[str, object]:
     name="omichub.infrastructure.celery_app.tasks.agentteams.respond_to_room_message",
     max_retries=120,
 )
-def respond_to_room_message(self, case_id: str, requester_ref: str, content: str) -> dict[str, str]:
-    result = asyncio.run(_respond_to_room_message(case_id, requester_ref, content))
+def respond_to_room_message(
+    self,
+    case_id: str,
+    requester_ref: str,
+    content: str,
+    dispatch: dict[str, object] | None = None,
+) -> dict[str, str]:
+    if dispatch is None:
+        result = asyncio.run(_respond_to_room_message(case_id, requester_ref, content))
+    else:
+        result = asyncio.run(_respond_to_room_message(case_id, requester_ref, content, dispatch))
     if result.get("status") == "skipped_locked":
         raise self.retry(countdown=2)
     return result
@@ -115,7 +124,10 @@ async def _sync_case_rooms_with_factory(
 
 
 async def _respond_to_room_message(
-    case_id: str, requester_ref: str, content: str
+    case_id: str,
+    requester_ref: str,
+    content: str,
+    dispatch: dict[str, object] | None = None,
 ) -> dict[str, str]:
     from omichub.application.services.agentteams_bridge_settings_service import (
         AgentTeamsBridgeSettingsService,
@@ -134,7 +146,12 @@ async def _respond_to_room_message(
             if not agentteams.available:
                 return {"status": "skipped_unavailable"}
             return await AgentTeamsRoomResponseService(db, agentteams=agentteams).respond(
-                case_id, requester_ref, content
+                case_id,
+                requester_ref,
+                content,
+                target_agent_id=str(dispatch.get("target_agent_id") or "") or None
+                if isinstance(dispatch, dict) and dispatch.get("dispatch_mode") == "direct"
+                else None,
             )
     except Exception as exc:  # noqa: BLE001
         logger.exception("AgentTeams room response task failed: %s", exc)
@@ -214,12 +231,7 @@ async def _auto_confirm_cases_with_factory(
     *,
     redis_getter=get_redis,
 ) -> dict[str, int | str]:
-    """自动确认处于 approval_pending 且被标记为 autonomous 的 Case。
-
-    消费 Redis 集合与 Bridge 待审批列表的交集；通用 Case 与流程 Case 均支持，
-    最终是否自动批准由用户当前 autonomy 偏好决定。标记丢失或 Bridge 不可达时
-    静默降级，Case 留在人工审批队列。
-    """
+    """清理历史自动确认标记，确保遗留标记不会绕过人工审批。"""
     from omichub.application.services.agentteams_bridge_settings_service import (
         AgentTeamsBridgeSettingsService,
     )
@@ -293,9 +305,15 @@ async def _auto_confirm_cases_with_factory(
                     summary["failed"] = int(summary["failed"]) + 1
                     continue
                 status_value = str(result.get("status") or "")
-                if status_value.startswith("idempotent_") or status_value == "auto_approved":
+                if status_value.startswith("idempotent_") or status_value in {
+                    "auto_approved",
+                    "skipped_manual_approval_required",
+                }:
                     await redis.srem(AUTO_CONFIRM_CASES_KEY, case_id)
-                    summary["confirmed"] = int(summary["confirmed"]) + 1
+                    if status_value != "skipped_manual_approval_required":
+                        summary["confirmed"] = int(summary["confirmed"]) + 1
+                    else:
+                        summary["skipped"] = int(summary["skipped"]) + 1
                 else:
                     summary["skipped"] = int(summary["skipped"]) + 1
             return summary

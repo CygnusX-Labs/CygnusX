@@ -69,7 +69,6 @@ dependencies = [
     "langgraph>=0.2.0",
     # Orchestrator 编排图 checkpoint 恢复载体（生产 PostgresSaver，psycopg 驱动）
     "langgraph-checkpoint-postgres>=2.0.0",
-    "mem0ai==2.0.15",
     "psycopg[binary,pool]>=3.1",
     "ollama>=0.6.2",
     "fastembed>=0.8.0",

@@ -54,6 +54,10 @@ class IntentRoute:
 
     flow_id: str  # Bridge 工作流 id(flow.bridge_workflow,如 "rna_seq")
     lead_planner: str  # 接管规划的 AgentTeams 身份(如 "agent-rnaseq")
+    flow_key: str | None = None
+    matched_hints: tuple[str, ...] = ()
+    route_input: str = ""
+    registry_version: str | None = None
 
 
 @dataclass(frozen=True)
@@ -204,7 +208,15 @@ def infer_intent_route(
     ).winner
     if winner is None:
         return None
-    return IntentRoute(flow_id=winner.bridge_workflow, lead_planner=winner.lead_planner)
+    registered = (flow_registry or get_flow_registry()).flows.get(winner.flow_id)
+    return IntentRoute(
+        flow_id=winner.bridge_workflow,
+        lead_planner=winner.lead_planner,
+        flow_key=winner.flow_id,
+        matched_hints=winner.matched_hints,
+        route_input=text,
+        registry_version=registered.digest if registered else None,
+    )
 
 
 __all__ = [

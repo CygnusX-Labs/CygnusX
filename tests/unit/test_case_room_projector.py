@@ -250,6 +250,51 @@ def test_projects_case_queue_reason_and_dequeue_notice() -> None:
     assert "开始规划" in dequeued[0]["content"]
 
 
+def test_projects_handoff_events_as_runtime_facts() -> None:
+    projector = _projector()
+    proposed = projector.project(
+        {
+            "event_id": "event-handoff-proposed",
+            "case_id": "case-1",
+            "actor": "bioops-manager",
+            "event_type": "case.handoff_proposed",
+            "payload": {"flow_id": "scrna_seq"},
+        },
+        session_id="session-1",
+    )
+    started = projector.project(
+        {
+            "event_id": "event-handoff-started",
+            "case_id": "case-1",
+            "actor": "workflow-operator",
+            "event_type": "case.handoff_started",
+            "payload": {"flow_id": "scrna_seq", "status": "executing"},
+        },
+        session_id="session-1",
+    )
+
+    assert "正在" in proposed[0]["content"]
+    assert "真实启动" in started[0]["content"]
+
+
+def test_projects_handoff_failure_with_actionable_reason() -> None:
+    projector = _projector()
+    failed = projector.project(
+        {
+            "event_id": "event-handoff-failed",
+            "case_id": "case-1",
+            "actor": "bioops-manager",
+            "event_type": "case.handoff_failed",
+            "payload": {"reason": "agent-scrna-upstream 凭证未配置"},
+        },
+        session_id="session-1",
+    )
+
+    assert "暂未交接" in failed[0]["content"]
+    assert "agent-scrna-upstream 凭证未配置" in failed[0]["content"]
+    assert "方案咨询" in failed[0]["content"]
+
+
 def test_projects_manager_review_and_plan_revision_version_notice() -> None:
     projector = _projector()
     review = projector.project(

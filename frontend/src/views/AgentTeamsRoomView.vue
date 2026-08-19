@@ -23,6 +23,7 @@ import {
   AddOutline,
   CaretDownOutline,
   CaretUpOutline,
+  ChevronBackOutline,
   CloseOutline,
   FileTrayOutline,
   MenuOutline,
@@ -34,6 +35,7 @@ import {
 } from '@vicons/ionicons5'
 import {
   agentTeamsApi,
+  type AgentTeamsEventListResponse,
   type AgentTeamsCase,
   type AgentTeamsCaseStatus,
   type AgentTeamsContextRef,
@@ -45,7 +47,9 @@ import MessageArtifactGallery from '@/components/ai-chat/MessageArtifactGallery.
 import AskUserCard from '@/components/ai-chat/AskUserCard.vue'
 import RouteDecisionCard from '@/components/agent-teams/RouteDecisionCard.vue'
 import AgentTeamsSettingsDrawer from '@/components/agent-teams/AgentTeamsSettingsDrawer.vue'
+import RoomMcpToolCard from '@/components/agent-teams/RoomMcpToolCard.vue'
 import type { FileAttachment } from '@/components/ai-chat/types'
+import type { AgentTemplate } from '@/types/agent'
 import { useAgentTeamsOnboardingStore } from '@/stores/agentTeamsOnboarding'
 import { useAgentTeamsPreferencesStore } from '@/stores/agentTeamsPreferences'
 import { mergeAgentTeamsEvents, shouldPollAgentTeamsCase } from '@/utils/agentTeamsState'
@@ -72,7 +76,9 @@ import {
   resolveManagerTyping,
   shouldStartNewRoomCase,
   type RoomAskRequest,
+  type RoomChangeAssessment,
   type RoomRoleMetadata,
+  type RoomDebugTrace,
   type RoomWorkerBlock,
   type RoomWorkerStep,
 } from '@/utils/agentTeamsRoom'
@@ -80,7 +86,8 @@ import {
 const POLLING_INTERVAL_MS = 20_000
 const SSE_RETRY_INITIAL_MS = 1_000
 const SSE_RETRY_MAX_MS = 30_000
-const LOCAL_TYPING_TTL_MS = 60_000
+const LOCAL_TYPING_TTL_MS = 8_000
+const ROOM_SIDEBAR_COLLAPSED_KEY = 'omichub:agentteams-room-sidebar-collapsed'
 
 const message = useMessage()
 const loading = ref(false)
@@ -109,11 +116,15 @@ const retrying = ref(false)
 const deletingCaseId = ref('')
 const draftMessage = ref('')
 const sendingMessage = ref(false)
+const changeDecisionPending = ref('')
 const roomViewMode = ref<'stream' | 'element'>('stream')
 const settingsVisible = ref(false)
 const localTypingUntil = ref<number>(0)
+let localTypingTimer: number | null = null
 const seenEventIds = ref<Set<string>>(new Set())
 const expandedStepIds = ref<Set<string>>(new Set())
+const expandedThoughtIds = ref<Set<string>>(new Set())
+const debugEnabled = computed(() => roomPreferences.settings.expandTechnicalEvents)
 let pollingTimer: ReturnType<typeof setInterval> | null = null
 let eventStreamAbort: AbortController | null = null
 let eventStreamRetryTimer: number | null = null
@@ -136,6 +147,31 @@ const effectiveRoleMetadata = computed<RoomRoleMetadata>(() => {
   }
   return { ...roleMetadata.value, role_labels: labels }
 })
+const roomMentionAgents = computed<AgentTemplate[]>(() => Object.values(effectiveRoleMetadata.value.role_labels || {})
+  .filter((label) => {
+    if (label.agent_id === 'bioops-manager' || label.role === 'manager') return true
+    const participants = new Set((detail.value?.work_items || []).map((item) => item.target))
+    if (!participants.size) return true
+    return participants.has(label.agent_id) || Object.entries(effectiveRoleMetadata.value.role_labels || {})
+      .some(([role, participant]) => participants.has(role) && participant.agent_id === label.agent_id)
+  })
+  .map((label) => ({
+    id: label.agent_id,
+    name: label.name,
+    description: `${label.role || '领域'} Agent · 当前 Case 参与者`,
+    avatar: label.avatar,
+    color: label.color,
+    category: 'analysis',
+    model_engine: 'runtime',
+    system_prompt: '',
+    welcome_message: '',
+    mcp_ids: [],
+    skill_ids: [],
+    features: {},
+    is_active: true,
+    is_builtin: true,
+    is_default: false,
+  })))
 const roomMessages = computed(() => projectCaseEvents(events.value, effectiveRoleMetadata.value))
 const visibleMessages = computed(() => roomMessages.value.filter((item) => !item.collapsed))
 const collapsedMessages = computed(() => roomMessages.value.filter((item) => item.collapsed))
@@ -196,12 +232,29 @@ const approvalCard = computed<RoomApprovalCard | null>(() => {
     }
   }
   if (!approvalFrozenEvent.value) return null
+  const approvalResolved = events.value.some((event) => {
+    if (event.event_type !== 'approval.resolved') return false
+    const body = event.payload || {}
+    const inner = (body.payload && typeof body.payload === 'object' ? body.payload : body) as Record<string, unknown>
+    return Boolean(inner.approval_id || inner.action)
+  })
   if (status === 'cancelled') {
     // Bridge 侧驳回与用户取消均收敛为 cancelled（case.cancelled 事件），文案如实并列表述
     return { state: 'rejected', title: '人工审批', summary: '', impact: '', terminalText: '已驳回或已取消', time: frozenAt, fullTime: frozenAtFull }
   }
   if (status === 'waiting_for_correction') {
     return { state: 'returned', title: '人工审批', summary: '', impact: '', terminalText: '已退回修正', time: frozenAt, fullTime: frozenAtFull }
+  }
+  if (!approvalResolved) {
+    return {
+      state: 'pending',
+      title: '人工审批请求',
+      summary: current.intent,
+      impact: '等待人工确认；未检测到审批凭证，暂不启动真实计算。',
+      terminalText: '',
+      time: frozenAt,
+      fullTime: frozenAtFull,
+    }
   }
   return { state: 'approved', title: '人工审批', summary: '', impact: '', terminalText: '已通过人工审批', time: frozenAt, fullTime: frozenAtFull }
 })
@@ -275,9 +328,19 @@ function applyRoomQuickAction(action: RoomQuickAction) {
 // ===== 窄屏（≤1024px）左栏收纳为可折叠抽屉（规范 §7.1）：默认收起，进入 Case 后自动收起 =====
 const isNarrowViewport = ref(false)
 const sidebarOpen = ref(false)
+const desktopSidebarCollapsed = ref(loadDesktopSidebarCollapsed())
 const sidebarRef = ref<HTMLElement | null>(null)
 const sidebarToggleRef = ref<InstanceType<typeof NButton> | null>(null)
 let narrowMedia: MediaQueryList | null = null
+
+function loadDesktopSidebarCollapsed(): boolean {
+  return localStorage.getItem(ROOM_SIDEBAR_COLLAPSED_KEY) === 'true'
+}
+
+function toggleDesktopSidebar() {
+  desktopSidebarCollapsed.value = !desktopSidebarCollapsed.value
+  localStorage.setItem(ROOM_SIDEBAR_COLLAPSED_KEY, String(desktopSidebarCollapsed.value))
+}
 
 function syncViewportMode() {
   isNarrowViewport.value = narrowMedia?.matches ?? false
@@ -328,6 +391,8 @@ const filteredCases = computed(() => {
     return true
   })
 })
+
+const collapsedRailCases = computed(() => sortedCases.value.slice(0, 9))
 
 const STAGE_SEQUENCE: Array<{ key: AgentTeamsCaseStage; label: string }> = [
   { key: 'plan', label: '计划' },
@@ -418,6 +483,16 @@ function workerStepProgress(block: RoomWorkerBlock): number {
   return Math.round((settled / block.steps.length) * 100)
 }
 
+function formatDebugTrace(trace: RoomDebugTrace): string {
+  return [
+    trace.toolCallId ? `tool_call_id: ${trace.toolCallId}` : '',
+    trace.round !== undefined ? `round: ${trace.round}` : '',
+    trace.executionPath ? `execution_path: ${trace.executionPath}` : '',
+    trace.argsSummary ? `参数摘要: ${trace.argsSummary}` : '',
+    trace.resultSummary ? `结果摘要: ${trace.resultSummary}` : '',
+  ].filter(Boolean).join('\n')
+}
+
 function toggleStepDetail(stepId: string) {
   const next = new Set(expandedStepIds.value)
   if (next.has(stepId)) next.delete(stepId)
@@ -427,6 +502,31 @@ function toggleStepDetail(stepId: string) {
 
 function isStepExpanded(stepId: string): boolean {
   return expandedStepIds.value.has(stepId)
+}
+
+function toggleThought(messageId: string) {
+  const next = new Set(expandedThoughtIds.value)
+  if (next.has(messageId)) next.delete(messageId)
+  else next.add(messageId)
+  expandedThoughtIds.value = next
+}
+
+function isThoughtExpanded(messageId: string): boolean {
+  return expandedThoughtIds.value.has(messageId)
+}
+
+function clearLocalTyping() {
+  localTypingUntil.value = 0
+  if (localTypingTimer !== null) {
+    clearTimeout(localTypingTimer)
+    localTypingTimer = null
+  }
+}
+
+function showLocalTyping() {
+  clearLocalTyping()
+  localTypingUntil.value = Date.now() + LOCAL_TYPING_TTL_MS
+  localTypingTimer = window.setTimeout(clearLocalTyping, LOCAL_TYPING_TTL_MS)
 }
 
 /** action 消息中的按钮统一路由到现有操作。 */
@@ -452,8 +552,8 @@ function mergeEvents(incoming: AgentTeamsEvent[]) {
   })
   if (!uniqueIncoming.length) return
   events.value = mergeAgentTeamsEvents(events.value, uniqueIncoming)
-  if (uniqueIncoming.some((event) => event.event_type === 'room.agent_message')) {
-    localTypingUntil.value = 0
+  if (uniqueIncoming.some((event) => event.event_type === 'room.agent_message' || event.event_type === 'room.ask_user')) {
+    clearLocalTyping()
   }
 }
 
@@ -494,7 +594,7 @@ async function refreshDetail(options: { resetEvents?: boolean; background?: bool
     const cursor = options.resetEvents ? undefined : eventCursor.value ?? undefined
     const [caseData, eventData] = await Promise.all([
       agentTeamsApi.getCase(selectedCaseId.value),
-      agentTeamsApi.getEvents(selectedCaseId.value, { cursor, limit: 100 }),
+      loadCaseEvents(selectedCaseId.value, { cursor, loadAll: !!options.resetEvents }),
     ])
     detail.value = caseData
     if (options.resetEvents) {
@@ -503,10 +603,34 @@ async function refreshDetail(options: { resetEvents?: boolean; background?: bool
     } else {
       mergeEvents(eventData.events)
     }
-    eventCursor.value = eventData.next_cursor ?? (events.value.at(-1)?.event_id ?? null)
-  } catch (cause) {
-    if (!options.background) message.error('无法获取协作 Case 详情。')
+    // SSE cursor 必须指向当前已展示的最后一条事件；next_cursor 只表示分页仍有后续历史，
+    // 不能直接拿它启动实时流，否则切换房间后会跳过已落库的消息。
+    eventCursor.value = events.value.at(-1)?.event_id ?? null
+  } catch (cause: any) {
+    if (!options.background) {
+      const detailMessage = cause?.response?.data?.detail
+      const statusCode = cause?.response?.status
+      const suffix = statusCode ? `（HTTP ${statusCode}）` : ''
+      message.error(detailMessage ? `${detailMessage}${suffix}` : '无法获取协作 Case 详情。')
+    }
   }
+}
+
+async function loadCaseEvents(
+  caseId: string,
+  options: { cursor?: string; loadAll: boolean },
+): Promise<AgentTeamsEventListResponse> {
+  const events: AgentTeamsEvent[] = []
+  let cursor = options.cursor
+  do {
+    const page = await agentTeamsApi.getEvents(caseId, { cursor, limit: 100 })
+    events.push(...page.events)
+    if (!options.loadAll || !page.next_cursor || !page.events.length) {
+      return { events, next_cursor: page.next_cursor }
+    }
+    cursor = page.next_cursor
+  } while (events.length < 5_000)
+  return { events, next_cursor: cursor }
 }
 
 async function selectCase(caseId: string) {
@@ -518,7 +642,7 @@ async function selectCase(caseId: string) {
   detail.value = null
   events.value = []
   eventCursor.value = null
-  localTypingUntil.value = 0
+  clearLocalTyping()
   seenEventIds.value = new Set()
   expandedStepIds.value = new Set()
   roomViewMode.value = 'stream'
@@ -548,6 +672,7 @@ async function sendRoomMessage(content: string, contextRefs: AgentTeamsContextRe
     return
   }
   const optimisticEventId = `local-user-message-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const clientMessageId = `room-msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
   sendingMessage.value = true
   try {
     if (!caseId) {
@@ -562,12 +687,17 @@ async function sendRoomMessage(content: string, contextRefs: AgentTeamsContextRe
       event_type: 'room.user_message',
       payload: {
         summary: content.slice(0, 80),
-        payload: { actor: 'current-user', content, context_refs: contextRefs },
+        payload: {
+          actor: 'current-user',
+          content,
+          context_refs: contextRefs,
+          client_message_id: clientMessageId,
+        },
         optimistic: true,
       },
     }])
     draftMessage.value = ''
-    const result = await agentTeamsApi.postCaseMessage(caseId, content, contextRefs)
+    const result = await agentTeamsApi.postCaseMessage(caseId, content, contextRefs, clientMessageId)
     const serverEventId = typeof result.event_id === 'string' ? result.event_id : ''
     if (selectedCaseId.value === caseId && serverEventId) {
       const serverEventArrived = events.value.some((event) => event.event_id === serverEventId)
@@ -579,8 +709,12 @@ async function sendRoomMessage(content: string, contextRefs: AgentTeamsContextRe
             : event,
         )
     }
-    // 用户消息落盘后给出本地“正在输入”提示，覆盖后端 typing 事件未到达或延迟的场景。
-    localTypingUntil.value = Date.now() + LOCAL_TYPING_TTL_MS
+    if (result.response_dispatch === 'failed') {
+      clearLocalTyping()
+      message.warning('消息已记录，但 Manager 回复调度暂不可用，请稍后重试。')
+    } else {
+      showLocalTyping()
+    }
     // 发言经审计事件回投房间；事件流不可用时立即拉一次，不等轮询。
     if (!eventStreamHealthy.value) await refreshDetail({ background: true })
   } catch (cause: any) {
@@ -592,6 +726,28 @@ async function sendRoomMessage(content: string, contextRefs: AgentTeamsContextRe
     message.error(cause?.response?.data?.detail || '发送失败，请稍后重试。')
   } finally {
     sendingMessage.value = false
+  }
+}
+
+async function submitChangeDecision(
+  assessment: RoomChangeAssessment,
+  decision: 'resume' | 'replan' | 'branch' | 'cancel',
+) {
+  const caseId = selectedCaseId.value
+  if (!caseId || !assessment.workItemIds.length || changeDecisionPending.value) return
+  changeDecisionPending.value = `${assessment.workItemIds.join(',')}:${decision}`
+  try {
+    await agentTeamsApi.applyChangeDecision(caseId, {
+      work_item_ids: assessment.workItemIds,
+      decision,
+      rationale: `用户在协作室选择：${decision}`,
+    })
+    message.success(decision === 'cancel' ? '已终止受影响支线。' : '决策已记录，等待 Manager 继续编排。')
+    await refreshDetail({ background: true })
+  } catch (cause: any) {
+    message.error(cause?.response?.data?.detail || '变更决策提交失败，请稍后重试。')
+  } finally {
+    changeDecisionPending.value = ''
   }
 }
 
@@ -613,12 +769,13 @@ async function createCaseFromDraft(content: string, contextRefs: AgentTeamsConte
     context_refs: contextRefs.length ? contextRefs : undefined,
   })
   draftMessage.value = ''
-  message.success('协作 Case 已创建，计划冻结后将自动确认执行。')
+  message.success('协作 Case 已创建，领域助手将先确认方案；真实计算需在审批卡中由你确认。')
   selectedCaseId.value = ''
   await loadCases()
   await selectCase(created.case_id)
   // 创建后立刻显示用户首条消息（乐观更新），避免 SSE 尚未连接或回投延迟时页面空白。
   const optimisticEventId = `local-user-message-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const clientMessageId = `room-msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
   mergeEvents([{
     event_id: optimisticEventId,
     recorded_at: new Date().toISOString(),
@@ -627,12 +784,17 @@ async function createCaseFromDraft(content: string, contextRefs: AgentTeamsConte
     event_type: 'room.user_message',
     payload: {
       summary: content.slice(0, 80),
-      payload: { actor: 'current-user', content, context_refs: contextRefs },
+      payload: {
+        actor: 'current-user',
+        content,
+        context_refs: contextRefs,
+        client_message_id: clientMessageId,
+      },
       optimistic: true,
     },
   }])
   try {
-    const result = await agentTeamsApi.postCaseMessage(created.case_id, content, contextRefs)
+    const result = await agentTeamsApi.postCaseMessage(created.case_id, content, contextRefs, clientMessageId)
     const serverEventId = typeof result.event_id === 'string' ? result.event_id : ''
     if (serverEventId) {
       const serverEventArrived = events.value.some((event) => event.event_id === serverEventId)
@@ -644,13 +806,17 @@ async function createCaseFromDraft(content: string, contextRefs: AgentTeamsConte
             : event,
         )
     }
-    // 用户消息落盘后给出本地“正在输入”提示，覆盖后端 typing 事件未到达或延迟的场景。
-    localTypingUntil.value = Date.now() + LOCAL_TYPING_TTL_MS
+    if (result.response_dispatch === 'failed') {
+      clearLocalTyping()
+      message.warning('消息已记录，但 Manager 回复调度暂不可用，请稍后重试。')
+    } else {
+      showLocalTyping()
+    }
     // 事件流未就绪时立即拉取一次，确保用户消息与 Manager 回复尽快出现。
     if (!eventStreamHealthy.value) await refreshDetail({ resetEvents: true })
   } catch (cause: any) {
     events.value = events.value.filter((event) => event.event_id !== optimisticEventId)
-    localTypingUntil.value = 0
+    clearLocalTyping()
     message.error(cause?.response?.data?.detail || '发送失败，请稍后重试。')
   }
   if (roomPreferences.settings.showOnboarding) {
@@ -772,7 +938,7 @@ async function startNewRoom() {
   detail.value = null
   events.value = []
   eventCursor.value = null
-  localTypingUntil.value = 0
+  clearLocalTyping()
   seenEventIds.value = new Set()
   expandedStepIds.value = new Set()
   roomViewMode.value = 'stream'
@@ -904,6 +1070,7 @@ onMounted(() => {
   document.addEventListener('keydown', handleGlobalKeydown)
 })
 onBeforeUnmount(() => {
+  clearLocalTyping()
   stopPolling()
   stopEventStream()
   cancelAnimationFrame(listScrollFrame)
@@ -917,12 +1084,74 @@ onBeforeUnmount(() => {
     <NAlert v-if="!loading && !available" type="info" title="AgentTeams 尚未接通" :show-icon="true">
       配置 AgentTeams Bridge 后，这里会显示真实的团队协作房间。
     </NAlert>
-    <div v-else class="room-layout">
+    <div v-else class="room-layout" :class="{ 'is-sidebar-collapsed': !isNarrowViewport && desktopSidebarCollapsed }">
+      <nav
+        v-if="!isNarrowViewport"
+        class="room-sidebar-rail"
+        aria-label="协作房间快捷切换"
+        :inert="!desktopSidebarCollapsed"
+      >
+        <NTooltip trigger="hover" placement="right">
+          <template #trigger>
+            <NButton
+              ref="sidebarToggleRef"
+              tertiary
+              circle
+              size="small"
+              aria-label="展开房间列表"
+              @click="toggleDesktopSidebar"
+            >
+              <template #icon><NIcon><MenuOutline /></NIcon></template>
+            </NButton>
+          </template>
+          展开房间列表
+        </NTooltip>
+        <div class="room-sidebar-rail__divider" aria-hidden="true"></div>
+        <div class="room-sidebar-rail__cases" role="listbox" aria-label="最近协作房间">
+          <NTooltip v-for="item in collapsedRailCases" :key="item.case_id" trigger="hover" placement="right">
+            <template #trigger>
+              <button
+                type="button"
+                class="room-sidebar-rail__case"
+                :class="{ 'is-active': item.case_id === selectedCaseId }"
+                role="option"
+                :aria-selected="item.case_id === selectedCaseId"
+                :aria-label="`切换到房间：${item.display_title || item.intent}`"
+                @click="selectCase(item.case_id)"
+              >
+                <span class="room-sidebar-rail__avatar" aria-hidden="true">{{ caseAvatarLetter(item) }}</span>
+                <span class="room-sidebar-rail__status" :class="`is-${agentTeamsCaseCategory(item.status)}`"></span>
+              </button>
+            </template>
+            <span>{{ item.display_title || item.intent }}</span>
+            <span> · {{ ROOM_CATEGORY_LABELS[agentTeamsCaseCategory(item.status)] }}</span>
+          </NTooltip>
+          <span v-if="!loading && !collapsedRailCases.length" class="room-sidebar-rail__empty" aria-label="暂无协作房间">
+            <NIcon :size="20"><FileTrayOutline /></NIcon>
+          </span>
+        </div>
+        <NTooltip trigger="hover" placement="right">
+          <template #trigger>
+            <NButton tertiary circle size="small" aria-label="新建协作房间" @click="startNewRoom">
+              <template #icon><NIcon><AddOutline /></NIcon></template>
+            </NButton>
+          </template>
+          新建房间
+        </NTooltip>
+      </nav>
+
       <div v-if="isNarrowViewport" class="room-topbar">
         <NTooltip trigger="hover">
           <template #trigger>
-            <NButton ref="sidebarToggleRef" tertiary size="small" aria-label="展开房间列表" @click="openSidebar">
-              <template #icon><NIcon><MenuOutline /></NIcon></template>房间列表
+            <NButton
+              ref="sidebarToggleRef"
+              tertiary
+              size="small"
+              aria-label="展开房间列表"
+              @click="openSidebar"
+            >
+              <template #icon><NIcon><MenuOutline /></NIcon></template>
+              <span>房间列表</span>
             </NButton>
           </template>
           展开房间列表
@@ -932,7 +1161,7 @@ onBeforeUnmount(() => {
         ref="sidebarRef"
         class="room-sidebar"
         :class="{ 'is-open': sidebarOpen }"
-        :inert="isNarrowViewport && !sidebarOpen"
+        :inert="(isNarrowViewport && !sidebarOpen) || (!isNarrowViewport && desktopSidebarCollapsed)"
       >
         <div class="room-sidebar__toolbar">
           <span class="room-sidebar__heading">协作室</span>
@@ -960,6 +1189,14 @@ onBeforeUnmount(() => {
               <template #trigger>
                 <NButton tertiary circle size="small" aria-label="收起房间列表" @click="closeSidebar">
                   <template #icon><NIcon><CloseOutline /></NIcon></template>
+                </NButton>
+              </template>
+              收起房间列表
+            </NTooltip>
+            <NTooltip v-else trigger="hover">
+              <template #trigger>
+                <NButton tertiary circle size="small" aria-label="收起房间列表" @click="toggleDesktopSidebar">
+                  <template #icon><NIcon><ChevronBackOutline /></NIcon></template>
                 </NButton>
               </template>
               收起房间列表
@@ -1055,12 +1292,12 @@ onBeforeUnmount(() => {
         @click="closeSidebar"
       ></div>
 
-      <section class="room-main" :class="{ 'room-main--empty': !selectedCaseId }">
+      <section class="room-main">
         <div v-if="!selectedCaseId" class="room-guide">
           <span class="room-guide__logo" aria-hidden="true"><NIcon :size="34"><SparklesOutline /></NIcon></span>
           <h1 class="room-guide__title">和你的 AI 管家聊聊</h1>
           <p class="room-guide__lead">描述你的分析问题，Manager 会分解任务、组建 Worker 团队协作完成，关键步骤由你审批把关；也可以从左侧选择已有房间继续协作。</p>
-          <p class="room-guide__note">流程型分析（真实计算）请在 AI 工作台发起，需人工审批。</p>
+          <p class="room-guide__note">协作室支持流程调用、结果分析与多轮协作；涉及真实计算时，关键步骤需人工审批。</p>
           <div class="room-guide__actions" role="group" aria-label="快捷操作">
             <button
               v-for="action in roomQuickActions"
@@ -1177,7 +1414,7 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
 
-                <div v-else-if="block.type === 'speech'" class="speech" :class="{ 'speech--user': block.message.isUser, 'speech--report': !!block.message.managerReport }">
+                <div v-else-if="block.type === 'speech'" class="speech" :class="{ 'speech--user': block.message.isUser, 'speech--report': !!block.message.managerReport, 'speech--ask': !!block.message.askRequest, 'speech--handoff': !!block.message.handoff, 'speech--assessment': !!block.message.changeAssessment }">
                   <span class="room-avatar" :style="{ background: block.message.sender.color }">{{ block.message.sender.avatar }}</span>
                   <div class="speech__main">
                     <div class="speech__head">
@@ -1185,10 +1422,56 @@ onBeforeUnmount(() => {
                       <span v-if="block.message.sender.role === 'manager' && !block.message.isUser" class="speech__role"> · 管家</span>
                       <time class="speech__time" :title="formatMessageFullTime(block.message.id)">{{ formatMessageTime(block.message.id) }}</time>
                     </div>
+                    <div
+                      v-if="block.message.thought || block.message.streaming"
+                      class="room-thought"
+                    >
+                      <button
+                        type="button"
+                        class="room-thought__toggle"
+                        :aria-expanded="isThoughtExpanded(block.message.id)"
+                        @click="toggleThought(block.message.id)"
+                      >
+                        <span class="room-thought__label">
+                          {{ block.message.streaming ? '✨ 思考中…' : '🔍 思考过程' }}
+                        </span>
+                        <span class="room-thought__arrow" :class="{ 'is-expanded': isThoughtExpanded(block.message.id) }">▾</span>
+                      </button>
+                      <transition name="room-thought-expand">
+                        <div v-show="isThoughtExpanded(block.message.id)" class="room-thought__content">
+                          {{ block.message.thought || '模型正在组织回复…' }}
+                        </div>
+                      </transition>
+                    </div>
                     <RouteDecisionCard
                       v-if="block.message.routeDecision && !block.message.askRequest"
                       :decision="block.message.routeDecision"
                     />
+                    <div v-else-if="block.message.handoff" class="speech__bubble room-handoff-card">
+                      <div class="room-handoff-card__title">已交接给 {{ effectiveRoleMetadata.role_labels?.[block.message.handoff.toAgentId]?.name || 'Manager' }}</div>
+                      <div class="room-handoff-card__summary">{{ block.message.content }}</div>
+                      <div v-if="block.message.handoff.workItemIds.length" class="room-handoff-card__meta">工作项：{{ block.message.handoff.workItemIds.join('、') }}</div>
+                      <div v-if="block.message.handoff.risks.length" class="room-handoff-card__section room-handoff-card__section--risk">风险：{{ block.message.handoff.risks.join('；') }}</div>
+                      <div v-if="block.message.handoff.artifactRefs.length" class="room-handoff-card__section">产物：{{ block.message.handoff.artifactRefs.join('、') }}</div>
+                    </div>
+                    <div v-else-if="block.message.changeAssessment" class="speech__bubble room-assessment-card">
+                      <div class="room-assessment-card__title">变更影响评估</div>
+                      <MarkdownRenderer :content="block.message.changeAssessment.conclusion || block.message.content" />
+                      <div v-if="block.message.changeAssessment.workItemIds.length" class="room-assessment-card__meta">受影响工作项：{{ block.message.changeAssessment.workItemIds.join('、') }}</div>
+                      <div v-if="block.message.changeAssessment.risks.length" class="room-assessment-card__section room-assessment-card__section--risk">风险：{{ block.message.changeAssessment.risks.join('；') }}</div>
+                      <div v-if="block.message.changeAssessment.decisionOptions.length" class="room-assessment-card__options" aria-label="可选变更决策">
+                        <NButton
+                          v-for="option in block.message.changeAssessment.decisionOptions"
+                          :key="option"
+                          size="small"
+                          secondary
+                          :type="option === 'cancel' ? 'error' : 'default'"
+                          :loading="changeDecisionPending === `${block.message.changeAssessment.workItemIds.join(',')}:${option}`"
+                          :disabled="!!changeDecisionPending"
+                          @click="submitChangeDecision(block.message.changeAssessment, option as 'resume' | 'replan' | 'branch' | 'cancel')"
+                        >{{ option === 'resume' ? '继续原计划' : option === 'replan' ? '按建议重规划' : option === 'branch' ? '新建并行支线' : '终止该支线' }}</NButton>
+                      </div>
+                    </div>
                     <div v-else-if="block.message.managerReport" class="speech__bubble manager-report">
                       <div v-if="block.message.managerReport.hardGate" class="manager-report__hardgate">
                         ⚠ {{ formatHardGate(block.message.managerReport.hardGate) }}
@@ -1219,11 +1502,13 @@ onBeforeUnmount(() => {
                         <pre class="manager-report__json">{{ JSON.stringify(block.message.managerReport.proposedSubmission, null, 2) }}</pre>
                       </details>
                     </div>
-                    <div v-else class="speech__bubble">
-                      <MarkdownRenderer v-if="!block.message.isUser" :content="block.message.content" />
+                    <div v-else class="speech__bubble" :class="{ 'speech__bubble--streaming': block.message.streaming }">
+                      <MarkdownRenderer v-if="!block.message.isUser && block.message.content" :content="block.message.content" />
                       <span v-else class="speech__mentions" v-html="formatMentions(block.message.content)" />
+                      <span v-if="block.message.streaming && !block.message.content" class="room-streaming-label">正在生成回复…</span>
+                      <span v-if="block.message.streaming && block.message.content" class="room-streaming-caret" aria-label="正在生成"></span>
                     </div>
-                    <div v-if="!block.message.isUser && isContentTruncated(block.message.content)" class="speech__continue">
+                    <div v-if="!block.message.isUser && !block.message.streaming && isContentTruncated(block.message.content)" class="speech__continue">
                       <NButton text size="tiny" @click="handleContinueGeneration">继续生成</NButton>
                     </div>
                     <AskUserCard
@@ -1281,41 +1566,23 @@ onBeforeUnmount(() => {
                     :color="block.failed ? 'var(--arco-danger)' : 'var(--arco-primary)'"
                     aria-hidden="true"
                   />
-                  <ul v-if="block.steps.length || block.extraProgress.length" class="worker-card__steps">
-                    <li v-for="step in block.steps" :key="step.id" class="worker-step" :class="`is-${step.tool.status}`">
-                      <span class="worker-step__dot" aria-hidden="true"></span>
-                      <button
-                        v-if="step.count > 1"
-                        type="button"
-                        class="worker-step__expand"
-                        :aria-label="isStepExpanded(step.id) ? '收起明细' : '展开明细'"
-                        @click="toggleStepDetail(step.id)"
-                      >
-                        <NIcon v-if="isStepExpanded(step.id)" :size="12"><CaretUpOutline /></NIcon>
-                        <NIcon v-else :size="12"><CaretDownOutline /></NIcon>
-                      </button>
-                      <span class="worker-step__name">{{ step.count > 1 ? `${step.tool.name} ×${step.count}` : step.tool.name }}</span>
-                      <NTag
-                        size="tiny"
-                        :bordered="false"
-                        round
-                        :type="step.tool.status === 'running' ? 'primary' : step.tool.status === 'failed' ? 'error' : 'success'"
-                      >{{ step.tool.status === 'running' ? '正在调用' : step.tool.status === 'failed' ? '调用失败' : '调用完成' }}</NTag>
-                      <span v-if="step.tool.durationMs !== undefined" class="worker-step__duration">{{ formatDuration(step.tool.durationMs) }}</span>
-                      <ul v-if="step.count > 1 && isStepExpanded(step.id)" class="worker-step__details">
-                        <li v-for="detail in step.details" :key="detail.id" class="worker-step__detail">
-                          <span class="worker-step__detail-name">{{ detail.tool.name }}</span>
-                          <NTag
-                            size="tiny"
-                            :bordered="false"
-                            round
-                            :type="detail.tool.status === 'running' ? 'primary' : detail.tool.status === 'failed' ? 'error' : 'success'"
-                          >{{ detail.tool.status === 'running' ? '正在调用' : detail.tool.status === 'failed' ? '调用失败' : '调用完成' }}</NTag>
-                          <span v-if="detail.tool.durationMs !== undefined" class="worker-step__duration">{{ formatDuration(detail.tool.durationMs) }}</span>
-                        </li>
-                      </ul>
+                  <div v-if="block.steps.length" class="worker-card__tools">
+                    <RoomMcpToolCard
+                      v-for="step in block.steps"
+                      :key="step.id"
+                      :tool="step.tool"
+                      :count="step.count"
+                      :debug-trace="step.details[0]?.debugTrace"
+                    />
+                  </div>
+                  <ul v-if="block.extraProgress.length" class="worker-card__steps">
+                    <li v-for="item in block.extraProgress" :key="item.id" class="worker-step is-plain">
+                      <span>{{ item.content }}</span>
+                      <details v-if="debugEnabled && item.debugTrace" class="worker-card__debug">
+                        <summary>调试详情</summary>
+                        <code>{{ formatDebugTrace(item.debugTrace) }}</code>
+                      </details>
                     </li>
-                    <li v-for="item in block.extraProgress" :key="item.id" class="worker-step is-plain">{{ item.content }}</li>
                   </ul>
                   <div v-if="block.body" class="worker-card__body"><MarkdownRenderer :content="block.body.content" /></div>
                   <MessageArtifactGallery v-if="block.body" :artifacts="block.body.artifacts" />
@@ -1330,7 +1597,7 @@ onBeforeUnmount(() => {
                 </header>
                 <p v-if="approvalCard.summary" class="room-approval-card__summary">{{ approvalCard.summary }}</p>
                 <p v-if="approvalCard.impact" class="room-approval-card__impact">{{ approvalCard.impact }}</p>
-                <div v-if="approvalCard.state === 'pending'" class="room-approval-card__actions">
+                <div v-if="approvalCard.state === 'pending' && canApprove" class="room-approval-card__actions">
                   <NButton
                     type="primary"
                     size="small"
@@ -1377,6 +1644,7 @@ onBeforeUnmount(() => {
             ref="composerRef"
             v-model="draftMessage"
             room-mode
+            :room-mention-agents="roomMentionAgents"
             class="room-composer__input"
             :placeholder="roomInputPlaceholder"
             :disabled="!roomInputEnabled || sendingMessage"
@@ -1429,10 +1697,29 @@ onBeforeUnmount(() => {
 /* ===== 页面骨架：Surface Base 页面底 + 左右两张 Surface Card（§3.3 / §4.2） ===== */
 .room-page { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: var(--space-md); padding: var(--page-padding, 32px); background: var(--neutral-bg); /* §3.3.5：非 .kimi-layout 作用域，必须为 KimiChatInput 补齐输入区语义变量 */ --chat-input-bg: var(--neutral-card); --chat-input-border: var(--neutral-border); }
 .room-topbar { display: flex; align-items: center; }
-.room-layout { display: grid; grid-template-columns: minmax(280px, 320px) minmax(0, 1fr); gap: var(--space-xl); flex: 1; min-height: 0; }
+.room-layout { position: relative; display: grid; grid-template-areas: 'sidebar main'; grid-template-columns: minmax(280px, 320px) minmax(0, 1fr); gap: var(--space-xl); flex: 1; min-height: 0; transition: grid-template-columns 240ms cubic-bezier(0.2, 0.8, 0.2, 1), gap 240ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.room-layout.is-sidebar-collapsed { grid-template-columns: 72px minmax(0, 1fr); gap: var(--space-md); }
+.room-sidebar-rail { grid-area: sidebar; display: flex; min-height: 0; flex-direction: column; align-items: center; gap: var(--space-md); padding: var(--space-md) var(--space-sm); border: 1px solid var(--neutral-border); border-radius: var(--radius-card); background: var(--neutral-card); box-shadow: var(--shadow-card); opacity: 0; pointer-events: none; transform: translateX(-8px) scale(0.98); transition: opacity 150ms ease-out, transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.room-layout.is-sidebar-collapsed .room-sidebar-rail { opacity: 1; pointer-events: auto; transform: translateX(0) scale(1); transition-delay: 70ms; }
+.room-sidebar-rail__divider { width: 100%; height: 1px; background: var(--neutral-border); }
+.room-sidebar-rail__cases { display: grid; width: 100%; min-height: 0; flex: 1; align-content: start; justify-items: center; gap: var(--space-md); overflow-y: auto; padding: var(--space-xs) 0; scrollbar-width: none; }
+.room-sidebar-rail__cases::-webkit-scrollbar { display: none; }
+.room-sidebar-rail__case { position: relative; display: inline-flex; width: 48px; height: 48px; align-items: center; justify-content: center; padding: 0; border: 1px solid transparent; border-radius: var(--radius-card); background: transparent; cursor: pointer; transition: border-color var(--motion-quick) ease-out, background-color var(--motion-quick) ease-out, transform var(--motion-quick) ease-out; }
+.room-sidebar-rail__case:hover { background: var(--neutral-hover); transform: translateY(-1px); }
+.room-sidebar-rail__case:focus-visible { outline: 2px solid var(--arco-primary); outline-offset: 3px; }
+.room-sidebar-rail__case.is-active { border-color: color-mix(in srgb, var(--arco-primary) 42%, var(--neutral-border)); background: var(--arco-primary-light); }
+.room-sidebar-rail__avatar { display: inline-flex; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: var(--radius-card); background: var(--neutral-fill-2); color: var(--neutral-text-2); font-size: var(--font-card-title-size); font-weight: 600; }
+.room-sidebar-rail__case.is-active .room-sidebar-rail__avatar { background: var(--arco-primary); color: var(--text-on-primary); }
+.room-sidebar-rail__status { position: absolute; right: 1px; bottom: 1px; width: 9px; height: 9px; border: 2px solid var(--neutral-card); border-radius: 50%; background: var(--neutral-text-3); }
+.room-sidebar-rail__status.is-active { background: var(--arco-primary); }
+.room-sidebar-rail__status.is-approval { background: var(--arco-warning); }
+.room-sidebar-rail__status.is-done { background: var(--arco-success); }
+.room-sidebar-rail__status.is-failed { background: var(--arco-danger); }
+.room-sidebar-rail__empty { display: inline-flex; width: 48px; height: 48px; align-items: center; justify-content: center; border: 1px dashed var(--neutral-border); border-radius: var(--radius-card); color: var(--neutral-text-3); }
 
 /* ===== 左栏：协作室切换器（工具行 + 搜索 + 过滤 chips + Case 列表，Surface Card 材质） ===== */
-.room-sidebar { display: flex; min-height: 0; flex-direction: column; gap: var(--space-lg); overflow: hidden; padding: var(--space-2xl); border: 1px solid var(--neutral-border); border-radius: var(--radius-card); background: var(--neutral-card); box-shadow: var(--shadow-card); }
+.room-sidebar { grid-area: sidebar; display: flex; min-height: 0; flex-direction: column; gap: var(--space-lg); overflow: hidden; padding: var(--space-2xl); border: 1px solid var(--neutral-border); border-radius: var(--radius-card); background: var(--neutral-card); box-shadow: var(--shadow-card); opacity: 1; transform: translateX(0); transition: opacity 150ms ease-out 70ms, transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1) 70ms; }
+.room-layout.is-sidebar-collapsed .room-sidebar { opacity: 0; pointer-events: none; transform: translateX(-8px) scale(0.98); transition-delay: 0ms; }
 .room-sidebar__toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
 .room-sidebar__heading { color: var(--neutral-text-1); font-size: var(--font-section-size); font-weight: var(--font-section-weight); line-height: var(--font-section-height); letter-spacing: var(--font-section-spacing); }
 .room-sidebar__actions { display: flex; align-items: center; gap: var(--space-xs); }
@@ -1490,10 +1777,8 @@ onBeforeUnmount(() => {
 .case-entry__skeleton-line--title { width: 72%; }
 .case-entry__skeleton-line--meta { width: 44%; height: 10px; }
 
-/* ===== 右栏主体：与左栏同规格 Surface Card，内部滚动 ===== */
-.room-main { display: flex; min-height: 0; flex-direction: column; overflow: hidden; border: 1px solid var(--neutral-border); border-radius: var(--radius-card); background: var(--neutral-card); box-shadow: var(--shadow-card); }
-/* 空状态：不撑整屏大卡片，引导内容列直接落在页面背景 --neutral-bg 上 */
-.room-main--empty { border-color: transparent; background: transparent; box-shadow: none; }
+/* ===== 右栏主体：与左栏同规格 Surface Card，承载欢迎区、会话流与输入区 ===== */
+.room-main { grid-area: main; display: flex; min-height: 0; flex-direction: column; overflow: hidden; border: 1px solid var(--neutral-border); border-radius: var(--radius-card); background: var(--neutral-card); box-shadow: var(--shadow-card); }
 .room-guide { display: flex; flex: 1; min-height: 0; flex-direction: column; align-items: center; justify-content: center; width: min(100%, 720px); margin-inline: auto; padding: var(--space-2xl); text-align: center; }
 /* 空状态品牌徽标：72px 品牌浅底圆角方块承载 34px 图标（§35.4 克制欢迎区） */
 .room-guide__logo { display: inline-flex; width: 72px; height: 72px; align-items: center; justify-content: center; border-radius: var(--radius-lg); background: var(--arco-primary-light); color: var(--arco-primary); }
@@ -1531,7 +1816,7 @@ onBeforeUnmount(() => {
 .case-stage__tag { margin-left: var(--space-xs); }
 
 /* ===== 人工审批卡片：内嵌消息流末尾，Surface Card + 左缘 3px 状态线区分待审批/重试/终态（§9.2） ===== */
-.room-approval-card { width: 100%; max-width: 1120px; box-sizing: border-box; padding: var(--space-lg) var(--space-xl); border: 1px solid var(--neutral-border); border-left: 3px solid var(--arco-warning); border-radius: var(--radius-card); background: var(--neutral-card); box-shadow: var(--shadow-card); }
+.room-approval-card { width: min(720px, calc(100% - 32px - var(--space-md))); box-sizing: border-box; padding: var(--space-lg) var(--space-xl); border: 1px solid var(--neutral-border); border-left: 3px solid var(--arco-warning); border-radius: var(--radius-card); background: var(--neutral-card); box-shadow: var(--shadow-card); }
 .room-approval-card.is-retry, .room-approval-card.is-rejected { border-left-color: var(--arco-danger); }
 .room-approval-card.is-approved { border-left-color: var(--arco-success); }
 .room-approval-card.is-returned { border-left-color: var(--arco-warning); }
@@ -1547,11 +1832,11 @@ onBeforeUnmount(() => {
 .room-approval-card__impact { margin: var(--space-xs) 0 0; color: var(--neutral-text-3); font-size: var(--font-caption-size); line-height: var(--font-caption-height); }
 .room-approval-card__actions { display: flex; gap: var(--space-sm); margin-top: var(--space-md); }
 
-/* ===== 消息流：贴左对齐、放宽上限；scrollbar-gutter 预留滚动条位置消除水平抖动（迁移自 KimiMessageList） ===== */
+/* ===== 消息流：占满主卡片可用宽度；具体消息仍由自身上限控制；scrollbar-gutter 预留滚动条位置消除水平抖动（迁移自 KimiMessageList） ===== */
 .room-messages-wrap { position: relative; display: flex; flex: 1; min-height: 240px; flex-direction: column; }
 .room-messages { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-xl) var(--space-2xl) var(--space-2xl); scrollbar-gutter: stable; scroll-padding-top: var(--space-xl); }
 .room-scroll-bottom { position: absolute; right: var(--space-lg); bottom: var(--space-lg); z-index: 5; border: 1px solid var(--neutral-border); box-shadow: var(--shadow-card); }
-.room-stream { display: grid; width: min(100%, 1200px); gap: var(--space-xl); align-content: start; }
+.room-stream { display: grid; width: 100%; gap: var(--space-xl); align-content: start; }
 
 /* system 时间轴节点：细轨 + 空心节点圆点，12px 正文 / 11px 时间 */
 .tl-node { display: flex; gap: var(--space-md); }
@@ -1571,20 +1856,46 @@ onBeforeUnmount(() => {
 .speech--user { flex-direction: row-reverse; }
 .room-avatar { display: inline-flex; width: 32px; height: 32px; flex: 0 0 32px; align-items: center; justify-content: center; border-radius: 50%; color: var(--text-on-primary); font-size: 15px; }
 .room-avatar--sm { width: 26px; height: 26px; flex-basis: 26px; font-size: 13px; }
-.speech__main { display: grid; min-width: 0; max-width: min(720px, 82%); gap: var(--space-xs); }
+.speech__main { display: grid; min-width: 0; max-width: min(720px, calc(100% - 32px - var(--space-md))); gap: var(--space-xs); }
+.speech:not(.speech--user) .speech__main { width: min(720px, calc(100% - 32px - var(--space-md))); }
 .speech__head { display: flex; align-items: baseline; gap: var(--space-sm); }
 .speech--user .speech__head { flex-direction: row-reverse; }
 .speech__name { font-size: var(--font-small-size); font-weight: 600; }
 .speech__role { color: var(--neutral-text-3); font-size: var(--font-caption-size); font-weight: 400; }
 .speech__time { color: var(--neutral-text-3); font-size: var(--font-caption-size); }
 .speech__bubble { padding: var(--space-md) var(--space-lg); border: 1px solid var(--neutral-border); border-radius: 4px var(--radius-card) var(--radius-card) var(--radius-card); background: var(--neutral-fill-2); color: var(--neutral-text-1); font-size: var(--font-body-size); line-height: 1.7; word-break: break-all; overflow-wrap: anywhere; white-space: pre-wrap; }
-.speech--user .speech__bubble { max-width: 75%; border-color: transparent; border-radius: var(--radius-card) 4px var(--radius-card) var(--radius-card); background: var(--arco-primary); color: var(--text-on-primary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.speech--user .speech__bubble { justify-self: end; max-width: 75%; border-color: transparent; border-radius: var(--radius-card) 4px var(--radius-card) var(--radius-card); background: var(--arco-primary); color: var(--text-on-primary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .speech__bubble .mention-chip { display: inline-block; padding: 0 4px; border-radius: 4px; background: var(--arco-primary-light); color: var(--arco-primary); font-weight: 600; }
 .speech--user .speech__bubble .mention-chip { background: rgba(255,255,255,0.2); color: #fff; }
+.speech__bubble--streaming { border-color: color-mix(in srgb, var(--arco-primary) 26%, var(--neutral-border)); }
+.room-handoff-card, .room-assessment-card { border-color: color-mix(in srgb, var(--arco-primary) 34%, var(--neutral-border)); background: color-mix(in srgb, var(--arco-primary-light) 34%, var(--neutral-fill-2)); }
+.room-handoff-card__title, .room-assessment-card__title { margin-bottom: var(--space-xs); color: var(--arco-primary); font-size: var(--font-small-size); font-weight: 700; }
+.room-handoff-card__summary, .room-assessment-card__meta, .room-handoff-card__meta { color: var(--neutral-text-2); font-size: var(--font-small-size); }
+.room-handoff-card__section, .room-assessment-card__section { margin-top: var(--space-sm); padding-top: var(--space-sm); border-top: 1px solid var(--neutral-border); font-size: var(--font-small-size); }
+.room-handoff-card__section--risk, .room-assessment-card__section--risk { color: var(--warning-text, var(--neutral-text-2)); }
+.room-assessment-card__options { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-md); }
+.room-streaming-label { color: var(--neutral-text-3); font-size: var(--font-small-size); }
+.room-streaming-caret { display: inline-block; width: 2px; height: 1.1em; margin-left: 3px; vertical-align: -0.16em; background: var(--arco-primary); animation: room-streaming-caret 0.9s step-end infinite; }
+@keyframes room-streaming-caret { 50% { opacity: 0; } }
+.room-thought { overflow: hidden; border: 1px solid var(--neutral-border); border-radius: var(--radius-sm); background: var(--neutral-fill-1); }
+.room-thought__toggle { display: flex; align-items: center; gap: var(--space-sm); width: 100%; padding: var(--space-sm) var(--space-md); border: 0; background: transparent; color: var(--neutral-text-2); cursor: pointer; font-size: var(--font-caption-size); text-align: left; transition: background-color var(--motion-quick) ease-out; }
+.room-thought__toggle:hover { background: var(--neutral-hover); }
+.room-thought__toggle:focus-visible { outline: 2px solid var(--arco-primary); outline-offset: -2px; }
+.room-thought__label { color: var(--arco-primary); }
+.room-thought__arrow { margin-left: auto; color: var(--neutral-text-3); transition: transform var(--motion-quick) ease-out; }
+.room-thought__arrow.is-expanded { transform: rotate(180deg); }
+.room-thought__content { max-height: 300px; overflow-y: auto; padding: var(--space-sm) var(--space-md); border-top: 1px solid var(--neutral-border); color: var(--neutral-text-2); font-size: var(--font-small-size); font-style: italic; line-height: 1.7; white-space: pre-wrap; }
+.room-thought-expand-enter-active, .room-thought-expand-leave-active { transition: opacity var(--motion-quick) ease-out, max-height var(--motion-base) ease-out; }
+.room-thought-expand-enter-from, .room-thought-expand-leave-to { max-height: 0; opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .room-streaming-caret { animation: none; } .room-thought__arrow, .room-thought-expand-enter-active, .room-thought-expand-leave-active { transition: none; } }
 .speech__continue { display: flex; justify-content: flex-end; margin-top: var(--space-xs); }
 /* Manager 结构化长文（分析方案）：对齐 §18.1.1 内联卡片形态——与消息内容区等宽、
    上限 1120px、box-sizing: border-box（普通对话气泡仍遵守 720px 上限，见 .speech__main） */
-.speech--report .speech__main { width: 100%; max-width: min(1120px, 100%); box-sizing: border-box; }
+.speech--report .speech__main { width: min(720px, calc(100% - 32px - var(--space-md))); max-width: 100%; box-sizing: border-box; }
+/* 询问工具卡片所在消息：.speech__main 是 shrink-to-fit 的 grid，列宽随最宽内容变化，
+   会导致卡片折叠（短表头）与展开（长问答）宽度跳变。这里把列宽钉在上限值
+   （沿用 720px/82% 上限，与 .speech--report 的 width:100% 同一手法），折叠/展开同宽。 */
+.speech--ask .speech__main { width: 100%; box-sizing: border-box; }
 /* AI 输出经 MarkdownRenderer 渲染：white-space 重置为 normal，避免容器 pre-wrap 继承后
    把 markdown-it 输出的标签换行显示成多余空行 */
 .speech__bubble :deep(.md-body),
@@ -1621,7 +1932,7 @@ onBeforeUnmount(() => {
 
 /* worker 工具进度卡片：与发言气泡共享 Elevated 表面与圆角语言，
    仅保留 3px 左侧成员色条作身份标识（动态成员色经 inline style 覆盖 border-left-color） */
-.worker-card { display: grid; gap: var(--space-sm); width: 100%; max-width: 1120px; box-sizing: border-box; padding: var(--space-md) var(--space-lg); border: 1px solid var(--neutral-border); border-left: 3px solid var(--neutral-border); border-radius: 4px var(--radius-card) var(--radius-card) var(--radius-card); background: var(--neutral-fill-2); }
+.worker-card { display: grid; gap: var(--space-sm); width: min(720px, calc(100% - 32px - var(--space-md))); box-sizing: border-box; padding: var(--space-md) var(--space-lg); border: 1px solid var(--neutral-border); border-left: 3px solid var(--neutral-border); border-radius: 4px var(--radius-card) var(--radius-card) var(--radius-card); background: var(--neutral-fill-2); }
 .worker-card__head { display: flex; align-items: center; gap: var(--space-sm); }
 .worker-card__heading { display: flex; flex: 1; min-width: 0; align-items: baseline; gap: var(--space-sm); }
 .worker-card__name { font-size: var(--font-small-size); font-weight: 600; }
@@ -1637,6 +1948,7 @@ onBeforeUnmount(() => {
 @keyframes worker-progress-indeterminate { 0% { transform: translateX(-100%); opacity: 0.6; } 50% { opacity: 1; } 100% { transform: translateX(250%); opacity: 0.6; } }
 @media (prefers-reduced-motion: reduce) { .worker-card__progress--indeterminate .worker-card__progress-bar { animation: none; transform: translateX(0); width: 100%; opacity: 0.5; } }
 .worker-card__steps { display: grid; gap: var(--space-xs); margin: 0; padding: var(--space-sm) 0 0; border-top: 1px dashed var(--neutral-border); list-style: none; }
+.worker-card__tools { display: grid; gap: var(--space-sm); width: 100%; padding-top: var(--space-sm); border-top: 1px dashed var(--neutral-border); }
 .worker-step { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); color: var(--neutral-text-2); font-size: var(--font-caption-size); }
 .worker-step__dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--neutral-text-3); }
 .worker-step.is-running .worker-step__dot { background: var(--arco-primary); animation: room-pulse 1.6s ease-in-out infinite; }
@@ -1649,6 +1961,9 @@ onBeforeUnmount(() => {
 .worker-step__details { width: 100%; margin: var(--space-xs) 0 0; padding: var(--space-xs) 0 var(--space-xs) var(--space-xl); border-left: 2px solid var(--neutral-border); list-style: none; }
 .worker-step__detail { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-xs) 0; }
 .worker-step__detail-name { color: var(--neutral-text-2); font-family: ui-monospace, 'JetBrains Mono', Menlo, Consolas, monospace; font-size: var(--font-caption-size); }
+.worker-card__debug { width: 100%; margin-top: var(--space-xs); color: var(--neutral-text-3); font-size: var(--font-caption-size); }
+.worker-card__debug summary { width: fit-content; cursor: pointer; }
+.worker-card__debug code { display: block; margin-top: var(--space-xs); overflow-wrap: anywhere; white-space: pre-wrap; }
 .worker-card__body { margin: 0; padding-top: var(--space-sm); border-top: 1px solid var(--neutral-border); color: var(--neutral-text-1); font-size: var(--font-body-size); line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
 
 /* 失败 / 人工复核动作 */
@@ -1699,7 +2014,8 @@ onBeforeUnmount(() => {
 
 /* ≤1024px：左栏收纳为可折叠抽屉（默认收起，进入 Case 后自动收起；Esc / 遮罩点击关闭） */
 @media (max-width: 1024px) {
-  .room-layout { grid-template-columns: minmax(0, 1fr); }
+  .room-layout { grid-template-areas: 'topbar' 'main'; grid-template-columns: minmax(0, 1fr); }
+  .room-topbar { grid-area: topbar; }
   .room-sidebar { position: fixed; top: 0; bottom: 0; left: 0; z-index: 210; width: min(320px, 84vw); border-radius: 0; box-shadow: var(--shadow-dropdown); transform: translateX(-100%); transition: transform var(--motion-standard) var(--motion-spring); }
   .room-sidebar.is-open { transform: translateX(0); }
   .room-sidebar-backdrop { position: fixed; inset: 0; z-index: 200; background: rgba(0, 0, 0, 0.32); }
@@ -1707,7 +2023,8 @@ onBeforeUnmount(() => {
 
 /* reduced-motion 下抽屉取消位移过渡（置于 1024px 规则之后，确保覆盖生效） */
 @media (prefers-reduced-motion: reduce) {
-  .room-sidebar { transition: none; }
+  .room-sidebar, .room-layout, .room-sidebar-rail, .room-sidebar-rail__case { transition: none; }
+  .room-sidebar-rail__case:hover { transform: none; }
 }
 
 /* ≤768px：页面内边距降至 16px（规范 §7.1），消息区同步收窄 */

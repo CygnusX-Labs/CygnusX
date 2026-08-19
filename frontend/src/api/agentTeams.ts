@@ -162,6 +162,29 @@ export interface AgentTeamsBridgeStatus {
   reason: 'disabled' | 'incomplete_configuration' | 'bridge_unreachable' | null
 }
 
+export interface AgentTeamsCapabilityCheck {
+  flow_id: string | null
+  available: boolean
+  reason?: string
+  stages: Array<{
+    stage: string
+    agent_id: string
+    execution_mode?: string
+    available: boolean
+    identity_configured: boolean
+    worker_online: boolean
+    reason: string
+  }>
+}
+
+export interface AgentTeamsResponseTimingSummary {
+  case_id: string
+  sample_count: number
+  p95_duration_ms: number
+  stage_p95_ms: Record<string, number>
+  latest_duration_ms: number
+}
+
 export const agentTeamsApi = {
   async status(): Promise<AgentTeamsBridgeStatus> {
     return (await apiClient.get('/agent-teams/status')).data
@@ -180,6 +203,12 @@ export const agentTeamsApi = {
   },
   async getCase(caseId: string): Promise<AgentTeamsCase> {
     return (await apiClient.get<AgentTeamsCase>(`/agent-teams/cases/${caseId}`)).data
+  },
+  async getCapabilityCheck(caseId: string): Promise<AgentTeamsCapabilityCheck> {
+    return (await apiClient.get<AgentTeamsCapabilityCheck>(`/agent-teams/cases/${caseId}/capability-check`)).data
+  },
+  async getResponseTiming(caseId: string): Promise<AgentTeamsResponseTimingSummary> {
+    return (await apiClient.get<AgentTeamsResponseTimingSummary>(`/agent-teams/cases/${caseId}/response-timing`)).data
   },
   async refreshCase(caseId: string): Promise<AgentTeamsCase> {
     return (await apiClient.post<AgentTeamsCase>(`/agent-teams/cases/${caseId}/refresh`)).data
@@ -206,11 +235,19 @@ export const agentTeamsApi = {
     caseId: string,
     content: string,
     contextRefs: AgentTeamsContextRef[] = [],
+    clientMessageId?: string,
   ): Promise<Record<string, unknown>> {
     return (await apiClient.post(`/agent-teams/cases/${caseId}/messages`, {
       content,
       context_refs: contextRefs,
+      client_message_id: clientMessageId,
     })).data
+  },
+  async applyChangeDecision(
+    caseId: string,
+    payload: { work_item_ids: string[]; decision: 'resume' | 'replan' | 'branch' | 'cancel'; rationale?: string },
+  ): Promise<Record<string, unknown>> {
+    return (await apiClient.post(`/agent-teams/cases/${caseId}/change-decisions`, payload)).data
   },
   async revisePlan(caseId: string, payload: AgentTeamsPlanRevisionRequest): Promise<AgentTeamsPlanRevisionResponse> {
     return (await apiClient.post<AgentTeamsPlanRevisionResponse>(`/agent-teams/cases/${caseId}/plan/revise`, payload)).data

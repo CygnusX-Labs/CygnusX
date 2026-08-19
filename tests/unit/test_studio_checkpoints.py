@@ -42,7 +42,7 @@ def test_checkpoint_excludes_input_and_records_large_files(tmp_path: Path, monke
     (workspace / "input" / "mounted.txt").write_text("mounted", encoding="utf-8")
     large = workspace / "large.bin"
     with large.open("wb") as handle:
-        handle.truncate(50 * 1024 * 1024 + 1)
+        handle.truncate(10 * 1024 * 1024 + 1)
 
     checkpoint = studio_checkpoints.create_checkpoint("session", "tc-large")
 

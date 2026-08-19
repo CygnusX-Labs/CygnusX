@@ -355,6 +355,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '用户管理', requiresAuth: true }
       },
       {
+        path: 'admin/memory',
+        name: 'admin-memory',
+        component: () => import('@/views/AdminMemoryView.vue'),
+        meta: { title: '记忆审计', requiresAuth: true }
+      },
+      {
         path: 'admin/session-logs',
         name: 'admin-session-logs',
         component: () => import('@/views/AdminSessionLogsView.vue'),

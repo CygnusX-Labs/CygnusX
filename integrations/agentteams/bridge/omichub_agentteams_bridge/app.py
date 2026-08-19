@@ -632,9 +632,6 @@ def create_app(
         identity: Annotated[str, Depends(authenticate_identity)],
         service: Annotated[BridgeService, Depends(get_service)],
     ) -> dict:
-        require_role(
-            identity, "bioops-manager", "workflow-operator", "quality-auditor", "delivery-reporter"
-        )
         return await service.get_task(task_id, identity)
 
     @app.get("/v1/tasks/{task_id}/events", tags=["Tasks"])
@@ -643,9 +640,6 @@ def create_app(
         identity: Annotated[str, Depends(authenticate_identity)],
         service: Annotated[BridgeService, Depends(get_service)],
     ) -> dict:
-        require_role(
-            identity, "bioops-manager", "workflow-operator", "quality-auditor", "delivery-reporter"
-        )
         return await service.get_task(task_id, identity)
 
     @app.get("/v1/tasks/{task_id}/artifacts", tags=["Tasks"])
@@ -654,7 +648,6 @@ def create_app(
         identity: Annotated[str, Depends(authenticate_identity)],
         service: Annotated[BridgeService, Depends(get_service)],
     ) -> dict:
-        require_role(identity, "quality-auditor", "delivery-reporter")
         return await service.get_artifacts(task_id, identity)
 
     @app.post("/v1/tasks/{task_id}/quality-gate", tags=["Quality"])
@@ -664,7 +657,6 @@ def create_app(
         identity: Annotated[str, Depends(authenticate_identity)],
         service: Annotated[BridgeService, Depends(get_service)],
     ) -> dict:
-        require_role(identity, "quality-auditor")
         return (await service.quality_gate(task_id, payload, identity)).model_dump(mode="json")
 
     @app.post("/v1/tasks/{task_id}/cancel", tags=["Tasks"])
@@ -686,14 +678,6 @@ def create_app(
         identity: Annotated[str, Depends(authenticate_identity)],
         service: Annotated[BridgeService, Depends(get_service)],
     ) -> dict:
-        require_role(
-            identity,
-            "bioops-manager",
-            "data-steward",
-            "workflow-operator",
-            "quality-auditor",
-            "delivery-reporter",
-        )
         return (await service.record_evidence(case_id, payload, identity)).model_dump(mode="json")
 
     @app.post("/v1/cases/{case_id}/close", tags=["Cases"])
@@ -703,7 +687,6 @@ def create_app(
         identity: Annotated[str, Depends(authenticate_identity)],
         service: Annotated[BridgeService, Depends(get_service)],
     ) -> dict:
-        require_role(identity, "delivery-reporter")
         if payload.case_id != case_id:
             raise HTTPException(status_code=400, detail="Case path and payload mismatch")
         return (await service.close_case(payload, identity)).model_dump(mode="json")

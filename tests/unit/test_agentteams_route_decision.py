@@ -14,6 +14,7 @@ from omichub.application.services.agent_consultation_service import (
 from omichub.application.services.agentteams_capability_registry import (
     AgentTeamsCapabilityRegistry,
 )
+from omichub.application.services.agentteams_intent_router import infer_intent_route
 from omichub.application.services.agentteams_room_response_service import (
     AgentTeamsRoomResponseService,
 )
@@ -213,6 +214,52 @@ def test_summarize_route_decision() -> None:
     assert "请点选裁决" in summarize_route_decision(ambiguous)
 
 
+def test_fallback_route_decision_is_explicitly_auditable(tmp_path) -> None:
+    flow_registry, capabilities = _build_registries(tmp_path)
+
+    decision = build_route_decision(
+        "帮我处理这个数据",
+        flow_registry=flow_registry,
+        capability_registry=capabilities,
+        fallback_lead_planner="agent-code",
+    )
+
+    assert decision is not None
+    assert decision["lead_planner"] == "agent-code"
+    assert decision["fallback"] is True
+    assert "未识别到领域专家" in decision["flow_label"]
+    assert decision["options"][-1]["lead_planner"] == "agent-code"
+
+
+def test_resolved_scrna_route_drives_display_target(tmp_path) -> None:
+    flow_registry, capabilities = _build_registries(tmp_path)
+    # Extend the fixture with a scrna flow and planner so this test exercises
+    # the same route result that dispatch receives.
+    _write_flow(flow_registry.flows_dir, "scrna", "agent-scrna", "scrna", "单细胞")
+    flow_registry = FlowRegistry.from_directory(flow_registry.flows_dir)
+    capabilities = AgentTeamsCapabilityRegistry(
+        flow_registry,
+        _Abilities({"agent-rnaseq", "agent-atacseq", "agent-scrna", "agent-general"}),
+        [_agent("agent-rnaseq"), _agent("agent-atacseq"), _agent("agent-scrna"), _agent("agent-general")],
+    )
+    route = infer_intent_route(
+        "请用单细胞流程分析 Cell Ranger 结果",
+        flow_registry=flow_registry,
+        capability_registry=capabilities,
+    )
+
+    decision = build_route_decision(
+        "请用单细胞流程分析 Cell Ranger 结果",
+        flow_registry=flow_registry,
+        capability_registry=capabilities,
+        resolved_route=route,
+    )
+
+    assert route is not None
+    assert route.lead_planner == "agent-scrna"
+    assert decision["lead_planner"] == route.lead_planner
+
+
 class _FakeRedis:
     async def set(self, *args, **kwargs):
         return True
@@ -270,7 +317,7 @@ async def test_execution_intent_emits_route_decision_event(monkeypatch, tmp_path
         flow_registry=flow_registry,
     ).respond("bioops_1", "user-a", "帮我进行rna-seq分析")
 
-    assert result == {"status": "responded"}
+    assert result == {"status": "planning_started"}
     agentteams.start_chat_planning.assert_awaited_once()
     route_call = agentteams.post_case_evidence.await_args_list[0]
     assert route_call.kwargs["event_type"] == "room.route_decision"
@@ -280,16 +327,36 @@ async def test_execution_intent_emits_route_decision_event(monkeypatch, tmp_path
     assert decision["flow_id"] == "rnaseq"
     assert decision["lead_planner"] == "agent-rnaseq"
     assert decision["confidence"] == "high"
-    # 卡片事件先于 typing / Manager 回复，保证消息流中卡片在最前。
+    assert agentteams.start_chat_planning.await_args.kwargs["target_agent_id"] == "agent-rnaseq"
+    assert decision["audit"]["display_lead_planner"] == "agent-rnaseq"
+    assert decision["audit"]["actual_plan_target"] == "agent-rnaseq"
+    assert decision["audit"]["level"] == "INFO"
+    # 规划接手后仅落路由决策，不再由 Manager 追加一轮重复回复。
     event_types = [
         call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list
     ]
-    assert event_types == [
-        "room.route_decision",
-        "room.typing",
-        "room.agent_message",
-        "room.typing",
-    ]
+    assert event_types == ["room.route_decision"]
+
+
+@pytest.mark.asyncio
+async def test_fallback_route_emits_audited_code_planner(tmp_path) -> None:
+    flow_registry, capabilities = _build_registries(tmp_path)
+    agentteams = SimpleNamespace(post_case_evidence=AsyncMock())
+    service = AgentTeamsRoomResponseService(
+        SimpleNamespace(),
+        agentteams=agentteams,
+        registry=capabilities,
+        redis_getter=lambda: None,
+        flow_registry=flow_registry,
+    )
+
+    await service._emit_route_decision("case-1", "帮我处理这个数据")
+
+    payload = agentteams.post_case_evidence.await_args.kwargs["payload"]
+    assert payload["fallback"] is True
+    assert payload["audit"]["actual_plan_target"] == "agent-code"
+    assert payload["audit"]["level"] == "INFO"
+    assert "回退通用代码助手" in payload["flow_label"]
 
 
 @pytest.mark.asyncio

@@ -15,6 +15,7 @@ from omichub.application.services.agentteams_capability_registry import (
     get_agentteams_capability_registry,
 )
 from omichub.application.services.agentteams_intent_router import (
+    IntentRoute,
     RouteCandidate,
     RouteExplanation,
     explain_intent_route,
@@ -136,20 +137,21 @@ def build_route_decision(
     *,
     flow_registry: FlowRegistry | None = None,
     capability_registry: AgentTeamsCapabilityRegistry | None = None,
+    resolved_route: IntentRoute | None = None,
+    fallback_lead_planner: str = "agent-code",
 ) -> dict[str, Any] | None:
     """构建路由决策卡载荷;空文本返回 None。
 
-    confidence 判定:唯一明确胜出者为 ``high``;无流程命中(落通用路径)或
-    前两名评分持平为 ``ambiguous``,此时附带 options 供用户点选裁决。
+    confidence 判定:唯一明确胜出者为 ``high``;领域规划者已有明确关键词命中但
+    没有注册流程时也直接落通用路径，不要求用户在候选 Agent 之间裁决；只有
+    完全无领域信号或前两名评分持平时才附带 options。
     """
     text = (content or "").strip()
     if not text:
         return None
     registry = flow_registry or get_flow_registry()
     capabilities = capability_registry or get_agentteams_capability_registry()
-    explanation = explain_intent_route(
-        text, flow_registry=registry, capability_registry=capabilities
-    )
+    explanation = explain_intent_route(text, flow_registry=registry, capability_registry=capabilities)
     planner = _select_planner(text, capabilities) or {}
     general_planner = str(planner.get("lead_planner_agent_id") or "agent-general")
     planner_scores = _planner_scores(text)
@@ -160,9 +162,18 @@ def build_route_decision(
         candidates[1].hit_count,
         candidates[1].hit_chars,
     )
-    confidence = "high" if candidates and not tied else "ambiguous"
+    domain_signal = any(
+        agent_id != general_planner and score > 0
+        for agent_id, score in planner_scores.items()
+    )
+    confidence = "high" if (candidates and not tied) or (not candidates and domain_signal) else "ambiguous"
 
     winner = explanation.winner
+    if resolved_route is not None and resolved_route.flow_key in registry.flows:
+        winner = next(
+            (candidate for candidate in explanation.candidates if candidate.flow_id == resolved_route.flow_key),
+            winner,
+        )
     configured_actor = ""
     if winner is not None:
         path = "bridge_workflow"
@@ -177,11 +188,16 @@ def build_route_decision(
         path = "overdrive"
         flow_id = None
         flow_label = "通用分析"
-        lead_planner = general_planner
-        matched_hints = [str(item) for item in planner.get("matched_capabilities") or []]
+        lead_planner = resolved_route.lead_planner if resolved_route else fallback_lead_planner
+        matched_hints = list(resolved_route.matched_hints) if resolved_route else [
+            str(item) for item in planner.get("matched_capabilities") or []
+        ]
         estimated_stages = [{"key": key, "title": title} for key, title in _OVERDRIVE_STAGES]
         participants = [lead_planner]
 
+    registry_version = ",".join(
+        f"{flow_id}:{registry.flows[flow_id].digest[:12]}" for flow_id in sorted(registry.flows)
+    )
     decision: dict[str, Any] = {
         "path": path,
         "flow_id": flow_id,
@@ -192,9 +208,22 @@ def build_route_decision(
         "estimated_stages": estimated_stages,
         "participants": participants,
         "confidence": confidence,
+        "route_input": text[:500],
+        "registry_version": resolved_route.registry_version or registry_version
+        if resolved_route
+        else registry_version,
     }
+    if resolved_route is None and explanation.winner is None:
+        decision["fallback"] = True
+        decision["fallback_reason"] = "未命中已注册领域路由"
+        decision["flow_label"] = "通用分析（未识别到领域专家，回退通用代码助手）"
     if confidence == "ambiguous":
-        decision["options"] = _build_options(candidates, registry, capabilities, general_planner)
+        decision["options"] = _build_options(
+            candidates,
+            registry,
+            capabilities,
+            fallback_lead_planner if resolved_route is None and winner is None else general_planner,
+        )
     _annotate_resource_status(
         decision, explanation, participants, configured_actor, registry, capabilities
     )

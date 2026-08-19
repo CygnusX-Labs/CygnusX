@@ -20,7 +20,7 @@ export interface AgentTeamsPreferences {
 export const DEFAULT_AGENT_TEAMS_PREFERENCES: AgentTeamsPreferences = {
   managerName: 'Manager',
   communicationStyle: 'professional',
-  autonomy: 'autonomous',
+  autonomy: 'cautious',
   language: 'zh-CN',
   showOnboarding: true,
   autoSplitNewTasks: true,

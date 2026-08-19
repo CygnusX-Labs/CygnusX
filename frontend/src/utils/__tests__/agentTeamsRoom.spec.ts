@@ -92,6 +92,50 @@ describe('projectCaseEvent', () => {
     expect(message).toMatchObject({ kind: 'speech', content: '短消息' })
   })
 
+  it('projects a structured domain-agent handoff', () => {
+    const message = projectCaseEvent(
+      makeEvent('room.agent_handoff', {
+        payload: {
+          from_agent_id: 'agent-data',
+          to_agent_id: 'bioops-manager',
+          work_item_ids: ['qc-1'],
+          summary: '样本表核验已完成。',
+          risks: ['缺少一个批次字段'],
+          artifact_refs: ['output/sample-sheet.json'],
+          recommended_next_action: 'request_user_review',
+        },
+      }, 'agent-data'),
+      METADATA,
+    )
+    expect(message?.handoff).toMatchObject({
+      fromAgentId: 'agent-data',
+      toAgentId: 'bioops-manager',
+      workItemIds: ['qc-1'],
+      risks: ['缺少一个批次字段'],
+      artifactRefs: ['output/sample-sheet.json'],
+    })
+    expect(message?.content).toBe('样本表核验已完成。')
+  })
+
+  it('projects a change assessment with decision options', () => {
+    const message = projectCaseEvent(
+      makeEvent('room.change_assessment', {
+        payload: {
+          agent_id: 'agent-scrna',
+          work_item_ids: ['scrna-deg-1'],
+          conclusion: '下游 DEG 需要重算。',
+          risks: ['3v3 统计效能有限'],
+          decision_options: ['resume', 'replan', 'branch', 'cancel'],
+          decision: 'pending_user_confirmation',
+        },
+      }, 'agent-scrna'),
+      METADATA,
+    )
+    expect(message?.changeAssessment?.workItemIds).toEqual(['scrna-deg-1'])
+    expect(message?.changeAssessment?.decisionOptions).toEqual(['resume', 'replan', 'branch', 'cancel'])
+    expect(message?.content).toBe('下游 DEG 需要重算。')
+  })
+
   it('projects room.created as a collapsed system line', () => {
     const message = projectCaseEvent(
       makeEvent('room.created', { payload: { room_id: '!room:test' } }),
@@ -209,6 +253,60 @@ describe('projectCaseEvent', () => {
       METADATA,
     )
     expect(message?.content).toBe('查询流程 调用失败')
+  })
+
+  it('projects tool lifecycle while collapsing internal reinjection events', () => {
+    const started = projectCaseEvent(
+      makeEvent('agent.tool_started', { tool: 'workspace_read_file' }, 'data-steward'),
+      METADATA,
+    )
+    expect(started).toMatchObject({ kind: 'progress', content: '工具执行中：读取文件', tool: { status: 'running' } })
+
+    const reinjected = projectCaseEvent(
+      makeEvent('agent.context_reinjected', { round: 2 }, 'data-steward'),
+      METADATA,
+    )
+    expect(reinjected).toBeNull()
+
+    const continued = projectCaseEvent(
+      makeEvent('agent.turn_continued', { round: 3 }, 'data-steward'),
+      METADATA,
+    )
+    expect(continued).toBeNull()
+  })
+
+  it('preserves correlated debug trace fields without expanding them into content', () => {
+    const message = projectCaseEvent(
+      makeEvent('agent.tool_result', {
+        tool: 'workspace_read_file',
+        tool_call_id: 'call-42',
+        round: 2,
+        execution_path: 'agentteams_worker_react',
+        result_summary: '读取到 3 个样本',
+        status: 'ok',
+      }, 'data-steward'),
+      METADATA,
+    )
+    expect(message?.content).toBe('读取文件 调用完成')
+    expect(message?.debugTrace).toEqual({
+      toolCallId: 'call-42',
+      round: 2,
+      executionPath: 'agentteams_worker_react',
+      resultSummary: '读取到 3 个样本',
+    })
+  })
+
+  it('projects loop guard as recoverable progress rather than an error card', () => {
+    const message = projectCaseEvent(
+      makeEvent('agent.loop_guard_triggered', {
+        reason: 'duplicate_tool_call',
+        tool: 'workspace_read_file',
+        execution_path: 'agentteams_worker_react',
+      }, 'data-steward'),
+      METADATA,
+    )
+    expect(message).toMatchObject({ kind: 'progress', content: '已停止重复调用（读取文件），正在整理已有结果' })
+    expect(message?.technicalDetail).toBe('agentteams_worker_react')
   })
 
   it('projects agent.tool_call from Bridge-wrapped nested payload', () => {
@@ -474,6 +572,99 @@ describe('projectCaseEvent', () => {
     expect(projectCaseEvent(makeEvent('approval.requested'), METADATA)).toBeNull()
     expect(projectCaseEvent(makeEvent('heartbeat'), METADATA)).toBeNull()
     expect(projectCaseEvent(makeEvent('room.typing', { payload: { typing: true } }), METADATA)).toBeNull()
+  })
+})
+
+describe('room.agent_stream projection', () => {
+  it('merges reasoning and text deltas into one live message, then settles on the final reply', () => {
+    const streamId = 'manager-reply-1'
+    const messages = projectCaseEvents(
+      [
+        makeEvent('room.agent_stream', {
+          payload: { stream_id: streamId, channel: 'reasoning', delta: '先检查输入。', agent_id: 'agent-general' },
+        }, 'bioops-manager', '2026-08-12T08:00:00Z'),
+        makeEvent('room.agent_stream', {
+          payload: { stream_id: streamId, channel: 'content', delta: '我已完成检查', agent_id: 'agent-general' },
+        }, 'bioops-manager', '2026-08-12T08:00:01Z'),
+        makeEvent('room.agent_message', {
+          summary: '我已完成检查。',
+          payload: { stream_id: streamId, content: '我已完成检查。', agent_id: 'agent-general' },
+        }, 'bioops-manager', '2026-08-12T08:00:02Z'),
+      ],
+      METADATA,
+    )
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({
+      id: `stream:${streamId}`,
+      content: '我已完成检查。',
+      thought: '先检查输入。',
+      streaming: false,
+      streamId,
+    })
+  })
+
+  it('shows an envelope conclusion while streaming and places its clarification card on the same message', () => {
+    const streamId = 'manager-envelope-1'
+    const pastedTextNotice = 'pasted text file: /tmp/pasted-text-1.txt. Read this file before continuing.'
+    const messages = projectCaseEvents(
+      [
+        makeEvent('room.agent_stream', {
+          payload: { stream_id: streamId, channel: 'content', delta: '{"conclusion":"收到需求。', agent_id: 'agent-general' },
+        }, 'bioops-manager', '2026-08-12T08:00:00Z'),
+        makeEvent('room.agent_stream', {
+          payload: { stream_id: streamId, channel: 'content', delta: '请确认输入文件。","recommendations":["上传文件"]}', agent_id: 'agent-general' },
+        }, 'bioops-manager', '2026-08-12T08:00:01Z'),
+        makeEvent('room.ask_user', {
+          payload: {
+            stream_id: streamId,
+            content: '收到需求。请确认输入文件。',
+            manager_report: {
+              conclusion: '收到需求。请确认输入文件。',
+              recommendations: ['上传文件'],
+              risks: ['尚未收到数据'],
+            },
+            questions: [{ question: '请上传输入文件。', options: [] }],
+          },
+        }, 'bioops-manager', '2026-08-12T08:00:02Z'),
+        makeEvent('room.agent_message', { payload: { content: pastedTextNotice } }, 'bioops-manager', '2026-08-12T08:00:03Z'),
+      ],
+      METADATA,
+    )
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({
+      id: `stream:${streamId}`,
+      content: '收到需求。请确认输入文件。',
+      streaming: false,
+      managerReport: {
+        recommendations: ['上传文件'],
+        risks: ['尚未收到数据'],
+      },
+      askRequest: { questions: [{ question: '请上传输入文件。', options: [] }] },
+    })
+    expect(messages[0].content).not.toContain('{"conclusion"')
+  })
+})
+
+describe('malformed manager envelope recovery', () => {
+  it('renders a trailing-comma envelope as a structured report', () => {
+    const content = `{
+      "conclusion": "收到需求。在制定分析方案前，需要确认数据状态。",
+      "recommendations": ["完成注释后进行 pseudobulk 差异分析"],
+      "risks": ["3v3 设计的统计效能有限"],
+      "ask_user": [{"question": "来自什么组织？", "options": [],}],
+    }`
+    const message = projectCaseEvent(
+      makeEvent('room.agent_message', { payload: { content } }, 'bioops-manager'),
+      METADATA,
+    )
+
+    expect(message?.managerReport).toMatchObject({
+      conclusion: '收到需求。在制定分析方案前，需要确认数据状态。',
+      recommendations: ['完成注释后进行 pseudobulk 差异分析'],
+      risks: ['3v3 设计的统计效能有限'],
+    })
   })
 })
 

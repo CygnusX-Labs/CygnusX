@@ -128,6 +128,17 @@ const overdriveEnabled = computed({
 const engineLabel = computed(() => agent.value?.model_engine || '')
 const agentDisplayName = computed(() => agent.value?.features?.router ? '星尘 AI' : agent.value?.name || '星尘 AI')
 const greetingUserName = computed(() => displayName(authStore.user))
+const sessionCreatedAtLabel = computed(() => {
+  const createdAt = session.value?.created_at
+  if (!createdAt) return ''
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(createdAt)).replace(',', '')
+})
 /** 快捷任务：结构化配置驱动，语义图标 + 动词文案 + 真实 behavior（fontend.md §35.6 / §36.3）。
  *  当前统一 behavior=prefill：预填输入框由用户确认发送，不自动提交。 */
 const quickActions: Array<{
@@ -419,6 +430,21 @@ onUnmounted(() => {
 <template>
   <div class="agent-sandbox" :class="{ 'is-empty': isEmpty }" v-if="agent && session">
     <ShaniaChatBackground v-if="agent.id === 'shania'" />
+    <!-- 新会话也保持真实聊天窗口的标题区，但不展示执行流程步骤。 -->
+    <header v-if="isEmpty" class="empty-session-header">
+      <div class="empty-session-identity">
+        <div class="empty-session-avatar" aria-hidden="true">{{ agentDisplayName.slice(0, 1) }}</div>
+        <div class="empty-session-meta">
+          <h1 class="empty-session-title">{{ session.title || agentDisplayName }}</h1>
+          <div class="empty-session-subtitle">
+            <span class="creator-badge">我</span>
+            <span>发起人 我</span>
+            <span aria-hidden="true">·</span>
+            <span>创建于 {{ sessionCreatedAtLabel }}</span>
+          </div>
+        </div>
+      </div>
+    </header>
     <!-- 首页（空会话）不渲染上边栏，进入聊天态后才显示返回/模型选择等控件 -->
     <header v-if="!isEmpty" class="sandbox-header">
       <div class="header-left">
@@ -603,13 +629,17 @@ onUnmounted(() => {
   position: relative;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: calc(100% - 40px);
+  margin: 20px 28px 20px 20px;
+  border: 1px solid var(--chat-border, var(--neutral-border));
+  border-radius: 18px;
   overflow: hidden;
   --chat-content-max-width: 1120px;
   background:
     radial-gradient(circle at 12% 0%, rgba(46, 91, 255, 0.08), transparent 32%),
     radial-gradient(circle at 88% 8%, rgba(123, 77, 255, 0.07), transparent 30%),
     linear-gradient(180deg, #f4f6ff 0%, #fafbff 40%, #fff 100%);
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--neutral-text-1) 8%, transparent);
 }
 
 .agent-sandbox::before {
@@ -634,6 +664,63 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--stardust-border-soft);
   background: rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(12px);
+}
+.empty-session-header {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  min-height: 74px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--stardust-border-soft);
+  background: color-mix(in srgb, var(--bg-card, #fff) 88%, transparent);
+  backdrop-filter: blur(12px);
+}
+.empty-session-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.empty-session-avatar {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 12px;
+  color: #fff;
+  background: var(--agent-hero-gradient);
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(79, 109, 245, 0.2);
+}
+.empty-session-meta { min-width: 0; }
+.empty-session-title {
+  margin: 0;
+  overflow: hidden;
+  color: var(--chat-text-primary, var(--neutral-text-1));
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.empty-session-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  color: var(--chat-text-muted, var(--neutral-text-3));
+  font-size: 12px;
+  line-height: 18px;
+}
+.creator-badge {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--stardust-blue, #4c6fff);
+  background: color-mix(in srgb, var(--stardust-blue, #4c6fff) 12%, transparent);
+  font-size: 11px;
+  font-weight: 700;
 }
 .header-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .back-btn { flex-shrink: 0; color: var(--stardust-text-secondary); }
@@ -832,6 +919,8 @@ onUnmounted(() => {
 .is-empty .chat-content-wrapper::-webkit-scrollbar { width: 0; height: 0; }
 
 @media (max-width: 768px) {
+  .agent-sandbox { height: calc(100% - 24px); margin: 12px; border-radius: 14px; }
+  .empty-session-header { padding-inline: 16px; }
   .sandbox-header { padding-inline: 16px; }
   .header-right { gap: 6px; }
   .model-selector :deep(.n-base-selection) { min-width: 124px; }
@@ -868,6 +957,7 @@ onUnmounted(() => {
   border-top-color: transparent;
   backdrop-filter: none;
 }
+:root[data-theme="dark"] .empty-session-header { background: color-mix(in srgb, var(--chat-surface, #1d2129) 90%, transparent); }
 :root[data-theme="dark"] .overdrive-progress-dock { background: transparent; }
 :root[data-theme="dark"] .is-empty .composer-slot { background: transparent; }
 :root[data-theme="dark"] .quick-chip { background: var(--chat-surface, var(--neutral-card)); border-color: var(--neutral-border, #2a3040); }

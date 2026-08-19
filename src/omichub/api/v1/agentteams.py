@@ -120,6 +120,14 @@ class ScientificInterpretationRequest(BaseModel):
     requested_tools: list[Annotated[str, Field(min_length=1, max_length=128)]] = Field(
         default_factory=list, max_length=20
     )
+
+
+class AgentTeamsChangeDecisionRequest(BaseModel):
+    work_item_ids: list[Annotated[str, Field(min_length=1, max_length=128)]] = Field(
+        min_length=1, max_length=100
+    )
+    decision: Literal["resume", "replan", "branch", "cancel"]
+    rationale: str = Field(default="", max_length=4_000)
     requester_ref: str = Field(min_length=1, max_length=256)
     work_item_id: str | None = Field(default=None, min_length=1, max_length=128)
     execution_mode: Literal["readonly_consultation", "workspace_execution"] = "readonly_consultation"
@@ -186,6 +194,7 @@ class AgentTeamsRoomMessageRequest(BaseModel):
     content: str = Field(min_length=1, max_length=4_000)
     # 房间 @ 引用的工作区文件，作为发言补充上下文写入审计 payload（只读引用）。
     context_refs: list[AgentTeamsContextRef] = Field(default_factory=list, max_length=20)
+    client_message_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class AgentTeamsPlanRevisionRequest(BaseModel):
@@ -430,6 +439,19 @@ async def get_manifest(
     return await service.get_manifest(case_id, current_user_id)
 
 
+@router.get("/cases/{case_id}/capability-check", summary="获取 Flow 交接前能力检查")
+async def get_case_capability_check(
+    case_id: str,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+) -> dict[str, Any]:
+    case = await service.get_case(case_id, current_user_id)
+    flow_id = str(case.get("flow_id") or "")
+    if not flow_id:
+        return {"flow_id": None, "available": True, "stages": [], "reason": "通用 Case 无专项 Flow"}
+    return await service.flow_capability_check(flow_id)
+
+
 @router.get("/cases/{case_id}/artifacts/{artifact_path:path}", summary="读取当前 Case 的受控产物")
 async def get_case_artifact(
     case_id: str,
@@ -559,15 +581,57 @@ async def post_case_message(
         current_user_id,
         request.content,
         context_refs=[ref.model_dump(exclude_none=True) for ref in request.context_refs],
+        client_message_id=request.client_message_id,
     )
+    response_dispatch = "queued"
     try:
         from omichub.infrastructure.celery_app.tasks.agentteams import respond_to_room_message
 
-        respond_to_room_message.delay(case_id, current_user_id, request.content.strip())
+        respond_to_room_message.delay(
+            case_id,
+            current_user_id,
+            request.content.strip(),
+            result.get("dispatch") if isinstance(result, dict) else None,
+        )
     except Exception as exc:  # noqa: BLE001 - Manager 响应调度失败不影响发言落盘
         logger.bind(case_id=case_id).warning(
             "AgentTeams room response dispatch failed: {}", exc
         )
+        response_dispatch = "failed"
+    return {**result, "response_dispatch": response_dispatch}
+
+
+@router.post(
+    "/cases/{case_id}/change-decisions",
+    status_code=status.HTTP_201_CREATED,
+    summary="提交运行中工作项的变更决策",
+)
+async def apply_case_change_decision(
+    case_id: str,
+    request: AgentTeamsChangeDecisionRequest,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+) -> dict[str, Any]:
+    result = await service.apply_change_decision(
+        case_id,
+        current_user_id,
+        work_item_ids=request.work_item_ids,
+        decision=request.decision,
+        rationale=request.rationale,
+    )
+    if request.decision in {"resume", "replan", "branch"}:
+        try:
+            from omichub.infrastructure.celery_app.tasks.agentteams import respond_to_room_message
+
+            respond_to_room_message.delay(
+                case_id,
+                current_user_id,
+                f"系统决策：用户选择 {request.decision}。请 Manager 根据审计事件继续编排，必要时先补充澄清和审批。",
+            )
+        except Exception as exc:  # noqa: BLE001 - decision evidence must survive dispatch failure
+            logger.bind(case_id=case_id).warning(
+                "AgentTeams change decision follow-up dispatch failed: {}", exc
+            )
     return result
 
 
@@ -580,6 +644,15 @@ async def get_case_events(
     limit: int = 100,
 ) -> dict[str, Any]:
     return await service.get_case_events(case_id, current_user_id, cursor=cursor, limit=limit)
+
+
+@router.get("/cases/{case_id}/response-timing", summary="获取协作案例响应耗时摘要")
+async def get_case_response_timing(
+    case_id: str,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+) -> dict[str, Any]:
+    return await service.get_room_response_timing_summary(case_id, current_user_id)
 
 
 @router.get("/cases/{case_id}/events/stream", summary="实时监听当前用户的协作案例事件")

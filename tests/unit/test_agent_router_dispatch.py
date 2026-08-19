@@ -64,6 +64,8 @@ def test_runtime_router_prompt_keeps_decision_on_stardust_ai() -> None:
     assert "不要执行分析" in ROUTER_SYSTEM_PROMPT
     assert "前端关键词规则" in ROUTER_SYSTEM_PROMPT
     assert "运行时候选专家目录" in ROUTER_SYSTEM_PROMPT
+    assert "领域词只用于选择合适的专家" in ROUTER_SYSTEM_PROMPT
+    assert "不能仅因“单细胞”创建流程型 Case" in ROUTER_SYSTEM_PROMPT
     assert "emoji" in ROUTER_SYSTEM_PROMPT
 
 
@@ -532,6 +534,8 @@ def test_router_prompt_uses_runtime_catalog_instead_of_static_candidates():
     assert "运行时候选目录（唯一依据）" in prompt_text
     assert "不得维护、记忆或引用任何静态 Agent 名单" in prompt_text
     assert "| agent_id | 名称 | 适用请求 |" not in prompt_text
+    assert "领域路由与执行授权必须分离" in prompt_text
+    assert "不能仅因“单细胞”创建流程型 Case" in prompt_text
 
 
 @pytest.mark.unit

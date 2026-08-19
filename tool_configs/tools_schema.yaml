@@ -339,6 +339,27 @@ tools:
     llm_result_fields: [memories, count, summary, success, error]
     ui_result_fields: []
 
+  - key: agent-memory-block-update
+    name: omichub_update_memory_block
+    description: 使用乐观锁更新当前 Agent 的命名记忆块。调用前必须先读取当前块内容和 version，并只提交增量修改。
+    category: agent-memory
+    invocation_mode: backend_sync
+    service: omichub.application.services.agent_memory_tool_service.AgentMemoryToolService
+    method: update_memory_block
+    requires_confirm: false
+    annotations: {readOnlyHint: false, destructiveHint: false, openWorld: false, idempotent: true}
+    extra: {user_scoped: true}
+    input_schema:
+      type: object
+      properties:
+        block_name: {type: string, enum: [profile, preferences, current_focus]}
+        content: {type: string, description: 更新后的完整块内容}
+        expected_version: {type: integer, minimum: 1}
+      required: [block_name, content, expected_version]
+    llm_result_fields: [block_name, version, summary, success, error]
+    ui_result_fields: []
+
+
   - key: kegg-enrichment
     name: omichub_run_kegg_enrichment
     description: 对无排序基因列表做 GO/KEGG 富集，返回分来源通路表和气泡图。适用于“这些基因富集到什么通路”“做 GO 或 KEGG 注释”；全基因按 log2FC 等分数排序时请改用 GSEA，原始 counts 请改用 DEG。输入 species_id 和每行一个 gene_text，gene_text 也支持 upload://file_id。

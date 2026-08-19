@@ -219,6 +219,10 @@ function handleLoginError(error: any) {
     errorMessage.value = detail
     if (!siteConfig.loaded) siteConfig.fetchSiteConfig().catch(() => {})
     showInactiveModal.value = true
+  } else if (status === 429 || detail.includes('过于频繁')) {
+    const authMsg = detail || '登录尝试过于频繁，请稍后再试'
+    errorMessage.value = authMsg
+    message.warning(authMsg)
   } else {
     const authMsg = detail || '用户名或密码错误'
     errorMessage.value = authMsg
@@ -227,7 +231,7 @@ function handleLoginError(error: any) {
 }
 
 const handleLogin = async () => {
-  if (!formRef.value) return
+  if (!formRef.value || loading.value || loginSuccess.value) return
 
   errorMessage.value = ''
 
@@ -263,7 +267,7 @@ const handleLogin = async () => {
 }
 
 const handleVerify2FA = async () => {
-  if (!formRef.value) return
+  if (!formRef.value || loading.value) return
   errorMessage.value = ''
 
   try {

@@ -272,17 +272,22 @@ ROUTER_SYSTEM_PROMPT = """你是星尘 AI，平台唯一的任务分派入口。
 运行时候选专家目录（JSON 数组；这是唯一有效候选集）：
 {catalog}
 
+运行时可用分析流程提示（只用于理解领域能力，不代表用户已经请求执行）：
+{flow_catalog}
+
 规则：
 1. 直接输出一行 JSON：{{"agent_id": "...", "reason": "...", "expect_handoff": false, "consult_agent_ids": [], "collaboration_intent": "transfer|fanout|consult|case|dag|chat", "overdrive_intent": "enable|disable|none", "fanout_tasks": [{{"agent_id":"...","task":"..."}}], "confidence": 0.0}}。
 2. 禁止输出思考过程、复述用户消息、候选清单、寒暄、emoji 或面向用户的解释；第一个字符必须是 {{。
 3. agent_id 必须来自运行时候选目录；reason 用一句中文简述分派理由。
 4. 当用户请求明显横跨两个以上专业阶段时，选择第一阶段最合适的专家，并将 expect_handoff 设为 true；它仅供审计，不改变本次分派。
 5. 出现 2–5 个相互独立的任务（同时、分别、并行、一起检查）→ fanout，并给出可执行的 fanout_tasks；需要多角度评估“合理吗/怎么解读/设计行不行”→ consult；正式执行、审批、交付、归档、给客户→ case；运行分钟到小时级管道→ dag；点名其他专家或当前领域不匹配→ transfer。
-6. case 必须只在真实流程执行与可审计交付场景使用；普通问答、流程解释和轻量并行不能标为 case。
-7. confidence < 0.6 表示需要向用户澄清协作方式；仍填写最可能的 collaboration_intent，禁止用 chat 掩盖不确定性。
-8. 信息不足且缺失项会改变数据模态、分析路线或专家选择时，必须选择运行时目录中的通用入口 Agent，由通用助手先通过 ask_user 补全上下文；禁止直接猜测具体领域或专家。若用户消息明确包含图片附件，应优先让通用助手先理解图片并直接回答用户当前问题；只有图片本身无法回答、且确实缺少会改变结论的关键信息时才追问。
-9. 选择专家时只依据候选目录中声明的 routing_notes、capability_scope 与 default_role，不得超出专家能力边界。
-10. overdrive_intent 只表示用户对超频协作会话的意图：仅当用户明确希望由多个专家/团队/并行协作处理，且本轮任务确实需要 fanout、consult、case 或 dag 时填 enable；用户明确要求普通回答、停止团队协作或关闭超频时填 disable；仅询问“超频模式是什么/如何开启”、普通问答、任务虽复杂但用户未要求协作时一律填 none。不得因为文本出现“超频”一词就填 enable。
+6. `case` 或 `dag` 必须要求用户明确表达真实执行、提交、运行、交付或归档意图；仅仅出现“单细胞、转录组、差异基因、样本、数据、流程”等领域词，不能判为 `case` 或 `dag`。
+7. “我想了解方案”“我想找出差异”“这个结果怎么解释”“帮我设计分析”这类需求，默认是 `chat` 或 `consult`；先由专家完成 intake 和方案沟通，不代表已经授权真实计算。
+8. 领域词只用于选择合适的专家，不用于直接决定协作模式。比如“我有 6 个样本的小鼠单细胞数据，想比较两个 group 的细胞类型和差异基因”应优先路由到单细胞/通用专家，但 collaboration_intent 应为 `chat` 或 `consult`，不能仅因“单细胞”创建流程型 Case。
+9. 信息不足且缺失项会改变数据模态、分析路线或专家选择时，必须选择运行时目录中的通用入口 Agent，由通用助手先通过 ask_user 补全上下文；禁止直接猜测具体领域或专家。若用户消息明确包含图片附件，应优先让通用助手先理解图片并直接回答用户当前问题；只有图片本身无法回答、且确实缺少会改变结论的关键信息时才追问。
+10. 选择专家时只依据候选目录中声明的 routing_notes、capability_scope 与 default_role，不得超出专家能力边界。
+11. confidence < 0.6 表示需要向用户澄清协作方式；仍填写最可能的 collaboration_intent，禁止用 chat 掩盖不确定性。
+12. overdrive_intent 只表示用户对超频协作会话的意图：仅当用户明确希望由多个专家/团队/并行协作处理，且本轮任务确实需要 fanout、consult、case 或 dag 时填 enable；用户明确要求普通回答、停止团队协作或关闭超频时填 disable；仅询问“超频模式是什么/如何开启”、普通问答、任务虽复杂但用户未要求协作时一律填 none。不得因为文本出现“超频”一词就填 enable。
 
 示例：
 - “这个结果应该怎么解读，注释策略合理吗” → consult
@@ -1208,6 +1213,7 @@ MEMORY_TOOL_NAMES = {
     "omichub_update_memory",
     "omichub_forget_memory",
     "omichub_search_memory",
+    "omichub_update_memory_block",
 }
 
 MEMORY_SYSTEM_PROMPT_SUFFIX = """## 长期记忆工具
@@ -1216,6 +1222,13 @@ MEMORY_SYSTEM_PROMPT_SUFFIX = """## 长期记忆工具
 - 仅在用户明确要求记住，或提供稳定的研究偏好、物种、参考基因组、数据类型或项目进展时使用保存工具。
 - 当前对话优先于历史记忆；冲突时修正记忆。用户要求忘记时调用遗忘工具。
 - 禁止保存密钥、密码、Token、原始数据内容、他人隐私或仅对本轮有效的临时细节。
+"""
+
+MEMORY_V2_WRITE_DISCIPLINE = """## 记忆写入纪律
+
+只在用户明确陈述持久偏好、纠正错误做法，或告知影响后续工作的项目事实时调用记忆工具。
+不要记录一次性任务、当前对话已有的临时上下文、未确认的推测、密钥凭据或隐私信息。
+更新记忆块前先读取内容并携带 version，做增量修改，不要整块重写无关部分。
 """
 
 HANDOFF_SYSTEM_PROMPT_SUFFIX = """## Agent 转交协议
@@ -1866,10 +1879,11 @@ class ChatService:
         return True
 
     async def _memory_runtime_enabled(self) -> bool:
-        """mem0 记忆功能是否处于可用状态（env 能力闸门 + 管理员运行时开关）。"""
+        """记忆功能是否处于可用状态（配置能力闸门 + 管理员运行时开关）。"""
         from omichub.core.config import get_settings
 
-        if not get_settings().mem0_engine_enabled:
+        settings = get_settings()
+        if not settings.memory_v2_enabled:
             return False
         if self._db is None:
             return True
@@ -1883,23 +1897,18 @@ class ChatService:
     async def _enqueue_memory_summary(self, session: ChatSessionModel) -> None:
         """删除会话后异步沉淀长期记忆；关闭开关时不产生任何副作用。
 
-        mem0 引擎开启 → settle_session_memory（mem0 抽取事实）；
-        否则沿用旧引擎 summarize_session（单句摘要）。
+        v2 开启 → settle_session_memory；关闭时不产生副作用。
         """
         from omichub.core.config import get_settings
 
         settings = get_settings()
         try:
-            if settings.mem0_engine_enabled:
+            if settings.memory_v2_enabled:
                 if not await self._memory_runtime_enabled():
                     return
                 from omichub.infrastructure.celery_app.tasks.memory import settle_session_memory
 
                 task = settle_session_memory
-            elif settings.agent_memory_auto_summary_enabled:
-                from omichub.infrastructure.celery_app.tasks.memory import summarize_session
-
-                task = summarize_session
             else:
                 return
             # API 事务会在请求结束后提交；短延时防止 worker 读到提交前的会话状态。
@@ -1910,15 +1919,18 @@ class ChatService:
             logger.warning("会话记忆沉淀任务投递失败，已跳过: {}", exc)
 
     async def _maybe_enqueue_memory_settle(self, session: ChatSessionModel) -> None:
-        """mem0 引擎：消息累计达到阈值时异步沉淀会话记忆（不等删除）。"""
+        """消息累计达到阈值时异步沉淀会话记忆。"""
         from omichub.core.config import get_settings
 
         settings = get_settings()
-        if not settings.mem0_engine_enabled:
+        if not settings.memory_v2_enabled:
             return
         if not await self._memory_runtime_enabled():
             return
-        every = max(4, settings.mem0_settle_every_n_messages)
+        every = max(
+            4,
+            settings.memory_settle_min_new_messages,
+        )
         if session.message_count <= 0 or session.message_count % every != 0:
             return
         try:
@@ -2696,11 +2708,6 @@ class ChatService:
             clarification_questions = [] if has_image_attachment else _analysis_intake_questions(user_text)
             from omichub.application.services.flow_registry import get_flow_registry
 
-            flow_target = (
-                None
-                if clarification_questions
-                else get_flow_registry().route_agent(user_text, valid_ids)
-            )
             decision = None
             if clarification_questions:
                 fallback = _general_fallback()
@@ -2710,14 +2717,19 @@ class ChatService:
                     "collaboration_intent": "chat",
                     "confidence": 1.0,
                 }
-            elif flow_target:
-                decision = {
-                    "agent_id": flow_target,
-                    "reason": "命中分析流程阶段的 YAML 路由提示",
-                    "collaboration_intent": "chat",
-                    "confidence": 0.98,
-                }
             else:
+                flow_catalog = json.dumps(
+                    [
+                        {
+                            "flow_id": flow_id,
+                            "display_name": registered.definition.flow.display_name,
+                            "bridge_workflow": registered.definition.flow.bridge_workflow,
+                            "trigger_hints": registered.definition.flow.trigger_hints,
+                        }
+                        for flow_id, registered in sorted(get_flow_registry().flows.items())
+                    ],
+                    ensure_ascii=False,
+                )
                 catalog = json.dumps(
                     [
                         {
@@ -2749,7 +2761,9 @@ class ChatService:
                     ],
                     ensure_ascii=False,
                 )
-                system_prompt = ROUTER_SYSTEM_PROMPT.replace("{catalog}", catalog)
+                system_prompt = ROUTER_SYSTEM_PROMPT.replace("{catalog}", catalog).replace(
+                    "{flow_catalog}", flow_catalog
+                )
                 router_input = user_text
                 if has_image_attachment:
                     router_input = (
@@ -4489,6 +4503,59 @@ class ChatService:
                                 "completed": completed_workers,
                             },
                         )
+                    elif event_type == "worker_tool_started" and sender:
+                        tool_name = str(event.get("tool_name") or "工具")
+                        yield ChatChunk(
+                            type="overdrive_progress",
+                            metadata={
+                                "phase": "tool_running",
+                                "label": f"{sender['name']} 正在执行 {tool_name}",
+                                "total": len(assignments),
+                                "completed": completed_workers,
+                            },
+                        )
+                    elif event_type == "worker_tool_result" and sender:
+                        tool_name = str(event.get("tool_name") or "工具")
+                        success = event.get("success") is True
+                        duration_ms = int(event.get("duration_ms") or 0)
+                        duration = f"（{duration_ms}ms）" if duration_ms else ""
+                        yield ChatChunk(
+                            type="overdrive_progress",
+                            metadata={
+                                "phase": "tool_running",
+                                "label": (
+                                    f"{sender['name']} 已完成 {tool_name}{duration}"
+                                    if success
+                                    else f"{sender['name']} 执行 {tool_name} 失败{duration}"
+                                ),
+                                "total": len(assignments),
+                                "completed": completed_workers,
+                                "warning": None if success else f"{tool_name} 执行失败",
+                            },
+                        )
+                    elif event_type == "agent_context_reinjected" and sender:
+                        tool_name = str(event.get("tool_name") or "工具结果")
+                        yield ChatChunk(
+                            type="overdrive_progress",
+                            metadata={
+                                "phase": "worker_running",
+                                "label": f"{sender['name']} 已将 {tool_name} 结果纳入下一步分析",
+                                "total": len(assignments),
+                                "completed": completed_workers,
+                            },
+                        )
+                    elif event_type == "agent_loop_guard_triggered" and sender:
+                        reason = str(event.get("reason") or "运行保护已触发")
+                        yield ChatChunk(
+                            type="overdrive_progress",
+                            metadata={
+                                "phase": "worker_running",
+                                "label": f"{sender['name']} 的运行保护已触发：{reason}",
+                                "total": len(assignments),
+                                "completed": completed_workers,
+                                "warning": reason,
+                            },
+                        )
                     elif event_type == "worker_text_delta" and sender:
                         yield ChatChunk(
                             type="room_speech_delta",
@@ -5178,6 +5245,7 @@ class ChatService:
         studio_image: str | None = None
         studio_context_pack: dict[str, Any] | None = None
         studio_workspace_memory: str | None = None
+        studio_workspace_memory_index: str | None = None
         # 会话级权限模式（§2）：supervised（默认，写/执行类工具需用户批准）| auto
         studio_permission_mode = "supervised"
         studio_plan_approved = False
@@ -5277,9 +5345,15 @@ class ChatService:
                 sandbox_meta = session.sandbox_meta or {}
                 studio_image = sandbox_meta.get("image")
                 studio_context_pack = sandbox_meta.get("context_pack")
-                from omichub.application.services.studio_context_service import load_workspace_memory
+                from omichub.application.services.studio_context_service import (
+                    load_workspace_memory,
+                    load_workspace_memory_index,
+                )
 
                 studio_workspace_memory = load_workspace_memory(session_id) if session_id else None
+                studio_workspace_memory_index = (
+                    load_workspace_memory_index(session_id) if session_id else None
+                )
                 studio_permission_mode = (sandbox_meta.get("permissions") or {}).get(
                     "mode", "supervised"
                 )
@@ -5920,10 +5994,13 @@ class ChatService:
             for tool in tools
             if isinstance(tool, dict)
         ):
+            memory_prompt = MEMORY_SYSTEM_PROMPT_SUFFIX
+            if get_settings().memory_v2_enabled:
+                memory_prompt = f"{memory_prompt}\n\n{MEMORY_V2_WRITE_DISCIPLINE}"
             system_prompt = (
-                f"{system_prompt}\n\n{MEMORY_SYSTEM_PROMPT_SUFFIX}"
+                f"{system_prompt}\n\n{memory_prompt}"
                 if system_prompt
-                else MEMORY_SYSTEM_PROMPT_SUFFIX
+                else memory_prompt
             )
         if any(
             tool.get("function", {}).get("name") == HANDOFF_TOOL_NAME
@@ -6114,6 +6191,12 @@ class ChatService:
                 from omichub.application.services.studio_context_service import render_workspace_memory
 
                 runtime_prompt += f"\n\n{render_workspace_memory(studio_workspace_memory)}"
+            if studio_workspace_memory_index:
+                from omichub.application.services.studio_context_service import (
+                    render_workspace_memory_index,
+                )
+
+                runtime_prompt += f"\n\n{render_workspace_memory_index(studio_workspace_memory_index)}"
             if studio_permission_mode == "plan":
                 runtime_prompt += (
                     "\n\n## Studio 计划权限\n"
@@ -6577,6 +6660,7 @@ class ChatService:
                 round_text = ""
                 round_reasoning = ""
                 round_tool_calls: list[dict[str, Any]] = []
+                round_checkpoint_requested = False
                 # 父单轮工具回合内 fan-out 调用计数（subagent_max_children_per_message 护栏）
                 subagent_calls_this_round = 0
 
@@ -7323,19 +7407,14 @@ class ChatService:
                                 }
                         # 沙盒执行：sandbox_execute 的 stdout/stderr 以 tool_output 事件边跑边推
                         if approval_passed:
-                            should_checkpoint = tool_name in {
+                            should_checkpoint = False
+                            round_checkpoint_requested = round_checkpoint_requested or tool_name in {
                                 "workspace_write",
                                 "workspace_edit",
                             } or (
                                 tool_name == "sandbox_execute"
                                 and studio_permission_mode in {"auto", "plan"}
                             )
-                            if should_checkpoint:
-                                checkpoint_info = await asyncio.to_thread(
-                                    create_checkpoint,
-                                    current_session_id,
-                                    str(tc.get("id") or ""),
-                                )
                             result = {}
                             async for item in stream_studio_tool(
                                 tool_name,
@@ -7615,6 +7694,13 @@ class ChatService:
                         ]
                         handoff_requested = True
                         break
+
+                if studio_mode and round_checkpoint_requested:
+                    checkpoint_info = await asyncio.to_thread(
+                        create_checkpoint,
+                        current_session_id,
+                        f"turn-{round_number}",
+                    )
 
                 if handoff_requested:
                     yield execution_chunk(
@@ -8609,6 +8695,11 @@ class ChatService:
                     tool_executor=_tool_executor,
                     channel_resolver=_resolve_channel,
                     chat_stream=provider_manager.chat_stream,
+                    emit_execution_events=True,
+                    session_id=session_id,
+                    run_id=execution_run_id,
+                    agent_id=execution_agent_id,
+                    execution_path=execution_path,
                 )
                 runtime = LangGraphRuntimeService(deps, max_rounds=max_rounds)
                 async for chunk in runtime.stream(runtime_state["llm_messages"]):
@@ -8702,16 +8793,6 @@ class ChatService:
                             },
                         )
                         yield chunk
-                        yield execution_chunk(
-                            "agent_context_reinjected",
-                            session_id=session_id,
-                            run_id=execution_run_id,
-                            agent_id=execution_agent_id,
-                            round_number=execution_round,
-                            execution_path=execution_path,
-                            tool_call_id=call_id,
-                            tool_name=tool_name,
-                        )
                     else:
                         # 其余事件直接透传（metadata 已对齐 legacy）
                         yield chunk

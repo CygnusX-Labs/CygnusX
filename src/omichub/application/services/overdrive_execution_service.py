@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import re
+import zipfile
 from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
@@ -555,7 +557,50 @@ class DeliveryAssembler:
         path_rel = f"{root_rel}/final-report.md"
         await backend.write(path_rel, content.encode("utf-8"))
         relative = f"{relative_overdrive_run_root(run.session_id, run.run_id)}/delivery/final-report.md"
-        return {"path": relative, "official_artifacts": official, "content": content}
+        archive_path = await self._write_archive(
+            backend,
+            root_rel=root_rel,
+            relative_root=relative_overdrive_run_root(run.session_id, run.run_id),
+            report_path=path_rel,
+            official=official,
+            report_content=content,
+        )
+        return {
+            "path": relative,
+            "archive_path": archive_path,
+            "official_artifacts": official,
+            "content": content,
+        }
+
+    async def _write_archive(
+        self,
+        backend: Any,
+        *,
+        root_rel: str,
+        relative_root: str,
+        report_path: str,
+        official: list[dict[str, Any]],
+        report_content: str,
+    ) -> str:
+        archive = io.BytesIO()
+        included: set[str] = set()
+        with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as bundle:
+            bundle.writestr("final-report.md", report_content.encode("utf-8"))
+            included.add(report_path)
+            for item in official:
+                path = str(item.get("path") or "").strip()
+                if not path or path in included or path.startswith("/"):
+                    continue
+                try:
+                    content = await backend.read(path)
+                except Exception:  # noqa: BLE001 - one missing artifact must not lose the bundle
+                    continue
+                name = path.replace("\\", "/").lstrip("/")
+                bundle.writestr(name, content)
+                included.add(path)
+        archive_rel = f"{root_rel}/artifacts.zip"
+        await backend.write(archive_rel, archive.getvalue())
+        return f"{relative_root}/delivery/artifacts.zip"
 
     async def write_readme(
         self,
@@ -594,6 +639,7 @@ class DeliveryAssembler:
             f"`GET /sessions/{run.session_id}/overdrive-runs/{run.run_id}/artifacts?path=<路径>`:",
             "",
             f"- 最终报告: `{delivery.get('path')}`",
+            f"- 产物压缩包: `{delivery.get('archive_path') or f'{relative_overdrive_run_root(run.session_id, run.run_id)}/delivery/artifacts.zip'}`",
         ]
         lines.extend(f"- `{item.get('path')}`(来源:{item.get('source') or 'unknown'})" for item in official)
         if manager_summary.strip():

@@ -1230,6 +1230,19 @@ async def test_reconcile_skips_planning_for_chat_case_without_flow_id(client, se
     assert skip_events[0]["payload"]["from_status"] == "received"
     assert skip_events[0]["payload"]["to_status"] == "received"
 
+    repeated = await request_client.post(
+        "/v1/cases/bioops_chat_skip_plan/reconcile", headers=headers("bioops-manager", "manager")
+    )
+    assert repeated.status_code == 200
+    audit_events = [json.loads(line) for line in Path(settings.audit_log_path).read_text(encoding="utf-8").splitlines()]
+    repeated_skip_events = [
+        event
+        for event in audit_events
+        if event["event_type"] == "case.reconciled"
+        and event.get("payload", {}).get("reason") == "chat_case_skips_auto_planning"
+    ]
+    assert len(repeated_skip_events) == 1
+
 
 @pytest.mark.asyncio
 async def test_reconcile_creates_quality_work_item_only_after_observed_success(client) -> None:
@@ -1660,6 +1673,12 @@ async def test_standard_work_item_targets_come_from_flow_config(client, settings
         item for item in current.json()["work_items"] if item["work_item_id"] == "delivery-01"
     )
     assert delivery["target"] == "agent-code"
+    closed = await request_client.post(
+        "/v1/cases/bioops_swi/close",
+        headers=headers("agent-code", "code"),
+        json={"case_id": "bioops_swi", "quality_decision": "passed"},
+    )
+    assert closed.status_code == 200
 
 
 @pytest.mark.asyncio

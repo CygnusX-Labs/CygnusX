@@ -193,7 +193,7 @@ def test_default_assignment_builds_tnpd_phylogeny_dag() -> None:
     assert any("Newick/treefile" in item for item in assignments[1]["produces_outputs"])
 
 
-def test_authoritative_assignment_mode_only_returns_declared_phylogeny_dag() -> None:
+def test_authoritative_assignment_mode_returns_only_declared_domain_anchors() -> None:
     request = "我要将tnpd蛋白序列对比到20个基因组进行进化分析与建树"
 
     assignments = _default_overdrive_assignments(
@@ -207,8 +207,16 @@ def test_authoritative_assignment_mode_only_returns_declared_phylogeny_dag() -> 
         "tnpd-homolog-search",
         "tnpd-phylogeny",
     ]
-    assert _default_overdrive_assignments(
+    scrna_assignments = _default_overdrive_assignments(
         "做个单细胞分析计划", CATALOG, authoritative_only=True
+    )
+    assert [item["task_id"] for item in scrna_assignments] == [
+        "scrna-sample-contract",
+        "scrna-integration-clustering",
+        "scrna-immune-tolerance",
+    ]
+    assert _default_overdrive_assignments(
+        "做个代码审查计划", CATALOG, authoritative_only=True
     ) == []
 
 

@@ -11,12 +11,16 @@ from omichub.infrastructure.mcp.presets import _BINARY_ONLY_SUFFIXES
 from omichub.infrastructure.studio.manager import studio_sandbox_manager
 
 _MAX_CHECKPOINTS = 20
-_MAX_TRACKED_BYTES = 50 * 1024 * 1024
+_MAX_TRACKED_BYTES = 10 * 1024 * 1024
 _CHECKPOINT_REF_PREFIX = "refs/studio-checkpoints/"
 _GITIGNORE = "\n".join(
     (
         "input/",
-        "# Files larger than 50MB are excluded by the Studio checkpoint filter.",
+        "# Files larger than 10MB are excluded by the Studio checkpoint filter.",
+        ".env",
+        "*.key",
+        "*.pem",
+        "secrets/",
         *(f"*{suffix}" for suffix in sorted(_BINARY_ONLY_SUFFIXES)),
         "",
     )

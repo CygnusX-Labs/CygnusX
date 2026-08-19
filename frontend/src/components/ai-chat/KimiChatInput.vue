@@ -91,6 +91,8 @@ interface Props {
   workbenchLoading?: boolean
   /** 协作室等纯消息场景：关闭 slash/Goal 命令与 Agent 会话专属工具，@ 面板仅保留文件条目 */
   roomMode?: boolean
+  /** 协作室当前 Case 可被 @ 点名的领域 Agent。 */
+  roomMentionAgents?: AgentTemplate[]
   /** 工具行提示文案（如 "Enter 发送 · Shift+Enter 换行"），不传则不显示；P7 后渲染在输入卡片下方右侧 */
   hint?: string
   /** 提交中：发送按钮 loading 并禁用 */
@@ -112,6 +114,7 @@ const props = withDefaults(defineProps<Props>(), {
   showWorkbenchControl: false,
   workbenchLoading: false,
   roomMode: false,
+  roomMentionAgents: () => [],
   hint: '',
   sendLoading: false,
   toolbarConfig: undefined,
@@ -681,7 +684,16 @@ function friendlyName(raw: string, fallbackPath: string, typeHint: string): [str
  */
 const mentionItems = computed<MentionItem[]>(() => {
   const q = mentionQuery.value
-  // roomMode（协作室）只保留文件条目：目录引用无法映射为 Case context_refs
+  const agents: MentionItem[] = props.roomMode
+    ? props.roomMentionAgents.map((agent) => ({
+      kind: 'agent' as const,
+      key: `room-agent-${agent.id}`,
+      name: agent.name,
+      description: agent.description || '当前协作 Case 的领域 Agent',
+      agent,
+    }))
+    : []
+  // roomMode 下目录引用无法映射为 Case context_refs，因此只保留文件与 Agent。
   const directories: MentionItem[] = props.roomMode ? [] : workspaceDirectories.value
     .filter((directory) => fuzzyMatch(directory.path, q))
     .slice(0, 20)
@@ -712,7 +724,7 @@ const mentionItems = computed<MentionItem[]>(() => {
       }
     })
 
-  const items = [...directories, ...files]
+  const items = [...agents, ...directories, ...files]
   const normalizedQuery = normalizedMentionQuery(q).toLowerCase()
   // 排序：查询相关度 → 最近使用置顶 → 名称
   return items.sort((left, right) => {
@@ -1989,18 +2001,6 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
         color: var(--arco-primary);
         background: var(--arco-primary-light);
         border-color: color-mix(in srgb, var(--arco-primary) 30%, transparent);
-      }
-
-      &.workbench-btn {
-        color: var(--arco-primary);
-        border-color: color-mix(in srgb, var(--arco-primary) 24%, transparent);
-        background: color-mix(in srgb, var(--arco-primary) 6%, transparent);
-
-        &:hover {
-          color: #fff;
-          background: var(--arco-primary);
-          border-color: var(--arco-primary);
-        }
       }
 
       .btn-label {

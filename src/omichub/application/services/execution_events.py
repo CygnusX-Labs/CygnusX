@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
@@ -9,6 +10,10 @@ from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
 EXECUTION_EVENT_TYPES = frozenset(
     {
         "agent_turn_started",
+        "agent_reasoning_delta",
+        "agent_tool_call",
+        "agent_tool_started",
+        "agent_tool_result",
         "agent_context_reinjected",
         "agent_turn_continued",
         "agent_final_result",
@@ -36,6 +41,7 @@ def execution_metadata(
         "agent_id": agent_id,
         "round": round_number,
         "execution_path": execution_path,
+        "timestamp": datetime.now(UTC).isoformat(),
     }
     metadata.update({key: value for key, value in payload.items() if value is not None})
     return metadata
@@ -65,4 +71,3 @@ def execution_chunk(
             **payload,
         ),
     )
-

@@ -144,6 +144,54 @@ async def test_echo_messages_filtered() -> None:
 
 
 @pytest.mark.asyncio
+async def test_duplicate_external_event_is_projected_once() -> None:
+    event = {
+        "event_id": "$same-event",
+        "origin": "external",
+        "sender_matrix_id": "@alice:matrix",
+        "content": "同一条用户回复",
+    }
+    agentteams = _agentteams()
+    redis = FakeRedis(bindings=BINDING)
+    responder = MagicMock()
+
+    stats = await _service(
+        agentteams=agentteams,
+        gateway=FakeGateway([event, event, {"next_batch": "token-3"}]),
+        redis=redis,
+        responder=responder,
+    ).run(watch_seconds=5)
+
+    assert stats["messages"] == 1
+    assert agentteams.post_case_evidence.await_count == 1
+    responder.assert_called_once_with("bioops_1", "user-a", "同一条用户回复")
+    assert redis.values[f"{ROOM_SYNC_CURSOR_KEY_PREFIX}bioops_1"] == "token-3"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_external_message_without_event_id_is_projected_once() -> None:
+    event = {
+        "origin": "external",
+        "sender_matrix_id": "@alice:matrix",
+        "content": "无事件 ID 的重复回复",
+    }
+    agentteams = _agentteams()
+    redis = FakeRedis(bindings=BINDING)
+    responder = MagicMock()
+
+    stats = await _service(
+        agentteams=agentteams,
+        gateway=FakeGateway([event, dict(event), {"next_batch": "token-4"}]),
+        redis=redis,
+        responder=responder,
+    ).run(watch_seconds=5)
+
+    assert stats["messages"] == 1
+    assert agentteams.post_case_evidence.await_count == 1
+    responder.assert_called_once_with("bioops_1", "user-a", "无事件 ID 的重复回复")
+
+
+@pytest.mark.asyncio
 async def test_sync_resumes_from_persisted_cursor() -> None:
     agentteams = _agentteams()
     gateway = FakeGateway([])

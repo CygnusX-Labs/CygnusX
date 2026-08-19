@@ -23,6 +23,7 @@ import asyncio
 import contextlib
 import hashlib
 import json
+import re
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -107,6 +108,7 @@ STUDIO_TOOL_NAMES: frozenset[str] = frozenset(
         "workspace_edit",
         "workspace_read",
         "workspace_list",
+        "omichub_workspace_remember",
         "datahub_import",
         "platform_result_import",
         "artifact_register",
@@ -226,6 +228,22 @@ STUDIO_TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "omichub_workspace_remember",
+            "description": "将工作区记忆正文写入 .memory 并追加 MEMORY.md 索引；正文不会自动注入上下文。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "记忆标题"},
+                    "summary": {"type": "string", "description": "索引中的一句话摘要"},
+                    "content": {"type": "string", "description": "记忆正文"},
+                },
+                "required": ["title", "summary", "content"],
             },
         },
     },
@@ -415,6 +433,58 @@ def _error_result(message: str) -> dict[str, Any]:
 
 def _ok_result(llm_payload: dict[str, Any], ui_payload: dict[str, Any]) -> dict[str, Any]:
     return {"success": True, "result": {"llm_payload": llm_payload, "ui_payload": ui_payload}}
+
+
+async def _workspace_remember(args: dict[str, Any], session_id: str) -> dict[str, Any]:
+    """写入正文和索引；失败时恢复两者原状。"""
+    from datetime import date
+
+    title = str(args.get("title") or "").strip()
+    summary = str(args.get("summary") or "").strip()
+    content = str(args.get("content") or "")
+    if not title or not summary or not content:
+        return _error_result("title、summary、content 均不能为空")
+    workspace = studio_sandbox_manager.workspace_dir(session_id)
+    memory_dir = workspace / ".memory"
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", title).strip("-").lower() or "note"
+    index_path = workspace / "MEMORY.md"
+    try:
+        memory_dir.mkdir(parents=True, exist_ok=True)
+        old_index = index_path.read_bytes() if index_path.exists() else None
+        index = old_index.decode("utf-8") if old_index else ""
+        entries = [line for line in index.splitlines() if line.lstrip().startswith("- [")]
+        if len(entries) >= 200:
+            return _error_result("MEMORY.md 已达到 200 条，请先合并精简记忆")
+
+        date_prefix = date.today().isoformat()
+        note_path = memory_dir / f"{date_prefix}-{slug}.md"
+        suffix = 2
+        while note_path.exists():
+            note_path = memory_dir / f"{date_prefix}-{slug}-{suffix}.md"
+            suffix += 1
+        old_note = note_path.read_bytes() if note_path.exists() else None
+        entry = f"- [{title}](.memory/{note_path.name}) — {summary}"
+    except (OSError, UnicodeDecodeError) as exc:
+        return _error_result(f"工作区记忆准备失败: {exc}")
+
+    try:
+        note_path.write_text(f"# {title}\n\n{content}\n", encoding="utf-8")
+        index_path.write_text(
+            (index.rstrip() + "\n" if index.strip() else "") + entry + "\n",
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        if old_note is None:
+            note_path.unlink(missing_ok=True)
+        else:
+            note_path.write_bytes(old_note)
+        if old_index is None:
+            index_path.unlink(missing_ok=True)
+        else:
+            index_path.write_bytes(old_index)
+        return _error_result(f"工作区记忆写入失败: {exc}")
+    payload = {"title": title, "summary": summary, "path": f".memory/{note_path.name}", "index": "MEMORY.md"}
+    return _ok_result(payload, dict(payload))
 
 
 # ===== 各工具执行器 =====
@@ -960,6 +1030,8 @@ async def execute_studio_tool(
             return await _workspace_read(args, session_id, image, user_id)
         if name == "workspace_list":
             return await _workspace_list(args, session_id, image, user_id)
+        if name == "omichub_workspace_remember":
+            return await _workspace_remember(args, session_id)
         if name == "datahub_import":
             return await _datahub_import(args, session_id, user_id, db)
         if name == "platform_result_import":

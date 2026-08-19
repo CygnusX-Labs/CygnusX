@@ -81,6 +81,25 @@ def test_parse_envelope_falls_back_to_raw_answer() -> None:
     assert result.conclusion == "普通文本结论"
 
 
+def test_parse_envelope_recovers_trailing_commas_from_manager_response() -> None:
+    result = AgentConsultationService.parse_envelope(
+        '''{
+  "conclusion": "收到需求。在制定分析方案前，需要确认数据状态。",
+  "recommendations": [],
+  "evidence_refs": [],
+  "risks": ["3v3 设计的统计效能有限"],
+  "ask_user": [
+    {"question": "数据是什么格式？", "options": ["Seurat RDS", "h5ad"]},
+    {"question": "来自什么组织？", "options": [],}
+  ],
+}'''
+    )
+
+    assert result.conclusion == "收到需求。在制定分析方案前，需要确认数据状态。"
+    assert result.risks == ["3v3 设计的统计效能有限"]
+    assert result.ask_user[1].question == "来自什么组织？"
+
+
 @pytest.mark.asyncio
 async def test_quality_gate_blocks_low_mapping_rate_and_keeps_verified_refs(monkeypatch) -> None:
     task_id = "00000000-0000-0000-0000-000000000002"
@@ -389,6 +408,9 @@ async def test_evidence_projection_emits_agent_events_with_truncated_args() -> N
             "index": 1,
             "agent_id": "agent-rnaseq",
             "tool_name": "task_result_summary",
+            "tool_call_id": "call-1",
+            "round": 1,
+            "execution_path": "agentteams_worker_react",
             "args_summary": "x" * 500,
         },
         {
@@ -396,8 +418,21 @@ async def test_evidence_projection_emits_agent_events_with_truncated_args() -> N
             "index": 1,
             "agent_id": "agent-rnaseq",
             "tool_name": "task_result_summary",
+            "tool_call_id": "call-1",
+            "round": 1,
+            "execution_path": "agentteams_worker_react",
+            "result_summary": "结果可信",
             "success": True,
             "duration_ms": 12,
+        },
+        {
+            "type": "agent_context_reinjected",
+            "index": 1,
+            "agent_id": "agent-rnaseq",
+            "tool_name": "task_result_summary",
+            "tool_call_id": "call-1",
+            "round": 1,
+            "execution_path": "agentteams_worker_react",
         },
         {
             "type": "worker_finished",
@@ -422,7 +457,13 @@ async def test_evidence_projection_emits_agent_events_with_truncated_args() -> N
 
     assert result.conclusion == "可信"
     calls = {call.kwargs["event_type"]: call for call in post_evidence.await_args_list}
-    assert set(calls) == {"agent.started", "agent.tool_call", "agent.tool_result", "agent.finished"}
+    assert set(calls) == {
+        "agent.started",
+        "agent.tool_call",
+        "agent.tool_result",
+        "agent.context_reinjected",
+        "agent.finished",
+    }
     for call in calls.values():
         assert call.args[0] == "case-1"
         assert call.kwargs["work_item_id"] == "wi-1"
@@ -430,10 +471,17 @@ async def test_evidence_projection_emits_agent_events_with_truncated_args() -> N
         assert call.kwargs["payload"]["agent_id"] == "agent-rnaseq"
     tool_call_payload = calls["agent.tool_call"].kwargs["payload"]
     assert tool_call_payload["tool"] == "task_result_summary"
+    assert tool_call_payload["tool_call_id"] == "call-1"
+    assert tool_call_payload["round"] == 1
+    assert tool_call_payload["execution_path"] == "agentteams_worker_react"
     assert len(tool_call_payload["args_summary"]) == 200
     tool_result_payload = calls["agent.tool_result"].kwargs["payload"]
     assert tool_result_payload == {
         "tool": "task_result_summary",
+        "tool_call_id": "call-1",
+        "round": 1,
+        "execution_path": "agentteams_worker_react",
+        "result_summary": "结果可信",
         "success": True,
         "duration_ms": 12,
         "work_item_id": "wi-1",

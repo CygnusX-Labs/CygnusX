@@ -6,8 +6,9 @@ import asyncio
 import hashlib
 import json
 from collections.abc import AsyncIterator
+from math import ceil
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 from loguru import logger
@@ -20,15 +21,22 @@ from omichub.application.services.agentteams_bridge_settings_service import (
 from omichub.application.services.agentteams_capability_registry import (
     get_agentteams_capability_registry,
 )
+from omichub.application.services.agentteams_context_refs import check_context_refs
+from omichub.application.services.agentteams_execution_intent import (
+    ExecutionIntent,
+    classify_execution_intent,
+)
 from omichub.application.services.agentteams_intent_router import infer_intent_route
 from omichub.application.services.agentteams_room_gateway_service import (
     AgentTeamsRoomGatewayService,
 )
 from omichub.application.services.agentteams_title import derive_agentteams_case_title
+from omichub.application.services.flow_registry import get_flow_registry
 from omichub.core.config import Settings
 from omichub.core.exceptions import AuthorizationError, BusinessError
 from omichub.infrastructure.cache.redis_client import get_redis
 from omichub.infrastructure.database.models.user import UserModel
+from omichub.infrastructure.storage import get_path_factory
 
 # Bridge 侧预留的 Case 级证据 work_item_id（bridge record_evidence 对 manager 放行，
 # 不要求存在同名 work item）；房间事件不属于任何具体工作项。
@@ -45,8 +53,8 @@ MATRIX_USER_IDENTITY_PREFIX = "omichub-user-"
 # 无 flow_id 的聊天式 Case 缺省规划者；意图路由命中时按流程分析师覆盖。
 DEFAULT_LEAD_PLANNER = "agent-code"
 
-# 聊天式创建的通用 Case 自动确认集合（Redis set）：API 创建时写入，
-# beat 任务消费后移除；Bridge 无 meta 字段且不改 schema，故事实源放在平台侧。
+# 历史自动确认集合：仅供 beat 清理旧标记。新的真实计算不再写入该集合，
+# 必须由用户在当前 Case 的人工审批卡上显式批准。
 AUTO_CONFIRM_CASES_KEY = "agentteams:auto_confirm_cases"
 
 # Bridge 连接状态缓存：避免每次打开协作室页面都同步探测 Bridge /healthz。
@@ -120,6 +128,50 @@ class AgentTeamsService:
         except BusinessError:
             return False
         return health.get("status") == "ok"
+
+    async def flow_capability_check(self, flow_id: str) -> dict[str, Any]:
+        """Return truthful pre-handoff capability status for every Flow stage."""
+        registry = get_flow_registry()
+        registered = registry.flows.get(flow_id) or next(
+            (item for item in registry.flows.values()
+             if item.definition.flow.bridge_workflow == flow_id),
+            None,
+        )
+        if registered is None:
+            return {"flow_id": flow_id, "available": False, "reason": "Flow 未注册", "stages": []}
+        health = await self._request("/v1/health/workers")
+        raw_workers = health.get("workers") if isinstance(health, dict) else []
+        workers = self._merge_worker_heartbeats(
+            raw_workers if isinstance(raw_workers, list) else [],
+            self._worker_identity_aliases(),
+        )
+        workers_by_identity = {
+            str(item.get("identity")): item
+            for item in workers
+            if isinstance(item, dict) and item.get("identity")
+        }
+        stages = []
+        for stage in registered.definition.stages:
+            identity = stage.assistant_agent_id or registered.definition.flow.actor
+            worker = workers_by_identity.get(identity, {})
+            configured = bool(worker.get("configured"))
+            online = bool(worker.get("active"))
+            stages.append({
+                "stage": stage.key,
+                "agent_id": identity,
+                "available": configured and online,
+                "identity_configured": configured,
+                "worker_online": online,
+                "execution_mode": "flow",
+                "reason": "" if configured and online else (
+                    "Bridge 身份未配置" if not configured else "Worker 心跳离线"
+                ),
+            })
+        return {
+            "flow_id": registered.definition.flow.id,
+            "available": all(item["available"] for item in stages),
+            "stages": stages,
+        }
 
     def _connection_status_cache_key(self) -> str:
         url_hash = hashlib.sha256(self._bridge_config.bridge_url.encode()).hexdigest()[:16]
@@ -355,8 +407,9 @@ class AgentTeamsService:
             case_payload["project_ref"] = {"kind": "project", "id": project_id}
         if context_refs:
             case_payload["context_refs"] = context_refs
-        if flow_id:
-            case_payload["flow_id"] = flow_id
+        resolved_flow_id = flow_id or self._resolve_chat_flow_id(intent, context_refs)
+        if resolved_flow_id:
+            case_payload["flow_id"] = resolved_flow_id
         else:
             case_payload["lead_planner"] = self._resolve_chat_lead_planner(intent)
         if origin_consultation_id:
@@ -368,15 +421,117 @@ class AgentTeamsService:
             method="POST",
             json=case_payload,
         )
-        if db is not None and await self._is_autonomous(db, requester_ref):
-            try:
-                redis = get_redis()
-                await redis.sadd(AUTO_CONFIRM_CASES_KEY, case_id)
-            except Exception as exc:  # noqa: BLE001
-                logger.bind(case_id=case_id).warning(
-                    "AgentTeams auto-confirm marking failed: {}", exc
+        if resolved_flow_id:
+            await self._materialize_flow_stage_work_items(
+                case_id=case_id,
+                flow_id=resolved_flow_id,
+                context_refs=context_refs or [],
+            )
+            if str(case.get("flow_id") or "") == resolved_flow_id:
+                await self._record_flow_capability_failure(
+                    case_id=case_id,
+                    flow_id=resolved_flow_id,
                 )
         return case
+
+    async def _record_flow_capability_failure(self, *, case_id: str, flow_id: str) -> None:
+        """Persist a truthful handoff failure before Manager describes execution."""
+        try:
+            capability = await self.flow_capability_check(flow_id)
+        except Exception as exc:  # noqa: BLE001 - capability failure must be visible, not fatal
+            logger.bind(case_id=case_id, flow_id=flow_id).warning(
+                "AgentTeams Flow capability check failed: {}", exc
+            )
+            capability = {
+                "flow_id": flow_id,
+                "available": False,
+                "reason": "能力检查暂不可用，当前不能确认专项 Worker 状态",
+                "stages": [],
+            }
+        if capability.get("available"):
+            return
+        stage_reasons = [
+            f"{item.get('agent_id')}: {item.get('reason')}"
+            for item in capability.get("stages", [])
+            if isinstance(item, dict) and item.get("reason")
+        ]
+        reason = "；".join(stage_reasons) or str(
+            capability.get("reason") or "专项 Worker 当前不可用"
+        )
+        try:
+            await self.post_case_evidence(
+                case_id,
+                work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                event_type="case.handoff_failed",
+                summary=f"Flow {flow_id} 暂未交接：{reason}"[:200],
+                payload={
+                    "flow_id": flow_id,
+                    "reason": reason,
+                    "capability": capability,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - evidence failure must not fail Case creation
+            logger.bind(case_id=case_id, flow_id=flow_id).warning(
+                "AgentTeams Flow capability failure evidence failed: {}", exc
+            )
+
+    async def _materialize_flow_stage_work_items(
+        self,
+        *,
+        case_id: str,
+        flow_id: str,
+        context_refs: list[dict[str, str]],
+    ) -> None:
+        """把 Flow YAML 阶段投影为可查询的 Case Work Item DAG。"""
+        registry = get_flow_registry()
+        registered = registry.flows.get(flow_id) or next(
+            (
+                item
+                for item in registry.flows.values()
+                if item.definition.flow.bridge_workflow == flow_id
+            ),
+            None,
+        )
+        if registered is None:
+            return
+        previous_id: str | None = None
+        for stage in registered.definition.stages:
+            work_item_id = f"stage-{stage.key}"
+            target = stage.assistant_agent_id or registered.definition.flow.actor
+            payload = {
+                "work_item_id": work_item_id,
+                "parent_work_item_id": previous_id,
+                "target": target,
+                "objective": stage.title,
+                "skill_name": stage.key,
+                "context_refs": [*context_refs, {"kind": "flow_stage", "id": stage.key}],
+                "declared_inputs": context_refs,
+                "declared_outputs": [{"kind": "flow", "id": stage.key}],
+                "read_only": True,
+                "depends_on": [previous_id] if previous_id else [],
+            }
+            try:
+                await self._request(
+                    f"/v1/cases/{case_id}/work-items",
+                    method="POST",
+                    json=payload,
+                )
+            except Exception as exc:  # noqa: BLE001 - expose unavailable stage, preserve Case
+                logger.bind(case_id=case_id, flow_id=flow_id, stage=stage.key).warning(
+                    "AgentTeams Flow stage work item unavailable: {}", exc
+                )
+                try:
+                    await self.post_case_evidence(
+                        case_id,
+                        work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                        event_type="flow.stage_unavailable",
+                        summary=f"Flow 阶段 {stage.key} 暂不可用",
+                        payload={"flow_id": flow_id, "stage": stage.key, "target": target, "reason": str(exc)[:500]},
+                    )
+                except Exception:
+                    pass
+                continue
+            previous_id = work_item_id
 
     @staticmethod
     def _resolve_chat_lead_planner(intent: str) -> str | None:
@@ -392,6 +547,38 @@ class AgentTeamsService:
             intent,
         )
         return None
+
+    @staticmethod
+    def _resolve_chat_flow_id(
+        intent: str,
+        context_refs: list[dict[str, str]] | None,
+    ) -> str | None:
+        """仅让带明确输入的正式领域请求在创建时绑定既有 Flow。
+
+        ``workspace`` 是聊天 Case 的只读默认引用，不能单独视为执行对象；否则
+        “介绍 RNA-seq”一类纯咨询会误创建领域流程。真正上传的文件/产物引用，
+        或文本内明确的 FASTQ、Cell Ranger、STARsolo 等产物才允许走 Flow。
+        """
+        execution_refs = [
+            ref
+            for ref in context_refs or []
+            if str(ref.get("kind") or "").strip().lower() != "workspace"
+        ]
+        if classify_execution_intent(intent, execution_refs) is not ExecutionIntent.EXECUTE:
+            return None
+        try:
+            route = infer_intent_route(intent)
+        except Exception as exc:  # noqa: BLE001 - routing failure must preserve generic chat Case
+            logger.bind(intent=intent[:160]).warning(
+                "AgentTeams chat Case flow routing failed: {}", exc
+            )
+            return None
+        if route is None:
+            return None
+        logger.bind(flow_id=route.flow_id, lead_planner=route.lead_planner).info(
+            "AgentTeams chat Case bound to inferred domain Flow"
+        )
+        return route.flow_id
 
     @staticmethod
     async def _user_agentteams_preferences(
@@ -431,37 +618,14 @@ class AgentTeamsService:
         db: AsyncSession | None = None,
         task_name: str = "auto-approved",
     ) -> dict[str, Any]:
-        """若用户为 autonomous 模式，自动批准并提交处于 approval_pending 的 Case。
-
-        通用 Case（无 flow_id）直接调用 general-plans/execute；
-        流程 Case 创建 submit work item 后调用 approved-submissions。
-        成功后在 Case 上记录「已根据你的授权自动批准」审计事件。
-        """
+        """保留旧巡检入口，但真实计算始终要求当前用户显式人工审批。"""
         if db is None:
             return {"status": "skipped_no_db", "case_id": case_id}
-        if not await self._is_autonomous(db, requester_ref):
-            return {"status": "skipped_not_autonomous", "case_id": case_id}
-        case = await self._get_case_for_requester(case_id, requester_ref)
-        status_value = str(case.get("status") or "")
-        if status_value == "approved":
-            return {"status": "idempotent_already_approved", "case_id": case_id}
-        if status_value == "executing":
-            return {"status": "idempotent_already_executing", "case_id": case_id}
-        if status_value != "approval_pending":
-            return {"status": "skipped_not_pending", "case_id": case_id, "case_status": status_value}
-        result = await self.approve_and_submit_task(
-            case_id=case_id,
-            requester_ref=requester_ref,
-            task_name=task_name,
-        )
-        await self.post_case_evidence(
-            case_id,
-            work_item_id=CASE_LEVEL_WORK_ITEM_ID,
-            event_type="case.auto_approved",
-            summary="已根据你的授权自动批准",
-            payload={"reason": "user_autonomy_autonomous"},
-        )
-        return {"status": "auto_approved", "case_id": case_id, "result": result}
+        return {
+            "status": "skipped_manual_approval_required",
+            "case_id": case_id,
+            "reason": "真实计算必须由用户在当前 Case 中显式批准",
+        }
 
     async def approve_and_submit_task(
         self,
@@ -615,24 +779,59 @@ class AgentTeamsService:
         requester_ref: str,
         objective: str,
         context_refs: list[dict[str, str]],
+        target_agent_id: str | None = None,
     ) -> None:
         """聊天式 Case（无 flow_id）命中执行意图时启动 planning。
 
         先创建 read_only 的 plan-01 规划工作项，再把 Case 推进到 planning_running。
-        顺序不可颠倒：Bridge 的 reconcile 会把没有 plan-01 的聊天 Case 从
-        planning_running 退回 received（chat_case_skips_auto_planning）。
+        Bridge reconcile 不会为无 flow_id 的聊天 Case 自动创建 planning 工作项，
+        也不会在重复 reconcile 时回退或重复产生 skip 审计事件。
         失败仅记 warning，绝不影响房间回复主流程。
         """
         refs: list[dict[str, str]] = (
             list(context_refs) if context_refs else [{"kind": "workspace", "id": requester_ref}]
         )
+        if context_refs:
+            workspace_root = get_path_factory().workspace_dir(requester_ref).resolve()
+            checks = check_context_refs(
+                refs, workspace_root=workspace_root if workspace_root.exists() else None
+            )
+            unreadable = [item for item in checks if not item.readable]
+            if unreadable:
+                details = [
+                    {"ref": item.ref, "category": item.category, "reason": item.reason}
+                    for item in unreadable
+                ]
+                try:
+                    await self.post_case_evidence(
+                        case_id,
+                        work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                        event_type="work_item.blocked",
+                        summary="执行计划已阻断：存在不可读的上下文引用",
+                        payload={"reason": "unreadable_context_refs", "references": details},
+                    )
+                except Exception as exc:  # noqa: BLE001 - blocking evidence is best effort
+                    logger.bind(case_id=case_id).warning(
+                        "AgentTeams unreadable context evidence failed: {}", exc
+                    )
+                return
+        target = target_agent_id
+        if not target:
+            try:
+                route = infer_intent_route(objective)
+                target = route.lead_planner if route else None
+            except Exception as exc:  # noqa: BLE001
+                logger.bind(case_id=case_id).warning(
+                    "AgentTeams chat planning target routing failed: {}", exc
+                )
+        target = target or DEFAULT_LEAD_PLANNER
         try:
             await self._request(
                 f"/v1/cases/{case_id}/work-items",
                 method="POST",
                 json={
                     "work_item_id": "plan-01",
-                    "target": "agent-code",
+                    "target": target,
                     "objective": objective,
                     "skill_name": "planning_advice",
                     "context_refs": refs,
@@ -761,6 +960,54 @@ class AgentTeamsService:
             params["cursor"] = cursor
         return await self._request(f"/v1/cases/{case_id}/events", params=params)
 
+    async def get_room_response_timing_summary(
+        self,
+        case_id: str,
+        requester_ref: str,
+        *,
+        limit: int = 1000,
+    ) -> dict[str, Any]:
+        """Aggregate persisted Manager response timing events for a Case."""
+        event_page = await self.get_case_events(case_id, requester_ref, limit=limit)
+        timings = [
+            event.get("payload") or {}
+            for event in event_page.get("events", [])
+            if isinstance(event, dict) and event.get("event_type") == "room.response_timing"
+        ]
+        durations = [
+            max(0, int(item.get("duration_ms") or 0))
+            for item in timings
+            if isinstance(item, dict) and item.get("duration_ms") is not None
+        ]
+
+        def percentile(values: list[int]) -> int:
+            if not values:
+                return 0
+            ordered = sorted(values)
+            return ordered[max(0, ceil(len(ordered) * 0.95) - 1)]
+
+        stage_values: dict[str, list[int]] = {}
+        for item in timings:
+            if not isinstance(item, dict):
+                continue
+            stage_ms = item.get("stage_ms")
+            if not isinstance(stage_ms, dict):
+                continue
+            for stage, value in stage_ms.items():
+                try:
+                    stage_values.setdefault(str(stage), []).append(max(0, int(value)))
+                except (TypeError, ValueError):
+                    continue
+        return {
+            "case_id": case_id,
+            "sample_count": len(durations),
+            "p95_duration_ms": percentile(durations),
+            "stage_p95_ms": {
+                stage: percentile(values) for stage, values in sorted(stage_values.items())
+            },
+            "latest_duration_ms": durations[-1] if durations else 0,
+        }
+
     async def provision_case_room(
         self, case_id: str, *, requester_ref: str = ""
     ) -> dict[str, Any] | None:
@@ -820,6 +1067,7 @@ class AgentTeamsService:
         content: str,
         *,
         context_refs: list[dict[str, str]] | None = None,
+        client_message_id: str | None = None,
     ) -> dict[str, Any]:
         """记录一条用户房间发言（``room.user_message`` 审计事件）。
 
@@ -830,16 +1078,190 @@ class AgentTeamsService:
         case = await self._request(f"/v1/cases/{case_id}")
         if case.get("requester_ref") != requester_ref:
             raise AuthorizationError("无权操作该协作案例")
-        payload: dict[str, Any] = {"actor": requester_ref, "content": content.strip()}
+        from omichub.application.services.agentteams_mention_resolver import resolve_room_mentions
+
+        registry = get_agentteams_capability_registry()
+        role_labels = registry.role_labels()
+        participant_targets = {
+            str(item.get("target"))
+            for item in case.get("work_items", [])
+            if isinstance(item, dict) and item.get("target")
+        }
+        allowed_agent_ids = set(participant_targets)
+        allowed_agent_ids.update(
+            str(label.get("agent_id"))
+            for role, label in role_labels.items()
+            if role in participant_targets and label.get("agent_id")
+        )
+        dispatch = resolve_room_mentions(
+            content,
+            registry=registry,
+            role_labels=role_labels,
+            allowed_agent_ids=allowed_agent_ids or None,
+        )
+        if client_message_id:
+            existing = await self.get_case_events(case_id, requester_ref, limit=200)
+            for event in existing.get("events", []):
+                if not isinstance(event, dict) or event.get("event_type") != "room.user_message":
+                    continue
+                event_payload = event.get("payload") or {}
+                if not isinstance(event_payload, dict):
+                    continue
+                nested_payload = event_payload.get("payload")
+                if isinstance(nested_payload, dict):
+                    event_payload = nested_payload
+                if event_payload.get("client_message_id") == client_message_id:
+                    return {
+                        "event_id": event.get("event_id"),
+                        "deduplicated": True,
+                        "dispatch": dispatch,
+                    }
+        payload: dict[str, Any] = {
+            "actor": requester_ref,
+            "content": content.strip(),
+            "mentions": dispatch["mentions"],
+            "target_agent_id": dispatch["target_agent_id"],
+            "dispatch_mode": dispatch["dispatch_mode"],
+        }
+        if dispatch.get("unknown_mentions"):
+            payload["mention_resolution_note"] = (
+                "以下点名对象不是当前 Case 参与者，已交由 Manager 评估："
+                + "、".join(dispatch["unknown_mentions"])
+            )
+        if client_message_id:
+            payload["client_message_id"] = client_message_id
         if context_refs:
             payload["context_refs"] = context_refs
-        return await self.post_case_evidence(
+        result = await self.post_case_evidence(
             case_id,
             work_item_id=CASE_LEVEL_WORK_ITEM_ID,
             event_type="room.user_message",
             summary=content.strip()[:80],
             payload=payload,
         )
+        return {**result, "dispatch": dispatch}
+
+    async def apply_change_decision(
+        self,
+        case_id: str,
+        requester_ref: str,
+        *,
+        work_item_ids: list[str],
+        decision: str,
+        rationale: str = "",
+    ) -> dict[str, Any]:
+        """Record a user change decision; only cancel mutates execution immediately."""
+        if decision not in {"resume", "replan", "branch", "cancel"}:
+            raise BusinessError("不支持的变更决策")
+        case = await self._get_case_for_requester(case_id, requester_ref)
+        requested_ids = {str(item_id) for item_id in work_item_ids if item_id}
+        items = [
+            item for item in case.get("work_items", [])
+            if isinstance(item, dict) and str(item.get("work_item_id")) in requested_ids
+        ]
+        if not items:
+            raise BusinessError("未找到可处理的受影响工作项")
+        statuses = {"claimed", "running", "in_progress", "awaiting_approval", "planning_running"}
+        active_items = [item for item in items if str(item.get("status") or "").lower() in statuses]
+        if not active_items and decision != "resume":
+            raise BusinessError("受影响工作项已经离开运行态，无法重复提交该决策")
+
+        changed_items: list[str] = []
+        if decision in {"cancel", "replan"}:
+            for item in active_items:
+                item_id = str(item["work_item_id"])
+                await self._request(
+                    f"/v1/cases/{case_id}/work-items/{item_id}",
+                    method="POST",
+                    json={
+                        "status": "cancelled",
+                        "summary": (
+                            rationale.strip()[:4_000]
+                            or ("用户确认终止该变更支线" if decision == "cancel" else "重规划前冻结旧工作项")
+                        ),
+                    },
+                )
+                changed_items.append(item_id)
+                await self.post_case_evidence(
+                    case_id,
+                    work_item_id=item_id,
+                    event_type="work_item.interrupted",
+                    summary="工作项已在安全边界停止，等待变更后续编排",
+                    payload={
+                        "work_item_id": item_id,
+                        "stop_level": "queued",
+                        "previous_status": item.get("status"),
+                        "reusable_artifacts": item.get("output_refs") or [],
+                        "resume_hint": "原工作项已保留审计与产物引用",
+                        "decision": decision,
+                    },
+                )
+
+        created_work_item_ids: list[str] = []
+        rerouted_targets: dict[str, str] = {}
+        if decision in {"replan", "branch"}:
+            suffix = uuid4().hex[:8]
+            for item in items:
+                item_id = str(item["work_item_id"])
+                new_id = f"{item_id}-{decision}-{suffix}"
+                target = item.get("target")
+                if decision == "replan":
+                    try:
+                        route = infer_intent_route(
+                            f"{case.get('intent') or ''}\n{item.get('objective') or ''}"
+                        )
+                    except Exception as exc:  # noqa: BLE001 - preserve old target on route failure
+                        route = None
+                        logger.bind(case_id=case_id, work_item_id=item_id).warning(
+                            "AgentTeams replan target routing failed: {}", exc
+                        )
+                    if route is not None:
+                        target = route.lead_planner
+                if decision == "replan" and target:
+                    rerouted_targets[item_id] = str(target)
+                await self._request(
+                    f"/v1/cases/{case_id}/work-items",
+                    method="POST",
+                    json={
+                        "work_item_id": new_id,
+                        "parent_work_item_id": item_id,
+                        "target": target,
+                        "objective": (
+                            f"根据用户变更决策重新规划：{item.get('objective') or ''}"
+                            if decision == "replan"
+                            else f"并行验证支线：{item.get('objective') or ''}"
+                        )[:1_000],
+                        "skill_name": item.get("skill_name") or "change-branch",
+                        "context_refs": item.get("context_refs") or [],
+                        "declared_inputs": item.get("declared_inputs") or [],
+                        "declared_outputs": item.get("declared_outputs") or [],
+                        "read_only": True,
+                        "execution_mode": "readonly_consultation",
+                        "depends_on": [],
+                        "idempotency_key": f"{case_id}:{new_id}",
+                    },
+                )
+                created_work_item_ids.append(new_id)
+
+        payload = {
+            "work_item_ids": [str(item["work_item_id"]) for item in items],
+            "decision": decision,
+            "rationale": rationale.strip()[:4_000],
+            "execution_status": (
+                "cancelled" if decision == "cancel" else "recorded_pending_replan"
+            ),
+            "changed_work_item_ids": changed_items,
+            "created_work_item_ids": created_work_item_ids,
+            "rerouted_targets": rerouted_targets,
+        }
+        await self.post_case_evidence(
+            case_id,
+            work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+            event_type="work_item.resume_decision",
+            summary=f"用户已提交变更决策：{decision}",
+            payload=payload,
+        )
+        return {"case_id": case_id, **payload}
 
     async def post_case_evidence(
         self,
@@ -859,6 +1281,32 @@ class AgentTeamsService:
                 "event_type": event_type,
                 "summary": summary[:4_000] or event_type,
                 "payload": payload or {},
+            },
+        )
+
+    async def record_room_response_timing(
+        self,
+        case_id: str,
+        *,
+        requester_ref: str,
+        response_status: str,
+        duration_ms: int,
+        stage_ms: dict[str, int],
+    ) -> dict[str, Any]:
+        """Persist response timing as queryable Case evidence for latency baselines."""
+        await self._get_case_for_requester(case_id, requester_ref)
+        return await self.post_case_evidence(
+            case_id,
+            work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+            event_type="room.response_timing",
+            summary=f"Manager 响应耗时 {duration_ms}ms",
+            payload={
+                "response_status": response_status,
+                "duration_ms": max(0, int(duration_ms)),
+                "stage_ms": {
+                    str(key): max(0, int(value))
+                    for key, value in stage_ms.items()
+                },
             },
         )
 
@@ -936,10 +1384,22 @@ class AgentTeamsService:
             response = await self._bridge_client().request(method, path, headers=headers, **kwargs)
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "AgentTeams Bridge request failed: method={} path={} status={}",
+                method,
+                path,
+                exc.response.status_code,
+            )
             if exc.response.status_code == 404:
                 raise BusinessError("协作案例不存在") from exc
             raise BusinessError("Agent 协作中心暂时不可用") from exc
         except httpx.HTTPError as exc:
+            logger.warning(
+                "AgentTeams Bridge request unavailable: method={} path={} error={}",
+                method,
+                path,
+                exc.__class__.__name__,
+            )
             raise BusinessError("Agent 协作中心暂时不可用") from exc
         payload = response.json()
         if not isinstance(payload, dict):

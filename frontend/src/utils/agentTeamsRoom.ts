@@ -66,6 +66,15 @@ export interface RoomToolInfo {
   durationMs?: number
 }
 
+/** 仅在技术事件视图中展示的、已截断的执行追踪字段。 */
+export interface RoomDebugTrace {
+  toolCallId?: string
+  round?: number
+  executionPath?: string
+  argsSummary?: string
+  resultSummary?: string
+}
+
 /** Manager 回复中的结构化 JSON 信封（解析自 ```json 代码块或裸 JSON）。 */
 export interface ManagerReport {
   conclusion: string
@@ -77,6 +86,26 @@ export interface ManagerReport {
   proposedSubmission?: Record<string, unknown>
 }
 
+export interface RoomAgentHandoff {
+  fromAgentId: string
+  toAgentId: string
+  workItemIds: string[]
+  risks: string[]
+  artifactRefs: string[]
+  recommendedNextAction?: string
+}
+
+export interface RoomChangeAssessment {
+  agentId: string
+  workItemIds: string[]
+  conclusion: string
+  recommendations: string[]
+  risks: string[]
+  evidenceRefs: string[]
+  decisionOptions: string[]
+  decision?: string
+}
+
 /** worker 卡片终态：由真实终态事件投影而来，决定卡片状态徽标。 */
 export type RoomWorkItemTerminal = 'finished' | 'failed' | 'interrupted'
 
@@ -85,10 +114,20 @@ export interface RoomMessage {
   sender: RoomSender
   kind: RoomMessageKind
   content: string
+  /** 模型推理增量；与 AI 助手的可折叠思考框一致。 */
+  thought?: string
+  /** 当前消息仍在接收模型增量。 */
+  streaming?: boolean
+  /** 增量事件与最终消息的关联标识。 */
+  streamId?: string
+  /** 增量期间保留的模型原始内容，仅用于提取可读的结构化正文。 */
+  streamRawContent?: string
   round?: number
   collapsed?: boolean
   /** progress 行对应的结构化工具调用信息（用于房间卡片内联进度行）。 */
   tool?: RoomToolInfo
+  /** 用于调试模式的调用关联信息，默认不展开。 */
+  debugTrace?: RoomDebugTrace
   /** 关联的工作项 ID（claim / running / 终态事件携带）。 */
   workItemId?: string
   /** 工作项开场占位消息（claim / running），按 workItemId 去重合并。 */
@@ -109,6 +148,10 @@ export interface RoomMessage {
   technicalDetail?: string
   /** 动作按钮：重试 / 修改需求 / 终止 Case 等。 */
   actions?: RoomMessageAction[]
+  /** 领域 Agent 完成后交给 Manager 的结构化交接。 */
+  handoff?: RoomAgentHandoff
+  /** 运行中任务的只读变更影响评估。 */
+  changeAssessment?: RoomChangeAssessment
 }
 
 /** role_labels / role_agent_map 均可选：端点未接通时用本地兜底身份渲染。 */
@@ -128,6 +171,8 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   workspace_read_file: '读取文件',
   sandbox_execute: '沙箱执行',
   pipeline_query: '查询流程',
+  task_result_summary: '整理任务结果',
+  task_file_preview: '预览任务文件',
 }
 
 /** 技能 display name 映射：避免 planning_advice 等内部 snake_case 名直出。 */
@@ -218,6 +263,57 @@ const OMIC_TASK_LABELS: Record<string, string> = {
 
 function truncate(text: string, limit = 200): string {
   return text.length > limit ? `${text.slice(0, limit)}…` : text
+}
+
+const PASTED_TEXT_NOTICE_RE = /^pasted text file:\s*.+pasted-text-\d+\.txt\.\s*read this file before continuing\.?$/is
+
+function isPastedTextNotice(content: string): boolean {
+  return PASTED_TEXT_NOTICE_RE.test(content.trim())
+}
+
+function decodePartialJsonString(raw: string, start: number): string {
+  let value = ''
+  for (let index = start; index < raw.length; index += 1) {
+    const char = raw[index]
+    if (char === '"') return value
+    if (char !== '\\') {
+      value += char
+      continue
+    }
+    const escaped = raw[index + 1]
+    if (!escaped) break
+    index += 1
+    value += ({ n: '\n', r: '\r', t: '\t', '"': '"', '\\': '\\', '/': '/' }[escaped] || escaped)
+  }
+  return value
+}
+
+/** 流式响应实际是 ConsultationEnvelope JSON 时，仅显示已到达的 conclusion 文本。 */
+function displayStreamingContent(raw: string): string {
+  if (isPastedTextNotice(raw)) return ''
+  const match = /["']conclusion["']\s*:\s*"/.exec(raw)
+  if (match) return decodePartialJsonString(raw, match.index + match[0].length)
+  const trimmed = raw.trimStart()
+  return trimmed.startsWith('{') || trimmed.startsWith('```json') ? '' : raw
+}
+
+function normalizeManagerReport(value: unknown): ManagerReport | null {
+  if (!value || typeof value !== 'object') return null
+  const payload = value as Record<string, unknown>
+  const conclusion = pickString(payload, ['conclusion'])
+  if (!conclusion) return null
+  const hardGate = payload.hard_gate || payload.hardGate
+  const proposedSubmission = payload.proposed_submission || payload.proposedSubmission
+  return {
+    conclusion,
+    recommendations: toStringList(payload.recommendations),
+    risks: toStringList(payload.risks),
+    evidenceRefs: toStringList(payload.evidence_refs || payload.evidenceRefs),
+    ...(hardGate && typeof hardGate === 'object' ? { hardGate: hardGate as Record<string, unknown> } : {}),
+    ...(proposedSubmission && typeof proposedSubmission === 'object'
+      ? { proposedSubmission: proposedSubmission as Record<string, unknown> }
+      : {}),
+  }
 }
 
 function toStringList(value: unknown): string[] {
@@ -345,6 +441,28 @@ function parseRoomAskReply(content: string, questions: RoomAskQuestion[]): strin
   })
 }
 
+function stripJsonTrailingCommas(value: string): string {
+  let result = ''
+  let inString = false
+  let escaped = false
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index]
+    if (char === '"' && !escaped) inString = !inString
+    if (char === ',' && !inString) {
+      let nextIndex = index + 1
+      while (nextIndex < value.length && /\s/.test(value[nextIndex])) nextIndex += 1
+      if (nextIndex < value.length && (value[nextIndex] === '}' || value[nextIndex] === ']')) {
+        escaped = false
+        continue
+      }
+    }
+    result += char
+    escaped = char === '\\' && !escaped
+    if (char !== '\\') escaped = false
+  }
+  return result
+}
+
 /** 从 Manager 回复文本中抽取 JSON 候选并解析：优先 ```json 代码块，
  *  其次整段裸 JSON，最后尝试文本中首个 { 到末个 } 的子串。 */
 function extractJsonEnvelope(content: string): Record<string, unknown> | null {
@@ -359,7 +477,7 @@ function extractJsonEnvelope(content: string): Record<string, unknown> | null {
   for (const candidate of candidates) {
     if (!candidate.startsWith('{')) continue
     try {
-      const parsed: unknown = JSON.parse(candidate)
+      const parsed: unknown = JSON.parse(stripJsonTrailingCommas(candidate))
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         return parsed as Record<string, unknown>
       }
@@ -474,7 +592,7 @@ export function projectCaseEvent(
     // 证据事件的内容嵌套在 audit payload.payload 内；summary 是截断兜底。
     const inner = (body.payload && typeof body.payload === 'object' ? body.payload : {}) as Record<string, unknown>
     const content = pickString(inner, ['content']) || pickString(body, ['summary'])
-    if (!content) return null
+    if (!content || isPastedTextNotice(content)) return null
     return { id: event_id, sender: USER_SENDER, kind: 'speech', content, isUser: true }
   }
 
@@ -482,17 +600,59 @@ export function projectCaseEvent(
     // Manager 回复：audit actor 是 bioops-manager，经 role_labels/兜底渲染为协作经理气泡。
     const inner = (body.payload && typeof body.payload === 'object' ? body.payload : {}) as Record<string, unknown>
     const content = pickString(inner, ['content']) || pickString(body, ['summary'])
-    if (!content) return null
+    if (!content || isPastedTextNotice(content)) return null
     const sender = resolveRoomSender(actor || 'bioops-manager', metadata)
+    const streamId = pickString(inner, ['stream_id'])
     // Manager 回复链路可能把整段 JSON 信封塞进 content；能解析出结构化字段时
     // 交给前端做结论/建议/风险/硬门禁的结构化展示，解析失败回退纯文本气泡。
-    const managerReport = sender.role === 'manager' ? parseManagerReport(content) : null
+    const managerReport = sender.role === 'manager'
+      ? normalizeManagerReport(inner.manager_report) || parseManagerReport(content)
+      : null
     return {
       id: event_id,
       sender,
       kind: 'speech',
       content: truncate(content, 2_000),
+      ...(streamId ? { streamId } : {}),
       ...(managerReport ? { managerReport } : {}),
+    }
+  }
+
+  if (event_type === 'room.agent_handoff') {
+    const inner = (body.payload && typeof body.payload === 'object' ? body.payload : body) as Record<string, unknown>
+    const fromAgentId = pickString(inner, ['from_agent_id']) || actor || 'unknown-agent'
+    const toAgentId = pickString(inner, ['to_agent_id']) || 'bioops-manager'
+    const workItemIds = toStringList(inner.work_item_ids)
+    const risks = toStringList(inner.risks)
+    const artifactRefs = toStringList(inner.artifact_refs)
+    const summary = pickString(inner, ['summary']) || '领域 Agent 已完成工作并提交交接。'
+    return {
+      id: event_id,
+      sender: resolveRoomSender(fromAgentId, metadata),
+      kind: 'speech',
+      content: summary,
+      handoff: { fromAgentId, toAgentId, workItemIds, risks, artifactRefs, recommendedNextAction: pickString(inner, ['recommended_next_action']) },
+    }
+  }
+
+  if (event_type === 'room.change_assessment') {
+    const inner = (body.payload && typeof body.payload === 'object' ? body.payload : body) as Record<string, unknown>
+    const agentId = pickString(inner, ['agent_id']) || actor || 'unknown-agent'
+    return {
+      id: event_id,
+      sender: resolveRoomSender(agentId, metadata),
+      kind: 'speech',
+      content: pickString(inner, ['conclusion']) || '领域 Agent 已完成变更影响评估。',
+      changeAssessment: {
+        agentId,
+        workItemIds: toStringList(inner.work_item_ids),
+        conclusion: pickString(inner, ['conclusion']),
+        recommendations: toStringList(inner.recommendations),
+        risks: toStringList(inner.risks),
+        evidenceRefs: toStringList(inner.evidence_refs),
+        decisionOptions: toStringList(inner.decision_options),
+        decision: pickString(inner, ['decision']),
+      },
     }
   }
 
@@ -504,11 +664,15 @@ export function projectCaseEvent(
     const questions = normalizeAskQuestions(inner.questions)
     if (!questions.length) return null
     const sender = resolveRoomSender(actor || 'bioops-manager', metadata)
+    const streamId = pickString(inner, ['stream_id'])
+    const managerReport = normalizeManagerReport(inner.manager_report)
     return {
       id: event_id,
       sender,
       kind: 'speech',
       content: truncate(content, 2_000),
+      ...(streamId ? { streamId } : {}),
+      ...(managerReport ? { managerReport } : {}),
       askRequest: { questions },
     }
   }
@@ -593,7 +757,7 @@ export function projectCaseEvent(
     }
   }
 
-  if (event_type === 'agent.tool_call') {
+  if (event_type === 'agent.tool_call' || event_type === 'agent.tool_started') {
     // 证据事件经 Bridge 审计包装，工具字段在内层 payload.payload（同 room 消息事件）
     const inner = (body.payload && typeof body.payload === 'object' ? body.payload : {}) as Record<string, unknown>
     const rawTool = pickString(inner, ['tool', 'tool_name', 'name']) || pickString(body, ['tool', 'tool_name', 'name'])
@@ -603,8 +767,9 @@ export function projectCaseEvent(
       id: event_id,
       sender: resolveRoomSender(actor, metadata),
       kind: 'progress',
-      content: `正在调用 ${tool}`,
+      content: event_type === 'agent.tool_started' ? `工具执行中：${tool}` : `正在调用 ${tool}`,
       tool: { name: tool, status: 'running' },
+      debugTrace: extractDebugTrace(body, inner),
     }
   }
 
@@ -625,6 +790,28 @@ export function projectCaseEvent(
       kind: 'progress',
       content: `${tool} ${failed ? '调用失败' : '调用完成'}${duration}`,
       tool: { name: tool, status: failed ? 'failed' : 'ok', durationMs },
+      debugTrace: extractDebugTrace(body, inner),
+    }
+  }
+
+  if (
+    event_type === 'agent.context_reinjected'
+    || event_type === 'agent.turn_continued'
+  ) {
+    return null
+  }
+
+  if (event_type === 'agent.loop_guard_triggered') {
+    const inner = (body.payload && typeof body.payload === 'object' ? body.payload : {}) as Record<string, unknown>
+    const reason = pickString(inner, ['reason']) || pickString(body, ['reason']) || '运行保护'
+    const tool = pickString(inner, ['tool']) || pickString(body, ['tool'])
+    return {
+      id: event_id,
+      sender: resolveRoomSender(actor, metadata),
+      kind: 'progress',
+      content: `已停止重复调用${tool ? `（${formatToolName(tool)}）` : ''}，正在整理已有结果`,
+      technicalDetail: pickString(inner, ['execution_path']) || pickString(body, ['execution_path']) || undefined,
+      debugTrace: extractDebugTrace(body, inner),
     }
   }
 
@@ -960,6 +1147,25 @@ export function projectCaseEvent(
   return null
 }
 
+function extractDebugTrace(
+  body: Record<string, unknown>,
+  inner: Record<string, unknown>,
+): RoomDebugTrace | undefined {
+  const read = (key: string) => pickString(inner, [key]) || pickString(body, [key])
+  const rawRound = inner.round ?? body.round
+  const round = typeof rawRound === 'number'
+    ? rawRound
+    : typeof rawRound === 'string' && /^\d+$/.test(rawRound) ? Number(rawRound) : undefined
+  const trace: RoomDebugTrace = {
+    toolCallId: read('tool_call_id') || undefined,
+    round,
+    executionPath: read('execution_path') || undefined,
+    argsSummary: read('args_summary') || undefined,
+    resultSummary: read('result_summary') || undefined,
+  }
+  return Object.values(trace).some((value) => value !== undefined) ? trace : undefined
+}
+
 /** 将一批事件投影为房间消息列表（丢弃不在投影表内的事件，保持原顺序）。
  *  同一 work_item_id 的重复 claim/running 占位消息在此去重：保留首次认领
  *  （attempt 变化视为合法重试，予以保留），其余重复占位合并掉，避免时间线上
@@ -972,6 +1178,7 @@ export function projectCaseEvents(
 ): RoomMessage[] {
   const messages: RoomMessage[] = []
   const startAttempts = new Map<string, number>()
+  const streams = new Map<string, RoomMessage>()
   // 按 recorded_at 排序：Bridge 事件可能因并发投递或分页合并导致顺序与发生顺序不一致，
   // 前端按时间戳归位后再投影，确保工具调用证据出现在最终结论之前。
   const sorted = [...events].sort((a, b) => {
@@ -982,8 +1189,61 @@ export function projectCaseEvents(
     return events.indexOf(a) - events.indexOf(b)
   })
   for (const event of sorted) {
+    if (event.event_type === 'room.agent_stream') {
+      const body = event.payload || {}
+      const inner = (body.payload && typeof body.payload === 'object' ? body.payload : {}) as Record<string, unknown>
+      const streamId = pickString(inner, ['stream_id'])
+      const channel = pickString(inner, ['channel'])
+      const delta = pickString(inner, ['delta'])
+      if (!streamId || !delta || (channel !== 'reasoning' && channel !== 'content')) continue
+      let stream = streams.get(streamId)
+      if (!stream) {
+        const sender = resolveRoomSender(event.actor || pickString(inner, ['agent_id']) || 'bioops-manager', metadata)
+        stream = {
+          id: `stream:${streamId}`,
+          sender,
+          kind: 'speech',
+          content: '',
+          thought: '',
+          streaming: true,
+          streamId,
+          streamRawContent: '',
+        }
+        streams.set(streamId, stream)
+        messages.push(stream)
+      }
+      if (channel === 'reasoning') stream.thought = `${stream.thought || ''}${delta}`
+      else {
+        stream.streamRawContent = `${stream.streamRawContent || ''}${delta}`
+        stream.content = displayStreamingContent(stream.streamRawContent)
+      }
+      continue
+    }
     const message = projectCaseEvent(event, metadata)
     if (!message) continue
+    if (message.streamId) {
+      const stream = streams.get(message.streamId)
+      if (stream && event.event_type === 'room.agent_message') {
+        Object.assign(stream, message, {
+          id: stream.id,
+          thought: stream.thought,
+          streaming: false,
+          streamId: message.streamId,
+          streamRawContent: undefined,
+        })
+        continue
+      }
+      if (stream && event.event_type === 'room.ask_user') {
+        stream.streaming = false
+        if (message.managerReport) {
+          stream.content = message.managerReport.conclusion
+          stream.managerReport = message.managerReport
+        }
+        stream.askRequest = message.askRequest
+        stream.streamRawContent = undefined
+        continue
+      }
+    }
     if (message.workItemStart && message.workItemId) {
       const rawAttempt = event.payload?.attempt
       const attempt = typeof rawAttempt === 'number' ? rawAttempt : -1
@@ -1046,7 +1306,7 @@ export function resolveElementRoomUrl(events: AgentTeamsEvent[]): string | null 
 }
 
 /** typing 事件新鲜度窗口：超出后视为残留事件（进程崩溃等未闭环场景），不再显示。 */
-export const MANAGER_TYPING_TTL_MS = 3 * 60_000
+export const MANAGER_TYPING_TTL_MS = 20_000
 
 /** 聊天式创建的 intent 归一化：收敛空白并对齐后端 intent 上限（256 字符）。 */
 export function buildRoomCreateIntent(content: string): string {
@@ -1098,7 +1358,7 @@ export interface RoomWorkerStep {
   tool: RoomToolInfo
   count: number
   collapsed: boolean
-  details: Array<{ id: string; tool: RoomToolInfo }>
+  details: Array<{ id: string; tool: RoomToolInfo; debugTrace?: RoomDebugTrace }>
 }
 
 /** worker 卡片块：同一成员的连续 progress / 终态发言聚合为一张卡片。 */
@@ -1134,7 +1394,7 @@ function foldWorkerSteps(steps: RoomWorkerStep[]): RoomWorkerStep[] {
     const last = folded[folded.length - 1]
     if (last && last.tool.name === step.tool.name) {
       last.count += 1
-      last.details.push({ id: step.id, tool: step.tool })
+      last.details.push({ id: step.id, tool: step.tool, debugTrace: step.details[0]?.debugTrace })
       const statuses = last.details.map((d) => d.tool.status)
       if (statuses.includes('failed')) {
         last.tool.status = 'failed'
@@ -1153,7 +1413,7 @@ function foldWorkerSteps(steps: RoomWorkerStep[]): RoomWorkerStep[] {
         tool: { ...step.tool },
         count: 1,
         collapsed: true,
-        details: [{ id: step.id, tool: step.tool }],
+        details: [{ id: step.id, tool: step.tool, debugTrace: step.details[0]?.debugTrace }],
       })
     }
   }
@@ -1199,7 +1459,7 @@ export function groupRoomMessages(messages: RoomMessage[]): RoomBlock[] {
           tool: item.tool as RoomToolInfo,
           count: 1,
           collapsed: false,
-          details: [{ id: item.id, tool: item.tool as RoomToolInfo }],
+          details: [{ id: item.id, tool: item.tool as RoomToolInfo, debugTrace: item.debugTrace }],
         }))
       const steps = foldWorkerSteps(rawSteps)
       const extraProgress = run.filter((item) => item.kind === 'progress' && !item.tool)

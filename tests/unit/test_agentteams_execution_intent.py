@@ -21,6 +21,18 @@ def test_execution_verb_with_filename_in_text_triggers_without_refs() -> None:
     assert detect_execution_intent("把 result.csv 画成热图", []) is True
 
 
+@pytest.mark.parametrize(
+    "content",
+    [
+        "对已有 Cell Ranger 产物进行小鼠单细胞分析",
+        "分析 FASTQ 原始数据并找差异基因",
+        "处理表达矩阵并输出细胞注释",
+    ],
+)
+def test_execution_verb_with_known_data_product_triggers_without_file_name(content: str) -> None:
+    assert classify_execution_intent(content, []) is ExecutionIntent.EXECUTE
+
+
 def test_consultation_veto_wins_over_execution_verb() -> None:
     refs = [{"kind": "file", "id": "tree-1"}]
     assert detect_execution_intent("可视化能做什么？", refs) is False
@@ -76,6 +88,7 @@ def test_general_plan_contract_targets_workspace_execution_workers() -> None:
     assert "work_items" in GENERAL_PLAN_CONTRACT
     assert "agent-viz" in GENERAL_PLAN_CONTRACT
     assert "agent-code" in GENERAL_PLAN_CONTRACT
+    assert "agent-scrna" in GENERAL_PLAN_CONTRACT
     assert "workspace_execution" in GENERAL_PLAN_CONTRACT
 
 
@@ -88,6 +101,16 @@ def test_classify_execute_with_refs() -> None:
 
 def test_classify_execute_with_filename_in_text() -> None:
     assert classify_execution_intent("把 result.csv 画成热图", []) is ExecutionIntent.EXECUTE
+
+
+def test_classify_readonly_request_uses_tool_execute() -> None:
+    refs = [{"kind": "file", "id": "result-1", "location": "result.csv"}]
+    assert classify_execution_intent("读取 result.csv 并判断是否为空", refs) is (
+        ExecutionIntent.TOOL_EXECUTE
+    )
+    assert classify_execution_intent("检索这个文件的相关文献", refs) is (
+        ExecutionIntent.TOOL_EXECUTE
+    )
 
 
 def test_classify_clarify_when_verb_without_object() -> None:

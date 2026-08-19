@@ -237,8 +237,8 @@ class CaseCreateRequest(BaseModel):
     def _validate_execution_context(self) -> CaseCreateRequest:
         if self.project_ref is not None and self.project_ref.kind != "project":
             raise ValueError("project_ref must be a project context")
-        if self.flow_id and self.project_ref is None:
-            raise ValueError("flow Cases require project_ref")
+        if self.flow_id and not (self.context_refs or self.project_ref):
+            raise ValueError("flow Cases require project_ref or context_refs")
         if not self.flow_id and not (self.context_refs or self.project_ref):
             raise ValueError("general Cases require at least one context_ref")
         return self
@@ -280,6 +280,8 @@ class WorkItemRecord(BaseModel):
     objective: str = Field(min_length=1, max_length=1_000)
     skill_name: str = Field(min_length=1, max_length=128)
     context_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
+    declared_inputs: list[ContextRef] = Field(default_factory=list, max_length=100)
+    declared_outputs: list[ContextRef] = Field(default_factory=list, max_length=100)
     read_only: bool = True
     execution_mode: Literal["readonly_consultation", "workspace_execution"] = (
         "readonly_consultation"
@@ -313,6 +315,8 @@ class WorkItemCreateRequest(BaseModel):
     objective: str = Field(min_length=1, max_length=1_000)
     skill_name: str = Field(min_length=1, max_length=128)
     context_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
+    declared_inputs: list[ContextRef] = Field(default_factory=list, max_length=100)
+    declared_outputs: list[ContextRef] = Field(default_factory=list, max_length=100)
     read_only: bool = True
     execution_mode: Literal["readonly_consultation", "workspace_execution"] = (
         "readonly_consultation"

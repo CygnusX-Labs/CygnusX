@@ -52,6 +52,7 @@ class ChatSessionModel(Base, TimestampMixin):
 
     message_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_settled_message_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
 
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

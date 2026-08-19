@@ -11,10 +11,11 @@ from pathlib import Path
 from typing import Any
 
 from celery import shared_task
-from omichub.infrastructure.storage import get_path_factory, get_storage_backend
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+
+from omichub.infrastructure.storage import get_path_factory, get_storage_backend
 
 
 @shared_task(name="omichub.infrastructure.celery_app.tasks.overdrive.advance_run")
@@ -370,6 +371,13 @@ async def _advance_run(run_id: str) -> dict[str, object]:
                 {
                     "artifact_id": "final_report",
                     "path": delivery["path"],
+                    "kind": "delivery",
+                    "status": "validated",
+                    "source": "manager",
+                },
+                {
+                    "artifact_id": "artifact_bundle",
+                    "path": delivery["archive_path"],
                     "kind": "delivery",
                     "status": "validated",
                     "source": "manager",
@@ -829,6 +837,7 @@ async def _run_delivery_summary_job(run_id: str) -> dict[str, object]:
             run,
             {
                 "path": f"{relative_root}/delivery/final-report.md",
+                "archive_path": f"{relative_root}/delivery/artifacts.zip",
                 "official_artifacts": official,
             },
             manager_summary=manager_summary,
