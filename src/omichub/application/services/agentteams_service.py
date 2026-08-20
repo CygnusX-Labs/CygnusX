@@ -5,10 +5,13 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import shutil
 from collections.abc import AsyncIterator
 from math import ceil
+from pathlib import PurePosixPath
 from typing import Any
 from uuid import UUID, uuid4
+from urllib.parse import urlparse
 
 import httpx
 from loguru import logger
@@ -31,16 +34,32 @@ from omichub.application.services.agentteams_room_gateway_service import (
     AgentTeamsRoomGatewayService,
 )
 from omichub.application.services.agentteams_title import derive_agentteams_case_title
+from omichub.application.services.file_service import ensure_directory_chain
+from omichub.application.services.project_service import ProjectService
 from omichub.application.services.flow_registry import get_flow_registry
 from omichub.core.config import Settings
 from omichub.core.exceptions import AuthorizationError, BusinessError
 from omichub.infrastructure.cache.redis_client import get_redis
 from omichub.infrastructure.database.models.user import UserModel
+from omichub.infrastructure.database.repositories.file_repository import FileRepositoryImpl
+from omichub.domain.file.entities import DataFile
+from omichub.domain.file.value_objects import FileType
+from omichub.infrastructure.storage.minio_store import MinioStore
 from omichub.infrastructure.storage import get_path_factory
 
 # Bridge 侧预留的 Case 级证据 work_item_id（bridge record_evidence 对 manager 放行，
 # 不要求存在同名 work item）；房间事件不属于任何具体工作项。
 CASE_LEVEL_WORK_ITEM_ID = "case"
+
+# 房间级事件流的 Bridge 内部命名空间前缀（会话-工单解耦 Part 2 方案 b）：
+# 未立项房间的事件流挂在 ``room-<room_id>`` 命名空间记录下，与 Bridge 侧
+# models.ROOM_NAMESPACE_ID_PREFIX 保持一致，改动需同步。
+ROOM_NAMESPACE_ID_PREFIX = "room-"
+
+
+def room_namespace_case_id(room_id: str) -> str:
+    """协作室房间对应的 Bridge 房间命名空间记录 id。"""
+    return f"{ROOM_NAMESPACE_ID_PREFIX}{room_id}"
 
 # 建房时邀请进 Matrix 房间的 Gateway 身份（均为 Gateway 默认 matrix_identities 成员）。
 ROOM_MEMBER_IDENTITIES = ["bioops-manager", "omichub-user"]
@@ -61,6 +80,8 @@ AUTO_CONFIRM_CASES_KEY = "agentteams:auto_confirm_cases"
 # TTL 10 秒，既减少页面加载延迟，又能在 Bridge 故障时较快感知。
 _CONNECTION_STATUS_CACHE_TTL_SECONDS = 10
 _CONNECTION_STATUS_CACHE_KEY_PREFIX = "agentteams:connection_status"
+_BRIDGE_CASE_EVENTS_PAGE_LIMIT = 100
+_BRIDGE_CASE_DELETE_TIMEOUT_SECONDS = 60
 
 _MATRIX_LOCALPART_ALLOWED = frozenset("abcdefghijklmnopqrstuvwxyz0123456789._=-")
 _MATRIX_USER_SLUG_MAX = 48
@@ -251,12 +272,14 @@ class AgentTeamsService:
         workers = bridge_health.get("workers") if isinstance(bridge_health.get("workers"), list) else []
         workers = self._merge_worker_heartbeats(workers, self._worker_identity_aliases())
         allowed_flows = bridge_health.get("allowed_flows") if isinstance(bridge_health.get("allowed_flows"), list) else []
+        room_gateway = await AgentTeamsRoomGatewayService().health_check()
         return {
             "connection": status,
             "identities": identities,
             "workers": workers,
             "allowed_flows": allowed_flows,
             "scrna_submit_available": "scrna_seq" in allowed_flows,
+            "room_gateway": room_gateway,
         }
 
     @staticmethod
@@ -387,7 +410,8 @@ class AgentTeamsService:
         *,
         case_id: str,
         project_id: str | None,
-        context_refs: list[dict[str, str]] | None = None,
+        project_name: str | None = None,
+        context_refs: list[dict[str, Any]] | None = None,
         intent: str,
         requester_ref: str,
         flow_id: str | None,
@@ -395,8 +419,21 @@ class AgentTeamsService:
         comparisons: list[dict[str, Any]] | None = None,
         origin_consultation_id: str | None = None,
         consultation_summary: str | None = None,
+        source_case_id: str | None = None,
         db: AsyncSession | None = None,
     ) -> dict[str, Any]:
+        context_refs = await self._normalize_context_refs(
+            list(context_refs or []), requester_ref=requester_ref, db=db
+        )
+        project_name, run_ref = await self._prepare_case_run(
+            requester_ref=requester_ref,
+            project_id=project_id,
+            project_name=project_name,
+            context_refs=context_refs,
+            db=db,
+        )
+        if run_ref is not None:
+            context_refs.append(run_ref)
         case_payload: dict[str, Any] = {
             "case_id": case_id,
             "intent": intent,
@@ -416,6 +453,9 @@ class AgentTeamsService:
             case_payload["origin_consultation_id"] = origin_consultation_id
         if consultation_summary:
             case_payload["consultation_summary"] = consultation_summary
+        if source_case_id:
+            # 终态后"基于上一 Case 继续"的关联引用（Part 2.4），Bridge 原样落审计。
+            case_payload["source_case_id"] = source_case_id
         case = await self._request(
             "/v1/cases",
             method="POST",
@@ -433,6 +473,81 @@ class AgentTeamsService:
                     flow_id=resolved_flow_id,
                 )
         return case
+
+    async def _normalize_context_refs(
+        self,
+        refs: list[dict[str, Any]],
+        *,
+        requester_ref: str,
+        db: AsyncSession | None,
+    ) -> list[dict[str, Any]]:
+        """Prefer protocol paths while retaining UUID refs for legacy audit compatibility."""
+        if db is None:
+            return refs
+        try:
+            user_uuid = UUID(requester_ref)
+        except ValueError:
+            return refs
+        factory = get_path_factory()
+        files = FileRepositoryImpl(db)
+        normalized: list[dict[str, Any]] = []
+        for ref in refs:
+            item = dict(ref)
+            if item.get("kind") in {"file", "workspace"}:
+                candidate = str(item.get("location") or item.get("id") or "").strip()
+                try:
+                    file_uuid = UUID(str(item.get("id")))
+                except (TypeError, ValueError):
+                    file_uuid = None
+                if file_uuid is not None and not candidate.startswith(("projects/", "inbox/")):
+                    file_record = await files.get_by_id(user_uuid, file_uuid)
+                    if file_record is not None:
+                        try:
+                            storage_path = Path(file_record.storage_path)
+                            if not storage_path.is_absolute():
+                                storage_path = factory.data_root / storage_path
+                            storage_path = storage_path.resolve()
+                            location = storage_path.relative_to(
+                                factory.user_root(requester_ref).resolve()
+                            ).as_posix()
+                            if location.startswith(("projects/", "inbox/")):
+                                item["location"] = location
+                                item.setdefault("meta", {})["legacy_file_id"] = str(file_uuid)
+                        except ValueError:
+                            pass
+            normalized.append(item)
+        return normalized
+
+    async def _prepare_case_run(
+        self,
+        *,
+        requester_ref: str,
+        project_id: str | None,
+        project_name: str | None,
+        context_refs: list[dict[str, Any]],
+        db: AsyncSession | None,
+    ) -> tuple[str | None, dict[str, Any] | None]:
+        """Create and register the user-visible run directory for a new Case."""
+        if db is None or not project_id:
+            return project_name, None
+        try:
+            user_uuid = UUID(requester_ref)
+        except ValueError:
+            return project_name, None
+        project = await ProjectService(db).get_project(user_uuid, UUID(project_id))
+        resolved_name = project_name or str(project["name"])
+        factory = get_path_factory()
+        run_dir = factory.create_project_run_dir(
+            requester_ref, resolved_name, analysis_name="agentteams-case"
+        )
+        relative_run = run_dir.relative_to(factory.user_root(requester_ref)).as_posix()
+        await ensure_directory_chain(db, user_uuid, relative_run)
+        return resolved_name, {
+            "kind": "project",
+            "id": project_id,
+            "location": relative_run,
+            "meta": {"project_name": resolved_name, "run_path": relative_run},
+        }
 
     async def _record_flow_capability_failure(self, *, case_id: str, flow_id: str) -> None:
         """Persist a truthful handoff failure before Manager describes execution."""
@@ -555,14 +670,16 @@ class AgentTeamsService:
     ) -> str | None:
         """仅让带明确输入的正式领域请求在创建时绑定既有 Flow。
 
-        ``workspace`` 是聊天 Case 的只读默认引用，不能单独视为执行对象；否则
-        “介绍 RNA-seq”一类纯咨询会误创建领域流程。真正上传的文件/产物引用，
-        或文本内明确的 FASTQ、Cell Ranger、STARsolo 等产物才允许走 Flow。
+        ``workspace`` 是聊天 Case 的只读默认引用，``project`` 是建 Case 时自动注入的
+        运行目录，二者都不是用户提供的数据，不能单独视为执行对象；否则"如何进行"
+        一类尚无数据的请求会在澄清完成前就误绑流程、向领域 Agent 派出 plan-01。
+        真正上传的文件/产物引用，或文本内明确的 FASTQ、Cell Ranger、STARsolo 等
+        产物才允许走 Flow。
         """
         execution_refs = [
             ref
             for ref in context_refs or []
-            if str(ref.get("kind") or "").strip().lower() != "workspace"
+            if str(ref.get("kind") or "").strip().lower() not in {"workspace", "project"}
         ]
         if classify_execution_intent(intent, execution_refs) is not ExecutionIntent.EXECUTE:
             return None
@@ -792,7 +909,7 @@ class AgentTeamsService:
             list(context_refs) if context_refs else [{"kind": "workspace", "id": requester_ref}]
         )
         if context_refs:
-            workspace_root = get_path_factory().workspace_dir(requester_ref).resolve()
+            workspace_root = get_path_factory().user_root(requester_ref).resolve()
             checks = check_context_refs(
                 refs, workspace_root=workspace_root if workspace_root.exists() else None
             )
@@ -876,7 +993,11 @@ class AgentTeamsService:
     async def delete_case(self, case_id: str, requester_ref: str) -> dict[str, Any]:
         """删除协作 Case：先校验归属，Bridge 侧取消未结束的 Case 并移除记录与审计事件。"""
         await self._get_case_for_requester(case_id, requester_ref)
-        return await self._request(f"/v1/cases/{case_id}", method="DELETE")
+        return await self._request(
+            f"/v1/cases/{case_id}",
+            method="DELETE",
+            timeout=_BRIDGE_CASE_DELETE_TIMEOUT_SECONDS,
+        )
 
     async def revise_case_plan(
         self,
@@ -899,8 +1020,128 @@ class AgentTeamsService:
         )
 
     async def get_manifest(self, case_id: str, requester_ref: str) -> dict[str, Any]:
-        await self._get_case_for_requester(case_id, requester_ref)
-        return await self._request(f"/v1/cases/{case_id}/manifest")
+        return await self.get_manifest_with_delivery(case_id, requester_ref)
+
+    async def get_manifest_with_delivery(
+        self,
+        case_id: str,
+        requester_ref: str,
+        *,
+        db: AsyncSession | None = None,
+    ) -> dict[str, Any]:
+        case = await self._get_case_for_requester(case_id, requester_ref)
+        manifest = await self._request(f"/v1/cases/{case_id}/manifest")
+        if db is not None:
+            await self._materialize_case_delivery(
+                case=case,
+                manifest=manifest,
+                requester_ref=requester_ref,
+                db=db,
+            )
+        return manifest
+
+    async def _materialize_case_delivery(
+        self,
+        *,
+        case: dict[str, Any],
+        manifest: dict[str, Any],
+        requester_ref: str,
+        db: AsyncSession,
+    ) -> None:
+        """Project Bridge delivery metadata into the Case's protocol run output directory."""
+        run_path = ""
+        for ref in case.get("context_refs") or []:
+            if not isinstance(ref, dict) or ref.get("kind") != "project":
+                continue
+            meta = ref.get("meta") if isinstance(ref.get("meta"), dict) else {}
+            run_path = str(meta.get("run_path") or ref.get("location") or "")
+            if "/runs/" in run_path:
+                break
+        if not run_path or not run_path.startswith("projects/") or "/runs/" not in run_path:
+            return
+        try:
+            user_uuid = UUID(requester_ref)
+        except ValueError:
+            return
+        factory = get_path_factory()
+        output_rel = f"{run_path}/output"
+        output_dir = (factory.user_root(requester_ref) / output_rel.removeprefix(""))
+        output_dir.mkdir(parents=True, exist_ok=True)
+        await ensure_directory_chain(db, user_uuid, output_rel)
+        output_refs = case.get("output_refs") or (manifest.get("case") or {}).get("output_refs") or []
+        minio = MinioStore(self._settings, probe=False)
+        for raw_ref in output_refs:
+            if not isinstance(raw_ref, dict):
+                continue
+            location = str(raw_ref.get("location") or raw_ref.get("id") or "").strip()
+            meta = raw_ref.get("meta") if isinstance(raw_ref.get("meta"), dict) else {}
+            local_path = str(meta.get("local_path") or "").strip()
+            filename = PurePosixPath(local_path or location).name
+            if not filename or filename in {".", ".."}:
+                continue
+            destination = output_dir / filename
+            if destination.exists():
+                continue
+            parsed = urlparse(location)
+            try:
+                if parsed.scheme == "s3":
+                    parts = PurePosixPath(parsed.path.lstrip("/")).parts
+                    if parsed.netloc != minio.bucket or len(parts) < 3 or parts[0] != case.get("case_id"):
+                        continue
+                    minio.fetch_case_object(str(case["case_id"]), "/".join(parts[1:]), destination)
+                elif location.startswith(("projects/", "inbox/")):
+                    source = (factory.user_root(requester_ref) / location).resolve()
+                    source.relative_to(factory.user_root(requester_ref).resolve())
+                    if source.is_file():
+                        shutil.copyfile(source, destination)
+            except (OSError, ValueError, BusinessError) as exc:
+                logger.warning("AgentTeams delivery artifact projection skipped {}: {}", location, exc)
+        manifest_path = output_dir / "agentteams-delivery-manifest.json"
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        summary = str(manifest.get("remediation_summary") or "").strip()
+        task_ids = manifest.get("task_ids") or []
+        report = [
+            "# AgentTeams Case 交付报告",
+            "",
+            f"- Case：`{case.get('case_id', '')}`",
+            f"- 项目运行目录：`{run_path}`",
+            f"- 状态：`{case.get('status', '')}`",
+            f"- 任务：{', '.join(map(str, task_ids)) or '无'}",
+            "",
+            "## 交付说明",
+            summary or "交付 Worker 已完成汇总，详细审计与产物校验见同目录 manifest。",
+            "",
+            "## 产物校验",
+            f"manifest 中登记 {len(manifest.get('artifact_checksums') or {})} 个产物校验项。",
+        ]
+        (output_dir / "delivery-summary.md").write_text("\n".join(report) + "\n", encoding="utf-8")
+        file_repo = FileRepositoryImpl(db)
+        existing = {
+            item.path
+            for item in await file_repo.list_by_user(user_uuid, status=None)
+            if item.source == "agentteams"
+        }
+        for output_file in sorted(output_dir.iterdir()):
+            if not output_file.is_file():
+                continue
+            storage_path = output_file.relative_to(factory.data_root).as_posix()
+            if storage_path in existing:
+                continue
+            payload = output_file.read_bytes()
+            await file_repo.save(
+                DataFile(
+                    id=uuid4(),
+                    user_id=user_uuid,
+                    path=storage_path,
+                    original_name=output_file.name,
+                    size=len(payload),
+                    checksum=hashlib.sha256(payload).hexdigest(),
+                    file_type=FileType.REPORT if output_file.suffix == ".md" else FileType.OTHER,
+                    directory=output_rel,
+                    source="agentteams",
+                )
+            )
+        await db.flush()
 
     async def refresh_case(self, case_id: str, requester_ref: str) -> dict[str, Any]:
         await self._get_case_for_requester(case_id, requester_ref)
@@ -955,7 +1196,7 @@ class AgentTeamsService:
         limit: int = 100,
     ) -> dict[str, Any]:
         await self._get_case_for_requester(case_id, requester_ref)
-        params = {"limit": limit}
+        params = {"limit": max(1, min(limit, _BRIDGE_CASE_EVENTS_PAGE_LIMIT))}
         if cursor:
             params["cursor"] = cursor
         return await self._request(f"/v1/cases/{case_id}/events", params=params)
@@ -969,9 +1210,23 @@ class AgentTeamsService:
     ) -> dict[str, Any]:
         """Aggregate persisted Manager response timing events for a Case."""
         event_page = await self.get_case_events(case_id, requester_ref, limit=limit)
+        event_items = list(event_page.get("events", []))
+        next_cursor = event_page.get("next_cursor")
+        while next_cursor and len(event_items) < limit:
+            event_page = await self.get_case_events(
+                case_id,
+                requester_ref,
+                cursor=str(next_cursor),
+                limit=limit - len(event_items),
+            )
+            page_items = event_page.get("events", [])
+            if not isinstance(page_items, list) or not page_items:
+                break
+            event_items.extend(page_items)
+            next_cursor = event_page.get("next_cursor")
         timings = [
             event.get("payload") or {}
-            for event in event_page.get("events", [])
+            for event in event_items
             if isinstance(event, dict) and event.get("event_type") == "room.response_timing"
         ]
         durations = [
@@ -1011,7 +1266,7 @@ class AgentTeamsService:
     async def provision_case_room(
         self, case_id: str, *, requester_ref: str = ""
     ) -> dict[str, Any] | None:
-        """Best-effort Matrix 房间供给；失败仅记录日志，Case 创建不受影响。
+        """Best-effort Matrix 房间供给；失败记录为 Case 证据但不阻断创建。
 
         房间标识通过 ``room.created`` Case 证据事件持久化（bridge 审计流即映射存储，
         bridge 侧房间镜像钩子凭它绑定 case_id → room_id）；同时在 Redis 登记
@@ -1034,10 +1289,16 @@ class AgentTeamsService:
             room = await gateway.create_room(case_id, identities)
         except Exception as exc:  # noqa: BLE001 - 建房失败不得阻断 Case 创建
             logger.warning("agentteams case {} room provisioning failed: {}", case_id, exc)
+            await self._record_room_provision_failure(case_id, reason="gateway_request_failed", exc=exc)
             return None
         room_id = str(room.get("room_id") or "")
         if not room_id:
             logger.warning("agentteams case {} room provisioning returned no room_id", case_id)
+            await self._record_room_provision_failure(
+                case_id,
+                reason="gateway_invalid_response",
+                detail="Gateway response did not contain room_id",
+            )
             return None
         try:
             await self.post_case_evidence(
@@ -1059,6 +1320,90 @@ class AgentTeamsService:
 
         await record_room_binding(case_id, room_id, requester_ref)
         return room
+
+    async def _record_room_provision_failure(
+        self,
+        case_id: str,
+        *,
+        reason: str,
+        exc: Exception | None = None,
+        detail: str | None = None,
+    ) -> None:
+        """Persist a visible fallback event so Matrix degradation is diagnosable from the Case."""
+        try:
+            await self.post_case_evidence(
+                case_id,
+                work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                event_type="room.provisioning_failed",
+                summary="协作房间创建失败，已降级为平台事件流",
+                payload={
+                    "provider": "matrix",
+                    "reason": reason,
+                    "detail": (detail or str(exc or "unknown failure"))[:1_000],
+                    "recovery": "检查 Gateway 配置、网络连通性和 Matrix 服务后重试建房",
+                },
+            )
+        except BusinessError as evidence_exc:
+            logger.warning(
+                "agentteams case {} room provisioning failure evidence failed: {}",
+                case_id,
+                evidence_exc,
+            )
+
+    async def create_room_namespace(
+        self, *, room_id: str, title: str, requester_ref: str
+    ) -> dict[str, Any]:
+        """在 Bridge 创建房间命名空间记录，承载未立项房间的级事件流。
+
+        命名空间记录（record_kind=room_namespace）复用 Case 事件流/恢复/SSE/镜像
+        链路，但不进用户 Case 列表、配额与 GC（Bridge 侧保证）。
+        """
+        return await self._request(
+            "/v1/cases",
+            method="POST",
+            json={
+                "case_id": room_namespace_case_id(room_id),
+                "record_kind": "room_namespace",
+                "intent": f"协作室房间会话：{title.strip()[:200]}",
+                "requester_ref": requester_ref,
+            },
+        )
+
+    async def bind_case_room(
+        self,
+        case_id: str,
+        *,
+        room_id: str,
+        matrix_room_id: str | None,
+        requester_ref: str,
+    ) -> dict[str, Any] | None:
+        """立项确认后把既有房间绑定到新 Case。
+
+        房间已有 Matrix 房间时直接复用（把 room.created 证据写到 Case 审计流，
+        让 Bridge 房间镜像钩子把 Case 事件镜像进同一房间）；没有则按原逻辑建房。
+        """
+        if not matrix_room_id:
+            return await self.provision_case_room(case_id, requester_ref=requester_ref)
+        try:
+            await self.post_case_evidence(
+                case_id,
+                work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                event_type="room.created",
+                summary="协作房间已创建",
+                payload={
+                    "provider": "matrix",
+                    "room_id": matrix_room_id,
+                    "reused_from_room_id": room_id,
+                },
+            )
+        except BusinessError as exc:
+            logger.warning("agentteams case {} room binding evidence failed: {}", case_id, exc)
+        from omichub.application.services.agentteams_room_sync_service import (
+            record_room_binding,
+        )
+
+        await record_room_binding(case_id, matrix_room_id, requester_ref)
+        return {"room_id": matrix_room_id}
 
     async def post_room_message(
         self,
@@ -1101,7 +1446,21 @@ class AgentTeamsService:
         )
         if client_message_id:
             existing = await self.get_case_events(case_id, requester_ref, limit=200)
-            for event in existing.get("events", []):
+            existing_events = list(existing.get("events", []))
+            next_cursor = existing.get("next_cursor")
+            while next_cursor and len(existing_events) < 200:
+                existing = await self.get_case_events(
+                    case_id,
+                    requester_ref,
+                    cursor=str(next_cursor),
+                    limit=200 - len(existing_events),
+                )
+                page_events = existing.get("events", [])
+                if not isinstance(page_events, list) or not page_events:
+                    break
+                existing_events.extend(page_events)
+                next_cursor = existing.get("next_cursor")
+            for event in existing_events:
                 if not isinstance(event, dict) or event.get("event_type") != "room.user_message":
                     continue
                 event_payload = event.get("payload") or {}
@@ -1384,15 +1743,43 @@ class AgentTeamsService:
             response = await self._bridge_client().request(method, path, headers=headers, **kwargs)
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
+            response_body = exc.response.text[:1000]
+            trace_id = exc.response.headers.get("x-request-id") or exc.response.headers.get(
+                "x-trace-id"
+            )
+            response_payload: dict[str, Any] = {}
+            try:
+                decoded_body = exc.response.json()
+                if isinstance(decoded_body, dict):
+                    response_payload = decoded_body
+            except ValueError:
+                pass
+            detail = response_payload.get("detail")
+            bridge_code = response_payload.get("code")
+            if isinstance(detail, dict):
+                bridge_code = detail.get("code") or bridge_code
+                detail_message = detail.get("message") or detail.get("detail")
+            else:
+                detail_message = detail
             logger.warning(
-                "AgentTeams Bridge request failed: method={} path={} status={}",
+                "AgentTeams Bridge request failed: method={} path={} status={} code={} trace_id={} body={}",
                 method,
                 path,
                 exc.response.status_code,
+                bridge_code,
+                trace_id,
+                response_body,
             )
             if exc.response.status_code == 404:
                 raise BusinessError("协作案例不存在") from exc
-            raise BusinessError("Agent 协作中心暂时不可用") from exc
+            if bridge_code == "LIMIT_EXCEEDED":
+                raise BusinessError(
+                    "协作事件查询范围无效，请缩小查询范围",
+                    code="LIMIT_EXCEEDED",
+                ) from exc
+            if isinstance(detail_message, str) and detail_message:
+                logger.debug("AgentTeams Bridge error detail: {}", detail_message)
+            raise BusinessError("Agent 协作中心暂时不可用", code=bridge_code) from exc
         except httpx.HTTPError as exc:
             logger.warning(
                 "AgentTeams Bridge request unavailable: method={} path={} error={}",
@@ -1400,7 +1787,7 @@ class AgentTeamsService:
                 path,
                 exc.__class__.__name__,
             )
-            raise BusinessError("Agent 协作中心暂时不可用") from exc
+            raise BusinessError("Agent 协作中心暂时不可用", code="BRIDGE_UNAVAILABLE") from exc
         payload = response.json()
         if not isinstance(payload, dict):
             raise BusinessError("Agent 协作中心返回了无效数据")

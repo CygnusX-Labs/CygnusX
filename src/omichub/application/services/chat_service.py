@@ -169,6 +169,7 @@ from omichub.infrastructure.config.runtime_image_loader import (
     render_runtime_manifest,
 )
 from omichub.infrastructure.database.models.ai_provider import AIProviderConfigModel
+from omichub.infrastructure.database.models.agent import AgentTemplateModel
 from omichub.infrastructure.database.models.chat import (
     ChatAssistantModel,
     ChatHandoffEventModel,
@@ -191,6 +192,46 @@ _skill_duration = _chat_meter.create_histogram(
 _agent_duration = _chat_meter.create_histogram(
     "agent.run.duration", unit="ms", description="Agent 单次运行耗时"
 )
+
+# ===== C2 观测项：自建 agent 静默回落告警 =====
+# chat 路由候选只来自注册表快照（data/ai YAML）；POST /api/v1/admin/agents
+# 创建的自建 agent（DB is_builtin=False）不在候选内会被静默回落通用助手。
+# 周期性比对 DB active 自建 agent 与注册表候选并打节流 warning，
+# 让"自建 agent 消失"可被发现与回溯（不侵入 UX，不落用户可见提示）。
+_CUSTOM_AGENT_REGISTRY_WARN_INTERVAL_SECONDS = 300.0
+_custom_agent_registry_warned_at = 0.0
+
+
+async def _warn_custom_agents_missing_from_registry(
+    db: AsyncSession, registered_ids: set[str]
+) -> list[str]:
+    """对比 DB active 自建 agent 与注册表候选，缺失者打节流 warning；返回缺失 id 清单。"""
+    global _custom_agent_registry_warned_at
+    now = time.monotonic()
+    if now - _custom_agent_registry_warned_at < _CUSTOM_AGENT_REGISTRY_WARN_INTERVAL_SECONDS:
+        return []
+    _custom_agent_registry_warned_at = now
+    try:
+        result = await db.execute(
+            select(AgentTemplateModel.agent_id).where(
+                AgentTemplateModel.is_active == True,  # noqa: E712
+                AgentTemplateModel.is_builtin == False,  # noqa: E712
+            )
+        )
+        missing = sorted(
+            str(agent_id)
+            for (agent_id,) in result.all()
+            if agent_id and str(agent_id) not in registered_ids
+        )
+    except Exception as exc:  # noqa: BLE001 - 观测比对失败不得影响路由主流程
+        logger.warning("自建 agent 注册表比对失败（忽略）: {}", exc)
+        return []
+    if missing:
+        logger.warning(
+            "chat 路由候选不含以下 DB 自建 agent（将静默回落通用助手）: {}",
+            ",".join(missing),
+        )
+    return missing
 
 
 def _extract_user_message_metadata(message: dict[str, Any]) -> dict[str, Any]:
@@ -1330,6 +1371,73 @@ class ChatService:
     @staticmethod
     def _escape_like(value: str) -> str:
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    async def _maybe_emit_agentteams_upgrade_suggestion(
+        self,
+        session_id: str,
+        user_id: str,
+        user_content: str,
+        session_meta: dict[str, Any],
+    ) -> ChatChunk | None:
+        """L2→L4 升级建议卡（愿景 Phase D）：规则命中即出卡，建议不强制。
+
+        命中时落一条 assistant 卡片消息（content_type=agentteams_upgrade）并返回
+        对应 SSE chunk；会话 sandbox_meta 记录 suggested 状态避免同会话重复弹卡。
+        任何失败只记日志、返回 None，绝不阻断正常对话。
+        """
+        try:
+            settings = get_settings()
+            enabled = settings.agentteams_chat_entry_enabled
+            if not enabled:
+                enabled = await SiteSettingsService(self._db).is_agentteams_chat_entry_enabled()
+            if not enabled:
+                return None
+            from omichub.application.services.agentteams_upgrade_advisor import (
+                UPGRADE_SESSION_META_KEY,
+                UPGRADE_SUGGESTION_MESSAGE_TYPE,
+                build_upgrade_suggestion,
+                evaluate_upgrade_trigger,
+                record_upgrade_event,
+                suggestion_message_text,
+                upgrade_suggestion_allowed,
+            )
+
+            if not upgrade_suggestion_allowed(session_meta):
+                return None
+            decision = evaluate_upgrade_trigger(user_content, session_id=session_id)
+            if decision is None:
+                return None
+            card = build_upgrade_suggestion(decision, session_id=session_id)
+            message = await self.add_message(
+                session_id,
+                "assistant",
+                suggestion_message_text(card),
+                content_type=UPGRADE_SUGGESTION_MESSAGE_TYPE,
+                metadata={"agentteams_upgrade_suggestion": card},
+            )
+            session = await self.get_session(session_id, user_id)
+            if session is not None:
+                meta = dict(session.sandbox_meta or {})
+                meta[UPGRADE_SESSION_META_KEY] = {
+                    "status": "suggested",
+                    "suggestion_id": card["suggestion_id"],
+                    "matched_rules": card["matched_rules"],
+                    "suggested_at": card["created_at"],
+                }
+                session.sandbox_meta = meta
+                await self._db.flush()
+            record_upgrade_event("suggested", matched_rules=card["matched_rules"])
+            return ChatChunk(
+                type=UPGRADE_SUGGESTION_MESSAGE_TYPE,
+                metadata={
+                    **card,
+                    "session_id": session_id,
+                    "message_id": message.message_id,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - 建议卡失败绝不阻断正常对话
+            logger.warning("AgentTeams 升级建议卡生成失败（忽略）: {}", exc)
+            return None
 
     @staticmethod
     def _requires_fresh_web_search(
@@ -2671,30 +2779,29 @@ class ChatService:
         任何失败（模型报错、解析失败、目标不存在）都静默回落 general 候选，绝不抛出。
         """
         from omichub.application.services.agent_service import AgentService
-        from omichub.infrastructure.config.agent_ability_catalog import agent_ability_catalog
+        from omichub.application.services.agentteams_capability_registry import (
+            get_agentteams_capability_registry,
+        )
 
         try:
             agent_service = AgentService(self._db)
-            agents = await agent_service.list_agents(active_only=True)
-            candidate_abilities = {
-                agent.agent_id: agent_ability_catalog.get(agent.agent_id) for agent in agents
-            }
-            candidates = [
-                agent
-                for agent in agents
-                if not (agent.features or {}).get("router")
-                and candidate_abilities[agent.agent_id].get("chat_entry", True)
-            ]
+            # 双注册表统一(Part 3.3):候选清单、能力描述、流程目录全部注入自
+            # AgentTeamsCapabilityRegistry 快照(唯一权威数据源 data/ai/*.yaml),
+            # chat 侧不再自行组装清单、不另读 YAML、不另起缓存。
+            snapshot = get_agentteams_capability_registry().snapshot()
+            candidates: list[dict[str, Any]] = list(snapshot.get("chat_router_catalog") or [])
             if not candidates or router_ctx.model_config is None:
                 return None, None
 
-            def _general_fallback() -> Any:
+            def _general_fallback() -> dict[str, Any]:
                 for c in candidates:
-                    if c.category == "general" or "general" in c.agent_id:
+                    if c.get("category") == "general" or "general" in str(c.get("agent_id") or ""):
                         return c
                 return candidates[0]
 
-            valid_ids = {c.agent_id for c in candidates}
+            valid_ids = {str(c["agent_id"]) for c in candidates}
+            # C2：自建 agent 不在注册表候选时会被静默回落——节流告警使其可观测。
+            await _warn_custom_agents_missing_from_registry(self._db, valid_ids)
             target_id = ""
             reason = ""
             expect_handoff = False
@@ -2706,58 +2813,41 @@ class ChatService:
                 if isinstance(attachment, dict)
             )
             clarification_questions = [] if has_image_attachment else _analysis_intake_questions(user_text)
-            from omichub.application.services.flow_registry import get_flow_registry
 
             decision = None
             if clarification_questions:
                 fallback = _general_fallback()
                 decision = {
-                    "agent_id": fallback.agent_id,
+                    "agent_id": fallback["agent_id"],
                     "reason": "缺少会改变分析路线的关键信息，先由通用助手澄清并补全任务上下文",
                     "collaboration_intent": "chat",
                     "confidence": 1.0,
                 }
             else:
                 flow_catalog = json.dumps(
-                    [
-                        {
-                            "flow_id": flow_id,
-                            "display_name": registered.definition.flow.display_name,
-                            "bridge_workflow": registered.definition.flow.bridge_workflow,
-                            "trigger_hints": registered.definition.flow.trigger_hints,
-                        }
-                        for flow_id, registered in sorted(get_flow_registry().flows.items())
-                    ],
+                    snapshot.get("flow_router_catalog") or [],
                     ensure_ascii=False,
                 )
                 catalog = json.dumps(
                     [
                         {
-                            "agent_id": c.agent_id,
-                            "name": c.name,
-                            "description": candidate_abilities[c.agent_id].get("summary")
-                            or c.description,
-                            "category": c.category,
-                            "chat_entry": candidate_abilities[c.agent_id].get("chat_entry", True),
-                            "capabilities": candidate_abilities[c.agent_id].get("capabilities")
-                            or (c.features or {}).get("capability_tags")
-                            or [],
-                            "not_suitable_for": candidate_abilities[c.agent_id].get(
-                                "not_suitable_for", []
-                            ),
-                            "handoff_when": candidate_abilities[c.agent_id].get(
-                                "handoff_when", []
-                            ),
-                            "preferred_inputs": candidate_abilities[c.agent_id].get(
-                                "preferred_inputs", []
-                            ),
-                            "routing_hints": (c.features or {}).get("routing_hints") or [],
-                            "capability_tags": (c.features or {}).get("capability_tags") or [],
-                            "routing_notes": get_domain_registry().router_notes_for(
-                                c.agent_id, (c.features or {}).get("domain")
-                            ),
+                            key: entry[key]
+                            for key in (
+                                "agent_id",
+                                "name",
+                                "description",
+                                "category",
+                                "chat_entry",
+                                "capabilities",
+                                "not_suitable_for",
+                                "handoff_when",
+                                "preferred_inputs",
+                                "routing_hints",
+                                "capability_tags",
+                                "routing_notes",
+                            )
                         }
-                        for c in candidates
+                        for entry in candidates
                     ],
                     ensure_ascii=False,
                 )
@@ -2787,7 +2877,7 @@ class ChatService:
             if decision:
                 target_id = str(decision.get("agent_id") or "")
                 reason = str(decision.get("reason") or "")
-                if has_image_attachment and target_id == _general_fallback().agent_id:
+                if has_image_attachment and target_id == _general_fallback()["agent_id"]:
                     reason = "已附图片，通用助手将先识别图片内容并直接回答当前问题"
                 expect_handoff = bool(decision.get("expect_handoff"))
                 raw_consults = decision.get("consult_agent_ids")
@@ -2834,19 +2924,19 @@ class ChatService:
                     decision = {**decision, "agent_id": target_id, "reason": reason}
             if target_id not in valid_ids:
                 fallback = _general_fallback()
-                target_id = fallback.agent_id
+                target_id = fallback["agent_id"]
                 if not reason:
                     reason = "未识别出明确领域，转接通用助手"
 
             fallback = _general_fallback()
             normalized = normalize_decision(
                 decision,
-                fallback_agent_id=fallback.agent_id,
+                fallback_agent_id=fallback["agent_id"],
                 valid_agent_ids=valid_ids,
             )
             target_id = normalized.target_agent_id or target_id
             reason = normalized.reason
-            if has_image_attachment and target_id == fallback.agent_id:
+            if has_image_attachment and target_id == fallback["agent_id"]:
                 reason = "已附图片，通用助手将先识别图片内容并直接回答当前问题"
 
             target_ctx = await (
@@ -2856,7 +2946,7 @@ class ChatService:
             )
             if target_ctx is None or target_ctx.model_config is None:
                 fallback = _general_fallback()
-                target_id = fallback.agent_id
+                target_id = fallback["agent_id"]
                 target_ctx = await (
                     agent_service.assemble_context(target_id, user_id=user_id)
                     if user_id is not None
@@ -2865,31 +2955,31 @@ class ChatService:
                 if target_ctx is None:
                     return None, None
 
-            target_dto = next(
-                (c for c in candidates if c.agent_id == target_id),
+            target_entry = next(
+                (c for c in candidates if c["agent_id"] == target_id),
                 _general_fallback(),
             )
-            is_specialist = target_dto.category in {"analysis", "code", "visualization"}
+            is_specialist = target_entry["category"] in {"analysis", "code", "visualization"}
             if is_specialist:
                 transition_title = "已匹配专项专家"
                 transition_message = (
-                    f"将由「{target_dto.name}」先确认任务目标与输入；"
+                    f"将由「{target_entry['name']}」先确认任务目标与输入；"
                     "涉及实际分析时，会在启动前向你展示执行摘要并请求确认。"
                 )
                 transition_next_step = "专项 Agent 进行任务 intake"
-            elif target_dto.category == "companion":
+            elif target_entry["category"] == "companion":
                 transition_title = "已匹配陪伴助手"
-                transition_message = f"将由「{target_dto.name}」继续陪你处理当前请求。"
+                transition_message = f"将由「{target_entry['name']}」继续陪你处理当前请求。"
                 transition_next_step = "陪伴助手继续处理"
             else:
                 transition_title = "已匹配通用助手"
-                transition_message = f"将由「{target_dto.name}」继续处理当前请求。"
+                transition_message = f"将由「{target_entry['name']}」继续处理当前请求。"
                 transition_next_step = "通用助手继续处理"
             route_info = {
-                "agent_id": target_dto.agent_id,
-                "name": target_dto.name,
-                "avatar": target_dto.avatar,
-                "color": target_dto.color,
+                "agent_id": target_entry["agent_id"],
+                "name": target_entry["name"],
+                "avatar": target_entry["avatar"],
+                "color": target_entry["color"],
                 "reason": reason,
                 "expect_handoff": expect_handoff,
                 "consult_agent_ids": consult_agent_ids,
@@ -5188,8 +5278,18 @@ class ChatService:
             yield ChatChunk(type="error", content=cookie_error)
             return
 
+        # 工具检索（retrieval 模式）用的查询文本：取最后一条用户消息正文；
+        # 取不到时为 None，由 assemble_context 退化为全量工具。
+        tool_query = next(
+            (
+                m.get("content")
+                for m in reversed(messages)
+                if m.get("role") == "user" and m.get("content")
+            ),
+            None,
+        )
         ctx = await AgentService(self._db).assemble_context(
-            agent_id, user_id=user_id, tool_query=content
+            agent_id, user_id=user_id, tool_query=tool_query
         )
         if ctx is None:
             yield ChatChunk(type="error", content="Agent 不存在或已停用")
@@ -5478,6 +5578,15 @@ class ChatService:
                         "reason": pre_route_info.get("reason") if pre_route_info else "",
                     },
                 )
+
+        # 2.5 L2→L4 升级建议卡（愿景 Phase D：规则优先、建议不强制、绝不自动跳转）。
+        # 超频编排会话有自己的执行编排，不出升级卡。
+        if not effective_overdrive:
+            upgrade_chunk = await self._maybe_emit_agentteams_upgrade_suggestion(
+                current_session_id, user_id, user_content, session_mcp_meta
+            )
+            if upgrade_chunk is not None:
+                yield upgrade_chunk
 
         if effective_overdrive:
             async for chunk in self._run_overdrive_turn(
@@ -9761,6 +9870,13 @@ class ChatService:
             ],
             multi_agent=bool((s.sandbox_meta or {}).get("multi_agent", False)),
             overdrive=bool((s.sandbox_meta or {}).get("overdrive", False)),
+            agentteams_upgrade=(
+                dict(upgrade_marker)
+                if isinstance(
+                    (upgrade_marker := (s.sandbox_meta or {}).get("agentteams_upgrade")), dict
+                )
+                else None
+            ),
         )
 
     @staticmethod

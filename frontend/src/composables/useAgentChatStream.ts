@@ -225,7 +225,7 @@ export interface OverdriveProgressEvent {
     durationMs?: number
     error?: string
   }>
-  tasks?: Array<{ taskId: string; agentId: string; status: string; errorSummary?: string }>
+  tasks?: Array<{ taskId: string; agentId: string; status: string; errorSummary?: string; statusLine?: string }>
 }
 
 export interface OverdriveApprovalEvent {
@@ -791,6 +791,9 @@ export function useAgentChatStream() {
               agentId: String(task.agent_id || ''),
               status: String(task.status || 'pending'),
               errorSummary: typeof task.error_summary === 'string' ? task.error_summary : undefined,
+              statusLine: typeof task.status_line === 'string' && task.status_line.trim()
+                ? task.status_line.trim()
+                : undefined,
             }
           }),
         })

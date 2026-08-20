@@ -26,8 +26,10 @@ from omichub.application.services.agentteams_room_gateway_service import (
 )
 from omichub.application.services.agentteams_service import (
     CASE_LEVEL_WORK_ITEM_ID,
+    ROOM_NAMESPACE_ID_PREFIX,
     AgentTeamsService,
 )
+from omichub.core.exceptions import BusinessError, NotFoundError
 from omichub.infrastructure.cache.redis_client import get_redis
 
 ROOM_BINDINGS_HASH_KEY = "agentteams:room-sync:bindings"
@@ -66,8 +68,18 @@ async def record_room_binding(
 
 
 def _default_responder(case_id: str, requester_ref: str, content: str) -> None:
-    from omichub.infrastructure.celery_app.tasks.agentteams import respond_to_room_message
+    from omichub.infrastructure.celery_app.tasks.agentteams import (
+        respond_to_room_message,
+        respond_to_room_namespace_message,
+    )
 
+    if case_id.startswith(ROOM_NAMESPACE_ID_PREFIX):
+        # 房间命名空间（未立项房间）的 Matrix 回投发言走房间级响应链路，
+        # 避免误触发 Case 态的 start_chat_planning。
+        respond_to_room_namespace_message.delay(
+            case_id.removeprefix(ROOM_NAMESPACE_ID_PREFIX), requester_ref, content
+        )
+        return
     respond_to_room_message.delay(case_id, requester_ref, content)
 
 
@@ -110,6 +122,19 @@ class AgentTeamsRoomSyncService:
                         case_id, room_id, requester_ref, watch_seconds=watch_seconds
                     )
                     messages += room_stats["messages"]
+                except (NotFoundError, BusinessError) as exc:
+                    if not isinstance(exc, NotFoundError) and (
+                        exc.code != "NOT_FOUND" and exc.detail != "协作案例不存在"
+                    ):
+                        failed += 1
+                        logger.bind(case_id=case_id, room_id=room_id).warning(
+                            "AgentTeams room sync failed: {}", exc
+                        )
+                        continue
+                    await redis.hdel(ROOM_BINDINGS_HASH_KEY, case_id)
+                    logger.bind(case_id=case_id, room_id=room_id).info(
+                        "AgentTeams room sync removed stale Case binding"
+                    )
                 except Exception as exc:  # noqa: BLE001 - 单房间失败不影响其他房间
                     failed += 1
                     logger.bind(case_id=case_id, room_id=room_id).warning(

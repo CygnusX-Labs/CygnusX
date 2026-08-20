@@ -12,6 +12,7 @@ from omichub.application.services.agentteams_room_sync_service import (
     AgentTeamsRoomSyncService,
     record_room_binding,
 )
+from omichub.core.exceptions import BusinessError, NotFoundError
 
 
 class FakeRedis:
@@ -228,6 +229,38 @@ async def test_terminal_case_binding_removed_without_streaming() -> None:
     )
 
     assert stats["messages"] == 0
+    assert gateway.streams == []
+    assert redis.hash == {}
+
+
+@pytest.mark.asyncio
+async def test_missing_case_binding_removed_without_repeated_failure() -> None:
+    agentteams = _agentteams()
+    agentteams.get_case = AsyncMock(side_effect=NotFoundError("协作案例不存在"))
+    gateway = FakeGateway([])
+    redis = FakeRedis(bindings=BINDING)
+
+    stats = await _service(agentteams=agentteams, gateway=gateway, redis=redis).run(
+        watch_seconds=5
+    )
+
+    assert stats["failed"] == 0
+    assert gateway.streams == []
+    assert redis.hash == {}
+
+
+@pytest.mark.asyncio
+async def test_bridge_not_found_case_binding_removed_without_repeated_failure() -> None:
+    agentteams = _agentteams()
+    agentteams.get_case = AsyncMock(side_effect=BusinessError("协作案例不存在"))
+    gateway = FakeGateway([])
+    redis = FakeRedis(bindings=BINDING)
+
+    stats = await _service(agentteams=agentteams, gateway=gateway, redis=redis).run(
+        watch_seconds=5
+    )
+
+    assert stats["failed"] == 0
     assert gateway.streams == []
     assert redis.hash == {}
 

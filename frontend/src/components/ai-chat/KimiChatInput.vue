@@ -726,7 +726,9 @@ const mentionItems = computed<MentionItem[]>(() => {
 
   const items = [...agents, ...directories, ...files]
   const normalizedQuery = normalizedMentionQuery(q).toLowerCase()
-  // 排序：查询相关度 → 最近使用置顶 → 名称
+  // 排序：类型分组（Agent → 目录 → 文件）→ 查询相关度 → 最近使用置顶 → 名称
+  const groupRank = (item: MentionItem) =>
+    item.kind === 'agent' ? 0 : item.kind === 'directory' ? 1 : 2
   return items.sort((left, right) => {
     const relevance = (item: MentionItem) => {
       if (!normalizedQuery) return 0
@@ -734,6 +736,7 @@ const mentionItems = computed<MentionItem[]>(() => {
       return text.startsWith(normalizedQuery) ? 0 : text.includes(normalizedQuery) ? 1 : 2
     }
     return (
+      groupRank(left) - groupRank(right) ||
       relevance(left) - relevance(right) ||
       recentRank('mention', left.key) - recentRank('mention', right.key) ||
       left.name.localeCompare(right.name, 'zh')
@@ -772,8 +775,8 @@ function selectMention(item: MentionItem) {
   } else if (item.kind === 'file' && item.file) {
     pushRecent('mention', item.key)
     const f = item.file
-    const fileId = `file://${f.id}`
     const relativePath = normalizePath(f.path || `${f.directory ? `${f.directory}/` : ''}${f.original_name}`)
+    const fileId = props.roomMode ? relativePath : `file://${f.id}`
     // 去重：已引用则不重复添加
     if (!attachments.value.some((a) => a.file_id === fileId)) {
       attachments.value.push({
@@ -915,6 +918,18 @@ function handleGoalControl(action: 'pause' | 'resume' | 'cancel'): void {
   void handleGoalCommand({ action })
 }
 
+/** 发送/清空后把自适应高度收回单行：naive-ui textarea 的高度由隐藏 mirror 驱动，
+ *  受控清空（程序置空而非逐字删除）时可能错过重算；这里派发一次 input 事件，
+ *  走 naive-ui 自己的 handleInput → syncMirror 路径强制重排，并兜底清掉内联高度。 */
+function resetTextareaHeight() {
+  void nextTick(() => {
+    const textarea = getTextareaElement()
+    if (!textarea) return
+    textarea.style.height = 'auto'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
+
 async function handleSend() {
   const content = localValue.value.trim()
   const hasPayload =
@@ -956,6 +971,7 @@ async function handleSend() {
   starPermissionExplicit.value = false
   showMentionMenu.value = false
   showMcpMenu.value = false
+  resetTextareaHeight()
   nextTick(() => getTextareaElement()?.focus())
 }
 
@@ -1132,6 +1148,7 @@ function handleClearConfirm() {
   pendingAgent.value = null
   pendingSkills.value = []
   showClearConfirm.value = false
+  resetTextareaHeight()
   nextTick(() => getTextareaElement()?.focus())
 }
 

@@ -16,6 +16,7 @@ from sqlalchemy import select
 
 from omichub.api.deps import CurrentUserId, DbSession
 from omichub.application.schemas.chat import (
+    AgentTeamsUpgradeDecisionRequest,
     ChatAssistantDTO,
     ChatHandoffEventDTO,
     ChatMessageDTO,
@@ -652,10 +653,38 @@ async def agentteams_case_events(
     )
 
 
+@router.post(
+    "/sessions/{session_id}/agentteams-upgrade",
+    summary="L2→L4 升级建议卡决策（accept 创建协作室房间并移交上下文 / dismiss 不再弹卡）",
+)
+async def decide_agentteams_upgrade(
+    session_id: str,
+    req: AgentTeamsUpgradeDecisionRequest,
+    current_user_id: CurrentUserId,
+    db: DbSession,
+) -> dict:
+    """消费 L2 会话中的协作室升级建议卡（愿景 Phase D，建议不强制、非自动跳转）。"""
+    from omichub.application.services.agentteams_bridge_settings_service import (
+        AgentTeamsBridgeSettingsService,
+    )
+    from omichub.application.services.agentteams_service import AgentTeamsService
+    from omichub.application.services.agentteams_upgrade_advisor import (
+        AgentTeamsUpgradeService,
+    )
+    from omichub.core.config import get_settings
+
+    session = await _get_owned_session(db, session_id, current_user_id)
+    if req.action == "dismiss":
+        return await AgentTeamsUpgradeService(db, agentteams=None).dismiss(session)
+    settings = get_settings()
+    runtime = await AgentTeamsBridgeSettingsService(db, settings).get_runtime_config()
+    agentteams = AgentTeamsService(settings, runtime)
+    return await AgentTeamsUpgradeService(db, agentteams).accept(session, current_user_id)
+
+
 # ============================================================
 # 可用模型列表（供前端选择模型下拉框）
 # ============================================================
-
 
 @router.get("/models", summary="可用模型列表")
 async def list_models(db: DbSession) -> list[dict]:

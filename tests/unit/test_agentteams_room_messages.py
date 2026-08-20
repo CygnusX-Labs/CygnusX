@@ -105,7 +105,11 @@ async def test_provision_case_room_failure_degrades_without_blocking(
     room = await service.provision_case_room("bioops_abc")
 
     assert room is None
-    evidence.assert_not_awaited()
+    # 建房失败降级为 room.provisioning_failed Case 证据（不阻断创建），供审计流排查。
+    evidence.assert_awaited_once()
+    kwargs = evidence.await_args.kwargs
+    assert kwargs["event_type"] == "room.provisioning_failed"
+    assert kwargs["payload"]["reason"] == "gateway_request_failed"
 
 
 @pytest.mark.asyncio

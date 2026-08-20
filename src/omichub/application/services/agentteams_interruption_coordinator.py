@@ -24,6 +24,7 @@ class AgentTeamsInterruptionCoordinator:
         requester_ref: str,
         agent_id: str,
         content: str,
+        causation_event_id: str | None = None,
     ) -> dict[str, Any]:
         case = await self._agentteams.get_case(case_id, requester_ref)
         running_items = [
@@ -72,6 +73,7 @@ class AgentTeamsInterruptionCoordinator:
             evidence_refs=[],
             requested_tools=[],
             requester_ref=requester_ref,
+            causation_event_id=causation_event_id,
         )
         assessment = {
             "agent_id": agent_id,

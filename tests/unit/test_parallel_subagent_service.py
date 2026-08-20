@@ -413,6 +413,8 @@ async def test_worker_no_progress_is_reported_as_partial_success(env, monkeypatc
     guard_events = [event for event in events if event["type"] == "agent_loop_guard_triggered"]
     assert guard_events[0]["reason"] == "no_progress"
     assert result["llm_payload"]["results"][0]["status"] == "ok"
+    assert result["llm_payload"]["results"][0]["partial"] is True
+    assert result["llm_payload"]["results"][0]["guard_triggered"] is True
     assert result["llm_payload"]["results"][0].get("error") is None
     assert "已停止重复调用" in result["llm_payload"]["results"][0]["answer"]
 
@@ -448,6 +450,65 @@ async def test_fanout_continues_after_model_output_length_limit(env, monkeypatch
     assert calls == 2
     assert "第一部分单细胞方案" in answer
     assert "第二部分免疫耐受机制与交付项" in answer
+
+
+@pytest.mark.asyncio
+async def test_fanout_retries_when_model_returns_empty_content(env, monkeypatch) -> None:
+    """模型偶发空响应（finish_reason=stop 且无正文）时追问重试，不向上返回空答复。"""
+    contexts = {"agent-scrna": _ctx("agent-scrna")}
+    monkeypatch.setattr(pss, "AgentService", lambda db: AgentServiceStub(contexts))
+    calls = 0
+
+    async def handler(messages, _kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield ChatChunk(type="done", metadata={"finish_reason": "stop"})
+            return
+        assert "没有包含任何正文内容" in messages[-1]["content"]
+        yield ChatChunk(type="text", content="正常答复。")
+        yield ChatChunk(type="done", metadata={"finish_reason": "stop"})
+
+    _patch_provider(monkeypatch, handler)
+    result = await pss.ParallelSubAgentService().run(
+        user_id="user-1",
+        parent_agent_id="manager",
+        parent_session_id="sess-1",
+        context_summary="",
+        tasks=[{"agent_id": "agent-scrna", "task": "你的职责是什么"}],
+        db=SimpleNamespace(),
+    )
+
+    assert calls == 2
+    assert "正常答复。" in result["llm_payload"]["results"][0]["answer"]
+
+
+@pytest.mark.asyncio
+async def test_fanout_fails_explicitly_after_repeated_empty_content(env, monkeypatch) -> None:
+    """连续空响应超过重试上限后返回显式失败，而不是空答案。"""
+    contexts = {"agent-scrna": _ctx("agent-scrna")}
+    monkeypatch.setattr(pss, "AgentService", lambda db: AgentServiceStub(contexts))
+    calls = 0
+
+    async def handler(messages, _kwargs):
+        nonlocal calls
+        calls += 1
+        yield ChatChunk(type="done", metadata={"finish_reason": "stop"})
+
+    _patch_provider(monkeypatch, handler)
+    result = await pss.ParallelSubAgentService().run(
+        user_id="user-1",
+        parent_agent_id="manager",
+        parent_session_id="sess-1",
+        context_summary="",
+        tasks=[{"agent_id": "agent-scrna", "task": "你的职责是什么"}],
+        db=SimpleNamespace(),
+    )
+
+    first = result["llm_payload"]["results"][0]
+    assert calls == 1 + pss._MAX_EMPTY_RESPONSE_RETRIES
+    assert first["answer"] in (None, "")
+    assert "空内容" in (first["error"] or "")
 
 
 @pytest.mark.asyncio
@@ -799,6 +860,31 @@ async def test_fanout_rejects_non_spawnable(env, monkeypatch) -> None:
     )
     assert result["success"] is False
     assert "subagents_spawnable" in result["llm_payload"]["error"]
+
+
+@pytest.mark.asyncio
+async def test_safe_single_consultation_allows_non_spawnable_target(env, monkeypatch) -> None:
+    contexts = {"agent-manager": _ctx("agent-manager", spawnable=False)}
+    monkeypatch.setattr(pss, "AgentService", lambda db: AgentServiceStub(contexts))
+
+    async def text(messages, kwargs):
+        yield ChatChunk(type="text", content='{"conclusion":"已接单"}')
+
+    _patch_provider(monkeypatch, text)
+    result = await pss.ParallelSubAgentService().run(
+        user_id="user-1",
+        parent_agent_id="agent-general",
+        parent_session_id="sess-1",
+        context_summary="",
+        tasks=[{"agent_id": "agent-manager", "task": "回复用户"}],
+        db=SimpleNamespace(),
+        safe_only=True,
+        runtime_authorized=True,
+        allow_non_spawnable_target=True,
+    )
+
+    assert result["success"] is True
+    assert result["llm_payload"]["results"][0]["answer"] == '{"conclusion":"已接单"}'
 
 
 @pytest.mark.asyncio

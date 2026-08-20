@@ -63,3 +63,23 @@ def test_unreadable_context_blocks_plan_item_and_records_event() -> None:
     assert request.await_args.kwargs["json"]["payload"]["references"][0]["reason"] == (
         "不支持的 URI 协议: file"
     )
+
+
+def test_context_ref_accepts_project_run_protocol_path(tmp_path: Path) -> None:
+    run = tmp_path / "projects" / "mouse-sc" / "runs" / "agentteams-case-20260819-120000"
+    output = run / "output"
+    output.mkdir(parents=True)
+    report = output / "delivery-summary.md"
+    report.write_text("ok", encoding="utf-8")
+
+    check = check_context_ref(
+        {
+            "kind": "project",
+            "id": "project-1",
+            "location": "projects/mouse-sc/runs/agentteams-case-20260819-120000/output/delivery-summary.md",
+        },
+        workspace_root=tmp_path,
+    )
+
+    assert check.readable is True
+    assert check.category == "workspace"

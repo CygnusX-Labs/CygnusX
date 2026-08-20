@@ -283,11 +283,14 @@ class AgentConsultationService:
         requester_ref: str,
         work_item_id: str | None = None,
         execution_mode: str = "readonly_consultation",
+        causation_event_id: str | None = None,
         on_event: Callable[[dict[str, Any]], Awaitable[None] | None] | None = None,
     ) -> ConsultationEnvelope:
         started = time.monotonic()
         registry = get_agentteams_capability_registry()
-        if agent_id not in registry.consultation_agents():
+        # 除可招募专家外，允许 planner_eligible 的平台内部角色（协作室 Manager，
+        # recruitable=false）参与只读会诊；其余未知 agent 一律拒绝。
+        if agent_id not in registry.internal_consultation_agents():
             raise NotFoundError(f"Agent {agent_id} 不存在或未启用")
         if execution_mode not in {"readonly_consultation", "workspace_execution"}:
             raise ValueError("Unsupported AgentTeams execution mode")
@@ -354,6 +357,7 @@ class AgentConsultationService:
             db=self._db,
             safe_only=execution_mode == "readonly_consultation",
             runtime_authorized=True,
+            allow_non_spawnable_target=True,
             workdir_root=workdir_root,
             on_event=project_event if event_handlers else None,
         )
@@ -361,6 +365,26 @@ class AgentConsultationService:
             await projector.drain()
         raw_answer = self._extract_answer(result)
         envelope, parse_success = self._parse_envelope_with_status(raw_answer)
+        if not parse_success and self._agentteams_service is not None and self._agentteams_service.available:
+            try:
+                await self._agentteams_service.post_case_evidence(
+                    case_id,
+                    work_item_id=work_item_id or "case",
+                    event_type="consultation.parse_failed",
+                    summary="专家会诊未通过结构化信封解析",
+                    payload={
+                        "parse_success": False,
+                        "reason": "invalid_consultation_envelope",
+                        "agent_id": agent_id,
+                        "work_item_id": work_item_id,
+                        "raw_answer_preview": raw_answer[:500],
+                        "causation_event_id": causation_event_id,
+                    },
+                )
+            except Exception as exc:  # noqa: BLE001 - evidence must not hide consultation output
+                logger.bind(case_id=case_id, agent_id=agent_id).warning(
+                    "AgentTeams parse failure evidence projection failed: {}", exc
+                )
         envelope.evidence_refs = self._verified_evidence_refs(result)
         envelope.hard_gate = hard_gate
         self._enforce_hard_gate(envelope)
@@ -382,7 +406,11 @@ class AgentConsultationService:
         )
         if execution_mode == "workspace_execution" and workdir_root is not None:
             artifacts, errors = await self._register_workspace_artifacts(
-                requester_ref, case_id, work_item_id or "", workdir_root
+                requester_ref,
+                case_id,
+                work_item_id or "",
+                workdir_root,
+                causation_event_id=causation_event_id,
             )
             envelope.artifacts = artifacts
             envelope.risks.extend(errors)
@@ -500,7 +528,13 @@ class AgentConsultationService:
             envelope.conclusion = f"WARNING\n{envelope.conclusion}"[:8_000]
 
     async def _register_workspace_artifacts(
-        self, requester_ref: str, case_id: str, work_item_id: str, workdir: Path
+        self,
+        requester_ref: str,
+        case_id: str,
+        work_item_id: str,
+        workdir: Path,
+        *,
+        causation_event_id: str | None = None,
     ) -> tuple[list[dict[str, Any]], list[str]]:
         try:
             user_id = UUID(str(requester_ref))
@@ -581,6 +615,7 @@ class AgentConsultationService:
                         case_id=case_id,
                         work_item_id=work_item_id,
                         local_path=record.path,
+                        causation_event_id=causation_event_id,
                     ).warning("AgentTeams artifact S3 upload failed: {}", exc)
                 artifacts.append(artifact)
             except (OSError, ValueError) as exc:
@@ -589,7 +624,8 @@ class AgentConsultationService:
 
     @staticmethod
     def _extract_answer(result: dict[str, Any]) -> str:
-        results = (result.get("llm_payload") or {}).get("results") or []
+        llm_payload = result.get("llm_payload") or {}
+        results = llm_payload.get("results") or []
         if results and isinstance(results[0], dict):
             answer = str(results[0].get("answer") or "").strip()
             if answer:
@@ -597,7 +633,11 @@ class AgentConsultationService:
             error = str(results[0].get("error") or "").strip()
             if error:
                 return error
-        return str((result.get("llm_payload") or {}).get("summary") or "会诊未返回内容")
+        error = str(llm_payload.get("error") or result.get("error") or "").strip()
+        if error:
+            return f"会诊执行失败：{error}"
+        summary = str(llm_payload.get("summary") or "").strip()
+        return summary or "会诊未返回内容"
 
     @staticmethod
     def parse_envelope(raw_answer: str) -> ConsultationEnvelope:

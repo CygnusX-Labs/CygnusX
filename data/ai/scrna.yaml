@@ -24,6 +24,24 @@ skill_ids:
   - scrna-quarto-report
   # inferCNV 工具（来源：pipelines/tools/skills/）
   - scrna-seq
+  # bio_skills 单细胞技能集（来源：skills/bio_skills/single-cell/，市场目录 data/ai/skill_marketplace/bio-single-cell-*）
+  - bio-single-cell-data-io
+  - bio-single-cell-preprocessing
+  - bio-single-cell-doublet-detection
+  - bio-single-cell-hashing-demultiplexing
+  - bio-single-cell-clustering
+  - bio-single-cell-batch-integration
+  - bio-single-cell-multimodal-integration
+  - bio-single-cell-cell-annotation
+  - bio-single-cell-markers-annotation
+  - bio-single-cell-trajectory-inference
+  - bio-single-cell-cell-communication
+  - bio-single-cell-metabolite-communication
+  - bio-single-cell-cnv-inference
+  - bio-single-cell-differential-abundance
+  - bio-single-cell-lineage-tracing
+  - bio-single-cell-perturb-seq
+  - bio-single-cell-scatac-analysis
 features:
   internal_case_role: agent-scrna
   agentteams:

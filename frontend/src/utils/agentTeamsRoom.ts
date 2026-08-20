@@ -14,6 +14,13 @@ export interface RoomAskRequest {
   /** 用户按问题顺序给出的答案；空串表示该问题被跳过。 */
   answers?: string[]
   answered?: boolean
+  eventId?: string
+  clarifyKind?: string
+  objectRequired?: boolean
+  submitting?: boolean
+  submitted?: boolean
+  answerStatus?: 'collected' | 'waiting_upload' | 'missing_object'
+  workspaceCandidates?: Array<{ kind: 'workspace' | 'file'; id: string; location: string }>
 }
 
 /** 澄清回复用户消息的前缀标记：投影时据此把答案回填到对应 ask_user 卡片。 */
@@ -46,11 +53,42 @@ export interface RoomRouteDecision {
   options: RoomRouteDecisionOption[]
 }
 
+/** 立项确认卡（room.proposal_confirm 房间级事件投影，会话-工单解耦）：
+ *  execute 意图不直接建 Case，先出卡；confirm 后才创建 Case 并绑定房间。 */
+export interface RoomProposal {
+  /** new_case：首次立项；followup：上一 Case 终态后的再立项。 */
+  proposalKind: 'new_case' | 'followup'
+  /** 一次性确认令牌。B1 起 token 不再经事件流分发（写入后即全出口脱敏），
+   *  确认改凭 owner + pending 状态；本字段仅兼容旧事件，通常为 ''。 */
+  confirmToken: string
+  /** pending 可交互；其余为已消费只读态（superseded：被同一房间的更新提案覆盖）。 */
+  status: 'pending' | 'confirmed' | 'modify_requested' | 'cancelled' | 'superseded'
+  objective: string
+  flowId: string
+  flowLabel: string
+  leadPlanner: string
+  routePath: string
+  participants: string[]
+  estimatedStages: RoomRouteDecisionStage[]
+  confidence: 'high' | 'ambiguous' | ''
+  /** 修改需求时回填输入框的原始需求文本。 */
+  originContent: string
+  /** followup 卡关联的上一 Case id。 */
+  sourceCaseId: string
+  /** 后端下发的可选项：new_case 为 confirm/modify/cancel，followup 为 continue/new/cancel。 */
+  options: string[]
+  createdAt: string
+  /** 本地提交中标记（不回投影，仅防重复点击）。 */
+  submitting?: boolean
+}
+
 export interface RoomSender {
   name: string
   avatar: string
   color: string
   role: 'manager' | 'worker'
+  /** 人格副标题（archetype），在发言头部以弱化样式展示。 */
+  archetype?: string
 }
 
 export type RoomMessageKind = 'speech' | 'progress' | 'action' | 'system'
@@ -93,6 +131,13 @@ export interface RoomAgentHandoff {
   risks: string[]
   artifactRefs: string[]
   recommendedNextAction?: string
+}
+
+/** Manager 分派卡片（work_item.assigned 事件投影）：标题 + 接收方 + 任务说明结构化展示。 */
+export interface RoomDispatchInfo {
+  targetName: string
+  objective: string
+  skillName?: string
 }
 
 export interface RoomChangeAssessment {
@@ -138,8 +183,11 @@ export interface RoomMessage {
   managerReport?: ManagerReport
   /** Manager 澄清卡片（room.ask_user）：存在时渲染可交互问答卡片。 */
   askRequest?: RoomAskRequest
+  hideContent?: boolean
   /** 路由决策卡（room.route_decision）：高置信渲染折叠卡片，模糊时升级为选项确认卡。 */
   routeDecision?: RoomRouteDecision
+  /** 立项确认卡（room.proposal_confirm）：未立项/终态后续聊的 execute 意图投影。 */
+  proposal?: RoomProposal
   /** 当前用户本人的发言（room.user_message 投影）：时间线上右对齐渲染。 */
   isUser?: boolean
   /** worker 执行产生的图片、PDF、表格等工作区产物。 */
@@ -150,6 +198,8 @@ export interface RoomMessage {
   actions?: RoomMessageAction[]
   /** 领域 Agent 完成后交给 Manager 的结构化交接。 */
   handoff?: RoomAgentHandoff
+  /** Manager 派单（work_item.assigned）：分派正文渲染为结构化卡片。 */
+  dispatch?: RoomDispatchInfo
   /** 运行中任务的只读变更影响评估。 */
   changeAssessment?: RoomChangeAssessment
 }
@@ -217,6 +267,7 @@ export function resolveRoomSender(actor: string, metadata: RoomRoleMetadata = {}
       avatar: direct.avatar || '💬',
       color: direct.color || '#64748b',
       role: normalizeRole(direct.role),
+      archetype: direct.archetype || undefined,
     }
   }
   const agentId = metadata.role_agent_map?.[actor]
@@ -228,6 +279,7 @@ export function resolveRoomSender(actor: string, metadata: RoomRoleMetadata = {}
         avatar: viaAgent.avatar || '💬',
         color: viaAgent.color || '#64748b',
         role: normalizeRole(viaAgent.role),
+        archetype: viaAgent.archetype || undefined,
       }
     }
     return resolveRoleIdentity(agentId)
@@ -248,6 +300,7 @@ function resolveQualitySender(actor: string, metadata: RoomRoleMetadata): RoomSe
       avatar: qc.avatar || QC_FALLBACK.avatar,
       color: qc.color || QC_FALLBACK.color,
       role: 'worker',
+      archetype: qc.archetype || undefined,
     }
   }
   return actor ? resolveRoomSender(actor, metadata) : QC_FALLBACK
@@ -336,6 +389,23 @@ function normalizeAskQuestions(value: unknown): RoomAskQuestion[] {
   return questions.slice(0, 5)
 }
 
+function normalizeWorkspaceCandidates(
+  value: unknown,
+): Array<{ kind: 'workspace' | 'file'; id: string; location: string }> {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null
+      const record = item as Record<string, unknown>
+      const kind = pickString(record, ['kind'])
+      const id = pickString(record, ['id'])
+      const location = pickString(record, ['location'])
+      if ((kind !== 'workspace' && kind !== 'file') || !id || !location) return null
+      return { kind, id, location }
+    })
+    .filter((item): item is { kind: 'workspace' | 'file'; id: string; location: string } => item !== null)
+}
+
 /** 归一化 room.route_decision 的预计阶段列表。 */
 function normalizeRouteStages(value: unknown): RoomRouteDecisionStage[] {
   if (!Array.isArray(value)) return []
@@ -395,6 +465,34 @@ function normalizeRouteDecision(value: unknown): RoomRouteDecision | null {
     participants: toStringList(record.participants),
     confidence: record.confidence === 'ambiguous' ? 'ambiguous' : 'high',
     options: normalizeRouteOptions(record.options),
+  }
+}
+
+/** 归一化 room.proposal_confirm 事件载荷。
+ *  B1 起 confirm_token 全出口脱敏（可能缺省/为 null），不再作为必要条件——
+ *  确认动作凭 owner + pending 状态走 confirm-proposal 端点，token 仅作可选二次校验。 */
+function normalizeRoomProposal(value: unknown): RoomProposal | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const confirmToken = pickString(record, ['confirm_token'])
+  const rawStatus = pickString(record, ['status'])
+  const rawConfidence = pickString(record, ['confidence'])
+  return {
+    proposalKind: pickString(record, ['proposal_kind']) === 'followup' ? 'followup' : 'new_case',
+    confirmToken,
+    status: rawStatus === 'pending' ? 'pending' : 'cancelled',
+    objective: pickString(record, ['objective']),
+    flowId: pickString(record, ['flow_id']),
+    flowLabel: pickString(record, ['flow_label']) || '通用分析',
+    leadPlanner: pickString(record, ['lead_planner']),
+    routePath: pickString(record, ['route_path']),
+    participants: toStringList(record.participants),
+    estimatedStages: normalizeRouteStages(record.estimated_stages),
+    confidence: rawConfidence === 'ambiguous' ? 'ambiguous' : rawConfidence === 'high' ? 'high' : '',
+    originContent: pickString(record, ['origin_content']) || pickString(record, ['objective']),
+    sourceCaseId: pickString(record, ['source_case_id']),
+    options: toStringList(record.options),
+    createdAt: pickString(record, ['created_at']),
   }
 }
 
@@ -573,13 +671,6 @@ export function formatDuration(durationMs?: number): string {
   return `${Math.round(durationMs)}ms`
 }
 
-const SENTENCE_END_RE = /[。！？.!?]$/
-
-/** 判断发言内容是否可能已被截断（非句末标点结尾）。 */
-export function isContentTruncated(content: string): boolean {
-  return !!content && !SENTENCE_END_RE.test(content.trim())
-}
-
 /** 把 Bridge case event 投影成房间消息；不在投影表内的事件返回 null（丢弃）。 */
 export function projectCaseEvent(
   event: AgentTeamsEvent,
@@ -666,14 +757,22 @@ export function projectCaseEvent(
     const sender = resolveRoomSender(actor || 'bioops-manager', metadata)
     const streamId = pickString(inner, ['stream_id'])
     const managerReport = normalizeManagerReport(inner.manager_report)
+    const clarifyKind = pickString(inner, ['clarify_kind'])
     return {
       id: event_id,
       sender,
       kind: 'speech',
-      content: truncate(content, 2_000),
+      content: clarifyKind === 'execution_object' ? '' : truncate(content, 2_000),
+      hideContent: clarifyKind === 'execution_object',
       ...(streamId ? { streamId } : {}),
       ...(managerReport ? { managerReport } : {}),
-      askRequest: { questions },
+      askRequest: {
+        questions,
+        eventId: event_id,
+        clarifyKind: clarifyKind || undefined,
+        objectRequired: clarifyKind === 'execution_object',
+        workspaceCandidates: normalizeWorkspaceCandidates(inner.workspace_candidates),
+      },
     }
   }
 
@@ -716,6 +815,54 @@ export function projectCaseEvent(
     }
   }
 
+  if (event_type === 'room.proposal_confirm') {
+    // 立项确认卡：execute 意图不直接建 Case，先出卡等用户裁决；payload 在内层 payload.payload。
+    const inner = (body.payload && typeof body.payload === 'object' ? body.payload : {}) as Record<string, unknown>
+    const proposal = normalizeRoomProposal(inner)
+    if (!proposal) return null
+    const sender = resolveRoomSender(pickString(inner, ['agent_id']) || actor || 'bioops-manager', metadata)
+    return {
+      id: event_id,
+      sender,
+      kind: 'speech',
+      content: '',
+      hideContent: true,
+      proposal,
+    }
+  }
+
+  if (event_type === 'room.case_bound') {
+    return {
+      id: event_id,
+      sender: SYSTEM_SENDER,
+      kind: 'system',
+      content: pickString(body, ['summary']) || '立项已确认，协作 Case 创建完成。',
+    }
+  }
+
+  if (event_type === 'room.proposal_modify_requested' || event_type === 'room.proposal_cancelled') {
+    const fallback = event_type === 'room.proposal_modify_requested'
+      ? '用户要求调整立项内容，请补充说明。'
+      : '本次立项已取消。'
+    return {
+      id: event_id,
+      sender: SYSTEM_SENDER,
+      kind: 'system',
+      content: pickString(body, ['summary']) || fallback,
+    }
+  }
+
+  if (event_type === 'room.provisioning_failed') {
+    const inner = (body.payload && typeof body.payload === 'object' ? body.payload : {}) as Record<string, unknown>
+    return {
+      id: event_id,
+      sender: SYSTEM_SENDER,
+      kind: 'system',
+      content: 'Matrix 协作房间创建失败，已降级为平台事件流；分析任务不受影响。',
+      technicalDetail: pickString(inner, ['detail', 'recovery']),
+    }
+  }
+
   if (event_type === 'case.created') return null
 
   if (event_type === 'planning.frozen') {
@@ -735,11 +882,17 @@ export function projectCaseEvent(
     const rawObjective = stripPlanContract(pickString(body, ['objective']))
     const rawSkillName = pickString(body, ['skill_name'])
     const objective = rawObjective || (rawSkillName ? formatSkillName(rawSkillName) : '')
+    // 分派从系统时间轴行升级为 Manager 的结构化卡片：长分派正文不再挤进一行时间轴文案。
     return {
       id: event_id,
-      sender: SYSTEM_SENDER,
-      kind: 'system',
+      sender: resolveRoomSender(actor || 'bioops-manager', metadata),
+      kind: 'speech',
       content: `Manager 将任务分派给 ${targetName}${objective ? `：${objective}` : ''}`,
+      dispatch: {
+        targetName,
+        objective,
+        ...(rawSkillName ? { skillName: formatSkillName(rawSkillName) } : {}),
+      },
     }
   }
 
@@ -823,7 +976,8 @@ export function projectCaseEvent(
       id: event_id,
       sender: resolveRoomSender(actor, metadata),
       kind: 'speech',
-      content: truncate(conclusion || '已完成本阶段任务。'),
+      // 终态正文是 worker 卡片主体内容：上限对齐 Manager 回复（2k），避免规划结论被截断。
+      content: truncate(conclusion || '已完成本阶段任务。', 2_000),
       terminal: 'finished',
       ...(body.artifacts !== undefined ? { artifacts: body.artifacts } : {}),
       ...(workItemId ? { workItemId } : {}),
@@ -838,7 +992,7 @@ export function projectCaseEvent(
       id: event_id,
       sender: resolveRoomSender(actor, metadata),
       kind: 'speech',
-      content: truncate(reason ? `任务执行失败：${reason}` : '任务执行失败。'),
+      content: truncate(reason ? `任务执行失败：${reason}` : '任务执行失败。', 2_000),
       terminal: 'failed',
       ...(workItemId ? { workItemId } : {}),
     }
@@ -1219,6 +1373,18 @@ export function projectCaseEvents(
       }
       continue
     }
+    if (event.event_type === 'room.typing') {
+      // typing 结束兜底收尾所有未闭环的流式气泡：最终回复事件即使在 SSE 中丢失，
+      // 气泡也不会永远停在「正在生成」。
+      const body = event.payload || {}
+      const inner = (body.payload && typeof body.payload === 'object' ? body.payload : {}) as Record<string, unknown>
+      if (inner.typing === false) {
+        for (const stream of streams.values()) {
+          if (stream.streaming) stream.streaming = false
+        }
+      }
+      continue
+    }
     const message = projectCaseEvent(event, metadata)
     if (!message) continue
     if (message.streamId) {
@@ -1244,6 +1410,14 @@ export function projectCaseEvents(
         continue
       }
     }
+    if (event.event_type === 'room.agent_message' || event.event_type === 'room.ask_user') {
+      // 最终回复未匹配到流（stream_id 缺失或增量事件丢失）：按发送者收尾未闭环的流式气泡。
+      for (const open of streams.values()) {
+        if (open.streaming && open.streamId !== message.streamId && open.sender.name === message.sender.name) {
+          open.streaming = false
+        }
+      }
+    }
     if (message.workItemStart && message.workItemId) {
       const rawAttempt = event.payload?.attempt
       const attempt = typeof rawAttempt === 'number' ? rawAttempt : -1
@@ -1254,7 +1428,9 @@ export function projectCaseEvents(
     }
     messages.push(message)
   }
+  applyAskAnswerEvidence(sorted, messages)
   const consumedReplyIds = markAskRequestsAnswered(messages)
+  applyProposalOutcomes(sorted, messages)
   const visible: RoomMessage[] = []
   for (const message of messages) {
     if (consumedReplyIds.has(message.id)) continue
@@ -1269,8 +1445,7 @@ export function projectCaseEvents(
   return visible
 }
 
-/** 澄清卡片的已答判定：其后出现任意一条本人发言即视为已答；若该发言是带
- *  ROOM_ASK_REPLY_MARKER 的澄清回复，则把答案逐题回填到卡片供回看。
+/** 澄清卡片的兼容回填：只接受可解析的【澄清回复】格式，不再把任意后续用户发言视为已答。
  *  返回被卡片消费的回复消息 id（这些回复不再单独渲染为用户气泡）；
  *  解析不出答案的回复不消费，保留原文气泡作为降级形态。 */
 function markAskRequestsAnswered(messages: RoomMessage[]): Set<string> {
@@ -1278,16 +1453,75 @@ function markAskRequestsAnswered(messages: RoomMessage[]): Set<string> {
   for (let i = 0; i < messages.length; i += 1) {
     const ask = messages[i].askRequest
     if (!ask) continue
-    const reply = messages.slice(i + 1).find((item) => item.isUser && !consumedReplyIds.has(item.id))
+    const reply = messages.slice(i + 1).find((item) =>
+      item.isUser
+      && item.content.startsWith(ROOM_ASK_REPLY_MARKER)
+      && !consumedReplyIds.has(item.id),
+    )
     if (!reply) continue
-    ask.answered = true
     const answers = parseRoomAskReply(reply.content, ask.questions)
     if (answers) {
       ask.answers = answers
+      ask.answered = true
       consumedReplyIds.add(reply.id)
     }
   }
   return consumedReplyIds
+}
+
+/** 立项确认卡消费态回填：房间同时只有一张 pending 卡（新卡覆盖旧卡）。
+ *  后续 room.case_bound / room.proposal_modify_requested / room.proposal_cancelled
+ *  事件即卡片的消费结果；更早的 pending 卡在新卡出现时标记为 superseded（已失效）。 */
+function applyProposalOutcomes(events: AgentTeamsEvent[], messages: RoomMessage[]): void {
+  const proposals = messages.filter((message) => message.proposal)
+  if (!proposals.length) return
+  const eventTimes = new Map(events.map((event) => [event.event_id, Date.parse(event.recorded_at) || 0]))
+  const outcomes = events.filter((event) =>
+    event.event_type === 'room.case_bound'
+    || event.event_type === 'room.proposal_modify_requested'
+    || event.event_type === 'room.proposal_cancelled',
+  )
+  for (const outcome of outcomes) {
+    const status: RoomProposal['status'] = outcome.event_type === 'room.case_bound'
+      ? 'confirmed'
+      : outcome.event_type === 'room.proposal_modify_requested'
+        ? 'modify_requested'
+        : 'cancelled'
+    const outcomeAt = Date.parse(outcome.recorded_at) || 0
+    // 消费该结果之前最近的一张 pending 卡（token 一次性，结果事件不携带 token 时按时间归位）。
+    const target = [...proposals]
+      .reverse()
+      .find((message) =>
+        message.proposal!.status === 'pending'
+        && (eventTimes.get(message.id) || 0) <= outcomeAt,
+      )
+    if (target) target.proposal!.status = status
+  }
+  const pendingCards = proposals.filter((message) => message.proposal!.status === 'pending')
+  for (const stale of pendingCards.slice(0, -1)) stale.proposal!.status = 'superseded'
+}
+
+function applyAskAnswerEvidence(events: AgentTeamsEvent[], messages: RoomMessage[]): void {  const asks = new Map(
+    messages
+      .filter((message) => message.askRequest?.eventId)
+      .map((message) => [message.askRequest!.eventId!, message.askRequest!] as const),
+  )
+  for (const event of events) {
+    if (event.event_type !== 'room.ask_user_answered') continue
+    const body = event.payload || {}
+    const inner = (body.payload && typeof body.payload === 'object' ? body.payload : body) as Record<string, unknown>
+    const ask = asks.get(pickString(inner, ['answer_to_event_id']))
+    if (!ask) continue
+    const answer = pickString(inner, ['answer'])
+    const parsedAnswers = answer ? parseRoomAskReply(answer, ask.questions) : null
+    if (parsedAnswers) ask.answers = parsedAnswers
+    const status = pickString(inner, ['answer_status']) as RoomAskRequest['answerStatus']
+    if (status === 'collected' || status === 'waiting_upload' || status === 'missing_object') {
+      ask.answerStatus = status
+      ask.answered = status === 'collected' || status === 'waiting_upload'
+      ask.submitted = !ask.answered
+    }
+  }
 }
 
 /** 从事件流解析当前 Case 的 Element 房间深链（Gateway 建房时随 room.created
@@ -1305,12 +1539,22 @@ export function resolveElementRoomUrl(events: AgentTeamsEvent[]): string | null 
   return url
 }
 
-/** typing 事件新鲜度窗口：超出后视为残留事件（进程崩溃等未闭环场景），不再显示。 */
-export const MANAGER_TYPING_TTL_MS = 20_000
+/** typing 事件新鲜度窗口：超出后视为残留事件（进程崩溃等未闭环场景），不再显示。
+ *  需覆盖一次 LLM 会诊的典型耗时（含排队），避免回复未到指示器先消失。 */
+export const MANAGER_TYPING_TTL_MS = 60_000
 
 /** 聊天式创建的 intent 归一化：收敛空白并对齐后端 intent 上限（256 字符）。 */
 export function buildRoomCreateIntent(content: string): string {
   return content.trim().replace(/\s+/g, ' ').slice(0, 256)
+}
+
+/**
+ * 从用户需求文本生成协作 Case 的项目目录名称：
+ * 取内容前 30 个字符，剥除不可用于目录名的字符，供 _prepare_case_run 做 run dir。
+ * 后端 project_name 最长 200 字符，中文 30 字符完全够用。
+ */
+export function buildCaseProjectName(content: string): string {
+  return content.trim().replace(/\s+/g, ' ').replace(/[/\\:*?"<>|]/g, '').slice(0, 30) || 'agentteams-case'
 }
 
 const PHYLOGENY_MARKERS = ['系统发育树', '系统进化树', '进化树', 'treeplot', 'phylogenetic', 'treefile', 'newick']
@@ -1483,6 +1727,13 @@ export function groupRoomMessages(messages: RoomMessage[]): RoomBlock[] {
       const fallbackBody = lastIsSpeech && (!firstIsSpeech || speeches.length > 1)
         ? speeches[speeches.length - 1]
         : undefined
+      // 兜底收尾：该成员的最终发言（如 Manager 工具调用后的 room.agent_message 气泡）
+      // 会打断 run 成为独立气泡；此时工具卡不应再停在「进行中」动画。
+      const followedByFinalSpeech =
+        i < messages.length
+        && messages[i].kind === 'speech'
+        && messages[i].sender.name === senderName
+        && !messages[i].streaming
       blocks.push({
         type: 'worker',
         key: run[0].id,
@@ -1493,7 +1744,7 @@ export function groupRoomMessages(messages: RoomMessage[]): RoomBlock[] {
         body: terminalSpeech ?? fallbackBody,
         failed: terminalSpeech?.terminal === 'failed' || steps.some((step) => step.tool.status === 'failed'),
         interrupted: terminalSpeech?.terminal === 'interrupted',
-        active: terminalSpeech === undefined,
+        active: terminalSpeech === undefined && !followedByFinalSpeech,
       })
       continue
     }

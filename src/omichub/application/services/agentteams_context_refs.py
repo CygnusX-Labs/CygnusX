@@ -43,7 +43,7 @@ def check_context_ref(
     path = PurePosixPath(raw.replace("\\", "/"))
     if path.is_absolute() or ".." in path.parts:
         return ContextRefCheck(ref, "unreadable", False, "工作区路径必须是安全的相对路径")
-    if ref.get("kind") not in {"workspace", "file", "path"}:
+    if ref.get("kind") not in {"workspace", "file", "project", "path"}:
         return ContextRefCheck(ref, "unreadable", False, "未注册的逻辑引用类型")
 
     if workspace_root is not None:

@@ -22,9 +22,11 @@ ROOM_BINDING_EVENT_TYPE = "room.created"
 USER_MESSAGE_EVENT_TYPE = "room.user_message"
 AGENT_MESSAGE_EVENT_TYPE = "room.agent_message"
 ASK_USER_EVENT_TYPE = "room.ask_user"
-# 瞬时/回源事件不进 Matrix：room.typing 只是前端指示；via=matrix 的事件本就
+# 瞬时/回源事件不进 Matrix：room.typing 只是前端指示；room.agent_stream 是
+# 打字机增量（每 24 字符一条），镜像会让 Matrix 房间刷屏；via=matrix 的事件本就
 # 来自 Matrix（反向同步回投），再镜像会造成回声循环。
-TRANSIENT_EVENT_TYPES = frozenset({"room.typing"})
+# worker.inbox_polled 是轮询心跳（历史遗留，新版本已不再产生），绝不进 Matrix。
+TRANSIENT_EVENT_TYPES = frozenset({"room.typing", "room.agent_stream", "worker.inbox_polled"})
 MATRIX_ORIGIN_MARKER = "matrix"
 _USER_SENDER_IDENTITY = "omichub-user"
 _FALLBACK_SENDER_IDENTITY = "bioops-manager"

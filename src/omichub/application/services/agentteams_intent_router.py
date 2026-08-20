@@ -12,6 +12,10 @@
    ``derived_flow_aliases``,O4 关键词单源化);
 3. 迁移期兜底:``_LEGACY_EXTRA_HINT_ALIASES`` 按 ``flow.id`` 登记的旧硬编码
    别名,保留一个版本,命中时打 deprecation 日志。
+
+双注册表统一(Part 3.3):trigger_hints 命中结果必须落在
+``AgentTeamsCapabilityRegistry`` 快照内已登记 Agent;未登记/无可用目标记入
+``blocked`` 并打审计日志,由调用方走统一 fallback(``agent-code`` 兜底)。
 """
 
 from __future__ import annotations
@@ -46,6 +50,7 @@ _EXTRA_HINT_ALIASES = _LEGACY_EXTRA_HINT_ALIASES
 _IGNORED_CHARS = frozenset("-_ \t\r\n")
 
 _legacy_alias_warned: set[str] = set()
+_unknown_alias_target_warned: set[str] = set()
 
 
 @dataclass(frozen=True)
@@ -150,6 +155,17 @@ def explain_intent_route(
         from omichub.application.services.domain_registry import get_domain_registry
 
         domain_registry = get_domain_registry()
+    # 双注册表统一(Part 3.3):路由目标必须落在注册表快照内已登记 Agent。
+    registered_agents = capabilities.registered_agent_ids()
+    derived_aliases = domain_registry.derived_flow_aliases()
+    for alias_target in sorted(set(derived_aliases) - set(registry.flows)):
+        if alias_target not in _unknown_alias_target_warned:
+            _unknown_alias_target_warned.add(alias_target)
+            logger.warning(
+                "intent_router: domains/*.yaml routing.flow_aliases 指向未登记 flow={},"
+                "已忽略(路由目标必须在注册表内)",
+                alias_target,
+            )
     candidates: list[RouteCandidate] = []
     blocked: list[RouteBlocked] = []
     winner: RouteCandidate | None = None
@@ -162,7 +178,21 @@ def explain_intent_route(
         if not matched:
             continue
         planner = capabilities.agent_for_flow(flow_id)
+        if planner is not None and planner not in registered_agents:
+            logger.warning(
+                "intent_route_target_unregistered: flow={} 路由目标 agent={} 未在注册表快照登记,"
+                "降级统一 fallback",
+                flow_id,
+                planner,
+            )
+            planner = None
         if planner is None:
+            logger.warning(
+                "intent_route_blocked: flow={} matched_hints={} 无已登记可用 Agent,"
+                "降级统一 fallback(调用方 agent-code 兜底)",
+                flow_id,
+                [display for display, _ in matched],
+            )
             blocked.append(
                 RouteBlocked(
                     flow_id=flow_id,

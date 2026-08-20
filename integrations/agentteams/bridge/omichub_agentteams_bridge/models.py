@@ -208,6 +208,15 @@ class EvidenceRequest(BaseModel):
 # record_evidence 不再要求存在同名 work item。
 CASE_LEVEL_WORK_ITEM_ID = "case"
 
+# 房间级事件流的内部命名空间（会话-工单解耦，Part 2 方案 b）：每个协作室房间
+# 对应一条 case_id 形如 ``room-<room_id>`` 的 room_namespace 记录，复用现有
+# Case 事件流/MinIO 恢复/SSE/房间镜像链路，但不作为用户 Case 暴露。
+ROOM_NAMESPACE_ID_PREFIX = "room-"
+
+
+def is_room_namespace_case_id(case_id: str) -> bool:
+    return case_id.startswith(ROOM_NAMESPACE_ID_PREFIX)
+
 
 class EvidenceResponse(BaseModel):
     event_id: str
@@ -232,9 +241,19 @@ class CaseCreateRequest(BaseModel):
     execution_mode: Literal["local", "cluster_case"] = "cluster_case"
     flow_id: str | None = Field(default=None, min_length=1, max_length=128)
     lead_planner: BridgeRole | None = None
+    # 会话-工单解耦（Part 2）：room_namespace 记录是房间级事件流的内部载体，
+    # 不进用户 Case 列表/配额/GC；source_case_id 记录"基于上一 Case 继续"的关联引用。
+    record_kind: Literal["case", "room_namespace"] = "case"
+    source_case_id: str | None = Field(default=None, max_length=128)
 
     @model_validator(mode="after")
     def _validate_execution_context(self) -> CaseCreateRequest:
+        if self.record_kind == "room_namespace":
+            if not is_room_namespace_case_id(self.case_id):
+                raise ValueError("room_namespace records require a room-<room_id> case_id")
+            if self.flow_id or self.lead_planner or self.source_case_id:
+                raise ValueError("room_namespace records cannot carry flow/planner/source fields")
+            return self
         if self.project_ref is not None and self.project_ref.kind != "project":
             raise ValueError("project_ref must be a project context")
         if self.flow_id and not (self.context_refs or self.project_ref):
@@ -255,6 +274,8 @@ class CaseRecord(BaseModel):
     execution_mode: Literal["local", "cluster_case"] = "cluster_case"
     flow_id: str | None = None
     lead_planner: BridgeRole | None = None
+    record_kind: Literal["case", "room_namespace"] = "case"
+    source_case_id: str | None = None
     status: CaseStatus = "received"
     proposed_submission: dict[str, Any] | None = None
     plan_hash: str | None = None

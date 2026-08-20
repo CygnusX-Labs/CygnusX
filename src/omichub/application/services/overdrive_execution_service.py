@@ -11,6 +11,10 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 
+from omichub.application.services.agentteams_capability_registry import (
+    persona_snapshot,
+    persona_status_line,
+)
 from omichub.application.services.overdrive_run_service import (
     OverdriveRunService,
     overdrive_run_root,
@@ -114,10 +118,18 @@ def resume_paused_instances(run: OverdriveRunModel) -> list[dict[str, Any]]:
         ):
             instance["status"] = "queued"
             instance["finished_at"] = None
+            _refresh_status_line(instance, "queued")
             resumed.append(instance)
     run.tasks = tasks
     run.assistant_instances = instances
     return resumed
+
+
+def _refresh_status_line(instance: dict[str, Any], phase: str) -> None:
+    """状态迁移时同步人格状态文案;该阶段未配置文案则保留原值。"""
+    line = persona_status_line(instance.get("persona"), phase)
+    if line:
+        instance["status_line"] = line
 
 
 def approved_queued_instances(run: OverdriveRunModel) -> list[dict[str, Any]]:
@@ -170,10 +182,12 @@ def requeue_repair_instances(
                 }
             )
             instance.update({"status": "failed", "finished_at": datetime.now(UTC).isoformat()})
+            _refresh_status_line(instance, "failed")
             exhausted.append(task_id)
             continue
         task.update({"status": "queued", "error_summary": ""})
         instance.update({"status": "queued", "finished_at": None})
+        _refresh_status_line(instance, "queued")
         requeued.append(deepcopy(instance))
     run.tasks = tasks
     run.assistant_instances = instances
@@ -222,23 +236,6 @@ def mark_artifacts_process_on_termination(run: OverdriveRunModel) -> None:
             }
         )
     run.artifact_index = artifacts
-
-
-def persona_snapshot(agent_features: dict[str, Any] | None) -> dict[str, Any]:
-    """Return presentation fields only; never copy tools or permission settings."""
-    raw = (agent_features or {}).get("persona")
-    if not isinstance(raw, dict):
-        return {}
-    allowed = {
-        "archetype",
-        "traits",
-        "working_style",
-        "communication_style",
-        "challenge_style",
-        "status_lines",
-        "version",
-    }
-    return {key: deepcopy(value) for key, value in raw.items() if key in allowed}
 
 
 class OverdrivePreflightService:

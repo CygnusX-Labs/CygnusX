@@ -205,6 +205,72 @@ async def _platform_get_current_time(
     }
 
 
+async def _platform_list_agent_skills(
+    arguments: dict[str, Any],
+    user_id: str | None = None,
+    context: ToolInvocationContext | None = None,
+    **_kw: Any,
+) -> dict[str, Any]:
+    """查询 Agent 当前绑定的技能列表（YAML 声明 + 实际安装/启用状态）。
+
+    「你绑定了哪些技能 / 某 Agent 会什么」类问题的唯一权威数据源。
+    """
+    from sqlalchemy import select
+
+    from omichub.infrastructure.database.models.agent import AgentTemplateModel
+    from omichub.infrastructure.database.models.skill import SkillModel
+    from omichub.infrastructure.database.session import get_session_factory
+
+    agent_id = str(arguments.get("agent_id") or "").strip()
+    if not agent_id and context is not None and context.agent_id:
+        agent_id = str(context.agent_id)
+
+    async def query(db: Any) -> dict[str, Any]:
+        if not agent_id:
+            return {"success": False, "error": "缺少 agent_id，且当前上下文无法确定 Agent"}
+        agent = (
+            await db.execute(
+                select(AgentTemplateModel).where(AgentTemplateModel.agent_id == agent_id)
+            )
+        ).scalar_one_or_none()
+        if agent is None:
+            return {"success": False, "error": f"Agent '{agent_id}' 不存在"}
+        declared = [str(sid) for sid in (agent.skill_ids or [])]
+        installed: dict[str, Any] = {}
+        if declared:
+            rows = (
+                (await db.execute(select(SkillModel).where(SkillModel.skill_id.in_(declared))))
+                .scalars()
+                .all()
+            )
+            installed = {str(s.skill_id): s for s in rows}
+        skills = []
+        for sid in declared:
+            row = installed.get(sid)
+            skills.append(
+                {
+                    "skill_id": sid,
+                    "installed": row is not None,
+                    "is_active": bool(row.is_active) if row else False,
+                    "name": row.name if row else "",
+                    "description": row.description if row else "",
+                    "version": row.version if row else None,
+                }
+            )
+        return {
+            "success": True,
+            "agent_id": agent_id,
+            "agent_name": agent.name,
+            "skills": skills,
+        }
+
+    if context is not None:
+        return await query(context.db)
+    factory = get_session_factory()
+    async with factory() as db:
+        return await query(db)
+
+
 async def _platform_get_user_info(
     arguments: dict[str, Any],
     user_id: str | None = None,
@@ -1270,6 +1336,29 @@ PLATFORM_PRESET_TOOLS = [
         },
     },
     {
+        "name": "platform_list_agent_skills",
+        "description": (
+            "查询某个 Agent（智能体）当前绑定的技能（Skill）列表：技能 ID、名称、描述、版本、"
+            "是否已安装并启用。用户问「你/某 Agent 绑定了哪些技能、会什么、能用什么技能包」时"
+            "必须调用本工具获取实时绑定关系，禁止凭记忆或猜测作答；省略 agent_id 时查询当前对话的 Agent。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "type": "string",
+                    "description": "Agent ID（如 agent-scrna）；省略时查询当前对话的 Agent",
+                },
+            },
+        },
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+    },
+    {
         "name": "platform_admin_health_check",
         "description": (
             "管理员专用的只读平台巡检：检查数据库可查询性、Redis、共享存储容量与权限、"
@@ -1514,6 +1603,7 @@ PLATFORM_HANDLERS = {
     "platform_list_flows": _platform_list_flows,
     "platform_get_user_info": _platform_get_user_info,
     "platform_get_current_time": _platform_get_current_time,
+    "platform_list_agent_skills": _platform_list_agent_skills,
     "platform_admin_health_check": _platform_admin_health_check,
     "platform_sandbox_execute": _platform_sandbox_execute,
     "platform_read_file": _platform_read_file,
@@ -1533,7 +1623,7 @@ PLATFORM_HANDLERS = {
 PRESET_SERVERS: list[dict[str, Any]] = [
     {
         "name": "omichub-platform",
-        "description": "平台操作 MCP - Europe PMC 文献检索、任务管理、流程查询、当前用户与饼干（积分）余额查询、沙箱执行、结果读取、数据下载（SRA/GEO 公共数据库与多云存储）",
+        "description": "平台操作 MCP - Europe PMC 文献检索、任务管理、流程查询、当前用户与饼干（积分）余额查询、Agent 技能绑定查询、沙箱执行、结果读取、数据下载（SRA/GEO 公共数据库与多云存储）",
         "transport": "builtin",
         "tools": PLATFORM_PRESET_TOOLS,
         "handlers": PLATFORM_HANDLERS,

@@ -46,7 +46,8 @@ _LEGACY_DOMAIN_HINTS: dict[str, tuple[str, ...]] = {
     "agent-viz": ("可视化", "绘图", "图表", "publication-ready"),
     "agent-code": ("代码", "python", "bash", "脚本", "调试"),
     "agent-data": ("数据契约", "元数据", "样本对应", "输入核验"),
-    # 通用分析域（data/ai/domains/general.yaml）关键词；O4 单源化落地前两处手工保持同步
+    # 通用分析域已在 data/ai/domains/general.yaml 声明 routing.planner_agent，
+    # 本行仅为迁移期并集兜底（不再新增关键词到这里）。
     "agent-general": ("文献", "检索", "整理", "汇总", "报告", "表格", "文献综述", "网页报告", "literature"),
 }
 

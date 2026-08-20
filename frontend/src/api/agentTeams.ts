@@ -55,7 +55,8 @@ export interface AgentTeamsEvent {
 export interface AgentTeamsCaseCreateRequest {
   session_id?: string
   project_id?: string
-  context_refs?: Array<{ kind: 'workspace' | 'file'; id: string; location?: string }>
+  project_name?: string
+  context_refs?: Array<{ kind: 'workspace' | 'file' | 'project'; id: string; location?: string; meta?: Record<string, unknown> }>
   intent: string
   flow_id?: string
   sample_sheet?: Array<Record<string, unknown>>
@@ -101,7 +102,12 @@ export interface AgentTeamsQualityGateRequest {
 }
 
 /** 房间 @ 引用的上下文（kind 与后端 AgentTeamsContextRef 对齐）。 */
-export type AgentTeamsContextRef = { kind: 'workspace' | 'file'; id: string; location?: string }
+export type AgentTeamsContextRef = {
+  kind: 'workspace' | 'file' | 'project'
+  id: string
+  location?: string
+  meta?: Record<string, unknown>
+}
 
 export interface AgentTeamsPlanRevisionRequest {
   expected_plan_hash: string
@@ -140,17 +146,74 @@ export interface AgentTeamsEventListResponse {
   next_cursor?: string | null
 }
 
+/** 协作室房间（轻量会话实体，会话-工单解耦）：先于 Case 存在，立项确认后才绑定 case_id。 */
+export interface AgentTeamsRoom {
+  room_id: string
+  title: string
+  status: string
+  origin: string
+  /** 立项确认后回写的绑定 Case；未立项为 null。 */
+  case_id: string | null
+  matrix_room_provisioned: boolean
+  /** 当前是否存在待消费的立项确认卡。 */
+  has_pending_proposal: boolean
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface AgentTeamsRoomCreateRequest {
+  title?: string
+  origin?: string
+}
+
+export interface AgentTeamsRoomListResponse {
+  items: AgentTeamsRoom[]
+  total: number
+}
+
+export type AgentTeamsProposalDecision = 'confirm' | 'modify' | 'cancel'
+export type AgentTeamsProposalFollowupMode = 'continue' | 'new'
+
+export interface AgentTeamsProposalConfirmRequest {
+  /** 可选的二次校验 nonce（B1：token 不再经事件流分发；不带则凭 owner+pending 消费）。 */
+  confirm_token?: string
+  decision: AgentTeamsProposalDecision
+  /** followup 卡（Case 终态后再立项）专用：基于上一 Case 继续 / 新建工单。 */
+  followup_mode?: AgentTeamsProposalFollowupMode
+  note?: string
+}
+
+export interface AgentTeamsProposalConfirmResponse {
+  status: 'confirmed' | 'already_bound' | 'modify_requested' | 'cancelled'
+  case_id?: string
+  source_case_id?: string | null
+  idempotent_replay?: boolean
+}
+
+/** 房间聚合事件响应：复合游标 `ns:<id>|case:<id>`，对前端不透明、原样回传即可。 */
+export interface AgentTeamsRoomEventListResponse extends AgentTeamsEventListResponse {
+  room_id?: string
+  case_id?: string | null
+}
+
 export interface AgentTeamsRoleLabel {
   agent_id: string
   name: string
   avatar: string
   color: string
   role: string
+  /** 人格副标题（features.persona.archetype）；未配置时为空。 */
+  archetype?: string
 }
 
 export interface AgentTeamsRoleLabelsResponse {
   role_labels: Record<string, AgentTeamsRoleLabel>
   role_agent_map: Record<string, string>
+  /** 协作室 Manager 展示身份（后端 agent YAML 的 name 为唯一权威来源）。 */
+  manager?: {
+    agent_id: string
+    display_name: string
+  }
 }
 
 export interface AgentTeamsBridgeStatus {
@@ -229,7 +292,7 @@ export const agentTeamsApi = {
     return (await apiClient.post<AgentTeamsCase>(`/agent-teams/cases/${caseId}/cancel`, payload)).data
   },
   async deleteCase(caseId: string): Promise<Record<string, unknown>> {
-    return (await apiClient.delete(`/agent-teams/cases/${caseId}`)).data
+    return (await apiClient.delete(`/agent-teams/cases/${caseId}`, { timeout: 70000 })).data
   },
   async postCaseMessage(
     caseId: string,
@@ -261,6 +324,45 @@ export const agentTeamsApi = {
   ): Promise<AgentTeamsEventListResponse> {
     return (await apiClient.get<AgentTeamsEventListResponse>(
       `/agent-teams/cases/${caseId}/events`,
+      { params },
+    )).data
+  },
+  async createRoom(payload: AgentTeamsRoomCreateRequest = {}): Promise<AgentTeamsRoom> {
+    return (await apiClient.post<AgentTeamsRoom>('/agent-teams/rooms', payload)).data
+  },
+  async listRooms(): Promise<AgentTeamsRoomListResponse> {
+    return (await apiClient.get<AgentTeamsRoomListResponse>('/agent-teams/rooms')).data
+  },
+  async getRoom(roomId: string): Promise<AgentTeamsRoom> {
+    return (await apiClient.get<AgentTeamsRoom>(`/agent-teams/rooms/${roomId}`)).data
+  },
+  async postRoomMessage(
+    roomId: string,
+    content: string,
+    contextRefs: AgentTeamsContextRef[] = [],
+    clientMessageId?: string,
+  ): Promise<Record<string, unknown>> {
+    return (await apiClient.post(`/agent-teams/rooms/${roomId}/messages`, {
+      content,
+      context_refs: contextRefs,
+      client_message_id: clientMessageId,
+    })).data
+  },
+  async confirmRoomProposal(
+    roomId: string,
+    payload: AgentTeamsProposalConfirmRequest,
+  ): Promise<AgentTeamsProposalConfirmResponse> {
+    return (await apiClient.post<AgentTeamsProposalConfirmResponse>(
+      `/agent-teams/rooms/${roomId}/confirm-proposal`,
+      payload,
+    )).data
+  },
+  async getRoomEvents(
+    roomId: string,
+    params: { cursor?: string; limit?: number } = {},
+  ): Promise<AgentTeamsRoomEventListResponse> {
+    return (await apiClient.get<AgentTeamsRoomEventListResponse>(
+      `/agent-teams/rooms/${roomId}/events`,
       { params },
     )).data
   },

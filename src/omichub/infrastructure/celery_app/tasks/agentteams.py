@@ -8,8 +8,16 @@ import uuid
 
 from celery import shared_task
 
+from omichub.application.services.agentteams_bridge_settings_service import (
+    AgentTeamsBridgeSettingsService,
+)
+from omichub.application.services.agentteams_room_response_service import (
+    AgentTeamsRoomResponseService,
+)
+from omichub.application.services.agentteams_service import AgentTeamsService
 from omichub.core.config import get_settings
 from omichub.infrastructure.cache.redis_client import get_redis
+from omichub.infrastructure.database.session import get_session_factory
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +90,56 @@ def sync_case_rooms() -> dict[str, object]:
     return asyncio.run(_sync_case_rooms())
 
 
+@shared_task(
+    bind=True,
+    name="omichub.infrastructure.celery_app.tasks.agentteams.respond_to_room_namespace_message",
+    max_retries=120,
+)
+def respond_to_room_namespace_message(
+    self,
+    room_id: str,
+    requester_ref: str,
+    content: str,
+    dispatch: dict[str, object] | None = None,
+) -> dict[str, str]:
+    """协作室房间（含未立项房间）发言的 Manager 响应任务。"""
+    result = asyncio.run(_respond_to_room_namespace_message(room_id, requester_ref, content, dispatch))
+    if result.get("status") == "skipped_locked":
+        raise self.retry(countdown=2)
+    return result
+
+
+async def _respond_to_room_namespace_message(
+    room_id: str,
+    requester_ref: str,
+    content: str,
+    dispatch: dict[str, object] | None = None,
+) -> dict[str, str]:
+    try:
+        settings = get_settings()
+        async with get_session_factory()() as db:
+            runtime = await AgentTeamsBridgeSettingsService(db, settings).get_runtime_config()
+            agentteams = AgentTeamsService(settings, runtime)
+            if not agentteams.available:
+                return {"status": "skipped_unavailable"}
+            from omichub.application.services.agentteams_room_service import (
+                AgentTeamsRoomService,
+            )
+
+            room = await AgentTeamsRoomService(db, agentteams).get_room(room_id, requester_ref)
+            return await AgentTeamsRoomResponseService(db, agentteams=agentteams).respond_room(
+                room,
+                requester_ref,
+                content,
+                target_agent_id=str(dispatch.get("target_agent_id") or "") or None
+                if isinstance(dispatch, dict) and dispatch.get("dispatch_mode") == "direct"
+                else None,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("AgentTeams room namespace response task failed: %s", exc)
+        return {"status": "failed"}
+
+
 async def _sync_case_rooms() -> dict[str, object]:
     from omichub.infrastructure.database.session import get_session_factory
 
@@ -129,15 +187,6 @@ async def _respond_to_room_message(
     content: str,
     dispatch: dict[str, object] | None = None,
 ) -> dict[str, str]:
-    from omichub.application.services.agentteams_bridge_settings_service import (
-        AgentTeamsBridgeSettingsService,
-    )
-    from omichub.application.services.agentteams_room_response_service import (
-        AgentTeamsRoomResponseService,
-    )
-    from omichub.application.services.agentteams_service import AgentTeamsService
-    from omichub.infrastructure.database.session import get_session_factory
-
     try:
         settings = get_settings()
         async with get_session_factory()() as db:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -12,6 +14,8 @@ class BridgeSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="BRIDGE_", extra="ignore")
 
     environment: str = "development"
+    build_sha: str = "unknown"
+    build_time: str = "unknown"
     omichub_base_url: str = "http://omichub-api:8000"
     omichub_service_token: str = ""
     omichub_api_key: str = ""
@@ -29,6 +33,7 @@ class BridgeSettings(BaseSettings):
         default_factory=dict, exclude=True
     )
     discovered_workspace_execution_identities: set[str] = Field(default_factory=set, exclude=True)
+    discovered_agent_personas: dict[str, dict[str, Any]] = Field(default_factory=dict, exclude=True)
     approval_signing_secret: str = "change-me-before-deployment"
     identities: str = (
         "approval-authority:approval-secret,bioops-manager:manager-secret,data-steward:steward-secret,"
@@ -54,6 +59,13 @@ class BridgeSettings(BaseSettings):
     state_store_key_prefix: str = "omichub:agentteams"
     audit_log_path: str = "/tmp/omichub-agentteams-bridge-audit.jsonl"
     case_store_path: str = "/tmp/omichub-agentteams-bridge-cases.json"
+    # MinIO 持久层（事实源）；未配置时非生产环境回退 Redis/本地文件模式并打 warning。
+    minio_endpoint: str = ""
+    minio_access_key: str = ""
+    minio_secret_key: str = ""
+    minio_bucket: str = "agentteams"
+    minio_secure: bool = False
+    minio_event_object_max_bytes: int = Field(default=52_428_800, ge=1_048_576)
     worker_token_store_path: str = "/tmp/omichub-agentteams-bridge-worker-tokens.json"
     manifest_dir: str = "/tmp/omichub-agentteams-bridge-manifests"
 
@@ -94,6 +106,8 @@ class BridgeSettings(BaseSettings):
             raise ValueError("生产环境必须替换 Gateway Manager token")
         if not self.state_store_url:
             raise ValueError("生产环境必须配置 Redis 共享状态存储")
+        if not self.minio_endpoint:
+            raise ValueError("生产环境必须配置 MinIO 持久层（BRIDGE_MINIO_ENDPOINT）")
         return self
 
     @staticmethod
@@ -194,6 +208,29 @@ class BridgeSettings(BaseSettings):
                 for identity, agent_id in self.discovered_role_agent_map.items()
                 if agent_id in allowed_agent_ids
             }
+            # persona 仅作展示用途(状态文案/成员副标题),不参与任何权限判定
+            self.discovered_agent_personas = {
+                str(item.get("agent_id") or "").strip(): item["persona"]
+                for item in agent_capabilities.values()
+                if isinstance(item, dict)
+                and str(item.get("agent_id") or "").strip()
+                and isinstance(item.get("persona"), dict)
+            }
+
+    def persona_status_line_for(self, agent_id: str, phase: str) -> str | None:
+        """按 agent_id 取该状态阶段的人格播报文案;未配置返回 None。"""
+        persona = self.discovered_agent_personas.get(agent_id) or {}
+        lines = persona.get("status_lines")
+        if not isinstance(lines, dict):
+            return None
+        candidates = lines.get(phase)
+        if isinstance(candidates, str) and candidates.strip():
+            return candidates.strip()
+        if isinstance(candidates, list):
+            for item in candidates:
+                if str(item).strip():
+                    return str(item).strip()
+        return None
 
     def quality_gate_for_flow(self, flow_id: str) -> bool:
         return bool(self.discovered_flow_quality_gate_map.get(flow_id, False))

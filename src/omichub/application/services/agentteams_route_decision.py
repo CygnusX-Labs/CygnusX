@@ -217,7 +217,9 @@ def build_route_decision(
         decision["fallback"] = True
         decision["fallback_reason"] = "未命中已注册领域路由"
         decision["flow_label"] = "通用分析（未识别到领域专家，回退通用代码助手）"
-    if confidence == "ambiguous":
+    # O7:命中流程但 actor/fallback 链全不可用(blocked)时同样给出 options,
+    # 由 _annotate_resource_status 把阻塞流程标注为 waiting,让用户看见"等待资源"。
+    if confidence == "ambiguous" or explanation.blocked:
         decision["options"] = _build_options(
             candidates,
             registry,

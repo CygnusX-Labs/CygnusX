@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from time import monotonic
 from typing import Any
@@ -23,6 +24,38 @@ _ROLE_ALIASES = {
     "quality-auditor": "agent-qc",
     "delivery-reporter": "agent-delivery",
 }
+
+
+def persona_snapshot(agent_features: dict[str, Any] | None) -> dict[str, Any]:
+    """Return presentation fields only; never copy tools or permission settings."""
+    raw = (agent_features or {}).get("persona")
+    if not isinstance(raw, dict):
+        return {}
+    allowed = {
+        "archetype",
+        "traits",
+        "working_style",
+        "communication_style",
+        "challenge_style",
+        "status_lines",
+        "version",
+    }
+    return {key: deepcopy(value) for key, value in raw.items() if key in allowed}
+
+
+def persona_status_line(persona: dict[str, Any] | None, phase: str) -> str | None:
+    """按状态阶段取 persona.status_lines 的第一条文案;未配置时返回 None。"""
+    lines = (persona or {}).get("status_lines")
+    if not isinstance(lines, dict):
+        return None
+    candidates = lines.get(phase)
+    if isinstance(candidates, str) and candidates.strip():
+        return candidates.strip()
+    if isinstance(candidates, list):
+        for item in candidates:
+            if str(item).strip():
+                return str(item).strip()
+    return None
 
 
 @dataclass(frozen=True)
@@ -48,10 +81,12 @@ class AgentTeamsCapabilityRegistry:
         ability_catalog: AgentAbilityCatalog | None = None,
         agent_configs: list[dict[str, Any]] | None = None,
         cache_ttl_seconds: float = 60.0,
+        domain_registry: Any | None = None,
     ) -> None:
         self._flow_registry = flow_registry
         self._ability_catalog = ability_catalog or agent_ability_catalog
         self._agent_configs = agent_configs
+        self._domain_registry = domain_registry
         self._cache_ttl = cache_ttl_seconds
         self._snapshot_cache: tuple[float, dict[str, Any]] | None = None
         self._active_agents_cache: tuple[float, dict[str, dict[str, Any]]] | None = None
@@ -143,6 +178,7 @@ class AgentTeamsCapabilityRegistry:
                 "capability_tags": [str(value) for value in features.get("capability_tags", [])],
                 "accepts_inputs": [str(value) for value in features.get("accepts_inputs", [])],
                 "produces_outputs": [str(value) for value in features.get("produces_outputs", [])],
+                "persona": persona_snapshot(features),
                 "worker_capability": self._capability_for(role, agent_id),
             }
         return capabilities
@@ -153,6 +189,20 @@ class AgentTeamsCapabilityRegistry:
             item["agent_id"]
             for item in self.agent_capabilities().values()
             if item["recruitable"] and item["agent_id"] in abilities
+        }
+
+    def internal_consultation_agents(self) -> set[str]:
+        """可参与平台内部会诊的 agent：可招募专家 + planner_eligible 的内部角色。
+
+        协作室 Manager（如 agentteams-manager）显式 ``recruitable: false``，
+        不进招募面板与 ``consultation_agents()``，但仍是房间内合法的会诊对象。
+        """
+        abilities = self._ability_catalog.all()
+        return {
+            item["agent_id"]
+            for item in self.agent_capabilities().values()
+            if (item["recruitable"] or item["planner_eligible"])
+            and item["agent_id"] in abilities
         }
 
     def agent_execution_modes(self, agent_id: str) -> list[str]:
@@ -232,17 +282,89 @@ class AgentTeamsCapabilityRegistry:
     def role_labels(self) -> dict[str, dict[str, str]]:
         labels: dict[str, dict[str, str]] = {}
         for agent_id, config in self._active_agents().items():
-            role = str((config.get("features") or {}).get("internal_case_role") or "").strip()
+            features = config.get("features") or {}
+            role = str(features.get("internal_case_role") or "").strip()
             if not role:
                 continue
+            archetype = str((features.get("persona") or {}).get("archetype") or "").strip()
             labels[role] = {
                 "agent_id": agent_id,
                 "name": str(config.get("name") or role),
                 "avatar": str(config.get("avatar") or "💬"),
                 "color": str(config.get("color") or "#64748b"),
                 "role": str(config.get("category") or "worker"),
+                "archetype": archetype,
             }
         return labels
+
+    def chat_router_catalog(self) -> list[dict[str, Any]]:
+        """chat 侧 LLM 路由的候选 Agent 目录(双注册表统一,Part 3.3)。
+
+        与房间关键词路由共用同一快照数据源:Agent 清单来自 ``data/ai/{name}.yaml``
+        (``_active_agents``),能力描述来自 ``data/ai/agent_ability.yaml``,
+        路由提示来自 ``data/ai/domains/*.yaml``。``features.router`` 与
+        能力目录 ``chat_entry: false`` 的 Agent 不进候选。
+        """
+        abilities = self._ability_catalog.all()
+        domain_registry = self._domain_registry
+        if domain_registry is None:
+            from omichub.application.services.domain_registry import get_domain_registry
+
+            domain_registry = get_domain_registry()
+        catalog: list[dict[str, Any]] = []
+        for agent_id, config in sorted(self._active_agents().items()):
+            features = config.get("features") or {}
+            if features.get("router"):
+                continue
+            ability = abilities.get(agent_id) or {}
+            if not ability.get("chat_entry", True):
+                continue
+            capability_tags = [str(value) for value in features.get("capability_tags") or []]
+            catalog.append(
+                {
+                    "agent_id": agent_id,
+                    "name": str(config.get("name") or agent_id),
+                    "description": str(
+                        ability.get("summary") or config.get("description") or ""
+                    ),
+                    "category": str(config.get("category") or "general"),
+                    "chat_entry": True,
+                    "capabilities": list(ability.get("capabilities") or capability_tags),
+                    "not_suitable_for": list(ability.get("not_suitable_for") or []),
+                    "handoff_when": list(ability.get("handoff_when") or []),
+                    "preferred_inputs": list(ability.get("preferred_inputs") or []),
+                    "routing_hints": [str(value) for value in features.get("routing_hints") or []],
+                    "capability_tags": capability_tags,
+                    "routing_notes": domain_registry.router_notes_for(
+                        agent_id, features.get("domain")
+                    ),
+                    "avatar": str(config.get("avatar") or "💬"),
+                    "color": str(config.get("color") or "#64748b"),
+                }
+            )
+        return catalog
+
+    def flow_router_catalog(self) -> list[dict[str, Any]]:
+        """chat 侧 LLM 路由 prompt 注入用的流程目录(与房间关键词路由同源)。
+
+        ``stage_count``/``actor`` 供 L2→L4 升级规则（愿景 Phase D）判定
+        "Flow 步骤数 ≥3 / requires_formal_delivery"使用。
+        """
+        return [
+            {
+                "flow_id": flow_id,
+                "display_name": registered.definition.flow.display_name,
+                "bridge_workflow": registered.definition.flow.bridge_workflow,
+                "trigger_hints": list(registered.definition.flow.trigger_hints),
+                "stage_count": len(registered.definition.stages),
+                "actor": registered.definition.flow.actor,
+            }
+            for flow_id, registered in sorted(self._flows().flows.items())
+        ]
+
+    def registered_agent_ids(self) -> set[str]:
+        """快照内已登记(可路由)的 Agent 集合,供路由目标成员资格校验。"""
+        return set(self.role_agent_map().values()) | set(self.flow_agent_map().values())
 
     def snapshot(self) -> dict[str, Any]:
         now = monotonic()
@@ -269,6 +391,9 @@ class AgentTeamsCapabilityRegistry:
                 if (profile := self.worker_profile(identity)) is not None
             },
             "role_labels": self.role_labels(),
+            "chat_router_catalog": self.chat_router_catalog(),
+            "flow_router_catalog": self.flow_router_catalog(),
+            "registered_agent_ids": sorted(self.registered_agent_ids()),
         }
         self._snapshot_cache = (now, result)
         return result
@@ -366,4 +491,6 @@ __all__ = [
     "AgentTeamsCapabilityRegistry",
     "WorkerProfile",
     "get_agentteams_capability_registry",
+    "persona_snapshot",
+    "persona_status_line",
 ]

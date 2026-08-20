@@ -1,8 +1,9 @@
 """房间内用户发言的 Manager 响应回路。
 
 用户在团队协作室发出 ``room.user_message`` 后，由 Celery 任务驱动本服务：
-以 readonly_consultation 模式调用 Manager agent（默认 agent-general，
-无则回退到任意 planner_eligible 的可会诊 agent），把结论落为
+以 readonly_consultation 模式调用 Manager agent（默认取配置项
+``agentteams_manager_agent_id`` = agentteams-manager，不可用时降级
+agent-general 并写 ``room.manager_persona_fallback`` 审计事件），把结论落为
 ``room.agent_message`` Case 级证据事件——SSE 投影与 Matrix 镜像随之自动生效。
 
 同一 Case 同时只允许一个 pending 响应（Redis 互斥锁）；锁被占用时由任务层
@@ -12,6 +13,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import re
 import time
 from collections.abc import Callable
 from typing import Any
@@ -37,6 +40,13 @@ from omichub.application.services.agentteams_intent_router import IntentRoute, i
 from omichub.application.services.agentteams_interruption_coordinator import (
     AgentTeamsInterruptionCoordinator,
 )
+from omichub.application.services.agentteams_room_service import (
+    PROPOSAL_OPTIONS_FOLLOWUP,
+    PROPOSAL_OPTIONS_NEW_CASE,
+    ROOM_PROPOSAL_EVENT_TYPE,
+    build_room_proposal,
+    persist_room_proposal,
+)
 from omichub.application.services.agentteams_route_decision import (
     ROUTE_DECISION_EVENT_TYPE,
     build_route_decision,
@@ -46,17 +56,40 @@ from omichub.application.services.agentteams_service import (
     CASE_LEVEL_WORK_ITEM_ID,
     DEFAULT_LEAD_PLANNER,
     AgentTeamsService,
+    room_namespace_case_id,
 )
 from omichub.application.services.flow_registry import FlowRegistry
+from omichub.core.config import get_settings
 from omichub.infrastructure.cache.redis_client import get_redis
+from omichub.infrastructure.database.models.chat import AgentTeamsRoomModel
 from omichub.infrastructure.database.models.user import UserModel
+from omichub.infrastructure.database.repositories.file_repository import FileRepositoryImpl
 
 ROOM_RESPONSE_LOCK_KEY_PREFIX = "agentteams:room-response:lock:"
 ROOM_RESPONSE_LOCK_TTL_SECONDS = 180
+# 同一用户发言的响应幂等标记：任务重试/broker 重投递/重复调度时，
+# 已应答过的 room.user_message 不再生成第二份 Manager 回复。
+ROOM_RESPONSE_DEDUP_KEY_PREFIX = "agentteams:room-response:done:"
+ROOM_RESPONSE_DEDUP_TTL_SECONDS = 24 * 60 * 60
+# 产出过真实响应的终态（失败/跳过不落幂等标记，允许后续重试）。
+_RESPONSE_SUCCESS_STATUSES = frozenset(
+    {"responded", "asked", "planning_started", "tool_executed", "proposal_pending"}
+)
+# Case 终态（含已取消）后房间继续对话时，新的 execute 意图转为"继续/新建"选择卡。
+ROOM_FOLLOWUP_CASE_STATUSES = frozenset({"closed", "delivery_ready", "cancelled"})
 _CONTEXT_EVENT_LIMIT = 30
 _CONTEXT_EVENT_SUMMARY_LINES = 8
-_PREFERRED_MANAGER_AGENT_ID = "agent-general"
+# 协作室 Manager 的审计/投影身份（Bridge 安全身份，非 LLM agent，禁止改名）。
+MANAGER_ROOM_ROLE = "bioops-manager"
+# Manager 人格 agent 的固定降级点：配置的首选 agent 不可用时回退通用助手。
+_FALLBACK_MANAGER_AGENT_ID = "agent-general"
+# Manager 展示名的最后兜底：唯一权威来源是 manager agent YAML 的 name
+# （经协作室配置接口下发），仅在该 YAML 未加载时使用本常量保持展示名不变。
+DEFAULT_MANAGER_DISPLAY_NAME = "生物信息部门经理"
 _ROOM_STREAM_FLUSH_CHARS = 24
+# 房间内 Manager 回复正文的落库上限：结构化长文（分析方案等）容易超过 4k，
+# 截断会让用户误以为"没生成完"，放宽到 10k。
+_ROOM_REPLY_CONTENT_MAX_CHARS = 10_000
 
 # 执行对象澄清（O6 阶段 2）：clarify 态下 Manager 直发选项式追问卡片，
 # 复用 room.ask_user / AskUserCard 的渲染与【澄清回复】回填链路。
@@ -77,6 +110,12 @@ _HANDOFF_LANGUAGE_REPLACEMENTS = {
     "已经开始分析": "等待确认后开始分析",
     "已启动分析": "等待确认后启动分析",
 }
+_INTAKE_SAMPLE_COUNT_RE = re.compile(r"(?:有|共)?\s*(\d+)\s*个?(?:样本|小鼠.*?样本)")
+_INTAKE_GROUP_RE = re.compile(r"(\d+)\s*(?:vs|v|对)\s*(\d+)", re.IGNORECASE)
+_INTAKE_COMPARISON_RE = re.compile(r"([\w\-]+\s*(?:mutation|mutant|突变))\s*(?:vs|v|对)\s*([\w\-]+\s*(?:WT|wild\s*type|野生型))", re.IGNORECASE)
+_WORKSPACE_DATA_SUFFIXES = frozenset({
+    ".csv", ".tsv", ".xlsx", ".fastq", ".fq", ".h5ad", ".loom", ".bam", ".txt",
+})
 
 _RELEASE_LOCK_LUA = """
 if redis.call('GET', KEYS[1]) == ARGV[1] then
@@ -168,6 +207,7 @@ class AgentTeamsRoomResponseService:
         content: str,
         *,
         target_agent_id: str | None = None,
+        room: AgentTeamsRoomModel | None = None,
     ) -> dict[str, str]:
         lock_key = f"{ROOM_RESPONSE_LOCK_KEY_PREFIX}{case_id}"
         lock_token = uuid4().hex
@@ -185,6 +225,7 @@ class AgentTeamsRoomResponseService:
                 requester_ref,
                 content,
                 target_agent_id=target_agent_id,
+                room=room,
             )
         finally:
             if acquired:
@@ -195,6 +236,64 @@ class AgentTeamsRoomResponseService:
                         "AgentTeams room response lock release failed: {}", exc
                     )
 
+    async def respond_room(
+        self,
+        room: AgentTeamsRoomModel,
+        requester_ref: str,
+        content: str,
+        *,
+        target_agent_id: str | None = None,
+    ) -> dict[str, str]:
+        """房间级响应入口（会话-工单解耦 Part 2）。
+
+        未立项房间：事件与对话全部发生在房间命名空间流（case_id=room-<room_id>），
+        execute 意图只落"立项确认卡"，确认前不创建 Case。
+        已绑定 Case 的房间：完全复用既有 Case 响应链路；仅当 Case 已到终态且
+        新的发言是 execute 意图时，先落"基于上一 Case 继续 / 新建工单"选择卡。
+        """
+        bound_case_id = str(room.case_id or "").strip() or None
+        if bound_case_id is None:
+            return await self.respond(
+                room_namespace_case_id(room.room_id),
+                requester_ref,
+                content,
+                target_agent_id=target_agent_id,
+                room=room,
+            )
+        try:
+            case = await self._agentteams.get_case(bound_case_id, requester_ref)
+        except Exception as exc:  # noqa: BLE001 - 绑定 Case 读取失败不阻断对话
+            logger.bind(case_id=bound_case_id).warning(
+                "AgentTeams bound case lookup failed: {}", exc
+            )
+            return {"status": "failed"}
+        if str(case.get("status") or "") in ROOM_FOLLOWUP_CASE_STATUSES:
+            try:
+                events_page = await self._agentteams.get_case_events(
+                    bound_case_id, requester_ref, limit=_CONTEXT_EVENT_LIMIT
+                )
+                event_items = [
+                    item for item in events_page.get("events", []) if isinstance(item, dict)
+                ]
+                refs = self._latest_message_context_refs(event_items, content)
+                if classify_execution_intent(content, refs) is ExecutionIntent.EXECUTE:
+                    emitted = await self._emit_case_proposal(
+                        room=room,
+                        content=content,
+                        refs=refs,
+                        proposal_kind="followup",
+                        source_case_id=bound_case_id,
+                    )
+                    if emitted:
+                        return {"status": "proposal_pending"}
+            except Exception as exc:  # noqa: BLE001 - 选择卡失败回退到普通对话
+                logger.bind(case_id=bound_case_id).warning(
+                    "AgentTeams follow-up proposal emission failed: {}", exc
+                )
+        return await self.respond(
+            bound_case_id, requester_ref, content, target_agent_id=target_agent_id
+        )
+
     async def _respond_locked(
         self,
         case_id: str,
@@ -202,10 +301,13 @@ class AgentTeamsRoomResponseService:
         content: str,
         *,
         target_agent_id: str | None = None,
+        room: AgentTeamsRoomModel | None = None,
     ) -> dict[str, str]:
         started = time.monotonic()
         stage_ms: dict[str, int] = {}
         response_status = "failed"
+        dedup_key: str | None = None
+        causation_event_id: str | None = None
         try:
             stage_started = time.monotonic()
             case = await self._agentteams.get_case(case_id, requester_ref)
@@ -218,15 +320,66 @@ class AgentTeamsRoomResponseService:
             event_items = [
                 item for item in events.get("events", []) if isinstance(item, dict)
             ]
+            # 幂等去重：同一条用户发言已产出过响应（任务重试、broker 重投递、
+            # post_case_message 与房间同步双通道重复调度）时直接跳过，
+            # 避免房间里出现两张相同的 Manager 回复/澄清卡片。
+            dedup_event_id = self._current_message_event_id(event_items, content)
+            causation_event_id = dedup_event_id
+            dedup_key = (
+                f"{ROOM_RESPONSE_DEDUP_KEY_PREFIX}{case_id}:{dedup_event_id}"
+                if dedup_event_id
+                else None
+            )
+            if dedup_key:
+                try:
+                    if await self._redis_getter().get(dedup_key):
+                        logger.bind(case_id=case_id).info(
+                            "AgentTeams room response skipped: message already answered"
+                        )
+                        return {"status": "skipped_duplicate"}
+                except Exception as exc:  # noqa: BLE001 - 幂等检查故障不得影响响应主流程
+                    logger.bind(case_id=case_id).warning(
+                        "AgentTeams room response dedup check failed: {}", exc
+                    )
+                    await self._record_dedup_degraded(
+                        case_id,
+                        reason=f"dedup_read_failed:{type(exc).__name__}",
+                        causation_event_id=causation_event_id,
+                    )
+                    dedup_key = None
             if target_agent_id:
-                return await self._respond_to_direct_agent(
-                    case_id,
-                    requester_ref,
-                    content,
-                    case,
-                    event_items,
-                    target_agent_id,
-                )
+                manager_agent_id = self._manager_agent_id()
+                if manager_agent_id and target_agent_id == manager_agent_id:
+                    # 按展示名 @Manager 本人（如 @生物信息部门经理）时回归 Manager
+                    # 主回路，而不是把 Manager 当被点名的领域 Worker 处理。
+                    target_agent_id = None
+                else:
+                    direct_result = await self._respond_to_direct_agent(
+                        case_id,
+                        requester_ref,
+                        content,
+                        case,
+                        event_items,
+                        target_agent_id,
+                        causation_event_id=causation_event_id,
+                    )
+                    if str(direct_result.get("status") or "") not in {
+                        "direct_failed",
+                        "direct_agent_unavailable",
+                    }:
+                        return direct_result
+                    # A3（Part 2.7 失败降级路径）：直答失败/超时/目标不可用时禁止
+                    # 静默——先落 Manager 可见降级消息与 room.agent_timeout 审计
+                    # 事件，随后不 return、继续走下方 Manager 主回路生成正式回复。
+                    await self._emit_direct_agent_fallback(
+                        case_id,
+                        target_agent_id=target_agent_id,
+                        reason=str(
+                            direct_result.get("reason") or direct_result.get("status") or ""
+                        ),
+                        causation_event_id=causation_event_id,
+                    )
+                    target_agent_id = None
             stage_ms["events"] = round((time.monotonic() - stage_started) * 1000)
             stage_started = time.monotonic()
             preferences = await self._manager_preferences(requester_ref)
@@ -239,8 +392,15 @@ class AgentTeamsRoomResponseService:
                 events=event_items,
                 content=content,
                 preferences=preferences,
+                causation_event_id=causation_event_id,
+                room=room,
             )
             stage_ms["execution_gate"] = round((time.monotonic() - stage_started) * 1000)
+            if execution_outcome == "proposal_pending":
+                # 未立项房间的 execute 态：立项确认卡已落房间级事件流，
+                # 等用户在 confirm-proposal 端点确认后才创建 Case。
+                response_status = "proposal_pending"
+                return {"status": response_status}
             if execution_outcome == "clarified":
                 # clarify 态：选项式追问卡片已落 room.ask_user，本轮不再跑
                 # LLM 会诊，避免与澄清卡片重复回复；答案将作为下一条
@@ -272,8 +432,9 @@ class AgentTeamsRoomResponseService:
                 system_note=(
                     _CLARIFY_EXHAUSTED_NOTE if execution_outcome == "degraded" else None
                 ),
+                manager_display_name=self._manager_display_name(),
             )
-            agent_id = self._manager_agent_id()
+            agent_id = await self._manager_agent_with_audit(case_id)
             if agent_id is None:
                 logger.bind(case_id=case_id).warning(
                     "AgentTeams room response skipped: no manager agent available"
@@ -298,6 +459,7 @@ class AgentTeamsRoomResponseService:
                         evidence_refs=[],
                         requested_tools=[],
                         requester_ref=requester_ref,
+                        causation_event_id=causation_event_id,
                         on_event=stream_projector,
                     )
                     stage_ms["llm"] = round((time.monotonic() - stage_started) * 1000)
@@ -338,11 +500,12 @@ class AgentTeamsRoomResponseService:
                         event_type="room.ask_user",
                         summary=(reply or questions[0]["question"])[:200],
                         payload={
-                            "content": reply[:4_000],
+                            "content": reply[:_ROOM_REPLY_CONTENT_MAX_CHARS],
                             "agent_id": agent_id,
                             "role": "bioops-manager",
                             "stream_id": stream_id,
                             "manager_report": manager_report,
+                            "causation_event_id": causation_event_id,
                             "questions": questions,
                         },
                     )
@@ -356,11 +519,12 @@ class AgentTeamsRoomResponseService:
                     event_type="room.agent_message",
                     summary=reply[:200],
                     payload={
-                        "content": reply[:4_000],
+                        "content": reply[:_ROOM_REPLY_CONTENT_MAX_CHARS],
                         "agent_id": agent_id,
                         "role": "bioops-manager",
                         "stream_id": stream_id,
                         "manager_report": manager_report,
+                        "causation_event_id": causation_event_id,
                         },
                     )
                 stage_ms["event_write"] = round((time.monotonic() - stage_started) * 1000)
@@ -373,6 +537,20 @@ class AgentTeamsRoomResponseService:
             response_status = "failed"
             return {"status": response_status}
         finally:
+            if dedup_key and response_status in _RESPONSE_SUCCESS_STATUSES:
+                try:
+                    await self._redis_getter().set(
+                        dedup_key, "1", ex=ROOM_RESPONSE_DEDUP_TTL_SECONDS
+                    )
+                except Exception as exc:  # noqa: BLE001 - 幂等标记丢失只允许安全重试
+                    logger.bind(case_id=case_id).warning(
+                        "AgentTeams room response dedup mark failed: {}", exc
+                    )
+                    await self._record_dedup_degraded(
+                        case_id,
+                        reason=f"dedup_mark_failed:{type(exc).__name__}",
+                        causation_event_id=causation_event_id,
+                    )
             record_timing = getattr(self._agentteams, "record_room_response_timing", None)
             if record_timing is not None:
                 try:
@@ -403,10 +581,18 @@ class AgentTeamsRoomResponseService:
         case: dict[str, Any],
         events: list[dict[str, Any]],
         target_agent_id: str,
+        causation_event_id: str | None = None,
     ) -> dict[str, str]:
-        """Phase 1 direct mention: readonly domain answer, without execution or approval bypass."""
+        """Phase 1 direct mention: readonly domain answer, without execution or approval bypass.
+
+        失败/超时/目标不可用时返回带 ``reason`` 的失败状态（不抛异常），由调用方
+        执行 A3 降级（可见降级消息 + room.agent_timeout 审计 + Manager 接管）。
+        """
         if target_agent_id not in self._registry.consultation_agents():
-            return {"status": "direct_agent_unavailable"}
+            return {
+                "status": "direct_agent_unavailable",
+                "reason": "agent_not_in_consultation_registry",
+            }
         if self._has_running_work_item(case, target_agent_id):
             assessment = await AgentTeamsInterruptionCoordinator(
                 self._agentteams, self._db
@@ -415,6 +601,7 @@ class AgentTeamsRoomResponseService:
                 requester_ref=requester_ref,
                 agent_id=target_agent_id,
                 content=content,
+                causation_event_id=causation_event_id,
             )
             return {"status": str(assessment.get("status") or "assessment_pending")}
         question = (
@@ -426,18 +613,23 @@ class AgentTeamsRoomResponseService:
             f"最近房间事件：{self._recent_event_context(events)}\n"
             f"用户点名消息：{content.strip()[:4_000]}"
         )
+        timeout_seconds = get_settings().agentteams_direct_timeout_seconds
         try:
-            envelope = await AgentConsultationService(
-                self._db,
-                agentteams_service=self._agentteams,
-            ).run_consultation(
-                case_id=case_id,
-                agent_id=target_agent_id,
-                question=question,
-                capability="interpretation",
-                evidence_refs=[],
-                requested_tools=[],
-                requester_ref=requester_ref,
+            envelope = await asyncio.wait_for(
+                AgentConsultationService(
+                    self._db,
+                    agentteams_service=self._agentteams,
+                ).run_consultation(
+                    case_id=case_id,
+                    agent_id=target_agent_id,
+                    question=question,
+                    capability="interpretation",
+                    evidence_refs=[],
+                    requested_tools=[],
+                    requester_ref=requester_ref,
+                    causation_event_id=causation_event_id,
+                ),
+                timeout=timeout_seconds,
             )
             await self._agentteams.post_case_evidence(
                 case_id,
@@ -449,6 +641,7 @@ class AgentTeamsRoomResponseService:
                     "agent_id": target_agent_id,
                     "role": "worker",
                     "direct_mention": True,
+                    "causation_event_id": causation_event_id,
                     "manager_report": {
                         "conclusion": envelope.conclusion,
                         "recommendations": envelope.recommendations,
@@ -460,11 +653,80 @@ class AgentTeamsRoomResponseService:
                 },
             )
             return {"status": "direct_responded"}
+        except TimeoutError:
+            # A3：30s（可配）无响应与报错同口径降级，绝不静默丢失用户消息。
+            logger.bind(case_id=case_id, target_agent_id=target_agent_id).warning(
+                "AgentTeams direct mention response timed out after {}s", timeout_seconds
+            )
+            return {
+                "status": "direct_failed",
+                "reason": f"timeout_after_{timeout_seconds:g}s",
+            }
         except Exception as exc:  # noqa: BLE001 - direct mention must degrade to Manager
             logger.bind(case_id=case_id, target_agent_id=target_agent_id).warning(
                 "AgentTeams direct mention response failed: {}", exc
             )
-            return {"status": "direct_failed"}
+            return {
+                "status": "direct_failed",
+                "reason": f"{type(exc).__name__}: {exc}"[:300],
+            }
+
+    async def _emit_direct_agent_fallback(
+        self,
+        case_id: str,
+        *,
+        target_agent_id: str,
+        reason: str,
+        causation_event_id: str | None,
+    ) -> None:
+        """A3 降级（Part 2.7）：direct 直答失败/超时的可见提示与审计。
+
+        先落一条 Manager 身份的可见降级消息（用户侧绝不"发消息后无任何回复"），
+        再落 ``room.agent_timeout`` 审计事件（target_agent_id + 失败原因 +
+        触发发言的 causation_event_id）；随后由调用方继续 Manager 主回路生成
+        正式回复。降级消息写失败只记 warning，不阻断 Manager 接管。
+        """
+        display_name = self._agent_display_name(target_agent_id)
+        notice = f"「{display_name}」暂时无法响应，已记录，由我转达或稍后重试。"
+        try:
+            await self._agentteams.post_case_evidence(
+                case_id,
+                work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                event_type="room.agent_message",
+                summary=notice[:200],
+                payload={
+                    "content": notice,
+                    "agent_id": self._manager_agent_id() or "bioops-manager",
+                    "role": "bioops-manager",
+                    "direct_fallback": True,
+                    "target_agent_id": target_agent_id,
+                    "causation_event_id": causation_event_id,
+                },
+            )
+            await self._agentteams.post_case_evidence(
+                case_id,
+                work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                event_type="room.agent_timeout",
+                summary=f"领域 Agent {target_agent_id} 直答失败/超时，Manager 已降级接管",
+                payload={
+                    "target_agent_id": target_agent_id,
+                    "reason": reason[:300],
+                    "causation_event_id": causation_event_id,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - 降级提示失败不得阻断 Manager 接管
+            logger.bind(case_id=case_id, target_agent_id=target_agent_id).warning(
+                "AgentTeams direct fallback notice failed: {}", exc
+            )
+
+    def _agent_display_name(self, agent_id: str) -> str:
+        """领域 Agent 的展示名（注册表 role_labels 快照），缺失时回退 agent_id。"""
+        for label in self._registry.role_labels().values():
+            if label.get("agent_id") == agent_id:
+                name = str(label.get("name") or "").strip()
+                if name:
+                    return name
+        return agent_id
 
     @staticmethod
     def _has_running_work_item(case: dict[str, Any], target_agent_id: str) -> bool:
@@ -504,12 +766,15 @@ class AgentTeamsRoomResponseService:
         events: list[dict[str, Any]],
         content: str,
         preferences: dict[str, Any] | None = None,
+        causation_event_id: str | None = None,
+        room: AgentTeamsRoomModel | None = None,
     ) -> str:
         """聊天式 Case 的执行意图三态处理；返回处理结果。
 
         返回值：``started``（execute 态，已触发 planning）/ ``clarified``
         （clarify 态，已落选项式追问卡片）/ ``degraded``（追问轮次耗尽，
-        降级为纯对话）/ ``none``（chat 态或触发失败，走正常 Manager 回复）。
+        降级为纯对话）/ ``proposal_pending``（未立项房间的 execute 态，
+        已落立项确认卡）/ ``none``（chat 态或触发失败，走正常 Manager 回复）。
 
         仅对无 flow_id、仍处于 received、且尚无 plan-01 的 Case 生效——flow 型
         Case 的人工审批链路绝不旁路。触发失败只记日志，不影响 Manager 回复。
@@ -526,13 +791,21 @@ class AgentTeamsRoomResponseService:
         ):
             return "none"
         refs = self._latest_message_context_refs(events, content)
+        await self._record_intake_if_present(case_id, content)
         pending_clarify_event = self._pending_execution_clarify_event(events, content)
         pending_clarify = pending_clarify_event is not None
+        workspace_candidates = (
+            await self._workspace_data_candidates(requester_ref, case)
+            if not refs and not pending_clarify
+            else []
+        )
         if pending_clarify_event is not None:
             await self._record_clarify_answer(
                 case_id,
                 content,
                 pending_clarify_event,
+                answer_to_event_id=str(pending_clarify_event.get("event_id") or "") or None,
+                context_refs=refs,
             )
         if pending_clarify and any(marker in content for marker in _CLARIFY_OPT_OUT_MARKERS):
             # 用户在澄清中明确放弃执行：按纯对话处理，不再追问。
@@ -563,7 +836,11 @@ class AgentTeamsRoomResponseService:
                 )
                 return "degraded"
             emitted = await self._emit_execution_clarify(
-                case_id, content, round_no=rounds + 1
+                case_id,
+                content,
+                round_no=rounds + 1,
+                causation_event_id=causation_event_id,
+                workspace_candidates=workspace_candidates,
             )
             return "clarified" if emitted else "none"
         if intent is ExecutionIntent.TOOL_EXECUTE:
@@ -573,6 +850,7 @@ class AgentTeamsRoomResponseService:
                 content=content,
                 refs=refs,
                 capabilities=requested_readonly_capabilities(content),
+                causation_event_id=causation_event_id,
             )
         # execute 态：路由决策卡（O1）：优先使用最初的执行请求做路由，
         # 避免用户回答“只有 FASTQ / 尚未上传”等澄清信息后丢失单细胞、RNA-seq 等领域上下文。
@@ -586,7 +864,23 @@ class AgentTeamsRoomResponseService:
         except Exception as exc:  # noqa: BLE001 - fallback is audited and safe
             logger.bind(case_id=case_id).warning("AgentTeams route resolution failed: {}", exc)
             route = None
-        await self._emit_route_decision(case_id, route_input, resolved_route=route)
+        if room is not None:
+            # 会话-工单解耦（Part 2）：未立项房间的 execute 意图不直接建 Case、
+            # 不启动 planning，先落"立项确认卡"（房间级事件流）；用户经
+            # confirm-proposal 端点确认后才创建 Case 并回写绑定。
+            emitted = await self._emit_case_proposal(
+                room=room,
+                content=route_input,
+                refs=refs,
+                resolved_route=route,
+                proposal_kind="new_case",
+                source_case_id=None,
+                causation_event_id=causation_event_id,
+            )
+            return "proposal_pending" if emitted else "none"
+        await self._emit_route_decision(
+            case_id, route_input, resolved_route=route, causation_event_id=causation_event_id
+        )
         # Bridge objective 上限 1000 字符：用户原话截断后附通用计划契约尾段；
         # 经澄清补全的执行沿用原始请求，并附用户补充的作用对象说明。
         if origin_content is not None:
@@ -623,9 +917,10 @@ class AgentTeamsRoomResponseService:
         content: str,
         refs: list[dict[str, Any]],
         capabilities: list[str],
+        causation_event_id: str | None = None,
     ) -> str:
         """执行单步只读房间请求，并把结果明确回传，不伪造 Case 完成。"""
-        agent_id = self._manager_agent_id()
+        agent_id = await self._manager_agent_with_audit(case_id)
         if agent_id is None:
             return "none"
         await self._agentteams.post_case_evidence(
@@ -639,6 +934,7 @@ class AgentTeamsRoomResponseService:
                 "requires_tool": True,
                 "requested_capabilities": capabilities,
                 "execution_path": "agentteams_tool_execution",
+                "causation_event_id": causation_event_id,
             },
         )
         question = self._build_question(
@@ -650,6 +946,7 @@ class AgentTeamsRoomResponseService:
                 "本轮只允许受控只读工具；工具失败必须如实说明，"
                 "不得把未执行的动作表述为已完成。"
             ),
+            manager_display_name=self._manager_display_name(),
         )
         await self._set_typing(case_id, typing=True)
         try:
@@ -669,6 +966,7 @@ class AgentTeamsRoomResponseService:
                     requested_tools=capabilities,
                     requester_ref=requester_ref,
                     execution_mode="readonly_consultation",
+                    causation_event_id=causation_event_id,
                     on_event=stream_projector,
                 )
             finally:
@@ -682,12 +980,13 @@ class AgentTeamsRoomResponseService:
                 event_type="room.agent_message",
                 summary=reply[:200],
                 payload={
-                    "content": reply[:4_000],
+                    "content": reply[:_ROOM_REPLY_CONTENT_MAX_CHARS],
                     "agent_id": agent_id,
                     "role": "bioops-manager",
                     "stream_id": stream_id,
                     "execution_path": "agentteams_tool_execution",
                     "route": "tool_execute",
+                    "causation_event_id": causation_event_id,
                     "requested_capabilities": capabilities,
                     "tool_result_refs": list(getattr(envelope, "evidence_refs", []) or []),
                     "risks": list(getattr(envelope, "risks", []) or []),
@@ -715,6 +1014,7 @@ class AgentTeamsRoomResponseService:
                     "role": "bioops-manager",
                     "execution_path": "agentteams_tool_execution",
                     "route": "tool_execute",
+                    "causation_event_id": causation_event_id,
                     "failed": True,
                 },
             )
@@ -723,7 +1023,13 @@ class AgentTeamsRoomResponseService:
             await self._set_typing(case_id, typing=False)
 
     async def _emit_execution_clarify(
-        self, case_id: str, content: str, *, round_no: int
+        self,
+        case_id: str,
+        content: str,
+        *,
+        round_no: int,
+        causation_event_id: str | None = None,
+        workspace_candidates: list[dict[str, str]] | None = None,
     ) -> bool:
         """clarify 态：落 ``room.ask_user`` 选项式追问卡片（AskUserCard 渲染）。
 
@@ -733,16 +1039,23 @@ class AgentTeamsRoomResponseService:
         """
         brief = content.strip().replace("\n", " ")[:80]
         if round_no <= 1:
-            question = (
-                f"收到你的执行请求「{brief}」，但还缺少明确的作用对象（输入文件/数据）。"
-                "请确认数据来源："
-            )
-            options = [
-                "上传文件后执行（推荐）",
-                "使用工作区已有数据（请回复文件名或路径）",
-                "从公共数据库检索（请回复 accession 或关键词）",
-                "先不执行，继续讨论方案",
-            ]
+            if workspace_candidates:
+                question = (
+                    f"收到你的执行请求「{brief}」。检测到当前工作区可能可用的数据文件，"
+                    "请选择要使用的文件，或上传/填写其它输入："
+                )
+                options = [item["location"] for item in workspace_candidates]
+            else:
+                question = (
+                    f"收到你的执行请求「{brief}」，但还缺少明确的作用对象（输入文件/数据）。"
+                    "请确认数据来源："
+                )
+                options = [
+                    "上传文件后执行（推荐）",
+                    "使用工作区已有数据（请回复文件名或路径）",
+                    "从公共数据库检索（请回复 accession 或关键词）",
+                    "先不执行，继续讨论方案",
+                ]
         else:
             question = (
                 "仍未拿到可执行的作用对象：请直接上传文件，或回复工作区文件名/路径"
@@ -763,6 +1076,8 @@ class AgentTeamsRoomResponseService:
                     "clarify_kind": CLARIFY_KIND_EXECUTION_OBJECT,
                     "round": round_no,
                     "origin_content": content.strip()[:600],
+                    "causation_event_id": causation_event_id,
+                    "workspace_candidates": workspace_candidates or [],
                 },
             )
         except Exception as exc:  # noqa: BLE001 - 澄清卡片失败回退到正常回复
@@ -773,6 +1088,80 @@ class AgentTeamsRoomResponseService:
         logger.bind(case_id=case_id).info(
             "AgentTeams execution intent unclear (no object), clarify round {} asked",
             round_no,
+        )
+        return True
+
+    async def _emit_case_proposal(
+        self,
+        *,
+        room: AgentTeamsRoomModel,
+        content: str,
+        refs: list[dict[str, Any]],
+        resolved_route: IntentRoute | None = None,
+        proposal_kind: str,
+        source_case_id: str | None,
+        causation_event_id: str | None = None,
+    ) -> bool:
+        """execute 态（未立项/终态后再立项）：落"立项确认卡"房间级事件。
+
+        事件类型 ``room.proposal_confirm``，payload 含分析目标/涉及部门/预计
+        流程摘要 + confirm/modify/cancel（followup 卡为 continue/new/cancel）
+        三选项与一次性 confirm_token；确认动作走 confirm-proposal 端点，
+        确认前的澄清对话全部留在房间维度。卡片发送失败返回 False，
+        调用方回退到正常 Manager 回复。
+        """
+        try:
+            decision = build_route_decision(
+                content,
+                flow_registry=self._flow_registry,
+                capability_registry=self._registry,
+                resolved_route=resolved_route,
+                fallback_lead_planner=DEFAULT_LEAD_PLANNER,
+            )
+        except Exception as exc:  # noqa: BLE001 - 路由摘要缺失不阻断立项卡
+            logger.bind(room_id=room.room_id).warning(
+                "AgentTeams proposal route decision build failed: {}", exc
+            )
+            decision = None
+        proposal = build_room_proposal(
+            proposal_kind=proposal_kind,
+            content=content,
+            route_decision=decision or {},
+            context_refs=refs,
+            source_case_id=source_case_id,
+        )
+        options = (
+            PROPOSAL_OPTIONS_NEW_CASE if proposal_kind == "new_case" else PROPOSAL_OPTIONS_FOLLOWUP
+        )
+        try:
+            await persist_room_proposal(self._db, room, proposal)
+            evidence = await self._agentteams.post_case_evidence(
+                room_namespace_case_id(room.room_id),
+                work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                event_type=ROOM_PROPOSAL_EVENT_TYPE,
+                summary=f"立项确认：{proposal['objective'][:80]}",
+                payload={
+                    "agent_id": self._manager_agent_id() or "bioops-manager",
+                    "role": "bioops-manager",
+                    "causation_event_id": causation_event_id,
+                    "confirm_token": proposal["token"],
+                    "options": options,
+                    **{key: value for key, value in proposal.items() if key != "token"},
+                },
+            )
+            # 回写卡片事件 id：确认/取消动作落事件时以 answer_to_event_id 指回
+            # 本卡片，与澄清答复的 answer_to_event_id 口径统一（Part 3.4）。
+            card_event_id = str(evidence.get("event_id") or "")
+            if card_event_id:
+                proposal["card_event_id"] = card_event_id
+                await persist_room_proposal(self._db, room, proposal)
+        except Exception as exc:  # noqa: BLE001 - 立项卡失败回退到正常回复
+            logger.bind(room_id=room.room_id).warning(
+                "AgentTeams case proposal event failed: {}", exc
+            )
+            return False
+        logger.bind(room_id=room.room_id, proposal_kind=proposal_kind).info(
+            "AgentTeams case proposal emitted, awaiting user confirmation"
         )
         return True
 
@@ -813,6 +1202,27 @@ class AgentTeamsRoomResponseService:
     def _execution_clarify_rounds(cls, events: list[dict[str, Any]]) -> int:
         """已发出的执行对象澄清轮次（按澄清卡片计数）。"""
         return sum(1 for event in events if cls._is_execution_clarify_event(event))
+
+    @classmethod
+    def _current_message_event_id(
+        cls, events: list[dict[str, Any]], content: str
+    ) -> str | None:
+        """当前发言对应的 room.user_message 事件 ID（按内容倒序匹配最近一条）。
+
+        与 _current_message_index 同一匹配规则；事件缺 event_id 时返回 None，
+        调用方据此跳过幂等去重（无法定位消息时不伪造去重键）。
+        """
+        target = content.strip()
+        for event in reversed(events):
+            if event.get("event_type") != "room.user_message":
+                continue
+            payload = cls._payload_dict(event)
+            inner_raw = payload.get("payload")
+            inner = dict(inner_raw) if isinstance(inner_raw, dict) else {}
+            event_content = str(inner.get("content") or payload.get("summary") or "").strip()
+            if event_content == target:
+                return str(event.get("event_id") or "") or None
+        return None
 
     @classmethod
     def _current_message_index(
@@ -861,6 +1271,9 @@ class AgentTeamsRoomResponseService:
         case_id: str,
         content: str,
         clarify_event: dict[str, Any],
+        *,
+        answer_to_event_id: str | None = None,
+        context_refs: list[dict[str, Any]] | None = None,
     ) -> None:
         """将澄清回复写成 Case 上下文中的已收集答案清单。"""
         payload = self._payload_dict(clarify_event)
@@ -874,6 +1287,14 @@ class AgentTeamsRoomResponseService:
             raw_options = questions[0].get("options")
             if isinstance(raw_options, list):
                 options = [str(option) for option in raw_options if str(option).strip()]
+        object_supplied = has_explicit_object(content, context_refs or [])
+        answer_status = (
+            "collected"
+            if object_supplied
+            else "waiting_upload"
+            if "上传" in content
+            else "missing_object"
+        )
         try:
             await self._agentteams.post_case_evidence(
                 case_id,
@@ -888,12 +1309,125 @@ class AgentTeamsRoomResponseService:
                     "answer": content.strip()[:4_000],
                     "origin_content": str(inner.get("origin_content") or "")[:600],
                     "source_event_type": "room.user_message",
+                    "answer_to_event_id": answer_to_event_id,
+                    "answer_status": answer_status,
                 },
             )
         except Exception as exc:  # noqa: BLE001 - answer audit must not block execution
             logger.bind(case_id=case_id).warning(
                 "AgentTeams execution clarify answer evidence failed: {}", exc
             )
+
+    async def _record_dedup_degraded(
+        self,
+        case_id: str,
+        *,
+        reason: str,
+        causation_event_id: str | None,
+    ) -> None:
+        """Record Redis dedup degradation without blocking the user response."""
+        try:
+            await self._agentteams.post_case_evidence(
+                case_id,
+                work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                event_type="room.dedup_degraded",
+                summary="房间响应幂等保护降级，已继续处理消息",
+                payload={
+                    "reason": reason,
+                    "causation_event_id": causation_event_id,
+                    "fallback": "continue_without_redis_dedup",
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - never mask the original Redis degradation
+            logger.bind(case_id=case_id).warning(
+                "AgentTeams dedup degradation audit failed: {}", exc
+            )
+
+    async def _record_intake_if_present(self, case_id: str, content: str) -> None:
+        """Persist a compact, reusable intake fact without replacing the original message evidence."""
+        intake = self._extract_intake(content)
+        if not intake:
+            return
+        try:
+            await self._agentteams.post_case_evidence(
+                case_id,
+                work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                event_type="room.intake_extracted",
+                summary="已提取研究设计：" + "；".join(
+                    f"{key}={value}" for key, value in intake.items()
+                )[:180],
+                payload={"intake": intake, "source_content": content.strip()[:600]},
+            )
+        except Exception as exc:  # noqa: BLE001 - intake evidence cannot block the response
+            logger.bind(case_id=case_id).warning("AgentTeams intake evidence failed: {}", exc)
+
+    async def _workspace_data_candidates(
+        self,
+        requester_ref: str,
+        case: dict[str, Any],
+    ) -> list[dict[str, str]]:
+        """Prefer Case-authorized refs, then supplement with recent active user data files."""
+        candidates: list[dict[str, str]] = []
+        seen_locations: set[str] = set()
+
+        for raw_ref in case.get("context_refs") or []:
+            if not isinstance(raw_ref, dict):
+                continue
+            kind = str(raw_ref.get("kind") or "").strip()
+            ref_id = str(raw_ref.get("id") or "").strip()
+            location = str(raw_ref.get("location") or raw_ref.get("path") or "").strip()
+            if kind not in {"file", "workspace"} or not ref_id or not location:
+                continue
+            if not any(location.lower().endswith(suffix) for suffix in _WORKSPACE_DATA_SUFFIXES):
+                continue
+            candidates.append({"kind": kind, "id": ref_id, "location": location})
+            seen_locations.add(location)
+            if len(candidates) >= 5:
+                return candidates
+
+        try:
+            user_id = UUID(requester_ref)
+        except (TypeError, ValueError):
+            return candidates
+        try:
+            files = await FileRepositoryImpl(self._db).list_by_user(user_id, status="active")
+        except Exception as exc:  # noqa: BLE001 - preflight must not delay or block clarification
+            logger.bind(requester_ref=requester_ref).warning(
+                "AgentTeams workspace candidate preflight failed: {}", exc
+            )
+            return candidates
+        for item in files:
+            location = str(item.path or item.original_name).strip()
+            if not location or not any(location.lower().endswith(suffix) for suffix in _WORKSPACE_DATA_SUFFIXES):
+                continue
+            if location in seen_locations:
+                continue
+            candidates.append({"kind": "file", "id": str(item.id), "location": location})
+            seen_locations.add(location)
+            if len(candidates) >= 5:
+                break
+        return candidates
+
+    @staticmethod
+    def _extract_intake(content: str) -> dict[str, Any]:
+        """Conservatively extract only explicit study-design facts from the user's wording."""
+        text = content.strip()
+        if not text:
+            return {}
+        intake: dict[str, Any] = {}
+        if "小鼠" in text:
+            intake["species"] = "mouse"
+        if "肺" in text:
+            intake["tissue"] = "lung"
+        if "单细胞" in text:
+            intake["modality"] = "single_cell_rna"
+        if match := _INTAKE_SAMPLE_COUNT_RE.search(text):
+            intake["sample_count"] = int(match.group(1))
+        if match := _INTAKE_GROUP_RE.search(text):
+            intake["group_sizes"] = [int(match.group(1)), int(match.group(2))]
+        if match := _INTAKE_COMPARISON_RE.search(text):
+            intake["comparison"] = f"{match.group(1).strip()} vs {match.group(2).strip()}"
+        return intake
 
     @classmethod
     def _pending_clarify_origin(
@@ -913,7 +1447,12 @@ class AgentTeamsRoomResponseService:
         return None
 
     async def _emit_route_decision(
-        self, case_id: str, content: str, *, resolved_route: IntentRoute | None = None
+        self,
+        case_id: str,
+        content: str,
+        *,
+        resolved_route: IntentRoute | None = None,
+        causation_event_id: str | None = None,
     ) -> None:
         """落 ``room.route_decision`` 事件并写结构化日志；任何失败仅记 warning。
 
@@ -941,6 +1480,7 @@ class AgentTeamsRoomResponseService:
                 summary=summarize_route_decision(decision)[:200],
                 payload={
                     **decision,
+                    "causation_event_id": causation_event_id,
                     "audit": {
                         "input_summary": content[:500],
                         "matched_hints": decision.get("matched_hints", []),
@@ -991,18 +1531,84 @@ class AgentTeamsRoomResponseService:
         except Exception as exc:  # noqa: BLE001 - typing 指示失败不得影响响应主流程
             logger.bind(case_id=case_id).warning("AgentTeams room typing event failed: {}", exc)
 
-    def _manager_agent_id(self) -> str | None:
-        """Manager agent 选法：优先 agent-general（平台指定的通用 planner），
-        否则回退到任意 planner_eligible 且可会诊的 agent。"""
-        consultation_agents = self._registry.consultation_agents()
-        if _PREFERRED_MANAGER_AGENT_ID in consultation_agents:
-            return _PREFERRED_MANAGER_AGENT_ID
+    def _resolve_manager_agent(self) -> tuple[str | None, dict[str, str] | None]:
+        """选定房间内 Manager 的 LLM agent，返回 ``(agent_id, fallback_info)``。
+
+        优先取配置项 ``agentteams_manager_agent_id``（默认 agentteams-manager，
+        独立部门经理人格）；配置值非法时 Settings 构造直接报错，不做静默回退。
+        首选不可用（未加载/未启用/不在能力目录）时按 agent-general → 任意
+        planner_eligible 可内部会诊 agent 的顺序降级，并在 fallback_info 中
+        带回原因与目标 agent_id，由调用方落 ``room.manager_persona_fallback``
+        审计事件——降级只影响能力与人格底座，Manager 话术与展示名不变。
+        """
+        preferred = get_settings().agentteams_manager_agent_id
+        candidates = self._registry.internal_consultation_agents()
+        if preferred in candidates:
+            return preferred, None
+        reason = f"配置的 Manager agent {preferred} 不可用（未加载、未启用或缺少 planner 能力）"
+        if _FALLBACK_MANAGER_AGENT_ID in candidates:
+            return _FALLBACK_MANAGER_AGENT_ID, {
+                "reason": reason,
+                "preferred_agent_id": preferred,
+                "target_agent_id": _FALLBACK_MANAGER_AGENT_ID,
+            }
         capabilities = self._registry.agent_capabilities()
         for role in sorted(capabilities):
             capability = capabilities[role]
-            if capability["planner_eligible"] and capability["agent_id"] in consultation_agents:
-                return str(capability["agent_id"])
-        return None
+            if capability["planner_eligible"] and capability["agent_id"] in candidates:
+                target = str(capability["agent_id"])
+                return target, {
+                    "reason": f"{reason}，且 {_FALLBACK_MANAGER_AGENT_ID} 也不可用",
+                    "preferred_agent_id": preferred,
+                    "target_agent_id": target,
+                }
+        return None, None
+
+    def _manager_agent_id(self) -> str | None:
+        """仅取 Manager agent id（不写审计）；供不落 LLM 的载荷填充使用。"""
+        return self._resolve_manager_agent()[0]
+
+    async def _manager_agent_with_audit(self, case_id: str) -> str | None:
+        """选定 Manager agent；发生人格降级时写 ``room.manager_persona_fallback`` 审计事件。"""
+        agent_id, fallback = self._resolve_manager_agent()
+        if agent_id is None or fallback is None:
+            return agent_id
+        try:
+            await self._agentteams.post_case_evidence(
+                case_id,
+                work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                event_type="room.manager_persona_fallback",
+                summary=(
+                    f"Manager 人格降级：由 {fallback['target_agent_id']} 代答，"
+                    "话术与展示名保持部门经理身份不变"
+                ),
+                payload={
+                    "reason": fallback["reason"],
+                    "preferred_agent_id": fallback["preferred_agent_id"],
+                    "target_agent_id": fallback["target_agent_id"],
+                    "case_id": case_id,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - 审计写入失败不得阻断房间回复
+            logger.bind(case_id=case_id).warning(
+                "AgentTeams manager persona fallback audit failed: {}", exc
+            )
+        logger.bind(case_id=case_id).warning(
+            "AgentTeams manager persona fallback: {} -> {} ({})",
+            fallback["preferred_agent_id"],
+            fallback["target_agent_id"],
+            fallback["reason"],
+        )
+        return agent_id
+
+    def _manager_display_name(self) -> str:
+        """Manager 称呼的唯一权威来源：manager agent YAML 的 name（bioops-manager 角色标签）。
+
+        YAML 未加载时回退 ``DEFAULT_MANAGER_DISPLAY_NAME``，保证降级期间展示名不变。
+        """
+        label = self._registry.role_labels().get(MANAGER_ROOM_ROLE) or {}
+        name = str(label.get("name") or "").strip()
+        return name or DEFAULT_MANAGER_DISPLAY_NAME
 
     async def _manager_preferences(self, requester_ref: str) -> dict[str, Any]:
         try:
@@ -1057,6 +1663,7 @@ class AgentTeamsRoomResponseService:
         fallback_content: str,
         preferences: dict[str, Any] | None = None,
         system_note: str | None = None,
+        manager_display_name: str | None = None,
     ) -> str:
         preferences = preferences or {}
         latest_user_message = fallback_content.strip()
@@ -1066,15 +1673,37 @@ class AgentTeamsRoomResponseService:
             if location:
                 matching_context_refs.append(location[:300])
         recent_lines: list[str] = []
+        latest_intake: dict[str, Any] = {}
         for event in events[-_CONTEXT_EVENT_SUMMARY_LINES:]:
             payload = cls._payload_dict(event)
             summary = str(payload.get("summary") or "").strip()
             event_type = str(event.get("event_type") or "")
             line = f"- {event_type}: {summary}" if summary else f"- {event_type}"
             recent_lines.append(line[:200])
+        for event in reversed(events):
+            if event.get("event_type") != "room.intake_extracted":
+                continue
+            payload = cls._payload_dict(event)
+            inner_raw = payload.get("payload")
+            inner = dict(inner_raw) if isinstance(inner_raw, dict) else {}
+            candidate = inner.get("intake")
+            if isinstance(candidate, dict):
+                latest_intake = candidate
+            break
         context_block = "\n".join(recent_lines) or "- （暂无历史动态）"
         refs_block = "、".join(matching_context_refs) or "（无显式文件引用）"
-        manager_name = str(preferences.get("managerName") or "Manager")[:24]
+        intake_block = (
+            "；".join(f"{key}={value}" for key, value in latest_intake.items())
+            if latest_intake
+            else "（尚未提取到结构化研究设计）"
+        )
+        # 称呼注入优先级：用户改名偏好 > manager agent YAML 的 display_name
+        # （由调用方从注册表读取）> 平台兜底名；不再单独硬编码。
+        manager_name = str(
+            preferences.get("managerName")
+            or manager_display_name
+            or DEFAULT_MANAGER_DISPLAY_NAME
+        )[:24]
         style = {
             "friendly": "亲切友好：语气自然、有温度，但不使用夸张措辞",
             "concise": "极简高效：先给结论和下一步，减少背景铺陈",
@@ -1107,6 +1736,7 @@ class AgentTeamsRoomResponseService:
             f"沟通风格为{style}；执行偏好为{autonomy}。\n"
             f"Case 目标：{str(case.get('intent') or '')[:200]}\n"
             f"Case 当前状态：{str(case.get('status') or '')}\n"
+            f"已提取研究设计（仅引用其中已有事实，不要重复追问）：{intake_block}\n"
             f"最近房间动态：\n{context_block}\n"
             f"本条发言引用文件：{refs_block}\n"
             f"请求人最新发言：{latest_user_message}"

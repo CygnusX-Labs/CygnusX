@@ -72,6 +72,7 @@ async def _test_run_consultation_uses_safe_single_task_and_parses_envelope() -> 
     call = parallel_service.run.await_args.kwargs
     assert call["safe_only"] is True
     assert call["runtime_authorized"] is True
+    assert call["allow_non_spawnable_target"] is True
     assert len(call["tasks"]) == 1
     assert call["tasks"][0]["workspace_access"] is False
 
@@ -79,6 +80,13 @@ async def _test_run_consultation_uses_safe_single_task_and_parses_envelope() -> 
 def test_parse_envelope_falls_back_to_raw_answer() -> None:
     result = AgentConsultationService.parse_envelope("普通文本结论")
     assert result.conclusion == "普通文本结论"
+
+
+def test_extract_answer_preserves_parallel_service_error() -> None:
+    result = AgentConsultationService._extract_answer(
+        {"llm_payload": {"success": False, "error": "目标 Agent 未标记为可派生子 Agent"}}
+    )
+    assert result == "会诊执行失败：目标 Agent 未标记为可派生子 Agent"
 
 
 def test_parse_envelope_recovers_trailing_commas_from_manager_response() -> None:
@@ -491,6 +499,85 @@ async def test_evidence_projection_emits_agent_events_with_truncated_args() -> N
     assert finished_payload["status"] == "ok"
     assert finished_payload["tool_call_count"] == 1
     assert finished_payload["duration_ms"] == 2500
+
+
+@pytest.mark.asyncio
+async def test_parse_failure_is_projected_to_case_timeline() -> None:
+    post_evidence = AsyncMock(return_value={"event_id": "parse-1"})
+    agent_service = SimpleNamespace(
+        assemble_context=AsyncMock(return_value=SimpleNamespace(model_config=object()))
+    )
+    parallel_service = SimpleNamespace(
+        run=AsyncMock(
+            return_value={
+                "llm_payload": {
+                    "results": [{"answer": "这不是 JSON 信封"}],
+                }
+            }
+        )
+    )
+    service = AgentConsultationService(
+        SimpleNamespace(),
+        agent_service=agent_service,
+        parallel_service=parallel_service,
+        agentteams_service=SimpleNamespace(available=True, post_case_evidence=post_evidence),
+    )
+
+    result = await service.run_consultation(
+        case_id="case-parse",
+        work_item_id="plan-01",
+        agent_id="agent-code",
+        question="生成计划",
+        capability="planning_advice",
+        evidence_refs=[],
+        requested_tools=[],
+        requester_ref="user-1",
+    )
+
+    assert result.risks == ["信封解析降级：专家答复未满足结构化 JSON 契约。"]
+    post_evidence.assert_awaited_once()
+    assert post_evidence.await_args.kwargs["event_type"] == "consultation.parse_failed"
+    assert post_evidence.await_args.kwargs["payload"]["parse_success"] is False
+
+
+@pytest.mark.asyncio
+async def test_parse_failure_evidence_carries_causation_event_id() -> None:
+    """手册阶段 2 修复 3：解析失败异常事件携带触发它的 room.user_message event_id。"""
+    post_evidence = AsyncMock(return_value={"event_id": "parse-1"})
+    agent_service = SimpleNamespace(
+        assemble_context=AsyncMock(return_value=SimpleNamespace(model_config=object()))
+    )
+    parallel_service = SimpleNamespace(
+        run=AsyncMock(
+            return_value={
+                "llm_payload": {
+                    "results": [{"answer": "这不是 JSON 信封"}],
+                }
+            }
+        )
+    )
+    service = AgentConsultationService(
+        SimpleNamespace(),
+        agent_service=agent_service,
+        parallel_service=parallel_service,
+        agentteams_service=SimpleNamespace(available=True, post_case_evidence=post_evidence),
+    )
+
+    await service.run_consultation(
+        case_id="case-parse",
+        work_item_id="plan-01",
+        agent_id="agent-code",
+        question="生成计划",
+        capability="planning_advice",
+        evidence_refs=[],
+        requested_tools=[],
+        requester_ref="user-1",
+        causation_event_id="evt-user-1",
+    )
+
+    post_evidence.assert_awaited_once()
+    assert post_evidence.await_args.kwargs["event_type"] == "consultation.parse_failed"
+    assert post_evidence.await_args.kwargs["payload"]["causation_event_id"] == "evt-user-1"
 
 
 @pytest.mark.asyncio

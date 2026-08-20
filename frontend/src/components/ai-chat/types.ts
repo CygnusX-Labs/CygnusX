@@ -104,7 +104,7 @@ export interface OverdriveProgress {
     durationMs?: number
     error?: string
   }>
-  tasks?: Array<{ taskId: string; agentId: string; status: string; errorSummary?: string }>
+  tasks?: Array<{ taskId: string; agentId: string; status: string; errorSummary?: string; statusLine?: string }>
   artifacts?: Array<{
     path: string
     kind?: string
@@ -136,6 +136,10 @@ export interface ChatMessage {
   backendMessageId?: string
   /** 用户操作的受控元数据；仅在当前请求中透传到后端。 */
   metadata?: Record<string, unknown>
+  /** 后端消息可见性协议字段；内部消息不得进入用户消息数组。 */
+  visible?: boolean
+  type?: string
+  agentName?: string
   role: 'user' | 'assistant' | 'system'
   content: string
   thought?: string
@@ -306,6 +310,21 @@ export interface AskRequest {
   /** 用户按问题顺序给出的答案；空串表示该问题被跳过 */
   answers?: string[]
   answered?: boolean
+  objectRequired?: boolean
+  submitting?: boolean
+  submitted?: boolean
+  answerStatus?: 'collected' | 'waiting_upload' | 'missing_object'
+  workspaceCandidates?: Array<{
+    kind: 'workspace' | 'file'
+    id: string
+    location: string
+  }>
+}
+
+export interface AskUserObjectReference {
+  path?: string
+  file?: File
+  contextRef?: { kind: 'workspace' | 'file'; id: string; location?: string }
 }
 
 // ===== 文件附件 =====

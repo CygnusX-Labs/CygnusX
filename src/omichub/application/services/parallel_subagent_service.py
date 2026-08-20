@@ -89,6 +89,9 @@ _OVERDRIVE_WORKSPACE_TOOL_NAMES = frozenset(
 # 20K tokens 的英文/代码输出可能超过 40K 字符，保留足够空间让 Agent 配置生效。
 _ANSWER_CAP_CHARS = 100_000
 _MAX_LENGTH_CONTINUATIONS = 2
+# 模型偶发返回空内容（finish_reason=stop 且无任何正文）时的重试上限，
+# 避免把空答复当作正常结果向上层返回。
+_MAX_EMPTY_RESPONSE_RETRIES = 2
 # 单条工具结果回灌子上下文的字符上限（C5）
 _TOOL_RESULT_CAP_CHARS = 8000
 # 可视化任务可能同时携带研究计划和代码阶段两个上游产物。
@@ -196,6 +199,7 @@ class ParallelSubAgentService:
         on_event: Callable[[dict[str, Any]], Awaitable[None] | None] | None = None,
         safe_only: bool = False,
         runtime_authorized: bool = False,
+        allow_non_spawnable_target: bool = False,
         workdir_root: Path | None = None,
         approved_tool_calls: list[dict[str, Any]] | None = None,
         control_check: Callable[[], Awaitable[str | None] | str | None] | None = None,
@@ -231,7 +235,9 @@ class ParallelSubAgentService:
                 return self._error(
                     f"子任务 #{index} 的目标 Agent {item['agent_id']} 不存在或未绑定可用模型"
                 )
-            if not bool((ctx.features or {}).get("subagents_spawnable")):
+            if not bool((ctx.features or {}).get("subagents_spawnable")) and not (
+                allow_non_spawnable_target and safe_only and len(normalized) == 1
+            ):
                 return self._error(
                     f"Agent {item['agent_id']} 未标记为可派生子 Agent"
                     "（需在 Agent YAML 的 features 增加 subagents_spawnable: true）"
@@ -574,6 +580,10 @@ class ParallelSubAgentService:
             "elapsed_s": round(time.monotonic() - started, 1),
             "usage": outcome.get("usage"),
         }
+        if outcome.get("partial"):
+            result["partial"] = True
+        if outcome.get("guard_triggered"):
+            result["guard_triggered"] = True
         await self._emit_event(on_event, {"type": "worker_finished", **result})
         return result
 
@@ -611,6 +621,7 @@ class ParallelSubAgentService:
         tool_call_signatures: list[str] = []
         result_signatures: list[str] = []
         length_continuations = 0
+        empty_response_retries = 0
         usage: dict[str, Any] | None = None
         for _round in range(max(1, max_rounds)):
             round_number = _round + 1
@@ -718,6 +729,31 @@ class ParallelSubAgentService:
             if last_text and (not answer_parts or answer_parts[-1] != last_text):
                 answer_parts.append(last_text)
             if not tool_calls:
+                if (
+                    not last_text
+                    and not answer_parts
+                    and finish_reason not in {"length", "max_tokens"}
+                ):
+                    # 模型偶发空响应（仅 reasoning、无正文）：追问重试，兜底报显式失败，
+                    # 不让空答复以"成功"姿态进入会诊信封解析。
+                    if empty_response_retries < _MAX_EMPTY_RESPONSE_RETRIES:
+                        empty_response_retries += 1
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": (
+                                    "你的上一段回复没有包含任何正文内容。"
+                                    "请直接输出对任务的文字答复，不要留空。"
+                                ),
+                            }
+                        )
+                        continue
+                    return {
+                        "status": "failed",
+                        "answer": None,
+                        "error": "模型连续返回空内容，请稍后重试",
+                        "usage": usage,
+                    }
                 if (
                     finish_reason in {"length", "max_tokens"}
                     and length_continuations < _MAX_LENGTH_CONTINUATIONS
@@ -918,10 +954,10 @@ class ParallelSubAgentService:
                         | {"type": "agent_loop_guard_triggered", "index": index},
                     )
                     return {
-                        # 相同结果已经足以支撑当前阶段时，将其视为可交付的阶段性完成。
-                        # 仍保留 loop_guard 事件用于审计，但不要让上层把 Worker 当成失败，
-                        # 否则 Manager 无法继续汇总已有证据，Case 会停在保护事件之后。
+                        # 保护触发只能表示阶段性结果，不能伪装成可交付完成。
                         "status": "ok",
+                        "partial": True,
+                        "guard_triggered": True,
                         "answer": (
                             "\n\n".join(answer_parts).strip()[:_ANSWER_CAP_CHARS]
                             or f"已获得 {tool_name} 的重复结果，结果未继续变化；已停止重复调用，建议基于已有结果继续分析。"
@@ -1223,6 +1259,10 @@ class ParallelSubAgentService:
             "packet": item.get("packet") or {},
             "verified_evidence_refs": item.get("verified_evidence_refs") or [],
         }
+        if item.get("partial"):
+            view["partial"] = True
+        if item.get("guard_triggered"):
+            view["guard_triggered"] = True
         if item.get("error"):
             view["error"] = item["error"]
         if item.get("workdir"):

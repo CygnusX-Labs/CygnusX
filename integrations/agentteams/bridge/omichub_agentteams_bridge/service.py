@@ -66,6 +66,59 @@ from .security import ApprovalSigner
 # O5 迁移期:标准工作项 target 未在 flow YAML/_shared 声明时走硬编码缺省,每类只警告一次。
 _standard_target_fallback_warned: set[str] = set()
 
+# B2 审计伪造面修复（手册阶段 0 修复 2）：/v1/cases/{id}/evidence 写入身份分级。
+# 平台身份（主后端固定以 bioops-manager 写房间/Case 事件）可写业务事件；
+# 其余身份一律按 Worker 处理：target 绑定 + 有效租约 + 因果锚点 + 命名空间限制。
+_PLATFORM_EVIDENCE_IDENTITIES = frozenset({"bioops-manager", "workflow-operator"})
+# Worker 身份禁止写入的平台保留命名空间（伪造审批/立项卡/任务提交事件的防线）。
+_PLATFORM_RESERVED_EVENT_PREFIXES = (
+    "approval.",
+    "case.",
+    "room.",
+    "planning.",
+    "general_plan.",
+    "omic_task.",
+    "work_item.",
+    "matrix.",
+    "consultation.",
+)
+
+
+def _is_platform_reserved_event_type(event_type: str) -> bool:
+    return event_type.startswith(_PLATFORM_RESERVED_EVENT_PREFIXES)
+
+
+# B1 confirm_token 脱敏（复审清单 B1 闭环）：room.proposal_confirm 立项确认卡
+# 在事件流出口（分页/SSE）一律置 confirm_token=None，不再区分 pending/已消费；
+# 存活 token 只存主后端房间行 DB 字段，confirm-proposal 端点凭 owner + pending
+# 状态原子消费（token 退化为可选的二次校验 nonce，不经事件流分发）。
+ROOM_PROPOSAL_CONFIRM_EVENT_TYPE = "room.proposal_confirm"
+
+
+def _with_confirm_token_redacted(event: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of the event with confirm_token nulled at both payload layers."""
+    redacted = dict(event)
+    payload = dict(event.get("payload")) if isinstance(event.get("payload"), dict) else {}
+    if isinstance(payload.get("payload"), dict):
+        inner = dict(payload["payload"])
+        if "confirm_token" in inner:
+            inner["confirm_token"] = None
+        payload["payload"] = inner
+    if "confirm_token" in payload:
+        payload["confirm_token"] = None
+    redacted["payload"] = payload
+    return redacted
+
+
+def redact_proposal_confirm_tokens(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Null confirm_token on every room.proposal_confirm card at read exits."""
+    return [
+        _with_confirm_token_redacted(event)
+        if event.get("event_type") == ROOM_PROPOSAL_CONFIRM_EVENT_TYPE
+        else event
+        for event in events
+    ]
+
 
 class BridgeService:
     _RETRY_BACKOFF_SECONDS = (30, 120, 480)
@@ -109,6 +162,10 @@ class BridgeService:
         self._cases = cases
         self._gateway = gateway
         self._approval_signer = ApprovalSigner(settings.approval_signing_secret)
+        # 每次 inbox 轮询只更新内存中的最新心跳时间，不再写审计事件：
+        # 心跳量级（每 Worker 数秒一条）曾把审计 JSONL 灌到 690 万条/1.4GB，
+        # 导致删除 Case 全量重写审计文件耗时数十秒、启动加载数分钟。
+        self._worker_last_poll: dict[str, datetime] = {}
 
     async def refresh_capabilities(self) -> dict[str, Any]:
         snapshot = await self._client.get_agentteams_capabilities()
@@ -231,6 +288,7 @@ class BridgeService:
                 "declared_inputs": [ref.model_dump() for ref in work_item.declared_inputs],
                 "declared_outputs": [ref.model_dump() for ref in work_item.declared_outputs],
                 "serialized_after": conflicting_items,
+                "status_line": self._work_item_status_line(work_item, "queued"),
             },
         )
         return work_item
@@ -323,6 +381,9 @@ class BridgeService:
             "deleted_events": 0,
         }
         for case in await self._cases.list():
+            if case.record_kind != "case":
+                # 房间命名空间记录承载房间级事件流，生命周期随房间，不参与 Case GC。
+                continue
             if case.status not in self._GC_CASE_STATUSES:
                 continue
             updated_at = case.updated_at
@@ -731,6 +792,12 @@ class BridgeService:
                 "findings": [finding.model_dump() for finding in request.findings],
                 "output_refs": [ref.model_dump() for ref in request.output_refs],
                 "trace_id": updated.trace_id,
+                "status_line": self._work_item_status_line(
+                    work_item,
+                    "succeeded" if request.status == "completed" else "failed",
+                )
+                if request.status in {"completed", "failed"}
+                else None,
             },
         )
         if request.status == "completed":
@@ -841,6 +908,11 @@ class BridgeService:
         # A failed work item with retry budget left will be requeued, so it is not settled.
         return work_item.status == "failed" and work_item.attempt >= work_item.max_attempts
 
+    def _work_item_status_line(self, work_item: WorkItemRecord, phase: str) -> str | None:
+        """按工作项 target 的人格配置取状态播报文案;未配置返回 None。"""
+        agent_id = self._settings.role_agent_mapping().get(work_item.target, work_item.target)
+        return self._settings.persona_status_line_for(agent_id, phase)
+
     async def claim_work_item(self, case_id: str, work_item_id: str, actor: str) -> WorkItemRecord:
         case = await self._cases.get(case_id)
         requested = await self._cases.get_work_item(case_id, work_item_id)
@@ -863,6 +935,7 @@ class BridgeService:
                 "lease_seconds": work_item.deadline_seconds,
                 "attempt": work_item.attempt,
                 "trace_id": work_item.trace_id,
+                "status_line": self._work_item_status_line(work_item, "running"),
             },
         )
         return work_item
@@ -945,7 +1018,11 @@ class BridgeService:
                 case_id=case_id,
                 actor=actor,
                 event_type="work_item.running",
-                payload={"work_item_id": work_item_id, "trace_id": work_item.trace_id},
+                payload={
+                    "work_item_id": work_item_id,
+                    "trace_id": work_item.trace_id,
+                    "status_line": self._work_item_status_line(work_item, "running"),
+                },
             )
         if work_item.status != "running":
             raise HTTPException(
@@ -1172,12 +1249,22 @@ class BridgeService:
             await asyncio.sleep(interval)
             try:
                 await self._cases.heartbeat_work_item(case_id, work_item_id, actor)
-            except Exception:
+            except Exception as exc:
                 logger.warning(
                     "lease renewal stopped for work item %s of case %s",
                     work_item_id,
                     case_id,
                     exc_info=True,
+                )
+                await self._audit.record(
+                    case_id=case_id,
+                    actor=actor,
+                    event_type="worker.lease_renewal_failed",
+                    payload={
+                        "work_item_id": work_item_id,
+                        "error": str(exc)[:500],
+                        "deadline_seconds": deadline_seconds,
+                    },
                 )
                 return
 
@@ -1194,6 +1281,7 @@ class BridgeService:
                     "attempt": work_item.attempt,
                     "max_attempts": work_item.max_attempts,
                     "options": ["retry", "skip", "terminate"],
+                    "status_line": self._work_item_status_line(work_item, "failed"),
                     "summary": (
                         f"工作项 {work_item.work_item_id} 失败且自动重试次数"
                         f"（{work_item.max_attempts} 次）已耗尽；依赖它的下游工作项将被跳过，"
@@ -1312,6 +1400,8 @@ class BridgeService:
         return [case.project_ref] if case.project_ref is not None else []
 
     async def create_case(self, request: CaseCreateRequest, actor: str) -> CaseRecord:
+        if request.record_kind == "room_namespace":
+            return await self._create_room_namespace(request, actor)
         queue_reason = await self._case_queue_reason(request)
         now = datetime.now(UTC)
         case = await self._cases.create(
@@ -1328,6 +1418,8 @@ class BridgeService:
                 execution_mode=request.execution_mode,
                 flow_id=request.flow_id,
                 lead_planner=request.lead_planner,
+                record_kind="case",
+                source_case_id=request.source_case_id,
                 status="queued" if queue_reason else "received",
                 created_at=now,
                 updated_at=now,
@@ -1343,6 +1435,7 @@ class BridgeService:
                 "intent": request.intent,
                 "execution_mode": request.execution_mode,
                 "origin_consultation_id": request.origin_consultation_id,
+                "source_case_id": request.source_case_id,
                 "queue_reason": queue_reason,
             },
         )
@@ -1384,6 +1477,36 @@ class BridgeService:
             case = await self._cases.get(case.case_id)
         return case
 
+    async def _create_room_namespace(self, request: CaseCreateRequest, actor: str) -> CaseRecord:
+        """Create the internal room-namespace record carrying a room-level event stream.
+
+        会话-工单解耦（Part 2 方案 b）：房间在立项前没有正式 Case，其事件流挂在
+        ``room-<room_id>`` 命名空间记录下。命名空间记录不进入用户 Case 列表、
+        配额统计与 GC，也不触发排队/规划工作项；事件读写、MinIO 恢复、SSE 与
+        房间镜像完全复用现有 Case 链路。
+        """
+        now = datetime.now(UTC)
+        case = await self._cases.create(
+            CaseRecord(
+                case_id=request.case_id,
+                intent=request.intent,
+                requester_ref=request.requester_ref,
+                team_id=request.team_id,
+                execution_mode=request.execution_mode,
+                record_kind="room_namespace",
+                status="received",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        await self._audit.record(
+            case_id=case.case_id,
+            actor=actor,
+            event_type="room.namespace_created",
+            payload={"intent": request.intent, "record_kind": "room_namespace"},
+        )
+        return case
+
     async def _case_queue_reason(
         self,
         case: CaseCreateRequest | CaseRecord,
@@ -1393,7 +1516,9 @@ class BridgeService:
         existing = [
             item
             for item in await self._cases.list()
-            if item.case_id != exclude_case_id and item.status in self._ACTIVE_CASE_STATUSES
+            if item.record_kind == "case"
+            and item.case_id != exclude_case_id
+            and item.status in self._ACTIVE_CASE_STATUSES
         ]
         requester_active = sum(item.requester_ref == case.requester_ref for item in existing)
         if requester_active >= self._settings.max_active_cases_per_requester:
@@ -1498,6 +1623,8 @@ class BridgeService:
     def _parse_missing_fields_from_validation_error(exc: Exception) -> list[str]:
         """从校验错误信息中解析缺失字段，用于修正事件 payload。"""
         message = str(exc)
+        if "omitted proposed_submission" in message:
+            return ["proposed_submission"]
         if "lacks objective or skill_name" in message:
             return ["objective", "skill_name"]
         if "requires parameters.work_items" in message:
@@ -1542,7 +1669,9 @@ class BridgeService:
             feedback = (
                 f"【计划校验反馈，第 {attempt}/{max_attempts} 次重试】"
                 f"生成的计划未通过 schema 校验：{error_message}。"
-                f"请修正以下字段后重新生成完整计划：{missing_fields or '（见错误描述）'}。"
+                f"缺失或需修正字段：{missing_fields or '（见错误描述）'}。"
+                "输出必须包含完整 proposed_submission；流程型计划至少包含 "
+                "flow_id、name、parameters、sample_sheet。"
             )
             # objective 上限 1000 字符，保留原始意图摘要。
             if len(feedback) > 950:
@@ -1557,6 +1686,11 @@ class BridgeService:
                 payload={
                     "reason": "根据校验错误反馈重新生成计划",
                     "attempt": attempt,
+                    "missing_fields": missing_fields,
+                    "schema_summary": {
+                        "required": ["proposed_submission"],
+                        "flow_plan": ["flow_id", "name", "parameters", "sample_sheet"],
+                    },
                 },
             )
             return
@@ -1712,24 +1846,11 @@ class BridgeService:
 
     async def list_worker_inbox(self, actor: str) -> WorkerInboxResponse:
         if actor in self._external_workers():
-            await self._audit.record(
-                case_id="__bridge_health__",
-                actor=actor,
-                event_type="worker.inbox_polled",
-                payload={},
-            )
+            self._worker_last_poll[actor] = datetime.now(UTC)
         assignments, sweep = await self._cases.list_assigned_work_items(
             actor, {"pending", "claimed", "running", "in_progress"}
         )
         await self._record_sweep(sweep, actor="bioops-manager")
-        if actor in self._external_workers():
-            for case, work_item in assignments:
-                await self._audit.record(
-                    case_id=case.case_id,
-                    actor=actor,
-                    event_type="worker.inbox_polled",
-                    payload={"work_item_id": work_item.work_item_id},
-                )
         items = [
             WorkerInboxItem(
                 case_id=case.case_id,
@@ -1852,6 +1973,8 @@ class BridgeService:
         limit: int = 20,
     ) -> CaseListResponse:
         cases = await self._cases.list(requester_ref)
+        # 房间命名空间记录是内部事件流载体，不作为用户 Case 暴露。
+        cases = [case for case in cases if case.record_kind == "case"]
         if case_status is not None:
             cases = [case for case in cases if case.status == case_status]
         if project_id is not None:
@@ -1892,7 +2015,8 @@ class BridgeService:
     ) -> CaseEventResponse:
         case = await self._cases.get(case_id)
         self._require_case_access(case, actor)
-        events = await self._audit.list_events(case_id)
+        # B1：立项确认卡 confirm_token 在事件流出口一律脱敏（含 pending 卡）。
+        events = redact_proposal_confirm_tokens(await self._audit.list_events(case_id))
         if cursor is not None:
             try:
                 start = (
@@ -1934,10 +2058,9 @@ class BridgeService:
         now = datetime.now(UTC)
         configured_identities = self._settings.identity_secrets()
         external_workers = self._external_workers()
-        heartbeats = await self._audit.worker_heartbeats(external_workers)
         workers = []
         for worker in sorted(external_workers):
-            last_seen = heartbeats[worker]
+            last_seen = self._worker_last_poll.get(worker)
             age_seconds = int((now - last_seen).total_seconds()) if last_seen else None
             configured = worker in configured_identities
             active = bool(
@@ -2130,6 +2253,7 @@ class BridgeService:
             work_item_id=request.work_item_id,
             flow_id=request.flow_id,
             task_id=request.task_id,
+            plan_hash=case.plan_hash,
             ttl_seconds=request.ttl_seconds,
         )
         await self._audit.record(
@@ -2140,6 +2264,7 @@ class BridgeService:
                 "approval_id": approval_id,
                 "action": request.action,
                 "work_item_id": request.work_item_id,
+                "plan_hash": case.plan_hash,
                 "expires_at": expires_at.isoformat(),
             },
         )
@@ -2148,8 +2273,10 @@ class BridgeService:
     async def execute_general_plan(
         self, case_id: str, approval_token: str, actor: str
     ) -> CaseRecord:
-        self._approval_signer.verify(approval_token, case_id=case_id, action="execute_plan")
         case = await self._cases.get(case_id)
+        self._approval_signer.verify(
+            approval_token, case_id=case_id, action="execute_plan", plan_hash=case.plan_hash
+        )
         if case.status != "approval_pending" or case.flow_id or not case.plan_hash:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail="General plan is not ready"
@@ -2348,13 +2475,14 @@ class BridgeService:
     async def submit_task(self, request: SubmitTaskRequest, actor: str) -> TaskReceipt:
         if request.task.flow_id not in self._settings.allowed_flows():
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Flow is not allowed")
+        case = await self._cases.get(request.case_id)
         self._approval_signer.verify(
             request.approval_token,
             case_id=request.case_id,
             action="submit_task",
             flow_id=request.task.flow_id,
+            plan_hash=case.plan_hash,
         )
-        case = await self._cases.get(request.case_id)
         if not case.plan_hash or case.proposed_submission is None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -2383,14 +2511,15 @@ class BridgeService:
             )
         if request.task.flow_id not in self._settings.allowed_flows():
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Flow is not allowed")
+        case = await self._cases.get(request.case_id)
         claims = self._approval_signer.verify(
             request.approval_token,
             case_id=request.case_id,
             action="submit_task",
             work_item_id=request.work_item_id,
             flow_id=request.task.flow_id,
+            plan_hash=case.plan_hash,
         )
-        case = await self._cases.get(request.case_id)
         self._validate_task_snapshot(case, request.task)
         work_item = await self._cases.get_work_item(request.case_id, request.work_item_id)
         if (
@@ -2491,6 +2620,7 @@ class BridgeService:
             case_id=case_id,
             action="submit_task",
             flow_id=task.flow_id,
+            plan_hash=case.plan_hash,
         )
         self._validate_task_snapshot(case, task)
         version = len(case.task_specs) + 1
@@ -2586,7 +2716,11 @@ class BridgeService:
                 case_id=case_id,
                 actor=actor,
                 event_type="work_item.running",
-                payload={"work_item_id": work_item_id, "trace_id": work_item.trace_id},
+                payload={
+                    "work_item_id": work_item_id,
+                    "trace_id": work_item.trace_id,
+                    "status_line": self._work_item_status_line(work_item, "running"),
+                },
             )
         if work_item.status != "running":
             raise HTTPException(
@@ -2742,6 +2876,7 @@ class BridgeService:
                     "objective": ensured.objective,
                     "skill_name": ensured.skill_name,
                     "context_refs": [ref.model_dump() for ref in ensured.context_refs],
+                    "status_line": self._work_item_status_line(ensured, "queued"),
                 },
             )
         return ensured
@@ -3162,6 +3297,7 @@ class BridgeService:
             case_id=request.case_id,
             action="cancel_task",
             task_id=task_id,
+            plan_hash=case.plan_hash,
         )
         task = await self._client.cancel_task(task_id)
         if case.status not in {"closed", "cancelled"}:
@@ -3181,19 +3317,65 @@ class BridgeService:
     async def record_evidence(
         self, case_id: str, request: EvidenceRequest, actor: str
     ) -> EvidenceResponse:
+        """Record an evidence event; identity-scoped to close the audit-forgery surface (B2).
+
+        口径（手册阶段 0 修复 2 的落地细化，注释即口径）：
+        - 平台身份（bioops-manager / workflow-operator）：允许写业务事件；
+          显式携带 ``causation_event_id`` 时强制校验锚点存在于本 Case 事件流，
+          悬空引用一律 422。合法的根事件（room.user_message、room.created 等）
+          天然无因果锚点，允许缺省——平台身份本身是审计写入的信任根，
+          对其强制自锚不增加抗伪造能力。
+        - Worker 身份：必须是目标 work item 的 target 且持有有效租约
+          （或工作项尚未被他人租用、处于可认领状态）；只能写 Worker 域事件，
+          平台保留命名空间（approval.*/room.*/case.*/planning.* 等，见
+          ``_PLATFORM_RESERVED_EVENT_PREFIXES``）一律 403，杜绝伪造审批/
+          立项卡/任务提交等业务事件；因果锚点强制存在——显式携带时校验存在性，
+          缺省时由 Bridge 回填为该工作项最近一条生命周期事件
+          （work_item.assigned 必然存在）。
+        """
         case = await self._cases.get(case_id)
-        self._require_case_access(case, actor)
-        if actor == "bioops-manager" and request.work_item_id == CASE_LEVEL_WORK_ITEM_ID:
-            # Case 级事件（房间绑定、用户发言等）不挂在任何工作项上。
-            pass
+        inner_payload = request.payload if isinstance(request.payload, dict) else {}
+        supplied_anchor = inner_payload.get("causation_event_id")
+        if not isinstance(supplied_anchor, str) or not supplied_anchor.strip():
+            supplied_anchor = None
+        if actor in _PLATFORM_EVIDENCE_IDENTITIES:
+            if actor == "bioops-manager" and request.work_item_id == CASE_LEVEL_WORK_ITEM_ID:
+                # Case 级事件（房间绑定、用户发言等）不挂在任何工作项上。
+                pass
+            else:
+                await self._cases.get_work_item(case_id, request.work_item_id)
+            if supplied_anchor is not None:
+                await self._require_existing_event(case_id, supplied_anchor)
         else:
+            self._require_case_access(case, actor)
             work_item = await self._cases.get_work_item(case_id, request.work_item_id)
-            if actor != "bioops-manager" and work_item.target != actor:
+            if work_item.target != actor:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Identity cannot record evidence for this work item",
                 )
-        sanitized_payload = _sanitize_payload(request.payload, self._settings.max_evidence_bytes)
+            if _is_platform_reserved_event_type(request.event_type):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Worker identities cannot record platform-domain evidence events",
+                )
+            self._require_evidence_lease(work_item, actor)
+            events = await self._audit.list_events(case_id)
+            if supplied_anchor is not None:
+                if not any(str(event.get("event_id")) == supplied_anchor for event in events):
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail="causation_event_id does not reference an event in this Case",
+                    )
+            else:
+                derived = self._latest_work_item_event_id(events, request.work_item_id)
+                if derived is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail="Worker evidence requires a causal anchor event in this Case",
+                    )
+                inner_payload = {**inner_payload, "causation_event_id": derived}
+        sanitized_payload = _sanitize_payload(inner_payload, self._settings.max_evidence_bytes)
         event_id, recorded_at = await self._audit.record(
             case_id=case_id,
             actor=actor,
@@ -3208,6 +3390,42 @@ class BridgeService:
             },
         )
         return EvidenceResponse(event_id=event_id, recorded_at=recorded_at)
+
+    async def _require_existing_event(self, case_id: str, event_id: str) -> None:
+        events = await self._audit.list_events(case_id)
+        if not any(str(event.get("event_id")) == event_id for event in events):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="causation_event_id does not reference an event in this Case",
+            )
+
+    @staticmethod
+    def _latest_work_item_event_id(
+        events: list[dict[str, Any]], work_item_id: str
+    ) -> str | None:
+        """Latest stream event bound to the work item (assignment always writes one)."""
+        for event in reversed(events):
+            payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+            if payload.get("work_item_id") == work_item_id and event.get("event_id"):
+                return str(event["event_id"])
+        return None
+
+    @staticmethod
+    def _require_evidence_lease(work_item: WorkItemRecord, actor: str) -> None:
+        """Worker evidence requires a live lease, or a claimable item not leased to others."""
+        if work_item.lease_owner is not None:
+            if work_item.lease_owner != actor or CaseStore._lease_expired(
+                work_item, datetime.now(UTC)
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Worker does not hold a valid lease for this work item",
+                )
+        elif work_item.status not in {"pending", "failed"}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Work item is not claimable by this worker",
+            )
 
 
 def _sanitize_payload(payload: dict[str, Any], max_bytes: int) -> dict[str, Any]:

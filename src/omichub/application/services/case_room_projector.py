@@ -209,9 +209,12 @@ class CaseRoomProjector:
                 f"计划已更新为 v{str(payload.get('plan_version') or '?')}，"
                 f"新短码 {str(payload.get('plan_hash') or '')[:8]}；旧版本立即失效，等待重新确认。"
             ),
-            "work_item.assigned": f"我已领取工作项：{str(payload.get('objective') or payload.get('skill_name') or '开始处理')[:180]}。",
-            "work_item.claimed": f"已认领工作项 {str(payload.get('work_item_id') or '')}，开始执行。",
-            "work_item.running": f"工作项 {str(payload.get('work_item_id') or '')} 正在执行。",
+            "work_item.assigned": str(payload.get("status_line") or "").strip()
+            or f"我已领取工作项：{str(payload.get('objective') or payload.get('skill_name') or '开始处理')[:180]}。",
+            "work_item.claimed": str(payload.get("status_line") or "").strip()
+            or f"已认领工作项 {str(payload.get('work_item_id') or '')}，开始执行。",
+            "work_item.running": str(payload.get("status_line") or "").strip()
+            or f"工作项 {str(payload.get('work_item_id') or '')} 正在执行。",
             "omic_task.submitted": f"OmicHub 任务 {str(payload.get('omic_task_id') or '')} 已提交，正在等待执行资源。",
             "omic_task.progress": f"任务进度已更新：{str(payload.get('progress') or payload.get('summary') or '处理中')}。",
             "remediation_pending": "失败诊断已完成，修复工作项正在等待执行。",

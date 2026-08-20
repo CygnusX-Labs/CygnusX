@@ -72,6 +72,32 @@ class FixtureOmicHubClient:
         )
 
 
+@pytest.mark.asyncio
+async def test_healthz_exposes_build_metadata(tmp_path: Path) -> None:
+    settings = BridgeSettings(
+        case_store_path=str(tmp_path / "cases.json"),
+        audit_log_path=str(tmp_path / "audit.jsonl"),
+        worker_token_store_path=str(tmp_path / "tokens.json"),
+        manifest_dir=str(tmp_path / "manifests"),
+        build_sha="abc123",
+        build_time="2026-08-19T00:00:00Z",
+    )
+    app = create_app(settings, FixtureOmicHubClient(settings, []))
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://bridge.test"
+    ) as client:
+        response = await client.get("/healthz")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "case_store_skipped_cases": 0,
+        "build_sha": "abc123",
+        "build_time": "2026-08-19T00:00:00Z",
+        "minio_enabled": False,
+    }
+
+
 class LoopLocalASGIClient:
     """Create the Bridge app and HTTPX transport inside each test event loop."""
 
@@ -868,6 +894,48 @@ async def test_case_and_audit_indexes_restore_from_disk(settings) -> None:
     assert await restored_audit.get_receipt("restore-key") == receipt
 
 
+def test_case_store_rejects_corrupt_state_file(settings, caplog) -> None:
+    Path(settings.case_store_path).write_text("{broken-json", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="state file is invalid"):
+        CaseStore(settings.case_store_path)
+
+    assert "cannot be read or parsed" in caplog.text
+
+
+def test_case_store_reports_skipped_invalid_case_records(settings, caplog) -> None:
+    Path(settings.case_store_path).write_text(
+        json.dumps({"bad-case": {"case_id": "bad-case"}, "not-an-object": "invalid"}),
+        encoding="utf-8",
+    )
+
+    store = CaseStore(settings.case_store_path)
+
+    assert store.skipped_case_count == 2
+    assert "Skipping invalid CaseStore entry" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_events_endpoint_enforces_limit_contract(client) -> None:
+    request_client, _ = client
+    await create_case(request_client, "bioops_limit_contract")
+    request_headers = headers("bioops-manager", "manager")
+
+    lower = await request_client.get(
+        "/v1/cases/bioops_limit_contract/events?limit=0", headers=request_headers
+    )
+    upper = await request_client.get(
+        "/v1/cases/bioops_limit_contract/events?limit=101", headers=request_headers
+    )
+    valid = await request_client.get(
+        "/v1/cases/bioops_limit_contract/events?limit=100", headers=request_headers
+    )
+
+    assert lower.status_code == 422
+    assert upper.status_code == 422
+    assert valid.status_code == 200
+
+
 @pytest.mark.asyncio
 async def test_manager_assigns_three_workers_and_only_targets_can_report(client) -> None:
     request_client, _ = client
@@ -944,7 +1012,8 @@ async def test_manager_assigns_three_workers_and_only_targets_can_report(client)
 
 
 @pytest.mark.asyncio
-async def test_external_worker_inbox_poll_is_recorded_on_the_assigned_case(client) -> None:
+async def test_external_worker_inbox_poll_does_not_spam_the_audit_stream(client) -> None:
+    """Inbox 轮询是 operational 心跳：只进内存心跳表，不再写审计事件流。"""
     request_client, _ = client
     await create_case(request_client, "bioops_inbox_audit")
     assigned = await request_client.post(
@@ -964,14 +1033,16 @@ async def test_external_worker_inbox_poll_is_recorded_on_the_assigned_case(clien
         "/v1/work-items/assigned", headers=headers("agent-code", "code")
     )
     assert inbox.status_code == 200
+    assert [item["work_item"]["work_item_id"] for item in inbox.json()["items"]] == ["code-01"]
 
     events = await request_client.get(
         "/v1/cases/bioops_inbox_audit/events", headers=headers("bioops-manager", "manager")
     )
-    assert ("agent-code", "worker.inbox_polled", "code-01") in {
-        (event["actor"], event["event_type"], event["payload"].get("work_item_id"))
+    assert not [
+        event
         for event in events.json()["events"]
-    }
+        if event["event_type"] == "worker.inbox_polled"
+    ]
 
 
 @pytest.mark.asyncio

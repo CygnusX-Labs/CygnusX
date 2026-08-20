@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     app_name: str = "OmicHub"
     app_env: str = "development"
     app_debug: bool = True
+    # 部署版本可观测：由镜像构建期 ARG/ENV 注入（APP_VERSION/APP_GIT_SHA/APP_BUILD_TIME），
+    # /health 对外暴露，缺省 unknown 表示未经规范构建流程产出。
+    app_version: str = "0.1.0"
+    app_git_sha: str = "unknown"
+    app_build_time: str = "unknown"
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     app_secret_key: str = "change-me-in-production"
@@ -299,6 +304,10 @@ class Settings(BaseSettings):
 
     # ===== AgentTeams 协作控制面（独立 Bridge 的受控用户代理） =====
     # 浏览器不接触 Bridge 身份凭证；Data Steward 仅可执行只读预检。
+    # 协作室 Manager 的 LLM 人格 agent（对应 data/ai/agentteams_manager.yaml）；
+    # 不可用时按既定降级链回退并写 room.manager_persona_fallback 审计事件。
+    # 配置非法（空值等）时 Settings 构造直接报错，不做静默回退。
+    agentteams_manager_agent_id: str = "agentteams-manager"
     agentteams_bridge_enabled: bool = False
     agentteams_bridge_url: str = ""
     agentteams_bridge_manager_token: str = ""
@@ -307,6 +316,9 @@ class Settings(BaseSettings):
     agentteams_bridge_workflow_operator_token: str = ""
     agentteams_bridge_timeout_seconds: float = 10.0
     agentteams_stale_task_seconds: int = 600
+    # A3（Part 2.7 失败降级路径）：@领域 Agent 直答的超时秒数；超时/报错/目标
+    # 不可用时 Manager 降级接管（可见降级消息 + room.agent_timeout 审计事件）。
+    agentteams_direct_timeout_seconds: float = 30.0
 
     # ===== Matrix Gateway（OmicHub 仅持有 Gateway 服务凭证，绝不保存 Matrix 凭证） =====
     agentteams_gateway_enabled: bool = False
@@ -458,6 +470,15 @@ class Settings(BaseSettings):
     # ===== 敏感信息脱敏 =====
     # 逗号分隔的敏感词列表，AI 对话送 LLM 前 / 落库前替换为 [REDACTED]（不可逆）
     sensitive_keywords: list[str] = []
+
+    @field_validator("agentteams_manager_agent_id", mode="before")
+    @classmethod
+    def validate_manager_agent_id(cls, v: Any) -> str:
+        # 配置加载/取值失败必须显式报错，禁止静默回退到硬编码默认。
+        value = str(v or "").strip()
+        if not value:
+            raise ValueError("AGENTTEAMS_MANAGER_AGENT_ID 不能为空")
+        return value
 
     @field_validator("database_url", mode="before")
     @classmethod

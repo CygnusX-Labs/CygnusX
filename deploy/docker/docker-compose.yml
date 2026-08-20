@@ -40,6 +40,9 @@ services:
       dockerfile: deploy/docker/Dockerfile
       args:
         SNAKEMAKE_LOGGER_PLUGIN_REF: ${SNAKEMAKE_LOGGER_PLUGIN_REF:-main}
+        # 由 Makefile 部署 target 导出（git rev-parse --short HEAD / UTC 构建时间），缺省 unknown。
+        OMICHUB_BUILD_SHA: ${OMICHUB_BUILD_SHA:-unknown}
+        OMICHUB_BUILD_TIME: ${OMICHUB_BUILD_TIME:-unknown}
     container_name: omichub-web
     restart: unless-stopped
     logging: *default-logging
@@ -133,6 +136,9 @@ services:
       dockerfile: deploy/docker/Dockerfile
       args:
         SNAKEMAKE_LOGGER_PLUGIN_REF: ${SNAKEMAKE_LOGGER_PLUGIN_REF:-main}
+        # 由 Makefile 部署 target 导出（git rev-parse --short HEAD / UTC 构建时间），缺省 unknown。
+        OMICHUB_BUILD_SHA: ${OMICHUB_BUILD_SHA:-unknown}
+        OMICHUB_BUILD_TIME: ${OMICHUB_BUILD_TIME:-unknown}
     container_name: omichub-beat
     restart: unless-stopped
     logging: *default-logging
@@ -175,6 +181,9 @@ services:
       dockerfile: deploy/docker/Dockerfile
       args:
         SNAKEMAKE_LOGGER_PLUGIN_REF: ${SNAKEMAKE_LOGGER_PLUGIN_REF:-main}
+        # 由 Makefile 部署 target 导出（git rev-parse --short HEAD / UTC 构建时间），缺省 unknown。
+        OMICHUB_BUILD_SHA: ${OMICHUB_BUILD_SHA:-unknown}
+        OMICHUB_BUILD_TIME: ${OMICHUB_BUILD_TIME:-unknown}
     container_name: omichub-flower
     restart: unless-stopped
     logging: *default-logging
@@ -278,6 +287,8 @@ services:
       retries: 6
 
   # 一次性初始化：建 AgentTeams 共享 bucket（幂等，mb --ignore-existing）
+  # MINIO_AGENTTEAMS_BUCKET 供主后端证据区；MINIO_AGENTTEAMS_BRIDGE_BUCKET 供
+  # Bridge 持久层（cases/{case_id}/events + snapshot，Part 1 MinIO 化改造）。
   minio-init:
     image: minio/mc:latest
     container_name: omichub-minio-init
@@ -288,10 +299,13 @@ services:
         mc alias set omichub http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
         && mc mb --ignore-existing "omichub/$${MINIO_AGENTTEAMS_BUCKET}"
         && mc anonymous set none "omichub/$${MINIO_AGENTTEAMS_BUCKET}"
+        && mc mb --ignore-existing "omichub/$${MINIO_AGENTTEAMS_BRIDGE_BUCKET}"
+        && mc anonymous set none "omichub/$${MINIO_AGENTTEAMS_BRIDGE_BUCKET}"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       MINIO_AGENTTEAMS_BUCKET: ${MINIO_AGENTTEAMS_BUCKET:-agentteams-evidence}
+      MINIO_AGENTTEAMS_BRIDGE_BUCKET: ${MINIO_AGENTTEAMS_BRIDGE_BUCKET:-agentteams}
     depends_on:
       minio:
         condition: service_healthy

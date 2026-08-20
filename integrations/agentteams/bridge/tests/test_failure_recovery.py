@@ -142,6 +142,38 @@ def expire_lease(item):
 
 
 @pytest.mark.asyncio
+async def test_lease_renewal_failure_is_recorded_for_diagnosis(tmp_path, monkeypatch) -> None:
+    service = make_service(tmp_path)
+    recorded: list[dict] = []
+
+    async def fail_heartbeat(*_args, **_kwargs):
+        raise RuntimeError("case store unavailable")
+
+    async def record(**kwargs):
+        recorded.append(kwargs)
+
+    async def no_wait(_seconds):
+        return None
+
+    monkeypatch.setattr(service._cases, "heartbeat_work_item", fail_heartbeat)
+    monkeypatch.setattr(service._audit, "record", record)
+    monkeypatch.setattr("omichub_agentteams_bridge.service.asyncio.sleep", no_wait)
+
+    await service._renew_work_item_lease("recovery-case", "code-01", "agent-code", 30)
+
+    assert recorded == [{
+        "case_id": "recovery-case",
+        "actor": "agent-code",
+        "event_type": "worker.lease_renewal_failed",
+        "payload": {
+            "work_item_id": "code-01",
+            "error": "case store unavailable",
+            "deadline_seconds": 30,
+        },
+    }]
+
+
+@pytest.mark.asyncio
 async def test_killed_worker_task_is_reclaimed_by_watchdog_and_completes(tmp_path) -> None:
     service = make_service(tmp_path)
     await create_case(service)
