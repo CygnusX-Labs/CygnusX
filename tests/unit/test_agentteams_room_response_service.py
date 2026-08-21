@@ -1365,3 +1365,63 @@ async def test_direct_mention_success_has_no_fallback(monkeypatch) -> None:
     assert len(messages) == 1
     assert messages[0].kwargs["payload"]["direct_mention"] is True
     assert messages[0].kwargs["payload"]["content"] == "领域直答：质控已通过。"
+
+
+def test_build_question_consultation_excludes_intake_guidance() -> None:
+    """纯咨询分支（A1）：不注入 Case 状态/研究设计，不含接单阶段引导与结构化 ask_user 指令。"""
+    question = AgentTeamsRoomResponseService._build_question(
+        {"intent": "", "status": "received"},
+        [],
+        "你们平台能做哪些分析？",
+        consultation=True,
+    )
+
+    assert "纯咨询/闲聊" in question
+    assert "ask_user 字段必须留空数组" in question
+    assert "Case 当前状态" not in question
+    assert "已提取研究设计" not in question
+    assert "规划、确认、执行和产物交付中的哪个阶段" not in question
+    assert "ask_user 字段输出结构化" not in question
+
+
+def test_build_question_default_keeps_intake_guidance() -> None:
+    """默认分支不回归（A1）：仍注入 Case 状态、研究设计与结构化 ask_user 澄清协议。"""
+    question = AgentTeamsRoomResponseService._build_question(
+        {"intent": "RNA-seq 数据分析", "status": "received"},
+        [],
+        "rna-seq 数据分析",
+    )
+
+    assert "Case 当前状态：received" in question
+    assert "已提取研究设计" in question
+    assert "ask_user 字段输出结构化" in question
+
+
+def test_is_consultation_reply_requires_empty_case_intent() -> None:
+    """Case 已提取研究目标时不算纯咨询：接单语境的选项式追问卡片必须保留。"""
+    service = _service(
+        agentteams=_agentteams(),
+        registry=_registry("agent-general", with_manager=True),
+        redis=FakeRedis(),
+    )
+    case_with_intent = {"intent": "RNA-seq 差异分析", "status": "received"}
+    case_no_intent = {"intent": "", "status": "received"}
+
+    assert (
+        service._is_consultation_reply(case_with_intent, [], "想确认一下这个 Case 的分组设置", "none")
+        is False
+    )
+    assert (
+        service._is_consultation_reply(case_no_intent, [], "想确认一下这个 Case 的分组设置", "none")
+        is True
+    )
+    # 已有 flow 或已开始规划时不可能是纯咨询。
+    assert (
+        service._is_consultation_reply(
+            {"intent": "", "status": "received", "flow_id": "rna_seq"}, [], "你好", "none"
+        )
+        is False
+    )
+    assert (
+        service._is_consultation_reply(case_no_intent, [], "你好", "started") is False
+    )

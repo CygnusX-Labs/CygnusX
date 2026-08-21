@@ -1218,6 +1218,99 @@ async def _platform_arxiv_search(
         return {"success": False, "error": f"arXiv 检索失败: {type(exc).__name__}"}
 
 
+async def _platform_ability_catalog_query(
+    arguments: dict[str, Any],
+    user_id: str | None = None,
+    context: ToolInvocationContext | None = None,
+    **_kw: Any,
+) -> dict[str, Any]:
+    """查询平台内置 Agent 能力目录（data/ai/agent_ability.yaml 权威源，只读）。
+
+    「平台上有哪些 Agent / 某 Agent 能做什么 / 谁适合接这个需求」类问题的唯一
+    权威数据源：目录是活文档，模型凭记忆背诵会随版本腐烂。默认返回 summary 层
+    清单；传 ``agent_id`` 返回该 Agent 的 detail（四段契约 + 输入示例）。
+    """
+    from omichub.infrastructure.config.agent_ability_catalog import agent_ability_catalog
+
+    agent_id = str(arguments.get("agent_id") or "").strip()
+    if agent_id:
+        entry = agent_ability_catalog.get(agent_id)
+        if not entry:
+            return {"success": False, "error": f"Agent '{agent_id}' 未在能力目录登记"}
+        return {"success": True, "agent_id": agent_id, "detail": entry}
+    agents = [
+        {
+            "agent_id": aid,
+            "summary": entry.get("summary") or "",
+            "chat_entry": bool(entry.get("chat_entry", True)),
+            "requires_formal_delivery": bool(entry.get("requires_formal_delivery", False)),
+        }
+        for aid, entry in sorted(agent_ability_catalog.all().items())
+    ]
+    return {"success": True, "agents": agents}
+
+
+async def _platform_room_state_query(
+    arguments: dict[str, Any],
+    user_id: str | None = None,
+    context: ToolInvocationContext | None = None,
+    **_kw: Any,
+) -> dict[str, Any]:
+    """查询当前协作室房间状态（与 GET /rooms/{room_id} 同源，只读）。
+
+    scope 锁当前房间：房间从调用上下文 ``context.session_id``
+    （形如 ``agentteams:{case_id}:sub:{run_id}:{index}``，未立项时 case_id 为
+    ``room-<room_id>`` 命名空间）解析，不接受任意 room_id 入参，防止跨房间窥探。
+    """
+    from sqlalchemy import select
+
+    from omichub.application.services.agentteams_service import ROOM_NAMESPACE_ID_PREFIX
+    from omichub.infrastructure.database.models.chat import AgentTeamsRoomModel
+
+    if context is None:
+        return {"success": False, "error": "缺少调用上下文，无法确定当前房间"}
+    tokens = (context.session_id or "").split(":")
+    case_id = tokens[1] if len(tokens) >= 2 and tokens[0] == "agentteams" else ""
+    if not case_id:
+        return {"success": False, "error": "当前会话不在协作室上下文中，无法定位房间"}
+
+    async def query(db: Any) -> dict[str, Any]:
+        if case_id.startswith(ROOM_NAMESPACE_ID_PREFIX):
+            room_id = case_id.removeprefix(ROOM_NAMESPACE_ID_PREFIX)
+            room = (
+                await db.execute(
+                    select(AgentTeamsRoomModel).where(AgentTeamsRoomModel.room_id == room_id)
+                )
+            ).scalar_one_or_none()
+        else:
+            room = (
+                await db.execute(
+                    select(AgentTeamsRoomModel).where(AgentTeamsRoomModel.case_id == case_id)
+                )
+            ).scalar_one_or_none()
+        if room is None:
+            return {
+                "success": False,
+                "error": f"未找到与当前会话关联的协作室房间（case_id={case_id}）",
+            }
+        proposal = room.proposal if isinstance(room.proposal, dict) else None
+        return {
+            "success": True,
+            "room_id": room.room_id,
+            "title": room.title,
+            "status": room.status,
+            "origin": room.origin,
+            "origin_ref": room.origin_ref,
+            "case_id": room.case_id,
+            "matrix_room_provisioned": bool(room.matrix_room_id),
+            "has_pending_proposal": bool(proposal and proposal.get("status") == "pending"),
+            "created_at": room.created_at.isoformat() if room.created_at else None,
+            "updated_at": room.updated_at.isoformat() if room.updated_at else None,
+        }
+
+    return await query(context.db)
+
+
 PLATFORM_PRESET_TOOLS = [
     {
         "name": "europe_pmc_search",
@@ -1593,6 +1686,46 @@ PLATFORM_PRESET_TOOLS = [
             "required": ["task_id"],
         },
     },
+    {
+        "name": "ability_catalog_query",
+        "description": (
+            "查询平台内置 Agent 能力目录（唯一权威数据源，只读）。默认返回全部 Agent 的"
+            " summary 层清单（agent_id / 触发摘要 / 是否聊天入口）；传 agent_id 返回该 Agent"
+            " 的 detail（能力、不适用场景、转交时机、偏好输入、输入示例）。被问「平台上有哪些"
+            " Agent / 某 Agent 会什么 / 谁适合接这个需求」时必须调用本工具，禁止凭记忆背诵。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "type": "string",
+                    "description": "可选；传入时返回该 Agent 的 detail 层契约",
+                },
+            },
+        },
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+    },
+    {
+        "name": "room_state_query",
+        "description": (
+            "查询当前协作室房间的状态（只读，scope 锁当前房间）：房间标题、状态、是否已立项"
+            "（case_id）、来源、是否有待确认立项卡、创建/更新时间。被问「这个房间/当前协作室"
+            " 现在什么状态 / 立项了吗」时调用本工具获取实时数据，禁止凭记忆作答。"
+            "本工具不接受 room_id 入参，只能查询当前会话所属房间。"
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+    },
 ]
 
 PLATFORM_HANDLERS = {
@@ -1616,6 +1749,8 @@ PLATFORM_HANDLERS = {
     "platform_submit_download": _platform_submit_download,
     "platform_list_downloads": _platform_list_downloads,
     "platform_get_download_progress": _platform_get_download_progress,
+    "ability_catalog_query": _platform_ability_catalog_query,
+    "room_state_query": _platform_room_state_query,
 }
 
 
@@ -1623,7 +1758,7 @@ PLATFORM_HANDLERS = {
 PRESET_SERVERS: list[dict[str, Any]] = [
     {
         "name": "omichub-platform",
-        "description": "平台操作 MCP - Europe PMC 文献检索、任务管理、流程查询、当前用户与饼干（积分）余额查询、Agent 技能绑定查询、沙箱执行、结果读取、数据下载（SRA/GEO 公共数据库与多云存储）",
+        "description": "平台操作 MCP - Europe PMC 文献检索、任务管理、流程查询、当前用户与饼干（积分）余额查询、Agent 技能绑定查询、协作室 Agent 能力目录与当前房间状态查询、沙箱执行、结果读取、数据下载（SRA/GEO 公共数据库与多云存储）",
         "transport": "builtin",
         "tools": PLATFORM_PRESET_TOOLS,
         "handlers": PLATFORM_HANDLERS,

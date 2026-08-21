@@ -424,6 +424,9 @@ class AgentTeamsRoomResponseService:
                 if execution_outcome == "started"
                 else case
             )
+            consultation = self._is_consultation_reply(
+                case, event_items, content, execution_outcome
+            )
             question = self._build_question(
                 question_case,
                 event_items,
@@ -433,6 +436,7 @@ class AgentTeamsRoomResponseService:
                     _CLARIFY_EXHAUSTED_NOTE if execution_outcome == "degraded" else None
                 ),
                 manager_display_name=self._manager_display_name(),
+                consultation=consultation,
             )
             agent_id = await self._manager_agent_with_audit(case_id)
             if agent_id is None:
@@ -487,6 +491,10 @@ class AgentTeamsRoomResponseService:
                     for item in (getattr(envelope, "ask_user", None) or [])
                     if item.question.strip()
                 ]
+                if consultation and questions:
+                    # 纯咨询禁止澄清卡片（A1）：prompt 已要求 ask_user 留空；
+                    # 模型仍输出时降级为纯文本回复，不落 room.ask_user 卡片。
+                    questions = []
                 if not reply and not questions:
                     response_status = "failed"
                     return {"status": response_status}
@@ -1655,6 +1663,38 @@ class AgentTeamsRoomResponseService:
             return [dict(ref) for ref in refs if isinstance(ref, dict)]
         return []
 
+    def _is_consultation_reply(
+        self,
+        case: dict[str, Any],
+        events: list[dict[str, Any]],
+        content: str,
+        execution_outcome: str,
+    ) -> bool:
+        """判定本轮 Manager 主回路是否纯咨询/闲聊（chat 态）。
+
+        与 ``_maybe_start_chat_execution`` 的门闸口径保持一致：仅无 flow_id、
+        仍处 received、且尚无 plan-01 的 Case 才可能进入意图分类；
+        execution_outcome 为 none/degraded、Case 尚未提取研究目标（intent 为空）
+        且执行意图分类为 CHAT 时，本轮按纯咨询构建问题——不注入 Case 状态与
+        接单阶段引导，避免咨询回复被推入接单话锋（"能力咨询误入接单流程"修复 A1）。
+        """
+        if execution_outcome not in {"none", "degraded"}:
+            return False
+        if case.get("flow_id") or case.get("status") != "received":
+            return False
+        if str(case.get("intent") or "").strip():
+            # Case 已提取研究目标：房间处于接单/澄清语境，Manager 针对目标要素的
+            # 选项式追问是合法接单流程而非咨询误入，保留结构化 ask_user 卡片。
+            return False
+        work_items = case.get("work_items")
+        if isinstance(work_items, list) and any(
+            isinstance(item, dict) and item.get("work_item_id") == "plan-01"
+            for item in work_items
+        ):
+            return False
+        refs = self._latest_message_context_refs(events, content)
+        return classify_execution_intent(content, refs) is ExecutionIntent.CHAT
+
     @classmethod
     def _build_question(
         cls,
@@ -1664,6 +1704,7 @@ class AgentTeamsRoomResponseService:
         preferences: dict[str, Any] | None = None,
         system_note: str | None = None,
         manager_display_name: str | None = None,
+        consultation: bool = False,
     ) -> str:
         preferences = preferences or {}
         latest_user_message = fallback_content.strip()
@@ -1716,28 +1757,55 @@ class AgentTeamsRoomResponseService:
             if preferences.get("autonomy") == "autonomous"
             else "谨慎模式：涉及执行选择或信息不足时优先说明影响并请求用户确认"
         )
+        if consultation:
+            # 纯咨询/闲聊专用话术（A1）：不注入 Case 状态与接单阶段引导，
+            # 澄清协议替换为"直接作答、禁止 ask_user"。内部状态机语言是管道
+            # 不是科学——请求人看到「已接收」只会困惑。
+            directive = (
+                "你在 AgentTeams 协作房间中扮演 Manager，直接回答请求人的最新发言。"
+                "必须以‘请求人最新发言’为唯一当前问题，不得重复回答更早的问题。"
+                "用中文简洁回答。\n"
+                "本轮是纯咨询/闲聊：直接回答请求人的问题即可。"
+                "禁止提及 Case 状态、房间状态等内部状态机语言；"
+                "不得主动引导进入规划、立项或交付流程——只有当请求人明确提出"
+                "研究需求或分析任务时，才讨论后续阶段。\n"
+                "澄清协议（强制）：纯咨询直接作答，JSON 信封的 ask_user 字段"
+                "必须留空数组，禁止对闲聊/咨询输出结构化追问。\n"
+            )
+            case_block = (
+                f"Case 目标：{str(case.get('intent') or '')[:200]}\n"
+                if str(case.get("intent") or "").strip()
+                else ""
+            )
+        else:
+            directive = (
+                "你在 AgentTeams 协作房间中扮演 Manager，直接回答请求人的最新发言。"
+                "必须以‘请求人最新发言’为唯一当前问题，不得重复回答更早的问题。"
+                "用中文简洁回答；若问题涉及执行中的任务，结合 Case 状态说明进展。"
+                "若用户要求基于文件绘图、运行分析或生成产物，必须明确这是计算执行请求，"
+                "不得假装已经产出结果；应说明当前 Case 是否与该目标一致，以及下一步会进入"
+                "规划、确认、执行和产物交付中的哪个阶段。\n"
+                "澄清协议（强制）：若最新发言缺少继续推进所需的关键信息（如输入数据形式、"
+                "物种与参考基因组、样本分组与生物学重复、分析目标、交付物），禁止只在 "
+                "conclusion 正文里罗列编号问题；必须在 JSON 信封的 ask_user 字段输出结构化"
+                "问题数组（最多 5 个），每项形如 "
+                '{"question":"...","options":["候选 A","候选 B"]}，options 给 2-4 个可点选'
+                "候选（有推荐项时放第一位并以（推荐）标注），无法预设选项的问题 options 留空数组。"
+                "使用 ask_user 时 conclusion 只写一句简短引导语，不得重复问题正文；"
+                "信息充分、无需澄清时 ask_user 必须留空数组。\n"
+            )
+            case_block = (
+                f"Case 目标：{str(case.get('intent') or '')[:200]}\n"
+                f"Case 当前状态：{str(case.get('status') or '')}\n"
+                f"已提取研究设计（仅引用其中已有事实，不要重复追问）：{intake_block}\n"
+            )
         return (
-            "你在 AgentTeams 协作房间中扮演 Manager，直接回答请求人的最新发言。"
-            "必须以‘请求人最新发言’为唯一当前问题，不得重复回答更早的问题。"
-            "用中文简洁回答；若问题涉及执行中的任务，结合 Case 状态说明进展。"
-            "若用户要求基于文件绘图、运行分析或生成产物，必须明确这是计算执行请求，"
-            "不得假装已经产出结果；应说明当前 Case 是否与该目标一致，以及下一步会进入"
-            "规划、确认、执行和产物交付中的哪个阶段。\n"
-            "澄清协议（强制）：若最新发言缺少继续推进所需的关键信息（如输入数据形式、"
-            "物种与参考基因组、样本分组与生物学重复、分析目标、交付物），禁止只在 "
-            "conclusion 正文里罗列编号问题；必须在 JSON 信封的 ask_user 字段输出结构化"
-            "问题数组（最多 5 个），每项形如 "
-            '{"question":"...","options":["候选 A","候选 B"]}，options 给 2-4 个可点选'
-            "候选（有推荐项时放第一位并以（推荐）标注），无法预设选项的问题 options 留空数组。"
-            "使用 ask_user 时 conclusion 只写一句简短引导语，不得重复问题正文；"
-            "信息充分、无需澄清时 ask_user 必须留空数组。\n"
+            directive
             + (f"{system_note}\n" if system_note else "")
             + f"全局回复偏好：称呼自己为「{manager_name}」；沟通语言为{language}；"
             f"沟通风格为{style}；执行偏好为{autonomy}。\n"
-            f"Case 目标：{str(case.get('intent') or '')[:200]}\n"
-            f"Case 当前状态：{str(case.get('status') or '')}\n"
-            f"已提取研究设计（仅引用其中已有事实，不要重复追问）：{intake_block}\n"
-            f"最近房间动态：\n{context_block}\n"
+            + case_block
+            + f"最近房间动态：\n{context_block}\n"
             f"本条发言引用文件：{refs_block}\n"
             f"请求人最新发言：{latest_user_message}"
         )

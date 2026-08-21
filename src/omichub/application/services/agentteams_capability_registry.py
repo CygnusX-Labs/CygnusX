@@ -179,6 +179,7 @@ class AgentTeamsCapabilityRegistry:
                 "accepts_inputs": [str(value) for value in features.get("accepts_inputs", [])],
                 "produces_outputs": [str(value) for value in features.get("produces_outputs", [])],
                 "persona": persona_snapshot(features),
+                "subagents_spawnable": bool(features.get("subagents_spawnable", False)),
                 "worker_capability": self._capability_for(role, agent_id),
             }
         return capabilities
@@ -343,6 +344,24 @@ class AgentTeamsCapabilityRegistry:
                 }
             )
         return catalog
+
+    def capability_detail_context(self, agent_ids: list[str]) -> str:
+        """组队会诊/派单确认时按需加载选中候选的 detail 层文本(F5 渐进暴露第二层)。
+
+        派单/路由上下文只注入 summary 层（``chat_router_catalog`` 的
+        ``description``），选中候选后才由会诊分支调用本方法补全四段契约
+        与输入示例；未登记或无 detail 的 agent_id 自动跳过。
+        """
+        blocks = [
+            block
+            for agent_id in dict.fromkeys(str(item) for item in agent_ids)
+            if (block := self._ability_catalog.render_detail(agent_id))
+        ]
+        if not blocks:
+            return ""
+        return (
+            "## 选中候选的完整能力契约（detail 层，按需加载）\n\n" + "\n\n".join(blocks)
+        )
 
     def flow_router_catalog(self) -> list[dict[str, Any]]:
         """chat 侧 LLM 路由 prompt 注入用的流程目录(与房间关键词路由同源)。
