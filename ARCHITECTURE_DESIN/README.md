@@ -15,6 +15,7 @@
 | `agent_execution_loop_observability_2026-08.md` | 2026-08-18 Agent 思考—工具闭环可观测性升级：执行路径、统一事件、协助室只读工具路由、Worker 追溯字段、Guard、前端技术事件模式与验证基线。 |
 | `agentteams_department_collaboration_architecture_2026-08.md` | 生物信息协作部门评审稿：用户—Manager—领域 Agent—并行 Worker 的组织模型、`@` 点名群聊协议、任务冻结/变更决策状态机、交接事件与分阶段实施建议。 |
 | `agentteams_department_collaboration_architecture.md` | 生物信息协作部门当前规范：用户—Manager—领域 Agent—并行 Worker 的组织模型、`@` 点名群聊协议、任务冻结/变更决策状态机、交接事件与实施边界。 |
+| `agentteams_room_current_architecture_2026-08-21.md` | 2026-08-21 协作室（AgentTeams）现阶段 as-built 架构：四层拓扑、房间意图路由四态、Bridge 状态机与派单、血缘/判决/自省数据面、房间归档、安全身份、前端展示位、已知限制清单。 |
 | `memory_architecture.md` | 2026-08-18 AI 记忆系统当前架构：v2 灰度拓扑、memory blocks/facts、FactStore、settle、Studio 文件记忆、检查点、安全和回滚边界。 |
 | `worker_images_plan.md` | Worker 轻量镜像与 Workspace 动态安装计划，定义 Worker 镜像边界、运行时挂载、Conda 环境缓存及实施步骤。 |
 | `mcp_architecture.md` | MCP 子系统完整架构（三层体系、注册/发现/调用、安全验证、沙箱隔离、AI 模型接入），以及 Agent 自生成 MCP 的可行性分析与分阶段实施方案。 |
