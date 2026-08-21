@@ -240,8 +240,11 @@ async def test_dynamic_handoff_catalog_includes_current_active_agents_only() -> 
     entries = json.loads(payload)
 
     assert [entry["agent_id"] for entry in entries] == ["agent-custom-qc"]
-    assert entries[0]["capabilities"] == []
     assert entries[0]["chat_entry"] is True
+    # F5 渐进暴露：handoff 派单目录只注入 summary 层，四段契约不进派单上下文。
+    assert entries[0]["description"] == "自定义质量控制流程"
+    for detail_key in ("capabilities", "not_suitable_for", "handoff_when", "preferred_inputs"):
+        assert detail_key not in entries[0]
 
 
 @pytest.mark.asyncio
@@ -267,17 +270,15 @@ async def test_dynamic_handoff_catalog_enriches_builtin_agent_from_ability_yaml(
     catalog_prompt = await AgentService(db)._build_handoff_catalog(source)
     entries = json.loads(catalog_prompt.split("\n\n")[1])
 
+    # F5 渐进暴露：description 为 summary 层触发分类器；四段契约已下沉 detail 层，
+    # 不在派单（handoff）目录中展开。
     assert entries == [
         {
             "agent_id": "agent-viz",
             "name": "可视化助手",
-            "description": "负责科研图形选型、脚本、版式、美化和导出规范。",
+            "description": "科研图形：图形选型、绘图脚本、版式美化与出版级导出。原始数据质控裁决、复杂统计推断或大规模工作流执行不属于它——转交对应专家，它只在结果数据就绪后接图。",
             "category": "analysis",
             "chat_entry": True,
-            "capabilities": ["科研绘图", "ggplot2", "热图", "火山图", "UMAP", "系统发育树", "图注", "出版级导出"],
-            "not_suitable_for": ["原始数据质控裁决", "复杂统计推断", "大规模工作流执行"],
-            "handoff_when": ["需要领域统计分析", "需要文件预处理或代码调试", "需要组学结果解释"],
-            "preferred_inputs": ["数据表或对象", "图形目标", "分组字段", "配色限制", "期刊或尺寸要求"],
         }
     ]
 

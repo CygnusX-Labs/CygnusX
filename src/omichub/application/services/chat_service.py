@@ -310,7 +310,9 @@ ROUTER_SYSTEM_PROMPT = """你是星尘 AI，平台唯一的任务分派入口。
 你的职责仅限于判断与分派：不要执行分析、不要决定前端页面或工作台，也不要把领域判断交给
 前端关键词规则。工作台模式和后续执行由被选中的 Agent 及服务端能力决定。
 
-运行时候选专家目录（JSON 数组；这是唯一有效候选集）：
+运行时候选专家目录（JSON 数组；这是唯一有效候选集。每条 description 是触发摘要，
+含该专家的适用与不适用场景；不适用场景命中时不要硬选。完整能力契约会在选中后的
+会诊/确认环节提供，此处只需按摘要做出最合适的一次选择）：
 {catalog}
 
 运行时可用分析流程提示（只用于理解领域能力，不代表用户已经请求执行）：
@@ -353,6 +355,20 @@ ROUTED_SPECIALIST_EXECUTION_CONFIRMED_PROMPT = """[Router 执行确认]
 2. 只调用完成本任务所需的最小工具集合；
 3. 如仍发现关键输入缺失，停止执行并调用 ask_user，不得带假设继续；
 4. 完成后交付真实结果、产物路径、关键参数与未完成事项。"""
+
+# F5 渐进暴露：路由/派单 prompt 只注入 summary 层键（触发分类器摘要 + 路由提示）。
+# 四段契约（capabilities/not_suitable_for/handoff_when/preferred_inputs）不得加入——
+# 它们属于 detail 层，由会诊阶段 capability_detail_context 按需加载。
+ROUTER_CATALOG_SUMMARY_KEYS = (
+    "agent_id",
+    "name",
+    "description",
+    "category",
+    "chat_entry",
+    "routing_hints",
+    "capability_tags",
+    "routing_notes",
+)
 
 
 def _is_route_execution_confirmation(user_text: str) -> bool:
@@ -2006,7 +2022,15 @@ class ChatService:
         """删除会话后异步沉淀长期记忆；关闭开关时不产生任何副作用。
 
         v2 开启 → settle_session_memory；关闭时不产生副作用。
+        AgentTeams 合成会话（mode=agentteams / status=system / agentteams: 前缀）
+        不投递 settle——Case 事实源是事件流与血缘，不进长期记忆。
         """
+        from omichub.infrastructure.celery_app.tasks.memory import (
+            is_agentteams_synthetic_session,
+        )
+
+        if is_agentteams_synthetic_session(session):
+            return
         from omichub.core.config import get_settings
 
         settings = get_settings()
@@ -2027,7 +2051,16 @@ class ChatService:
             logger.warning("会话记忆沉淀任务投递失败，已跳过: {}", exc)
 
     async def _maybe_enqueue_memory_settle(self, session: ChatSessionModel) -> None:
-        """消息累计达到阈值时异步沉淀会话记忆。"""
+        """消息累计达到阈值时异步沉淀会话记忆。
+
+        AgentTeams 合成会话不投递 settle（与 _enqueue_memory_summary 同口径）。
+        """
+        from omichub.infrastructure.celery_app.tasks.memory import (
+            is_agentteams_synthetic_session,
+        )
+
+        if is_agentteams_synthetic_session(session):
+            return
         from omichub.core.config import get_settings
 
         settings = get_settings()
@@ -2828,25 +2861,16 @@ class ChatService:
                     snapshot.get("flow_router_catalog") or [],
                     ensure_ascii=False,
                 )
+                # F5 渐进暴露：路由/派单上下文只注入 summary 层（触发分类器），
+                # 四段契约（capabilities/not_suitable_for/handoff_when/
+                # preferred_inputs）下沉 detail 层，选中候选后会诊阶段再加载。
+                # 依据: 实测 — 改造前 4131 tokens → 改造后 2801 tokens
+                # （口径: tiktoken cl100k_base，scripts/measure_capability_catalog_tokens.py，
+                # 日期 2026-08-21）。P2-11 完整预算口径（同脚本）：模板 1497 +
+                # 目录 2801 + flow 目录 446 = 完整路由 system prompt 4743 tokens。
                 catalog = json.dumps(
                     [
-                        {
-                            key: entry[key]
-                            for key in (
-                                "agent_id",
-                                "name",
-                                "description",
-                                "category",
-                                "chat_entry",
-                                "capabilities",
-                                "not_suitable_for",
-                                "handoff_when",
-                                "preferred_inputs",
-                                "routing_hints",
-                                "capability_tags",
-                                "routing_notes",
-                            )
-                        }
+                        {key: entry[key] for key in ROUTER_CATALOG_SUMMARY_KEYS}
                         for entry in candidates
                     ],
                     ensure_ascii=False,
@@ -6181,7 +6205,19 @@ class ChatService:
                 consultation_context = MultiExpertConsultationService.render_prompt_context(
                     opinions
                 )
+                # F5 渐进暴露 detail 层：组队会诊/派单确认阶段按选中候选加载
+                # 四段契约全文与输入示例，供主助手综合意见时核对能力边界；
+                # 路由阶段只见过 summary 层（见路由 catalog 注入处注释）。
+                from omichub.application.services.agentteams_capability_registry import (
+                    get_agentteams_capability_registry,
+                )
+
+                detail_context = get_agentteams_capability_registry().capability_detail_context(
+                    list(route_info["consult_agent_ids"])
+                )
                 if consultation_context:
+                    if detail_context:
+                        consultation_context = f"{detail_context}\n\n{consultation_context}"
                     settings = get_settings()
                     runtime_site_settings = await SiteSettingsService(self._db).get_settings()
                     bridge_runtime = await AgentTeamsBridgeSettingsService(

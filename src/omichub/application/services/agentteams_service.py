@@ -3,21 +3,25 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import shutil
 from collections.abc import AsyncIterator
 from math import ceil
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any
-from uuid import UUID, uuid4
 from urllib.parse import urlparse
+from uuid import UUID, uuid4
 
 import httpx
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from omichub.application.services.agentteams_artifact_lineage_service import (
+    AgentTeamsArtifactLineageService,
+)
 from omichub.application.services.agentteams_bridge_settings_service import (
     AgentTeamsBridgeRuntimeConfig,
 )
@@ -35,17 +39,17 @@ from omichub.application.services.agentteams_room_gateway_service import (
 )
 from omichub.application.services.agentteams_title import derive_agentteams_case_title
 from omichub.application.services.file_service import ensure_directory_chain
-from omichub.application.services.project_service import ProjectService
 from omichub.application.services.flow_registry import get_flow_registry
+from omichub.application.services.project_service import ProjectService
 from omichub.core.config import Settings
 from omichub.core.exceptions import AuthorizationError, BusinessError
+from omichub.domain.file.entities import DataFile
+from omichub.domain.file.value_objects import FileType
 from omichub.infrastructure.cache.redis_client import get_redis
 from omichub.infrastructure.database.models.user import UserModel
 from omichub.infrastructure.database.repositories.file_repository import FileRepositoryImpl
-from omichub.domain.file.entities import DataFile
-from omichub.domain.file.value_objects import FileType
-from omichub.infrastructure.storage.minio_store import MinioStore
 from omichub.infrastructure.storage import get_path_factory
+from omichub.infrastructure.storage.minio_store import MinioStore
 
 # Bridge 侧预留的 Case 级证据 work_item_id（bridge record_evidence 对 manager 放行，
 # 不要求存在同名 work item）；房间事件不属于任何具体工作项。
@@ -635,7 +639,7 @@ class AgentTeamsService:
                 logger.bind(case_id=case_id, flow_id=flow_id, stage=stage.key).warning(
                     "AgentTeams Flow stage work item unavailable: {}", exc
                 )
-                try:
+                with contextlib.suppress(Exception):
                     await self.post_case_evidence(
                         case_id,
                         work_item_id=CASE_LEVEL_WORK_ITEM_ID,
@@ -643,8 +647,6 @@ class AgentTeamsService:
                         summary=f"Flow 阶段 {stage.key} 暂不可用",
                         payload={"flow_id": flow_id, "stage": stage.key, "target": target, "reason": str(exc)[:500]},
                     )
-                except Exception:
-                    pass
                 continue
             previous_id = work_item_id
 
@@ -884,10 +886,8 @@ class AgentTeamsService:
             )
         finally:
             if token_id:
-                try:
+                with contextlib.suppress(BusinessError):
                     await self.admin_revoke_worker_token(token_id)
-                except BusinessError:
-                    pass
 
     async def start_chat_planning(
         self,
@@ -1104,6 +1104,20 @@ class AgentTeamsService:
                         shutil.copyfile(source, destination)
             except (OSError, ValueError, BusinessError) as exc:
                 logger.warning("AgentTeams delivery artifact projection skipped {}: {}", location, exc)
+        # 产物血缘（F1）：交付 manifest 内嵌权威血缘（平台 DB 版本行 + 依赖 DAG），
+        # 甲方报告文末附血缘清单（version_id + checksum + 上游一级展开）。
+        lineage: dict[str, Any] = {"versions": [], "dependencies": []}
+        lineage_note = ""
+        try:
+            lineage = await AgentTeamsArtifactLineageService(db).case_lineage(
+                str(case.get("case_id") or "")
+            )
+            manifest["artifact_version_lineage"] = lineage
+        except Exception as exc:  # noqa: BLE001 - 血缘查询失败不阻断交付，但必须在报告中显式可见
+            lineage_note = f"血缘清单不可用：{type(exc).__name__}"
+            logger.bind(case_id=case.get("case_id")).warning(
+                "AgentTeams delivery lineage query failed: {}", exc
+            )
         manifest_path = output_dir / "agentteams-delivery-manifest.json"
         manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         summary = str(manifest.get("remediation_summary") or "").strip()
@@ -1121,6 +1135,8 @@ class AgentTeamsService:
             "",
             "## 产物校验",
             f"manifest 中登记 {len(manifest.get('artifact_checksums') or {})} 个产物校验项。",
+            "",
+            *self._lineage_report_lines(lineage, lineage_note),
         ]
         (output_dir / "delivery-summary.md").write_text("\n".join(report) + "\n", encoding="utf-8")
         file_repo = FileRepositoryImpl(db)
@@ -1150,6 +1166,37 @@ class AgentTeamsService:
                 )
             )
         await db.flush()
+
+    @staticmethod
+    def _lineage_report_lines(lineage: dict[str, Any], lineage_note: str) -> list[str]:
+        """甲方报告文末的"血缘清单"小节：每个交付物 version_id + checksum + 上游一级展开。"""
+        lines = ["## 血缘清单"]
+        if lineage_note:
+            return [*lines, lineage_note]
+        versions = lineage.get("versions") or []
+        if not versions:
+            declared = lineage.get("dependencies") or []
+            return [*lines, "本 Case 无平台登记的产物版本记录。" if not declared else "本 Case 无平台登记的产物版本记录（仅依赖边）。"]
+        for row in versions:
+            checksum = str(row.get("checksum_sha256") or "")
+            lines.append(
+                f"- `{row.get('artifact_id', '')}` v{row.get('version_no', '?')}"
+                f"（version_id: `{row.get('version_id', '')}`，"
+                f"sha256: `{checksum[:16]}…`，"
+                f"producing_event: `{row.get('producing_event_id') or '无'}`）"
+            )
+            upstream = row.get("upstream") or []
+            if upstream:
+                lines.append(
+                    "  - 上游："
+                    + "、".join(
+                        f"`{ref.get('artifact_id', '')}`（{ref.get('relation', 'input_to')}）"
+                        for ref in upstream
+                    )
+                )
+            else:
+                lines.append("  - 上游：无（首环产物）")
+        return lines
 
     async def refresh_case(self, case_id: str, requester_ref: str) -> dict[str, Any]:
         await self._get_case_for_requester(case_id, requester_ref)

@@ -1063,6 +1063,11 @@ class AgentService:
             ):
                 continue
             ability = agent_ability_catalog.get(candidate.agent_id)
+            # F5 渐进暴露：转交（派单）目录只注入 summary 层触发分类器；
+            # 四段契约下沉 detail 层，由会诊/派单确认阶段按需加载。
+            # 依据: 实测 — 改造前 3058 tokens → 改造后 1715 tokens
+            # （口径: tiktoken cl100k_base，scripts/measure_capability_catalog_tokens.py，
+            # 日期 2026-08-21）。
             catalog.append(
                 {
                     "agent_id": candidate.agent_id,
@@ -1070,10 +1075,6 @@ class AgentService:
                     "description": ability.get("summary") or candidate.description,
                     "category": candidate.category,
                     "chat_entry": ability.get("chat_entry", True),
-                    "capabilities": ability.get("capabilities", []),
-                    "not_suitable_for": ability.get("not_suitable_for", []),
-                    "handoff_when": ability.get("handoff_when", []),
-                    "preferred_inputs": ability.get("preferred_inputs", []),
                 }
             )
         if not catalog:
