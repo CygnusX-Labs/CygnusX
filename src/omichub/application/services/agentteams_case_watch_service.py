@@ -48,7 +48,13 @@ def _watchable_sessions_query():
 
 
 class AgentTeamsCaseWatchService:
-    """按会话绑定扫描非终态 Case；读取失败不会影响其它会话。"""
+    """按会话绑定扫描非终态 Case；读取失败不会影响其它会话。
+
+    每个 tick 通过 ``refresh_case`` 触发 Bridge reconcile：case 状态推进、
+    ``omic_task.stalled`` 与 planning/execution 超时看门狗都由 reconcile 驱动。
+    若只做纯读取（``get_case``），用户不打开 Case 视图时看门狗永远不触发
+    （E2E-1 曾观测卡死 17min+ 未终止，根因即此）。
+    """
 
     def __init__(self, db: Any) -> None:
         self._db = db
@@ -108,7 +114,9 @@ class AgentTeamsCaseWatchService:
                 continue
             scanned += 1
             try:
-                case = await agentteams.get_case(case_id, requester_ref=session.user_id)
+                # refresh_case 内部即 Bridge reconcile（幂等，设计供轮询器反复调用），
+                # 让 stall/timeout 看门狗不依赖用户打开 Case 视图也能触发。
+                case = await agentteams.refresh_case(case_id, requester_ref=session.user_id)
             except Exception as exc:  # noqa: BLE001
                 failed += 1
                 failure_count = int(failure_counts.get(case_id) or 0) + 1

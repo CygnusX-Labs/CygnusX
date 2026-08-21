@@ -54,7 +54,7 @@ def test_watch_query_filters_sessions_without_case_bindings() -> None:
 
 
 class FakeAgentTeams:
-    async def get_case(self, case_id: str, requester_ref: str):
+    async def refresh_case(self, case_id: str, requester_ref: str):
         assert case_id == "case-1"
         assert requester_ref == "user-1"
         return {"case_id": case_id, "intent": "RNA-seq 全流程交付", "status": "approval_pending"}
@@ -127,7 +127,7 @@ async def test_watch_notifies_closed_flow_case_as_analysis_completion(monkeypatc
     )
 
     class ClosedFlowAgentTeams:
-        async def get_case(self, case_id: str, requester_ref: str):
+        async def refresh_case(self, case_id: str, requester_ref: str):
             assert (case_id, requester_ref) == ("case-1", "user-1")
             return {
                 "case_id": case_id,
@@ -192,7 +192,7 @@ async def test_watch_continues_when_one_case_read_fails() -> None:
     )
 
     class BrokenAgentTeams:
-        async def get_case(self, *_args, **_kwargs):
+        async def refresh_case(self, *_args, **_kwargs):
             raise RuntimeError("bridge unavailable")
 
     result = await service._scan_session(session, BrokenAgentTeams())
@@ -226,7 +226,7 @@ async def test_watch_projects_sync_warning_after_three_consecutive_failures(monk
     )
 
     class BrokenAgentTeams:
-        async def get_case(self, *_args, **_kwargs):
+        async def refresh_case(self, *_args, **_kwargs):
             raise RuntimeError("bridge unavailable")
 
     results = [await service._scan_session(session, BrokenAgentTeams()) for _ in range(4)]
