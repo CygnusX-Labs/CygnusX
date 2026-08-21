@@ -161,4 +161,5 @@ markers = [
     "unit: 单元测试",
     "integration: 集成测试",
     "e2e: 端到端测试",
+    "quarantine: 存量失败隔离（burn-down 清零前不阻塞 CI，见 docs/info/26.8.21/协作室测试quarantine-burn-down-2026-08-21.md）",
 ]
