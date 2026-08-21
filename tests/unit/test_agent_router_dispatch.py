@@ -571,9 +571,9 @@ def test_router_prompt_uses_runtime_catalog_instead_of_static_candidates():
     """Router 只能依据运行时目录，避免静态候选表随 Agent 增删而漂移。"""
     prompt_text = ROUTER_PROMPT_MD.read_text(encoding="utf-8")
     assert "运行时候选目录（唯一依据）" in prompt_text
-    assert "不得维护、记忆或引用任何静态 Agent 名单" in prompt_text
+    assert "不维护、记忆或引用任何静态 Agent 名单" in prompt_text
     assert "| agent_id | 名称 | 适用请求 |" not in prompt_text
-    assert "领域路由与执行授权必须分离" in prompt_text
+    assert "领域路由与执行授权分离" in prompt_text
     assert "不能仅因“单细胞”创建流程型 Case" in prompt_text
 
 

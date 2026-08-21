@@ -188,6 +188,8 @@ class SkillImportService:
     ) -> list[SkillMarketplaceItemDTO]:
         items: list[SkillMarketplaceItemDTO] = []
         if market_dir.is_dir():
+            category_map = _builtin_category_map(market_dir) if source == "builtin" else {}
+            folders: list[tuple[Path, ParsedSkill]] = []
             for folder in sorted(market_dir.iterdir()):
                 skill_md = folder / "SKILL.md"
                 if not folder.is_dir() or not skill_md.is_file():
@@ -196,6 +198,10 @@ class SkillImportService:
                     parsed = self._read_folder(folder)
                 except SkillParseError:
                     continue
+                folders.append((folder, parsed))
+
+            installed_ids = await self._installed_ids([folder.name for folder, _ in folders])
+            for folder, parsed in folders:
                 items.append(
                     SkillMarketplaceItemDTO(
                         # 市场以文件夹名为安装键（frontmatter 无显式 skill_id 时
@@ -204,11 +210,11 @@ class SkillImportService:
                         name=parsed.name,
                         description=parsed.description,
                         icon=parsed.icon,
-                        category=parsed.category,
+                        category=category_map.get(folder.name, parsed.category),
                         version=parsed.version,
                         author=parsed.author,
                         has_scripts=parsed.has_scripts,
-                        installed=await self._exists(folder.name),
+                        installed=folder.name in installed_ids,
                         source=source,
                         official=official,
                     )
@@ -228,6 +234,7 @@ class SkillImportService:
             parsed, source_type="market", source_ref=f"builtin://{skill_id}"
         )
         preview.skill_id = skill_id  # 文件夹名为规范键，保证 DB/磁盘/市场三处一致
+        preview.category = _builtin_category_map(market_dir).get(skill_id, preview.category)
         return await self.confirm_import(preview, overwrite=overwrite)
 
     # ---------- 阿里云官方技能源（市场第二分组） ----------
@@ -390,6 +397,7 @@ class SkillImportService:
         if not isinstance(raw_items, list):
             return []
         items: list[SkillMarketplaceItemDTO] = []
+        normalized_items: list[tuple[dict, str, str]] = []
         for raw in raw_items:
             if not isinstance(raw, dict):
                 continue
@@ -399,6 +407,10 @@ class SkillImportService:
             category = str(
                 raw.get("sub_category_name") or raw.get("category_name") or "general"
             )
+            normalized_items.append((raw, skill_id, category))
+
+        installed_ids = await self._installed_ids([skill_id for _, skill_id, _ in normalized_items])
+        for raw, skill_id, category in normalized_items:
             items.append(
                 SkillMarketplaceItemDTO(
                     skill_id=skill_id,
@@ -409,7 +421,7 @@ class SkillImportService:
                     version=str(raw.get("updated_at") or ""),
                     author="阿里云官方",
                     has_scripts=False,
-                    installed=await self._exists(skill_id),
+                    installed=skill_id in installed_ids,
                     source="aliyun_official",
                     official=True,
                 )
@@ -442,6 +454,7 @@ class SkillImportService:
             source_commit=manifest.get("commit") or "",
         )
         preview.skill_id = skill_id  # 缓存文件夹名为规范键
+        preview.category = _aliyun_category(manifest, skill_id, preview.category)
         return await self.confirm_import(preview, overwrite=overwrite)
 
     async def _install_agentexplorer_skill(
@@ -475,6 +488,9 @@ class SkillImportService:
             source_commit=str(item.get("updated_at") or ""),
         )
         preview.skill_id = skill_id
+        preview.category = str(
+            item.get("sub_category_name") or item.get("category_name") or preview.category
+        )
         return await self.confirm_import(preview, overwrite=overwrite)
 
     def _agentexplorer_client(self):
@@ -768,6 +784,14 @@ class SkillImportService:
     async def _exists(self, skill_id: str) -> bool:
         return await self._get_model(skill_id) is not None
 
+    async def _installed_ids(self, skill_ids: list[str]) -> set[str]:
+        if not skill_ids:
+            return set()
+        result = await self._db.execute(
+            select(SkillModel.skill_id).where(SkillModel.skill_id.in_(skill_ids))
+        )
+        return {str(skill_id) for skill_id in result.scalars().all()}
+
     async def _get_model(self, skill_id: str) -> SkillModel | None:
         result = await self._db.execute(
             select(SkillModel).where(SkillModel.skill_id == skill_id)
@@ -932,6 +956,29 @@ def _write_json(path: Path, obj: dict) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(path)
+
+
+def _builtin_category_map(market_dir: Path) -> dict[str, str]:
+    """Recover the source taxonomy for bioSkills published as flat market folders."""
+    source_root = market_dir.parents[2] / "skills" / "bio_skills"
+    if not source_root.is_dir():
+        return {}
+    result: dict[str, str] = {}
+    for skill_md in source_root.glob("*/*/SKILL.md"):
+        skill_dir = skill_md.parent
+        category = skill_dir.parent.name
+        skill_id = f"bio-{category}-{skill_dir.name}"
+        result[skill_id] = category
+    return result
+
+
+def _aliyun_category(manifest: dict, skill_id: str, fallback: str = "general") -> str:
+    for item in manifest.get("items", []):
+        if isinstance(item, dict) and str(item.get("skill_name") or "") == skill_id:
+            return str(
+                item.get("sub_category_name") or item.get("category_name") or fallback
+            )
+    return fallback
 
 
 def _extract_aliyun_skills(blob: bytes) -> dict[str, dict[str, bytes]]:

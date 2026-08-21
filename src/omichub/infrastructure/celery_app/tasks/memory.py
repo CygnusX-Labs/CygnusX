@@ -9,7 +9,30 @@ import re
 from typing import Any
 
 from celery import shared_task
+from loguru import logger
 from sqlalchemy import select
+
+from omichub.core.telemetry import get_meter
+
+_memory_meter = get_meter("omichub.memory")
+_settle_skipped = _memory_meter.create_counter(
+    "memory.settle_skipped",
+    description="AgentTeams 合成会话 settle 排除次数（operational 级：仅指标计数，进 /metrics）",
+)
+
+
+def is_agentteams_synthetic_session(session: Any) -> bool:
+    """AgentTeams 合成会话判定：settle 入口与任务体共用的排除条件。
+
+    合成会话标记（agentteams_usage_service.py）：session_id=agentteams:<case_id>、
+    status="system"、mode="agentteams"。Case 事实源永远是事件流 + 血缘，
+    合成会话不允许进入长期记忆 settle 通道。
+    """
+    return bool(
+        getattr(session, "mode", None) == "agentteams"
+        or getattr(session, "status", None) == "system"
+        or str(getattr(session, "session_id", "") or "").startswith("agentteams:")
+    )
 
 
 def _conversation_text(messages: list[Any], *, limit: int = 8_000) -> str:
@@ -211,12 +234,12 @@ async def _settle_session_memory(session_id: str) -> dict[str, Any]:
 
 async def _settle_session_memory_v2(session_id: str) -> dict[str, Any]:
     """Extract only the new message interval and persist it idempotently."""
+    from omichub.application.services.agent_memory_service import AgentMemoryService
     from omichub.core.config import get_settings
-    from omichub.infrastructure.database.models.agent_memory import MemoryFactModel, MemorySettlementModel
+    from omichub.infrastructure.database.models.agent_memory import MemorySettlementModel
     from omichub.infrastructure.database.models.chat import ChatMessageModel, ChatSessionModel
     from omichub.infrastructure.database.session import get_session_factory
     from omichub.infrastructure.memory.fact_store import MemoryFactCreate, PostgresFactStore
-    from omichub.application.services.agent_memory_service import AgentMemoryService
 
     settings = get_settings()
     async with get_session_factory()() as session:
@@ -225,6 +248,15 @@ async def _settle_session_memory_v2(session_id: str) -> dict[str, Any]:
         )
         if chat_session is None:
             return {"status": "missing"}
+        if is_agentteams_synthetic_session(chat_session):
+            # 任务体双保险：防御未来新投递点绕过入口排除。命中即幂等返回，
+            # 不写 settlement、不动游标；operational 级口径 = 指标计数 + 日志。
+            _settle_skipped.add(1, {"reason": "agentteams_synthetic"})
+            logger.info(
+                "memory.settle_skipped session_id={} reason=agentteams_synthetic",
+                session_id,
+            )
+            return {"status": "skipped_agentteams"}
         query = (
             select(ChatMessageModel)
             .where(ChatMessageModel.session_id == session_id)

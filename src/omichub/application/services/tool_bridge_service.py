@@ -472,6 +472,9 @@ class ToolBridgeService:
         return {
             "success": False,
             "is_error": True,
+            # 顶层 error 供事件流摘要（_tool_result_summary）读取真实失败原因，
+            # 避免降级成无信息量的“工具执行失败”。
+            "error": message,
             "llm_payload": {"success": False, "error": message},
             "ui_payload": {"error": message},
         }

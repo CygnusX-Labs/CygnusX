@@ -127,7 +127,7 @@ async def _respond_to_room_namespace_message(
             )
 
             room = await AgentTeamsRoomService(db, agentteams).get_room(room_id, requester_ref)
-            return await AgentTeamsRoomResponseService(db, agentteams=agentteams).respond_room(
+            result = await AgentTeamsRoomResponseService(db, agentteams=agentteams).respond_room(
                 room,
                 requester_ref,
                 content,
@@ -135,6 +135,11 @@ async def _respond_to_room_namespace_message(
                 if isinstance(dispatch, dict) and dispatch.get("dispatch_mode") == "direct"
                 else None,
             )
+            # BUG-E2E-02：立项卡等房间行写入此前只 flush 不 commit，会话关闭即回滚，
+            # confirm-proposal 恒 400。失败态不提交，随会话关闭回滚保持一致。
+            if result.get("status") != "failed":
+                await db.commit()
+            return result
     except Exception as exc:  # noqa: BLE001
         logger.exception("AgentTeams room namespace response task failed: %s", exc)
         return {"status": "failed"}

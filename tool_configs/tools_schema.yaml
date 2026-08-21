@@ -159,7 +159,7 @@ tools:
     input_schema:
       type: object
       properties:
-        task_id: {type: string, description: 当前用户拥有的任务 UUID}
+        task_id: {type: string, description: 当前用户拥有的 Pipeline 任务 UUID（不是 bioops_ 开头的 AgentTeams Case ID，Case 未产生任务时不要调用本工具）}
       required: [task_id]
     llm_result_fields: [task_id, status, flow_id, parameters, metrics, artifacts, file_records, error_excerpt, success, error]
     ui_result_fields: []
@@ -177,7 +177,7 @@ tools:
     input_schema:
       type: object
       properties:
-        task_id: {type: string, description: 当前用户拥有的任务 UUID}
+        task_id: {type: string, description: 当前用户拥有的 Pipeline 任务 UUID（不是 bioops_ 开头的 AgentTeams Case ID，Case 未产生任务时不要调用本工具）}
         path: {type: string, description: 相对于任务根目录的文件路径}
         max_bytes: {type: integer, minimum: 1, maximum: 20000, default: 20000}
       required: [task_id, path]
@@ -259,6 +259,35 @@ tools:
         metric_name: {type: string, enum: [mapping_rate, q30, duplicate_rate]}
       required: [flow_id, metric_name]
     llm_result_fields: [flow_id, metric_name, threshold, rule_version, success, error]
+    ui_result_fields: []
+
+  - key: agentteams-case-facts-query
+    name: case_facts_query
+    description: >-
+      自省查询（F4）：查当前 Case 的已登记产物及版本、事件时间线、待办审批、产物血缘一级展开。
+      处理"这个产物是哪来的/上次判了什么/还有什么没批"类问题前先查这里，不要凭上下文记忆回答。
+      scope 强制限定当前 Case，越权与受限关键词查询会被拒并记审计。
+      template=schema 可取表/列说明文档正文（渐进暴露）。
+    category: agentteams-evidence
+    invocation_mode: backend_sync
+    service: omichub.application.services.agentteams_introspection_service.AgentTeamsIntrospectionService
+    method: query_case_facts_tool
+    requires_confirm: false
+    annotations: {readOnlyHint: true, destructiveHint: false, openWorld: false, idempotent: true}
+    extra: {user_scoped: true}
+    input_schema:
+      type: object
+      properties:
+        case_id: {type: string, description: 当前协作 Case ID（必须是本房间绑定的 Case）}
+        template:
+          type: string
+          enum: [artifact_versions, event_timeline, pending_approvals, artifact_lineage, schema]
+          description: 预置查询模板；与 sql 二选一
+        sql: {type: string, maxLength: 2000, description: 受限 SQL（单表 SELECT，表白名单 case_artifact_versions/case_artifact_dependencies/qc_verification_checks，服务端强制注入 case_id 过滤）；与 template 二选一}
+        params: {type: object, description: 模板参数（如 artifact_id / work_item_id / event_type / since）}
+        limit: {type: integer, minimum: 1, maximum: 200, default: 50}
+      required: [case_id]
+    llm_result_fields: [rows, row_count, total_count, truncated, aggregate, document, success, error]
     ui_result_fields: []
 
   - key: agent-memory-save

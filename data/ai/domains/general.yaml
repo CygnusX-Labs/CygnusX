@@ -51,7 +51,7 @@ assignments:
       workspace_access: true
       accepts_inputs: [结构化实体清单]
       produces_outputs: [带来源引用的文献证据表]
-      task: "对提取的实体逐条做文献检索，优先权威来源（PubMed/Europe PMC 等），输出带来源引用的证据表；无来源支撑的结论必须标注为未证实。"
+      task: "对提取的实体逐条做文献检索，优先权威来源（PubMed/Europe PMC 等），输出带来源引用的证据表；无来源支撑的结论要标注为未证实——交付与审计会按引用逐条核对，未标注的臆造结论会被质量门判 fail 并触发返工。"
     - id: report-generation
       when_slot_is: {needs_report: "true"}
       agent_match: [agent-delivery, agent-viz, 交付, 可视化]

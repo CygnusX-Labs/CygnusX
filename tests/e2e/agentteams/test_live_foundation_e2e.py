@@ -176,7 +176,7 @@ def test_live_e2e9_cursor_pagination_no_dup_no_missing() -> None:
         # 与 Bridge 侧事实源计数对账（可选：需 Bridge 凭证）
         if BRIDGE_URL and MANAGER_TOKEN:
             with _bridge_client() as bridge:
-                resp = bridge.get(f"/v1/cases/room-{room_id}/events", params={"limit": 1000})
+                resp = bridge.get(f"/v1/cases/room-{room_id}/events", params={"limit": 100})
                 resp.raise_for_status()
                 bridge_events = resp.json().get("events", [])
                 assert len(seen) == len(bridge_events), (

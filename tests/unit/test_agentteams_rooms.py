@@ -463,7 +463,8 @@ async def test_room_events_unbound_replays_namespace_history() -> None:
 
     assert [event["event_id"] for event in page["events"]] == ["e1", "e2"]
     assert page["case_id"] is None
-    assert page["next_cursor"] == "ns:e2|case:"
+    # E2E-9：本页保留数 < limit → 流已耗尽，游标必须收敛为 None。
+    assert page["next_cursor"] is None
     # 未绑定房间只有命名空间一条流。
     assert agentteams.get_case_events.await_count == 1
     assert agentteams.get_case_events.await_args.args[0] == room_namespace_case_id(room.room_id)
@@ -495,7 +496,8 @@ async def test_room_events_bound_merges_case_stream_by_recorded_at() -> None:
 
     assert [event["event_id"] for event in page["events"]] == ["ns-1", "case-1", "ns-2"]
     assert page["case_id"] == "bioops_case1"
-    assert page["next_cursor"] == "ns:ns-2|case:case-1"
+    # 归并后保留数（3）< limit（100）→ 两流均耗尽，游标清空。
+    assert page["next_cursor"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -1096,6 +1098,8 @@ async def test_room_events_truncates_merged_page_and_recomputes_cursor() -> None
         room, "user-a", cursor=page2["next_cursor"], limit=2
     )
     assert page3["events"] == []
+    # E2E-9：空页必须清空游标，调用方据此判停（此前 next_cursor 永不清空）。
+    assert page3["next_cursor"] is None
 
 
 @pytest.mark.asyncio
@@ -1137,3 +1141,140 @@ async def test_room_events_order_matches_shared_sort_key() -> None:
     assert [event["event_id"] for event in page["events"]] == [
         event["event_id"] for event in sorted(events, key=event_stream_sort_key)
     ] == ["evt-m", "evt-a", "evt-z"]
+
+
+# ---------------------------------------------------------------------------
+# BUG-E2E-01：Matrix 建房回写二次 flush 后 updated_at 被 expire，必须 refresh
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_room_refreshes_after_matrix_writeback() -> None:
+    """Matrix 建房成功路径：二次 flush（UPDATE）使 onupdate=func.now() 的
+    updated_at 进入 expired/unloaded 态，端点 _room_payload 在 async 上下文
+    同步读列会触发懒加载 IO（MissingGreenlet → 500）。修复后必须显式 refresh。"""
+    db = make_db()
+    agentteams = make_agentteams()
+    service = AgentTeamsRoomService(db, agentteams)
+
+    room = await service.create_room(owner_id="user-a", title="x")
+
+    assert room.matrix_room_id == "!room:test"
+    # 插入 + matrix_room_id 回写共两次 flush；回写后必须 refresh 重新加载所有列。
+    assert db.flush.await_count == 2
+    db.refresh.assert_awaited_once_with(room)
+
+
+@pytest.mark.asyncio
+async def test_create_room_without_matrix_writeback_does_not_refresh() -> None:
+    """Matrix 不可用（纯 INSERT）时 updated_at 经 RETURNING 已加载，无需 refresh。"""
+    db = make_db()
+    agentteams = make_agentteams()
+    agentteams.provision_case_room = AsyncMock(return_value=None)
+    service = AgentTeamsRoomService(db, agentteams)
+
+    room = await service.create_room(owner_id="user-a")
+
+    assert room.matrix_room_id is None
+    assert db.flush.await_count == 1
+    db.refresh.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# E2E-9：游标分页终止性——末页后 next_cursor 收敛为 None，全程不重不漏
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_room_events_pagination_terminates_at_end_of_stream() -> None:
+    """20 条事件按 limit=7 翻页（7+7+6）：末页 next_cursor 必须为 None，
+    且不允许出现「空页 + 非空游标」的死循环页。"""
+    room = make_room()
+    ns_id = room_namespace_case_id(room.room_id)
+    events = [
+        _stream_event(f"e{index:02d}", f"2026-08-20T10:{index:02d}:00+00:00")
+        for index in range(20)
+    ]
+    agentteams = _paged_agentteams({ns_id: events})
+    service = AgentTeamsRoomService(make_db(), agentteams)
+
+    seen: list[str] = []
+    cursor: str | None = None
+    pages = 0
+    while True:
+        page = await service.get_room_events(room, "user-a", cursor=cursor, limit=7)
+        pages += 1
+        assert len(page["events"]) <= 7
+        seen.extend(str(event["event_id"]) for event in page["events"])
+        if page["next_cursor"] is None:
+            break
+        assert page["events"], "空页不得携带非空 next_cursor（E2E-9 死循环回归）"
+        cursor = page["next_cursor"]
+        assert pages < 10, "翻页未在末页终止"
+
+    assert pages == 3  # 7 + 7 + 6
+    assert seen == [f"e{index:02d}" for index in range(20)]  # 不重不漏
+    assert len(seen) == len(set(seen))
+
+
+@pytest.mark.asyncio
+async def test_room_events_full_boundary_page_terminates_on_next_empty_page() -> None:
+    """末页恰好满页（kept == limit）时允许再拉一页空页，但空页游标必须为 None。"""
+    room = make_room()
+    ns_id = room_namespace_case_id(room.room_id)
+    events = [
+        _stream_event(f"e{index}", f"2026-08-20T10:0{index}:00+00:00") for index in range(4)
+    ]
+    agentteams = _paged_agentteams({ns_id: events})
+    service = AgentTeamsRoomService(make_db(), agentteams)
+
+    page1 = await service.get_room_events(room, "user-a", limit=4)
+    assert len(page1["events"]) == 4
+    # 满页无法判断是否还有后续，游标继续推进。
+    assert page1["next_cursor"] == "ns:e3|case:"
+
+    page2 = await service.get_room_events(room, "user-a", cursor=page1["next_cursor"], limit=4)
+    assert page2["events"] == []
+    assert page2["next_cursor"] is None
+
+
+# ---------------------------------------------------------------------------
+# E2E-2：events 端点 limit 超上界钳制到 100（不对用户报 422）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_room_events_endpoint_clamps_limit_above_100(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """limit=101/200 不再被 Query(le=100) 422 抹平：端点钳制到 100 交给 Service，
+    调用方凭 next_cursor 续拉（Bridge 自身的硬上限校验保留，不在本层）。"""
+    from omichub.api.v1 import agentteams as agentteams_api
+
+    captured: dict[str, Any] = {}
+
+    class FakeRooms:
+        def __init__(self, db: Any, service: Any) -> None: ...
+
+        async def get_room(self, room_id: str, user_id: str) -> Any:
+            return make_room(room_id=room_id, owner_id=user_id)
+
+        async def get_room_events(
+            self, room: Any, user_id: str, *, cursor: str | None, limit: int
+        ) -> dict:
+            captured["limit"] = limit
+            return {"room_id": room.room_id, "events": [], "next_cursor": None}
+
+    monkeypatch.setattr(agentteams_api, "AgentTeamsRoomService", FakeRooms)
+
+    for requested in (1, 100, 101, 200):
+        result = await agentteams_api.get_room_events(
+            "room-1",
+            current_user_id="user-a",
+            service=SimpleNamespace(),
+            db=AsyncMock(),
+            cursor=None,
+            limit=requested,
+        )
+        assert result["events"] == []
+        assert captured["limit"] == min(requested, 100)

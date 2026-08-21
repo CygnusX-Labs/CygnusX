@@ -60,6 +60,7 @@ from omichub.application.services.agentteams_service import (
 )
 from omichub.application.services.flow_registry import FlowRegistry, get_flow_registry
 from omichub.core.config import get_settings
+from omichub.core.telemetry import get_meter
 from omichub.infrastructure.cache.redis_client import get_redis
 from omichub.infrastructure.database.models.chat import AgentTeamsRoomModel
 from omichub.infrastructure.database.models.user import UserModel
@@ -73,7 +74,7 @@ ROOM_RESPONSE_DEDUP_KEY_PREFIX = "agentteams:room-response:done:"
 ROOM_RESPONSE_DEDUP_TTL_SECONDS = 24 * 60 * 60
 # 产出过真实响应的终态（失败/跳过不落幂等标记，允许后续重试）。
 _RESPONSE_SUCCESS_STATUSES = frozenset(
-    {"responded", "asked", "planning_started", "tool_executed", "proposal_pending"}
+    {"responded", "asked", "planning_started", "tool_executed", "proposal_pending", "direct_responded"}
 )
 # Case 终态（含已取消）后房间继续对话时，新的 execute 意图转为"继续/新建"选择卡。
 ROOM_FOLLOWUP_CASE_STATUSES = frozenset({"closed", "delivery_ready", "cancelled"})
@@ -90,6 +91,14 @@ _ROOM_STREAM_FLUSH_CHARS = 24
 # 房间内 Manager 回复正文的落库上限：结构化长文（分析方案等）容易超过 4k，
 # 截断会让用户误以为"没生成完"，放宽到 10k。
 _ROOM_REPLY_CONTENT_MAX_CHARS = 10_000
+
+_memory_meter = get_meter("omichub.memory")
+# L4 记忆装配异常降级计数（operational 级：仅指标计数，进 /metrics）；
+# 静默降级是本平台反复打过的模式，必须可观测。
+_l4_inject_degraded = _memory_meter.create_counter(
+    "memory.l4_inject_degraded",
+    description="L4 房间记忆装配异常降级为空注入的次数（operational 级指标）",
+)
 
 # 执行对象澄清（O6 阶段 2）：clarify 态下 Manager 直发选项式追问卡片，
 # 复用 room.ask_user / AskUserCard 的渲染与【澄清回复】回填链路。
@@ -377,6 +386,7 @@ class AgentTeamsRoomResponseService:
                         "direct_failed",
                         "direct_agent_unavailable",
                     }:
+                        response_status = str(direct_result.get("status") or "")
                         return direct_result
                     # A3（Part 2.7 失败降级路径）：直答失败/超时/目标不可用时禁止
                     # 静默——先落 Manager 可见降级消息与 room.agent_timeout 审计
@@ -437,6 +447,16 @@ class AgentTeamsRoomResponseService:
             consultation = self._is_consultation_reply(
                 case, event_items, content, execution_outcome
             )
+            agent_id = await self._manager_agent_with_audit(case_id)
+            if agent_id is None:
+                logger.bind(case_id=case_id).warning(
+                    "AgentTeams room response skipped: no manager agent available"
+                )
+                response_status = "skipped_no_manager"
+                return {"status": response_status}
+            memory_context = await self._build_memory_context(
+                requester_ref=requester_ref, agent_id=agent_id, current_message=content
+            )
             question = self._build_question(
                 question_case,
                 event_items,
@@ -447,14 +467,8 @@ class AgentTeamsRoomResponseService:
                 ),
                 manager_display_name=self._manager_display_name(),
                 consultation=consultation,
+                memory_context=memory_context,
             )
-            agent_id = await self._manager_agent_with_audit(case_id)
-            if agent_id is None:
-                logger.bind(case_id=case_id).warning(
-                    "AgentTeams room response skipped: no manager agent available"
-                )
-                response_status = "skipped_no_manager"
-                return {"status": response_status}
             await self._set_typing(case_id, typing=True)
             try:
                 stream_id = uuid4().hex
@@ -998,6 +1012,9 @@ class AgentTeamsRoomResponseService:
                 "causation_event_id": causation_event_id,
             },
         )
+        memory_context = await self._build_memory_context(
+            requester_ref=requester_ref, agent_id=agent_id, current_message=content
+        )
         question = self._build_question(
             {"intent": "受控只读工具执行", "status": "tool_execute"},
             [],
@@ -1008,6 +1025,7 @@ class AgentTeamsRoomResponseService:
                 "不得把未执行的动作表述为已完成。"
             ),
             manager_display_name=self._manager_display_name(),
+            memory_context=memory_context,
         )
         await self._set_typing(case_id, typing=True)
         try:
@@ -1885,6 +1903,7 @@ class AgentTeamsRoomResponseService:
         system_note: str | None = None,
         manager_display_name: str | None = None,
         consultation: bool = False,
+        memory_context: str | None = None,
     ) -> str:
         preferences = preferences or {}
         latest_user_message = fallback_content.strip()
@@ -1987,5 +2006,31 @@ class AgentTeamsRoomResponseService:
             + case_block
             + f"最近房间动态：\n{context_block}\n"
             f"本条发言引用文件：{refs_block}\n"
-            f"请求人最新发言：{latest_user_message}"
+            # L4 读取面记忆注入（M2）：共享层 + Manager 分区，<user_memory> 不可信包装
+            + (f"{memory_context}\n" if memory_context else "")
+            + f"请求人最新发言：{latest_user_message}"
         )
+
+    async def _build_memory_context(
+        self, *, requester_ref: str, agent_id: str, current_message: str
+    ) -> str:
+        """L4 房间读取面记忆装配（M2）：共享层（profile/preference）+ Manager 分区。
+
+        仅 memory_v2 开启时注入；v2 off 或装配失败返回空串，行为与接入前一致。
+        3200 字节预算与 <user_memory> 不可信包装由 build_prompt_context_v2 保证。
+        """
+        if not get_settings().memory_v2_enabled:
+            return ""
+        try:
+            from omichub.application.services.agent_memory_service import AgentMemoryService
+
+            return await AgentMemoryService(self._db).build_prompt_context_v2(
+                requester_ref, agent_id, current_message
+            )
+        except Exception as exc:  # noqa: BLE001 - 记忆装配失败不得阻断房间回复
+            # 静默降级必须可观测：operational 级指标计数 + 警告日志
+            _l4_inject_degraded.add(1, {"agent_id": agent_id})
+            logger.bind(agent_id=agent_id).warning(
+                "AgentTeams 房间记忆装配失败，本轮不注入: {}", exc
+            )
+            return ""

@@ -210,7 +210,9 @@ payload = {agent_id, role, causation_event_id,
 
 ## 十、演进历史与遗留问题
 
-演进主线：**Overdrive 超频（08 初）→ 协作室 M1–M7（08-12~13）→ 部门协作 Phase 1–3 → 08-19 生产事故根因调查 → 08-20 Manager 人格分层 + 框架调研 → 08-21 MinIO 化 + Case 解耦 + L4 前置收尾 → 08-21 L4 符合度审查 + 安全/正确性加固 → 08-21 v3 复审八项修复（本文档）**。
+演进主线：**Overdrive 超频（08 初）→ 协作室 M1–M7（08-12~13）→ 部门协作 Phase 1–3 → 08-19 生产事故根因调查 → 08-20 Manager 人格分层 + 框架调研 → 08-21 MinIO 化 + Case 解耦 + L4 前置收尾 → 08-21 L4 符合度审查 + 安全/正确性加固 → 08-21 v3 复审八项修复 → 08-21 双线施工（地基真实栈 e2e 验收 + 七项 hotfix，本节）**。
+
+08-21 双线施工（《协作室双线施工任务书-三件套实现与地基e2e验收.md》Track B）：11 条地基用例在真实栈（compose 全套 + MinIO + 5 个 agentteams worker）首轮验收 4 绿/1 半绿/3 红/1 阻断/2 未覆盖，产出 5 个地基 bug 档案；随后主干 hotfix 七项并逐项复验——BUG-01 建房 500（MissingGreenlet 懒加载）、BUG-02 立项卡不落库（celery 任务无 commit）、BUG-03 preflight 派单硬编码别名（`_canonical_work_item_target` 经 capability snapshot 解析 canonical identity，端到端目击 preflight-01 target=agent-data 被专业池认领）、E2E-2 limit 钳制、E2E-9 空页死循环；复验中新发现 BUG-04（规划校验自愈 3/3 全败停死 waiting_for_correction，修复：会诊信封补流程型 TaskSpec 完整骨架 + sample_sheet list 形态明示）与 BUG-05（工具错误信封缺顶层 error 致事件流摘要丢失真实原因 + task_id 描述澄清），均已修复并各带单测。修复后全链路重跑：规划 3 次尝试内通过 → planning.frozen → preflight completed → approval_pending。验收套件已固化为 `tests/e2e/agentteams/test_live_foundation_e2e.py`（AGENTTEAMS_LIVE_E2E=1 门控，真实栈 HTTP 驱动）。全部证据在 `evidence/e2e-2026-08-21/`。
 
 08-21 审查修复后**已闭环**的原遗留项：#2 `room.agent_stream` 已瞬态化（不进 MinIO 持久流、不进 Matrix 镜像，仅 Redis/内存供 SSE 打字机）；#3 会诊异常事件已带 `causation_event_id`（`run_consultation` 调用链透传触发 event_id）；#6 CaseStore 已改 persist-then-commit（23 处调用点顺序反转，快照写失败内存态不推进，且 `_persist` 改增量写）；#8 幂等 receipt 已持久化 MinIO（`receipts/{key}.json`，恢复不依赖事件重放）。审查新发现的安全项同日修复：B1 审批旁路（approval-authority 不可铸 worker token、审批 token 绑定 plan_hash）、B2 evidence 身份白名单 + worker 因果锚点强制、B3 confirm_token 全出口脱敏（复审 B1 进一步闭环为"写入后即脱敏"，见第四节）+ owner 显式断言。
 
@@ -218,8 +220,8 @@ payload = {agent_id, role, causation_event_id,
 
 当前遗留问题（按优先级）：
 
-1. **分组提交验收未执行**（唯一阻断项）：218 条改动对账表与分组计划已产出（`docs/info/26.8.21/协作室工作树对账与分组提交计划-2026-08-21.md`），夹带项归属与 hunk 拆分待用户决策后提交。
-2. **真实服务 e2e 未执行**：CI 已建（含 Bridge 测试收编与 E2E-7），但 MinIO 恢复演练（E2E-8）、Case 解耦端到端（E2E-9/10/11 的真实环境版）、audit-chain 实跑均未在真实服务上验证——"已验证"档的全部缺口在此。
+1. **分组提交验收未执行**（唯一阻断项）：218+ 条改动对账表与分组计划已产出（`docs/info/26.8.21/协作室工作树对账与分组提交计划-2026-08-21.md`），夹带项归属与 hunk 拆分待用户决策后提交；双线施工的七项 hotfix 也随工作树待提交。
+2. **真实服务 e2e 已执行一轮并修复复验**（见上节双线施工）：剩余缺口为审批→执行→交付段（需真实审批触发计算任务）、E2E-4/6/11 的故障注入/前端渲染子项、live 套件进 CI 默认执行（需 CI compose 矩阵）；`waiting_for_correction` 无预算耗尽显式终态；BUG-05 的 live success 标记疑点待查。
 3. L2→L4 的 Phase D"LLM 兜底"未实现（仅 trigger_hints 子串匹配，veto 可审计与词表收窄已修）。
 4. 房间删除/归档端点未实现（GC 口径已定档未实施）；房间列表无最后消息预览字段。
 5. @直答成功不落幂等标记（`direct_responded` 不在成功终态内，重试可能重复直答）——改动前即如此，待评估。
@@ -232,7 +234,7 @@ payload = {agent_id, role, causation_event_id,
 
 ## 十一、一句话总结
 
-升级后的协作室是一套**"房间即轻量会话、Case 即确认工单、MinIO 即事实源"**的三进程架构——主后端做认证适配、房间实体与 LLM 会诊内核，无状态 Bridge 持有 Case 状态机并把状态与事件流全部对象化到 MinIO，Gateway 做策略护栏与 Matrix 密钥隔离；前端以 SSE + 两级纯函数投影把双流（房间级/Case 级）统一渲染成群聊。L4 四个前置条件的代码已全部就绪并经一轮独立审查与安全/正确性加固（审批旁路与审计伪造已封堵），但全部改动仍在工作树：**完成分组提交与真实服务 e2e 验收后，方可摘除"L4 候选/演示态"标签**。
+升级后的协作室是一套**"房间即轻量会话、Case 即确认工单、MinIO 即事实源"**的三进程架构——主后端做认证适配、房间实体与 LLM 会诊内核，无状态 Bridge 持有 Case 状态机并把状态与事件流全部对象化到 MinIO，Gateway 做策略护栏与 Matrix 密钥隔离；前端以 SSE + 两级纯函数投影把双流（房间级/Case 级）统一渲染成群聊。L4 四个前置条件的代码已全部就绪，经一轮独立审查、安全/正确性加固与真实栈地基 e2e 验收（七项 hotfix 已复验转绿）；但全部改动仍在工作树：**完成分组提交后，方可摘除"L4 候选/演示态"标签**。
 
 ---
 
@@ -243,6 +245,8 @@ payload = {agent_id, role, causation_event_id,
 - `docs/info/26.8.21/协作室L4审查修复与优化实施手册.md` —— 审查修复手册（阶段 0–3）
 - `docs/info/26.8.21/协作室工作树对账与分组提交计划-2026-08-21.md` —— 218 条改动对账与提交计划
 - `docs/info/26.8.21/协作室框架文档v3复审问题清单.md` —— 第二轮复审八项问题（A/B/C 类，已全部修复）
+- `docs/info/26.8.21/协作室双线施工任务书-三件套实现与地基e2e验收.md` —— 双线施工任务书（Track A 三件套待提交门禁，Track B 地基验收已执行）
+- `evidence/e2e-2026-08-21/summary.md` —— 地基 e2e 验收 + 七项 hotfix 复验证据汇总（BUG-01~05 档案在 env/ 子目录）
 - `docs/info/26.8.21/协作室房间事件GC与归档口径.md` —— 房间闲聊数据保留/归档口径（C1）
 - `ARCHITECTURE_DESIN/agentteams_department_collaboration_architecture(_2026-08).md` —— 部门协作架构
 - `ARCHITECTURE_DESIN/agentteams_room_plan.md` —— 协作室实施总账 M1–M7

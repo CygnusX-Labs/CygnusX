@@ -1553,7 +1553,30 @@ async def test_direct_mention_success_has_no_fallback(monkeypatch) -> None:
     assert messages[0].kwargs["payload"]["content"] == "领域直答：质控已通过。"
 
 
-def test_build_question_consultation_excludes_intake_guidance() -> None:
+@pytest.mark.asyncio
+async def test_direct_mention_success_arms_dedup(monkeypatch) -> None:
+    """@直答成功后应落幂等标记，任务重试/轮询时同一消息不再重复直答。"""
+    events = _direct_message_events()
+    agentteams = _agentteams(events=events)
+    run = AsyncMock(return_value=ConsultationEnvelope(conclusion="领域直答：质控已通过。"))
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+    redis = FakeRedis()
+    room = _room(case_id="bioops_1")
+    service = _service(
+        agentteams=agentteams,
+        registry=_registry("agent-scrna", with_manager=True),
+        redis=redis,
+    )
+
+    first = await service.respond_room(room, "user-a", "这个样本的质控怎么看？", target_agent_id="agent-scrna")
+    second = await service.respond_room(room, "user-a", "这个样本的质控怎么看？", target_agent_id="agent-scrna")
+
+    assert first == {"status": "direct_responded"}
+    assert second == {"status": "skipped_duplicate"}
+    assert run.await_count == 1
+    messages = _evidence_calls(agentteams, "room.agent_message")
+    assert len(messages) == 1
+    assert messages[0].kwargs["payload"]["direct_mention"] is True
     """纯咨询分支（A1）：不注入 Case 状态/研究设计，不含接单阶段引导与结构化 ask_user 指令。"""
     question = AgentTeamsRoomResponseService._build_question(
         {"intent": "", "status": "received"},
@@ -1611,3 +1634,220 @@ def test_is_consultation_reply_requires_empty_case_intent() -> None:
     assert (
         service._is_consultation_reply(case_no_intent, [], "你好", "started") is False
     )
+
+
+# --- M2：L4 房间读取面记忆注入 ---
+
+_MEMORY_BLOCK = "<user_memory>\n## 用户记忆\n- 结果图都用英文标注\n</user_memory>"
+
+
+def test_build_question_injects_memory_context_when_provided() -> None:
+    """M2 注入：记忆块进入 Manager 问题装配，且位于最新发言之前。"""
+    question = AgentTeamsRoomResponseService._build_question(
+        {"intent": "RNA-seq 数据分析", "status": "received"},
+        [],
+        "帮我做差异分析",
+        memory_context=_MEMORY_BLOCK,
+    )
+
+    assert "<user_memory>" in question
+    assert "结果图都用英文标注" in question
+    assert question.index("<user_memory>") < question.rindex("请求人最新发言")
+
+
+def test_build_question_without_memory_context_has_no_user_memory() -> None:
+    """专家直答/会诊子 Agent 等未传 memory_context 的调用方零注入（V5）。"""
+    question = AgentTeamsRoomResponseService._build_question(
+        {"intent": "受控只读工具执行", "status": "tool_execute"},
+        [],
+        "读一下结果文件",
+    )
+
+    assert "<user_memory>" not in question
+
+
+@pytest.mark.asyncio
+async def test_memory_context_empty_when_v2_off(monkeypatch) -> None:
+    """v2 off 时行为与接入前完全一致：不装配、不触碰记忆服务。"""
+    monkeypatch.setattr(
+        "omichub.application.services.agentteams_room_response_service.get_settings",
+        lambda: SimpleNamespace(memory_v2_enabled=False),
+    )
+
+    class _ForbiddenMemoryService:
+        def __init__(self, *args, **kwargs) -> None:
+            raise AssertionError("v2 off 不应装配记忆服务")
+
+    monkeypatch.setattr(
+        "omichub.application.services.agent_memory_service.AgentMemoryService",
+        _ForbiddenMemoryService,
+    )
+    service = _service(
+        agentteams=SimpleNamespace(),
+        registry=_registry("agent-general", with_manager=True),
+        redis=FakeRedis(),
+    )
+
+    result = await service._build_memory_context(
+        requester_ref="user-1", agent_id="agentteams-manager", current_message="你好"
+    )
+
+    assert result == ""
+
+
+@pytest.mark.asyncio
+async def test_memory_context_uses_shared_plus_manager_partition(monkeypatch) -> None:
+    """v2 开启时按 requester + manager agent 分区装配，结果原样透传。"""
+    monkeypatch.setattr(
+        "omichub.application.services.agentteams_room_response_service.get_settings",
+        lambda: SimpleNamespace(memory_v2_enabled=True),
+    )
+    captured: dict = {}
+
+    class _FakeMemoryService:
+        def __init__(self, _db) -> None:
+            pass
+
+        async def build_prompt_context_v2(
+            self, user_id, agent_id, current_message, *, project_id=None
+        ) -> str:
+            captured.update(user_id=user_id, agent_id=agent_id, message=current_message)
+            return _MEMORY_BLOCK
+
+    monkeypatch.setattr(
+        "omichub.application.services.agent_memory_service.AgentMemoryService",
+        _FakeMemoryService,
+    )
+    service = _service(
+        agentteams=SimpleNamespace(),
+        registry=_registry("agent-general", with_manager=True),
+        redis=FakeRedis(),
+    )
+
+    result = await service._build_memory_context(
+        requester_ref="user-1", agent_id="agentteams-manager", current_message="提个需求"
+    )
+
+    assert result == _MEMORY_BLOCK
+    assert captured == {
+        "user_id": "user-1",
+        "agent_id": "agentteams-manager",
+        "message": "提个需求",
+    }
+
+
+@pytest.mark.asyncio
+async def test_memory_context_failure_does_not_break_room_reply(monkeypatch) -> None:
+    """记忆装配异常降级为空注入，不得阻断房间回复主流程。"""
+    monkeypatch.setattr(
+        "omichub.application.services.agentteams_room_response_service.get_settings",
+        lambda: SimpleNamespace(memory_v2_enabled=True),
+    )
+
+    class _BrokenMemoryService:
+        def __init__(self, _db) -> None:
+            pass
+
+        async def build_prompt_context_v2(self, *args, **kwargs) -> str:
+            raise RuntimeError("memory backend down")
+
+    monkeypatch.setattr(
+        "omichub.application.services.agent_memory_service.AgentMemoryService",
+        _BrokenMemoryService,
+    )
+    service = _service(
+        agentteams=SimpleNamespace(),
+        registry=_registry("agent-general", with_manager=True),
+        redis=FakeRedis(),
+    )
+
+    result = await service._build_memory_context(
+        requester_ref="user-1", agent_id="agentteams-manager", current_message="你好"
+    )
+
+    assert result == ""
+
+
+@pytest.mark.asyncio
+async def test_memory_context_excludes_other_agent_partitions(monkeypatch) -> None:
+    """M2+M1 装配点贯通证据：注入含共享偏好与 Manager 分区事实，不含其他 agent 分区。"""
+    from datetime import UTC, datetime
+
+    from omichub.application.services.agent_memory_service import AgentMemoryService
+
+    monkeypatch.setattr(
+        "omichub.application.services.agentteams_room_response_service.get_settings",
+        lambda: SimpleNamespace(memory_v2_enabled=True),
+    )
+    monkeypatch.setattr(
+        "omichub.application.services.agent_memory_service.get_settings",
+        lambda: SimpleNamespace(
+            memory_v2_enabled=True,
+            memory_fact_time_decay_lambda=0.02,
+            agent_memory_embedding_model="text-embedding-3-small",
+        ),
+    )
+    monkeypatch.setattr(
+        AgentMemoryService, "_embed", AsyncMock(return_value=[1.0, 0.0, 0.0])
+    )
+
+    def _fact(fact_id: int, agent_id: str, scope: str, content: str) -> SimpleNamespace:
+        return SimpleNamespace(
+            id=fact_id, agent_id=agent_id, scope=scope, content=content,
+            similarity=0.9, created_at=datetime.now(UTC),
+        )
+
+    partitions = {
+        "": [_fact(1, "", "preference", "结果图都用英文标注")],
+        "agentteams-manager": [_fact(2, "agentteams-manager", "summary", "manager 分区摘要")],
+        "agent-scrna": [_fact(3, "agent-scrna", "project", "scrna 分区项目事实")],
+    }
+    store_calls: list[str] = []
+
+    class _FakeStore:
+        def __init__(self, _db) -> None:
+            pass
+
+        async def search(self, user_id, agent_id, query_vector, limit=10):
+            store_calls.append(agent_id)
+            return list(partitions.get(agent_id, []))[:limit]
+
+    monkeypatch.setattr(
+        "omichub.application.services.agent_memory_service.PostgresFactStore", _FakeStore
+    )
+
+    blocks = [
+        SimpleNamespace(id=1, agent_id="", block_name="preferences", content="偏好块：英文标注"),
+        SimpleNamespace(id=2, agent_id="agent-scrna", block_name="current_focus", content="不应出现"),
+    ]
+
+    class _FakeScalars:
+        def __init__(self, rows: list) -> None:
+            self._rows = rows
+
+        def all(self) -> list:
+            # 模拟 DB 分区过滤：只返回共享层 + 当前 agent 分区的块
+            return [
+                row for row in self._rows if row.agent_id in {"", "agentteams-manager"}
+            ]
+
+    db = AsyncMock()
+    db.scalars = AsyncMock(return_value=_FakeScalars(blocks))
+    service = AgentTeamsRoomResponseService(
+        db,
+        agentteams=SimpleNamespace(),
+        registry=_registry("agent-general", with_manager=True),
+        redis_getter=lambda: FakeRedis(),
+    )
+
+    content = await service._build_memory_context(
+        requester_ref="user-1", agent_id="agentteams-manager", current_message="帮我画图"
+    )
+
+    assert content.startswith("<user_memory>")
+    assert "结果图都用英文标注" in content
+    assert "偏好块：英文标注" in content
+    assert "manager 分区摘要" in content
+    assert "scrna 分区项目事实" not in content
+    assert "不应出现" not in content
+    assert store_calls == ["", "agentteams-manager"]

@@ -73,6 +73,8 @@
 
 SKILL.md 解析要求（`src/omichub/infrastructure/skills/skillmd.py`）：frontmatter 必填 `name`、`description`；单技能文件夹总量上限 1 MiB，单文件 512 KiB。
 
+`skills/bio_skills/` 的 561 个技能已全量发布到内置市场，市场 id 统一为 `bio-<分类>-<技能>`。发布到 `skill_marketplace` 只表示技能可在平台市场中安装；只有被 Agent 的 `skill_ids` 引用或由管理员执行市场安装后，才会写入 `data/ai/skills/` 和 DB `SkillModel`。不要为了“全量安装”把 561 个技能同时挂到单个 Agent，这会显著增加提示词上下文。
+
 ### 2. 单细胞 Agent 的技能挂载
 
 单细胞分析师 `agent-scrna`（`data/ai/scrna.yaml`）当前已挂载：
@@ -81,7 +83,7 @@ SKILL.md 解析要求（`src/omichub/infrastructure/skills/skillmd.py`）：fron
 - scRNA 可执行技能集（来源 `pipelines/scrna/skills/`）：`scrna-pipeline-overview`、`scrna-object-convert`、`scrna-recluster`、`scrna-annotation-ref`、`scrna-tcell-projectils`、`scrna-deg-analysis`、`scrna-annotation-stats`、`scrna-quarto-report`
 - inferCNV 工具：`scrna-seq`
 
-此外已将 bio_skills 的 17 个单细胞技能发布到市场并挂载到 `agent-scrna`（id 均为 `bio-single-cell-*`，对应 `skills/bio_skills/single-cell/` 下的同名子目录）：
+bio_skills 已全量发布到市场；其中以下 17 个单细胞技能已挂载到 `agent-scrna`（id 均为 `bio-single-cell-*`，对应 `skills/bio_skills/single-cell/` 下的同名子目录）：
 
 `bio-single-cell-batch-integration`、`bio-single-cell-cell-annotation`、`bio-single-cell-cell-communication`、`bio-single-cell-clustering`、`bio-single-cell-cnv-inference`、`bio-single-cell-data-io`、`bio-single-cell-differential-abundance`、`bio-single-cell-doublet-detection`、`bio-single-cell-hashing-demultiplexing`、`bio-single-cell-lineage-tracing`、`bio-single-cell-markers-annotation`、`bio-single-cell-metabolite-communication`、`bio-single-cell-multimodal-integration`、`bio-single-cell-perturb-seq`、`bio-single-cell-preprocessing`、`bio-single-cell-scatac-analysis`、`bio-single-cell-trajectory-inference`
 

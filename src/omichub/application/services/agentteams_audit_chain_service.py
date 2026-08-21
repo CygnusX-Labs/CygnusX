@@ -37,7 +37,9 @@ from omichub.application.services.agentteams_service import (
 from omichub.core.exceptions import BusinessError
 from omichub.infrastructure.database.models.chat import AgentTeamsRoomModel
 
+# 依据: 上游契约 — 与 API 默认一致（src/omichub/api/v1/agentteams.py:896 max_events Query 默认 5000、上限 20000）
 _DEFAULT_MAX_EVENTS = 5_000
+# 依据: 实测 E2E-2 — events 端点分页契约每页上限 100（limit>100 钳制，evidence/e2e-2026-08-21/E2E-2）
 _PAGE_LIMIT = 100
 
 # 事件页拉取器：(stream_case_id, cursor, limit) -> {"events": [...], "next_cursor": ...}

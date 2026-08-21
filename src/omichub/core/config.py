@@ -103,9 +103,15 @@ class Settings(BaseSettings):
     minio_access_key: str = ""
     minio_secret_key: str = ""
     minio_agentteams_bucket: str = "agentteams-evidence"
+    # 依据: 待测（经验初值）— 1h 覆盖人工点击下载场景；验证: 统计产物下载因签名过期的失败率
     minio_presign_expire_seconds: int = 3600
+    # 依据: 上游契约 — docs/modules/04_yaml_schema.md:2618 容量表（GTF 注释 50–500MB → 上限 512MB），
+    # data/ai/update/archive/AgentTeams_update_v2.1.md §4 同口径
     agentteams_artifact_fetch_max_mb: int = 512
+    # 依据: 待测（经验初值）— 预览只取报告头部，20MB 为经验上限；验证: 统计真实报告体积分布再校准
     agentteams_report_preview_max_mb: int = 20
+    # 依据: 上游契约 — 与平台日志保留口径一致（loguru retention 30 天，README.md:1069、
+    # ARCHITECTURE_DESIN/LOG_ARCHITECTURE.md:69）
     agentteams_evidence_retention_days: int = 30
     # ===== Session 目录引用 =====
     # 目录仅生成轻量清单，避免一次递归扫描或将大型输入直接注入模型上下文。
@@ -155,8 +161,11 @@ class Settings(BaseSettings):
     agentteams_chat_entry_enabled: bool = False
     agentteams_chat_flow_whitelist: str = "rna_seq,atac_seq,scrna_seq"
     # SSE/event consumer is the primary path; polling only reconciles non-event sources.
+    # 依据: 待测（经验初值）— 15s 为事件主通道之外的兜底对账节拍；验证: 观察对账触发频率与 DB 压力
     agentteams_case_watch_interval_seconds: int = 15
+    # 依据: 待测（经验初值）— SSE 重连间隔；验证: 断网恢复场景下事件补发延迟
     agentteams_case_event_stream_interval_seconds: int = 5
+    # 依据: 待测（经验初值）— 55s 意在小于常见反代 60s 空闲超时；验证: 经生产反代实测 SSE 是否被空闲切断
     agentteams_case_event_stream_seconds: int = 55
     # Cursor migration follows dual-write -> verified new-store reads -> legacy rollback.
     agentteams_case_cursor_migration_mode: Literal["dual_write", "new_only", "legacy_only"] = "dual_write"
@@ -166,6 +175,7 @@ class Settings(BaseSettings):
     subagent_child_timeout_seconds: int = 180  # 单个子任务墙钟上限
     subagent_max_rounds_per_child: int = 6  # 子循环工具轮数上限
     # 超频专家做多步工具任务的子循环轮数上限（普通聊天 fan-out 仍用上面的默认值）
+    # 依据: 待测（经验初值）— 25 轮为长链工具调用的经验上限；验证: 统计超频任务真实轮数分布的 P95
     overdrive_subagent_max_rounds: int = 25
     subagent_max_children_per_message: int = 1  # 父单轮工具回合内允许的 fan-out 调用次数
     upload_dir: str = "uploads"
@@ -314,16 +324,23 @@ class Settings(BaseSettings):
     agentteams_bridge_data_steward_token: str = ""
     agentteams_bridge_approval_token: str = ""
     agentteams_bridge_workflow_operator_token: str = ""
+    # 依据: 待测（经验初值）— 平台到 Bridge 单次调用上限；验证: deploy/agentteams/verify_latency_budget.py
+    # 的 approval_accept_ms P95 ≤ 1000ms 约束下复核是否过紧
     agentteams_bridge_timeout_seconds: float = 10.0
+    # 依据: 待测（经验初值）— 判定 Celery 任务失联的阈值；验证: evidence/e2e-2026-08-21/E2E-1
+    # 曾观测 preflight 卡死 17min+，据此校准用户可容忍等待
     agentteams_stale_task_seconds: int = 600
     # A3（Part 2.7 失败降级路径）：@领域 Agent 直答的超时秒数；超时/报错/目标
     # 不可用时 Manager 降级接管（可见降级消息 + room.agent_timeout 审计事件）。
+    # 依据: 实测 E2E-11 — 真实 LLM 直答耗时 26.9s（evidence/e2e-2026-08-21/summary.md），
+    # 30s 余量很薄；上调需同步评估降级触发率
     agentteams_direct_timeout_seconds: float = 30.0
 
     # ===== Matrix Gateway（OmicHub 仅持有 Gateway 服务凭证，绝不保存 Matrix 凭证） =====
     agentteams_gateway_enabled: bool = False
     agentteams_gateway_url: str = ""
     agentteams_gateway_manager_token: str = ""
+    # 依据: 待测（经验初值）— 平台到 Gateway 单次调用上限；验证: 同 bridge_timeout 的 P95 口径
     agentteams_gateway_timeout_seconds: float = 10.0
 
     # ===== 节日彩蛋系统 =====

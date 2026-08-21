@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import mimetypes
 import re
 import shutil
 import time
@@ -18,8 +19,18 @@ from loguru import logger
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from omichub.application.schemas.qc_verification import (
+    aggregate_qc_decision,
+    enforce_fabrication_clause,
+    merge_gate_decision,
+    parse_qc_verification,
+)
 from omichub.application.schemas.tool_invocation import ToolInvocationContext
 from omichub.application.services.agent_service import AgentService
+from omichub.application.services.agentteams_artifact_lineage_service import (
+    AgentTeamsArtifactLineageService,
+    normalize_source_refs,
+)
 from omichub.application.services.agentteams_capability_registry import (
     get_agentteams_capability_registry,
 )
@@ -28,6 +39,9 @@ from omichub.application.services.agentteams_consultation_telemetry_service impo
 )
 from omichub.application.services.agentteams_quality_gate_service import (
     AgentTeamsQualityGateService,
+)
+from omichub.application.services.agentteams_qc_verification_service import (
+    AgentTeamsQcVerificationService,
 )
 from omichub.application.services.agentteams_service import AgentTeamsService
 from omichub.application.services.agentteams_usage_service import record_consultation_usage
@@ -43,7 +57,9 @@ from omichub.infrastructure.storage.path_factory import get_path_factory
 
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
 
+# 依据: 待测（经验初值）— 单任务工具调用事件条数上限，防事件流膨胀；验证: 统计真实任务工具调用条数分布 P95
 _TOOL_CALL_EVIDENCE_LIMIT = 200
+# 依据: 待测（经验初值）— 单条工具参数摘要截断长度；验证: 统计参数摘要长度分布与前端展示效果
 _ARGS_SUMMARY_MAX_CHARS = 200
 
 _WORKSPACE_EXEC_PROTOCOL_PATH = (
@@ -53,6 +69,17 @@ _WORKSPACE_EXEC_PROTOCOL_PATH = (
     / "prompts"
     / "shared"
     / "agentteams_workspace_execution.md"
+)
+
+# L4 版记忆写入纪律（M3）：解释 why 的风格，仅 memory_v2 开启时追加进会诊 prompt；
+# 与 ChatService 版（chat_service.MEMORY_V2_WRITE_DISCIPLINE）各自维护，不互相照搬。
+_L4_MEMORY_WRITE_DISCIPLINE = (
+    "\n记忆写入纪律：\n"
+    "- 只记录甲方明确陈述的持久偏好与纠错；一次性任务细节、临时上下文、未经确认的"
+    "推测不进长期记忆——它们只对当前 Case 有意义，写入后只会成为噪音。\n"
+    "- Case 事实（样本、分组、文件路径、中间决策）禁止写入长期记忆；要查历史用血缘与 "
+    "case_facts_query——记忆会漂移，血缘与事件流不会。\n"
+    "- 写入前先调用 omichub_search_memory 查重，避免同一事实多版本漂移。\n"
 )
 
 
@@ -73,6 +100,9 @@ class ConsultationEnvelope(BaseModel):
     artifacts: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
     hard_gate: dict[str, Any] | None = None
     ask_user: list[AskUserQuestion] = Field(default_factory=list, max_length=5)
+    # F2 证据化验收：quality-gate 会诊时 qc 必须附带的结构化判决
+    # （claims[] + checks[]，权威 schema 见 omichub.application.schemas.qc_verification）。
+    verification: dict[str, Any] | None = None
 
 
 class _BridgeEvidenceProjector:
@@ -284,6 +314,8 @@ class AgentConsultationService:
         work_item_id: str | None = None,
         execution_mode: str = "readonly_consultation",
         causation_event_id: str | None = None,
+        source_refs: list[dict[str, Any]] | None = None,
+        execution_summary: str = "",
         on_event: Callable[[dict[str, Any]], Awaitable[None] | None] | None = None,
     ) -> ConsultationEnvelope:
         started = time.monotonic()
@@ -388,12 +420,22 @@ class AgentConsultationService:
         envelope.evidence_refs = self._verified_evidence_refs(result)
         envelope.hard_gate = hard_gate
         self._enforce_hard_gate(envelope)
+        if capability == "quality-gate":
+            # F2 证据化验收：解析 qc 结构化判决、聚合总体决策、逐行落库，
+            # 并与既有指标硬门取较严者写回 envelope.hard_gate。
+            await self._apply_qc_verification(
+                envelope,
+                case_id=case_id,
+                agent_id=agent_id,
+                work_item_id=work_item_id,
+                causation_event_id=causation_event_id,
+            )
         await self._record_telemetry(
             result=result,
             parse_success=parse_success,
             requested_refs=evidence_refs,
             verified_refs=envelope.evidence_refs,
-            hard_gate=hard_gate,
+            hard_gate=envelope.hard_gate,
             conclusion=envelope.conclusion,
         )
         await self._record_usage(
@@ -411,6 +453,10 @@ class AgentConsultationService:
                 work_item_id or "",
                 workdir_root,
                 causation_event_id=causation_event_id,
+                source_refs=source_refs,
+                execution_summary=execution_summary,
+                agent_id=agent_id,
+                capability=capability,
             )
             envelope.artifacts = artifacts
             envelope.risks.extend(errors)
@@ -452,8 +498,12 @@ class AgentConsultationService:
                 '"token_usage":0,"proposed_submission":null,"artifacts":[],"hard_gate":null,'
                 '"ask_user":[]}。'
                 "evidence_refs 只允许填写本回合工具成功读取后产生的已核验引用。规划能力调用时 "
-                "proposed_submission 按 Case 类型输出：流程型 Case 输出可校验的 TaskSpec "
-                "参数对象；无 flow_id 的通用 Case 输出 "
+                "proposed_submission 按 Case 类型输出：流程型 Case 必须输出完整 TaskSpec 对象 "
+                '{"flow_id": "流程ID", "name": "任务名", "parameters": {...}, '
+                '"sample_sheet": [{"sample": "样本名", "group": "组别", ...}], '
+                '"quality_gate_required": bool}——sample_sheet 必须是 dict 组成的 list'
+                "（每行一个样本），不允许输出成单个 dict 或描述性文本；"
+                "无 flow_id 的通用 Case 输出 "
                 '{"name": ..., "parameters": {"work_items": [{"work_item_id", "target", '
                 '"objective", "skill_name", "execution_mode": "workspace_execution", '
                 '"depends_on": []}]}, "quality_gate_required": bool}，target 限声明了 '
@@ -466,6 +516,22 @@ class AgentConsultationService:
             if hard_gate
             else ""
         )
+        verification_clause = (
+            "\n本次为质量门会诊，JSON 中必须附带 \"verification\" 字段，结构为："
+            '{"claims":[{"statement":"断言原文","location":"位置（交付物 version_id/文件/段落）",'
+            '"claim_type":"factual|metric|citation|external_lookup|computation|procedural"}],'
+            '"checks":[{"claim_index":0,"verdict":"pass|warn|fail|inconclusive",'
+            '"evidence_event_id":"证据指针（审计事件 id 或血缘 version_id），无则填 null",'
+            '"reason":"判决理由"}]}。'
+            "checks 逐条对应 claims；找到矛盾才判 fail，找不到不定罪；"
+            "但 claim_type=external_lookup（声称已检索/已计算的可核对标识符）"
+            "无证据指针一律判 fail；能打开的来源必须先打开再判，无法核实判 inconclusive。"
+            if capability == "quality-gate" and envelope_clause
+            else ""
+        )
+        memory_clause = (
+            _L4_MEMORY_WRITE_DISCIPLINE if get_settings().memory_v2_enabled else ""
+        )
         return (
             "你正在执行 AgentTeams 受控专业会诊。\n"
             + mode_clause
@@ -475,6 +541,8 @@ class AgentConsultationService:
             "凡在结论中引用 task: 或 file:，必须先调用对应只读工具读取；禁止仅凭引用字符串猜测内容。\n"
             + hard_gate_clause
             + envelope_clause
+            + verification_clause
+            + memory_clause
         )
 
     async def _evaluate_hard_gate(
@@ -526,6 +594,150 @@ class AgentConsultationService:
             envelope.conclusion = f"BLOCKED\n{envelope.conclusion}"[:8_000]
         elif decision == "WARNING" and first_line == "PASSED":
             envelope.conclusion = f"WARNING\n{envelope.conclusion}"[:8_000]
+        elif decision == "MANUAL_REVIEW" and first_line == "PASSED":
+            # F2：存在 inconclusive 且无 fail 时走人工/甲方裁决路径。首行三态契约
+            # 没有 MANUAL_REVIEW token，对齐为 WARNING（不确定不得与 PASSED 同态放行），
+            # 结构化 manual_review 决策由 hard_gate 字典承载给 Bridge。
+            envelope.conclusion = f"WARNING\n{envelope.conclusion}"[:8_000]
+            marker = "需人工/甲方裁决"
+            if not any(marker in risk for risk in envelope.risks):
+                envelope.risks.append(
+                    "存在无法自动判定的核查项（inconclusive），需人工/甲方裁决后方可交付。"
+                )
+
+    async def _apply_qc_verification(
+        self,
+        envelope: ConsultationEnvelope,
+        *,
+        case_id: str,
+        agent_id: str,
+        work_item_id: str | None,
+        causation_event_id: str | None,
+    ) -> None:
+        """F2 证据化验收：解析 qc 的 verification 结构化判决并写回硬门管线。
+
+        - schema 校验失败/缺失：显式降级——落一行 inconclusive + 审计事件，不静默吞。
+        - 校验通过：先执行编造引用条款（external_lookup 无证据指针一律 fail），
+          再聚合总体决策并逐行落 ``qc_verification_checks``。
+        - 总体决策与既有指标硬门取较严者（merge_gate_decision），指标门语义不动。
+        """
+        raw = envelope.verification
+        report = None
+        degrade_reason = ""
+        if not isinstance(raw, dict) or not raw:
+            degrade_reason = "qc 未输出 verification 结构化判决"
+        else:
+            try:
+                report = parse_qc_verification(raw)
+            except ValueError as exc:
+                degrade_reason = str(exc)
+        service = AgentTeamsQcVerificationService(self._db)
+        stats: dict[str, Any]
+        if report is None:
+            qc_decision = "MANUAL_REVIEW"
+            stats = {
+                "claims": 0,
+                "checks": 0,
+                "fails": 0,
+                "warnings": 0,
+                "inconclusive": 1,
+                "degraded": True,
+            }
+            try:
+                await service.record_degradation(
+                    case_id=case_id, reviewer_agent=agent_id, reason=degrade_reason
+                )
+            except Exception as exc:  # noqa: BLE001 — 落库失败不得吞掉会诊结论
+                logger.bind(case_id=case_id, agent_id=agent_id).warning(
+                    "AgentTeams qc verification degradation record failed: {}", exc
+                )
+            await self._post_qc_verification_event(
+                case_id,
+                work_item_id=work_item_id,
+                event_type="consultation.verification_degraded",
+                summary="qc 结构化判决缺失或未通过 schema 校验，平台降级为 inconclusive",
+                payload={
+                    "reason": degrade_reason[:500],
+                    "agent_id": agent_id,
+                    "work_item_id": work_item_id,
+                    "causation_event_id": causation_event_id,
+                },
+            )
+        else:
+            enforce_fabrication_clause(report)
+            qc_decision = aggregate_qc_decision(report.checks)
+            stats = {
+                "claims": len(report.claims),
+                "checks": len(report.checks),
+                "fails": sum(1 for c in report.checks if c.verdict == "fail"),
+                "warnings": sum(1 for c in report.checks if c.verdict == "warn"),
+                "inconclusive": sum(1 for c in report.checks if c.verdict == "inconclusive"),
+                "degraded": False,
+            }
+            try:
+                await service.record_checks(
+                    case_id=case_id, reviewer_agent=agent_id, report=report
+                )
+            except Exception as exc:  # noqa: BLE001 — 落库失败显式记事件，不静默吞
+                stats["persist_failed"] = True
+                logger.bind(case_id=case_id, agent_id=agent_id).warning(
+                    "AgentTeams qc verification checks persist failed: {}", exc
+                )
+                await self._post_qc_verification_event(
+                    case_id,
+                    work_item_id=work_item_id,
+                    event_type="consultation.verification_persist_failed",
+                    summary="qc 结构化判决落库失败",
+                    payload={
+                        "error": str(exc)[:500],
+                        "agent_id": agent_id,
+                        "work_item_id": work_item_id,
+                        "causation_event_id": causation_event_id,
+                    },
+                )
+            await self._post_qc_verification_event(
+                case_id,
+                work_item_id=work_item_id,
+                event_type="consultation.verification_recorded",
+                summary=f"qc 结构化判决：{qc_decision}（{stats['checks']} 项核查）",
+                payload={
+                    "decision": qc_decision,
+                    "agent_id": agent_id,
+                    "work_item_id": work_item_id,
+                    "causation_event_id": causation_event_id,
+                    **stats,
+                },
+            )
+        gate = dict(envelope.hard_gate or {})
+        gate["decision"] = merge_gate_decision(str(gate.get("decision") or ""), qc_decision)
+        gate["qc_verdict"] = {"decision": qc_decision, **stats}
+        envelope.hard_gate = gate
+        self._enforce_hard_gate(envelope)
+
+    async def _post_qc_verification_event(
+        self,
+        case_id: str,
+        *,
+        work_item_id: str | None,
+        event_type: str,
+        summary: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """F2 判决的审计事件投影（best-effort，不影响会诊主流程）。"""
+        if self._agentteams_service is None or not self._agentteams_service.available:
+            return
+        try:
+            await self._agentteams_service.post_case_evidence(
+                case_id,
+                work_item_id=work_item_id or "case",
+                event_type=event_type,
+                summary=summary,
+                payload=payload,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.bind(case_id=case_id, event_type=event_type).warning(
+                "AgentTeams qc verification evidence projection failed: {}", exc
+            )
 
     async def _register_workspace_artifacts(
         self,
@@ -535,6 +747,10 @@ class AgentConsultationService:
         workdir: Path,
         *,
         causation_event_id: str | None = None,
+        source_refs: list[dict[str, Any]] | None = None,
+        execution_summary: str = "",
+        agent_id: str = "",
+        capability: str = "",
     ) -> tuple[list[dict[str, Any]], list[str]]:
         try:
             user_id = UUID(str(requester_ref))
@@ -565,12 +781,17 @@ class AgentConsultationService:
             factory.user_root(str(user_id)) / "workspace" / "agentteams" / case_id / work_item_id
         )
         repository = FileRepositoryImpl(self._db)
+        lineage = AgentTeamsArtifactLineageService(self._db)
+        normalized_refs = normalize_source_refs(source_refs)
+        settings = get_settings()
         artifacts: list[dict[str, Any]] = []
         errors: list[str] = []
         sources = sorted(
             path for path in workdir.rglob("*") if path.is_file() and not path.is_symlink()
         )[:100]
         for source in sources:
+            # artifact_id 是 Case 内逻辑名（work_item 相对路径）；同名再登记 version_no 递增。
+            artifact_id = f"{work_item_id}/{source.relative_to(workdir).as_posix()}"
             try:
                 relative = source.relative_to(workdir)
                 target = destination / relative
@@ -605,10 +826,12 @@ class AgentConsultationService:
                     "sha256": sha256,
                     "download_url": f"/api/v1/files/{record.id}/download",
                 }
+                storage_uri = record.path
                 try:
                     artifact["s3_uri"] = self._minio_store.put_case_object(
                         case_id, f"{work_item_id}/{relative.as_posix()}", target
                     )
+                    storage_uri = artifact["s3_uri"]
                 except (BusinessError, OSError, ValueError) as exc:
                     logger.bind(
                         event_type="artifact.s3_upload_failed",
@@ -617,6 +840,36 @@ class AgentConsultationService:
                         local_path=record.path,
                         causation_event_id=causation_event_id,
                     ).warning("AgentTeams artifact S3 upload failed: {}", exc)
+                # 产物血缘（F1）：登记即强制写 version 行；失败计入 errors 不静默跳过。
+                try:
+                    version_row = await lineage.register_version(
+                        case_id=case_id,
+                        artifact_id=artifact_id,
+                        checksum_sha256=sha256,
+                        size_bytes=record.size,
+                        content_type=mimetypes.guess_type(source.name)[0] or "",
+                        storage_uri=storage_uri,
+                        producing_event_id=causation_event_id,
+                        work_item_id=work_item_id or None,
+                        environment_snapshot={
+                            "agent_id": agent_id,
+                            "capability": capability,
+                            "work_item_id": work_item_id,
+                            "app_version": settings.app_version,
+                            "app_git_sha": settings.app_git_sha,
+                            "execution_summary": execution_summary[:2_000],
+                        },
+                    )
+                    artifact["version_id"] = str(version_row.id)
+                    artifact["version_no"] = version_row.version_no
+                    if normalized_refs:
+                        await lineage.register_dependencies(
+                            case_id=case_id,
+                            downstream_artifact_id=artifact_id,
+                            source_refs=normalized_refs,
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"产物血缘登记失败（{source.name}）：{exc}")
                 artifacts.append(artifact)
             except (OSError, ValueError) as exc:
                 errors.append(f"产物登记失败（{source.name}）：{exc}")
@@ -725,11 +978,19 @@ class AgentConsultationService:
         verified = set(verified_refs)
         decision = str((hard_gate or {}).get("decision") or "").upper()
         first_line = conclusion.splitlines()[0].strip().upper()
+        # F2：MANUAL_REVIEW 在三态首行契约中对齐为 WARNING/BLOCKED，视为一致。
+        qc_consistent = bool(
+            decision
+            and (
+                first_line == decision
+                or (decision == "MANUAL_REVIEW" and first_line in {"WARNING", "BLOCKED"})
+            )
+        )
         await self._telemetry_service.record(
             parse_success=parse_success,
             tool_call_count=int(first.get("tool_call_count") or 0),
             evidence_requested=len(requested),
             evidence_verified=len(requested & verified),
             qc_checked=bool(decision),
-            qc_consistent=bool(decision and first_line == decision),
+            qc_consistent=qc_consistent,
         )

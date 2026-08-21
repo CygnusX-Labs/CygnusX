@@ -173,6 +173,10 @@ class AgentTeamsRoomService:
         if matrix_room and matrix_room.get("room_id"):
             room.matrix_room_id = str(matrix_room["room_id"])
             await self._db.flush()
+            # BUG-E2E-01：updated_at 的 onupdate=func.now() 使该属性在 UPDATE flush
+            # 后被 expire；端点 _room_payload 在 async 上下文同步读列会触发懒加载
+            # IO（MissingGreenlet → 500）。显式 refresh 把所有列重新加载为已加载态。
+            await self._db.refresh(room)
         return room
 
     async def list_rooms(self, owner_id: str) -> list[AgentTeamsRoomModel]:
@@ -261,11 +265,17 @@ class AgentTeamsRoomService:
         # B1：confirm_token 写入后即全出口脱敏（含 pending 卡）；存活 token 只存
         # 房间行 DB 字段，不再经事件流分发。
         events = [redact_confirm_token(event) for _, event in kept]
+        # BUG-E2E-09 终止条件：本页保留数 < limit 说明两流各返不足 limit 条、
+        # 均已耗尽（被截事件只在保留数 == limit 时存在），游标清空让调用方判停；
+        # 否则按截断后保留的各流最后一条推进游标（A2 不重不漏语义不变）。
+        next_cursor = (
+            None if len(kept) < limit else f"ns:{lasts['ns']}|case:{lasts['case']}"
+        )
         return {
             "room_id": room.room_id,
             "case_id": room.case_id,
             "events": events,
-            "next_cursor": f"ns:{lasts['ns']}|case:{lasts['case']}",
+            "next_cursor": next_cursor,
         }
 
     async def stream_room_events(

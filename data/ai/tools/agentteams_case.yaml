@@ -8,3 +8,4 @@ builtin_tools:
   - artifact_fetch
   - task_compare_metrics
   - rule_threshold_lookup
+  - case_facts_query

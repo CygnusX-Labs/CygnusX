@@ -1220,11 +1220,15 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   }
 
   /** 一键安装市场技能 */
-  async function installMarketplaceSkill(skillId: string, overwrite = false): Promise<void> {
+  async function installMarketplaceSkill(
+    skillId: string,
+    overwrite = false,
+    refresh = true,
+  ): Promise<void> {
     await apiClient.post(`/admin/skills/marketplace/${skillId}/install`, null, {
       params: { overwrite },
     })
-    await fetchSkills(true)
+    if (refresh) await fetchSkills(true)
   }
 
   /** 阿里云官方技能源：同步状态（不触网） */
@@ -1244,11 +1248,15 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   }
 
   /** 一键安装阿里云官方技能（走统一预览校验入库） */
-  async function installAliyunMarketSkill(skillId: string, overwrite = false): Promise<void> {
+  async function installAliyunMarketSkill(
+    skillId: string,
+    overwrite = false,
+    refresh = true,
+  ): Promise<void> {
     await apiClient.post(`/admin/skills/marketplace/aliyun/${skillId}/install`, null, {
       params: { overwrite },
     })
-    await fetchSkills(true)
+    if (refresh) await fetchSkills(true)
   }
 
   /** 检查上游更新（GitHub 来源） */
