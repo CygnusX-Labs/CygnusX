@@ -23,6 +23,9 @@ from omichub.application.services.agent_consultation_service import (
     AgentConsultationService,
     ConsultationEnvelope,
 )
+from omichub.application.services.agentteams_artifact_lineage_service import (
+    AgentTeamsArtifactLineageService,
+)
 from omichub.application.services.agentteams_audit_chain_service import (
     AgentTeamsAuditChainService,
 )
@@ -36,6 +39,9 @@ from omichub.application.services.agentteams_case_tool_service import AgentTeams
 from omichub.application.services.agentteams_introspection_service import (
     AgentTeamsIntrospectionService,
     load_introspection_schema_doc,
+)
+from omichub.application.services.agentteams_qc_verification_service import (
+    AgentTeamsQcVerificationService,
 )
 from omichub.application.services.agentteams_room_response_service import (
     DEFAULT_MANAGER_DISPLAY_NAME,
@@ -889,6 +895,27 @@ async def get_case_events(
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ) -> dict[str, Any]:
     return await service.get_case_events(case_id, current_user_id, cursor=cursor, limit=limit)
+
+
+@router.get(
+    "/cases/{case_id}/artifact-lineage",
+    summary="获取协作案例产物血缘清单与 qc 判决分布",
+)
+async def get_case_artifact_lineage(
+    case_id: str,
+    current_user_id: CurrentUserId,
+    db: DbSession,
+    service: AgentTeamsServiceDep,
+) -> dict[str, Any]:
+    # 归属校验与 get_case_events 同一口径：Bridge requester_ref 不匹配即拒。
+    await service.get_case(case_id, current_user_id)
+    lineage = await AgentTeamsArtifactLineageService(db).case_lineage(case_id)
+    qc_verdicts = await AgentTeamsQcVerificationService(db).case_verdicts(case_id)
+    return {
+        "versions": lineage["versions"],
+        "dependencies": lineage["dependencies"],
+        "qc_verdicts": qc_verdicts,
+    }
 
 
 @router.get(

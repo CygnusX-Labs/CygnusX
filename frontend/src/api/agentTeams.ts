@@ -248,6 +248,43 @@ export interface AgentTeamsResponseTimingSummary {
   latest_duration_ms: number
 }
 
+export interface AgentTeamsArtifactVersion {
+  version_id: string
+  artifact_id: string
+  version_no: number
+  checksum_sha256: string
+  size_bytes: number
+  content_type: string
+  storage_uri: string
+  producing_event_id?: string | null
+  work_item_id?: string | null
+  created_at?: string | null
+  /** 上游一级展开：本产物依赖的上游 artifact_id 与关系。 */
+  upstream: Array<{ artifact_id: string; relation: string }>
+}
+
+export interface AgentTeamsArtifactDependency {
+  downstream_artifact_id: string
+  upstream_artifact_id: string
+  relation: string
+}
+
+export interface AgentTeamsQcCheck {
+  verdict: string
+  reason: string
+  reviewer_agent: string
+  claim_hash: string
+  evidence_event_id?: string | null
+  created_at?: string | null
+}
+
+export interface AgentTeamsArtifactLineageResponse {
+  versions: AgentTeamsArtifactVersion[]
+  dependencies: AgentTeamsArtifactDependency[]
+  /** counts 为全量聚合（始终含 pass/warn/fail 键）；checks 为最近若干条（后端上限 200）。 */
+  qc_verdicts: { counts: Record<string, number>; checks: AgentTeamsQcCheck[] }
+}
+
 export const agentTeamsApi = {
   async status(): Promise<AgentTeamsBridgeStatus> {
     return (await apiClient.get('/agent-teams/status')).data
@@ -317,6 +354,9 @@ export const agentTeamsApi = {
   },
   async getManifest(caseId: string): Promise<Record<string, unknown>> {
     return (await apiClient.get<Record<string, unknown>>(`/agent-teams/cases/${caseId}/manifest`)).data
+  },
+  async getArtifactLineage(caseId: string): Promise<AgentTeamsArtifactLineageResponse> {
+    return (await apiClient.get<AgentTeamsArtifactLineageResponse>(`/agent-teams/cases/${caseId}/artifact-lineage`)).data
   },
   async getEvents(
     caseId: string,

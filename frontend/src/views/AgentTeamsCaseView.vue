@@ -34,11 +34,18 @@ import {
 import PageHeader from '@/components/PageHeader.vue'
 import {
   agentTeamsApi,
+  type AgentTeamsArtifactLineageResponse,
   type AgentTeamsCase,
   type AgentTeamsCaseStatus,
   type AgentTeamsEvent,
 } from '@/api/agentTeams'
-import { mergeAgentTeamsEvents, shouldPollAgentTeamsCase } from '@/utils/agentTeamsState'
+import {
+  formatAgentTeamsArtifactSize,
+  mergeAgentTeamsEvents,
+  qcVerdictLabel,
+  qcVerdictTagType,
+  shouldPollAgentTeamsCase,
+} from '@/utils/agentTeamsState'
 import { formatAgentTeamsStatus } from '@/utils/agentTeamsStatus'
 
 const POLLING_INTERVAL_MS = 20_000
@@ -63,6 +70,7 @@ const retrying = ref(false)
 const manifestVisible = ref(false)
 const manifestLoading = ref(false)
 const manifest = ref<Record<string, unknown> | null>(null)
+const lineage = ref<AgentTeamsArtifactLineageResponse | null>(null)
 const approvalConfirmed = ref(false)
 const submitForm = ref({
   task_name: '',
@@ -155,6 +163,13 @@ const canSubmitQualityGate = computed(() => {
   )
 })
 const planShortHash = computed(() => detail.value?.plan_hash ? detail.value.plan_hash.slice(0, 12) : '')
+const lineageVersions = computed(() => lineage.value?.versions ?? [])
+const qcVerdictCounts = computed(() => lineage.value?.qc_verdicts.counts ?? {})
+const qcTotal = computed(() =>
+  Object.values(qcVerdictCounts.value).reduce((sum, count) => sum + count, 0),
+)
+/** 判决行后端已按 created_at 倒序；展示位只取最近几条，全量以审计链为准。 */
+const recentQcChecks = computed(() => (lineage.value?.qc_verdicts.checks ?? []).slice(0, 5))
 const eventLabel = (type: string) => ({
   'case.created': 'Case 已创建',
   'case.state_changed': '阶段已更新',
@@ -329,6 +344,7 @@ async function refresh(options: { background?: boolean; resetEvents?: boolean } 
     else mergeEvents(eventData.events)
     eventCursor.value = eventData.next_cursor ?? (events.value.at(-1)?.event_id ?? null)
     lastSyncedAt.value = new Date()
+    void loadArtifactLineage()
   } catch (cause: any) {
     if (!options.background) {
       error.value = cause?.response?.data?.detail || '无法获取协作 Case 详情。'
@@ -342,6 +358,16 @@ async function refresh(options: { background?: boolean; resetEvents?: boolean } 
 function syncIfVisible() {
   pollingActive.value = shouldPollAgentTeamsCase(document.visibilityState)
   if (pollingActive.value && !eventStreamHealthy.value) void refresh({ background: true })
+}
+
+async function loadArtifactLineage() {
+  if (!caseId.value) return
+  try {
+    lineage.value = await agentTeamsApi.getArtifactLineage(caseId.value)
+  } catch {
+    // 血缘/判决展示位失败时降级为空态，不阻断 Case 详情主流程。
+    lineage.value = null
+  }
 }
 
 function startPolling() {
@@ -583,6 +609,46 @@ onBeforeUnmount(() => {
               </NDescriptionsItem>
             </NDescriptions>
           </NCard>
+          <NCard title="产物血缘" size="small">
+            <ul v-if="lineageVersions.length" class="lineage-list">
+              <li v-for="version in lineageVersions" :key="version.version_id">
+                <strong>{{ version.artifact_id }}</strong>
+                <span>
+                  v{{ version.version_no }} · {{ formatAgentTeamsArtifactSize(version.size_bytes) }}
+                  · {{ version.created_at ? new Date(version.created_at).toLocaleString('zh-CN') : '—' }}
+                </span>
+                <small v-if="version.upstream.length">
+                  上游：{{ version.upstream.map((up) => up.artifact_id).join('、') }}
+                </small>
+              </li>
+            </ul>
+            <NEmpty v-else size="small" description="暂无平台登记的产物版本" />
+          </NCard>
+          <NCard title="质量判决分布" size="small">
+            <template v-if="qcTotal > 0">
+              <div class="qc-counts">
+                <NTag type="success" :bordered="false">通过 {{ qcVerdictCounts.pass ?? 0 }}</NTag>
+                <NTag type="warning" :bordered="false">警告 {{ qcVerdictCounts.warn ?? 0 }}</NTag>
+                <NTag type="error" :bordered="false">失败 {{ qcVerdictCounts.fail ?? 0 }}</NTag>
+                <NTag v-if="(qcVerdictCounts.inconclusive ?? 0) > 0" :bordered="false">
+                  存疑 {{ qcVerdictCounts.inconclusive }}
+                </NTag>
+              </div>
+              <ul class="qc-check-list">
+                <li v-for="(check, index) in recentQcChecks" :key="index">
+                  <NTag size="small" :type="qcVerdictTagType(check.verdict)" :bordered="false">
+                    {{ qcVerdictLabel(check.verdict) }}
+                  </NTag>
+                  <span>{{ check.reason || '—' }}</span>
+                  <small>
+                    {{ check.reviewer_agent }}
+                    · {{ check.created_at ? new Date(check.created_at).toLocaleString('zh-CN') : '—' }}
+                  </small>
+                </li>
+              </ul>
+            </template>
+            <NEmpty v-else size="small" description="暂无 qc 判决记录" />
+          </NCard>
           <NCard title="安全边界" size="small">
             <div class="security-note"><NIcon><ShieldCheckmarkOutline /></NIcon><span>所有计算操作经独立 Bridge；此页面只展示经授权的 Case 证据。</span></div>
           </NCard>
@@ -666,6 +732,12 @@ onBeforeUnmount(() => {
 .manifest-uri { overflow-wrap: anywhere; color: var(--text-secondary); font-size: 12px; }
 .manifest-preview { max-height: 60vh; overflow: auto; margin: 0; padding: 12px; border-radius: 8px; background: var(--surface-color-soft); color: var(--text-secondary); font: 12px/1.6 ui-monospace, monospace; white-space: pre-wrap; }
 .quality-decision-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.lineage-list, .qc-check-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.lineage-list li, .qc-check-list li { display: grid; gap: 3px; }
+.lineage-list strong { color: var(--text-primary); font-size: 13px; overflow-wrap: anywhere; }
+.lineage-list span, .qc-check-list span { color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+.lineage-list small, .qc-check-list small { color: var(--text-tertiary); font-size: 11px; overflow-wrap: anywhere; }
+.qc-counts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 @media (max-width: 1024px) { .case-workbench { grid-template-columns: minmax(190px, 240px) minmax(0, 1fr); } .evidence-column { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 768px) { .case-workbench, .evidence-column { grid-template-columns: 1fr; } .overview-column, .timeline-column, .evidence-column { grid-column: auto; } }
 </style>

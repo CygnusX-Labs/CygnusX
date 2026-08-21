@@ -10,17 +10,21 @@
 from __future__ import annotations
 
 import hashlib
+from typing import Any
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.qc_verification import QcVerificationReport
 from omichub.infrastructure.database.models.chat import QcVerificationCheckModel
 
 _MAX_REVIEWER_AGENT_LEN = 80
+# 血缘清单端点返回的最近判决行上限；counts 为全量聚合不受此限。
+_QC_CHECKS_READ_LIMIT = 200
 
 
 class AgentTeamsQcVerificationService:
-    """qc_verification_checks 的写入面。"""
+    """qc_verification_checks 的写入面与用户态读取面。"""
 
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
@@ -79,6 +83,50 @@ class AgentTeamsQcVerificationService:
         self._db.add(row)
         await self._db.flush()
         return row
+
+    async def case_verdicts(
+        self, case_id: str, *, limit: int = _QC_CHECKS_READ_LIMIT
+    ) -> dict[str, Any]:
+        """Case 级判决分布（全量聚合）+ 最近判决行（created_at 倒序，上限 limit）。
+
+        counts 始终含 pass/warn/fail 三键；inconclusive 等降级判决按原值并入。
+        """
+        count_rows = (
+            await self._db.execute(
+                select(QcVerificationCheckModel.verdict, func.count())
+                .where(QcVerificationCheckModel.case_id == case_id)
+                .group_by(QcVerificationCheckModel.verdict)
+            )
+        ).all()
+        counts: dict[str, int] = {"pass": 0, "warn": 0, "fail": 0}
+        for verdict, count in count_rows:
+            counts[str(verdict)] = int(count)
+        checks = (
+            (
+                await self._db.execute(
+                    select(QcVerificationCheckModel)
+                    .where(QcVerificationCheckModel.case_id == case_id)
+                    .order_by(QcVerificationCheckModel.created_at.desc())
+                    .limit(limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return {
+            "counts": counts,
+            "checks": [
+                {
+                    "verdict": row.verdict,
+                    "reason": row.reason,
+                    "reviewer_agent": row.reviewer_agent,
+                    "claim_hash": row.claim_hash,
+                    "evidence_event_id": row.evidence_event_id,
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                }
+                for row in checks
+            ],
+        }
 
 
 __all__ = ["AgentTeamsQcVerificationService"]
