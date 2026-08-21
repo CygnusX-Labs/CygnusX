@@ -31,6 +31,8 @@ PUBLIC_PREFIXES = ("/api/v1/studio/shared/",)
 SELF_AUTHENTICATED_PREFIXES = (
     "/api/v1/studio/internal/",
     "/api/v1/agent-teams/consultations/",
+    # F4 自省查询面：端点内以 X-Integration-Token 自鉴权（Bridge authenticate=False 调用）
+    "/api/v1/agent-teams/introspection/",
 )
 
 SELF_AUTHENTICATED_PATHS = frozenset(

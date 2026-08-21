@@ -28,12 +28,15 @@ from omichub.infrastructure.database.models.blast import (
 from omichub.infrastructure.database.models.chat import (
     AgentTeamsCaseCursorModel,
     AgentTeamsRoomModel,
+    CaseArtifactDependencyModel,
+    CaseArtifactVersionModel,
     ChatAssistantModel,
     ChatMessageFeedbackModel,
     CollaborationDegradationEventModel,
     ChatHandoffEventModel,
     ChatMessageModel,
     ChatSessionModel,
+    QcVerificationCheckModel,
 )
 from omichub.infrastructure.database.models.cookie import (
     ConsumptionLogModel,
@@ -127,6 +130,9 @@ __all__ = [
     "ChatSessionModel",
     "AgentTeamsCaseCursorModel",
     "AgentTeamsRoomModel",
+    "CaseArtifactDependencyModel",
+    "CaseArtifactVersionModel",
+    "QcVerificationCheckModel",
     "ChatMessageModel",
     "ChatMessageFeedbackModel",
     "ChatAssistantModel",

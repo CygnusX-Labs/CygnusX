@@ -109,6 +109,102 @@ class AgentTeamsRoomModel(Base, TimestampMixin):
     __table_args__ = (Index("idx_agentteams_rooms_owner_updated", "owner_id", "updated_at"),)
 
 
+class CaseArtifactVersionModel(Base, TimestampMixin):
+    """协作室产物版本行（产物血缘 F1）：每次产物登记强制写一行。
+
+    ``artifact_id`` 是 Case 内逻辑名（``{work_item_id}/{相对路径}``），同一
+    (case_id, artifact_id) 重复登记时 ``version_no`` 递增；行 id 即对外的
+    version_id（血缘清单/交付 manifest 引用它，避免同名文件歧义）。
+    ``producing_event_id`` 指向触发本次登记的审计事件（复用 causation 因果链）。
+    ``environment_snapshot`` 只记可复现最小事实（执行 agent、平台版本/git sha、
+    执行摘要），不做 ENVS 声明式环境抽象。
+    """
+
+    __tablename__ = "case_artifact_versions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    case_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    artifact_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    producing_event_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    work_item_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    checksum_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_type: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    storage_uri: Mapped[str] = mapped_column(String(1024), nullable=False)
+    environment_snapshot: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "case_id",
+            "artifact_id",
+            "version_no",
+            name="uq_case_artifact_versions_case_artifact_version",
+        ),
+        Index("ix_case_artifact_versions_checksum", "checksum_sha256"),
+    )
+
+
+class CaseArtifactDependencyModel(Base, TimestampMixin):
+    """协作室产物依赖边（产物血缘 F1）：下游产物 ← 上游产物 的 DAG 边。"""
+
+    __tablename__ = "case_artifact_dependencies"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    case_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    downstream_artifact_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    upstream_artifact_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    relation: Mapped[str] = mapped_column(String(32), default="input_to", nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "case_id",
+            "downstream_artifact_id",
+            "upstream_artifact_id",
+            "relation",
+            name="uq_case_artifact_dependencies_edge",
+        ),
+        Index(
+            "ix_case_artifact_dependencies_upstream",
+            "case_id",
+            "upstream_artifact_id",
+        ),
+    )
+
+
+class QcVerificationCheckModel(Base, TimestampMixin):
+    """agent-qc 结构化判决行（证据化验收 F2）：每条 claim 的核查判决一行。
+
+    qc 会诊输出的 checks[] 逐行落库，判决因此可统计（pass/warn/fail 分布、
+    与后续返工率交叉验证）、可复核（claim_snapshot 留存断言原文快照）。
+    ``claim_hash`` 是断言内容指纹（statement+location+claim_type 的 sha256），
+    同一断言重复核查时可按 hash 聚合；``evidence_event_id`` 是指向审计事件或
+    产物血缘 version_id 的字符串指针。权威 schema 见
+    ``omichub.application.schemas.qc_verification``。
+    """
+
+    __tablename__ = "qc_verification_checks"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    case_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    claim_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    verdict: Mapped[str] = mapped_column(String(16), nullable=False)
+    evidence_event_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    reviewer_agent: Mapped[str] = mapped_column(String(80), nullable=False)
+    claim_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    reason: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+
+    __table_args__ = (Index("ix_qc_verification_checks_case_verdict", "case_id", "verdict"),)
+
+
 class AgentTeamsCaseCursorModel(Base, TimestampMixin):
     """聊天会话中 AgentTeams Case 的事件游标与通知去重状态。"""
 

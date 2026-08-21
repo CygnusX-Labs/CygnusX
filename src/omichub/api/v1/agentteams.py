@@ -33,6 +33,10 @@ from omichub.application.services.agentteams_capability_registry import (
     get_agentteams_capability_registry,
 )
 from omichub.application.services.agentteams_case_tool_service import AgentTeamsCaseToolService
+from omichub.application.services.agentteams_introspection_service import (
+    AgentTeamsIntrospectionService,
+    load_introspection_schema_doc,
+)
 from omichub.application.services.agentteams_room_response_service import (
     DEFAULT_MANAGER_DISPLAY_NAME,
     MANAGER_ROOM_ROLE,
@@ -139,6 +143,9 @@ class ScientificInterpretationRequest(BaseModel):
     execution_mode: Literal["readonly_consultation", "workspace_execution"] = (
         "readonly_consultation"
     )
+    # 产物血缘（F1）：workspace_execution 登记产物时携带的上游产物引用与执行摘要。
+    source_refs: list[dict[str, Any]] | None = Field(default=None, max_length=100)
+    execution_summary: str = Field(default="", max_length=2_000)
 
 
 class AgentTeamsChangeDecisionRequest(BaseModel):
@@ -798,11 +805,15 @@ async def get_room_events(
     service: AgentTeamsServiceDep,
     db: DbSession,
     cursor: str | None = None,
-    limit: Annotated[int, Query(ge=1, le=100)] = 100,
+    limit: Annotated[int, Query(ge=1)] = 100,
 ) -> dict[str, Any]:
     rooms = AgentTeamsRoomService(db, service)
     room = await rooms.get_room(room_id, current_user_id)
-    return await rooms.get_room_events(room, current_user_id, cursor=cursor, limit=limit)
+    # E2E-2 口径：limit 超上界不对用户报 422，钳制到单页上限 100，
+    # 调用方凭 next_cursor 续拉剩余事件。
+    return await rooms.get_room_events(
+        room, current_user_id, cursor=cursor, limit=min(limit, 100)
+    )
 
 
 @router.get("/rooms/{room_id}/events/stream", summary="实时监听协作室房间聚合事件")
@@ -895,6 +906,64 @@ async def get_case_audit_chain(
     return await chain_service.get_case_audit_chain(
         case_id, current_user_id, max_events=max_events
     )
+
+
+class AgentTeamsIntrospectionQueryRequest(BaseModel):
+    """F4 自省查询请求：Bridge 内部角色（Manager/qc 等）经集成令牌调用。
+
+    scope 强制：room_id 与 case_id 绑定关系在平台 DB 校验，错配即拒；
+    普通用户无法到达本端点（仅 X-Integration-Token 服务端到服务端）。
+    """
+
+    case_id: str = Field(min_length=1, max_length=80)
+    caller: str = Field(min_length=1, max_length=80)
+    room_id: str | None = Field(default=None, min_length=1, max_length=80)
+    template: (
+        Literal[
+            "artifact_versions",
+            "event_timeline",
+            "pending_approvals",
+            "artifact_lineage",
+            "schema",
+        ]
+        | None
+    ) = None
+    sql: str | None = Field(default=None, min_length=1, max_length=2_000)
+    params: dict[str, Any] | None = None
+    limit: int | None = Field(default=None, ge=1, le=200)
+
+
+@router.post(
+    "/introspection/query",
+    summary="AgentTeams 自省查询（F4，Bridge 内部角色只读查询面）",
+)
+async def query_case_facts(
+    request: AgentTeamsIntrospectionQueryRequest,
+    _integration_token: IntegrationTokenRequired,
+    db: DbSession,
+    agentteams: AgentTeamsServiceDep,
+) -> dict[str, Any]:
+    service = AgentTeamsIntrospectionService(agentteams=agentteams)
+    return await service.query_case_facts(
+        db,
+        case_id=request.case_id,
+        caller=request.caller,
+        room_id=request.room_id,
+        template=request.template,
+        sql=request.sql,
+        params=request.params,
+        limit=request.limit,
+    )
+
+
+@router.get(
+    "/introspection/schema",
+    summary="获取自省查询面的表/列说明文档（F4 渐进暴露正文）",
+)
+async def get_introspection_schema(
+    _integration_token: IntegrationTokenRequired,
+) -> dict[str, Any]:
+    return {"document": load_introspection_schema_doc()}
 
 
 @router.get("/cases/{case_id}/response-timing", summary="获取协作案例响应耗时摘要")
