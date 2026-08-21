@@ -16,6 +16,7 @@ CaseStatus = Literal[
     "preflight_running",
     "preflight_blocked",
     "waiting_for_correction",
+    "planning_failed",
     "approval_pending",
     "approved",
     "executing",
@@ -282,6 +283,8 @@ class CaseRecord(BaseModel):
     plan_version: int = Field(default=0, ge=0)
     plan_revision_count: int = Field(default=0, ge=0)
     planning_retry_count: int = Field(default=0, ge=0)
+    correction_round_count: int = Field(default=0, ge=0)
+    max_correction_rounds: int = Field(default=2, ge=1)
     node_started_at: datetime | None = None
     omic_task_ids: list[str] = Field(default_factory=list)
     task_specs: list[dict[str, Any]] = Field(default_factory=list)

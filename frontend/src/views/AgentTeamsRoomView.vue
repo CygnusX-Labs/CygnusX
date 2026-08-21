@@ -273,6 +273,9 @@ const approvalCard = computed<RoomApprovalCard | null>(() => {
   if (status === 'waiting_for_correction') {
     return { state: 'returned', title: '人工审批', summary: '', impact: '', terminalText: '已退回修正', time: frozenAt, fullTime: frozenAtFull }
   }
+  if (status === 'planning_failed') {
+    return { state: 'rejected', title: '人工审批', summary: '', impact: '', terminalText: '规划失败，请取消后重新创建 Case', time: frozenAt, fullTime: frozenAtFull }
+  }
   if (!approvalResolved && !APPROVAL_PASSED_STATUSES.has(status)) {
     // 计划已冻结但尚未进入待审批（预检/状态推进中）：如实说明进度并给出手动同步入口，
     // 不渲染无可操作项的「等待人工确认」卡片把用户卡死。
@@ -529,7 +532,7 @@ const updatedAtFull = computed(() => (updatedAtText.value ? formatRoomFullTime(d
 
 const tagType = (status: AgentTeamsCaseStatus) => {
   if (['closed', 'delivery_ready'].includes(status)) return 'success'
-  if (['preflight_blocked', 'quality_blocked', 'execution_failed'].includes(status)) return 'error'
+  if (['preflight_blocked', 'quality_blocked', 'execution_failed', 'planning_failed'].includes(status)) return 'error'
   if (['approval_pending', 'waiting_for_correction', 'remediation_pending'].includes(status)) return 'warning'
   return 'info'
 }

@@ -148,20 +148,14 @@ class KnowledgeAssetService:
             return None
         return resolved if resolved.is_file() else None
 
-    @staticmethod
-    def _extract_pdf(path: Path) -> str:
-        try:
-            from pypdf import PdfReader
-        except ImportError:
-            logger.warning("未安装 pypdf，无法提取知识库 PDF 文本: {}", path)
-            return ""
-        reader = PdfReader(str(path))
-        pages: list[str] = []
-        for page_number, page in enumerate(reader.pages, start=1):
-            text = (page.extract_text() or "").strip()
-            if text:
-                pages.append(f"[第 {page_number} 页]\n{text}")
-        return "\n\n".join(pages)
+    def _extract_pdf(self, path: Path) -> str:
+        """提取知识库 PDF 文本（已迁移至 PDFProcessor）。"""
+        from omichub.application.services.pdf_models import KNOWLEDGE_BASE_CONFIG
+        from omichub.application.services.pdf_processor import PDFProcessor
+
+        processor = PDFProcessor(config=KNOWLEDGE_BASE_CONFIG)
+        result = processor.process_sync(str(path))
+        return result.content
 
     @staticmethod
     def _extract_office_xml(path: Path, member: str) -> str:

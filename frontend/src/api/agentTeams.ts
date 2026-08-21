@@ -2,6 +2,7 @@ import apiClient from '@/api/client'
 
 export type AgentTeamsCaseStatus =
   | 'queued' | 'received' | 'planning_running' | 'preflight_running' | 'preflight_blocked' | 'waiting_for_correction'
+  | 'planning_failed'
   | 'approval_pending' | 'approved' | 'executing' | 'execution_failed' | 'quality_running'
   | 'quality_blocked' | 'remediation_pending' | 'delivery_ready' | 'closed' | 'cancelled'
 

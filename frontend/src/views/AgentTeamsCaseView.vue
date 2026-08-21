@@ -91,7 +91,7 @@ let eventStreamFailures = 0
 
 const caseId = computed(() => String(route.params.caseId || ''))
 const phases: { key: AgentTeamsCaseStatus[]; label: string }[] = [
-  { key: ['received', 'preflight_running', 'preflight_blocked', 'waiting_for_correction'], label: '预检' },
+  { key: ['received', 'preflight_running', 'preflight_blocked', 'waiting_for_correction', 'planning_failed'], label: '预检' },
   { key: ['approval_pending', 'approved'], label: '审批' },
   { key: ['executing', 'execution_failed'], label: '执行' },
   { key: ['quality_running', 'quality_blocked', 'remediation_pending'], label: '质量' },
@@ -123,6 +123,12 @@ const nextStep = computed(() => {
     return {
       title: '请修正预检问题后重试',
       description: '查看时间线中的预检证据，修正样本表或分组对比后创建新的协作 Case。',
+    }
+  }
+  if (status === 'planning_failed') {
+    return {
+      title: '规划失败，已耗尽自动修正与用户修正预算',
+      description: '多次计划校验均未通过，当前 Case 无法继续推进；建议取消后重新创建 Case 并检查输入数据。',
     }
   }
   if (status === 'executing') {

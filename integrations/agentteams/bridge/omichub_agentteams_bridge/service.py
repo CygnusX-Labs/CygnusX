@@ -1864,7 +1864,11 @@ class BridgeService:
         actor: str,
         max_attempts: int = 3,
     ) -> None:
-        """计划校验失败后的自愈回路：3 次内反馈给 Planner 重试，超限后升级人工介入。"""
+        """计划校验失败后的自愈回路：自动重试 `max_attempts` 次内反馈给 Planner 重试；
+        自动重试耗尽后进入 `waiting_for_correction` 等待用户修正，最多
+        `case.max_correction_rounds` 轮；用户修正轮次也耗尽后进入显式终态
+        `planning_failed`，避免无限硬锁。
+        """
         correction_target = "plan-01"
         missing_fields = self._parse_missing_fields_from_validation_error(exc)
         error_message = str(exc)[:500]
@@ -1909,24 +1913,64 @@ class BridgeService:
                 },
             )
             return
-        if case.status == "planning_running":
-            await self._cases.transition(case_id, "waiting_for_correction")
+
+        # 自动重试已耗尽：进入用户修正轮次或终态。
+        next_round = case.correction_round_count + 1
+        if next_round <= case.max_correction_rounds:
+            if case.status == "planning_running":
+                await self._cases.transition(case_id, "waiting_for_correction")
+            await self._cases.bump_correction_round(case_id)
+            await self._audit.record(
+                case_id=case_id,
+                actor=actor,
+                event_type="correction_failed",
+                payload={
+                    "reason": error_message,
+                    "attempt": case.planning_retry_count,
+                    "max_attempts": max_attempts,
+                    "correction_round": next_round,
+                    "max_correction_rounds": case.max_correction_rounds,
+                    "next_actions": ["revise", "cancel"],
+                },
+            )
+            await self._audit.record(
+                case_id=case_id,
+                actor=actor,
+                event_type="planning.validation_failed",
+                payload={
+                    "error": error_message,
+                    "retry_exhausted": True,
+                    "correction_round": next_round,
+                    "max_correction_rounds": case.max_correction_rounds,
+                },
+            )
+            return
+
+        # 用户修正轮次也耗尽：显式终态 planning_failed，防止硬锁。
+        if case.status != "planning_failed":
+            await self._cases.transition(case_id, "planning_failed")
         await self._audit.record(
             case_id=case_id,
             actor=actor,
-            event_type="correction_failed",
+            event_type="correction_exhausted",
             payload={
                 "reason": error_message,
                 "attempt": case.planning_retry_count,
                 "max_attempts": max_attempts,
-                "next_actions": ["retry", "revise", "cancel"],
+                "correction_round": case.correction_round_count,
+                "max_correction_rounds": case.max_correction_rounds,
+                "next_actions": ["cancel"],
             },
         )
         await self._audit.record(
             case_id=case_id,
             actor=actor,
             event_type="planning.validation_failed",
-            payload={"error": error_message, "retry_exhausted": True},
+            payload={
+                "error": error_message,
+                "retry_exhausted": True,
+                "correction_exhausted": True,
+            },
         )
 
     def _validate_general_plan(self, proposed_submission: dict[str, Any]) -> dict[str, Any]:
@@ -2356,6 +2400,9 @@ class BridgeService:
             await self._cases.transition(request.case_id, "waiting_for_correction")
             case = await self._cases.get(request.case_id)
         if case.status in {"received", "waiting_for_correction"}:
+            if case.status == "waiting_for_correction":
+                # 用户提交修正：开启新一轮自动重试预算。
+                await self._cases.reset_planning_retry_count(request.case_id)
             await self._cases.transition(request.case_id, "preflight_running")
         await self._cases.save_preflight_input(
             request.case_id,

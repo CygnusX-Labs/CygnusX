@@ -550,48 +550,40 @@ def _human_size(size: int) -> str:
     return f"{size}B"
 
 
-def _extract_workspace_pdf_text(path: Path, max_chars: int = _PDF_READ_MAX_CHARS) -> dict[str, Any]:
-    """提取可搜索 PDF 的分页文本；扫描版和加密文件返回可操作的错误。"""
-    try:
-        from pypdf import PdfReader
+async def _extract_workspace_pdf_text(
+    path: Path, max_chars: int = _PDF_READ_MAX_CHARS
+) -> dict[str, Any]:
+    """提取工作区 PDF 的分页文本；扫描版和加密文件返回可操作的错误。"""
+    from omichub.application.services.pdf_models import WORKSPACE_MCP_CONFIG
+    from omichub.application.services.pdf_processor import PDFProcessor
 
-        reader = PdfReader(path)
-        pages: list[str] = []
-        total_chars = 0
-        last_page_number = 0
-        truncated = False
-        for page_number, page in enumerate(reader.pages, start=1):
-            text = (page.extract_text() or "").strip()
-            if not text:
-                continue
-            remaining = max_chars - total_chars
-            if remaining <= 0:
-                truncated = True
-                break
-            page_text = text[:remaining]
-            pages.append(f"[Page {page_number}]\n{page_text}")
-            total_chars += len(page_text)
-            last_page_number = page_number
-            if len(page_text) < len(text):
-                truncated = True
-                break
-        if not pages:
-            return {
-                "error": "无法提取文本：该 PDF 可能是扫描版、加密文件或不含可搜索文字。"
-                "请提供可搜索文字版 PDF，或使用 OCR 后的文件。"
-            }
-        if truncated:
-            pages.append(f"[已截断，仅覆盖前 {last_page_number} 页]")
+    config = {**WORKSPACE_MCP_CONFIG, "max_chars": max_chars}
+    processor = PDFProcessor(config=config)
+    result = await processor.process(str(path))
+
+    if not result.success:
         return {
-            "content": "\n\n".join(pages),
-            "truncated": truncated,
-            "pages_read": last_page_number,
-        }
-    except Exception as exc:  # noqa: BLE001 - convert library failures to a tool result
-        return {
-            "error": f"无法提取文本：{type(exc).__name__}。"
+            "error": f"无法提取文本：{result.fallback_reason or 'unknown error'}。"
             "该 PDF 可能是扫描版或加密文件；请提供可搜索文字版 PDF 或 OCR 版本。"
         }
+
+    # 对 JSON 输出，result.content 是 JSON 字符串；需检查原始 markdown 是否为空
+    raw_content = (result.raw_markdown or "").strip()
+    if not raw_content and not result.pages:
+        return {
+            "error": "无法提取文本：该 PDF 可能是扫描版、加密文件或不含可搜索文字。"
+            "请提供可搜索文字版 PDF，或使用 OCR 后的文件。"
+        }
+
+    return {
+        "content": result.content,
+        "truncated": result.metadata.truncated,
+        "pages_read": result.metadata.total_pages,
+        "pdf_type": result.metadata.pdf_type.value,
+        "confidence": result.metadata.confidence,
+        "source": result.source.value,
+        "fallback_reason": result.fallback_reason,
+    }
 
 
 async def _resolve_workspace_file(
@@ -967,7 +959,7 @@ async def _workspace_read_file(
 
     name = meta["name"]
     if name.lower().endswith(_PDF_SUFFIX):
-        extracted = _extract_workspace_pdf_text(target)
+        extracted = await _extract_workspace_pdf_text(target)
         if error := extracted.get("error"):
             return {"error": error, **meta}
         meta["content"] = extracted["content"]

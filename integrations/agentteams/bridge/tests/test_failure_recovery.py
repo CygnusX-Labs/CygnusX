@@ -443,3 +443,82 @@ async def test_dag_retry_and_timeout_fields_flow_into_work_items(tmp_path) -> No
     # 声明的 backoff 指数增长：attempt=1 -> 45s。
     assert service._retry_delay_seconds(items["exec-01"].model_copy(update={"attempt": 1})) == 45
     assert service._retry_delay_seconds(items["exec-01"].model_copy(update={"attempt": 2})) == 90
+
+
+@pytest.mark.asyncio
+async def test_plan_validation_auto_retry_exhaustion_enters_waiting_for_correction(tmp_path) -> None:
+    """N-c：自动重试耗尽后进入 waiting_for_correction 并计入一次用户修正轮次。"""
+    service = make_service(tmp_path)
+    case = await service.create_case(
+        CaseCreateRequest(
+            case_id="plan-fail-case",
+            intent="fail planning",
+            requester_ref="user-1",
+            context_refs=[ContextRef(kind="file", id="input.csv")],
+            lead_planner="agent-code",
+        ),
+        "bioops-manager",
+    )
+    # 模拟自动重试预算已耗尽（planning_retry_count == max_attempts）。
+    case = case.model_copy(
+        update={
+            "status": "planning_running",
+            "planning_retry_count": 3,
+            "correction_round_count": 0,
+        }
+    )
+    service._cases._cases["plan-fail-case"] = case
+
+    await service._handle_plan_validation_failure(
+        "plan-fail-case", case, ValueError("missing sample_sheet"), "agent-code", max_attempts=3
+    )
+
+    updated = await service._cases.get("plan-fail-case")
+    assert updated.status == "waiting_for_correction"
+    assert updated.correction_round_count == 1
+    assert updated.planning_retry_count == 3
+
+    events = await service.get_case_events("plan-fail-case", "bioops-manager")
+    event_types = [e["event_type"] for e in events.events]
+    assert "correction_failed" in event_types
+    assert "planning.validation_failed" in event_types
+
+
+@pytest.mark.asyncio
+async def test_plan_validation_correction_rounds_exhausted_becomes_planning_failed(tmp_path) -> None:
+    """N-c：用户修正轮次也耗尽后进入 planning_failed 显式终态并记录 correction_exhausted。"""
+    service = make_service(tmp_path)
+    case = await service.create_case(
+        CaseCreateRequest(
+            case_id="plan-exhausted-case",
+            intent="exhaust planning",
+            requester_ref="user-1",
+            context_refs=[ContextRef(kind="file", id="input.csv")],
+            lead_planner="agent-code",
+        ),
+        "bioops-manager",
+    )
+    # 自动重试与用户修正轮次均已达到上限。
+    case = case.model_copy(
+        update={
+            "status": "waiting_for_correction",
+            "planning_retry_count": 3,
+            "correction_round_count": case.max_correction_rounds,
+        }
+    )
+    service._cases._cases["plan-exhausted-case"] = case
+
+    await service._handle_plan_validation_failure(
+        "plan-exhausted-case", case, ValueError("missing flow_id"), "agent-code", max_attempts=3
+    )
+
+    updated = await service._cases.get("plan-exhausted-case")
+    assert updated.status == "planning_failed"
+    assert updated.correction_round_count == case.max_correction_rounds
+
+    events = await service.get_case_events("plan-exhausted-case", "bioops-manager")
+    event_types = [e["event_type"] for e in events.events]
+    assert "correction_exhausted" in event_types
+    assert "planning.validation_failed" in event_types
+    validation_events = [e for e in events.events if e["event_type"] == "planning.validation_failed"]
+    assert any(e["payload"].get("correction_exhausted") for e in validation_events)

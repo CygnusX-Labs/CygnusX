@@ -60,6 +60,7 @@ const isFlowCase = computed(() => createForm.value.case_kind === 'flow')
 
 const STATUS_OPTIONS: AgentTeamsCaseStatus[] = [
   'queued', 'received', 'planning_running', 'preflight_running', 'preflight_blocked', 'waiting_for_correction',
+  'planning_failed',
   'approval_pending', 'approved', 'executing', 'execution_failed', 'quality_running', 'quality_blocked',
   'remediation_pending', 'delivery_ready', 'closed', 'cancelled',
 ]
@@ -67,7 +68,7 @@ const statusOptions = STATUS_OPTIONS.map((value) => ({ value, label: formatAgent
 
 const tagType = (status: AgentTeamsCaseStatus) => {
   if (['closed', 'delivery_ready'].includes(status)) return 'success'
-  if (['preflight_blocked', 'quality_blocked', 'execution_failed'].includes(status)) return 'error'
+  if (['preflight_blocked', 'quality_blocked', 'execution_failed', 'planning_failed'].includes(status)) return 'error'
   if (['approval_pending', 'waiting_for_correction', 'remediation_pending'].includes(status)) return 'warning'
   return 'info'
 }

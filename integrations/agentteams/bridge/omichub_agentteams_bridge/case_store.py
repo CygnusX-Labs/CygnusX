@@ -52,10 +52,11 @@ _WORK_ITEM_TRANSITIONS: dict[WorkItemStatus, set[WorkItemStatus]] = {
 _ALLOWED_TRANSITIONS: dict[CaseStatus, set[CaseStatus]] = {
     "queued": {"received", "cancelled"},
     "received": {"planning_running", "preflight_running", "cancelled"},
-    "planning_running": {"preflight_running", "approval_pending", "waiting_for_correction", "cancelled"},
+    "planning_running": {"preflight_running", "approval_pending", "waiting_for_correction", "planning_failed", "cancelled"},
     "preflight_running": {"preflight_blocked", "approval_pending", "cancelled"},
     "preflight_blocked": {"waiting_for_correction", "cancelled"},
-    "waiting_for_correction": {"planning_running", "preflight_running", "cancelled"},
+    "waiting_for_correction": {"planning_running", "preflight_running", "planning_failed", "cancelled"},
+    "planning_failed": set(),
     "approval_pending": {"approved", "cancelled"},
     "approved": {"executing", "cancelled"},
     "executing": {"quality_running", "delivery_ready", "execution_failed", "cancelled"},
@@ -487,6 +488,42 @@ class CaseStore:
                     "planning_retry_count": case.planning_retry_count + 1,
                     "work_items": revised_items,
                     "updated_at": now,
+                }
+            )
+            await self._persist({case_id: updated})
+            return updated
+
+    async def bump_correction_round(
+        self,
+        case_id: str,
+    ) -> CaseRecord:
+        """Enter a new user-correction round from waiting_for_correction."""
+        async with self._lock:
+            case = self._cases.get(case_id)
+            if case is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+            updated = case.model_copy(
+                update={
+                    "correction_round_count": case.correction_round_count + 1,
+                    "updated_at": datetime.now(UTC),
+                }
+            )
+            await self._persist({case_id: updated})
+            return updated
+
+    async def reset_planning_retry_count(self, case_id: str) -> CaseRecord:
+        """Reset the automatic planning retry counter when the user submits a revision.
+
+        This gives the Planner a fresh `max_attempts` budget for the new correction round.
+        """
+        async with self._lock:
+            case = self._cases.get(case_id)
+            if case is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+            updated = case.model_copy(
+                update={
+                    "planning_retry_count": 0,
+                    "updated_at": datetime.now(UTC),
                 }
             )
             await self._persist({case_id: updated})

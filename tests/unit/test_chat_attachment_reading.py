@@ -10,8 +10,19 @@ from omichub.application.services.chat_service import ChatService
 async def test_read_attachment_text_extracts_local_pdf(monkeypatch, tmp_path: Path) -> None:
     pdf_path = tmp_path / "paper.pdf"
     pdf_path.write_bytes(b"%PDF fake")
-    monkeypatch.setattr(ChatService, "_resolve_attachment_path", staticmethod(lambda _url: str(pdf_path)))
-    monkeypatch.setattr(ChatService, "_extract_pdf_text", staticmethod(lambda source: f"parsed:{Path(source).name}"))
+    monkeypatch.setattr(
+        ChatService,
+        "_resolve_attachment_path",
+        staticmethod(lambda _url: str(pdf_path)),
+    )
+    async def fake_extract_pdf_text(source: str) -> str:
+        return f"parsed:{Path(source).name}"
+
+    monkeypatch.setattr(
+        ChatService,
+        "_extract_pdf_text",
+        staticmethod(fake_extract_pdf_text),
+    )
 
     text = await ChatService._read_attachment_text(
         {
@@ -24,14 +35,23 @@ async def test_read_attachment_text_extracts_local_pdf(monkeypatch, tmp_path: Pa
     assert text == "parsed:paper.pdf"
 
 
-def test_extract_pdf_text_preserves_page_boundaries(monkeypatch) -> None:
-    pages = [
-        SimpleNamespace(extract_text=lambda: "第一页内容"),
-        SimpleNamespace(extract_text=lambda: "第二页内容"),
-    ]
-    fake_pypdf = SimpleNamespace(PdfReader=lambda _source: SimpleNamespace(pages=pages))
-    monkeypatch.setitem(__import__("sys").modules, "pypdf", fake_pypdf)
+@pytest.mark.asyncio
+async def test_extract_pdf_text_delegates_to_pdf_processor(monkeypatch, tmp_path: Path) -> None:
+    """验证 _extract_pdf_text 已迁移至 PDFProcessor。"""
+    pdf_path = tmp_path / "paper.pdf"
+    pdf_path.write_bytes(b"%PDF fake")
 
-    text = ChatService._extract_pdf_text(b"pdf")
+    async def fake_process(self, file_path: str):
+        return SimpleNamespace(
+            content=f"processed:{Path(file_path).name}",
+            metadata=SimpleNamespace(total_pages=2),
+        )
 
-    assert text == "[第 1 页]\n第一页内容\n\n[第 2 页]\n第二页内容"
+    monkeypatch.setattr(
+        "omichub.application.services.pdf_processor.PDFProcessor.process",
+        fake_process,
+    )
+
+    text = await ChatService._extract_pdf_text(str(pdf_path))
+
+    assert text == "processed:paper.pdf"

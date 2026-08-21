@@ -73,6 +73,7 @@ dependencies = [
     "ollama>=0.6.2",
     "fastembed>=0.8.0",
     "pypdf>=5.0.0",
+    "pdf-inspector>=0.1.0",
     "pillow>=10.0.0",
 ]
 
