@@ -1046,19 +1046,25 @@ class BridgeService:
         )
         try:
             try:
-                result = await self._gateway.consult(
-                    {
-                        "case_id": case_id,
-                        "agent_id": expected_agent_id,
-                        "question": request.question,
-                        "capability": request.capability,
-                        "evidence_refs": request.evidence_refs,
-                        "requested_tools": request.requested_tools,
-                        "requester_ref": case.requester_ref,
-                        "work_item_id": work_item_id,
-                        "execution_mode": request.execution_mode,
-                    }
-                )
+                consult_payload: dict[str, Any] = {
+                    "case_id": case_id,
+                    "agent_id": expected_agent_id,
+                    "question": request.question,
+                    "capability": request.capability,
+                    "evidence_refs": request.evidence_refs,
+                    "requested_tools": request.requested_tools,
+                    "requester_ref": case.requester_ref,
+                    "work_item_id": work_item_id,
+                    "execution_mode": request.execution_mode,
+                }
+                # 产物血缘（F1）：Worker 声明的 source_refs/执行摘要原样透传到平台登记路径。
+                if request.source_refs is not None:
+                    consult_payload["source_refs"] = [
+                        ref.model_dump(mode="json") for ref in request.source_refs
+                    ]
+                if request.execution_summary is not None:
+                    consult_payload["execution_summary"] = request.execution_summary
+                result = await self._gateway.consult(consult_payload)
                 gateway_result = ReadOnlyExecutionResult.model_validate(result)
                 if gateway_result.agent_id != request.agent_id:
                     raise ValueError("Gateway response agent does not match the requested agent")
@@ -1598,7 +1604,7 @@ class BridgeService:
             WorkItemRecord(
                 work_item_id="preflight-01",
                 parent_work_item_id="plan-01",
-                target="data-steward",
+                target=self._canonical_work_item_target("data-steward"),
                 objective="核验冻结计划与真实项目数据、样本和分组是否匹配。",
                 skill_name="project-preflight",
                 context_refs=[*self._case_context_refs(case), {"kind": "flow", "id": task.flow_id}],
@@ -1618,6 +1624,19 @@ class BridgeService:
                 "quality_gate_required": task.quality_gate_required,
             },
         )
+
+    def _canonical_work_item_target(self, target: str) -> str:
+        """BUG-E2E-03：把 legacy 角色别名 target 解析为 canonical worker identity。
+
+        capability snapshot 的 role_agent_map 覆盖 canonical 角色与别名
+        （如 data-steward → agent-data）；未登记的 target（如 workflow-operator
+        平台内置身份）原样返回。inbox/claim 的精确匹配与租约语义不变。
+        """
+        resolved = self._settings.role_agent_mapping().get(target)
+        if resolved and resolved != target:
+            logger.info("work item target %s resolved to canonical identity %s", target, resolved)
+            return resolved
+        return target
 
     @staticmethod
     def _parse_missing_fields_from_validation_error(exc: Exception) -> list[str]:
@@ -2931,6 +2950,26 @@ class BridgeService:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Case and task mismatch"
             )
+        if request.artifact_hashes and not request.source_refs:
+            # 产物血缘（F1）硬约束：上报产物必须携带 source_refs，缺失即拒绝登记，
+            # 回写 room.artifact_rejected 审计事件（例外显式化，不静默兜底），
+            # Case 状态机不发生任何迁移。
+            await self._audit.record(
+                case_id=case.case_id,
+                actor=actor,
+                event_type="room.artifact_rejected",
+                payload={
+                    "reason": "missing_source_refs",
+                    "task_id": task_id,
+                    "work_item_id": request.work_item_id,
+                    "artifact_paths": sorted(request.artifact_hashes),
+                    "detail": "上报产物缺少 source_refs（输入产物 id 列表 + 执行摘要），登记被拒绝。",
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Artifact registration rejected: source_refs are required when artifact_hashes are reported",
+            )
         await self._require_bound_work_item_target(
             case.case_id, request.work_item_id, actor, skill_name="quality-gate"
         )
@@ -2949,6 +2988,8 @@ class BridgeService:
             summary=request.summary,
             evidence_refs=request.evidence_refs,
             artifact_hashes=request.artifact_hashes,
+            source_refs=request.source_refs,
+            execution_summary=request.execution_summary,
             recorded_at=datetime.now(UTC),
         )
         await self._cases.set_quality(case.case_id, request.decision)
@@ -3088,6 +3129,9 @@ class BridgeService:
         # 汇总各质量门事件提交的产物 MD5（md5 能力在质量门侧计算并随
         # quality.decision 事件落审计），内嵌进交付 manifest 供接收方核验。
         artifact_checksums: dict[str, str] = {}
+        # 产物血缘（F1）：Bridge 侧血缘事实来自质量门事件声明的 source_refs，
+        # 随交付 manifest 一并输出；权威版本行在平台 DB（artifact_version_lineage）。
+        artifact_lineage: list[dict[str, Any]] = []
         for event in events:
             if event.get("event_type") != "quality.decision":
                 continue
@@ -3095,10 +3139,19 @@ class BridgeService:
             if not isinstance(payload, dict):
                 continue
             hashes = payload.get("artifact_hashes")
-            if not isinstance(hashes, dict):
-                continue
-            for path, digest in hashes.items():
-                artifact_checksums[str(path)] = str(digest)
+            if isinstance(hashes, dict):
+                for path, digest in hashes.items():
+                    artifact_checksums[str(path)] = str(digest)
+                artifact_lineage.append(
+                    {
+                        "event_id": event.get("event_id"),
+                        "recorded_at": event.get("recorded_at"),
+                        "task_id": payload.get("task_id"),
+                        "artifact_hashes": {str(k): str(v) for k, v in hashes.items()},
+                        "source_refs": payload.get("source_refs") or [],
+                        "execution_summary": str(payload.get("execution_summary") or ""),
+                    }
+                )
         task_snapshots: list[dict[str, Any]] = []
         for task_id in case.omic_task_ids:
             try:
@@ -3127,6 +3180,7 @@ class BridgeService:
             "omic_task_snapshots": task_snapshots,
             "quality": {"decision": request.quality_decision},
             "artifact_checksums": artifact_checksums,
+            "artifact_lineage": artifact_lineage,
             "approval_events": [
                 event for event in events if event["event_type"].startswith("approval.")
             ],

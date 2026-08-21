@@ -33,6 +33,51 @@ class OmicHubClient:
             authenticate=False,
         )
 
+    async def query_case_facts(
+        self,
+        *,
+        case_id: str,
+        caller: str,
+        room_id: str | None = None,
+        template: str | None = None,
+        sql: str | None = None,
+        params: dict[str, Any] | None = None,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        """F4 自省查询面：内部角色查本 case 历史（模板或受限 SQL，scope 服务端强制）。
+
+        只读；scope 限定与 denied 防御在平台端强制，本方法只做转发。
+        审计：每次调用（含被拒）平台端都会写 case.introspection_query /
+        case.introspection_denied 事件。
+        """
+        payload: dict[str, Any] = {"case_id": case_id, "caller": caller}
+        if room_id is not None:
+            payload["room_id"] = room_id
+        if template is not None:
+            payload["template"] = template
+        if sql is not None:
+            payload["sql"] = sql
+        if params is not None:
+            payload["params"] = params
+        if limit is not None:
+            payload["limit"] = limit
+        return await self._request(
+            "POST",
+            "/api/v1/agent-teams/introspection/query",
+            json=payload,
+            headers={"X-Integration-Token": self._settings.omichub_integration_token},
+            authenticate=False,
+        )
+
+    async def get_introspection_schema(self) -> dict[str, Any]:
+        """F4 渐进暴露：按需取自省查询面的表/列说明文档正文。"""
+        return await self._request(
+            "GET",
+            "/api/v1/agent-teams/introspection/schema",
+            headers={"X-Integration-Token": self._settings.omichub_integration_token},
+            authenticate=False,
+        )
+
     async def get_flow_schema(self, flow_id: str) -> dict[str, Any]:
         return await self._request("GET", f"/api/v1/flows/{flow_id}/schema")
 

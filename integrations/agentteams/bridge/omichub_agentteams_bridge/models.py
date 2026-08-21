@@ -364,6 +364,14 @@ class WorkItemHeartbeatRequest(BaseModel):
     worker_id: str | None = Field(default=None, max_length=256)
 
 
+class ArtifactSourceRef(BaseModel):
+    """产物血缘（F1）：Worker 上报产物时携带的上游产物引用。"""
+
+    artifact_id: str = Field(min_length=1, max_length=512)
+    relation: Literal["input_to", "derived_from"] = "input_to"
+    note: str = Field(default="", max_length=500)
+
+
 class ReadOnlyExecutionRequest(BaseModel):
     """Worker request for a Bridge-mediated, Gateway-restricted consultation."""
 
@@ -385,6 +393,10 @@ class ReadOnlyExecutionRequest(BaseModel):
     execution_mode: Literal["readonly_consultation", "workspace_execution"] = (
         "readonly_consultation"
     )
+    # 产物血缘（F1）：workspace_execution 的上游产物引用与执行摘要，
+    # 原样透传给平台产物登记路径；None 表示 Worker 未声明。
+    source_refs: list[ArtifactSourceRef] | None = Field(default=None, max_length=100)
+    execution_summary: str | None = Field(default=None, max_length=2_000)
 
 
 class ReadOnlyExecutionResult(BaseModel):
@@ -443,6 +455,10 @@ class QualityGateRequest(BaseModel):
     summary: str = Field(min_length=1, max_length=4_000)
     evidence_refs: list[ContextRef] = Field(default_factory=list, max_length=100)
     artifact_hashes: dict[str, str] = Field(default_factory=dict, max_length=100)
+    # 产物血缘（F1）硬约束：上报了 artifact_hashes 就必须携带 source_refs，
+    # 缺失由 Bridge 拒绝登记并回写 room.artifact_rejected 审计事件。
+    source_refs: list[ArtifactSourceRef] = Field(default_factory=list, max_length=100)
+    execution_summary: str = Field(default="", max_length=2_000)
     remediation_request: RemediationRequest | None = None
 
 
@@ -460,6 +476,8 @@ class QualityGateResponse(BaseModel):
     summary: str
     evidence_refs: list[ContextRef]
     artifact_hashes: dict[str, str]
+    source_refs: list[ArtifactSourceRef]
+    execution_summary: str
     recorded_at: datetime
 
 

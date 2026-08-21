@@ -658,6 +658,9 @@ async def test_case_success_path_generates_quality_evidence_and_manifest(client)
             "summary": "All required artifacts are present.",
             "evidence_refs": [{"kind": "task", "id": "task-001"}],
             "artifact_hashes": {"artifact-001": "abc123"},
+            # 产物血缘（F1）硬约束：上报 artifact_hashes 必须携带 source_refs。
+            "source_refs": [{"artifact_id": "projects/p1/input.fastq", "relation": "input_to"}],
+            "execution_summary": "rna_seq run over the declared input sheet",
         },
     )
     assert quality.status_code == 200
@@ -1806,3 +1809,63 @@ async def test_standard_work_item_targets_fall_back_to_legacy_defaults(client) -
     work_items = {item["work_item_id"]: item for item in reconciled.json()["work_items"]}
     assert work_items["interpret-01"]["target"] == "agent-rnaseq"
     assert work_items["quality-01"]["target"] == "quality-auditor"
+
+
+@pytest.mark.asyncio
+async def test_query_case_facts_uses_integration_token_and_forwards_payload(settings) -> None:
+    """F4 自省查询面：Bridge 内部客户端只转发，scope/denied 在平台端强制。"""
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if request.url.path.endswith("/introspection/schema"):
+            return httpx.Response(200, json={"document": "schema doc"})
+        return httpx.Response(
+            200,
+            json={
+                "case_id": "bioops_case1",
+                "rows": [],
+                "row_count": 0,
+                "total_count": 0,
+                "truncated": False,
+                "aggregate": {},
+            },
+        )
+
+    token_settings = settings.model_copy(
+        update={
+            "omichub_service_token": "",
+            "omichub_api_key": "omh_restricted_key",
+            "omichub_integration_token": "integration-secret",
+        }
+    )
+    upstream = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="http://omic.test"
+    )
+    client = OmicHubClient(token_settings, upstream)
+    result = await client.query_case_facts(
+        case_id="bioops_case1",
+        caller="manager",
+        room_id="room-1",
+        template="artifact_lineage",
+        limit=20,
+    )
+    schema = await client.get_introspection_schema()
+    await upstream.aclose()
+
+    query_call, schema_call = calls
+    assert query_call.url.path == "/api/v1/agent-teams/introspection/query"
+    assert query_call.headers["x-integration-token"] == "integration-secret"
+    assert "x-api-key" not in query_call.headers
+    assert "authorization" not in query_call.headers
+    body = json.loads(query_call.content)
+    assert body == {
+        "case_id": "bioops_case1",
+        "caller": "manager",
+        "room_id": "room-1",
+        "template": "artifact_lineage",
+        "limit": 20,
+    }
+    assert result["truncated"] is False
+    assert schema_call.url.path == "/api/v1/agent-teams/introspection/schema"
+    assert schema["document"] == "schema doc"
