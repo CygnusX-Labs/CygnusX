@@ -71,6 +71,37 @@ async def _case_gc_loop(service: BridgeService) -> None:
         await asyncio.sleep(24 * 60 * 60)
 
 
+def room_archive_autorun_enabled(settings: BridgeSettings) -> bool:
+    """Scheduled room-namespace archive scan is enabled whenever room_archive_days > 0.
+
+    与 case_gc_autorun_enabled 的差异是有意的：归档可逆（非物理删除），
+    口径文档默认 30 天即期望生产生效，因此不按 environment 禁用。
+    """
+    return settings.room_archive_days > 0
+
+
+async def _room_archive_loop(service: BridgeService) -> None:
+    """Periodically archive room namespaces idle beyond BRIDGE_ROOM_ARCHIVE_DAYS.
+
+    间隔 3600s：归档窗口以天计（默认 30 天），小时级节拍足够且与
+    work_item sweep 同属低频后台循环；单次扫描失败只记录日志，下轮重试。
+    """
+    logger = logging.getLogger(__name__)
+    while True:
+        try:
+            summary = await service.archive_stale_room_namespaces("bioops-manager")
+            if summary["archived"] or summary["failed"]:
+                logger.info(
+                    "Bridge room archive scan: %d archived, %d skipped, %d failed",
+                    summary["archived"],
+                    summary["skipped"],
+                    summary["failed"],
+                )
+        except Exception:
+            logger.exception("Bridge room archive scan failed")
+        await asyncio.sleep(3600)
+
+
 async def _work_item_watchdog_loop(service: BridgeService, interval_seconds: float) -> None:
     """Periodically reclaim lost Workers' leases so killed Workers never stall a Case.
 
@@ -165,6 +196,9 @@ def create_app(
         gc_task: asyncio.Task[None] | None = None
         if case_gc_autorun_enabled(runtime_settings):
             gc_task = asyncio.create_task(_case_gc_loop(service))
+        room_archive_task: asyncio.Task[None] | None = None
+        if room_archive_autorun_enabled(runtime_settings):
+            room_archive_task = asyncio.create_task(_room_archive_loop(service))
         watchdog_task: asyncio.Task[None] | None = None
         if runtime_settings.work_item_sweep_interval_seconds > 0:
             watchdog_task = asyncio.create_task(
@@ -199,6 +233,10 @@ def create_app(
             gc_task.cancel()
             with suppress(asyncio.CancelledError):
                 await gc_task
+        if room_archive_task is not None:
+            room_archive_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await room_archive_task
         await runtime_client.aclose()
         if runtime_gateway_client is not None:
             await runtime_gateway_client.aclose()
@@ -400,6 +438,27 @@ def create_app(
     ) -> dict:
         require_role(identity, "bioops-manager")
         return await service.gc_cases(identity)
+
+    @app.post("/v1/rooms/{room_id}/archive", tags=["Rooms"])
+    async def archive_room(
+        room_id: str,
+        identity: Annotated[str, Depends(authenticate_identity)],
+        service: Annotated[BridgeService, Depends(get_service)],
+        reason: str | None = None,
+    ) -> dict:
+        """Archive a room namespace event stream to cold storage (归档 ≠ 删除，幂等)。"""
+        require_role(identity, "bioops-manager")
+        return await service.archive_room_namespace(room_id, identity, reason)
+
+    @app.post("/v1/rooms/{room_id}/unarchive", tags=["Rooms"])
+    async def unarchive_room(
+        room_id: str,
+        identity: Annotated[str, Depends(authenticate_identity)],
+        service: Annotated[BridgeService, Depends(get_service)],
+    ) -> dict:
+        """Restore an archived room namespace; audit chain replays in full."""
+        require_role(identity, "bioops-manager")
+        return await service.unarchive_room_namespace(room_id, identity)
 
     @app.post("/v1/worker-tokens", status_code=status.HTTP_201_CREATED, tags=["Worker Tokens"])
     async def issue_worker_token(

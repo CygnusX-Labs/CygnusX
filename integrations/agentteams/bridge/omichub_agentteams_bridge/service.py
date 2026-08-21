@@ -14,14 +14,14 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
-logger = logging.getLogger(__name__)
-
-from .audit import AuditStore
+from .audit import OPERATIONAL_EVENT_TYPES, STREAM_EVENT_TYPES, AuditStore
 from .case_store import CaseStore
 from .client import GatewayClient, OmicHubClient
 from .config import BridgeSettings
+from .minio_store import MinioBridgeStorage
 from .models import (
     CASE_LEVEL_WORK_ITEM_ID,
+    ROOM_NAMESPACE_ID_PREFIX,
     ApprovalRequest,
     ApprovalResponse,
     ApprovedSubmission,
@@ -62,6 +62,8 @@ from .models import (
     WorkItemUpdateRequest,
 )
 from .security import ApprovalSigner
+
+logger = logging.getLogger(__name__)
 
 # O5 迁移期:标准工作项 target 未在 flow YAML/_shared 声明时走硬编码缺省,每类只警告一次。
 _standard_target_fallback_warned: set[str] = set()
@@ -398,6 +400,200 @@ class BridgeService:
             summary["deleted_cases"] += 1
             summary["deleted_events"] += deleted_events
         return summary
+
+    # ------------------------------------------------------------------
+    # 房间命名空间归档/恢复（协作室房间事件GC与归档口径 §2，归档 ≠ 删除）
+    # ------------------------------------------------------------------
+    async def archive_room_namespace(
+        self, room_id: str, actor: str, reason: str | None = None
+    ) -> dict[str, Any]:
+        """Archive a room namespace event stream to the MinIO cold prefix.
+
+        口径 §2：先向在线事件流末尾追加 room.archived 审计事件（操作者/原因/
+        冷存位置/事件量快照），随事件卷一并迁往 ``archive/rooms/<room_id>/``；
+        归档后在线审计链查询不再加载该卷，business 写入被显式拒绝（见
+        record_evidence 的只读拦截）。已归档的命名空间重复调用幂等返回。
+        """
+        case_id = self._room_namespace_case_id(room_id)
+        case = await self._cases.get(case_id)
+        if case.record_kind != "room_namespace":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Target case_id is not a room namespace",
+            )
+        if not self._audit.supports_room_archive:
+            raise HTTPException(
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail="Room namespace archiving requires the MinIO persistence layer",
+            )
+        if self._audit.room_namespace_archived(room_id):
+            return {
+                "room_id": room_id,
+                "case_id": case_id,
+                "archived": True,
+                "already_archived": True,
+                "archive_prefix": MinioBridgeStorage.archived_events_prefix(room_id),
+            }
+        events = await self._audit.list_events(case_id)
+        business_events = [
+            event
+            for event in events
+            if event.get("event_type") not in STREAM_EVENT_TYPES
+            and event.get("event_type") not in OPERATIONAL_EVENT_TYPES
+        ]
+        last_business_at = self._last_business_recorded_at(business_events)
+        await self._audit.record(
+            case_id=case_id,
+            actor=actor,
+            event_type="room.archived",
+            payload={
+                "room_id": room_id,
+                "reason": reason,
+                "archive_prefix": MinioBridgeStorage.archived_events_prefix(room_id),
+                "event_count": len(business_events),
+                "last_business_recorded_at": (
+                    last_business_at.isoformat() if last_business_at is not None else None
+                ),
+            },
+        )
+        migration = await self._audit.archive_room_events(case_id, room_id)
+        return {
+            "room_id": room_id,
+            "case_id": case_id,
+            "archived": True,
+            "already_archived": False,
+            "event_count": len(business_events),
+            **migration,
+        }
+
+    async def unarchive_room_namespace(self, room_id: str, actor: str) -> dict[str, Any]:
+        """Restore an archived room namespace: cold volumes move back, then audit.
+
+        口径「恢复」：冷存事件卷回搬后追加 room.unarchived 审计事件；恢复后
+        read_events 能完整读出归档前全部事件 + room.archived + room.unarchived，
+        审计链完整可重放。
+        """
+        case_id = self._room_namespace_case_id(room_id)
+        case = await self._cases.get(case_id)
+        if case.record_kind != "room_namespace":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Target case_id is not a room namespace",
+            )
+        if not self._audit.supports_room_archive:
+            raise HTTPException(
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail="Room namespace archiving requires the MinIO persistence layer",
+            )
+        if not self._audit.room_namespace_archived(room_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Room namespace is not archived",
+            )
+        restoration = await self._audit.unarchive_room_events(case_id, room_id)
+        await self._audit.record(
+            case_id=case_id,
+            actor=actor,
+            event_type="room.unarchived",
+            payload={
+                "room_id": room_id,
+                "restored_from": restoration["restored_from"],
+                "restored_object_count": len(restoration["restored_objects"]),
+            },
+        )
+        return {
+            "room_id": room_id,
+            "case_id": case_id,
+            "unarchived": True,
+            **restoration,
+        }
+
+    async def archive_stale_room_namespaces(self, actor: str) -> dict[str, Any]:
+        """Auto-archive scan: archive room namespaces idle beyond room_archive_days.
+
+        口径 §2 归档触发：以最后一条 business 事件的 recorded_at 判定活动
+        （operational/stream 不算活动）；已归档的跳过，单房间失败不阻断扫描。
+        """
+        days = self._settings.room_archive_days
+        if days <= 0:
+            return {
+                "archive_enabled": False,
+                "days": days,
+                "scanned": 0,
+                "archived": 0,
+                "skipped": 0,
+                "failed": 0,
+            }
+        cutoff = datetime.now(UTC) - timedelta(days=days)
+        summary: dict[str, Any] = {
+            "archive_enabled": True,
+            "days": days,
+            "scanned": 0,
+            "archived": 0,
+            "skipped": 0,
+            "failed": 0,
+        }
+        for case in await self._cases.list():
+            if case.record_kind != "room_namespace":
+                continue
+            summary["scanned"] += 1
+            room_id = case.case_id[len(ROOM_NAMESPACE_ID_PREFIX):]
+            if self._audit.room_namespace_archived(room_id):
+                summary["skipped"] += 1
+                continue
+            events = await self._audit.list_events(case.case_id)
+            last_business_at = self._last_business_recorded_at(events)
+            if last_business_at is None or last_business_at >= cutoff:
+                summary["skipped"] += 1
+                continue
+            try:
+                await self.archive_room_namespace(
+                    room_id, actor, reason=f"inactive_for_{days}d(auto)"
+                )
+            except Exception:
+                logger.warning(
+                    "room namespace auto-archive failed for %s", case.case_id, exc_info=True
+                )
+                summary["failed"] += 1
+                continue
+            summary["archived"] += 1
+        return summary
+
+    @staticmethod
+    def _room_namespace_case_id(room_id: str) -> str:
+        if not room_id or "/" in room_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid room_id"
+            )
+        return f"{ROOM_NAMESPACE_ID_PREFIX}{room_id}"
+
+    def _last_business_recorded_at(self, events: list[dict[str, Any]]) -> datetime | None:
+        """Latest recorded_at among business events (stream/operational不算活动)。"""
+        latest: datetime | None = None
+        for event in events:
+            event_type = str(event.get("event_type") or "")
+            if event_type in STREAM_EVENT_TYPES or event_type in OPERATIONAL_EVENT_TYPES:
+                continue
+            parsed = self._parse_datetime(event.get("recorded_at"))
+            if parsed is not None and (latest is None or parsed > latest):
+                latest = parsed
+        return latest
+
+    def _require_room_namespace_writable(self, case: CaseRecord, event_type: str) -> None:
+        """口径 §2.2：已归档房间命名空间只读，business 事件写入显式 409 拒绝。
+
+        瞬态 stream 与 operational 计数不受影响（它们本就不进持久事件卷）。
+        """
+        if case.record_kind != "room_namespace":
+            return
+        if event_type in STREAM_EVENT_TYPES or event_type in OPERATIONAL_EVENT_TYPES:
+            return
+        room_id = case.case_id[len(ROOM_NAMESPACE_ID_PREFIX):]
+        if self._audit.room_namespace_archived(room_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Room namespace is archived; unarchive it before recording events",
+            )
 
     async def reconcile_case(self, case_id: str, actor: str) -> CaseRecord:
         """Advance a submitted Case only from observed OmicHub task state.
@@ -3388,6 +3584,8 @@ class BridgeService:
           （work_item.assigned 必然存在）。
         """
         case = await self._cases.get(case_id)
+        # 归档口径 §2.2：已归档房间命名空间的 business 事件写入显式拒绝。
+        self._require_room_namespace_writable(case, request.event_type)
         inner_payload = request.payload if isinstance(request.payload, dict) else {}
         supplied_anchor = inner_payload.get("causation_event_id")
         if not isinstance(supplied_anchor, str) or not supplied_anchor.strip():

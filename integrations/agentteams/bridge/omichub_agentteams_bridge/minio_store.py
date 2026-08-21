@@ -19,6 +19,7 @@ asyncio 锁串行化同一 Case 的写入。Bridge 审计事件体量小（每�
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import io
 import json
 import logging
@@ -371,6 +372,140 @@ class MinioBridgeStorage:
 
     def _events_deleted(self, case_id: str) -> None:
         self._last_event_ids.pop(case_id, None)
+
+    # ------------------------------------------------------------------
+    # room namespace archive（协作室房间事件GC与归档口径 §2：归档 ≠ 删除）
+    # 事件卷整体迁到冷存前缀 archive/rooms/<room_id>/events/...，在线审计链
+    # 查询不再加载；反向回搬即恢复。与 Case GC 的 delete_* 语义完全隔离。
+    # ------------------------------------------------------------------
+    @staticmethod
+    def archive_rooms_prefix() -> str:
+        return "archive/rooms/"
+
+    @classmethod
+    def archived_room_prefix(cls, room_id: str) -> str:
+        return f"{cls.archive_rooms_prefix()}{room_id}/"
+
+    @classmethod
+    def archived_events_prefix(cls, room_id: str) -> str:
+        return f"{cls.archived_room_prefix(room_id)}events/"
+
+    def list_archived_room_ids(self) -> list[str]:
+        """Startup recovery: enumerate rooms with an archived event stream."""
+        room_ids: set[str] = set()
+        for key in self._list_keys(self.archive_rooms_prefix()):
+            parts = key.split("/")
+            if len(parts) >= 3 and parts[2]:
+                room_ids.add(parts[2])
+        return sorted(room_ids)
+
+    def room_namespace_archived(self, room_id: str) -> bool:
+        """Prefix probe: any object under the room's cold prefix means archived."""
+        return bool(self._list_keys(self.archived_room_prefix(room_id)))
+
+    def archive_event_volumes(self, case_id: str, room_id: str) -> dict[str, Any]:
+        """Migrate the event volumes of a room namespace to the cold archive prefix.
+
+        逐对象两阶段、失败不留半迁状态：
+        1. 复制阶段：全部在线卷先复制到冷存，冷存齐全前不动任何在线对象；
+           任一复制失败即回滚已写的冷存副本后抛出，在线侧保持原样。
+        2. 删除阶段：冷存副本已完整，逐个删在线卷；此处失败只可能造成
+           在线残留（数据不丢），抛出显式的部分迁移错误，重试幂等
+           （复制按同 key 覆盖）。
+        """
+        online_keys = self._event_volume_keys(case_id)
+        if not online_keys:
+            raise RuntimeError(f"room namespace {case_id} has no online event volumes to archive")
+        events_prefix = self.events_prefix(case_id)
+        cold_prefix = self.archived_events_prefix(room_id)
+        copied: list[tuple[str, str]] = []
+        try:
+            for key in online_keys:
+                data = self._get(key)
+                if data is None:
+                    raise RuntimeError(f"MinIO event object vanished after listing: {key}")
+                cold_key = f"{cold_prefix}{key[len(events_prefix):]}"
+                self._put(cold_key, data)
+                copied.append((key, cold_key))
+        except Exception:
+            for _online_key, cold_key in copied:
+                with contextlib.suppress(Exception):
+                    self._remove(cold_key)
+            raise
+        deleted: list[str] = []
+        try:
+            for online_key, _cold_key in copied:
+                self._remove(online_key)
+                deleted.append(online_key)
+        except Exception as exc:
+            remaining = [key for key, _ in copied if key not in deleted]
+            raise RuntimeError(
+                f"room namespace {case_id} partially archived: cold copies complete under "
+                f"{cold_prefix}, online objects left: {remaining}"
+            ) from exc
+        self._events_deleted(case_id)
+        # 快照连续性：事件卷入冷存后，快照内嵌的 last_event_id 在线上流中已
+        # 不存在，recover_cases 的连续性校验会拒绝启动；重置为 None（协议内的
+        # 合法瞬时态，解除归档或后续写入后由下一次快照重建）。
+        envelope = self.read_snapshot(case_id)
+        if envelope is not None and envelope.get("last_event_id") is not None:
+            envelope["last_event_id"] = None
+            envelope["saved_at"] = datetime.now(UTC).isoformat()
+            self._put(
+                self.snapshot_key(case_id),
+                json.dumps(envelope, ensure_ascii=False, default=json_default).encode("utf-8"),
+            )
+        return {
+            "archive_prefix": cold_prefix,
+            "migrated_objects": [cold_key for _, cold_key in copied],
+        }
+
+    def unarchive_event_volumes(self, case_id: str, room_id: str) -> dict[str, Any]:
+        """Move an archived room namespace's event volumes back online.
+
+        与 archive_event_volumes 对称的两阶段复制-删除；在线卷已存在时拒绝
+        回搬（防止覆盖归档窗口内意外写入的在线事件），调用方先消化冲突。
+        """
+        if self._event_volume_keys(case_id):
+            raise RuntimeError(
+                f"room namespace {case_id} already has online event volumes; refusing to unarchive"
+            )
+        cold_prefix = self.archived_events_prefix(room_id)
+        cold_keys = [
+            key for key in self._list_keys(cold_prefix) if key.endswith(".jsonl")
+        ]
+        if not cold_keys:
+            raise RuntimeError(f"room {room_id} has no archived event volumes")
+        events_prefix = self.events_prefix(case_id)
+        copied: list[tuple[str, str]] = []
+        try:
+            for key in cold_keys:
+                data = self._get(key)
+                if data is None:
+                    raise RuntimeError(f"MinIO event object vanished after listing: {key}")
+                online_key = f"{events_prefix}{key[len(cold_prefix):]}"
+                self._put(online_key, data)
+                copied.append((key, online_key))
+        except Exception:
+            for _cold_key, online_key in copied:
+                with contextlib.suppress(Exception):
+                    self._remove(online_key)
+            raise
+        deleted: list[str] = []
+        try:
+            for cold_key, _online_key in copied:
+                self._remove(cold_key)
+                deleted.append(cold_key)
+        except Exception as exc:
+            remaining = [key for key, _ in copied if key not in deleted]
+            raise RuntimeError(
+                f"room {room_id} partially unarchived: online copies complete under "
+                f"{events_prefix}, cold objects left: {remaining}"
+            ) from exc
+        return {
+            "restored_from": cold_prefix,
+            "restored_objects": [online_key for _, online_key in copied],
+        }
 
     # ------------------------------------------------------------------
     # health (/healthz extension)

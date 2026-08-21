@@ -51,6 +51,10 @@ class AuditStore:
         self._idempotency: dict[str, dict[str, Any]] = {}
         self._events: dict[str, list[dict[str, Any]]] = {}
         self._operational_counts: dict[str, int] = {}
+        # 已归档房间命名空间（room_id 集合，归档 ≠ 删除）：事件卷在 MinIO 冷存
+        # 前缀 archive/rooms/<room_id>/ 下，启动时按前缀一次性重建；归档/恢复
+        # 动作原地维护。business 事件写入以该集合做只读拦截（口径 §2.2）。
+        self._archived_room_ids: set[str] = set()
         self._on_event = on_event
         self._shared_state = (
             RedisStateBackend(state_store_url, state_store_key_prefix) if state_store_url else None
@@ -118,6 +122,9 @@ class AuditStore:
             # 全量重放的完成度即可恢复幂等索引；事件重放（下方 _ingest）
             # 会覆盖同 key receipt，内容与对象一致。
             self._idempotency.update(self._minio.read_receipts())  # type: ignore[union-attr]
+            # 冷存前缀一次性扫描重建已归档房间集合（归档命名空间的事件卷不在
+            # cases/ 下，下方事件重放天然不会加载它们，口径 §2.1）。
+            self._archived_room_ids.update(self._minio.list_archived_room_ids())  # type: ignore[union-attr]
             for case_id in self._minio.list_case_ids():  # type: ignore[union-attr]
                 for event in self._minio.read_events(case_id):  # type: ignore[union-attr]
                     self._ingest(event)
@@ -400,6 +407,43 @@ class AuditStore:
                 removed += 1
         return removed
 
+    # ------------------------------------------------------------------
+    # room namespace archive（口径 §2：归档 ≠ 删除，冷存迁移 + 内存索引同步）
+    # ------------------------------------------------------------------
+    @property
+    def supports_room_archive(self) -> bool:
+        """Archiving is defined only on the MinIO persistence layer."""
+        return self._minio is not None
+
+    def room_namespace_archived(self, room_id: str) -> bool:
+        """In-memory archived-room lookup (seeded from the cold prefix at startup)."""
+        return room_id in self._archived_room_ids
+
+    async def archive_room_events(self, case_id: str, room_id: str) -> dict[str, Any]:
+        """Migrate one room namespace's event volumes to the cold archive prefix."""
+        if self._minio is None:
+            raise RuntimeError("room namespace archiving requires the MinIO persistence layer")
+        result = self._minio.archive_event_volumes(case_id, room_id)
+        async with self._lock:
+            # 内存索引同步下线：事件已随卷入冷存，list_events/metrics 不再见到
+            # 它们（瞬态 stream 事件按定义不留存，一并随索引清除）。
+            self._events.pop(case_id, None)
+            self._archived_room_ids.add(room_id)
+        return result
+
+    async def unarchive_room_events(self, case_id: str, room_id: str) -> dict[str, Any]:
+        """Move an archived room namespace's event volumes back online and re-index."""
+        if self._minio is None:
+            raise RuntimeError("room namespace archiving requires the MinIO persistence layer")
+        result = self._minio.unarchive_event_volumes(case_id, room_id)
+        events = self._minio.read_events(case_id)
+        async with self._lock:
+            self._events.pop(case_id, None)
+            for event in events:
+                self._ingest(event)
+            self._archived_room_ids.discard(room_id)
+        return result
+
     async def metrics(self) -> dict[str, int]:
         # 房间命名空间事件流（room-<room_id>）不是工单，与 __bridge_health__ 一样
         # 不计入 Case 运营指标；但其事件量单独按命名空间展平暴露（C1 观测项，
@@ -423,7 +467,10 @@ class AuditStore:
                     for event in events
                 ]
             return await self._with_operational_metrics(
-                {**_event_metrics(all_events), **_room_event_metrics(room_events)}
+                {
+                    **_event_metrics(all_events),
+                    **_room_event_metrics(room_events, self._archived_room_ids),
+                }
             )
         if self._shared_state is not None:
             shared_events = await self._shared_events()
@@ -439,7 +486,10 @@ class AuditStore:
                 if is_room_namespace_case_id(str(event.get("case_id") or ""))
             ]
             return await self._with_operational_metrics(
-                {**_event_metrics(all_events), **_room_event_metrics(room_events)}
+                {
+                    **_event_metrics(all_events),
+                    **_room_event_metrics(room_events, self._archived_room_ids),
+                }
             )
         async with self._lock:
             all_events = [
@@ -454,7 +504,10 @@ class AuditStore:
                 if is_room_namespace_case_id(case_id)
                 for event in events
             ]
-            return {**_event_metrics(all_events), **_room_event_metrics(room_events)}
+            return {
+                **_event_metrics(all_events),
+                **_room_event_metrics(room_events, self._archived_room_ids),
+            }
 
     async def _with_operational_metrics(self, metrics: dict[str, int]) -> dict[str, int]:
         """附加 operational 事件聚合计数（Redis 计数 key + 进程内兜底计数合并）。"""
@@ -573,13 +626,17 @@ def _event_metrics(events: list[dict[str, Any]]) -> dict[str, int]:
     }
 
 
-def _room_event_metrics(events: list[dict[str, Any]]) -> dict[str, int]:
+def _room_event_metrics(
+    events: list[dict[str, Any]], archived_room_ids: set[str] | None = None
+) -> dict[str, int]:
     """房间命名空间（room-<id>）事件量指标：按命名空间展平，business 与瞬态分开。
 
     C1 观测项（闲聊数据进事实源）：房间事件流与 Case 事件一样持久化，
     需要按房间暴露事件量供容量监控与 GC/归档决策消费。数据只来自内存索引
     或已取出的共享事件清单，不为指标新增 MinIO 全量扫描。operational 事件
     （心跳/轮询/typing）已由 operational_events__<event_type> 键覆盖，此处不计。
+    已归档命名空间的事件卷在冷存、不在线计数，单独以
+    room_namespace_archived_count 暴露已归档房间数（口径 §2）。
     """
     business: dict[str, int] = {}
     stream: dict[str, int] = {}
@@ -595,7 +652,10 @@ def _room_event_metrics(events: list[dict[str, Any]]) -> dict[str, int]:
         else:
             business[case_id] = business.get(case_id, 0) + 1
     room_ids = sorted(set(business) | set(stream))
-    metrics: dict[str, int] = {"room_namespace_count": len(room_ids)}
+    metrics: dict[str, int] = {
+        "room_namespace_count": len(room_ids),
+        "room_namespace_archived_count": len(archived_room_ids or set()),
+    }
     for case_id in room_ids:
         metrics[f"room_events__{case_id}"] = business.get(case_id, 0)
         metrics[f"room_stream_events__{case_id}"] = stream.get(case_id, 0)

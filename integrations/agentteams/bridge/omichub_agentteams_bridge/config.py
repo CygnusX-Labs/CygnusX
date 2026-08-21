@@ -42,19 +42,37 @@ class BridgeSettings(BaseSettings):
         "agent-scrna:scrna-secret,agent-rnaseq:rnaseq-secret,analysis-worker:analysis-secret"
     )
     allowed_flow_ids: str = "rna_seq,scrna_seq"
+    # 依据: 待测（经验初值）— Bridge 调用 OmicHub 上游的单次上限；验证: 采集上游响应 P95 后校准
     request_timeout_seconds: float = 20.0
+    # 依据: 待测（经验初值）— 1MiB 覆盖立项/计划 JSON 正常体积；验证: 监控超界拒绝日志再调整
     max_request_bytes: int = Field(default=1_048_576, ge=1_024, le=16_777_216)
+    # 依据: 待测（经验初值）— 同上，响应侧对称口径
     max_response_bytes: int = Field(default=1_048_576, ge=1_024, le=16_777_216)
+    # 依据: 待测（经验初值）— 单条证据摘要上限 16KiB；验证: 统计真实证据字段长度分布
     max_evidence_bytes: int = 16_384
+    # 依据: 待测（经验初值）— Worker 失联判定（语义见 docs/configuration/多Agent协作配置指南.md:50）；
+    # 验证: 以 Worker inbox 轮询周期 ×3 为基线，观察 sweep 误回收率
     worker_heartbeat_ttl_seconds: int = Field(default=180, ge=30, le=3_600)
+    # 依据: 待测（经验初值）— 失联租约清扫节拍，应远小于 heartbeat TTL(180s)；验证: 失联到回收的实测延迟
     work_item_sweep_interval_seconds: int = Field(default=30, ge=0, le=3_600)
+    # 依据: 待测（经验初值）— Omic 任务无进展看门狗；验证: evidence/e2e-2026-08-21/E2E-1
+    # 曾观测 preflight 卡死 17min+ 未被终止，需复测触发正确性
     omic_task_stall_timeout_seconds: int = Field(default=900, ge=30, le=86_400)
+    # 依据: 待测（经验初值）— 验证: E2E-1 规划段（含 3 轮校验自愈）真实耗时可作校准样本
     planning_timeout_seconds: int = Field(default=120, ge=10, le=86_400)
+    # 依据: 待测（经验初值）— 单工作项执行上限；验证: 统计真实执行耗时分位数后校准
     execution_timeout_seconds: int = Field(default=600, ge=60, le=86_400)
+    # 依据: 待测（经验初值）— 容量护栏，防止单请求者占满 Worker 池；验证: 压测并发 Case 与池容量
     max_active_cases_per_requester: int = Field(default=3, ge=1, le=100)
+    # 依据: 待测（经验初值）— 同上，项目维度护栏
     max_active_cases_per_project: int = Field(default=5, ge=1, le=100)
+    # 依据: 待测（经验初值）— 单 Case 工作项并发护栏；验证: 压测单 Case 扇出对状态存储的压力
     max_active_work_items_per_case: int = Field(default=8, ge=1, le=500)
-    case_gc_days: int = Field(default=7, ge=0, le=3650)
+    case_gc_days: int = Field(default=7, ge=0, le=3650)  # 依据: 待测（经验初值）— 与平台证据保留 30 天口径的关系待明确；验证: 观察 GC 前是否有审计回放需求
+    # 依据: 口径文档 docs/info/26.8.21/协作室房间事件GC与归档口径.md §2 — 建议默认 N=30 天，
+    # 以最后一条 business 事件 recorded_at 判定活动（operational/stream 不算）；0=禁用自动归档。
+    # 验证: 以 room_events__room-<id> 指标观察房间事件量增长，校准归档窗口
+    room_archive_days: int = Field(default=30, ge=0, le=3650)
     state_store_url: str = ""
     state_store_key_prefix: str = "omichub:agentteams"
     audit_log_path: str = "/tmp/omichub-agentteams-bridge-audit.jsonl"
@@ -65,6 +83,8 @@ class BridgeSettings(BaseSettings):
     minio_secret_key: str = ""
     minio_bucket: str = "agentteams"
     minio_secure: bool = False
+    # 依据: 上游契约 — 设计文档 docs/info/26.8.21/协作室架构升级方案-MinIO持久化与Case解耦及L4前置收尾.md:70
+    # 建议 50MB 分卷阈值；minio_store.py 追加为读-改-写尾卷，阈值即单卷整载内存上限
     minio_event_object_max_bytes: int = Field(default=52_428_800, ge=1_048_576)
     worker_token_store_path: str = "/tmp/omichub-agentteams-bridge-worker-tokens.json"
     manifest_dir: str = "/tmp/omichub-agentteams-bridge-manifests"
