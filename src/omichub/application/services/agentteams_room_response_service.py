@@ -58,7 +58,7 @@ from omichub.application.services.agentteams_service import (
     AgentTeamsService,
     room_namespace_case_id,
 )
-from omichub.application.services.flow_registry import FlowRegistry
+from omichub.application.services.flow_registry import FlowRegistry, get_flow_registry
 from omichub.core.config import get_settings
 from omichub.infrastructure.cache.redis_client import get_redis
 from omichub.infrastructure.database.models.chat import AgentTeamsRoomModel
@@ -95,6 +95,11 @@ _ROOM_REPLY_CONTENT_MAX_CHARS = 10_000
 # 复用 room.ask_user / AskUserCard 的渲染与【澄清回复】回填链路。
 CLARIFY_KIND_EXECUTION_OBJECT = "execution_object"
 MAX_EXECUTION_CLARIFY_ROUNDS = 2
+# 领域路由澄清（P0-1 硬约束）：execute 意图路由无命中时禁止静默直达兜底
+# planner（agent-code）——先落选项式领域澄清卡请用户指明分析类型；追问轮次
+# 耗尽仍未命中则降级为 Manager 会诊对话，全程不静默派发兜底 planner。
+CLARIFY_KIND_ROUTE_DOMAIN = "route_domain"
+MAX_ROUTE_CLARIFY_ROUNDS = 2
 ROOM_ASK_REPLY_MARKER = "【澄清回复】"
 _CLARIFY_OPT_OUT_MARKERS = ("先不执行", "暂不执行", "先讨论", "继续讨论", "不用了", "取消")
 _CLARIFY_EXHAUSTED_NOTE = (
@@ -116,6 +121,11 @@ _INTAKE_COMPARISON_RE = re.compile(r"([\w\-]+\s*(?:mutation|mutant|突变))\s*(?
 _WORKSPACE_DATA_SUFFIXES = frozenset({
     ".csv", ".tsv", ".xlsx", ".fastq", ".fq", ".h5ad", ".loom", ".bam", ".txt",
 })
+
+
+def _normalize_route_text(text: str) -> str:
+    """与意图路由同口径的归一化（忽略大小写与 ``-_``/空白分隔符）。"""
+    return "".join(ch for ch in text.lower() if ch not in "-_ \t\r\n")
 
 _RELEASE_LOCK_LUA = """
 if redis.call('GET', KEYS[1]) == ARGV[1] then
@@ -815,7 +825,18 @@ class AgentTeamsRoomResponseService:
                 answer_to_event_id=str(pending_clarify_event.get("event_id") or "") or None,
                 context_refs=refs,
             )
-        if pending_clarify and any(marker in content for marker in _CLARIFY_OPT_OUT_MARKERS):
+        pending_route_event = self._pending_route_clarify_event(events, content)
+        if pending_route_event is not None:
+            await self._record_clarify_answer(
+                case_id,
+                content,
+                pending_route_event,
+                answer_to_event_id=str(pending_route_event.get("event_id") or "") or None,
+                context_refs=refs,
+            )
+        if (pending_clarify or pending_route_event is not None) and any(
+            marker in content for marker in _CLARIFY_OPT_OUT_MARKERS
+        ):
             # 用户在澄清中明确放弃执行：按纯对话处理，不再追问。
             return "none"
         intent = classify_execution_intent(content, refs)
@@ -833,6 +854,19 @@ class AgentTeamsRoomResponseService:
             ):
                 # 结构化澄清答复仍未给出对象：推进追问轮次（受轮次上限约束）。
                 intent = ExecutionIntent.CLARIFY
+        if (
+            pending_route_event is not None
+            and intent not in {ExecutionIntent.EXECUTE, ExecutionIntent.TOOL_EXECUTE}
+        ):
+            # P0-1：领域澄清答复——与原始执行请求拼接后重跑路由；仍无命中时由
+            # 下方 route is None 分支按轮次上限继续追问或降级 Manager 会诊。
+            intent = ExecutionIntent.EXECUTE
+            route_origin = self._route_clarify_origin(pending_route_event)
+            origin_content = (
+                f"{route_origin}\n用户补充的分析领域：{content.strip()[:200]}"
+                if route_origin
+                else content
+            )
         if intent is ExecutionIntent.CHAT:
             return "none"
         if intent is ExecutionIntent.CLARIFY:
@@ -886,6 +920,24 @@ class AgentTeamsRoomResponseService:
                 causation_event_id=causation_event_id,
             )
             return "proposal_pending" if emitted else "none"
+        if route is None:
+            # P0-1 硬约束：路由无命中禁止静默直达 DEFAULT_LEAD_PLANNER 兜底。
+            # 先落领域澄清卡请用户指明分析类型；追问轮次耗尽则降级为 Manager
+            # 会诊对话（返回 none 走正常 LLM 回复），同样不派发执行。
+            route_rounds = self._route_clarify_rounds(events)
+            if route_rounds >= MAX_ROUTE_CLARIFY_ROUNDS:
+                logger.bind(case_id=case_id).info(
+                    "AgentTeams route unresolved after {} clarify rounds, degraded to manager consultation",
+                    route_rounds,
+                )
+                return "none"
+            emitted = await self._emit_route_clarify(
+                case_id,
+                route_input,
+                round_no=route_rounds + 1,
+                causation_event_id=causation_event_id,
+            )
+            return "clarified" if emitted else "none"
         await self._emit_route_decision(
             case_id, route_input, resolved_route=route, causation_event_id=causation_event_id
         )
@@ -905,7 +957,8 @@ class AgentTeamsRoomResponseService:
                 requester_ref=requester_ref,
                 objective=objective,
                 context_refs=refs,
-                target_agent_id=route.lead_planner if route else DEFAULT_LEAD_PLANNER,
+                # P0-1：能走到这里路由必定已命中（无命中在上方被澄清卡/会诊拦截）。
+                target_agent_id=route.lead_planner,
             )
         except Exception as exc:  # noqa: BLE001 - 触发失败不得影响回复主流程
             logger.bind(case_id=case_id).warning(
@@ -1099,6 +1152,91 @@ class AgentTeamsRoomResponseService:
         )
         return True
 
+    async def _emit_route_clarify(
+        self,
+        case_id: str,
+        content: str,
+        *,
+        round_no: int,
+        causation_event_id: str | None = None,
+    ) -> bool:
+        """P0-1：execute 意图路由无命中时落 ``room.ask_user`` 领域澄清卡。
+
+        选项来自流程注册表的 display_name（必要时附主 hint 保证答复可被路由
+        再次命中）；答复经【澄清回复】链路与原始请求拼接后重跑路由，仍无命中
+        则由轮次上限降级到 Manager 会诊。卡片发送失败返回 False，调用方回退
+        到正常 Manager 回复。
+        """
+        brief = content.strip().replace("\n", " ")[:80]
+        flow_options = self._route_domain_options()
+        if round_no <= 1 and flow_options:
+            question = (
+                f"收到你的执行请求「{brief}」，但没能识别出要做哪类分析。"
+                "请确认分析类型，或补充说明研究领域："
+            )
+        else:
+            question = (
+                f"仍未识别出「{brief}」要做哪类分析：请直接回复分析类型"
+                "（如 RNA-seq 差异分析、单细胞转录组、ATAC-seq），或选择先讨论方案。"
+            )
+        options = [*flow_options, "以上都不是，先和 Manager 讨论方案"]
+        try:
+            await self._agentteams.post_case_evidence(
+                case_id,
+                work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                event_type="room.ask_user",
+                summary=question[:200],
+                payload={
+                    "content": "需要你先确认分析类型，再启动执行。",
+                    "agent_id": self._manager_agent_id() or "bioops-manager",
+                    "role": "bioops-manager",
+                    "questions": [{"question": question, "options": options}],
+                    "clarify_kind": CLARIFY_KIND_ROUTE_DOMAIN,
+                    "round": round_no,
+                    "origin_content": content.strip()[:600],
+                    "causation_event_id": causation_event_id,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - 澄清卡片失败回退到正常回复
+            logger.bind(case_id=case_id).warning(
+                "AgentTeams route clarify event failed: {}", exc
+            )
+            return False
+        logger.bind(case_id=case_id).info(
+            "AgentTeams route unresolved (no domain hit), clarify round {} asked",
+            round_no,
+        )
+        return True
+
+    def _route_domain_options(self) -> list[str]:
+        """领域澄清卡候选项：流程注册表 display_name（至多 4 个）。
+
+        display_name 不含任何 trigger hint 时附主 hint，保证用户点选后的
+        【澄清回复】文本能被意图路由再次命中。
+        """
+        try:
+            registry = self._flow_registry or get_flow_registry()
+        except Exception:  # noqa: BLE001 - 注册表不可用时只给自由补充项
+            logger.warning("AgentTeams route clarify options: flow registry unavailable")
+            return []
+        options: list[str] = []
+        for flow_id in sorted(registry.flows):
+            meta = registry.flows[flow_id].definition.flow
+            label = str(meta.display_name or "").strip()
+            if not label:
+                continue
+            hints = [str(hint).strip() for hint in meta.trigger_hints if str(hint).strip()]
+            normalized_label = _normalize_route_text(label)
+            if hints and not any(
+                _normalize_route_text(hint) in normalized_label for hint in hints
+            ):
+                label = f"{label}（{hints[0]}）"
+            if label not in options:
+                options.append(label)
+            if len(options) >= 4:
+                break
+        return options
+
     async def _emit_case_proposal(
         self,
         *,
@@ -1210,6 +1348,48 @@ class AgentTeamsRoomResponseService:
     def _execution_clarify_rounds(cls, events: list[dict[str, Any]]) -> int:
         """已发出的执行对象澄清轮次（按澄清卡片计数）。"""
         return sum(1 for event in events if cls._is_execution_clarify_event(event))
+
+    @classmethod
+    def _is_route_clarify_event(cls, event: dict[str, Any]) -> bool:
+        if event.get("event_type") != "room.ask_user":
+            return False
+        payload = cls._payload_dict(event)
+        inner_raw = payload.get("payload")
+        inner = dict(inner_raw) if isinstance(inner_raw, dict) else {}
+        return inner.get("clarify_kind") == CLARIFY_KIND_ROUTE_DOMAIN
+
+    @classmethod
+    def _route_clarify_rounds(cls, events: list[dict[str, Any]]) -> int:
+        """已发出的领域路由澄清轮次（P0-1，按澄清卡片计数）。"""
+        return sum(1 for event in events if cls._is_route_clarify_event(event))
+
+    @classmethod
+    def _pending_route_clarify_event(
+        cls, events: list[dict[str, Any]], content: str
+    ) -> dict[str, Any] | None:
+        """当前发言是否是对最近一张领域澄清卡的回答（P0-1）。
+
+        口径与 ``_pending_execution_clarify_event`` 一致：当前发言之前最近的
+        一张领域澄清卡之后没有其他用户发言，则当前发言就是对它的回答。
+        """
+        current_index = cls._current_message_index(events, content)
+        scan = events[:current_index] if current_index is not None else events
+        pending: dict[str, Any] | None = None
+        for event in scan:
+            if event.get("event_type") == "room.user_message":
+                pending = None
+            elif cls._is_route_clarify_event(event):
+                pending = event
+        return pending
+
+    @classmethod
+    def _route_clarify_origin(cls, clarify_event: dict[str, Any]) -> str | None:
+        """取领域澄清卡记录的原始执行请求（供答复拼接后重跑路由）。"""
+        payload = cls._payload_dict(clarify_event)
+        inner_raw = payload.get("payload")
+        inner = dict(inner_raw) if isinstance(inner_raw, dict) else {}
+        origin = str(inner.get("origin_content") or "").strip()
+        return origin or None
 
     @classmethod
     def _current_message_event_id(

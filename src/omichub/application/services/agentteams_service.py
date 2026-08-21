@@ -941,6 +941,14 @@ class AgentTeamsService:
                 logger.bind(case_id=case_id).warning(
                     "AgentTeams chat planning target routing failed: {}", exc
                 )
+        if not target:
+            # P0-1：二次路由仍无命中时兜底 planner 必须可审计、不得静默生效。
+            # 房间响应回路已在派发前用领域澄清卡/Manager 会诊拦截无命中请求，
+            # 正常路径不会走到这里；走到即视为异常并显式告警。
+            logger.bind(case_id=case_id).warning(
+                "AgentTeams chat planning target unresolved, audited fallback to {}",
+                DEFAULT_LEAD_PLANNER,
+            )
         target = target or DEFAULT_LEAD_PLANNER
         try:
             await self._request(

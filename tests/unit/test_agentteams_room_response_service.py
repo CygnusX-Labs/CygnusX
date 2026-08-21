@@ -20,6 +20,7 @@ from omichub.application.services.agentteams_room_response_service import (
     AgentTeamsRoomResponseService,
 )
 from omichub.application.services.agentteams_service import room_namespace_case_id
+from omichub.application.services.flow_registry import FlowRegistry
 from omichub.core.config import get_settings
 from omichub.infrastructure.database.models.chat import AgentTeamsRoomModel
 
@@ -127,12 +128,14 @@ def _service(
     agentteams: SimpleNamespace,
     registry: AgentTeamsCapabilityRegistry,
     redis: FakeRedis,
+    flow_registry: FlowRegistry | None = None,
 ) -> AgentTeamsRoomResponseService:
     return AgentTeamsRoomResponseService(
         SimpleNamespace(),
         agentteams=agentteams,
         registry=registry,
         redis_getter=lambda: redis,
+        flow_registry=flow_registry,
     )
 
 
@@ -150,6 +153,81 @@ def _agentteams(
         post_case_evidence=AsyncMock(return_value={"event_id": "evt-reply"}),
         start_chat_planning=AsyncMock(return_value=None),
     )
+
+
+# ---- P0-1：领域路由可命中的最小注册表 fixture ----
+
+
+def _write_flow(flows_dir, flow_id: str, actor: str, bridge_workflow: str, hints: str) -> None:
+    (flows_dir / f"{flow_id}.yaml").write_text(
+        f"""flow:
+  id: {flow_id}
+  version: 1.0.0
+  display_name: {flow_id} 流程
+  domain: {flow_id}
+  actor: {actor}
+  runtime_image: analysis-core
+  bridge_workflow: {bridge_workflow}
+  trigger_hints: [{hints}]
+artifacts:
+  - {{key: result, type: table}}
+stages:
+  - key: run
+    title: Run
+    executors:
+      - {{key: run, queue: general, resource_profile: standard, outputs: [result], retry_policy: bounded}}
+delivery: {{quality_gate: true, outputs: [result]}}
+""",
+        encoding="utf-8",
+    )
+
+
+def _flow_registries(tmp_path) -> tuple[FlowRegistry, AgentTeamsCapabilityRegistry]:
+    """路由可命中的最小注册表：rnaseq(actor=agent-rnaseq, hints RNA-seq/差异分析)。"""
+    flows_dir = tmp_path / "flows"
+    flows_dir.mkdir()
+    shared_dir = flows_dir / "_shared"
+    shared_dir.mkdir()
+    (shared_dir / "policies.yaml").write_text(
+        "retry_policies:\n  bounded: {max_attempts: 1}\napproval_templates: {}\n",
+        encoding="utf-8",
+    )
+    (shared_dir / "resources.yaml").write_text(
+        "standard: {cpu: 1, memory_gb: 1, temp_disk_gb: 1, queue: general, max_project_concurrency: 1}\n",
+        encoding="utf-8",
+    )
+    (shared_dir / "artifact_types.yaml").write_text(
+        "table: {format: tsv, media_types: [text/tab-separated-values], max_size_gb: 1, retention_days: 1}\n",
+        encoding="utf-8",
+    )
+    _write_flow(flows_dir, "rnaseq", "agent-rnaseq", "rna_seq", "RNA-seq, 差异分析")
+    flow_registry = FlowRegistry.from_directory(flows_dir)
+    capabilities = AgentTeamsCapabilityRegistry(
+        flow_registry,
+        FakeAbilityCatalog({"agent-rnaseq", "agent-general"}),
+        [
+            _agent_config("agent-rnaseq", planner_eligible=True),
+            _agent_config("agent-general", planner_eligible=True),
+        ],
+    )
+    return flow_registry, capabilities
+
+
+def _route_clarify_card_event(origin_content: str, round_no: int) -> dict:
+    return {
+        "event_type": "room.ask_user",
+        "payload": {
+            "summary": "请确认分析类型",
+            "payload": {
+                "content": "需要你先确认分析类型，再启动执行。",
+                "role": "bioops-manager",
+                "questions": [{"question": "请确认分析类型：", "options": ["rnaseq 流程"]}],
+                "clarify_kind": "route_domain",
+                "round": round_no,
+                "origin_content": origin_content,
+            },
+        },
+    }
 
 
 @pytest.mark.asyncio
@@ -757,37 +835,132 @@ _EXECUTION_EVENTS = [
 
 
 @pytest.mark.asyncio
-async def test_execution_intent_starts_chat_planning_without_duplicate_manager_reply(monkeypatch) -> None:
-    """执行意图进入领域规划后，不再让 Manager 追加重复澄清。"""
+async def test_execution_intent_without_route_hit_emits_domain_clarify(monkeypatch, tmp_path) -> None:
+    """P0-1：路由无命中禁止静默直达兜底 planner——先落领域澄清卡，不触发规划。"""
+    flow_registry, _capabilities = _flow_registries(tmp_path)
     agentteams = _agentteams(status="received", events=_EXECUTION_EVENTS)
-    run = AsyncMock(return_value=ConsultationEnvelope(conclusion="已为你启动可视化流水线。"))
+    run = AsyncMock(return_value=ConsultationEnvelope(conclusion="不应走到会诊"))
     monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
 
     result = await _service(
-        agentteams=agentteams, registry=_registry("agent-general"), redis=FakeRedis()
+        agentteams=agentteams,
+        registry=_registry("agent-general"),
+        redis=FakeRedis(),
+        flow_registry=flow_registry,
     ).respond("bioops_1", "user-a", "对这个 treefile 进行可视化并解释")
+
+    assert result == {"status": "asked"}
+    agentteams.start_chat_planning.assert_not_awaited()
+    run.assert_not_awaited()
+    event_types = [call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list]
+    assert event_types == ["room.ask_user"]
+    payload = agentteams.post_case_evidence.await_args_list[0].kwargs["payload"]
+    assert payload["clarify_kind"] == "route_domain"
+    assert payload["round"] == 1
+    assert payload["origin_content"] == "对这个 treefile 进行可视化并解释"
+    options = payload["questions"][0]["options"]
+    assert "rnaseq 流程" in options
+    assert options[-1] == "以上都不是，先和 Manager 讨论方案"
+
+
+@pytest.mark.asyncio
+async def test_execution_intent_with_route_hit_starts_planning_without_duplicate_manager_reply(
+    monkeypatch, tmp_path
+) -> None:
+    """执行意图命中领域路由后按路由 planner 启动规划，Manager 不追加重复澄清。"""
+    flow_registry, capabilities = _flow_registries(tmp_path)
+    content = "对这些样本做差异分析"
+    events = [
+        _user_message_event(
+            content,
+            context_refs=[
+                {"kind": "file", "id": "m-1", "location": "workspace/chat-uploads/matrix.csv"}
+            ],
+        )
+    ]
+    agentteams = _agentteams(status="received", events=events)
+    run = AsyncMock(return_value=ConsultationEnvelope(conclusion="不应走到会诊"))
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+
+    result = await _service(
+        agentteams=agentteams, registry=capabilities, redis=FakeRedis(), flow_registry=flow_registry
+    ).respond("bioops_1", "user-a", content)
 
     assert result == {"status": "planning_started"}
     agentteams.start_chat_planning.assert_awaited_once()
     trigger = agentteams.start_chat_planning.await_args.kwargs
     assert trigger["case_id"] == "bioops_1"
     assert trigger["requester_ref"] == "user-a"
-    assert "对这个 treefile 进行可视化并解释" in trigger["objective"]
-    assert "work_items" in trigger["objective"]
-    assert trigger["context_refs"] == [
-        {"kind": "file", "id": "tree-1", "location": "workspace/chat-uploads/example.treefile"}
-    ]
+    assert trigger["target_agent_id"] == "agent-rnaseq"
+    assert content in trigger["objective"]
     run.assert_not_awaited()
     event_types = [call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list]
     assert event_types == ["room.route_decision"]
-    route_call = agentteams.post_case_evidence.await_args_list[0]
-    assert route_call.kwargs["work_item_id"] == "case"
-    decision = route_call.kwargs["payload"]
-    # “treefile 可视化”走通用 Overdrive 路径，由 Manager 自动选择，不要求用户选 Agent。
-    assert decision["path"] == "overdrive"
-    assert decision["flow_id"] is None
-    assert decision["confidence"] == "high"
-    assert "options" not in decision
+    decision = agentteams.post_case_evidence.await_args_list[0].kwargs["payload"]
+    assert decision["path"] == "bridge_workflow"
+    assert decision["flow_id"] == "rnaseq"
+    assert decision["lead_planner"] == "agent-rnaseq"
+
+
+@pytest.mark.asyncio
+async def test_route_clarify_reply_with_domain_starts_planning(monkeypatch, tmp_path) -> None:
+    """领域澄清答复与原始请求拼接后重跑路由：命中即按路由 planner 启动规划。"""
+    flow_registry, capabilities = _flow_registries(tmp_path)
+    reply = "【澄清回复】\n1. 请确认分析类型：rnaseq 流程"
+    events = [
+        _user_message_event("帮我跑一下这个数据"),
+        _route_clarify_card_event("帮我跑一下这个数据", 1),
+        _user_message_event(reply),
+    ]
+    agentteams = _agentteams(status="received", events=events)
+    run = AsyncMock(return_value=ConsultationEnvelope(conclusion="不应走到会诊"))
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+
+    result = await _service(
+        agentteams=agentteams, registry=capabilities, redis=FakeRedis(), flow_registry=flow_registry
+    ).respond("bioops_1", "user-a", reply)
+
+    assert result == {"status": "planning_started"}
+    agentteams.start_chat_planning.assert_awaited_once()
+    trigger = agentteams.start_chat_planning.await_args.kwargs
+    assert trigger["target_agent_id"] == "agent-rnaseq"
+    assert "帮我跑一下这个数据" in trigger["objective"]
+    run.assert_not_awaited()
+    answer_call = next(
+        call
+        for call in agentteams.post_case_evidence.await_args_list
+        if call.kwargs["event_type"] == "room.ask_user_answered"
+    )
+    assert answer_call.kwargs["payload"]["clarify_kind"] == "route_domain"
+
+
+@pytest.mark.asyncio
+async def test_route_clarify_exhausted_degrades_to_manager_consultation(monkeypatch, tmp_path) -> None:
+    """追问轮次耗尽仍无命中 → 降级 Manager 会诊对话，绝不静默派发兜底 planner。"""
+    flow_registry, capabilities = _flow_registries(tmp_path)
+    content = "把这个 matrix.csv 跑一下"
+    ref = {"kind": "file", "id": "m-1", "location": "workspace/chat-uploads/matrix.csv"}
+    events = [
+        _user_message_event(content, context_refs=[ref]),
+        _route_clarify_card_event(content, 1),
+        _user_message_event("【澄清回复】\n1. 请确认分析类型：随便跑跑"),
+        _route_clarify_card_event(content, 2),
+        _user_message_event(content, context_refs=[ref]),
+    ]
+    agentteams = _agentteams(status="received", events=events)
+    run = AsyncMock(return_value=ConsultationEnvelope(conclusion="可以先讨论分析方案。"))
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+
+    result = await _service(
+        agentteams=agentteams, registry=capabilities, redis=FakeRedis(), flow_registry=flow_registry
+    ).respond("bioops_1", "user-a", content)
+
+    assert result == {"status": "responded"}
+    agentteams.start_chat_planning.assert_not_awaited()
+    run.assert_awaited_once()
+    event_types = [call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list]
+    assert "room.ask_user" not in event_types
+    assert "room.route_decision" not in event_types
 
 
 @pytest.mark.asyncio
@@ -829,15 +1002,25 @@ async def test_execution_intent_not_triggered_when_gates_fail(
 
 
 @pytest.mark.asyncio
-async def test_execution_trigger_failure_does_not_break_manager_reply(monkeypatch) -> None:
-    agentteams = _agentteams(status="received", events=_EXECUTION_EVENTS)
+async def test_execution_trigger_failure_does_not_break_manager_reply(monkeypatch, tmp_path) -> None:
+    flow_registry, capabilities = _flow_registries(tmp_path)
+    content = "对这些样本做差异分析"
+    events = [
+        _user_message_event(
+            content,
+            context_refs=[
+                {"kind": "file", "id": "m-1", "location": "workspace/chat-uploads/matrix.csv"}
+            ],
+        )
+    ]
+    agentteams = _agentteams(status="received", events=events)
     agentteams.start_chat_planning = AsyncMock(side_effect=RuntimeError("bridge down"))
     run = AsyncMock(return_value=ConsultationEnvelope(conclusion="稍后为你处理。"))
     monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
 
     result = await _service(
-        agentteams=agentteams, registry=_registry("agent-general"), redis=FakeRedis()
-    ).respond("bioops_1", "user-a", "对这个 treefile 进行可视化并解释")
+        agentteams=agentteams, registry=capabilities, redis=FakeRedis(), flow_registry=flow_registry
+    ).respond("bioops_1", "user-a", content)
 
     assert result == {"status": "responded"}
     assert "计划冻结后会在房间内请求你确认" not in run.await_args.kwargs["question"]
@@ -924,8 +1107,9 @@ async def test_clarify_intent_emits_option_card_without_route_decision(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_clarify_reply_with_object_auto_starts_execution(monkeypatch) -> None:
+async def test_clarify_reply_with_object_auto_starts_execution(monkeypatch, tmp_path) -> None:
     """澄清回复补全作用对象（文件名）→ 自动转 execute，沿用原始请求拼接执行目标。"""
+    flow_registry, capabilities = _flow_registries(tmp_path)
     reply = "【澄清回复】\n1. 请确认数据来源：使用工作区已有数据 genes.xlsx"
     events = [
         _user_message_event("帮我做差异分析"),
@@ -937,13 +1121,15 @@ async def test_clarify_reply_with_object_auto_starts_execution(monkeypatch) -> N
     monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
 
     result = await _service(
-        agentteams=agentteams, registry=_registry("agent-general"), redis=FakeRedis()
+        agentteams=agentteams, registry=capabilities, redis=FakeRedis(), flow_registry=flow_registry
     ).respond("bioops_1", "user-a", reply)
 
     assert result == {"status": "planning_started"}
     agentteams.start_chat_planning.assert_awaited_once()
     run.assert_not_awaited()
     trigger = agentteams.start_chat_planning.await_args.kwargs
+    # 原始请求命中 rnaseq 路由（“差异分析” hint），按路由 planner 派发。
+    assert trigger["target_agent_id"] == "agent-rnaseq"
     assert "帮我做差异分析" in trigger["objective"]
     assert "genes.xlsx" in trigger["objective"]
     event_types = [call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list]
