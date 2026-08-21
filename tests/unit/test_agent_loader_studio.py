@@ -157,6 +157,58 @@ def test_local_prompt_and_tool_pack_are_loaded(tmp_path: Path):
 
 
 @pytest.mark.unit
+def test_agent_level_mcp_tools_whitelist_is_merged(tmp_path: Path):
+    """Agent YAML 顶层 mcp_tools 白名单须并入 features.tool_packs（否则是死配置）。"""
+    tools_dir = tmp_path / "tools"
+    tools_dir.mkdir()
+    (tools_dir / "research.yaml").write_text(
+        "id: research\nplatform_tools: [list_workspace_files]\n",
+        encoding="utf-8",
+    )
+    path = _write_yaml(
+        tmp_path,
+        "agent_id: a1\n"
+        "tool_packs: [research]\n"
+        "mcp_tools:\n"
+        f"  {OMICHUB_PLATFORM_SERVER_ID}:\n"
+        "    - ability_catalog_query\n",
+    )
+
+    data = _load_single_agent(path)
+
+    assert data is not None
+    packs = data["features"]["tool_packs"]
+    inline = next(p for p in packs if p["id"] == "a1:inline")
+    assert inline["mcp_tools"] == {str(OMICHUB_PLATFORM_SERVER_ID): ["ability_catalog_query"]}
+    # 工具包自带的白名单不受影响
+    assert packs[0]["mcp_tools"] == {str(OMICHUB_PLATFORM_SERVER_ID): ["list_workspace_files"]}
+
+
+@pytest.mark.unit
+def test_agent_level_mcp_tools_without_tool_packs(tmp_path: Path):
+    """未声明 tool_packs 时，顶层 mcp_tools 白名单也应生效。"""
+    path = _write_yaml(
+        tmp_path,
+        "agent_id: a2\n"
+        "mcp_tools:\n"
+        f"  {OMICHUB_PLATFORM_SERVER_ID}: [room_state_query]\n",
+    )
+
+    data = _load_single_agent(path)
+
+    assert data is not None
+    packs = data["features"]["tool_packs"]
+    assert packs == [
+        {
+            "id": "a2:inline",
+            "description": "Agent 级 mcp_tools 白名单（YAML 顶层声明）",
+            "builtin_tools": [],
+            "mcp_tools": {str(OMICHUB_PLATFORM_SERVER_ID): ["room_state_query"]},
+        }
+    ]
+
+
+@pytest.mark.unit
 def test_handoff_section_is_synced_into_features(tmp_path: Path):
     path = _write_yaml(
         tmp_path,

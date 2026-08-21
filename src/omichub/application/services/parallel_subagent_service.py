@@ -420,6 +420,15 @@ class ParallelSubAgentService:
             for server in (getattr(ctx, "mcp_servers", []) or [])
             for tool in (getattr(server, "tools", []) or [])
         }
+        # 声明了 readOnlyHint 的 MCP 工具（如协作室能力目录/房间状态查询）在
+        # safe_only 只读会诊中放行；无注解声明的外部 MCP 工具维持原样剥离。
+        readonly_mcp_tool_names = {
+            str(tool.tool_name)
+            for server in (getattr(ctx, "mcp_servers", []) or [])
+            for tool in (getattr(server, "tools", []) or [])
+            if (getattr(tool, "annotations", None) or {}).get("readOnlyHint") is True
+            and (getattr(tool, "annotations", None) or {}).get("destructiveHint") is not True
+        }
         kept: list[dict[str, Any]] = []
         for tool in tools:
             name = str((tool.get("function") or {}).get("name") or "")
@@ -438,6 +447,7 @@ class ParallelSubAgentService:
             if (
                 safe_only
                 and name not in {"ask_user", "knowledge_search", "web_search", *SKILL_TOOL_NAMES}
+                and name not in readonly_mcp_tool_names
                 and (
                     schema is None
                     or not schema.annotations.read_only_hint

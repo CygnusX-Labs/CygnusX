@@ -6,9 +6,8 @@
 
 from __future__ import annotations
 
-import json
-
 import asyncio
+import json
 import time
 from types import SimpleNamespace
 
@@ -694,6 +693,38 @@ def test_goal_safe_child_tools_only_keep_read_only_capabilities(monkeypatch) -> 
     assert {"unsafe_mutation", "remote_lookup", "workspace_write", "sandbox_execute"}.isdisjoint(
         names
     )
+
+
+def test_child_tools_safe_only_keeps_readonly_annotated_mcp_tools() -> None:
+    """safe_only 只读会诊放行声明 readOnlyHint 的 MCP 工具（能力目录/房间状态查询）。"""
+    readonly_tool = SimpleNamespace(
+        tool_name="ability_catalog_query",
+        annotations={"readOnlyHint": True, "destructiveHint": False},
+    )
+    unannotated_tool = SimpleNamespace(tool_name="remote_lookup", annotations={})
+    legacy_tool = SimpleNamespace(tool_name="legacy_lookup")  # 无 annotations 属性
+    destructive_tool = SimpleNamespace(
+        tool_name="dangerous_mcp",
+        annotations={"readOnlyHint": True, "destructiveHint": True},
+    )
+    ctx = _ctx(
+        "agent-manager",
+        tools=[
+            {"function": {"name": "ability_catalog_query"}},
+            {"function": {"name": "remote_lookup"}},
+            {"function": {"name": "legacy_lookup"}},
+            {"function": {"name": "dangerous_mcp"}},
+        ],
+    )
+    ctx.mcp_servers = [
+        SimpleNamespace(tools=[readonly_tool, unannotated_tool, legacy_tool, destructive_tool])
+    ]
+
+    tools = pss.ParallelSubAgentService._prepare_child_tools(ctx, safe_only=True)
+    names = {(tool.get("function") or {}).get("name") for tool in tools}
+
+    assert "ability_catalog_query" in names
+    assert {"remote_lookup", "legacy_lookup", "dangerous_mcp"}.isdisjoint(names)
 
 
 @pytest.mark.asyncio

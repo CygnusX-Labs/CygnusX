@@ -194,9 +194,16 @@ def _append_shared_sandbox_protocol(prompt: str, yaml_path: Path) -> str:
 def _apply_tool_packs(data: dict[str, Any], yaml_path: Path) -> None:
     """把 data/ai/tools 下的声明式工具包合并为 Agent 绑定。"""
     selected = data.get("tool_packs") or []
-    if not selected:
+    # Agent YAML 顶层 mcp_tools 是 Agent 级 MCP 工具白名单（如 agentteams-manager
+    # 只暴露能力目录/房间状态两个只读工具），与工具包白名单取并集后生效。
+    agent_mcp_tools = {
+        str(server_id): [str(tool) for tool in tool_names if str(tool).strip()]
+        for server_id, tool_names in (data.get("mcp_tools") or {}).items()
+        if isinstance(tool_names, list)
+    }
+    if not selected and not agent_mcp_tools:
         return
-    if not isinstance(selected, list):
+    if selected and not isinstance(selected, list):
         logging.getLogger(__name__).warning("Agent tool_packs 必须为列表: %s", yaml_path)
         data["tool_packs"] = []
         return
@@ -245,6 +252,15 @@ def _apply_tool_packs(data: dict[str, Any], yaml_path: Path) -> None:
             }
         )
 
+    if agent_mcp_tools:
+        packs.append(
+            {
+                "id": f"{data.get('agent_id') or yaml_path.stem}:inline",
+                "description": "Agent 级 mcp_tools 白名单（YAML 顶层声明）",
+                "builtin_tools": [],
+                "mcp_tools": agent_mcp_tools,
+            }
+        )
     data["mcp_ids"] = list(dict.fromkeys(mcp_ids))
     data["skill_ids"] = list(dict.fromkeys(skill_ids))
     features = dict(data.get("features") or {})

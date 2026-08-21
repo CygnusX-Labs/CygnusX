@@ -21,6 +21,9 @@ class MCPToolRegistry(BaseModel):
     description: str = ""
     input_schema: dict[str, Any] = {}
     server_id: UUID
+    # MCP 注解（readOnlyHint/destructiveHint 等）；builtin 预设从代码声明同步，
+    # 外部 server 无声明时为空——safe_only（只读会诊）链路据此放行只读 MCP 工具。
+    annotations: dict[str, Any] = {}
 
 
 class MCPServer(BaseModel):

@@ -34,8 +34,8 @@ from omichub.core.exceptions import BusinessError, NotFoundError
 from omichub.domain.mcp.entities import MCPServer, MCPToolRegistry
 from omichub.domain.mcp.value_objects import ServerStatus, Transport
 from omichub.domain.skill.entities import Skill
-from omichub.infrastructure.config.agent_loader import load_agent_configs
 from omichub.infrastructure.config.agent_ability_catalog import agent_ability_catalog
+from omichub.infrastructure.config.agent_loader import load_agent_configs
 from omichub.infrastructure.database.models.agent import (
     AgentTemplateModel,
     UserAgentCapabilityModel,
@@ -873,6 +873,7 @@ class AgentService:
                         description=tool["description"],
                         input_schema=tool["inputSchema"],
                         server_id=OMICHUB_PLATFORM_SERVER_ID,
+                        annotations=dict(tool.get("annotations") or {}),
                     )
                     for tool in preset_tools
                 ]

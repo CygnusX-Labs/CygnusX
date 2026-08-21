@@ -81,6 +81,7 @@ class SqlAlchemyMCPServerRepository(IMCPServerRepository):
                 description=t.get("description", ""),
                 input_schema=t.get("inputSchema", {}),
                 server_id=m.id,
+                annotations=dict(t.get("annotations") or {}),
             )
             for t in (m.tools or [])
         ]
@@ -130,7 +131,12 @@ class SqlAlchemyMCPServerRepository(IMCPServerRepository):
             status=s.status.value,
             is_enabled=s.is_enabled,
             tools=[
-                {"name": t.tool_name, "description": t.description, "inputSchema": t.input_schema}
+                {
+                    "name": t.tool_name,
+                    "description": t.description,
+                    "inputSchema": t.input_schema,
+                    "annotations": dict(t.annotations or {}),
+                }
                 for t in s.tools
             ],
             timeout=s.timeout,
@@ -159,7 +165,12 @@ class SqlAlchemyMCPServerRepository(IMCPServerRepository):
         m.status = s.status.value
         m.is_enabled = s.is_enabled
         m.tools = [
-            {"name": t.tool_name, "description": t.description, "inputSchema": t.input_schema}
+            {
+                "name": t.tool_name,
+                "description": t.description,
+                "inputSchema": t.input_schema,
+                "annotations": dict(t.annotations or {}),
+            }
             for t in s.tools
         ]
         m.timeout = s.timeout

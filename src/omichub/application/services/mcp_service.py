@@ -168,6 +168,7 @@ def _tool_snapshot(tools: list[MCPToolRegistry]) -> list[dict[str, Any]]:
             "name": tool.tool_name,
             "description": tool.description,
             "inputSchema": tool.input_schema,
+            "annotations": tool.annotations,
         }
         for tool in tools
     ]
@@ -180,6 +181,7 @@ def _preset_tools(preset: dict[str, Any], server_id: UUID) -> list[MCPToolRegist
             description=tool["description"],
             input_schema=tool["inputSchema"],
             server_id=server_id,
+            annotations=dict(tool.get("annotations") or {}),
         )
         for tool in preset["tools"]
     ]
