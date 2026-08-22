@@ -36,6 +36,9 @@ from omichub.application.services.agentteams_capability_registry import (
     get_agentteams_capability_registry,
 )
 from omichub.application.services.agentteams_case_tool_service import AgentTeamsCaseToolService
+from omichub.application.services.agentteams_flow_report_service import (
+    AgentTeamsFlowReportService,
+)
 from omichub.application.services.agentteams_introspection_service import (
     AgentTeamsIntrospectionService,
     load_introspection_schema_doc,
@@ -50,6 +53,7 @@ from omichub.application.services.agentteams_room_response_service import (
 from omichub.application.services.agentteams_room_service import AgentTeamsRoomService
 from omichub.application.services.agentteams_service import (
     AUTO_CONFIRM_CASES_KEY,
+    CASE_LEVEL_WORK_ITEM_ID,
     AgentTeamsService,
 )
 from omichub.application.services.flow_registry import get_flow_registry
@@ -59,6 +63,7 @@ from omichub.core.exceptions import BusinessError
 from omichub.infrastructure.cache.redis_client import get_redis
 from omichub.infrastructure.database.models.chat import (
     AgentTeamsRoomModel,
+    AgentTeamsTurnRecordModel,
     ChatMessageModel,
     ChatSessionModel,
 )
@@ -152,6 +157,7 @@ class ScientificInterpretationRequest(BaseModel):
     # 产物血缘（F1）：workspace_execution 登记产物时携带的上游产物引用与执行摘要。
     source_refs: list[dict[str, Any]] | None = Field(default=None, max_length=100)
     execution_summary: str = Field(default="", max_length=2_000)
+    trace_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class AgentTeamsChangeDecisionRequest(BaseModel):
@@ -235,6 +241,60 @@ class AgentTeamsRoomCreateRequest(BaseModel):
 
     title: str | None = Field(default=None, max_length=200)
     origin: str = Field(default="manual", min_length=1, max_length=20)
+
+
+class AgentTeamsRoomInvitationRequest(BaseModel):
+    user_id: str = Field(min_length=1, max_length=50)
+
+
+async def _get_turn_room(
+    case_id: str, current_user_id: str, service: AgentTeamsService, db: DbSession
+) -> AgentTeamsRoomModel | None:
+    room = await db.scalar(
+        select(AgentTeamsRoomModel).where(AgentTeamsRoomModel.case_id == case_id)
+    )
+    if room is None:
+        await service.get_case(case_id, current_user_id)
+        return None
+    return await AgentTeamsRoomService(db, service).get_room(room.room_id, current_user_id)
+
+
+async def _get_report_events(
+    service: AgentTeamsService,
+    case_id: str,
+    requester_ref: str,
+    *,
+    maximum: int = 1_000,
+) -> list[dict[str, Any]]:
+    page = await service.get_case_events(case_id, requester_ref, limit=min(100, maximum))
+    events = list(page.get("events", []))
+    cursor = page.get("next_cursor")
+    while cursor and len(events) < maximum:
+        page = await service.get_case_events(
+            case_id,
+            requester_ref,
+            cursor=str(cursor),
+            limit=min(100, maximum - len(events)),
+        )
+        batch = page.get("events", [])
+        if not isinstance(batch, list) or not batch:
+            break
+        events.extend(batch)
+        cursor = page.get("next_cursor")
+    return events
+
+
+def _turn_summary(record: AgentTeamsTurnRecordModel) -> dict[str, Any]:
+    return {
+        "record_id": str(record.record_id), "case_id": record.case_id,
+        "work_item_id": record.work_item_id, "round_number": record.round_number,
+        "call_seq": record.call_seq, "agent_id": record.agent_id,
+        "actor_user_id": record.actor_user_id, "requester_ref": record.requester_ref,
+        "provider": record.provider, "model": record.model,
+        "usage": {"prompt_tokens": record.prompt_tokens, "completion_tokens": record.completion_tokens, "total_tokens": record.total_tokens},
+        "duration_ms": record.duration_ms, "status": record.status,
+        "recorded_at": record.recorded_at.isoformat() if record.recorded_at else None,
+    }
 
 
 class AgentTeamsProposalConfirmRequest(BaseModel):
@@ -540,9 +600,10 @@ async def get_case_artifact(
     artifact_path: str,
     current_user_id: CurrentUserId,
     service: AgentTeamsServiceDep,
+    db: DbSession,
     download: bool = False,
 ) -> Response:
-    await service.get_case(case_id, current_user_id)
+    await _get_turn_room(case_id, current_user_id, service, db)
     normalized = artifact_path.replace("\\", "/").strip("/")
     if not normalized or ".." in normalized.split("/"):
         raise HTTPException(status_code=400, detail="Invalid artifact path")
@@ -574,6 +635,53 @@ async def get_case_artifact(
             "frame-src 'none'; form-action 'none'; base-uri 'none'"
         )
     return Response(content=payload, media_type=media_type, headers=headers)
+
+
+@router.post(
+    "/cases/{case_id}/reports/flow",
+    status_code=status.HTTP_201_CREATED,
+    summary="导出协作 Case 离线流程 HTML 报告",
+)
+async def create_case_flow_report(
+    case_id: str,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+    db: DbSession,
+) -> dict[str, Any]:
+    room = await _get_turn_room(case_id, current_user_id, service, db)
+    requester_ref = room.owner_id if room is not None else current_user_id
+    case = await service.get_case(case_id, requester_ref)
+    events = await _get_report_events(service, case_id, requester_ref)
+    viewer_role = getattr(room, "_agentteams_role", "mine") if room is not None else "mine"
+
+    async def publish_evidence(payload: dict[str, Any]) -> dict[str, Any]:
+        return await service.post_case_evidence(
+            case_id,
+            work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+            event_type="report.flow_exported",
+            summary="已生成协作流程 HTML 报告",
+            payload=payload,
+        )
+
+    artifact = await AgentTeamsFlowReportService(db).generate(
+        case_id=case_id,
+        case=case,
+        events=events,
+        generated_by=current_user_id,
+        viewer_role=viewer_role,
+        publish_evidence=publish_evidence,
+    )
+    return {
+        "artifact_id": artifact.artifact_id,
+        "artifact_path": artifact.artifact_path,
+        "version_id": artifact.version_id,
+        "version_no": artifact.version_no,
+        "checksum_sha256": artifact.checksum_sha256,
+        "content_checksum_sha256": artifact.content_checksum_sha256,
+        "size_bytes": artifact.size_bytes,
+        "storage_uri": artifact.storage_uri,
+        "generated_at": artifact.generated_at,
+    }
 
 
 @router.post(
@@ -698,6 +806,7 @@ def _room_payload(room: AgentTeamsRoomModel) -> dict[str, Any]:
         "has_pending_proposal": pending_proposal,
         "created_at": room.created_at.isoformat() if room.created_at else None,
         "updated_at": room.updated_at.isoformat() if room.updated_at else None,
+        "role": getattr(room, "_agentteams_role", "mine"),
     }
 
 
@@ -718,6 +827,60 @@ async def create_room(
     return _room_payload(room)
 
 
+@router.post("/rooms/{room_id}/invitations", status_code=status.HTTP_201_CREATED)
+async def invite_room_member(
+    room_id: str,
+    request: AgentTeamsRoomInvitationRequest,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+    db: DbSession,
+) -> dict[str, Any]:
+    rooms = AgentTeamsRoomService(db, service)
+    room = await rooms.get_room(room_id, current_user_id)
+    return await rooms.invite_member(room, current_user_id, request.user_id)
+
+
+@router.get("/invitations/pending")
+async def list_pending_room_invitations(
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+    db: DbSession,
+) -> dict[str, Any]:
+    return {"items": await AgentTeamsRoomService(db, service).pending_invitations(current_user_id)}
+
+
+@router.get("/rooms/{room_id}/members")
+async def list_room_members(
+    room_id: str,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+    db: DbSession,
+) -> dict[str, Any]:
+    rooms = AgentTeamsRoomService(db, service)
+    room = await rooms.get_room(room_id, current_user_id)
+    return {"items": await rooms.list_members(room, current_user_id)}
+
+
+@router.post("/invitations/{invitation_id}/accept")
+async def accept_room_invitation(
+    invitation_id: str,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+    db: DbSession,
+) -> dict[str, Any]:
+    return await AgentTeamsRoomService(db, service).respond_invitation(invitation_id, current_user_id, True)
+
+
+@router.post("/invitations/{invitation_id}/decline")
+async def decline_room_invitation(
+    invitation_id: str,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+    db: DbSession,
+) -> dict[str, Any]:
+    return await AgentTeamsRoomService(db, service).respond_invitation(invitation_id, current_user_id, False)
+
+
 @router.get("/rooms", summary="获取当前用户的协作室房间列表")
 async def list_rooms(
     current_user_id: CurrentUserId,
@@ -726,6 +889,104 @@ async def list_rooms(
 ) -> dict[str, Any]:
     rooms = await AgentTeamsRoomService(db, service).list_rooms(current_user_id)
     return {"items": [_room_payload(room) for room in rooms], "total": len(rooms)}
+
+
+@router.get("/cases/{case_id}/turns", summary="分页读取 Case LLM 过程记录摘要")
+async def list_case_turns(
+    case_id: str,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+    db: DbSession,
+    work_item_id: str | None = Query(None, max_length=128),
+    round_number: int | None = Query(None, ge=1),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+) -> dict[str, Any]:
+    await _get_turn_room(case_id, current_user_id, service, db)
+    query = select(AgentTeamsTurnRecordModel).where(AgentTeamsTurnRecordModel.case_id == case_id)
+    if work_item_id:
+        query = query.where(AgentTeamsTurnRecordModel.work_item_id == work_item_id)
+    if round_number is not None:
+        query = query.where(AgentTeamsTurnRecordModel.round_number == round_number)
+    rows = await db.scalars(
+        query.order_by(
+            AgentTeamsTurnRecordModel.work_item_id,
+            AgentTeamsTurnRecordModel.round_number,
+            AgentTeamsTurnRecordModel.call_seq,
+        ).offset(offset).limit(limit)
+    )
+    return {"items": [_turn_summary(row) for row in rows], "offset": offset, "limit": limit}
+
+
+@router.get("/cases/{case_id}/turns/{record_id}", summary="读取 Case LLM 过程记录全文")
+async def get_case_turn(
+    case_id: str,
+    record_id: UUID,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+    db: DbSession,
+) -> dict[str, Any]:
+    room = await _get_turn_room(case_id, current_user_id, service, db)
+    record = await db.scalar(
+        select(AgentTeamsTurnRecordModel).where(
+            AgentTeamsTurnRecordModel.case_id == case_id,
+            AgentTeamsTurnRecordModel.record_id == record_id,
+        )
+    )
+    if record is None:
+        raise BusinessError("过程记录不存在")
+    uri_parts = record.s3_uri.split("/", 5)
+    if len(uri_parts) != 6 or uri_parts[3] != "cases" or uri_parts[4] != case_id:
+        raise BusinessError("过程记录对象地址无效")
+    payload = await run_in_threadpool(
+        MinioStore(get_settings()).read_turn_record,
+        case_id,
+        uri_parts[5],
+        max_bytes=10 * 1024 * 1024,
+    )
+    details = json.loads(payload)
+    if getattr(room, "_agentteams_role", "mine") == "invited":
+        details.pop("messages", None)
+        details.pop("reasoning_text", None)
+    return details
+
+
+@router.delete("/rooms/{room_id}/invitations/{user_id}")
+async def revoke_room_invitation(
+    room_id: str,
+    user_id: str,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+    db: DbSession,
+) -> dict[str, Any]:
+    rooms = AgentTeamsRoomService(db, service)
+    room = await rooms.get_room(room_id, current_user_id)
+    return await rooms.revoke_invitation(room, current_user_id, user_id)
+
+
+@router.post("/rooms/{room_id}/leave")
+async def leave_room(
+    room_id: str,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+    db: DbSession,
+) -> dict[str, Any]:
+    rooms = AgentTeamsRoomService(db, service)
+    room = await rooms.get_room(room_id, current_user_id)
+    return await rooms.leave_member(room, current_user_id)
+
+
+@router.delete("/rooms/{room_id}/members/{user_id}")
+async def remove_room_member(
+    room_id: str,
+    user_id: str,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+    db: DbSession,
+) -> dict[str, Any]:
+    rooms = AgentTeamsRoomService(db, service)
+    room = await rooms.get_room(room_id, current_user_id)
+    return await rooms.leave_member(room, user_id, owner_id=current_user_id)
 
 
 @router.get("/rooms/{room_id}", summary="获取协作室房间详情")
@@ -737,6 +998,36 @@ async def get_room(
 ) -> dict[str, Any]:
     room = await AgentTeamsRoomService(db, service).get_room(room_id, current_user_id)
     return _room_payload(room)
+
+
+@router.delete(
+    "/rooms/{room_id}",
+    summary="删除协作室房间（清空该聊天窗口的全部内容：会话事件、已绑定 Case 与审计记录）",
+)
+async def delete_room(
+    room_id: str,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+    db: DbSession,
+) -> dict[str, Any]:
+    rooms = AgentTeamsRoomService(db, service)
+    room = await rooms.get_room(room_id, current_user_id)
+    return await rooms.delete_room(room, current_user_id)
+
+
+@router.post(
+    "/rooms/{room_id}/element-session",
+    summary="签发协作室 Element 视图免登录会话（凭据仅返回给房间 owner）",
+)
+async def create_room_element_session(
+    room_id: str,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+    db: DbSession,
+) -> dict[str, Any]:
+    rooms = AgentTeamsRoomService(db, service)
+    room = await rooms.get_room(room_id, current_user_id)
+    return await rooms.create_element_session(room, current_user_id)
 
 
 @router.post(
@@ -769,9 +1060,10 @@ async def post_room_message(
 
             respond_to_room_namespace_message.delay(
                 room.room_id,
-                current_user_id,
+                room.owner_id,
                 request.content.strip(),
                 result.get("dispatch") if isinstance(result, dict) else None,
+                current_user_id,
             )
         except Exception as exc:  # noqa: BLE001 - Manager 响应调度失败不影响发言落盘
             logger.bind(room_id=room.room_id).warning(

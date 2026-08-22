@@ -38,6 +38,8 @@ import {
   type AgentTeamsCase,
   type AgentTeamsCaseStatus,
   type AgentTeamsEvent,
+  type AgentTeamsTurnSummary,
+  type AgentTeamsTurnDetail,
 } from '@/api/agentTeams'
 import {
   formatAgentTeamsArtifactSize,
@@ -71,6 +73,12 @@ const manifestVisible = ref(false)
 const manifestLoading = ref(false)
 const manifest = ref<Record<string, unknown> | null>(null)
 const lineage = ref<AgentTeamsArtifactLineageResponse | null>(null)
+const turns = ref<AgentTeamsTurnSummary[]>([])
+const selectedTurn = ref<AgentTeamsTurnDetail | null>(null)
+const turnDetailVisible = ref(false)
+const turnDetailLoading = ref(false)
+const turnDetailError = ref('')
+const flowReportGenerating = ref(false)
 const approvalConfirmed = ref(false)
 const submitForm = ref({
   task_name: '',
@@ -90,6 +98,15 @@ let eventStreamRetryTimer: number | null = null
 let eventStreamFailures = 0
 
 const caseId = computed(() => String(route.params.caseId || ''))
+const turnGroups = computed(() => {
+  const grouped = new Map<string, AgentTeamsTurnSummary[]>()
+  for (const turn of turns.value) {
+    const current = grouped.get(turn.work_item_id) || []
+    current.push(turn)
+    grouped.set(turn.work_item_id, current)
+  }
+  return [...grouped.entries()].map(([workItemId, items]) => ({ workItemId, items }))
+})
 const phases: { key: AgentTeamsCaseStatus[]; label: string }[] = [
   { key: ['received', 'preflight_running', 'preflight_blocked', 'waiting_for_correction', 'planning_failed'], label: '预检' },
   { key: ['approval_pending', 'approved'], label: '审批' },
@@ -239,6 +256,27 @@ async function downloadManifest() {
   }
 }
 
+async function exportFlowReport() {
+  if (!detail.value?.case_id || flowReportGenerating.value) return
+  flowReportGenerating.value = true
+  try {
+    const artifact = await agentTeamsApi.createCaseFlowReport(detail.value.case_id)
+    const blob = await agentTeamsApi.downloadCaseArtifact(detail.value.case_id, artifact.artifact_path)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = artifact.artifact_path.split('/').at(-1) || `${detail.value.case_id}-flow-report.html`
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    await loadArtifactLineage()
+    message.success('流程报告已生成并开始下载。')
+  } catch (cause: any) {
+    message.error(cause?.response?.data?.detail || '流程报告导出失败。')
+  } finally {
+    flowReportGenerating.value = false
+  }
+}
+
 async function confirmSubmit() {
   if (!detail.value) return
   const taskName = submitForm.value.task_name.trim()
@@ -346,6 +384,7 @@ async function refresh(options: { background?: boolean; resetEvents?: boolean } 
     }
     const eventData = await agentTeamsApi.getEvents(caseId.value, { cursor, limit: 100 })
     detail.value = caseData
+    turns.value = await agentTeamsApi.listCaseTurns(caseId.value).catch(() => [])
     if (options.resetEvents) events.value = eventData.events
     else mergeEvents(eventData.events)
     eventCursor.value = eventData.next_cursor ?? (events.value.at(-1)?.event_id ?? null)
@@ -358,6 +397,21 @@ async function refresh(options: { background?: boolean; resetEvents?: boolean } 
   } finally {
     loading.value = false
     syncing.value = false
+  }
+}
+
+async function openTurnDetail(recordId: string) {
+  if (!caseId.value) return
+  turnDetailVisible.value = true
+  turnDetailLoading.value = true
+  turnDetailError.value = ''
+  selectedTurn.value = null
+  try {
+    selectedTurn.value = await agentTeamsApi.getCaseTurn(caseId.value, recordId)
+  } catch (cause: any) {
+    turnDetailError.value = cause?.response?.data?.detail || '无法读取过程记录详情。'
+  } finally {
+    turnDetailLoading.value = false
   }
 }
 
@@ -522,6 +576,26 @@ onBeforeUnmount(() => {
               </li>
             </ul>
             <NEmpty v-else size="small" description="Manager 尚未分派工作项" />
+          </NCard>
+          <NCard title="Agent 过程记录" size="small">
+            <template #header-extra>
+              <NButton size="tiny" secondary :loading="flowReportGenerating" @click="exportFlowReport">导出流程报告</NButton>
+            </template>
+            <ul v-if="turns.length" class="work-item-list turn-list">
+              <li v-for="group in turnGroups" :key="group.workItemId" class="turn-group">
+                <strong>工作项：{{ group.workItemId }}</strong>
+                <NButton
+                  v-for="turn in group.items"
+                  :key="turn.record_id"
+                  text
+                  class="turn-row"
+                  @click="openTurnDetail(turn.record_id)"
+                >
+                  第 {{ turn.round_number }} 轮 · {{ turn.agent_id }} · {{ turn.model || turn.provider || '模型调用' }} · {{ turn.usage.total_tokens || 0 }} tokens · {{ turn.duration_ms }}ms · {{ turn.status }}
+                </NButton>
+              </li>
+            </ul>
+            <NEmpty v-else size="small" description="暂无过程记录" />
           </NCard>
           <NCard title="角色边界" size="small">
             <ul class="role-list">
@@ -702,6 +776,27 @@ onBeforeUnmount(() => {
         </div>
       </NForm>
     </NModal>
+    <NModal v-model:show="turnDetailVisible" preset="card" title="Agent 过程记录详情" :style="{ width: 'min(94vw, 860px)' }">
+      <NSpin :show="turnDetailLoading">
+        <NAlert v-if="turnDetailError" type="error" :show-icon="true">{{ turnDetailError }}</NAlert>
+        <template v-else-if="selectedTurn">
+          <p class="turn-detail-meta">{{ selectedTurn.agent_id }} · 第 {{ selectedTurn.round_number }} 轮 · {{ selectedTurn.model || selectedTurn.provider }} · {{ selectedTurn.duration_ms }}ms · {{ selectedTurn.status }}</p>
+          <h4>模型输入</h4>
+          <div v-if="selectedTurn.messages" class="turn-message-list">
+            <pre v-for="(item, index) in selectedTurn.messages" :key="index"><strong>{{ item.role }}</strong>\n{{ item.content }}</pre>
+          </div>
+          <NText v-else depth="3">无权查看</NText>
+          <h4>思考过程</h4>
+          <pre v-if="selectedTurn.reasoning_text" class="turn-detail-pre">{{ selectedTurn.reasoning_text }}</pre>
+          <NText v-else depth="3">无权查看</NText>
+          <h4>输出全文</h4>
+          <pre class="turn-detail-pre">{{ selectedTurn.output_text || '无输出内容' }}</pre>
+          <h4>工具调用</h4>
+          <pre v-if="selectedTurn.tool_calls.length" class="turn-detail-pre">{{ JSON.stringify(selectedTurn.tool_calls, null, 2) }}</pre>
+          <NText v-else depth="3">本轮没有工具调用</NText>
+        </template>
+      </NSpin>
+    </NModal>
   </main>
 </template>
 
@@ -744,6 +839,12 @@ onBeforeUnmount(() => {
 .lineage-list span, .qc-check-list span { color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
 .lineage-list small, .qc-check-list small { color: var(--text-tertiary); font-size: 11px; overflow-wrap: anywhere; }
 .qc-counts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.turn-group { display: grid; gap: 4px; }
+.turn-row { justify-content: flex-start; height: auto; white-space: normal; text-align: left; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+.turn-detail-meta { color: var(--text-secondary); font-size: 13px; }
+.turn-message-list, .turn-detail-pre { max-height: 260px; overflow: auto; margin: 8px 0 16px; padding: 12px; border-radius: 8px; background: var(--surface-color-soft); color: var(--text-secondary); font: 12px/1.6 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.turn-message-list pre { margin: 0 0 12px; white-space: pre-wrap; }
+.turn-message-list pre:last-child { margin-bottom: 0; }
 @media (max-width: 1024px) { .case-workbench { grid-template-columns: minmax(190px, 240px) minmax(0, 1fr); } .evidence-column { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 768px) { .case-workbench, .evidence-column { grid-template-columns: 1fr; } .overview-column, .timeline-column, .evidence-column { grid-column: auto; } }
 </style>

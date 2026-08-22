@@ -164,6 +164,7 @@ def create_app(
         f"{runtime_settings.state_store_key_prefix}:audit",
         on_event=room_mirror.observe if room_mirror.enabled else None,
         minio_storage=minio_storage,
+        stream_maxlen=runtime_settings.audit_stream_maxlen,
     )
     case_store = CaseStore(
         runtime_settings.case_store_path,

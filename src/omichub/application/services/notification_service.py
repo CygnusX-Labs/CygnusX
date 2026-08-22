@@ -43,6 +43,8 @@ class NotificationService:
         is_global: bool = True,
         target_user_id: str | None = None,
         expires_at: datetime | None = None,
+        notification_type: str = "general",
+        payload: dict | None = None,
     ) -> NotificationModel:
         notification = NotificationModel(
             title=title,
@@ -52,6 +54,8 @@ class NotificationService:
             is_global=is_global,
             target_user_id=UUID(target_user_id) if target_user_id else None,
             expires_at=expires_at,
+            type=notification_type,
+            payload=payload or {},
             read_by=[],
         )
         return await self._repo.create(notification)

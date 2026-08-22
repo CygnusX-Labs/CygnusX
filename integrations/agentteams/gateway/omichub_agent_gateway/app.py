@@ -16,9 +16,12 @@ from .config import GatewaySettings
 from .matrix_client import MatrixGatewayClient
 from .models import (
     ConsultationRequest,
+    ElementSessionRequest,
+    ElementSessionResponse,
     EnsureUsersRequest,
     RoomCreateRequest,
     RoomCreateResponse,
+    RoomLeaveRequest,
     RoomMessageRequest,
     RoomMessagesResponse,
     ScientificInterpretationResponse,
@@ -122,6 +125,40 @@ def create_app(
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         return {"ensured": ensured}
+
+    @app.post(
+        "/matrix/element-session",
+        response_model=ElementSessionResponse,
+        tags=["Matrix"],
+    )
+    async def create_element_session(
+        payload: ElementSessionRequest,
+        request: Request,
+        actor: Annotated[str, Depends(authenticate_manager)],
+        gateway_service: Annotated[GatewayService, Depends(get_service)],
+    ) -> ElementSessionResponse:
+        try:
+            session = await gateway_service.create_element_session(payload.identity, actor, payload.room_id)
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        settings = request.app.state.gateway_settings
+        return ElementSessionResponse(
+            **session,
+            homeserver_url=settings.matrix_public_url,
+            element_base_url=settings.element_base_url.strip() or None,
+        )
+
+    @app.post("/matrix/rooms/leave", tags=["Matrix"])
+    async def leave_matrix_room(
+        payload: RoomLeaveRequest,
+        actor: Annotated[str, Depends(authenticate_manager)],
+        gateway_service: Annotated[GatewayService, Depends(get_service)],
+    ) -> dict[str, bool]:
+        try:
+            await gateway_service.leave_room(payload.identity, payload.room_id, actor)
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return {"left": True}
 
     @app.post("/rooms/{room_id}/messages", tags=["Matrix"])
     async def post_room_message(

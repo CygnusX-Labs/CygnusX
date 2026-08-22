@@ -1251,6 +1251,7 @@ class BridgeService:
                     "requested_tools": request.requested_tools,
                     "requester_ref": case.requester_ref,
                     "work_item_id": work_item_id,
+                    "trace_id": work_item.trace_id or request.trace_id,
                     "execution_mode": request.execution_mode,
                 }
                 # 产物血缘（F1）：Worker 声明的 source_refs/执行摘要原样透传到平台登记路径。

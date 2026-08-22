@@ -30,6 +30,8 @@ class GatewaySettings(BaseSettings):
     matrix_homeserver_url: str = ""
     matrix_service_token: str = ""
     matrix_server_name: str = "localhost"
+    # 浏览器/Element 可达的 Matrix C-S 公网地址；未配置时回退 matrix_homeserver_url。
+    matrix_public_base_url: str = ""
     matrix_identities: str = (
         "bioops-manager=@bioops-manager:localhost,omichub-user=@omichub-user:localhost"
     )
@@ -141,6 +143,11 @@ class GatewaySettings(BaseSettings):
     @property
     def matrix_enabled(self) -> bool:
         return bool(self.matrix_homeserver_url.strip() and self.matrix_service_token.strip())
+
+    @property
+    def matrix_public_url(self) -> str:
+        """浏览器侧可达的 Matrix C-S 地址；未单独配置时回退内网 homeserver 地址。"""
+        return self.matrix_public_base_url.strip() or self.matrix_homeserver_url.strip()
 
     def matrix_identity_map(self) -> dict[str, str]:
         entries = (entry.strip() for entry in self.matrix_identities.split(","))

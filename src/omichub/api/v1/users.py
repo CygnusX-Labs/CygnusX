@@ -26,11 +26,36 @@ from omichub.core.config import get_settings
 from omichub.core.exceptions import AuthorizationError
 from omichub.infrastructure.database.models.audit_log import AuditLogModel
 from omichub.infrastructure.database.models.chat import ChatSessionModel
+from omichub.infrastructure.database.models.user import UserModel
 from omichub.infrastructure.database.repositories import SqlAlchemyUserRepository
 from omichub.infrastructure.task_queue.dispatcher import enqueue_task
 from omichub.middleware.rbac import require_roles
 
 router = APIRouter()
+
+
+@router.get("/lookup", summary="协作室邀请用最小用户目录")
+async def lookup_users(
+    current_user_id: CurrentUserId,
+    db: DbSession,
+    q: str = Query(min_length=1, max_length=64),
+) -> list[dict[str, str | None]]:
+    """Only expose the minimum identity fields needed by the room invitation picker."""
+    term = q.strip()
+    if not term:
+        return []
+    rows = await db.scalars(
+        select(UserModel)
+        .where(UserModel.status == "active")
+        .where((UserModel.username.ilike(f"{term}%")) | (UserModel.nickname.ilike(f"{term}%")))
+        .order_by(UserModel.username.asc())
+        .limit(20)
+    )
+    return [
+        {"id": str(user.id), "nickname": user.nickname or user.username, "avatar": user.avatar_url}
+        for user in rows
+        if str(user.id) != current_user_id
+    ]
 
 
 def get_user_service(db: DbSession) -> UserService:

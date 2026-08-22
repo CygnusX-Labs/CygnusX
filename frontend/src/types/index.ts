@@ -511,6 +511,8 @@ export interface Notification {
   title: string
   content: string
   level: NotificationLevel
+  type?: string
+  payload?: Record<string, unknown>
   created_by: string
   is_global: boolean
   target_user_id: string | null

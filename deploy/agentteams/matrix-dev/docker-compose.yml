@@ -21,6 +21,10 @@ services:
       # element-web 镜像默认带 X-Frame-Options: SAMEORIGIN,不允许被 OmicHub 页面 iframe 嵌入;
       # 开发环境挂载去掉该头的 nginx 配置(由 setup 脚本从镜像提取并改写)
       - ./nginx-no-xfo.conf:/etc/nginx/nginx.conf:ro
+      # OmicHub 免登录跳板页:凭据经 URL fragment 写入 localStorage 后跳转房间深链
+      - ./omichub-login.html:/usr/share/nginx/html/omichub-login.html:ro
+      # insecure context 兼容补丁(经 nginx sub_filter 注入 index.html)
+      - ./omichub-compat.js:/usr/share/nginx/html/omichub-compat.js:ro
     ports:
       - "127.0.0.1:8081:80"
     depends_on:

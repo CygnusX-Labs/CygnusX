@@ -58,7 +58,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: gateway
-          image: omichub-agent-gateway:0.1.0
+          image: omichub-agent-gateway:v0.0.2dev
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef: {name: omichub-agent-gateway-config}

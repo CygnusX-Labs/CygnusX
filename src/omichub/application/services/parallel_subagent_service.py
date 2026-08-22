@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.schemas.tool_invocation import ToolInvocationContext
 from omichub.application.services.agent_service import AgentService
+from omichub.application.services.agentteams_turn_recorder import AgentTeamsTurnRecorder
 from omichub.application.services.execution_events import execution_metadata
 from omichub.application.services.studio_tools import (
     ASK_USER_TOOL_SCHEMA,
@@ -39,6 +40,7 @@ from omichub.application.services.studio_tools import (
     execute_studio_tool,
 )
 from omichub.core.config import get_settings
+from omichub.core.agentteams_context import agentteams_ctx_var
 from omichub.domain.skill.services import (
     SKILL_TOOL_NAMES,
     USE_SKILL_TOOL_NAME,
@@ -622,7 +624,7 @@ class ParallelSubAgentService:
             f"{ctx.system_prompt or ''}{_SUBAGENT_RESEARCH_PROMPT_SUFFIX}{SUBAGENT_SYSTEM_SUFFIX}"
         )
         messages: list[dict[str, Any]] = [{"role": "user", "content": instruction}]
-        child_session_id = f"{parent_session_id}:sub:{run_id}:{index}"
+        child_session_id = f"{parent_session_id}:child:{run_id}:{index}"
         last_text = ""
         answer_parts: list[str] = []
         reasoning_text = ""
@@ -635,6 +637,16 @@ class ParallelSubAgentService:
         usage: dict[str, Any] | None = None
         for _round in range(max(1, max_rounds)):
             round_number = _round + 1
+            agentteams_context = agentteams_ctx_var.get()
+            agentteams_token = None
+            if agentteams_context is not None:
+                agentteams_context = {
+                    **agentteams_context,
+                    "round_number": round_number,
+                    "agent_id": agent_id,
+                    "call_seq": 1,
+                }
+                agentteams_token = agentteams_ctx_var.set(agentteams_context)
             await self._check_control(control_check)
             await self._emit_event(
                 on_event,
@@ -650,19 +662,45 @@ class ParallelSubAgentService:
                 | {"type": "agent_turn_started", "index": index},
             )
             text = ""
+            round_reasoning_text = ""
             tool_calls: list[dict[str, Any]] = []
             finish_reason = ""
-            async for chunk in provider_manager.chat_stream(
-                config=ctx.model_config,
-                messages=messages,
-                system_prompt=system_prompt,
-                temperature=0.3,
-                max_tokens=min(int(getattr(ctx, "max_tokens", 20_000) or 20_000), 20_000),
-                tools=child_tools or None,
-            ):
+            turn_started = time.monotonic()
+            async def recorded_stream():
+                try:
+                    async for stream_chunk in provider_manager.chat_stream(
+                        config=ctx.model_config,
+                        messages=messages,
+                        system_prompt=system_prompt,
+                        temperature=0.3,
+                        max_tokens=min(int(getattr(ctx, "max_tokens", 20_000) or 20_000), 20_000),
+                        tools=child_tools or None,
+                    ):
+                        yield stream_chunk
+                except Exception as exc:
+                    self._record_agentteams_turn(
+                        ctx=ctx,
+                        child_session_id=child_session_id,
+                        messages=messages,
+                        system_prompt=system_prompt,
+                        output_text=text,
+                        reasoning_text=round_reasoning_text,
+                        tool_calls=tool_calls,
+                        usage=usage,
+                        duration_ms=round((time.monotonic() - turn_started) * 1000),
+                        finish_reason=finish_reason,
+                        status="error",
+                        error=str(exc)[:500],
+                    )
+                    if agentteams_token is not None:
+                        agentteams_ctx_var.reset(agentteams_token)
+                    raise
+
+            async for chunk in recorded_stream():
                 if chunk.type == "text":
                     if chunk.metadata.get("is_reasoning"):
                         reasoning_text += chunk.content
+                        round_reasoning_text += chunk.content
                         await self._emit_event(
                             on_event,
                             execution_metadata(
@@ -715,6 +753,20 @@ class ParallelSubAgentService:
                     finish_reason = str(chunk.metadata.get("finish_reason") or "").lower()
                     usage = merge_token_usage(usage, chunk.metadata.get("usage"))
                 elif chunk.type == "error":
+                    self._record_agentteams_turn(
+                        ctx=ctx,
+                        child_session_id=child_session_id,
+                        messages=messages,
+                        system_prompt=system_prompt,
+                        output_text=text,
+                        reasoning_text=round_reasoning_text,
+                        tool_calls=tool_calls,
+                        usage=usage,
+                        duration_ms=round((time.monotonic() - turn_started) * 1000),
+                        finish_reason=finish_reason,
+                        status="error",
+                        error=str(chunk.content or "模型调用失败")[:500],
+                    )
                     await self._emit_event(
                         on_event,
                         execution_metadata(
@@ -729,12 +781,30 @@ class ParallelSubAgentService:
                         )
                         | {"type": "agent_turn_failed", "index": index},
                     )
+                    if agentteams_token is not None:
+                        agentteams_ctx_var.reset(agentteams_token)
                     return {
                         "status": "failed",
                         "answer": None,
                         "error": str(chunk.content or "模型调用失败")[:500],
                         "usage": usage,
                     }
+            self._record_agentteams_turn(
+                ctx=ctx,
+                child_session_id=child_session_id,
+                messages=messages,
+                system_prompt=system_prompt,
+                output_text=text,
+                reasoning_text=round_reasoning_text,
+                tool_calls=tool_calls,
+                usage=usage,
+                duration_ms=round((time.monotonic() - turn_started) * 1000),
+                finish_reason=finish_reason,
+                status="ok",
+                error=None,
+            )
+            if agentteams_token is not None:
+                agentteams_ctx_var.reset(agentteams_token)
             last_text = text.strip()
             if last_text and (not answer_parts or answer_parts[-1] != last_text):
                 answer_parts.append(last_text)
@@ -1064,6 +1134,51 @@ class ParallelSubAgentService:
             "tool_call_count": successful_tool_calls,
             "usage": usage,
         }
+
+    @staticmethod
+    def _record_agentteams_turn(
+        *,
+        ctx: Any,
+        child_session_id: str,
+        messages: list[dict[str, Any]],
+        system_prompt: str,
+        output_text: str,
+        reasoning_text: str,
+        tool_calls: list[dict[str, Any]],
+        usage: dict[str, Any] | None,
+        duration_ms: int,
+        finish_reason: str,
+        status: str,
+        error: str | None,
+    ) -> None:
+        """Queue AgentTeams-only audit capture; storage errors stay off the model path."""
+        uri = AgentTeamsTurnRecorder.schedule(
+            messages=[{"role": "system", "content": system_prompt}, *messages],
+            output_text=output_text,
+            reasoning_text=reasoning_text,
+            tool_calls=tool_calls,
+            usage=usage,
+            duration_ms=duration_ms,
+            finish_reason=finish_reason,
+            status=status,
+            error=error,
+            child_session_id=child_session_id,
+            provider=str(getattr(ctx.model_config, "name", "")),
+            model=str(getattr(ctx.model_config, "model", "")),
+            sampling={
+                "temperature": 0.3,
+                "max_tokens": min(int(getattr(ctx, "max_tokens", 20_000) or 20_000), 20_000),
+                "deep_thinking": False,
+            },
+        )
+        if not uri:
+            return
+        try:
+            from opentelemetry import trace
+
+            trace.get_current_span().set_attribute("agentteams.turn_record_uri", uri)
+        except Exception:  # noqa: BLE001 - tracing must not affect model execution
+            return
 
     @staticmethod
     def _tool_result_summary(tool_envelope: dict[str, Any]) -> str:

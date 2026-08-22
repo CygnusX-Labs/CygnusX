@@ -130,6 +130,8 @@ __all__ = [
     "ChatSessionModel",
     "AgentTeamsCaseCursorModel",
     "AgentTeamsRoomModel",
+    "AgentTeamsRoomMemberModel",
+    "AgentTeamsTurnRecordModel",
     "CaseArtifactDependencyModel",
     "CaseArtifactVersionModel",
     "QcVerificationCheckModel",

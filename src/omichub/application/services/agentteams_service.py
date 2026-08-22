@@ -1376,6 +1376,28 @@ class AgentTeamsService:
         await record_room_binding(case_id, room_id, requester_ref)
         return room
 
+    async def create_element_session(self, identity: str, room_id: str | None = None) -> dict[str, Any]:
+        """经 Gateway 为平台用户的 Matrix 身份签发 Element 视图免登录会话。
+
+        as_token 不出 Gateway 进程；本方法只做连通性检查与转发。携带
+        ``room_id`` 时 Gateway 会先幂等入房（仅 invited 未 joined 的房间在
+        Element 深链下会卡黑屏）。
+        """
+        gateway = AgentTeamsRoomGatewayService()
+        if not gateway.available:
+            raise BusinessError("Agent 协作中心尚未接通")
+        return await gateway.create_element_session(identity, room_id)
+
+    async def leave_matrix_room(self, identity: str, room_id: str) -> dict[str, Any]:
+        """经 Gateway 让平台用户的 Matrix 身份离房（删除协作室时调用）。
+
+        as_token 不出 Gateway 进程；本方法只做连通性检查与转发。
+        """
+        gateway = AgentTeamsRoomGatewayService()
+        if not gateway.available:
+            raise BusinessError("Agent 协作中心尚未接通")
+        return await gateway.leave_matrix_room(identity, room_id)
+
     async def _record_room_provision_failure(
         self,
         case_id: str,
@@ -1466,6 +1488,7 @@ class AgentTeamsService:
         requester_ref: str,
         content: str,
         *,
+        actor_user_id: str | None = None,
         context_refs: list[dict[str, str]] | None = None,
         client_message_id: str | None = None,
     ) -> dict[str, Any]:
@@ -1531,7 +1554,7 @@ class AgentTeamsService:
                         "dispatch": dispatch,
                     }
         payload: dict[str, Any] = {
-            "actor": requester_ref,
+            "actor": actor_user_id or requester_ref,
             "content": content.strip(),
             "mentions": dispatch["mentions"],
             "target_agent_id": dispatch["target_agent_id"],

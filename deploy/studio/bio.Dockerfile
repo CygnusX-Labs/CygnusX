@@ -1,9 +1,10 @@
-# OmicStudio 沙盒生信镜像（omichub-sandbox:bio）
-# 构建：先构建 base，再 docker build -t omichub-sandbox:bio -f deploy/studio/bio.Dockerfile deploy/studio
+ARG OMICHUB_IMAGE_TAG=v0.0.2dev
+# OmicStudio 沙盒生信镜像（omichub-sandbox-bio:v0.0.2dev）
+# 构建：先构建 base，再 docker build --build-arg OMICHUB_IMAGE_TAG=v0.0.2dev -t omichub-sandbox-bio:v0.0.2dev -f deploy/studio/bio.Dockerfile deploy/studio
 #
 # 设计（架构设计 §6.1）：base + scanpy/anndata/pysam/bioinfokit + 常用生信 CLI
 #（blast / samtools / bedtools / seqkit，取自 Debian 官方仓库，seqkit 不可用时跳过）
-FROM omichub-sandbox:base
+FROM omichub-sandbox-base:${OMICHUB_IMAGE_TAG}
 
 LABEL maintainer="OmicHub"
 LABEL description="OmicStudio sandbox bio image (scanpy + NGS CLI tools)"

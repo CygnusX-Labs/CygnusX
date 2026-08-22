@@ -37,7 +37,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: bridge
-          image: omichub-agentteams-bridge:0.1.0
+          image: omichub-agentteams-bridge:v0.0.2dev
           imagePullPolicy: IfNotPresent
           args: ["uvicorn", "omichub_agentteams_bridge.app:app", "--host", "0.0.0.0", "--port", "8080"]
           envFrom:
@@ -103,7 +103,7 @@ spec:
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: worker
-          image: omichub-agentteams-worker:0.1.0
+          image: omichub-agentteams-worker:v0.0.2dev
           imagePullPolicy: IfNotPresent
           env:
             - {name: AGENTTEAMS_WORKER_MODE, value: production}
@@ -142,7 +142,7 @@ spec:
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: worker
-          image: omichub-agentteams-worker:0.1.0
+          image: omichub-agentteams-worker:v0.0.2dev
           imagePullPolicy: IfNotPresent
           env:
             - {name: AGENTTEAMS_WORKER_MODE, value: production}
@@ -181,7 +181,7 @@ spec:
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: worker
-          image: omichub-agentteams-worker:0.1.0
+          image: omichub-agentteams-worker:v0.0.2dev
           imagePullPolicy: IfNotPresent
           env:
             - {name: AGENTTEAMS_WORKER_MODE, value: production}
@@ -220,7 +220,7 @@ spec:
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: worker
-          image: omichub-agentteams-worker:0.1.0
+          image: omichub-agentteams-worker:v0.0.2dev
           imagePullPolicy: IfNotPresent
           env:
             - {name: AGENTTEAMS_WORKER_MODE, value: production}
@@ -259,7 +259,7 @@ spec:
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: worker
-          image: omichub-agentteams-worker:0.1.0
+          image: omichub-agentteams-worker:v0.0.2dev
           imagePullPolicy: IfNotPresent
           env:
             - {name: AGENTTEAMS_WORKER_MODE, value: analysis}

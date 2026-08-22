@@ -4,11 +4,15 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TAG="${OMICHUB_IMAGE_TAG:-v0.0.2dev}"
 
-echo "==> 构建 omichub-sandbox:base"
-docker build -t omichub-sandbox:base -f "${SCRIPT_DIR}/base.Dockerfile" "${SCRIPT_DIR}"
+echo "==> 构建 omichub-sandbox-base:${TAG}"
+docker build -t "omichub-sandbox-base:${TAG}" \
+  -f "${SCRIPT_DIR}/base.Dockerfile" "${SCRIPT_DIR}"
 
-echo "==> 构建 omichub-sandbox:bio"
-docker build -t omichub-sandbox:bio -f "${SCRIPT_DIR}/bio.Dockerfile" "${SCRIPT_DIR}"
+echo "==> 构建 omichub-sandbox-bio:${TAG}"
+docker build -t "omichub-sandbox-bio:${TAG}" \
+  --build-arg "OMICHUB_IMAGE_TAG=${TAG}" \
+  -f "${SCRIPT_DIR}/bio.Dockerfile" "${SCRIPT_DIR}"
 
-echo "==> 完成：omichub-sandbox:base / omichub-sandbox:bio"
+echo "==> 完成：omichub-sandbox-base:${TAG} / omichub-sandbox-bio:${TAG}"

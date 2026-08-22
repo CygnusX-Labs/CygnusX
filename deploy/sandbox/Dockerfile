@@ -1,5 +1,6 @@
+ARG OMICHUB_IMAGE_TAG=v0.0.2dev
 # OmicHub 生信分析沙盒镜像
-# 构建：docker build -t omichub/sandbox-base:latest -f deploy/sandbox/Dockerfile deploy/sandbox
+# 构建：docker build --build-arg OMICHUB_IMAGE_TAG=v0.0.2dev -t omichub/sandbox-base:v0.0.2dev -f deploy/sandbox/Dockerfile deploy/sandbox
 #
 # 设计（符合 1 人运维 / 单机部署原则）：
 # - 基于 condaforge/mambaforge，通过 bioconda 预装 scanpy + R/Seurat 交互式分析栈

@@ -1,4 +1,5 @@
-FROM omichub-analysis:core-2026.07
+ARG OMICHUB_IMAGE_TAG=v0.0.2dev
+FROM omichub-analysis:core-${OMICHUB_IMAGE_TAG}
 
 LABEL org.opencontainers.image.title="OmicHub Analysis Plot"
 LABEL org.omichub.runtime.profile="analysis-plot"

@@ -10,7 +10,7 @@
 ## 清单构成
 
 - `bridge-cluster.yaml`：Bridge + 各 Worker Deployment/HPA（既有）。
-- `gateway.yaml`：Matrix Gateway Deployment/Service/PDB + ConfigMap/Secret 模板。Gateway 是 OmicHub 侧唯一持有 Matrix 凭证（AppService token）的进程，镜像由 `integrations/agentteams/gateway/Dockerfile` 构建（`omichub-agent-gateway:0.1.0`）。
+- `gateway.yaml`：Matrix Gateway Deployment/Service/PDB + ConfigMap/Secret 模板。Gateway 是 OmicHub 侧唯一持有 Matrix 凭证（AppService token）的进程，镜像由 `integrations/agentteams/gateway/Dockerfile` 构建（当前默认 tag：`omichub-agent-gateway:v0.0.2dev`，可通过 `.env` 的 `OMICHUB_IMAGE_TAG` 统一调整）。
 - `tuwunel.yaml`：Tuwunel homeserver Deployment（单副本 + Recreate，RWO PVC）+ Service + ConfigMap + AppService 注册文件 Secret 模板。
 - `network-policy.default-deny.yaml` / `network-policy.runtime.yaml`：默认拒绝 + Bridge/Worker/Gateway/Tuwunel 的精确放行。
 

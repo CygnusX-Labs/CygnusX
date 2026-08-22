@@ -1,5 +1,5 @@
-# OmicStudio 沙盒基础镜像（omichub-sandbox:base）
-# 构建：docker build -t omichub-sandbox:base -f deploy/studio/base.Dockerfile deploy/studio
+# OmicStudio 沙盒基础镜像（omichub-sandbox-base:v0.0.2dev）
+# 构建：docker build -t omichub-sandbox-base:v0.0.2dev -f deploy/studio/base.Dockerfile deploy/studio
 #
 # 设计（架构设计 §6.1）：
 # - python:3.12-slim + 数据分析栈（pandas/numpy/matplotlib/plotly/seaborn

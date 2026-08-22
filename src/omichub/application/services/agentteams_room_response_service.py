@@ -225,6 +225,7 @@ class AgentTeamsRoomResponseService:
         requester_ref: str,
         content: str,
         *,
+        actor_user_id: str | None = None,
         target_agent_id: str | None = None,
         room: AgentTeamsRoomModel | None = None,
     ) -> dict[str, str]:
@@ -243,6 +244,7 @@ class AgentTeamsRoomResponseService:
                 case_id,
                 requester_ref,
                 content,
+                actor_user_id=actor_user_id or requester_ref,
                 target_agent_id=target_agent_id,
                 room=room,
             )
@@ -261,6 +263,7 @@ class AgentTeamsRoomResponseService:
         requester_ref: str,
         content: str,
         *,
+        actor_user_id: str | None = None,
         target_agent_id: str | None = None,
     ) -> dict[str, str]:
         """房间级响应入口（会话-工单解耦 Part 2）。
@@ -276,6 +279,7 @@ class AgentTeamsRoomResponseService:
                 room_namespace_case_id(room.room_id),
                 requester_ref,
                 content,
+                actor_user_id=actor_user_id or requester_ref,
                 target_agent_id=target_agent_id,
                 room=room,
             )
@@ -310,7 +314,11 @@ class AgentTeamsRoomResponseService:
                     "AgentTeams follow-up proposal emission failed: {}", exc
                 )
         return await self.respond(
-            bound_case_id, requester_ref, content, target_agent_id=target_agent_id
+            bound_case_id,
+            requester_ref,
+            content,
+            actor_user_id=actor_user_id or requester_ref,
+            target_agent_id=target_agent_id,
         )
 
     async def _respond_locked(
@@ -319,6 +327,7 @@ class AgentTeamsRoomResponseService:
         requester_ref: str,
         content: str,
         *,
+        actor_user_id: str,
         target_agent_id: str | None = None,
         room: AgentTeamsRoomModel | None = None,
     ) -> dict[str, str]:
@@ -380,6 +389,7 @@ class AgentTeamsRoomResponseService:
                         case,
                         event_items,
                         target_agent_id,
+                        actor_user_id=actor_user_id,
                         causation_event_id=causation_event_id,
                     )
                     if str(direct_result.get("status") or "") not in {
@@ -408,6 +418,7 @@ class AgentTeamsRoomResponseService:
             execution_outcome = await self._maybe_start_chat_execution(
                 case_id=case_id,
                 requester_ref=requester_ref,
+                actor_user_id=actor_user_id,
                 case=case,
                 events=event_items,
                 content=content,
@@ -487,6 +498,7 @@ class AgentTeamsRoomResponseService:
                         evidence_refs=[],
                         requested_tools=[],
                         requester_ref=requester_ref,
+                        actor_user_id=actor_user_id,
                         causation_event_id=causation_event_id,
                         on_event=stream_projector,
                     )
@@ -613,6 +625,7 @@ class AgentTeamsRoomResponseService:
         case: dict[str, Any],
         events: list[dict[str, Any]],
         target_agent_id: str,
+        actor_user_id: str,
         causation_event_id: str | None = None,
     ) -> dict[str, str]:
         """Phase 1 direct mention: readonly domain answer, without execution or approval bypass.
@@ -659,6 +672,7 @@ class AgentTeamsRoomResponseService:
                     evidence_refs=[],
                     requested_tools=[],
                     requester_ref=requester_ref,
+                    actor_user_id=actor_user_id,
                     causation_event_id=causation_event_id,
                 ),
                 timeout=timeout_seconds,
@@ -669,7 +683,7 @@ class AgentTeamsRoomResponseService:
                 event_type="room.agent_message",
                 summary=envelope.conclusion[:200],
                 payload={
-                    "content": envelope.conclusion[:8_000],
+                    "content": envelope.conclusion[:_ROOM_REPLY_CONTENT_MAX_CHARS],
                     "agent_id": target_agent_id,
                     "role": "worker",
                     "direct_mention": True,
@@ -794,6 +808,7 @@ class AgentTeamsRoomResponseService:
         *,
         case_id: str,
         requester_ref: str,
+        actor_user_id: str,
         case: dict[str, Any],
         events: list[dict[str, Any]],
         content: str,
@@ -903,6 +918,7 @@ class AgentTeamsRoomResponseService:
             return await self._run_room_tool_execution(
                 case_id=case_id,
                 requester_ref=requester_ref,
+                actor_user_id=actor_user_id,
                 content=content,
                 refs=refs,
                 capabilities=requested_readonly_capabilities(content),
@@ -989,6 +1005,7 @@ class AgentTeamsRoomResponseService:
         *,
         case_id: str,
         requester_ref: str,
+        actor_user_id: str,
         content: str,
         refs: list[dict[str, Any]],
         capabilities: list[str],
@@ -1044,6 +1061,7 @@ class AgentTeamsRoomResponseService:
                     evidence_refs=[],
                     requested_tools=capabilities,
                     requester_ref=requester_ref,
+                    actor_user_id=actor_user_id,
                     execution_mode="readonly_consultation",
                     causation_event_id=causation_event_id,
                     on_event=stream_projector,

@@ -45,9 +45,11 @@ class AuditStore:
         on_event: Any = None,
         *,
         minio_storage: MinioBridgeStorage | None = None,
+        stream_maxlen: int = 20_000,
     ) -> None:
         self._path = Path(path)
         self._minio = minio_storage
+        self._stream_maxlen = stream_maxlen
         self._idempotency: dict[str, dict[str, Any]] = {}
         self._events: dict[str, list[dict[str, Any]]] = {}
         self._operational_counts: dict[str, int] = {}
@@ -236,7 +238,10 @@ class AuditStore:
                 if self._shared_state is not None:
                     try:
                         await self._shared_state.client.xadd(
-                            self._event_stream_key, {"event": encoded.rstrip("\n")}
+                            self._event_stream_key,
+                            {"event": encoded.rstrip("\n")},
+                            maxlen=self._stream_maxlen,
+                            approximate=True,
                         )
                     except Exception:
                         logging.getLogger(__name__).warning(
@@ -253,7 +258,10 @@ class AuditStore:
             if self._shared_state is not None:
                 try:
                     await self._shared_state.client.xadd(
-                        self._event_stream_key, {"event": encoded.rstrip("\n")}
+                        self._event_stream_key,
+                        {"event": encoded.rstrip("\n")},
+                        maxlen=self._stream_maxlen,
+                        approximate=True,
                     )
                 except Exception:
                     logging.getLogger(__name__).warning(
@@ -265,7 +273,12 @@ class AuditStore:
             self._notify(event)
             return event_id, recorded_at
         if self._shared_state is not None:
-            await self._shared_state.client.xadd(self._event_stream_key, {"event": encoded.rstrip("\n")})
+            await self._shared_state.client.xadd(
+                self._event_stream_key,
+                {"event": encoded.rstrip("\n")},
+                maxlen=self._stream_maxlen,
+                approximate=True,
+            )
             self._notify(event)
             return event_id, recorded_at
         async with self._lock:

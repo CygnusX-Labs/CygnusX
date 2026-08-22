@@ -25,6 +25,7 @@ import PendingApprovalBar, {
   type PendingApprovalItem,
   type PendingAskItem,
 } from '@/components/ai-chat/PendingApprovalBar.vue'
+import StudioPlanTimeline from '@/components/studio/StudioPlanTimeline.vue'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 import StudioFileTree from '@/components/studio/StudioFileTree.vue'
 import StudioArtifactsPanel from '@/components/studio/StudioArtifactsPanel.vue'
@@ -1120,7 +1121,6 @@ function formatSessionTime(iso: string): string {
               :session-id="sessionId"
               :target-message-id="String(route.query.message || '')"
               :task-understanding="taskUnderstanding"
-              :plan-steps="store.currentPlan"
               @copy="handleCopy"
               @feedback="(id, type) => store.submitMessageFeedback(id, type)"
               @regenerate="handleRegenerate"
@@ -1140,6 +1140,7 @@ function formatSessionTime(iso: string): string {
               :ask="pendingAskModal?.ask || null"
               @submit="handleAskModalSubmit"
             />
+            <StudioPlanTimeline v-if="store.currentPlan.length" :steps="store.currentPlan" />
             <div class="input-area">
               <KimiChatInput
                 v-model="input"

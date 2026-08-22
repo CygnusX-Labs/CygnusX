@@ -24,7 +24,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from loguru import logger
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from omichub.application.services.agentteams_audit_events import (
@@ -37,13 +37,23 @@ from omichub.application.services.agentteams_capability_registry import (
 from omichub.application.services.agentteams_service import (
     CASE_LEVEL_WORK_ITEM_ID,
     AgentTeamsService,
+    matrix_identity_for_requester,
     room_namespace_case_id,
 )
 from omichub.application.services.flow_registry import get_flow_registry
 from omichub.application.services.project_service import ProjectService
 from omichub.core.config import get_settings
 from omichub.core.exceptions import AuthorizationError, BusinessError
-from omichub.infrastructure.database.models.chat import AgentTeamsRoomModel
+from omichub.application.services.notification_service import NotificationService
+from omichub.infrastructure.database.models.chat import (
+    AgentTeamsRoomMemberModel,
+    AgentTeamsRoomModel,
+)
+from omichub.infrastructure.database.models.notification import NotificationModel
+from omichub.infrastructure.database.models.user import UserModel
+from omichub.infrastructure.database.repositories.notification_repository import (
+    SqlAlchemyNotificationRepository,
+)
 
 # 立项确认卡房间级事件类型：payload 契约见 build_room_proposal / _emit_case_proposal。
 ROOM_PROPOSAL_EVENT_TYPE = "room.proposal_confirm"
@@ -179,13 +189,25 @@ class AgentTeamsRoomService:
             await self._db.refresh(room)
         return room
 
-    async def list_rooms(self, owner_id: str) -> list[AgentTeamsRoomModel]:
+    async def list_rooms(self, user_id: str) -> list[AgentTeamsRoomModel]:
         result = await self._db.scalars(
             select(AgentTeamsRoomModel)
-            .where(AgentTeamsRoomModel.owner_id == owner_id)
+            .outerjoin(
+                AgentTeamsRoomMemberModel,
+                (AgentTeamsRoomMemberModel.room_id == AgentTeamsRoomModel.room_id)
+                & (AgentTeamsRoomMemberModel.user_id == user_id)
+                & (AgentTeamsRoomMemberModel.status == "accepted"),
+            )
+            .where(
+                (AgentTeamsRoomModel.owner_id == user_id)
+                | (AgentTeamsRoomMemberModel.user_id.is_not(None))
+            )
             .order_by(AgentTeamsRoomModel.updated_at.desc())
         )
-        return list(result)
+        rooms = list(result)
+        for room in rooms:
+            room._agentteams_role = "mine" if room.owner_id == user_id else "invited"
+        return rooms
 
     async def get_room(self, room_id: str, owner_id: str) -> AgentTeamsRoomModel:
         room = await self._db.scalar(
@@ -193,9 +215,302 @@ class AgentTeamsRoomService:
         )
         if room is None:
             raise BusinessError("协作室房间不存在")
-        if room.owner_id != owner_id:
+        member = await self._db.scalar(
+            select(AgentTeamsRoomMemberModel).where(
+                AgentTeamsRoomMemberModel.room_id == room_id,
+                AgentTeamsRoomMemberModel.user_id == owner_id,
+                AgentTeamsRoomMemberModel.status == "accepted",
+            )
+        )
+        # Keep repository mocks and alternate session adapters from treating the
+        # room row returned by a broad scalar stub as a membership row.
+        if isinstance(member, AgentTeamsRoomModel):
+            member = None
+        if room.owner_id != owner_id and member is None:
             raise AuthorizationError("无权访问该协作室房间")
+        room._agentteams_role = "mine" if room.owner_id == owner_id else "invited"
         return room
+
+    async def invite_member(self, room: AgentTeamsRoomModel, owner_id: str, user_id: str) -> dict[str, Any]:
+        if room.owner_id != owner_id:
+            raise AuthorizationError("仅房间 owner 可以邀请成员")
+        if user_id == owner_id:
+            raise BusinessError("房间 owner 无需邀请")
+        target = await self._db.get(UserModel, UUID(user_id))
+        if target is None or target.status != "active":
+            raise BusinessError("受邀用户不存在或已被禁用")
+        existing = await self._db.scalar(
+            select(AgentTeamsRoomMemberModel).where(
+                AgentTeamsRoomMemberModel.room_id == room.room_id,
+                AgentTeamsRoomMemberModel.user_id == user_id,
+            )
+        )
+        if existing is not None:
+            if existing.status == "pending":
+                return self._member_payload(existing)
+            if existing.status != "declined":
+                raise BusinessError("该用户已经是协作室成员")
+            existing.status = "pending"
+            existing.invited_by = owner_id
+            existing.created_at = datetime.now(UTC)
+            existing.responded_at = None
+            member = existing
+        else:
+            member = AgentTeamsRoomMemberModel(
+                room_id=room.room_id, user_id=user_id, invited_by=owner_id, status="pending"
+            )
+            self._db.add(member)
+        inviter = await self._db.get(UserModel, UUID(owner_id))
+        inviter_name = (
+            (inviter.nickname or inviter.username) if inviter is not None else owner_id
+        )
+        await self._db.flush()
+        notification = NotificationService(SqlAlchemyNotificationRepository(self._db))
+        await notification.create(
+            created_by=owner_id,
+            title=f"邀请你加入协作室：{room.title}",
+            content=f"{owner_id} 邀请你加入协作室“{room.title}”。",
+            level="info",
+            is_global=False,
+            target_user_id=user_id,
+            notification_type="agentteams_room_invite",
+            payload={
+                "room_id": room.room_id,
+                "invitation_id": str(member.id),
+                "inviter_id": owner_id,
+                "inviter_nickname": inviter_name,
+            },
+        )
+        return self._member_payload(member)
+
+    async def pending_invitations(self, user_id: str) -> list[dict[str, Any]]:
+        rows = await self._db.scalars(
+            select(AgentTeamsRoomMemberModel)
+            .where(AgentTeamsRoomMemberModel.user_id == user_id, AgentTeamsRoomMemberModel.status == "pending")
+            .order_by(AgentTeamsRoomMemberModel.created_at.desc())
+        )
+        return [self._member_payload(row) for row in rows]
+
+    async def list_members(
+        self, room: AgentTeamsRoomModel, viewer_id: str
+    ) -> list[dict[str, Any]]:
+        rows = list(
+            await self._db.scalars(
+                select(AgentTeamsRoomMemberModel)
+                .where(AgentTeamsRoomMemberModel.room_id == room.room_id)
+                .where(
+                    AgentTeamsRoomMemberModel.status == "accepted"
+                    if room.owner_id != viewer_id
+                    else True
+                )
+                .order_by(AgentTeamsRoomMemberModel.created_at.asc())
+            )
+        )
+        owner = {
+            "id": None,
+            "room_id": room.room_id,
+            "user_id": room.owner_id,
+            "role": "owner",
+            "status": "accepted",
+            "invited_by": room.owner_id,
+            "created_at": room.created_at.isoformat() if room.created_at else None,
+            "responded_at": None,
+        }
+        return [owner, *(self._member_payload(row) for row in rows)]
+
+    async def respond_invitation(self, invitation_id: str, user_id: str, accepted: bool) -> dict[str, Any]:
+        member = await self._db.get(AgentTeamsRoomMemberModel, UUID(invitation_id))
+        if member is None or member.user_id != user_id or member.status != "pending":
+            raise AuthorizationError("无权处理该邀请")
+        room = await self._db.scalar(select(AgentTeamsRoomModel).where(AgentTeamsRoomModel.room_id == member.room_id))
+        if room is None:
+            raise BusinessError("协作室房间不存在")
+        if not accepted:
+            member.status = "declined"
+            member.responded_at = datetime.now(UTC)
+            await self._db.flush()
+            await self._record_invitation_decision(member, "declined")
+            return self._member_payload(member)
+
+        member.status = "accepted"
+        member.responded_at = datetime.now(UTC)
+        await self._db.flush()
+        if room.matrix_room_id:
+            identity = matrix_identity_for_requester(user_id)
+            try:
+                await self._agentteams.create_element_session(identity, room.matrix_room_id)
+            except Exception as exc:  # noqa: BLE001 - platform membership remains authoritative
+                logger.warning("Matrix member join failed for room {}: {}", room.room_id, exc)
+        member_user = await self._db.get(UserModel, UUID(user_id))
+        member_name = (
+            (member_user.nickname or member_user.username) if member_user is not None else user_id
+        )
+        notification = NotificationService(SqlAlchemyNotificationRepository(self._db))
+        await notification.create(
+            created_by=user_id,
+            title=f"{member_name} 已加入协作室：{room.title}",
+            content=f"{member_name} 已接受邀请并加入协作室“{room.title}”。",
+            level="info",
+            is_global=False,
+            target_user_id=room.owner_id,
+            notification_type="agentteams_room_member_joined",
+            payload={"room_id": room.room_id, "user_id": user_id, "member_id": str(member.id)},
+        )
+        await self._record_invitation_decision(member, "accepted")
+        return self._member_payload(member)
+
+    async def _record_invitation_decision(
+        self, member: AgentTeamsRoomMemberModel, decision: str
+    ) -> None:
+        notifications = await self._db.scalars(
+            select(NotificationModel).where(
+                NotificationModel.target_user_id == UUID(member.user_id),
+                NotificationModel.type == "agentteams_room_invite",
+            )
+        )
+        for notification in notifications:
+            payload = dict(notification.payload or {})
+            if (
+                payload.get("room_id") != member.room_id
+                or payload.get("invitation_id") != str(member.id)
+                or payload.get("decision")
+            ):
+                continue
+            notification.payload = {
+                **payload,
+                "decision": decision,
+                "responded_at": member.responded_at.isoformat() if member.responded_at else None,
+            }
+        await self._db.flush()
+
+    async def revoke_invitation(self, room: AgentTeamsRoomModel, owner_id: str, user_id: str) -> dict[str, Any]:
+        if room.owner_id != owner_id:
+            raise AuthorizationError("仅房间 owner 可以撤销邀请")
+        member = await self._db.scalar(select(AgentTeamsRoomMemberModel).where(
+            AgentTeamsRoomMemberModel.room_id == room.room_id,
+            AgentTeamsRoomMemberModel.user_id == user_id,
+            AgentTeamsRoomMemberModel.status == "pending",
+        ))
+        if member is None:
+            raise BusinessError("待处理邀请不存在")
+        await self._db.delete(member)
+        return {"revoked": True, "room_id": room.room_id, "user_id": user_id}
+
+    async def leave_member(self, room: AgentTeamsRoomModel, user_id: str, *, owner_id: str | None = None) -> dict[str, Any]:
+        if owner_id is not None and room.owner_id != owner_id:
+            raise AuthorizationError("仅房间 owner 可以移除成员")
+        if owner_id is None and user_id == room.owner_id:
+            raise BusinessError("房间 owner 不能退出，请删除房间")
+        member = await self._db.scalar(select(AgentTeamsRoomMemberModel).where(
+            AgentTeamsRoomMemberModel.room_id == room.room_id,
+            AgentTeamsRoomMemberModel.user_id == user_id,
+            AgentTeamsRoomMemberModel.status == "accepted",
+        ))
+        if member is None:
+            raise BusinessError("房间成员不存在")
+        await self._db.delete(member)
+        if room.matrix_room_id:
+            try:
+                await self._agentteams.leave_matrix_room(matrix_identity_for_requester(user_id), room.matrix_room_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Matrix member leave failed for room {}: {}", room.room_id, exc)
+        return {"room_id": room.room_id, "user_id": user_id, "removed": True}
+
+    @staticmethod
+    def _member_payload(member: AgentTeamsRoomMemberModel) -> dict[str, Any]:
+        return {
+            "id": str(member.id), "room_id": member.room_id, "user_id": member.user_id,
+            "role": member.role, "invited_by": member.invited_by, "status": member.status,
+            "created_at": member.created_at.isoformat() if member.created_at else None,
+            "responded_at": member.responded_at.isoformat() if member.responded_at else None,
+        }
+
+    async def delete_room(
+        self, room: AgentTeamsRoomModel, requester_ref: str
+    ) -> dict[str, Any]:
+        """删除协作室房间：清空该会话窗口的全部内容并移除房间记录。
+
+        - 已绑定 Case：经 Bridge ``delete_case`` 先取消未结束工单，再移除 Case
+          记录与其审计事件（与旧 Case 房间删除同一口径）；
+        - 房间命名空间记录（``room-<room_id>``，承载未立项阶段的房间级会话
+          事件流）：同样经 Bridge 删除，保证「删除即清空本窗口全部内容」；
+        - 两次 Bridge 删除均容忍「不存在」（超时重试/对账场景幂等），最后删
+          主库房间行；Matrix 侧孤儿房间不阻断删除（与 Case 删除保留磁盘产物
+          的口径一致，仅清会话与审计数据）；
+        - Matrix 房间无法真正删除：让请求者的 Matrix 身份离房，使其从 Element
+          房间列表消失；离房失败（Gateway 离线等）不阻断删除。
+        """
+        if room.owner_id != requester_ref:
+            raise AuthorizationError("仅房间 owner 可以删除协作室")
+        room_id = room.room_id
+        deleted_case_id: str | None = None
+        if room.case_id:
+            try:
+                await self._agentteams.delete_case(room.case_id, requester_ref)
+                deleted_case_id = room.case_id
+            except BusinessError as exc:
+                if "不存在" not in str(exc):
+                    raise
+        try:
+            await self._agentteams.delete_case(
+                room_namespace_case_id(room_id), requester_ref
+            )
+        except BusinessError as exc:
+            if "不存在" not in str(exc):
+                raise
+        if room.matrix_room_id:
+            try:
+                await self._agentteams.leave_matrix_room(
+                    matrix_identity_for_requester(requester_ref), room.matrix_room_id
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Matrix 离房失败（房间 {}，身份 {}）：{}",
+                    room.matrix_room_id,
+                    requester_ref,
+                    exc,
+                )
+            members = await self._db.scalars(select(AgentTeamsRoomMemberModel).where(
+                AgentTeamsRoomMemberModel.room_id == room.room_id,
+                AgentTeamsRoomMemberModel.status == "accepted",
+            ))
+            for member in members:
+                try:
+                    await self._agentteams.leave_matrix_room(
+                        matrix_identity_for_requester(member.user_id), room.matrix_room_id
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Matrix member cleanup failed for room {}: {}", room.room_id, exc)
+        await self._db.delete(room)
+        await self._db.flush()
+        return {"room_id": room_id, "deleted": True, "case_id": deleted_case_id}
+
+    # ------------------------------------------------------------------
+    # Element 视图免登录会话
+    # ------------------------------------------------------------------
+    async def create_element_session(
+        self, room: AgentTeamsRoomModel, requester_ref: str
+    ) -> dict[str, Any]:
+        """为房间 owner 签发 Element 视图免登录会话凭据。
+
+        身份取请求者的平台用户动态 Matrix 身份（``omichub-user-<slug>``，建房
+        时已注册并邀请入房；``get_room`` 已强制请求者即 owner）；经 Gateway 做
+        appservice login 签发独立设备 token，as_token 不出 Gateway 进程。返回的
+        ``room_url`` 供前端拼自动登录跳板地址。
+        """
+        if not room.matrix_room_id:
+            raise BusinessError("该房间尚未开通 Matrix 协作房间")
+        identity = matrix_identity_for_requester(requester_ref)
+        # 携带房间 id：Gateway 先幂等入房再签发，避免仅 invited 未 joined 时 Element 卡黑屏。
+        session = await self._agentteams.create_element_session(identity, room.matrix_room_id)
+        session["matrix_room_id"] = room.matrix_room_id
+        element_base_url = str(session.get("element_base_url") or "").strip()
+        session["room_url"] = (
+            f"{element_base_url.rstrip('/')}/#/room/{room.matrix_room_id}"
+            if element_base_url
+            else None
+        )
+        return session
 
     # ------------------------------------------------------------------
     # 房间消息与事件流
@@ -213,8 +528,9 @@ class AgentTeamsRoomService:
         stream_case_id = room.case_id or room_namespace_case_id(room.room_id)
         return await self._agentteams.post_room_message(
             stream_case_id,
-            requester_ref,
+            room.owner_id,
             content,
+            actor_user_id=requester_ref,
             context_refs=context_refs,
             client_message_id=client_message_id,
         )
@@ -240,13 +556,13 @@ class AgentTeamsRoomService:
         ns_cursor, case_cursor = self._parse_room_cursor(cursor)
         streams: list[tuple[str, list[dict[str, Any]]]] = []
         ns_events = await self._fetch_stream_page(
-            room_namespace_case_id(room.room_id), requester_ref, cursor=ns_cursor, limit=limit
+            room_namespace_case_id(room.room_id), room.owner_id, cursor=ns_cursor, limit=limit
         )
         streams.append(("ns", ns_events))
         case_events: list[dict[str, Any]] = []
         if room.case_id:
             case_events = await self._fetch_stream_page(
-                room.case_id, requester_ref, cursor=case_cursor, limit=limit
+                room.case_id, room.owner_id, cursor=case_cursor, limit=limit
             )
             streams.append(("case", case_events))
         merged = [(stream, event) for stream, events in streams for event in events]

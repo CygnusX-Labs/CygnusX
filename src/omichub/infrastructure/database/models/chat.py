@@ -109,6 +109,64 @@ class AgentTeamsRoomModel(Base, TimestampMixin):
     __table_args__ = (Index("idx_agentteams_rooms_owner_updated", "owner_id", "updated_at"),)
 
 
+class AgentTeamsRoomMemberModel(Base, TimestampMixin):
+    """协作室邀请与已接受成员；owner 始终由 ``AgentTeamsRoomModel.owner_id`` 表示。"""
+
+    __tablename__ = "agentteams_room_members"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    room_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(20), default="member", nullable=False)
+    invited_by: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False, index=True)
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("room_id", "user_id", name="uq_agentteams_room_members_room_user"),
+        Index("idx_agentteams_room_members_user_status", "user_id", "status"),
+    )
+
+
+class AgentTeamsTurnRecordModel(Base):
+    """Case 每次 LLM 调用的可查询摘要，全文由 ``s3_uri`` 指向 MinIO。"""
+
+    __tablename__ = "agentteams_turn_records"
+
+    record_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    case_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    work_item_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    round_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    call_seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    agent_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    actor_user_id: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    requester_ref: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    provider: Mapped[str] = mapped_column(String(100), default="", nullable=False)
+    model: Mapped[str] = mapped_column(String(160), default="", nullable=False)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    s3_uri: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "case_id",
+            "work_item_id",
+            "round_number",
+            "call_seq",
+            name="uq_agentteams_turn_records_call",
+        ),
+        Index("idx_agentteams_turn_records_case_work_round", "case_id", "work_item_id", "round_number"),
+    )
+
+
 class CaseArtifactVersionModel(Base, TimestampMixin):
     """协作室产物版本行（产物血缘 F1）：每次产物登记强制写一行。
 

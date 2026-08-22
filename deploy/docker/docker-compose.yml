@@ -43,6 +43,7 @@ services:
         # 由 Makefile 部署 target 导出（git rev-parse --short HEAD / UTC 构建时间），缺省 unknown。
         OMICHUB_BUILD_SHA: ${OMICHUB_BUILD_SHA:-unknown}
         OMICHUB_BUILD_TIME: ${OMICHUB_BUILD_TIME:-unknown}
+    image: ${OMICHUB_WEB_IMAGE:-omichub-web:v0.0.2dev}
     container_name: omichub-web
     restart: unless-stopped
     logging: *default-logging
@@ -63,8 +64,8 @@ services:
       - RUN_MIGRATIONS=1                   # 容器启动时由 entrypoint 自动跑 alembic upgrade head
       - OMICHUB_LOG_DIR=/app/logs          # 挂载到宿主机 /data/omichub/logs/app，保证容器重建后不丢失
       - SKILLS_DIR=/data/omichub/skills    # SKILL.md 技能库落可写共享卷（/app/data 只读；Settings 无 env_prefix）
-      - PDF_INSPECTOR_ENABLED=true         # 启用 pdf-inspector 主路径解析 PDF
-      - PDF_INSPECTOR_ROLLOUT=100          # 100% 流量走主路径；生产环境建议先 10/50 灰度
+      - PDF_INSPECTOR_ENABLED=${PDF_INSPECTOR_ENABLED:-true}   # 启用 pdf-inspector 主路径解析 PDF；可在 .env 中覆盖
+      - PDF_INSPECTOR_ROLLOUT=${PDF_INSPECTOR_ROLLOUT:-100}    # 灰度比例；生产环境建议在 .env 中先设 10/50
     depends_on:
       db:
         condition: service_healthy
@@ -103,6 +104,7 @@ services:
     build:
       context: ../studio
       dockerfile: proxy.Dockerfile
+    image: ${OMICHUB_STUDIO_EGRESS_PROXY_IMAGE:-omichub-studio-egress-proxy:v0.0.2dev}
     container_name: omichub-studio-egress-proxy
     restart: unless-stopped
     logging: *default-logging
@@ -141,6 +143,7 @@ services:
         # 由 Makefile 部署 target 导出（git rev-parse --short HEAD / UTC 构建时间），缺省 unknown。
         OMICHUB_BUILD_SHA: ${OMICHUB_BUILD_SHA:-unknown}
         OMICHUB_BUILD_TIME: ${OMICHUB_BUILD_TIME:-unknown}
+    image: ${OMICHUB_BEAT_IMAGE:-omichub-beat:v0.0.2dev}
     container_name: omichub-beat
     restart: unless-stopped
     logging: *default-logging
@@ -186,6 +189,7 @@ services:
         # 由 Makefile 部署 target 导出（git rev-parse --short HEAD / UTC 构建时间），缺省 unknown。
         OMICHUB_BUILD_SHA: ${OMICHUB_BUILD_SHA:-unknown}
         OMICHUB_BUILD_TIME: ${OMICHUB_BUILD_TIME:-unknown}
+    image: ${OMICHUB_FLOWER_IMAGE:-omichub-flower:v0.0.2dev}
     container_name: omichub-flower
     restart: unless-stopped
     logging: *default-logging

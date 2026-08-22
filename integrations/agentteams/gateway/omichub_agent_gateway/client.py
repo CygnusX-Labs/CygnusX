@@ -32,6 +32,7 @@ class OmicHubConsultationClient:
             "requested_tools": request.requested_tools,
             "requester_ref": request.requester_ref,
             "work_item_id": request.work_item_id,
+            "trace_id": request.trace_id,
             "execution_mode": request.execution_mode,
             "read_only": request.execution_mode == "readonly_consultation",
             "allow_task_actions": False,

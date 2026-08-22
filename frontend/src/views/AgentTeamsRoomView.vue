@@ -40,9 +40,11 @@ import {
   type AgentTeamsCase,
   type AgentTeamsCaseStatus,
   type AgentTeamsContextRef,
+  type AgentTeamsElementSession,
   type AgentTeamsEvent,
   type AgentTeamsProposalFollowupMode,
   type AgentTeamsRoom,
+  type AgentTeamsRoomMember,
   type AgentTeamsRoomEventListResponse,
 } from '@/api/agentTeams'
 import KimiChatInput from '@/components/ai-chat/KimiChatInput.vue'
@@ -123,6 +125,7 @@ const revising = ref(false)
 const reviseForm = ref({ reason: '', parameters: '{}' })
 const retrying = ref(false)
 const deletingCaseId = ref('')
+const deletingRoomId = ref('')
 const draftMessage = ref('')
 const projectPickerVisible = ref(false)
 const projectPickerLoading = ref(false)
@@ -134,6 +137,13 @@ const pendingProjectCreate = ref<{ content: string; contextRefs: AgentTeamsConte
 const sendingMessage = ref(false)
 const changeDecisionPending = ref('')
 const roomViewMode = ref<'stream' | 'element'>('stream')
+const inviteVisible = ref(false)
+const inviteQuery = ref('')
+const inviteResults = ref<Array<{ id: string; nickname: string; avatar?: string | null }>>([])
+const inviteLoading = ref(false)
+const invitingUserId = ref('')
+const roomMembers = ref<AgentTeamsRoomMember[]>([])
+const memberActionUserId = ref('')
 const settingsVisible = ref(false)
 const localTypingUntil = ref<number>(0)
 let localTypingTimer: number | null = null
@@ -398,8 +408,120 @@ function closeSidebar() {
 function handleGlobalKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') closeSidebar()
 }
+
+async function searchInviteUsers() {
+  const query = inviteQuery.value.trim()
+  if (!query) { inviteResults.value = []; return }
+  inviteLoading.value = true
+  try {
+    inviteResults.value = (await apiClient.get<Array<{ id: string; nickname: string; avatar?: string | null }>>('/users/lookup', { params: { q: query } })).data
+  } catch { inviteResults.value = [] }
+  finally { inviteLoading.value = false }
+}
+
+async function inviteUser(userId: string) {
+  if (!selectedRoomId.value) return
+  invitingUserId.value = userId
+  try {
+    await agentTeamsApi.inviteRoomMember(selectedRoomId.value, userId)
+    message.success('邀请已发送')
+    await loadRoomMembers()
+  } catch (cause: any) { message.error(cause?.response?.data?.detail || '发送邀请失败') }
+  finally { invitingUserId.value = '' }
+}
+
+async function loadRoomMembers() {
+  if (!selectedRoomId.value) return
+  try {
+    roomMembers.value = await agentTeamsApi.listRoomMembers(selectedRoomId.value)
+  } catch {
+    roomMembers.value = []
+  }
+}
+
+async function manageRoomMember(member: AgentTeamsRoomMember) {
+  if (!selectedRoomId.value || member.role === 'owner') return
+  memberActionUserId.value = member.user_id
+  try {
+    if (member.status === 'pending') {
+      await agentTeamsApi.revokeRoomInvitation(selectedRoomId.value, member.user_id)
+      message.success('邀请已撤销')
+    } else if (member.status === 'declined') {
+      await agentTeamsApi.inviteRoomMember(selectedRoomId.value, member.user_id)
+      message.success('已重新发送邀请')
+    } else {
+      await agentTeamsApi.removeRoomMember(selectedRoomId.value, member.user_id)
+      message.success('成员已移除')
+    }
+    await loadRoomMembers()
+  } catch (cause: any) { message.error(cause?.response?.data?.detail || '成员操作失败') }
+  finally { memberActionUserId.value = '' }
+}
+
+async function leaveCurrentRoom() {
+  if (!selectedRoomId.value) return
+  try {
+    await agentTeamsApi.leaveRoom(selectedRoomId.value)
+    message.success('已离开协作室')
+    selectedRoomId.value = ''
+    roomDetail.value = null
+    await loadCases()
+  } catch (cause: any) { message.error(cause?.response?.data?.detail || '离开协作室失败') }
+}
+
+watch(inviteVisible, (visible) => {
+  if (visible) void loadRoomMembers()
+})
 // Matrix 房间已建（room.created 携带 Gateway 下发的 Element 深链）时才提供 Element 嵌入入口。
 const elementRoomUrl = computed(() => resolveElementRoomUrl(events.value))
+
+// Element 免登录会话：切到 Element 视图时按需向主后端申请（凭据经跳板页 fragment 注入，
+// 不出现在服务器日志）；会话按房间缓存，切换房间时重置。
+const elementSession = ref<AgentTeamsElementSession | null>(null)
+const elementSessionLoading = ref(false)
+const elementSessionError = ref('')
+
+/** 当前会话对应的房间实体 id：房间模式直接用 selectedRoomId；Case 模式找已绑定的房间行。 */
+const elementSessionRoomId = computed(
+  () =>
+    selectedRoomId.value ||
+    rooms.value.find((item) => item.case_id && item.case_id === selectedCaseId.value)?.room_id ||
+    '',
+)
+
+/** 免登录跳板地址：omichub-login.html + fragment 凭据；无房间实体（旧 Case）时为空，退回原始深链。 */
+const elementShimUrl = computed(() => {
+  const session = elementSession.value
+  const base = session?.element_base_url?.replace(/\/+$/, '')
+  if (!session || !base || !session.matrix_room_id) return ''
+  const fragment =
+    `hs=${encodeURIComponent(session.homeserver_url)}` +
+    `&user_id=${encodeURIComponent(session.user_id)}` +
+    `&token=${encodeURIComponent(session.access_token)}` +
+    `&device_id=${encodeURIComponent(session.device_id)}` +
+    `&room=${encodeURIComponent(session.matrix_room_id)}`
+  return `${base}/omichub-login.html#${fragment}`
+})
+
+async function ensureElementSession(force = false) {
+  if (elementSessionLoading.value) return
+  if (elementSession.value && !force) return
+  const roomId = elementSessionRoomId.value
+  if (!roomId) return
+  elementSessionLoading.value = true
+  elementSessionError.value = ''
+  try {
+    elementSession.value = await agentTeamsApi.createRoomElementSession(roomId)
+  } catch (cause: any) {
+    elementSessionError.value = cause?.response?.data?.detail || 'Element 会话建立失败，请重试。'
+  } finally {
+    elementSessionLoading.value = false
+  }
+}
+
+watch(roomViewMode, (mode) => {
+  if (mode === 'element') void ensureElementSession()
+})
 
 const FILTER_CHIPS: Array<{ key: 'all' | AgentTeamsCaseCategory; label: string }> = [
   { key: 'all', label: '全部' },
@@ -675,6 +797,10 @@ async function loadCases(selectFirst = false) {
   }
 }
 
+function handleRoomMembershipChanged() {
+  void loadCases()
+}
+
 async function refreshDetail(options: { resetEvents?: boolean; background?: boolean } = {}) {
   if (selectedRoomId.value) return refreshRoomDetail(options)
   if (!selectedCaseId.value) return
@@ -792,6 +918,8 @@ async function selectRoom(roomId: string) {
   detail.value = null
   events.value = []
   eventCursor.value = null
+  elementSession.value = null
+  elementSessionError.value = ''
   clearLocalTyping()
   seenEventIds.value = new Set()
   expandedStepIds.value = new Set()
@@ -811,6 +939,8 @@ async function selectCase(caseId: string) {
   detail.value = null
   events.value = []
   eventCursor.value = null
+  elementSession.value = null
+  elementSessionError.value = ''
   clearLocalTyping()
   seenEventIds.value = new Set()
   expandedStepIds.value = new Set()
@@ -1469,6 +1599,57 @@ async function deleteRoomCase(item: AgentTeamsCase) {
   }
 }
 
+// 删除房间实体（轻量会话）：后端清空该窗口全部内容——房间命名空间会话事件流、
+// 已绑定 Case（未结束先取消）与审计记录一并移除；删除当前房间时同时清理详情与事件流
+async function deleteRoom(item: AgentTeamsRoom) {
+  if (deletingRoomId.value) return
+  deletingRoomId.value = item.room_id
+  try {
+    await agentTeamsApi.deleteRoom(item.room_id)
+    message.success('协作房间已删除，该聊天窗口的全部内容已清除。')
+    if (selectedRoomId.value === item.room_id) {
+      stopEventStream()
+      selectedRoomId.value = ''
+      roomDetail.value = null
+      detail.value = null
+      events.value = []
+      eventCursor.value = null
+    }
+    rooms.value = rooms.value.filter((entry) => entry.room_id !== item.room_id)
+    // 房间已绑定 Case 时后端一并删除，左栏同步移除该 Case（未绑定时 case_id 为空，filter 无影响）
+    if (item.case_id) cases.value = cases.value.filter((entry) => entry.case_id !== item.case_id)
+  } catch (cause: any) {
+    const timedOut = cause?.code === 'ECONNABORTED' || /timeout/i.test(String(cause?.message || ''))
+    if (timedOut) {
+      await loadCases()
+      const stillExists = rooms.value.some((entry) => entry.room_id === item.room_id)
+      if (!stillExists) {
+        if (selectedRoomId.value === item.room_id) {
+          stopEventStream()
+          selectedRoomId.value = ''
+          roomDetail.value = null
+          detail.value = null
+          events.value = []
+          eventCursor.value = null
+        }
+        message.success('删除请求超时，已完成对账：协作房间已删除。')
+        return
+      }
+      message.warning('删除请求超时，已重新拉取房间列表；当前结果未知，请稍后重试。')
+      return
+    }
+    message.error(cause?.response?.data?.detail || '删除协作房间失败，请稍后重试。')
+  } finally {
+    deletingRoomId.value = ''
+  }
+}
+
+// 左栏删除入口分流：旧 Case 房间走 Case 删除，新房间实体走房间删除
+function deleteSidebarEntry(entry: RoomSidebarEntry) {
+  if (entry.caseItem) return deleteRoomCase(entry.caseItem)
+  if (entry.roomItem) return deleteRoom(entry.roomItem)
+}
+
 watch(visibleMessages, async () => {
   await nextTick()
   if (!listAtBottom.value) return
@@ -1497,6 +1678,7 @@ onMounted(() => {
   syncViewportMode()
   narrowMedia.addEventListener('change', syncViewportMode)
   document.addEventListener('keydown', handleGlobalKeydown)
+  window.addEventListener('agentteams-room-membership-changed', handleRoomMembershipChanged)
 })
 onBeforeUnmount(() => {
   clearLocalTyping()
@@ -1505,6 +1687,7 @@ onBeforeUnmount(() => {
   cancelAnimationFrame(listScrollFrame)
   narrowMedia?.removeEventListener('change', syncViewportMode)
   document.removeEventListener('keydown', handleGlobalKeydown)
+  window.removeEventListener('agentteams-room-membership-changed', handleRoomMembershipChanged)
 })
 </script>
 
@@ -1701,14 +1884,13 @@ onBeforeUnmount(() => {
                   {{ entry.kind === 'room' && !entry.roomItem?.case_id ? '会话中 · 尚未立项' : `${ROOM_CATEGORY_LABELS[entry.category]}${entry.caseItem ? ` · ${formatAgentTeamsStatus(entry.caseItem.status)}` : ''}` }}
                 </NTooltip>
                 <span class="case-entry__time" :title="formatRoomFullTime(entry.updatedAt)">{{ formatRoomRelativeTime(entry.updatedAt) }}</span>
-                <!-- 房间实体暂无删除端点，删除入口只对旧 Case 房间开放 -->
+                <!-- 删除入口对两类条目开放：旧 Case 房间走 Case 删除，新房间实体走房间删除（后端串联清掉已绑定 Case） -->
                 <NPopconfirm
-                  v-if="entry.caseItem"
                   positive-text="删除"
                   negative-text="取消"
-                  :positive-button-props="{ type: 'error', size: 'small', loading: deletingCaseId === entry.caseItem.case_id }"
+                  :positive-button-props="{ type: 'error', size: 'small', loading: entry.caseItem ? deletingCaseId === entry.caseItem.case_id : deletingRoomId === entry.roomItem?.room_id }"
                   :negative-button-props="{ size: 'small' }"
-                  @positive-click="deleteRoomCase(entry.caseItem)"
+                  @positive-click="deleteSidebarEntry(entry)"
                 >
                   <template #trigger>
                     <span
@@ -1718,7 +1900,7 @@ onBeforeUnmount(() => {
                       @click.stop
                     ><NIcon :size="13" aria-hidden="true"><TrashOutline /></NIcon></span>
                   </template>
-                  删除该协作房间？未结束的 Case 会先取消，审计记录将一并移除。
+                  删除该协作房间？本聊天窗口的所有内容将会被清除（含全部对话记录{{ entry.caseItem || entry.roomItem?.case_id ? '、已绑定 Case 及其审计记录' : '' }}），且不可恢复。
                 </NPopconfirm>
               </span>
             </button>
@@ -1802,18 +1984,35 @@ onBeforeUnmount(() => {
                 @click="roomViewMode = 'element'"
               >Element 视图</button>
             </div>
+            <NButton v-if="roomDetail?.role === 'mine' && selectedRoomId" size="small" secondary @click="inviteVisible = true">
+              邀请成员
+            </NButton>
+            <NButton v-else-if="roomDetail?.role === 'invited' && selectedRoomId" size="small" secondary @click="leaveCurrentRoom">
+              离开协作室
+            </NButton>
           </header>
 
           <div v-if="roomViewMode === 'element' && elementRoomUrl" class="room-element">
             <div class="room-element__toolbar">
-              <span class="room-element__hint">Element 直接连接 Matrix 房间，需使用 Matrix 账号登录后方可发言。</span>
-              <NButton size="small" tertiary tag="a" :href="elementRoomUrl" target="_blank" rel="noopener noreferrer">
-                在新标签页打开
-              </NButton>
+              <span class="room-element__hint">
+                {{ elementSessionError || (elementSessionRoomId ? 'Element 已使用当前账号免登录，可直接查看与发言。' : 'Element 直接连接 Matrix 房间，需使用 Matrix 账号登录后方可发言。') }}
+              </span>
+              <div class="room-element__actions">
+                <NButton v-if="elementSessionError" size="small" tertiary :loading="elementSessionLoading" @click="ensureElementSession(true)">
+                  重试
+                </NButton>
+                <NButton size="small" tertiary tag="a" :href="elementShimUrl || elementRoomUrl" target="_blank" rel="noopener noreferrer">
+                  在新标签页打开
+                </NButton>
+              </div>
             </div>
+            <div v-if="elementSessionLoading" class="room-element__status">正在建立 Element 会话…</div>
+            <div v-else-if="elementSessionError" class="room-element__status is-error">{{ elementSessionError }}</div>
             <iframe
+              v-else
+              :key="elementShimUrl || elementRoomUrl"
               class="room-element__frame"
-              :src="elementRoomUrl"
+              :src="elementShimUrl || elementRoomUrl"
               title="Element Matrix 房间"
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
               referrerpolicy="no-referrer"
@@ -2112,6 +2311,32 @@ onBeforeUnmount(() => {
           />
         </div>
       </section>
+      <NModal v-model:show="inviteVisible" preset="card" title="邀请协作室成员" style="width: min(440px, 92vw)">
+        <NInput v-model:value="inviteQuery" clearable placeholder="输入用户名或昵称" @update:value="searchInviteUsers" />
+        <NSpin :show="inviteLoading">
+          <NEmpty v-if="!inviteResults.length" description="输入关键字搜索用户" style="padding: 28px 0" />
+          <div v-else class="invite-results">
+            <div v-for="user in inviteResults" :key="user.id" class="invite-result">
+              <span>{{ user.nickname }}</span>
+              <NButton size="small" type="primary" :loading="invitingUserId === user.id" @click="inviteUser(user.id)">邀请</NButton>
+            </div>
+          </div>
+        </NSpin>
+        <div class="room-member-list">
+          <strong>当前成员</strong>
+          <div v-for="member in roomMembers" :key="member.id" class="invite-result">
+            <span>{{ member.user_id }}<small> · {{ member.role === 'owner' ? '房主' : member.status === 'pending' ? '待接受' : member.status === 'declined' ? '已拒绝' : '成员' }}</small></span>
+            <NButton
+              v-if="member.role !== 'owner'"
+              size="small"
+              tertiary
+              type="error"
+              :loading="memberActionUserId === member.user_id"
+              @click="manageRoomMember(member)"
+            >{{ member.status === 'pending' ? '撤销邀请' : member.status === 'declined' ? '重新邀请' : '移除' }}</NButton>
+          </div>
+        </div>
+      </NModal>
     </div>
 
     <NModal v-model:show="submitVisible" preset="card" title="人工确认并提交计算任务" :style="{ width: 'min(92vw, 560px)' }" :mask-closable="!submitting">
@@ -2271,7 +2496,7 @@ onBeforeUnmount(() => {
 .room-guide__pill:focus-visible { outline: 2px solid var(--arco-primary); outline-offset: 3px; }
 
 /* ===== 顶部 Case 状态条：标题（卡片标题层级）+ 胶囊步骤条 ===== */
-.case-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md) var(--space-xl); flex-wrap: wrap; padding: var(--space-lg) var(--space-2xl); border-bottom: 1px solid var(--neutral-border); }
+.case-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md) var(--space-xl); flex-wrap: wrap; padding: var(--space-sm) var(--space-2xl); border-bottom: 1px solid var(--neutral-border); }
 .case-header__info { min-width: 0; }
 .case-header__title { margin: 0; overflow: hidden; color: var(--neutral-text-1); font-size: var(--font-card-title-size); font-weight: 600; line-height: var(--font-card-title-height); text-overflow: ellipsis; white-space: nowrap; }
 .case-header__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) var(--space-sm); margin: var(--space-xs) 0 0; color: var(--neutral-text-3); font-size: var(--font-caption-size); line-height: var(--font-caption-height); }
@@ -2484,9 +2709,16 @@ onBeforeUnmount(() => {
 .room-element { display: flex; flex: 1; min-height: 0; flex-direction: column; }
 .room-element__toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); padding: var(--space-sm) var(--space-2xl); border-bottom: 1px solid var(--neutral-border); }
 .room-element__hint { color: var(--neutral-text-3); font-size: var(--font-caption-size); }
+.room-element__actions { display: flex; align-items: center; gap: var(--space-sm); flex-shrink: 0; }
+.room-element__status { flex: 1; min-height: 320px; display: flex; align-items: center; justify-content: center; color: var(--neutral-text-3); font-size: var(--font-caption-size); background: var(--neutral-card); }
+.room-element__status.is-error { color: var(--arco-danger); }
 .room-element__frame { flex: 1; min-height: 320px; width: 100%; border: none; background: var(--neutral-card); }
 
 .room-modal-actions { display: flex; justify-content: flex-end; gap: var(--space-sm); margin-top: var(--space-xl); }
+.invite-results { display: grid; gap: var(--space-sm); margin-top: var(--space-md); }
+.invite-result { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); padding: var(--space-sm); border: 1px solid var(--neutral-border); border-radius: var(--radius-sm); }
+.invite-result small { color: var(--text-color-3); }
+.room-member-list { display: grid; gap: var(--space-sm); margin-top: var(--space-lg); }
 
 @keyframes room-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .worker-step.is-running .worker-step__dot { animation: none; } }

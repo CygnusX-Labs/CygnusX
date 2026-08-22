@@ -49,6 +49,8 @@ from omichub.application.services.parallel_subagent_service import ParallelSubAg
 from omichub.application.services.pipeline_result_service import PipelineResultService
 from omichub.core.config import get_settings
 from omichub.core.exceptions import BusinessError, NotFoundError
+from omichub.core.agentteams_context import agentteams_ctx_var
+from omichub.middleware.trace_context import request_id_var, session_id_var
 from omichub.domain.file.entities import DataFile
 from omichub.domain.file.value_objects import FileType, OwnerScope
 from omichub.infrastructure.database.repositories.file_repository import FileRepositoryImpl
@@ -311,11 +313,13 @@ class AgentConsultationService:
         evidence_refs: list[str],
         requested_tools: list[str],
         requester_ref: str,
+        actor_user_id: str | None = None,
         work_item_id: str | None = None,
         execution_mode: str = "readonly_consultation",
         causation_event_id: str | None = None,
         source_refs: list[dict[str, Any]] | None = None,
         execution_summary: str = "",
+        trace_id: str | None = None,
         on_event: Callable[[dict[str, Any]], Awaitable[None] | None] | None = None,
     ) -> ConsultationEnvelope:
         started = time.monotonic()
@@ -373,26 +377,45 @@ class AgentConsultationService:
                 if isawaitable(result):
                     await result
 
-        result = await self._parallel_service.run(
-            user_id=requester_ref,
-            parent_agent_id="agent-general",
-            parent_session_id=f"agentteams:{case_id}",
-            context_summary=f"AgentTeams Case {case_id} 的受控专业会诊",
-            tasks=[
-                {
-                    "task_id": f"consultation:{case_id}:{work_item_id or agent_id}",
-                    "agent_id": agent_id,
-                    "task": instruction,
-                    "workspace_access": execution_mode == "workspace_execution",
-                }
-            ],
-            db=self._db,
-            safe_only=execution_mode == "readonly_consultation",
-            runtime_authorized=True,
-            allow_non_spawnable_target=True,
-            workdir_root=workdir_root,
-            on_event=project_event if event_handlers else None,
+        context_token = agentteams_ctx_var.set(
+            {
+                "case_id": case_id,
+                "work_item_id": work_item_id or "case",
+                "round_number": 1,
+                "agent_id": agent_id,
+                "actor_user_id": actor_user_id or requester_ref,
+                "requester_ref": requester_ref,
+                "trace_id": trace_id,
+            }
         )
+        session_token = session_id_var.set(f"agentteams:{case_id}")
+        request_token = request_id_var.set(trace_id) if trace_id else None
+        try:
+            result = await self._parallel_service.run(
+                user_id=requester_ref,
+                parent_agent_id="agent-general",
+                parent_session_id=f"agentteams:{case_id}",
+                context_summary=f"AgentTeams Case {case_id} 的受控专业会诊",
+                tasks=[
+                    {
+                        "task_id": f"consultation:{case_id}:{work_item_id or agent_id}",
+                        "agent_id": agent_id,
+                        "task": instruction,
+                        "workspace_access": execution_mode == "workspace_execution",
+                    }
+                ],
+                db=self._db,
+                safe_only=execution_mode == "readonly_consultation",
+                runtime_authorized=True,
+                allow_non_spawnable_target=True,
+                workdir_root=workdir_root,
+                on_event=project_event if event_handlers else None,
+            )
+        finally:
+            agentteams_ctx_var.reset(context_token)
+            session_id_var.reset(session_token)
+            if request_token is not None:
+                request_id_var.reset(request_token)
         if projector is not None:
             await projector.drain()
         raw_answer = self._extract_answer(result)
@@ -457,6 +480,12 @@ class AgentConsultationService:
                 execution_summary=execution_summary,
                 agent_id=agent_id,
                 capability=capability,
+                environment_snapshot={
+                    "provider": str(getattr(context.model_config, "name", "") or ""),
+                    "model": str(getattr(context.model_config, "model", "") or ""),
+                    "temperature": context.temperature,
+                    "deep_thinking": False,
+                },
             )
             envelope.artifacts = artifacts
             envelope.risks.extend(errors)
@@ -751,6 +780,7 @@ class AgentConsultationService:
         execution_summary: str = "",
         agent_id: str = "",
         capability: str = "",
+        environment_snapshot: dict[str, Any] | None = None,
     ) -> tuple[list[dict[str, Any]], list[str]]:
         try:
             user_id = UUID(str(requester_ref))
@@ -858,6 +888,7 @@ class AgentConsultationService:
                             "app_version": settings.app_version,
                             "app_git_sha": settings.app_git_sha,
                             "execution_summary": execution_summary[:2_000],
+                            **(environment_snapshot or {}),
                         },
                     )
                     artifact["version_id"] = str(version_row.id)

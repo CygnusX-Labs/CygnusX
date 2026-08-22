@@ -155,6 +155,17 @@ def make_agentteams(
             return_value={"room_id": "!room:test", "element_room_url": "http://element.test/!room:test"}
         ),
         bind_case_room=AsyncMock(return_value={"room_id": "!room:test"}),
+        delete_case=AsyncMock(return_value={"deleted": True}),
+        create_element_session=AsyncMock(
+            return_value={
+                "user_id": "@omichub-user-user-a:test",
+                "device_id": "DEVTEST",
+                "access_token": "syt_test_token",
+                "homeserver_url": "http://synapse.test",
+                "element_base_url": "http://element.test",
+            }
+        ),
+        leave_matrix_room=AsyncMock(return_value={"left": True}),
         start_chat_planning=AsyncMock(return_value=None),
         post_room_message=AsyncMock(return_value={"event_id": "evt-msg"}),
     )
@@ -215,6 +226,144 @@ async def test_get_room_enforces_ownership() -> None:
     assert (await service.get_room(room.room_id, "user-a")) is room
     with pytest.raises(AuthorizationError):
         await service.get_room(room.room_id, "user-b")
+
+
+# ---------------------------------------------------------------------------
+# Element 视图免登录会话
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_element_session_returns_credentials_and_room_url() -> None:
+    agentteams = make_agentteams()
+    service = AgentTeamsRoomService(make_db(), agentteams)
+    room = make_room()
+
+    session = await service.create_element_session(room, requester_ref="user-a")
+
+    assert session["access_token"] == "syt_test_token"
+    assert session["matrix_room_id"] == "!room:test"
+    assert session["room_url"] == "http://element.test/#/room/!room:test"
+    agentteams.create_element_session.assert_awaited_once()
+    # 携带房间 id 透传给 Gateway，由其先幂等入房再签发
+    assert agentteams.create_element_session.await_args.args == ("omichub-user-user-a", "!room:test")
+
+
+@pytest.mark.asyncio
+async def test_create_element_session_requires_matrix_room() -> None:
+    service = AgentTeamsRoomService(make_db(), make_agentteams())
+    room = make_room(matrix_room_id=None)
+
+    with pytest.raises(BusinessError):
+        await service.create_element_session(room, requester_ref="user-a")
+
+
+# ---------------------------------------------------------------------------
+# 房间删除：清空该会话窗口全部内容（命名空间事件流 + 已绑定 Case）后移除房间行
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_delete_room_without_case_removes_namespace_and_row() -> None:
+    room = make_room(case_id=None)
+    db = make_db()
+    agentteams = make_agentteams()
+    service = AgentTeamsRoomService(db, agentteams)
+
+    result = await service.delete_room(room, "user-a")
+
+    assert result == {"room_id": room.room_id, "deleted": True, "case_id": None}
+    # 未立项房间只删房间命名空间记录（room-<room_id>），不触碰任何 Case。
+    agentteams.delete_case.assert_awaited_once_with(
+        room_namespace_case_id(room.room_id), "user-a"
+    )
+    db.delete.assert_awaited_once_with(room)
+
+
+@pytest.mark.asyncio
+async def test_delete_room_with_bound_case_removes_both_streams() -> None:
+    room = make_room(case_id="bioops_bound1")
+    db = make_db()
+    agentteams = make_agentteams()
+    service = AgentTeamsRoomService(db, agentteams)
+
+    result = await service.delete_room(room, "user-a")
+
+    assert result == {"room_id": room.room_id, "deleted": True, "case_id": "bioops_bound1"}
+    # 先删已绑定 Case（Bridge 侧先取消未结束工单），再删房间命名空间记录。
+    assert [call.args for call in agentteams.delete_case.await_args_list] == [
+        ("bioops_bound1", "user-a"),
+        (room_namespace_case_id(room.room_id), "user-a"),
+    ]
+    db.delete.assert_awaited_once_with(room)
+
+
+@pytest.mark.asyncio
+async def test_delete_room_leaves_matrix_room() -> None:
+    room = make_room(matrix_room_id="!room:test")
+    agentteams = make_agentteams()
+    service = AgentTeamsRoomService(make_db(), agentteams)
+
+    await service.delete_room(room, "user-a")
+
+    # 删除协作室时让请求者的 Matrix 身份离房，Element 房间列表随之移除。
+    agentteams.leave_matrix_room.assert_awaited_once_with("omichub-user-user-a", "!room:test")
+
+
+@pytest.mark.asyncio
+async def test_delete_room_tolerates_matrix_leave_failure() -> None:
+    room = make_room(matrix_room_id="!room:test")
+    agentteams = make_agentteams()
+    agentteams.leave_matrix_room = AsyncMock(side_effect=BusinessError("Agent 协作中心尚未接通"))
+    db = make_db()
+    service = AgentTeamsRoomService(db, agentteams)
+
+    result = await service.delete_room(room, "user-a")
+
+    # Matrix 离房失败（Gateway 离线等）不阻断删除。
+    assert result["deleted"] is True
+    db.delete.assert_awaited_once_with(room)
+
+
+@pytest.mark.asyncio
+async def test_delete_room_without_matrix_room_skips_leave() -> None:
+    room = make_room(matrix_room_id=None)
+    agentteams = make_agentteams()
+    service = AgentTeamsRoomService(make_db(), agentteams)
+
+    await service.delete_room(room, "user-a")
+
+    agentteams.leave_matrix_room.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_room_tolerates_already_deleted_records() -> None:
+    room = make_room(case_id="bioops_gone")
+    db = make_db()
+    agentteams = make_agentteams()
+    # 重试/对账场景：Bridge 侧记录已不存在（404 → BusinessError("协作案例不存在")）时幂等放行。
+    agentteams.delete_case = AsyncMock(side_effect=BusinessError("协作案例不存在"))
+    service = AgentTeamsRoomService(db, agentteams)
+
+    result = await service.delete_room(room, "user-a")
+
+    assert result == {"room_id": room.room_id, "deleted": True, "case_id": None}
+    db.delete.assert_awaited_once_with(room)
+
+
+@pytest.mark.asyncio
+async def test_delete_room_propagates_bridge_failure_without_removing_row() -> None:
+    room = make_room(case_id="bioops_bound1")
+    db = make_db()
+    agentteams = make_agentteams()
+    agentteams.delete_case = AsyncMock(side_effect=BusinessError("Agent 协作中心暂时不可用"))
+    service = AgentTeamsRoomService(db, agentteams)
+
+    with pytest.raises(BusinessError, match="暂时不可用"):
+        await service.delete_room(room, "user-a")
+
+    # Bridge 删除失败时保留房间行，用户可重试。
+    db.delete.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

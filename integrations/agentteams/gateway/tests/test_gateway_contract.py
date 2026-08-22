@@ -362,6 +362,8 @@ class FakeMatrixClient:
         self.created: list[tuple[str, str, list[str]]] = []
         self.sent: list[dict[str, object]] = []
         self.ensured: list[list[str]] = []
+        self.joined: list[tuple[str, str]] = []
+        self.left: list[tuple[str, str]] = []
 
     async def close(self) -> None:
         pass
@@ -386,6 +388,15 @@ class FakeMatrixClient:
             }
         )
         return "$event-1"
+
+    async def create_element_session(self, identity: str):
+        return {"user_id": f"@{identity}:test", "access_token": "syt_fake_token", "device_id": "DEVFAKE"}
+
+    async def join_room(self, identity: str, room_id: str) -> None:
+        self.joined.append((identity, room_id))
+
+    async def leave_room(self, identity: str, room_id: str) -> None:
+        self.left.append((identity, room_id))
 
     async def messages(self, room_id: str, since: str | None, limit: int):
         from omichub_agent_gateway.models import RoomMessage
@@ -547,3 +558,105 @@ async def _test_ensure_users_endpoint(tmp_path: Path) -> None:
         "bioops-manager",
         ["bioops-manager", "omichub-user-u42"],
     )
+
+
+def test_element_session_endpoint_issues_credentials_and_audits(tmp_path: Path) -> None:
+    asyncio.run(_test_element_session_endpoint(tmp_path))
+
+
+async def _test_element_session_endpoint(tmp_path: Path) -> None:
+    settings = GatewaySettings(
+        omichub_base_url="http://omic.test",
+        audit_log_path=str(tmp_path / "gateway-audit.jsonl"),
+        matrix_homeserver_url="http://matrix.internal",
+        matrix_public_base_url="https://matrix.example.com",
+        matrix_service_token="matrix-secret",
+        matrix_server_name="test",
+        matrix_identities="bioops-manager=@manager:test,omichub-user=@user:test",
+        element_base_url="http://element.test",
+    )
+    upstream = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={})),
+        base_url="http://omic.test",
+    )
+    matrix = FakeMatrixClient()
+    app = create_app(settings, OmicHubConsultationClient(settings, upstream), matrix)  # type: ignore[arg-type]
+    api = httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://gateway.test")
+    try:
+        issued = await api.post(
+            "/matrix/element-session",
+            headers=headers(),
+            json={"identity": "omichub-user-u42", "room_id": "!room:test"},
+        )
+        rejected = await api.post(
+            "/matrix/element-session",
+            headers=headers(),
+            json={"identity": "agent-rnaseq"},
+        )
+    finally:
+        await api.aclose()
+        await upstream.aclose()
+
+    assert issued.status_code == 200
+    # 携带 room_id 时先幂等入房再签发（仅 invited 未 joined 的房间在 Element 深链下会卡黑屏）
+    assert matrix.joined == [("omichub-user-u42", "!room:test")]
+    body = issued.json()
+    assert body["user_id"] == "@omichub-user-u42:test"
+    assert body["access_token"] == "syt_fake_token"
+    assert body["device_id"] == "DEVFAKE"
+    # 浏览器侧地址走公网配置，不回退内网 homeserver 地址
+    assert body["homeserver_url"] == "https://matrix.example.com"
+    assert body["element_base_url"] == "http://element.test"
+    # 未配置的静态身份、非 omichub-user- 前缀身份一律拒绝
+    assert rejected.status_code == 503
+    # 签发动作落审计，但 access_token 不进审计日志
+    audit_text = read_audit_log(settings.audit_log_path)
+    event = json.loads(audit_text.splitlines()[-1])
+    assert event["event_type"] == "matrix.element_session.created"
+    assert event["payload"]["identity"] == "omichub-user-u42"
+    assert "syt_fake_token" not in audit_text
+
+
+def test_room_leave_endpoint_leaves_and_audits(tmp_path: Path) -> None:
+    asyncio.run(_test_room_leave_endpoint(tmp_path))
+
+
+async def _test_room_leave_endpoint(tmp_path: Path) -> None:
+    settings = GatewaySettings(
+        omichub_base_url="http://omic.test",
+        audit_log_path=str(tmp_path / "gateway-audit.jsonl"),
+        matrix_homeserver_url="http://matrix.internal",
+        matrix_service_token="matrix-secret",
+        matrix_server_name="test",
+        matrix_identities="bioops-manager=@manager:test,omichub-user=@user:test",
+    )
+    upstream = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={})),
+        base_url="http://omic.test",
+    )
+    matrix = FakeMatrixClient()
+    app = create_app(settings, OmicHubConsultationClient(settings, upstream), matrix)  # type: ignore[arg-type]
+    api = httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://gateway.test")
+    try:
+        left = await api.post(
+            "/matrix/rooms/leave",
+            headers=headers(),
+            json={"identity": "omichub-user-u42", "room_id": "!room:test"},
+        )
+        rejected = await api.post(
+            "/matrix/rooms/leave",
+            headers=headers(),
+            json={"identity": "agent-rnaseq", "room_id": "!room:test"},
+        )
+    finally:
+        await api.aclose()
+        await upstream.aclose()
+
+    assert left.status_code == 200
+    assert left.json() == {"left": True}
+    assert matrix.left == [("omichub-user-u42", "!room:test")]
+    # 未配置的静态身份、非 omichub-user- 前缀身份一律拒绝
+    assert rejected.status_code == 503
+    event = json.loads(read_audit_log(settings.audit_log_path).splitlines()[-1])
+    assert event["event_type"] == "matrix.room.left"
+    assert event["payload"] == {"room_id": "!room:test", "identity": "omichub-user-u42"}

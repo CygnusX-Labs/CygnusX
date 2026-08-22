@@ -101,9 +101,14 @@ def respond_to_room_namespace_message(
     requester_ref: str,
     content: str,
     dispatch: dict[str, object] | None = None,
+    actor_user_id: str | None = None,
 ) -> dict[str, str]:
     """协作室房间（含未立项房间）发言的 Manager 响应任务。"""
-    result = asyncio.run(_respond_to_room_namespace_message(room_id, requester_ref, content, dispatch))
+    result = asyncio.run(
+        _respond_to_room_namespace_message(
+            room_id, requester_ref, content, dispatch, actor_user_id=actor_user_id
+        )
+    )
     if result.get("status") == "skipped_locked":
         raise self.retry(countdown=2)
     return result
@@ -114,6 +119,7 @@ async def _respond_to_room_namespace_message(
     requester_ref: str,
     content: str,
     dispatch: dict[str, object] | None = None,
+    actor_user_id: str | None = None,
 ) -> dict[str, str]:
     try:
         settings = get_settings()
@@ -131,6 +137,7 @@ async def _respond_to_room_namespace_message(
                 room,
                 requester_ref,
                 content,
+                actor_user_id=actor_user_id or requester_ref,
                 target_agent_id=str(dispatch.get("target_agent_id") or "") or None
                 if isinstance(dispatch, dict) and dispatch.get("dispatch_mode") == "direct"
                 else None,

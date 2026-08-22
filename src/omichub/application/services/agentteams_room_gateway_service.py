@@ -73,6 +73,23 @@ class AgentTeamsRoomGatewayService:
             "matrix": payload.get("matrix", {}),
         }
 
+    async def create_element_session(self, identity: str, room_id: str | None = None) -> dict[str, Any]:
+        """为 AppService 持有的身份申请 Element Web 免登录会话凭据。
+
+        携带 ``room_id`` 时 Gateway 会先幂等入房，避免仅 invited 未 joined
+        的房间在 Element 深链下卡黑屏。
+        """
+        payload: dict[str, Any] = {"identity": identity}
+        if room_id:
+            payload["room_id"] = room_id
+        return await self._request("POST", "/matrix/element-session", json=payload)
+
+    async def leave_matrix_room(self, identity: str, room_id: str) -> dict[str, Any]:
+        """让 AppService 持有的身份离开指定 Matrix 房间（删除协作室时调用）。"""
+        return await self._request(
+            "POST", "/matrix/rooms/leave", json={"identity": identity, "room_id": room_id}
+        )
+
     async def post_message(
         self,
         room_id: str,

@@ -92,6 +92,46 @@ class MinioStore:
             raise BusinessError("对象存储不可用") from exc
         return f"s3://{self.bucket}/{object_name}"
 
+    def put_turn_record(self, case_id: str, key: str, local_path: str | Path) -> str:
+        """Store an AgentTeams turn under the explicit evidence namespace."""
+        self._validate_id(case_id, "case_id")
+        relative = PurePosixPath(str(key).replace("\\", "/"))
+        if relative.is_absolute() or ".." in relative.parts or any(not part for part in relative.parts):
+            raise ValueError("invalid turn record key")
+        object_name = f"cases/{case_id}/{relative.as_posix()}"
+        try:
+            self._require_client().fput_object(
+                self.bucket, object_name, str(Path(local_path)), content_type="application/json"
+            )
+        except BusinessError:
+            raise
+        except Exception as exc:
+            raise BusinessError("对象存储不可用") from exc
+        return f"s3://{self.bucket}/{object_name}"
+
+    def read_turn_record(self, case_id: str, key: str, *, max_bytes: int) -> bytes:
+        self._validate_id(case_id, "case_id")
+        relative = PurePosixPath(str(key).replace("\\", "/"))
+        if relative.is_absolute() or ".." in relative.parts or any(not part for part in relative.parts):
+            raise ValueError("invalid turn record key")
+        response = None
+        try:
+            response = self._require_client().get_object(
+                self.bucket, f"cases/{case_id}/{relative.as_posix()}"
+            )
+            payload = response.read(max_bytes + 1)
+        except BusinessError:
+            raise
+        except Exception as exc:
+            raise BusinessError("对象存储不可用") from exc
+        finally:
+            if response is not None:
+                response.close()
+                response.release_conn()
+        if len(payload) > max_bytes:
+            raise BusinessError("会话回放超过预览大小上限")
+        return payload
+
     def presigned_get(self, case_id: str, key: str, expires: int | None = None) -> str:
         object_name = self._object_name(case_id, key)
         seconds = expires or self.settings.minio_presign_expire_seconds

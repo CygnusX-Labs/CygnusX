@@ -310,6 +310,46 @@ class GatewayService:
         )
         return allowed
 
+    async def leave_room(self, identity: str, room_id: str, actor: str) -> None:
+        """删除协作室时让请求者的 Matrix 身份离房，Element 房间列表随之移除。"""
+        matrix = self._require_matrix()
+        if self._settings.matrix_user_for_identity(identity) is None:
+            raise ValueError(f"Matrix identity is not configured: {identity}")
+        await matrix.leave_room(identity, room_id)
+        await self._audit.record(
+            case_id=room_id,
+            actor=actor,
+            event_type="matrix.room.left",
+            payload={"room_id": room_id, "identity": identity},
+        )
+
+    async def create_element_session(
+        self, identity: str, actor: str, room_id: str | None = None
+    ) -> dict[str, str]:
+        """为已配置的 OmicHub 身份签发 Element 免登录会话（签发动作落审计）。
+
+        携带 ``room_id`` 时先幂等入房：Element 视图直接深链进房，仅被邀请未
+        加入时 Element 会循环 peek 卡在黑屏。
+        """
+        matrix = self._require_matrix()
+        if self._settings.matrix_user_for_identity(identity) is None:
+            raise ValueError(f"Matrix identity is not configured: {identity}")
+        if room_id:
+            try:
+                await matrix.join_room(identity, room_id)
+            except Exception as exc:
+                # 入房失败（未受邀/房间不存在）直接报错，让前端提示重试而不是黑屏死等。
+                raise RuntimeError(f"无法加入 Matrix 房间：{room_id}") from exc
+        session = await matrix.create_element_session(identity)
+        await self._audit.record(
+            case_id="matrix-users",
+            actor=actor,
+            event_type="matrix.element_session.created",
+            # 不记录 access_token，仅留身份与设备 id 供取证。
+            payload={"identity": identity, "device_id": session.get("device_id"), "room_id": room_id},
+        )
+        return session
+
     def _element_room_url(self, room_id: str) -> str | None:
         if not self._settings.element_base_url:
             return None

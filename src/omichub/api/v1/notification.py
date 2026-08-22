@@ -5,7 +5,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from omichub.api.deps import CurrentUserId, DbSession
 from omichub.application.services.notification_service import NotificationService
@@ -24,6 +24,8 @@ def _notification_to_dict(n) -> dict:
         "title": n.title,
         "content": n.content,
         "level": n.level,
+        "type": n.type,
+        "payload": n.payload or {},
         "created_by": str(n.created_by),
         "is_global": n.is_global,
         "target_user_id": str(n.target_user_id) if n.target_user_id else None,
@@ -50,6 +52,8 @@ class CreateNotificationRequest(BaseModel):
     is_global: bool = True
     target_user_id: str | None = None
     expires_at: datetime | None = None
+    notification_type: str = "general"
+    payload: dict = Field(default_factory=dict)
 
 
 class UpdateNotificationRequest(BaseModel):
@@ -94,6 +98,8 @@ async def create_notification(
         is_global=req.is_global,
         target_user_id=req.target_user_id,
         expires_at=req.expires_at,
+        notification_type=req.notification_type,
+        payload=req.payload,
     )
     return _notification_to_dict(notification)
 

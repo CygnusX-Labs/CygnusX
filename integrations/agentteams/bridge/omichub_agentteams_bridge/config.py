@@ -75,6 +75,7 @@ class BridgeSettings(BaseSettings):
     room_archive_days: int = Field(default=30, ge=0, le=3650)
     state_store_url: str = ""
     state_store_key_prefix: str = "omichub:agentteams"
+    audit_stream_maxlen: int = Field(default=20_000, ge=1_000, le=10_000_000)
     audit_log_path: str = "/tmp/omichub-agentteams-bridge-audit.jsonl"
     case_store_path: str = "/tmp/omichub-agentteams-bridge-cases.json"
     # MinIO 持久层（事实源）；未配置时非生产环境回退 Redis/本地文件模式并打 warning。

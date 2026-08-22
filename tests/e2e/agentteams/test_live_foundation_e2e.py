@@ -1,4 +1,4 @@
-"""Live（真实服务）AgentTeams 地基 e2e 验收套件：E2E-7 / E2E-2 / E2E-9。
+"""Live（真实服务）AgentTeams 地基 e2e 验收套件：E2E-7 / E2E-2 / E2E-9 / E2E-10。
 
 与进程内默认用例（test_hi_no_case_e2e.py 等）互补：本文件直接打真实 HTTP 栈
 （主后端 + Bridge + MinIO + Redis + PG），禁止 mock Bridge/MinIO。
@@ -182,3 +182,44 @@ def test_live_e2e9_cursor_pagination_no_dup_no_missing() -> None:
                 assert len(seen) == len(bridge_events), (
                     f"房间视图 {len(seen)} 条 vs Bridge 事实源 {len(bridge_events)} 条，存在丢失"
                 )
+
+
+def test_live_e2e10_flow_report_export_and_controlled_download() -> None:
+    """E2E-10：真实 Case 可生成离线报告，并经 JWT 受控通道下载可打开 HTML。"""
+    with _client() as client:
+        created = client.post(
+            f"{API}/cases",
+            json={"intent": f"live flow report export {uuid.uuid4().hex[:8]}"},
+        )
+        assert created.status_code == 201, (
+            f"create case failed: {created.status_code} {created.text[:300]}"
+        )
+        case_id = str(created.json()["case_id"])
+        try:
+            exported = client.post(f"{API}/cases/{case_id}/reports/flow")
+            assert exported.status_code == 201, (
+                f"flow report failed: {exported.status_code} {exported.text[:300]}"
+            )
+            report = exported.json()
+            assert report["artifact_path"].startswith("reports/flow-")
+            assert report["artifact_path"].endswith(".html")
+            assert len(report["checksum_sha256"]) == 64
+            assert report["size_bytes"] > 0
+
+            downloaded = client.get(
+                f"{API}/cases/{case_id}/artifacts/{report['artifact_path']}",
+                params={"download": "true"},
+            )
+            downloaded.raise_for_status()
+            assert "text/html" in downloaded.headers.get("content-type", "")
+            html = downloaded.text
+            assert "协作流程报告" in html
+            assert case_id in html
+            assert "环境快照" in html
+            assert "content_checksum_sha256" in html
+        finally:
+            cancelled = client.post(
+                f"{API}/cases/{case_id}/cancel",
+                json={"reason": "live flow report acceptance completed"},
+            )
+            assert cancelled.status_code in {200, 409}, cancelled.text[:300]

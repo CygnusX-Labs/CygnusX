@@ -18,7 +18,7 @@ x-logging: &default-logging
 
 services:
   rocketmq-worker:
-    image: ${OMICHUB_WORKER_IMAGE:-omichub-worker:dev}
+    image: ${OMICHUB_WORKER_IMAGE:-omichub-worker:v0.0.2dev}
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.worker
@@ -73,8 +73,8 @@ services:
 
   worker:
     # Compose 同时负责构建与运行。可在 .env 覆盖为不可变发布标签，
-    # 例如 OMICHUB_WORKER_IMAGE=registry.example.com/omichub-worker:2026.07.12-<sha>。
-    image: ${OMICHUB_WORKER_IMAGE:-omichub-worker:dev}
+    # 例如 OMICHUB_WORKER_IMAGE=registry.example.com/omichub-worker:v0.0.2dev。
+    image: ${OMICHUB_WORKER_IMAGE:-omichub-worker:v0.0.2dev}
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.worker
@@ -144,7 +144,7 @@ services:
       retries: 3
 
   phylo-worker:
-    image: ${OMICHUB_PHYLO_WORKER_IMAGE:-omichub-phylo-worker:dev}
+    image: ${OMICHUB_PHYLO_WORKER_IMAGE:-omichub-phylo-worker:v0.0.2dev}
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.phylo
