@@ -3,7 +3,8 @@
 import pytest
 
 import omichub.application.services.chat_service as chat_module
-from omichub.application.services.chat_service import (
+import omichub.application.services.chat.overdrive_control as overdrive_module
+from omichub.application.services.chat.overdrive_control import (
     _analysis_intake_questions,
     _default_overdrive_assignments,
     _extract_overdrive_intake_slots,
@@ -248,7 +249,7 @@ def test_default_assignment_uses_code_fallback_for_non_planning_request() -> Non
 
 
 def test_empty_domain_registry_safely_degrades(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(chat_module, "get_domain_registry", lambda: DomainRegistry(tmp_path))
+    monkeypatch.setattr(overdrive_module, "get_domain_registry", lambda: DomainRegistry(tmp_path))
 
     assert _is_overdrive_planning_request("设计一个 RNA-seq 分析方案") is False
     assert _analysis_intake_questions("设计一个 RNA-seq 分析方案") == []
@@ -292,7 +293,7 @@ def test_general_domain_anchors_fire_in_order_for_literature_report_request() ->
 
 
 def test_general_domain_anchors_pass_plan_constraint_validation() -> None:
-    registry = chat_module.get_domain_registry()
+    registry = overdrive_module.get_domain_registry()
     slots = _extract_overdrive_intake_slots(GENERAL_ACCEPTANCE_REQUEST)
     rules = [
         rule
@@ -328,7 +329,7 @@ def test_phylo_homolog_search_wording_does_not_trigger_general_anchors() -> None
         "已上传 query.faa、20个基因组 FASTA/GFF，将用 DIAMOND 检索同源序列。"
     )
     slots = _extract_overdrive_intake_slots(request)
-    rules = chat_module.get_domain_registry().assignment_rules(request, slots)
+    rules = overdrive_module.get_domain_registry().assignment_rules(request, slots)
 
     assert not [rule for rule in rules if rule.task_id.startswith("general-")]
     assert [rule.task_id for rule in rules] == ["tnpd-homolog-search", "tnpd-phylogeny"]

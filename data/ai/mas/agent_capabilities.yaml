@@ -126,6 +126,14 @@ agents:
     - reproducible-code
     - artifact-validate
 
+  # --- 代码库只读侦察 ---
+  agent-explorer:
+    - workspace-inspect
+    - codebase-analysis
+    - file-investigation
+    - dependency-map
+    - artifact-validate
+
   # --- 可视化交付 ---
   agent-viz:
     - deg-volcano

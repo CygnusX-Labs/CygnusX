@@ -163,6 +163,29 @@ def test_validate_container_network_rejects_none_mode_on_bridge(tmp_path: Path):
 
 
 @pytest.mark.unit
+def test_validate_container_security_requires_hardening(tmp_path: Path):
+    manager = _make_manager(tmp_path)
+    config = manager._config()
+    container = MagicMock()
+    container.attrs = {
+        "HostConfig": {
+            "NanoCpus": 2_000_000_000,
+            "PidsLimit": 512,
+            "ReadonlyRootfs": True,
+            "CapDrop": ["ALL"],
+            "SecurityOpt": ["no-new-privileges:true", "seccomp=default"],
+        },
+        "Config": {"User": "10001:10001"},
+    }
+
+    manager._validate_container_security(container, config)
+
+    container.attrs["HostConfig"]["NanoCpus"] = 0
+    with pytest.raises(StudioSandboxUnavailableError, match="硬 CPU"):
+        manager._validate_container_security(container, config)
+
+
+@pytest.mark.unit
 def test_session_network_name_is_stable_and_hides_session_id(tmp_path: Path):
     manager = _make_manager(tmp_path)
     config = manager._config()

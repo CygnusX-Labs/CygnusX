@@ -101,7 +101,7 @@ async def _replan_run(run_id: str) -> dict[str, object]:
     The lease keeps a simultaneous normal chat turn from racing the planner and all
     resulting plan-confirmation events remain replayable from the run ledger.
     """
-    from omichub.application.services.agent_service import AgentService
+    from omichub.application.services.agent_context_builder import AgentContextBuilder
     from omichub.application.services.chat_service import ChatService
     from omichub.application.services.overdrive_run_service import OverdriveRunService
     from omichub.infrastructure.database.models.overdrive import OverdriveRunModel
@@ -146,8 +146,10 @@ async def _replan_run(run_id: str) -> dict[str, object]:
             run = await OverdriveRunService(db).get_for_user(run_id, user_id)
             if run is None:
                 return {"status": "missing", "run_id": run_id}
-            manager_ctx = await AgentService(db).assemble_context(
-                str(run.lead_planner_agent_id or "agent-general"), user_id=user_id
+            manager_ctx = await AgentContextBuilder(db).assemble(
+                str(run.lead_planner_agent_id or "agent-general"),
+                user_id,
+                mode="overdrive",
             )
             if manager_ctx is None:
                 raise RuntimeError("找不到规划 Agent 上下文")
@@ -548,7 +550,7 @@ def run_manager_review_job(run_id: str, task_id: str, attempt: int) -> dict[str,
 
 
 async def _run_manager_review_job(run_id: str, task_id: str, attempt: int) -> dict[str, object]:
-    from omichub.application.services.agent_service import AgentService
+    from omichub.application.services.agent_context_builder import AgentContextBuilder
     from omichub.application.services.overdrive_run_service import (
         OverdriveRunService,
         overdrive_run_root,
@@ -585,7 +587,11 @@ async def _run_manager_review_job(run_id: str, task_id: str, attempt: int) -> di
             return {"status": "duplicate", "run_id": run_id, "task_id": task_id}
         result = deepcopy(result_row.result or {})
         manager_agent_id = str(run.lead_planner_agent_id or "agent-general")
-        manager_ctx = await AgentService(db).assemble_context(manager_agent_id, user_id=run.user_id)
+        manager_ctx = await AgentContextBuilder(db).assemble(
+            manager_agent_id,
+            str(run.user_id),
+            mode="overdrive",
+        )
         task_snapshot = deepcopy(task)
         result_snapshot = deepcopy(result)
 
@@ -723,7 +729,7 @@ def run_delivery_summary_job(run_id: str) -> dict[str, object]:
 
 
 async def _run_delivery_summary_job(run_id: str) -> dict[str, object]:
-    from omichub.application.services.agent_service import AgentService
+    from omichub.application.services.agent_context_builder import AgentContextBuilder
     from omichub.application.services.overdrive_execution_service import DeliveryAssembler
     from omichub.application.services.overdrive_run_service import (
         OverdriveRunService,
@@ -761,7 +767,11 @@ async def _run_delivery_summary_job(run_id: str) -> dict[str, object]:
             .all()
         )
         manager_agent_id = str(run.lead_planner_agent_id or "agent-general")
-        manager_ctx = await AgentService(db).assemble_context(manager_agent_id, user_id=run.user_id)
+        manager_ctx = await AgentContextBuilder(db).assemble(
+            manager_agent_id,
+            str(run.user_id),
+            mode="overdrive",
+        )
         plan_snapshot = deepcopy(run.plan or {})
         tasks_snapshot = deepcopy(run.tasks)
         artifact_snapshot = deepcopy(run.artifact_index)

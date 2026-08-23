@@ -100,6 +100,7 @@ from omichub.infrastructure.studio.manager import (
     StudioSandboxUnavailableError,
     studio_sandbox_manager,
 )
+from omichub.infrastructure.studio.audit import emit as emit_audit
 from omichub.infrastructure.studio.paths import PathEscapeError, resolve_workspace_read_path
 from omichub.infrastructure.studio.workspace import (
     DEFAULT_READ_LIMIT,
@@ -148,11 +149,31 @@ def _sandbox_image(session: ChatSessionModel) -> str | None:
     return (session.sandbox_meta or {}).get("image")
 
 
+def _normalize_sandbox_capabilities(values: list[str] | None) -> list[str]:
+    """规范运行时沙盒能力，始终保留基础代码执行能力。"""
+    normalized = list(dict.fromkeys(str(value).strip().lower() for value in values or ["code"]))
+    if "code" not in normalized:
+        normalized.insert(0, "code")
+    return normalized
+
+
+def _session_sandbox_capabilities(session: ChatSessionModel) -> list[str]:
+    """读取已持久化的运行时能力；历史 Studio 会话默认仅代码执行。"""
+    return _normalize_sandbox_capabilities(
+        (session.sandbox_meta or {}).get("sandbox_capabilities")
+    )
+
+
 _prewarm_tasks: set[asyncio.Task[None]] = set()
 
 
 def _schedule_sandbox_prewarm(
-    session_id: str, user_id: str, image: str | None
+    session_id: str,
+    user_id: str,
+    image: str | None,
+    *,
+    agent_id: str | None = None,
+    capabilities: list[str] | None = None,
 ) -> None:
     """创建会话后后台启动其专属容器，不阻塞 API 响应。
 
@@ -165,7 +186,11 @@ def _schedule_sandbox_prewarm(
     async def _prewarm() -> None:
         try:
             await studio_sandbox_manager.ensure_running(
-                session_id, image=image, user_id=user_id
+                session_id,
+                image=image,
+                user_id=user_id,
+                agent_id=agent_id,
+                capabilities_requested=capabilities,
             )
             logger.info(f"[Studio] 会话 {session_id[:8]} 专属沙盒预热完成")
         except Exception as exc:  # noqa: BLE001 - 预热失败不影响会话创建与后续懒启动
@@ -345,7 +370,29 @@ async def create_studio_session(
     if model_id is None:
         raise BusinessError("Agent 未绑定模型，请显式指定 model_id")
 
+    requested_capabilities = _normalize_sandbox_capabilities(req.sandbox_capabilities)
+    allowed_capabilities = _normalize_sandbox_capabilities(
+        studio_cfg.get("sandbox_capabilities") or ["code"]
+    )
+    if not set(requested_capabilities).issubset(set(allowed_capabilities)):
+        emit_audit(
+            "sandbox.capability_denied",
+            session_id=None,
+            user_id=current_user_id,
+            agent_id=req.agent_id,
+            capabilities_requested=requested_capabilities,
+            policy_result={
+                "allowed": allowed_capabilities,
+                "reason": "requested capability is not authorized",
+            },
+        )
+        raise BusinessError("请求的沙盒能力未获该 Agent 授权")
+
     image = studio_cfg.get("image")
+    if set(requested_capabilities) != {"code"}:
+        image = get_studio_config().image_for_capabilities(requested_capabilities)
+        if not image:
+            raise BusinessError("当前部署未配置覆盖所请求能力的 Studio 沙盒镜像")
     title = req.title or f"与 {agent.name} 的工作台"
     project_id = resolve_agent_project_scope(
         agent_project_id=agent.project_id,
@@ -357,11 +404,20 @@ async def create_studio_session(
         title,
         agent_id=req.agent_id,
         mode="studio",
-        sandbox_meta={"image": image} if image else None,
+        sandbox_meta={
+            "image": image,
+            "sandbox_capabilities": requested_capabilities,
+        },
         project_id=project_id,
     )
     await asyncio.to_thread(ensure_checkpoint_repository, dto.session_id)
-    _schedule_sandbox_prewarm(dto.session_id, current_user_id, image)
+    _schedule_sandbox_prewarm(
+        dto.session_id,
+        current_user_id,
+        image,
+        agent_id=req.agent_id,
+        capabilities=requested_capabilities,
+    )
     return dto
 
 
@@ -474,6 +530,7 @@ async def get_studio_session(
         files=listing.get("entries") or [],
         plan=(session.sandbox_meta or {}).get("plan"),
         capabilities=(session.sandbox_meta or {}).get("capabilities"),
+        sandbox_capabilities=_session_sandbox_capabilities(session),
         permissions=(session.sandbox_meta or {}).get("permissions") or {"mode": "supervised"},
         sandbox_metrics=sandbox_metrics,
         ui={

@@ -6,6 +6,7 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
+from omichub.application.services.execution_events import validate_event_sequence
 from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
 from omichub.infrastructure.execution.langgraph_nodes import NodeDeps, llm_call_node, tool_exec_node
 from omichub.infrastructure.execution.langgraph_runtime import LangGraphRuntimeService
@@ -202,6 +203,88 @@ async def test_execution_event_sequence_proves_tool_reinjection() -> None:
     assert execution[4].metadata["round"] == 1
     assert execution[5].metadata["round"] == 2
     assert all(chunk.metadata["execution_path"] == "chat_langgraph" for chunk in execution)
+
+
+async def test_execution_event_sequence_accepts_multiple_tool_batch() -> None:
+    async def _executor(
+        tool_name: str, args: dict[str, Any], tool_call_id: str
+    ) -> dict[str, Any]:
+        return {"success": True, "result": {"tool": tool_name, "id": tool_call_id, **args}}
+
+    emitted: list[ChatChunk] = []
+
+    async def _emit(chunk: ChatChunk) -> None:
+        emitted.append(chunk)
+
+    async def _stream(**_kwargs: Any) -> AsyncIterator[ChatChunk]:
+        yield ChatChunk(
+            type="tool_calls",
+            metadata={
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "get_gene",
+                            "arguments": json.dumps({"gene": "TP53"}),
+                        },
+                    },
+                    {
+                        "id": "call_2",
+                        "type": "function",
+                        "function": {
+                            "name": "get_pathway",
+                            "arguments": json.dumps({"pathway": "p53"}),
+                        },
+                    },
+                ]
+            },
+        )
+        yield ChatChunk(type="done")
+
+    deps = NodeDeps(
+        model_config=None,
+        chat_stream=_stream,
+        tool_executor=_executor,
+        emit=_emit,
+        emit_execution_events=True,
+        session_id="session-1",
+        run_id="run-1",
+        agent_id="agent-general",
+    )
+    state = {
+        "messages": [{"role": "user", "content": "查询 TP53 和 p53 通路"}],
+        "rounds": 0,
+        "usage": None,
+    }
+    llm_delta = await llm_call_node(state, deps)
+    state["messages"].extend(llm_delta["messages"])
+    await tool_exec_node(state, deps)
+
+    validate_event_sequence([*emitted, "agent_final_result", "done"])
+    assert [chunk.type for chunk in emitted].count("agent_context_reinjected") == 2
+    assert emitted[-1].type == "agent_turn_continued"
+
+
+async def test_runtime_events_validate_across_tool_reinjection_round() -> None:
+    async def _executor(
+        tool_name: str, args: dict[str, Any], tool_call_id: str
+    ) -> dict[str, Any]:
+        return {"success": True, "result": {"tool": tool_name, **args}}
+
+    runtime, _ = _make_runtime(
+        [
+            [_tool_calls_chunk("get_gene", {"gene": "TP53"}), ChatChunk(type="done")],
+            [ChatChunk(type="text", content="TP53 是抑癌基因"), ChatChunk(type="done")],
+        ],
+        tool_executor=_executor,
+        emit_execution_events=True,
+    )
+
+    chunks = await _collect(runtime)
+
+    validate_event_sequence([*chunks, "agent_final_result", "done"])
+    assert [chunk.type for chunk in chunks].count("agent_turn_started") == 1
 
 
 async def test_handoff_tool_ends_current_graph_without_another_llm_round() -> None:

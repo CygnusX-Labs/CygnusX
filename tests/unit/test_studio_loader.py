@@ -28,6 +28,13 @@ def test_loads_defaults_when_file_missing(tmp_path: Path):
     assert config.sandbox.cpu == 2
     assert config.sandbox.memory == "4g"
     assert config.sandbox.exec_timeout_seconds == 600
+    assert config.sandbox.pids_limit == 512
+    assert config.sandbox.read_only_rootfs is True
+    assert config.sandbox.tmpfs_size == "512m"
+    assert config.sandbox.container_user == "10001:10001"
+    assert config.sandbox.seccomp_profile == "default"
+    assert config.sandbox.workspace_quota_bytes == 10 * 1024**3
+    assert config.sandbox.workspace_quota_check_interval_seconds == 30
     assert config.sandbox.network.mode == "none"
     assert config.sandbox.network.docker_network == "omichub-studio-egress"
     assert config.sandbox.network.proxy_container == "omichub-studio-egress-proxy"
@@ -67,7 +74,8 @@ studio:
     micro_compaction:
       threshold_chars: 1200
   images:
-    base: {dockerfile: deploy/studio/base.Dockerfile}
+    base: {image: img:base, dockerfile: deploy/studio/base.Dockerfile, capabilities: [code]}
+    browser: {image: img:browser, capabilities: [code, browser]}
 other_key: ignored
 """,
     )
@@ -85,6 +93,9 @@ other_key: ignored
     assert config.agent.loop_control.auto_downgrade_to_supervised is False
     assert config.agent.micro_compaction.threshold_chars == 1200
     assert config.images["base"].dockerfile == "deploy/studio/base.Dockerfile"
+    assert config.image_for_capabilities(["code"]) == "img:base"
+    assert config.image_for_capabilities(["code", "browser"]) == "img:browser"
+    assert config.capabilities_for_image("img:browser") == ["code", "browser"]
 
 
 @pytest.mark.unit
@@ -92,6 +103,21 @@ def test_invalid_yaml_falls_back_to_defaults(tmp_path: Path):
     """YAML 解析失败 / 结构非法时回退默认配置"""
     yaml_path = tmp_path / "studio.yaml"
     _write_yaml(yaml_path, "studio: [not, a, mapping")
+    config = StudioConfigManager(config_path=yaml_path).get_config()
+    assert config == StudioConfig()
+
+
+@pytest.mark.unit
+def test_invalid_image_capability_falls_back_to_defaults(tmp_path: Path):
+    yaml_path = tmp_path / "studio.yaml"
+    _write_yaml(
+        yaml_path,
+        """
+studio:
+  images:
+    unsafe: {image: img:unsafe, capabilities: [code, desktop]}
+""",
+    )
     config = StudioConfigManager(config_path=yaml_path).get_config()
     assert config == StudioConfig()
 

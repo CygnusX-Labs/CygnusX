@@ -93,6 +93,13 @@ class StudioSandboxConfig(BaseModel):
     cpu: float = 2.0
     memory: str = "4g"
     exec_timeout_seconds: int = 600
+    pids_limit: int = Field(default=512, ge=64, le=65_536)
+    read_only_rootfs: bool = True
+    tmpfs_size: str = "512m"
+    container_user: str = "10001:10001"
+    seccomp_profile: str = "default"
+    workspace_quota_bytes: int = Field(default=10 * 1024**3, ge=0)
+    workspace_quota_check_interval_seconds: int = Field(default=30, ge=5, le=3600)
     network: StudioNetworkConfig = Field(default_factory=StudioNetworkConfig)
 
 
@@ -159,7 +166,20 @@ class StudioImageDef(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     dockerfile: str = ""
+    image: str = ""
     needs_r: bool = False
+    capabilities: list[str] = Field(default_factory=lambda: ["code"])
+
+    @field_validator("capabilities")
+    @classmethod
+    def validate_capabilities(cls, values: list[str]) -> list[str]:
+        allowed = {"code", "browser", "document"}
+        normalized = list(dict.fromkeys(str(value).strip().lower() for value in values))
+        if not normalized or any(value not in allowed for value in normalized):
+            raise ValueError("镜像 capabilities 只能包含 code/browser/document，且不能为空")
+        if "code" not in normalized:
+            normalized.insert(0, "code")
+        return normalized
 
 
 class StudioConfig(BaseModel):
@@ -175,6 +195,26 @@ class StudioConfig(BaseModel):
     agent: StudioAgentConfig = Field(default_factory=StudioAgentConfig)
     mounts: StudioMountsConfig = Field(default_factory=StudioMountsConfig)
     images: dict[str, StudioImageDef] = Field(default_factory=dict)
+
+    def image_for_capabilities(self, capabilities: list[str]) -> str | None:
+        """返回覆盖请求能力的已配置镜像，优先能力集合最小的镜像。"""
+        requested = set(capabilities)
+        candidates = [
+            definition
+            for definition in self.images.values()
+            if definition.image and requested.issubset(set(definition.capabilities))
+        ]
+        if not candidates:
+            return None
+        selected = min(candidates, key=lambda definition: len(definition.capabilities))
+        return selected.image
+
+    def capabilities_for_image(self, image: str) -> list[str]:
+        """返回已配置镜像的能力；未登记镜像按普通代码镜像处理。"""
+        for definition in self.images.values():
+            if definition.image == image:
+                return list(definition.capabilities)
+        return ["code"]
 
     @property
     def workspace_root(self) -> Path:

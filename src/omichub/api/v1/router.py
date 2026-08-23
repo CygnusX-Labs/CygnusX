@@ -28,6 +28,8 @@ from omichub.api.v1 import (
     projects,
     prompts,
     reports,
+    reminders,
+    schedules,
     sandbox,
     site_content,
     site_settings,
@@ -68,6 +70,8 @@ api_router.include_router(docs.router, prefix="/docs", tags=["Docs"])
 api_router.include_router(flows.router, prefix="/flows", tags=["Flows"])
 api_router.include_router(goals.router, prefix="/goals", tags=["Goals"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["Tasks"])
+api_router.include_router(schedules.router, prefix="/schedules", tags=["Schedules"])
+api_router.include_router(reminders.router, prefix="/reminders", tags=["Reminders"])
 api_router.include_router(pipelines.router, prefix="/pipelines", tags=["Pipelines"])
 api_router.include_router(stats.router, prefix="/stats", tags=["Stats"])
 api_router.include_router(plot_stats.router, prefix="/stats", tags=["PlotStats"])

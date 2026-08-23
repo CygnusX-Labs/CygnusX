@@ -11,8 +11,18 @@ from omichub.application.services.multi_expert_consultation_service import (
 from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
 
 
-class AgentServiceStub:
-    async def assemble_context(self, agent_id: str):
+class ContextBuilderStub:
+    async def assemble(
+        self,
+        agent_id: str,
+        user_id: str,
+        *,
+        user_message: str | None = None,
+        mode: str = "chat",
+    ):
+        assert user_id == ""
+        assert user_message == "请分析这个项目"
+        assert mode == "consultation"
         return SimpleNamespace(
             agent=SimpleNamespace(agent_id=agent_id, name=f"{agent_id} 专家"),
             model_config=SimpleNamespace(),
@@ -21,7 +31,6 @@ class AgentServiceStub:
 
 
 @pytest.mark.asyncio
-@pytest.mark.quarantine(reason="assemble_context 调用新增 user_id 关键字，AgentServiceStub 签名未跟上")
 async def test_collect_runs_experts_and_ignores_failed_opinion(monkeypatch) -> None:
     async def fake_stream(**kwargs) -> AsyncIterator[ChatChunk]:
         if kwargs["config"] is None:
@@ -32,7 +41,10 @@ async def test_collect_runs_experts_and_ignores_failed_opinion(monkeypatch) -> N
         "omichub.application.services.multi_expert_consultation_service.provider_manager.chat_stream",
         fake_stream,
     )
-    service = MultiExpertConsultationService(AgentServiceStub())
+    service = MultiExpertConsultationService(
+        object(),
+        context_builder=ContextBuilderStub(),  # type: ignore[arg-type]
+    )
 
     opinions = await service.collect(["agent-rnaseq", "agent-viz"], "请分析这个项目")
 

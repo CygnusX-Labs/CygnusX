@@ -40,6 +40,7 @@ celery_app = Celery(
         "omichub.infrastructure.celery_app.tasks.goals",
         "omichub.infrastructure.celery_app.tasks.ai_metrics",
         "omichub.infrastructure.celery_app.tasks.observability",
+        "omichub.infrastructure.celery_app.tasks.schedules",
     ],
 )
 
@@ -85,10 +86,21 @@ celery_app.conf.task_routes = {
     "omichub.infrastructure.celery_app.tasks.goals.*": {"queue": "analysis"},
     "omichub.infrastructure.celery_app.tasks.ai_metrics.*": {"queue": "analysis"},
     "omichub.infrastructure.celery_app.tasks.observability.*": {"queue": "analysis"},
+    "omichub.infrastructure.celery_app.tasks.schedules.*": {"queue": "schedules"},
 }
 
 # 定时任务
 celery_app.conf.beat_schedule = {
+    "schedule-scan-due": {
+        "task": "omichub.infrastructure.celery_app.tasks.schedules.scan_due_schedules",
+        "schedule": 30.0,
+        "options": {"queue": "schedules"},
+    },
+    "schedule-retry-failed": {
+        "task": "omichub.infrastructure.celery_app.tasks.schedules.retry_failed_deliveries",
+        "schedule": 300.0,
+        "options": {"queue": "schedules"},
+    },
     "agentteams-evidence-retention": {
         "task": "omichub.infrastructure.celery_app.tasks.agentteams.cleanup_evidence",
         "schedule": crontab(hour=2, minute=45),

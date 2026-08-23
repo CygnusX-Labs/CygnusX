@@ -15,4 +15,9 @@ docker build -t "omichub-sandbox-bio:${TAG}" \
   --build-arg "OMICHUB_IMAGE_TAG=${TAG}" \
   -f "${SCRIPT_DIR}/bio.Dockerfile" "${SCRIPT_DIR}"
 
-echo "==> 完成：omichub-sandbox-base:${TAG} / omichub-sandbox-bio:${TAG}"
+echo "==> 构建 omichub-sandbox-browser-office:${TAG}"
+docker build -t "omichub-sandbox-browser-office:${TAG}" \
+  --build-arg "OMICHUB_IMAGE_TAG=${TAG}" \
+  -f "${SCRIPT_DIR}/browser-office.Dockerfile" "${SCRIPT_DIR}"
+
+echo "==> 完成：omichub-sandbox-base:${TAG} / omichub-sandbox-bio:${TAG} / omichub-sandbox-browser-office:${TAG}"

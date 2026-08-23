@@ -13,11 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import omichub.application.services.chat_service as chat_module
 from omichub.application.services.chat_service import (
     ChatService,
+    _extract_route_json,
+)
+from omichub.application.services.chat.overdrive_control import (
     _build_overdrive_followup_assignments,
     _default_overdrive_assignments,
     _effective_overdrive,
     _extract_overdrive_intake_slots,
-    _extract_route_json,
     _filter_overdrive_questions,
     _normalize_overdrive_assignments,
     _overdrive_assignment_waves,
@@ -46,7 +48,13 @@ class _FakeAgentService:
         assert active_only
         return self.agents
 
-    async def assemble_context(self, _agent_id: str, *, user_id: str | None = None):
+    async def assemble_context(
+        self,
+        _agent_id: str,
+        *,
+        user_id: str | None = None,
+        tool_query: str | None = None,
+    ):
         return None
 
 

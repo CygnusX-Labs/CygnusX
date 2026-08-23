@@ -77,6 +77,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '任务管理', requiresAuth: true }
       },
       {
+        path: 'schedules',
+        name: 'schedules',
+        component: () => import('@/views/SchedulesView.vue'),
+        meta: { title: '日程与提醒', requiresAuth: true }
+      },
+      {
         path: 'workflow-monitor',
         name: 'workflow-monitor',
         component: () => import('@/views/WorkflowMonitorView.vue'),

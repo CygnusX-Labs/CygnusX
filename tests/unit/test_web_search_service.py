@@ -1,6 +1,7 @@
 """联网搜索适配器的离线契约测试。"""
 
 from types import SimpleNamespace
+from itertools import count
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -194,7 +195,7 @@ def _configure_agent_stream(monkeypatch, *, supports_tools, provider_stream, fea
         extra_params={"supports_tools": supports_tools},
     )
     context = AgentContext(
-        agent=SimpleNamespace(name="Test agent", project_id=None),
+        agent=SimpleNamespace(agent_id="agent-1", name="Test agent", project_id=None),
         model_config=model,
         system_prompt="base system prompt",
         tools=[],
@@ -211,19 +212,19 @@ def _configure_agent_stream(monkeypatch, *, supports_tools, provider_stream, fea
         project_id=None,
     )
     service = ChatService(FakeDb())
-    message_ids = iter(["user-1", "assistant-1"])
+    message_ids = count(1)
 
     async def no_cookie_balance(_user_id):
         return None
 
-    async def assemble_context(_self, _agent_id):
+    async def assemble_context(_self, _agent_id, *, user_id=None, tool_query=None):
         return context
 
     async def get_session(_session_id, _user_id):
         return session
 
     async def add_message(*_args, **_kwargs):
-        return SimpleNamespace(message_id=next(message_ids))
+        return SimpleNamespace(message_id=f"message-{next(message_ids)}")
 
     async def ignore_update(*_args, **_kwargs):
         return None
@@ -347,7 +348,7 @@ async def test_direct_chat_mounts_research_tools_and_emits_mcp_style_web_events(
 
 
 @pytest.mark.asyncio
-@pytest.mark.quarantine(reason="assemble_context mock 签名缺少 user_id 关键字，与 chat_service 现行调用不匹配")
+@pytest.mark.quarantine(reason="依赖完整持久化与会话集成夹具的流测试")
 async def test_professional_chat_mounts_kb_first_web_fallback_protocol(monkeypatch):
     captured: dict[str, object] = {}
 
@@ -381,7 +382,7 @@ async def test_professional_chat_mounts_kb_first_web_fallback_protocol(monkeypat
 
 
 @pytest.mark.asyncio
-@pytest.mark.quarantine(reason="assemble_context mock 签名缺少 user_id 关键字，与 chat_service 现行调用不匹配")
+@pytest.mark.quarantine(reason="依赖完整持久化与会话集成夹具的流测试")
 async def test_professional_chat_can_fallback_from_empty_kb_to_web(monkeypatch):
     calls: list[dict[str, object]] = []
 
@@ -479,7 +480,7 @@ async def test_professional_chat_can_fallback_from_empty_kb_to_web(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.quarantine(reason="assemble_context mock 签名缺少 user_id 关键字，与 chat_service 现行调用不匹配")
+@pytest.mark.quarantine(reason="依赖完整持久化与会话集成夹具的流测试")
 async def test_agent_without_tools_uses_presearch_context(monkeypatch):
     captured: dict[str, object] = {}
 
@@ -520,7 +521,7 @@ async def test_agent_without_tools_uses_presearch_context(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.quarantine(reason="assemble_context mock 签名缺少 user_id 关键字，与 chat_service 现行调用不匹配")
+@pytest.mark.quarantine(reason="依赖完整持久化与会话集成夹具的流测试")
 async def test_agent_injects_user_memory_into_system_prompt(monkeypatch):
     captured: dict[str, object] = {}
 
@@ -554,7 +555,7 @@ async def test_agent_injects_user_memory_into_system_prompt(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.quarantine(reason="assemble_context mock 签名缺少 user_id 关键字，与 chat_service 现行调用不匹配")
+@pytest.mark.quarantine(reason="依赖完整持久化与会话集成夹具的流测试")
 async def test_agent_with_tools_executes_and_reinjects_web_search(monkeypatch):
     calls: list[dict[str, object]] = []
 
@@ -608,7 +609,7 @@ async def test_agent_with_tools_executes_and_reinjects_web_search(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.quarantine(reason="assemble_context mock 签名缺少 user_id 关键字，与 chat_service 现行调用不匹配")
+@pytest.mark.quarantine(reason="依赖完整持久化与会话集成夹具的流测试")
 async def test_presearch_failure_does_not_interrupt_agent_response(monkeypatch):
     async def failing_search_default(_self, _query, _max_results=5):
         raise BusinessError("搜索超时")

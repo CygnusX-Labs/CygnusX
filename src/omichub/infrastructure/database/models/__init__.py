@@ -90,6 +90,11 @@ from omichub.infrastructure.database.models.overdrive import (
 from omichub.infrastructure.database.models.project import ProjectModel
 from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
 from omichub.infrastructure.database.models.sandbox import SandboxSessionModel
+from omichub.infrastructure.database.models.schedule import (
+    ReminderDeliveryModel,
+    ScheduleModel,
+    ScheduleOccurrenceModel,
+)
 from omichub.infrastructure.database.models.search_provider import SearchProviderConfigModel
 from omichub.infrastructure.database.models.site_settings import SiteSettingModel
 from omichub.infrastructure.database.models.skill import (
@@ -185,4 +190,7 @@ __all__ = [
     "SampleModel",
     "DirectoryModel",
     "ProjectModel",
+    "ScheduleModel",
+    "ScheduleOccurrenceModel",
+    "ReminderDeliveryModel",
 ]

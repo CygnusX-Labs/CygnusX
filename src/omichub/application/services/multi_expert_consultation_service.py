@@ -5,20 +5,36 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from omichub.application.services.agent_context_builder import AgentContextBuilder
 from omichub.infrastructure.ai_provider.openai_compatible import provider_manager
 
 
 class MultiExpertConsultationService:
     """并行收集专家意见；任一专家失败不影响其余意见或主链路回答。"""
 
-    def __init__(self, agent_service: Any) -> None:
+    def __init__(
+        self,
+        agent_service: Any,
+        context_builder: AgentContextBuilder | None = None,
+    ) -> None:
         self._agent_service = agent_service
+        self._context_builder = context_builder or AgentContextBuilder(
+            getattr(agent_service, "_db", None), agent_service
+        )
 
     async def collect(
         self, agent_ids: list[str], user_text: str, user_id: str | None = None
     ) -> list[dict[str, str]]:
         contexts = await asyncio.gather(
-            *(self._agent_service.assemble_context(agent_id, user_id=user_id) for agent_id in agent_ids),
+            *(
+                self._context_builder.assemble(
+                    agent_id,
+                    user_id or "",
+                    user_message=user_text,
+                    mode="consultation",
+                )
+                for agent_id in agent_ids
+            ),
             return_exceptions=True,
         )
         tasks = [

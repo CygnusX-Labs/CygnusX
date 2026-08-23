@@ -100,11 +100,12 @@ async def llm_call_node(state: AgentState, deps: NodeDeps) -> dict[str, Any]:
     force_final_response = (
         deps.max_tool_rounds is not None and rounds >= deps.max_tool_rounds
     )
-    await deps.emit_execution(
-        "agent_turn_started",
-        round_number=rounds + 1,
-        phase="before_model_call",
-    )
+    if rounds == 0:
+        await deps.emit_execution(
+            "agent_turn_started",
+            round_number=rounds + 1,
+            phase="before_model_call",
+        )
     system_prompt = deps.system_prompt
     tools = deps.tools or None
     if force_final_response:

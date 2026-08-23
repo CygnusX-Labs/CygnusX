@@ -6,7 +6,10 @@ API 前缀：/api/v1/chat
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -34,9 +37,50 @@ from omichub.application.schemas.chat import (
     UpdateSessionRequest,
 )
 from omichub.application.schemas.skill import SkillDTO
+from omichub.application.services.chat.chat_event_service import ChatEventService
 from omichub.application.services.chat_service import ChatService
+from omichub.core.config import get_settings
+from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
 
 router = APIRouter()
+
+# 聊天 SSE 保活间隔：上游（模型首 token、长工具调用、MCP 初始化等）静默超过
+# 该时长时由 _with_sse_heartbeat 补心跳，避免中间层按读超时掐断长连接。
+_SSE_HEARTBEAT_INTERVAL_SECONDS = 15.0
+
+
+async def _with_sse_heartbeat(
+    stream: AsyncIterator[ChatChunk],
+    interval: float = _SSE_HEARTBEAT_INTERVAL_SECONDS,
+) -> AsyncIterator[ChatChunk]:
+    """包裹聊天事件流，静默超过 interval 秒时产出 heartbeat 事件。
+
+    模型首 token 前的长等待（深度思考、排队）和部分工具调用期间 SSE 无任何
+    数据，反向代理/网关会按读超时掐断连接，前端即表现为「流式连接意外中断」。
+    这里在等待下一个事件时叠加超时，超时则先产出一个心跳再继续等待原事件；
+    心跳由 generate_sse 转成 SSE 注释帧（``: heartbeat``），前端会忽略它。
+    """
+    iterator = aiter(stream)
+    pending: asyncio.Task[ChatChunk] | None = None
+    try:
+        while True:
+            if pending is None:
+                pending = asyncio.ensure_future(anext(iterator))
+            try:
+                chunk = await asyncio.wait_for(asyncio.shield(pending), timeout=interval)
+            except TimeoutError:
+                # shield 保证超时不取消底层 anext，下次循环继续等同一个事件
+                yield ChatChunk(type="heartbeat")
+                continue
+            except StopAsyncIteration:
+                return
+            pending = None
+            yield chunk
+    finally:
+        if pending is not None and not pending.done():
+            pending.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await pending
 
 
 async def _resume_orchestrator_graph(
@@ -538,6 +582,8 @@ async def chat_stream(
 
     async def generate_sse():
         service = ChatService(db)
+        event_service = ChatEventService.from_settings()
+        terminal_sent = False
         if request.agent_id:
             gen = service.stream_agent_chat(
                 user_id=current_user_id,
@@ -573,17 +619,45 @@ async def chat_stream(
                 enable_web_search=request.enable_web_search,
                 project_id=request.project_id,
             )
-        async for chunk in gen:
-            if chunk.type == "heartbeat":
-                yield ": heartbeat\n\n"
-                continue
-            data: dict = {"type": chunk.type, "content": chunk.content}
-            if chunk.metadata:
-                data.update(chunk.metadata)
-            yield f"data: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
-            if chunk.type == "done":
-                break
-        await db.commit()
+        try:
+            async for chunk in _with_sse_heartbeat(gen):
+                if chunk.type == "heartbeat":
+                    yield ": heartbeat\n\n"
+                    continue
+                chunk = event_service.before_send(chunk)
+                data: dict = {"type": chunk.type, "content": chunk.content}
+                if chunk.metadata:
+                    data.update(chunk.metadata)
+                yield f"data: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
+                if chunk.type in {"done", "error", "agent_turn_failed"}:
+                    terminal_sent = True
+                if chunk.type == "done":
+                    break
+            event_service.after_stream()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("聊天 SSE 出口异常，已转换为 error 事件: {}", exc)
+            if not terminal_sent:
+                detail = str(exc).replace("\n", " ").strip()[:300]
+                yield (
+                    "data: "
+                    + json.dumps(
+                        {
+                            "type": "error",
+                            "content": (
+                                "聊天服务处理异常"
+                                + (f"（{detail}）" if detail else "")
+                                + "，请稍后重试；如果持续出现，请联系管理员。"
+                            ),
+                            "error_code": "chat_stream_failed",
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n\n"
+                )
+        finally:
+            await db.commit()
 
     return StreamingResponse(
         generate_sse(),

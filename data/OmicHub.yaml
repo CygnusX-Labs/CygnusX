@@ -101,6 +101,7 @@ agents:
     - scrna_integration
     - scrna_advanced
     - code
+    - explorer
     - viz
     - data
     - qc

@@ -46,6 +46,7 @@ from omichub.infrastructure.config.studio_loader import (
 )
 from omichub.infrastructure.database.session import get_session_factory
 from omichub.infrastructure.storage.scratch_volume import ScratchVolumeManager
+from omichub.infrastructure.studio.audit import emit as emit_audit
 from omichub.infrastructure.studio.paths import PLATFORM_CONTAINER_MOUNT
 
 _AGENT_TIMEOUT = httpx.Timeout(connect=5.0, read=None, write=30.0, pool=5.0)
@@ -357,7 +358,12 @@ class StudioSandboxManager:
     # 容器生命周期
     # ------------------------------------------------------------------
     async def ensure_running(
-        self, session_id: str, image: str | None = None, user_id: str | None = None
+        self,
+        session_id: str,
+        image: str | None = None,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        capabilities_requested: list[str] | None = None,
     ) -> SandboxHandle:
         """确保会话容器运行中（懒启动 + 复用），返回句柄。
 
@@ -371,6 +377,7 @@ class StudioSandboxManager:
             raise StudioSandboxUnavailableError("沙盒 Docker 不可用")
 
         image = image or config.default_image
+        capabilities_granted = config.capabilities_for_image(image)
         name = self.container_name(session_id)
         persistent_workspace = self.workspace_dir(session_id)
         self.ensure_workspace_dirs(persistent_workspace)
@@ -425,22 +432,78 @@ class StudioSandboxManager:
                         container.start()
                     container.reload()
                     self._validate_container_network(container, config, session_id)
-                    return container
+                    try:
+                        self._validate_container_security(container, config)
+                        emit_audit(
+                            "sandbox.reuse",
+                            session_id=session_id,
+                            container_id=str(container.id),
+                            baseline_check={
+                                "network": True,
+                                "cpu": True,
+                                "pids": True,
+                                "readonly_rootfs": True,
+                                "cap_drop": True,
+                                "no_new_privileges": True,
+                                "user": True,
+                                "seccomp": True,
+                            },
+                        )
+                        return container
+                    except StudioSandboxUnavailableError as exc:
+                        logger.warning(
+                            "[Studio] 发现不符合安全基线的旧容器，重建 {}: {}", name, exc
+                        )
+                        emit_audit(
+                            "sandbox.rebuild",
+                            session_id=session_id,
+                            user_id=user_id,
+                            agent_id=agent_id,
+                            capabilities_requested=capabilities_requested or ["code"],
+                            capabilities_granted=capabilities_granted,
+                            image=image,
+                            container_id=str(container.id),
+                            rebuild_reason=str(exc),
+                        )
+                        with contextlib.suppress(Exception):
+                            container.stop(timeout=5)
+                        with contextlib.suppress(Exception):
+                            container.remove(force=True)
 
                 # agent 通过共享工作区 UDS 访问；none 模式的沙盒完全不加入 Docker 网络。
                 socket_path = workspace / _AGENT_SOCKET_NAME
                 with contextlib.suppress(OSError):
                     socket_path.unlink()
-                cpu_shares = int(config.sandbox.cpu * 1024)
+                capabilities = config.capabilities_for_image(image)
                 run_kwargs: dict[str, Any] = {
                     "image": image,
                     "name": name,
                     "detach": True,
                     "auto_remove": False,
                     "mem_limit": config.sandbox.memory,
-                    "cpu_shares": cpu_shares,
+                    "nano_cpus": int(config.sandbox.cpu * 1_000_000_000),
+                    "pids_limit": config.sandbox.pids_limit,
+                    "cap_drop": ["ALL"],
+                    "user": config.sandbox.container_user,
+                    "security_opt": [
+                        "no-new-privileges:true",
+                        f"seccomp={config.sandbox.seccomp_profile}",
+                    ],
+                    "read_only": config.sandbox.read_only_rootfs,
+                    "tmpfs": {
+                        "/tmp": f"rw,nosuid,nodev,noexec,size={config.sandbox.tmpfs_size}",
+                    },
                     "volumes": volumes,
                     "labels": {"omichub.studio": "1", "omichub.studio.session": session_id},
+                    "environment": {
+                        "SANDBOX_CAPABILITIES": ",".join(capabilities),
+                        "SANDBOX_WORKSPACE_QUOTA_BYTES": str(
+                            config.sandbox.workspace_quota_bytes
+                        ),
+                        "SANDBOX_WORKSPACE_QUOTA_CHECK_INTERVAL_SECONDS": str(
+                            config.sandbox.workspace_quota_check_interval_seconds
+                        ),
+                    },
                 }
                 if config.sandbox.network.mode.strip().lower() == "none":
                     run_kwargs["network_mode"] = "none"
@@ -451,15 +514,32 @@ class StudioSandboxManager:
                         f"{config.sandbox.network.proxy_port}"
                     )
                     run_kwargs["network"] = network_name
-                    run_kwargs["environment"] = {
+                    run_kwargs["environment"].update({
                         "HTTP_PROXY": proxy_url,
                         "HTTPS_PROXY": proxy_url,
                         "http_proxy": proxy_url,
                         "https_proxy": proxy_url,
                         "NO_PROXY": "localhost,127.0.0.1",
                         "no_proxy": "localhost,127.0.0.1",
-                    }
-                return client.containers.run(**run_kwargs)
+                    })
+                created_container = client.containers.run(**run_kwargs)
+                emit_audit(
+                    "sandbox.create",
+                    session_id=session_id,
+                    user_id=user_id,
+                    agent_id=agent_id,
+                    capabilities_requested=capabilities_requested or ["code"],
+                    capabilities_granted=capabilities_granted,
+                    image=image,
+                    container_id=str(created_container.id),
+                    limits={
+                        "cpu": config.sandbox.cpu,
+                        "memory": config.sandbox.memory,
+                        "pids": config.sandbox.pids_limit,
+                    },
+                    network_mode=config.sandbox.network.mode,
+                )
+                return created_container
 
             container = await asyncio.to_thread(_ensure)
         except StudioSandboxUnavailableError:
@@ -520,6 +600,28 @@ class StudioSandboxManager:
             raise StudioSandboxUnavailableError(
                 f"Studio 沙盒网络不安全: expected={expected}, attached={sorted(attached)}"
             )
+
+    @staticmethod
+    def _validate_container_security(container: Any, config: StudioConfig) -> None:
+        """拒绝复用不满足当前 Studio 安全基线的旧容器。"""
+        host_config = container.attrs.get("HostConfig", {})
+        if int(host_config.get("NanoCpus") or 0) < int(config.sandbox.cpu * 1_000_000_000):
+            raise StudioSandboxUnavailableError("Studio 沙盒未设置有效硬 CPU 限制")
+        if int(host_config.get("PidsLimit") or 0) != config.sandbox.pids_limit:
+            raise StudioSandboxUnavailableError("Studio 沙盒 PID 限制不符合当前配置")
+        if config.sandbox.read_only_rootfs and not host_config.get("ReadonlyRootfs"):
+            raise StudioSandboxUnavailableError("Studio 沙盒根文件系统不是只读")
+        cap_drop = {str(item).upper() for item in host_config.get("CapDrop") or []}
+        if "ALL" not in cap_drop:
+            raise StudioSandboxUnavailableError("Studio 沙盒未丢弃 Linux capabilities")
+        security_opts = {str(item).lower() for item in host_config.get("SecurityOpt") or []}
+        if "no-new-privileges:true" not in security_opts:
+            raise StudioSandboxUnavailableError("Studio 沙盒未启用 no-new-privileges")
+        actual_user = str(container.attrs.get("Config", {}).get("User", ""))
+        if actual_user != config.sandbox.container_user:
+            raise StudioSandboxUnavailableError("Studio 沙盒运行用户不是固定非 root 用户")
+        if f"seccomp={config.sandbox.seccomp_profile}" not in security_opts:
+            raise StudioSandboxUnavailableError("Studio 沙盒未显式启用 seccomp profile")
 
     @staticmethod
     def _agent_client(socket_path: Path, timeout: httpx.Timeout) -> httpx.AsyncClient:
@@ -633,6 +735,7 @@ class StudioSandboxManager:
     async def stop(self, session_id: str) -> bool:
         """停止并移除会话容器，返回是否实际回收了容器。"""
         name = self.container_name(session_id)
+        last_active_at = await self.last_activity_at(session_id)
         await self._remove_activity(session_id)
         scratch = self._scratch_volumes.get(session_id)
 
@@ -663,6 +766,14 @@ class StudioSandboxManager:
             self._scratch_volumes.pop(session_id, None)
         if removed:
             logger.info(f"[Studio] 会话 {session_id[:8]} 沙盒已回收")
+            emit_audit(
+                "sandbox.reclaim",
+                session_id=session_id,
+                container_id=name,
+                reclaim_reason="manual",
+                last_active_at=last_active_at,
+                resource_peak=None,
+            )
         return removed
 
     async def hibernate(self, session_id: str) -> str:

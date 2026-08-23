@@ -262,3 +262,15 @@ def test_reverse_edit_payload_supports_deletion():
 @pytest.mark.unit
 def test_reverse_edit_payload_returns_none_for_empty_result():
     assert _reverse_edit_payload("all", "", 0, "all", "") is None
+
+@pytest.mark.unit
+def test_workspace_quota_rejects_excess_write(tmp_path, monkeypatch):
+    monkeypatch.setattr(sandbox_agent, "WORKSPACE_ROOT", tmp_path)
+    monkeypatch.setattr(sandbox_agent, "WORKSPACE_QUOTA_BYTES", 4)
+    (tmp_path / "existing.txt").write_text("1234", encoding="utf-8")
+
+    with pytest.raises(sandbox_agent.HTTPException) as exc_info:
+        sandbox_agent._check_workspace_quota(1)
+
+    assert exc_info.value.status_code == 413
+    assert exc_info.value.detail["code"] == "quota_exceeded"

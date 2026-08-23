@@ -729,3 +729,111 @@ tools:
     input_schema: {type: object, properties: {}}
     llm_result_fields: [route, message, success, error]
     ui_result_fields: [route, arguments]
+
+  - key: schedule-create
+    name: omichub_schedule_create
+    description: 创建日程或提醒。支持明确的 ISO 时间，也支持“明天下午3点”“48小时后”等自然语言时间。涉及创建操作时必须先取得用户确认。
+    keywords: [schedule, reminder, calendar, 日程, 提醒, 会议]
+    category: productivity
+    invocation_mode: backend_sync
+    service: omichub.application.services.schedule_tool_service.ScheduleToolService
+    method: create
+    requires_confirm: true
+    annotations: {readOnlyHint: false, destructiveHint: false, openWorld: false, idempotent: false}
+    input_schema:
+      type: object
+      properties:
+        title: {type: string, description: 日程标题}
+        start_at: {type: string, format: date-time}
+        natural_time: {type: string, description: 自然语言时间}
+        timezone: {type: string, default: Asia/Shanghai}
+        description: {type: string}
+        recurrence_rule: {type: string, description: RFC 5545 RRULE}
+        reminder_offsets_minutes: {type: array, items: {type: integer, minimum: 0}}
+      required: [title]
+    llm_result_fields: [schedule_id, status, summary]
+    ui_result_fields: [schedule_id, status]
+
+  - key: schedule-list
+    name: omichub_schedule_list
+    description: 查询当前用户的日程列表，所有权由调用上下文注入。
+    keywords: [schedule list, calendar, 日程列表, 我的提醒]
+    category: productivity
+    invocation_mode: backend_sync
+    service: omichub.application.services.schedule_tool_service.ScheduleToolService
+    method: list
+    requires_confirm: false
+    annotations: {readOnlyHint: true, destructiveHint: false, openWorld: false, idempotent: true}
+    input_schema: {type: object, properties: {status: {type: string}}}
+    llm_result_fields: [schedules, count]
+    ui_result_fields: [schedules, count]
+
+  - key: schedule-update
+    name: omichub_schedule_update
+    description: 修改当前用户拥有的日程。涉及修改操作时必须先取得用户确认。
+    keywords: [schedule update, calendar edit, 修改日程]
+    category: productivity
+    invocation_mode: backend_sync
+    service: omichub.application.services.schedule_tool_service.ScheduleToolService
+    method: update
+    requires_confirm: true
+    annotations: {readOnlyHint: false, destructiveHint: false, openWorld: false, idempotent: true}
+    input_schema:
+      type: object
+      properties:
+        schedule_id: {type: string}
+        title: {type: string}
+        start_at: {type: string, format: date-time}
+        timezone: {type: string}
+        recurrence_rule: {type: string}
+        status: {type: string}
+      required: [schedule_id]
+    llm_result_fields: [schedule_id, status, summary]
+    ui_result_fields: [schedule_id, status]
+
+  - key: schedule-cancel
+    name: omichub_schedule_cancel
+    description: 取消当前用户拥有的日程，并抑制尚未发送的提醒。必须先取得用户确认。
+    keywords: [schedule cancel, cancel reminder, 取消日程, 取消提醒]
+    category: productivity
+    invocation_mode: backend_sync
+    service: omichub.application.services.schedule_tool_service.ScheduleToolService
+    method: cancel
+    requires_confirm: true
+    annotations: {readOnlyHint: false, destructiveHint: true, openWorld: false, idempotent: true}
+    input_schema: {type: object, properties: {schedule_id: {type: string}}, required: [schedule_id]}
+    llm_result_fields: [schedule_id, status, summary]
+    ui_result_fields: [schedule_id, status]
+
+  - key: reminder-snooze
+    name: omichub_reminder_snooze
+    description: 将当前用户的一条提醒推迟指定分钟数。
+    keywords: [snooze, reminder, 推迟提醒, 稍后提醒]
+    category: productivity
+    invocation_mode: backend_sync
+    service: omichub.application.services.schedule_tool_service.ScheduleToolService
+    method: snooze
+    requires_confirm: false
+    annotations: {readOnlyHint: false, destructiveHint: false, openWorld: false, idempotent: true}
+    input_schema:
+      type: object
+      properties:
+        delivery_id: {type: string}
+        minutes: {type: integer, minimum: 1, maximum: 43200}
+      required: [delivery_id, minutes]
+    llm_result_fields: [delivery_id, status, due_at]
+    ui_result_fields: [delivery_id, status, due_at]
+
+  - key: reminder-complete
+    name: omichub_reminder_complete
+    description: 将当前用户的一条提醒标记为完成。
+    keywords: [complete reminder, done, 完成提醒, 已完成]
+    category: productivity
+    invocation_mode: backend_sync
+    service: omichub.application.services.schedule_tool_service.ScheduleToolService
+    method: complete
+    requires_confirm: false
+    annotations: {readOnlyHint: false, destructiveHint: false, openWorld: false, idempotent: true}
+    input_schema: {type: object, properties: {delivery_id: {type: string}}, required: [delivery_id]}
+    llm_result_fields: [delivery_id, status]
+    ui_result_fields: [delivery_id, status]

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from omichub.application.services import chat_service
+from omichub.application.services.chat import persistence_support
 from omichub.application.services.chat_service import ChatService
 from omichub.infrastructure.database.models.chat import ChatMessageModel
 
@@ -59,8 +59,12 @@ async def test_user_message_anchor_uses_independent_database_session(monkeypatch
 
     source_db = FakeDb()
     anchor_db = FakeDb()
-    monkeypatch.setattr(chat_service, "AsyncSession", FakeDb)
-    monkeypatch.setattr(chat_service, "get_session_factory", lambda: lambda: FakeContext(anchor_db))
+    monkeypatch.setattr(persistence_support, "AsyncSession", FakeDb)
+    monkeypatch.setattr(
+        persistence_support,
+        "get_session_factory",
+        lambda: lambda: FakeContext(anchor_db),
+    )
 
     message = await ChatService(source_db)._record_user_message_anchor(
         "session-1", "persist me", metadata={"marker": True}

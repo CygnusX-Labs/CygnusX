@@ -1,6 +1,19 @@
 studio:
   enabled: true
   default_image: omichub-analysis:core-2026.07
+  images:
+    base:
+      image: omichub-analysis:core-2026.07
+      dockerfile: deploy/studio/base.Dockerfile
+      capabilities: [code]
+    bio:
+      image: omichub-sandbox-bio:v0.0.2dev
+      dockerfile: deploy/studio/bio.Dockerfile
+      capabilities: [code]
+    browser-office:
+      image: omichub-sandbox-browser-office:v0.0.2dev
+      dockerfile: deploy/studio/browser-office.Dockerfile
+      capabilities: [code, browser, document]
   session:
     idle_ttl_minutes: 10
     # 工作区自会话最后更新起保留 7 天；有效分享、近期活动或执行中的会话不会清理。
@@ -25,6 +38,13 @@ studio:
     cpu: 2
     memory: 4g
     exec_timeout_seconds: 600
+    pids_limit: 512
+    read_only_rootfs: true
+    tmpfs_size: 512m
+    container_user: 10001:10001
+    seccomp_profile: default
+    workspace_quota_bytes: 10737418240
+    workspace_quota_check_interval_seconds: 30
     network:
       mode: whitelist
       docker_network: omichub-studio-egress

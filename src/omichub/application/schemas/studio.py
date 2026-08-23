@@ -18,6 +18,10 @@ class CreateStudioSessionRequest(BaseModel):
     title: str | None = Field(None, description="会话标题，缺省为「与 <Agent名> 的工作台」")
     project_id: str | None = Field(None, max_length=64, description="项目边界标识")
     model_id: UUID | None = Field(None, description="模型配置 ID，缺省用 Agent 绑定模型")
+    sandbox_capabilities: list[Literal["code", "browser", "document"]] = Field(
+        default_factory=lambda: ["code"],
+        description="请求的沙盒运行能力；必须被 Agent 的 studio.sandbox_capabilities 授权",
+    )
 
 
 class PromoteStudioSessionRequest(BaseModel):
@@ -155,6 +159,10 @@ class StudioSessionDetailDTO(BaseModel):
     plan: dict[str, Any] | None = Field(None, description="最新待办计划（sandbox_meta.plan）")
     capabilities: dict[str, Any] | None = Field(
         None, description="会话级 MCP/Skill 加载状态与最近审计记录（sandbox_meta.capabilities）"
+    )
+    sandbox_capabilities: list[Literal["code", "browser", "document"]] = Field(
+        default_factory=lambda: ["code"],
+        description="会话实际分配的沙盒运行能力（sandbox_meta.sandbox_capabilities）",
     )
     ui: dict[str, Any] = Field(default_factory=dict, description="代码工作室视图与交互设置")
     permissions: dict[str, Any] = Field(

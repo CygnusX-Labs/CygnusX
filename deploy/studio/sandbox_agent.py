@@ -36,6 +36,7 @@ from typing import Any, Literal
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from loguru import logger
 
 # ===== 常量 =====
 WORKSPACE_ROOT = Path(os.environ.get("SANDBOX_WORKSPACE", "/workspace"))
@@ -58,6 +59,58 @@ MAX_EXEC_TIMEOUT = 3600
 MCP_BUILDS_DIR = "mcp-builds"  # MCP Builder 生成代码约定目录（相对 /workspace）
 MCP_MAX_SERVERS = 8  # 单容器内同时运行的实验 MCP 上限
 MCP_SESSION_TIMEOUT = 30  # MCP 初始化/工具调用默认超时（秒）
+WORKSPACE_QUOTA_BYTES = int(os.environ.get("SANDBOX_WORKSPACE_QUOTA_BYTES", "0") or 0)
+QUOTA_CHECK_INTERVAL_SECONDS = int(
+    os.environ.get("SANDBOX_WORKSPACE_QUOTA_CHECK_INTERVAL_SECONDS", "30") or 30
+)
+_quota_exceeded = False
+
+
+def _workspace_usage_bytes() -> int:
+    total = 0
+    for path in WORKSPACE_ROOT.rglob("*"):
+        try:
+            if path.is_file() and not path.is_symlink():
+                total += path.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def _check_workspace_quota(extra_bytes: int = 0) -> None:
+    global _quota_exceeded
+    if WORKSPACE_QUOTA_BYTES <= 0:
+        return
+    usage = _workspace_usage_bytes()
+    if usage + max(extra_bytes, 0) > WORKSPACE_QUOTA_BYTES:
+        _quota_exceeded = True
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "code": "quota_exceeded",
+                "usage_bytes": usage,
+                "quota_bytes": WORKSPACE_QUOTA_BYTES,
+            },
+        )
+    _quota_exceeded = False
+
+
+async def _quota_watcher() -> None:
+    global _quota_exceeded
+    while True:
+        await asyncio.sleep(max(5, QUOTA_CHECK_INTERVAL_SECONDS))
+        if WORKSPACE_QUOTA_BYTES <= 0:
+            continue
+        usage = await asyncio.to_thread(_workspace_usage_bytes)
+        exceeded = usage > WORKSPACE_QUOTA_BYTES
+        if exceeded and not _quota_exceeded:
+            logger.bind(
+                event="sandbox.quota_exceeded",
+                component="studio_sandbox",
+                usage_bytes=usage,
+                quota_bytes=WORKSPACE_QUOTA_BYTES,
+            ).warning("Studio sandbox quota exceeded")
+        _quota_exceeded = exceeded
 
 @contextlib.asynccontextmanager
 async def _lifespan(_: FastAPI):
@@ -65,7 +118,13 @@ async def _lifespan(_: FastAPI):
     socket_path = Path(os.environ.get("SANDBOX_AGENT_SOCKET", "/workspace/.agent.sock"))
     with contextlib.suppress(OSError):
         await asyncio.to_thread(socket_path.chmod, 0o666)
-    yield
+    watcher = asyncio.create_task(_quota_watcher())
+    try:
+        yield
+    finally:
+        watcher.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await watcher
 
 
 app = FastAPI(
@@ -623,6 +682,7 @@ async def read_file(
 async def write_file(req: WriteRequest) -> dict[str, Any]:
     """创建 / 覆盖文件（自动创建父目录）。"""
     target = _resolve_writable_or_403(req.path)
+    _check_workspace_quota(len(req.content.encode("utf-8")))
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(req.content, encoding="utf-8")
@@ -665,6 +725,7 @@ def _reverse_edit_payload(
 @app.post("/files/mkdir")
 async def make_directory(req: PathRequest) -> dict[str, Any]:
     target = _resolve_writable_or_403(req.path)
+    _check_workspace_quota()
     if target == WORKSPACE_ROOT or target.exists():
         raise HTTPException(status_code=400, detail="目录已存在或路径非法")
     try:
@@ -680,6 +741,7 @@ async def rename_file(req: RenameRequest) -> dict[str, Any]:
     _raise_if_protected_write_prefix(req.new_path)
     source = _resolve_or_400(req.path)
     target = _resolve_or_400(req.new_path)
+    _check_workspace_quota()
     if source == WORKSPACE_ROOT or not source.exists() or target.exists():
         raise HTTPException(status_code=400, detail="源路径不存在、目标已存在或路径非法")
     if source.is_symlink():
@@ -728,6 +790,9 @@ async def edit_file(req: EditRequest) -> dict[str, Any]:
         )
     edit_index = old_content.find(req.old_string)
     new_content = old_content.replace(req.old_string, req.new_string, 1)
+    _check_workspace_quota(
+        len(new_content.encode("utf-8")) - len(old_content.encode("utf-8"))
+    )
     reverse_edit = _reverse_edit_payload(
         old_content, new_content, edit_index, req.old_string, req.new_string
     )

@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     app_port: int = 8000
     app_secret_key: str = "change-me-in-production"
     service_name: str = "web"
+    # Runtime 拆分灰度：关闭时保持当前 ChatService 直连路径。
+    chat_runtime_refactor_enabled: bool = False
+    # 事件顺序异常默认仅告警，避免 SSE 已开始后因观测校验中断用户回复；
+    # 需要严格阻断时显式设置 CHAT_EVENT_SEQUENCE_ENFORCEMENT=raise。
+    chat_event_sequence_enforcement: Literal["off", "warn", "raise"] = "warn"
+    agent_context_cache_ttl_seconds: int = 60
 
     # ===== 数据库配置 =====
     postgres_host: str = "localhost"
@@ -51,6 +57,8 @@ class Settings(BaseSettings):
     redis_db: int = 0
     celery_broker_url: str = ""
     celery_result_backend: str = ""
+    schedule_scan_batch_size: int = 100
+    schedule_max_delivery_attempts: int = 5
     # ===== 任务队列传输 =====
     # celery：保持现有行为；rocketmq：全部业务任务走 RocketMQ；
     # hybrid：仅 ROCKETMQ_TASK_ROUTES 命中的任务走 RocketMQ，其余保持 Celery。
